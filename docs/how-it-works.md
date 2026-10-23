@@ -233,6 +233,101 @@ git-excluded copies of the plugin's agents in the checkout's `.junie/agents/`,
 which `orch.sh agent sync` writes, refreshes and deletes; `set` and `clear`
 with `--host junie` run it, and on Junie every skill runs it once per run.
 
+## Autopilot
+
+The autopilot flow runs a flow's phases unattended. See GLOSSARY.md's
+**Autopilot flow** entry. It is Claude Code only.
+
+### Lifecycle
+
+`orch.sh autopilot start <issue> <plan-file>`, run by the planning close's
+autopilot route, refuses an issue without `ready-for-agent` or with a **phase
+label** already on it. It posts the **plan comment** and adds `orch:spec`. The
+labels then advance `orch:spec` -> `orch:implement` -> `orch:review` ->
+`orch:done`. `orch:running` is set while a session works.
+
+Before starting a session, the **watcher** (`watch`, or a scheduled `tick`,
+which is the same watcher run once) takes a **claim** on the issue's next
+phase: a ref under `refs/orch/claims` on origin, held until the session ends.
+At most **cap** sessions run at once per repo; the cap is soft.
+
+### Setup
+
+Each key is `orchestrator.autopilot.<name>`, read from local git config, then
+global git config. `orch.sh autopilot` has no `set` verb, so set one with
+`git config orchestrator.autopilot.<name> <value>`, or
+`git config --global ...` to apply it in every repo, e.g.
+`git config orchestrator.autopilot.permission-mode acceptEdits`.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `permission-mode` | required, no default: one of `default`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions` | The `--permission-mode` every headless session runs in. |
+| `cap` | 3 | Sessions that may run at once per repo. |
+| `handle` | the repo's owner | Who gets @mentioned when it needs you. |
+| `rounds` | 2 | Spec review rounds. |
+| `budget` | 3 | Review loop iterations. |
+
+`rounds` and `budget` are only the defaults a hand-labelled issue's minimal
+plan comment gets. A flow started at the planning close runs the `Rounds` and
+`Budget` its plan's `## Autopilot` block sizes from the planned scope, and
+every review loop of that flow runs that budget.
+
+`orch.sh autopilot show` prints each setting's value and source. A headless
+session cannot answer a permission prompt, so the permission mode decides what
+it may do unattended.
+
+### Running it
+
+Run `orch.sh autopilot watch [--every <seconds>]` (60 seconds by default), or
+have a scheduler (cron or similar) call `orch.sh autopilot tick`. The **pickup
+rule**: an open issue with a phase label other than `orch:done`, and neither
+`orch:running` nor `needs-human`.
+
+### When it needs you
+
+It stops for three things:
+
+- a **fundamental item** in the spec review;
+- a review-loop bounded stop (a spec question the review loop files among
+  them);
+- a failed session, which is never retried.
+
+It posts a **question comment** that @mentions the handle and adds
+`needs-human`. Reply in one comment like `1: A, 2: recommended, 3: <free text>`
+(`all: recommended` accepts everything), then remove `needs-human`. The next
+tick picks the issue up again, and a review-loop stop starts another loop with
+the planned budget.
+
+### Steering
+
+- Relabel the issue one phase back to redo that phase.
+- A session that stops on Claude Code's usage limit pauses new pickups until
+  the reset time.
+
+### Hand-labelled issue
+
+A human may give an issue a phase label by hand instead of using the planning
+close. Its plan comment is the minimal one, and its body is reviewed as it
+stands.
+
+### Autopilot and doctor
+
+`orch.sh doctor` flags a phase label that disagrees with the phase this
+checkout's (or a side checkout's) flow state last moved to, and other hosts'
+old claims.
+
+### Autopilot commands
+
+| Command | What it does |
+| --- | --- |
+| `orch.sh autopilot show` | Print the settings, each with its source. |
+| `orch.sh autopilot start <issue> <plan-file>` | Post the plan comment and add `orch:spec`. |
+| `orch.sh autopilot watch [--every <seconds>]` | Run the watcher, a tick every `<seconds>`. |
+| `orch.sh autopilot tick` | Run the watcher once. |
+
+The rest (`active`, `rounds`, `budget`, `run`, `ask`, `answer`) are called by
+the sessions themselves.
+
 ## Hosts
 
 The plugin runs on Claude Code and on the Junie CLI; Junie's setup is in
