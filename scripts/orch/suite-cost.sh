@@ -314,16 +314,16 @@ suite_cost_is_base() {
 # confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_commit clean_head line IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_field head_commit clean_head line IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
-  head_commit="$(suite_cost_head_commit)"
-  clean_head="$head_commit"
-  [ "${clean_head%-dirty}" = "$clean_head" ] || clean_head=""
-  head_commit="${head_commit%-dirty}"
+  head_field="$(suite_cost_head_commit)"
+  head_commit="${head_field%-dirty}"
+  clean_head=""
+  [ "$head_field" != "$head_commit" ] || clean_head="$head_commit"
   if [ -n "$clean_head" ] &&
     verdict="$(suite_cost_verdict_find)"; then
     note "$verdict"
