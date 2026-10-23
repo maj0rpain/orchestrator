@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.6
+
+`changelog.d/` survives a release: a tracked `changelog.d/.gitkeep` keeps it, which `scripts/version-bump.sh` never refuses, reads or deletes, and it no longer removes the directory (#1522). CLAUDE.md's Versioning section and CONTRIBUTING name who writes the fragment and what it is named - the PR's issue, in a flow the spec issue, never a ticket - and `docs_lint.sh`'s fragment rule flags a fragment named for a sub-issue, naming its parent, and a changed or deleted `.gitkeep`.
+
 ## 4.32.5
 
 Outside a git checkout, orch.sh's error now names the checkout the caller came from (its `OLDPWD`), or else says to `cd` into the repo's checkout, and warns that a `mktemp` path is for files, not the working directory. The issue-tracker doc says never to `cd` into a `mktemp` path.
