@@ -90,6 +90,22 @@ a skipped check is reported.
    **Deviations**, or the open PR's own. Fix none of them, and record none
    as a decline or a spec question.
 
+   **Pattern findings.** A finding whose report bullet carries a `Sites:`
+   list is a **pattern finding**: its claim holds at every listed site, the
+   first, its leading `file:line`, included. When you agree with one, fix
+   every listed site, not only the first. Before committing, grep once more
+   for each pattern you fixed: a new site the grep finds within the same
+   mechanical reach - the same fix, applied the same way - is fixed in the
+   same commit. Each site you do not fix, a listed one or one the grep
+   found, is recorded as its own decline line (step 6), carrying that
+   site's own `file:line`, the pattern's claim and your reason.
+
+   **Strengthen, don't relax.** Fix the code under test. Never delete or
+   weaken an assertion or a fixture the spec names to get a run green. A
+   finding you cannot fix without that is a **spec question** (step 7),
+   recorded as one, never a decline, so a quick implementation's PR opens
+   as a draft.
+
    **Suite cost.** Before fixing, run once, with the caller's verification
    command:
 

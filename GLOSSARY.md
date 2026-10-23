@@ -538,6 +538,12 @@ fixes it, declines it, or, when it is a spec question, puts it to a human,
 unless a standalone review pass left it out as a
 smell-baseline finding. A finding about the spec carries no severity: the spec review's session marks the item proposing its edit material or minor, a human accepts or declines that edit, or an unattended spec review applies it as recommended, and it is never filed.
 
+**Pattern finding**:
+A finding whose claim holds at more than one place - one cause or one breached
+rule recurring across sites. It lists every site, and its fix reaches or defers
+each one.
+_Avoid_: recurring finding
+
 **Severity**:
 Which of three roles a finding plays - how wrong the change is, and so which
 findings the loop may fix without asking anyone:

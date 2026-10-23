@@ -23,7 +23,8 @@ your return instead - see **Could not fix**.
 - **Merge resolutions** - what this iteration's base sync resolved. The
   record lists them as given.
 - **Fixable list** - each finding with its axis (Standards or Spec), severity
-  (blocking, major, or nit), file, line, and claim.
+  (blocking, major, or nit), file, line, and claim, and a **pattern
+  finding**'s site list after its file and line - see **Pattern findings**.
 - **Triaged out** - every other finding of the iteration, each with its
   disposition: demoted (and the authority), waiting to be filed (and the rule
   that kept it out), or met again (and its issue number).
@@ -46,9 +47,13 @@ your return instead - see **Could not fix**.
    major or nit fix needs no new test. A blocking fix removes the
    finding's cause, per **Rules for a fix** below, so its reach is every
    site that cause acts at; keep each major or nit fix confined to what its
-   finding names. The fix SHAs are the loop's record of what it wrote, and
-   the driver blames later findings against them. Done when every item is
-   fixed or on your could-not-fix list.
+   finding names. For a pattern finding, what its finding names is every
+   listed site, so a major or nit pattern fix reaches every listed site - see
+   **Pattern findings**. Fix the code under test, never the test the spec
+   asked for - see **Strengthen, don't relax**. The fix SHAs are the loop's
+   record of what it wrote, and the driver blames later findings against
+   them. Done when every item is fixed or on your could-not-fix list, and
+   every listed site of a pattern finding is fixed or deferred.
 2. **Verify.** Run the verification command through `bash "<orch.sh>"
    suite-cost run -- <command>`, which passes its output and exit code
    through unchanged and records a passing run's suite cost. A failure is a
@@ -58,7 +63,9 @@ your return instead - see **Could not fix**.
    itself is an open blocking finding. Done when the command passes, or
    every failure left is on your could-not-fix list and none of your
    remaining fixes causes one.
-3. **Commit once**, if anything was fixed. Subject in this repo's plain
+3. **Commit once**, if anything was fixed. Before committing, grep once more
+   for each pattern you fixed, per **Pattern findings**, and fix or defer
+   each new site it finds. Subject in this repo's plain
    imperative style (`Replace precheck and state validate with one doctor
    command`), describing the fix rather than the iteration; the body lists the
    findings addressed and points at the record. Stage the files you changed
@@ -162,6 +169,43 @@ is a deviation, named on the finding's line under **Findings** in the record.
 - **The test passes on the unfixed code**: do not fix it. The finding goes
   on your could-not-fix list as **open blocking**, with the reason
   "could not reproduce", so the next iteration's triage looks at it again.
+
+## Pattern findings
+
+A **pattern finding** is a finding whose claim holds at more than one place -
+one cause or one breached rule recurring across sites. Its entry carries
+`` Sites: `<file>:<line>`, `<file>:<line>` `` after its file and line: every
+site, the first, its leading `file:line`, included. It is one finding.
+
+- **Reach.** A major or nit pattern fix reaches every listed site. A blocking
+  pattern fix keeps its root-cause reach, every listed site among it.
+- **Final grep.** Before committing, grep once more for each pattern you
+  fixed. A new site within the same mechanical reach - the same fix, applied
+  the same way - is fixed in the same commit and recorded as `found by the
+  fixer's grep`. Any other new site is deferred, as below.
+- **Deferred sites.** A site of a major or nit pattern finding you do not fix
+  - listed, or found by your grep - is deferred with one of the existing
+  **Waiting to be filed** rules: needs a decision, not mechanical,
+  loop-authored lines (`git blame` the site against the fix SHAs, as triage
+  does for the first site), final iteration, could not fix, or spec question.
+  It gets its own **Waiting to be filed** bullet, carrying that site's own
+  file and line and the finding's axis and severity, so the closer files it
+  and later iterations hold it as a known item. No other rule defers a site.
+- **Blocking pattern findings** are never deferred or filed. A site you
+  cannot fix keeps the whole finding **open blocking**, with the unfixed
+  sites named in its reason. A site whose cause is out of reach takes **A
+  cause out of reach** under **Rules for a fix**: the symptom fix there, and
+  the cause recorded as a major under **Waiting to be filed** with the rule
+  `root cause out of reach`.
+
+## Strengthen, don't relax
+
+Fix the code under test. Never delete or weaken an assertion or a fixture
+the spec names to get a run green. When the code cannot be made to pass such
+an assertion, the finding goes to could-not-fix (see **Could not fix**):
+**open blocking** for a blocking finding; for a major, waiting to be filed
+with the rule `spec question` when passing it needs a decision the spec
+leaves unsettled, else `could not fix`; for a nit, `could not fix`.
 
 ## Could not fix
 
@@ -306,7 +350,14 @@ Every finding of the iteration appears under **Findings** with its axis and
 severity, the triaged-out ones included, each saying what happened to it:
 fixed (with the commit SHA), demoted and on what authority, waiting to be
 filed and the rule that kept it out, met again already filed (with the issue
-number), or open blocking. A reviewer whose report went missing twice is
+number), or open blocking. A pattern finding's entry lists every site, each
+as `` `<file>:<line>` fixed <SHA> `` or `` `<file>:<line>` deferred: <rule> ``,
+a site your final grep found marked `found by the fixer's grep`. When some of
+its sites are deferred, its **Findings** entry and its **Fixed this
+iteration** line lead with its first fixed site, never a deferred one, so
+the closer's match against **Fixed this iteration** never drops a deferred
+site's bullet; each deferred site has its own **Waiting to be filed**
+bullet (see **Pattern findings**). A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
 
