@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.7
+
+The repo now has one line width: 80 columns, stated in CONTRIBUTING and checked by the new `scan_line_width` rule in `docs_lint.sh`, over the Markdown under `skills/`, `agents/`, `commands/` and `docs/`, the root README, CONTRIBUTING, GLOSSARY and CLAUDE.md, and whole-line shell comments under `scripts/`. Tables, fences, frontmatter, URLs, shellcheck directives, heredoc bodies and unbreakable tokens are exempt. The covered tree is reflowed to fit, and the Standards reviewer no longer raises line width as a finding.
+
 ## 4.32.6
 
 `changelog.d/` survives a release: a tracked `changelog.d/.gitkeep` keeps it, which `scripts/version-bump.sh` never refuses, reads or deletes, and it no longer removes the directory (#1522). CLAUDE.md's Versioning section and CONTRIBUTING name who writes the fragment and what it is named - the PR's issue, in a flow the spec issue, never a ticket - and `docs_lint.sh`'s fragment rule flags a fragment named for a sub-issue, naming its parent, and a changed or deleted `.gitkeep`.
