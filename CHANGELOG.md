@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.3
+
+A pattern finding now lists every site of its pattern: both reviewers grep for every site and report them in its `Sites:`, the review loop hands the site list to the fixer, and the fixer and the review pass fix or defer every site, grep once more before committing, and never delete or weaken an assertion or fixture the spec names. `GLOSSARY.md` gains the **Pattern finding** entry.
+
 ## 4.32.2
 
 `suite-cost check` now takes its baseline only from clean records on the base commit itself, never an ancestor's, and measures a base commit with no record, so a `grew` verdict reflects the branch's own growth. A verdict it confirmed is stored and reused while the clean head, base commit, command and thresholds are unchanged, so an unchanged tree is not measured again.
