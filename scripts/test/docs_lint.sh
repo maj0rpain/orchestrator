@@ -68,7 +68,7 @@
 #   scan_driver_loop  the loop step labels live in docs/driver-loop.md only
 #   scan_layout_map  CONTRIBUTING's Layout map lists every docs/ file and directory
 #   scan_changelog  the CHANGELOG's top heading is the plugin version, with one non-empty section
-#   scan_changelog_fragments  a PR to main adds one well-formed changelog fragment and bumps nothing by hand
+#   scan_changelog_fragments  a PR to main adds one well-formed changelog fragment, named for no sub-issue, and bumps nothing by hand
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -3043,7 +3043,8 @@ check "each PR-writing site names docs/pr-writing.md" \
 # CHANGELOG rule always runs; the fragment rule runs against the real root only
 # when CHANGELOG_BASE holds main's commit, and waives its one-fragment part when
 # NO_VERSION_BUMP is set; .github/workflows/test.yml's "Read main's commit"
-# step sets both.
+# step sets both, and its Verify step carries the GH_TOKEN the fragment rule's
+# parent lookup reads issues with.
 echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"
 # version_field: the version field of the plugin.json on stdin, empty when
@@ -3108,13 +3109,25 @@ check "CHANGELOG.md's top entry is the plugin.json version" "$(scan_changelog "$
 # non-empty, it adds exactly one file under changelog.d/, named <digits>.md
 # and well-formed as scripts/version-bump.sh reads it. Always: plugin.json's
 # version is unchanged, CHANGELOG.md gains no ## heading, and no fragment the
-# merge-base holds is modified or deleted.
+# merge-base holds is modified or deleted. changelog.d/.gitkeep is not a
+# fragment: adding it counts for nothing, and changing it is flagged on its
+# own. The one fragment's issue must not be a sub-issue: a fragment is named
+# for the PR's issue, never a ticket (CLAUDE.md Versioning).
 scan_changelog_fragments() {
-  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new heading frag
+  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new heading frag issue parent
   if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
     echo "CHANGELOG_BASE: no merge-base with HEAD for '$base'"; return 0
   fi
   while IFS=$'\t' read -r status path; do
+    if [ "$path" = changelog.d/.gitkeep ]; then
+      case "$status" in
+        A) ;;
+        M) echo "$path: modified; version-bump.sh keeps it" ;;
+        D) echo "$path: deleted; version-bump.sh keeps it" ;;
+        *) echo "$path: changed ($status); version-bump.sh keeps it" ;;
+      esac
+      continue
+    fi
     case "$status" in
       A) added+=("$path") ;;
       M) echo "$path: an existing fragment is modified" ;;
@@ -3139,6 +3152,12 @@ scan_changelog_fragments() {
       git -C "$r" show "HEAD:${added[0]}" >"$frag/${added[0]}"
       (cd "$frag" && bash "$PLUGIN_ROOT/scripts/version-bump.sh" 2>&1 >/dev/null) |
         sed 's/^version-bump: //'
+      issue="$(basename "${added[0]}" .md)"
+      if ! parent="$(cd "$r" && issue_parent_url "$issue")"; then
+        echo "${added[0]}: looking up #$issue's parent issue failed (gh api), so the fragment's name is unchecked"
+      elif [ -n "$parent" ]; then
+        echo "${added[0]}: #$issue is a sub-issue of #${parent##*/}; name the fragment for the PR's issue, never a ticket"
+      fi
     fi
   fi
   old="$(git -C "$r" show "$mb:.claude-plugin/plugin.json" 2>/dev/null | version_field)"
@@ -3152,6 +3171,12 @@ scan_changelog_fragments() {
     <(git -C "$r" show "$mb:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort) \
     <(git -C "$r" show "HEAD:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort))
   return 0
+}
+# issue_parent_url <n>: issue <n>'s parent_issue_url, read from GitHub for the
+# repo of the current directory; empty when it has none. Fails when gh does.
+# The fixture self-tests replace it with a fake.
+issue_parent_url() {
+  gh api "repos/{owner}/{repo}/issues/$1" --jq '.parent_issue_url // ""'
 }
 # fragment_fixture: a fixture git repo whose main branch holds plugin.json at
 # 4.5.6, a CHANGELOG topped by ## 4.5.6, and one fragment not yet bumped,
@@ -3184,6 +3209,11 @@ fragment_add() {
   printf '%s\n' "$@" >"$f/changelog.d/$name"
   fragment_commit "$f"
 }
+# The fixtures' issues have no parent unless a test fakes one: the fake
+# stands in for issue_parent_url for every fixture self-test, and the real
+# lookup is put back before the real root's check.
+real_issue_parent_url="$(declare -f issue_parent_url)"
+issue_parent_url() { :; }
 fixture="$(fragment_fixture)"
 fragment_add "$fixture" 12.md 'bump: minor' '' 'A new feature.'
 spares "one well-formed new fragment is not flagged" \
@@ -3252,6 +3282,45 @@ flags "with NO_VERSION_BUMP, a changed plugin.json version is still flagged" \
   "$(scan_changelog_fragments "$fixture" main 1)" ".claude-plugin/plugin.json: version changed from 4.5.6 to 4.5.7"
 flags "a base with no merge-base is flagged, naming it" \
   "$(scan_changelog_fragments "$fixture" no-such-ref)" "CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'"
+# gitkeep_fixture: fragment_fixture with changelog.d/.gitkeep already on main.
+gitkeep_fixture() {
+  local f
+  f="$(fragment_fixture)"
+  git -C "$f" checkout -q main
+  : >"$f/changelog.d/.gitkeep"
+  fragment_commit "$f"
+  git -C "$f" checkout -q -B pr
+  echo "$f"
+}
+fixture="$(fragment_fixture)"
+: >"$fixture/changelog.d/.gitkeep"
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+spares "an added .gitkeep beside one well-formed fragment is not flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" '.'
+fixture="$(gitkeep_fixture)"
+rm "$fixture/changelog.d/.gitkeep"
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "a deleted .gitkeep is flagged with its own message" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/.gitkeep: deleted; version-bump.sh keeps it"
+fixture="$(gitkeep_fixture)"
+echo kept >"$fixture/changelog.d/.gitkeep"
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "a modified .gitkeep is flagged with its own message" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/.gitkeep: modified; version-bump.sh keeps it"
+fixture="$(fragment_fixture)"
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "a fragment named for a sub-issue is flagged, naming its parent" \
+  "$(issue_parent_url() { echo "https://api.github.com/repos/o/r/issues/10"; }
+    scan_changelog_fragments "$fixture" main)" \
+  "changelog.d/12.md: #12 is a sub-issue of #10; name the fragment for the PR's issue, never a ticket"
+spares "a fragment named for an issue with no parent is not flagged" \
+  "$(issue_parent_url() { echo ""; }; scan_changelog_fragments "$fixture" main)" '.'
+flags "a failed parent lookup is flagged" \
+  "$(issue_parent_url() { return 1; }; scan_changelog_fragments "$fixture" main)" \
+  "changelog.d/12.md: looking up #12's parent issue failed"
+spares "with NO_VERSION_BUMP, no parent lookup runs" \
+  "$(issue_parent_url() { echo "lookup ran"; return 1; }; scan_changelog_fragments "$fixture" main 1)" '.'
+eval "$real_issue_parent_url"
 if [ -n "${CHANGELOG_BASE+set}" ]; then
   check "the PR adds one changelog fragment and bumps nothing by hand" \
     "$(scan_changelog_fragments "$PLUGIN_ROOT" "$CHANGELOG_BASE" "${NO_VERSION_BUMP:-}")"

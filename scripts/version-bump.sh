@@ -6,7 +6,10 @@
 #
 # A fragment is changelog.d/<issue>.md, <issue> all digits: its first line is
 # exactly "bump: patch", "bump: minor" or "bump: major", and the rest, after
-# any blank lines, is the CHANGELOG prose, non-empty.
+# any blank lines, is the CHANGELOG prose, non-empty. changelog.d/.gitkeep,
+# tracked so the directory survives a release, is not a fragment: it is never
+# refused, read or deleted, and the directory is never removed. Any other
+# file under changelog.d/, dotfiles included, is refused.
 #
 # With no fragment it changes nothing, prints nothing and exits 0. Otherwise
 # it bumps .claude-plugin/plugin.json's version by the highest level among
@@ -18,9 +21,13 @@
 PLUGIN_JSON=.claude-plugin/plugin.json
 CHANGELOG=CHANGELOG.md
 
-# dotglob too, so a stray dotfile under changelog.d/ is refused, not skipped.
+# dotglob too, so a stray dotfile under changelog.d/ is refused, not skipped;
+# only changelog.d/.gitkeep is left out.
 shopt -s nullglob dotglob
-fragments=(changelog.d/*)
+fragments=()
+for f in changelog.d/*; do
+  [ "$f" = changelog.d/.gitkeep ] || fragments+=("$f")
+done
 [ "${#fragments[@]}" -eq 0 ] && exit 0
 
 work="$(mktemp -d)" || exit 1
@@ -92,5 +99,4 @@ sed "${line_no}s/\"$old\"/\"$new\"/" "$PLUGIN_JSON" >"$work/plugin.json"
 cat "$work/plugin.json" >"$PLUGIN_JSON"
 cat "$work/CHANGELOG.md" >"$CHANGELOG"
 rm -f "${fragments[@]}"
-rmdir changelog.d 2>/dev/null
 printf '%s\n' "$new"

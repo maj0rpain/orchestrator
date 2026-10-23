@@ -156,6 +156,23 @@ run_bump "$c"
 assert_eq "issue-number order is numeric, 99 before 100" \
   "$(grep -E '^Issue ' "$c/CHANGELOG.md")" "$(printf '%s\n' 'Issue ninety-nine.' 'Issue one hundred.')"
 
+echo
+echo "changelog.d/.gitkeep"
+c="$(checkout 4.5.6)"
+fragment "$c" .gitkeep
+fragment "$c" 12.md 'bump: patch' '' 'Beside the keep file.'
+run_bump "$c"
+assert_eq "a bump beside .gitkeep bumps as without it" "$out" "4.5.7"
+assert_eq "a bump leaves changelog.d/ and its .gitkeep, the fragments gone" \
+  "$(cd "$c" && find changelog.d | LC_ALL=C sort)" "$(printf '%s\n' changelog.d changelog.d/.gitkeep)"
+c="$(checkout 4.5.6)"
+fragment "$c" .gitkeep
+before="$(snapshot "$c")"
+run_bump "$c"
+assert_status "exits 0 with only .gitkeep" "$st" 0
+assert_empty "prints nothing with only .gitkeep" "$out$err"
+assert_eq "changes nothing with only .gitkeep" "$(snapshot "$c")" "$before"
+
 # refused <test> <checkout> <file>: runs the script, which must exit 1, name
 # <file> on stderr, print nothing on stdout, and change nothing.
 refused() {
@@ -196,6 +213,15 @@ c="$(checkout 4.5.6)"
 fragment "$c" 11.md 'bump: patch' '' 'A good one.'
 fragment "$c" .notes.md 'bump: patch' '' 'Hidden.'
 refused "a dotfile under changelog.d/" "$c" "changelog.d/.notes.md"
+c="$(checkout 4.5.6)"
+fragment "$c" .gitkeep
+fragment "$c" 11.md 'bump: patch' '' 'A good one.'
+fragment "$c" .keep
+refused "a dotfile under changelog.d/ beside .gitkeep" "$c" "changelog.d/.keep"
+c="$(checkout 4.5.6)"
+fragment "$c" .gitkeep
+fragment "$c" 12.md 'A change with no bump line.'
+refused "a malformed fragment beside .gitkeep" "$c" "changelog.d/12.md"
 
 c="$(checkout 4.5.6)"
 fragment "$c" 11.md 'bump: patch' '' 'A good one.'

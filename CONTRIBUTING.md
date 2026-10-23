@@ -77,7 +77,14 @@ after a push plus `/plugin marketplace update orchestrator`.
 
 Every PR to `main` adds one **changelog fragment** and never bumps the version
 by hand. The fragment is `changelog.d/<issue>.md`, `<issue>` all digits (a PR
-closing several issues names it for one of them). Its first line is exactly
+closing several issues names it for one of them); beside the fragments,
+`changelog.d/` holds only the tracked `changelog.d/.gitkeep`, which keeps the
+directory on `main` after a release and is never a fragment. The fragment is
+named for the PR's issue - in a flow or a quick implementation, the spec
+issue, never a ticket - and is written once: by the one ticket subagent when
+the breakdown collapsed onto the issue, else by the session driving the flow
+or quick implementation after its last ticket lands; no other ticket subagent
+writes or edits it. Its first line is exactly
 `bump: patch`, `bump: minor` or `bump: major` - semver judgement: patch for
 fixes and docs, minor for new features, major for breaking changes - and the
 rest, after any blank lines, is the CHANGELOG prose for the change, non-empty:
@@ -94,7 +101,7 @@ version-bump Action (`.github/workflows/version-bump.yml`) runs
 `scripts/version-bump.sh`, which gathers every fragment on `main` into one
 version bump: `version` raised by the highest level among them, one `## <new
 version>` entry on top of `CHANGELOG.md` carrying their prose in issue-number
-order, the fragments deleted. The Action commits that as `Release <version>`
+order, the fragments deleted, `.gitkeep` left in place. The Action commits that as `Release <version>`
 and pushes it; a push that loses a race with another merge leaves the
 fragments to that merge's run. Run `scripts/version-bump.sh` from a scratch
 copy of the checkout to see how a fragment renders: it edits the files in
@@ -102,7 +109,10 @@ place and does not commit. `scripts/test/version_bump_test.sh` tests it.
 
 CI (`docs_lint.sh`) enforces the rule: a PR to `main` adds exactly one
 well-formed fragment, and never changes `version`, adds a `## ` heading to
-`CHANGELOG.md`, or modifies or deletes an existing fragment. A pure CI or
+`CHANGELOG.md`, or modifies or deletes an existing fragment or `.gitkeep`;
+the fragment's issue is no sub-issue, its parent looked up with `gh api` and
+named when it has one. An epic's child shipped as its own PR is a known false
+positive, cleared by detaching it from its parent on GitHub. A pure CI or
 repo-hygiene PR carries the `no-version-bump` label, which waives the fragment
 and ships no version bump; the other rules still hold.
 
