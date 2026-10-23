@@ -276,6 +276,22 @@ handoff_comments_retire() {
   rm -f "$scratch"
 }
 
+# handoff_resolve <issue> <file> <scratch dir>: prints the readable path of a
+# handoff file - fetched into the scratch directory from its posted comment in
+# an autopilot session, $HANDOFF_DIR/<file> otherwise. The path is printed
+# either way; the status is non-zero when there is no such handoff, and each
+# caller chooses its own reaction.
+handoff_resolve() {
+  local issue="$1" file="$2" dir="$3"
+  if autopilot_active; then
+    printf '%s/%s\n' "$dir" "$file"
+    (handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file") 2>/dev/null && [ -f "$dir/$file" ]
+    return
+  fi
+  printf '%s/%s\n' "$HANDOFF_DIR" "$file"
+  [ -f "$HANDOFF_DIR/$file" ]
+}
+
 # handoff_autopilot_only <op>: dies unless this is an autopilot session - the
 # only flow whose handoffs are comments.
 handoff_autopilot_only() {
@@ -303,12 +319,11 @@ cmd_handoff() {
         for earlier in $(handoffs_due "$1"); do
           [ "$earlier" = "$file" ] || handoff_comment_fetch "$issue" "${earlier%.md}" "$scratch/$earlier" || true
         done
-        handoff_comment_fetch "$issue" "${file%.md}" "$scratch/$file" ||
+        handoff_resolve "$issue" "$file" "$scratch" ||
           die "issue #$issue has no ${file%.md} handoff comment"
-        printf '%s/%s\n' "$scratch" "$file"
         return 0
       fi
-      printf '%s/%s\n' "$HANDOFF_DIR" "$file"
+      handoff_resolve "" "$file" ""
       ;;
     post)
       [ $# -eq 2 ] || die "usage: orch.sh handoff post <name> <file>"

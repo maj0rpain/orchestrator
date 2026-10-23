@@ -1971,8 +1971,9 @@ echo "doctor: autopilot side-checkout flows"
 tick_fixture
 fake_issue 7 open ready-for-agent orch:spec
 printf 'Side flow\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
-printf '7\n' >"$launcher_dir/release"
-"$ORCH" autopilot tick >/dev/null 2>&1
+# The side checkout is built by the commands a pickup runs: add, then init.
+side7="$("$ORCH" side-checkout add 7-side-flow --issue 7 2>/dev/null)"
+(cd "$side7" && "$ORCH" init 7-side-flow --issue 7 >/dev/null 2>&1)
 fake_issue 7 open ready-for-agent orch:implement
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "doctor in the main checkout flags a side flow whose label disagrees" "$out" "issue #7 is labelled orch:implement, but its side checkout"

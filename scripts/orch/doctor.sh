@@ -882,7 +882,7 @@ check_flow_worktree_clean() {
 # Which handoffs are due is the phase table's handoffs_due - phase names what
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
-  local phase files f path problems line issue scratch=""
+  local phase files f path problems line issue="" scratch=""
   phase="$(state_get phase)"
   # A phase the table does not hold is due nothing, so the check skips it.
   files="$(handoffs_due "$phase")"
@@ -898,16 +898,12 @@ check_flow_handoffs() {
     scratch="$(mktemp -d)" || { d_fail "could not create a temp directory for the handoff comments."; return 0; }
   fi
   for f in $files; do
-    path="$HANDOFF_DIR/$f"
-    if [ -n "$scratch" ]; then
-      path="$scratch/$f"
-      if ! (handoff_comment_fetch "$issue" "${f%.md}" "$path") 2>/dev/null || [ ! -f "$path" ]; then
+    if ! path="$(handoff_resolve "$issue" "$f" "$scratch")"; then
+      if [ -n "$scratch" ]; then
         d_fail "handoff ${f%.md} comment is missing on issue #$issue - the phase that writes it has already run."
-        d_remedy "$(flow_cmd redo)"
-        continue
+      else
+        d_fail "handoff $f is missing - the phase that writes it has already run."
       fi
-    elif [ ! -f "$path" ]; then
-      d_fail "handoff $f is missing - the phase that writes it has already run."
       d_remedy "$(flow_cmd redo)"
       continue
     fi
