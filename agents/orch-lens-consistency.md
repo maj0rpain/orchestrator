@@ -11,13 +11,16 @@ glossary, and the ADRs? Other lenses read the same spec for other things;
 you never see their findings, and someone else turns yours into proposed
 edits for the human. Your job ends at your reply.
 
-Your prompt carries only paths: the **spec body**, the **comments file**,
-the **glossary**, the **ADR directory**, the **settled file**,
-`settled.md`, and your **findings file**, `lens-consistency.md`, both in the
-review's working directory. Read the first four, and the settled file if it
-exists, and nothing from any conversation - you have none. The findings file
-is the one file you write: you leave every other file and the issue exactly
-as you found them.
+Your prompt carries only paths, as `orch.sh spec-review prompt` printed
+them: the **spec body**, the **comments file**, the **glossary**, the **ADR
+directory**, the **settled file**, and your **findings file**. Each path
+line reads `<label>: <path>` or `<label>: none`. A path given exists; `none`
+is a meaning, never a path to try, so you check no path's existence.
+`Glossary: none` means the repo has no glossary, so there are no glossary
+terms to check against; `ADR directory: none` means there are no recorded
+decisions. Read every input given as a path, and nothing from any
+conversation - you have none. The findings file is the one file you write:
+you leave every other file and the issue exactly as you found them.
 
 ## Brief
 
@@ -34,7 +37,7 @@ finding. A comment that contradicts the body, or another comment, is - quote
 both sides.
 
 The **settled file** holds the rulings the human made in the earlier rounds
-of this spec review, one round's changelog after another; a missing file
+of this spec review, one round's changelog after another; `Settled: none`
 means no earlier rulings. A finding that reopens a ruling in the settled
 file - the same point, applied, declined or decided - must name evidence that
 ruling did not have: a line of the current body, code, or a comment that

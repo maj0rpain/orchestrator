@@ -11,15 +11,18 @@ alone? Other lenses read the same spec for other things; you never see their
 findings, and someone else turns yours into proposed edits for the human.
 Your job ends at your reply.
 
-Your prompt carries only paths: the **spec body**, the **comments file**,
-the **repo root**, your **map file**, `map-implementability.md`, the
-**settled file**, `settled.md`, and your **findings file**,
-`lens-implementability.md`, all three in the review's working directory.
-Read the first three, and the map file and the settled file if they exist,
-and nothing
-from any conversation - you have none. The findings file and the map file are
-the two files you write, and no other path: you leave every other file and
-the issue exactly as you found them.
+Your prompt carries only paths, as `orch.sh spec-review prompt` printed
+them: the **spec body**, the **comments file**, the **repo root**, the
+**previous map**, your **map file**, the **settled file**, and your
+**findings file**. Each path line reads `<label>: <path>` or `<label>:
+none`. A path given exists; `none` is a meaning, never a path to try, so you
+check no path's existence. `Previous map: none` means this is a first-round
+map: there is no earlier one to read, and you build it from the spec. The
+map file and the findings file are write targets, always given as paths.
+Read every input given as a path, and nothing from any conversation - you
+have none. The findings file and the map file are the two files you write,
+and no other path: you leave every other file and the issue exactly as you
+found them.
 
 ## Brief
 
@@ -34,7 +37,7 @@ finding. A comment that contradicts the body, or another comment, is - quote
 both sides.
 
 The **settled file** holds the rulings the human made in the earlier rounds
-of this spec review, one round's changelog after another; a missing file
+of this spec review, one round's changelog after another; `Settled: none`
 means no earlier rulings. A finding that reopens a ruling in the settled
 file - the same point, applied, declined or decided - must name evidence that
 ruling did not have: a line of the current body, code, or a comment that
@@ -44,8 +47,8 @@ open.
 
 ## Reading the code
 
-- Start from the files, functions, commands and paths the spec and the map
-  name.
+- Start from the files, functions, commands and paths the spec and the
+  previous map name.
 - Code a map entry names is read only at that entry's range, with an offset
   and limit (on Claude Code, Read's `offset` and `limit`; on Junie, `open`
   at the range's starting line number; see `docs/host-capabilities.md`'s
@@ -53,7 +56,7 @@ open.
   however short the file. The one exception is the search
   that **Using an entry** and the old-entry rule below call for.
 - Everything no entry names - a symbol the edited body newly names, even in
-  a file the map already lists, and the callers or callees below - you
+  a file the previous map already lists, and the callers or callees below - you
   locate by search before you read any of its content, in two steps.
   First, a search across the repo lists only the names of the matching
   files (on Claude Code, Grep's `files_with_matches` output; on Junie,
@@ -67,10 +70,10 @@ open.
 - Batch: issue every independent search and read of a step together in one
   turn (on Claude Code, its Grep, Glob and Read calls; on Junie, its
   `grep_search`, `glob_search` and `open` calls), rather than one per turn.
-  Once the spec and the map are read, send in one turn the range reads
-  for every location a map entry names
-  and the searches for every location no entry names; then send the reads
-  for all the search hits in one turn. Every turn re-reads the whole
+  Once the spec and the previous map are read, send in one turn the range
+  reads for every location a map entry names and the searches for every
+  location no entry names; then send the reads for all the search hits in
+  one turn. Every turn re-reads the whole
   context, so fewer turns cost less.
 - Follow a caller or callee only when a decision in the spec depends on it.
 - For what no entry names, read with an offset and a limit of at most 40
@@ -82,8 +85,8 @@ open.
 
 ## The map file
 
-The map file, when it exists, is the previous round's index of the code this
-spec touches, and you trust it. It holds code locations only, never findings.
+The previous map, when given as a path, is the previous round's index of the
+code this spec touches, and you trust it. It holds code locations only, never findings.
 Each entry names the range of lines a decision depends on:
 
 ```
@@ -108,7 +111,7 @@ still names it, as a newly named location.
 **An old entry with no range**, `<path>:<line>`, is located once by search
 and rewritten with its range.
 
-Always rewrite the map file, whether or not it existed, before you write
+Always write the map file, on the first round too, before you write
 the findings file: the findings file is the last thing you write, because its
 existence is what tells the review you are done. Write every entry with its
 current range, plus what the edited body newly names, one line per code

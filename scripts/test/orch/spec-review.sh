@@ -2624,3 +2624,128 @@ assert_contains "the unknown-op message lists wait" "$out" "want begin|check|app
 assert_contains "help documents spec-review wait" "$("$ORCH" help)" "spec-review wait <dir> <lens>..."
 rm -rf "$wait_dir" "$wait_late" "$wait_err"
 restore_suite_env ORCH_SPEC_REVIEW_WAIT_TIMEOUT ORCH_SPEC_REVIEW_WAIT_INTERVAL
+
+# --- spec-review prompt (#1521) ------------------------------------------------
+# A lens's whole prompt, printed for the session to pass unchanged: every input
+# path it names exists or reads none, and the write targets - the findings
+# file and the Implementability map file - are always given as paths.
+echo
+echo "spec-review prompt (#1521)"
+new_repo >/dev/null
+top="$(git rev-parse --show-toplevel)"
+sp_dir="$top/.orchestrator/spec-review/14"
+sp_round="$top/.orchestrator/spec-rounds/1"
+sp_state="$top/.orchestrator/state.json"
+# sp_seed <dir>: a round directory as the session leaves it after fetching -
+# the body and the comments, nothing carried.
+sp_seed() { rm -rf "$1"; mkdir -p "$1"; echo body >"$1/spec.md"; : >"$1/comments.md"; }
+# spr <dir> <lens>: the prompt op, its stdout and stderr together into out
+# and its status into st.
+spr() { out="$("$ORCH" spec-review prompt "$@" 2>&1)"; st=$?; }
+
+sp_seed "$sp_dir"
+spr "$sp_dir" implementability
+assert_status "round 1 Implementability prompt: printed" "$st" 0
+assert_eq "round 1 Implementability prompt, whole: every line in order, previous map and settled none, the map file and the findings file still given, the findings file last" "$out" \
+"Spec body: $sp_dir/spec.md
+Comments: $sp_dir/comments.md
+Repo root: $top
+Previous map: none
+Map file: $sp_dir/map-implementability.md
+Settled: none
+Findings file: $sp_dir/lens-implementability.md"
+
+printf 'map\n' >"$sp_dir/map-implementability.md"
+printf 'settled\n' >"$sp_dir/settled.md"
+spr "$sp_dir/" implementability
+assert_status "a later round, given with a trailing slash: printed" "$st" 0
+assert_eq "the carried map printed as the previous map" "$(has_line "$out" "Previous map: $sp_dir/map-implementability.md")" yes
+assert_eq "the carried settled file printed as a path" "$(has_line "$out" "Settled: $sp_dir/settled.md")" yes
+assert_eq "the map file still given" "$(has_line "$out" "Map file: $sp_dir/map-implementability.md")" yes
+
+sp_seed "$sp_dir"
+spr "$sp_dir" consistency
+assert_status "Consistency with no root glossary and no ADR directory: printed" "$st" 0
+assert_eq "its lines in order, Glossary, ADR directory and Settled none" "$out" \
+"Spec body: $sp_dir/spec.md
+Comments: $sp_dir/comments.md
+Glossary: none
+ADR directory: none
+Settled: none
+Findings file: $sp_dir/lens-consistency.md"
+printf 'terms\n' >"$sp_dir/glossary.md"
+mkdir -p "$top/docs/adr"
+printf 'settled\n' >"$sp_dir/settled.md"
+spr "$sp_dir" consistency
+assert_eq "with the glossary match file, the ADR directory and the settled file, each a path" "$out" \
+"Spec body: $sp_dir/spec.md
+Comments: $sp_dir/comments.md
+Glossary: $sp_dir/glossary.md
+ADR directory: $top/docs/adr/
+Settled: $sp_dir/settled.md
+Findings file: $sp_dir/lens-consistency.md"
+
+sp_seed "$sp_dir"
+spr "$sp_dir" testability
+assert_eq "Testability: its lines in order" "$out" \
+"Spec body: $sp_dir/spec.md
+Comments: $sp_dir/comments.md
+Repo root: $top
+Settled: none
+Findings file: $sp_dir/lens-testability.md"
+
+(cd "$top/.orchestrator" && "$ORCH" spec-review prompt spec-review/14 testability >"$top/.sp-rel" 2>&1)
+assert_eq "a relative <dir> printed absolute" "$(has_line "$(cat "$top/.sp-rel")" "Findings file: $sp_dir/lens-testability.md")" yes
+rm -f "$top/.sp-rel"
+
+sp_seed "$sp_round"
+mkdir -p "$top/.orchestrator/handoff"
+plan_file "$top/.orchestrator/handoff/01-plan.md"
+spr "$sp_round" fidelity
+assert_status "Fidelity in a flow round directory: printed" "$st" 0
+assert_eq "its lines in order, the plan handoff's path from handoff path spec" "$out" \
+"Spec body: $sp_round/spec.md
+Comments: $sp_round/comments.md
+Plan handoff: $top/.orchestrator/handoff/01-plan.md
+Settled: none
+Findings file: $sp_round/lens-fidelity.md"
+
+rm -f "$top/.orchestrator/handoff/01-plan.md"
+spr "$sp_round" fidelity
+assert_status "Fidelity in a flow round directory with no plan handoff: dies" "$st" 1
+assert_eq "naming the plan handoff it could not find, never Plan handoff: none" "$out" \
+  "orch: no plan handoff for the Fidelity prompt: $top/.orchestrator/handoff/01-plan.md does not exist"
+
+sp_seed "$sp_dir"
+spr "$sp_dir" fidelity
+assert_status "Fidelity in a standalone review's directory: dies" "$st" 1
+assert_eq "saying a standalone review never starts Fidelity" "$out" \
+  "orch: the Fidelity lens runs only in a flow's spec review: $sp_dir is not under $top/.orchestrator/spec-rounds/"
+printf '{"slug":"x","phase":"spec","issue":99,"branch":null}\n' >"$sp_state"
+plan_file "$top/.orchestrator/handoff/01-plan.md"
+spr "$sp_dir" fidelity
+assert_status "Fidelity in a standalone review's directory while a flow holds another issue: dies" "$st" 1
+assert_contains "for the same reason" "$out" "runs only in a flow's spec review"
+rm -f "$sp_state"
+
+spr "$sp_dir" clarity
+assert_status "an unknown lens: dies" "$st" 1
+assert_eq "naming it and the four lenses" "$out" \
+  "orch: unknown lens 'clarity' (want one of: fidelity consistency testability implementability)"
+rm -f "$sp_dir/spec.md"
+spr "$sp_dir" testability
+assert_status "a directory with no spec.md: dies" "$st" 1
+assert_eq "naming it" "$out" "orch: no spec body: $sp_dir/spec.md does not exist - fetch it first"
+sp_seed "$sp_dir"; rm -f "$sp_dir/comments.md"
+spr "$sp_dir" testability
+assert_status "a directory with no comments.md: dies" "$st" 1
+assert_eq "naming it" "$out" "orch: no comments file: $sp_dir/comments.md does not exist - fetch it first"
+spr "$top/nowhere" testability
+assert_status "a missing directory: dies" "$st" 1
+assert_eq "naming it" "$out" "orch: no such directory: $top/nowhere"
+spr "$sp_dir"
+assert_status "a missing lens: dies" "$st" 1
+assert_eq "with the usage" "$out" "orch: usage: orch.sh spec-review prompt <dir> <lens>"
+
+assert_contains "the unknown-op message lists prompt" "$("$ORCH" spec-review wipe 2>&1)" "want begin|check|apply|wait|prompt"
+assert_contains "help documents spec-review prompt" "$("$ORCH" help)" "spec-review prompt <dir> <lens>"

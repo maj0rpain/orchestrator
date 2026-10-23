@@ -76,11 +76,12 @@ phase exactly as a failed body fetch does.
    same directory. It reads the issue number from state, and writes an empty
    file when the issue has no comments. A failure stops the phase exactly as
    a failed body fetch does: the lenses would otherwise review half the spec.
-3. Resolve the other files the lenses read, and record the paths:
-   - the plan handoff: `bash "$ORCH" handoff path spec` (always `01-plan.md`);
-   - the glossary, the decisions and the repo root, as the main file's
-     **Standalone spec review** step 4 resolves them. A failed `glossary
-     match` stops the phase exactly as a failed body fetch does.
+3. The glossary, as the main file's **Standalone spec review** step 4
+   writes it. A failed `glossary match` stops the phase exactly as a failed
+   body fetch does. The plan handoff is not resolved here: the Fidelity
+   prompt's `spec-review prompt` runs `handoff path spec` itself, and dies,
+   naming the plan handoff, when it is missing - which stops the phase
+   exactly as a failed body fetch does.
 
 The main file's rule that nothing from this session's conversation reaches a
 lens holds here too: not the plan as you remember it, not `orch-to-spec`'s
@@ -101,9 +102,9 @@ even if the setting changed since. A later round whose directory holds no
 the read - starts its lenses as round 1 did, with no setting. The Fidelity
 row:
 
-| Lens | Agent | Paths |
+| Lens | Agent | Prompt |
 |---|---|---|
-| Fidelity | `orch-lens-fidelity` | spec body, comments file, plan handoff, `<dir>/settled.md`, `<dir>/lens-fidelity.md` |
+| Fidelity | `orch-lens-fidelity` | pass what `spec-review prompt <dir> fidelity` prints: spec body, comments, plan handoff, settled, findings file |
 
 `batch.md` records it as `@@ lens fidelity ran`, or `not-run <reason>` after
 two failures, never `standalone`.

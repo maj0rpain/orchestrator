@@ -755,6 +755,20 @@ orch.sh - deterministic operations for the orchestrator flow
                               missing after ORCH_SPEC_REVIEW_WAIT_TIMEOUT
                               seconds (default 900), polling every
                               ORCH_SPEC_REVIEW_WAIT_INTERVAL (default 5)
+  spec-review prompt <dir> <lens>
+                              print <lens>'s whole prompt, for the session
+                              to pass unchanged: one "<label>: <path>" line
+                              per path in its lens-table row, every path
+                              absolute, the findings file last. A missing
+                              input (glossary.md, docs/adr/, settled.md, the
+                              previous map-implementability.md) prints
+                              "<label>: none"; Map file: and Findings file:
+                              are always given. <dir> is a standalone
+                              review's or a flow round's directory and must
+                              hold spec.md and comments.md. fidelity only in
+                              a directory under .orchestrator/spec-rounds/,
+                              its Plan handoff what handoff path spec prints;
+                              dies when that fails, and on an unknown lens
   spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
                     [--tickets <answer> [--ticket-reasons <file>]]
                     [--issue <n>] [--unattended] [--host-fallbacks <file>]
