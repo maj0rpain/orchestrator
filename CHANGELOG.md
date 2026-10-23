@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.0
+
+Autopilot phase sessions start lean: a tool allowlist, no bundled skills or built-in plugin-authoring plugin, no MCP servers, no Explore or Plan agents, and the container turns off nonessential traffic and file checkpointing.
+
 ## 4.31.0
 
 Run the autopilot watcher in a Docker container isolated from the host: `docker/` ships a Dockerfile, compose project and example env file, and how-it-works documents the container and a host alternative (systemd or cron calling `orch.sh autopilot tick`).
