@@ -56,13 +56,17 @@ a skipped check is reported.
    `--deviations <file>` when the caller handed one. It writes the earlier
    passes' declines, the spec rulings and the deviations to that file. If it
    dies, relay its message and stop the pass, as a failed review does. Then
+   resolve the standards documents, once for the pass: `bash "$ORCH" review
+   standards` prints one line, `Standards: ` and the repo's standards
+   documents, every path one that exists, or `Standards: none`; keep it
+   verbatim, for both reviewers and any restart step 4 makes. Then
    start `orch-reviewer-standards` and `orch-reviewer-spec` at once, both in one message, each as a fresh
    subagent, never a fork, which would inherit this context. Start each as
    `docs/host-capabilities.md`'s **Start a fresh subagent** row describes for
    the host: on Claude Code, the Agent tool with `subagent_type` set to
    `orchestrator:<agent>`, both on the `reviewer` setting: run `bash "$ORCH"
    agent get reviewer` once, at the pass's start, per **Agent settings** in
-   `docs/host-capabilities.md`. Each prompt carries these six variables and
+   `docs/host-capabilities.md`. Each prompt carries these seven variables and
    nothing else - no issue body, no diff, no brief:
 
    ```
@@ -72,6 +76,7 @@ a skipped check is reported.
    Report path: <prefix>-<standards|spec>.md
    orch.sh: <the path ORCH holds>
    Known items: <prefix>-known.md
+   Standards: <the line review standards printed>
    ```
 
 4. **A failed review.** A missing report, or one that says the base SHA did

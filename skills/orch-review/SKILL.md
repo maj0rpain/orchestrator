@@ -153,6 +153,11 @@ reads the budget from the plan instead of asking.
    root. Every reviewer, fixer and closer this loop starts, and every
    resolver its base syncs start, runs on these, never re-read per
    iteration.
+7. Resolve the standards documents, once, for the whole loop: `bash "$ORCH"
+   review standards` prints one line, `Standards: ` and the repo's standards
+   documents, every path one that exists, or `Standards: none`. Keep it
+   verbatim: every reviewer this loop starts gets that same line, never
+   re-resolved per iteration (see **The reviewers**).
 
 ## The iteration
 
@@ -355,9 +360,11 @@ Two plugin agents under the plugin root's `agents/`, one per axis:
   the spec issue asked for.
 
 Start both at once, as fresh agents (see **Starting an agent**), both in one
-message. Each prompt carries six variables and nothing else - no spec body,
-no diff, no brief, no word about earlier iterations or fixes beyond the
-known-items file the sixth names:
+message. Each prompt carries seven variables and nothing else - no spec
+body, no diff, no brief, no word about earlier iterations or fixes beyond
+the known-items file the sixth names. The seventh is the line step 7 of
+**Before the first iteration** resolved, so a reviewer reads the standards
+documents it lists instead of discovering them:
 
 ```
 Base SHA: <this iteration's base SHA>
@@ -366,6 +373,7 @@ Iteration: <NN>
 Report path: <report path>
 orch.sh: <the path ORCH holds>
 Known items: <the iteration-NN-known.md step 3 of The iteration built>
+Standards: <the line review standards printed>
 ```
 
 Each reviewer reviews blind and opens the known items only when it writes its

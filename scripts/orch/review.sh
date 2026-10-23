@@ -452,8 +452,8 @@ review_standards() {
     done
   fi
   hop=(${listed[@]+"${listed[@]}"})
-  local round
-  for round in 1 2; do
+  local i
+  for ((i = 0; i < 2; i++)); do
     next=()
     for f in ${hop[@]+"${hop[@]}"}; do
       while IFS= read -r p; do

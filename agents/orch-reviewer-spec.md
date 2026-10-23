@@ -1,6 +1,6 @@
 ---
 name: orch-reviewer-spec
-description: The Spec axis of one orchestrator review - an iteration of a review loop, or a review pass - checks whether the whole change since a base SHA implements what the spec issue asked for, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, a report path, the path of orch.sh, and a known-items file.
+description: The Spec axis of one orchestrator review - an iteration of a review loop, or a review pass - checks whether the whole change since a base SHA implements what the spec issue asked for, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, a report path, the path of orch.sh, a known-items file, and the standards documents' list.
 tools: [Read, Grep, Glob, Bash]
 ---
 
@@ -11,10 +11,11 @@ issue asked for? You review the **whole change** from the base SHA, write
 every finding to the report file you were given, and return one line.
 Someone else ranks, fixes, and files; your job ends at the report.
 
-Your prompt carries six variables: the **base SHA**, the **spec issue**
+Your prompt carries seven variables: the **base SHA**, the **spec issue**
 number, the **iteration**, the **report path**, **orch.sh**, the path of
-the plugin's `orch.sh`, and **known items**, the path of the known-items
-file - see **Known items**.
+the plugin's `orch.sh`, **known items**, the path of the known-items
+file - see **Known items** - and **standards**, the `Standards:` line
+listing the repo's standards documents, or `Standards: none`.
 
 ## Read-only
 
@@ -82,8 +83,9 @@ you held back for the report's `Known items held back:` line.
    unfixed is **missing**.
 
    Before reporting a hunk as scope creep, check whether the repo's coding
-   standards require it. Find them as the Standards reviewer does: follow
-   `CLAUDE.md` or `AGENTS.md` pointers to the code-writing documents they name.
+   standards require it: the code-writing documents among those your
+   prompt's `Standards:` line lists, read as the Standards reviewer reads
+   them. `Standards: none` means no standard requires any hunk.
    A hunk a standard requires traces to that standard, and is not scope creep -
    for example, moving an existing caller onto a helper the change introduces.
 

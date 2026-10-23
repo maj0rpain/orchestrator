@@ -51,6 +51,7 @@
 #   scan_skill_refs  each skill's SKILL.md names every reference file beside it
 #   scan_spec_review_refs  orch-flow's spec phase step 4 names spec-phase.md and changelog.md, orch-spec-review's Applying the answer names spec-review apply, and orch-handoff's 02-spec.md Spec review changelog names changelog.md
 #   scan_previously_declined  a standalone review pass lists earlier declines and the reviewers hear of them only through the known-items file
+#   scan_review_loop_prompt  the review loop's reviewer prompt is the seven variables, Standards: last
 #   scan_standalone_smells  the standalone review pass section and its command offer --smells
 #   scan_cheapest_test  the implementer's and fixer's Test-driven development sections carry one identical Cheapest sufficient test paragraph
 #   scan_test_cost_smells  the Standards reviewer carries the four test-cost smells outside the smell baseline
@@ -2010,8 +2011,9 @@ echo "previously declined (#418)"
 # A standalone review pass reads earlier passes' declines through pr comments
 # and lists what it dropped as **Previously declined** - while the reviewers
 # hear of earlier passes only through the known-items file: Review pass step
-# 3's prompt is the six variables, `Known items: <prefix>-known.md` last, and
-# carries no earlier items inline (ADR-0045).
+# 3's prompt is the seven variables, `Known items: <prefix>-known.md` then
+# `Standards: <the line review standards printed>` last, and carries no
+# earlier items inline (ADR-0045).
 # scan_previously_declined <plugin root>: one line per break of that rule.
 scan_previously_declined() {
   local r="$1" pass="skills/orch-review-pass/SKILL.md" body prompt
@@ -2024,8 +2026,8 @@ scan_previously_declined() {
     | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//')"
   [ "$prompt" = "$(printf '%s\n' 'Base SHA: <base SHA>' 'Spec issue: #<issue>' 'Iteration: <NN>' \
     'Report path: <prefix>-<standards|spec>.md' 'orch.sh: <the path ORCH holds>' \
-    'Known items: <prefix>-known.md')" ] \
-    || echo "$pass: ## Review pass step 3's reviewer prompt is not the six variables"
+    'Known items: <prefix>-known.md' 'Standards: <the line review standards printed>')" ] \
+    || echo "$pass: ## Review pass step 3's reviewer prompt is not the seven variables"
   return 0
 }
 fixture="$(new_fixture)"
@@ -2042,7 +2044,7 @@ flags "a standalone pass that never reads pr comments is flagged" \
 flags "a standalone pass with no Previously declined is flagged" \
   "$out" "skills/orch-review-pass/SKILL.md: ## Standalone review pass does not name **Previously declined**"
 flags "a reviewer prompt carrying earlier declines inline is flagged" \
-  "$out" "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the six variables"
+  "$out" "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the seven variables"
 printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
   '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' \
   '   orch.sh: <the path ORCH holds>' '   ```' '' \
@@ -2050,17 +2052,61 @@ printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base
   >"$fixture/skills/orch-review-pass/SKILL.md"
 flags "the old five-variable prompt is flagged" \
   "$(scan_previously_declined "$fixture")" \
-  "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the six variables"
-printf '%s\n' '# R' '' '## Review pass' '' '3. Run `orch.sh review-pass known-items <issue> <prefix>-known.md`, then start them:' \
-  '' '   ```' '   Base SHA: <base SHA>' \
+  "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the seven variables"
+printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
   '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' \
   '   orch.sh: <the path ORCH holds>' '   Known items: <prefix>-known.md' '   ```' '' \
   '## Standalone review pass' '' 'Run `orch.sh pr comments <file>`; list **Previously' 'declined**.' \
   >"$fixture/skills/orch-review-pass/SKILL.md"
-assert_empty "a pass that reads earlier declines and passes the six variables is not flagged" \
+flags "the old six-variable prompt, with no Standards line, is flagged" \
+  "$(scan_previously_declined "$fixture")" \
+  "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the seven variables"
+printf '%s\n' '# R' '' '## Review pass' '' '3. Run `orch.sh review-pass known-items <issue> <prefix>-known.md`, then start them:' \
+  '' '   ```' '   Base SHA: <base SHA>' \
+  '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' \
+  '   orch.sh: <the path ORCH holds>' '   Known items: <prefix>-known.md' \
+  '   Standards: <the line review standards printed>' '   ```' '' \
+  '## Standalone review pass' '' 'Run `orch.sh pr comments <file>`; list **Previously' 'declined**.' \
+  >"$fixture/skills/orch-review-pass/SKILL.md"
+assert_empty "a pass that reads earlier declines and passes the seven variables is not flagged" \
   "$(scan_previously_declined "$fixture")"
-check "a standalone review pass drops earlier declines and the reviewer prompt is the six variables" \
+check "a standalone review pass drops earlier declines and the reviewer prompt is the seven variables" \
   "$(scan_previously_declined "$PLUGIN_ROOT")"
+
+# --- review loop reviewer prompt (#1532) ----------------------------------------
+echo
+echo "review loop reviewer prompt (#1532)"
+# The review loop's reviewers get the same seven variables a review pass's do,
+# with the loop's own placeholders: `Standards: <the line review standards
+# printed>` last, after `Known items:`.
+# scan_review_loop_prompt <plugin root>: one line when the orch-review skill's
+# ## The reviewers prompt block is not those seven lines.
+scan_review_loop_prompt() {
+  local r="$1" skill="skills/orch-review/SKILL.md" prompt
+  prompt="$(md_section "$r/$skill" "## The reviewers" \
+    | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//')"
+  [ "$prompt" = "$(printf '%s\n' "Base SHA: <this iteration's base SHA>" 'Spec issue: #<spec issue>' \
+    'Iteration: <NN>' 'Report path: <report path>' 'orch.sh: <the path ORCH holds>' \
+    'Known items: <the iteration-NN-known.md step 3 of The iteration built>' \
+    'Standards: <the line review standards printed>')" ] \
+    || echo "$skill: ## The reviewers prompt is not the seven variables"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-review"
+printf '%s\n' '# R' '' '## The reviewers' '' '```' "Base SHA: <this iteration's base SHA>" \
+  'Spec issue: #<spec issue>' 'Iteration: <NN>' 'Report path: <report path>' \
+  'orch.sh: <the path ORCH holds>' 'Known items: <the iteration-NN-known.md step 3 of The iteration built>' \
+  '```' >"$fixture/skills/orch-review/SKILL.md"
+flags "a six-variable loop prompt, with no Standards line, is flagged" \
+  "$(scan_review_loop_prompt "$fixture")" \
+  "skills/orch-review/SKILL.md: ## The reviewers prompt is not the seven variables"
+printf '%s\n' '# R' '' '## The reviewers' '' '```' "Base SHA: <this iteration's base SHA>" \
+  'Spec issue: #<spec issue>' 'Iteration: <NN>' 'Report path: <report path>' \
+  'orch.sh: <the path ORCH holds>' 'Known items: <the iteration-NN-known.md step 3 of The iteration built>' \
+  'Standards: <the line review standards printed>' '```' >"$fixture/skills/orch-review/SKILL.md"
+assert_empty "the seven-variable loop prompt is not flagged" "$(scan_review_loop_prompt "$fixture")"
+check "the review loop's reviewer prompt is the seven variables" "$(scan_review_loop_prompt "$PLUGIN_ROOT")"
 
 # --- standalone pass smells (#419) ---------------------------------------------
 echo
