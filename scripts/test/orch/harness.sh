@@ -1341,13 +1341,6 @@ plant_file "$gh_op_dir/orch" zz-multiline.sh <<'PLANTED'
   x="a string opened here
   # and closed on this line" adapter_pr_refs "$n"
 PLANTED
-out="$(gh_op_placement "$gh_op_dir")"; st=$?
-assert_status "an op after a multi-line string holding a # at a line's start fails" "$st" 1
-assert_eq "naming the file and the op" "$out" \
-  "scripts/orch/zz-multiline.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE"
-rm -rf "${gh_op_dir%/scripts}"
-
-gh_op_dir="$(tree_copy scripts)"
 plant_file "$gh_op_dir/orch" zz-param.sh <<'PLANTED'
   y=${x#pat} adapter_issue_state_labels "$n"
 PLANTED
@@ -1364,12 +1357,13 @@ plant_file "$gh_op_dir/orch" zz-literal.sh <<'PLANTED'
   echo "adapter_pr_refs"
 PLANTED
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
-assert_status "an op after a # in \${...}, in \$'...' or on a heredoc body line, or in a quoted literal, fails" "$st" 1
+assert_status "an op after a # in \${...}, in \$'...', on a heredoc body line or inside a multi-line string, or in a quoted literal, fails" "$st" 1
 assert_eq "naming each file and op" "$out" \
   "scripts/orch/zz-ansi.sh names adapter_pr_state_draft. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-heredoc.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-literal.sh names adapter_issue_state_labels_body. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-literal.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-multiline.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-param.sh names adapter_issue_state_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
