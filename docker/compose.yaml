@@ -1,0 +1,17 @@
+# One compose project per repo: copy .env.example to .env, fill it in, then
+# `docker compose up -d` (run from this directory). The host's ~/.claude is
+# never mounted.
+services:
+  autopilot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        EXTRA_APT_PACKAGES: ${EXTRA_APT_PACKAGES:-}
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - repo:/home/orch/repo
+
+volumes:
+  repo:
