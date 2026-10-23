@@ -1,5 +1,7 @@
 # One compose project per repo: copy .env.example to .env, fill it in, then
-# `docker compose up -d` (run from this directory). The host's ~/.claude is
+# `docker compose up -d` (run from this directory). A second project sets
+# ORCH_ENV_FILE to its own env file: `ORCH_ENV_FILE=.env.other docker compose
+# -p other up -d`. The host's ~/.claude is
 # never mounted.
 services:
   autopilot:
@@ -9,7 +11,7 @@ services:
       args:
         EXTRA_APT_PACKAGES: ${EXTRA_APT_PACKAGES:-}
     restart: unless-stopped
-    env_file: .env
+    env_file: ${ORCH_ENV_FILE:-.env}
     volumes:
       - repo:/home/orch/repo
 

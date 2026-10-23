@@ -132,11 +132,11 @@ assert_eq "all three missing: nothing but orch lines" "$(printf '%s\n' "$err" | 
 
 run_entry -CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY=key
 assert_status "the API key alone is accepted" "$st" 0
+
+# The one default run: the artefacts of later checks are asserted after it.
 run_entry
+default_gh_log="$gh_log" default_home="$home" default_clone="$clone"
 assert_status "the OAuth token alone is accepted" "$st" 0
-
-
-run_entry
 assert_contains "gh auth setup-git is called" "$(<"$gh_log")" "auth setup-git"
 
 FAKE_GH_FAIL=setup-git run_entry
@@ -158,9 +158,8 @@ assert_eq "a non-empty non-git clone dir is left alone" "$(cat "$clone/file")" x
 assert_eq "a non-empty non-git clone dir is not cloned over" "$(grep -c 'repo clone' "$gh_log")" 0
 
 
-run_entry
-assert_eq "identity name falls back on the token owner's login" "$(cfg user.name)" octo
-assert_eq "identity email falls back on the noreply address" "$(cfg user.email)" "4242+octo@users.noreply.github.com"
+assert_eq "identity name falls back on the token owner's login" "$(HOME="$default_home" git config --global --get user.name)" octo
+assert_eq "identity email falls back on the noreply address" "$(HOME="$default_home" git config --global --get user.email)" "4242+octo@users.noreply.github.com"
 run_entry ORCH_GIT_NAME=Bot ORCH_GIT_EMAIL=bot@example.com
 assert_eq "ORCH_GIT_NAME overrides the name" "$(cfg user.name)" Bot
 assert_eq "ORCH_GIT_EMAIL overrides the email" "$(cfg user.email)" bot@example.com
@@ -179,30 +178,22 @@ assert_eq "cap is written" "$(cfg orchestrator.autopilot.cap)" 3
 assert_eq "handle is written" "$(cfg orchestrator.autopilot.handle)" maj0rpain
 assert_eq "rounds is written" "$(cfg orchestrator.autopilot.rounds)" 5
 assert_eq "budget is written" "$(cfg orchestrator.autopilot.budget)" 12
-run_entry
-assert_eq "permission-mode defaults to bypassPermissions" "$(cfg orchestrator.autopilot.permission-mode)" bypassPermissions
+assert_eq "permission-mode defaults to bypassPermissions" "$(HOME="$default_home" git config --global --get orchestrator.autopilot.permission-mode)" bypassPermissions
 run_entry ORCH_PERMISSION_MODE=
 assert_eq "an empty permission mode defaults too" "$(cfg orchestrator.autopilot.permission-mode)" bypassPermissions
 for key in cap handle rounds budget; do
-  run_entry
-  assert_eq "an unset variable leaves $key unset" "$(cfg_set "orchestrator.autopilot.$key")" unset
+  assert_eq "an unset variable leaves $key unset" "$(HOME="$default_home" git config --global --get "orchestrator.autopilot.$key" >/dev/null 2>&1 && echo set || echo unset)" unset
   upper="ORCH_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
   run_entry "$upper="
   assert_eq "an empty $upper leaves $key unset" "$(cfg_set "orchestrator.autopilot.$key")" unset
 done
 
 
-run_entry
-assert_status "first start succeeds" "$st" 0
-assert_contains "first start clones the repo into the clone dir" "$(<"$gh_log")" "repo clone owner/name $clone"
-assert_eq "first start leaves a git clone" "$([ -d "$clone/.git" ] && echo yes)" yes
-second_gh="$case_dir/gh2.log"
-: >"$second_gh"
-env -i "PATH=$fake_bin:$PATH" "HOME=$home" "GH_LOG=$second_gh" "ORCH_LOG=$orch_log" \
-  "ORCH_SH=$root/orch.sh" "ORCH_CLONE_DIR=$clone" REPO=owner/name GH_TOKEN=tok \
-  CLAUDE_CODE_OAUTH_TOKEN=oauth bash "$ENTRY" >/dev/null 2>&1
-assert_status "second start succeeds" "$?" 0
-assert_eq "second start does not clone again" "$(grep -c 'repo clone' "$second_gh")" 0
+assert_contains "first start clones the repo into the clone dir" "$(<"$default_gh_log")" "repo clone owner/name $default_clone"
+assert_eq "first start leaves a git clone" "$([ -d "$default_clone/.git" ] && echo yes)" yes
+run_entry -HOME "HOME=$default_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$default_clone"
+assert_status "second start succeeds" "$st" 0
+assert_eq "second start does not clone again" "$(grep -c 'repo clone' "$gh_log")" 0
 
 FAKE_GH_FAIL=clone run_entry
 assert_status "a failing clone refuses" "$st" 1

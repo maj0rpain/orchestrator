@@ -320,7 +320,8 @@ USER orch
 ```
 
 Run one compose project per repo, each with its own env file, clone and
-pidfile: `docker compose -p <name> up -d`.
+pidfile: `ORCH_ENV_FILE=<env file> docker compose -p <name> up -d`
+(`ORCH_ENV_FILE` defaults to `.env`).
 
 #### The host alternative
 
