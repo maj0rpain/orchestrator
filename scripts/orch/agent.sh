@@ -26,7 +26,10 @@ agent_want() { printf '%s' "${1// /|}"; }
 
 # agent_listed <list> <word>: whether <word> is one of the space-separated
 # <list>'s words, whole - never several of them, nor part of one.
-agent_listed() { list_has "${1// /$'\n'}" "$2"; }
+agent_listed() {
+  case "$2" in *[[:space:]]*) return 1 ;; esac
+  [[ " $1 " == *" $2 "* ]]
+}
 
 # agent_allowed <kind> <value> [<host>]: whether <value> is allowed for the
 # model or effort key, of Claude Code or, with <host> junie, of Junie.
@@ -77,10 +80,51 @@ agent_host() {
   printf claude
 }
 
-# agent_key <host> <kind> <role>: the git config key of the setting.
+# agent_key <var> <host> <kind> <role>: the git config key of the setting,
+# into <var>.
 agent_key() {
-  if [ "$1" = junie ]; then printf 'orchestrator.junie.%s.%s' "$2" "$3"
-  else printf 'orchestrator.%s.%s' "$2" "$3"; fi
+  if [ "$2" = junie ]; then printf -v "$1" 'orchestrator.junie.%s.%s' "$3" "$4"
+  else printf -v "$1" 'orchestrator.%s.%s' "$3" "$4"; fi
+}
+
+# The agent settings' git config, read once per scope per process: one
+# associative array per scope, filled lazily and dropped by every write.
+declare -A AGENT_CACHE_LOCAL=() AGENT_CACHE_GLOBAL=()
+AGENT_CACHE_LOADED=""
+
+# agent_cache_drop: forgets the cache, so the next lookup reloads it.
+agent_cache_drop() { AGENT_CACHE_LOADED=""; }
+
+# agent_cache_load: fills both scopes' arrays unless already loaded. The last
+# record of a key wins; a record with no newline is a key with no value; a
+# value loses its trailing newlines, as a command substitution strips them.
+agent_cache_load() {
+  [ -z "$AGENT_CACHE_LOADED" ] || return 0
+  local scope rec k v
+  AGENT_CACHE_LOCAL=(); AGENT_CACHE_GLOBAL=()
+  for scope in local global; do
+    while IFS= read -r -d '' rec; do
+      if [[ "$rec" == *$'\n'* ]]; then k="${rec%%$'\n'*}"; v="${rec#*$'\n'}"
+      else k="$rec"; v=""; fi
+      while [[ "$v" == *$'\n' ]]; do v="${v%$'\n'}"; done
+      if [ "$scope" = local ]; then AGENT_CACHE_LOCAL["$k"]="$v"
+      else AGENT_CACHE_GLOBAL["$k"]="$v"; fi
+    done < <(git config "--$scope" -z --get-regexp '^orchestrator\.(junie\.)?(model|effort)\.' 2>/dev/null)
+  done
+  AGENT_CACHE_LOADED=1
+}
+
+# agent_scoped <scope> <key> <var>: the value stored at <scope> for <key> into
+# <var>; fails when the key is not set there.
+agent_scoped() {
+  agent_cache_load
+  if [ "$1" = local ]; then
+    [ -n "${AGENT_CACHE_LOCAL[$2]+x}" ] || return 1
+    printf -v "$3" '%s' "${AGENT_CACHE_LOCAL[$2]}"
+  else
+    [ -n "${AGENT_CACHE_GLOBAL[$2]+x}" ] || return 1
+    printf -v "$3" '%s' "${AGENT_CACHE_GLOBAL[$2]}"
+  fi
 }
 
 # agent_host_flag <host>: what a clear naming this host's key needs before
@@ -100,10 +144,10 @@ agent_require_role() {
 # value, get refuses it.
 agent_lookup() {
   local lookup_key lookup_value
-  lookup_key="$(agent_key "${5:-claude}" "$1" "$2")"
-  if lookup_value="$(git config --local --get "$lookup_key" 2>/dev/null)"; then
+  agent_key lookup_key "${5:-claude}" "$1" "$2"
+  if agent_scoped local "$lookup_key" lookup_value; then
     printf -v "$3" '%s' "$lookup_value"; printf -v "$4" local
-  elif lookup_value="$(git config --global --get "$lookup_key" 2>/dev/null)"; then
+  elif agent_scoped global "$lookup_key" lookup_value; then
     printf -v "$3" '%s' "$lookup_value"; printf -v "$4" global
   else
     printf -v "$3" inherit; printf -v "$4" inherit
@@ -112,14 +156,18 @@ agent_lookup() {
 
 # agent_unset <scope> <key>: removes <key> at local or global scope; a key that
 # is not set is no error.
-agent_unset() { git config "--$1" --unset-all "$2" 2>/dev/null || true; }
+agent_unset() { agent_cache_drop; git config "--$1" --unset-all "$2" 2>/dev/null || true; }
+
+# agent_write <scope> <key> <value>: drops the cache, then writes the key; a
+# failed write fails the caller.
+agent_write() { agent_cache_drop; git config "--$1" "$2" "$3"; }
 
 # agent set <role> [--model <m>] [--effort <e>] [--global]: every argument is
 # validated before anything is written. inherit clears the key at that scope,
 # so a stored inherit can never hide a global value.
 agent_set() {
   local usage="usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]"
-  local role="${1:-}" model="" effort="" scope=local kind v host seen_host=""
+  local role="${1:-}" model="" effort="" scope=local kind v host seen_host="" key
   shift || true
   agent_require_role "$role"
   host="$(agent_host "$@")" || exit 1
@@ -145,11 +193,9 @@ agent_set() {
   for kind in model effort; do
     if [ "$kind" = model ]; then v="$model"; else v="$effort"; fi
     [ -n "$v" ] || continue
-    if [ "$v" = inherit ]; then
-      agent_unset "$scope" "$(agent_key "$host" "$kind" "$role")"
-    else
-      git config "--$scope" "$(agent_key "$host" "$kind" "$role")" "$v"
-    fi
+    agent_key key "$host" "$kind" "$role"
+    if [ "$v" = inherit ]; then agent_unset "$scope" "$key"
+    else agent_write "$scope" "$key" "$v"; fi
   done
   if [ "$host" = junie ]; then agent_sync; fi
 }
@@ -159,7 +205,7 @@ agent_set() {
 # on a key that is not set.
 agent_clear() {
   local usage="usage: orch.sh agent clear <role> [--model] [--effort] [--global] [--host junie]"
-  local role="${1:-}" kinds="" scope=local kind host=""
+  local role="${1:-}" kinds="" scope=local kind host="" key
   shift || true
   agent_require_role "$role"
   while [ $# -gt 0 ]; do
@@ -177,7 +223,7 @@ agent_clear() {
   done
   host="${host:-claude}"
   [ -n "$kinds" ] || kinds="model effort"
-  for kind in $kinds; do agent_unset "$scope" "$(agent_key "$host" "$kind" "$role")"; done
+  for kind in $kinds; do agent_key key "$host" "$kind" "$role"; agent_unset "$scope" "$key"; done
   if [ "$host" = junie ]; then agent_sync; fi
 }
 
@@ -204,13 +250,14 @@ agent_show() { agent_show_host claude; agent_show_host junie; }
 # A disallowed value is refused, naming its key, its value, the allowed values
 # and the clear that removes it - never quietly read as inherit.
 agent_get() {
-  local role="$1" host="$2" kind v src flag out=""
+  local role="$1" host="$2" kind v src flag out="" key
   agent_require_role "$role"
   for kind in model effort; do
     agent_lookup "$kind" "$role" v src "$host"
     if ! agent_allowed "$kind" "$v" "$host"; then
       flag="$(agent_host_flag "$host") --$kind"; [ "$src" = global ] && flag="$flag --global"
-      die "$(agent_key "$host" "$kind" "$role") is $v - not an allowed $kind (want $(agent_values "$kind" "$host")) - clear it: orch.sh agent clear $role$flag"
+      agent_key key "$host" "$kind" "$role"
+      die "$key is $v - not an allowed $kind (want $(agent_values "$kind" "$host")) - clear it: orch.sh agent clear $role$flag"
     fi
     out="$out$kind $v"$'\n'
   done
@@ -471,9 +518,9 @@ check_agent_settings_host() {
     done
     d_ok "${line%,}"
     for kind in model effort; do
-      key="$(agent_key "$host" "$kind" "$role")"
+      agent_key key "$host" "$kind" "$role"
       for scope in local global; do
-        scoped="$(git config "--$scope" --get "$key" 2>/dev/null)" || continue
+        agent_scoped "$scope" "$key" scoped || continue
         agent_allowed "$kind" "$scoped" "$host" && continue
         flag="$(agent_host_flag "$host") --$kind"; [ "$scope" = global ] && flag="$flag --global"
         d_fail "$key is $scoped ($scope) - not an allowed $kind (want $(agent_values "$kind" "$host"))"
