@@ -19,7 +19,7 @@ RUN userdel -r node 2>/dev/null; useradd --create-home --shell /bin/bash --uid 1
  && mkdir -p /home/orch/repo \
  && chown -R orch:orch /home/orch
 
-COPY --chown=orch:orch . /tmp/orchestrator-src
+COPY --chown=orch:orch . /home/orch/orchestrator-src
 
 USER orch
 WORKDIR /home/orch
@@ -28,18 +28,17 @@ WORKDIR /home/orch
 # cannot do that non-interactively, copy it into the plugin cache layout.
 # /home/orch/orchestrator is a stable link to whichever root results.
 RUN set -eu; \
-    version="$(jq -r .version /tmp/orchestrator-src/.claude-plugin/plugin.json)"; \
-    if claude plugin marketplace add /tmp/orchestrator-src \
+    version="$(jq -r .version /home/orch/orchestrator-src/.claude-plugin/plugin.json)"; \
+    if claude plugin marketplace add /home/orch/orchestrator-src \
        && claude plugin install orchestrator@orchestrator \
        && [ -f "/home/orch/.claude/plugins/cache/orchestrator/orchestrator/$version/scripts/orch.sh" ]; then \
       ln -s "/home/orch/.claude/plugins/cache/orchestrator/orchestrator/$version" /home/orch/orchestrator; \
     else \
       dest="/home/orch/.claude/plugins/cache/orchestrator/orchestrator/$version"; \
       mkdir -p "$dest"; \
-      cp -a /tmp/orchestrator-src/. "$dest"/; \
+      cp -a /home/orch/orchestrator-src/. "$dest"/; \
       ln -sfn "$dest" /home/orch/orchestrator; \
-    fi; \
-    rm -rf /tmp/orchestrator-src
+    fi
 
 ENV ORCH_SH=/home/orch/orchestrator/scripts/orch.sh
 

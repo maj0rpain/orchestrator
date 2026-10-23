@@ -72,7 +72,7 @@ chmod +x "$fake_bin/gh"
 # run_entry <VAR=value>...: runs the entrypoint in a fresh case directory with
 # the valid base environment plus the arguments, each overriding the base; a
 # VAR= with no value sets it empty, and `-VAR` removes it. Leaves $case_dir,
-# $out/$err (stderr), $st, $home, $clone (ORCH_CLONE_DIR unless an argument
+# $err (stderr), $st, $home, $clone (ORCH_CLONE_DIR unless an argument
 # sets it), $gh_log and $orch_log. A case that needs the clone directory
 # prepared sets $clone_prep to a command run before it.
 run_entry() {
@@ -207,16 +207,15 @@ clone_prep=
 sh_out="$root/exec.pid"
 (
   home_dir="$(mktemp -d "$root/exec.XXXXXX")"
-  env -i "PATH=$fake_bin:$PATH" "HOME=$home_dir" "GH_LOG=$home_dir/gh.log" \
+  echo "$home_dir" >"$sh_out.dir"
+  echo "$BASHPID" >"$sh_out"
+  exec env -i "PATH=$fake_bin:$PATH" "HOME=$home_dir" "GH_LOG=$home_dir/gh.log" \
     "ORCH_LOG=$home_dir/orch.log" "ORCH_SH=$root/orch.sh" \
     "ORCH_CLONE_DIR=$home_dir/clone" REPO=owner/name GH_TOKEN=tok \
-    CLAUDE_CODE_OAUTH_TOKEN=oauth bash "$ENTRY" >/dev/null 2>&1 &
-  echo "$!" >"$sh_out"
-  wait "$!"
-  echo "$home_dir" >>"$sh_out"
+    CLAUDE_CODE_OAUTH_TOKEN=oauth bash "$ENTRY" >/dev/null 2>&1
 )
-entry_pid="$(sed -n 1p "$sh_out")"
-exec_dir="$(sed -n 2p "$sh_out")"
+entry_pid="$(<"$sh_out")"
+exec_dir="$(<"$sh_out.dir")"
 exec_line="$(<"$exec_dir/orch.log")"
 assert_contains "orch.sh autopilot watch runs" "$exec_line" "args=autopilot watch"
 assert_contains "it runs in the clone" "$exec_line" "pwd=$exec_dir/clone"
