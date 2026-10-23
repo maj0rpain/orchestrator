@@ -77,10 +77,11 @@ source "$ORCH_SCRIPTS/orch/common.sh"
 # Outside a checkout, the remedy names the one the caller came from: an agent
 # whose cwd drifted into a mktemp directory still has OLDPWD (#1523).
 if ! ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+  target="the repo's checkout (its root or a worktree)"
   if [ -n "${OLDPWD:-}" ] && came_from="$(git -C "$OLDPWD" rev-parse --show-toplevel 2>/dev/null)"; then
-    die "not inside a git repository ($PWD) - cd into the checkout you came from, $came_from, and run orch.sh there; a mktemp path is for files, not the working directory"
+    target="the checkout you came from, $came_from,"
   fi
-  die "not inside a git repository ($PWD) - cd into the repo's checkout (its root or a worktree) and run orch.sh there; a mktemp path is for files, not the working directory"
+  die "not inside a git repository ($PWD) - cd into $target and run orch.sh there; a mktemp path is for files, not the working directory"
 fi
 readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
