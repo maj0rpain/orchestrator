@@ -577,7 +577,9 @@ tick_fixture() {
 #!/bin/sh
 {
   printf 'argv:%s\n' "\$*"
+  for a in "\$@"; do printf 'arg:%s\n' "\$a"; done
   printf 'autopilot:%s\n' "\${ORCH_AUTOPILOT:-}"
+  printf 'explore-plan:%s\n' "\${CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS:-}"
   printf 'dir:%s\n' "\$(pwd -P)"
   for d in "$ORCH_GH_FAKE_STORE"/issues/*/; do
     printf 'labels:%s:%s\n' "\$(basename "\$d")" "\$(sort "\$d/labels" | tr '\n' ' ')"

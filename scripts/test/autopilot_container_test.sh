@@ -224,6 +224,12 @@ assert_contains "it runs in the clone" "$exec_line" "pwd=$exec_dir/clone"
 assert_contains "it runs by exec: its PID is the entrypoint's" "$exec_line" "pid=$entry_pid "
 assert_eq "it runs once" "$(wc -l <"$exec_dir/orch.log" | tr -d ' ')" 1
 
+# The Dockerfile's lean-session ENV lines, each a whole line.
+dockerfile="$DIR/../docker/Dockerfile"
+for v in CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING; do
+  assert_eq "the Dockerfile sets $v=1" "$(grep -cx "ENV $v=1" "$dockerfile")" 1
+done
+
 # >>> summary
 echo
 echo "$PASS passed, $FAIL failed"

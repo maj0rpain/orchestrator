@@ -38,6 +38,8 @@ RUN set -eu; \
       || { echo "build failed: installed orch.sh not found at $installed/scripts/orch.sh" >&2; exit 1; }; \
     ln -s "$installed" /home/orch/orchestrator
 
+ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+ENV CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1
 ENV ORCH_SH=/home/orch/orchestrator/scripts/orch.sh
 
 ENTRYPOINT ["/home/orch/orchestrator/scripts/autopilot-container.sh"]
