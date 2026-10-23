@@ -10,9 +10,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     # contents: read for the checkout; pull-requests: read for the PR's
-    # labels, which "Read main's commit" reads live.
+    # labels, which "Read main's commit" reads live; issues: read for
+    # docs_lint.sh's fragment rule, which looks up the fragment's issue's parent.
     permissions:
       contents: read
+      issues: read
       pull-requests: read
     steps:
       - uses: actions/checkout@v7
@@ -44,5 +46,9 @@ jobs:
           if grep -qxF no-version-bump <<<"$labels"; then
             echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
           fi
+      # GH_TOKEN for docs_lint.sh's fragment rule, whose gh api call reads the
+      # fragment's issue to check it is no sub-issue.
       - name: Verify
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/test/all.sh

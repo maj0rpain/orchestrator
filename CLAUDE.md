@@ -61,10 +61,14 @@ Every PR to `main` adds one changelog fragment, `changelog.d/<issue>.md`, and
 never bumps `version` in `.claude-plugin/plugin.json` or adds a `## ` heading to
 `CHANGELOG.md` by hand. The fragment's first line is exactly `bump: patch`,
 `bump: minor` or `bump: major`, and the rest, after any blank lines, is its
-CHANGELOG prose. Use semver judgment: patch for fixes/docs, minor for new
-features, major for breaking changes. On merge, the version-bump Action runs
-`scripts/version-bump.sh`, which bumps the version and writes the CHANGELOG
-entry from the fragments. CI (`scripts/test/docs_lint.sh`) enforces the rule;
-a pure CI or repo-hygiene PR carries the `no-version-bump` label and adds no
-fragment.
+CHANGELOG prose. The fragment is named for the PR's issue - in a flow or a quick
+implementation, the spec issue, never a ticket - and is written once: by the one
+ticket subagent when the breakdown collapsed onto the issue, else by the session
+driving the flow or quick implementation after its last ticket lands; no other
+ticket subagent writes or edits it. Use semver judgment: patch for fixes/docs,
+minor for new features, major for breaking changes. On merge, the version-bump
+Action runs `scripts/version-bump.sh`, which bumps the version and writes the
+CHANGELOG entry from the fragments. CI (`scripts/test/docs_lint.sh`) enforces
+the rule; a pure CI or repo-hygiene PR carries the `no-version-bump` label and
+adds no fragment.
 See CONTRIBUTING.md's Develop section.
