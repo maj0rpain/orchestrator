@@ -53,7 +53,7 @@ failed=0
 suites_tmp="$tmp/suites-tmp"
 mkdir "$suites_tmp" || exit 1
 
-suites=(orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh lens_bench_test.sh)
+suites=(orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh autopilot_container_test.sh lens_bench_test.sh)
 pids=()
 for suite in "${suites[@]}"; do
   TMPDIR="$suites_tmp" bash "$dir/$suite" >"$tmp/$suite" &
