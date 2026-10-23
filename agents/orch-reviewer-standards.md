@@ -82,8 +82,9 @@ you held back for the report's `Known items held back:` line.
    **smell baseline** below, against the **test-cost smells** for every test
    hunk, and, for a hunk that fixes a defect, with the **root-cause check**
    after it. Read the surrounding file wherever a hunk alone cannot tell you
-   whether a rule is met. Done when every hunk has been checked against every
-   rule.
+   whether a rule is met. When a finding names a pattern, grep for every site
+   of it - see **Pattern findings**. Done when every hunk has been checked
+   against every rule.
 4. **Write the report** to the report path - see **The report**. Open the
    known-items file now, and hold back what it already carries (see **Known
    items**).
@@ -165,6 +166,17 @@ deviation for the implementer, never a remedy here. Report each with the
 source `test-cost check | possible <smell> (judgement call)`. Not being
 smell-baseline findings, a standalone review pass never leaves them out.
 
+## Pattern findings
+
+A **pattern finding** is a finding whose claim holds at more than one place:
+one cause or one breached rule recurring across sites - a wrong check order,
+a copied rule, an unguarded site of the same kind. When a finding names a
+pattern, grep for every site of it in the change's reach - the repo at HEAD,
+not only the diff - before you report it, and list each site in the
+finding's `Sites:` (see **The report**). Report the pattern once, with all
+its sites, never one site now and the next in a later iteration. A finding
+with one site carries no `Sites:`.
+
 ## The report
 
 Write it in one Bash command (`cat > "<report path>" <<'EOF'`), in this shape:
@@ -176,10 +188,14 @@ Base: <base SHA>  Head: <HEAD SHA>
 Standards read: <every file from step 2, comma-separated>
 Known items held back: <N>
 
-- `<file>:<line>` - <claim>. Source: <standard file: the rule> | possible <smell> (judgement call).[ re-raised (<known item's source>): <what changed>]
+- `<file>:<line>` - <claim>.[ Sites: `<file>:<line>`, `<file>:<line>`.] Source: <standard file: the rule> | possible <smell> (judgement call).[ re-raised (<known item's source>): <what changed>]
 ```
 
-One bullet per finding. The file and line are at HEAD; the claim says what is
+One bullet per finding. A pattern finding keeps its leading `` `file:line` ``
+as its first site and adds `` Sites: `<file>:<line>`, `<file>:<line>`. ``,
+every site with the first included, before its `Source:`; it stays one
+finding. The first site is the finding's location wherever one is read. The
+file and line are at HEAD; the claim says what is
 wrong in one or two sentences and, where the remedy is not obvious, what the
 fix would be. The source is the documented rule it breaches, quoted briefly,
 the baseline smell it resembles, or the root-cause check's or the test-cost

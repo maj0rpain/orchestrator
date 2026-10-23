@@ -94,6 +94,9 @@ you held back for the report's `Known items held back:` line.
      reviewed like any other code;
    - a listed deviation that no commit carries out is reported **wrong**.
 
+   When a finding names a pattern - a missing or wrong requirement repeated
+   across sites - grep for every site of it; see **Pattern findings**.
+
    Done when every requirement has been traced to the diff or reported, every
    hunk traced to a requirement or to a standard that requires it, or
    reported, and every deviation traced to the commits that carry it out, or
@@ -102,6 +105,16 @@ you held back for the report's `Known items held back:` line.
    known-items file's `## Known items` heading now, and hold back what it
    already carries (see **Known items**).
 5. **Return one line**: `<report path>: <N> findings`.
+
+## Pattern findings
+
+A **pattern finding** is a finding whose claim holds at more than one place:
+one cause or one breached requirement recurring across sites. When a finding
+names a pattern, grep for every site of it in the change's reach - the repo
+at HEAD, not only the diff - before you report it, and list each site in the
+finding's `Sites:` (see **The report**). Report the pattern once, with all
+its sites, never one site now and the next in a later iteration. A finding
+with one site carries no `Sites:`.
 
 ## The report
 
@@ -114,14 +127,18 @@ Base: <base SHA>  Head: <HEAD SHA>
 Spec: #<spec issue> (and any sub-issues read)
 Known items held back: <N>
 
-- `<file>:<line>` - <missing | scope creep | wrong>: <claim>. Spec: "<quoted spec line>"[ re-raised (<known item's source>): <what changed>]
+- `<file>:<line>` - <missing | scope creep | wrong>: <claim>.[ Sites: `<file>:<line>`, `<file>:<line>`.] Spec: "<quoted spec line>"[ re-raised (<known item's source>): <what changed>]
 
 ## Set aside
 
 - `<file>:<line>` - <requirement> - set aside by: <deviation>
 ```
 
-One bullet per finding. The file and line are at HEAD; a missing requirement
+One bullet per finding. A pattern finding keeps its leading `` `file:line` ``
+as its first site and adds `` Sites: `<file>:<line>`, `<file>:<line>`. ``,
+every site with the first included, before its `Spec:`; it stays one
+finding. The first site is the finding's location wherever one is read. The
+file and line are at HEAD; a missing requirement
 names the file where it belongs, or `-` when no file does. The claim says what
 is wrong in one or two sentences. Quote the spec line each finding rests on;
 scope creep quotes the nearest requirement it strays from, or says none. A

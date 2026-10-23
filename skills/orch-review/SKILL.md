@@ -248,6 +248,14 @@ reads the budget from the plan instead of asking.
      **Filed** entry with no file and line predates that format; match it on
      its title against the finding's claim.
 
+   A **pattern finding** - one whose report bullet carries a `Sites:` list,
+   every site with the first included - is one finding, triaged once, never
+   one per site. **Loop-authored lines**, **the final iteration** and
+   **Met again** judge it by its first site, its leading `file:line`, the
+   finding's location for every consumer; the fixer applies loop-authored
+   lines and the final iteration to each of its other sites, and defers
+   those they keep out.
+
    A reviewer holds back what its known items already carry, so most of
    what earlier iterations dealt with never reaches you; these filters stay
    the backstop for what it lets through. A finding marked `` re-raised
@@ -393,8 +401,8 @@ PR: #<pr>
 Spec issue: #<spec issue>
 Base SHA: <this iteration's base SHA>
 Merge resolutions: <step 2's, per Merge resolutions in agents/orch-resolver.md>
-Fixable list: <each finding: axis, severity, file:line, claim>
-Triaged out: <each other finding: axis, severity, file:line, claim, disposition>
+Fixable list: <each finding: axis, severity, file:line, sites, claim>
+Triaged out: <each other finding: axis, severity, file:line, sites, claim, disposition>
 Fix SHAs: <this loop's earlier fix commits, or none>
 Iteration: <NN> of budget <budget>
 Verification command: <command>
@@ -405,7 +413,10 @@ orch.sh: <the path ORCH holds>
 ```
 
 A disposition names its reason: the authority for a demotion, the rule for
-a finding to file, the issue number for one met again.
+a finding to file, the issue number for one met again. A pattern finding's
+entry carries its site list after its `file:line`, as `` Sites: `<file>:<line>`,
+`<file>:<line>` ``, every site exactly as the report wrote it, so triage never
+drops a site; a finding with one site has no `sites` part.
 
 ## The closer
 
