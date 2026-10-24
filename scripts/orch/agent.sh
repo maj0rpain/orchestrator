@@ -182,10 +182,8 @@ agent_lookup() {
 # is not set (git config's exit 5) is no error; any other failure dies naming
 # the key.
 agent_unset() {
-  local status=0
   agent_cache_drop
-  git config "--$1" --unset-all "$2" 2>/dev/null || status=$?
-  [ "$status" -eq 0 ] || [ "$status" -eq 5 ] || die "cannot clear $2 at $1 scope"
+  git_config_unset "$1" "$2" 2>/dev/null || die "cannot clear $2 at $1 scope"
 }
 
 # agent_write <scope> <key> <value>: drops the cache, then writes the key; a

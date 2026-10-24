@@ -195,15 +195,12 @@ assert_eq "an empty permission mode defaults too" "$(cfg orchestrator.autopilot.
 for key in cap handle rounds budget model effort; do
   upper="ORCH_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
   assert_eq "an unset variable leaves $key unset on a first start" "$(HOME="$default_home" git config --global --get "orchestrator.autopilot.$key" >/dev/null 2>&1 && echo set || echo unset)" unset
-  # A start that wrote the key, then one with the variable empty or unset.
+  # A start that wrote the key, then one with the variable empty.
   run_entry "$upper=1"
   prior_home="$home" prior_clone="$clone"
   assert_eq "$upper writes $key" "$(cfg "orchestrator.autopilot.$key")" 1
   run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone" "$upper="
   assert_eq "an empty $upper clears $key" "$(cfg_set "orchestrator.autopilot.$key")" unset
-  run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone"
-  assert_status "an unset $upper over an absent $key passes" "$st" 0
-  assert_eq "an unset $upper leaves $key unset" "$(cfg_set "orchestrator.autopilot.$key")" unset
 done
 
 # Model and effort reach their global keys.

@@ -84,15 +84,10 @@ fi
 [ -n "${ORCH_SH:-}" ] && [ -f "$ORCH_SH" ] || die "exec: ORCH_SH does not name an orch.sh"
 cd "$clone_dir" || die "exec: cannot enter $clone_dir"
 
-# unset_global <key>: clears the key; one that is not set (exit 5) is no error.
-unset_global() {
-  local status=0
-  git config --global --unset-all "$1" || status=$?
-  [ "$status" -eq 0 ] || [ "$status" -eq 5 ] || die "autopilot settings: cannot clear $1"
-}
 # autopilot_set <key> <value>: writes the key; an empty value clears it.
 autopilot_set() {
-  if [ -z "$2" ]; then unset_global "orchestrator.autopilot.$1"
+  if [ -z "$2" ]; then git_config_unset global "orchestrator.autopilot.$1" ||
+    die "autopilot settings: cannot clear orchestrator.autopilot.$1"
   else git config --global "orchestrator.autopilot.$1" "$2" ||
     die "autopilot settings: cannot write orchestrator.autopilot.$1"; fi
 }
