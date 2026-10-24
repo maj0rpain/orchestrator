@@ -221,13 +221,15 @@ top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open ready-for-agent orch:spec
 printf 'Add the widget\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
 printf '7\n' >"$launcher_dir/release"
-out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+# The caller's own ceiling must not reach the session.
+out="$(CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=600000 "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick over one hand-labelled issue succeeds" "$st" 0
 calls="$(cat "$launcher_dir/calls" 2>/dev/null)"
 side7="$top/.orchestrator/checkouts/add-the-widget"
 assert_contains "asking in words for orch-flow's Next phase" "$calls" "orchestrator:orch-flow skill's Next phase"
 assert_contains "with ORCH_AUTOPILOT=1" "$calls" "autopilot:1"
 assert_contains "with the Explore and Plan agents disabled" "$calls" "explore-plan:1"
+assert_contains "with a 2-hour background wait, whatever the caller sets" "$calls" "bg-wait:7200000"
 # Every argument but the second, the prompt, which the line above matches.
 assert_eq "the session runs claude -p with the permission mode and the lean flags" "$(grep '^arg:' "$launcher_dir/calls" | sed -n '1p;3,$p' | tr '\n' '|')" \
   "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|"
