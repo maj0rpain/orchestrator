@@ -148,13 +148,15 @@ gh_or_die() {
 # The operations, in the order they are defined below:
 # - label: adapter_label_upsert, adapter_label_create, adapter_labels
 # - issue: adapter_issue_body, adapter_issue_comments,
+#   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_state, adapter_issues_labelled,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
 #   adapter_pr_comments, adapter_pr_refs, adapter_pr_ready, adapter_pr_draft,
-#   adapter_pr_state_draft, adapter_prs_open, adapter_prs_merged,
+#   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_all,
+#   adapter_pr_diff, adapter_prs_merged,
 #   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
 #   adapter_pr_body_edit
 # - sub-issue and dependency: adapter_sub_issues, adapter_sub_issue_link,
@@ -284,6 +286,14 @@ adapter_issue_comments() {
 # is the shape `issue fetch --json` publishes.
 adapter_issue_json() {
   gh issue view "$1" --json number,title,body,labels,comments --jq "$ISSUE_JSON_JQ"
+}
+
+# adapter_issue_comments_json <n>: the issue's comments as one JSON array, each
+# comment's author login, gh's ISO-8601 timestamp, body and url - the url
+# `issue fetch --json` leaves out, so ISSUE_JSON_JQ's shape is not changed.
+adapter_issue_comments_json() {
+  gh issue view "$1" --json comments \
+    --jq '[.comments[] | {author: .author.login, createdAt, body, url}]'
 }
 
 # adapter_issue_state_labels <n>: OPEN or CLOSED on the first line, then one
@@ -552,6 +562,16 @@ adapter_prs_open() {
   local args=(--head "$1")
   [ -z "${2:-}" ] || args+=(--base "$2")
   gh pr list "${args[@]}" --state open --json number --jq '.[].number'
+}
+
+# adapter_prs_open_all: every open PR, one number per line, newest first.
+adapter_prs_open_all() {
+  gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+}
+
+# adapter_pr_diff <n>: the PR's diff, as gh prints it.
+adapter_pr_diff() {
+  gh pr diff "$1"
 }
 
 # adapter_prs_merged <head> <base>: the PRs from the head branch merged into

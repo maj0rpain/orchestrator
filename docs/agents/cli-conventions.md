@@ -13,13 +13,13 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | --------- | --------------------------------------------------- |
 | `base`    | `set`, `show`, `clear`                               |
 | `parallel` | `show`                                             |
-| `autopilot` | `show`, `active`, `rounds`, `budget`, `start`, `tick`, `watch`, `run`, `ask`, `answer` |
+| `autopilot` | `show`, `active`, `rounds`, `budget`, `start`, `tick`, `watch`, `run`, `ask`, `answer`, `questions`, `reply`, `resume` |
 | `agent`   | `set`, `show`, `clear`, `get`, `sync`, `roles`      |
 | `suite-cost` | `run`, `check`, `history`                     |
 | `repo`    | `show`                                               |
 | `branch`  | `create`, `off`, `busy`, `base-sha`, `sync`, `retire` |
 | `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready`, `close` |
-| `pr`      | `open`, `publish`, `release`, `comment`, `comments`, `fetch`, `update`, `draft`, `ready` |
+| `pr`      | `open`, `publish`, `release`, `comment`, `comments`, `fetch`, `read`, `update`, `draft`, `ready` |
 | `review`  | `begin`, `path`, `file`, `known-items`, `standards`, `ready`, `ci`, `rerun`, `terminal`, `retire` |
 | `review-pass` | `begin`, `known-items`                           |
 | `spec`    | `fetch`, `update`, `comment`, `comments`, `pause`, `round`, `round-dir` |

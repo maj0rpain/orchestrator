@@ -173,6 +173,7 @@ that left them.
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:finish` | Clean up every finished side checkout: its PR merged on GitHub, its tree clean, any flow at `done`. Archives its flow into the main checkout, removes it, and deletes its local branch; archives the main checkout's finished flow in place. Removes nothing when GitHub cannot be read. |
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see [Base branch](#base-branch)). |
+| `/orchestrator:questions` | Gather the repo's pending autopilot questions (open `needs-human` issues whose newest question comment no comment follows): a fresh subagent per issue forms its own recommendation, shown beside the session's; one batch per issue, oldest first, answered `1: A`, `recommended`, `session`, free text, `all: recommended`, `all: session` or `skip`; each reply is shown in full, confirmed, posted spelling out every choice, and `needs-human` removed. Then offers to retry refusal and failure stops and to lift the label on issues already replied to. Needs no flow. |
 | `/orchestrator:improve-tests [<direction>]` | Evaluate the repo's test suite, read-only: scope it by git hot spots or a direction you name, time each test file or section once and sequentially, hunt quality-preserving candidates in a fresh subagent, rank them by measured cost saved, show them in an HTML report (a Markdown summary in chat where the host cannot open it), and hand the one you pick to the planning interview. |
 | `/orchestrator:spec-review <issue> [--rounds <n>]` | Review any spec issue on demand, outside a flow: a standalone spec review, of 1 round unless `--rounds` gives another count. |
 | `/orchestrator:review-pass <issue> [--smells]` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, and leaves out the Standards reviewer's smell-baseline findings unless `--smells` is given, reporting only how many it left out. Fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
@@ -402,7 +403,9 @@ It stops for three things:
 - a failed session, which is never retried.
 
 It posts a **question comment** that @mentions the handle and adds
-`needs-human`. Reply in one comment like `1: A, 2: recommended, 3: <free text>`
+`needs-human`. `/orchestrator:questions` gathers the pending questions and
+replies for you. Or reply in one comment like
+`1: A, 2: recommended, 3: <free text>`
 (`all: recommended` accepts everything), then remove `needs-human`. The next
 tick picks the issue up again, and a review-loop stop starts another loop with
 the planned budget.
@@ -433,6 +436,9 @@ old claims.
 | `orch.sh autopilot start <issue> <plan-file>` | Post the plan comment and add `orch:spec`. |
 | `orch.sh autopilot watch [--every <seconds>]` | Run the watcher, a tick every `<seconds>`. |
 | `orch.sh autopilot tick` | Run the watcher once. |
+| `orch.sh autopilot questions` | List the repo's open `needs-human` autopilot issues: issue, kind (`question`, `replied` or `stop`), phase and comment URL. |
+| `orch.sh autopilot reply <issue> <file>` | Post `<file>` as a comment, then remove `needs-human`; refused unless the label is on and no comment follows the newest question. |
+| `orch.sh autopilot resume <issue>` | Remove `needs-human` from the issue, nothing else. |
 
 The rest (`active`, `rounds`, `budget`, `run`, `ask`, `answer`) are called by
 the sessions themselves.

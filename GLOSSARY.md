@@ -164,6 +164,11 @@ flow's plan handoff.
 The issue comment tagged `<!-- orch:question <phase> -->` that asks the human an
 autopilot phase's numbered questions.
 
+**Pending question**:
+An autopilot flow's newest question comment that no comment follows yet, on an
+open issue labelled `needs-human`. `/orchestrator:questions` puts each one to
+the human with its own recommendation and posts the reply.
+
 **Pickup rule**:
 The rule a watcher picks issues by: open, a phase label other than `orch:done`,
 and neither `orch:running` nor `needs-human`.
