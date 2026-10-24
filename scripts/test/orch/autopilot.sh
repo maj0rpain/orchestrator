@@ -121,6 +121,15 @@ git config --unset-all orchestrator.autopilot.permission-mode
 out="$(PATH="$fakebin:$PATH" sourced_orch autopilot_gate 2>&1)"; st=$?
 assert_status "the gate refuses with no permission mode set" "$st" 1
 assert_contains "naming the key" "$out" "orchestrator.autopilot.permission-mode"
+git config orchestrator.autopilot.permission-mode plan
+for name in model effort; do
+  git config "orchestrator.autopilot.$name" gpt
+  out="$(PATH="$fakebin:$PATH" sourced_orch autopilot_gate 2>&1)"; st=$?
+  assert_status "the gate refuses $name gpt" "$st" 1
+  assert_contains "naming the $name key and value" "$out" "orchestrator.autopilot.$name is gpt"
+  git config --unset-all "orchestrator.autopilot.$name"
+done
+git config --unset-all orchestrator.autopilot.permission-mode
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "autopilot show is in the usage text" "$out" "autopilot show"
@@ -424,6 +433,12 @@ git config orchestrator.autopilot.permission-mode plan
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "tick refuses on Junie" "$st" 1
 assert_contains "saying so" "$out" "autopilot is Claude Code only"
+git config orchestrator.autopilot.model gpt
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "tick refuses an autopilot model outside the list" "$st" 1
+assert_contains "naming the key" "$out" "orchestrator.autopilot.model is gpt"
+assert_eq "before starting any session" "$(tick_calls)" "0"
+git config --unset-all orchestrator.autopilot.model
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: side checkouts, refusals and failed steps ----------------
