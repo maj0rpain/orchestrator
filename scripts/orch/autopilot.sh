@@ -641,6 +641,12 @@ AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQ
 # Its settings: no bundled skills, and no plugin-authoring, a built-in plugin
 # that disableBundledSkills leaves listed.
 AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-authoring@builtin":false}}'
+# How long, in ms, print mode waits for background tasks after a session's last
+# turn: a ticket subagent outlives its 10-minute default, and a finite ceiling
+# (2 hours) still ends a hung session, which then goes through the existing
+# failure handling. Not 0: nothing else limits a session, so a hung subagent
+# would hold its claim forever.
+AUTOPILOT_BG_WAIT_MS=7200000
 
 # autopilot_run <issue>: the session wrapper a tick starts: runs the headless
 # session in the issue's side checkout, its output in the session log, and
@@ -672,7 +678,7 @@ autopilot_run() {
   log="$dir/logs/$issue-$phase-$(dir_stamp).log"
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
-  ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 "$launcher" -p "$prompt" --permission-mode "$mode" \
+  ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections ) >"$log" 2>&1 || rc=$?
   autopilot_claims_read claims
