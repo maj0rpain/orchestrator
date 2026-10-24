@@ -31,7 +31,9 @@ autopilot_lookup() {
 # orchestrator.autopilot.<name> into AUTOPILOT_VALUE, its source into
 # AUTOPILOT_SOURCE (local, global, default or unset). The permission mode and
 # the handle fall back to nothing and the repo's owner; the three integers to
-# their defaults. Dies naming key and value when a value is out of range.
+# their defaults; the model and effort stay unset, checked against the agent
+# setting's Claude Code lists. Dies naming key and value when a value is out of
+# range.
 # The handle's owner is resolved only when the handle is needed.
 autopilot_setting() {
   local name="$1" key="orchestrator.autopilot.$1" def="" owner
@@ -49,6 +51,10 @@ autopilot_setting() {
       else
         die "$REPO_REMEDY (the handle defaults to the repo's owner; or git config $key <handle>)"
       fi ;;
+    model|effort)
+      [ "$AUTOPILOT_SOURCE" != unset ] || return 0
+      agent_allowed "$name" "$AUTOPILOT_VALUE" ||
+        die "$key is $AUTOPILOT_VALUE - not an allowed $name (want $(agent_values "$name"))" ;;
     cap|rounds|budget)
       case "$name" in
         cap) def="$AUTOPILOT_CAP_DEFAULT" ;;
@@ -67,7 +73,7 @@ autopilot_setting() {
 # range, naming key and value.
 autopilot_show() {
   local name
-  for name in permission-mode cap handle rounds budget; do
+  for name in permission-mode cap handle rounds budget model effort; do
     autopilot_setting "$name"
     printf 'orchestrator.autopilot.%s %s (%s)\n' "$name" "${AUTOPILOT_VALUE:-(none)}" "$AUTOPILOT_SOURCE"
   done
@@ -79,12 +85,16 @@ autopilot_active() { [ "${ORCH_AUTOPILOT:-}" = 1 ]; }
 
 # autopilot_gate: the host and settings gate tick and watch start with. Dies
 # on a host other than Claude Code (Junie, or no claude on PATH), then with no
-# permission mode set, naming the key.
+# permission mode set, naming the key, then on a model or effort outside its
+# list, before any issue is claimed: a run's own check dies with its output
+# discarded.
 autopilot_gate() {
+  local name
   if [ "$(host_detect)" = junie ] || ! command -v claude >/dev/null 2>&1; then
     die "autopilot is Claude Code only (no headless-session fallback on this host; see docs/host-capabilities.md)"
   fi
   autopilot_mode_require
+  for name in model effort; do autopilot_setting "$name"; done
 }
 
 # autopilot_mode_require: sets AUTOPILOT_VALUE to the permission mode, dying,
@@ -532,6 +542,24 @@ autopilot_spawn_run() {
   fi
 }
 
+# autopilot_short_slug <title>: prints the normalised title as whole
+# hyphen-separated words of at most 40 characters in all. A first word over 40
+# on its own is cut at 40, so the slug is never empty; a title that normalises
+# to nothing gives `untitled`.
+autopilot_short_slug() {
+  local norm word slug="" next
+  norm="$(normalize_slug "$1" 2>/dev/null)" || { printf 'untitled\n'; return 0; }
+  while [ -n "$norm" ]; do
+    word="${norm%%-*}"
+    case "$norm" in *-*) norm="${norm#*-}" ;; *) norm="" ;; esac
+    next="${slug:+$slug-}$word"
+    if [ "${#next}" -le 40 ]; then slug="$next"; continue; fi
+    [ -n "$slug" ] || slug="${word:0:40}"
+    break
+  done
+  printf '%s\n' "$slug"
+}
+
 # autopilot_pickup <issue> <phase>: steps 2 to 5 of a tick for a claimed issue.
 # A refusal or a failed write ends in autopilot_stop and returns 0: the claim is
 # released, the tick goes on.
@@ -544,7 +572,9 @@ autopilot_pickup() {
       autopilot_stop "$issue" failure "$phase" "step side-checkout add failed: could not read the issue's title: $(gh_reason "$gh_err")"
       return 0
     }
-    slug="$(normalize_slug "$issue-$title")"
+    slug="$(autopilot_short_slug "$title")"
+    # a clash with any entry of the side checkouts directory takes the issue
+    [ ! -e "$(side_checkouts_dir "$(main_checkout)")/$slug" ] || slug="$slug-$issue"
     capture side gh_err cmd_side_checkout_add "$slug" --issue "$issue" || {
       autopilot_stop "$issue" failure "$phase" "step side-checkout add failed: $(gh_reason "$gh_err")"
       return 0
@@ -739,13 +769,19 @@ AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQ
 # Its settings: no bundled skills, and no plugin-authoring, a built-in plugin
 # that disableBundledSkills leaves listed.
 AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-authoring@builtin":false}}'
+# How long, in ms, print mode waits for background tasks after a session's last
+# turn: a ticket subagent outlives its 10-minute default, and a finite ceiling
+# (2 hours) still ends a hung session, which then goes through the existing
+# failure handling. Not 0: nothing else limits a session, so a hung subagent
+# would hold its claim forever.
+AUTOPILOT_BG_WAIT_MS=7200000
 
 # autopilot_run <issue>: the session wrapper a tick starts: runs the headless
 # session in the issue's side checkout, its output in the session log, and
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
@@ -767,10 +803,14 @@ autopilot_run() {
   while IFS= read -r line; do
     case "$line" in "$issue"$'\t'*) mine="$line" ;; esac
   done <<<"$claims"
+  for name in model effort; do
+    autopilot_setting "$name"
+    if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
+  done
   log="$dir/logs/$issue-$phase-$(dir_stamp).log"
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
-  ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 "$launcher" -p "$prompt" --permission-mode "$mode" \
+  ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections ) >"$log" 2>&1 || rc=$?
   autopilot_claims_read claims

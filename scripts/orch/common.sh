@@ -110,6 +110,15 @@ capture() {
   rm -f "$_capture_file"
   return "$_capture_st"
 }
+# git_config_unset <scope> <key>: removes every value of <key> at local or
+# global scope; a key that is not set (git config's exit 5) is no error, and
+# any other failure returns git's status, so each caller keeps its own die.
+git_config_unset() {
+  local status=0
+  git config "--$1" --unset-all "$2" || status=$?
+  [ "$status" -eq 5 ] && return 0
+  return "$status"
+}
 # git_push <reason-var> <git push args...>: runs git push with the arguments,
 # sets <reason-var> to git's reason through git_push_reason, and returns the
 # push's status (#1300). Every push orch.sh makes runs through it, so none

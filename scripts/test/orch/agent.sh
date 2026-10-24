@@ -186,6 +186,15 @@ assert_eq "clear --global removes the global keys" "$(key global orchestrator.mo
 out="$("$ORCH" agent clear closer 2>&1)"; st=$?
 assert_status "clear on an unset key exits 0" "$st" 0
 assert_eq "with no output" "$out" ""
+# A clear git cannot carry out - the global config locked, here by a stale
+# lock file - fails naming the key, rather than passing as a key not set.
+"$ORCH" agent set closer --model haiku --global >/dev/null
+: >"$HOME/.gitconfig.lock"
+out="$("$ORCH" agent clear closer --model --global 2>&1)"; st=$?
+rm -f "$HOME/.gitconfig.lock"
+"$ORCH" agent clear closer --global >/dev/null
+assert_status "a failed clear exits 1" "$st" 1
+assert_contains "naming the key it could not clear" "$out" "orch: cannot clear orchestrator.model.closer"
 out="$("$ORCH" agent clear implementor 2>&1)"; st=$?
 assert_status "clear refuses an unknown role" "$st" 1
 assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver)"
@@ -193,6 +202,16 @@ assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer
 out="$("$ORCH" agent 2>&1)"; st=$?
 assert_status "refuses a missing verb" "$st" 1
 assert_contains "naming the verbs" "$out" "want set|show|clear|get|sync"
+out="$("$ORCH" agent roles 2>&1)"; st=$?
+assert_status "roles succeeds" "$st" 0
+assert_eq "roles prints the six roles one per line, in order" "$out" "implementer
+lens
+reviewer
+fixer
+closer
+resolver"
+out="$("$ORCH" agent roles extra 2>&1)"; st=$?
+assert_status "roles refuses an argument" "$st" 1
 out="$("$ORCH" agent show extra 2>&1)"; st=$?
 assert_status "show refuses an argument" "$st" 1
 
@@ -261,6 +280,36 @@ assert_status "get refuses another host" "$st" 1
 out="$("$ORCH" agent clear lens --host codex 2>&1)"; st=$?
 assert_status "clear refuses another host" "$st" 1
 assert_contains "naming it" "$out" "codex"
+for verb in set clear get; do
+  extra=(); [ "$verb" = set ] && extra=(--model opus)
+  out="$("$ORCH" agent "$verb" lens --host codex "${extra[@]}" 2>&1)"; st=$?
+  assert_status "$verb refuses an unknown host" "$st" 1
+  assert_contains "$verb names the unknown host as agent set does" "$out" "host codex is not allowed (want junie)"
+done
+for verb in clear get; do
+  out="$("$ORCH" agent "$verb" lens --host 2>&1)"; st=$?
+  assert_status "$verb refuses --host with no value" "$st" 1
+  assert_contains "$verb names the missing value as agent set does" "$out" "--host needs a value (want junie)"
+done
+out="$("$ORCH" agent set lens --host junie --host junie --model gpt-5 2>&1)"; st=$?
+assert_status "set refuses --host given twice" "$st" 1
+assert_contains "set prints its usage for a repeated --host" "$out" "usage: orch.sh agent set <role>"
+out="$("$ORCH" agent clear lens --host junie --host junie 2>&1)"; st=$?
+assert_status "clear refuses --host given twice" "$st" 1
+assert_contains "clear prints its usage for a repeated --host" "$out" "usage: orch.sh agent clear <role>"
+out="$("$ORCH" agent get lens --host junie --host junie 2>&1)"; st=$?
+assert_status "get refuses --host given twice" "$st" 1
+assert_contains "get prints its usage for a repeated --host" "$out" "usage: orch.sh agent get <role>"
+"$ORCH" agent set lens --host codex --model x >/dev/null 2>&1
+assert_eq "a refused set --host codex writes no model key" "$(git config --local --get orchestrator.model.lens || echo '<unset>')" "<unset>"
+"$ORCH" agent set lens --model haiku >/dev/null
+"$ORCH" agent clear lens --host codex >/dev/null 2>&1
+assert_eq "a refused clear --host codex leaves a set key set" "$(git config --local --get orchestrator.model.lens)" "haiku"
+"$ORCH" agent clear lens >/dev/null
+help_set="$(help_entry "agent set" | flat_text)"
+assert_contains "the agent set help entry points at agent show" "$help_set" "agent show"
+assert_not_contains "the agent set help entry names no model alias" "$help_set" "sonnet"
+assert_not_contains "the agent set help entry names no effort level" "$help_set" "xhigh"
 
 git config --local orchestrator.junie.effort.fixer extreme
 git config --global orchestrator.junie.model.closer "bad model"

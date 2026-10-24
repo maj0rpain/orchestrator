@@ -4,25 +4,42 @@
 # Its tests: scripts/test/orch/agent.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# The roles, in the order show prints them, and the values each key allows:
-# exactly the aliases the Agent tool's model parameter accepts and the levels
-# its effort parameter takes, in this Claude Code version. Each list lives here
-# alone; set and get both validate against it. inherit is allowed for both
-# keys and means no setting at all.
+# The roles, in the order show prints them. The list lives here alone.
 AGENT_ROLES="implementer lens reviewer fixer closer resolver"
-AGENT_MODELS="sonnet opus haiku fable inherit"
-AGENT_EFFORTS="low medium high xhigh max inherit"
 
-# Junie's keys live beside the Claude Code ones, as
-# orchestrator.junie.<kind>.<role>. A Junie model is allowed when it matches
-# this pattern as a whole (a Junie LLM name or custom:<profile-id>), or is
-# inherit; a Junie effort is one of these. The pattern cannot tell an alias
-# from an LLM name, so the refusal warns against aliases.
-AGENT_JUNIE_MODEL_PATTERN='[A-Za-z0-9._:/-]+'
-AGENT_JUNIE_EFFORTS="low medium high inherit"
+# The host table: every site reads these arrays, so a host or an allowed list
+# is a table entry and no site switches on a host or a kind. Keyed by host
+# (claude, junie) or by <host>.<kind> (kind model or effort).
+#
+# The git config key prefix: <prefix>.<kind>.<role>. Junie's keys live beside
+# the Claude Code ones.
+declare -A AGENT_HOST_KEY=([claude]=orchestrator [junie]=orchestrator.junie)
+# What prefixes a role's line in agent show and the doctor.
+declare -A AGENT_HOST_LINE=([claude]="" [junie]="junie ")
+# What a clear naming this host's key needs before --model|--effort.
+declare -A AGENT_HOST_CLEAR=([claude]="" [junie]=" --host junie")
+# The hosts that keep copies agent sync writes.
+declare -A AGENT_HOST_SYNCS=([junie]=1)
+# The hosts a --host flag names.
+AGENT_FLAG_HOSTS="junie"
+# The values each key allows: exactly the aliases the Agent tool's model
+# parameter accepts and the levels its effort parameter takes, in this Claude
+# Code version. inherit is allowed for every key and means no setting at all.
+declare -A AGENT_ALLOWED=(
+  [claude.model]="sonnet opus haiku fable inherit"
+  [claude.effort]="low medium high xhigh max inherit"
+  [junie.effort]="low medium high inherit"
+)
+# A key with a pattern in place of a list: allowed when it is inherit or
+# matches the pattern as a whole (a Junie LLM name or custom:<profile-id>). The
+# pattern cannot tell an alias from an LLM name, so the note, a printf format
+# taking the pattern, warns against aliases.
+declare -A AGENT_PATTERN=([junie.model]='[A-Za-z0-9._:/-]+')
+declare -A AGENT_NOTE=([junie.model]="inherit or a name matching %s - use the names Junie's /model picker and --model flag take; aliases resolve unpredictably")
 
-# agent_want <list>: the list as an orch: message's allowed values, a|b|c.
-agent_want() { printf '%s' "${1// /|}"; }
+# agent_pipe_list <list>: the space-separated list as a|b|c, for an orch:
+# message's allowed values.
+agent_pipe_list() { printf '%s' "${1// /|}"; }
 
 # agent_listed <list> <word>: whether <word> is one of the space-separated
 # <list>'s words, whole - never several of them, nor part of one.
@@ -32,48 +49,40 @@ agent_listed() {
 }
 
 # agent_allowed <kind> <value> [<host>]: whether <value> is allowed for the
-# model or effort key, of Claude Code or, with <host> junie, of Junie.
+# model or effort key, of Claude Code or of <host>.
 agent_allowed() {
-  local list
-  if [ "${3:-}" = junie ]; then
-    if [ "$1" = model ]; then
-      [ "$2" = inherit ] && return 0
-      [[ "$2" =~ ^${AGENT_JUNIE_MODEL_PATTERN}$ ]]
-      return
-    fi
-    list="$AGENT_JUNIE_EFFORTS"
-  elif [ "$1" = model ]; then list="$AGENT_MODELS"; else list="$AGENT_EFFORTS"; fi
-  agent_listed "$list" "$2"
+  local k="${3:-claude}.$1"
+  if [ -n "${AGENT_PATTERN[$k]+x}" ]; then
+    [ "$2" = inherit ] && return 0
+    [[ "$2" =~ ^${AGENT_PATTERN[$k]}$ ]]
+    return
+  fi
+  agent_listed "${AGENT_ALLOWED[$k]}" "$2"
 }
 
 # agent_values <kind> [<host>]: the allowed values for the model or effort key,
-# a|b|c; for a Junie model, the pattern and what to use instead of an alias.
+# a|b|c; for a key with a pattern, the pattern and its note.
 agent_values() {
-  if [ "${2:-}" = junie ]; then
-    if [ "$1" = model ]; then
-      printf 'inherit or a name matching %s - use the names Junie'"'"'s /model picker and --model flag take; aliases resolve unpredictably' \
-        "$AGENT_JUNIE_MODEL_PATTERN"
-    else
-      agent_want "$AGENT_JUNIE_EFFORTS"
-    fi
-  elif [ "$1" = model ]; then agent_want "$AGENT_MODELS"; else agent_want "$AGENT_EFFORTS"; fi
-}
-
-# agent_host_named <value>: <value> as the host a --host flag names - junie.
-# Any other value is refused, naming it.
-agent_host_named() {
-  [ "$1" = junie ] || die "host $1 is not allowed (want junie)"
-  printf junie
+  local k="${2:-claude}.$1"
+  if [ -n "${AGENT_NOTE[$k]+x}" ]; then
+    # shellcheck disable=SC2059 # the note is the format, taking the pattern
+    printf "${AGENT_NOTE[$k]}" "${AGENT_PATTERN[$k]}"
+  else
+    agent_pipe_list "${AGENT_ALLOWED[$k]}"
+  fi
 }
 
 # agent_host <arg>...: the host named by a --host flag among the arguments -
-# junie, or claude when there is none - on stdout. Any other value is refused,
-# naming it. agent set reads it first, so each value is validated as parsed.
+# a flag host, or claude when there is none - on stdout. A missing value or
+# any other value is refused, naming it. The one parser of --host: each
+# command reads it first, so the value is validated before the rest.
 agent_host() {
   while [ $# -gt 0 ]; do
     if [ "$1" = --host ]; then
-      [ $# -ge 2 ] || die "--host needs a value (want junie)"
-      agent_host_named "$2"; return
+      [ $# -ge 2 ] || die "--host needs a value (want $(agent_pipe_list "$AGENT_FLAG_HOSTS"))"
+      agent_listed "$AGENT_FLAG_HOSTS" "$2" ||
+        die "host $2 is not allowed (want $(agent_pipe_list "$AGENT_FLAG_HOSTS"))"
+      printf '%s' "$2"; return
     fi
     shift
   done
@@ -82,10 +91,7 @@ agent_host() {
 
 # agent_key <var> <host> <kind> <role>: the git config key of the setting,
 # into <var>.
-agent_key() {
-  if [ "$2" = junie ]; then printf -v "$1" 'orchestrator.junie.%s.%s' "$3" "$4"
-  else printf -v "$1" 'orchestrator.%s.%s' "$3" "$4"; fi
-}
+agent_key() { printf -v "$1" '%s.%s.%s' "${AGENT_HOST_KEY[$2]}" "$3" "$4"; }
 
 # The agent settings' git config, read once per scope per process: one
 # associative array per scope, filled lazily and dropped by every write.
@@ -127,14 +133,32 @@ agent_scoped() {
   fi
 }
 
-# agent_host_flag <host>: what a clear naming this host's key needs before
-# --model|--effort, empty for Claude Code.
-agent_host_flag() { [ "$1" = junie ] && printf ' --host junie' || true; }
+# agent_clear_cmd <host> <kind> <role> <scope>: the clear that removes the
+# <kind> key of <role> for <host> at <scope> - the remedy of a disallowed value.
+agent_clear_cmd() {
+  printf 'orch.sh agent clear %s%s --%s' "$3" "${AGENT_HOST_CLEAR[$1]}" "$2"
+  [ "$4" != global ] || printf ' --global'
+}
+
+# agent_role_values <host> <role> <sep>: <role>'s effective model and effort for
+# <host>, each with its source - a disallowed value marked invalid rather than
+# refused - as model <v> (<label>)<sep> effort <v> (<label>). Show and the
+# doctor both print it.
+agent_role_values() {
+  local kind v src label out=""
+  for kind in model effort; do
+    agent_lookup "$kind" "$2" v src "$1"
+    label="$src"; agent_allowed "$kind" "$v" "$1" || label="$src, invalid"
+    [ -z "$out" ] || out="$out$3 "
+    out="$out$kind $v ($label)"
+  done
+  printf '%s' "$out"
+}
 
 # agent_require_role <role>: dies unless <role> is one of the roles.
 agent_require_role() {
   agent_listed "$AGENT_ROLES" "$1" && return 0
-  die "unknown role ${1:-<none>} (want $(agent_want "$AGENT_ROLES"))"
+  die "unknown role ${1:-<none>} (want $(agent_pipe_list "$AGENT_ROLES"))"
 }
 
 # agent_lookup <kind> <role> <value-var> <source-var> [<host>]: the key
@@ -155,8 +179,12 @@ agent_lookup() {
 }
 
 # agent_unset <scope> <key>: removes <key> at local or global scope; a key that
-# is not set is no error.
-agent_unset() { agent_cache_drop; git config "--$1" --unset-all "$2" 2>/dev/null || true; }
+# is not set (git config's exit 5) is no error; any other failure dies naming
+# the key.
+agent_unset() {
+  agent_cache_drop
+  git_config_unset "$1" "$2" 2>/dev/null || die "cannot clear $2 at $1 scope"
+}
 
 # agent_write <scope> <key> <value>: drops the cache, then writes the key; a
 # failed write fails the caller.
@@ -167,7 +195,8 @@ agent_write() { agent_cache_drop; git config "--$1" "$2" "$3"; }
 # so a stored inherit can never hide a global value.
 agent_set() {
   local usage="usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]"
-  local role="${1:-}" model="" effort="" scope=local kind v host seen_host="" key
+  local role="${1:-}" scope=local kind v host seen_host="" key
+  local -A vals=()
   shift || true
   agent_require_role "$role"
   host="$(agent_host "$@")" || exit 1
@@ -176,11 +205,8 @@ agent_set() {
       --model|--effort)
         kind="${1#--}"
         [ $# -ge 2 ] || die "$1 needs a value (want $(agent_values "$kind" "$host"))"
-        if [ "$kind" = model ]; then
-          [ -z "$model" ] || die "$usage"; model="$2"
-        else
-          [ -z "$effort" ] || die "$usage"; effort="$2"
-        fi
+        [ -z "${vals[$kind]:-}" ] || die "$usage"
+        vals[$kind]="$2"
         agent_allowed "$kind" "$2" "$host" || die "$kind $2 is not allowed (want $(agent_values "$kind" "$host"))"
         shift 2 ;;
       --host) [ -z "$seen_host" ] || die "$usage"; seen_host=1; shift 2 ;;
@@ -188,16 +214,16 @@ agent_set() {
       *) die "$usage" ;;
     esac
   done
-  [ -n "$model$effort" ] ||
+  [ -n "${vals[model]:-}${vals[effort]:-}" ] ||
     die "agent set needs --model or --effort (models: $(agent_values model "$host"); efforts: $(agent_values effort "$host"))"
   for kind in model effort; do
-    if [ "$kind" = model ]; then v="$model"; else v="$effort"; fi
+    v="${vals[$kind]:-}"
     [ -n "$v" ] || continue
     agent_key key "$host" "$kind" "$role"
     if [ "$v" = inherit ]; then agent_unset "$scope" "$key"
     else agent_write "$scope" "$key" "$v"; fi
   done
-  if [ "$host" = junie ]; then agent_sync; fi
+  if [ -n "${AGENT_HOST_SYNCS[$host]+x}" ]; then agent_sync; fi
 }
 
 # agent clear <role> [--model] [--effort] [--global]: both keys, or only those
@@ -205,41 +231,35 @@ agent_set() {
 # on a key that is not set.
 agent_clear() {
   local usage="usage: orch.sh agent clear <role> [--model] [--effort] [--global] [--host junie]"
-  local role="${1:-}" kinds="" scope=local kind host="" key
+  local role="${1:-}" kinds="" scope=local kind host seen_host="" key
   shift || true
   agent_require_role "$role"
+  host="$(agent_host "$@")" || exit 1
   while [ $# -gt 0 ]; do
     case "$1" in
       --model|--effort) kinds="$kinds ${1#--}" ;;
       --global) scope=global ;;
       --host)
-        [ -z "$host" ] || die "$usage"
-        [ $# -ge 2 ] || die "--host needs a value (want junie)"
-        host="$(agent_host_named "$2")" || exit 1
+        [ -z "$seen_host" ] || die "$usage"
+        seen_host=1
         shift ;;
       *) die "$usage" ;;
     esac
     shift
   done
-  host="${host:-claude}"
   [ -n "$kinds" ] || kinds="model effort"
   for kind in $kinds; do agent_key key "$host" "$kind" "$role"; agent_unset "$scope" "$key"; done
-  if [ "$host" = junie ]; then agent_sync; fi
+  if [ -n "${AGENT_HOST_SYNCS[$host]+x}" ]; then agent_sync; fi
 }
 
 # agent_show_host <host>: one line per role, in role order - its model and
 # effort, each with its source, a disallowed value marked invalid rather than
 # refused. The Junie lines are prefixed junie.
 agent_show_host() {
-  local role kind v src label line
+  local role
+  agent_cache_load
   for role in $AGENT_ROLES; do
-    line="$role"; [ "$1" = junie ] && line="junie $role"
-    for kind in model effort; do
-      agent_lookup "$kind" "$role" v src "$1"
-      label="$src"; agent_allowed "$kind" "$v" "$1" || label="$src, invalid"
-      line="$line $kind $v ($label)"
-    done
-    printf '%s\n' "$line"
+    printf '%s%s %s\n' "${AGENT_HOST_LINE[$1]}" "$role" "$(agent_role_values "$1" "$role" "")"
   done
 }
 
@@ -251,14 +271,13 @@ agent_show() { agent_show_host claude; agent_show_host junie; }
 # the allowed values and the clear that removes it - never quietly read as
 # inherit.
 agent_get() {
-  local role="$1" host="$2" kind v src flag out="" key
+  local role="$1" host="$2" kind v src out="" key
   agent_require_role "$role"
   for kind in model effort; do
     agent_lookup "$kind" "$role" v src "$host"
     if ! agent_allowed "$kind" "$v" "$host"; then
-      flag="$(agent_host_flag "$host") --$kind"; [ "$src" = global ] && flag="$flag --global"
       agent_key key "$host" "$kind" "$role"
-      die "$key is $v - not an allowed $kind (want $(agent_values "$kind" "$host")) - clear it: orch.sh agent clear $role$flag"
+      die "$key is $v - not an allowed $kind (want $(agent_values "$kind" "$host")) - clear it: $(agent_clear_cmd "$host" "$kind" "$role" "$src")"
     fi
     out="$out$kind $v"$'\n'
   done
@@ -510,23 +529,17 @@ check_agent_settings() {
 # marked invalid - then a FAIL for each disallowed stored value, read at each
 # scope on its own. Junie's lines are named agent junie <role>.
 check_agent_settings_host() {
-  local host="$1" role kind scope v src label flag line scoped key
+  local host="$1" role kind scope scoped key
+  agent_cache_load
   for role in $AGENT_ROLES; do
-    line="agent $role:"; [ "$host" = junie ] && line="agent junie $role:"
-    for kind in model effort; do
-      agent_lookup "$kind" "$role" v src "$host"
-      label="$src"; agent_allowed "$kind" "$v" "$host" || label="$src, invalid"
-      line="$line $kind $v ($label),"
-    done
-    d_ok "${line%,}"
+    d_ok "agent ${AGENT_HOST_LINE[$host]}$role: $(agent_role_values "$host" "$role" ",")"
     for kind in model effort; do
       agent_key key "$host" "$kind" "$role"
       for scope in local global; do
         agent_scoped "$scope" "$key" scoped || continue
         agent_allowed "$kind" "$scoped" "$host" && continue
-        flag="$(agent_host_flag "$host") --$kind"; [ "$scope" = global ] && flag="$flag --global"
         d_fail "$key is $scoped ($scope) - not an allowed $kind (want $(agent_values "$kind" "$host"))"
-        d_remedy "orch.sh agent clear $role$flag"
+        d_remedy "$(agent_clear_cmd "$host" "$kind" "$role" "$scope")"
       done
     done
   done
@@ -568,19 +581,21 @@ cmd_agent() {
       agent_show
       ;;
     clear) agent_clear "$@" ;;
+    roles)
+      [ $# -eq 0 ] || die "usage: orch.sh agent roles"
+      printf '%s\n' $AGENT_ROLES
+      ;;
     sync)
       [ $# -eq 0 ] || die "usage: orch.sh agent sync"
       agent_sync
       ;;
     get)
-      local get_usage="usage: orch.sh agent get <role> [--host junie]"
-      if [ $# -eq 1 ]; then agent_get "$1" claude
-      elif [ $# -eq 3 ] && [ "$2" = --host ]; then
-        local get_host
-        get_host="$(agent_host_named "$3")" || exit 1
+      local get_usage="usage: orch.sh agent get <role> [--host junie]" get_host
+      if [ $# -eq 1 ] || { [ $# -ge 2 ] && [ $# -le 3 ] && [ "$2" = --host ]; }; then
+        get_host="$(agent_host "${@:2}")" || exit 1
         agent_get "$1" "$get_host"
       else die "$get_usage"; fi
       ;;
-    *) die "unknown agent op: ${op:-<none>} (want set|show|clear|get|sync)" ;;
+    *) die "unknown agent op: ${op:-<none>} (want set|show|clear|get|sync|roles)" ;;
   esac
 }

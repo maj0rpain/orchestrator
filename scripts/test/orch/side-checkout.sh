@@ -952,7 +952,7 @@ fake_issue 7 open ready-for-agent orch:spec
 printf 'Prune me\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
 printf '7\n' >"$launcher_dir/release"
 "$ORCH" autopilot tick >/dev/null 2>&1
-side7="$top/.orchestrator/checkouts/7-prune-me"
+side7="$top/.orchestrator/checkouts/prune-me"
 git -C "$side7" checkout -q -b orch/7-prune-me
 git -C "$side7" commit -q --allow-empty -m work
 (cd "$side7" && state_fixture phase "done" && state_fixture branch orch/7-prune-me && state_fixture pr 41)

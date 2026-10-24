@@ -136,8 +136,10 @@ orch.sh - deterministic operations for the orchestrator flow
   autopilot show              print the autopilot settings, each with its
                               source: orchestrator.autopilot.permission-mode
                               (no default), .cap (3), .handle (the repo's
-                              owner), .rounds (2), .budget (3). Dies naming
-                              the key and value when one is out of range
+                              owner), .rounds (2), .budget (3), .model and
+                              .effort (no default; the agent setting's Claude
+                              Code values or inherit). Dies naming the key
+                              and value when one is out of range
   autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),
                               1 otherwise
   autopilot rounds            print the Rounds line of the flow's issue's
@@ -182,15 +184,12 @@ orch.sh - deterministic operations for the orchestrator flow
   autopilot resume <issue>    remove needs-human from the issue, nothing else
   agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]
                               set a role's agent setting in local config,
-                              or global with --global. Roles: implementer,
-                              lens, reviewer, fixer, closer, resolver; models:
-                              sonnet, opus, haiku, fable; efforts: low,
-                              medium, high, xhigh, max; inherit clears the
-                              key at that scope. Validates everything before
-                              writing; refuses a call with neither flag.
-                              --host junie sets the Junie keys instead:
-                              any name Junie's /model picker and --model
-                              flag take, efforts low, medium, high
+                              or global with --global. agent show lists the
+                              roles; a refused value names the allowed ones;
+                              inherit clears the key at that scope. Validates
+                              everything before writing; refuses a call with
+                              neither flag. --host junie sets the Junie keys
+                              instead
   agent show                  print each role's model and effort with each
                               one's source: local, global or inherit; a
                               disallowed hand-set value is marked invalid;
@@ -205,6 +204,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               `effort <level|inherit>`, each looked up local,
                               then global, else inherit; refuses a
                               disallowed value, naming its key
+  agent roles                 print the agent setting's roles, one per line
   agent sync                  write, refresh and delete this checkout's
                               .junie/agents/ copies of the plugin's agents
                               to match the Junie agent setting; refuses an

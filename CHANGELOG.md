@@ -1,5 +1,29 @@
 # Changelog
 
+## 4.33.0
+
+The autopilot container now sets which models autopilot runs on from its env
+file. `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's model
+and effort (the new `orchestrator.autopilot.model` and `.effort` keys, passed
+to `claude -p` as `--model` and `--effort`). `ORCH_MODEL_<ROLE>` and
+`ORCH_EFFORT_<ROLE>` set each role's agent setting; a role left unset inherits
+the phase session's. An unset variable now clears its key, `ORCH_CAP`,
+`ORCH_HANDLE`, `ORCH_ROUNDS` and `ORCH_BUDGET` included, and a bad value stops
+the container at startup. New: `orch.sh agent roles`. `agent clear` now fails
+naming the key when git cannot clear it, rather than passing silently.
+
+## 4.32.12
+
+The autopilot watcher now names a picked-up flow's slug and branch from the issue title alone, shortened to whole words of at most 40 characters, instead of repeating the issue number and using the whole title.
+
+## 4.32.11
+
+An autopilot phase session now waits up to 2 hours, not print mode's default 10 minutes, for its background ticket subagents, so a long build is no longer stopped mid-run.
+
+## 4.32.10
+
+The agent module reads one host table in place of its repeated host and kind switches, builds a role's line and the clear remedy in one helper each, and parses --host in one place, so agent clear and agent get refuse a missing or unknown --host value with the same messages as agent set. The agent set help entry no longer lists the roles, models and efforts.
+
 ## 4.32.9
 
 Document `EXTRA_APT_PACKAGES` in the autopilot container's env file and give a second compose project's command `--env-file` and `--build`, so its image is built from its own env file.
