@@ -75,7 +75,7 @@ the agreed seams, Implementability from the spec alone - each a read-only
 agent (`orch-lens-fidelity`, `orch-lens-consistency`, `orch-lens-testability`,
 `orch-lens-implementability`), and puts every finding to the human as one
 batch of proposed edits; the edits they accept rewrite the issue body, and the
-disposition is recorded on the issue and in the handoff. When the issue
+disposition is recorded on the issue. When the issue
 already has a ticket breakdown and the accepted edits touch an open ticket,
 the review then asks a ticket question: edit the tickets the change touches,
 or retire the breakdown so the issue is broken down again.

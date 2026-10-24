@@ -331,6 +331,16 @@ out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "a bare Ticket breakdown heading is no better than none" "$st" 1
 assert_contains "reported as empty, not missing" "$out" "empty section"
 
+writeln '## Ticket breakdown' '#1.' >"$h2"
+out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
+assert_status "a spec handoff with no Spec issue is incomplete" "$st" 1
+assert_contains "names the missing Spec issue" "$out" "Spec issue"
+
+writeln '## Spec issue' '   ' '' '## Ticket breakdown' '#1.' >"$h2"
+out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
+assert_status "a bare Spec issue heading is no better than none" "$st" 1
+assert_contains "reported as an empty Spec issue" "$out" "empty section: ## Spec issue"
+
 complete_handoff "$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "passes once the parent issue is recorded" "$st" 0
@@ -358,18 +368,6 @@ writeln '## Spec issue' '#1.' '' '## Seams' '' '## Spec review changelog' '' '' 
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "a handoff carrying empty Seams and Spec review changelog validates" "$st" 0
 
-# A spec review of several rounds (#871) puts each round's changelog under a
-# `### Round <k> of <n>` subheading, with no `## ` line inside the section,
-# since validate reads a section up to the next `## ` line.
-writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
-        '## Spec review changelog' \
-        '### Round 1 of 3' '#### Consolidation' 'None' '#### Tickets' 'None - no ticket breakdown' '' \
-        '### Round 2 of 3' '#### Consolidation' 'None' '#### Tickets' 'None - no ticket breakdown' '' \
-        '### Round 3 of 3' '#### Consolidation' 'None' '#### Tickets' 'None - no ticket breakdown' '' \
-        '## Ticket breakdown' '#1.' '' \
-        '## Host fallbacks' 'None (Claude Code).' >"$h2"
-out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
-assert_status "a Spec review changelog of several ### Round subheadings validates" "$st" 0
 restore_suite_env
 
 # --- handoff templates -------------------------------------------------------

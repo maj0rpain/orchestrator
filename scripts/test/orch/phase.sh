@@ -31,6 +31,21 @@ assert_status "refuses at spec with an invalid spec handoff" "$st" 1
 assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Ticket breakdown"
 assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
+writeln '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at spec with no Spec issue in the handoff" "$st" 1
+assert_contains "naming the missing Spec issue" "$out" "Spec issue"
+assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
+
+# A spec handoff written before #1601 still carries Seams and a Spec review
+# changelog; neither is required any more, so it advances, filled or empty.
+writeln '## Spec issue' '#7.' '' '## Seams' '' '## Spec review changelog' 'Not reviewed.' '' \
+        '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "advances a spec handoff still carrying the old sections" "$st" 0
+assert_eq "recording the implement phase" "$("$ORCH" state get phase)" "implement"
+state_fixture phase spec
+
 complete_handoff "$hs2"
 "$ORCH" state set issue null
 out="$("$ORCH" phase advance 2>&1)"; st=$?
