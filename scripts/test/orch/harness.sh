@@ -237,6 +237,18 @@ assert_eq "CLAUDE_PLUGIN_ROOT is unset" "${CLAUDE_PLUGIN_ROOT-unset}" "unset"
 assert_eq "no caller git config is reachable" \
   "${XDG_CONFIG_HOME-unset} ${GIT_CONFIG_GLOBAL-unset}" "unset unset"
 assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
+# The caller's ORCH_* knobs are cleared, ORCH_TEST_* kept. The probe run is a
+# child suite run started with ORCH_AUTOPILOT and a probe variable exported;
+# the child (which has the probe set) asserts, and does not start a child.
+assert_eq "ORCH_AUTOPILOT is unset" "${ORCH_AUTOPILOT-unset}" "unset"
+if [ -n "${ORCH_TEST_ISOLATION_PROBE:-}" ]; then
+  assert_eq "an ORCH_TEST_* variable is kept" "$ORCH_TEST_ISOLATION_PROBE" "kept"
+else
+  out="$(ORCH_AUTOPILOT=1 ORCH_TEST_ISOLATION_PROBE=kept ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' \
+    ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
+  assert_contains "a child run with ORCH_AUTOPILOT exported sees it unset" "$out" "ok   ORCH_AUTOPILOT is unset"
+  assert_contains "a child run keeps an exported ORCH_TEST_* variable" "$out" "ok   an ORCH_TEST_* variable is kept"
+fi
 
 # --- the section filter (ORCH_TEST_ONLY, #612) --------------------------------
 # The suite run as a child process under a filter, asserted on its stdout and
@@ -427,7 +439,7 @@ assert_contains "reports a section that exits mid-way as a FAIL naming it" "$out
 assert_contains "keeps a planted FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "sums both failures into the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "8 passed, 2 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "11 passed, 2 failed"
 # Each failing path alone, so neither passes on the strength of the other.
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted exit$' \
   bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
@@ -435,14 +447,14 @@ assert_status "a parallel run whose only failing section exits mid-way exits 1" 
 assert_contains "reports that section alone as a FAIL naming it" "$out" \
   "  FAIL section 'planted exit' reported no counts"
 assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "9 passed, 1 failed"
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted failure$' \
   bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
 assert_status "a parallel run whose only failing section has a failing check exits 1" "$st" 1
 assert_contains "keeps that check's FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "9 passed, 1 failed"
 rm -rf "$par_dir"
 
 # --- the section files (#932) -------------------------------------------------
@@ -701,7 +713,7 @@ assert_eq "reports exactly one FAIL" "$(printf '%s\n' "$out" | grep -c '^  FAIL 
 assert_contains "whose detail names the call" "$out" \
   "$(printf '  FAIL a section called the real gh\n     gh repo view o/r --json defaultBranchRef')"
 assert_eq "counts it in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
-  "6 passed, 1 failed"
+  "9 passed, 1 failed"
 rm -rf "$guard_dir"
 
 # --- all.sh, the single entry point (#615) ----------------------------------

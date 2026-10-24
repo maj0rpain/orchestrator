@@ -14,6 +14,14 @@ SKIP=0
 # a Claude Code or Junie session. Each test names its host.
 unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 
+# The caller's ORCH_* knobs: a suite started from an autopilot session exports
+# ORCH_AUTOPILOT, ORCH_SH, ORCH_MODEL*, ORCH_EFFORT* and more. Every exported
+# ORCH_* goes, by prefix, but ORCH_TEST_*, the suite's own knobs.
+while IFS= read -r setup_var; do
+  case "$setup_var" in ORCH_TEST_*) ;; ORCH_*) unset "$setup_var" ;; esac
+done < <(compgen -e)
+unset setup_var
+
 # ORCH, GH_ADAPTER_FAKE and PLUGIN_ROOT are set by scripts/test/orch_test.sh,
 # the runner, from its own location, before the cd below. CALLER_HOME keeps
 # the HOME the suite started with, only for the isolation section to check

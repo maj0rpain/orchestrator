@@ -52,3 +52,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/test/all.sh
+
+  # The whole suite on the autopilot image's own tools (jq 1.6, bookworm's
+  # mawk, git 2.39, its shellcheck), so tool-version drift and environment
+  # leaks are caught on the PR rather than in an autopilot run. It runs the
+  # runner's checkout, not the image's baked-in copy, which has no .git.
+  container:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Build the autopilot image
+        run: >-
+          docker build -f docker/Dockerfile
+          --build-arg EXTRA_APT_PACKAGES=shellcheck
+          -t orchestrator-autopilot .
+      # CHANGELOG_BASE stays unset: the host job enforces the changelog
+      # fragment rule. ORCH_SH is already set by the image.
+      - name: Verify in the container
+        run: |
+          set -euo pipefail
+          tmp_home="$(mktemp -d)"
+          docker run --rm --entrypoint bash \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/work" -w /work \
+            -v "$tmp_home:/tmp/home" \
+            -e HOME=/tmp/home \
+            -e ORCH_AUTOPILOT=1 \
+            -e ORCH_MODEL=opus \
+            -e ORCH_MODEL_IMPLEMENTER=sonnet \
+            -e ORCH_EFFORT=high \
+            orchestrator-autopilot scripts/test/all.sh

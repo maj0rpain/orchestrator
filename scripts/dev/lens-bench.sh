@@ -554,14 +554,14 @@ REPORT_JQ="$JQ_PRELUDE"'
 # their Markdown summary row: mean, median, minimum and maximum, each as
 # <value>/<total> when a total is given. Prints nothing on no numbers.
 summary_row() {
-  jq -rs --arg label "$1" --arg total "${2:-}" "$JQ_PRELUDE"'
+  jq -rs --arg heading "$1" --arg total "${2:-}" "$JQ_PRELUDE"'
     if length == 0 then empty else
       sort as $v | ($v | length) as $n
       | [($v | add) / $n,
          (if $n % 2 == 1 then $v[($n - 1) / 2] else ($v[$n / 2 - 1] + $v[$n / 2]) / 2 end),
          $v[0], $v[-1]]
       | map(num + (if $total == "" then "" else "/" + $total end))
-      | "| \($label) | \(join(" | ")) |"
+      | "| \($heading) | \(join(" | ")) |"
     end'
 }
 

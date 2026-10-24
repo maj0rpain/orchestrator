@@ -165,6 +165,9 @@ scripts/test/orch_test.sh`.
 -A` and `printf -v` are fine. `scripts/flow-state.sh` and the `hook-*.sh`
 scripts stay bash 3.2-compatible (no namerefs, no `mapfile`, no `declare -A`),
 because they run under macOS's `/bin/bash`.
+The code and tests also run on the autopilot image's tools - jq 1.6, bookworm's
+mawk (no regex interval expressions) and git 2.39 - as their floor, and the
+container CI job enforces it.
 
 ### Measuring a lens
 
