@@ -828,7 +828,7 @@ assert_eq "its two confirming runs ran" "$(runs)" 2
 assert_eq "one verdict line is written" "$(wc -l <"$vf" | tr -d ' ')" 1
 assert_eq "in the documented format: head, base, floor, growth, time, command, verdict" \
   "$(awk -F'\t' -v h="$head" -v b="$base" -v v="$first" \
-    '$1 == h && $2 == b && $3 == "0.01" && $4 == 15 && $5 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/ && $6 == "sh run.sh" && $7 == v { print "ok" }' "$vf")" "ok"
+    '$1 == h && $2 == b && $3 == "0.01" && $4 == 15 && $5 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T/ && $6 == "sh run.sh" && $7 == v { print "ok" }' "$vf")" "ok"
 second="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a second check on the unchanged clean HEAD prints the same verdict" "$second" "$first"
 assert_eq "and runs the command no more" "$(runs)" 2

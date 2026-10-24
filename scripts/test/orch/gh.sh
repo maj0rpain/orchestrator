@@ -1265,7 +1265,7 @@ claim_contract() {
   out="$(claim_op adapter_claim_list 2>&1)"
   assert_eq "$who: the loser changed nothing" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
   assert_eq "$who: list prints issue, host, pid, phase and start time" \
-    "$(printf '%s\n' "$out" | awk -F'\t' -v h="$(hostname)" '$1 == 41 && $2 == h && $3 == 1234 && $4 == "spec" && $5 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$/ && NF == 5 { print "ok" }')" "ok"
+    "$(printf '%s\n' "$out" | awk -F'\t' -v h="$(hostname)" '$1 == 41 && $2 == h && $3 == 1234 && $4 == "spec" && $5 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:][0-9:][0-9:][0-9:][0-9:][0-9:][0-9:][0-9:]Z$/ && NF == 5 { print "ok" }')" "ok"
   claim_op adapter_claim_create 7 review 99 >/dev/null 2>&1
   assert_eq "$who: list prints one line per claim, by issue number" \
     "$(claim_op adapter_claim_list | cut -f1 | tr '\n' ' ')" "7 41 "

@@ -1096,8 +1096,10 @@ assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
 printf '#!/bin/sh\nexit 1\n' >"$hooks/pre-rebase"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge exits 1 when a silent pre-rebase hook refuses" "$st" 1
-assert_contains "naming git's own line" "$out" \
-  "orch: rebasing orch/5-feature--t7 onto orch/5-feature failed: error: The pre-rebase hook refused to rebase."
+assert_contains "naming the failed rebase" "$out" \
+  "orch: rebasing orch/5-feature--t7 onto orch/5-feature failed: "
+assert_contains "naming git's own line, whichever prefix git puts before it" "$out" \
+  "The pre-rebase hook refused to rebase."
 assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
 assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
