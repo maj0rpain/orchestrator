@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.34.1
+
+The test suite now passes inside the autopilot container. The lens bench's jq,
+two tests' awk checks and the ticket-merge test no longer rely on jq 1.7+, awk
+interval expressions or git's newer error wording, so they pass on the image's
+jq 1.6, mawk and git 2.39. The orch.sh suite clears every inherited `ORCH_*`
+variable but `ORCH_TEST_*` at start, so a run from an autopilot session no
+longer fails on its `ORCH_AUTOPILOT` and `ORCH_MODEL_*`. CI gains a job that
+runs the whole suite inside the autopilot image.
+
 ## 4.34.0
 
 The test suite no longer sizes itself to the whole machine. `orch_test.sh`'s
