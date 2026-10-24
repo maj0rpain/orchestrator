@@ -15,6 +15,11 @@
 # /sys/fs/cgroup/cpu.max unless the test-only ORCH_TEST_CPU_MAX_FILE names
 # another.
 #
+# test_jobs_count <runner>: prints the run's job count - ORCH_TEST_JOBS when
+# set, else test_jobs_default - normalized to base 10. A set value that is not
+# a positive integer prints "<runner>: ORCH_TEST_JOBS='<value>' is not a
+# positive integer" on stderr and returns 1, for the caller to exit on.
+#
 # test_jobs_lower_priority: raises the calling shell's niceness to 10 unless CI
 # is set, so the processes it starts inherit it. It never stacks: a niceness
 # of 10 or more is left alone, and a ps that fails or prints no number means
@@ -28,7 +33,7 @@ is_positive_integer() {
 }
 
 test_jobs_default() {
-  local cores quota period file usable
+  local cores quota period quota_cpus file usable
   cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"
   is_positive_integer "$cores" || cores=4
   cores=$((10#$cores))
@@ -37,14 +42,28 @@ test_jobs_default() {
   read -r quota period 2>/dev/null <"$file"
   usable="$cores"
   if is_positive_integer "$quota" && is_positive_integer "$period"; then
-    quota=$(((10#$quota + 10#$period - 1) / 10#$period))
-    [ "$quota" -lt "$usable" ] && usable="$quota"
+    quota_cpus=$(((10#$quota + 10#$period - 1) / 10#$period))
+    [ "$quota_cpus" -lt "$usable" ] && usable="$quota_cpus"
   fi
   if [ -n "${CI:-}" ]; then
     echo "$usable"
   else
     echo $((usable / 2 > 0 ? usable / 2 : 1))
   fi
+}
+
+test_jobs_count() {
+  local jobs
+  if [ -n "${ORCH_TEST_JOBS+set}" ]; then
+    jobs="$ORCH_TEST_JOBS"
+  else
+    jobs="$(test_jobs_default)"
+  fi
+  if ! is_positive_integer "$jobs"; then
+    echo "$1: ORCH_TEST_JOBS='$jobs' is not a positive integer" >&2
+    return 1
+  fi
+  echo "$((10#$jobs))"
 }
 
 test_jobs_lower_priority() {

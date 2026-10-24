@@ -1131,10 +1131,15 @@ printf '#!/bin/sh\ncat %q\necho "$*" >%q\n' "$load_dir/nice" "$load_dir/ps_args"
 printf '#!/bin/sh\necho "$*" >>%q\necho renice-noise >&2\nexit $(cat %q)\n' \
   "$load_dir/renice_args" "$load_dir/renice_exit" >"$load_fakes/renice"
 chmod +x "$load_fakes/ps" "$load_fakes/renice"
+# all.sh's niceness runs need no shellcheck timing: an instant stub shadows the
+# sleeping one.
+mkdir "$load_dir/instant"
+printf '#!/bin/sh\nexit 0\n' >"$load_dir/instant/shellcheck"
+chmod +x "$load_dir/instant/shellcheck"
 # load_nice_run <runner> <niceness|none> <renice exit> [CI]: the runner on
 # PATH with the fakes first, its combined output then "status=N".
 load_nice_run() {
-  local runner="$1" bin="$load_fakes:$load_all/bin" script ci="${4:-}"
+  local runner="$1" bin="$load_fakes:$load_dir/instant:$load_all/bin" script ci="${4:-}"
   [ -n "$2" ] && echo "$2" >"$load_dir/nice"
   echo "$3" >"$load_dir/renice_exit"
   rm -f "$load_dir/renice_args" "$load_dir/ps_args"

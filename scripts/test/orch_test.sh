@@ -198,16 +198,7 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   exit $?
 fi
 
-if [ -n "${ORCH_TEST_JOBS+set}" ]; then
-  orch_jobs="$ORCH_TEST_JOBS"
-else
-  orch_jobs="$(test_jobs_default)"
-fi
-if ! is_positive_integer "$orch_jobs"; then
-  echo "orch_test.sh: ORCH_TEST_JOBS='$orch_jobs' is not a positive integer" >&2
-  exit 1
-fi
-orch_jobs=$((10#$orch_jobs))
+orch_jobs="$(test_jobs_count orch_test.sh)" || exit 1
 
 # Every run, sequential or parallel, filtered or not, evals the text the walk
 # extracts for its kept set: no section runs from this file itself.

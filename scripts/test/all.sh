@@ -58,16 +58,7 @@
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=test_jobs.sh
 source "$dir/test_jobs.sh"
-if [ -n "${ORCH_TEST_JOBS+set}" ]; then
-  sc_jobs="$ORCH_TEST_JOBS"
-else
-  sc_jobs="$(test_jobs_default)"
-fi
-if ! is_positive_integer "$sc_jobs"; then
-  echo "all.sh: ORCH_TEST_JOBS='$sc_jobs' is not a positive integer" >&2
-  exit 1
-fi
-sc_jobs=$((10#$sc_jobs))
+sc_jobs="$(test_jobs_count all.sh)" || exit 1
 test_jobs_lower_priority
 unset ORCH_TEST_ONLY
 export ORCH_TEST_QUIET=1
