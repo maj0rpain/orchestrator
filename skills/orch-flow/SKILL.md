@@ -279,8 +279,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    where it is, say what blocked, and offer `/orchestrator:abort`.
 6. Invoke the `orch-handoff` skill for `02-spec.md`, with its
    **Ticket breakdown** as either the spec issue number (published or found as
-   sub-issues) or `None: work directly against #<n>` naming the spec issue (collapsed, per
-   step 5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH"
+   sub-issues) or `None: work directly against #<n>` naming the spec issue
+   (collapsed, per step 5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH"
    handoff path implement)"`, fixing and re-validating until it passes.
 7. `bash "$ORCH" phase advance`. It validates `02-spec.md` again and checks the
    issue is recorded before recording the implement phase; on a FAIL the phase
