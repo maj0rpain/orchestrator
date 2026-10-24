@@ -408,7 +408,7 @@ replies for you. Or reply in one comment like
 `1: A, 2: recommended, 3: <free text>`
 (`all: recommended` accepts everything), then remove `needs-human`. The next
 tick picks the issue up again, and a review-loop stop starts another loop with
-the planned budget.
+a budget the driver sizes from what the last loop left.
 
 ### Steering
 

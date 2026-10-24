@@ -28,6 +28,8 @@ your return instead - see **Could not fix**.
 - **Triaged out** - every other finding of the iteration, each with its
   disposition: demoted (and the authority), waiting to be filed (and the rule
   that kept it out), or met again (and its issue number).
+- **Re-entry budget** - on an autopilot re-entry's first iteration, the
+  one header line the driver chose; copy it into the record. Absent otherwise.
 - **Fix SHAs** - the fix commits of this loop's earlier iterations.
 - **Iteration** and **budget**.
 - **Verification command**.
@@ -298,6 +300,7 @@ and later iterations, the closer, `orch.sh review terminal`, and
 Base SHA: <base SHA>
 PR: #<pr>
 Spec issue: #<spec issue>
+Re-entry budget: <n> - <reason>   (only when the prompt carries it)
 Host fallbacks: <each fallback taken, or None>
 
 ## Findings
