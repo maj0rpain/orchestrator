@@ -186,6 +186,15 @@ assert_eq "clear --global removes the global keys" "$(key global orchestrator.mo
 out="$("$ORCH" agent clear closer 2>&1)"; st=$?
 assert_status "clear on an unset key exits 0" "$st" 0
 assert_eq "with no output" "$out" ""
+# A clear git cannot carry out - the global config locked, here by a stale
+# lock file - fails naming the key, rather than passing as a key not set.
+"$ORCH" agent set closer --model haiku --global >/dev/null
+: >"$HOME/.gitconfig.lock"
+out="$("$ORCH" agent clear closer --model --global 2>&1)"; st=$?
+rm -f "$HOME/.gitconfig.lock"
+"$ORCH" agent clear closer --global >/dev/null
+assert_status "a failed clear exits 1" "$st" 1
+assert_contains "naming the key it could not clear" "$out" "orch: cannot clear orchestrator.model.closer"
 out="$("$ORCH" agent clear implementor 2>&1)"; st=$?
 assert_status "clear refuses an unknown role" "$st" 1
 assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver)"

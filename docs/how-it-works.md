@@ -266,8 +266,8 @@ global git config. `orch.sh autopilot` has no `set` verb, so set one with
 | `handle` | the repo's owner | Who gets @mentioned when it needs you. |
 | `rounds` | 2 | Spec review rounds. |
 | `budget` | 3 | Review loop iterations. |
-| `model` | unset: the session's own default; else one of Claude Code's allowed models (`orch.sh agent` lists them) or `inherit` | The `--model` the headless phase session runs on. |
-| `effort` | unset: the session's own default; else one of Claude Code's allowed efforts or `inherit` | The `--effort` the headless phase session runs on. |
+| `model` | unset: the session's own default; else one of Claude Code's allowed models, `sonnet`, `opus`, `haiku` or `fable`, or `inherit` | The `--model` the headless phase session runs on. |
+| `effort` | unset: the session's own default; else one of Claude Code's allowed efforts, `low`, `medium`, `high`, `xhigh` or `max`, or `inherit` | The `--effort` the headless phase session runs on. |
 
 `rounds` and `budget` are only the defaults a hand-labelled issue's minimal
 plan comment gets. A flow started at the planning close runs the `Rounds` and
@@ -312,10 +312,10 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
   <v> --global`. A role left unset inherits the model and effort of the session
   that starts it, so `ORCH_MODEL` alone moves every role whose model is unset,
   `ORCH_EFFORT` likewise, and a role variable overrides it.
-- **Unset clears:** `docker/.env` is the one source of truth. Every optional
-  variable above except `ORCH_PERMISSION_MODE` that is unset or empty clears
-  its global key at each start, so a line deleted from `.env` takes effect
-  after `docker restart`.
+- **Unset clears:** `docker/.env` is the one source of truth. `ORCH_CAP`,
+  `ORCH_HANDLE`, `ORCH_ROUNDS`, `ORCH_BUDGET`, `ORCH_MODEL`, `ORCH_EFFORT` and
+  every role variable, unset or empty, clears its global key at each start,
+  so a line deleted from `.env` takes effect after `docker restart`.
 - **Validated at startup:** once the clone exists, the entrypoint writes these
   keys inside it and runs `orch.sh autopilot show`. Any refusal exits non-zero
   with its `orch:` line, so a typo fails `docker compose up` and never runs the

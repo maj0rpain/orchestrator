@@ -232,7 +232,7 @@ assert_eq "autopilot show runs before autopilot watch" "$([ -n "$show_line" ] &&
 for refused in "agent set implementer" "autopilot show" "agent roles" "agent clear"; do
   FAKE_ORCH_FAIL="$refused" run_entry ORCH_MODEL_IMPLEMENTER=opus ORCH_MODEL=opus
   assert_eq "a refused '$refused' exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
-  assert_contains "a refused '$refused' shows its orch line" "$err" "orch: "
+  assert_contains "a refused '$refused' shows its orch line" "$err" "orch: refused $refused"
   assert_eq "a refused '$refused' never runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 0
 done
 FAKE_ORCH_FAIL="agent set" run_entry ORCH_MODEL=opus ORCH_MODEL_LENS=low

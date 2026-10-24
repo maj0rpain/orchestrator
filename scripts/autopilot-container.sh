@@ -15,9 +15,10 @@
 # counts as unset. ORCH_MODEL and ORCH_EFFORT are the phase session's model and
 # effort (orchestrator.autopilot.model/effort); a role variable is that role's
 # agent setting, written with `agent set --global`, and a role left unset
-# inherits the phase session's model and effort. Unset clears: every optional
-# variable but ORCH_PERMISSION_MODE (default bypassPermissions) that is unset
-# clears its global key, so .env is the one source of truth. Once the clone
+# inherits the phase session's model and effort. Unset clears: an unset
+# ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET, ORCH_MODEL, ORCH_EFFORT or
+# role variable clears its global key, so .env is the one source of truth;
+# ORCH_PERMISSION_MODE defaults to bypassPermissions instead. Once the clone
 # exists the settings are written in it, `orch.sh autopilot show` validates
 # them, and a refusal keeps what was written and never starts the watcher.
 # The first failing step exits non-zero with an `orch:` line on stderr.
@@ -110,8 +111,7 @@ for role in $roles; do
     if [ -n "${!var:-}" ]; then
       bash "$ORCH_SH" agent set "$role" "--$kind" "${!var}" --global || exit 1
     else
-      bash "$ORCH_SH" agent clear "$role" "--$kind" --global ||
-        die "autopilot settings: cannot clear the $kind of $role"
+      bash "$ORCH_SH" agent clear "$role" "--$kind" --global || exit 1
     fi
   done
 done

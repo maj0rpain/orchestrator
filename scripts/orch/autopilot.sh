@@ -31,7 +31,9 @@ autopilot_lookup() {
 # orchestrator.autopilot.<name> into AUTOPILOT_VALUE, its source into
 # AUTOPILOT_SOURCE (local, global, default or unset). The permission mode and
 # the handle fall back to nothing and the repo's owner; the three integers to
-# their defaults. Dies naming key and value when a value is out of range.
+# their defaults; the model and effort stay unset, checked against the agent
+# setting's Claude Code lists. Dies naming key and value when a value is out of
+# range.
 # The handle's owner is resolved only when the handle is needed.
 autopilot_setting() {
   local name="$1" key="orchestrator.autopilot.$1" def="" owner
