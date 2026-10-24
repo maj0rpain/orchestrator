@@ -16,10 +16,12 @@
 # Then shellcheck, from the repo root two levels up, at warning severity, one
 # process per shell file matched by the one recursive glob scripts/**/*.sh,
 # with .shellcheckrc's source settings. A glob that matches nothing is dropped,
-# never passed to shellcheck as the literal pattern. Every process starts at
-# once, alongside the suites, with no throttle, so no single shellcheck run
-# over every file is the critical path - this deliberately reverses #777's
-# one-process rule. Each process's stdout and stderr go to its own captured
+# never passed to shellcheck as the literal pattern. The processes start
+# alongside the suites, at most as many at a time as the job count
+# (ORCH_TEST_JOBS when set, else test_jobs.sh's default: half the usable CPUs,
+# all of them under CI), so no single shellcheck run over every file is the
+# critical path and the machine is not flooded with one process per file. Each
+# process's stdout and stderr go to its own captured
 # buffer, and all.sh waits on each one; the buffers are joined in glob order,
 # and the status taken is the highest exit among the processes. Its summary
 # line has the same shape: each finding line, then "shellcheck: N findings"; or
@@ -42,11 +44,33 @@
 # unset - for docs_lint.sh's changelog fragment rule, which CI's "Read main's
 # commit" step feeds. ORCH_TEST_JOBS
 # passes through too: orch_test.sh runs that many sections at once, by default
-# the core count, and ORCH_TEST_JOBS=1 runs them sequentially, in one shell.
+# half the usable CPUs (the full count under CI), and ORCH_TEST_JOBS=1 runs them
+# sequentially, in one shell. A set ORCH_TEST_JOBS that is not a positive
+# integer makes all.sh print "all.sh: ORCH_TEST_JOBS='<value>' is not a positive
+# integer" on stderr and exit 1 before anything starts. The default all.sh
+# computes for its shellcheck limit is never exported: an unset ORCH_TEST_JOBS
+# stays unset for the suites.
+#
+# Outside CI all.sh lowers its own niceness to 10 at start (test_jobs.sh), so
+# every process it starts inherits it; a niceness of 10 or more is left alone,
+# and a failing renice is ignored.
 
+dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=test_jobs.sh
+source "$dir/test_jobs.sh"
+if [ -n "${ORCH_TEST_JOBS+set}" ]; then
+  sc_jobs="$ORCH_TEST_JOBS"
+else
+  sc_jobs="$(test_jobs_default)"
+fi
+if ! is_positive_integer "$sc_jobs"; then
+  echo "all.sh: ORCH_TEST_JOBS='$sc_jobs' is not a positive integer" >&2
+  exit 1
+fi
+sc_jobs=$((10#$sc_jobs))
+test_jobs_lower_priority
 unset ORCH_TEST_ONLY
 export ORCH_TEST_QUIET=1
-dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tmp="$(mktemp -d)" || exit 1
 trap 'rm -rf "$tmp"' EXIT
 failed=0
@@ -67,7 +91,16 @@ if command -v shellcheck >/dev/null 2>&1; then
   shopt -s globstar nullglob
   sc_files=("$root"/scripts/**/*.sh)
   shopt -u globstar nullglob
+  # At most sc_jobs run at once: past that, wait for the oldest still running
+  # (in start order, so its status is kept for the join below).
+  sc_exits=()
+  sc_next=0
   for sc_file in "${sc_files[@]}"; do
+    while [ "$((${#sc_pids[@]} - sc_next))" -ge "$sc_jobs" ]; do
+      wait "${sc_pids[$sc_next]}"
+      sc_exits[sc_next]=$?
+      sc_next=$((sc_next + 1))
+    done
     sc_rel="${sc_file#"$root/"}"
     (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
       >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
@@ -86,8 +119,12 @@ if [ "$have_sc" -eq 1 ]; then
   sc_status=0
   sc_out=""
   for sc_n in "${!sc_pids[@]}"; do
-    wait "${sc_pids[$sc_n]}"
-    sc_exit=$?
+    if [ -n "${sc_exits[$sc_n]:-}" ]; then
+      sc_exit="${sc_exits[$sc_n]}"
+    else
+      wait "${sc_pids[$sc_n]}"
+      sc_exit=$?
+    fi
     [ "$sc_exit" -gt "$sc_status" ] && sc_status=$sc_exit
     sc_part="$(<"$tmp/shellcheck.$sc_n")"
     [ -n "$sc_part" ] && sc_out+="${sc_out:+$'\n'}$sc_part"

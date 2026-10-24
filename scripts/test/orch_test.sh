@@ -49,6 +49,9 @@ GH_ADAPTER_FAKE="$TEST_DIR/gh_adapter_fake.sh"
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
 SUITE_SCRIPT="$TEST_DIR/$(basename "${BASH_SOURCE[0]}")"
 SECTION_DIR="$TEST_DIR/orch"
+# shellcheck source=test_jobs.sh
+source "$TEST_DIR/test_jobs.sh"
+test_jobs_lower_priority
 SETUP_FILE="$SECTION_DIR/setup.sh"
 
 # The temp root. Every invocation - the parallel runner, each of its children,
@@ -79,7 +82,8 @@ trap 'exit 130' INT TERM
 # exits 1, printing the selectable section titles, in walk order, one per line.
 #
 # The parallel runner. ORCH_TEST_JOBS sets how many sections run at once:
-# by default the core count (getconf _NPROCESSORS_ONLN, or 4 when that fails);
+# by default half the usable CPUs, rounded down, at least 1, and all of them
+# under CI (test_jobs.sh: the online cores, lowered to a cgroup v2 quota);
 # 1 runs the suite - or the filtered text - in this one shell, sequentially.
 # A value that is not a positive integer exits 1 before any section runs.
 # Above 1, each section chosen (every one, or the isolation section plus those
@@ -95,6 +99,10 @@ trap 'exit 130' INT TERM
 # Exits 1 when any child failed. Buffers live in one temp directory under the
 # temp root; an interrupt also kills the running children and waits for them
 # to exit.
+#
+# Outside CI this runner lowers its own niceness to 10 at start (test_jobs.sh),
+# so the processes it starts inherit it; a niceness of 10 or more is left
+# alone, so nested runs never stack, and a failing renice is ignored.
 
 # section_files: the noun files the walk reads, one per line - harness.sh,
 # then every other scripts/test/orch/*.sh but setup.sh, in LC_ALL=C order
@@ -190,18 +198,10 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   exit $?
 fi
 
-# True when $1 is digits only and its value is above zero, so `00` is no
-# positive integer either.
-is_positive_integer() {
-  case "$1" in '' | *[!0-9]*) return 1 ;; esac
-  [ "$((10#$1))" -gt 0 ]
-}
-
 if [ -n "${ORCH_TEST_JOBS+set}" ]; then
   orch_jobs="$ORCH_TEST_JOBS"
 else
-  orch_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"
-  is_positive_integer "$orch_jobs" || orch_jobs=4
+  orch_jobs="$(test_jobs_default)"
 fi
 if ! is_positive_integer "$orch_jobs"; then
   echo "orch_test.sh: ORCH_TEST_JOBS='$orch_jobs' is not a positive integer" >&2

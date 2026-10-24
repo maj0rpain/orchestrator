@@ -663,7 +663,7 @@ done
 # an orch_test.sh stub that leaves a file in its TMPDIR.
 root_all="$root_dir/all"
 mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
-cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$root_all/scripts/test/"
+cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$root_all/scripts/test/"
 for root_tool in bash dirname awk tail mktemp rm mkdir; do
   ln -s "$(command -v "$root_tool")" "$root_all/bin/$root_tool"
 done
@@ -723,13 +723,13 @@ all_root="$(mktemp -d)"
 all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
 mkdir -p "$all_dir/orch" "$all_bin"
-cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$all_dir/"
+cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$all_dir/"
 for all_tool in bash dirname awk tail mktemp rm mkdir sleep; do
   ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
 done
 # all_written: every shell file the fixture writes, by path from <tmp>, for
 # the expected shellcheck arguments - never a glob.
-all_written=(scripts/test/all.sh)
+all_written=(scripts/test/all.sh scripts/test/test_jobs.sh)
 all_planted=(scripts/lint_me.sh scripts/test/lint_me.sh scripts/test/orch/lint_me.sh
   scripts/dev/deep/lint_me.sh)
 mkdir -p "$all_root/scripts/dev/deep"
@@ -1023,6 +1023,156 @@ assert_contains "says a suite that printed nothing died before its summary" "$ou
 assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
   "docs_lint.sh: a stray last line"
 rm -rf "$all_root"
+
+# --- the test runners' CPU load (#1586) ---------------------------------------
+# The default job count, test_jobs.sh's test_jobs_default, with getconf faked
+# on PATH and ORCH_TEST_CPU_MAX_FILE naming a planted quota file; then all.sh's
+# limit on shellcheck processes, with shellcheck faked to log its starts and
+# ends; then both runners' niceness, with ps and renice faked.
+echo
+echo "the test runners' CPU load (#1586)"
+load_dir="$(mktemp -d)"
+load_tests="$(dirname "$SUITE_SCRIPT")"
+suites_read "$load_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+mkdir "$load_dir/getconf"
+# load_default <cores|fail> <quota file content|-missing|-dir> [VAR=value...]:
+# the default job count with getconf reporting <cores> (or failing).
+load_default() {
+  local cores="$1" quota="$2" file="$load_dir/cpu.max"
+  shift 2
+  if [ "$cores" = fail ]; then
+    printf '#!/bin/sh\nexit 1\n' >"$load_dir/getconf/getconf"
+  else
+    printf '#!/bin/sh\necho %s\n' "$cores" >"$load_dir/getconf/getconf"
+  fi
+  chmod +x "$load_dir/getconf/getconf"
+  rm -rf "$file"
+  case "$quota" in
+    -missing) ;;
+    -dir) mkdir "$file" ;;
+    *) printf '%s\n' "$quota" >"$file" ;;
+  esac
+  (
+    unset CI ORCH_TEST_JOBS
+    export ORCH_TEST_CPU_MAX_FILE="$file" PATH="$load_dir/getconf:$PATH"
+    for load_kv in "$@"; do declare -x "$load_kv"; done
+    source "$load_tests/test_jobs.sh"
+    test_jobs_default
+  )
+}
+assert_eq "32 cores and no quota file give 16 jobs" "$(load_default 32 -missing)" "16"
+assert_eq "32 cores and a quota of 4 CPUs give 2 jobs" "$(load_default 32 '400000 100000')" "2"
+assert_eq "32 cores and a quota of 1.5 CPUs (2 usable) give 1 job" "$(load_default 32 '150000 100000')" "1"
+assert_eq "4 cores and a quota above them give 2 jobs" "$(load_default 4 '800000 100000')" "2"
+assert_eq "1 core gives 1 job" "$(load_default 1 -missing)" "1"
+assert_eq "32 cores and a max quota give 16 jobs" "$(load_default 32 'max 100000')" "16"
+assert_eq "32 cores and an unreadable quota file give 16 jobs" "$(load_default 32 -dir)" "16"
+assert_eq "a failing getconf falls back to 4 cores, 2 jobs" "$(load_default fail -missing)" "2"
+assert_eq "CI gives the full 32 usable CPUs" "$(load_default 32 -missing CI=true)" "32"
+assert_eq "CI honours the quota too" "$(load_default 32 '400000 100000' CI=true)" "4"
+
+# all.sh's runs: a copy beside passing suite stubs, a shellcheck stub that logs
+# "+" when it starts and "-" when it ends, over the planted files below.
+load_all="$load_dir/all"
+mkdir -p "$load_all/scripts/test" "$load_all/bin"
+cp "$load_tests/all.sh" "$load_tests/test_jobs.sh" "$load_all/scripts/test/"
+for load_tool in bash dirname awk tail mktemp rm mkdir sleep cat; do
+  ln -s "$(command -v "$load_tool")" "$load_all/bin/$load_tool"
+done
+for load_n in 1 2 3 4 5 6; do echo 'echo planted' >"$load_all/scripts/lint_$load_n.sh"; done
+for load_stub in "${SUITES[@]}"; do
+  printf '#!/usr/bin/env bash\necho "%s ran" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
+    "$load_stub" >"$load_all/scripts/test/$load_stub"
+done
+printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' \
+  "$load_all/sc_log" "$load_all/sc_log" >"$load_all/bin/shellcheck"
+chmod +x "$load_all/bin/shellcheck"
+# load_peak: the most shellcheck processes the log shows running at once.
+load_peak() {
+  awk '/^\+/ { n++; if (n > max) max = n } /^-/ { n-- } END { print max + 0 }' "$load_all/sc_log"
+}
+# load_run_all [VAR=value...]: all.sh on the stub PATH, CI and ORCH_TEST_JOBS
+# unset, then the assignments applied.
+load_run_all() {
+  (
+    unset CI ORCH_TEST_JOBS
+    env "$@" PATH="$load_all/bin:$load_dir/getconf" bash "$load_all/scripts/test/all.sh"
+  )
+}
+printf '#!/bin/sh\necho 4\n' >"$load_dir/getconf/getconf"
+chmod +x "$load_dir/getconf/getconf"
+out="$(load_run_all ORCH_TEST_JOBS=2 2>&1)"; st=$?
+assert_status "all.sh with ORCH_TEST_JOBS=2 passes" "$st" 0
+assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(load_peak)" "2"
+assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
+  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 8))"
+assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
+: >"$load_all/sc_log"
+load_run_all >/dev/null 2>&1
+assert_eq "all.sh with ORCH_TEST_JOBS unset and 4 cores runs at most 2 shellcheck at once" \
+  "$(load_peak)" "2"
+: >"$load_all/sc_log"
+load_run_all ORCH_TEST_JOBS=1 >/dev/null 2>&1
+assert_eq "all.sh with ORCH_TEST_JOBS=1 runs one shellcheck at a time" "$(load_peak)" "1"
+rm -f "$load_all/log" "$load_all/scripts/test/log" "$load_all/sc_log"
+out="$(load_run_all ORCH_TEST_JOBS=abc 2>&1)"; st=$?
+assert_status "all.sh with an invalid ORCH_TEST_JOBS exits 1" "$st" 1
+assert_eq "all.sh with an invalid ORCH_TEST_JOBS names it on stderr" "$out" \
+  "all.sh: ORCH_TEST_JOBS='abc' is not a positive integer"
+assert_eq "all.sh with an invalid ORCH_TEST_JOBS starts no suite or shellcheck" \
+  "$(ls "$load_all/sc_log" "$load_all/scripts/test/log" 2>/dev/null)" ""
+
+# Niceness: ps prints the niceness in <dir>/nice and records the pid it was
+# asked about; renice records its arguments, and exits <dir>/renice_exit.
+load_fakes="$load_dir/fakes"
+mkdir "$load_fakes"
+printf '#!/bin/sh\ncat %q\necho "$*" >%q\n' "$load_dir/nice" "$load_dir/ps_args" >"$load_fakes/ps"
+printf '#!/bin/sh\necho "$*" >>%q\necho renice-noise >&2\nexit $(cat %q)\n' \
+  "$load_dir/renice_args" "$load_dir/renice_exit" >"$load_fakes/renice"
+chmod +x "$load_fakes/ps" "$load_fakes/renice"
+# load_nice_run <runner> <niceness|none> <renice exit> [CI]: the runner on
+# PATH with the fakes first, its combined output then "status=N".
+load_nice_run() {
+  local runner="$1" bin="$load_fakes:$load_all/bin" script ci="${4:-}"
+  [ -n "$2" ] && echo "$2" >"$load_dir/nice"
+  echo "$3" >"$load_dir/renice_exit"
+  rm -f "$load_dir/renice_args" "$load_dir/ps_args"
+  case "$runner" in
+    all.sh) script="$load_all/scripts/test/all.sh" ;;
+    *) bin="$load_fakes:$PATH"; script="$load_tests/orch_test.sh" ;;
+  esac
+  (
+    unset CI; [ -n "$ci" ] && export CI=true
+    ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' PATH="$bin" bash "$script" 2>&1
+    echo "status=$?"
+  )
+}
+for load_runner in all.sh orch_test.sh; do
+  : >"$load_all/sc_log"
+  rm -f "$load_all/scripts/test/log"
+  baseline="$(load_nice_run "$load_runner" 10 0)"
+  assert_eq "$load_runner at niceness 10 calls no renice" "$([ -e "$load_dir/renice_args" ] && echo yes)" ""
+  load_nice_run "$load_runner" 15 0 >/dev/null
+  assert_eq "$load_runner at niceness 15 calls no renice" "$([ -e "$load_dir/renice_args" ] && echo yes)" ""
+  load_nice_run "$load_runner" 0 0 >/dev/null
+  assert_eq "$load_runner at niceness 0 renices by an increment of 10 on its own pid" \
+    "$(sed -E 's/[0-9]+$/PID/' "$load_dir/renice_args")" "-n 10 -p PID"
+  assert_eq "$load_runner renices the pid it read the niceness of" \
+    "$(sed 's/.* //' "$load_dir/renice_args")" "$(sed 's/.* //' "$load_dir/ps_args")"
+  load_nice_run "$load_runner" 4 0 >/dev/null
+  assert_eq "$load_runner at niceness 4 renices by an increment of 6" \
+    "$(sed -E 's/ -p .*//' "$load_dir/renice_args")" "-n 6"
+  assert_eq "$load_runner with a failing renice prints and exits as at niceness 10" \
+    "$(load_nice_run "$load_runner" 0 1)" "$baseline"
+  load_nice_run "$load_runner" 0 0 CI >/dev/null
+  assert_eq "$load_runner under CI calls no renice" "$([ -e "$load_dir/renice_args" ] && echo yes)" ""
+  : >"$load_dir/nice"
+  load_nice_run "$load_runner" "" 0 >/dev/null
+  assert_eq "$load_runner with ps printing no number calls no renice" \
+    "$([ -e "$load_dir/renice_args" ] && echo yes)" ""
+done
+rm -rf "$load_dir"
 
 # --- shell code (#1411) -------------------------------------------------------
 # shell_code over planted files: the code view keeps every line, drops each

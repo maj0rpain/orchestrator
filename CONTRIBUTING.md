@@ -44,9 +44,13 @@ only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
-the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so
-every section must pass on its own. Helper placement is checked by harness.sh's
-placement section; its failure message states the rule.
+half the usable CPUs, rounded down, at least 1, and all of them under `CI`;
+usable CPUs are the online cores, lowered to a cgroup v2 `cpu.max` quota;
+`ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
+pass on its own. all.sh runs at most that many shellcheck processes at once, and
+both runners lower their own niceness to 10 outside `CI`.
+Helper placement is checked by harness.sh's placement section; its failure
+message states the rule.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
 noun's code, named as that noun's test file is, and a helper lives in the
