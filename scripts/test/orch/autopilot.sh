@@ -227,7 +227,12 @@ assert_contains "writing the question" "$(cat "$ans")" "1. Keep it?"
 assert_contains "and the reply" "$(cat "$ans")" "1: A"
 assert_contains "and every later comment" "$(cat "$ans")" "thanks"
 out="$("$ORCH" autopilot answer implement "$ans" 2>&1)"; st=$?
-assert_status "answer for a phase never asked dies" "$st" 1
+assert_status "answer for a phase never asked exits 2, never no reply's 1" "$st" 2
+fake_fail adapter_issue_json "HTTP 500"
+out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
+assert_status "a failed comment read exits 2, never no reply's 1" "$st" 2
+assert_contains "naming the read" "$out" "read the comments of issue #7"
+fake_unfail
 # a failed label add leaves the claim held and names the comment
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7

@@ -272,8 +272,10 @@ global git config. `orch.sh autopilot` has no `set` verb, so set one with
 
 `rounds` and `budget` are only the defaults a hand-labelled issue's minimal
 plan comment gets. A flow started at the planning close runs the `Rounds` and
-`Budget` its plan's `## Autopilot` block sizes from the planned scope, and
-every review loop of that flow runs that budget.
+`Budget` its plan's `## Autopilot` block sizes from the planned scope. Its
+first review loop runs that budget; a loop after a bounded stop runs one the
+driver sizes from what the last loop left, never more than it unless the
+human's reply names one.
 
 `model` and `effort` are validated against the agent setting's Claude Code
 allowed lists; unset or `inherit` passes no flag. The cascade: an agent role
@@ -436,7 +438,7 @@ replies for you. Or reply in one comment like
 `1: A, 2: recommended, 3: <free text>`
 (`all: recommended` accepts everything), then remove `needs-human`. The next
 tick picks the issue up again, and a review-loop stop starts another loop with
-the planned budget.
+a budget the driver sizes from what the last loop left.
 
 ### Steering
 

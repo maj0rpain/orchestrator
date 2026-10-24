@@ -500,8 +500,10 @@ starts, from a number the driver suggests: for a flow's first loop, from the
 size of the change; for a further loop, from what the loop before it left. A
 loop runs its whole budget: finding nothing does not end it early, because
 every iteration is an independent look at the same change, and the value of
-the loop is in the number of looks. An autopilot flow's is chosen once, at the
-planning close, and every loop of that flow runs it.
+the loop is in the number of looks. An autopilot flow's first loop runs the
+budget chosen at the planning close; each loop after a bounded stop runs one
+the driver chooses from what the loop before it left, never more than that
+first budget, unless the human's reply names one.
 
 **Iteration**:
 One pass within a review loop: sync the branch with its base, review the
