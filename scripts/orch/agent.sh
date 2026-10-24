@@ -179,8 +179,12 @@ agent_lookup() {
 }
 
 # agent_unset <scope> <key>: removes <key> at local or global scope; a key that
-# is not set is no error.
-agent_unset() { agent_cache_drop; git config "--$1" --unset-all "$2" 2>/dev/null || true; }
+# is not set (git config's exit 5) is no error; any other failure dies naming
+# the key.
+agent_unset() {
+  agent_cache_drop
+  git_config_unset "$1" "$2" 2>/dev/null || die "cannot clear $2 at $1 scope"
+}
 
 # agent_write <scope> <key> <value>: drops the cache, then writes the key; a
 # failed write fails the caller.
@@ -577,6 +581,10 @@ cmd_agent() {
       agent_show
       ;;
     clear) agent_clear "$@" ;;
+    roles)
+      [ $# -eq 0 ] || die "usage: orch.sh agent roles"
+      printf '%s\n' $AGENT_ROLES
+      ;;
     sync)
       [ $# -eq 0 ] || die "usage: orch.sh agent sync"
       agent_sync
@@ -588,6 +596,6 @@ cmd_agent() {
         agent_get "$1" "$get_host"
       else die "$get_usage"; fi
       ;;
-    *) die "unknown agent op: ${op:-<none>} (want set|show|clear|get|sync)" ;;
+    *) die "unknown agent op: ${op:-<none>} (want set|show|clear|get|sync|roles)" ;;
   esac
 }

@@ -34,6 +34,8 @@ assert_contains "the cap defaults to 3" "$out" "orchestrator.autopilot.cap 3 (de
 assert_contains "the handle defaults to the repo's owner" "$out" "orchestrator.autopilot.handle o (default)"
 assert_contains "the rounds default to 2" "$out" "orchestrator.autopilot.rounds 2 (default)"
 assert_contains "the budget defaults to 3" "$out" "orchestrator.autopilot.budget 3 (default)"
+assert_contains "the model has no default" "$out" "orchestrator.autopilot.model (none) (unset)"
+assert_contains "nor has the effort" "$out" "orchestrator.autopilot.effort (none) (unset)"
 
 out="$(GH_REPO=acme/widgets "$ORCH" autopilot show 2>&1)"
 assert_contains "the handle follows GH_REPO's owner" "$out" "orchestrator.autopilot.handle acme (default)"
@@ -71,6 +73,24 @@ git config --unset-all orchestrator.autopilot.rounds
 git config --unset-all orchestrator.autopilot.budget
 git config --unset-all orchestrator.autopilot.handle
 
+git config orchestrator.autopilot.model opus
+git config --global orchestrator.autopilot.effort inherit
+out="$("$ORCH" autopilot show 2>&1)"
+assert_contains "a set model shows with its source" "$out" "orchestrator.autopilot.model opus (local)"
+assert_contains "a stored inherit shows as inherit" "$out" "orchestrator.autopilot.effort inherit (global)"
+git config --global --unset-all orchestrator.autopilot.effort
+for kv in "model=gpt|sonnet|opus|haiku|fable|inherit" "effort=extreme|low|medium|high|xhigh|max|inherit" "model=Opus|sonnet|opus|haiku|fable|inherit"; do
+  k="${kv%%=*}"; rest="${kv#*=}"; v="${rest%%|*}"; allowed="${rest#*|}"
+  git config "orchestrator.autopilot.$k" "$v"
+  out="$("$ORCH" autopilot show 2>&1)"; st=$?
+  assert_status "autopilot show dies on $k=$v" "$st" 1
+  assert_contains "naming the key" "$out" "orchestrator.autopilot.$k is $v"
+  assert_contains "and the allowed values for $k" "$out" "want $allowed"
+  git config --unset-all "orchestrator.autopilot.$k"
+done
+git config --unset-all orchestrator.autopilot.model
+git config --unset-all orchestrator.autopilot.effort
+
 out="$("$ORCH" autopilot show extra 2>&1)"; st=$?
 assert_status "autopilot show refuses an argument" "$st" 1
 assert_contains "with its usage line" "$out" "usage: orch.sh autopilot show"
@@ -101,6 +121,15 @@ git config --unset-all orchestrator.autopilot.permission-mode
 out="$(PATH="$fakebin:$PATH" sourced_orch autopilot_gate 2>&1)"; st=$?
 assert_status "the gate refuses with no permission mode set" "$st" 1
 assert_contains "naming the key" "$out" "orchestrator.autopilot.permission-mode"
+git config orchestrator.autopilot.permission-mode plan
+for name in model effort; do
+  git config "orchestrator.autopilot.$name" gpt
+  out="$(PATH="$fakebin:$PATH" sourced_orch autopilot_gate 2>&1)"; st=$?
+  assert_status "the gate refuses $name gpt" "$st" 1
+  assert_contains "naming the $name key and value" "$out" "orchestrator.autopilot.$name is gpt"
+  git config --unset-all "orchestrator.autopilot.$name"
+done
+git config --unset-all orchestrator.autopilot.permission-mode
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "autopilot show is in the usage text" "$out" "autopilot show"
@@ -233,6 +262,8 @@ assert_contains "with a 2-hour background wait, whatever the caller sets" "$call
 # Every argument but the second, the prompt, which the line above matches.
 assert_eq "the session runs claude -p with the permission mode and the lean flags" "$(grep '^arg:' "$launcher_dir/calls" | sed -n '1p;3,$p' | tr '\n' '|')" \
   "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|"
+assert_not_contains "no --model when the key is unset" "$calls" "arg:--model"
+assert_not_contains "and no --effort" "$calls" "arg:--effort"
 assert_contains "in the side checkout, slugged by the title" "$calls" "dir:$side7"
 assert_contains "after orch:running was added" "$calls" "labels:7:orch:running orch:spec ready-for-agent "
 assert_eq "the flow adopted issue 7" "$(cd "$side7" && "$ORCH" state get issue)" "7"
@@ -252,6 +283,22 @@ assert_eq "its run pidfile is gone" "$(on_disk "$top/.orchestrator/autopilot/run
 logs="$(ls "$top/.orchestrator/autopilot/logs" 2>/dev/null)"
 assert_eq "one log, named <issue>-<phase>-<UTC timestamp>.log" \
   "$(grep -cE '^7-spec-[0-9]{8}-[0-9]{6}\.log$' <<<"$logs")" "1"
+
+# a set model and effort reach the launch; inherit passes neither
+printf '' >"$launcher_dir/calls"
+git config orchestrator.autopilot.model opus
+git config orchestrator.autopilot.effort inherit
+fake_issue 7 open ready-for-agent orch:spec
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "a set model is passed" "$(grep '^arg:' "$launcher_dir/calls" | tr '\n' '|')" "arg:--model|arg:opus|"
+assert_not_contains "an inherit effort is not passed" "$(cat "$launcher_dir/calls")" "arg:--effort"
+git config orchestrator.autopilot.effort high
+printf '' >"$launcher_dir/calls"
+fake_issue 7 open ready-for-agent orch:spec
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "a set effort is passed" "$(grep '^arg:' "$launcher_dir/calls" | tr '\n' '|')" "arg:--effort|arg:high|"
+git config --unset-all orchestrator.autopilot.model
+git config --unset-all orchestrator.autopilot.effort
 
 # a plan comment the issue already has is not posted again
 printf '' >"$launcher_dir/calls"
@@ -386,6 +433,12 @@ git config orchestrator.autopilot.permission-mode plan
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "tick refuses on Junie" "$st" 1
 assert_contains "saying so" "$out" "autopilot is Claude Code only"
+git config orchestrator.autopilot.model gpt
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "tick refuses an autopilot model outside the list" "$st" 1
+assert_contains "naming the key" "$out" "orchestrator.autopilot.model is gpt"
+assert_eq "before starting any session" "$(tick_calls)" "0"
+git config --unset-all orchestrator.autopilot.model
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: side checkouts, refusals and failed steps ----------------

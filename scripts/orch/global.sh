@@ -136,8 +136,10 @@ orch.sh - deterministic operations for the orchestrator flow
   autopilot show              print the autopilot settings, each with its
                               source: orchestrator.autopilot.permission-mode
                               (no default), .cap (3), .handle (the repo's
-                              owner), .rounds (2), .budget (3). Dies naming
-                              the key and value when one is out of range
+                              owner), .rounds (2), .budget (3), .model and
+                              .effort (no default; the agent setting's Claude
+                              Code values or inherit). Dies naming the key
+                              and value when one is out of range
   autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),
                               1 otherwise
   autopilot rounds            print the Rounds line of the flow's issue's
@@ -192,6 +194,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               `effort <level|inherit>`, each looked up local,
                               then global, else inherit; refuses a
                               disallowed value, naming its key
+  agent roles                 print the agent setting's roles, one per line
   agent sync                  write, refresh and delete this checkout's
                               .junie/agents/ copies of the plugin's agents
                               to match the Junie agent setting; refuses an

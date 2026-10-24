@@ -266,11 +266,17 @@ global git config. `orch.sh autopilot` has no `set` verb, so set one with
 | `handle` | the repo's owner | Who gets @mentioned when it needs you. |
 | `rounds` | 2 | Spec review rounds. |
 | `budget` | 3 | Review loop iterations. |
+| `model` | unset: the session's own default; else one of Claude Code's allowed models, `sonnet`, `opus`, `haiku` or `fable`, or `inherit` | The `--model` the headless phase session runs on. |
+| `effort` | unset: the session's own default; else one of Claude Code's allowed efforts, `low`, `medium`, `high`, `xhigh` or `max`, or `inherit` | The `--effort` the headless phase session runs on. |
 
 `rounds` and `budget` are only the defaults a hand-labelled issue's minimal
 plan comment gets. A flow started at the planning close runs the `Rounds` and
 `Budget` its plan's `## Autopilot` block sizes from the planned scope, and
 every review loop of that flow runs that budget.
+
+`model` and `effort` are validated against the agent setting's Claude Code
+allowed lists; unset or `inherit` passes no flag. The cascade: an agent role
+left at `inherit` inherits the phase session's model and effort.
 
 `orch.sh autopilot show` prints each setting's value and source. A headless
 session cannot answer a permission prompt, so the permission mode decides what
@@ -296,9 +302,25 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
 - **Optional:** `ORCH_GIT_NAME` and `ORCH_GIT_EMAIL` (commits default to the
   token owner's login and GitHub noreply address); `ORCH_PERMISSION_MODE`
   (default `bypassPermissions`), `ORCH_CAP`, `ORCH_HANDLE`, `ORCH_ROUNDS` and
-  `ORCH_BUDGET`, written to the matching `orchestrator.autopilot.*` keys, an
-  unset one leaving its key unset; `ORCH_CLONE_DIR` (default
-  `/home/orch/repo`).
+  `ORCH_BUDGET`, written to the matching `orchestrator.autopilot.*` keys;
+  `ORCH_CLONE_DIR` (default `/home/orch/repo`).
+- **Models:** `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's
+  model and effort (`orchestrator.autopilot.model` / `.effort`).
+  `ORCH_MODEL_<ROLE>` and `ORCH_EFFORT_<ROLE>`, with the role upper-case
+  (`IMPLEMENTER`, `LENS`, `REVIEWER`, `FIXER`, `CLOSER`, `RESOLVER`), set that
+  role's agent setting, written with `orch.sh agent set <role> --model|--effort
+  <v> --global`. A role left unset inherits the model and effort of the session
+  that starts it, so `ORCH_MODEL` alone moves every role whose model is unset,
+  `ORCH_EFFORT` likewise, and a role variable overrides it.
+- **Unset clears:** `docker/.env` is the one source of truth. `ORCH_CAP`,
+  `ORCH_HANDLE`, `ORCH_ROUNDS`, `ORCH_BUDGET`, `ORCH_MODEL`, `ORCH_EFFORT` and
+  every role variable, unset or empty, clears its global key at each start,
+  so a line deleted from `.env` takes effect after `docker restart`.
+- **Validated at startup:** once the clone exists, the entrypoint writes these
+  keys inside it and runs `orch.sh autopilot show`. Any refusal exits non-zero
+  with its `orch:` line, so a typo fails `docker compose up` and never runs the
+  watcher. A refused start keeps what it already wrote; the next start, with
+  `.env` fixed, writes or clears every key again.
 
 The repo is cloned into a named volume on first start and reused after, so
 side checkouts, flow state and logs survive a restart. Session logs stay

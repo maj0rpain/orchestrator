@@ -64,7 +64,15 @@ exit 2
 FAKE
 cat >"$root/orch.sh" <<'FAKE'
 #!/usr/bin/env bash
+# The fake orch.sh: logs pid, directory and arguments; prints a role list for
+# `agent roles`; and refuses, with an `orch:` line, any call whose arguments
+# contain $FAKE_ORCH_FAIL.
 printf 'pid=%s pwd=%s args=%s\n' "$$" "$PWD" "$*" >>"$ORCH_LOG"
+if [ -n "${FAKE_ORCH_FAIL:-}" ]; then
+  case "$*" in *"$FAKE_ORCH_FAIL"*) echo "orch: refused $*" >&2; exit 1 ;; esac
+fi
+[ "$*" = "agent roles" ] && printf '%s\n' implementer lens reviewer fixer closer resolver
+exit 0
 FAKE
 chmod +x "$fake_bin/gh"
 
@@ -88,6 +96,7 @@ run_entry() {
   local -a envs=(
     "PATH=$fake_bin:$PATH" "HOME=$home" "GH_LOG=$gh_log" "ORCH_LOG=$orch_log"
     "ORCH_SH=$root/orch.sh" "ORCH_CLONE_DIR=$clone" "FAKE_GH_FAIL=${FAKE_GH_FAIL:-}"
+    "FAKE_ORCH_FAIL=${FAKE_ORCH_FAIL:-}"
     "REPO=owner/name" "GH_TOKEN=tok" "CLAUDE_CODE_OAUTH_TOKEN=oauth"
   )
   local arg entry
@@ -183,12 +192,48 @@ assert_eq "budget is written" "$(cfg orchestrator.autopilot.budget)" 12
 assert_eq "permission-mode defaults to bypassPermissions" "$(HOME="$default_home" git config --global --get orchestrator.autopilot.permission-mode)" bypassPermissions
 run_entry ORCH_PERMISSION_MODE=
 assert_eq "an empty permission mode defaults too" "$(cfg orchestrator.autopilot.permission-mode)" bypassPermissions
-for key in cap handle rounds budget; do
-  assert_eq "an unset variable leaves $key unset" "$(HOME="$default_home" git config --global --get "orchestrator.autopilot.$key" >/dev/null 2>&1 && echo set || echo unset)" unset
+for key in cap handle rounds budget model effort; do
   upper="ORCH_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
-  run_entry "$upper="
-  assert_eq "an empty $upper leaves $key unset" "$(cfg_set "orchestrator.autopilot.$key")" unset
+  assert_eq "an unset variable leaves $key unset on a first start" "$(HOME="$default_home" git config --global --get "orchestrator.autopilot.$key" >/dev/null 2>&1 && echo set || echo unset)" unset
+  # A start that wrote the key, then one with the variable empty.
+  run_entry "$upper=1"
+  prior_home="$home" prior_clone="$clone"
+  assert_eq "$upper writes $key" "$(cfg "orchestrator.autopilot.$key")" 1
+  run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone" "$upper="
+  assert_eq "an empty $upper clears $key" "$(cfg_set "orchestrator.autopilot.$key")" unset
 done
+
+# Model and effort reach their global keys.
+run_entry ORCH_MODEL=opus ORCH_EFFORT=high
+assert_eq "ORCH_MODEL is written" "$(cfg orchestrator.autopilot.model)" opus
+assert_eq "ORCH_EFFORT is written" "$(cfg orchestrator.autopilot.effort)" high
+
+# Role variables: one agent set or agent clear call per role and kind.
+run_entry ORCH_MODEL_IMPLEMENTER=opus ORCH_EFFORT_LENS=low ORCH_MODEL_RESOLVER= ORCH_EFFORT_FIXER=high
+calls="$(grep -o 'args=agent .*' "$orch_log")"
+assert_contains "a role model variable is agent set" "$calls" "args=agent set implementer --model opus --global"
+assert_contains "a role effort variable is agent set" "$calls" "args=agent set lens --effort low --global"
+assert_contains "another role effort variable is agent set" "$calls" "args=agent set fixer --effort high --global"
+assert_contains "an empty role variable is agent clear" "$calls" "args=agent clear resolver --model --global"
+assert_contains "an unset role variable is agent clear" "$calls" "args=agent clear reviewer --effort --global"
+assert_eq "every role and kind gets exactly one call" "$(printf '%s\n' "$calls" | grep -c 'args=agent \(set\|clear\) ')" 12
+assert_contains "the role list comes from agent roles" "$calls" "args=agent roles"
+
+# autopilot show runs in the clone, before the watcher.
+show_line="$(grep -n 'args=autopilot show' "$orch_log" | cut -d: -f1)"
+watch_line="$(grep -n 'args=autopilot watch' "$orch_log" | cut -d: -f1)"
+assert_contains "autopilot show runs in the clone" "$(grep 'args=autopilot show' "$orch_log")" "pwd=$clone "
+assert_eq "autopilot show runs before autopilot watch" "$([ -n "$show_line" ] && [ "$show_line" -lt "$watch_line" ] && echo yes)" yes
+
+# A refusal exits with its line and never starts the watcher.
+for refused in "agent set implementer" "autopilot show" "agent roles" "agent clear"; do
+  FAKE_ORCH_FAIL="$refused" run_entry ORCH_MODEL_IMPLEMENTER=opus ORCH_MODEL=opus
+  assert_eq "a refused '$refused' exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
+  assert_contains "a refused '$refused' shows its orch line" "$err" "orch: refused $refused"
+  assert_eq "a refused '$refused' never runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 0
+done
+FAKE_ORCH_FAIL="agent set" run_entry ORCH_MODEL=opus ORCH_MODEL_LENS=low
+assert_eq "a refused start keeps what it already wrote" "$(cfg orchestrator.autopilot.model)" opus
 
 
 assert_contains "first start clones the repo into the clone dir" "$(<"$default_gh_log")" "repo clone owner/name $default_clone"
@@ -218,11 +263,11 @@ sh_out="$root/exec.pid"
 )
 entry_pid="$(<"$sh_out")"
 exec_dir="$(<"$sh_out.dir")"
-exec_line="$(<"$exec_dir/orch.log")"
+exec_line="$(grep 'args=autopilot watch' "$exec_dir/orch.log")"
 assert_contains "orch.sh autopilot watch runs" "$exec_line" "args=autopilot watch"
 assert_contains "it runs in the clone" "$exec_line" "pwd=$exec_dir/clone"
 assert_contains "it runs by exec: its PID is the entrypoint's" "$exec_line" "pid=$entry_pid "
-assert_eq "it runs once" "$(wc -l <"$exec_dir/orch.log" | tr -d ' ')" 1
+assert_eq "it runs once" "$(grep -c 'args=autopilot watch' "$exec_dir/orch.log")" 1
 
 # The Dockerfile's lean-session ENV lines, each a whole line.
 dockerfile="$DIR/../docker/Dockerfile"
