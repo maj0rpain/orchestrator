@@ -542,6 +542,29 @@ assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body, label names a
   "$(printf '%s' "$issue_gh_json" | jq -cS "$issue_json_jq")" \
   '{"body":"## Problem\n\nTracked in #6.","comments":[{"author":"pat","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}],"labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
 
+: >"$GH_FIXTURE/env.log"
+comments_json_jq='[.comments[] | {author: .author.login, createdAt, body, url}]'
+gh_reply 0 $'[{"author":"pat","body":"B.","createdAt":"2026-09-02T11:30:00Z","url":"https://github.com/acme/widgets/issues/23#issuecomment-1"}]\n' '' \
+  issue view 23 --json comments --jq "$comments_json_jq"
+out="$(contract adapter_issue_comments_json 23 2>&1)"; st=$?
+assert_status "issue comments json: reads author, date, body and url" "$st" 0
+assert_contains "printing the array it formatted" "$out" '"url":"https://github.com/acme/widgets/issues/23#issuecomment-1"'
+assert_eq "the jq keeps each comment's url, which gh-shaped JSON carries" \
+  "$(printf '%s' '{"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"body":"A.","createdAt":"2026-09-02T11:30:00Z","url":"https://x/1","isMinimized":false}]}' | jq -c "$comments_json_jq")" \
+  '[{"author":"pat","createdAt":"2026-09-02T11:30:00Z","body":"A.","url":"https://x/1"}]'
+gh_reply 1 '' 'HTTP 502: Bad Gateway' issue view 404 --json comments --jq "$comments_json_jq"
+out="$(contract adapter_issue_comments_json 404 2>&1)"; st=$?
+assert_status "issue comments json: a gh failure fails it" "$st" 1
+
+gh_reply 0 $'58\n57\n' '' pr list --state open --limit 1000 --json number --jq '.[].number'
+out="$(contract adapter_prs_open_all 2>&1)"; st=$?
+assert_status "open PRs: lists every open PR" "$st" 0
+assert_eq "newest first, one number per line" "$out" "$(writeln 58 57)"
+gh_reply 0 $'diff --git a/w b/w\n+widget\n' '' pr diff 57
+out="$(contract adapter_pr_diff 57 2>&1)"; st=$?
+assert_status "pr diff: reads the diff" "$st" 0
+assert_eq "printing it as gh does" "$out" "$(writeln 'diff --git a/w b/w' '+widget')"
+
 gh_reply 0 $'OPEN\nreview:nit\nneeds-triage\n' '' issue view 23 --json state,labels --jq '.state, (.labels[].name)'
 out="$(contract adapter_issue_state_labels 23 2>&1)"; st=$?
 assert_status "issue state and labels: reads both" "$st" 0

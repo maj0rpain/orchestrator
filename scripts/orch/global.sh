@@ -170,6 +170,16 @@ orch.sh - deterministic operations for the orchestrator flow
   autopilot answer <phase> <file>
                               write the newest question and every later
                               comment to <file>; exit 1 when none follows
+  autopilot questions         list each open needs-human issue of an autopilot
+                              flow, no flow state needed: a tab-separated
+                              line of issue, kind (question, replied or
+                              stop), phase and comment URL; one line saying
+                              so when nothing is pending
+  autopilot reply <issue> <file>
+                              post <file> as a comment, then remove
+                              needs-human; refused unless the label is still
+                              on and no comment follows the newest question
+  autopilot resume <issue>    remove needs-human from the issue, nothing else
   agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]
                               set a role's agent setting in local config,
                               or global with --global. Roles: implementer,
@@ -467,6 +477,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               file. Exits 1 writing nothing when the branch
                               has no open PR, 2 when GitHub cannot be read
                               or the call is wrong
+  pr read <issue> <file>      write the body of the open PR whose issue line
+                              is `Closes #<issue>` or `Refs #<issue>`, a
+                              `---` line, then its diff, to <file> -
+                              recording no state; exits 1 when no open PR
+                              names the issue or GitHub cannot be read
   pr draft                    turn the current branch's open PR into a draft,
                               recording no state. Exits 0 when done or the PR
                               is already a draft (saying so), 1 when the branch

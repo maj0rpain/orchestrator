@@ -241,8 +241,26 @@ autopilot_phase_move() {
   autopilot_release "$1" "${3:+$3, }moved the phase label to $(autopilot_phase_label "$2"), recorded phase $2"
 }
 
+# The first line of a question comment opens with this, then the phase, then
+# " -->".
+AUTOPILOT_QUESTION_PREFIX='<!-- orch:question '
+
+# The jq definitions every reader of a comment list shares, so the question
+# marker test is written once: question_comment is true for a comment whose
+# first line is a question marker (of $phase, or of any phase when $phase is
+# empty); stop_phase is the phase a refusal or failure comment names, else null.
+AUTOPILOT_COMMENT_JQ='
+  def first_line: .body | split("\n")[0] | rtrimstr("\r");
+  def question_comment($phase):
+    first_line | startswith($prefix) and endswith(" -->")
+      and ($phase == "" or . == $prefix + $phase + " -->");
+  def question_phase: first_line | ltrimstr($prefix) | rtrimstr(" -->");
+  def stop_phase:
+    first_line | first(capture("^Autopilot (refused to run|failed in) the (?<p>[^ ]+) phase") | .p) // null;
+'
+
 # autopilot_question_marker <phase>: the first line of a question comment.
-autopilot_question_marker() { printf '<!-- orch:question %s -->\n' "$1"; }
+autopilot_question_marker() { printf '%s%s -->\n' "$AUTOPILOT_QUESTION_PREFIX" "$1"; }
 
 # autopilot_phase_arg <phase>: dies unless <phase> is a phase a question can be
 # asked in - a flow phase other than done.
@@ -281,8 +299,8 @@ autopilot_answer() {
   require_state
   require_issue issue
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  out="$(jq -j --arg m "$(autopilot_question_marker "$phase")" '
-    (.comments | map(.body | split("\n")[0] | rtrimstr("\r") == ($m | rtrimstr("\n"))) | rindex(true)) as $q
+  out="$(jq -j --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
+    (.comments | map(question_comment($phase)) | rindex(true)) as $q
     | if $q == null then "noq" elif $q == (.comments | length) - 1 then "noreply"
       else (.comments[$q:] | map(.body) | .[0] |= (split("\n")[1:] | join("\n")) | join("\n---\n")) end' <<<"$json")" ||
     die "could not read issue #$issue's comments"
@@ -292,6 +310,86 @@ autopilot_answer() {
   esac
   mkdir -p "$(dirname "$file")"
   printf '%s\n' "$out" >"$file"
+}
+
+# --- questions, reply and resume (#1571) ------------------------------------
+#
+# The verbs behind /orchestrator:questions. They hold no flow state: the issue
+# comes from the arguments, the repo from the checkout's origin.
+
+# autopilot_human_labelled <issue>: dies unless the issue is open and carries
+# needs-human.
+autopilot_human_labelled() {
+  # state is read with the labels.
+  local issue="$1" state labels gh_err
+  issue_state_labels_read "$issue" state labels gh_err || gh_die "read issue #$issue" "$gh_err"
+  [ "$state" = OPEN ] || die "issue #$issue is closed"
+  list_has "$labels" "$AUTOPILOT_HUMAN_LABEL" || die "issue #$issue does not carry $AUTOPILOT_HUMAN_LABEL"
+}
+
+# autopilot_resume <issue>: removes needs-human from the issue, and nothing
+# else.
+autopilot_resume() {
+  local issue="$1" gh_err
+  is_positive_int "$issue" || die "not an issue number: $issue"
+  autopilot_human_labelled "$issue"
+  capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL" ||
+    gh_die "remove $AUTOPILOT_HUMAN_LABEL from issue #$issue" "$gh_err"
+}
+
+# autopilot_reply <issue> <file>: posts <file> as a comment on the issue, then
+# removes needs-human - refused unless the label is still on and no comment
+# follows the issue's newest question comment.
+autopilot_reply() {
+  local issue="$1" file="$2" json verdict gh_err
+  is_positive_int "$issue" || die "not an issue number: $issue"
+  [ -f "$file" ] || die "reply file not found: $file"
+  [ -s "$file" ] || die "reply file is empty: $file"
+  autopilot_human_labelled "$issue"
+  gh_or_die --out json "read the comments of issue #$issue" adapter_issue_comments_json "$issue"
+  verdict="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" "$AUTOPILOT_COMMENT_JQ"'
+    (map(question_comment("")) | rindex(true)) as $q
+    | if $q == null then "noq" elif $q != length - 1 then "followed" else "ok" end' <<<"$json")" ||
+    die "could not read issue #$issue's comments"
+  case "$verdict" in
+    noq) die "issue #$issue has no question comment to reply to" ;;
+    followed) die "a comment already follows the newest question on issue #$issue" ;;
+  esac
+  capture_err gh_err adapter_issue_comment "$issue" "$file" || gh_die "post the reply on issue #$issue" "$gh_err"
+  capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL" ||
+    die "the reply comment landed on issue #$issue, but $AUTOPILOT_HUMAN_LABEL could not be removed: $(gh_reason "$gh_err")"
+}
+
+# autopilot_questions: one tab-separated line per open needs-human issue that
+# carries a phase label other than orch:done: the issue, its kind (question,
+# replied or stop), the phase, and the URL of the comment the kind is about.
+# The newest of the issue's question comments and stop comments decides the
+# kind. Prints one line saying so when nothing is listed; dies, printing
+# nothing, when any read fails.
+autopilot_questions() {
+  local list err n state labels p phase json line lines="" gh_err
+  capture list err adapter_issues_labelled "$AUTOPILOT_HUMAN_LABEL" ||
+    gh_die "list the $AUTOPILOT_HUMAN_LABEL issues" "$err"
+  for n in $(printf '%s\n' "$list" | sort -n); do
+    issue_state_labels_read "$n" state labels gh_err || gh_die "read the labels of issue #$n" "$gh_err"
+    phase=""
+    for p in $(autopilot_phase_labels_in "$labels"); do
+      [ "$p" = "done" ] && continue
+      phase="$p"; break
+    done
+    [ -n "$phase" ] || continue
+    gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
+    line="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg n "$n" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
+      (to_entries | map(select(.value | question_comment(""))) | last) as $q
+      | (to_entries | map(select(.value | stop_phase != null)) | last) as $s
+      | if $q != null and ($s == null or $q.key > $s.key) then
+          [$n, (if $q.key == length - 1 then "question" else "replied" end), ($q.value | question_phase), $q.value.url]
+        elif $s != null then [$n, "stop", ($s.value | stop_phase), $s.value.url]
+        else [$n, "stop", $phase, ""] end
+      | @tsv' <<<"$json")" || die "could not read issue #$n's comments"
+    lines+="$line"$'\n'
+  done
+  if [ -n "$lines" ]; then printf '%s' "$lines"; else printf 'nothing pending: no open %s issue of an autopilot flow\n' "$AUTOPILOT_HUMAN_LABEL"; fi
 }
 
 # --- tick and run (#1458) ---------------------------------------------------
@@ -785,10 +883,22 @@ cmd_autopilot() {
       [ $# -eq 1 ] || die "usage: orch.sh autopilot run <issue>"
       autopilot_run "$1"
       ;;
+    questions)
+      [ $# -eq 0 ] || die "usage: orch.sh autopilot questions"
+      autopilot_questions
+      ;;
+    reply)
+      [ $# -eq 2 ] || die "usage: orch.sh autopilot reply <issue> <file>"
+      autopilot_reply "$1" "$2"
+      ;;
+    resume)
+      [ $# -eq 1 ] || die "usage: orch.sh autopilot resume <issue>"
+      autopilot_resume "$1"
+      ;;
     ask|answer)
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|questions|reply|resume)" ;;
   esac
 }

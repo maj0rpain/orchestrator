@@ -377,6 +377,25 @@ cmd_pr_update() {
   gh_or_die "replace the body of PR #$pr" adapter_pr_body_edit "$pr" "$file"
 }
 
+# pr read <issue> <file>: writes the body of the open PR whose body opens with
+# the issue line `Closes #<issue>` or `Refs #<issue>` (the newest, where
+# several do), a `---` line, then its diff, to <file>.
+cmd_pr_read() {
+  [ $# -eq 2 ] || die "usage: orch.sh pr read <issue> <file>"
+  local issue="$1" file="$2" open pr body line found="" diff
+  is_positive_int "$issue" || die "not an issue number: $issue"
+  gh_or_die --out open "list the open PRs" adapter_prs_open_all
+  for pr in $open; do
+    gh_or_die --out body "read the body of PR #$pr" adapter_pr_body "$pr"
+    line="$(printf '%s\n' "$body" | sed -n '1{s/\r$//;p;}')"
+    if [ "$line" = "Closes #$issue" ] || [ "$line" = "Refs #$issue" ]; then found="$pr"; break; fi
+  done
+  [ -n "$found" ] || die "no open PR closes or refers to issue #$issue"
+  gh_or_die --out diff "read the diff of PR #$found" adapter_pr_diff "$found"
+  mkdir -p "$(dirname "$file")"
+  printf '%s\n\n---\n%s\n' "$body" "$diff" >"$file"
+}
+
 cmd_pr() {
   local op="${1:-}"
   shift || true
@@ -387,9 +406,10 @@ cmd_pr() {
     comment) cmd_pr_comment "$@" ;;
     comments) cmd_pr_comments "$@" ;;
     fetch)   cmd_pr_fetch "$@" ;;
+    read)    cmd_pr_read "$@" ;;
     update)  cmd_pr_update "$@" ;;
     draft)   cmd_pr_draft "$@" ;;
     ready)   cmd_pr_ready "$@" ;;
-    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment|comments|fetch|update|draft|ready)" ;;
+    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment|comments|fetch|read|update|draft|ready)" ;;
   esac
 }

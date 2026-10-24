@@ -1054,3 +1054,36 @@ assert_contains "with its usage" "$err" "usage: orch.sh pr comments <file>"
 
 assert_contains "help documents pr comments" "$("$ORCH" help)" "pr comments <file>"
 rm -f "$pr_comments"
+
+# --- pr read (#1573) ----------------------------------------------------------
+# The body and diff of the open PR that closes or refers to an issue, for a
+# review-phase question's context.
+echo
+echo "pr read"
+new_repo >/dev/null
+fake_github
+out_file="$(mktemp -d)/pr.md"
+out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
+assert_status "pr read with no PR for the issue fails" "$st" 1
+assert_contains "saying so" "$out" "no open PR"
+fake_pr 56 open orch/99-other main
+fake_pr_body 56 $'Closes #99\n\nNot this one.\n'
+fake_pr 57 open orch/12-foo main
+fake_pr_body 57 $'Refs #12\n\nAdds the widget.\n'
+printf 'diff --git a/w b/w\n+widget\n' >"$ORCH_GH_FAKE_STORE/prs/57/diff"
+fake_pr 58 open orch/120-bar main
+fake_pr_body 58 $'Closes #120\n'
+out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
+assert_status "pr read finds the PR whose issue line names the issue" "$st" 0
+assert_eq "writing its body, a rule, then its diff" "$(cat "$out_file")" \
+  "$(printf 'Refs #12\n\nAdds the widget.\n\n---\ndiff --git a/w b/w\n+widget')"
+out="$("$ORCH" pr read 12 2>&1)"; st=$?
+assert_status "pr read without a file fails" "$st" 1
+assert_contains "with its usage" "$out" "usage: orch.sh pr read <issue> <file>"
+fake_fail adapter_pr_diff "HTTP 502"
+out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
+assert_status "a failed diff read fails" "$st" 1
+fake_unfail
+help="$("$ORCH" help)"
+assert_contains "help documents pr read" "$help" "pr read <issue> <file>"
+restore_suite_env

@@ -42,6 +42,7 @@
 #   prs/<n>/head_oid  the head commit's SHA; absent, forty zeros
 #   prs/<n>/commits   the PR's commit SHAs, one per line, oldest first;
 #                     absent, the head alone
+#   prs/<n>/diff      the PR's diff, byte for byte; absent, an empty one
 #   prs/<n>/comments/<k>/{author,created,body}
 #                     the PR's k-th comment
 #   next_pr           the number the next opened PR takes; absent, one past
@@ -306,6 +307,25 @@ adapter_issue_json() {
     --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
     --argjson c "$comments" \
     '{number: $n, title: $t, body: $b, labels: $l, comments: $c}'
+}
+
+# adapter_issue_comments_json <n>: the stored comments as one JSON array of
+# author, createdAt, body and url, the url being
+# https://github.com/o/r/issues/<n>#issuecomment-<k> for the k-th comment.
+adapter_issue_comments_json() {
+  ! fake_failing adapter_issue_comments_json || return 1
+  fake_issue_known "$1" || return 1
+  local d k comments="[]"
+  d="$(fake_issue_dir "$1")"
+  if [ -d "$d/comments" ]; then
+    for k in $(ls "$d/comments" | sort -n); do
+      comments="$(jq -c --arg a "$(cat "$d/comments/$k/author")" \
+        --arg c "$(cat "$d/comments/$k/created")" --rawfile b "$d/comments/$k/body" \
+        --arg u "https://github.com/o/r/issues/$1#issuecomment-$k" \
+        '. + [{author: $a, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
+    done
+  fi
+  printf '%s\n' "$comments"
 }
 
 # adapter_issue_state_labels <n>: the stored state, then its labels. Lagging
@@ -624,6 +644,25 @@ adapter_prs_open() {
     [ -z "${2:-}" ] || [ "$(cat "$d/base")" = "$2" ] || continue
     basename "$d"
   done | sort -rn
+}
+
+# adapter_prs_open_all: every open PR in the store, newest first.
+adapter_prs_open_all() {
+  local d
+  ! fake_failing adapter_prs_open_all || return 1
+  for d in "$(fake_store)"/prs/*/; do
+    [ -d "$d" ] || continue
+    [ "$(cat "$d/state")" = OPEN ] || continue
+    basename "$d"
+  done | sort -rn
+}
+
+# adapter_pr_diff <n>: the stored diff, byte for byte.
+adapter_pr_diff() {
+  ! fake_failing adapter_pr_diff || return 1
+  fake_pr_known "$1" || return 1
+  cat "$(fake_pr_dir "$1")/diff" 2>/dev/null
+  return 0
 }
 
 # adapter_prs_merged <head> <base>: the merged PRs in the store from the head

@@ -655,3 +655,175 @@ assert_eq "the claim is still held" "$(fake_claim_held 8)" held
 fake_unfail
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
+
+# --- autopilot questions, reply and resume ------------------------------------
+# The three verbs behind /orchestrator:questions: they hold no flow state, so
+# the repo here is a bare checkout with an origin and no state.json.
+echo
+echo "autopilot questions, reply and resume"
+new_repo >/dev/null
+fake_github
+# post_stop <issue> <refusal|failure> <phase> <detail>: a stop comment as
+# autopilot_stop itself words it.
+post_stop() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_stop "$@" >/dev/null 2>&1; }
+# question_of <phase>: a question comment body of that phase.
+question_of() { printf '<!-- orch:question %s -->\n@o\n\n1. Keep it? Recommended: yes\n' "$1"; }
+url_of() { printf 'https://github.com/o/r/issues/%s#issuecomment-%s' "$1" "$2"; }
+
+assert_eq "no state.json exists in the checkout" "$(on_disk .orchestrator/state.json)" absent
+out="$("$ORCH" autopilot questions 2>&1)"; st=$?
+assert_status "nothing labelled needs-human exits 0" "$st" 0
+assert_contains "saying nothing is pending" "$out" "nothing pending"
+assert_eq "in one line" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
+
+# a pending question
+fake_issue 11 open needs-human orch:spec
+fake_comment 11 o 2026-01-01T00:00:00Z "$(question_of spec)"
+# several earlier questions: only the newest counts, across phases
+fake_issue 12 open needs-human orch:review
+fake_comment 12 o 2026-01-01T00:00:00Z "$(question_of spec)"
+fake_comment 12 o 2026-01-02T00:00:00Z "$(question_of implement)"
+fake_comment 12 o 2026-01-03T00:00:00Z "$(question_of review)"
+# replied: a comment follows the question
+fake_issue 13 open needs-human orch:implement
+fake_comment 13 o 2026-01-01T00:00:00Z "$(question_of implement)"
+fake_comment 13 h 2026-01-02T00:00:00Z "1: A"
+# a stop with the comment's phase differing from the label
+fake_issue 14 open needs-human orch:review
+post_stop 14 failure implement "step x failed"
+# neither comment: the phase comes from the earliest phase label
+fake_issue 15 open needs-human orch:review orch:implement
+# a question then a stop, and a stop then a question
+fake_issue 16 open needs-human orch:spec
+fake_comment 16 o 2026-01-01T00:00:00Z "$(question_of spec)"
+post_stop 16 refusal spec "no plan"
+fake_issue 17 open needs-human orch:spec
+post_stop 17 refusal spec "no plan"
+fake_comment 17 o 2026-01-09T00:00:00Z "$(question_of spec)"
+# left out: no phase label, orch:done, closed, and not needs-human
+fake_issue 18 open needs-human ready-for-agent
+fake_issue 19 open needs-human orch:done
+fake_issue 20 closed needs-human orch:spec
+fake_issue 21 open orch:spec
+fake_comment 21 o 2026-01-01T00:00:00Z "$(question_of spec)"
+out="$("$ORCH" autopilot questions 2>&1)"; st=$?
+assert_status "listing succeeds" "$st" 0
+tab=$'\t'
+assert_eq "a pending question" "$(grep "^11$tab" <<<"$out")" "11${tab}question${tab}spec${tab}$(url_of 11 1)"
+assert_eq "the newest of several questions decides, in its own phase" "$(grep "^12$tab" <<<"$out")" "12${tab}question${tab}review${tab}$(url_of 12 3)"
+assert_eq "a question with a reply is replied" "$(grep "^13$tab" <<<"$out")" "13${tab}replied${tab}implement${tab}$(url_of 13 1)"
+assert_eq "a stop comment's phase wins over the label's" "$(grep "^14$tab" <<<"$out")" "14${tab}stop${tab}implement${tab}$(url_of 14 1)"
+assert_eq "no comment at all is a stop in the earliest labelled phase, URL empty" "$(grep "^15$tab" <<<"$out")" "15${tab}stop${tab}implement${tab}"
+assert_eq "a stop after a question is a stop" "$(grep "^16$tab" <<<"$out")" "16${tab}stop${tab}spec${tab}$(url_of 16 2)"
+assert_eq "a question after a stop is a question" "$(grep "^17$tab" <<<"$out")" "17${tab}question${tab}spec${tab}$(url_of 17 2)"
+assert_eq "an issue with no phase label, orch:done, closed or not needs-human is left out" \
+  "$(cut -f1 <<<"$out" | tr '\n' ' ')" "11 12 13 14 15 16 17 "
+# the marker test is shared with answer
+fake_issue 22 open needs-human orch:spec
+fake_comment 22 o 2026-01-01T00:00:00Z "$(question_of spec)"
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "a listed pending question" "$out" "22${tab}question"
+"$ORCH" autopilot answer spec "$(mktemp)" >/dev/null 2>&1; st=$?
+assert_status "is one answer reports unanswered" "$st" 1
+fake_comment 22 h 2026-01-02T00:00:00Z "1: A"
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "and once replied, listed as replied" "$out" "22${tab}replied"
+# a comment that only mentions the marker is no question
+fake_issue 23 open needs-human orch:spec
+fake_comment 23 o 2026-01-01T00:00:00Z $'see the marker\n<!-- orch:question spec -->'
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "a marker off the first line is no question" "$out" "23${tab}stop${tab}spec${tab}"
+for n in 11 12 13 14 15 16 17 18 19 20 21 22 23; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done
+fake_issue 11 open needs-human orch:spec
+fake_issue 12 open needs-human orch:spec
+fake_fail adapter_issue_comments_json "$GH_502"
+out="$("$ORCH" autopilot questions 2>/dev/null)"; st=$?
+assert_status "an adapter read failure dies" "$st" 1
+assert_eq "listing nothing" "$out" ""
+fake_unfail
+fake_fail adapter_issues_labelled "$GH_502"
+"$ORCH" autopilot questions >/dev/null 2>&1; st=$?
+assert_status "a failed listing dies" "$st" 1
+fake_unfail
+
+# usage
+for v in "questions x" "reply 11" "reply" "resume" "resume 11 x"; do
+  out="$("$ORCH" autopilot $v 2>&1)"; st=$?
+  assert_status "autopilot $v dies" "$st" 1
+  assert_contains "with its usage" "$out" "orch: usage: orch.sh autopilot ${v%% *}"
+done
+
+# resume
+fake_issue 30 open needs-human orch:spec
+"$ORCH" autopilot resume 30 >/dev/null 2>&1; st=$?
+assert_status "resume succeeds" "$st" 0
+assert_eq "removing only needs-human" "$(fake_labels_of 30)" "orch:spec "
+out="$("$ORCH" autopilot resume 30 2>&1)"; st=$?
+assert_status "resume without the label dies" "$st" 1
+assert_contains "naming needs-human" "$out" "needs-human"
+fake_issue 31 closed needs-human orch:spec
+out="$("$ORCH" autopilot resume 31 2>&1)"; st=$?
+assert_status "resume on a closed issue dies" "$st" 1
+assert_contains "saying closed" "$out" "closed"
+assert_eq "leaving its labels" "$(fake_labels_of 31)" "needs-human orch:spec "
+out="$("$ORCH" autopilot resume 999 2>&1)"; st=$?
+assert_status "resume on a missing issue dies" "$st" 1
+fake_issue 32 open needs-human orch:spec
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$("$ORCH" autopilot resume 32 2>&1)"; st=$?
+assert_status "resume on an adapter failure dies" "$st" 1
+assert_contains "with gh's reason" "$out" "HTTP 500"
+fake_unfail
+
+# reply
+r="$(mktemp)"; printf '1: Yes, keep it\n' >"$r"
+fake_issue 40 open needs-human orch:spec
+fake_comment 40 o 2026-01-01T00:00:00Z "$(question_of spec)"
+"$ORCH" autopilot reply 40 "$r" >/dev/null 2>&1; st=$?
+assert_status "reply succeeds" "$st" 0
+assert_eq "posting the file as a comment" "$(fake_comments_of 40 | tail -1)" "1: Yes, keep it"
+assert_eq "and removing needs-human" "$(fake_labels_of 40)" "orch:spec "
+# posts before removing the label: a failed removal leaves the comment
+fake_issue 41 open needs-human orch:spec
+fake_comment 41 o 2026-01-01T00:00:00Z "$(question_of spec)"
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$("$ORCH" autopilot reply 41 "$r" 2>&1)"; st=$?
+assert_status "a failed label removal dies" "$st" 1
+assert_contains "saying the comment landed" "$out" "comment landed"
+assert_eq "the comment is there" "$(fake_comments_of 41 | tail -1)" "1: Yes, keep it"
+fake_unfail
+# a failed post leaves the label
+fake_issue 42 open needs-human orch:spec
+fake_comment 42 o 2026-01-01T00:00:00Z "$(question_of spec)"
+fake_fail adapter_issue_comment "HTTP 500"
+"$ORCH" autopilot reply 42 "$r" >/dev/null 2>&1; st=$?
+assert_status "a failed post dies" "$st" 1
+assert_eq "leaving the label" "$(fake_labels_of 42)" "needs-human orch:spec "
+fake_unfail
+# refusals post nothing
+fake_issue 43 open orch:spec
+fake_comment 43 o 2026-01-01T00:00:00Z "$(question_of spec)"
+out="$("$ORCH" autopilot reply 43 "$r" 2>&1)"; st=$?
+assert_status "reply without needs-human is refused" "$st" 1
+assert_contains "naming it" "$out" "needs-human"
+assert_eq "posting nothing" "$(fake_comments_of 43 | grep -c 'Yes, keep')" "0"
+fake_issue 44 open needs-human orch:spec
+fake_comment 44 o 2026-01-01T00:00:00Z "$(question_of spec)"
+fake_comment 44 h 2026-01-02T00:00:00Z "1: A"
+out="$("$ORCH" autopilot reply 44 "$r" 2>&1)"; st=$?
+assert_status "reply after a comment followed the question is refused" "$st" 1
+assert_eq "posting nothing" "$(fake_comments_of 44 | grep -c 'Yes, keep')" "0"
+assert_eq "and keeping the label" "$(fake_labels_of 44)" "needs-human orch:spec "
+fake_issue 45 open needs-human orch:spec
+out="$("$ORCH" autopilot reply 45 "$r" 2>&1)"; st=$?
+assert_status "reply with no question comment is refused" "$st" 1
+fake_issue 46 open needs-human orch:spec
+fake_comment 46 o 2026-01-01T00:00:00Z "$(question_of spec)"
+out="$("$ORCH" autopilot reply 46 "$TMPDIR/none-$$" 2>&1)"; st=$?
+assert_status "a missing file is refused" "$st" 1
+: >"$r.empty"
+out="$("$ORCH" autopilot reply 46 "$r.empty" 2>&1)"; st=$?
+assert_status "an empty file is refused" "$st" 1
+assert_eq "posting nothing" "$(fake_comments_of 46 | wc -l | tr -d ' ')" "3"
+assert_eq "keeping the label" "$(fake_labels_of 46)" "needs-human orch:spec "
+restore_suite_env
