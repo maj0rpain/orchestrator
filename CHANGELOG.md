@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.34.0
+
+The test suite no longer sizes itself to the whole machine. `orch_test.sh`'s
+default `ORCH_TEST_JOBS` is now half the usable CPUs, at least 1 - the online
+cores, lowered to a cgroup v2 `cpu.max` quota when one is set - and the full
+count under `CI`. `all.sh` runs at most that many shellcheck processes at once
+instead of one per file all at once, and rejects an invalid `ORCH_TEST_JOBS`
+before starting anything. Both runners lower their own priority to niceness 10
+outside CI. The autopilot container takes a new optional `ORCH_CPUS` in its env
+file, which limits the container's CPU for any repo's tests; unset means no
+limit.
+
 ## 4.33.0
 
 The autopilot container now sets which models autopilot runs on from its env

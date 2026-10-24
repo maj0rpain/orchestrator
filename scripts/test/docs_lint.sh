@@ -76,6 +76,8 @@
 #     doctor
 #   scan_build_args  every build arg docker/compose.yaml interpolates is named
 #     in docker/.env.example
+#   scan_cpu_limit  the autopilot service limits CPU from ORCH_CPUS and
+#     docker/.env.example mentions it
 #   scan_review_pass  the review pass is defined once in orch-review-pass and
 #     quick implementation's step 6 runs it
 #   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the
@@ -1953,6 +1955,28 @@ printf '# FOO=\nBAR=1\n' >"$fixture/docker/.env.example"
 assert_empty "build args all listed in .env.example are not flagged" "$(scan_build_args "$fixture")"
 check "every build arg docker/compose.yaml interpolates is named in docker/.env.example" \
   "$(scan_build_args "$PLUGIN_ROOT")"
+
+# The autopilot service's CPU limit reads ORCH_CPUS (0 = no limit when unset),
+# and .env.example documents it (#1587).
+# scan_cpu_limit <plugin root>: one line per break of that rule.
+scan_cpu_limit() {
+  local r="$1"
+  grep -qE '^ +cpus: \$\{ORCH_CPUS:-0\}$' "$r/docker/compose.yaml" ||
+    echo 'docker/compose.yaml: autopilot has no cpus: ${ORCH_CPUS:-0} line'
+  grep -q 'ORCH_CPUS' "$r/docker/.env.example" ||
+    echo "docker/.env.example: does not mention ORCH_CPUS"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docker"
+printf 'services:\n  a:\n    restart: no\n' >"$fixture/docker/compose.yaml"
+printf '# FOO=\n' >"$fixture/docker/.env.example"
+flags "a compose file without the ORCH_CPUS limit is flagged" \
+  "$(scan_cpu_limit "$fixture")" "autopilot has no cpus"
+flags "an .env.example without ORCH_CPUS is flagged" \
+  "$(scan_cpu_limit "$fixture")" "does not mention ORCH_CPUS"
+check "docker/compose.yaml limits CPU from ORCH_CPUS and .env.example documents it" \
+  "$(scan_cpu_limit "$PLUGIN_ROOT")"
 
 # --- review pass (#342) -------------------------------------------------------
 echo

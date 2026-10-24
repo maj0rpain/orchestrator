@@ -14,6 +14,7 @@ services:
       args:
         EXTRA_APT_PACKAGES: ${EXTRA_APT_PACKAGES:-}
     restart: unless-stopped
+    cpus: ${ORCH_CPUS:-0}
     env_file: ${ORCH_ENV_FILE:-.env}
     volumes:
       - repo:/home/orch/repo
