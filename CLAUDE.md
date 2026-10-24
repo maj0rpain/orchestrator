@@ -60,8 +60,11 @@ go in the file for the noun it touches (a new noun gets a new file; a concept
 module with no noun, `checkout.sh`, `filed-finding.sh` or `known-items.sh`, gets
 a section file named as it is).
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
-the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so
-every section must pass on its own.
+half the usable CPUs, rounded down, at least 1, and all of them under `CI`;
+usable CPUs are the online cores, lowered to a cgroup v2 `cpu.max` quota;
+`ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
+pass on its own. all.sh runs at most that many shellcheck processes at once, and
+both runners lower their own niceness to 10 outside `CI`.
 Helper placement is checked by harness.sh's placement section; its failure
 message states the rule. Before writing or reusing a helper, run
 `scripts/dev/helpers.sh` (orch.sh's modules) or `scripts/dev/helpers.sh --tests`

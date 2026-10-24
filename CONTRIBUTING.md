@@ -44,9 +44,13 @@ only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
-the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so
-every section must pass on its own. Helper placement is checked by harness.sh's
-placement section; its failure message states the rule.
+half the usable CPUs, rounded down, at least 1, and all of them under `CI`;
+usable CPUs are the online cores, lowered to a cgroup v2 `cpu.max` quota;
+`ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
+pass on its own. all.sh runs at most that many shellcheck processes at once, and
+both runners lower their own niceness to 10 outside `CI`.
+Helper placement is checked by harness.sh's placement section; its failure
+message states the rule.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
 noun's code, named as that noun's test file is, and a helper lives in the
@@ -243,6 +247,7 @@ scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of 
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), and all.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
+scripts/test/test_jobs.sh     the job-count and priority helpers orch_test.sh and all.sh both source: the default ORCH_TEST_JOBS and the renice to 10
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
 scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
