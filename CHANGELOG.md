@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.32.12
+
+The autopilot watcher now names a picked-up flow's slug and branch from the issue title alone, shortened to whole words of at most 40 characters, instead of repeating the issue number and using the whole title.
+
+## 4.32.11
+
+An autopilot phase session now waits up to 2 hours, not print mode's default 10 minutes, for its background ticket subagents, so a long build is no longer stopped mid-run.
+
 ## 4.32.10
 
 The agent module reads one host table in place of its repeated host and kind switches, builds a role's line and the clear remedy in one helper each, and parses --host in one place, so agent clear and agent get refuse a missing or unknown --host value with the same messages as agent set. The agent set help entry no longer lists the roles, models and efforts.
