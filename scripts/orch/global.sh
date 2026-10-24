@@ -172,15 +172,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               comment to <file>; exit 1 when none follows
   agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]
                               set a role's agent setting in local config,
-                              or global with --global. Roles: implementer,
-                              lens, reviewer, fixer, closer, resolver; models:
-                              sonnet, opus, haiku, fable; efforts: low,
-                              medium, high, xhigh, max; inherit clears the
-                              key at that scope. Validates everything before
-                              writing; refuses a call with neither flag.
-                              --host junie sets the Junie keys instead:
-                              any name Junie's /model picker and --model
-                              flag take, efforts low, medium, high
+                              or global with --global. agent show lists the
+                              roles; a refused value names the allowed ones;
+                              inherit clears the key at that scope. Validates
+                              everything before writing; refuses a call with
+                              neither flag. --host junie sets the Junie keys
+                              instead
   agent show                  print each role's model and effort with each
                               one's source: local, global or inherit; a
                               disallowed hand-set value is marked invalid;
