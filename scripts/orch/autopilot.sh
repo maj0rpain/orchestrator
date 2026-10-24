@@ -280,6 +280,7 @@ AUTOPILOT_COMMENT_JQ='
   def question_comment($phase):
     first_line | startswith($prefix) and endswith(" -->")
       and ($phase == "" or . == $prefix + $phase + " -->");
+  def newest_question($phase): map(question_comment($phase)) | rindex(true);
   def question_phase: first_line | ltrimstr($prefix) | rtrimstr(" -->");
   def stop_phase:
     first_line | first(capture("^(?:'"$AUTOPILOT_REFUSAL_OPENING|$AUTOPILOT_FAILURE_OPENING"')(?<p>[^ ]+) phase") | .p) // null;
@@ -326,7 +327,7 @@ autopilot_answer() {
   require_issue issue
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
   out="$(jq -j --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
-    (.comments | map(question_comment($phase)) | rindex(true)) as $q
+    (.comments | newest_question($phase)) as $q
     | if $q == null then "noq" elif $q == (.comments | length) - 1 then "noreply"
       else (.comments[$q:] | map(.body) | .[0] |= (split("\n")[1:] | join("\n")) | join("\n---\n")) end' <<<"$json")" ||
     die "could not read issue #$issue's comments"
@@ -356,11 +357,10 @@ autopilot_human_labelled() {
 # autopilot_resume <issue>: removes needs-human from the issue, and nothing
 # else.
 autopilot_resume() {
-  local issue="$1" gh_err
+  local issue="$1"
   is_positive_int "$issue" || die "not an issue number: $issue"
   autopilot_human_labelled "$issue"
-  capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL" ||
-    gh_die "remove $AUTOPILOT_HUMAN_LABEL from issue #$issue" "$gh_err"
+  gh_or_die "remove $AUTOPILOT_HUMAN_LABEL from issue #$issue" adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL"
 }
 
 # autopilot_reply <issue> <file>: posts <file> as a comment on the issue, then
@@ -374,14 +374,14 @@ autopilot_reply() {
   autopilot_human_labelled "$issue"
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_comments_json "$issue"
   verdict="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" "$AUTOPILOT_COMMENT_JQ"'
-    (map(question_comment("")) | rindex(true)) as $q
+    newest_question("") as $q
     | if $q == null then "noq" elif $q != length - 1 then "followed" else "ok" end' <<<"$json")" ||
     die "could not read issue #$issue's comments"
   case "$verdict" in
     noq) die "issue #$issue has no question comment to reply to" ;;
     followed) die "a comment already follows the newest question on issue #$issue" ;;
   esac
-  capture_err gh_err adapter_issue_comment "$issue" "$file" || gh_die "post the reply on issue #$issue" "$gh_err"
+  gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
   capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL" ||
     die "the reply comment landed on issue #$issue, but $AUTOPILOT_HUMAN_LABEL could not be removed: $(gh_reason "$gh_err")"
 }
@@ -393,19 +393,18 @@ autopilot_reply() {
 # kind. Prints one line saying so when nothing is listed; dies, printing
 # nothing, when any read fails.
 autopilot_questions() {
-  local list err n state labels phase json line lines="" gh_err
-  capture list err adapter_issues_labelled "$AUTOPILOT_HUMAN_LABEL" ||
-    gh_die "list the $AUTOPILOT_HUMAN_LABEL issues" "$err"
+  local list n state labels phase json line lines="" gh_err
+  gh_or_die --out list "list the $AUTOPILOT_HUMAN_LABEL issues" adapter_issues_labelled "$AUTOPILOT_HUMAN_LABEL"
   for n in $(printf '%s\n' "$list" | sort -n); do
     issue_state_labels_read "$n" state labels gh_err || gh_die "read the labels of issue #$n" "$gh_err"
     phase="$(autopilot_live_phase "$labels")"
     [ -n "$phase" ] || continue
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
     line="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg n "$n" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
-      (to_entries | map(select(.value | question_comment(""))) | last) as $q
+      newest_question("") as $qi | (if $qi == null then null else .[$qi] end) as $q
       | (to_entries | map(select(.value | stop_phase != null)) | last) as $s
-      | if $q != null and ($s == null or $q.key > $s.key) then
-          [$n, (if $q.key == length - 1 then "question" else "replied" end), ($q.value | question_phase), $q.value.url]
+      | if $q != null and ($s == null or $qi > $s.key) then
+          [$n, (if $qi == length - 1 then "question" else "replied" end), ($q | question_phase), $q.url]
         elif $s != null then [$n, "stop", ($s.value | stop_phase), $s.value.url]
         else [$n, "stop", $phase, ""] end
       | @tsv' <<<"$json")" || die "could not read issue #$n's comments"
