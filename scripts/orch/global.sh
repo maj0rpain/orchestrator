@@ -171,7 +171,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               release the claim
   autopilot answer <phase> <file>
                               write the newest question and every later
-                              comment to <file>; exit 1 when none follows
+                              comment to <file>; exit 1 when none follows,
+                              2 on any other failure
   autopilot questions         list each open needs-human issue of an autopilot
                               flow, no flow state needed: a tab-separated
                               line of issue, kind (question, replied or

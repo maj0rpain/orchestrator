@@ -289,11 +289,13 @@ AUTOPILOT_COMMENT_JQ='
 # autopilot_question_marker <phase>: the first line of a question comment.
 autopilot_question_marker() { printf '%s%s -->\n' "$AUTOPILOT_QUESTION_PREFIX" "$1"; }
 
-# autopilot_phase_arg <phase>: dies unless <phase> is a phase a question can be
-# asked in - a flow phase other than done.
+# autopilot_phase_arg <phase> [die-fn]: dies, through die-fn (default die),
+# unless <phase> is a phase a question can be asked in - a flow phase other
+# than done.
 autopilot_phase_arg() {
-  case " $PHASES " in *" $1 "*) ;; *) die "not a flow phase: $1 (want ${PHASES// /|})" ;; esac
-  [ "$1" != "done" ] || die "a done flow asks no question"
+  local die_fn="${2:-die}"
+  case " $PHASES " in *" $1 "*) ;; *) "$die_fn" "not a flow phase: $1 (want ${PHASES// /|})" ;; esac
+  [ "$1" != "done" ] || "$die_fn" "a done flow asks no question"
 }
 
 # autopilot_ask <phase> <file>: posts <file> as <phase>'s question comment, the
@@ -318,25 +320,26 @@ autopilot_ask() {
 
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
 # marker stripped, and every comment after it to <file>, each later one after a
-# `---` line. Dies, writing nothing, when there is no question or no comment
-# follows it - the caller re-asks.
+# `---` line. Exits 1, writing nothing, when no comment follows the question -
+# the caller re-asks, or carries on - and 2 on any other failure, so a failed
+# read is never taken for no reply.
 autopilot_answer() {
   local phase="$1" file="$2" issue json out
-  autopilot_phase_arg "$phase"
-  require_state
-  require_issue issue
-  gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
+  autopilot_phase_arg "$phase" die2
+  require_state die2
+  require_issue issue die2
+  gh_or_die --exit 2 --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
   out="$(jq -j --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
     (.comments | newest_question($phase)) as $q
     | if $q == null then "noq" elif $q == (.comments | length) - 1 then "noreply"
       else (.comments[$q:] | map(.body) | .[0] |= (split("\n")[1:] | join("\n")) | join("\n---\n")) end' <<<"$json")" ||
-    die "could not read issue #$issue's comments"
+    die2 "could not read issue #$issue's comments"
   case "$out" in
-    noq) die "issue #$issue has no $phase question comment" ;;
+    noq) die2 "issue #$issue has no $phase question comment" ;;
     noreply) die "no reply to the $phase question on issue #$issue yet" ;;
   esac
-  mkdir -p "$(dirname "$file")"
-  printf '%s\n' "$out" >"$file"
+  mkdir -p "$(dirname "$file")" || die2 "could not create the directory of $file"
+  printf '%s\n' "$out" >"$file" || die2 "could not write $file"
 }
 
 # --- questions, reply and resume (#1571) ------------------------------------

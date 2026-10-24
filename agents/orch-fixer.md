@@ -300,7 +300,7 @@ and later iterations, the closer, `orch.sh review terminal`, and
 Base SHA: <base SHA>
 PR: #<pr>
 Spec issue: #<spec issue>
-Re-entry budget: <n> - <reason>   (only when the prompt carries it)
+Re-entry budget: <n> - <reason>   (an autopilot re-entry's first iteration only)
 Host fallbacks: <each fallback taken, or None>
 
 ## Findings

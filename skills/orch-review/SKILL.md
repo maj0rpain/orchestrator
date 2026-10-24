@@ -54,24 +54,22 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
 **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) the loop
 runs headless and asks the human nothing directly. First, when
-`iteration` is not 0 and the previous loop ended in a bounded stop for a spec
-question, read the human's reply before anything else:
+`iteration` is not 0 - the previous loop ended in a bounded stop of any kind -
+read the human's reply before anything else:
 `bash "$ORCH" autopilot answer review <file>` (a `mktemp` file). It exits 1
-when no comment follows the question: re-post the same question with
+when no comment follows the question. After a stop for a spec question, re-post
+the same question then with
 `bash "$ORCH" autopilot ask review .orchestrator/review/question.md` (the
 save point the asking site wrote) and stop - never assume
-the recommendations. With a reply, apply it to the spec issue's body:
-`bash "$ORCH" spec fetch <file>`, edit the body to carry the ruling, then
-`bash "$ORCH" spec update <file>`.
+the recommendations. After any other stop (an open blocking, an unclean final
+iteration, a missing look, CI), exit 1 means "carry on": the driver picks the
+budget in step 5. Any other exit stops the loop, as a failed fetch does.
 
-Read the reply the same way after every other bounded stop too (an open
-blocking, an unclean final iteration, a missing look, CI), when `iteration` is
-not 0. There, exit 1 means "carry on": the driver picks the budget in step 5.
-Any other failure of `autopilot answer review` stops the loop, as a failed
-fetch does. A reply is split: a budget it plainly names (step 5) is never
-written to the spec body, and any ruling on what the change does is applied to
-the spec body as above. The reply **changes behaviour** exactly when applying
-it edits the spec body; step 5's floor reads that.
+A reply, after any stop, is split. A budget it plainly names (step 5) is never
+written to the spec body. Any ruling on what the change does is applied to the
+spec issue's body: `bash "$ORCH" spec fetch <file>`, edit the body to carry the
+ruling, then `bash "$ORCH" spec update <file>`. The reply **changes behaviour**
+exactly when applying it edits the spec body; step 5's floor reads that.
 
 Then carry on with the steps below, whose step 5 sizes the budget from the
 plan or from what the previous loop left instead of asking.
@@ -117,10 +115,8 @@ plan or from what the previous loop left instead of asking.
    budget is never asked. On a first loop (`iteration` is 0), `bash "$ORCH"
    autopilot budget` prints the plan's budget: set `budget` to it. On a
    re-entry (`iteration` not 0, after any bounded stop) pick the number of
-   further iterations `n` yourself, by the interactive re-entry rule below:
-   from what the previous loop's records (step 4) left - any open blocking
-   still standing, and how much its final iterations still found - never from
-   the change's size. Then `budget` is `iteration + n`, bounded thus:
+   further iterations `n` yourself, by the interactive re-entry rule below
+   (the "Re-entry" bullet). Then `budget` is `iteration + n`, bounded thus:
    - Floor: `n` is at least 2 when anything must be fixed - an open blocking
      finding carried in, or a reply or ruling that changes behaviour - because
      only a clean final iteration can go Ready; otherwise at least 1.
