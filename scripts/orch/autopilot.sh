@@ -266,6 +266,11 @@ autopilot_phase_move() {
 # " -->".
 AUTOPILOT_QUESTION_PREFIX='<!-- orch:question '
 
+# What a refusal or failure comment opens with, before the phase; autopilot_stop
+# writes them and stop_phase below reads them back.
+AUTOPILOT_REFUSAL_OPENING='Autopilot refused to run the '
+AUTOPILOT_FAILURE_OPENING='Autopilot failed in the '
+
 # The jq definitions every reader of a comment list shares, so the question
 # marker test is written once: question_comment is true for a comment whose
 # first line is a question marker (of $phase, or of any phase when $phase is
@@ -277,7 +282,7 @@ AUTOPILOT_COMMENT_JQ='
       and ($phase == "" or . == $prefix + $phase + " -->");
   def question_phase: first_line | ltrimstr($prefix) | rtrimstr(" -->");
   def stop_phase:
-    first_line | first(capture("^Autopilot (refused to run|failed in) the (?<p>[^ ]+) phase") | .p) // null;
+    first_line | first(capture("^(?:'"$AUTOPILOT_REFUSAL_OPENING|$AUTOPILOT_FAILURE_OPENING"')(?<p>[^ ]+) phase") | .p) // null;
 '
 
 # autopilot_question_marker <phase>: the first line of a question comment.
@@ -494,10 +499,10 @@ autopilot_stop() {
     autopilot_chain_die "" "$issue" "add $AUTOPILOT_HUMAN_LABEL" "$gh_err"
   body="$(mktemp)" || die "could not create a temp file for the $kind comment"
   case "$kind" in
-    refusal) printf 'Autopilot refused to run the %s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
-      "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" >"$body" ;;
-    *) printf 'Autopilot failed in the %s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically. Remove the label to have the watcher start the phase again.\n' \
-      "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" >"$body" ;;
+    refusal) printf '%s%s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
+      "$AUTOPILOT_REFUSAL_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" >"$body" ;;
+    *) printf '%s%s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically. Remove the label to have the watcher start the phase again.\n' \
+      "$AUTOPILOT_FAILURE_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" >"$body" ;;
   esac
   capture_err gh_err adapter_issue_comment "$issue" "$body" || {
     rm -f "$body"

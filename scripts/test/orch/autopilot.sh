@@ -925,5 +925,9 @@ assert_eq "and no call carried another repo" "$(grep -cv '^GH_REPO=fork/widgets 
 : >"$GH_FIXTURE/env.log"
 env -u ORCH_GH_ADAPTER -u GH_REPO "$ORCH" autopilot resume 30 >/dev/null 2>&1
 assert_contains "resume reached gh pinned to origin's repo" "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets "
+: >"$GH_FIXTURE/env.log"
+printf 'reply\n' >"$r.origin"
+env -u ORCH_GH_ADAPTER -u GH_REPO "$ORCH" autopilot reply 30 "$r.origin" >/dev/null 2>&1
+assert_contains "reply reached gh pinned to origin's repo" "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets "
 restore_suite_env GH_FIXTURE
 restore_suite_env
