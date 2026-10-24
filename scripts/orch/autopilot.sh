@@ -118,6 +118,17 @@ autopilot_phase_labels_in() {
   done
 }
 
+# autopilot_live_phase <labels>: the first phase other than done whose label is
+# among <labels>, in table order; nothing when there is none.
+autopilot_live_phase() {
+  local p
+  for p in $(autopilot_phase_labels_in "$1"); do
+    [ "$p" != "done" ] || continue
+    printf '%s\n' "$p"
+    return 0
+  done
+}
+
 # autopilot_block_values <file> <key>: the value of each `<key>: <value>` line
 # in <file>'s `## Autopilot` section, trimmed, one per line.
 autopilot_block_values() {
@@ -377,16 +388,12 @@ autopilot_reply() {
 # kind. Prints one line saying so when nothing is listed; dies, printing
 # nothing, when any read fails.
 autopilot_questions() {
-  local list err n state labels p phase json line lines="" gh_err
+  local list err n state labels phase json line lines="" gh_err
   capture list err adapter_issues_labelled "$AUTOPILOT_HUMAN_LABEL" ||
     gh_die "list the $AUTOPILOT_HUMAN_LABEL issues" "$err"
   for n in $(printf '%s\n' "$list" | sort -n); do
     issue_state_labels_read "$n" state labels gh_err || gh_die "read the labels of issue #$n" "$gh_err"
-    phase=""
-    for p in $(autopilot_phase_labels_in "$labels"); do
-      [ "$p" = "done" ] && continue
-      phase="$p"; break
-    done
+    phase="$(autopilot_live_phase "$labels")"
     [ -n "$phase" ] || continue
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
     line="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg n "$n" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
@@ -670,7 +677,7 @@ autopilot_candidates() {
 # One tick). A claim create that fails for a reason other than a lost race
 # stops the tick, naming it.
 autopilot_tick() {
-  local main_root cap claims count issue state labels gh_err phase p rc candidates
+  local main_root cap claims count issue state labels gh_err phase rc candidates
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
   cd "$main_root" || die "could not enter the main checkout $main_root"
@@ -688,11 +695,7 @@ autopilot_tick() {
     [ "$state" = OPEN ] || continue
     ! list_has "$labels" "$AUTOPILOT_RUNNING_LABEL" || continue
     ! list_has "$labels" "$AUTOPILOT_HUMAN_LABEL" || continue
-    phase=""
-    for p in $(autopilot_phase_labels_in "$labels"); do
-      [ "$p" != "done" ] || continue
-      phase="$p"; break
-    done
+    phase="$(autopilot_live_phase "$labels")"
     [ -n "$phase" ] || continue
     rc=0
     capture_err gh_err adapter_claim_create "$issue" "$phase" "$$" || rc=$?

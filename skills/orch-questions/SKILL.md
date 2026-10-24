@@ -64,16 +64,16 @@ It reads, through `orch.sh` and never raw `gh`:
 
 Each file is a `mktemp` file outside the repo, opened with the Read tool. The
 subagent reads nothing outside GitHub, so no save point, and changes no file in
-the repo. It returns, for each numbered question, the session's recommendation,
-its own recommendation with a one-clause reason, and a flag where the two
-disagree.
+the repo. It returns the question comment's `createdAt` (from the comments it
+read) and, for each numbered question, the session's recommendation, its own
+recommendation with a one-clause reason, and a flag where the two disagree.
 
 ## 3. Ask
 
-Put one batch per issue to the human, the issue with the oldest question
-first. Show each question with its options, the session's recommendation, this
-skill's recommendation and reason, and any disagreement flag. The answer
-grammar for a batch:
+Put one batch per issue to the human, ordered by the `createdAt` the
+subagents returned, the oldest question first. Show each question with its
+options, the session's recommendation, this skill's recommendation and reason,
+and any disagreement flag. The answer grammar for a batch:
 
 - `<k>: <option>`
 - `<k>: recommended` (this skill's recommendation)

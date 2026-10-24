@@ -797,22 +797,12 @@ assert_eq "a stop after a question is a stop" "$(grep "^16$tab" <<<"$out")" "16$
 assert_eq "a question after a stop is a question" "$(grep "^17$tab" <<<"$out")" "17${tab}question${tab}spec${tab}$(url_of 17 2)"
 assert_eq "an issue with no phase label, orch:done, closed or not needs-human is left out" \
   "$(cut -f1 <<<"$out" | tr '\n' ' ')" "11 12 13 14 15 16 17 "
-# the marker test is shared with answer
-fake_issue 22 open needs-human orch:spec
-fake_comment 22 o 2026-01-01T00:00:00Z "$(question_of spec)"
-out="$("$ORCH" autopilot questions 2>&1)"
-assert_contains "a listed pending question" "$out" "22${tab}question"
-"$ORCH" autopilot answer spec "$(mktemp)" >/dev/null 2>&1; st=$?
-assert_status "is one answer reports unanswered" "$st" 1
-fake_comment 22 h 2026-01-02T00:00:00Z "1: A"
-out="$("$ORCH" autopilot questions 2>&1)"
-assert_contains "and once replied, listed as replied" "$out" "22${tab}replied"
 # a comment that only mentions the marker is no question
 fake_issue 23 open needs-human orch:spec
 fake_comment 23 o 2026-01-01T00:00:00Z $'see the marker\n<!-- orch:question spec -->'
 out="$("$ORCH" autopilot questions 2>&1)"
 assert_contains "a marker off the first line is no question" "$out" "23${tab}stop${tab}spec${tab}"
-for n in 11 12 13 14 15 16 17 18 19 20 21 22 23; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done
+for n in 11 12 13 14 15 16 17 18 19 20 21 23; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done
 fake_issue 11 open needs-human orch:spec
 fake_issue 12 open needs-human orch:spec
 fake_fail adapter_issue_comments_json "$GH_502"
@@ -905,4 +895,35 @@ out="$("$ORCH" autopilot reply 46 "$r.empty" 2>&1)"; st=$?
 assert_status "an empty file is refused" "$st" 1
 assert_eq "posting nothing" "$(fake_comments_of 46 | wc -l | tr -d ' ')" "3"
 assert_eq "keeping the label" "$(fake_labels_of 46)" "needs-human orch:spec "
+
+# the marker test is shared with answer: a question questions lists as pending
+# is one answer reports unanswered, and the reverse. answer reads the flow's
+# issue from state, so this runs in a flow checkout.
+fake_flow 22
+state_fixture issue 22
+fake_issue 22 open needs-human orch:spec
+fake_comment 22 o 2026-01-01T00:00:00Z "$(question_of spec)"
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "a listed pending question" "$out" "22${tab}question"
+out="$("$ORCH" autopilot answer spec "$r.answer" 2>&1)"; st=$?
+assert_status "is one answer reports unanswered" "$st" 1
+assert_contains "saying no reply yet" "$out" "no reply to the spec question on issue #22 yet"
+fake_comment 22 h 2026-01-02T00:00:00Z "1: A"
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "and once replied, listed as replied" "$out" "22${tab}replied"
+"$ORCH" autopilot answer spec "$r.answer" >/dev/null 2>&1; st=$?
+assert_status "and answer reads the reply" "$st" 0
+assert_contains "writing it to the file" "$(cat "$r.answer")" "1: A"
+
+# the verbs read the repo from the checkout's origin
+new_repo >/dev/null
+git remote set-url origin https://github.com/fork/widgets.git
+gh_fixture
+env -u ORCH_GH_ADAPTER -u GH_REPO "$ORCH" autopilot questions >/dev/null 2>&1
+assert_contains "questions reached gh pinned to origin's repo" "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets "
+assert_eq "and no call carried another repo" "$(grep -cv '^GH_REPO=fork/widgets ' "$GH_FIXTURE/env.log")" "0"
+: >"$GH_FIXTURE/env.log"
+env -u ORCH_GH_ADAPTER -u GH_REPO "$ORCH" autopilot resume 30 >/dev/null 2>&1
+assert_contains "resume reached gh pinned to origin's repo" "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets "
+restore_suite_env GH_FIXTURE
 restore_suite_env
