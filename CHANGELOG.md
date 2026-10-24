@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.12
+
+The autopilot watcher now names a picked-up flow's slug and branch from the issue title alone, shortened to whole words of at most 40 characters, instead of repeating the issue number and using the whole title.
+
 ## 4.32.11
 
 An autopilot phase session now waits up to 2 hours, not print mode's default 10 minutes, for its background ticket subagents, so a long build is no longer stopped mid-run.
