@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.36.0
+
+New `scripts/autopilot-up.sh` creates or rebuilds every autopilot compose project (`docker/.env` and each `docker/.env.<name>`), which is how a plugin update reaches autopilot. It skips a project whose container is mid-phase unless `--force`, and `--fresh` also refreshes Claude Code. A container now keeps its claim identity in its repo volume (`ORCH_HOST_ID`), so a phase killed by a recreate is cleaned up as a failure stop instead of leaving its issue claimed forever.
+
 ## 4.35.1
 
 The `02-spec` handoff no longer copies the spec review changelog or the seams, which the spec issue already holds (ADR-0053).

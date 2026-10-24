@@ -67,7 +67,7 @@ cat >"$root/orch.sh" <<'FAKE'
 # The fake orch.sh: logs pid, directory and arguments; prints a role list for
 # `agent roles`; and refuses, with an `orch:` line, any call whose arguments
 # contain $FAKE_ORCH_FAIL.
-printf 'pid=%s pwd=%s args=%s\n' "$$" "$PWD" "$*" >>"$ORCH_LOG"
+printf 'pid=%s pwd=%s host=%s args=%s\n' "$$" "$PWD" "${ORCH_HOST_ID:-}" "$*" >>"$ORCH_LOG"
 if [ -n "${FAKE_ORCH_FAIL:-}" ]; then
   case "$*" in *"$FAKE_ORCH_FAIL"*) echo "orch: refused $*" >&2; exit 1 ;; esac
 fi
@@ -274,6 +274,27 @@ dockerfile="$DIR/../docker/Dockerfile"
 for v in CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING; do
   assert_eq "the Dockerfile sets $v=1" "$(grep -cx "ENV $v=1" "$dockerfile")" 1
 done
+
+# The claim identity: written once under the clone, reused on a later start,
+# and exported to the watcher as ORCH_HOST_ID.
+run_entry
+id_file="$clone/.orchestrator/autopilot/host-id"
+first_id="$(<"$id_file")"
+case "$first_id" in
+  autopilot-??????????*) ok "a first start writes autopilot- plus hex to host-id" ;;
+  *) bad "a first start writes autopilot- plus hex to host-id" "got '$first_id'" ;;
+esac
+assert_contains "the watcher gets it as ORCH_HOST_ID" "$(grep 'args=autopilot watch' "$orch_log")" "host=$first_id "
+first_clone="$clone"
+run_entry "ORCH_CLONE_DIR=$first_clone"
+assert_eq "a later start reuses the file" "$(<"$id_file")" "$first_id"
+assert_contains "and exports the same value" "$(grep 'args=autopilot watch' "$orch_log")" "host=$first_id "
+: >"$id_file"
+run_entry "ORCH_CLONE_DIR=$first_clone"
+case "$(<"$id_file")" in
+  autopilot-?*) ok "an empty host-id is written again" ;;
+  *) bad "an empty host-id is written again" "got '$(<"$id_file")'" ;;
+esac
 
 # >>> summary
 echo

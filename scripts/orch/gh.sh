@@ -846,7 +846,7 @@ adapter_claim_create() {
   local ref="refs/orch/claims/$1" commit reason
   commit="$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "orch claim $1" \
     -m "$(printf 'host: %s\npid: %s\nphase: %s\nstarted: %s' \
-      "$(hostname)" "$3" "$2" "$(now)")")" || return 1
+      "$(autopilot_host_id)" "$3" "$2" "$(now)")")" || return 1
   git_push reason --force-with-lease="$ref:" origin "$commit:$ref" && return 0
   case "$reason" in
     *'stale info'*|*'already exists'*) return 2 ;;

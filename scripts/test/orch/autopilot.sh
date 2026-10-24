@@ -553,6 +553,17 @@ assert_eq "a dead run pidfile makes it stale" "$(fake_claim_held 12)" free
 assert_contains "the stale comment names the session log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
 assert_contains "and says no exit code is known" "$(fake_comments_of 12)" "no exit code"
 
+# the claim identity: with ORCH_HOST_ID set, only claims of that id are this
+# host's
+fake_issue 14 open ready-for-agent orch:spec orch:running
+fake_claim_seed 14 autopilot-abc123 "$(dead_pid)"
+fake_issue 15 open ready-for-agent orch:spec orch:running
+fake_claim_seed 15 "$(hostname)" "$(dead_pid)"
+ORCH_HOST_ID=autopilot-abc123 "$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a claim of ORCH_HOST_ID is cleaned" "$(fake_claim_held 14)" free
+assert_eq "the hostname's claim is then another identity's, left alone" "$(fake_claim_held 15)" held
+rm -f "$ORCH_GH_FAKE_STORE/claims/15"
+
 # a stop that dies partway leaves the claim held and names the writes that
 # landed
 fake_issue 13 open ready-for-agent orch:spec orch:running

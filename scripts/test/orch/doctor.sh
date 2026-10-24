@@ -1963,6 +1963,10 @@ out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
 assert_not_contains "not a fresh one" "$out" "issue #8"
 assert_not_contains "nor this host's own" "$out" "issue #9"
+fake_claim_seed 6 autopilot-abc123 5 2020-01-01T00:00:00Z
+out="$(ORCH_HOST_ID=autopilot-abc123 "$ORCH" doctor --env 2>&1)"
+assert_not_contains "with ORCH_HOST_ID set, a claim of that id is its own" "$out" "issue #6"
+assert_contains "and the hostname's claim is another identity's" "$out" "issue #9 has been claimed by $(hostname)"
 restore_suite_env
 
 # --- doctor: autopilot side-checkout flows ------------------------------------
