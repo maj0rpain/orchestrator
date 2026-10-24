@@ -440,8 +440,7 @@ autopilot_spawn_run() {
 # to nothing gives `untitled`.
 autopilot_short_slug() {
   local norm word slug="" next
-  norm="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
-  [ -n "$norm" ] || { printf 'untitled\n'; return 0; }
+  norm="$(normalize_slug "$1" 2>/dev/null)" || { printf 'untitled\n'; return 0; }
   while [ -n "$norm" ]; do
     word="${norm%%-*}"
     case "$norm" in *-*) norm="${norm#*-}" ;; *) norm="" ;; esac
