@@ -17,7 +17,9 @@ named as its module is, and `checkout.sh`, `filed-finding.sh` and
 `setup.sh` and `harness.sh`). The autopilot container's files live in `docker/`
 (`Dockerfile`, `compose.yaml`, `.env.example`), its entrypoint is
 `scripts/autopilot-container.sh`, and `scripts/test/autopilot_container_test.sh`
-tests it. Repo-development tools that do not ship to users live in
+tests it. `scripts/autopilot-up.sh` brings its compose projects up, and
+`scripts/test/autopilot_up_test.sh` tests it. Repo-development tools that do
+not ship to users live in
 `scripts/dev/` (`helpers.sh`, the helper index). There is no top-level `tests/`,
 and `hooks/` holds only `hooks.json`.
 

@@ -113,5 +113,17 @@ done
 
 bash "$ORCH_SH" autopilot show >/dev/null || exit 1
 
+# The claim identity: kept in the clone's volume so a recreated container
+# keeps it, and so another project or machine has its own.
+host_id_file="$clone_dir/.orchestrator/autopilot/host-id"
+if [ ! -s "$host_id_file" ]; then
+  mkdir -p "$(dirname "$host_id_file")" || die "host id: cannot create $(dirname "$host_id_file")"
+  printf 'autopilot-%s\n' "$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')" >"$host_id_file" ||
+    die "host id: cannot write $host_id_file"
+fi
+ORCH_HOST_ID="$(<"$host_id_file")"
+[ -n "$ORCH_HOST_ID" ] || die "host id: $host_id_file is empty"
+export ORCH_HOST_ID
+
 # 7. The watcher becomes the main process.
 exec bash "$ORCH_SH" autopilot watch

@@ -244,6 +244,7 @@ scripts/paste-guard.sh        the transcript scan and paste check the two paste 
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/autopilot-container.sh the autopilot container's entrypoint: checks the env file, configures git and the permission mode, clones the repo, writes and validates the other autopilot and role settings in it, then execs the watcher; `scripts/test/autopilot_container_test.sh` tests it
+scripts/autopilot-up.sh        brings the autopilot compose projects up or rebuilds them from the checkout (how-it-works' Updating the plugin); `scripts/test/autopilot_up_test.sh` tests it
 docker/                       the autopilot container: `Dockerfile`, `compose.yaml` and `.env.example` (how-it-works' Autopilot Setup documents them)
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
