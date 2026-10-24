@@ -13,6 +13,9 @@ rounds, not one pass.
 Superseded in part by ADR-0047: the spec review's session marks each item
 material or minor, though it still ranks nothing across lenses.
 
+Superseded in part by ADR-0053: the spec handoff no longer copies the changelog
+or the seams; both live on the issue.
+
 A spec review runs once, in the spec phase, after the issue exists - published
 by `to-spec` or already adopted at init - and before `02-spec.md` is written.
 Four lenses read the issue as fresh sub-agents and report findings; every

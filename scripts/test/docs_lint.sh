@@ -2087,11 +2087,9 @@ check "every skill's SKILL.md names each of its reference files" \
   "$(scan_skill_refs "$PLUGIN_ROOT")"
 
 # orch-flow's spec phase, which alone needs orch-spec-review's spec-phase.md,
-# names it in its step 4, where it invokes the review, and names changelog.md
-# there, where each round's changelog is read from. orch-spec-review's
-# Applying the answer names the spec-review apply command, and orch-handoff's
-# 02-spec.md template's Spec review changelog names changelog.md, where each
-# round's changelog is copied from. Names only, never wording (ADR-0027).
+# names it in its step 4, where it invokes the review. orch-spec-review's
+# Applying the answer names the spec-review apply command. Names only, never
+# wording (ADR-0027).
 # scan_spec_review_refs <plugin root>: one line per site that lost its name.
 scan_spec_review_refs() {
   local r="$1" flow="skills/orch-flow/SKILL.md" step
@@ -2099,10 +2097,7 @@ scan_spec_review_refs() {
     | awk '/^[0-9]+\. / { inb = ($0 ~ /^4\. /) } inb' | flat_text)"
   grep -qF 'spec-phase.md' <<<"$step" \
     || echo "$flow: spec phase step 4 does not name orch-spec-review's spec-phase.md"
-  grep -qF 'changelog.md' <<<"$step" \
-    || echo "$flow: spec phase step 4 does not name changelog.md"
   scan_names_phrase "$r" 'skills/orch-spec-review/SKILL.md|## Applying the answer' 'spec-review apply'
-  scan_names_phrase "$r" 'skills/orch-handoff/SKILL.md|## Spec review changelog' 'changelog.md'
   return 0
 }
 fixture="$(new_fixture)"
@@ -2111,32 +2106,24 @@ printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`.\n5. Then read sp
   >"$fixture/skills/orch-flow/SKILL.md"
 flags "a spec phase step 4 that does not name spec-phase.md is flagged" \
   "$(scan_spec_review_refs "$fixture")" "skills/orch-flow/SKILL.md: spec phase step 4 does not name orch-spec-review's spec-phase.md"
-printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`, reading spec-phase.md.\n5. Read each `changelog.md`.\n' \
+printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`, reading spec-phase.md.\n' \
   >"$fixture/skills/orch-flow/SKILL.md"
-mkdir -p "$fixture/skills/orch-spec-review" "$fixture/skills/orch-handoff"
+mkdir -p "$fixture/skills/orch-spec-review"
 printf '# S\n\n## Applying the answer\n\nApply it.\n\n## The changelog\n\nRun `spec-review apply`.\n' \
   >"$fixture/skills/orch-spec-review/SKILL.md"
-printf '# H\n\n```markdown\n## Spec review changelog\n\nOne per round.\n\n## Ticket breakdown\n\nSee `changelog.md`.\n```\n' \
-  >"$fixture/skills/orch-handoff/SKILL.md"
 out="$(scan_spec_review_refs "$fixture")"
 flags "an Applying the answer section that does not name spec-review apply is flagged" \
   "$out" "skills/orch-spec-review/SKILL.md: ## Applying the answer does not name spec-review apply"
-flags "a Spec review changelog naming changelog.md only after Ticket breakdown is flagged" \
-  "$out" "skills/orch-handoff/SKILL.md: ## Spec review changelog does not name changelog.md"
-flags "a spec phase naming changelog.md only in step 5 is flagged" \
-  "$out" "skills/orch-flow/SKILL.md: spec phase step 4 does not name changelog.md"
 printf '# S\n\n## Other\n' >"$fixture/skills/orch-spec-review/SKILL.md"
 flags "a missing Applying the answer section is flagged" \
   "$(scan_spec_review_refs "$fixture")" "skills/orch-spec-review/SKILL.md: no ## Applying the answer section"
-printf '# F\n\n### Phase: spec\n\n4. Ask the round count.\n\n   Then invoke `orch-spec-review`, reading its\n   spec-phase.md, and keep each round'"'"'s changelog.md path.\n5. Break it down.\n' \
+printf '# F\n\n### Phase: spec\n\n4. Ask the round count.\n\n   Then invoke `orch-spec-review`, reading its\n   spec-phase.md.\n5. Break it down.\n' \
   >"$fixture/skills/orch-flow/SKILL.md"
 printf '# S\n\n## Applying the answer\n\nHand the reply to `orch.sh spec-review\napply` once.\n' \
   >"$fixture/skills/orch-spec-review/SKILL.md"
-printf '# H\n\n```markdown\n## Spec review changelog\n\nEach round, taken from its changelog.md.\n\n## Ticket breakdown\n```\n' \
-  >"$fixture/skills/orch-handoff/SKILL.md"
 assert_empty "a spec review whose sites name their files and command, however worded, is not flagged" \
   "$(scan_spec_review_refs "$fixture")"
-check "the spec review's references name spec-phase.md, changelog.md and spec-review apply" \
+check "the spec review's references name spec-phase.md and spec-review apply" \
   "$(scan_spec_review_refs "$PLUGIN_ROOT")"
 
 # --- previously declined (#418) -----------------------------------------------

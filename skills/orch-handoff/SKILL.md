@@ -120,21 +120,6 @@ until review.>
 ## Spec issue
 <URL and number. The spec itself lives there - do not restate it.>
 
-## Seams
-<the test seams agreed with the user, and why these and not lower ones>
-
-## Spec review changelog
-<every round's changelog orch-spec-review returned, in round order, each
-copied from `changelog.md` in that round's working directory, where
-`spec-review apply` left it, and placed under a `### Round <k> of <n>`
-subheading, its own `## Spec review` heading
-and `Round <k> of <n>` line dropped and any heading inside it at `####` or deeper - no line here starts
-with `## `, because `handoff validate` reads a section up to the next `## `
-line. Each round, per lens: applied edits one line each, declined
-findings verbatim with the human's reason or "declined as recommended:
-<reason>", "None" for a lens that found nothing, "not run - <reason>" for one
-that failed>
-
 ## Ticket breakdown
 <usually the parent issue number only - the tickets themselves are its
 GitHub sub-issues, already published. The implement phase discovers them
@@ -149,7 +134,7 @@ rather than run a `ticket next`/`ticket close` loop against an empty
 frontier>
 
 ## Suggested skills
-<usually tdd, plus whatever the seams imply>
+<usually tdd, plus whatever the spec's Testing Decisions imply>
 
 ## Host fallbacks
 <per **Record every host fallback** above>

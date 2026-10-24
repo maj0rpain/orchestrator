@@ -157,8 +157,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      review from round k, with no round count asked. When it prints
      `done <n>`, every round has run - the session that ran the last one
      failed after it, say in the ticket breakdown - so ask nothing and go to
-     step 5, with every round's changelog at
-     `.orchestrator/spec-rounds/<k>/changelog.md`, k from 1 to n. Only when
+     step 5. Only when
      it exits 1, no round marker for this issue, go on to the marker check.
      Any other exit is a failure: relay its `orch:` message and stop, leaving
      the state where it is.
@@ -240,9 +239,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    lenses, one batch question,
    the body rewritten with what the human accepts, and, when the accepted
    edits touch an open ticket of an existing breakdown, a ticket question
-   that edits those tickets or retires the breakdown - and returns every
-   round's changelog, in round order, as the path of `changelog.md` in that
-   round's working directory, where `spec-review apply` left it. This step is
+   that edits those tickets or retires the breakdown. This step is
    part of the phase, not an option in it: no spec reaches the implement phase
    unreviewed, and the human's control is at each round's batch, where they may
    decline every edit.
@@ -280,15 +277,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 
    **Any other exit** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.
-6. Invoke the `orch-handoff` skill for `02-spec.md`, with every round's
-   changelog as its **Spec review changelog**, read from
-   `.orchestrator/spec-rounds/1/changelog.md` through
-   `.orchestrator/spec-rounds/<n>/changelog.md`, in round order - the
-   earlier rounds ran in earlier sessions - each copied rather than typed
-   again, laid out
-   as that template says, and its **Ticket breakdown** as
-   either the spec issue number (published or found as sub-issues) or
-   `None: work directly against #<n>` naming the spec issue (collapsed, per
+6. Invoke the `orch-handoff` skill for `02-spec.md`, with its
+   **Ticket breakdown** as either the spec issue number (published or found as
+   sub-issues) or `None: work directly against #<n>` naming the spec issue (collapsed, per
    step 5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH"
    handoff path implement)"`, fixing and re-validating until it passes.
 7. `bash "$ORCH" phase advance`. It validates `02-spec.md` again and checks the

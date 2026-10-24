@@ -148,10 +148,6 @@ After round k of n, k < n, the amendment runs, then the pause: `orch-flow`'s
 spec phase step 4 runs `spec pause --round <k>/<n>` and the session stops,
 and the next round runs in a fresh one. The last round never pauses.
 
-After the last round, return every round's changelog to the flow skill, in
-round order, as the paths `.orchestrator/spec-rounds/<k>/changelog.md`, so the
-implement phase carries the disposition without a network call. Its layout
-in `02-spec.md` is the **Spec review changelog** section of `orch-handoff`'s
-`02-spec.md` template. When a round retired the breakdown, breaking the
+When a round retired the breakdown, breaking the
 issue down again is left to `orch-flow`'s spec phase step 5, which then sees
 `ticket exists` exit 1.

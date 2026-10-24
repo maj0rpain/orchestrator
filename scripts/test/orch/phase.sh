@@ -24,11 +24,11 @@ assert_eq "leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 "$ORCH" state set issue 7
 hs2="$("$ORCH" handoff path implement)"
-writeln '## Spec issue' '#7.' '' '## Seams' '' '## Spec review changelog' 'None.' '' \
-        '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+writeln '## Spec issue' '#7.' '' '## Ticket breakdown' '' '' \
+        '## Host fallbacks' 'None.' >"$hs2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with an invalid spec handoff" "$st" 1
-assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Seams"
+assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Ticket breakdown"
 assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 complete_handoff "$hs2"

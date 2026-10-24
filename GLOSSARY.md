@@ -452,8 +452,8 @@ records it as not run.
 
 **Seam**:
 The public boundary a test observes behaviour at. Seams are agreed with a human
-in the spec phase, recorded in the spec and its handoff, and that agreement is
-the only one: the implement phase tests at the seams it is given and does not
+in the spec phase, recorded in the spec, and that agreement is
+the only one: the implement phase tests at the seams the spec gives and does not
 re-ask. A seam the code turns out not to allow is a deviation, recorded like
 any other. In an autopilot flow they are agreed in the planning session, which
 writes the spec; a hand-labelled issue's are the ones its body states, accepted
