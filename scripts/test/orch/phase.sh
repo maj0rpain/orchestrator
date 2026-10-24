@@ -24,12 +24,47 @@ assert_eq "leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 "$ORCH" state set issue 7
 hs2="$("$ORCH" handoff path implement)"
-writeln '## Spec issue' '#7.' '' '## Seams' '' '## Spec review changelog' 'None.' '' \
-        '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+writeln '## Spec issue' '#7.' '' '## Ticket breakdown' '' '' \
+        '## Host fallbacks' 'None.' >"$hs2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with an invalid spec handoff" "$st" 1
-assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Seams"
+assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Ticket breakdown"
 assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
+
+writeln '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at spec with no Spec issue in the handoff" "$st" 1
+assert_contains "naming the missing Spec issue" "$out" "Spec issue"
+assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
+
+writeln '## Spec issue' '' '' '## Ticket breakdown' '#7.' '' \
+        '## Host fallbacks' 'None.' >"$hs2"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at spec with an empty Spec issue" "$st" 1
+assert_contains "naming the empty Spec issue" "$out" "FAIL  empty section: ## Spec issue"
+assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
+
+writeln '## Spec issue' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at spec with no Ticket breakdown in the handoff" "$st" 1
+assert_contains "naming the missing Ticket breakdown" "$out" "missing section: ## Ticket breakdown"
+assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
+
+# A spec handoff written before #1601 still carries Seams and a Spec review
+# changelog; neither is required any more, so it advances, filled or empty.
+writeln '## Spec issue' '#7.' '' '## Seams' '' '## Spec review changelog' 'Not reviewed.' '' \
+        '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "advances a spec handoff still carrying the old sections" "$st" 0
+assert_eq "recording the implement phase" "$("$ORCH" state get phase)" "implement"
+state_fixture phase spec
+
+writeln '## Spec issue' '#7.' '' '## Seams' 'At handoff validate.' '' '## Spec review changelog' '' \
+        '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "advances with a filled Seams and an empty Spec review changelog" "$st" 0
+assert_eq "recording the implement phase" "$("$ORCH" state get phase)" "implement"
+state_fixture phase spec
 
 complete_handoff "$hs2"
 "$ORCH" state set issue null
