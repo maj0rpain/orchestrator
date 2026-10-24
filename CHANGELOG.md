@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.10
+
+The agent module reads one host table in place of its repeated host and kind switches, builds a role's line and the clear remedy in one helper each, and parses --host in one place, so agent clear and agent get refuse a missing or unknown --host value with the same messages as agent set. The agent set help entry no longer lists the roles, models and efforts.
+
 ## 4.32.9
 
 Document `EXTRA_APT_PACKAGES` in the autopilot container's env file and give a second compose project's command `--env-file` and `--build`, so its image is built from its own env file.
