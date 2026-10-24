@@ -1072,14 +1072,13 @@ assert_eq "CI gives the full 32 usable CPUs" "$(load_default 32 -missing CI=true
 assert_eq "CI honours the quota too" "$(load_default 32 '400000 100000' CI=true)" "4"
 
 # all.sh's runs: a copy beside passing suite stubs, a shellcheck stub that logs
-# "+" when it starts and "-" when it ends, over the planted files below.
+# "+" when it starts and "-" when it ends, over the stubs and the two copies.
 load_all="$load_dir/all"
 mkdir -p "$load_all/scripts/test" "$load_all/bin"
 cp "$load_tests/all.sh" "$load_tests/test_jobs.sh" "$load_all/scripts/test/"
 for load_tool in bash dirname awk tail mktemp rm mkdir sleep cat; do
   ln -s "$(command -v "$load_tool")" "$load_all/bin/$load_tool"
 done
-for load_n in 1 2 3 4 5 6; do echo 'echo planted' >"$load_all/scripts/lint_$load_n.sh"; done
 for load_stub in "${SUITES[@]}"; do
   printf '#!/usr/bin/env bash\necho "%s ran" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
     "$load_stub" >"$load_all/scripts/test/$load_stub"
@@ -1105,7 +1104,7 @@ out="$(load_run_all ORCH_TEST_JOBS=2 2>&1)"; st=$?
 assert_status "all.sh with ORCH_TEST_JOBS=2 passes" "$st" 0
 assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(load_peak)" "2"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
-  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 8))"
+  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 2))"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
 : >"$load_all/sc_log"
