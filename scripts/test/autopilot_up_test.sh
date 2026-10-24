@@ -70,8 +70,9 @@ new_case() {
   n=$((n + 1))
   case_dir="$root/case$n/tree"
   export FAKE_DIR="$root/case$n/fake"
-  mkdir -p "$case_dir/scripts" "$case_dir/docker" "$case_dir/.claude-plugin" "$FAKE_DIR"
+  mkdir -p "$case_dir/scripts/orch" "$case_dir/docker" "$case_dir/.claude-plugin" "$FAKE_DIR"
   cp "$DIR/autopilot-up.sh" "$case_dir/scripts/"
+  cp "$DIR/orch/common.sh" "$case_dir/scripts/orch/"
   printf '{\n  "name": "orchestrator",\n  "version": "9.8.7"\n}\n' >"$case_dir/.claude-plugin/plugin.json"
   echo "test-engine" >"$FAKE_DIR/info"
   : >"$FAKE_DIR/log"

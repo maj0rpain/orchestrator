@@ -19,6 +19,9 @@
 # changes anything; warns when the checkout has uncommitted changes. Its tests:
 # scripts/test/autopilot_up_test.sh.
 
+# shellcheck source=orch/common.sh
+. "$(dirname "${BASH_SOURCE[0]}")/orch/common.sh"
+
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 docker_dir="$root/docker"
 
@@ -29,7 +32,7 @@ for arg in "$@"; do
   case "$arg" in
     --fresh) fresh=1 ;;
     --force) force=1 ;;
-    -*) echo "orch: unknown option $arg" >&2; exit 2 ;;
+    -*) die2 "unknown option $arg" ;;
     *) names+=("$arg") ;;
   esac
 done
@@ -53,18 +56,15 @@ for f in "$d"/run/*.pid; do
   echo "$i $ph"
 done'
 
-engine="$(docker info --format '{{.Name}}')" || {
-  echo "orch: docker info failed; is Docker running?" >&2
-  exit 1
-}
+engine="$(docker info --format '{{.Name}}')" || die "docker info failed; is Docker running?"
 echo "engine: $engine"
 
-version="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/;T;p;q' \
+version="$(sed -n '/^[[:space:]]*"version"/{s/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/;p;q;}' \
   "$root/.claude-plugin/plugin.json")"
 commit="$(git -C "$root" rev-parse --short HEAD 2>/dev/null)" || commit="unknown"
 baked="orchestrator ${version:-unknown} @ $commit"
 if [ -n "$(git -C "$root" status --porcelain 2>/dev/null)" ]; then
-  echo "orch: warning: the checkout has uncommitted changes; the build uses the working tree" >&2
+  warn "warning: the checkout has uncommitted changes; the build uses the working tree"
 fi
 
 # Project list: "<file>" per entry, "default" for .env.
@@ -78,6 +78,15 @@ if [ "${#names[@]}" -eq 0 ]; then
     names+=("$n")
   done
 fi
+
+# compose <args>: docker compose for the current project, from docker/, with
+# its env file as both the container's settings and the build's args.
+compose() {
+  (cd "$docker_dir" && ORCH_ENV_FILE="$file" docker compose --env-file "$file" "${pflag[@]}" "$@")
+}
+
+# summary_line <outcome> <detail>: the current project's one summary line.
+summary_line() { printf '%-13s (%s)  %-8s %s\n' "$file" "$pname" "$1" "$2"; }
 
 failed=0
 for name in "${names[@]}"; do
@@ -94,12 +103,8 @@ for name in "${names[@]}"; do
     continue
   fi
 
-  compose() {
-    (cd "$docker_dir" && ORCH_ENV_FILE="$file" docker compose --env-file "$file" "${pflag[@]}" "$@")
-  }
-  pname="$(compose config | sed -n 's/^name:[[:space:]]*//;T;p;q')"
+  pname="$(compose config | sed -n '/^name:/{s/^name:[[:space:]]*//;p;q;}')"
   [ -n "$pname" ] || pname="${pflag[1]:-docker}"
-  line() { printf '%-13s (%s)  %-8s %s\n' "$file" "$pname" "$1" "$2"; }
 
   existing="$(compose ps -a -q)"
   running="$(compose ps -q)"
@@ -109,13 +114,13 @@ for name in "${names[@]}"; do
       if [ -n "$live" ]; then
         sessions="$(printf '%s\n' "$live" | awk 'NF { printf "%s#%s %s", (n++ ? ", " : ""), $1, $2 }')"
         if [ "$force" -eq 0 ]; then
-          line skipped "busy: $sessions"
+          summary_line skipped "busy: $sessions"
           continue
         fi
         killed="forced: killed $sessions"
       fi
     elif [ "$force" -eq 0 ]; then
-      line skipped "busy: unknown (probe failed)"
+      summary_line skipped "busy: unknown (probe failed)"
       continue
     else
       killed="forced: killed unknown (probe failed)"
@@ -123,15 +128,15 @@ for name in "${names[@]}"; do
   fi
 
   if [ "$fresh" -eq 1 ] && ! compose build --pull --no-cache >&2; then
-    line failed "$baked"
+    summary_line failed "$baked"
     failed=1
     continue
   fi
   if compose up -d --build >&2; then
     if [ -n "$existing" ]; then outcome=rebuilt; else outcome=created; fi
-    line "$outcome" "$baked${killed:+ $killed}"
+    summary_line "$outcome" "$baked${killed:+ $killed}"
   else
-    line failed "$baked"
+    summary_line failed "$baked"
     failed=1
   fi
 done
