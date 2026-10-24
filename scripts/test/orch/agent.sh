@@ -193,6 +193,16 @@ assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer
 out="$("$ORCH" agent 2>&1)"; st=$?
 assert_status "refuses a missing verb" "$st" 1
 assert_contains "naming the verbs" "$out" "want set|show|clear|get|sync"
+out="$("$ORCH" agent roles 2>&1)"; st=$?
+assert_status "roles succeeds" "$st" 0
+assert_eq "roles prints the six roles one per line, in order" "$out" "implementer
+lens
+reviewer
+fixer
+closer
+resolver"
+out="$("$ORCH" agent roles extra 2>&1)"; st=$?
+assert_status "roles refuses an argument" "$st" 1
 out="$("$ORCH" agent show extra 2>&1)"; st=$?
 assert_status "show refuses an argument" "$st" 1
 

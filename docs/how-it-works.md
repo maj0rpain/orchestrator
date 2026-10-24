@@ -302,9 +302,25 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
 - **Optional:** `ORCH_GIT_NAME` and `ORCH_GIT_EMAIL` (commits default to the
   token owner's login and GitHub noreply address); `ORCH_PERMISSION_MODE`
   (default `bypassPermissions`), `ORCH_CAP`, `ORCH_HANDLE`, `ORCH_ROUNDS` and
-  `ORCH_BUDGET`, written to the matching `orchestrator.autopilot.*` keys, an
-  unset one leaving its key unset; `ORCH_CLONE_DIR` (default
-  `/home/orch/repo`).
+  `ORCH_BUDGET`, written to the matching `orchestrator.autopilot.*` keys;
+  `ORCH_CLONE_DIR` (default `/home/orch/repo`).
+- **Models:** `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's
+  model and effort (`orchestrator.autopilot.model` / `.effort`).
+  `ORCH_MODEL_<ROLE>` and `ORCH_EFFORT_<ROLE>`, with the role upper-case
+  (`IMPLEMENTER`, `LENS`, `REVIEWER`, `FIXER`, `CLOSER`, `RESOLVER`), set that
+  role's agent setting, written with `orch.sh agent set <role> --model|--effort
+  <v> --global`. A role left unset inherits the model and effort of the session
+  that starts it, so `ORCH_MODEL` alone moves every role whose model is unset,
+  `ORCH_EFFORT` likewise, and a role variable overrides it.
+- **Unset clears:** `docker/.env` is the one source of truth. Every optional
+  variable above except `ORCH_PERMISSION_MODE` that is unset or empty clears
+  its global key at each start, so a line deleted from `.env` takes effect
+  after `docker restart`.
+- **Validated at startup:** once the clone exists, the entrypoint writes these
+  keys inside it and runs `orch.sh autopilot show`. Any refusal exits non-zero
+  with its `orch:` line, so a typo fails `docker compose up` and never runs the
+  watcher. A refused start keeps what it already wrote; the next start, with
+  `.env` fixed, writes or clears every key again.
 
 The repo is cloned into a named volume on first start and reused after, so
 side checkouts, flow state and logs survive a restart. Session logs stay

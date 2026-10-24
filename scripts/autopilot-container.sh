@@ -7,10 +7,20 @@
 #
 # Environment: REPO (owner/name), GH_TOKEN, and CLAUDE_CODE_OAUTH_TOKEN or
 # ANTHROPIC_API_KEY are required. ORCH_GIT_NAME, ORCH_GIT_EMAIL,
-# ORCH_PERMISSION_MODE, ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET and
-# ORCH_CLONE_DIR (default /home/orch/repo) are optional; ORCH_SH names the
-# installed plugin's orch.sh. A variable set to the empty string counts as
-# unset. The first failing step exits non-zero with an `orch:` line on stderr.
+# ORCH_PERMISSION_MODE, ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET,
+# ORCH_MODEL, ORCH_EFFORT, ORCH_MODEL_<ROLE>, ORCH_EFFORT_<ROLE> (roles from
+# `orch.sh agent roles`, upper-case: IMPLEMENTER, LENS, REVIEWER, FIXER, CLOSER,
+# RESOLVER) and ORCH_CLONE_DIR (default /home/orch/repo) are optional; ORCH_SH
+# names the installed plugin's orch.sh. A variable set to the empty string
+# counts as unset. ORCH_MODEL and ORCH_EFFORT are the phase session's model and
+# effort (orchestrator.autopilot.model/effort); a role variable is that role's
+# agent setting, written with `agent set --global`, and a role left unset
+# inherits the phase session's model and effort. Unset clears: every optional
+# variable but ORCH_PERMISSION_MODE (default bypassPermissions) that is unset
+# clears its global key, so .env is the one source of truth. Once the clone
+# exists the settings are written in it, `orch.sh autopilot show` validates
+# them, and a refusal keeps what was written and never starts the watcher.
+# The first failing step exits non-zero with an `orch:` line on stderr.
 
 # shellcheck source=orch/common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/orch/common.sh"
@@ -47,16 +57,9 @@ fi
 git config --global user.name "$git_name" || die "commit identity: cannot write user.name"
 git config --global user.email "$git_email" || die "commit identity: cannot write user.email"
 
-# 4. Autopilot settings: values only, the watcher validates them.
-autopilot_set() {
-  git config --global "orchestrator.autopilot.$1" "$2" ||
-    die "autopilot settings: cannot write orchestrator.autopilot.$1"
-}
-autopilot_set permission-mode "${ORCH_PERMISSION_MODE:-bypassPermissions}"
-[ -z "${ORCH_CAP:-}" ] || autopilot_set cap "$ORCH_CAP"
-[ -z "${ORCH_HANDLE:-}" ] || autopilot_set handle "$ORCH_HANDLE"
-[ -z "${ORCH_ROUNDS:-}" ] || autopilot_set rounds "$ORCH_ROUNDS"
-[ -z "${ORCH_BUDGET:-}" ] || autopilot_set budget "$ORCH_BUDGET"
+# 4. Permission mode: a value only, `autopilot show` validates it in step 6.
+git config --global orchestrator.autopilot.permission-mode "${ORCH_PERMISSION_MODE:-bypassPermissions}" ||
+  die "autopilot settings: cannot write orchestrator.autopilot.permission-mode"
 
 # 5. Clone, or reuse the clone.
 clone_dir="${ORCH_CLONE_DIR:-/home/orch/repo}"
@@ -73,7 +76,47 @@ else
   die "clone: $clone_dir is not empty and is not a git clone"
 fi
 
-# 6. The watcher becomes the main process.
+# 6. The other settings, from .env alone: a variable set is written, one unset
+# or empty clears its global key. orch.sh refuses outside a git repository, so
+# this waits for the clone. A refusal exits with its `orch:` line, keeps what
+# was already written and never reaches the watcher.
 [ -n "${ORCH_SH:-}" ] && [ -f "$ORCH_SH" ] || die "exec: ORCH_SH does not name an orch.sh"
 cd "$clone_dir" || die "exec: cannot enter $clone_dir"
+
+# unset_global <key>: clears the key; one that is not set (exit 5) is no error.
+unset_global() {
+  local status=0
+  git config --global --unset-all "$1" || status=$?
+  [ "$status" -eq 0 ] || [ "$status" -eq 5 ] || die "autopilot settings: cannot clear $1"
+}
+# autopilot_set <key> <value>: writes the key; an empty value clears it.
+autopilot_set() {
+  if [ -z "$2" ]; then unset_global "orchestrator.autopilot.$1"
+  else git config --global "orchestrator.autopilot.$1" "$2" ||
+    die "autopilot settings: cannot write orchestrator.autopilot.$1"; fi
+}
+autopilot_set cap "${ORCH_CAP:-}"
+autopilot_set handle "${ORCH_HANDLE:-}"
+autopilot_set rounds "${ORCH_ROUNDS:-}"
+autopilot_set budget "${ORCH_BUDGET:-}"
+autopilot_set model "${ORCH_MODEL:-}"
+autopilot_set effort "${ORCH_EFFORT:-}"
+
+roles="$(bash "$ORCH_SH" agent roles)" || die "agent roles failed"
+for role in $roles; do
+  upper="$(printf '%s' "$role" | tr '[:lower:]' '[:upper:]')"
+  for kind in model effort; do
+    var="ORCH_$(printf '%s' "$kind" | tr '[:lower:]' '[:upper:]')_$upper"
+    if [ -n "${!var:-}" ]; then
+      bash "$ORCH_SH" agent set "$role" "--$kind" "${!var}" --global || exit 1
+    else
+      bash "$ORCH_SH" agent clear "$role" "--$kind" --global ||
+        die "autopilot settings: cannot clear the $kind of $role"
+    fi
+  done
+done
+
+bash "$ORCH_SH" autopilot show >/dev/null || exit 1
+
+# 7. The watcher becomes the main process.
 exec bash "$ORCH_SH" autopilot watch

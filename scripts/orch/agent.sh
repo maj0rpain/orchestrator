@@ -577,6 +577,10 @@ cmd_agent() {
       agent_show
       ;;
     clear) agent_clear "$@" ;;
+    roles)
+      [ $# -eq 0 ] || die "usage: orch.sh agent roles"
+      printf '%s\n' $AGENT_ROLES
+      ;;
     sync)
       [ $# -eq 0 ] || die "usage: orch.sh agent sync"
       agent_sync
@@ -588,6 +592,6 @@ cmd_agent() {
         agent_get "$1" "$get_host"
       else die "$get_usage"; fi
       ;;
-    *) die "unknown agent op: ${op:-<none>} (want set|show|clear|get|sync)" ;;
+    *) die "unknown agent op: ${op:-<none>} (want set|show|clear|get|sync|roles)" ;;
   esac
 }

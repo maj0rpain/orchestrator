@@ -14,7 +14,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `base`    | `set`, `show`, `clear`                               |
 | `parallel` | `show`                                             |
 | `autopilot` | `show`, `active`, `rounds`, `budget`, `start`, `tick`, `watch`, `run`, `ask`, `answer` |
-| `agent`   | `set`, `show`, `clear`, `get`, `sync`                |
+| `agent`   | `set`, `show`, `clear`, `get`, `sync`, `roles`      |
 | `suite-cost` | `run`, `check`, `history`                     |
 | `repo`    | `show`                                               |
 | `branch`  | `create`, `off`, `busy`, `base-sha`, `sync`, `retire` |
