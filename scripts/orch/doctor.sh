@@ -614,7 +614,7 @@ check_autopilot_side_flows() {
 check_autopilot_claims() {
   local list issue host pid phase started now_epoch age me
   list="$(adapter_claim_list 2>/dev/null)" || return 0
-  now_epoch="$(date -u +%s)"; me="$(hostname)"
+  now_epoch="$(date -u +%s)"; me="$(autopilot_host_id)"
   while IFS=$'\t' read -r issue host pid phase started; do
     [ -n "$issue" ] && [ "$host" != "$me" ] || continue
     age="$(autopilot_iso_epoch "$started")" || continue

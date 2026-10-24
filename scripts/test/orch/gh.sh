@@ -1305,6 +1305,10 @@ assert_eq "a claim is a ref on origin that holds the empty tree" \
   "$(git -C "$claim_origin" rev-parse "refs/orch/claims/41^{tree}")" "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 assert_eq "and touches no branch of origin" "$(git -C "$claim_origin" for-each-ref --format='%(refname)' | grep -vc '^refs/orch/claims/')" "0"
 assert_eq "and leaves the checkout's HEAD where it was" "$(git rev-parse HEAD)" "$claim_head"
+out="$(ORCH_HOST_ID=autopilot-abc123 claim_op adapter_claim_create 60 spec 1 2>&1; claim_op adapter_claim_list | awk -F'\t' '$1 == 60 { print $2 }')"
+assert_eq "a claim records ORCH_HOST_ID when set" "$out" "autopilot-abc123"
+out="$(ORCH_HOST_ID="" claim_op adapter_claim_create 61 spec 1 2>&1; claim_op adapter_claim_list | awk -F'\t' '$1 == 61 { print $2 }')"
+assert_eq "and the hostname when it is empty" "$out" "$(hostname)"
 git remote set-url origin "$claim_origin/nowhere"
 out="$(claim_op adapter_claim_create 50 spec 1 2>&1)"; st=$?
 assert_status "a push that fails for another reason fails with status 1, not 2" "$st" 1

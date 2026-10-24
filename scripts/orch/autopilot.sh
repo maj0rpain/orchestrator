@@ -626,6 +626,13 @@ autopilot_pickup() {
   autopilot_spawn_run "$issue"
 }
 
+# autopilot_host_id: the identity a claim records as its host - ORCH_HOST_ID
+# when set and non-empty (the container entrypoint sets it, kept in the repo
+# volume across recreates), else the hostname.
+autopilot_host_id() {
+  if [ -n "${ORCH_HOST_ID:-}" ]; then printf '%s\n' "$ORCH_HOST_ID"; else hostname; fi
+}
+
 # autopilot_cleanup_stale <main-root>: every claim of this host whose process is
 # gone is a failure: needs-human, a comment, then the claim released. The pid
 # is the run pidfile's, or - with none - the claim's own tick pid. Other hosts'
@@ -634,7 +641,7 @@ autopilot_cleanup_stale() {
   local main_root="$1" claims issue host tick_pid run_pid phase _started pidfile log detail
   autopilot_claims_read claims
   while IFS=$'\t' read -r issue host tick_pid phase _started; do
-    [ -n "$issue" ] && [ "$host" = "$(hostname)" ] || continue
+    [ -n "$issue" ] && [ "$host" = "$(autopilot_host_id)" ] || continue
     pidfile="$(autopilot_dir "$main_root")/run/$issue.pid"
     run_pid=""
     [ ! -f "$pidfile" ] || run_pid="$(cat "$pidfile")"
