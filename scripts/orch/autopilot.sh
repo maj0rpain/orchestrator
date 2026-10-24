@@ -434,6 +434,25 @@ autopilot_spawn_run() {
   fi
 }
 
+# autopilot_short_slug <title>: prints the normalised title as whole
+# hyphen-separated words of at most 40 characters in all. A first word over 40
+# on its own is cut at 40, so the slug is never empty; a title that normalises
+# to nothing gives `untitled`.
+autopilot_short_slug() {
+  local norm word slug="" next
+  norm="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+  [ -n "$norm" ] || { printf 'untitled\n'; return 0; }
+  while [ -n "$norm" ]; do
+    word="${norm%%-*}"
+    case "$norm" in *-*) norm="${norm#*-}" ;; *) norm="" ;; esac
+    next="${slug:+$slug-}$word"
+    if [ "${#next}" -le 40 ]; then slug="$next"; continue; fi
+    [ -n "$slug" ] || slug="${word:0:40}"
+    break
+  done
+  printf '%s\n' "$slug"
+}
+
 # autopilot_pickup <issue> <phase>: steps 2 to 5 of a tick for a claimed issue.
 # A refusal or a failed write ends in autopilot_stop and returns 0: the claim is
 # released, the tick goes on.
@@ -446,7 +465,9 @@ autopilot_pickup() {
       autopilot_stop "$issue" failure "$phase" "step side-checkout add failed: could not read the issue's title: $(gh_reason "$gh_err")"
       return 0
     }
-    slug="$(normalize_slug "$issue-$title")"
+    slug="$(autopilot_short_slug "$title")"
+    # a clash with any entry of the side checkouts directory takes the issue
+    [ ! -e "$(side_checkouts_dir "$(main_checkout)")/$slug" ] || slug="$slug-$issue"
     capture side gh_err cmd_side_checkout_add "$slug" --issue "$issue" || {
       autopilot_stop "$issue" failure "$phase" "step side-checkout add failed: $(gh_reason "$gh_err")"
       return 0

@@ -224,14 +224,14 @@ printf '7\n' >"$launcher_dir/release"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick over one hand-labelled issue succeeds" "$st" 0
 calls="$(cat "$launcher_dir/calls" 2>/dev/null)"
-side7="$top/.orchestrator/checkouts/7-add-the-widget"
+side7="$top/.orchestrator/checkouts/add-the-widget"
 assert_contains "asking in words for orch-flow's Next phase" "$calls" "orchestrator:orch-flow skill's Next phase"
 assert_contains "with ORCH_AUTOPILOT=1" "$calls" "autopilot:1"
 assert_contains "with the Explore and Plan agents disabled" "$calls" "explore-plan:1"
 # Every argument but the second, the prompt, which the line above matches.
 assert_eq "the session runs claude -p with the permission mode and the lean flags" "$(grep '^arg:' "$launcher_dir/calls" | sed -n '1p;3,$p' | tr '\n' '|')" \
   "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|"
-assert_contains "in the side checkout, slugged <n>-<title>" "$calls" "dir:$side7"
+assert_contains "in the side checkout, slugged by the title" "$calls" "dir:$side7"
 assert_contains "after orch:running was added" "$calls" "labels:7:orch:running orch:spec ready-for-agent "
 assert_eq "the flow adopted issue 7" "$(cd "$side7" && "$ORCH" state get issue)" "7"
 assert_contains "the hand-labelled issue got the minimal plan comment" "$(fake_comments_of 7)" "<!-- orch:handoff 01-plan -->"
@@ -309,8 +309,32 @@ git config orchestrator.autopilot.cap 2
 "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
 assert_status "a tick under a cap of 2 succeeds" "$st" 0
 assert_eq "it starts two sessions" "$(tick_calls)" "2"
-assert_eq "the oldest first" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "7-issue-7 8-issue-8 "
+assert_eq "the oldest first" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "issue-7 issue-8 "
 assert_eq "the third waits" "$(fake_labels_of 9)" "orch:spec ready-for-agent "
+
+# the slug: the issue title alone, whole words, at most 40 characters
+pickup_titled() { # <issue> <title>: ticks over the issue; prints its side checkout's basename and its flow's slug
+  fake_issue "$1" open ready-for-agent orch:spec; printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"
+  printf '%s\n' "$1" >"$launcher_dir/release"
+  local before side; before="$(ls "$top/.orchestrator/checkouts" 2>/dev/null)"
+  "$ORCH" autopilot tick >/dev/null 2>&1
+  side="$(comm -13 <(printf '%s\n' "$before") <(ls "$top/.orchestrator/checkouts") | head -1)"
+  [ -n "$side" ] || { echo none; return; }
+  side="$top/.orchestrator/checkouts/$side"
+  printf '%s %s\n' "$(basename "$side")" "$(cd "$side" && "$ORCH" state get slug)"
+}
+top="$(git rev-parse --show-toplevel)"
+git config orchestrator.autopilot.cap 5
+assert_eq "a long title is cut to whole words" "$(pickup_titled 21 'Agent settings: repeated kind/host switches and duplicated listing remedy builders (9 findings)')" "agent-settings-repeated-kind-host agent-settings-repeated-kind-host"
+assert_eq "a short title is used whole" "$(pickup_titled 22 'Fix the widget')" "fix-the-widget fix-the-widget"
+assert_eq "a first word over 40 characters is cut at 40" "$(pickup_titled 23 'Aaaaaaaaaabbbbbbbbbbccccccccccddddddddddeeeee rest')" "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
+assert_eq "an all-punctuation title is untitled" "$(pickup_titled 24 '!!! ???')" "untitled untitled"
+assert_eq "a clash with another issue's side checkout appends the issue" "$(pickup_titled 25 'Fix the widget')" "fix-the-widget-25 fix-the-widget-25"
+# a re-pickup reuses a legacy-named side checkout and its slug
+(cd "$top" && "$ORCH" side-checkout add 26-legacy-title --issue 26 >/dev/null 2>&1)
+assert_eq "a re-pickup reuses a legacy-named side checkout" "$(pickup_titled 26 'Legacy title')" "none"
+assert_eq "no second checkout is made for it" "$(printf '%s\n' "$top"/.orchestrator/checkouts/*legacy* | wc -l | tr -d ' ')" "1"
+assert_eq "and the flow was initialised under the legacy slug" "$(cd "$top/.orchestrator/checkouts/26-legacy-title" && "$ORCH" state get slug)" "26-legacy-title"
 
 # claims of other hosts count against the cap; a lost claim skips the issue
 printf '' >"$launcher_dir/calls"
@@ -320,7 +344,7 @@ fake_claim_seed 7 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fake_claim_seed 90 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf '8\n' >"$launcher_dir/release"
 "$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "a claim lost to another host skips its issue, the cap leaving room for one" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "8-issue-8 "
+assert_eq "a claim lost to another host skips its issue, the cap leaving room for one" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "issue-8 "
 assert_eq "the lost claim stays theirs" "$(fake_claim_held 7)" held
 assert_eq "and its issue untouched" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
 rm -f "$ORCH_GH_FAKE_STORE/claims/7" "$ORCH_GH_FAKE_STORE/claims/90"
@@ -376,14 +400,14 @@ assert_eq "the issue is needs-human" "$(fake_labels_of 7)" "needs-human orch:spe
 assert_eq "its claim is released" "$(fake_claim_held 7)" free
 assert_contains "the comment names the failed step" "$(fake_comments_of 7)" "step init failed"
 assert_contains "and the phase" "$(fake_comments_of 7)" "spec phase"
-assert_eq "the side checkout is kept" "$(on_disk "$top/.orchestrator/checkouts/7-needs-ready")" present
-assert_eq "holding no flow" "$(on_disk "$top/.orchestrator/checkouts/7-needs-ready/.orchestrator/state.json")" absent
+assert_eq "the side checkout is kept" "$(on_disk "$top/.orchestrator/checkouts/needs-ready")" present
+assert_eq "holding no flow" "$(on_disk "$top/.orchestrator/checkouts/needs-ready/.orchestrator/state.json")" absent
 fake_issue 7 open ready-for-agent orch:spec
 printf '7\n' >"$launcher_dir/release"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "the next pickup reuses the side checkout and runs init again" "$(tick_calls)" "1"
 assert_eq "one side checkout" "$("$ORCH" side-checkout list | wc -l | tr -d ' ')" "1"
-assert_eq "now holding the flow" "$(on_disk "$top/.orchestrator/checkouts/7-needs-ready/.orchestrator/state.json")" present
+assert_eq "now holding the flow" "$(on_disk "$top/.orchestrator/checkouts/needs-ready/.orchestrator/state.json")" present
 
 # a forward skip is refused: label review, recorded phase spec
 fake_issue 7 open ready-for-agent orch:review
@@ -394,7 +418,7 @@ assert_eq "and is needs-human" "$(fake_labels_of 7)" "needs-human orch:review re
 assert_contains "the comment names the recorded phase" "$(fake_comments_of 7 | tail -3)" "last moved to phase spec"
 assert_eq "the claim is released" "$(fake_claim_held 7)" free
 # a step back from done is refused
-side7="$top/.orchestrator/checkouts/7-needs-ready"
+side7="$top/.orchestrator/checkouts/needs-ready"
 (cd "$side7" && state_fixture phase "done")
 fake_issue 7 open ready-for-agent orch:implement
 "$ORCH" autopilot tick >/dev/null 2>&1
@@ -427,7 +451,7 @@ printf '' >"$launcher_dir/calls"
 # a failed side-checkout add is a failure, the claim released
 fake_issue 8 open ready-for-agent orch:spec
 printf 'Blocked add\n' >"$ORCH_GH_FAKE_STORE/issues/8/title"
-mkdir -p "$top/.orchestrator/checkouts/8-blocked-add"
+mkdir -p "$top/.orchestrator/checkouts/blocked-add" "$top/.orchestrator/checkouts/blocked-add-8"
 "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
 assert_status "a failed side-checkout add does not stop the tick" "$st" 0
 assert_eq "the issue is needs-human" "$(fake_labels_of 8)" "needs-human orch:spec ready-for-agent "
@@ -497,7 +521,7 @@ fake_unfail
 fake_claim_seed 13 otherhost
 # a refusal dies the same way
 fake_issue 7 open ready-for-agent orch:review
-(cd "$top/.orchestrator/checkouts/7-needs-ready" && state_fixture phase spec)
+(cd "$top/.orchestrator/checkouts/needs-ready" && state_fixture phase spec)
 fake_fail adapter_claim_delete "HTTP 500"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a refusal with a failed claim delete dies" "$st" 1
