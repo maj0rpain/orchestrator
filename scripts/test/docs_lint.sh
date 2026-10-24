@@ -83,10 +83,8 @@
 #   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the
 #     unattended modes
 #   scan_skill_refs  each skill's SKILL.md names every reference file beside it
-#   scan_spec_review_refs  orch-flow's spec phase step 4 names spec-phase.md and
-#     changelog.md, orch-spec-review's Applying the answer names spec-review
-#     apply, and orch-handoff's 02-spec.md Spec review changelog names
-#     changelog.md
+#   scan_spec_review_refs  orch-flow's spec phase step 4 names spec-phase.md,
+#     and orch-spec-review's Applying the answer names spec-review apply
 #   scan_previously_declined  a standalone review pass lists earlier declines
 #     and the reviewers hear of them only through the known-items file
 #   scan_review_loop_prompt  the review loop's reviewer prompt is the seven
