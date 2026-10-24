@@ -1,3 +1,5 @@
+# To create or update the projects, run scripts/autopilot-up.sh (the plugin is
+# baked into the image at build); it runs the commands below for each env file.
 # One compose project per repo: copy .env.example to .env, fill it in, then
 # `docker compose up -d` (run from this directory). A second project sets
 # ORCH_ENV_FILE to its own env file, which must be named docker/.env.<name>

@@ -355,6 +355,34 @@ its args. Without `--env-file`, the image is built with `docker/.env`'s
 depth, so an env file named or kept elsewhere would hold tokens that can be
 committed or baked into the image.
 
+**Updating the plugin.** The plugin is baked into the image at build, so a
+container does not see a newer plugin until it is rebuilt. Pull the checkout
+and run `scripts/autopilot-up.sh`: it brings up `docker/.env` as the default
+project and each `docker/.env.<name>` as project `<name>` (never
+`.env.example`), creating a project not yet created and rebuilding one that
+exists, so it is also how a new project starts. Name projects to limit it
+(`scripts/autopilot-up.sh work`; `default` means `.env`). `--fresh` builds
+with `--pull --no-cache`, refreshing the base image and Claude Code too;
+without it the build cache is used and only the plugin changes. A project whose
+container is running a phase session is skipped and reported as busy;
+`--force` recreates it anyway and says what it killed. It prints an `engine:`
+line, then one line per project with the outcome and the plugin version and
+commit baked in, keeps going past a failed project, and exits non-zero when
+any failed. It warns, but does not refuse, when the checkout has uncommitted
+changes, since the build context is the working tree. A recreated container
+keeps its claim identity in the repo volume, so its watcher stops a killed
+phase's issue as a failure; claims left by containers recreated before #1603
+carry another identity, and `/orchestrator:health` reports them with their
+release command.
+
+On Windows, run it from PowerShell as `bash scripts/autopilot-up.sh` (WSL's
+bash) or from Git Bash. Under WSL, turn on Docker Desktop's WSL integration for
+that distro: its `docker` then drives the same Docker Desktop engine PowerShell
+does, so the script rebuilds the containers you started from PowerShell. A
+Docker Engine installed inside the distro is a separate engine with its own
+volumes: the script would create fresh containers there, so check the `engine:`
+line it prints first.
+
 #### The host alternative
 
 Without Docker, run scheduled one-shot ticks of `orch.sh autopilot tick`
