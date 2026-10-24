@@ -49,6 +49,10 @@ autopilot_setting() {
       else
         die "$REPO_REMEDY (the handle defaults to the repo's owner; or git config $key <handle>)"
       fi ;;
+    model|effort)
+      [ "$AUTOPILOT_SOURCE" != unset ] || return 0
+      agent_allowed "$name" "$AUTOPILOT_VALUE" ||
+        die "$key is $AUTOPILOT_VALUE - not an allowed $name (want $(agent_values "$name"))" ;;
     cap|rounds|budget)
       case "$name" in
         cap) def="$AUTOPILOT_CAP_DEFAULT" ;;
@@ -67,7 +71,7 @@ autopilot_setting() {
 # range, naming key and value.
 autopilot_show() {
   local name
-  for name in permission-mode cap handle rounds budget; do
+  for name in permission-mode cap handle rounds budget model effort; do
     autopilot_setting "$name"
     printf 'orchestrator.autopilot.%s %s (%s)\n' "$name" "${AUTOPILOT_VALUE:-(none)}" "$AUTOPILOT_SOURCE"
   done
@@ -647,7 +651,7 @@ AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-autho
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
@@ -669,10 +673,14 @@ autopilot_run() {
   while IFS= read -r line; do
     case "$line" in "$issue"$'\t'*) mine="$line" ;; esac
   done <<<"$claims"
+  for name in model effort; do
+    autopilot_setting "$name"
+    if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
+  done
   log="$dir/logs/$issue-$phase-$(dir_stamp).log"
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
-  ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 "$launcher" -p "$prompt" --permission-mode "$mode" \
+  ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections ) >"$log" 2>&1 || rc=$?
   autopilot_claims_read claims

@@ -266,11 +266,17 @@ global git config. `orch.sh autopilot` has no `set` verb, so set one with
 | `handle` | the repo's owner | Who gets @mentioned when it needs you. |
 | `rounds` | 2 | Spec review rounds. |
 | `budget` | 3 | Review loop iterations. |
+| `model` | unset: the session's own default; else one of Claude Code's allowed models (`orch.sh agent` lists them) or `inherit` | The `--model` the headless phase session runs on. |
+| `effort` | unset: the session's own default; else one of Claude Code's allowed efforts or `inherit` | The `--effort` the headless phase session runs on. |
 
 `rounds` and `budget` are only the defaults a hand-labelled issue's minimal
 plan comment gets. A flow started at the planning close runs the `Rounds` and
 `Budget` its plan's `## Autopilot` block sizes from the planned scope, and
 every review loop of that flow runs that budget.
+
+`model` and `effort` are validated against the agent setting's Claude Code
+allowed lists; unset or `inherit` passes no flag. The cascade: an agent role
+left at `inherit` inherits the phase session's model and effort.
 
 `orch.sh autopilot show` prints each setting's value and source. A headless
 session cannot answer a permission prompt, so the permission mode decides what
