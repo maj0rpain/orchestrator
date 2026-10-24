@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.33.0
+
+The autopilot container now sets which models autopilot runs on from its env
+file. `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's model
+and effort (the new `orchestrator.autopilot.model` and `.effort` keys, passed
+to `claude -p` as `--model` and `--effort`). `ORCH_MODEL_<ROLE>` and
+`ORCH_EFFORT_<ROLE>` set each role's agent setting; a role left unset inherits
+the phase session's. An unset variable now clears its key, `ORCH_CAP`,
+`ORCH_HANDLE`, `ORCH_ROUNDS` and `ORCH_BUDGET` included, and a bad value stops
+the container at startup. New: `orch.sh agent roles`. `agent clear` now fails
+naming the key when git cannot clear it, rather than passing silently.
+
 ## 4.32.12
 
 The autopilot watcher now names a picked-up flow's slug and branch from the issue title alone, shortened to whole words of at most 40 characters, instead of repeating the issue number and using the whole title.
