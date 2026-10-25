@@ -1473,5 +1473,10 @@ out="$("$ORCH" review standards extra 2>&1)"; st=$?
 assert_status "refuses an argument" "$st" 1
 assert_contains "with its usage" "$out" "orch: usage: orch.sh review standards"
 assert_contains "orch.sh help lists review standards" "$("$ORCH" help)" "review standards"
+: >docs/agents/a,b.md
+writeln '# contributing' 'See [the pair](docs/agents/a,b.md) and `docs/agents/c.md`.' >CONTRIBUTING.md
+assert_eq "a path containing a comma is listed whole, every other path unchanged" \
+  "$("$ORCH" review standards)" \
+  "Standards: CODING_STANDARDS.md, CONTRIBUTING.md, docs/agents/a,b.md, docs/agents/c.md"
 rm -rf "$out_dir"
 restore_suite_env

@@ -17,6 +17,18 @@ list_has() {
   [[ $2 != *$'\n'* ]] && grep -qxF -- "$2" <<<"$1"
 }
 
+# list_join <list>: the newline-separated <list>'s non-empty lines joined with
+# ", ", then a newline - a list reads better in a sentence. The one newline-list
+# join, beside list_has; an item containing a comma stays whole.
+list_join() {
+  local out="" x
+  while IFS= read -r x; do
+    if [ -z "$x" ]; then continue; fi
+    if [ -n "$out" ]; then out="$out, $x"; else out="$x"; fi
+  done <<<"$1"
+  printf '%s\n' "$out"
+}
+
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 # die for commands that reserve exit 1 for a meaningful "no" (pr comment: no
 # open PR; ticket exists: no breakdown), so their failures exit with status 2

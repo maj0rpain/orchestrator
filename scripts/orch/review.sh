@@ -424,15 +424,15 @@ review_standards_resolve() {
 # in backticks (against the repo root) or as Markdown links (against <file>'s
 # directory), one per line in the order they appear.
 review_standards_mentions() {
-  local file="$1" dir="" m
+  local file="$1" dir="" m link
   [[ $file == */* ]] && dir="${file%/*}"
   while IFS= read -r m; do
     case "$m" in
       \`*) review_standards_resolve "" "${m:1:${#m}-2}" ;;
       *)
-        m="${m#](}"; m="${m%)}"; m="${m%%[[:space:]]*}"
-        m="${m#<}"; m="${m%>}"
-        review_standards_resolve "$dir" "$m"
+        link="${m#](}"; link="${link%)}"; link="${link%%[[:space:]]*}"
+        link="${link#<}"; link="${link%>}"
+        review_standards_resolve "$dir" "$link"
         ;;
     esac
   done < <(grep -oE '`[^`]+`|\]\([^)]+\)' "$ROOT/$file" 2>/dev/null)
@@ -470,9 +470,7 @@ review_standards() {
   if [ "${#listed[@]}" -eq 0 ]; then
     note "Standards: none"
   else
-    local IFS=, joined
-    joined="${listed[*]}"
-    note "Standards: ${joined//,/, }"
+    note "Standards: $(list_join "$(printf '%s\n' "${listed[@]}")")"
   fi
 }
 
