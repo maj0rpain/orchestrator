@@ -55,12 +55,12 @@ missing="$(bash -c 'source "$1"
   done' _ "$ORCH" 2>&1)"
 assert_eq "every member of FILED_AXES has a category_for_axis result" "$missing" ""
 # shellcheck disable=SC2016 # expanded by the inner bash
-cat_for() { bash -c 'source "$1" && category_for_axis "$2"' _ "$ORCH" "$1"; }
-assert_eq "spec starts as a bug" "$(cat_for spec)" "bug"
-assert_eq "standards starts as an enhancement" "$(cat_for standards)" "enhancement"
-assert_eq "suite-cost starts as an enhancement" "$(cat_for suite-cost)" "enhancement"
-assert_eq "the axis is case-insensitive" "$(cat_for Suite-Cost)" "enhancement"
-out="$(cat_for style)"; st=0; bash -c 'source "$1" && category_for_axis style' _ "$ORCH" >/dev/null || st=$?
+axis_category() { bash -c 'source "$1" && category_for_axis "$2"' _ "$ORCH" "$1"; }
+assert_eq "spec starts as a bug" "$(axis_category spec)" "bug"
+assert_eq "standards starts as an enhancement" "$(axis_category standards)" "enhancement"
+assert_eq "suite-cost starts as an enhancement" "$(axis_category suite-cost)" "enhancement"
+assert_eq "the axis is case-insensitive" "$(axis_category Suite-Cost)" "enhancement"
+out="$(axis_category style)"; st=$?
 assert_status "an unknown axis fails" "$st" 1
 assert_eq "printing nothing" "$out" ""
 
