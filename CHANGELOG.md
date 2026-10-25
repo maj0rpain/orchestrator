@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.0
+
+An autopilot session cut off by a Claude Code usage limit is now waited out instead of handed to the human: its issue is labelled `orch:limited` in place of `needs-human`, and a tick once the limit pause has passed picks its phase up again. A phase cut off three times in a row falls back to `needs-human`. The headless session now runs with `--output-format stream-json --verbose`, and the reset time comes from its `rate_limit_event`, with the limit message as fallback; a session that ends with five-hour usage at 90% or more pauses pickup until that window resets. Every other failure still waits on the human.
+
 ## 4.37.0
 
 A flow phase that dies partway - a usage limit, a crash, a killed process - now restarts safely, interactive and autopilot alike: it finishes from its save points and discards what the dead session left uncommitted or unreported. The new `breakdown publish` and `breakdown state` finish a half-published ticket breakdown, `spec-review apply --resume` reruns a round cut off inside `apply` without a second changelog, `branch create` accepts the flow's own branch, `pr open` updates the flow's open PR, `ticket report save`/`show` keep each ticket's report, `ticket reclaim` recovers leftover ticket worktrees, and `review resume` reruns an interrupted review iteration without spending budget. Every ticket now builds in its own ticket worktree, the collapsed and one-at-a-time paths included. Uncommitted changes on the flow's branch in an interactive flow's main checkout are refused with the discard command named, never thrown away.
