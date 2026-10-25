@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.4
+
+A failed write to the clone's git exclude file now dies with one `orch: ` message naming the missing lines and the file, whichever command wrote it, and the confusable `exclude_lines` helper is gone.
+
 ## 4.38.3
 
 The spec module writes its `spec-paused` and round markers through one helper, so a failed write of either reads `orch: cannot write <path>` with no raw shell error.
