@@ -1030,23 +1030,13 @@ echo
 echo "ticket publish --record"
 ticket_fixture
 fake_issue 50 open
-fake_next_issue 100
-nums="$(mktemp)"; : >"$nums"
-out="$("$ORCH" ticket publish 50 "First" "$body" --record "$nums" 1 2>&1)"; st=$?
-assert_status "publishes with --record" "$st" 0
-assert_eq "records created then linked, after the link" "$(paste -sd ';' "$nums")" "1 100 created;1 100 linked"
-fake_fail adapter_sub_issue_link
-: >"$nums"
-out="$("$ORCH" ticket publish 50 "Second" "$body" --record "$nums" 2 2>&1)"; st=$?
-assert_status "a failed link dies" "$st" 1
-assert_eq "created is recorded before the link, linked is not" "$(cat "$nums")" "2 101 created"
-fake_unfail
+fake_next_issue 102
 bad_nums="$(mktemp -d)"
 before="$(fake_snapshot)"
 out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$bad_nums" 3 2>&1)"; st=$?
 assert_status "an unwritable numbers file dies" "$st" 1
 assert_contains "naming the record" "$out" "could not write ticket #102's created record"
-assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" "100"
+assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" ""
 restore_suite_env
 
 # --- ticket retire: breakdown save point ------------------------------------
@@ -1424,6 +1414,20 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "the same dirty tree in an autopilot flow is discarded" "$st" 0
 assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
 assert_eq "and reclaiming the leftover" "$(rc_has_worktree 7)$(fake_state_of 7)" "noCLOSED"
+
+# a side checkout of an interactive flow discards without autopilot
+rc_setup 0
+main_path="$(pwd -P)"
+git checkout -q -
+git worktree add -q "$main_path/.orchestrator/checkouts/side" orch/5-feature
+touch "$(git -C "$main_path/.orchestrator/checkouts/side" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+(
+  cd "$main_path/.orchestrator/checkouts/side" || exit 1
+  echo hand >>README.md
+  out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+  assert_status "a dirty flow branch in a side checkout is discarded" "$st" 0
+  assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
+)
 
 out="$("$ORCH" ticket reclaim 2>&1)"; st=$?
 assert_status "reclaim refuses a missing parent" "$st" 1

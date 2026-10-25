@@ -909,6 +909,7 @@ assert_eq "printing nothing" "$out" ""
 gh_reply 1 '' 'HTTP 502: Bad Gateway' pr edit 58 --body-file "$ibody"
 out="$(contract adapter_pr_body_edit 58 "$ibody" 2>&1)"; st=$?
 assert_status "pr body edit: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
 gh_reply 0 'https://github.com/acme/widgets/pull/57' '' pr edit 57 --title "New title"
 out="$(contract adapter_pr_title_edit 57 "New title" 2>&1)"; st=$?
@@ -926,7 +927,6 @@ assert_eq "printing nothing" "$out" ""
 gh_reply 1 '' 'HTTP 502: Bad Gateway' pr edit 58 --add-label ci
 out="$(contract adapter_pr_label_add 58 ci 2>&1)"; st=$?
 assert_status "pr label add: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "every PR operation was pinned to the resolved repo" \
   "$(grep ' pr ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> pr ')" "0"

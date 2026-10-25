@@ -335,14 +335,19 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    will diff against. When it dies because the flow's base does not exist on
    origin, offer the maintainer the repair rather than an abort: `bash "$ORCH"
    base set <branch> --flow` points the flow at another base, then rerun `branch
-   create`. When it exits 3, the checkout is a busy checkout - a working tree
-   with changes outside the planning allowlist, or a branch the plugin made that
-   has no PR yet, as after `redo review` of a flow whose PR opened before
-   the PR marker existed. Stop the phase with the state left where it is,
-   relay the busy line it printed, and tell the human to commit or stash the
-   changes, or switch off the named branch, then run `/orchestrator:next`
-   again. The flow's state already exists here, so it is never moved to a
-   side checkout.
+   create`. A working tree with changes outside the planning allowlist, or a
+   merge or rebase in progress, on the flow's branch is a dead session's
+   leftover: `branch create` discards it (ADR-0054) - except in an interactive
+   flow's main checkout, where it refuses instead, exit 1, naming the exact
+   discard command and touching nothing. Relay that line and tell the human to
+   run the command if the changes are not wanted, or commit them, then run
+   `/orchestrator:next` again. When it exits 3, the checkout is a busy
+   checkout - a branch the plugin made that has no PR yet, as after `redo
+   review` of a flow whose PR opened before the PR marker existed. Stop the
+   phase with the state left where it is, relay the busy line it printed, and
+   tell the human to switch off the named branch, then run
+   `/orchestrator:next` again. The flow's state already exists here, so it is
+   never moved to a side checkout.
 
    **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) neither
    case is offered: an exit 3, or a base missing on origin, is a failure. Ask
