@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.37.0
+
+A flow phase that dies partway - a usage limit, a crash, a killed process - now restarts safely, interactive and autopilot alike: it finishes from its save points and discards what the dead session left uncommitted or unreported. The new `breakdown publish` and `breakdown state` finish a half-published ticket breakdown, `spec-review apply --resume` reruns a round cut off inside `apply` without a second changelog, `branch create` accepts the flow's own branch, `pr open` updates the flow's open PR, `ticket report save`/`show` keep each ticket's report, `ticket reclaim` recovers leftover ticket worktrees, and `review resume` reruns an interrupted review iteration without spending budget. Every ticket now builds in its own ticket worktree, the collapsed and one-at-a-time paths included. Uncommitted changes on the flow's branch in an interactive flow's main checkout are refused with the discard command named, never thrown away.
+
 ## 4.36.1
 
 An autopilot review loop that re-enters after a bounded stop now sizes its budget from what the previous loop left, instead of re-running the whole planned budget, and reads the human's reply after every stop. `orch.sh autopilot answer` now exits 2, not 1, on a failure other than no reply yet.
