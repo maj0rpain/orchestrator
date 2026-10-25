@@ -431,7 +431,8 @@ It stops for three things:
 - a **fundamental item** in the spec review;
 - a review-loop bounded stop (a spec question the review loop files among
   them);
-- a failed session, which is never retried.
+- a failed session, which is never retried except a usage-limit stop labelled
+  `orch:limited`.
 
 It posts a **question comment** that @mentions the handle and adds
 `needs-human`. `/orchestrator:questions` gathers the pending questions and

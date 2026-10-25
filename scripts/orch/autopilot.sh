@@ -218,6 +218,7 @@ autopilot_iso_epoch() {
 
 AUTOPILOT_RUNNING_LABEL="orch:running"
 AUTOPILOT_HUMAN_LABEL="needs-human"
+AUTOPILOT_LIMITED_LABEL="orch:limited"
 
 # autopilot_chain_die <landed> <issue> <what> <gh-stderr>: dies for a write of
 # a chain that failed, naming the reason and the writes that landed before it.
@@ -266,6 +267,10 @@ autopilot_phase_move() {
 # " -->".
 AUTOPILOT_QUESTION_PREFIX='<!-- orch:question '
 
+# The first line of a limit stop comment opens with this, then the phase, then
+# " -->".
+AUTOPILOT_LIMITED_PREFIX='<!-- orch:limited '
+
 # What a refusal or failure comment opens with, before the phase; autopilot_stop
 # writes them and stop_phase below reads them back.
 AUTOPILOT_REFUSAL_OPENING='Autopilot refused to run the '
@@ -277,17 +282,21 @@ AUTOPILOT_FAILURE_OPENING='Autopilot failed in the '
 # empty); stop_phase is the phase a refusal or failure comment names, else null.
 AUTOPILOT_COMMENT_JQ='
   def first_line: .body | split("\n")[0] | rtrimstr("\r");
+  def marker_phase($p):
+    first_line | if startswith($p) and endswith(" -->") then ltrimstr($p) | rtrimstr(" -->") else null end;
   def question_comment($phase):
-    first_line | startswith($prefix) and endswith(" -->")
-      and ($phase == "" or . == $prefix + $phase + " -->");
+    marker_phase($prefix) as $m | $m != null and ($phase == "" or $m == $phase);
   def newest_question($phase): map(question_comment($phase)) | rindex(true);
-  def question_phase: first_line | ltrimstr($prefix) | rtrimstr(" -->");
+  def question_phase: marker_phase($prefix);
   def stop_phase:
     first_line | first(capture("^(?:'"$AUTOPILOT_REFUSAL_OPENING|$AUTOPILOT_FAILURE_OPENING"')(?<p>[^ ]+) phase") | .p) // null;
 '
 
 # autopilot_question_marker <phase>: the first line of a question comment.
 autopilot_question_marker() { printf '%s%s -->\n' "$AUTOPILOT_QUESTION_PREFIX" "$1"; }
+
+# autopilot_limit_marker <phase>: the first line of a limit stop comment.
+autopilot_limit_marker() { printf '%s%s -->\n' "$AUTOPILOT_LIMITED_PREFIX" "$1"; }
 
 # autopilot_phase_arg <phase> [die-fn]: dies, through die-fn (default die),
 # unless <phase> is a phase a question can be asked in - a flow phase other
@@ -423,7 +432,7 @@ autopilot_questions() {
 
 # autopilot_label_entries: the labels a tick ensures, one
 # `name|colour|description` each: a label per phase of the table, then the
-# running and human labels.
+# running, human and limited labels.
 autopilot_label_entries() {
   local p colour what
   for p in $PHASES; do
@@ -438,6 +447,7 @@ autopilot_label_entries() {
   done
   printf '%s|fbca04|Autopilot session running\n' "$AUTOPILOT_RUNNING_LABEL"
   printf '%s|d93f0b|Waiting on the human\n' "$AUTOPILOT_HUMAN_LABEL"
+  printf '%s|c5def5|Autopilot session stopped on a usage limit; retried after the reset\n' "$AUTOPILOT_LIMITED_LABEL"
 }
 
 # Claude Code's usage-limit messages, as grep -Ei reads it: the one pattern for
@@ -474,7 +484,7 @@ autopilot_orch_in() {
   cd "$dir" && "$(autopilot_self)" "$@" >/dev/null
 }
 
-# autopilot_labels_ensure: the six labels exist with their colour and
+# autopilot_labels_ensure: the labels exist with their colour and
 # description. A failed upsert dies naming the label, stopping the tick.
 autopilot_labels_ensure() {
   local name colour description gh_err
@@ -492,26 +502,79 @@ autopilot_claims_read() {
   printf -v "$1" '%s' "$claims_text"
 }
 
+# autopilot_stop_write <issue> <kind> <text> <label> [<remove-label>]: the write
+# chain of a stop: adds <label> (removing <remove-label> when given), posts
+# <text> as the <kind> comment, then releases the claim, last.
+autopilot_stop_write() {
+  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=()
+  relabel=(--add "$label")
+  [ -z "$remove" ] || relabel+=(--remove "$remove")
+  capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
+    autopilot_chain_die "" "$issue" "add $label" "$gh_err"
+  body="$(mktemp)" || die "could not create a temp file for the $kind comment"
+  printf '%s' "$text" >"$body"
+  capture_err gh_err adapter_issue_comment "$issue" "$body" || {
+    rm -f "$body"
+    autopilot_chain_die "added $label" "$issue" "post the $kind comment" "$gh_err"
+  }
+  rm -f "$body"
+  autopilot_release "$issue" "added $label, posted the $kind comment"
+}
+
 # autopilot_stop <issue> <refusal|failure> <phase> <detail>: ends a phase that
 # will not run, or did not finish: adds needs-human, comments - the comment
 # names the phase and <detail> - then releases the claim, last.
 autopilot_stop() {
-  local issue="$1" kind="$2" phase="$3" detail="$4" body gh_err
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$AUTOPILOT_HUMAN_LABEL" ||
-    autopilot_chain_die "" "$issue" "add $AUTOPILOT_HUMAN_LABEL" "$gh_err"
-  body="$(mktemp)" || die "could not create a temp file for the $kind comment"
+  local issue="$1" kind="$2" phase="$3" detail="$4" text
   case "$kind" in
-    refusal) printf '%s%s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
-      "$AUTOPILOT_REFUSAL_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" >"$body" ;;
-    *) printf '%s%s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically. Remove the label to have the watcher start the phase again.\n' \
-      "$AUTOPILOT_FAILURE_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" >"$body" ;;
+    refusal) printf -v text '%s%s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
+      "$AUTOPILOT_REFUSAL_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" ;;
+    *) printf -v text '%s%s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
+      "$AUTOPILOT_FAILURE_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL" ;;
   esac
-  capture_err gh_err adapter_issue_comment "$issue" "$body" || {
-    rm -f "$body"
-    autopilot_chain_die "added $AUTOPILOT_HUMAN_LABEL" "$issue" "post the $kind comment" "$gh_err"
+  autopilot_stop_write "$issue" "$kind" "$text" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL"
+}
+
+# autopilot_limit_count <issue> <phase> <var>: the limit stop comments of
+# <phase> before now, into <var>, counted newest first up to the first refusal,
+# failure or question comment, handoff comment, or limit stop comment of
+# another phase; other comments are skipped. Non-zero when the comments cannot
+# be read.
+autopilot_limit_count() {
+  local json gh_err n
+  capture json gh_err adapter_issue_comments_json "$1" || return 1
+  n="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg lprefix "$AUTOPILOT_LIMITED_PREFIX" --arg hprefix "$HANDOFF_MARKER_PREFIX" --arg phase "$2" "$AUTOPILOT_COMMENT_JQ"'
+    def limit_phase: marker_phase($lprefix);
+    def handoff: first_line | startswith($hprefix);
+    reduce (reverse[]) as $c ({n: 0, done: false};
+      if .done then .
+      elif ($c | stop_phase != null or question_comment("") or handoff) then .done = true
+      elif ($c | limit_phase) != null then
+        if ($c | limit_phase) == $phase then .n += 1 else .done = true end
+      else . end) | .n' <<<"$json")" || return 1
+  printf -v "$3" '%s' "$n"
+}
+
+# autopilot_limit_stop <issue> <phase> <reset> <rc> <log>: ends a phase whose
+# session stopped on a usage limit. With fewer than two such stops of the phase
+# before it, adds orch:limited, comments, then releases the claim; the third in
+# a row, and a stop whose comments cannot be read, take the failure path.
+autopilot_limit_stop() {
+  local issue="$1" phase="$2" reset="$3" rc="$4" log="$5" count text when="" at="" stopped
+  [ -z "$reset" ] || when=" (resets $reset)"
+  stopped="the session stopped on a usage limit$when and exited with code $rc"
+  autopilot_limit_count "$issue" "$phase" count || {
+    autopilot_stop "$issue" failure "$phase" "$stopped, and the issue's comments could not be read to count the stops in a row; log: $log"
+    return 0
   }
-  rm -f "$body"
-  autopilot_release "$issue" "added $AUTOPILOT_HUMAN_LABEL, posted the $kind comment"
+  if [ "$count" -ge 2 ]; then
+    autopilot_stop "$issue" failure "$phase" "$stopped, the third in a row in the $phase phase; log: $log"
+    return 0
+  fi
+  [ -z "$reset" ] || at=", which resets $reset"
+  printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
+    "$(autopilot_limit_marker "$phase")" "$phase" "$at" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
+  autopilot_stop_write "$issue" "limit stop" "$text" "$AUTOPILOT_LIMITED_LABEL"
 }
 
 # autopilot_minimal_plan <file>: the plan a hand-labelled issue gets: the repo
@@ -574,11 +637,17 @@ autopilot_short_slug() {
   printf '%s\n' "$slug"
 }
 
-# autopilot_pickup <issue> <phase>: steps 2 to 5 of a tick for a claimed issue.
-# A refusal or a failed write ends in autopilot_stop and returns 0: the claim is
-# released, the tick goes on.
+# autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
+# claimed issue. A refusal or a failed write ends in autopilot_stop and returns
+# 0: the claim is released, the tick goes on.
 autopilot_pickup() {
-  local issue="$1" phase="$2" side slug title labels gh_err recorded state redo
+  local issue="$1" phase="$2" limited="${3:-}" side slug title labels gh_err recorded state redo
+  if [ -n "$limited" ]; then
+    capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_LIMITED_LABEL" || {
+      autopilot_stop "$issue" failure "$phase" "step removing $AUTOPILOT_LIMITED_LABEL failed: $(gh_reason "$gh_err")"
+      return 0
+    }
+  fi
   side="$(side_checkout_for_issue "$issue")" || side=""
   if [ -z "$side" ]; then
     # labels is the read's throwaway half.
@@ -657,17 +726,24 @@ autopilot_cleanup_stale() {
   done <<<"$claims"
 }
 
+# autopilot_limit_epoch <file>: the reset recorded in the limit file <file> as
+# epoch seconds; 0 when the file is missing or its text does not parse.
+autopilot_limit_epoch() {
+  local text
+  text="$(cat "$1" 2>/dev/null)" || text=""
+  autopilot_iso_epoch "$text" || echo 0
+}
+
 # autopilot_limit_paused <main>: whether a usage limit pauses pickup. While the
 # limit file's reset time is in the future it prints one line naming it and
 # returns 0; once it has passed, the file is removed and it returns 1.
 autopilot_limit_paused() {
-  local file reset epoch
+  local file epoch
   file="$(autopilot_dir "$1")/limit"
   [ -f "$file" ] || return 1
-  reset="$(cat "$file")"
-  epoch="$(autopilot_iso_epoch "$reset")" || epoch=0
+  epoch="$(autopilot_limit_epoch "$file")"
   if [ "$epoch" -gt "$(date +%s)" ]; then
-    note "usage limit: no issue is picked up until $reset"
+    note "usage limit: no issue is picked up until $(cat "$file")"
     return 0
   fi
   rm -f "$file"
@@ -691,7 +767,7 @@ autopilot_candidates() {
 # One tick). A claim create that fails for a reason other than a lost race
 # stops the tick, naming it.
 autopilot_tick() {
-  local main_root cap claims count issue state labels gh_err phase rc candidates
+  local main_root cap claims count issue state labels gh_err phase rc candidates limited_arg
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
   cd "$main_root" || die "could not enter the main checkout $main_root"
@@ -719,7 +795,9 @@ autopilot_tick() {
       *) die "could not claim issue #$issue: $(gh_reason "$gh_err") - the tick stops" ;;
     esac
     count=$((count + 1))
-    autopilot_pickup "$issue" "$phase"
+    limited_arg=""
+    if list_has "$labels" "$AUTOPILOT_LIMITED_LABEL"; then limited_arg=limited; fi
+    autopilot_pickup "$issue" "$phase" "$limited_arg"
   done <<<"$candidates"
 }
 
@@ -764,13 +842,69 @@ autopilot_resets_epoch() {
   printf '%s\n' "$((target + shift_secs))"
 }
 
-# autopilot_limit_reset <log>: returns 0 when <log> holds Claude Code's
-# usage-limit message, printing its reset time as a UTC timestamp when the
-# message gives one - an epoch, or a `resets <time>` that autopilot_resets_epoch
-# reads; 1 when the log holds no usage-limit message.
+# autopilot_log_last_event <log> <type>: the last line of <log> that parses as a
+# JSON object of that "type", compact; nothing when there is none. The log is
+# NDJSON with plain-text lines mixed in, which this skips.
+autopilot_log_last_event() {
+  jq -cR --arg type "$2" 'fromjson? | select(type == "object" and .type == $type)' "$1" 2>/dev/null | tail -n 1
+}
+
+# autopilot_log_text <log>: the text of <log> the usage-limit message parse
+# reads: its lines that do not parse as JSON, and the result text of its last
+# result event - never an assistant message or a tool result.
+autopilot_log_text() {
+  jq -rR '. as $line | try (fromjson | empty) catch $line' "$1" 2>/dev/null || true
+  autopilot_log_last_event "$1" result | jq -r '.result // empty | strings' 2>/dev/null || true
+}
+
+# autopilot_event_rejecting_reset <event>: returns 0 when the rate_limit_event
+# has a window - the top level one or one under unifiedWindows - whose status is
+# neither allowed nor allowed_warning, printing the latest resetsAt among them
+# as epoch seconds (nothing when none carries one); 1 when it has none.
+autopilot_event_rejecting_reset() {
+  local out
+  out="$(jq -r '.rate_limit_info // {} | [., (.unifiedWindows // {} | .[])]
+    | map(select(type == "object" and ((.status // "allowed") | IN("allowed", "allowed_warning") | not)))
+    | if length == 0 then "none" else ([.[].resetsAt | numbers | floor] | max // "") end' <<<"$1" 2>/dev/null)" || return 1
+  [ "$out" != none ] || return 1
+  printf '%s\n' "$out"
+}
+
+# autopilot_event_five_hour_reset <event>: the five_hour window's resetsAt, as
+# epoch seconds, when its utilization is 0.9 or more; non-zero otherwise.
+autopilot_event_five_hour_reset() {
+  local out
+  out="$(jq -r '.rate_limit_info // {} | (if .rateLimitType == "five_hour" then . else .unifiedWindows.five_hour end) // {} | select((.utilization | numbers) >= 0.9) | .resetsAt | numbers | floor' <<<"$1" 2>/dev/null)" || return 1
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+
+# autopilot_limit_write <dir> <log> <reset>: records the UTC timestamp <reset>
+# as the limit file's reset in <dir>, keeping one already there that is later
+# and replacing one that is earlier or does not parse. A failed write is noted
+# in <log> and on stderr, and is no failure of the caller.
+autopilot_limit_write() {
+  local file="$1/limit" log="$2" old_epoch new_epoch msg
+  new_epoch="$(autopilot_iso_epoch "$3")" || new_epoch=0
+  if [ -f "$file" ]; then
+    old_epoch="$(autopilot_limit_epoch "$file")"
+    [ "$old_epoch" -lt "$new_epoch" ] || return 0
+  fi
+  if ! { printf '%s\n' "$3" >"$file"; } 2>/dev/null; then
+    msg="autopilot run: could not write the limit file $file"
+    warn "$msg"
+    printf '%s\n' "$msg" >>"$log"
+  fi
+  return 0
+}
+
+# autopilot_limit_reset <log>: returns 0 when <log> text (autopilot_log_text)
+# holds Claude Code's usage-limit message, printing its reset time as a UTC
+# timestamp when the message gives one - an epoch, or a `resets <time>` that
+# autopilot_resets_epoch reads; 1 when the log holds no usage-limit message.
 autopilot_limit_reset() {
   local hit epoch
-  hit="$(grep -Eio "$AUTOPILOT_LIMIT_PATTERN" "$1" | tail -n 1)" || true
+  hit="$(autopilot_log_text "$1" | grep -Eio "$AUTOPILOT_LIMIT_PATTERN" | tail -n 1)" || true
   [ -n "$hit" ] || return 1
   case "$hit" in
     *'|'*) autopilot_epoch_iso "${hit##*|}" ;;
@@ -798,7 +932,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name event pause_epoch pause_iso reject_epoch limited flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
@@ -829,11 +963,18 @@ autopilot_run() {
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
-      --strict-mcp-config --exclude-dynamic-system-prompt-sections ) >"$log" 2>&1 || rc=$?
+      --strict-mcp-config --exclude-dynamic-system-prompt-sections \
+      --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
   autopilot_claims_read claims
   while IFS= read -r line; do
     case "$line" in "$issue"$'\t'*) [ -z "$mine" ] || [ "$line" = "$mine" ] || continue; held=1 ;; esac
   done <<<"$claims"
+  # The early pause: a session ending with its five-hour usage at 90% or more
+  # pauses pickup until that window resets, whatever its outcome.
+  event="$(autopilot_log_last_event "$log" rate_limit_event)"
+  if [ -n "$event" ] && pause_epoch="$(autopilot_event_five_hour_reset "$event")"; then
+    autopilot_limit_write "$dir" "$log" "$(autopilot_epoch_iso "$pause_epoch")"
+  fi
   if [ "$held" = 0 ]; then
     detail="autopilot run: issue #$issue's session exited $rc with its claim released"
     note "$detail"
@@ -841,14 +982,19 @@ autopilot_run() {
     return 0
   fi
   detail="the session exited with code $rc; log: $log"
-  if reset="$(autopilot_limit_reset "$log")"; then
-    if [ -n "$reset" ]; then
-      detail="the session stopped on a usage limit (resets $reset) and exited with code $rc; log: $log"
-    else
-      detail="the session stopped on a usage limit and exited with code $rc; log: $log"
-      reset="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
-    fi
-    printf '%s\n' "$reset" >"$dir/limit"
+  limited=0; reset=""
+  if [ -n "$event" ] && reject_epoch="$(autopilot_event_rejecting_reset "$event")"; then
+    limited=1
+    [ -z "$reject_epoch" ] || reset="$(autopilot_epoch_iso "$reject_epoch")"
+  elif reset="$(autopilot_limit_reset "$log")"; then
+    limited=1
+  fi
+  if [ "$limited" = 1 ]; then
+    pause_iso="$reset"
+    [ -n "$pause_iso" ] || pause_iso="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
+    autopilot_limit_write "$dir" "$log" "$pause_iso"
+    autopilot_limit_stop "$issue" "$phase" "$reset" "$rc" "$log"
+    return 0
   fi
   autopilot_stop "$issue" failure "$phase" "$detail"
 }

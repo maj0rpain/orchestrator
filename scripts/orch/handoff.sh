@@ -202,10 +202,13 @@ handoff_check() {
   return "$failed"
 }
 
+# What a handoff comment's first line opens with, before the name.
+HANDOFF_MARKER_PREFIX='<!-- orch:handoff '
+
 # handoff_marker <name> [retired]: the first line of a handoff's comment, the
 # hidden tag that makes an issue comment the handoff <name>: `01-plan`,
 # `02-spec` or `03-implement`.
-handoff_marker() { printf '<!-- orch:handoff %s%s -->\n' "$1" "${2:+ $2}"; }
+handoff_marker() { printf '%s%s%s -->\n' "$HANDOFF_MARKER_PREFIX" "$1" "${2:+ $2}"; }
 
 # handoff_name_check <name>: dies unless <name> is a handoff the table holds,
 # its file name without the `.md`.

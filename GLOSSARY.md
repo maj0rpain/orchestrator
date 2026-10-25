@@ -127,7 +127,9 @@ A flow whose phases are started by a watcher rather than a human. Its phase is
 recorded as a label on its issue, its handoffs are issue comments, and its
 questions reach the human as issue comments. It stops for the human only on a
 fundamental item, a bounded stop (a spec question the review loop meets among
-them), or a failure. _Avoid_: auto flow, headless flow.
+them), or a failure; a session cut off by a usage limit is waited out instead,
+as a limited issue, short of the third such stop in a row of one phase.
+_Avoid_: auto flow, headless flow.
 
 **Watcher**:
 The process that starts each autopilot flow's next phase, in that flow's side
@@ -177,7 +179,19 @@ the human with its own recommendation and posts the reply.
 
 **Pickup rule**:
 The rule a watcher picks issues by: open, a phase label other than `orch:done`,
-and neither `orch:running` nor `needs-human`.
+and neither `orch:running` nor `needs-human`, while no limit pause holds.
+
+**Limited issue**:
+An autopilot flow's issue whose last session stopped on a Claude Code usage
+limit, labelled `orch:limited` in place of `needs-human`. A tick once the limit
+pause has passed picks its phase up again; a third such stop in a row of one
+phase waits on the human. _Avoid_: rate-limited issue.
+
+**Limit pause**:
+The stretch in which a clone's watcher picks up no issue: from a session
+stopping on a usage limit, or ending with its five-hour usage at 90% or more,
+until the latest usage reset any of them named. Running sessions are left
+alone.
 
 **Cap**:
 The most autopilot sessions a repo runs at once, counted as the claim refs on
