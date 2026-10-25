@@ -266,7 +266,7 @@ assert_contains "with the Explore and Plan agents disabled" "$calls" "explore-pl
 assert_contains "with a 2-hour background wait, whatever the caller sets" "$calls" "bg-wait:7200000"
 # Every argument but the second, the prompt, which the line above matches.
 assert_eq "the session runs claude -p with the permission mode and the lean flags" "$(grep '^arg:' "$launcher_dir/calls" | sed -n '1p;3,$p' | tr '\n' '|')" \
-  "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|"
+  "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|arg:--output-format|arg:stream-json|arg:--verbose|"
 assert_not_contains "no --model when the key is unset" "$calls" "arg:--model"
 assert_not_contains "and no --effort" "$calls" "arg:--effort"
 assert_contains "in the side checkout, slugged by the title" "$calls" "dir:$side7"
@@ -750,6 +750,116 @@ assert_eq "the claim is still held" "$(fake_claim_held 8)" held
 fake_unfail
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
+# --- autopilot tick: the rate limit event -------------------------------------
+# The session's log is NDJSON with plain-text lines mixed in; the limit file's
+# reset comes from the last rate_limit_event (#1463).
+echo
+echo "autopilot tick rate limit event"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; printf 'Event 7\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
+limit_file="$top/.orchestrator/autopilot/limit"
+iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
+# rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
+# <7d reset>
+rl_event() {
+  printf '{"type":"rate_limit_event","rate_limit_info":{"status":"%s","resetsAt":%s,"rateLimitType":"seven_day","utilization":%s,"unifiedWindows":{"five_hour":{"utilization":%s,"resetsAt":%s,"status":"%s"},"seven_day":{"utilization":%s,"resetsAt":%s,"status":"%s"}}}}\n' \
+    "$4" "$6" "$5" "$2" "$3" "$1" "$5" "$6" "$4"
+}
+# event_session <exit>: a fresh tick of issue 7 over the launcher's canned log.
+event_session() {
+  rm -f "$limit_file"
+  fake_issue 7 open ready-for-agent orch:spec
+  printf '%s\n' "$1" >"$launcher_dir/exit"
+  "$ORCH" autopilot tick >/dev/null 2>&1
+}
+now_epoch="$(date +%s)"
+r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
+
+{ echo 'stderr noise line'; rl_event rejected 1 "$r1" allowed_warning 0.8 "$r3"; echo 'another note'; } >"$launcher_dir/out"
+event_session 1
+assert_eq "a rejecting five-hour window writes its reset" "$(cat "$limit_file")" "$(iso_of "$r1")"
+assert_contains "and the failure comment names it" "$(fake_comments_of 7)" "$(iso_of "$r1")"
+rl_event rejected 1 "$r1" rejected 0.8 "$r3" >"$launcher_dir/out"
+event_session 1
+assert_eq "the latest rejecting window decides" "$(cat "$limit_file")" "$(iso_of "$r3")"
+{ rl_event rejected 1 "$r1" allowed 0.8 "$r3"; rl_event allowed 0.5 "$r1" allowed 0.8 "$r3"; } >"$launcher_dir/out"
+event_session 1
+assert_eq "a rejecting event followed by an allowed one is no limit stop" "$(on_disk "$limit_file")" absent
+assert_not_contains "its comment names no usage limit" "$(fake_comments_of 7)" "usage limit"
+
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"Claude AI usage limit reached"}]}}' \
+  '{"type":"user","message":{"content":[{"type":"tool_result","content":"Weekly limit reached"}]}}' >"$launcher_dir/out"
+event_session 1
+assert_eq "limit wording only in assistant text or tool results is no limit stop" "$(on_disk "$limit_file")" absent
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}' \
+  "{\"type\":\"result\",\"is_error\":true,\"result\":\"Claude AI usage limit reached|$r2\"}" >"$launcher_dir/out"
+event_session 1
+assert_eq "a limit message in the last result event is a limit stop" "$(cat "$limit_file")" "$(iso_of "$r2")"
+printf '%s\n' "{\"type\":\"result\",\"result\":\"Claude AI usage limit reached|$r2\"}" 'plain 5-hour limit reached ∙ resets 3pm' >"$launcher_dir/out"
+event_session 1
+assert_contains "a plain-text line is read with the result text" "$(fake_comments_of 7)" "usage limit"
+
+# early pause
+rl_event allowed 0.9 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
+event_session 0
+assert_eq "a five-hour utilization of 0.9 writes its reset on a successful session" "$(cat "$limit_file")" "$(iso_of "$r1")"
+event_session 3
+assert_eq "and on a failure that is no usage limit" "$(cat "$limit_file")" "$(iso_of "$r1")"
+assert_not_contains "that failure names no usage limit" "$(fake_comments_of 7)" "usage limit"
+printf '7\n' >"$launcher_dir/release"
+event_session 0
+assert_eq "and on a session that released its claim" "$(cat "$limit_file")" "$(iso_of "$r1")"
+rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
+event_session 1
+assert_eq "a rejecting event of a released claim marks no issue" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
+assert_not_contains "and posts no limit stop comment" "$(fake_comments_of 7)" "usage limit"
+rm -f "$launcher_dir/release"
+rl_event allowed 0.89 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
+event_session 0
+assert_eq "0.89 writes nothing" "$(on_disk "$limit_file")" absent
+rl_event allowed 0.5 "$r1" allowed_warning 0.97 "$r3" >"$launcher_dir/out"
+event_session 0
+assert_eq "a high seven-day utilization alone writes nothing" "$(on_disk "$limit_file")" absent
+
+# a later recorded reset is kept; an earlier or unparsable one is replaced
+# run_with_prior <limit file content>: a run of issue 7 over the canned log.
+run_with_prior() {
+  fake_issue 7 open ready-for-agent orch:spec orch:running
+  fake_claim_seed 7
+  printf '%s\n' "$1" >"$limit_file"
+  "$ORCH" autopilot run 7 2>&1
+}
+rl_event allowed 0.95 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
+run_with_prior "$(iso_of "$r2")" >/dev/null
+assert_eq "a later reset already recorded is kept" "$(cat "$limit_file")" "$(iso_of "$r2")"
+run_with_prior "2020-01-01T00:00:00Z" >/dev/null
+assert_eq "an earlier one is replaced" "$(cat "$limit_file")" "$(iso_of "$r1")"
+run_with_prior "garbage" >/dev/null
+assert_eq "one that does not parse is replaced" "$(cat "$limit_file")" "$(iso_of "$r1")"
+
+# a failed limit-file write is noted and changes nothing else
+rm -f "$limit_file"; mkdir "$limit_file"
+rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7
+out="$("$ORCH" autopilot run 7 2>&1)"; st=$?
+assert_status "a run whose limit-file write fails succeeds" "$st" 0
+assert_contains "the failure is noted on stderr" "$out" "could not write the limit file"
+event_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_contains "and in the session log" "$(cat "$event_log")" "could not write the limit file"
+assert_eq "the issue is still stopped" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
+assert_eq "its claim released" "$(fake_claim_held 7)" free
+assert_contains "with its usage limit comment" "$(fake_comments_of 7)" "usage limit"
+rmdir "$limit_file"
+
+# the stale-claim cleanup still names an NDJSON session log
+fake_issue 12 open ready-for-agent orch:spec orch:running
+fake_claim_seed 12 "$(hostname)" "$(dead_pid)"
+rl_event allowed 0.4 "$r1" allowed 0.2 "$r3" >"$top/.orchestrator/autopilot/logs/12-spec-20250101T000000.log"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "the stale comment names an NDJSON log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot questions, reply and resume ------------------------------------
 # The three verbs behind /orchestrator:questions: they hold no flow state, so

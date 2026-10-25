@@ -764,13 +764,70 @@ autopilot_resets_epoch() {
   printf '%s\n' "$((target + shift_secs))"
 }
 
-# autopilot_limit_reset <log>: returns 0 when <log> holds Claude Code's
-# usage-limit message, printing its reset time as a UTC timestamp when the
-# message gives one - an epoch, or a `resets <time>` that autopilot_resets_epoch
-# reads; 1 when the log holds no usage-limit message.
+# autopilot_log_last_event <log> <type>: the last line of <log> that parses as a
+# JSON object of that "type", compact; nothing when there is none. The log is
+# NDJSON with plain-text lines mixed in, which this skips.
+autopilot_log_last_event() {
+  jq -cR --arg type "$2" 'fromjson? | select(type == "object" and .type == $type)' "$1" 2>/dev/null | tail -n 1
+}
+
+# autopilot_log_text <log>: the text of <log> the usage-limit message parse
+# reads: its lines that do not parse as JSON, and the result text of its last
+# result event - never an assistant message or a tool result.
+autopilot_log_text() {
+  jq -rR '. as $line | try (fromjson | empty) catch $line' "$1" 2>/dev/null || true
+  autopilot_log_last_event "$1" result | jq -r '.result // empty | strings' 2>/dev/null || true
+}
+
+# autopilot_event_rejecting_reset <event>: returns 0 when the rate_limit_event
+# has a window - the top level one or one under unifiedWindows - whose status is
+# neither allowed nor allowed_warning, printing the latest resetsAt among them
+# as epoch seconds (nothing when none carries one); 1 when it has none.
+autopilot_event_rejecting_reset() {
+  local out
+  out="$(jq -r '.rate_limit_info // {} | [., (.unifiedWindows // {} | .[])]
+    | map(select(type == "object" and ((.status // "allowed") | IN("allowed", "allowed_warning") | not)))
+    | if length == 0 then "none" else ([.[].resetsAt | numbers] | max // "" | tostring | sub("\\..*$"; "")) end' <<<"$1" 2>/dev/null)" || return 1
+  [ "$out" != none ] || return 1
+  printf '%s\n' "$out"
+}
+
+# autopilot_event_five_hour_reset <event>: the five_hour window's resetsAt, as
+# epoch seconds, when its utilization is 0.9 or more; non-zero otherwise.
+autopilot_event_five_hour_reset() {
+  local out
+  out="$(jq -r '.rate_limit_info.unifiedWindows.five_hour // {} | select((.utilization | numbers) >= 0.9) | .resetsAt | numbers | floor' <<<"$1" 2>/dev/null)" || return 1
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+
+# autopilot_limit_write <dir> <log> <reset>: records the UTC timestamp <reset>
+# as the limit file's reset in <dir>, keeping one already there that is later
+# and replacing one that is earlier or does not parse. A failed write is noted
+# in <log> and on stderr, and is no failure of the caller.
+autopilot_limit_write() {
+  local file="$1/limit" log="$2" old old_epoch new_epoch msg
+  new_epoch="$(autopilot_iso_epoch "$3")" || new_epoch=0
+  if [ -f "$file" ]; then
+    old="$(cat "$file" 2>/dev/null)" || old=""
+    old_epoch="$(autopilot_iso_epoch "$old")" || old_epoch=0
+    [ "$old_epoch" -lt "$new_epoch" ] || return 0
+  fi
+  if ! { printf '%s\n' "$3" >"$file"; } 2>/dev/null; then
+    msg="autopilot run: could not write the limit file $file"
+    warn "$msg"
+    printf '%s\n' "$msg" >>"$log"
+  fi
+  return 0
+}
+
+# autopilot_limit_reset <log>: returns 0 when <log> text (autopilot_log_text)
+# holds Claude Code's usage-limit message, printing its reset time as a UTC
+# timestamp when the message gives one - an epoch, or a `resets <time>` that
+# autopilot_resets_epoch reads; 1 when the log holds no usage-limit message.
 autopilot_limit_reset() {
   local hit epoch
-  hit="$(grep -Eio "$AUTOPILOT_LIMIT_PATTERN" "$1" | tail -n 1)" || true
+  hit="$(autopilot_log_text "$1" | grep -Eio "$AUTOPILOT_LIMIT_PATTERN" | tail -n 1)" || true
   [ -n "$hit" ] || return 1
   case "$hit" in
     *'|'*) autopilot_epoch_iso "${hit##*|}" ;;
@@ -798,7 +855,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name event epoch limited flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
@@ -829,11 +886,18 @@ autopilot_run() {
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
-      --strict-mcp-config --exclude-dynamic-system-prompt-sections ) >"$log" 2>&1 || rc=$?
+      --strict-mcp-config --exclude-dynamic-system-prompt-sections \
+      --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
   autopilot_claims_read claims
   while IFS= read -r line; do
     case "$line" in "$issue"$'\t'*) [ -z "$mine" ] || [ "$line" = "$mine" ] || continue; held=1 ;; esac
   done <<<"$claims"
+  # The early pause: a session ending with its five-hour usage at 90% or more
+  # pauses pickup until that window resets, whatever its outcome.
+  event="$(autopilot_log_last_event "$log" rate_limit_event)"
+  if [ -n "$event" ] && epoch="$(autopilot_event_five_hour_reset "$event")"; then
+    autopilot_limit_write "$dir" "$log" "$(autopilot_epoch_iso "$epoch")"
+  fi
   if [ "$held" = 0 ]; then
     detail="autopilot run: issue #$issue's session exited $rc with its claim released"
     note "$detail"
@@ -841,14 +905,21 @@ autopilot_run() {
     return 0
   fi
   detail="the session exited with code $rc; log: $log"
-  if reset="$(autopilot_limit_reset "$log")"; then
+  limited=0; reset=""
+  if [ -n "$event" ] && epoch="$(autopilot_event_rejecting_reset "$event")"; then
+    limited=1
+    [ -z "$epoch" ] || reset="$(autopilot_epoch_iso "$epoch")"
+  elif reset="$(autopilot_limit_reset "$log")"; then
+    limited=1
+  fi
+  if [ "$limited" = 1 ]; then
     if [ -n "$reset" ]; then
       detail="the session stopped on a usage limit (resets $reset) and exited with code $rc; log: $log"
     else
       detail="the session stopped on a usage limit and exited with code $rc; log: $log"
       reset="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
     fi
-    printf '%s\n' "$reset" >"$dir/limit"
+    autopilot_limit_write "$dir" "$log" "$reset"
   fi
   autopilot_stop "$issue" failure "$phase" "$detail"
 }
