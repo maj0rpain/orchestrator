@@ -840,6 +840,22 @@ assert_eq "leaving no merge in progress" \
   "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "none"
 assert_eq "and a clean tree" "$(git status --porcelain)" ""
 
+# a dead rebase in progress
+git checkout -q -b clash-r
+echo c >clash.txt && git add clash.txt && git commit -qm c
+git checkout -q orch/15-again
+echo d >clash.txt && git add clash.txt && git commit -qm d
+git rebase clash-r >/dev/null 2>&1
+assert_eq "(fixture) a rebase is in progress" \
+  "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "rebasing"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a rebase in progress in an interactive main checkout is refused" "$st" 1
+assert_contains "naming rebase --abort" "$out" "rebase --abort"
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a rebase in progress in an autopilot flow is aborted" "$st" 0
+assert_eq "leaving no rebase in progress" \
+  "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "none"
+
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin
 orch_gh_failing init other >/dev/null

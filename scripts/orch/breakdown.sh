@@ -94,6 +94,13 @@ breakdown_number() {
   awk -v k="$2" '$1 == k { n = $2; s = $3 } END { if (n != "") print n, s }' "$1"
 }
 
+# ticket_record <numbers-file> <k> <n> created|linked: appends one line to a
+# breakdown's numbers file. A failed write dies.
+ticket_record() {
+  printf '%s %s %s\n' "$2" "$3" "$4" >>"$1" \
+    || die "could not write ticket #$3's $4 record to $1"
+}
+
 # breakdown_publish_in <parent> <draft> <tmp>: breakdown publish's work, run in
 # a subshell so the caller can remove <tmp> however it ends.
 breakdown_publish_in() {

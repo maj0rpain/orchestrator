@@ -1196,27 +1196,6 @@ out="$("$ORCH" review resume 2>&1)"; st=$?
 assert_status "a dirty tree in an interactive main checkout is refused" "$st" 1
 assert_contains "naming the discard command" "$out" "reset --hard"
 assert_eq "touching nothing" "$(resume_facts)" "$before"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" review resume 2>&1)"; st=$?
-assert_status "the same tree in an autopilot flow is discarded" "$st" 0
-assert_eq "leaving it clean" "$(git status --porcelain)" ""
-
-git checkout -q -b clash-a
-echo a >clash.txt && git add clash.txt && git commit -qm a
-git checkout -q -
-echo b >clash.txt && git add clash.txt && git commit -qm b
-git merge -q clash-a >/dev/null 2>&1
-out="$(ORCH_AUTOPILOT=1 "$ORCH" review resume 2>&1)"; st=$?
-assert_status "a merge in progress is aborted" "$st" 0
-assert_eq "leaving none" \
-  "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "none"
-git checkout -q -b clash-r
-echo c >clash.txt && git add clash.txt && git commit -qm c
-git checkout -q -
-git rebase clash-r >/dev/null 2>&1
-out="$(ORCH_AUTOPILOT=1 "$ORCH" review resume 2>&1)"; st=$?
-assert_status "a rebase in progress is aborted" "$st" 0
-assert_eq "leaving none" \
-  "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "none"
 
 sc_clone
 side="$(sc_add sideresume)"

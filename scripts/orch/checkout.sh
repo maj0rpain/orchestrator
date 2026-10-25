@@ -177,6 +177,22 @@ refuse_busy_checkout() {
   exit 3
 }
 
+# discard_work_in <path> <who>: the discard sequence every site of the discard
+# rule (ADR-0054) runs in the checkout at <path>: a merge or rebase in
+# progress is aborted, then the tree is reset and cleaned. Nothing to discard
+# changes nothing. A failed step dies "<who>: <git command> failed in <path>".
+discard_work_in() {
+  local path="$1" who="$2"
+  if git -C "$path" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1; then
+    git -C "$path" merge --abort >/dev/null 2>&1 || die "$who: git merge --abort failed in $path"
+  fi
+  if rebase_in_progress "$path"; then
+    git -C "$path" rebase --abort >/dev/null 2>&1 || die "$who: git rebase --abort failed in $path"
+  fi
+  git -C "$path" reset --hard -q >/dev/null 2>&1 || die "$who: git reset --hard failed in $path"
+  git -C "$path" clean -fdq >/dev/null 2>&1 || die "$who: git clean failed in $path"
+}
+
 # discard_flow_branch_work: the flow-branch case of the discard rule
 # (ADR-0054), the one primitive every site meeting uncommitted or in-progress
 # work a dead session left on the flow's own branch applies - branch create
@@ -189,10 +205,9 @@ refuse_busy_checkout() {
 # nothing. A failed abort, reset or clean dies (exit 1) naming the step.
 # Called as a bare statement, so the die stops the caller.
 discard_flow_branch_work() {
-  local merging="" rebasing="" dirty kind gd cmds=""
-  gd="$(git -C "$ROOT" rev-parse --absolute-git-dir)" || die "could not read the git directory of $ROOT"
+  local merging="" rebasing="" dirty kind cmds=""
   git -C "$ROOT" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1 && merging=1
-  if [ -d "$gd/rebase-merge" ] || [ -d "$gd/rebase-apply" ]; then rebasing=1; fi
+  ! rebase_in_progress "$ROOT" || rebasing=1
   dirty="$(dirty_outside_allowlist)" || exit 1
   [ -n "$merging$rebasing$dirty" ] || return 0
   if ! autopilot_active; then
@@ -203,12 +218,5 @@ discard_flow_branch_work() {
       die "uncommitted or in-progress work on the flow's branch in the main checkout - discard it yourself (${dirty//$'\n'/, }${merging:+ merge in progress}): ${cmds}git -C \"$ROOT\" reset --hard && git -C \"$ROOT\" clean -fd"
     fi
   fi
-  if [ -n "$merging" ]; then
-    git -C "$ROOT" merge --abort >/dev/null 2>&1 || die "could not discard: git merge --abort failed in $ROOT"
-  fi
-  if [ -n "$rebasing" ]; then
-    git -C "$ROOT" rebase --abort >/dev/null 2>&1 || die "could not discard: git rebase --abort failed in $ROOT"
-  fi
-  git -C "$ROOT" reset --hard -q >/dev/null 2>&1 || die "could not discard: git reset --hard failed in $ROOT"
-  git -C "$ROOT" clean -fdq >/dev/null 2>&1 || die "could not discard: git clean failed in $ROOT"
+  discard_work_in "$ROOT" "could not discard"
 }

@@ -17,8 +17,6 @@ ticket_fixture() {
   writeln 'Build the thing.' >"$body"
 }
 
-# number, space-separated - nothing for none.
-
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
 # sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`
@@ -1062,6 +1060,12 @@ out="$("$ORCH" ticket retire 50 2>&1)"; st=$?
 assert_status "retires" "$st" 0
 assert_eq "removes the parent's breakdown save point" "$(on_disk .orchestrator/breakdown/50)" "absent"
 assert_eq "leaves another parent's" "$(on_disk .orchestrator/breakdown/51/draft.md)" "present"
+# a collapsed breakdown's report is saved under the spec issue's own number
+printf 'Ticket: #50\n' >"$body"
+"$ORCH" ticket report save 50 "$body"
+"$ORCH" ticket retire 50 >/dev/null 2>&1
+"$ORCH" ticket report show 50 >/dev/null 2>&1; st=$?
+assert_status "retire removes the parent's own saved report" "$st" 1
 restore_suite_env
 
 # --- ticket: unknown op ------------------------------------------------------
@@ -1304,6 +1308,16 @@ assert_contains "and one for the worktree" "$out" "removed the worktree of ticke
 out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "a rerun with nothing left succeeds" "$st" 0
 assert_eq "printing nothing" "$out" ""
+
+# merged with a saved report, worktree dirty: reset, then removed
+rc_setup 1
+rc_report 7
+"$ORCH" ticket merge 7 >/dev/null 2>&1
+echo junk >"$(rc_wt 7)/untracked.txt"
+echo more >>"$(rc_wt 7)/t7.txt"
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a merged reported ticket with a dirty worktree succeeds" "$st" 0
+assert_eq "removing its worktree and closing it" "$(rc_has_worktree 7)$(fake_state_of 7)" "noCLOSED"
 
 # reported, unmerged and dirty: reset, merged, closed, removed
 rc_setup 1

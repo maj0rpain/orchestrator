@@ -696,6 +696,14 @@ orch.sh - deterministic operations for the orchestrator flow
   review terminal             classify the last iteration: none, pending,
                               interrupted, malformed, ready, or stop; exits
                               non-zero on the first four
+  review resume               resume a review loop whose session died
+                              mid-iteration, spending no budget: discard the
+                              flow branch's stray work first (refused in an
+                              interactive main checkout, exit 1), then print
+                              rerun <i> after clearing the dead run's
+                              reviewer reports, next, or terminate. Exits 1
+                              when review terminal says anything but pending
+                              or interrupted
   review retire <n>           move every iteration-*.md into pre-redo-<n>/
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
@@ -734,7 +742,11 @@ orch.sh - deterministic operations for the orchestrator flow
   spec round                  print the round a resumed spec review runs
                               next, from handoff/spec-round: "<k> <n>" - k+1
                               once round k's directory holds round-complete -
-                              or "done <n>" once round n's does. Exits 1,
+                              or "done <n>" once round n's does; "<k> <n>
+                              applying" while round k's directory holds a
+                              saved apply answer (an apply died: run
+                              spec-review apply --resume), "<k> <n> waiting"
+                              while it holds fundamental.md. Exits 1,
                               printing nothing, with no marker or one naming
                               another issue; 2 on a malformed marker and on
                               every refusal spec pause makes
@@ -848,6 +860,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               state.json. Each GitHub write lands in
                               <dir>/applied.log; a failed one dies naming those
                               landed, and a non-empty applied.log is refused
+  spec-review apply <dir> --resume --round <k>/<n>
+                              rerun an apply that died partway, with the
+                              answer it saved in <dir> before its first
+                              GitHub write, and no other argument; refuses
+                              when <dir> holds no saved answer or the answer
+                              is for another round
   review-pass begin <issue>   start a review pass of the current branch
                               against issue <issue>: refuse on a detached
                               HEAD, on the base branch, and while an active

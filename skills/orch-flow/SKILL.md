@@ -155,9 +155,12 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      and `spec round-dir` leave in the handoff folder. When it prints
      `<k> <n>`, ask nothing and run round k of n in this session: step 4's
      review from round k, with no round count asked. When it prints
-     `done <n>`, every round has run - the session that ran the last one
-     failed after it, say in the ticket breakdown - so ask nothing and go to
-     step 5. Only when
+     `<k> <n> applying`, a spec-review apply died partway: run
+     `bash "$ORCH" spec-review apply <dir> --resume --round <k>/<n>` (it
+     reruns with the answer it saved) and go on from the round it completes.
+     When it prints `done <n>`, every round has run - the session that ran
+     the last one failed after it, say in the ticket breakdown - so ask
+     nothing and go to step 5. Only when
      it exits 1, no round marker for this issue, go on to the marker check.
      Any other exit is a failure: relay its `orch:` message and stop, leaving
      the state where it is.

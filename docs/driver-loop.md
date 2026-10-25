@@ -66,7 +66,7 @@ caller's numbered steps.
   ticket report save <n> <file>` (the report in a `mktemp` file; a refused
   save stops like any exit 1 below), then `bash "$ORCH" ticket merge
   <n>`, then `bash "$ORCH" ticket close <n>`, then `bash "$ORCH"
-  ticket-worktree remove <n>`, then refill (loop step c). Run the three as
+  ticket-worktree remove <n>`, then refill (loop step c). Run the four as
   separate calls, each only after the previous one exits 0 - never chained
   with `;`. A ticket is merged
   and closed whatever its `Verification` or `Criteria` line says, and is

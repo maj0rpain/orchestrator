@@ -404,7 +404,6 @@ assert_eq "a round without fundamental.md is the round to run" "$("$ORCH" spec r
 assert_eq "a round holding fundamental.md waits" "$("$ORCH" spec round 2>&1)" "1 2 waiting"
 : >"$rounds/1/apply-answer"
 assert_eq "a round holding apply-answer is applying" "$("$ORCH" spec round 2>&1)" "1 2 applying"
-assert_eq "applying is reported ahead of waiting" "$("$ORCH" spec round 2>&1)" "1 2 applying"
 rm -f "$rounds/1/apply-answer" "$rounds/1/fundamental.md"
 "$ORCH" spec round-dir 2/2 >/dev/null
 : >"$rounds/2/round-complete"

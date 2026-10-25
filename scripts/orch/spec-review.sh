@@ -1645,11 +1645,10 @@ spec_review_local_write() {
 # to <dir>/apply-answer, one shell-quoted line, before the first GitHub write.
 # The file arguments (--reasons, --ticket-reasons, --host-fallbacks) are copied
 # into <dir> first and saved as the copies, so a resume never reads a file the
-# dead session left elsewhere. Leaves the saved arguments in SR_SAVED.
+# dead session left elsewhere.
 spec_review_save_answer() {
-  local dir="$1" a prev="" copy
+  local dir="$1" a prev="" copy saved=()
   shift
-  SR_SAVED=()
   for a in "$@"; do
     case "$prev" in
       --reasons|--ticket-reasons|--host-fallbacks)
@@ -1658,11 +1657,11 @@ spec_review_save_answer() {
           || die "could not copy $a to $copy - nothing written to GitHub"
         a="$copy" ;;
     esac
-    SR_SAVED+=("$a")
+    saved+=("$a")
     prev="$a"
     case "$prev" in --reasons|--ticket-reasons|--host-fallbacks) ;; *) prev="" ;; esac
   done
-  { printf '%q ' "${SR_SAVED[@]}"; printf '\n'; } >"$dir/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
+  { printf '%q ' "${saved[@]}"; printf '\n'; } >"$dir/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
     || die "could not write $dir/$SPEC_ROUND_APPLY_ANSWER - nothing written to GitHub"
 }
 
