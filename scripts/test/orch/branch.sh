@@ -740,7 +740,7 @@ orch_gh_failing state set issue 12
 echo edit >>README.md
 before="$(checkout_facts)"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
-assert_status "branch create on a dirty tree exits 3" "$st" 3
+assert_status "branch create on a dirty tree in an interactive main checkout is refused (exit 1)" "$st" 1
 assert_contains "naming the changed path (branch create)" "$out" "README.md"
 assert_eq "leaving the checkout as it was (branch create, dirty)" "$(checkout_facts)" "$before"
 assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
@@ -772,6 +772,96 @@ restore_index
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create succeeds beside its own flow when the checkout is otherwise free" "$st" 0
 assert_eq "checking its branch out" "$(git branch --show-current)" "orch/12-own"
+
+# --- branch create on a restart (ADR-0054) ------------------------------------
+# A restarted implement phase finds the flow's own branch already made: branch
+# create accepts it, and applies the discard rule's flow-branch case to a dirty
+# tree or a merge in progress.
+echo
+echo "branch create on a restart (ADR-0054)"
+restart_facts() { git status --porcelain; git diff; }
+new_repo_with_origin
+orch_gh_failing init again >/dev/null
+orch_gh_failing state set issue 15
+default="$(git branch --show-current)"
+orch_gh_failing branch create >/dev/null
+base_sha_first="$(orch_gh_failing state get base_sha)"
+git checkout -q "$default"
+git -C "$PWD" config branch.orch/15-again.orchestrator-base-sha moved-marker
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create with the flow's own existing branch succeeds" "$st" 0
+assert_eq "printing its name" "$out" "orch/15-again"
+assert_eq "checking it out when it was not current" "$(git branch --show-current)" "orch/15-again"
+assert_eq "leaving base_sha as it was" "$(orch_gh_failing state get base_sha)" "$base_sha_first"
+assert_eq "and the branch's recorded base SHA" \
+  "$(git config --get branch.orch/15-again.orchestrator-base-sha)" "moved-marker"
+assert_eq "and its recorded base" "$(base_key orch/15-again)" "$(orch_gh_failing state get base)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on the flow's branch while on it succeeds" "$st" 0
+
+
+# A dirty tree on the flow's branch: refused in an interactive main checkout.
+git checkout -q orch/15-again
+echo hand >>README.md
+before="$(restart_facts)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a dirty tree in an interactive main checkout is refused with exit 1" "$st" 1
+assert_contains "naming the discard command" "$out" "reset --hard"
+assert_eq "writing nothing" "$(restart_facts)" "$before"
+
+# a failed discard step dies naming the step, leaving the dirty tree
+touch "$(git rev-parse --absolute-git-dir)/index.lock"
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a failed discard step dies with exit 1" "$st" 1
+assert_contains "naming the failed step" "$out" "git reset --hard failed"
+rm -f "$(git rev-parse --absolute-git-dir)/index.lock"
+
+# discarded in an autopilot flow
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "the same dirty tree in an autopilot flow is discarded" "$st" 0
+assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
+
+# a dead base sync's merge in progress
+git checkout -q -b clash-a
+echo a >clash.txt && git add clash.txt && git commit -qm a
+git checkout -q orch/15-again
+echo b >clash.txt && git add clash.txt && git commit -qm b
+git merge -q clash-a >/dev/null 2>&1
+assert_eq "(fixture) a merge is in progress" \
+  "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "merging"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a merge in progress in an interactive main checkout is refused" "$st" 1
+assert_contains "naming merge --abort" "$out" "merge --abort"
+assert_eq "leaving the merge in progress" \
+  "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "merging"
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a merge in progress in an autopilot flow is aborted" "$st" 0
+assert_eq "leaving no merge in progress" \
+  "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "none"
+assert_eq "and a clean tree" "$(git status --porcelain)" ""
+
+# A different existing branch - one the flow never recorded - is still refused.
+new_repo_with_origin
+orch_gh_failing init other >/dev/null
+orch_gh_failing state set issue 17
+git branch -q orch/17-other
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a different existing branch is still refused" "$st" 1
+assert_contains "as already existing" "$out" "orch/17-other already exists"
+assert_eq "recording no branch" "$(orch_gh_failing state get branch)" ""
+# a side checkout discards without autopilot
+sc_clone
+side="$(sc_add sidebr)"
+(
+  cd "$side" || exit 1
+  orch_gh_failing init sidebr >/dev/null
+  orch_gh_failing state set issue 16
+  orch_gh_failing branch create >/dev/null
+  echo hand >>README.md
+  out="$(orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "a dirty tree in a side checkout is discarded" "$st" 0
+  assert_eq "leaving it clean" "$(git status --porcelain)" ""
+)
 
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null

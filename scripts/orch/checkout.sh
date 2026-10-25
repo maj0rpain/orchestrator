@@ -176,3 +176,39 @@ refuse_busy_checkout() {
      $remedy"
   exit 3
 }
+
+# discard_flow_branch_work: the flow-branch case of the discard rule
+# (ADR-0054), the one primitive every site meeting uncommitted or in-progress
+# work a dead session left on the flow's own branch applies - branch create
+# now, ticket reclaim and review resume next. In the current checkout
+# ($ROOT): a merge or rebase in progress is aborted, and a tree dirty outside
+# the planning allowlist is reset and cleaned. Nothing to discard changes
+# nothing. In an interactive flow's main checkout - autopilot_active false and
+# checkout_kind main, the one tree a human plausibly edits by hand - it
+# refuses instead, exit 1, naming the exact discard command and writing
+# nothing. A failed abort, reset or clean dies (exit 1) naming the step.
+# Called as a bare statement, so the die stops the caller.
+discard_flow_branch_work() {
+  local merging="" rebasing="" dirty kind gd cmds=""
+  gd="$(git -C "$ROOT" rev-parse --absolute-git-dir)" || die "could not read the git directory of $ROOT"
+  git -C "$ROOT" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1 && merging=1
+  if [ -d "$gd/rebase-merge" ] || [ -d "$gd/rebase-apply" ]; then rebasing=1; fi
+  dirty="$(dirty_outside_allowlist)" || exit 1
+  [ -n "$merging$rebasing$dirty" ] || return 0
+  if ! autopilot_active; then
+    kind="$(checkout_kind "$ROOT")" || die "could not tell whether $ROOT is the main checkout - nothing was discarded"
+    if [ "$kind" = main ]; then
+      [ -z "$merging" ] || cmds="git -C \"$ROOT\" merge --abort; "
+      [ -z "$rebasing" ] || cmds="${cmds}git -C \"$ROOT\" rebase --abort; "
+      die "uncommitted or in-progress work on the flow's branch in the main checkout - discard it yourself (${dirty//$'\n'/, }${merging:+ merge in progress}): ${cmds}git -C \"$ROOT\" reset --hard && git -C \"$ROOT\" clean -fd"
+    fi
+  fi
+  if [ -n "$merging" ]; then
+    git -C "$ROOT" merge --abort >/dev/null 2>&1 || die "could not discard: git merge --abort failed in $ROOT"
+  fi
+  if [ -n "$rebasing" ]; then
+    git -C "$ROOT" rebase --abort >/dev/null 2>&1 || die "could not discard: git rebase --abort failed in $ROOT"
+  fi
+  git -C "$ROOT" reset --hard -q >/dev/null 2>&1 || die "could not discard: git reset --hard failed in $ROOT"
+  git -C "$ROOT" clean -fdq >/dev/null 2>&1 || die "could not discard: git clean failed in $ROOT"
+}

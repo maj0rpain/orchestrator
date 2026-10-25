@@ -147,9 +147,15 @@ rejected alternative, or adding or dropping scope beyond the plan. In an
 autopilot flow's spec review it is the only kind of item that reaches the human.
 
 **Save point**:
-What an autopilot phase writes to its side checkout before asking the human a
-question, so that the fresh session started after the answer resumes from it and
-the reply, never re-exploring code.
+What a phase writes to its checkout so that a fresh session - started after the
+human answers its question, or after the phase died partway - resumes from it,
+never redoing or repeating what already landed and never re-exploring code.
+
+**Discard rule**:
+What a restarted phase does with uncommitted or in-progress work a dead session
+left: discarded in a ticket worktree always, and on the flow's own branch in
+every checkout except an interactive flow's main checkout, where it is refused
+with the discard command named.
 
 **Hand-labelled issue**:
 An issue a human gave a phase label by hand, without the planning close's

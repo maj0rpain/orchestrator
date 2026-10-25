@@ -46,19 +46,36 @@ record_branch_base() {
   git config "branch.$1.orchestrator-base-sha" "$3"
 }
 
-# It refuses a busy checkout with exit 3 - a branch the plugin made with no PR
-# yet, or a dirty tree - but not on the flow signal, since the flow
-# mid-pipeline is its own. Besides state, it records the base and base SHA in
-# the branch's git config, as branch off does, so branch sync and branch
-# base-sha still find them once the flow is done or archived.
+# A restarted implement phase finds the flow's own branch already made: when
+# state.branch records the name it would create and that branch exists, it is
+# checked out if not current and printed, with base_sha and the branch's
+# recorded base untouched (ADR-0054). Any other existing branch is still
+# refused. It refuses a busy checkout with exit 3 - a branch the plugin made
+# with no PR yet, except the flow's own - but not on the flow signal, since
+# the flow mid-pipeline is its own. Uncommitted or in-progress work is the
+# discard rule's (discard_flow_branch_work), applied before anything else
+# changes: discarded, or refused in an interactive main checkout. Besides
+# state, it records the base and base SHA in the branch's git config, as
+# branch off does, so branch sync and branch base-sha still find them once
+# the flow is done or archived.
 cmd_branch_create() {
   require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"
-  refuse_busy_checkout branch tree
-  local slug issue name base sha
+  local slug issue name base sha own=""
   slug="$(state_get slug)"
   require_issue issue
   name="orch/${issue}-${slug}"
+  if [ "$(state_get branch)" = "$name" ] && git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then
+    own=1
+  fi
+  [ -n "$own" ] || refuse_busy_checkout branch
+  discard_flow_branch_work
+  if [ -n "$own" ]; then
+    [ "$(checkout_branch)" = "$name" ] || git checkout -q "$name" \
+      || die "could not check out $name"
+    note "$name"
+    return
+  fi
   base="$(flow_base)"
   checkout_new_branch "$name" "$base" \
     "point this flow at another base: orch.sh base set <branch> --flow"
