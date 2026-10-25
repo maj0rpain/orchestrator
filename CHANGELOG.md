@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.2
+
+A phase or lens name made of two adjacent list words is now refused: `orch.sh doctor` fails a `state.json` phase such as `spec implement`, and the phase writer, autopilot's phase argument and the spec review's lens check refuse it. Space-list membership now has one primitive, `word_listed`.
+
 ## 4.38.1
 
 Refactored the agent module and doctor with no change to behaviour: the plugin root is worked out once, a role's Junie setting is read by one helper, two locals are renamed, and the sync plan returns its lists in one encoding.
