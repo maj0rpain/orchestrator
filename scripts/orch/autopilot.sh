@@ -560,14 +560,15 @@ autopilot_limit_count() {
 # before it, adds orch:limited, comments, then releases the claim; the third in
 # a row, and a stop whose comments cannot be read, take the failure path.
 autopilot_limit_stop() {
-  local issue="$1" phase="$2" reset="$3" rc="$4" log="$5" count text when=""
+  local issue="$1" phase="$2" reset="$3" rc="$4" log="$5" count text when="" stopped
   [ -z "$reset" ] || when=" (resets $reset)"
+  stopped="the session stopped on a usage limit$when and exited with code $rc"
   autopilot_limit_count "$issue" "$phase" count || {
-    autopilot_stop "$issue" failure "$phase" "the session stopped on a usage limit$when and exited with code $rc, and the issue's comments could not be read to count the stops in a row; log: $log"
+    autopilot_stop "$issue" failure "$phase" "$stopped, and the issue's comments could not be read to count the stops in a row; log: $log"
     return 0
   }
   if [ "$count" -ge 2 ]; then
-    autopilot_stop "$issue" failure "$phase" "the session stopped on a usage limit$when and exited with code $rc, the third in a row in the $phase phase; log: $log"
+    autopilot_stop "$issue" failure "$phase" "$stopped, the third in a row in the $phase phase; log: $log"
     return 0
   fi
   printf -v text '%s\nThe session stopped on a usage limit in the %s phase, which resets %s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
