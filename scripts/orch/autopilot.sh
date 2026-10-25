@@ -726,17 +726,24 @@ autopilot_cleanup_stale() {
   done <<<"$claims"
 }
 
+# autopilot_limit_epoch <file>: the reset recorded in the limit file <file> as
+# epoch seconds; 0 when the file is missing or its text does not parse.
+autopilot_limit_epoch() {
+  local text
+  text="$(cat "$1" 2>/dev/null)" || text=""
+  autopilot_iso_epoch "$text" || echo 0
+}
+
 # autopilot_limit_paused <main>: whether a usage limit pauses pickup. While the
 # limit file's reset time is in the future it prints one line naming it and
 # returns 0; once it has passed, the file is removed and it returns 1.
 autopilot_limit_paused() {
-  local file reset epoch
+  local file epoch
   file="$(autopilot_dir "$1")/limit"
   [ -f "$file" ] || return 1
-  reset="$(cat "$file")"
-  epoch="$(autopilot_iso_epoch "$reset")" || epoch=0
+  epoch="$(autopilot_limit_epoch "$file")"
   if [ "$epoch" -gt "$(date +%s)" ]; then
-    note "usage limit: no issue is picked up until $reset"
+    note "usage limit: no issue is picked up until $(cat "$file")"
     return 0
   fi
   rm -f "$file"
@@ -877,11 +884,10 @@ autopilot_event_five_hour_reset() {
 # and replacing one that is earlier or does not parse. A failed write is noted
 # in <log> and on stderr, and is no failure of the caller.
 autopilot_limit_write() {
-  local file="$1/limit" log="$2" old old_epoch new_epoch msg
+  local file="$1/limit" log="$2" old_epoch new_epoch msg
   new_epoch="$(autopilot_iso_epoch "$3")" || new_epoch=0
   if [ -f "$file" ]; then
-    old="$(cat "$file" 2>/dev/null)" || old=""
-    old_epoch="$(autopilot_iso_epoch "$old")" || old_epoch=0
+    old_epoch="$(autopilot_limit_epoch "$file")"
     [ "$old_epoch" -lt "$new_epoch" ] || return 0
   fi
   if ! { printf '%s\n' "$3" >"$file"; } 2>/dev/null; then

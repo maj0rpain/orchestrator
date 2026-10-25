@@ -150,7 +150,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               validate the plan (## Autopilot block included),
                               post it as the plan handoff comment, then add
                               orch:spec
-  autopilot tick              one watcher pass: ensure the six labels, clean up
+  autopilot tick              one watcher pass: ensure the seven labels, clean up
                               this host's stale claims, then claim each open
                               phase-labelled issue (oldest first, below the
                               cap), make or reuse its side checkout and start
