@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.7
+
+A handoff comment that fails to post now reports the gh reason and leaves no temp file; `review known-items` resolves its handoffs through the shared resolver, a failed comments read now shows its gh reason, and one helper owns the "has no handoff comment" message.
+
 ## 4.38.6
 
 A standards path containing a comma is now listed whole on the reviewers' Standards line.
