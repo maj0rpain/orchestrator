@@ -17,9 +17,7 @@ ticket_fixture() {
   writeln 'Build the thing.' >"$body"
 }
 
-# fake_blockers_of <n>: #n's blockers read back from the store, sorted by
 # number, space-separated - nothing for none.
-fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
 
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
@@ -1027,6 +1025,43 @@ assert_eq "and bringing the body in line" \
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket unblock is in the usage text" "$out" "ticket unblock <n> --by N,N,..."
 
+restore_suite_env
+
+# --- ticket publish --record --------------------------------------------------
+echo
+echo "ticket publish --record"
+ticket_fixture
+fake_issue 50 open
+fake_next_issue 100
+nums="$(mktemp)"; : >"$nums"
+out="$("$ORCH" ticket publish 50 "First" "$body" --record "$nums" 1 2>&1)"; st=$?
+assert_status "publishes with --record" "$st" 0
+assert_eq "records created then linked, after the link" "$(paste -sd ';' "$nums")" "1 100 created;1 100 linked"
+fake_fail adapter_sub_issue_link
+: >"$nums"
+out="$("$ORCH" ticket publish 50 "Second" "$body" --record "$nums" 2 2>&1)"; st=$?
+assert_status "a failed link dies" "$st" 1
+assert_eq "created is recorded before the link, linked is not" "$(cat "$nums")" "2 101 created"
+fake_unfail
+bad_nums="$(mktemp -d)"
+before="$(fake_snapshot)"
+out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$bad_nums" 3 2>&1)"; st=$?
+assert_status "an unwritable numbers file dies" "$st" 1
+assert_contains "naming the record" "$out" "could not write ticket #102's created record"
+assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" "100"
+restore_suite_env
+
+# --- ticket retire: breakdown save point ------------------------------------
+echo
+echo "ticket retire save point"
+ticket_fixture
+fake_issue 50 open
+mkdir -p .orchestrator/breakdown/50 .orchestrator/breakdown/51
+: >.orchestrator/breakdown/50/draft.md; : >.orchestrator/breakdown/51/draft.md
+out="$("$ORCH" ticket retire 50 2>&1)"; st=$?
+assert_status "retires" "$st" 0
+assert_eq "removes the parent's breakdown save point" "$(on_disk .orchestrator/breakdown/50)" "absent"
+assert_eq "leaves another parent's" "$(on_disk .orchestrator/breakdown/51/draft.md)" "present"
 restore_suite_env
 
 # --- ticket: unknown op ------------------------------------------------------

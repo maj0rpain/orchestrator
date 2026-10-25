@@ -253,19 +253,27 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    review there. On a non-zero exit, relay its `orch:` message and stop.
    The fresh session's round check runs round k+1. Round n runs to
    completion in its session, and the phase goes on to step 5 there.
-5. Run `bash "$ORCH" ticket exists <spec issue>` first, with the spec issue
-   from `bash "$ORCH" state get issue`.
+5. Run `bash "$ORCH" breakdown state <spec issue>` first, with the spec issue
+   from `bash "$ORCH" state get issue`. It prints one word, and exits 2 when
+   GitHub cannot be read (relay its message and stop).
 
-   **Exit 0** means the issue already has a ticket breakdown - as for a
-   blueprint adopted at init, or one a step-0c rewrite kept; a default `redo
-   spec` retires the breakdown first, so it never reaches this exit. Skip the
-   breakdown and ask nothing: step 4's spec review may already have reconciled
-   the breakdown with the edits it applied. `ticket exists` printed one word,
-   which settles step 6's **Ticket
-   breakdown**: `sub-issues` means the spec issue number, and `collapsed`
-   means `None: work directly against #<n>` naming the spec issue.
+   **`complete`** means the issue already has a whole ticket breakdown - as for
+   a blueprint adopted at init, one a step-0c rewrite kept, or one published
+   in full; a default `redo spec` retires the breakdown first, so it never
+   reaches this answer. Skip the breakdown and ask nothing: step 4's spec
+   review may already have reconciled the breakdown with the edits it applied.
+   Step 6's **Ticket breakdown** is settled by `bash "$ORCH" ticket exists
+   <spec issue>`, which prints one word: `sub-issues` means the spec issue
+   number, and `collapsed` means `None: work directly against #<n>` naming the
+   spec issue.
 
-   **Exit 1** means it has none: invoke the `orch-to-tickets` skill on the
+   **`partial`** means a breakdown was approved and saved but not fully
+   published: run `bash "$ORCH" breakdown publish <spec issue> <saved draft>`
+   on the saved draft (`.orchestrator/breakdown/<spec issue>/draft.md`) with no
+   quiz and no new draft, and report its published numbers.
+
+   **`none`** means there is no breakdown: invoke the `orch-to-tickets` skill
+   on the
    just-reviewed spec issue and follow it, through its own quiz until the
    user approves a breakdown. It publishes 2 or more tickets as sub-issues,
    or collapses 0 or 1 into the spec issue under its fixed `## Ticket`
@@ -275,7 +283,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    A step-0c rewrite or a step-4 review that retired the breakdown also
    lands here.
 
-   **Any other exit** means GitHub could not be read: stop, leaving the state
+   **Exit 2** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.
 6. Invoke the `orch-handoff` skill for `02-spec.md`, with its
    **Ticket breakdown** as either the spec issue number (published or found as

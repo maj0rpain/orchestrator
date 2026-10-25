@@ -97,10 +97,10 @@ ticket_links_verified() {
 # dies naming the ticket rather than falling back to a text-based `Blocked by:`
 # convention, since nothing downstream ever reads that fallback.
 cmd_ticket_publish() {
-  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...] [--record <numbers-file> <k>]"
   [ $# -ge 3 ] || die "$usage"
-  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" b
-  local ready child gh_err="" st=0
+  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want=""
+  local record_file="" record_k="" ready child
   shift 3
   # Every argument check runs here, before the first GitHub write. A second
   # --blocked-by is refused, never allowed to replace the first.
@@ -109,6 +109,10 @@ cmd_ticket_publish() {
       --blocked-by)
         flag_value_once "$usage" "$have_blocked_by" "$#"
         blocked_by="$2"; have_blocked_by=1; shift 2 ;;
+      --record)
+        [ $# -ge 3 ] && [ -z "$record_file" ] || die "$usage"
+        record_file="$2"; record_k="$3"; shift 3
+        case "$record_k" in ''|*[!0-9]*) die "--record's position must be a plain number, got: $record_k" ;; esac ;;
       *) die "$usage" ;;
     esac
   done
@@ -127,8 +131,41 @@ cmd_ticket_publish() {
   gh_or_die --out child "create the ticket" \
     adapter_issue_create "$title" "$body_file" "$ready"
 
-  gh_or_die "link ticket #$child as a sub-issue of #$parent" \
-    adapter_sub_issue_link "$parent" "$child"
+  # The created number is recorded before the link, so a rerun can tell
+  # "created, unlinked" from "not created". A failed write dies here.
+  if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" created; fi
+
+  ticket_link_and_verify "$parent" "$child" "$want"
+  if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" linked; fi
+
+  note "$child"
+}
+
+# ticket_record <numbers-file> <k> <n> created|linked: appends one line to a
+# breakdown's numbers file. A failed write dies.
+ticket_record() {
+  printf '%s %s %s\n' "$2" "$3" "$4" >>"$1" \
+    || die "could not write ticket #$3's $4 record to $1"
+}
+
+# ticket_link_and_verify <parent> <child> <want> [adopt]: links <child> as a
+# sub-issue of <parent>, adds a blocking edge for every number in <want>, and
+# verifies every link by reading it back, with one retry - either status gets
+# it, and the second attempt decides the death: a failed read dies with gh's
+# reason, a mismatch as unverified. With <adopt> set the link write is skipped
+# when the parent's listing already holds <child>.
+ticket_link_and_verify() {
+  local parent="$1" child="$2" want="$3" adopt="${4-}" b gh_err="" st=0 subs line linked=""
+  if [ -n "$adopt" ]; then
+    subs="$(ticket_sub_issues "$parent")" || exit 1
+    while IFS= read -r line; do
+      if [ "${line%%$'\t'*}" = "$child" ]; then linked=1; fi
+    done <<<"$subs"
+  fi
+  if [ -z "$linked" ]; then
+    gh_or_die "link ticket #$child as a sub-issue of #$parent" \
+      adapter_sub_issue_link "$parent" "$child"
+  fi
 
   if [ -n "$want" ]; then
     while IFS= read -r b; do
@@ -137,16 +174,12 @@ cmd_ticket_publish() {
     done <<<"$want"
   fi
 
-  # Either status gets the one retry, and the second attempt decides the
-  # death: a failed read dies with gh's reason, a mismatch as unverified.
   ticket_links_verified gh_err "$parent" "$child" "$want" \
     || ticket_links_verified gh_err "$parent" "$child" "$want" \
     || st=$?
   [ "$st" -ne 2 ] || gh_die "read ticket #$child's links" "$gh_err"
   [ "$st" -eq 0 ] \
     || die "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed"
-
-  note "$child"
 }
 
 # The parent's open sub-issues with zero open blockers, in the order GitHub
@@ -364,6 +397,10 @@ cmd_ticket_retire() {
   # unchanged, so it is not written.
   issue_body_rewrite "$parent" "read issue #$parent's body" \
     "remove the ## Ticket section from #$parent" strip_ticket_sections
+  # The parent's breakdown save point goes with it, so `breakdown state`
+  # never reads a retired breakdown as complete.
+  rm -rf "$ORCH/breakdown/$parent" \
+    || die "could not remove the breakdown save point $ORCH/breakdown/$parent"
 }
 
 # issue_body_rewrite <n> <read-what> <write-what> <filter> [<arg>...]: issue

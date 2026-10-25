@@ -497,7 +497,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               <file>, recording no state. Refuses, leaving
                               the body unchanged, unless <file> opens with
                               the PR's existing Closes/Refs #<issue> line
-  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
+  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...] [--record <numbers-file> <k>]
                               create a ticket, link it as a sub-issue of
                               <parent>, add a blocking edge for every
                               --blocked-by issue, apply ready-for-agent, and
@@ -537,7 +537,18 @@ orch.sh - deterministic operations for the orchestrator flow
                               open sub-issue as not planned, comment on every
                               one, unlink it, and cut every `## Ticket`
                               section from the body; afterwards ticket exists
-                              exits 1. A repeat changes nothing
+                              exits 1, and the parent's breakdown save point is
+                              removed. A repeat changes nothing
+  breakdown publish <parent> <draft-file>
+                              save the approved ticket draft (the first run
+                              only; a saved draft wins), then publish every
+                              ticket not yet recorded, in dependency order,
+                              linking a created-but-unlinked one; the
+                              published marker is written last. Prints the
+                              numbers in publishing order
+  breakdown state <parent>    print complete, partial or none; with no draft
+                              saved, ticket exists decides; exits 2 on a
+                              failed read
   ticket block <n> --by N,N,...
                               add a blocking edge on open ticket <n> for every
                               --by sibling (a sub-issue of <n>'s parent; a

@@ -105,6 +105,7 @@ source "$ORCH_SCRIPTS/orch/agent.sh"
 source "$ORCH_SCRIPTS/orch/autopilot.sh"
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"
+source "$ORCH_SCRIPTS/orch/breakdown.sh"
 source "$ORCH_SCRIPTS/orch/checkout.sh"
 source "$ORCH_SCRIPTS/orch/doctor.sh"
 source "$ORCH_SCRIPTS/orch/filed-finding.sh"
@@ -159,6 +160,7 @@ main() {
     handoff)       cmd_handoff "$@" ;;
     phase)         cmd_phase "$@" ;;
     branch)        cmd_branch "$@" ;;
+    breakdown)     cmd_breakdown "$@" ;;
     issue)         cmd_issue "$@" ;;
     pr)            cmd_pr "$@" ;;
     ticket)        cmd_ticket "$@" ;;

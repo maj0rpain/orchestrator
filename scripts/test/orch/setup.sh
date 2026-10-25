@@ -717,6 +717,10 @@ fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
 # store, in link order, space-separated - nothing for none.
 fake_sub_issues_of() { paste -sd ' ' "$ORCH_GH_FAKE_STORE/subs/$1" 2>/dev/null || true; }
 
+# fake_blockers_of <n>: #n's blockers read back from the store, sorted by
+# number, space-separated - nothing for none.
+fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
+
 # fake_lag <operation> <n> [stale]: the next n calls of the named operation
 # answer stale, as GitHub does for a moment after a write; the call after them
 # is current again. An operation that reads answers the stale text given, in
