@@ -65,6 +65,39 @@ printf '%s\n' '.orchestrator/' >>"$ude_ex"
 assert_eq "nothing prints when every entry is present" \
   "$(sourced_orch orch_dirs_unexcluded)" ""
 
+# --- exclude_line's failed write (#1548) --------------------------------------
+# exclude_orch_dirs' four callers (init, side-checkout add, the ticket worktree,
+# the review pass) call it bare under set -e, so this pins their message.
+echo
+echo "exclude_line"
+new_repo >/dev/null
+el_dir="$(git rev-parse --git-common-dir)"
+rm -rf "$el_dir/info/exclude"
+mkdir -p "$el_dir/info/exclude"
+out="$(sourced_orch exclude_orch_dirs 2>&1)"; st=$?
+assert_status "an exclude file it cannot append to exits 1" "$st" 1
+assert_eq "naming both missing lines and the file" "$out" \
+  "orch: cannot add .orchestrator/, .scratch/ to the git exclude file $el_dir/info/exclude"
+rm -rf "$el_dir/info/exclude"
+rm -rf "$el_dir/info"
+: >"$el_dir/info"
+out="$(sourced_orch exclude_orch_dirs 2>&1)"; st=$?
+assert_status "an info that is a plain file exits 1" "$st" 1
+assert_eq "with the same message" "$out" \
+  "orch: cannot add .orchestrator/, .scratch/ to the git exclude file $el_dir/info/exclude"
+rm -f "$el_dir/info"
+mkdir -p "$el_dir/info"
+printf '%s\n' '.scratch/' >"$el_dir/info/exclude"
+chmod a-w "$el_dir/info/exclude"
+if [ -w "$el_dir/info/exclude" ]; then
+  skip "only the missing line is named" "$el_dir/info/exclude stays writable (running as root?)"
+else
+  out="$(sourced_orch exclude_orch_dirs 2>&1)"; st=$?
+  assert_eq "only the missing line is named" "$out" \
+    "orch: cannot add .orchestrator/ to the git exclude file $el_dir/info/exclude"
+fi
+chmod u+w "$el_dir/info/exclude"
+
 # --- list_has -----------------------------------------------------------------
 # The one newline-list membership test: whole lines, matched literally.
 echo

@@ -304,21 +304,20 @@ finding_triage_cmd() {
 # the only info/exclude git reads, so a linked worktree writes it too.
 exclude_orch_dirs() { exclude_line "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
 
-# exclude_lines <lines>: appends each of the newline-separated <lines> to the
-# clone's shared info/exclude, as the caller has already found it missing.
-# Nothing is written for an empty <lines>. The one place that file is appended
-# to: exclude_line passes it the lines it lacks, for exclude_orch_dirs and
-# agent sync's agent-copy line alike.
-exclude_lines() {
-  local ex
-  ex="$(git rev-parse --git-common-dir)/info/exclude"
-  mkdir -p "${ex%/*}"
-  if [ -n "$1" ]; then printf '%s\n' "$1" >>"$ex"; fi
-}
-
 # exclude_line <lines>: makes sure each of the newline-separated <lines> is a
-# line of the clone's shared info/exclude, adding it once and never again.
-exclude_line() { exclude_lines "$(exclude_missing "$1")"; }
+# line of the clone's shared info/exclude, adding it once and never again: it
+# appends the lines exclude_missing finds absent, creating the file's directory
+# first, and does nothing at all when none is missing. The one place that file
+# is appended to, for exclude_orch_dirs and agent sync's agent-copy line alike;
+# it dies naming the missing lines and the file on a failed write.
+exclude_line() {
+  local missing ex
+  missing="$(exclude_missing "$1")"
+  [ -n "$missing" ] || return 0
+  ex="$(git rev-parse --git-common-dir)/info/exclude"
+  { mkdir -p "${ex%/*}" && printf '%s\n' "$missing" >>"$ex"; } 2>/dev/null ||
+    die "cannot add ${missing//$'\n'/, } to the git exclude file $ex"
+}
 
 # exclude_missing <lines>: prints, one per line, each of the newline-separated
 # <lines> the clone's shared info/exclude lacks - every one when the file is
