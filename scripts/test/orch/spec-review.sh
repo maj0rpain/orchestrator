@@ -351,11 +351,24 @@ BATCH
   printf '%s\n' "$d"
 }
 # sra <dir> <answer> [flags...]: apply on issue #14, standalone, round
-# $sra_rnd (1/2 when unset), its output and status into out and st.
+# $sra_rnd (1/2 when unset), its output and status into out and st. With
+# $sra_in = flow (see sra_in_mode) it runs in the flow instead, without
+# --issue 14.
 sra() {
-  local d="$1" a="$2"
+  local d="$1" a="$2" issue=(--issue 14)
   shift 2
-  out="$("$ORCH" spec-review apply "$d" "$a" --round "${sra_rnd:-1/2}" --issue 14 "$@" 2>&1)"; st=$?
+  [ "${sra_in:-issue}" = flow ] && issue=()
+  out="$("$ORCH" spec-review apply "$d" "$a" --round "${sra_rnd:-1/2}" "${issue[@]}" "$@" 2>&1)"; st=$?
+}
+# sra_in_mode <issue|flow>: a fresh start for sra in <mode> - no state.json,
+# and in flow mode a flow, sra, on issue 14. Sets sra_in, which sra reads;
+# every loop over both modes ends with sra_in_mode issue.
+sra_in_mode() {
+  sra_in="$1"
+  rm -f "$top/.orchestrator/state.json"
+  if [ "$1" = flow ]; then
+    "$ORCH" init sra >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
+  fi
 }
 # sra_refused <label> <dir> <want-in-message> <answer> [flags...]: apply is
 # refused, naming <want>, with nothing written: spec.md, changelog.md and
@@ -743,21 +756,14 @@ d="$(sra_dir)"
 sed -i '/^@@ summary Insert/d' "$d/batch.md"
 sra_refused "an item with no summary" "$d" "item 4 has no @@ summary" recommended
 
-# The summary cap (#1352): apply shares check's grammar, so refuses the same
-# summaries of more than 30 words and passes one of 30.
+# The summary cap (#1352): apply shares check's grammar through the same batch
+# parser, so this one case proves apply enforces the cap; check's cases pin the
+# 30-word boundary and the option wording.
 sra_w30="$(printf 'w%s ' {1..30})"; sra_w30="${sra_w30% }"
 d="$(sra_dir)"
 sed -i "s/^@@ summary Insert a test note after Delta\$/@@ summary $sra_w30 w31/" "$d/batch.md"
 sra_refused "a 31-word item summary" "$d" \
   "orch: batch.md line 47: item 4's @@ summary has 31 words, more than 30" recommended
-d="$(sra_dir)"
-sed -i "s/^@@ summary Gamma dropped\$/@@ summary $sra_w30 w31/" "$d/batch.md"
-sra_refused "a 31-word option summary" "$d" \
-  "orch: batch.md line 39: item 3 option B's @@ summary has 31 words, more than 30" recommended
-d="$(sra_dir)"
-sed -i "s/^@@ summary Insert a test note after Delta\$/@@ summary $sra_w30/; s/^@@ summary Gamma dropped\$/@@ summary $sra_w30/" "$d/batch.md"
-sra "$d" recommended
-assert_status "30-word item and option summaries: apply" "$st" 0
 d="$(sra_dir)"
 sed -i '/^@@ lens consistency/d' "$d/batch.md"
 sra_refused "a lens with no @@ lens line" "$d" "no @@ lens line for consistency" recommended
@@ -1016,19 +1022,24 @@ assert_status "a failed changelog.md write stops apply" "$st" 1
 assert_contains "naming it" "$out" "could not write $d/changelog.md"
 assert_eq "before any GitHub write" "$(fake_snapshot)" "$snap"
 
+# sra honours sra_in: in flow mode it runs without --issue 14, so a flow that
+# records no issue is refused.
+d="$(sra_dir)"
+sra_in_mode flow
+"$ORCH" state set issue "" >/dev/null 2>&1 || "$ORCH" state unset issue >/dev/null 2>&1
+sra "$d" recommended
+sra_in_mode issue
+assert_status "sra in flow mode on a flow with no issue: refused" "$st" 1
+assert_contains "sra in flow mode: naming the missing issue" "$out" "issue"
+sra "$d" recommended
+assert_status "sra in issue mode runs with --issue 14" "$st" 0
+
 for sra_mode in issue flow; do
   for sra_op in adapter_issue_body_edit adapter_issue_comment; do
     d="$(sra_dir)"
-    rm -f "$top/.orchestrator/state.json"
-    if [ "$sra_mode" = flow ]; then
-      "$ORCH" init sra >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
-    fi
+    sra_in_mode "$sra_mode"
     fake_fail "$sra_op"
-    if [ "$sra_mode" = flow ]; then
-      out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 2>&1)"; st=$?
-    else
-      sra "$d" recommended
-    fi
+    sra "$d" recommended
     fake_unfail
     assert_status "$sra_mode: a failed $sra_op stops apply" "$st" 1
     if [ "$sra_op" = adapter_issue_body_edit ]; then
@@ -1041,6 +1052,7 @@ for sra_mode in issue flow; do
     assert_eq "$sra_mode: changelog.md stays" "$(on_disk "$d/changelog.md")" present
   done
 done
+sra_in_mode issue
 rm -rf "$top/.orchestrator"
 
 d="$(sra_dir)"
@@ -1324,14 +1336,10 @@ mv "$d/tickets.md" "$d/tickets.keep"
 srt_refused "no tickets.md" "$d" "tickets.md not found" recommended --tickets recommended
 cp "$d/tickets.keep" "$d/tickets.md"
 srt_refused "a ticket item with no ticket file" "$d" "ticket item 1: ticket-20.md not found" recommended --tickets recommended
-assert_eq "a ticket item with no ticket file: names its header line" "$out" \
-  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written"
 srt_fetch "$d"
 assert_eq "ticket-20.fetched.md not yet taken by a run that found no file" "$(on_disk "$d/ticket-20.fetched.md")" absent
 sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
 srt_refused "a ticket anchor matching nothing" "$d" "ticket item 1 (#20): its anchor matches no text" recommended --tickets recommended
-assert_eq "a ticket anchor matching nothing: names its @@ anchor line" "$out" \
-  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written"
 assert_eq "the refused run took ticket-20.fetched.md" "$(cat "$d/ticket-20.fetched.md")" "$(printf '%s' "$srt_t20")"
 sed -i 's/^Nowhere\.$/##/' "$d/tickets.md"
 srt_refused "a ticket anchor matching twice" "$d" "ticket item 1 (#20): its anchor matches more than one place" recommended --tickets recommended
@@ -1361,23 +1369,12 @@ printf '1: why\n' >"$d/treasons"
 srt_refused "a ticket reason for an accepted item" "$d" "does not decline" recommended --tickets recommended --ticket-reasons "$d/treasons"
 printf '9: why\n' >"$d/treasons"
 srt_refused "a ticket reason for an unknown item" "$d" "item 9" recommended --tickets none --ticket-reasons "$d/treasons"
-srt_refused "a block for an edge already present" "$d" "ticket item 5: #21 is already blocked by #20" recommended --tickets all
-assert_eq "a block for an edge already present: names its header line" "$out" \
-  "orch: tickets.md line 19: ticket item 5: #21 is already blocked by #20 - nothing written"
-sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
-srt_refused "an unblock for an edge not present" "$d" "ticket item 2: #20 is not blocked by #21" recommended --tickets recommended
-assert_eq "an unblock for an edge not present: names its header line" "$out" \
-  "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21 - nothing written"
 cp "$d/tickets.keep" "$d/tickets.md"
 mv "$d/ticket-21.md" "$d/ticket-21.keep"
 srt_refused "an edge item with no ticket file" "$d" "ticket item 2: ticket-21.md not found" recommended --tickets recommended
 assert_eq "an edge item with no ticket file: names its header line" "$out" \
   "orch: tickets.md line 10: ticket item 2: ticket-21.md not found in $d - fetch each ticket a ticket item names into it - nothing written"
 mv "$d/ticket-21.keep" "$d/ticket-21.md"
-sed -i 's/^@@ item 5 block 21 by 20 /@@ item 5 block 99 by 20 /' "$d/tickets.md"
-srt_refused "an edge item whose ticket is not in the breakdown" "$d" "ticket item 5: #99 is not a ticket of #14's breakdown" recommended --tickets recommended
-assert_eq "an edge item whose ticket is not in the breakdown: names its header line" "$out" \
-  "orch: tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written"
 cp "$d/tickets.keep" "$d/tickets.md"
 sra "$d" recommended --tickets recommended
 assert_status "the corrected rerun applies" "$st" 0
@@ -1409,47 +1406,17 @@ assert_eq "recorded" "$(tail -n 1 "$d/changelog.md")" "- (1) The ticket builds a
 d="$(srt_collapsed)"
 sed -i 's/^Build the spec\.$/Alpha line./' "$d/tickets.md"
 srt_refused "a ## Ticket anchor on text the batch items replaced" "$d" "ticket item 1 (## Ticket): its anchor matches no text" recommended --tickets recommended
-assert_eq "a ## Ticket anchor matching nothing: names its @@ anchor line" "$out" \
-  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written"
-d="$(srt_dir)"
-srt_fetch "$d"
-printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
-srt_refused "a ## Ticket item on a sub-issue breakdown" "$d" "ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues" recommended --tickets recommended
-assert_eq "a ## Ticket item on a sub-issue breakdown: names its header line" "$out" \
-  "orch: tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written"
 
-# srt_mode_setup <mode>: a fresh start for apply in <mode> - no state.json,
-# and in flow mode a flow on issue 14.
-srt_mode_setup() {
-  rm -f "$top/.orchestrator/state.json"
-  if [ "$1" = flow ]; then
-    "$ORCH" init srt >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
-  fi
-}
-# srt_apply_in <mode> <dir> <ticket-answer>: apply <dir>'s recommended
-# answer with --tickets <ticket-answer> in <mode>, setting out and st.
-srt_apply_in() {
-  if [ "$1" = flow ]; then
-    out="$("$ORCH" spec-review apply "$2" recommended --round 1/2 --tickets "$3" 2>&1)"; st=$?
-  else
-    sra "$2" recommended --tickets "$3"
-  fi
-}
 # Every kind of ticket-step error names its tickets.md line and ends
 # ` - nothing written`, with nothing written, in both modes.
 # srt_step_refused <mode> <label> <dir> <want> <ticket-answer>: apply in
 # <mode> (issue or flow) is refused with exactly <want>, leaving spec.md, the
 # ticket files and changelog.md as they were, and GitHub untouched.
 srt_step_refused() {
-  local mode="$1" label="$1: $2" d="$3" want="$4" before snap
-  srt_mode_setup "$mode"
-  before="$(srt_files "$d"; cat "$d/settled.md" 2>/dev/null)"
-  snap="$(fake_snapshot)"
-  srt_apply_in "$mode" "$d" "$5"
-  assert_status "$label: refused" "$st" 1
-  assert_eq "$label: the exact message" "$out" "$want"
-  assert_eq "$label: no local file written" "$(srt_files "$d"; cat "$d/settled.md" 2>/dev/null)" "$before"
-  assert_eq "$label: no GitHub update" "$(fake_snapshot)" "$snap"
+  local mode="$1"
+  sra_in_mode "$mode"
+  srt_refused "$mode: $2" "$3" "$4" recommended --tickets "$5"
+  assert_eq "$mode: $2: the exact message" "$out" "$4"
 }
 for sra_mode in issue flow; do
   d="$(srt_dir)"
@@ -1489,6 +1456,7 @@ for sra_mode in issue flow; do
   srt_step_refused "$sra_mode" "an edge outside the breakdown" "$d" \
     "orch: tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written" recommended
 done
+sra_in_mode issue
 rm -rf "$top/.orchestrator"
 
 # A failed ticket write stops apply, naming the writes already landed, in
@@ -1497,9 +1465,9 @@ srt_fail() {
   local mode="$1" how="$2" op="$3" n="$4"
   d="$(srt_dir)"
   srt_fetch "$d"
-  srt_mode_setup "$mode"
+  sra_in_mode "$mode"
   if [ "$n" = 0 ]; then fake_fail "$op"; else fake_fail_after "$op" "$n"; fi
-  srt_apply_in "$mode" "$d" "$how"
+  sra "$d" recommended --tickets "$how"
   fake_unfail
   assert_status "$mode: a failed $op stops apply" "$st" 1
   assert_eq "$mode: changelog.md stays after a failed $op" "$(on_disk "$d/changelog.md")" present
@@ -1526,6 +1494,7 @@ for sra_mode in issue flow; do
   assert_contains "$sra_mode: a comment failure named" "$out" "could not write the changelog comment on issue #14"
   assert_contains "$sra_mode: every other write landed" "$out" "already landed: ticket #20's body; unblock #21 by #20; block #20 by #21; the body of issue #14;"
 done
+sra_in_mode issue
 rm -rf "$top/.orchestrator"
 d="$(srt_dir)"
 srt_fetch "$d"
@@ -2161,7 +2130,6 @@ Beta reversed.
 assert_eq "--full creates no spec.fetched.md" "$(on_disk "$d/spec.fetched.md")" absent
 assert_eq "--full makes no GitHub write" "$(fake_snapshot)" "$snap"
 src "$d" --full 3
-assert_contains "--full shows a decision item's options in full" "$out" "#### Option A - Keep gamma (recommended)"
 assert_eq "its option headings carry the compact view's label and mark" "$(grep '^#### ' <<<"$out")" \
   '#### Option A - Keep gamma (recommended)
 #### Option B - Drop gamma'
