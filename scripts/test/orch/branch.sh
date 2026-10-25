@@ -857,6 +857,13 @@ out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a different existing branch is still refused" "$st" 1
 assert_contains "as already existing" "$out" "orch/17-other already exists"
 assert_eq "recording no branch" "$(orch_gh_failing state get branch)" ""
+# the refusal comes before the discard: a dirty tree survives it
+echo hand >>README.md
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a different existing branch is refused in an autopilot flow too" "$st" 1
+assert_contains "as already existing, as before" "$out" "orch/17-other already exists"
+assert_contains "leaving the dirty tree untouched" "$(git status --porcelain)" "README.md"
+git checkout -q -- README.md
 # a side checkout discards without autopilot
 sc_clone
 side="$(sc_add sidebr)"

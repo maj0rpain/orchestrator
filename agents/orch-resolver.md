@@ -109,7 +109,8 @@ failed sync stops and where its **Merge resolutions** go.
 
 This section is for the driver session too: the one statement of how a
 driver resolves a ticket conflict, when `bash "$ORCH" ticket merge <n>`
-exits 3 on the parallel path. `orch-flow`'s implement phase and
+exits 3, on the parallel or the sequential path, or `ticket reclaim` prints
+`conflict <n>` and exits 3. `orch-flow`'s implement phase and
 `orch-quick-implement` each run it as loop step e of the driver loop in
 `docs/driver-loop.md`, and each binds that doc's **the record** slot to say
 where its **Merge resolutions** go. `ticket merge` has already aborted its
@@ -144,7 +145,10 @@ checked out in the driver's checkout.
 3. **Merge again.** First check the resolution: if it failed, as **Report**
    below defines it, go to step 4 without merging. Otherwise rerun
    `bash "$ORCH" ticket merge <n>`. On exit 0, proceed as loop step d
-   does: close the ticket, remove its worktree, and refill. Record the
+   does: close the ticket, remove its worktree, and refill - except that a
+   collapsed breakdown's ticket (its worktree is `t<spec issue>`) is never
+   closed, and a resolution that began at `ticket reclaim` goes back to
+   `bash "$ORCH" ticket reclaim <parent>` instead of refilling. Record the
    report per **Merge resolutions** below, under the ticket's number.
    Exit 1 is loop step d's exit 1.
 4. **A failed resolution** - one that failed as **Report** below defines

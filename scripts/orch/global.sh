@@ -353,7 +353,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               and its tip as the base SHA in state and in
                               the branch's git config, as branch off does.
                               Refuses with exit 3 in a busy checkout, its own
-                              flow aside, changing nothing
+                              flow aside, changing nothing. When state.branch
+                              records the branch and it exists, checks it out
+                              and prints it, base_sha untouched. A dirty tree
+                              or merge/rebase in progress is discarded, or
+                              refused with exit 1 in an interactive main
+                              checkout; any other existing branch is refused
+                              before anything is discarded
   branch off <name>           create and check out <name> off the base branch
                               in effect, recording that base on the branch
                               (branch.<name>.orchestrator-base in local git
@@ -440,7 +446,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               state
   pr open <title> <body-file> [--label <name>]...
                               push and open a draft PR against the flow's base
-                              branch - Closes its issue into the default
+                              branch, or, when a PR is already recorded,
+                              update that PR instead (dying if it is closed,
+                              merged or on another branch) - Closes its issue into the default
                               branch, Refs it into any other. --label,
                               repeatable, opens it carrying that label, read
                               back once the PR is recorded: one missing, or a

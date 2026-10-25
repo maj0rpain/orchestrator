@@ -691,6 +691,7 @@ ticket_reclaim_remove() {
   if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
     git -C "$ROOT" branch -q -D "$flow--t$n" \
       || die "ticket #$n: could not delete branch $flow--t$n"
+    note "deleted the branch of ticket #$n"
   fi
 }
 
@@ -707,8 +708,7 @@ cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
   local parent="$1" flow subs line worktrees n state path st reported merged nums=""
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
-  flow="$(git -C "$ROOT" branch --show-current)"
-  [ -n "$flow" ] || die "the current checkout is on no branch - nothing to reclaim onto"
+  flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
   discard_flow_branch_work
   subs="$(ticket_sub_issues "$parent")" || exit 1
   while IFS= read -r line; do
