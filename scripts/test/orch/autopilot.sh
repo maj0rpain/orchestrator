@@ -7,11 +7,16 @@
 
 # iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
 iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
+# rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
+# <7d reset>: a rate_limit_event line.
+rl_event() {
+  printf '{"type":"rate_limit_event","rate_limit_info":{"status":"%s","resetsAt":%s,"rateLimitType":"seven_day","utilization":%s,"unifiedWindows":{"five_hour":{"utilization":%s,"resetsAt":%s,"status":"%s"},"seven_day":{"utilization":%s,"resetsAt":%s,"status":"%s"}}}}\n' \
+    "$4" "$6" "$5" "$2" "$3" "$1" "$5" "$6" "$4"
+}
 # ndjson_with <line>: a session log of NDJSON lines with <line> as a plain text
 # line among them, and a rate_limit_event that rejects nothing.
 ndjson_with() {
-  printf '%s\n' '{"type":"system","subtype":"init"}' \
-    '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":4102444800,"rateLimitType":"five_hour","utilization":0.1,"unifiedWindows":{"five_hour":{"utilization":0.1,"resetsAt":4102444800,"status":"allowed"}}}}' \
+  printf '%s\n' '{"type":"system","subtype":"init"}' "$(rl_event allowed 0.1 4102444800 allowed 0.1 4102444800)" \
     "$1" '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'
 }
 # tick_calls: how many sessions the launcher has been asked for.
@@ -772,15 +777,11 @@ limit_file="$top/.orchestrator/autopilot/limit"
 printf '7\n' >"$launcher_dir/release"; : >"$launcher_dir/out"
 "$ORCH" autopilot tick >/dev/null 2>&1   # makes the side checkout
 rm -f "$launcher_dir/release" "$launcher_dir/calls" "$limit_file"
-# rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
-# <7d reset>
-rl_event() {
-  printf '{"type":"rate_limit_event","rate_limit_info":{"status":"%s","resetsAt":%s,"rateLimitType":"seven_day","utilization":%s,"unifiedWindows":{"five_hour":{"utilization":%s,"resetsAt":%s,"status":"%s"},"seven_day":{"utilization":%s,"resetsAt":%s,"status":"%s"}}}}\n' \
-    "$4" "$6" "$5" "$2" "$3" "$1" "$5" "$6" "$4"
-}
-# event_session <exit>: a fresh run of issue 7 over the launcher's canned log.
+# event_session <exit> [prior limit file content]: a fresh run of issue 7 over
+# the launcher's canned log, the limit file as the prior content, else absent.
 event_session() {
   rm -f "$limit_file"
+  [ $# -lt 2 ] || printf '%s\n' "$2" >"$limit_file"
   fake_issue 7 open ready-for-agent orch:spec orch:running
   fake_claim_seed 7
   printf '%s\n' "$1" >"$launcher_dir/exit"
@@ -836,19 +837,12 @@ event_session 0
 assert_eq "a high seven-day utilization alone writes nothing" "$(on_disk "$limit_file")" absent
 
 # a later recorded reset is kept; an earlier or unparsable one is replaced
-# run_with_prior <limit file content>: a run of issue 7 over the canned log.
-run_with_prior() {
-  fake_issue 7 open ready-for-agent orch:spec orch:running
-  fake_claim_seed 7
-  printf '%s\n' "$1" >"$limit_file"
-  "$ORCH" autopilot run 7 2>&1
-}
 rl_event allowed 0.95 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
-run_with_prior "$(iso_of "$r2")" >/dev/null
+event_session 0 "$(iso_of "$r2")"
 assert_eq "a later reset already recorded is kept" "$(cat "$limit_file")" "$(iso_of "$r2")"
-run_with_prior "2020-01-01T00:00:00Z" >/dev/null
+event_session 0 "2020-01-01T00:00:00Z"
 assert_eq "an earlier one is replaced" "$(cat "$limit_file")" "$(iso_of "$r1")"
-run_with_prior "garbage" >/dev/null
+event_session 0 "garbage"
 assert_eq "one that does not parse is replaced" "$(cat "$limit_file")" "$(iso_of "$r1")"
 
 # a failed limit-file write is noted and changes nothing else
@@ -864,6 +858,20 @@ assert_contains "and in the session log" "$(cat "$event_log")" "could not write 
 assert_eq "the issue is still limited" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 assert_eq "its claim released" "$(fake_claim_held 7)" free
 assert_contains "with its usage limit comment" "$(fake_comments_of 7)" "usage limit"
+rmdir "$limit_file"
+
+# a failed early-pause write on its own leaves the session's outcome as it was
+rm -f "$limit_file"; mkdir "$limit_file"
+rl_event allowed 0.95 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"; printf '3\n' >"$launcher_dir/exit"
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7
+out="$("$ORCH" autopilot run 7 2>&1)"; st=$?
+assert_status "a run whose early-pause write fails succeeds" "$st" 0
+assert_contains "the failure is noted on stderr" "$out" "could not write the limit file"
+assert_eq "an ordinary failure is still needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
+assert_contains "with its ordinary failure comment" "$(fake_comments_of 7)" "Autopilot failed in the spec phase"
+assert_not_contains "that names no usage limit" "$(fake_comments_of 7)" "usage limit"
+assert_eq "its claim released" "$(fake_claim_held 7)" free
 rmdir "$limit_file"
 
 # the stale-claim cleanup still names an NDJSON session log
@@ -886,14 +894,11 @@ lim_reset=$(( $(date +%s) + 3600 ))
 lim_iso="$(iso_of "$lim_reset")"
 # lim_relabel <n> <label>...: issue #n's labels set; title, comments kept.
 lim_relabel() { local n="$1"; shift; printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"; }
-lim_event() {
-  printf '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":1,"resetsAt":%s,"status":"rejected"}}}}\n' "$lim_reset"
-}
 # limit_run <issue>: a run of <issue>'s session, its claim held by a dead
 # process, that ends on the limit.
 limit_run() {
   fake_claim_seed "$1" "$(hostname)" "$(dead_pid)"
-  lim_event >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
+  rl_event rejected 1 "$lim_reset" allowed 0.2 "$lim_reset" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
   "$ORCH" autopilot run "$1" 2>&1
 }
 fake_issue 7 open ready-for-agent orch:spec; printf 'Lim 7\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
@@ -1005,6 +1010,18 @@ rm -f "$launcher_dir/calls"
 fake_unfail
 assert_eq "a failed orch:limited removal ends with needs-human and no orch:limited" "$(fake_labels_of 6)" "$LIM_OFF"
 assert_eq "and starts no session for it" "$(tick_calls)" "0"
+
+# a limit file in another clone's autopilot directory starts no pause
+other_clone="$(mktemp -d)"
+git clone -q "$top" "$other_clone/clone" >/dev/null 2>&1
+mkdir -p "$other_clone/clone/.orchestrator/autopilot"
+printf '%s\n' "$lim_iso" >"$other_clone/clone/.orchestrator/autopilot/limit"
+rm -f "$limit_file" "$launcher_dir/calls"
+fake_issue 8 open ready-for-agent orch:spec; printf 'Lim 8\n' >"$ORCH_GH_FAKE_STORE/issues/8/title"
+printf '8\n' >"$launcher_dir/release"; printf '0\n' >"$launcher_dir/exit"; : >"$launcher_dir/out"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "another clone's limit file starts no pause" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "lim-8"
+rm -rf "$other_clone"
 
 # autopilot questions does not list a limited issue
 fake_issue 30 open ready-for-agent orch:spec orch:limited

@@ -278,17 +278,21 @@ AUTOPILOT_FAILURE_OPENING='Autopilot failed in the '
 # empty); stop_phase is the phase a refusal or failure comment names, else null.
 AUTOPILOT_COMMENT_JQ='
   def first_line: .body | split("\n")[0] | rtrimstr("\r");
+  def marker_phase($p):
+    first_line | if startswith($p) and endswith(" -->") then ltrimstr($p) | rtrimstr(" -->") else null end;
   def question_comment($phase):
-    first_line | startswith($prefix) and endswith(" -->")
-      and ($phase == "" or . == $prefix + $phase + " -->");
+    marker_phase($prefix) as $m | $m != null and ($phase == "" or $m == $phase);
   def newest_question($phase): map(question_comment($phase)) | rindex(true);
-  def question_phase: first_line | ltrimstr($prefix) | rtrimstr(" -->");
+  def question_phase: marker_phase($prefix);
   def stop_phase:
     first_line | first(capture("^(?:'"$AUTOPILOT_REFUSAL_OPENING|$AUTOPILOT_FAILURE_OPENING"')(?<p>[^ ]+) phase") | .p) // null;
 '
 
 # autopilot_question_marker <phase>: the first line of a question comment.
 autopilot_question_marker() { printf '%s%s -->\n' "$AUTOPILOT_QUESTION_PREFIX" "$1"; }
+
+# autopilot_limit_marker <phase>: the first line of a limit stop comment.
+autopilot_limit_marker() { printf '%s%s -->\n' "$AUTOPILOT_LIMITED_PREFIX" "$1"; }
 
 # autopilot_phase_arg <phase> [die-fn]: dies, through die-fn (default die),
 # unless <phase> is a phase a question can be asked in - a flow phase other
@@ -539,9 +543,9 @@ AUTOPILOT_LIMITED_PREFIX='<!-- orch:limited '
 autopilot_limit_count() {
   local json gh_err n
   capture json gh_err adapter_issue_comments_json "$1" || return 1
-  n="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg lprefix "$AUTOPILOT_LIMITED_PREFIX" --arg phase "$2" "$AUTOPILOT_COMMENT_JQ"'
-    def limit_phase: first_line | if startswith($lprefix) and endswith(" -->") then ltrimstr($lprefix) | rtrimstr(" -->") else null end;
-    def handoff: first_line | startswith("<!-- orch:handoff ");
+  n="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg lprefix "$AUTOPILOT_LIMITED_PREFIX" --arg hprefix "$HANDOFF_MARKER_PREFIX" --arg phase "$2" "$AUTOPILOT_COMMENT_JQ"'
+    def limit_phase: marker_phase($lprefix);
+    def handoff: first_line | startswith($hprefix);
     reduce (reverse[]) as $c ({n: 0, done: false};
       if .done then .
       elif ($c | stop_phase != null or question_comment("") or handoff) then .done = true
@@ -566,8 +570,8 @@ autopilot_limit_stop() {
     autopilot_stop "$issue" failure "$phase" "the session stopped on a usage limit$when and exited with code $rc, the third in a row in the $phase phase; log: $log"
     return 0
   fi
-  printf -v text '%s%s -->\nThe session stopped on a usage limit in the %s phase, which resets %s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
-    "$AUTOPILOT_LIMITED_PREFIX" "$phase" "$phase" "${reset:-at an unknown time}" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
+  printf -v text '%s\nThe session stopped on a usage limit in the %s phase, which resets %s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
+    "$(autopilot_limit_marker "$phase")" "$phase" "${reset:-at an unknown time}" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
   autopilot_stop_write "$issue" "limit stop" "$text" "$AUTOPILOT_LIMITED_LABEL"
 }
 
