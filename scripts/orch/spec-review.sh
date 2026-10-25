@@ -1658,8 +1658,10 @@ spec_review_save_answer() {
         a="$copy" ;;
     esac
     saved+=("$a")
-    prev="$a"
-    case "$prev" in --reasons|--ticket-reasons|--host-fallbacks) ;; *) prev="" ;; esac
+    case "$a" in
+      --reasons|--ticket-reasons|--host-fallbacks) prev="$a" ;;
+      *) prev="" ;;
+    esac
   done
   { printf '%q ' "${saved[@]}"; printf '\n'; } >"$dir/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
     || die "could not write $dir/$SPEC_ROUND_APPLY_ANSWER - nothing written to GitHub"
@@ -1742,7 +1744,7 @@ spec_review_apply() {
     if [ "$a" = --resume ]; then resume=1; else given+=("$a"); fi
   done
   if [ -n "$resume" ]; then
-    local r_dir="" r_round="" s_round="" prev=""
+    local r_dir="" r_round=""
     set -- ${given[@]+"${given[@]}"}
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -1758,12 +1760,6 @@ spec_review_apply() {
       || die "--resume: $r_dir holds no $SPEC_ROUND_APPLY_ANSWER - there is no apply to resume; run apply with its answer"
     eval "saved=($(cat "$r_dir/$SPEC_ROUND_APPLY_ANSWER"))" 2>/dev/null \
       || die "$r_dir/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
-    for a in ${saved[@]+"${saved[@]}"}; do
-      [ "$prev" != --round ] || s_round="$a"
-      prev="$a"
-    done
-    [ "$r_round" = "$s_round" ] \
-      || die "--resume --round $r_round: the saved answer in $r_dir is for round $s_round"
     set -- "$r_dir" "${saved[@]}"
   else
     set -- ${given[@]+"${given[@]}"}
@@ -1798,6 +1794,8 @@ spec_review_apply() {
         shift ;;
     esac
   done
+  [ -z "$resume" ] || [ "$r_round" = "$round" ] \
+    || die "--resume --round $r_round: the saved answer in $r_dir is for round $round"
   [ -n "$dir" ] && [ -n "$have_answer" ] || die "$usage"
   [ -n "$round" ] || die "--round <k>/<n> is required ($usage)"
   case "$round" in

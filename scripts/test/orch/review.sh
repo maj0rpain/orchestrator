@@ -1211,32 +1211,32 @@ side="$(sc_add sideresume)"
   assert_eq "leaving it clean" "$(git status --porcelain)" ""
 
   # a dead base sync's merge in progress
-  flow_branch="$(git rev-parse HEAD)"
-  git checkout -q -b clash-a
-  echo a >clash.txt && git add clash.txt && git commit -qm a
-  git checkout -q "$flow_branch"
-  echo b >clash.txt && git add clash.txt && git commit -qm b
-  git merge -q clash-a >/dev/null 2>&1
+  leave_merge_in_progress clash-a
   assert_eq "(fixture) a merge is in progress" \
-    "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "merging"
+    "$(merge_state)" "merging"
   out="$("$ORCH" review resume 2>&1)"; st=$?
   assert_status "a merge in progress in a side checkout is aborted" "$st" 0
   assert_eq "leaving no merge in progress" \
-    "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "none"
+    "$(merge_state)" "none"
   assert_eq "and a clean tree" "$(git status --porcelain)" ""
 
   # a dead rebase in progress
-  git checkout -q -b clash-r
-  echo c >clash.txt && git add clash.txt && git commit -qm c
-  git checkout -q "$flow_branch"
-  echo d >clash.txt && git add clash.txt && git commit -qm d
-  git rebase clash-r >/dev/null 2>&1
+  leave_rebase_in_progress clash-r
   assert_eq "(fixture) a rebase is in progress" \
-    "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "rebasing"
+    "$(rebase_state)" "rebasing"
   out="$("$ORCH" review resume 2>&1)"; st=$?
   assert_status "a rebase in progress in a side checkout is aborted" "$st" 0
   assert_eq "leaving no rebase in progress" \
-    "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "none"
+    "$(rebase_state)" "none"
+
+  # a finished loop has nothing to resume: refused before anything is discarded
+  mkdir -p .orchestrator/review
+  writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
+  echo hand >>README.md
+  out="$("$ORCH" review resume 2>&1)"; st=$?
+  assert_status "nothing to resume in a side checkout exits 1" "$st" 1
+  assert_contains "saying so" "$out" "nothing to resume"
+  assert_eq "and discards no edits" "$(git status --porcelain README.md)" " M README.md"
 )
 restore_suite_env
 

@@ -822,39 +822,31 @@ assert_status "the same dirty tree in an autopilot flow is discarded" "$st" 0
 assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
 
 # a dead base sync's merge in progress
-git checkout -q -b clash-a
-echo a >clash.txt && git add clash.txt && git commit -qm a
-git checkout -q orch/15-again
-echo b >clash.txt && git add clash.txt && git commit -qm b
-git merge -q clash-a >/dev/null 2>&1
+leave_merge_in_progress clash-a
 assert_eq "(fixture) a merge is in progress" \
-  "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "merging"
+  "$(merge_state)" "merging"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a merge in progress in an interactive main checkout is refused" "$st" 1
 assert_contains "naming merge --abort" "$out" "merge --abort"
 assert_eq "leaving the merge in progress" \
-  "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "merging"
+  "$(merge_state)" "merging"
 out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a merge in progress in an autopilot flow is aborted" "$st" 0
 assert_eq "leaving no merge in progress" \
-  "$(git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none)" "none"
+  "$(merge_state)" "none"
 assert_eq "and a clean tree" "$(git status --porcelain)" ""
 
 # a dead rebase in progress
-git checkout -q -b clash-r
-echo c >clash.txt && git add clash.txt && git commit -qm c
-git checkout -q orch/15-again
-echo d >clash.txt && git add clash.txt && git commit -qm d
-git rebase clash-r >/dev/null 2>&1
+leave_rebase_in_progress clash-r
 assert_eq "(fixture) a rebase is in progress" \
-  "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "rebasing"
+  "$(rebase_state)" "rebasing"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a rebase in progress in an interactive main checkout is refused" "$st" 1
 assert_contains "naming rebase --abort" "$out" "rebase --abort"
 out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a rebase in progress in an autopilot flow is aborted" "$st" 0
 assert_eq "leaving no rebase in progress" \
-  "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "none"
+  "$(rebase_state)" "none"
 
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin

@@ -104,7 +104,7 @@ ticket_record() {
 # breakdown_publish_in <parent> <draft> <tmp>: breakdown publish's work, run in
 # a subshell so the caller can remove <tmp> however it ends.
 breakdown_publish_in() {
-  local parent="$1" draft="$2" tmp="$3" dir saved numbers k rec n status b want list title order
+  local parent="$1" draft="$2" tmp="$3" dir saved numbers k rec n status b want list title order subs
   dir="$(breakdown_dir "$parent")"
   saved="$dir/draft.md"
   # A saved draft always wins over the one given.
@@ -133,7 +133,11 @@ breakdown_publish_in() {
     fi
     if [ -n "$rec" ]; then
       # Created but not linked: link it, never create another.
-      (ticket_link_and_verify "$parent" "$n" "$(tr ',' '\n' <<<"$want")" adopt) \
+      (
+        subs="$(ticket_sub_issues "$parent")" || exit 1
+        ticket_listing_has "$subs" "$n" || ticket_link_write "$parent" "$n"
+        ticket_edges_and_verify "$parent" "$n" "$(tr ',' '\n' <<<"$want")"
+      ) \
         || die "ticket $k of the draft (#$n): the link failed"
       ticket_record "$numbers" "$k" "$n" linked
     else

@@ -257,12 +257,14 @@ assert_contains "restart: naming the PR" "$out" "PR #51"
 assert_eq "restart: creating none" "$(fake_prs)" "${prs_before}51 "
 rm -rf "$ORCH_GH_FAKE_STORE/prs/51"
 
+fake_pr_body 50 "untouched body"
 state_fixture pr 50
 git commit -q --allow-empty -m "more unpushed work"
 origin_rejects "$bare"
 out="$("$ORCH" pr open "Rejected title" "$body" --label other 2>&1)"; st=$?
 assert_status "restart: a rejected push fails pr open" "$st" 1
 assert_eq "restart: leaving the title" "$(fake_pr_title_of 50)" "New title"
+assert_eq "restart: and the body" "$(fake_pr_body_of 50)" "untouched body"
 assert_eq "restart: and the labels" "$(fake_pr_labels_of 50)" "$(writeln keep-me ci)"
 rm -f "$bare/hooks/pre-receive"
 

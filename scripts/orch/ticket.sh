@@ -63,6 +63,16 @@ issue_number_list() {
   printf '%s\n' $list | sort -un
 }
 
+# ticket_listing_has <listing> <n>: 0 when <n> is the first tab field of a line
+# of the sub-issue <listing>.
+ticket_listing_has() {
+  local line
+  while IFS= read -r line; do
+    if [ "${line%%$'\t'*}" = "$2" ]; then return 0; fi
+  done <<<"$1"
+  return 1
+}
+
 # ticket_links_verified <err_var> <parent> <child> <want>: 0 only once both
 # links read back exactly as published: the parent's sub-issue listing
 # contains the child, and the child's blocked-by listing is the same set of
@@ -73,15 +83,12 @@ issue_number_list() {
 # would just repeat the same verdict. Locals prefixed so no caller's variable
 # name is shadowed.
 ticket_links_verified() {
-  local __tlv_out __tlv_blockers __tlv_err __tlv_line __tlv_linked=""
+  local __tlv_out __tlv_blockers __tlv_err
   if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
     printf -v "$1" '%s' "$__tlv_err"
     return 2
   fi
-  while IFS= read -r __tlv_line; do
-    if [ "${__tlv_line%%$'\t'*}" = "$3" ]; then __tlv_linked=1; break; fi
-  done <<<"$__tlv_out"
-  [ -n "$__tlv_linked" ] || return 1
+  ticket_listing_has "$__tlv_out" "$3" || return 1
   if ! capture __tlv_blockers __tlv_err adapter_blockers "$3"; then
     printf -v "$1" '%s' "$__tlv_err"
     return 2
@@ -135,30 +142,25 @@ cmd_ticket_publish() {
   # "created, unlinked" from "not created". A failed write dies here.
   if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" created; fi
 
-  ticket_link_and_verify "$parent" "$child" "$want"
+  ticket_link_write "$parent" "$child"
+  ticket_edges_and_verify "$parent" "$child" "$want"
   if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" linked; fi
 
   note "$child"
 }
 
-# ticket_link_and_verify <parent> <child> <want> [adopt]: links <child> as a
-# sub-issue of <parent>, adds a blocking edge for every number in <want>, and
-# verifies every link by reading it back, with one retry - either status gets
-# it, and the second attempt decides the death: a failed read dies with gh's
-# reason, a mismatch as unverified. With <adopt> set the link write is skipped
-# when the parent's listing already holds <child>.
-ticket_link_and_verify() {
-  local parent="$1" child="$2" want="$3" adopt="${4-}" b gh_err="" st=0 subs line linked=""
-  if [ -n "$adopt" ]; then
-    subs="$(ticket_sub_issues "$parent")" || exit 1
-    while IFS= read -r line; do
-      if [ "${line%%$'\t'*}" = "$child" ]; then linked=1; fi
-    done <<<"$subs"
-  fi
-  if [ -z "$linked" ]; then
-    gh_or_die "link ticket #$child as a sub-issue of #$parent" \
-      adapter_sub_issue_link "$parent" "$child"
-  fi
+# ticket_link_write <parent> <child>: links <child> as a sub-issue of <parent>.
+ticket_link_write() {
+  gh_or_die "link ticket #$2 as a sub-issue of #$1" \
+    adapter_sub_issue_link "$1" "$2"
+}
+
+# ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
+# every number in <want>, and verifies every link by reading it back, with one
+# retry - either status gets it, and the second attempt decides the death: a
+# failed read dies with gh's reason, a mismatch as unverified.
+ticket_edges_and_verify() {
+  local parent="$1" child="$2" want="$3" b gh_err="" st=0
 
   if [ -n "$want" ]; then
     while IFS= read -r b; do

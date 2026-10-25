@@ -477,25 +477,25 @@ review_standards() {
 }
 
 # review_resume: resumes a review loop whose driving session died mid-iteration,
-# spending no budget (ADR-0054). It applies the discard rule to the flow's
-# branch first - a refusal in an interactive main checkout exits 1 with
-# nothing else touched - then reads `review terminal`: only pending and
-# interrupted resume. With no record for the last iteration the dead run's
-# reviewer reports are cleared and `rerun <i>` is printed; with a record whose
-# Terminal state is empty the iteration finished, and `next` (pending) or
-# `terminate` (interrupted) is printed. `iteration` and `budget` are never
-# written. A failed clear dies (exit 1) naming the report.
+# spending no budget (ADR-0054). It reads `review terminal` first: only pending
+# and interrupted resume, any other state exits 1 with nothing changed. Then it
+# applies the discard rule to the flow's branch - a refusal in an interactive
+# main checkout exits 1 with nothing else touched. With no record for the last
+# iteration the dead run's reviewer reports are cleared and `rerun <i>` is
+# printed; with a record whose Terminal state is empty the iteration finished,
+# and `next` (pending) or `terminate` (interrupted) is printed. `iteration` and
+# `budget` are never written. A failed clear dies (exit 1) naming the report.
 review_resume() {
   [ $# -eq 0 ] || die "usage: orch.sh review resume"
   require_state
   local state i path report
-  discard_flow_branch_work
   state="$(review_terminal_state)" || true
   state="${state%%$'\n'*}"
   case "$state" in
     pending|interrupted) ;;
     *) die "nothing to resume: review terminal says ${state:-nothing}" ;;
   esac
+  discard_flow_branch_work
   i="$(state_get iteration)" || die "cannot read iteration from $STATE"
   path="$(cmd_review path "$i")" || exit 1
   if [ ! -f "$path" ]; then
