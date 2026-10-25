@@ -41,13 +41,6 @@ declare -A AGENT_NOTE=([junie.model]="inherit or a name matching %s - use the na
 # message's allowed values.
 agent_pipe_list() { printf '%s' "${1// /|}"; }
 
-# agent_listed <list> <word>: whether <word> is one of the space-separated
-# <list>'s words, whole - never several of them, nor part of one.
-agent_listed() {
-  case "$2" in *[[:space:]]*) return 1 ;; esac
-  [[ " $1 " == *" $2 "* ]]
-}
-
 # agent_allowed <kind> <value> [<host>]: whether <value> is allowed for the
 # model or effort key, of Claude Code or of <host>.
 agent_allowed() {
@@ -57,7 +50,7 @@ agent_allowed() {
     [[ "$2" =~ ^${AGENT_PATTERN[$k]}$ ]]
     return
   fi
-  agent_listed "${AGENT_ALLOWED[$k]}" "$2"
+  word_listed "${AGENT_ALLOWED[$k]}" "$2"
 }
 
 # agent_values <kind> [<host>]: the allowed values for the model or effort key,
@@ -80,7 +73,7 @@ agent_host() {
   while [ $# -gt 0 ]; do
     if [ "$1" = --host ]; then
       [ $# -ge 2 ] || die "--host needs a value (want $(agent_pipe_list "$AGENT_FLAG_HOSTS"))"
-      agent_listed "$AGENT_FLAG_HOSTS" "$2" ||
+      word_listed "$AGENT_FLAG_HOSTS" "$2" ||
         die "host $2 is not allowed (want $(agent_pipe_list "$AGENT_FLAG_HOSTS"))"
       printf '%s' "$2"; return
     fi
@@ -157,7 +150,7 @@ agent_role_values() {
 
 # agent_require_role <role>: dies unless <role> is one of the roles.
 agent_require_role() {
-  agent_listed "$AGENT_ROLES" "$1" && return 0
+  word_listed "$AGENT_ROLES" "$1" && return 0
   die "unknown role ${1:-<none>} (want $(agent_pipe_list "$AGENT_ROLES"))"
 }
 

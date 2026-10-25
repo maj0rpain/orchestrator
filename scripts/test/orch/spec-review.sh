@@ -2817,3 +2817,14 @@ assert_eq "with the usage" "$out" "orch: usage: orch.sh spec-review prompt <dir>
 
 assert_contains "the unknown-op message lists prompt" "$("$ORCH" spec-review wipe 2>&1)" "want begin|check|apply|wait|prompt"
 assert_contains "help documents spec-review prompt" "$("$ORCH" help)" "spec-review prompt <dir> <lens>"
+
+# --- spec_review_lens_known matches one whole lens (#1546) -------------------
+echo
+echo "spec-review lens check"
+new_repo >/dev/null
+sourced_orch spec_review_lens_known consistency; st=$?
+assert_status "a lens name is known" "$st" 0
+sourced_orch spec_review_lens_known "consistency testability"; st=$?
+assert_status "two adjacent lens names are refused" "$st" 1
+sourced_orch spec_review_lens_known ""; st=$?
+assert_status "the empty name is refused" "$st" 1

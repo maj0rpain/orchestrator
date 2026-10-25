@@ -1227,3 +1227,12 @@ env -u ORCH_GH_ADAPTER -u GH_REPO "$ORCH" autopilot reply 30 "$r.origin" >/dev/n
 assert_contains "reply reached gh pinned to origin's repo" "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets "
 restore_suite_env GH_FIXTURE
 restore_suite_env
+
+# --- autopilot_phase_arg refuses two adjacent phases (#1546) ------------------
+echo
+echo "autopilot phase argument"
+new_repo >/dev/null
+out="$(sourced_orch autopilot_phase_arg "spec implement" 2>&1)"; st=$?
+assert_status "autopilot_phase_arg refuses two adjacent phases" "$st" 1
+assert_eq "with its not-a-flow-phase message" "$out" \
+  "orch: not a flow phase: spec implement (want spec|implement|review|done)"

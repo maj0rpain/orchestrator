@@ -98,7 +98,7 @@ deleting_commit() {
     deleters="$deleters $deleter"
   fi
   for commit in $(git log --format=%H "$ref" "^$old" -- "$file" 2>/dev/null); do
-    case " $deleters " in *" $commit "*) printf '%s\n' "$commit"; return 0 ;; esac
+    if word_listed "$deleters" "$commit"; then printf '%s\n' "$commit"; return 0; fi
   done
 }
 
@@ -432,7 +432,7 @@ cmd_finding_triage_bundle() {
   fi
 
   for m in "${members[@]}"; do
-    case "$seen" in *" $m "*) die "issue #$m is named twice" ;; esac
+    ! word_listed "$seen" "$m" || die "issue #$m is named twice"
     seen="$seen$m "
     bundle_member_check "$m" labels
     if [ -z "$into" ]; then

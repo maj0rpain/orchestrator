@@ -150,6 +150,11 @@ assert_status "the state writer refuses a phase outside the table" "$st" 1
 assert_eq "with today's message" "$out" \
   "orch: not a flow phase: plan (want one of: spec implement review done)"
 assert_eq "leaving the recorded phase unchanged" "$("$ORCH" state get phase)" "spec"
+out="$(sourced_orch phase_write "spec implement" 2>&1)"; st=$?
+assert_status "the state writer refuses two adjacent phases" "$st" 1
+assert_eq "with today's message for them too" "$out" \
+  "orch: not a flow phase: spec implement (want one of: spec implement review done)"
+assert_eq "leaving the recorded phase unchanged after them" "$("$ORCH" state get phase)" "spec"
 restore_suite_env
 
 # --- state.json schema ------------------------------------------------------

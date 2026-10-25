@@ -10,11 +10,18 @@
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
 # <list>, matched whole-line and literally. The one newline-list membership test
-# (agent_listed matches its space-separated lists without a fork):
+# (word_listed matches its space-separated lists without a fork):
 # `--` keeps an item beginning with `-` an item, never a grep option, and an
 # item spanning lines is no line at all, never several of grep's patterns.
 list_has() {
   [[ $2 != *$'\n'* ]] && grep -qxF -- "$2" <<<"$1"
+}
+
+# word_listed <list> <word>: whether <word> is one of the space-separated
+# <list>'s words, whole - never several of them, nor part of one, nor empty.
+word_listed() {
+  case "$2" in *[[:space:]]*) return 1 ;; esac
+  [[ " $1 " == *" $2 "* ]]
 }
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
