@@ -1284,6 +1284,20 @@ the changelog comment on issue #14"
 - #22 closed, built against the earlier spec: the gamma API'
 done
 
+# A --resume after the retire landed reports the retire, not "no breakdown".
+d="$(srt_dir)"
+srt_fetch "$d"
+fake_fail_after adapter_issue_comment 1
+sra "$d" recommended --tickets retire
+fake_unfail
+assert_status "retire landed, then the changelog comment failed" "$st" 1
+assert_contains "the retire is in applied.log" "$(cat "$d/applied.log")" "the retire of #14's ticket breakdown"
+srr_resume "$d"
+assert_status "--resume after a landed retire applies" "$st" 0
+assert_eq "the resumed changelog still reports the retire" "$(tail -n 3 "$d/changelog.md")" '### Tickets
+- retired, to be broken down again
+- #22 closed, built against the earlier spec: the gamma API'
+
 # @@ none-affected.
 d="$(srt_dir)"
 printf '@@ none-affected\n' >"$d/tickets.md"

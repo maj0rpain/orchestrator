@@ -247,7 +247,7 @@ cmd_ticket_reset() {
 }
 
 # The directory the driver's saved ticket reports live in.
-ticket_reports_dir() { printf '%s/%s/reports\n' "$ROOT" "$ORCH_DIR_NAME"; }
+ticket_reports_dir() { printf '%s/reports\n' "$ORCH"; }
 
 # ticket_report_remove <n>: drops ticket <n>'s saved report, if it has one.
 ticket_report_remove() {

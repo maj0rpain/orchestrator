@@ -1890,6 +1890,10 @@ spec_review_apply() {
   [ "$text" = "$fetched" ] || changed=1
   if [ -z "$changed" ]; then
     tickets="Not checked - no edit applied"
+  elif [ -n "$resume" ] && grep -Fxq -- "the retire of #$issue's ticket breakdown" "$dir/applied.log" 2>/dev/null; then
+    # The dead run's retire landed, so the live state no longer shows the
+    # breakdown it decided on; the rerun keeps that decision.
+    kind=""
   else
     capture kind err cmd_ticket_exists "$issue" || st=$?
     case "$st" in
