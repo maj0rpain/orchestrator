@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.1
+
+Refactored the agent module and doctor with no change to behaviour: the plugin root is worked out once, a role's Junie setting is read by one helper, two locals are renamed, and the sync plan returns its lists in one encoding.
+
 ## 4.38.0
 
 An autopilot session cut off by a Claude Code usage limit is now waited out instead of handed to the human: its issue is labelled `orch:limited` in place of `needs-human`, and a tick once the limit pause has passed picks its phase up again. A phase cut off three times in a row falls back to `needs-human`. The headless session now runs with `--output-format stream-json --verbose`, and the reset time comes from its `rate_limit_event`, with the limit message as fallback; a session that ends with five-hour usage at 90% or more pauses pickup until that window resets. Every other failure still waits on the human.
