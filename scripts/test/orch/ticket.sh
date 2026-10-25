@@ -419,6 +419,44 @@ assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not list sub-issues of #90"
 restore_suite_env
 
+# --- ticket report -----------------------------------------------------------
+echo
+echo "ticket report"
+ticket_fixture
+fake_issue 95 open
+fake_next_issue 700
+t1="$("$ORCH" ticket publish 95 "A" "$body")"
+t2="$("$ORCH" ticket publish 95 "B" "$body")"
+rep="$(mktemp)"; writeln 'Ticket: #1' >"$rep"
+out="$("$ORCH" ticket report show "$t1" 2>&1)"; st=$?
+assert_status "show with none saved exits 1" "$st" 1
+"$ORCH" ticket report save "$t1" "$rep"; st=$?
+assert_status "saves" "$st" 0
+assert_eq "show prints what was saved" "$("$ORCH" ticket report show "$t1")" "Ticket: #1"
+writeln 'Ticket: #2' >"$rep"
+"$ORCH" ticket report save "$t1" "$rep"
+assert_eq "a resave replaces" "$("$ORCH" ticket report show "$t1")" "Ticket: #2"
+: >"$rep"
+out="$("$ORCH" ticket report save "$t1" "$rep" 2>&1)"; st=$?
+assert_status "an empty file is refused" "$st" 1
+assert_eq "and nothing is overwritten" "$("$ORCH" ticket report show "$t1")" "Ticket: #2"
+out="$("$ORCH" ticket report save "$t2" "$rep.missing" 2>&1)"; st=$?
+assert_status "a missing file is refused" "$st" 1
+"$ORCH" ticket report show "$t2" >/dev/null 2>&1; st=$?
+assert_status "and nothing is written" "$st" 1
+writeln 'R' >"$rep"
+"$ORCH" ticket report save "$t2" "$rep"
+"$ORCH" ticket close "$t1" >/dev/null
+"$ORCH" ticket reset 95
+"$ORCH" ticket report show "$t1" >/dev/null 2>&1; st=$?
+assert_status "reset removes a reopened ticket's report" "$st" 1
+"$ORCH" ticket report show "$t2" >/dev/null 2>&1; st=$?
+assert_status "reset keeps a still-open ticket's report" "$st" 0
+"$ORCH" ticket retire 95
+"$ORCH" ticket report show "$t2" >/dev/null 2>&1; st=$?
+assert_status "retire removes the parent's tickets' reports" "$st" 1
+restore_suite_env
+
 # --- ticket parent -----------------------------------------------------------
 # The implementer's way to find its spec issue without calling the sub-issue
 # endpoints itself: a sub-issue prints its parent's number, an issue with no

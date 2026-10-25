@@ -214,7 +214,43 @@ cmd_ticket_reset() {
     tsv_split "$line" n state
     [ "$state" = CLOSED ] && [ -n "$n" ] || continue
     gh_or_die "reopen ticket #$n" adapter_issue_reopen "$n"
+    ticket_report_remove "$n"
   done <<<"$subs"
+}
+
+# The directory the driver's saved ticket reports live in.
+ticket_reports_dir() { printf '%s/%s/reports\n' "$ROOT" "$ORCH_DIR_NAME"; }
+
+# ticket_report_remove <n>: drops ticket <n>'s saved report, if it has one.
+ticket_report_remove() {
+  rm -f "$(ticket_reports_dir)/$1.md" || die "could not remove ticket #$1's saved report"
+}
+
+# ticket report save <n> <file> | show <n>: a returned ticket report outlives
+# the driver session as .orchestrator/reports/<n>.md. A save replaces an
+# earlier one; a missing or empty file is refused with nothing written, and
+# `show` exits 1 when no report is saved.
+cmd_ticket_report() {
+  local op="${1:-}" usage="usage: orch.sh ticket report save <n> <file> | show <n>" dir
+  shift || true
+  dir="$(ticket_reports_dir)"
+  case "$op" in
+    save)
+      [ $# -eq 2 ] || die "$usage"
+      case "$1" in ''|*[!0-9]*) die "not a plain issue number: $1" ;; esac
+      [ -s "$2" ] || die "report file $2 is missing or empty - nothing saved"
+      mkdir -p "$dir" || die "could not create $dir"
+      cp "$2" "$dir/$1.md.tmp" && mv -f "$dir/$1.md.tmp" "$dir/$1.md" \
+        || die "could not save ticket #$1's report"
+      ;;
+    show)
+      [ $# -eq 1 ] || die "$usage"
+      case "$1" in ''|*[!0-9]*) die "not a plain issue number: $1" ;; esac
+      [ -f "$dir/$1.md" ] || die "no saved report for ticket #$1"
+      cat "$dir/$1.md" || die "could not read ticket #$1's saved report"
+      ;;
+    *) die "$usage" ;;
+  esac
 }
 
 # Prints <n>'s parent issue number, or nothing (still exit 0) when <n> is
@@ -320,7 +356,10 @@ cmd_ticket_retire() {
     fi
     gh_or_die "unlink ticket #$n from #$parent" \
       adapter_sub_issue_unlink "$parent" "$n"
+    ticket_report_remove "$n"
   done <<<"$subs"
+  rm -rf "${ROOT:?}/$ORCH_DIR_NAME/breakdown/$parent" \
+    || die "could not remove #$parent's breakdown save point"
   # A body with no `## Ticket` line outside a code fence comes back
   # unchanged, so it is not written.
   issue_body_rewrite "$parent" "read issue #$parent's body" \
@@ -531,10 +570,11 @@ cmd_ticket() {
     parent)  cmd_ticket_parent "$@" ;;
     exists)  cmd_ticket_exists "$@" ;;
     retire)  cmd_ticket_retire "$@" ;;
+    report)  cmd_ticket_report "$@" ;;
     block)   cmd_ticket_block "$@" ;;
     unblock) cmd_ticket_unblock "$@" ;;
     merge)   cmd_ticket_merge "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block|unblock|merge)" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|report|block|unblock|merge)" ;;
   esac
 }
 

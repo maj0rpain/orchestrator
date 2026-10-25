@@ -514,6 +514,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               its ticket branch has not merged into its
                               forked-from branch (or records none), leaving
                               the issue open - --unmerged closes it anyway
+  ticket report save <n> <file>
+                              store ticket <n>'s returned report at
+                              .orchestrator/reports/<n>.md, replacing an
+                              earlier save; a missing or empty file is
+                              refused (exit 1) and nothing is written
+  ticket report show <n>     print ticket <n>'s saved report; exits 1 when
+                              none is saved
   ticket reset <parent>      reopen every sub-issue of <parent> that is
                               currently closed, and only those
   ticket parent <n>          print <n>'s parent issue number, or nothing

@@ -348,8 +348,9 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    - **the stop**: the phase stops, naming every failure;
    - **after loop step f**: this phase's step 4.
 
-   Keep each report's `Evidence` line, its sixth, for step 5's PR body: the
-   red runs its **Evidence** draws on.
+   The driver saves every returned report (loop step d). Steps 5 and 6 read
+   them back with `bash "$ORCH" ticket report show <n>`, for every saved
+   ticket report, none held only in this session.
 
    Whether the breakdown is collapsed comes from the handoff's **Ticket
    breakdown** section, written by the spec phase's step 5.
@@ -385,7 +386,7 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    headings and style. Its **Summary**, **Evidence** and **Merge Danger**
    are judged against `git diff <base SHA>..HEAD`, with the base SHA from
    `bash "$ORCH" branch base-sha`; **Evidence** draws on
-   the reports' `Evidence` lines kept in step 3, and its last line is step
+   the `Evidence` lines (each saved report's sixth), and its last line is step
    3's combined verification command with `pass` or `fail`. This site adds
    no audit heading of its own: the implement handoff carries the
    deviations and merge resolutions. `pr open` refuses a body missing a
@@ -397,7 +398,7 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    them; never add one afterwards with `gh pr edit`. A `pr open` that fails
    on a label stops the phase, relaying its reason.
 6. Invoke the `orch-handoff` skill for `03-implement.md`, assembling these
-   sections from the tickets' reports, step 3's combined verification and
+   sections from every saved ticket report, step 3's combined verification and
    step 4's base sync:
    - **Deviations**: one bullet per ticket whose `Deviation` line is not
      `None`, naming the ticket and holding all of its deviations. "None" only

@@ -44,7 +44,9 @@ caller's numbered steps.
   dispatches the one subagent and goes to loop step f. Otherwise it loops:
   `bash "$ORCH" ticket next <the issue>` - nothing ready means the frontier
   is exhausted, so go to loop step f - then dispatch a subagent (below) for
-  the ticket, with no `Worktree:` line; record its report, then `bash
+  the ticket, with no `Worktree:` line; record its report, save it with
+  `bash "$ORCH" ticket report save <n> <file>` (the report in a `mktemp`
+  file), then `bash
   "$ORCH" ticket close <n>` - only now that the report is back, never
   before - and go around again. Any other case takes the parallel path, loop
   steps c-e.
@@ -55,7 +57,9 @@ caller's numbered steps.
   a subagent (below) for it in the background, its prompt carrying the
   `Worktree:` line with the path `ticket-worktree add` printed. Stop filling
   when `ticket next` has nothing more.
-- **d. As each report returns**, record it, then `bash "$ORCH" ticket merge
+- **d. As each report returns**, record it, save it with `bash "$ORCH"
+  ticket report save <n> <file>` (the report in a `mktemp` file; a refused
+  save stops like any exit 1 below), then `bash "$ORCH" ticket merge
   <n>`, then `bash "$ORCH" ticket close <n>`, then `bash "$ORCH"
   ticket-worktree remove <n>`, then refill (loop step c). Run the three as
   separate calls, each only after the previous one exits 0 - never chained
