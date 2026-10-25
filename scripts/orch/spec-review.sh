@@ -59,23 +59,25 @@ spec_review_begin() {
   # spec-review/.
   local dir="$ORCH/spec-review/$issue"
   if [ "$carry" = 1 ]; then
-    spec_review_dir_reset "$dir" --carry
+    spec_review_dir_reset "$dir" "${SPEC_REVIEW_CARRIED[@]}"
   else
     spec_review_dir_reset "$dir"
   fi
   printf '%s/\n' "$dir"
 }
 
-# spec_review_dir_reset <dir> [--carry]: a round's working directory made
-# ready to run in - emptied, created when missing - the one reset both a
-# standalone review's begin and a flow's spec round-dir run. --carry keeps
-# what a round hands the next, the SPEC_REVIEW_CARRIED files, each when it
-# exists, deleting every other entry in place.
+# spec_review_dir_reset <dir> [<name>...]: a round's working directory made
+# ready to run in - the one reset both a standalone review's begin and a
+# flow's spec round-dir run. With names, every entry of an existing <dir>
+# other than those is deleted in place, keeping what a round hands the next;
+# with none, <dir> is removed whole. Either way <dir> is then created when
+# missing.
 spec_review_dir_reset() {
   local dir="$1"
-  if [ "${2-}" = --carry ] && [ -d "$dir" ]; then
+  shift
+  if [ $# -gt 0 ] && [ -d "$dir" ]; then
     local keep=() f
-    for f in "${SPEC_REVIEW_CARRIED[@]}"; do keep+=(! -name "$f"); done
+    for f in "$@"; do keep+=(! -name "$f"); done
     find "$dir" -mindepth 1 -maxdepth 1 "${keep[@]}" -exec rm -rf {} +
   else
     rm -rf "$dir"
@@ -206,7 +208,7 @@ spec_review_summary_cap() {
 # unless item <n>'s <mark> - the last fixed token of its `@@ item` line - is
 # material or minor, or fundamental when ORCH_AUTOPILOT=1 (a fundamental item
 # is material everywhere else: the parser reads it as material, flagged in
-# SR_IT_FUND).
+# SR_IT_FUNDAMENTAL).
 spec_review_mark_check() {
   case "$4" in
     material|minor) ;;
@@ -235,9 +237,9 @@ spec_review_at_line() {
 spec_review_batch_parse() {
   local file="$1" line lineno=0 mode=top kw args cur=-1 opt=-1
   local buf="" bufn=0 block_line=0 quote_wanted="" n group rec rec_tail arg lens state reason
-  local fd_lens fd_k login created letter label extra lens_slot fd_slot cm_slot target mark fund
+  local fd_lens fd_k login created letter label extra lens_slot fd_slot cm_slot target mark fundamental
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
-  SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=(); SR_IT_FUND=()
+  SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=(); SR_IT_FUNDAMENTAL=()
   SR_IT_SUMMARY=(); SR_IT_WHY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
   SR_FD_ITEM=(); SR_FD_LENS=(); SR_FD_K=(); SR_FD_LINE=()
   SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
@@ -338,8 +340,8 @@ spec_review_batch_parse() {
             [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... decision takes nothing after its mark" ;;
           *) spec_review_batch_die "$lineno" "item $n's recommendation must be apply <mark>, decline <mark> <reason>, decision <letter> <mark> or resolved" ;;
         esac
-        fund=""
-        if [ "$mark" = fundamental ]; then fund=1; mark=material; fi
+        fundamental=""
+        if [ "$mark" = fundamental ]; then fundamental=1; mark=material; fi
         [ "$mark" != minor ] || [ "$rec" != decision ] \
           || spec_review_batch_die "$lineno" "decision item $n is always material, never minor"
         [ "$mark" != minor ] || [ "$group" != contradicts-the-plan ] \
@@ -347,7 +349,7 @@ spec_review_batch_parse() {
         cur="${#SR_IT_N[@]}"; opt=-1
         SR_IT_N[cur]="$n"; SR_IT_GROUP[cur]="$group"; SR_IT_REC[cur]="$rec"
         SR_IT_ARG[cur]="$arg"; SR_IT_MARK[cur]="$mark"; SR_IT_LINE[cur]="$lineno"
-        [ -z "$fund" ] || SR_IT_FUND[cur]=1
+        [ -z "$fundamental" ] || SR_IT_FUNDAMENTAL[cur]=1
         mode=item ;;
       summary)
         [ -n "$args" ] || spec_review_batch_die "$lineno" "@@ summary needs its line"
@@ -522,11 +524,11 @@ spec_review_answer_tokens() {
 
 # spec_review_item_held <i>: whether item <i> is a fundamental item an
 # autopilot round's first run holds back for the human's reply.
-spec_review_item_held() { [ "${SR_FMODE:-}" = hold ] && [ -n "${SR_IT_FUND[$1]:-}" ]; }
+spec_review_item_held() { [ "${SR_FUNDAMENTAL_RUN:-}" = hold ] && [ -n "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
 # spec_review_item_skipped <i>: whether item <i> is one the resumed run leaves
 # alone - the round already applied it before the fundamental items were held.
-spec_review_item_skipped() { [ "${SR_FMODE:-}" = resume ] && [ -z "${SR_IT_FUND[$1]:-}" ]; }
+spec_review_item_skipped() { [ "${SR_FUNDAMENTAL_RUN:-}" = resume ] && [ -z "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
 # spec_review_answer <answer>: each item's disposition into
 # SR_DISP (applied, declined, taken, undecided or resolved), SR_ASREC (1 where
@@ -685,11 +687,11 @@ spec_review_edit() {
   printf -v "$1" '%s' "${__sre_text%%"$4"*}$5${__sre_text#*"$4"}"
 }
 
-# spec_review_edit_accepted <accepted> <var> <fetched> <what> <anchor>
+# spec_review_edit_or_check <accepted> <var> <fetched> <what> <anchor>
 # <replacement>: spec_review_edit on <var> when <accepted> is set, else the
 # anchor checked on its own against a scratch copy of <fetched>, so a declined
 # item's broken anchor is a problem too. Returns spec_review_edit's status.
-spec_review_edit_accepted() {
+spec_review_edit_or_check() {
   if [ -n "$1" ]; then
     spec_review_edit "$2" "$3" "$4" "$5" "$6"
   else
@@ -699,13 +701,16 @@ spec_review_edit_accepted() {
   fi
 }
 
+# The anchors spec_review_anchor_visit counted; spec_review_validate resets it.
+SR_ANCHOR_COUNT=0
+
 # spec_review_anchor_visit <accepted> <what> <anchor> <replacement>: one
 # anchor of spec_review_validate's, counted into SR_ANCHOR_COUNT - applied to
 # SR_TEXT when <accepted> is set, else checked on its own against a scratch
-# copy of SR_FETCHED (see spec_review_edit_accepted).
+# copy of SR_FETCHED (see spec_review_edit_or_check).
 spec_review_anchor_visit() {
   SR_ANCHOR_COUNT=$((SR_ANCHOR_COUNT + 1))
-  spec_review_edit_accepted "$1" SR_TEXT "$SR_FETCHED" "$2" "$3" "$4" || true
+  spec_review_edit_or_check "$1" SR_TEXT "$SR_FETCHED" "$2" "$3" "$4" || true
 }
 
 # spec_review_validate <dir> <body-file> <answer>: the one validation check
@@ -913,9 +918,9 @@ spec_review_check() {
     for n in "${wanted[@]}"; do
       [ -n "$(array_index SR_IT_N "$n")" ] || die "--full $n: batch.md has no item $n"
     done
-    local index=()
-    for n in "${wanted[@]}"; do index+=("$(array_index SR_IT_N "$n")"); done
-    spec_review_view_save "$dir" spec_review_full_view "${index[@]}"
+    local indexes=()
+    for n in "${wanted[@]}"; do indexes+=("$(array_index SR_IT_N "$n")"); done
+    spec_review_view_save "$dir" spec_review_full_view "${indexes[@]}"
   else
     spec_review_view_save "$dir" spec_review_view
   fi
@@ -1413,7 +1418,7 @@ SR_TICKET_ANCHOR_COUNT=0
 # item <index>'s checks that read no GitHub, the half apply and check share. A
 # text item, counted into SR_TICKET_ANCHOR_COUNT, has its ticket loaded (see
 # spec_review_ticket_load) and its anchor visited (see
-# spec_review_edit_accepted): when ST_DISP holds it applied, its edit made in
+# spec_review_edit_or_check): when ST_DISP holds it applied, its edit made in
 # memory, to its ticket's copy in TK_TEXT, or a `## Ticket` edit to the body
 # in <body-var>, anchored on <batch-body>, the body as the batch items left it;
 # when declined, checked on its own against the ticket as fetched, or
@@ -1426,18 +1431,17 @@ spec_review_ticket_item_offline() {
   local what="ticket item ${ST_N[$1]}"
   at="tickets.md line ${ST_LINE[$i]}: "
   [ "${ST_DISP[$i]}" != applied ] || accepted=1
+  case "${ST_KIND[$i]}" in ticket|section) SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1)) ;; esac
   case "${ST_KIND[$i]}" in
     ticket)
-      SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1))
       spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       j="$(array_index TK_T "${ST_T[$i]}")"
-      spec_review_edit_accepted "$accepted" "TK_TEXT[$j]" "${TK_FETCHED[$j]}" \
+      spec_review_edit_or_check "$accepted" "TK_TEXT[$j]" "${TK_FETCHED[$j]}" \
         "$at$what (#${ST_T[$i]})" "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     section)
-      SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1))
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
-      spec_review_edit_accepted "$accepted" "$body_var" "$batch_body" "$at$what (## Ticket)" \
+      spec_review_edit_or_check "$accepted" "$body_var" "$batch_body" "$at$what (## Ticket)" \
         "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     block|unblock)
       [ -n "$accepted" ] || return 0
@@ -1688,7 +1692,7 @@ spec_review_finish() {
   # appends nothing, so a rerun never appends a changelog twice.
   { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
     || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
-  if [ "$SR_FMODE" = resume ]; then
+  if [ "$SR_FUNDAMENTAL_RUN" = resume ]; then
     rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
       && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
       || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
@@ -1711,7 +1715,7 @@ spec_review_finish() {
 # body as published, the base the resumed run's edits anchor in.
 spec_review_hold() {
   local dir="$1" held=" " i
-  for i in ${SR_IT_FUND[@]+"${!SR_IT_FUND[@]}"}; do held="$held${SR_IT_N[$i]} "; done
+  for i in ${SR_IT_FUNDAMENTAL[@]+"${!SR_IT_FUNDAMENTAL[@]}"}; do held="$held${SR_IT_N[$i]} "; done
   { {
     grep '^@@ lens ' "$dir/batch.md" || true
     awk -v held="$held" '
@@ -1835,9 +1839,9 @@ spec_review_apply() {
   # An autopilot round's two runs (see spec_review_hold): the first holds the
   # fundamental items back, the run after the reply, finding fundamental.md,
   # applies only those.
-  SR_FMODE=""
+  SR_FUNDAMENTAL_RUN=""
   if autopilot_active; then
-    if [ -f "$dir/$SPEC_ROUND_FUNDAMENTAL" ]; then SR_FMODE=resume; else SR_FMODE=hold; fi
+    if [ -f "$dir/$SPEC_ROUND_FUNDAMENTAL" ]; then SR_FUNDAMENTAL_RUN=resume; else SR_FUNDAMENTAL_RUN=hold; fi
   fi
   if [ -n "$hosts_file" ]; then
     [ -f "$hosts_file" ] || die "--host-fallbacks file not found: $hosts_file"
@@ -1935,7 +1939,7 @@ spec_review_apply() {
   [ -n "$resume" ] || spec_review_save_answer "$dir" "${save_args[@]}"
 
   local held_any=""
-  [ "$SR_FMODE" != hold ] || [ "${#SR_IT_FUND[@]}" -eq 0 ] || held_any=1
+  [ "$SR_FUNDAMENTAL_RUN" != hold ] || [ "${#SR_IT_FUNDAMENTAL[@]}" -eq 0 ] || held_any=1
   local log=""
   if [ -z "$held_any" ]; then
     log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
