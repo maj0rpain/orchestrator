@@ -166,7 +166,7 @@ plan_file "$planf" $'Rounds: 4\nBudget: 5'
 
 out="$("$ORCH" autopilot rounds 2>&1)"; st=$?
 assert_status "rounds with no plan comment dies" "$st" 1
-assert_contains "naming the missing plan" "$out" "no 01-plan handoff"
+assert_eq "naming the missing plan" "$out" "orch: issue #7 has no 01-plan handoff comment"
 
 fake_issue 8 open
 out="$("$ORCH" autopilot start 8 "$planf" 2>&1)"; st=$?

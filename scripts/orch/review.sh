@@ -344,6 +344,17 @@ review_file() {
   note "$n"
 }
 
+# review_handoff_path <issue> <file> <scratch dir> <label>: prints the
+# readable path of a handoff known-items reads, as handoff_resolve gives it,
+# or dies naming it missing - its comment with an issue, else its file under
+# <label>.
+review_handoff_path() {
+  local path
+  path="$(handoff_resolve "$1" "$2" "$3")" && { printf '%s\n' "$path"; return 0; }
+  [ -z "$1" ] || handoff_missing "$1" "${2%.md}"
+  die "$4 handoff not found: $path"
+}
+
 # review_known_items <path> <loop boundary>: writes the loop's known-items
 # file to <path>, overwriting it - `## Deviations`, the implement handoff's
 # Deviations, then `## Known items`: Waiting to be filed from each record
@@ -353,7 +364,7 @@ review_file() {
 # built aside and moved into place, so a refused run leaves <path> as it was.
 review_known_items() {
   [ $# -eq 2 ] || die "usage: orch.sh review known-items <path> <loop boundary>"
-  local path="$1" boundary="$2" implement plan issue="" scratch="" impl_file plan_file
+  local path="$1" boundary="$2" implement plan issue="" scratch=""
   case "$boundary" in ''|*[!0-9]*) die "not a loop boundary: $boundary (want the iteration read before the loop's first)" ;; esac
   boundary=$((10#$boundary))
   # In an autopilot session the handoffs are comments, fetched aside and read
@@ -362,16 +373,8 @@ review_known_items() {
     require_issue issue
     scratch="$HANDOFF_SCRATCH_DIR"
   fi
-  impl_file="$(handoff_file_for review)"
-  plan_file="$(handoff_file_for spec)"
-  implement="$(handoff_resolve "$issue" "$impl_file" "$scratch")" || {
-    [ -z "$issue" ] || handoff_missing "$issue" "${impl_file%.md}"
-    die "implement handoff not found: $implement"
-  }
-  plan="$(handoff_resolve "$issue" "$plan_file" "$scratch")" || {
-    [ -z "$issue" ] || handoff_missing "$issue" "${plan_file%.md}"
-    die "plan handoff not found: $plan"
-  }
+  implement="$(review_handoff_path "$issue" "$(handoff_file_for review)" "$scratch" implement)" || exit 1
+  plan="$(review_handoff_path "$issue" "$(handoff_file_for spec)" "$scratch" plan)" || exit 1
 
   local record n entry tag deviations="" waiting="" filed="" rejected=""
   section_entries_append deviations "$implement" '## Deviations'
