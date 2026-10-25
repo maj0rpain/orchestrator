@@ -565,6 +565,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               start immediately)` once none is left). A repeat
                               removes no edge; re-running a failed run
                               finishes it
+  ticket reclaim <parent>    recover what a dead implement run left: discard
+                              the flow branch's stray work, then per leftover
+                              ticket - reported and merged: close it, remove
+                              its worktree; reported, unmerged: ticket merge
+                              it (conflict <n>, exit 3), close, remove;
+                              otherwise discard it so it is rebuilt. One line
+                              per action; a failed write exits 1 naming the
+                              ticket
   ticket merge <n>            land ticket <n>'s branch on the branch it was
                               forked from: rebase it onto that branch's tip
                               inside its ticket worktree, then fast-forward

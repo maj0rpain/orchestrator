@@ -611,7 +611,8 @@ cmd_ticket() {
     block)   cmd_ticket_block "$@" ;;
     unblock) cmd_ticket_unblock "$@" ;;
     merge)   cmd_ticket_merge "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|report|block|unblock|merge)" ;;
+    reclaim) cmd_ticket_reclaim "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|report|block|unblock|merge|reclaim)" ;;
   esac
 }
 
@@ -667,4 +668,108 @@ cmd_ticket_merge() {
   fi
   git -C "$parent_checkout" merge -q --ff-only "$branch" \
     || die "could not fast-forward $parent to $branch in $parent_checkout"
+}
+
+# ticket_worktree_discard_work <n> <path>: the discard rule's ticket-worktree
+# case (ADR-0054) for the work a dead subagent left in <path>: a rebase or
+# merge in progress is aborted, then the tree is reset and cleaned. A failed
+# step dies naming ticket <n> and the step.
+ticket_worktree_discard_work() {
+  local n="$1" path="$2"
+  if rebase_in_progress "$path"; then
+    git -C "$path" rebase --abort >/dev/null 2>&1 \
+      || die "ticket #$n: could not abort the rebase in progress in $path"
+  fi
+  if git -C "$path" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1; then
+    git -C "$path" merge --abort >/dev/null 2>&1 \
+      || die "ticket #$n: could not abort the merge in progress in $path"
+  fi
+  git -C "$path" reset --hard -q >/dev/null 2>&1 || die "ticket #$n: git reset --hard failed in $path"
+  git -C "$path" clean -fdq >/dev/null 2>&1 || die "ticket #$n: git clean failed in $path"
+}
+
+# ticket_reclaim_close <n> <parent>: closes ticket <n> if it is still open and
+# is not <parent> itself - a collapsed breakdown's spec issue is never closed.
+ticket_reclaim_close() {
+  local n="$1" state
+  [ "$n" != "$2" ] || return 0
+  gh_or_die --out state "read ticket #$n" adapter_issue_state "$n"
+  [ "$state" = OPEN ] || return 0
+  gh_or_die "close ticket #$n" adapter_issue_close "$n"
+  note "closed ticket #$n"
+}
+
+# ticket_reclaim_remove <n> <flow>: removes ticket <n>'s worktree if it has one
+# and deletes its branch if one is left, dying naming the ticket and the write.
+ticket_reclaim_remove() {
+  local n="$1" flow="$2" path
+  path="$(ticket_worktree_path "$n")"
+  if is_ticket_worktree "$path"; then
+    (cmd_ticket_worktree_remove --unmerged "$n") \
+      || die "ticket #$n: could not remove its worktree $path"
+    note "removed the worktree of ticket #$n"
+  fi
+  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
+    git -C "$ROOT" branch -q -D "$flow--t$n" \
+      || die "ticket #$n: could not delete branch $flow--t$n"
+  fi
+}
+
+# ticket reclaim <parent>: recovers what a dead implement run left (ADR-0054).
+# The discard rule runs on the flow's branch first, before anything else is
+# touched. Then each leftover ticket - a ticket worktree under this checkout,
+# or an open sub-issue of <parent> with a saved report - takes the first case
+# that matches: reported and merged, close it and remove its worktree;
+# reported and unmerged, reset the tree, `ticket merge` it, close it and remove
+# the worktree (a conflict prints `conflict <n>` and exits 3, both branches at
+# their prior tips, later leftovers untouched); anything else, discard it so it
+# is rebuilt. One line per action; a failed write dies naming the ticket.
+cmd_ticket_reclaim() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
+  local parent="$1" flow subs line n state path st reported merged nums=""
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  flow="$(git -C "$ROOT" branch --show-current)"
+  [ -n "$flow" ] || die "the current checkout is on no branch - nothing to reclaim onto"
+  discard_flow_branch_work
+  subs="$(ticket_sub_issues "$parent")" || exit 1
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    tsv_split "$line" n state
+    if [ "$state" = OPEN ] && [ -f "$(ticket_reports_dir)/$n.md" ]; then nums="$nums$n"$'\n'; fi
+  done <<<"$subs"
+  line="$(ticket_worktrees_under "$ROOT")" || exit 1
+  while read -r n path; do
+    [ -z "$n" ] || nums="$nums$n"$'\n'
+  done <<<"$line"
+  nums="$(printf '%s' "$nums" | sort -un)"
+  while read -r n; do
+    [ -n "$n" ] || continue
+    path="$(ticket_worktree_path "$n")"
+    reported=""
+    [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
+    merged=""
+    if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
+      ! git -C "$ROOT" merge-base --is-ancestor "$flow--t$n" "$flow" || merged=1
+    elif [ -n "$reported" ]; then
+      merged=1
+    fi
+    if [ -n "$reported" ] && [ -n "$merged" ]; then
+      ticket_reclaim_close "$n" "$parent"
+      ticket_reclaim_remove "$n" "$flow"
+    elif [ -n "$reported" ] && is_ticket_worktree "$path"; then
+      ticket_worktree_discard_work "$n" "$path"
+      st=0
+      (cmd_ticket_merge "$n") || st=$?
+      if [ "$st" -eq 3 ]; then note "conflict $n"; exit 3; fi
+      [ "$st" -eq 0 ] || die "ticket #$n: could not merge its branch"
+      note "merged ticket #$n"
+      ticket_reclaim_close "$n" "$parent"
+      ticket_reclaim_remove "$n" "$flow"
+    else
+      if is_ticket_worktree "$path"; then ticket_worktree_discard_work "$n" "$path"; fi
+      ticket_reclaim_remove "$n" "$flow"
+      ticket_report_remove "$n"
+      note "discarded ticket #$n"
+    fi
+  done <<<"$nums"
 }
