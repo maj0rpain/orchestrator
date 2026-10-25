@@ -1022,18 +1022,6 @@ assert_status "a failed changelog.md write stops apply" "$st" 1
 assert_contains "naming it" "$out" "could not write $d/changelog.md"
 assert_eq "before any GitHub write" "$(fake_snapshot)" "$snap"
 
-# sra honours sra_in: in flow mode it runs without --issue 14, so a flow that
-# records no issue is refused.
-d="$(sra_dir)"
-sra_in_mode flow
-"$ORCH" state set issue "" >/dev/null 2>&1 || "$ORCH" state unset issue >/dev/null 2>&1
-sra "$d" recommended
-sra_in_mode issue
-assert_status "sra in flow mode on a flow with no issue: refused" "$st" 1
-assert_contains "sra in flow mode: naming the missing issue" "$out" "issue"
-sra "$d" recommended
-assert_status "sra in issue mode runs with --issue 14" "$st" 0
-
 for sra_mode in issue flow; do
   for sra_op in adapter_issue_body_edit adapter_issue_comment; do
     d="$(sra_dir)"
@@ -1062,25 +1050,29 @@ fake_unfail
 assert_status "an unattended write failure stops apply too" "$st" 1
 assert_contains "naming the landed body" "$out" "already landed: the body of issue #14"
 
-# Flow mode: the issue from state, through the spec command's guards.
+# Flow mode: the issue from state, through the spec command's guards. Run
+# through sra with sra_in = flow, so the refusal naming the missing issue also
+# proves sra drops --issue 14 in flow mode.
+sra_in=flow sra_rnd=1/1
 d="$(sra_dir)"
-out="$("$ORCH" spec-review apply "$d" recommended --round 1/1 2>&1)"; st=$?
+sra "$d" recommended
 assert_status "flow mode with no flow is refused" "$st" 1
 assert_contains "naming the missing flow" "$out" "no active flow"
 "$ORCH" init srflow >/dev/null 2>&1
-out="$("$ORCH" spec-review apply "$d" recommended --round 1/1 2>&1)"; st=$?
+sra "$d" recommended
 assert_status "flow mode with no recorded issue is refused" "$st" 1
 assert_contains "naming the missing issue" "$out" "no issue recorded"
 "$ORCH" state set issue 14 >/dev/null
-out="$("$ORCH" spec-review apply "$d" recommended --round 1/1 2>&1)"; st=$?
+sra "$d" recommended
 assert_status "flow mode applies on state's issue" "$st" 0
 assert_eq "publishing the body" "$(fake_body_of 14)" "$sra_clean"
 assert_contains "and the comment" "$(fake_comments_of 14)" "Round 1 of 1"
 d="$(sra_dir)"
 state_fixture phase "done"
-out="$("$ORCH" spec-review apply "$d" recommended --round 1/1 2>&1)"; st=$?
+sra "$d" recommended
 assert_status "flow mode in a done flow is refused" "$st" 1
 assert_contains "naming the done flow" "$out" "is done"
+sra_in=issue; unset sra_rnd
 sra "$d" recommended
 assert_status "--issue on a done flow's own issue succeeds" "$st" 0
 chmod 000 "$top/.orchestrator/state.json"
