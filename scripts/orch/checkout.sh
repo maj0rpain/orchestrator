@@ -140,16 +140,16 @@ current_branch_or_die() {
 # read exits 1, never read as free or busy. Called as a bare statement, so
 # that exit stops the caller.
 checkout_busy() {
-  local line_var="$1" remedy_var="$2" signals=" ${*:3} " b dirty busy_line="" busy_remedy=""
-  if [[ "$signals" == *" flow "* ]] && flow_active; then
+  local line_var="$1" remedy_var="$2" signals="${*:3}" b dirty busy_line="" busy_remedy=""
+  if word_listed "$signals" flow && flow_active; then
     busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
     busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
-  elif [[ "$signals" == *" branch "* ]] && b="$(checkout_branch)" \
+  elif word_listed "$signals" branch && b="$(checkout_branch)" \
     && git config --get "branch.$b.orchestrator-base" >/dev/null 2>&1 \
     && ! git config --get "branch.$b.orchestrator-pr" >/dev/null 2>&1; then
     busy_line="busy: branch $b has no PR yet"
     busy_remedy="Open its PR, or switch off it."
-  elif [[ "$signals" == *" tree "* ]]; then
+  elif word_listed "$signals" tree; then
     dirty="$(dirty_outside_allowlist)" || exit 1
     [ -z "$dirty" ] || {
       busy_line="busy: the working tree has changes outside the planning allowlist: ${dirty//$'\n'/, }"
