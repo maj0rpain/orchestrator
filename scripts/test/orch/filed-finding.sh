@@ -39,6 +39,31 @@ assert_eq "FILED_SEVERITIES lists the table's severities in its order" \
 bash -c 'source "$1" && filed_severity_label blocking colour desc' _ "$ORCH"
 assert_status "a severity with no entry returns 1" "$?" 1
 
+# --- axis table -------------------------------------------------------------
+# Every review axis has a category a finding filed on it starts in.
+
+echo
+echo "axis table"
+new_repo >/dev/null
+# shellcheck disable=SC2016 # expanded by the inner bash
+assert_eq "FILED_AXES lists the table's axes in its order" \
+  "$(bash -c 'source "$1" && printf "%s" "$FILED_AXES"' _ "$ORCH")" "spec standards suite-cost"
+# shellcheck disable=SC2016 # expanded by the inner bash
+missing="$(bash -c 'source "$1"
+  for axis in $FILED_AXES; do
+    [ -n "$(category_for_axis "$axis")" ] || printf "%s\n" "$axis"
+  done' _ "$ORCH" 2>&1)"
+assert_eq "every member of FILED_AXES has a category_for_axis result" "$missing" ""
+# shellcheck disable=SC2016 # expanded by the inner bash
+axis_category() { bash -c 'source "$1" && category_for_axis "$2"' _ "$ORCH" "$1"; }
+assert_eq "spec starts as a bug" "$(axis_category spec)" "bug"
+assert_eq "standards starts as an enhancement" "$(axis_category standards)" "enhancement"
+assert_eq "suite-cost starts as an enhancement" "$(axis_category suite-cost)" "enhancement"
+assert_eq "the axis is case-insensitive" "$(axis_category Suite-Cost)" "enhancement"
+out="$(axis_category style)"; st=$?
+assert_status "an unknown axis fails" "$st" 1
+assert_eq "printing nothing" "$out" ""
+
 # --- finding body -----------------------------------------------------------
 # A filed finding's issue body: finding_body_render writes it from its parts,
 # finding_body_parse reads every labelled line back out, each the inverse of
