@@ -781,12 +781,12 @@ rm -f "$launcher_dir/release" "$launcher_dir/calls" "$limit_file"
 # event_session <exit> [prior limit file content]: a fresh run of issue 7 over
 # the launcher's canned log, the limit file as the prior content, else absent.
 event_session() {
-  rm -f "$limit_file"
+  [ -d "$limit_file" ] || rm -f "$limit_file"
   [ $# -lt 2 ] || printf '%s\n' "$2" >"$limit_file"
   fake_issue 7 open ready-for-agent orch:spec orch:running
   fake_claim_seed 7
   printf '%s\n' "$1" >"$launcher_dir/exit"
-  "$ORCH" autopilot run 7 >/dev/null 2>&1
+  out="$("$ORCH" autopilot run 7 2>&1)"; st=$?
 }
 now_epoch="$(date +%s)"
 r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
@@ -853,10 +853,8 @@ assert_eq "one that does not parse is replaced" "$(cat "$limit_file")" "$(iso_of
 
 # a failed limit-file write is noted and changes nothing else
 rm -f "$limit_file"; mkdir "$limit_file"
-rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_claim_seed 7
-out="$("$ORCH" autopilot run 7 2>&1)"; st=$?
+rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
+event_session 1
 assert_status "a run whose limit-file write fails succeeds" "$st" 0
 assert_contains "the failure is noted on stderr" "$out" "could not write the limit file"
 event_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
@@ -868,14 +866,13 @@ rmdir "$limit_file"
 
 # a failed early-pause write on its own leaves the session's outcome as it was
 rm -f "$limit_file"; mkdir "$limit_file"
-rl_event allowed 0.95 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"; printf '3\n' >"$launcher_dir/exit"
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_claim_seed 7
-out="$("$ORCH" autopilot run 7 2>&1)"; st=$?
+rl_event allowed 0.95 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
+event_session 3
 assert_status "a run whose early-pause write fails succeeds" "$st" 0
 assert_contains "the failure is noted on stderr" "$out" "could not write the limit file"
 assert_eq "an ordinary failure is still needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
 assert_contains "with its ordinary failure comment" "$(fake_comments_of 7)" "Autopilot failed in the spec phase"
+assert_contains "and the new failure-comment wording" "$(fake_comments_of 7)" 'nothing is retried automatically except a usage-limit stop labelled `orch:limited`'
 assert_not_contains "that names no usage limit" "$(fake_comments_of 7)" "usage limit"
 assert_eq "its claim released" "$(fake_claim_held 7)" free
 rmdir "$limit_file"
