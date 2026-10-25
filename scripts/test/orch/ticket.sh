@@ -451,6 +451,21 @@ assert_status "reset keeps a still-open ticket's report" "$st" 0
 "$ORCH" ticket retire 95
 "$ORCH" ticket report show "$t2" >/dev/null 2>&1; st=$?
 assert_status "retire removes the parent's tickets' reports" "$st" 1
+# a death between the report removal and the GitHub write leaves no stale report
+t3="$("$ORCH" ticket publish 95 "C" "$body")"
+"$ORCH" ticket report save "$t3" "$rep"
+"$ORCH" ticket close "$t3" >/dev/null
+fake_fail adapter_issue_reopen
+"$ORCH" ticket reset 95 >/dev/null 2>&1
+fake_unfail
+"$ORCH" ticket report show "$t3" >/dev/null 2>&1; st=$?
+assert_status "reset removes the report before the reopen that can fail" "$st" 1
+"$ORCH" ticket report save "$t3" "$rep"
+fake_fail adapter_sub_issue_unlink
+"$ORCH" ticket retire 95 >/dev/null 2>&1
+fake_unfail
+"$ORCH" ticket report show "$t3" >/dev/null 2>&1; st=$?
+assert_status "retire removes a report before the unlink that can fail" "$st" 1
 restore_suite_env
 
 # --- ticket parent -----------------------------------------------------------
@@ -1398,6 +1413,16 @@ assert_status "a failed close dies" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #7"
 assert_eq "leaving the later leftover's worktree" "$(rc_has_worktree 8)" "yes"
 assert_eq "and its issue open" "$(fake_state_of 8)" "OPEN"
+
+# a collapsed breakdown's landed ticket (report under the spec issue, worktree
+# gone) is read as landed, and its report stays
+rc_setup 0
+rc_report 90
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a landed collapsed ticket succeeds" "$st" 0
+assert_contains "saying it already landed" "$out" "ticket #90 already landed"
+assert_eq "keeping its report" "$("$ORCH" ticket report show 90)" "Ticket: #90"
+assert_eq "and leaving the spec issue open" "$(fake_state_of 90)" "OPEN"
 restore_suite_env
 
 # the flow branch's stray work: refused in an interactive main checkout,

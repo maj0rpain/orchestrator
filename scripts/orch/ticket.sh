@@ -241,8 +241,10 @@ cmd_ticket_reset() {
   while IFS= read -r line; do
     tsv_split "$line" n state
     [ "$state" = CLOSED ] && [ -n "$n" ] || continue
-    gh_or_die "reopen ticket #$n" adapter_issue_reopen "$n"
+    # The report goes first: once the ticket is open again no rerun removes it,
+    # so a death between the two would strand it.
     ticket_report_remove "$n"
+    gh_or_die "reopen ticket #$n" adapter_issue_reopen "$n"
   done <<<"$subs"
 }
 
@@ -382,9 +384,10 @@ cmd_ticket_retire() {
         rm -f "$comment_file"
       fi
     fi
+    # Before the unlink: once unlinked, no rerun lists the ticket to clean it.
+    ticket_report_remove "$n"
     gh_or_die "unlink ticket #$n from #$parent" \
       adapter_sub_issue_unlink "$parent" "$n"
-    ticket_report_remove "$n"
   done <<<"$subs"
   # A collapsed breakdown saved its report under the parent's own number.
   ticket_report_remove "$parent"
@@ -716,6 +719,9 @@ cmd_ticket_reclaim() {
     tsv_split "$line" n state
     if [ "$state" = OPEN ] && [ -f "$(ticket_reports_dir)/$n.md" ]; then nums="$nums$n"$'\n'; fi
   done <<<"$subs"
+  # A collapsed breakdown has no sub-issues; its one ticket is the parent, whose
+  # saved report is the record that it landed even once its worktree is gone.
+  if [ -z "$subs" ] && [ -f "$(ticket_reports_dir)/$parent.md" ]; then nums="$nums$parent"$'\n'; fi
   worktrees="$(ticket_worktrees_under "$ROOT")" || exit 1
   while read -r n path; do
     [ -z "$n" ] || nums="$nums$n"$'\n'
@@ -733,6 +739,7 @@ cmd_ticket_reclaim() {
       merged=1
     fi
     if [ -n "$reported" ] && [ -n "$merged" ]; then
+      [ "$n" != "$parent" ] || note "ticket #$n already landed"
       ticket_reclaim_close "$n" "$parent"
       ticket_reclaim_remove "$n" "$flow"
     elif [ -n "$reported" ] && is_ticket_worktree "$path"; then

@@ -1616,6 +1616,11 @@ spec_review_err_line() {
   local err="${1#orch: }"
   printf '%s' "${err%%$'\n'*}"
 }
+# The applied.log labels the resume path reads back: one definition each, for
+# the spec_review_write that logs it and the grep that finds it.
+spec_review_label_changelog() { printf 'the changelog comment on issue #%s' "$1"; }
+spec_review_label_retire() { printf "the retire of #%s's ticket breakdown" "$1"; }
+
 
 # spec_review_write <dir> <what> <command...>: one GitHub write, appended to
 # <dir>/applied.log once it lands. A failure dies naming <what> and every
@@ -1851,7 +1856,7 @@ spec_review_apply() {
   fi
 
   # The changelog comment landed: only the local tail is left.
-  if [ -n "$resume" ] && grep -Fxq -- "the changelog comment on issue #$issue" "$dir/applied.log" 2>/dev/null; then
+  if [ -n "$resume" ] && grep -Fxq -- "$(spec_review_label_changelog "$issue")" "$dir/applied.log" 2>/dev/null; then
     [ -f "$dir/changelog.md" ] || die "changelog.md not found in $dir"
     local landed_log
     landed_log="$(cat "$dir/changelog.md")"
@@ -1890,7 +1895,7 @@ spec_review_apply() {
   [ "$text" = "$fetched" ] || changed=1
   if [ -z "$changed" ]; then
     tickets="Not checked - no edit applied"
-  elif [ -n "$resume" ] && grep -Fxq -- "the retire of #$issue's ticket breakdown" "$dir/applied.log" 2>/dev/null; then
+  elif [ -n "$resume" ] && grep -Fxq -- "$(spec_review_label_retire "$issue")" "$dir/applied.log" 2>/dev/null; then
     # The dead run's retire landed, so the live state no longer shows the
     # breakdown it decided on; the rerun keeps that decision.
     kind=""
@@ -1963,12 +1968,12 @@ spec_review_apply() {
     spec_review_write "$dir" "the body of issue #$issue" "${update[@]}" "$dir/spec.md"
   fi
   if [ -n "$ST_RETIRE" ]; then
-    spec_review_write "$dir" "the retire of #$issue's ticket breakdown" cmd_ticket_retire "$issue"
+    spec_review_write "$dir" "$(spec_review_label_retire "$issue")" cmd_ticket_retire "$issue"
   fi
   if [ -n "$held_any" ]; then
     spec_review_hold "$dir"
     return 0
   fi
-  spec_review_write "$dir" "the changelog comment on issue #$issue" "${comment[@]}" "$dir/changelog.md"
+  spec_review_write "$dir" "$(spec_review_label_changelog "$issue")" "${comment[@]}" "$dir/changelog.md"
   spec_review_finish "$dir" "$log"
 }

@@ -34,7 +34,9 @@ caller's numbered steps.
 - **a. Entry check.** `bash "$ORCH" ticket reclaim <the issue>`: it recovers
   what a dead run left (ADR-0054) - a merged ticket closed, an unmerged
   ticket with a saved report merged and closed, any other leftover discarded
-  so its ticket is rebuilt - and prints one line per action. Exit 3 means a
+  so its ticket is rebuilt - and prints one line per action (a collapsed
+  breakdown's ticket that already landed prints `ticket #<the issue> already
+  landed`). Exit 3 means a
   saved ticket's merge conflicted (`conflict <n>`): resolve it as loop step e
   says, with a fresh resolver in place of the dead subagent - it starts the
   rebase itself - then run `ticket reclaim` again. Any other failure stops
@@ -50,8 +52,12 @@ caller's numbered steps.
   its report exactly as loop step d does - save, `ticket merge`, `ticket
   close`, `ticket-worktree remove`. Collapsed, the ticket is **the issue**
   itself, built in `t<the issue>`: its branch is merged and its worktree
-  removed, and `ticket close` is never run on it. It dispatches that one
-  subagent, lands it, and goes to loop step f. Otherwise it loops: `bash
+  removed, and `ticket close` is never run on it. If loop step a printed
+  `ticket #<the issue> already landed` (or
+  `bash "$ORCH" ticket report show <the issue>` exits 0 after it), the ticket
+  is built and merged: never dispatch it again, go to loop step f. If not, it
+  dispatches that one subagent, lands it, and goes to loop step f. A
+  breakdown that is not collapsed loops: `bash
   "$ORCH" ticket next <the issue>` - nothing ready means the frontier is
   exhausted, so go to loop step f - then the ticket as above, and go around
   again. Any other case takes the parallel path, loop steps c-e.
