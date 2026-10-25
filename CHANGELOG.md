@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.6
+
+A standards path containing a comma is now listed whole on the reviewers' Standards line.
+
 ## 4.38.5
 
 Rename and reshape five spots in the spec review's module so each name says what it holds or does; no command's output, files or exit status change.
