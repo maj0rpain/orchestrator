@@ -60,16 +60,6 @@ d_append() {
   if [ -n "$1" ]; then printf '%s\n%s' "$1" "$2"; else printf '%s' "$2"; fi
 }
 
-# Newline-separated in, comma-separated out: a list reads better in a sentence.
-d_join() {
-  local out="" x
-  while IFS= read -r x; do
-    if [ -z "$x" ]; then continue; fi
-    if [ -n "$out" ]; then out="$out, $x"; else out="$x"; fi
-  done <<<"$1"
-  printf '%s\n' "$out"
-}
-
 # Gates. A check whose answer is unavailable reports *skip* rather than a FAIL
 # it derived from not knowing, and the skipped group collapses into a single
 # warn naming the cause - N warns, or worse N invented FAILs, would bury the one
@@ -310,9 +300,9 @@ check_host() {
   # Not a failure: the flow runs on this host, with the documented fallbacks.
   # A warn keeps the reduced enforcement in front of the user instead. An
   # unverified cell is reported apart, so doctor never states it as a gap.
-  if [ -n "$lacks" ]; then detail="lacks: $(d_join "$lacks")"; fi
+  if [ -n "$lacks" ]; then detail="lacks: $(list_join "$lacks")"; fi
   if [ -n "$unverified" ]; then
-    detail="${detail:+$detail; }unverified: $(d_join "$unverified")"
+    detail="${detail:+$detail; }unverified: $(list_join "$unverified")"
   fi
   d_warn "host: $name $detail - fallbacks in $HOST_REF"
 }
@@ -358,7 +348,7 @@ check_orch_sh() {
     [ -n "$names" ] || continue
     # A warn, not a FAIL: the install running this is whole, and which host
     # picks up the skills-only copy is not something doctor can see.
-    d_warn "orch.sh missing beside the orchestrator skills in ${store/#$HOME/\~}: $(d_join "$names") - a skills-only install."
+    d_warn "orch.sh missing beside the orchestrator skills in ${store/#$HOME/\~}: $(list_join "$names") - a skills-only install."
     found=1
   done
   if [ -z "$found" ]; then d_ok "orch.sh: ${ORCH_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
@@ -423,10 +413,10 @@ check_labels_exist() {
   # someone to stop reading the word.
   n="$(printf '%s\n' "$have" | grep -c .)" || n=0
   if [ "$n" -ge "$LABEL_LIMIT" ]; then
-    d_warn "the repo has more than $LABEL_LIMIT labels - cannot confirm: $(d_join "$missing")"
+    d_warn "the repo has more than $LABEL_LIMIT labels - cannot confirm: $(list_join "$missing")"
     return 0
   fi
-  d_fail "triage labels missing from the repo: $(d_join "$missing")"
+  d_fail "triage labels missing from the repo: $(list_join "$missing")"
   # Quoted, because a label that needs quoting is exactly the one you would
   # paste wrong.
   while IFS= read -r l; do d_remedy "gh label create \"$l\""; done <<<"$missing"
@@ -470,13 +460,13 @@ check_git_exclude() {
     if [ -n "$d" ]; then missing+=("$d"); fi
   done <<<"$(orch_dirs_unexcluded)"
   if [ "${#missing[@]}" -eq 0 ]; then
-    d_ok "$(d_join "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")") git-excluded"
+    d_ok "$(list_join "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")") git-excluded"
     return 0
   fi
   # A warn, not a FAIL: init writes these lines, so it only bites someone who
   # arrived mid-flow in a repo that is not theirs. One warning for every missing
   # line, and a remedy that appends only those.
-  d_warn "$(d_join "$(printf '%s\n' "${missing[@]}")") not git-excluded - flow state and planning drafts would show as untracked."
+  d_warn "$(list_join "$(printf '%s\n' "${missing[@]}")") not git-excluded - flow state and planning drafts would show as untracked."
   d_remedy "printf '%s\\n' $(printf "'%s' " "${missing[@]}")>>\"\$(git rev-parse --git-common-dir)/info/exclude\""
 }
 
@@ -872,7 +862,7 @@ check_flow_worktree_clean() {
     return 0
   fi
   [ -n "$dirty" ] || return 0
-  d_fail "the working tree has changes outside the planning allowlist: $(d_join "$dirty")"
+  d_fail "the working tree has changes outside the planning allowlist: $(list_join "$dirty")"
   d_remedy "git status"
 }
 

@@ -112,6 +112,20 @@ done
 assert_eq "list_has matches whole lines literally, an item beginning with - included, one spanning lines never" \
   "$lh_verdicts" " y y y y n n n n n"
 
+# --- list_join ----------------------------------------------------------------
+# The one newline-list join: non-empty lines, joined by ", ".
+echo
+echo "list_join"
+new_repo >/dev/null
+assert_eq "list_join of empty input is an empty line" "$(sourced_orch list_join "")" ""
+assert_eq "list_join of one item is that item" "$(sourced_orch list_join "a")" "a"
+assert_eq "list_join joins several items with ', '" \
+  "$(sourced_orch list_join $'a\nb\nc')" "a, b, c"
+assert_eq "list_join keeps an item containing a comma whole" \
+  "$(sourced_orch list_join $'a,b.md\nc')" "a,b.md, c"
+assert_eq "list_join skips blank lines" \
+  "$(sourced_orch list_join $'\na\n\nb\n')" "a, b"
+
 # --- word_listed --------------------------------------------------------------
 # The one space-list membership test: a whole word, never several or part.
 echo
