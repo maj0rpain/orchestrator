@@ -90,7 +90,7 @@ mkdir -p "$el_dir/info"
 printf '%s\n' '.scratch/' >"$el_dir/info/exclude"
 chmod a-w "$el_dir/info/exclude"
 if [ -w "$el_dir/info/exclude" ]; then
-  ok "skipped: the file stays writable for this user"
+  skip "only the missing line is named" "$el_dir/info/exclude stays writable (running as root?)"
 else
   out="$(sourced_orch exclude_orch_dirs 2>&1)"; st=$?
   assert_eq "only the missing line is named" "$out" \
