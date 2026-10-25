@@ -516,6 +516,8 @@ git config --local orchestrator.junie.model.closer gpt-5
 out="$("$ORCH" agent sync 2>&1)"; st=$?
 assert_status "sync with an exclude file it cannot append to exits non-zero" "$st" 1
 assert_contains "naming the exclude file's path in its own message" "$out" "to the git exclude file .git/info/exclude"
+assert_eq "and holding exactly one orch: line" "$(printf '%s\n' "$out" | grep -c '^orch: ')" "1"
+assert_not_contains "and no agent sync wrapper message" "$out" "agent sync: cannot add"
 rm -rf .git/info/exclude
 cd "$as_main" || exit 1
 unset -f as_exclude as_copies

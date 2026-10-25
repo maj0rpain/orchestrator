@@ -275,7 +275,7 @@ review_file() {
       *) die "$usage" ;;
     esac
     [ $# -ge 2 ] || die "$usage"
-    case "$seen" in *" $flag "*) die "$usage" ;; esac
+    ! word_listed "$seen" "$flag" || die "$usage"
     seen+="$flag "
     value="$(trim "$2")"
     [ -n "$value" ] || die "$usage"
@@ -292,7 +292,7 @@ review_file() {
     shift 2
   done
   for flag in --axis --finding-file --severity-reason --location --sha --pr --why; do
-    case "$seen" in *" $flag "*) ;; *) die "$usage" ;; esac
+    word_listed "$seen" "$flag" || die "$usage"
   done
 
   local colour desc category triage n file line body_file
