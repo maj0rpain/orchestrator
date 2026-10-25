@@ -858,7 +858,7 @@ autopilot_event_rejecting_reset() {
   local out
   out="$(jq -r '.rate_limit_info // {} | [., (.unifiedWindows // {} | .[])]
     | map(select(type == "object" and ((.status // "allowed") | IN("allowed", "allowed_warning") | not)))
-    | if length == 0 then "none" else ([.[].resetsAt | numbers] | max // "" | tostring | sub("\\..*$"; "")) end' <<<"$1" 2>/dev/null)" || return 1
+    | if length == 0 then "none" else ([.[].resetsAt | numbers | floor] | max // "") end' <<<"$1" 2>/dev/null)" || return 1
   [ "$out" != none ] || return 1
   printf '%s\n' "$out"
 }
