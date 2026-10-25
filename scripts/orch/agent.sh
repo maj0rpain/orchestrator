@@ -565,20 +565,18 @@ check_agent_settings_host() {
 check_junie_agent_settings() {
   check_agent_settings_host junie
   agent_sync_plan
-  local missing="" stale="" extra="" name state drift refused
+  local missing="" stale="" name state drift refused extra
   while IFS="|" read -r name _ _ state; do
     [ -n "$name" ] || continue
     if [ "$state" = missing ]; then missing="$missing $name.md"; else stale="$stale $name.md"; fi
   done <<<"$AGENT_PLAN_WRITES"
   refused="$(agent_plan_files "$AGENT_PLAN_REFUSED")"
-  while IFS= read -r name; do
-    [ -n "$name" ] && extra="$extra $name.md"
-  done <<<"$AGENT_PLAN_DELETES"
+  extra="$(agent_plan_files "$AGENT_PLAN_DELETES")"
   [ -z "$missing$stale$extra$refused" ] && return 0
   drift="Junie agent copies in $AGENT_PLAN_DIR are not what agent sync would leave:"
   [ -z "$missing" ] || drift="$drift missing$missing;"
   [ -z "$stale" ] || drift="$drift stale$stale;"
-  [ -z "$extra" ] || drift="$drift extra$extra;"
+  [ -z "$extra" ] || drift="$drift extra $extra;"
   [ -z "$refused" ] || drift="$drift $refused carries no sync marker and is in the way;"
   d_warn "${drift%;}"
   d_remedy "orch.sh agent sync"
