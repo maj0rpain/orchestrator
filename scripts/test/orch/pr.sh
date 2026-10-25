@@ -130,6 +130,7 @@ assert_eq "the create call never reached a real gh subprocess" \
   "$(gh_calls)" "0"
 
 git config --unset "branch.orch/16-propen.orchestrator-pr"
+state_fixture pr ""
 fake_fail adapter_pr_create 'a pull request for branch "orch/16-propen" into branch "main" already exists'
 out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
@@ -217,6 +218,72 @@ assert_eq "writing no PR marker" "$(pr_marker_of orch/16-propen)" ""
 assert_eq "and leaving the flow state byte for byte" \
   "$(cmp -s "$state_before" .orchestrator/state.json && echo same || echo changed)" "same"
 rm -f "$bare/hooks/pre-receive"
+
+# A restart past the PR's creation (#1609): state.pr names the flow's open PR,
+# so pr open updates it instead of creating a second one.
+fake_unfail
+fake_pr 50 open orch/16-propen main
+fake_pr_body 50 "old body"
+printf 'old title\n' >"$ORCH_GH_FAKE_STORE/prs/50/title"
+printf 'keep-me\n' >"$ORCH_GH_FAKE_STORE/prs/50/labels"
+state_fixture pr 50
+prs_before="$(fake_prs)"
+out="$("$ORCH" pr open "New title" "$body" --label ci 2>"$errf")"; st=$?
+assert_status "restart: updates the recorded PR" "$st" 0
+assert_eq "restart: prints its number" "$out" "50"
+assert_eq "restart: creates no PR" "$(fake_prs)" "$prs_before"
+assert_eq "restart: sets the title" "$(fake_pr_title_of 50)" "New title"
+assert_first_line "restart: sets the body, issue line first" "$(fake_pr_body_of 50)" "Closes #16"
+assert_eq "restart: adds the missing label and removes none" \
+  "$(fake_pr_labels_of 50)" "$(writeln keep-me ci)"
+out="$("$ORCH" pr open "New title" "$body" --label ci --label keep-me 2>"$errf")"; st=$?
+assert_status "restart: a rerun repeats every write" "$st" 0
+assert_eq "restart: adding no label twice" "$(fake_pr_labels_of 50)" "$(writeln keep-me ci)"
+
+for closed in closed merged; do
+  fake_pr 51 "$closed" orch/16-propen main
+  state_fixture pr 51
+  out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+  assert_status "restart: a $closed recorded PR fails pr open" "$st" 1
+  assert_contains "restart: naming the PR" "$out" "PR #51"
+  assert_eq "restart: creating none" "$(fake_prs)" "${prs_before}51 "
+  rm -rf "$ORCH_GH_FAKE_STORE/prs/51"
+done
+fake_pr 51 open some-other-branch main
+state_fixture pr 51
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "restart: a recorded PR on another branch fails pr open" "$st" 1
+assert_contains "restart: naming the PR" "$out" "PR #51"
+assert_eq "restart: creating none" "$(fake_prs)" "${prs_before}51 "
+rm -rf "$ORCH_GH_FAKE_STORE/prs/51"
+
+state_fixture pr 50
+git commit -q --allow-empty -m "more unpushed work"
+origin_rejects "$bare"
+out="$("$ORCH" pr open "Rejected title" "$body" --label other 2>&1)"; st=$?
+assert_status "restart: a rejected push fails pr open" "$st" 1
+assert_eq "restart: leaving the title" "$(fake_pr_title_of 50)" "New title"
+assert_eq "restart: and the labels" "$(fake_pr_labels_of 50)" "$(writeln keep-me ci)"
+rm -f "$bare/hooks/pre-receive"
+
+fake_fail adapter_pr_label_add "$GH_502"
+out="$("$ORCH" pr open "Third title" "$body" --label other 2>&1)"; st=$?
+assert_status "restart: a failed label write fails pr open" "$st" 1
+assert_contains "restart: naming the label" "$out" "'other'"
+assert_contains "restart: and the writes that landed" "$out" "title"
+assert_eq "restart: the title did land" "$(fake_pr_title_of 50)" "Third title"
+fake_unfail
+fake_fail adapter_pr_title_edit "$GH_502"
+out="$("$ORCH" pr open "Fourth title" "$body" 2>&1)"; st=$?
+assert_status "restart: a failed title write fails pr open" "$st" 1
+assert_contains "restart: naming the title" "$out" "title"
+fake_unfail
+fake_fail adapter_pr_body_edit "$GH_502"
+out="$("$ORCH" pr open "Fifth title" "$body" 2>&1)"; st=$?
+assert_status "restart: a failed body write fails pr open" "$st" 1
+assert_contains "restart: naming the body" "$out" "body"
+assert_contains "restart: and the title that landed" "$out" "title"
+fake_unfail
 
 assert_contains "help documents --label" "$("$ORCH" help)" \
   "pr open <title> <body-file> [--label <name>]..."

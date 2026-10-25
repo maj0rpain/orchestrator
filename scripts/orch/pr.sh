@@ -49,6 +49,55 @@ open_pr() {
   printf '%s\n' "$pr"
 }
 
+# update_pr <pr> <branch> <base> <issue> <title> <body-file> <label>...: pr
+# open's restart path (#1609), for a flow whose state already names its PR: the
+# PR must be open on <branch>, else it dies naming it and creates none. It
+# pushes, then writes the title, the body (issue line included, as on
+# creation) and each requested label the PR lacks, removing none. A failed
+# push dies before any PR write; a failed write dies naming it and each write
+# already landed. A rerun repeats every write.
+update_pr() {
+  # shellcheck disable=SC2034 # pr_refs_read fills all four; only head is read
+  local pr="$1" branch="$2" base="$3" issue="$4" title="$5" body_file="$6" st draft err refs_oid head refs_base commits
+  shift 6
+  local keyword=Closes tmp have label landed=""
+  pr_state_draft_read "$pr" st draft err \
+    || gh_die "read the state of PR #$pr, recorded in state" "$err"
+  [ "$st" = OPEN ] || die "PR #$pr, recorded in state, is $st, not open - no PR was opened or updated"
+  pr_refs_read "$pr" refs_oid head refs_base commits err \
+    || gh_die "read the branch of PR #$pr, recorded in state" "$err"
+  [ "$head" = "$branch" ] \
+    || die "PR #$pr, recorded in state, is on branch $head, not the flow's branch $branch - no PR was opened or updated"
+  git_push err -q -u origin "$branch" \
+    || die "could not push branch $branch to origin - PR #$pr was not updated: $err"
+  [ "$base" = "$(default_branch)" ] || keyword=Refs
+  tmp="$(mktemp)" || die "could not create a temp file for the PR body - PR #$pr was not updated"
+  { printf '%s #%s\n\n' "$keyword" "$issue" && cat "$body_file"; } >"$tmp" || {
+    rm -f "$tmp"
+    die "could not write the PR body from $body_file - PR #$pr was not updated"
+  }
+  if ! capture have err adapter_pr_title_edit "$pr" "$title"; then
+    rm -f "$tmp"
+    gh_die "write the title of PR #$pr" "$err"
+  fi
+  landed="the title"
+  if ! capture have err adapter_pr_body_edit "$pr" "$tmp"; then
+    rm -f "$tmp"
+    die "gh could not write the body of PR #$pr: $(gh_reason "$err"); already written: $landed"
+  fi
+  rm -f "$tmp"
+  landed="$landed, the body"
+  [ $# -gt 0 ] || return 0
+  capture have err adapter_pr_labels "$pr" \
+    || die "gh could not read the labels of PR #$pr: $(gh_reason "$err"); already written: $landed"
+  for label; do
+    list_has "$have" "$label" && continue
+    capture have err adapter_pr_label_add "$pr" "$label" \
+      || die "gh could not add the label '$label' to PR #$pr: $(gh_reason "$err"); already written: $landed"
+    landed="$landed, the label '$label'"
+  done
+}
+
 # pr_label_value <usage> <option-names> --label [value...]: dies, naming
 # --label, unless it is followed by a label name - a value neither empty nor
 # one of <option-names>, a space-separated list. Any other name is taken as
@@ -141,7 +190,7 @@ cmd_pr_open() {
   require_state
   local usage="usage: orch.sh pr open <title> <body-file> [--label <name>]..." labels=()
   [ $# -ge 2 ] || die "$usage"
-  local title="$1" body_file="$2" issue branch base pr
+  local title="$1" body_file="$2" issue branch base pr recorded
   shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -154,6 +203,12 @@ cmd_pr_open() {
   require_branch branch
   base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
   pr_body_check "$body_file" Summary Evidence "Merge Danger"
+  recorded="$(state_get pr)"
+  if [ -n "$recorded" ]; then
+    update_pr "$recorded" "$branch" "$base" "$issue" "$title" "$body_file" ${labels[@]+"${labels[@]}"}
+    note "$recorded"
+    return 0
+  fi
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"
