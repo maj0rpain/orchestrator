@@ -1918,6 +1918,11 @@ printf '%s\n' 'mine' >.junie/agents/orch-reviewer-spec.md
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "warns of an unmarked file in the way, by name" "$out" \
   "orch-reviewer-spec.md carries no sync marker and is in the way"
+printf '%s\n' 'mine too' >.junie/agents/orch-reviewer-standards.md
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "warns of two unmarked files in the way, both named" "$out" \
+  "warn  Junie agent copies in $PWD/.junie/agents are not what agent sync would leave: orch-reviewer-spec.md orch-reviewer-standards.md carries no sync marker and is in the way"
+rm -f .junie/agents/orch-reviewer-standards.md
 rm -f .junie/agents/orch-reviewer-spec.md
 
 git config --local orchestrator.junie.model.fixer "my model"

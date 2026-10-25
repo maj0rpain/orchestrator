@@ -480,6 +480,13 @@ assert_contains "naming the file" "$out" "orch-reviewer-spec.md"
 assert_eq "and changes nothing else" "$(dir_snapshot "$as_dir"; as_exclude)" "$before"
 assert_eq "the unmarked file is byte-identical" "$(cat "$as_dir/orch-reviewer-spec.md")" "hand made"
 
+printf '%s\n' 'hand made too' >"$as_dir/orch-reviewer-standards.md"
+out="$("$ORCH" agent sync 2>&1)"; st=$?
+assert_status "sync refuses two unmarked orch-*.md in its way" "$st" 1
+assert_eq "naming both files in one message" "$out" \
+  "orch: agent sync: orch-reviewer-spec.md orch-reviewer-standards.md in $PWD/$as_dir carries no sync marker - not written by orch.sh agent sync, so left alone; rename or remove it, then rerun orch.sh agent sync"
+rm -f "$as_dir/orch-reviewer-standards.md"
+
 out="$("$ORCH" agent set closer --host junie --model gpt-5 2>&1)"; st=$?
 assert_status "set --host junie with an unmarked file in the way exits non-zero" "$st" 1
 assert_contains "with sync's message" "$out" "orch-reviewer-spec.md"
