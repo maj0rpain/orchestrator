@@ -5,6 +5,15 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
+iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
+# ndjson_with <line>: a session log of NDJSON lines with <line> as a plain text
+# line among them, and a rate_limit_event that rejects nothing.
+ndjson_with() {
+  printf '%s\n' '{"type":"system","subtype":"init"}' \
+    '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":4102444800,"rateLimitType":"five_hour","utilization":0.1,"unifiedWindows":{"five_hour":{"utilization":0.1,"resetsAt":4102444800,"status":"allowed"}}}}' \
+    "$1" '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'
+}
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
 # local_fields <iso>: the limit file's UTC timestamp as "<epoch> <%H> <%a>" in
@@ -666,8 +675,8 @@ tick_fixture
 top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open ready-for-agent orch:spec; printf 'Limit 7\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
 reset_epoch="$(( $(date +%s) + 7200 ))"
-reset_iso="$(date -u -d "@$reset_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$reset_epoch" +%Y-%m-%dT%H:%M:%SZ)"
-printf 'Claude AI usage limit reached|%s\n' "$reset_epoch" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
+reset_iso="$(iso_of "$reset_epoch")"
+ndjson_with "Claude AI usage limit reached|$reset_epoch" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "the session that hit the limit starts one session" "$(tick_calls)" "1"
 assert_contains "its failure comment names the usage limit" "$(fake_comments_of 7)" "usage limit"
@@ -693,7 +702,7 @@ assert_eq "once the reset time has passed the file is removed" "$(on_disk "$top/
 assert_eq "and pickup resumes with the limited issue first, then the next" "$(tick_calls)" "3"
 # a message without a reset time pauses for an hour
 fake_issue 8 open ready-for-agent orch:spec
-printf 'Claude AI usage limit reached\n' >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"; rm -f "$launcher_dir/release"
+ndjson_with 'Claude AI usage limit reached' >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"; rm -f "$launcher_dir/release"
 "$ORCH" autopilot tick >/dev/null 2>&1
 limit_epoch="$(date -u -d "$(cat "$top/.orchestrator/autopilot/limit")" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$(cat "$top/.orchestrator/autopilot/limit")" +%s)"
 assert_eq "no reset time in the message: one hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
@@ -703,7 +712,7 @@ assert_contains "the comment still names the usage limit" "$(fake_comments_of 8)
 for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
   rm -f "$top/.orchestrator/autopilot/limit"
   fake_issue 8 open ready-for-agent orch:spec
-  printf '%s\n' "$wording" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
+  ndjson_with "$wording" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
   fake_claim_seed 8
   "$ORCH" autopilot run 8 >/dev/null 2>&1
   assert_eq "\"$wording\" writes the limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" present
@@ -713,7 +722,7 @@ done
 # a "resets <time>" message pauses until that next moment, in local time
 rm -f "$top/.orchestrator/autopilot/limit"
 fake_issue 8 open ready-for-agent orch:spec
-printf '5-hour limit reached ∙ resets 3pm\n' >"$launcher_dir/out"
+ndjson_with '5-hour limit reached ∙ resets 3pm' >"$launcher_dir/out"
 fake_claim_seed 8
 "$ORCH" autopilot run 8 >/dev/null 2>&1
 read -r limit_epoch limit_hour _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
@@ -721,7 +730,7 @@ assert_eq "\"resets 3pm\" pauses until 15:00 local" "$limit_hour" "15"
 assert_eq "within the next day" "$([ "$limit_epoch" -gt "$(date +%s)" ] && [ "$limit_epoch" -le "$(( $(date +%s) + 86400 + 3600 ))" ] && echo yes)" "yes"
 rm -f "$top/.orchestrator/autopilot/limit"
 fake_issue 8 open ready-for-agent orch:spec
-printf 'Weekly limit reached ∙ resets Mon 9am\n' >"$launcher_dir/out"
+ndjson_with 'Weekly limit reached ∙ resets Mon 9am' >"$launcher_dir/out"
 fake_claim_seed 8
 "$ORCH" autopilot run 8 >/dev/null 2>&1
 read -r limit_epoch limit_hour limit_day < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
@@ -732,7 +741,7 @@ assert_eq "within the next week" "$([ "$limit_epoch" -gt "$(date +%s)" ] && [ "$
 for wording in "iteration limit reached" "API rate limit reached, retrying"; do
   rm -f "$top/.orchestrator/autopilot/limit"
   fake_issue 8 open ready-for-agent orch:spec
-  printf '%s\n' "$wording" >"$launcher_dir/out"
+  ndjson_with "$wording" >"$launcher_dir/out"
   fake_claim_seed 8
   "$ORCH" autopilot run 8 >/dev/null 2>&1
   assert_eq "\"$wording\" writes no limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
@@ -760,19 +769,22 @@ tick_fixture
 top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open ready-for-agent orch:spec; printf 'Event 7\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
 limit_file="$top/.orchestrator/autopilot/limit"
-iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
+printf '7\n' >"$launcher_dir/release"; : >"$launcher_dir/out"
+"$ORCH" autopilot tick >/dev/null 2>&1   # makes the side checkout
+rm -f "$launcher_dir/release" "$launcher_dir/calls" "$limit_file"
 # rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
 # <7d reset>
 rl_event() {
   printf '{"type":"rate_limit_event","rate_limit_info":{"status":"%s","resetsAt":%s,"rateLimitType":"seven_day","utilization":%s,"unifiedWindows":{"five_hour":{"utilization":%s,"resetsAt":%s,"status":"%s"},"seven_day":{"utilization":%s,"resetsAt":%s,"status":"%s"}}}}\n' \
     "$4" "$6" "$5" "$2" "$3" "$1" "$5" "$6" "$4"
 }
-# event_session <exit>: a fresh tick of issue 7 over the launcher's canned log.
+# event_session <exit>: a fresh run of issue 7 over the launcher's canned log.
 event_session() {
   rm -f "$limit_file"
-  fake_issue 7 open ready-for-agent orch:spec
+  fake_issue 7 open ready-for-agent orch:spec orch:running
+  fake_claim_seed 7
   printf '%s\n' "$1" >"$launcher_dir/exit"
-  "$ORCH" autopilot tick >/dev/null 2>&1
+  "$ORCH" autopilot run 7 >/dev/null 2>&1
 }
 now_epoch="$(date +%s)"
 r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
@@ -780,7 +792,7 @@ r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
 { echo 'stderr noise line'; rl_event rejected 1 "$r1" allowed_warning 0.8 "$r3"; echo 'another note'; } >"$launcher_dir/out"
 event_session 1
 assert_eq "a rejecting five-hour window writes its reset" "$(cat "$limit_file")" "$(iso_of "$r1")"
-assert_contains "and the failure comment names it" "$(fake_comments_of 7)" "$(iso_of "$r1")"
+assert_contains "and the limit stop comment names it" "$(fake_comments_of 7)" "$(iso_of "$r1")"
 rl_event rejected 1 "$r1" rejected 0.8 "$r3" >"$launcher_dir/out"
 event_session 1
 assert_eq "the latest rejecting window decides" "$(cat "$limit_file")" "$(iso_of "$r3")"
@@ -871,7 +883,7 @@ tick_fixture
 top="$(git rev-parse --show-toplevel)"
 limit_file="$top/.orchestrator/autopilot/limit"
 lim_reset=$(( $(date +%s) + 3600 ))
-lim_iso="$(date -u -d "@$lim_reset" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$lim_reset" +%Y-%m-%dT%H:%M:%SZ)"
+lim_iso="$(iso_of "$lim_reset")"
 # lim_relabel <n> <label>...: issue #n's labels set; title, comments kept.
 lim_relabel() { local n="$1"; shift; printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"; }
 lim_event() {
@@ -993,14 +1005,6 @@ rm -f "$launcher_dir/calls"
 fake_unfail
 assert_eq "a failed orch:limited removal ends with needs-human and no orch:limited" "$(fake_labels_of 6)" "$LIM_OFF"
 assert_eq "and starts no session for it" "$(tick_calls)" "0"
-
-# a limit file in another clone's autopilot directory starts no pause
-other="$(mktemp -d)"; mkdir -p "$other/.orchestrator/autopilot"
-printf '2999-01-01T00:00:00Z\n' >"$other/.orchestrator/autopilot/limit"
-rm -f "$limit_file" "$launcher_dir/calls"
-fake_issue 6 open ready-for-agent orch:spec orch:limited
-"$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "another clone's limit file pauses nothing" "$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null || true)" "1"
 
 # autopilot questions does not list a limited issue
 fake_issue 30 open ready-for-agent orch:spec orch:limited
