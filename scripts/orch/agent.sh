@@ -385,7 +385,7 @@ agent_sync() {
   dir="$AGENT_PLAN_DIR"
   [ -z "$AGENT_PLAN_REFUSED" ] ||
     die "agent sync: $AGENT_PLAN_REFUSED in $dir carries no sync marker - not written by orch.sh agent sync, so left alone; rename or remove it, then rerun orch.sh agent sync"
-  if [ -n "$AGENT_PLAN_WANT" ]; then exclude_line "$AGENT_COPY_EXCLUDE" || die "agent sync: cannot add $AGENT_COPY_EXCLUDE to the git exclude file $(git rev-parse --git-common-dir)/info/exclude"; fi
+  if [ -n "$AGENT_PLAN_WANT" ]; then exclude_line "$AGENT_COPY_EXCLUDE"; fi
   while IFS= read -r name; do
     [ -n "$name" ] || continue
     rm -f -- "$dir/$name.md" || die "agent sync: cannot delete $dir/$name.md"
