@@ -53,6 +53,11 @@ When a round has a fundamental item:
    re-posts the question with `autopilot ask spec` and stops, never assuming
    the recommendations.
 
+A fresh session that meets `spec round` printing `<k> <n> applying` finds an
+apply that died: it runs `bash "$ORCH" spec-review apply <dir> --resume --round
+<k>/<n>`, which reruns with the answer the dead run saved in
+`<dir>/apply-answer` and skips the writes already in `applied.log`.
+
 ## Inputs
 
 Steps 1 to 3 run at the start of every round, each round in its own

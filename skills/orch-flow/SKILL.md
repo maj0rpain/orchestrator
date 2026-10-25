@@ -296,7 +296,10 @@ and stops for the human only on a fundamental item of the spec review
 decides, so the issue is reviewed as it stands - no rewrite decision, no
 marker check, no redo check. The round check still runs, first. Step 4 asks
 no round-count question: the count is `bash "$ORCH" autopilot rounds`. The
-round check's `<k> <n> waiting` means round k holds fundamental items back
+round check's `<k> <n> applying` means a spec-review apply died partway: run
+`bash "$ORCH" spec-review apply <dir> --resume --round <k>/<n>` (it reruns
+with the answer it saved) and go on from the round it completes. The round
+check's `<k> <n> waiting` means round k holds fundamental items back
 for the human's reply (`.orchestrator/spec-rounds/<k>/fundamental.md`): read
 the reply with `bash "$ORCH" autopilot answer spec <file>` (a `mktemp` file
 outside the repo). When it dies because no reply has come, re-post the

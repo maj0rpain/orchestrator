@@ -1623,6 +1623,10 @@ spec_review_err_line() {
 spec_review_write() {
   local dir="$1" what="$2" err
   shift 2
+  # A resumed apply skips what applied.log already records.
+  if [ -f "$dir/applied.log" ] && grep -Fxq -- "$what" "$dir/applied.log"; then
+    return 0
+  fi
   if ! capture_err err "$@" >/dev/null; then
     die "could not write $what: $(spec_review_err_line "$err") - already landed: $(spec_review_landed "$dir"); $dir/changelog.md is kept, and the review stops here"
   fi
@@ -1635,6 +1639,60 @@ spec_review_write() {
 spec_review_local_write() {
   { printf '%s' "$2" >"$1"; } 2>/dev/null \
     || die "could not write $1 - nothing written to GitHub"
+}
+
+# spec_review_save_answer <dir> <arg>...: the apply's answer arguments saved
+# to <dir>/apply-answer, one shell-quoted line, before the first GitHub write.
+# The file arguments (--reasons, --ticket-reasons, --host-fallbacks) are copied
+# into <dir> first and saved as the copies, so a resume never reads a file the
+# dead session left elsewhere. Leaves the saved arguments in SR_SAVED.
+spec_review_save_answer() {
+  local dir="$1" a prev="" copy
+  shift
+  SR_SAVED=()
+  for a in "$@"; do
+    case "$prev" in
+      --reasons|--ticket-reasons|--host-fallbacks)
+        copy="$dir/apply-${prev#--}.copy"
+        cp "$a" "$copy" 2>/dev/null \
+          || die "could not copy $a to $copy - nothing written to GitHub"
+        a="$copy" ;;
+    esac
+    SR_SAVED+=("$a")
+    prev="$a"
+    case "$prev" in --reasons|--ticket-reasons|--host-fallbacks) ;; *) prev="" ;; esac
+  done
+  { printf '%q ' "${SR_SAVED[@]}"; printf '\n'; } >"$dir/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
+    || die "could not write $dir/$SPEC_ROUND_APPLY_ANSWER - nothing written to GitHub"
+}
+
+# spec_review_clear_answer <dir>: the saved answer and its file copies removed,
+# at the end of the run that no resume continues.
+spec_review_clear_answer() {
+  rm -f "$1/$SPEC_ROUND_APPLY_ANSWER" "$1"/apply-*.copy 2>/dev/null \
+    || die "could not remove $1/$SPEC_ROUND_APPLY_ANSWER - every GitHub write landed: $(spec_review_landed "$1")"
+}
+
+# spec_review_finish <dir> <log>: the local tail of a round once its changelog
+# comment landed: <log> appended to settled.md, fundamental.md removed in a
+# resumed autopilot run, round-complete written, the saved answer removed.
+spec_review_finish() {
+  local dir="$1" log="$2"
+  # The settled file, last: a pause or a failed write before this point
+  # appends nothing, so a rerun never appends a changelog twice.
+  { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
+    || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
+  if [ "$SR_FMODE" = resume ]; then
+    rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
+      && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
+      || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
+  fi
+  # The round's completion, the very last step: spec round reads it to tell
+  # a resumed flow which round runs next, so it exists only once every write
+  # above has landed.
+  { : >"$dir/$SPEC_ROUND_COMPLETE"; } 2>/dev/null \
+    || die "could not write $dir/$SPEC_ROUND_COMPLETE - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
+  spec_review_clear_answer "$dir"
 }
 
 # spec_review_hold <dir>: the end of an autopilot round's first run, when the
@@ -1659,6 +1717,7 @@ spec_review_hold() {
     || die "could not copy spec.md to $dir/spec.fetched.md - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
   rm -f "$dir/applied.log" 2>/dev/null \
     || die "could not clear $dir/applied.log - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+  spec_review_clear_answer "$dir"
 }
 
 # spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
@@ -1670,14 +1729,51 @@ spec_review_hold() {
 # the first write. With an accepted edit and a ticket breakdown but no
 # --tickets it pauses, exit 3, before any GitHub write, printing the
 # breakdown kind.
+#
+# spec-review apply <dir> --resume --round <k>/<n>: an apply that died, run
+# again with the answer it saved in <dir>/apply-answer; the writes applied.log
+# records are skipped, and with the changelog comment landed only the local
+# tail runs.
 spec_review_apply() {
-  local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended] [--host-fallbacks <file>]"
+  local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended] [--host-fallbacks <file>] | orch.sh spec-review apply <dir> --resume --round <k>/<n>"
   local dir="" answer="" have_answer="" round="" reasons="" issue="" unattended=false hosts_file="" hosts=""
-  local ticket_answer="" ticket_reasons="" opt_like
+  local ticket_answer="" ticket_reasons="" opt_like resume="" a
+  local -a save_args=() saved=() given=()
+  for a in "$@"; do
+    if [ "$a" = --resume ]; then resume=1; else given+=("$a"); fi
+  done
+  if [ -n "$resume" ]; then
+    local r_dir="" r_round="" s_round="" prev=""
+    set -- ${given[@]+"${given[@]}"}
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --round) [ $# -ge 2 ] && [ -n "$2" ] || die "--round needs a value ($usage)"; r_round="$2"; shift 2 ;;
+        -*) die "--resume takes only <dir> and --round <k>/<n>, got: $1 ($usage)" ;;
+        *) [ -z "$r_dir" ] || die "$usage"; r_dir="$1"; shift ;;
+      esac
+    done
+    [ -n "$r_dir" ] && [ -n "$r_round" ] || die "$usage"
+    [ -d "$r_dir" ] || die "no such directory: $r_dir"
+    r_dir="${r_dir%/}"
+    [ -f "$r_dir/$SPEC_ROUND_APPLY_ANSWER" ] \
+      || die "--resume: $r_dir holds no $SPEC_ROUND_APPLY_ANSWER - there is no apply to resume; run apply with its answer"
+    eval "saved=($(cat "$r_dir/$SPEC_ROUND_APPLY_ANSWER"))" 2>/dev/null \
+      || die "$r_dir/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
+    for a in ${saved[@]+"${saved[@]}"}; do
+      [ "$prev" != --round ] || s_round="$a"
+      prev="$a"
+    done
+    [ "$r_round" = "$s_round" ] \
+      || die "--resume --round $r_round: the saved answer in $r_dir is for round $s_round"
+    set -- "$r_dir" "${saved[@]}"
+  else
+    set -- ${given[@]+"${given[@]}"}
+  fi
   while [ $# -gt 0 ]; do
     case "$1" in
       --round|--reasons|--issue|--host-fallbacks|--tickets|--ticket-reasons)
         [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value ($usage)"
+        save_args+=("$1" "$2")
         case "$1" in
           --round) round="$2" ;;
           --reasons) reasons="$2" ;;
@@ -1687,7 +1783,7 @@ spec_review_apply() {
           --ticket-reasons) ticket_reasons="$2" ;;
         esac
         shift 2 ;;
-      --unattended) unattended=true; shift ;;
+      --unattended) unattended=true; save_args+=("$1"); shift ;;
       *)
         # An override answer may begin with -, as -4: before <dir> any
         # leading dash makes an unknown option, after it only a double one -
@@ -1697,7 +1793,7 @@ spec_review_apply() {
         case "$opt_like" in -*) die "unknown option: $1 ($usage)" ;; esac
         if [ -z "$dir" ]; then
           dir="$1"
-        elif [ -z "$have_answer" ]; then answer="$1"; have_answer=1
+        elif [ -z "$have_answer" ]; then answer="$1"; have_answer=1; save_args+=("$1")
         else die "$usage"
         fi
         shift ;;
@@ -1730,7 +1826,9 @@ spec_review_apply() {
   fi
   [ -d "$dir" ] || die "no such directory: $dir"
   dir="${dir%/}"
-  [ ! -s "$dir/applied.log" ] \
+  [ -z "$resume" ] && [ -e "$dir/$SPEC_ROUND_APPLY_ANSWER" ] \
+    && die "$dir/$SPEC_ROUND_APPLY_ANSWER holds the answer of an apply that died - run spec-review apply $dir --resume --round $round to resume it"
+  [ -n "$resume" ] || [ ! -s "$dir/applied.log" ] \
     || die "$dir/applied.log records writes that already landed: $(spec_review_landed "$dir") - this review stopped at a failed write; apply refuses to run again"
   # An autopilot round's two runs (see spec_review_hold): the first holds the
   # fundamental items back, the run after the reply, finding fundamental.md,
@@ -1755,6 +1853,14 @@ spec_review_apply() {
       || die "the flow on issue #$issue is done - spec-review apply acts only on an active flow's issue; for another issue use --issue <n>"
   fi
 
+  # The changelog comment landed: only the local tail is left.
+  if [ -n "$resume" ] && grep -Fxq -- "the changelog comment on issue #$issue" "$dir/applied.log" 2>/dev/null; then
+    [ -f "$dir/changelog.md" ] || die "changelog.md not found in $dir"
+    local landed_log
+    landed_log="$(cat "$dir/changelog.md")"
+    spec_review_finish "$dir" "$landed_log"
+    return 0
+  fi
   [ -f "$dir/spec.md" ] || die "spec.md not found in $dir"
   [ -f "$dir/batch.md" ] || die "batch.md not found in $dir"
   if [ ! -e "$dir/spec.fetched.md" ]; then
@@ -1800,6 +1906,7 @@ spec_review_apply() {
     if [ -z "$ticket_answer" ]; then
       # The pause: the session drafts the ticket items and runs apply again.
       spec_review_local_write "$dir/spec.md" "$text"
+      spec_review_clear_answer "$dir"
       note "$kind"
       exit 3
     fi
@@ -1816,6 +1923,10 @@ spec_review_apply() {
   for j in ${TK_T[@]+"${!TK_T[@]}"}; do
     spec_review_local_write "$dir/ticket-${TK_T[$j]}.md" "${TK_TEXT[$j]}"
   done
+
+  # The answer saved before the first GitHub write, for --resume to rerun; a
+  # resumed run keeps the file it was resumed from.
+  [ -n "$resume" ] || spec_review_save_answer "$dir" "${save_args[@]}"
 
   local held_any=""
   [ "$SR_FMODE" != hold ] || [ "${#SR_IT_FUND[@]}" -eq 0 ] || held_any=1
@@ -1858,18 +1969,5 @@ spec_review_apply() {
     return 0
   fi
   spec_review_write "$dir" "the changelog comment on issue #$issue" "${comment[@]}" "$dir/changelog.md"
-  # The settled file, last: a pause or a failed write before this point
-  # appends nothing, so a rerun never appends a changelog twice.
-  { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
-    || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
-  if [ "$SR_FMODE" = resume ]; then
-    rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
-      && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
-      || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
-  fi
-  # The round's completion, the very last step: spec round reads it to tell
-  # a resumed flow which round runs next, so it exists only once every write
-  # above has landed.
-  { : >"$dir/$SPEC_ROUND_COMPLETE"; } 2>/dev/null \
-    || die "could not write $dir/$SPEC_ROUND_COMPLETE - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
+  spec_review_finish "$dir" "$log"
 }
