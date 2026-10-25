@@ -2,6 +2,8 @@
 
 Amends ADR-0034, ADR-0041 and ADR-0050.
 
+Amended by ADR-0056: a usage-limit stop is retried after its reset.
+
 Every flow boundary needed a human `/clear` and `/orchestrator:next`. Headless
 sessions can start phases, but they need a phase record every session can reach
 and a mutual-exclusion primitive across watchers.

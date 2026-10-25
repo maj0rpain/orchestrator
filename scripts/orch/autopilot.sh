@@ -218,6 +218,7 @@ autopilot_iso_epoch() {
 
 AUTOPILOT_RUNNING_LABEL="orch:running"
 AUTOPILOT_HUMAN_LABEL="needs-human"
+AUTOPILOT_LIMITED_LABEL="orch:limited"
 
 # autopilot_chain_die <landed> <issue> <what> <gh-stderr>: dies for a write of
 # a chain that failed, naming the reason and the writes that landed before it.
@@ -438,6 +439,7 @@ autopilot_label_entries() {
   done
   printf '%s|fbca04|Autopilot session running\n' "$AUTOPILOT_RUNNING_LABEL"
   printf '%s|d93f0b|Waiting on the human\n' "$AUTOPILOT_HUMAN_LABEL"
+  printf '%s|c5def5|Autopilot session stopped on a usage limit; retried after the reset\n' "$AUTOPILOT_LIMITED_LABEL"
 }
 
 # Claude Code's usage-limit messages, as grep -Ei reads it: the one pattern for
@@ -474,7 +476,7 @@ autopilot_orch_in() {
   cd "$dir" && "$(autopilot_self)" "$@" >/dev/null
 }
 
-# autopilot_labels_ensure: the six labels exist with their colour and
+# autopilot_labels_ensure: the labels exist with their colour and
 # description. A failed upsert dies naming the label, stopping the tick.
 autopilot_labels_ensure() {
   local name colour description gh_err
@@ -497,14 +499,14 @@ autopilot_claims_read() {
 # names the phase and <detail> - then releases the claim, last.
 autopilot_stop() {
   local issue="$1" kind="$2" phase="$3" detail="$4" body gh_err
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$AUTOPILOT_HUMAN_LABEL" ||
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$AUTOPILOT_HUMAN_LABEL" --remove "$AUTOPILOT_LIMITED_LABEL" ||
     autopilot_chain_die "" "$issue" "add $AUTOPILOT_HUMAN_LABEL" "$gh_err"
   body="$(mktemp)" || die "could not create a temp file for the $kind comment"
   case "$kind" in
     refusal) printf '%s%s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
       "$AUTOPILOT_REFUSAL_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" >"$body" ;;
-    *) printf '%s%s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically. Remove the label to have the watcher start the phase again.\n' \
-      "$AUTOPILOT_FAILURE_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" >"$body" ;;
+    *) printf '%s%s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
+      "$AUTOPILOT_FAILURE_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL" >"$body" ;;
   esac
   capture_err gh_err adapter_issue_comment "$issue" "$body" || {
     rm -f "$body"
@@ -512,6 +514,59 @@ autopilot_stop() {
   }
   rm -f "$body"
   autopilot_release "$issue" "added $AUTOPILOT_HUMAN_LABEL, posted the $kind comment"
+}
+
+# The first line of a limit stop comment opens with this, then the phase, then
+# " -->".
+AUTOPILOT_LIMITED_PREFIX='<!-- orch:limited '
+
+# autopilot_limit_count <issue> <phase> <var>: the limit stop comments of
+# <phase> before now, into <var>, counted newest first up to the first refusal,
+# failure or question comment, handoff comment, or limit stop comment of
+# another phase; other comments are skipped. Non-zero when the comments cannot
+# be read.
+autopilot_limit_count() {
+  local json gh_err n
+  capture json gh_err adapter_issue_comments_json "$1" || return 1
+  n="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg lprefix "$AUTOPILOT_LIMITED_PREFIX" --arg phase "$2" "$AUTOPILOT_COMMENT_JQ"'
+    def limit_phase: first_line | if startswith($lprefix) and endswith(" -->") then ltrimstr($lprefix) | rtrimstr(" -->") else null end;
+    def handoff: first_line | startswith("<!-- orch:handoff ");
+    reduce (reverse[]) as $c ({n: 0, done: false};
+      if .done then .
+      elif ($c | stop_phase != null or question_comment("") or handoff) then .done = true
+      elif ($c | limit_phase) != null then
+        if ($c | limit_phase) == $phase then .n += 1 else .done = true end
+      else . end) | .n' <<<"$json")" || return 1
+  printf -v "$3" '%s' "$n"
+}
+
+# autopilot_limit_stop <issue> <phase> <reset> <rc> <log>: ends a phase whose
+# session stopped on a usage limit. With fewer than two such stops of the phase
+# before it, adds orch:limited, comments, then releases the claim; the third in
+# a row, and a stop whose comments cannot be read, take the failure path.
+autopilot_limit_stop() {
+  local issue="$1" phase="$2" reset="$3" rc="$4" log="$5" count body gh_err when="" landed
+  [ -z "$reset" ] || when=" (resets $reset)"
+  autopilot_limit_count "$issue" "$phase" count || {
+    autopilot_stop "$issue" failure "$phase" "the session stopped on a usage limit$when and exited with code $rc, and the issue's comments could not be read to count the stops in a row; log: $log"
+    return 0
+  }
+  if [ "$count" -ge 2 ]; then
+    autopilot_stop "$issue" failure "$phase" "the session stopped on a usage limit$when and exited with code $rc, the third in a row in the $phase phase; log: $log"
+    return 0
+  fi
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$AUTOPILOT_LIMITED_LABEL" ||
+    autopilot_chain_die "" "$issue" "add $AUTOPILOT_LIMITED_LABEL" "$gh_err"
+  body="$(mktemp)" || die "could not create a temp file for the limit stop comment"
+  printf '%s%s -->\nThe session stopped on a usage limit in the %s phase, which resets %s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
+    "$AUTOPILOT_LIMITED_PREFIX" "$phase" "$phase" "${reset:-at an unknown time}" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log" >"$body"
+  capture_err gh_err adapter_issue_comment "$issue" "$body" || {
+    rm -f "$body"
+    autopilot_chain_die "added $AUTOPILOT_LIMITED_LABEL" "$issue" "post the limit stop comment" "$gh_err"
+  }
+  rm -f "$body"
+  landed="added $AUTOPILOT_LIMITED_LABEL, posted the limit stop comment"
+  autopilot_release "$issue" "$landed"
 }
 
 # autopilot_minimal_plan <file>: the plan a hand-labelled issue gets: the repo
@@ -578,7 +633,13 @@ autopilot_short_slug() {
 # A refusal or a failed write ends in autopilot_stop and returns 0: the claim is
 # released, the tick goes on.
 autopilot_pickup() {
-  local issue="$1" phase="$2" side slug title labels gh_err recorded state redo
+  local issue="$1" phase="$2" limited="${3:-}" side slug title labels gh_err recorded state redo
+  if [ -n "$limited" ]; then
+    capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_LIMITED_LABEL" || {
+      autopilot_stop "$issue" failure "$phase" "step removing $AUTOPILOT_LIMITED_LABEL failed: $(gh_reason "$gh_err")"
+      return 0
+    }
+  fi
   side="$(side_checkout_for_issue "$issue")" || side=""
   if [ -z "$side" ]; then
     # labels is the read's throwaway half.
@@ -719,7 +780,7 @@ autopilot_tick() {
       *) die "could not claim issue #$issue: $(gh_reason "$gh_err") - the tick stops" ;;
     esac
     count=$((count + 1))
-    autopilot_pickup "$issue" "$phase"
+    if list_has "$labels" "$AUTOPILOT_LIMITED_LABEL"; then autopilot_pickup "$issue" "$phase" limited; else autopilot_pickup "$issue" "$phase"; fi
   done <<<"$candidates"
 }
 
@@ -913,13 +974,10 @@ autopilot_run() {
     limited=1
   fi
   if [ "$limited" = 1 ]; then
-    if [ -n "$reset" ]; then
-      detail="the session stopped on a usage limit (resets $reset) and exited with code $rc; log: $log"
-    else
-      detail="the session stopped on a usage limit and exited with code $rc; log: $log"
-      reset="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
-    fi
+    [ -n "$reset" ] || reset="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
     autopilot_limit_write "$dir" "$log" "$reset"
+    autopilot_limit_stop "$issue" "$phase" "$reset" "$rc" "$log"
+    return 0
   fi
   autopilot_stop "$issue" failure "$phase" "$detail"
 }
