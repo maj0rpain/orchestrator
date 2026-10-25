@@ -353,25 +353,25 @@ review_file() {
 # built aside and moved into place, so a refused run leaves <path> as it was.
 review_known_items() {
   [ $# -eq 2 ] || die "usage: orch.sh review known-items <path> <loop boundary>"
-  local path="$1" boundary="$2" implement plan
+  local path="$1" boundary="$2" implement plan issue="" scratch="" impl_file plan_file
   case "$boundary" in ''|*[!0-9]*) die "not a loop boundary: $boundary (want the iteration read before the loop's first)" ;; esac
   boundary=$((10#$boundary))
-  implement="$HANDOFF_DIR/$(handoff_file_for review)"
-  plan="$HANDOFF_DIR/$(handoff_file_for spec)"
+  # In an autopilot session the handoffs are comments, fetched aside and read
+  # as files; otherwise the resolver gives the $HANDOFF_DIR paths.
   if autopilot_active; then
-    # The handoffs are comments: fetched aside, then read as files.
-    local issue name
     require_issue issue
-    implement="$HANDOFF_SCRATCH_DIR/$(handoff_file_for review)"
-    plan="$HANDOFF_SCRATCH_DIR/$(handoff_file_for spec)"
-    for name in "$implement" "$plan"; do
-      name="${name##*/}"
-      handoff_comment_fetch "$issue" "${name%.md}" "$HANDOFF_SCRATCH_DIR/$name" ||
-        die "issue #$issue has no ${name%.md} handoff comment"
-    done
+    scratch="$HANDOFF_SCRATCH_DIR"
   fi
-  [ -f "$implement" ] || die "implement handoff not found: $implement"
-  [ -f "$plan" ] || die "plan handoff not found: $plan"
+  impl_file="$(handoff_file_for review)"
+  plan_file="$(handoff_file_for spec)"
+  implement="$(handoff_resolve "$issue" "$impl_file" "$scratch")" || {
+    [ -z "$issue" ] || handoff_missing "$issue" "${impl_file%.md}"
+    die "implement handoff not found: $implement"
+  }
+  plan="$(handoff_resolve "$issue" "$plan_file" "$scratch")" || {
+    [ -z "$issue" ] || handoff_missing "$issue" "${plan_file%.md}"
+    die "plan handoff not found: $plan"
+  }
 
   local record n entry tag deviations="" waiting="" filed="" rejected=""
   section_entries_append deviations "$implement" '## Deviations'

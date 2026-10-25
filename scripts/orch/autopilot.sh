@@ -167,7 +167,7 @@ autopilot_plan_value() {
   local issue file value
   require_issue issue
   file="$(mktemp)" || die "could not create a temp file for the plan comment"
-  handoff_comment_fetch "$issue" 01-plan "$file" || { rm -f "$file"; die "issue #$issue has no 01-plan handoff comment"; }
+  handoff_comment_fetch "$issue" 01-plan "$file" || { rm -f "$file"; handoff_missing "$issue" 01-plan; }
   value="$(autopilot_block_values "$file" "$1")"
   rm -f "$file"
   is_positive_int "$value" ||
@@ -197,7 +197,7 @@ autopilot_start() {
     die "issue #$issue already carries the phase label $(autopilot_phase_label "$phase") - it is already an autopilot flow"
   done
   handoff_check "$file" "" 01-plan.md autopilot || die "plan $file is not valid - nothing posted"
-  handoff_comment_post "$issue" 01-plan "$file"
+  handoff_comment_post "$issue" 01-plan "$file" || exit 1
   first="$(autopilot_phase_label "${PHASES%% *}")"
   capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"

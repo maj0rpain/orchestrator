@@ -75,7 +75,7 @@ cmd_phase() {
         # The handoff is the posted comment: fetched, then checked as a file.
         require_issue issue
         file="$(handoff_resolve "$issue" "$name" "$HANDOFF_SCRATCH_DIR")" ||
-          die "issue #$issue has no ${name%.md} handoff comment - post it with handoff post before leaving the $phase phase"
+          handoff_missing "$issue" "${name%.md}" "post it with handoff post before leaving the $phase phase"
         handoff_check "$file" "" "$name" || die "the ${name%.md} comment on issue #$issue is not valid - post a fixed one, then run phase advance again; the flow stays at $phase"
       else
         file="$(handoff_resolve "" "$name" "")" || true

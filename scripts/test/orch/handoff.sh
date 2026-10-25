@@ -520,8 +520,19 @@ assert_eq "posting nothing" "$(fake_snapshot)" "$before"
 fake_fail adapter_issue_comment "HTTP 502"
 out="$("$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
 assert_status "a post gh refuses dies" "$st" 1
+assert_contains "showing the gh reason" "$out" "gh could not post the 01-plan handoff on issue #7: HTTP 502"
 fake_unfail
 assert_eq "having posted nothing" "$(fake_snapshot)" "$before"
+post_tmp="$(mktemp -d)"
+fake_fail adapter_issue_comment "HTTP 502"
+TMPDIR="$post_tmp" "$ORCH" handoff post 01-plan "$planf" >/dev/null 2>&1
+fake_unfail
+assert_eq "a failed post leaves no temp file" "$(ls -A "$post_tmp")" ""
+fake_fail adapter_issue_json "HTTP 503 read"
+out="$("$ORCH" handoff path spec 2>&1)"; st=$?
+assert_status "handoff path with a failed comments read dies" "$st" 1
+assert_contains "showing the gh reason" "$out" "HTTP 503 read"
+fake_unfail
 unset ORCH_AUTOPILOT
 restore_suite_env
 

@@ -224,14 +224,25 @@ handoff_name_check() {
 
 # handoff_comment_post <issue> <name> <file>: posts <file>, already validated,
 # as a new comment on <issue> under <name>'s marker. The newest tagged comment
-# is the handoff, so a post never edits an earlier one.
+# is the handoff, so a post never edits an earlier one. Its temp body is
+# removed on every path. Returns non-zero, with `orch: gh could not post ...:
+# <reason>` on stderr, when the post fails; each caller chooses its reaction.
 handoff_comment_post() {
-  local issue="$1" name="$2" file="$3" body
+  local issue="$1" name="$2" file="$3" body gh_err
   body="$(mktemp)" || die "could not create a temp file for the handoff comment"
   { handoff_marker "$name"; cat "$file"; } >"$body"
-  gh_or_die "post the $name handoff on issue #$issue" adapter_issue_comment "$issue" "$body" \
-    || { rm -f "$body"; return 1; }
+  if ! capture_err gh_err adapter_issue_comment "$issue" "$body"; then
+    rm -f "$body"
+    warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
+    return 1
+  fi
   rm -f "$body"
+}
+
+# handoff_missing <issue> <name> [<hint>]: dies, `issue #<issue> has no <name>
+# handoff comment`, followed by ` - <hint>` when there is one.
+handoff_missing() {
+  die "issue #$1 has no $2 handoff comment${3:+ - $3}"
 }
 
 # handoff_comment_fetch <issue> <name> <file>: writes the body of <issue>'s
@@ -288,7 +299,7 @@ handoff_resolve() {
   local issue="$1" file="$2" dir="$3"
   if autopilot_active; then
     printf '%s/%s\n' "$dir" "$file"
-    (handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file") 2>/dev/null && [ -f "$dir/$file" ]
+    (handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file") && [ -f "$dir/$file" ]
     return
   fi
   printf '%s/%s\n' "$HANDOFF_DIR" "$file"
@@ -322,8 +333,7 @@ cmd_handoff() {
         for earlier in $(handoffs_due "$1"); do
           [ "$earlier" = "$file" ] || handoff_comment_fetch "$issue" "${earlier%.md}" "$scratch/$earlier" || true
         done
-        handoff_resolve "$issue" "$file" "$scratch" ||
-          die "issue #$issue has no ${file%.md} handoff comment"
+        handoff_resolve "$issue" "$file" "$scratch" || handoff_missing "$issue" "${file%.md}"
         return 0
       fi
       handoff_resolve "" "$file" ""
@@ -336,7 +346,7 @@ cmd_handoff() {
       local issue
       require_issue issue
       handoff_check "$2" "" "$1.md" || die "handoff $2 is not valid - nothing posted"
-      handoff_comment_post "$issue" "$1" "$2"
+      handoff_comment_post "$issue" "$1" "$2" || exit 1
       ;;
     fetch)
       [ $# -eq 2 ] || die "usage: orch.sh handoff fetch <name> <file>"
@@ -344,7 +354,7 @@ cmd_handoff() {
       handoff_name_check "$1"
       local issue
       require_issue issue
-      handoff_comment_fetch "$issue" "$1" "$2" || die "issue #$issue has no $1 handoff comment"
+      handoff_comment_fetch "$issue" "$1" "$2" || handoff_missing "$issue" "$1"
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"

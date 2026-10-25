@@ -1419,7 +1419,12 @@ fake_issue 7 open ready-for-agent orch:review orch:running
 mkdir -p .orchestrator/review
 out="$(ORCH_AUTOPILOT=1 "$ORCH" review known-items known.md 0 2>&1)"; st=$?
 assert_status "with no handoff comment it dies" "$st" 1
-assert_contains "naming the missing comment" "$out" "no 03-implement handoff comment"
+assert_contains "naming the missing comment" "$out" "issue #7 has no 03-implement handoff comment"
+fake_fail adapter_issue_json "HTTP 502 comments"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review known-items known.md 0 2>&1)"; st=$?
+assert_status "a failed comments read dies" "$st" 1
+assert_contains "showing the gh reason" "$out" "HTTP 502 comments"
+fake_unfail
 rm -rf .orchestrator/handoff
 printf '## Decisions\nNone\n\n## Rejected alternatives\n\n- Polling the PR\n  - too slow\n' >plan.md
 printf '## PR\n#7\n## Deviations\n\n- Kept the cache\n## Verification\nok\n' >impl.md

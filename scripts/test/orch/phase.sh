@@ -190,6 +190,12 @@ complete_handoff "$spec_h"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance with no posted handoff dies" "$st" 1
 assert_contains "naming the missing comment" "$out" "no 02-spec handoff comment"
+assert_contains "and the hint" "$out" "post it with handoff post before leaving the spec phase"
+fake_fail adapter_issue_json "HTTP 504 read"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed comments read dies" "$st" 1
+assert_contains "showing the gh reason" "$out" "HTTP 504 read"
 assert_eq "leaving the label" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_eq "and the claim held" "$(fake_claim_held 7)" held
 
