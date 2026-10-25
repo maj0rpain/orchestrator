@@ -635,9 +635,9 @@ autopilot_short_slug() {
   printf '%s\n' "$slug"
 }
 
-# autopilot_pickup <issue> <phase>: steps 2 to 5 of a tick for a claimed issue.
-# A refusal or a failed write ends in autopilot_stop and returns 0: the claim is
-# released, the tick goes on.
+# autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
+# claimed issue. A refusal or a failed write ends in autopilot_stop and returns
+# 0: the claim is released, the tick goes on.
 autopilot_pickup() {
   local issue="$1" phase="$2" limited="${3:-}" side slug title labels gh_err recorded state redo
   if [ -n "$limited" ]; then
@@ -758,7 +758,7 @@ autopilot_candidates() {
 # One tick). A claim create that fails for a reason other than a lost race
 # stops the tick, naming it.
 autopilot_tick() {
-  local main_root cap claims count issue state labels gh_err phase rc candidates
+  local main_root cap claims count issue state labels gh_err phase rc candidates limited_arg
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
   cd "$main_root" || die "could not enter the main checkout $main_root"
@@ -786,7 +786,9 @@ autopilot_tick() {
       *) die "could not claim issue #$issue: $(gh_reason "$gh_err") - the tick stops" ;;
     esac
     count=$((count + 1))
-    if list_has "$labels" "$AUTOPILOT_LIMITED_LABEL"; then autopilot_pickup "$issue" "$phase" limited; else autopilot_pickup "$issue" "$phase"; fi
+    limited_arg=""
+    if list_has "$labels" "$AUTOPILOT_LIMITED_LABEL"; then limited_arg=limited; fi
+    autopilot_pickup "$issue" "$phase" "$limited_arg"
   done <<<"$candidates"
 }
 
