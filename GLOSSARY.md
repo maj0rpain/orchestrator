@@ -510,6 +510,8 @@ the loop is in the number of looks. An autopilot flow's first loop runs the
 budget chosen at the planning close; each loop after a bounded stop runs one
 the driver chooses from what the loop before it left, never more than that
 first budget, unless the human's reply names one.
+A loop that resumes a pending or interrupted iteration asks for and picks no
+budget: it keeps the one already recorded.
 
 **Iteration**:
 One pass within a review loop: sync the branch with its base, review the

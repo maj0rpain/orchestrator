@@ -52,6 +52,18 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
 ## Before the first iteration
 
+**Every loop, first** - interactive or autopilot, before any
+`autopilot answer` or budget question - run `bash "$ORCH" review terminal`. On
+`pending` or `interrupted` the previous session died mid-loop: run
+`bash "$ORCH" review resume`, read no reply, ask and pick no budget (the
+recorded `iteration` and `budget` stand), and carry on from what it
+prints. `rerun <i>`
+runs iteration `<i>` again from step 2's sync under that number, without
+`review begin`; `next` goes to step 1's `review begin`; `terminate` goes to
+Termination. A refusal (exit 1) is the human's to settle: stop and show its
+message. Only `stop`, and `none` on a first loop, take the paths below;
+`ready`, `malformed` and `unreadable` keep their usual handling.
+
 **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) the loop
 runs headless and asks the human nothing directly. First, when
 `iteration` is not 0 - the previous loop ended in a bounded stop of any kind -
