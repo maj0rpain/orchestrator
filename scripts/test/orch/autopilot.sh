@@ -712,6 +712,7 @@ ndjson_with 'Claude AI usage limit reached' >"$launcher_dir/out"; printf '1\n' >
 limit_epoch="$(date -u -d "$(cat "$top/.orchestrator/autopilot/limit")" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$(cat "$top/.orchestrator/autopilot/limit")" +%s)"
 assert_eq "no reset time in the message: one hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
 assert_contains "the comment still names the usage limit" "$(fake_comments_of 8)" "usage limit"
+assert_not_contains "but names no reset time it does not have" "$(cat "$ORCH_GH_FAKE_STORE/issues/8/comments/$(ls "$ORCH_GH_FAKE_STORE/issues/8/comments" | sort -n | tail -n 1)/body")" "resets"
 
 # the other usage-limit wordings are detected, each with the one hour fallback
 for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
@@ -829,6 +830,11 @@ event_session 1
 assert_eq "a rejecting event of a released claim marks no issue" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_not_contains "and posts no limit stop comment" "$(fake_comments_of 7)" "usage limit"
 rm -f "$launcher_dir/release"
+# a five-hour window at the top level pauses too
+printf '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":%s,"rateLimitType":"five_hour","utilization":0.95}}\n' "$r1" >"$launcher_dir/out"
+event_session 0
+assert_eq "a top-level five-hour window at 0.95 writes its reset" "$(cat "$limit_file")" "$(iso_of "$r1")"
+rm -f "$limit_file"
 rl_event allowed 0.89 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
 event_session 0
 assert_eq "0.89 writes nothing" "$(on_disk "$limit_file")" absent
@@ -909,7 +915,7 @@ lim_relabel 7 orch:spec ready-for-agent orch:running
 limit_run 7 >/dev/null
 assert_eq "a first limit stop leaves orch:limited, not needs-human" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 assert_eq "and releases the claim" "$(fake_claim_held 7)" free
-assert_eq "its comment opens with the marker" "$(fake_comments_of 7 | tail -n +1 | grep -m1 'orch:limited')" "<!-- orch:limited spec -->"
+assert_eq "its comment opens with the marker" "$(head -n 1 "$ORCH_GH_FAKE_STORE/issues/7/comments/$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | sort -n | tail -n 1)/body")" "<!-- orch:limited spec -->"
 assert_contains "gives the reset time" "$(fake_comments_of 7)" "$lim_iso"
 assert_contains "and the retry number" "$(fake_comments_of 7)" "retry 1 of 2, started once the limit pause has passed"
 assert_contains "and the log path" "$(fake_comments_of 7)" "/autopilot/logs/7-spec-"
@@ -998,7 +1004,7 @@ git config --unset orchestrator.autopilot.cap
 # a lost claim leaves orch:limited in place
 fake_issue 6 open ready-for-agent orch:spec orch:limited
 fake_claim_seed 6 otherhost 1
-rm -f "$launcher_dir/calls" "$ORCH_GH_FAKE_STORE/issues/7/labels"; fake_issue 7 open ready-for-agent orch:spec
+rm -f "$launcher_dir/calls"; fake_issue 7 open ready-for-agent orch:spec
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a lost claim leaves orch:limited in place" "$(fake_labels_of 6)" "orch:limited orch:spec ready-for-agent "
 rm -f "$ORCH_GH_FAKE_STORE/claims/6"

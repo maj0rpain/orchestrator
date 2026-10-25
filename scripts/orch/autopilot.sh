@@ -267,6 +267,10 @@ autopilot_phase_move() {
 # " -->".
 AUTOPILOT_QUESTION_PREFIX='<!-- orch:question '
 
+# The first line of a limit stop comment opens with this, then the phase, then
+# " -->".
+AUTOPILOT_LIMITED_PREFIX='<!-- orch:limited '
+
 # What a refusal or failure comment opens with, before the phase; autopilot_stop
 # writes them and stop_phase below reads them back.
 AUTOPILOT_REFUSAL_OPENING='Autopilot refused to run the '
@@ -531,10 +535,6 @@ autopilot_stop() {
   autopilot_stop_write "$issue" "$kind" "$text" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL"
 }
 
-# The first line of a limit stop comment opens with this, then the phase, then
-# " -->".
-AUTOPILOT_LIMITED_PREFIX='<!-- orch:limited '
-
 # autopilot_limit_count <issue> <phase> <var>: the limit stop comments of
 # <phase> before now, into <var>, counted newest first up to the first refusal,
 # failure or question comment, handoff comment, or limit stop comment of
@@ -560,7 +560,7 @@ autopilot_limit_count() {
 # before it, adds orch:limited, comments, then releases the claim; the third in
 # a row, and a stop whose comments cannot be read, take the failure path.
 autopilot_limit_stop() {
-  local issue="$1" phase="$2" reset="$3" rc="$4" log="$5" count text when="" stopped
+  local issue="$1" phase="$2" reset="$3" rc="$4" log="$5" count text when="" at="" stopped
   [ -z "$reset" ] || when=" (resets $reset)"
   stopped="the session stopped on a usage limit$when and exited with code $rc"
   autopilot_limit_count "$issue" "$phase" count || {
@@ -571,8 +571,9 @@ autopilot_limit_stop() {
     autopilot_stop "$issue" failure "$phase" "$stopped, the third in a row in the $phase phase; log: $log"
     return 0
   fi
-  printf -v text '%s\nThe session stopped on a usage limit in the %s phase, which resets %s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
-    "$(autopilot_limit_marker "$phase")" "$phase" "${reset:-at an unknown time}" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
+  [ -z "$reset" ] || at=", which resets $reset"
+  printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
+    "$(autopilot_limit_marker "$phase")" "$phase" "$at" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
   autopilot_stop_write "$issue" "limit stop" "$text" "$AUTOPILOT_LIMITED_LABEL"
 }
 
@@ -866,7 +867,7 @@ autopilot_event_rejecting_reset() {
 # epoch seconds, when its utilization is 0.9 or more; non-zero otherwise.
 autopilot_event_five_hour_reset() {
   local out
-  out="$(jq -r '.rate_limit_info.unifiedWindows.five_hour // {} | select((.utilization | numbers) >= 0.9) | .resetsAt | numbers | floor' <<<"$1" 2>/dev/null)" || return 1
+  out="$(jq -r '.rate_limit_info // {} | (if .rateLimitType == "five_hour" then . else .unifiedWindows.five_hour end) // {} | select((.utilization | numbers) >= 0.9) | .resetsAt | numbers | floor' <<<"$1" 2>/dev/null)" || return 1
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
 }
@@ -925,7 +926,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name event pause_epoch reject_epoch limited flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name event pause_epoch pause_iso reject_epoch limited flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
@@ -983,8 +984,9 @@ autopilot_run() {
     limited=1
   fi
   if [ "$limited" = 1 ]; then
-    [ -n "$reset" ] || reset="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
-    autopilot_limit_write "$dir" "$log" "$reset"
+    pause_iso="$reset"
+    [ -n "$pause_iso" ] || pause_iso="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
+    autopilot_limit_write "$dir" "$log" "$pause_iso"
     autopilot_limit_stop "$issue" "$phase" "$reset" "$rc" "$log"
     return 0
   fi
