@@ -36,7 +36,11 @@ case "$ORCH_SOURCE" in
   /*) ORCH_SCRIPTS="/" ;;
   *) ORCH_SCRIPTS="." ;;
 esac
-readonly ORCH_SOURCE ORCH_SCRIPTS
+# The plugin root: the directory above ORCH_SCRIPTS, which is also where every
+# skill resolves orch.sh and the capabilities reference from. Resolved in a
+# subshell, so it is a plain assignment, marked readonly with the rest.
+ORCH_PLUGIN="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
+readonly ORCH_SOURCE ORCH_SCRIPTS ORCH_PLUGIN
 # The Flow state module: the state format, ORCH_DIR_NAME and now, shared with
 # the hooks. Marked readonly here, where orch.sh has always fixed it, since the
 # module assigns it plainly.

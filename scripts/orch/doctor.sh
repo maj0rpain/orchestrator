@@ -256,10 +256,6 @@ check_default_branch() {
 
 # plugin environment ---------------------------------------------------------
 
-# The plugin root doctor runs from: the directory above orch.sh's ORCH_SCRIPTS,
-# which is also where every skill resolves orch.sh and the capabilities
-# reference from.
-D_PLUGIN="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
 HOST_REF="docs/host-capabilities.md"
 
 # The host's column header in the capabilities reference.
@@ -274,12 +270,12 @@ host_name() {
 # Unverified), read from the reference itself rather than restated here, so
 # doctor and the table can never disagree. One per line.
 host_marked() {
-  [ -f "$D_PLUGIN/$HOST_REF" ] || return 0
+  [ -f "$ORCH_PLUGIN/$HOST_REF" ] || return 0
   awk -F'|' -v host="$1" -v mark="**$2**" '
     function trim(x) { gsub(/^ +| +$/, "", x); return x }
     /^\| *Capability *\|/ { for (i = 2; i < NF; i++) if (trim($i) == host) col = i; next }
     col && /^\|/ && index($col, mark) { print trim($2) }
-  ' "$D_PLUGIN/$HOST_REF"
+  ' "$ORCH_PLUGIN/$HOST_REF"
 }
 
 D_HOST=""
@@ -355,7 +351,7 @@ check_orch_sh() {
     d_warn "orch.sh missing beside the orchestrator skills in ${store/#$HOME/\~}: $(list_join "$names") - a skills-only install."
     found=1
   done
-  if [ -z "$found" ]; then d_ok "orch.sh: ${D_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
+  if [ -z "$found" ]; then d_ok "orch.sh: ${ORCH_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
   d_orch_remedy
 }
 
