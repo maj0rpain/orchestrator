@@ -303,7 +303,7 @@ autopilot_limit_marker() { printf '%s%s -->\n' "$AUTOPILOT_LIMITED_PREFIX" "$1";
 # than done.
 autopilot_phase_arg() {
   local die_fn="${2:-die}"
-  case " $PHASES " in *" $1 "*) ;; *) "$die_fn" "not a flow phase: $1 (want ${PHASES// /|})" ;; esac
+  word_listed "$PHASES" "$1" || "$die_fn" "not a flow phase: $1 (want ${PHASES// /|})"
   [ "$1" != "done" ] || "$die_fn" "a done flow asks no question"
 }
 

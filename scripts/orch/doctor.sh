@@ -639,11 +639,12 @@ h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude 
 check_state_phase() {
   local phase
   phase="$(state_get phase)"
-  case " $PHASES " in
-    *" $phase "*) d_ok "phase: $phase" ;;
-    *) d_fail "unknown phase: $phase (want one of: $PHASES)"
-       d_remedy "$(flow_cmd abort)" ;;
-  esac
+  if word_listed "$PHASES" "$phase"; then
+    d_ok "phase: $phase"
+  else
+    d_fail "unknown phase: $phase (want one of: $PHASES)"
+    d_remedy "$(flow_cmd abort)"
+  fi
 }
 
 check_flow_branch() {

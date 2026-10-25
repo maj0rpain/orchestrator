@@ -97,10 +97,7 @@ require_branch() { require_field "$1" branch "no branch recorded in state"; }
 # - advance, review ready, both redos, and init's seed - keeps its own guard on
 # which transition it may make, so a step back needs no handoff check here.
 phase_write() {
-  case " $PHASES " in
-    *" $1 "*) ;;
-    *) die "not a flow phase: $1 (want one of: $PHASES)" ;;
-  esac
+  word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
   state_write phase "$1"
 }
 

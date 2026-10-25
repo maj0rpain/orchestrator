@@ -115,7 +115,7 @@ spec_review_title() {
 
 # spec_review_lens_known <name>: whether <name> is one of the four lenses.
 spec_review_lens_known() {
-  case " $SPEC_REVIEW_LENSES " in *" $1 "*) [ -n "$1" ] ;; *) return 1 ;; esac
+  word_listed "$SPEC_REVIEW_LENSES" "$1"
 }
 
 # spec_review_option_index <item-index> <letter>: the index in SR_OP_ITEM of
@@ -1952,7 +1952,7 @@ spec_review_apply() {
   local done_t=" "
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     [ "${ST_KIND[$i]}" = ticket ] && [ "${ST_DISP[$i]:-}" = applied ] || continue
-    case "$done_t" in *" ${ST_T[$i]} "*) continue ;; esac
+    word_listed "$done_t" "${ST_T[$i]}" && continue
     done_t="$done_t${ST_T[$i]} "
     spec_review_write "$dir" "ticket #${ST_T[$i]}'s body" \
       cmd_issue update "${ST_T[$i]}" "$dir/ticket-${ST_T[$i]}.md"

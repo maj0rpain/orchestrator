@@ -79,6 +79,19 @@ done
 assert_eq "list_has matches whole lines literally, an item beginning with - included, one spanning lines never" \
   "$lh_verdicts" " y y y y n n n n n"
 
+# --- word_listed --------------------------------------------------------------
+# The one space-list membership test: a whole word, never several or part.
+echo
+echo "word_listed"
+new_repo >/dev/null
+wl_verdicts=""
+for wl_item in spec implement 'done' 'spec implement' impl '' 'implement review'; do
+  if sourced_orch word_listed "spec implement review done" "$wl_item"; then wl_verdicts="$wl_verdicts y"
+  else wl_verdicts="$wl_verdicts n"; fi
+done
+assert_eq "word_listed accepts a whole word of the list, never part of one, two adjacent words or an empty word" \
+  "$wl_verdicts" " y y y n n n n"
+
 # --- is_positive_int ----------------------------------------------------------
 # The one whole-number-of-1-or-more test.
 echo

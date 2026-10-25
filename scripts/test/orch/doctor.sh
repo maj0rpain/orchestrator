@@ -1037,6 +1037,10 @@ state_fixture phase nonsense
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "rejects an unknown phase" "$st" 1
 assert_contains "names the phase it does not know" "$out" "nonsense"
+state_fixture phase "spec implement"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "rejects a phase made of two adjacent phases" "$st" 1
+assert_contains "and reports it as an unknown phase" "$out" "unknown phase: spec implement"
 state_fixture phase spec
 
 state_fixture branch orch/9-gone
