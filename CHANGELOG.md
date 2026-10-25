@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.3
+
+The spec module writes its `spec-paused` and round markers through one helper, so a failed write of either reads `orch: cannot write <path>` with no raw shell error.
+
 ## 4.38.2
 
 A phase or lens name made of two adjacent list words is now refused: `orch.sh doctor` fails a `state.json` phase such as `spec implement`, and the phase writer, autopilot's phase argument and the spec review's lens check refuse it. Space-list membership now has one primitive, `word_listed`.
