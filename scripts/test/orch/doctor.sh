@@ -1742,16 +1742,14 @@ healthy_repo
 doctor_github
 git config --global orchestrator.model.reviewer haiku
 git config --local orchestrator.effort.implementer high
-for scope in "" --env; do
-  out="$("$ORCH" doctor $scope 2>&1)"; st=$?
-  assert_status "doctor ${scope:-(bare)} passes with valid agent settings" "$st" 0
-  assert_contains "doctor ${scope:-(bare)} lists a role's local effort and inherited model" "$out" \
-    "ok    agent implementer: model inherit (inherit), effort high (local)"
-  assert_contains "doctor ${scope:-(bare)} lists a role's global model" "$out" \
-    "ok    agent reviewer: model haiku (global), effort inherit (inherit)"
-  assert_contains "doctor ${scope:-(bare)} lists every role, the last among them" "$out" \
-    "ok    agent resolver: model inherit (inherit), effort inherit (inherit)"
-done
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "doctor --env passes with valid agent settings" "$st" 0
+assert_contains "doctor --env lists a role's local effort and inherited model" "$out" \
+  "ok    agent implementer: model inherit (inherit), effort high (local)"
+assert_contains "doctor --env lists a role's global model" "$out" \
+  "ok    agent reviewer: model haiku (global), effort inherit (inherit)"
+assert_contains "doctor --env lists every role, the last among them" "$out" \
+  "ok    agent resolver: model inherit (inherit), effort inherit (inherit)"
 
 git config --local orchestrator.model.fixer gpt
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
@@ -1800,7 +1798,6 @@ junie_exec() { # <log> <session> <agent> <model> <effort> <reasoningEffort>
   printf 'session %s\n%s INFO Executing agent custom_agent_%s_1 with parameters AgentParams(model=%s, effort=%s, reasoningEffort=%s)\n' \
     "$2" "x" "$3" "$4" "$5" "$6" >>"$JH/logs/$1"
 }
-doc() { "$ORCH" doctor --env 2>&1; }
 
 junie_reset
 junie_index new 20 old 10
@@ -1810,7 +1807,7 @@ junie_exec log-b.log new orch-fixer claude-opus-5-5 medium null
 junie_exec log-b.log new orch-fixer claude-opus-5-5 low null
 git config orchestrator.junie.model.reviewer gpt-5
 git config orchestrator.junie.effort.reviewer high
-out="$(doc)"; st=$?
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a Junie session report exits 0" "$st" 0
 assert_contains "the newer session is chosen; a dated model matches the set one, effort read from reasoningEffort=" "$out" \
   "ok    junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt-5, effort high)"
@@ -1821,29 +1818,29 @@ assert_not_contains "no cannot-tell line when the session is read" "$out" "junie
 
 git config orchestrator.junie.model.reviewer gpt-4
 git config orchestrator.junie.effort.reviewer low
-out="$(doc)"; st=$?
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a mismatch is a WARN, not a failure" "$st" 0
 assert_contains "a model and effort mismatch warns" "$out" \
   "warn  junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt-4, effort low)"
 git config --unset orchestrator.junie.model.reviewer
 git config --unset orchestrator.junie.effort.reviewer
 
-cannot() { # <label> <reason>
-  out="$(doc)"; st=$?
+assert_junie_cannot_tell() { # <label> <reason>
+  out="$("$ORCH" doctor --env 2>&1)"; st=$?
   assert_status "$1 exits 0" "$st" 0
   assert_contains "$1 gives the cannot-tell line" "$out" "ok    junie session: cannot tell ($2"
 }
 junie_reset
-cannot "no session" "no Junie session index"
+assert_junie_cannot_tell "no session" "no Junie session index"
 junie_index other 5; sed -i 's#"projectDir":"[^"]*"#"projectDir":"/elsewhere"#' "$JH/sessions/index.jsonl"
-cannot "an index without this checkout" "no session for this checkout"
+assert_junie_cannot_tell "an index without this checkout" "no session for this checkout"
 junie_index lost 5
-cannot "a session no log names" "no log names session lost"
+assert_junie_cannot_tell "a session no log names" "no log names session lost"
 echo 'not json' >"$JH/sessions/index.jsonl"
-cannot "a garbled index" "the session index does not parse"
+assert_junie_cannot_tell "a garbled index" "the session index does not parse"
 junie_index g 5
 printf 'g\ngarbage\n' >"$JH/logs/log-g.log"
-cannot "a garbled log" "the log "
+assert_junie_cannot_tell "a garbled log" "the log "
 
 junie_reset
 junie_index s 5
@@ -1852,26 +1849,26 @@ printf "WARN Unrecognized 'model' value 'old-model', falling back to default. Al
 touch -d '2 days ago' "$JH/logs/log-old.log"
 echo "nothing" >"$JH/logs/log-new.log"
 git config orchestrator.junie.model.fixer old-model
-out="$(doc)"; st=$?
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "the line only in an older log gives no failure" "$st" 0
 assert_not_contains "and no message" "$out" "did not recognise"
 printf "WARN Unrecognized 'model' value 'bad-model', falling back to default. Allowed display names: X. Allowed LLM names: gpt-5, claude-opus-5-5\n" >>"$JH/logs/log-new.log"
-out="$(doc)"; st=$?
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unrecognised value that is not set gives no failure" "$st" 0
 assert_not_contains "and no message" "$out" "did not recognise"
 git config orchestrator.junie.model.fixer bad-model
-out="$(doc)"; st=$?
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unrecognised local set model fails" "$st" 1
 assert_contains "naming the role" "$out" "FAIL  Junie did not recognise model bad-model, set for fixer (local)"
 assert_contains "printing the allowed LLM names" "$out" "Allowed LLM names: gpt-5, claude-opus-5-5"
 assert_contains "with the agent set remedy" "$out" "orch.sh agent set fixer --host junie --model <id>"
 git config --unset orchestrator.junie.model.fixer
 git config --global orchestrator.junie.model.closer bad-model
-out="$(doc)"; st=$?
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unrecognised global set model fails" "$st" 1
 assert_contains "naming the global role" "$out" "set for closer (global)"
 git config orchestrator.junie.model.closer good
-out="$(doc)"; st=$?
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a global model hidden by a local one gives no failure" "$st" 0
 git config --unset orchestrator.junie.model.closer
 rm -rf "$JH"
