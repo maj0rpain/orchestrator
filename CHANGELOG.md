@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.5
+
+Rename and reshape five spots in the spec review's module so each name says what it holds or does; no command's output, files or exit status change.
+
 ## 4.38.4
 
 A failed write to the clone's git exclude file now dies with one `orch: ` message naming the missing lines and the file, whichever command wrote it, and the confusable `exclude_lines` helper is gone.
