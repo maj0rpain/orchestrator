@@ -665,7 +665,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               creating the directory if it is not there yet
   review file <major|nit> <title> --axis <spec|standards|suite-cost>
               --finding-file <f> --severity-reason <r>
-              --location <file>:<line|suite> --sha <sha>
+              --location <<file>:<line>|suite> --sha <sha>
               --pr <url> --why <reason> [--spec-question <q>]
                               file a finding as a GitHub issue labelled
                               review:<severity>, the repo's needs-triage, and

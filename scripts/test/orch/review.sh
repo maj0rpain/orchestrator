@@ -357,7 +357,11 @@ fake_unfail
 # Every refusal comes before any write: the fake's label and issue stores are
 # as they were. The store starts empty, so "as they were" is also "nothing".
 fake_github
-usage="orch: usage: orch.sh review file <major|nit> <title> --axis <spec|standards|suite-cost> --finding-file <f> --severity-reason <r> --location <file>:<line|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+# shellcheck disable=SC2016 # expanded by the inner bash
+sevs="$(bash -c 'source "$1" && printf "%s" "${FILED_SEVERITIES// /|}"' _ "$ORCH")"
+# shellcheck disable=SC2016 # expanded by the inner bash
+axes="$(bash -c 'source "$1" && printf "%s" "${FILED_AXES// /|}"' _ "$ORCH")"
+usage="orch: usage: orch.sh review file <$sevs> <title> --axis <$axes> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
 before="$(fake_snapshot)"
 # each case is one line, label|drop|add: parts less the flag named by drop and
 # its value, then add, word-split on spaces, so no value in add may hold one
@@ -397,7 +401,10 @@ assert_eq "with the usage line" "$out" "$usage"
 parts_with --axis style
 out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses an unknown axis" "$st" 1
-assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec, standards or suite-cost)"
+assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec or standards or suite-cost)"
+for axis in $(bash -c 'source "$1" && printf "%s\n" "$FILED_AXES"' _ "$ORCH"); do
+  assert_contains "naming review axis $axis, read from FILED_AXES" "$out" "$axis"
+done
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 out="$("$ORCH" review file blocking "Wrong" "${parts[@]}" 2>&1)"; st=$?

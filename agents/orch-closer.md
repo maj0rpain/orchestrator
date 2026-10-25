@@ -75,7 +75,7 @@ Each finding is filed with:
 
 ```
 bash "<orch.sh>" review file <major|nit> "<title>" --axis <spec|standards|suite-cost> \
-  --finding-file <file> --severity-reason "<reason>" --location <file>:<line|suite> \
+  --finding-file <file> --severity-reason "<reason>" --location <<file>:<line>|suite> \
   --sha <head SHA> --pr <url> --why "<reason>" [--spec-question "<question>"]
 ```
 

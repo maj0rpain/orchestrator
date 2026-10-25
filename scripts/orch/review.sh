@@ -262,7 +262,7 @@ review_rerun() {
 # reaches GitHub rather than surfacing weeks later as "body does not parse" in
 # triage.
 review_file() {
-  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards|suite-cost> --finding-file <f> --severity-reason <r> --location <file>:<line|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
   local severity="$1" title="$2" flag value
   local axis="" finding="" reason="" location="" sha="" pr="" why="" question=""
@@ -301,7 +301,7 @@ review_file() {
   filed_severity_label "$severity" colour desc
   # The category follows the axis; finding triage confirms or flips it later.
   category="$(category_for_axis "$axis")" \
-    || die "not a review axis: $axis (want spec, standards or suite-cost)"
+    || die "not a review axis: $axis (want ${FILED_AXES// / or })"
   [ -n "$title" ] || die "the title is empty"
   [ -f "$finding" ] || die "finding file not found: $finding"
   [ -n "$(tr -d '[:space:]' <"$finding")" ] || die "finding file is empty: $finding"

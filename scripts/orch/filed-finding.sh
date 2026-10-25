@@ -19,6 +19,18 @@ readonly FILED_SEVERITY_TABLE="major:d93f0b nit:c5def5"
 FILED_SEVERITIES="$(for entry in $FILED_SEVERITY_TABLE; do printf '%s ' "${entry%%:*}"; done)"
 readonly FILED_SEVERITIES="${FILED_SEVERITIES% }"
 
+# The axis table: each review axis a finding is filed on, paired with the
+# category a finding filed on it starts in, as <axis>:<category>, in order. A
+# Spec finding misses what was asked for, so it is a bug; a Standards finding
+# improves how it was built, and so does a suite-cost one. Adding an axis is one
+# entry here.
+readonly FILED_AXIS_TABLE="spec:bug standards:enhancement suite-cost:enhancement"
+
+# The review axes alone, in the table's order, for usage lines, messages and
+# loops over them.
+FILED_AXES="$(for entry in $FILED_AXIS_TABLE; do printf '%s ' "${entry%%:*}"; done)"
+readonly FILED_AXES="${FILED_AXES% }"
+
 # filed_severity_label <sev> <colour_var> <desc_var>: writes the review:<sev>
 # label's colour, from the severity table, and description into the named
 # variables; returns 1, writing neither, for a severity with no entry.
@@ -83,16 +95,16 @@ triage_label_ensure() {
 }
 
 # category_for_axis <axis>: the category a finding filed on that review axis
-# starts in, whatever the axis's case. A Spec finding misses what was asked
-# for, so it is a bug; a Standards finding improves how it was built, and so
-# does a suite-cost one, the suite's cost growth `suite-cost check` reports.
-# Prints nothing and fails for any other axis; the caller words its own error.
+# starts in, from the axis table, whatever the axis's case. Prints nothing and
+# fails for any other axis; the caller words its own error.
 category_for_axis() {
-  case "${1,,}" in
-    spec)      printf 'bug\n' ;;
-    standards|suite-cost) printf 'enhancement\n' ;;
-    *) return 1 ;;
-  esac
+  local entry
+  for entry in $FILED_AXIS_TABLE; do
+    [ "${1,,}" = "${entry%%:*}" ] || continue
+    printf '%s\n' "${entry#*:}"
+    return 0
+  done
+  return 1
 }
 
 # The location a suite-cost finding names: the suite as a whole, with no line.
