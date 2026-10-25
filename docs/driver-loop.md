@@ -74,11 +74,12 @@ caller's numbered steps.
   merged and its worktree removed, never closed. A report is six lines,
   the sixth `Evidence`; one with no `Evidence:` line reads as
   `Evidence: None` and is processed as normal, never as malformed. Any exit
-  1 from `ticket merge`, `ticket close` or `ticket-worktree remove`, a dispatch that fails, or a
-  report that comes back malformed stops refilling: the tickets still in
-  flight report and are processed as normal, then **the stop** happens,
-  naming every failure. A leftover worktree is reclaimed at the next entry
-  check and shows in `doctor` (`doctor --flow` inside a flow).
+  1 from `ticket merge`, `ticket close` or `ticket-worktree remove`,
+  a dispatch that fails, or a report that comes back malformed stops
+  refilling: the tickets still in flight report and are processed as
+  normal, then **the stop** happens, naming every failure. A leftover
+  worktree is reclaimed at the next entry check and shows in `doctor`
+  (`doctor --flow` inside a flow).
 - **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
   rebuild it (ADR-0038), by **A driver's ticket resolution** in
   `agents/orch-resolver.md` (under the plugin root), **the issue** on the
