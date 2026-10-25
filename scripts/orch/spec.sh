@@ -55,9 +55,7 @@ cmd_spec_pause() {
   [ $# -eq 0 ] || die "usage: orch.sh spec pause [--round <k>/<n>]"
   local issue
   spec_phase_guard die pause issue
-  mkdir -p "$HANDOFF_DIR" || die "cannot create $HANDOFF_DIR"
-  printf '%s\n' "$issue" >"$HANDOFF_DIR/$SPEC_PAUSED_MARKER" \
-    || die "cannot write $HANDOFF_DIR/$SPEC_PAUSED_MARKER"
+  spec_marker_write "$SPEC_PAUSED_MARKER" "$issue"
   print_next_block "Spec #$issue written. The spec review runs in a fresh session."
 }
 
@@ -84,13 +82,14 @@ spec_phase_guard() {
 # validate and doctor never look at it - and no state.json field.
 readonly SPEC_ROUND_MARKER=spec-round
 
-# spec_round_marker_write <issue> <k> <n>: the round marker, naming <issue>,
-# round <k> and the round count <n> - the one writer of the line spec round
-# parses; dies when it cannot write it.
-spec_round_marker_write() {
+# spec_marker_write <marker> <line>: creates the handoff folder and writes
+# <line> as the one line of the marker file <marker> in it - the one writer of
+# the spec module's two markers; dies when it cannot, hiding the shell's own
+# redirection error.
+spec_marker_write() {
   mkdir -p "$HANDOFF_DIR" 2>/dev/null || die "cannot create $HANDOFF_DIR"
-  { printf '%s %s %s\n' "$1" "$2" "$3" >"$HANDOFF_DIR/$SPEC_ROUND_MARKER"; } 2>/dev/null \
-    || die "cannot write the round marker $HANDOFF_DIR/$SPEC_ROUND_MARKER"
+  { printf '%s\n' "$2" >"$HANDOFF_DIR/$1"; } 2>/dev/null \
+    || die "cannot write $HANDOFF_DIR/$1"
 }
 
 # The empty file spec-review apply writes in a round's directory as its very
@@ -147,7 +146,7 @@ cmd_spec_pause_round() {
   [ "$k" -lt "$n" ] \
     || die "round $k is the last of $n - the last round never pauses; go on to the ticket breakdown"
   spec_phase_guard die pause issue
-  spec_round_marker_write "$issue" "$((k + 1))" "$n"
+  spec_marker_write "$SPEC_ROUND_MARKER" "$issue $((k + 1)) $n"
   # In autopilot the round's session ends here: the claim is released, and the
   # next tick starts the next round.
   ! autopilot_active || autopilot_release "$issue" "wrote the round marker"
@@ -179,7 +178,7 @@ cmd_spec_round_dir() {
         || die "cannot copy round $((k - 1))'s $f into $dir"
     done
   fi
-  spec_round_marker_write "$issue" "$k" "$n"
+  spec_marker_write "$SPEC_ROUND_MARKER" "$issue $k $n"
   printf '%s/\n' "$dir"
 }
 
