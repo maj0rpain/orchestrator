@@ -166,7 +166,7 @@ plan_file "$planf" $'Rounds: 4\nBudget: 5'
 
 out="$("$ORCH" autopilot rounds 2>&1)"; st=$?
 assert_status "rounds with no plan comment dies" "$st" 1
-assert_contains "naming the missing plan" "$out" "no 01-plan handoff"
+assert_eq "naming the missing plan" "$out" "orch: issue #7 has no 01-plan handoff comment"
 
 fake_issue 8 open
 out="$("$ORCH" autopilot start 8 "$planf" 2>&1)"; st=$?
@@ -184,6 +184,16 @@ out="$("$ORCH" autopilot start 9 "$bad_plan" 2>&1)"; st=$?
 assert_status "start refuses a plan with no Autopilot block" "$st" 1
 assert_contains "naming it" "$out" "## Autopilot"
 assert_eq "writing nothing" "$(fake_comments_of 9)$(fake_labels_of 9)" "ready-for-agent "
+
+# a failed plan post dies with the reason, adds no label and leaves no temp file
+start_tmp="$(mktemp -d)"
+fake_fail adapter_issue_comment "HTTP 502 post"
+out="$(TMPDIR="$start_tmp" "$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed plan post dies" "$st" 1
+assert_contains "showing the gh reason" "$out" "HTTP 502 post"
+assert_eq "adding no phase label" "$(fake_labels_of 7)" "ready-for-agent "
+assert_eq "leaving no temp file" "$(ls -A "$start_tmp")" ""
 
 # a failure after the comment leaves the issue unlabelled and names the comment
 fake_fail adapter_issue_relabel "HTTP 502"
@@ -537,10 +547,12 @@ assert_eq "and the claim is released" "$(fake_claim_held 8)" free
 fake_issue 9 open ready-for-agent orch:spec
 printf 'No plan\n' >"$ORCH_GH_FAKE_STORE/issues/9/title"
 fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
-"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+tick_tmp="$(mktemp -d)"
+TMPDIR="$tick_tmp" "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
 assert_status "a failed plan-comment post does not stop the tick" "$st" 0
 assert_eq "the issue is needs-human" "$(fake_labels_of 9)" "needs-human orch:spec ready-for-agent "
-assert_contains "naming the step" "$(fake_comments_of 9)" "step minimal plan comment failed"
+assert_contains "naming the step and the gh reason" "$(fake_comments_of 9)" "step minimal plan comment failed: orch: gh could not post the 01-plan handoff on issue #9: HTTP 500 comment"
+assert_eq "leaving no temp file from the post" "$(ls -A "$tick_tmp")" ""
 assert_eq "and the claim is released" "$(fake_claim_held 9)" free
 assert_eq "with no session started" "$(tick_calls)" "0"
 

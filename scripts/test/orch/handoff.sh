@@ -501,9 +501,10 @@ assert_not_contains "and not the handoff directory" "$p" "/handoff/"
 fake_comment 7 someone 2030-01-02T00:00:00Z "<!-- orch:handoff 01-plan retired -->"
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
-assert_contains "saying so" "$out" "no 01-plan handoff"
-out="$("$ORCH" handoff path spec 2>&1)"; st=$?
+assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
+out="$("$ORCH" handoff path spec 2>&1 >/dev/null)"; st=$?
 assert_status "nor to path" "$st" 1
+assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
 out="$("$ORCH" handoff fetch 02-spec "$fetched" 2>&1)"; st=$?
 assert_status "a handoff never posted is none" "$st" 1
 out="$("$ORCH" handoff fetch bogus "$fetched" 2>&1)"; st=$?
@@ -517,11 +518,19 @@ out="$("$ORCH" handoff post 01-plan "$bad_plan" 2>&1)"; st=$?
 assert_status "an invalid handoff is refused" "$st" 1
 assert_contains "naming the missing section" "$out" "missing section"
 assert_eq "posting nothing" "$(fake_snapshot)" "$before"
+post_tmp="$(mktemp -d)"
 fake_fail adapter_issue_comment "HTTP 502"
-out="$("$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
-assert_status "a post gh refuses dies" "$st" 1
+out="$(TMPDIR="$post_tmp" "$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
 fake_unfail
+assert_status "a post gh refuses dies" "$st" 1
+assert_contains "showing the gh reason" "$out" "gh could not post the 01-plan handoff on issue #7: HTTP 502"
 assert_eq "having posted nothing" "$(fake_snapshot)" "$before"
+assert_eq "a failed post leaves no temp file" "$(ls -A "$post_tmp")" ""
+fake_fail adapter_issue_json "HTTP 503 read"
+out="$("$ORCH" handoff path spec 2>&1)"; st=$?
+assert_status "handoff path with a failed comments read dies" "$st" 1
+assert_contains "showing the gh reason" "$out" "HTTP 503 read"
+fake_unfail
 unset ORCH_AUTOPILOT
 restore_suite_env
 
