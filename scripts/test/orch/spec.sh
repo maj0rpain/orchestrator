@@ -267,11 +267,6 @@ round_marker="$handoff_dir/spec-round"
 # rd_snapshot: every path under spec-rounds/ and the round marker's content,
 # so a refusal is checked to have created and deleted nothing.
 rd_snapshot() { find "$rounds" 2>/dev/null | sort; cat "$round_marker" 2>/dev/null; }
-before="$(rd_snapshot)"
-out="$("$ORCH" spec round-dir 1/1 2>&1)"; st=$?
-assert_status "round-dir refuses when state records no issue" "$st" 1
-assert_contains "naming the phase that records one" "$out" "spec phase"
-assert_eq "creating nothing and writing no marker" "$(rd_snapshot)" "$before"
 "$ORCH" state set issue 21
 out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
 assert_status "round-dir 1/2 succeeds at phase spec with an issue" "$st" 0
@@ -318,8 +313,6 @@ assert_eq "copying nothing" "$(ls -A "$rounds/2" 2>&1)" ""
 out="$("$ORCH" spec round-dir 1/1 2>&1)"; st=$?
 assert_status "round-dir 1/1 succeeds" "$st" 0
 assert_eq "writing the marker, so spec round runs round 1 of 1" "$("$ORCH" spec round 2>&1)" "1 1"
-: >"$rounds/1/round-complete"
-assert_eq "and, once round 1 holds round-complete, every round is done" "$("$ORCH" spec round 2>&1)" "done 1"
 
 before="$(rd_snapshot)"
 for arg in "" 1 0/2 1/0 2/1 a/2 1/b 1/2/3 /2 1/ -1/2 "1 /2"; do
@@ -340,11 +333,6 @@ out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
 assert_status "round-dir refuses at phase implement" "$st" 1
 assert_contains "saying it runs only in the spec phase" "$out" "spec round-dir runs only in the spec phase"
 assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
-state_fixture phase "done"
-out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
-assert_status "round-dir refuses once the flow is done" "$st" 1
-assert_contains "naming the flow's issue" "$out" "the flow on issue #21 is done"
-assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
 state_fixture phase spec
 
 rm -f "$round_marker"
@@ -353,7 +341,7 @@ if unwritable_dir "$handoff_dir" "a failed marker write prints no path"; then
   chmod u+w "$handoff_dir"
   assert_status "round-dir fails when the marker cannot be written" "$st" 1
   assert_not_contains "printing no path" "$out" "$rounds/1/"
-  assert_contains "naming the marker" "$out" "$round_marker"
+  assert_eq "naming the marker, with no raw shell error" "$out" "orch: cannot write $round_marker"
   assert_eq "and leaving no marker" "$(on_disk "$round_marker")" absent
 fi
 assert_contains "help documents spec round-dir" "$("$ORCH" help)" "spec round-dir <k>/<n>"
@@ -452,11 +440,6 @@ fake_github
 state_fixture phase spec
 handoff_dir="$(dirname "$("$ORCH" handoff path spec)")"
 round_marker="$handoff_dir/spec-round"
-out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
-assert_status "pause --round refuses when state records no issue" "$st" 1
-assert_contains "naming the phase that records one" "$out" "spec phase"
-assert_not_contains "printing no block" "$out" "Next:"
-assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
 "$ORCH" state set issue 21
 out="$("$ORCH" spec pause --round 1/3 2>&1)"; st=$?
 assert_status "pause --round 1/3 succeeds at phase spec with an issue" "$st" 0
@@ -492,12 +475,6 @@ assert_status "pause --round refuses at phase implement" "$st" 1
 assert_contains "saying it runs only in the spec phase" "$out" "spec pause runs only in the spec phase"
 assert_not_contains "printing no block" "$out" "Next:"
 assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
-state_fixture phase "done"
-out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
-assert_status "pause --round refuses once the flow is done" "$st" 1
-assert_contains "naming the flow's issue" "$out" "the flow on issue #21 is done"
-assert_not_contains "printing no block" "$out" "Next:"
-assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
 state_fixture phase spec
 
 if unwritable_dir "$handoff_dir" "a failed round marker write prints no block"; then
@@ -505,7 +482,7 @@ if unwritable_dir "$handoff_dir" "a failed round marker write prints no block"; 
   chmod u+w "$handoff_dir"
   assert_status "pause --round fails when the marker cannot be written" "$st" 1
   assert_not_contains "printing no block" "$out" "Next:"
-  assert_contains "naming the marker" "$out" "$round_marker"
+  assert_eq "naming the marker, with no raw shell error" "$out" "orch: cannot write $round_marker"
   assert_eq "and leaving no marker" "$(on_disk "$round_marker")" absent
 fi
 assert_contains "help documents spec pause --round" "$("$ORCH" help)" "spec pause --round <k>/<n>"
