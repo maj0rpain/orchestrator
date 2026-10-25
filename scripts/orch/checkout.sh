@@ -177,6 +177,13 @@ refuse_busy_checkout() {
   exit 3
 }
 
+# Whether a rebase is in progress in the checkout at <path>.
+rebase_in_progress() {
+  local gitdir
+  gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
+}
+
 # discard_work_in <path> <who>: the discard sequence every site of the discard
 # rule (ADR-0054) runs in the checkout at <path>: a merge or rebase in
 # progress is aborted, then the tree is reset and cleaned. Nothing to discard

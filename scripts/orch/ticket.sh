@@ -734,7 +734,7 @@ cmd_ticket_reclaim() {
     [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
     merged=""
     if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
-      ! git -C "$ROOT" merge-base --is-ancestor "$flow--t$n" "$flow" || merged=1
+      ! ticket_branch_merged "$flow--t$n" || merged=1
     elif [ -n "$reported" ]; then
       merged=1
     fi

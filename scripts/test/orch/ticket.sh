@@ -1296,7 +1296,7 @@ rc_midrebase() {
   rc_commit . feature.txt from-flow
   git -C "$(rc_wt "$1")" rebase -q orch/5-feature >/dev/null 2>&1 || true
   assert_eq "(fixture) ticket $1 is mid-rebase" \
-    "$([ -d "$(git -C "$(rc_wt "$1")" rev-parse --git-path rebase-merge)" ] && echo yes || echo no)" "yes"
+    "$(cd "$(rc_wt "$1")" && rebase_state)" "rebasing"
 }
 
 # merged with a saved report: closed, worktree removed
@@ -1347,7 +1347,7 @@ out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "a mid-rebase reported worktree is reset, then its conflict reported" "$st" 3
 assert_contains "printing conflict <n>" "$out" "conflict 7"
 assert_eq "no rebase is left in progress" \
-  "$([ -d "$(git -C "$(rc_wt 7)" rev-parse --git-path rebase-merge)" ] && echo yes || echo no)" "no"
+  "$(cd "$(rc_wt 7)" && rebase_state)" "none"
 
 # conflict: exit 3, both branches at their prior tips, later leftovers untouched
 rc_setup 2
