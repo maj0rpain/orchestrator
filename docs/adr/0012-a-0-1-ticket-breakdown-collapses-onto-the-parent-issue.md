@@ -62,3 +62,6 @@ first. The cost lands on `to-tickets`, which still carries its own "never
 modify the parent" instruction verbatim in the upstream skill text - this
 project's use of it is now inconsistent with that skill's contract by
 design, recorded here so the inconsistency is never mistaken for a bug.
+
+ADR-0055 amends the above: a collapsed breakdown's one ticket now builds in a
+ticket worktree, `t<spec issue>`, like every other ticket.

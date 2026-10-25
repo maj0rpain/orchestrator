@@ -137,12 +137,11 @@ agent was not available, and why.
 
 ### Start a background subagent
 
-Build the frontier one ticket at a time, on the one branch, with no ticket
-worktrees: the sequential path of the driver loop in `docs/driver-loop.md`,
-which `orch-flow`'s implement phase and `orch-quick-implement`'s implement
-step both run. The entry check for
-leftover ticket worktrees and the combined verification still run
-(ADR-0036).
+Build the frontier one ticket at a time, each in its own ticket worktree,
+the subagent run in the foreground: the sequential path of the driver
+loop in `docs/driver-loop.md`, which `orch-flow`'s implement phase and
+`orch-quick-implement`'s implement step both run. The entry check (`ticket
+reclaim`) and the combined verification still run (ADR-0036, ADR-0055).
 
 ### Start a forked subagent
 

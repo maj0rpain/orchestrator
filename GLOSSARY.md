@@ -314,44 +314,48 @@ may block, or be blocked by, other tickets in the same breakdown. When the
 approved breakdown - in a quick implementation, the drafted one - resolves to 0
 or 1 tickets, no sub-issue is published at all: the drafted ticket's content, if
 there is one, is folded into the parent issue's own body instead, and the parent
-is worked directly as if it were the sole ticket - a breakdown of one, collapsed
+is worked as if it were the sole ticket, built in its own ticket worktree,
+`t<parent>`, and never closed by the build - a breakdown of one, collapsed
 onto its own parent rather than split out beneath it.
 
 **Ticket subagent**:
-The fresh, non-fork agent that builds exactly one ticket of a ticket
-breakdown, test-first, and checks its own work against that ticket's
-acceptance criteria, and that a test exercises every source file it changed,
-before reporting. It never reviews its work beyond those checks: review
-belongs to the review loop, or to a review pass. It reports back
-structurally instead of blocking on a human; a criterion it cannot meet alone
-is reported as unmet, and a changed source file no test exercises is reported
-as untested, both for the review loop's Spec axis to judge. Used in the
-implement phase and in quick implementation. When its frontier is built in
-parallel, it builds on a ticket branch in its own ticket worktree; otherwise
-on the one branch, one ticket at a time. When its ticket branch conflicts as
+The fresh, non-fork agent that builds exactly one
+ticket of a ticket breakdown, test-first, and checks its own work against
+that ticket's acceptance criteria, and that a test exercises every source
+file it changed, before reporting. It never reviews its work beyond those
+checks: review belongs to the review loop, or to a review pass. It reports
+back structurally instead of blocking on a human; a criterion it cannot meet
+alone is reported as unmet, and a changed source file no test exercises is
+reported as untested, both for the review loop's Spec axis to judge. Used
+in the implement phase and in quick implementation. It always builds on
+a ticket branch in its own ticket worktree, whether its frontier is built
+in parallel or one ticket at a time. When its ticket branch conflicts as
 it is merged, it is resumed to resolve the conflict itself, since it knows
 its ticket's intent.
 
 **Ticket branch**:
 The branch one ticket subagent builds a single ticket on, forked from its
 flow's or quick implementation's branch at the tip, and merged back into it
-before the ticket closes. It is local and short-lived, gone once merged, and
+before the ticket closes - or, for a collapsed breakdown, with no ticket
+closed. It is local and short-lived, gone once merged, and
 is not the flow's one branch.
 
 **Ticket worktree**:
-The git worktree a ticket branch is checked out in, so ticket subagents of one
-breakdown can build at the same time without sharing a working tree.
+The git worktree a ticket branch is checked out in - every ticket subagent
+builds in one, so tickets of one breakdown can build at the same time without
+sharing a working tree, and a ticket's landing is its branch merging.
 
 **Frontier**:
 The open tickets of a ticket breakdown with no open blocker - what `ticket
 next` prints. Several can be built at once, up to the clone's parallel cap.
 
 **Driver loop**:
-The procedure that builds a ticket breakdown, one frontier after another: one
-ticket subagent per ticket, in parallel up to the clone's parallel cap or one
-at a time, each ticket merged and closed as its report returns, then one
-verification of the combined branch. The implement phase and a quick
-implementation both run it.
+The procedure that builds a ticket breakdown, one frontier
+after another: one ticket subagent per ticket, in parallel up to the clone's
+parallel cap or one at a time, each ticket's report saved as it returns,
+then the ticket merged and closed - a collapsed breakdown's merged, never
+closed - then one verification of the combined branch. The implement phase
+and a quick implementation both run it.
 
 ### Spec review
 
@@ -533,20 +537,21 @@ one - and no **missing look**, and files no spec question, with CI green or
 absent. Anything else is a bounded stop.
 
 **Driver**:
-The session that runs a driver loop or a review loop, starting the fresh
-agents that do the work and keeping the run's record. A review loop's driver
-syncs the branch with its base, starts the reviewers, the fixer, the closer
-and, on a conflict, a resolver, triages what the reviewers report, waits on
-CI, and decides the terminal state. It does not edit the change: every line
-the loop fixes is the fixer's, and filing is the closer's. In a clean
-iteration whose base sync resolved a conflict, it corrects the PR body itself
-(**Checking the PR body** in the fixer's brief): the body is what the PR
-claims, not the change. The one exception
+The session that runs a driver loop or a review loop, starting
+the fresh agents that do the work and keeping the run's record. A review
+loop's driver syncs the branch with its base, starts the reviewers,
+the fixer, the closer and, on a conflict, a resolver, triages what the
+reviewers report, waits on CI, and decides the terminal state. It does not
+edit the change: every line the loop fixes is the fixer's, and filing is
+the closer's. In a clean iteration whose base sync resolved a conflict,
+it corrects the PR body itself (**Checking the PR body** in the fixer's
+brief): the body is what the PR claims, not the change. The one exception
 is a host with no fresh subagent: there the review loop's driver takes the
-host-capabilities **Start a fresh subagent** fallback, does the fixer's and
-the closer's work in its own session, and records that as a host fallback. A
-driver loop's driver starts one ticket subagent per ticket and merges and
-closes each ticket as its report returns.
+host-capabilities **Start a fresh subagent** fallback, does the fixer's
+and the closer's work in its own session, and records that as a host
+fallback. A driver loop's driver starts one ticket subagent per ticket
+and saves each ticket's report as it returns, then merges and closes the
+ticket - a collapsed breakdown's merged, never closed.
 
 **Reviewer**:
 A fresh agent a review loop's driver starts for one axis - Standards or Spec -

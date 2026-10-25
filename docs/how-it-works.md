@@ -107,10 +107,11 @@ runs a base sync to bring the flow's branch up to date with its base, and
 opens the one draft PR for the whole flow.
 
 A collapsed breakdown, a cap of 1, or a host that cannot start a background
-subagent builds one ticket at a time on the flow's branch, with no worktrees.
-Leftover ticket worktrees from an interrupted run stop the next implement
-phase and fail `doctor --flow`; `orch.sh ticket-worktree list` shows them and
-`orch.sh ticket-worktree remove <n>` clears each.
+subagent builds one ticket at a time, each in its own ticket worktree
+(ADR-0055); a collapsed breakdown's ticket builds in `t<spec issue>`, merged
+and never closed. The driver saves each returned report. Leftover ticket
+worktrees from an interrupted run are reclaimed by `orch.sh ticket reclaim`
+at the next implement phase (ADR-0054); `doctor --flow` still reports them.
 
 #### Parallel cap
 

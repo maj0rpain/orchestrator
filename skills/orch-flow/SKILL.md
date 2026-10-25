@@ -370,7 +370,8 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    itself. No `ticket next`/`ticket close` loop runs against it: an empty
    frontier there means nothing was ever split out, not "already done."
    The breakdown is collapsed: the sequential path dispatches exactly one
-   subagent, for ticket `<n>`. **Any other content** names the spec issue
+   subagent, for ticket `<n>`, in its own ticket worktree `t<n>`: merged,
+   never closed. **Any other content** names the spec issue
    as a parent whose GitHub sub-issues carry the real tickets, and the loop
    works its frontier.
 

@@ -58,3 +58,7 @@ worktree is left over.
 ADR-0054 amends the rules above that ticket worktrees are never removed with
 force and that an interrupted run's leftovers stop the next implement phase
 until a human clears them: a restarted phase discards them.
+
+ADR-0055 amends the above: a collapsed breakdown, a cap of 1 and a host without
+background subagents also build each ticket in a ticket worktree, one at a
+time.

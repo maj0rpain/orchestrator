@@ -13,8 +13,8 @@ depends on them.
 
 - **the issue**: the issue whose frontier is built - the issue `ticket next`
   is given, and the issue on the resolver's `Spec issue:` line.
-- **the branch**: the branch every ticket commits to on the sequential path,
-  and that loop step f verifies.
+- **the branch**: the branch every ticket branch merges into, and that
+  loop step f verifies.
 - **the record**: where the driver records host fallbacks, a resolution's
   **Merge resolutions**, and loop step f's verification command and `pass` or
   `fail`.
@@ -31,25 +31,30 @@ means for its run; loop step b takes it as a fact.
 Its steps are lettered a-f, so that a "loop step" never reads as one of the
 caller's numbered steps.
 
-- **a. Entry check.** `bash "$ORCH" ticket-worktree list`. If it prints
-  anything, stop and name each leftover ticket worktree: a dead run's state,
-  never built over. A human clears each with `bash "$ORCH" ticket-worktree
-  remove <n>`. This runs on every path, sequential included.
+- **a. Entry check.** `bash "$ORCH" ticket reclaim <the issue>`: it recovers
+  what a dead run left (ADR-0054) - a merged ticket closed, an unmerged
+  ticket with a saved report merged and closed, any other leftover discarded
+  so its ticket is rebuilt - and prints one line per action. Exit 3 means a
+  saved ticket's merge conflicted (`conflict <n>`): resolve it as loop step e
+  says, with a fresh resolver in place of the dead subagent - it starts the
+  rebase itself - then run `ticket reclaim` again. Any other failure stops
+  the run, naming it. This runs on every path.
 - **b. Pick the path.** Read the cap: `bash "$ORCH" parallel show`. Take the
   **sequential path** when the breakdown is collapsed, the cap is 1, or the
   host cannot start a background subagent (record that last one under **the
   record**'s host fallbacks, per `docs/host-capabilities.md`'s **Start a
-  background subagent** row). It creates no ticket worktree, and every ticket
-  commits to **the branch**, one at a time, never in parallel. Collapsed, it
-  dispatches the one subagent and goes to loop step f. Otherwise it loops:
-  `bash "$ORCH" ticket next <the issue>` - nothing ready means the frontier
-  is exhausted, so go to loop step f - then dispatch a subagent (below) for
-  the ticket, with no `Worktree:` line; record its report, save it with
-  `bash "$ORCH" ticket report save <n> <file>` (the report in a `mktemp`
-  file), then `bash
-  "$ORCH" ticket close <n>` - only now that the report is back, never
-  before - and go around again. Any other case takes the parallel path, loop
-  steps c-e.
+  background subagent** row). It runs one ticket at a time, never in
+  parallel, and every ticket still builds in its own ticket worktree
+  (ADR-0055): `bash "$ORCH" ticket-worktree add <n>`, then dispatch the
+  subagent (below) with the `Worktree:` line, in the foreground, then land
+  its report exactly as loop step d does - save, `ticket merge`, `ticket
+  close`, `ticket-worktree remove`. Collapsed, the ticket is **the issue**
+  itself, built in `t<the issue>`: its branch is merged and its worktree
+  removed, and `ticket close` is never run on it. It dispatches that one
+  subagent, lands it, and goes to loop step f. Otherwise it loops: `bash
+  "$ORCH" ticket next <the issue>` - nothing ready means the frontier is
+  exhausted, so go to loop step f - then the ticket as above, and go around
+  again. Any other case takes the parallel path, loop steps c-e.
 - **c. Fill the free slots.** Keep an in-flight set of tickets in this
   session. While fewer than the cap are in flight, take the next ticket `bash
   "$ORCH" ticket next <the issue>` prints that is neither in flight nor
@@ -65,14 +70,15 @@ caller's numbered steps.
   separate calls, each only after the previous one exits 0 - never chained
   with `;`. A ticket is merged
   and closed whatever its `Verification` or `Criteria` line says, and is
-  closed only after its merge succeeds. A report is six lines, the sixth
-  `Evidence`; one with no `Evidence:` line reads as `Evidence: None` and is
-  processed as normal, never as malformed. Any exit 1 from `ticket merge`,
-  `ticket close` or `ticket-worktree remove`, a dispatch that fails, or a
+  closed only after its merge succeeds. A collapsed breakdown's ticket is
+  merged and its worktree removed, never closed. A report is six lines,
+  the sixth `Evidence`; one with no `Evidence:` line reads as
+  `Evidence: None` and is processed as normal, never as malformed. Any exit
+  1 from `ticket merge`, `ticket close` or `ticket-worktree remove`, a dispatch that fails, or a
   report that comes back malformed stops refilling: the tickets still in
   flight report and are processed as normal, then **the stop** happens,
-  naming every failure. A leftover worktree surfaces at the next entry check
-  and in `doctor` (`doctor --flow` inside a flow).
+  naming every failure. A leftover worktree is reclaimed at the next entry
+  check and shows in `doctor` (`doctor --flow` inside a flow).
 - **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
   rebuild it (ADR-0038), by **A driver's ticket resolution** in
   `agents/orch-resolver.md` (under the plugin root), **the issue** on the
@@ -97,9 +103,10 @@ Start the plugin's `orch-implementer` agent exactly as the **Starting this
 agent** section of `agents/orch-implementer.md` (under the plugin root) says,
 for the ticket named above. On Claude Code it is the agent named
 `orch-implementer` under the `orchestrator:` plugin scope, run in the
-background on the parallel path, on the `implementer` setting. The driver
-reads it, and the `resolver` setting **A driver's ticket resolution** starts
-its resolvers on, once, before loop step a, per **Agent settings** in
+background on the parallel path and in the foreground on the sequential
+one, on the `implementer` setting. The driver reads it, and the
+`resolver` setting **A driver's ticket resolution** starts its resolvers on,
+once, before loop step a, per **Agent settings** in
 `docs/host-capabilities.md`: `bash "$ORCH" agent get implementer` and
 `bash "$ORCH" agent get resolver`. Every ticket subagent and resolver of the
 run starts on those, and a ticket subagent resumed to resolve its own merge
