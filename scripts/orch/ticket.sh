@@ -63,6 +63,16 @@ issue_number_list() {
   printf '%s\n' $list | sort -un
 }
 
+# ticket_listing_has <listing> <n>: 0 when <n> is the first tab field of a line
+# of the sub-issue <listing>.
+ticket_listing_has() {
+  local line
+  while IFS= read -r line; do
+    if [ "${line%%$'\t'*}" = "$2" ]; then return 0; fi
+  done <<<"$1"
+  return 1
+}
+
 # ticket_links_verified <err_var> <parent> <child> <want>: 0 only once both
 # links read back exactly as published: the parent's sub-issue listing
 # contains the child, and the child's blocked-by listing is the same set of
@@ -73,15 +83,12 @@ issue_number_list() {
 # would just repeat the same verdict. Locals prefixed so no caller's variable
 # name is shadowed.
 ticket_links_verified() {
-  local __tlv_out __tlv_blockers __tlv_err __tlv_line __tlv_linked=""
+  local __tlv_out __tlv_blockers __tlv_err
   if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
     printf -v "$1" '%s' "$__tlv_err"
     return 2
   fi
-  while IFS= read -r __tlv_line; do
-    if [ "${__tlv_line%%$'\t'*}" = "$3" ]; then __tlv_linked=1; break; fi
-  done <<<"$__tlv_out"
-  [ -n "$__tlv_linked" ] || return 1
+  ticket_listing_has "$__tlv_out" "$3" || return 1
   if ! capture __tlv_blockers __tlv_err adapter_blockers "$3"; then
     printf -v "$1" '%s' "$__tlv_err"
     return 2
@@ -97,10 +104,10 @@ ticket_links_verified() {
 # dies naming the ticket rather than falling back to a text-based `Blocked by:`
 # convention, since nothing downstream ever reads that fallback.
 cmd_ticket_publish() {
-  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...] [--record <numbers-file> <k>]"
   [ $# -ge 3 ] || die "$usage"
-  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" b
-  local ready child gh_err="" st=0
+  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want=""
+  local record_file="" record_k="" ready child
   shift 3
   # Every argument check runs here, before the first GitHub write. A second
   # --blocked-by is refused, never allowed to replace the first.
@@ -109,6 +116,10 @@ cmd_ticket_publish() {
       --blocked-by)
         flag_value_once "$usage" "$have_blocked_by" "$#"
         blocked_by="$2"; have_blocked_by=1; shift 2 ;;
+      --record)
+        [ $# -ge 3 ] && [ -z "$record_file" ] || die "$usage"
+        record_file="$2"; record_k="$3"; shift 3
+        case "$record_k" in ''|*[!0-9]*) die "--record's position must be a plain number, got: $record_k" ;; esac ;;
       *) die "$usage" ;;
     esac
   done
@@ -127,8 +138,29 @@ cmd_ticket_publish() {
   gh_or_die --out child "create the ticket" \
     adapter_issue_create "$title" "$body_file" "$ready"
 
-  gh_or_die "link ticket #$child as a sub-issue of #$parent" \
-    adapter_sub_issue_link "$parent" "$child"
+  # The created number is recorded before the link, so a rerun can tell
+  # "created, unlinked" from "not created". A failed write dies here.
+  if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" created; fi
+
+  ticket_link_write "$parent" "$child"
+  ticket_edges_and_verify "$parent" "$child" "$want"
+  if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" linked; fi
+
+  note "$child"
+}
+
+# ticket_link_write <parent> <child>: links <child> as a sub-issue of <parent>.
+ticket_link_write() {
+  gh_or_die "link ticket #$2 as a sub-issue of #$1" \
+    adapter_sub_issue_link "$1" "$2"
+}
+
+# ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
+# every number in <want>, and verifies every link by reading it back, with one
+# retry - either status gets it, and the second attempt decides the death: a
+# failed read dies with gh's reason, a mismatch as unverified.
+ticket_edges_and_verify() {
+  local parent="$1" child="$2" want="$3" b gh_err="" st=0
 
   if [ -n "$want" ]; then
     while IFS= read -r b; do
@@ -137,16 +169,12 @@ cmd_ticket_publish() {
     done <<<"$want"
   fi
 
-  # Either status gets the one retry, and the second attempt decides the
-  # death: a failed read dies with gh's reason, a mismatch as unverified.
   ticket_links_verified gh_err "$parent" "$child" "$want" \
     || ticket_links_verified gh_err "$parent" "$child" "$want" \
     || st=$?
   [ "$st" -ne 2 ] || gh_die "read ticket #$child's links" "$gh_err"
   [ "$st" -eq 0 ] \
     || die "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed"
-
-  note "$child"
 }
 
 # The parent's open sub-issues with zero open blockers, in the order GitHub
@@ -213,8 +241,46 @@ cmd_ticket_reset() {
   while IFS= read -r line; do
     tsv_split "$line" n state
     [ "$state" = CLOSED ] && [ -n "$n" ] || continue
+    # The report goes first: once the ticket is open again no rerun removes it,
+    # so a death between the two would strand it.
+    ticket_report_remove "$n"
     gh_or_die "reopen ticket #$n" adapter_issue_reopen "$n"
   done <<<"$subs"
+}
+
+# The directory the driver's saved ticket reports live in.
+ticket_reports_dir() { printf '%s/reports\n' "$ORCH"; }
+
+# ticket_report_remove <n>: drops ticket <n>'s saved report, if it has one.
+ticket_report_remove() {
+  rm -f "$(ticket_reports_dir)/$1.md" || die "could not remove ticket #$1's saved report"
+}
+
+# ticket report save <n> <file> | show <n>: a returned ticket report outlives
+# the driver session as .orchestrator/reports/<n>.md. A save replaces an
+# earlier one; a missing or empty file is refused with nothing written, and
+# `show` exits 1 when no report is saved.
+cmd_ticket_report() {
+  local op="${1:-}" usage="usage: orch.sh ticket report save <n> <file> | show <n>" dir
+  shift || true
+  dir="$(ticket_reports_dir)"
+  case "$op" in
+    save)
+      [ $# -eq 2 ] || die "$usage"
+      case "$1" in ''|*[!0-9]*) die "not a plain issue number: $1" ;; esac
+      [ -s "$2" ] || die "report file $2 is missing or empty - nothing saved"
+      mkdir -p "$dir" || die "could not create $dir"
+      cp "$2" "$dir/$1.md.tmp" && mv -f "$dir/$1.md.tmp" "$dir/$1.md" \
+        || die "could not save ticket #$1's report"
+      ;;
+    show)
+      [ $# -eq 1 ] || die "$usage"
+      case "$1" in ''|*[!0-9]*) die "not a plain issue number: $1" ;; esac
+      [ -f "$dir/$1.md" ] || die "no saved report for ticket #$1"
+      cat "$dir/$1.md" || die "could not read ticket #$1's saved report"
+      ;;
+    *) die "$usage" ;;
+  esac
 }
 
 # Prints <n>'s parent issue number, or nothing (still exit 0) when <n> is
@@ -318,13 +384,21 @@ cmd_ticket_retire() {
         rm -f "$comment_file"
       fi
     fi
+    # Before the unlink: once unlinked, no rerun lists the ticket to clean it.
+    ticket_report_remove "$n"
     gh_or_die "unlink ticket #$n from #$parent" \
       adapter_sub_issue_unlink "$parent" "$n"
   done <<<"$subs"
+  # A collapsed breakdown saved its report under the parent's own number.
+  ticket_report_remove "$parent"
   # A body with no `## Ticket` line outside a code fence comes back
   # unchanged, so it is not written.
   issue_body_rewrite "$parent" "read issue #$parent's body" \
     "remove the ## Ticket section from #$parent" strip_ticket_sections
+  # The parent's breakdown save point goes with it, so `breakdown state`
+  # never reads a retired breakdown as complete.
+  rm -rf "$(breakdown_dir "$parent")" \
+    || die "could not remove the breakdown save point of #$parent"
 }
 
 # issue_body_rewrite <n> <read-what> <write-what> <filter> [<arg>...]: issue
@@ -531,10 +605,12 @@ cmd_ticket() {
     parent)  cmd_ticket_parent "$@" ;;
     exists)  cmd_ticket_exists "$@" ;;
     retire)  cmd_ticket_retire "$@" ;;
+    report)  cmd_ticket_report "$@" ;;
     block)   cmd_ticket_block "$@" ;;
     unblock) cmd_ticket_unblock "$@" ;;
     merge)   cmd_ticket_merge "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block|unblock|merge)" ;;
+    reclaim) cmd_ticket_reclaim "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|report|block|unblock|merge|reclaim)" ;;
   esac
 }
 
@@ -590,4 +666,95 @@ cmd_ticket_merge() {
   fi
   git -C "$parent_checkout" merge -q --ff-only "$branch" \
     || die "could not fast-forward $parent to $branch in $parent_checkout"
+}
+
+# ticket_reclaim_close <n> <parent>: closes ticket <n> if it is still open and
+# is not <parent> itself - a collapsed breakdown's spec issue is never closed.
+ticket_reclaim_close() {
+  local n="$1" state
+  [ "$n" != "$2" ] || return 0
+  gh_or_die --out state "read ticket #$n" adapter_issue_state "$n"
+  [ "$state" = OPEN ] || return 0
+  gh_or_die "close ticket #$n" adapter_issue_close "$n"
+  note "closed ticket #$n"
+}
+
+# ticket_reclaim_remove <n> <flow>: discards the work in ticket <n>'s worktree
+# if it has one, removes the worktree, and deletes its branch if one is left,
+# dying naming the ticket and the write.
+ticket_reclaim_remove() {
+  local n="$1" flow="$2" path
+  path="$(ticket_worktree_path "$n")"
+  if is_ticket_worktree "$path"; then
+    discard_work_in "$path" "ticket #$n"
+    (cmd_ticket_worktree_remove --unmerged "$n") \
+      || die "ticket #$n: could not remove its worktree $path"
+    note "removed the worktree of ticket #$n"
+  fi
+  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
+    git -C "$ROOT" branch -q -D "$flow--t$n" \
+      || die "ticket #$n: could not delete branch $flow--t$n"
+    note "deleted the branch of ticket #$n"
+  fi
+}
+
+# ticket reclaim <parent>: recovers what a dead implement run left (ADR-0054).
+# The discard rule runs on the flow's branch first, before anything else is
+# touched. Then each leftover ticket - a ticket worktree under this checkout,
+# or an open sub-issue of <parent> with a saved report - takes the first case
+# that matches: reported and merged, close it, reset its worktree and remove it;
+# reported and unmerged, reset the tree, `ticket merge` it, close it and remove
+# the worktree (a conflict prints `conflict <n>` and exits 3, both branches at
+# their prior tips, later leftovers untouched); anything else, discard it so it
+# is rebuilt. One line per action; a failed write dies naming the ticket.
+cmd_ticket_reclaim() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
+  local parent="$1" flow subs line worktrees n state path st reported merged nums=""
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
+  discard_flow_branch_work
+  subs="$(ticket_sub_issues "$parent")" || exit 1
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    tsv_split "$line" n state
+    if [ "$state" = OPEN ] && [ -f "$(ticket_reports_dir)/$n.md" ]; then nums="$nums$n"$'\n'; fi
+  done <<<"$subs"
+  # A collapsed breakdown has no sub-issues; its one ticket is the parent, whose
+  # saved report is the record that it landed even once its worktree is gone.
+  if [ -z "$subs" ] && [ -f "$(ticket_reports_dir)/$parent.md" ]; then nums="$nums$parent"$'\n'; fi
+  worktrees="$(ticket_worktrees_under "$ROOT")" || exit 1
+  while read -r n path; do
+    [ -z "$n" ] || nums="$nums$n"$'\n'
+  done <<<"$worktrees"
+  nums="$(printf '%s' "$nums" | sort -un)"
+  while read -r n; do
+    [ -n "$n" ] || continue
+    path="$(ticket_worktree_path "$n")"
+    reported=""
+    [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
+    merged=""
+    if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
+      ! ticket_branch_merged "$flow--t$n" || merged=1
+    elif [ -n "$reported" ]; then
+      merged=1
+    fi
+    if [ -n "$reported" ] && [ -n "$merged" ]; then
+      [ "$n" != "$parent" ] || note "ticket #$n already landed"
+      ticket_reclaim_close "$n" "$parent"
+      ticket_reclaim_remove "$n" "$flow"
+    elif [ -n "$reported" ] && is_ticket_worktree "$path"; then
+      discard_work_in "$path" "ticket #$n"
+      st=0
+      (cmd_ticket_merge "$n") || st=$?
+      if [ "$st" -eq 3 ]; then note "conflict $n"; exit 3; fi
+      [ "$st" -eq 0 ] || die "ticket #$n: could not merge its branch"
+      note "merged ticket #$n"
+      ticket_reclaim_close "$n" "$parent"
+      ticket_reclaim_remove "$n" "$flow"
+    else
+      ticket_reclaim_remove "$n" "$flow"
+      ticket_report_remove "$n"
+      note "discarded ticket #$n"
+    fi
+  done <<<"$nums"
 }

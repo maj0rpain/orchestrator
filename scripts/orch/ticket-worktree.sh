@@ -74,23 +74,23 @@ ticket_worktree_resolve() {
     || die "ticket worktree $path is not on a branch (detached HEAD)"
 }
 
-# ticket_branch_merged_or_die <branch> <what>: dies unless ticket branch
-# <branch> records a forked-from branch and is an ancestor of it - the one
-# merged check, shared by ticket-worktree remove and ticket close. Each
-# refusal ends "pass --unmerged to <what>", <what> naming the command's act.
+# ticket_branch_merged <branch>: whether ticket branch <branch> records a
+# forked-from branch and is an ancestor of it - the one merged check.
+ticket_branch_merged() {
+  local parent
+  parent="$(forked_from_branch "$1")" || return 1
+  git merge-base --is-ancestor "$1" "$parent" 2>/dev/null
+}
+
+# ticket_branch_merged_or_die <branch> <what>: dies unless ticket_branch_merged
+# holds, shared by ticket-worktree remove and ticket close. Each refusal ends
+# "pass --unmerged to <what>", <what> naming the command's act.
 ticket_branch_merged_or_die() {
   local parent
   parent="$(forked_from_branch "$1")" \
     || die "branch $1 records no forked-from branch - pass --unmerged to $2"
-  git merge-base --is-ancestor "$1" "$parent" 2>/dev/null \
+  ticket_branch_merged "$1" \
     || die "branch $1 is not merged into $parent - merge it first, or pass --unmerged to $2"
-}
-
-# Whether a rebase is in progress in the checkout at <path>.
-rebase_in_progress() {
-  local gitdir
-  gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
-  [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
 }
 
 # Forks <current-branch>--t<n> from the current branch's tip, records the

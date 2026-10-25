@@ -13,6 +13,14 @@
 # the remedy for a base origin says is gone ($3), since only a flow has a
 # base it can correct.
 checkout_new_branch() {
+  new_branch_refusals "$@"
+  fork_new_branch "$1" "$2"
+}
+
+# new_branch_refusals <name> <base> [<remedy>]: checkout_new_branch's refusals -
+# the name taken, or the base gone from origin - alone, so a caller with
+# something to write first (branch create's discard) runs them before it.
+new_branch_refusals() {
   local name="$1" base="$2" remedy="${3:-start again on another base branch}"
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
   if ! git fetch --quiet origin "$base" 2>/dev/null; then
@@ -23,6 +31,11 @@ checkout_new_branch() {
     origin_has_branch "$base" || st=$?
     [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or $remedy"
   fi
+}
+
+# fork_new_branch <name> <base>: the checkout half, after new_branch_refusals.
+fork_new_branch() {
+  local name="$1" base="$2"
   # --no-track: the base is recorded in the branch's own config, so the
   # upstream branch.autoSetupMerge would set is never wanted; pr publish sets
   # the real one on the first push.
@@ -46,22 +59,44 @@ record_branch_base() {
   git config "branch.$1.orchestrator-base-sha" "$3"
 }
 
-# It refuses a busy checkout with exit 3 - a branch the plugin made with no PR
-# yet, or a dirty tree - but not on the flow signal, since the flow
-# mid-pipeline is its own. Besides state, it records the base and base SHA in
-# the branch's git config, as branch off does, so branch sync and branch
-# base-sha still find them once the flow is done or archived.
+# A restarted implement phase finds the flow's own branch already made: when
+# state.branch records the name it would create and that branch exists, it is
+# checked out if not current and printed, with base_sha and the branch's
+# recorded base untouched (ADR-0054). Any other existing branch is still
+# refused. It refuses a busy checkout with exit 3 - a branch the plugin made
+# with no PR yet, except the flow's own - but not on the flow signal, since
+# the flow mid-pipeline is its own. Uncommitted or in-progress work is the
+# discard rule's (discard_flow_branch_work), applied before anything else
+# changes: discarded, or refused in an interactive main checkout. Besides
+# state, it records the base and base SHA in the branch's git config, as
+# branch off does, so branch sync and branch base-sha still find them once
+# the flow is done or archived.
 cmd_branch_create() {
   require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"
-  refuse_busy_checkout branch tree
-  local slug issue name base sha
+  local slug issue name base sha own=""
   slug="$(state_get slug)"
   require_issue issue
   name="orch/${issue}-${slug}"
-  base="$(flow_base)"
-  checkout_new_branch "$name" "$base" \
-    "point this flow at another base: orch.sh base set <branch> --flow"
+  if [ "$(state_get branch)" = "$name" ] && git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then
+    own=1
+  fi
+  [ -n "$own" ] || refuse_busy_checkout branch
+  # The non-own path's refusals come before the discard, so a refusal exits
+  # with nothing written.
+  if [ -z "$own" ]; then
+    base="$(flow_base)"
+    new_branch_refusals "$name" "$base" \
+      "point this flow at another base: orch.sh base set <branch> --flow"
+  fi
+  discard_flow_branch_work
+  if [ -n "$own" ]; then
+    [ "$(checkout_branch)" = "$name" ] || git checkout -q "$name" \
+      || die "could not check out $name"
+    note "$name"
+    return
+  fi
+  fork_new_branch "$name" "$base"
   sha="$(git rev-parse HEAD)"
   state_write_string branch "$name"
   state_write_string base_sha "$sha"

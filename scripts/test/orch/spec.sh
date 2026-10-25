@@ -402,7 +402,9 @@ assert_eq "printing done and the count" "$out" "done 2"
 assert_eq "a round without fundamental.md is the round to run" "$("$ORCH" spec round 2>&1)" "1 2"
 : >"$rounds/1/fundamental.md"
 assert_eq "a round holding fundamental.md waits" "$("$ORCH" spec round 2>&1)" "1 2 waiting"
-rm -f "$rounds/1/fundamental.md"
+: >"$rounds/1/apply-answer"
+assert_eq "a round holding apply-answer is applying" "$("$ORCH" spec round 2>&1)" "1 2 applying"
+rm -f "$rounds/1/apply-answer" "$rounds/1/fundamental.md"
 "$ORCH" spec round-dir 2/2 >/dev/null
 : >"$rounds/2/round-complete"
 

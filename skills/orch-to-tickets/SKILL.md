@@ -143,20 +143,34 @@ is a legitimate outcome: the parent is already one ticket's worth of work.
 
 ### 5. Publish, or collapse
 
-**2 or more tickets: publish.** Write each ticket's body from the template
-below into a file outside the repo's tracked tree (`.scratch/` serves), then
-publish the tickets in dependency order, blockers first, so each ticket's
-blocking edges name real issue numbers:
+**2 or more tickets: publish.** Write the approved breakdown as one draft file
+outside the repo's tracked tree (`.scratch/` serves), one block per ticket in
+draft order, each ticket's body written from the template below:
 
 ```
-bash "$ORCH" ticket publish <parent> "<title>" <body-file> [--blocked-by N,N,...]
+@@ ticket <k> <title>
+@@ blocked-by <k>,<k>,...
+<body>
+@@ end
 ```
 
-`ticket publish` creates the issue, links it as a sub-issue of the parent,
-records each `--blocked-by` edge, applies the `ready-for-agent` triage role's
-label, and reads all of it back before it reports success. Never publish with
-an ad hoc `gh` call. If it fails, stop and report which tickets were published
-before it did.
+`<k>` is the ticket's position in the draft; the `@@ blocked-by` line is
+optional and names blockers by position. Then publish:
+
+```
+bash "$ORCH" breakdown publish <parent> <draft-file>
+```
+
+`breakdown publish` saves the draft as the breakdown's save point, then
+publishes every ticket in dependency order - blockers first, so each ticket's
+blocking edges name real issue numbers - through `ticket publish`, which
+creates the issue, links it as a sub-issue of the parent, records each
+blocking edge, applies the `ready-for-agent` triage role's label, and reads all
+of it back before it reports success. It prints the published numbers in
+publishing order. If it fails it names the ticket's draft position and the
+failed write, and a rerun on the same parent finishes from the saved draft,
+linking a ticket created but never linked rather than creating another. Never
+publish with an ad hoc `gh` call.
 
 When a published ticket's blocking edges are wrong - any number missing or
 extra - repair them in place rather than retiring the breakdown:

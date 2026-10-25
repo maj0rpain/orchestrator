@@ -1132,6 +1132,114 @@ assert_status "takes no arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh review terminal"
 restore_suite_env
 
+# --- review resume ------------------------------------------------------------
+# A loop whose session died mid-iteration resumes without spending budget
+# (ADR-0054): the dead iteration's reports are cleared and it reruns under the
+# same number, or its landed record sends the loop on.
+echo
+echo "review resume"
+fresh_flow resumetest
+resume_facts() {
+  "$ORCH" state get iteration; "$ORCH" state get budget
+  ls .orchestrator/review 2>/dev/null
+  git status --porcelain
+}
+mkdir -p .orchestrator/review
+state_fixture iteration 2
+"$ORCH" state set budget 5
+writeln '## Findings' 'None' >.orchestrator/review/iteration-01.md
+writeln 'old' >.orchestrator/review/iteration-02-spec.md
+writeln 'old' >.orchestrator/review/iteration-02-standards.md
+out="$("$ORCH" review resume 2>&1)"; st=$?
+assert_status "resume with no record for the last iteration succeeds" "$st" 0
+assert_eq "printing rerun with that iteration" "$out" "rerun 2"
+assert_eq "clearing the dead iteration's reports" \
+  "$(ls .orchestrator/review)" "iteration-01.md"
+assert_eq "keeping iteration" "$("$ORCH" state get iteration)" "2"
+assert_eq "and budget" "$("$ORCH" state get budget)" "5"
+
+writeln '## Findings' 'None' >.orchestrator/review/iteration-02.md
+writeln 'kept' >.orchestrator/review/iteration-02-spec.md
+out="$("$ORCH" review resume 2>&1)"; st=$?
+assert_status "resume with a record lacking a Terminal state succeeds" "$st" 0
+assert_eq "printing next while pending" "$out" "next"
+assert_eq "and leaving that iteration's reports" \
+  "$(cat .orchestrator/review/iteration-02-spec.md)" "kept"
+
+"$ORCH" state set budget 2
+out="$("$ORCH" review resume 2>&1)"; st=$?
+assert_status "resume when interrupted succeeds" "$st" 0
+assert_eq "printing terminate" "$out" "terminate"
+assert_eq "keeping budget" "$("$ORCH" state get budget)" "2"
+
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-02.md
+out="$("$ORCH" review resume 2>&1)"; st=$?
+assert_status "a finished loop has nothing to resume" "$st" 1
+assert_contains "saying so" "$out" "nothing to resume"
+
+# A failed clear dies naming the report, leaving iteration and budget.
+rm -f .orchestrator/review/iteration-02.md .orchestrator/review/iteration-02-spec.md
+mkdir -p .orchestrator/review/iteration-02-spec.md/sub
+"$ORCH" state set budget 5
+out="$("$ORCH" review resume 2>&1)"; st=$?
+assert_status "a failed clear dies with exit 1" "$st" 1
+assert_contains "naming the report" "$out" "could not clear the dead iteration's reviewer report"
+assert_eq "leaving iteration" "$("$ORCH" state get iteration)" "2"
+rm -rf .orchestrator/review/iteration-02-spec.md
+
+# The discard rule: refused in an interactive main checkout, applied beside one.
+writeln 'old' >.orchestrator/review/iteration-02-spec.md
+git add -A >/dev/null 2>&1; git commit -qm base >/dev/null 2>&1
+echo hand >>README.md
+before="$(resume_facts)"
+out="$("$ORCH" review resume 2>&1)"; st=$?
+assert_status "a dirty tree in an interactive main checkout is refused" "$st" 1
+assert_contains "naming the discard command" "$out" "reset --hard"
+assert_eq "touching nothing" "$(resume_facts)" "$before"
+
+sc_clone
+side="$(sc_add sideresume)"
+(
+  cd "$side" || exit 1
+  "$ORCH" init sideresume >/dev/null
+  state_fixture iteration 1
+  "$ORCH" state set budget 3
+  echo hand >>README.md
+  out="$("$ORCH" review resume 2>&1)"; st=$?
+  assert_status "a dirty tree in a side checkout is discarded" "$st" 0
+  assert_eq "and the iteration reruns" "$out" "rerun 1"
+  assert_eq "leaving it clean" "$(git status --porcelain)" ""
+
+  # a dead base sync's merge in progress
+  leave_merge_in_progress clash-a
+  assert_eq "(fixture) a merge is in progress" \
+    "$(merge_state)" "merging"
+  out="$("$ORCH" review resume 2>&1)"; st=$?
+  assert_status "a merge in progress in a side checkout is aborted" "$st" 0
+  assert_eq "leaving no merge in progress" \
+    "$(merge_state)" "none"
+  assert_eq "and a clean tree" "$(git status --porcelain)" ""
+
+  # a dead rebase in progress
+  leave_rebase_in_progress clash-r
+  assert_eq "(fixture) a rebase is in progress" \
+    "$(rebase_state)" "rebasing"
+  out="$("$ORCH" review resume 2>&1)"; st=$?
+  assert_status "a rebase in progress in a side checkout is aborted" "$st" 0
+  assert_eq "leaving no rebase in progress" \
+    "$(rebase_state)" "none"
+
+  # a finished loop has nothing to resume: refused before anything is discarded
+  mkdir -p .orchestrator/review
+  writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
+  echo hand >>README.md
+  out="$("$ORCH" review resume 2>&1)"; st=$?
+  assert_status "nothing to resume in a side checkout exits 1" "$st" 1
+  assert_contains "saying so" "$out" "nothing to resume"
+  assert_eq "and discards no edits" "$(git status --porcelain README.md)" " M README.md"
+)
+restore_suite_env
+
 # --- review retire -------------------------------------------------------
 # The archive test's directory-move assertions are the direct template.
 echo

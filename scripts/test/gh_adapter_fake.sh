@@ -724,6 +724,20 @@ adapter_pr_state_draft() {
   if [ -f "$(fake_pr_dir "$1")/draft" ]; then echo true; else echo false; fi
 }
 
+# adapter_pr_title_edit <n> <title>: the title as the stored one.
+adapter_pr_title_edit() {
+  ! fake_failing adapter_pr_title_edit || return 1
+  fake_pr_known "$1" || return 1
+  printf '%s\n' "$2" >"$(fake_pr_dir "$1")/title"
+}
+
+# adapter_pr_label_add <n> <label>: the label appended to the stored ones.
+adapter_pr_label_add() {
+  ! fake_failing adapter_pr_label_add || return 1
+  fake_pr_known "$1" || return 1
+  printf '%s\n' "$2" >>"$(fake_pr_dir "$1")/labels"
+}
+
 # --- sub-issue and dependency operations, on the store ------------------------
 
 # fake_open_blockers <n>: how many of #n's stored blockers are still open.

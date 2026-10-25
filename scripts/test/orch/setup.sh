@@ -717,6 +717,10 @@ fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
 # store, in link order, space-separated - nothing for none.
 fake_sub_issues_of() { paste -sd ' ' "$ORCH_GH_FAKE_STORE/subs/$1" 2>/dev/null || true; }
 
+# fake_blockers_of <n>: #n's blockers read back from the store, sorted by
+# number, space-separated - nothing for none.
+fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
+
 # fake_lag <operation> <n> [stale]: the next n calls of the named operation
 # answer stale, as GitHub does for a moment after a write; the call after them
 # is current again. An operation that reads answers the stale text given, in
@@ -856,6 +860,39 @@ marked_ticket_worktree() {
   path="$("$ORCH" ticket-worktree add "$1")" || return
   printf '123\n' >"$(git -C "$path" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
   printf '%s\n' "$path"
+}
+
+# leave_merge_in_progress <clash-branch>: leaves a merge in progress on the
+# current branch (or detached HEAD), as a dead base sync does - <clash-branch>
+# and the current commit each add clash.txt differently, and the merge stops.
+leave_merge_in_progress() {
+  local base
+  base="$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)"
+  git checkout -q -b "$1"
+  echo a >clash.txt && git add clash.txt && git commit -qm a
+  git checkout -q "$base"
+  echo b >clash.txt && git add clash.txt && git commit -qm b
+  git merge -q "$1" >/dev/null 2>&1
+}
+
+# leave_rebase_in_progress <clash-branch>: the same for a rebase in progress.
+leave_rebase_in_progress() {
+  local base
+  base="$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)"
+  git checkout -q -b "$1"
+  echo c >clash.txt && git add clash.txt && git commit -qm c
+  git checkout -q "$base"
+  echo d >clash.txt && git add clash.txt && git commit -qm d
+  git rebase "$1" >/dev/null 2>&1
+}
+
+# merge_state, rebase_state: print merging or none / rebasing or none for the
+# current checkout.
+merge_state() {
+  git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none
+}
+rebase_state() {
+  [ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none
 }
 
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,

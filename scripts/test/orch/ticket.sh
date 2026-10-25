@@ -17,10 +17,6 @@ ticket_fixture() {
   writeln 'Build the thing.' >"$body"
 }
 
-# fake_blockers_of <n>: #n's blockers read back from the store, sorted by
-# number, space-separated - nothing for none.
-fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
-
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
 # sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`
@@ -417,6 +413,59 @@ fake_fail adapter_sub_issues
 out="$("$ORCH" ticket reset 90 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not list sub-issues of #90"
+restore_suite_env
+
+# --- ticket report -----------------------------------------------------------
+echo
+echo "ticket report"
+ticket_fixture
+fake_issue 95 open
+fake_next_issue 700
+t1="$("$ORCH" ticket publish 95 "A" "$body")"
+t2="$("$ORCH" ticket publish 95 "B" "$body")"
+rep="$(mktemp)"; writeln 'Ticket: #1' >"$rep"
+out="$("$ORCH" ticket report show "$t1" 2>&1)"; st=$?
+assert_status "show with none saved exits 1" "$st" 1
+"$ORCH" ticket report save "$t1" "$rep"; st=$?
+assert_status "saves" "$st" 0
+assert_eq "show prints what was saved" "$("$ORCH" ticket report show "$t1")" "Ticket: #1"
+writeln 'Ticket: #2' >"$rep"
+"$ORCH" ticket report save "$t1" "$rep"
+assert_eq "a resave replaces" "$("$ORCH" ticket report show "$t1")" "Ticket: #2"
+: >"$rep"
+out="$("$ORCH" ticket report save "$t1" "$rep" 2>&1)"; st=$?
+assert_status "an empty file is refused" "$st" 1
+assert_eq "and nothing is overwritten" "$("$ORCH" ticket report show "$t1")" "Ticket: #2"
+out="$("$ORCH" ticket report save "$t2" "$rep.missing" 2>&1)"; st=$?
+assert_status "a missing file is refused" "$st" 1
+"$ORCH" ticket report show "$t2" >/dev/null 2>&1; st=$?
+assert_status "and nothing is written" "$st" 1
+writeln 'R' >"$rep"
+"$ORCH" ticket report save "$t2" "$rep"
+"$ORCH" ticket close "$t1" >/dev/null
+"$ORCH" ticket reset 95
+"$ORCH" ticket report show "$t1" >/dev/null 2>&1; st=$?
+assert_status "reset removes a reopened ticket's report" "$st" 1
+"$ORCH" ticket report show "$t2" >/dev/null 2>&1; st=$?
+assert_status "reset keeps a still-open ticket's report" "$st" 0
+"$ORCH" ticket retire 95
+"$ORCH" ticket report show "$t2" >/dev/null 2>&1; st=$?
+assert_status "retire removes the parent's tickets' reports" "$st" 1
+# a death between the report removal and the GitHub write leaves no stale report
+t3="$("$ORCH" ticket publish 95 "C" "$body")"
+"$ORCH" ticket report save "$t3" "$rep"
+"$ORCH" ticket close "$t3" >/dev/null
+fake_fail adapter_issue_reopen
+"$ORCH" ticket reset 95 >/dev/null 2>&1
+fake_unfail
+"$ORCH" ticket report show "$t3" >/dev/null 2>&1; st=$?
+assert_status "reset removes the report before the reopen that can fail" "$st" 1
+"$ORCH" ticket report save "$t3" "$rep"
+fake_fail adapter_sub_issue_unlink
+"$ORCH" ticket retire 95 >/dev/null 2>&1
+fake_unfail
+"$ORCH" ticket report show "$t3" >/dev/null 2>&1; st=$?
+assert_status "retire removes a report before the unlink that can fail" "$st" 1
 restore_suite_env
 
 # --- ticket parent -----------------------------------------------------------
@@ -991,6 +1040,39 @@ assert_contains "ticket unblock is in the usage text" "$out" "ticket unblock <n>
 
 restore_suite_env
 
+# --- ticket publish --record --------------------------------------------------
+echo
+echo "ticket publish --record"
+ticket_fixture
+fake_issue 50 open
+fake_next_issue 102
+bad_nums="$(mktemp -d)"
+before="$(fake_snapshot)"
+out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$bad_nums" 3 2>&1)"; st=$?
+assert_status "an unwritable numbers file dies" "$st" 1
+assert_contains "naming the record" "$out" "could not write ticket #102's created record"
+assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" ""
+restore_suite_env
+
+# --- ticket retire: breakdown save point ------------------------------------
+echo
+echo "ticket retire save point"
+ticket_fixture
+fake_issue 50 open
+mkdir -p .orchestrator/breakdown/50 .orchestrator/breakdown/51
+: >.orchestrator/breakdown/50/draft.md; : >.orchestrator/breakdown/51/draft.md
+out="$("$ORCH" ticket retire 50 2>&1)"; st=$?
+assert_status "retires" "$st" 0
+assert_eq "removes the parent's breakdown save point" "$(on_disk .orchestrator/breakdown/50)" "absent"
+assert_eq "leaves another parent's" "$(on_disk .orchestrator/breakdown/51/draft.md)" "present"
+# a collapsed breakdown's report is saved under the spec issue's own number
+printf 'Ticket: #50\n' >"$body"
+"$ORCH" ticket report save 50 "$body"
+"$ORCH" ticket retire 50 >/dev/null 2>&1
+"$ORCH" ticket report show 50 >/dev/null 2>&1; st=$?
+assert_status "retire removes the parent's own saved report" "$st" 1
+restore_suite_env
+
 # --- ticket: unknown op ------------------------------------------------------
 new_repo >/dev/null
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
@@ -1176,4 +1258,203 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "ticket merge is in the usage text" "$out" "ticket merge <n>"
 assert_contains "the CLI conventions' noun table lists merge among ticket's verbs" \
   "$(grep '^| `ticket` ' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`merge`'
+restore_suite_env
+
+# --- ticket reclaim (ADR-0054) -----------------------------------------------
+# Recovers what a dead implement run left: closes merged tickets, merges
+# reported ones, discards the rest. Checked through issue states, branches,
+# worktrees and exit status.
+echo
+echo "ticket reclaim"
+# rc_commit <dir> <file> <content>: commit <content> to <file> in <dir>.
+rc_commit() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
+# rc_wt <n>: ticket <n>'s worktree path.
+rc_wt() { printf '%s/.orchestrator/worktrees/t%s\n' "$(pwd -P)" "$1"; }
+# rc_setup <count>: a flow branch with spec issue 90 and <count> published
+# tickets numbered 7.., each with a ticket worktree holding one commit.
+rc_setup() {
+  local i k
+  tw_repo
+  fake_github
+  body="$(mktemp)"
+  writeln 'Build the thing.' >"$body"
+  fake_issue 90 open
+  fake_next_issue 7
+  for ((i = 0; i < $1; i++)); do
+    k=$((7 + i))
+    "$ORCH" ticket publish 90 "T$k" "$body" >/dev/null
+    "$ORCH" ticket-worktree add "$k" >/dev/null
+    rc_commit "$(rc_wt "$k")" "t$k.txt" "work $k"
+  done
+}
+rc_report() { local f; f="$(mktemp)"; echo "Ticket: #$1" >"$f"; "$ORCH" ticket report save "$1" "$f"; }
+rc_has_worktree() { if [ -e "$(rc_wt "$1")/.git" ]; then echo yes; else echo no; fi; }
+rc_has_branch() { if git rev-parse --verify --quiet "refs/heads/orch/5-feature--t$1" >/dev/null; then echo yes; else echo no; fi; }
+# rc_midrebase <n>: leave ticket <n> stopped mid-rebase on a conflict.
+rc_midrebase() {
+  rc_commit "$(rc_wt "$1")" feature.txt from-ticket
+  rc_commit . feature.txt from-flow
+  git -C "$(rc_wt "$1")" rebase -q orch/5-feature >/dev/null 2>&1 || true
+  assert_eq "(fixture) ticket $1 is mid-rebase" \
+    "$(cd "$(rc_wt "$1")" && rebase_state)" "rebasing"
+}
+
+# merged with a saved report: closed, worktree removed
+rc_setup 1
+rc_report 7
+"$ORCH" ticket merge 7 >/dev/null 2>&1
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a merged reported ticket succeeds" "$st" 0
+assert_eq "closing the open ticket" "$(fake_state_of 7)" "CLOSED"
+assert_eq "removing its worktree" "$(rc_has_worktree 7)" "no"
+assert_eq "and deleting its branch" "$(rc_has_branch 7)" "no"
+assert_contains "printing a line for the close" "$out" "closed ticket #7"
+assert_contains "and one for the worktree" "$out" "removed the worktree of ticket #7"
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a rerun with nothing left succeeds" "$st" 0
+assert_eq "printing nothing" "$out" ""
+
+# merged with a saved report, worktree dirty: reset, then removed
+rc_setup 1
+rc_report 7
+"$ORCH" ticket merge 7 >/dev/null 2>&1
+echo junk >"$(rc_wt 7)/untracked.txt"
+echo more >>"$(rc_wt 7)/t7.txt"
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a merged reported ticket with a dirty worktree succeeds" "$st" 0
+assert_eq "removing its worktree and closing it" "$(rc_has_worktree 7)$(fake_state_of 7)" "noCLOSED"
+
+# reported, unmerged and dirty: reset, merged, closed, removed
+rc_setup 1
+rc_report 7
+echo junk >"$(rc_wt 7)/untracked.txt"
+echo more >>"$(rc_wt 7)/t7.txt"
+rc_commit . other.txt landed-first
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a reported unmerged dirty ticket succeeds" "$st" 0
+assert_eq "closing it" "$(fake_state_of 7)" "CLOSED"
+assert_eq "landing its commit on the flow branch, without the uncommitted edit" "$(cat t7.txt)" "work 7"
+assert_eq "the flow branch's tip is the ticket's commit" "$(git log -1 --format=%s orch/5-feature)" "t7.txt: work 7"
+assert_eq "removing its worktree" "$(rc_has_worktree 7)" "no"
+assert_contains "printing the merge" "$out" "merged ticket #7"
+
+# reported, unmerged and mid-rebase (the rebase would conflict): reset first,
+# then the merge itself reports the conflict
+rc_setup 1
+rc_report 7
+rc_midrebase 7
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a mid-rebase reported worktree is reset, then its conflict reported" "$st" 3
+assert_contains "printing conflict <n>" "$out" "conflict 7"
+assert_eq "no rebase is left in progress" \
+  "$(cd "$(rc_wt 7)" && rebase_state)" "none"
+
+# conflict: exit 3, both branches at their prior tips, later leftovers untouched
+rc_setup 2
+rc_report 7
+rc_report 8
+rc_commit "$(rc_wt 7)" feature.txt from-ticket
+rc_commit . feature.txt from-flow
+flow_tip="$(git rev-parse orch/5-feature)"
+tip7="$(git rev-parse orch/5-feature--t7)"
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a conflicting merge exits 3" "$st" 3
+assert_contains "printing conflict <n>" "$out" "conflict 7"
+assert_eq "the flow branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$tip7"
+assert_eq "the conflicting ticket stays open" "$(fake_state_of 7)" "OPEN"
+assert_eq "a later leftover is untouched" "$(rc_has_worktree 8)$(fake_state_of 8)" "yesOPEN"
+
+# unreported worktrees are discarded: unmerged, dirty, commit-less, mid-rebase
+rc_setup 2
+echo junk >"$(rc_wt 8)/untracked.txt"
+echo more >>"$(rc_wt 8)/t8.txt"
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of unreported worktrees succeeds" "$st" 0
+assert_eq "discarding the unmerged one" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
+assert_eq "and the dirty one" "$(rc_has_worktree 8)$(rc_has_branch 8)" "nono"
+assert_eq "leaving both tickets open to be rebuilt" "$(fake_state_of 7) $(fake_state_of 8)" "OPEN OPEN"
+assert_contains "printing the discard" "$out" "discarded ticket #7"
+
+rc_setup 0
+"$ORCH" ticket publish 90 T7 "$body" >/dev/null
+"$ORCH" ticket-worktree add 7 >/dev/null
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim discards a commit-less worktree" "$st" 0
+assert_eq "removing it" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
+
+rc_setup 1
+rc_midrebase 7
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim discards a mid-rebase unreported worktree" "$st" 0
+assert_eq "removing it" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
+
+# a collapsed breakdown's spec issue is never closed
+tw_repo
+fake_github
+fake_issue 90 open
+"$ORCH" ticket-worktree add 90 >/dev/null
+rc_commit "$(rc_wt 90)" t90.txt work
+rc_report 90
+"$ORCH" ticket merge 90 >/dev/null 2>&1
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a collapsed breakdown succeeds" "$st" 0
+assert_eq "never closing the spec issue" "$(fake_state_of 90)" "OPEN"
+assert_eq "but removing its worktree" "$(rc_has_worktree 90)" "no"
+
+# a failed close dies naming the ticket and touches no later leftover
+rc_setup 2
+rc_report 7
+rc_report 8
+"$ORCH" ticket merge 7 >/dev/null 2>&1
+fake_fail adapter_issue_close
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a failed close dies" "$st" 1
+assert_contains "naming the ticket" "$out" "ticket #7"
+assert_eq "leaving the later leftover's worktree" "$(rc_has_worktree 8)" "yes"
+assert_eq "and its issue open" "$(fake_state_of 8)" "OPEN"
+
+# a collapsed breakdown's landed ticket (report under the spec issue, worktree
+# gone) is read as landed, and its report stays
+rc_setup 0
+rc_report 90
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a landed collapsed ticket succeeds" "$st" 0
+assert_contains "saying it already landed" "$out" "ticket #90 already landed"
+assert_eq "keeping its report" "$("$ORCH" ticket report show 90)" "Ticket: #90"
+assert_eq "and leaving the spec issue open" "$(fake_state_of 90)" "OPEN"
+restore_suite_env
+
+# the flow branch's stray work: refused in an interactive main checkout,
+# discarded in an autopilot flow
+rc_setup 1
+rc_report 7
+echo hand >>README.md
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a dirty flow branch in an interactive main checkout is refused" "$st" 1
+assert_contains "naming the discard command" "$out" "reset --hard"
+assert_eq "touching no leftover" "$(rc_has_worktree 7)$(fake_state_of 7)" "yesOPEN"
+assert_eq "and leaving the edit" "$(git status --porcelain)" " M README.md"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "the same dirty tree in an autopilot flow is discarded" "$st" 0
+assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
+assert_eq "and reclaiming the leftover" "$(rc_has_worktree 7)$(fake_state_of 7)" "noCLOSED"
+
+# a side checkout of an interactive flow discards without autopilot
+rc_setup 0
+main_path="$(pwd -P)"
+git checkout -q -
+git worktree add -q "$main_path/.orchestrator/checkouts/side" orch/5-feature
+touch "$(git -C "$main_path/.orchestrator/checkouts/side" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+(
+  cd "$main_path/.orchestrator/checkouts/side" || exit 1
+  echo hand >>README.md
+  out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+  assert_status "a dirty flow branch in a side checkout is discarded" "$st" 0
+  assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
+)
+
+out="$("$ORCH" ticket reclaim 2>&1)"; st=$?
+assert_status "reclaim refuses a missing parent" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket reclaim <parent>"
 restore_suite_env

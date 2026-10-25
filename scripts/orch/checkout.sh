@@ -176,3 +176,54 @@ refuse_busy_checkout() {
      $remedy"
   exit 3
 }
+
+# Whether a rebase is in progress in the checkout at <path>.
+rebase_in_progress() {
+  local gitdir
+  gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
+}
+
+# discard_work_in <path> <who>: the discard sequence every site of the discard
+# rule (ADR-0054) runs in the checkout at <path>: a merge or rebase in
+# progress is aborted, then the tree is reset and cleaned. Nothing to discard
+# changes nothing. A failed step dies "<who>: <git command> failed in <path>".
+discard_work_in() {
+  local path="$1" who="$2"
+  if git -C "$path" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1; then
+    git -C "$path" merge --abort >/dev/null 2>&1 || die "$who: git merge --abort failed in $path"
+  fi
+  if rebase_in_progress "$path"; then
+    git -C "$path" rebase --abort >/dev/null 2>&1 || die "$who: git rebase --abort failed in $path"
+  fi
+  git -C "$path" reset --hard -q >/dev/null 2>&1 || die "$who: git reset --hard failed in $path"
+  git -C "$path" clean -fdq >/dev/null 2>&1 || die "$who: git clean failed in $path"
+}
+
+# discard_flow_branch_work: the flow-branch case of the discard rule
+# (ADR-0054), the one primitive every site meeting uncommitted or in-progress
+# work a dead session left on the flow's own branch applies - branch create
+# now, ticket reclaim and review resume next. In the current checkout
+# ($ROOT): a merge or rebase in progress is aborted, and a tree dirty outside
+# the planning allowlist is reset and cleaned. Nothing to discard changes
+# nothing. In an interactive flow's main checkout - autopilot_active false and
+# checkout_kind main, the one tree a human plausibly edits by hand - it
+# refuses instead, exit 1, naming the exact discard command and writing
+# nothing. A failed abort, reset or clean dies (exit 1) naming the step.
+# Called as a bare statement, so the die stops the caller.
+discard_flow_branch_work() {
+  local merging="" rebasing="" dirty kind cmds=""
+  git -C "$ROOT" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1 && merging=1
+  ! rebase_in_progress "$ROOT" || rebasing=1
+  dirty="$(dirty_outside_allowlist)" || exit 1
+  [ -n "$merging$rebasing$dirty" ] || return 0
+  if ! autopilot_active; then
+    kind="$(checkout_kind "$ROOT")" || die "could not tell whether $ROOT is the main checkout - nothing was discarded"
+    if [ "$kind" = main ]; then
+      [ -z "$merging" ] || cmds="git -C \"$ROOT\" merge --abort; "
+      [ -z "$rebasing" ] || cmds="${cmds}git -C \"$ROOT\" rebase --abort; "
+      die "uncommitted or in-progress work on the flow's branch in the main checkout - discard it yourself (${dirty//$'\n'/, }${merging:+ merge in progress}): ${cmds}git -C \"$ROOT\" reset --hard && git -C \"$ROOT\" clean -fd"
+    fi
+  fi
+  discard_work_in "$ROOT" "could not discard"
+}

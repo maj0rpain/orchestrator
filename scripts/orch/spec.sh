@@ -100,6 +100,9 @@ readonly SPEC_ROUND_COMPLETE=round-complete
 # apply in the round's directory: while it exists the round waits for the
 # human's answer, and spec round says so.
 readonly SPEC_ROUND_FUNDAMENTAL=fundamental.md
+# The saved answer of a spec-review apply that is running or died in the round's
+# directory: while it exists the round is applying, and spec round says so.
+readonly SPEC_ROUND_APPLY_ANSWER=apply-answer
 # Where a flow's spec review rounds work, one directory per round number. Not
 # under spec-review/, the flow-less entry archive keeps: these belong to the
 # flow and are archived with it.
@@ -181,7 +184,9 @@ cmd_spec_round_dir() {
 }
 
 # spec round: the round a resumed flow's spec review runs next, from the
-# round marker - `<k> <n> waiting` while the marker's round holds fundamental
+# round marker - `<k> <n> applying` while the marker's round holds a saved
+# apply answer (an apply died), `<k> <n> waiting` while the marker's round holds
+# fundamental
 # items back for the human's answer (autopilot), else `<k> <n>`, the marker's k,
 # or k+1 once round k's directory holds round-complete - or `done <n>` once
 # round n's does. Exit 1, printing nothing, when there is no marker or it names
@@ -201,7 +206,9 @@ cmd_spec_round() {
   spec_round_number "$k" && spec_round_number "$n" && [ -z "$extra" ] && [ "$k" -le "$n" ] \
     || die2 "$malformed"
   [ "$m_issue" = "$issue" ] || return 1
-  if [ -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_FUNDAMENTAL" ]; then
+  if [ -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_APPLY_ANSWER" ]; then
+    printf '%s %s applying\n' "$k" "$n"
+  elif [ -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_FUNDAMENTAL" ]; then
     printf '%s %s waiting\n' "$k" "$n"
   elif [ ! -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_COMPLETE" ]; then
     printf '%s %s\n' "$k" "$n"

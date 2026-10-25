@@ -373,6 +373,13 @@ sra_refused() {
   assert_eq "$label: no GitHub write" "$(fake_snapshot)" "$snap"
 }
 
+# srr_resume <dir>: apply --resume for round $sra_rnd (1/2 when unset).
+srr_resume() {
+  local d="$1"
+  shift
+  out="$("$ORCH" spec-review apply "$d" --resume --round "${sra_rnd:-1/2}" "$@" 2>&1)"; st=$?
+}
+
 # Apply as recommended.
 d="$(sra_dir)"
 sra "$d" recommended
@@ -465,7 +472,7 @@ fake_unfail
 assert_status "a failed first write stops apply" "$st" 1
 assert_eq "leaving settled.md unchanged" "$(cat "$d/settled.md")" "earlier round"
 assert_eq "and writing no round-complete" "$(on_disk "$d/round-complete")" absent
-sra "$d" recommended
+srr_resume "$d"
 assert_status "the rerun applies" "$st" 0
 { printf 'earlier round\n'; cat "$d/changelog.md"; } >"$d/want-settled"
 assert_eq "appending the changelog once" "$(sra_cmp "$d/settled.md" "$d/want-settled")" same
@@ -479,6 +486,49 @@ assert_contains "naming settled.md" "$out" "$d/settled.md"
 assert_contains "and that every GitHub write landed" "$out" "every GitHub write landed"
 assert_contains "the comment among them" "$(fake_comments_of 14)" "Round 1 of 2"
 assert_eq "and the round is not complete: no round-complete" "$(on_disk "$d/round-complete")" absent
+
+# apply --resume (#1614): an apply that died saved its answer in the round
+# directory; --resume reruns it, skipping the writes applied.log records.
+d="$(sra_dir)"
+printf '2: the plan chose this\n' >"$d/reasons.src"
+fake_fail adapter_issue_comment
+sra "$d" recommended --reasons "$d/reasons.src"
+fake_unfail
+assert_status "a changelog failure stops apply" "$st" 1
+assert_eq "apply-answer is kept" "$(on_disk "$d/apply-answer")" present
+assert_eq "the reasons file argument is copied into the round directory" \
+  "$(grep -c "$d/reasons.src" "$d/apply-answer")" 0
+sra "$d" recommended
+assert_status "apply without --resume beside a saved answer is refused" "$st" 1
+assert_contains "naming --resume" "$out" "--resume"
+(sra_rnd=2/2; srr_resume "$d"; echo "$st" >"$d/.st"); st="$(cat "$d/.st")"
+assert_status "--resume with another round is refused" "$st" 1
+rm -f "$d/reasons.src"
+srr_resume "$d"
+assert_status "--resume reruns with the saved answer" "$st" 0
+assert_eq "the changelog is posted once" "$(fake_comments_of 14 | grep -c '^## Spec review')" 1
+assert_eq "the body is the applied spec" "$(fake_body_of 14)" "$(cat "$d/spec.md")"
+assert_eq "apply-answer is removed at round-complete" "$(on_disk "$d/apply-answer")" absent
+assert_eq "round-complete is written" "$(on_disk "$d/round-complete")" present
+assert_eq "settled.md is appended" "$(sra_cmp "$d/settled.md" "$d/changelog.md")" same
+
+d="$(sra_dir)"
+srr_resume "$d"
+assert_status "--resume with no saved answer is refused" "$st" 1
+
+# With the changelog landed, only the local tail runs.
+d="$(sra_dir)"
+mkdir "$d/settled.md"
+sra "$d" recommended
+rmdir "$d/settled.md"
+assert_eq "a settled.md that cannot be appended keeps apply-answer" "$(on_disk "$d/apply-answer")" present
+snap="$(fake_snapshot)"
+srr_resume "$d"
+assert_status "the tail-only resume succeeds" "$st" 0
+assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
+assert_eq "settled.md written" "$(sra_cmp "$d/settled.md" "$d/changelog.md")" same
+assert_eq "round-complete written" "$(on_disk "$d/round-complete")" present
+assert_eq "apply-answer removed" "$(on_disk "$d/apply-answer")" absent
 
 # Apply all: the recommend-decline item too.
 d="$(sra_dir)"
@@ -861,6 +911,7 @@ mkdir -p "$ORCH_GH_FAKE_STORE/subs" && printf '20\n' >"$ORCH_GH_FAKE_STORE/subs/
 snap="$(fake_snapshot)"
 sra "$d" recommended
 assert_status "a breakdown and an applied edit pause with exit 3" "$st" 3
+assert_eq "the pause leaves no apply-answer" "$(on_disk "$d/apply-answer")" absent
 assert_eq "printing the breakdown kind" "$out" "sub-issues"
 assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
 assert_eq "spec.md edited" "$(cat "$d/spec.md")" "$sra_clean"
@@ -911,6 +962,7 @@ assert_contains "saying it carries no mark" "$out" "a resolved item carries no m
 d="$(srf_dir)"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
 assert_status "a round with a fundamental item applies" "$st" 0
+assert_eq "the hold-back leaves no apply-answer" "$(on_disk "$d/apply-answer")" absent
 assert_eq "the rest is applied and the held item's edit left out" "$(cat "$d/spec.md")" '# Spec
 
 Alpha prime line.
@@ -951,8 +1003,8 @@ fake_unfail
 assert_status "a failed changelog write in the resumed apply stops it" "$st" 1
 assert_contains "naming the writes that landed" "$out" "already landed: the body of issue #14"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
-assert_status "and apply refuses to run again" "$st" 1
-assert_contains "saying so" "$out" "apply refuses to run again"
+assert_status "and apply without --resume is refused" "$st" 1
+assert_contains "naming --resume" "$out" "--resume"
 assert_eq "fundamental.md is kept" "$(on_disk "$d/fundamental.md")" present
 
 # Write order and failure.
@@ -1232,6 +1284,20 @@ the changelog comment on issue #14"
 - #22 closed, built against the earlier spec: the gamma API'
 done
 
+# A --resume after the retire landed reports the retire, not "no breakdown".
+d="$(srt_dir)"
+srt_fetch "$d"
+fake_fail_after adapter_issue_comment 1
+sra "$d" recommended --tickets retire
+fake_unfail
+assert_status "retire landed, then the changelog comment failed" "$st" 1
+assert_contains "the retire is in applied.log" "$(cat "$d/applied.log")" "the retire of #14's ticket breakdown"
+srr_resume "$d"
+assert_status "--resume after a landed retire applies" "$st" 0
+assert_eq "the resumed changelog still reports the retire" "$(tail -n 3 "$d/changelog.md")" '### Tickets
+- retired, to be broken down again
+- #22 closed, built against the earlier spec: the gamma API'
+
 # @@ none-affected.
 d="$(srt_dir)"
 printf '@@ none-affected\n' >"$d/tickets.md"
@@ -1469,6 +1535,7 @@ fake_unfail
 assert_status "an unattended ticket write failure stops apply" "$st" 1
 assert_contains "naming the landed writes" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
 restore_suite_env
+
 
 # --- spec-review check (#1137) ------------------------------------------------
 # A round's batch validated before the batch question: everything apply checks

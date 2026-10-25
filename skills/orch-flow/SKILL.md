@@ -155,9 +155,12 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      and `spec round-dir` leave in the handoff folder. When it prints
      `<k> <n>`, ask nothing and run round k of n in this session: step 4's
      review from round k, with no round count asked. When it prints
-     `done <n>`, every round has run - the session that ran the last one
-     failed after it, say in the ticket breakdown - so ask nothing and go to
-     step 5. Only when
+     `<k> <n> applying`, a spec-review apply died partway: run
+     `bash "$ORCH" spec-review apply <dir> --resume --round <k>/<n>` (it
+     reruns with the answer it saved) and go on from the round it completes.
+     When it prints `done <n>`, every round has run - the session that ran
+     the last one failed after it, say in the ticket breakdown - so ask
+     nothing and go to step 5. Only when
      it exits 1, no round marker for this issue, go on to the marker check.
      Any other exit is a failure: relay its `orch:` message and stop, leaving
      the state where it is.
@@ -253,19 +256,27 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    review there. On a non-zero exit, relay its `orch:` message and stop.
    The fresh session's round check runs round k+1. Round n runs to
    completion in its session, and the phase goes on to step 5 there.
-5. Run `bash "$ORCH" ticket exists <spec issue>` first, with the spec issue
-   from `bash "$ORCH" state get issue`.
+5. Run `bash "$ORCH" breakdown state <spec issue>` first, with the spec issue
+   from `bash "$ORCH" state get issue`. It prints one word, and exits 2 when
+   GitHub cannot be read (relay its message and stop).
 
-   **Exit 0** means the issue already has a ticket breakdown - as for a
-   blueprint adopted at init, or one a step-0c rewrite kept; a default `redo
-   spec` retires the breakdown first, so it never reaches this exit. Skip the
-   breakdown and ask nothing: step 4's spec review may already have reconciled
-   the breakdown with the edits it applied. `ticket exists` printed one word,
-   which settles step 6's **Ticket
-   breakdown**: `sub-issues` means the spec issue number, and `collapsed`
-   means `None: work directly against #<n>` naming the spec issue.
+   **`complete`** means the issue already has a whole ticket breakdown - as for
+   a blueprint adopted at init, one a step-0c rewrite kept, or one published
+   in full; a default `redo spec` retires the breakdown first, so it never
+   reaches this answer. Skip the breakdown and ask nothing: step 4's spec
+   review may already have reconciled the breakdown with the edits it applied.
+   Step 6's **Ticket breakdown** is settled by `bash "$ORCH" ticket exists
+   <spec issue>`, which prints one word: `sub-issues` means the spec issue
+   number, and `collapsed` means `None: work directly against #<n>` naming the
+   spec issue.
 
-   **Exit 1** means it has none: invoke the `orch-to-tickets` skill on the
+   **`partial`** means a breakdown was approved and saved but not fully
+   published: run `bash "$ORCH" breakdown publish <spec issue> <saved draft>`
+   on the saved draft (`.orchestrator/breakdown/<spec issue>/draft.md`) with no
+   quiz and no new draft, and report its published numbers.
+
+   **`none`** means there is no breakdown: invoke the `orch-to-tickets` skill
+   on the
    just-reviewed spec issue and follow it, through its own quiz until the
    user approves a breakdown. It publishes 2 or more tickets as sub-issues,
    or collapses 0 or 1 into the spec issue under its fixed `## Ticket`
@@ -275,7 +286,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    A step-0c rewrite or a step-4 review that retired the breakdown also
    lands here.
 
-   **Any other exit** means GitHub could not be read: stop, leaving the state
+   **Exit 2** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.
 6. Invoke the `orch-handoff` skill for `02-spec.md`, with its
    **Ticket breakdown** as either the spec issue number (published or found as
@@ -296,7 +307,10 @@ and stops for the human only on a fundamental item of the spec review
 decides, so the issue is reviewed as it stands - no rewrite decision, no
 marker check, no redo check. The round check still runs, first. Step 4 asks
 no round-count question: the count is `bash "$ORCH" autopilot rounds`. The
-round check's `<k> <n> waiting` means round k holds fundamental items back
+round check's `<k> <n> applying` means a spec-review apply died partway: run
+`bash "$ORCH" spec-review apply <dir> --resume --round <k>/<n>` (it reruns
+with the answer it saved) and go on from the round it completes. The round
+check's `<k> <n> waiting` means round k holds fundamental items back
 for the human's reply (`.orchestrator/spec-rounds/<k>/fundamental.md`): read
 the reply with `bash "$ORCH" autopilot answer spec <file>` (a `mktemp` file
 outside the repo). When it dies because no reply has come, re-post the
@@ -321,14 +335,19 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    will diff against. When it dies because the flow's base does not exist on
    origin, offer the maintainer the repair rather than an abort: `bash "$ORCH"
    base set <branch> --flow` points the flow at another base, then rerun `branch
-   create`. When it exits 3, the checkout is a busy checkout - a working tree
-   with changes outside the planning allowlist, or a branch the plugin made that
-   has no PR yet, as after `redo review` of a flow whose PR opened before
-   the PR marker existed. Stop the phase with the state left where it is,
-   relay the busy line it printed, and tell the human to commit or stash the
-   changes, or switch off the named branch, then run `/orchestrator:next`
-   again. The flow's state already exists here, so it is never moved to a
-   side checkout.
+   create`. A working tree with changes outside the planning allowlist, or a
+   merge or rebase in progress, on the flow's branch is a dead session's
+   leftover: `branch create` discards it (ADR-0054) - except in an interactive
+   flow's main checkout, where it refuses instead, exit 1, naming the exact
+   discard command and touching nothing. Relay that line and tell the human to
+   run the command if the changes are not wanted, or commit them, then run
+   `/orchestrator:next` again. When it exits 3, the checkout is a busy
+   checkout - a branch the plugin made that has no PR yet, as after `redo
+   review` of a flow whose PR opened before the PR marker existed. Stop the
+   phase with the state left where it is, relay the busy line it printed, and
+   tell the human to switch off the named branch, then run
+   `/orchestrator:next` again. The flow's state already exists here, so it is
+   never moved to a side checkout.
 
    **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) neither
    case is offered: an exit 3, or a base missing on origin, is a failure. Ask
@@ -348,8 +367,9 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    - **the stop**: the phase stops, naming every failure;
    - **after loop step f**: this phase's step 4.
 
-   Keep each report's `Evidence` line, its sixth, for step 5's PR body: the
-   red runs its **Evidence** draws on.
+   The driver saves every returned report (loop step d). Steps 5 and 6 read
+   them back with `bash "$ORCH" ticket report show <n>`, for every saved
+   ticket report, none held only in this session.
 
    Whether the breakdown is collapsed comes from the handoff's **Ticket
    breakdown** section, written by the spec phase's step 5.
@@ -358,7 +378,8 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    itself. No `ticket next`/`ticket close` loop runs against it: an empty
    frontier there means nothing was ever split out, not "already done."
    The breakdown is collapsed: the sequential path dispatches exactly one
-   subagent, for ticket `<n>`. **Any other content** names the spec issue
+   subagent, for ticket `<n>`, in its own ticket worktree `t<n>`: merged,
+   never closed. **Any other content** names the spec issue
    as a parent whose GitHub sub-issues carry the real tickets, and the loop
    works its frontier.
 
@@ -385,7 +406,7 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    headings and style. Its **Summary**, **Evidence** and **Merge Danger**
    are judged against `git diff <base SHA>..HEAD`, with the base SHA from
    `bash "$ORCH" branch base-sha`; **Evidence** draws on
-   the reports' `Evidence` lines kept in step 3, and its last line is step
+   the `Evidence` lines (each saved report's sixth), and its last line is step
    3's combined verification command with `pass` or `fail`. This site adds
    no audit heading of its own: the implement handoff carries the
    deviations and merge resolutions. `pr open` refuses a body missing a
@@ -397,7 +418,7 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    them; never add one afterwards with `gh pr edit`. A `pr open` that fails
    on a label stops the phase, relaying its reason.
 6. Invoke the `orch-handoff` skill for `03-implement.md`, assembling these
-   sections from the tickets' reports, step 3's combined verification and
+   sections from every saved ticket report, step 3's combined verification and
    step 4's base sync:
    - **Deviations**: one bullet per ticket whose `Deviation` line is not
      `None`, naming the ticket and holding all of its deviations. "None" only

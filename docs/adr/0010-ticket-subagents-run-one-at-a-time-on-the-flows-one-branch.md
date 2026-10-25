@@ -50,3 +50,6 @@ instead of stalling the loop, and every deviation is collected into the
 phase's one handoff (`skills/orch-handoff/SKILL.md`) rather than scattered
 across per-ticket artefacts - there is still only one implement-phase handoff
 and one review, of the whole diff, same as before this feature existed.
+
+ADR-0055 amends the above: every ticket subagent now builds in its own ticket
+worktree, the one-at-a-time path included, not on the flow's one branch.

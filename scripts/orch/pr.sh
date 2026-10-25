@@ -4,6 +4,35 @@
 # Its tests: scripts/test/orch/pr.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
+# pr_push_and_body <branch> <base> <issue> <body-file> <tmp-var> <outcome>:
+# the one place the push-then-issue-line rule lives, for open_pr and
+# update_pr. Pushes <branch>, then writes <body-file> behind its issue line -
+# Closes into the default branch, Refs into any other base - into a temp file
+# whose path it sets <tmp-var> to; the caller removes it. A failed push or
+# write dies naming <outcome>, what the failure leaves undone ("no PR was
+# opened", "PR #7 was not updated"). Current shell only: it sets <tmp-var>
+# with printf -v, and its locals carry a _pr_pb_ prefix.
+pr_push_and_body() {
+  local _pr_pb_why _pr_pb_tmp _pr_pb_keyword=Closes
+  # A bare push would rely on set -e, which bash turns off inside the $(...)
+  # open_pr's callers run it in (#1300), so the status is checked here.
+  git_push _pr_pb_why -q -u origin "$1" \
+    || die "could not push branch $1 to origin - $6: $_pr_pb_why"
+  # GitHub only acts on a closing keyword when the PR merges into the default
+  # branch, so a PR into any other base branch refers to its issue instead of
+  # claiming to close it - the release PR is what closes it.
+  [ "$2" = "$(default_branch)" ] || _pr_pb_keyword=Refs
+  # Errexit is off in that $(...) too (#1327), so the temp body's creation and
+  # write are checked here: a failed write would otherwise open the PR with a
+  # truncated body.
+  _pr_pb_tmp="$(mktemp)" || die "could not create a temp file for the PR body - $6"
+  { printf '%s #%s\n\n' "$_pr_pb_keyword" "$3" && cat "$4"; } >"$_pr_pb_tmp" || {
+    rm -f "$_pr_pb_tmp"
+    die "could not write the PR body from $4 - $6"
+  }
+  printf -v "$5" '%s' "$_pr_pb_tmp"
+}
+
 # Pushing a branch and opening a PR against it has exactly one right answer -
 # push, then prefix the body with the issue line - Closes into the default
 # branch, so GitHub links the PR as a closer (no agent-chosen wording can leave
@@ -19,26 +48,11 @@
 # (#1299), so the PR carries them from creation; pr_labels_check reads them
 # back once the caller has recorded the PR.
 open_pr() {
-  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err why keyword=Closes create_opts=() label
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err create_opts=() label
   shift 6
   [ "$draft" != true ] || create_opts=(--draft)
   for label; do create_opts+=(--label "$label"); done
-  # A bare push would rely on set -e, which bash turns off inside the $(...)
-  # every caller runs open_pr in (#1300), so the status is checked here.
-  git_push why -q -u origin "$branch" \
-    || die "could not push branch $branch to origin - no PR was opened: $why"
-  # GitHub only acts on a closing keyword when the PR merges into the default
-  # branch, so a PR into any other base branch refers to its issue instead of
-  # claiming to close it - the release PR is what closes it.
-  [ "$base" = "$(default_branch)" ] || keyword=Refs
-  # open_pr runs in $(...), where errexit is off (#1327), so the temp body's
-  # creation and write are checked here: a failed write to the temp file
-  # would otherwise open the PR with a truncated body.
-  tmp="$(mktemp)" || die "could not create a temp file for the PR body - no PR was opened"
-  { printf '%s #%s\n\n' "$keyword" "$issue" && cat "$body_file"; } >"$tmp" || {
-    rm -f "$tmp"
-    die "could not write the PR body from $body_file - no PR was opened"
-  }
+  pr_push_and_body "$branch" "$base" "$issue" "$body_file" tmp "no PR was opened"
   if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${create_opts[@]+"${create_opts[@]}"}; then
     rm -f "$tmp"
     gh_die "open the PR for branch $branch (issue #$issue)" "$err"
@@ -47,6 +61,49 @@ open_pr() {
   git config "branch.$branch.orchestrator-pr" "$pr" \
     || warn "could not record PR #$pr on branch $branch - it counts as busy until you switch off it"
   printf '%s\n' "$pr"
+}
+
+# update_pr <pr> <branch> <base> <issue> <title> <body-file> <label>...: pr
+# open's restart path (#1609), for a flow whose state already names its PR: the
+# PR must be open on <branch>, else it dies naming it and creates none. It
+# pushes, then writes the title, the body (issue line included, as on
+# creation) and each requested label the PR lacks, removing none. A failed
+# push dies before any PR write; a failed write dies naming it and each write
+# already landed. A rerun repeats every write.
+update_pr() {
+  # shellcheck disable=SC2034 # pr_refs_read fills all four; only head is read
+  local pr="$1" branch="$2" base="$3" issue="$4" title="$5" body_file="$6" st draft err refs_oid head refs_base commits
+  shift 6
+  # shellcheck disable=SC2034 # ignored takes the writes' output, read by no one
+  local tmp have ignored label landed=""
+  pr_state_draft_read "$pr" st draft err \
+    || gh_die "read the state of PR #$pr, recorded in state" "$err"
+  [ "$st" = OPEN ] || die "PR #$pr, recorded in state, is $st, not open - no PR was opened or updated"
+  pr_refs_read "$pr" refs_oid head refs_base commits err \
+    || gh_die "read the branch of PR #$pr, recorded in state" "$err"
+  [ "$head" = "$branch" ] \
+    || die "PR #$pr, recorded in state, is on branch $head, not the flow's branch $branch - no PR was opened or updated"
+  pr_push_and_body "$branch" "$base" "$issue" "$body_file" tmp "PR #$pr was not updated"
+  if ! capture ignored err adapter_pr_title_edit "$pr" "$title"; then
+    rm -f "$tmp"
+    gh_die "write the title of PR #$pr" "$err"
+  fi
+  landed="the title"
+  if ! capture ignored err adapter_pr_body_edit "$pr" "$tmp"; then
+    rm -f "$tmp"
+    gh_die --hint "already written: $landed" "write the body of PR #$pr" "$err"
+  fi
+  rm -f "$tmp"
+  landed="$landed, the body"
+  [ $# -gt 0 ] || return 0
+  capture have err adapter_pr_labels "$pr" \
+    || gh_die --hint "already written: $landed" "read the labels of PR #$pr" "$err"
+  for label; do
+    list_has "$have" "$label" && continue
+    capture ignored err adapter_pr_label_add "$pr" "$label" \
+      || gh_die --hint "already written: $landed" "add the label '$label' to PR #$pr" "$err"
+    landed="$landed, the label '$label'"
+  done
 }
 
 # pr_label_value <usage> <option-names> --label [value...]: dies, naming
@@ -141,7 +198,7 @@ cmd_pr_open() {
   require_state
   local usage="usage: orch.sh pr open <title> <body-file> [--label <name>]..." labels=()
   [ $# -ge 2 ] || die "$usage"
-  local title="$1" body_file="$2" issue branch base pr
+  local title="$1" body_file="$2" issue branch base pr recorded
   shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -154,6 +211,12 @@ cmd_pr_open() {
   require_branch branch
   base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
   pr_body_check "$body_file" Summary Evidence "Merge Danger"
+  recorded="$(state_get pr)"
+  if [ -n "$recorded" ]; then
+    update_pr "$recorded" "$branch" "$base" "$issue" "$title" "$body_file" ${labels[@]+"${labels[@]}"}
+    note "$recorded"
+    return 0
+  fi
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"

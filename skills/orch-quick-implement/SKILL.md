@@ -215,7 +215,8 @@ The breakdown is collapsed when step 3 found or made no sub-issue - `ticket
 exists` printed `collapsed`, or `orch-to-tickets` reported `collapsed`: no
 `ticket next`/`ticket close` loop runs against the linked issue, and the
 sequential path dispatches exactly one subagent, for the linked issue itself
-as the ticket.
+as the ticket, built in its own ticket worktree `t<issue>`: merged,
+never closed.
 
 The agent settings are read once, before loop step a, as **Dispatching a
 subagent** says, per **Agent settings** in `docs/host-capabilities.md`:

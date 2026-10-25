@@ -353,7 +353,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               and its tip as the base SHA in state and in
                               the branch's git config, as branch off does.
                               Refuses with exit 3 in a busy checkout, its own
-                              flow aside, changing nothing
+                              flow aside, changing nothing. When state.branch
+                              records the branch and it exists, checks it out
+                              and prints it, base_sha untouched. A dirty tree
+                              or merge/rebase in progress is discarded, or
+                              refused with exit 1 in an interactive main
+                              checkout; any other existing branch is refused
+                              before anything is discarded
   branch off <name>           create and check out <name> off the base branch
                               in effect, recording that base on the branch
                               (branch.<name>.orchestrator-base in local git
@@ -440,7 +446,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               state
   pr open <title> <body-file> [--label <name>]...
                               push and open a draft PR against the flow's base
-                              branch - Closes its issue into the default
+                              branch, or, when a PR is already recorded,
+                              update that PR instead (dying if it is closed,
+                              merged or on another branch) - Closes its issue into the default
                               branch, Refs it into any other. --label,
                               repeatable, opens it carrying that label, read
                               back once the PR is recorded: one missing, or a
@@ -497,7 +505,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               <file>, recording no state. Refuses, leaving
                               the body unchanged, unless <file> opens with
                               the PR's existing Closes/Refs #<issue> line
-  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
+  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...] [--record <numbers-file> <k>]
                               create a ticket, link it as a sub-issue of
                               <parent>, add a blocking edge for every
                               --blocked-by issue, apply ready-for-agent, and
@@ -514,6 +522,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               its ticket branch has not merged into its
                               forked-from branch (or records none), leaving
                               the issue open - --unmerged closes it anyway
+  ticket report save <n> <file>
+                              store ticket <n>'s returned report at
+                              .orchestrator/reports/<n>.md, replacing an
+                              earlier save; a missing or empty file is
+                              refused (exit 1) and nothing is written
+  ticket report show <n>     print ticket <n>'s saved report; exits 1 when
+                              none is saved
   ticket reset <parent>      reopen every sub-issue of <parent> that is
                               currently closed, and only those
   ticket parent <n>          print <n>'s parent issue number, or nothing
@@ -530,7 +545,18 @@ orch.sh - deterministic operations for the orchestrator flow
                               open sub-issue as not planned, comment on every
                               one, unlink it, and cut every `## Ticket`
                               section from the body; afterwards ticket exists
-                              exits 1. A repeat changes nothing
+                              exits 1, and the parent's breakdown save point is
+                              removed. A repeat changes nothing
+  breakdown publish <parent> <draft-file>
+                              save the approved ticket draft (the first run
+                              only; a saved draft wins), then publish every
+                              ticket not yet recorded, in dependency order,
+                              linking a created-but-unlinked one; the
+                              published marker is written last. Prints the
+                              numbers in publishing order
+  breakdown state <parent>    print complete, partial or none; with no draft
+                              saved, ticket exists decides; exits 2 on a
+                              failed read
   ticket block <n> --by N,N,...
                               add a blocking edge on open ticket <n> for every
                               --by sibling (a sub-issue of <n>'s parent; a
@@ -547,6 +573,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               start immediately)` once none is left). A repeat
                               removes no edge; re-running a failed run
                               finishes it
+  ticket reclaim <parent>    recover what a dead implement run left: discard
+                              the flow branch's stray work, then per leftover
+                              ticket - reported and merged: close it, remove
+                              its worktree; reported, unmerged: ticket merge
+                              it (conflict <n>, exit 3), close, remove;
+                              otherwise discard it so it is rebuilt. One line
+                              per action; a failed write exits 1 naming the
+                              ticket
   ticket merge <n>            land ticket <n>'s branch on the branch it was
                               forked from: rebase it onto that branch's tip
                               inside its ticket worktree, then fast-forward
@@ -670,6 +704,14 @@ orch.sh - deterministic operations for the orchestrator flow
   review terminal             classify the last iteration: none, pending,
                               interrupted, malformed, ready, or stop; exits
                               non-zero on the first four
+  review resume               resume a review loop whose session died
+                              mid-iteration, spending no budget: discard the
+                              flow branch's stray work first (refused in an
+                              interactive main checkout, exit 1), then print
+                              rerun <i> after clearing the dead run's
+                              reviewer reports, next, or terminate. Exits 1
+                              when review terminal says anything but pending
+                              or interrupted
   review retire <n>           move every iteration-*.md into pre-redo-<n>/
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
@@ -708,7 +750,11 @@ orch.sh - deterministic operations for the orchestrator flow
   spec round                  print the round a resumed spec review runs
                               next, from handoff/spec-round: "<k> <n>" - k+1
                               once round k's directory holds round-complete -
-                              or "done <n>" once round n's does. Exits 1,
+                              or "done <n>" once round n's does; "<k> <n>
+                              applying" while round k's directory holds a
+                              saved apply answer (an apply died: run
+                              spec-review apply --resume), "<k> <n> waiting"
+                              while it holds fundamental.md. Exits 1,
                               printing nothing, with no marker or one naming
                               another issue; 2 on a malformed marker and on
                               every refusal spec pause makes
@@ -822,6 +868,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               state.json. Each GitHub write lands in
                               <dir>/applied.log; a failed one dies naming those
                               landed, and a non-empty applied.log is refused
+  spec-review apply <dir> --resume --round <k>/<n>
+                              rerun an apply that died partway, with the
+                              answer it saved in <dir> before its first
+                              GitHub write, and no other argument; refuses
+                              when <dir> holds no saved answer or the answer
+                              is for another round
   review-pass begin <issue>   start a review pass of the current branch
                               against issue <issue>: refuse on a detached
                               HEAD, on the base branch, and while an active

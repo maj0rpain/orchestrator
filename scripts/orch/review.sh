@@ -476,6 +476,41 @@ review_standards() {
   fi
 }
 
+# review_resume: resumes a review loop whose driving session died mid-iteration,
+# spending no budget (ADR-0054). It reads `review terminal` first: only pending
+# and interrupted resume, any other state exits 1 with nothing changed. Then it
+# applies the discard rule to the flow's branch - a refusal in an interactive
+# main checkout exits 1 with nothing else touched. With no record for the last
+# iteration the dead run's reviewer reports are cleared and `rerun <i>` is
+# printed; with a record whose Terminal state is empty the iteration finished,
+# and `next` (pending) or `terminate` (interrupted) is printed. `iteration` and
+# `budget` are never written. A failed clear dies (exit 1) naming the report.
+review_resume() {
+  [ $# -eq 0 ] || die "usage: orch.sh review resume"
+  require_state
+  local state i path report
+  state="$(review_terminal_state)" || true
+  state="${state%%$'\n'*}"
+  case "$state" in
+    pending|interrupted) ;;
+    *) die "nothing to resume: review terminal says ${state:-nothing}" ;;
+  esac
+  discard_flow_branch_work
+  i="$(state_get iteration)" || die "cannot read iteration from $STATE"
+  path="$(cmd_review path "$i")" || exit 1
+  if [ ! -f "$path" ]; then
+    for report in "${path%.md}"-*.md; do
+      [ -e "$report" ] || [ -L "$report" ] || continue
+      rm -f -- "$report" 2>/dev/null || die "could not clear the dead iteration's reviewer report $report"
+    done
+    note "rerun $i"
+  elif [ "$state" = pending ]; then
+    note next
+  else
+    note terminate
+  fi
+}
+
 cmd_review() {
   local op="${1:-}"
   shift || true
@@ -615,6 +650,7 @@ cmd_review() {
       ;;
     standards) review_standards "$@" ;;
     rerun) review_rerun "$@" ;;
+    resume) review_resume "$@" ;;
     terminal)
       require_state
       [ $# -eq 0 ] || die "usage: orch.sh review terminal"
@@ -635,6 +671,6 @@ cmd_review() {
       done
       note "$dest"
       ;;
-    *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|standards|ci|rerun|ready|terminal|retire)" ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|standards|ci|rerun|ready|terminal|resume|retire)" ;;
   esac
 }

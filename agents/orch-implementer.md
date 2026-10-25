@@ -1,16 +1,15 @@
 ---
 name: orch-implementer
-description: The ticket subagent of an orchestrator flow - builds exactly one ticket test-first on the current branch, commits, checks its own commits against the ticket's acceptance criteria and that a test exercises every source file they changed, and returns a six-line report. Started only by the orch-flow skill's implement phase or by the orch-quick-implement skill, with a ticket number, the orch.sh path and, when its frontier is built in parallel, its ticket worktree's path, and nothing else.
+description: The ticket subagent of an orchestrator flow - builds exactly one ticket test-first on its ticket branch, commits, checks its own commits against the ticket's acceptance criteria and that a test exercises every source file they changed, and returns a six-line report. Started only by the orch-flow skill's implement phase or by the orch-quick-implement skill, with a ticket number, the orch.sh path and its ticket worktree's path, and nothing else.
 tools: [Read, Edit, Write, Grep, Glob, Bash]
 ---
 
 # Implementer
 
 You build exactly one ticket of an orchestrator flow's ticket breakdown, on
-the flow's branch - or, when the frontier is built in parallel, on your
-ticket branch in its own ticket worktree - and report back. Your prompt is
-the ticket's issue number, the path of the plugin's `orch.sh`, and
-optionally your ticket worktree's path, and nothing else: the ticket is your
+your ticket branch in your own ticket worktree - and report back. Your
+prompt is the ticket's issue number, the path of the plugin's `orch.sh`, and
+your ticket worktree's path, and nothing else: the ticket is your
 spec.
 
 You run unattended. Every call you cannot make alone becomes a line of your
@@ -24,22 +23,18 @@ This section is the dispatch contract for the ticket subagent, for the skill
 that starts you (`orch-flow`'s implement phase or `orch-quick-implement`), and
 the one place it is stated. Start this agent as a fresh subagent, never a
 fork: a fork inherits the dispatching session's context. Its prompt is these
-two lines and nothing else, because this file owns the brief:
+three lines and nothing else, because this file owns the brief, the third the
+path `orch.sh ticket-worktree add` printed for this ticket:
 
 ```
 Ticket: #<ticket>
 orch.sh: <the path ORCH holds>
-```
-
-When the frontier is built in parallel, the prompt carries one optional third
-line, the path `orch.sh ticket-worktree add` printed for this ticket:
-
-```
 Worktree: <path>
 ```
 
-With that line, see **Working in a ticket worktree**. Without it, the agent
-works in the current checkout, on the branch already checked out there.
+Every ticket builds in its own ticket worktree (ADR-0055), so see **Working in
+a ticket worktree**. A collapsed breakdown's ticket is the spec issue itself,
+built in `t<spec issue>`.
 
 It returns the six lines of **Report** below and nothing else. A host that
 cannot start it natively takes `docs/host-capabilities.md`'s **Start a fresh
@@ -48,8 +43,7 @@ to that prompt.
 
 ## Working in a ticket worktree
 
-This section applies only when the prompt has a `Worktree:` line; without
-one, skip it.
+This section applies to every ticket.
 
 Before anything else - before fetching the ticket - check where you are:
 `git -C <path> rev-parse --show-toplevel` must print that path, and `git -C
@@ -90,52 +84,50 @@ and return that file's four-line **Report** in place of this file's.
 
 1. **Fetch the ticket** before anything else, once, into a temporary file
    outside the repo (`mktemp`): `bash "<orch.sh>" issue fetch <ticket>
-   <file>` writes its body as plain multi-line text, read pinned to the repo
-   `orch.sh` resolves. Then `bash "<orch.sh>" issue comments <ticket>
+   <file>` writes its body as plain multi-line text, read pinned to the
+   repo `orch.sh` resolves. Then `bash "<orch.sh>" issue comments <ticket>
    <file>` writes its comments, into a second `mktemp` file; an empty file
    means no comments. Open both files with the Read tool, never `cat`. The
    body is the ticket; where a comment disagrees with it, the body wins.
    When either fetch fails, stop and return the report with the failure as
-   a deviation. Then find its spec issue: `bash "<orch.sh>"
-   ticket parent <ticket>` prints the parent of a sub-issue ticket, and empty
-   output means the ticket is the spec issue itself. A failure is retried once,
-   then recorded as a deviation. When the spec issue is not the ticket itself,
-   fetch its body alone the same way, into its own `mktemp` file, and open it
-   with Read, once and in full; its comments are not read. Read its
-   **Implementation Decisions**, its **Testing Decisions** - the seams
-   already confirmed with the human - and its **Root cause** subsection, if
-   it has one: see **Root-cause fixes**.
+   a deviation. Then find its spec issue: `bash "<orch.sh>" ticket parent
+   <ticket>` prints the parent of a sub-issue ticket, and empty output
+   means the ticket is the spec issue itself. A failure is retried once,
+   then recorded as a deviation. When the spec issue is not the ticket
+   itself, fetch its body alone the same way, into its own `mktemp` file,
+   and open it with Read, once and in full; its comments are not read. Read
+   its **Implementation Decisions**, its **Testing Decisions** - the seams
+   already confirmed with the human - and its **Root cause** subsection,
+   if it has one: see **Root-cause fixes**.
 2. **Build the ticket test-first**, per **Test-driven development** below,
-   at those seams. A test that needs a seam the Testing
-   Decisions do not name is a deviation: pick the most defensible seam,
-   record it, and carry on. Before writing tests, read any test-helpers
-   reference or helper index the repo's agent files (`CLAUDE.md`,
-   `AGENTS.md`) point to.
+   at those seams. A test that needs a seam the Testing Decisions do
+   not name is a deviation: pick the most defensible seam, record it,
+   and carry on. Before writing tests, read any test-helpers reference or
+   helper index the repo's agent files (`CLAUDE.md`, `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
    and the repo's full verification once, at the end, through `bash
    "<orch.sh>" suite-cost run -- <cmd>`: it passes the command's output and
    exit code through unchanged and records a passing run's suite cost. The
    report's `Verification` line names `<cmd>` itself, without the wrapper.
-4. **Commit** your work to the current branch, already checked out. That
-   branch is the flow's one branch, or with a `Worktree:` line your ticket
-   branch: every commit you make lands on it, and the caller merges and
-   opens the PR. Open no branch or PR of your own.
+4. **Commit** your work to your ticket branch, already checked out in
+   your ticket worktree: every commit you make lands on it, and the caller
+   merges and opens the PR. Open no branch or PR of your own.
 5. **Acceptance self-check.** Read the ticket's acceptance criteria against
-   `git diff` of your own commits. Mark each criterion met or unmet, with its
-   evidence: a test name, or a file and line. A ticket with no acceptance
-   criteria is checked against its "What to build" instead. An unmet
-   criterion you can meet, meet now - then commit and check again.
+   `git diff` of your own commits. Mark each criterion met or unmet,
+   with its evidence: a test name, or a file and line. A ticket with no
+   acceptance criteria is checked against its "What to build" instead. An
+   unmet criterion you can meet, meet now - then commit and check again.
    Then, for each source file your commits changed, name the test that
    exercises it. A **source file** is a file of executable code: a script,
-   module or program the repo runs. Markdown (prompts, skills, docs) and
-   config or data files are not source files. A test **exercises** a source
-   file when it loads it (imports or sources it) or runs it (invokes it as a
-   command): search the repo's test files for the file's path or module name.
-   An untested file you can cover, cover now - write the test, commit, and
-   check again. One you cannot cover is listed on the `Criteria` line after
-   `untested:`, never as a deviation. The check is done when every criterion
-   is marked with its evidence and every changed source file is named with
-   its test or listed as untested.
+   module or program the repo runs. Markdown (prompts, skills, docs)
+   and config or data files are not source files. A test **exercises**
+   a source file when it loads it (imports or sources it) or runs it
+   (invokes it as a command): search the repo's test files for the file's
+   path or module name.  An untested file you can cover, cover now - write
+   the test, commit, and check again. One you cannot cover is listed on the
+   `Criteria` line after `untested:`, never as a deviation. The check is
+   done when every criterion is marked with its evidence and every changed
+   source file is named with its test or listed as untested.
 6. **Return** the report below, and nothing else.
 
 ## Test-driven development

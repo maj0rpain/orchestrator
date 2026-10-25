@@ -158,7 +158,7 @@ gh_or_die() {
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_all,
 #   adapter_pr_diff, adapter_prs_merged,
 #   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
-#   adapter_pr_body_edit
+#   adapter_pr_body_edit, adapter_pr_title_edit, adapter_pr_label_add
 # - sub-issue and dependency: adapter_sub_issues, adapter_sub_issue_link,
 #   adapter_sub_issue_unlink, adapter_issue_parent, adapter_blockers,
 #   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
@@ -606,6 +606,17 @@ adapter_pr_comment() {
 # contents (issue #444). Prints nothing.
 adapter_pr_body_edit() {
   gh pr edit "$1" --body-file "$2" >/dev/null
+}
+
+# adapter_pr_title_edit <n> <title>: replaces the PR's title. Prints nothing.
+adapter_pr_title_edit() {
+  gh pr edit "$1" --title "$2" >/dev/null
+}
+
+# adapter_pr_label_add <n> <label>: adds the label to the PR, removing none.
+# Prints nothing.
+adapter_pr_label_add() {
+  gh pr edit "$1" --add-label "$2" >/dev/null
 }
 
 # --- sub-issue and dependency operations ---
