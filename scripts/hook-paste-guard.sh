@@ -8,7 +8,7 @@
 # and names that file in its stderr pass line; this hook reads the session's
 # transcript and refuses every ask after such a pass line until the view is
 # in chat, handing the view back with the instruction to end the turn on it
-# and the batch question in plain text, not the ask tool (#1350, ADR-0051):
+# and the question in plain text, not the ask tool (#1350, ADR-0051):
 # some hosts hide a long text written in the same response as a tool call.
 # The short confirmation ask after a near-miss answer passes, its view
 # already in the turn-final reply above.
@@ -31,4 +31,4 @@ tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
 [ "$tool" = "AskUserQuestion" ] || exit 0
 paste_guard_check "$transcript" since && exit 0
 
-hook_emit_deny "Blocked by the orchestrator: the human has not seen this round's view in chat. Do not ask this question with the ask tool. $(paste_guard_instruction)"
+hook_emit_deny "Blocked by the orchestrator: the human has not seen this round's view in chat. Do not ask this question with the ask tool. $(paste_guard_instruction "$paste_guard_view")"

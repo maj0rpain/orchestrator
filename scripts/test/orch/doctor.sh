@@ -1953,6 +1953,9 @@ fake_flow autopilot-doctor
 fake_issue 7 open ready-for-agent orch:implement
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "doctor flags a label that disagrees with the recorded phase" "$out" "is labelled orch:implement, but this checkout last moved to phase spec"
+fake_issue 7 open ready-for-agent orch:review orch:spec
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "two phase labels are named space-separated in table order" "$out" "is labelled orch:spec orch:review, but this checkout last moved to phase spec"
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "an agreeing label is ok" "$out" "phase label: orch:spec"
@@ -1990,6 +1993,9 @@ fake_issue 7 open ready-for-agent orch:implement
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "doctor in the main checkout flags a side flow whose label disagrees" "$out" "issue #7 is labelled orch:implement, but its side checkout"
 assert_contains "naming the recorded phase" "$out" "last moved to phase spec"
+fake_issue 7 open ready-for-agent orch:review orch:spec
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "a side flow with two phase labels names both, space-separated" "$out" "issue #7 is labelled orch:spec orch:review, but its side checkout"
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"

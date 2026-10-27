@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.38.13
+
+The exclude-file, `branch busy` and `branch create` messages that list paths now join them with the shared `list_join` helper; their wording is unchanged.
+
+## 4.38.12
+
+The paste guard passes the armed view.md to its refusal instruction explicitly, allows on an unknown mode, and names "the question" generically so the ticket view is no longer called the batch question.
+
+## 4.38.11
+
+Rename four misleading locals in the doctor and autopilot modules and share the joined phase-labels loop of the two doctor label checks in one helper; no output changes.
+
 ## 4.38.10
 
 The PR body check and the ticket scanners (`ticket exists`, `ticket retire`,

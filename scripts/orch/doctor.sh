@@ -531,7 +531,7 @@ check_side_checkouts_finished() {
 check_flow_autopilot_label() {
   # issue_state is the read's throwaway half.
   # shellcheck disable=SC2034
-  local issue issue_state="" flabels="" gh_err="" phase p phase_labels=""
+  local issue issue_state="" flabels="" gh_err="" phase phase_labels=""
   issue="$(state_get issue)"
   phase="$(state_get phase)"
   if [ -z "$issue" ]; then
@@ -543,9 +543,7 @@ check_flow_autopilot_label() {
   fi
   d_gh_gate || return 0
   issue_state_labels_read "$issue" issue_state flabels gh_err || return 0
-  for p in $(autopilot_phase_labels_in "$flabels"); do
-    phase_labels="${phase_labels:+$phase_labels }$(autopilot_phase_label "$p")"
-  done
+  phase_labels="$(autopilot_phase_labels_text "$flabels")"
   if [ -z "$phase_labels" ]; then
     if autopilot_active; then
       d_fail "issue #$issue carries no phase label - an autopilot session needs the flow's phase recorded on its issue."
@@ -566,7 +564,7 @@ check_flow_autopilot_label() {
 # is where a label that disagrees with a side checkout's recorded phase is seen.
 # This checkout's own flow is check_flow_autopilot_label's.
 check_autopilot_side_flows() {
-  local list kind _flow _branch path issue phase here p phase_labels
+  local list kind _flow _branch path issue phase here phase_labels
   # issue_state is the read's throwaway half.
   # shellcheck disable=SC2034
   local issue_state="" flabels="" gh_err=""
@@ -579,10 +577,7 @@ check_autopilot_side_flows() {
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
     d_gh_gate || return 0
     issue_state_labels_read "$issue" issue_state flabels gh_err || continue
-    phase_labels=""
-    for p in $(autopilot_phase_labels_in "$flabels"); do
-      phase_labels="${phase_labels:+$phase_labels }$(autopilot_phase_label "$p")"
-    done
+    phase_labels="$(autopilot_phase_labels_text "$flabels")"
     [ -n "$phase_labels" ] || continue
     if [ "$phase_labels" = "$(autopilot_phase_label "$phase")" ]; then
       d_ok "phase label of #$issue: $phase_labels"
@@ -598,13 +593,13 @@ check_autopilot_side_flows() {
 # them, so doctor is where they are noticed. Silent where origin cannot be read
 # or there are none.
 check_autopilot_claims() {
-  local list issue host pid phase started now_epoch age me
+  local list issue host pid phase started now_epoch started_epoch me
   list="$(adapter_claim_list 2>/dev/null)" || return 0
   now_epoch="$(date -u +%s)"; me="$(autopilot_host_id)"
   while IFS=$'\t' read -r issue host pid phase started; do
     [ -n "$issue" ] && [ "$host" != "$me" ] || continue
-    age="$(autopilot_iso_epoch "$started")" || continue
-    [ "$((now_epoch - age))" -gt 86400 ] || continue
+    started_epoch="$(autopilot_iso_epoch "$started")" || continue
+    [ "$((now_epoch - started_epoch))" -gt 86400 ] || continue
     d_warn "issue #$issue has been claimed by $host (pid $pid, phase $phase) since $started - more than a day."
     d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its $AUTOPILOT_RUNNING_LABEL label"
   done <<<"$list"

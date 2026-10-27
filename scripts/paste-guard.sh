@@ -25,7 +25,8 @@
 #   seen on the first read. ORCH_PASTE_GUARD_WAIT may shorten the window, for
 #   the tests.
 # - Fails open: a missing or unreadable transcript, a view.md deleted, empty
-#   or unreadable, or a transcript with no arming pass line all allow.
+#   or unreadable, a transcript with no arming pass line, or a mode other than
+#   since or final all allow.
 
 # Seconds the guards keep re-reading the transcript for the paste before they
 # refuse. ORCH_PASTE_GUARD_WAIT, a whole number of seconds no larger, may
@@ -94,9 +95,10 @@ paste_guard_pasted() {
 
 # paste_guard_check <transcript> <blocks>: succeeds - allow - when the guard is
 # not armed, fails open, or finds the paste within the re-read window; fails -
-# refuse - otherwise, with `view` set in the caller's shell to the armed
-# view.md. <blocks> picks the text blocks that may hold the paste: since,
-# those after the arming pass line; final, the final reply.
+# refuse - otherwise, with `paste_guard_view` set in the caller's shell to the
+# armed view.md (pass it to paste_guard_instruction). <blocks> picks the text
+# blocks that may hold the paste: since, those after the arming pass line;
+# final, the final reply. Any other mode allows.
 paste_guard_check() {
   local wait_s tries scan rest blocks
   wait_s="$PASTE_GUARD_WAIT"
@@ -108,24 +110,25 @@ paste_guard_check() {
   tries=$((wait_s * 4))
   while :; do
     scan="$(paste_guard_scan "$1")" || return 0
-    view="${scan%%$'\n'*}"
-    [ -n "$view" ] && [ -s "$view" ] && [ -r "$view" ] || return 0
+    paste_guard_view="${scan%%$'\n'*}"
+    [ -n "$paste_guard_view" ] && [ -s "$paste_guard_view" ] && [ -r "$paste_guard_view" ] || return 0
     rest="${scan#*$'\n'}"
     case "$2" in
       since) blocks="${rest%%$'\n'*}" ;;
-      *) blocks="${rest#*$'\n'}" ;;
+      final) blocks="${rest#*$'\n'}" ;;
+      *) return 0 ;;
     esac
-    paste_guard_pasted "$blocks" "$view" && return 0
+    paste_guard_pasted "$blocks" "$paste_guard_view" && return 0
     [ "$tries" -gt 0 ] || return 1
     tries=$((tries - 1))
     sleep 0.25
   done
 }
 
-# paste_guard_instruction: the instruction both guards hand back on refusing,
-# naming the armed view.md (`view`) and ending on its contents.
+# paste_guard_instruction <view.md>: the instruction both guards hand back on
+# refusing, naming <view.md> and ending on its contents.
 paste_guard_instruction() {
-  printf '%s' "End your turn on one plain-text reply, with no tool call: the view below word for word - every line, composing nothing of your own - then the batch question, its answer words spelled out; the human's next message is the answer. It is the view \`spec-review check\` printed and saved in $view:
+  printf '%s' "End your turn on one plain-text reply, with no tool call: the view below word for word - every line, composing nothing of your own - then the question, its answer words spelled out; the human's next message is the answer. It is the view \`spec-review check\` printed and saved in $1:
 
-$(cat "$view")"
+$(cat "$1")"
 }

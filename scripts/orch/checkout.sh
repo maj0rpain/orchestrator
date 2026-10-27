@@ -152,7 +152,7 @@ checkout_busy() {
   elif word_listed "$signals" tree; then
     dirty="$(dirty_outside_allowlist)" || exit 1
     [ -z "$dirty" ] || {
-      busy_line="busy: the working tree has changes outside the planning allowlist: ${dirty//$'\n'/, }"
+      busy_line="busy: the working tree has changes outside the planning allowlist: $(list_join "$dirty")"
       busy_remedy="Commit, stash, or discard these changes."
     }
   fi
@@ -222,7 +222,7 @@ discard_flow_branch_work() {
     if [ "$kind" = main ]; then
       [ -z "$merging" ] || cmds="git -C \"$ROOT\" merge --abort; "
       [ -z "$rebasing" ] || cmds="${cmds}git -C \"$ROOT\" rebase --abort; "
-      die "uncommitted or in-progress work on the flow's branch in the main checkout - discard it yourself (${dirty//$'\n'/, }${merging:+ merge in progress}): ${cmds}git -C \"$ROOT\" reset --hard && git -C \"$ROOT\" clean -fd"
+      die "uncommitted or in-progress work on the flow's branch in the main checkout - discard it yourself ($(list_join "$dirty")${merging:+ merge in progress}): ${cmds}git -C \"$ROOT\" reset --hard && git -C \"$ROOT\" clean -fd"
     fi
   fi
   discard_work_in "$ROOT" "could not discard"
