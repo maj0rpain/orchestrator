@@ -413,8 +413,10 @@ require_clean_tree() {
 # shellcheck disable=SC2034 # used by the pr and ticket modules
 FENCE_AWK='
   function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
-  function fenced(line,   s, c) {
-    s = line; sub(/[ \t\r]+$/, "", s); sub(/^ ? ? ?/, "", s); c = substr(s, 1, 1)
+  function fenced(line,   s, c, n) {
+    s = line; sub(/[ \t\r]+$/, "", s)
+    n = fence_run(s, " "); if (n <= 3) s = substr(s, n + 1)
+    c = substr(s, 1, 1)
     if (fence_char != "") {
       if (c == fence_char && fence_run(s, c) >= fence_len && fence_run(s, c) == length(s)) fence_char = ""
       return 1
