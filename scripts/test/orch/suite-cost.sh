@@ -656,7 +656,8 @@ fake_cpu() { printf '%s %s\n' "$1" "$2" >>"$ORCH_SUITE_COST_FAKE_CPU"; }
 # feat recorded with base as its base SHA, holds <head script>; a low floor,
 # a growth seeded for sh run.sh, head 100.00 over base 50.00, and the timer
 # fake reporting 50.00 for a run on either commit until fake_cpu says
-# otherwise (see confirm_reset). Sets base, head, rec, cmd and cmd_str.
+# otherwise (see confirm_reset). Sets base, head, rec, vf (its stored-verdict
+# record), cmd and cmd_str.
 confirm_repo() {
   new_repo >/dev/null
   printf '%s\n' "$1" >run.sh
@@ -670,6 +671,7 @@ confirm_repo() {
   git commit -q --allow-empty -m head
   head="$(git rev-parse HEAD)"
   rec_path made
+  vf="$rec.verdicts"
   cmd=(sh run.sh)
   cmd_str="sh run.sh"
   confirm_reset
@@ -767,7 +769,6 @@ assert_contains "warning it could not register" "$(cat "$errf")" \
 assert_not_contains "never with an overlap warning" "$(cat "$errf")" "overlapped"
 
 confirm_reset
-vf="$rec.verdicts"
 : >"$rec"
 seed_run "$base" 50.00
 seed_run "$head" 52.00
@@ -804,7 +805,6 @@ assert_eq "the passing solo head confirming run before it is recorded" "$(record
 assert_eq "the failing base run is not" "$(recorded "$base")" ""
 
 confirm_reset
-vf="$rec.verdicts"
 "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
 assert_eq "a confirmation ending unmeasured writes no line" "$(on_disk "$vf")" absent
 
@@ -850,7 +850,6 @@ grown_reset() {
   confirm_reset
   fake_cpu "$head" 90.00
   fake_cpu "$base" 60.00
-  vf="$rec.verdicts"
 }
 grown_repo() {
   confirm_repo "echo b >>$cnt" "echo h >>$cnt"
@@ -915,7 +914,6 @@ assert_eq "a verdict stored for a different base commit is not reused" "$(runs)"
 
 # A confirmed ok is reused too.
 confirm_reset
-vf="$rec.verdicts"
 before_runs="$(runs)"
 okv="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)"
 assert_eq "a seeded growth the confirming runs do not bear out is ok" "$okv" "ok"
