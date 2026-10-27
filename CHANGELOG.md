@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.9
+
+The suite-cost module was cleaned up with no change in behaviour, except one warning: a confirming run that another suite-cost run overlapped now ends its warning `- the growth is unconfirmed`, where it ended `- contention left the growth unconfirmed`.
+
 ## 4.38.8
 
 Spell `review file`'s location as `--location <<file>:<line>|suite>` in its usage line, the help text, the CLI conventions doc and the closer brief, and derive the review axes, their usage and unknown-axis message, and each axis's starting category from one axis table.
