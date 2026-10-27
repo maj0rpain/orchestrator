@@ -3453,7 +3453,9 @@ mkdir "$guard_fixture/nested"
 for guard_case in "empty|" "relative|root.x" "outside|$guard_repo" "nested|$guard_fixture/nested" \
   "multi-line|$guard_fixture"$'\n'"On branch pr"; do
   guard_err="$(cd "$guard_repo" && FIXTURE_ABORT_PID=$BASHPID && fixture_git "${guard_case#*|}" checkout -q -b pr 2>&1 >/dev/null)"
+  guard_st=$?
   flags "fixture_git refuses a ${guard_case%%|*} path" "$(check x "$guard_err")" "docs_lint.sh: fixture_git: "
+  assert_eq "fixture_git kills its process on a ${guard_case%%|*} path" "$guard_st" 143
   [ "$(guard_state)" = "$guard_before" ] && ok "a refused ${guard_case%%|*} path leaves the caller's repository unchanged" ||
     bad "a refused ${guard_case%%|*} path leaves the caller's repository unchanged" "HEAD, branch or index changed"
   git -C "$guard_repo" checkout -q main 2>/dev/null
@@ -3461,6 +3463,7 @@ done
 fixture_git "$guard_fixture" init -q
 [ -d "$guard_fixture/.git" ] && ok "fixture_git runs git on a real fixture" || bad "fixture_git runs git on a real fixture" "no repository"
 guard_err="$(FIXTURES="$FIXTURES/gone" && rm -rf "$FIXTURES/gone" && FIXTURE_ABORT_PID=$BASHPID && new_fixture 2>&1)"
+assert_eq "new_fixture kills its process when its fixture root is gone" "$?" 143
 flags "new_fixture aborts when its fixture root is gone" "$(check x "$guard_err")" "docs_lint.sh: cannot create a fixture under $FIXTURES/gone"
 [ -z "$(fragment_commit "$guard_fixture" 2>&1)" ] && ok "fragment_commit prints nothing when there is nothing to commit" ||
   bad "fragment_commit prints nothing when there is nothing to commit" "printed output"

@@ -71,13 +71,7 @@ pids=()
 sc_pids=()
 # On INT or TERM, TERM every suite and shellcheck started, wait for each, and
 # exit 130; the EXIT trap removes the temp directory only after that.
-all_stop_children() {
-  local pid
-  kill "${pids[@]}" "${sc_pids[@]}" 2>/dev/null
-  for pid in "${pids[@]}" "${sc_pids[@]}"; do wait "$pid"; done
-  exit 130
-}
-trap all_stop_children INT TERM
+trap 'test_jobs_stop_children "${pids[@]}" "${sc_pids[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
 failed=0
 suites_tmp="$tmp/suites-tmp"
