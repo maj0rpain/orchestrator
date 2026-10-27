@@ -104,7 +104,7 @@ echo "gh_reason and capture_err"
 new_repo >/dev/null
 # Sourced rather than run, as is_filed_severity is: both are helpers every gh
 # death goes through, and sourcing orch.sh defines them without running main.
-reason() { bash -c 'source "$1" && gh_reason "$2"' _ "$ORCH" "$1"; }
+reason() { sourced_orch gh_reason "$1"; }
 assert_eq "gh_reason gives only the first line of gh's stderr" \
   "$(reason $'HTTP 502: Bad Gateway\nsecond line\n')" "HTTP 502: Bad Gateway"
 assert_eq "and says gh gave no reason when stderr is empty" "$(reason "")" "gh gave no reason"
@@ -112,19 +112,19 @@ assert_eq "or when its first line is" "$(reason $'\n')" "gh gave no reason"
 # capture_err leaves stdout to the caller's redirect, so a body streamed to a
 # file keeps its trailing newlines byte for byte.
 cefile="$(mktemp)"
-out="$(bash -c 'source "$1"
+out="$(sourced_orch_script '
   emit() { printf "body\n\n"; printf "HTTP 502: Bad Gateway\nsecond line\n" >&2; return 3; }
-  st=0; capture_err e emit >"$2" || st=$?
-  printf "%s|%s." "$st" "$e"' _ "$ORCH" "$cefile")"
+  st=0; capture_err e emit >"$1" || st=$?
+  printf "%s|%s." "$st" "$e"' "$cefile")"
 assert_eq "capture_err returns the command's status and sets the error variable to its stderr" \
   "$out" "3|HTTP 502: Bad Gateway
 second line
 ."
 assert_eq "and leaves stdout to the caller's redirect, trailing newlines kept" \
   "$(od -c <"$cefile")" "$(printf 'body\n\n' | od -c)"
-out="$(bash -c 'source "$1"
+out="$(sourced_orch_script '
   quiet() { printf "x"; }
-  e=stale; capture_err e quiet >/dev/null; printf "%s|%s" "$?" "$e"' _ "$ORCH")"
+  e=stale; capture_err e quiet >/dev/null; printf "%s|%s" "$?" "$e"')"
 assert_eq "a command that succeeds silently returns 0 and leaves the variable empty" "$out" "0|"
 rm -f "$cefile"
 unset cefile
@@ -499,7 +499,7 @@ assert_status "issue body: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" \
   "GraphQL: Could not resolve to an issue or pull request with the number of 404."
 
-comments_jq="$(bash -c 'source "$1"; printf "%s" "$COMMENTS_JQ"' _ "$ORCH")"
+comments_jq="$(sourced_orch_script 'printf "%s" "$COMMENTS_JQ"')"
 gh_reply 0 $'<!-- comment @pat 2026-09-02T11:30:00Z -->\nA follow-up.\n' '' \
   issue view 23 --json comments --jq "$comments_jq"
 out="$(contract adapter_issue_comments 23 2>&1)"; st=$?
@@ -516,7 +516,7 @@ assert_eq "COMMENTS_JQ opens each comment with its author-and-date marker, one b
 assert_eq "and prints nothing at all for no comments" \
   "$(printf '%s' '{"comments":[]}' | jq -r "$comments_jq" | wc -c | tr -d ' ')" "0"
 
-issue_json_jq="$(bash -c 'source "$1"; printf "%s" "$ISSUE_JSON_JQ"' _ "$ORCH")"
+issue_json_jq="$(sourced_orch_script 'printf "%s" "$ISSUE_JSON_JQ"')"
 : >"$GH_FIXTURE/env.log"
 gh_reply 0 $'{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}\n' '' \
   issue view 23 --json number,title,body,labels,comments --jq "$issue_json_jq"
@@ -1078,7 +1078,7 @@ assert_eq "every CI operation was pinned to the resolved repo" \
 # operation owns, so each reply here is what that --jq printed. The writes
 # take GitHub's database id, which the operation reads itself.
 subs="repos/{owner}/{repo}/issues/50/sub_issues"
-subs_jq="$(bash -c 'source "$1"; printf "%s" "$SUB_ISSUES_JQ"' _ "$ORCH")"
+subs_jq="$(sourced_orch_script 'printf "%s" "$SUB_ISSUES_JQ"')"
 gh_reply 0 $'51\tOPEN\t0\n52\tCLOSED\t1\n' '' api --paginate "$subs" --jq "$subs_jq"
 out="$(contract adapter_sub_issues 50 2>&1)"; st=$?
 assert_status "sub-issues: lists a parent's sub-issues" "$st" 0

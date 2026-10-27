@@ -97,10 +97,10 @@ assert_eq "checkout_kind: a hand-made worktree is hand-made" \
   "$(sourced_orch checkout_kind "$handmade")" "hand-made"
 
 outside="$(fresh_dir)"
-out="$(bash -c 'source "$1"; cd "$2" && checkouts' _ "$ORCH" "$outside" 2>/dev/null)"; st=$?
+out="$(sourced_orch_script 'cd "$1" && checkouts' "$outside" 2>/dev/null)"; st=$?
 assert_ne "checkouts outside a repo fails" "$st" 0
 assert_eq "and prints nothing" "$out" ""
-out="$(bash -c 'source "$1"; cd "$2" && checkout_kind "$2"' _ "$ORCH" "$outside" 2>/dev/null)"; st=$?
+out="$(sourced_orch_script 'cd "$1" && checkout_kind "$1"' "$outside" 2>/dev/null)"; st=$?
 assert_ne "checkout_kind outside a repo fails" "$st" 0
 assert_eq "and checkout_kind prints nothing" "$out" ""
 

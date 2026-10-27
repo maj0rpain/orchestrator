@@ -12,7 +12,7 @@ echo "is_filed_severity"
 new_repo >/dev/null
 # Sourced rather than run: the helper is the one answer to "is this severity
 # filed", and sourcing orch.sh defines its functions without running main.
-filed_sev() { bash -c 'source "$1" && is_filed_severity "$2"' _ "$ORCH" "$1"; }
+filed_sev() { sourced_orch is_filed_severity "$1"; }
 filed_sev major; assert_status "accepts major" "$?" 0
 filed_sev nit; assert_status "accepts nit" "$?" 0
 filed_sev blocking; assert_status "refuses blocking - it is always fixed, never filed" "$?" 1
@@ -26,17 +26,17 @@ echo
 echo "severity table"
 new_repo >/dev/null
 # shellcheck disable=SC2016 # expanded by the inner bash
-missing="$(bash -c 'source "$1"
+missing="$(sourced_orch_script '
   for sev in $FILED_SEVERITIES; do
     colour= desc=
     filed_severity_label "$sev" colour desc && [ -n "$colour" ] && [ -n "$desc" ] \
       || printf "%s\n" "$sev"
-  done' _ "$ORCH" 2>&1)"
+  done' 2>&1)"
 assert_eq "every member of FILED_SEVERITIES has a severity-table entry" "$missing" ""
 # shellcheck disable=SC2016 # expanded by the inner bash
 assert_eq "FILED_SEVERITIES lists the table's severities in its order" \
-  "$(bash -c 'source "$1" && printf "%s" "$FILED_SEVERITIES"' _ "$ORCH")" "major nit"
-bash -c 'source "$1" && filed_severity_label blocking colour desc' _ "$ORCH"
+  "$(sourced_orch_script 'printf "%s" "$FILED_SEVERITIES"')" "major nit"
+sourced_orch filed_severity_label blocking colour desc
 assert_status "a severity with no entry returns 1" "$?" 1
 
 # --- axis table -------------------------------------------------------------
@@ -47,15 +47,14 @@ echo "axis table"
 new_repo >/dev/null
 # shellcheck disable=SC2016 # expanded by the inner bash
 assert_eq "FILED_AXES lists the table's axes in its order" \
-  "$(bash -c 'source "$1" && printf "%s" "$FILED_AXES"' _ "$ORCH")" "spec standards suite-cost"
+  "$(sourced_orch_script 'printf "%s" "$FILED_AXES"')" "spec standards suite-cost"
 # shellcheck disable=SC2016 # expanded by the inner bash
-missing="$(bash -c 'source "$1"
+missing="$(sourced_orch_script '
   for axis in $FILED_AXES; do
     [ -n "$(category_for_axis "$axis")" ] || printf "%s\n" "$axis"
-  done' _ "$ORCH" 2>&1)"
+  done' 2>&1)"
 assert_eq "every member of FILED_AXES has a category_for_axis result" "$missing" ""
-# shellcheck disable=SC2016 # expanded by the inner bash
-axis_category() { bash -c 'source "$1" && category_for_axis "$2"' _ "$ORCH" "$1"; }
+axis_category() { sourced_orch category_for_axis "$1"; }
 assert_eq "spec starts as a bug" "$(axis_category spec)" "bug"
 assert_eq "standards starts as an enhancement" "$(axis_category standards)" "enhancement"
 assert_eq "suite-cost starts as an enhancement" "$(axis_category suite-cost)" "enhancement"
@@ -78,12 +77,12 @@ new_repo >/dev/null
 # turn into the same array.
 # shellcheck disable=SC2016 # expanded by the inner bash
 parsed() {
-  bash -c 'source "$1"; shift
+  sourced_orch_script '
     declare -A f
     for b in "$@"; do finding_body_parse "$b" f; done
     for k in axis severity reason file line sha pr pr_number why question; do
       printf "%s=%s\n" "$k" "${f[$k]}"
-    done' _ "$ORCH" "$@"
+    done' "$@"
 }
 # rendered <finding text> <part>...: the body finding_body_render prints for
 # the finding text, written to a file, and the parts after it.
@@ -174,14 +173,14 @@ assert_eq "and leaves every field empty, printing nothing else" "$out" "$(fields
 out="$(parsed "$legacy" "$no_axis_why" 2>&1)"
 assert_eq "a sparse body parsed after a full one into the same array leaves its missing fields empty" \
   "$out" "$(fields '' nit 'a reason.' src/app.sh 3 "$sha" "$url/" 42 '')"
-out="$(bash -c 'source "$1"; finding_body_parse "$2" nosuch' _ "$ORCH" "$legacy" 2>&1)"; st=$?
+out="$(sourced_orch finding_body_parse "$legacy" nosuch 2>&1)"; st=$?
 assert_status "an undeclared array name fails" "$st" 1
 assert_eq "naming it" "$out" "orch: finding_body_parse: nosuch is not a declared associative array"
 # shellcheck disable=SC2016 # expanded by the inner bash
-out="$(bash -c 'source "$1"; g() { local f; finding_body_parse "$1" f; }; g "$2"' _ "$ORCH" "$legacy" 2>&1)"; st=$?
+out="$(sourced_orch_script 'g() { local f; finding_body_parse "$1" f; }; g "$1"' "$legacy" 2>&1)"; st=$?
 assert_status "a scalar fails" "$st" 1
 assert_eq "naming it" "$out" "orch: finding_body_parse: f is not a declared associative array"
 # shellcheck disable=SC2016 # expanded by the inner bash
-out="$(bash -c 'source "$1"; g() { local -a f; finding_body_parse "$1" f; }; g "$2"' _ "$ORCH" "$legacy" 2>&1)"; st=$?
+out="$(sourced_orch_script 'g() { local -a f; finding_body_parse "$1" f; }; g "$1"' "$legacy" 2>&1)"; st=$?
 assert_status "an indexed array fails" "$st" 1
 assert_eq "naming it" "$out" "orch: finding_body_parse: f is not a declared associative array"
