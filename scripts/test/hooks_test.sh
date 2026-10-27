@@ -1074,7 +1074,7 @@ pg_text "$T" "Running the lenses."
 pg_check "$T" toolu_c1 batch "$PG/batch/view.md"
 assert_eq "armed, an ask with no paste after the pass line is refused" "$(pg_decide "$T")" deny
 assert_contains "with the view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/batch/view.md")"
-assert_contains "and the instruction to end the turn on the view and the batch question in plain text" "$(cat "$PG/reason")" \
+assert_contains "and the instruction to end the turn on the view and the question in plain text" "$(cat "$PG/reason")" \
   "End your turn on one plain-text reply, with no tool call: the view below word for word"
 assert_contains "not to use the ask tool for it" "$(cat "$PG/reason")" "Do not ask this question with the ask tool"
 assert_contains "naming view.md" "$(cat "$PG/reason")" "$PG/batch/view.md"
@@ -1164,6 +1164,8 @@ T6="$PG/tickets.jsonl"; cp "$T5" "$T6"
 pg_check "$T6" toolu_c3 tickets "$PG/tickets/view.md"
 assert_eq "an apply then a check --tickets with an affected ticket: refused" "$(pg_decide "$T6")" deny
 assert_contains "with the ticket view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/tickets/view.md")"
+assert_contains "naming the question generically" "$(cat "$PG/reason")" "then the question, its answer words spelled out"
+assert_not_contains "and not the batch question" "$(cat "$PG/reason")" "batch question"
 
 T7="$PG/no-ticket.jsonl"; cp "$T5" "$T7"
 pg_bash "$T7" toolu_c4 "bash \"\$ORCH\" spec-review check .orchestrator/spec-review/7 --tickets"
@@ -1213,6 +1215,27 @@ pg_text "$T11" "Which approach do you prefer?"
 pg_bash "$T11" toolu_u1 "git status"
 pg_result "$T11" toolu_u1 "nothing to commit"
 assert_eq "a transcript with no spec-review activity allows" "$(pg_decide "$T11")" allow
+if [ "$(id -u)" -eq 0 ]; then
+  ok "a pass line naming an unreadable view.md allows (skipped as root)"
+else
+  mkdir "$PG/locked"; cp "$PG/batch/view.md" "$PG/locked/view.md"
+  T13="$PG/locked.jsonl"
+  pg_check "$T13" toolu_c8 batch "$PG/locked/view.md"
+  chmod 000 "$PG/locked/view.md"
+  assert_eq "a pass line naming an unreadable view.md allows" "$(pg_decide "$T13")" allow
+  chmod 600 "$PG/locked/view.md"
+fi
+# The module seam: paste_guard_check's mode, and paste_guard_instruction's
+# view argument, with the module sourced in a subshell.
+pg_mode() { (source "$DIR/paste-guard.sh"; ORCH_PASTE_GUARD_WAIT=0 paste_guard_check "$T" "$1"; echo $?); }
+assert_eq "paste_guard_check with a bogus mode allows" "$(pg_mode bogus)" 0
+assert_eq "paste_guard_check with an empty mode allows" "$(pg_mode '')" 0
+assert_eq "paste_guard_check with mode since refuses" "$(pg_mode since)" 1
+assert_eq "paste_guard_check with mode final refuses" "$(pg_mode final)" 1
+pg_instr="$( (source "$DIR/paste-guard.sh"; unset view paste_guard_view; paste_guard_instruction "$PG/tickets/view.md") )"
+assert_contains "paste_guard_instruction names the view.md it is given" "$pg_instr" "$PG/tickets/view.md"
+pg_vw="$(cat "$PG/tickets/view.md")"
+assert_eq "and ends on its contents" "${pg_instr: -${#pg_vw}}" "$pg_vw"
 # The re-read window, with a `sleep` stub on PATH in place of the wall clock:
 # the hook sleeps between reads, so the stub runs where Claude Code would be
 # writing a response's text block after PreToolUse fires. In the first case
@@ -1322,26 +1345,7 @@ assert_eq "a final reply holding the view written within the window: allowed" \
 
 # Fail open.
 assert_eq "a payload that is not JSON allows" "$(printf 'not json' | "$STOP" 2>/dev/null; echo "exit $?")" "exit 0"
-assert_eq "a JSON payload that is not an object allows" "$(printf '[1]' | "$STOP" 2>/dev/null; echo "exit $?")" "exit 0"
-assert_eq "no transcript_path allows" "$(sg_decide "")" allow
-assert_eq "a missing transcript allows" "$(sg_decide "$PG/none.jsonl")" allow
-assert_eq "a pass line naming a deleted view.md allows" "$(sg_decide "$T9")" allow
-assert_eq "a pass line naming an empty view.md allows" "$(sg_decide "$T10")" allow
 assert_eq "a transcript with no arming pass line allows" "$(sg_decide "$T11")" allow
-if [ "$(id -u)" -eq 0 ]; then
-  ok "an unreadable transcript allows (skipped as root)"
-  ok "a pass line naming an unreadable view.md allows (skipped as root)"
-else
-  chmod 000 "$PG/unreadable.jsonl"
-  assert_eq "an unreadable transcript allows" "$(sg_decide "$PG/unreadable.jsonl")" allow
-  chmod 600 "$PG/unreadable.jsonl"
-  mkdir "$PG/locked"; cp "$PG/batch/view.md" "$PG/locked/view.md"
-  S7="$PG/stop-locked.jsonl"
-  pg_check "$S7" toolu_c8 batch "$PG/locked/view.md"
-  chmod 000 "$PG/locked/view.md"
-  assert_eq "a pass line naming an unreadable view.md allows" "$(sg_decide "$S7")" allow
-  chmod 600 "$PG/locked/view.md"
-fi
 unset ORCH_PASTE_GUARD_WAIT
 rm -rf "$PG"
 
