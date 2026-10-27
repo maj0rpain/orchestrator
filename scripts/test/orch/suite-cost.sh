@@ -354,7 +354,8 @@ rm -f "$marker"
 
 # Lowest samples: of several records on the newest head record's commit, or
 # on the newest baseline record's, the lowest decides, not the newest.
-check_repo
+: >"$rec"
+rm -f "$marker"
 seed_run "$base" 100.00
 seed_run "$head" 105.00
 seed_run "$head" 130.00
@@ -394,8 +395,8 @@ assert_eq "nor a clean sample with the -dirty ones" "$(verdict)" "unmeasured"
 rm -f "$marker"
 
 # The default threshold, 15%, with no override.
-check_repo
-unconfirmed="orch: the confirming run at $head exited 9 - the growth is unconfirmed"
+: >"$rec"
+rm -f "$marker"
 seed_run "$base" 100.00
 seed_run "$head" 112.00
 assert_eq "with no override, records 12% apart are ok" "$(verdict)" "ok"
@@ -409,7 +410,8 @@ assert_contains "where the failing head confirming run warns" "$(cat "$errf")" "
 
 # Dirty records: one on the base, a run made before the ticket's first commit,
 # is the head's; it is never the baseline, which stays the clean record.
-check_repo
+: >"$rec"
+rm -f "$marker"
 seed_run "$base" 60.00
 seed_run "$base-dirty" 70.00
 assert_eq "a dirty record on the base counts as the head, the clean one the baseline" \
@@ -427,7 +429,8 @@ assert_eq "the newest head record, dirty, counts" "$(verdict)" "ok"
 # The base commit: base-sha's recorded SHA, else its merge-base; state.base_sha
 # inside a flow. Base costs 100, parent 60 and head 70: from base, the head is
 # 70 against 100 (ok); from parent, 70 against 60 (past the threshold).
-check_repo
+: >"$rec"
+rm -f "$marker"
 seed_run "$base" 100.00
 seed_run "$parent" 60.00
 seed_run "$head" 70.00
@@ -458,7 +461,10 @@ rm -f "$errf"
 
 # An invalid override dies before anything runs: no head here would have
 # meant a base run, so the marker and the record prove none started.
-check_repo
+: >"$rec"
+rm -f "$marker"
+git config --unset orchestrator.suiteCost.floor || true
+git config --unset orchestrator.suiteCost.growth || true
 seed_run "$head" 70.00
 before="$(cat "$rec")"
 for kv in "floor abc" "floor -1" "growth 1e3" "growth 10%"; do
@@ -650,7 +656,8 @@ fake_cpu() { printf '%s %s\n' "$1" "$2" >>"$ORCH_SUITE_COST_FAKE_CPU"; }
 # feat recorded with base as its base SHA, holds <head script>; a low floor,
 # a growth seeded for sh run.sh, head 100.00 over base 50.00, and the timer
 # fake reporting 50.00 for a run on either commit until fake_cpu says
-# otherwise. Sets base, head, rec, cmd and cmd_str.
+# otherwise (see confirm_reset). Sets base, head, rec, vf (its stored-verdict
+# record), cmd and cmd_str.
 confirm_repo() {
   new_repo >/dev/null
   printf '%s\n' "$1" >run.sh
@@ -663,15 +670,29 @@ confirm_repo() {
   git add run.sh
   git commit -q --allow-empty -m head
   head="$(git rev-parse HEAD)"
-  git config orchestrator.suiteCost.floor 0.01
   rec_path made
+  vf="$rec.verdicts"
   cmd=(sh run.sh)
   cmd_str="sh run.sh"
+  confirm_reset
+}
+# confirm_reset: puts confirm_repo's repo back to its built state, for a case
+# that changed only the record, the stored verdicts, the .active file, the
+# timer fake's CPU file or the suiteCost config keys: the record holds its two
+# seeded lines, the stored-verdict record (a file or a directory) and .active
+# are gone, the timer fake reports 50.00 for either commit, the floor is 0.01
+# and growth and setup are unset.
+confirm_reset() {
+  : >"$rec"
   seed_run "$base" 50.00
   seed_run "$head" 100.00
+  rm -rf "$rec.verdicts" "$rec.active"
   : >"$ORCH_SUITE_COST_FAKE_CPU"
   fake_cpu "$base" 50.00
   fake_cpu "$head" 50.00
+  git config orchestrator.suiteCost.floor 0.01
+  git config --unset orchestrator.suiteCost.growth || true
+  git config --unset orchestrator.suiteCost.setup || true
 }
 # recorded <sha>: the CPU seconds of the newest record line at <sha> past the
 # seeded ones, or nothing.
@@ -687,7 +708,7 @@ assert_eq "both passing solo confirming runs are recorded, head then base" \
   "$(awk -F'\t' 'NR > 2 { print $1 }' "$rec" | tr '\n' ' ')" "$head $base "
 assert_eq "and their worktrees are gone" "$(git worktree list | wc -l | tr -d ' ')" 1
 
-confirm_repo ":" ":"
+confirm_reset
 fake_cpu "$head" 90.00
 fake_cpu "$base" 60.00
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
@@ -698,7 +719,7 @@ assert_contains "and the lowest baseline value, the seeded 50, at the baseline c
   "against 50.00 at baseline commit $base"
 assert_contains "and the default threshold" "$out" "past the 15% threshold"
 
-confirm_repo ":" ":"
+confirm_reset
 : >"$rec"
 seed_run "$base" 30.00
 seed_run "$head-dirty" 50.00
@@ -712,11 +733,47 @@ assert_contains "the head side is the head confirming run alone, the dirty sampl
 assert_not_contains "never the dirty sample's value" "$out" "50.00 CPU seconds"
 assert_contains "a decimal threshold is named" "$out" "past the 16.5% threshold"
 
-confirm_repo ":" ":"
+confirm_reset
 git config orchestrator.suiteCost.floor 0.5
 fake_cpu "$base" 0.05
 assert_eq "a base confirming run landing below the floor, at 0.05, is off" \
   "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "off"
+
+confirm_reset
+git config orchestrator.suiteCost.setup "exit 3"
+before="$(cat "$rec")"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a failing confirming setup is unmeasured" "$out" "unmeasured"
+assert_contains "warning with the setup, the head and its exit code" "$(cat "$errf")" \
+  "orch: the confirming run's setup (exit 3) at $head exited 3 - $unconfirmed_tail"
+assert_eq "recording nothing" "$(cat "$rec")" "$before"
+
+if [ "$(id -u)" -ne 0 ]; then
+  confirm_reset
+  wts="$(git rev-parse --git-common-dir)/worktrees"
+  mkdir -p "$wts"
+  chmod 555 "$wts"
+  out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+  chmod 755 "$wts"
+  assert_eq "a confirming worktree that cannot be added is unmeasured" "$out" "unmeasured"
+  assert_contains "warning it could not add the worktree" "$(cat "$errf")" \
+    "orch: could not add a worktree for the confirming run at $head - $unconfirmed_tail"
+fi
+
+confirm_reset
+: >"$rec.active"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a confirming run that cannot register is unmeasured" "$out" "unmeasured"
+assert_contains "warning it could not register" "$(cat "$errf")" \
+  "orch: the confirming run at $head could not register as active - $unconfirmed_tail"
+assert_not_contains "never with an overlap warning" "$(cat "$errf")" "overlapped"
+
+confirm_reset
+: >"$rec"
+seed_run "$base" 50.00
+seed_run "$head" 52.00
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "an ok reached without confirmation stores nothing" "$(on_disk "$vf")" absent
 
 # Setup runs first in both confirming worktrees: each commit's script needs
 # the file it writes.
@@ -747,34 +804,9 @@ assert_eq "the passing solo head confirming run before it is recorded" "$(record
   "$(awk -F'\t' 'NR == 3 { print $2 }' "$rec")"
 assert_eq "the failing base run is not" "$(recorded "$base")" ""
 
-confirm_repo ":" ":"
-git config orchestrator.suiteCost.setup "exit 3"
-before="$(cat "$rec")"
-out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
-assert_eq "a failing confirming setup is unmeasured" "$out" "unmeasured"
-assert_contains "warning with the setup, the head and its exit code" "$(cat "$errf")" \
-  "orch: the confirming run's setup (exit 3) at $head exited 3 - $unconfirmed_tail"
-assert_eq "recording nothing" "$(cat "$rec")" "$before"
-
-if [ "$(id -u)" -ne 0 ]; then
-  confirm_repo ":" ":"
-  wts="$(git rev-parse --git-common-dir)/worktrees"
-  mkdir -p "$wts"
-  chmod 555 "$wts"
-  out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
-  chmod 755 "$wts"
-  assert_eq "a confirming worktree that cannot be added is unmeasured" "$out" "unmeasured"
-  assert_contains "warning it could not add the worktree" "$(cat "$errf")" \
-    "orch: could not add a worktree for the confirming run at $head - $unconfirmed_tail"
-fi
-
-confirm_repo ":" ":"
-: >"$rec.active"
-out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
-assert_eq "a confirming run that cannot register is unmeasured" "$out" "unmeasured"
-assert_contains "warning it could not register" "$(cat "$errf")" \
-  "orch: the confirming run at $head could not register as active - $unconfirmed_tail"
-assert_not_contains "never with an overlap warning" "$(cat "$errf")" "overlapped"
+confirm_reset
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "a confirmation ending unmeasured writes no line" "$(on_disk "$vf")" absent
 
 # Overlapped confirming runs, by the FIFO handshake of the suite-cost run
 # section. The head's: a suite-cost run started alongside check reads a FIFO
@@ -814,11 +846,14 @@ assert_eq "and no worktree is left" "$(git worktree list | wc -l | tr -d ' ')" 1
 # knobs are unchanged. A command that appends to a counter file counts runs.
 cnt="$(mktemp)"
 runs() { wc -l <"$cnt" | tr -d ' '; }
-grown_repo() {
-  confirm_repo "echo b >>$cnt" "echo h >>$cnt"
+grown_reset() {
+  confirm_reset
   fake_cpu "$head" 90.00
   fake_cpu "$base" 60.00
-  vf="$rec.verdicts"
+}
+grown_repo() {
+  confirm_repo "echo b >>$cnt" "echo h >>$cnt"
+  grown_reset
 }
 
 grown_repo
@@ -877,10 +912,8 @@ before_runs="$(runs)"
 "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
 assert_eq "a verdict stored for a different base commit is not reused" "$(runs)" "$((before_runs + 2))"
 
-# A confirmed ok is reused too, and an ok reached without confirmation stores
-# nothing.
-confirm_repo "echo b >>$cnt" "echo h >>$cnt"
-vf="$rec.verdicts"
+# A confirmed ok is reused too.
+confirm_reset
 before_runs="$(runs)"
 okv="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)"
 assert_eq "a seeded growth the confirming runs do not bear out is ok" "$okv" "ok"
@@ -888,21 +921,8 @@ assert_eq "it ran the two confirming runs" "$(runs)" "$((before_runs + 2))"
 "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
 assert_eq "a confirmed ok is reused" "$(runs)" "$((before_runs + 2))"
 
-confirm_repo ":" ":"
-vf="$rec.verdicts"
-: >"$rec"
-seed_run "$base" 50.00
-seed_run "$head" 52.00
-"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
-assert_eq "an ok reached without confirmation stores nothing" "$(on_disk "$vf")" absent
-
-confirm_repo "exit 6" ":"
-vf="$rec.verdicts"
-"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
-assert_eq "a confirmation ending unmeasured writes no line" "$(on_disk "$vf")" absent
-
 # The newest of two matching lines wins.
-grown_repo
+grown_reset
 printf '%s\t%s\t0.01\t15\t2020-01-01T00:00:00Z\tsh run.sh\tgrew 1 - old\n' "$head" "$base" >"$vf"
 printf '%s\t%s\t0.01\t15\t2021-01-01T00:00:00Z\tsh run.sh\tok\n' "$head" "$base" >>"$vf"
 before_runs="$(runs)"
@@ -911,7 +931,7 @@ assert_eq "with two matching lines the newest one's verdict is printed" \
 assert_eq "and nothing ran" "$(runs)" "$before_runs"
 
 # An unwritable verdict record warns and the verdict still prints.
-grown_repo
+grown_reset
 mkdir -p "$vf"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_contains "the verdict still prints" "$out" "grew 80 - "
