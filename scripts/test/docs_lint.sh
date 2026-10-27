@@ -1603,17 +1603,24 @@ echo "flow commands in script messages"
 # which works on no host as a flow step. A `usage:` string for redo or abort
 # names the CLI itself, so it is spared, as are comments; a line with `usage:`
 # elsewhere is not.
+# flow_code_lines <regex>: "<file>:<line>:<code view>" for each line of
+# orch.sh or of a module in its orch/ directory whose code view - its comment
+# dropped, strings kept - matches <regex>. Run from the plugin root.
+flow_code_lines() {
+  awk -v re="$1" "$SHELL_CODE_AWK"'
+    { shell_code_line($0) }
+    sc_code ~ re { print FILENAME ":" FNR ":" sc_code }' \
+    scripts/orch.sh scripts/orch/*.sh 2>/dev/null
+}
 # scan_flow_cmd <plugin root>: each line of orch.sh or of a module in its
 # orch/ directory naming a plugin command outside flow_cmd, each such line
 # naming orch.sh redo or abort other than in its own usage: string, quoted any
 # way, and each flow_cmd section orch-flow lacks.
 scan_flow_cmd() {
   local r="$1" s
-  (cd "$r" && grep -nE '/orchestrator:[a-z]' scripts/orch.sh scripts/orch/*.sh 2>/dev/null) \
-    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+  (cd "$r" && flow_code_lines '/orchestrator:[a-z]') \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a plugin command outside flow_cmd/'
-  (cd "$r" && grep -nE 'orch\.sh (redo|abort)' scripts/orch.sh scripts/orch/*.sh 2>/dev/null) \
-    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+  (cd "$r" && flow_code_lines 'orch[.]sh (redo|abort)') \
     | sed -E "s/usage: [\"']?orch\\.sh (redo|abort)//g" | grep -E 'orch\.sh (redo|abort)' \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a flow command literally, not through flow_cmd/'
   # Not a section read: this range is a shell function body in orch.sh or a
@@ -1636,6 +1643,7 @@ printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    start) section="Starting a fl
   '  die "usage: orch.sh abort"' "  die 'usage: orch.sh redo review'" "  die 'usage: orch.sh abort'" \
   '  echo usage: orch.sh redo review' '  echo usage: orch.sh abort' \
   'die "usage: orch.sh redo review; run orch.sh abort"' \
+  'echo ok # run /orchestrator:next' 'echo ok # then orch.sh abort' \
   >"$fixture/scripts/orch.sh"
 printf '%s\n' 'echo ok' 'die "run orch.sh abort"' >"$fixture/scripts/orch/doctor.sh"
 printf '# Flow\n\n## Starting a flow\n\n## Next steps\n' >"$fixture/skills/orch-flow/SKILL.md"
@@ -1668,6 +1676,8 @@ spares "an unquoted usage: string naming orch.sh abort is not flagged" \
   "$out" ':19:'
 flags "a usage: string beside another literal flow command is flagged" \
   "$out" "scripts/orch.sh:20: names a flow command literally, not through flow_cmd"
+spares "a plugin command or orch.sh abort in a trailing comment is not flagged" \
+  "$out" ':21:|:22:'
 fixture="$(new_fixture)"
 mkdir -p "$fixture/scripts/orch" "$fixture/skills/orch-flow"
 printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    pad) section="Padded step" ;;' '  esac' '}' \
@@ -1697,25 +1707,30 @@ echo "no pipe into a quiet grep or head (#987, #1019)"
 # --silent and --max-count, anywhere among that grep's words up to the next |,
 # ;, && or ||. head is flagged whatever its flags, when it is the first word
 # after the pipe, ending at whitespace, ), ;, &, | or the line's end, so
-# `| header` is not. There are no exemptions. A line is judged whole: a trailing
-# comment is not stripped, since # sits inside quoted patterns, and words are
-# not parsed for quoting, so an option-shaped word inside a pattern counts too.
-# Comment lines are spared. A pipe continued onto the next line with \ goes
-# unseen.
+# `| header` is not. There are no exemptions. Each line is judged through
+# SHELL_CODE_AWK's words view: its comment is dropped and every quoted string
+# collapsed, so a |, grep, option or # inside a string or comment counts for
+# nothing, while the code inside $(...) in a string is still read. A pipe
+# continued onto the next line, with \ or without, is joined to the grep or
+# head that starts the next line.
 # scan_early_exit_pipe <plugin root>: "<file>:<line>: <text>" for each line of
-# a scanned script that pipes into a quiet grep or into head, <text> with
-# leading whitespace trimmed.
+# a scanned script that pipes into a quiet grep or into head, <text> the raw
+# line with leading whitespace trimmed.
 scan_early_exit_pipe() {
   local f
   while IFS= read -r f; do
     case "$f" in scripts/test/gh_adapter_fake.sh) ;; scripts/test/*) continue ;; esac
-    F="$f" awk '
-      { t = $0; sub(/^[[:space:]]+/, "", t) }
-      t ~ /^#/ { next }
+    F="$f" awk "$SHELL_CODE_AWK"'
+      FNR == 1 { open = 0 }
       {
-        s = t; gsub(/\|\|/, SUBSEP, s)
+        t = $0; sub(/^[[:space:]]+/, "", t)
+        shell_code_line($0)
+        s = sc_words; gsub(/\|\|/, SUBSEP, s)
+        first = 2
+        if (open) { first = 1; sub(/^q[[:space:]]+/, "", s) }
+        open = s ~ /\|[[:space:]]*$/
         n = split(s, seg, "|")
-        for (i = 2; i <= n; i++) {
+        for (i = first; i <= n; i++) {
           g = seg[i]
           cut = length(g) + 1
           if ((k = index(g, ";")) && k < cut) cut = k
@@ -1759,6 +1774,9 @@ printf '%s\n' '#!/usr/bin/env bash' \
   'echo "$x" | head' \
   'x="$(cmd | head)"' \
   >"$fixture/scripts/orch/head.sh"
+printf '%s\n' 'echo "a | grep -q y"' "echo 'b | head'" 'echo "$x" | grep "#x" f | head' \
+  'echo "$x" | \' '  grep -q y' 'echo "$x" |' '  head -n 1' 'v="$(echo y | grep -q z)"' \
+  >"$fixture/scripts/orch/words.sh"
 printf '%s\n' 'echo "$x" | header' >"$fixture/scripts/orch/header.sh"
 printf '%s\n' 'grep -q y <<<"$x"' >"$fixture/scripts/orch/herestring.sh"
 printf '%s\n' 'false || grep -q y f' >"$fixture/scripts/orch/oror.sh"
@@ -1790,6 +1808,14 @@ spares "a pipe into a word starting with head is not flagged" "$out" '^scripts/o
 spares "a herestring into grep -q is not flagged" "$out" '^scripts/orch/herestring\.sh:'
 spares "grep -q after || is not flagged" "$out" '^scripts/orch/oror\.sh:'
 spares "a comment mentioning | grep -q is not flagged" "$out" '^scripts/orch/comment\.sh:'
+spares "a | grep -q inside a quoted string is not flagged" "$out" '^scripts/orch/words\.sh:(1|2):'
+flags "a # inside a quoted grep pattern ahead of a real | head is flagged" \
+  "$out" 'scripts/orch/words.sh:3: echo "$x" | grep "#x" f | head'
+flags "a pipe continued with a backslash into grep -q is flagged" \
+  "$out" 'scripts/orch/words.sh:5: grep -q y'
+flags "a pipe at a line's end into head is flagged" "$out" 'scripts/orch/words.sh:7: head -n 1'
+flags "a quiet grep piped inside \"\$(...)\" is flagged" \
+  "$out" 'scripts/orch/words.sh:8: v="$(echo y | grep -q z)"'
 spares "a pipe into grep -q or head elsewhere under scripts/test/ is not flagged" "$out" '^scripts/test/runner\.sh:'
 check "no plugin script pipes into a quiet grep or head" "$(scan_early_exit_pipe "$PLUGIN_ROOT")"
 
