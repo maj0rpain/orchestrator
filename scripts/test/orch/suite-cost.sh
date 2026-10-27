@@ -182,6 +182,20 @@ assert_contains "the first warns it overlapped another run" "$(cat "$hs/err-a")"
 assert_contains "and so does the second" "$(cat "$hs/err-b")" "orch: $overlap"
 assert_eq "neither is recorded" "$("$ORCH" suite-cost history)" ""
 
+# While both are registered, exactly one .contended file exists: the one the
+# later run made for the earlier, whichever registered first. A run does not
+# mark itself.
+"$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>&1 &
+pid_a=$!
+"$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; ls "$2" >"$3"; printf "x\n" >"$1"' \
+  "$hs/one" "$hs/two" "$rec.active" "$hs/listing" >/dev/null 2>&1
+wait "$pid_a"
+assert_eq "two overlapping runs leave exactly one .contended file between them" \
+  "$(grep -c '\.contended$' "$hs/listing")" 1
+marked="$(grep '\.contended$' "$hs/listing")"
+assert_eq "and it marks a run whose marker is listed beside it" \
+  "$(grep -cx "${marked%.contended}" "$hs/listing")" 1
+
 git branch other
 git worktree add -q "$PWD/wt" other
 "$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>"$hs/err-a" &
@@ -223,6 +237,16 @@ err="$("$ORCH" suite-cost run -- true 2>&1)"
 assert_eq "a live pid's .contended file with no marker is no contention" "$err" ""
 assert_eq "the run is recorded" "$("$ORCH" suite-cost history | wc -l | tr -d ' ')" 4
 assert_eq "and that .contended file is gone" "$(on_disk "$active/$$.contended")" absent
+# A live run already marked contended - the test shell's own pid, its marker
+# and .contended file seeded - is contention, and only its marker is marked:
+# its .contended file is never taken for a marker of its own.
+: >"$active/$$"
+: >"$active/$$.contended"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_contains "a live run already marked contended is contention" "$err" "orch: $overlap"
+assert_eq "and its .contended file gets no .contended file of its own" \
+  "$(on_disk "$active/$$.contended.contended")" absent
+rm -f -- "$active/$$" "$active/$$.contended"
 
 # A run that cannot register as active: a plain file where the active-runs
 # directory goes, the record itself still writable.
@@ -811,7 +835,7 @@ assert_eq "a confirmation ending unmeasured writes no line" "$(on_disk "$vf")" a
 # Overlapped confirming runs, by the FIFO handshake of the suite-cost run
 # section. The head's: a suite-cost run started alongside check reads a FIFO
 # the head's script writes, and writes one it reads.
-overlap_tail="overlapped another suite-cost run - contention left the growth unconfirmed"
+overlap_tail="overlapped another suite-cost run - the growth is unconfirmed"
 hs="$(handshake_fifos)"
 marker="$hs/base-ran"
 confirm_repo "touch $marker" "$(handshake_first "$hs")"
