@@ -9,7 +9,8 @@
 # order, files separated by a blank line. The description drops the comment's
 # leading `#` and any `<name> <args>:` signature; a function with no comment
 # line directly above it prints `-`. Subcommand entry points (cmd_*) are left
-# out, as are functions inside an embedded awk program, string or heredoc.
+# out, as are functions inside an embedded awk program, string, substitution
+# or heredoc.
 #
 # A repo-development tool, not an orch.sh noun: it does not ship to users.
 # Usage errors exit 2.
@@ -34,13 +35,20 @@ done
 [ "$tests" -eq 0 ] || [ -z "$file" ] || usage
 [ -z "$file" ] || [ -f "$file" ] || usage
 
+# SHELL_CODE_AWK, the one rule of what counts as code in a shell file, loaded
+# from scripts/test/shell_code.awk.
+SHELL_CODE_AWK="$(<"$ROOT/scripts/test/shell_code.awk")" || SHELL_CODE_AWK=""
+[ -n "$SHELL_CODE_AWK" ] || {
+  echo "helpers.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }
+
 # index <path> <header>: the listing of one file. A line opens a definition
-# only at column 0 outside any quoted string or heredoc, which the scan below
-# tracks line by line: single and double quotes, $'...' strings, comments, and
-# each heredoc's body up to its terminator.
+# only at column 0 of a line that starts at top level, and a comment line
+# counts toward a description block only when it starts at top level too:
+# shell_code_line, from SHELL_CODE_AWK, says whether a line starts outside any
+# open quote, substitution or heredoc, so the scan keeps no state of its own.
 index() {
-  awk -v header="$2" '
-    BEGIN { print "# " header; nheredocs = 0; cur_heredoc = 1; open_quote = "" }
+  awk -v header="$2" "$SHELL_CODE_AWK"'
+    BEGIN { print "# " header }
     # describe(name): the first line of the comment block directly above, its
     # `#` and any `<name> <args>:` signature dropped - or the second line
     # of the block, where the signature filled the first; - when there is none.
@@ -59,47 +67,9 @@ index() {
       sub(/^[ \t]*#[ \t]*/, "", line)
       return line
     }
-    function scan(line,   i, c, n, prev, rest, word, strip, ws) {
-      n = length(line); prev = " "
-      for (i = 1; i <= n; i++) {
-        c = substr(line, i, 1)
-        if (open_quote == "'\''") { if (c == "'\''") open_quote = ""; prev = c; continue }
-        if (open_quote == "$") {
-          if (c == "\\") { i++; continue }
-          if (c == "'\''") open_quote = ""
-          prev = c; continue
-        }
-        if (open_quote == "\"") {
-          if (c == "\\") { i++; continue }
-          if (c == "\"") open_quote = ""
-          prev = c; continue
-        }
-        if (c == "\\") { i++; prev = " "; continue }
-        if (c == "#" && prev ~ /[ \t;(|&]/) return
-        if (c == "$" && substr(line, i + 1, 1) == "'\''") { open_quote = "$"; i++; prev = c; continue }
-        if (c == "'\''" || c == "\"") { open_quote = c; prev = c; continue }
-        if (c == "<" && substr(line, i, 2) == "<<" && substr(line, i + 2, 1) != "<") {
-          rest = substr(line, i + 2); strip = 0
-          if (substr(rest, 1, 1) == "-") { strip = 1; rest = substr(rest, 2) }
-          match(rest, /^[ \t]*/); ws = RLENGTH; rest = substr(rest, ws + 1)
-          if (match(rest, /^("[A-Za-z_][A-Za-z0-9_]*"|'\''[A-Za-z_][A-Za-z0-9_]*'\''|[A-Za-z_][A-Za-z0-9_]*)/)) {
-            word = substr(rest, 1, RLENGTH); gsub(/["'\'']/, "", word)
-            nheredocs++; hword[nheredocs] = word; hstrip[nheredocs] = strip
-            i += 1 + strip + ws + RLENGTH
-            prev = " "; continue
-          }
-        }
-        prev = c
-      }
-    }
     {
-      if (cur_heredoc <= nheredocs) {
-        t = $0
-        if (hstrip[cur_heredoc]) sub(/^\t*/, "", t)
-        if (t == hword[cur_heredoc]) { cur_heredoc++; if (cur_heredoc > nheredocs) { nheredocs = 0; cur_heredoc = 1 } }
-        incomment = 0; next
-      }
-      if (open_quote != "") { scan($0); incomment = 0; next }
+      shell_code_line($0)
+      if (!sc_top) { incomment = 0; next }
       if (match($0, /^[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
         name = substr($0, 1, RLENGTH); sub(/[ \t]*\(\)$/, "", name)
         if (name !~ /^cmd_/) print name "\t" describe(name)
@@ -111,7 +81,6 @@ index() {
       } else {
         incomment = 0
       }
-      scan($0)
     }' "$1"
 }
 
