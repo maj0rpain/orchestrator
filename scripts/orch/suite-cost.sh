@@ -23,8 +23,8 @@
 # marker, then lists the others: it marks each other live one contended. On
 # finish it was overlapped when its .contended file exists, or when it saw
 # another live marker at start, and it removes its marker and .contended file
-# either way. A marker or .contended file whose pid
-# names no live process is stale, and so is a .contended file whose marker is
+# either way. A marker or .contended file whose pid names no live process is
+# stale, and so is a .contended file whose marker is
 # gone: no contention, and removed by the run that finds it. A failed .contended
 # write for another run is not retried, and a failed removal is ignored. A run
 # that cannot register still runs but is not recorded. No run ever waits for
@@ -113,7 +113,7 @@ suite_cost_register() {
     [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
     if ! kill -0 "$p" 2>/dev/null || [ ! -e "$dir/$p" ]; then
       rm -f -- "$f" 2>/dev/null || true
-    else
+    elif [ "$f" = "$dir/$p" ]; then
       SUITE_COST_SAW_LIVE=1
       : 2>/dev/null >"$f.contended" || true
     fi
