@@ -36,6 +36,10 @@
 # suites left temp files behind" after the suites' summaries and before
 # the shellcheck summary, and the run fails.
 #
+# On INT or TERM it sends TERM to every suite and shellcheck process it started,
+# waits for each one, and exits 130; the temporary directory is removed only
+# after that. A child that ignores TERM keeps all.sh waiting on it.
+#
 # Exits 1 when any suite failed, a suite left temp files behind, or shellcheck
 # did not pass.
 #
@@ -63,13 +67,23 @@ test_jobs_lower_priority
 unset ORCH_TEST_ONLY
 export ORCH_TEST_QUIET=1
 tmp="$(mktemp -d)" || exit 1
+pids=()
+sc_pids=()
+# On INT or TERM, TERM every suite and shellcheck started, wait for each, and
+# exit 130; the EXIT trap removes the temp directory only after that.
+all_stop_children() {
+  local pid
+  kill "${pids[@]}" "${sc_pids[@]}" 2>/dev/null
+  for pid in "${pids[@]}" "${sc_pids[@]}"; do wait "$pid"; done
+  exit 130
+}
+trap all_stop_children INT TERM
 trap 'rm -rf "$tmp"' EXIT
 failed=0
 suites_tmp="$tmp/suites-tmp"
 mkdir "$suites_tmp" || exit 1
 
 suites=(orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh autopilot_container_test.sh autopilot_up_test.sh lens_bench_test.sh)
-pids=()
 for suite in "${suites[@]}"; do
   TMPDIR="$suites_tmp" bash "$dir/$suite" >"$tmp/$suite" &
   pids+=("$!")
@@ -78,7 +92,6 @@ have_sc=0
 if command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
   root="$dir/../.."
-  sc_pids=()
   shopt -s globstar nullglob
   sc_files=("$root"/scripts/**/*.sh)
   shopt -u globstar nullglob
