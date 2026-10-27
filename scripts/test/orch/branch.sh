@@ -256,9 +256,9 @@ out="$(orch_gh_failing branch retire quick/3-unpushed quick/3-unpushed-redo-1 2>
 assert_status "branch retire renames a never-pushed branch" "$st" 0
 assert_eq "locally" "$(git branch --show-current)" "quick/3-unpushed-redo-1"
 assert_eq "and pushes no new name to origin" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/3-unpushed-redo-1 >/dev/null && echo present || echo gone)" "gone"
+  "$(origin_branch_state "$bare" quick/3-unpushed-redo-1)" "missing"
 assert_eq "nor the old one" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/3-unpushed >/dev/null && echo present || echo gone)" "gone"
+  "$(origin_branch_state "$bare" quick/3-unpushed)" "missing"
 rm -rf "$(dirname "$bare")"
 
 # --- branch retire ------------------------------------------------------------
@@ -298,11 +298,11 @@ out="$(orch_gh_failing branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
 assert_status "renames and republishes a branch with an upstream" "$st" 0
 assert_eq "prints the new name" "$out" "to-retire-redo-1"
 assert_eq "pushes the new name to origin" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire-redo-1 >/dev/null && echo present || echo gone)" "present"
+  "$(origin_branch_state "$bare" to-retire-redo-1)" "pushed"
 # Not optional: a leftover ref under the un-suffixed name is exactly what the
 # next implement attempt's branch create/pr open would collide with.
 assert_eq "and deletes the old remote ref" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire >/dev/null && echo present || echo gone)" "gone"
+  "$(origin_branch_state "$bare" to-retire)" "missing"
 
 # A local branch named origin/<old> makes the upstream's short name ambiguous
 # (#1331): retire must still see the upstream and republish. Made only after
@@ -313,9 +313,9 @@ git branch -q origin/to-retire-amb
 out="$(orch_gh_failing branch retire to-retire-amb to-retire-amb-redo-1 2>&1)"; st=$?
 assert_status "retires a pushed branch beside a local origin/<old> branch" "$st" 0
 assert_eq "still pushes the new name to origin" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire-amb-redo-1 >/dev/null && echo present || echo gone)" "present"
+  "$(origin_branch_state "$bare" to-retire-amb-redo-1)" "pushed"
 assert_eq "and still deletes the old remote ref" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire-amb >/dev/null && echo present || echo gone)" "gone"
+  "$(origin_branch_state "$bare" to-retire-amb)" "missing"
 git branch -q -D origin/to-retire-amb
 
 # The fixture gap named in spec review: no test in the suite forces a real
@@ -347,7 +347,7 @@ assert_eq "prints the new name" "$out" "to-fail-redo-1"
 assert_eq "renames locally" \
   "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "and publishes it" \
-  "$(git -C "$bare2" rev-parse --quiet --verify refs/heads/to-fail-redo-1 >/dev/null && echo present || echo gone)" "present"
+  "$(origin_branch_state "$bare2" to-fail-redo-1)" "pushed"
 
 # Idempotent resume: a previous call whose local rename and remote push both
 # already succeeded, but whose remote delete of the old ref did not - the
@@ -366,7 +366,7 @@ out="$(orch_gh_failing branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
 assert_status "resumes rather than failing on the already-gone old name" "$st" 0
 assert_eq "prints the new name" "$out" "to-resume-redo-1"
 assert_eq "and finishes the delete the earlier attempt left undone" \
-  "$(git -C "$bare3" rev-parse --quiet --verify refs/heads/to-resume >/dev/null && echo present || echo gone)" "gone"
+  "$(origin_branch_state "$bare3" to-resume)" "missing"
 
 # A genuine remote failure on that same delete step still has to die, not
 # get swallowed by the resume path's tolerance for an already-gone ref.

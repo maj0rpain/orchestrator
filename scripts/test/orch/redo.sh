@@ -135,7 +135,7 @@ assert_eq "renames the old branch aside" \
 assert_eq "keeping its PR marker, so the retired branch reads as handed off (#1200)" \
   "$(pr_marker_of orch/21-redotest-redo-1)" "30"
 assert_eq "and republishes it on origin" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/orch/21-redotest-redo-1 >/dev/null && echo present || echo gone)" "present"
+  "$(origin_branch_state "$bare" orch/21-redotest-redo-1)" "pushed"
 assert_eq "closes the old PR" "$(fake_pr_state_of 30)" "CLOSED"
 assert_contains "with a comment naming the retired branch" \
   "$(fake_pr_comments_of 30)" "orch/21-redotest-redo-1"

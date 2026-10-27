@@ -20,12 +20,6 @@ fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
 # per line.
 fake_pr_labels_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/labels" 2>/dev/null || true; }
 
-# origin_branch_state <bare> <branch>: "pushed" when <branch> reached the bare
-# origin repo <bare>, else "missing".
-origin_branch_state() {
-  git -C "$1" rev-parse --quiet --verify "refs/heads/$2" >/dev/null && echo pushed || echo missing
-}
-
 # fake_pr_label_drop <name>: every later PR opened with label <name> is stored
 # without it, as a gh whose label mutation did not land (#1299).
 fake_pr_label_drop() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/pr_label_drops"; }
