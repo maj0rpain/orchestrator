@@ -104,7 +104,7 @@ echo "gh_reason and capture_err"
 new_repo >/dev/null
 # Sourced rather than run, as is_filed_severity is: both are helpers every gh
 # death goes through, and sourcing orch.sh defines them without running main.
-reason() { bash -c 'source "$1" && gh_reason "$2"' _ "$ORCH" "$1"; }
+reason() { sourced_orch gh_reason "$1"; }
 assert_eq "gh_reason gives only the first line of gh's stderr" \
   "$(reason $'HTTP 502: Bad Gateway\nsecond line\n')" "HTTP 502: Bad Gateway"
 assert_eq "and says gh gave no reason when stderr is empty" "$(reason "")" "gh gave no reason"
@@ -112,19 +112,19 @@ assert_eq "or when its first line is" "$(reason $'\n')" "gh gave no reason"
 # capture_err leaves stdout to the caller's redirect, so a body streamed to a
 # file keeps its trailing newlines byte for byte.
 cefile="$(mktemp)"
-out="$(bash -c 'source "$1"
+out="$(sourced_orch_script '
   emit() { printf "body\n\n"; printf "HTTP 502: Bad Gateway\nsecond line\n" >&2; return 3; }
-  st=0; capture_err e emit >"$2" || st=$?
-  printf "%s|%s." "$st" "$e"' _ "$ORCH" "$cefile")"
+  st=0; capture_err e emit >"$1" || st=$?
+  printf "%s|%s." "$st" "$e"' "$cefile")"
 assert_eq "capture_err returns the command's status and sets the error variable to its stderr" \
   "$out" "3|HTTP 502: Bad Gateway
 second line
 ."
 assert_eq "and leaves stdout to the caller's redirect, trailing newlines kept" \
   "$(od -c <"$cefile")" "$(printf 'body\n\n' | od -c)"
-out="$(bash -c 'source "$1"
+out="$(sourced_orch_script '
   quiet() { printf "x"; }
-  e=stale; capture_err e quiet >/dev/null; printf "%s|%s" "$?" "$e"' _ "$ORCH")"
+  e=stale; capture_err e quiet >/dev/null; printf "%s|%s" "$?" "$e"')"
 assert_eq "a command that succeeds silently returns 0 and leaves the variable empty" "$out" "0|"
 rm -f "$cefile"
 unset cefile
@@ -137,15 +137,12 @@ echo
 echo "gh failure verb and readers"
 new_repo >/dev/null
 fake_github
-# in_orch <script> [args...]: runs the script in a shell that sourced orch.sh,
-# the args as its $1...
-in_orch() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
 
-out="$(in_orch 'gh_die "read issue #5" "$1"' "$GH_502" 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_die "read issue #5" "$1"' "$GH_502" 2>&1)"; st=$?
 assert_status "gh_die dies with status 1" "$st" 1
 assert_eq "naming what gh could not do and only gh's first line" "$out" \
   "orch: gh could not read issue #5: HTTP 502: Bad Gateway"
-out="$(in_orch 'gh_die --exit 2 --hint "no member was touched" "read issue #5" ""' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_die --exit 2 --hint "no member was touched" "read issue #5" ""' 2>&1)"; st=$?
 assert_status "gh_die --exit 2 dies with status 2" "$st" 2
 assert_eq "and --hint follows the reason" "$out" \
   "orch: gh could not read issue #5: gh gave no reason - no member was touched"
@@ -153,74 +150,74 @@ assert_eq "and --hint follows the reason" "$out" \
 fake_issue 5 open
 fake_issue_body 5 $'Body.\n\n'
 fake_fail adapter_issue_body "$GH_502"
-out="$(in_orch 'gh_or_die "read issue #5" adapter_issue_body 5; echo carried on' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die "read issue #5" adapter_issue_body 5; echo carried on' 2>&1)"; st=$?
 assert_status "gh_or_die dies with status 1 on a failed operation" "$st" 1
 assert_eq "with gh_die's message" "$out" "orch: gh could not read issue #5: HTTP 502: Bad Gateway"
-out="$(in_orch 'gh_or_die --exit 2 "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die --exit 2 "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
 assert_status "gh_or_die --exit 2 dies with status 2" "$st" 2
-out="$(in_orch 'gh_or_die --hint "the flow stays in review" "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die --hint "the flow stays in review" "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
 assert_eq "gh_or_die passes --hint on" "$out" \
   "orch: gh could not read issue #5: HTTP 502: Bad Gateway - the flow stays in review"
 
 # --file on a failure: no partial, created or temp file, an existing target
 # unchanged.
 vdir="$(mktemp -d)"
-in_orch 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/new" 2>/dev/null; st=$?
+sourced_orch_script 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/new" 2>/dev/null; st=$?
 assert_status "gh_or_die --file dies on a failed read" "$st" 1
 assert_eq "leaving no file behind, temp or target" "$(ls -A "$vdir")" ""
 printf 'old\n' >"$vdir/kept"
-in_orch 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/kept" 2>/dev/null
+sourced_orch_script 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/kept" 2>/dev/null
 assert_eq "and an existing target unchanged, with nothing beside it" \
   "$(cat "$vdir/kept")|$(ls -A "$vdir")" "old|kept"
 fake_unfail
 
-out="$(in_orch 'gh_or_die --out out "read issue #5" adapter_issue_body 5; printf "%s|" "$out"')"; st=$?
+out="$(sourced_orch_script 'gh_or_die --out out "read issue #5" adapter_issue_body 5; printf "%s|" "$out"')"; st=$?
 assert_status "gh_or_die --out succeeds on a good read" "$st" 0
 assert_eq "assigning the operation's stdout to the caller's variable" "$out" "Body.|"
-out="$(in_orch 'gh_or_die --out err "read issue #5" adapter_issue_body 5; printf "%s|" "$err"')"
+out="$(sourced_orch_script 'gh_or_die --out err "read issue #5" adapter_issue_body 5; printf "%s|" "$err"')"
 assert_eq "even one named as an unprefixed local of the verb would be" "$out" "Body.|"
-in_orch 'gh_or_die "read issue #5" adapter_issue_body 5 >"$1"' "$vdir/bare"
+sourced_orch_script 'gh_or_die "read issue #5" adapter_issue_body 5 >"$1"' "$vdir/bare"
 assert_eq "a bare gh_or_die leaves stdout to the caller's redirect, byte for byte" \
   "$(od -c <"$vdir/bare")" "$(printf 'Body.\n\n\n' | od -c)"
-in_orch 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/fetched"; st=$?
+sourced_orch_script 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/fetched"; st=$?
 assert_status "gh_or_die --file succeeds on a good read" "$st" 0
 assert_eq "keeping trailing newlines byte for byte" \
   "$(od -c <"$vdir/fetched")" "$(printf 'Body.\n\n\n' | od -c)"
-in_orch 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/a/b/fetched"
+sourced_orch_script 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/a/b/fetched"
 assert_eq "and fetches into a directory that does not exist yet" \
   "$(cat "$vdir/a/b/fetched")" "Body."
 assert_eq "leaving no temp file there" "$(ls -A "$vdir/a/b")" "fetched"
 
-out="$(in_orch 'gh_or_die --exit 2 --out v --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/both" 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die --exit 2 --out v --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/both" 2>&1)"; st=$?
 assert_status "gh_or_die refuses --out with --file, status 1 whatever --exit says" "$st" 1
 assert_contains "naming them" "$out" "--out"
 assert_contains "both" "$out" "--file"
-out="$(in_orch 'gh_or_die --exit 2 --bogus "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die --exit 2 --bogus "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
 assert_status "gh_or_die refuses an unknown option with status 1" "$st" 1
 assert_contains "naming it" "$out" "--bogus"
 
 # gh_die's own options, refused by gh_or_die before its operation runs (#1106):
 # the operation would leave a file behind, and none is there.
-out="$(in_orch 'gh_or_die --exit 3 "write a mark" touch "$1"' "$vdir/mark3" 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die --exit 3 "write a mark" touch "$1"' "$vdir/mark3" 2>&1)"; st=$?
 assert_status "gh_or_die --exit 3 dies with status 1" "$st" 1
 assert_eq "naming gh_or_die and the option" "$out" "orch: gh_or_die: --exit takes 2, not '3'"
 assert_eq "before its operation runs" "$(on_disk "$vdir/mark3")" absent
-out="$(in_orch 'gh_or_die --hint' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die --hint' 2>&1)"; st=$?
 assert_status "gh_or_die with a trailing --hint dies with status 1" "$st" 1
 assert_eq "naming gh_or_die and --hint" "$out" "orch: gh_or_die: --hint needs a value"
-out="$(in_orch 'gh_or_die --exit 2 --hint' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die --exit 2 --hint' 2>&1)"; st=$?
 assert_status "under --exit 2 too, with status 1, not 2" "$st" 1
 assert_eq "naming --hint" "$out" "orch: gh_or_die: --hint needs a value"
-out="$(in_orch 'gh_or_die --hint "" "write a mark" touch "$1"' "$vdir/marke" 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_or_die --hint "" "write a mark" touch "$1"' "$vdir/marke" 2>&1)"; st=$?
 assert_status "gh_or_die accepts --hint \"\"" "$st" 0
 assert_eq "and runs its operation" "$(on_disk "$vdir/marke")" present
-out="$(in_orch 'gh_die --exit 3 "read issue #5" ""' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_die --exit 3 "read issue #5" ""' 2>&1)"; st=$?
 assert_status "gh_die --exit 3 still dies with status 1" "$st" 1
 assert_eq "naming gh_die and the option" "$out" "orch: gh_die: --exit takes 2, not '3'"
-out="$(in_orch 'gh_die --exit 2 --hint' 2>&1)"; st=$?
+out="$(sourced_orch_script 'gh_die --exit 2 --hint' 2>&1)"; st=$?
 assert_status "gh_die with a trailing --hint dies with status 1" "$st" 1
 assert_eq "naming gh_die and --hint" "$out" "orch: gh_die: --hint needs a value"
-out="$(in_orch 'gh_die --hint "" "read issue #5" ""' 2>&1)"
+out="$(sourced_orch_script 'gh_die --hint "" "read issue #5" ""' 2>&1)"
 assert_eq "gh_die accepts --hint \"\"" "$out" "orch: gh could not read issue #5: gh gave no reason"
 rm -rf "$vdir"
 unset vdir
@@ -231,13 +228,13 @@ unset vdir
 rerr="$(mktemp)"
 fake_pr 7 open topic main
 fake_pr_draft 7
-out="$(in_orch 'pr_state_draft_read 7 state draft err; printf "%s|%s" "$state" "$draft"')"
+out="$(sourced_orch_script 'pr_state_draft_read 7 state draft err; printf "%s|%s" "$state" "$draft"')"
 assert_eq "pr_state_draft_read writes the state and the draft flag" "$out" "OPEN|true"
 fake_pr 8 merged topic main
-out="$(in_orch 'pr_state_draft_read 8 state draft err; printf "%s|%s" "$state" "$draft"')"
+out="$(sourced_orch_script 'pr_state_draft_read 8 state draft err; printf "%s|%s" "$state" "$draft"')"
 assert_eq "a PR that is no draft reads false" "$out" "MERGED|false"
 fake_fail adapter_pr_state_draft "$GH_502"
-out="$(in_orch 'state=x draft=x; st=0; pr_state_draft_read 7 state draft err || st=$?
+out="$(sourced_orch_script 'state=x draft=x; st=0; pr_state_draft_read 7 state draft err || st=$?
   printf "%s|%s|%s|%s" "$st" "$state" "$draft" "$err"' 2>"$rerr")"
 assert_eq "a failed read writes neither and fills the error variable" "$out" \
   "1|x|x|$GH_502"
@@ -245,12 +242,12 @@ assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 
 printf 'abc123\n' >"$ORCH_GH_FAKE_STORE/prs/8/head_oid"
 printf 'c1\nc2\n' >"$ORCH_GH_FAKE_STORE/prs/8/commits"
-out="$(in_orch 'pr_refs_read 8 oid ref base commits err; printf "%s|%s|%s|%s" "$oid" "$ref" "$base" "$commits"')"
+out="$(sourced_orch_script 'pr_refs_read 8 oid ref base commits err; printf "%s|%s|%s|%s" "$oid" "$ref" "$base" "$commits"')"
 assert_eq "pr_refs_read writes the head SHA, head branch, base and commits" "$out" \
   "abc123|topic|main|c1
 c2"
 fake_fail adapter_pr_refs "$GH_502"
-out="$(in_orch 'oid=x ref=x base=x commits=x; st=0; pr_refs_read 8 oid ref base commits err || st=$?
+out="$(sourced_orch_script 'oid=x ref=x base=x commits=x; st=0; pr_refs_read 8 oid ref base commits err || st=$?
   printf "%s|%s|%s|%s|%s|%s" "$st" "$oid" "$ref" "$base" "$commits" "$err"' 2>"$rerr")"
 assert_eq "a failed refs read writes none and fills the error variable" "$out" \
   "1|x|x|x|x|$GH_502"
@@ -258,11 +255,11 @@ assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 
 fake_issue 9 open bug enhancement
 printf 'A title\n' >"$ORCH_GH_FAKE_STORE/issues/9/title"
-out="$(in_orch 'issue_title_labels_read 9 title labels err; printf "%s|%s" "$title" "$labels"')"
+out="$(sourced_orch_script 'issue_title_labels_read 9 title labels err; printf "%s|%s" "$title" "$labels"')"
 assert_eq "issue_title_labels_read writes the title and the labels" "$out" "A title|bug
 enhancement"
 fake_fail adapter_issue_title_labels "$GH_502"
-out="$(in_orch 'title=x labels=x; st=0; issue_title_labels_read 9 title labels err || st=$?
+out="$(sourced_orch_script 'title=x labels=x; st=0; issue_title_labels_read 9 title labels err || st=$?
   printf "%s|%s|%s|%s" "$st" "$title" "$labels" "$err"' 2>"$rerr")"
 assert_eq "a failed title read writes neither and fills the error variable" "$out" \
   "1|x|x|$GH_502"
@@ -271,18 +268,18 @@ fake_unfail
 
 # gh_lines_read, the capture-and-split the readers share (#1106), and the
 # readers over it, the caller's variables named out, err and st.
-out="$(in_orch 'gh_lines_read adapter_issue_title_labels 9 st out err
+out="$(sourced_orch_script 'gh_lines_read adapter_issue_title_labels 9 st out err
   printf "%s|%s" "$out" "$err"')"
 assert_eq "gh_lines_read splits the answer into the caller's variables" "$out" "A title|bug
 enhancement"
-out="$(in_orch 'issue_title_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
+out="$(sourced_orch_script 'issue_title_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
 assert_eq "a reader fills variables named out and st" "$out" "A title|bug
 enhancement"
-out="$(in_orch 'issue_state_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
+out="$(sourced_orch_script 'issue_state_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
 assert_eq "issue_state_labels_read fills them too" "$out" "OPEN|bug
 enhancement"
 fake_issue_body 9 $'Line one.\n\nLine three.\n'
-out="$(in_orch 'issue_state_labels_body_read 9 out st err gh_err
+out="$(sourced_orch_script 'issue_state_labels_body_read 9 out st err gh_err
   printf "%s|%s|%s" "$out" "$st" "$err"')"
 assert_eq "issue_state_labels_body_read writes the state, the labels and the body" "$out" \
   "OPEN|bug
@@ -290,17 +287,17 @@ enhancement|Line one.
 
 Line three."
 fake_fail adapter_issue_title_labels "$GH_502"
-out="$(in_orch 'out=x err=x; st=0; gh_lines_read adapter_issue_title_labels 9 gh_err out err || st=$?
+out="$(sourced_orch_script 'out=x err=x; st=0; gh_lines_read adapter_issue_title_labels 9 gh_err out err || st=$?
   printf "%s|%s|%s|%s" "$st" "$out" "$err" "$gh_err"' 2>"$rerr")"
 assert_eq "a failed gh_lines_read writes none, fills the error variable and returns non-zero" \
   "$out" "1|x|x|$GH_502"
 assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
-out="$(in_orch 'out=x st=x; rc=0; issue_title_labels_read 9 out st err || rc=$?
+out="$(sourced_orch_script 'out=x st=x; rc=0; issue_title_labels_read 9 out st err || rc=$?
   printf "%s|%s|%s|%s" "$rc" "$out" "$st" "$err"' 2>"$rerr")"
 assert_eq "a failed reader writes the error into a variable named err" "$out" \
   "1|x|x|$GH_502"
 fake_fail adapter_issue_state_labels_body "$GH_502"
-out="$(in_orch 'state=x labels=x body=x; st=0; issue_state_labels_body_read 9 state labels body err || st=$?
+out="$(sourced_orch_script 'state=x labels=x body=x; st=0; issue_state_labels_body_read 9 state labels body err || st=$?
   printf "%s|%s|%s|%s|%s" "$st" "$state" "$labels" "$body" "$err"' 2>"$rerr")"
 assert_eq "a failed issue_state_labels_body_read writes none and fills the error variable" \
   "$out" "1|x|x|x|$GH_502"
@@ -323,7 +320,6 @@ assert_status "gh_or_die dies with no repo" "$st" 1
 assert_contains "naming GH_REPO as the remedy" "$out" "GH_REPO=<owner>/<repo>"
 assert_eq "and nothing reached gh" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null)" ""
 restore_suite_env GH_HOST GH_FIXTURE
-unset -f in_orch
 
 # --- gh fake (#280) -----------------------------------------------------------
 # The store-backed fake's own helpers: the store fake_github makes, the seeds
@@ -503,7 +499,7 @@ assert_status "issue body: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" \
   "GraphQL: Could not resolve to an issue or pull request with the number of 404."
 
-comments_jq="$(bash -c 'source "$1"; printf "%s" "$COMMENTS_JQ"' _ "$ORCH")"
+comments_jq="$(sourced_orch_script 'printf "%s" "$COMMENTS_JQ"')"
 gh_reply 0 $'<!-- comment @pat 2026-09-02T11:30:00Z -->\nA follow-up.\n' '' \
   issue view 23 --json comments --jq "$comments_jq"
 out="$(contract adapter_issue_comments 23 2>&1)"; st=$?
@@ -520,7 +516,7 @@ assert_eq "COMMENTS_JQ opens each comment with its author-and-date marker, one b
 assert_eq "and prints nothing at all for no comments" \
   "$(printf '%s' '{"comments":[]}' | jq -r "$comments_jq" | wc -c | tr -d ' ')" "0"
 
-issue_json_jq="$(bash -c 'source "$1"; printf "%s" "$ISSUE_JSON_JQ"' _ "$ORCH")"
+issue_json_jq="$(sourced_orch_script 'printf "%s" "$ISSUE_JSON_JQ"')"
 : >"$GH_FIXTURE/env.log"
 gh_reply 0 $'{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}\n' '' \
   issue view 23 --json number,title,body,labels,comments --jq "$issue_json_jq"
@@ -1082,7 +1078,7 @@ assert_eq "every CI operation was pinned to the resolved repo" \
 # operation owns, so each reply here is what that --jq printed. The writes
 # take GitHub's database id, which the operation reads itself.
 subs="repos/{owner}/{repo}/issues/50/sub_issues"
-subs_jq="$(bash -c 'source "$1"; printf "%s" "$SUB_ISSUES_JQ"' _ "$ORCH")"
+subs_jq="$(sourced_orch_script 'printf "%s" "$SUB_ISSUES_JQ"')"
 gh_reply 0 $'51\tOPEN\t0\n52\tCLOSED\t1\n' '' api --paginate "$subs" --jq "$subs_jq"
 out="$(contract adapter_sub_issues 50 2>&1)"; st=$?
 assert_status "sub-issues: lists a parent's sub-issues" "$st" 0

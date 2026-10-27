@@ -358,9 +358,9 @@ fake_unfail
 # as they were. The store starts empty, so "as they were" is also "nothing".
 fake_github
 # shellcheck disable=SC2016 # expanded by the inner bash
-sevs="$(bash -c 'source "$1" && printf "%s" "${FILED_SEVERITIES// /|}"' _ "$ORCH")"
+sevs="$(sourced_orch_script 'printf "%s" "${FILED_SEVERITIES// /|}"')"
 # shellcheck disable=SC2016 # expanded by the inner bash
-axes="$(bash -c 'source "$1" && printf "%s" "${FILED_AXES// /|}"' _ "$ORCH")"
+axes="$(sourced_orch_script 'printf "%s" "${FILED_AXES// /|}"')"
 usage="orch: usage: orch.sh review file <$sevs> <title> --axis <$axes> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
 before="$(fake_snapshot)"
 # each case is one line, label|drop|add: parts less the flag named by drop and
@@ -402,7 +402,7 @@ parts_with --axis style
 out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses an unknown axis" "$st" 1
 assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec or standards or suite-cost)"
-for axis in $(bash -c 'source "$1" && printf "%s\n" "$FILED_AXES"' _ "$ORCH"); do
+for axis in $(sourced_orch_script 'printf "%s\n" "$FILED_AXES"'); do
   assert_contains "naming review axis $axis, read from FILED_AXES" "$out" "$axis"
 done
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
@@ -412,7 +412,7 @@ assert_status "refuses a blocking severity - the loop fixes those" "$st" 1
 assert_contains "naming what it accepts" "$out" "major"
 assert_contains "saying blocking is always fixed, never filed" "$out" "blocking is always fixed, never filed"
 assert_not_contains "without claiming the loop fixes blocking only" "$out" "the loop fixes blocking)"
-for sev in $(bash -c 'source "$1" && printf "%s\n" "$FILED_SEVERITIES"' _ "$ORCH"); do
+for sev in $(sourced_orch_script 'printf "%s\n" "$FILED_SEVERITIES"'); do
   assert_contains "naming filed severity $sev, read from FILED_SEVERITIES" "$out" "$sev"
 done
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"

@@ -444,9 +444,9 @@ assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
 # shellcheck disable=SC2016 # expanded by the inner bash
-sevs="$(bash -c 'source "$1" && printf "%s" "${FILED_SEVERITIES// /|}"' _ "$ORCH")"
+sevs="$(sourced_orch_script 'printf "%s" "${FILED_SEVERITIES// /|}"')"
 # shellcheck disable=SC2016 # expanded by the inner bash
-axes="$(bash -c 'source "$1" && printf "%s" "${FILED_AXES// /|}"' _ "$ORCH")"
+axes="$(sourced_orch_script 'printf "%s" "${FILED_AXES// /|}"')"
 assert_contains "with the finding's parts as flags" "$("$ORCH" help | flat_text)" \
   "review file <$sevs> <title> --axis <$axes> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
 assert_not_contains "and no --body-file" "$("$ORCH" help | grep -A3 'review file')" "--body-file"
