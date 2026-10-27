@@ -399,3 +399,29 @@ require_clean_tree() {
   status="$(tree_status "$1")" || die "$status"
   [ -z "$status" ] || die "$2"
 }
+
+# FENCE_AWK: the one markdown code-fence rule, an awk function fragment each
+# scanner prepends to its own program. A fence opens on a line whose first
+# non-space character, after at most three spaces of indent, starts a run of
+# at least three backticks or tildes; it closes only on a line that, with the
+# same indent allowance, is a bare run of the same character at least as long.
+# fenced(line) is called once per input line, in order, and strips the line's
+# CR and trailing whitespace from its own copy; it returns 1 for a fence
+# delimiter or a line inside a fence, else 0. Callers still print or cut
+# delimiter lines as any other; fenced only gates heading and section tests.
+# State is fence_-prefixed.
+# shellcheck disable=SC2034 # used by the pr and ticket modules
+FENCE_AWK='
+  function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
+  function fenced(line,   s, c, n) {
+    s = line; sub(/[ \t\r]+$/, "", s)
+    n = fence_run(s, " "); if (n <= 3) s = substr(s, n + 1)
+    c = substr(s, 1, 1)
+    if (fence_char != "") {
+      if (c == fence_char && fence_run(s, c) >= fence_len && fence_run(s, c) == length(s)) fence_char = ""
+      return 1
+    }
+    if ((c == "`" || c == "~") && fence_run(s, c) >= 3) { fence_char = c; fence_len = fence_run(s, c); return 1 }
+    return 0
+  }
+'

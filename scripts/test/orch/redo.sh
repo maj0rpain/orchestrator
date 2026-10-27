@@ -135,7 +135,7 @@ assert_eq "renames the old branch aside" \
 assert_eq "keeping its PR marker, so the retired branch reads as handed off (#1200)" \
   "$(pr_marker_of orch/21-redotest-redo-1)" "30"
 assert_eq "and republishes it on origin" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/orch/21-redotest-redo-1 >/dev/null && echo present || echo gone)" "present"
+  "$(origin_branch_state "$bare" orch/21-redotest-redo-1)" "pushed"
 assert_eq "closes the old PR" "$(fake_pr_state_of 30)" "CLOSED"
 assert_contains "with a comment naming the retired branch" \
   "$(fake_pr_comments_of 30)" "orch/21-redotest-redo-1"
@@ -571,6 +571,10 @@ assert_eq "cutting only the real section, the fenced example kept" \
   "$(fake_body_of 56 | od -c)" "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' | od -c)"
 out="$("$ORCH" ticket exists 56 2>&1)"; st=$?
 assert_status "ticket exists then ignores the fenced example" "$st" 1
+fake_issue_body 56 "$(writeln 'Intro' '  ```md' '## Ticket' 'example' '  ```' '' '## Ticket' 'Build.')"
+"$ORCH" ticket retire 56 >/dev/null 2>&1
+assert_eq "retire keeps a ## Ticket example inside an indented fence" \
+  "$(fake_body_of 56 | od -c)" "$(writeln 'Intro' '  ```md' '## Ticket' 'example' '  ```' | od -c)"
 fake_issue_body 57 "$(writeln 'Intro' '```md' '## Ticket' '```')"
 fake_fail adapter_issue_body_edit
 out="$("$ORCH" ticket retire 57 2>&1)"; st=$?

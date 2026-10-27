@@ -326,10 +326,9 @@ TICKET_HEADING='## Ticket'
 # a code fence, CRLF ends allowed - the test `ticket exists` uses, and the line
 # `strip_ticket_sections` cuts from.
 has_ticket_heading() {
-  awk -v heading="$TICKET_HEADING" '
-    { l = $0; sub(/\r$/, "", l) }
-    !fence && l == heading { found = 1 }
-    l ~ /^(```|~~~)/ { fence = !fence }
+  awk -v heading="$TICKET_HEADING" "$FENCE_AWK"'
+    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
+    !f && l == heading { found = 1 }
     END { exit !found }
   '
 }
@@ -340,11 +339,10 @@ has_ticket_heading() {
 # the blank lines a section at the end leaves behind trimmed. Every other
 # line is kept byte for byte, CRLF ends and trailing blank lines included.
 strip_ticket_sections() {
-  awk -v heading="$TICKET_HEADING" '
-    { l = $0; sub(/\r$/, "", l) }
-    skip && !fence && l ~ /^##?([ \t]|$)/ && l != heading { skip = 0 }
-    !fence && l == heading { skip = 1; next }
-    l ~ /^(```|~~~)/ { fence = !fence }
+  awk -v heading="$TICKET_HEADING" "$FENCE_AWK"'
+    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
+    skip && !f && l ~ /^##?([ \t]|$)/ && l != heading { skip = 0 }
+    !f && l == heading { skip = 1; next }
     skip { next }
     l == "" { held = held $0 "\n"; next }
     { printf "%s%s\n", held, $0; held = "" }
@@ -485,17 +483,16 @@ BLOCKED_BY_HEADING='## Blocked by'
 # line did, CRLF included. With no such section, one is appended after one
 # blank line. Every other line is kept byte for byte.
 rewrite_blocked_by_section() {
-  awk -v heading="$BLOCKED_BY_HEADING" -v blockers="$1" '
+  awk -v heading="$BLOCKED_BY_HEADING" -v blockers="$1" "$FENCE_AWK"'
     function section(eol,   i, n, b) {
       printf "%s%s%s", heading, eol, eol
       n = split(blockers, b, "\n")
       if (blockers == "") printf "None (can start immediately)%s", eol
       else for (i = 1; i <= n; i++) printf "- #%s%s", b[i], eol
     }
-    { l = $0; cr = ($0 ~ /\r$/) ? "\r" : ""; sub(/\r$/, "", l); last = l; lastcr = cr }
-    skip && !fence && l ~ /^##?([ \t]|$)/ { skip = 0; printf "%s\n", seol }
-    !done && !fence && l == heading { seol = cr; section(cr "\n"); skip = 1; done = 1; next }
-    l ~ /^(```|~~~)/ { fence = !fence }
+    { l = $0; cr = ($0 ~ /\r$/) ? "\r" : ""; sub(/\r$/, "", l); last = l; lastcr = cr; f = fenced(l) }
+    skip && !f && l ~ /^##?([ \t]|$)/ { skip = 0; printf "%s\n", seol }
+    !done && !f && l == heading { seol = cr; section(cr "\n"); skip = 1; done = 1; next }
     skip { next }
     { print }
     END {
@@ -512,11 +509,10 @@ rewrite_blocked_by_section() {
 # bounded as rewrite_blocked_by_section bounds it. A body with no section, or
 # one reading `None (can start immediately)`, lists none.
 blocked_by_section_numbers() {
-  awk -v heading="$BLOCKED_BY_HEADING" '
-    { l = $0; sub(/\r$/, "", l) }
-    in_section && !fence && l ~ /^##?([ \t]|$)/ { in_section = 0 }
-    !done && !fence && l == heading { in_section = 1; done = 1; next }
-    l ~ /^(```|~~~)/ { fence = !fence }
+  awk -v heading="$BLOCKED_BY_HEADING" "$FENCE_AWK"'
+    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
+    in_section && !f && l ~ /^##?([ \t]|$)/ { in_section = 0 }
+    !done && !f && l == heading { in_section = 1; done = 1; next }
     in_section && match(l, /^- #[0-9]+/) { print substr(l, 4, RLENGTH - 3) }
   '
 }

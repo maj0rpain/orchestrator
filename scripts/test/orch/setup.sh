@@ -810,6 +810,12 @@ rebase_state() {
   [ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none
 }
 
+# origin_branch_state <bare> <branch>: "pushed" when <branch> reached the bare
+# origin repo <bare>, else "missing".
+origin_branch_state() {
+  git -C "$1" rev-parse --quiet --verify "refs/heads/$2" >/dev/null && echo pushed || echo missing
+}
+
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,
 # REPO_CAUSE and REPO_REMEDY - but spelled out here, never read from orch.sh,
 # so a wording change there that the suite does not mirror still fails a test.

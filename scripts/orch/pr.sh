@@ -139,6 +139,13 @@ pr_labels_check() {
   die "PR #$pr is open but lacks the labels $missing - add them by hand"
 }
 
+# The PR-writing standard's required headings (#1387) for pr open and pr
+# publish, written once: both require all of them, and pr_body_check's Door and
+# Blast Radius rules key on the Merge Danger one. pr release meets a smaller
+# standard, Summary alone.
+PR_MERGE_DANGER_HEADING='Merge Danger'
+PR_BODY_HEADINGS=(Summary Evidence "$PR_MERGE_DANGER_HEADING")
+
 # pr_body_check <body-file> <heading>...: dies, naming in one message every
 # piece of the PR-writing standard (#1387) the body lacks or gets wrong, unless
 # it has an exact `## <heading>` line for each <heading> - and, when Merge
@@ -153,20 +160,14 @@ pr_body_check() {
   local body_file="$1" required problems
   shift
   required="$(IFS='|'; printf '%s' "$*")"
-  problems="$(awk -v required="$required" '
-    function run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
+  problems="$(awk -v required="$required" -v danger="$PR_MERGE_DANGER_HEADING" "$FENCE_AWK"'
     function add(p) { out = out (out == "" ? "" : "; ") p }
     function value(s) { sub(/^[ \t]+/, "", s); return s }
     {
       line = $0; sub(/[ \t\r]+$/, "", line)
-      s = line; sub(/^ ? ? ?/, "", s); c = substr(s, 1, 1)
-      if (fence != "") {
-        if (c == fence && run(s, c) >= fence_len && run(s, c) == length(s)) fence = ""
-        next
-      }
-      if ((c == "`" || c == "~") && run(s, c) >= 3) { fence = c; fence_len = run(s, c); next }
+      if (fenced(line)) next
       if (line ~ /^## /) { section = substr(line, 4); seen[section] = 1; next }
-      if (section != "Merge Danger") next
+      if (section != danger) next
       if (index(line, "**Door:**") == 1) {
         doors++; v = value(substr(line, 10))
         if (v == "") bad_doors[++bad] = "an empty **Door:** value"
@@ -180,11 +181,11 @@ pr_body_check() {
       n = split(required, req, "|")
       for (i = 1; i <= n; i++) {
         if (!(req[i] in seen)) add("no ## " req[i] " heading")
-        if (req[i] != "Merge Danger") continue
-        if (!doors) add("no **Door:** line under ## Merge Danger")
+        if (req[i] != danger) continue
+        if (!doors) add("no **Door:** line under ## " danger)
         for (j = 1; j <= bad; j++) add(bad_doors[j])
-        if (doors > 1) add("a second **Door:** line under ## Merge Danger")
-        if (!blasts) add("no **Blast Radius:** line under ## Merge Danger")
+        if (doors > 1) add("a second **Door:** line under ## " danger)
+        if (!blasts) add("no **Blast Radius:** line under ## " danger)
         else if (empty_blast) add("an empty **Blast Radius:** value")
       }
       print out
@@ -210,7 +211,7 @@ cmd_pr_open() {
   require_issue issue
   require_branch branch
   base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
-  pr_body_check "$body_file" Summary Evidence "Merge Danger"
+  pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
   recorded="$(state_get pr)"
   if [ -n "$recorded" ]; then
     update_pr "$recorded" "$branch" "$base" "$issue" "$title" "$body_file" ${labels[@]+"${labels[@]}"}
@@ -249,7 +250,7 @@ cmd_pr_publish() {
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   current_branch_or_die
   base="$(recorded_base "$branch")"
-  pr_body_check "$body_file" Summary Evidence "Merge Danger"
+  pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft" ${labels[@]+"${labels[@]}"})"
   pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"

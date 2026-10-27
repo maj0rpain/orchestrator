@@ -20,12 +20,6 @@ fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
 # per line.
 fake_pr_labels_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/labels" 2>/dev/null || true; }
 
-# origin_branch_state <bare> <branch>: "pushed" when <branch> reached the bare
-# origin repo <bare>, else "missing".
-origin_branch_state() {
-  git -C "$1" rev-parse --quiet --verify "refs/heads/$2" >/dev/null && echo pushed || echo missing
-}
-
 # fake_pr_label_drop <name>: every later PR opened with label <name> is stored
 # without it, as a gh whose label mutation did not land (#1299).
 fake_pr_label_drop() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/pr_label_drops"; }
@@ -522,6 +516,11 @@ out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
 assert_status "pieces only inside a fence or outside Merge Danger are refused" "$st" 1
 assert_eq "counting each as missing" "$out" \
   "$PR_BODY_REFUSED no ## Evidence heading; no **Door:** line under ## Merge Danger; no **Blast Radius:** line under ## Merge Danger"
+writeln '## Summary' '' '   ~~~' '## Evidence' '~~~' '' '## Merge Danger' '' \
+  '**Door:** two-way' '**Blast Radius:** the widget module' >"$bad_body"
+out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
+assert_status "an Evidence heading only inside an indented fence is refused" "$st" 1
+assert_eq "naming the missing Evidence heading alone" "$out" "$PR_BODY_REFUSED no ## Evidence heading"
 reordered_body="$(mktemp)"
 writeln '## Merge Danger' '' '**Blast Radius:** the widget module' '**Door:** one-way' '' \
   '## Evidence' '' '```' 'not a fence end: ````' '```' '' '## Summary' '' 'Did it.' >"$reordered_body"
