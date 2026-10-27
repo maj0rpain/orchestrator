@@ -207,6 +207,14 @@ trap 'rm -rf "$FIXTURES"' EXIT
 # new_fixture: an empty fixture plugin root, removed on exit.
 new_fixture() { mktemp -d "$FIXTURES/root.XXXXXX"; }
 
+# SHELL_CODE_AWK, the one rule of what counts as code in a shell file, loaded
+# from its own library, scripts/test/shell_code.awk, which the orch.sh suite's
+# setup loads too: a line is a comment only when it starts outside any open
+# quote, substitution or heredoc.
+SHELL_CODE_AWK="$(<"$PLUGIN_ROOT/scripts/test/shell_code.awk")"
+[ -n "$SHELL_CODE_AWK" ] || {
+  echo "docs_lint.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }
+
 echo "docs lint"
 
 # --- markdown section reader -------------------------------------------------
@@ -3452,13 +3460,6 @@ echo "line width (#1524)"
 # CONTRIBUTING's Develop section states the width, 80 columns, and the files
 # it covers. A covered line fails when it is longer than 80, counted in
 # characters, so a multi-byte character is one column.
-# SHELL_CODE_AWK, the one rule of what counts as code in a shell file, read
-# from the orch.sh suite's setup, which cannot be sourced here: a line is a
-# comment only when it starts outside any open quote, substitution or heredoc.
-SHELL_CODE_AWK="$(awk "/^SHELL_CODE_AWK='\$/ { f = 1; next } f && /^'\$/ { exit } f" \
-  "$PLUGIN_ROOT/scripts/test/orch/setup.sh")"
-[ -n "$SHELL_CODE_AWK" ] || {
-  echo "docs_lint.sh: no SHELL_CODE_AWK in scripts/test/orch/setup.sh" >&2; exit 1; }
 # scan_line_width <plugin root>: "<file>:<line>: <length> columns, past 80"
 # for each covered, non-exempt line longer than 80.
 scan_line_width() {
