@@ -14,13 +14,6 @@
 echo
 echo "known-items module"
 new_repo >/dev/null
-# sourced_orch_script <script> [<arg>...]: runs <script> in a child bash that
-# has sourced orch.sh, with <arg>... as its positional parameters. Command
-# substitution drops the trailing newline every appended line ends in.
-sourced_orch_script() {
-  bash -c 'source "$1"; script="$2"; shift 2; eval "$script"' _ "$ORCH" "$@"
-}
-
 entries="$(mktemp)"
 printf '%s\n' '- first bullet' '  continued here' '    and here' 'a margin line' \
   '- None' 'None.' '- None declined.' '' '- second bullet' >"$entries"

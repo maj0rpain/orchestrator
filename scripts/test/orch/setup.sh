@@ -246,6 +246,9 @@ flat_text() { tr -s ' \t\n' '   '; }
 # sourced_orch <function> [args...]: the function's output, called in a shell
 # that sourced orch.sh, with its status.
 sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+# sourced_orch_script <script> [<arg>...]: runs <script> in a child bash that
+# has sourced orch.sh, with <arg>... as its positional parameters $1...
+sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
 # help_entry <command>: orch.sh help's entry for <command> - its first line
 # and the indented continuation lines under it.
 help_entry() {
