@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.11
+
+Rename four misleading locals in the doctor and autopilot modules and share the joined phase-labels loop of the two doctor label checks in one helper; no output changes.
+
 ## 4.38.10
 
 The PR body check and the ticket scanners (`ticket exists`, `ticket retire`,
