@@ -23,9 +23,10 @@ differences only:
   line each under **Minor edits** - so a human watching can see what is applied
   and interrupt. It is not a turn-final reply, whatever `check`'s pass line
   says: see `docs/turn-final-reply.md`'s **Unattended printout**. Then no
-  question is asked and nothing waits: go straight on to `apply` in the same turn, the batch applied at once as **Apply
-  as recommended** - every proposed edit applied, every **recommend decline**
-  item skipped, and every decision item takes its recommended option.
+  question is asked and nothing waits: go straight on to `apply` in the same
+  turn, the batch applied at once as **Apply as recommended** - every proposed edit
+  applied, every **recommend decline** item skipped, and every decision item
+  takes its recommended option.
 - **Applying**: the standalone call in **Applying the answer**, with the
   answer `recommended` and `--unattended` added:
 

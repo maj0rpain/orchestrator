@@ -356,11 +356,11 @@ each minor edit's summary, then the batch question with its answer words
 spelled out. Compose no view of your own - no summary, no shortening, no
 expansion, in any round: the view the human reads is `check`'s, every round
 alike. The turn ends on the list and the question, in one reply. No edit is
-applied and no changelog is posted before the answer arrives. On Claude Code an ask-tool call is refused
-while the view is unpasted: after each `check` that wrote a `view.md`, and
-until the next `apply`, a hook refuses every ask until one text block after
-that `check` holds the whole view, handing back that view each time - end
-the turn on it and the batch question in plain text. The answers:
+applied and no changelog is posted before the answer arrives. On Claude Code
+an ask-tool call is refused while the view is unpasted: after each `check`
+that wrote a `view.md`, and until the next `apply`, a hook refuses every ask
+until one text block after that `check` holds the whole view, handing back
+that view each time - end the turn on it and the batch question in plain text. The answers:
 
 - **Apply as recommended (Recommended)**, answer word `recommended` - every
   proposed edit applied, every decision item takes its recommended option,
