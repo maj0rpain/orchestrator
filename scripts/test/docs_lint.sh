@@ -1201,19 +1201,23 @@ agent_start_files() {
   find "$1/agents" "$1/docs" -name '*.md' -type f 2>/dev/null | sort
   return 0
 }
+# agent_roles_read: orch.sh's AGENT_ROLES, which live in its agent module
+# alone, read from the real plugin root: a scanned fixture carries no agent
+# module. Prints nothing when the module yields no roles.
+agent_roles_read() {
+  (source "$PLUGIN_ROOT/scripts/orch/agent.sh" && echo "$AGENT_ROLES") 2>/dev/null
+}
 # scan_agent_settings <plugin root>: one line per role a start site starts
 # without reading its setting.
 scan_agent_settings() {
-  local r="$1" f text name roles role pattern
+  local r="$1" f text name known_roles roles role pattern
   local -a files
-  # The roles live in orch.sh's agent module alone, read from the real plugin
-  # root: a scanned fixture carries no agent module.
-  roles="$( (source "$PLUGIN_ROOT/scripts/orch/agent.sh" && echo "$AGENT_ROLES") 2>/dev/null)"
-  if [ -z "$roles" ]; then
+  known_roles="$(agent_roles_read)"
+  if [ -z "$known_roles" ]; then
     echo "scripts/orch/agent.sh: no AGENT_ROLES read"
     return 0
   fi
-  pattern="orch-(${roles// /|})(-[a-z]+)?"
+  pattern="orch-(${known_roles// /|})(-[a-z]+)?"
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
     text="$(flat_text "$f")"
@@ -1284,7 +1288,7 @@ flags "a pointer at Dispatching a subagent starts the implementer" \
   "$out" "agents/orch-x.md: starts an agent of the implementer role but does not name agent get implementer"
 # A start site generated from AGENT_ROLES, read as the rule reads it, so a role
 # added there is covered with no edit here.
-roles_read="$( (source "$PLUGIN_ROOT/scripts/orch/agent.sh" && echo "$AGENT_ROLES") )"
+roles_read="$(agent_roles_read)"
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/a"
 {
@@ -1983,7 +1987,7 @@ done
 # scan_dockerignore_secrets <plugin root>: one line per mapped Secrets pattern
 # .dockerignore does not list, or when .gitignore has no # Secrets block.
 scan_dockerignore_secrets() {
-  local r="$1" pat
+  local r="$1" pat want
   local -a pats
   mapfile -t pats < <(awk '/^# Secrets[[:space:]]*$/ { inb = 1; next }
     inb && (/^[[:space:]]*$/ || /^#/) { exit }
@@ -1994,12 +1998,12 @@ scan_dockerignore_secrets() {
   fi
   for pat in "${pats[@]}"; do
     case "${pat#!}" in
-      /*) pat="${pat/\//}" ;;
-      */?*) ;;
-      *) if [[ $pat == '!'* ]]; then pat="!**/${pat#!}"; else pat="**/$pat"; fi ;;
+      /*) want="${pat/\//}" ;;
+      */?*) want="$pat" ;;
+      *) if [[ $pat == '!'* ]]; then want="!**/${pat#!}"; else want="**/$pat"; fi ;;
     esac
-    grep -qxF -- "$pat" "$r/.dockerignore" 2>/dev/null ||
-      echo ".dockerignore: does not list $pat"
+    grep -qxF -- "$want" "$r/.dockerignore" 2>/dev/null ||
+      echo ".dockerignore: does not list $want"
   done
   return 0
 }
@@ -2012,7 +2016,13 @@ for pat in '**/.env' '**/keys/' '!**/.env.example' conf/secret.json root.key; do
   flags "a .dockerignore missing $pat is flagged" "$out" ".dockerignore: does not list $pat"
 done
 spares "a pattern outside the Secrets block is never required" "$out" 'outside|build'
-printf '%s\n' '**/.env' '**/keys/' '!**/.env.example' conf/secret.json root.key >"$fixture/.dockerignore"
+mapped=('**/.env' '**/keys/' '!**/.env.example' conf/secret.json root.key)
+for pat in "${mapped[@]}"; do
+  grep -vxF -- "$pat" < <(printf '%s\n' "${mapped[@]}") >"$fixture/.dockerignore"
+  assert_eq "a .dockerignore listing all but $pat flags only it" \
+    "$(scan_dockerignore_secrets "$fixture")" ".dockerignore: does not list $pat"
+done
+printf '%s\n' "${mapped[@]}" >"$fixture/.dockerignore"
 assert_empty "a .dockerignore listing every mapped pattern is not flagged" "$(scan_dockerignore_secrets "$fixture")"
 printf '%s\n' 'build/' >"$fixture/.gitignore"
 flags "a .gitignore with no Secrets block is flagged" \
@@ -2409,11 +2419,12 @@ scan_cheapest_test() {
 # inside its ## Smell baseline, and one when the section is missing.
 scan_test_cost_smells() {
   local r="$1" f="agents/orch-reviewer-standards.md" body base smell
-  base="$(md_section "$r/$f" "## Smell baseline" 2>/dev/null)"
+  base="$(md_section "$r/$f" "## Smell baseline" 2>/dev/null | flat_text)"
   if ! body="$(md_section "$r/$f" "## Test-cost smells" 2>/dev/null)"; then
     echo "$f: no ## Test-cost smells section"
     body=""
   fi
+  body="$(flat_text <<<"$body")"
   while IFS= read -r smell; do
     if [ -n "$body" ] && ! grep -qF -- "**$smell**" <<<"$body"; then
       echo "$f: ## Test-cost smells does not name **$smell**"
@@ -2457,6 +2468,12 @@ printf '# S\n\n## Smell baseline\n\n- **Mysterious Name**: a name.\n\n## Test-co
   >"$fixture/agents/orch-reviewer-standards.md"
 assert_empty "four test-cost smells outside the smell baseline are not flagged" \
   "$(scan_test_cost_smells "$fixture")"
+printf '# S\n\n## Smell baseline\n\n- **Mysterious Name**: a name, not **Per-test\nsetup**.\n\n## Test-cost smells\n\n- **Duplicated\ncoverage**: a.\n- **Expensive seam**: b.\n- **Per-test setup**: c.\n- **Waiting**: d.\n' \
+  >"$fixture/agents/orch-reviewer-standards.md"
+out="$(scan_test_cost_smells "$fixture")"
+spares "a test-cost smell wrapped across lines still counts as named" "$out" 'does not name \*\*Duplicated coverage'
+flags "a test-cost smell wrapped across lines inside the smell baseline is flagged" \
+  "$out" "agents/orch-reviewer-standards.md: **Per-test setup** is inside the ## Smell baseline"
 check "the Standards reviewer carries the four test-cost smells outside the smell baseline" \
   "$(scan_test_cost_smells "$PLUGIN_ROOT")"
 
