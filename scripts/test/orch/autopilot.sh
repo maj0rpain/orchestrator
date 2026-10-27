@@ -1248,3 +1248,14 @@ out="$(sourced_orch autopilot_phase_arg "spec implement" 2>&1)"; st=$?
 assert_status "autopilot_phase_arg refuses two adjacent phases" "$st" 1
 assert_eq "with its not-a-flow-phase message" "$out" \
   "orch: not a flow phase: spec implement (want spec|implement|review|done)"
+
+# --- autopilot_phase_labels_text joins the phase labels (#1563) ---------------
+echo
+echo "autopilot phase labels text"
+new_repo >/dev/null
+out="$(sourced_orch autopilot_phase_labels_text "$(printf 'bug\nready-for-agent')" 2>&1)"
+assert_eq "no phase label prints nothing" "$out" ""
+out="$(sourced_orch autopilot_phase_labels_text "$(printf 'bug\norch:review')" 2>&1)"
+assert_eq "one phase label prints that label" "$out" "orch:review"
+out="$(sourced_orch autopilot_phase_labels_text "$(printf 'orch:review\nbug\norch:spec')" 2>&1)"
+assert_eq "two phase labels print in table order, space-separated" "$out" "orch:spec orch:review"

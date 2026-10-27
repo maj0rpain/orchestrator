@@ -36,7 +36,7 @@ autopilot_lookup() {
 # range.
 # The handle's owner is resolved only when the handle is needed.
 autopilot_setting() {
-  local name="$1" key="orchestrator.autopilot.$1" def="" owner
+  local name="$1" key="orchestrator.autopilot.$1" def="" owner_name
   autopilot_lookup "$name" AUTOPILOT_VALUE AUTOPILOT_SOURCE
   case "$name" in
     permission-mode)
@@ -47,7 +47,7 @@ autopilot_setting() {
       [ "$AUTOPILOT_SOURCE" = unset ] || return 0
       AUTOPILOT_SOURCE=default
       if repo_resolve; then
-        owner="$(repo_owner_name "$REPO_NAME")"; AUTOPILOT_VALUE="${owner%%/*}"
+        owner_name="$(repo_owner_name "$REPO_NAME")"; AUTOPILOT_VALUE="${owner_name%%/*}"
       else
         die "$REPO_REMEDY (the handle defaults to the repo's owner; or git config $key <handle>)"
       fi ;;
@@ -116,6 +116,16 @@ autopilot_phase_labels_in() {
   for p in $PHASES; do
     ! list_has "$1" "$(autopilot_phase_label "$p")" || printf '%s\n' "$p"
   done
+}
+
+# autopilot_phase_labels_text <labels>: the phase labels (`orch:<phase>`) among
+# <labels>, joined by single spaces in table order; nothing when there are none.
+autopilot_phase_labels_text() {
+  local p text=""
+  for p in $(autopilot_phase_labels_in "$1"); do
+    text="${text:+$text }$(autopilot_phase_label "$p")"
+  done
+  printf '%s' "$text"
 }
 
 # autopilot_live_phase <labels>: the first phase other than done whose label is
@@ -807,7 +817,7 @@ autopilot_tick() {
 # holds none. A time already past today is the same time tomorrow, or, with a
 # weekday, a week on at most.
 autopilot_resets_epoch() {
-  local text re day="" h m ap now_epoch since target clock shift_secs ahead cur i d
+  local text re day="" h m ap now_epoch since target_since target clock shift_secs ahead cur i d
   text="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   re='resets[[:space:]]+(([a-z]{3})[a-z]*[[:space:]]+)?([0-9]{1,2})(:([0-9]{2}))?[[:space:]]*(am|pm)'
   [[ "$text" =~ $re ]] || return 1
@@ -835,8 +845,8 @@ autopilot_resets_epoch() {
   # A clock change between now and then shifts the hour: pull the target back to
   # the wanted local time of day.
   clock="$(date -d "@$target" +%H:%M:%S 2>/dev/null || date -r "$target" +%H:%M:%S)"
-  since="$(( 10#${clock:0:2} * 3600 + 10#${clock:3:2} * 60 + 10#${clock:6:2} ))"
-  shift_secs="$(( h * 3600 + m * 60 - since ))"
+  target_since="$(( 10#${clock:0:2} * 3600 + 10#${clock:3:2} * 60 + 10#${clock:6:2} ))"
+  shift_secs="$(( h * 3600 + m * 60 - target_since ))"
   [ "$shift_secs" -le 43200 ] || shift_secs=$((shift_secs - 86400))
   [ "$shift_secs" -ge -43200 ] || shift_secs=$((shift_secs + 86400))
   printf '%s\n' "$((target + shift_secs))"
@@ -932,7 +942,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine name event pause_epoch pause_iso reject_epoch limited flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail released_note line mine name event pause_epoch pause_iso reject_epoch limited flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
@@ -976,9 +986,9 @@ autopilot_run() {
     autopilot_limit_write "$dir" "$log" "$(autopilot_epoch_iso "$pause_epoch")"
   fi
   if [ "$held" = 0 ]; then
-    detail="autopilot run: issue #$issue's session exited $rc with its claim released"
-    note "$detail"
-    printf '%s\n' "$detail" >>"$log"
+    released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
+    note "$released_note"
+    printf '%s\n' "$released_note" >>"$log"
     return 0
   fi
   detail="the session exited with code $rc; log: $log"
