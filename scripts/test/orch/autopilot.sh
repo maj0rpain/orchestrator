@@ -434,18 +434,14 @@ git config orchestrator.autopilot.permission-mode plan
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "tick refuses on Junie" "$st" 1
 assert_contains "saying so" "$out" "autopilot is Claude Code only"
-git config orchestrator.autopilot.model gpt
-out="$("$ORCH" autopilot tick 2>&1)"; st=$?
-assert_status "tick refuses an autopilot model outside the list" "$st" 1
-assert_contains "naming the key" "$out" "orchestrator.autopilot.model is gpt"
-assert_eq "before starting any session" "$(tick_calls)" "0"
-git config --unset-all orchestrator.autopilot.model
-git config orchestrator.autopilot.effort gpt
-out="$("$ORCH" autopilot tick 2>&1)"; st=$?
-assert_status "tick refuses an autopilot effort outside the list" "$st" 1
-assert_contains "naming the effort key and value" "$out" "orchestrator.autopilot.effort is gpt"
-assert_eq "before starting any session, for the effort too" "$(tick_calls)" "0"
-git config --unset-all orchestrator.autopilot.effort
+for name in model effort; do
+  git config "orchestrator.autopilot.$name" gpt
+  out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+  assert_status "tick refuses an autopilot $name outside the list" "$st" 1
+  assert_contains "naming the $name key and value" "$out" "orchestrator.autopilot.$name is gpt"
+  assert_eq "before starting any session, for the $name" "$(tick_calls)" "0"
+  git config --unset-all "orchestrator.autopilot.$name"
+done
 noclaude_path="$(
   new=""; IFS=:; for d in $PATH; do [ -x "$d/claude" ] || new="$new:$d"; done; printf '%s' "${new#:}")"
 out="$(PATH="$noclaude_path" "$ORCH" autopilot tick 2>&1)"; st=$?
