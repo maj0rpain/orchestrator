@@ -2819,11 +2819,12 @@ echo "routed nouns and their verbs are in the CLI conventions"
 # routed_nouns <orch.sh>: one line per command main()'s case statement routes,
 # its option spellings (-h, --help) and the catch-all left out.
 routed_nouns() {
-  awk '
-    /^main\(\) \{/ { inm = 1; next }
-    inm && /^\}/ { exit }
-    inm && match($0, /^[[:space:]]+[a-z][a-z|-]*\)/) {
-      arm = substr($0, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
+  awk "$SHELL_CODE_AWK"'
+    { shell_code_line($0) }
+    sc_top && sc_code ~ /^main\(\) \{/ { inm = 1; next }
+    inm && sc_top && sc_code ~ /^\}/ { exit }
+    inm && sc_top && match(sc_code, /^[[:space:]]+[a-z][a-z|-]*\)/) {
+      arm = substr(sc_code, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
       n = split(arm, names, "|")
       for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
     }' "$1"
@@ -2833,20 +2834,20 @@ routed_nouns() {
 # _), its option spellings, the catch-all and nested cases' arms left out.
 noun_verbs() {
   [ -f "$1" ] || return 0
-  F="cmd_${2//-/_}" awk '
+  F="cmd_${2//-/_}" awk "$SHELL_CODE_AWK"'
     BEGIN { fn = ENVIRON["F"] }
-    index($0, fn "()") == 1 { inf = 1; next }
+    { shell_code_line($0) }
+    sc_top && index(sc_code, fn "()") == 1 { inf = 1; next }
     !inf { next }
-    /^\}/ { exit }
-    /^[[:space:]]*#/ { next }
+    sc_top && sc_code ~ /^\}/ { exit }
     {
-      if (depth == 1 && match($0, /^[[:space:]]+[a-z-][a-z|-]*\)/)) {
-        arm = substr($0, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
+      if (depth == 1 && sc_top && match(sc_code, /^[[:space:]]+[a-z-][a-z|-]*\)/)) {
+        arm = substr(sc_code, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
         n = split(arm, names, "|")
         for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
       }
-      t = $0; opens = gsub(/(^|[;[:space:]])case[[:space:]]/, "", t)
-      t = $0; closes = gsub(/(^|[;[:space:]])esac([;[:space:])]|$)/, "", t)
+      t = sc_words; opens = gsub(/(^|[;[:space:]])case[[:space:]]/, "", t)
+      t = sc_words; closes = gsub(/(^|[;[:space:]])esac([;[:space:])]|$)/, "", t)
       if (opens) started = 1
       depth += opens - closes
       if (started && depth <= 0) exit
@@ -2937,6 +2938,46 @@ spares "nested-case arms, option spellings, the catch-all and a later case are n
 spares "a row verb, a redo <verb> in Exceptions, and a hyphenated noun's verbs are spared" \
   "$out" '(base verb (set|show) |redo verb (review|spec) |widget-thing verb )'
 spares "a bare global command in Exceptions has no verbs to check" "$out" '(doctor|routed noun) '
+# Planted fixtures for the shared code rule: a case/esac in a trailing comment
+# or a quoted string, and a quoted arm pattern, inside cmd_<noun>, and an
+# arm-shaped line in a heredoc or a multi-line string in main(), change
+# neither the verbs nor the nouns reported.
+fixture="$(new_fixture)"
+mkdir -p "$fixture/scripts/orch" "$fixture/docs/agents"
+cat >"$fixture/scripts/orch.sh" <<'PLANT'
+main() {
+  case "$cmd" in
+    base) cmd_base "$@" ;;
+    *) die nope ;;
+  esac
+  cat <<EOT
+    heredocnoun) cmd_x ;;
+EOT
+  msg="
+    stringnoun) cmd_y ;;
+  "
+}
+PLANT
+cat >"$fixture/scripts/orch/base.sh" <<'PLANT'
+cmd_base() {
+  echo hi # a trailing comment with esac in it
+  echo "a string with esac in it"
+  echo "a string with case x in it"
+  echo hi # case y in
+  case "$1" in
+    set) echo ;;
+    "") echo ;;
+    after) echo "esac" ;; # esac
+  esac
+  case "$1" in
+    later) echo ;;
+  esac
+}
+PLANT
+printf '%s\n' '# CLI' '' '## Current nouns' '' '| Noun | Verbs |' '| --- | --- |' \
+  '| `base` | `set`, `after` |' '' '## Exceptions' '' >"$fixture/docs/agents/cli-conventions.md"
+assert_empty "comments, strings, heredocs and a quoted arm pattern change no noun or verb" \
+  "$(scan_cli_nouns "$fixture")"
 check "every noun orch.sh routes, and every verb it dispatches, is in the CLI conventions table or its Exceptions" \
   "$(scan_cli_nouns "$PLUGIN_ROOT")"
 
