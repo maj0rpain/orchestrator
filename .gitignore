@@ -16,13 +16,11 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Local Claude Code state
-.claude/settings.local.json
-
 # Secrets
 .env
 .env.*
 !.env.example
+.claude/settings.local.json
 
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
