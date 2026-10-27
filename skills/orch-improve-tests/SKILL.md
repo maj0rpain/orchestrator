@@ -150,31 +150,19 @@ and replacement.
 ## 6. Hand off
 
 Ask the user which candidate to take forward, if any, as a **turn-final
-reply**: end your turn on one plain-text reply, with no tool call in it,
-holding step 5's Markdown summary - or, where the report opened in the
-browser, its path - and then the pick question with its answers spelled
-out: a candidate's number, or `none`. The user's next message is the
-answer. Never ask it with the multiple-choice question capability, and
-never write the summary in a response that also calls a tool: some hosts
-hide a long text written in the same response as a tool call, and the user
-never sees it (ADR-0051).
-A number and `none` are matched after trimming surrounding whitespace,
-letter case and trailing punctuation: `None.` is `none`, `2.` is `2`.
+reply**, per `docs/turn-final-reply.md` under the plugin root: step 5's
+Markdown summary - or, where the report opened in the browser, its path - and
+then the pick question with its answers spelled out: a candidate's number, or
+`none`. `2.` is `2` and `None.` is `none`.
 
-A **near-miss reply** is neither a candidate's number, nor `none`, nor
-clearly a question: a typo, extra words, or a number no candidate has. It
-is never guessed at and never re-shown. State in one line what you would
-do (e.g. "Take candidate 2 forward"), then ask a short confirmation with
-the multiple-choice question capability, nothing long in front of it:
-*Yes, apply that* / *No, I'll answer again*. *Yes, apply that* does
-exactly what the line states. Any other reply to the confirmation - *No*, a
-free-text answer, or a dismissed ask - counts as *No*. Nothing is ever picked on
-a guess.
+A **near-miss reply** (the doc's **Near-miss reply**) is neither a
+candidate's number, nor `none`, nor clearly a question: a typo, extra words,
+or a number no candidate has. Its one-line restatement reads e.g. "Take
+candidate 2 forward". Nothing is ever picked on a guess.
 
-On *No*, or on a reply that is clearly a question, the question path runs:
-answer the question in chat, pick nothing, then end your turn again on the
-summary, or the report's path, and the pick question in one plain-text
-reply, with no tool call.
+On *No*, or on a clear question, the doc's **Question path** runs: pick
+nothing, and end the turn again on the summary, or the report's path, and
+the pick question.
 
 The one they pick goes
 to the `orch-interview` skill: invoke it with the candidate - its kind,

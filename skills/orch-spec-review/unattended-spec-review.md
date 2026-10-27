@@ -22,9 +22,8 @@ differences only:
   one line each, no citation and no diff, and the minor and resolved ones one
   line each under **Minor edits** - so a human watching can see what is applied
   and interrupt. It is not a turn-final reply, whatever `check`'s pass line
-  says: it asks no question, and a reply with no tool call ends the turn, so
-  never end the turn on it. Then no question is asked and nothing waits: go
-  straight on to `apply` in the same turn, the batch applied at once as **Apply
+  says: see `docs/turn-final-reply.md`'s **Unattended printout**. Then no
+  question is asked and nothing waits: go straight on to `apply` in the same turn, the batch applied at once as **Apply
   as recommended** - every proposed edit applied, every **recommend decline**
   item skipped, and every decision item takes its recommended option.
 - **Applying**: the standalone call in **Applying the answer**, with the
@@ -42,8 +41,8 @@ differences only:
 - **Tickets follow the spec** runs as usual when `apply` pauses with exit 3:
   `tickets.md` is drafted and checked with `spec-review check <dir>
   --tickets` until it passes, and its items printed by pasting that
-  command's stdout word for word - again not a turn-final reply, so never
-  end the turn on it; then no question is asked, and `apply` runs again in
+  command's stdout word for word - again not a turn-final reply (the doc's
+  **Unattended printout**); then no question is asked, and `apply` runs again in
   the same turn with `--tickets recommended`, its one ticket answer in this
   mode. `tickets.md`'s `@@ recommend` line picks **Apply as
   recommended** or **Retire and break down again**.

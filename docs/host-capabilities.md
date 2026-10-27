@@ -165,12 +165,8 @@ flow start instead of prevented.
 ### Guard the batch question
 
 On every host the batch question, its `show <n>` re-ask, its re-ask after a
-question and the ticket question are asked the same way, the turn-final
-reply: one plain-text reply that ends the turn with no tool call, holding
-`check`'s view word for word and then the question with its answer words
-spelled out, the human's next message the answer (ADR-0051). Some hosts hide
-a long text written in the same response as a tool call, so the view is
-never shown beside an ask-tool call.
+question and the ticket question are asked the same way, as a turn-final
+reply, per `docs/turn-final-reply.md`, holding `check`'s view word for word.
 
 On Claude Code two guards enforce it, arming on the same pass line, disarming
 on the same `spec-review apply`, and reading the transcript through one

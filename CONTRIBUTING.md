@@ -265,6 +265,7 @@ docs/how-it-works.md          the phases, every command in full, the base branch
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run
 docs/pr-writing.md            the PR-writing standard: style rules, body and release layouts, and the comment shape every PR body and comment follows
+docs/turn-final-reply.md      the turn-final reply procedure and the unattended-printout rule, written once
 docs/adr/                     the architecture decision records
 docs/agents/                  this repo's agent-skill configuration: issue tracker, triage labels, domain docs, CLI conventions, coding standards
 docs/junie/README.md          Junie CLI setup: the AGENTS.md snippet and the per-prompt fallback

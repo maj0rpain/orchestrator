@@ -119,13 +119,13 @@ Its answer words are the option names `apply --tickets` takes: `recommended`,
 numbers to apply, comma-separated (e.g. `1, 3`); the question spells them
 all out. An answer word and its option's full label (`Retire and break down
 again` is `retire`) are the same answer, matched after trimming surrounding
-whitespace, letter case and trailing punctuation, as for the spec batch. A
-near-miss reply - one matching none of these forms - is restated in one
-line, in the grammar `apply --tickets` takes, and confirmed with a short ask
-(*Yes, apply that* / *No, I'll answer again*), never guessed at and never
-re-pasted, as the spec batch's is. On *No*, or on a reply that is clearly a
-question, answer it, re-run `check --tickets`, and end the turn again on its
-view and the ticket question in one plain-text reply.
+whitespace, letter case and trailing punctuation, as for the spec batch. The
+ticket question is a turn-final reply, per `docs/turn-final-reply.md` under
+the plugin root. A near-miss reply - one matching none of these forms - is
+restated in the grammar `apply --tickets` takes, as the doc's **Near-miss
+reply** says. On *No*, or on a reply that is clearly a question, the doc's
+**Question path** runs: re-run `check --tickets`, and end the turn again on
+its view and the ticket question.
 
 ## Applying
 

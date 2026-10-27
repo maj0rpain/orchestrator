@@ -187,7 +187,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      confirmed, or a body that already reflects the plan. Before acting,
      print one line naming the decision and its reason, so a human watching
      can stop a wrong one: `Rewriting #<n> from the plan: <reason>` or
-     `Reviewing #<n> as it stands: <reason>`.
+     `Reviewing #<n> as it stands: <reason>`. The line is not a turn-final
+     reply: see `docs/turn-final-reply.md`'s **Unattended printout**, and go
+     on to 0c or the review in the same turn.
    - **0c. On Rewrite**, invoke the `orch-to-spec` skill in rewrite mode on
      the issue (args `<n>`), from `01-plan.md` - its **Rejected alternatives**
      section is load-bearing, as in step 1 - and follow it. Its test-seams
@@ -303,7 +305,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 
 When `bash "$ORCH" autopilot active` exits 0 the spec phase runs unattended
 and stops for the human only on a fundamental item of the spec review
-(ADR-0049). Step 0 is skipped: the plan's `## Autopilot` block settled what it
+(ADR-0052). Step 0 is skipped: the plan's `## Autopilot` block settled what it
 decides, so the issue is reviewed as it stands - no rewrite decision, no
 marker check, no redo check. The round check still runs, first. Step 4 asks
 no round-count question: the count is `bash "$ORCH" autopilot rounds`. The

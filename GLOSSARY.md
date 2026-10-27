@@ -819,3 +819,11 @@ fallbacks, including any taken during its spec review, under its PR body's
 **Host fallbacks**; and a standalone review pass records them in its PR
 comment, or reports them in the session when the branch has no PR - so a
 reduced run is never mistaken for a full one.
+
+**Turn-final reply**:
+One plain-text reply that ends a session's turn with no tool call in it,
+holding a long block and then the question about it, its answer words spelled
+out; the human's next message is the answer. It is never written beside a tool
+call, since some hosts hide such text (ADR-0051). A block printed only so a
+human watching can see it, asking nothing, is not one, and never ends the
+turn.
