@@ -3,7 +3,7 @@
 # Stop hook: the paste guard's Stop half (#1421).
 #
 # A spec review ends its turn on one plain-text reply holding `spec-review
-# check`'s view and the batch question (ADR-0051): some hosts hide a long text
+# check`'s view and the question (ADR-0051): some hosts hide a long text
 # written in the same response as a tool call, so the turn-final reply is
 # where the human sees the view. This hook refuses to let the turn end while
 # the paste guard is armed unless the final reply holds the view, handing the
@@ -34,4 +34,4 @@ paste_guard_payload || exit 0
 [ "$(printf '%s' "$input" | jq -r '.stop_hook_active == true')" = true ] && exit 0
 paste_guard_check "$transcript" final && exit 0
 
-hook_emit_block "Blocked by the orchestrator: the human has not seen this round's view in your final reply. $(paste_guard_instruction)"
+hook_emit_block "Blocked by the orchestrator: the human has not seen this round's view in your final reply. $(paste_guard_instruction "$paste_guard_view")"
