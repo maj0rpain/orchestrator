@@ -37,7 +37,7 @@ done
 
 # SHELL_CODE_AWK, the one rule of what counts as code in a shell file, loaded
 # from scripts/test/shell_code.awk.
-SHELL_CODE_AWK="$(<"$ROOT/scripts/test/shell_code.awk")" 2>/dev/null || SHELL_CODE_AWK=""
+SHELL_CODE_AWK="$(<"$ROOT/scripts/test/shell_code.awk")" || SHELL_CODE_AWK=""
 [ -n "$SHELL_CODE_AWK" ] || {
   echo "helpers.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }
 

@@ -1721,7 +1721,6 @@ scan_early_exit_pipe() {
   while IFS= read -r f; do
     case "$f" in scripts/test/gh_adapter_fake.sh) ;; scripts/test/*) continue ;; esac
     F="$f" awk "$SHELL_CODE_AWK"'
-      FNR == 1 { open = 0 }
       {
         t = $0; sub(/^[[:space:]]+/, "", t)
         shell_code_line($0)
