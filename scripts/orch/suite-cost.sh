@@ -20,10 +20,10 @@
 # - a file named by the pid of the orch.sh process measuring it; its contended
 # mark is a sibling file <pid>.contended. A run first removes its own pid's
 # .contended file, left by an earlier run of the same process, then creates its
-# marker, then lists the others: it marks each other live one contended, and
-# itself when there was any. On finish it was overlapped when its .contended
-# file exists, or when it saw another live marker at start, and it removes its
-# marker and .contended file either way. A marker or .contended file whose pid
+# marker, then lists the others: it marks each other live one contended. On
+# finish it was overlapped when its .contended file exists, or when it saw
+# another live marker at start, and it removes its marker and .contended file
+# either way. A marker or .contended file whose pid
 # names no live process is stale, and so is a .contended file whose marker is
 # gone: no contention, and removed by the run that finds it. A failed .contended
 # write for another run is not retried, and a failed removal is ignored. A run
@@ -95,13 +95,13 @@ suite_cost_active() {
 
 # suite_cost_register: registers this orch.sh process's run as active, before
 # it is measured, and sets SUITE_COST_MARK to its marker's path, empty when it
-# could not register, and SUITE_COST_SAW to 1 when another live run's marker
-# was present, else 0. Stale markers and .contended files it finds are removed,
-# a .contended file whose marker is gone counting as stale whether or not its
-# pid is live.
+# could not register, and SUITE_COST_SAW_LIVE to 1 when another live run's
+# marker was present, else 0. Stale markers and .contended files it finds are
+# removed, a .contended file whose marker is gone counting as stale whether or
+# not its pid is live.
 suite_cost_register() {
   local dir me f name p
-  SUITE_COST_MARK="" SUITE_COST_SAW=0
+  SUITE_COST_MARK="" SUITE_COST_SAW_LIVE=0
   dir="$(suite_cost_active 2>/dev/null)" || return 0
   me="$dir/$$"
   rm -f -- "$me.contended" 2>/dev/null || true
@@ -111,30 +111,27 @@ suite_cost_register() {
     name="${f##*/}"
     p="${name%.contended}"
     [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
-    if ! kill -0 "$p" 2>/dev/null; then
+    if ! kill -0 "$p" 2>/dev/null || [ ! -e "$dir/$p" ]; then
       rm -f -- "$f" 2>/dev/null || true
-    elif [ "$f" = "$dir/$p" ]; then
-      SUITE_COST_SAW=1
+    else
+      SUITE_COST_SAW_LIVE=1
       : 2>/dev/null >"$f.contended" || true
-    elif [ ! -e "$dir/$p" ]; then
-      rm -f -- "$f" 2>/dev/null || true
     fi
   done
-  [ "$SUITE_COST_SAW" -eq 0 ] || : 2>/dev/null >"$me.contended" || true
 }
 
 # suite_cost_unregister: ends the run suite_cost_register began, removing its
-# marker and .contended file, and sets SUITE_COST_SOLO to solo, overlapped
+# marker and .contended file, and sets SUITE_COST_ISOLATION to solo, overlapped
 # (its .contended file existed, or it saw another live run at start) or
 # unregistered (it never had a marker).
 suite_cost_unregister() {
   if [ -z "$SUITE_COST_MARK" ]; then
-    SUITE_COST_SOLO=unregistered
+    SUITE_COST_ISOLATION=unregistered
     return 0
   fi
-  SUITE_COST_SOLO=solo
-  if [ "$SUITE_COST_SAW" -eq 1 ] || [ -e "$SUITE_COST_MARK.contended" ]; then
-    SUITE_COST_SOLO=overlapped
+  SUITE_COST_ISOLATION=solo
+  if [ "$SUITE_COST_SAW_LIVE" -eq 1 ] || [ -e "$SUITE_COST_MARK.contended" ]; then
+    SUITE_COST_ISOLATION=overlapped
   fi
   rm -f -- "$SUITE_COST_MARK" "$SUITE_COST_MARK.contended" 2>/dev/null || true
   SUITE_COST_MARK=""
@@ -146,23 +143,32 @@ suite_cost_unregister() {
 # unless another suite-cost run overlapped it, or it could not register as
 # active, either of which it warns of. Exits with the command's own status.
 suite_cost_run() {
-  local sha
-  sha="$(suite_cost_head_commit)"
+  local commit_field
+  commit_field="$(suite_cost_head_commit)"
   suite_cost_register
   suite_cost_measure "$@"
   suite_cost_unregister
-  if [ "$SUITE_COST_SOLO" = unregistered ]; then
-    warn "this run could not register as active - its suite cost is not recorded"
-  elif [ "$SUITE_COST_SOLO" = overlapped ]; then
-    warn "this run overlapped another suite-cost run - its suite cost is not recorded"
-  elif [ "$SUITE_COST_STATUS" -eq 0 ]; then
-    if [ -n "$sha" ]; then
-      suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
+  if suite_cost_require_solo "this run" "its suite cost is not recorded" && [ "$SUITE_COST_STATUS" -eq 0 ]; then
+    if [ -n "$commit_field" ]; then
+      suite_cost_append "$commit_field" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
     else
       warn "HEAD names no commit - this run's suite cost is not recorded"
     fi
   fi
   exit "$SUITE_COST_STATUS"
+}
+
+# suite_cost_require_solo <subject> <tail>: returns 0 when the run just
+# unregistered was solo. Otherwise warns "<subject> could not register as
+# active - <tail>" (unregistered) or "<subject> overlapped another suite-cost
+# run - <tail>" (overlapped) and returns 1.
+suite_cost_require_solo() {
+  case "$SUITE_COST_ISOLATION" in
+    solo) return 0 ;;
+    unregistered) warn "$1 could not register as active - $2" ;;
+    *) warn "$1 overlapped another suite-cost run - $2" ;;
+  esac
+  return 1
 }
 
 # suite_cost_head_commit: prints the commit field a run started now would
@@ -172,9 +178,10 @@ suite_cost_head_commit() {
   local sha
   sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
   if [ -n "$sha" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-    sha="$sha-dirty"
+    note "$sha-dirty"
+  else
+    note "$sha"
   fi
-  note "$sha"
 }
 
 # suite_cost_measure <cmd> [args...]: runs the command once, its stdout,
@@ -197,14 +204,14 @@ suite_cost_measure() {
   SUITE_COST_CPU="$(LC_ALL=C awk -v u="${user/,/.}" -v s="${sys/,/.}" 'BEGIN { printf "%.2f", u + s }')"
 }
 
-# suite_cost_append <sha> <cpu> <wall> <cmd> [args...]: appends one record
-# line, making the record's directory when missing. An append that fails
+# suite_cost_append <commit-field> <cpu> <wall> <cmd> [args...]: appends one
+# record line, making the record's directory when missing. An append that fails
 # warns and records nothing, returning 0: the run it measured stands.
 suite_cost_append() {
-  local sha="$1" cpu="$2" wall="$3" IFS=' '
+  local commit_field="$1" cpu="$2" wall="$3" IFS=' '
   shift 3
   suite_cost_append_line "$(suite_cost_record)" "suite-cost record" "this run's suite cost is not recorded" \
-    "$sha" "$cpu" "$wall" "$(now)" "$*"
+    "$commit_field" "$cpu" "$wall" "$(now)" "$*"
 }
 
 # suite_cost_append_line <file> <name> <lost> <field>...: appends the fields
@@ -440,21 +447,19 @@ suite_cost_min() {
 # and the worktree is gone; a failed removal after a pass keeps the record and
 # names the left-over worktree.
 suite_cost_tree_run() {
-  local role="$1" sha="$2" tmp wt here="$PWD" status=0 setup setup_status=0 run end no_worktree overlapped
+  local role="$1" sha="$2" tmp wt here="$PWD" status=0 setup setup_status=0 run_label msg_tail msg_no_worktree
   shift 2
   if [ "$role" = base ]; then
-    run="the base run" end="the suite cost is unmeasured"
-    no_worktree="could not add a worktree at base commit $sha - $end"
-    overlapped="$run at $sha overlapped another suite-cost run - $end"
+    run_label="the base run" msg_tail="the suite cost is unmeasured"
+    msg_no_worktree="could not add a worktree at base commit $sha - $msg_tail"
   else
-    run="the confirming run" end="the growth is unconfirmed"
-    no_worktree="could not add a worktree for $run at $sha - $end"
-    overlapped="$run at $sha overlapped another suite-cost run - contention left the growth unconfirmed"
+    run_label="the confirming run" msg_tail="the growth is unconfirmed"
+    msg_no_worktree="could not add a worktree for $run_label at $sha - $msg_tail"
   fi
-  tmp="$(mktemp -d)" || { warn "could not make a temp directory for $run"; return 1; }
+  tmp="$(mktemp -d)" || { warn "could not make a temp directory for $run_label"; return 1; }
   wt="$tmp/$role"
   if ! git worktree add -q --detach "$wt" "$sha" >/dev/null 2>&1; then
-    warn "$no_worktree"
+    warn "$msg_no_worktree"
     rm -rf "$tmp"
     return 1
   fi
@@ -465,23 +470,20 @@ suite_cost_tree_run() {
     [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
     suite_cost_unregister
     cd "$here" || die "could not return to $here"
-    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ] && [ "$SUITE_COST_SOLO" = solo ]; then
-      suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
-    elif [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
-      status=1
-      if [ "$SUITE_COST_SOLO" = unregistered ]; then
-        warn "$run at $sha could not register as active - $end"
+    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
+      if suite_cost_require_solo "$run_label at $sha" "$msg_tail"; then
+        suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
       else
-        warn "$overlapped"
+        status=1
       fi
     else
       status=1
       if [ "$setup_status" -ne 0 ]; then
-        warn "$run's setup ($setup) at $sha exited $setup_status - $end"
+        warn "$run_label's setup ($setup) at $sha exited $setup_status - $msg_tail"
       elif [ "$role" = base ] && [ "$SUITE_COST_STATUS" -eq 127 ] && [ -z "$setup" ]; then
-        warn "$run at $sha exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
+        warn "$run_label at $sha exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
       else
-        warn "$run at $sha exited $SUITE_COST_STATUS - $end"
+        warn "$run_label at $sha exited $SUITE_COST_STATUS - $msg_tail"
       fi
     fi
   else
@@ -490,7 +492,7 @@ suite_cost_tree_run() {
   if git worktree remove --force "$wt" >/dev/null 2>&1; then
     rmdir "$tmp" 2>/dev/null || true
   else
-    warn "could not remove $run's worktree $wt - remove it with: git worktree remove --force $wt"
+    warn "could not remove $run_label's worktree $wt - remove it with: git worktree remove --force $wt"
     status=1
   fi
   return "$status"
