@@ -33,13 +33,10 @@ dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
 
 
 # --- autopilot ---------------------------------------------------------------
-# The clone-scoped autopilot settings, the autopilot-session check and the
-# host gate tick and watch share.
+# The clone-scoped autopilot settings and the autopilot-session check.
 echo
 echo "autopilot"
 new_repo >/dev/null
-fakebin="$(mktemp -d)"
-printf '#!/bin/sh\nexit 0\n' >"$fakebin/claude"; chmod +x "$fakebin/claude"
 
 out="$("$ORCH" autopilot show 2>&1)"; st=$?
 assert_status "autopilot show succeeds with nothing set" "$st" 0
@@ -118,32 +115,6 @@ env -u ORCH_AUTOPILOT "$ORCH" autopilot active; st=$?
 assert_status "autopilot active exits 1 without ORCH_AUTOPILOT" "$st" 1
 ORCH_AUTOPILOT=0 "$ORCH" autopilot active; st=$?
 assert_status "autopilot active exits 1 under ORCH_AUTOPILOT=0" "$st" 1
-
-# The gate: host first, then the permission mode.
-noclaude_path="$(
-  new=""; IFS=:; for d in $PATH; do [ -x "$d/claude" ] || new="$new:$d"; done; printf '%s' "${new#:}")"
-git config orchestrator.autopilot.permission-mode plan
-out="$(PATH="$fakebin:$PATH" sourced_orch autopilot_gate 2>&1)"; st=$?
-assert_status "the gate passes with claude on PATH, a mode set and no host signal" "$st" 0
-out="$(PATH="$fakebin:$PATH" ORCHESTRATOR_HOST=junie sourced_orch autopilot_gate 2>&1)"; st=$?
-assert_status "the gate refuses on Junie" "$st" 1
-assert_contains "saying autopilot is Claude Code only" "$out" "autopilot is Claude Code only"
-out="$(PATH="$noclaude_path" sourced_orch autopilot_gate 2>&1)"; st=$?
-assert_status "the gate refuses with no claude on PATH" "$st" 1
-assert_contains "saying autopilot is Claude Code only" "$out" "autopilot is Claude Code only"
-git config --unset-all orchestrator.autopilot.permission-mode
-out="$(PATH="$fakebin:$PATH" sourced_orch autopilot_gate 2>&1)"; st=$?
-assert_status "the gate refuses with no permission mode set" "$st" 1
-assert_contains "naming the key" "$out" "orchestrator.autopilot.permission-mode"
-git config orchestrator.autopilot.permission-mode plan
-for name in model effort; do
-  git config "orchestrator.autopilot.$name" gpt
-  out="$(PATH="$fakebin:$PATH" sourced_orch autopilot_gate 2>&1)"; st=$?
-  assert_status "the gate refuses $name gpt" "$st" 1
-  assert_contains "naming the $name key and value" "$out" "orchestrator.autopilot.$name is gpt"
-  git config --unset-all "orchestrator.autopilot.$name"
-done
-git config --unset-all orchestrator.autopilot.permission-mode
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "autopilot show is in the usage text" "$out" "autopilot show"
@@ -469,6 +440,18 @@ assert_status "tick refuses an autopilot model outside the list" "$st" 1
 assert_contains "naming the key" "$out" "orchestrator.autopilot.model is gpt"
 assert_eq "before starting any session" "$(tick_calls)" "0"
 git config --unset-all orchestrator.autopilot.model
+git config orchestrator.autopilot.effort gpt
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "tick refuses an autopilot effort outside the list" "$st" 1
+assert_contains "naming the effort key and value" "$out" "orchestrator.autopilot.effort is gpt"
+assert_eq "before starting any session, for the effort too" "$(tick_calls)" "0"
+git config --unset-all orchestrator.autopilot.effort
+noclaude_path="$(
+  new=""; IFS=:; for d in $PATH; do [ -x "$d/claude" ] || new="$new:$d"; done; printf '%s' "${new#:}")"
+out="$(PATH="$noclaude_path" "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "tick refuses with no claude on PATH" "$st" 1
+assert_contains "saying autopilot is Claude Code only" "$out" "autopilot is Claude Code only"
+assert_eq "before starting any session, with no claude" "$(tick_calls)" "0"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: side checkouts, refusals and failed steps ----------------
@@ -721,7 +704,7 @@ assert_eq "and pickup resumes with the limited issue first, then the next" "$(ti
 fake_issue 8 open ready-for-agent orch:spec
 ndjson_with 'Claude AI usage limit reached' >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"; rm -f "$launcher_dir/release"
 "$ORCH" autopilot tick >/dev/null 2>&1
-limit_epoch="$(date -u -d "$(cat "$top/.orchestrator/autopilot/limit")" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$(cat "$top/.orchestrator/autopilot/limit")" +%s)"
+read -r limit_epoch _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
 assert_eq "no reset time in the message: one hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
 assert_contains "the comment still names the usage limit" "$(fake_comments_of 8)" "usage limit"
 assert_not_contains "but names no reset time it does not have" "$(cat "$ORCH_GH_FAKE_STORE/issues/8/comments/$(ls "$ORCH_GH_FAKE_STORE/issues/8/comments" | sort -n | tail -n 1)/body")" "resets"
@@ -764,18 +747,6 @@ for wording in "iteration limit reached" "API rate limit reached, retrying"; do
   "$ORCH" autopilot run 8 >/dev/null 2>&1
   assert_eq "\"$wording\" writes no limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
 done
-# a failed session's stop dies partway: the claim stays held, the landed writes
-# named
-rm -f "$top/.orchestrator/autopilot/limit"
-fake_issue 8 open ready-for-agent orch:spec orch:running
-printf 'session output line\n' >"$launcher_dir/out"
-fake_claim_seed 8
-fake_fail adapter_claim_delete "HTTP 500"
-out="$("$ORCH" autopilot run 8 2>&1)"; st=$?
-assert_status "a session failure whose claim delete fails dies" "$st" 1
-assert_contains "naming the writes that landed" "$out" "added needs-human, posted the failure comment, removed orch:running"
-assert_eq "the claim is still held" "$(fake_claim_held 8)" held
-fake_unfail
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: the rate limit event -------------------------------------

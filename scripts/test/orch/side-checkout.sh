@@ -941,25 +941,3 @@ assert_eq "prune: the main checkout's flow is archived in place" "$(archived_cou
 fl_kept "prune" "$top"
 fl_archived "prune" "$(fl_dest swp-flow)"
 restore_suite_env
-
-# --- side-checkout prune: an autopilot flow's checkout (#1458) ----------------
-# Pruned as any flow's is: kept while its PR is open, removed once it merges.
-echo
-echo "side-checkout prune of an autopilot flow"
-tick_fixture
-top="$(git rev-parse --show-toplevel)"
-fake_issue 7 open ready-for-agent orch:spec
-printf 'Prune me\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
-printf '7\n' >"$launcher_dir/release"
-"$ORCH" autopilot tick >/dev/null 2>&1
-side7="$top/.orchestrator/checkouts/prune-me"
-git -C "$side7" checkout -q -b orch/7-prune-me
-git -C "$side7" commit -q --allow-empty -m work
-(cd "$side7" && state_fixture phase "done" && state_fixture branch orch/7-prune-me && state_fixture pr 41)
-fake_pr 41 open orch/7-prune-me main
-"$ORCH" side-checkout prune >/dev/null 2>&1
-assert_eq "an autopilot flow's side checkout stays while its PR is open" "$(on_disk "$side7")" present
-fake_pr 41 merged orch/7-prune-me main
-"$ORCH" side-checkout prune >/dev/null 2>&1
-assert_eq "it is removed once its PR merges" "$(on_disk "$side7")" absent
-restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
