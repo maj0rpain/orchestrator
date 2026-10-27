@@ -1707,6 +1707,32 @@ out="$(cd / && "$index_dir/dev/helpers.sh")"
 assert_eq "the default listing of a copy includes a planted module" \
   "$(printf '%s\n' "$out" | grep -c '^# scripts/orch/zz-planted.sh$')" 1
 
+plant_file "$index_dir/orch" zz-subst.sh <<'PLANTED'
+real_before() { :; }
+x=$(
+cmd
+planted_in_cmdsub() { :; }
+)
+y=${z:-
+planted_in_param() { :; }
+}
+w=`
+planted_in_backtick() { :; }
+`
+real_after() { :; }
+PLANTED
+out="$(cd "$index_dir" && ./dev/helpers.sh orch/zz-subst.sh)"
+assert_eq "a column-0 definition inside a multi-line \$(...), \${...} or backtick substitution is not listed" \
+  "$out" "# orch/zz-subst.sh
+real_before	-
+real_after	-"
+nolib_dir="$(tree_copy scripts)"
+rm -f "$nolib_dir/test/shell_code.awk"
+out="$(cd / && "$nolib_dir/dev/helpers.sh" 2>&1)"; st=$?
+assert_status "the helper index without its library exits non-zero" "$st" 1
+assert_contains "naming the file" "$out" "scripts/test/shell_code.awk"
+rm -rf "${nolib_dir%/scripts}"
+
 for args in "--tests orch/zz-planted.sh" "orch/missing.sh" "--bogus" \
   "orch/zz-planted.sh orch/base.sh"; do
   # shellcheck disable=SC2086 # the words are the arguments
