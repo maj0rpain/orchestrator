@@ -202,10 +202,43 @@ spares() {
 }
 
 # >>> checks
-FIXTURES="$(mktemp -d)"
+FIXTURES="$(mktemp -d)" || FIXTURES=""
+[ -n "$FIXTURES" ] || {
+  echo "docs_lint.sh: cannot create the fixture root" >&2; exit 1; }
 trap 'rm -rf "$FIXTURES"' EXIT
-# new_fixture: an empty fixture plugin root, removed on exit.
-new_fixture() { mktemp -d "$FIXTURES/root.XXXXXX"; }
+trap 'exit 143' TERM
+# The suite runs from its own temp directory, never the developer's checkout.
+cd "$FIXTURES" || exit 1
+# FIXTURE_ABORT_PID: the process a failed fixture kills, the suite's main shell
+# ($$ stays the main shell's pid inside a command substitution).
+FIXTURE_ABORT_PID=$$
+# fixture_abort <message>: prints it on stderr and kills the suite.
+fixture_abort() {
+  echo "docs_lint.sh: $1" >&2
+  kill -TERM "$FIXTURE_ABORT_PID"
+  return 1
+}
+# new_fixture: an empty fixture plugin root, removed on exit. A failed mktemp
+# kills the suite: every caller captures this in a command substitution.
+new_fixture() {
+  mktemp -d "$FIXTURES/root.XXXXXX" 2>/dev/null ||
+    fixture_abort "cannot create a fixture under $FIXTURES"
+}
+# fixture_git <dir> <git args...>: git -C <dir>, only when <dir> is an existing
+# directory directly under the fixture root; else kills the suite.
+fixture_git() {
+  local dir="$1"
+  shift
+  case "$dir" in
+    *$'\n'*) fixture_abort "fixture_git: not a single-line path: $dir"; return 1 ;;
+  esac
+  if [ -z "$FIXTURES" ] || [ "$dir" = "$FIXTURES/." ] || [ "$dir" = "$FIXTURES/.." ] ||
+    [ "${dir%/*}" != "${FIXTURES%/}" ] || [ ! -d "$dir" ]; then
+    fixture_abort "fixture_git: not a fixture directory: $dir"
+    return 1
+  fi
+  git -C "$dir" "$@"
+}
 
 # SHELL_CODE_AWK, the one rule of what counts as code in a shell file, loaded
 # from its own library, scripts/test/shell_code.awk, which the orch.sh suite's
@@ -357,7 +390,7 @@ scan_old_names() {
   return 0
 }
 fixture="$(new_fixture)"
-git -C "$fixture" init -q
+fixture_git "$fixture" init -q
 mkdir -p "$fixture/skills/orch-spec-review" "$fixture/commands" "$fixture/docs/adr"
 printf 'Call `orchestrator:review-spec`.\n' >"$fixture/commands/a.md"
 printf 'Run `/orchestrator:review-spec 12`.\n' >"$fixture/commands/b.md"
@@ -393,7 +426,7 @@ printf 'Run `/orchestrator:review 12`.\n' >"$fixture/commands/r1.md"
 printf 'Run `/orchestrator:status`.\n' >"$fixture/commands/r2.md"
 printf 'Run `/orchestrator:doctor`.\n' >"$fixture/commands/r3.md"
 printf 'Run `/orchestrator:review-pass 12`.\nRun `/orchestrator:flow-status`.\nRun `/orchestrator:health`.\nCall `orchestrator:orch-review`.\nCall `orchestrator:orch-review-pass`.\nSee skills/orch-review-pass/SKILL.md.\nname: orch-review-pass\n' >"$fixture/commands/renamed.md"
-git -C "$fixture" add -A
+fixture_git "$fixture" add -A
 out="$(scan_old_names "$fixture")"
 flags "the old review-spec skill name is flagged" "$out" "commands/a.md:1: old skill or command name"
 flags "the old /orchestrator:review-spec command is flagged" "$out" "commands/b.md:1: old skill or command name"
@@ -512,13 +545,13 @@ scan_old_glossary_names() {
     skills agents
 }
 fixture="$(new_fixture)"
-git -C "$fixture" init -q
+fixture_git "$fixture" init -q
 mkdir -p "$fixture/skills/orch-x" "$fixture/agents"
 printf 'Read `CONTEXT.md` first.\n' >"$fixture/skills/orch-x/SKILL.md"
 printf 'With a `CONTEXT-MAP.md` at the root.\n' >"$fixture/agents/orch-a.md"
 printf 'Read `GLOSSARY.md`, or with a `GLOSSARY-MAP.md`, the one it points to.\n' >"$fixture/agents/orch-new.md"
 printf 'Records (GLOSSARY.md, GLOSSARY-MAP.md, CONTEXT.md, CONTEXT-MAP.md, docs/adr/).\n' >"$fixture/README.md"
-git -C "$fixture" add -A
+fixture_git "$fixture" add -A
 out="$(scan_old_glossary_names "$fixture")"
 flags "an old CONTEXT.md in a skill is flagged" "$out" "skills/orch-x/SKILL.md:1: old glossary name"
 flags "an old CONTEXT-MAP.md in an agent is flagged" "$out" "agents/orch-a.md:1: old glossary name"
@@ -3378,16 +3411,16 @@ fragment_fixture() {
   f="$(changelog_fixture 4.5.6 '# Changelog' '' '## 4.5.6' '' 'Old.' '' '## 4.5.5' '' 'Older.')"
   mkdir "$f/changelog.d"
   printf '%s\n' 'bump: patch' '' 'Merged, not yet bumped.' >"$f/changelog.d/7.md"
-  git -C "$f" init -q -b main
+  fixture_git "$f" init -q -b main
   fragment_commit "$f"
-  git -C "$f" checkout -q -b pr
+  fixture_git "$f" checkout -q -b pr
   echo "$f"
 }
 # fragment_commit <fixture>: commits every change in it.
 fragment_commit() {
-  git -C "$1" add -A
-  git -C "$1" -c user.name=lint -c user.email=lint@example.com -c commit.gpgsign=false \
-    commit -q -m change
+  fixture_git "$1" add -A
+  fixture_git "$1" -c user.name=lint -c user.email=lint@example.com -c commit.gpgsign=false \
+    commit -q -m change >/dev/null
 }
 # fixture_sed <file> <sed expression>: edits <file> in place, portably.
 fixture_sed() {
@@ -3406,6 +3439,38 @@ fragment_add() {
 # lookup is put back before the real root's check.
 real_issue_parent_url="$(declare -f issue_parent_url)"
 issue_parent_url() { :; }
+# fixture_git and new_fixture guards. Each check sets FIXTURE_ABORT_PID to its
+# own subshell's pid, so the abort ends only that subshell.
+guard_repo="$(mktemp -d "${TMPDIR:-/tmp}/guard.XXXXXX")"
+git -C "$guard_repo" init -q -b main
+git -C "$guard_repo" -c user.name=g -c user.email=g@example.com commit -q --allow-empty -m base
+echo dirty >"$guard_repo/dirty"
+git -C "$guard_repo" add dirty
+guard_state() { git -C "$guard_repo" rev-parse HEAD; git -C "$guard_repo" branch --show-current; git -C "$guard_repo" status --porcelain; }
+guard_before="$(guard_state)"
+guard_fixture="$(new_fixture)"
+mkdir "$guard_fixture/nested"
+for guard_case in "empty|" "relative|root.x" "outside|$guard_repo" "nested|$guard_fixture/nested" \
+  "multi-line|$guard_fixture"$'\n'"On branch pr"; do
+  guard_err="$(cd "$guard_repo" && FIXTURE_ABORT_PID=$BASHPID && fixture_git "${guard_case#*|}" checkout -q -b pr 2>&1 >/dev/null)"
+  flags "fixture_git refuses a ${guard_case%%|*} path" "$(check x "$guard_err")" "docs_lint.sh: fixture_git: "
+  [ "$(guard_state)" = "$guard_before" ] && ok "a refused ${guard_case%%|*} path leaves the caller's repository unchanged" ||
+    bad "a refused ${guard_case%%|*} path leaves the caller's repository unchanged" "HEAD, branch or index changed"
+  git -C "$guard_repo" checkout -q main 2>/dev/null
+done
+fixture_git "$guard_fixture" init -q
+[ -d "$guard_fixture/.git" ] && ok "fixture_git runs git on a real fixture" || bad "fixture_git runs git on a real fixture" "no repository"
+guard_err="$(FIXTURES="$FIXTURES/gone" && rm -rf "$FIXTURES/gone" && FIXTURE_ABORT_PID=$BASHPID && new_fixture 2>&1)"
+flags "new_fixture aborts when its fixture root is gone" "$(check x "$guard_err")" "docs_lint.sh: cannot create a fixture under $FIXTURES/gone"
+[ -z "$(fragment_commit "$guard_fixture" 2>&1)" ] && ok "fragment_commit prints nothing when there is nothing to commit" ||
+  bad "fragment_commit prints nothing when there is nothing to commit" "printed output"
+guard_out="$(fragment_fixture)"
+[ -d "$guard_out" ] && [ "$(printf '%s\n' "$guard_out" | wc -l)" -eq 1 ] && ok "fragment_fixture echoes one existing directory" ||
+  bad "fragment_fixture echoes one existing directory" "got: $guard_out"
+rm -rf "$guard_repo"
+guard_top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[ "$guard_top" != "$PLUGIN_ROOT" ] && ok "the suite's working directory is outside the plugin root's work tree" ||
+  bad "the suite's working directory is outside the plugin root's work tree" "inside $PLUGIN_ROOT"
 fixture="$(fragment_fixture)"
 fragment_add "$fixture" 12.md 'bump: minor' '' 'A new feature.'
 spares "one well-formed new fragment is not flagged" \
@@ -3478,10 +3543,10 @@ flags "a base with no merge-base is flagged, naming it" \
 gitkeep_fixture() {
   local f
   f="$(fragment_fixture)"
-  git -C "$f" checkout -q main
+  fixture_git "$f" checkout -q main
   : >"$f/changelog.d/.gitkeep"
   fragment_commit "$f"
-  git -C "$f" checkout -q -B pr
+  fixture_git "$f" checkout -q -B pr
   echo "$f"
 }
 fixture="$(fragment_fixture)"
