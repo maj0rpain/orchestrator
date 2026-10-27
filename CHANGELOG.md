@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.38.10
+
+The PR body check and the ticket scanners (`ticket exists`, `ticket retire`,
+`ticket block`, `ticket unblock`) now share one markdown code-fence rule. An
+indented fence, or a fence line of the other character or a shorter run inside
+an open fence, no longer confuses the ticket commands about whether a
+`## Ticket` or `## Blocked by` line is inside a fence. The PR body's required
+headings now have one source in the pr module, and the test helper
+`origin_branch_state` moved into the shared test setup.
+
 ## 4.38.9
 
 The suite-cost module was cleaned up with no change in behaviour, except one warning: a confirming run that another suite-cost run overlapped now ends its warning `- the growth is unconfirmed`, where it ended `- contention left the growth unconfirmed`.
