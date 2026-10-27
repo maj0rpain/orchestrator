@@ -139,9 +139,10 @@ pr_labels_check() {
   die "PR #$pr is open but lacks the labels $missing - add them by hand"
 }
 
-# The PR-writing standard's required headings (#1387), written once: pr open and
-# pr publish require all of them, and pr_body_check's Door and Blast Radius
-# rules key on the Merge Danger one.
+# The PR-writing standard's required headings (#1387) for pr open and pr
+# publish, written once: both require all of them, and pr_body_check's Door and
+# Blast Radius rules key on the Merge Danger one. pr release meets a smaller
+# standard, Summary alone.
 PR_MERGE_DANGER_HEADING='Merge Danger'
 PR_BODY_HEADINGS=(Summary Evidence "$PR_MERGE_DANGER_HEADING")
 

@@ -327,7 +327,7 @@ TICKET_HEADING='## Ticket'
 # `strip_ticket_sections` cuts from.
 has_ticket_heading() {
   awk -v heading="$TICKET_HEADING" "$FENCE_AWK"'
-    { l = $0; sub(/\r$/, "", l); t = l; sub(/[ \t]+$/, "", t); f = fenced(t) }
+    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
     !f && l == heading { found = 1 }
     END { exit !found }
   '
@@ -340,7 +340,7 @@ has_ticket_heading() {
 # line is kept byte for byte, CRLF ends and trailing blank lines included.
 strip_ticket_sections() {
   awk -v heading="$TICKET_HEADING" "$FENCE_AWK"'
-    { l = $0; sub(/\r$/, "", l); t = l; sub(/[ \t]+$/, "", t); f = fenced(t) }
+    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
     skip && !f && l ~ /^##?([ \t]|$)/ && l != heading { skip = 0 }
     !f && l == heading { skip = 1; next }
     skip { next }
@@ -490,7 +490,7 @@ rewrite_blocked_by_section() {
       if (blockers == "") printf "None (can start immediately)%s", eol
       else for (i = 1; i <= n; i++) printf "- #%s%s", b[i], eol
     }
-    { l = $0; cr = ($0 ~ /\r$/) ? "\r" : ""; sub(/\r$/, "", l); last = l; lastcr = cr; t = l; sub(/[ \t]+$/, "", t); f = fenced(t) }
+    { l = $0; cr = ($0 ~ /\r$/) ? "\r" : ""; sub(/\r$/, "", l); last = l; lastcr = cr; f = fenced(l) }
     skip && !f && l ~ /^##?([ \t]|$)/ { skip = 0; printf "%s\n", seol }
     !done && !f && l == heading { seol = cr; section(cr "\n"); skip = 1; done = 1; next }
     skip { next }
@@ -510,7 +510,7 @@ rewrite_blocked_by_section() {
 # one reading `None (can start immediately)`, lists none.
 blocked_by_section_numbers() {
   awk -v heading="$BLOCKED_BY_HEADING" "$FENCE_AWK"'
-    { l = $0; sub(/\r$/, "", l); t = l; sub(/[ \t]+$/, "", t); f = fenced(t) }
+    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
     in_section && !f && l ~ /^##?([ \t]|$)/ { in_section = 0 }
     !done && !f && l == heading { in_section = 1; done = 1; next }
     in_section && match(l, /^- #[0-9]+/) { print substr(l, 4, RLENGTH - 3) }
