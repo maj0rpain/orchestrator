@@ -153,18 +153,12 @@ pr_body_check() {
   local body_file="$1" required problems
   shift
   required="$(IFS='|'; printf '%s' "$*")"
-  problems="$(awk -v required="$required" '
-    function run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
+  problems="$(awk -v required="$required" "$FENCE_AWK"'
     function add(p) { out = out (out == "" ? "" : "; ") p }
     function value(s) { sub(/^[ \t]+/, "", s); return s }
     {
       line = $0; sub(/[ \t\r]+$/, "", line)
-      s = line; sub(/^ ? ? ?/, "", s); c = substr(s, 1, 1)
-      if (fence != "") {
-        if (c == fence && run(s, c) >= fence_len && run(s, c) == length(s)) fence = ""
-        next
-      }
-      if ((c == "`" || c == "~") && run(s, c) >= 3) { fence = c; fence_len = run(s, c); next }
+      if (fenced(line)) next
       if (line ~ /^## /) { section = substr(line, 4); seen[section] = 1; next }
       if (section != "Merge Danger") next
       if (index(line, "**Door:**") == 1) {

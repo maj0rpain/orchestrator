@@ -522,6 +522,11 @@ out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
 assert_status "pieces only inside a fence or outside Merge Danger are refused" "$st" 1
 assert_eq "counting each as missing" "$out" \
   "$PR_BODY_REFUSED no ## Evidence heading; no **Door:** line under ## Merge Danger; no **Blast Radius:** line under ## Merge Danger"
+writeln '## Summary' '' '   ~~~' '## Evidence' '~~~' '' '## Merge Danger' '' \
+  '**Door:** two-way' '**Blast Radius:** the widget module' >"$bad_body"
+out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
+assert_status "an Evidence heading only inside an indented fence is refused" "$st" 1
+assert_eq "naming the missing Evidence heading alone" "$out" "$PR_BODY_REFUSED no ## Evidence heading"
 reordered_body="$(mktemp)"
 writeln '## Merge Danger' '' '**Blast Radius:** the widget module' '**Door:** one-way' '' \
   '## Evidence' '' '```' 'not a fence end: ````' '```' '' '## Summary' '' 'Did it.' >"$reordered_body"

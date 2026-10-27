@@ -566,6 +566,22 @@ out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
 assert_status "a ## Ticket inside a code fence is not the collapse heading" "$st" 1
 assert_eq "and prints nothing" "$out" ""
 
+fake_issue_body 99 "$(writeln '~~~~' '```' '## Ticket' '~~~~')"
+"$ORCH" ticket exists 99 >/dev/null 2>&1; st=$?
+assert_status "a ## Ticket in a ~~~~ fence holding a backtick fence line stays fenced" "$st" 1
+fake_issue_body 99 "$(writeln '  ```md' '## Ticket' '  ```')"
+"$ORCH" ticket exists 99 >/dev/null 2>&1; st=$?
+assert_status "a ## Ticket inside a fence indented by 2 spaces stays fenced" "$st" 1
+fake_issue_body 99 "$(writeln '````' '```' '## Ticket' '````')"
+"$ORCH" ticket exists 99 >/dev/null 2>&1; st=$?
+assert_status "a ## Ticket in a four-backtick fence holding a three-backtick line stays fenced" "$st" 1
+fake_issue_body 99 "$(writeln '```' '```text' '## Ticket')"
+"$ORCH" ticket exists 99 >/dev/null 2>&1; st=$?
+assert_status "a backtick line with text does not close a fence" "$st" 1
+fake_issue_body 99 "$(writeln '```' 'x' '```   ' '## Ticket' 'Build.')"
+out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
+assert_eq "a fence closed by a run with trailing spaces ends; a later ## Ticket is collapsed" "$out" "collapsed"
+
 # An unreadable GitHub is not "no breakdown": a caller that read exit 1 as
 # "neither" would publish a second breakdown, so a gh failure dies with 2.
 fake_fail adapter_sub_issues
@@ -807,6 +823,11 @@ fake_body_read "$bb" 'Intro\n\n```md\n## Blocked by\n\n- #1\n```\n'
 "$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
 assert_eq "a fenced ## Blocked by is ignored and a real section appended" \
   "$(fake_body_of "$bb" | od -c)" "$(printf 'Intro\n\n```md\n## Blocked by\n\n- #1\n```\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
+
+fake_body_read "$bb" 'Intro\n\n  ```md\n## Blocked by\n\n- #1\n  ```\n'
+"$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
+assert_eq "a ## Blocked by inside an indented fence is ignored and a real section appended" \
+  "$(fake_body_of "$bb" | od -c)" "$(printf 'Intro\n\n  ```md\n## Blocked by\n\n- #1\n  ```\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
 
 fake_body_read "$bb" '## Blocked by\n\n```\n## Not a heading\n```\n\n## After\nTail.\n'
 "$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1

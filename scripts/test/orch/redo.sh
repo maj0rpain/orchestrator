@@ -571,6 +571,10 @@ assert_eq "cutting only the real section, the fenced example kept" \
   "$(fake_body_of 56 | od -c)" "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' | od -c)"
 out="$("$ORCH" ticket exists 56 2>&1)"; st=$?
 assert_status "ticket exists then ignores the fenced example" "$st" 1
+fake_issue_body 56 "$(writeln 'Intro' '  ```md' '## Ticket' 'example' '  ```' '' '## Ticket' 'Build.')"
+"$ORCH" ticket retire 56 >/dev/null 2>&1
+assert_eq "retire keeps a ## Ticket example inside an indented fence" \
+  "$(fake_body_of 56 | od -c)" "$(writeln 'Intro' '  ```md' '## Ticket' 'example' '  ```' | od -c)"
 fake_issue_body 57 "$(writeln 'Intro' '```md' '## Ticket' '```')"
 fake_fail adapter_issue_body_edit
 out="$("$ORCH" ticket retire 57 2>&1)"; st=$?
