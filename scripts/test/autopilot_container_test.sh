@@ -77,13 +77,13 @@ FAKE
 chmod +x "$fake_bin/gh"
 
 
-# run_entry <VAR=value>...: runs the entrypoint in a fresh case directory with
-# the valid base environment plus the arguments, each overriding the base; a
-# VAR= with no value sets it empty, and `-VAR` removes it. Leaves $case_dir,
-# $err (stderr), $st, $home, $clone (ORCH_CLONE_DIR unless an argument
-# sets it), $gh_log and $orch_log. A case that needs the clone directory
-# prepared sets $clone_prep to a command run before it.
-run_entry() {
+# entry_env <VAR=value>...: makes a fresh case directory and fills the global
+# array entry_envs with the valid base environment plus the arguments, each
+# overriding the base; a VAR= with no value sets it empty, and `-VAR` removes
+# it. Sets $case_dir, $home, $clone (ORCH_CLONE_DIR unless an argument sets
+# it), $gh_log and $orch_log. A case that needs the clone directory prepared
+# sets $clone_prep to a command run before it.
+entry_env() {
   case_dir="$(mktemp -d "$root/case.XXXXXX")"
   home="$case_dir/home"
   clone="$case_dir/clone"
@@ -100,21 +100,28 @@ run_entry() {
     "REPO=owner/name" "GH_TOKEN=tok" "CLAUDE_CODE_OAUTH_TOKEN=oauth"
   )
   local arg entry
-  local -a final=()
+  entry_envs=()
   for entry in "${envs[@]}"; do
     for arg in "$@"; do
       [ "$arg" = "-${entry%%=*}" ] && continue 2
     done
-    final+=("$entry")
+    entry_envs+=("$entry")
   done
   for arg in "$@"; do
-    case "$arg" in -*) ;; *) final+=("$arg") ;; esac
+    case "$arg" in -*) ;; *) entry_envs+=("$arg") ;; esac
   done
-  err="$(env -i "${final[@]}" bash "$ENTRY" 2>&1 >/dev/null)"
+}
+# run_entry <VAR=value>...: entry_env, then runs the entrypoint under that
+# environment. Leaves entry_env's variables, $err (stderr) and $st.
+run_entry() {
+  entry_env "$@"
+  err="$(env -i "${entry_envs[@]}" bash "$ENTRY" 2>&1 >/dev/null)"
   st=$?
 }
-cfg() { HOME="$home" git config --global --get "$1"; }
-cfg_set() { HOME="$home" git config --global --get "$1" >/dev/null 2>&1 && echo set || echo unset; }
+# cfg <key> [home]: a key's global git config value; home defaults to $home.
+cfg() { HOME="${2:-$home}" git config --global --get "$1"; }
+# cfg_state <key> [home]: set or unset, for whether the key has a value.
+cfg_state() { cfg "$@" >/dev/null 2>&1 && echo set || echo unset; }
 
 # >>> checks
 
@@ -169,8 +176,8 @@ assert_eq "a non-empty non-git clone dir is left alone" "$(cat "$clone/file")" x
 assert_eq "a non-empty non-git clone dir is not cloned over" "$(grep -c 'repo clone' "$gh_log")" 0
 
 
-assert_eq "identity name falls back on the token owner's login" "$(HOME="$default_home" git config --global --get user.name)" octo
-assert_eq "identity email falls back on the noreply address" "$(HOME="$default_home" git config --global --get user.email)" "4242+octo@users.noreply.github.com"
+assert_eq "identity name falls back on the token owner's login" "$(cfg user.name "$default_home")" octo
+assert_eq "identity email falls back on the noreply address" "$(cfg user.email "$default_home")" "4242+octo@users.noreply.github.com"
 run_entry ORCH_GIT_NAME=Bot ORCH_GIT_EMAIL=bot@example.com
 assert_eq "ORCH_GIT_NAME overrides the name" "$(cfg user.name)" Bot
 assert_eq "ORCH_GIT_EMAIL overrides the email" "$(cfg user.email)" bot@example.com
@@ -189,18 +196,18 @@ assert_eq "cap is written" "$(cfg orchestrator.autopilot.cap)" 3
 assert_eq "handle is written" "$(cfg orchestrator.autopilot.handle)" maj0rpain
 assert_eq "rounds is written" "$(cfg orchestrator.autopilot.rounds)" 5
 assert_eq "budget is written" "$(cfg orchestrator.autopilot.budget)" 12
-assert_eq "permission-mode defaults to bypassPermissions" "$(HOME="$default_home" git config --global --get orchestrator.autopilot.permission-mode)" bypassPermissions
+assert_eq "permission-mode defaults to bypassPermissions" "$(cfg orchestrator.autopilot.permission-mode "$default_home")" bypassPermissions
 run_entry ORCH_PERMISSION_MODE=
 assert_eq "an empty permission mode defaults too" "$(cfg orchestrator.autopilot.permission-mode)" bypassPermissions
 for key in cap handle rounds budget model effort; do
   upper="ORCH_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
-  assert_eq "an unset variable leaves $key unset on a first start" "$(HOME="$default_home" git config --global --get "orchestrator.autopilot.$key" >/dev/null 2>&1 && echo set || echo unset)" unset
+  assert_eq "an unset variable leaves $key unset on a first start" "$(cfg_state "orchestrator.autopilot.$key" "$default_home")" unset
   # A start that wrote the key, then one with the variable empty.
   run_entry "$upper=1"
   prior_home="$home" prior_clone="$clone"
   assert_eq "$upper writes $key" "$(cfg "orchestrator.autopilot.$key")" 1
   run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone" "$upper="
-  assert_eq "an empty $upper clears $key" "$(cfg_set "orchestrator.autopilot.$key")" unset
+  assert_eq "an empty $upper clears $key" "$(cfg_state "orchestrator.autopilot.$key")" unset
 done
 
 # Model and effort reach their global keys.
@@ -250,24 +257,18 @@ assert_empty "a failing clone leaves the directory empty" "$(ls -A "$clone")"
 assert_empty "a failing clone leaves orch.sh unrun" "$(<"$orch_log")"
 
 
-clone_prep=
+entry_env
 sh_out="$root/exec.pid"
 (
-  home_dir="$(mktemp -d "$root/exec.XXXXXX")"
-  echo "$home_dir" >"$sh_out.dir"
   echo "$BASHPID" >"$sh_out"
-  exec env -i "PATH=$fake_bin:$PATH" "HOME=$home_dir" "GH_LOG=$home_dir/gh.log" \
-    "ORCH_LOG=$home_dir/orch.log" "ORCH_SH=$root/orch.sh" \
-    "ORCH_CLONE_DIR=$home_dir/clone" REPO=owner/name GH_TOKEN=tok \
-    CLAUDE_CODE_OAUTH_TOKEN=oauth bash "$ENTRY" >/dev/null 2>&1
+  exec env -i "${entry_envs[@]}" bash "$ENTRY" >/dev/null 2>&1
 )
 entry_pid="$(<"$sh_out")"
-exec_dir="$(<"$sh_out.dir")"
-exec_line="$(grep 'args=autopilot watch' "$exec_dir/orch.log")"
+exec_line="$(grep 'args=autopilot watch' "$orch_log")"
 assert_contains "orch.sh autopilot watch runs" "$exec_line" "args=autopilot watch"
-assert_contains "it runs in the clone" "$exec_line" "pwd=$exec_dir/clone"
+assert_contains "it runs in the clone" "$exec_line" "pwd=$clone"
 assert_contains "it runs by exec: its PID is the entrypoint's" "$exec_line" "pid=$entry_pid "
-assert_eq "it runs once" "$(grep -c 'args=autopilot watch' "$exec_dir/orch.log")" 1
+assert_eq "it runs once" "$(grep -c 'args=autopilot watch' "$orch_log")" 1
 
 # The Dockerfile's lean-session ENV lines, each a whole line.
 dockerfile="$DIR/../docker/Dockerfile"
