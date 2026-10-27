@@ -913,8 +913,7 @@ before_runs="$(runs)"
 "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
 assert_eq "a verdict stored for a different base commit is not reused" "$(runs)" "$((before_runs + 2))"
 
-# A confirmed ok is reused too, and an ok reached without confirmation stores
-# nothing.
+# A confirmed ok is reused too.
 confirm_reset
 vf="$rec.verdicts"
 before_runs="$(runs)"
