@@ -402,14 +402,14 @@ above it.
 
 An Other answer of `show <n>...` is not an answer to the batch question.
 Run `bash "$ORCH" spec-review check <dir> --full <n>...` with the numbers it
-names, then end your turn on one plain-text reply holding its stdout word
-for word and the batch question again, its answer words spelled out, with no
-tool call. It writes the full items' view to `<dir>/view.md` in place of
-the batch view, and its pass line names that file and gives the same
-instruction as the batch `check`'s. On Claude Code an ask-tool call is
-refused until the view is pasted, as for the batch question. `apply` never
-receives a `show` answer. A `--full` refusal - a number not in `batch.md` -
-is told to the human, and the batch question asked again, the same way.
+names, then end the turn again on a turn-final reply, per the doc, holding
+its stdout word for word and the batch question. It writes the full items'
+view to `<dir>/view.md` in place of the batch view, and its pass line names
+that file and gives the same instruction as the batch `check`'s. On Claude
+Code an ask-tool call is refused until the view is pasted, as for the batch
+question. `apply` never receives a `show` answer. A `--full` refusal - a
+number not in `batch.md` - is told to the human, and the batch question
+asked again, the same way.
 
 A question, or *No* to a near-miss confirmation, is not an answer to the
 batch question either: the doc's **Question path** runs. Do not run `apply`,

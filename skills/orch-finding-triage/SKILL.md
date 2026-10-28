@@ -346,8 +346,9 @@ reply, per `docs/turn-final-reply.md` under the plugin root. The answers:
 The question spells both out: `accept`, or the changes in plain words, or a
 question. `accept` is matched as in step 3, its full label counting the
 same. A near-miss reply - one that is neither `accept`, nor changes this
-list names, nor clearly a question - and the question path run as in step 3,
-per the doc: apply nothing.
+list names, nor clearly a question - is restated in one line, in the changes
+format, and confirmed as in step 3, per the doc's **Near-miss reply**. On
+*No*, or on a question, the doc's **Question path** runs: apply nothing.
 
 Nothing is written before the answer.
 
