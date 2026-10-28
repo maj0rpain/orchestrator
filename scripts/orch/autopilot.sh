@@ -565,12 +565,12 @@ autopilot_limit_count() {
   printf -v "$3" '%s' "$n"
 }
 
-# autopilot_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a phase whose
-# session stopped on a usage limit. With fewer than two such stops of the phase
-# before it, adds orch:limited, comments, then releases the claim; the third in
-# a row, and a stop whose comments cannot be read, take the failure path. The
-# reset is empty when the session named none; the pause is the time written to
-# the limit file: the reset, else the one-hour fallback.
+# autopilot_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a
+# phase whose session stopped on a usage limit. With fewer than two such stops
+# of the phase before it, adds orch:limited, comments, then releases the claim;
+# the third in a row, and a stop whose comments cannot be read, take the
+# failure path. The reset is empty when the session named none; the pause is
+# the time written to the limit file: the reset, else the one-hour fallback.
 autopilot_limit_stop() {
   local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" count text when=" (the session gave no reset time)" at stopped
   [ -z "$reset" ] || when=" (resets $reset)"
