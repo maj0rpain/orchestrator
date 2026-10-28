@@ -155,9 +155,9 @@ never redoing or repeating what already landed and never re-exploring code.
 
 **Discard rule**:
 What a restarted phase does with uncommitted or in-progress work a dead session
-left: discarded in a ticket worktree always, and on the flow's own branch - or a quick implementation's own
-branch - in every checkout except an interactive flow's main checkout, where it
-is refused with the discard command named.
+left: discarded in a ticket worktree always, and on the flow's own branch - or
+a quick implementation's own branch - in every checkout except an interactive
+flow's main checkout, where it is refused with the discard command named.
 
 **Hand-labelled issue**:
 An issue a human gave a phase label by hand, without the planning close's
