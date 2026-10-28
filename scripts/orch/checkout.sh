@@ -200,17 +200,19 @@ discard_work_in() {
   git -C "$path" clean -fdq >/dev/null 2>&1 || die "$who: git clean failed in $path"
 }
 
-# discard_flow_branch_work: the flow-branch case of the discard rule
-# (ADR-0054), the one primitive every site meeting uncommitted or in-progress
-# work a dead session left on the flow's own branch applies - branch create
-# now, ticket reclaim and review resume next. In the current checkout
+# discard_flow_branch_work: the flow-branch case of the discard rule (ADR-0054),
+# the one primitive every site meeting uncommitted or in-progress work a dead
+# session left on the flow's own branch - or, for ticket reclaim, a quick
+# implementation's own branch - applies: branch create now, ticket reclaim and
+# review resume next. Each caller first settles that the branch is the one to
+# discard on; this primitive checks no ownership. In the current checkout
 # ($ROOT): a merge or rebase in progress is aborted, and a tree dirty outside
 # the planning allowlist is reset and cleaned. Nothing to discard changes
 # nothing. In an interactive flow's main checkout - autopilot_active false and
-# checkout_kind main, the one tree a human plausibly edits by hand - it
-# refuses instead, exit 1, naming the exact discard command and writing
-# nothing. A failed abort, reset or clean dies (exit 1) naming the step.
-# Called as a bare statement, so the die stops the caller.
+# checkout_kind main, the one tree a human plausibly edits by hand - it refuses
+# instead, exit 1, naming the exact discard command and writing nothing. A
+# failed abort, reset or clean dies (exit 1) naming the step. Called as a bare
+# statement, so the die stops the caller.
 discard_flow_branch_work() {
   local merging="" rebasing="" dirty kind cmds=""
   git -C "$ROOT" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1 && merging=1

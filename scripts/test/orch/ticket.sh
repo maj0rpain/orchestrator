@@ -1312,7 +1312,9 @@ rc_setup() {
 # rc_flow: the active flow the reclaim guard requires in this checkout - it
 # owns the branch orch/5-feature and issue 90.
 rc_flow() {
-  mkdir -p .orchestrator && echo '{}' >.orchestrator/state.json
+  local file
+  file="$(flow_state_file "$(git rev-parse --show-toplevel)")"
+  mkdir -p "$(dirname "$file")" && echo '{}' >"$file"
   state_fixture phase implement
   state_fixture branch orch/5-feature
   state_fixture issue 90
