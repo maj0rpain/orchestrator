@@ -787,6 +787,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               absolute path and saying to end the turn on
                               one plain-text reply with no tool call: the
                               view word for word, then the question.
+                              --unattended (not with --full) ends that line
+                              instead with "unattended: not a turn-final
+                              reply; go straight on to apply", so it never
+                              arms the paste guard.
                               --tickets validates
                               <dir>/tickets.md instead, before the ticket
                               question, as apply --tickets would take the all

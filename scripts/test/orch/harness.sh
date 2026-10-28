@@ -1007,6 +1007,45 @@ mkdir "$all_root/tmpdir"
 all_run TMPDIR="$all_root/tmpdir" >/dev/null 2>&1
 assert_eq "removes its temp files on exit" "$(ls -A "$all_root/tmpdir")" ""
 
+# A killed all.sh (#1668): orch_test.sh's stub and every stub shellcheck set
+# their TERM trap, then write their pid and stay running until TERMed; then
+# they wait 0.3s and note whether their TMPDIR still exists before they exit.
+# After TERM to all.sh, they must all be stopped, each having seen its TMPDIR,
+# and all.sh must exit 130.
+all_kill="$all_root/kill"
+mkdir -p "$all_kill/tmp"
+all_sc_stub 0
+sed -i.bak "1a trap 'kill \$sp; sleep 0.3; [ -d \"\$TMPDIR\"/*/suites-tmp ] \&\& echo yes >>\"$all_kill/sc.tmp\"; exit 0' TERM; echo \$\$ >>'$all_kill/sc.pid'; sleep 30 \& sp=\$!; wait" "$all_bin/shellcheck"
+all_swap orch_test.sh \
+  "trap 'kill \$sp; sleep 0.3; [ -d \"\$TMPDIR\" ] && echo yes >\"$all_kill/suite.tmp\"; exit 0' TERM" \
+  "echo \$\$ >'$all_kill/suite.pid'" \
+  'sleep 30 & sp=$!; wait'
+# all_run's environment, with exec so $! is all.sh's own pid.
+(
+  unset CI CHANGELOG_BASE NO_VERSION_BUMP ORCH_TEST_JOBS
+  exec env TMPDIR="$all_kill/tmp" PATH="$all_bin" "$all_bash" "$all_dir/all.sh"
+) >/dev/null 2>&1 &
+all_pid=$!
+all_tries=0
+until [ -s "$all_kill/suite.pid" ] && [ -s "$all_kill/sc.pid" ] || [ "$all_tries" -gt 100 ]; do
+  all_tries=$((all_tries + 1))
+  sleep 0.1
+done
+kill -TERM "$all_pid"
+wait "$all_pid"; st=$?
+all_restore orch_test.sh
+all_alive=0
+for all_stub_pid in $(cat "$all_kill/suite.pid" "$all_kill/sc.pid"); do
+  kill -0 "$all_stub_pid" 2>/dev/null && all_alive=$((all_alive + 1))
+done
+assert_status "TERM to all.sh makes it exit 130" "$st" 130
+assert_eq "TERM to all.sh stops the suite and every shellcheck before it returns" "$all_alive" "0"
+assert_eq "the suite's TMPDIR still existed when it stopped" "$(cat "$all_kill/suite.tmp" 2>/dev/null)" "yes"
+assert_eq "all.sh's temp directory still existed when every shellcheck stopped" \
+  "$(sort -u "$all_kill/sc.tmp" 2>/dev/null)" "yes"
+assert_eq "removes its temp directory after stopping the children" "$(ls -A "$all_kill/tmp")" ""
+all_sc_stub 0
+
 rm -f "$all_bin/shellcheck" "$all_bin/shellcheck.bak"
 out="$(export CI=true; all_run 2>&1)"; st=$?
 assert_eq "says shellcheck was skipped when it is not installed" \

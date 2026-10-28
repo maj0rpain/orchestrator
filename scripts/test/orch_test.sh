@@ -224,13 +224,7 @@ orch_pids=()
 orch_sections=()
 # Kill the children, then wait for each to exit, so the root is removed
 # only once no child can still write into it.
-orch_stop_children() {
-  local pid
-  kill "${orch_pids[@]}" 2>/dev/null
-  for pid in "${orch_pids[@]}"; do wait "$pid"; done
-  exit 130
-}
-trap orch_stop_children INT TERM
+trap 'test_jobs_stop_children "${orch_pids[@]}"' INT TERM
 IFS=, read -r -a orch_sections <<<"${orch_kept#,}"
 orch_total=${#orch_sections[@]}
 orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_any_failed=0

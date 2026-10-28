@@ -14,17 +14,17 @@ differences only:
   question; a `--rounds` value is never passed to it.
 - **Consolidation and the lenses** run unchanged: Consistency, Testability
   and Implementability, with Fidelity not run.
-- **Disposition**: `batch.md` is written and checked with `spec-review
-  check` until it passes, as in an attended review, and the batch printed by
-  pasting `check`'s stdout word for word, as in an attended review - the
-  same compact view: the material items as one list, each under its batch
+- **Disposition**: `batch.md` is written and checked with `spec-review check
+  <dir> --unattended` until it passes, as in an attended review, and the batch
+  printed by pasting `check`'s stdout word for word, as in an attended review -
+  the same compact view: the material items as one list, each under its batch
   number, on one line with its summary and its reason, a decision item's options
   one line each, no citation and no diff, and the minor and resolved ones one
   line each under **Minor edits** - so a human watching can see what is applied
-  and interrupt. It is not a turn-final reply, whatever `check`'s pass line
-  says: see **Unattended printout** in `docs/turn-final-reply.md` under the
-  plugin root. Then no question is asked and nothing waits: go straight on to
-  `apply` in the same turn, the batch applied at once as **Apply as
+  and interrupt. It is not a turn-final reply, as `check --unattended`'s pass
+  line says: see **Unattended printout** in `docs/turn-final-reply.md` under
+  the plugin root. Then no question is asked and nothing waits: go straight
+  on to `apply` in the same turn, the batch applied at once as **Apply as
   recommended** - every proposed edit applied, every **recommend decline**
   item skipped, and every decision item takes its recommended option.
 - **Applying**: the standalone call in **Applying the answer**, with the
@@ -41,11 +41,11 @@ differences only:
   body. Declined items record **declined as recommended: <reason>**.
 - **Tickets follow the spec** runs as usual when `apply` pauses with exit 3:
   `tickets.md` is drafted and checked with `spec-review check <dir>
-  --tickets` until it passes, and its items printed by pasting that
-  command's stdout word for word - again not a turn-final reply (the doc's
-  **Unattended printout**); then no question is asked, and `apply` runs again in
-  the same turn with `--tickets recommended`, its one ticket answer in this
-  mode. `tickets.md`'s `@@ recommend` line picks **Apply as
+  --tickets --unattended` until it passes, and its items printed by pasting
+  that command's stdout word for word - again not a turn-final reply (the
+  doc's **Unattended printout**); then no question is asked, and `apply` runs
+  again in the same turn with `--tickets recommended`, its one ticket answer
+  in this mode. `tickets.md`'s `@@ recommend` line picks **Apply as
   recommended** or **Retire and break down again**.
 - **A retire** is followed, after the round, by `orch-to-tickets`'
   **Unattended breakdown**, never its quiz.

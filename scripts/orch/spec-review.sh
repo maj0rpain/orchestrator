@@ -876,18 +876,21 @@ spec_review_problems_exit() {
 # `orch: ` line each, then exit 1, leaving any earlier view.md as it was. A
 # clean batch prints its view on stdout - see spec_review_view - saves it to
 # <dir>/view.md (see spec_review_view_save), and prints a one-line summary on
-# stderr, ending in spec_review_nudge. With --tickets, the
+# stderr, ending in spec_review_nudge - or, with --unattended, in
+# spec_review_unattended_tail. With --tickets, the
 # round's tickets.md instead: see spec_review_tickets_check. With --full
 # <n>..., the same validation, then only the named items on stdout, each in
 # full (see spec_review_item_view), in the order named - any item in
-# batch.md, minor or resolved included.
+# batch.md, minor or resolved included. --unattended does not combine with
+# --full; it changes only the pass line's tail.
 spec_review_check() {
-  local usage="usage: orch.sh spec-review check <dir> [--tickets | --full <n>...]" dir="" tickets="" full="" n
+  local usage="usage: orch.sh spec-review check <dir> [--tickets | --full <n>...]" dir="" tickets="" full="" unattended="" n
   local wanted=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --tickets) tickets=1 ;;
       --full) full=1 ;;
+      --unattended) unattended=1 ;;
       -*) die "unknown option: $1 ($usage)" ;;
       *)
         if [ -n "$full" ]; then
@@ -901,11 +904,12 @@ spec_review_check() {
   [ -n "$dir" ] || die "$usage"
   [ -z "$full" ] || [ -z "$tickets" ] || die "--full and --tickets do not combine ($usage)"
   [ -z "$full" ] || [ "${#wanted[@]}" -gt 0 ] || die "--full needs at least one item number ($usage)"
+  [ -z "$full" ] || [ -z "$unattended" ] || die "--full and --unattended do not combine ($usage)"
   dir="${dir%/}"
   local body
   [ -d "$dir" ] || die "no such directory: $dir"
   if [ -n "$tickets" ]; then
-    spec_review_tickets_check "$dir"
+    spec_review_tickets_check "$dir" "$unattended"
     return 0
   fi
   [ -f "$dir/batch.md" ] || die "batch.md not found in $dir"
@@ -924,7 +928,7 @@ spec_review_check() {
   else
     spec_review_view_save "$dir" spec_review_view
   fi
-  note "batch.md passes: ${#SR_IT_N[@]} items, $SR_ANCHOR_COUNT anchors, each matching once in $body, and the all answer applies cleanly$(spec_review_nudge "$dir")" >&2
+  note "batch.md passes: ${#SR_IT_N[@]} items, $SR_ANCHOR_COUNT anchors, each matching once in $body, and the all answer applies cleanly$(spec_review_pass_tail "$dir" "$unattended")" >&2
 }
 
 # spec_review_full_view <index>...: check --full's view - each item <index>
@@ -957,11 +961,28 @@ spec_review_view_path() {
   esac
 }
 
+# spec_review_unattended_tail: what an --unattended check pass line ends with
+# in place of spec_review_nudge. It carries no "; it is saved in <path>/view.md"
+# tail, so the paste guards never arm on it.
+spec_review_unattended_tail() {
+  printf ' - unattended: not a turn-final reply; go straight on to apply'
+}
+
+# spec_review_pass_tail <dir> <unattended>: the tail of a check pass line that
+# saved a view - spec_review_unattended_tail when <unattended> is non-empty,
+# else spec_review_nudge.
+spec_review_pass_tail() {
+  if [ -n "$2" ]; then spec_review_unattended_tail; else spec_review_nudge "$1"; fi
+}
+
 # spec_review_nudge <dir>: what a check pass line that saved a view ends
 # with - the instruction to end the turn on one plain-text reply holding the
 # view word for word and the question, with no tool call (ADR-0051), and the
-# view.md it was saved to, by absolute path. scripts/hook-paste-guard.sh
-# arms on a pass line ending "; it is saved in <path>/view.md": keep that tail.
+# view.md it was saved to, by absolute path. The paste guards
+# (scripts/paste-guard.sh) arm on a pass line ending "; it is saved in
+# <path>/view.md": keep that tail. They never arm on a pass line in the result
+# of a Bash call that also ran `spec-review apply`, nor on an --unattended pass
+# line, which ends in spec_review_unattended_tail instead.
 spec_review_nudge() {
   printf ' - end your turn on one plain-text reply, no tool call: the view above word for word, then the question with its answer words spelled out; it is saved in %s' \
     "$(spec_review_view_path "$1")"
@@ -1497,17 +1518,18 @@ spec_review_tickets_follow() {
   [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing written"
 }
 
-# spec_review_tickets_check <dir>: check --tickets - <dir>/tickets.md
-# validated as apply --tickets would take the all answer, against the ticket
-# copies and <dir>/spec.md, with nothing written but <dir>/view.md and no
-# GitHub read. A grammar error stops at the first; every other problem is
-# reported, one `orch: ` line each, then exit 1. A clean file prints its view
-# on stdout - see spec_review_tickets_view - saves it to <dir>/view.md, and
-# prints a one-line summary on stderr ending in spec_review_nudge. With
-# @@ none-affected its stdout is a stub, not a view: any earlier view.md is
-# removed, none written, and the summary names none.
+# spec_review_tickets_check <dir> [<unattended>]: check --tickets -
+# <dir>/tickets.md validated as apply --tickets would take the all answer,
+# against the ticket copies and <dir>/spec.md, with nothing written but
+# <dir>/view.md and no GitHub read. A grammar error stops at the first; every
+# other problem is reported, one `orch: ` line each, then exit 1. A clean file
+# prints its view on stdout - see spec_review_tickets_view - saves it to
+# <dir>/view.md, and prints a one-line summary on stderr ending in
+# spec_review_nudge, or in spec_review_unattended_tail when <unattended> is
+# non-empty. With @@ none-affected its stdout is a stub, not a view: any earlier
+# view.md is removed, none written, and the summary names none.
 spec_review_tickets_check() {
-  local dir="$1" i __srtc_body
+  local dir="$1" unattended="${2:-}" i __srtc_body
   [ -f "$dir/tickets.md" ] || die "tickets.md not found in $dir"
   [ -f "$dir/spec.md" ] || die "spec.md not found in $dir"
   spec_review_tickets_parse "$dir/tickets.md"
@@ -1526,7 +1548,7 @@ spec_review_tickets_check() {
     note "tickets.md passes: no open ticket affected" >&2
   else
     spec_review_view_save "$dir" spec_review_tickets_view
-    note "tickets.md passes: ${#ST_N[@]} items, $SR_TICKET_ANCHOR_COUNT anchors, each matching once, and the all answer applies cleanly$(spec_review_nudge "$dir")" >&2
+    note "tickets.md passes: ${#ST_N[@]} items, $SR_TICKET_ANCHOR_COUNT anchors, each matching once, and the all answer applies cleanly$(spec_review_pass_tail "$dir" "$unattended")" >&2
   fi
 }
 

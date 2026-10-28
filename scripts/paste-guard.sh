@@ -7,9 +7,13 @@
 # window; they differ only in which text blocks may hold the paste.
 #
 # - Armed by the latest `check` pass line in a tool result that names a
-#   view.md (scripts/orch/spec-review.sh's spec_review_nudge words it).
+#   view.md (scripts/orch/spec-review.sh's spec_review_nudge words it). An
+#   unattended check's pass line carries no such tail, so it never arms.
 # - Disarmed by a later Bash tool_use whose command contains
-#   `spec-review apply`, whatever its exit status.
+#   `spec-review apply`, whatever its exit status. The apply wins within its
+#   own call: a tool_result answering such a tool_use (by tool_use_id) never
+#   arms, so a combined `check && apply` call leaves the guard disarmed. A
+#   result with no tool_use_id, or another id, arms as usual.
 # - A paste is one assistant text block holding every non-blank line of
 #   view.md, both compared with their whitespace normalised (runs collapsed to
 #   one space, ends trimmed), so a re-wrapped paste counts and a view split
@@ -61,20 +65,22 @@ paste_guard_scan() {
         and any(.[]; type == "object" and .type == "text")
         and (any(.[]; type == "object" and .type == "tool_result") | not)));
     reduce (inputs | fromjson? | select(type == "object")) as $e (
-      {view: null, texts: [], final: []};
+      {view: null, texts: [], final: [], applied: []};
       if ($e | human) then .final = []
       elif $e.type == "user" and ($e.message.content | type) == "array" then
-        reduce ($e.message.content[] | select(type == "object" and .type == "tool_result")
+        . as $st
+        | reduce ($e.message.content[] | select(type == "object" and .type == "tool_result")
+                | select(((.tool_use_id // null) as $id | $id != null and ($st.applied | index($id) != null)) | not)
                 | .content | text | split("\n")[]
                 | capture("\\.md passes: .*; it is saved in (?<p>/.*/view\\.md)$")?
                 | .p) as $p (.; .view = $p | .texts = [] | .final = [])
       elif $e.type == "assistant" and ($e.message.content | type) == "array" then
         reduce ($e.message.content[] | select(type == "object")) as $b (.;
-          if .view == null then .
-          elif $b.type == "text" then ($b.text // "" | tostring) as $t | .texts += [$t] | .final += [$t]
-          elif $b.type == "tool_use" and $b.name == "Bash"
+          if $b.type == "tool_use" and $b.name == "Bash"
             and (($b.input.command // "") | tostring | contains("spec-review apply"))
-            then .view = null | .texts = [] | .final = []
+            then .applied += [$b.id // ""] | .view = null | .texts = [] | .final = []
+          elif .view == null then .
+          elif $b.type == "text" then ($b.text // "" | tostring) as $t | .texts += [$t] | .final += [$t]
           else . end)
       else . end)
     | if .view != null then .view, (.texts | tojson), (.final | tojson) else empty end
