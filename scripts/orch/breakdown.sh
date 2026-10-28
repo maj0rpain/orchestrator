@@ -94,9 +94,9 @@ breakdown_number() {
   awk -v k="$2" '$1 == k { n = $2; s = $3 } END { if (n != "") print n, s }' "$1"
 }
 
-# ticket_record <numbers-file> <k> <n> created|linked: appends one line to a
+# breakdown_record <numbers-file> <k> <n> created|linked: appends one line to a
 # breakdown's numbers file. A failed write dies.
-ticket_record() {
+breakdown_record() {
   printf '%s %s %s\n' "$2" "$3" "$4" >>"$1" \
     || die "could not write ticket #$3's $4 record to $1"
 }
@@ -135,11 +135,12 @@ breakdown_publish_in() {
       # Created but not linked: link it, never create another.
       (
         subs="$(ticket_sub_issues "$parent")" || exit 1
-        ticket_listing_has "$subs" "$n" || ticket_link_write "$parent" "$n"
+        ticket_listing_has "$subs" "$n" || gh_or_die "link ticket #$n as a sub-issue of #$parent" \
+          adapter_sub_issue_link "$parent" "$n"
         ticket_edges_and_verify "$parent" "$n" "$(tr ',' '\n' <<<"$want")"
       ) \
         || die "ticket $k of the draft (#$n): the link failed"
-      ticket_record "$numbers" "$k" "$n" linked
+      breakdown_record "$numbers" "$k" "$n" linked
     else
       title="$(cat "$tmp/$k.title")"
       (cmd_ticket_publish "$parent" "$title" "$tmp/$k.body" \

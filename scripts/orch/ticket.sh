@@ -140,19 +140,14 @@ cmd_ticket_publish() {
 
   # The created number is recorded before the link, so a rerun can tell
   # "created, unlinked" from "not created". A failed write dies here.
-  if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" created; fi
+  if [ -n "$record_file" ]; then breakdown_record "$record_file" "$record_k" "$child" created; fi
 
-  ticket_link_write "$parent" "$child"
+  gh_or_die "link ticket #$child as a sub-issue of #$parent" \
+    adapter_sub_issue_link "$parent" "$child"
   ticket_edges_and_verify "$parent" "$child" "$want"
-  if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" linked; fi
+  if [ -n "$record_file" ]; then breakdown_record "$record_file" "$record_k" "$child" linked; fi
 
   note "$child"
-}
-
-# ticket_link_write <parent> <child>: links <child> as a sub-issue of <parent>.
-ticket_link_write() {
-  gh_or_die "link ticket #$2 as a sub-issue of #$1" \
-    adapter_sub_issue_link "$1" "$2"
 }
 
 # ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
