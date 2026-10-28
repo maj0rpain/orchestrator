@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.15
+
+The paste guard no longer blocks the end of an unattended run: an apply wins within its own tool call, and `spec-review check --unattended` ends its pass line without the turn-final nudge, so it never arms the guard.
+
 ## 4.38.14
 
 A killed `scripts/test/all.sh` now stops its suites and shellcheck processes before it removes their temp directory, and the docs lint suite runs outside the checkout and refuses any fixture path that is not one of its own fixtures. A test run can no longer commit into, or switch the branch of, the checkout it runs from.
