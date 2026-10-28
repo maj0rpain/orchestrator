@@ -273,19 +273,17 @@ assert_contains "naming the Junie efforts" "$out" "low|medium|high|inherit"
 untouched "a disallowed Junie effort"
 out="$("$ORCH" agent set lens --host codex --model opus 2>&1)"; st=$?
 assert_status "set refuses another host" "$st" 1
-assert_contains "naming it" "$out" "codex"
+assert_contains "set names the unknown host" "$out" "host codex is not allowed (want junie)"
 untouched "another host"
 out="$("$ORCH" agent get lens --host codex 2>&1)"; st=$?
 assert_status "get refuses another host" "$st" 1
+assert_contains "get names the unknown host" "$out" "host codex is not allowed (want junie)"
+"$ORCH" agent set lens --model haiku >/dev/null
 out="$("$ORCH" agent clear lens --host codex 2>&1)"; st=$?
 assert_status "clear refuses another host" "$st" 1
-assert_contains "naming it" "$out" "codex"
-for verb in set clear get; do
-  extra=(); [ "$verb" = set ] && extra=(--model opus)
-  out="$("$ORCH" agent "$verb" lens --host codex "${extra[@]}" 2>&1)"; st=$?
-  assert_status "$verb refuses an unknown host" "$st" 1
-  assert_contains "$verb names the unknown host as agent set does" "$out" "host codex is not allowed (want junie)"
-done
+assert_contains "clear names the unknown host" "$out" "host codex is not allowed (want junie)"
+assert_eq "a refused clear --host codex leaves a set key set" "$(git config --local --get orchestrator.model.lens)" "haiku"
+"$ORCH" agent clear lens >/dev/null
 for verb in clear get; do
   out="$("$ORCH" agent "$verb" lens --host 2>&1)"; st=$?
   assert_status "$verb refuses --host with no value" "$st" 1
@@ -293,19 +291,13 @@ for verb in clear get; do
 done
 out="$("$ORCH" agent set lens --host junie --host junie --model gpt-5 2>&1)"; st=$?
 assert_status "set refuses --host given twice" "$st" 1
-assert_contains "set prints its usage for a repeated --host" "$out" "usage: orch.sh agent set <role>"
+assert_contains "set prints its usage for a repeated --host" "$out" "usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]"
 out="$("$ORCH" agent clear lens --host junie --host junie 2>&1)"; st=$?
 assert_status "clear refuses --host given twice" "$st" 1
-assert_contains "clear prints its usage for a repeated --host" "$out" "usage: orch.sh agent clear <role>"
+assert_contains "clear prints its usage for a repeated --host" "$out" "usage: orch.sh agent clear <role> [--model] [--effort] [--global] [--host junie]"
 out="$("$ORCH" agent get lens --host junie --host junie 2>&1)"; st=$?
 assert_status "get refuses --host given twice" "$st" 1
-assert_contains "get prints its usage for a repeated --host" "$out" "usage: orch.sh agent get <role>"
-"$ORCH" agent set lens --host codex --model x >/dev/null 2>&1
-assert_eq "a refused set --host codex writes no model key" "$(git config --local --get orchestrator.model.lens || echo '<unset>')" "<unset>"
-"$ORCH" agent set lens --model haiku >/dev/null
-"$ORCH" agent clear lens --host codex >/dev/null 2>&1
-assert_eq "a refused clear --host codex leaves a set key set" "$(git config --local --get orchestrator.model.lens)" "haiku"
-"$ORCH" agent clear lens >/dev/null
+assert_contains "get prints its usage for a repeated --host" "$out" "usage: orch.sh agent get <role> [--host junie]"
 help_set="$(help_entry "agent set" | flat_text)"
 assert_contains "the agent set help entry points at agent show" "$help_set" "agent show"
 assert_not_contains "the agent set help entry names no model alias" "$help_set" "sonnet"
