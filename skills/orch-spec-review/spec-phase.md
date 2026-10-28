@@ -28,7 +28,11 @@ answer is `recommended` without `--unattended`, which is for a quick
 implementation. The batch is printed as for an attended review and the
 session goes straight on; no question is asked of the human except for
 fundamental items. The ticket question, when `apply` pauses with exit 3, is
-taken as recommended: `--tickets recommended`.
+taken as recommended: `--tickets recommended`. In an autopilot flow `check`
+takes `--unattended`, even though `apply` does not (`apply --unattended` stays
+quick-implementation-only); this holds in a round with a fundamental item too,
+since that item reaches the human by the posted autopilot question, never by a
+pasted view, so no autopilot round arms the paste guard.
 
 While writing `batch.md`, mark each material item that is also a **fundamental
 item** - one that would reverse or change a planning decision, revive a rejected

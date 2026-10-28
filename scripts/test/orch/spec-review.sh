@@ -49,6 +49,28 @@ src() {
 src_nudge() {
   printf '%s' " - end your turn on one plain-text reply, no tool call: the view above word for word, then the question with its answer words spelled out; it is saved in $1/view.md"
 }
+# src_unattended_tail: what an --unattended check pass line ends with in place
+# of the nudge.
+src_unattended_tail() {
+  printf '%s' " - unattended: not a turn-final reply; go straight on to apply"
+}
+# src_unattended_pair <label> <dir> [arg...]: check on <dir> with the args and
+# then with --unattended added - the unflagged pass line with the unattended
+# tail in place of the nudge, the stdout and view.md equal.
+src_unattended_pair() {
+  local label="$1" dir="$2" plain_out plain_err plain_view
+  shift 2
+  src "$dir" "$@"
+  plain_out="$out"; plain_err="$err"; plain_view="$(cat "$dir/view.md")"
+  rm -f "$dir/view.md"
+  src "$dir" "$@" --unattended
+  assert_status "$label --unattended: passes" "$st" 0
+  assert_eq "$label --unattended: the summary with the unattended tail, no nudge" "$err" \
+    "${plain_err%"$(src_nudge "$dir")"}$(src_unattended_tail)"
+  assert_not_contains "$label --unattended: no saved-in tail" "$err" "saved in"
+  assert_eq "$label --unattended: stdout equals the unflagged run's" "$out" "$plain_out"
+  assert_eq "$label --unattended: view.md equals the unflagged run's" "$(cat "$dir/view.md")" "$plain_view"
+}
 # src_view_saved <label> <dir> [arg...]: check on <dir> with any further args
 # exits 0 and leaves <dir>/view.md byte-identical to its stdout, a non-empty
 # view.
@@ -2128,6 +2150,26 @@ assert_eq "its option headings carry the compact view's label and mark" "$(grep 
 assert_not_contains "and no item it was not asked for" "$out" "### Item 2"
 assert_not_contains "nor the lens lines" "$out" "### Lenses"
 
+# check --unattended (#1671) on a batch, and its refusals.
+d="$(src_dir)"
+src_unattended_pair "batch" "$d"
+printf 'an earlier view\n' >"$d/view.md"
+src "$d" --full 1 --unattended
+assert_status "--full --unattended is refused" "$st" 1
+assert_eq "with a usage message" "$err" \
+  "orch: --full and --unattended do not combine (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
+assert_eq "and an earlier view.md untouched" "$(cat "$d/view.md")" "an earlier view"
+printf 'an earlier view\n' >"$d/view.md"
+src "$d" --unattended --full 9
+assert_eq "--unattended --full is refused the same way" "$err" \
+  "orch: --full and --unattended do not combine (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
+printf '@@ item 1 material\n' >"$d/batch.md"
+src "$d" --unattended
+fail_err="$err"
+src "$d"
+assert_eq "a failing --unattended check fails as without the flag" "$fail_err" "$err"
+assert_eq "leaving an earlier view.md as it was" "$(cat "$d/view.md")" "an earlier view"
+
 # Refusals: a missing or unknown number, and --full with --tickets.
 src_full_none() { src "$1" --full; }
 src_full_9() { src "$1" --full 9; }
@@ -2511,6 +2553,18 @@ assert_eq "with an orch: message naming it" "$err" "orch: could not remove $d/vi
 assert_eq "and no stub on stdout" "$out" ""
 d="$(srct_dir)"
 src_view_unwritable srct "--tickets" "$d"
+
+# check --unattended (#1671): the pass line ends with the unattended tail.
+d="$(srct_dir)"
+src_unattended_pair "--tickets" "$d" --tickets
+d="$(mktemp -d)"
+printf '# Spec\n' >"$d/spec.md"
+printf '@@ none-affected\n' >"$d/tickets.md"
+printf 'an earlier batch view\n' >"$d/view.md"
+src "$d" --tickets --unattended
+assert_status "--tickets --unattended with none affected: passes" "$st" 0
+assert_eq "its pass line is the unflagged one" "$err" "tickets.md passes: no open ticket affected"
+assert_eq "and no view.md is left" "$(on_disk "$d/view.md")" absent
 
 # Refusals.
 d="$(srct_dir)"
