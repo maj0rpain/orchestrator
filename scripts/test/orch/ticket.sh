@@ -1307,7 +1307,12 @@ rc_setup() {
     "$ORCH" ticket-worktree add "$k" >/dev/null
     rc_commit "$(rc_wt "$k")" "t$k.txt" "work $k"
   done
-  # the active flow the reclaim guard requires: it owns the branch and issue 90
+  rc_flow
+}
+# rc_flow: the active flow the reclaim guard requires in this checkout - it
+# owns the branch orch/5-feature and issue 90.
+rc_flow() {
+  mkdir -p .orchestrator && echo '{}' >.orchestrator/state.json
   state_fixture phase implement
   state_fixture branch orch/5-feature
   state_fixture issue 90
@@ -1418,6 +1423,7 @@ assert_eq "removing it" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
 tw_repo
 fake_github
 fake_issue 90 open
+rc_flow
 "$ORCH" ticket-worktree add 90 >/dev/null
 rc_commit "$(rc_wt 90)" t90.txt work
 rc_report 90
@@ -1473,6 +1479,7 @@ git worktree add -q "$main_path/.orchestrator/checkouts/side" orch/5-feature
 touch "$(git -C "$main_path/.orchestrator/checkouts/side" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
 (
   cd "$main_path/.orchestrator/checkouts/side" || exit 1
+  rc_flow
   echo hand >>README.md
   out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
   assert_status "a dirty flow branch in a side checkout is discarded" "$st" 0
@@ -1516,7 +1523,7 @@ git config branch.quick/90-thing.orchestrator-base main
 out="$(ORCH_AUTOPILOT=1 "$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "an owned quick branch is reclaimed" "$st" 0
 assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
-assert_eq "and reclaiming the leftover" "$(rc_has_worktree 7)$(fake_state_of 7)" "noCLOSED"
+assert_eq "and discarding the unreported leftover to be rebuilt" "$(rc_has_worktree 7)$(fake_state_of 7)" "noOPEN"
 
 out="$("$ORCH" ticket reclaim 2>&1)"; st=$?
 assert_status "reclaim refuses a missing parent" "$st" 1
