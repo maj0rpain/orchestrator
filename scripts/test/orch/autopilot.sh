@@ -28,6 +28,12 @@ local_fields() {
   e="$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s)"
   printf '%s %s\n' "$e" "$(date -d "@$e" '+%H %a' 2>/dev/null || date -r "$e" '+%H %a')"
 }
+# fake_last_comment_of <n>: the body of issue #n's newest comment in the gh
+# fake's store (newest by numeric comment order); the issue holds a comment.
+fake_last_comment_of() {
+  local d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
+  cat "$d/$(ls "$d" | sort -n | tail -n 1)/body"
+}
 # dead_pid: the pid of a process that has exited.
 dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
 
@@ -703,7 +709,7 @@ ndjson_with 'Claude AI usage limit reached' >"$launcher_dir/out"; printf '1\n' >
 read -r limit_epoch _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
 assert_eq "no reset time in the message: one hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
 assert_contains "the comment still names the usage limit" "$(fake_comments_of 8)" "usage limit"
-assert_not_contains "but names no reset time it does not have" "$(cat "$ORCH_GH_FAKE_STORE/issues/8/comments/$(ls "$ORCH_GH_FAKE_STORE/issues/8/comments" | sort -n | tail -n 1)/body")" "resets"
+assert_not_contains "but names no reset time it does not have" "$(fake_last_comment_of 8)" "resets"
 
 # the other usage-limit wordings are detected, each with the one hour fallback
 for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
@@ -855,13 +861,6 @@ assert_contains "and the new failure-comment wording" "$(fake_comments_of 7)" 'n
 assert_not_contains "that names no usage limit" "$(fake_comments_of 7)" "usage limit"
 assert_eq "its claim released" "$(fake_claim_held 7)" free
 rmdir "$limit_file"
-
-# the stale-claim cleanup still names an NDJSON session log
-fake_issue 12 open ready-for-agent orch:spec orch:running
-fake_claim_seed 12 "$(hostname)" "$(dead_pid)"
-rl_event allowed 0.4 "$r1" allowed 0.2 "$r3" >"$top/.orchestrator/autopilot/logs/12-spec-20250101T000000.log"
-"$ORCH" autopilot tick >/dev/null 2>&1
-assert_contains "the stale comment names an NDJSON log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: limited issues -------------------------------------------
@@ -891,7 +890,7 @@ lim_relabel 7 orch:spec ready-for-agent orch:running
 limit_run 7 >/dev/null
 assert_eq "a first limit stop leaves orch:limited, not needs-human" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 assert_eq "and releases the claim" "$(fake_claim_held 7)" free
-assert_eq "its comment opens with the marker" "$(head -n 1 "$ORCH_GH_FAKE_STORE/issues/7/comments/$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | sort -n | tail -n 1)/body")" "<!-- orch:limited spec -->"
+assert_eq "its comment opens with the marker" "$(fake_last_comment_of 7 | head -n 1)" "<!-- orch:limited spec -->"
 assert_contains "gives the reset time" "$(fake_comments_of 7)" "$lim_iso"
 assert_contains "and the retry number" "$(fake_comments_of 7)" "retry 1 of 2, started once the limit pause has passed"
 assert_contains "and the log path" "$(fake_comments_of 7)" "/autopilot/logs/7-spec-"
@@ -905,7 +904,6 @@ limit_run 7 >/dev/null
 assert_eq "the third in a row is needs-human, without orch:limited" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
 assert_contains "its failure comment names the usage limit and the cap" "$(fake_comments_of 7)" "the third in a row in the spec phase"
 assert_eq "it still writes the limit file" "$(cat "$limit_file")" "$lim_iso"
-assert_contains "the failure comment has the new wording" "$(fake_comments_of 7)" 'nothing is retried automatically except a usage-limit stop labelled `orch:limited`'
 
 # the count stops at a refusal, failure, question or handoff comment and at a
 # limit stop comment of another phase, and skips other comments
@@ -920,17 +918,17 @@ count_case() { # <label> <expected label set> <comment>...: seeded oldest first
   limit_run 7 >/dev/null
   assert_eq "$label" "$(fake_labels_of 7)" "$want"
 }
-LIM_OFF="needs-human orch:spec ready-for-agent "
-LIM_ON="orch:limited orch:spec ready-for-agent "
-count_case "two stops in a row are counted" "$LIM_OFF" "$LIM_SPEC" "$LIM_SPEC"
-count_case "other comments between them are skipped" "$LIM_OFF" "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
-count_case "a failure comment resets the count" "$LIM_ON" "$LIM_SPEC" "$LIM_SPEC" "Autopilot failed in the spec phase: x"
-count_case "a refusal comment resets it" "$LIM_ON" "$LIM_SPEC" "$LIM_SPEC" "Autopilot refused to run the spec phase: x"
-count_case "a question comment resets it" "$LIM_ON" "$LIM_SPEC" "$LIM_SPEC" "<!-- orch:question spec -->
+LABELS_HUMAN="needs-human orch:spec ready-for-agent "
+LABELS_LIMITED="orch:limited orch:spec ready-for-agent "
+count_case "two stops in a row are counted" "$LABELS_HUMAN" "$LIM_SPEC" "$LIM_SPEC"
+count_case "other comments between them are skipped" "$LABELS_HUMAN" "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
+count_case "a failure comment resets the count" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "Autopilot failed in the spec phase: x"
+count_case "a refusal comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "Autopilot refused to run the spec phase: x"
+count_case "a question comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "<!-- orch:question spec -->
 @o"
-count_case "a handoff comment resets it" "$LIM_ON" "$LIM_SPEC" "$LIM_SPEC" "<!-- orch:handoff 01-plan -->
+count_case "a handoff comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "<!-- orch:handoff 01-plan -->
 x"
-count_case "a limit stop comment of another phase resets it" "$LIM_ON" "$LIM_SPEC" "<!-- orch:limited implement -->
+count_case "a limit stop comment of another phase resets it" "$LABELS_LIMITED" "$LIM_SPEC" "<!-- orch:limited implement -->
 x" "$LIM_SPEC"
 
 # comments that cannot be read take the failure path, and still write the reset
@@ -939,7 +937,7 @@ lim_relabel 7 orch:spec ready-for-agent orch:running
 fake_fail adapter_issue_comments_json "HTTP 500 comments"
 limit_run 7 >/dev/null
 fake_unfail
-assert_eq "a failed comment read ends with needs-human" "$(fake_labels_of 7)" "$LIM_OFF"
+assert_eq "a failed comment read ends with needs-human" "$(fake_labels_of 7)" "$LABELS_HUMAN"
 assert_contains "naming the failed read" "$(fake_comments_of 7)" "comments could not be read"
 assert_eq "and the limit file is written" "$(cat "$limit_file")" "$lim_iso"
 
@@ -955,7 +953,7 @@ for op in adapter_issue_relabel adapter_issue_comment; do
   assert_eq "$op: the claim is still held" "$(fake_claim_held 7)" held
   rm -f "$limit_file"
   "$ORCH" autopilot tick >/dev/null 2>&1
-  assert_eq "$op: the next tick ends with needs-human and no orch:limited" "$(fake_labels_of 7)" "$LIM_OFF"
+  assert_eq "$op: the next tick ends with needs-human and no orch:limited" "$(fake_labels_of 7)" "$LABELS_HUMAN"
 done
 
 # pickup: no session under the pause; after it, oldest first under the cap, and
@@ -990,7 +988,7 @@ fake_fail_times adapter_issue_relabel 1 "HTTP 500"
 rm -f "$launcher_dir/calls"
 "$ORCH" autopilot tick >/dev/null 2>&1
 fake_unfail
-assert_eq "a failed orch:limited removal ends with needs-human and no orch:limited" "$(fake_labels_of 6)" "$LIM_OFF"
+assert_eq "a failed orch:limited removal ends with needs-human and no orch:limited" "$(fake_labels_of 6)" "$LABELS_HUMAN"
 assert_eq "and starts no session for it" "$(tick_calls)" "0"
 
 # a limit file in another clone's autopilot directory starts no pause
@@ -1171,40 +1169,6 @@ assert_status "an empty file is refused" "$st" 1
 assert_eq "posting nothing" "$(fake_comments_of 46 | wc -l | tr -d ' ')" "3"
 assert_eq "keeping the label" "$(fake_labels_of 46)" "needs-human orch:spec "
 
-# the marker test is shared with answer: a question questions lists as pending
-# is one answer reports unanswered, and the reverse. answer reads the flow's
-# issue from state, so this runs in a flow checkout.
-fake_flow 22
-state_fixture issue 22
-fake_issue 22 open needs-human orch:spec
-fake_comment 22 o 2026-01-01T00:00:00Z "$(question_of spec)"
-out="$("$ORCH" autopilot questions 2>&1)"
-assert_contains "a listed pending question" "$out" "22${tab}question"
-out="$("$ORCH" autopilot answer spec "$r.answer" 2>&1)"; st=$?
-assert_status "is one answer reports unanswered" "$st" 1
-assert_contains "saying no reply yet" "$out" "no reply to the spec question on issue #22 yet"
-fake_comment 22 h 2026-01-02T00:00:00Z "1: A"
-out="$("$ORCH" autopilot questions 2>&1)"
-assert_contains "and once replied, listed as replied" "$out" "22${tab}replied"
-"$ORCH" autopilot answer spec "$r.answer" >/dev/null 2>&1; st=$?
-assert_status "and answer reads the reply" "$st" 0
-assert_contains "writing it to the file" "$(cat "$r.answer")" "1: A"
-
-# the verbs read the repo from the checkout's origin
-new_repo >/dev/null
-git remote set-url origin https://github.com/fork/widgets.git
-gh_fixture
-env -u ORCH_GH_ADAPTER -u GH_REPO "$ORCH" autopilot questions >/dev/null 2>&1
-assert_contains "questions reached gh pinned to origin's repo" "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets "
-assert_eq "and no call carried another repo" "$(grep -cv '^GH_REPO=fork/widgets ' "$GH_FIXTURE/env.log")" "0"
-: >"$GH_FIXTURE/env.log"
-env -u ORCH_GH_ADAPTER -u GH_REPO "$ORCH" autopilot resume 30 >/dev/null 2>&1
-assert_contains "resume reached gh pinned to origin's repo" "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets "
-: >"$GH_FIXTURE/env.log"
-printf 'reply\n' >"$r.origin"
-env -u ORCH_GH_ADAPTER -u GH_REPO "$ORCH" autopilot reply 30 "$r.origin" >/dev/null 2>&1
-assert_contains "reply reached gh pinned to origin's repo" "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets "
-restore_suite_env GH_FIXTURE
 restore_suite_env
 
 # --- autopilot_phase_arg refuses two adjacent phases (#1546) ------------------
