@@ -188,8 +188,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      print one line naming the decision and its reason, so a human watching
      can stop a wrong one: `Rewriting #<n> from the plan: <reason>` or
      `Reviewing #<n> as it stands: <reason>`. The line is not a turn-final
-     reply: see `docs/turn-final-reply.md`'s **Unattended printout**, and go
-     on to 0c or the review in the same turn.
+     reply: see **Unattended printout** in `docs/turn-final-reply.md` under
+     the plugin root, and go on to 0c or the review in the same turn.
    - **0c. On Rewrite**, invoke the `orch-to-spec` skill in rewrite mode on
      the issue (args `<n>`), from `01-plan.md` - its **Rejected alternatives**
      section is load-bearing, as in step 1 - and follow it. Its test-seams

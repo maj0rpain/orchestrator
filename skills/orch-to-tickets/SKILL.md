@@ -214,8 +214,9 @@ Steps 1-3, 5 and 6 run as written. Step 4, the quiz, is replaced:
   split or re-edge the draft until it holds.
 - Print the breakdown as step 4 presents it - each ticket's **Title**,
   **Blocked by** and **What it delivers** - so a human watching can see it.
-  It is not a turn-final reply: see `docs/turn-final-reply.md`'s
-  **Unattended printout**. The published tickets carry the same breakdown.
+  It is not a turn-final reply: see **Unattended printout** in
+  `docs/turn-final-reply.md` under the plugin root. The published tickets
+  carry the same breakdown.
 - Ask nothing, and go straight to step 5 in the same turn: it publishes 2 or
   more tickets, or collapses 0 or 1 into the parent.
 

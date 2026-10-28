@@ -412,11 +412,10 @@ receives a `show` answer. A `--full` refusal - a number not in `batch.md` -
 is told to the human, and the batch question asked again, the same way.
 
 A question, or *No* to a near-miss confirmation, is not an answer to the
-batch question either: the question path runs. Answer a question in chat:
-apply nothing, and do not run `apply`, which never receives a question. Then
-re-run `bash "$ORCH" spec-review check <dir>` and end your turn on one
-plain-text reply holding its new view word for word and the batch question
-again, its answer words spelled out, with no tool call. The re-run's pass
+batch question either: the doc's **Question path** runs. Do not run `apply`,
+which never receives a question. Re-run `bash "$ORCH" spec-review check
+<dir>`, and end the turn again on its new view word for word and the batch
+question. The re-run's pass
 line arms the guard again, so on Claude Code only a paste made after it lets
 a later ask through.
 

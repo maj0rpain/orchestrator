@@ -145,8 +145,8 @@ mode runs as written, stop-on-failure included, with these differences only:
 
 - **The test-seams check** (Process step 2): sketch the seams as that step
   says and print the sketch, so a human watching can see it. It is not a
-  turn-final reply: see `docs/turn-final-reply.md`'s **Unattended printout**.
-  Ask nothing, and go on to step 3.
+  turn-final reply: see **Unattended printout** in `docs/turn-final-reply.md`
+  under the plugin root. Ask nothing, and go on to step 3.
 - **The retire-or-keep question** (**Rewrite the issue** step 1, exit 0) is
   not asked. It is replaced by the judgement `orch-spec-review`'s **Tickets
   follow the spec** makes, by the **Drafting** and **Applying** rules of
