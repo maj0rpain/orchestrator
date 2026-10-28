@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.17
+
+The spec review's save-answer loop spells its file-option set once, and the apply --resume tests cover all three file options.
+
 ## 4.38.16
 
 The turn-final-reply procedure and the unattended-printout rule now live once in `docs/turn-final-reply.md`, and every site that asks such a question or prints such a block points at it. The Unattended rewrite test-seams printout and the spec phase rewrite decision line no longer end the turn, an autopilot flow's unattended spec phase is credited to ADR-0052, and the glossary gains **Turn-final reply**.

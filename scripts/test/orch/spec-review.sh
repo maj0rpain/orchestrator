@@ -525,20 +525,21 @@ assert_eq "and the round is not complete: no round-complete" "$(on_disk "$d/roun
 # apply --resume (#1614): an apply that died saved its answer in the round
 # directory; --resume reruns it, skipping the writes applied.log records.
 d="$(sra_dir)"
-printf '2: the plan chose this\n' >"$d/reasons.src"
+sra_src="$(mktemp -d)"
+printf '2: the plan chose this\n' >"$sra_src/reasons.src"
 fake_fail adapter_issue_comment
-sra "$d" recommended --reasons "$d/reasons.src"
+sra "$d" recommended --reasons "$sra_src/reasons.src"
 fake_unfail
 assert_status "a changelog failure stops apply" "$st" 1
 assert_eq "apply-answer is kept" "$(on_disk "$d/apply-answer")" present
 assert_eq "the reasons file argument is copied into the round directory" \
-  "$(grep -c "$d/reasons.src" "$d/apply-answer")" 0
+  "$(grep -c "$sra_src/reasons.src" "$d/apply-answer")" 0
 sra "$d" recommended
 assert_status "apply without --resume beside a saved answer is refused" "$st" 1
 assert_contains "naming --resume" "$out" "--resume"
 (sra_rnd=2/2; srr_resume "$d"; echo "$st" >"$d/.st"); st="$(cat "$d/.st")"
 assert_status "--resume with another round is refused" "$st" 1
-rm -f "$d/reasons.src"
+rm -rf "$sra_src"
 srr_resume "$d"
 assert_status "--resume reruns with the saved answer" "$st" 0
 assert_eq "the changelog is posted once" "$(fake_comments_of 14 | grep -c '^## Spec review')" 1
@@ -1278,6 +1279,29 @@ sra "$d" recommended --tickets " 1 ,2,  4 " --ticket-reasons "$d/treasons"
 assert_status "an Other ticket list with surrounding spaces applies" "$st" 0
 assert_eq "the same result as the ticket list written plainly" \
   "$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 20; fake_body_of 21)" "$srt_other"
+
+# apply --resume copies every file option (#1626): --reasons, --ticket-reasons
+# and --host-fallbacks, each from a directory of its own outside the round
+# directory, are saved as copies in it; a resume reads the copies.
+d="$(srt_dir)"
+srt_fetch "$d"
+srt_reasons_src="$(mktemp -d)"; srt_treasons_src="$(mktemp -d)"; srt_hosts_src="$(mktemp -d)"
+printf '2: the plan chose this\n' >"$srt_reasons_src/reasons"
+printf '5: the edge stays\n' >"$srt_treasons_src/treasons"
+printf 'AskUserQuestion fell back to a plain question\n' >"$srt_hosts_src/hosts"
+fake_fail adapter_issue_comment
+sra "$d" recommended --reasons "$srt_reasons_src/reasons" --tickets "1, 2, 4" \
+  --ticket-reasons "$srt_treasons_src/treasons" --host-fallbacks "$srt_hosts_src/hosts"
+fake_unfail
+assert_status "all three file options: a changelog failure stops apply" "$st" 1
+assert_eq "apply-answer names no source path" \
+  "$(grep -c -e "$srt_reasons_src/" -e "$srt_treasons_src/" -e "$srt_hosts_src/" "$d/apply-answer")" 0
+assert_eq "--reasons is copied into the round directory" "$(on_disk "$d/apply-reasons.copy")" present
+assert_eq "--ticket-reasons is copied into the round directory" "$(on_disk "$d/apply-ticket-reasons.copy")" present
+assert_eq "--host-fallbacks is copied into the round directory" "$(on_disk "$d/apply-host-fallbacks.copy")" present
+rm -rf "$srt_reasons_src" "$srt_treasons_src" "$srt_hosts_src"
+srr_resume "$d"
+assert_status "--resume reads the copies, not the deleted sources" "$st" 0
 
 # --tickets none: no ticket write, the body still published.
 d="$(srt_dir)"

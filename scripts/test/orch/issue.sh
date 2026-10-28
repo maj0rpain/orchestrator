@@ -789,6 +789,12 @@ JSON
 )"
 assert_eq "the read never reached a real gh subprocess" "$(gh_calls)" "0"
 
+fake_issue 28 open bug
+fake_issue_title 28 "No comments"
+"$ORCH" issue fetch 28 "$issue_json" --json >/dev/null 2>&1
+assert_eq "an issue with no comments fetches --json with an empty comments array" \
+  "$(jq -c .comments "$issue_json" 2>&1)" "[]"
+
 out="$("$ORCH" issue fetch 27 "$issue_body" 2>&1)"; st=$?
 assert_status "without --json, fetch still succeeds" "$st" 0
 assert_eq "writing the body alone, as before" "$(cat "$issue_body")" \

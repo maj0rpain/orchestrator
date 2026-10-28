@@ -1678,20 +1678,20 @@ spec_review_local_write() {
 # into <dir> first and saved as the copies, so a resume never reads a file the
 # dead session left elsewhere.
 spec_review_save_answer() {
-  local dir="$1" a prev="" copy saved=()
+  local dir="$1" a file_opt="" copy saved=()
   shift
   for a in "$@"; do
-    case "$prev" in
-      --reasons|--ticket-reasons|--host-fallbacks)
-        copy="$dir/apply-${prev#--}.copy"
-        cp "$a" "$copy" 2>/dev/null \
-          || die "could not copy $a to $copy - nothing written to GitHub"
-        a="$copy" ;;
-    esac
+    if [ -n "$file_opt" ]; then
+      copy="$dir/apply-${file_opt#--}.copy"
+      cp "$a" "$copy" 2>/dev/null \
+        || die "could not copy $a to $copy - nothing written to GitHub"
+      saved+=("$copy")
+      file_opt=""
+      continue
+    fi
     saved+=("$a")
     case "$a" in
-      --reasons|--ticket-reasons|--host-fallbacks) prev="$a" ;;
-      *) prev="" ;;
+      --reasons|--ticket-reasons|--host-fallbacks) file_opt="$a" ;;
     esac
   done
   { printf '%q ' "${saved[@]}"; printf '\n'; } >"$dir/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
