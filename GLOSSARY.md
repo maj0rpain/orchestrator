@@ -190,8 +190,8 @@ phase waits on the human. _Avoid_: rate-limited issue.
 **Limit pause**:
 The stretch in which a clone's watcher picks up no issue: from a session
 stopping on a usage limit, or ending with its five-hour usage at 90% or more,
-until the latest usage reset any of them named. Running sessions are left
-alone.
+until the latest usage reset any of them named - or, for a stop that named
+none, an hour after it. Running sessions are left alone.
 
 **Cap**:
 The most autopilot sessions a repo runs at once, counted as the claim refs on
