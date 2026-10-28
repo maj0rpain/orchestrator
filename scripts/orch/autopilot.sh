@@ -289,15 +289,17 @@ AUTOPILOT_FAILURE_OPENING='Autopilot failed in the '
 # The jq definitions every reader of a comment list shares, so the question
 # marker test is written once: question_comment is true for a comment whose
 # first line is a question marker (of $phase, or of any phase when $phase is
-# empty); stop_phase is the phase a refusal or failure comment names, else null.
+# empty); question_prefix is the question marker's opening; stop_phase is the
+# phase a refusal or failure comment names, else null.
 AUTOPILOT_COMMENT_JQ='
   def first_line: .body | split("\n")[0] | rtrimstr("\r");
   def marker_phase($p):
     first_line | if startswith($p) and endswith(" -->") then ltrimstr($p) | rtrimstr(" -->") else null end;
+  def question_prefix: "'"$AUTOPILOT_QUESTION_PREFIX"'";
   def question_comment($phase):
-    marker_phase($prefix) as $m | $m != null and ($phase == "" or $m == $phase);
+    marker_phase(question_prefix) as $m | $m != null and ($phase == "" or $m == $phase);
   def newest_question($phase): map(question_comment($phase)) | rindex(true);
-  def question_phase: marker_phase($prefix);
+  def question_phase: marker_phase(question_prefix);
   def stop_phase:
     first_line | first(capture("^(?:'"$AUTOPILOT_REFUSAL_OPENING|$AUTOPILOT_FAILURE_OPENING"')(?<p>[^ ]+) phase") | .p) // null;
 '
@@ -348,7 +350,7 @@ autopilot_answer() {
   require_state die2
   require_issue issue die2
   gh_or_die --exit 2 --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  out="$(jq -j --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
+  out="$(jq -j --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
     (.comments | newest_question($phase)) as $q
     | if $q == null then "noq" elif $q == (.comments | length) - 1 then "noreply"
       else (.comments[$q:] | map(.body) | .[0] |= (split("\n")[1:] | join("\n")) | join("\n---\n")) end' <<<"$json")" ||
@@ -366,9 +368,9 @@ autopilot_answer() {
 # The verbs behind /orchestrator:questions. They hold no flow state: the issue
 # comes from the arguments, the repo from the checkout's origin.
 
-# autopilot_human_labelled <issue>: dies unless the issue is open and carries
-# needs-human.
-autopilot_human_labelled() {
+# autopilot_require_human_label <issue>: dies unless the issue is open and
+# carries needs-human.
+autopilot_require_human_label() {
   # state is read with the labels.
   local issue="$1" state labels gh_err
   issue_state_labels_read "$issue" state labels gh_err || gh_die "read issue #$issue" "$gh_err"
@@ -381,7 +383,7 @@ autopilot_human_labelled() {
 autopilot_resume() {
   local issue="$1"
   is_positive_int "$issue" || die "not an issue number: $issue"
-  autopilot_human_labelled "$issue"
+  autopilot_require_human_label "$issue"
   gh_or_die "remove $AUTOPILOT_HUMAN_LABEL from issue #$issue" adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL"
 }
 
@@ -393,9 +395,9 @@ autopilot_reply() {
   is_positive_int "$issue" || die "not an issue number: $issue"
   [ -f "$file" ] || die "reply file not found: $file"
   [ -s "$file" ] || die "reply file is empty: $file"
-  autopilot_human_labelled "$issue"
+  autopilot_require_human_label "$issue"
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_comments_json "$issue"
-  verdict="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" "$AUTOPILOT_COMMENT_JQ"'
+  verdict="$(jq -r "$AUTOPILOT_COMMENT_JQ"'
     newest_question("") as $q
     | if $q == null then "noq" elif $q != length - 1 then "followed" else "ok" end' <<<"$json")" ||
     die "could not read issue #$issue's comments"
@@ -422,7 +424,7 @@ autopilot_questions() {
     phase="$(autopilot_live_phase "$labels")"
     [ -n "$phase" ] || continue
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
-    line="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg n "$n" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
+    line="$(jq -r --arg n "$n" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
       newest_question("") as $qi | (if $qi == null then null else .[$qi] end) as $q
       | (to_entries | map(select(.value | stop_phase != null)) | last) as $s
       | if $q != null and ($s == null or $qi > $s.key) then
@@ -553,7 +555,7 @@ autopilot_stop() {
 autopilot_limit_count() {
   local json gh_err n
   capture json gh_err adapter_issue_comments_json "$1" || return 1
-  n="$(jq -r --arg prefix "$AUTOPILOT_QUESTION_PREFIX" --arg lprefix "$AUTOPILOT_LIMITED_PREFIX" --arg hprefix "$HANDOFF_MARKER_PREFIX" --arg phase "$2" "$AUTOPILOT_COMMENT_JQ"'
+  n="$(jq -r --arg lprefix "$AUTOPILOT_LIMITED_PREFIX" --arg hprefix "$HANDOFF_MARKER_PREFIX" --arg phase "$2" "$AUTOPILOT_COMMENT_JQ"'
     def limit_phase: marker_phase($lprefix);
     def handoff: first_line | startswith($hprefix);
     reduce (reverse[]) as $c ({n: 0, done: false};
@@ -651,8 +653,9 @@ autopilot_short_slug() {
 }
 
 # autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
-# claimed issue. A refusal or a failed write ends in autopilot_stop and returns
-# 0: the claim is released, the tick goes on.
+# claimed issue; with limited, first removes orch:limited, and a failed removal
+# is a failed step. A refusal or a failed write ends in autopilot_stop and
+# returns 0: the claim is released, the tick goes on.
 autopilot_pickup() {
   local issue="$1" phase="$2" limited="${3:-}" side slug title labels gh_err recorded state redo
   if [ -n "$limited" ]; then
