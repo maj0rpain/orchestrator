@@ -694,9 +694,34 @@ ticket_reclaim_remove() {
   fi
 }
 
+# ticket_reclaim_guard <parent> <branch>: proves <branch> is the recovered
+# run's own branch for <parent>, or dies (exit 1, "nothing was discarded").
+# With an active flow it must be the flow's recorded branch and <parent> its
+# issue; with none, a `branch off`-made quick/<parent>-<slug> branch.
+ticket_reclaim_guard() {
+  local parent="$1" b="$2" fb fissue
+  if flow_active; then
+    fb="$(state_get branch)" || die "ticket reclaim: cannot read the flow's branch from $STATE"
+    fissue="$(state_get issue)" || die "ticket reclaim: cannot read the flow's issue from $STATE"
+    if [ -z "$fb" ] || [ -z "$fissue" ]; then
+      die "ticket reclaim: on $b, the active flow records no branch (or issue) yet - nothing was discarded"
+    fi
+    [ "$b" = "$fb" ] || die "ticket reclaim: the current branch $b is not the flow's branch $fb - nothing was discarded"
+    [ "$parent" = "$fissue" ] || die "ticket reclaim: on $b, #$parent is not the flow's issue #$fissue - nothing was discarded"
+    return 0
+  fi
+  case "$b" in
+    "quick/$parent-"?*)
+      git -C "$ROOT" config --get "branch.$b.orchestrator-base" >/dev/null 2>&1 && return 0 ;;
+  esac
+  die "ticket reclaim: no active flow, and $b is not a quick implementation's branch for #$parent (quick/$parent-<slug>, made by branch off) - nothing was discarded"
+}
+
 # ticket reclaim <parent>: recovers what a dead implement run left (ADR-0054).
-# The discard rule runs on the flow's branch first, before anything else is
-# touched. Then each leftover ticket - a ticket worktree under this checkout,
+# It first refuses, discarding and reading nothing, unless the current branch
+# is the run's own for <parent> (see ticket_reclaim_guard). The discard rule
+# then runs on that branch, before anything else is touched. Then each
+# leftover ticket - a ticket worktree under this checkout,
 # or an open sub-issue of <parent> with a saved report - takes the first case
 # that matches: reported and merged, close it, reset its worktree and remove it;
 # reported and unmerged, reset the tree, `ticket merge` it, close it and remove
@@ -708,6 +733,7 @@ cmd_ticket_reclaim() {
   local parent="$1" flow subs line worktrees n state path st reported merged nums=""
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
+  ticket_reclaim_guard "$parent" "$flow"
   discard_flow_branch_work
   subs="$(ticket_sub_issues "$parent")" || exit 1
   while IFS= read -r line; do

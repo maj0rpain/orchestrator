@@ -1307,6 +1307,10 @@ rc_setup() {
     "$ORCH" ticket-worktree add "$k" >/dev/null
     rc_commit "$(rc_wt "$k")" "t$k.txt" "work $k"
   done
+  # the active flow the reclaim guard requires: it owns the branch and issue 90
+  state_fixture phase implement
+  state_fixture branch orch/5-feature
+  state_fixture issue 90
 }
 rc_report() { local f; f="$(mktemp)"; echo "Ticket: #$1" >"$f"; "$ORCH" ticket report save "$1" "$f"; }
 rc_has_worktree() { if [ -e "$(rc_wt "$1")/.git" ]; then echo yes; else echo no; fi; }
@@ -1474,6 +1478,45 @@ touch "$(git -C "$main_path/.orchestrator/checkouts/side" rev-parse --absolute-g
   assert_status "a dirty flow branch in a side checkout is discarded" "$st" 0
   assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
 )
+
+# the guard: reclaim refuses unless the branch is the run's own.
+# rc_refused <label> <message>: reclaim 90 under autopilot refuses with
+# <message>, leaving the dirty tree, the leftover worktree and the open ticket.
+rc_refused() {
+  local out st
+  out="$(ORCH_AUTOPILOT=1 "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+  assert_status "$1: refused" "$st" 1
+  assert_contains "$1: with the guard's message" "$out" "$2"
+  assert_contains "$1: saying nothing was discarded" "$out" "nothing was discarded"
+  assert_eq "$1: leaving the edit" "$(git status --porcelain)" " M README.md"
+  assert_eq "$1: the worktree and the open ticket" "$(rc_has_worktree 7)$(fake_state_of 7)" "yesOPEN"
+}
+rc_setup 1
+echo hand >>README.md
+git checkout -q -b stray
+rc_refused "a branch other than the flow's" "is not the flow's branch orch/5-feature"
+git checkout -q orch/5-feature
+state_fixture issue 91
+rc_refused "a parent other than the flow's issue" "#90 is not the flow's issue #91"
+state_fixture_drop issue
+rc_refused "a flow recording no issue" "records no branch (or issue) yet"
+state_fixture issue 90
+state_fixture_drop branch
+rc_refused "a flow recording no branch" "records no branch (or issue) yet"
+state_fixture branch orch/5-feature
+state_fixture phase "done"
+rc_refused "no flow, on a non-quick branch" "no active flow, and orch/5-feature is not a quick implementation's branch for #90"
+git checkout -q -b quick/91-other && git config branch.quick/91-other.orchestrator-base main
+rc_refused "no flow, on a quick branch for another issue" "is not a quick implementation's branch for #90"
+git checkout -q -b quick/90-thing
+rc_refused "no flow, on a quick branch with no orchestrator base" "is not a quick implementation's branch for #90"
+
+# no flow, on an owned quick branch: discards and recovers
+git config branch.quick/90-thing.orchestrator-base main
+out="$(ORCH_AUTOPILOT=1 "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "an owned quick branch is reclaimed" "$st" 0
+assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
+assert_eq "and reclaiming the leftover" "$(rc_has_worktree 7)$(fake_state_of 7)" "noCLOSED"
 
 out="$("$ORCH" ticket reclaim 2>&1)"; st=$?
 assert_status "reclaim refuses a missing parent" "$st" 1
