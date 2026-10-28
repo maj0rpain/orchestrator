@@ -539,12 +539,12 @@ assert_status "a rerun with origin reachable exits 0" "$st" 0
 assert_eq "merging nothing more" "$(git rev-parse HEAD)" "$merged"
 assert_eq "and pushes" "$(bs_origin_tip orch/11-bsync)" "$merged"
 
-# A merge failing with no merge in progress (a held index lock) is no conflict.
-bs_advance locked.txt locked >/dev/null
+# A merge failing with no merge in progress is no conflict: merge.ff=only
+# refuses the diverged merge before git writes any merge state.
+bs_advance ffonly.txt ffonly >/dev/null
 before="$(git rev-parse HEAD)"
-touch "$(git rev-parse --absolute-git-dir)/index.lock"
-out="$(orch_gh_failing branch sync 2>&1)"; st=$?
-rm -f "$(git rev-parse --absolute-git-dir)/index.lock"
+out="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=merge.ff GIT_CONFIG_VALUE_0=only \
+  orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "a merge failing with no merge in progress exits 1" "$st" 1
 assert_contains "saying git could not merge" "$out" "git could not merge origin/main into orch/11-bsync"
 assert_not_contains "and not the conflict message" "$out" "hit a conflict"
