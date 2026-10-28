@@ -1153,6 +1153,7 @@ resume_facts() {
 }
 mkdir -p .orchestrator/review
 state_fixture iteration 2
+state_fixture branch "$(git branch --show-current)"
 "$ORCH" state set budget 5
 writeln '## Findings' 'None' >.orchestrator/review/iteration-01.md
 writeln 'old' >.orchestrator/review/iteration-02-spec.md
@@ -1204,18 +1205,68 @@ assert_status "a dirty tree in an interactive main checkout is refused" "$st" 1
 assert_contains "naming the discard command" "$out" "reset --hard"
 assert_eq "touching nothing" "$(resume_facts)" "$before"
 
+# The guard: resume refuses unless the checked-out branch is the flow's.
+# rr_refused <label> <message>: under autopilot, resume refuses with <message>,
+# printing no rerun and leaving the facts as they were.
+rr_refused() {
+  local before out st
+  before="$(resume_facts)"
+  out="$(ORCH_AUTOPILOT=1 "$ORCH" review resume 2>&1)"; st=$?
+  assert_status "$1: refused" "$st" 1
+  assert_contains "$1: with the guard's message" "$out" "$2"
+  assert_contains "$1: saying nothing was discarded" "$out" "nothing was discarded"
+  assert_not_contains "$1: printing no rerun" "$out" "rerun"
+  assert_eq "$1: touching nothing" "$(resume_facts)" "$before"
+}
+flow_b="$(git branch --show-current)"
+git checkout -q -b stray
+rr_refused "another branch, dirty" "the current branch stray is not the flow's branch $flow_b"
+git checkout -q -- README.md
+rr_refused "another branch, clean" "the current branch stray is not the flow's branch $flow_b"
+echo hand >>README.md
+git checkout -q --detach
+rr_refused "a detached HEAD" "the current checkout is on no branch"
+git checkout -q stray
+state_fixture_drop branch
+rr_refused "a flow recording no branch" "on stray, the active flow records no branch yet"
+git checkout -q "$flow_b" 2>/dev/null || git checkout -q -
+state_fixture branch "$flow_b"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review resume 2>&1)"; st=$?
+assert_status "on the flow's branch under autopilot, resume discards" "$st" 0
+assert_eq "and the iteration reruns" "$out" "rerun 2"
+assert_eq "leaving a clean tree" "$(git status --porcelain)" ""
+
 sc_clone
 side="$(sc_add sideresume)"
 (
   cd "$side" || exit 1
   "$ORCH" init sideresume >/dev/null
   state_fixture iteration 1
+  git checkout -q -b sideflow
+  state_fixture branch sideflow
   "$ORCH" state set budget 3
   echo hand >>README.md
   out="$("$ORCH" review resume 2>&1)"; st=$?
   assert_status "a dirty tree in a side checkout is discarded" "$st" 0
   assert_eq "and the iteration reruns" "$out" "rerun 1"
   assert_eq "leaving it clean" "$(git status --porcelain)" ""
+
+  # another branch in a side checkout is refused without autopilot
+  side_b="$(git branch --show-current)"
+  git checkout -q -b straysc
+  echo hand >>README.md
+  mkdir -p .orchestrator/review
+  : >.orchestrator/review/iteration-01-standards.md
+  before="$(resume_facts)"
+  out="$("$ORCH" review resume 2>&1)"; st=$?
+  assert_status "a side checkout on another branch is refused" "$st" 1
+  assert_contains "with the guard's message" "$out" "the current branch straysc is not the flow's branch $side_b"
+  assert_contains "saying nothing was discarded" "$out" "nothing was discarded"
+  assert_not_contains "printing no rerun" "$out" "rerun"
+  assert_eq "and touching nothing" "$(resume_facts)" "$before"
+  assert_eq "and discards no edits" "$(git status --porcelain README.md)" " M README.md"
+  rm -f .orchestrator/review/iteration-01-standards.md
+  git checkout -q -f "$side_b"
 
   # a dead base sync's merge in progress
   leave_merge_in_progress clash-a
