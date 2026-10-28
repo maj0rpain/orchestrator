@@ -540,7 +540,7 @@ assert_eq "merging nothing more" "$(git rev-parse HEAD)" "$merged"
 assert_eq "and pushes" "$(bs_origin_tip orch/11-bsync)" "$merged"
 
 # A merge failing with no merge in progress (a held index lock) is no conflict.
-new_tip="$(bs_advance locked.txt locked)"
+bs_advance locked.txt locked >/dev/null
 before="$(git rev-parse HEAD)"
 touch "$(git rev-parse --absolute-git-dir)/index.lock"
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
