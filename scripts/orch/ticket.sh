@@ -699,14 +699,11 @@ ticket_reclaim_remove() {
 # With an active flow it must be the flow's recorded branch and <parent> its
 # issue; with none, a `branch off`-made quick/<parent>-<slug> branch.
 ticket_reclaim_guard() {
-  local parent="$1" b="$2" fb fissue
+  local parent="$1" b="$2" fissue
   if flow_active; then
-    fb="$(state_get branch)" || die "ticket reclaim: cannot read the flow's branch from $STATE"
     fissue="$(state_get issue)" || die "ticket reclaim: cannot read the flow's issue from $STATE"
-    if [ -z "$fb" ] || [ -z "$fissue" ]; then
-      die "ticket reclaim: on $b, the active flow records no branch (or issue) yet - nothing was discarded"
-    fi
-    [ "$b" = "$fb" ] || die "ticket reclaim: the current branch $b is not the flow's branch $fb - nothing was discarded"
+    require_flow_branch "ticket reclaim" "$b"
+    [ -n "$fissue" ] || die "ticket reclaim: on $b, the active flow records no issue yet - nothing was discarded"
     [ "$parent" = "$fissue" ] || die "ticket reclaim: on $b, #$parent is not the flow's issue #$fissue - nothing was discarded"
     return 0
   fi
