@@ -74,7 +74,8 @@
 #     host-capabilities' Agent settings naming agent sync, the Junie README's
 #     Agent settings on Junie section naming --host junie and orch.sh doctor,
 #     the README's Running autopilot and how-it-works' Autopilot and Setup
-#     sections naming their autopilot phrases
+#     sections naming their autopilot phrases, and the turn-final reply sites
+#     docs/turn-final-reply.md and the glossary's Turn-final reply entry
 #   scan_dockerignore_secrets  .dockerignore lists each pattern of .gitignore's
 #     Secrets block, in its .dockerignore form
 #   scan_build_args  docker/compose.yaml and docker/.env.example exist, and
@@ -1460,7 +1461,11 @@ skills/orch-to-spec/SKILL.md|## Rewrite the issue
 skills/orch-to-spec/SKILL.md|## Unattended rewrite
 skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
 skills/orch-to-tickets/SKILL.md|## Unattended breakdown
-skills/orch-to-tickets/SKILL.md|## Ticket template'
+skills/orch-to-tickets/SKILL.md|## Ticket template
+docs/turn-final-reply.md|## Turn-final reply
+docs/turn-final-reply.md|## Near-miss reply
+docs/turn-final-reply.md|## Question path
+docs/turn-final-reply.md|## Unattended printout'
 # scan_required_headings <plugin root> [pairs]: each listed heading missing
 # from its file, or found above the heading listed before it in that file.
 scan_required_headings() {
@@ -3349,6 +3354,28 @@ spares "sites that name the doc, wrapped across lines or not, are not flagged" \
   "$out" "orch-(quick-implement|review-pass|sync|fixer)"
 check "each PR-writing site names docs/pr-writing.md" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$pr_writing_sites" 'docs/pr-writing.md')"
+
+# --- the turn-final reply (#1562) ---------------------------------------------
+echo
+echo "the turn-final reply (#1562)"
+# The procedure for a long-block question and the unattended-printout guard
+# live once in docs/turn-final-reply.md: each site that asks such a question or
+# prints such a block names it, and the glossary defines the term.
+turn_final_sites='skills/orch-finding-triage/SKILL.md|## 3. Propose one batch per source PR
+skills/orch-finding-triage/SKILL.md|### B3. Propose one batch
+skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
+skills/orch-to-tickets/SKILL.md|## Unattended breakdown
+skills/orch-improve-tests/SKILL.md|## 6. Hand off
+skills/orch-spec-review/SKILL.md|## Disposition
+skills/orch-spec-review/tickets-follow-the-spec.md|## The ticket question
+docs/host-capabilities.md|### Guard the batch question
+skills/orch-spec-review/unattended-spec-review.md
+skills/orch-to-spec/SKILL.md|## Unattended rewrite
+skills/orch-flow/SKILL.md|### Phase: spec'
+check "each turn-final reply site names docs/turn-final-reply.md" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$turn_final_sites" 'docs/turn-final-reply.md')"
+check "the glossary defines Turn-final reply" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'GLOSSARY.md' '**Turn-final reply**:')"
 
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
 # Every PR to main adds one changelog fragment, changelog.d/<issue>.md, and

@@ -93,15 +93,13 @@ which is no view: it removes any earlier `<dir>/view.md`, writes none, and
 its pass line names none.
 
 When an open ticket is affected, ask **one ticket question** as the spec
-batch is asked: end your turn on one plain-text reply, with no tool call,
-holding `check --tickets`'s stdout word for word, composing no view of your
-own, then the ticket question with its answer words spelled out. Never ask
-it with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user` on
-Junie): the turn ends on the view and the question, and the human's next
-message is the answer. On Claude Code an ask-tool call is refused until the
-view is pasted, as the spec batch's is. Its options are the spec batch's,
-under the skill's **Disposition**, each offered once and with the same
-rules, except:
+batch is asked: a turn-final reply, per **Turn-final reply** in
+`docs/turn-final-reply.md` under the plugin root, holding `check --tickets`'s
+stdout word for word, composing no view of your own, then the ticket question
+with its answer words spelled out. On Claude Code an ask-tool call is
+refused until the view is pasted, as the spec batch's is. Its options are
+the spec batch's, under the skill's **Disposition**, each offered once and
+with the same rules, except:
 
 - **Retire and break down again** is added: no ticket is edited; the
   breakdown is retired after the body is published, and the issue broken
@@ -118,14 +116,12 @@ Its answer words are the option names `apply --tickets` takes: `recommended`,
 `all`, `none`, `retire` (only when offered), or the Other form, the item
 numbers to apply, comma-separated (e.g. `1, 3`); the question spells them
 all out. An answer word and its option's full label (`Retire and break down
-again` is `retire`) are the same answer, matched after trimming surrounding
-whitespace, letter case and trailing punctuation, as for the spec batch. A
-near-miss reply - one matching none of these forms - is restated in one
-line, in the grammar `apply --tickets` takes, and confirmed with a short ask
-(*Yes, apply that* / *No, I'll answer again*), never guessed at and never
-re-pasted, as the spec batch's is. On *No*, or on a reply that is clearly a
-question, answer it, re-run `check --tickets`, and end the turn again on its
-view and the ticket question in one plain-text reply.
+again` is `retire`) are the same answer, matched as the doc says. A
+near-miss reply - one matching none of these forms - is restated in the
+grammar `apply --tickets` takes, as the doc's **Near-miss reply** says. On
+*No*, or on a reply that is clearly a question, the doc's **Question path**
+runs: re-run `check --tickets`, and end the turn again on its view and the
+ticket question.
 
 ## Applying
 

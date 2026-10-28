@@ -109,34 +109,21 @@ Ask the user:
   genuinely gate it?
 - Should any tickets be merged or split further?
 
-The breakdown and these questions are one **turn-final reply**: end your
-turn on one plain-text reply, with no tool call in it, holding the numbered
-list and then the questions with the answers spelled out - `approve`, or the
-changes wanted in plain words. The user's next message is the answer. Never
-ask it with the ask-the-user capability, and never write the breakdown in
-a response that also calls a tool: some hosts hide a long text written in
-the same response as a tool call, and the user never sees it (ADR-0051).
+The breakdown and these questions are one **turn-final reply**, per
+`docs/turn-final-reply.md` under the plugin root: the numbered list, then the
+questions with the answers spelled out - `approve`, or the changes wanted in
+plain words. `approve` and its full label (`Approve the breakdown`) are the
+same answer. Changes in plain words start another round: redraft, then end
+your turn again on the new breakdown and the questions, the same way.
 
-`approve` and its full label (`Approve the breakdown`) are the same answer,
-both matched after trimming surrounding whitespace, letter case and
-trailing punctuation: `Approve.` is `approve`. Changes in plain words start
-another round: redraft, then end your turn again on the new breakdown and
-the questions, the same way.
+A **near-miss reply** (the doc's **Near-miss reply**) is neither `approve`,
+nor changes wanted, nor clearly a question: a typo, or mixed forms such as
+`approve but merge 2 and 3`. Its one-line restatement reads e.g. "Approve,
+except tickets 2 and 3 merged"; *Yes, apply that* does exactly what it
+states: an approval publishes, a change starts another round.
 
-A **near-miss reply** is neither `approve`, nor changes wanted, nor clearly
-a question: a typo, or mixed forms such as `approve but merge 2 and 3`. It
-is never guessed at and never re-shown. State in one line what you would
-do (e.g. "Approve, except tickets 2 and 3 merged"), then ask a short
-confirmation with the ask-the-user capability, nothing long in front of
-it: *Yes, apply that* / *No, I'll answer again*. *Yes, apply that* does
-exactly what the line states: an approval publishes, a change starts
-another round. Any other reply to the confirmation - *No*, a free-text
-answer, or a dismissed ask - counts as *No*. Nothing is ever applied on a
-guess.
-
-On *No*, or on a reply that is clearly a question, the question path runs:
-answer the question in chat, change nothing, then end your turn again on
-the breakdown and its questions in one plain-text reply, with no tool call.
+On *No*, or on a clear question, the doc's **Question path** runs: change
+nothing.
 
 Iterate until the user answers `approve`. A breakdown of 0 or 1 tickets
 is a legitimate outcome: the parent is already one ticket's worth of work.
@@ -214,7 +201,7 @@ The published ticket numbers in publishing order, or `collapsed`.
 ## Unattended breakdown
 
 The mode a quick implementation takes, and an autopilot flow's spec phase
-(ADR-0049): a breakdown that asks the human nothing (ADR-0034). It is also what
+(ADR-0052): a breakdown that asks the human nothing (ADR-0034). It is also what
 follows a retire in `orch-spec-review`'s **Unattended spec review**, defined in
 that skill's `unattended-spec-review.md`.
 
@@ -227,9 +214,9 @@ Steps 1-3, 5 and 6 run as written. Step 4, the quiz, is replaced:
   split or re-edge the draft until it holds.
 - Print the breakdown as step 4 presents it - each ticket's **Title**,
   **Blocked by** and **What it delivers** - so a human watching can see it.
-  It is not a turn-final reply: it asks no question, and a reply with no
-  tool call ends the turn, so never end the turn on it. The published
-  tickets carry the same breakdown.
+  It is not a turn-final reply: see **Unattended printout** in
+  `docs/turn-final-reply.md` under the plugin root. The published tickets
+  carry the same breakdown.
 - Ask nothing, and go straight to step 5 in the same turn: it publishes 2 or
   more tickets, or collapses 0 or 1 into the parent.
 

@@ -196,13 +196,9 @@ closer's rule sets from the body's `**Axis:**` line - `bug` for Spec,
 `enhancement` for Standards - and that is also the default for a finding filed
 before categories, which carries none.
 
-Ask **one blocking question** per batch as a **turn-final reply**: end your
-turn on one plain-text reply, with no tool call in it, holding the batch and
-then the question with its answer words spelled out. The human's next
-message is the answer. Never ask it with the multiple-choice question
-capability, and never write the batch in a response that also calls a tool:
-some hosts hide a long text written in the same response as a tool call,
-and the human never sees it (ADR-0051). The answers:
+Ask **one blocking question** per batch as a **turn-final reply**, per
+`docs/turn-final-reply.md` under the plugin root: the batch, then the
+question with its answer words spelled out. The answers:
 
 - **Accept as proposed (Recommended)**, answer word `accept` - every finding
   takes its proposed outcome and category.
@@ -215,23 +211,15 @@ and the human never sees it (ADR-0051). The answers:
 
 The question spells both out: `accept`, or the exceptions in this format,
 or a question in plain words. `accept` and its option's full label (`Accept
-as proposed`) are the same answer, both matched after trimming surrounding
-whitespace, letter case and trailing punctuation: `Accept.` is `accept`.
+as proposed`) are the same answer.
 
-A **near-miss reply** matches neither form: a typo, extra words around
-`accept`, or mixed forms such as `accept but not 3`. It is never guessed at
-and never re-shown. State in one line what you would apply, in the
-exceptions format (e.g. "Accept as proposed, except 3 wontfix"), then ask a
-short confirmation with the multiple-choice question capability, nothing
-long in front of it: *Yes, apply that* / *No, I'll answer again*. *Yes,
-apply that* applies exactly what the line states. Any other reply to the
-confirmation - *No*, a free-text Other, or a dismissed ask - counts as
-*No*. Nothing is ever applied on a guess.
+A **near-miss reply** (see the doc's **Near-miss reply**) matches neither
+form: a typo, extra words around `accept`, or mixed forms such as `accept
+but not 3`. Its one-line restatement is in the exceptions format (e.g.
+"Accept as proposed, except 3 wontfix").
 
-On *No*, or on a reply that is clearly a question, the question path runs:
-answer the question in chat, apply nothing, then end your turn again on one
-plain-text reply holding the batch and its question, answer words spelled
-out, with no tool call.
+On *No*, or on a clear question, the doc's **Question path** runs: apply
+nothing.
 
 Nothing is written before the answer. Presenting the batch is not the end of
 the step; the answer is. A wrong proposal costs nothing until then.
@@ -343,9 +331,7 @@ one numbered batch:
 With no group and no close to propose, there is nothing to ask: go to B5.
 
 Ask **one blocking question** as step 3's batch is asked: a turn-final
-reply, one plain-text reply holding the batch and then the question with
-its answer words spelled out, with no tool call in it, never the
-multiple-choice question capability. The answers:
+reply, per `docs/turn-final-reply.md` under the plugin root. The answers:
 
 - **Accept as proposed (Recommended)**, answer word `accept` - every group
   is created and every close applied as proposed.
@@ -360,11 +346,9 @@ multiple-choice question capability. The answers:
 The question spells both out: `accept`, or the changes in plain words, or a
 question. `accept` is matched as in step 3, its full label counting the
 same. A near-miss reply - one that is neither `accept`, nor changes this
-list names, nor clearly a question - gets step 3's one-line restatement and
-short confirmation, *Yes, apply that* / *No, I'll answer again*, and nothing
-is applied on a guess. On *No*, or on a question, the question path runs:
-answer it, apply nothing, then end your turn again on the batch and its
-question in one plain-text reply, with no tool call.
+list names, nor clearly a question - is restated in one line, in the changes
+format, and confirmed as in step 3, per the doc's **Near-miss reply**. On
+*No*, or on a question, the doc's **Question path** runs: apply nothing.
 
 Nothing is written before the answer.
 
