@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.23
+
+The agent noun now reads its hosts and kinds from the host table at every site, so adding a host is a table entry. Output is unchanged.
+
 ## 4.38.22
 
 `review resume` now refuses unless the checked-out branch is the flow's recorded branch (sharing `require_flow_branch` with `ticket reclaim`), so a stray resume no longer resets another branch's work or clears the flow's reviewer reports.
