@@ -1280,30 +1280,30 @@ assert_status "an Other ticket list with surrounding spaces applies" "$st" 0
 assert_eq "the same result as the ticket list written plainly" \
   "$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 20; fake_body_of 21)" "$srt_other"
 
-# --tickets none: no ticket write, the body still published.
 # apply --resume copies every file option (#1626): --reasons, --ticket-reasons
 # and --host-fallbacks, each from a directory of its own outside the round
 # directory, are saved as copies in it; a resume reads the copies.
 d="$(srt_dir)"
 srt_fetch "$d"
-sr_src="$(mktemp -d)"; sr_src2="$(mktemp -d)"; sr_src3="$(mktemp -d)"
-printf '2: the plan chose this\n' >"$sr_src/reasons"
-printf '5: the edge stays\n' >"$sr_src2/treasons"
-printf 'AskUserQuestion fell back to a plain question\n' >"$sr_src3/hosts"
+srt_reasons_src="$(mktemp -d)"; srt_treasons_src="$(mktemp -d)"; srt_hosts_src="$(mktemp -d)"
+printf '2: the plan chose this\n' >"$srt_reasons_src/reasons"
+printf '5: the edge stays\n' >"$srt_treasons_src/treasons"
+printf 'AskUserQuestion fell back to a plain question\n' >"$srt_hosts_src/hosts"
 fake_fail adapter_issue_comment
-sra "$d" recommended --reasons "$sr_src/reasons" --tickets "1, 2, 4" \
-  --ticket-reasons "$sr_src2/treasons" --host-fallbacks "$sr_src3/hosts"
+sra "$d" recommended --reasons "$srt_reasons_src/reasons" --tickets "1, 2, 4" \
+  --ticket-reasons "$srt_treasons_src/treasons" --host-fallbacks "$srt_hosts_src/hosts"
 fake_unfail
 assert_status "all three file options: a changelog failure stops apply" "$st" 1
 assert_eq "apply-answer names no source path" \
-  "$(grep -c -e "$sr_src/" -e "$sr_src2/" -e "$sr_src3/" "$d/apply-answer")" 0
+  "$(grep -c -e "$srt_reasons_src/" -e "$srt_treasons_src/" -e "$srt_hosts_src/" "$d/apply-answer")" 0
 assert_eq "--reasons is copied into the round directory" "$(on_disk "$d/apply-reasons.copy")" present
 assert_eq "--ticket-reasons is copied into the round directory" "$(on_disk "$d/apply-ticket-reasons.copy")" present
 assert_eq "--host-fallbacks is copied into the round directory" "$(on_disk "$d/apply-host-fallbacks.copy")" present
-rm -rf "$sr_src" "$sr_src2" "$sr_src3"
+rm -rf "$srt_reasons_src" "$srt_treasons_src" "$srt_hosts_src"
 srr_resume "$d"
 assert_status "--resume reads the copies, not the deleted sources" "$st" 0
 
+# --tickets none: no ticket write, the body still published.
 d="$(srt_dir)"
 srt_fetch "$d"
 printf '1: alpha is fine\n' >"$d/treasons"
