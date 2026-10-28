@@ -703,7 +703,9 @@ ndjson_with 'Claude AI usage limit reached' >"$launcher_dir/out"; printf '1\n' >
 read -r limit_epoch _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
 assert_eq "no reset time in the message: one hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
 assert_contains "the comment still names the usage limit" "$(fake_comments_of 8)" "usage limit"
-assert_not_contains "but names no reset time it does not have" "$(cat "$ORCH_GH_FAKE_STORE/issues/8/comments/$(ls "$ORCH_GH_FAKE_STORE/issues/8/comments" | sort -n | tail -n 1)/body")" "resets"
+last_body="$(cat "$ORCH_GH_FAKE_STORE/issues/8/comments/$(ls "$ORCH_GH_FAKE_STORE/issues/8/comments" | sort -n | tail -n 1)/body")"
+assert_contains "the comment says the session gave no reset time" "$last_body" "it gave no reset time, so the watcher falls back to a one-hour limit pause, until $(cat "$top/.orchestrator/autopilot/limit")."
+assert_not_contains "and names no reset it does not have" "$last_body" "resets"
 
 # the other usage-limit wordings are detected, each with the one hour fallback
 for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
@@ -932,6 +934,35 @@ count_case "a handoff comment resets it" "$LIM_ON" "$LIM_SPEC" "$LIM_SPEC" "<!--
 x"
 count_case "a limit stop comment of another phase resets it" "$LIM_ON" "$LIM_SPEC" "<!-- orch:limited implement -->
 x" "$LIM_SPEC"
+
+# a rejecting rate_limit_event with no resetsAt names the fallback pause too
+rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; rm -f "$limit_file"
+lim_relabel 7 orch:spec ready-for-agent orch:running
+fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+rl_event rejected 1 null allowed 0.2 null >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_contains "an event with no resetsAt: the comment names the fallback pause" "$(fake_comments_of 7)" "it gave no reset time, so the watcher falls back to a one-hour limit pause, until $(cat "$limit_file")."
+assert_not_contains "and no reset" "$(fake_comments_of 7)" "resets"
+# the third stop in a row with no reset: failure text says so, names no pause
+rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; rm -f "$limit_file"
+lim_relabel 7 orch:spec ready-for-agent orch:running
+fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
+fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
+fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_contains "the third in a row, no reset: says the session gave no reset time" "$(fake_comments_of 7)" "the session gave no reset time"
+assert_contains "and is the third-in-a-row failure" "$(fake_comments_of 7)" "the third in a row in the spec phase"
+assert_not_contains "naming no pause" "$(fake_comments_of 7)" "$(cat "$limit_file")"
+# unreadable comments, no reset
+rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; rm -f "$limit_file"
+lim_relabel 7 orch:spec ready-for-agent orch:running
+fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+fake_fail adapter_issue_comments_json "HTTP 500 comments"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+assert_contains "unreadable comments, no reset: says the session gave no reset time" "$(fake_comments_of 7)" "the session gave no reset time"
+assert_contains "and names the failed read" "$(fake_comments_of 7)" "comments could not be read"
+assert_not_contains "naming no pause time" "$(fake_comments_of 7)" "$(cat "$limit_file")"
 
 # comments that cannot be read take the failure path, and still write the reset
 rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; rm -f "$limit_file"

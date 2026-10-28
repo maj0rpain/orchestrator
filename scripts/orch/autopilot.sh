@@ -565,12 +565,14 @@ autopilot_limit_count() {
   printf -v "$3" '%s' "$n"
 }
 
-# autopilot_limit_stop <issue> <phase> <reset> <rc> <log>: ends a phase whose
+# autopilot_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a phase whose
 # session stopped on a usage limit. With fewer than two such stops of the phase
 # before it, adds orch:limited, comments, then releases the claim; the third in
-# a row, and a stop whose comments cannot be read, take the failure path.
+# a row, and a stop whose comments cannot be read, take the failure path. The
+# reset is empty when the session named none; the pause is the time written to
+# the limit file: the reset, else the one-hour fallback.
 autopilot_limit_stop() {
-  local issue="$1" phase="$2" reset="$3" rc="$4" log="$5" count text when="" at="" stopped
+  local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" count text when=" (the session gave no reset time)" at stopped
   [ -z "$reset" ] || when=" (resets $reset)"
   stopped="the session stopped on a usage limit$when and exited with code $rc"
   autopilot_limit_count "$issue" "$phase" count || {
@@ -581,6 +583,7 @@ autopilot_limit_stop() {
     autopilot_stop "$issue" failure "$phase" "$stopped, the third in a row in the $phase phase; log: $log"
     return 0
   fi
+  at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
   [ -z "$reset" ] || at=", which resets $reset"
   printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
     "$(autopilot_limit_marker "$phase")" "$phase" "$at" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
@@ -1003,7 +1006,7 @@ autopilot_run() {
     pause_iso="$reset"
     [ -n "$pause_iso" ] || pause_iso="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
     autopilot_limit_write "$dir" "$log" "$pause_iso"
-    autopilot_limit_stop "$issue" "$phase" "$reset" "$rc" "$log"
+    autopilot_limit_stop "$issue" "$phase" "$reset" "$pause_iso" "$rc" "$log"
     return 0
   fi
   autopilot_stop "$issue" failure "$phase" "$detail"
