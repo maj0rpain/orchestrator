@@ -189,13 +189,13 @@ rebase_in_progress() {
 # git's own rebase-merge/rebase-apply head-name record. Returns 1 on a
 # detached HEAD with no rebase in progress.
 checkout_branch_or_rebasing() {
-  local gitdir name
+  local gitdir file ref
   checkout_branch "$@" && return 0
   gitdir="$(git -C "${1:-.}" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
-  for name in "$gitdir/rebase-merge/head-name" "$gitdir/rebase-apply/head-name"; do
-    [ -f "$name" ] || continue
-    name="$(<"$name")"
-    case "$name" in refs/heads/?*) printf '%s\n' "${name#refs/heads/}"; return 0 ;; esac
+  for file in "$gitdir/rebase-merge/head-name" "$gitdir/rebase-apply/head-name"; do
+    [ -f "$file" ] || continue
+    ref="$(<"$file")"
+    case "$ref" in refs/heads/?*) printf '%s\n' "${ref#refs/heads/}"; return 0 ;; esac
   done
   return 1
 }

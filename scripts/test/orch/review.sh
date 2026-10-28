@@ -1255,10 +1255,17 @@ side="$(sc_add sideresume)"
   side_b="$(git branch --show-current)"
   git checkout -q -b straysc
   echo hand >>README.md
+  mkdir -p .orchestrator/review
+  : >.orchestrator/review/iteration-01-standards.md
+  before="$(resume_facts)"
   out="$("$ORCH" review resume 2>&1)"; st=$?
   assert_status "a side checkout on another branch is refused" "$st" 1
   assert_contains "with the guard's message" "$out" "the current branch straysc is not the flow's branch $side_b"
+  assert_contains "saying nothing was discarded" "$out" "nothing was discarded"
+  assert_not_contains "printing no rerun" "$out" "rerun"
+  assert_eq "and touching nothing" "$(resume_facts)" "$before"
   assert_eq "and discards no edits" "$(git status --porcelain README.md)" " M README.md"
+  rm -f .orchestrator/review/iteration-01-standards.md
   git checkout -q -f "$side_b"
 
   # a dead base sync's merge in progress
