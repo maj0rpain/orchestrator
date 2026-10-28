@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.38.23
+
+The agent noun now reads its hosts and kinds from the host table at every site, so adding a host is a table entry. Output is unchanged.
+
+## 4.38.22
+
+`review resume` now refuses unless the checked-out branch is the flow's recorded branch (sharing `require_flow_branch` with `ticket reclaim`), so a stray resume no longer resets another branch's work or clears the flow's reviewer reports.
+
+## 4.38.21
+
+Readability nits in the autopilot module: the shared comment-reading jq definitions carry their own question prefix, the needs-human guard is now autopilot_require_human_label, and autopilot_pickup's comment says what limited does.
+
+## 4.38.20
+
+Rename the breakdown numbers-file helper `ticket_record` to `breakdown_record` and inline the one-statement `ticket_link_write`; behaviour is unchanged.
+
 ## 4.38.19
 
 `ticket reclaim` now refuses, discarding nothing, unless the current branch is the recovered run's own: the active flow's recorded branch for its issue, or a `branch off`-made `quick/<issue>-<slug>` branch when no flow is active.

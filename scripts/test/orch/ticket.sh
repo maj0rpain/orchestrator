@@ -1493,10 +1493,11 @@ git checkout -q orch/5-feature
 state_fixture issue 91
 rc_refused "a parent other than the flow's issue" "#90 is not the flow's issue #91"
 state_fixture_drop issue
-rc_refused "a flow recording no issue" "records no branch (or issue) yet"
-state_fixture issue 90
+rc_refused "a flow recording no issue" "the active flow records no issue yet"
 state_fixture_drop branch
-rc_refused "a flow recording no branch" "records no branch (or issue) yet"
+rc_refused "a flow recording neither issue nor branch" "the active flow records no branch yet"
+state_fixture issue 90
+rc_refused "a flow recording no branch" "the active flow records no branch yet"
 state_fixture branch orch/5-feature
 state_fixture phase "done"
 rc_refused "no flow, on a non-quick branch" "no active flow, and orch/5-feature is not a quick implementation's branch for #90"

@@ -140,19 +140,14 @@ cmd_ticket_publish() {
 
   # The created number is recorded before the link, so a rerun can tell
   # "created, unlinked" from "not created". A failed write dies here.
-  if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" created; fi
+  if [ -n "$record_file" ]; then breakdown_record "$record_file" "$record_k" "$child" created; fi
 
-  ticket_link_write "$parent" "$child"
+  gh_or_die "link ticket #$child as a sub-issue of #$parent" \
+    adapter_sub_issue_link "$parent" "$child"
   ticket_edges_and_verify "$parent" "$child" "$want"
-  if [ -n "$record_file" ]; then ticket_record "$record_file" "$record_k" "$child" linked; fi
+  if [ -n "$record_file" ]; then breakdown_record "$record_file" "$record_k" "$child" linked; fi
 
   note "$child"
-}
-
-# ticket_link_write <parent> <child>: links <child> as a sub-issue of <parent>.
-ticket_link_write() {
-  gh_or_die "link ticket #$2 as a sub-issue of #$1" \
-    adapter_sub_issue_link "$1" "$2"
 }
 
 # ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
@@ -699,14 +694,11 @@ ticket_reclaim_remove() {
 # With an active flow it must be the flow's recorded branch and <parent> its
 # issue; with none, a `branch off`-made quick/<parent>-<slug> branch.
 ticket_reclaim_guard() {
-  local parent="$1" b="$2" fb fissue
+  local parent="$1" b="$2" fissue
   if flow_active; then
-    fb="$(state_get branch)" || die "ticket reclaim: cannot read the flow's branch from $STATE"
     fissue="$(state_get issue)" || die "ticket reclaim: cannot read the flow's issue from $STATE"
-    if [ -z "$fb" ] || [ -z "$fissue" ]; then
-      die "ticket reclaim: on $b, the active flow records no branch (or issue) yet - nothing was discarded"
-    fi
-    [ "$b" = "$fb" ] || die "ticket reclaim: the current branch $b is not the flow's branch $fb - nothing was discarded"
+    require_flow_branch "ticket reclaim" "$b"
+    [ -n "$fissue" ] || die "ticket reclaim: on $b, the active flow records no issue yet - nothing was discarded"
     [ "$parent" = "$fissue" ] || die "ticket reclaim: on $b, #$parent is not the flow's issue #$fissue - nothing was discarded"
     return 0
   fi

@@ -189,6 +189,22 @@ rebase_in_progress() {
   [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
 }
 
+# checkout_branch_or_rebasing [<path>]: checkout_branch, but a rebase in
+# progress - which detaches HEAD - yields the branch it is rebasing, read from
+# git's own rebase-merge/rebase-apply head-name record. Returns 1 on a
+# detached HEAD with no rebase in progress.
+checkout_branch_or_rebasing() {
+  local gitdir file ref
+  checkout_branch "$@" && return 0
+  gitdir="$(git -C "${1:-.}" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  for file in "$gitdir/rebase-merge/head-name" "$gitdir/rebase-apply/head-name"; do
+    [ -f "$file" ] || continue
+    ref="$(<"$file")"
+    case "$ref" in refs/heads/?*) printf '%s\n' "${ref#refs/heads/}"; return 0 ;; esac
+  done
+  return 1
+}
+
 # discard_work_in <path> <who>: the discard sequence every site of the discard
 # rule (ADR-0054) runs in the checkout at <path>: a merge or rebase in
 # progress is aborted, then the tree is reset and cleaned. Nothing to discard
@@ -203,6 +219,18 @@ discard_work_in() {
   fi
   git -C "$path" reset --hard -q >/dev/null 2>&1 || die "$who: git reset --hard failed in $path"
   git -C "$path" clean -fdq >/dev/null 2>&1 || die "$who: git clean failed in $path"
+}
+
+# require_flow_branch <who> <branch>: dies (exit 1, "nothing was discarded")
+# unless <branch> is the branch the flow state records, whatever the phase -
+# the proof a discard-rule caller owes before it discards. It never asks
+# whether the flow is active: each caller first settles that a flow state
+# exists. Called as a bare statement, so the die stops the caller.
+require_flow_branch() {
+  local who="$1" b="$2" fb
+  fb="$(state_get branch)" || die "$who: cannot read the flow's branch from $STATE"
+  [ -n "$fb" ] || die "$who: on $b, the active flow records no branch yet - nothing was discarded"
+  [ "$b" = "$fb" ] || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
 }
 
 # discard_flow_branch_work: the flow-branch case of the discard rule (ADR-0054),
