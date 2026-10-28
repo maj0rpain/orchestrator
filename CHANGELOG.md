@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.24
+
+Name the merge-in-progress check once as `merge_in_progress`, beside `rebase_in_progress`, and route every inline `MERGE_HEAD` check through it; trim duplicated test cases and share the in-progress fixtures' setup. Behaviour is unchanged.
+
 ## 4.38.23
 
 The agent noun now reads its hosts and kinds from the host table at every site, so adding a host is a table entry. Output is unchanged.
