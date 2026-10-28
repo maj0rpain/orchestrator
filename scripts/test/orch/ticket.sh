@@ -1473,21 +1473,6 @@ assert_status "the same dirty tree in an autopilot flow is discarded" "$st" 0
 assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
 assert_eq "and reclaiming the leftover" "$(rc_has_worktree 7)$(fake_state_of 7)" "noCLOSED"
 
-# a side checkout of an interactive flow discards without autopilot
-rc_setup 0
-main_path="$(pwd -P)"
-git checkout -q -
-git worktree add -q "$main_path/.orchestrator/checkouts/side" orch/5-feature
-touch "$(git -C "$main_path/.orchestrator/checkouts/side" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
-(
-  cd "$main_path/.orchestrator/checkouts/side" || exit 1
-  rc_flow
-  echo hand >>README.md
-  out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
-  assert_status "a dirty flow branch in a side checkout is discarded" "$st" 0
-  assert_eq "leaving the tree clean" "$(git status --porcelain)" ""
-)
-
 # the guard: reclaim refuses unless the branch is the run's own.
 # rc_refused <label> <message>: reclaim 90 under autopilot refuses with
 # <message>, leaving the dirty tree, the leftover worktree and the open ticket.

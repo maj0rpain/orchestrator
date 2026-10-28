@@ -177,7 +177,7 @@ cmd_branch_sync() {
       || die "$branch is not a branch the plugin made: no flow here holds it and it records no base - nothing was synced"
   fi
   [ "$branch" != "$base" ] || die "$branch is its own base branch - nothing was synced"
-  if git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
+  if merge_in_progress "$ROOT"; then
     die "a merge is in progress on $branch - commit it (or git merge --abort), then rerun orch.sh branch sync"
   fi
   require_clean_tree "$ROOT" "the working tree is dirty - commit or discard its changes first; nothing was synced"
@@ -185,7 +185,7 @@ cmd_branch_sync() {
     || die "could not fetch $base from origin - nothing was synced"
   tip="$(git rev-parse "refs/remotes/origin/$base")"
   if ! git merge --quiet --no-edit "origin/$base" >/dev/null 2>&1; then
-    if git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
+    if merge_in_progress "$ROOT"; then
       warn "merging origin/$base into $branch hit a conflict - the merge is left in progress; resolve and commit it, then rerun orch.sh branch sync"
       exit 3
     fi

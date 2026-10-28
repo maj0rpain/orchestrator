@@ -177,6 +177,11 @@ refuse_busy_checkout() {
   exit 3
 }
 
+# Whether a merge is in progress in the checkout at <path>.
+merge_in_progress() {
+  git -C "$1" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1
+}
+
 # Whether a rebase is in progress in the checkout at <path>.
 rebase_in_progress() {
   local gitdir
@@ -206,7 +211,7 @@ checkout_branch_or_rebasing() {
 # changes nothing. A failed step dies "<who>: <git command> failed in <path>".
 discard_work_in() {
   local path="$1" who="$2"
-  if git -C "$path" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1; then
+  if merge_in_progress "$path"; then
     git -C "$path" merge --abort >/dev/null 2>&1 || die "$who: git merge --abort failed in $path"
   fi
   if rebase_in_progress "$path"; then
@@ -243,7 +248,7 @@ require_flow_branch() {
 # statement, so the die stops the caller.
 discard_flow_branch_work() {
   local merging="" rebasing="" dirty kind cmds=""
-  git -C "$ROOT" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1 && merging=1
+  ! merge_in_progress "$ROOT" || merging=1
   ! rebase_in_progress "$ROOT" || rebasing=1
   dirty="$(dirty_outside_allowlist)" || exit 1
   [ -n "$merging$rebasing$dirty" ] || return 0
