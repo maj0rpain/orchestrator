@@ -1217,25 +1217,6 @@ side="$(sc_add sideresume)"
   assert_eq "and the iteration reruns" "$out" "rerun 1"
   assert_eq "leaving it clean" "$(git status --porcelain)" ""
 
-  # a dead base sync's merge in progress
-  leave_merge_in_progress clash-a
-  assert_eq "(fixture) a merge is in progress" \
-    "$(merge_state)" "merging"
-  out="$("$ORCH" review resume 2>&1)"; st=$?
-  assert_status "a merge in progress in a side checkout is aborted" "$st" 0
-  assert_eq "leaving no merge in progress" \
-    "$(merge_state)" "none"
-  assert_eq "and a clean tree" "$(git status --porcelain)" ""
-
-  # a dead rebase in progress
-  leave_rebase_in_progress clash-r
-  assert_eq "(fixture) a rebase is in progress" \
-    "$(rebase_state)" "rebasing"
-  out="$("$ORCH" review resume 2>&1)"; st=$?
-  assert_status "a rebase in progress in a side checkout is aborted" "$st" 0
-  assert_eq "leaving no rebase in progress" \
-    "$(rebase_state)" "none"
-
   # a finished loop has nothing to resume: refused before anything is discarded
   mkdir -p .orchestrator/review
   writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md

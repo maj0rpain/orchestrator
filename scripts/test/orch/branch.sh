@@ -9,6 +9,38 @@
 # orchestrator-base git config key), or <unset>.
 base_key() { git config --get "branch.$1.orchestrator-base" || echo "<unset>"; }
 
+# clash_commits <clash-branch>: from the current branch (or detached HEAD),
+# creates <clash-branch> with clash.txt holding its name, and commits
+# clash.txt holding "<clash-branch> base" on the starting point, leaving the
+# checkout there.
+clash_commits() {
+  local base
+  base="$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)"
+  git checkout -q -b "$1"
+  echo "$1" >clash.txt && git add clash.txt && git commit -qm "$1"
+  git checkout -q "$base"
+  echo "$1 base" >clash.txt && git add clash.txt && git commit -qm "$1 base"
+}
+
+# leave_merge_in_progress <clash-branch>: leaves a merge in progress on the
+# current branch (or detached HEAD), as a dead base sync does - <clash-branch>
+# and the current commit each add clash.txt differently, and the merge stops.
+leave_merge_in_progress() {
+  clash_commits "$1"
+  git merge -q "$1" >/dev/null 2>&1
+}
+
+# leave_rebase_in_progress <clash-branch>: the same for a rebase in progress.
+leave_rebase_in_progress() {
+  clash_commits "$1"
+  git rebase "$1" >/dev/null 2>&1
+}
+
+# merge_state: prints merging or none for the current checkout.
+merge_state() {
+  git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none
+}
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
@@ -404,8 +436,6 @@ bs_advance() {
 }
 # bs_sha: the current branch's base SHA as its git config records it.
 bs_sha() { git config --get "branch.$(git branch --show-current).orchestrator-base-sha"; }
-# bs_merging: "yes" when a merge is in progress in this checkout.
-bs_merging() { if git rev-parse -q --verify MERGE_HEAD >/dev/null; then echo yes; else echo no; fi; }
 # bs_origin_tip <branch>: origin's tip of <branch>, empty when it has none.
 bs_origin_tip() { git ls-remote "$sc_origin" "refs/heads/$1" | cut -f1; }
 
@@ -471,7 +501,7 @@ before="$(git rev-parse HEAD)"; sha_before="$(bs_sha)"; pushed="$(bs_origin_tip 
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "a conflict exits 3" "$st" 3
 assert_contains "saying it conflicted" "$out" "conflict"
-assert_eq "leaving the merge in progress" "$(bs_merging)" "yes"
+assert_eq "leaving the merge in progress" "$(merge_state)" "merging"
 assert_eq "the branch tip unmoved" "$(git rev-parse HEAD)" "$before"
 assert_eq "the base SHA unmoved in branch config" "$(bs_sha)" "$sha_before"
 assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$sha_before"
@@ -479,7 +509,7 @@ assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
 
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "a rerun before the merge is committed refuses" "$st" 1
-assert_eq "leaving the merge in progress" "$(bs_merging)" "yes"
+assert_eq "leaving the merge in progress" "$(merge_state)" "merging"
 
 # The resolver commits; the rerun finishes the sync.
 echo both >clash.txt; git add clash.txt; git commit -q --no-edit
@@ -508,6 +538,18 @@ out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "a rerun with origin reachable exits 0" "$st" 0
 assert_eq "merging nothing more" "$(git rev-parse HEAD)" "$merged"
 assert_eq "and pushes" "$(bs_origin_tip orch/11-bsync)" "$merged"
+
+# A merge failing with no merge in progress (a held index lock) is no conflict.
+new_tip="$(bs_advance locked.txt locked)"
+before="$(git rev-parse HEAD)"
+touch "$(git rev-parse --absolute-git-dir)/index.lock"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+rm -f "$(git rev-parse --absolute-git-dir)/index.lock"
+assert_status "a merge failing with no merge in progress exits 1" "$st" 1
+assert_contains "saying git could not merge" "$out" "git could not merge origin/main into orch/11-bsync"
+assert_not_contains "and not the conflict message" "$out" "hit a conflict"
+assert_eq "leaving no merge in progress" "$(merge_state)" "none"
+assert_eq "and the tip unmoved" "$(git rev-parse HEAD)" "$before"
 
 # Refusals: each exits 1 with nothing moved.
 before="$(git rev-parse HEAD)"; sha_before="$(bs_sha)"
