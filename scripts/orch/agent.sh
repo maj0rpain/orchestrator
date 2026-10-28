@@ -25,6 +25,8 @@ declare -A AGENT_HOST_CLEAR=([claude]="" [junie]=" --host junie")
 declare -A AGENT_HOST_SYNCS=([junie]=1)
 # The hosts a --host flag names.
 AGENT_FLAG_HOSTS="junie"
+# The host a site means when no --host flag names one.
+AGENT_DEFAULT_HOST=claude
 # The values each key allows: exactly the aliases the Agent tool's model
 # parameter accepts and the levels its effort parameter takes, in this Claude
 # Code version. inherit is allowed for every key and means no setting at all.
@@ -47,7 +49,7 @@ agent_pipe_list() { printf '%s' "${1// /|}"; }
 # agent_allowed <kind> <value> [<host>]: whether <value> is allowed for the
 # model or effort key, of Claude Code or of <host>.
 agent_allowed() {
-  local k="${3:-claude}.$1"
+  local k="${3:-$AGENT_DEFAULT_HOST}.$1"
   if [ -n "${AGENT_PATTERN[$k]+x}" ]; then
     [ "$2" = inherit ] && return 0
     [[ "$2" =~ ^${AGENT_PATTERN[$k]}$ ]]
@@ -59,7 +61,7 @@ agent_allowed() {
 # agent_values <kind> [<host>]: the allowed values for the model or effort key,
 # a|b|c; for a key with a pattern, the pattern and its note.
 agent_values() {
-  local k="${2:-claude}.$1"
+  local k="${2:-$AGENT_DEFAULT_HOST}.$1"
   if [ -n "${AGENT_NOTE[$k]+x}" ]; then
     # shellcheck disable=SC2059 # the note is the format, taking the pattern
     printf "${AGENT_NOTE[$k]}" "${AGENT_PATTERN[$k]}"
@@ -69,9 +71,9 @@ agent_values() {
 }
 
 # agent_host <arg>...: the host named by a --host flag among the arguments -
-# a flag host, or claude when there is none - on stdout. A missing value or
-# any other value is refused, naming it. The one parser of --host: each
-# command reads it first, so the value is validated before the rest.
+# a flag host, or the default host when there is none - on stdout. A missing
+# value or any other value is refused, naming it. The one parser of --host:
+# each command reads it first, so the value is validated before the rest.
 agent_host() {
   while [ $# -gt 0 ]; do
     if [ "$1" = --host ]; then
@@ -82,7 +84,7 @@ agent_host() {
     fi
     shift
   done
-  printf claude
+  printf %s "$AGENT_DEFAULT_HOST"
 }
 
 # agent_key <var> <host> <kind> <role>: the git config key of the setting,
@@ -166,7 +168,7 @@ agent_require_role() {
 # <source-var>. Never validates: show looks at a bad value, get refuses it.
 agent_lookup() {
   local lookup_key lookup_value
-  agent_key lookup_key "${5:-claude}" "$1" "$2"
+  agent_key lookup_key "${5:-$AGENT_DEFAULT_HOST}" "$1" "$2"
   if agent_scoped local "$lookup_key" lookup_value; then
     printf -v "$3" '%s' "$lookup_value"; printf -v "$4" local
   elif agent_scoped global "$lookup_key" lookup_value; then
