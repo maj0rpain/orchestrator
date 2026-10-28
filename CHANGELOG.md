@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.22
+
+`review resume` now refuses unless the checked-out branch is the flow's recorded branch (sharing `require_flow_branch` with `ticket reclaim`), so a stray resume no longer resets another branch's work or clears the flow's reviewer reports.
+
 ## 4.38.21
 
 Readability nits in the autopilot module: the shared comment-reading jq definitions carry their own question prefix, the needs-human guard is now autopilot_require_human_label, and autopilot_pickup's comment says what limited does.
