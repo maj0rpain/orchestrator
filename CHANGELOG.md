@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.20
+
+Rename the breakdown numbers-file helper `ticket_record` to `breakdown_record` and inline the one-statement `ticket_link_write`; behaviour is unchanged.
+
 ## 4.38.19
 
 `ticket reclaim` now refuses, discarding nothing, unless the current branch is the recovered run's own: the active flow's recorded branch for its issue, or a `branch off`-made `quick/<issue>-<slug>` branch when no flow is active.
