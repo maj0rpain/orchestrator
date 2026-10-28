@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.19
+
+`ticket reclaim` now refuses, discarding nothing, unless the current branch is the recovered run's own: the active flow's recorded branch for its issue, or a `branch off`-made `quick/<issue>-<slug>` branch when no flow is active.
+
 ## 4.38.18
 
 A usage-limit stop with no known reset now says the session gave no reset time: the limit stop comment names the one-hour fallback pause the watcher wrote, and the failure text of an unretried limit stop says no reset time was given.
