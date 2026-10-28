@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.21
+
+Readability nits in the autopilot module: the shared comment-reading jq definitions carry their own question prefix, the needs-human guard is now autopilot_require_human_label, and autopilot_pickup's comment says what limited does.
+
 ## 4.38.20
 
 Rename the breakdown numbers-file helper `ticket_record` to `breakdown_record` and inline the one-statement `ticket_link_write`; behaviour is unchanged.
