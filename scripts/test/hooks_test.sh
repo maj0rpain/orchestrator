@@ -1045,13 +1045,18 @@ pg_result() {
 # itself - spec-review.sh's spec_review_nudge, sourced - so a change to its
 # wording reaches the guard's cases rather than leaving them on a copy.
 pg_nudge() { (source "$DIR/orch/spec-review.sh" && spec_review_nudge "$(dirname "$1")"); }
+# pg_pass_line <kind> <view.md>: check's stderr pass line for <kind>, batch or
+# tickets, naming <view.md>, ending as spec_review_nudge ends it.
+pg_pass_line() {
+  printf '%s' "$1.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$2")"
+}
 # pg_check <transcript> <id> <kind> <view.md>: a passing check run as Bash -
 # <kind> batch or tickets - its result <view.md>'s view then the stderr pass
-# line naming <view.md>, ending as spec_review_nudge ends it.
+# line naming <view.md>.
 pg_check() {
   pg_bash "$1" "$2" "bash \"\$ORCH\" spec-review check .orchestrator/spec-review/7"
   pg_result "$1" "$2" "$(cat "$4" 2>/dev/null)
-$3.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$4")"
+$(pg_pass_line "$3" "$4")"
 }
 # pg_decide <transcript-or-empty> [tool_use_id] [tool_name]: the guard's
 # decision on an ask - deny, allow (no output), or the exit status when it is
@@ -1339,7 +1344,7 @@ assert_eq "a spec-review apply after the check disarms: allowed" "$(sg_decide "$
 pg_combined() {
   pg_bash "$1" "$2" "bash \"\$ORCH\" spec-review check .orchestrator/spec-review/7 >/dev/null && bash \"\$ORCH\" spec-review apply .orchestrator/spec-review/7 recommended --unattended"
   pg_result "$1" "$2" "$(cat "$PG/batch/view.md")
-batch.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$PG/batch/view.md")"
+$(pg_pass_line batch "$PG/batch/view.md")"
 }
 TC1="$PG/combined.jsonl"
 pg_text "$TC1" "Running the lenses."
@@ -1357,10 +1362,10 @@ pg_check "$TC3" toolu_k3 batch "$PG/batch/view.md"
 assert_eq "a later separate check re-arms: the ask is refused" "$(pg_decide "$TC3")" deny
 assert_eq "and the Stop guard blocks" "$(sg_decide "$TC3")" block
 TC4="$PG/combined-other-id.jsonl"; cp "$TC2" "$TC4"
-pg_result "$TC4" toolu_other "batch.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$PG/batch/view.md")"
+pg_result "$TC4" toolu_other "$(pg_pass_line batch "$PG/batch/view.md")"
 assert_eq "a pass-line result with another tool_use_id arms" "$(pg_decide "$TC4")" deny
 TC5="$PG/combined-no-id.jsonl"; cp "$TC2" "$TC5"
-pg_entry "$TC5" user "$(jq -nc --arg t "batch.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$PG/batch/view.md")" '[{type:"tool_result", content:$t}]')"
+pg_entry "$TC5" user "$(jq -nc --arg t "$(pg_pass_line batch "$PG/batch/view.md")" '[{type:"tool_result", content:$t}]')"
 assert_eq "a pass-line result with no tool_use_id arms" "$(pg_decide "$TC5")" deny
 
 

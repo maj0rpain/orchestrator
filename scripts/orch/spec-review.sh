@@ -978,8 +978,11 @@ spec_review_pass_tail() {
 # spec_review_nudge <dir>: what a check pass line that saved a view ends
 # with - the instruction to end the turn on one plain-text reply holding the
 # view word for word and the question, with no tool call (ADR-0051), and the
-# view.md it was saved to, by absolute path. scripts/hook-paste-guard.sh
-# arms on a pass line ending "; it is saved in <path>/view.md": keep that tail.
+# view.md it was saved to, by absolute path. The paste guards
+# (scripts/paste-guard.sh) arm on a pass line ending "; it is saved in
+# <path>/view.md": keep that tail. They never arm on a pass line in the result
+# of a Bash call that also ran `spec-review apply`, nor on an --unattended pass
+# line, which ends in spec_review_unattended_tail instead.
 spec_review_nudge() {
   printf ' - end your turn on one plain-text reply, no tool call: the view above word for word, then the question with its answer words spelled out; it is saved in %s' \
     "$(spec_review_view_path "$1")"
