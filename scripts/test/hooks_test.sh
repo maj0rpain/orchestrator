@@ -1334,6 +1334,35 @@ assert_eq "stop_hook_active set: allowed" "$(sg_decide "$T" true)" allow
 
 assert_eq "a final reply holding the view re-wrapped, whitespace normalised: allowed" "$(sg_decide "$T3d")" allow
 assert_eq "a spec-review apply after the check disarms: allowed" "$(sg_decide "$T5")" allow
+# One Bash call that runs check then apply (#1671): the apply wins within its
+# own call, so its pass-line result does not arm.
+pg_combined() {
+  pg_bash "$1" "$2" "bash \"\$ORCH\" spec-review check .orchestrator/spec-review/7 >/dev/null && bash \"\$ORCH\" spec-review apply .orchestrator/spec-review/7 recommended --unattended"
+  pg_result "$1" "$2" "$(cat "$PG/batch/view.md")
+batch.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$PG/batch/view.md")"
+}
+TC1="$PG/combined.jsonl"
+pg_text "$TC1" "Running the lenses."
+pg_combined "$TC1" toolu_k1
+pg_text "$TC1" "Done."
+assert_eq "a check and apply in one call, no earlier arming: the ask is allowed" "$(pg_decide "$TC1")" allow
+assert_eq "and the Stop guard allows" "$(sg_decide "$TC1")" allow
+TC2="$PG/combined-after-check.jsonl"; cp "$T" "$TC2"
+pg_combined "$TC2" toolu_k2
+pg_text "$TC2" "Done."
+assert_eq "a check and apply in one call after an arming check: the ask is allowed" "$(pg_decide "$TC2")" allow
+assert_eq "and the Stop guard allows" "$(sg_decide "$TC2")" allow
+TC3="$PG/combined-then-check.jsonl"; cp "$TC2" "$TC3"
+pg_check "$TC3" toolu_k3 batch "$PG/batch/view.md"
+assert_eq "a later separate check re-arms: the ask is refused" "$(pg_decide "$TC3")" deny
+assert_eq "and the Stop guard blocks" "$(sg_decide "$TC3")" block
+TC4="$PG/combined-other-id.jsonl"; cp "$TC2" "$TC4"
+pg_result "$TC4" toolu_other "batch.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$PG/batch/view.md")"
+assert_eq "a pass-line result with another tool_use_id arms" "$(pg_decide "$TC4")" deny
+TC5="$PG/combined-no-id.jsonl"; cp "$TC2" "$TC5"
+pg_entry "$TC5" user "$(jq -nc --arg t "batch.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$PG/batch/view.md")" '[{type:"tool_result", content:$t}]')"
+assert_eq "a pass-line result with no tool_use_id arms" "$(pg_decide "$TC5")" deny
+
 
 # The re-read window, with the paste guard's `sleep` stub: it appends the
 # final reply on its first call, between two reads.
