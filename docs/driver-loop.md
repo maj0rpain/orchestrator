@@ -31,7 +31,10 @@ means for its run; loop step b takes it as a fact.
 Its steps are lettered a-f, so that a "loop step" never reads as one of the
 caller's numbered steps.
 
-- **a. Entry check.** `bash "$ORCH" ticket reclaim <the issue>`: it recovers
+- **a. Entry check.** `bash "$ORCH" ticket reclaim <the issue>`: it refuses,
+  discarding nothing, unless the current branch is the run's own - the flow's
+  recorded branch for its issue, or a `branch off`-made `quick/<the
+  issue>-<slug>` with no flow - and otherwise recovers
   what a dead run left (ADR-0054) - a merged ticket closed, an unmerged
   ticket with a saved report merged and closed, any other leftover discarded
   so its ticket is rebuilt - and prints one line per action (a collapsed
