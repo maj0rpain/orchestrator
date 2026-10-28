@@ -267,6 +267,23 @@ fake_comments_print() {
   printf '\n'
 }
 
+# fake_comments_json <comments-dir> <n>: the directory's comments, numerically
+# ordered, as one compact JSON array of author, createdAt, body and url, the url
+# being https://github.com/o/r/issues/<n>#issuecomment-<k> for the k-th
+# comment; [] for a missing or empty directory.
+fake_comments_json() {
+  local d="$1" k comments="[]"
+  if [ -d "$d" ]; then
+    for k in $(ls "$d" | sort -n); do
+      comments="$(jq -c --arg a "$(cat "$d/$k/author")" \
+        --arg c "$(cat "$d/$k/created")" --rawfile b "$d/$k/body" \
+        --arg u "https://github.com/o/r/issues/$2#issuecomment-$k" \
+        '. + [{author: $a, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
+    done
+  fi
+  printf '%s\n' "$comments"
+}
+
 # adapter_issue_body <n>: the stored body, then a newline, as gh's --jq .body
 # prints it.
 adapter_issue_body() {
@@ -291,21 +308,14 @@ adapter_issue_comments() {
 adapter_issue_json() {
   ! fake_failing adapter_issue_json || return 1
   fake_issue_known "$1" || return 1
-  local d k comments="[]" body
+  local d body
   d="$(fake_issue_dir "$1")"
   body="$d/body"
   [ -f "$body" ] || body=/dev/null
-  if [ -d "$d/comments" ]; then
-    for k in $(ls "$d/comments" | sort -n); do
-      comments="$(jq -c --arg a "$(cat "$d/comments/$k/author")" \
-        --arg c "$(cat "$d/comments/$k/created")" --rawfile b "$d/comments/$k/body" \
-        '. + [{author: $a, createdAt: $c, body: $b}]' <<<"$comments")"
-    done
-  fi
   jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
     --rawfile b "$body" \
     --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
-    --argjson c "$comments" \
+    --argjson c "$(fake_comments_json "$d/comments" "$1" | jq -c 'map(del(.url))')" \
     '{number: $n, title: $t, body: $b, labels: $l, comments: $c}'
 }
 
@@ -315,17 +325,7 @@ adapter_issue_json() {
 adapter_issue_comments_json() {
   ! fake_failing adapter_issue_comments_json || return 1
   fake_issue_known "$1" || return 1
-  local d k comments="[]"
-  d="$(fake_issue_dir "$1")"
-  if [ -d "$d/comments" ]; then
-    for k in $(ls "$d/comments" | sort -n); do
-      comments="$(jq -c --arg a "$(cat "$d/comments/$k/author")" \
-        --arg c "$(cat "$d/comments/$k/created")" --rawfile b "$d/comments/$k/body" \
-        --arg u "https://github.com/o/r/issues/$1#issuecomment-$k" \
-        '. + [{author: $a, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
-    done
-  fi
-  printf '%s\n' "$comments"
+  fake_comments_json "$(fake_issue_dir "$1")/comments" "$1"
 }
 
 # adapter_issue_state_labels <n>: the stored state, then its labels. Lagging
