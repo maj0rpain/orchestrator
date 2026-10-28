@@ -71,11 +71,14 @@
 #   scan_names_phrase  each listed file, or section of one, names its phrase:
 #     the verifying agents suite-cost run, the review loop's triage and the
 #     review pass suite-cost check, and the PR-writing sites docs/pr-writing.md,
-#     host-capabilities' Agent settings naming agent sync, and the Junie
-#     README's Agent settings on Junie section naming --host junie and orch.sh
-#     doctor
-#   scan_build_args  every build arg docker/compose.yaml interpolates is named
-#     in docker/.env.example
+#     host-capabilities' Agent settings naming agent sync, the Junie README's
+#     Agent settings on Junie section naming --host junie and orch.sh doctor,
+#     the README's Running autopilot and how-it-works' Autopilot and Setup
+#     sections naming their autopilot phrases
+#   scan_dockerignore_secrets  .dockerignore lists each pattern of .gitignore's
+#     Secrets block, in its .dockerignore form
+#   scan_build_args  docker/compose.yaml and docker/.env.example exist, and
+#     every build arg the former interpolates is named in the latter
 #   scan_cpu_limit  the autopilot service limits CPU from ORCH_CPUS and
 #     docker/.env.example mentions it
 #   scan_review_pass  the review pass is defined once in orch-review-pass and
@@ -1198,22 +1201,35 @@ agent_start_files() {
   find "$1/agents" "$1/docs" -name '*.md' -type f 2>/dev/null | sort
   return 0
 }
+# agent_roles_read: orch.sh's AGENT_ROLES, which live in its agent module
+# alone, read from the real plugin root: a scanned fixture carries no agent
+# module. Prints nothing when the module yields no roles.
+agent_roles_read() {
+  (source "$PLUGIN_ROOT/scripts/orch/agent.sh" && echo "$AGENT_ROLES") 2>/dev/null
+}
 # scan_agent_settings <plugin root>: one line per role a start site starts
 # without reading its setting.
 scan_agent_settings() {
-  local r="$1" f text name roles role
+  local r="$1" f text name known_roles roles role pattern
   local -a files
+  known_roles="$(agent_roles_read)"
+  if [ -z "$known_roles" ]; then
+    echo "scripts/orch/agent.sh: no AGENT_ROLES read"
+    return 0
+  fi
+  pattern="orch-(${known_roles// /|})(-[a-z]+)?"
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
     text="$(flat_text "$f")"
     roles=""
-    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>|orchestrator:orch-(implementer|lens-|reviewer-|fixer|closer|resolver)' <<<"$text"; then
+    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$text" ||
+      grep -qE "orchestrator:$pattern" <<<"$text"; then
       # An agent's file path, such as agents/orch-fixer.md, names a file to
       # read, not an agent to start.
       while IFS= read -r name; do
         case "$name" in /* | *.md | '') continue ;; esac
         roles+=" $(agent_role "$name")"
-      done < <(grep -oE '/?\borch-(implementer|lens-[a-z]+|reviewer-[a-z]+|fixer|closer|resolver)\b(\.md)?' <<<"$text")
+      done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
     fi
     grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
     grep -qE "\*\*A driver's (base sync|ticket resolution)\*\*" <<<"$text" && roles+=" resolver"
@@ -1270,6 +1286,23 @@ flags "a pointer at a driver's base sync starts the resolver" \
 spares "a skill's scoped name is not a start" "$out" 'skills/c/SKILL.md: starts an agent of the (implementer|lens|reviewer|fixer|closer) '
 flags "a pointer at Dispatching a subagent starts the implementer" \
   "$out" "agents/orch-x.md: starts an agent of the implementer role but does not name agent get implementer"
+# A start site generated from AGENT_ROLES, read as the rule reads it, so a role
+# added there is covered with no edit here.
+roles_read="$(agent_roles_read)"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/a"
+{
+  printf 'Start under the `orchestrator:` plugin scope:'
+  for role in $roles_read; do printf ' `orch-%s`' "$role"; done
+  printf ' and `orch-lens-x`.\n'
+} >"$fixture/skills/a/SKILL.md"
+out="$(scan_agent_settings "$fixture")"
+for role in $roles_read; do
+  flags "a start site naming orch-$role without agent get $role is flagged" \
+    "$out" "skills/a/SKILL.md: starts an agent of the $role role but does not name agent get $role"
+done
+flags "an agent module that yields no roles is flagged" \
+  "$( (PLUGIN_ROOT="$(new_fixture)"; scan_agent_settings "$fixture") )" "scripts/orch/agent.sh: no AGENT_ROLES read"
 check "every start site points at Agent settings and reads each role it starts" \
   "$(scan_agent_settings "$PLUGIN_ROOT")"
 
@@ -1947,28 +1980,70 @@ for phrase in orchestrator.autopilot.permission-mode 'orch.sh autopilot tick' ne
     "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/how-it-works.md|## Autopilot' "$phrase")"
 done
 
-# The container and host-alternative subsections sit inside ### Setup, and the
-# files the container docs name exist (#1502).
-container_files=(docker/compose.yaml docker/.env.example)
-for phrase in "${container_files[@]}" systemd; do
+# The container and host-alternative subsections sit inside ### Setup (#1502).
+for phrase in docker/compose.yaml docker/.env.example systemd; do
   check "how-it-works' Autopilot Setup names $phrase" \
     "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/how-it-works.md|### Setup' "$phrase")"
 done
-for f in "${container_files[@]}"; do
-  check "$f exists" "$([ -f "$PLUGIN_ROOT/$f" ] || echo "$f: missing")"
-done
 # The build context is the plugin root, so .dockerignore must keep the filled-in
-# secrets (the .gitignore Secrets patterns, at any depth) out of the image.
-for pat in '**/.env' '**/.env.*' '!**/.env.example' .claude/settings.local.json; do
-  check ".dockerignore lists $pat" \
-    "$(grep -qxF -- "$pat" "$PLUGIN_ROOT/.dockerignore" || echo ".dockerignore: does not list $pat")"
+# secrets out of the image: each pattern of .gitignore's # Secrets block, in its
+# .dockerignore form.
+# scan_dockerignore_secrets <plugin root>: one line per mapped Secrets pattern
+# .dockerignore does not list, or when .gitignore has no # Secrets block.
+scan_dockerignore_secrets() {
+  local r="$1" pat want
+  local -a pats
+  mapfile -t pats < <(awk '/^# Secrets[[:space:]]*$/ { inb = 1; next }
+    inb && (/^[[:space:]]*$/ || /^#/) { exit }
+    inb { print }' "$r/.gitignore" 2>/dev/null)
+  if [ "${#pats[@]}" -eq 0 ]; then
+    echo ".gitignore: no # Secrets block"
+    return 0
+  fi
+  for pat in "${pats[@]}"; do
+    case "${pat#!}" in
+      /*) want="${pat/\//}" ;;
+      */?*) want="$pat" ;;
+      *) if [[ $pat == '!'* ]]; then want="!**/${pat#!}"; else want="**/$pat"; fi ;;
+    esac
+    grep -qxF -- "$want" "$r/.dockerignore" 2>/dev/null ||
+      echo ".dockerignore: does not list $want"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+printf '%s\n' 'build/' '' '# Secrets' '.env' 'keys/' '!.env.example' 'conf/secret.json' '/root.key' '' \
+  'outside.txt' >"$fixture/.gitignore"
+: >"$fixture/.dockerignore"
+out="$(scan_dockerignore_secrets "$fixture")"
+for pat in '**/.env' '**/keys/' '!**/.env.example' conf/secret.json root.key; do
+  flags "a .dockerignore missing $pat is flagged" "$out" ".dockerignore: does not list $pat"
 done
+spares "a pattern outside the Secrets block is never required" "$out" 'outside|build'
+mapped=('**/.env' '**/keys/' '!**/.env.example' conf/secret.json root.key)
+for pat in "${mapped[@]}"; do
+  grep -vxF -- "$pat" < <(printf '%s\n' "${mapped[@]}") >"$fixture/.dockerignore"
+  assert_eq "a .dockerignore listing all but $pat flags only it" \
+    "$(scan_dockerignore_secrets "$fixture")" ".dockerignore: does not list $pat"
+done
+printf '%s\n' "${mapped[@]}" >"$fixture/.dockerignore"
+assert_empty "a .dockerignore listing every mapped pattern is not flagged" "$(scan_dockerignore_secrets "$fixture")"
+printf '%s\n' 'build/' >"$fixture/.gitignore"
+flags "a .gitignore with no Secrets block is flagged" \
+  "$(scan_dockerignore_secrets "$fixture")" ".gitignore: no # Secrets block"
+check ".dockerignore lists every pattern of .gitignore's Secrets block" \
+  "$(scan_dockerignore_secrets "$PLUGIN_ROOT")"
 
 # Compose interpolates build.args from the project env file, so every variable
 # it interpolates there is named in docker/.env.example (#1569).
-# scan_build_args <plugin root>: one line per build arg .env.example omits.
+# scan_build_args <plugin root>: one line per docker file missing, else one per
+# build arg .env.example omits.
 scan_build_args() {
-  local r="$1" v
+  local r="$1" v f missing=""
+  for f in docker/compose.yaml docker/.env.example; do
+    [ -f "$r/$f" ] || { echo "$f: missing"; missing=1; }
+  done
+  [ -z "$missing" ] || return 0
   awk '/^ *args:/ { match($0, /^ */); n = RLENGTH; inargs = 1; next }
     inargs { match($0, /^ */); if (RLENGTH <= n) inargs = 0; else print }' \
     "$r/docker/compose.yaml" |
@@ -1988,6 +2063,13 @@ flags "a build arg missing from .env.example is flagged" \
   "$(scan_build_args "$fixture")" "docker/.env.example: does not name build arg BAR"
 printf '# FOO=\nBAR=1\n' >"$fixture/docker/.env.example"
 assert_empty "build args all listed in .env.example are not flagged" "$(scan_build_args "$fixture")"
+rm "$fixture/docker/.env.example"
+assert_eq "a missing docker/.env.example is the only line flagged" \
+  "$(scan_build_args "$fixture")" "docker/.env.example: missing"
+printf '# FOO=\n' >"$fixture/docker/.env.example"
+rm "$fixture/docker/compose.yaml"
+assert_eq "a missing docker/compose.yaml is the only line flagged" \
+  "$(scan_build_args "$fixture")" "docker/compose.yaml: missing"
 check "every build arg docker/compose.yaml interpolates is named in docker/.env.example" \
   "$(scan_build_args "$PLUGIN_ROOT")"
 
@@ -2172,12 +2254,9 @@ echo "previously declined (#418)"
 # earlier items inline (ADR-0045).
 # scan_previously_declined <plugin root>: one line per break of that rule.
 scan_previously_declined() {
-  local r="$1" pass="skills/orch-review-pass/SKILL.md" body prompt
-  body="$(md_section "$r/$pass" "## Standalone review pass" | flat_text)"
-  grep -qF 'pr comments' <<<"$body" \
-    || echo "$pass: ## Standalone review pass does not name pr comments"
-  grep -qF '**Previously declined**' <<<"$body" \
-    || echo "$pass: ## Standalone review pass does not name **Previously declined**"
+  local r="$1" pass="skills/orch-review-pass/SKILL.md" prompt
+  scan_names_phrase "$r" "$pass|## Standalone review pass" 'pr comments'
+  scan_names_phrase "$r" "$pass|## Standalone review pass" '**Previously declined**'
   prompt="$(md_section_first_block "$r/$pass" "## Review pass")"
   [ "$prompt" = "$(printf '%s\n' 'Base SHA: <base SHA>' 'Spec issue: #<issue>' 'Iteration: <NN>' \
     'Report path: <prefix>-<standards|spec>.md' 'orch.sh: <the path ORCH holds>' \
@@ -2225,6 +2304,10 @@ printf '%s\n' '# R' '' '## Review pass' '' '3. Run `orch.sh review-pass known-it
   >"$fixture/skills/orch-review-pass/SKILL.md"
 assert_empty "a pass that reads earlier declines and passes the seven variables is not flagged" \
   "$(scan_previously_declined "$fixture")"
+printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' '   ```' \
+  >"$fixture/skills/orch-review-pass/SKILL.md"
+flags "a pass with no Standalone review pass section gets the section's missing line" \
+  "$(scan_previously_declined "$fixture")" "skills/orch-review-pass/SKILL.md: no ## Standalone review pass section"
 check "a standalone review pass drops earlier declines and the reviewer prompt is the seven variables" \
   "$(scan_previously_declined "$PLUGIN_ROOT")"
 
@@ -2272,8 +2355,7 @@ echo "standalone pass smells (#419)"
 # scan_standalone_smells <plugin root>: one line per place that drops the flag.
 scan_standalone_smells() {
   local r="$1" pass="skills/orch-review-pass/SKILL.md" cmd="commands/review-pass.md"
-  md_section "$r/$pass" "## Standalone review pass" | grep -qF -- '--smells' \
-    || echo "$pass: ## Standalone review pass does not name --smells"
+  scan_names_phrase "$r" "$pass|## Standalone review pass" '--smells'
   grep -E '^argument-hint:' "$r/$cmd" 2>/dev/null | grep -qF -- '--smells' \
     || echo "$cmd: argument-hint does not name --smells"
   return 0
@@ -2291,6 +2373,9 @@ flags "a review-pass argument-hint without --smells is flagged" \
 printf '# R\n\n## Standalone review pass\n\nWith `--smells`, keep them.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
 printf -- '---\nargument-hint: "<issue> [--smells]"\n---\n' >"$fixture/commands/review-pass.md"
 assert_empty "a standalone pass and argument-hint naming --smells are not flagged" \
+  "$(scan_standalone_smells "$fixture")"
+printf '# R\n\n## Standalone review pass\n\nKeep the smell findings when the\nhuman passes\n--smells, and drop them\notherwise.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
+assert_empty "a --smells opening a wrapped line in the section is not flagged" \
   "$(scan_standalone_smells "$fixture")"
 check "a standalone review pass takes --smells, and review-pass offers it" \
   "$(scan_standalone_smells "$PLUGIN_ROOT")"
@@ -2338,11 +2423,12 @@ scan_cheapest_test() {
 # inside its ## Smell baseline, and one when the section is missing.
 scan_test_cost_smells() {
   local r="$1" f="agents/orch-reviewer-standards.md" body base smell
-  base="$(md_section "$r/$f" "## Smell baseline" 2>/dev/null)"
+  base="$(md_section "$r/$f" "## Smell baseline" 2>/dev/null | flat_text)"
   if ! body="$(md_section "$r/$f" "## Test-cost smells" 2>/dev/null)"; then
     echo "$f: no ## Test-cost smells section"
     body=""
   fi
+  body="$(flat_text <<<"$body")"
   while IFS= read -r smell; do
     if [ -n "$body" ] && ! grep -qF -- "**$smell**" <<<"$body"; then
       echo "$f: ## Test-cost smells does not name **$smell**"
@@ -2386,6 +2472,12 @@ printf '# S\n\n## Smell baseline\n\n- **Mysterious Name**: a name.\n\n## Test-co
   >"$fixture/agents/orch-reviewer-standards.md"
 assert_empty "four test-cost smells outside the smell baseline are not flagged" \
   "$(scan_test_cost_smells "$fixture")"
+printf '# S\n\n## Smell baseline\n\n- **Mysterious Name**: a name, not **Per-test\nsetup**.\n\n## Test-cost smells\n\n- **Duplicated\ncoverage**: a.\n- **Expensive seam**: b.\n- **Per-test setup**: c.\n- **Waiting**: d.\n' \
+  >"$fixture/agents/orch-reviewer-standards.md"
+out="$(scan_test_cost_smells "$fixture")"
+spares "a test-cost smell wrapped across lines still counts as named" "$out" 'does not name \*\*Duplicated coverage'
+flags "a test-cost smell wrapped across lines inside the smell baseline is flagged" \
+  "$out" "agents/orch-reviewer-standards.md: **Per-test setup** is inside the ## Smell baseline"
 check "the Standards reviewer carries the four test-cost smells outside the smell baseline" \
   "$(scan_test_cost_smells "$PLUGIN_ROOT")"
 
@@ -2779,13 +2871,9 @@ closer_filing_lines='**Axis:**
 # scan_closer_filing <plugin root>: each labelled body line the closer's
 # ## Filing section does not name, or the section itself when it is missing.
 scan_closer_filing() {
-  local r="$1" closer="agents/orch-closer.md" body line
-  if ! body="$(md_section "$r/$closer" "## Filing")"; then
-    echo "$closer: no ## Filing section"
-    return 0
-  fi
+  local r="$1" line
   while IFS= read -r line; do
-    grep -qF -- "$line" <<<"$body" || echo "$closer: ## Filing does not name $line"
+    scan_names_phrase "$r" "agents/orch-closer.md|## Filing" "$line"
   done <<<"$closer_filing_lines"
   return 0
 }

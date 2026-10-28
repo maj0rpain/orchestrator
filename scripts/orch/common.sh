@@ -328,7 +328,7 @@ exclude_line() {
   [ -n "$missing" ] || return 0
   ex="$(git rev-parse --git-common-dir)/info/exclude"
   { mkdir -p "${ex%/*}" && printf '%s\n' "$missing" >>"$ex"; } 2>/dev/null ||
-    die "cannot add ${missing//$'\n'/, } to the git exclude file $ex"
+    die "cannot add $(list_join "$missing") to the git exclude file $ex"
 }
 
 # exclude_missing <lines>: prints, one per line, each of the newline-separated

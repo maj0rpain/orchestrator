@@ -615,6 +615,13 @@ assert_status "a dirty tree outside the allowlist is busy" "$st" 3
 assert_contains "naming the changed path" "$out" "README.md"
 git checkout -q README.md
 
+echo more >stray.txt
+echo edit >>README.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_contains "naming every changed path, comma-separated" "$out" "outside the planning allowlist: README.md, stray.txt"
+git checkout -q README.md
+rm stray.txt
+
 out="$(orch_gh_failing branch busy extra 2>&1)"; st=$?
 assert_status "an argument is a usage error" "$st" 1
 assert_contains "naming the usage" "$out" "usage: orch.sh branch busy"
@@ -807,6 +814,10 @@ before="$(restart_facts)"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a dirty tree in an interactive main checkout is refused with exit 1" "$st" 1
 assert_contains "naming the discard command" "$out" "reset --hard"
+echo more >stray.txt
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_contains "naming every dirty path, comma-separated" "$out" "(README.md, stray.txt"
+rm stray.txt
 assert_eq "writing nothing" "$(restart_facts)" "$before"
 
 # a failed discard step dies naming the step, leaving the dirty tree

@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.13
+
+The exclude-file, `branch busy` and `branch create` messages that list paths now join them with the shared `list_join` helper; their wording is unchanged.
+
 ## 4.38.12
 
 The paste guard passes the armed view.md to its refusal instruction explicitly, allows on an unknown mode, and names "the question" generically so the ticket view is no longer called the batch question.
