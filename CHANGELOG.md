@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.18
+
+A usage-limit stop with no known reset now says the session gave no reset time: the limit stop comment names the one-hour fallback pause the watcher wrote, and the failure text of an unretried limit stop says no reset time was given.
+
 ## 4.38.17
 
 The spec review's save-answer loop spells its file-option set once, and the apply --resume tests cover all three file options.
