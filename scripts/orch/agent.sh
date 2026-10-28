@@ -11,6 +11,9 @@ AGENT_ROLES="implementer lens reviewer fixer closer resolver"
 # is a table entry and no site switches on a host or a kind. Keyed by host
 # (claude, junie) or by <host>.<kind> (kind model or effort).
 #
+# Every host in the order agent show prints them, and every kind of setting.
+AGENT_HOSTS="claude junie"
+AGENT_KINDS="model effort"
 # The git config key prefix: <prefix>.<kind>.<role>. Junie's keys live beside
 # the Claude Code ones.
 declare -A AGENT_HOST_KEY=([claude]=orchestrator [junie]=orchestrator.junie)
@@ -99,7 +102,9 @@ agent_cache_drop() { AGENT_CACHE_LOADED=""; }
 # value loses its trailing newlines, as a command substitution strips them.
 agent_cache_load() {
   [ -z "$AGENT_CACHE_LOADED" ] || return 0
-  local scope rec k v
+  local scope rec k v host prefixes="" re
+  for host in $AGENT_HOSTS; do prefixes="$prefixes|${AGENT_HOST_KEY[$host]//./\\.}"; done
+  re="^(${prefixes#|})\\.($(agent_pipe_list "$AGENT_KINDS"))\\."
   AGENT_CACHE_LOCAL=(); AGENT_CACHE_GLOBAL=()
   for scope in local global; do
     while IFS= read -r -d '' rec; do
@@ -108,7 +113,7 @@ agent_cache_load() {
       while [[ "$v" == *$'\n' ]]; do v="${v%$'\n'}"; done
       if [ "$scope" = local ]; then AGENT_CACHE_LOCAL["$k"]="$v"
       else AGENT_CACHE_GLOBAL["$k"]="$v"; fi
-    done < <(git config "--$scope" -z --get-regexp '^orchestrator\.(junie\.)?(model|effort)\.' 2>/dev/null)
+    done < <(git config "--$scope" -z --get-regexp "$re" 2>/dev/null)
   done
   AGENT_CACHE_LOADED=1
 }
@@ -139,7 +144,7 @@ agent_clear_cmd() {
 # doctor both print it.
 agent_role_values() {
   local kind v src label out=""
-  for kind in model effort; do
+  for kind in $AGENT_KINDS; do
     agent_lookup "$kind" "$2" v src "$1"
     label="$src"; agent_allowed "$kind" "$v" "$1" || label="$src, invalid"
     [ -z "$out" ] || out="$out$3 "
@@ -197,7 +202,7 @@ agent_write() { agent_cache_drop; git config "--$1" "$2" "$3"; }
 # validated before anything is written. inherit clears the key at that scope,
 # so a stored inherit can never hide a global value.
 agent_set() {
-  local usage="usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]"
+  local usage="usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host ${AGENT_FLAG_HOSTS// /|}]"
   local role="${1:-}" scope=local kind v host seen_host="" key
   local -A vals=()
   shift || true
@@ -219,7 +224,7 @@ agent_set() {
   done
   [ -n "${vals[model]:-}${vals[effort]:-}" ] ||
     die "agent set needs --model or --effort (models: $(agent_values model "$host"); efforts: $(agent_values effort "$host"))"
-  for kind in model effort; do
+  for kind in $AGENT_KINDS; do
     v="${vals[$kind]:-}"
     [ -n "$v" ] || continue
     agent_key key "$host" "$kind" "$role"
@@ -233,7 +238,7 @@ agent_set() {
 # named, at local scope or with --global at global scope. Silent, and exit 0
 # on a key that is not set.
 agent_clear() {
-  local usage="usage: orch.sh agent clear <role> [--model] [--effort] [--global] [--host junie]"
+  local usage="usage: orch.sh agent clear <role> [--model] [--effort] [--global] [--host ${AGENT_FLAG_HOSTS// /|}]"
   local role="${1:-}" kinds="" scope=local kind host seen_host="" key
   shift || true
   agent_require_role "$role"
@@ -250,7 +255,7 @@ agent_clear() {
     esac
     shift
   done
-  [ -n "$kinds" ] || kinds="model effort"
+  [ -n "$kinds" ] || kinds="$AGENT_KINDS"
   for kind in $kinds; do agent_key key "$host" "$kind" "$role"; agent_unset "$scope" "$key"; done
   if [ -n "${AGENT_HOST_SYNCS[$host]+x}" ]; then agent_sync; fi
 }
@@ -266,8 +271,11 @@ agent_show_host() {
   done
 }
 
-# agent show: Claude Code's six lines, then Junie's six.
-agent_show() { agent_show_host claude; agent_show_host junie; }
+# agent show: each host's six lines, in table order.
+agent_show() {
+  local host
+  for host in $AGENT_HOSTS; do agent_show_host "$host"; done
+}
 
 # agent get <role> [--host junie]: exactly two lines, model then effort, the
 # effective values. A disallowed value is refused, naming its key, its value,
@@ -276,7 +284,7 @@ agent_show() { agent_show_host claude; agent_show_host junie; }
 agent_get() {
   local role="$1" host="$2" kind v src out="" key
   agent_require_role "$role"
-  for kind in model effort; do
+  for kind in $AGENT_KINDS; do
     agent_lookup "$kind" "$role" v src "$host"
     if ! agent_allowed "$kind" "$v" "$host"; then
       agent_key key "$host" "$kind" "$role"
@@ -539,7 +547,7 @@ check_agent_settings_host() {
   agent_cache_load
   for role in $AGENT_ROLES; do
     d_ok "agent ${AGENT_HOST_LINE[$host]}$role: $(agent_role_values "$host" "$role" ",")"
-    for kind in model effort; do
+    for kind in $AGENT_KINDS; do
       agent_key key "$host" "$kind" "$role"
       for scope in local global; do
         agent_scoped "$scope" "$key" scoped || continue
@@ -595,7 +603,7 @@ cmd_agent() {
       agent_sync
       ;;
     get)
-      local get_usage="usage: orch.sh agent get <role> [--host junie]" get_host
+      local get_usage="usage: orch.sh agent get <role> [--host ${AGENT_FLAG_HOSTS// /|}]" get_host
       if [ $# -eq 1 ] || { [ $# -ge 2 ] && [ $# -le 3 ] && [ "$2" = --host ]; }; then
         get_host="$(agent_host "${@:2}")" || exit 1
         agent_get "$1" "$get_host"
