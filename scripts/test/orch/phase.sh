@@ -192,7 +192,7 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance with no posted handoff dies" "$st" 1
 assert_contains "naming the missing comment" "$out" "no 02-spec handoff comment"
 assert_contains "and the hint" "$out" "post it with handoff post before leaving the spec phase"
-fake_comment 7 someone 2026-01-01T00:00:00Z "$(printf '<!-- orch:handoff 02-spec -->\n## Decisions\n')"
+fake_comment 7 someone 2026-01-01T00:00:00Z "$(marker_of handoff 02-spec; printf "## Decisions\n")"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance with an invalid posted handoff dies" "$st" 1
 assert_contains "with the uniform invalid error" "$out" \

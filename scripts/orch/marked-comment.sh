@@ -91,33 +91,35 @@ marked_comment_newest() {
 }
 
 # marked_comment_retired <kind> [<arg>]: succeeds when the newest comment of
-# <kind> is tagged retired; prints nothing. Fails when it is not, or none is.
+# <kind> is tagged retired; prints nothing. Fails with 1 when it is not, or none
+# is, and with 2 when the comments cannot be read.
 marked_comment_retired() {
   local json i
   json="$(cat)"
-  i="$(marked_comment_newest "$@" <<<"$json")" || return 1
+  i="$(marked_comment_newest "$@" <<<"$json")" || return $?
   jq -e --argjson i "$i" "$(marked_comment_jq)"'
     marked_comment_list[$i] | marked_comment_info | .retired' <<<"$json" >/dev/null
 }
 
 # marked_comment_follows <kind> [<arg>]: succeeds when some comment follows
-# the newest comment of <kind>; prints nothing. Fails when none does, or none
-# is of that kind.
+# the newest comment of <kind>; prints nothing. Fails with 1 when none does, or
+# none is of that kind, and with 2 when the comments cannot be read.
 marked_comment_follows() {
   local json i
   json="$(cat)"
-  i="$(marked_comment_newest "$@" <<<"$json")" || return 1
+  i="$(marked_comment_newest "$@" <<<"$json")" || return $?
   jq -e --argjson i "$i" "$(marked_comment_jq)"'
     marked_comment_list | length > $i + 1' <<<"$json" >/dev/null
 }
 
 # marked_comment_body <kind> [<arg>]: the body of the newest comment of <kind>
 # with its first line stripped, printed exactly, trailing newlines kept. Exits
-# 1, printing nothing, when none is of that kind.
+# 1, printing nothing, when none is of that kind, and 2 when the comments cannot
+# be read.
 marked_comment_body() {
   local json i
   json="$(cat)"
-  i="$(marked_comment_newest "$@" <<<"$json")" || return 1
+  i="$(marked_comment_newest "$@" <<<"$json")" || return $?
   jq -j --argjson i "$i" "$(marked_comment_jq)"'
     marked_comment_list[$i].body | (index("\n") // empty) as $n | .[$n + 1:]' <<<"$json"
 }

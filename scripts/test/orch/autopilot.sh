@@ -1133,7 +1133,6 @@ post_stop 41 failure review "boom"
 assert_eq "a failure comment opens with the hidden marker line" "$(fake_comments_of 41 | head -1)" "$(marker_of failure review)"
 assert_contains "and keeps its prose beneath" "$(fake_comments_of 41 | sed -n 2p)" "Autopilot failed in the review phase: boom"
 fake_issue 42 open ready-for-agent orch:spec
-post_stop 42 failure "" "boom"
 bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_stop 42 failure "" boom >/dev/null 2>&1; st=$?
 assert_status "an empty phase dies" "$st" 1
 bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_limit_stop 42 "" "" "" 1 log >/dev/null 2>&1; st=$?
