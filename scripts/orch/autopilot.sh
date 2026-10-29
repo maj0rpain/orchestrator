@@ -308,18 +308,23 @@ autopilot_ask() {
 # the caller re-asks, or carries on - and 2 on any other failure, so a failed
 # read is never taken for no reply.
 autopilot_answer() {
-  local phase="$1" file="$2" issue json out q
+  local phase="$1" file="$2" issue json out q first rest
   autopilot_phase_arg "$phase" die2
   require_state die2
   require_issue issue die2
   gh_or_die --exit 2 --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
   q="$(marked_comment_newest question "$phase" <<<"$json")" || die2 "issue #$issue has no $phase question comment"
-  out="$(jq -j --argjson q "$q" "$(marked_comment_jq)"'
+  # The stripped body is read with a sentinel so its trailing newlines survive
+  # into the `---` join; the later comments are read here.
+  first="$(marked_comment_body question "$phase" <<<"$json"; printf x)" || die2 "could not read issue #$issue's comments"
+  first="${first%x}"
+  rest="$(jq -j --argjson q "$q" "$(marked_comment_jq)"'
     marked_comment_list as $c
     | if $q == ($c | length) - 1 then "noreply"
-      else ($c[$q:] | map(.body) | .[0] |= (split("\n")[1:] | join("\n")) | join("\n---\n")) end' <<<"$json")" ||
+      else ($c[$q + 1:] | map("\n---\n" + .body) | join("")) end' <<<"$json")" ||
     die2 "could not read issue #$issue's comments"
-  [ "$out" != noreply ] || die "no reply to the $phase question on issue #$issue yet"
+  out="$(printf '%s' "$first$rest")"  # as before, trailing newlines go; the file gets one
+  [ "$rest" != noreply ] || die "no reply to the $phase question on issue #$issue yet"
   mkdir -p "$(dirname "$file")" || die2 "could not create the directory of $file"
   printf '%s\n' "$out" >"$file" || die2 "could not write $file"
 }
@@ -365,6 +370,11 @@ autopilot_reply() {
     die "the reply comment landed on issue #$issue, but $AUTOPILOT_HUMAN_LABEL could not be removed: $(gh_reason "$gh_err")"
 }
 
+# The one rule for a stop comment, which stays here and not in the
+# marked-comment module: a refusal or a failure comment is a stop.
+# autopilot_is_stop takes a marked_comment_info.
+AUTOPILOT_STOP_JQ='def autopilot_is_stop: .kind == "refusal" or .kind == "failure";'
+
 # autopilot_questions: one tab-separated line per open needs-human issue that
 # carries a phase label other than orch:done: the issue, its kind (question,
 # replied or stop), the phase, and the URL of the comment the kind is about.
@@ -379,12 +389,11 @@ autopilot_questions() {
     phase="$(autopilot_live_phase "$labels")"
     [ -n "$phase" ] || continue
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
-    line="$(jq -r --arg n "$n" --arg phase "$phase" "$(marked_comment_jq)"'
-      def stop: .info.kind == "refusal" or .info.kind == "failure";
+    line="$(jq -r --arg n "$n" --arg phase "$phase" "$(marked_comment_jq)$AUTOPILOT_STOP_JQ"'
       marked_comment_list | length as $len
       | to_entries | map(.value |= {c: ., info: marked_comment_info}) as $e
       | ($e | map(select(.value.info.kind == "question")) | last) as $q
-      | ($e | map(select(.value | stop)) | last) as $s
+      | ($e | map(select(.value.info | autopilot_is_stop)) | last) as $s
       | if $q != null and ($s == null or $q.key > $s.key) then
           [$n, (if $q.key == $len - 1 then "question" else "replied" end), $q.value.info.arg, $q.value.c.url]
         elif $s != null then [$n, "stop", $s.value.info.arg, $s.value.c.url]
@@ -516,11 +525,11 @@ autopilot_stop() {
 autopilot_limit_count() {
   local json gh_err n
   capture json gh_err adapter_issue_comments_json "$1" || return 1
-  n="$(jq -r --arg phase "$2" "$(marked_comment_jq)"'
+  n="$(jq -r --arg phase "$2" "$(marked_comment_jq)$AUTOPILOT_STOP_JQ"'
     reduce (marked_comment_list | reverse[]) as $c ({n: 0, done: false};
       ($c | marked_comment_info) as $i
       | if .done then .
-      elif ($i.kind | IN("refusal", "failure", "question", "handoff")) then .done = true
+      elif ($i | autopilot_is_stop) or ($i.kind | IN("question", "handoff")) then .done = true
       elif $i.kind == "limited" then
         if $i.arg == $phase then .n += 1 else .done = true end
       else . end) | .n' <<<"$json")" || return 1

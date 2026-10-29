@@ -74,11 +74,11 @@ cmd_issue_fetch() {
     adapter_issue_body "$issue"
 }
 
-# The comments `issue comments` writes (#1116): every comment but the spec
-# review's own changelogs (the marked comments of kind spec-review), rendered
-# through COMMENTS_RENDER_JQ, as COMMENTS_JQ renders them; nothing at all when
-# none is left. It reads ISSUE_JSON_JQ's object, whose author is already the
-# login.
+# The comments `issue comments` writes (#1116), from the issue's comments
+# already filtered to drop the spec review's own changelogs (the marked comments
+# of kind spec-review): rendered through COMMENTS_RENDER_JQ, as COMMENTS_JQ
+# renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
+# object, whose author is already the login.
 ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
 
 # issue_comments_kept <n>: issue <n>'s comments as ISSUE_COMMENTS_KEPT_JQ

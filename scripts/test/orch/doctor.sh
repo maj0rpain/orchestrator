@@ -2024,7 +2024,7 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_not_contains "posted handoff comments are not reported missing" "$out" "is missing"
 assert_contains "the plan comment validates" "$out" "handoff 01-plan.md complete"
 assert_contains "and the spec comment" "$out" "handoff 02-spec.md complete"
-fake_comment 7 o 2030-01-01T00:00:00Z "<!-- orch:handoff 02-spec -->
+fake_comment 7 o 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
 ## Decisions"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"
 assert_contains "an incomplete newest comment is flagged" "$out" "handoff 02-spec.md: "

@@ -498,7 +498,7 @@ assert_contains "holding the newest handoff" "$(cat "$p")" "Newer decisions."
 assert_not_contains "and not the handoff directory" "$p" "/handoff/"
 
 # a retired newest comment reads as no handoff
-fake_comment 7 someone 2030-01-02T00:00:00Z "$(sourced_orch marked_comment_write handoff 01-plan retired)"
+fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired)"
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
 assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"

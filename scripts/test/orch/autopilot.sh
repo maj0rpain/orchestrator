@@ -6,9 +6,6 @@
 (( 0 )) && source setup.sh
 
 # iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
-# marker_of <kind> [<arg>]: the marked-comment module's first line for the kind,
-# so a seeded comment is written as the module writes it.
-marker_of() { sourced_orch marked_comment_write "$@"; }
 iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
 # rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
 # <7d reset>: a rate_limit_event line.

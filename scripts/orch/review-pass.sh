@@ -64,8 +64,9 @@ review_pass_begin() {
 REVIEW_PASS_HEADINGS=('## Review' '## Host fallbacks')
 
 # The entries of an issue's Spec ruling comments, one per line, from the
-# issue's structured read: each comment whose body begins `Spec ruling:`, the
-# prefix stripped and its lines trimmed and joined by single spaces.
+# issue's structured read already filtered to the Spec ruling comments (those
+# whose body begins `Spec ruling:`): the prefix stripped and the lines trimmed
+# and joined by single spaces.
 SPEC_RULING_ENTRIES_JQ='.comments[].body | gsub("\r"; "")
   | ltrimstr("Spec ruling:") | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
   | map(select(length > 0)) | join(" ")'

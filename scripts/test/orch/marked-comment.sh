@@ -26,14 +26,12 @@ mc() {
   mc_rc="${mc_out##*rc=}"; mc_out="${mc_out%rc=*}"
   mc_out="${mc_out%$'\n'}"
 }
-# mc_line <kind> [<arg>] [retired]: the writer's first line, newline dropped.
-mc_line() { sourced_orch marked_comment_write "$@"; }
 
 # Round trip: each kind's writer line, read back by every reader.
 for spec in "question plan" "limited implement" "handoff 01-plan" "refusal review" "failure implement" \
   "spec-review" "spec-ruling"; do
   # shellcheck disable=SC2086 # the words are the kind and its argument
-  line="$(mc_line $spec)"
+  line="$(marker_of $spec)"
   kind="${spec%% *}"; arg=""; [ "$kind" = "$spec" ] || arg="${spec#* }"
   arr="$(mc_array "first" "$line"$'\nthe text\n' "last")"
   mc newest "$arr" "$kind" $arg
@@ -43,11 +41,11 @@ for spec in "question plan" "limited implement" "handoff 01-plan" "refusal revie
   mc newest "$(mc_object "$line"$'\n')" "$kind" $arg
   assert_eq "$kind: the issue object is read as the bare array is" "$mc_out/$mc_rc" "0/0"
 done
-assert_eq "the writer prints the question marker" "$(mc_line question plan)" "<!-- orch:question plan -->"
-assert_eq "the writer prints the retired handoff marker" "$(mc_line handoff 01-plan retired)" "<!-- orch:handoff 01-plan retired -->"
-assert_eq "the writer prints the refusal marker" "$(mc_line refusal plan)" "<!-- orch:refusal plan -->"
-assert_eq "the writer prints the spec review heading" "$(mc_line spec-review)" "## Spec review"
-assert_eq "the writer prints the Spec ruling opening alone" "$(mc_line spec-ruling)" "Spec ruling:"
+assert_eq "the writer prints the question marker" "$(marker_of question plan)" "<!-- orch:question plan -->"
+assert_eq "the writer prints the retired handoff marker" "$(marker_of handoff 01-plan retired)" "<!-- orch:handoff 01-plan retired -->"
+assert_eq "the writer prints the refusal marker" "$(marker_of refusal plan)" "<!-- orch:refusal plan -->"
+assert_eq "the writer prints the spec review heading" "$(marker_of spec-review)" "## Spec review"
+assert_eq "the writer prints the Spec ruling opening alone" "$(marker_of spec-ruling)" "Spec ruling:"
 
 # The writer's refusals print nothing and fail.
 for bad_args in "bogus x" "question" "question ''" "spec-review x" "spec-ruling x" "question plan retired" \
@@ -57,7 +55,7 @@ for bad_args in "bogus x" "question" "question ''" "spec-review x" "spec-ruling 
 done
 
 # Exact bodies: trailing newlines are kept; a body with no second line is empty.
-q="$(mc_line question plan)"
+q="$(marker_of question plan)"
 mc body "$(mc_array "$q"$'\nline\n\n\n')" question
 assert_eq "the stripped body keeps its trailing newlines" "$mc_out" "line"$'\n\n'
 mc_exact="$(sourced_orch marked_comment_body question <<<"$(mc_array "$q"$'\nline\n\n\n')"; echo x)"
@@ -72,7 +70,7 @@ mc body "$(mc_array "$q"$'\r\ntext\r\n')" question
 assert_eq "the stripped body of a CR comment drops the marker line and its CR" "$mc_out" $'text\r'
 
 # A retired handoff.
-live="$(mc_line handoff 01-plan)"; ret="$(mc_line handoff 01-plan retired)"
+live="$(marker_of handoff 01-plan)"; ret="$(marker_of handoff 01-plan retired)"
 arr="$(mc_array "$live" "$ret")"
 mc newest "$arr" handoff 01-plan
 assert_eq "a retired handoff is the newest handoff of its name" "$mc_out/$mc_rc" "1/0"
@@ -82,7 +80,7 @@ mc retired "$(mc_array "$ret" "$live")" handoff 01-plan
 assert_eq "the retired predicate says no for a live newest" "$mc_rc:$mc_out" "1:"
 mc retired "$(mc_array "x")" handoff 01-plan
 assert_eq "the retired predicate says no when no comment is of the kind" "$mc_rc:$mc_out" "1:"
-mc retired "$(mc_array "$(mc_line question plan retired 2>/dev/null)")" question
+mc retired "$(mc_array "$(marker_of question plan retired 2>/dev/null)")" question
 assert_eq "retired is read on handoff only" "$mc_rc" "1"
 mc newest "$(mc_array "<!-- orch:question plan retired -->")" question
 assert_eq "a retired tag on a question marker makes it unmarked" "$mc_rc:$mc_out" "1:"
@@ -106,9 +104,9 @@ mc newest "$(mc_array "$q")" question implement
 assert_eq "an argument mismatch finds no comment" "$mc_rc:$mc_out" "1:"
 mc newest "$(mc_array "$q")" limited
 assert_eq "a kind mismatch finds no comment" "$mc_rc:$mc_out" "1:"
-mc newest "$(mc_array "$q" "$(mc_line question implement)")" question
+mc newest "$(mc_array "$q" "$(marker_of question implement)")" question
 assert_eq "with no argument the newest question of any phase is found" "$mc_rc:$mc_out" "0:1"
-mc newest "$(mc_array "$q" "$(mc_line question implement)")" question plan
+mc newest "$(mc_array "$q" "$(marker_of question implement)")" question plan
 assert_eq "with an argument the newest question of that phase is found" "$mc_rc:$mc_out" "0:0"
 mc body "$(mc_array "other")" question
 assert_eq "the body of no comment exits 1, printing nothing" "$mc_rc:$mc_out" "1:"
@@ -147,12 +145,25 @@ mc newest "$(mc_array $'\nSpec ruling: a')" spec-ruling
 assert_eq "a spec ruling whose first line is blank is rejected" "$mc_rc:$mc_out" "1:"
 
 # The exported prelude, through jq: each comment's {kind, arg, retired}.
-arr="$(mc_array "$q" "$ret" "$(mc_line limited build)"$'\r\n' "Autopilot refused to run the plan phase: x" \
-  "$(mc_line failure plan)" $'## Spec review\t' "Spec ruling: z" "plain" "<!-- orch:handoff x")"
+arr="$(mc_array "$q" "$ret" "$(marker_of limited build)"$'\r\n' "Autopilot refused to run the plan phase: x" \
+  "$(marker_of failure plan)" $'## Spec review\t' "Spec ruling: z" "plain" "<!-- orch:handoff x")"
 # shellcheck disable=SC2016 # the jq program is single-quoted, and the module expands in the child
 got="$(sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' marked_comment_list | map(marked_comment_info)'" <<<"$arr")"
 assert_eq "the prelude gives every comment its kind, arg and retired" "$got" \
   '[{"kind":"question","arg":"plan","retired":false},{"kind":"handoff","arg":"01-plan","retired":true},{"kind":"limited","arg":"build","retired":false},{"kind":"refusal","arg":"plan","retired":false},{"kind":"failure","arg":"plan","retired":false},{"kind":"spec-review","arg":null,"retired":false},{"kind":"spec-ruling","arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false}]'
+# The same prelude over the edge cases: a marker on the second line, a retired
+# tag on a non-handoff marker, a marker with an extra argument, a CRLF spec
+# ruling, a spec ruling whose first line is blank, a question marker without
+# its argument.
+arr="$(mc_array $'intro\n<!-- orch:question plan -->' "<!-- orch:question plan retired -->" "<!-- orch:question plan extra -->" \
+  $'Spec ruling: a\r\n- b\r\n' $'\nSpec ruling: a' "<!-- orch:question -->")"
+# shellcheck disable=SC2016
+got="$(sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' marked_comment_list | map(marked_comment_info)'" <<<"$arr")"
+assert_eq "the prelude reads the edge cases as unmarked, but for the CRLF spec ruling" "$got" \
+  '[{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":"spec-ruling","arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false}]'
+# shellcheck disable=SC2016
+got="$(sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' marked_comment_list | map(marked_comment_info)'" <<<"[]")"
+assert_eq "the prelude reads an empty array as no comments" "$got" "[]"
 # shellcheck disable=SC2016
 got="$(sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' marked_comment_list | length'" <<<"$(mc_object a b)")"
 assert_eq "the prelude reads the issue object's comments" "$got" "2"

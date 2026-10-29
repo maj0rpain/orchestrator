@@ -121,9 +121,9 @@ git checkout -q -b quick/21-foo
 fake_github
 fake_issue 21 open
 kp="$(mktemp -d)"
-fake_comment 21 pat 2026-10-01T09:00:00Z $'Spec ruling: Does the cache expire -\n  yes, after an hour.'
+fake_comment 21 pat 2026-10-01T09:00:00Z "$(marker_of spec-ruling) Does the cache expire -"$'\n  yes, after an hour.'
 fake_comment 21 pat 2026-10-02T09:00:00Z 'Not a ruling. Spec ruling: buried mid-comment'
-fake_comment 21 pat 2026-10-03T09:00:00Z $'## Spec review\n\nRound 1.'
+fake_comment 21 pat 2026-10-03T09:00:00Z "$(marker_of spec-review)"$'\n\nRound 1.'
 writeln '- Built the key from the slug,' '  not from the member' 'None.' >"$kp/dev.md"
 
 "$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/dev.md"; st=$?
@@ -173,12 +173,21 @@ assert_status "an empty --deviations file builds the file" "$st" 0
 assert_eq "and both empty headings read None." "$(cat "$kp/known.md")" \
   "$(writeln '## Deviations' 'None.' '## Known items' 'None.')"
 
-fake_comment 21 pat 2026-10-07T09:00:00Z 'Spec ruling: None.'
-fake_comment 21 pat 2026-10-08T09:00:00Z 'Spec ruling: - foo'
+fake_comment 21 pat 2026-10-07T09:00:00Z "$(marker_of spec-ruling) None."
+fake_comment 21 pat 2026-10-08T09:00:00Z "$(marker_of spec-ruling) - foo"
 "$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/empty.md" >/dev/null
 assert_eq "issue rulings drop None. and lose a leading bullet" \
   "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" \
   "$(writeln '## Known items' '- foo - spec ruling')"
+rm -rf "$ORCH_GH_FAKE_STORE/issues/21/comments"
+
+# A multi-line Spec ruling with CR line endings joins the known items as it
+# always did: the CRs go, the lines are trimmed and joined by single spaces.
+fake_comment 21 pat 2026-10-09T09:00:00Z "$(marker_of spec-ruling) Is the key stable -"$'\r\n  yes, per slug.\r\n'
+"$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/empty.md" >/dev/null
+assert_eq "a multi-line Spec ruling with CR line endings joins into one known item" \
+  "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" \
+  "$(writeln '## Known items' '- Is the key stable - yes, per slug. - spec ruling')"
 rm -rf "$ORCH_GH_FAKE_STORE/issues/21/comments"
 
 writeln 'kept' >"$kp/known.md"
