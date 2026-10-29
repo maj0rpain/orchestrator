@@ -17,9 +17,8 @@ export ORCHESTRATOR_HOST=claude
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with no spec handoff" "$st" 1
 assert_contains "names the missing handoff" "$out" "02-spec.md"
-assert_contains "prints a FAIL line for it" "$out" "FAIL  handoff not found:"
-assert_contains "dies with only the remedy" "$out" "02-spec.md before leaving the spec phase"
-assert_not_contains "without repeating that it was not found" "$(printf '%s\n' "$out" | grep '^orch:')" "handoff not found"
+assert_contains "dies with the uniform missing error and the mode's hint" "$out" \
+  "handoff not found: $PWD/.orchestrator/handoff/02-spec.md - write it before leaving the spec phase"
 assert_eq "leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 "$ORCH" state set issue 7
@@ -29,6 +28,8 @@ writeln '## Spec issue' '#7.' '' '## Ticket breakdown' '' '' \
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with an invalid spec handoff" "$st" 1
 assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Ticket breakdown"
+assert_contains "and the uniform invalid error" "$out" \
+  "02-spec.md is not valid - fix it, then run phase advance again; the flow stays at spec"
 assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 writeln '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"

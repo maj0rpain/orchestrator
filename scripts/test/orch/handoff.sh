@@ -31,6 +31,12 @@ assert_contains "review phase reads the implement handoff" "$("$ORCH" handoff pa
 out="$("$ORCH" handoff path bogus 2>/dev/null)"; st=$?
 assert_status "an unknown phase is an error, not a directory" "$st" 1
 assert_eq "and prints no path for a caller to use" "$out" ""
+
+# A handoff not yet written is the write target: the path, a non-zero status,
+# and no message.
+out="$("$ORCH" handoff path review 2>&1)"; st=$?
+assert_status "a missing handoff is a non-zero status" "$st" 1
+assert_eq "printing only its path" "$out" "$PWD/.orchestrator/handoff/03-implement.md"
 restore_suite_env
 
 # --- phase table ------------------------------------------------------------
@@ -531,6 +537,11 @@ out="$("$ORCH" handoff path spec 2>&1)"; st=$?
 assert_status "handoff path with a failed comments read dies" "$st" 1
 assert_contains "showing the gh reason" "$out" "HTTP 503 read"
 fake_unfail
+# a copy left by an earlier fetch is never taken as found
+mkdir -p "$(dirname "$p")"; echo stale >"$(dirname "$p")/02-spec.md"
+out="$("$ORCH" handoff path implement 2>&1)"; st=$?
+assert_status "a stale scratch copy is not a found handoff" "$st" 1
+assert_contains "naming the issue and the comment" "$out" "issue #7 has no 02-spec handoff comment"
 unset ORCH_AUTOPILOT
 restore_suite_env
 
