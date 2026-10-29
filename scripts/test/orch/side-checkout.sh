@@ -812,12 +812,16 @@ db="$(sc_add db)"
   && state_fixture phase "done" && state_fixture branch orch/main-flow && state_fixture pr 58)
 sp_branch_off "$db" quick/11-db
 fake_pr 58 merged orch/main-flow main
+dd="$(sc_add dd)"
+sp_branch_off "$dd" quick/14-dd
+fake_pr 63 merged quick/14-dd main
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune exits 1 when the branch cannot be deleted" "$st" 1
 assert_contains "warning of it" "$out" "could not delete branch orch/main-flow: "
 assert_eq "the worktree is removed" "$(on_disk "$db")" "absent"
 assert_eq "the branch stays" "$(sp_branch orch/main-flow)" "kept"
+assert_eq "the sweep moves on to the next" "$(on_disk "$dd")" "absent"
 git branch -q -D quick/11-db
 
 # #1333: an archive that cannot be written stops before the side checkout, its
