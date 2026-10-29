@@ -32,11 +32,6 @@ out="$("$ORCH" handoff path bogus 2>/dev/null)"; st=$?
 assert_status "an unknown phase is an error, not a directory" "$st" 1
 assert_eq "and prints no path for a caller to use" "$out" ""
 
-# A handoff not yet written is the write target: the path, a non-zero status,
-# and no message.
-out="$("$ORCH" handoff path review 2>&1)"; st=$?
-assert_status "a missing handoff is a non-zero status" "$st" 1
-assert_eq "printing only its path" "$out" "$PWD/.orchestrator/handoff/03-implement.md"
 restore_suite_env
 
 # --- phase table ------------------------------------------------------------
@@ -497,19 +492,10 @@ fake_comment 7 someone 2030-01-01T00:00:00Z "unrelated chatter"
 assert_contains "the newest tagged comment wins" "$(cat "$fetched")" "Newer decisions."
 assert_eq "an older one is left in place" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "3"
 
-p="$("$ORCH" handoff path spec 2>&1)"; st=$?
-assert_status "handoff path fetches in autopilot" "$st" 0
-assert_contains "printing a scratch file under .orchestrator" "$p" "/.orchestrator/"
-assert_contains "holding the newest handoff" "$(cat "$p")" "Newer decisions."
-assert_not_contains "and not the handoff directory" "$p" "/handoff/"
-
 # a retired newest comment reads as no handoff
 fake_comment 7 someone 2030-01-02T00:00:00Z "<!-- orch:handoff 01-plan retired -->"
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
-assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
-out="$("$ORCH" handoff path spec 2>&1 >/dev/null)"; st=$?
-assert_status "nor to path" "$st" 1
 assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
 out="$("$ORCH" handoff fetch 02-spec "$fetched" 2>&1)"; st=$?
 assert_status "a handoff never posted is none" "$st" 1
@@ -532,16 +518,54 @@ assert_status "a post gh refuses dies" "$st" 1
 assert_contains "showing the gh reason" "$out" "gh could not post the 01-plan handoff on issue #7: HTTP 502"
 assert_eq "having posted nothing" "$(fake_snapshot)" "$before"
 assert_eq "a failed post leaves no temp file" "$(ls -A "$post_tmp")" ""
+unset ORCH_AUTOPILOT
+restore_suite_env
+
+# --- handoff path's lookups in both modes (#1697) -----------------------------
+# handoff path reads a handoff through the handoff module's lookups: a file in
+# an interactive flow, the posted comment fetched to the scratch directory in an
+# autopilot one. The missing error at the callers that die on it is asserted in
+# their own sections.
+echo
+echo "handoff path's lookups in both modes"
+fake_flow handoff-lookups
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open
+# A handoff not yet written is the write target: the path, a non-zero status,
+# and no message.
+out="$("$ORCH" handoff path review 2>&1)"; st=$?
+assert_status "an interactive missing handoff is a non-zero status" "$st" 1
+assert_eq "printing only its path" "$out" "$PWD/.orchestrator/handoff/03-implement.md"
+mkdir -p .orchestrator/handoff
+literal_handoff implement >.orchestrator/handoff/02-spec.md
+out="$("$ORCH" handoff path implement 2>&1)"; st=$?
+assert_status "an interactive handoff that exists resolves" "$st" 0
+assert_eq "to its file" "$out" "$PWD/.orchestrator/handoff/02-spec.md"
+
+export ORCH_AUTOPILOT=1
+out="$("$ORCH" handoff path spec 2>&1)"; st=$?
+assert_status "an autopilot handoff never posted dies" "$st" 1
+assert_contains "naming the issue and the comment" "$out" "orch: issue #7 has no 01-plan handoff comment"
+fake_comment 7 someone 2030-01-01T00:00:00Z "$(printf '<!-- orch:handoff 01-plan -->\n'; literal_handoff spec)"
+p="$("$ORCH" handoff path spec 2>&1)"; st=$?
+assert_status "a posted handoff resolves" "$st" 0
+assert_contains "to a scratch file under .orchestrator" "$p" "/.orchestrator/"
+assert_not_contains "not the handoff directory" "$p" "/handoff/"
+assert_eq "holding the comment's body" "$(cat "$p")" "$(literal_handoff spec)"
 fake_fail adapter_issue_json "HTTP 503 read"
 out="$("$ORCH" handoff path spec 2>&1)"; st=$?
-assert_status "handoff path with a failed comments read dies" "$st" 1
+assert_status "a failed comments read dies" "$st" 1
 assert_contains "showing the gh reason" "$out" "HTTP 503 read"
 fake_unfail
 # a copy left by an earlier fetch is never taken as found
-mkdir -p "$(dirname "$p")"; echo stale >"$(dirname "$p")/02-spec.md"
+echo stale >"$(dirname "$p")/02-spec.md"
 out="$("$ORCH" handoff path implement 2>&1)"; st=$?
 assert_status "a stale scratch copy is not a found handoff" "$st" 1
 assert_contains "naming the issue and the comment" "$out" "issue #7 has no 02-spec handoff comment"
+fake_comment 7 someone 2030-01-02T00:00:00Z "<!-- orch:handoff 01-plan retired -->"
+out="$("$ORCH" handoff path spec 2>&1 >/dev/null)"; st=$?
+assert_status "a retired newest comment is missing" "$st" 1
+assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
 unset ORCH_AUTOPILOT
 restore_suite_env
 
