@@ -168,6 +168,13 @@ as it stands.
 The issue comment tagged `<!-- orch:handoff 01-plan -->` that holds an autopilot
 flow's plan handoff.
 
+**Marked comment**:
+An issue comment whose first line names its kind to orch.sh: a hidden
+`<!-- orch:<kind> <arg> -->` marker (question, limit stop, handoff, refusal,
+failure), or a visible opening the human reads too (the spec review's
+`## Spec review` heading, a `Spec ruling:` line). Question comment, Plan comment
+and the rest are kinds of marked comment.
+
 **Question comment**:
 The issue comment tagged `<!-- orch:question <phase> -->` that asks the human an
 autopilot phase's numbered questions.
