@@ -605,18 +605,6 @@ cmd_ticket() {
   esac
 }
 
-# The checkout that has <branch> checked out, or nothing: the first checkout
-# the walk lists on <branch>, a worktree whose directory is gone included.
-# Dies when the checkouts cannot be read; called in a substitution, so its
-# caller carries that status out.
-branch_checkout() {
-  local list _kind _flow branch path
-  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
-  while read -r _kind _flow branch path; do
-    if [ "$branch" = "$1" ]; then note "$path"; return 0; fi
-  done <<<"$list"
-}
-
 # Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
 # that branch's tip inside the ticket worktree, then fast-forwards that branch
 # in whichever checkout has it - so history stays linear. Every refusal (exit

@@ -36,7 +36,7 @@ forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
 # dies when the checkouts cannot be read, never reading that as none.
 ticket_worktrees_under() {
   local list _kind _flow _branch path name
-  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
+  list="$(checkouts_or_die)" || exit $?
   while read -r _kind _flow _branch path; do
     checkout_ticket_path "$path" "$1" || continue
     name="${path##*/}"

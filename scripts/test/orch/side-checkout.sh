@@ -398,6 +398,12 @@ assert_contains "naming the checkouts" "$out" "orch: could not read the checkout
 out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "side-checkout prune dies when the walk fails" "$st" 1
 assert_contains "saying nothing was removed" "$out" "orch: could not read the checkouts - nothing was removed"
+out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout add walk-add 2>&1)"; st=$?
+assert_status "side-checkout add dies when the walk fails" "$st" 1
+assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts - git worktree list failed"
+out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout remove walk-rm 2>&1)"; st=$?
+assert_status "side-checkout remove dies when the walk fails" "$st" 1
+assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts - git worktree list failed"
 out="$(PATH="$nowalk:$PATH" orch_gh_failing status 2>&1)"; st=$?
 assert_status "status dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"

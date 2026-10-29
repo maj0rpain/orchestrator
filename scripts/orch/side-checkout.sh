@@ -213,7 +213,7 @@ cmd_side_checkout_add() {
     esac
   done
   slug="$(normalize_slug "$slug")"
-  main_root="$(main_checkout)"
+  main_root="$(main_checkout_or_die)" || exit $?
   # The sweep first, its report on stderr so stdout stays the path alone. A
   # failed sweep never stops add; it may have removed the checkout this ran
   # in, so add carries on from the main checkout.
@@ -242,7 +242,7 @@ cmd_side_checkout_add() {
 cmd_side_checkout_list() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout list"
   local list kind _flow _branch path issue quick
-  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
+  list="$(checkouts_or_die)" || exit $?
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] || continue
     quick=""
@@ -271,7 +271,7 @@ cmd_side_checkout_remove() {
   local slug path err here main_root dirs
   here="$(pwd -P)"
   slug="$(normalize_slug "$1")"
-  main_root="$(main_checkout)"
+  main_root="$(main_checkout_or_die)" || exit $?
   path="$(side_checkouts_dir "$main_root")/$slug"
   # One rev-parse for both reads: the top level on the first line, the git
   # folder that holds the marker (see side_checkout_marked) on the second.
@@ -315,10 +315,7 @@ cmd_side_checkout_prune() {
   # The walk lists the main checkout first.
   list="$(checkouts)" || die "could not read the checkouts - nothing was removed"
   mapfile -t walk <<<"$list"
-  main_root=""
-  # The parse main_checkout makes, repeated on the walk already held rather
-  # than walking again.
-  [ "${#walk[@]}" -eq 0 ] || read -r _kind _flow _branch main_root <<<"${walk[0]}"
+  main_root="$(checkouts_main "$list")" || die "could not read the checkouts - nothing was removed"
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"

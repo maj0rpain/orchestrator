@@ -84,6 +84,33 @@ assert_eq "branch_checkout prints nothing for a branch checked out nowhere" \
 assert_eq "main_checkout prints the main checkout from a side checkout" \
   "$(cd "$side" && sourced_orch main_checkout)" "$top"
 
+# checkouts_main <walk>: the main checkout from a walk already held (#1702).
+walk_held="$(sourced_orch checkouts)"
+assert_eq "checkouts_main prints the first line's path" \
+  "$(sourced_orch checkouts_main "$walk_held")" "$top"
+out="$(sourced_orch checkouts_main "")"; st=$?
+assert_status "checkouts_main fails on an empty walk" "$st" 1
+assert_eq "checkouts_main prints nothing on an empty walk" "$out" ""
+
+# checkouts_or_die / main_checkout_or_die: what the plain queries print, or the
+# one walk-failure message.
+nowalk="$(nowalk_bin)"
+assert_eq "checkouts_or_die prints the walk" "$(sourced_orch checkouts_or_die)" "$walk_held"
+assert_eq "main_checkout_or_die prints the main checkout" \
+  "$(cd "$side" && sourced_orch main_checkout_or_die)" "$top"
+out="$(PATH="$nowalk:$PATH" sourced_orch checkouts_or_die 2>&1)"; st=$?
+assert_status "checkouts_or_die dies on a failed walk" "$st" 1
+assert_contains "checkouts_or_die names the walk failure" "$out" \
+  "orch: could not read the checkouts - git worktree list failed"
+out="$(PATH="$nowalk:$PATH" sourced_orch main_checkout_or_die 2>&1)"; st=$?
+assert_status "main_checkout_or_die dies on a failed walk" "$st" 1
+assert_contains "main_checkout_or_die names the walk failure" "$out" \
+  "orch: could not read the checkouts - git worktree list failed"
+out="$(PATH="$nowalk:$PATH" sourced_orch branch_checkout gone 2>&1)"; st=$?
+assert_status "branch_checkout dies on a failed walk" "$st" 1
+assert_contains "branch_checkout names the walk failure" "$out" \
+  "orch: could not read the checkouts - git worktree list failed"
+
 # checkout_kind <path>: the walk's kind for the checkout holding <path> (#1110).
 assert_eq "checkout_kind: a ticket worktree carrying a copied marker is ticket" \
   "$(sourced_orch checkout_kind "$top/.orchestrator/worktrees/t9")" "ticket"

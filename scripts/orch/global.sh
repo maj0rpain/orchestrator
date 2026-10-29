@@ -28,7 +28,7 @@ cmd_status() {
 # no marker, so they never appear; with nothing to list, nothing is printed.
 status_others() {
   local list kind flow _branch path lines=""
-  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
+  list="$(checkouts_or_die)" || exit $?
   while read -r kind flow _branch path; do
     [ "$path" != "$ROOT" ] || continue
     [ "$flow" = 1 ] || [ "$kind" = side ] || continue
