@@ -1397,6 +1397,8 @@ assert_eq "discarding the unmerged one" "$(rc_has_worktree 7)$(rc_has_branch 7)"
 assert_eq "and the dirty one" "$(rc_has_worktree 8)$(rc_has_branch 8)" "nono"
 assert_eq "leaving both tickets open to be rebuilt" "$(fake_state_of 7) $(fake_state_of 8)" "OPEN OPEN"
 assert_contains "printing the discard" "$out" "discarded ticket #7"
+assert_contains "noting the dirty worktree removed" "$out" "removed the worktree of ticket #8"
+assert_contains "and its branch deleted" "$out" "deleted the branch of ticket #8"
 
 # a collapsed breakdown's spec issue is never closed
 tw_repo
@@ -1434,15 +1436,6 @@ assert_contains "saying it already landed" "$out" "ticket #90 already landed"
 assert_eq "keeping its report" "$("$ORCH" ticket report show 90)" "Ticket: #90"
 assert_eq "and leaving the spec issue open" "$(fake_state_of 90)" "OPEN"
 restore_suite_env
-
-# tearing down with discard, and its notes: an unreported dirty worktree is
-# discarded; both the worktree and the branch are reported removed
-rc_setup 1
-echo junk >"$(rc_wt 7)/untracked.txt"
-out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
-assert_status "reclaim tears down a dirty unreported worktree" "$st" 0
-assert_contains "noting the worktree" "$out" "removed the worktree of ticket #7"
-assert_contains "and the branch" "$out" "deleted the branch of ticket #7"
 
 # a branch left with no worktree is deleted, and only the branch is noted
 rc_setup 1
