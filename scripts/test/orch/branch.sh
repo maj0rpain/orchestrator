@@ -937,6 +937,13 @@ assert_status "branch create on a done flow's existing branch succeeds" "$st" 0
 assert_eq "checking the branch out" "$(git branch --show-current)" "orch/18-finished"
 assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 
+# An unreadable state.json is reported, not swallowed, when branch sync asks
+# whether the flow holds the branch.
+echo '{ not json' >.orchestrator/state.json
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "branch sync on an unreadable state exits 1" "$st" 1
+assert_contains "branch sync shows the state read's own error" "$out" "parse error"
+
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin
 orch_gh_failing init other >/dev/null

@@ -58,18 +58,27 @@ branch_upstream() {
 # getter prints the value, or nothing and returns non-zero when the key is
 # unset; a setter returns the status of its git config write.
 
-branch_base_get() { git config --get "branch.$1.orchestrator-base" 2>/dev/null; }
-branch_base_set() { git config "branch.$1.orchestrator-base" "$2"; }
-branch_base_sha_get() { git config --get "branch.$1.orchestrator-base-sha" 2>/dev/null; }
-branch_base_sha_set() { git config "branch.$1.orchestrator-base-sha" "$2"; }
-branch_pr_get() { git config --get "branch.$1.orchestrator-pr" 2>/dev/null; }
-branch_pr_set() { git config "branch.$1.orchestrator-pr" "$2"; }
+# Each key is spelled once, in its <key>_key function; its getter and setter
+# both go through it.
+branch_base_key() { printf 'branch.%s.orchestrator-base\n' "$1"; }
+branch_base_sha_key() { printf 'branch.%s.orchestrator-base-sha\n' "$1"; }
+branch_pr_key() { printf 'branch.%s.orchestrator-pr\n' "$1"; }
+# forked_from_key <branch>: the git config key that records the branch ticket
+# branch <branch> was forked from.
+forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
+
+branch_base_get() { git config --get "$(branch_base_key "$1")" 2>/dev/null; }
+branch_base_set() { git config "$(branch_base_key "$1")" "$2"; }
+branch_base_sha_get() { git config --get "$(branch_base_sha_key "$1")" 2>/dev/null; }
+branch_base_sha_set() { git config "$(branch_base_sha_key "$1")" "$2"; }
+branch_pr_get() { git config --get "$(branch_pr_key "$1")" 2>/dev/null; }
+branch_pr_set() { git config "$(branch_pr_key "$1")" "$2"; }
 
 # forked_from_branch <branch>: prints the forked-from branch recorded on
 # ticket branch <branch> (its ticket parent), or prints nothing and returns
 # non-zero when none is recorded.
-forked_from_branch() { git config --get "branch.$1.orchestrator-ticket-parent" 2>/dev/null; }
-forked_from_set() { git config "branch.$1.orchestrator-ticket-parent" "$2"; }
+forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
+forked_from_set() { git config "$(forked_from_key "$1")" "$2"; }
 
 # Name builders. A flow's branch from its issue and slug, its redo form from
 # that and a redo count, a ticket branch from its forked-from branch and
@@ -130,7 +139,7 @@ branch_kind() {
 # branch_held <branch>: succeeds when this checkout's flow state records
 # <branch> as the flow's branch, in any phase. Reads flow state only.
 branch_held() {
-  [ -f "$STATE" ] && [ "$(state_get branch 2>/dev/null)" = "$1" ]
+  [ -f "$STATE" ] && [ "$(state_get branch)" = "$1" ]
 }
 
 # Records <base> and <sha> as branch <name>'s base and base SHA in its git
@@ -147,7 +156,8 @@ record_branch_base() {
 # refused. It refuses a busy checkout with exit 3 - a branch the plugin made
 # with no PR yet, except the flow's own - but not on the flow signal, since
 # the flow mid-pipeline is its own. Uncommitted or in-progress work is the
-# discard rule's (discard_flow_branch_work), applied before anything else
+# discard rule's (discard_own_branch_work on the flow's own branch,
+# discard_flow_branch_work before a fork), applied before anything else
 # changes: discarded, or refused in an interactive main checkout. Besides
 # state, it records the base and base SHA in the branch's git config, as
 # branch off does, so branch sync and branch base-sha still find them once
@@ -162,21 +172,20 @@ cmd_branch_create() {
   if branch_held "$name" && git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then
     own=1
   fi
-  [ -n "$own" ] || refuse_busy_checkout branch
-  # The non-own path's refusals come before the discard, so a refusal exits
-  # with nothing written.
-  if [ -z "$own" ]; then
-    base="$(flow_base)"
-    new_branch_refusals "$name" "$base" \
-      "point this flow at another base: orch.sh base set <branch> --flow"
-  fi
-  if [ -n "$own" ]; then discard_own_branch_work "branch create" "$name"; else discard_flow_branch_work; fi
   if [ -n "$own" ]; then
+    discard_own_branch_work "branch create" "$name"
     [ "$(checkout_branch)" = "$name" ] || git checkout -q "$name" \
       || die "could not check out $name"
     note "$name"
     return
   fi
+  refuse_busy_checkout branch
+  # The refusals come before the discard, so a refusal exits with nothing
+  # written.
+  base="$(flow_base)"
+  new_branch_refusals "$name" "$base" \
+    "point this flow at another base: orch.sh base set <branch> --flow"
+  discard_flow_branch_work
   fork_new_branch "$name" "$base"
   sha="$(git rev-parse HEAD)"
   state_write_string branch "$name"
