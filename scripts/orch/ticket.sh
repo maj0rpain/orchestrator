@@ -658,23 +658,25 @@ ticket_reclaim_close() {
   note "closed ticket #$n"
 }
 
-# ticket_reclaim_remove <n> <flow>: discards the work in ticket <n>'s worktree
-# if it has one, removes the worktree, and deletes its branch if one is left,
-# dying naming the ticket and the write.
+# ticket_reclaim_remove <n> <flow>: tears down ticket <n>'s worktree and
+# branch, discarding the work in the worktree first, when either exists. It
+# reads what exists first, so its notes follow from that; a failure dies
+# naming the ticket and the step.
 ticket_reclaim_remove() {
-  local n="$1" flow="$2" path
+  local n="$1" flow="$2" path had_wt=0 had_branch=0
   path="$(ticket_worktree_path "$n")"
-  if is_ticket_worktree "$path"; then
-    discard_work_in "$path" "ticket #$n"
-    (cmd_ticket_worktree_remove --unmerged "$n") \
-      || die "ticket #$n: could not remove its worktree $path"
-    note "removed the worktree of ticket #$n"
+  ! is_ticket_worktree "$path" || had_wt=1
+  ! git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null || had_branch=1
+  [ "$had_wt$had_branch" != 00 ] || return 0
+  if ! (ticket_worktree_teardown "$n" --unmerged --discard); then
+    if is_ticket_worktree "$path"; then
+      die "ticket #$n: could not remove its worktree $path"
+    fi
+    [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
+    die "ticket #$n: could not delete branch $flow--t$n"
   fi
-  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
-    git -C "$ROOT" branch -q -D "$flow--t$n" \
-      || die "ticket #$n: could not delete branch $flow--t$n"
-    note "deleted the branch of ticket #$n"
-  fi
+  [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
+  [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
 
 # ticket_reclaim_guard <parent> <branch>: proves <branch> is the recovered

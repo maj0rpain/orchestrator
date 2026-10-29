@@ -1458,6 +1458,60 @@ assert_eq "keeping its report" "$("$ORCH" ticket report show 90)" "Ticket: #90"
 assert_eq "and leaving the spec issue open" "$(fake_state_of 90)" "OPEN"
 restore_suite_env
 
+# tearing down with discard, and its notes: an unreported dirty worktree is
+# discarded; both the worktree and the branch are reported removed
+rc_setup 1
+echo junk >"$(rc_wt 7)/untracked.txt"
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim tears down a dirty unreported worktree" "$st" 0
+assert_contains "noting the worktree" "$out" "removed the worktree of ticket #7"
+assert_contains "and the branch" "$out" "deleted the branch of ticket #7"
+
+# a branch left with no worktree is deleted, and only the branch is noted
+rc_setup 1
+rc_report 7
+"$ORCH" ticket merge 7 >/dev/null 2>&1
+git worktree remove --force "$(rc_wt 7)"
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a ticket with only a branch left succeeds" "$st" 0
+assert_eq "deleting the branch" "$(rc_has_branch 7)" "no"
+assert_contains "noting the branch" "$out" "deleted the branch of ticket #7"
+assert_not_contains "and no worktree" "$out" "removed the worktree"
+
+# a ticket with neither worktree nor branch is skipped, writing nothing
+rc_setup 1
+rc_report 7
+"$ORCH" ticket merge 7 >/dev/null 2>&1
+"$ORCH" ticket-worktree remove 7 >/dev/null
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a ticket with nothing left to tear down succeeds" "$st" 0
+assert_not_contains "noting no removal" "$out" "removed the worktree"
+assert_not_contains "and no deletion" "$out" "deleted the branch"
+
+# each per-ticket die wording
+# rc_git_fails <pattern>: a bin dir whose git fails when its arguments match
+# the glob <pattern>.
+rc_git_fails() {
+  local dir
+  dir="$(mktemp -d)"
+  writeln '#!/bin/sh' 'case " $* " in '"$1"') exit 1 ;; esac' "exec $(command -v git) \"\$@\"" >"$dir/git"
+  chmod +x "$dir/git"
+  printf '%s\n' "$dir"
+}
+rc_setup 1
+out="$(PATH="$(rc_git_fails '*" worktree remove "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a worktree that cannot be removed dies" "$st" 1
+assert_contains "naming the ticket and its worktree" "$out" "ticket #7: could not remove its worktree $(rc_wt 7)"
+assert_eq "leaving the worktree" "$(rc_has_worktree 7)" "yes"
+
+rc_setup 1
+out="$(PATH="$(rc_git_fails '*" branch "*" -D "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a -D that fails after the worktree is removed dies" "$st" 1
+assert_contains "noting the worktree that went" "$out" "removed the worktree of ticket #7"
+assert_contains "naming the ticket and its branch" "$out" "ticket #7: could not delete branch orch/5-feature--t7"
+assert_eq "leaving the branch and no worktree" "$(rc_has_worktree 7)$(rc_has_branch 7)" "noyes"
+restore_suite_env
+
 # the flow branch's stray work: refused in an interactive main checkout,
 # discarded in an autopilot flow
 rc_setup 1

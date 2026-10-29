@@ -159,6 +159,8 @@ assert_status "remove --unmerged discards a clean worktree's unmerged branch" "$
 assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 
+# ticket_worktree_teardown, the one site that tears a worktree down. Called
+# through sourced_orch from the flow's checkout; checked through what git shows.
 # Left mid-rebase - a ticket conflict's resolution that failed: --unmerged
 # aborts the rebase first, returning the ticket branch to its committed tip,
 # then removes the clean worktree with no force.
@@ -168,8 +170,9 @@ ticket_tip="$(git rev-parse orch/5-feature--t7)"
 echo parent >feature.txt && git commit -qam "parent edit"
 git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
 echo leftover >"$wt/untracked.txt"
-out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
-assert_status "remove --unmerged of a mid-rebase worktree still refuses it dirty" "$st" 1
+out="$(sourced_orch ticket_worktree_teardown 7 --unmerged 2>&1)"; st=$?
+assert_status "teardown --unmerged of a mid-rebase worktree still refuses it dirty" "$st" 1
+assert_contains "saying it is dirty" "$out" "ticket worktree $wt is dirty"
 assert_eq "having aborted its rebase first" \
   "$(rebasing "$wt")" "none"
 assert_eq "returning the ticket branch to its committed tip" \
@@ -177,11 +180,69 @@ assert_eq "returning the ticket branch to its committed tip" \
 assert_eq "and removing nothing with force" "$(on_disk "$wt")" "present"
 rm "$wt/untracked.txt"
 git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
-out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
-assert_status "remove --unmerged of a clean mid-rebase worktree succeeds" "$st" 0
+out="$(sourced_orch ticket_worktree_teardown 7 --unmerged 2>&1)"; st=$?
+assert_status "teardown --unmerged of a clean mid-rebase worktree succeeds" "$st" 0
 assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 git reset -q --hard HEAD~1
+
+# Without --unmerged a rebase left in progress is not aborted.
+wt="$("$ORCH" ticket-worktree add 7)"
+echo ticket >"$wt/feature.txt" && git -C "$wt" commit -qam "ticket edit"
+echo parent >feature.txt && git commit -qam "parent edit"
+git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown without --unmerged refuses a mid-rebase worktree" "$st" 1
+assert_eq "leaving its rebase in progress" "$(rebasing "$wt")" "rebasing"
+git -C "$wt" rebase --abort
+git reset -q --hard HEAD~1
+
+# Dirty and unmerged refusals, then --discard under the label ticket #<n>.
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown refuses an unmerged branch" "$st" 1
+assert_contains "saying it is not merged" "$out" "not merged into orch/5-feature"
+assert_eq "leaving the worktree in place" "$(on_disk "$wt")" "present"
+echo dirty >"$wt/README.md"
+out="$(sourced_orch ticket_worktree_teardown 7 --unmerged 2>&1)"; st=$?
+assert_status "teardown refuses a dirty worktree" "$st" 1
+assert_eq "leaving the worktree and the branch" \
+  "$(on_disk "$wt")$(git branch --list 'orch/5-feature--t7' | tr -d ' +')" "presentorch/5-feature--t7"
+resetfail="$(mktemp -d)"
+writeln '#!/bin/sh' 'case " $* " in *" reset "*) exit 1 ;; esac' "exec $(command -v git) \"\$@\"" >"$resetfail/git"
+chmod +x "$resetfail/git"
+out="$(PATH="$resetfail:$PATH" sourced_orch ticket_worktree_teardown 7 --unmerged --discard 2>&1)"; st=$?
+assert_status "teardown --discard dies when the discard fails" "$st" 1
+assert_contains "under the label ticket #7" "$out" "orch: ticket #7: git reset --hard failed in $wt"
+assert_eq "removing nothing" "$(on_disk "$wt")" "present"
+out="$(sourced_orch ticket_worktree_teardown 7 --unmerged --discard 2>&1)"; st=$?
+assert_status "teardown --discard throws the dirty work away and succeeds" "$st" 0
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
+assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+
+wt="$("$ORCH" ticket-worktree add 7)"
+echo dirty >"$wt/README.md"
+out="$(sourced_orch ticket_worktree_teardown 7 --discard 2>&1)"; st=$?
+assert_status "teardown --discard of a merged branch succeeds" "$st" 0
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
+
+# Branch only: the worktree is gone but the branch is left.
+wt="$("$ORCH" ticket-worktree add 7)"
+git worktree remove "$wt"
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown of a merged branch whose worktree is gone succeeds" "$st" 0
+assert_eq "deleting the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" commit -q --allow-empty -m work
+git worktree remove "$wt"
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown of an unmerged branch alone refuses" "$st" 1
+assert_eq "keeping the branch" "$(git branch --list 'orch/5-feature--t7' | tr -d ' +')" "orch/5-feature--t7"
+out="$(sourced_orch ticket_worktree_teardown 7 --unmerged 2>&1)"; st=$?
+assert_status "teardown --unmerged of an unmerged branch alone succeeds" "$st" 0
+assert_eq "deleting the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown with neither worktree nor branch dies" "$st" 1
+assert_contains "naming the ticket" "$out" "no ticket worktree or branch for ticket 7"
 
 # A leftover t<n> directory that is no worktree: git would resolve it to the
 # enclosing checkout, so --unmerged must not abort that checkout's rebase.
