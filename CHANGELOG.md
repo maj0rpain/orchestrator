@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.25
+
+Internal refactor: the handoff module now owns the interactive/autopilot choice when a handoff is read, so `phase advance`, `review known-items`, `doctor --flow` and `handoff path` share one lookup. The only visible changes are wording: the interactive missing-handoff message in `review known-items` and `phase advance`, and `phase advance`'s invalid-handoff message in both modes.
+
 ## 4.38.24
 
 Name the merge-in-progress check once as `merge_in_progress`, beside `rebase_in_progress`, and route every inline `MERGE_HEAD` check through it; trim duplicated test cases and share the in-progress fixtures' setup. Behaviour is unchanged.

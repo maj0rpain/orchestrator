@@ -2008,8 +2008,12 @@ echo
 echo "doctor --flow: autopilot handoff comments"
 fake_flow autopilot-handoffs
 export ORCHESTRATOR_HOST=claude
-"$ORCH" state set issue 7 >/dev/null
 state_fixture phase implement
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow fails with no recorded issue" "$st" 1
+assert_contains "naming the unreadable handoff comments" "$out" "autopilot session, but no issue is recorded - the handoff comments cannot be read."
+assert_contains "with abort as the remedy" "$out" "abort"
+"$ORCH" state set issue 7 >/dev/null
 fake_issue 7 open ready-for-agent orch:implement
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow fails with the handoff comments missing" "$st" 1
@@ -2024,6 +2028,12 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_not_contains "posted handoff comments are not reported missing" "$out" "is missing"
 assert_contains "the plan comment validates" "$out" "handoff 01-plan.md complete"
 assert_contains "and the spec comment" "$out" "handoff 02-spec.md complete"
+fake_fail adapter_issue_json "HTTP 502 comments"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_unfail
+assert_status "a comments read failing past the gh gate is a failed check" "$st" 1
+assert_contains "reported as the missing comment" "$out" "handoff 01-plan comment is missing on issue #7"
+assert_contains "and doctor carries on to the next handoff" "$out" "handoff 02-spec comment is missing on issue #7"
 fake_comment 7 o 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
 ## Decisions"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"

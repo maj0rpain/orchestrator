@@ -151,7 +151,7 @@ assert_eq "leaving no implement handoff behind" \
 assert_eq "and the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)" "$plan_before"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave implement" "$st" 1
-assert_contains "for want of the implement handoff" "$out" "/.orchestrator/handoff/03-implement.md before leaving the implement phase"
+assert_contains "for want of the implement handoff" "$out" "/.orchestrator/handoff/03-implement.md - write it before leaving the implement phase"
 out="$("$ORCH" base set redo-base --flow 2>&1)"; st=$?
 assert_status "base set --flow succeeds again once redo review retired the branch" "$st" 0
 assert_eq "recording the corrected base" "$("$ORCH" state get base)" "redo-base"
@@ -389,7 +389,7 @@ assert_eq "and prints nothing" "$out" ""
 assert_eq "without bumping redo_count" "$("$ORCH" state get redo_count)" "2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave spec" "$st" 1
-assert_contains "for want of the spec handoff" "$out" "/.orchestrator/handoff/02-spec.md before leaving the spec phase"
+assert_contains "for want of the spec handoff" "$out" "/.orchestrator/handoff/02-spec.md - write it before leaving the spec phase"
 
 state_fixture phase implement
 "$ORCH" state set issue 41

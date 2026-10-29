@@ -71,19 +71,9 @@ cmd_phase() {
       # checked before the state fields so a missing handoff - the likelier
       # gap - is the one reported.
       name="$(handoff_file_for "$next")"
-      if autopilot_active; then
-        # The handoff is the posted comment: fetched, then checked as a file.
-        require_issue issue
-        file="$(handoff_resolve "$issue" "$name" "$HANDOFF_SCRATCH_DIR")" ||
-          handoff_missing "$issue" "${name%.md}" "post it with handoff post before leaving the $phase phase"
-        handoff_check "$file" "" "$name" || die "the ${name%.md} comment on issue #$issue is not valid - post a fixed one, then run phase advance again; the flow stays at $phase"
-      else
-        file="$(handoff_resolve "" "$name" "")" || true
-        handoff_check "$file" || case $? in
-          2) die "write $file before leaving the $phase phase" ;;
-          *) die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase" ;;
-        esac
-      fi
+      file="$(handoff_read "$name" "before leaving the $phase phase")"
+      handoff_check "$file" "" "$name" ||
+        handoff_invalid "$name" "then run phase advance again; the flow stays at $phase"
       # Deliberately a per-phase switch, not a phase table column: each
       # requirement carries its own remedy message, which a column of field
       # names could only reach through a naming convention.
@@ -92,6 +82,7 @@ cmd_phase() {
         review)    require_branch _unused; require_base_sha _unused; require_pr _unused ;;
       esac
       if phase_finish "$next" ""; then
+        issue="$(state_get issue)"
         note "Phase $(phase_cell writer "$next") complete. Handoff posted on issue #$issue; the watcher starts the $next phase."
       else
         print_boundary "$next"
