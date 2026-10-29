@@ -819,6 +819,9 @@ ab="$(sc_add ab)"
   && state_fixture phase "done" && state_fixture branch orch/ab-flow && state_fixture pr 57)
 sp_branch_off "$ab" orch/ab-flow
 fake_pr 57 merged orch/ab-flow main
+ac="$(sc_add ac)"
+sp_branch_off "$ac" quick/12-ac
+fake_pr 59 merged quick/12-ac main
 fake_online
 mv "$top/.orchestrator/archive" "$top/.orchestrator/archive.kept"
 : >"$top/.orchestrator/archive"
@@ -827,6 +830,8 @@ rm "$top/.orchestrator/archive"
 mv "$top/.orchestrator/archive.kept" "$top/.orchestrator/archive"
 assert_status "prune exits 1 when the archive cannot be written" "$st" 1
 assert_contains "naming the archive path" "$out" "orch: could not create the archive directory $top/.orchestrator/archive/"
+assert_contains "warning with the prefix and the path" "$out" "could not archive the flow in side checkout $ab:"
+assert_eq "the sweep carries on with a flowless one" "$(on_disk "$ac")" "absent"
 assert_eq "the side checkout stays" "$(on_disk "$ab")" "present"
 assert_eq "with its state" "$(on_disk "$ab/.orchestrator/state.json")" "present"
 assert_eq "and its branch" "$(sp_branch orch/ab-flow)" "kept"

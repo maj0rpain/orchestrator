@@ -336,10 +336,11 @@ cmd_side_checkout_remove() {
 cmd_side_checkout_prune() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
   local here main_root path line entry verdict branch rc unread=0 failed=0
-  # archive_out is this entry's archive_flow output - its note, or its error -
-  # cleared at the top of each entry so none outlives its own.
+  # archive_out is the main checkout entry's archive_flow output - its note,
+  # or its error - cleared at the top of each entry so none outlives its own;
+  # a side checkout's is cleared by side_checkout_archive_and_remove.
   local archive_out branch_err
-  local list kind flow _kind _flow _branch walk=() finished=()
+  local list kind flow _branch walk=() finished=()
   here="$(pwd -P)"
   # The walk lists the main checkout first.
   list="$(checkouts)" || die "could not read the checkouts - nothing was removed"

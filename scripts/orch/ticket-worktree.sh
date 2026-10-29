@@ -163,8 +163,7 @@ ticket_worktree_teardown() {
       git -C "$path" rebase --abort \
         || die "could not abort the rebase in progress in ticket worktree $path"
     fi
-    branch="$(checkout_branch "$path")" \
-      || die "ticket worktree $path is not on a branch (detached HEAD)"
+    ticket_worktree_resolve "$n"
     require_clean_tree "$path" \
       "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
   else
@@ -184,7 +183,7 @@ ticket_worktree_teardown() {
 # argument parsing over ticket_worktree_teardown, dying when there is no
 # worktree.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=() path
+  local n="" unmerged=() path branch
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=(--unmerged) ;;
@@ -193,9 +192,7 @@ cmd_ticket_worktree_remove() {
     esac
     shift
   done
-  n="$(ticket_worktree_number "$n")"
-  path="$(ticket_worktree_path "$n")"
-  is_ticket_worktree "$path" || die "no ticket worktree for ticket $n at $path"
+  ticket_worktree_resolve "$n"
   ticket_worktree_teardown "$n" ${unmerged[@]+"${unmerged[@]}"}
 }
 

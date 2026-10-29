@@ -207,10 +207,7 @@ out="$(sourced_orch ticket_worktree_teardown 7 --unmerged 2>&1)"; st=$?
 assert_status "teardown refuses a dirty worktree" "$st" 1
 assert_eq "leaving the worktree and the branch" \
   "$(on_disk "$wt")$(git branch --list 'orch/5-feature--t7' | tr -d ' +')" "presentorch/5-feature--t7"
-resetfail="$(mktemp -d)"
-writeln '#!/bin/sh' 'case " $* " in *" reset "*) exit 1 ;; esac' "exec $(command -v git) \"\$@\"" >"$resetfail/git"
-chmod +x "$resetfail/git"
-out="$(PATH="$resetfail:$PATH" sourced_orch ticket_worktree_teardown 7 --unmerged --discard 2>&1)"; st=$?
+out="$(PATH="$(git_fails_bin '*" reset "*'):$PATH" sourced_orch ticket_worktree_teardown 7 --unmerged --discard 2>&1)"; st=$?
 assert_status "teardown --discard dies when the discard fails" "$st" 1
 assert_contains "under the label ticket #7" "$out" "orch: ticket #7: git reset --hard failed in $wt"
 assert_eq "removing nothing" "$(on_disk "$wt")" "present"

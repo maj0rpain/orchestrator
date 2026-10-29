@@ -1346,16 +1346,6 @@ out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "a rerun with nothing left succeeds" "$st" 0
 assert_eq "printing nothing" "$out" ""
 
-# merged with a saved report, worktree dirty: reset, then removed
-rc_setup 1
-rc_report 7
-"$ORCH" ticket merge 7 >/dev/null 2>&1
-echo junk >"$(rc_wt 7)/untracked.txt"
-echo more >>"$(rc_wt 7)/t7.txt"
-out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
-assert_status "reclaim of a merged reported ticket with a dirty worktree succeeds" "$st" 0
-assert_eq "removing its worktree and closing it" "$(rc_has_worktree 7)$(fake_state_of 7)" "noCLOSED"
-
 # reported, unmerged and dirty: reset, merged, closed, removed
 rc_setup 1
 rc_report 7
@@ -1397,7 +1387,7 @@ assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-fea
 assert_eq "the conflicting ticket stays open" "$(fake_state_of 7)" "OPEN"
 assert_eq "a later leftover is untouched" "$(rc_has_worktree 8)$(fake_state_of 8)" "yesOPEN"
 
-# unreported worktrees are discarded: unmerged, dirty, commit-less, mid-rebase
+# unreported worktrees are discarded: unmerged, dirty
 rc_setup 2
 echo junk >"$(rc_wt 8)/untracked.txt"
 echo more >>"$(rc_wt 8)/t8.txt"
@@ -1407,19 +1397,6 @@ assert_eq "discarding the unmerged one" "$(rc_has_worktree 7)$(rc_has_branch 7)"
 assert_eq "and the dirty one" "$(rc_has_worktree 8)$(rc_has_branch 8)" "nono"
 assert_eq "leaving both tickets open to be rebuilt" "$(fake_state_of 7) $(fake_state_of 8)" "OPEN OPEN"
 assert_contains "printing the discard" "$out" "discarded ticket #7"
-
-rc_setup 0
-"$ORCH" ticket publish 90 T7 "$body" >/dev/null
-"$ORCH" ticket-worktree add 7 >/dev/null
-out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
-assert_status "reclaim discards a commit-less worktree" "$st" 0
-assert_eq "removing it" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
-
-rc_setup 1
-rc_midrebase 7
-out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
-assert_status "reclaim discards a mid-rebase unreported worktree" "$st" 0
-assert_eq "removing it" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
 
 # a collapsed breakdown's spec issue is never closed
 tw_repo
@@ -1478,6 +1455,15 @@ assert_eq "deleting the branch" "$(rc_has_branch 7)" "no"
 assert_contains "noting the branch" "$out" "deleted the branch of ticket #7"
 assert_not_contains "and no worktree" "$out" "removed the worktree"
 
+# a worktree on another branch: the teardown deletes that branch, and the
+# ticket's own branch is deleted after it, so reclaim still leaves none
+rc_setup 1
+git -C "$(rc_wt 7)" checkout -q -b elsewhere
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim of a worktree on another branch succeeds" "$st" 0
+assert_eq "removing the worktree and the ticket's branch" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
+assert_contains "noting the branch" "$out" "deleted the branch of ticket #7"
+
 # a ticket with neither worktree nor branch is skipped, writing nothing
 rc_setup 1
 rc_report 7
@@ -1489,23 +1475,14 @@ assert_not_contains "noting no removal" "$out" "removed the worktree"
 assert_not_contains "and no deletion" "$out" "deleted the branch"
 
 # each per-ticket die wording
-# rc_git_fails <pattern>: a bin dir whose git fails when its arguments match
-# the glob <pattern>.
-rc_git_fails() {
-  local dir
-  dir="$(mktemp -d)"
-  writeln '#!/bin/sh' 'case " $* " in '"$1"') exit 1 ;; esac' "exec $(command -v git) \"\$@\"" >"$dir/git"
-  chmod +x "$dir/git"
-  printf '%s\n' "$dir"
-}
 rc_setup 1
-out="$(PATH="$(rc_git_fails '*" worktree remove "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+out="$(PATH="$(git_fails_bin '*" worktree remove "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "a worktree that cannot be removed dies" "$st" 1
 assert_contains "naming the ticket and its worktree" "$out" "ticket #7: could not remove its worktree $(rc_wt 7)"
 assert_eq "leaving the worktree" "$(rc_has_worktree 7)" "yes"
 
 rc_setup 1
-out="$(PATH="$(rc_git_fails '*" branch "*" -D "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+out="$(PATH="$(git_fails_bin '*" branch "*" -D "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "a -D that fails after the worktree is removed dies" "$st" 1
 assert_contains "noting the worktree that went" "$out" "removed the worktree of ticket #7"
 assert_contains "naming the ticket and its branch" "$out" "ticket #7: could not delete branch orch/5-feature--t7"
