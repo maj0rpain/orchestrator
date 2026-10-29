@@ -182,19 +182,23 @@ assert_contains "the first warns it overlapped another run" "$(cat "$hs/err-a")"
 assert_contains "and so does the second" "$(cat "$hs/err-b")" "orch: $overlap"
 assert_eq "neither is recorded" "$("$ORCH" suite-cost history)" ""
 
-# While both are registered, exactly one .contended file exists: the one the
-# later run made for the earlier, whichever registered first. A run does not
-# mark itself.
+# While both are registered, each .contended file marks the other run - a run
+# does not mark itself. The later run to scan marks the earlier; when both
+# write their markers before either scans, each marks the other, so there are
+# one or two.
 "$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>&1 &
 pid_a=$!
 "$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; ls "$2" >"$3"; printf "x\n" >"$1"' \
   "$hs/one" "$hs/two" "$rec.active" "$hs/listing" >/dev/null 2>&1
 wait "$pid_a"
-assert_eq "two overlapping runs leave exactly one .contended file between them" \
-  "$(grep -c '\.contended$' "$hs/listing")" 1
-marked="$(grep '\.contended$' "$hs/listing")"
-assert_eq "and it marks a run whose marker is listed beside it" \
-  "$(grep -cx "${marked%.contended}" "$hs/listing")" 1
+n="$(grep -c '\.contended$' "$hs/listing")"
+assert_eq "two overlapping runs leave one or two .contended files between them" \
+  "$(case "$n" in 1|2) echo "one or two" ;; *) echo "$n" ;; esac)" "one or two"
+unmarked=""
+while IFS= read -r marked; do
+  grep -qx "${marked%.contended}" "$hs/listing" || unmarked="$unmarked $marked"
+done < <(grep '\.contended$' "$hs/listing")
+assert_eq "and each marks a run whose marker is listed beside it" "$unmarked" ""
 
 git branch other
 git worktree add -q "$PWD/wt" other
