@@ -241,9 +241,11 @@ handoff_missing() {
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
 handoff_comment_fetch() {
-  local issue="$1" name="$2" file="$3" json raw
+  local issue="$1" name="$2" file="$3" json raw rc=0
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  marked_comment_newest handoff "$name" <<<"$json" >/dev/null || return 1
+  marked_comment_newest handoff "$name" <<<"$json" >/dev/null || rc=$?
+  [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
+  [ "$rc" -eq 0 ] || return 1
   ! marked_comment_retired handoff "$name" <<<"$json" || return 1
   raw="$(marked_comment_body handoff "$name" <<<"$json")" || die "could not read issue #$issue's comments"
   mkdir -p "$(dirname "$file")"

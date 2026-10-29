@@ -79,13 +79,13 @@ marked_comment_write() {
 
 # marked_comment_newest <kind> [<arg>]: the index of the newest comment of
 # <kind> (and of <arg>, when given) in the comments on stdin. Exits 1,
-# printing nothing, when none is.
+# printing nothing, when none is, and 2 when the comments cannot be read.
 marked_comment_newest() {
   local out
   out="$(jq -r --arg k "$1" --arg a "${2-}" "$(marked_comment_jq)"'
     marked_comment_list | to_entries
     | map(select(.value | marked_comment_info | .kind == $k and ($a == "" or .arg == $a)))
-    | last | .key // empty')" || return 1
+    | last | .key // empty')" || return 2
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
 }

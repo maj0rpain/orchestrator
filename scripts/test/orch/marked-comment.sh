@@ -18,6 +18,9 @@ new_repo >/dev/null
 mc_array() { jq -cn '$ARGS.positional | map({body: .})' --args "$@"; }
 # mc_object <body>...: the issue object holding the same comments.
 mc_object() { jq -cn '{number: 1, comments: ($ARGS.positional | map({body: .}))}' --args "$@"; }
+# mc_jq <program>: runs the jq <program> over the module's prelude, on stdin.
+# shellcheck disable=SC2016 # the program is single-quoted, and the module expands in the child
+mc_jq() { sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' $1'"; }
 # mc <function> <comments-json> [<arg>...]: sets mc_out and mc_rc from running
 # the module's <function> on the JSON.
 mc() {
@@ -138,6 +141,9 @@ assert_eq "keep leaves only the comments of the kind" "$mc_out" '[{"body":"## Sp
 mc drop "$(mc_object "keep" $'## Spec review\nx')" spec-review
 assert_eq "drop on the issue object keeps its shape" "$mc_out" '{"number":1,"comments":[{"body":"keep"}]}'
 
+mc newest "not json" question plan
+assert_eq "unreadable comments are exit 2, not none" "$mc_rc:$mc_out" "2:"
+
 # Spec ruling.
 mc keep "$(mc_array $'Spec ruling: a\r\n- b\r\n' "x")" spec-ruling
 assert_eq "a spec ruling with CR line endings is kept unchanged" "$mc_out" '[{"body":"Spec ruling: a\r\n- b\r\n"}]'
@@ -147,8 +153,7 @@ assert_eq "a spec ruling whose first line is blank is rejected" "$mc_rc:$mc_out"
 # The exported prelude, through jq: each comment's {kind, arg, retired}.
 arr="$(mc_array "$q" "$ret" "$(marker_of limited build)"$'\r\n' "Autopilot refused to run the plan phase: x" \
   "$(marker_of failure plan)" $'## Spec review\t' "Spec ruling: z" "plain" "<!-- orch:handoff x")"
-# shellcheck disable=SC2016 # the jq program is single-quoted, and the module expands in the child
-got="$(sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' marked_comment_list | map(marked_comment_info)'" <<<"$arr")"
+got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$arr")"
 assert_eq "the prelude gives every comment its kind, arg and retired" "$got" \
   '[{"kind":"question","arg":"plan","retired":false},{"kind":"handoff","arg":"01-plan","retired":true},{"kind":"limited","arg":"build","retired":false},{"kind":"refusal","arg":"plan","retired":false},{"kind":"failure","arg":"plan","retired":false},{"kind":"spec-review","arg":null,"retired":false},{"kind":"spec-ruling","arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false}]'
 # The same prelude over the edge cases: a marker on the second line, a retired
@@ -157,13 +162,10 @@ assert_eq "the prelude gives every comment its kind, arg and retired" "$got" \
 # its argument.
 arr="$(mc_array $'intro\n<!-- orch:question plan -->' "<!-- orch:question plan retired -->" "<!-- orch:question plan extra -->" \
   $'Spec ruling: a\r\n- b\r\n' $'\nSpec ruling: a' "<!-- orch:question -->")"
-# shellcheck disable=SC2016
-got="$(sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' marked_comment_list | map(marked_comment_info)'" <<<"$arr")"
+got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$arr")"
 assert_eq "the prelude reads the edge cases as unmarked, but for the CRLF spec ruling" "$got" \
   '[{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":"spec-ruling","arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false}]'
-# shellcheck disable=SC2016
-got="$(sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' marked_comment_list | map(marked_comment_info)'" <<<"[]")"
+got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"[]")"
 assert_eq "the prelude reads an empty array as no comments" "$got" "[]"
-# shellcheck disable=SC2016
-got="$(sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' marked_comment_list | length'" <<<"$(mc_object a b)")"
+got="$(mc_jq 'marked_comment_list | length' <<<"$(mc_object a b)")"
 assert_eq "the prelude reads the issue object's comments" "$got" "2"

@@ -1134,6 +1134,10 @@ assert_eq "a failure comment opens with the hidden marker line" "$(fake_comments
 assert_contains "and keeps its prose beneath" "$(fake_comments_of 41 | sed -n 2p)" "Autopilot failed in the review phase: boom"
 fake_issue 42 open ready-for-agent orch:spec
 post_stop 42 failure "" "boom"
+bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_stop 42 failure "" boom >/dev/null 2>&1; st=$?
+assert_status "an empty phase dies" "$st" 1
+bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_limit_stop 42 "" "" "" 1 log >/dev/null 2>&1; st=$?
+assert_status "a limit stop of an empty phase dies" "$st" 1
 assert_eq "an empty phase writes no comment and changes no label" "$(fake_comments_of 42)$(fake_labels_of 42)" "orch:spec ready-for-agent "
 for n in 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 40 41 42; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done
 fake_issue 11 open needs-human orch:spec

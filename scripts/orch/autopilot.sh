@@ -308,15 +308,17 @@ autopilot_ask() {
 # the caller re-asks, or carries on - and 2 on any other failure, so a failed
 # read is never taken for no reply.
 autopilot_answer() {
-  local phase="$1" file="$2" issue json out q first rest
+  local phase="$1" file="$2" issue json out q first rest rc=0
   autopilot_phase_arg "$phase" die2
   require_state die2
   require_issue issue die2
   gh_or_die --exit 2 --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  q="$(marked_comment_newest question "$phase" <<<"$json")" || die2 "issue #$issue has no $phase question comment"
+  q="$(marked_comment_newest question "$phase" <<<"$json")" || rc=$?
+  [ "$rc" -ne 2 ] || die2 "could not read issue #$issue's comments"
+  [ "$rc" -eq 0 ] || die2 "issue #$issue has no $phase question comment"
   # The stripped body is read with a sentinel so its trailing newlines survive
   # into the `---` join; the later comments are read here.
-  first="$(marked_comment_body question "$phase" <<<"$json"; printf x)" || die2 "could not read issue #$issue's comments"
+  first="$(marked_comment_body question "$phase" <<<"$json" || exit 1; printf x)" || die2 "could not read issue #$issue's comments"
   first="${first%x}"
   rest="$(jq -j --argjson q "$q" "$(marked_comment_jq)"'
     marked_comment_list as $c
@@ -543,7 +545,7 @@ autopilot_limit_count() {
 # failure path. The reset is empty when the session named none; the pause is
 # the time written to the limit file: the reset, else the one-hour fallback.
 autopilot_limit_stop() {
-  local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" count text when=" (the session gave no reset time)" at stopped
+  local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" count text when=" (the session gave no reset time)" at stopped marker
   [ -z "$reset" ] || when=" (resets $reset)"
   stopped="the session stopped on a usage limit$when and exited with code $rc"
   autopilot_limit_count "$issue" "$phase" count || {
@@ -554,10 +556,11 @@ autopilot_limit_stop() {
     autopilot_stop "$issue" failure "$phase" "$stopped, the third in a row in the $phase phase; log: $log"
     return 0
   fi
+  marker="$(marked_comment_write limited "$phase")" || exit 1
   at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
   [ -z "$reset" ] || at=", which resets $reset"
   printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
-    "$(marked_comment_write limited "$phase")" "$phase" "$at" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
+    "$marker" "$phase" "$at" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
   autopilot_stop_write "$issue" "limit stop" "$text" "$AUTOPILOT_LIMITED_LABEL"
 }
 
