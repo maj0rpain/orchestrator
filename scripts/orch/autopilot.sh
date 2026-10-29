@@ -493,14 +493,17 @@ autopilot_stop_write() {
 
 # autopilot_stop <issue> <refusal|failure> <phase> <detail>: ends a phase that
 # will not run, or did not finish: adds needs-human, comments - the comment
-# names the phase and <detail> - then releases the claim, last.
+# opens with the hidden marker line, then names the phase and <detail> - then
+# releases the claim, last. The marker is written first: a refusal of the
+# writer dies before any label, comment or claim is touched.
 autopilot_stop() {
-  local issue="$1" kind="$2" phase="$3" detail="$4" text
+  local issue="$1" kind="$2" phase="$3" detail="$4" text marker
+  marker="$(marked_comment_write "$kind" "$phase")" || exit 1
   case "$kind" in
-    refusal) printf -v text 'Autopilot refused to run the %s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
-      "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" ;;
-    *) printf -v text 'Autopilot failed in the %s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
-      "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL" ;;
+    refusal) printf -v text '%s\nAutopilot refused to run the %s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
+      "$marker" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" ;;
+    *) printf -v text '%s\nAutopilot failed in the %s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
+      "$marker" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL" ;;
   esac
   autopilot_stop_write "$issue" "$kind" "$text" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL"
 }
