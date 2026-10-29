@@ -674,7 +674,7 @@ ticket_reclaim_close() {
 # if it has one, removes the worktree, and deletes its branch if one is left,
 # dying naming the ticket and the write.
 ticket_reclaim_remove() {
-  local n="$1" flow="$2" path
+  local n="$1" flow="$2" path tbranch
   path="$(ticket_worktree_path "$n")"
   if is_ticket_worktree "$path"; then
     discard_work_in "$path" "ticket #$n"
@@ -682,9 +682,10 @@ ticket_reclaim_remove() {
       || die "ticket #$n: could not remove its worktree $path"
     note "removed the worktree of ticket #$n"
   fi
-  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$(branch_name_ticket "$flow" "$n")" >/dev/null; then
-    git -C "$ROOT" branch -q -D "$(branch_name_ticket "$flow" "$n")" \
-      || die "ticket #$n: could not delete branch $(branch_name_ticket "$flow" "$n")"
+  tbranch="$(branch_name_ticket "$flow" "$n")"
+  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
+    git -C "$ROOT" branch -q -D "$tbranch" \
+      || die "ticket #$n: could not delete branch $tbranch"
     note "deleted the branch of ticket #$n"
   fi
 }
@@ -719,7 +720,7 @@ ticket_reclaim_guard() {
 # is rebuilt. One line per action; a failed write dies naming the ticket.
 cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
-  local parent="$1" flow subs line worktrees n state path st reported merged nums=""
+  local parent="$1" flow subs line worktrees n state path st reported merged nums="" tbranch
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
   ticket_reclaim_guard "$parent" "$flow"
@@ -744,8 +745,9 @@ cmd_ticket_reclaim() {
     reported=""
     [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
     merged=""
-    if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$(branch_name_ticket "$flow" "$n")" >/dev/null; then
-      ! ticket_branch_merged "$(branch_name_ticket "$flow" "$n")" || merged=1
+    tbranch="$(branch_name_ticket "$flow" "$n")"
+    if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
+      ! ticket_branch_merged "$tbranch" || merged=1
     elif [ -n "$reported" ]; then
       merged=1
     fi

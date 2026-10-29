@@ -133,23 +133,6 @@ branch_held() {
   [ -f "$STATE" ] && [ "$(state_get branch 2>/dev/null)" = "$1" ]
 }
 
-# discard_own_branch_work <who> <branch>: the Discard rule's prelude and the
-# discard in one: proves <branch> is the caller's own, then runs
-# discard_flow_branch_work. Own is the branch the flow holds, in any phase;
-# else, with an active flow, the flow-branch proof dies on it; with none, a
-# `quick` branch. Called as a bare statement, so a die stops the caller.
-discard_own_branch_work() {
-  local who="$1" b="$2"
-  if ! branch_held "$b"; then
-    if flow_active; then
-      require_flow_branch "$who" "$b"
-    elif [ "$(branch_kind "$b")" != quick ]; then
-      die "$who: no active flow, and $b is not a quick implementation's branch - nothing was discarded"
-    fi
-  fi
-  discard_flow_branch_work
-}
-
 # Records <base> and <sha> as branch <name>'s base and base SHA in its git
 # config, where branch sync and branch base-sha read them.
 record_branch_base() {

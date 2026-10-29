@@ -716,6 +716,13 @@ out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "a branch with the PR key is free" "$st" 0
 assert_eq "printing nothing (PR key)" "$out" ""
 
+# An orch/ branch with a recorded base and no PR is busy when no flow holds it.
+git checkout -q -b orch/30-unheld
+git config branch.orch/30-unheld.orchestrator-base main
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "an unheld orch/ branch with a base and no PR is busy" "$st" 3
+assert_contains "naming the branch (orch/)" "$out" "orch/30-unheld"
+
 for phase in spec implement review; do
   new_repo_with_origin
   orch_gh_failing init held >/dev/null
@@ -914,6 +921,21 @@ out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a rebase in progress in an autopilot flow is aborted" "$st" 0
 assert_eq "leaving no rebase in progress" \
   "$(rebase_state)" "none"
+
+# A done flow still holds its branch: a restart discards dirty work and checks
+# the branch out.
+new_repo_with_origin
+orch_gh_failing init finished >/dev/null
+orch_gh_failing state set issue 18
+default="$(git branch --show-current)"
+orch_gh_failing branch create >/dev/null
+git checkout -q "$default"
+state_fixture phase "done"
+echo hand >>README.md
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on a done flow's existing branch succeeds" "$st" 0
+assert_eq "checking the branch out" "$(git branch --show-current)" "orch/18-finished"
+assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin

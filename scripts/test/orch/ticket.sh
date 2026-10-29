@@ -1518,7 +1518,8 @@ assert_status "an owned quick branch is reclaimed" "$st" 0
 assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 assert_eq "and discarding the unreported leftover to be rebuilt" "$(rc_has_worktree 7)$(fake_state_of 7)" "noOPEN"
 
-# no flow, on a quick branch whose slug starts with digits: the issue is the run up to the first dash
+# no flow, on a quick branch whose slug starts with digits: the issue is the
+# run up to the first dash
 git checkout -q -b quick/90-6-x && git config branch.quick/90-6-x.orchestrator-base main
 out="$(ORCH_AUTOPILOT=1 "$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "a quick branch quick/90-6-x is reclaimed for #90" "$st" 0
