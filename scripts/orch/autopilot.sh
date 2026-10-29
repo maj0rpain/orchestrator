@@ -273,43 +273,6 @@ autopilot_phase_move() {
   autopilot_release "$1" "${3:+$3, }moved the phase label to $(autopilot_phase_label "$2"), recorded phase $2"
 }
 
-# The first line of a question comment opens with this, then the phase, then
-# " -->".
-AUTOPILOT_QUESTION_PREFIX='<!-- orch:question '
-
-# The first line of a limit stop comment opens with this, then the phase, then
-# " -->".
-AUTOPILOT_LIMITED_PREFIX='<!-- orch:limited '
-
-# What a refusal or failure comment opens with, before the phase; autopilot_stop
-# writes them and stop_phase below reads them back.
-AUTOPILOT_REFUSAL_OPENING='Autopilot refused to run the '
-AUTOPILOT_FAILURE_OPENING='Autopilot failed in the '
-
-# The jq definitions every reader of a comment list shares, so the question
-# marker test is written once: question_comment is true for a comment whose
-# first line is a question marker (of $phase, or of any phase when $phase is
-# empty); question_prefix is the question marker's opening; stop_phase is the
-# phase a refusal or failure comment names, else null.
-AUTOPILOT_COMMENT_JQ='
-  def first_line: .body | split("\n")[0] | rtrimstr("\r");
-  def marker_phase($p):
-    first_line | if startswith($p) and endswith(" -->") then ltrimstr($p) | rtrimstr(" -->") else null end;
-  def question_prefix: "'"$AUTOPILOT_QUESTION_PREFIX"'";
-  def question_comment($phase):
-    marker_phase(question_prefix) as $m | $m != null and ($phase == "" or $m == $phase);
-  def newest_question($phase): map(question_comment($phase)) | rindex(true);
-  def question_phase: marker_phase(question_prefix);
-  def stop_phase:
-    first_line | first(capture("^(?:'"$AUTOPILOT_REFUSAL_OPENING|$AUTOPILOT_FAILURE_OPENING"')(?<p>[^ ]+) phase") | .p) // null;
-'
-
-# autopilot_question_marker <phase>: the first line of a question comment.
-autopilot_question_marker() { printf '%s%s -->\n' "$AUTOPILOT_QUESTION_PREFIX" "$1"; }
-
-# autopilot_limit_marker <phase>: the first line of a limit stop comment.
-autopilot_limit_marker() { printf '%s%s -->\n' "$AUTOPILOT_LIMITED_PREFIX" "$1"; }
-
 # autopilot_phase_arg <phase> [die-fn]: dies, through die-fn (default die),
 # unless <phase> is a phase a question can be asked in - a flow phase other
 # than done.
@@ -329,7 +292,7 @@ autopilot_ask() {
   require_issue issue
   autopilot_setting handle
   body="$(mktemp)" || die "could not create a temp file for the question comment"
-  { autopilot_question_marker "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; cat "$file"
+  { marked_comment_write question "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; cat "$file"
     printf '\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n'; } >"$body"
   capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
   rm -f "$body"
@@ -345,20 +308,18 @@ autopilot_ask() {
 # the caller re-asks, or carries on - and 2 on any other failure, so a failed
 # read is never taken for no reply.
 autopilot_answer() {
-  local phase="$1" file="$2" issue json out
+  local phase="$1" file="$2" issue json out q
   autopilot_phase_arg "$phase" die2
   require_state die2
   require_issue issue die2
   gh_or_die --exit 2 --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  out="$(jq -j --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
-    (.comments | newest_question($phase)) as $q
-    | if $q == null then "noq" elif $q == (.comments | length) - 1 then "noreply"
-      else (.comments[$q:] | map(.body) | .[0] |= (split("\n")[1:] | join("\n")) | join("\n---\n")) end' <<<"$json")" ||
+  q="$(marked_comment_newest question "$phase" <<<"$json")" || die2 "issue #$issue has no $phase question comment"
+  out="$(jq -j --argjson q "$q" "$(marked_comment_jq)"'
+    marked_comment_list as $c
+    | if $q == ($c | length) - 1 then "noreply"
+      else ($c[$q:] | map(.body) | .[0] |= (split("\n")[1:] | join("\n")) | join("\n---\n")) end' <<<"$json")" ||
     die2 "could not read issue #$issue's comments"
-  case "$out" in
-    noq) die2 "issue #$issue has no $phase question comment" ;;
-    noreply) die "no reply to the $phase question on issue #$issue yet" ;;
-  esac
+  [ "$out" != noreply ] || die "no reply to the $phase question on issue #$issue yet"
   mkdir -p "$(dirname "$file")" || die2 "could not create the directory of $file"
   printf '%s\n' "$out" >"$file" || die2 "could not write $file"
 }
@@ -391,20 +352,14 @@ autopilot_resume() {
 # removes needs-human - refused unless the label is still on and no comment
 # follows the issue's newest question comment.
 autopilot_reply() {
-  local issue="$1" file="$2" json verdict gh_err
+  local issue="$1" file="$2" json gh_err
   is_positive_int "$issue" || die "not an issue number: $issue"
   [ -f "$file" ] || die "reply file not found: $file"
   [ -s "$file" ] || die "reply file is empty: $file"
   autopilot_require_human_label "$issue"
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_comments_json "$issue"
-  verdict="$(jq -r "$AUTOPILOT_COMMENT_JQ"'
-    newest_question("") as $q
-    | if $q == null then "noq" elif $q != length - 1 then "followed" else "ok" end' <<<"$json")" ||
-    die "could not read issue #$issue's comments"
-  case "$verdict" in
-    noq) die "issue #$issue has no question comment to reply to" ;;
-    followed) die "a comment already follows the newest question on issue #$issue" ;;
-  esac
+  marked_comment_newest question <<<"$json" >/dev/null || die "issue #$issue has no question comment to reply to"
+  ! marked_comment_follows question <<<"$json" || die "a comment already follows the newest question on issue #$issue"
   gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
   capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL" ||
     die "the reply comment landed on issue #$issue, but $AUTOPILOT_HUMAN_LABEL could not be removed: $(gh_reason "$gh_err")"
@@ -424,12 +379,15 @@ autopilot_questions() {
     phase="$(autopilot_live_phase "$labels")"
     [ -n "$phase" ] || continue
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
-    line="$(jq -r --arg n "$n" --arg phase "$phase" "$AUTOPILOT_COMMENT_JQ"'
-      newest_question("") as $qi | (if $qi == null then null else .[$qi] end) as $q
-      | (to_entries | map(select(.value | stop_phase != null)) | last) as $s
-      | if $q != null and ($s == null or $qi > $s.key) then
-          [$n, (if $qi == length - 1 then "question" else "replied" end), ($q | question_phase), $q.url]
-        elif $s != null then [$n, "stop", ($s.value | stop_phase), $s.value.url]
+    line="$(jq -r --arg n "$n" --arg phase "$phase" "$(marked_comment_jq)"'
+      def stop: .info.kind == "refusal" or .info.kind == "failure";
+      marked_comment_list | length as $len
+      | to_entries | map(.value |= {c: ., info: marked_comment_info}) as $e
+      | ($e | map(select(.value.info.kind == "question")) | last) as $q
+      | ($e | map(select(.value | stop)) | last) as $s
+      | if $q != null and ($s == null or $q.key > $s.key) then
+          [$n, (if $q.key == $len - 1 then "question" else "replied" end), $q.value.info.arg, $q.value.c.url]
+        elif $s != null then [$n, "stop", $s.value.info.arg, $s.value.c.url]
         else [$n, "stop", $phase, ""] end
       | @tsv' <<<"$json")" || die "could not read issue #$n's comments"
     lines+="$line"$'\n'
@@ -539,10 +497,10 @@ autopilot_stop_write() {
 autopilot_stop() {
   local issue="$1" kind="$2" phase="$3" detail="$4" text
   case "$kind" in
-    refusal) printf -v text '%s%s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
-      "$AUTOPILOT_REFUSAL_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" ;;
-    *) printf -v text '%s%s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
-      "$AUTOPILOT_FAILURE_OPENING" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL" ;;
+    refusal) printf -v text 'Autopilot refused to run the %s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
+      "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" ;;
+    *) printf -v text 'Autopilot failed in the %s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
+      "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL" ;;
   esac
   autopilot_stop_write "$issue" "$kind" "$text" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL"
 }
@@ -555,14 +513,13 @@ autopilot_stop() {
 autopilot_limit_count() {
   local json gh_err n
   capture json gh_err adapter_issue_comments_json "$1" || return 1
-  n="$(jq -r --arg lprefix "$AUTOPILOT_LIMITED_PREFIX" --arg hprefix "$HANDOFF_MARKER_PREFIX" --arg phase "$2" "$AUTOPILOT_COMMENT_JQ"'
-    def limit_phase: marker_phase($lprefix);
-    def handoff: first_line | startswith($hprefix);
-    reduce (reverse[]) as $c ({n: 0, done: false};
-      if .done then .
-      elif ($c | stop_phase != null or question_comment("") or handoff) then .done = true
-      elif ($c | limit_phase) != null then
-        if ($c | limit_phase) == $phase then .n += 1 else .done = true end
+  n="$(jq -r --arg phase "$2" "$(marked_comment_jq)"'
+    reduce (marked_comment_list | reverse[]) as $c ({n: 0, done: false};
+      ($c | marked_comment_info) as $i
+      | if .done then .
+      elif ($i.kind | IN("refusal", "failure", "question", "handoff")) then .done = true
+      elif $i.kind == "limited" then
+        if $i.arg == $phase then .n += 1 else .done = true end
       else . end) | .n' <<<"$json")" || return 1
   printf -v "$3" '%s' "$n"
 }
@@ -588,7 +545,7 @@ autopilot_limit_stop() {
   at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
   [ -z "$reset" ] || at=", which resets $reset"
   printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
-    "$(autopilot_limit_marker "$phase")" "$phase" "$at" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
+    "$(marked_comment_write limited "$phase")" "$phase" "$at" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
   autopilot_stop_write "$issue" "limit stop" "$text" "$AUTOPILOT_LIMITED_LABEL"
 }
 
