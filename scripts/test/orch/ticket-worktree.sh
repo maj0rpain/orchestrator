@@ -197,6 +197,18 @@ assert_eq "leaving its rebase in progress" "$(rebasing "$wt")" "rebasing"
 git -C "$wt" rebase --abort
 git reset -q --hard HEAD~1
 
+# The CLI too: remove --unmerged on a worktree left mid-rebase (HEAD detached)
+# aborts the rebase before it reads the branch, then removes the worktree.
+echo parent >feature.txt && git commit -qam "parent edit"
+git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
+out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
+assert_status "remove --unmerged of a mid-rebase worktree succeeds" "$st" 0
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
+assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+git reset -q --hard HEAD~1
+wt="$("$ORCH" ticket-worktree add 7)"
+echo ticket >"$wt/feature.txt" && git -C "$wt" commit -qam "ticket edit"
+
 # Dirty and unmerged refusals, then --discard under the label ticket #<n>.
 out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
 assert_status "teardown refuses an unmerged branch" "$st" 1

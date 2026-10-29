@@ -335,7 +335,7 @@ cmd_side_checkout_remove() {
 # worktree holding a flow is reported and left alone.
 cmd_side_checkout_prune() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
-  local here main_root path line entry verdict branch rc unread=0 failed=0
+  local here main_root path line entry verdict branch rc teardown_rc unread=0 failed=0
   # archive_out is the main checkout entry's archive_flow output - its note,
   # or its error - cleared at the top of each entry so none outlives its own;
   # a side checkout's is cleared by side_checkout_archive_and_remove.
@@ -343,9 +343,9 @@ cmd_side_checkout_prune() {
   local list kind flow _branch walk=() finished=()
   here="$(pwd -P)"
   # The walk lists the main checkout first.
-  list="$(checkouts)" || die "could not read the checkouts - nothing was removed"
+  list="$(checkouts)" && main_root="$(checkouts_main "$list")" \
+    || die "could not read the checkouts - nothing was removed"
   mapfile -t walk <<<"$list"
-  main_root="$(checkouts_main "$list")" || die "could not read the checkouts - nothing was removed"
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"
@@ -381,9 +381,9 @@ cmd_side_checkout_prune() {
       note "archived the main checkout's flow in place - $(checkout_branch "$main_root" || true) is still checked out"
       continue
     fi
-    rc=0
-    side_checkout_archive_and_remove "$path" "$main_root" "$here" warn || rc=$?
-    case "$rc" in
+    teardown_rc=0
+    side_checkout_archive_and_remove "$path" "$main_root" "$here" warn || teardown_rc=$?
+    case "$teardown_rc" in
       0) ;;
       2) warn "could not archive the flow in side checkout $path: ${archive_out%%$'\n'*} - left as it stands"
          failed=1; continue ;;

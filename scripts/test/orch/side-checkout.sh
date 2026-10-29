@@ -9,6 +9,17 @@
 # checkout at <top> holds.
 archived_count() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
 
+# archive_block / archive_unblock: make the main checkout's archive directory
+# unwritable - a file stands where it goes - and put it back.
+archive_block() {
+  mv "$top/.orchestrator/archive" "$top/.orchestrator/archive.kept"
+  : >"$top/.orchestrator/archive"
+}
+archive_unblock() {
+  rm "$top/.orchestrator/archive"
+  mv "$top/.orchestrator/archive.kept" "$top/.orchestrator/archive"
+}
+
 # sp_branch <branch>: kept or gone, by whether the local branch exists.
 sp_branch() { if git rev-parse --verify --quiet "refs/heads/$1" >/dev/null; then echo kept; else echo gone; fi; }
 # sp_branch_off <path> <branch>: puts the side checkout at <path> on a new
@@ -498,12 +509,14 @@ assert_eq "the branch is kept" \
 # locked worktree is one git refuses to remove without force.
 eps="$(sc_add eps)"
 (cd "$eps" && orch_gh_failing init eps-flow >/dev/null)
+sp_branch_off "$eps" quick/9-eps
 git worktree lock "$eps"
 out="$(orch_gh_failing side-checkout remove eps 2>&1)"; st=$?
 assert_status "remove exits 1 when the worktree cannot be removed" "$st" 1
 assert_contains "reporting the failure" "$out" "could not remove side checkout $eps"
 assert_eq "the archive stands" "$(archived_count "$top" eps-flow)" "1"
 assert_eq "the worktree stays" "$(on_disk "$eps")" "present"
+assert_eq "the branch is kept" "$(sp_branch quick/9-eps)" "kept"
 git worktree unlock "$eps"
 
 out="$(orch_gh_failing side-checkout remove 2>&1)"; st=$?
@@ -515,15 +528,13 @@ assert_contains "side-checkout remove is in the usage text" "$(orch_gh_failing h
 for caller in archive remove; do
   af="$(sc_add "af-$caller")"
   (cd "$af" && orch_gh_failing init "af-$caller-flow" >/dev/null)
-  mv "$top/.orchestrator/archive" "$top/.orchestrator/archive.kept"
-  : >"$top/.orchestrator/archive"
+  archive_block
   if [ "$caller" = archive ]; then
     out="$(cd "$af" && orch_gh_failing archive 2>&1)"; st=$?
   else
     out="$(orch_gh_failing side-checkout remove "af-$caller" 2>&1)"; st=$?
   fi
-  rm "$top/.orchestrator/archive"
-  mv "$top/.orchestrator/archive.kept" "$top/.orchestrator/archive"
+  archive_unblock
   assert_status "$caller exits 1 when the archive cannot be written" "$st" 1
   assert_contains "$caller prints the archive error unchanged" "$out" "orch: could not create the archive directory"
   assert_contains "$caller names the main checkout's archive" "$out" "$top/.orchestrator/archive/"
@@ -566,15 +577,13 @@ assert_contains "warn policy returns 1 for a refused removal" "$out" "rc=1"
 assert_eq "the archive stands" "$(archived_count "$top" sf2-flow)" "1"
 sf="$(sc_add sf3)"
 (cd "$sf" && orch_gh_failing init sf3-flow >/dev/null)
-mv "$top/.orchestrator/archive" "$top/.orchestrator/archive.kept"
-: >"$top/.orchestrator/archive"
+archive_block
 for policy in die warn; do
   out="$(cd "$top" && sourced_orch_script 'side_checkout_archive_and_remove "$1" "$2" "$2" "$3" || echo "rc=$?"; echo "out=$archive_out"' "$sf" "$top" "$policy" 2>&1)"
   assert_contains "an archive failure returns 2 under $policy" "$out" "rc=2"
   assert_contains "keeping the error in archive_out" "$out" "out=orch: could not create the archive directory"
 done
-rm "$top/.orchestrator/archive"
-mv "$top/.orchestrator/archive.kept" "$top/.orchestrator/archive"
+archive_unblock
 assert_eq "and removes nothing" "$(on_disk "$sf/.orchestrator/state.json")" "present"
 restore_suite_env
 
@@ -823,11 +832,9 @@ ac="$(sc_add ac)"
 sp_branch_off "$ac" quick/12-ac
 fake_pr 59 merged quick/12-ac main
 fake_online
-mv "$top/.orchestrator/archive" "$top/.orchestrator/archive.kept"
-: >"$top/.orchestrator/archive"
+archive_block
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
-rm "$top/.orchestrator/archive"
-mv "$top/.orchestrator/archive.kept" "$top/.orchestrator/archive"
+archive_unblock
 assert_status "prune exits 1 when the archive cannot be written" "$st" 1
 assert_contains "naming the archive path" "$out" "orch: could not create the archive directory $top/.orchestrator/archive/"
 assert_contains "warning with the prefix and the path" "$out" "could not archive the flow in side checkout $ab:"

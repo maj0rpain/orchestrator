@@ -143,7 +143,7 @@ cmd_ticket_worktree_list() {
 # Every refusal or failed step dies naming what failed, leaving what already
 # happened in place.
 ticket_worktree_teardown() {
-  local n="" unmerged=0 discard=0 path branch have_wt=0
+  local n="" unmerged=0 discard=0 path branch parent have_wt=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -168,7 +168,8 @@ ticket_worktree_teardown() {
       "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
   else
     current_branch_or_die
-    branch="$branch--t$n"
+    parent="$branch"
+    branch="$parent--t$n"
     git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null \
       || die "no ticket worktree or branch for ticket $n at $path"
   fi
@@ -183,7 +184,7 @@ ticket_worktree_teardown() {
 # argument parsing over ticket_worktree_teardown, dying when there is no
 # worktree.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=() path branch
+  local n="" unmerged=() path
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=(--unmerged) ;;
@@ -192,7 +193,11 @@ cmd_ticket_worktree_remove() {
     esac
     shift
   done
-  ticket_worktree_resolve "$n"
+  # Only that a worktree exists is read here: its branch cannot be, while a
+  # rebase leaves HEAD detached, until the teardown has aborted the rebase.
+  n="$(ticket_worktree_number "$n")"
+  path="$(ticket_worktree_path "$n")"
+  is_ticket_worktree "$path" || die "no ticket worktree for ticket $n at $path"
   ticket_worktree_teardown "$n" ${unmerged[@]+"${unmerged[@]}"}
 }
 

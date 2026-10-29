@@ -668,17 +668,17 @@ ticket_reclaim_remove() {
   ! is_ticket_worktree "$path" || had_wt=1
   ! git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null || had_branch=1
   [ "$had_wt$had_branch" != 00 ] || return 0
-  local torn=0
-  (ticket_worktree_teardown "$n" --unmerged --discard) || torn=1
+  local teardown_failed=0
+  (ticket_worktree_teardown "$n" --unmerged --discard) || teardown_failed=1
   if is_ticket_worktree "$path"; then
     die "ticket #$n: could not remove its worktree $path"
   fi
   [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
-  [ "$torn" = 0 ] || die "ticket #$n: could not delete branch $flow--t$n"
+  [ "$teardown_failed" = 0 ] || die "ticket #$n: could not delete branch $flow--t$n"
   # The teardown deletes the worktree's own branch; a worktree on another
-  # branch leaves $flow--t$n behind, which is deleted here.
+  # branch leaves $flow--t$n behind, which the branch-only teardown deletes.
   if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
-    git -C "$ROOT" branch -q -D "$flow--t$n" \
+    (ticket_worktree_teardown "$n" --unmerged --discard) \
       || die "ticket #$n: could not delete branch $flow--t$n"
   fi
   [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
