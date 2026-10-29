@@ -86,10 +86,8 @@ cmd_archive() {
     archive_flow "$ROOT" "$archive_home"
     return
   fi
-  local archive_out rc=0
-  side_checkout_archive_and_remove "$ROOT" "$archive_home" "$(pwd -P)" warn || rc=$?
   # A refused removal is kept and warned of: the archive has still succeeded.
-  if [ "$rc" -eq 2 ]; then printf '%s\n' "$archive_out" >&2; exit 1; fi
+  side_checkout_archive_and_remove_or_exit "$ROOT" "$archive_home" "$(pwd -P)" warn || true
 }
 
 cmd_help() {

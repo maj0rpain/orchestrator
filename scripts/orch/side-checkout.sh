@@ -195,6 +195,17 @@ side_checkout_archive_and_remove() {
   side_checkout_remove_worktree "$path" "$main_root" "$here" "$policy"
 }
 
+# side_checkout_archive_and_remove_or_exit <path> <main-root> <here> <policy>:
+# the CLI callers' shape of side_checkout_archive_and_remove - a failed archive
+# prints its kept `orch: ...` error and exits 1; otherwise it returns the
+# helper's status (0 removed, 1 removal refused under `warn`).
+side_checkout_archive_and_remove_or_exit() {
+  local archive_out rc=0
+  side_checkout_archive_and_remove "$@" || rc=$?
+  if [ "$rc" -eq 2 ]; then printf '%s\n' "$archive_out" >&2; exit 1; fi
+  return "$rc"
+}
+
 # side_checkouts_dir <main-root>: where the side checkouts of the main
 # checkout at <main-root> live.
 side_checkouts_dir() { printf '%s/%s/checkouts\n' "$1" "$ORCH_DIR_NAME"; }
@@ -303,7 +314,7 @@ cmd_side_checkout_issue() {
 # branch is left in place.
 cmd_side_checkout_remove() {
   [ $# -eq 1 ] || die "usage: orch.sh side-checkout remove <slug>"
-  local slug path here main_root dirs archive_out
+  local slug path here main_root dirs
   here="$(pwd -P)"
   slug="$(normalize_slug "$1")"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -320,9 +331,7 @@ cmd_side_checkout_remove() {
   # archive_flow refuses ticket worktrees itself before anything moves, so
   # the refusal runs here only when there is no flow to archive.
   checkout_has_flow "$path" || refuse_ticket_worktrees "$path"
-  local rc=0
-  side_checkout_archive_and_remove "$path" "$main_root" "$here" die || rc=$?
-  if [ "$rc" -eq 2 ]; then printf '%s\n' "$archive_out" >&2; exit 1; fi
+  side_checkout_archive_and_remove_or_exit "$path" "$main_root" "$here" die
 }
 
 # The sweep behind /orchestrator:finish. Every verdict is read first, so a

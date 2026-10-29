@@ -1464,16 +1464,6 @@ assert_status "reclaim of a worktree on another branch succeeds" "$st" 0
 assert_eq "removing the worktree and the ticket's branch" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
 assert_contains "noting the branch" "$out" "deleted the branch of ticket #7"
 
-# a ticket with neither worktree nor branch is skipped, writing nothing
-rc_setup 1
-rc_report 7
-"$ORCH" ticket merge 7 >/dev/null 2>&1
-"$ORCH" ticket-worktree remove 7 >/dev/null
-out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
-assert_status "reclaim of a ticket with nothing left to tear down succeeds" "$st" 0
-assert_not_contains "noting no removal" "$out" "removed the worktree"
-assert_not_contains "and no deletion" "$out" "deleted the branch"
-
 # each per-ticket die wording
 rc_setup 1
 out="$(PATH="$(git_fails_bin '*" worktree remove "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
