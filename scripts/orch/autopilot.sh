@@ -359,14 +359,17 @@ autopilot_resume() {
 # removes needs-human - refused unless the label is still on and no comment
 # follows the issue's newest question comment.
 autopilot_reply() {
-  local issue="$1" file="$2" json gh_err
+  local issue="$1" file="$2" json gh_err rc
   is_positive_int "$issue" || die "not an issue number: $issue"
   [ -f "$file" ] || die "reply file not found: $file"
   [ -s "$file" ] || die "reply file is empty: $file"
   autopilot_require_human_label "$issue"
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_comments_json "$issue"
   marked_comment_newest question <<<"$json" >/dev/null || die "issue #$issue has no question comment to reply to"
-  ! marked_comment_follows question <<<"$json" || die "a comment already follows the newest question on issue #$issue"
+  rc=0
+  marked_comment_follows question <<<"$json" || rc=$?
+  [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
+  [ "$rc" -ne 0 ] || die "a comment already follows the newest question on issue #$issue"
   gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
   capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL" ||
     die "the reply comment landed on issue #$issue, but $AUTOPILOT_HUMAN_LABEL could not be removed: $(gh_reason "$gh_err")"

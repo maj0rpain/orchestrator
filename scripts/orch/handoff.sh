@@ -270,7 +270,10 @@ handoff_comment_fetch() {
   marked_comment_newest handoff "$name" <<<"$json" >/dev/null || rc=$?
   [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
   [ "$rc" -eq 0 ] || return 1
-  ! marked_comment_retired handoff "$name" <<<"$json" || return 1
+  rc=0
+  marked_comment_retired handoff "$name" <<<"$json" || rc=$?
+  [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
+  [ "$rc" -ne 0 ] || return 1
   raw="$(marked_comment_body handoff "$name" <<<"$json")" || die "could not read issue #$issue's comments"
   mkdir -p "$(dirname "$file")"
   if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
