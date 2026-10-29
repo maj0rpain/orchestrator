@@ -337,24 +337,27 @@ handoff_resolve() {
 }
 
 # handoff_read <file> [<hint>]: the dying read. Prints the readable path of the
-# handoff <file>, or dies with handoff_missing's error, <hint> mode-free. An
-# autopilot session requires its recorded issue.
+# handoff <file>, as handoff_resolve does, then dies with handoff_missing's
+# error, <hint> mode-free, when there is no such handoff. An autopilot session
+# requires its recorded issue.
 handoff_read() {
-  local file="$1" issue="" path
+  local file="$1" issue=""
   if autopilot_active; then require_issue issue; fi
-  path="$(handoff_resolve "$file")" && { printf '%s\n' "$path"; return 0; }
-  handoff_missing "$issue" "${file%.md}" "${2:-}"
+  handoff_resolve "$file" || handoff_missing "$issue" "${file%.md}" "${2:-}"
 }
 
 # handoff_fetch_earlier <phase> <file>: in an autopilot session, fetches the
 # handoffs due at <phase> other than <file> beside it, where they exist - a
-# skill reaches a sibling handoff by its directory.
+# skill reaches a sibling handoff by its directory. A copy left by an earlier
+# fetch is cleared first, so a sibling with no live comment is absent.
 handoff_fetch_earlier() {
   local issue earlier
   autopilot_active || return 0
   require_issue issue
   for earlier in $(handoffs_due "$1"); do
-    [ "$earlier" = "$2" ] || handoff_comment_fetch "$issue" "${earlier%.md}" "$HANDOFF_SCRATCH_DIR/$earlier" || true
+    [ "$earlier" != "$2" ] || continue
+    rm -f "$HANDOFF_SCRATCH_DIR/$earlier"
+    handoff_comment_fetch "$issue" "${earlier%.md}" "$HANDOFF_SCRATCH_DIR/$earlier" || true
   done
 }
 
