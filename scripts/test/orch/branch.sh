@@ -628,6 +628,20 @@ assert_eq "recording it as the base SHA (quick)" "$(bs_sha)" "$new_tip"
 assert_eq "and branch base-sha prints it" "$(orch_gh_failing branch base-sha)" "$new_tip"
 assert_eq "writing no state" "$(on_disk .orchestrator/state.json)" "absent"
 
+# A ticket branch, then a base-recorded branch named outside orch/ and quick/.
+git checkout -q main
+git checkout -q -b feature/ticketed
+git config branch.feature/ticketed.orchestrator-ticket-parent main
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a ticket branch is refused" "$st" 1
+assert_contains "as no plugin-made branch to sync" "$out" "is not a branch the plugin made"
+git config --unset branch.feature/ticketed.orchestrator-ticket-parent
+git config branch.feature/ticketed.orchestrator-base main
+new_tip="$(bs_advance named.txt named)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a base-recorded branch named outside orch/ and quick/ syncs" "$st" 0
+assert_eq "merging origin's base tip (any name)" "$(git rev-parse HEAD^2)" "$new_tip"
+
 assert_contains "help lists branch sync" "$("$ORCH" help)" "branch sync"
 cd "$SUITE_CWD" || exit 1
 rm -rf "$(dirname "$sc_origin")"
