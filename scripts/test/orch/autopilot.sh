@@ -785,13 +785,14 @@ mkfifo "$ORCH_GH_FAKE_STORE/hold/adapter_label_upsert"
 rm -f "$ORCH_GH_FAKE_STORE/held"
 "$ORCH" autopilot watch --every 1 >/dev/null 2>&1 &
 watch_pid=$!
-for _ in $(seq 1 100); do [ -e "$ORCH_GH_FAKE_STORE/held" ] && break; sleep 0.1; done
-tick_pid="$(pgrep -P "$watch_pid" -f 'autopilot tick' | head -n1)"
+for _ in $(seq 1 100); do [ -s "$ORCH_GH_FAKE_STORE/held" ] && break; sleep 0.1; done
+tick_pid="$(cat "$ORCH_GH_FAKE_STORE/held" 2>/dev/null)"
+assert_eq "the held tick's pid is known" "$([[ "$tick_pid" =~ ^[0-9]+$ ]] && echo yes)" yes
 kill -TERM "$watch_pid"
 wait "$watch_pid" 2>/dev/null; st=$?
 assert_status "a watch termed mid-tick exits 0" "$st" 0
 assert_eq "and removes its pidfile" "$(on_disk "$pidfile")" absent
-kill -0 "${tick_pid:-0}" 2>/dev/null; st=$?
+kill -0 "${tick_pid:-none}" 2>/dev/null; st=$?
 assert_status "and the tick it was running is gone" "$st" 1
 printf 'x\n' >"$ORCH_GH_FAKE_STORE/hold/adapter_label_upsert" &
 sleep 0.2; kill $! 2>/dev/null
@@ -1279,10 +1280,14 @@ a="$(sourced_orch autopilot_proc_start "$$")"; b="$(sourced_orch autopilot_proc_
 assert_eq "the /proc branch gives the same start time twice" "$a" "$b"
 assert_eq "as one whitespace-free token" "$(printf '%s' "$a" | tr -d '[:space:]')" "$a"
 empty_proc="$(mktemp -d)"
-a="$(ORCH_PROC_DIR="$empty_proc" sourced_orch autopilot_proc_start "$$")"; b="$(ORCH_PROC_DIR="$empty_proc" sourced_orch autopilot_proc_start "$$")"
-assert_eq "the ps branch gives the same start time twice" "$a" "$b"
-assert_eq "and one whitespace-free token" "$(printf '%s' "$a" | tr -d '[:space:]')" "$a"
-assert_eq "which is not empty" "$([ -n "$a" ] && echo yes)" yes
+if command -v ps >/dev/null 2>&1; then
+  a="$(ORCH_PROC_DIR="$empty_proc" sourced_orch autopilot_proc_start "$$")"; b="$(ORCH_PROC_DIR="$empty_proc" sourced_orch autopilot_proc_start "$$")"
+  assert_eq "the ps branch gives the same start time twice" "$a" "$b"
+  assert_eq "and one whitespace-free token" "$(printf '%s' "$a" | tr -d '[:space:]')" "$a"
+  assert_eq "which is not empty" "$([ -n "$a" ] && echo yes)" yes
+else
+  skip "the ps branch gives the same start time twice" "no ps on this machine (the autopilot image ships no procps)"
+fi
 out="$(sourced_orch autopilot_pid_write "$(dead_pid)" "$empty_proc/f" 2>&1)"; st=$?
 assert_status "writing a record for an unreadable process fails" "$st" 1
 assert_contains "naming the pid" "$out" "orch: could not read the start time of pid"
