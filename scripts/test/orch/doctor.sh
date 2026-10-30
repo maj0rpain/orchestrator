@@ -1985,7 +1985,7 @@ echo
 echo "doctor: autopilot side-checkout flows"
 tick_fixture
 fake_issue 7 open ready-for-agent orch:spec
-printf 'Side flow\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
+fake_issue_title 7 "Side flow"
 # The side checkout is built by the commands a pickup runs: add, then init.
 side7="$("$ORCH" side-checkout add 7-side-flow --issue 7 2>/dev/null)"
 (cd "$side7" && "$ORCH" init 7-side-flow --issue 7 >/dev/null 2>&1)
