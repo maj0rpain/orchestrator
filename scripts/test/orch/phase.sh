@@ -123,10 +123,10 @@ fake_issue 8 open
 fake_issue_body 8 $'## Ticket\n\nx\n'
 fake_issue 9 open
 fake_issue_body 9 $'Just a spec.\n'
-for collapsed in 8 9; do
-  state_fixture issue "$collapsed"
+for no_subs in 8 9; do
+  state_fixture issue "$no_subs"
   out="$("$ORCH" phase advance 2>&1)"; st=$?
-  assert_status "advances implement with issue #$collapsed (no sub-issues)" "$st" 0
+  assert_status "advances implement with issue #$no_subs (no sub-issues)" "$st" 0
   state_fixture phase implement
 done
 state_fixture issue 7
