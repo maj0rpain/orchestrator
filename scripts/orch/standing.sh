@@ -83,6 +83,8 @@ standing_host_id() {
 
 # --- the read -------------------------------------------------------------
 
+STANDING_REASON=""
+
 # standing_read <issue>: reads the issue's state and labels once into
 # STANDING_STATE (OPEN or CLOSED), STANDING_LABELS (every label, one per line),
 # STANDING_PHASE (the live phase: the first phase other than done whose label is
@@ -91,8 +93,6 @@ standing_host_id() {
 # STANDING_LIMITED, each 0 or 1. Non-zero when the read fails: the reason on
 # stderr and in STANDING_REASON. Call it in the current shell, never inside
 # capture_err or $(...).
-STANDING_REASON=""
-# shellcheck disable=SC2034 # the variables are the module's read, used by its callers
 standing_read() {
   local gh_err
   if ! issue_state_labels_read "$1" STANDING_STATE STANDING_LABELS gh_err; then
@@ -105,6 +105,8 @@ standing_read() {
   STANDING_RUNNING=0 STANDING_HUMAN=0 STANDING_LIMITED=0
   ! list_has "$STANDING_LABELS" "$STANDING_RUNNING_LABEL" || STANDING_RUNNING=1
   ! list_has "$STANDING_LABELS" "$STANDING_HUMAN_LABEL" || STANDING_HUMAN=1
+  # the variables are the module's read, used by its callers
+  # shellcheck disable=SC2034
   ! list_has "$STANDING_LABELS" "$STANDING_LIMITED_LABEL" || STANDING_LIMITED=1
 }
 

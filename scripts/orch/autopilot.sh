@@ -373,9 +373,14 @@ autopilot_short_slug() {
   printf '%s\n' "$slug"
 }
 
+# autopilot_in_subshell <command...>: runs the command in a subshell, so a die
+# inside it fails only the step and a cd never reaches the tick's shell.
+autopilot_in_subshell() { ( "$@" ); }
+
 # autopilot_pickup_step <issue> <phase> <kind> <detail> <command...>: runs one
 # step of pickup in pickup's own shell, so the command may set pickup's
-# variables. A failed step stops the issue through standing_stop as <kind>
+# variables; a step that sets none runs through autopilot_in_subshell.
+# A failed step stops the issue through standing_stop as <kind>
 # (refusal or failure) and returns 1; the stop detail is "<detail>: <reason>"
 # with the reason from the command's stderr ("gh gave no reason" when it said
 # nothing), and the command's own wording when <detail> is empty.
@@ -398,7 +403,7 @@ autopilot_pickup_side() {
   # labels is the read's throwaway half.
   # shellcheck disable=SC2034
   local issue="$1" title labels gh_err slug
-  side="$(side_checkout_for_issue "$issue")" || side=""
+  side="$(side_checkout_for_issue "$issue" 2>/dev/null)" || side=""
   [ -z "$side" ] || return 0
   issue_title_labels_read "$issue" title labels gh_err || {
     echo "step side-checkout add failed: could not read the issue's title: $(gh_reason "$gh_err")" >&2
@@ -439,8 +444,8 @@ autopilot_pickup_redo() {
 autopilot_pickup() {
   local issue="$1" phase="$2" limited="${3:-}" side="" recorded redo
   autopilot_pickup_step "$issue" "$phase" failure "" autopilot_pickup_side "$issue" || return 0
-  autopilot_pickup_step "$issue" "$phase" failure "step init failed" autopilot_pickup_init "$issue" "$side" || return 0
-  autopilot_pickup_step "$issue" "$phase" failure "step minimal plan comment failed" autopilot_post_minimal_plan "$issue" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "step init failed" autopilot_in_subshell autopilot_pickup_init "$issue" "$side" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "step minimal plan comment failed" autopilot_in_subshell autopilot_post_minimal_plan "$issue" || return 0
   autopilot_pickup_step "$issue" "$phase" failure "" autopilot_pickup_recorded "$side" || return 0
   if [ "$recorded" != "$phase" ]; then
     case "$phase:$recorded" in
@@ -449,9 +454,9 @@ autopilot_pickup() {
       *) standing_stop "$issue" refusal "$phase" "the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only a step back from review to implement or from implement to spec is a redo"
          return 0 ;;
     esac
-    autopilot_pickup_step "$issue" "$phase" refusal "redo $redo refused" autopilot_pickup_redo "$side" "$redo" || return 0
+    autopilot_pickup_step "$issue" "$phase" refusal "redo $redo refused" autopilot_in_subshell autopilot_pickup_redo "$side" "$redo" || return 0
   fi
-  autopilot_pickup_step "$issue" "$phase" failure "" standing_begin "$issue" "$phase" "$limited" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "" autopilot_in_subshell standing_begin "$issue" "$phase" "$limited" || return 0
   autopilot_spawn_run "$issue"
 }
 

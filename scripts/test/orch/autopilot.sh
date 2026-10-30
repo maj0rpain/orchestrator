@@ -553,6 +553,13 @@ assert_eq "leaving no temp file from the post" "$(ls -A "$tick_tmp")" ""
 assert_eq "and the claim is released" "$(fake_claim_held 9)" free
 assert_eq "with no session started" "$(tick_calls)" "0"
 
+# a die inside a subshell step fails that step only, and a cd never leaks
+fake_issue 20 open ready-for-agent orch:spec orch:running
+out="$(sourced_orch_script 'start="$PWD"; autopilot_pickup_step 20 spec failure "step minimal plan comment failed" autopilot_in_subshell die "could not read the comments" || echo "went on:$?"; autopilot_pickup_step 20 spec failure "step init failed" autopilot_in_subshell cd / || true; echo "cwd-kept:$([ "$PWD" = "$start" ] && echo yes || echo no)"' 2>&1)"
+assert_contains "a die inside a step does not end the tick" "$out" "went on:1"
+assert_contains "the step's stop names the die" "$(fake_comments_of 20)" "step minimal plan comment failed: "
+assert_contains "a cd inside a step does not move the tick" "$out" "cwd-kept:yes"
+
 # stale claims of this host are failures; other hosts' are left alone
 fake_issue 10 open ready-for-agent orch:spec orch:running
 fake_claim_seed 10 "$(hostname)" "$(dead_pid)"
