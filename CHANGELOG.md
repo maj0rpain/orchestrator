@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.35
+
+Reorder the `pr publish` entry of `orch.sh help` so its purpose clause stays with the sentence it belongs to and its refusal sentence comes last.
+
 ## 4.38.34
 
 handoff_comment_fetch keeps one meaning per status variable, with no change in behaviour.
