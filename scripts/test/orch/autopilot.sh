@@ -38,6 +38,9 @@ fake_last_comment_of() {
   local d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
   cat "$d/$(ls "$d" | sort -n | tail -n 1)/body"
 }
+# live_record <pid>: the pidfile record of a running process, read from /proc
+# independently of orch.sh (the start time is stat's field after the command).
+live_record() { printf '%s %s\n' "$1" "$(sed 's/^.*) //' "/proc/$1/stat" | cut -d' ' -f20)"; }
 # dead_pid: the pid of a process that has exited.
 dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
 
@@ -627,7 +630,7 @@ fake_claim_seed 11 otherhost "$(dead_pid)"
 fake_issue 12 open ready-for-agent orch:spec orch:running
 fake_claim_seed 12 "$(hostname)" "$(dead_pid)"
 mkdir -p "$top/.orchestrator/autopilot/run"
-printf '%s\n' "$$" >"$top/.orchestrator/autopilot/run/12.pid"
+live_record "$$" >"$top/.orchestrator/autopilot/run/12.pid"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "this host's claim with a dead pid is a failure" "$(fake_labels_of 10)" "needs-human orch:spec ready-for-agent "
 assert_contains "with a comment naming the phase" "$(fake_comments_of 10)" "spec phase"
@@ -642,6 +645,39 @@ mkdir -p "$top/.orchestrator/autopilot/logs"
 assert_eq "a dead run pidfile makes it stale" "$(fake_claim_held 12)" free
 assert_contains "the stale comment names the session log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
 assert_contains "and says no exit code is known" "$(fake_comments_of 12)" "no exit code"
+
+# a live pid with another start time is stale in the run pidfile and in the tick
+# record; a live tick record keeps the claim; no file at all is gone
+rundir="$top/.orchestrator/autopilot/run"
+fake_issue 16 open ready-for-agent orch:spec orch:running
+fake_claim_seed 16 "$(hostname)" "$$"
+printf '%s 1\n' "$$" >"$rundir/16.pid"
+printf '%s 1\n' "$$" >"$rundir/16.tick"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a run pidfile with another start time releases the claim" "$(fake_claim_held 16)" free
+assert_eq "and removes both files" "$(find "$rundir" -name '16.*' | wc -l | tr -d ' ')" 0
+fake_issue 17 open ready-for-agent orch:spec orch:running
+fake_claim_seed 17 "$(hostname)" "$$"
+printf '%s 1\n' "$$" >"$rundir/17.tick"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick record with another start time releases the claim" "$(fake_claim_held 17)" free
+fake_issue 18 open ready-for-agent orch:spec orch:running
+fake_claim_seed 18 "$(hostname)" "$$"
+live_record "$$" >"$rundir/18.tick"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a live tick record keeps the claim" "$(fake_claim_held 18)" held
+rm -f "$rundir/18.tick"; fake_claim_release 18
+fake_issue 19 open ready-for-agent orch:spec orch:running
+fake_claim_seed 19 "$(hostname)" "$$"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a claim with neither file is released" "$(fake_claim_held 19)" free
+
+# a tick writes its own record to run/<issue>.tick, over an older one
+printf 'old\n' >"$rundir/20.tick"
+sourced_orch autopilot_tick_record 20 >/dev/null 2>&1
+[[ "$(cat "$rundir/20.tick")" =~ ^[0-9]+\ [^\ ]+$ ]] && shape=record || shape=other
+assert_eq "the tick record is a pid and start time, over an older one" "$shape" record
+rm -f "$rundir/20.tick"
 
 # the claim identity: with ORCH_HOST_ID set, only claims of that id are this
 # host's
@@ -683,6 +719,15 @@ assert_eq "a newer claim made while the session exits is left held" "$(fake_clai
 assert_eq "and its issue is not failed" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_eq "the newer run's pidfile is not removed by the older run" "$(cat "$top/.orchestrator/autopilot/run/7.pid" 2>/dev/null)" "999"
 rm -f "$top/.orchestrator/autopilot/run/7.pid"; fake_claim_release 7
+# the run removes the tick's record once its own pidfile is written
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" 111
+live_record "$$" >"$top/.orchestrator/autopilot/run/7.tick"
+tick_seen_launcher="$(mktemp)"
+printf '#!/bin/sh\nrm -f "%s/claims/7"\nexit 0\n' "$ORCH_GH_FAKE_STORE" >"$tick_seen_launcher"
+chmod +x "$tick_seen_launcher"
+ORCH_AUTOPILOT_LAUNCHER="$tick_seen_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_eq "autopilot run removes run/<issue>.tick" "$([ -e "$top/.orchestrator/autopilot/run/7.tick" ] && echo there || echo gone)" gone
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot watch ----------------------------------------------------------
@@ -695,19 +740,35 @@ top="$(git rev-parse --show-toplevel)"
 pidfile="$(git rev-parse --git-common-dir)/orchestrator/autopilot-watch.pid"
 watch_log="$(mktemp)"
 mkdir -p "$(dirname "$pidfile")"
-printf '%s\n' "$$" >"$pidfile"
+live_record "$$" >"$pidfile"
 out="$("$ORCH" autopilot watch 2>&1)"; st=$?
 assert_status "a second watch of the same clone is refused" "$st" 1
 assert_contains "naming the live one" "$out" "already running"
-assert_eq "and leaves the live one's pidfile" "$(cat "$pidfile")" "$$"
+assert_eq "and leaves the live one's pidfile" "$(cat "$pidfile")" "$(live_record "$$")"
+
+# a live pid with another start time (a container restart's pid 1) is stale, and
+# so is a bare pid
+printf '%s 1\n' "$$" >"$pidfile"
+out="$(sourced_orch autopilot_record_alive "$(cat "$pidfile")" 2>&1)"; st=$?
+assert_status "a live pid with a different start time is not alive" "$st" 1
+out="$(sourced_orch autopilot_record_alive "$$" 2>&1)"; st=$?
+assert_status "a bare-pid line is stale" "$st" 1
+
+# a pidfile naming a live pid with another start time does not block a watch
+printf '%s 1\n' "$$" >"$pidfile"
+"$ORCH" autopilot watch --every 1 >/dev/null 2>&1 &
+other_watch=$!
+for _ in $(seq 1 60); do [ "$(cat "$pidfile" 2>/dev/null)" = "$(live_record "$other_watch")" ] && break; sleep 0.1; done
+assert_eq "a pidfile with another start time is replaced" "$(cat "$pidfile" 2>/dev/null)" "$(live_record "$other_watch")"
+kill -TERM "$other_watch"; wait "$other_watch" 2>/dev/null
 
 # one watch, started over a dead pidfile while every tick fails
 printf '%s\n' "$(dead_pid)" >"$pidfile"
 fake_fail adapter_label_upsert "HTTP 500 label"
 "$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
 watch_pid=$!
-for _ in $(seq 1 60); do [ "$(cat "$pidfile" 2>/dev/null)" = "$watch_pid" ] && [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
-assert_eq "a dead pidfile is replaced" "$(cat "$pidfile" 2>/dev/null)" "$watch_pid"
+for _ in $(seq 1 60); do [ "$(cat "$pidfile" 2>/dev/null)" = "$(live_record "$watch_pid")" ] && [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
+assert_eq "a dead pidfile is replaced" "$(cat "$pidfile" 2>/dev/null)" "$(live_record "$watch_pid")"
 kill -0 "$watch_pid" 2>/dev/null; st=$?
 assert_status "watch survives a failed tick" "$st" 0
 assert_contains "reporting it with its exit status" "$(cat "$watch_log")" "the tick failed (exit 1)"
@@ -715,6 +776,28 @@ assert_eq "and ticking again after it" "$([ "$(grep -c 'the tick failed' "$watch
 kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
 assert_eq "an interrupted watch removes its pidfile" "$(on_disk "$pidfile")" absent
 fake_unfail
+
+# TERM mid-tick: the tick is held in the gh fake; the watch removes its pidfile
+# and TERMs the tick at once, then exits 0 once the tick has gone
+printf '%s\n' "$(dead_pid)" >"$pidfile"
+mkdir -p "$ORCH_GH_FAKE_STORE/hold"
+mkfifo "$ORCH_GH_FAKE_STORE/hold/adapter_label_upsert"
+rm -f "$ORCH_GH_FAKE_STORE/held"
+"$ORCH" autopilot watch --every 1 >/dev/null 2>&1 &
+watch_pid=$!
+for _ in $(seq 1 100); do [ -s "$ORCH_GH_FAKE_STORE/held" ] && break; sleep 0.1; done
+tick_pid="$(cat "$ORCH_GH_FAKE_STORE/held" 2>/dev/null)"
+assert_eq "the held tick's pid is known" "$([[ "$tick_pid" =~ ^[0-9]+$ ]] && echo yes)" yes
+kill -TERM "$watch_pid"
+wait "$watch_pid" 2>/dev/null; st=$?
+assert_status "a watch termed mid-tick exits 0" "$st" 0
+assert_eq "and removes its pidfile" "$(on_disk "$pidfile")" absent
+kill -0 "${tick_pid:-none}" 2>/dev/null; st=$?
+assert_status "and the tick it was running is gone" "$st" 1
+printf 'x\n' >"$ORCH_GH_FAKE_STORE/hold/adapter_label_upsert" &
+sleep 0.2; kill $! 2>/dev/null
+rm -rf "$ORCH_GH_FAKE_STORE/hold"
+
 out="$("$ORCH" autopilot watch --every 0 2>&1)"; st=$?
 assert_status "--every refuses zero" "$st" 1
 git config --unset-all orchestrator.autopilot.permission-mode
@@ -1188,6 +1271,26 @@ out="$(sourced_orch autopilot_phase_arg "spec implement" 2>&1)"; st=$?
 assert_status "autopilot_phase_arg refuses two adjacent phases" "$st" 1
 assert_eq "with its not-a-flow-phase message" "$out" \
   "orch: not a flow phase: spec implement (want spec|implement|review|done)"
+
+# --- autopilot start-time reader ----------------------------------------------
+echo
+echo "autopilot start time"
+new_repo >/dev/null
+a="$(sourced_orch autopilot_proc_start "$$")"; b="$(sourced_orch autopilot_proc_start "$$")"
+assert_eq "the /proc branch gives the same start time twice" "$a" "$b"
+assert_eq "as one whitespace-free token" "$(printf '%s' "$a" | tr -d '[:space:]')" "$a"
+empty_proc="$(mktemp -d)"
+if command -v ps >/dev/null 2>&1; then
+  a="$(ORCH_PROC_DIR="$empty_proc" sourced_orch autopilot_proc_start "$$")"; b="$(ORCH_PROC_DIR="$empty_proc" sourced_orch autopilot_proc_start "$$")"
+  assert_eq "the ps branch gives the same start time twice" "$a" "$b"
+  assert_eq "and one whitespace-free token" "$(printf '%s' "$a" | tr -d '[:space:]')" "$a"
+  assert_eq "which is not empty" "$([ -n "$a" ] && echo yes)" yes
+else
+  skip "the ps branch gives the same start time twice" "no ps on this machine (the autopilot image ships no procps)"
+fi
+out="$(sourced_orch autopilot_pid_write "$(dead_pid)" "$empty_proc/f" 2>&1)"; st=$?
+assert_status "writing a record for an unreadable process fails" "$st" 1
+assert_contains "naming the pid" "$out" "orch: could not read the start time of pid"
 
 # --- autopilot pause store ----------------------------------------------------
 echo

@@ -119,6 +119,12 @@ fake_countdown() {
 fake_failing() {
   local f n s
   s="$(fake_store)" || return 1
+  # a fifo at hold/<operation> parks the call: it writes the calling orch.sh's
+  # pid to the "held" file and waits until something is written to the fifo
+  if [ -p "$s/hold/$1" ]; then
+    printf '%s\n' "$$" >"$s/held"
+    read -r _ <"$s/hold/$1" || true
+  fi
   if [ -f "$s/offline" ]; then
     echo "dial tcp: lookup api.github.com: no such host" >&2
     return 0

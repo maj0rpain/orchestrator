@@ -143,6 +143,22 @@ echo "name: custom" >"$FAKE_DIR/config.default"
 run_up
 assert_contains "name: from config's name: line" "$out" "(custom)"
 
+# --- the probe's own text, run with sh against a fixture clone
+probe_text="$(sed -n "/^probe='/,/^done'/p" "$DIR/autopilot-up.sh" | sed "1s/^probe='//;\$s/'\$//")"
+sleep 30 &
+live_pid=$!
+live_start="$(sed 's/^.*) //' "/proc/$live_pid/stat" | cut -d' ' -f20)"
+clone="$root/probe-clone"
+mkdir -p "$clone/.orchestrator/autopilot/run"
+echo "$live_pid $live_start" >"$clone/.orchestrator/autopilot/run/11.pid"
+echo "$live_pid 1" >"$clone/.orchestrator/autopilot/run/12.pid"
+echo "$live_pid" >"$clone/.orchestrator/autopilot/run/13.pid"
+probed="$(ORCH_CLONE_DIR="$clone" sh -c "$probe_text")"
+kill "$live_pid" 2>/dev/null
+assert_contains "probe: lists a matching start time" "$probed" "11 ?"
+assert_lacks "probe: leaves out a different start time" "$probed" "12 "
+assert_contains "probe: lists a live bare-pid run" "$probed" "13 ?"
+
 # --- busy
 new_case ".env.side"
 echo cid >"$FAKE_DIR/psa.side"; echo cid >"$FAKE_DIR/ps.side"

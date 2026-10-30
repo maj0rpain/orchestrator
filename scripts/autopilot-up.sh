@@ -39,12 +39,20 @@ done
 
 # The busy probe, run by plain sh inside the container so that it works against
 # an image built before this script existed: one "<issue> <phase>" line per
-# live run pidfile, the phase from the newest log beside run/, or ?.
+# live run pidfile (a pid, or a pid and start time matching field 22 of its
+# /proc stat), the phase from the newest log beside run/, or ?.
 probe='d="${ORCH_CLONE_DIR:-/home/orch/repo}/.orchestrator/autopilot"
 for f in "$d"/run/*.pid; do
   [ -e "$f" ] || continue
-  p=$(cat "$f")
-  kill -0 "$p" 2>/dev/null || continue
+  read -r p st x <"$f"
+  if [ -n "$st" ]; then
+    s=$(cat "/proc/$p/stat" 2>/dev/null) || continue
+    s=${s##*) }
+    set -- $s
+    [ "${20}" = "$st" ] || continue
+  else
+    kill -0 "$p" 2>/dev/null || continue
+  fi
   i=$(basename "$f" .pid)
   l=$(ls -t "$d"/logs/"$i"-*.log 2>/dev/null | sed -n 1p)
   ph="?"
