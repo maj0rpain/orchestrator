@@ -136,6 +136,14 @@ branch_kind() {
   fi
 }
 
+# branch_records_base <branch>: succeeds when <branch> is a plugin-made branch
+# that records a base - a flow's or a quick implementation's branch, never a
+# ticket branch - and fails otherwise. Asks branch_kind, the one definition of
+# branch kinds.
+branch_records_base() {
+  case "$(branch_kind "$1")" in flow|quick) return 0 ;; *) return 1 ;; esac
+}
+
 # branch_held <branch>: succeeds when this checkout's flow state records
 # <branch> as the flow's branch, in any phase. Reads flow state only.
 branch_held() {
@@ -280,10 +288,11 @@ cmd_branch_sync() {
     held=1
     base="$(flow_base)"
   else
-    case "$(branch_kind "$branch")" in
-      flow|quick) base="$(branch_base_get "$branch")" ;;
-      *) die "$branch is not a branch the plugin made: no flow here holds it and it records no base - nothing was synced" ;;
-    esac
+    if branch_records_base "$branch"; then
+      base="$(branch_base_get "$branch")"
+    else
+      die "$branch is not a branch the plugin made: no flow here holds it and it records no base - nothing was synced"
+    fi
   fi
   [ "$branch" != "$base" ] || die "$branch is its own base branch - nothing was synced"
   if merge_in_progress "$ROOT"; then

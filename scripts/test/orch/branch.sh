@@ -420,6 +420,25 @@ out="$(orch_gh_failing branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
+# --- branch_records_base (#1713) ----------------------------------------------
+# Whether a branch is a plugin-made branch that records a base: a flow's or a
+# quick implementation's branch succeeds, a ticket branch and a foreign one
+# fail. Read from git config and the name alone.
+echo
+echo "branch_records_base (#1713)"
+new_repo >/dev/null
+git config branch.orch/40-flowing.orchestrator-base main
+git config branch.quick/41-quick.orchestrator-base main
+git config branch.feature/ticketed.orchestrator-ticket-parent main
+sourced_orch branch_records_base orch/40-flowing; st=$?
+assert_status "a flow branch with a recorded base records a base" "$st" 0
+sourced_orch branch_records_base quick/41-quick; st=$?
+assert_status "a quick branch with a recorded base records a base" "$st" 0
+sourced_orch branch_records_base feature/ticketed; st=$?
+assert_status "a ticket branch records no base" "$st" 1
+sourced_orch branch_records_base feature/foreign; st=$?
+assert_status "a foreign branch records no base" "$st" 1
+
 # --- branch sync (#792) -------------------------------------------------------
 # Merges origin's tip of the current plugin-made branch's base into it - never
 # rebasing, never the local base - moves its base SHA to that tip, and pushes
@@ -724,6 +743,13 @@ git config branch.orch/30-unheld.orchestrator-base main
 out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "an unheld orch/ branch with a base and no PR is busy" "$st" 3
 assert_contains "naming the branch (orch/)" "$out" "orch/30-unheld"
+
+# A ticket branch records no base, so with no PR it leaves the checkout free.
+git checkout -q -b orch/30-unheld--t31
+git config branch.orch/30-unheld--t31.orchestrator-ticket-parent orch/30-unheld
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a ticket branch with no PR is free" "$st" 0
+assert_eq "printing nothing (ticket branch)" "$out" ""
 
 for phase in spec implement review; do
   new_repo_with_origin
