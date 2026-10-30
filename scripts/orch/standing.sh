@@ -296,8 +296,8 @@ standing_ask() {
 
 # The one rule for a stop comment, which lives here and not in the
 # marked-comment module: a refusal or a failure comment is a stop.
-# autopilot_is_stop takes a marked_comment_info.
-STANDING_STOP_JQ='def autopilot_is_stop: .kind == "refusal" or .kind == "failure";'
+# standing_is_stop takes a marked_comment_info.
+STANDING_STOP_JQ='def standing_is_stop: .kind == "refusal" or .kind == "failure";'
 
 # standing_stop_write <issue> <kind> <text> <label> [<remove-label>]: the write
 # chain of a stop: adds <label> (removing <remove-label> when given), posts
@@ -350,7 +350,7 @@ standing_limit_count() {
     reduce (marked_comment_list | reverse[]) as $c ({n: 0, done: false};
       ($c | marked_comment_info) as $i
       | if .done then .
-      elif ($i | autopilot_is_stop) or ($i.kind | IN("question", "handoff")) then .done = true
+      elif ($i | standing_is_stop) or ($i.kind | IN("question", "handoff")) then .done = true
       elif $i.kind == "limited" then
         if $i.arg == $phase then .n += 1 else .done = true end
       else . end) | .n' <<<"$json")" || return 1

@@ -151,9 +151,10 @@ fake_unfail
 out="$(st 'standing_pause 54 "wrote the round marker"')"
 assert_eq "pause releases the claim and leaves the phase label" "$(tr_labels 54)|$(fake_claim_held 54)" "spec|0|0|0|free"
 tr_seed 55 orch:spec orch:running
-fake_fail adapter_claim_delete "HTTP 500"
-out="$(st 'standing_stop 55 failure spec boom')"
-assert_contains "a stop after the pause names only its own writes" "$out" "writes that landed: added needs-human, posted the failure comment, removed orch:running; the claim stays held"
+tr_seed 54 orch:spec orch:running; fake_claim_seed 54
+fake_fail_after adapter_claim_delete 1 "HTTP 500"
+out="$(st 'standing_pause 54 "wrote the round marker"; standing_stop 55 failure spec boom')"
+assert_contains "a stop failing in the same shell as an earlier succeeding pause names only its own writes" "$out" "writes that landed: added needs-human, posted the failure comment, removed orch:running; the claim stays held"
 fake_unfail
 
 # stop
@@ -284,7 +285,7 @@ assert_eq "and the removal had landed" "$(tr_labels 63)" "spec|0|0|0"
 # begin through pickup's step runner: a failed write ends in today's stop
 tr_seed 69 orch:spec orch:limited
 fake_fail_once_after adapter_issue_relabel 1 "HTTP 500"
-out="$(st 'autopilot_pickup_step 69 spec failure "" standing_begin 69 spec limited')"
+out="$(st 'autopilot_pickup_step 69 spec failure "" reason standing_begin 69 spec limited')"
 fake_unfail
 assert_contains "a failed running addition returns 1 through the step runner" "$out" "rc=1"
 assert_eq "the issue ends labelled for the human, limited removed, claim released" "$(tr_labels 69)|$(fake_claim_held 69)" "spec|0|1|0|free"
@@ -292,13 +293,13 @@ assert_contains "and carries the failure comment worded as the step" "$(fake_com
 
 # the step runner words a silent failure as today's stops did
 tr_seed 76 orch:spec orch:running
-st 'autopilot_pickup_step 76 spec failure "step init failed" false' >/dev/null
+st 'autopilot_pickup_step 76 spec failure "step init failed" reason false' >/dev/null
 assert_contains "a step failing silently gets gh's no-reason wording after its detail" "$(fake_comments_of 76)" "Autopilot failed in the spec phase: step init failed: gh gave no reason"
 tr_seed 77 orch:spec orch:running
-st 'autopilot_pickup_step 77 spec refusal "redo review refused" false' >/dev/null
+st 'autopilot_pickup_step 77 spec refusal "redo review refused" reason false' >/dev/null
 assert_contains "a refused redo gets the same" "$(fake_comments_of 77)" "Autopilot refused to run the spec phase: redo review refused: gh gave no reason"
 tr_seed 78 orch:spec orch:running
-st 'autopilot_pickup_step 78 spec failure "" autopilot_pickup_recorded /nonexistent' >/dev/null
+st 'autopilot_pickup_step 78 spec failure "step reading the recorded phase failed" bare autopilot_pickup_recorded /nonexistent' >/dev/null
 assert_contains "a failed recorded-phase read keeps its wording, with no reason after it" "$(fake_comments_of 78)" "Autopilot failed in the spec phase: step reading the recorded phase failed
 "
 
