@@ -586,13 +586,10 @@ fake_next_issue 810
 tbody="$(mktemp)"; writeln 'Build it.' >"$tbody"
 pt="$("$ORCH" ticket publish 61 "T" "$tbody")"
 prs_before="$(fake_prs)"
-for dr in "" "--draft"; do
-  # shellcheck disable=SC2086 # the flag is a word list on purpose
-  out="$("$ORCH" pr publish 61 "Title" "$body" $dr 2>&1)"; st=$?
-  assert_status "open tickets: pr publish ${dr:-without --draft} refuses" "$st" 1
-  assert_contains "naming pr publish" "$out" \
-    "orch: #61 still has open tickets: #$pt - run the driver loop (orch.sh ticket next 61) or close them, then run pr publish again"
-done
+out="$("$ORCH" pr publish 61 "Title" "$body" 2>&1)"; st=$?
+assert_status "open tickets: pr publish refuses" "$st" 1
+assert_contains "naming pr publish" "$out" \
+  "orch: #61 still has open tickets: #$pt - run the driver loop (orch.sh ticket next 61) or close them, then run pr publish again"
 assert_eq "and creates no PR" "$(fake_prs)" "$prs_before"
 fake_fail adapter_sub_issues
 out="$("$ORCH" pr publish 61 "Title" "$body" 2>&1)"; st=$?

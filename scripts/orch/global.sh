@@ -289,7 +289,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               implement; orch.sh handoff path <next phase>
                               prints its file) and the state the next one
                               needs (issue; branch, base_sha, pr), then record
-                              the next phase and print the boundary. On a
+                              the next phase and print the boundary. Leaving
+                              implement is refused while the spec issue has
+                              an open sub-issue, or when GitHub cannot be
+                              read. On a
                               FAIL the phase stays. Refuses at review (use
                               review ready) and done
   phase boundary              print the block that ends a phase - the
@@ -438,13 +441,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               branch, Refs it into any other. --label,
                               repeatable, opens it carrying that label, read
                               back once the PR is recorded: one missing, or a
-                              failed read, fails naming the PR
+                              failed read, fails naming the PR. Refused
+                              while the spec issue has an open sub-issue, or
+                              when GitHub cannot be read
   pr publish <issue> <title> <body-file> [--draft] [--label <name>]...
                               push the current branch and open a non-draft PR
                               against the base branch branch off recorded for
                               it (else the base branch in effect) - Closes
                               <issue> into the default branch, Refs it into any
-                              other - recording no state; prints the PR number
+                              other - recording no state; prints the PR number.
+                              Refused while <issue> has an open sub-issue, or
+                              when GitHub cannot be read
                               - for a quick implementation whose review pass
                               already ran. --draft opens it as a draft, for a
                               pass that met a spec question. --label as pr

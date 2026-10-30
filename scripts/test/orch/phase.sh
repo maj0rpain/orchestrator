@@ -117,6 +117,20 @@ fake_unfail
 "$ORCH" ticket close "$t2" >/dev/null
 fake_issue_body 7 $'## Ticket\n\nx\n'
 
+# A collapsed breakdown (a ## Ticket body, no sub-issues) and an issue with
+# neither pass; the hybrid above passes too.
+fake_issue 8 open
+fake_issue_body 8 $'## Ticket\n\nx\n'
+fake_issue 9 open
+fake_issue_body 9 $'Just a spec.\n'
+for collapsed in 8 9; do
+  state_fixture issue "$collapsed"
+  out="$("$ORCH" phase advance 2>&1)"; st=$?
+  assert_status "advances implement with issue #$collapsed (no sub-issues)" "$st" 0
+  state_fixture phase implement
+done
+state_fixture issue 7
+
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advances implement to review with a valid handoff and the fields" "$st" 0
 assert_eq "records the review phase" "$("$ORCH" state get phase)" "review"
