@@ -23,15 +23,6 @@ readonly TICKET_WORKTREES="$ORCH/worktrees"
 # ticket_worktree_path <n>: prints the path of ticket #<n>'s worktree.
 ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 
-# forked_from_key <branch>: the git config key that records the branch ticket
-# branch <branch> was forked from - the one place code spells it out.
-forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
-
-# forked_from_branch <branch>: prints the forked-from branch recorded on
-# ticket branch <branch>, or prints nothing and returns non-zero when none is
-# recorded.
-forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
-
 # Prints <n> <path> for every ticket worktree under the checkout at <root>;
 # dies when the checkouts cannot be read, never reading that as none.
 ticket_worktrees_under() {
@@ -99,25 +90,25 @@ ticket_branch_merged_or_die() {
 # after that takes the worktree and the branch back out before dying.
 cmd_ticket_worktree_add() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket-worktree add <n>"
-  local n parent branch path
+  local n parent branch tbranch path
   n="$(ticket_worktree_number "$1")"
   current_branch_or_die
   parent="$branch"
-  branch="$parent--t$n"
+  tbranch="$(branch_name_ticket "$parent" "$n")"
   path="$(ticket_worktree_path "$n")"
   [ ! -e "$path" ] || die "ticket worktree $path already exists"
-  if git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
-    die "branch $branch already exists"
+  if git rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
+    die "branch $tbranch already exists"
   fi
   exclude_orch_dirs
-  git branch -q --no-track "$branch" HEAD || die "could not create branch $branch"
-  if ! git worktree add -q "$path" "$branch" \
-     || ! git config "$(forked_from_key "$branch")" "$parent"; then
+  git branch -q --no-track "$tbranch" HEAD || die "could not create branch $tbranch"
+  if ! git worktree add -q "$path" "$tbranch" \
+     || ! forked_from_set "$tbranch" "$parent"; then
     # A freshly added worktree holds nothing of anyone's, so no force is
     # needed to take it back out; -D deletes the branch's config section too.
     if [ -e "$path" ]; then git worktree remove "$path" 2>/dev/null || true; fi
-    git branch -q -D "$branch" 2>/dev/null || true
-    die "could not add ticket worktree $path - removed branch $branch again"
+    git branch -q -D "$tbranch" 2>/dev/null || true
+    die "could not add ticket worktree $path - removed branch $tbranch again"
   fi
   note "$path"
 }
