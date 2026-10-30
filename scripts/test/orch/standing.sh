@@ -148,6 +148,7 @@ tr_seed 54 orch:spec orch:running
 fake_fail adapter_claim_delete "HTTP 500"
 out="$(st 'standing_pause 54 "wrote the round marker"; true')"
 assert_contains "pause failing on its release names its reason and the removal" "$out" "writes that landed: wrote the round marker, removed orch:running; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 54)" held
 fake_unfail
 out="$(st 'standing_pause 54 "wrote the round marker"')"
 assert_eq "pause releases the claim and leaves the phase label" "$(tr_standing 54)|$(fake_claim_held 54)" "spec|0|0|0|free"
@@ -193,6 +194,7 @@ tr_seed 61 orch:spec orch:running
 fake_fail adapter_issue_comment "HTTP 500"
 out="$(st 'standing_limit_stop 61 spec "" 2026-01-01T01:00:00Z 1 log')"
 assert_contains "limit-stop failing on its comment names the label that landed" "$out" "could not post the limit stop comment on issue #61: HTTP 500 - writes that landed: added orch:limited; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 61)" held
 fake_unfail
 tr_seed 67 orch:spec orch:running
 fake_comment 67 o 2026-01-01T00:00:00Z "$(marker_of limited spec)"
@@ -218,11 +220,13 @@ ask_seed 64 orch:spec orch:running
 fake_fail adapter_issue_relabel "HTTP 500"
 out="$(st 'standing_ask spec Q')"
 assert_contains "ask failing on the label names the comment that landed" "$out" "could not add needs-human on issue #64: HTTP 500 - writes that landed: posted the spec question comment; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 64)" held
 fake_unfail
 fake_fail adapter_claim_delete "HTTP 500"
 ask_seed 65 orch:spec orch:running
 out="$(st 'standing_ask spec Q')"
 assert_contains "ask failing on the release names all three writes" "$out" "writes that landed: posted the spec question comment, added needs-human, removed orch:running; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 65)" held
 fake_unfail
 
 # start
@@ -249,6 +253,7 @@ fake_fail adapter_issue_relabel "HTTP 500"
 out="$(st 'standing_start 74 '"$sp")"
 assert_contains "start failing after its plan comment dies with that message" "$out" "orch: posted the 01-plan comment on issue #74 but adding orch:spec failed: HTTP 500 - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
 assert_eq "and adds no phase label" "$(fake_labels_of 74)" "ready-for-agent "
+assert_contains "and keeps the plan comment" "$(fake_comments_of 74)" "01-plan"
 fake_unfail
 
 # resume
