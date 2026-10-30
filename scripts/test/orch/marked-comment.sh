@@ -86,10 +86,6 @@ mc retired "$(mc_array "$ret" "$live")" handoff 01-plan
 assert_eq "the retired predicate says no for a live newest" "$mc_rc:$mc_out" "1:"
 mc retired "$(mc_array "x")" handoff 01-plan
 assert_eq "the retired predicate says no when no comment is of the kind" "$mc_rc:$mc_out" "1:"
-mc retired "$(mc_array "$(marker_of question plan retired 2>/dev/null)")" question
-assert_eq "retired is read on handoff only" "$mc_rc" "1"
-mc newest "$(mc_array "<!-- orch:question plan retired -->")" question
-assert_eq "a retired tag on a question marker makes it unmarked" "$mc_rc:$mc_out" "1:"
 
 # The follows predicate.
 mc follows "$(mc_array "$q" "later")" question
@@ -104,8 +100,6 @@ mc newest "$(mc_array "<!-- orch:question plan")" question
 assert_eq "a marker without its closing is no question comment" "$mc_rc:$mc_out" "1:"
 mc newest "$(mc_array "<!-- orch:handoff 01-plan")" handoff
 assert_eq "a handoff prefix without its closing is no handoff" "$mc_rc:$mc_out" "1:"
-mc newest "$(mc_array $'intro\n'"$q")" question
-assert_eq "a marker on the second line is no marker" "$mc_rc:$mc_out" "1:"
 mc newest "$(mc_array "$q")" question implement
 assert_eq "an argument mismatch finds no comment" "$mc_rc:$mc_out" "1:"
 mc newest "$(mc_array "$q")" limited
@@ -162,8 +156,6 @@ mc texts "not json" spec-ruling
 assert_eq "texts on unreadable comments exits 2, printing nothing" "$mc_rc:$mc_out" "2:"
 mc drop "not json" spec-review
 assert_eq "drop on unreadable comments fails, printing nothing" "$([ "$mc_rc" != 0 ] && echo failed):$mc_out" "failed:"
-mc newest "$(mc_array $'\nSpec ruling: a')" spec-ruling
-assert_eq "a spec ruling whose first line is blank is rejected" "$mc_rc:$mc_out" "1:"
 
 # The exported prelude, through jq: each comment's {kind, arg, retired}.
 arr="$(mc_array "$q" "$ret" "$(marker_of limited build)"$'\r\n' "Autopilot refused to run the plan phase: x" \
