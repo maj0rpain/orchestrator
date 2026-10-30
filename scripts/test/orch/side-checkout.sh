@@ -538,8 +538,24 @@ for caller in archive remove; do
   assert_status "$caller exits 1 when the archive cannot be written" "$st" 1
   assert_contains "$caller prints the archive error unchanged" "$out" "orch: could not create the archive directory"
   assert_contains "$caller names the main checkout's archive" "$out" "$top/.orchestrator/archive/"
+  assert_not_contains "$caller prints the error with one prefix" "$out" "orch: orch: "
   assert_eq "$caller leaves the worktree" "$(on_disk "$af/.orchestrator/state.json")" "present"
 done
+
+# #1718: a ticket worktree blocking the archive - remove relays the multi-line
+# refusal whole, with one prefix.
+rt="$(sc_add rt)"
+(cd "$rt" && orch_gh_failing init rt-flow >/dev/null && state_fixture branch orch/rt-flow)
+sp_branch_off "$rt" orch/rt-flow
+(cd "$rt" && orch_gh_failing ticket-worktree add 8 >/dev/null)
+out="$(orch_gh_failing side-checkout remove rt 2>&1)"; st=$?
+assert_status "remove exits 1 when a ticket worktree blocks the archive" "$st" 1
+assert_eq "its refusal's first line carries one prefix" "$(printf '%s\n' "$out" | head -n 1)" \
+  "orch: ticket worktrees are left under $rt - moving them would break git's record of them:"
+assert_eq "and the refusal arrives whole" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "     Remove each with orch.sh ticket-worktree remove <n> first."
+assert_eq "the side checkout stays" "$(on_disk "$rt/.orchestrator/state.json")" "present"
+(cd "$rt" && orch_gh_failing ticket-worktree remove 8 >/dev/null)
 
 # side_checkout_remove_worktree and side_checkout_archive_and_remove:
 # Each function through the sourced module, one case per policy and outcome.
@@ -796,8 +812,11 @@ fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune exits 1 when a ticket worktree blocks an archive" "$st" 1
 assert_contains "reporting the side checkout as not archived" "$out" \
-  "could not archive the flow in side checkout $tw: "
+  "could not archive the flow in side checkout $tw: ticket worktrees are left under $tw"
 assert_contains "and left as it stands" "$out" "- left as it stands"
+assert_not_contains "with one prefix" "$out" ": orch: "
+assert_not_contains "on one line, without the refusal's later lines" "$out" \
+  "Remove each with orch.sh ticket-worktree remove"
 assert_eq "its flow is not archived" "$(archived_count "$top" tw-flow)" "0"
 assert_eq "the side checkout stays" "$(on_disk "$tw/.orchestrator/state.json")" "present"
 assert_eq "with its branch" "$(sp_branch orch/tw-flow)" "kept"
@@ -840,12 +859,30 @@ archive_block
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 archive_unblock
 assert_status "prune exits 1 when the archive cannot be written" "$st" 1
-assert_contains "naming the archive path" "$out" "orch: could not create the archive directory $top/.orchestrator/archive/"
-assert_contains "warning with the prefix and the path" "$out" "could not archive the flow in side checkout $ab:"
+assert_contains "warning with one prefix, naming the archive path" "$out" \
+  "orch: could not archive the flow in side checkout $ab: could not create the archive directory $top/.orchestrator/archive/"
+assert_not_contains "and no second prefix" "$out" ": orch: "
 assert_eq "the sweep carries on with a flowless one" "$(on_disk "$ac")" "absent"
 assert_eq "the side checkout stays" "$(on_disk "$ab")" "present"
 assert_eq "with its state" "$(on_disk "$ab/.orchestrator/state.json")" "present"
 assert_eq "and its branch" "$(sp_branch orch/ab-flow)" "kept"
+orch_gh_failing side-checkout prune >/dev/null 2>&1
+
+# #1718: a main checkout's finished flow whose archive cannot be written is
+# warned of with one prefix, and the flow stays.
+fake_offline
+orch_gh_failing init main-blocked >/dev/null
+state_fixture phase "done"; state_fixture branch orch/main-flow; state_fixture pr 64
+fake_pr 64 merged orch/main-flow main
+fake_online
+archive_block
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+archive_unblock
+assert_status "prune exits 1 when the main checkout's archive cannot be written" "$st" 1
+assert_contains "warning of it with one prefix" "$out" \
+  "orch: could not archive the main checkout's flow: could not create the archive directory $top/.orchestrator/archive/"
+assert_not_contains "and no second prefix" "$out" ": orch: "
+assert_eq "the main checkout's flow stays" "$(on_disk "$top/.orchestrator/state.json")" "present"
 orch_gh_failing side-checkout prune >/dev/null 2>&1
 
 # Each removal reports only its own archive: a flowless side checkout swept
