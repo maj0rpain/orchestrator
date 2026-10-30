@@ -167,7 +167,7 @@ assert_eq "its entries replacing the PR body's Deviations" \
 
 : >"$kp/empty.md"
 fake_pr 57 closed quick/21-foo main
-rm -rf "$ORCH_GH_FAKE_STORE/issues/21/comments"
+fake_comments_clear 21
 "$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/empty.md" >/dev/null; st=$?
 assert_status "an empty --deviations file builds the file" "$st" 0
 assert_eq "and both empty headings read None." "$(cat "$kp/known.md")" \
@@ -179,7 +179,7 @@ fake_comment 21 pat 2026-10-08T09:00:00Z "$(marker_of spec-ruling) - foo"
 assert_eq "issue rulings drop None. and lose a leading bullet" \
   "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" \
   "$(writeln '## Known items' '- foo - spec ruling')"
-rm -rf "$ORCH_GH_FAKE_STORE/issues/21/comments"
+fake_comments_clear 21
 
 # A multi-line Spec ruling with CR line endings joins the known items as it
 # always did: the CRs go, the lines are trimmed and joined by single spaces.
@@ -188,7 +188,7 @@ fake_comment 21 pat 2026-10-09T09:00:00Z "$(marker_of spec-ruling) Is the key st
 assert_eq "a multi-line Spec ruling with CR line endings joins into one known item" \
   "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" \
   "$(writeln '## Known items' '- Is the key stable - yes, per slug. - spec ruling')"
-rm -rf "$ORCH_GH_FAKE_STORE/issues/21/comments"
+fake_comments_clear 21
 
 writeln 'kept' >"$kp/known.md"
 out="$("$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/missing.md" 2>&1)"; st=$?

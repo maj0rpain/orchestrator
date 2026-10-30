@@ -270,13 +270,19 @@ standing_pause() {
   standing_release "$1"
 }
 
-# standing_ask <issue> <phase> <text>: posts <text> as <phase>'s question
-# comment, adds needs-human, then releases the claim.
+# standing_ask <phase> <text>: reads the issue from flow state, posts <text> as
+# <phase>'s question comment - the hidden marker line, the configured handle
+# @mentioned, <text>, then the reply instructions - adds needs-human, then
+# releases the claim.
 standing_ask() {
-  local issue="$1" phase="$2" text="$3" body gh_err
+  local phase="$1" text="$2" issue body gh_err
   STANDING_LANDED=""
+  require_state
+  require_issue issue
+  autopilot_setting handle
   body="$(mktemp)" || die "could not create a temp file for the question comment"
-  printf '%s' "$text" >"$body"
+  { marked_comment_write question "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; printf '%s' "$text"
+    printf '\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n'; } >"$body"
   capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
   rm -f "$body"
   standing_landed_add "posted the $phase question comment"

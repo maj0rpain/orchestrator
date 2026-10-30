@@ -463,6 +463,9 @@ fake_issue() {
 # fake_issue_title <n> <title>: seeds issue #n's title.
 fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
 
+# fake_comments_clear <n>: issue #n holds no comments.
+fake_comments_clear() { rm -rf "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
+
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 

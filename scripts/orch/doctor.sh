@@ -547,9 +547,7 @@ doctor_phase_label_verdict() {
 # under ORCH_AUTOPILOT=1, where a flow with none is refused: autopilot behaviour
 # must never leak into an interactive flow.
 check_flow_autopilot_label() {
-  # issue_state is the read's throwaway half.
-  # shellcheck disable=SC2034
-  local issue issue_state="" flabels="" gh_err="" phase
+  local issue phase
   issue="$(state_get issue)"
   phase="$(state_get phase)"
   if [ -z "$issue" ]; then
@@ -560,8 +558,8 @@ check_flow_autopilot_label() {
     return 0
   fi
   d_gh_gate || return 0
-  issue_state_labels_read "$issue" issue_state flabels gh_err || return 0
-  if ! doctor_phase_label_verdict "$issue" "$phase" "$flabels" "this checkout" "phase label"; then
+  standing_read "$issue" 2>/dev/null || return 0
+  if ! doctor_phase_label_verdict "$issue" "$phase" "$STANDING_LABELS" "this checkout" "phase label"; then
     if autopilot_active; then
       d_fail "issue #$issue carries no phase label - an autopilot session needs the flow's phase recorded on its issue."
       d_remedy "gh issue edit $issue --add-label $(standing_phase_label "$phase")"
@@ -575,9 +573,6 @@ check_flow_autopilot_label() {
 # This checkout's own flow is check_flow_autopilot_label's.
 check_autopilot_side_flows() {
   local list kind _flow _branch path issue phase here
-  # issue_state is the read's throwaway half.
-  # shellcheck disable=SC2034
-  local issue_state="" flabels="" gh_err=""
   list="$(checkouts)" || return 0
   here="$(pwd -P)"
   while read -r kind _flow _branch path; do
@@ -586,8 +581,8 @@ check_autopilot_side_flows() {
     [ -f "$(flow_state_file "$path")" ] || continue
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
     d_gh_gate || return 0
-    issue_state_labels_read "$issue" issue_state flabels gh_err || continue
-    doctor_phase_label_verdict "$issue" "$phase" "$flabels" "its side checkout ${path##*/}" "phase label of #$issue" || true
+    standing_read "$issue" 2>/dev/null || continue
+    doctor_phase_label_verdict "$issue" "$phase" "$STANDING_LABELS" "its side checkout ${path##*/}" "phase label of #$issue" || true
   done <<<"$list"
   return 0
 }

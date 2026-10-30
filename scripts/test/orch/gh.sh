@@ -254,7 +254,7 @@ assert_eq "a failed refs read writes none and fills the error variable" "$out" \
 assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 
 fake_issue 9 open bug enhancement
-printf 'A title\n' >"$ORCH_GH_FAKE_STORE/issues/9/title"
+fake_issue_title 9 "A title"
 out="$(sourced_orch_script 'issue_title_labels_read 9 title labels err; printf "%s|%s" "$title" "$labels"')"
 assert_eq "issue_title_labels_read writes the title and the labels" "$out" "A title|bug
 enhancement"

@@ -169,17 +169,11 @@ autopilot_phase_arg() {
 # autopilot_ask <phase> <file>: posts <file> as <phase>'s question comment, the
 # configured handle @mentioned, adds needs-human, then releases the claim.
 autopilot_ask() {
-  local phase="$1" file="$2" issue text
+  local phase="$1" file="$2" text
   autopilot_phase_arg "$phase"
   [ -f "$file" ] || die "question file not found: $file"
-  require_state
-  require_issue issue
-  autopilot_setting handle
-  # The sentinel keeps the comment's trailing newline through the capture.
-  text="$({ marked_comment_write question "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; cat "$file"
-    printf '\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n'; printf x; })"
-  text="${text%x}"
-  standing_ask "$issue" "$phase" "$text"
+  file_read text "$file" || die "could not read $file"
+  standing_ask "$phase" "$text"
 }
 
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
@@ -383,19 +377,18 @@ autopilot_short_slug() {
 # step of pickup in pickup's own shell, so the command may set pickup's
 # variables. A failed step stops the issue through standing_stop as <kind>
 # (refusal or failure) and returns 1; the stop detail is "<detail>: <reason>"
-# with the reason from the command's stderr, <detail> alone when the command
-# said nothing, and the command's own wording when <detail> is empty.
+# with the reason from the command's stderr ("gh gave no reason" when it said
+# nothing), and the command's own wording when <detail> is empty.
 autopilot_pickup_step() {
-  local issue="$1" phase="$2" kind="$3" detail="$4" errf err
+  local issue="$1" phase="$2" kind="$3" detail="$4" errf err stop_detail
   shift 4
   errf="$(mktemp)"
   if "$@" 2>"$errf"; then rm -f "$errf"; return 0; fi
   file_read err "$errf" || err=""
   rm -f "$errf"
-  if [ -z "$err" ]; then err="$detail"
-  elif [ -z "$detail" ]; then err="$(gh_reason "$err")"
-  else err="$detail: $(gh_reason "$err")"; fi
-  standing_stop "$issue" "$kind" "$phase" "$err"
+  if [ -z "$detail" ]; then stop_detail="$(gh_reason "$err")"
+  else stop_detail="$detail: $(gh_reason "$err")"; fi
+  standing_stop "$issue" "$kind" "$phase" "$stop_detail"
   return 1
 }
 
@@ -429,7 +422,10 @@ autopilot_pickup_init() {
 # autopilot_pickup_recorded <side>: the step reading the side checkout's
 # recorded phase, into pickup's recorded.
 autopilot_pickup_recorded() {
-  recorded="$(state_get_in "$(flow_state_file "$1")" phase 2>/dev/null)"
+  recorded="$(state_get_in "$(flow_state_file "$1")" phase 2>/dev/null)" || {
+    echo "step reading the recorded phase failed" >&2
+    return 1
+  }
 }
 
 # autopilot_pickup_redo <side> <redo>: the step redoing a phase.
@@ -445,7 +441,7 @@ autopilot_pickup() {
   autopilot_pickup_step "$issue" "$phase" failure "" autopilot_pickup_side "$issue" || return 0
   autopilot_pickup_step "$issue" "$phase" failure "step init failed" autopilot_pickup_init "$issue" "$side" || return 0
   autopilot_pickup_step "$issue" "$phase" failure "step minimal plan comment failed" autopilot_post_minimal_plan "$issue" || return 0
-  autopilot_pickup_step "$issue" "$phase" failure "step reading the recorded phase failed" autopilot_pickup_recorded "$side" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "" autopilot_pickup_recorded "$side" || return 0
   if [ "$recorded" != "$phase" ]; then
     case "$phase:$recorded" in
       implement:review) redo=review ;;
@@ -685,7 +681,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 held=0 reset detail released_note mine now name event pause_epoch pause_iso reject_epoch limited flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 held=0 reset detail released_note mine claim_after name event pause_epoch pause_iso reject_epoch limited flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -716,7 +712,7 @@ autopilot_run() {
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
       --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
   standing_claims_read
-  if now="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$now" = "$mine" ]; }; then held=1; fi
+  if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
   # The early pause: a session ending with its five-hour usage at 90% or more
   # pauses pickup until that window resets, whatever its outcome.
   event="$(autopilot_log_last_event "$log" rate_limit_event)"

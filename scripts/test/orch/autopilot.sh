@@ -36,8 +36,6 @@ fake_issue_relabel() {
   : >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
 }
-# fake_comments_clear <n>: issue #n holds no comments.
-fake_comments_clear() { rm -rf "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
 # fake_issue_drop <n>...: each issue is gone from the store.
 fake_issue_drop() { local n; for n in "$@"; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done; }
 # fake_claim_release <issue>: the store holds no claim on it.
@@ -1140,22 +1138,7 @@ fake_issue 23 open needs-human orch:spec
 fake_comment 23 o 2026-01-01T00:00:00Z $'see the marker\n<!-- orch:question spec -->'
 out="$("$ORCH" autopilot questions 2>&1)"
 assert_contains "a marker off the first line is no question" "$out" "23${tab}stop${tab}spec${tab}"
-# standing_stop opens its comment with the hidden marker line, prose beneath
-fake_issue 40 open ready-for-agent orch:spec
-sourced_orch standing_stop 40 refusal spec "no plan" >/dev/null 2>&1
-assert_eq "a refusal comment opens with the hidden marker line" "$(fake_comments_of 40 | head -1)" "$(marker_of refusal spec)"
-assert_contains "and keeps its prose beneath" "$(fake_comments_of 40 | sed -n 2p)" "Autopilot refused to run the spec phase: no plan"
-fake_issue 41 open ready-for-agent orch:spec
-sourced_orch standing_stop 41 failure review "boom" >/dev/null 2>&1
-assert_eq "a failure comment opens with the hidden marker line" "$(fake_comments_of 41 | head -1)" "$(marker_of failure review)"
-assert_contains "and keeps its prose beneath" "$(fake_comments_of 41 | sed -n 2p)" "Autopilot failed in the review phase: boom"
-fake_issue 42 open ready-for-agent orch:spec
-sourced_orch standing_stop 42 failure "" boom >/dev/null 2>&1; st=$?
-assert_status "an empty phase dies" "$st" 1
-sourced_orch standing_limit_stop 42 "" "" "" 1 log >/dev/null 2>&1; st=$?
-assert_status "a limit stop of an empty phase dies" "$st" 1
-assert_eq "an empty phase writes no comment and changes no label" "$(fake_comments_of 42)$(fake_labels_of 42)" "orch:spec ready-for-agent "
-for n in 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 40 41 42; do fake_issue_drop "$n"; done
+for n in 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26; do fake_issue_drop "$n"; done
 fake_issue 11 open needs-human orch:spec
 fake_issue 12 open needs-human orch:spec
 fake_fail adapter_issue_comments_json "$GH_502"
