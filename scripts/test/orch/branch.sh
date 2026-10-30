@@ -952,17 +952,12 @@ assert_eq "leaving no rebase in progress" \
 
 # A done flow still holds its branch: a restart discards dirty work and checks
 # the branch out.
-new_repo_with_origin
-orch_gh_failing init finished >/dev/null
-orch_gh_failing state set issue 18
-default="$(git branch --show-current)"
-orch_gh_failing branch create >/dev/null
 git checkout -q "$default"
 state_fixture phase "done"
 echo hand >>README.md
 out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on a done flow's existing branch succeeds" "$st" 0
-assert_eq "checking the branch out" "$(git branch --show-current)" "orch/18-finished"
+assert_eq "checking the branch out" "$(git branch --show-current)" "orch/15-again"
 assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 
 # An unreadable state.json is reported, not swallowed, when branch sync asks
