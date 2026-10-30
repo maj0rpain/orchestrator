@@ -459,6 +459,9 @@ fake_issue() {
   fake_issue_relabel "${d##*/}" "$@"
 }
 
+# fake_issue_title <n> <title>: seeds issue #n's title.
+fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
+
 # fake_issue_relabel <n> <label>...: sets issue #n's labels; its state, title,
 # body and comments are kept.
 fake_issue_relabel() {
@@ -467,9 +470,6 @@ fake_issue_relabel() {
   : >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
 }
-
-# fake_issue_title <n> <title>: seeds issue #n's title.
-fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
 
 # fake_comments_clear <n>: issue #n holds no comments.
 fake_comments_clear() { rm -rf "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
