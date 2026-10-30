@@ -187,17 +187,19 @@ autopilot_answer() {
   require_state die2
   require_issue issue die2
   gh_or_die --exit 2 --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  rest="$(marked_comment_at -j '
-    if $i == (marked_comment_list | length) - 1 then "noreply"
-    else (marked_comment_list[$i + 1:] | map("\n---\n" + .body) | join("")) end' question "$phase" <<<"$json")" || rc=$?
-  [ "$rc" -ne 1 ] || die2 "issue #$issue has no $phase question comment"
-  [ "$rc" -eq 0 ] || die2 "could not read issue #$issue's comments"
   # The stripped body is read with a sentinel so its trailing newlines survive
   # into the `---` join.
-  first="$(marked_comment_body question "$phase" <<<"$json" || exit 1; printf x)" || die2 "could not read issue #$issue's comments"
+  first="$(marked_comment_body question "$phase" <<<"$json"; rc=$?; printf x; exit "$rc")" || rc=$?
+  [ "$rc" -ne 1 ] || die2 "issue #$issue has no $phase question comment"
+  [ "$rc" -eq 0 ] || die2 "could not read issue #$issue's comments"
   first="${first%x}"
+  rc=0
+  marked_comment_follows question "$phase" <<<"$json" || rc=$?
+  [ "$rc" -ne 1 ] || die "no reply to the $phase question on issue #$issue yet"
+  [ "$rc" -eq 0 ] || die2 "could not read issue #$issue's comments"
+  rest="$(marked_comment_at -j '
+    marked_comment_list[$i + 1:] | map("\n---\n" + .body) | join("")' question "$phase" <<<"$json")" || die2 "could not read issue #$issue's comments"
   out="$(printf '%s' "$first$rest")"  # as before, trailing newlines go; the file gets one
-  [ "$rest" != noreply ] || die "no reply to the $phase question on issue #$issue yet"
   mkdir -p "$(dirname "$file")" || die2 "could not create the directory of $file"
   printf '%s\n' "$out" >"$file" || die2 "could not write $file"
 }
