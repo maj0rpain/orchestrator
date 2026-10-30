@@ -760,7 +760,7 @@ autopilot_candidates() {
 autopilot_tick() {
   local main_root cap claims count issue state labels gh_err phase rc candidates limited_arg
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
-  main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
+  main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale "$main_root"
@@ -926,7 +926,7 @@ autopilot_run() {
   local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail released_note line mine name event pause_epoch pause_iso reject_epoch limited flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
-  main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
+  main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
   phase="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
   dir="$(autopilot_dir "$main_root")"

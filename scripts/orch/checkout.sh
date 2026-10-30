@@ -73,13 +73,45 @@ checkout_kind() {
   return 1
 }
 
+# checkouts_main <walk>: prints the main checkout's path from a walk already
+# held: the parse of its first line. Prints nothing and fails on an empty walk.
+checkouts_main() {
+  local _kind _flow _branch path
+  [ -n "$1" ] || return 1
+  read -r _kind _flow _branch path <<<"${1%%$'\n'*}"
+  printf '%s\n' "$path"
+}
+
 # The main checkout: the first checkout the walk prints. Fails, printing
 # nothing, when the walk fails or prints nothing.
 main_checkout() {
-  local list _kind _flow _branch path
-  list="$(checkouts)" && [ -n "$list" ] || return 1
-  read -r _kind _flow _branch path <<<"${list%%$'\n'*}"
-  printf '%s\n' "$path"
+  local list
+  list="$(checkouts)" || return 1
+  checkouts_main "$list"
+}
+
+# checkouts_or_die / main_checkout_or_die: what checkouts / main_checkout
+# print, or die "could not read the checkouts - git worktree list failed", the
+# one place that message is spelled. Called in a substitution, where die exits
+# only the subshell, so every caller carries the status out (|| exit $?).
+checkouts_unreadable() { die "could not read the checkouts - git worktree list failed"; }
+checkouts_or_die() {
+  checkouts || checkouts_unreadable
+}
+main_checkout_or_die() {
+  main_checkout || checkouts_unreadable
+}
+
+# The checkout that has <branch> checked out, or nothing: the first checkout
+# the walk lists on <branch>, a worktree whose directory is gone included.
+# Dies when the checkouts cannot be read; called in a substitution, so its
+# caller carries that status out.
+branch_checkout() {
+  local list _kind _flow branch path
+  list="$(checkouts_or_die)" || exit $?
+  while read -r _kind _flow branch path; do
+    if [ "$branch" = "$1" ]; then note "$path"; return 0; fi
+  done <<<"$list"
 }
 
 # Whether the checkout at <path> holds a flow.
@@ -145,8 +177,8 @@ checkout_busy() {
     busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
     busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
   elif word_listed "$signals" branch && b="$(checkout_branch)" \
-    && git config --get "branch.$b.orchestrator-base" >/dev/null 2>&1 \
-    && ! git config --get "branch.$b.orchestrator-pr" >/dev/null 2>&1; then
+    && case "$(branch_kind "$b")" in flow|quick) true ;; *) false ;; esac \
+    && ! branch_pr_get "$b" >/dev/null; then
     busy_line="busy: branch $b has no PR yet"
     busy_remedy="Open its PR, or switch off it."
   elif word_listed "$signals" tree; then
@@ -230,7 +262,7 @@ require_flow_branch() {
   local who="$1" b="$2" fb
   fb="$(state_get branch)" || die "$who: cannot read the flow's branch from $STATE"
   [ -n "$fb" ] || die "$who: on $b, the active flow records no branch yet - nothing was discarded"
-  [ "$b" = "$fb" ] || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
+  branch_held "$b" || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
 }
 
 # discard_flow_branch_work: the flow-branch case of the discard rule (ADR-0054),

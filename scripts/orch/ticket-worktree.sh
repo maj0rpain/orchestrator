@@ -23,20 +23,11 @@ readonly TICKET_WORKTREES="$ORCH/worktrees"
 # ticket_worktree_path <n>: prints the path of ticket #<n>'s worktree.
 ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 
-# forked_from_key <branch>: the git config key that records the branch ticket
-# branch <branch> was forked from - the one place code spells it out.
-forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
-
-# forked_from_branch <branch>: prints the forked-from branch recorded on
-# ticket branch <branch>, or prints nothing and returns non-zero when none is
-# recorded.
-forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
-
 # Prints <n> <path> for every ticket worktree under the checkout at <root>;
 # dies when the checkouts cannot be read, never reading that as none.
 ticket_worktrees_under() {
   local list _kind _flow _branch path name
-  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
+  list="$(checkouts_or_die)" || exit $?
   while read -r _kind _flow _branch path; do
     checkout_ticket_path "$path" "$1" || continue
     name="${path##*/}"
@@ -99,25 +90,25 @@ ticket_branch_merged_or_die() {
 # after that takes the worktree and the branch back out before dying.
 cmd_ticket_worktree_add() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket-worktree add <n>"
-  local n parent branch path
+  local n parent branch tbranch path
   n="$(ticket_worktree_number "$1")"
   current_branch_or_die
   parent="$branch"
-  branch="$parent--t$n"
+  tbranch="$(branch_name_ticket "$parent" "$n")"
   path="$(ticket_worktree_path "$n")"
   [ ! -e "$path" ] || die "ticket worktree $path already exists"
-  if git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
-    die "branch $branch already exists"
+  if git rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
+    die "branch $tbranch already exists"
   fi
   exclude_orch_dirs
-  git branch -q --no-track "$branch" HEAD || die "could not create branch $branch"
-  if ! git worktree add -q "$path" "$branch" \
-     || ! git config "$(forked_from_key "$branch")" "$parent"; then
+  git branch -q --no-track "$tbranch" HEAD || die "could not create branch $tbranch"
+  if ! git worktree add -q "$path" "$tbranch" \
+     || ! forked_from_set "$tbranch" "$parent"; then
     # A freshly added worktree holds nothing of anyone's, so no force is
     # needed to take it back out; -D deletes the branch's config section too.
     if [ -e "$path" ]; then git worktree remove "$path" 2>/dev/null || true; fi
-    git branch -q -D "$branch" 2>/dev/null || true
-    die "could not add ticket worktree $path - removed branch $branch again"
+    git branch -q -D "$tbranch" 2>/dev/null || true
+    die "could not add ticket worktree $path - removed branch $tbranch again"
   fi
   note "$path"
 }
@@ -130,41 +121,75 @@ cmd_ticket_worktree_list() {
   ticket_worktrees_under "$ROOT"
 }
 
-# Removes ticket <n>'s worktree and deletes its branch, never with --force.
-# Both refusals - a dirty worktree, and without --unmerged a branch not merged
-# into its forked-from branch - run before anything is removed. With
-# --unmerged, a rebase left in progress there (a failed ticket-conflict
-# resolution) is aborted first, returning the ticket branch to its committed
-# tip, so the worktree is judged clean or dirty as that tip left it.
-cmd_ticket_worktree_remove() {
-  local n="" unmerged=0 path branch
+# ticket_worktree_teardown <n> [--unmerged] [--discard]: the one site that
+# tears ticket <n>'s worktree down. The branch is the worktree's own, else -
+# the worktree already gone - <current branch>--t<n>. --discard first discards
+# the work in the worktree under the label "ticket #<n>". --unmerged aborts a
+# rebase in progress there (returning the branch to its committed tip) and
+# skips the merged check, which otherwise runs before anything is removed. A
+# dirty worktree is refused and nothing is ever forced; the worktree is then
+# removed and the branch deleted with -D (the merged check, when it applies,
+# already proved it merged into its forked-from branch, where -d would judge
+# it against this checkout's HEAD). With the branch alone left, it is deleted.
+# Every refusal or failed step dies naming what failed, leaving what already
+# happened in place.
+ticket_worktree_teardown() {
+  local n="" unmerged=0 discard=0 path branch parent have_wt=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
+      --discard) discard=1 ;;
+      *) n="$1" ;;
+    esac
+    shift
+  done
+  n="$(ticket_worktree_number "$n")"
+  path="$(ticket_worktree_path "$n")"
+  # Only a worktree at $path itself: a leftover t<n> directory's enclosing
+  # checkout is not ours to discard, abort or remove.
+  if is_ticket_worktree "$path"; then
+    have_wt=1
+    [ "$discard" = 0 ] || discard_work_in "$path" "ticket #$n"
+    if [ "$unmerged" = 1 ] && rebase_in_progress "$path"; then
+      git -C "$path" rebase --abort \
+        || die "could not abort the rebase in progress in ticket worktree $path"
+    fi
+    ticket_worktree_resolve "$n"
+    require_clean_tree "$path" \
+      "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
+  else
+    current_branch_or_die
+    parent="$branch"
+    branch="$(branch_name_ticket "$parent" "$n")"
+    git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null \
+      || die "no ticket worktree or branch for ticket $n at $path"
+  fi
+  [ "$unmerged" = 1 ] || ticket_branch_merged_or_die "$branch" "discard it"
+  if [ "$have_wt" = 1 ]; then
+    git worktree remove "$path" || die "could not remove ticket worktree $path"
+  fi
+  git branch -q -D "$branch" || die "could not delete branch $branch"
+}
+
+# Removes ticket <n>'s worktree and deletes its branch, never with --force:
+# argument parsing over ticket_worktree_teardown, dying when there is no
+# worktree.
+cmd_ticket_worktree_remove() {
+  local n="" unmerged=() path
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --unmerged) unmerged=(--unmerged) ;;
       -*) die "unknown flag: $1 (usage: orch.sh ticket-worktree remove <n> [--unmerged])" ;;
       *) [ -z "$n" ] || die "usage: orch.sh ticket-worktree remove <n> [--unmerged]"; n="$1" ;;
     esac
     shift
   done
-  if [ "$unmerged" = 1 ]; then
-    path="$(ticket_worktree_path "$(ticket_worktree_number "$n")")"
-    # Only a worktree at $path itself: a leftover t<n> directory's enclosing
-    # checkout's rebase is not ours to abort.
-    if is_ticket_worktree "$path" && rebase_in_progress "$path"; then
-      git -C "$path" rebase --abort \
-        || die "could not abort the rebase in progress in ticket worktree $path"
-    fi
-  fi
-  ticket_worktree_resolve "$n"
-  require_clean_tree "$path" \
-    "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
-  [ "$unmerged" = 1 ] || ticket_branch_merged_or_die "$branch" "discard it"
-  git worktree remove "$path" || die "could not remove ticket worktree $path"
-  # -D, not -d, either way: without --unmerged the merged check above
-  # already proved the branch merged into its forked-from branch, while -d
-  # would judge it against this checkout's HEAD (a ticket branch has no
-  # upstream) and could refuse after the worktree is gone.
-  git branch -q -D "$branch" || die "could not delete branch $branch"
+  # Only that a worktree exists is read here: its branch cannot be, while a
+  # rebase leaves HEAD detached, until the teardown has aborted the rebase.
+  n="$(ticket_worktree_number "$n")"
+  path="$(ticket_worktree_path "$n")"
+  is_ticket_worktree "$path" || die "no ticket worktree for ticket $n at $path"
+  ticket_worktree_teardown "$n" ${unmerged[@]+"${unmerged[@]}"}
 }
 
 cmd_ticket_worktree() {

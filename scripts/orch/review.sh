@@ -481,8 +481,7 @@ review_resume() {
     *) die "nothing to resume: review terminal says ${state:-nothing}" ;;
   esac
   b="$(checkout_branch_or_rebasing "$ROOT")" || die "review resume: the current checkout is on no branch - nothing was discarded"
-  require_flow_branch "review resume" "$b"
-  discard_flow_branch_work
+  discard_own_branch_work "review resume" "$b"
   i="$(state_get iteration)" || die "cannot read iteration from $STATE"
   path="$(cmd_review path "$i")" || exit 1
   if [ ! -f "$path" ]; then

@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.38.27
+
+Give each checkout kind one teardown in its own module: `side_checkout_archive_and_remove` and `side_checkout_remove_worktree` for a side checkout, with the refusal policy as a parameter, and `ticket_worktree_teardown` for a ticket worktree, shared by `ticket-worktree remove` and ticket reclaim. The Checkout module now owns every query over the checkout walk, `branch_checkout` and `checkouts_main` among them, and spells the "could not read the checkouts" failure once. A refused side-checkout removal now prints one message wherever it happens, and `side-checkout add` and `side-checkout remove` now die when `git worktree list` fails.
+
+## 4.38.26
+
+Branch names and the orchestrator-* git config keys now live in one place, with one verdict on whether a branch is plugin-made, so the sync, busy-checkout, reclaim and discard guards share one rule. No behaviour changes.
+
 ## 4.38.25
 
 Internal refactor: the handoff module now owns the interactive/autopilot choice when a handoff is read, so `phase advance`, `review known-items`, `doctor --flow` and `handoff path` share one lookup. The only visible changes are wording: the interactive missing-handoff message in `review known-items` and `phase advance`, and `phase advance`'s invalid-handoff message in both modes.

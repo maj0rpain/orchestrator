@@ -9,6 +9,17 @@
 # checkout at <top> holds.
 archived_count() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
 
+# archive_block / archive_unblock: make the main checkout's archive directory
+# unwritable - a file stands where it goes - and put it back.
+archive_block() {
+  mv "$top/.orchestrator/archive" "$top/.orchestrator/archive.kept"
+  : >"$top/.orchestrator/archive"
+}
+archive_unblock() {
+  rm "$top/.orchestrator/archive"
+  mv "$top/.orchestrator/archive.kept" "$top/.orchestrator/archive"
+}
+
 # sp_branch <branch>: kept or gone, by whether the local branch exists.
 sp_branch() { if git rev-parse --verify --quiet "refs/heads/$1" >/dev/null; then echo kept; else echo gone; fi; }
 # sp_branch_off <path> <branch>: puts the side checkout at <path> on a new
@@ -326,7 +337,6 @@ assert_eq "with the flow's handoffs in it" \
 assert_contains "it prints the archive's full path" "$out" "$top/.orchestrator/archive/"
 assert_eq "the worktree is gone from disk" "$(on_disk "$alpha")" "absent"
 assert_not_contains "and from git's list" "$(git worktree list)" "$alpha"
-assert_contains "it tells the human to close the session" "$out" "close this session"
 
 # archive in a dirty side checkout: the archive succeeds, the worktree stays.
 beta="$(sc_add beta)"
@@ -336,9 +346,8 @@ out="$(cd "$beta" && orch_gh_failing archive 2>&1)"; st=$?
 assert_status "archive in a dirty side checkout succeeds" "$st" 0
 assert_eq "it archives into the main checkout" "$(archived_count "$top" beta-flow)" "1"
 assert_eq "and leaves the worktree in place" "$(on_disk "$beta/wip.txt")" "present"
-assert_contains "reporting why it was kept" "$out" "kept side checkout $beta"
+assert_contains "reporting why it was kept" "$out" "could not remove side checkout $beta"
 assert_contains "naming the remove command" "$out" "side-checkout remove beta"
-assert_not_contains "and never tells the human to close the session" "$out" "close this session"
 assert_eq "no flow is left in it" "$(on_disk "$beta/.orchestrator/state.json")" "absent"
 
 # init over a done flow in a side checkout archives to the main checkout and
@@ -398,6 +407,12 @@ assert_contains "naming the checkouts" "$out" "orch: could not read the checkout
 out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "side-checkout prune dies when the walk fails" "$st" 1
 assert_contains "saying nothing was removed" "$out" "orch: could not read the checkouts - nothing was removed"
+out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout add walk-add 2>&1)"; st=$?
+assert_status "side-checkout add dies when the walk fails" "$st" 1
+assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts - git worktree list failed"
+out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout remove walk-rm 2>&1)"; st=$?
+assert_status "side-checkout remove dies when the walk fails" "$st" 1
+assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts - git worktree list failed"
 out="$(PATH="$nowalk:$PATH" orch_gh_failing status 2>&1)"; st=$?
 assert_status "status dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"
@@ -488,30 +503,88 @@ assert_eq "the worktree is gone" "$(on_disk "$gamma")" "absent"
 assert_not_contains "and from git's list" "$(git worktree list)" "$gamma"
 assert_eq "the branch is kept" \
   "$(git rev-parse --verify --quiet refs/heads/quick/5-gamma >/dev/null && echo kept || echo gone)" "kept"
-assert_not_contains "run from the main checkout, no close-the-session message" "$out" "close this session"
 
-# remove of a side checkout holding no flow, run from inside it.
-delta="$(sc_add delta)"
-out="$(cd "$delta" && orch_gh_failing side-checkout remove delta 2>&1)"; st=$?
-assert_status "remove from inside the side checkout succeeds" "$st" 0
-assert_eq "the worktree is gone" "$(on_disk "$delta")" "absent"
-assert_contains "and the session is told to close" "$out" "close this session"
 
 # A failing git worktree remove: the archive stands, and remove exits 1. A
 # locked worktree is one git refuses to remove without force.
 eps="$(sc_add eps)"
 (cd "$eps" && orch_gh_failing init eps-flow >/dev/null)
+sp_branch_off "$eps" quick/9-eps
 git worktree lock "$eps"
 out="$(orch_gh_failing side-checkout remove eps 2>&1)"; st=$?
 assert_status "remove exits 1 when the worktree cannot be removed" "$st" 1
 assert_contains "reporting the failure" "$out" "could not remove side checkout $eps"
 assert_eq "the archive stands" "$(archived_count "$top" eps-flow)" "1"
 assert_eq "the worktree stays" "$(on_disk "$eps")" "present"
+assert_eq "the branch is kept" "$(sp_branch quick/9-eps)" "kept"
 git worktree unlock "$eps"
 
 out="$(orch_gh_failing side-checkout remove 2>&1)"; st=$?
 assert_status "remove refuses a missing slug" "$st" 1
 assert_contains "side-checkout remove is in the usage text" "$(orch_gh_failing help)" "side-checkout remove <slug>"
+
+# CLI callers, archive failure: an archive that cannot be written removes
+# nothing; archive and remove print the error unchanged and exit 1.
+for caller in archive remove; do
+  af="$(sc_add "af-$caller")"
+  (cd "$af" && orch_gh_failing init "af-$caller-flow" >/dev/null)
+  archive_block
+  if [ "$caller" = archive ]; then
+    out="$(cd "$af" && orch_gh_failing archive 2>&1)"; st=$?
+  else
+    out="$(orch_gh_failing side-checkout remove "af-$caller" 2>&1)"; st=$?
+  fi
+  archive_unblock
+  assert_status "$caller exits 1 when the archive cannot be written" "$st" 1
+  assert_contains "$caller prints the archive error unchanged" "$out" "orch: could not create the archive directory"
+  assert_contains "$caller names the main checkout's archive" "$out" "$top/.orchestrator/archive/"
+  assert_eq "$caller leaves the worktree" "$(on_disk "$af/.orchestrator/state.json")" "present"
+done
+
+# side_checkout_remove_worktree and side_checkout_archive_and_remove:
+# Each function through the sourced module, one case per policy and outcome.
+sf="$(sc_add sf)"
+out="$(cd "$top" && sourced_orch side_checkout_remove_worktree "$sf" "$top" "$top" die 2>&1)"; st=$?
+assert_status "remove_worktree removes a clean checkout" "$st" 0
+assert_eq "noting it and no close-the-session note" "$out" "removed side checkout $sf"
+assert_eq "the worktree is gone" "$(on_disk "$sf")" "absent"
+sf="$(sc_add sf)"
+out="$(cd "$top" && sourced_orch side_checkout_remove_worktree "$sf" "$top" "$sf/sub" warn 2>&1)"
+assert_contains "remove_worktree tells the human to close a session that ran inside" "$out" "close this session"
+sf="$(sc_add sf)"
+echo wip >"$sf/wip.txt"
+refusal="could not remove side checkout $sf: fatal: '$sf' contains modified or untracked files, use --force to delete it - left as it stands. Commit or discard its changes, then run orch.sh side-checkout remove sf."
+out="$(cd "$top" && sourced_orch side_checkout_remove_worktree "$sf" "$top" "$top" die 2>&1)"; st=$?
+assert_status "die dies on a refusal" "$st" 1
+assert_eq "with the one refusal message" "$out" "orch: $refusal"
+out="$(cd "$top" && sourced_orch side_checkout_remove_worktree "$sf" "$top" "$top" warn 2>&1)"; st=$?
+assert_status "warn returns 1 on a refusal" "$st" 1
+assert_eq "with the same message" "$out" "orch: $refusal"
+assert_eq "the worktree stays" "$(on_disk "$sf/wip.txt")" "present"
+rm "$sf/wip.txt"
+
+(cd "$sf" && orch_gh_failing init sf-flow >/dev/null)
+out="$(cd "$top" && sourced_orch_script 'side_checkout_archive_and_remove "$1" "$2" "$2" die && echo "rc=0"; echo "out=$archive_out"' "$sf" "$top" 2>&1)"
+assert_contains "archive_and_remove returns 0" "$out" "rc=0"
+assert_eq "the flow is archived in the main checkout, the worktree gone" \
+  "$(archived_count "$top" sf-flow)$(on_disk "$sf")" "1absent"
+assert_contains "archive_out holds the archive's path" "$out" "out=.orchestrator/archive/"
+sf="$(sc_add sf)"
+(cd "$sf" && orch_gh_failing init sf2-flow >/dev/null)
+echo wip >"$sf/wip.txt"
+out="$(cd "$top" && sourced_orch_script 'side_checkout_archive_and_remove "$1" "$2" "$2" warn || echo "rc=$?"' "$sf" "$top" 2>&1)"
+assert_contains "warn policy returns 1 for a refused removal" "$out" "rc=1"
+assert_eq "the archive stands" "$(archived_count "$top" sf2-flow)" "1"
+sf="$(sc_add sf3)"
+(cd "$sf" && orch_gh_failing init sf3-flow >/dev/null)
+archive_block
+for policy in die warn; do
+  out="$(cd "$top" && sourced_orch_script 'side_checkout_archive_and_remove "$1" "$2" "$2" "$3" || echo "rc=$?"; echo "out=$archive_out"' "$sf" "$top" "$policy" 2>&1)"
+  assert_contains "an archive failure returns 2 under $policy" "$out" "rc=2"
+  assert_contains "keeping the error in archive_out" "$out" "out=orch: could not create the archive directory"
+done
+archive_unblock
+assert_eq "and removes nothing" "$(on_disk "$sf/.orchestrator/state.json")" "present"
 restore_suite_env
 
 # --- side-checkout prune (#726) -----------------------------------------------
@@ -731,6 +804,26 @@ assert_eq "with its branch" "$(sp_branch orch/tw-flow)" "kept"
 (cd "$tw" && orch_gh_failing ticket-worktree remove 8 >/dev/null)
 orch_gh_failing side-checkout prune >/dev/null 2>&1
 
+# A branch -D that fails is reported, the sweep exits 1, and the removal and
+# archive stand. The flow's recorded branch is one the main checkout holds.
+fake_offline
+db="$(sc_add db)"
+(cd "$db" && orch_gh_failing init db-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/main-flow && state_fixture pr 58)
+sp_branch_off "$db" quick/11-db
+fake_pr 58 merged orch/main-flow main
+dd="$(sc_add dd)"
+sp_branch_off "$dd" quick/14-dd
+fake_pr 63 merged quick/14-dd main
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune exits 1 when the branch cannot be deleted" "$st" 1
+assert_contains "warning of it" "$out" "could not delete branch orch/main-flow: "
+assert_eq "the worktree is removed" "$(on_disk "$db")" "absent"
+assert_eq "the branch stays" "$(sp_branch orch/main-flow)" "kept"
+assert_eq "the sweep moves on to the next" "$(on_disk "$dd")" "absent"
+git branch -q -D quick/11-db
+
 # #1333: an archive that cannot be written stops before the side checkout, its
 # state or its branch go. The archive root is the main checkout's.
 fake_offline
@@ -739,14 +832,17 @@ ab="$(sc_add ab)"
   && state_fixture phase "done" && state_fixture branch orch/ab-flow && state_fixture pr 57)
 sp_branch_off "$ab" orch/ab-flow
 fake_pr 57 merged orch/ab-flow main
+ac="$(sc_add ac)"
+sp_branch_off "$ac" quick/12-ac
+fake_pr 59 merged quick/12-ac main
 fake_online
-mv "$top/.orchestrator/archive" "$top/.orchestrator/archive.kept"
-: >"$top/.orchestrator/archive"
+archive_block
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
-rm "$top/.orchestrator/archive"
-mv "$top/.orchestrator/archive.kept" "$top/.orchestrator/archive"
+archive_unblock
 assert_status "prune exits 1 when the archive cannot be written" "$st" 1
 assert_contains "naming the archive path" "$out" "orch: could not create the archive directory $top/.orchestrator/archive/"
+assert_contains "warning with the prefix and the path" "$out" "could not archive the flow in side checkout $ab:"
+assert_eq "the sweep carries on with a flowless one" "$(on_disk "$ac")" "absent"
 assert_eq "the side checkout stays" "$(on_disk "$ab")" "present"
 assert_eq "with its state" "$(on_disk "$ab/.orchestrator/state.json")" "present"
 assert_eq "and its branch" "$(sp_branch orch/ab-flow)" "kept"

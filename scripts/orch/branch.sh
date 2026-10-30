@@ -52,11 +52,118 @@ branch_upstream() {
   git rev-parse --symbolic-full-name --verify --quiet "$1@{upstream}" 2>/dev/null
 }
 
+# --- plugin-made branches: config keys, names and the verdict --------------
+# The one home of every orchestrator-* git config key and of every plugin
+# branch name: no other module spells a key or builds or matches a name. A
+# getter prints the value, or nothing and returns non-zero when the key is
+# unset; a setter returns the status of its git config write.
+
+# Each key is spelled once, in its <key>_key function; its getter and setter
+# both go through it.
+branch_base_key() { printf 'branch.%s.orchestrator-base\n' "$1"; }
+branch_base_sha_key() { printf 'branch.%s.orchestrator-base-sha\n' "$1"; }
+branch_pr_key() { printf 'branch.%s.orchestrator-pr\n' "$1"; }
+# forked_from_key <branch>: the git config key that records the branch ticket
+# branch <branch> was forked from.
+forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
+
+branch_base_get() { git config --get "$(branch_base_key "$1")" 2>/dev/null; }
+branch_base_set() { git config "$(branch_base_key "$1")" "$2"; }
+branch_base_sha_get() { git config --get "$(branch_base_sha_key "$1")" 2>/dev/null; }
+branch_base_sha_set() { git config "$(branch_base_sha_key "$1")" "$2"; }
+branch_pr_get() { git config --get "$(branch_pr_key "$1")" 2>/dev/null; }
+branch_pr_set() { git config "$(branch_pr_key "$1")" "$2"; }
+
+# forked_from_branch <branch>: prints the forked-from branch recorded on
+# ticket branch <branch> (its ticket parent), or prints nothing and returns
+# non-zero when none is recorded.
+forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
+forked_from_set() { git config "$(forked_from_key "$1")" "$2"; }
+
+# Name builders. A flow's branch from its issue and slug, its redo form from
+# that and a redo count, a ticket branch from its forked-from branch and
+# ticket number, and a quick implementation's branch from issue and slug.
+branch_name_flow() { printf 'orch/%s-%s\n' "$1" "$2"; }
+branch_name_redo() { printf '%s-redo-%s\n' "$(branch_name_flow "$1" "$2")" "$3"; }
+branch_name_ticket() { printf '%s--t%s\n' "$1" "$2"; }
+branch_name_quick() { printf 'quick/%s-%s\n' "$1" "$2"; }
+
+# branch_issue_of <name>: prints the issue number of a flow or quick branch
+# name - the digits after orch/ or quick/ up to the first `-` - and fails
+# unless that run is non-empty, all digits and followed by a non-empty slug.
+branch_issue_of() {
+  local rest issue slug
+  case "$1" in
+    orch/*) rest="${1#orch/}" ;;
+    quick/*) rest="${1#quick/}" ;;
+    *) return 1 ;;
+  esac
+  case "$rest" in *-*) ;; *) return 1 ;; esac
+  issue="${rest%%-*}"
+  slug="${rest#*-}"
+  case "$issue" in ''|*[!0-9]*) return 1 ;; esac
+  [ -n "$slug" ] || return 1
+  printf '%s\n' "$issue"
+}
+
+# branch_redo_count_of <name>: prints the redo count of a flow branch name in
+# its -redo-<n> form, and fails for any other name.
+branch_redo_count_of() {
+  local n
+  case "$1" in orch/*) ;; *) return 1 ;; esac
+  branch_issue_of "$1" >/dev/null || return 1
+  n="${1##*-redo-}"
+  [ "$n" != "$1" ] || return 1
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$n"
+}
+
+# branch_kind <branch>: prints what kind of branch <branch> is, reading git
+# config and the name only. A plugin-made branch is a `ticket` (a ticket
+# parent is recorded), a `flow` (a base is recorded and the name is
+# orch/<issue>-<slug>, redo form included) or a `quick` (a base is recorded
+# and the name is anything else); every other branch is `foreign`.
+branch_kind() {
+  if forked_from_branch "$1" >/dev/null; then
+    echo ticket
+  elif branch_base_get "$1" >/dev/null; then
+    case "$1" in
+      orch/*) if branch_issue_of "$1" >/dev/null; then echo flow; else echo quick; fi ;;
+      *) echo quick ;;
+    esac
+  else
+    echo foreign
+  fi
+}
+
+# branch_held <branch>: succeeds when this checkout's flow state records
+# <branch> as the flow's branch, in any phase. Reads flow state only.
+branch_held() {
+  [ -f "$STATE" ] && [ "$(state_get branch)" = "$1" ]
+}
+
+# discard_own_branch_work <who> <branch>: the Discard rule's prelude and the
+# discard in one: proves <branch> is the caller's own, then runs
+# discard_flow_branch_work. Own is the branch the flow holds, in any phase;
+# else, with an active flow, the flow-branch proof dies on it; with none, a
+# `quick` branch. Called as a bare statement, so a die stops the caller.
+discard_own_branch_work() {
+  local who="$1" b="$2"
+  if ! branch_held "$b"; then
+    if flow_active; then
+      require_flow_branch "$who" "$b"
+    elif [ "$(branch_kind "$b")" != quick ]; then
+      die "$who: no active flow, and $b is not a quick implementation's branch - nothing was discarded"
+    fi
+  fi
+  discard_flow_branch_work
+}
+
 # Records <base> and <sha> as branch <name>'s base and base SHA in its git
 # config, where branch sync and branch base-sha read them.
 record_branch_base() {
-  git config "branch.$1.orchestrator-base" "$2"
-  git config "branch.$1.orchestrator-base-sha" "$3"
+  branch_base_set "$1" "$2"
+  branch_base_sha_set "$1" "$3"
 }
 
 # A restarted implement phase finds the flow's own branch already made: when
@@ -66,7 +173,8 @@ record_branch_base() {
 # refused. It refuses a busy checkout with exit 3 - a branch the plugin made
 # with no PR yet, except the flow's own - but not on the flow signal, since
 # the flow mid-pipeline is its own. Uncommitted or in-progress work is the
-# discard rule's (discard_flow_branch_work), applied before anything else
+# discard rule's (discard_own_branch_work on the flow's own branch,
+# discard_flow_branch_work before a fork), applied before anything else
 # changes: discarded, or refused in an interactive main checkout. Besides
 # state, it records the base and base SHA in the branch's git config, as
 # branch off does, so branch sync and branch base-sha still find them once
@@ -77,25 +185,24 @@ cmd_branch_create() {
   local slug issue name base sha own=""
   slug="$(state_get slug)"
   require_issue issue
-  name="orch/${issue}-${slug}"
-  if [ "$(state_get branch)" = "$name" ] && git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then
+  name="$(branch_name_flow "$issue" "$slug")"
+  if branch_held "$name" && git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then
     own=1
   fi
-  [ -n "$own" ] || refuse_busy_checkout branch
-  # The non-own path's refusals come before the discard, so a refusal exits
-  # with nothing written.
-  if [ -z "$own" ]; then
-    base="$(flow_base)"
-    new_branch_refusals "$name" "$base" \
-      "point this flow at another base: orch.sh base set <branch> --flow"
-  fi
-  discard_flow_branch_work
   if [ -n "$own" ]; then
+    discard_own_branch_work "branch create" "$name"
     [ "$(checkout_branch)" = "$name" ] || git checkout -q "$name" \
       || die "could not check out $name"
     note "$name"
     return
   fi
+  refuse_busy_checkout branch
+  # The refusals come before the discard, so a refusal exits with nothing
+  # written.
+  base="$(flow_base)"
+  new_branch_refusals "$name" "$base" \
+    "point this flow at another base: orch.sh base set <branch> --flow"
+  discard_flow_branch_work
   fork_new_branch "$name" "$base"
   sha="$(git rev-parse HEAD)"
   state_write_string branch "$name"
@@ -142,7 +249,7 @@ cmd_branch_base_sha() {
   [ $# -eq 0 ] || die "usage: orch.sh branch base-sha"
   local branch sha base ref
   current_branch_or_die
-  sha="$(git config --get "branch.$branch.orchestrator-base-sha" 2>/dev/null)" || sha=""
+  sha="$(branch_base_sha_get "$branch")" || sha=""
   if [ -n "$sha" ]; then note "$sha"; return; fi
   base="$(recorded_base "$branch")"
   if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null; then
@@ -169,12 +276,14 @@ cmd_branch_sync() {
   [ $# -eq 0 ] || die "usage: orch.sh branch sync"
   local branch base held="" tip remote why
   current_branch_or_die ' - nothing was synced'
-  if [ -f "$STATE" ] && [ "$(state_get branch)" = "$branch" ]; then
+  if branch_held "$branch"; then
     held=1
     base="$(flow_base)"
   else
-    base="$(git config --get "branch.$branch.orchestrator-base" 2>/dev/null)" \
-      || die "$branch is not a branch the plugin made: no flow here holds it and it records no base - nothing was synced"
+    case "$(branch_kind "$branch")" in
+      flow|quick) base="$(branch_base_get "$branch")" ;;
+      *) die "$branch is not a branch the plugin made: no flow here holds it and it records no base - nothing was synced" ;;
+    esac
   fi
   [ "$branch" != "$base" ] || die "$branch is its own base branch - nothing was synced"
   if merge_in_progress "$ROOT"; then
@@ -191,7 +300,7 @@ cmd_branch_sync() {
     fi
     die "git could not merge origin/$base into $branch"
   fi
-  git config "branch.$branch.orchestrator-base-sha" "$tip"
+  branch_base_sha_set "$branch" "$tip"
   [ -z "$held" ] || state_write_string base_sha "$tip"
   # Its own upstream only: a branch made before branch create and branch off
   # passed --no-track (#1152) may still track its base until its first push.

@@ -628,6 +628,20 @@ assert_eq "recording it as the base SHA (quick)" "$(bs_sha)" "$new_tip"
 assert_eq "and branch base-sha prints it" "$(orch_gh_failing branch base-sha)" "$new_tip"
 assert_eq "writing no state" "$(on_disk .orchestrator/state.json)" "absent"
 
+# A ticket branch, then a base-recorded branch named outside orch/ and quick/.
+git checkout -q main
+git checkout -q -b feature/ticketed
+git config branch.feature/ticketed.orchestrator-ticket-parent main
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a ticket branch is refused" "$st" 1
+assert_contains "as no plugin-made branch to sync" "$out" "is not a branch the plugin made"
+git config --unset branch.feature/ticketed.orchestrator-ticket-parent
+git config branch.feature/ticketed.orchestrator-base main
+new_tip="$(bs_advance named.txt named)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a base-recorded branch named outside orch/ and quick/ syncs" "$st" 0
+assert_eq "merging origin's base tip (any name)" "$(git rev-parse HEAD^2)" "$new_tip"
+
 assert_contains "help lists branch sync" "$("$ORCH" help)" "branch sync"
 cd "$SUITE_CWD" || exit 1
 rm -rf "$(dirname "$sc_origin")"
@@ -701,6 +715,13 @@ git config branch.quick/5-held.orchestrator-pr 42
 out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "a branch with the PR key is free" "$st" 0
 assert_eq "printing nothing (PR key)" "$out" ""
+
+# An orch/ branch with a recorded base and no PR is busy when no flow holds it.
+git checkout -q -b orch/30-unheld
+git config branch.orch/30-unheld.orchestrator-base main
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "an unheld orch/ branch with a base and no PR is busy" "$st" 3
+assert_contains "naming the branch (orch/)" "$out" "orch/30-unheld"
 
 for phase in spec implement review; do
   new_repo_with_origin
@@ -900,6 +921,28 @@ out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a rebase in progress in an autopilot flow is aborted" "$st" 0
 assert_eq "leaving no rebase in progress" \
   "$(rebase_state)" "none"
+
+# A done flow still holds its branch: a restart discards dirty work and checks
+# the branch out.
+new_repo_with_origin
+orch_gh_failing init finished >/dev/null
+orch_gh_failing state set issue 18
+default="$(git branch --show-current)"
+orch_gh_failing branch create >/dev/null
+git checkout -q "$default"
+state_fixture phase "done"
+echo hand >>README.md
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on a done flow's existing branch succeeds" "$st" 0
+assert_eq "checking the branch out" "$(git branch --show-current)" "orch/18-finished"
+assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
+
+# An unreadable state.json is reported, not swallowed, when branch sync asks
+# whether the flow holds the branch.
+echo '{ not json' >.orchestrator/state.json
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "branch sync on an unreadable state exits 1" "$st" 1
+assert_contains "branch sync shows the state read's own error" "$out" "parse error"
 
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin

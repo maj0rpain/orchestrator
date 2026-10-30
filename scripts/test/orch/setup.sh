@@ -212,16 +212,20 @@ on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
-# nowalk_bin: a new directory holding a git that fails `worktree list` alone
-# and passes every other call through; first on PATH, it fails the checkouts
-# walk and nothing else.
-nowalk_bin() {
+# git_fails_bin <pattern>: a new directory holding a git that fails when its
+# arguments, space-joined and padded with a space either side, match the glob
+# <pattern>, and passes every other call through; first on PATH, it fails
+# those calls and nothing else.
+git_fails_bin() {
   local dir
   dir="$(mktemp -d)"
-  writeln '#!/bin/sh' '[ "$1 $2" = "worktree list" ] && exit 1' "exec $(command -v git) \"\$@\"" >"$dir/git"
+  writeln '#!/bin/sh' 'case " $* " in '"$1"') exit 1 ;; esac' "exec $(command -v git) \"\$@\"" >"$dir/git"
   chmod +x "$dir/git"
   printf '%s\n' "$dir"
 }
+# nowalk_bin: a git_fails_bin that fails `worktree list` alone, so it fails the
+# checkouts walk and nothing else.
+nowalk_bin() { git_fails_bin '" worktree list "*'; }
 # break_index / restore_index [<checkout>]: make a checkout's working tree
 # (default: the current directory) unreadable - git status fails on a garbage
 # index - and put the index back. They return non-zero, touching no file, when

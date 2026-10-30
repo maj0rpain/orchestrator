@@ -28,7 +28,7 @@ cmd_status() {
 # no marker, so they never appear; with nothing to list, nothing is printed.
 status_others() {
   local list kind flow _branch path lines=""
-  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
+  list="$(checkouts_or_die)" || exit $?
   while read -r kind flow _branch path; do
     [ "$path" != "$ROOT" ] || continue
     [ "$flow" = 1 ] || [ "$kind" = side ] || continue
@@ -81,27 +81,13 @@ cmd_archive() {
   require_state
   local archive_home
   archive_home="$(archive_root "$ROOT")" || die "could not read the checkouts - nothing was archived"
-  archive_flow "$ROOT" "$archive_home"
   # Only a side checkout archives anywhere but in place.
-  if [ "$archive_home" != "$ROOT" ]; then side_checkout_remove_after_archive "$ROOT" "$archive_home"; fi
-}
-
-# side_checkout_remove_after_archive <path> <main-root>: removes the side
-# checkout at <path>, through the main checkout at <main-root>, once its flow
-# is archived, never with force. A dirty worktree is reported and kept: the
-# archive has still succeeded. When this command ran inside the removed
-# worktree, the session working there is told to close.
-side_checkout_remove_after_archive() {
-  local path="$1" main_root="$2" err here
-  # Read before the removal: once the worktree is gone, so is this directory.
-  here="$(pwd -P)"
-  if ! err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
-    warn "kept side checkout $path - it was not removed: ${err%%$'\n'*}
-     Commit or discard its changes, then run orch.sh side-checkout remove $(basename "$path")."
-    return 0
+  if [ "$archive_home" = "$ROOT" ]; then
+    archive_flow "$ROOT" "$archive_home"
+    return
   fi
-  note "removed side checkout $path"
-  side_checkout_close_note "$path" "$here"
+  # A refused removal is kept and warned of: the archive has still succeeded.
+  side_checkout_archive_and_remove_or_exit "$ROOT" "$archive_home" "$(pwd -P)" warn || true
 }
 
 cmd_help() {
