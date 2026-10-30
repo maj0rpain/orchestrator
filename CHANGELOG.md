@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.30
+
+The autopilot module now decides how a phase session ended in one function, `autopilot_session_end`, which reads the session log and whether the claim is still held and sets the outcome (`released`, `limited` or `failure`), the reset, the early-pause reset and the limit pause. The limit file is reached only through `autopilot_pause_extend` and `autopilot_pause_until`, and `autopilot_run` keeps only launching, the claim check, recording the pause and dispatching. The log parsing, the pause store and the third-stop-in-a-row count are now tested by direct calls, with one end-to-end tracer per path. No behaviour changes.
+
 ## 4.38.29
 
 A flow's implement phase now decides whether a ticket breakdown is collapsed from `orch.sh ticket exists`, not from the spec handoff, so it can no longer build only the spec issue and skip every ticket of a broken-down spec. `02-spec.md` no longer carries a `## Ticket breakdown` section; an older handoff that still has one keeps validating. `phase advance` out of implement, `pr open` and `pr publish` now refuse while the spec issue has any open sub-issue, naming each one, and refuse when GitHub cannot be read. To drop a ticket on purpose, close it with `orch.sh ticket close <n> --unmerged`. ADR-0012 gains an amendment note.
