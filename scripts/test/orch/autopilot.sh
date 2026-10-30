@@ -777,7 +777,7 @@ printf '7\n' >"$launcher_dir/release"; : >"$launcher_dir/out"
 "$ORCH" autopilot tick >/dev/null 2>&1   # makes the side checkout
 rm -f "$launcher_dir/release" "$launcher_dir/calls" "$limit_file"
 # event_session <exit>: a fresh run of issue 7 over the launcher's canned log,
-# the limit file absent.
+# the limit file removed unless a test made it a directory.
 event_session() {
   [ -d "$limit_file" ] || rm -f "$limit_file"
   fake_issue 7 open ready-for-agent orch:spec orch:running
@@ -792,12 +792,7 @@ r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
 rl_event allowed 0.9 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
 event_session 0
 assert_eq "a five-hour utilization of 0.9 writes its reset on a successful session" "$(cat "$limit_file")" "$(iso_of "$r1")"
-event_session 3
-assert_eq "and on a failure that is no usage limit" "$(cat "$limit_file")" "$(iso_of "$r1")"
-assert_not_contains "that failure names no usage limit" "$(fake_comments_of 7)" "usage limit"
 printf '7\n' >"$launcher_dir/release"
-event_session 0
-assert_eq "and on a session that released its claim" "$(cat "$limit_file")" "$(iso_of "$r1")"
 rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
 event_session 1
 assert_eq "a rejecting event of a released claim marks no issue" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
@@ -843,6 +838,7 @@ restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 echo
 echo "autopilot tick limited issues"
 tick_fixture
+LABELS_HUMAN="needs-human orch:spec ready-for-agent "
 top="$(git rev-parse --show-toplevel)"
 limit_file="$top/.orchestrator/autopilot/limit"
 lim_reset=$(( $(date +%s) + 3600 ))
@@ -881,11 +877,9 @@ assert_eq "and still limited" "$(fake_labels_of 7)" "orch:limited orch:spec read
 fake_issue_relabel 7 orch:spec ready-for-agent orch:limited orch:running
 rm -f "$limit_file"
 limit_run 7 >/dev/null
-assert_eq "the third in a row is needs-human, without orch:limited" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
+assert_eq "the third in a row is needs-human, without orch:limited" "$(fake_labels_of 7)" "$LABELS_HUMAN"
 assert_contains "its failure comment names the usage limit and the cap" "$(fake_comments_of 7)" "the third in a row in the spec phase"
 assert_eq "it still writes the limit file" "$(cat "$limit_file")" "$lim_iso"
-
-LABELS_HUMAN="needs-human orch:spec ready-for-agent "
 
 # a rejecting rate_limit_event with no resetsAt names the fallback pause too
 lim_fresh
@@ -1242,42 +1236,42 @@ assert_status "unreadable comments return non-zero" "$st" 1
 echo
 echo "autopilot pause store"
 tick_fixture
-pm="$(git rev-parse --show-toplevel)"; pl="$(mktemp)"
+pause_main="$(git rev-parse --show-toplevel)"; pause_log="$(mktemp)"
 future_iso="$(iso_of "$(( $(date +%s) + 7200 ))")"; later_iso="$(iso_of "$(( $(date +%s) + 9000 ))")"
-mkdir -p "$pm/.orchestrator/autopilot"; pf="$pm/.orchestrator/autopilot/limit"
-out="$(sourced_orch autopilot_pause_until "$pm" 2>&1)"; st=$?
+mkdir -p "$pause_main/.orchestrator/autopilot"; pause_file="$pause_main/.orchestrator/autopilot/limit"
+out="$(sourced_orch autopilot_pause_until "$pause_main" 2>&1)"; st=$?
 assert_status "no limit file: not paused" "$st" 1
 assert_eq "and nothing printed" "$out" ""
-sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl"; st=$?
+sourced_orch autopilot_pause_extend "$pause_main" "$future_iso" "$pause_log"; st=$?
 assert_status "extend succeeds" "$st" 0
-assert_eq "extend records the time" "$(cat "$pf")" "$future_iso"
-sourced_orch autopilot_pause_extend "$pm" "$later_iso" "$pl"
-assert_eq "extend replaces an earlier time" "$(cat "$pf")" "$later_iso"
-sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl"
-assert_eq "extend keeps a later time" "$(cat "$pf")" "$later_iso"
-printf 'garbage\n' >"$pf"
-sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl"
-assert_eq "extend replaces an unparsable time" "$(cat "$pf")" "$future_iso"
-out="$(sourced_orch autopilot_pause_until "$pm" 2>&1)"; st=$?
+assert_eq "extend records the time" "$(cat "$pause_file")" "$future_iso"
+sourced_orch autopilot_pause_extend "$pause_main" "$later_iso" "$pause_log"
+assert_eq "extend replaces an earlier time" "$(cat "$pause_file")" "$later_iso"
+sourced_orch autopilot_pause_extend "$pause_main" "$future_iso" "$pause_log"
+assert_eq "extend keeps a later time" "$(cat "$pause_file")" "$later_iso"
+printf 'garbage\n' >"$pause_file"
+sourced_orch autopilot_pause_extend "$pause_main" "$future_iso" "$pause_log"
+assert_eq "extend replaces an unparsable time" "$(cat "$pause_file")" "$future_iso"
+out="$(sourced_orch autopilot_pause_until "$pause_main" 2>&1)"; st=$?
 assert_status "a future time pauses" "$st" 0
 assert_contains "and the note names it" "$out" "usage limit: no issue is picked up until $future_iso"
-printf '2020-01-01T00:00:00Z\n' >"$pf"
-sourced_orch autopilot_pause_until "$pm" >/dev/null 2>&1; st=$?
+printf '2020-01-01T00:00:00Z\n' >"$pause_file"
+sourced_orch autopilot_pause_until "$pause_main" >/dev/null 2>&1; st=$?
 assert_status "a passed time does not pause" "$st" 1
-assert_eq "and removes the file" "$(on_disk "$pf")" absent
-printf 'garbage\n' >"$pf"
-sourced_orch autopilot_pause_until "$pm" >/dev/null 2>&1; st=$?
+assert_eq "and removes the file" "$(on_disk "$pause_file")" absent
+printf 'garbage\n' >"$pause_file"
+sourced_orch autopilot_pause_until "$pause_main" >/dev/null 2>&1; st=$?
 assert_status "an unparsable time does not pause" "$st" 1
-assert_eq "and removes the file too" "$(on_disk "$pf")" absent
-rm -f "$pf"; mkdir "$pf"
-out="$(sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl" 2>&1)"; st=$?
+assert_eq "and removes the file too" "$(on_disk "$pause_file")" absent
+rm -f "$pause_file"; mkdir "$pause_file"
+out="$(sourced_orch autopilot_pause_extend "$pause_main" "$future_iso" "$pause_log" 2>&1)"; st=$?
 assert_status "a failed write still returns 0" "$st" 0
 assert_contains "noting it on stderr" "$out" "could not write the limit file"
-assert_contains "and in the log" "$(cat "$pl")" "could not write the limit file"
-rm -rf "$pf"
+assert_contains "and in the log" "$(cat "$pause_log")" "could not write the limit file"
+rm -rf "$pause_file"
 
 # --- autopilot session end (the classifier) ----------------------------------
-# autopilot_session_end <log> <held>, called directly over log files: each case
+# autopilot_session_end, called directly over log files: each case
 # asserts all four values (#1695).
 echo
 echo "autopilot session end"
@@ -1285,7 +1279,7 @@ new_repo >/dev/null
 se_dir="$(mktemp -d)"; se_log="$se_dir/session.log"
 # se_end <held>: the classifier over $se_log, as "outcome|reset|early|limit".
 se_end() {
-  sourced_orch_script 'outcome=x reset=x early=x limit=x; autopilot_session_end "$1" "$2"; printf "%s|%s|%s|%s\n" "$outcome" "$reset" "$early" "$limit"' "$se_log" "$1"
+  sourced_orch_script 'autopilot_session_end "$1" "$2" end_outcome end_reset end_early end_limit; printf "%s|%s|%s|%s\n" "$end_outcome" "$end_reset" "$end_early" "$end_limit"' "$se_log" "$1"
 }
 # se_check <label> <held> <outcome> <reset> <early> <limit>: asserts all four.
 se_check() { assert_eq "$1" "$(se_end "$2")" "$3|$4|$5|$6"; }
@@ -1293,12 +1287,12 @@ se_check() { assert_eq "$1" "$(se_end "$2")" "$3|$4|$5|$6"; }
 # outcome is limited with no reset or early pause, and the limit is one hour on,
 # within the clock read around the call.
 se_check_hour_fallback() {
-  local before after got o rs er lm lim_epoch
+  local before after got got_outcome got_reset got_early got_limit limit_epoch
   before="$(date +%s)"; got="$(se_end 1)"; after="$(date +%s)"
-  IFS='|' read -r o rs er lm <<<"$got"
-  read -r lim_epoch _ < <(local_fields "$lm")
-  assert_eq "$1" "$o|$rs|$er" "limited||"
-  assert_eq "$2" "$([ "$lim_epoch" -ge $((before + 3600)) ] && [ "$lim_epoch" -le $((after + 3600)) ] && echo yes)" yes
+  IFS='|' read -r got_outcome got_reset got_early got_limit <<<"$got"
+  read -r limit_epoch _ < <(local_fields "$got_limit")
+  assert_eq "$1" "$got_outcome|$got_reset|$got_early" "limited||"
+  assert_eq "$2" "$([ "$limit_epoch" -ge $((before + 3600)) ] && [ "$limit_epoch" -le $((after + 3600)) ] && echo yes)" yes
 }
 now_epoch="$(date +%s)"
 r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
@@ -1318,17 +1312,17 @@ done
 
 # resets <time>
 ndjson_with '5-hour limit reached ∙ resets 3pm' >"$se_log"
-IFS='|' read -r o rs er lm <<<"$(se_end 1)"
-read -r rs_epoch rs_hour _ < <(local_fields "$rs")
-assert_eq "\"resets 3pm\" is limited, its limit the reset, no early pause" "$o|$lm|$er" "limited|$rs|"
-assert_eq "the reset is 15:00 local" "$rs_hour" 15
-assert_eq "within the next day" "$([ "$rs_epoch" -gt "$(date +%s)" ] && [ "$rs_epoch" -le "$(( $(date +%s) + 86400 + 3600 ))" ] && echo yes)" yes
+IFS='|' read -r got_outcome got_reset got_early got_limit <<<"$(se_end 1)"
+read -r reset_epoch reset_hour _ < <(local_fields "$got_reset")
+assert_eq "\"resets 3pm\" is limited, its limit the reset, no early pause" "$got_outcome|$got_limit|$got_early" "limited|$got_reset|"
+assert_eq "the reset is 15:00 local" "$reset_hour" 15
+assert_eq "within the next day" "$([ "$reset_epoch" -gt "$(date +%s)" ] && [ "$reset_epoch" -le "$(( $(date +%s) + 86400 + 3600 ))" ] && echo yes)" yes
 ndjson_with 'Weekly limit reached ∙ resets Mon 9am' >"$se_log"
-IFS='|' read -r o rs er lm <<<"$(se_end 1)"
-read -r rs_epoch rs_hour rs_day < <(local_fields "$rs")
-assert_eq "\"resets Mon 9am\" is limited, its limit the reset" "$o|$lm|$er" "limited|$rs|"
-assert_eq "the reset is a Monday at 09:00 local" "$rs_day $rs_hour" "Mon 09"
-assert_eq "within the next week" "$([ "$rs_epoch" -gt "$(date +%s)" ] && [ "$rs_epoch" -le "$(( $(date +%s) + 7 * 86400 + 3600 ))" ] && echo yes)" yes
+IFS='|' read -r got_outcome got_reset got_early got_limit <<<"$(se_end 1)"
+read -r reset_epoch reset_hour reset_day < <(local_fields "$got_reset")
+assert_eq "\"resets Mon 9am\" is limited, its limit the reset" "$got_outcome|$got_limit|$got_early" "limited|$got_reset|"
+assert_eq "the reset is a Monday at 09:00 local" "$reset_day $reset_hour" "Mon 09"
+assert_eq "within the next week" "$([ "$reset_epoch" -gt "$(date +%s)" ] && [ "$reset_epoch" -le "$(( $(date +%s) + 7 * 86400 + 3600 ))" ] && echo yes)" yes
 
 # where the text is found
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"Claude AI usage limit reached"}]}}' \

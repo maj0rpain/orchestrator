@@ -528,6 +528,26 @@ autopilot_pause_until() {
   return 1
 }
 
+# autopilot_pause_extend <main> <iso> <log>: records the UTC timestamp <iso>
+# as the limit file's reset under <main>, keeping one already there that is
+# later and replacing one that is earlier or does not parse. A failed write is
+# noted in <log> and on stderr, and is no failure of the caller.
+autopilot_pause_extend() {
+  local file log="$3" old_epoch new_epoch msg
+  file="$(autopilot_dir "$1")/limit"
+  new_epoch="$(autopilot_iso_epoch "$2")" || new_epoch=0
+  if [ -f "$file" ]; then
+    old_epoch="$(autopilot_pause_epoch "$file")"
+    [ "$old_epoch" -lt "$new_epoch" ] || return 0
+  fi
+  if ! { printf '%s\n' "$2" >"$file"; } 2>/dev/null; then
+    msg="autopilot run: could not write the limit file $file"
+    warn "$msg"
+    printf '%s\n' "$msg" >>"$log"
+  fi
+  return 0
+}
+
 # autopilot_candidates: the open issues carrying a phase label other than
 # orch:done, oldest first, one number per line.
 autopilot_candidates() {
@@ -654,26 +674,6 @@ autopilot_event_five_hour_reset() {
   printf '%s\n' "$out"
 }
 
-# autopilot_pause_extend <main> <iso> <log>: records the UTC timestamp <iso>
-# as the limit file's reset under <main>, keeping one already there that is
-# later and replacing one that is earlier or does not parse. A failed write is
-# noted in <log> and on stderr, and is no failure of the caller.
-autopilot_pause_extend() {
-  local file log="$3" old_epoch new_epoch msg
-  file="$(autopilot_dir "$1")/limit"
-  new_epoch="$(autopilot_iso_epoch "$2")" || new_epoch=0
-  if [ -f "$file" ]; then
-    old_epoch="$(autopilot_pause_epoch "$file")"
-    [ "$old_epoch" -lt "$new_epoch" ] || return 0
-  fi
-  if ! { printf '%s\n' "$2" >"$file"; } 2>/dev/null; then
-    msg="autopilot run: could not write the limit file $file"
-    warn "$msg"
-    printf '%s\n' "$msg" >>"$log"
-  fi
-  return 0
-}
-
 # autopilot_limit_reset <log>: returns 0 when <log> text (autopilot_log_text)
 # holds Claude Code's usage-limit message, printing its reset time as a UTC
 # timestamp when the message gives one - an epoch, or a `resets <time>` that
@@ -690,34 +690,42 @@ autopilot_limit_reset() {
   return 0
 }
 
-# autopilot_session_end <log> <held>: how a phase session ended, set in the
-# caller as outcome, reset, early and limit. <held> is 1 while the session's
-# claim is still held, 0 once released. outcome is released (<held> is 0,
-# whatever the log holds), else limited (the log's last rate_limit_event has a
-# rejecting window, or failing that its text holds the usage-limit message),
-# else failure. reset is the reset the session named as a UTC timestamp, empty
-# unless limited or when none is named. early is the five-hour window's
-# resetsAt as a UTC timestamp when its utilization is 0.9 or more, whatever the
-# outcome, else empty. limit is set only when limited: reset, or one hour on.
-# It makes no GitHub call and writes nothing.
+# autopilot_session_end <log> <held> <outcome_var> <reset_var> <early_var>
+# <limit_var>: how a phase session ended, each result set with printf -v in the
+# caller's variable of the name given. <held> is 1 while the session's claim is
+# still held, 0 once released. The outcome is released (<held> is 0, whatever
+# the log holds), else limited (the log's last rate_limit_event has a rejecting
+# window, or failing that its text holds the usage-limit message), else
+# failure. The reset is the reset the session named as a UTC timestamp, empty
+# unless limited or when none is named. The early pause is the five-hour
+# window's resetsAt as a UTC timestamp when its utilization is 0.9 or more,
+# whatever the outcome, else empty. The limit pause is set only when limited:
+# the reset, or one hour on. It makes no GitHub call and writes nothing.
 autopilot_session_end() {
-  local log="$1" held="$2" event="" early_epoch reject_epoch
-  outcome=failure; reset=""; early=""; limit=""
-  event="$(autopilot_log_last_event "$log" rate_limit_event)"
-  if [ -n "$event" ] && early_epoch="$(autopilot_event_five_hour_reset "$event")"; then
-    early="$(autopilot_epoch_iso "$early_epoch")"
+  local session_end_log="$1" session_end_held="$2" session_end_event="" session_end_early_epoch session_end_reject_epoch
+  local session_end_outcome=failure session_end_reset="" session_end_early="" session_end_limit=""
+  session_end_event="$(autopilot_log_last_event "$session_end_log" rate_limit_event)"
+  if [ -n "$session_end_event" ] && session_end_early_epoch="$(autopilot_event_five_hour_reset "$session_end_event")"; then
+    session_end_early="$(autopilot_epoch_iso "$session_end_early_epoch")"
   fi
-  if [ "$held" = 0 ]; then outcome=released; return 0; fi
-  if [ -n "$event" ] && reject_epoch="$(autopilot_event_rejecting_reset "$event")"; then
-    outcome=limited
-    [ -z "$reject_epoch" ] || reset="$(autopilot_epoch_iso "$reject_epoch")"
-  elif reset="$(autopilot_limit_reset "$log")"; then
-    outcome=limited
+  if [ "$session_end_held" = 0 ]; then
+    session_end_outcome=released
+  else
+    if [ -n "$session_end_event" ] && session_end_reject_epoch="$(autopilot_event_rejecting_reset "$session_end_event")"; then
+      session_end_outcome=limited
+      [ -z "$session_end_reject_epoch" ] || session_end_reset="$(autopilot_epoch_iso "$session_end_reject_epoch")"
+    elif session_end_reset="$(autopilot_limit_reset "$session_end_log")"; then
+      session_end_outcome=limited
+    fi
+    if [ "$session_end_outcome" = limited ]; then
+      session_end_limit="$session_end_reset"
+      [ -n "$session_end_limit" ] || session_end_limit="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
+    fi
   fi
-  if [ "$outcome" = limited ]; then
-    limit="$reset"
-    [ -n "$limit" ] || limit="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
-  fi
+  printf -v "$3" '%s' "$session_end_outcome"
+  printf -v "$4" '%s' "$session_end_reset"
+  printf -v "$5" '%s' "$session_end_early"
+  printf -v "$6" '%s' "$session_end_limit"
   return 0
 }
 
@@ -771,7 +779,7 @@ autopilot_run() {
       --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
   standing_claims_read
   if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
-  autopilot_session_end "$log" "$held"
+  autopilot_session_end "$log" "$held" outcome reset early limit
   # The early pause, then the limit pause: the pause store keeps the later.
   if [ -n "$early" ]; then autopilot_pause_extend "$main_root" "$early" "$log"; fi
   if [ -n "$limit" ]; then autopilot_pause_extend "$main_root" "$limit" "$log"; fi
