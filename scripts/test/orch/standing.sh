@@ -143,7 +143,7 @@ assert_contains "finish failing on the label read names the seed alone" "$out" "
 fake_unfail
 
 # a failing transition names only its own landed writes
-fake_issue 54 open orch:spec orch:running; fake_claim_seed 54
+tr_seed 54 orch:spec orch:running
 fake_fail adapter_claim_delete "HTTP 500"
 out="$(st 'standing_pause 54 "wrote the round marker"; true')"
 assert_contains "pause failing on its release names its reason and the removal" "$out" "writes that landed: wrote the round marker, removed orch:running; the claim stays held"
