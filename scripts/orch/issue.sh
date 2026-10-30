@@ -74,20 +74,18 @@ cmd_issue_fetch() {
     adapter_issue_body "$issue"
 }
 
-# The comments `issue comments` writes (#1116): every comment but the spec
-# review's own changelogs - those whose body's first line is the
-# `## Spec review` heading - rendered through COMMENTS_RENDER_JQ, as
-# COMMENTS_JQ renders them; nothing at all when none is left. It reads
-# ISSUE_JSON_JQ's object, whose author is already the login.
-ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' [.comments[]
-  | select((.body | split("\n")[0] | rtrimstr("\r")) | test("^## Spec review[ \t]*$") | not)]
-  | render_comments(.author)'
+# The comments `issue comments` writes (#1116), from the issue's comments
+# already filtered to drop the spec review's own changelogs (the marked comments
+# of kind spec-review): rendered through COMMENTS_RENDER_JQ, as COMMENTS_JQ
+# renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
+# object, whose author is already the login.
+ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
 
 # issue_comments_kept <n>: issue <n>'s comments as ISSUE_COMMENTS_KEPT_JQ
 # prints them, filtered here rather than in the adapter, from the issue's
 # structured read - never by splitting the joined text.
 issue_comments_kept() {
-  adapter_issue_json "$1" | jq -r "$ISSUE_COMMENTS_KEPT_JQ"
+  adapter_issue_json "$1" | marked_comment_drop spec-review | jq -r "$ISSUE_COMMENTS_KEPT_JQ"
 }
 
 # Every comment on the issue but the spec review's own changelogs, in

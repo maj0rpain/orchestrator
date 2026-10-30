@@ -1214,7 +1214,7 @@ spec_review_lens_state_line() {
 # dispositions.
 spec_review_changelog() {
   local unattended="$2" section l i lines
-  printf '## Spec review\nRound %s of %s\n' "${1%/*}" "${1#*/}"
+  { marked_comment_write spec-review; printf 'Round %s of %s\n' "${1%/*}" "${1#*/}"; }
   [ "$unattended" != true ] \
     || printf 'Unattended spec review, run from a quick implementation: applied as recommended.\n'
   for section in consolidation $SPEC_REVIEW_LENSES; do

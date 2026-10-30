@@ -674,9 +674,9 @@ echo "redo spec in an autopilot flow"
 fresh_flow redoautopilot
 fake_github
 fake_issue 60 open
-fake_comment 60 someone 2030-01-01T00:00:00Z "<!-- orch:handoff 02-spec -->
+fake_comment 60 someone 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
 spec text"
-fake_comment 60 someone 2030-01-01T00:00:01Z "<!-- orch:handoff 03-implement -->
+fake_comment 60 someone 2030-01-01T00:00:01Z "$(marker_of handoff 03-implement)
 implement text"
 state_fixture phase implement
 "$ORCH" state set issue 60
@@ -691,8 +691,8 @@ assert_status "the next redo finishes" "$st" 0
 assert_eq "the phase is spec" "$("$ORCH" state get phase)" "spec"
 retired="$(fake_comments_of 60 | grep -c 'orch:handoff .* retired')"
 assert_eq "each handoff is retired exactly once: the next redo skipped the one already retired" "$retired" "2"
-assert_contains "the spec handoff is retired" "$(fake_comments_of 60)" "<!-- orch:handoff 02-spec retired -->"
-assert_contains "and the implement handoff" "$(fake_comments_of 60)" "<!-- orch:handoff 03-implement retired -->"
+assert_contains "the spec handoff is retired" "$(fake_comments_of 60)" "$(marker_of handoff 02-spec retired)"
+assert_contains "and the implement handoff" "$(fake_comments_of 60)" "$(marker_of handoff 03-implement retired)"
 restore_suite_env
 
 # --- redo review in an autopilot flow (#1459) --------------------------------
@@ -710,7 +710,7 @@ git init -q --bare "$bare"
 bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init redoap >/dev/null
-fake_comment 61 someone 2030-01-01T00:00:01Z "<!-- orch:handoff 03-implement -->
+fake_comment 61 someone 2030-01-01T00:00:01Z "$(marker_of handoff 03-implement)
 implement text"
 state_fixture phase review
 "$ORCH" state set issue 61
@@ -732,7 +732,7 @@ fake_fail adapter_pr_close "$GH_502"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a redo review that dies at the PR close fails" "$st" 1
 assert_contains "the implement handoff is retired by comment before any state moved" \
-  "$(fake_comments_of 61)" "<!-- orch:handoff 03-implement retired -->"
+  "$(fake_comments_of 61)" "$(marker_of handoff 03-implement retired)"
 assert_eq "leaving the recorded phase at review" "$("$ORCH" state get phase)" "review"
 fake_unfail
 out="$(ORCH_AUTOPILOT=1 "$ORCH" redo review 2>&1)"; st=$?

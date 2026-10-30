@@ -202,14 +202,6 @@ handoff_check() {
   return "$failed"
 }
 
-# What a handoff comment's first line opens with, before the name.
-HANDOFF_MARKER_PREFIX='<!-- orch:handoff '
-
-# handoff_marker <name> [retired]: the first line of a handoff's comment, the
-# hidden tag that makes an issue comment the handoff <name>: `01-plan`,
-# `02-spec` or `03-implement`.
-handoff_marker() { printf '%s%s%s -->\n' "$HANDOFF_MARKER_PREFIX" "$1" "${2:+ $2}"; }
-
 # handoff_name_check <name>: dies unless <name> is a handoff the table holds,
 # its file name without the `.md`.
 handoff_name_check() {
@@ -230,7 +222,7 @@ handoff_name_check() {
 handoff_comment_post() {
   local issue="$1" name="$2" file="$3" body gh_err
   body="$(mktemp)" || die "could not create a temp file for the handoff comment"
-  { handoff_marker "$name"; cat "$file"; } >"$body"
+  { marked_comment_write handoff "$name"; cat "$file"; } >"$body"
   if ! capture_err gh_err adapter_issue_comment "$issue" "$body"; then
     rm -f "$body"
     warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
@@ -273,18 +265,18 @@ handoff_invalid() {
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
 handoff_comment_fetch() {
-  local issue="$1" name="$2" file="$3" json raw
+  local issue="$1" name="$2" file="$3" json raw rc=0
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  raw="$(jq -j --arg m "$(handoff_marker "$name")" --arg r "$(handoff_marker "$name" retired)" '
-    [.comments[] | select((.body | split("\n")[0] | rtrimstr("\r")) as $l | $l == $m or $l == $r)]
-    | last | .body // empty' <<<"$json")" || die "could not read issue #$issue's comments"
-  [ -n "$raw" ] || return 1
-  [ "$(printf '%s\n' "${raw%%$'\n'*}" | tr -d '\r')" != "$(handoff_marker "$name" retired)" ] || return 1
+  marked_comment_newest handoff "$name" <<<"$json" >/dev/null || rc=$?
+  [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
+  [ "$rc" -eq 0 ] || return 1
+  rc=0
+  marked_comment_retired handoff "$name" <<<"$json" || rc=$?
+  [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
+  [ "$rc" -ne 0 ] || return 1
+  raw="$(marked_comment_body handoff "$name" <<<"$json")" || die "could not read issue #$issue's comments"
   mkdir -p "$(dirname "$file")"
-  case "$raw" in
-    *$'\n'*) printf '%s\n' "${raw#*$'\n'}" >"$file" ;;
-    *) : >"$file" ;;
-  esac
+  if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
 }
 
 # handoff_comments_retire <issue> <file>...: in an autopilot session, retires
@@ -303,7 +295,7 @@ handoff_comments_retire() {
     name="${file%.md}"
     handoff_comment_fetch "$issue" "$name" "$scratch" || continue
     body="$(mktemp)" || { rm -f "$scratch"; die "could not create a temp file for the retired comment"; }
-    { handoff_marker "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
+    { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
     capture_err gh_err adapter_issue_comment "$issue" "$body" || {
       rm -f "$scratch" "$body"
       die "could not retire the $name handoff on issue #$issue: $(gh_reason "$gh_err") - comments posted: ${posted:-none}; the recorded phase is unchanged, so a re-run retires the rest"

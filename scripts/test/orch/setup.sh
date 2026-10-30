@@ -253,6 +253,9 @@ sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 # sourced_orch_script <script> [<arg>...]: runs <script> in a child bash that
 # has sourced orch.sh, with <arg>... as its positional parameters $1...
 sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
+# marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
+# the kind, so a seeded comment is written as the module writes it.
+marker_of() { sourced_orch marked_comment_write "$@"; }
 # help_entry <command>: orch.sh help's entry for <command> - its first line
 # and the indented continuation lines under it.
 help_entry() {

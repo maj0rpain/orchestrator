@@ -917,8 +917,8 @@ assert_eq "it still writes the limit file" "$(cat "$limit_file")" "$lim_iso"
 
 # the count stops at a refusal, failure, question or handoff comment and at a
 # limit stop comment of another phase, and skips other comments
-LIM_SPEC='<!-- orch:limited spec -->
-stopped'
+LIM_SPEC="$(marker_of limited spec)
+stopped"
 count_case() { # <label> <expected label set> <comment>...: seeded oldest first
   local label="$1" want="$2" c
   shift 2
@@ -934,11 +934,17 @@ count_case "two stops in a row are counted" "$LABELS_HUMAN" "$LIM_SPEC" "$LIM_SP
 count_case "other comments between them are skipped" "$LABELS_HUMAN" "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
 count_case "a failure comment resets the count" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "Autopilot failed in the spec phase: x"
 count_case "a refusal comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "Autopilot refused to run the spec phase: x"
-count_case "a question comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "<!-- orch:question spec -->
+count_case "a question comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "$(marker_of question spec)
 @o"
-count_case "a handoff comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "<!-- orch:handoff 01-plan -->
+count_case "a handoff comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "$(marker_of handoff 01-plan)
 x"
-count_case "a limit stop comment of another phase resets it" "$LABELS_LIMITED" "$LIM_SPEC" "<!-- orch:limited implement -->
+count_case "a limit stop comment of another phase resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$(marker_of limited implement)
+x" "$LIM_SPEC"
+count_case "a marked failure comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "$(marker_of failure spec)
+x"
+count_case "a marked refusal comment resets it" "$LABELS_LIMITED" "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
+x"
+count_case "a handoff first line without its closing is no handoff" "$LABELS_HUMAN" "$LIM_SPEC" "<!-- orch:handoff 01-plan
 x" "$LIM_SPEC"
 
 # a rejecting rate_limit_event with no resetsAt names the fallback pause too
@@ -1049,7 +1055,7 @@ fake_github
 # autopilot_stop itself words it.
 post_stop() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_stop "$@" >/dev/null 2>&1; }
 # question_of <phase>: a question comment body of that phase.
-question_of() { printf '<!-- orch:question %s -->\n@o\n\n1. Keep it? Recommended: yes\n' "$1"; }
+question_of() { printf '%s\n@o\n\n1. Keep it? Recommended: yes\n' "$(marker_of question "$1")"; }
 url_of() { printf 'https://github.com/o/r/issues/%s#issuecomment-%s' "$1" "$2"; }
 
 assert_eq "no state.json exists in the checkout" "$(on_disk .orchestrator/state.json)" absent
@@ -1082,6 +1088,15 @@ post_stop 16 refusal spec "no plan"
 fake_issue 17 open needs-human orch:spec
 post_stop 17 refusal spec "no plan"
 fake_comment 17 o 2026-01-09T00:00:00Z "$(question_of spec)"
+# a stop comment in the legacy form, seeded raw, is still a stop
+fake_issue 24 open needs-human orch:spec
+fake_comment 24 o 2026-01-01T00:00:00Z "Autopilot refused to run the review phase: no pr"
+fake_issue 25 open needs-human orch:spec
+fake_comment 25 o 2026-01-01T00:00:00Z "Autopilot failed in the implement phase: boom"
+# a marked stop comment
+fake_issue 26 open needs-human orch:spec
+fake_comment 26 o 2026-01-01T00:00:00Z "$(marker_of failure review)
+detail"
 # left out: no phase label, orch:done, closed, and not needs-human
 fake_issue 18 open needs-human ready-for-agent
 fake_issue 19 open needs-human orch:done
@@ -1098,14 +1113,32 @@ assert_eq "a stop comment's phase wins over the label's" "$(grep "^14$tab" <<<"$
 assert_eq "no comment at all is a stop in the earliest labelled phase, URL empty" "$(grep "^15$tab" <<<"$out")" "15${tab}stop${tab}implement${tab}"
 assert_eq "a stop after a question is a stop" "$(grep "^16$tab" <<<"$out")" "16${tab}stop${tab}spec${tab}$(url_of 16 2)"
 assert_eq "a question after a stop is a question" "$(grep "^17$tab" <<<"$out")" "17${tab}question${tab}spec${tab}$(url_of 17 2)"
+assert_eq "a legacy-form refusal comment is a stop, in its own phase" "$(grep "^24$tab" <<<"$out")" "24${tab}stop${tab}review${tab}$(url_of 24 1)"
+assert_eq "a legacy-form failure comment is a stop, in its own phase" "$(grep "^25$tab" <<<"$out")" "25${tab}stop${tab}implement${tab}$(url_of 25 1)"
+assert_eq "a marked failure comment is a stop, in its own phase" "$(grep "^26$tab" <<<"$out")" "26${tab}stop${tab}review${tab}$(url_of 26 1)"
 assert_eq "an issue with no phase label, orch:done, closed or not needs-human is left out" \
-  "$(cut -f1 <<<"$out" | tr '\n' ' ')" "11 12 13 14 15 16 17 "
+  "$(cut -f1 <<<"$out" | tr "\n" " ")" "11 12 13 14 15 16 17 24 25 26 "
 # a comment that only mentions the marker is no question
 fake_issue 23 open needs-human orch:spec
 fake_comment 23 o 2026-01-01T00:00:00Z $'see the marker\n<!-- orch:question spec -->'
 out="$("$ORCH" autopilot questions 2>&1)"
 assert_contains "a marker off the first line is no question" "$out" "23${tab}stop${tab}spec${tab}"
-for n in 11 12 13 14 15 16 17 18 19 20 21 23; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done
+# autopilot_stop opens its comment with the hidden marker line, prose beneath
+fake_issue 40 open ready-for-agent orch:spec
+post_stop 40 refusal spec "no plan"
+assert_eq "a refusal comment opens with the hidden marker line" "$(fake_comments_of 40 | head -1)" "$(marker_of refusal spec)"
+assert_contains "and keeps its prose beneath" "$(fake_comments_of 40 | sed -n 2p)" "Autopilot refused to run the spec phase: no plan"
+fake_issue 41 open ready-for-agent orch:spec
+post_stop 41 failure review "boom"
+assert_eq "a failure comment opens with the hidden marker line" "$(fake_comments_of 41 | head -1)" "$(marker_of failure review)"
+assert_contains "and keeps its prose beneath" "$(fake_comments_of 41 | sed -n 2p)" "Autopilot failed in the review phase: boom"
+fake_issue 42 open ready-for-agent orch:spec
+bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_stop 42 failure "" boom >/dev/null 2>&1; st=$?
+assert_status "an empty phase dies" "$st" 1
+bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_limit_stop 42 "" "" "" 1 log >/dev/null 2>&1; st=$?
+assert_status "a limit stop of an empty phase dies" "$st" 1
+assert_eq "an empty phase writes no comment and changes no label" "$(fake_comments_of 42)$(fake_labels_of 42)" "orch:spec ready-for-agent "
+for n in 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 40 41 42; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done
 fake_issue 11 open needs-human orch:spec
 fake_issue 12 open needs-human orch:spec
 fake_fail adapter_issue_comments_json "$GH_502"

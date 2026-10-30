@@ -1461,8 +1461,8 @@ mkdir -p .orchestrator/review
 rm -rf .orchestrator/handoff
 printf '## Decisions\nNone\n\n## Rejected alternatives\n\n- Polling the PR\n  - too slow\n' >plan.md
 printf '## PR\n#7\n## Deviations\n\n- Kept the cache\n## Verification\nok\n' >impl.md
-fake_comment 7 o 2026-01-01T00:00:00Z "$(printf '<!-- orch:handoff 01-plan -->\n'; cat plan.md)"
-fake_comment 7 o 2026-01-02T00:00:00Z "$(printf '<!-- orch:handoff 03-implement -->\n'; cat impl.md)"
+fake_comment 7 o 2026-01-01T00:00:00Z "$(printf '%s\n' "$(marker_of handoff 01-plan)"; cat plan.md)"
+fake_comment 7 o 2026-01-02T00:00:00Z "$(printf '%s\n' "$(marker_of handoff 03-implement)"; cat impl.md)"
 ORCH_AUTOPILOT=1 "$ORCH" review known-items known.md 0 >/dev/null 2>&1; st=$?
 assert_status "with the comments posted it builds the file" "$st" 0
 assert_contains "carrying the implement comment's deviation" "$(cat known.md)" "- Kept the cache"
