@@ -1173,6 +1173,17 @@ assert_eq "removing only needs-human" "$(fake_labels_of 30)" "orch:spec "
 out="$("$ORCH" autopilot resume 30 2>&1)"; st=$?
 assert_status "resume without the label dies" "$st" 1
 assert_contains "naming needs-human" "$out" "needs-human"
+
+# no repo to work on: the remedy reaches the caller on the read path too
+savepath="$PATH"; gh_fixture; PATH="$savepath"
+norepo_plan="$(mktemp -d)/p.md"; printf 'plan\n' >"$norepo_plan"
+for norepo_args in "resume 5" "start 5 $norepo_plan"; do
+  # shellcheck disable=SC2086
+  out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
+    && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" autopilot $norepo_args 2>&1)"; st=$?
+  assert_status "autopilot $norepo_args with no repo fails" "$st" 1
+  assert_contains "autopilot $norepo_args with no repo prints the remedy" "$out" "$repo_remedy"
+done
 fake_issue 31 closed needs-human orch:spec
 out="$("$ORCH" autopilot resume 31 2>&1)"; st=$?
 assert_status "resume on a closed issue dies" "$st" 1

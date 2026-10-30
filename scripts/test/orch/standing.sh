@@ -36,8 +36,7 @@ assert_eq "the live phase skips done, the label text keeps table order, running 
 rc=0"
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$(st 'standing_read 5; echo "reason=$STANDING_REASON"')"
-assert_eq "a failed standing_read returns non-zero with the reason on stderr" "$out" "HTTP 502
-reason=HTTP 502
+assert_eq "a failed standing_read keeps the reason in STANDING_REASON and prints nothing" "$out" "reason=HTTP 502
 rc=0"
 out="$(st 'standing_read 5')"
 assert_contains "and its status is non-zero" "$out" "rc=1"
