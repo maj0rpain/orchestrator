@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.40
+
+Autopilot pickup's step runner has one signature and one stop wording, and the recorded-phase read's error is now its stop reason. A failed temp file is no longer reported as another command's failure: the runner, `capture_err` and `capture` check `mktemp`, and so does every other `mktemp` in orch.sh's modules.
+
 ## 4.38.39
 
 Tidy the limit pause code: the session-end classifier takes caller-named outputs, the pause store sits together, and the autopilot tests lose a duplicate run and opaque names.
