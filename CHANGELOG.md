@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.31
+
+An autopilot flow's issue Standing (its phase label, `orch:running`, `needs-human`, `orch:limited` and its claim) is now owned by one new module, `scripts/orch/standing.sh`, behind a fixed set of transitions (start, claim, begin, finish, pause, ask, stop, limit-stop, resume), one read, and parsed claim lookups. The watcher's pickup runs its steps through one step runner, doctor's two phase-label checks share one helper, and the GitHub adapter's claim create now takes the host as an argument. The autopilot tests seed state only through the gh fake's helpers. No `orch.sh` verb, comment wording, label, write order or claim format changes. `GLOSSARY.md` gains **Standing**.
+
 ## 4.38.30
 
 The autopilot module now decides how a phase session ended in one function, `autopilot_session_end`, which reads the session log and whether the claim is still held and sets the outcome (`released`, `limited` or `failure`), the reset, the early-pause reset and the limit pause. The limit file is reached only through `autopilot_pause_extend` and `autopilot_pause_until`, and `autopilot_run` keeps only launching, the claim check, recording the pause and dispatching. The log parsing, the pause store and the third-stop-in-a-row count are now tested by direct calls, with one end-to-end tracer per path. No behaviour changes.
