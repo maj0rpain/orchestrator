@@ -776,6 +776,27 @@ assert_eq "and ticking again after it" "$([ "$(grep -c 'the tick failed' "$watch
 kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
 assert_eq "an interrupted watch removes its pidfile" "$(on_disk "$pidfile")" absent
 fake_unfail
+
+# TERM mid-tick: the tick is held in the gh fake; the watch removes its pidfile
+# and TERMs the tick at once, then exits 0 once the tick has gone
+printf '%s\n' "$(dead_pid)" >"$pidfile"
+mkdir -p "$ORCH_GH_FAKE_STORE/hold"
+mkfifo "$ORCH_GH_FAKE_STORE/hold/adapter_label_upsert"
+rm -f "$ORCH_GH_FAKE_STORE/held"
+"$ORCH" autopilot watch --every 1 >/dev/null 2>&1 &
+watch_pid=$!
+for _ in $(seq 1 100); do [ -e "$ORCH_GH_FAKE_STORE/held" ] && break; sleep 0.1; done
+tick_pid="$(pgrep -P "$watch_pid" -f 'autopilot tick' | head -n1)"
+kill -TERM "$watch_pid"
+wait "$watch_pid" 2>/dev/null; st=$?
+assert_status "a watch termed mid-tick exits 0" "$st" 0
+assert_eq "and removes its pidfile" "$(on_disk "$pidfile")" absent
+kill -0 "${tick_pid:-0}" 2>/dev/null; st=$?
+assert_status "and the tick it was running is gone" "$st" 1
+printf 'x\n' >"$ORCH_GH_FAKE_STORE/hold/adapter_label_upsert" &
+sleep 0.2; kill $! 2>/dev/null
+rm -rf "$ORCH_GH_FAKE_STORE/hold"
+
 out="$("$ORCH" autopilot watch --every 0 2>&1)"; st=$?
 assert_status "--every refuses zero" "$st" 1
 git config --unset-all orchestrator.autopilot.permission-mode

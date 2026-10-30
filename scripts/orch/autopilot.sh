@@ -874,13 +874,22 @@ autopilot_watch_pidfile() {
   printf '%s/autopilot-watch.pid\n' "$d"
 }
 
+# autopilot_watch_stop_child: the watch's INT/TERM step for what it is waiting
+# on, the running tick or the sleep: sends it TERM and waits for it to exit.
+AUTOPILOT_WATCH_CHILD=""
+autopilot_watch_stop_child() {
+  [ -z "$AUTOPILOT_WATCH_CHILD" ] && return 0
+  kill -TERM "$AUTOPILOT_WATCH_CHILD" 2>/dev/null || true
+  wait "$AUTOPILOT_WATCH_CHILD" 2>/dev/null || true
+}
+
 # autopilot_watch <seconds>: repeats tick every <seconds> until interrupted.
 # Refuses while another watch of this clone is alive, replaces a pidfile whose
 # pid is dead, reports a failed tick on stderr and carries on, and removes its
 # pidfile when interrupted. Each tick is a fresh orch.sh process, so a tick
 # that dies takes nothing else with it.
 autopilot_watch() {
-  local every="$1" pidfile other rc nap=""
+  local every="$1" pidfile other rc
   pidfile="$(autopilot_watch_pidfile)" || return 1
   if [ -f "$pidfile" ]; then
     other="$(cat "$pidfile" 2>/dev/null)" || other=""
@@ -890,17 +899,20 @@ autopilot_watch() {
   mkdir -p "$(dirname "$pidfile")" || die "could not create $(dirname "$pidfile")"
   autopilot_pid_write "$$" "$pidfile" || return 1
   # shellcheck disable=SC2064
-  trap "rm -f '$pidfile'; [ -z \"\${nap:-}\" ] || kill \"\$nap\" 2>/dev/null; exit 0" INT TERM
+  trap "rm -f '$pidfile'; autopilot_watch_stop_child; exit 0" INT TERM
   # shellcheck disable=SC2064
   trap "rm -f '$pidfile'" EXIT
   while :; do
     rc=0
-    "$(autopilot_self)" autopilot tick >/dev/null || rc=$?
+    "$(autopilot_self)" autopilot tick >/dev/null &
+    AUTOPILOT_WATCH_CHILD=$!
+    wait "$AUTOPILOT_WATCH_CHILD" || rc=$?
+    AUTOPILOT_WATCH_CHILD=""
     [ "$rc" = 0 ] || warn "autopilot watch: the tick failed (exit $rc); trying again in ${every}s"
     sleep "$every" &
-    nap=$!
-    wait "$nap" || true
-    nap=""
+    AUTOPILOT_WATCH_CHILD=$!
+    wait "$AUTOPILOT_WATCH_CHILD" || true
+    AUTOPILOT_WATCH_CHILD=""
   done
 }
 
