@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.41
+
+Narrowed the Standing module's interface: standing_begin takes no phase, standing_resume no mode, the two label-accessor wrappers are gone, and standing_read no longer has --quiet. No change to any orch.sh message, exit code or label write.
+
 ## 4.38.40
 
 Autopilot pickup's step runner has one signature and one stop wording, and the recorded-phase read's error is now its stop reason. A failed temp file is no longer reported as another command's failure: the runner, `capture_err` and `capture` check `mktemp`, and so does every other `mktemp` in orch.sh's modules.
