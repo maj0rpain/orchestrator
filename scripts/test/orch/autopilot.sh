@@ -646,6 +646,39 @@ assert_eq "a dead run pidfile makes it stale" "$(fake_claim_held 12)" free
 assert_contains "the stale comment names the session log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
 assert_contains "and says no exit code is known" "$(fake_comments_of 12)" "no exit code"
 
+# a live pid with another start time is stale in the run pidfile and in the tick
+# record; a live tick record keeps the claim; no file at all is gone
+rundir="$top/.orchestrator/autopilot/run"
+fake_issue 16 open ready-for-agent orch:spec orch:running
+fake_claim_seed 16 "$(hostname)" "$$"
+printf '%s 1\n' "$$" >"$rundir/16.pid"
+printf '%s 1\n' "$$" >"$rundir/16.tick"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a run pidfile with another start time releases the claim" "$(fake_claim_held 16)" free
+assert_eq "and removes both files" "$(find "$rundir" -name '16.*' | wc -l | tr -d ' ')" 0
+fake_issue 17 open ready-for-agent orch:spec orch:running
+fake_claim_seed 17 "$(hostname)" "$$"
+printf '%s 1\n' "$$" >"$rundir/17.tick"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick record with another start time releases the claim" "$(fake_claim_held 17)" free
+fake_issue 18 open ready-for-agent orch:spec orch:running
+fake_claim_seed 18 "$(hostname)" "$$"
+live_record "$$" >"$rundir/18.tick"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a live tick record keeps the claim" "$(fake_claim_held 18)" held
+rm -f "$rundir/18.tick"; fake_claim_release 18
+fake_issue 19 open ready-for-agent orch:spec orch:running
+fake_claim_seed 19 "$(hostname)" "$$"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a claim with neither file is released" "$(fake_claim_held 19)" free
+
+# a tick writes its own record to run/<issue>.tick, over an older one
+printf 'old\n' >"$rundir/20.tick"
+sourced_orch autopilot_tick_record 20 >/dev/null 2>&1
+[[ "$(cat "$rundir/20.tick")" =~ ^[0-9]+\ [^\ ]+$ ]] && shape=record || shape=other
+assert_eq "the tick record is a pid and start time, over an older one" "$shape" record
+rm -f "$rundir/20.tick"
+
 # the claim identity: with ORCH_HOST_ID set, only claims of that id are this
 # host's
 fake_issue 14 open ready-for-agent orch:spec orch:running
@@ -686,6 +719,15 @@ assert_eq "a newer claim made while the session exits is left held" "$(fake_clai
 assert_eq "and its issue is not failed" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_eq "the newer run's pidfile is not removed by the older run" "$(cat "$top/.orchestrator/autopilot/run/7.pid" 2>/dev/null)" "999"
 rm -f "$top/.orchestrator/autopilot/run/7.pid"; fake_claim_release 7
+# the run removes the tick's record once its own pidfile is written
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" 111
+live_record "$$" >"$top/.orchestrator/autopilot/run/7.tick"
+tick_seen_launcher="$(mktemp)"
+printf '#!/bin/sh\nrm -f "%s/claims/7"\nexit 0\n' "$ORCH_GH_FAKE_STORE" >"$tick_seen_launcher"
+chmod +x "$tick_seen_launcher"
+ORCH_AUTOPILOT_LAUNCHER="$tick_seen_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_eq "autopilot run removes run/<issue>.tick" "$([ -e "$top/.orchestrator/autopilot/run/7.tick" ] && echo there || echo gone)" gone
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot watch ----------------------------------------------------------

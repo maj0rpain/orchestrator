@@ -283,11 +283,6 @@ AUTOPILOT_LIMIT_PATTERN='(usage|[0-9]+-hour|weekly) limit reached(\|[0-9]+|[^|]{
 # pidfiles, the session logs and the limit file - under its main checkout.
 autopilot_dir() { printf '%s/%s/autopilot\n' "$1" "$ORCH_DIR_NAME"; }
 
-# autopilot_pid_alive <pid>: whether a process of that pid is running.
-autopilot_pid_alive() {
-  [[ "${1:-}" =~ ^[0-9]+$ ]] && { kill -0 "$1" 2>/dev/null || ps -p "$1" >/dev/null 2>&1; }
-}
-
 # autopilot_proc_start <pid>: the process's start time as one whitespace-free
 # token - /proc/<pid>/stat field 22 under $ORCH_PROC_DIR (default /proc), else
 # `ps -o lstart=` with its spaces turned to underscores. Fails when unreadable.
@@ -527,35 +522,45 @@ autopilot_pickup() {
     standing_stop "$issue" failure "$phase" "$(gh_reason "$begin_err")"
     return 0
   }
+  autopilot_tick_record "$issue"
   autopilot_spawn_run "$issue"
 }
 
+# autopilot_tick_record <issue>: right after a tick takes a claim, writes its
+# own record to run/<issue>.tick, overwriting an older one. A failed write warns
+# and carries on: with no record, the claim's process counts as gone.
+autopilot_tick_record() {
+  local dir
+  dir="$(autopilot_dir "$(pwd)")/run"
+  { mkdir -p "$dir" && autopilot_pid_write "$$" "$dir/$1.tick"; } 2>/dev/null ||
+    warn "could not write the tick record for issue #$1"
+  return 0
+}
+
 # autopilot_cleanup_stale <main-root>: every claim of this host whose process is
-# gone is a failure: needs-human, a comment, then the claim released. The pid
-# is the run pidfile's, or - with none - the claim's own tick pid. Other hosts'
-# claims are never touched.
+# gone is a failure: needs-human, a comment, then the claim released. The
+# process is named by the run pidfile's record or - with none - the tick's
+# run/<issue>.tick record; with neither, it counts as gone. Both files go with
+# the claim. Other hosts' claims are never touched.
 autopilot_cleanup_stale() {
-  local main_root="$1" issue tick_pid run_pid phase pidfile log detail me gone_pid
+  local main_root="$1" issue phase run_dir pidfile tickfile record log detail me gone_pid
   me="$(standing_host_id)"
+  run_dir="$(autopilot_dir "$main_root")/run"
   standing_claims_read
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
     [ "${STANDING_CLAIM_HOST[$issue]}" = "$me" ] || continue
-    tick_pid="${STANDING_CLAIM_PID[$issue]}" phase="${STANDING_CLAIM_PHASE[$issue]}"
-    pidfile="$(autopilot_dir "$main_root")/run/$issue.pid"
-    run_pid=""
-    [ ! -f "$pidfile" ] || run_pid="$(cat "$pidfile")"
-    gone_pid="${run_pid%% *}"
-    if [ -n "$run_pid" ]; then
-      ! autopilot_record_alive "$run_pid" || continue
-    else
-      gone_pid="$tick_pid"
-      ! autopilot_pid_alive "$tick_pid" || continue
-    fi
+    phase="${STANDING_CLAIM_PHASE[$issue]}"
+    pidfile="$run_dir/$issue.pid" tickfile="$run_dir/$issue.tick"
+    record=""
+    if [ -f "$pidfile" ]; then record="$(cat "$pidfile")"
+    elif [ -f "$tickfile" ]; then record="$(cat "$tickfile")"; fi
+    gone_pid="${record%% *}"
+    ! autopilot_record_alive "$record" || continue
     detail="the session's process (pid ${gone_pid:-unknown}) is gone and the claim was never released - no exit code is known"
     log="$(ls -1 "$(autopilot_dir "$main_root")/logs/$issue-$phase-"*.log 2>/dev/null | tail -n 1)" || true
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
     standing_stop "$issue" failure "$phase" "$detail"
-    rm -f "$pidfile"
+    rm -f "$pidfile" "$tickfile"
   done
 }
 
@@ -815,6 +820,7 @@ autopilot_run() {
   mkdir -p "$dir/run" "$dir/logs" || die "could not create $dir"
   pidfile="$dir/run/$issue.pid"
   autopilot_pid_write "$$" "$pidfile" || exit 1
+  rm -f "$dir/run/$issue.tick"
   # A later run of the same issue may have replaced the pidfile by the time this
   # one exits: remove it only while it still names this run.
   # shellcheck disable=SC2064
