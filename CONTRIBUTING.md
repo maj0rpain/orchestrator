@@ -45,6 +45,13 @@ noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
+A case lives once, in the section of the module it exercises. The Standing
+sections own what a transition does on its own: its writes, its write chain
+(the "writes that landed: ..." wording) and the claim staying held when a write
+fails partway. Each command section owns its refusals, usage, success path and
+own messages, plus exactly one partway-failure case, which shows the command
+passes its own reason first and exits 1.
+
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 half the usable CPUs, rounded down, at least 1, and all of them under `CI`;
 usable CPUs are the online cores, lowered to a cgroup v2 `cpu.max` quota;
