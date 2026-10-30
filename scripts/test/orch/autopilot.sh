@@ -229,23 +229,54 @@ assert_contains "and the reply format" "$(fake_comments_of 7)" 'Reply in one com
 assert_eq "adding needs-human, dropping orch:running" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
 assert_eq "and releasing the claim" "$(fake_claim_held 7)" free
 ans="$(mktemp)"
+printf 'old answer\n' >"$ans"
 out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "answer with no reply exits 1" "$st" 1
 assert_contains "saying so" "$out" "no reply"
+assert_eq "and leaves an existing answer file as it was" "$(cat "$ans")" "old answer"
 fake_comment 7 o 2026-01-02T00:00:00Z "1: A"
 fake_comment 7 o 2026-01-03T00:00:00Z "thanks"
 "$ORCH" autopilot answer spec "$ans" >/dev/null 2>&1; st=$?
 assert_status "answer with a reply succeeds" "$st" 0
-assert_contains "writing the question" "$(cat "$ans")" "1. Keep it?"
-assert_contains "and the reply" "$(cat "$ans")" "1: A"
-assert_contains "and every later comment" "$(cat "$ans")" "thanks"
+assert_eq "the answer file is the question, then each later comment after a --- line" "$(cat "$ans"; printf x)" "@o
+
+1. Keep it? Recommended: yes
+
+Reply like \`1: A\`.
+
+Reply in one comment like \`1: A, 2: recommended, 3: <free text>\` (\`all: recommended\` accepts everything).
+
+---
+1: A
+---
+thanks
+x"
+kept="$(cat "$ans")"
 out="$("$ORCH" autopilot answer implement "$ans" 2>&1)"; st=$?
 assert_status "answer for a phase never asked exits 2, never no reply's 1" "$st" 2
+assert_contains "naming the phase" "$out" "has no implement question comment"
+assert_eq "and leaves the answer file as it was" "$(cat "$ans")" "$kept"
 fake_fail adapter_issue_json "HTTP 500"
 out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "a failed comment read exits 2, never no reply's 1" "$st" 2
 assert_contains "naming the read" "$out" "read the comments of issue #7"
 fake_unfail
+# a question ending in the text noreply is read as any other (#1723)
+fake_issue 8 open ready-for-agent orch:spec
+"$ORCH" state set issue 8 >/dev/null
+fake_comment 8 o 2026-01-01T00:00:00Z "<!-- orch:question spec -->
+Keep it? noreply"
+ans8="$(mktemp)"
+out="$("$ORCH" autopilot answer spec "$ans8" 2>&1)"; st=$?
+assert_status "a question ending in noreply, unanswered, exits 1" "$st" 1
+assert_contains "saying no reply" "$out" "no reply"
+fake_comment 8 o 2026-01-02T00:00:00Z "1: A"
+"$ORCH" autopilot answer spec "$ans8" >/dev/null 2>&1; st=$?
+assert_status "once a reply follows it succeeds" "$st" 0
+assert_eq "and keeps the question's text with the reply" "$(cat "$ans8")" "Keep it? noreply
+---
+1: A"
+"$ORCH" state set issue 7 >/dev/null
 # a failed label add leaves the claim held and names the comment
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7
