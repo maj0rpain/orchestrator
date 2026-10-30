@@ -917,16 +917,16 @@ autopilot_limit_reset() {
 # outcome, else empty. limit is set only when limited: reset, or one hour on.
 # It makes no GitHub call and writes nothing.
 autopilot_session_end() {
-  local log="$1" held="$2" event="" epoch
+  local log="$1" held="$2" event="" early_epoch reject_epoch
   outcome=failure; reset=""; early=""; limit=""
   event="$(autopilot_log_last_event "$log" rate_limit_event)"
-  if [ -n "$event" ] && epoch="$(autopilot_event_five_hour_reset "$event")"; then
-    early="$(autopilot_epoch_iso "$epoch")"
+  if [ -n "$event" ] && early_epoch="$(autopilot_event_five_hour_reset "$event")"; then
+    early="$(autopilot_epoch_iso "$early_epoch")"
   fi
   if [ "$held" = 0 ]; then outcome=released; return 0; fi
-  if [ -n "$event" ] && epoch="$(autopilot_event_rejecting_reset "$event")"; then
+  if [ -n "$event" ] && reject_epoch="$(autopilot_event_rejecting_reset "$event")"; then
     outcome=limited
-    [ -z "$epoch" ] || reset="$(autopilot_epoch_iso "$epoch")"
+    [ -z "$reject_epoch" ] || reset="$(autopilot_epoch_iso "$reject_epoch")"
   elif reset="$(autopilot_limit_reset "$log")"; then
     outcome=limited
   fi

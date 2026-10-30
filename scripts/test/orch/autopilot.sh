@@ -756,10 +756,11 @@ assert_not_contains "and posts no limit stop comment" "$(fake_comments_of 7)" "u
 rm -f "$launcher_dir/release"
 # a failed limit-file write is noted and changes nothing else
 rm -f "$limit_file"; mkdir "$limit_file"
-rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
+rl_event allowed 0.2 "$r1" rejected 1 "$r1" >"$launcher_dir/out"
 event_session 1
 assert_status "a run whose limit-file write fails succeeds" "$st" 0
 assert_contains "the failure is noted on stderr" "$out" "could not write the limit file"
+assert_eq "a limit stop alone gives one note" "$(grep -c "could not write the limit file" <<<"$out")" "1"
 event_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "and in the session log" "$(cat "$event_log")" "could not write the limit file"
 assert_eq "the issue is still limited" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
@@ -784,7 +785,6 @@ rm -f "$limit_file"; mkdir "$limit_file"
 rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
 event_session 1
 assert_eq "both pauses with an unwritable limit file give two notes" "$(grep -c "could not write the limit file" <<<"$out")" "2"
-assert_eq "and the issue is still limited" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 rmdir "$limit_file"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
@@ -1213,11 +1213,11 @@ assert_contains "and the note names it" "$out" "usage limit: no issue is picked 
 printf '2020-01-01T00:00:00Z\n' >"$pf"
 sourced_orch autopilot_pause_until "$pm" >/dev/null 2>&1; st=$?
 assert_status "a passed time does not pause" "$st" 1
-assert_eq "and removes the file" "$([ -e "$pf" ] && echo there || echo gone)" "gone"
+assert_eq "and removes the file" "$(on_disk "$pf")" absent
 printf 'garbage\n' >"$pf"
 sourced_orch autopilot_pause_until "$pm" >/dev/null 2>&1; st=$?
 assert_status "an unparsable time does not pause" "$st" 1
-assert_eq "and removes the file too" "$([ -e "$pf" ] && echo there || echo gone)" "gone"
+assert_eq "and removes the file too" "$(on_disk "$pf")" absent
 rm -f "$pf"; mkdir "$pf"
 out="$(sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl" 2>&1)"; st=$?
 assert_status "a failed write still returns 0" "$st" 0
@@ -1238,6 +1238,17 @@ se_end() {
 }
 # se_check <label> <held> <outcome> <reset> <early> <limit>: asserts all four.
 se_check() { assert_eq "$1" "$(se_end "$2")" "$3|$4|$5|$6"; }
+# se_check_hour_fallback <outcome label> <limit label>: over $se_log held, the
+# outcome is limited with no reset or early pause, and the limit is one hour on,
+# within the clock read around the call.
+se_check_hour_fallback() {
+  local before after got o rs er lm lim_epoch
+  before="$(date +%s)"; got="$(se_end 1)"; after="$(date +%s)"
+  IFS='|' read -r o rs er lm <<<"$got"
+  read -r lim_epoch _ < <(local_fields "$lm")
+  assert_eq "$1" "$o|$rs|$er" "limited||"
+  assert_eq "$2" "$([ "$lim_epoch" -ge $((before + 3600)) ] && [ "$lim_epoch" -le $((after + 3600)) ] && echo yes)" yes
+}
 now_epoch="$(date +%s)"
 r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
 i1="$(iso_of "$r1")"; i2="$(iso_of "$r2")"; i3="$(iso_of "$r3")"
@@ -1247,11 +1258,7 @@ ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 se_check "\"usage limit reached|<epoch>\" is limited, with that reset" 1 limited "$i2" "" "$i2"
 for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
   ndjson_with "$wording" >"$se_log"
-  before="$(date +%s)"; got="$(se_end 1)"; after="$(date +%s)"
-  IFS='|' read -r o rs er lm <<<"$got"
-  read -r lim_epoch _ < <(local_fields "$lm")
-  assert_eq "\"$wording\" is limited, with no reset or early pause" "$o|$rs|$er" "limited||"
-  assert_eq "and its limit is one hour on" "$([ "$lim_epoch" -ge $((before + 3600)) ] && [ "$lim_epoch" -le $((after + 3600)) ] && echo yes)" yes
+  se_check_hour_fallback "\"$wording\" is limited, with no reset or early pause" "and its limit is one hour on"
 done
 for wording in "iteration limit reached" "API rate limit reached, retrying"; do
   ndjson_with "$wording" >"$se_log"
@@ -1290,11 +1297,7 @@ se_check "the latest of several rejecting windows decides" 1 limited "$i3" "$i1"
 { rl_event rejected 1 "$r1" allowed 0.8 "$r3"; rl_event allowed 0.5 "$r1" allowed 0.8 "$r3"; } >"$se_log"
 se_check "a rejecting event followed by an allowed one is a failure" 1 failure "" "" ""
 rl_event rejected 1 null allowed 0.2 null >"$se_log"
-before="$(date +%s)"; got="$(se_end 1)"; after="$(date +%s)"
-IFS='|' read -r o rs er lm <<<"$got"
-read -r lim_epoch _ < <(local_fields "$lm")
-assert_eq "a rejecting event with no resetsAt: limited, no reset, no early pause" "$o|$rs|$er" "limited||"
-assert_eq "and a limit pause one hour on, within the clock read around the call" "$([ "$lim_epoch" -ge $((before + 3600)) ] && [ "$lim_epoch" -le $((after + 3600)) ] && echo yes)" yes
+se_check_hour_fallback "a rejecting event with no resetsAt: limited, no reset, no early pause" "and a limit pause one hour on, within the clock read around the call"
 
 # early pause, whatever the outcome
 rl_event allowed 0.9 "$r1" allowed 0.2 "$r3" >"$se_log"
@@ -1310,8 +1313,8 @@ rl_event allowed 0.5 "$r1" allowed_warning 0.97 "$r3" >"$se_log"
 se_check "a high seven-day utilization alone gives none" 1 failure "" "" ""
 
 # both pauses present
-rl_event rejected 0.95 "$r3" allowed 0.2 "$r3" >"$se_log"
-se_check "early pause the later: each value holds its own" 1 limited "$i3" "$i3" "$i3"
+{ rl_event allowed 0.95 "$r3" allowed 0.2 "$r3"; echo "Claude AI usage limit reached|$r1"; } >"$se_log"
+se_check "early pause the later: each value holds its own" 1 limited "$i1" "$i3" "$i1"
 { rl_event allowed 0.95 "$r1" allowed 0.2 "$r3"; echo "Claude AI usage limit reached|$r3"; } >"$se_log"
 se_check "limit pause the later: each value holds its own" 1 limited "$i3" "$i1" "$i3"
 
