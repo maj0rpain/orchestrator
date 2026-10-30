@@ -349,8 +349,7 @@ fake_local_default ""
 # later GitHub checks counted on the skip line, no gh call made at all. The
 # real adapter runs here, over a fixture gh that logs every call it gets.
 savepath="$PATH"; gh_fixture; PATH="$savepath"
-out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
-  && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" doctor --env 2>&1)"; st=$?
+out="$(orch_no_repo doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
 assert_contains "names the missing repo as a FAIL, with no remedy in it" "$out" \
   "FAIL  $repo_cause"

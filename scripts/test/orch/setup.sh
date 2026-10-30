@@ -456,8 +456,16 @@ fake_issue() {
   mkdir -p "$d"
   printf '%s\n' "$2" | tr '[:lower:]' '[:upper:]' >"$d/state"
   shift 2
-  : >"$d/labels"
-  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/labels"
+  fake_issue_relabel "${d##*/}" "$@"
+}
+
+# fake_issue_relabel <n> <label>...: sets issue #n's labels; its state, title,
+# body and comments are kept.
+fake_issue_relabel() {
+  local n="$1"
+  shift
+  : >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
 }
 
 # fake_issue_title <n> <title>: seeds issue #n's title.
@@ -465,6 +473,16 @@ fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; 
 
 # fake_comments_clear <n>: issue #n holds no comments.
 fake_comments_clear() { rm -rf "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
+
+# orch_no_repo <args>...: runs orch.sh with <args> in a fresh origin-less copy
+# of the current directory (the section's test repo), over the fixture gh the
+# caller made with gh_fixture; orch.sh's output and status pass through. Fails,
+# running nothing, when no gh_fixture was made.
+orch_no_repo() {
+  [ -n "${GH_FIXTURE:-}" ] || { echo "orch_no_repo: make a gh_fixture first" >&2; return 1; }
+  (cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
+    && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" "$@")
+}
 
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
