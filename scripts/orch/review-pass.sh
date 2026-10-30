@@ -64,11 +64,9 @@ review_pass_begin() {
 REVIEW_PASS_HEADINGS=('## Review' '## Host fallbacks')
 
 # The entries of an issue's Spec ruling comments, one per line, from the
-# issue's structured read already filtered to the Spec ruling comments (those
-# whose body begins `Spec ruling:`): the prefix stripped and the lines trimmed
-# and joined by single spaces.
-SPEC_RULING_ENTRIES_JQ='.comments[].body | gsub("\r"; "")
-  | ltrimstr("Spec ruling:") | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
+# marked_comment_texts array of their texts: the lines trimmed and joined by
+# single spaces.
+SPEC_RULING_ENTRIES_JQ='.[] | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
   | map(select(length > 0)) | join(" ")'
 
 # has_headings <file> <heading>...: true when <file> has every <heading> as a
@@ -84,9 +82,9 @@ has_headings() {
 # PR body's Deviations or the --deviations file's entries in their place,
 # then `## Known items`: the declines under Review in the PR body and in each
 # PR comment that is an earlier pass's (REVIEW_PASS_HEADINGS), tagged
-# declined, then the Spec rulings lines of every PR comment and each spec
-# issue comment whose body begins `Spec ruling:` - that prefix stripped and
-# the comment joined into one entry - tagged spec ruling. With no open PR,
+# declined, then the Spec rulings lines of every PR comment and each of the
+# spec issue's Spec ruling comments, read through marked_comment_texts and
+# joined into one entry - tagged spec ruling. With no open PR,
 # only the issue's rulings and the --deviations file are read. A heading with
 # no entry reads None. Every refusal comes before the write, and the file is
 # built aside and moved into place, so a refused run leaves <path> as it was.
@@ -141,7 +139,7 @@ review_pass_known_items() {
     text_entries_append deviations "$work/deviations"
   fi
   gh_or_die --out issue_json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  issue_rulings="$(marked_comment_keep spec-ruling <<<"$issue_json" | jq -r "$SPEC_RULING_ENTRIES_JQ")" \
+  issue_rulings="$(marked_comment_texts spec-ruling <<<"$issue_json" | jq -r "$SPEC_RULING_ENTRIES_JQ")" \
     || die "could not read the comments of issue #$issue"
   printf '%s\n' "$issue_rulings" >"$work/rulings" \
     || die "could not write the rulings of issue #$issue to $work/rulings"
