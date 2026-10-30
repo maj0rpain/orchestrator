@@ -288,6 +288,55 @@ autopilot_pid_alive() {
   [[ "${1:-}" =~ ^[0-9]+$ ]] && { kill -0 "$1" 2>/dev/null || ps -p "$1" >/dev/null 2>&1; }
 }
 
+# autopilot_proc_start <pid>: the process's start time as one whitespace-free
+# token - /proc/<pid>/stat field 22 under $ORCH_PROC_DIR (default /proc), else
+# `ps -o lstart=` with its spaces turned to underscores. Fails when unreadable.
+autopilot_proc_start() {
+  local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  if [ -r "$root/$pid/stat" ]; then
+    stat="$(cat "$root/$pid/stat" 2>/dev/null)" || stat=""
+    rest="${stat##*) }"
+    # shellcheck disable=SC2086
+    set -- $rest
+    # after the command name, field 22 is the 20th word
+    [ -n "${20:-}" ] || return 1
+    printf '%s\n' "${20}"
+    return 0
+  fi
+  t="$(ps -o lstart= -p "$pid" 2>/dev/null)" || return 1
+  t="$(printf '%s' "$t" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/[[:space:]][[:space:]]*/_/g')"
+  [ -n "$t" ] || return 1
+  printf '%s\n' "$t"
+}
+
+# autopilot_pid_write <pid> <file>: writes the process's record,
+# `<pid> <start-time>`, to the file. Fails with an orch: line when the start
+# time cannot be read.
+autopilot_pid_write() {
+  local pid="$1" file="$2" start
+  start="$(autopilot_proc_start "$pid")" || { warn "could not read the start time of pid $pid"; return 1; }
+  printf '%s %s\n' "$pid" "$start" >"$file"
+}
+
+# autopilot_record_alive <record>: whether the record's process is running with
+# the recorded start time. A bare-pid or malformed record is stale.
+autopilot_record_alive() {
+  local pid start now
+  read -r pid start extra <<<"${1:-}"
+  [[ "$pid" =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ -z "${extra:-}" ] || return 1
+  now="$(autopilot_proc_start "$pid")" || return 1
+  [ "$now" = "$start" ]
+}
+
+# autopilot_record_is_me <record>: whether the record names the calling
+# process ($$).
+autopilot_record_is_me() {
+  local pid start
+  read -r pid start _ <<<"${1:-}"
+  [ "$pid" = "$$" ] && [ -n "$start" ] && [ "$start" = "$(autopilot_proc_start "$$")" ]
+}
+
 # autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
 # date.
 autopilot_epoch_iso() {
@@ -486,7 +535,7 @@ autopilot_pickup() {
 # is the run pidfile's, or - with none - the claim's own tick pid. Other hosts'
 # claims are never touched.
 autopilot_cleanup_stale() {
-  local main_root="$1" issue tick_pid run_pid phase pidfile log detail me
+  local main_root="$1" issue tick_pid run_pid phase pidfile log detail me gone_pid
   me="$(standing_host_id)"
   standing_claims_read
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
@@ -495,8 +544,14 @@ autopilot_cleanup_stale() {
     pidfile="$(autopilot_dir "$main_root")/run/$issue.pid"
     run_pid=""
     [ ! -f "$pidfile" ] || run_pid="$(cat "$pidfile")"
-    ! autopilot_pid_alive "${run_pid:-$tick_pid}" || continue
-    detail="the session's process (pid ${run_pid:-${tick_pid:-unknown}}) is gone and the claim was never released - no exit code is known"
+    gone_pid="${run_pid%% *}"
+    if [ -n "$run_pid" ]; then
+      ! autopilot_record_alive "$run_pid" || continue
+    else
+      gone_pid="$tick_pid"
+      ! autopilot_pid_alive "$tick_pid" || continue
+    fi
+    detail="the session's process (pid ${gone_pid:-unknown}) is gone and the claim was never released - no exit code is known"
     log="$(ls -1 "$(autopilot_dir "$main_root")/logs/$issue-$phase-"*.log 2>/dev/null | tail -n 1)" || true
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
     standing_stop "$issue" failure "$phase" "$detail"
@@ -759,11 +814,11 @@ autopilot_run() {
   dir="$(autopilot_dir "$main_root")"
   mkdir -p "$dir/run" "$dir/logs" || die "could not create $dir"
   pidfile="$dir/run/$issue.pid"
-  printf '%s\n' "$$" >"$pidfile"
+  autopilot_pid_write "$$" "$pidfile" || exit 1
   # A later run of the same issue may have replaced the pidfile by the time this
   # one exits: remove it only while it still names this run.
   # shellcheck disable=SC2064
-  trap "[ \"\$(cat '$pidfile' 2>/dev/null)\" != '$$' ] || rm -f '$pidfile'" EXIT
+  trap "! autopilot_record_is_me \"\$(cat '$pidfile' 2>/dev/null)\" || rm -f '$pidfile'" EXIT
   # The claim this run was started for: a session that releases it may exit
   # after the next phase's claim is made, and that one is not this run's to
   # fail.
@@ -823,11 +878,11 @@ autopilot_watch() {
   pidfile="$(autopilot_watch_pidfile)" || return 1
   if [ -f "$pidfile" ]; then
     other="$(cat "$pidfile" 2>/dev/null)" || other=""
-    ! autopilot_pid_alive "$other" ||
-      die "another autopilot watch (pid $other) is already running in this clone"
+    ! autopilot_record_alive "$other" ||
+      die "another autopilot watch (pid ${other%% *}) is already running in this clone"
   fi
   mkdir -p "$(dirname "$pidfile")" || die "could not create $(dirname "$pidfile")"
-  printf '%s\n' "$$" >"$pidfile"
+  autopilot_pid_write "$$" "$pidfile" || return 1
   # shellcheck disable=SC2064
   trap "rm -f '$pidfile'; [ -z \"\${nap:-}\" ] || kill \"\$nap\" 2>/dev/null; exit 0" INT TERM
   # shellcheck disable=SC2064
