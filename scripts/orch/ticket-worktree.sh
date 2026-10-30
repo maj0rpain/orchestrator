@@ -91,6 +91,16 @@ ticket_branch_merged_or_die() {
     || die "branch $1 is not merged into $parent - merge it first, or pass --unmerged to $2"
 }
 
+# ticket_branch_current <n>: assigns the caller's `parent`, the current
+# branch, and `tbranch`, ticket <n>'s own branch <parent>--t<n>, which bash
+# scopes dynamically; dies on a detached HEAD. Called as a bare statement so
+# `die` stops the caller.
+ticket_branch_current() {
+  current_branch_or_die
+  parent="$branch"
+  tbranch="$(branch_name_ticket "$parent" "$1")"
+}
+
 # Forks <current-branch>--t<n> from the current branch's tip, records the
 # forked-from branch on it, and checks it out at .orchestrator/worktrees/t<n>.
 # The exclude entry is written before the branch exists; anything failing
@@ -99,9 +109,7 @@ cmd_ticket_worktree_add() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket-worktree add <n>"
   local n parent branch tbranch path
   n="$(ticket_worktree_number "$1")"
-  current_branch_or_die
-  parent="$branch"
-  tbranch="$(branch_name_ticket "$parent" "$n")"
+  ticket_branch_current "$n"
   path="$(ticket_worktree_path "$n")"
   [ ! -e "$path" ] || die "ticket worktree $path already exists"
   if git rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
@@ -152,9 +160,7 @@ ticket_worktree_teardown() {
     shift
   done
   [ -n "$n" ] || die "usage: ticket_worktree_teardown <n> [--unmerged] [--discard]"
-  current_branch_or_die
-  parent="$branch"
-  tbranch="$(branch_name_ticket "$parent" "$n")"
+  ticket_branch_current "$n"
   path="$(ticket_worktree_path "$n")"
   # Only a worktree at $path itself: a leftover t<n> directory's enclosing
   # checkout is not ours to discard, abort or remove.

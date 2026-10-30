@@ -1448,14 +1448,13 @@ assert_eq "deleting the branch" "$(rc_has_branch 7)" "no"
 assert_contains "noting the branch" "$out" "deleted the branch of ticket #7"
 assert_not_contains "and no worktree" "$out" "removed the worktree"
 
-# a worktree on another branch: that branch survives, and the ticket's own
-# branch is deleted
+# a worktree on another branch: the ticket's own branch is deleted (the
+# teardown's own section proves the other branch survives)
 rc_setup 1
 git -C "$(rc_wt 7)" checkout -q -b elsewhere
 out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "reclaim of a worktree on another branch succeeds" "$st" 0
 assert_eq "removing the worktree and the ticket's branch" "$(rc_has_worktree 7)$(rc_has_branch 7)" "nono"
-assert_eq "keeping the other branch" "$(git branch --list elsewhere | tr -d ' ')" "elsewhere"
 git branch -q -D elsewhere
 assert_contains "noting the branch" "$out" "deleted the branch of ticket #7"
 
