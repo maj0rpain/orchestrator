@@ -65,3 +65,9 @@ design, recorded here so the inconsistency is never mistaken for a bug.
 
 ADR-0055 amends the above: a collapsed breakdown's one ticket now builds in a
 ticket worktree, `t<spec issue>`, like every other ticket.
+
+A later amendment removes the sentinel: `02-spec.md` no longer carries a
+`## Ticket breakdown` section, so the `None: work directly against #<n>`
+sentinel that the Context and Consequences above describe is gone. The
+implement phase decides collapsed-or-not from `orch.sh ticket exists <spec
+issue>` (`sub-issues` or `collapsed`), a fact GitHub holds structurally.

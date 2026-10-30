@@ -267,10 +267,6 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    in full; a default `redo spec` retires the breakdown first, so it never
    reaches this answer. Skip the breakdown and ask nothing: step 4's spec
    review may already have reconciled the breakdown with the edits it applied.
-   Step 6's **Ticket breakdown** is settled by `bash "$ORCH" ticket exists
-   <spec issue>`, which prints one word: `sub-issues` means the spec issue
-   number, and `collapsed` means `None: work directly against #<n>` naming the
-   spec issue.
 
    **`partial`** means a breakdown was approved and saved but not fully
    published: run `bash "$ORCH" breakdown publish <spec issue> <saved draft>`
@@ -290,10 +286,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 
    **Exit 2** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.
-6. Invoke the `orch-handoff` skill for `02-spec.md`, with its
-   **Ticket breakdown** as either the spec issue number (published or found as
-   sub-issues) or `None: work directly against #<n>` naming the spec issue
-   (collapsed, per step 5); validate it with
+6. Invoke the `orch-handoff` skill for `02-spec.md`; validate it with
    `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path implement)"`,
    fixing and re-validating until it passes.
 7. `bash "$ORCH" phase advance`. It validates `02-spec.md` again and checks the
@@ -373,17 +366,18 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    them back with `bash "$ORCH" ticket report show <n>`, for every saved
    ticket report, none held only in this session.
 
-   Whether the breakdown is collapsed comes from the handoff's **Ticket
-   breakdown** section, written by the spec phase's step 5.
-   **`None: work directly against #<n>`** means that breakdown collapsed to
-   0 or 1 tickets and published no sub-issue - `<n>` names the spec issue
-   itself. No `ticket next`/`ticket close` loop runs against it: an empty
-   frontier there means nothing was ever split out, not "already done."
-   The breakdown is collapsed: the sequential path dispatches exactly one
-   subagent, for ticket `<n>`, in its own ticket worktree `t<n>`: merged,
-   never closed. **Any other content** names the spec issue
-   as a parent whose GitHub sub-issues carry the real tickets, and the loop
-   works its frontier.
+   Whether the breakdown is collapsed comes from structure, not from the
+   handoff: run `bash "$ORCH" ticket exists <spec issue>`.
+   **`sub-issues`** means the spec issue is a parent whose GitHub sub-issues
+   carry the real tickets, and the loop works its frontier. **`collapsed`**
+   means the breakdown collapsed to 0 or 1 tickets and published no
+   sub-issue: no `ticket next`/`ticket close` loop runs against it, since an
+   empty frontier there means nothing was ever split out, not "already done."
+   The sequential path dispatches exactly one subagent, for the spec issue
+   itself, in its own ticket worktree `t<n>`: merged, never closed. **Exit 1**
+   means no breakdown exists: the phase stops, naming it. **Exit 2** means
+   GitHub could not be read, or `ticket exists` was misused: the phase stops,
+   leaving the state where it is.
 
    The phase reads its agent settings once, before loop step a, as
    **Dispatching a subagent** says, per **Agent settings** in

@@ -11,7 +11,7 @@ literal_handoff() {
   case "$1" in
     spec) writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' 'Y, because Z.' '' \
                   '## Constraints' 'Must run offline.' '' '## Open assumptions' 'Assumes W.' ;;
-    implement) writeln '## Spec issue' '#1.' '' '## Ticket breakdown' '#1.' ;;
+    implement) writeln '## Spec issue' '#1.' ;;
     review) writeln '## PR' '#3.' '' '## Spec issue' '#1.' '' '## Base SHA' 'abc1234.' '' \
                     '## Deviations' 'None.' '' '## Verification' 'scripts/test/orch_test.sh' ;;
   esac
@@ -101,7 +101,7 @@ for cell in "handoff|spec|01-plan.md" "handoff|implement|02-spec.md" \
             "handoff|review|03-implement.md" \
             "writer|spec|plan" "writer|implement|spec" "writer|review|implement" \
             "sections|spec|Decisions;Rejected alternatives;Constraints;Open assumptions" \
-            "sections|implement|Spec issue;Ticket breakdown" \
+            "sections|implement|Spec issue" \
             "sections|review|PR;Spec issue;Base SHA;Deviations;Verification"; do
   col="${cell%%|*}"; rest="${cell#*|}"; p="${rest%%|*}"
   out="$(sourced_orch phase_cell "$col" "$p")"; st=$?
@@ -128,7 +128,7 @@ assert_eq "handoff_required 01-plan.md prints its headings in order" \
   "$(writeln '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions')"
 assert_eq "handoff_required 02-spec.md prints its headings in order" \
   "$(sourced_orch handoff_required 02-spec.md)" \
-  "$(writeln '## Spec issue' '## Ticket breakdown')"
+  "$(writeln '## Spec issue')"
 assert_eq "handoff_required 03-implement.md prints its headings in order" \
   "$(sourced_orch handoff_required 03-implement.md)" \
   "$(writeln '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification')"
@@ -313,31 +313,20 @@ assert_contains "an unknown handoff op lists section" "$out" "want path|post|fet
 rm -f "$hs" "$hi"
 restore_suite_env
 
-# --- ticket breakdown handoff ------------------------------------------------
+# --- spec handoff -----------------------------------------------------------
 # The spec phase's last step publishes tickets as sub-issues of the spec
 # issue, so the handoff that follows it must at least name the parent -
 # anything less sends implement's `ticket next` query against nothing.
 echo
-echo "ticket breakdown handoff"
-fake_flow ticket-breakdown
+echo "spec handoff"
+fake_flow spec-handoff
 h2="$("$ORCH" handoff path implement)"
-writeln '## Spec issue' '#1.' >"$h2"
-out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
-assert_status "a spec handoff with no ticket breakdown is incomplete" "$st" 1
-assert_contains "names the section implement would have read" "$out" "Ticket breakdown"
-
-writeln '## Spec issue' '#1.' '' \
-        '## Ticket breakdown' '   ' >"$h2"
-out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
-assert_status "a bare Ticket breakdown heading is no better than none" "$st" 1
-assert_contains "reported as empty, not missing" "$out" "empty section"
-
-writeln '## Ticket breakdown' '#1.' >"$h2"
+writeln '## Decisions' 'Use X.' >"$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "a spec handoff with no Spec issue is incomplete" "$st" 1
 assert_contains "names the missing Spec issue" "$out" "Spec issue"
 
-writeln '## Spec issue' '   ' '' '## Ticket breakdown' '#1.' >"$h2"
+writeln '## Spec issue' '   ' >"$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "a bare Spec issue heading is no better than none" "$st" 1
 assert_contains "reported as an empty Spec issue" "$out" "empty section: ## Spec issue"
@@ -346,16 +335,13 @@ complete_handoff "$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "passes once the parent issue is recorded" "$st" 0
 
-# A 0/1-ticket breakdown collapses (issue #99/#101): no sub-issue is published,
-# so this section names the spec issue itself via a plain-text sentinel rather
-# than a parent whose GitHub sub-issues carry the real tickets. It is covered
-# today by the same generic non-empty-section check as any other content -
-# named explicitly here so the convention doesn't silently rot.
+# A spec handoff written before the Ticket breakdown section was dropped still
+# carries it; only the phase table's sections are checked, so it validates.
 writeln '## Spec issue' '#1.' '' \
         '## Ticket breakdown' 'None: work directly against #1.' '' \
         '## Host fallbacks' 'None (Claude Code).' >"$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
-assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
+assert_status "an older spec handoff still carrying Ticket breakdown validates" "$st" 0
 
 # A handoff that still carries the old Seams and Spec review changelog
 # sections validates, filled or empty: neither is required any more.

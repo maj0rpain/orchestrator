@@ -1066,7 +1066,7 @@ assert_contains "an upstream pointing at the base branch is still unpushed" \
 
 # A handoff with a bare required heading is the failure the next phase would
 # experience as running blind, so it has to surface as a FAIL here.
-writeln '## Spec issue' '#1' '' '## Ticket breakdown' '' \
+writeln '## Spec issue' '' \
   >"$("$ORCH" handoff path implement)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when a completed phase's handoff has an empty section" "$st" 1
