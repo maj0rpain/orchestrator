@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.37
+
+A ticket worktree teardown now deletes only the ticket's own branch, `<current branch>--t<n>`, never a branch the worktree has checked out; `ticket reclaim` tears each ticket down in one call, and the teardown parses its flags strictly.
+
 ## 4.38.36
 
 `orch.sh autopilot answer` decides "no reply yet" through the marked-comment helper `marked_comment_follows`, with no sentinel string; its behaviour is unchanged.
