@@ -837,39 +837,7 @@ assert_eq "the third in a row is needs-human, without orch:limited" "$(fake_labe
 assert_contains "its failure comment names the usage limit and the cap" "$(fake_comments_of 7)" "the third in a row in the spec phase"
 assert_eq "it still writes the limit file" "$(cat "$limit_file")" "$lim_iso"
 
-# the count stops at a refusal, failure, question or handoff comment and at a
-# limit stop comment of another phase, and skips other comments
-LIM_SPEC="$(marker_of limited spec)
-stopped"
-count_case() { # <label> <expected count> <comment>...: seeded oldest first
-  local label="$1" want="$2" c
-  shift 2
-  rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"
-  for c in "$@"; do fake_comment 7 o 2026-01-01T00:00:00Z "$c"; done
-  # shellcheck disable=SC2016 # expanded by the inner bash
-  assert_eq "$label" "$(sourced_orch_script 'autopilot_limit_count 7 spec got && printf %s "$got"')" "$want"
-}
 LABELS_HUMAN="needs-human orch:spec ready-for-agent "
-count_case "two stops in a row are counted" 2 "$LIM_SPEC" "$LIM_SPEC"
-count_case "other comments between them are skipped" 2 "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
-count_case "a failure comment resets the count" 0 "$LIM_SPEC" "$LIM_SPEC" "Autopilot failed in the spec phase: x"
-count_case "a refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "Autopilot refused to run the spec phase: x"
-count_case "a question comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of question spec)
-@o"
-count_case "a handoff comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of handoff 01-plan)
-x"
-count_case "a limit stop comment of another phase resets it" 1 "$LIM_SPEC" "$(marker_of limited implement)
-x" "$LIM_SPEC"
-count_case "a marked failure comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of failure spec)
-x"
-count_case "a marked refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
-x"
-count_case "a handoff first line without its closing is no handoff" 2 "$LIM_SPEC" "<!-- orch:handoff 01-plan
-x" "$LIM_SPEC"
-fake_fail adapter_issue_comments_json "HTTP 500 comments"
-sourced_orch_script 'autopilot_limit_count 7 spec got' 2>/dev/null; st=$?
-fake_unfail
-assert_status "unreadable comments return non-zero" "$st" 1
 
 # a rejecting rate_limit_event with no resetsAt names the fallback pause too
 lim_fresh
@@ -884,6 +852,8 @@ limit_run 7 "$({ rl_event allowed 0.9 "$far_epoch" allowed 0.2 "$far_epoch"; ech
 assert_contains "no reset, early pause later: the comment names the one-hour fallback" "$(fake_last_comment_of 7)" "falls back to a one-hour limit pause, until "
 assert_not_contains "and not the early-pause reset" "$(fake_last_comment_of 7)" "$(iso_of "$far_epoch")"
 assert_eq "while the limit file holds the early-pause reset" "$(cat "$limit_file")" "$(iso_of "$far_epoch")"
+LIM_SPEC="$(marker_of limited spec)
+stopped"
 # the third stop in a row, on a message with no reset: says so, names no pause
 lim_fresh
 fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
@@ -1185,6 +1155,45 @@ out="$(sourced_orch autopilot_phase_labels_text "$(printf 'bug\norch:review')" 2
 assert_eq "one phase label prints that label" "$out" "orch:review"
 out="$(sourced_orch autopilot_phase_labels_text "$(printf 'orch:review\nbug\norch:spec')" 2>&1)"
 assert_eq "two phase labels print in table order, space-separated" "$out" "orch:spec orch:review"
+
+# --- autopilot limit count (the retry count) ---------------------------------
+# autopilot_limit_count called directly over seeded comments (#1463, #1695).
+echo
+echo "autopilot limit count"
+tick_fixture
+fake_issue 7 open ready-for-agent orch:spec
+# the count stops at a refusal, failure, question or handoff comment and at a
+# limit stop comment of another phase, and skips other comments
+LIM_SPEC="$(marker_of limited spec)
+stopped"
+count_case() { # <label> <expected count> <comment>...: seeded oldest first
+  local label="$1" want="$2" c
+  shift 2
+  rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"
+  for c in "$@"; do fake_comment 7 o 2026-01-01T00:00:00Z "$c"; done
+  # shellcheck disable=SC2016 # expanded by the inner bash
+  assert_eq "$label" "$(sourced_orch_script 'autopilot_limit_count 7 spec got && printf %s "$got"')" "$want"
+}
+count_case "two stops in a row are counted" 2 "$LIM_SPEC" "$LIM_SPEC"
+count_case "other comments between them are skipped" 2 "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
+count_case "a failure comment resets the count" 0 "$LIM_SPEC" "$LIM_SPEC" "Autopilot failed in the spec phase: x"
+count_case "a refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "Autopilot refused to run the spec phase: x"
+count_case "a question comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of question spec)
+@o"
+count_case "a handoff comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of handoff 01-plan)
+x"
+count_case "a limit stop comment of another phase resets it" 1 "$LIM_SPEC" "$(marker_of limited implement)
+x" "$LIM_SPEC"
+count_case "a marked failure comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of failure spec)
+x"
+count_case "a marked refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
+x"
+count_case "a handoff first line without its closing is no handoff" 2 "$LIM_SPEC" "<!-- orch:handoff 01-plan
+x" "$LIM_SPEC"
+fake_fail adapter_issue_comments_json "HTTP 500 comments"
+sourced_orch_script 'autopilot_limit_count 7 spec got' 2>/dev/null; st=$?
+fake_unfail
+assert_status "unreadable comments return non-zero" "$st" 1
 
 # --- autopilot pause store ----------------------------------------------------
 echo
