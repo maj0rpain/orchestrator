@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.28
+
+Refusal and failure stop comments now open with a hidden marker line (`<!-- orch:refusal <phase> -->`, `<!-- orch:failure <phase> -->`) above their unchanged prose, so their wording can change without breaking a reader; stop comments posted before this change are still recognised. Reading and writing orch.sh's marked comments - question, limit stop, handoff, refusal, failure, spec review changelog and Spec ruling - now lives in one concept module, `marked-comment`, which owns the marker grammar and CR handling.
+
 ## 4.38.27
 
 Give each checkout kind one teardown in its own module: `side_checkout_archive_and_remove` and `side_checkout_remove_worktree` for a side checkout, with the refusal policy as a parameter, and `ticket_worktree_teardown` for a ticket worktree, shared by `ticket-worktree remove` and ticket reclaim. The Checkout module now owns every query over the checkout walk, `branch_checkout` and `checkouts_main` among them, and spells the "could not read the checkouts" failure once. A refused side-checkout removal now prints one message wherever it happens, and `side-checkout add` and `side-checkout remove` now die when `git worktree list` fails.
