@@ -1176,7 +1176,7 @@ stopped"
 count_case() { # <label> <expected count> <comment>...: seeded oldest first
   local label="$1" want="$2" c
   shift 2
-  rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"
+  fake_comments_clear 7
   for c in "$@"; do fake_comment 7 o 2026-01-01T00:00:00Z "$c"; done
   # shellcheck disable=SC2016 # expanded by the inner bash
   assert_eq "$label" "$(sourced_orch_script 'standing_limit_count 7 spec got && printf %s "$got"')" "$want"

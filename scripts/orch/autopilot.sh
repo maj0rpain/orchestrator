@@ -245,7 +245,7 @@ autopilot_questions() {
   local list n phase json line lines=""
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
-    standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
+    standing_read "$n" || die "could not read the labels of issue #$n"
     phase="$STANDING_PHASE"
     [ -n "$phase" ] || continue
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
@@ -557,7 +557,7 @@ autopilot_tick() {
     [ -n "$issue" ] || continue
     [ "$count" -lt "$cap" ] || break
     standing_read "$issue" ||
-      die "could not read issue #$issue: $STANDING_REASON"
+      die "could not read issue #$issue"
     standing_pickable || continue
     phase="$STANDING_PHASE"
     rc=0
