@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.36
+
+`orch.sh autopilot answer` decides "no reply yet" through the marked-comment helper `marked_comment_follows`, with no sentinel string; its behaviour is unchanged.
+
 ## 4.38.35
 
 Reorder the `pr publish` entry of `orch.sh help` so its purpose clause stays with the sentence it belongs to and its refusal sentence comes last.
