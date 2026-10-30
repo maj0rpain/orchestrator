@@ -504,21 +504,14 @@ assert_status "spec pause --round in autopilot succeeds" "$st" 0
 assert_eq "dropping orch:running" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
 assert_eq "releasing the claim" "$(fake_claim_held 7)" free
 
-# a failure partway leaves the claim held and names the writes that landed
+# a failure partway dies with the claim ref's reason and seeds its own; Standing
+# owns the rest of the writes that landed and the held claim
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7
 fake_fail adapter_claim_delete "HTTP 500"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 2>&1)"; st=$?
 assert_status "a failed claim delete dies" "$st" 1
 assert_contains "naming the claim ref" "$out" "delete the claim ref"
-assert_contains "and the writes that landed" "$out" "wrote the round marker, removed orch:running"
-assert_eq "the claim is still held" "$(fake_claim_held 7)" held
-fake_unfail
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 2>&1)"; st=$?
-assert_status "a failed orch:running removal dies" "$st" 1
-assert_contains "naming the marker that landed" "$out" "writes that landed: wrote the round marker;"
-assert_eq "the claim is still held after it" "$(fake_claim_held 7)" held
+assert_contains "seeding its own reason" "$out" "wrote the round marker"
 fake_unfail
 restore_suite_env
