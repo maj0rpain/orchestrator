@@ -198,6 +198,7 @@ assert_contains "status prints the flow's base branch" "$(orch_gh_failing status
 body="$(mktemp)"
 pr_body_complete "$body"
 fake_github
+fake_issue 7 open
 fake_next_pr 31
 out="$(orch_gh_failing pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "pr open succeeds" "$st" 0

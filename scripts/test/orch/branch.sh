@@ -149,6 +149,8 @@ body="$(mktemp)"
 pr_body_complete "$body"
 git checkout -q quick/5-uat
 fake_github
+fake_issue 5 open
+fake_issue 7 open
 fake_next_pr 41
 out="$(orch_gh_failing pr publish 5 "Title" "$body" 2>&1)"; st=$?
 assert_status "pr publish succeeds" "$st" 0
