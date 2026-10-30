@@ -1253,3 +1253,41 @@ out="$(sourced_orch autopilot_phase_labels_text "$(printf 'bug\norch:review')" 2
 assert_eq "one phase label prints that label" "$out" "orch:review"
 out="$(sourced_orch autopilot_phase_labels_text "$(printf 'orch:review\nbug\norch:spec')" 2>&1)"
 assert_eq "two phase labels print in table order, space-separated" "$out" "orch:spec orch:review"
+
+# --- autopilot pause store ----------------------------------------------------
+echo
+echo "autopilot pause store"
+tick_fixture
+pm="$(git rev-parse --show-toplevel)"; pl="$(mktemp)"
+future_iso="$(iso_of "$(( $(date +%s) + 7200 ))")"; later_iso="$(iso_of "$(( $(date +%s) + 9000 ))")"
+mkdir -p "$pm/.orchestrator/autopilot"; pf="$pm/.orchestrator/autopilot/limit"
+out="$(sourced_orch autopilot_pause_until "$pm" 2>&1)"; st=$?
+assert_status "no limit file: not paused" "$st" 1
+assert_eq "and nothing printed" "$out" ""
+sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl"; st=$?
+assert_status "extend succeeds" "$st" 0
+assert_eq "extend records the time" "$(cat "$pf")" "$future_iso"
+sourced_orch autopilot_pause_extend "$pm" "$later_iso" "$pl"
+assert_eq "extend replaces an earlier time" "$(cat "$pf")" "$later_iso"
+sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl"
+assert_eq "extend keeps a later time" "$(cat "$pf")" "$later_iso"
+printf 'garbage\n' >"$pf"
+sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl"
+assert_eq "extend replaces an unparsable time" "$(cat "$pf")" "$future_iso"
+out="$(sourced_orch autopilot_pause_until "$pm" 2>&1)"; st=$?
+assert_status "a future time pauses" "$st" 0
+assert_contains "and the note names it" "$out" "usage limit: no issue is picked up until $future_iso"
+printf '2020-01-01T00:00:00Z\n' >"$pf"
+sourced_orch autopilot_pause_until "$pm" >/dev/null 2>&1; st=$?
+assert_status "a passed time does not pause" "$st" 1
+assert_eq "and removes the file" "$([ -e "$pf" ] && echo there || echo gone)" "gone"
+printf 'garbage\n' >"$pf"
+sourced_orch autopilot_pause_until "$pm" >/dev/null 2>&1; st=$?
+assert_status "an unparsable time does not pause" "$st" 1
+assert_eq "and removes the file too" "$([ -e "$pf" ] && echo there || echo gone)" "gone"
+rm -f "$pf"; mkdir "$pf"
+out="$(sourced_orch autopilot_pause_extend "$pm" "$future_iso" "$pl" 2>&1)"; st=$?
+assert_status "a failed write still returns 0" "$st" 0
+assert_contains "noting it on stderr" "$out" "could not write the limit file"
+assert_contains "and in the log" "$(cat "$pl")" "could not write the limit file"
+rm -rf "$pf"
