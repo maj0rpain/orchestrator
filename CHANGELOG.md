@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.33
+
+`orch.sh side-checkout prune` (and the `/orchestrator:finish` sweep) no longer doubles the `orch: ` prefix when it cannot archive a flow: each warning, for the main checkout or a side checkout, now reads as one message with one prefix, still one line per checkout. The CLI callers' archive failure (`side-checkout remove`, `archive`) is now relayed through `die` rather than printed by hand, its text unchanged.
+
 ## 4.38.32
 
 Name the "does this branch record a base" check once, as `branch_records_base`, and use it in `branch sync` and the busy-checkout check. No change users can see.
