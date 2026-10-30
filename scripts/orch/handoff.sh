@@ -17,7 +17,7 @@
 # from it. A per-phase `case` that gives each phase its own message or
 # requirement (phase advance, review pass, spec review) may name phases.
 readonly PHASE_TABLE='spec|01-plan.md|plan|Decisions;Rejected alternatives;Constraints;Open assumptions
-implement|02-spec.md|spec|Spec issue;Ticket breakdown
+implement|02-spec.md|spec|Spec issue
 review|03-implement.md|implement|PR;Spec issue;Base SHA;Deviations;Verification
 done|||'
 

@@ -23,45 +23,32 @@ assert_eq "leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 "$ORCH" state set issue 7
 hs2="$("$ORCH" handoff path implement)"
-writeln '## Spec issue' '#7.' '' '## Ticket breakdown' '' '' \
+writeln '## Spec issue' '' '' \
         '## Host fallbacks' 'None.' >"$hs2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with an invalid spec handoff" "$st" 1
-assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Ticket breakdown"
+assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Spec issue"
 assert_contains "and the uniform invalid error" "$out" \
   "02-spec.md is not valid - fix it, then run phase advance again; the flow stays at spec"
 assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
-writeln '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+writeln '## Host fallbacks' 'None.' >"$hs2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with no Spec issue in the handoff" "$st" 1
 assert_contains "naming the missing Spec issue" "$out" "Spec issue"
 assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
-writeln '## Spec issue' '' '' '## Ticket breakdown' '#7.' '' \
-        '## Host fallbacks' 'None.' >"$hs2"
-out="$("$ORCH" phase advance 2>&1)"; st=$?
-assert_status "refuses at spec with an empty Spec issue" "$st" 1
-assert_contains "naming the empty Spec issue" "$out" "FAIL  empty section: ## Spec issue"
-assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
-
-writeln '## Spec issue' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
-out="$("$ORCH" phase advance 2>&1)"; st=$?
-assert_status "refuses at spec with no Ticket breakdown in the handoff" "$st" 1
-assert_contains "naming the missing Ticket breakdown" "$out" "missing section: ## Ticket breakdown"
-assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
-
 # A spec handoff written before #1601 still carries Seams and a Spec review
 # changelog; neither is required any more, so it advances, filled or empty.
 writeln '## Spec issue' '#7.' '' '## Seams' '' '## Spec review changelog' 'Not reviewed.' '' \
-        '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+        '## Host fallbacks' 'None.' >"$hs2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advances a spec handoff still carrying the old sections" "$st" 0
 assert_eq "recording the implement phase" "$("$ORCH" state get phase)" "implement"
 state_fixture phase spec
 
 writeln '## Spec issue' '#7.' '' '## Seams' 'At handoff validate.' '' '## Spec review changelog' '' \
-        '## Ticket breakdown' '#7.' '' '## Host fallbacks' 'None.' >"$hs2"
+        '## Host fallbacks' 'None.' >"$hs2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advances with a filled Seams and an empty Spec review changelog" "$st" 0
 assert_eq "recording the implement phase" "$("$ORCH" state get phase)" "implement"
@@ -105,7 +92,45 @@ for field in branch base_sha pr; do
   assert_eq "and leaves the phase at implement (no $field)" "$("$ORCH" state get phase)" "implement"
 done
 
+# Open tickets (#1733): implement is left only once no sub-issue of the spec
+# issue is open, blocked ones included.
 state_fixture pr 3
+fake_issue 7 open
+fake_next_issue 700
+tbody="$(mktemp)"; writeln 'Build it.' >"$tbody"
+t1="$("$ORCH" ticket publish 7 "A" "$tbody")"
+t2="$("$ORCH" ticket publish 7 "B" "$tbody" --blocked-by "$t1")"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at implement with open sub-issues" "$st" 1
+assert_contains "names each open one in order and phase advance" "$out" \
+  "orch: #7 still has open tickets: #$t1 #$t2 - run the driver loop (orch.sh ticket next 7) or close them, then run phase advance again"
+assert_eq "and leaves the phase at implement (open tickets)" "$("$ORCH" state get phase)" "implement"
+"$ORCH" ticket close "$t1" >/dev/null
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_contains "a closed one drops out of the list" "$out" "open tickets: #$t2 - run"
+fake_fail adapter_sub_issues
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at implement when GitHub cannot be read" "$st" 1
+assert_contains "naming the failure" "$out" "orch: gh could not list sub-issues of #7"
+assert_eq "and leaves the phase at implement (unreadable)" "$("$ORCH" state get phase)" "implement"
+fake_unfail
+"$ORCH" ticket close "$t2" >/dev/null
+fake_issue_body 7 $'## Ticket\n\nx\n'
+
+# A collapsed breakdown (a ## Ticket body, no sub-issues) and an issue with
+# neither pass; the hybrid above passes too.
+fake_issue 8 open
+fake_issue_body 8 $'## Ticket\n\nx\n'
+fake_issue 9 open
+fake_issue_body 9 $'Just a spec.\n'
+for collapsed in 8 9; do
+  state_fixture issue "$collapsed"
+  out="$("$ORCH" phase advance 2>&1)"; st=$?
+  assert_status "advances implement with issue #$collapsed (no sub-issues)" "$st" 0
+  state_fixture phase implement
+done
+state_fixture issue 7
+
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advances implement to review with a valid handoff and the fields" "$st" 0
 assert_eq "records the review phase" "$("$ORCH" state get phase)" "review"

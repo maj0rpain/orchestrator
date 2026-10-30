@@ -78,6 +78,7 @@ assert_eq "the recorded issue is checked before the body's standard" "$out" \
 
 "$ORCH" state set issue 16
 fake_github
+fake_issue 16 open
 fake_next_pr 23
 
 # The PR-writing standard (#1387): a body lacking a piece of the human layer
@@ -122,6 +123,38 @@ assert_contains "and keeps the agent's original body intact after a blank line" 
   "$body_recorded" "Some detail."
 assert_eq "the create call never reached a real gh subprocess" \
   "$(gh_calls)" "0"
+
+# Open tickets (#1734): pr open leaves a PR alone while the spec issue has open
+# sub-issues, on both the create and the update path.
+fake_next_issue 800
+tbody="$(mktemp)"; writeln 'Build it.' >"$tbody"
+ot="$("$ORCH" ticket publish 16 "T" "$tbody")"
+prs_before="$(fake_prs)"
+title_before="$(fake_pr_title_of 23)"
+out="$("$ORCH" pr open "Changed" "$body" 2>&1)"; st=$?
+assert_status "open tickets: pr open refuses with a PR recorded" "$st" 1
+assert_contains "naming pr open" "$out" \
+  "orch: #16 still has open tickets: #$ot - run the driver loop (orch.sh ticket next 16) or close them, then run pr open again"
+assert_eq "and leaves that PR unedited" "$(fake_pr_title_of 23)" "$title_before"
+state_fixture pr ""
+git config --unset "branch.orch/16-propen.orchestrator-pr"
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "open tickets: pr open refuses with no PR recorded" "$st" 1
+assert_contains "naming pr open (create path)" "$out" "then run pr open again"
+assert_eq "and creates no PR" "$(fake_prs)" "$prs_before"
+fake_fail adapter_sub_issues
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "pr open refuses when GitHub cannot be read" "$st" 1
+assert_contains "naming the failure" "$out" "orch: gh could not list sub-issues of #16"
+assert_eq "and creates no PR when unreadable" "$(fake_prs)" "$prs_before"
+fake_unfail
+"$ORCH" ticket close "$ot" >/dev/null
+state_fixture pr 23
+git config "branch.orch/16-propen.orchestrator-pr" 23
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "pr open passes once the tickets are closed" "$st" 0
+assert_eq "and updates the recorded PR" "$out" "23"
+assert_eq "creating no PR" "$(fake_prs)" "$prs_before"
 
 git config --unset "branch.orch/16-propen.orchestrator-pr"
 state_fixture pr ""
@@ -303,6 +336,7 @@ assert_contains "with the exact require_branch die message" "$out" \
 out="$("$ORCH" pr open "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
 assert_eq "the recorded branch is checked before the body's standard" "$out" \
   "orch: no branch recorded in state"
+
 restore_suite_env
 
 # --- pr publish --------------------------------------------------------------
@@ -324,6 +358,7 @@ body="$(mktemp)"
 pr_body_complete "$body"
 
 fake_github
+for n in 16 17 18 19 20 21 22 24 25; do fake_issue "$n" open; done
 fake_next_pr 23
 out="$("$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
@@ -541,6 +576,29 @@ out="$("$ORCH" pr publish 25 "Title" "$(pr_body_without '## Summary')" 2>&1)"; s
 assert_eq "the current branch is checked before the body's standard" "$out" \
   "orch: not on a branch (detached HEAD)"
 git checkout -q quick/25-refused
+
+
+# Open tickets (#1734): pr publish creates no PR while <issue> has open
+# sub-issues.
+fake_issue 61 open
+fake_next_issue 810
+tbody="$(mktemp)"; writeln 'Build it.' >"$tbody"
+pt="$("$ORCH" ticket publish 61 "T" "$tbody")"
+prs_before="$(fake_prs)"
+out="$("$ORCH" pr publish 61 "Title" "$body" 2>&1)"; st=$?
+assert_status "open tickets: pr publish refuses" "$st" 1
+assert_contains "naming pr publish" "$out" \
+  "orch: #61 still has open tickets: #$pt - run the driver loop (orch.sh ticket next 61) or close them, then run pr publish again"
+assert_eq "and creates no PR" "$(fake_prs)" "$prs_before"
+fake_fail adapter_sub_issues
+out="$("$ORCH" pr publish 61 "Title" "$body" 2>&1)"; st=$?
+assert_status "pr publish refuses when GitHub cannot be read" "$st" 1
+assert_contains "naming the failure" "$out" "orch: gh could not list sub-issues of #61"
+assert_eq "and creates no PR when GitHub cannot be read" "$(fake_prs)" "$prs_before"
+fake_unfail
+"$ORCH" ticket close "$pt" >/dev/null
+out="$("$ORCH" pr publish 61 "Title" "$body" 2>&1)"; st=$?
+assert_status "pr publish passes once the tickets are closed" "$st" 0
 
 help="$("$ORCH" help)"
 assert_contains "help documents --draft and --label" "$help" \

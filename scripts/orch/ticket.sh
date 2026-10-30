@@ -31,6 +31,24 @@ ticket_sub_issues() {
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
+# require_no_open_tickets <spec> <command>: dies unless <spec> has no open
+# sub-issue, blocked or not - what phase advance requires before it leaves
+# implement, and pr open and pr publish before they touch a PR. <command> is
+# the refusing command, named in the message ("phase advance", "pr open").
+# A collapsed breakdown or an issue with no sub-issues has none, so it passes.
+# A GitHub that cannot be read dies too, in ticket_sub_issues' grammar.
+require_no_open_tickets() {
+  local spec="$1" command="$2" subs line n state _blockers open=()
+  subs="$(ticket_sub_issues "$spec")" || exit 1
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    tsv_split "$line" n state _blockers
+    if [ "$state" = OPEN ]; then open+=("#$n"); fi
+  done <<<"$subs"
+  [ ${#open[@]} -eq 0 ] ||
+    die "#$spec still has open tickets: ${open[*]} - run the driver loop (orch.sh ticket next $spec) or close them, then run $command again"
+}
+
 # flag_value_once <usage> <already-given> <argc>: the rule for a flag that
 # takes a value, shared by `ticket publish --blocked-by` and `ticket
 # block`/`unblock --by`. Prints nothing; dies with <usage> unless this is the

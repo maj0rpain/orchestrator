@@ -212,6 +212,7 @@ cmd_pr_open() {
   require_branch branch
   base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
+  require_no_open_tickets "$issue" "pr open"
   recorded="$(state_get pr)"
   if [ -n "$recorded" ]; then
     update_pr "$recorded" "$branch" "$base" "$issue" "$title" "$body_file" ${labels[@]+"${labels[@]}"}
@@ -251,6 +252,7 @@ cmd_pr_publish() {
   current_branch_or_die
   base="$(recorded_base "$branch")"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
+  require_no_open_tickets "$issue" "pr publish"
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft" ${labels[@]+"${labels[@]}"})"
   pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"
