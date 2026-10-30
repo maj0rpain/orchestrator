@@ -152,10 +152,11 @@ assert_eq "a spec ruling whose first line is blank is rejected" "$mc_rc:$mc_out"
 
 # The exported prelude, through jq: each comment's {kind, arg, retired}.
 arr="$(mc_array "$q" "$ret" "$(marker_of limited build)"$'\r\n' "Autopilot refused to run the plan phase: x" \
-  "$(marker_of failure plan)" $'## Spec review\t' "Spec ruling: z" "plain" "<!-- orch:handoff x")"
+  "$(marker_of failure plan)" $'## Spec review\t' "Spec ruling: z" "plain" "<!-- orch:handoff x" \
+  "Autopilot failed in the implement phase: boom" "$live" "$q"$'\r\ntext')"
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$arr")"
 assert_eq "the prelude gives every comment its kind, arg and retired" "$got" \
-  '[{"kind":"question","arg":"plan","retired":false},{"kind":"handoff","arg":"01-plan","retired":true},{"kind":"limited","arg":"build","retired":false},{"kind":"refusal","arg":"plan","retired":false},{"kind":"failure","arg":"plan","retired":false},{"kind":"spec-review","arg":null,"retired":false},{"kind":"spec-ruling","arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false}]'
+  '[{"kind":"question","arg":"plan","retired":false},{"kind":"handoff","arg":"01-plan","retired":true},{"kind":"limited","arg":"build","retired":false},{"kind":"refusal","arg":"plan","retired":false},{"kind":"failure","arg":"plan","retired":false},{"kind":"spec-review","arg":null,"retired":false},{"kind":"spec-ruling","arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":"failure","arg":"implement","retired":false},{"kind":"handoff","arg":"01-plan","retired":false},{"kind":"question","arg":"plan","retired":false}]'
 # The same prelude over the edge cases: a marker on the second line, a retired
 # tag on a non-handoff marker, a marker with an extra argument, a CRLF spec
 # ruling, a spec ruling whose first line is blank, a question marker without
