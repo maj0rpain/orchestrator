@@ -18,7 +18,7 @@
 #
 # The readers: marked_comment_newest, _retired, _follows, _body, _texts (the
 # opening-stripped texts of a kind) and _drop, over the prelude's
-# marked_comment_list, _info and _entries.
+# marked_comment_list, _info, _entries and _of.
 #
 # Every reader takes the comments JSON on stdin: the issue object from the
 # structured issue read, or the bare comment array.
@@ -42,7 +42,8 @@ MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
 # either shape; marked_comment_info is, for a comment, {kind, arg, retired}
 # (kind and arg null for an unmarked comment, retired a boolean);
 # marked_comment_entries is, for the input, {key, c, info} of each comment: its
-# index, the comment and its marked_comment_info.
+# index, the comment and its marked_comment_info; marked_comment_of($k; $a) is
+# the entries of kind $k (and of arg $a, unless it is empty).
 marked_comment_jq() {
   local kinds="${MARKED_COMMENT_KINDS// /|}"
   cat <<EOJQ
@@ -63,6 +64,8 @@ def marked_comment_info:
     else {kind: null, arg: null, retired: false} end;
 def marked_comment_entries:
   marked_comment_list | to_entries | map({key, c: .value, info: (.value | marked_comment_info)});
+def marked_comment_of(\$k; \$a):
+  marked_comment_entries | map(select(.info | .kind == \$k and (\$a == "" or .arg == \$a)));
 EOJQ
 }
 
@@ -103,9 +106,7 @@ marked_comment_write() {
 marked_comment_newest() {
   local out
   out="$(jq -r --arg k "$1" --arg a "${2-}" "$(marked_comment_jq)"'
-    marked_comment_entries
-    | map(select(.info | .kind == $k and ($a == "" or .arg == $a)))
-    | last | .key // empty')" || return 2
+    marked_comment_of($k; $a) | last | .key // empty')" || return 2
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
 }
@@ -157,9 +158,8 @@ marked_comment_body() {
 marked_comment_texts() {
   local out
   out="$(jq -c --arg k "$1" --arg a "${2-}" --arg ruling "$MARKED_COMMENT_SPEC_RULING_OPENING" "$(marked_comment_jq)"'
-    marked_comment_entries
-    | map(select(.info | .kind == $k and ($a == "" or .arg == $a))
-      | (.c.body // "") as $b
+    marked_comment_of($k; $a)
+    | map((.c.body // "") as $b
       | (if $k == "spec-ruling" then $b | ltrimstr($ruling)
          else ($b | index("\n")) as $n | if $n == null then "" else $b[$n + 1:] end end)
       | gsub("\r"; ""))')" || return 2

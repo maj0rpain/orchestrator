@@ -30,9 +30,12 @@ mc() {
   mc_out="${mc_out%$'\n'}"
 }
 
-# Round trip: each kind's writer line, read back by every reader.
-for spec in "question plan" "limited implement" "handoff 01-plan" "refusal review" "failure implement" \
-  "spec-review" "spec-ruling"; do
+# Round trip: each kind's writer line, read back by every reader - every
+# hidden-marker kind the registry holds, so a newly added one is covered too.
+hidden_kinds="$(sourced_orch_script 'printf "%s " $MARKED_COMMENT_KINDS')"
+# shellcheck disable=SC2086 # the kinds are space-separated words
+for entry in $(printf '%s:plan ' $hidden_kinds) "spec-review" "spec-ruling"; do
+  spec="${entry/:/ }"
   # shellcheck disable=SC2086 # the words are the kind and its argument
   line="$(marker_of $spec)"
   kind="${spec%% *}"; arg=""; [ "$kind" = "$spec" ] || arg="${spec#* }"
@@ -159,11 +162,6 @@ mc texts "not json" spec-ruling
 assert_eq "texts on unreadable comments exits 2, printing nothing" "$mc_rc:$mc_out" "2:"
 mc drop "not json" spec-review
 assert_eq "drop on unreadable comments fails, printing nothing" "$([ "$mc_rc" != 0 ] && echo failed):$mc_out" "failed:"
-# Every kind the registry holds is written and read back.
-for kind in $(sourced_orch_script 'printf "%s " $MARKED_COMMENT_KINDS'); do
-  mc texts "$(mc_array "$(marker_of "$kind" plan)"$'\nthe text')" "$kind" plan
-  assert_eq "registry kind $kind: the writer's line is recognised and stripped" "$mc_out" '["the text"]'
-done
 mc newest "$(mc_array $'\nSpec ruling: a')" spec-ruling
 assert_eq "a spec ruling whose first line is blank is rejected" "$mc_rc:$mc_out" "1:"
 

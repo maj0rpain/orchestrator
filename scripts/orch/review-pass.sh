@@ -82,9 +82,9 @@ has_headings() {
 # PR body's Deviations or the --deviations file's entries in their place,
 # then `## Known items`: the declines under Review in the PR body and in each
 # PR comment that is an earlier pass's (REVIEW_PASS_HEADINGS), tagged
-# declined, then the Spec rulings lines of every PR comment and each spec
-# issue comment whose body begins `Spec ruling:` - that prefix stripped and
-# the comment joined into one entry - tagged spec ruling. With no open PR,
+# declined, then the Spec rulings lines of every PR comment and each of the
+# spec issue's Spec ruling comments, read through marked_comment_texts and
+# joined into one entry - tagged spec ruling. With no open PR,
 # only the issue's rulings and the --deviations file are read. A heading with
 # no entry reads None. Every refusal comes before the write, and the file is
 # built aside and moved into place, so a refused run leaves <path> as it was.
