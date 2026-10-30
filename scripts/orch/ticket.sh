@@ -605,18 +605,6 @@ cmd_ticket() {
   esac
 }
 
-# The checkout that has <branch> checked out, or nothing: the first checkout
-# the walk lists on <branch>, a worktree whose directory is gone included.
-# Dies when the checkouts cannot be read; called in a substitution, so its
-# caller carries that status out.
-branch_checkout() {
-  local list _kind _flow branch path
-  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
-  while read -r _kind _flow branch path; do
-    if [ "$branch" = "$1" ]; then note "$path"; return 0; fi
-  done <<<"$list"
-}
-
 # Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
 # that branch's tip inside the ticket worktree, then fast-forwards that branch
 # in whichever checkout has it - so history stays linear. Every refusal (exit
@@ -670,24 +658,31 @@ ticket_reclaim_close() {
   note "closed ticket #$n"
 }
 
-# ticket_reclaim_remove <n> <flow>: discards the work in ticket <n>'s worktree
-# if it has one, removes the worktree, and deletes its branch if one is left,
-# dying naming the ticket and the write.
+# ticket_reclaim_remove <n> <flow>: tears down ticket <n>'s worktree and
+# branch, discarding the work in the worktree first, when either exists. It
+# reads what exists first, so its notes follow from that; a failure dies
+# naming the ticket and the step.
 ticket_reclaim_remove() {
-  local n="$1" flow="$2" path tbranch
+  local n="$1" flow="$2" path tbranch had_wt=0 had_branch=0
   path="$(ticket_worktree_path "$n")"
-  if is_ticket_worktree "$path"; then
-    discard_work_in "$path" "ticket #$n"
-    (cmd_ticket_worktree_remove --unmerged "$n") \
-      || die "ticket #$n: could not remove its worktree $path"
-    note "removed the worktree of ticket #$n"
-  fi
   tbranch="$(branch_name_ticket "$flow" "$n")"
-  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
-    git -C "$ROOT" branch -q -D "$tbranch" \
-      || die "ticket #$n: could not delete branch $tbranch"
-    note "deleted the branch of ticket #$n"
+  ! is_ticket_worktree "$path" || had_wt=1
+  ! git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null || had_branch=1
+  [ "$had_wt$had_branch" != 00 ] || return 0
+  local teardown_failed=0
+  (ticket_worktree_teardown "$n" --unmerged --discard) || teardown_failed=1
+  if is_ticket_worktree "$path"; then
+    die "ticket #$n: could not remove its worktree $path"
   fi
+  [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
+  [ "$teardown_failed" = 0 ] || die "ticket #$n: could not delete branch $tbranch"
+  # The teardown deletes the worktree's own branch; a worktree on another
+  # branch leaves $tbranch behind, which the branch-only teardown deletes.
+  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
+    (ticket_worktree_teardown "$n" --unmerged --discard) \
+      || die "ticket #$n: could not delete branch $tbranch"
+  fi
+  [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
 
 # ticket_reclaim_guard <parent> <branch>: proves <branch> is the recovered

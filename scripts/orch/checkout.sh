@@ -73,13 +73,45 @@ checkout_kind() {
   return 1
 }
 
+# checkouts_main <walk>: prints the main checkout's path from a walk already
+# held: the parse of its first line. Prints nothing and fails on an empty walk.
+checkouts_main() {
+  local _kind _flow _branch path
+  [ -n "$1" ] || return 1
+  read -r _kind _flow _branch path <<<"${1%%$'\n'*}"
+  printf '%s\n' "$path"
+}
+
 # The main checkout: the first checkout the walk prints. Fails, printing
 # nothing, when the walk fails or prints nothing.
 main_checkout() {
-  local list _kind _flow _branch path
-  list="$(checkouts)" && [ -n "$list" ] || return 1
-  read -r _kind _flow _branch path <<<"${list%%$'\n'*}"
-  printf '%s\n' "$path"
+  local list
+  list="$(checkouts)" || return 1
+  checkouts_main "$list"
+}
+
+# checkouts_or_die / main_checkout_or_die: what checkouts / main_checkout
+# print, or die "could not read the checkouts - git worktree list failed", the
+# one place that message is spelled. Called in a substitution, where die exits
+# only the subshell, so every caller carries the status out (|| exit $?).
+checkouts_unreadable() { die "could not read the checkouts - git worktree list failed"; }
+checkouts_or_die() {
+  checkouts || checkouts_unreadable
+}
+main_checkout_or_die() {
+  main_checkout || checkouts_unreadable
+}
+
+# The checkout that has <branch> checked out, or nothing: the first checkout
+# the walk lists on <branch>, a worktree whose directory is gone included.
+# Dies when the checkouts cannot be read; called in a substitution, so its
+# caller carries that status out.
+branch_checkout() {
+  local list _kind _flow branch path
+  list="$(checkouts_or_die)" || exit $?
+  while read -r _kind _flow branch path; do
+    if [ "$branch" = "$1" ]; then note "$path"; return 0; fi
+  done <<<"$list"
 }
 
 # Whether the checkout at <path> holds a flow.
