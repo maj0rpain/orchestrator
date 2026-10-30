@@ -402,6 +402,13 @@ autopilot_pickup_step() {
   return 1
 }
 
+# autopilot_pickup_side_find <issue>: finds the issue's side checkout, into
+# pickup's side - empty when it has none. It never fails, so pickup calls it
+# directly, outside autopilot_pickup_step.
+autopilot_pickup_side_find() {
+  side="$(side_checkout_for_issue "$1")" || side=""
+}
+
 # autopilot_pickup_side_title <issue>: the step reading the title of an issue
 # with no side checkout, into pickup's title; its reason goes on stderr.
 autopilot_pickup_side_title() {
@@ -446,11 +453,11 @@ autopilot_pickup_redo() {
 }
 
 # autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
-# claimed issue. A refusal or a failed step ends in standing_stop through
-# autopilot_pickup_step and returns 0: the claim is released, the tick goes on.
+# claimed issue. A refusal or a failed step ends in standing_stop and returns
+# 0: the claim is released, the tick goes on.
 autopilot_pickup() {
   local issue="$1" phase="$2" limited="${3:-}" side="" title="" recorded redo begin_err
-  side="$(side_checkout_for_issue "$issue")" || side=""
+  autopilot_pickup_side_find "$issue"
   if [ -z "$side" ]; then
     autopilot_pickup_step "$issue" "$phase" failure "step side-checkout add failed: could not read the issue's title" autopilot_pickup_side_title "$issue" || return 0
     autopilot_pickup_step "$issue" "$phase" failure "step side-checkout add failed" autopilot_pickup_side_add "$issue" "$title" || return 0
@@ -467,7 +474,7 @@ autopilot_pickup() {
     esac
     autopilot_pickup_step "$issue" "$phase" refusal "redo $redo refused" autopilot_in_subshell autopilot_pickup_redo "$side" "$redo" || return 0
   fi
-  capture_err begin_err autopilot_in_subshell standing_begin "$issue" "$phase" "$limited" || {
+  capture_err begin_err standing_begin "$issue" "$phase" "$limited" || {
     standing_stop "$issue" failure "$phase" "$(gh_reason "$begin_err")"
     return 0
   }

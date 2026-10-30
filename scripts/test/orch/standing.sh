@@ -315,14 +315,14 @@ assert_contains "and that reason is the reader's own message" "$(fake_comments_o
 
 # a failed mktemp is a temp-file failure, never gh's: the command is not run
 tr_seed 79 orch:spec orch:running
-mt_marker="$(mktemp -u)"
+ran_marker="$(mktemp -u)"
 # (a file marks the first call: each runs in a $(...) subshell)
-mt_failed="$(mktemp -u)"
-out="$(st 'mktemp() { [ -e "'"$mt_failed"'" ] || { : >"'"$mt_failed"'"; return 1; }; command mktemp "$@"; }; autopilot_pickup_step 79 spec failure "step init failed" touch "'"$mt_marker"'"')"
+first_call_marker="$(mktemp -u)"
+out="$(st 'mktemp() { [ -e "'"$first_call_marker"'" ] || { : >"'"$first_call_marker"'"; return 1; }; command mktemp "$@"; }; autopilot_pickup_step 79 spec failure "step init failed" touch "'"$ran_marker"'"')"
 assert_contains "a failed runner mktemp returns 1" "$out" "rc=1"
 assert_contains "and stops the issue worded as a temp-file failure" "$(fake_comments_of 79)" "Autopilot failed in the spec phase: step init failed: could not create a temp file for the step's stderr"
 assert_eq "releasing the claim" "$(fake_claim_held 79)" free
-assert_eq "without running the command" "$([ -e "$mt_marker" ] && echo ran || echo not-run)" not-run
-rm -f "$mt_marker" "$mt_failed"
+assert_eq "without running the command" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
+rm -f "$ran_marker" "$first_call_marker"
 
 restore_suite_env

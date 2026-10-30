@@ -187,13 +187,15 @@ restore_suite_env
 echo
 echo "capture_err and capture without a temp file"
 new_repo >/dev/null
-cm="$(mktemp -u)"
-out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; st=0; capture_err e touch "'"$cm"'" 2>/dev/null || st=$?; echo "$st|$e"')"
-assert_eq "capture_err returns 1 and names the temp file in its variable" "$out" "1|could not create a temp file"
-assert_contains "and says so on stderr" "$(sourced_orch eval 'TMPDIR=/nonexistent-dir; capture_err e true' 2>&1)" "could not create a temp file"
-assert_eq "without running the command" "$([ -e "$cm" ] && echo ran || echo not-run)" not-run
-out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; st=0; capture o e touch "'"$cm"'" 2>/dev/null || st=$?; echo "$st|$e"')"
-assert_eq "capture returns 1 and names the temp file in its error variable" "$out" "1|could not create a temp file"
-assert_contains "and says so on stderr" "$(sourced_orch eval 'TMPDIR=/nonexistent-dir; capture o e true' 2>&1)" "could not create a temp file"
-assert_eq "capture too runs no command" "$([ -e "$cm" ] && echo ran || echo not-run)" not-run
+ran_marker="$(mktemp -u)"
+out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; st=0; capture_err e touch "'"$ran_marker"'" || st=$?; echo "$st|$e"' 2>&1)"
+assert_contains "capture_err says so on stderr" "$out" "could not create a temp file
+"
+assert_eq "capture_err returns 1, naming the temp file in its variable" "${out##*$'\n'}" "1|could not create a temp file"
+assert_eq "without running the command" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
+out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; st=0; capture o e touch "'"$ran_marker"'" || st=$?; echo "$st|$e"' 2>&1)"
+assert_contains "capture says so on stderr" "$out" "could not create a temp file
+"
+assert_eq "capture returns 1, naming the temp file in its variable" "${out##*$'\n'}" "1|could not create a temp file"
+assert_eq "capture too runs no command" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
 restore_suite_env
