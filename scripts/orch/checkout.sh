@@ -177,7 +177,7 @@ checkout_busy() {
     busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
     busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
   elif word_listed "$signals" branch && b="$(checkout_branch)" \
-    && case "$(branch_kind "$b")" in flow|quick) true ;; *) false ;; esac \
+    && branch_records_base "$b" \
     && ! branch_pr_get "$b" >/dev/null; then
     busy_line="busy: branch $b has no PR yet"
     busy_remedy="Open its PR, or switch off it."
