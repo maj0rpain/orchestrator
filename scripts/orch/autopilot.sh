@@ -420,12 +420,13 @@ autopilot_pickup_side_title() {
 }
 
 # autopilot_pickup_side_add <issue> <title>: the step adding the issue's side
-# checkout, into pickup's side; its reason goes on stderr.
+# checkout, into pickup's side; its reason goes on stderr. The slug and
+# main-checkout lookups send theirs to fd 3, the tick's, never the stop.
 autopilot_pickup_side_add() {
   local issue="$1" slug gh_err
-  slug="$(autopilot_short_slug "$2")"
+  slug="$(autopilot_short_slug "$2" 2>&3)"
   # a clash with any entry of the side checkouts directory takes the issue
-  [ ! -e "$(side_checkouts_dir "$(main_checkout)")/$slug" ] || slug="$slug-$issue"
+  [ ! -e "$(side_checkouts_dir "$(main_checkout 2>&3)")/$slug" ] || slug="$slug-$issue"
   capture side gh_err cmd_side_checkout_add "$slug" --issue "$issue" || {
     echo "$gh_err" >&2
     return 1
