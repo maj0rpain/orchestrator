@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.39
+
+Tidy the limit pause code: the session-end classifier takes caller-named outputs, the pause store sits together, and the autopilot tests lose a duplicate run and opaque names.
+
 ## 4.38.38
 
 The Marked comment module now owns every marker text and comment/info pairing: one kind registry builds the writer and the reader, a new `marked_comment_texts` reader replaces the review pass's own `Spec ruling:` stripping, and the callback filter is gone. Behaviour is unchanged.
