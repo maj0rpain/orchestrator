@@ -449,13 +449,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               against the base branch branch off recorded for
                               it (else the base branch in effect) - Closes
                               <issue> into the default branch, Refs it into any
-                              other - recording no state; prints the PR number.
-                              Refused while <issue> has an open sub-issue, or
-                              when GitHub cannot be read
+                              other - recording no state; prints the PR number
                               - for a quick implementation whose review pass
                               already ran. --draft opens it as a draft, for a
                               pass that met a spec question. --label as pr
-                              open's
+                              open's. Refused while <issue> has an open
+                              sub-issue, or when GitHub cannot be read
   pr release [--force] <title> <body-file>
                               open the release PR: a non-draft PR from the
                               base branch in effect into the default branch,
