@@ -543,19 +543,19 @@ check_flow_autopilot_label() {
   fi
   d_gh_gate || return 0
   issue_state_labels_read "$issue" issue_state flabels gh_err || return 0
-  phase_labels="$(autopilot_phase_labels_text "$flabels")"
+  phase_labels="$(standing_phase_labels_text "$flabels")"
   if [ -z "$phase_labels" ]; then
     if autopilot_active; then
       d_fail "issue #$issue carries no phase label - an autopilot session needs the flow's phase recorded on its issue."
-      d_remedy "gh issue edit $issue --add-label $(autopilot_phase_label "$phase")"
+      d_remedy "gh issue edit $issue --add-label $(standing_phase_label "$phase")"
     fi
     return 0
   fi
-  if [ "$phase_labels" = "$(autopilot_phase_label "$phase")" ]; then
+  if [ "$phase_labels" = "$(standing_phase_label "$phase")" ]; then
     d_ok "phase label: $phase_labels"
   else
     d_warn "issue #$issue is labelled $phase_labels, but this checkout last moved to phase $phase."
-    d_remedy "relabel the issue $(autopilot_phase_label "$phase"), or leave it to the watcher's redo rules"
+    d_remedy "relabel the issue $(standing_phase_label "$phase"), or leave it to the watcher's redo rules"
   fi
 }
 
@@ -577,13 +577,13 @@ check_autopilot_side_flows() {
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
     d_gh_gate || return 0
     issue_state_labels_read "$issue" issue_state flabels gh_err || continue
-    phase_labels="$(autopilot_phase_labels_text "$flabels")"
+    phase_labels="$(standing_phase_labels_text "$flabels")"
     [ -n "$phase_labels" ] || continue
-    if [ "$phase_labels" = "$(autopilot_phase_label "$phase")" ]; then
+    if [ "$phase_labels" = "$(standing_phase_label "$phase")" ]; then
       d_ok "phase label of #$issue: $phase_labels"
     else
       d_warn "issue #$issue is labelled $phase_labels, but its side checkout ${path##*/} last moved to phase $phase."
-      d_remedy "relabel the issue $(autopilot_phase_label "$phase"), or leave it to the watcher's redo rules"
+      d_remedy "relabel the issue $(standing_phase_label "$phase"), or leave it to the watcher's redo rules"
     fi
   done <<<"$list"
   return 0
@@ -593,16 +593,17 @@ check_autopilot_side_flows() {
 # them, so doctor is where they are noticed. Silent where origin cannot be read
 # or there are none.
 check_autopilot_claims() {
-  local list issue host pid phase started now_epoch started_epoch me
-  list="$(adapter_claim_list 2>/dev/null)" || return 0
-  now_epoch="$(date -u +%s)"; me="$(autopilot_host_id)"
-  while IFS=$'\t' read -r issue host pid phase started; do
-    [ -n "$issue" ] && [ "$host" != "$me" ] || continue
+  local issue host started now_epoch started_epoch me
+  standing_claims_read --quiet || return 0
+  now_epoch="$(date -u +%s)"; me="$(standing_host_id)"
+  for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
+    host="${STANDING_CLAIM_HOST[$issue]}" started="${STANDING_CLAIM_STARTED[$issue]}"
+    [ "$host" != "$me" ] || continue
     started_epoch="$(autopilot_iso_epoch "$started")" || continue
     [ "$((now_epoch - started_epoch))" -gt 86400 ] || continue
-    d_warn "issue #$issue has been claimed by $host (pid $pid, phase $phase) since $started - more than a day."
-    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its $AUTOPILOT_RUNNING_LABEL label"
-  done <<<"$list"
+    d_warn "issue #$issue has been claimed by $host (pid ${STANDING_CLAIM_PID[$issue]}, phase ${STANDING_CLAIM_PHASE[$issue]}) since $started - more than a day."
+    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its $(standing_running_label) label"
+  done
 }
 
 ENV_CHECKS="

@@ -148,6 +148,12 @@ one watcher can create. _Avoid_: lock (unqualified).
 **Phase label**:
 The `orch:` label on an issue that records an autopilot flow's phase.
 
+**Standing**:
+Where an autopilot flow's issue stands: its phase label, whether a session is
+running on it, whether it waits on the human or on a usage limit, and the claim
+held on it, if any. Every change to it is one of a fixed set of transitions.
+_Avoid_: protocol state, issue status.
+
 **Fundamental item**:
 A material spec review item whose edit would change what the human decided in
 planning - reversing or changing a decision the plan recorded, reviving a

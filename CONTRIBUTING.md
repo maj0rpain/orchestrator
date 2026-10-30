@@ -38,7 +38,8 @@ summary. A concept module with no noun gets a section file named as the module
 is, beside the per-noun files: `checkout.sh` for `scripts/orch/checkout.sh`,
 `filed-finding.sh` for `scripts/orch/filed-finding.sh`, `known-items.sh` for
 `scripts/orch/known-items.sh`, `marked-comment.sh` for
-`scripts/orch/marked-comment.sh`. A
+`scripts/orch/marked-comment.sh`, `standing.sh` for
+`scripts/orch/standing.sh`. A
 ticket's tests go in the file for the noun it touches; a new
 noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
@@ -64,9 +65,10 @@ the walk over every checkout), `filed-finding.sh` (the Filed finding module:
 a filed finding's severities and labels, and rendering and parsing its issue
 body), `known-items.sh` (the Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
-file) and `marked-comment.sh` (the Marked comment module: writing and reading
-the issue comments whose first line names their kind), live among the modules
-too.
+file), `marked-comment.sh` (the Marked comment module: writing and reading
+the issue comments whose first line names their kind) and `standing.sh` (the
+Standing module: an issue's label set, its read and its claims), live among the
+modules too.
 orch.sh sources every module eagerly from an explicit list, so a new noun gets
 its own module, a case in `main` and a line in that list.
 
@@ -235,6 +237,7 @@ scripts/orch/checkout.sh      the Checkout module, a concept module with no noun
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
+scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
@@ -266,6 +269,7 @@ scripts/test/orch/checkout.sh the Checkout module's sections, named as the modul
 scripts/test/orch/filed-finding.sh the Filed finding module's sections, named as the module is
 scripts/test/orch/known-items.sh the Known items module's sections, named as the module is
 scripts/test/orch/marked-comment.sh the Marked comment module's sections, named as the module is
+scripts/test/orch/standing.sh       the Standing module's sections, named as the module is
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run

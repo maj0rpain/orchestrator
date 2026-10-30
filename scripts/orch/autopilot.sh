@@ -105,40 +105,6 @@ autopilot_mode_require() {
     die "orchestrator.autopilot.permission-mode is not set - choose how headless sessions run (git config orchestrator.autopilot.permission-mode <${AUTOPILOT_MODES// /|}>)"
 }
 
-# autopilot_phase_label <phase>: the label that records an autopilot flow's
-# phase on its issue, `orch:<phase>` - the label is the flow's phase record.
-autopilot_phase_label() { printf 'orch:%s\n' "$1"; }
-
-# autopilot_phase_labels_in <labels>: the phases, one per line in table order,
-# whose labels are among <labels>.
-autopilot_phase_labels_in() {
-  local p
-  for p in $PHASES; do
-    ! list_has "$1" "$(autopilot_phase_label "$p")" || printf '%s\n' "$p"
-  done
-}
-
-# autopilot_phase_labels_text <labels>: the phase labels (`orch:<phase>`) among
-# <labels>, joined by single spaces in table order; nothing when there are none.
-autopilot_phase_labels_text() {
-  local p text=""
-  for p in $(autopilot_phase_labels_in "$1"); do
-    text="${text:+$text }$(autopilot_phase_label "$p")"
-  done
-  printf '%s' "$text"
-}
-
-# autopilot_live_phase <labels>: the first phase other than done whose label is
-# among <labels>, in table order; nothing when there is none.
-autopilot_live_phase() {
-  local p
-  for p in $(autopilot_phase_labels_in "$1"); do
-    [ "$p" != "done" ] || continue
-    printf '%s\n' "$p"
-    return 0
-  done
-}
-
 # autopilot_block_values <file> <key>: the value of each `<key>: <value>` line
 # in <file>'s `## Autopilot` section, trimmed, one per line.
 autopilot_block_values() {
@@ -193,22 +159,18 @@ autopilot_plan_value() {
 # comment leaves the issue unlabelled, never picked up. A re-run on an
 # unlabelled issue posts a newer plan comment, which supersedes the earlier.
 autopilot_start() {
-  # state is the read's throwaway half: only the labels are checked here.
-  # shellcheck disable=SC2034
-  local issue="$1" file="$2" ready state labels gh_err phase first
+  local issue="$1" file="$2" ready gh_err first
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   [ -f "$file" ] || die "plan file not found: $file"
   ready="$(triage_label_for ready-for-agent)"
-  issue_state_labels_read "$issue" state labels gh_err \
-    || gh_die "read issue #$issue" "$gh_err"
-  list_has "$labels" "$ready" ||
+  standing_read "$issue" 2>/dev/null || gh_die "read issue #$issue" "$STANDING_REASON"
+  list_has "$STANDING_LABELS" "$ready" ||
     die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"
-  for phase in $(autopilot_phase_labels_in "$labels"); do
-    die "issue #$issue already carries the phase label $(autopilot_phase_label "$phase") - it is already an autopilot flow"
-  done
+  [ -z "$STANDING_PHASE_LABELS" ] ||
+    die "issue #$issue already carries the phase label ${STANDING_PHASE_LABELS%% *} - it is already an autopilot flow"
   handoff_check "$file" "" 01-plan.md autopilot || die "plan $file is not valid - nothing posted"
   handoff_comment_post "$issue" 01-plan "$file" || exit 1
-  first="$(autopilot_phase_label "${PHASES%% *}")"
+  first="$(standing_phase_label "${PHASES%% *}")"
   capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
 }
@@ -226,10 +188,6 @@ autopilot_iso_epoch() {
 # that fails partway leaves the claim held, and dies naming the writes that
 # landed, so the next tick cleans it up as a failure.
 
-AUTOPILOT_RUNNING_LABEL="orch:running"
-AUTOPILOT_HUMAN_LABEL="needs-human"
-AUTOPILOT_LIMITED_LABEL="orch:limited"
-
 # autopilot_chain_die <landed> <issue> <what> <gh-stderr>: dies for a write of
 # a chain that failed, naming the reason and the writes that landed before it.
 autopilot_chain_die() {
@@ -244,11 +202,11 @@ autopilot_move_label() {
   local issue="$1" phase="$2" landed="$3" state labels gh_err p args=()
   issue_state_labels_read "$issue" state labels gh_err ||
     autopilot_chain_die "$landed" "$issue" "read the labels" "$gh_err"
-  for p in $(autopilot_phase_labels_in "$labels"); do
-    [ "$p" = "$phase" ] || args+=(--remove "$(autopilot_phase_label "$p")")
+  for p in $(standing_phase_labels_in "$labels"); do
+    [ "$p" = "$phase" ] || args+=(--remove "$(standing_phase_label "$p")")
   done
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$(autopilot_phase_label "$phase")" ${args[@]+"${args[@]}"} ||
-    autopilot_chain_die "$landed" "$issue" "move the phase label to $(autopilot_phase_label "$phase")" "$gh_err"
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$(standing_phase_label "$phase")" ${args[@]+"${args[@]}"} ||
+    autopilot_chain_die "$landed" "$issue" "move the phase label to $(standing_phase_label "$phase")" "$gh_err"
 }
 
 # autopilot_release <issue> <landed>: finishes a phase - deletes orch:running,
@@ -256,9 +214,9 @@ autopilot_move_label() {
 # message of a failure.
 autopilot_release() {
   local issue="$1" landed="$2" gh_err
-  capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_RUNNING_LABEL" ||
-    autopilot_chain_die "$landed" "$issue" "remove $AUTOPILOT_RUNNING_LABEL" "$gh_err"
-  landed="${landed:+$landed, }removed $AUTOPILOT_RUNNING_LABEL"
+  capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_RUNNING_LABEL" ||
+    autopilot_chain_die "$landed" "$issue" "remove $STANDING_RUNNING_LABEL" "$gh_err"
+  landed="${landed:+$landed, }removed $STANDING_RUNNING_LABEL"
   capture_err gh_err adapter_claim_delete "$issue" ||
     autopilot_chain_die "$landed" "$issue" "delete the claim ref" "$gh_err"
 }
@@ -270,7 +228,7 @@ autopilot_release() {
 autopilot_phase_move() {
   autopilot_move_label "$1" "$2" "$3"
   phase_write "$2"
-  autopilot_release "$1" "${3:+$3, }moved the phase label to $(autopilot_phase_label "$2"), recorded phase $2"
+  autopilot_release "$1" "${3:+$3, }moved the phase label to $(standing_phase_label "$2"), recorded phase $2"
 }
 
 # autopilot_phase_arg <phase> [die-fn]: dies, through die-fn (default die),
@@ -297,9 +255,9 @@ autopilot_ask() {
   capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
   rm -f "$body"
   landed="posted the $phase question comment"
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$AUTOPILOT_HUMAN_LABEL" ||
-    autopilot_chain_die "$landed" "$issue" "add $AUTOPILOT_HUMAN_LABEL" "$gh_err"
-  autopilot_release "$issue" "$landed, added $AUTOPILOT_HUMAN_LABEL"
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_HUMAN_LABEL" ||
+    autopilot_chain_die "$landed" "$issue" "add $STANDING_HUMAN_LABEL" "$gh_err"
+  autopilot_release "$issue" "$landed, added $STANDING_HUMAN_LABEL"
 }
 
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
@@ -333,34 +291,24 @@ autopilot_answer() {
 # The verbs behind /orchestrator:questions. They hold no flow state: the issue
 # comes from the arguments, the repo from the checkout's origin.
 
-# autopilot_require_human_label <issue>: dies unless the issue is open and
-# carries needs-human.
-autopilot_require_human_label() {
-  # state is read with the labels.
-  local issue="$1" state labels gh_err
-  issue_state_labels_read "$issue" state labels gh_err || gh_die "read issue #$issue" "$gh_err"
-  [ "$state" = OPEN ] || die "issue #$issue is closed"
-  list_has "$labels" "$AUTOPILOT_HUMAN_LABEL" || die "issue #$issue does not carry $AUTOPILOT_HUMAN_LABEL"
-}
-
 # autopilot_resume <issue>: removes needs-human from the issue, and nothing
 # else.
 autopilot_resume() {
   local issue="$1"
   is_positive_int "$issue" || die "not an issue number: $issue"
-  autopilot_require_human_label "$issue"
-  gh_or_die "remove $AUTOPILOT_HUMAN_LABEL from issue #$issue" adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL"
+  standing_human_guard "$issue"
+  standing_resume "$issue"
 }
 
 # autopilot_reply <issue> <file>: posts <file> as a comment on the issue, then
 # removes needs-human - refused unless the label is still on and no comment
 # follows the issue's newest question comment.
 autopilot_reply() {
-  local issue="$1" file="$2" json gh_err rc
+  local issue="$1" file="$2" json rc
   is_positive_int "$issue" || die "not an issue number: $issue"
   [ -f "$file" ] || die "reply file not found: $file"
   [ -s "$file" ] || die "reply file is empty: $file"
-  autopilot_require_human_label "$issue"
+  standing_human_guard "$issue"
   gh_or_die --out json "read the comments of issue #$issue" adapter_issue_comments_json "$issue"
   marked_comment_newest question <<<"$json" >/dev/null || die "issue #$issue has no question comment to reply to"
   rc=0
@@ -368,8 +316,7 @@ autopilot_reply() {
   [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
   [ "$rc" -ne 0 ] || die "a comment already follows the newest question on issue #$issue"
   gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
-  capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_HUMAN_LABEL" ||
-    die "the reply comment landed on issue #$issue, but $AUTOPILOT_HUMAN_LABEL could not be removed: $(gh_reason "$gh_err")"
+  standing_resume "$issue" replied
 }
 
 # The one rule for a stop comment, which stays here and not in the
@@ -384,11 +331,11 @@ AUTOPILOT_STOP_JQ='def autopilot_is_stop: .kind == "refusal" or .kind == "failur
 # kind. Prints one line saying so when nothing is listed; dies, printing
 # nothing, when any read fails.
 autopilot_questions() {
-  local list n state labels phase json line lines="" gh_err
-  gh_or_die --out list "list the $AUTOPILOT_HUMAN_LABEL issues" adapter_issues_labelled "$AUTOPILOT_HUMAN_LABEL"
+  local list n phase json line lines=""
+  list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
-    issue_state_labels_read "$n" state labels gh_err || gh_die "read the labels of issue #$n" "$gh_err"
-    phase="$(autopilot_live_phase "$labels")"
+    standing_read "$n" 2>/dev/null || gh_die "read the labels of issue #$n" "$STANDING_REASON"
+    phase="$STANDING_PHASE"
     [ -n "$phase" ] || continue
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
     line="$(jq -r --arg n "$n" --arg phase "$phase" "$(marked_comment_jq)$AUTOPILOT_STOP_JQ"'
@@ -403,33 +350,13 @@ autopilot_questions() {
       | @tsv' <<<"$json")" || die "could not read issue #$n's comments"
     lines+="$line"$'\n'
   done
-  if [ -n "$lines" ]; then printf '%s' "$lines"; else printf 'nothing pending: no open %s issue of an autopilot flow\n' "$AUTOPILOT_HUMAN_LABEL"; fi
+  if [ -n "$lines" ]; then printf '%s' "$lines"; else printf 'nothing pending: no open %s issue of an autopilot flow\n' "$(standing_human_label)"; fi
 }
 
 # --- tick and run (#1458) ---------------------------------------------------
 #
 # One pass of the watcher, and the wrapper around one headless session. Every
 # write under a claim ends in autopilot_release, as above.
-
-# autopilot_label_entries: the labels a tick ensures, one
-# `name|colour|description` each: a label per phase of the table, then the
-# running, human and limited labels.
-autopilot_label_entries() {
-  local p colour what
-  for p in $PHASES; do
-    what="$p phase next"
-    case "$p" in
-      spec) colour=1d76db ;;
-      implement) colour=0e8a16 ;;
-      review) colour=5319e7 ;;
-      *) colour=c2e0c6; what="$p" ;;
-    esac
-    printf '%s|%s|Autopilot flow: %s\n' "$(autopilot_phase_label "$p")" "$colour" "$what"
-  done
-  printf '%s|fbca04|Autopilot session running\n' "$AUTOPILOT_RUNNING_LABEL"
-  printf '%s|d93f0b|Waiting on the human\n' "$AUTOPILOT_HUMAN_LABEL"
-  printf '%s|c5def5|Autopilot session stopped on a usage limit; retried after the reset\n' "$AUTOPILOT_LIMITED_LABEL"
-}
 
 # Claude Code's usage-limit messages, as grep -Ei reads it: the one pattern for
 # them, anchored on its own wordings - "usage limit reached", "<N>-hour limit
@@ -472,15 +399,7 @@ autopilot_labels_ensure() {
   while IFS='|' read -r name colour description; do
     capture_err gh_err adapter_label_upsert "$name" "$colour" "$description" ||
       die "could not upsert the label $name: $(gh_reason "$gh_err") - the tick stops"
-  done <<<"$(autopilot_label_entries)"
-}
-
-# autopilot_claims_read <var>: the claims on origin, adapter_claim_list's
-# lines, into <var>. Dies, naming the failure, where they cannot be read.
-autopilot_claims_read() {
-  local gh_err claims_text
-  capture claims_text gh_err adapter_claim_list || die "could not list the claims on origin: $(gh_reason "$gh_err")"
-  printf -v "$1" '%s' "$claims_text"
+  done <<<"$(standing_label_entries)"
 }
 
 # autopilot_stop_write <issue> <kind> <text> <label> [<remove-label>]: the write
@@ -512,11 +431,11 @@ autopilot_stop() {
   marker="$(marked_comment_write "$kind" "$phase")" || exit 1
   case "$kind" in
     refusal) printf -v text '%s\nAutopilot refused to run the %s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
-      "$marker" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" ;;
+      "$marker" "$phase" "$detail" "$STANDING_HUMAN_LABEL" ;;
     *) printf -v text '%s\nAutopilot failed in the %s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
-      "$marker" "$phase" "$detail" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL" ;;
+      "$marker" "$phase" "$detail" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL" ;;
   esac
-  autopilot_stop_write "$issue" "$kind" "$text" "$AUTOPILOT_HUMAN_LABEL" "$AUTOPILOT_LIMITED_LABEL"
+  autopilot_stop_write "$issue" "$kind" "$text" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL"
 }
 
 # autopilot_limit_count <issue> <phase> <var>: the limit stop comments of
@@ -560,8 +479,8 @@ autopilot_limit_stop() {
   at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
   [ -z "$reset" ] || at=", which resets $reset"
   printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
-    "$marker" "$phase" "$at" "$AUTOPILOT_LIMITED_LABEL" "$((count + 1))" "$log"
-  autopilot_stop_write "$issue" "limit stop" "$text" "$AUTOPILOT_LIMITED_LABEL"
+    "$marker" "$phase" "$at" "$STANDING_LIMITED_LABEL" "$((count + 1))" "$log"
+  autopilot_stop_write "$issue" "limit stop" "$text" "$STANDING_LIMITED_LABEL"
 }
 
 # autopilot_minimal_plan <file>: the plan a hand-labelled issue gets: the repo
@@ -631,8 +550,8 @@ autopilot_short_slug() {
 autopilot_pickup() {
   local issue="$1" phase="$2" limited="${3:-}" side slug title labels gh_err recorded state redo
   if [ -n "$limited" ]; then
-    capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_LIMITED_LABEL" || {
-      autopilot_stop "$issue" failure "$phase" "step removing $AUTOPILOT_LIMITED_LABEL failed: $(gh_reason "$gh_err")"
+    capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_LIMITED_LABEL" || {
+      autopilot_stop "$issue" failure "$phase" "step removing $STANDING_LIMITED_LABEL failed: $(gh_reason "$gh_err")"
       return 0
     }
   fi
@@ -671,7 +590,7 @@ autopilot_pickup() {
     case "$phase:$recorded" in
       implement:review) redo=review ;;
       spec:implement) redo=spec ;;
-      *) autopilot_stop "$issue" refusal "$phase" "the issue is labelled $(autopilot_phase_label "$phase"), but its side checkout last moved to phase $recorded - only a step back from review to implement or from implement to spec is a redo"
+      *) autopilot_stop "$issue" refusal "$phase" "the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only a step back from review to implement or from implement to spec is a redo"
          return 0 ;;
     esac
     ORCH_AUTOPILOT=1 capture_err gh_err autopilot_orch_in "$side" redo "$redo" || {
@@ -679,18 +598,11 @@ autopilot_pickup() {
       return 0
     }
   fi
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$AUTOPILOT_RUNNING_LABEL" || {
-    autopilot_stop "$issue" failure "$phase" "step adding $AUTOPILOT_RUNNING_LABEL failed: $(gh_reason "$gh_err")"
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_RUNNING_LABEL" || {
+    autopilot_stop "$issue" failure "$phase" "step adding $STANDING_RUNNING_LABEL failed: $(gh_reason "$gh_err")"
     return 0
   }
   autopilot_spawn_run "$issue"
-}
-
-# autopilot_host_id: the identity a claim records as its host - ORCH_HOST_ID
-# when set and non-empty (the container entrypoint sets it, kept in the repo
-# volume across recreates), else the hostname.
-autopilot_host_id() {
-  if [ -n "${ORCH_HOST_ID:-}" ]; then printf '%s\n' "$ORCH_HOST_ID"; else hostname; fi
 }
 
 # autopilot_cleanup_stale <main-root>: every claim of this host whose process is
@@ -698,10 +610,12 @@ autopilot_host_id() {
 # is the run pidfile's, or - with none - the claim's own tick pid. Other hosts'
 # claims are never touched.
 autopilot_cleanup_stale() {
-  local main_root="$1" claims issue host tick_pid run_pid phase _started pidfile log detail
-  autopilot_claims_read claims
-  while IFS=$'\t' read -r issue host tick_pid phase _started; do
-    [ -n "$issue" ] && [ "$host" = "$(autopilot_host_id)" ] || continue
+  local main_root="$1" issue tick_pid run_pid phase pidfile log detail me
+  me="$(standing_host_id)"
+  standing_claims_read
+  for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
+    [ "${STANDING_CLAIM_HOST[$issue]}" = "$me" ] || continue
+    tick_pid="${STANDING_CLAIM_PID[$issue]}" phase="${STANDING_CLAIM_PHASE[$issue]}"
     pidfile="$(autopilot_dir "$main_root")/run/$issue.pid"
     run_pid=""
     [ ! -f "$pidfile" ] || run_pid="$(cat "$pidfile")"
@@ -711,7 +625,7 @@ autopilot_cleanup_stale() {
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
     autopilot_stop "$issue" failure "$phase" "$detail"
     rm -f "$pidfile"
-  done <<<"$claims"
+  done
 }
 
 # autopilot_limit_epoch <file>: the reset recorded in the limit file <file> as
@@ -744,8 +658,8 @@ autopilot_candidates() {
   local phase out gh_err all=""
   for phase in $PHASES; do
     [ "$phase" != "done" ] || continue
-    capture out gh_err adapter_issues_labelled "$(autopilot_phase_label "$phase")" ||
-      die "could not list the issues labelled $(autopilot_phase_label "$phase"): $(gh_reason "$gh_err")"
+    capture out gh_err adapter_issues_labelled "$(standing_phase_label "$phase")" ||
+      die "could not list the issues labelled $(standing_phase_label "$phase"): $(gh_reason "$gh_err")"
     all="$all$out"$'\n'
   done
   printf '%s' "$all" | grep -v '^$' | sort -nu || true
@@ -755,28 +669,25 @@ autopilot_candidates() {
 # One tick). A claim create that fails for a reason other than a lost race
 # stops the tick, naming it.
 autopilot_tick() {
-  local main_root cap claims count issue state labels gh_err phase rc candidates limited_arg
+  local main_root cap count issue gh_err phase rc candidates limited_arg
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale "$main_root"
   if autopilot_limit_paused "$main_root"; then return 0; fi
-  autopilot_claims_read claims
-  count="$(grep -c . <<<"$claims" || true)"
+  standing_claims_read
+  count="${#STANDING_CLAIM_ISSUES[@]}"
   candidates="$(autopilot_candidates)"
   while IFS= read -r issue; do
     [ -n "$issue" ] || continue
     [ "$count" -lt "$cap" ] || break
-    issue_state_labels_read "$issue" state labels gh_err ||
-      die "could not read issue #$issue: $(gh_reason "$gh_err")"
-    [ "$state" = OPEN ] || continue
-    ! list_has "$labels" "$AUTOPILOT_RUNNING_LABEL" || continue
-    ! list_has "$labels" "$AUTOPILOT_HUMAN_LABEL" || continue
-    phase="$(autopilot_live_phase "$labels")"
-    [ -n "$phase" ] || continue
+    standing_read "$issue" 2>/dev/null ||
+      die "could not read issue #$issue: $STANDING_REASON"
+    standing_pickable || continue
+    phase="$STANDING_PHASE"
     rc=0
-    capture_err gh_err adapter_claim_create "$issue" "$phase" "$$" || rc=$?
+    capture_err gh_err standing_claim "$issue" "$phase" "$$" || rc=$?
     case "$rc" in
       0) ;;
       2) continue ;;
@@ -784,7 +695,7 @@ autopilot_tick() {
     esac
     count=$((count + 1))
     limited_arg=""
-    if list_has "$labels" "$AUTOPILOT_LIMITED_LABEL"; then limited_arg=limited; fi
+    if [ "$STANDING_LIMITED" = 1 ]; then limited_arg=limited; fi
     autopilot_pickup "$issue" "$phase" "$limited_arg"
   done <<<"$candidates"
 }
@@ -920,7 +831,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail released_note line mine name event pause_epoch pause_iso reject_epoch limited flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 held=0 reset detail released_note mine now name event pause_epoch pause_iso reject_epoch limited flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -937,11 +848,8 @@ autopilot_run() {
   # The claim this run was started for: a session that releases it may exit
   # after the next phase's claim is made, and that one is not this run's to
   # fail.
-  autopilot_claims_read claims
-  mine=""
-  while IFS= read -r line; do
-    case "$line" in "$issue"$'\t'*) mine="$line" ;; esac
-  done <<<"$claims"
+  standing_claims_read
+  mine="$(standing_claim_fields "$issue")" || mine=""
   for name in model effort; do
     autopilot_setting "$name"
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
@@ -953,10 +861,8 @@ autopilot_run() {
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
       --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
-  autopilot_claims_read claims
-  while IFS= read -r line; do
-    case "$line" in "$issue"$'\t'*) [ -z "$mine" ] || [ "$line" = "$mine" ] || continue; held=1 ;; esac
-  done <<<"$claims"
+  standing_claims_read
+  if now="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$now" = "$mine" ]; }; then held=1; fi
   # The early pause: a session ending with its five-hour usage at 90% or more
   # pauses pickup until that window resets, whatever its outcome.
   event="$(autopilot_log_last_event "$log" rate_limit_event)"

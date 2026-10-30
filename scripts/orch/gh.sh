@@ -845,8 +845,8 @@ adapter_run_rerun() {
 # autopilot adds. These run git against origin, not gh, but are adapter
 # operations all the same, so the suite fakes them with the rest.
 
-# adapter_claim_create <issue> <phase> <pid>: takes the claim on <issue> for
-# <phase>, recording this host, <pid> and the start time. It pushes a throwaway
+# adapter_claim_create <issue> <phase> <pid> <host>: takes the claim on <issue>
+# for <phase>, recording <host>, <pid> and the start time. It pushes a throwaway
 # empty-tree commit, made with commit-tree so no checkout is touched, to the
 # claim's ref with an empty --force-with-lease expect: the push succeeds only
 # where the ref does not exist, atomically on the server, so exactly one of
@@ -857,7 +857,7 @@ adapter_claim_create() {
   local ref="refs/orch/claims/$1" commit reason
   commit="$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "orch claim $1" \
     -m "$(printf 'host: %s\npid: %s\nphase: %s\nstarted: %s' \
-      "$(autopilot_host_id)" "$3" "$2" "$(now)")")" || return 1
+      "$4" "$3" "$2" "$(now)")")" || return 1
   git_push reason --force-with-lease="$ref:" origin "$commit:$ref" && return 0
   case "$reason" in
     *'stale info'*|*'already exists'*) return 2 ;;
