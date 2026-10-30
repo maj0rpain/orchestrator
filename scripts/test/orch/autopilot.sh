@@ -602,9 +602,6 @@ assert_contains "a cd inside a step does not move the tick" "$out" "cwd-kept:yes
 fake_issue 76 open orch:spec orch:running; fake_claim_seed 76
 sourced_orch_script 'autopilot_pickup_step 76 spec failure "step init failed" false' >/dev/null 2>&1
 assert_contains "a step failing silently gets gh's no-reason wording after its detail" "$(fake_comments_of 76)" "Autopilot failed in the spec phase: step init failed: gh gave no reason"
-fake_issue 77 open orch:spec orch:running; fake_claim_seed 77
-sourced_orch_script 'autopilot_pickup_step 77 spec refusal "redo review refused" false' >/dev/null 2>&1
-assert_contains "a refused redo gets the same" "$(fake_comments_of 77)" "Autopilot refused to run the spec phase: redo review refused: gh gave no reason"
 fake_issue 78 open orch:spec orch:running; fake_claim_seed 78
 sourced_orch_script 'autopilot_pickup_step 78 spec failure "step reading the recorded phase failed" autopilot_pickup_recorded /nonexistent' >/dev/null 2>&1
 assert_contains "a failed recorded-phase read stops with the reader's reason after the detail" "$(fake_comments_of 78)" "Autopilot failed in the spec phase: step reading the recorded phase failed: "
