@@ -182,3 +182,22 @@ assert_eq "a rejected push of two refs returns 1 with both ' ! ' lines, joined b
   "$(sourced_orch eval 'git_push why origin HEAD:refs/heads/a HEAD:refs/heads/b || echo "$?: $why"')" \
   "1: ! [remote rejected] HEAD -> a (pre-receive hook declined); ! [remote rejected] HEAD -> b (pre-receive hook declined)"
 restore_suite_env
+
+# --- capture_err and capture without a temp file (#1780) ----------------------
+echo
+echo "capture_err and capture without a temp file"
+new_repo >/dev/null
+ran_marker="$(mktemp -u)"
+out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; st=0; capture_err e touch "'"$ran_marker"'" || st=$?; echo "$st|$e"' 2>&1)"
+assert_contains "capture_err says so on stderr" "$out" "could not create a temp file
+"
+assert_eq "capture_err returns 1, naming the temp file in its variable" "${out##*$'\n'}" "1|could not create a temp file"
+assert_eq "without running the command" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
+out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; st=0; capture o e touch "'"$ran_marker"'" || st=$?; echo "$st|$e"' 2>&1)"
+assert_contains "capture says so on stderr" "$out" "could not create a temp file
+"
+assert_eq "capture returns 1, naming the temp file in its variable" "${out##*$'\n'}" "1|could not create a temp file"
+assert_eq "capture too runs no command" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
+out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; d="$(dirty_outside_allowlist)" || echo "refused"' 2>&1)"
+assert_contains "a git-status check under || names the temp file, not git" "$out" "could not create a temp file for git status"
+restore_suite_env

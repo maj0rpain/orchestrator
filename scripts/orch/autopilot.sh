@@ -379,34 +379,34 @@ autopilot_short_slug() {
 # inside it fails only the step and a cd never reaches the tick's shell.
 autopilot_in_subshell() { ( "$@" ); }
 
-# autopilot_pickup_step <issue> <phase> <kind> <detail> <reasoned> <command...>:
+# autopilot_pickup_step <issue> <phase> <kind> <detail> <command...>:
 # runs one step of pickup in pickup's own shell, so the command may set pickup's
 # variables; a step that sets none runs through autopilot_in_subshell.
 # A failed step stops the issue through standing_stop as <kind>
-# (refusal or failure) and returns 1. The stop detail is <detail> whole, then -
-# when <reasoned> is "reason" - ": <reason>" with the reason from the command's
-# stderr ("gh gave no reason" when it said nothing); <reasoned> "bare" stops at
-# <detail>. The command's fd 3 is the tick's own stderr, for a step whose stderr
-# is no part of the stop wording. An empty <detail> takes the command's own
-# wording.
+# (refusal or failure) and returns 1. The stop detail is "<detail>: <reason>",
+# the reason the first line of the command's stderr ("gh gave no reason" when
+# it said nothing). When the stderr's temp file cannot be made, the command is
+# not run and the stop's reason says so. The command's fd 3 is the tick's own
+# stderr, for a step whose stderr is no part of the stop wording.
 autopilot_pickup_step() {
-  local issue="$1" phase="$2" kind="$3" detail="$4" reasoned="$5" errf err stop_detail
-  shift 5
-  errf="$(mktemp)"
+  local issue="$1" phase="$2" kind="$3" detail="$4" errf err
+  shift 4
+  errf="$(mktemp)" || {
+    standing_stop "$issue" "$kind" "$phase" "$detail: could not create a temp file for the step's stderr"
+    return 1
+  }
   if "$@" 3>&2 2>"$errf"; then rm -f "$errf"; return 0; fi
   file_read err "$errf" || err=""
   rm -f "$errf"
-  if [ -z "$detail" ]; then stop_detail="$(gh_reason "$err")"
-  elif [ "$reasoned" = bare ]; then stop_detail="$detail"
-  else stop_detail="$detail: $(gh_reason "$err")"; fi
-  standing_stop "$issue" "$kind" "$phase" "$stop_detail"
+  standing_stop "$issue" "$kind" "$phase" "$detail: $(gh_reason "$err")"
   return 1
 }
 
-# autopilot_pickup_side_find <issue>: the step finding the issue's side
-# checkout, into pickup's side - empty when it has none. It never fails.
+# autopilot_pickup_side_find <issue>: finds the issue's side checkout, into
+# pickup's side - empty when it has none. It never fails, so pickup calls it
+# directly, outside autopilot_pickup_step.
 autopilot_pickup_side_find() {
-  side="$(side_checkout_for_issue "$1" 2>&3)" || side=""
+  side="$(side_checkout_for_issue "$1")" || side=""
 }
 
 # autopilot_pickup_side_title <issue>: the step reading the title of an issue
@@ -444,7 +444,7 @@ autopilot_pickup_init() {
 # autopilot_pickup_recorded <side>: the step reading the side checkout's
 # recorded phase, into pickup's recorded.
 autopilot_pickup_recorded() {
-  recorded="$(state_get_in "$(flow_state_file "$1")" phase 2>&3)"
+  recorded="$(state_get_in "$(flow_state_file "$1")" phase)"
 }
 
 # autopilot_pickup_redo <side> <redo>: the step redoing a phase.
@@ -453,18 +453,18 @@ autopilot_pickup_redo() {
 }
 
 # autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
-# claimed issue. A refusal or a failed step ends in standing_stop through
-# autopilot_pickup_step and returns 0: the claim is released, the tick goes on.
+# claimed issue. A refusal or a failed step ends in standing_stop and returns
+# 0: the claim is released, the tick goes on.
 autopilot_pickup() {
-  local issue="$1" phase="$2" limited="${3:-}" side="" title="" recorded redo
-  autopilot_pickup_step "$issue" "$phase" failure "" reason autopilot_pickup_side_find "$issue" || return 0
+  local issue="$1" phase="$2" limited="${3:-}" side="" title="" recorded redo begin_err
+  autopilot_pickup_side_find "$issue"
   if [ -z "$side" ]; then
-    autopilot_pickup_step "$issue" "$phase" failure "step side-checkout add failed: could not read the issue's title" reason autopilot_pickup_side_title "$issue" || return 0
-    autopilot_pickup_step "$issue" "$phase" failure "step side-checkout add failed" reason autopilot_pickup_side_add "$issue" "$title" || return 0
+    autopilot_pickup_step "$issue" "$phase" failure "step side-checkout add failed: could not read the issue's title" autopilot_pickup_side_title "$issue" || return 0
+    autopilot_pickup_step "$issue" "$phase" failure "step side-checkout add failed" autopilot_pickup_side_add "$issue" "$title" || return 0
   fi
-  autopilot_pickup_step "$issue" "$phase" failure "step init failed" reason autopilot_in_subshell autopilot_pickup_init "$issue" "$side" || return 0
-  autopilot_pickup_step "$issue" "$phase" failure "step minimal plan comment failed" reason autopilot_in_subshell autopilot_post_minimal_plan "$issue" || return 0
-  autopilot_pickup_step "$issue" "$phase" failure "step reading the recorded phase failed" bare autopilot_pickup_recorded "$side" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "step init failed" autopilot_in_subshell autopilot_pickup_init "$issue" "$side" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "step minimal plan comment failed" autopilot_in_subshell autopilot_post_minimal_plan "$issue" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "step reading the recorded phase failed" autopilot_pickup_recorded "$side" || return 0
   if [ "$recorded" != "$phase" ]; then
     case "$phase:$recorded" in
       implement:review) redo=review ;;
@@ -472,9 +472,12 @@ autopilot_pickup() {
       *) standing_stop "$issue" refusal "$phase" "the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only a step back from review to implement or from implement to spec is a redo"
          return 0 ;;
     esac
-    autopilot_pickup_step "$issue" "$phase" refusal "redo $redo refused" reason autopilot_in_subshell autopilot_pickup_redo "$side" "$redo" || return 0
+    autopilot_pickup_step "$issue" "$phase" refusal "redo $redo refused" autopilot_in_subshell autopilot_pickup_redo "$side" "$redo" || return 0
   fi
-  autopilot_pickup_step "$issue" "$phase" failure "" reason autopilot_in_subshell standing_begin "$issue" "$phase" "$limited" || return 0
+  capture_err begin_err standing_begin "$issue" "$phase" "$limited" || {
+    standing_stop "$issue" failure "$phase" "$(gh_reason "$begin_err")"
+    return 0
+  }
   autopilot_spawn_run "$issue"
 }
 

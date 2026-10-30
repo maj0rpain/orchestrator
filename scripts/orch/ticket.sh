@@ -388,7 +388,7 @@ cmd_ticket_retire() {
       gh_or_die --out comments "read ticket #$n's comments" \
         adapter_issue_comments "$n"
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
-        comment_file="$(mktemp)"
+        comment_file="$(mktemp)" || die "could not create a temp file for the comment on ticket #$n"
         printf '%s\n' "$msg" >"$comment_file"
         capture_err err adapter_issue_comment "$n" "$comment_file" \
           || { rm -f "$comment_file"; gh_die "comment on ticket #$n" "$err"; }
@@ -424,10 +424,10 @@ cmd_ticket_retire() {
 issue_body_rewrite() {
   local n="$1" read_what="$2" write_what="$3" body result out err
   shift 3
-  body="$(mktemp)"
+  body="$(mktemp)" || die "could not create a temp file for issue #$n's body"
   capture_err err adapter_issue_body "$n" >"$body" \
     || { rm -f "$body"; gh_die "$read_what" "$err"; }
-  result="$(mktemp)"
+  result="$(mktemp)" || { rm -f "$body"; die "could not create a temp file for issue #$n's rewritten body"; }
   "$@" <"$body" >"$result"
   # A filter command may end its last line with a newline; a body that had
   # no final newline gets none back.

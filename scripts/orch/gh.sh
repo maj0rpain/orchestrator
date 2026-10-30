@@ -123,7 +123,7 @@ gh_or_die() {
     [ "$_gh_or_die_st" -ne 0 ] || printf -v "$_gh_or_die_out" '%s' "$_gh_or_die_text"
   elif [ -n "$_gh_or_die_file" ]; then
     mkdir -p "$(dirname "$_gh_or_die_file")"
-    _gh_or_die_tmp="$(mktemp "$_gh_or_die_file.XXXXXX")"
+    _gh_or_die_tmp="$(mktemp "$_gh_or_die_file.XXXXXX")" || die "could not create a temp file beside $_gh_or_die_file"
     if capture_err _gh_or_die_err "${@:2}" >"$_gh_or_die_tmp"; then
       mv "$_gh_or_die_tmp" "$_gh_or_die_file"
     else

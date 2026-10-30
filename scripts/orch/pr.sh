@@ -297,7 +297,7 @@ cmd_pr_release() {
     die "nothing to close: no PR merged into $base refers to a still-open issue - pass --force to release anyway"
   # Only Summary: a release PR carries PRs already reviewed (#1387).
   pr_body_check "$body_file" Summary
-  tmp="$(mktemp)"
+  tmp="$(mktemp)" || die "could not create a temp file for the release PR body"
   {
     for n in $issues; do printf 'Closes #%s\n' "$n"; done
     [ -z "$issues" ] || printf '\n'
