@@ -41,6 +41,18 @@ reason=HTTP 502
 rc=0"
 out="$(st 'standing_read 5')"
 assert_contains "and its status is non-zero" "$out" "rc=1"
+out="$(st 'standing_read --quiet 5; echo "reason=$STANDING_REASON"')"
+assert_eq "standing_read --quiet keeps the reason in STANDING_REASON and prints nothing" "$out" "reason=HTTP 502
+rc=0"
+out="$(st 'standing_read --quiet 5')"
+assert_contains "and its status is still non-zero" "$out" "rc=1"
+out="$(st 'standing_human_guard 5')"
+assert_eq "a guard read failing dies in one line naming gh and the reason" "$out" "orch: gh could not read issue #5: HTTP 502
+rc=1"
+sp0="$(mktemp -d)/01-plan.md"; plan_file "$sp0" $'Rounds: 4\nBudget: 5'
+out="$(st "standing_start 5 $sp0")"
+assert_eq "start failing on the read dies in one line naming gh and the reason" "$out" "orch: gh could not read issue #5: HTTP 502
+rc=1"
 fake_unfail
 
 # Pickup rule, the label half

@@ -969,6 +969,11 @@ rm -rf "$other_clone"
 # autopilot questions does not list a limited issue
 fake_issue 30 open ready-for-agent orch:spec orch:limited
 assert_not_contains "autopilot questions lists no limited issue" "$("$ORCH" autopilot questions 2>&1)" "30"
+fake_issue 31 open needs-human orch:spec
+fake_fail adapter_issue_state_labels "HTTP 502"
+out="$("$ORCH" autopilot questions 2>&1)"; st=$?
+assert_eq "questions failing on a label read dies in one line naming gh and the reason" "$(printf "%s\n" "$out" | grep -c .)|${out#orch: gh could not read the labels of issue #*: }" "1|HTTP 502"
+fake_unfail
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot questions, reply and resume ------------------------------------

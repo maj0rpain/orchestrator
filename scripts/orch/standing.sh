@@ -85,19 +85,21 @@ standing_host_id() {
 
 STANDING_REASON=""
 
-# standing_read <issue>: reads the issue's state and labels once into
+# standing_read [--quiet] <issue>: reads the issue's state and labels once into
 # STANDING_STATE (OPEN or CLOSED), STANDING_LABELS (every label, one per line),
 # STANDING_PHASE (the live phase: the first phase other than done whose label is
 # present, in table order; empty when none), STANDING_PHASE_LABELS (the text of
 # every phase label, in table order) and STANDING_RUNNING, STANDING_HUMAN and
 # STANDING_LIMITED, each 0 or 1. Non-zero when the read fails: the reason on
-# stderr and in STANDING_REASON. Call it in the current shell, never inside
+# stderr and in STANDING_REASON; with --quiet only in STANDING_REASON, for a
+# caller that words its own death. Call it in the current shell, never inside
 # capture_err or $(...).
 standing_read() {
-  local gh_err
+  local gh_err quiet=0
+  if [ "${1-}" = --quiet ]; then quiet=1; shift; fi
   if ! issue_state_labels_read "$1" STANDING_STATE STANDING_LABELS gh_err; then
     STANDING_REASON="$(gh_reason "$gh_err")"
-    printf '%s\n' "$STANDING_REASON" >&2
+    [ "$quiet" = 1 ] || printf '%s\n' "$STANDING_REASON" >&2
     return 1
   fi
   STANDING_PHASE="$(standing_live_phase "$STANDING_LABELS")"
@@ -143,7 +145,7 @@ standing_human_issues() {
 # standing_human_guard <issue>: reads the issue and dies unless it is open and
 # carries needs-human.
 standing_human_guard() {
-  standing_read "$1" || die "could not read issue #$1"
+  standing_read --quiet "$1" || gh_die "read issue #$1" "$STANDING_REASON"
   [ "$STANDING_STATE" = OPEN ] || die "issue #$1 is closed"
   [ "$STANDING_HUMAN" = 1 ] || die "issue #$1 does not carry $STANDING_HUMAN_LABEL"
 }
@@ -220,7 +222,7 @@ standing_start() {
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   [ -f "$file" ] || die "plan file not found: $file"
   ready="$(triage_label_for ready-for-agent)"
-  standing_read "$issue" || die "could not read issue #$issue"
+  standing_read --quiet "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
   list_has "$STANDING_LABELS" "$ready" ||
     die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"
   [ -z "$STANDING_PHASE_LABELS" ] ||

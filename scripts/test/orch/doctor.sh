@@ -1959,6 +1959,10 @@ assert_contains "two phase labels are named space-separated in table order" "$ou
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "an agreeing label is ok" "$out" "phase label: orch:spec"
+fake_fail adapter_issue_state_labels "HTTP 502"
+out="$("$ORCH" doctor --flow 2>&1 >/dev/null)"
+assert_not_contains "doctor stays silent about a failed label read" "$out" "HTTP 502"
+fake_unfail
 fake_issue 7 open ready-for-agent
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_not_contains "an interactive flow's missing label is not mentioned" "$out" "phase label"
