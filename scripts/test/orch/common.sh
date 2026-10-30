@@ -198,4 +198,6 @@ assert_contains "capture says so on stderr" "$out" "could not create a temp file
 "
 assert_eq "capture returns 1, naming the temp file in its variable" "${out##*$'\n'}" "1|could not create a temp file"
 assert_eq "capture too runs no command" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
+out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; d="$(dirty_outside_allowlist)" || echo "refused"' 2>&1)"
+assert_contains "a git-status check under || names the temp file, not git" "$out" "could not create a temp file for git status"
 restore_suite_env

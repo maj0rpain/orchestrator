@@ -27,7 +27,7 @@ cmd_glossary() {
       [ $# -ge 1 ] || die2 "usage: orch.sh glossary show <term>..."
       [ -f "$glossary" ] || die2 "no GLOSSARY.md at $ROOT"
       local missing st=0 term
-      missing="$(mktemp)"
+      missing="$(mktemp)" || die "could not create a temp file for the missing terms"
       GLOSSARY_MISSING="$missing" glossary_run show "$glossary" "$@" || st=$?
       while IFS= read -r term; do
         warn "no glossary entry for '$term'"

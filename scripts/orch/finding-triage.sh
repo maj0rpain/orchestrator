@@ -469,7 +469,7 @@ bundle_members_close() {
   local b="$1" comment_file m i=0 comments state why left err
   shift
   local members=("$@")
-  comment_file="$(mktemp)"
+  comment_file="$(mktemp)" || die "could not create a temp file for the bundle comments"
   printf 'Bundled into #%s\n' "$b" >"$comment_file"
   for m in "${members[@]}"; do
     why=""

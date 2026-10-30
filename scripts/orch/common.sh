@@ -374,7 +374,7 @@ dirty_outside_allowlist() {
   # failure set -e never sees: a git status that cannot run must refuse, not
   # read as a clean tree. A file, not a variable, because the output is
   # NUL-separated. git's own error is kept so the refusal can name it.
-  status="$(mktemp)"
+  status="$(mktemp)" || die "could not create a temp file for git status"
   if ! err="$(git -C "$ROOT" status --porcelain=v1 -z -uall 2>&1 >"$status")"; then
     rm -f "$status"
     die "git status failed - cannot check the working tree: ${err%%$'\n'*}"
