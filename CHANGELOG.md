@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.29
+
+A flow's implement phase now decides whether a ticket breakdown is collapsed from `orch.sh ticket exists`, not from the spec handoff, so it can no longer build only the spec issue and skip every ticket of a broken-down spec. `02-spec.md` no longer carries a `## Ticket breakdown` section; an older handoff that still has one keeps validating. `phase advance` out of implement, `pr open` and `pr publish` now refuse while the spec issue has any open sub-issue, naming each one, and refuse when GitHub cannot be read. To drop a ticket on purpose, close it with `orch.sh ticket close <n> --unmerged`. ADR-0012 gains an amendment note.
+
 ## 4.38.28
 
 Refusal and failure stop comments now open with a hidden marker line (`<!-- orch:refusal <phase> -->`, `<!-- orch:failure <phase> -->`) above their unchanged prose, so their wording can change without breaking a reader; stop comments posted before this change are still recognised. Reading and writing orch.sh's marked comments - question, limit stop, handoff, refusal, failure, spec review changelog and Spec ruling - now lives in one concept module, `marked-comment`, which owns the marker grammar and CR handling.
