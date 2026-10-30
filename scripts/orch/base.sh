@@ -68,7 +68,7 @@ origin_has_branch() {
 # The one rule pr publish targets and branch base-sha falls back to, so the PR
 # and the SHA its review diffs from never name different bases.
 recorded_base() {
-  git config --get "branch.$1.orchestrator-base" 2>/dev/null || base_branch
+  branch_base_get "$1" || base_branch
 }
 
 # base_source: prints `set` when a base branch is configured, else `default`.

@@ -1519,6 +1519,11 @@ git checkout -q -b quick/91-other && git config branch.quick/91-other.orchestrat
 rc_refused "no flow, on a quick branch for another issue" "is not a quick implementation's branch for #90"
 git checkout -q -b quick/90-thing
 rc_refused "no flow, on a quick branch with no orchestrator base" "is not a quick implementation's branch for #90"
+git checkout -q -b quick/090-padded && git config branch.quick/090-padded.orchestrator-base main
+rc_refused "no flow, on a quick branch whose issue is zero-padded" "is not a quick implementation's branch for #90"
+git checkout -q -b quick/90- && git config branch.quick/90-.orchestrator-base main
+rc_refused "no flow, on a quick branch with an empty slug" "is not a quick implementation's branch for #90"
+git checkout -q quick/90-thing
 
 # no flow, on an owned quick branch: discards and recovers
 git config branch.quick/90-thing.orchestrator-base main
@@ -1526,6 +1531,12 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "an owned quick branch is reclaimed" "$st" 0
 assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 assert_eq "and discarding the unreported leftover to be rebuilt" "$(rc_has_worktree 7)$(fake_state_of 7)" "noOPEN"
+
+# no flow, on a quick branch whose slug starts with digits: the issue is the
+# run up to the first dash
+git checkout -q -b quick/90-6-x && git config branch.quick/90-6-x.orchestrator-base main
+out="$(ORCH_AUTOPILOT=1 "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a quick branch quick/90-6-x is reclaimed for #90" "$st" 0
 
 out="$("$ORCH" ticket reclaim 2>&1)"; st=$?
 assert_status "reclaim refuses a missing parent" "$st" 1

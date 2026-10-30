@@ -78,12 +78,12 @@ $detail" ;;
   # have produced, the retire already happened: resume at closing the PR
   # instead of retiring an already-retired branch a second time, which
   # issue #63 called out by name as not what a retry should do.
-  if [ "$redo_count" -gt 0 ] && [ "$branch" = "orch/${issue}-${slug}-redo-${redo_count}" ]; then
+  if [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$issue" "$slug" "$redo_count")" ]; then
     new_n="$redo_count"
     new_branch="$branch"
   else
     new_n=$(( redo_count + 1 ))
-    new_branch="orch/${issue}-${slug}-redo-${new_n}"
+    new_branch="$(branch_name_redo "$issue" "$slug" "$new_n")"
     cmd_branch retire "$branch" "$new_branch" >/dev/null
     # Recorded immediately, before the gh call below that can still fail:
     # the rename already happened for real, so state.branch has to track it

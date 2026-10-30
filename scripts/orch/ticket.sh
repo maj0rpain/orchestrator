@@ -663,10 +663,11 @@ ticket_reclaim_close() {
 # reads what exists first, so its notes follow from that; a failure dies
 # naming the ticket and the step.
 ticket_reclaim_remove() {
-  local n="$1" flow="$2" path had_wt=0 had_branch=0
+  local n="$1" flow="$2" path tbranch had_wt=0 had_branch=0
   path="$(ticket_worktree_path "$n")"
+  tbranch="$(branch_name_ticket "$flow" "$n")"
   ! is_ticket_worktree "$path" || had_wt=1
-  ! git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null || had_branch=1
+  ! git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null || had_branch=1
   [ "$had_wt$had_branch" != 00 ] || return 0
   local teardown_failed=0
   (ticket_worktree_teardown "$n" --unmerged --discard) || teardown_failed=1
@@ -674,12 +675,12 @@ ticket_reclaim_remove() {
     die "ticket #$n: could not remove its worktree $path"
   fi
   [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
-  [ "$teardown_failed" = 0 ] || die "ticket #$n: could not delete branch $flow--t$n"
+  [ "$teardown_failed" = 0 ] || die "ticket #$n: could not delete branch $tbranch"
   # The teardown deletes the worktree's own branch; a worktree on another
-  # branch leaves $flow--t$n behind, which the branch-only teardown deletes.
-  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
+  # branch leaves $tbranch behind, which the branch-only teardown deletes.
+  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
     (ticket_worktree_teardown "$n" --unmerged --discard) \
-      || die "ticket #$n: could not delete branch $flow--t$n"
+      || die "ticket #$n: could not delete branch $tbranch"
   fi
   [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
@@ -697,10 +698,7 @@ ticket_reclaim_guard() {
     [ "$parent" = "$fissue" ] || die "ticket reclaim: on $b, #$parent is not the flow's issue #$fissue - nothing was discarded"
     return 0
   fi
-  case "$b" in
-    "quick/$parent-"?*)
-      git -C "$ROOT" config --get "branch.$b.orchestrator-base" >/dev/null 2>&1 && return 0 ;;
-  esac
+  if [ "$(branch_kind "$b")" = quick ] && [ "$(branch_issue_of "$b" 2>/dev/null)" = "$parent" ]; then return 0; fi
   die "ticket reclaim: no active flow, and $b is not a quick implementation's branch for #$parent (quick/$parent-<slug>, made by branch off) - nothing was discarded"
 }
 
@@ -717,11 +715,11 @@ ticket_reclaim_guard() {
 # is rebuilt. One line per action; a failed write dies naming the ticket.
 cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
-  local parent="$1" flow subs line worktrees n state path st reported merged nums=""
+  local parent="$1" flow subs line worktrees n state path st reported merged nums="" tbranch
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
   ticket_reclaim_guard "$parent" "$flow"
-  discard_flow_branch_work
+  discard_own_branch_work "ticket reclaim" "$flow"
   subs="$(ticket_sub_issues "$parent")" || exit 1
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -742,8 +740,9 @@ cmd_ticket_reclaim() {
     reported=""
     [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
     merged=""
-    if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$flow--t$n" >/dev/null; then
-      ! ticket_branch_merged "$flow--t$n" || merged=1
+    tbranch="$(branch_name_ticket "$flow" "$n")"
+    if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
+      ! ticket_branch_merged "$tbranch" || merged=1
     elif [ -n "$reported" ]; then
       merged=1
     fi

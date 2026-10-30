@@ -38,6 +38,12 @@ started in a busy checkout goes to a side checkout; a flow started in one
 is offered a side checkout, except on a dirty tree, which `init` refuses.
 _Avoid_: locked checkout, active checkout.
 
+**Plugin-made branch**:
+A branch the plugin made and records as its own: a flow's branch, a quick
+implementation's branch, or a ticket branch. Any other branch is foreign: no
+command syncs it, reclaims onto it, or discards work on it.
+_Avoid_: owned branch.
+
 **Side checkout**:
 A git worktree the plugin makes inside the repo, so a second flow or a quick
 implementation can run beside the work already in this checkout, in a session

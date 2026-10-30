@@ -58,7 +58,7 @@ open_pr() {
     gh_die "open the PR for branch $branch (issue #$issue)" "$err"
   fi
   rm -f "$tmp"
-  git config "branch.$branch.orchestrator-pr" "$pr" \
+  branch_pr_set "$branch" "$pr" \
     || warn "could not record PR #$pr on branch $branch - it counts as busy until you switch off it"
   printf '%s\n' "$pr"
 }
