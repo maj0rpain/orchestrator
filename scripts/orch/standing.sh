@@ -3,7 +3,8 @@
 # autopilot flow's issue stands. It owns the label set (the phase labels,
 # orch:running, needs-human, orch:limited), the phase-label helpers, the label
 # table a tick upserts, the host id, the read of an issue's Standing, the
-# claim record's parsing and the claim transition. Its tests:
+# claim record's parsing, the claim transition and every other write to it
+# (start, finish, pause, ask, stop, limit-stop, resume). Its tests:
 # scripts/test/orch/standing.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -150,11 +151,210 @@ standing_human_guard() {
 # comment has landed), that comment's; without it, autopilot resume's.
 standing_resume() {
   local issue="$1" gh_err
+  STANDING_LANDED=""
   capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_HUMAN_LABEL" && return 0
   if [ "${2:-}" = replied ]; then
     die "the reply comment landed on issue #$issue, but $STANDING_HUMAN_LABEL could not be removed: $(gh_reason "$gh_err")"
   fi
   gh_die "remove $STANDING_HUMAN_LABEL from issue #$issue" "$gh_err"
+}
+
+# --- transitions ------------------------------------------------------------
+#
+# Every write to Standing except pickup's goes through one transition below:
+# start, finish, pause, ask, stop, limit-stop and resume. A chain of writes a
+# session makes under its claim ends in the release - deletes orch:running and
+# then, last, the claim ref - which is internal to this module: a chain that
+# fails partway leaves the claim held, and dies naming the writes that landed,
+# so the next tick cleans it up as a failure. STANDING_LANDED accumulates those
+# writes; each transition resets it at its start.
+
+STANDING_LANDED=""
+
+# standing_chain_die <issue> <what> <gh-stderr>: dies for a write of a chain
+# that failed, naming the reason and the writes that landed before it.
+standing_chain_die() {
+  die "could not $2 on issue #$1: $(gh_reason "$3") - writes that landed: ${STANDING_LANDED:-none}; the claim stays held"
+}
+
+# standing_landed_add <write>: notes a write that landed.
+standing_landed_add() { STANDING_LANDED="${STANDING_LANDED:+$STANDING_LANDED, }$1"; }
+
+# standing_release <issue>: deletes orch:running, then the claim ref, last.
+standing_release() {
+  local issue="$1" gh_err
+  capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_RUNNING_LABEL" ||
+    standing_chain_die "$issue" "remove $STANDING_RUNNING_LABEL" "$gh_err"
+  standing_landed_add "removed $STANDING_RUNNING_LABEL"
+  capture_err gh_err adapter_claim_delete "$issue" ||
+    standing_chain_die "$issue" "delete the claim ref" "$gh_err"
+}
+
+# standing_move_label <issue> <phase>: <issue>'s phase label made the one for
+# <phase> - the other phase labels removed - in one edit.
+standing_move_label() {
+  # state is the read's throwaway half.
+  # shellcheck disable=SC2034
+  local issue="$1" phase="$2" state labels gh_err p args=()
+  issue_state_labels_read "$issue" state labels gh_err ||
+    standing_chain_die "$issue" "read the labels" "$gh_err"
+  for p in $(standing_phase_labels_in "$labels"); do
+    [ "$p" = "$phase" ] || args+=(--remove "$(standing_phase_label "$p")")
+  done
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$(standing_phase_label "$phase")" ${args[@]+"${args[@]}"} ||
+    standing_chain_die "$issue" "move the phase label to $(standing_phase_label "$phase")" "$gh_err"
+}
+
+# standing_start <issue> <plan-file>: the planning close's last step. Before
+# any write it refuses an issue without the ready-for-agent label (checked as
+# issue ready checks it) and one that already carries a phase label, then
+# validates the plan, ## Autopilot block included. Then it posts the plan
+# comment and, last, adds the first phase's label - so a failure after the
+# comment leaves the issue unlabelled, never picked up. A re-run on an
+# unlabelled issue posts a newer plan comment, which supersedes the earlier.
+standing_start() {
+  local issue="$1" file="$2" ready gh_err first
+  STANDING_LANDED=""
+  case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+  [ -f "$file" ] || die "plan file not found: $file"
+  ready="$(triage_label_for ready-for-agent)"
+  standing_read "$issue" 2>/dev/null || gh_die "read issue #$issue" "$STANDING_REASON"
+  list_has "$STANDING_LABELS" "$ready" ||
+    die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"
+  [ -z "$STANDING_PHASE_LABELS" ] ||
+    die "issue #$issue already carries the phase label ${STANDING_PHASE_LABELS%% *} - it is already an autopilot flow"
+  handoff_check "$file" "" 01-plan.md autopilot || die "plan $file is not valid - nothing posted"
+  handoff_comment_post "$issue" 01-plan "$file" || exit 1
+  first="$(standing_phase_label "${PHASES%% *}")"
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
+    die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
+}
+
+# standing_finish <issue> <phase> <reason>: a finished phase's close under its
+# claim - the phase label moved to <phase>, then the recorded phase, then the
+# claim released. <reason> names what was done, and seeds the writes that
+# landed. The label moves before state.json records the phase, so a failure
+# between the two leaves the label one step ahead, never behind.
+standing_finish() {
+  STANDING_LANDED="${3:-}"
+  standing_move_label "$1" "$2"
+  phase_write "$2"
+  standing_landed_add "moved the phase label to $(standing_phase_label "$2"), recorded phase $2"
+  standing_release "$1"
+}
+
+# standing_pause <issue> <reason>: ends a session's turn with the phase
+# unchanged - the claim released, nothing else. <reason> seeds the writes that
+# landed.
+standing_pause() {
+  STANDING_LANDED="${2:-}"
+  standing_release "$1"
+}
+
+# standing_ask <issue> <phase> <text>: posts <text> as <phase>'s question
+# comment, adds needs-human, then releases the claim.
+standing_ask() {
+  local issue="$1" phase="$2" text="$3" body gh_err
+  STANDING_LANDED=""
+  body="$(mktemp)" || die "could not create a temp file for the question comment"
+  printf '%s' "$text" >"$body"
+  capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
+  rm -f "$body"
+  standing_landed_add "posted the $phase question comment"
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_HUMAN_LABEL" ||
+    standing_chain_die "$issue" "add $STANDING_HUMAN_LABEL" "$gh_err"
+  standing_landed_add "added $STANDING_HUMAN_LABEL"
+  standing_release "$issue"
+}
+
+# The one rule for a stop comment, which lives here and not in the
+# marked-comment module: a refusal or a failure comment is a stop.
+# autopilot_is_stop takes a marked_comment_info.
+STANDING_STOP_JQ='def autopilot_is_stop: .kind == "refusal" or .kind == "failure";'
+
+# standing_stop_write <issue> <kind> <text> <label> [<remove-label>]: the write
+# chain of a stop: adds <label> (removing <remove-label> when given), posts
+# <text> as the <kind> comment, then releases the claim, last.
+standing_stop_write() {
+  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=()
+  relabel=(--add "$label")
+  [ -z "$remove" ] || relabel+=(--remove "$remove")
+  capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
+    standing_chain_die "$issue" "add $label" "$gh_err"
+  standing_landed_add "added $label"
+  body="$(mktemp)" || die "could not create a temp file for the $kind comment"
+  printf '%s' "$text" >"$body"
+  capture_err gh_err adapter_issue_comment "$issue" "$body" || {
+    rm -f "$body"
+    standing_chain_die "$issue" "post the $kind comment" "$gh_err"
+  }
+  rm -f "$body"
+  standing_landed_add "posted the $kind comment"
+  standing_release "$issue"
+}
+
+# standing_stop <issue> <refusal|failure> <phase> <detail>: ends a phase that
+# will not run, or did not finish: adds needs-human, comments - the comment
+# opens with the hidden marker line, then names the phase and <detail> - then
+# releases the claim, last. The marker is written first: a refusal of the
+# writer dies before any label, comment or claim is touched.
+standing_stop() {
+  local issue="$1" kind="$2" phase="$3" detail="$4" text marker
+  STANDING_LANDED=""
+  marker="$(marked_comment_write "$kind" "$phase")" || exit 1
+  case "$kind" in
+    refusal) printf -v text '%s\nAutopilot refused to run the %s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
+      "$marker" "$phase" "$detail" "$STANDING_HUMAN_LABEL" ;;
+    *) printf -v text '%s\nAutopilot failed in the %s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
+      "$marker" "$phase" "$detail" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL" ;;
+  esac
+  standing_stop_write "$issue" "$kind" "$text" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL"
+}
+
+# standing_limit_count <issue> <phase> <var>: the limit stop comments of
+# <phase> before now, into <var>, counted newest first up to the first refusal,
+# failure or question comment, handoff comment, or limit stop comment of
+# another phase; other comments are skipped. Non-zero when the comments cannot
+# be read.
+standing_limit_count() {
+  local json gh_err n
+  capture json gh_err adapter_issue_comments_json "$1" || return 1
+  n="$(jq -r --arg phase "$2" "$(marked_comment_jq)$STANDING_STOP_JQ"'
+    reduce (marked_comment_list | reverse[]) as $c ({n: 0, done: false};
+      ($c | marked_comment_info) as $i
+      | if .done then .
+      elif ($i | autopilot_is_stop) or ($i.kind | IN("question", "handoff")) then .done = true
+      elif $i.kind == "limited" then
+        if $i.arg == $phase then .n += 1 else .done = true end
+      else . end) | .n' <<<"$json")" || return 1
+  printf -v "$3" '%s' "$n"
+}
+
+# standing_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a
+# phase whose session stopped on a usage limit. With fewer than two such stops
+# of the phase before it, adds orch:limited, comments, then releases the claim;
+# the third in a row, and a stop whose comments cannot be read, take the
+# failure path. The reset is empty when the session named none; the pause is
+# the time written to the limit file: the reset, else the one-hour fallback.
+standing_limit_stop() {
+  local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" count text when=" (the session gave no reset time)" at stopped marker
+  STANDING_LANDED=""
+  [ -z "$reset" ] || when=" (resets $reset)"
+  stopped="the session stopped on a usage limit$when and exited with code $rc"
+  standing_limit_count "$issue" "$phase" count || {
+    standing_stop "$issue" failure "$phase" "$stopped, and the issue's comments could not be read to count the stops in a row; log: $log"
+    return 0
+  }
+  if [ "$count" -ge 2 ]; then
+    standing_stop "$issue" failure "$phase" "$stopped, the third in a row in the $phase phase; log: $log"
+    return 0
+  fi
+  marker="$(marked_comment_write limited "$phase")" || exit 1
+  at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
+  [ -z "$reset" ] || at=", which resets $reset"
+  printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
+    "$marker" "$phase" "$at" "$STANDING_LIMITED_LABEL" "$((count + 1))" "$log"
+  standing_stop_write "$issue" "limit stop" "$text" "$STANDING_LIMITED_LABEL"
 }
 
 # --- claims -----------------------------------------------------------------

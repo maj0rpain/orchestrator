@@ -149,7 +149,7 @@ cmd_spec_pause_round() {
   spec_marker_write "$SPEC_ROUND_MARKER" "$issue $((k + 1)) $n"
   # In autopilot the round's session ends here: the claim is released, and the
   # next tick starts the next round.
-  ! autopilot_active || autopilot_release "$issue" "wrote the round marker"
+  ! autopilot_active || standing_pause "$issue" "wrote the round marker"
   print_next_block "Spec review round $k of $n applied. Round $((k + 1)) runs in a fresh session."
 }
 

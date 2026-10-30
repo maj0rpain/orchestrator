@@ -101,4 +101,131 @@ out="$(st 'standing_claim 32 spec 1')"
 assert_eq "any other failure exits 1 with the reason on stderr" "$out" "HTTP 500
 rc=1"
 fake_unfail
+
+# --- Standing transitions ---------------------------------------------------
+# Each transition driven against the fake, read back through standing_read and
+# the fake's read-back helpers. tr_labels <n>: the issue's labels, one line.
+tr_labels() { st "standing_read $1 && echo \"\$STANDING_PHASE|\$STANDING_RUNNING|\$STANDING_HUMAN|\$STANDING_LIMITED\"" | head -n 1; }
+tr_seed() { fake_issue "$1" open "${@:2}"; fake_claim_seed "$1"; }
+echo
+echo "standing transitions"
+fake_flow standing-transitions
+st() { sourced_orch_script 'rc=0; ( '"$1"' ) || rc=$?; echo "rc=$rc"' 2>&1; }
+
+# finish
+tr_seed 50 orch:spec orch:running
+out="$(st 'standing_finish 50 implement "wrote the spec"')"
+assert_eq "finish moves the phase label, drops running and releases the claim" "$(tr_labels 50)|$(fake_claim_held 50)" "implement|0|0|0|free"
+assert_eq "finish records the phase in state.json" "$("$ORCH" state get phase)" implement
+tr_seed 51 orch:spec orch:running
+fake_fail_after adapter_issue_relabel 1 "HTTP 500"
+out="$(st 'standing_finish 51 review "wrote the spec"')"
+assert_contains "finish failing on the running removal names the reason's writes" "$out" "could not remove orch:running on issue #51: HTTP 500 - writes that landed: wrote the spec, moved the phase label to orch:review, recorded phase review; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 51)" held
+fake_unfail
+tr_seed 52 orch:spec orch:running
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(st 'standing_finish 52 implement ""')"
+assert_contains "finish failing on the claim delete names every write before it" "$out" "could not delete the claim ref on issue #52: HTTP 500 - writes that landed: moved the phase label to orch:implement, recorded phase implement, removed orch:running; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 52)" held
+fake_unfail
+tr_seed 53 orch:spec orch:running
+fake_fail adapter_issue_state_labels "HTTP 502"
+out="$(st 'standing_finish 53 implement "wrote the spec"')"
+assert_contains "finish failing on the label read names the seed alone" "$out" "could not read the labels on issue #53: HTTP 502 - writes that landed: wrote the spec; the claim stays held"
+fake_unfail
+
+# a failing transition names only its own landed writes
+fake_issue 54 open orch:spec orch:running; fake_claim_seed 54
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(st 'standing_pause 54 "wrote the round marker"; true')"
+assert_contains "pause failing on its release names its reason and the removal" "$out" "writes that landed: wrote the round marker, removed orch:running; the claim stays held"
+fake_unfail
+out="$(st 'standing_pause 54 "wrote the round marker"')"
+assert_eq "pause releases the claim and leaves the phase label" "$(tr_labels 54)|$(fake_claim_held 54)" "spec|0|0|0|free"
+tr_seed 55 orch:spec orch:running
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(st 'standing_stop 55 failure spec boom')"
+assert_contains "a stop after the pause names only its own writes" "$out" "writes that landed: added needs-human, posted the failure comment, removed orch:running; the claim stays held"
+fake_unfail
+
+# stop
+tr_seed 56 orch:spec orch:running orch:limited
+st 'standing_stop 56 refusal spec "no plan"' >/dev/null
+assert_eq "stop adds needs-human, drops limited and running, and releases" "$(tr_labels 56)|$(fake_claim_held 56)" "spec|0|1|0|free"
+assert_eq "and posts the marked stop comment" "$(fake_comments_of 56 | head -1)" "$(marker_of refusal spec)"
+tr_seed 57 orch:spec orch:running
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(st 'standing_stop 57 failure spec boom')"
+assert_contains "stop failing on its first write names none landed" "$out" "could not add needs-human on issue #57: HTTP 500 - writes that landed: none; the claim stays held"
+fake_unfail
+tr_seed 58 orch:spec orch:running
+fake_fail adapter_issue_comment "HTTP 500"
+out="$(st 'standing_stop 58 failure spec boom')"
+assert_contains "stop failing on its comment names the label that landed" "$out" "could not post the failure comment on issue #58: HTTP 500 - writes that landed: added needs-human; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 58)" held
+fake_unfail
+tr_seed 59 orch:spec orch:running
+out="$(st 'standing_stop 59 failure "" boom')"
+assert_contains "stop with an empty phase dies before any write" "$(tr_labels 59)|$(fake_comments_of 59)|$(fake_claim_held 59)" "spec|1|0|0|"
+
+# limit-stop
+tr_seed 60 orch:spec orch:running
+st 'standing_limit_stop 60 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
+assert_eq "limit-stop adds limited, drops running and releases the claim" "$(tr_labels 60)|$(fake_claim_held 60)" "spec|0|0|1|free"
+assert_eq "and posts the limited comment" "$(fake_comments_of 60 | head -1)" "$(marker_of limited spec)"
+tr_seed 61 orch:spec orch:running
+fake_fail adapter_issue_comment "HTTP 500"
+out="$(st 'standing_limit_stop 61 spec "" 2026-01-01T01:00:00Z 1 log')"
+assert_contains "limit-stop failing on its comment names the label that landed" "$out" "could not post the limit stop comment on issue #61: HTTP 500 - writes that landed: added orch:limited; the claim stays held"
+fake_unfail
+
+# ask
+q="$(mktemp)"; printf '%s\n@o\n\nQ?\n' "$(marker_of question spec)" >"$q"
+tr_seed 63 orch:spec orch:running
+out="$(st 'standing_ask 63 spec "$(cat '"$q"')"')"
+assert_eq "ask posts the question, adds needs-human and releases the claim" "$(tr_labels 63)|$(fake_claim_held 63)|$(fake_comments_of 63 | head -1)" "spec|0|1|0|free|$(marker_of question spec)"
+tr_seed 64 orch:spec orch:running
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(st 'standing_ask 64 spec Q')"
+assert_contains "ask failing on the label names the comment that landed" "$out" "could not add needs-human on issue #64: HTTP 500 - writes that landed: posted the spec question comment; the claim stays held"
+fake_unfail
+fake_fail adapter_claim_delete "HTTP 500"
+tr_seed 65 orch:spec orch:running
+out="$(st 'standing_ask 65 spec Q')"
+assert_contains "ask failing on the release names all three writes" "$out" "writes that landed: posted the spec question comment, added needs-human, removed orch:running; the claim stays held"
+fake_unfail
+
+# start
+sp="$(mktemp -d)/01-plan.md"; plan_file "$sp" $'Rounds: 4\nBudget: 5'
+fake_issue 70 open
+out="$(st 'standing_start 70 '"$sp")"
+assert_eq "start refuses an issue without ready-for-agent, writing nothing" "$(fake_comments_of 70)$(fake_labels_of 70)" ""
+fake_issue 71 open ready-for-agent orch:review
+out="$(st 'standing_start 71 '"$sp")"
+assert_eq "start refuses an issue with a phase label, writing nothing" "$(fake_comments_of 71)|$(fake_labels_of 71)" "|orch:review ready-for-agent "
+fake_issue 72 open ready-for-agent
+out="$(st 'standing_start 72 /nonexistent')"
+assert_eq "start refuses a missing plan file, writing nothing" "$(fake_comments_of 72)|$(fake_labels_of 72)" "|ready-for-agent "
+fake_issue 73 open ready-for-agent
+st 'standing_start 73 '"$sp" >/dev/null
+assert_eq "start posts the plan comment and adds the first phase label" "$(tr_labels 73)" "spec|0|0|0"
+fake_issue 74 open ready-for-agent
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(st 'standing_start 74 '"$sp")"
+assert_contains "start failing after its plan comment dies with that message" "$out" "orch: posted the 01-plan comment on issue #74 but adding orch:spec failed: HTTP 500 - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
+assert_eq "and adds no phase label" "$(fake_labels_of 74)" "ready-for-agent "
+fake_unfail
+
+# resume
+fake_issue 80 open needs-human orch:spec
+st 'standing_resume 80' >/dev/null
+assert_eq "resume removes needs-human" "$(tr_labels 80)" "spec|0|0|0"
+fake_issue 81 open needs-human orch:spec
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(st 'standing_resume 81 replied')"
+assert_contains "resume failing with replied dies with reply's message" "$out" "orch: the reply comment landed on issue #81, but needs-human could not be removed: HTTP 500"
+out="$(st 'standing_resume 81')"
+assert_contains "resume failing without it dies with resume's message" "$out" "could not remove needs-human from issue #81"
+fake_unfail
 restore_suite_env

@@ -1063,9 +1063,6 @@ echo
 echo "autopilot questions, reply and resume"
 new_repo >/dev/null
 fake_github
-# post_stop <issue> <refusal|failure> <phase> <detail>: a stop comment as
-# autopilot_stop itself words it.
-post_stop() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_stop "$@" >/dev/null 2>&1; }
 # question_of <phase>: a question comment body of that phase.
 question_of() { printf '%s\n@o\n\n1. Keep it? Recommended: yes\n' "$(marker_of question "$1")"; }
 url_of() { printf 'https://github.com/o/r/issues/%s#issuecomment-%s' "$1" "$2"; }
@@ -1090,15 +1087,15 @@ fake_comment 13 o 2026-01-01T00:00:00Z "$(question_of implement)"
 fake_comment 13 h 2026-01-02T00:00:00Z "1: A"
 # a stop with the comment's phase differing from the label
 fake_issue 14 open needs-human orch:review
-post_stop 14 failure implement "step x failed"
+sourced_orch standing_stop 14 failure implement "step x failed" >/dev/null 2>&1
 # neither comment: the phase comes from the earliest phase label
 fake_issue 15 open needs-human orch:review orch:implement
 # a question then a stop, and a stop then a question
 fake_issue 16 open needs-human orch:spec
 fake_comment 16 o 2026-01-01T00:00:00Z "$(question_of spec)"
-post_stop 16 refusal spec "no plan"
+sourced_orch standing_stop 16 refusal spec "no plan" >/dev/null 2>&1
 fake_issue 17 open needs-human orch:spec
-post_stop 17 refusal spec "no plan"
+sourced_orch standing_stop 17 refusal spec "no plan" >/dev/null 2>&1
 fake_comment 17 o 2026-01-09T00:00:00Z "$(question_of spec)"
 # a stop comment in the legacy form, seeded raw, is still a stop
 fake_issue 24 open needs-human orch:spec
@@ -1135,19 +1132,19 @@ fake_issue 23 open needs-human orch:spec
 fake_comment 23 o 2026-01-01T00:00:00Z $'see the marker\n<!-- orch:question spec -->'
 out="$("$ORCH" autopilot questions 2>&1)"
 assert_contains "a marker off the first line is no question" "$out" "23${tab}stop${tab}spec${tab}"
-# autopilot_stop opens its comment with the hidden marker line, prose beneath
+# standing_stop opens its comment with the hidden marker line, prose beneath
 fake_issue 40 open ready-for-agent orch:spec
-post_stop 40 refusal spec "no plan"
+sourced_orch standing_stop 40 refusal spec "no plan" >/dev/null 2>&1
 assert_eq "a refusal comment opens with the hidden marker line" "$(fake_comments_of 40 | head -1)" "$(marker_of refusal spec)"
 assert_contains "and keeps its prose beneath" "$(fake_comments_of 40 | sed -n 2p)" "Autopilot refused to run the spec phase: no plan"
 fake_issue 41 open ready-for-agent orch:spec
-post_stop 41 failure review "boom"
+sourced_orch standing_stop 41 failure review "boom" >/dev/null 2>&1
 assert_eq "a failure comment opens with the hidden marker line" "$(fake_comments_of 41 | head -1)" "$(marker_of failure review)"
 assert_contains "and keeps its prose beneath" "$(fake_comments_of 41 | sed -n 2p)" "Autopilot failed in the review phase: boom"
 fake_issue 42 open ready-for-agent orch:spec
-bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_stop 42 failure "" boom >/dev/null 2>&1; st=$?
+sourced_orch standing_stop 42 failure "" boom >/dev/null 2>&1; st=$?
 assert_status "an empty phase dies" "$st" 1
-bash -c 'source "$1"; shift; "$@"' _ "$ORCH" autopilot_limit_stop 42 "" "" "" 1 log >/dev/null 2>&1; st=$?
+sourced_orch standing_limit_stop 42 "" "" "" 1 log >/dev/null 2>&1; st=$?
 assert_status "a limit stop of an empty phase dies" "$st" 1
 assert_eq "an empty phase writes no comment and changes no label" "$(fake_comments_of 42)$(fake_labels_of 42)" "orch:spec ready-for-agent "
 for n in 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 40 41 42; do fake_issue_drop "$n"; done
