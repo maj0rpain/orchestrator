@@ -301,6 +301,7 @@ fake_unfail
 assert_contains "begin failing on the running addition returns 1 with that step's wording" "$out" "step adding orch:running failed: HTTP 500
 rc=1"
 assert_eq "and the removal had landed" "$(tr_standing 63)" "spec|0|0|0"
+restore_suite_env
 
 # --- autopilot limit count (the retry count) ---------------------------------
 # standing_limit_count called directly over seeded comments (#1463, #1695).
@@ -333,8 +334,8 @@ x"
 count_case "a marked refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
 x"
 fake_fail adapter_issue_comments_json "HTTP 500 comments"
-sourced_orch_script 'standing_limit_count 7 spec got' 2>/dev/null; st=$?
+sourced_orch_script 'standing_limit_count 7 spec got' 2>/dev/null; rc=$?
 fake_unfail
-assert_status "unreadable comments return non-zero" "$st" 1
+assert_status "unreadable comments return non-zero" "$rc" 1
 
 restore_suite_env

@@ -660,16 +660,14 @@ assert_eq "a claim of ORCH_HOST_ID is cleaned" "$(fake_claim_held 14)" free
 assert_eq "the hostname's claim is then another identity's, left alone" "$(fake_claim_held 15)" held
 fake_claim_release 15
 
-# a stop that dies partway leaves the claim held and names the writes that
-# landed
+# a stop that dies partway dies with the claim ref's reason; Standing owns the
+# writes that landed and the held claim
 fake_issue 13 open ready-for-agent orch:spec orch:running
 fake_claim_seed 13 "$(hostname)" "$(dead_pid)"
 fake_fail adapter_claim_delete "HTTP 500"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "stale-claim cleanup with a failed claim delete dies" "$st" 1
 assert_contains "naming the claim ref" "$out" "delete the claim ref"
-assert_contains "and the writes that landed" "$out" "added needs-human, posted the failure comment, removed orch:running"
-assert_eq "the claim is still held" "$(fake_claim_held 13)" held
 fake_unfail
 fake_claim_seed 13 otherhost
 # a session that released its claim exits after the next phase's claim is made:
