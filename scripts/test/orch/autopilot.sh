@@ -28,14 +28,6 @@ local_fields() {
   e="$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s)"
   printf '%s %s\n' "$e" "$(date -d "@$e" '+%H %a' 2>/dev/null || date -r "$e" '+%H %a')"
 }
-# fake_issue_relabel <n> <label>...: sets issue #n's labels; its state, title,
-# body and comments are kept.
-fake_issue_relabel() {
-  local n="$1"
-  shift
-  : >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
-  [ $# -eq 0 ] || printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
-}
 # fake_issue_drop <n>...: each issue is gone from the store.
 fake_issue_drop() { local n; for n in "$@"; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done; }
 # fake_claim_release <issue>: the store holds no claim on it.
@@ -1114,8 +1106,7 @@ savepath="$PATH"; gh_fixture; PATH="$savepath"
 norepo_plan="$(mktemp -d)/p.md"; printf 'plan\n' >"$norepo_plan"
 for norepo_args in "resume 5" "start 5 $norepo_plan"; do
   # shellcheck disable=SC2086
-  out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
-    && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" autopilot $norepo_args 2>&1)"; st=$?
+  out="$(orch_no_repo autopilot $norepo_args 2>&1)"; st=$?
   assert_status "autopilot $norepo_args with no repo fails" "$st" 1
   assert_contains "autopilot $norepo_args with no repo prints the remedy" "$out" "$repo_remedy"
 done
