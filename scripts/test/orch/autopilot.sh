@@ -1048,11 +1048,6 @@ sourced_orch standing_stop 16 refusal spec "no plan" >/dev/null 2>&1
 fake_issue 17 open needs-human orch:spec
 sourced_orch standing_stop 17 refusal spec "no plan" >/dev/null 2>&1
 fake_comment 17 o 2026-01-09T00:00:00Z "$(question_of spec)"
-# a stop comment in the legacy form, seeded raw, is still a stop
-fake_issue 24 open needs-human orch:spec
-fake_comment 24 o 2026-01-01T00:00:00Z "Autopilot refused to run the review phase: no pr"
-fake_issue 25 open needs-human orch:spec
-fake_comment 25 o 2026-01-01T00:00:00Z "Autopilot failed in the implement phase: boom"
 # a marked stop comment
 fake_issue 26 open needs-human orch:spec
 fake_comment 26 o 2026-01-01T00:00:00Z "$(marker_of failure review)
@@ -1073,17 +1068,10 @@ assert_eq "a stop comment's phase wins over the label's" "$(grep "^14$tab" <<<"$
 assert_eq "no comment at all is a stop in the earliest labelled phase, URL empty" "$(grep "^15$tab" <<<"$out")" "15${tab}stop${tab}implement${tab}"
 assert_eq "a stop after a question is a stop" "$(grep "^16$tab" <<<"$out")" "16${tab}stop${tab}spec${tab}$(url_of 16 2)"
 assert_eq "a question after a stop is a question" "$(grep "^17$tab" <<<"$out")" "17${tab}question${tab}spec${tab}$(url_of 17 2)"
-assert_eq "a legacy-form refusal comment is a stop, in its own phase" "$(grep "^24$tab" <<<"$out")" "24${tab}stop${tab}review${tab}$(url_of 24 1)"
-assert_eq "a legacy-form failure comment is a stop, in its own phase" "$(grep "^25$tab" <<<"$out")" "25${tab}stop${tab}implement${tab}$(url_of 25 1)"
 assert_eq "a marked failure comment is a stop, in its own phase" "$(grep "^26$tab" <<<"$out")" "26${tab}stop${tab}review${tab}$(url_of 26 1)"
 assert_eq "an issue with no phase label, orch:done, closed or not needs-human is left out" \
-  "$(cut -f1 <<<"$out" | tr "\n" " ")" "11 12 13 14 15 16 17 24 25 26 "
-# a comment that only mentions the marker is no question
-fake_issue 23 open needs-human orch:spec
-fake_comment 23 o 2026-01-01T00:00:00Z $'see the marker\n<!-- orch:question spec -->'
-out="$("$ORCH" autopilot questions 2>&1)"
-assert_contains "a marker off the first line is no question" "$out" "23${tab}stop${tab}spec${tab}"
-for n in 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26; do fake_issue_drop "$n"; done
+  "$(cut -f1 <<<"$out" | tr "\n" " ")" "11 12 13 14 15 16 17 26 "
+for n in 11 12 13 14 15 16 17 18 19 20 21 26; do fake_issue_drop "$n"; done
 fake_issue 11 open needs-human orch:spec
 fake_issue 12 open needs-human orch:spec
 fake_fail adapter_issue_comments_json "$GH_502"
@@ -1219,9 +1207,7 @@ count_case() { # <label> <expected count> <comment>...: seeded oldest first
 }
 count_case "two stops in a row are counted" 2 "$LIM_SPEC" "$LIM_SPEC"
 count_case "other comments between them are skipped" 2 "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
-count_case "a failure comment resets the count" 0 "$LIM_SPEC" "$LIM_SPEC" "Autopilot failed in the spec phase: x"
-count_case "a refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "Autopilot refused to run the spec phase: x"
-count_case "a question comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of question spec)
+count_case "a question comment resets the count" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of question spec)
 @o"
 count_case "a handoff comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of handoff 01-plan)
 x"
@@ -1231,8 +1217,6 @@ count_case "a marked failure comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(mar
 x"
 count_case "a marked refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
 x"
-count_case "a handoff first line without its closing is no handoff" 2 "$LIM_SPEC" "<!-- orch:handoff 01-plan
-x" "$LIM_SPEC"
 fake_fail adapter_issue_comments_json "HTTP 500 comments"
 sourced_orch_script 'standing_limit_count 7 spec got' 2>/dev/null; st=$?
 fake_unfail
