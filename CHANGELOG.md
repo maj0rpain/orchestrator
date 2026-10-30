@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.38
+
+The Marked comment module now owns every marker text and comment/info pairing: one kind registry builds the writer and the reader, a new `marked_comment_texts` reader replaces the review pass's own `Spec ruling:` stripping, and the callback filter is gone. Behaviour is unchanged.
+
 ## 4.38.37
 
 A ticket worktree teardown now deletes only the ticket's own branch, `<current branch>--t<n>`, never a branch the worktree has checked out; `ticket reclaim` tears each ticket down in one call, and the teardown parses its flags strictly.
