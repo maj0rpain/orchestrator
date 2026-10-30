@@ -79,7 +79,8 @@ cmd_phase() {
       # names could only reach through a naming convention.
       case "$next" in
         implement) require_issue _unused ;;
-        review)    require_branch _unused; require_base_sha _unused; require_pr _unused ;;
+        review)    require_branch _unused; require_base_sha _unused; require_pr _unused
+               require_issue issue; require_no_open_tickets "$issue" ;;
       esac
       if phase_finish "$next" ""; then
         issue="$(state_get issue)"

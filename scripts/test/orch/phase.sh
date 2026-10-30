@@ -105,7 +105,31 @@ for field in branch base_sha pr; do
   assert_eq "and leaves the phase at implement (no $field)" "$("$ORCH" state get phase)" "implement"
 done
 
+# Open tickets (#1733): implement is left only once no sub-issue of the spec
+# issue is open, blocked ones included.
 state_fixture pr 3
+fake_issue 7 open
+fake_next_issue 700
+tbody="$(mktemp)"; writeln 'Build it.' >"$tbody"
+t1="$("$ORCH" ticket publish 7 "A" "$tbody")"
+t2="$("$ORCH" ticket publish 7 "B" "$tbody" --blocked-by "$t1")"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at implement with open sub-issues" "$st" 1
+assert_contains "names each open one in order and phase advance" "$out" \
+  "orch: #7 still has open tickets: #$t1 #$t2 - run the driver loop (orch.sh ticket next 7) or close them, then run phase advance again"
+assert_eq "and leaves the phase at implement (open tickets)" "$("$ORCH" state get phase)" "implement"
+"$ORCH" ticket close "$t1" >/dev/null
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_contains "a closed one drops out of the list" "$out" "open tickets: #$t2 - run"
+fake_fail adapter_sub_issues
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at implement when GitHub cannot be read" "$st" 1
+assert_contains "naming the failure" "$out" "orch: gh could not list sub-issues of #7"
+assert_eq "and leaves the phase at implement (unreadable)" "$("$ORCH" state get phase)" "implement"
+fake_unfail
+"$ORCH" ticket close "$t2" >/dev/null
+fake_issue_body 7 $'## Ticket\n\nx\n'
+
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advances implement to review with a valid handoff and the fields" "$st" 0
 assert_eq "records the review phase" "$("$ORCH" state get phase)" "review"
