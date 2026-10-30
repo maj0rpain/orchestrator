@@ -154,7 +154,7 @@ state_fixture phase "$prior_phase"
 spec_comments="$(mktemp)"
 fake_github
 fake_issue 14 open
-fake_comment 14 pat 2026-09-02T11:00:00Z "$(writeln '## Spec review' 'Round 1 of 1')"
+fake_comment 14 pat 2026-09-02T11:00:00Z "$(writeln "$(marker_of spec-review)" 'Round 1 of 1')"
 fake_comment 14 pat 2026-09-02T11:30:00Z "A follow-up."
 fake_comment 14 sam 2026-09-02T11:40:00Z "$(writeln 'A note that quotes' '## Spec review' 'lower down.')"
 fake_issue 15 open
@@ -166,8 +166,8 @@ assert_eq "of the issue state records, each opened by its marker line, leaving o
     '<!-- comment @sam 2026-09-02T11:40:00Z -->' 'A note that quotes' '## Spec review' 'lower down.')"
 fake_github
 fake_issue 14 open
-fake_comment 14 pat 2026-09-02T11:00:00Z "$(writeln '## Spec review' 'Round 1 of 2')"
-fake_comment 14 pat 2026-09-02T12:00:00Z "$(writeln '## Spec review' 'Round 2 of 2')"
+fake_comment 14 pat 2026-09-02T11:00:00Z "$(writeln "$(marker_of spec-review)" 'Round 1 of 2')"
+fake_comment 14 pat 2026-09-02T12:00:00Z "$(writeln "$(marker_of spec-review)" 'Round 2 of 2')"
 printf 'known content\n' >"$spec_comments"
 out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
 assert_status "spec comments succeeds on a spec with only review changelogs" "$st" 0

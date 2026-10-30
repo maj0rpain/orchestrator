@@ -493,7 +493,7 @@ assert_contains "the newest tagged comment wins" "$(cat "$fetched")" "Newer deci
 assert_eq "an older one is left in place" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "3"
 
 # a retired newest comment reads as no handoff
-fake_comment 7 someone 2030-01-02T00:00:00Z "<!-- orch:handoff 01-plan retired -->"
+fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired)"
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
 assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
@@ -548,7 +548,7 @@ assert_status "an autopilot handoff never posted dies" "$st" 1
 assert_contains "naming the issue and the comment" "$out" "orch: issue #7 has no 01-plan handoff comment"
 assert_eq "still printing its scratch path first" "$("$ORCH" handoff path spec 2>/dev/null)" \
   "$PWD/.orchestrator/scratch/01-plan.md"
-fake_comment 7 someone 2030-01-01T00:00:00Z "$(printf '<!-- orch:handoff 01-plan -->\n'; literal_handoff spec)"
+fake_comment 7 someone 2030-01-01T00:00:00Z "$(marker_of handoff 01-plan; literal_handoff spec)"
 p="$("$ORCH" handoff path spec 2>&1)"; st=$?
 assert_status "a posted handoff resolves" "$st" 0
 assert_contains "to a scratch file under .orchestrator" "$p" "/.orchestrator/"
@@ -564,12 +564,12 @@ echo stale >"$(dirname "$p")/02-spec.md"
 out="$("$ORCH" handoff path implement 2>&1)"; st=$?
 assert_status "a stale scratch copy is not a found handoff" "$st" 1
 assert_contains "naming the issue and the comment" "$out" "issue #7 has no 02-spec handoff comment"
-fake_comment 7 someone 2030-01-02T00:00:00Z "<!-- orch:handoff 01-plan retired -->"
+fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired)"
 out="$("$ORCH" handoff path spec 2>&1 >/dev/null)"; st=$?
 assert_status "a retired newest comment is missing" "$st" 1
 assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
 # a sibling fetched beside the handoff is cleared when its comment is retired
-fake_comment 7 someone 2030-01-01T00:00:01Z "$(printf '<!-- orch:handoff 02-spec -->\n'; literal_handoff implement)"
+fake_comment 7 someone 2030-01-01T00:00:01Z "$(marker_of handoff 02-spec; literal_handoff implement)"
 echo stale >"$(dirname "$p")/01-plan.md"
 "$ORCH" handoff path implement >/dev/null 2>&1
 assert_eq "a retired sibling leaves no stale copy beside the handoff" \
