@@ -714,22 +714,25 @@ autopilot_cleanup_stale() {
   done <<<"$claims"
 }
 
-# autopilot_limit_epoch <file>: the reset recorded in the limit file <file> as
+# The pause store: the limit file is reached only through autopilot_pause_extend
+# and autopilot_pause_until, so no other function builds or reads its path.
+
+# autopilot_pause_epoch <file>: the reset recorded in the limit file <file> as
 # epoch seconds; 0 when the file is missing or its text does not parse.
-autopilot_limit_epoch() {
+autopilot_pause_epoch() {
   local text
   text="$(cat "$1" 2>/dev/null)" || text=""
   autopilot_iso_epoch "$text" || echo 0
 }
 
-# autopilot_limit_paused <main>: whether a usage limit pauses pickup. While the
+# autopilot_pause_until <main>: whether a usage limit pauses pickup. While the
 # limit file's reset time is in the future it prints one line naming it and
 # returns 0; once it has passed, the file is removed and it returns 1.
-autopilot_limit_paused() {
+autopilot_pause_until() {
   local file epoch
   file="$(autopilot_dir "$1")/limit"
   [ -f "$file" ] || return 1
-  epoch="$(autopilot_limit_epoch "$file")"
+  epoch="$(autopilot_pause_epoch "$file")"
   if [ "$epoch" -gt "$(date +%s)" ]; then
     note "usage limit: no issue is picked up until $(cat "$file")"
     return 0
@@ -761,7 +764,7 @@ autopilot_tick() {
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale "$main_root"
-  if autopilot_limit_paused "$main_root"; then return 0; fi
+  if autopilot_pause_until "$main_root"; then return 0; fi
   autopilot_claims_read claims
   count="$(grep -c . <<<"$claims" || true)"
   candidates="$(autopilot_candidates)"
@@ -867,18 +870,19 @@ autopilot_event_five_hour_reset() {
   printf '%s\n' "$out"
 }
 
-# autopilot_limit_write <dir> <log> <reset>: records the UTC timestamp <reset>
-# as the limit file's reset in <dir>, keeping one already there that is later
-# and replacing one that is earlier or does not parse. A failed write is noted
-# in <log> and on stderr, and is no failure of the caller.
-autopilot_limit_write() {
-  local file="$1/limit" log="$2" old_epoch new_epoch msg
-  new_epoch="$(autopilot_iso_epoch "$3")" || new_epoch=0
+# autopilot_pause_extend <main> <iso> <log>: records the UTC timestamp <iso>
+# as the limit file's reset under <main>, keeping one already there that is
+# later and replacing one that is earlier or does not parse. A failed write is
+# noted in <log> and on stderr, and is no failure of the caller.
+autopilot_pause_extend() {
+  local file log="$3" old_epoch new_epoch msg
+  file="$(autopilot_dir "$1")/limit"
+  new_epoch="$(autopilot_iso_epoch "$2")" || new_epoch=0
   if [ -f "$file" ]; then
-    old_epoch="$(autopilot_limit_epoch "$file")"
+    old_epoch="$(autopilot_pause_epoch "$file")"
     [ "$old_epoch" -lt "$new_epoch" ] || return 0
   fi
-  if ! { printf '%s\n' "$3" >"$file"; } 2>/dev/null; then
+  if ! { printf '%s\n' "$2" >"$file"; } 2>/dev/null; then
     msg="autopilot run: could not write the limit file $file"
     warn "$msg"
     printf '%s\n' "$msg" >>"$log"
@@ -902,6 +906,37 @@ autopilot_limit_reset() {
   return 0
 }
 
+# autopilot_session_end <log> <held>: how a phase session ended, set in the
+# caller as outcome, reset, early and limit. <held> is 1 while the session's
+# claim is still held, 0 once released. outcome is released (<held> is 0,
+# whatever the log holds), else limited (the log's last rate_limit_event has a
+# rejecting window, or failing that its text holds the usage-limit message),
+# else failure. reset is the reset the session named as a UTC timestamp, empty
+# unless limited or when none is named. early is the five-hour window's
+# resetsAt as a UTC timestamp when its utilization is 0.9 or more, whatever the
+# outcome, else empty. limit is set only when limited: reset, or one hour on.
+# It makes no GitHub call and writes nothing.
+autopilot_session_end() {
+  local log="$1" held="$2" event="" early_epoch reject_epoch
+  outcome=failure; reset=""; early=""; limit=""
+  event="$(autopilot_log_last_event "$log" rate_limit_event)"
+  if [ -n "$event" ] && early_epoch="$(autopilot_event_five_hour_reset "$event")"; then
+    early="$(autopilot_epoch_iso "$early_epoch")"
+  fi
+  if [ "$held" = 0 ]; then outcome=released; return 0; fi
+  if [ -n "$event" ] && reject_epoch="$(autopilot_event_rejecting_reset "$event")"; then
+    outcome=limited
+    [ -z "$reject_epoch" ] || reset="$(autopilot_epoch_iso "$reject_epoch")"
+  elif reset="$(autopilot_limit_reset "$log")"; then
+    outcome=limited
+  fi
+  if [ "$outcome" = limited ]; then
+    limit="$reset"
+    [ -n "$limit" ] || limit="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
+  fi
+  return 0
+}
+
 # The tools a headless phase session gets: those the plugin's skills and agents
 # use.
 AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion"
@@ -920,7 +955,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail released_note line mine name event pause_epoch pause_iso reject_epoch limited flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 outcome reset early limit detail released_note line mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -957,33 +992,21 @@ autopilot_run() {
   while IFS= read -r line; do
     case "$line" in "$issue"$'\t'*) [ -z "$mine" ] || [ "$line" = "$mine" ] || continue; held=1 ;; esac
   done <<<"$claims"
-  # The early pause: a session ending with its five-hour usage at 90% or more
-  # pauses pickup until that window resets, whatever its outcome.
-  event="$(autopilot_log_last_event "$log" rate_limit_event)"
-  if [ -n "$event" ] && pause_epoch="$(autopilot_event_five_hour_reset "$event")"; then
-    autopilot_limit_write "$dir" "$log" "$(autopilot_epoch_iso "$pause_epoch")"
-  fi
-  if [ "$held" = 0 ]; then
-    released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
-    note "$released_note"
-    printf '%s\n' "$released_note" >>"$log"
-    return 0
-  fi
+  autopilot_session_end "$log" "$held"
+  # The early pause, then the limit pause: the pause store keeps the later.
+  if [ -n "$early" ]; then autopilot_pause_extend "$main_root" "$early" "$log"; fi
+  if [ -n "$limit" ]; then autopilot_pause_extend "$main_root" "$limit" "$log"; fi
+  case "$outcome" in
+    released)
+      released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
+      note "$released_note"
+      printf '%s\n' "$released_note" >>"$log"
+      return 0 ;;
+    limited)
+      autopilot_limit_stop "$issue" "$phase" "$reset" "$limit" "$rc" "$log"
+      return 0 ;;
+  esac
   detail="the session exited with code $rc; log: $log"
-  limited=0; reset=""
-  if [ -n "$event" ] && reject_epoch="$(autopilot_event_rejecting_reset "$event")"; then
-    limited=1
-    [ -z "$reject_epoch" ] || reset="$(autopilot_epoch_iso "$reject_epoch")"
-  elif reset="$(autopilot_limit_reset "$log")"; then
-    limited=1
-  fi
-  if [ "$limited" = 1 ]; then
-    pause_iso="$reset"
-    [ -n "$pause_iso" ] || pause_iso="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
-    autopilot_limit_write "$dir" "$log" "$pause_iso"
-    autopilot_limit_stop "$issue" "$phase" "$reset" "$pause_iso" "$rc" "$log"
-    return 0
-  fi
   autopilot_stop "$issue" failure "$phase" "$detail"
 }
 
