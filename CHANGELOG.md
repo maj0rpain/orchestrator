@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.42
+
+Fix the autopilot container crash-looping with `another autopilot watch (pid 1) is already running` after a restart. Autopilot's pidfiles now record each process's start time beside its pid, so a pid reused in a restarted container - the watcher's own pid 1 included - no longer reads as the old process; old bare-pid files count as stale. Stale-claim cleanup and `autopilot-up.sh`'s busy probe check the same records, and the watcher now stops its running tick at once on INT or TERM.
+
 ## 4.38.41
 
 Narrowed the Standing module's interface: standing_begin takes no phase, standing_resume no mode, the two label-accessor wrappers are gone, and standing_read no longer has --quiet. No change to any orch.sh message, exit code or label write.
