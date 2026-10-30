@@ -1976,6 +1976,11 @@ fake_claim_seed 6 autopilot-abc123 5 2020-01-01T00:00:00Z
 out="$(ORCH_HOST_ID=autopilot-abc123 "$ORCH" doctor --env 2>&1)"
 assert_not_contains "with ORCH_HOST_ID set, a claim of that id is its own" "$out" "issue #6"
 assert_contains "and the hostname's claim is another identity's" "$out" "issue #9 has been claimed by $(hostname)"
+fake_fail adapter_claim_list "HTTP 502 claims"
+out="$("$ORCH" doctor --env 2>&1)"
+fake_unfail
+assert_not_contains "claims origin cannot list are not reported" "$out" "has been claimed by"
+assert_contains "and doctor's other checks still run" "$out" "ok    "
 restore_suite_env
 
 # --- doctor: autopilot side-checkout flows ------------------------------------
