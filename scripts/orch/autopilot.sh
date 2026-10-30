@@ -317,7 +317,7 @@ autopilot_pid_write() {
 # autopilot_record_alive <record>: whether the record's process is running with
 # the recorded start time. A bare-pid or malformed record is stale.
 autopilot_record_alive() {
-  local pid start now
+  local pid start extra now
   read -r pid start extra <<<"${1:-}"
   [[ "$pid" =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ -z "${extra:-}" ] || return 1
   now="$(autopilot_proc_start "$pid")" || return 1
@@ -327,9 +327,7 @@ autopilot_record_alive() {
 # autopilot_record_is_me <record>: whether the record names the calling
 # process ($$).
 autopilot_record_is_me() {
-  local pid start
-  read -r pid start _ <<<"${1:-}"
-  [ "$pid" = "$$" ] && [ -n "$start" ] && [ "$start" = "$(autopilot_proc_start "$$")" ]
+  [ "${1%% *}" = "$$" ] && autopilot_record_alive "$1"
 }
 
 # autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
@@ -522,7 +520,6 @@ autopilot_pickup() {
     standing_stop "$issue" failure "$phase" "$(gh_reason "$begin_err")"
     return 0
   }
-  autopilot_tick_record "$issue"
   autopilot_spawn_run "$issue"
 }
 
@@ -652,6 +649,7 @@ autopilot_tick() {
       2) continue ;;
       *) die "could not claim issue #$issue: $(gh_reason "$gh_err") - the tick stops" ;;
     esac
+    autopilot_tick_record "$issue"
     count=$((count + 1))
     limited_arg=""
     if [ "$STANDING_LIMITED" = 1 ]; then limited_arg=limited; fi
