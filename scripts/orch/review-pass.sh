@@ -64,11 +64,9 @@ review_pass_begin() {
 REVIEW_PASS_HEADINGS=('## Review' '## Host fallbacks')
 
 # The entries of an issue's Spec ruling comments, one per line, from the
-# issue's structured read already filtered to the Spec ruling comments (those
-# whose body begins `Spec ruling:`): the prefix stripped and the lines trimmed
-# and joined by single spaces.
-SPEC_RULING_ENTRIES_JQ='.comments[].body | gsub("\r"; "")
-  | ltrimstr("Spec ruling:") | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
+# marked_comment_texts array of their texts: the lines trimmed and joined by
+# single spaces.
+SPEC_RULING_ENTRIES_JQ='.[] | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
   | map(select(length > 0)) | join(" ")'
 
 # has_headings <file> <heading>...: true when <file> has every <heading> as a
@@ -141,7 +139,7 @@ review_pass_known_items() {
     text_entries_append deviations "$work/deviations"
   fi
   gh_or_die --out issue_json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  issue_rulings="$(marked_comment_keep spec-ruling <<<"$issue_json" | jq -r "$SPEC_RULING_ENTRIES_JQ")" \
+  issue_rulings="$(marked_comment_texts spec-ruling <<<"$issue_json" | jq -r "$SPEC_RULING_ENTRIES_JQ")" \
     || die "could not read the comments of issue #$issue"
   printf '%s\n' "$issue_rulings" >"$work/rulings" \
     || die "could not write the rulings of issue #$issue to $work/rulings"

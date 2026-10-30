@@ -251,12 +251,12 @@ autopilot_questions() {
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
     line="$(jq -r --arg n "$n" --arg phase "$phase" "$(marked_comment_jq)$STANDING_STOP_JQ"'
       marked_comment_list | length as $len
-      | to_entries | map(.value |= {c: ., info: marked_comment_info}) as $e
-      | ($e | map(select(.value.info.kind == "question")) | last) as $q
-      | ($e | map(select(.value.info | standing_is_stop)) | last) as $s
+      | marked_comment_entries as $e
+      | ($e | map(select(.info.kind == "question")) | last) as $q
+      | ($e | map(select(.info | standing_is_stop)) | last) as $s
       | if $q != null and ($s == null or $q.key > $s.key) then
-          [$n, (if $q.key == $len - 1 then "question" else "replied" end), $q.value.info.arg, $q.value.c.url]
-        elif $s != null then [$n, "stop", $s.value.info.arg, $s.value.c.url]
+          [$n, (if $q.key == $len - 1 then "question" else "replied" end), $q.info.arg, $q.c.url]
+        elif $s != null then [$n, "stop", $s.info.arg, $s.c.url]
         else [$n, "stop", $phase, ""] end
       | @tsv' <<<"$json")" || die "could not read issue #$n's comments"
     lines+="$line"$'\n'

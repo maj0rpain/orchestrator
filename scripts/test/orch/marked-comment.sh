@@ -136,8 +136,8 @@ assert_eq "spec-review is exactly the heading" "$mc_rc:$mc_out" "1:"
 arr="$(mc_array "keep" $'## Spec review\nRound 1 of 2' "also")"
 mc drop "$arr" spec-review
 assert_eq "drop leaves the other comments unchanged, in the array shape" "$mc_out" '[{"body":"keep"},{"body":"also"}]'
-mc keep "$arr" spec-review
-assert_eq "keep leaves only the comments of the kind" "$mc_out" '[{"body":"## Spec review\nRound 1 of 2"}]'
+mc texts "$arr" spec-review
+assert_eq "texts drops the spec-review heading line" "$mc_out" '["Round 1 of 2"]'
 mc drop "$(mc_object "keep" $'## Spec review\nx')" spec-review
 assert_eq "drop on the issue object keeps its shape" "$mc_out" '{"number":1,"comments":[{"body":"keep"}]}'
 
@@ -145,8 +145,25 @@ mc newest "not json" question plan
 assert_eq "unreadable comments are exit 2, not none" "$mc_rc:$mc_out" "2:"
 
 # Spec ruling.
-mc keep "$(mc_array $'Spec ruling: a\r\n- b\r\n' "x")" spec-ruling
-assert_eq "a spec ruling with CR line endings is kept unchanged" "$mc_out" '[{"body":"Spec ruling: a\r\n- b\r\n"}]'
+mc texts "$(mc_array $'Spec ruling: a\r\n- b\r\n' "x")" spec-ruling
+assert_eq "a spec ruling with CR line endings loses its prefix and its CRs" "$mc_out" '[" a\n- b\n"]'
+mc texts "$(mc_object $'Spec ruling: q - a' $'Spec ruling:\nlater' "x")" spec-ruling
+assert_eq "texts keeps a same-line ruling and a ruling on following lines, on the object shape" "$mc_out" '[" q - a","\nlater"]'
+mc texts "$(mc_array "$q"$'\r\nbody\r\n' "$q" "$(marker_of question build)"$'\nother')" question plan
+assert_eq "texts drops the marker line, strips CRs, and honours the argument" "$mc_out" '["body\n",""]'
+mc texts "$(mc_array "x" "$q")" spec-review
+assert_eq "texts prints an empty array when no comment is of the kind" "$mc_rc:$mc_out" "0:[]"
+mc texts "$(mc_array "Spec ruling:")" spec-ruling
+assert_eq "a ruling that is only its opening gives an empty string" "$mc_out" '[""]'
+mc texts "not json" spec-ruling
+assert_eq "texts on unreadable comments exits 2, printing nothing" "$mc_rc:$mc_out" "2:"
+mc drop "not json" spec-review
+assert_eq "drop on unreadable comments fails, printing nothing" "$([ "$mc_rc" != 0 ] && echo failed):$mc_out" "failed:"
+# Every kind the registry holds is written and read back.
+for kind in $(sourced_orch_script 'printf "%s " $MARKED_COMMENT_KINDS'); do
+  mc texts "$(mc_array "$(marker_of "$kind" plan)"$'\nthe text')" "$kind" plan
+  assert_eq "registry kind $kind: the writer's line is recognised and stripped" "$mc_out" '["the text"]'
+done
 mc newest "$(mc_array $'\nSpec ruling: a')" spec-ruling
 assert_eq "a spec ruling whose first line is blank is rejected" "$mc_rc:$mc_out" "1:"
 

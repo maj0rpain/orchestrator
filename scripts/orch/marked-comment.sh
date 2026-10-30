@@ -16,6 +16,10 @@
 # opening), spec-review (the first line `## Spec review`) and spec-ruling (a
 # first line beginning `Spec ruling:`).
 #
+# The readers: marked_comment_newest, _retired, _follows, _body, _texts (the
+# opening-stripped texts of a kind) and _drop, over the prelude's
+# marked_comment_list, _info and _entries.
+#
 # Every reader takes the comments JSON on stdin: the issue object from the
 # structured issue read, or the bare comment array.
 
@@ -24,27 +28,41 @@
 MARKED_COMMENT_LEGACY_REFUSAL='Autopilot refused to run the '
 MARKED_COMMENT_LEGACY_FAILURE='Autopilot failed in the '
 
+# The kind registry, written once: the hidden-marker kinds (space-separated,
+# as their marker text), the one kind that can be retired, and the two visible
+# openings. The writer's checks and the jq prelude's recognition are built
+# from these.
+MARKED_COMMENT_KINDS='question limited handoff refusal failure'
+MARKED_COMMENT_RETIRABLE='handoff'
+MARKED_COMMENT_SPEC_REVIEW_OPENING='## Spec review'
+MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
+
 # marked_comment_jq: prints the jq definitions every reader shares. Expand it
 # at call time. marked_comment_list is the comment array of the input, in
 # either shape; marked_comment_info is, for a comment, {kind, arg, retired}
-# (kind and arg null for an unmarked comment, retired a boolean).
+# (kind and arg null for an unmarked comment, retired a boolean);
+# marked_comment_entries is, for the input, {key, c, info} of each comment: its
+# index, the comment and its marked_comment_info.
 marked_comment_jq() {
+  local kinds="${MARKED_COMMENT_KINDS// /|}"
   cat <<EOJQ
 def marked_comment_list: if type == "object" then .comments else . end;
 def marked_comment_info:
   ((.body // "") | split("\n")[0] // "" | rtrimstr("\r")) as \$l
-  | ([\$l | capture("^<!-- orch:(?<kind>question|limited|handoff|refusal|failure) (?<arg>[^ ]+)(?<retired> retired)? -->\$")?] | .[0]) as \$m
+  | ([\$l | capture("^<!-- orch:(?<kind>$kinds) (?<arg>[^ ]+)(?<retired> retired)? -->\$")?] | .[0]) as \$m
   | ([\$l | capture("^$MARKED_COMMENT_LEGACY_REFUSAL(?<p>[^ ]+) phase")?] | .[0]) as \$lr
   | ([\$l | capture("^$MARKED_COMMENT_LEGACY_FAILURE(?<p>[^ ]+) phase")?] | .[0]) as \$lf
-  | if \$m != null and ((\$m.retired // "") == "" or \$m.kind == "handoff") then
+  | if \$m != null and ((\$m.retired // "") == "" or \$m.kind == "$MARKED_COMMENT_RETIRABLE") then
       {kind: \$m.kind, arg: \$m.arg, retired: ((\$m.retired // "") != "")}
-    elif (\$l | test("^## Spec review[ \t]*\$")) then {kind: "spec-review", arg: null, retired: false}
-    elif (\$l | startswith("Spec ruling:")) then {kind: "spec-ruling", arg: null, retired: false}
+    elif (\$l | test("^${MARKED_COMMENT_SPEC_REVIEW_OPENING}[ \t]*\$")) then {kind: "spec-review", arg: null, retired: false}
+    elif (\$l | startswith("$MARKED_COMMENT_SPEC_RULING_OPENING")) then {kind: "spec-ruling", arg: null, retired: false}
     elif \$lr != null then
       {kind: "refusal", arg: \$lr.p, retired: false}
     elif \$lf != null then
       {kind: "failure", arg: \$lf.p, retired: false}
     else {kind: null, arg: null, retired: false} end;
+def marked_comment_entries:
+  marked_comment_list | to_entries | map({key, c: .value, info: (.value | marked_comment_info)});
 EOJQ
 }
 
@@ -58,12 +76,14 @@ marked_comment_write() {
     spec-review | spec-ruling)
       [ $# -le 1 ] || die "marked comment: $kind takes no argument"
       case "$kind" in
-        spec-review) printf '## Spec review\n' ;;
-        *) printf 'Spec ruling:\n' ;;
+        spec-review) printf '%s\n' "$MARKED_COMMENT_SPEC_REVIEW_OPENING" ;;
+        *) printf '%s\n' "$MARKED_COMMENT_SPEC_RULING_OPENING" ;;
       esac
       return ;;
-    question | limited | handoff | refusal | failure) ;;
-    *) die "marked comment: unknown kind: $kind" ;;
+    *) case " $MARKED_COMMENT_KINDS " in
+         *" $kind "*) ;;
+         *) die "marked comment: unknown kind: $kind" ;;
+       esac ;;
   esac
   case "$arg" in
     '' | *[[:space:]]*) die "marked comment: $kind needs an argument without whitespace" ;;
@@ -71,7 +91,7 @@ marked_comment_write() {
   case "$tag" in
     '') printf '<!-- orch:%s %s -->\n' "$kind" "$arg" ;;
     retired)
-      [ "$kind" = handoff ] || die "marked comment: only a handoff can be retired"
+      [ "$kind" = "$MARKED_COMMENT_RETIRABLE" ] || die "marked comment: only a handoff can be retired"
       printf '<!-- orch:%s %s retired -->\n' "$kind" "$arg" ;;
     *) die "marked comment: unknown tag: $tag" ;;
   esac
@@ -83,8 +103,8 @@ marked_comment_write() {
 marked_comment_newest() {
   local out
   out="$(jq -r --arg k "$1" --arg a "${2-}" "$(marked_comment_jq)"'
-    marked_comment_list | to_entries
-    | map(select(.value | marked_comment_info | .kind == $k and ($a == "" or .arg == $a)))
+    marked_comment_entries
+    | map(select(.info | .kind == $k and ($a == "" or .arg == $a)))
     | last | .key // empty')" || return 2
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
@@ -128,16 +148,29 @@ marked_comment_body() {
     marked_comment_list[$i].body | (index("\n") // empty) as $n | .[$n + 1:]' "$@"
 }
 
-# marked_comment_keep <kind> / marked_comment_drop <kind>: the comments on
-# stdin, in the input's shape, with every comment of <kind> kept, or dropped;
-# each kept comment unchanged.
-marked_comment_keep() { marked_comment_filter "$1" 'select(.kind == $k)'; }
-marked_comment_drop() { marked_comment_filter "$1" 'select(.kind != $k)'; }
+# marked_comment_texts <kind> [<arg>]: a JSON array of, for every comment of
+# <kind> (and of <arg>, when given) on stdin in order, its body with its opening
+# removed - the whole first line, newline included, for every kind but
+# spec-ruling, whose `Spec ruling:` prefix alone goes - and every CR removed.
+# A comment of only its opening gives "". Prints [] when none is of that kind,
+# and exits 2, printing nothing, when the comments cannot be read.
+marked_comment_texts() {
+  local out
+  out="$(jq -c --arg k "$1" --arg a "${2-}" --arg ruling "$MARKED_COMMENT_SPEC_RULING_OPENING" "$(marked_comment_jq)"'
+    marked_comment_entries
+    | map(select(.info | .kind == $k and ($a == "" or .arg == $a))
+      | (.c.body // "") as $b
+      | (if $k == "spec-ruling" then $b | ltrimstr($ruling)
+         else ($b | index("\n")) as $n | if $n == null then "" else $b[$n + 1:] end end)
+      | gsub("\r"; ""))')" || return 2
+  printf '%s\n' "$out"
+}
 
-# marked_comment_filter <kind> <jq-select>: the one filter keep and drop share.
-marked_comment_filter() {
+# marked_comment_drop <kind>: the comments on stdin, in the input's shape, with
+# every comment of <kind> dropped; each kept comment unchanged. Exits non-zero,
+# printing nothing, when the comments cannot be read.
+marked_comment_drop() {
   jq -c --arg k "$1" "$(marked_comment_jq)"'
-    def pick: map(select(.info | '"$2"') | .c);
-    def run: [.[] | {c: ., info: marked_comment_info}] | pick;
+    def run: map(select((marked_comment_info).kind != $k));
     if type == "object" then .comments |= run else run end'
 }
