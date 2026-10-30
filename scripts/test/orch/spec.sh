@@ -514,11 +514,4 @@ assert_contains "naming the claim ref" "$out" "delete the claim ref"
 assert_contains "and the writes that landed" "$out" "wrote the round marker, removed orch:running"
 assert_eq "the claim is still held" "$(fake_claim_held 7)" held
 fake_unfail
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 2>&1)"; st=$?
-assert_status "a failed orch:running removal dies" "$st" 1
-assert_contains "naming the marker that landed" "$out" "writes that landed: wrote the round marker;"
-assert_eq "the claim is still held after it" "$(fake_claim_held 7)" held
-fake_unfail
 restore_suite_env

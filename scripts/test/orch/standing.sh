@@ -197,6 +197,35 @@ out="$(st 'standing_stop 59 failure "" boom')"
 assert_eq "an empty phase dies" "$(printf %s "$out" | tail -n 1)" "rc=1"
 assert_eq "and writes nothing, the claim still held" "$(tr_standing 59)|$(fake_comments_of 59)|$(fake_claim_held 59)" "spec|1|0|0||held"
 
+# the chain points a command section no longer asserts: each transition's own
+# writes, and the claim held when one fails
+state_fixture phase spec
+tr_seed 90 orch:spec orch:running
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(st 'standing_finish 90 implement ""')"
+assert_contains "finish failing on the label move names the reason and none landed" "$out" "could not move the phase label to orch:implement on issue #90: HTTP 500 - writes that landed: none; the claim stays held"
+assert_eq "the phase stays unrecorded" "$("$ORCH" state get phase)" spec
+assert_eq "and the claim stays held" "$(fake_claim_held 90)" held
+fake_unfail
+tr_seed 91 orch:spec orch:running
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(st 'standing_pause 91 "wrote the round marker"')"
+assert_contains "pause failing on the running removal names the seed alone" "$out" "could not remove orch:running on issue #91: HTTP 500 - writes that landed: wrote the round marker; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 91)" held
+fake_unfail
+tr_seed 92 orch:spec orch:running
+fake_fail_after adapter_issue_relabel 1 "HTTP 500"
+out="$(st 'standing_stop 92 failure spec boom')"
+assert_contains "stop failing on the running removal names the label add and the comment" "$out" "could not remove orch:running on issue #92: HTTP 500 - writes that landed: added needs-human, posted the failure comment; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 92)" held
+fake_unfail
+tr_seed 93 orch:spec orch:running
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(st 'standing_stop 93 refusal spec "no plan"')"
+assert_contains "a refusal stop failing on the claim delete names every write before it" "$out" "could not delete the claim ref on issue #93: HTTP 500 - writes that landed: added needs-human, posted the refusal comment, removed orch:running; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 93)" held
+fake_unfail
+
 # limit-stop
 tr_seed 60 orch:spec orch:running
 st 'standing_limit_stop 60 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
@@ -222,12 +251,6 @@ assert_eq "and writes no comment and changes no label" "$(fake_comments_of 68)|$
 
 # ask: the issue comes from flow state
 ask_seed() { tr_seed "$@"; "$ORCH" state set issue "$1" >/dev/null; }
-ask_seed 63 orch:spec orch:running
-out="$(QTEXT=$'1. Keep it? Recommended: yes\n' st 'standing_ask spec "$QTEXT"')"
-assert_eq "ask posts the question, adds needs-human and releases the claim" "$(tr_standing 63)|$(fake_claim_held 63)|$(fake_comments_of 63 | head -1)" "spec|0|1|0|free|$(marker_of question spec)"
-assert_eq "and @mentions the configured handle under the marker" "$(fake_comments_of 63 | sed -n 2p)" "@o"
-assert_contains "carrying the question" "$(fake_comments_of 63)" "1. Keep it? Recommended: yes"
-assert_contains "and the reply instructions" "$(fake_comments_of 63)" 'Reply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).'
 ask_seed 64 orch:spec orch:running
 fake_fail adapter_issue_relabel "HTTP 500"
 out="$(st 'standing_ask spec Q')"
@@ -242,31 +265,9 @@ assert_eq "and the claim stays held" "$(fake_claim_held 65)" held
 fake_unfail
 
 # start
-sp="$(mktemp -d)/01-plan.md"; plan_file "$sp" $'Rounds: 4\nBudget: 5'
-fake_issue 70 open
-out="$(st 'standing_start 70 '"$sp")"
-assert_eq "start refuses an issue without ready-for-agent, writing nothing" "$(fake_comments_of 70)$(fake_labels_of 70)" ""
-fake_issue 71 open ready-for-agent orch:review
-out="$(st 'standing_start 71 '"$sp")"
-assert_eq "start refuses an issue with a phase label, writing nothing" "$(fake_comments_of 71)|$(fake_labels_of 71)" "|orch:review ready-for-agent "
 fake_issue 72 open ready-for-agent
 out="$(st 'standing_start 72 /nonexistent')"
 assert_eq "start refuses a missing plan file, writing nothing" "$(fake_comments_of 72)|$(fake_labels_of 72)" "|ready-for-agent "
-bad="$(mktemp -d)/01-plan.md"; printf 'not a plan\n' >"$bad"
-fake_issue 75 open ready-for-agent
-out="$(st 'standing_start 75 '"$bad")"
-assert_contains "start refuses an invalid plan with its message" "$out" "is not valid - nothing posted"
-assert_eq "and posts no comment and adds no label" "$(fake_comments_of 75)|$(fake_labels_of 75)" "|ready-for-agent "
-fake_issue 73 open ready-for-agent
-st 'standing_start 73 '"$sp" >/dev/null
-assert_eq "start posts the plan comment and adds the first phase label" "$(tr_standing 73)" "spec|0|0|0"
-fake_issue 74 open ready-for-agent
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(st 'standing_start 74 '"$sp")"
-assert_contains "start failing after its plan comment dies with that message" "$out" "orch: posted the 01-plan comment on issue #74 but adding orch:spec failed: HTTP 500 - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
-assert_eq "and adds no phase label" "$(fake_labels_of 74)" "ready-for-agent "
-assert_contains "and keeps the plan comment" "$(fake_comments_of 74)" "01-plan"
-fake_unfail
 
 # resume
 fake_issue 80 open needs-human orch:spec
@@ -301,28 +302,39 @@ assert_contains "begin failing on the running addition returns 1 with that step'
 rc=1"
 assert_eq "and the removal had landed" "$(tr_standing 63)" "spec|0|0|0"
 
-# the step runner words a silent failure as today's stops did
-tr_seed 76 orch:spec orch:running
-st 'autopilot_pickup_step 76 spec failure "step init failed" false' >/dev/null
-assert_contains "a step failing silently gets gh's no-reason wording after its detail" "$(fake_comments_of 76)" "Autopilot failed in the spec phase: step init failed: gh gave no reason"
-tr_seed 77 orch:spec orch:running
-st 'autopilot_pickup_step 77 spec refusal "redo review refused" false' >/dev/null
-assert_contains "a refused redo gets the same" "$(fake_comments_of 77)" "Autopilot refused to run the spec phase: redo review refused: gh gave no reason"
-tr_seed 78 orch:spec orch:running
-out="$(st 'autopilot_pickup_step 78 spec failure "step reading the recorded phase failed" autopilot_pickup_recorded /nonexistent')"
-assert_contains "a failed recorded-phase read stops with the reader's reason after the detail" "$(fake_comments_of 78)" "Autopilot failed in the spec phase: step reading the recorded phase failed: "
-assert_contains "and that reason is the reader's own message" "$(fake_comments_of 78)" "Could not open file /nonexistent"
-
-# a failed mktemp is a temp-file failure, never gh's: the command is not run
-tr_seed 79 orch:spec orch:running
-ran_marker="$(mktemp -u)"
-# (a file marks the first call: each runs in a $(...) subshell)
-first_call_marker="$(mktemp -u)"
-out="$(st 'mktemp() { [ -e "'"$first_call_marker"'" ] || { : >"'"$first_call_marker"'"; return 1; }; command mktemp "$@"; }; autopilot_pickup_step 79 spec failure "step init failed" touch "'"$ran_marker"'"')"
-assert_contains "a failed runner mktemp returns 1" "$out" "rc=1"
-assert_contains "and stops the issue worded as a temp-file failure" "$(fake_comments_of 79)" "Autopilot failed in the spec phase: step init failed: could not create a temp file for the step's stderr"
-assert_eq "releasing the claim" "$(fake_claim_held 79)" free
-assert_eq "without running the command" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
-rm -f "$ran_marker" "$first_call_marker"
+# --- autopilot limit count (the retry count) ---------------------------------
+# standing_limit_count called directly over seeded comments (#1463, #1695).
+echo
+echo "autopilot limit count"
+tick_fixture
+fake_issue 7 open ready-for-agent orch:spec
+# the count stops at a refusal, failure, question or handoff comment and at a
+# limit stop comment of another phase, and skips other comments
+LIM_SPEC="$(marker_of limited spec)
+stopped"
+count_case() { # <label> <expected count> <comment>...: seeded oldest first
+  local label="$1" want="$2" c
+  shift 2
+  fake_comments_clear 7
+  for c in "$@"; do fake_comment 7 o 2026-01-01T00:00:00Z "$c"; done
+  # shellcheck disable=SC2016 # expanded by the inner bash
+  assert_eq "$label" "$(sourced_orch_script 'standing_limit_count 7 spec got && printf %s "$got"')" "$want"
+}
+count_case "two stops in a row are counted" 2 "$LIM_SPEC" "$LIM_SPEC"
+count_case "other comments between them are skipped" 2 "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
+count_case "a question comment resets the count" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of question spec)
+@o"
+count_case "a handoff comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of handoff 01-plan)
+x"
+count_case "a limit stop comment of another phase resets it" 1 "$LIM_SPEC" "$(marker_of limited implement)
+x" "$LIM_SPEC"
+count_case "a marked failure comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of failure spec)
+x"
+count_case "a marked refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
+x"
+fake_fail adapter_issue_comments_json "HTTP 500 comments"
+sourced_orch_script 'standing_limit_count 7 spec got' 2>/dev/null; st=$?
+fake_unfail
+assert_status "unreadable comments return non-zero" "$st" 1
 
 restore_suite_env

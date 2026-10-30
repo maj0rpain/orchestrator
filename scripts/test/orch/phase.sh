@@ -245,15 +245,6 @@ assert_contains "naming the claim ref" "$out" "delete the claim ref"
 assert_contains "and the writes that landed" "$out" "moved the phase label to orch:implement, recorded phase implement, removed orch:running"
 assert_eq "the claim is still held" "$(fake_claim_held 7)" held
 fake_unfail
-fake_issue 7 open ready-for-agent orch:spec orch:running
-ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
-state_fixture phase spec
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
-assert_status "a failed label move dies" "$st" 1
-assert_eq "recording no phase" "$("$ORCH" state get phase)" "spec"
-assert_eq "the claim is still held" "$(fake_claim_held 7)" held
-fake_unfail
 
 # an interactive flow touches no label
 fake_issue 7 open ready-for-agent
