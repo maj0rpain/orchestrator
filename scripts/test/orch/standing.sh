@@ -5,8 +5,8 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# sourced_rc <script>: runs the script in a shell that sourced orch.sh, then prints its
-# exit status as "rc=<n>" on a last line.
+# sourced_rc <script>: runs the script in a shell that sourced orch.sh, then
+# prints its exit status as "rc=<n>" on a last line.
 sourced_rc() { sourced_orch_script 'rc=0; ( '"$1"' ) || rc=$?; echo "rc=$rc"' 2>&1; }
 
 # fake_fail_once_after <operation> <n> [stderr]: the next n calls of the
