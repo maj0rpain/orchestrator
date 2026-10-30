@@ -694,12 +694,6 @@ ticket_reclaim_remove() {
   fi
   [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
   [ "$teardown_failed" = 0 ] || die "ticket #$n: could not delete branch $tbranch"
-  # The teardown deletes the worktree's own branch; a worktree on another
-  # branch leaves $tbranch behind, which the branch-only teardown deletes.
-  if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
-    (ticket_worktree_teardown "$n" --unmerged --discard) \
-      || die "ticket #$n: could not delete branch $tbranch"
-  fi
   [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
 

@@ -253,6 +253,51 @@ out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
 assert_status "teardown with neither worktree nor branch dies" "$st" 1
 assert_contains "naming the ticket" "$out" "no ticket worktree or branch for ticket 7"
 
+# Strict arguments.
+out="$(sourced_orch ticket_worktree_teardown 2>&1)"; st=$?
+assert_status "teardown without a ticket number dies" "$st" 1
+assert_contains "with its usage" "$out" "usage: ticket_worktree_teardown <n> [--unmerged] [--discard]"
+out="$(sourced_orch ticket_worktree_teardown 7 --bogus 2>&1)"; st=$?
+assert_status "teardown dies on an unknown flag" "$st" 1
+assert_contains "naming it" "$out" "--bogus"
+out="$(sourced_orch ticket_worktree_teardown 7 8 2>&1)"; st=$?
+assert_status "teardown dies on a second positional argument" "$st" 1
+assert_contains "naming it" "$out" "unexpected argument: 8"
+
+# A worktree switched to another branch: removed, that branch survives, and
+# the ticket branch is deleted.
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" checkout -q -b elsewhere
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown of a worktree on another branch succeeds" "$st" 0
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
+assert_eq "keeping the other branch" "$(git branch --list elsewhere | tr -d ' ')" "elsewhere"
+assert_eq "deleting the ticket branch" "$(git branch --list 'orch/5-feature--t7')" ""
+git branch -q -D elsewhere
+
+# Ticket branch gone: refused with the worktree kept, removed under --unmerged.
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" checkout -q --detach
+git branch -q -D orch/5-feature--t7
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown refuses a worktree whose ticket branch is gone" "$st" 1
+assert_eq "leaving the worktree" "$(on_disk "$wt")" "present"
+out="$(sourced_orch ticket_worktree_teardown 7 --unmerged 2>&1)"; st=$?
+assert_status "teardown --unmerged removes a detached worktree whose ticket branch is gone" "$st" 0
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
+
+# A detached current checkout dies with the worktree untouched.
+wt="$("$ORCH" ticket-worktree add 7)"
+echo dirty >"$wt/README.md"
+git checkout -q --detach
+out="$(sourced_orch ticket_worktree_teardown 7 --unmerged --discard 2>&1)"; st=$?
+assert_status "teardown from a detached checkout dies" "$st" 1
+assert_contains "saying so" "$out" "not on a branch (detached HEAD)"
+assert_eq "leaving the work untouched" "$(cat "$wt/README.md")" "dirty"
+git checkout -q orch/5-feature
+git -C "$wt" checkout -q -- README.md
+"$ORCH" ticket-worktree remove 7 >/dev/null
+
 # A leftover t<n> directory that is no worktree: git would resolve it to the
 # enclosing checkout, so --unmerged must not abort that checkout's rebase.
 git checkout -q -b orch/5-side
@@ -270,18 +315,19 @@ rmdir .orchestrator/worktrees/t9
 git reset -q --hard HEAD~1
 git branch -q -D orch/5-side
 
-# Merged into its forked-from branch, but not into the branch the invoking
-# checkout has checked out: merged is judged against the forked-from branch
-# alone, so remove succeeds rather than refusing after the worktree is gone.
+# Merged into its forked-from branch, but invoked from another branch: the
+# ticket branch is <current branch>--t<n>, so remove judges that one, finds
+# it missing, and refuses with the worktree kept.
 wt="$("$ORCH" ticket-worktree add 7)"
 git -C "$wt" commit -q --allow-empty -m "ticket work"
 git merge -q --ff-only orch/5-feature--t7
 git checkout -q -b orch/5-elsewhere HEAD~1
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
-assert_status "remove of a ticket merged into its forked-from branch but not HEAD succeeds" "$st" 0
-assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
-assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+assert_status "remove from another branch refuses, judging that branch's ticket branch" "$st" 1
+assert_eq "keeping the worktree" "$(on_disk "$wt")" "present"
 git checkout -q orch/5-feature
+"$ORCH" ticket-worktree remove 7 >/dev/null
+git branch -q -D orch/5-elsewhere
 
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses a ticket with no worktree" "$st" 1
