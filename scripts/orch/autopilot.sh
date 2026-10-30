@@ -906,6 +906,37 @@ autopilot_limit_reset() {
   return 0
 }
 
+# autopilot_session_end <log> <held>: how a phase session ended, set in the
+# caller as outcome, reset, early and limit. <held> is 1 while the session's
+# claim is still held, 0 once released. outcome is released (<held> is 0,
+# whatever the log holds), else limited (the log's last rate_limit_event has a
+# rejecting window, or failing that its text holds the usage-limit message),
+# else failure. reset is the reset the session named as a UTC timestamp, empty
+# unless limited or when none is named. early is the five-hour window's
+# resetsAt as a UTC timestamp when its utilization is 0.9 or more, whatever the
+# outcome, else empty. limit is set only when limited: reset, or one hour on.
+# It makes no GitHub call and writes nothing.
+autopilot_session_end() {
+  local log="$1" held="$2" event="" epoch
+  outcome=failure; reset=""; early=""; limit=""
+  event="$(autopilot_log_last_event "$log" rate_limit_event)"
+  if [ -n "$event" ] && epoch="$(autopilot_event_five_hour_reset "$event")"; then
+    early="$(autopilot_epoch_iso "$epoch")"
+  fi
+  if [ "$held" = 0 ]; then outcome=released; return 0; fi
+  if [ -n "$event" ] && epoch="$(autopilot_event_rejecting_reset "$event")"; then
+    outcome=limited
+    [ -z "$epoch" ] || reset="$(autopilot_epoch_iso "$epoch")"
+  elif reset="$(autopilot_limit_reset "$log")"; then
+    outcome=limited
+  fi
+  if [ "$outcome" = limited ]; then
+    limit="$reset"
+    [ -n "$limit" ] || limit="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
+  fi
+  return 0
+}
+
 # The tools a headless phase session gets: those the plugin's skills and agents
 # use.
 AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion"
@@ -924,7 +955,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail released_note line mine name event pause_epoch pause_iso reject_epoch limited flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 outcome reset early limit detail released_note line mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -961,33 +992,21 @@ autopilot_run() {
   while IFS= read -r line; do
     case "$line" in "$issue"$'\t'*) [ -z "$mine" ] || [ "$line" = "$mine" ] || continue; held=1 ;; esac
   done <<<"$claims"
-  # The early pause: a session ending with its five-hour usage at 90% or more
-  # pauses pickup until that window resets, whatever its outcome.
-  event="$(autopilot_log_last_event "$log" rate_limit_event)"
-  if [ -n "$event" ] && pause_epoch="$(autopilot_event_five_hour_reset "$event")"; then
-    autopilot_pause_extend "$main_root" "$(autopilot_epoch_iso "$pause_epoch")" "$log"
-  fi
-  if [ "$held" = 0 ]; then
-    released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
-    note "$released_note"
-    printf '%s\n' "$released_note" >>"$log"
-    return 0
-  fi
+  autopilot_session_end "$log" "$held"
+  # The early pause, then the limit pause: the pause store keeps the later.
+  if [ -n "$early" ]; then autopilot_pause_extend "$main_root" "$early" "$log"; fi
+  if [ -n "$limit" ]; then autopilot_pause_extend "$main_root" "$limit" "$log"; fi
+  case "$outcome" in
+    released)
+      released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
+      note "$released_note"
+      printf '%s\n' "$released_note" >>"$log"
+      return 0 ;;
+    limited)
+      autopilot_limit_stop "$issue" "$phase" "$reset" "$limit" "$rc" "$log"
+      return 0 ;;
+  esac
   detail="the session exited with code $rc; log: $log"
-  limited=0; reset=""
-  if [ -n "$event" ] && reject_epoch="$(autopilot_event_rejecting_reset "$event")"; then
-    limited=1
-    [ -z "$reject_epoch" ] || reset="$(autopilot_epoch_iso "$reject_epoch")"
-  elif reset="$(autopilot_limit_reset "$log")"; then
-    limited=1
-  fi
-  if [ "$limited" = 1 ]; then
-    pause_iso="$reset"
-    [ -n "$pause_iso" ] || pause_iso="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
-    autopilot_pause_extend "$main_root" "$pause_iso" "$log"
-    autopilot_limit_stop "$issue" "$phase" "$reset" "$pause_iso" "$rc" "$log"
-    return 0
-  fi
   autopilot_stop "$issue" failure "$phase" "$detail"
 }
 

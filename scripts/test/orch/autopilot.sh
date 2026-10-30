@@ -712,45 +712,6 @@ assert_contains "the comment still names the usage limit" "$(fake_comments_of 8)
 last_body="$(fake_last_comment_of 8)"
 assert_contains "the comment says the session gave no reset time" "$last_body" "it gave no reset time, so the watcher falls back to a one-hour limit pause, until $(cat "$top/.orchestrator/autopilot/limit")."
 assert_not_contains "and names no reset it does not have" "$last_body" "resets"
-
-# the other usage-limit wordings are detected, each with the one hour fallback
-for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
-  rm -f "$top/.orchestrator/autopilot/limit"
-  fake_issue 8 open ready-for-agent orch:spec
-  ndjson_with "$wording" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
-  fake_claim_seed 8
-  "$ORCH" autopilot run 8 >/dev/null 2>&1
-  assert_eq "\"$wording\" writes the limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" present
-  read -r limit_epoch _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
-  assert_eq "and pauses an hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
-done
-# a "resets <time>" message pauses until that next moment, in local time
-rm -f "$top/.orchestrator/autopilot/limit"
-fake_issue 8 open ready-for-agent orch:spec
-ndjson_with '5-hour limit reached ∙ resets 3pm' >"$launcher_dir/out"
-fake_claim_seed 8
-"$ORCH" autopilot run 8 >/dev/null 2>&1
-read -r limit_epoch limit_hour _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
-assert_eq "\"resets 3pm\" pauses until 15:00 local" "$limit_hour" "15"
-assert_eq "within the next day" "$([ "$limit_epoch" -gt "$(date +%s)" ] && [ "$limit_epoch" -le "$(( $(date +%s) + 86400 + 3600 ))" ] && echo yes)" "yes"
-rm -f "$top/.orchestrator/autopilot/limit"
-fake_issue 8 open ready-for-agent orch:spec
-ndjson_with 'Weekly limit reached ∙ resets Mon 9am' >"$launcher_dir/out"
-fake_claim_seed 8
-"$ORCH" autopilot run 8 >/dev/null 2>&1
-read -r limit_epoch limit_hour limit_day < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
-assert_eq "\"resets Mon 9am\" pauses until a Monday" "$limit_day" "Mon"
-assert_eq "at 09:00 local" "$limit_hour" "09"
-assert_eq "within the next week" "$([ "$limit_epoch" -gt "$(date +%s)" ] && [ "$limit_epoch" -le "$(( $(date +%s) + 7 * 86400 + 3600 ))" ] && echo yes)" "yes"
-# another "limit reached" is no usage limit
-for wording in "iteration limit reached" "API rate limit reached, retrying"; do
-  rm -f "$top/.orchestrator/autopilot/limit"
-  fake_issue 8 open ready-for-agent orch:spec
-  ndjson_with "$wording" >"$launcher_dir/out"
-  fake_claim_seed 8
-  "$ORCH" autopilot run 8 >/dev/null 2>&1
-  assert_eq "\"$wording\" writes no limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
-done
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: the rate limit event -------------------------------------
@@ -778,30 +739,6 @@ event_session() {
 now_epoch="$(date +%s)"
 r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
 
-{ echo 'stderr noise line'; rl_event rejected 1 "$r1" allowed_warning 0.8 "$r3"; echo 'another note'; } >"$launcher_dir/out"
-event_session 1
-assert_eq "a rejecting five-hour window writes its reset" "$(cat "$limit_file")" "$(iso_of "$r1")"
-assert_contains "and the limit stop comment names it" "$(fake_comments_of 7)" "$(iso_of "$r1")"
-rl_event rejected 1 "$r1" rejected 0.8 "$r3" >"$launcher_dir/out"
-event_session 1
-assert_eq "the latest rejecting window decides" "$(cat "$limit_file")" "$(iso_of "$r3")"
-{ rl_event rejected 1 "$r1" allowed 0.8 "$r3"; rl_event allowed 0.5 "$r1" allowed 0.8 "$r3"; } >"$launcher_dir/out"
-event_session 1
-assert_eq "a rejecting event followed by an allowed one is no limit stop" "$(on_disk "$limit_file")" absent
-assert_not_contains "its comment names no usage limit" "$(fake_comments_of 7)" "usage limit"
-
-printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"Claude AI usage limit reached"}]}}' \
-  '{"type":"user","message":{"content":[{"type":"tool_result","content":"Weekly limit reached"}]}}' >"$launcher_dir/out"
-event_session 1
-assert_eq "limit wording only in assistant text or tool results is no limit stop" "$(on_disk "$limit_file")" absent
-printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}' \
-  "{\"type\":\"result\",\"is_error\":true,\"result\":\"Claude AI usage limit reached|$r2\"}" >"$launcher_dir/out"
-event_session 1
-assert_eq "a limit message in the last result event is a limit stop" "$(cat "$limit_file")" "$(iso_of "$r2")"
-printf '%s\n' "{\"type\":\"result\",\"result\":\"Claude AI usage limit reached|$r2\"}" 'plain 5-hour limit reached ∙ resets 3pm' >"$launcher_dir/out"
-event_session 1
-assert_contains "a plain-text line is read with the result text" "$(fake_comments_of 7)" "usage limit"
-
 # early pause
 rl_event allowed 0.9 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
 event_session 0
@@ -817,27 +754,6 @@ event_session 1
 assert_eq "a rejecting event of a released claim marks no issue" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_not_contains "and posts no limit stop comment" "$(fake_comments_of 7)" "usage limit"
 rm -f "$launcher_dir/release"
-# a five-hour window at the top level pauses too
-printf '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":%s,"rateLimitType":"five_hour","utilization":0.95}}\n' "$r1" >"$launcher_dir/out"
-event_session 0
-assert_eq "a top-level five-hour window at 0.95 writes its reset" "$(cat "$limit_file")" "$(iso_of "$r1")"
-rm -f "$limit_file"
-rl_event allowed 0.89 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
-event_session 0
-assert_eq "0.89 writes nothing" "$(on_disk "$limit_file")" absent
-rl_event allowed 0.5 "$r1" allowed_warning 0.97 "$r3" >"$launcher_dir/out"
-event_session 0
-assert_eq "a high seven-day utilization alone writes nothing" "$(on_disk "$limit_file")" absent
-
-# a later recorded reset is kept; an earlier or unparsable one is replaced
-rl_event allowed 0.95 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
-event_session 0 "$(iso_of "$r2")"
-assert_eq "a later reset already recorded is kept" "$(cat "$limit_file")" "$(iso_of "$r2")"
-event_session 0 "2020-01-01T00:00:00Z"
-assert_eq "an earlier one is replaced" "$(cat "$limit_file")" "$(iso_of "$r1")"
-event_session 0 "garbage"
-assert_eq "one that does not parse is replaced" "$(cat "$limit_file")" "$(iso_of "$r1")"
-
 # a failed limit-file write is noted and changes nothing else
 rm -f "$limit_file"; mkdir "$limit_file"
 rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
@@ -862,6 +778,13 @@ assert_contains "with its ordinary failure comment" "$(fake_comments_of 7)" "Aut
 assert_contains "and the new failure-comment wording" "$(fake_comments_of 7)" 'nothing is retried automatically except a usage-limit stop labelled `orch:limited`'
 assert_not_contains "that names no usage limit" "$(fake_comments_of 7)" "usage limit"
 assert_eq "its claim released" "$(fake_claim_held 7)" free
+rmdir "$limit_file"
+# a failed write on one session with both pauses notes once per write
+rm -f "$limit_file"; mkdir "$limit_file"
+rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
+event_session 1
+assert_eq "both pauses with an unwritable limit file give two notes" "$(grep -c "could not write the limit file" <<<"$out")" "2"
+assert_eq "and the issue is still limited" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 rmdir "$limit_file"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
@@ -954,6 +877,14 @@ lim_fresh
 limit_run 7 "$(rl_event rejected 1 null allowed 0.2 null)" >/dev/null
 assert_contains "an event with no resetsAt: the comment names the fallback pause" "$(fake_comments_of 7)" "it gave no reset time, so the watcher falls back to a one-hour limit pause, until $(cat "$limit_file")."
 assert_not_contains "and no reset" "$(fake_comments_of 7)" "resets"
+# a no-reset limit stop whose five-hour window is at 90% with its reset far off:
+# the comment names the one-hour fallback pause, the file the early-pause reset
+lim_fresh
+far_epoch=$(( $(date +%s) + 14400 ))
+limit_run 7 "$({ rl_event allowed 0.9 "$far_epoch" allowed 0.2 "$far_epoch"; echo 'Claude AI usage limit reached'; })" >/dev/null
+assert_contains "no reset, early pause later: the comment names the one-hour fallback" "$(fake_last_comment_of 7)" "falls back to a one-hour limit pause, until "
+assert_not_contains "and not the early-pause reset" "$(fake_last_comment_of 7)" "$(iso_of "$far_epoch")"
+assert_eq "while the limit file holds the early-pause reset" "$(cat "$limit_file")" "$(iso_of "$far_epoch")"
 # the third stop in a row, on a message with no reset: says so, names no pause
 lim_fresh
 fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
@@ -1293,3 +1224,98 @@ assert_status "a failed write still returns 0" "$st" 0
 assert_contains "noting it on stderr" "$out" "could not write the limit file"
 assert_contains "and in the log" "$(cat "$pl")" "could not write the limit file"
 rm -rf "$pf"
+
+# --- autopilot session end (the classifier) ----------------------------------
+# autopilot_session_end <log> <held>, called directly over log files: each case
+# asserts all four values (#1695).
+echo
+echo "autopilot session end"
+new_repo >/dev/null
+se_dir="$(mktemp -d)"; se_log="$se_dir/session.log"
+# se_end <held>: the classifier over $se_log, as "outcome|reset|early|limit".
+se_end() {
+  sourced_orch_script 'outcome=x reset=x early=x limit=x; autopilot_session_end "$1" "$2"; printf "%s|%s|%s|%s\n" "$outcome" "$reset" "$early" "$limit"' "$se_log" "$1"
+}
+# se_check <label> <held> <outcome> <reset> <early> <limit>: asserts all four.
+se_check() { assert_eq "$1" "$(se_end "$2")" "$3|$4|$5|$6"; }
+now_epoch="$(date +%s)"
+r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
+i1="$(iso_of "$r1")"; i2="$(iso_of "$r2")"; i3="$(iso_of "$r3")"
+
+# wordings
+ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
+se_check "\"usage limit reached|<epoch>\" is limited, with that reset" 1 limited "$i2" "" "$i2"
+for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
+  ndjson_with "$wording" >"$se_log"
+  before="$(date +%s)"; got="$(se_end 1)"; after="$(date +%s)"
+  IFS='|' read -r o rs er lm <<<"$got"
+  read -r lim_epoch _ < <(local_fields "$lm")
+  assert_eq "\"$wording\" is limited, with no reset or early pause" "$o|$rs|$er" "limited||"
+  assert_eq "and its limit is one hour on" "$([ "$lim_epoch" -ge $((before + 3600)) ] && [ "$lim_epoch" -le $((after + 3600)) ] && echo yes)" yes
+done
+for wording in "iteration limit reached" "API rate limit reached, retrying"; do
+  ndjson_with "$wording" >"$se_log"
+  se_check "\"$wording\" is a failure" 1 failure "" "" ""
+done
+
+# resets <time>
+ndjson_with '5-hour limit reached ∙ resets 3pm' >"$se_log"
+IFS='|' read -r o rs er lm <<<"$(se_end 1)"
+read -r rs_epoch rs_hour _ < <(local_fields "$rs")
+assert_eq "\"resets 3pm\" is limited, its limit the reset" "$o|$lm" "limited|$rs"
+assert_eq "the reset is 15:00 local" "$rs_hour" 15
+assert_eq "within the next day" "$([ "$rs_epoch" -gt "$(date +%s)" ] && [ "$rs_epoch" -le "$(( $(date +%s) + 86400 + 3600 ))" ] && echo yes)" yes
+ndjson_with 'Weekly limit reached ∙ resets Mon 9am' >"$se_log"
+IFS='|' read -r o rs er lm <<<"$(se_end 1)"
+read -r rs_epoch rs_hour rs_day < <(local_fields "$rs")
+assert_eq "\"resets Mon 9am\" is limited, its limit the reset" "$o|$lm|$er" "limited|$rs|"
+assert_eq "the reset is a Monday at 09:00 local" "$rs_day $rs_hour" "Mon 09"
+assert_eq "within the next week" "$([ "$rs_epoch" -gt "$(date +%s)" ] && [ "$rs_epoch" -le "$(( $(date +%s) + 7 * 86400 + 3600 ))" ] && echo yes)" yes
+
+# where the text is found
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"Claude AI usage limit reached"}]}}' \
+  '{"type":"user","message":{"content":[{"type":"tool_result","content":"Weekly limit reached"}]}}' >"$se_log"
+se_check "limit wording only in assistant text or tool results is a failure" 1 failure "" "" ""
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}' \
+  "{\"type\":\"result\",\"is_error\":true,\"result\":\"Claude AI usage limit reached|$r2\"}" >"$se_log"
+se_check "a limit message in the last result event is limited" 1 limited "$i2" "" "$i2"
+printf '%s\n' "{\"type\":\"result\",\"result\":\"all done\"}" "plain Claude AI usage limit reached|$r2" >"$se_log"
+se_check "a plain-text line is read with the result text" 1 limited "$i2" "" "$i2"
+
+# rate-limit events
+{ echo 'stderr noise line'; rl_event rejected 1 "$r1" allowed_warning 0.8 "$r3"; echo 'another note'; } >"$se_log"
+se_check "a rejecting five-hour window gives its reset" 1 limited "$i1" "$i1" "$i1"
+rl_event rejected 1 "$r1" rejected 0.8 "$r3" >"$se_log"
+se_check "the latest of several rejecting windows decides" 1 limited "$i3" "$i1" "$i3"
+{ rl_event rejected 1 "$r1" allowed 0.8 "$r3"; rl_event allowed 0.5 "$r1" allowed 0.8 "$r3"; } >"$se_log"
+se_check "a rejecting event followed by an allowed one is a failure" 1 failure "" "" ""
+rl_event rejected 1 null allowed 0.2 null >"$se_log"
+before="$(date +%s)"; got="$(se_end 1)"; after="$(date +%s)"
+IFS='|' read -r o rs er lm <<<"$got"
+read -r lim_epoch _ < <(local_fields "$lm")
+assert_eq "a rejecting event with no resetsAt: limited, no reset, no early pause" "$o|$rs|$er" "limited||"
+assert_eq "and a limit pause one hour on, within the clock read around the call" "$([ "$lim_epoch" -ge $((before + 3600)) ] && [ "$lim_epoch" -le $((after + 3600)) ] && echo yes)" yes
+
+# early pause, whatever the outcome
+rl_event allowed 0.9 "$r1" allowed 0.2 "$r3" >"$se_log"
+se_check "utilization 0.9 gives the early pause on a failure" 1 failure "" "$i1" ""
+se_check "and on a released claim" 0 released "" "$i1" ""
+{ rl_event allowed 0.9 "$r1" allowed 0.2 "$r3"; echo "Claude AI usage limit reached|$r2"; } >"$se_log"
+se_check "and on a limited session, the limit pause apart" 1 limited "$i2" "$i1" "$i2"
+printf '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":%s,"rateLimitType":"five_hour","utilization":0.95}}\n' "$r1" >"$se_log"
+se_check "a top-level five-hour window at 0.95 gives it" 1 failure "" "$i1" ""
+rl_event allowed 0.89 "$r1" allowed 0.2 "$r3" >"$se_log"
+se_check "0.89 gives none" 1 failure "" "" ""
+rl_event allowed 0.5 "$r1" allowed_warning 0.97 "$r3" >"$se_log"
+se_check "a high seven-day utilization alone gives none" 1 failure "" "" ""
+
+# both pauses present
+rl_event rejected 0.95 "$r3" allowed 0.2 "$r3" >"$se_log"
+se_check "early pause the later: each value holds its own" 1 limited "$i3" "$i3" "$i3"
+{ rl_event allowed 0.95 "$r1" allowed 0.2 "$r3"; echo "Claude AI usage limit reached|$r3"; } >"$se_log"
+se_check "limit pause the later: each value holds its own" 1 limited "$i3" "$i1" "$i3"
+
+# released claims
+rl_event rejected 0.95 "$r1" allowed 0.2 "$r3" >"$se_log"
+se_check "a released claim with a rejecting event is released, with its early pause only" 0 released "" "$i1" ""
+rm -rf "$se_dir"
