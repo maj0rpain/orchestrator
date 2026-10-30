@@ -468,6 +468,10 @@ out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses a ticket worktree under a side checkout holding a flow" "$st" 1
 assert_contains "naming it" "$out" "$gamma/.orchestrator/worktrees/t6"
 assert_contains "with ticket-worktree remove as the remedy" "$out" "orch.sh ticket-worktree remove 6"
+assert_eq "its refusal's first line carries one prefix (#1718)" "$(printf '%s\n' "$out" | head -n 1)" \
+  "orch: ticket worktrees are left under $gamma - moving them would break git's record of them:"
+assert_eq "and the refusal arrives whole" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "     Remove each with orch.sh ticket-worktree remove <n> first."
 assert_eq "its flow is not archived" "$(archived_count "$top" new-flow)" "0"
 assert_eq "its flow stays in place" "$(on_disk "$gamma/.orchestrator/state.json")" "present"
 assert_eq "nor its worktree removed" "$(on_disk "$gamma")" "present"
@@ -541,21 +545,6 @@ for caller in archive remove; do
   assert_not_contains "$caller prints the error with one prefix" "$out" "orch: orch: "
   assert_eq "$caller leaves the worktree" "$(on_disk "$af/.orchestrator/state.json")" "present"
 done
-
-# #1718: a ticket worktree blocking the archive - remove relays the multi-line
-# refusal whole, with one prefix.
-rt="$(sc_add rt)"
-(cd "$rt" && orch_gh_failing init rt-flow >/dev/null && state_fixture branch orch/rt-flow)
-sp_branch_off "$rt" orch/rt-flow
-(cd "$rt" && orch_gh_failing ticket-worktree add 8 >/dev/null)
-out="$(orch_gh_failing side-checkout remove rt 2>&1)"; st=$?
-assert_status "remove exits 1 when a ticket worktree blocks the archive" "$st" 1
-assert_eq "its refusal's first line carries one prefix" "$(printf '%s\n' "$out" | head -n 1)" \
-  "orch: ticket worktrees are left under $rt - moving them would break git's record of them:"
-assert_eq "and the refusal arrives whole" "$(printf '%s\n' "$out" | tail -n 1)" \
-  "     Remove each with orch.sh ticket-worktree remove <n> first."
-assert_eq "the side checkout stays" "$(on_disk "$rt/.orchestrator/state.json")" "present"
-(cd "$rt" && orch_gh_failing ticket-worktree remove 8 >/dev/null)
 
 # side_checkout_remove_worktree and side_checkout_archive_and_remove:
 # Each function through the sourced module, one case per policy and outcome.

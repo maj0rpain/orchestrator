@@ -152,6 +152,18 @@ done
 assert_eq "is_positive_int accepts whole numbers of 1 or more, leading zeros included, and nothing else" \
   "$pi_verdicts" " y y y n n n n n n n"
 
+# --- err_line (#1718) ---------------------------------------------------------
+# A captured error's first line, everything through its first `orch: ` dropped.
+echo
+echo "err_line"
+new_repo >/dev/null
+assert_eq "err_line drops the prefix and keeps the first line" \
+  "$(sourced_orch err_line $'orch: first\n     second')" "first"
+assert_eq "err_line drops stray text ahead of the first prefix" \
+  "$(sourced_orch err_line $'jq: parse error\norch: the reason')" "the reason"
+assert_eq "err_line leaves an error with no prefix as its first line" \
+  "$(sourced_orch err_line $'plain\nmore')" "plain"
+
 # --- git_push (#1300) ---------------------------------------------------------
 # Every push orch.sh makes runs through git_push, which returns the push's
 # status and cuts git's reason out of its stderr. pr open, pr publish and
