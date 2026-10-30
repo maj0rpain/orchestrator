@@ -155,7 +155,6 @@ out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "pr open passes once the tickets are closed" "$st" 0
 assert_eq "and updates the recorded PR" "$out" "23"
 assert_eq "creating no PR" "$(fake_prs)" "$prs_before"
-state_fixture pr ""
 
 git config --unset "branch.orch/16-propen.orchestrator-pr"
 state_fixture pr ""
