@@ -1974,6 +1974,7 @@ fake_claim_seed 8 otherhost 5 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
+assert_contains "its remedy names git push and the orch:running label" "$out" "if that session is gone: git push origin :refs/orch/claims/7, and remove its orch:running label"
 assert_not_contains "not a fresh one" "$out" "issue #8"
 assert_not_contains "nor this host's own" "$out" "issue #9"
 fake_claim_seed 6 autopilot-abc123 5 2020-01-01T00:00:00Z

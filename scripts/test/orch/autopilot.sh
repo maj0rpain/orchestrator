@@ -163,6 +163,11 @@ assert_status "start refuses an issue without ready-for-agent" "$st" 1
 assert_contains "naming the label" "$out" "ready-for-agent"
 assert_eq "writing nothing" "$(fake_comments_of 8)$(fake_labels_of 8)" ""
 fake_issue 9 open ready-for-agent orch:review
+fake_fail adapter_issue_state_labels "HTTP 502"
+out="$("$ORCH" autopilot start 9 "$planf" 2>&1)"; st=$?
+fake_unfail
+assert_status "start on a failed issue read dies" "$st" 1
+assert_eq "in one line naming gh and the reason" "$(printf '%s\n' "$out" | grep -c .)|${out#orch: gh could not read issue #9: }" "1|HTTP 502"
 out="$("$ORCH" autopilot start 9 "$planf" 2>&1)"; st=$?
 assert_status "start refuses an issue with a phase label" "$st" 1
 assert_contains "naming the label" "$out" "orch:review"
@@ -1025,7 +1030,7 @@ url_of() { printf 'https://github.com/o/r/issues/%s#issuecomment-%s' "$1" "$2"; 
 assert_eq "no state.json exists in the checkout" "$(on_disk .orchestrator/state.json)" absent
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_status "nothing labelled needs-human exits 0" "$st" 0
-assert_contains "saying nothing is pending" "$out" "nothing pending"
+assert_eq "saying nothing is pending, the label text included" "$out" "nothing pending: no open needs-human issue of an autopilot flow"
 assert_eq "in one line" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
 
 # a pending question
@@ -1125,7 +1130,13 @@ fake_issue 32 open needs-human orch:spec
 fake_fail adapter_issue_relabel "HTTP 500"
 out="$("$ORCH" autopilot resume 32 2>&1)"; st=$?
 assert_status "resume on an adapter failure dies" "$st" 1
-assert_contains "with gh's reason" "$out" "HTTP 500"
+assert_eq "with its own wording and gh's reason" "$out" "orch: gh could not remove needs-human from issue #32: HTTP 500"
+fake_unfail
+fake_issue 33 open needs-human orch:spec
+fake_fail adapter_issue_state_labels "HTTP 502"
+out="$("$ORCH" autopilot resume 33 2>&1)"; st=$?
+assert_status "resume on a failed issue read dies" "$st" 1
+assert_eq "in one line naming gh and the reason" "$(printf '%s\n' "$out" | grep -c .)|${out#orch: gh could not read issue #33: }" "1|HTTP 502"
 fake_unfail
 
 # reply
@@ -1142,7 +1153,7 @@ fake_comment 41 o 2026-01-01T00:00:00Z "$(question_of spec)"
 fake_fail adapter_issue_relabel "HTTP 500"
 out="$("$ORCH" autopilot reply 41 "$r" 2>&1)"; st=$?
 assert_status "a failed label removal dies" "$st" 1
-assert_contains "saying the comment landed" "$out" "comment landed"
+assert_eq "saying the comment landed, with the reason" "$out" "orch: the reply comment landed on issue #41, but needs-human could not be removed: HTTP 500"
 assert_eq "the comment is there" "$(fake_comments_of 41 | tail -1)" "1: Yes, keep it"
 fake_unfail
 # a failed post leaves the label
