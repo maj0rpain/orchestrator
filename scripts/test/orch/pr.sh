@@ -595,6 +595,7 @@ fake_fail adapter_sub_issues
 out="$("$ORCH" pr publish 61 "Title" "$body" 2>&1)"; st=$?
 assert_status "pr publish refuses when GitHub cannot be read" "$st" 1
 assert_contains "naming the failure" "$out" "orch: gh could not list sub-issues of #61"
+assert_eq "and creates no PR when GitHub cannot be read" "$(fake_prs)" "$prs_before"
 fake_unfail
 "$ORCH" ticket close "$pt" >/dev/null
 out="$("$ORCH" pr publish 61 "Title" "$body" 2>&1)"; st=$?

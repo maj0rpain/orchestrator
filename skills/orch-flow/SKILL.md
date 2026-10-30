@@ -374,7 +374,8 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    sub-issue: no `ticket next`/`ticket close` loop runs against it, since an
    empty frontier there means nothing was ever split out, not "already done."
    The sequential path dispatches exactly one subagent, for the spec issue
-   itself, in its own ticket worktree `t<n>`: merged, never closed. **Exit 1**
+   itself, in its own ticket worktree `t<spec issue>`: merged, never closed.
+   **Exit 1**
    means no breakdown exists: the phase stops, naming it. **Exit 2** means
    GitHub could not be read, or `ticket exists` was misused: the phase stops,
    leaving the state where it is.
