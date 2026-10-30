@@ -460,6 +460,12 @@ fake_issue() {
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/labels"
 }
 
+# fake_issue_title <n> <title>: seeds issue #n's title.
+fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
+
+# fake_comments_clear <n>: issue #n holds no comments.
+fake_comments_clear() { rm -rf "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
+
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 
@@ -482,12 +488,13 @@ fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_labels_of() { sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
 fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
 
-# fake_claim_seed <issue> [host] [pid] [started]: seeds a claim on the issue,
-# held by this host with pid 1 and a start long past unless given. A claim
+# fake_claim_seed <issue> [host] [pid] [started] [phase]: seeds a claim on the
+# issue, held by this host with pid 1, a start long past and the spec phase
+# unless given. A claim
 # is a ref on origin; the fake keeps it as a line in the store.
 fake_claim_seed() {
   mkdir -p "$ORCH_GH_FAKE_STORE/claims"
-  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "${2:-$(hostname)}" "${3:-1}" spec "${4:-2026-01-01T00:00:00Z}" \
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "${2:-$(hostname)}" "${3:-1}" "${5:-spec}" "${4:-2026-01-01T00:00:00Z}" \
     >"$ORCH_GH_FAKE_STORE/claims/$1"
 }
 

@@ -963,16 +963,16 @@ adapter_run_rerun() {
   printf '%s\n' "$1" >>"$(fake_store)/reruns"
 }
 
-# adapter_claim_create <issue> <phase> <pid>: the claim stored as one line, this
-# host and the start time beside the arguments; status 2 where the issue is
-# already claimed, as the real operation's lost race.
+# adapter_claim_create <issue> <phase> <pid> <host>: the claim stored as one
+# line, the host and the start time beside the arguments; status 2 where the
+# issue is already claimed, as the real operation's lost race.
 adapter_claim_create() {
   ! fake_failing adapter_claim_create || return 1
   local f
   f="$(fake_store)/claims/$1"
   mkdir -p "$(fake_store)/claims"
   [ ! -e "$f" ] || return 2
-  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(autopilot_host_id)" "$3" "$2" "$(now)" >"$f"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$4" "$3" "$2" "$(now)" >"$f"
 }
 
 # adapter_claim_delete <issue>: the claim removed; none there is freed all the

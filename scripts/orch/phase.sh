@@ -43,7 +43,7 @@ phase_finish() {
   local issue
   if autopilot_active; then
     require_issue issue
-    autopilot_phase_move "$issue" "$1" "$2"
+    standing_finish "$issue" "$1" "$2"
     return 0
   fi
   phase_write "$1"

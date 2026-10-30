@@ -1959,6 +1959,10 @@ assert_contains "two phase labels are named space-separated in table order" "$ou
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "an agreeing label is ok" "$out" "phase label: orch:spec"
+fake_fail adapter_issue_state_labels "HTTP 502"
+out="$("$ORCH" doctor --flow 2>&1 >/dev/null)"
+assert_not_contains "doctor stays silent about a failed label read" "$out" "HTTP 502"
+fake_unfail
 fake_issue 7 open ready-for-agent
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_not_contains "an interactive flow's missing label is not mentioned" "$out" "phase label"
@@ -1976,6 +1980,11 @@ fake_claim_seed 6 autopilot-abc123 5 2020-01-01T00:00:00Z
 out="$(ORCH_HOST_ID=autopilot-abc123 "$ORCH" doctor --env 2>&1)"
 assert_not_contains "with ORCH_HOST_ID set, a claim of that id is its own" "$out" "issue #6"
 assert_contains "and the hostname's claim is another identity's" "$out" "issue #9 has been claimed by $(hostname)"
+fake_fail adapter_claim_list "HTTP 502 claims"
+out="$("$ORCH" doctor --env 2>&1)"
+fake_unfail
+assert_not_contains "claims origin cannot list are not reported" "$out" "has been claimed by"
+assert_contains "and doctor's other checks still run" "$out" "ok    "
 restore_suite_env
 
 # --- doctor: autopilot side-checkout flows ------------------------------------
@@ -1985,7 +1994,7 @@ echo
 echo "doctor: autopilot side-checkout flows"
 tick_fixture
 fake_issue 7 open ready-for-agent orch:spec
-printf 'Side flow\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
+fake_issue_title 7 "Side flow"
 # The side checkout is built by the commands a pickup runs: add, then init.
 side7="$("$ORCH" side-checkout add 7-side-flow --issue 7 2>/dev/null)"
 (cd "$side7" && "$ORCH" init 7-side-flow --issue 7 >/dev/null 2>&1)

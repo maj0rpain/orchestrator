@@ -254,7 +254,7 @@ assert_eq "a failed refs read writes none and fills the error variable" "$out" \
 assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 
 fake_issue 9 open bug enhancement
-printf 'A title\n' >"$ORCH_GH_FAKE_STORE/issues/9/title"
+fake_issue_title 9 "A title"
 out="$(sourced_orch_script 'issue_title_labels_read 9 title labels err; printf "%s|%s" "$title" "$labels"')"
 assert_eq "issue_title_labels_read writes the title and the labels" "$out" "A title|bug
 enhancement"
@@ -1295,21 +1295,21 @@ claim_contract() {
   local who="$1" out st
   out="$(claim_op adapter_claim_list 2>&1)"
   assert_eq "$who: no claim lists nothing" "$out" ""
-  out="$(claim_op adapter_claim_create 41 spec 1234 2>&1)"; st=$?
+  out="$(claim_op adapter_claim_create 41 spec 1234 "$(hostname)" 2>&1)"; st=$?
   assert_status "$who: a first create wins" "$st" 0
-  out="$(claim_op adapter_claim_create 41 implement 5678 2>&1)"; st=$?
+  out="$(claim_op adapter_claim_create 41 implement 5678 "$(hostname)" 2>&1)"; st=$?
   assert_status "$who: a second create of the same issue loses with status 2" "$st" 2
   out="$(claim_op adapter_claim_list 2>&1)"
   assert_eq "$who: the loser changed nothing" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
   assert_eq "$who: list prints issue, host, pid, phase and start time" \
     "$(printf '%s\n' "$out" | awk -F'\t' -v h="$(hostname)" '$1 == 41 && $2 == h && $3 == 1234 && $4 == "spec" && $5 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9:][0-9:][0-9:][0-9:][0-9:][0-9:][0-9:][0-9:]Z$/ && NF == 5 { print "ok" }')" "ok"
-  claim_op adapter_claim_create 7 review 99 >/dev/null 2>&1
+  claim_op adapter_claim_create 7 review 99 "$(hostname)" >/dev/null 2>&1
   assert_eq "$who: list prints one line per claim, by issue number" \
     "$(claim_op adapter_claim_list | cut -f1 | tr '\n' ' ')" "7 41 "
   out="$(claim_op adapter_claim_delete 41 2>&1)"; st=$?
   assert_status "$who: a delete succeeds" "$st" 0
   assert_eq "$who: and the list no longer has the claim" "$(claim_op adapter_claim_list | cut -f1 | tr '\n' ' ')" "7 "
-  out="$(claim_op adapter_claim_create 41 review 4321 2>&1)"; st=$?
+  out="$(claim_op adapter_claim_create 41 review 4321 "$(hostname)" 2>&1)"; st=$?
   assert_status "$who: a delete frees the issue for a new create" "$st" 0
 }
 
@@ -1319,12 +1319,10 @@ assert_eq "a claim is a ref on origin that holds the empty tree" \
   "$(git -C "$claim_origin" rev-parse "refs/orch/claims/41^{tree}")" "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 assert_eq "and touches no branch of origin" "$(git -C "$claim_origin" for-each-ref --format='%(refname)' | grep -vc '^refs/orch/claims/')" "0"
 assert_eq "and leaves the checkout's HEAD where it was" "$(git rev-parse HEAD)" "$claim_head"
-out="$(ORCH_HOST_ID=autopilot-abc123 claim_op adapter_claim_create 60 spec 1 2>&1; claim_op adapter_claim_list | awk -F'\t' '$1 == 60 { print $2 }')"
-assert_eq "a claim records ORCH_HOST_ID when set" "$out" "autopilot-abc123"
-out="$(ORCH_HOST_ID="" claim_op adapter_claim_create 61 spec 1 2>&1; claim_op adapter_claim_list | awk -F'\t' '$1 == 61 { print $2 }')"
-assert_eq "and the hostname when it is empty" "$out" "$(hostname)"
+out="$(claim_op adapter_claim_create 60 spec 1 autopilot-abc123 2>&1; claim_op adapter_claim_list | awk -F"\t" '$1 == 60 { print $2 }')"
+assert_eq "a claim records the host it is given" "$out" "autopilot-abc123"
 git remote set-url origin "$claim_origin/nowhere"
-out="$(claim_op adapter_claim_create 50 spec 1 2>&1)"; st=$?
+out="$(claim_op adapter_claim_create 50 spec 1 "$(hostname)" 2>&1)"; st=$?
 assert_status "a push that fails for another reason fails with status 1, not 2" "$st" 1
 assert_ne "and says why" "$out" ""
 out="$(claim_op adapter_claim_delete 50 2>&1)"; st=$?
@@ -1339,7 +1337,7 @@ fake_github
 claim_op() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 claim_contract "fake"
 fake_fail adapter_claim_create "boom"
-out="$(claim_op adapter_claim_create 51 spec 1 2>&1)"; st=$?
+out="$(claim_op adapter_claim_create 51 spec 1 "$(hostname)" 2>&1)"; st=$?
 assert_status "fake: a seeded failure fails a create with status 1" "$st" 1
 assert_eq "fake: with the seeded stderr" "$out" "boom"
 fake_unfail

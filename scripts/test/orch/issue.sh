@@ -5,8 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# fake_issue_title <n> <title>: seeds issue #n's title.
-fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
 
 # close_refused <what> <want> <args...>: runs `issue close <args...>` and
 # asserts it exits 1 with an orch: message containing <want>, leaving the
