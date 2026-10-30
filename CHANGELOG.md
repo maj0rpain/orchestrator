@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.34
+
+handoff_comment_fetch keeps one meaning per status variable, with no change in behaviour.
+
 ## 4.38.33
 
 `orch.sh side-checkout prune` (and the `/orchestrator:finish` sweep) no longer doubles the `orch: ` prefix when it cannot archive a flow: each warning, for the main checkout or a side checkout, now reads as one message with one prefix, still one line per checkout. The CLI callers' archive failure (`side-checkout remove`, `archive`) is now relayed through `die` rather than printed by hand, its text unchanged.
