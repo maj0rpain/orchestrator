@@ -726,11 +726,10 @@ limit_file="$top/.orchestrator/autopilot/limit"
 printf '7\n' >"$launcher_dir/release"; : >"$launcher_dir/out"
 "$ORCH" autopilot tick >/dev/null 2>&1   # makes the side checkout
 rm -f "$launcher_dir/release" "$launcher_dir/calls" "$limit_file"
-# event_session <exit> [prior limit file content]: a fresh run of issue 7 over
-# the launcher's canned log, the limit file as the prior content, else absent.
+# event_session <exit>: a fresh run of issue 7 over the launcher's canned log,
+# the limit file absent.
 event_session() {
   [ -d "$limit_file" ] || rm -f "$limit_file"
-  [ $# -lt 2 ] || printf '%s\n' "$2" >"$limit_file"
   fake_issue 7 open ready-for-agent orch:spec orch:running
   fake_claim_seed 7
   printf '%s\n' "$1" >"$launcher_dir/exit"
@@ -1269,7 +1268,7 @@ done
 ndjson_with '5-hour limit reached ∙ resets 3pm' >"$se_log"
 IFS='|' read -r o rs er lm <<<"$(se_end 1)"
 read -r rs_epoch rs_hour _ < <(local_fields "$rs")
-assert_eq "\"resets 3pm\" is limited, its limit the reset" "$o|$lm" "limited|$rs"
+assert_eq "\"resets 3pm\" is limited, its limit the reset, no early pause" "$o|$lm|$er" "limited|$rs|"
 assert_eq "the reset is 15:00 local" "$rs_hour" 15
 assert_eq "within the next day" "$([ "$rs_epoch" -gt "$(date +%s)" ] && [ "$rs_epoch" -le "$(( $(date +%s) + 86400 + 3600 ))" ] && echo yes)" yes
 ndjson_with 'Weekly limit reached ∙ resets Mon 9am' >"$se_log"
