@@ -90,26 +90,33 @@ marked_comment_newest() {
   printf '%s\n' "$out"
 }
 
+# marked_comment_at <jq-flags> <program> <kind> [<arg>]: reads the comments on
+# stdin and runs the jq <program>, under <jq-flags>, with $i bound to the index
+# marked_comment_newest finds for <kind> [<arg>]; the one place the readers'
+# exit status is settled. Passes marked_comment_newest's 1 and 2 through, else
+# jq's own status.
+marked_comment_at() {
+  local flags="$1" program="$2" json i
+  shift 2
+  json="$(cat)"
+  i="$(marked_comment_newest "$@" <<<"$json")" || return $?
+  jq "$flags" --argjson i "$i" "$(marked_comment_jq)$program" <<<"$json"
+}
+
 # marked_comment_retired <kind> [<arg>]: succeeds when the newest comment of
 # <kind> is tagged retired; prints nothing. Fails with 1 when it is not, or none
 # is, and with 2 when the comments cannot be read.
 marked_comment_retired() {
-  local json i
-  json="$(cat)"
-  i="$(marked_comment_newest "$@" <<<"$json")" || return $?
-  jq -e --argjson i "$i" "$(marked_comment_jq)"'
-    marked_comment_list[$i] | marked_comment_info | .retired' <<<"$json" >/dev/null
+  marked_comment_at -e '
+    marked_comment_list[$i] | marked_comment_info | .retired' "$@" >/dev/null
 }
 
 # marked_comment_follows <kind> [<arg>]: succeeds when some comment follows
 # the newest comment of <kind>; prints nothing. Fails with 1 when none does, or
 # none is of that kind, and with 2 when the comments cannot be read.
 marked_comment_follows() {
-  local json i
-  json="$(cat)"
-  i="$(marked_comment_newest "$@" <<<"$json")" || return $?
-  jq -e --argjson i "$i" "$(marked_comment_jq)"'
-    marked_comment_list | length > $i + 1' <<<"$json" >/dev/null
+  marked_comment_at -e '
+    marked_comment_list | length > $i + 1' "$@" >/dev/null
 }
 
 # marked_comment_body <kind> [<arg>]: the body of the newest comment of <kind>
@@ -117,11 +124,8 @@ marked_comment_follows() {
 # 1, printing nothing, when none is of that kind, and 2 when the comments cannot
 # be read.
 marked_comment_body() {
-  local json i
-  json="$(cat)"
-  i="$(marked_comment_newest "$@" <<<"$json")" || return $?
-  jq -j --argjson i "$i" "$(marked_comment_jq)"'
-    marked_comment_list[$i].body | (index("\n") // empty) as $n | .[$n + 1:]' <<<"$json"
+  marked_comment_at -j '
+    marked_comment_list[$i].body | (index("\n") // empty) as $n | .[$n + 1:]' "$@"
 }
 
 # marked_comment_keep <kind> / marked_comment_drop <kind>: the comments on
