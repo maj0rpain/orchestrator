@@ -13,8 +13,8 @@ st() { sourced_orch_script 'rc=0; ( '"$1"' ) || rc=$?; echo "rc=$rc"' 2>&1; }
 # operation succeed, the one after fails once, then it succeeds again - a run
 # of writes that fails at one step and goes on.
 fake_fail_once_after() {
+  fake_fail_after "$1" "$2" "${3-}"
   fake_fail_times "$1" 1 "${3-}"
-  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
 }
 
 # --- Standing module ---------------------------------------------------------
@@ -112,8 +112,9 @@ fake_unfail
 
 # --- Standing transitions ---------------------------------------------------
 # Each transition driven against the fake, read back through standing_read and
-# the fake's read-back helpers. tr_labels <n>: the issue's labels, one line.
-tr_labels() { st "standing_read $1 && echo \"\$STANDING_PHASE|\$STANDING_RUNNING|\$STANDING_HUMAN|\$STANDING_LIMITED\"" | head -n 1; }
+# the fake's read-back helpers. tr_standing <n>: the issue's live phase,
+# running, needs-human and limited flags as "phase|running|human|limited".
+tr_standing() { st "standing_read $1 && echo \"\$STANDING_PHASE|\$STANDING_RUNNING|\$STANDING_HUMAN|\$STANDING_LIMITED\"" | head -n 1; }
 tr_seed() { fake_issue "$1" open "${@:2}"; fake_claim_seed "$1"; }
 echo
 echo "standing transitions"
@@ -122,7 +123,7 @@ fake_flow standing-transitions
 # finish
 tr_seed 50 orch:spec orch:running
 out="$(st 'standing_finish 50 implement "wrote the spec"')"
-assert_eq "finish moves the phase label, drops running and releases the claim" "$(tr_labels 50)|$(fake_claim_held 50)" "implement|0|0|0|free"
+assert_eq "finish moves the phase label, drops running and releases the claim" "$(tr_standing 50)|$(fake_claim_held 50)" "implement|0|0|0|free"
 assert_eq "finish records the phase in state.json" "$("$ORCH" state get phase)" implement
 tr_seed 51 orch:spec orch:running
 fake_fail_after adapter_issue_relabel 1 "HTTP 500"
@@ -149,7 +150,7 @@ out="$(st 'standing_pause 54 "wrote the round marker"; true')"
 assert_contains "pause failing on its release names its reason and the removal" "$out" "writes that landed: wrote the round marker, removed orch:running; the claim stays held"
 fake_unfail
 out="$(st 'standing_pause 54 "wrote the round marker"')"
-assert_eq "pause releases the claim and leaves the phase label" "$(tr_labels 54)|$(fake_claim_held 54)" "spec|0|0|0|free"
+assert_eq "pause releases the claim and leaves the phase label" "$(tr_standing 54)|$(fake_claim_held 54)" "spec|0|0|0|free"
 tr_seed 55 orch:spec orch:running
 tr_seed 54 orch:spec orch:running; fake_claim_seed 54
 fake_fail_after adapter_claim_delete 1 "HTTP 500"
@@ -160,7 +161,7 @@ fake_unfail
 # stop
 tr_seed 56 orch:spec orch:running orch:limited
 st 'standing_stop 56 refusal spec "no plan"' >/dev/null
-assert_eq "stop adds needs-human, drops limited and running, and releases" "$(tr_labels 56)|$(fake_claim_held 56)" "spec|0|1|0|free"
+assert_eq "stop adds needs-human, drops limited and running, and releases" "$(tr_standing 56)|$(fake_claim_held 56)" "spec|0|1|0|free"
 assert_eq "and posts the marked stop comment" "$(fake_comments_of 56 | head -1)" "$(marker_of refusal spec)"
 assert_contains "and keeps its prose beneath the marker" "$(fake_comments_of 56 | sed -n 2p)" "Autopilot refused to run the spec phase: no plan"
 tr_seed 66 orch:spec orch:running
@@ -180,12 +181,13 @@ assert_eq "and the claim stays held" "$(fake_claim_held 58)" held
 fake_unfail
 tr_seed 59 orch:spec orch:running
 out="$(st 'standing_stop 59 failure "" boom')"
-assert_contains "stop with an empty phase dies before any write" "$(tr_labels 59)|$(fake_comments_of 59)|$(fake_claim_held 59)" "spec|1|0|0|"
+assert_eq "an empty phase dies" "$(printf %s "$out" | tail -n 1)" "rc=1"
+assert_eq "and writes nothing, the claim still held" "$(tr_standing 59)|$(fake_comments_of 59)|$(fake_claim_held 59)" "spec|1|0|0||held"
 
 # limit-stop
 tr_seed 60 orch:spec orch:running
 st 'standing_limit_stop 60 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
-assert_eq "limit-stop adds limited, drops running and releases the claim" "$(tr_labels 60)|$(fake_claim_held 60)" "spec|0|0|1|free"
+assert_eq "limit-stop adds limited, drops running and releases the claim" "$(tr_standing 60)|$(fake_claim_held 60)" "spec|0|0|1|free"
 assert_eq "and posts the limited comment" "$(fake_comments_of 60 | head -1)" "$(marker_of limited spec)"
 tr_seed 61 orch:spec orch:running
 fake_fail adapter_issue_comment "HTTP 500"
@@ -196,19 +198,19 @@ tr_seed 67 orch:spec orch:running
 fake_comment 67 o 2026-01-01T00:00:00Z "$(marker_of limited spec)"
 fake_comment 67 o 2026-01-02T00:00:00Z "$(marker_of limited spec)"
 st 'standing_limit_stop 67 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
-assert_eq "the third limit stop in a row takes the failure path: needs-human, not limited, claim released" "$(tr_labels 67)|$(fake_claim_held 67)" "spec|0|1|0|free"
+assert_eq "the third limit stop in a row takes the failure path: needs-human, not limited, claim released" "$(tr_standing 67)|$(fake_claim_held 67)" "spec|0|1|0|free"
 assert_contains "and posts a failure comment naming the third in a row" "$(fake_comments_of 67)" "the third in a row in the spec phase"
 assert_contains "under the failure marker" "$(fake_comments_of 67)" "$(marker_of failure spec)"
 tr_seed 68 orch:spec orch:running
 out="$(st 'standing_limit_stop 68 "" "" "" 1 log')"
 assert_contains "a limit stop of an empty phase dies" "$out" "rc=1"
-assert_eq "and writes no comment and changes no label" "$(fake_comments_of 68)|$(tr_labels 68)|$(fake_claim_held 68)" "|spec|1|0|0|held"
+assert_eq "and writes no comment and changes no label" "$(fake_comments_of 68)|$(tr_standing 68)|$(fake_claim_held 68)" "|spec|1|0|0|held"
 
 # ask: the issue comes from flow state
 ask_seed() { tr_seed "$@"; "$ORCH" state set issue "$1" >/dev/null; }
 ask_seed 63 orch:spec orch:running
 out="$(QTEXT=$'1. Keep it? Recommended: yes\n' st 'standing_ask spec "$QTEXT"')"
-assert_eq "ask posts the question, adds needs-human and releases the claim" "$(tr_labels 63)|$(fake_claim_held 63)|$(fake_comments_of 63 | head -1)" "spec|0|1|0|free|$(marker_of question spec)"
+assert_eq "ask posts the question, adds needs-human and releases the claim" "$(tr_standing 63)|$(fake_claim_held 63)|$(fake_comments_of 63 | head -1)" "spec|0|1|0|free|$(marker_of question spec)"
 assert_eq "and @mentions the configured handle under the marker" "$(fake_comments_of 63 | sed -n 2p)" "@o"
 assert_contains "carrying the question" "$(fake_comments_of 63)" "1. Keep it? Recommended: yes"
 assert_contains "and the reply instructions" "$(fake_comments_of 63)" 'Reply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).'
@@ -241,7 +243,7 @@ assert_contains "start refuses an invalid plan with its message" "$out" "is not 
 assert_eq "and posts no comment and adds no label" "$(fake_comments_of 75)|$(fake_labels_of 75)" "|ready-for-agent "
 fake_issue 73 open ready-for-agent
 st 'standing_start 73 '"$sp" >/dev/null
-assert_eq "start posts the plan comment and adds the first phase label" "$(tr_labels 73)" "spec|0|0|0"
+assert_eq "start posts the plan comment and adds the first phase label" "$(tr_standing 73)" "spec|0|0|0"
 fake_issue 74 open ready-for-agent
 fake_fail adapter_issue_relabel "HTTP 500"
 out="$(st 'standing_start 74 '"$sp")"
@@ -252,7 +254,7 @@ fake_unfail
 # resume
 fake_issue 80 open needs-human orch:spec
 st 'standing_resume 80' >/dev/null
-assert_eq "resume removes needs-human" "$(tr_labels 80)" "spec|0|0|0"
+assert_eq "resume removes needs-human" "$(tr_standing 80)" "spec|0|0|0"
 fake_issue 81 open needs-human orch:spec
 fake_fail adapter_issue_relabel "HTTP 500"
 out="$(st 'standing_resume 81 replied')"
@@ -264,10 +266,10 @@ fake_unfail
 # begin
 tr_seed 60 orch:spec orch:limited
 out="$(st 'standing_begin 60 spec limited')"
-assert_eq "begin on a limited issue drops orch:limited and adds orch:running" "$(tr_labels 60)|$(printf %s "$out")" "spec|1|0|0|rc=0"
+assert_eq "begin on a limited issue drops orch:limited and adds orch:running" "$(tr_standing 60)|$(printf %s "$out")" "spec|1|0|0|rc=0"
 tr_seed 61 orch:spec
 out="$(st 'standing_begin 61 spec')"
-assert_eq "begin without limited just adds orch:running" "$(tr_labels 61)|$(printf %s "$out")" "spec|1|0|0|rc=0"
+assert_eq "begin without limited just adds orch:running" "$(tr_standing 61)|$(printf %s "$out")" "spec|1|0|0|rc=0"
 tr_seed 62 orch:spec orch:limited
 fake_fail_after adapter_issue_relabel 0 "HTTP 500"
 out="$(st 'standing_begin 62 spec limited')"
@@ -280,7 +282,7 @@ out="$(st 'standing_begin 63 spec limited')"
 fake_unfail
 assert_contains "begin failing on the running addition returns 1 with that step's wording" "$out" "step adding orch:running failed: HTTP 500
 rc=1"
-assert_eq "and the removal had landed" "$(tr_labels 63)" "spec|0|0|0"
+assert_eq "and the removal had landed" "$(tr_standing 63)" "spec|0|0|0"
 
 # begin through pickup's step runner: a failed write ends in today's stop
 tr_seed 69 orch:spec orch:limited
@@ -288,7 +290,7 @@ fake_fail_once_after adapter_issue_relabel 1 "HTTP 500"
 out="$(st 'autopilot_pickup_step 69 spec failure "" reason standing_begin 69 spec limited')"
 fake_unfail
 assert_contains "a failed running addition returns 1 through the step runner" "$out" "rc=1"
-assert_eq "the issue ends labelled for the human, limited removed, claim released" "$(tr_labels 69)|$(fake_claim_held 69)" "spec|0|1|0|free"
+assert_eq "the issue ends labelled for the human, limited removed, claim released" "$(tr_standing 69)|$(fake_claim_held 69)" "spec|0|1|0|free"
 assert_contains "and carries the failure comment worded as the step" "$(fake_comments_of 69)" "Autopilot failed in the spec phase: step adding orch:running failed: HTTP 500"
 
 # the step runner words a silent failure as today's stops did
@@ -299,7 +301,8 @@ tr_seed 77 orch:spec orch:running
 st 'autopilot_pickup_step 77 spec refusal "redo review refused" reason false' >/dev/null
 assert_contains "a refused redo gets the same" "$(fake_comments_of 77)" "Autopilot refused to run the spec phase: redo review refused: gh gave no reason"
 tr_seed 78 orch:spec orch:running
-st 'autopilot_pickup_step 78 spec failure "step reading the recorded phase failed" bare autopilot_pickup_recorded /nonexistent' >/dev/null
+out="$(st 'autopilot_pickup_step 78 spec failure "step reading the recorded phase failed" bare autopilot_pickup_recorded /nonexistent')"
+assert_contains "the read's own message reaches the tick's output" "$out" "Could not open file /nonexistent"
 assert_contains "a failed recorded-phase read keeps its wording, with no reason after it" "$(fake_comments_of 78)" "Autopilot failed in the spec phase: step reading the recorded phase failed
 "
 

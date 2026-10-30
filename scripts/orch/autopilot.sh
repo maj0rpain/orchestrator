@@ -384,12 +384,14 @@ autopilot_in_subshell() { ( "$@" ); }
 # (refusal or failure) and returns 1. The stop detail is <detail> whole, then -
 # when <reasoned> is "reason" - ": <reason>" with the reason from the command's
 # stderr ("gh gave no reason" when it said nothing); <reasoned> "bare" stops at
-# <detail>. An empty <detail> takes the command's own wording.
+# <detail>. The command's fd 3 is the tick's own stderr, for a step whose stderr
+# is no part of the stop wording. An empty <detail> takes the command's own
+# wording.
 autopilot_pickup_step() {
   local issue="$1" phase="$2" kind="$3" detail="$4" reasoned="$5" errf err stop_detail
   shift 5
   errf="$(mktemp)"
-  if "$@" 2>"$errf"; then rm -f "$errf"; return 0; fi
+  if "$@" 3>&2 2>"$errf"; then rm -f "$errf"; return 0; fi
   file_read err "$errf" || err=""
   rm -f "$errf"
   if [ -z "$detail" ]; then stop_detail="$(gh_reason "$err")"
@@ -402,7 +404,7 @@ autopilot_pickup_step() {
 # autopilot_pickup_side_find <issue>: the step finding the issue's side
 # checkout, into pickup's side - empty when it has none. It never fails.
 autopilot_pickup_side_find() {
-  side="$(side_checkout_for_issue "$1" 2>/dev/null)" || side=""
+  side="$(side_checkout_for_issue "$1" 2>&3)" || side=""
 }
 
 # autopilot_pickup_side_title <issue>: the step reading the title of an issue
@@ -439,7 +441,7 @@ autopilot_pickup_init() {
 # autopilot_pickup_recorded <side>: the step reading the side checkout's
 # recorded phase, into pickup's recorded.
 autopilot_pickup_recorded() {
-  recorded="$(state_get_in "$(flow_state_file "$1")" phase 2>/dev/null)"
+  recorded="$(state_get_in "$(flow_state_file "$1")" phase 2>&3)"
 }
 
 # autopilot_pickup_redo <side> <redo>: the step redoing a phase.
