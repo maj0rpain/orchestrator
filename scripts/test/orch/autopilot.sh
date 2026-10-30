@@ -584,9 +584,19 @@ assert_eq "leaving no temp file from the post" "$(ls -A "$tick_tmp")" ""
 assert_eq "and the claim is released" "$(fake_claim_held 9)" free
 assert_eq "with no session started" "$(tick_calls)" "0"
 
+# a failed orch:running write in pickup keeps standing_begin's own wording
+fake_issue 21 open ready-for-agent orch:spec
+fake_issue_title 21 "Begin fails"
+fake_fail_times adapter_issue_relabel 1 "HTTP 500"
+"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+fake_unfail
+assert_status "a failed orch:running write does not stop the tick" "$st" 0
+assert_contains "the comment names the step and the reason" "$(fake_comments_of 21)" "Autopilot failed in the spec phase: step adding orch:running failed: HTTP 500"
+assert_eq "and the claim is released" "$(fake_claim_held 21)" free
+
 # a die inside a subshell step fails that step only, and a cd never leaks
 fake_issue 20 open ready-for-agent orch:spec orch:running
-out="$(sourced_orch_script 'start="$PWD"; autopilot_pickup_step 20 spec failure "step minimal plan comment failed" reason autopilot_in_subshell die "could not read the comments" || echo "went on:$?"; autopilot_pickup_step 20 spec failure "step init failed" reason autopilot_in_subshell cd / || true; echo "cwd-kept:$([ "$PWD" = "$start" ] && echo yes || echo no)"' 2>&1)"
+out="$(sourced_orch_script 'start="$PWD"; autopilot_pickup_step 20 spec failure "step minimal plan comment failed" autopilot_in_subshell die "could not read the comments" || echo "went on:$?"; autopilot_pickup_step 20 spec failure "step init failed" autopilot_in_subshell cd / || true; echo "cwd-kept:$([ "$PWD" = "$start" ] && echo yes || echo no)"' 2>&1)"
 assert_contains "a die inside a step does not end the tick" "$out" "went on:1"
 assert_contains "the step's stop names the die" "$(fake_comments_of 20)" "step minimal plan comment failed: "
 assert_contains "a cd inside a step does not move the tick" "$out" "cwd-kept:yes"

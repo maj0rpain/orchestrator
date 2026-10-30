@@ -115,7 +115,11 @@ require_poll_knobs() {
 # here with its message redirected into the capture.
 capture_err() {
   local _capture_err_file _capture_err_text _capture_err_st=0
-  _capture_err_file="$(mktemp)"
+  _capture_err_file="$(mktemp)" || {
+    echo "could not create a temp file" >&2
+    printf -v "$1" '%s' "could not create a temp file"
+    return 1
+  }
   ( "${@:2}" ) 2>"$_capture_err_file" || _capture_err_st=$?
   file_read _capture_err_text "$_capture_err_file" || _capture_err_text=""
   rm -f "$_capture_err_file"
@@ -129,7 +133,11 @@ capture_err() {
 # and _capture_-prefixed locals, nested calls included.
 capture() {
   local _capture_file _capture_st=0
-  _capture_file="$(mktemp)"
+  _capture_file="$(mktemp)" || {
+    echo "could not create a temp file" >&2
+    printf -v "$2" '%s' "could not create a temp file"
+    return 1
+  }
   capture_err "$2" "${@:3}" >"$_capture_file" || _capture_st=$?
   printf -v "$1" '%s' "$(cat "$_capture_file")"
   rm -f "$_capture_file"

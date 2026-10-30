@@ -301,26 +301,28 @@ assert_contains "begin failing on the running addition returns 1 with that step'
 rc=1"
 assert_eq "and the removal had landed" "$(tr_standing 63)" "spec|0|0|0"
 
-# begin through pickup's step runner: a failed write ends in today's stop
-tr_seed 69 orch:spec orch:limited
-fake_fail_once_after adapter_issue_relabel 1 "HTTP 500"
-out="$(st 'autopilot_pickup_step 69 spec failure "" reason standing_begin 69 spec limited')"
-fake_unfail
-assert_contains "a failed running addition returns 1 through the step runner" "$out" "rc=1"
-assert_eq "the issue ends labelled for the human, limited removed, claim released" "$(tr_standing 69)|$(fake_claim_held 69)" "spec|0|1|0|free"
-assert_contains "and carries the failure comment worded as the step" "$(fake_comments_of 69)" "Autopilot failed in the spec phase: step adding orch:running failed: HTTP 500"
-
 # the step runner words a silent failure as today's stops did
 tr_seed 76 orch:spec orch:running
-st 'autopilot_pickup_step 76 spec failure "step init failed" reason false' >/dev/null
+st 'autopilot_pickup_step 76 spec failure "step init failed" false' >/dev/null
 assert_contains "a step failing silently gets gh's no-reason wording after its detail" "$(fake_comments_of 76)" "Autopilot failed in the spec phase: step init failed: gh gave no reason"
 tr_seed 77 orch:spec orch:running
-st 'autopilot_pickup_step 77 spec refusal "redo review refused" reason false' >/dev/null
+st 'autopilot_pickup_step 77 spec refusal "redo review refused" false' >/dev/null
 assert_contains "a refused redo gets the same" "$(fake_comments_of 77)" "Autopilot refused to run the spec phase: redo review refused: gh gave no reason"
 tr_seed 78 orch:spec orch:running
-out="$(st 'autopilot_pickup_step 78 spec failure "step reading the recorded phase failed" bare autopilot_pickup_recorded /nonexistent')"
-assert_contains "the read's own message reaches the tick's output" "$out" "Could not open file /nonexistent"
-assert_contains "a failed recorded-phase read keeps its wording, with no reason after it" "$(fake_comments_of 78)" "Autopilot failed in the spec phase: step reading the recorded phase failed
-"
+out="$(st 'autopilot_pickup_step 78 spec failure "step reading the recorded phase failed" autopilot_pickup_recorded /nonexistent')"
+assert_contains "a failed recorded-phase read stops with the reader's reason after the detail" "$(fake_comments_of 78)" "Autopilot failed in the spec phase: step reading the recorded phase failed: "
+assert_contains "and that reason is the reader's own message" "$(fake_comments_of 78)" "Could not open file /nonexistent"
+
+# a failed mktemp is a temp-file failure, never gh's: the command is not run
+tr_seed 79 orch:spec orch:running
+mt_marker="$(mktemp -u)"
+# (a file marks the first call: each runs in a $(...) subshell)
+mt_failed="$(mktemp -u)"
+out="$(st 'mktemp() { [ -e "'"$mt_failed"'" ] || { : >"'"$mt_failed"'"; return 1; }; command mktemp "$@"; }; autopilot_pickup_step 79 spec failure "step init failed" touch "'"$mt_marker"'"')"
+assert_contains "a failed runner mktemp returns 1" "$out" "rc=1"
+assert_contains "and stops the issue worded as a temp-file failure" "$(fake_comments_of 79)" "Autopilot failed in the spec phase: step init failed: could not create a temp file for the step's stderr"
+assert_eq "releasing the claim" "$(fake_claim_held 79)" free
+assert_eq "without running the command" "$([ -e "$mt_marker" ] && echo ran || echo not-run)" not-run
+rm -f "$mt_marker" "$mt_failed"
 
 restore_suite_env
