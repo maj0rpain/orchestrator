@@ -45,6 +45,12 @@ die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
 # own status, or a warning the command carries on past.
 warn() { printf 'orch: %s\n' "$*" >&2; }
 note() { printf '%s\n' "$*"; }
+# err_line <err>: a captured error's first line, everything through its first
+# `orch: ` dropped, for quoting inside a message of our own.
+err_line() {
+  local err="${1#*orch: }"
+  printf '%s' "${err%%$'\n'*}"
+}
 # The one timestamp shape for .orchestrator/ directory names: compact, UTC, and
 # colon-free so the path is valid on Windows too. now(), in flow-state.sh, stays
 # ISO-8601: it is a field value, never a path segment.

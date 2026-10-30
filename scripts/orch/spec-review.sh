@@ -837,7 +837,7 @@ spec_review_prompt() {
       *) die "the Fidelity lens runs only in a flow's spec review: $dir is not under $SPEC_ROUNDS_DIR/" ;;
     esac
     capture plan plan_err cmd_handoff path spec || {
-      [ -z "$plan_err" ] || die "no plan handoff for the Fidelity prompt: $(spec_review_err_line "$plan_err")"
+      [ -z "$plan_err" ] || die "no plan handoff for the Fidelity prompt: $(err_line "$plan_err")"
       die "no plan handoff for the Fidelity prompt: $plan does not exist"
     }
   fi
@@ -1636,12 +1636,6 @@ spec_review_landed() {
   printf '%s' "${out:-nothing}"
 }
 
-# spec_review_err_line <err>: a captured error's first line, its `orch: `
-# prefix dropped, for quoting inside a die message of our own.
-spec_review_err_line() {
-  local err="${1#orch: }"
-  printf '%s' "${err%%$'\n'*}"
-}
 # The applied.log labels the resume path reads back: one definition each, for
 # the spec_review_write that logs it and the grep that finds it.
 spec_review_label_changelog() { printf 'the changelog comment on issue #%s' "$1"; }
@@ -1659,7 +1653,7 @@ spec_review_write() {
     return 0
   fi
   if ! capture_err err "$@" >/dev/null; then
-    die "could not write $what: $(spec_review_err_line "$err") - already landed: $(spec_review_landed "$dir"); $dir/changelog.md is kept, and the review stops here"
+    die "could not write $what: $(err_line "$err") - already landed: $(spec_review_landed "$dir"); $dir/changelog.md is kept, and the review stops here"
   fi
   printf '%s\n' "$what" >>"$dir/applied.log" \
     || die "$what landed, but $dir/applied.log could not record it"
@@ -1931,7 +1925,7 @@ spec_review_apply() {
       0) ;;
       1) tickets="None - no ticket breakdown" ;;
       *)
-        die "ticket exists #$issue exited $st: $(spec_review_err_line "$err") - nothing written" ;;
+        die "ticket exists #$issue exited $st: $(err_line "$err") - nothing written" ;;
     esac
   fi
   if [ -n "$changed" ] && [ "$st" -eq 0 ]; then

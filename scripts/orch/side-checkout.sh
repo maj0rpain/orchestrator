@@ -197,12 +197,13 @@ side_checkout_archive_and_remove() {
 
 # side_checkout_archive_and_remove_or_exit <path> <main-root> <here> <policy>:
 # the CLI callers' shape of side_checkout_archive_and_remove - a failed archive
-# prints its kept `orch: ...` error and exits 1; otherwise it returns the
-# helper's status (0 removed, 1 removal refused under `warn`).
+# relays its kept error through die, everything through its first `orch: `
+# stripped so it carries one prefix; otherwise it returns the helper's status
+# (0 removed, 1 removal refused under `warn`).
 side_checkout_archive_and_remove_or_exit() {
   local archive_out rc=0
   side_checkout_archive_and_remove "$@" || rc=$?
-  if [ "$rc" -eq 2 ]; then printf '%s\n' "$archive_out" >&2; exit 1; fi
+  if [ "$rc" -eq 2 ]; then die "${archive_out#*orch: }"; fi
   return "$rc"
 }
 
@@ -384,7 +385,7 @@ cmd_side_checkout_prune() {
     archive_out=""
     if [ "$path" = "$main_root" ]; then
       if ! archive_out="$(archive_flow "$path" "$main_root" 2>&1)"; then
-        warn "could not archive the main checkout's flow: ${archive_out%%$'\n'*}"; failed=1; continue
+        warn "could not archive the main checkout's flow: $(err_line "$archive_out")"; failed=1; continue
       fi
       note "$archive_out"
       note "archived the main checkout's flow in place - $(checkout_branch "$main_root" || true) is still checked out"
@@ -394,7 +395,7 @@ cmd_side_checkout_prune() {
     side_checkout_archive_and_remove "$path" "$main_root" "$here" warn || teardown_rc=$?
     case "$teardown_rc" in
       0) ;;
-      2) warn "could not archive the flow in side checkout $path: ${archive_out%%$'\n'*} - left as it stands"
+      2) warn "could not archive the flow in side checkout $path: $(err_line "$archive_out") - left as it stands"
          failed=1; continue ;;
       *) failed=1; continue ;;
     esac
