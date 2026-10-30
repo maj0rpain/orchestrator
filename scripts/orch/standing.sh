@@ -161,7 +161,7 @@ standing_resume() {
 
 # --- transitions ------------------------------------------------------------
 #
-# Every write to Standing except pickup's goes through one transition below:
+# Every write to Standing goes through one transition below: begin,
 # start, finish, pause, ask, stop, limit-stop and resume. A chain of writes a
 # session makes under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
@@ -228,6 +228,25 @@ standing_start() {
   first="$(standing_phase_label "${PHASES%% *}")"
   capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
+}
+
+# standing_begin <issue> <phase> [limited]: pickup's last step - removes
+# orch:limited when <limited> is given, then adds orch:running. It never dies
+# and does not stop the issue: a failed write returns 1 with the write's step
+# wording, "step removing orch:limited failed: <reason>" or "step adding
+# orch:running failed: <reason>", on stderr.
+standing_begin() {
+  local issue="$1" gh_err
+  if [ -n "${3:-}" ]; then
+    capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_LIMITED_LABEL" || {
+      echo "step removing $STANDING_LIMITED_LABEL failed: $(gh_reason "$gh_err")" >&2
+      return 1
+    }
+  fi
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_RUNNING_LABEL" || {
+    echo "step adding $STANDING_RUNNING_LABEL failed: $(gh_reason "$gh_err")" >&2
+    return 1
+  }
 }
 
 # standing_finish <issue> <phase> <reason>: a finished phase's close under its

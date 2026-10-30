@@ -379,50 +379,73 @@ autopilot_short_slug() {
   printf '%s\n' "$slug"
 }
 
-# autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
-# claimed issue; with limited, first removes orch:limited, and a failed removal
-# is a failed step. A refusal or a failed write ends in standing_stop and
-# returns 0: the claim is released, the tick goes on.
-autopilot_pickup() {
+# autopilot_pickup_step <issue> <phase> <kind> <detail> <command...>: runs one
+# step of pickup in pickup's own shell, so the command may set pickup's
+# variables. A failed step stops the issue through standing_stop as <kind>
+# (refusal or failure) and returns 1; the stop detail is "<detail>: <reason>"
+# with the reason from the command's stderr, <detail> alone when the command
+# said nothing, and the command's own wording when <detail> is empty.
+autopilot_pickup_step() {
+  local issue="$1" phase="$2" kind="$3" detail="$4" errf err
+  shift 4
+  errf="$(mktemp)"
+  if "$@" 2>"$errf"; then rm -f "$errf"; return 0; fi
+  file_read err "$errf" || err=""
+  rm -f "$errf"
+  if [ -z "$err" ]; then err="$detail"
+  elif [ -z "$detail" ]; then err="$(gh_reason "$err")"
+  else err="$detail: $(gh_reason "$err")"; fi
+  standing_stop "$issue" "$kind" "$phase" "$err"
+  return 1
+}
+
+# autopilot_pickup_side <issue>: the step finding the issue's side checkout or
+# adding it, into pickup's side. Its failures are worded in full on stderr.
+autopilot_pickup_side() {
   # labels is the read's throwaway half.
   # shellcheck disable=SC2034
-  local issue="$1" phase="$2" limited="${3:-}" side slug title labels gh_err recorded state redo
-  if [ -n "$limited" ]; then
-    capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_LIMITED_LABEL" || {
-      standing_stop "$issue" failure "$phase" "step removing $STANDING_LIMITED_LABEL failed: $(gh_reason "$gh_err")"
-      return 0
-    }
-  fi
+  local issue="$1" title labels gh_err slug
   side="$(side_checkout_for_issue "$issue")" || side=""
-  if [ -z "$side" ]; then
-    issue_title_labels_read "$issue" title labels gh_err || {
-      standing_stop "$issue" failure "$phase" "step side-checkout add failed: could not read the issue's title: $(gh_reason "$gh_err")"
-      return 0
-    }
-    slug="$(autopilot_short_slug "$title")"
-    # a clash with any entry of the side checkouts directory takes the issue
-    [ ! -e "$(side_checkouts_dir "$(main_checkout)")/$slug" ] || slug="$slug-$issue"
-    capture side gh_err cmd_side_checkout_add "$slug" --issue "$issue" || {
-      standing_stop "$issue" failure "$phase" "step side-checkout add failed: $(gh_reason "$gh_err")"
-      return 0
-    }
-  fi
-  slug="$(basename "$side")"
-  if ! checkout_has_flow "$side"; then
-    capture_err gh_err autopilot_orch_in "$side" init "$slug" --issue "$issue" || {
-      standing_stop "$issue" failure "$phase" "step init failed: $(gh_reason "$gh_err")"
-      return 0
-    }
-  fi
-  capture_err gh_err autopilot_post_minimal_plan "$issue" || {
-    standing_stop "$issue" failure "$phase" "step minimal plan comment failed: $(gh_reason "$gh_err")"
-    return 0
+  [ -z "$side" ] || return 0
+  issue_title_labels_read "$issue" title labels gh_err || {
+    echo "step side-checkout add failed: could not read the issue's title: $(gh_reason "$gh_err")" >&2
+    return 1
   }
-  state="$(flow_state_file "$side")"
-  recorded="$(state_get_in "$state" phase)" || {
-    standing_stop "$issue" failure "$phase" "step reading the recorded phase failed"
-    return 0
+  slug="$(autopilot_short_slug "$title")"
+  # a clash with any entry of the side checkouts directory takes the issue
+  [ ! -e "$(side_checkouts_dir "$(main_checkout)")/$slug" ] || slug="$slug-$issue"
+  capture side gh_err cmd_side_checkout_add "$slug" --issue "$issue" || {
+    echo "step side-checkout add failed: $(gh_reason "$gh_err")" >&2
+    return 1
   }
+}
+
+# autopilot_pickup_init <issue> <side>: the step initialising a side checkout
+# that holds no flow yet.
+autopilot_pickup_init() {
+  checkout_has_flow "$2" || autopilot_orch_in "$2" init "$(basename "$2")" --issue "$1"
+}
+
+# autopilot_pickup_recorded <side>: the step reading the side checkout's
+# recorded phase, into pickup's recorded.
+autopilot_pickup_recorded() {
+  recorded="$(state_get_in "$(flow_state_file "$1")" phase 2>/dev/null)"
+}
+
+# autopilot_pickup_redo <side> <redo>: the step redoing a phase.
+autopilot_pickup_redo() {
+  ORCH_AUTOPILOT=1 autopilot_orch_in "$1" redo "$2"
+}
+
+# autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
+# claimed issue. A refusal or a failed step ends in standing_stop through
+# autopilot_pickup_step and returns 0: the claim is released, the tick goes on.
+autopilot_pickup() {
+  local issue="$1" phase="$2" limited="${3:-}" side="" recorded redo
+  autopilot_pickup_step "$issue" "$phase" failure "" autopilot_pickup_side "$issue" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "step init failed" autopilot_pickup_init "$issue" "$side" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "step minimal plan comment failed" autopilot_post_minimal_plan "$issue" || return 0
+  autopilot_pickup_step "$issue" "$phase" failure "step reading the recorded phase failed" autopilot_pickup_recorded "$side" || return 0
   if [ "$recorded" != "$phase" ]; then
     case "$phase:$recorded" in
       implement:review) redo=review ;;
@@ -430,15 +453,9 @@ autopilot_pickup() {
       *) standing_stop "$issue" refusal "$phase" "the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only a step back from review to implement or from implement to spec is a redo"
          return 0 ;;
     esac
-    ORCH_AUTOPILOT=1 capture_err gh_err autopilot_orch_in "$side" redo "$redo" || {
-      standing_stop "$issue" refusal "$phase" "redo $redo refused: $(gh_reason "$gh_err")"
-      return 0
-    }
+    autopilot_pickup_step "$issue" "$phase" refusal "redo $redo refused" autopilot_pickup_redo "$side" "$redo" || return 0
   fi
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_RUNNING_LABEL" || {
-    standing_stop "$issue" failure "$phase" "step adding $STANDING_RUNNING_LABEL failed: $(gh_reason "$gh_err")"
-    return 0
-  }
+  autopilot_pickup_step "$issue" "$phase" failure "" standing_begin "$issue" "$phase" "$limited" || return 0
   autopilot_spawn_run "$issue"
 }
 

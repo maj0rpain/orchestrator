@@ -228,4 +228,25 @@ assert_contains "resume failing with replied dies with reply's message" "$out" "
 out="$(st 'standing_resume 81')"
 assert_contains "resume failing without it dies with resume's message" "$out" "could not remove needs-human from issue #81"
 fake_unfail
+
+# begin
+tr_seed 60 orch:spec orch:limited
+out="$(st 'standing_begin 60 spec limited')"
+assert_eq "begin on a limited issue drops orch:limited and adds orch:running" "$(tr_labels 60)|$(printf %s "$out")" "spec|1|0|0|rc=0"
+tr_seed 61 orch:spec
+out="$(st 'standing_begin 61 spec')"
+assert_eq "begin without limited just adds orch:running" "$(tr_labels 61)|$(printf %s "$out")" "spec|1|0|0|rc=0"
+tr_seed 62 orch:spec orch:limited
+fake_fail_after adapter_issue_relabel 0 "HTTP 500"
+out="$(st 'standing_begin 62 spec limited')"
+fake_unfail
+assert_contains "begin failing on the limited removal returns 1 with that step's wording" "$out" "step removing orch:limited failed: HTTP 500
+rc=1"
+tr_seed 63 orch:spec orch:limited
+fake_fail_after adapter_issue_relabel 1 "HTTP 500"
+out="$(st 'standing_begin 63 spec limited')"
+fake_unfail
+assert_contains "begin failing on the running addition returns 1 with that step's wording" "$out" "step adding orch:running failed: HTTP 500
+rc=1"
+assert_eq "and the removal had landed" "$(tr_labels 63)" "spec|0|0|0"
 restore_suite_env

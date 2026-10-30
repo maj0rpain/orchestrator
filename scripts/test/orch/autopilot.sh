@@ -1039,6 +1039,14 @@ fake_unfail
 assert_eq "a failed orch:limited removal ends with needs-human and no orch:limited" "$(fake_labels_of 6)" "$LABELS_HUMAN"
 assert_eq "and starts no session for it" "$(tick_calls)" "0"
 
+# an early step failing on a limited issue ends with needs-human only
+fake_issue 9 open orch:spec orch:limited
+fake_issue_title 9 "Lim 9 needs ready"
+rm -f "$launcher_dir/calls"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a failed init on a limited issue ends with needs-human and no orch:limited" "$(fake_labels_of 9)" "needs-human orch:spec "
+assert_contains "naming the init step" "$(fake_comments_of 9)" "step init failed"
+
 # a limit file in another clone's autopilot directory starts no pause
 other_clone="$(mktemp -d)"
 git clone -q "$top" "$other_clone/clone" >/dev/null 2>&1
