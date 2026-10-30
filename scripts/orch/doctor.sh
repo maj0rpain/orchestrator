@@ -558,7 +558,7 @@ check_flow_autopilot_label() {
     return 0
   fi
   d_gh_gate || return 0
-  standing_read --quiet "$issue" || return 0
+  standing_read "$issue" || return 0
   if ! doctor_phase_label_verdict "$issue" "$phase" "$STANDING_LABELS" "this checkout" "phase label"; then
     if autopilot_active; then
       d_fail "issue #$issue carries no phase label - an autopilot session needs the flow's phase recorded on its issue."
@@ -581,7 +581,7 @@ check_autopilot_side_flows() {
     [ -f "$(flow_state_file "$path")" ] || continue
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
     d_gh_gate || return 0
-    standing_read --quiet "$issue" || continue
+    standing_read "$issue" || continue
     doctor_phase_label_verdict "$issue" "$phase" "$STANDING_LABELS" "its side checkout ${path##*/}" "phase label of #$issue" || true
   done <<<"$list"
   return 0
@@ -600,7 +600,7 @@ check_autopilot_claims() {
     started_epoch="$(autopilot_iso_epoch "$started")" || continue
     [ "$((now_epoch - started_epoch))" -gt 86400 ] || continue
     d_warn "issue #$issue has been claimed by $host (pid ${STANDING_CLAIM_PID[$issue]}, phase ${STANDING_CLAIM_PHASE[$issue]}) since $started - more than a day."
-    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its $(standing_running_label) label"
+    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its $STANDING_RUNNING_LABEL label"
   done
 }
 

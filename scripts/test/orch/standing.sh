@@ -36,16 +36,10 @@ assert_eq "the live phase skips done, the label text keeps table order, running 
 rc=0"
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$(st 'standing_read 5; echo "reason=$STANDING_REASON"')"
-assert_eq "a failed standing_read keeps the reason in STANDING_REASON and prints it on stderr" "$out" "HTTP 502
-reason=HTTP 502
+assert_eq "a failed standing_read keeps the reason in STANDING_REASON and prints nothing" "$out" "reason=HTTP 502
 rc=0"
 out="$(st 'standing_read 5')"
 assert_contains "and its status is non-zero" "$out" "rc=1"
-out="$(st 'standing_read --quiet 5; echo "reason=$STANDING_REASON"')"
-assert_eq "standing_read --quiet keeps the reason in STANDING_REASON and prints nothing" "$out" "reason=HTTP 502
-rc=0"
-out="$(st 'standing_read --quiet 5')"
-assert_contains "and its status is still non-zero" "$out" "rc=1"
 out="$(st 'standing_human_guard 5')"
 assert_eq "a guard read failing dies in one line naming gh and the reason" "$out" "orch: gh could not read issue #5: HTTP 502
 rc=1"
@@ -274,28 +268,29 @@ st 'standing_resume 80' >/dev/null
 assert_eq "resume removes needs-human" "$(tr_standing 80)" "spec|0|0|0"
 fake_issue 81 open needs-human orch:spec
 fake_fail adapter_issue_relabel "HTTP 500"
-out="$(st 'standing_resume 81 replied')"
-assert_contains "resume failing with replied dies with reply's message" "$out" "orch: the reply comment landed on issue #81, but needs-human could not be removed: HTTP 500"
+out="$(st 'standing_resume 81; echo "reason=$STANDING_REASON"')"
+assert_eq "resume failing returns 1 with the reason in STANDING_REASON and prints nothing" "$out" "reason=HTTP 500
+rc=0"
 out="$(st 'standing_resume 81')"
-assert_contains "resume failing without it dies with resume's message" "$out" "could not remove needs-human from issue #81"
+assert_contains "and its status is non-zero" "$out" "rc=1"
 fake_unfail
 
 # begin
 tr_seed 60 orch:spec orch:limited
-out="$(st 'standing_begin 60 spec limited')"
+out="$(st 'standing_begin 60 limited')"
 assert_eq "begin on a limited issue drops orch:limited and adds orch:running" "$(tr_standing 60)|$(printf %s "$out")" "spec|1|0|0|rc=0"
 tr_seed 61 orch:spec
-out="$(st 'standing_begin 61 spec')"
+out="$(st 'standing_begin 61')"
 assert_eq "begin without limited just adds orch:running" "$(tr_standing 61)|$(printf %s "$out")" "spec|1|0|0|rc=0"
 tr_seed 62 orch:spec orch:limited
 fake_fail_after adapter_issue_relabel 0 "HTTP 500"
-out="$(st 'standing_begin 62 spec limited')"
+out="$(st 'standing_begin 62 limited')"
 fake_unfail
 assert_contains "begin failing on the limited removal returns 1 with that step's wording" "$out" "step removing orch:limited failed: HTTP 500
 rc=1"
 tr_seed 63 orch:spec orch:limited
 fake_fail_after adapter_issue_relabel 1 "HTTP 500"
-out="$(st 'standing_begin 63 spec limited')"
+out="$(st 'standing_begin 63 limited')"
 fake_unfail
 assert_contains "begin failing on the running addition returns 1 with that step's wording" "$out" "step adding orch:running failed: HTTP 500
 rc=1"

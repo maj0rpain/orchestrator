@@ -16,14 +16,6 @@ STANDING_LIMITED_LABEL="orch:limited"
 # phase on its issue, `orch:<phase>` - the label is the flow's phase record.
 standing_phase_label() { printf 'orch:%s\n' "$1"; }
 
-# standing_running_label: the label of a running session, for a remedy that
-# prints it.
-standing_running_label() { printf '%s\n' "$STANDING_RUNNING_LABEL"; }
-
-# standing_human_label: the label of an issue waiting on the human, for a
-# message that prints it.
-standing_human_label() { printf '%s\n' "$STANDING_HUMAN_LABEL"; }
-
 # standing_phase_labels_in <labels>: the phases, one per line in table order,
 # whose labels are among <labels>.
 standing_phase_labels_in() {
@@ -85,21 +77,18 @@ standing_host_id() {
 
 STANDING_REASON=""
 
-# standing_read [--quiet] <issue>: reads the issue's state and labels once into
+# standing_read <issue>: reads the issue's state and labels once into
 # STANDING_STATE (OPEN or CLOSED), STANDING_LABELS (every label, one per line),
 # STANDING_PHASE (the live phase: the first phase other than done whose label is
 # present, in table order; empty when none), STANDING_PHASE_LABELS (the text of
 # every phase label, in table order) and STANDING_RUNNING, STANDING_HUMAN and
-# STANDING_LIMITED, each 0 or 1. Non-zero when the read fails: the reason on
-# stderr and in STANDING_REASON; with --quiet only in STANDING_REASON, for a
-# caller that words its own death. Call it in the current shell, never inside
-# capture_err or $(...).
+# STANDING_LIMITED, each 0 or 1. Non-zero when the read fails: the reason only
+# in STANDING_REASON, printing nothing, for a caller that words its own death.
+# Call it in the current shell, never inside capture_err or $(...).
 standing_read() {
-  local gh_err quiet=0
-  if [ "${1-}" = --quiet ]; then quiet=1; shift; fi
+  local gh_err
   if ! issue_state_labels_read "$1" STANDING_STATE STANDING_LABELS gh_err; then
     STANDING_REASON="$(gh_reason "$gh_err")"
-    [ "$quiet" = 1 ] || printf '%s\n' "$STANDING_REASON" >&2
     return 1
   fi
   STANDING_PHASE="$(standing_live_phase "$STANDING_LABELS")"
@@ -145,33 +134,33 @@ standing_human_issues() {
 # standing_human_guard <issue>: reads the issue and dies unless it is open and
 # carries needs-human.
 standing_human_guard() {
-  standing_read --quiet "$1" || gh_die "read issue #$1" "$STANDING_REASON"
+  standing_read "$1" || gh_die "read issue #$1" "$STANDING_REASON"
   [ "$STANDING_STATE" = OPEN ] || die "issue #$1 is closed"
   [ "$STANDING_HUMAN" = 1 ] || die "issue #$1 does not carry $STANDING_HUMAN_LABEL"
 }
 
-# standing_resume <issue> [replied]: removes needs-human. A failed removal dies
-# with the message of its caller: with replied (autopilot reply, whose reply
-# comment has landed), that comment's; without it, autopilot resume's.
+# standing_resume <issue>: removes needs-human. Returns 0, or 1 with the reason
+# in STANDING_REASON when the removal fails, printing nothing: each caller
+# dies with its own message. A single write, not a chain: it leaves
+# STANDING_LANDED alone.
 standing_resume() {
-  local issue="$1" gh_err
-  STANDING_LANDED=""
-  capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_HUMAN_LABEL" && return 0
-  if [ "${2:-}" = replied ]; then
-    die "the reply comment landed on issue #$issue, but $STANDING_HUMAN_LABEL could not be removed: $(gh_reason "$gh_err")"
-  fi
-  gh_die "remove $STANDING_HUMAN_LABEL from issue #$issue" "$gh_err"
+  local gh_err
+  capture_err gh_err adapter_issue_relabel "$1" --remove "$STANDING_HUMAN_LABEL" && return 0
+  STANDING_REASON="$(gh_reason "$gh_err")"
+  return 1
 }
 
 # --- transitions ------------------------------------------------------------
 #
 # Every write to Standing goes through one transition below: begin,
-# start, finish, pause, ask, stop, limit-stop and resume. A chain of writes a
+# start, finish, pause, ask, stop, limit-stop and resume. Begin and resume are
+# single writes; the others are chains. A chain of writes a
 # session makes under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
 # fails partway leaves the claim held, and dies naming the writes that landed,
 # so the next tick cleans it up as a failure. STANDING_LANDED accumulates those
-# writes; each transition resets it at its start.
+# writes; each chain transition (start, finish, pause, ask, stop and limit-stop)
+# resets it at its start, and begin and resume neither reset nor add to it.
 
 STANDING_LANDED=""
 
@@ -222,7 +211,7 @@ standing_start() {
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   [ -f "$file" ] || die "plan file not found: $file"
   ready="$(triage_label_for ready-for-agent)"
-  standing_read --quiet "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
+  standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
   list_has "$STANDING_LABELS" "$ready" ||
     die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"
   [ -z "$STANDING_PHASE_LABELS" ] ||
@@ -234,14 +223,14 @@ standing_start() {
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
 }
 
-# standing_begin <issue> <phase> [limited]: pickup's last step - removes
+# standing_begin <issue> [limited]: pickup's last step - removes
 # orch:limited when <limited> is given, then adds orch:running. It never dies
 # and does not stop the issue: a failed write returns 1 with the write's step
 # wording, "step removing orch:limited failed: <reason>" or "step adding
 # orch:running failed: <reason>", on stderr.
 standing_begin() {
   local issue="$1" gh_err
-  if [ -n "${3:-}" ]; then
+  if [ -n "${2:-}" ]; then
     capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_LIMITED_LABEL" || {
       echo "step removing $STANDING_LIMITED_LABEL failed: $(gh_reason "$gh_err")" >&2
       return 1

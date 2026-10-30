@@ -215,7 +215,7 @@ autopilot_resume() {
   local issue="$1"
   is_positive_int "$issue" || die "not an issue number: $issue"
   standing_human_guard "$issue"
-  standing_resume "$issue"
+  standing_resume "$issue" || gh_die "remove $STANDING_HUMAN_LABEL from issue #$issue" "$STANDING_REASON"
 }
 
 # autopilot_reply <issue> <file>: posts <file> as a comment on the issue, then
@@ -234,7 +234,7 @@ autopilot_reply() {
   [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
   [ "$rc" -ne 0 ] || die "a comment already follows the newest question on issue #$issue"
   gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
-  standing_resume "$issue" replied
+  standing_resume "$issue" || die "the reply comment landed on issue #$issue, but $STANDING_HUMAN_LABEL could not be removed: $STANDING_REASON"
 }
 
 # autopilot_questions: one tab-separated line per open needs-human issue that
@@ -247,7 +247,7 @@ autopilot_questions() {
   local list n phase json line lines=""
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
-    standing_read --quiet "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
+    standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
     phase="$STANDING_PHASE"
     [ -n "$phase" ] || continue
     gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
@@ -263,7 +263,7 @@ autopilot_questions() {
       | @tsv' <<<"$json")" || die "could not read issue #$n's comments"
     lines+="$line"$'\n'
   done
-  if [ -n "$lines" ]; then printf '%s' "$lines"; else printf 'nothing pending: no open %s issue of an autopilot flow\n' "$(standing_human_label)"; fi
+  if [ -n "$lines" ]; then printf '%s' "$lines"; else printf 'nothing pending: no open %s issue of an autopilot flow\n' "$STANDING_HUMAN_LABEL"; fi
 }
 
 # --- tick and run (#1458) ---------------------------------------------------
@@ -474,7 +474,7 @@ autopilot_pickup() {
     esac
     autopilot_pickup_step "$issue" "$phase" refusal "redo $redo refused" autopilot_in_subshell autopilot_pickup_redo "$side" "$redo" || return 0
   fi
-  capture_err begin_err standing_begin "$issue" "$phase" "$limited" || {
+  capture_err begin_err standing_begin "$issue" "$limited" || {
     standing_stop "$issue" failure "$phase" "$(gh_reason "$begin_err")"
     return 0
   }
@@ -581,7 +581,7 @@ autopilot_tick() {
   while IFS= read -r issue; do
     [ -n "$issue" ] || continue
     [ "$count" -lt "$cap" ] || break
-    standing_read --quiet "$issue" ||
+    standing_read "$issue" ||
       die "could not read issue #$issue: $STANDING_REASON"
     standing_pickable || continue
     phase="$STANDING_PHASE"
