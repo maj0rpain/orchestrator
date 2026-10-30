@@ -308,23 +308,20 @@ autopilot_ask() {
 # the caller re-asks, or carries on - and 2 on any other failure, so a failed
 # read is never taken for no reply.
 autopilot_answer() {
-  local phase="$1" file="$2" issue json out q first rest rc=0
+  local phase="$1" file="$2" issue json out first rest rc=0
   autopilot_phase_arg "$phase" die2
   require_state die2
   require_issue issue die2
   gh_or_die --exit 2 --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  q="$(marked_comment_newest question "$phase" <<<"$json")" || rc=$?
-  [ "$rc" -ne 2 ] || die2 "could not read issue #$issue's comments"
-  [ "$rc" -eq 0 ] || die2 "issue #$issue has no $phase question comment"
+  rest="$(marked_comment_at -j '
+    if $i == (marked_comment_list | length) - 1 then "noreply"
+    else (marked_comment_list[$i + 1:] | map("\n---\n" + .body) | join("")) end' question "$phase" <<<"$json")" || rc=$?
+  [ "$rc" -ne 1 ] || die2 "issue #$issue has no $phase question comment"
+  [ "$rc" -eq 0 ] || die2 "could not read issue #$issue's comments"
   # The stripped body is read with a sentinel so its trailing newlines survive
-  # into the `---` join; the later comments are read here.
+  # into the `---` join.
   first="$(marked_comment_body question "$phase" <<<"$json" || exit 1; printf x)" || die2 "could not read issue #$issue's comments"
   first="${first%x}"
-  rest="$(jq -j --argjson q "$q" "$(marked_comment_jq)"'
-    marked_comment_list as $c
-    | if $q == ($c | length) - 1 then "noreply"
-      else ($c[$q + 1:] | map("\n---\n" + .body) | join("")) end' <<<"$json")" ||
-    die2 "could not read issue #$issue's comments"
   out="$(printf '%s' "$first$rest")"  # as before, trailing newlines go; the file gets one
   [ "$rest" != noreply ] || die "no reply to the $phase question on issue #$issue yet"
   mkdir -p "$(dirname "$file")" || die2 "could not create the directory of $file"
