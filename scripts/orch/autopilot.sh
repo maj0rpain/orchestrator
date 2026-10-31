@@ -280,55 +280,8 @@ autopilot_questions() {
 AUTOPILOT_LIMIT_PATTERN='(usage|[0-9]+-hour|weekly) limit reached(\|[0-9]+|[^|]{0,8}resets [^|]*)?'
 
 # autopilot_dir <main-root>: where a clone's autopilot files live - the run
-# pidfiles, the session logs and the limit file - under its main checkout.
+# records, the session logs and the limit file - under its main checkout.
 autopilot_dir() { printf '%s/%s/autopilot\n' "$1" "$ORCH_DIR_NAME"; }
-
-# autopilot_proc_start <pid>: the process's start time as one whitespace-free
-# token - /proc/<pid>/stat field 22 under $ORCH_PROC_DIR (default /proc), else
-# `ps -o lstart=` with its spaces turned to underscores. Fails when unreadable.
-autopilot_proc_start() {
-  local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  if [ -r "$root/$pid/stat" ]; then
-    stat="$(cat "$root/$pid/stat" 2>/dev/null)" || stat=""
-    rest="${stat##*) }"
-    # shellcheck disable=SC2086
-    set -- $rest
-    # after the command name, field 22 is the 20th word
-    [ -n "${20:-}" ] || return 1
-    printf '%s\n' "${20}"
-    return 0
-  fi
-  t="$(ps -o lstart= -p "$pid" 2>/dev/null)" || return 1
-  t="$(printf '%s' "$t" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/[[:space:]][[:space:]]*/_/g')"
-  [ -n "$t" ] || return 1
-  printf '%s\n' "$t"
-}
-
-# autopilot_pid_write <pid> <file>: writes the process's record,
-# `<pid> <start-time>`, to the file. Fails with an orch: line when the start
-# time cannot be read.
-autopilot_pid_write() {
-  local pid="$1" file="$2" start
-  start="$(autopilot_proc_start "$pid")" || { warn "could not read the start time of pid $pid"; return 1; }
-  printf '%s %s\n' "$pid" "$start" >"$file"
-}
-
-# autopilot_record_alive <record>: whether the record's process is running with
-# the recorded start time. A bare-pid or malformed record is stale.
-autopilot_record_alive() {
-  local pid start extra now
-  read -r pid start extra <<<"${1:-}"
-  [[ "$pid" =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ -z "${extra:-}" ] || return 1
-  now="$(autopilot_proc_start "$pid")" || return 1
-  [ "$now" = "$start" ]
-}
-
-# autopilot_record_is_me <record>: whether the record names the calling
-# process ($$).
-autopilot_record_is_me() {
-  [ "${1%% *}" = "$$" ] && autopilot_record_alive "$1"
-}
 
 # autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
 # date.
@@ -573,41 +526,23 @@ autopilot_pickup() {
   autopilot_spawn_run "$1"
 }
 
-# autopilot_tick_record <issue>: right after a tick takes a claim, writes its
-# own record to run/<issue>.tick, overwriting an older one. A failed write warns
-# and carries on: with no record, the claim's process counts as gone.
-autopilot_tick_record() {
-  local dir
-  dir="$(autopilot_dir "$(pwd)")/run"
-  { mkdir -p "$dir" && autopilot_pid_write "$$" "$dir/$1.tick"; } 2>/dev/null ||
-    warn "could not write the tick record for issue #$1"
-  return 0
-}
-
-# autopilot_cleanup_stale <main-root>: every claim of this host whose process is
-# gone is a failure: needs-human, a comment, then the claim released. The
-# process is named by the run pidfile's record or - with none - the tick's
-# run/<issue>.tick record; with neither, it counts as gone. Both files go with
-# the claim. Other hosts' claims are never touched.
+# autopilot_cleanup_stale: every claim of this host whose process is gone is a
+# failure: needs-human, a comment, then the claim released. The process is the
+# Liveness module's to name, and both of the issue's records go with the claim.
+# Other hosts' claims are never touched.
 autopilot_cleanup_stale() {
-  local main_root="$1" issue phase run_dir pidfile tickfile record log detail me gone_pid
+  local issue phase log detail me gone_pid
   me="$(standing_host_id)"
-  run_dir="$(autopilot_dir "$main_root")/run"
   standing_claims_read
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
     [ "${STANDING_CLAIM_HOST[$issue]}" = "$me" ] || continue
     phase="${STANDING_CLAIM_PHASE[$issue]}"
-    pidfile="$run_dir/$issue.pid" tickfile="$run_dir/$issue.tick"
-    record=""
-    if [ -f "$pidfile" ]; then record="$(cat "$pidfile")"
-    elif [ -f "$tickfile" ]; then record="$(cat "$tickfile")"; fi
-    gone_pid="${record%% *}"
-    ! autopilot_record_alive "$record" || continue
+    gone_pid="$(liveness_issue_alive "$issue")" && continue
     detail="the session's process (pid ${gone_pid:-unknown}) is gone and the claim was never released - no exit code is known"
-    log="$(ls -1 "$(autopilot_dir "$main_root")/logs/$issue-$phase-"*.log 2>/dev/null | tail -n 1)" || true
+    log="$(liveness_latest_log "$issue" "$phase")" || true
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
     standing_stop "$issue" failure "$phase" "$detail"
-    rm -f "$pidfile" "$tickfile"
+    liveness_issue_forget "$issue"
   done
 }
 
@@ -680,7 +615,7 @@ autopilot_tick() {
   main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
-  autopilot_cleanup_stale "$main_root"
+  autopilot_cleanup_stale
   if autopilot_pause_until "$main_root"; then return 0; fi
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
@@ -699,7 +634,7 @@ autopilot_tick() {
       2) continue ;;
       *) die "could not claim issue #$issue: $(gh_reason "$gh_err") - the tick stops" ;;
     esac
-    autopilot_tick_record "$issue"
+    liveness_tick_begin "$issue"
     count=$((count + 1))
     limited_arg=""
     if [ "$STANDING_LIMITED" = 1 ]; then limited_arg=limited; fi
@@ -873,21 +808,17 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 mine name flags=()
+  local issue="$1" main_root side phase mode launcher log prompt rc=0 mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
   phase="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
-  dir="$(autopilot_dir "$main_root")"
-  mkdir -p "$dir/run" "$dir/logs" || die "could not create $dir"
-  pidfile="$dir/run/$issue.pid"
-  autopilot_pid_write "$$" "$pidfile" || exit 1
-  rm -f "$dir/run/$issue.tick"
-  # A later run of the same issue may have replaced the pidfile by the time this
-  # one exits: remove it only while it still names this run.
+  liveness_run_begin "$issue" || exit 1
+  # A later run of the same issue may have replaced the record by the time this
+  # one exits: liveness_run_end removes it only while it still names this run.
   # shellcheck disable=SC2064
-  trap "! autopilot_record_is_me \"\$(cat '$pidfile' 2>/dev/null)\" || rm -f '$pidfile'" EXIT
+  trap "liveness_run_end '$issue'" EXIT
   # The claim this run was started for: a session that releases it may exit
   # after the next phase's claim is made, and that one is not this run's to
   # fail.
@@ -897,7 +828,7 @@ autopilot_run() {
     autopilot_setting "$name"
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
   done
-  log="$dir/logs/$issue-$phase-$(dir_stamp).log"
+  log="$(liveness_log_path "$issue" "$phase")" || exit $?
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
@@ -910,15 +841,6 @@ autopilot_run() {
 # --- watch (#1459) ------------------------------------------------------------
 
 AUTOPILOT_WATCH_EVERY_DEFAULT=60
-
-# autopilot_watch_pidfile: the clone's watch pidfile, under the git common
-# directory beside the suite-cost record, so every worktree of the clone
-# reaches the same one.
-autopilot_watch_pidfile() {
-  local d
-  d="$(clone_orchestrator_dir)" || return 1
-  printf '%s/autopilot-watch.pid\n' "$d"
-}
 
 # autopilot_watch_stop_child: the watch's INT/TERM step for what it is waiting
 # on, the running tick or the sleep: sends it TERM and waits for it to exit.
@@ -935,19 +857,10 @@ autopilot_watch_stop_child() {
 # pidfile when interrupted. Each tick is a fresh orch.sh process, so a tick
 # that dies takes nothing else with it.
 autopilot_watch() {
-  local every="$1" pidfile other rc
-  pidfile="$(autopilot_watch_pidfile)" || return 1
-  if [ -f "$pidfile" ]; then
-    other="$(cat "$pidfile" 2>/dev/null)" || other=""
-    ! autopilot_record_alive "$other" ||
-      die "another autopilot watch (pid ${other%% *}) is already running in this clone"
-  fi
-  mkdir -p "$(dirname "$pidfile")" || die "could not create $(dirname "$pidfile")"
-  autopilot_pid_write "$$" "$pidfile" || return 1
-  # shellcheck disable=SC2064
-  trap "rm -f '$pidfile'; autopilot_watch_stop_child; exit 0" INT TERM
-  # shellcheck disable=SC2064
-  trap "rm -f '$pidfile'" EXIT
+  local every="$1" rc
+  liveness_watch_begin || return 1
+  trap "liveness_watch_end; autopilot_watch_stop_child; exit 0" INT TERM
+  trap "liveness_watch_end" EXIT
   while :; do
     rc=0
     "$(autopilot_self)" autopilot tick >/dev/null &

@@ -253,6 +253,19 @@ sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 # sourced_orch_script <script> [<arg>...]: runs <script> in a child bash that
 # has sourced orch.sh, with <arg>... as its positional parameters $1...
 sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
+# live_orch <function> [args...]: calls the function in a background shell that
+# sourced orch.sh, from the current directory, and keeps that shell alive, so a
+# record the function writes names a running process. Sets LIVE_PID; live_stop
+# kills the shell, leaving the record naming a process that is gone.
+live_orch() {
+  local ready_file
+  ready_file="$(mktemp -u)"
+  bash -c 'source "$1"; ready="$2"; shift 2; "$@"; : >"$ready"; exec sleep 600' _ "$ORCH" "$ready_file" "$@" &
+  LIVE_PID=$!
+  until [ -e "$ready_file" ] || ! kill -0 "$LIVE_PID" 2>/dev/null; do sleep 0.05; done
+  rm -f "$ready_file"
+}
+live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return 0; }
 # marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
 # the kind, so a seeded comment is written as the module writes it.
 marker_of() { sourced_orch marked_comment_write "$@"; }
