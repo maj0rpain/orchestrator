@@ -274,12 +274,12 @@ handoff_timeline_read() {
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
 handoff_comment_fetch() {
-  local i raw
-  handoff_timeline_read "$1"
-  i="$(timeline_handoff "$2")" || return 1
+  local issue="$1" name="$2" file="$3" i raw
+  handoff_timeline_read "$issue"
+  i="$(timeline_handoff "$name")" || return 1
   raw="$(timeline_body "$i")"
-  mkdir -p "$(dirname "$3")"
-  if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$3"; else : >"$3"; fi
+  mkdir -p "$(dirname "$file")"
+  if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
 }
 
 # handoff_comments_retire <issue> <file>...: in an autopilot session, retires

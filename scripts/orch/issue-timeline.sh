@@ -4,11 +4,12 @@
 # orch.sh noun of its own, one reader over one issue's comment history. It reads
 # the comments once (timeline_read) and then answers domain questions from that
 # read, with no gh call and no 0/1/2 exit code: a query that finds nothing
-# prints nothing and returns 1, bar two: timeline_limit_count always prints a
-# number and returns 0, and timeline_answers prints nothing and returns 0 when
-# no comment follows the question. Only the read can fail. The marker grammar
-# stays in the Marked comment module (its jq prelude) and here. Its tests:
-# scripts/test/orch/issue-timeline.sh.
+# prints nothing and returns 1, bar three: timeline_limit_count always prints a
+# number and returns 0, timeline_answers prints nothing and returns 0 when no
+# comment follows the question, and timeline_body always prints the indexed
+# comment's body (possibly empty) and returns 0. Only the read can fail. The
+# marker grammar stays in the Marked comment module (its jq prelude) and here.
+# Its tests: scripts/test/orch/issue-timeline.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block; marked_comment_jq is
 # expanded at call time, so marked-comment.sh may load after it. Layering:
 # Marked comment, then Issue timeline, then Standing, autopilot and handoff.
@@ -113,7 +114,8 @@ timeline_stop() {
 
 # timeline_limit_count <phase>: prints the number of <phase>'s limit stops in a
 # row, counted newest first up to the first stop, question comment, handoff
-# comment, or limit stop of another phase; other comments are skipped.
+# comment, or limit stop of another phase; other comments are skipped. Always
+# prints a number (0 for none) and returns 0.
 timeline_limit_count() {
   local i n=0
   for ((i = ${#TIMELINE_KIND[@]} - 1; i >= 0; i--)); do
@@ -143,6 +145,7 @@ timeline_handoff() {
 
 # timeline_body <index>: the body of comment <index> with its first line
 # stripped, printed exactly, trailing newlines kept (read it with a sentinel).
+# Always returns 0; prints nothing for a comment with no body.
 timeline_body() {
   jq -j --argjson i "$1" '.[$i].body // "" | (index("\n") // empty) as $n | .[$n + 1:]' <<<"$TIMELINE_JSON"
 }
