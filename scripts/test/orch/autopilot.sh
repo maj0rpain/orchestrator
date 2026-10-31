@@ -1334,6 +1334,8 @@ se_fresh; se_end 1
 read -r reset_epoch reset_hour reset_day < <(local_fields "$(se_limit)")
 assert_eq "\"resets Mon 9am\" is a Monday at 09:00 local" "$reset_day $reset_hour" "Mon 09"
 assert_eq "within the next week" "$([ "$reset_epoch" -gt "$(date +%s)" ] && [ "$reset_epoch" -le "$(( $(date +%s) + 7 * 86400 + 3600 ))" ] && echo yes)" yes
+assert_eq "\"resets Mon 9am\" is a limit stop" "$(se_kind)" limited
+assert_contains "the comment names the same reset" "$(fake_last_comment_of 7)" "which resets $(se_limit)"
 
 # where the text is found
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"Claude AI usage limit reached"}]}}' \
@@ -1342,14 +1344,18 @@ se_check "limit wording only in assistant text or tool results is a failure" fai
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}' \
   "{\"type\":\"result\",\"is_error\":true,\"result\":\"Claude AI usage limit reached|$r2\"}" >"$se_log"
 se_check "a limit message in the last result event is a limit stop" limited "$i2"
+assert_contains "its comment names the same reset" "$(fake_last_comment_of 7)" "which resets $i2"
 printf '%s\n' "{\"type\":\"result\",\"result\":\"all done\"}" "plain Claude AI usage limit reached|$r2" >"$se_log"
 se_check "a plain-text line is read with the result text" limited "$i2"
+assert_contains "its comment names the same reset" "$(fake_last_comment_of 7)" "which resets $i2"
 
 # rate-limit events
 { echo 'stderr noise line'; rl_event rejected 1 "$r1" allowed_warning 0.8 "$r3"; echo 'another note'; } >"$se_log"
 se_check "a rejecting five-hour window gives its reset" limited "$i1"
+assert_contains "its comment names the same reset" "$(fake_last_comment_of 7)" "which resets $i1"
 rl_event rejected 1 "$r1" rejected 0.8 "$r3" >"$se_log"
 se_check "the latest of several rejecting windows decides" limited "$i3"
+assert_contains "its comment names the same reset" "$(fake_last_comment_of 7)" "which resets $i3"
 { rl_event rejected 1 "$r1" allowed 0.8 "$r3"; rl_event allowed 0.5 "$r1" allowed 0.8 "$r3"; } >"$se_log"
 se_check "a rejecting event followed by an allowed one is a failure" failure absent
 rl_event rejected 1 null allowed 0.2 null >"$se_log"
@@ -1371,6 +1377,7 @@ se_check "early pause the later: the limit file holds it" limited "$i3"
 assert_contains "while the comment names the session's own reset" "$(fake_last_comment_of 7)" "which resets $i1"
 { rl_event allowed 0.95 "$r1" allowed 0.2 "$r3"; echo "Claude AI usage limit reached|$r3"; } >"$se_log"
 se_check "limit pause the later: the limit file holds it" limited "$i3"
+assert_contains "its comment names the same reset" "$(fake_last_comment_of 7)" "which resets $i3"
 
 # the pause store keeps a later time and replaces an earlier or unparsable one
 ndjson_with "Claude AI usage limit reached|$r1" >"$se_log"
