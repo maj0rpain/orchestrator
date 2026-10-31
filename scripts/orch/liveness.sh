@@ -50,13 +50,17 @@ liveness_record_alive() {
   [ "$now" = "$start" ]
 }
 
-# liveness_run_dir: the main checkout's run directory. Dies when the checkouts
-# cannot be read; called in a substitution, so the caller carries the status.
-liveness_run_dir() {
+# liveness_subdir <name>: the main checkout's autopilot subdirectory of that
+# name. Dies when the checkouts cannot be read; called in a substitution, so
+# the caller carries the status.
+liveness_subdir() {
   local root
   root="$(main_checkout_or_die)" || exit $?
-  printf '%s/run\n' "$(autopilot_dir "$root")"
+  printf '%s/%s\n' "$(autopilot_dir "$root")" "$1"
 }
+
+# liveness_run_dir: the main checkout's run directory.
+liveness_run_dir() { liveness_subdir run; }
 
 # liveness_tick_begin <issue>: right after a tick takes a claim, writes the
 # calling process's record as the issue's tick record, overwriting an older
@@ -122,22 +126,18 @@ liveness_issue_forget() {
 # liveness_live_issues: the issues whose process is alive by
 # liveness_issue_alive's rule, one number per line, ascending.
 liveness_live_issues() {
-  local dir f issue
+  local dir f name issue
   dir="$(liveness_run_dir)" || return $?
   for f in "$dir"/*.pid "$dir"/*.tick; do
     [ -e "$f" ] || continue
-    f="${f##*/}"; printf '%s\n' "${f%.*}"
+    name="${f##*/}"; printf '%s\n' "${name%.*}"
   done | sort -un | while read -r issue; do
     ! liveness_issue_alive "$issue" >/dev/null || printf '%s\n' "$issue"
   done
 }
 
 # liveness_logs_dir: the main checkout's session logs directory.
-liveness_logs_dir() {
-  local root
-  root="$(main_checkout_or_die)" || exit $?
-  printf '%s/logs\n' "$(autopilot_dir "$root")"
-}
+liveness_logs_dir() { liveness_subdir logs; }
 
 # liveness_log_path <issue> <phase>: a new session log's path,
 # logs/<issue>-<phase>-<stamp>.log, creating the logs directory.
@@ -151,12 +151,12 @@ liveness_log_path() {
 # liveness_latest_log <issue> [<phase>]: the newest session log of the issue
 # (of that phase, when given); nothing when there is none.
 liveness_latest_log() {
-  local dir f rest prefix="$1-"
+  local dir f base rest prefix="$1-"
   dir="$(liveness_logs_dir)" || return $?
   [ -z "${2:-}" ] || prefix="$1-$2-"
   for f in "$dir/$prefix"*.log; do
     [ -e "$f" ] || continue
-    rest="${f##*/}"; rest="${rest#"$1"-}"
+    base="${f##*/}"; rest="${base#"$1"-}"
     # <phase>-<stamp>.log: order by the stamp, whatever the phase
     printf '%s %s\n' "${rest#*-}" "$f"
   done | sort | tail -n 1 | cut -d' ' -f2-

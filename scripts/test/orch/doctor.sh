@@ -1977,7 +1977,7 @@ assert_contains "its remedy names the host to run a tick on" "$out" "if that ses
 assert_not_contains "and no claim ref" "$out" "refs/orch/claims"
 assert_not_contains "not a fresh one" "$out" "issue #8"
 assert_contains "this host's dead claim with no record warns, naming issue, phase and no record" "$out" "issue #9 is claimed by this host (phase spec), but its process is gone (no record)."
-assert_contains "with the tick remedy" "$out" "orch.sh autopilot tick"
+assert_contains "with the tick remedy on the line after it" "$(printf "%s\n" "$out" | grep -A1 "issue #9 is claimed by this host")" "      orch.sh autopilot tick"
 live_orch liveness_run_begin 9
 out="$("$ORCH" doctor --env 2>&1)"
 assert_not_contains "a live claim adds no warning" "$out" "issue #9 is claimed"

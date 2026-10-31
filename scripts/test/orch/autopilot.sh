@@ -38,9 +38,9 @@ fake_last_comment_of() {
   local d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
   cat "$d/$(ls "$d" | sort -n | tail -n 1)/body"
 }
-# live_record <pid>: the pidfile record of a running process, read from /proc
-# independently of orch.sh (the start time is stat's field after the command).
-live_record() { printf '%s %s\n' "$1" "$(sed 's/^.*) //' "/proc/$1/stat" | cut -d' ' -f20)"; }
+# live_record <pid>: the record the Liveness module writes for a running
+# process, made through its interface.
+live_record() { local t; t="$(mktemp)"; sourced_orch liveness_pid_write "$1" "$t" && cat "$t"; rm -f "$t"; }
 
 
 # --- autopilot ---------------------------------------------------------------

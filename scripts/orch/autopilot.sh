@@ -280,7 +280,7 @@ autopilot_questions() {
 AUTOPILOT_LIMIT_PATTERN='(usage|[0-9]+-hour|weekly) limit reached(\|[0-9]+|[^|]{0,8}resets [^|]*)?'
 
 # autopilot_dir <main-root>: where a clone's autopilot files live - the run
-# run records, the session logs and the limit file - under its main checkout.
+# records, the session logs and the limit file - under its main checkout.
 autopilot_dir() { printf '%s/%s/autopilot\n' "$1" "$ORCH_DIR_NAME"; }
 
 # autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD

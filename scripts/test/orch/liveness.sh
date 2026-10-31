@@ -128,12 +128,11 @@ sourced_orch liveness_tick_begin 21
 printf 'x\n' >"$rundir/22.tick"
 sourced_orch liveness_tick_begin 3
 assert_eq "live_issues lists only live issues" "$(sourced_orch liveness_live_issues)" "20"
+live_pid_20="$LIVE_PID"
 live_orch liveness_tick_begin 100
-live_pid_100="$LIVE_PID"
 assert_eq "ascending by number" "$(sourced_orch liveness_live_issues | tr '\n' ' ')" "20 100 "
 live_stop
-kill "$live_pid_100" 2>/dev/null; wait "$live_pid_100" 2>/dev/null
-kill "$(sed 's/ .*//' "$rundir/20.pid")" 2>/dev/null
+kill "$live_pid_20" 2>/dev/null; wait "$live_pid_20" 2>/dev/null
 sourced_orch liveness_tick_begin 23
 sourced_orch liveness_run_begin 23
 printf 'x\n' >"$rundir/23.tick"
