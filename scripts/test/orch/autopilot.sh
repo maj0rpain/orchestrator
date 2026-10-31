@@ -426,10 +426,29 @@ pickup_titled() { # <issue> <title>: ticks over the issue; prints its side check
 }
 top="$(git rev-parse --show-toplevel)"
 git config orchestrator.autopilot.cap 5
-assert_eq "a long title is cut to whole words" "$(pickup_titled 21 'Agent settings: repeated kind/host switches and duplicated listing remedy builders (9 findings)')" "agent-settings-repeated-kind-host agent-settings-repeated-kind-host"
-assert_eq "a short title is used whole" "$(pickup_titled 22 'Fix the widget')" "fix-the-widget fix-the-widget"
-assert_eq "a first word over 40 characters is cut at 40" "$(pickup_titled 23 'Aaaaaaaaaabbbbbbbbbbccccccccccddddddddddeeeee rest')" "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
-assert_eq "an all-punctuation title is untitled" "$(pickup_titled 24 '!!! ???')" "untitled untitled"
+fake_issue_drop 9
+for n in 21 22 23 24; do fake_issue "$n" open ready-for-agent orch:spec; done
+fake_issue_title 21 'Agent settings: repeated kind/host switches and duplicated listing remedy builders (9 findings)'
+fake_issue_title 22 'Fix the widget'
+fake_issue_title 23 'Aaaaaaaaaabbbbbbbbbbccccccccccddddddddddeeeee rest'
+fake_issue_title 24 '!!! ???'
+printf '21 22 23 24\n' >"$launcher_dir/release"
+printf '' >"$launcher_dir/calls"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the slug tick starts exactly the four slug issues" "$(tick_calls)" "4"
+side_of() { # <issue>: prints the basename of the side checkout recording the issue and its flow's slug, or none
+  local d
+  for d in "$top"/.orchestrator/checkouts/*/; do
+    [ "$(cd "$d" && "$ORCH" state get issue 2>/dev/null)" = "$1" ] || continue
+    printf '%s %s\n' "$(basename "$d")" "$(cd "$d" && "$ORCH" state get slug)"
+    return
+  done
+  echo none
+}
+assert_eq "a long title is cut to whole words" "$(side_of 21)" "agent-settings-repeated-kind-host agent-settings-repeated-kind-host"
+assert_eq "a short title is used whole" "$(side_of 22)" "fix-the-widget fix-the-widget"
+assert_eq "a first word over 40 characters is cut at 40" "$(side_of 23)" "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
+assert_eq "an all-punctuation title is untitled" "$(side_of 24)" "untitled untitled"
 assert_eq "a clash with another issue's side checkout appends the issue" "$(pickup_titled 25 'Fix the widget')" "fix-the-widget-25 fix-the-widget-25"
 # a re-pickup reuses a legacy-named side checkout and its slug
 (cd "$top" && "$ORCH" side-checkout add 26-legacy-title --issue 26 >/dev/null 2>&1)
