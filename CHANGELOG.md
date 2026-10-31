@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.44
+
+Autopilot: one Session end operation now applies the whole consequence of a phase session's end (the held rule, one pause-store write with the later of the early and limit pauses, and the released note, limit stop or failure stop). A failed limit-file write on a session with both pauses is now noted once per session, not once per pause.
+
 ## 4.38.43
 
 Autopilot Pickup is one operation: each step returns its failure reason through `PICKUP_REASON` instead of the runner reading the first line of its stderr, so a helper's diagnostic no longer changes a stop comment's wording and reaches the tick's stderr instead. One `standing_stop` ends a failed or refused Pickup, a step that fails silently now reads "the step gave no reason", and `standing_begin` sets `STANDING_REASON` rather than printing. The phase-redo rule is `standing_redo_phase` in the Standing module, shared by Pickup and doctor, whose phase-label remedy now names the redo the watcher will run or says to relabel. GLOSSARY gains a **Pickup** entry.
