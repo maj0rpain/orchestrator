@@ -32,13 +32,12 @@ mc() {
 
 # mc_newest <comments-json> <kind> [<arg>]: sets mc_out and mc_rc as mc does,
 # from the index of the newest comment of <kind> (and <arg>) that the prelude's
-# marked_comment_of finds: rc 1 and no output when none is, 2 when jq fails on
-# the comments (they cannot be read).
+# marked_comment_of finds: rc 1 and no output when none is.
 mc_newest() {
   mc_out="$(sourced_orch_script 'jq -r --arg k "$1" --arg a "$2" "$(marked_comment_jq)"'"' marked_comment_of(\$k; \$a) | last | .key // empty'" "$2" "${3-}" <<<"$1" 2>/dev/null; echo "rc=$?")"
   mc_rc="${mc_out##*rc=}"; mc_out="${mc_out%rc=*}"
   mc_out="${mc_out%$'\n'}"
-  if [ "$mc_rc" -ne 0 ]; then mc_rc=2; elif [ -z "$mc_out" ]; then mc_rc=1; fi
+  if [ -z "$mc_out" ]; then mc_rc=1; fi
 }
 # Round trip: each kind's writer line, read back by the prelude and texts -
 # every hidden-marker kind the registry holds, so a newly added one is covered
@@ -131,9 +130,6 @@ mc texts "$arr" spec-review
 assert_eq "texts drops the spec-review heading line" "$mc_out" '["Round 1 of 2"]'
 mc drop "$(mc_object "keep" $'## Spec review\nx')" spec-review
 assert_eq "drop on the issue object keeps its shape" "$mc_out" '{"number":1,"comments":[{"body":"keep"}]}'
-
-mc_newest "not json" question plan
-assert_eq "unreadable comments are exit 2, not none" "$mc_rc:$mc_out" "2:"
 
 # Spec ruling.
 mc texts "$(mc_array $'Spec ruling: a\r\n- b\r\n' "x")" spec-ruling

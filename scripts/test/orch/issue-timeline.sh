@@ -127,7 +127,7 @@ assert_eq "output that is not JSON returns non-zero with an empty reason" "$(sou
 
 # reads in sequence
 break_read='break_read() { mkdir -p "$ORCH_GH_FAKE_STORE/fail"; echo x >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json"; }; '
-two_reads="$break_read"'timeline_read 7; timeline_handoff 01-plan; rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; timeline_read 7; rc=0; timeline_handoff 01-plan || rc=$?; echo "rc=$rc"'
+two_reads='timeline_read 7; timeline_handoff 01-plan; rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; timeline_read 7; rc=0; timeline_handoff 01-plan || rc=$?; echo "rc=$rc"'
 assert_eq "two reads in sequence: a handoff live in the first is missing in the second" \
   "$(sourced_orch_script "$two_reads" 2>&1 | tr '\n' '|')" "0|rc=1|"
 tl_seed "$Q_SPEC" "$STOP_F" "$HO_A"
@@ -135,7 +135,6 @@ good_then_bad="$break_read"'timeline_read 7; break_read; timeline_read 7 || true
 for q in "timeline_question" "timeline_stop" "timeline_handoff 01-plan" "timeline_replied"; do
   out=""; rc=0; out="$($q)" || rc=$?; printf "%s[%s]%s " "$q" "$out" "$rc"
 done'
-fake_unfail
 assert_eq "a good read then a failed one: every query answers none" \
   "$(sourced_orch_script "$good_then_bad" 2>&1)" "timeline_question[]1 timeline_stop[]1 timeline_handoff 01-plan[]1 timeline_replied[]1 "
 fake_unfail

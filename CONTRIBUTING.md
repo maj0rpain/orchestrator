@@ -248,8 +248,8 @@ scripts/orch.sh               the entry point for every deterministic operation 
 scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body
-scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops and live handoffs
+scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a claim on this host is alive - the run records, the start-time reader, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
