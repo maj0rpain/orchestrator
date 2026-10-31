@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.47
+
+Autopilot: one Issue timeline module now reads an issue's comment history once and answers its newest question comment and whether a comment follows it, its latest stop, a phase's limit stops in a row, and its live handoffs. `autopilot answer`, `reply` and `questions`, Standing's limit stop, `handoff fetch` and the redo retire ask it instead of decoding the Marked comment readers' exit codes, a redo retiring several handoffs reads the comments once, and only the Marked comment module and the timeline use the marker prelude. No behaviour change.
+
 ## 4.38.46
 
 Handoffs go through one Handoff store with two adapters, a file adapter and a comment adapter, chosen in one place: phase advance, review, redo, doctor and `handoff path` call store operations (`path`, `locate`, `read`, `siblings`, `retire`) and no longer branch on autopilot. `handoff_resolve` is now `handoff_locate`. Redo retires its stale handoffs with one early call, before any state moves, in both modes, so a redo that dies partway leaves the phase unchanged and a re-run finishes it; interactive retired handoffs still land in the same `pre-redo-<n>` and `pre-redo-spec-<stamp>` folders. Doctor's flow handoff check asks the store for its findings. One contract test suite runs against each adapter in place of the duplicated autopilot sections. Every `orch:` message is unchanged.
