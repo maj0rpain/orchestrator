@@ -200,6 +200,12 @@ the human with its own recommendation and posts the reply.
 The rule a watcher picks issues by: open, a phase label other than `orch:done`,
 and neither `orch:running` nor `needs-human`, while no limit pause holds.
 
+**Pickup**:
+A watcher taking one claimed issue to a running session: its side checkout, its
+flow, its plan comment, a redo when the label stepped back one phase, then
+`orch:running` and the session. A failed or refused step stops the issue and
+releases the claim.
+
 **Limited issue**:
 An autopilot flow's issue whose last session stopped on a Claude Code usage
 limit, labelled `orch:limited` in place of `needs-human`. A tick once the limit

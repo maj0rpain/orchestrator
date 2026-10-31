@@ -615,33 +615,50 @@ assert_status "a failed orch:running write does not stop the tick" "$st" 0
 assert_contains "the comment names the step and the reason" "$(fake_comments_of 21)" "Autopilot failed in the spec phase: step adding orch:running failed: HTTP 500"
 assert_eq "and the claim is released" "$(fake_claim_held 21)" free
 
-# a die inside a subshell step fails that step only, and a cd never leaks
-fake_issue 20 open ready-for-agent orch:spec orch:running
-out="$(sourced_orch_script 'start="$PWD"; autopilot_pickup_step 20 spec failure "step minimal plan comment failed" autopilot_in_subshell die "could not read the comments" || echo "went on:$?"; autopilot_pickup_step 20 spec failure "step init failed" autopilot_in_subshell cd / || true; echo "cwd-kept:$([ "$PWD" = "$start" ] && echo yes || echo no)"' 2>&1)"
-assert_contains "a die inside a step does not end the tick" "$out" "went on:1"
-assert_contains "the step's stop names the die" "$(fake_comments_of 20)" "step minimal plan comment failed: "
-assert_contains "a cd inside a step does not move the tick" "$out" "cwd-kept:yes"
-
-# the step runner words a silent failure as today's stops did
-fake_issue 76 open orch:spec orch:running; fake_claim_seed 76
-sourced_orch_script 'autopilot_pickup_step 76 spec failure "step init failed" false' >/dev/null 2>&1
-assert_contains "a step failing silently gets gh's no-reason wording after its detail" "$(fake_comments_of 76)" "Autopilot failed in the spec phase: step init failed: gh gave no reason"
-fake_issue 78 open orch:spec orch:running; fake_claim_seed 78
-sourced_orch_script 'autopilot_pickup_step 78 spec failure "step reading the recorded phase failed" autopilot_pickup_recorded /nonexistent' >/dev/null 2>&1
-assert_contains "a failed recorded-phase read stops with the reader's reason after the detail" "$(fake_comments_of 78)" "Autopilot failed in the spec phase: step reading the recorded phase failed: "
-assert_contains "and that reason is the reader's own message" "$(fake_comments_of 78)" "Could not open file /nonexistent"
-
-# a failed mktemp is a temp-file failure, never gh's: the command is not run
-fake_issue 79 open orch:spec orch:running; fake_claim_seed 79
+# the process-boundary wrapper: the reason is the last orch: line of the step's
+# stderr, the other lines going on to the tick's stderr
+out="$(sourced_orch_script 'set +e; noisy() { echo "warning one" >&2; echo "orch: first" >&2; echo "warning two" >&2; echo "orch: the real cause" >&2; return 1; }; autopilot_pickup_contained noisy 2>/tmp/pk_err.$$; echo "rc=$? reason=$PICKUP_REASON"; cat /tmp/pk_err.$$; rm -f /tmp/pk_err.$$')"
+assert_eq "the last orch: line is the reason despite earlier warnings, the others reaching stderr" "$out" "rc=1 reason=orch: the real cause
+warning one
+orch: first
+warning two"
+out="$(sourced_orch_script 'set +e; start="$PWD"; dies() { cd /; die "could not read the comments"; }; autopilot_pickup_contained dies 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON cwd-kept=$([ "$PWD" = "$start" ] && echo yes || echo no)"')"
+assert_eq "a die and a cd stay contained" "$out" "rc=1 reason=orch: could not read the comments cwd-kept=yes"
+out="$(sourced_orch_script 'set +e; plain() { echo "first" >&2; echo "last words" >&2; echo >&2; return 1; }; autopilot_pickup_contained plain 2>/dev/null; echo "reason=$PICKUP_REASON"')"
+assert_eq "with no orch: line the reason is the last non-empty line" "$out" "reason=last words"
+out="$(sourced_orch_script 'fine() { echo "note a" >&2; echo "note b" >&2; }; autopilot_pickup_contained fine 2>&1; echo "rc=$?"')"
+assert_eq "a succeeding step passes every line on" "$out" "note a
+note b
+rc=0"
+out="$(sourced_orch_script 'set +e; autopilot_pickup_contained false; echo "rc=$? reason=$PICKUP_REASON"')"
+assert_eq "a silent failure reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
 ran_marker="$(mktemp -u)"
-# (a file marks the first call: each runs in a $(...) subshell)
-first_call_marker="$(mktemp -u)"
-out="$(sourced_orch_script 'rc=0; ( mktemp() { [ -e "'"$first_call_marker"'" ] || { : >"'"$first_call_marker"'"; return 1; }; command mktemp "$@"; }; autopilot_pickup_step 79 spec failure "step init failed" touch "'"$ran_marker"'" ) || rc=$?; echo "rc=$rc"' 2>&1)"
-assert_contains "a failed runner mktemp returns 1" "$out" "rc=1"
-assert_contains "and stops the issue worded as a temp-file failure" "$(fake_comments_of 79)" "Autopilot failed in the spec phase: step init failed: could not create a temp file for the step's stderr"
-assert_eq "releasing the claim" "$(fake_claim_held 79)" free
-assert_eq "without running the command" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
-rm -f "$ran_marker" "$first_call_marker"
+out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker")"
+assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the step's stderr"
+assert_eq "and runs nothing" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
+rm -f "$ran_marker"
+
+# the side-checkout add takes its reason by the same rule
+out="$(sourced_orch_script 'set +e; cmd_side_checkout_add() { return 1; }; side=""; autopilot_pickup_side_add 5 "A title" 2>&1; echo "rc=$? reason=$PICKUP_REASON"')"
+assert_contains "a side-checkout add failing with no stderr reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
+out="$(sourced_orch_script 'set +e; cmd_side_checkout_add() { echo "swept 2 stale entries" >&2; echo "orch: warning: odd entry" >&2; echo "orch: could not add the checkout" >&2; return 1; }; side=""; autopilot_pickup_side_add 5 "A title" 2>/tmp/pk_err.$$; echo "reason=$PICKUP_REASON"; cat /tmp/pk_err.$$; rm -f /tmp/pk_err.$$')"
+assert_eq "its die's line is the reason, the sweep report and warning reaching stderr" "$out" "reason=orch: could not add the checkout
+swept 2 stale entries
+orch: warning: odd entry"
+
+# a failed recorded-phase read stops with a reason naming the state file
+fake_issue 78 open orch:spec orch:running; fake_claim_seed 78
+out="$(sourced_orch_script 'set +e; state_get_in() { return 1; }; flow_state_file() { echo "$1/state.json"; }; autopilot_pickup_recorded /nowhere 2>/dev/null; echo "reason=$PICKUP_REASON"')"
+assert_eq "a failed recorded-phase read names the state file" "$out" "reason=could not read the phase recorded in /nowhere/state.json"
+
+# a step's helper printing a diagnostic before it fails changes no wording
+fake_issue 77 open ready-for-agent orch:spec
+fake_issue_title 77 "Noisy add"
+mkdir -p "$top/.orchestrator/checkouts/noisy-add" "$top/.orchestrator/checkouts/noisy-add-77"
+tick_err="$("$ORCH" autopilot tick 2>&1 >/dev/null)"
+assert_contains "the stop wording keeps the step's detail" "$(fake_comments_of 77)" "step side-checkout add failed: "
+assert_eq "the diagnostic is not the comment's reason" "$(fake_comments_of 77 | grep -c 'orch: warning' || true)" "0"
+assert_contains "and the tick's stderr carries the helper's diagnostics" "$tick_err" "no finished side checkouts"
 
 # stale claims of this host are failures; other hosts' are left alone
 fake_issue 10 open ready-for-agent orch:spec orch:running

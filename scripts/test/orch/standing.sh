@@ -291,16 +291,16 @@ out="$(sourced_rc 'standing_begin 61')"
 assert_eq "begin without limited just adds orch:running" "$(tr_standing 61)|$(printf %s "$out")" "spec|1|0|0|rc=0"
 tr_seed 62 orch:spec orch:limited
 fake_fail_after adapter_issue_relabel 0 "HTTP 500"
-out="$(sourced_rc 'standing_begin 62 limited')"
+out="$(sourced_rc 'standing_begin 62 limited || echo "reason=$STANDING_REASON"')"
 fake_unfail
-assert_contains "begin failing on the limited removal returns 1 with that step's wording" "$out" "step removing orch:limited failed: HTTP 500
-rc=1"
+assert_eq "begin failing on the limited removal sets that step's wording in STANDING_REASON, printing nothing else" "$out" "reason=step removing orch:limited failed: HTTP 500
+rc=0"
 tr_seed 63 orch:spec orch:limited
 fake_fail_after adapter_issue_relabel 1 "HTTP 500"
-out="$(sourced_rc 'standing_begin 63 limited')"
+out="$(sourced_rc 'standing_begin 63 limited || echo "reason=$STANDING_REASON"')"
 fake_unfail
-assert_contains "begin failing on the running addition returns 1 with that step's wording" "$out" "step adding orch:running failed: HTTP 500
-rc=1"
+assert_eq "begin failing on the running addition sets that step's wording in STANDING_REASON, printing nothing else" "$out" "reason=step adding orch:running failed: HTTP 500
+rc=0"
 assert_eq "and the removal had landed" "$(tr_standing 63)" "spec|0|0|0"
 restore_suite_env
 
