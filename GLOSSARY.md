@@ -187,6 +187,13 @@ failure), or a visible opening the human reads too (the spec review's
 `## Spec review` heading, a `Spec ruling:` line). Question comment, Plan comment
 and the rest are kinds of marked comment.
 
+**Issue timeline**:
+An autopilot flow's issue's comment history, read once and asked in domain
+terms: its newest question comment and whether a comment follows it, its latest
+stop, its limit stops in a row for a phase, and its live handoffs. Only the
+timeline and the Marked comment module know how a comment's kind is marked.
+_Avoid_: comment log.
+
 **Question comment**:
 The issue comment tagged `<!-- orch:question <phase> -->` that asks the human an
 autopilot phase's numbered questions.
