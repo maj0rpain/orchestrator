@@ -132,13 +132,15 @@ cmd_redo_spec() {
   else
     cmd_ticket_retire "$issue"
   fi
-  # The spec-paused marker (#1181) moves late, into the folder the handoffs
-  # went to: left behind, it would carry the redone spec phase past its
-  # rewrite decision. The round marker (#1348) moves with it for the same
-  # reason: left behind, it would carry the redone spec review past round 1.
+  # The spec-paused marker (#1181) moves late, into this run's pre-redo-spec
+  # folder (the handoffs' too, unless a re-run after a death between the two
+  # moves computed a new stamp): left behind, it would carry the redone spec
+  # phase past its rewrite decision. The round marker (#1348) moves with it
+  # for the same reason: left behind, it would carry the redone spec review
+  # past round 1.
   # The round directories stay in place, since round 1's `spec round-dir 1/<n>`
   # clears them.
-  handoff_file_retire "$label" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
+  move_files_aside "$HANDOFF_DIR" "$HANDOFF_DIR/$label" "a moved marker" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
   phase_write spec
 }
 
