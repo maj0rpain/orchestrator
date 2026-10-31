@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.46
+
+Handoffs go through one Handoff store with two adapters, a file adapter and a comment adapter, chosen in one place: phase advance, review, redo, doctor and `handoff path` call store operations (`path`, `locate`, `read`, `siblings`, `retire`) and no longer branch on autopilot. `handoff_resolve` is now `handoff_locate`. Redo retires its stale handoffs with one early call, before any state moves, in both modes, so a redo that dies partway leaves the phase unchanged and a re-run finishes it; interactive retired handoffs still land in the same `pre-redo-<n>` and `pre-redo-spec-<stamp>` folders. Doctor's flow handoff check asks the store for its findings. One contract test suite runs against each adapter in place of the duplicated autopilot sections. Every `orch:` message is unchanged.
+
 ## 4.38.45
 
 Move autopilot's local session liveness - the run and tick records, their `<pid> <start-time>` format, the watch pidfile and the session log names - into one internal module, so the tick, `autopilot run`, the watch and doctor all ask the same rule. `orch.sh doctor` now warns when a claim of this host has lost its process, with `orch.sh autopilot tick` as the remedy, and its warning for another host's day-old claim tells you to run the tick on that host instead of naming the claim ref.
