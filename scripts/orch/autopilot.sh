@@ -463,13 +463,14 @@ autopilot_pickup_settle() {
 # success passes every stderr line on. When the stderr's temp file cannot be
 # made, the command is not run and the reason says so.
 autopilot_pickup_contained() {
-  local err st=0
-  capture_err err "$@" || st=$?
-  if [ "$st" -eq 1 ] && [ "$err" = "could not create a temp file" ]; then
-    # capture_err's own failure (a step's die carries an orch: prefix)
+  local file err st=0
+  file="$(mktemp)" || {
     PICKUP_REASON="could not create a temp file for the step's stderr"
     return 1
-  fi
+  }
+  ( "$@" ) 2>"$file" || st=$?
+  file_read err "$file" || err=""
+  rm -f "$file"
   autopilot_pickup_settle "$st" "$err"
 }
 

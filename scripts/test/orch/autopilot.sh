@@ -582,6 +582,19 @@ assert_eq "the flow is back at spec" "$(cd "$side7" && "$ORCH" state get phase)"
 assert_contains "the session starts after orch:running was added" "$(cat "$launcher_dir/calls")" "labels:7:orch:running orch:spec ready-for-agent "
 printf '' >"$launcher_dir/calls"
 
+# a state file that cannot be read stops the issue naming the step and the file
+state7="$side7/.orchestrator/state.json"
+cp "$state7" "$state7.keep"
+printf 'not json' >"$state7"
+fake_issue 7 open ready-for-agent orch:spec
+"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "an unreadable state file does not stop the tick" "$st" 0
+assert_contains "the comment names the step and the state file" "$(fake_comments_of 7 | tail -3)" "step reading the recorded phase failed: could not read the phase recorded in $state7"
+assert_eq "leaving needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
+assert_eq "the claim is released" "$(fake_claim_held 7)" free
+assert_eq "and no session starts" "$(tick_calls)" "0"
+mv "$state7.keep" "$state7"
+
 # a failed side-checkout add is a failure, the claim released
 fake_issue 8 open ready-for-agent orch:spec
 fake_issue_title 8 "Blocked add"
@@ -617,7 +630,8 @@ assert_eq "and the claim is released" "$(fake_claim_held 21)" free
 
 # the process-boundary wrapper: the reason is the last orch: line of the step's
 # stderr, the other lines going on to the tick's stderr
-out="$(sourced_orch_script 'set +e; noisy() { echo "warning one" >&2; echo "orch: first" >&2; echo "warning two" >&2; echo "orch: the real cause" >&2; return 1; }; autopilot_pickup_contained noisy 2>/tmp/pk_err.$$; echo "rc=$? reason=$PICKUP_REASON"; cat /tmp/pk_err.$$; rm -f /tmp/pk_err.$$')"
+pk_err="$(mktemp)"
+out="$(sourced_orch_script 'set +e; noisy() { echo "warning one" >&2; echo "orch: first" >&2; echo "warning two" >&2; echo "orch: the real cause" >&2; return 1; }; autopilot_pickup_contained noisy 2>"$1"; echo "rc=$? reason=$PICKUP_REASON"; cat "$1"' "$pk_err")"
 assert_eq "the last orch: line is the reason despite earlier warnings, the others reaching stderr" "$out" "rc=1 reason=orch: the real cause
 warning one
 orch: first
@@ -637,6 +651,11 @@ out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_con
 assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the step's stderr"
 assert_eq "and runs nothing" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
 rm -f "$ran_marker"
+# the plan step's own temp-file failure keeps its own reason, not the wrapper's
+step_marker="$(mktemp -u)"
+out="$(sourced_orch_script 'set +e; m="$1"; mktemp() { [ ! -e "$m" ] || return 1; : >"$m"; command mktemp; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"' "$step_marker")"
+assert_eq "the plan step failing to make its own temp file keeps its reason" "$out" "rc=1 reason=could not create a temp file"
+rm -f "$step_marker"
 # driven to the stop: worded as a temp-file failure, the claim released
 fake_issue 79 open orch:spec orch:running; fake_claim_seed 79
 first_call_marker="$(mktemp -u)"
@@ -649,10 +668,11 @@ rm -f "$first_call_marker"
 # the side-checkout add takes its reason by the same rule
 out="$(sourced_orch_script 'set +e; cmd_side_checkout_add() { return 1; }; side=""; autopilot_pickup_side_add 5 "A title" 2>&1; echo "rc=$? reason=$PICKUP_REASON"')"
 assert_contains "a side-checkout add failing with no stderr reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
-out="$(sourced_orch_script 'set +e; cmd_side_checkout_add() { echo "swept 2 stale entries" >&2; echo "orch: warning: odd entry" >&2; echo "orch: could not add the checkout" >&2; return 1; }; side=""; autopilot_pickup_side_add 5 "A title" 2>/tmp/pk_err.$$; echo "reason=$PICKUP_REASON"; cat /tmp/pk_err.$$; rm -f /tmp/pk_err.$$')"
+out="$(sourced_orch_script 'set +e; cmd_side_checkout_add() { echo "swept 2 stale entries" >&2; echo "orch: warning: odd entry" >&2; echo "orch: could not add the checkout" >&2; return 1; }; side=""; autopilot_pickup_side_add 5 "A title" 2>"$1"; echo "reason=$PICKUP_REASON"; cat "$1"' "$pk_err")"
 assert_eq "its die's line is the reason, the sweep report and warning reaching stderr" "$out" "reason=orch: could not add the checkout
 swept 2 stale entries
 orch: warning: odd entry"
+rm -f "$pk_err"
 
 # a failed recorded-phase read stops with a reason naming the state file
 out="$(sourced_orch_script 'set +e; autopilot_pickup_side_find() { side=/nowhere; }; autopilot_pickup_contained() { return 0; }; state_get_in() { return 1; }; flow_state_file() { echo "$1/state.json"; }; standing_stop() { echo "stop $2 $3: $4"; }; autopilot_pickup 78 spec 2>/dev/null')"
