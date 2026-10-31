@@ -49,6 +49,15 @@ assert_eq "start failing on the read dies in one line naming gh and the reason" 
 rc=1"
 fake_unfail
 
+# The phase-redo rule
+assert_eq "a flow labelled implement whose checkout moved to review is redone as review" "$(sourced_rc 'standing_redo_phase implement review')" "review
+rc=0"
+assert_eq "a flow labelled spec whose checkout moved to implement is redone as spec" "$(sourced_rc 'standing_redo_phase spec implement')" "spec
+rc=0"
+for pair in "spec review" "review spec" "done review" "spec done" "implement implement" "review implement"; do
+  assert_eq "no redo for labelled/recorded $pair: nothing printed, status 1" "$(sourced_rc "standing_redo_phase $pair")" "rc=1"
+done
+
 # Pickup rule, the label half
 pickable() { sourced_rc "standing_read $1 && standing_pickable" | tail -n 1; }
 fake_issue 10 open orch:spec

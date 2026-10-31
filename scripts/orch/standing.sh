@@ -123,6 +123,19 @@ standing_label_verdict() {
   fi
 }
 
+# standing_redo_phase <labelled> <recorded>: the phase-redo rule. Prints the
+# `orch.sh redo` argument that steps a flow labelled <labelled> back to that
+# phase from the <recorded> phase its checkout last moved to: review for
+# implement:review, spec for spec:implement. Any other pair is no redo: prints
+# nothing and returns 1.
+standing_redo_phase() {
+  case "$1:$2" in
+    implement:review) printf 'review\n' ;;
+    spec:implement) printf 'spec\n' ;;
+    *) return 1 ;;
+  esac
+}
+
 # standing_human_issues: the open or closed issues carrying needs-human, one
 # number per line; dies, naming the failure, where they cannot be listed.
 standing_human_issues() {

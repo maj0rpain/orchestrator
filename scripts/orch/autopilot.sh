@@ -508,12 +508,10 @@ autopilot_pickup() {
   autopilot_pickup_step "$issue" "$phase" failure "step minimal plan comment failed" autopilot_in_subshell autopilot_post_minimal_plan "$issue" || return 0
   autopilot_pickup_step "$issue" "$phase" failure "step reading the recorded phase failed" autopilot_pickup_recorded "$side" || return 0
   if [ "$recorded" != "$phase" ]; then
-    case "$phase:$recorded" in
-      implement:review) redo=review ;;
-      spec:implement) redo=spec ;;
-      *) standing_stop "$issue" refusal "$phase" "the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only a step back from review to implement or from implement to spec is a redo"
-         return 0 ;;
-    esac
+    redo="$(standing_redo_phase "$phase" "$recorded")" || {
+      standing_stop "$issue" refusal "$phase" "the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only a step back from review to implement or from implement to spec is a redo"
+      return 0
+    }
     autopilot_pickup_step "$issue" "$phase" refusal "redo $redo refused" autopilot_in_subshell autopilot_pickup_redo "$side" "$redo" || return 0
   fi
   capture_err begin_err standing_begin "$issue" "$limited" || {
