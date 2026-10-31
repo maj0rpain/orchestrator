@@ -261,14 +261,6 @@ handoff_invalid() {
   die "$HANDOFF_DIR/$1 is not valid - fix it${2:+, $2}"
 }
 
-# handoff_timeline_read <issue>: reads <issue>'s timeline, dying when its
-# comments cannot be read: with gh's reason when gh failed, else saying the
-# output could not be parsed.
-handoff_timeline_read() {
-  timeline_read "$1" && return 0
-  [ -z "$TIMELINE_REASON" ] || gh_die "read the comments of issue #$1" "$TIMELINE_REASON"
-  die "could not read issue #$1's comments"
-}
 
 # handoff_timeline_write <name> <file>: writes the body of the last-read
 # timeline's live <name> handoff, marker stripped, to <file>. Non-zero, and
@@ -285,7 +277,7 @@ handoff_timeline_write() {
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
 handoff_comment_fetch() {
-  handoff_timeline_read "$1"
+  timeline_read_or_die "$1"
   handoff_timeline_write "$2" "$3"
 }
 
@@ -302,7 +294,7 @@ handoff_comments_retire() {
   shift
   autopilot_active || return 0
   [ $# -gt 0 ] || return 0
-  handoff_timeline_read "$issue"
+  timeline_read_or_die "$issue"
   for file in "$@"; do
     name="${file%.md}"
     timeline_handoff "$name" >/dev/null || continue

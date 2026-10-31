@@ -4,7 +4,9 @@
 # orch.sh noun of its own, one reader over one issue's comment history. It reads
 # the comments once (timeline_read) and then answers domain questions from that
 # read, with no gh call and no 0/1/2 exit code: a query that finds nothing
-# prints nothing and returns 1. Only the read can fail. The marker grammar
+# prints nothing and returns 1, bar two: timeline_limit_count always prints a
+# number and returns 0, and timeline_answers prints nothing and returns 0 when
+# no comment follows the question. Only the read can fail. The marker grammar
 # stays in the Marked comment module (its jq prelude) and here. Its tests:
 # scripts/test/orch/issue-timeline.sh.
 # Sourced by orch.sh, after marked-comment.sh and gh.sh; layering: Marked
@@ -14,7 +16,8 @@
 # limit stop is not), the legacy prose-opened ones included, which the Marked
 # comment module already reads as those kinds.
 #
-# The queries: timeline_question, timeline_replied, timeline_answers,
+# The reader that dies: timeline_read_or_die. The queries: timeline_question,
+# timeline_replied, timeline_answers,
 # timeline_stop, timeline_limit_count, timeline_handoff and timeline_body.
 
 # The last read: the comments JSON, why the read failed (gh's reason, or empty
@@ -56,6 +59,21 @@ timeline_read() {
   done <<<"$text"
   # An empty comment list reads one blank line.
   if [ -z "$text" ]; then TIMELINE_KIND=() TIMELINE_ARG=() TIMELINE_RETIRED=() TIMELINE_URL=(); fi
+}
+
+# timeline_read_or_die <issue> [2]: timeline_read, dying when it cannot: with
+# gh's wording when gh failed, with "could not read issue #<issue>'s comments"
+# when its output was no comment list - status 1, or 2 when the second argument
+# is 2.
+timeline_read_or_die() {
+  local issue="$1" code="${2-1}"
+  timeline_read "$issue" && return 0
+  if [ -z "$TIMELINE_REASON" ]; then
+    if [ "$code" = 2 ]; then die2 "could not read issue #$issue's comments"; fi
+    die "could not read issue #$issue's comments"
+  fi
+  if [ "$code" = 2 ]; then gh_die --exit 2 "read the comments of issue #$issue" "$TIMELINE_REASON"; fi
+  gh_die "read the comments of issue #$issue" "$TIMELINE_REASON"
 }
 
 # timeline_question [<phase>]: the newest question comment, of <phase> when

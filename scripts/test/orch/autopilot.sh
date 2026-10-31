@@ -264,9 +264,8 @@ assert_status "a failed comment read exits 2, never no reply's 1" "$st" 2
 assert_contains "naming the read" "$out" "read the comments of issue #7"
 fake_unfail
 # gh succeeds but its output is no comment list
-unparseable_adapter="$(mktemp)"
-printf 'source "%s"\nadapter_issue_comments_json() { echo "not json"; }\n' "$GH_ADAPTER_FAKE" >"$unparseable_adapter"
-out="$(ORCH_GH_ADAPTER="$unparseable_adapter" "$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "unparseable comments exit 2, never no reply's 1" "$st" 2
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #7's comments"
 # a question ending in the text noreply is read as any other (#1723)
@@ -1102,10 +1101,9 @@ out="$("$ORCH" autopilot questions 2>/dev/null)"; st=$?
 assert_status "an adapter read failure dies" "$st" 1
 assert_eq "listing nothing" "$out" ""
 fake_unfail
-unparseable_adapter="$(mktemp)"
-printf 'source "%s"\nadapter_issue_comments_json() { echo "not json"; }\n' "$GH_ADAPTER_FAKE" >"$unparseable_adapter"
+fake_lag adapter_issue_comments_json 1 'not json'
 fake_issue 11 open needs-human orch:spec
-out="$(ORCH_GH_ADAPTER="$unparseable_adapter" "$ORCH" autopilot questions 2>&1)"; st=$?
+out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #11's comments"
 fake_fail adapter_issues_labelled "$GH_502"
@@ -1211,7 +1209,8 @@ assert_eq "posting nothing" "$(fake_comments_of 46 | wc -l | tr -d ' ')" "3"
 assert_eq "keeping the label" "$(fake_labels_of 46)" "needs-human orch:spec "
 fake_issue 47 open needs-human orch:spec
 fake_comment 47 o 2026-01-01T00:00:00Z "$(question_of spec)"
-out="$(ORCH_GH_ADAPTER="$unparseable_adapter" "$ORCH" autopilot reply 47 "$r" 2>&1)"; st=$?
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$("$ORCH" autopilot reply 47 "$r" 2>&1)"; st=$?
 assert_status "reply over unparseable comments is refused" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #47's comments"
 assert_eq "posting nothing" "$(fake_comments_of 47 | grep -c 'Yes, keep')" "0"

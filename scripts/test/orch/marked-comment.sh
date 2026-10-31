@@ -43,7 +43,6 @@ mc_newest() {
 # Round trip: each kind's writer line, read back by the prelude and texts -
 # every hidden-marker kind the registry holds, so a newly added one is covered
 # too.
-# hidden-marker kind the registry holds, so a newly added one is covered too.
 hidden_kinds="$(sourced_orch_script 'printf "%s " $MARKED_COMMENT_KINDS')"
 # shellcheck disable=SC2086 # the kinds are space-separated words
 for entry in $(printf '%s:plan ' $hidden_kinds) "spec-review" "spec-ruling"; do
@@ -109,6 +108,7 @@ mc_newest "$(mc_array "$q" "$(marker_of question implement)")" question plan
 assert_eq "with an argument the newest question of that phase is found" "$mc_rc:$mc_out" "0:0"
 mc_newest '[]' question
 assert_eq "an empty array has no question comment" "$mc_rc:$mc_out" "1:"
+mc_newest '{"comments": []}' question
 assert_eq "an issue object with no comments has no question comment" "$mc_rc:$mc_out" "1:"
 
 # The legacy stop forms.
