@@ -1952,12 +1952,19 @@ fake_flow autopilot-doctor
 fake_issue 7 open ready-for-agent orch:implement
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "doctor flags a label that disagrees with the recorded phase" "$out" "is labelled orch:implement, but this checkout last moved to phase spec"
+assert_contains "a forward skip gets the relabel remedy" "$out" "relabel the issue orch:spec"
+assert_not_contains "and no leave-it-to-the-watcher prose" "$out" "redo rules"
 fake_issue 7 open ready-for-agent orch:review orch:spec
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "two phase labels are named space-separated in table order" "$out" "is labelled orch:spec orch:review, but this checkout last moved to phase spec"
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "an agreeing label is ok" "$out" "phase label: orch:spec"
+state_fixture phase implement
+fake_issue 7 open ready-for-agent orch:spec
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "a flow labelled one step back gets a remedy naming the redo" "$out" "the watcher will run $(sourced_orch flow_cmd redo) spec"
+state_fixture phase spec
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$("$ORCH" doctor --flow 2>&1 >/dev/null)"
 assert_not_contains "doctor stays silent about a failed label read" "$out" "HTTP 502"

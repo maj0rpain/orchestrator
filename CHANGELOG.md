@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.43
+
+Autopilot Pickup is one operation: each step returns its failure reason through `PICKUP_REASON` instead of the runner reading the first line of its stderr, so a helper's diagnostic no longer changes a stop comment's wording and reaches the tick's stderr instead. One `standing_stop` ends a failed or refused Pickup, a step that fails silently now reads "the step gave no reason", and `standing_begin` sets `STANDING_REASON` rather than printing. The phase-redo rule is `standing_redo_phase` in the Standing module, shared by Pickup and doctor, whose phase-label remedy now names the redo the watcher will run or says to relabel. GLOSSARY gains a **Pickup** entry.
+
 ## 4.38.42
 
 Fix the autopilot container crash-looping with `another autopilot watch (pid 1) is already running` after a restart. Autopilot's pidfiles now record each process's start time beside its pid, so a pid reused in a restarted container - the watcher's own pid 1 included - no longer reads as the old process; old bare-pid files count as stale. Stale-claim cleanup and `autopilot-up.sh`'s busy probe check the same records, and the watcher now stops its running tick at once on INT or TERM.
