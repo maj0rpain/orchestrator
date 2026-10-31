@@ -713,6 +713,13 @@ assert_eq "with the parse wording" "$out" "orch: could not read issue #7's comme
 assert_eq "posting nothing either" "$(fake_comments_of 7)" "$before"
 restore_suite_env
 
+# a retire naming no files still needs the recorded issue
+fake_flow handoff-retire-no-issue
+out="$(ORCH_AUTOPILOT=1 sourced_orch handoff_comment_retire pre-redo 2>&1)"; st=$?
+assert_status "a no-file retire with no recorded issue fails" "$st" 1
+assert_contains "naming the missing issue" "$out" "no issue recorded in state - the spec phase must publish one first"
+restore_suite_env
+
 echo
 echo "handoff validate's Autopilot block"
 new_repo >/dev/null

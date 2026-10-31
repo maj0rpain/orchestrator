@@ -436,8 +436,8 @@ handoff_comment_path() {
 handoff_comment_retire() {
   local issue file name body gh_err posted=""
   shift
-  [ $# -gt 0 ] || return 0
   require_issue issue
+  [ $# -gt 0 ] || return 0
   handoff_timeline_read "$issue"
   for file in "$@"; do
     name="${file%.md}"
