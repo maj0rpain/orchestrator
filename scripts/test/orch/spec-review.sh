@@ -1439,7 +1439,7 @@ sed -i 's/^Build the spec\.$/Alpha line./' "$d/tickets.md"
 srt_refused "a ## Ticket anchor on text the batch items replaced" "$d" "ticket item 1 (## Ticket): its anchor matches no text" recommended --tickets recommended
 
 # Every kind of ticket-step error names its tickets.md line and ends
-# ` - nothing written`, with nothing written, in both modes.
+# ` - nothing written`, with nothing written.
 # srt_step_refused <mode> <label> <dir> <want> <ticket-answer>: apply in
 # <mode> (issue or flow) is refused with exactly <want>, leaving spec.md, the
 # ticket files and changelog.md as they were, and GitHub untouched.
@@ -1454,35 +1454,33 @@ srt_step_refused() {
 # all eight refusals, and flow mode keeps the two whose message names the issue
 # taken from state (#14's breakdown). Each case dropped from flow mode keeps its
 # issue-mode case of the same label.
+d="$(srt_dir)"
+srt_fetch "$d"
+sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
+srt_step_refused issue "a ticket-anchor problem" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written" recommended
+d="$(srt_dir)"
+srt_fetch "$d"
+sed -i 's/^Build gamma\.$/Nowhere./' "$d/tickets.md"
+srt_step_refused issue "a declined ticket item's anchor problem" "$d" \
+  "orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body - nothing written" recommended
+d="$(srt_collapsed)"
+sed -i 's/^@@ item 1 section apply$/@@ item 1 section decline not now/; s/^Build the spec\.$/Nowhere./' "$d/tickets.md"
+srt_step_refused issue "a declined ## Ticket item's anchor problem" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written" recommended
+d="$(srt_dir)"
+srt_step_refused issue "a missing ticket" "$d" \
+  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written" recommended
+d="$(srt_dir)"
+srt_fetch "$d"
+srt_step_refused issue "a block problem" "$d" \
+  "orch: tickets.md line 19: ticket item 5: #21 is already blocked by #20 - nothing written" all
+d="$(srt_dir)"
+srt_fetch "$d"
+sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
+srt_step_refused issue "an unblock problem" "$d" \
+  "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21 - nothing written" recommended
 for sra_mode in issue flow; do
-  if [ "$sra_mode" = issue ]; then
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
-  srt_step_refused "$sra_mode" "a ticket-anchor problem" "$d" \
-    "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written" recommended
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  sed -i 's/^Build gamma\.$/Nowhere./' "$d/tickets.md"
-  srt_step_refused "$sra_mode" "a declined ticket item's anchor problem" "$d" \
-    "orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body - nothing written" recommended
-  d="$(srt_collapsed)"
-  sed -i 's/^@@ item 1 section apply$/@@ item 1 section decline not now/; s/^Build the spec\.$/Nowhere./' "$d/tickets.md"
-  srt_step_refused "$sra_mode" "a declined ## Ticket item's anchor problem" "$d" \
-    "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written" recommended
-  d="$(srt_dir)"
-  srt_step_refused "$sra_mode" "a missing ticket" "$d" \
-    "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written" recommended
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  srt_step_refused "$sra_mode" "a block problem" "$d" \
-    "orch: tickets.md line 19: ticket item 5: #21 is already blocked by #20 - nothing written" all
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
-  srt_step_refused "$sra_mode" "an unblock problem" "$d" \
-    "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21 - nothing written" recommended
-  fi
   d="$(srt_dir)"
   srt_fetch "$d"
   printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
@@ -1497,8 +1495,7 @@ done
 sra_in_mode issue
 rm -rf "$top/.orchestrator"
 
-# A failed ticket write stops apply, naming the writes already landed, in
-# both modes.
+# A failed ticket write stops apply, naming the writes already landed.
 srt_fail() {
   local mode="$1" how="$2" op="$3" n="$4"
   d="$(srt_dir)"
@@ -1514,18 +1511,16 @@ srt_fail() {
 # the same in both modes, so the ticket-body, unblock and block failures run in
 # issue mode only. The issue's body, retire and comment failures differ by
 # mode (cmd_spec writes them in flow mode) and run in both.
+srt_fail issue recommended adapter_issue_body_edit 0
+assert_contains "issue: a ticket update failure named" "$out" "could not write ticket #20's body"
+assert_contains "issue: nothing landed" "$out" "already landed: nothing"
+srt_fail issue recommended adapter_blocker_remove 0
+assert_contains "issue: an unblock failure named" "$out" "could not write unblock #21 by #20"
+assert_contains "issue: the text edit landed" "$out" "already landed: ticket #20's body;"
+srt_fail issue recommended adapter_blocker_add 0
+assert_contains "issue: a block failure named" "$out" "could not write block #20 by #21"
+assert_contains "issue: the text edit and the unblock landed" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
 for sra_mode in issue flow; do
-  if [ "$sra_mode" = issue ]; then
-  srt_fail "$sra_mode" recommended adapter_issue_body_edit 0
-  assert_contains "$sra_mode: a ticket update failure named" "$out" "could not write ticket #20's body"
-  assert_contains "$sra_mode: nothing landed" "$out" "already landed: nothing"
-  srt_fail "$sra_mode" recommended adapter_blocker_remove 0
-  assert_contains "$sra_mode: an unblock failure named" "$out" "could not write unblock #21 by #20"
-  assert_contains "$sra_mode: the text edit landed" "$out" "already landed: ticket #20's body;"
-  srt_fail "$sra_mode" recommended adapter_blocker_add 0
-  assert_contains "$sra_mode: a block failure named" "$out" "could not write block #20 by #21"
-  assert_contains "$sra_mode: the text edit and the unblock landed" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
-  fi
   # The ticket update, then the two edges' ## Blocked by rewrites, then the
   # body.
   srt_fail "$sra_mode" recommended adapter_issue_body_edit 3
