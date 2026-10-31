@@ -33,20 +33,19 @@ assert_eq "still printing its pid" "$out" "$LIVE_PID"
 assert_eq "and no longer listed" "$(sourced_orch liveness_live_issues)" ""
 
 # a bare pid, a malformed record and another start time are gone
-live_orch liveness_run_begin 6
-printf '%s\n' "$LIVE_PID" >"$rundir/6.pid"
+running_pid=$$
+printf '%s\n' "$running_pid" >"$rundir/6.pid"
 sourced_orch liveness_issue_alive 6 >/dev/null; st=$?
 assert_status "a bare-pid record is gone" "$st" 1
-printf '%s a b\n' "$LIVE_PID" >"$rundir/6.pid"
+printf '%s a b\n' "$running_pid" >"$rundir/6.pid"
 sourced_orch liveness_issue_alive 6 >/dev/null; st=$?
 assert_status "a record with extra fields is gone" "$st" 1
 printf 'word 1\n' >"$rundir/6.pid"
 sourced_orch liveness_issue_alive 6 >/dev/null; st=$?
 assert_status "a record with no pid is gone" "$st" 1
-printf '%s 1\n' "$LIVE_PID" >"$rundir/6.pid"
+printf '%s 1\n' "$running_pid" >"$rundir/6.pid"
 sourced_orch liveness_issue_alive 6 >/dev/null; st=$?
 assert_status "a live pid with another start time is gone" "$st" 1
-live_stop
 rm -f "$rundir/6.pid"
 out="$(sourced_orch liveness_issue_alive 6)"; st=$?
 assert_status "an issue with neither record is gone" "$st" 1
@@ -80,10 +79,9 @@ rm -f "$rundir/9.pid"
 
 # run_begin: success, failure
 printf 'old\n' >"$rundir/10.tick"
-live_orch liveness_run_begin 10
+sourced_orch liveness_run_begin 10
 assert_eq "a successful run_begin leaves the run record" "$(on_disk "$rundir/10.pid")" present
 assert_eq "and no tick record" "$(on_disk "$rundir/10.tick")" absent
-live_stop
 rm -f "$rundir/10.pid"
 printf 'old\n' >"$rundir/11.tick"
 unreadable="$(mktemp -d)"
