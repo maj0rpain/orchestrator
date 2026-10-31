@@ -123,6 +123,19 @@ standing_label_verdict() {
   fi
 }
 
+# standing_redo_phase <labelled> <recorded>: the phase-redo rule. Prints the
+# `orch.sh redo` argument that steps a flow labelled <labelled> back to that
+# phase from the <recorded> phase its checkout last moved to: review for
+# implement:review, spec for spec:implement. Any other pair is no redo: prints
+# nothing and returns 1.
+standing_redo_phase() {
+  case "$1:$2" in
+    implement:review) printf 'review\n' ;;
+    spec:implement) printf 'spec\n' ;;
+    *) return 1 ;;
+  esac
+}
+
 # standing_human_issues: the open or closed issues carrying needs-human, one
 # number per line; dies, naming the failure, where they cannot be listed.
 standing_human_issues() {
@@ -227,17 +240,17 @@ standing_start() {
 # orch:limited when <limited> is given, then adds orch:running. It never dies
 # and does not stop the issue: a failed write returns 1 with the write's step
 # wording, "step removing orch:limited failed: <reason>" or "step adding
-# orch:running failed: <reason>", on stderr.
+# orch:running failed: <reason>", in STANDING_REASON and printing nothing.
 standing_begin() {
   local issue="$1" gh_err
   if [ -n "${2:-}" ]; then
     capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_LIMITED_LABEL" || {
-      echo "step removing $STANDING_LIMITED_LABEL failed: $(gh_reason "$gh_err")" >&2
+      STANDING_REASON="step removing $STANDING_LIMITED_LABEL failed: $(gh_reason "$gh_err")"
       return 1
     }
   fi
   capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_RUNNING_LABEL" || {
-    echo "step adding $STANDING_RUNNING_LABEL failed: $(gh_reason "$gh_err")" >&2
+    STANDING_REASON="step adding $STANDING_RUNNING_LABEL failed: $(gh_reason "$gh_err")"
     return 1
   }
 }

@@ -529,14 +529,18 @@ check_side_checkouts_finished() {
 # checkout") last moved to; <ok-lead> opens the ok line. Returns 1, printing
 # nothing, when the issue carries no phase label.
 doctor_phase_label_verdict() {
-  local issue="$1" phase="$2" label_verdict label_text
+  local issue="$1" phase="$2" label_verdict label_text redo
   standing_label_verdict "$3" "$phase" label_verdict label_text
   case "$label_verdict" in
     none) return 1 ;;
     agrees) d_ok "$5: $label_text" ;;
     *)
       d_warn "issue #$issue is labelled $label_text, but $4 last moved to phase $phase."
-      d_remedy "relabel the issue $(standing_phase_label "$phase"), or leave it to the watcher's redo rules"
+      if redo="$(standing_redo_phase "$(standing_live_phase "$3")" "$phase")"; then
+        d_remedy "the watcher will run $(flow_cmd redo) $redo"
+      else
+        d_remedy "relabel the issue $(standing_phase_label "$phase"); the watcher refuses this disagreement"
+      fi
       ;;
   esac
 }
