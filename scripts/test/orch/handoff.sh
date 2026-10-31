@@ -627,6 +627,17 @@ handoff_store_contract() {
     assert_contains "comment: showing the gh reason" "$out" "HTTP 503 read"
   fi
 
+  # doctor: the missing-handoff finding is the adapter's (01-plan was retired)
+  out="$(hs_orch "$adapter" doctor --flow 2>&1)"; st=$?
+  assert_status "$adapter: doctor --flow fails on a missing handoff" "$st" 1
+  if [ "$adapter" = comment ]; then
+    assert_contains "$adapter: with the adapter's finding" "$out" \
+      "handoff 01-plan comment is missing on issue #7 - the phase that writes it has already run."
+  else
+    assert_contains "$adapter: with the adapter's finding" "$out" \
+      "handoff 01-plan.md is missing - the phase that writes it has already run."
+  fi
+
   # retire, through redo spec: both handoffs are set aside before a failing
   # ticket retire, and the re-run retires nothing twice
   hs_put "$adapter" 02-spec "$(literal_handoff implement)"
@@ -650,6 +661,17 @@ handoff_store_contract() {
     # shellcheck disable=SC2010 # counts what the globs matched
     assert_eq "$adapter: each handoff is in a pre-redo-spec folder once" \
       "$(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null | grep -c .)" 2
+  fi
+
+  # doctor's readiness check: no recorded issue fails the comment adapter only
+  fake_flow "handoff-store-ready-$adapter"
+  out="$(hs_orch "$adapter" doctor --flow 2>&1)"
+  if [ "$adapter" = comment ]; then
+    assert_contains "comment: no recorded issue is today's finding" "$out" \
+      "autopilot session, but no issue is recorded - the handoff comments cannot be read."
+  else
+    assert_not_contains "file: readiness passes with no recorded issue" "$out" "no issue is recorded"
+    assert_contains "file: and the missing handoff is reported" "$out" "handoff 01-plan.md is missing"
   fi
   restore_suite_env
 }

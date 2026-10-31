@@ -275,6 +275,40 @@ handoff_comment_invalid() {
 # handoff_invalid <file> <hint>: the store's invalid message, the adapter's.
 handoff_invalid() { "handoff_$(handoff_store)_invalid" "$@"; }
 
+# handoff_file_doctor_missing <file>: prints doctor's finding for a missing
+# handoff.
+handoff_file_doctor_missing() {
+  printf 'handoff %s is missing - the phase that writes it has already run.\n' "$1"
+}
+
+# handoff_comment_doctor_missing <file>: prints doctor's finding for a missing
+# handoff comment on the recorded issue.
+handoff_comment_doctor_missing() {
+  printf 'handoff %s comment is missing on issue #%s - the phase that writes it has already run.\n' \
+    "${1%.md}" "$(state_get issue)"
+}
+
+# handoff_doctor_missing <file>: the store's doctor finding, the adapter's.
+handoff_doctor_missing() { "handoff_$(handoff_store)_doctor_missing" "$@"; }
+
+# handoff_file_ready: doctor's readiness check; files need nothing, so it
+# passes.
+handoff_file_ready() { return 0; }
+
+# handoff_comment_ready: doctor's readiness check for reading the comments.
+# Status 0: ready. 1: not ready, the finding printed. 2: ready if gh is, which
+# is for the caller to gate.
+handoff_comment_ready() {
+  if [ -z "$(state_get issue)" ]; then
+    printf 'autopilot session, but no issue is recorded - the handoff comments cannot be read.\n'
+    return 1
+  fi
+  return 2
+}
+
+# handoff_ready: the store's readiness check, the adapter's.
+handoff_ready() { "handoff_$(handoff_store)_ready" "$@"; }
+
 # handoff_comment_fetch <issue> <name> <file>: writes the body of <issue>'s
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
