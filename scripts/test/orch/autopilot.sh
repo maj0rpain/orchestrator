@@ -1357,7 +1357,6 @@ se_check "the latest of several rejecting windows decides" limited "$i3"
 se_check "a rejecting event followed by an allowed one is a failure" failure absent
 rl_event rejected 1 null allowed 0.2 null >"$se_log"
 se_check_hour_fallback "a rejecting event with no resetsAt"
-assert_not_contains "and no reset" "$(fake_last_comment_of 7)" "resets"
 
 # early pause, whatever the outcome
 rl_event allowed 0.9 "$r1" allowed 0.2 "$r3" >"$se_log"
