@@ -893,20 +893,6 @@ assert_eq "a rejecting event of a released claim marks no issue" "$(fake_labels_
 assert_not_contains "and posts no limit stop comment" "$(fake_comments_of 7)" "usage limit"
 rm -f "$launcher_dir/release"
 
-# a failed limit-file write is noted and changes nothing else
-rm -f "$limit_file"; mkdir "$limit_file"
-rl_event allowed 0.2 "$r1" rejected 1 "$r1" >"$launcher_dir/out"
-event_session 1
-assert_status "a run whose limit-file write fails succeeds" "$st" 0
-assert_contains "the failure is noted on stderr" "$out" "could not write the limit file"
-assert_eq "a limit stop alone gives one note" "$(grep -c "could not write the limit file" <<<"$out")" "1"
-event_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
-assert_contains "and in the session log" "$(cat "$event_log")" "could not write the limit file"
-assert_eq "the issue is still limited" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
-assert_eq "its claim released" "$(fake_claim_held 7)" free
-assert_contains "with its usage limit comment" "$(fake_comments_of 7)" "usage limit"
-rmdir "$limit_file"
-
 # a failed write on one session with both pauses is noted once
 rm -f "$limit_file"; mkdir "$limit_file"
 rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
@@ -1308,6 +1294,18 @@ se_check() {
   se_fresh; se_end 1
   assert_eq "$1" "$(se_kind)|$(se_limit)" "$2|$3"
 }
+# se_check_hour_fallback <label>: a fresh held session over $se_log gave no
+# reset time: a limit stop with the limit pause one hour on, its comment naming
+# that fallback pause and no reset.
+se_check_hour_fallback() {
+  local before after limit_epoch
+  before="$(date +%s)"; se_fresh; se_end 1; after="$(date +%s)"
+  read -r limit_epoch _ < <(local_fields "$(se_limit)")
+  assert_eq "$1: a limit stop" "$(se_kind)" limited
+  assert_eq "$1: with a limit pause one hour on" "$([ "$limit_epoch" -ge $((before + 3600)) ] && [ "$limit_epoch" -le $((after + 3600)) ] && echo yes)" yes
+  assert_contains "$1: its comment names the fallback pause" "$(fake_last_comment_of 7)" "it gave no reset time, so the watcher falls back to a one-hour limit pause, until $(se_limit)."
+  assert_not_contains "$1: and no reset" "$(fake_last_comment_of 7)" "resets"
+}
 now_epoch="$(date +%s)"
 r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
 i1="$(iso_of "$r1")"; i2="$(iso_of "$r2")"; i3="$(iso_of "$r3")"
@@ -1318,12 +1316,7 @@ se_check "\"usage limit reached|<epoch>\" is a limit stop at that reset" limited
 assert_contains "its comment names the reset" "$(fake_last_comment_of 7)" "which resets $i2"
 for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
   ndjson_with "$wording" >"$se_log"
-  before="$(date +%s)"; se_fresh; se_end 1; after="$(date +%s)"
-  read -r limit_epoch _ < <(local_fields "$(se_limit)")
-  assert_eq "\"$wording\" is a limit stop" "$(se_kind)" limited
-  assert_eq "with a limit pause one hour on" "$([ "$limit_epoch" -ge $((before + 3600)) ] && [ "$limit_epoch" -le $((after + 3600)) ] && echo yes)" yes
-  assert_contains "and a comment saying it gave no reset time" "$(fake_last_comment_of 7)" "it gave no reset time, so the watcher falls back to a one-hour limit pause, until $(se_limit)."
-  assert_not_contains "naming no reset it does not have" "$(fake_last_comment_of 7)" "resets"
+  se_check_hour_fallback "\"$wording\""
 done
 for wording in "iteration limit reached" "API rate limit reached, retrying"; do
   ndjson_with "$wording" >"$se_log"
@@ -1363,11 +1356,7 @@ se_check "the latest of several rejecting windows decides" limited "$i3"
 { rl_event rejected 1 "$r1" allowed 0.8 "$r3"; rl_event allowed 0.5 "$r1" allowed 0.8 "$r3"; } >"$se_log"
 se_check "a rejecting event followed by an allowed one is a failure" failure absent
 rl_event rejected 1 null allowed 0.2 null >"$se_log"
-before="$(date +%s)"; se_fresh; se_end 1; after="$(date +%s)"
-read -r limit_epoch _ < <(local_fields "$(se_limit)")
-assert_eq "a rejecting event with no resetsAt is a limit stop" "$(se_kind)" limited
-assert_eq "one hour on" "$([ "$limit_epoch" -ge $((before + 3600)) ] && [ "$limit_epoch" -le $((after + 3600)) ] && echo yes)" yes
-assert_contains "its comment names the fallback pause" "$(fake_last_comment_of 7)" "it gave no reset time, so the watcher falls back to a one-hour limit pause, until $(se_limit)."
+se_check_hour_fallback "a rejecting event with no resetsAt"
 assert_not_contains "and no reset" "$(fake_last_comment_of 7)" "resets"
 
 # early pause, whatever the outcome
@@ -1428,6 +1417,28 @@ assert_eq "no claim before but one after is held" "$(se_kind)" limited
 se_fresh; fake_claim_release 7; rl_event rejected 0.95 "$r1" allowed 0.2 "$r3" >"$se_log"; se_end 1 "$se_claim_fields"
 assert_eq "released over a rejecting log: only the early pause, no stop" "$(se_kind)|$(se_limit)|$(fake_comments_of 7)" "released|$i1|"
 
+# the limit stop comment: retry number, log, and the failure comment's wording
+ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
+se_fresh; se_end 1
+assert_contains "a first limit stop is retry 1 of 2" "$(fake_last_comment_of 7)" "retry 1 of 2, started once the limit pause has passed"
+assert_contains "its comment names the log" "$(fake_last_comment_of 7)" "$se_log"
+se_fresh; fake_comment 7 o 2026-01-01T00:00:00Z "$(marker_of limited spec)
+stopped"; se_end 1
+assert_eq "a second stop in a row is limited" "$(se_kind)" limited
+assert_contains "and retry 2 of 2" "$(fake_last_comment_of 7)" "retry 2 of 2"
+ndjson_with "iteration limit reached" >"$se_log"
+se_fresh; se_end 1
+assert_contains "the failure comment says only a limit stop is retried" "$(fake_last_comment_of 7)" 'nothing is retried automatically except a usage-limit stop labelled `orch:limited`'
+assert_not_contains "and names no usage limit" "$(fake_last_comment_of 7)" "usage limit"
+
+# no reset, an early pause the later: the comment keeps the one-hour fallback
+far_epoch=$((now_epoch + 14400))
+{ rl_event allowed 0.9 "$far_epoch" allowed 0.2 "$far_epoch"; echo 'Claude AI usage limit reached'; } >"$se_log"
+se_fresh; se_end 1
+assert_contains "no reset, early pause later: the comment names the one-hour fallback" "$(fake_last_comment_of 7)" "falls back to a one-hour limit pause, until "
+assert_not_contains "and not the early-pause reset" "$(fake_last_comment_of 7)" "$(iso_of "$far_epoch")"
+assert_eq "while the limit file holds the early-pause reset" "$(se_limit)" "$(iso_of "$far_epoch")"
+
 # the limit stop's failure fallbacks
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 LIM_SPEC="$(marker_of limited spec)
@@ -1443,6 +1454,15 @@ se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; f
 assert_eq "unreadable comments take the failure stop" "$(se_kind)" failure
 assert_contains "naming the failed read" "$(fake_last_comment_of 7)" "comments could not be read"
 assert_eq "and still write the limit file" "$(se_limit)" "$i2"
+# the same two fallbacks over a log with no reset
+ndjson_with 'Claude AI usage limit reached' >"$se_log"
+se_fresh
+fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
+fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
+se_end 1
+assert_contains "the third in a row, no reset: the session gave no reset time" "$(fake_last_comment_of 7)" "the session gave no reset time"
+se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; fake_unfail
+assert_contains "unreadable comments, no reset: the session gave no reset time" "$(fake_last_comment_of 7)" "the session gave no reset time"
 
 # claims or the checkout that cannot be read: nothing is touched
 se_fresh; before="$(fake_snapshot)"
