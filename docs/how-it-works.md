@@ -458,7 +458,8 @@ stands.
 
 `orch.sh doctor` flags a phase label that disagrees with the phase this
 checkout's (or a side checkout's) flow state last moved to, and other hosts'
-old claims.
+old claims. It also warns about this host's claims whose process is gone;
+`orch.sh autopilot tick` clears them.
 
 ### Autopilot commands
 

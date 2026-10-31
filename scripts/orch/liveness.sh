@@ -43,11 +43,11 @@ liveness_pid_write() {
 # liveness_record_alive <record>: whether the record's process is running with
 # the recorded start time. A bare-pid or malformed record is stale.
 liveness_record_alive() {
-  local pid start extra now
+  local pid start extra current
   read -r pid start extra <<<"${1:-}"
   [[ "$pid" =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ -z "${extra:-}" ] || return 1
-  now="$(liveness_proc_start "$pid")" || return 1
-  [ "$now" = "$start" ]
+  current="$(liveness_proc_start "$pid")" || return 1
+  [ "$current" = "$start" ]
 }
 
 # liveness_subdir <name>: the main checkout's autopilot subdirectory of that

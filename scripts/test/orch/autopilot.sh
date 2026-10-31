@@ -739,7 +739,7 @@ sourced_orch liveness_watch_begin
 fake_fail adapter_label_upsert "HTTP 500 label"
 "$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
 watch_pid=$!
-for _ in $(seq 1 60); do watch_holds "$watch_pid" && [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
+for _ in $(seq 1 60); do [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
 watch_holds "$watch_pid"; st=$?
 assert_status "a dead pidfile is replaced by the new watch" "$st" 0
 kill -0 "$watch_pid" 2>/dev/null; st=$?
