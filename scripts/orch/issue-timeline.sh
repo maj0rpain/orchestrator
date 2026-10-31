@@ -25,7 +25,6 @@
 # when gh succeeded but its output could not be parsed), and per comment, by
 # index, its kind, argument, retired flag and URL (empty when unmarked).
 TIMELINE_JSON='[]'
-# shellcheck disable=SC2034 # read by the callers of timeline_read
 TIMELINE_REASON=""
 TIMELINE_KIND=()
 TIMELINE_ARG=()

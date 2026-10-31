@@ -548,6 +548,8 @@ fake_fail adapter_issue_comments_json "HTTP 503 read"
 out="$("$ORCH" handoff path spec 2>&1)"; st=$?
 assert_status "a failed comments read dies" "$st" 1
 assert_contains "showing the gh reason" "$out" "HTTP 503 read"
+assert_eq "naming the missing handoff and the scratch path first, with no earlier handoff due" "$out" \
+  "$(printf "%s\norch: gh could not read the comments of issue #7: HTTP 503 read\norch: issue #7 has no 01-plan handoff comment" "$PWD/.orchestrator/scratch/01-plan.md")"
 fake_unfail
 # a copy left by an earlier fetch is never taken as found
 echo stale >"$(dirname "$p")/02-spec.md"
