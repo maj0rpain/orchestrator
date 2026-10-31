@@ -511,7 +511,7 @@ restore_suite_env
 # One function, run once per adapter, at the orch.sh CLI over the gh fake: a
 # handoff is a file in the handoff directory (file adapter, interactive) or a
 # tagged comment on the issue (comment adapter, ORCH_AUTOPILOT=1). The reads
-# behave alike whichever adapter keeps the handoff.
+# behave alike whichever adapter keeps the handoff, and so does retire.
 
 # hs_orch <adapter> <orch args>...: runs orch.sh as that adapter's session.
 hs_orch() {
@@ -625,6 +625,31 @@ handoff_store_contract() {
     fake_unfail
     assert_status "comment: a failed comments read dies" "$st" 1
     assert_contains "comment: showing the gh reason" "$out" "HTTP 503 read"
+  fi
+
+  # retire, through redo spec: both handoffs are set aside before a failing
+  # ticket retire, and the re-run retires nothing twice
+  hs_put "$adapter" 02-spec "$(literal_handoff implement)"
+  hs_put "$adapter" 03-implement "implement text"
+  state_fixture phase implement
+  fake_issue_body 7 "$(printf 'Spec.\n\n## Ticket\nBuild.\n')"
+  fake_fail adapter_issue_body_edit
+  out="$(hs_orch "$adapter" redo spec 2>&1)"; st=$?
+  fake_unfail
+  assert_status "$adapter: a gh failure in the ticket retire fails redo spec" "$st" 1
+  assert_eq "$adapter: leaving the phase at implement" "$("$ORCH" state get phase)" implement
+  p="$(hs_orch "$adapter" handoff path implement 2>/dev/null)"; st=$?
+  assert_status "$adapter: the retired spec handoff reads as missing" "$st" 1
+  out="$(hs_orch "$adapter" redo spec 2>&1)"; st=$?
+  assert_status "$adapter: the re-run finishes" "$st" 0
+  assert_eq "$adapter: the phase is spec" "$("$ORCH" state get phase)" spec
+  if [ "$adapter" = comment ]; then
+    assert_eq "$adapter: each handoff is retired exactly once" \
+      "$(fake_comments_of 7 | grep -c 'orch:handoff \(02-spec\|03-implement\) retired')" 2
+  else
+    # shellcheck disable=SC2010 # counts what the globs matched
+    assert_eq "$adapter: each handoff is in a pre-redo-spec folder once" \
+      "$(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null | grep -c .)" 2
   fi
   restore_suite_env
 }

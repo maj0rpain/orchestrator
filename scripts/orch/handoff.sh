@@ -234,7 +234,8 @@ handoff_comment_post() {
 # The Handoff store: where a flow's handoffs live, behind one interface with a
 # file adapter (interactive: files in the handoff directory) and a comment
 # adapter (autopilot: marked comments on the issue). Operations: path, locate,
-# read, siblings. handoff_store is the one place that chooses the adapter, per
+# read, siblings, retire. handoff_store is the one place that chooses the
+# adapter, per
 # call, so a test toggling ORCH_AUTOPILOT between commands keeps working.
 
 # handoff_store: prints the adapter this session's handoffs live in, `comment`
@@ -291,33 +292,6 @@ handoff_comment_fetch() {
   if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
 }
 
-# handoff_comments_retire <issue> <file>...: in an autopilot session, retires
-# each named handoff file's comment by posting a newer one tagged retired -
-# what moving the file into a pre-redo folder is for an interactive flow. A
-# handoff with no comment, or whose newest is already retired, posts nothing,
-# so a redo that died partway is finished by the next. A post that fails dies
-# naming the comments already posted. Outside an autopilot session it does
-# nothing: those handoffs are files.
-handoff_comments_retire() {
-  local issue="$1" file name scratch body gh_err posted=""
-  shift
-  autopilot_active || return 0
-  scratch="$(mktemp)" || die "could not create a temp file for the handoff check"
-  for file in "$@"; do
-    name="${file%.md}"
-    handoff_comment_fetch "$issue" "$name" "$scratch" || continue
-    body="$(mktemp)" || { rm -f "$scratch"; die "could not create a temp file for the retired comment"; }
-    { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
-    capture_err gh_err adapter_issue_comment "$issue" "$body" || {
-      rm -f "$scratch" "$body"
-      die "could not retire the $name handoff on issue #$issue: $(gh_reason "$gh_err") - comments posted: ${posted:-none}; the recorded phase is unchanged, so a re-run retires the rest"
-    }
-    rm -f "$body"
-    posted="${posted:+$posted, }$name"
-  done
-  rm -f "$scratch"
-}
-
 # handoff_locate <file>: the status lookup. Prints the readable path of the
 # handoff <file> and, by status, whether it exists; it never dies on a missing
 # one - each caller chooses its own reaction. A copy left by an earlier fetch
@@ -338,6 +312,11 @@ handoff_siblings() { "handoff_$(handoff_store)_siblings" "$@"; }
 # handoff <phase> writes.
 handoff_path() { "handoff_$(handoff_store)_path" "$@"; }
 
+# handoff_retire <label> <file>...: sets the named handoffs aside, as a redo
+# does. The file adapter moves each existing one into the handoff directory's
+# <label> folder; the comment adapter ignores the label.
+handoff_retire() { "handoff_$(handoff_store)_retire" "$@"; }
+
 # File adapter.
 
 # handoff_file_locate <file>: prints $HANDOFF_DIR/<file>; non-zero when absent.
@@ -357,6 +336,24 @@ handoff_file_siblings() { return 0; }
 # handoff is missing.
 handoff_file_path() {
   handoff_file_locate "$2"
+}
+
+# handoff_file_retire <label> <file>...: moves each named handoff that exists
+# into $HANDOFF_DIR/<label>, created only when there is something to move. A
+# folder already holding one of them is refused before any moves; a folder that
+# merely exists is fine.
+handoff_file_retire() {
+  local dest="$HANDOFF_DIR/$1" f
+  shift
+  any_exist_under "$HANDOFF_DIR" "$@" || return 0
+  if any_exist_under "$dest" "$@"; then
+    die "$dest already holds a retired handoff - refusing to overwrite it"
+  fi
+  mkdir -p "$dest"
+  for f in "$@"; do
+    [ -e "$HANDOFF_DIR/$f" ] && mv "$HANDOFF_DIR/$f" "$dest/"
+  done
+  return 0
 }
 
 # Comment adapter.
@@ -397,6 +394,32 @@ handoff_comment_siblings() {
 handoff_comment_path() {
   handoff_comment_siblings "$1" "$2"
   handoff_comment_read "$2"
+}
+
+# handoff_comment_retire <label> <file>...: the label names a folder, which
+# comments have none of, so it is ignored. Retires each named handoff by
+# posting a newer comment tagged retired on the recorded issue. A handoff with
+# no comment, or whose newest is already retired, posts nothing, so a redo that
+# died partway is finished by the next. A post that fails dies naming the
+# comments already posted.
+handoff_comment_retire() {
+  local issue file name scratch body gh_err posted=""
+  shift
+  require_issue issue
+  scratch="$(mktemp)" || die "could not create a temp file for the handoff check"
+  for file in "$@"; do
+    name="${file%.md}"
+    handoff_comment_fetch "$issue" "$name" "$scratch" || continue
+    body="$(mktemp)" || { rm -f "$scratch"; die "could not create a temp file for the retired comment"; }
+    { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
+    capture_err gh_err adapter_issue_comment "$issue" "$body" || {
+      rm -f "$scratch" "$body"
+      die "could not retire the $name handoff on issue #$issue: $(gh_reason "$gh_err") - comments posted: ${posted:-none}; the recorded phase is unchanged, so a re-run retires the rest"
+    }
+    rm -f "$body"
+    posted="${posted:+$posted, }$name"
+  done
+  rm -f "$scratch"
 }
 
 # handoff_autopilot_only <op>: dies unless this is an autopilot session - the

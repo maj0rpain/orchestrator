@@ -11,11 +11,12 @@ any_exist_under() {
   return 1
 }
 
-# Moves each named handoff that exists into exactly <dest>, created only when
-# there is something to move. A <dest> already holding one of them is refused
-# before any handoff moves; unlike `review retire`, a <dest> that merely
+# Moves each named marker that exists into exactly <dest>, created only when
+# there is something to move, in both modes: markers are files even where
+# handoffs are comments. A <dest> already holding one of them is refused
+# before any marker moves; unlike `review retire`, a <dest> that merely
 # exists is fine.
-retire_handoffs() {
+move_markers() {
   local dest="$1" f
   shift
   any_exist_under "$HANDOFF_DIR" "$@" || return 0
@@ -66,11 +67,6 @@ $detail" ;;
   require_branch branch
   require_pr pr
   redo_count="$(state_get redo_count)"
-  # In an autopilot flow the handoffs are comments: retired first, before any
-  # state moves, so a redo that dies partway leaves the phase as it was.
-  # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  handoff_comments_retire "$issue" $(handoffs_written_from implement)
-
   # A previous call at this same redo can have already retired the branch
   # and recorded it here before dying on the PR close below - branch and
   # redo_count are set together right after a real retire, so if the
@@ -78,12 +74,25 @@ $detail" ;;
   # have produced, the retire already happened: resume at closing the PR
   # instead of retiring an already-retired branch a second time, which
   # issue #63 called out by name as not what a retry should do.
+  local resumed=0
   if [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$issue" "$slug" "$redo_count")" ]; then
     new_n="$redo_count"
     new_branch="$branch"
+    resumed=1
   else
     new_n=$(( redo_count + 1 ))
     new_branch="$(branch_name_redo "$issue" "$slug" "$new_n")"
+  fi
+
+  # The implement handoff described the attempt being retired; left in place,
+  # phase advance would let the redone implement phase leave on it (#279).
+  # Retired first, before any state moves, so a redo that dies partway leaves
+  # the phase as it was; the label pairs it with the review records beside it.
+  # A resumed redo finds it already retired. The plan handoff is never touched.
+  # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
+  handoff_retire "pre-redo-$new_n" $(handoffs_written_from implement)
+
+  if [ "$resumed" -eq 0 ]; then
     cmd_branch retire "$branch" "$new_branch" >/dev/null
     # Recorded immediately, before the gh call below that can still fail:
     # the rename already happened for real, so state.branch has to track it
@@ -102,11 +111,6 @@ $detail" ;;
   cmd_ticket_reset "$issue" >/dev/null
 
   cmd_review retire "$new_n" >/dev/null
-  # The implement handoff described the attempt just retired; left in place,
-  # phase advance would let the redone implement phase leave on it (#279).
-  # Same N as the review records beside it. The plan handoff is never touched.
-  # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  retire_handoffs "$HANDOFF_DIR/pre-redo-$new_n" $(handoffs_written_from implement)
 
   state_write branch null
   state_write pr null
@@ -121,9 +125,10 @@ $detail" ;;
 # redo check reads the pre-redo-spec-* folder this leaves behind and so
 # skips the rewrite decision an adopted issue gets - and retires that issue's
 # ticket breakdown (`ticket retire`, issue #334) so the redone spec is broken
-# down again. The retire runs first: a GitHub failure there dies with the phase
-# still `implement` and the handoffs in place, so a re-run resumes. Only
-# `--new-issue` closes the old one and clears state.issue, so orch-to-spec
+# down again. The handoffs retire first, then the breakdown: a GitHub failure at
+# the latter dies with the phase still `implement`, the handoffs already in
+# their pre-redo-spec-* folder and the markers in place, so a re-run resumes.
+# Only `--new-issue` closes the old one and clears state.issue, so orch-to-spec
 # runs again from scratch; its tickets are left as they are.
 cmd_redo_spec() {
   require_state
@@ -136,12 +141,16 @@ cmd_redo_spec() {
     *) die "usage: orch.sh redo spec [--new-issue]" ;;
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
-  # Autopilot handoff comments are retired before any state moves, as in redo
-  # review.
-  local issue
+  # The spec handoff - and the implement handoff built on it, if any - are
+  # stale once the spec is being redone, so phase advance must not pass on
+  # them (#279). They are retired first, before any state moves, as in redo
+  # review. redo_count stays put: it counts review step-backs and names the
+  # retired branch, so the folder is told apart by a UTC timestamp.
+  local issue label
   require_issue issue
+  label="pre-redo-spec-$(dir_stamp)"
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  handoff_comments_retire "$issue" $(handoffs_written_from spec)
+  handoff_retire "$label" $(handoffs_written_from spec)
   if [ "$new_issue" -eq 1 ]; then
     local msg
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
@@ -150,19 +159,13 @@ cmd_redo_spec() {
   else
     cmd_ticket_retire "$issue"
   fi
-  # The spec handoff - and the implement handoff built on it, if any - are
-  # stale once the spec is being redone, so phase advance must not pass on
-  # them (#279). redo_count stays put: it counts review step-backs and names
-  # the retired branch, so the directory is told apart by a UTC timestamp.
-  # The spec-paused marker (#1181) moves with them, exactly when they do: left
-  # behind, it would carry the redone spec phase past its rewrite decision.
-  # The round marker (#1348) moves with them for the same reason: left behind,
-  # it would carry the redone spec review past round 1. The round directories
-  # stay in place, since round 1's `spec round-dir 1/<n>` clears them.
-  local dest
-  dest="$HANDOFF_DIR/pre-redo-spec-$(dir_stamp)"
-  # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  retire_handoffs "$dest" $(handoffs_written_from spec) "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
+  # The spec-paused marker (#1181) moves late, into the folder the handoffs
+  # went to: left behind, it would carry the redone spec phase past its
+  # rewrite decision. The round marker (#1348) moves with it for the same
+  # reason: left behind, it would carry the redone spec review past round 1.
+  # The round directories stay in place, since round 1's `spec round-dir 1/<n>`
+  # clears them.
+  move_markers "$HANDOFF_DIR/$label" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
   phase_write spec
 }
 
