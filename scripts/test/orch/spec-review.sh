@@ -1372,11 +1372,9 @@ assert_eq "ticket-20.fetched.md not yet taken by a run that found no file" "$(on
 sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
 srt_refused "a ticket anchor matching nothing" "$d" "ticket item 1 (#20): its anchor matches no text" recommended --tickets recommended
 assert_eq "the refused run took ticket-20.fetched.md" "$(cat "$d/ticket-20.fetched.md")" "$(printf '%s' "$srt_t20")"
-sed -i 's/^Nowhere\.$/##/' "$d/tickets.md"
-srt_refused "a ticket anchor matching twice" "$d" "ticket item 1 (#20): its anchor matches more than one place" recommended --tickets recommended
-cp "$d/tickets.keep" "$d/tickets.md"
-printf '@@ bogus\n' >>"$d/tickets.md"
-srt_refused "a malformed tickets.md" "$d" "tickets.md line 21: unknown line '@@ bogus'" recommended --tickets recommended
+# A ticket anchor matching twice and a malformed tickets.md are asserted by
+# spec-review check --tickets (#1226), which shares their parser and anchor
+# check: see its "a ticket anchor matching twice" and "a grammar error".
 printf '@@ item 1 ticket 20 apply\n' >"$d/tickets.md"
 srt_refused "tickets.md with no @@ recommend" "$d" "tickets.md line 1: @@ recommend comes first" recommended --tickets recommended
 printf '@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ anchor\nx\n@@ replace\ny\n@@ end\n' >"$d/tickets.md"
