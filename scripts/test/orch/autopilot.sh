@@ -758,14 +758,14 @@ tick_seen_launcher="$(mktemp)"
 printf '#!/bin/sh\nrm -f "%s/claims/7"\nexit 0\n' "$ORCH_GH_FAKE_STORE" >"$tick_seen_launcher"
 chmod +x "$tick_seen_launcher"
 ORCH_AUTOPILOT_LAUNCHER="$tick_seen_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
-assert_eq "autopilot run removes run/<issue>.tick" "$([ -e "$top/.orchestrator/autopilot/run/7.tick" ] && echo there || echo gone)" gone
+assert_eq "autopilot run removes run/<issue>.tick" "$(on_disk "$top/.orchestrator/autopilot/run/7.tick")" absent
 # the same when the tick's record is live: its process still runs, the run
 # takes the issue over all the same
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" 111
 live_orch liveness_tick_begin 7
 ORCH_AUTOPILOT_LAUNCHER="$tick_seen_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
-assert_eq "autopilot run removes a live tick's run/<issue>.tick too" "$([ -e "$top/.orchestrator/autopilot/run/7.tick" ] && echo there || echo gone)" gone
+assert_eq "autopilot run removes a live tick's run/<issue>.tick too" "$(on_disk "$top/.orchestrator/autopilot/run/7.tick")" absent
 live_stop
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
