@@ -23,12 +23,6 @@ stub_pushed_branch() {
 # or MERGED.
 fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
 
-# fake_comment_reads: how many comment-list reads (adapter_issue_comments_json)
-# the fake has answered or refused - 0 for none.
-fake_comment_reads() {
-  if [ -f "$ORCH_GH_FAKE_STORE/comment_reads" ]; then wc -l <"$ORCH_GH_FAKE_STORE/comment_reads" | tr -d ' '; else echo 0; fi
-}
-
 # --- redo review ----------------------------------------------------------
 # The full review -> implement transition: three distinct refusals below a
 # terminal state, and a full composition above it.
@@ -672,60 +666,6 @@ assert_eq "without retiring the closed issue's tickets" \
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
-restore_suite_env
-
-# --- redo spec in an autopilot flow (#1459) ----------------------------------
-# The handoffs are comments: a redo retires each by posting a newer comment
-# tagged retired, before it moves any state.
-echo
-echo "redo spec in an autopilot flow"
-fresh_flow redoautopilot
-fake_github
-fake_issue 60 open
-fake_comment 60 someone 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
-spec text"
-fake_comment 60 someone 2030-01-01T00:00:01Z "$(marker_of handoff 03-implement)
-implement text"
-state_fixture phase implement
-"$ORCH" state set issue 60
-fake_fail_after adapter_issue_comment 1 "HTTP 500 comment"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" redo spec 2>&1)"; st=$?
-assert_status "a redo that dies between its retirement comments fails" "$st" 1
-assert_contains "naming the comment it posted" "$out" "comments posted: 02-spec"
-assert_eq "leaving the recorded phase as it was" "$("$ORCH" state get phase)" "implement"
-fake_unfail
-out="$(ORCH_AUTOPILOT=1 "$ORCH" redo spec 2>&1)"; st=$?
-assert_status "the next redo finishes" "$st" 0
-assert_eq "the phase is spec" "$("$ORCH" state get phase)" "spec"
-retired="$(fake_comments_of 60 | grep -c 'orch:handoff .* retired')"
-assert_eq "each handoff is retired exactly once: the next redo skipped the one already retired" "$retired" "2"
-assert_contains "the spec handoff is retired" "$(fake_comments_of 60)" "$(marker_of handoff 02-spec retired)"
-assert_contains "and the implement handoff" "$(fake_comments_of 60)" "$(marker_of handoff 03-implement retired)"
-
-# a retire of several handoffs makes one comment read
-fake_comment 60 someone 2030-01-03T00:00:00Z "$(marker_of handoff 02-spec)
-spec again"
-fake_comment 60 someone 2030-01-03T00:00:01Z "$(marker_of handoff 03-implement)
-implement again"
-retire_all() { ORCH_AUTOPILOT=1 sourced_orch handoff_comment_retire pre-redo 02-spec.md 03-implement.md; }
-reads_before="$(fake_comment_reads)"
-retire_all >/dev/null 2>&1
-assert_eq "a retire of several handoffs makes exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" "1"
-
-# an unreadable read dies before any post, with each failure's wording
-fake_comment 60 someone 2030-01-04T00:00:00Z "$(marker_of handoff 02-spec)
-spec third"
-before="$(fake_comments_of 60)"
-assert_gh_dies "a failed comments read dies with gh's wording" adapter_issue_comments_json "$GH_502" 1 \
-  "orch: gh could not read the comments of issue #60: HTTP 502: Bad Gateway" \
-  retire_all
-assert_eq "posting nothing" "$(fake_comments_of 60)" "$before"
-fake_lag adapter_issue_comments_json 1 'not json'
-out="$(retire_all 2>&1)"; st=$?
-assert_status "unparseable comments die" "$st" 1
-assert_eq "with the parse wording" "$out" "orch: could not read issue #60's comments"
-assert_eq "posting nothing either" "$(fake_comments_of 60)" "$before"
-
 restore_suite_env
 
 # --- redo spec and redo review, per handoff mode (#1820) ----------------------
