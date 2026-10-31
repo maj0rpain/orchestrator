@@ -49,6 +49,15 @@ assert_eq "start failing on the read dies in one line naming gh and the reason" 
 rc=1"
 fake_unfail
 
+# The phase-redo rule
+assert_eq "a flow labelled implement whose checkout moved to review is redone as review" "$(sourced_rc 'standing_redo_phase implement review')" "review
+rc=0"
+assert_eq "a flow labelled spec whose checkout moved to implement is redone as spec" "$(sourced_rc 'standing_redo_phase spec implement')" "spec
+rc=0"
+for pair in "spec review" "review spec" "review done" "done review" "spec done" "implement implement" "review implement"; do
+  assert_eq "no redo for labelled/recorded $pair: nothing printed, status 1" "$(sourced_rc "standing_redo_phase $pair")" "rc=1"
+done
+
 # Pickup rule, the label half
 pickable() { sourced_rc "standing_read $1 && standing_pickable" | tail -n 1; }
 fake_issue 10 open orch:spec
@@ -282,16 +291,16 @@ out="$(sourced_rc 'standing_begin 61')"
 assert_eq "begin without limited just adds orch:running" "$(tr_standing 61)|$(printf %s "$out")" "spec|1|0|0|rc=0"
 tr_seed 62 orch:spec orch:limited
 fake_fail_after adapter_issue_relabel 0 "HTTP 500"
-out="$(sourced_rc 'standing_begin 62 limited')"
+out="$(sourced_rc 'standing_begin 62 limited || echo "reason=$STANDING_REASON"')"
 fake_unfail
-assert_contains "begin failing on the limited removal returns 1 with that step's wording" "$out" "step removing orch:limited failed: HTTP 500
-rc=1"
+assert_eq "begin failing on the limited removal sets that step's wording in STANDING_REASON, printing nothing else" "$out" "reason=step removing orch:limited failed: HTTP 500
+rc=0"
 tr_seed 63 orch:spec orch:limited
 fake_fail_after adapter_issue_relabel 1 "HTTP 500"
-out="$(sourced_rc 'standing_begin 63 limited')"
+out="$(sourced_rc 'standing_begin 63 limited || echo "reason=$STANDING_REASON"')"
 fake_unfail
-assert_contains "begin failing on the running addition returns 1 with that step's wording" "$out" "step adding orch:running failed: HTTP 500
-rc=1"
+assert_eq "begin failing on the running addition sets that step's wording in STANDING_REASON, printing nothing else" "$out" "reason=step adding orch:running failed: HTTP 500
+rc=0"
 assert_eq "and the removal had landed" "$(tr_standing 63)" "spec|0|0|0"
 restore_suite_env
 
