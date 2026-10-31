@@ -439,3 +439,29 @@ FENCE_AWK='
     return 0
   }
 '
+
+# True when any of the named files exists under <dir>.
+any_exist_under() {
+  local dir="$1" f
+  shift
+  for f in "$@"; do [ -e "$dir/$f" ] && return 0; done
+  return 1
+}
+
+# move_files_aside <dir> <dest> <what> <file>...: moves each named file that
+# exists in <dir> into exactly <dest>, created only when there is something to
+# move. A <dest> already holding one of them is refused, naming <what>, before
+# any moves; a <dest> that merely exists is fine.
+move_files_aside() {
+  local dir="$1" dest="$2" what="$3" f
+  shift 3
+  any_exist_under "$dir" "$@" || return 0
+  if any_exist_under "$dest" "$@"; then
+    die "$dest already holds $what - refusing to overwrite it"
+  fi
+  mkdir -p "$dest"
+  for f in "$@"; do
+    [ -e "$dir/$f" ] && mv "$dir/$f" "$dest/"
+  done
+  return 0
+}
