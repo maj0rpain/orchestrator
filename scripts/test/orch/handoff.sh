@@ -483,6 +483,10 @@ fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
 assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
+assert_status "unparseable comments make handoff fetch fail" "$st" 1
+assert_eq "with the parse-failure wording" "$out" "orch: could not read issue #7's comments"
 out="$("$ORCH" handoff fetch 02-spec "$fetched" 2>&1)"; st=$?
 assert_status "a handoff never posted is none" "$st" 1
 out="$("$ORCH" handoff fetch bogus "$fetched" 2>&1)"; st=$?
@@ -540,7 +544,7 @@ assert_status "a posted handoff resolves" "$st" 0
 assert_contains "to a scratch file under .orchestrator" "$p" "/.orchestrator/"
 assert_not_contains "not the handoff directory" "$p" "/handoff/"
 assert_eq "holding the comment's body" "$(cat "$p")" "$(literal_handoff spec)"
-fake_fail adapter_issue_json "HTTP 503 read"
+fake_fail adapter_issue_comments_json "HTTP 503 read"
 out="$("$ORCH" handoff path spec 2>&1)"; st=$?
 assert_status "a failed comments read dies" "$st" 1
 assert_contains "showing the gh reason" "$out" "HTTP 503 read"

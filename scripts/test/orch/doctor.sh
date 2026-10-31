@@ -2055,7 +2055,7 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_not_contains "posted handoff comments are not reported missing" "$out" "is missing"
 assert_contains "the plan comment validates" "$out" "handoff 01-plan.md complete"
 assert_contains "and the spec comment" "$out" "handoff 02-spec.md complete"
-fake_fail adapter_issue_json "HTTP 502 comments"
+fake_fail adapter_issue_comments_json "HTTP 502 comments"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 fake_unfail
 assert_status "a comments read failing past the gh gate is a failed check" "$st" 1

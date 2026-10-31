@@ -6,9 +6,9 @@
 # the visible openings, the legacy stop form) and CR handling. Callers name a
 # kind and never write a marker or recognise a comment by one. Its tests:
 # scripts/test/orch/marked-comment.sh.
-# Sourced by orch.sh, after common.sh and the ROOT block. Sourced after
-# autopilot.sh, handoff.sh and issue.sh, so they expand marked_comment_jq at
-# call time, inside a function, never into a constant.
+# Sourced by orch.sh, after common.sh and the ROOT block. issue-timeline.sh, the
+# one other module that calls marked_comment_jq, expands it at call time, inside
+# a function, never into a constant.
 #
 # The kinds: question, limited (a limit stop), handoff (argument: its name,
 # optionally tagged retired), refusal and failure (arguments: a phase; a stop
@@ -16,9 +16,8 @@
 # opening), spec-review (the first line `## Spec review`) and spec-ruling (a
 # first line beginning `Spec ruling:`).
 #
-# The readers: marked_comment_newest, _retired, _follows, _body, _texts (the
-# opening-stripped texts of a kind) and _drop, over the prelude's
-# marked_comment_list, _info, _entries and _of.
+# The readers: marked_comment_texts (the opening-stripped texts of a kind) and
+# _drop, over the prelude's marked_comment_list, _info, _entries and _of.
 #
 # Every reader takes the comments JSON on stdin: the issue object from the
 # structured issue read, or the bare comment array.
@@ -98,55 +97,6 @@ marked_comment_write() {
       printf '<!-- orch:%s %s retired -->\n' "$kind" "$arg" ;;
     *) die "marked comment: unknown tag: $tag" ;;
   esac
-}
-
-# marked_comment_newest <kind> [<arg>]: the index of the newest comment of
-# <kind> (and of <arg>, when given) in the comments on stdin. Exits 1,
-# printing nothing, when none is, and 2 when the comments cannot be read.
-marked_comment_newest() {
-  local out
-  out="$(jq -r --arg k "$1" --arg a "${2-}" "$(marked_comment_jq)"'
-    marked_comment_of($k; $a) | last | .key // empty')" || return 2
-  [ -n "$out" ] || return 1
-  printf '%s\n' "$out"
-}
-
-# marked_comment_at <jq-flags> <program> <kind> [<arg>]: reads the comments on
-# stdin and runs the jq <program>, under <jq-flags>, with $i bound to the index
-# marked_comment_newest finds for <kind> [<arg>]; the one place the readers'
-# exit status is settled. Passes marked_comment_newest's 1 and 2 through, else
-# jq's own status.
-marked_comment_at() {
-  local flags="$1" program="$2" json i
-  shift 2
-  json="$(cat)"
-  i="$(marked_comment_newest "$@" <<<"$json")" || return $?
-  jq "$flags" --argjson i "$i" "$(marked_comment_jq)$program" <<<"$json"
-}
-
-# marked_comment_retired <kind> [<arg>]: succeeds when the newest comment of
-# <kind> is tagged retired; prints nothing. Fails with 1 when it is not, or none
-# is, and with 2 when the comments cannot be read.
-marked_comment_retired() {
-  marked_comment_at -e '
-    marked_comment_list[$i] | marked_comment_info | .retired' "$@" >/dev/null
-}
-
-# marked_comment_follows <kind> [<arg>]: succeeds when some comment follows
-# the newest comment of <kind>; prints nothing. Fails with 1 when none does, or
-# none is of that kind, and with 2 when the comments cannot be read.
-marked_comment_follows() {
-  marked_comment_at -e '
-    marked_comment_list | length > $i + 1' "$@" >/dev/null
-}
-
-# marked_comment_body <kind> [<arg>]: the body of the newest comment of <kind>
-# with its first line stripped, printed exactly, trailing newlines kept. Exits
-# 1, printing nothing, when none is of that kind, and 2 when the comments cannot
-# be read.
-marked_comment_body() {
-  marked_comment_at -j '
-    marked_comment_list[$i].body | (index("\n") // empty) as $n | .[$n + 1:]' "$@"
 }
 
 # marked_comment_texts <kind> [<arg>]: a JSON array of, for every comment of

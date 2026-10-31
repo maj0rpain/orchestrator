@@ -244,6 +244,17 @@ sourced_rc 'standing_limit_stop 67 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/nul
 assert_eq "the third limit stop in a row takes the failure path: needs-human, not limited, claim released" "$(tr_standing 67)|$(fake_claim_held 67)" "spec|0|1|0|free"
 assert_contains "and posts a failure comment naming the third in a row" "$(fake_comments_of 67)" "the third in a row in the spec phase"
 assert_contains "under the failure marker" "$(fake_comments_of 67)" "$(marker_of failure spec)"
+tr_seed 69 orch:spec orch:running
+fake_comment 69 o 2026-01-01T00:00:00Z "$(marker_of limited spec)"
+sourced_rc 'standing_limit_stop 69 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
+assert_eq "the second limit stop in a row is still limited" "$(tr_standing 69)|$(fake_claim_held 69)" "spec|0|0|1|free"
+assert_contains "and is retry 2 of 2" "$(fake_comments_of 69)" "retry 2 of 2"
+tr_seed 70 orch:spec orch:running
+fake_fail adapter_issue_comments_json "HTTP 500 comments"
+sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
+fake_unfail
+assert_eq "unreadable comments take the failure path: needs-human, not limited, claim released" "$(tr_standing 70)|$(fake_claim_held 70)" "spec|0|1|0|free"
+assert_contains "and the failure comment says the comments could not be read" "$(fake_comments_of 70)" "could not be read to count the stops in a row"
 tr_seed 68 orch:spec orch:running
 out="$(sourced_rc 'standing_limit_stop 68 "" "" "" 1 log')"
 assert_contains "a limit stop of an empty phase dies" "$out" "rc=1"
@@ -302,41 +313,4 @@ fake_unfail
 assert_eq "begin failing on the running addition sets that step's wording in STANDING_REASON, printing nothing else" "$out" "reason=step adding orch:running failed: HTTP 500
 rc=0"
 assert_eq "and the removal had landed" "$(tr_standing 63)" "spec|0|0|0"
-restore_suite_env
-
-# --- autopilot limit count (the retry count) ---------------------------------
-# standing_limit_count called directly over seeded comments (#1463, #1695).
-echo
-echo "autopilot limit count"
-tick_fixture
-fake_issue 7 open ready-for-agent orch:spec
-# the count stops at a refusal, failure, question or handoff comment and at a
-# limit stop comment of another phase, and skips other comments
-LIM_SPEC="$(marker_of limited spec)
-stopped"
-count_case() { # <label> <expected count> <comment>...: seeded oldest first
-  local label="$1" want="$2" c
-  shift 2
-  fake_comments_clear 7
-  for c in "$@"; do fake_comment 7 o 2026-01-01T00:00:00Z "$c"; done
-  # shellcheck disable=SC2016 # expanded by the inner bash
-  assert_eq "$label" "$(sourced_orch_script 'standing_limit_count 7 spec got && printf %s "$got"')" "$want"
-}
-count_case "two stops in a row are counted" 2 "$LIM_SPEC" "$LIM_SPEC"
-count_case "other comments between them are skipped" 2 "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
-count_case "a question comment resets the count" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of question spec)
-@o"
-count_case "a handoff comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of handoff 01-plan)
-x"
-count_case "a limit stop comment of another phase resets it" 1 "$LIM_SPEC" "$(marker_of limited implement)
-x" "$LIM_SPEC"
-count_case "a marked failure comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of failure spec)
-x"
-count_case "a marked refusal comment resets it" 0 "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
-x"
-fake_fail adapter_issue_comments_json "HTTP 500 comments"
-sourced_orch_script 'standing_limit_count 7 spec got' 2>/dev/null; rc=$?
-fake_unfail
-assert_status "unreadable comments return non-zero" "$rc" 1
-
 restore_suite_env

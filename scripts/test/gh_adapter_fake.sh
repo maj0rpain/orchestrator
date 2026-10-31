@@ -69,6 +69,7 @@
 #                     counts it down
 #   lag/<operation>.stale
 #                     the stale answer, where the operation takes one
+#   comment_reads     one line per adapter_issue_comments_json call made
 #   default_branch    the answer to the repo's default branch, byte for byte;
 #                     absent, gh cannot answer for the repo
 #   checks/<n>/<scope>
@@ -329,7 +330,12 @@ adapter_issue_json() {
 # author, createdAt, body and url, the url being
 # https://github.com/o/r/issues/<n>#issuecomment-<k> for the k-th comment.
 adapter_issue_comments_json() {
+  echo x >>"$(fake_store)/comment_reads"
   ! fake_failing adapter_issue_comments_json || return 1
+  if fake_lagging adapter_issue_comments_json; then
+    fake_stale adapter_issue_comments_json
+    return 0
+  fi
   fake_issue_known "$1" || return 1
   fake_comments_json "$(fake_issue_dir "$1")/comments" "$1"
 }
