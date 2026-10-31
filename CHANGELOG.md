@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.45
+
+Move autopilot's local session liveness - the run and tick records, their `<pid> <start-time>` format, the watch pidfile and the session log names - into one internal module, so the tick, `autopilot run`, the watch and doctor all ask the same rule. `orch.sh doctor` now warns when a claim of this host has lost its process, with `orch.sh autopilot tick` as the remedy, and its warning for another host's day-old claim tells you to run the tick on that host instead of naming the claim ref.
+
 ## 4.38.44
 
 Autopilot: one Session end operation now applies the whole consequence of a phase session's end (the held rule, one pause-store write with the later of the early and limit pauses, and the released note, limit stop or failure stop). A failed limit-file write on a session with both pauses is now noted once per session, not once per pause.

@@ -591,20 +591,28 @@ check_autopilot_side_flows() {
   return 0
 }
 
-# Claims held by another host for more than a day: the watcher never touches
-# them, so doctor is where they are noticed. Silent where origin cannot be read
-# or there are none.
+# Claims: this host's whose process is gone (asked of the Liveness module), and
+# other hosts' held for more than a day (the watcher never touches those).
+# Silent where origin cannot be read, and for this host's claims where the main
+# checkout cannot be resolved.
 check_autopilot_claims() {
-  local issue host started now_epoch started_epoch me
+  local issue host started now_epoch started_epoch me here=0 pid
   standing_claims_read --quiet || return 0
   now_epoch="$(date -u +%s)"; me="$(standing_host_id)"
+  main_checkout >/dev/null 2>&1 && here=1
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
     host="${STANDING_CLAIM_HOST[$issue]}" started="${STANDING_CLAIM_STARTED[$issue]}"
-    [ "$host" != "$me" ] || continue
+    if [ "$host" = "$me" ]; then
+      [ "$here" = 1 ] || continue
+      pid="$(liveness_issue_alive "$issue" 2>/dev/null)" && continue
+      d_warn "issue #$issue is claimed by this host (phase ${STANDING_CLAIM_PHASE[$issue]}), but its process is gone ($([ -n "$pid" ] && echo "pid $pid" || echo "no record"))."
+      d_remedy "orch.sh autopilot tick"
+      continue
+    fi
     started_epoch="$(autopilot_iso_epoch "$started")" || continue
     [ "$((now_epoch - started_epoch))" -gt 86400 ] || continue
     d_warn "issue #$issue has been claimed by $host (pid ${STANDING_CLAIM_PID[$issue]}, phase ${STANDING_CLAIM_PHASE[$issue]}) since $started - more than a day."
-    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its $STANDING_RUNNING_LABEL label"
+    d_remedy "if that session is gone, run orch.sh autopilot tick on $host"
   done
 }
 
