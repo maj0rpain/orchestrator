@@ -261,48 +261,60 @@ handoff_invalid() {
   die "$HANDOFF_DIR/$1 is not valid - fix it${2:+, $2}"
 }
 
+# handoff_timeline_read <issue>: reads <issue>'s timeline, dying when its
+# comments cannot be read: with gh's reason when gh failed, else saying the
+# output could not be parsed.
+handoff_timeline_read() {
+  timeline_read "$1" && return 0
+  [ -z "$TIMELINE_REASON" ] || gh_die "read the comments of issue #$1" "$TIMELINE_REASON"
+  die "could not read issue #$1's comments"
+}
+
+# handoff_timeline_write <name> <file>: writes the body of the last-read
+# timeline's live <name> handoff, marker stripped, to <file>. Non-zero, and
+# <file> untouched, when there is none or the newest is tagged retired.
+handoff_timeline_write() {
+  local i raw
+  i="$(timeline_handoff "$1")" || return 1
+  raw="$(timeline_body "$i")"
+  mkdir -p "$(dirname "$2")"
+  if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$2"; else : >"$2"; fi
+}
+
 # handoff_comment_fetch <issue> <name> <file>: writes the body of <issue>'s
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
 handoff_comment_fetch() {
-  local issue="$1" name="$2" file="$3" json raw rc=0 retired_rc=0
-  gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  marked_comment_newest handoff "$name" <<<"$json" >/dev/null || rc=$?
-  [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
-  [ "$rc" -eq 0 ] || return 1
-  marked_comment_retired handoff "$name" <<<"$json" || retired_rc=$?
-  [ "$retired_rc" -ne 2 ] || die "could not read issue #$issue's comments"
-  [ "$retired_rc" -ne 0 ] || return 1
-  raw="$(marked_comment_body handoff "$name" <<<"$json")" || die "could not read issue #$issue's comments"
-  mkdir -p "$(dirname "$file")"
-  if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
+  handoff_timeline_read "$1"
+  handoff_timeline_write "$2" "$3"
 }
 
 # handoff_comments_retire <issue> <file>...: in an autopilot session, retires
 # each named handoff file's comment by posting a newer one tagged retired -
-# what moving the file into a pre-redo folder is for an interactive flow. A
-# handoff with no comment, or whose newest is already retired, posts nothing,
-# so a redo that died partway is finished by the next. A post that fails dies
-# naming the comments already posted. Outside an autopilot session it does
-# nothing: those handoffs are files.
+# what moving the file into a pre-redo folder is for an interactive flow. The
+# comments are read once, before any post, and every file is decided from that
+# read. A handoff with no comment, or whose newest is already retired, posts
+# nothing, so a redo that died partway is finished by the next. A post that
+# fails dies naming the comments already posted. Outside an autopilot session
+# it does nothing: those handoffs are files.
 handoff_comments_retire() {
-  local issue="$1" file name scratch body gh_err posted=""
+  local issue="$1" file name body gh_err posted=""
   shift
   autopilot_active || return 0
-  scratch="$(mktemp)" || die "could not create a temp file for the handoff check"
+  [ $# -gt 0 ] || return 0
+  handoff_timeline_read "$issue"
   for file in "$@"; do
     name="${file%.md}"
-    handoff_comment_fetch "$issue" "$name" "$scratch" || continue
-    body="$(mktemp)" || { rm -f "$scratch"; die "could not create a temp file for the retired comment"; }
+    timeline_handoff "$name" >/dev/null || continue
+    body="$(mktemp)" || die "could not create a temp file for the retired comment"
     { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
     capture_err gh_err adapter_issue_comment "$issue" "$body" || {
-      rm -f "$scratch" "$body"
+      rm -f "$body"
       die "could not retire the $name handoff on issue #$issue: $(gh_reason "$gh_err") - comments posted: ${posted:-none}; the recorded phase is unchanged, so a re-run retires the rest"
     }
     rm -f "$body"
     posted="${posted:+$posted, }$name"
   done
-  rm -f "$scratch"
 }
 
 # handoff_resolve <file>: the status lookup. Prints the readable path of the
