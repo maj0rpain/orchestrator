@@ -603,7 +603,9 @@ handoff_store_contract() {
 
   # a stale scratch copy is never found (only the comment adapter has one)
   if [ "$adapter" = comment ]; then
-    echo stale >"$(dirname "$p")/01-plan.md"
+    scratch="$(dirname "$p")"
+    assert_contains "comment: the stale copy goes in the sandbox's scratch directory" "$scratch" "/.orchestrator/"
+    case "$scratch" in /*/.orchestrator/*) echo stale >"$scratch/01-plan.md" ;; esac
     out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
     assert_status "comment: a stale scratch copy is not a found handoff" "$st" 1
     assert_contains "comment: with the missing message" "$out" "$(hs_missing_msg comment 01-plan)"

@@ -140,7 +140,7 @@ cmd_redo_spec() {
   # past round 1.
   # The round directories stay in place, since round 1's `spec round-dir 1/<n>`
   # clears them.
-  move_files_aside "$HANDOFF_DIR" "$HANDOFF_DIR/$label" "a moved marker" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
+  move_files_aside "$HANDOFF_DIR" "$HANDOFF_DIR/$label" "a retired handoff" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
   phase_write spec
 }
 
