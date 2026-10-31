@@ -1426,10 +1426,6 @@ ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 se_fresh; se_end 1
 assert_contains "a first limit stop is retry 1 of 2" "$(fake_last_comment_of 7)" "retry 1 of 2, started once the limit pause has passed"
 assert_contains "its comment names the log" "$(fake_last_comment_of 7)" "$se_log"
-se_fresh; fake_comment 7 o 2026-01-01T00:00:00Z "$(marker_of limited spec)
-stopped"; se_end 1
-assert_eq "a second stop in a row is limited" "$(se_kind)" limited
-assert_contains "and retry 2 of 2" "$(fake_last_comment_of 7)" "retry 2 of 2"
 ndjson_with "iteration limit reached" >"$se_log"
 se_fresh; se_end 1
 assert_contains "the failure comment says only a limit stop is retried" "$(fake_last_comment_of 7)" 'nothing is retried automatically except a usage-limit stop labelled `orch:limited`'

@@ -261,7 +261,6 @@ handoff_invalid() {
   die "$HANDOFF_DIR/$1 is not valid - fix it${2:+, $2}"
 }
 
-
 # handoff_timeline_write <name> <file>: writes the body of the last-read
 # timeline's live <name> handoff, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
@@ -349,10 +348,11 @@ handoff_fetch_earlier() {
   local issue earlier
   autopilot_active || return 0
   require_issue issue
+  timeline_read_or_die "$issue"
   for earlier in $(handoffs_due "$1"); do
     [ "$earlier" != "$2" ] || continue
     rm -f "$HANDOFF_SCRATCH_DIR/$earlier"
-    handoff_comment_fetch "$issue" "${earlier%.md}" "$HANDOFF_SCRATCH_DIR/$earlier" || true
+    handoff_timeline_write "${earlier%.md}" "$HANDOFF_SCRATCH_DIR/$earlier" || true
   done
 }
 

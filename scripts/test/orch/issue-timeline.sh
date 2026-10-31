@@ -48,96 +48,73 @@ HO_A="$(marker_of handoff 01-plan)"$'\nthe plan\n\n'
 HO_A_RETIRED="$(marker_of handoff 01-plan retired)
 Retired"
 
+# The cases are a table: each row is one comment history plus the answer a
+# query gives it - tl_case <name> <script> <expected> <comment>..., or
+# tl_case_exact for an answer read with trailing newlines kept. Adding a case is
+# adding a row.
+tl_case() { local name="$1" script="$2" want="$3"; shift 3; tl_seed "$@"; assert_eq "$name" "$(tl "$script")" "$want"; }
+tl_case_exact() { local name="$1" script="$2" want="$3"; shift 3; tl_seed "$@"; assert_eq "$name" "$(tl_exact "$script")" "$want"; }
+
 # question: pending / replied / none, per phase and across phases
-tl_seed "intro"
-assert_eq "no question comment: none" "$(tl 'timeline_question spec')" "rc=1"
-assert_eq "no question comment: not replied" "$(tl 'timeline_replied spec')" "rc=1"
-tl_seed "$Q_SPEC"
-assert_eq "a question with nothing after it is pending" "$(tl 'timeline_question spec; timeline_replied spec')" "0~spec~$U-1|rc=1"
-assert_eq "the question of another phase is none" "$(tl 'timeline_question implement')" "rc=1"
-tl_seed "$Q_SPEC" "the answer"
-assert_eq "a comment after the question replies to it" "$(tl 'timeline_replied spec')" "rc=0"
-tl_seed "$Q_SPEC" "$Q_IMPL"
-assert_eq "the phase's question is found past another phase's newer one" "$(tl 'timeline_question spec')" "0~spec~$U-1|rc=0"
-assert_eq "a question of another phase after it counts as a comment after it" "$(tl 'timeline_replied spec')" "rc=0"
-assert_eq "the newest question of any phase is the last" "$(tl 'timeline_question')" "1~implement~$U-2|rc=0"
-tl_seed "$Q_SPEC" "reply" "$Q_SPEC"
-assert_eq "the newest question of a phase wins" "$(tl 'timeline_question spec')" "2~spec~$U-3|rc=0"
+tl_case "no question comment: none" 'timeline_question spec' "rc=1" "intro"
+tl_case "no question comment: not replied" 'timeline_replied spec' "rc=1" "intro"
+tl_case "a question with nothing after it is pending" 'timeline_question spec; timeline_replied spec' "0~spec~$U-1|rc=1" "$Q_SPEC"
+tl_case "the question of another phase is none" 'timeline_question implement' "rc=1" "$Q_SPEC"
+tl_case "a comment after the question replies to it" 'timeline_replied spec' "rc=0" "$Q_SPEC" "the answer"
+tl_case "the phase's question is found past another phase's newer one" 'timeline_question spec' "0~spec~$U-1|rc=0" "$Q_SPEC" "$Q_IMPL"
+tl_case "a question of another phase after it counts as a comment after it" 'timeline_replied spec' "rc=0" "$Q_SPEC" "$Q_IMPL"
+tl_case "the newest question of any phase is the last" 'timeline_question' "1~implement~$U-2|rc=0" "$Q_SPEC" "$Q_IMPL"
+tl_case "the newest question of a phase wins" 'timeline_question spec' "2~spec~$U-3|rc=0" "$Q_SPEC" "reply" "$Q_SPEC"
 
 # the comments after the question
-tl_seed "$Q_SPEC" "one"
-assert_eq "one reply is printed bare after a --- line" "$(tl_exact 'timeline_answers spec')" "[
+tl_case_exact "one reply is printed bare after a --- line" 'timeline_answers spec' "[
 ---
-one]"
-tl_seed "$Q_SPEC" $'one\n' "two"
-assert_eq "several replies are joined by --- lines, trailing newlines kept" "$(tl_exact 'timeline_answers spec')" "[
+one]" "$Q_SPEC" "one"
+tl_case_exact "several replies are joined by --- lines, trailing newlines kept" 'timeline_answers spec' "[
 ---
 one
 
 ---
-two]"
-tl_seed "$Q_SPEC"
-assert_eq "no reply: nothing" "$(tl_exact 'timeline_answers spec')" "[]"
+two]" "$Q_SPEC" $'one\n' "two"
+tl_case_exact "no reply: nothing" 'timeline_answers spec' "[]" "$Q_SPEC"
 
 # the latest stop
-tl_seed "intro"
-assert_eq "no stop: none" "$(tl 'timeline_stop')" "rc=1"
-tl_seed "$STOP_F" "note"
-assert_eq "a failure comment is a stop" "$(tl 'timeline_stop')" "0~failure~spec~$U-1|rc=0"
-tl_seed "$STOP_F" "$STOP_R" "note"
-assert_eq "the newest stop wins" "$(tl 'timeline_stop')" "1~refusal~implement~$U-2|rc=0"
-tl_seed "$STOP_F" "$LIM_SPEC"
-assert_eq "a limit stop is not a stop" "$(tl 'timeline_stop')" "0~failure~spec~$U-1|rc=0"
-tl_seed "Autopilot refused to run the plan phase: nope" "x"
-assert_eq "a legacy prose-opened refusal is a stop" "$(tl 'timeline_stop')" "0~refusal~plan~$U-1|rc=0"
-tl_seed "Autopilot failed in the review phase: boom" "x"
-assert_eq "a legacy prose-opened failure is a stop" "$(tl 'timeline_stop')" "0~failure~review~$U-1|rc=0"
-tl_seed "$STOP_F" "$Q_SPEC"
-assert_eq "a question newer than a stop leaves the stop answered as it was" "$(tl 'timeline_stop')" "0~failure~spec~$U-1|rc=0"
-assert_eq "and is itself the newest question" "$(tl 'timeline_question')" "1~spec~$U-2|rc=0"
-tl_seed "$Q_SPEC" "$STOP_F"
-assert_eq "a stop newer than a question leaves the question answered as it was" "$(tl 'timeline_question')" "0~spec~$U-1|rc=0"
-assert_eq "and is itself the latest stop" "$(tl 'timeline_stop')" "1~failure~spec~$U-2|rc=0"
+tl_case "no stop: none" 'timeline_stop' "rc=1" "intro"
+tl_case "a failure comment is a stop" 'timeline_stop' "0~failure~spec~$U-1|rc=0" "$STOP_F" "note"
+tl_case "the newest stop wins" 'timeline_stop' "1~refusal~implement~$U-2|rc=0" "$STOP_F" "$STOP_R" "note"
+tl_case "a limit stop is not a stop" 'timeline_stop' "0~failure~spec~$U-1|rc=0" "$STOP_F" "$LIM_SPEC"
+tl_case "a legacy prose-opened refusal is a stop" 'timeline_stop' "0~refusal~plan~$U-1|rc=0" "Autopilot refused to run the plan phase: nope" "x"
+tl_case "a legacy prose-opened failure is a stop" 'timeline_stop' "0~failure~review~$U-1|rc=0" "Autopilot failed in the review phase: boom" "x"
+tl_case "a question newer than a stop leaves the stop answered as it was" 'timeline_stop' "0~failure~spec~$U-1|rc=0" "$STOP_F" "$Q_SPEC"
+tl_case "and is itself the newest question" 'timeline_question' "1~spec~$U-2|rc=0" "$STOP_F" "$Q_SPEC"
+tl_case "a stop newer than a question leaves the question answered as it was" 'timeline_question' "0~spec~$U-1|rc=0" "$Q_SPEC" "$STOP_F"
+tl_case "and is itself the latest stop" 'timeline_stop' "1~failure~spec~$U-2|rc=0" "$Q_SPEC" "$STOP_F"
 
 # limit stops in a row
-tl_seed "$LIM_SPEC" "$LIM_SPEC"
-assert_eq "two limit stops in a row are counted" "$(tl 'timeline_limit_count spec')" "2|rc=0"
-tl_seed
-assert_eq "no comments count none" "$(tl 'timeline_limit_count spec')" "0|rc=0"
-tl_seed "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
-assert_eq "unmarked comments between them are skipped" "$(tl 'timeline_limit_count spec')" "2|rc=0"
-tl_seed "$LIM_SPEC" "$LIM_SPEC" "$Q_SPEC"
-assert_eq "a question comment ends the streak" "$(tl 'timeline_limit_count spec')" "0|rc=0"
-tl_seed "$LIM_SPEC" "$LIM_SPEC" "$HO_A"
-assert_eq "a handoff comment ends it" "$(tl 'timeline_limit_count spec')" "0|rc=0"
-tl_seed "$LIM_SPEC" "$LIM_IMPL" "$LIM_SPEC"
-assert_eq "a limit stop of another phase ends it" "$(tl 'timeline_limit_count spec')" "1|rc=0"
-tl_seed "$LIM_SPEC" "$LIM_SPEC" "$STOP_F"
-assert_eq "a failure comment ends it" "$(tl 'timeline_limit_count spec')" "0|rc=0"
-tl_seed "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
+tl_case "two limit stops in a row are counted" 'timeline_limit_count spec' "2|rc=0" "$LIM_SPEC" "$LIM_SPEC"
+tl_case "no comments count none" 'timeline_limit_count spec' "0|rc=0"
+tl_case "unmarked comments between them are skipped" 'timeline_limit_count spec' "2|rc=0" "$LIM_SPEC" "just a note" "$LIM_SPEC" "another note"
+tl_case "a question comment ends the streak" 'timeline_limit_count spec' "0|rc=0" "$LIM_SPEC" "$LIM_SPEC" "$Q_SPEC"
+tl_case "a handoff comment ends it" 'timeline_limit_count spec' "0|rc=0" "$LIM_SPEC" "$LIM_SPEC" "$HO_A"
+tl_case "a limit stop of another phase ends it" 'timeline_limit_count spec' "1|rc=0" "$LIM_SPEC" "$LIM_IMPL" "$LIM_SPEC"
+tl_case "a failure comment ends it" 'timeline_limit_count spec' "0|rc=0" "$LIM_SPEC" "$LIM_SPEC" "$STOP_F"
+tl_case "a refusal comment ends it" 'timeline_limit_count spec' "0|rc=0" "$LIM_SPEC" "$LIM_SPEC" "$(marker_of refusal spec)
 x"
-assert_eq "a refusal comment ends it" "$(tl 'timeline_limit_count spec')" "0|rc=0"
-tl_seed "$STOP_F" "$LIM_SPEC"
-assert_eq "a stop older than the streak does not count" "$(tl 'timeline_limit_count spec')" "1|rc=0"
+tl_case "a stop older than the streak does not count" 'timeline_limit_count spec' "1|rc=0" "$STOP_F" "$LIM_SPEC"
 
 # handoffs
-tl_seed "intro" "$HO_A"
-assert_eq "a live handoff is found" "$(tl 'timeline_handoff 01-plan')" "1|rc=0"
-assert_eq "its body is exact, trailing newlines kept" "$(tl_exact 'timeline_body 1')" "[the plan
+tl_case "a live handoff is found" 'timeline_handoff 01-plan' "1|rc=0" "intro" "$HO_A"
+tl_case_exact "its body is exact, trailing newlines kept" 'timeline_body 1' "[the plan
 
-]"
-assert_eq "a handoff of another name is missing" "$(tl 'timeline_handoff 02-build')" "rc=1"
-tl_seed "$HO_A" "$HO_A_RETIRED"
-assert_eq "a retired newest handoff is not live" "$(tl 'timeline_handoff 01-plan')" "rc=1"
-tl_seed "$HO_A_RETIRED" "$HO_A"
-assert_eq "a live handoff newer than a retired one is live" "$(tl 'timeline_handoff 01-plan')" "1|rc=0"
-tl_seed "$(marker_of handoff 01-plan)"
-assert_eq "a comment of only its marker line has an empty body" "$(tl_exact 'timeline_body 0')" "[]"
+]" "intro" "$HO_A"
+tl_case "a handoff of another name is missing" 'timeline_handoff 02-build' "rc=1" "intro" "$HO_A"
+tl_case "a retired newest handoff is not live" 'timeline_handoff 01-plan' "rc=1" "$HO_A" "$HO_A_RETIRED"
+tl_case "a live handoff newer than a retired one is live" 'timeline_handoff 01-plan' "1|rc=0" "$HO_A_RETIRED" "$HO_A"
+tl_case_exact "a comment of only its marker line has an empty body" 'timeline_body 0' "[]" "$(marker_of handoff 01-plan)"
 
 # CR-terminated marker lines
-tl_seed "<!-- orch:question spec -->"$'\r\nwhat?' "<!-- orch:handoff 01-plan -->"$'\r\nbody'
-assert_eq "a CR-terminated question marker is read" "$(tl 'timeline_question spec')" "0~spec~$U-1|rc=0"
-assert_eq "a CR-terminated handoff marker is read" "$(tl 'timeline_handoff 01-plan')" "1|rc=0"
+tl_case "a CR-terminated question marker is read" 'timeline_question spec' "0~spec~$U-1|rc=0" "<!-- orch:question spec -->"$'\r\nwhat?' "<!-- orch:handoff 01-plan -->"$'\r\nbody'
+tl_case "a CR-terminated handoff marker is read" 'timeline_handoff 01-plan' "1|rc=0" "<!-- orch:question spec -->"$'\r\nwhat?' "<!-- orch:handoff 01-plan -->"$'\r\nbody'
 
 # failed reads
 tl_seed "$HO_A"

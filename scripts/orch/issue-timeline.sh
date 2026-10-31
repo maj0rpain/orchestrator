@@ -9,8 +9,9 @@
 # no comment follows the question. Only the read can fail. The marker grammar
 # stays in the Marked comment module (its jq prelude) and here. Its tests:
 # scripts/test/orch/issue-timeline.sh.
-# Sourced by orch.sh, after marked-comment.sh and gh.sh; layering: Marked
-# comment, then Issue timeline, then Standing, autopilot and handoff.
+# Sourced by orch.sh, after common.sh and the ROOT block; marked_comment_jq is
+# expanded at call time, so marked-comment.sh may load after it. Layering:
+# Marked comment, then Issue timeline, then Standing, autopilot and handoff.
 #
 # The rule for a stop lives here: a refusal or a failure comment is a stop (a
 # limit stop is not), the legacy prose-opened ones included, which the Marked
@@ -37,28 +38,31 @@ TIMELINE_URL=()
 # read: TIMELINE_REASON holds gh's reason, or is empty for output that is not a
 # comment list.
 timeline_read() {
-  local json gh_err text kind arg retired url
+  local json gh_err text rows kind arg retired url
   TIMELINE_JSON='[]' TIMELINE_REASON=""
   TIMELINE_KIND=() TIMELINE_ARG=() TIMELINE_RETIRED=() TIMELINE_URL=()
   if ! capture json gh_err adapter_issue_comments_json "$1"; then
     TIMELINE_REASON="$(gh_reason "$gh_err")"
     return 1
   fi
-  # Every field is prefixed with _ so an empty one survives the tab split.
+  # One pass: the first line is the comment list, compact, then one row per
+  # comment. Every field is prefixed with _ so an empty one survives the tab
+  # split.
   text="$(jq -r "$(marked_comment_jq)"'
-    marked_comment_entries[]
-    | ["_" + (.info.kind // ""), "_" + (.info.arg // ""),
-       "_" + (if .info.retired then "r" else "" end), "_" + (.c.url // "")]
-    | @tsv' <<<"$json" 2>/dev/null)" || return 1
-  TIMELINE_JSON="$(jq -c "$(marked_comment_jq)"' marked_comment_list' <<<"$json" 2>/dev/null)" || return 1
-  while IFS=$'\t' read -r kind arg retired url; do
+    (marked_comment_list | tojson),
+    (marked_comment_entries[]
+     | ["_" + (.info.kind // ""), "_" + (.info.arg // ""),
+        "_" + (if .info.retired then "r" else "" end), "_" + (.c.url // "")]
+     | @tsv)' <<<"$json" 2>/dev/null)" || return 1
+  TIMELINE_JSON="${text%%$'\n'*}"
+  rows=""
+  case "$text" in *$'\n'*) rows="${text#*$'\n'}" ;; esac
+  [ -z "$rows" ] || while IFS=$'\t' read -r kind arg retired url; do
     TIMELINE_KIND+=("${kind#_}")
     TIMELINE_ARG+=("${arg#_}")
     TIMELINE_RETIRED+=("${retired#_}")
     TIMELINE_URL+=("${url#_}")
-  done <<<"$text"
-  # An empty comment list reads one blank line.
-  if [ -z "$text" ]; then TIMELINE_KIND=() TIMELINE_ARG=() TIMELINE_RETIRED=() TIMELINE_URL=(); fi
+  done <<<"$rows"
 }
 
 # timeline_read_or_die <issue> [2]: timeline_read, dying when it cannot: with

@@ -176,7 +176,6 @@ autopilot_ask() {
   standing_ask "$phase" "$text"
 }
 
-
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
 # marker stripped, and every comment after it to <file>, each later one after a
 # `---` line. Exits 1, writing nothing, when no comment follows the question -
