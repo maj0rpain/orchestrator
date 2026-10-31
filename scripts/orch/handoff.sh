@@ -372,6 +372,14 @@ handoff_file_path() {
   handoff_file_locate "$2"
 }
 
+# True when any of the named files exists under <dir>.
+any_exist_under() {
+  local dir="$1" f
+  shift
+  for f in "$@"; do [ -e "$dir/$f" ] && return 0; done
+  return 1
+}
+
 # handoff_file_retire <label> <file>...: moves each named handoff that exists
 # into $HANDOFF_DIR/<label>, created only when there is something to move. A
 # folder already holding one of them is refused before any moves; a folder that

@@ -3,33 +3,6 @@
 # Its tests: scripts/test/orch/redo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# True when any of the named files exists under <dir>.
-any_exist_under() {
-  local dir="$1" f
-  shift
-  for f in "$@"; do [ -e "$dir/$f" ] && return 0; done
-  return 1
-}
-
-# Moves each named marker that exists into exactly <dest>, created only when
-# there is something to move, in both modes: markers are files even where
-# handoffs are comments. A <dest> already holding one of them is refused
-# before any marker moves; unlike `review retire`, a <dest> that merely
-# exists is fine.
-move_markers() {
-  local dest="$1" f
-  shift
-  any_exist_under "$HANDOFF_DIR" "$@" || return 0
-  if any_exist_under "$dest" "$@"; then
-    die "$dest already holds a retired handoff - refusing to overwrite it"
-  fi
-  mkdir -p "$dest"
-  for f in "$@"; do
-    [ -e "$HANDOFF_DIR/$f" ] && mv "$HANDOFF_DIR/$f" "$dest/"
-  done
-  return 0
-}
-
 # The full `review -> implement` transition: retire the old branch and PR,
 # reopen the spec issue's closed tickets, move the old loop's records aside,
 # and reset the state a fresh implement attempt needs - never mid-budget, and
@@ -165,7 +138,7 @@ cmd_redo_spec() {
   # reason: left behind, it would carry the redone spec review past round 1.
   # The round directories stay in place, since round 1's `spec round-dir 1/<n>`
   # clears them.
-  move_markers "$HANDOFF_DIR/$label" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
+  handoff_file_retire "$label" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
   phase_write spec
 }
 

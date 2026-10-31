@@ -675,23 +675,6 @@ restore_suite_env
 # moves no state; a failure after it leaves the phase, and a re-run finishes
 # retiring each handoff exactly once.
 
-# rd_orch <mode>: runs orch.sh as that mode's session.
-rd_orch() {
-  local mode="$1"
-  shift
-  if [ "$mode" = comment ]; then ORCH_AUTOPILOT=1 "$ORCH" "$@"; else env -u ORCH_AUTOPILOT "$ORCH" "$@"; fi
-}
-
-# rd_put <mode> <issue> <ts> <name> <body>: keeps a handoff as the mode does.
-rd_put() {
-  if [ "$1" = comment ]; then
-    fake_comment "$2" someone "$3" "$(marker_of handoff "$4")
-$5"
-  else
-    writeln "$5" >".orchestrator/handoff/$4.md"
-  fi
-}
-
 # rd_retired_count <mode> <issue> <name> <folder-glob>: how many times the
 # handoff was retired: retired comments, or copies in matching folders.
 rd_retired_count() {
@@ -711,8 +694,8 @@ redo_spec_scenario() {
   fresh_flow "redospec$mode"
   fake_github
   fake_issue 60 open
-  rd_put "$mode" 60 2030-01-01T00:00:00Z 02-spec "spec text"
-  rd_put "$mode" 60 2030-01-01T00:00:01Z 03-implement "implement text"
+  put_handoff "$mode" 60 2030-01-01T00:00:00Z 02-spec "spec text"
+  put_handoff "$mode" 60 2030-01-01T00:00:01Z 03-implement "implement text"
   state_fixture phase implement
   "$ORCH" state set issue 60
   local branch_before count_before
@@ -731,7 +714,7 @@ redo_spec_scenario() {
     mkdir -p .orchestrator/handoff/pre-redo-spec-20300101-000000
     writeln '# older' >.orchestrator/handoff/pre-redo-spec-20300101-000000/02-spec.md
   fi
-  out="$(PATH="${shim:+$shim:}$PATH" rd_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
+  out="$(PATH="${shim:+$shim:}$PATH" handoff_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
   assert_status "$mode: a failure at the retire fails redo spec" "$st" 1
   if [ "$mode" = comment ]; then
     assert_contains "$mode: naming the comments posted" "$out" "comments posted: 02-spec"
@@ -747,11 +730,11 @@ redo_spec_scenario() {
 
   # A failure after it: the issue close.
   fake_fail adapter_issue_close "$GH_502"
-  out="$(rd_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
+  out="$(handoff_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
   assert_status "$mode: a failure after the retire fails redo spec" "$st" 1
   assert_eq "$mode: leaving the phase at implement" "$("$ORCH" state get phase)" implement
   fake_unfail
-  out="$(rd_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
+  out="$(handoff_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
   assert_status "$mode: the re-run finishes" "$st" 0
   assert_eq "$mode: the phase is spec" "$("$ORCH" state get phase)" spec
   assert_eq "$mode: the spec handoff is retired exactly once" \
@@ -775,7 +758,7 @@ redo_review_scenario() {
   bare_origin "$bare"
   git push -q origin HEAD:refs/heads/main
   "$ORCH" init "redo$mode" >/dev/null
-  rd_put "$mode" 61 2030-01-01T00:00:01Z 03-implement "implement text"
+  put_handoff "$mode" 61 2030-01-01T00:00:01Z 03-implement "implement text"
   state_fixture phase review
   "$ORCH" state set issue 61
   git checkout -q -b "orch/61-redo$mode"
@@ -794,7 +777,7 @@ redo_review_scenario() {
     mkdir -p .orchestrator/handoff/pre-redo-1
     writeln '# older' >.orchestrator/handoff/pre-redo-1/03-implement.md
   fi
-  out="$(rd_orch "$mode" redo review 2>&1)"; st=$?
+  out="$(handoff_orch "$mode" redo review 2>&1)"; st=$?
   assert_status "$mode: a failure at the retire fails redo review" "$st" 1
   assert_eq "$mode: leaving the phase at review" "$("$ORCH" state get phase)" review
   assert_eq "$mode: and the branch" "$("$ORCH" state get branch)" "orch/61-redo$mode"
@@ -804,11 +787,11 @@ redo_review_scenario() {
 
   # A failure after it: the PR close.
   fake_fail adapter_pr_close "$GH_502"
-  out="$(rd_orch "$mode" redo review 2>&1)"; st=$?
+  out="$(handoff_orch "$mode" redo review 2>&1)"; st=$?
   assert_status "$mode: a failure after the retire fails redo review" "$st" 1
   assert_eq "$mode: leaving the phase at review" "$("$ORCH" state get phase)" review
   fake_unfail
-  out="$(rd_orch "$mode" redo review 2>&1)"; st=$?
+  out="$(handoff_orch "$mode" redo review 2>&1)"; st=$?
   assert_status "$mode: the re-run finishes" "$st" 0
   assert_not_contains "$mode: with no taken-folder refusal" "$out" "already holds a retired handoff"
   assert_eq "$mode: stepping back to implement" "$("$ORCH" state get phase)" implement
