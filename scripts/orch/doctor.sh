@@ -884,7 +884,7 @@ check_flow_handoffs() {
     d_gh_gate || return 0
   fi
   for f in $files; do
-    if ! path="$(handoff_resolve "$f")"; then
+    if ! path="$(handoff_locate "$f")"; then
       if autopilot_active; then
         d_fail "handoff ${f%.md} comment is missing on issue #$issue - the phase that writes it has already run."
       else

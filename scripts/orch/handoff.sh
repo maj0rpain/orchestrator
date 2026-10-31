@@ -231,35 +231,48 @@ handoff_comment_post() {
   rm -f "$body"
 }
 
-# handoff_missing <issue> <name> [<hint>]: dies, naming the handoff <name> (its
-# file name without the `.md`) missing, worded by mode: with an <issue>,
-# `issue #<issue> has no <name> handoff comment`; with none, `handoff not
-# found: <path>`. A <hint> is mode-free, the part naming the caller's own
-# situation; it follows ` - ` with the mode's verb in front, "post it with
-# handoff post" or "write it". With no hint no verb is added.
-handoff_missing() {
-  local msg verb
-  if [ -n "$1" ]; then
-    msg="issue #$1 has no $2 handoff comment"
-    verb="post it with handoff post"
-  else
-    msg="handoff not found: $HANDOFF_DIR/$2.md"
-    verb="write it"
-  fi
-  die "$msg${3:+ - $verb $3}"
+# The Handoff store: where a flow's handoffs live, behind one interface with a
+# file adapter (interactive: files in the handoff directory) and a comment
+# adapter (autopilot: marked comments on the issue). Operations: path, locate,
+# read, siblings. handoff_store is the one place that chooses the adapter, per
+# call, so a test toggling ORCH_AUTOPILOT between commands keeps working.
+
+# handoff_store: prints the adapter this session's handoffs live in, `comment`
+# in an autopilot session and `file` otherwise.
+handoff_store() {
+  if autopilot_active; then printf 'comment\n'; else printf 'file\n'; fi
 }
 
-# handoff_invalid <file> <hint>: dies saying the handoff <file> is not valid,
-# worded by mode - the issue's comment with a fix to post in an autopilot
-# session, the file with a fix to make otherwise - then ", <hint>".
-handoff_invalid() {
-  if autopilot_active; then
-    local issue
-    issue="$(state_get issue)"
-    die "the ${1%.md} comment on issue #$issue is not valid - post a fixed one${2:+, $2}"
-  fi
+# handoff_file_missing <name> [<hint>]: dies, naming the handoff <name> (its
+# file name without the `.md`) missing: `handoff not found: <path>`. A <hint>
+# is the part naming the caller's own situation; it follows ` - write it `.
+handoff_file_missing() {
+  die "handoff not found: $HANDOFF_DIR/$1.md${2:+ - write it $2}"
+}
+
+# handoff_comment_missing <issue> <name> [<hint>]: dies, naming the handoff
+# <name> missing: `issue #<issue> has no <name> handoff comment`. A <hint>
+# follows ` - post it with handoff post `.
+handoff_comment_missing() {
+  die "issue #$1 has no $2 handoff comment${3:+ - post it with handoff post $3}"
+}
+
+# handoff_file_invalid <file> <hint>: dies saying the handoff file is not
+# valid, with a fix to make, then ", <hint>".
+handoff_file_invalid() {
   die "$HANDOFF_DIR/$1 is not valid - fix it${2:+, $2}"
 }
+
+# handoff_comment_invalid <file> <hint>: dies saying the handoff's comment on
+# the recorded issue is not valid, with a fix to post, then ", <hint>".
+handoff_comment_invalid() {
+  local issue
+  issue="$(state_get issue)"
+  die "the ${1%.md} comment on issue #$issue is not valid - post a fixed one${2:+, $2}"
+}
+
+# handoff_invalid <file> <hint>: the store's invalid message, the adapter's.
+handoff_invalid() { "handoff_$(handoff_store)_invalid" "$@"; }
 
 # handoff_comment_fetch <issue> <name> <file>: writes the body of <issue>'s
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
@@ -305,51 +318,85 @@ handoff_comments_retire() {
   rm -f "$scratch"
 }
 
-# handoff_resolve <file>: the status lookup. Prints the readable path of the
-# handoff <file> - fetched into the handoff scratch directory from its posted
-# comment in an autopilot session, $HANDOFF_DIR/<file> otherwise. The path is
-# printed either way; the status is non-zero when there is no such handoff
-# (in an autopilot session also when no issue is recorded or the comments
-# cannot be read, the gh reason on stderr), and it never dies on a missing
+# handoff_locate <file>: the status lookup. Prints the readable path of the
+# handoff <file> and, by status, whether it exists; it never dies on a missing
 # one - each caller chooses its own reaction. A copy left by an earlier fetch
 # is never taken as found.
-handoff_resolve() {
-  local file="$1" issue dir="$HANDOFF_SCRATCH_DIR"
-  if autopilot_active; then
-    printf '%s/%s\n' "$dir" "$file"
-    issue="$(state_get issue 2>/dev/null)" || issue=""
-    [ -n "$issue" ] || return 1
-    rm -f "$dir/$file"
-    (handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file") && [ -f "$dir/$file" ]
-    return
-  fi
-  printf '%s/%s\n' "$HANDOFF_DIR" "$file"
-  [ -f "$HANDOFF_DIR/$file" ]
-}
+handoff_locate() { "handoff_$(handoff_store)_locate" "$@"; }
 
 # handoff_read <file> [<hint>]: the dying read. Prints the readable path of the
-# handoff <file>, as handoff_resolve does, then dies with handoff_missing's
-# error, <hint> mode-free, when there is no such handoff. An autopilot session
-# requires its recorded issue.
-handoff_read() {
-  local file="$1" issue=""
-  if autopilot_active; then require_issue issue; fi
-  handoff_resolve "$file" || handoff_missing "$issue" "${file%.md}" "${2:-}"
+# handoff <file>, as handoff_locate does, then dies with the adapter's missing
+# message, <hint> naming the caller's situation, when there is no such handoff.
+handoff_read() { "handoff_$(handoff_store)_read" "$@"; }
+
+# handoff_siblings <phase> <file>: fetches the handoffs due at <phase> other
+# than <file> beside it, where the adapter keeps them elsewhere than the
+# handoff directory.
+handoff_siblings() { "handoff_$(handoff_store)_siblings" "$@"; }
+
+# handoff_path <phase> <file>: what `handoff path` prints for <file>, the
+# handoff <phase> writes.
+handoff_path() { "handoff_$(handoff_store)_path" "$@"; }
+
+# File adapter.
+
+# handoff_file_locate <file>: prints $HANDOFF_DIR/<file>; non-zero when absent.
+handoff_file_locate() {
+  printf '%s/%s\n' "$HANDOFF_DIR" "$1"
+  [ -f "$HANDOFF_DIR/$1" ]
 }
 
-# handoff_fetch_earlier <phase> <file>: in an autopilot session, fetches the
-# handoffs due at <phase> other than <file> beside it, where they exist - a
-# skill reaches a sibling handoff by its directory. A copy left by an earlier
-# fetch is cleared first, so a sibling with no live comment is absent.
-handoff_fetch_earlier() {
+handoff_file_read() {
+  handoff_file_locate "$1" || handoff_file_missing "${1%.md}" "${2:-}"
+}
+
+# The files are already in the handoff directory: nothing to fetch.
+handoff_file_siblings() { return 0; }
+
+# handoff_file_path <phase> <file>: prints the write target; non-zero when the
+# handoff is missing.
+handoff_file_path() {
+  handoff_file_locate "$2"
+}
+
+# Comment adapter.
+
+# handoff_comment_locate <file>: prints the scratch path the comment is
+# fetched to; non-zero when no issue is recorded, the comments cannot be read
+# (the gh reason on stderr) or there is no live comment.
+handoff_comment_locate() {
+  local file="$1" issue dir="$HANDOFF_SCRATCH_DIR"
+  printf '%s/%s\n' "$dir" "$file"
+  issue="$(state_get issue 2>/dev/null)" || issue=""
+  [ -n "$issue" ] || return 1
+  rm -f "$dir/$file"
+  (handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file") && [ -f "$dir/$file" ]
+}
+
+# handoff_comment_read <file> [<hint>]: requires the recorded issue first.
+handoff_comment_read() {
+  local file="$1" issue=""
+  require_issue issue
+  handoff_comment_locate "$file" || handoff_comment_missing "$issue" "${file%.md}" "${2:-}"
+}
+
+# handoff_comment_siblings <phase> <file>: fetches the other handoffs due at
+# <phase> into the scratch directory. A copy left by an earlier fetch is
+# cleared first, so a sibling with no live comment is absent.
+handoff_comment_siblings() {
   local issue earlier
-  autopilot_active || return 0
   require_issue issue
   for earlier in $(handoffs_due "$1"); do
     [ "$earlier" != "$2" ] || continue
     rm -f "$HANDOFF_SCRATCH_DIR/$earlier"
     handoff_comment_fetch "$issue" "${earlier%.md}" "$HANDOFF_SCRATCH_DIR/$earlier" || true
   done
+}
+
+# handoff_comment_path <phase> <file>: fetches the siblings, then reads.
+handoff_comment_path() {
+  handoff_comment_siblings "$1" "$2"
+  handoff_comment_read "$2"
 }
 
 # handoff_autopilot_only <op>: dies unless this is an autopilot session - the
@@ -370,8 +417,7 @@ cmd_handoff() {
       # handoff directory and a zero exit, which is worse than no answer.
       local file
       file="$(handoff_file_for "$1")"
-      handoff_fetch_earlier "$1" "$file"
-      if autopilot_active; then handoff_read "$file"; else handoff_resolve "$file"; fi
+      handoff_path "$1" "$file"
       ;;
     post)
       [ $# -eq 2 ] || die "usage: orch.sh handoff post <name> <file>"
@@ -389,7 +435,7 @@ cmd_handoff() {
       handoff_name_check "$1"
       local issue
       require_issue issue
-      handoff_comment_fetch "$issue" "$1" "$2" || handoff_missing "$issue" "$1"
+      handoff_comment_fetch "$issue" "$1" "$2" || handoff_comment_missing "$issue" "$1"
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"

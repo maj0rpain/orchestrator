@@ -143,7 +143,7 @@ autopilot_plan_value() {
   local issue file value
   require_issue issue
   file="$(mktemp)" || die "could not create a temp file for the plan comment"
-  handoff_comment_fetch "$issue" 01-plan "$file" || { rm -f "$file"; handoff_missing "$issue" 01-plan; }
+  handoff_comment_fetch "$issue" 01-plan "$file" || { rm -f "$file"; handoff_comment_missing "$issue" 01-plan; }
   value="$(autopilot_block_values "$file" "$1")"
   rm -f "$file"
   is_positive_int "$value" ||
