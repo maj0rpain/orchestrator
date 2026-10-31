@@ -1417,6 +1417,8 @@ se_fresh; se_end 1 ""
 assert_eq "no claim before but one after is held" "$(se_kind)" limited
 se_fresh; fake_claim_release 7; rl_event rejected 0.95 "$r1" allowed 0.2 "$r3" >"$se_log"; se_end 1 "$se_claim_fields"
 assert_eq "released over a rejecting log: only the early pause, no stop" "$(se_kind)|$(se_limit)|$(fake_comments_of 7)" "released|$i1|"
+assert_contains "with the released note on stderr" "$se_out" "autopilot run: issue #7's session exited 1 with its claim released"
+assert_contains "and in the log" "$(cat "$se_log")" "autopilot run: issue #7's session exited 1 with its claim released"
 
 # the limit stop comment: retry number, log, and the failure comment's wording
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
