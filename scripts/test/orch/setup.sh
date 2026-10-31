@@ -504,6 +504,26 @@ fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 # after any it has.
 fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4"; }
 
+# handoff_orch <mode> <orch args>...: runs orch.sh as that handoff mode's
+# session: autopilot for "comment", interactive for "file".
+handoff_orch() {
+  local mode="$1"
+  shift
+  if [ "$mode" = comment ]; then ORCH_AUTOPILOT=1 "$ORCH" "$@"; else env -u ORCH_AUTOPILOT "$ORCH" "$@"; fi
+}
+
+# put_handoff <mode> <issue> <ts> <name> <body>: keeps the handoff <name> (no
+# .md) as the mode does - a live tagged comment on issue #<issue> made at <ts>,
+# or a file in the handoff directory.
+put_handoff() {
+  if [ "$1" = comment ]; then
+    fake_comment "$2" someone "$3" "$(marker_of handoff "$4"; printf '%s\n' "$5")"
+  else
+    mkdir -p .orchestrator/handoff
+    printf '%s\n' "$5" >".orchestrator/handoff/$4.md"
+  fi
+}
+
 # fake_next_issue <n>: the number the next issue created takes.
 fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
 
