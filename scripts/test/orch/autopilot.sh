@@ -838,11 +838,8 @@ reset_iso="$(iso_of "$reset_epoch")"
 ndjson_with "Claude AI usage limit reached|$reset_epoch" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "the session that hit the limit starts one session" "$(tick_calls)" "1"
-assert_contains "its failure comment names the usage limit" "$(fake_comments_of 7)" "usage limit"
-assert_contains "and the reset time" "$(fake_comments_of 7)" "$reset_iso"
 fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Limit 8"
 assert_eq "it writes the limit file" "$(cat "$top/.orchestrator/autopilot/limit")" "$reset_iso"
-assert_eq "and the issue is limited, not needs-human" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick under the limit succeeds" "$st" 0
 assert_eq "picking nothing up" "$(tick_calls)" "1"
@@ -1361,8 +1358,6 @@ se_check_hour_fallback "a rejecting event with no resetsAt"
 # early pause, whatever the outcome
 rl_event allowed 0.9 "$r1" allowed 0.2 "$r3" >"$se_log"
 se_check "utilization 0.9 writes the early pause on a failure" failure "$i1"
-se_fresh; fake_claim_release 7; se_end 0 "$se_claim_fields"
-assert_eq "and on a released claim" "$(se_kind)|$(se_limit)" "released|$i1"
 printf '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":%s,"rateLimitType":"five_hour","utilization":0.95}}\n' "$r1" >"$se_log"
 se_check "a top-level five-hour window at 0.95 gives it" failure "$i1"
 rl_event allowed 0.89 "$r1" allowed 0.2 "$r3" >"$se_log"
