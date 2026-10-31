@@ -751,43 +751,59 @@ autopilot_limit_reset() {
   return 0
 }
 
-# autopilot_session_end <log> <held> <outcome_var> <reset_var> <early_var>
-# <limit_var>: how a phase session ended, each result set with printf -v in the
-# caller's variable of the name given. <held> is 1 while the session's claim is
-# still held, 0 once released. The outcome is released (<held> is 0, whatever
-# the log holds), else limited (the log's last rate_limit_event has a rejecting
+# autopilot_session_end <issue> <phase> <log> <rc> <mine>: applies the whole
+# consequence of a phase session's end. <mine> is the claim fields read before
+# the session ("" when there was none). It reads origin's claims again: the
+# session is held when the issue has a claim and either <mine> is empty or the
+# claim's fields equal <mine>, else released (the claim was released, or the
+# next phase's took its place). The outcome is released (not held, whatever the
+# log holds), else limited (the log's last rate_limit_event has a rejecting
 # window, or failing that its text holds the usage-limit message), else
-# failure. The reset is the reset the session named as a UTC timestamp, empty
-# unless limited or when none is named. The early pause is the five-hour
-# window's resetsAt as a UTC timestamp when its utilization is 0.9 or more,
-# whatever the outcome, else empty. The limit pause is set only when limited:
-# the reset, or one hour on. It makes no GitHub call and writes nothing.
+# failure. The limit pause is the reset the session named, or one hour on; the
+# early pause is the five-hour window's resetsAt when its utilization is 0.9 or
+# more, whatever the outcome. The pause store is extended once, with the later
+# of the two. Then it gives the released note, the limit stop or the failure
+# stop. It dies, before any write, when the checkout or the claims cannot be
+# read.
 autopilot_session_end() {
-  local session_end_log="$1" session_end_held="$2" session_end_event="" session_end_early_epoch session_end_reject_epoch
-  local session_end_outcome=failure session_end_reset="" session_end_early="" session_end_limit=""
-  session_end_event="$(autopilot_log_last_event "$session_end_log" rate_limit_event)"
-  if [ -n "$session_end_event" ] && session_end_early_epoch="$(autopilot_event_five_hour_reset "$session_end_event")"; then
-    session_end_early="$(autopilot_epoch_iso "$session_end_early_epoch")"
+  local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0
+  local event="" early_epoch reject_epoch outcome=failure reset="" early="" limit="" pause released_note
+  main_root="$(main_checkout_or_die)" || exit $?
+  standing_claims_read
+  if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
+  event="$(autopilot_log_last_event "$log" rate_limit_event)"
+  if [ -n "$event" ] && early_epoch="$(autopilot_event_five_hour_reset "$event")"; then
+    early="$(autopilot_epoch_iso "$early_epoch")"
   fi
-  if [ "$session_end_held" = 0 ]; then
-    session_end_outcome=released
+  if [ "$held" = 0 ]; then
+    outcome=released
   else
-    if [ -n "$session_end_event" ] && session_end_reject_epoch="$(autopilot_event_rejecting_reset "$session_end_event")"; then
-      session_end_outcome=limited
-      [ -z "$session_end_reject_epoch" ] || session_end_reset="$(autopilot_epoch_iso "$session_end_reject_epoch")"
-    elif session_end_reset="$(autopilot_limit_reset "$session_end_log")"; then
-      session_end_outcome=limited
+    if [ -n "$event" ] && reject_epoch="$(autopilot_event_rejecting_reset "$event")"; then
+      outcome=limited
+      [ -z "$reject_epoch" ] || reset="$(autopilot_epoch_iso "$reject_epoch")"
+    elif reset="$(autopilot_limit_reset "$log")"; then
+      outcome=limited
     fi
-    if [ "$session_end_outcome" = limited ]; then
-      session_end_limit="$session_end_reset"
-      [ -n "$session_end_limit" ] || session_end_limit="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
+    if [ "$outcome" = limited ]; then
+      limit="$reset"
+      [ -n "$limit" ] || limit="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
     fi
   fi
-  printf -v "$3" '%s' "$session_end_outcome"
-  printf -v "$4" '%s' "$session_end_reset"
-  printf -v "$5" '%s' "$session_end_early"
-  printf -v "$6" '%s' "$session_end_limit"
-  return 0
+  # One write: the later of the two pauses.
+  pause="$early"
+  if [ -n "$limit" ] && { [ -z "$pause" ] || [ "$(autopilot_iso_epoch "$limit")" -gt "$(autopilot_iso_epoch "$pause")" ]; }; then pause="$limit"; fi
+  if [ -n "$pause" ]; then autopilot_pause_extend "$main_root" "$pause" "$log"; fi
+  case "$outcome" in
+    released)
+      released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
+      note "$released_note"
+      printf '%s\n' "$released_note" >>"$log"
+      return 0 ;;
+    limited)
+      standing_limit_stop "$issue" "$phase" "$reset" "$limit" "$rc" "$log"
+      return 0 ;;
+  esac
+  standing_stop "$issue" failure "$phase" "the session exited with code $rc; log: $log"
 }
 
 # The tools a headless phase session gets: those the plugin's skills and agents
@@ -805,10 +821,9 @@ AUTOPILOT_BG_WAIT_MS=7200000
 
 # autopilot_run <issue>: the session wrapper a tick starts: runs the headless
 # session in the issue's side checkout, its output in the session log, and
-# when the claim is still held at its exit, runs the failure handling. A
-# session that released its claim is left alone whatever its exit code.
+# hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 held=0 outcome reset early limit detail released_note mine claim_after name flags=()
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -839,24 +854,7 @@ autopilot_run() {
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
       --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
-  standing_claims_read
-  if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
-  autopilot_session_end "$log" "$held" outcome reset early limit
-  # The early pause, then the limit pause: the pause store keeps the later.
-  if [ -n "$early" ]; then autopilot_pause_extend "$main_root" "$early" "$log"; fi
-  if [ -n "$limit" ]; then autopilot_pause_extend "$main_root" "$limit" "$log"; fi
-  case "$outcome" in
-    released)
-      released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
-      note "$released_note"
-      printf '%s\n' "$released_note" >>"$log"
-      return 0 ;;
-    limited)
-      standing_limit_stop "$issue" "$phase" "$reset" "$limit" "$rc" "$log"
-      return 0 ;;
-  esac
-  detail="the session exited with code $rc; log: $log"
-  standing_stop "$issue" failure "$phase" "$detail"
+  autopilot_session_end "$issue" "$phase" "$log" "$rc" "$mine"
 }
 
 # --- watch (#1459) ------------------------------------------------------------
