@@ -298,11 +298,6 @@ standing_ask() {
   standing_release "$issue"
 }
 
-# The one rule for a stop comment, which lives here and not in the
-# marked-comment module: a refusal or a failure comment is a stop.
-# standing_is_stop takes a marked_comment_info.
-STANDING_STOP_JQ='def standing_is_stop: .kind == "refusal" or .kind == "failure";'
-
 # standing_stop_write <issue> <kind> <text> <label> [<remove-label>]: the write
 # chain of a stop: adds <label> (removing <remove-label> when given), posts
 # <text> as the <kind> comment, then releases the claim, last.
@@ -342,25 +337,6 @@ standing_stop() {
   standing_stop_write "$issue" "$kind" "$text" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL"
 }
 
-# standing_limit_count <issue> <phase> <var>: the limit stop comments of
-# <phase> before now, into <var>, counted newest first up to the first refusal,
-# failure or question comment, handoff comment, or limit stop comment of
-# another phase; other comments are skipped. Non-zero when the comments cannot
-# be read.
-standing_limit_count() {
-  local json gh_err n
-  capture json gh_err adapter_issue_comments_json "$1" || return 1
-  n="$(jq -r --arg phase "$2" "$(marked_comment_jq)$STANDING_STOP_JQ"'
-    reduce (marked_comment_list | reverse[]) as $c ({n: 0, done: false};
-      ($c | marked_comment_info) as $i
-      | if .done then .
-      elif ($i | standing_is_stop) or ($i.kind | IN("question", "handoff")) then .done = true
-      elif $i.kind == "limited" then
-        if $i.arg == $phase then .n += 1 else .done = true end
-      else . end) | .n' <<<"$json")" || return 1
-  printf -v "$3" '%s' "$n"
-}
-
 # standing_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a
 # phase whose session stopped on a usage limit. With fewer than two such stops
 # of the phase before it, adds orch:limited, comments, then releases the claim;
@@ -372,7 +348,7 @@ standing_limit_stop() {
   STANDING_LANDED=""
   [ -z "$reset" ] || when=" (resets $reset)"
   stopped="the session stopped on a usage limit$when and exited with code $rc"
-  standing_limit_count "$issue" "$phase" count || {
+  { timeline_read "$issue" && count="$(timeline_limit_count "$phase")"; } || {
     standing_stop "$issue" failure "$phase" "$stopped, and the issue's comments could not be read to count the stops in a row; log: $log"
     return 0
   }

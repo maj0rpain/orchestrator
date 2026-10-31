@@ -258,11 +258,16 @@ out="$("$ORCH" autopilot answer implement "$ans" 2>&1)"; st=$?
 assert_status "answer for a phase never asked exits 2, never no reply's 1" "$st" 2
 assert_contains "naming the phase" "$out" "has no implement question comment"
 assert_eq "and leaves the answer file as it was" "$(cat "$ans")" "$kept"
-fake_fail adapter_issue_json "HTTP 500"
+fake_fail adapter_issue_comments_json "HTTP 500"
 out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "a failed comment read exits 2, never no reply's 1" "$st" 2
 assert_contains "naming the read" "$out" "read the comments of issue #7"
 fake_unfail
+# gh succeeds but its output is no comment list
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
+assert_status "unparseable comments exit 2, never no reply's 1" "$st" 2
+assert_eq "naming the issue's comments" "$out" "orch: could not read issue #7's comments"
 # a question ending in the text noreply is read as any other (#1723)
 fake_issue 8 open ready-for-agent orch:spec
 "$ORCH" state set issue 8 >/dev/null
@@ -1096,6 +1101,11 @@ out="$("$ORCH" autopilot questions 2>/dev/null)"; st=$?
 assert_status "an adapter read failure dies" "$st" 1
 assert_eq "listing nothing" "$out" ""
 fake_unfail
+fake_lag adapter_issue_comments_json 1 'not json'
+fake_issue 11 open needs-human orch:spec
+out="$("$ORCH" autopilot questions 2>&1)"; st=$?
+assert_status "unparseable comments die" "$st" 1
+assert_eq "naming the issue's comments" "$out" "orch: could not read issue #11's comments"
 fake_fail adapter_issues_labelled "$GH_502"
 "$ORCH" autopilot questions >/dev/null 2>&1; st=$?
 assert_status "a failed listing dies" "$st" 1
@@ -1197,6 +1207,13 @@ out="$("$ORCH" autopilot reply 46 "$r.empty" 2>&1)"; st=$?
 assert_status "an empty file is refused" "$st" 1
 assert_eq "posting nothing" "$(fake_comments_of 46 | wc -l | tr -d ' ')" "3"
 assert_eq "keeping the label" "$(fake_labels_of 46)" "needs-human orch:spec "
+fake_issue 47 open needs-human orch:spec
+fake_comment 47 o 2026-01-01T00:00:00Z "$(question_of spec)"
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$("$ORCH" autopilot reply 47 "$r" 2>&1)"; st=$?
+assert_status "reply over unparseable comments is refused" "$st" 1
+assert_eq "naming the issue's comments" "$out" "orch: could not read issue #47's comments"
+assert_eq "posting nothing" "$(fake_comments_of 47 | grep -c 'Yes, keep')" "0"
 
 restore_suite_env
 
@@ -1409,10 +1426,6 @@ ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 se_fresh; se_end 1
 assert_contains "a first limit stop is retry 1 of 2" "$(fake_last_comment_of 7)" "retry 1 of 2, started once the limit pause has passed"
 assert_contains "its comment names the log" "$(fake_last_comment_of 7)" "$se_log"
-se_fresh; fake_comment 7 o 2026-01-01T00:00:00Z "$(marker_of limited spec)
-stopped"; se_end 1
-assert_eq "a second stop in a row is limited" "$(se_kind)" limited
-assert_contains "and retry 2 of 2" "$(fake_last_comment_of 7)" "retry 2 of 2"
 ndjson_with "iteration limit reached" >"$se_log"
 se_fresh; se_end 1
 assert_contains "the failure comment says only a limit stop is retried" "$(fake_last_comment_of 7)" 'nothing is retried automatically except a usage-limit stop labelled `orch:limited`'

@@ -30,8 +30,18 @@ mc() {
   mc_out="${mc_out%$'\n'}"
 }
 
-# Round trip: each kind's writer line, read back by every reader - every
-# hidden-marker kind the registry holds, so a newly added one is covered too.
+# mc_newest <comments-json> <kind> [<arg>]: sets mc_out and mc_rc as mc does,
+# from the index of the newest comment of <kind> (and <arg>) that the prelude's
+# marked_comment_of finds: rc 1 and no output when none is.
+mc_newest() {
+  mc_out="$(sourced_orch_script 'jq -r --arg k "$1" --arg a "$2" "$(marked_comment_jq)"'"' marked_comment_of(\$k; \$a) | last | .key // empty'" "$2" "${3-}" <<<"$1" 2>/dev/null; echo "rc=$?")"
+  mc_rc="${mc_out##*rc=}"; mc_out="${mc_out%rc=*}"
+  mc_out="${mc_out%$'\n'}"
+  if [ -z "$mc_out" ]; then mc_rc=1; fi
+}
+# Round trip: each kind's writer line, read back by the prelude and texts -
+# every hidden-marker kind the registry holds, so a newly added one is covered
+# too.
 hidden_kinds="$(sourced_orch_script 'printf "%s " $MARKED_COMMENT_KINDS')"
 # shellcheck disable=SC2086 # the kinds are space-separated words
 for entry in $(printf '%s:plan ' $hidden_kinds) "spec-review" "spec-ruling"; do
@@ -40,11 +50,12 @@ for entry in $(printf '%s:plan ' $hidden_kinds) "spec-review" "spec-ruling"; do
   line="$(marker_of $spec)"
   kind="${spec%% *}"; arg=""; [ "$kind" = "$spec" ] || arg="${spec#* }"
   arr="$(mc_array "first" "$line"$'\nthe text\n' "last")"
-  mc newest "$arr" "$kind" $arg
+  mc_newest "$arr" "$kind" $arg
   assert_eq "$kind: the newest comment is found by kind${arg:+ and argument} (writer round trip)" "$mc_out/$mc_rc" "1/0"
-  mc body "$arr" "$kind" $arg
-  assert_eq "$kind: the stripped body is the text, trailing newline kept" "$mc_out" "the text"
-  mc newest "$(mc_object "$line"$'\n')" "$kind" $arg
+  mc texts "$arr" "$kind" $arg
+  assert_eq "$kind: the opening-stripped text is the text, trailing newline kept" "$mc_out" \
+    "$([ "$kind" = spec-ruling ] && echo '["\nthe text\n"]' || echo '["the text\n"]')"
+  mc_newest "$(mc_object "$line"$'\n')" "$kind" $arg
   assert_eq "$kind: the issue object is read as the bare array is" "$mc_out/$mc_rc" "0/0"
 done
 assert_eq "the writer prints the question marker" "$(marker_of question plan)" "<!-- orch:question plan -->"
@@ -60,75 +71,57 @@ for bad_args in "bogus x" "question" "question ''" "spec-review x" "spec-ruling 
   assert_eq "the writer refuses '$bad_args', printing nothing" "$rc:$out" "1:"
 done
 
-# Exact bodies: trailing newlines are kept; a body with no second line is empty.
+# Exact texts: trailing newlines are kept; a body with no second line is empty.
 q="$(marker_of question plan)"
-mc body "$(mc_array "$q"$'\nline\n\n\n')" question
-assert_eq "the stripped body keeps its trailing newlines" "$mc_out" "line"$'\n\n'
-mc_exact="$(sourced_orch marked_comment_body question <<<"$(mc_array "$q"$'\nline\n\n\n')"; echo x)"
-assert_eq "the stripped body is printed byte for byte" "$mc_exact" "line"$'\n\n\n'"x"
-mc body "$(mc_array "$q")" question
-assert_eq "a marker-only comment has an empty body, exit 0" "$mc_rc:$mc_out" "0:"
+mc texts "$(mc_array "$q"$'\nline\n\n\n')" question
+assert_eq "the opening-stripped text keeps its trailing newlines" "$mc_out" '["line\n\n\n"]'
+mc texts "$(mc_array "$q")" question
+assert_eq "a marker-only comment has an empty text" "$mc_rc:$mc_out" '0:[""]'
 
 # CR line endings.
-mc newest "$(mc_array "$q"$'\r\ntext')" question plan
+mc_newest "$(mc_array "$q"$'\r\ntext')" question plan
 assert_eq "a marker line ending in CR is still a question comment" "$mc_out/$mc_rc" "0/0"
-mc body "$(mc_array "$q"$'\r\ntext\r\n')" question
-assert_eq "the stripped body of a CR comment drops the marker line and its CR" "$mc_out" $'text\r'
+mc texts "$(mc_array "$q"$'\r\ntext\r\n')" question
+assert_eq "the text of a CR comment drops the marker line and every CR" "$mc_out" '["text\n"]'
 
 # A retired handoff.
 live="$(marker_of handoff 01-plan)"; ret="$(marker_of handoff 01-plan retired)"
 arr="$(mc_array "$live" "$ret")"
-mc newest "$arr" handoff 01-plan
+mc_newest "$arr" handoff 01-plan
 assert_eq "a retired handoff is the newest handoff of its name" "$mc_out/$mc_rc" "1/0"
-mc retired "$arr" handoff 01-plan
-assert_eq "the retired predicate says yes for a retired newest" "$mc_rc:$mc_out" "0:"
-mc retired "$(mc_array "$ret" "$live")" handoff 01-plan
-assert_eq "the retired predicate says no for a live newest" "$mc_rc:$mc_out" "1:"
-mc retired "$(mc_array "x")" handoff 01-plan
-assert_eq "the retired predicate says no when no comment is of the kind" "$mc_rc:$mc_out" "1:"
-
-# The follows predicate.
-mc follows "$(mc_array "$q" "later")" question
-assert_eq "follows says yes when a comment follows the newest" "$mc_rc:$mc_out" "0:"
-mc follows "$(mc_array "later" "$q")" question
-assert_eq "follows says no when the newest is last" "$mc_rc:$mc_out" "1:"
-mc follows "$(mc_array "later")" question
-assert_eq "follows says no when no comment is of the kind" "$mc_rc:$mc_out" "1:"
+got="$(mc_jq 'marked_comment_of("handoff"; "01-plan") | map(.info.retired)' <<<"$arr")"
+assert_eq "the prelude marks the retired handoff retired and the live one not" "$got" '[false,true]'
 
 # Near-misses and mismatches.
-mc newest "$(mc_array "<!-- orch:question plan")" question
+mc_newest "$(mc_array "<!-- orch:question plan")" question
 assert_eq "a marker without its closing is no question comment" "$mc_rc:$mc_out" "1:"
-mc newest "$(mc_array "<!-- orch:handoff 01-plan")" handoff
+mc_newest "$(mc_array "<!-- orch:handoff 01-plan")" handoff
 assert_eq "a handoff prefix without its closing is no handoff" "$mc_rc:$mc_out" "1:"
-mc newest "$(mc_array "$q")" question implement
+mc_newest "$(mc_array "$q")" question implement
 assert_eq "an argument mismatch finds no comment" "$mc_rc:$mc_out" "1:"
-mc newest "$(mc_array "$q")" limited
+mc_newest "$(mc_array "$q")" limited
 assert_eq "a kind mismatch finds no comment" "$mc_rc:$mc_out" "1:"
-mc newest "$(mc_array "$q" "$(marker_of question implement)")" question
+mc_newest "$(mc_array "$q" "$(marker_of question implement)")" question
 assert_eq "with no argument the newest question of any phase is found" "$mc_rc:$mc_out" "0:1"
-mc newest "$(mc_array "$q" "$(marker_of question implement)")" question plan
+mc_newest "$(mc_array "$q" "$(marker_of question implement)")" question plan
 assert_eq "with an argument the newest question of that phase is found" "$mc_rc:$mc_out" "0:0"
-mc body "$(mc_array "other")" question
-assert_eq "the body of no comment exits 1, printing nothing" "$mc_rc:$mc_out" "1:"
-for fn in newest retired follows body; do
-  mc "$fn" '[]' question
-  assert_eq "$fn on an empty array exits 1, printing nothing" "$mc_rc:$mc_out" "1:"
-done
-mc newest '{"comments": []}' question
-assert_eq "newest on an issue with no comments exits 1, printing nothing" "$mc_rc:$mc_out" "1:"
+mc_newest '[]' question
+assert_eq "an empty array has no question comment" "$mc_rc:$mc_out" "1:"
+mc_newest '{"comments": []}' question
+assert_eq "an issue object with no comments has no question comment" "$mc_rc:$mc_out" "1:"
 
 # The legacy stop forms.
-mc newest "$(mc_array "Autopilot refused to run the review phase: no pr")" refusal review
+mc_newest "$(mc_array "Autopilot refused to run the review phase: no pr")" refusal review
 assert_eq "a legacy refusal opening is a refusal of its phase" "$mc_rc:$mc_out" "0:0"
-mc newest "$(mc_array "Autopilot failed in the implement phase: boom")" failure implement
+mc_newest "$(mc_array "Autopilot failed in the implement phase: boom")" failure implement
 assert_eq "a legacy failure opening is a failure of its phase" "$mc_rc:$mc_out" "0:0"
-mc newest "$(mc_array "Autopilot failed in the implement phase: boom")" refusal
+mc_newest "$(mc_array "Autopilot failed in the implement phase: boom")" refusal
 assert_eq "a legacy failure is no refusal" "$mc_rc:$mc_out" "1:"
 
 # Spec review.
-mc newest "$(mc_array $'## Spec review \t\nRound 1 of 2')" spec-review
+mc_newest "$(mc_array $'## Spec review \t\nRound 1 of 2')" spec-review
 assert_eq "spec-review allows trailing spaces and tabs" "$mc_rc:$mc_out" "0:0"
-mc newest "$(mc_array $'## Spec review of x\nRound 1')" spec-review
+mc_newest "$(mc_array $'## Spec review of x\nRound 1')" spec-review
 assert_eq "spec-review is exactly the heading" "$mc_rc:$mc_out" "1:"
 arr="$(mc_array "keep" $'## Spec review\nRound 1 of 2' "also")"
 mc drop "$arr" spec-review
@@ -137,9 +130,6 @@ mc texts "$arr" spec-review
 assert_eq "texts drops the spec-review heading line" "$mc_out" '["Round 1 of 2"]'
 mc drop "$(mc_object "keep" $'## Spec review\nx')" spec-review
 assert_eq "drop on the issue object keeps its shape" "$mc_out" '{"number":1,"comments":[{"body":"keep"}]}'
-
-mc newest "not json" question plan
-assert_eq "unreadable comments are exit 2, not none" "$mc_rc:$mc_out" "2:"
 
 # Spec ruling.
 mc texts "$(mc_array $'Spec ruling: a\r\n- b\r\n' "x")" spec-ruling

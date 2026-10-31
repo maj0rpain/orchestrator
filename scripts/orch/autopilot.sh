@@ -176,29 +176,38 @@ autopilot_ask() {
   standing_ask "$phase" "$text"
 }
 
+# autopilot_timeline_read <issue> [2]: timeline_read, dying when it cannot -
+# status 1, or 2 when the second argument is 2. Each caller module words its own
+# read failure (handoff.sh has handoff_timeline_read), so the two look alike.
+autopilot_timeline_read() {
+  local issue="$1" code="${2-1}"
+  timeline_read "$issue" && return 0
+  if [ -z "$TIMELINE_REASON" ]; then
+    if [ "$code" = 2 ]; then die2 "could not read issue #$issue's comments"; fi
+    die "could not read issue #$issue's comments"
+  fi
+  if [ "$code" = 2 ]; then gh_die --exit 2 "read the comments of issue #$issue" "$TIMELINE_REASON"; fi
+  gh_die "read the comments of issue #$issue" "$TIMELINE_REASON"
+}
+
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
 # marker stripped, and every comment after it to <file>, each later one after a
 # `---` line. Exits 1, writing nothing, when no comment follows the question -
 # the caller re-asks, or carries on - and 2 on any other failure, so a failed
 # read is never taken for no reply.
 autopilot_answer() {
-  local phase="$1" file="$2" issue json out first rest rc=0
+  local phase="$1" file="$2" issue out first rest q
   autopilot_phase_arg "$phase" die2
   require_state die2
   require_issue issue die2
-  gh_or_die --exit 2 --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
+  autopilot_timeline_read "$issue" 2
+  q="$(timeline_question "$phase")" || die2 "issue #$issue has no $phase question comment"
+  timeline_replied "$phase" || die "no reply to the $phase question on issue #$issue yet"
   # The stripped body is read with a sentinel so its trailing newlines survive
   # into the `---` join.
-  first="$(marked_comment_body question "$phase" <<<"$json"; rc=$?; printf x; exit "$rc")" || rc=$?
-  [ "$rc" -ne 1 ] || die2 "issue #$issue has no $phase question comment"
-  [ "$rc" -eq 0 ] || die2 "could not read issue #$issue's comments"
+  first="$(timeline_body "${q%%$'\t'*}"; printf x)"
   first="${first%x}"
-  rc=0
-  marked_comment_follows question "$phase" <<<"$json" || rc=$?
-  [ "$rc" -ne 1 ] || die "no reply to the $phase question on issue #$issue yet"
-  [ "$rc" -eq 0 ] || die2 "could not read issue #$issue's comments"
-  rest="$(marked_comment_at -j '
-    marked_comment_list[$i + 1:] | map("\n---\n" + .body) | join("")' question "$phase" <<<"$json")" || die2 "could not read issue #$issue's comments"
+  rest="$(timeline_answers "$phase")"
   out="$(printf '%s' "$first$rest")"  # as before, trailing newlines go; the file gets one
   mkdir -p "$(dirname "$file")" || die2 "could not create the directory of $file"
   printf '%s\n' "$out" >"$file" || die2 "could not write $file"
@@ -222,17 +231,14 @@ autopilot_resume() {
 # removes needs-human - refused unless the label is still on and no comment
 # follows the issue's newest question comment.
 autopilot_reply() {
-  local issue="$1" file="$2" json rc
+  local issue="$1" file="$2"
   is_positive_int "$issue" || die "not an issue number: $issue"
   [ -f "$file" ] || die "reply file not found: $file"
   [ -s "$file" ] || die "reply file is empty: $file"
   standing_human_guard "$issue"
-  gh_or_die --out json "read the comments of issue #$issue" adapter_issue_comments_json "$issue"
-  marked_comment_newest question <<<"$json" >/dev/null || die "issue #$issue has no question comment to reply to"
-  rc=0
-  marked_comment_follows question <<<"$json" || rc=$?
-  [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
-  [ "$rc" -ne 0 ] || die "a comment already follows the newest question on issue #$issue"
+  autopilot_timeline_read "$issue"
+  timeline_question >/dev/null || die "issue #$issue has no question comment to reply to"
+  ! timeline_replied || die "a comment already follows the newest question on issue #$issue"
   gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
   standing_resume "$issue" || die "the reply comment landed on issue #$issue, but $STANDING_HUMAN_LABEL could not be removed: $STANDING_REASON"
 }
@@ -244,24 +250,27 @@ autopilot_reply() {
 # kind. Prints one line saying so when nothing is listed; dies, printing
 # nothing, when any read fails.
 autopilot_questions() {
-  local list n phase json line lines=""
+  local list n phase q s qi si row kind q_phase url lines=""
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
     standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
     phase="$STANDING_PHASE"
     [ -n "$phase" ] || continue
-    gh_or_die --out json "read the comments of issue #$n" adapter_issue_comments_json "$n"
-    line="$(jq -r --arg n "$n" --arg phase "$phase" "$(marked_comment_jq)$STANDING_STOP_JQ"'
-      marked_comment_list | length as $len
-      | marked_comment_entries as $e
-      | ($e | map(select(.info.kind == "question")) | last) as $q
-      | ($e | map(select(.info | standing_is_stop)) | last) as $s
-      | if $q != null and ($s == null or $q.key > $s.key) then
-          [$n, (if $q.key == $len - 1 then "question" else "replied" end), $q.info.arg, $q.c.url]
-        elif $s != null then [$n, "stop", $s.info.arg, $s.c.url]
-        else [$n, "stop", $phase, ""] end
-      | @tsv' <<<"$json")" || die "could not read issue #$n's comments"
-    lines+="$line"$'\n'
+    autopilot_timeline_read "$n"
+    q="$(timeline_question)" || q=""
+    s="$(timeline_stop)" || s=""
+    qi="${q%%$'\t'*}" si="${s%%$'\t'*}"
+    if [ -n "$q" ] && { [ -z "$s" ] || [ "$qi" -gt "$si" ]; }; then
+      if timeline_replied; then kind="replied"; else kind="question"; fi
+      IFS=$'\t' read -r _ q_phase url <<<"$q"
+      row="$n"$'\t'"$kind"$'\t'"$q_phase"$'\t'"$url"
+    elif [ -n "$s" ]; then
+      IFS=$'\t' read -r _ _ q_phase url <<<"$s"
+      row="$n"$'\tstop\t'"$q_phase"$'\t'"$url"
+    else
+      row="$n"$'\tstop\t'"$phase"$'\t'
+    fi
+    lines+="$row"$'\n'
   done
   if [ -n "$lines" ]; then printf '%s' "$lines"; else printf 'nothing pending: no open %s issue of an autopilot flow\n' "$STANDING_HUMAN_LABEL"; fi
 }

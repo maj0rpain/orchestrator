@@ -264,6 +264,15 @@ handoff_file_invalid() {
   die "$HANDOFF_DIR/$1 is not valid - fix it${2:+, $2}"
 }
 
+# handoff_timeline_read <issue>: timeline_read, dying when it cannot. Each
+# caller module words its own read failure (autopilot.sh has
+# autopilot_timeline_read), so the two look alike.
+handoff_timeline_read() {
+  timeline_read "$1" && return 0
+  [ -n "$TIMELINE_REASON" ] || die "could not read issue #$1's comments"
+  gh_die "read the comments of issue #$1" "$TIMELINE_REASON"
+}
+
 # handoff_comment_invalid <file> <hint>: dies saying the handoff's comment on
 # the recorded issue is not valid, with a fix to post, then ", <hint>".
 handoff_comment_invalid() {
@@ -313,15 +322,10 @@ handoff_ready() { "handoff_$(handoff_store)_ready" "$@"; }
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
 handoff_comment_fetch() {
-  local issue="$1" name="$2" file="$3" json raw rc=0 retired_rc=0
-  gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
-  marked_comment_newest handoff "$name" <<<"$json" >/dev/null || rc=$?
-  [ "$rc" -ne 2 ] || die "could not read issue #$issue's comments"
-  [ "$rc" -eq 0 ] || return 1
-  marked_comment_retired handoff "$name" <<<"$json" || retired_rc=$?
-  [ "$retired_rc" -ne 2 ] || die "could not read issue #$issue's comments"
-  [ "$retired_rc" -ne 0 ] || return 1
-  raw="$(marked_comment_body handoff "$name" <<<"$json")" || die "could not read issue #$issue's comments"
+  local issue="$1" name="$2" file="$3" i raw
+  handoff_timeline_read "$issue"
+  i="$(timeline_handoff "$name")" || return 1
+  raw="$(timeline_body "$i")"
   mkdir -p "$(dirname "$file")"
   if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
 }
@@ -424,28 +428,29 @@ handoff_comment_path() {
 
 # handoff_comment_retire <label> <file>...: the label names a folder, which
 # comments have none of, so it is ignored. Retires each named handoff by
-# posting a newer comment tagged retired on the recorded issue. A handoff with
-# no comment, or whose newest is already retired, posts nothing, so a redo that
-# died partway is finished by the next. A post that fails dies naming the
-# comments already posted.
+# posting a newer comment tagged retired on the recorded issue. The comments
+# are read once, before any post, and every file is decided from that read. A
+# handoff with no comment, or whose newest is already retired, posts nothing,
+# so a redo that died partway is finished by the next. A post that fails dies
+# naming the comments already posted.
 handoff_comment_retire() {
-  local issue file name scratch body gh_err posted=""
+  local issue file name body gh_err posted=""
   shift
   require_issue issue
-  scratch="$(mktemp)" || die "could not create a temp file for the handoff check"
+  [ $# -gt 0 ] || return 0
+  handoff_timeline_read "$issue"
   for file in "$@"; do
     name="${file%.md}"
-    handoff_comment_fetch "$issue" "$name" "$scratch" || continue
-    body="$(mktemp)" || { rm -f "$scratch"; die "could not create a temp file for the retired comment"; }
+    timeline_handoff "$name" >/dev/null || continue
+    body="$(mktemp)" || die "could not create a temp file for the retired comment"
     { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
     capture_err gh_err adapter_issue_comment "$issue" "$body" || {
-      rm -f "$scratch" "$body"
+      rm -f "$body"
       die "could not retire the $name handoff on issue #$issue: $(gh_reason "$gh_err") - comments posted: ${posted:-none}; the recorded phase is unchanged, so a re-run retires the rest"
     }
     rm -f "$body"
     posted="${posted:+$posted, }$name"
   done
-  rm -f "$scratch"
 }
 
 # handoff_autopilot_only <op>: dies unless this is an autopilot session - the

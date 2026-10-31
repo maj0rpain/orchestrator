@@ -483,6 +483,10 @@ fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
 assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
+assert_status "unparseable comments make handoff fetch fail" "$st" 1
+assert_eq "with the parse-failure wording" "$out" "orch: could not read issue #7's comments"
 out="$("$ORCH" handoff fetch 02-spec "$fetched" 2>&1)"; st=$?
 assert_status "a handoff never posted is none" "$st" 1
 out="$("$ORCH" handoff fetch bogus "$fetched" 2>&1)"; st=$?
@@ -609,7 +613,7 @@ handoff_store_contract() {
     out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
     assert_status "comment: a stale scratch copy is not a found handoff" "$st" 1
     assert_contains "comment: with the missing message" "$out" "$(hs_missing_msg comment 01-plan)"
-    fake_fail adapter_issue_json "HTTP 503 read"
+    fake_fail adapter_issue_comments_json "HTTP 503 read"
     out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
     fake_unfail
     assert_status "comment: a failed comments read dies" "$st" 1
@@ -667,6 +671,54 @@ handoff_store_contract() {
 
 handoff_store_contract file
 handoff_store_contract comment
+
+# --- handoff comment retire's timeline read -----------------------------------
+# The comments are read once per retire, and not at all when no file is named.
+# fake_comment_reads: how many comment-list reads (adapter_issue_comments_json)
+# the fake has answered or refused - 0 for none.
+fake_comment_reads() {
+  if [ -f "$ORCH_GH_FAKE_STORE/comment_reads" ]; then wc -l <"$ORCH_GH_FAKE_STORE/comment_reads" | tr -d ' '; else echo 0; fi
+}
+
+echo
+echo "handoff comment retire's timeline read"
+fake_flow handoff-retire-reads
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open
+fake_comment 7 someone 2030-01-03T00:00:00Z "$(marker_of handoff 02-spec)
+spec again"
+fake_comment 7 someone 2030-01-03T00:00:01Z "$(marker_of handoff 03-implement)
+implement again"
+retire_all() { ORCH_AUTOPILOT=1 sourced_orch handoff_comment_retire pre-redo 02-spec.md 03-implement.md; }
+reads_before="$(fake_comment_reads)"
+ORCH_AUTOPILOT=1 sourced_orch handoff_comment_retire pre-redo >/dev/null 2>&1; st=$?
+assert_status "a retire with no files succeeds" "$st" 0
+assert_eq "and makes no comment read" "$(( $(fake_comment_reads) - reads_before ))" "0"
+reads_before="$(fake_comment_reads)"
+retire_all >/dev/null 2>&1
+assert_eq "a retire of several handoffs makes exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" "1"
+
+# an unreadable read dies before any post, with each failure's wording
+fake_comment 7 someone 2030-01-04T00:00:00Z "$(marker_of handoff 02-spec)
+spec third"
+before="$(fake_comments_of 7)"
+assert_gh_dies "a failed comments read dies with gh's wording" adapter_issue_comments_json "$GH_502" 1 \
+  "orch: gh could not read the comments of issue #7: HTTP 502: Bad Gateway" \
+  retire_all
+assert_eq "posting nothing" "$(fake_comments_of 7)" "$before"
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$(retire_all 2>&1)"; st=$?
+assert_status "unparseable comments die" "$st" 1
+assert_eq "with the parse wording" "$out" "orch: could not read issue #7's comments"
+assert_eq "posting nothing either" "$(fake_comments_of 7)" "$before"
+restore_suite_env
+
+# a retire naming no files still needs the recorded issue
+fake_flow handoff-retire-no-issue
+out="$(ORCH_AUTOPILOT=1 sourced_orch handoff_comment_retire pre-redo 2>&1)"; st=$?
+assert_status "a no-file retire with no recorded issue fails" "$st" 1
+assert_contains "naming the missing issue" "$out" "no issue recorded in state - the spec phase must publish one first"
+restore_suite_env
 
 echo
 echo "handoff validate's Autopilot block"

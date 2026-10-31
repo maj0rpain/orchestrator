@@ -36,7 +36,8 @@ own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
 check on `scripts/orch/common.sh`, and `setup.sh` the shared setup and the
 summary. A concept module with no noun gets a section file named as the module
 is, beside the per-noun files: `checkout.sh` for `scripts/orch/checkout.sh`,
-`filed-finding.sh` for `scripts/orch/filed-finding.sh`, `known-items.sh` for
+`filed-finding.sh` for `scripts/orch/filed-finding.sh`,
+`issue-timeline.sh` for `scripts/orch/issue-timeline.sh`, `known-items.sh` for
 `scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,
 `marked-comment.sh` for
 `scripts/orch/marked-comment.sh`, `standing.sh` for
@@ -71,7 +72,9 @@ section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
 calls it. The concept modules with no noun, `checkout.sh` (the Checkout module:
 the walk over every checkout), `filed-finding.sh` (the Filed finding module:
 a filed finding's severities and labels, and rendering and parsing its issue
-body), `known-items.sh` (the Known items module: splitting a record's text
+body), `issue-timeline.sh` (the Issue timeline module: one issue's
+comment history, read once and asked in domain terms), `known-items.sh` (the
+Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
 file), `liveness.sh` (the Liveness module: whether the process behind a claim
 on this host is still running - the run records, their format and the session
@@ -245,6 +248,7 @@ scripts/orch.sh               the entry point for every deterministic operation 
 scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body
+scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a claim on this host is alive - the run records, the start-time reader, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
@@ -278,6 +282,7 @@ scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 scripts/test/orch/checkout.sh the Checkout module's sections, named as the module is
 scripts/test/orch/filed-finding.sh the Filed finding module's sections, named as the module is
+scripts/test/orch/issue-timeline.sh the Issue timeline module's sections, named as the module is
 scripts/test/orch/known-items.sh the Known items module's sections, named as the module is
 scripts/test/orch/liveness.sh      the Liveness module's sections, named as the module is
 scripts/test/orch/marked-comment.sh the Marked comment module's sections, named as the module is

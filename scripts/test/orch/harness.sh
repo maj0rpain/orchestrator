@@ -166,18 +166,22 @@ GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body a
 # The gh op placement rule, as gh_op_placement's message states it.
 GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (${GH_MULTI_FIELD_OPS// /, }); every other script reads one through its reader, which decodes its fields."
 
-# gh_op_placement <dir>: checks every shell script under <dir> (a scripts/
-# tree) outside the gh module, orch/gh.sh, and test/ for a name of one of the
-# five multi-field gh ops, and prints one line per file and op, sorted, naming
-# the file (as scripts/<path>), the op and the rule; returns 1 when it printed
-# any. An op counts as a whole word anywhere in code - a command word, or an
-# argument to capture, gh_or_die or any other runner, or a word inside a
-# string; each line is read through SHELL_CODE_AWK's code view, so its comment
-# is dropped first, and a name inside a longer name is no match.
-gh_op_placement() {
-  local out
-  out="$(cd "$1" && find . -name '*.sh' ! -path ./orch/gh.sh ! -path './test/*' \
-    -exec awk -v rule="$GH_OP_PLACEMENT_RULE" -v opnames="$GH_MULTI_FIELD_OPS" "$SHELL_CODE_AWK"'
+# name_placement <dir> <rule> <verb> <names> <owner-path>...: checks every shell
+# script under <dir> (a scripts/ tree) outside the owner paths (find's ./ form,
+# e.g. ./orch/gh.sh) and test/ for a name of <names> (space-separated), and
+# prints one line per file and name, sorted, naming the file (as
+# scripts/<path>),
+# <verb>, the name and <rule>; returns 1 when it printed any. A name counts as a
+# whole word anywhere in code - a command word, an argument to any runner, or a
+# word inside a string; each line is read through SHELL_CODE_AWK's code view, so
+# its comment is dropped first, and a name inside a longer name is no match.
+name_placement() {
+  local dir="$1" rule="$2" verb="$3" names="$4" out p
+  local owners=()
+  shift 4
+  for p in "$@"; do owners+=(! -path "$p"); done
+  out="$(cd "$dir" && find . -name '*.sh' "${owners[@]}" ! -path './test/*' \
+    -exec awk -v rule="$rule" -v verb="$verb" -v opnames="$names" "$SHELL_CODE_AWK"'
     BEGIN { nop = split(opnames, ops, " ") }
     {
       shell_code_line($0)
@@ -187,7 +191,7 @@ gh_op_placement() {
         while (match(t, ops[k])) {
           before = substr(t, RSTART - 1, 1); after = substr(t, RSTART + RLENGTH, 1)
           if (before !~ /[A-Za-z0-9_]/ && after !~ /[A-Za-z0-9_]/) {
-            printf "%s names %s. %s\n", file, ops[k], rule; break
+            printf "%s %s %s. %s\n", file, verb, ops[k], rule; break
           }
           t = substr(t, RSTART + 1)
         }
@@ -197,6 +201,24 @@ gh_op_placement() {
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort -u
   return 1
+}
+
+# gh_op_placement <dir>: name_placement for the five multi-field gh ops, outside
+# the gh module, orch/gh.sh; a line reads "<file> names <op>. <rule>".
+gh_op_placement() {
+  name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_MULTI_FIELD_OPS" ./orch/gh.sh
+}
+
+# The Marked comment prelude placement rule, as marked_comment_jq_placement's
+# message states it.
+MARKED_COMMENT_JQ_PLACEMENT_RULE="The rule: only the Marked comment module, scripts/orch/marked-comment.sh, and the Issue timeline, scripts/orch/issue-timeline.sh, call marked_comment_jq; every other script reads a comment through the Marked comment module's readers or the Issue timeline's questions."
+
+# marked_comment_jq_placement <dir>: name_placement for the name
+# marked_comment_jq, outside the Marked comment module, orch/marked-comment.sh,
+# and the Issue timeline, orch/issue-timeline.sh; a line reads "<file> calls
+# marked_comment_jq. <rule>".
+marked_comment_jq_placement() {
+  name_placement "$1" "$MARKED_COMMENT_JQ_PLACEMENT_RULE" calls marked_comment_jq ./orch/marked-comment.sh ./orch/issue-timeline.sh
 }
 
 # The declaration substitution rule, as decl_substitutions' message states it.
@@ -1571,6 +1593,37 @@ scripts/orch/zz-literal.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-multiline.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-param.sh names adapter_issue_state_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
+
+# --- marked comment prelude placement (#1853) ---------------------------------
+# marked_comment_jq_placement over the real scripts/, then over copies of it,
+# each with a planted file: one calling the prelude, which breaks the rule, and
+# one that only mentions it, which keeps it.
+echo
+echo "marked comment prelude placement (#1853)"
+out="$(marked_comment_jq_placement "$PLUGIN_ROOT/scripts")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "no script of the real tree calls marked_comment_jq outside the Marked comment module and the Issue timeline"
+else
+  bad "no script of the real tree calls marked_comment_jq outside the Marked comment module and the Issue timeline" "$out"
+fi
+
+mcjq_dir="$(tree_copy scripts)"
+plant_file "$mcjq_dir/orch" zz-prelude.sh <<'PLANTED'
+  planted_read() {
+    jq -r "$(marked_comment_jq)"' marked_comment_list | length'
+  }
+PLANTED
+plant_file "$mcjq_dir/orch" zz-keep.sh <<'PLANTED'
+  # marked_comment_jq in a comment
+  x=1  # and marked_comment_jq after code
+  my_marked_comment_jq_x() { :; }
+PLANTED
+printf '%s\n' 'planted_tl() { marked_comment_jq; }' >>"$mcjq_dir/orch/issue-timeline.sh"
+out="$(marked_comment_jq_placement "$mcjq_dir")"; st=$?
+assert_status "a call in another module fails, while comments, longer names and the two owning modules pass" "$st" 1
+assert_eq "naming only the calling file and the rule" "$out" \
+  "scripts/orch/zz-prelude.sh calls marked_comment_jq. $MARKED_COMMENT_JQ_PLACEMENT_RULE"
+rm -rf "${mcjq_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------
 # decl_substitutions over the real scripts/, then over copies of it, each with
