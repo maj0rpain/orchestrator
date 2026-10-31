@@ -38,9 +38,11 @@ fake_last_comment_of() {
   local d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
   cat "$d/$(ls "$d" | sort -n | tail -n 1)/body"
 }
-# live_record <pid>: the record the Liveness module writes for a running
-# process, made through its interface.
-live_record() { local t; t="$(mktemp)"; sourced_orch liveness_pid_write "$1" "$t" && cat "$t"; rm -f "$t"; }
+# dead_pid: the pid of a process that has exited.
+dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
+# watch_holds <pid>: succeeds while another process's liveness_watch_begin is
+# refused naming <pid>, i.e. while <pid> is the clone's live watch.
+watch_holds() { sourced_orch liveness_watch_begin 2>&1 | grep -q "autopilot watch (pid $1)"; }
 
 
 # --- autopilot ---------------------------------------------------------------
@@ -737,8 +739,9 @@ sourced_orch liveness_watch_begin
 fake_fail adapter_label_upsert "HTTP 500 label"
 "$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
 watch_pid=$!
-for _ in $(seq 1 60); do [ "$(cat "$pidfile" 2>/dev/null)" = "$(live_record "$watch_pid")" ] && [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
-assert_eq "a dead pidfile is replaced" "$(cat "$pidfile" 2>/dev/null)" "$(live_record "$watch_pid")"
+for _ in $(seq 1 60); do watch_holds "$watch_pid" && [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
+watch_holds "$watch_pid"; st=$?
+assert_status "a dead pidfile is replaced by the new watch" "$st" 0
 kill -0 "$watch_pid" 2>/dev/null; st=$?
 assert_status "watch survives a failed tick" "$st" 0
 assert_contains "reporting it with its exit status" "$(cat "$watch_log")" "the tick failed (exit 1)"

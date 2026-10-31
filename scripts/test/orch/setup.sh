@@ -266,8 +266,6 @@ live_orch() {
   rm -f "$ready"
 }
 live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return 0; }
-# dead_pid: the pid of a process that has exited.
-dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
 # marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
 # the kind, so a seeded comment is written as the module writes it.
 marker_of() { sourced_orch marked_comment_write "$@"; }

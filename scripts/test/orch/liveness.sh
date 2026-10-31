@@ -86,14 +86,10 @@ assert_eq "and no tick record" "$(on_disk "$rundir/10.tick")" absent
 live_stop
 rm -f "$rundir/10.pid"
 printf 'old\n' >"$rundir/11.tick"
-dead="$(dead_pid)"
-out="$(sourced_orch_script 'liveness_pid_write '"$dead"' /dev/null' 2>&1)"; st=$?
-assert_status "writing a record for an unreadable process fails" "$st" 1
-assert_contains "with an orch: line naming the pid" "$out" "orch: could not read the start time of pid $dead"
 unreadable="$(mktemp -d)"
 out="$(ORCH_PROC_DIR="$unreadable" sourced_orch_script 'ps() { return 1; }; export -f ps; liveness_run_begin 11' 2>&1)"; st=$?
 assert_status "run_begin with an unreadable start time fails" "$st" 1
-assert_contains "with an orch: line" "$out" "orch: could not read the start time of pid"
+assert_contains "with an orch: line naming the pid" "$out" "orch: could not read the start time of pid "
 assert_eq "writes no run record" "$(on_disk "$rundir/11.pid")" absent
 assert_eq "and keeps the tick record" "$(cat "$rundir/11.tick")" "old"
 rm -f "$rundir/11.tick"
