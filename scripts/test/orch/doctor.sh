@@ -1980,13 +1980,24 @@ fake_claim_seed 8 otherhost 5 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
-assert_contains "its remedy names git push and the orch:running label" "$out" "if that session is gone: git push origin :refs/orch/claims/7, and remove its orch:running label"
+assert_contains "its remedy names the host to run a tick on" "$out" "if that session is gone, run orch.sh autopilot tick on otherhost"
+assert_not_contains "and no claim ref" "$out" "refs/orch/claims"
 assert_not_contains "not a fresh one" "$out" "issue #8"
-assert_not_contains "nor this host's own" "$out" "issue #9"
+assert_contains "this host's dead claim with no record warns, naming issue, phase and no record" "$out" "issue #9 is claimed by this host (phase spec), but its process is gone (no record)."
+assert_contains "with the tick remedy on the line after it" "$(printf "%s\n" "$out" | grep -A1 "issue #9 is claimed by this host")" "      orch.sh autopilot tick"
+live_orch liveness_run_begin 9
+out="$("$ORCH" doctor --env 2>&1)"
+assert_not_contains "a live claim adds no warning" "$out" "issue #9 is claimed"
+live_stop
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "a since-exited run record's pid is named" "$out" "issue #9 is claimed by this host (phase spec), but its process is gone (pid $LIVE_PID)."
+sourced_orch liveness_issue_forget 9
+out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" doctor --env 2>&1)"
+assert_not_contains "with the checkouts unreadable, this host's claim adds no warning" "$out" "issue #9 is claimed"
 fake_claim_seed 6 autopilot-abc123 5 2020-01-01T00:00:00Z
 out="$(ORCH_HOST_ID=autopilot-abc123 "$ORCH" doctor --env 2>&1)"
-assert_not_contains "with ORCH_HOST_ID set, a claim of that id is its own" "$out" "issue #6"
-assert_contains "and the hostname's claim is another identity's" "$out" "issue #9 has been claimed by $(hostname)"
+assert_contains "with ORCH_HOST_ID set, a claim of that id is this host's" "$out" "issue #6 is claimed by this host"
+assert_not_contains "and the hostname's claim is another identity's, a day old or not" "$out" "issue #9 is claimed by this host"
 fake_fail adapter_claim_list "HTTP 502 claims"
 out="$("$ORCH" doctor --env 2>&1)"
 fake_unfail
