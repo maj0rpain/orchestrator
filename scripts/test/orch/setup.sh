@@ -258,12 +258,12 @@ sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" 
 # record the function writes names a running process. Sets LIVE_PID; live_stop
 # kills the shell, leaving the record naming a process that is gone.
 live_orch() {
-  local ready
-  ready="$(mktemp -u)"
-  bash -c 'source "$1"; ready="$2"; shift 2; "$@"; : >"$ready"; exec sleep 600' _ "$ORCH" "$ready" "$@" &
+  local ready_file
+  ready_file="$(mktemp -u)"
+  bash -c 'source "$1"; ready="$2"; shift 2; "$@"; : >"$ready"; exec sleep 600' _ "$ORCH" "$ready_file" "$@" &
   LIVE_PID=$!
-  until [ -e "$ready" ] || ! kill -0 "$LIVE_PID" 2>/dev/null; do sleep 0.05; done
-  rm -f "$ready"
+  until [ -e "$ready_file" ] || ! kill -0 "$LIVE_PID" 2>/dev/null; do sleep 0.05; done
+  rm -f "$ready_file"
 }
 live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return 0; }
 # marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
