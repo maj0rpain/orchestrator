@@ -261,23 +261,25 @@ handoff_invalid() {
   die "$HANDOFF_DIR/$1 is not valid - fix it${2:+, $2}"
 }
 
-# handoff_timeline_write <name> <file>: writes the body of the last-read
-# timeline's live <name> handoff, marker stripped, to <file>. Non-zero, and
-# <file> untouched, when there is none or the newest is tagged retired.
-handoff_timeline_write() {
-  local i raw
-  i="$(timeline_handoff "$1")" || return 1
-  raw="$(timeline_body "$i")"
-  mkdir -p "$(dirname "$2")"
-  if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$2"; else : >"$2"; fi
+# handoff_timeline_read <issue>: timeline_read, dying when it cannot. Each
+# caller module words its own read failure (autopilot.sh has
+# autopilot_timeline_read), so the two look alike.
+handoff_timeline_read() {
+  timeline_read "$1" && return 0
+  [ -n "$TIMELINE_REASON" ] || die "could not read issue #$1's comments"
+  gh_die "read the comments of issue #$1" "$TIMELINE_REASON"
 }
 
 # handoff_comment_fetch <issue> <name> <file>: writes the body of <issue>'s
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
 handoff_comment_fetch() {
-  timeline_read_or_die "$1"
-  handoff_timeline_write "$2" "$3"
+  local i raw
+  handoff_timeline_read "$1"
+  i="$(timeline_handoff "$2")" || return 1
+  raw="$(timeline_body "$i")"
+  mkdir -p "$(dirname "$3")"
+  if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$3"; else : >"$3"; fi
 }
 
 # handoff_comments_retire <issue> <file>...: in an autopilot session, retires
@@ -293,7 +295,7 @@ handoff_comments_retire() {
   shift
   autopilot_active || return 0
   [ $# -gt 0 ] || return 0
-  timeline_read_or_die "$issue"
+  handoff_timeline_read "$issue"
   for file in "$@"; do
     name="${file%.md}"
     timeline_handoff "$name" >/dev/null || continue

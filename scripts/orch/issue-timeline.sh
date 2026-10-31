@@ -17,8 +17,7 @@
 # limit stop is not), the legacy prose-opened ones included, which the Marked
 # comment module already reads as those kinds.
 #
-# The reader that dies: timeline_read_or_die. The queries: timeline_question,
-# timeline_replied, timeline_answers,
+# The queries: timeline_question, timeline_replied, timeline_answers,
 # timeline_stop, timeline_limit_count, timeline_handoff and timeline_body.
 
 # The last read: the comments JSON, why the read failed (gh's reason, or empty
@@ -62,21 +61,6 @@ timeline_read() {
     TIMELINE_RETIRED+=("${retired#_}")
     TIMELINE_URL+=("${url#_}")
   done <<<"$rows"
-}
-
-# timeline_read_or_die <issue> [2]: timeline_read, dying when it cannot: with
-# gh's wording when gh failed, with "could not read issue #<issue>'s comments"
-# when its output was no comment list - status 1, or 2 when the second argument
-# is 2.
-timeline_read_or_die() {
-  local issue="$1" code="${2-1}"
-  timeline_read "$issue" && return 0
-  if [ -z "$TIMELINE_REASON" ]; then
-    if [ "$code" = 2 ]; then die2 "could not read issue #$issue's comments"; fi
-    die "could not read issue #$issue's comments"
-  fi
-  if [ "$code" = 2 ]; then gh_die --exit 2 "read the comments of issue #$issue" "$TIMELINE_REASON"; fi
-  gh_die "read the comments of issue #$issue" "$TIMELINE_REASON"
 }
 
 # timeline_question [<phase>]: the newest question comment, of <phase> when
