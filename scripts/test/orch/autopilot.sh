@@ -381,8 +381,9 @@ assert_eq "a failure without the usage-limit message writes no limit file" "$(on
 
 # one that released its claim, then exited non-zero, is left alone
 printf '7\n' >"$launcher_dir/release"
-fake_issue 7 open ready-for-agent orch:spec
-"$ORCH" autopilot tick >/dev/null 2>&1
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
 assert_eq "a released claim and a non-zero exit is no failure" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_not_contains "and posts no failure comment" "$(fake_comments_of 7)" "Autopilot failed"
 released_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
@@ -390,8 +391,9 @@ assert_contains "its exit code is recorded in the session log" "$(cat "$released
 
 # one that exited zero with its claim still held is a failure too
 rm -f "$launcher_dir/release"; printf '0\n' >"$launcher_dir/exit"
-fake_issue 7 open ready-for-agent orch:spec
-"$ORCH" autopilot tick >/dev/null 2>&1
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
 assert_eq "a clean exit with the claim held is needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
 assert_eq "its claim is released" "$(fake_claim_held 7)" free
 clean_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
