@@ -536,7 +536,7 @@ doctor_phase_label_verdict() {
     agrees) d_ok "$5: $label_text" ;;
     *)
       d_warn "issue #$issue is labelled $label_text, but $4 last moved to phase $phase."
-      if redo="$(standing_redo_phase "$STANDING_PHASE" "$phase")"; then
+      if redo="$(standing_redo_phase "$(standing_live_phase "$3")" "$phase")"; then
         d_remedy "the watcher will run $(flow_cmd redo) $redo"
       else
         d_remedy "relabel the issue $(standing_phase_label "$phase"); the watcher refuses this disagreement"

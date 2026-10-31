@@ -1963,7 +1963,7 @@ assert_contains "an agreeing label is ok" "$out" "phase label: orch:spec"
 state_fixture phase implement
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --flow 2>&1)"
-assert_contains "a flow labelled one step back gets a remedy naming the redo" "$out" "the watcher will run"
+assert_contains "a flow labelled one step back gets a remedy naming the redo" "$out" "the watcher will run $(sourced_orch flow_cmd redo) spec"
 state_fixture phase spec
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$("$ORCH" doctor --flow 2>&1 >/dev/null)"

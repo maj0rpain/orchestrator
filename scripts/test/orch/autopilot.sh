@@ -634,7 +634,7 @@ out="$(sourced_orch_script 'set +e; autopilot_pickup_contained false; echo "rc=$
 assert_eq "a silent failure reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
 ran_marker="$(mktemp -u)"
 out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker")"
-assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the step's stderr"
+assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file"
 assert_eq "and runs nothing" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
 rm -f "$ran_marker"
 
@@ -647,9 +647,8 @@ swept 2 stale entries
 orch: warning: odd entry"
 
 # a failed recorded-phase read stops with a reason naming the state file
-fake_issue 78 open orch:spec orch:running; fake_claim_seed 78
-out="$(sourced_orch_script 'set +e; state_get_in() { return 1; }; flow_state_file() { echo "$1/state.json"; }; autopilot_pickup_recorded /nowhere 2>/dev/null; echo "reason=$PICKUP_REASON"')"
-assert_eq "a failed recorded-phase read names the state file" "$out" "reason=could not read the phase recorded in /nowhere/state.json"
+out="$(sourced_orch_script 'set +e; autopilot_pickup_side_find() { side=/nowhere; }; autopilot_pickup_contained() { return 0; }; state_get_in() { return 1; }; flow_state_file() { echo "$1/state.json"; }; standing_stop() { echo "stop $2 $3: $4"; }; autopilot_pickup 78 spec 2>/dev/null')"
+assert_eq "a failed recorded-phase read stops the issue naming the step and the state file" "$out" "stop failure spec: step reading the recorded phase failed: could not read the phase recorded in /nowhere/state.json"
 
 # a step's helper printing a diagnostic before it fails changes no wording
 fake_issue 77 open ready-for-agent orch:spec
@@ -657,7 +656,7 @@ fake_issue_title 77 "Noisy add"
 mkdir -p "$top/.orchestrator/checkouts/noisy-add" "$top/.orchestrator/checkouts/noisy-add-77"
 tick_err="$("$ORCH" autopilot tick 2>&1 >/dev/null)"
 assert_contains "the stop wording keeps the step's detail" "$(fake_comments_of 77)" "step side-checkout add failed: "
-assert_eq "the diagnostic is not the comment's reason" "$(fake_comments_of 77 | grep -c 'orch: warning' || true)" "0"
+assert_not_contains "the diagnostic is not the comment's reason" "$(fake_comments_of 77)" "no finished side checkouts"
 assert_contains "and the tick's stderr carries the helper's diagnostics" "$tick_err" "no finished side checkouts"
 
 # stale claims of this host are failures; other hosts' are left alone

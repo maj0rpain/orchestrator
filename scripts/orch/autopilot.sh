@@ -445,26 +445,27 @@ autopilot_pickup_reason() {
   done
 }
 
+# autopilot_pickup_settle <status> <stderr-text>: the tail of a captured step.
+# A success passes every stderr line on; a failure sets PICKUP_REASON (see
+# autopilot_pickup_reason) and returns 1.
+autopilot_pickup_settle() {
+  if [ "$1" -eq 0 ]; then
+    [ -z "$2" ] || printf '%s' "$2" >&2
+    return 0
+  fi
+  autopilot_pickup_reason "$2"
+  return 1
+}
+
 # autopilot_pickup_contained <command...>: runs the command contained, so a die
 # inside it fails only the step and a cd never reaches the tick's shell. A
 # failure sets PICKUP_REASON (see autopilot_pickup_reason) and returns 1; a
 # success passes every stderr line on. When the stderr's temp file cannot be
 # made, the command is not run and the reason says so.
 autopilot_pickup_contained() {
-  local errf err st=0
-  errf="$(mktemp)" || {
-    PICKUP_REASON="could not create a temp file for the step's stderr"
-    return 1
-  }
-  ( "$@" ) 2>"$errf" || st=$?
-  file_read err "$errf" || err=""
-  rm -f "$errf"
-  if [ "$st" -eq 0 ]; then
-    [ -z "$err" ] || printf "%s" "$err" >&2
-    return 0
-  fi
-  autopilot_pickup_reason "$err"
-  return 1
+  local err st=0
+  capture_err err "$@" || st=$?
+  autopilot_pickup_settle "$st" "$err"
 }
 
 # autopilot_pickup_fail <kind> <detail>: records a failed step's stop - <kind>
@@ -501,11 +502,7 @@ autopilot_pickup_side_add() {
   # a clash with any entry of the side checkouts directory takes the issue
   [ ! -e "$(side_checkouts_dir "$(main_checkout)")/$slug" ] || slug="$slug-$issue"
   capture side err cmd_side_checkout_add "$slug" --issue "$issue" || st=$?
-  if [ "$st" -ne 0 ]; then
-    autopilot_pickup_reason "$err"
-    return 1
-  fi
-  [ -z "$err" ] || printf '%s\n' "$err" >&2
+  autopilot_pickup_settle "$st" "$err"
 }
 
 # autopilot_pickup_init <issue> <side>: the step initialising a side checkout
