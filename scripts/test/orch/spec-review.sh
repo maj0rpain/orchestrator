@@ -769,9 +769,8 @@ assert_status "a single-dash override answer after <dir>: taken as the answer" "
 assert_eq "a single-dash override answer after <dir>: item 4 declined" "$(has_line "$(cat "$d/spec.md")" "Test note.")" no
 
 # A malformed batch file, named by its line.
-d="$(sra_dir)"
-sed -i '7s/.*/@@ bogus/' "$d/batch.md"
-sra_refused "an unknown batch line" "$d" "batch.md line 7: unknown line '@@ bogus'" recommended
+# Counterpart: check's "two grammar errors" pins "an unknown batch line" (the
+# same @@ bogus line, refused with the first error).
 d="$(sra_dir)"
 printf 'stray text\n' >>"$d/batch.md"
 sra_refused "text outside a block" "$d" "batch.md line 58: text outside" recommended
@@ -787,9 +786,8 @@ d="$(sra_dir)"
 sed -i "s/^@@ summary Insert a test note after Delta\$/@@ summary $sra_w30 w31/" "$d/batch.md"
 sra_refused "a 31-word item summary" "$d" \
   "orch: batch.md line 47: item 4's @@ summary has 31 words, more than 30" recommended
-d="$(sra_dir)"
-sed -i '/^@@ lens consistency/d' "$d/batch.md"
-sra_refused "a lens with no @@ lens line" "$d" "no @@ lens line for consistency" recommended
+# Counterpart: check's "a missing @@ lens line" pins "a lens with no @@ lens
+# line".
 
 # The parser's refusals say why the line is wrong (#1149).
 sra_resolved_takes='a resolved item takes no @@ anchor, @@ replace or @@ end'
@@ -809,10 +807,9 @@ sra "$d" recommended
 assert_status "an apply item with no block: refused" "$st" 1
 assert_eq "an apply item with no block keeps its message" "$out" \
   "orch: batch.md line 45: item 4 has no @@ anchor/@@ replace/@@ end block"
-d="$(sra_dir)"
-sed -i '16,17d' "$d/batch.md"
-sra_refused "a replacement left open at the next @@ item" "$d" \
-  "batch.md line 16: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline material the plan chose this'" recommended
+# Counterpart: check's "a CRLF @@ line ending a replacement left open" pins
+# "a replacement left open at the next @@ item"; its "with the same view as LF"
+# assertion shows CRLF @@ lines read exactly as LF ones.
 d="$(sra_dir)"
 sed -i '14d' "$d/batch.md"
 sra "$d" recommended
@@ -839,19 +836,18 @@ assert_eq "the recommended option with no block: no hint" "$out" \
   "orch: batch.md line 31: item 3 option A has no @@ anchor/@@ replace/@@ end block"
 
 # Malformed marks (#1237): refused attended and unattended, before any write.
+# One case proves apply refuses a bad mark in both answer modes. The other four
+# are grammar errors that check pins with exact messages, and mark errors die in
+# the batch parser before the answer mode is read. Counterparts in check
+# (#1137): "no mark" is "an item with no mark"; "a mark on a resolved item" is
+# the same label; "a decision marked minor" is "a decision item marked minor";
+# "a contradicts-the-plan item marked minor" is the same label.
 for sra_flag in "" --unattended; do
-  for sra_case in \
-    "45s/ minor$//|no mark|batch.md line 45: @@ item 4 ... apply needs its mark, material or minor" \
-    "45s/ minor$/ major/|an unknown mark|batch.md line 45: item 4's mark must be material or minor, got 'major'" \
-    "55s/$/ minor/|a mark on a resolved item|batch.md line 55: @@ item 5 ... a resolved item carries no mark" \
-    "27s/ material$/ minor/|a decision marked minor|batch.md line 27: decision item 3 is always material, never minor" \
-    "18s/decline material/decline minor/|a contradicts-the-plan item marked minor|batch.md line 18: contradicts-the-plan item 2 is always material, never minor"; do
-    d="$(sra_dir)"
-    printf 'earlier round\n' >"$d/settled.md"
-    sed -i "${sra_case%%|*}" "$d/batch.md"
-    sra_label="${sra_case#*|}"
-    sra_refused "${sra_flag:-attended}: ${sra_label%%|*}" "$d" "${sra_label#*|}" recommended ${sra_flag:+"$sra_flag"}
-  done
+  d="$(sra_dir)"
+  printf 'earlier round\n' >"$d/settled.md"
+  sed -i '45s/ minor$/ major/' "$d/batch.md"
+  sra_refused "${sra_flag:-attended}: an unknown mark" "$d" \
+    "batch.md line 45: item 4's mark must be material or minor, got 'major'" recommended ${sra_flag:+"$sra_flag"}
 done
 
 # @@ why (#1248): a material item missing it refused attended and unattended,
@@ -874,15 +870,12 @@ for sra_why in "The comment asks for alpha prime" "Beta follows the plan's rever
 done
 
 # Lens files and citations.
-d="$(sra_dir)"
-sed -i 's/^@@ finding testability 3$/@@ finding testability 4/' "$d/batch.md"
-sra_refused "a finding past its lens file's count" "$d" "lens-testability.md holds 3" recommended
+# Counterpart: check's "a citation past its lens file's count" pins "a finding
+# past its lens file's count".
 d="$(sra_dir)"
 rm "$d/lens-consistency.md"
 sra_refused "a missing lens file" "$d" "lens-consistency.md not found" recommended
-d="$(sra_dir)"
-printf 'preamble\n@@ finding 1\nx\n' >"$d/lens-consistency.md"
-sra_refused "a malformed lens file" "$d" "lens-consistency.md line 1" recommended
+# Counterpart: check's "a malformed lens file" pins "a malformed lens file".
 d="$(sra_dir)"
 printf '@@ finding 1\nx\n@@ finding 3\ny\n' >"$d/lens-consistency.md"
 sra_refused "a lens file out of order" "$d" "expected @@ finding 2" recommended
@@ -1446,7 +1439,7 @@ sed -i 's/^Build the spec\.$/Alpha line./' "$d/tickets.md"
 srt_refused "a ## Ticket anchor on text the batch items replaced" "$d" "ticket item 1 (## Ticket): its anchor matches no text" recommended --tickets recommended
 
 # Every kind of ticket-step error names its tickets.md line and ends
-# ` - nothing written`, with nothing written, in both modes.
+# ` - nothing written`, with nothing written.
 # srt_step_refused <mode> <label> <dir> <want> <ticket-answer>: apply in
 # <mode> (issue or flow) is refused with exactly <want>, leaving spec.md, the
 # ticket files and changelog.md as they were, and GitHub untouched.
@@ -1456,33 +1449,38 @@ srt_step_refused() {
   srt_refused "$mode: $2" "$3" "$4" recommended --tickets "$5"
   assert_eq "$mode: $2: the exact message" "$out" "$4"
 }
+# Flow mode changes only how apply resolves the issue and which command writes
+# the body and comment; the ticket step is the same in both. So issue mode runs
+# all eight refusals, and flow mode keeps the two whose message names the issue
+# taken from state (#14's breakdown). Each case dropped from flow mode keeps its
+# issue-mode case of the same label.
+d="$(srt_dir)"
+srt_fetch "$d"
+sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
+srt_step_refused issue "a ticket-anchor problem" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written" recommended
+d="$(srt_dir)"
+srt_fetch "$d"
+sed -i 's/^Build gamma\.$/Nowhere./' "$d/tickets.md"
+srt_step_refused issue "a declined ticket item's anchor problem" "$d" \
+  "orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body - nothing written" recommended
+d="$(srt_collapsed)"
+sed -i 's/^@@ item 1 section apply$/@@ item 1 section decline not now/; s/^Build the spec\.$/Nowhere./' "$d/tickets.md"
+srt_step_refused issue "a declined ## Ticket item's anchor problem" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written" recommended
+d="$(srt_dir)"
+srt_step_refused issue "a missing ticket" "$d" \
+  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written" recommended
+d="$(srt_dir)"
+srt_fetch "$d"
+srt_step_refused issue "a block problem" "$d" \
+  "orch: tickets.md line 19: ticket item 5: #21 is already blocked by #20 - nothing written" all
+d="$(srt_dir)"
+srt_fetch "$d"
+sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
+srt_step_refused issue "an unblock problem" "$d" \
+  "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21 - nothing written" recommended
 for sra_mode in issue flow; do
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
-  srt_step_refused "$sra_mode" "a ticket-anchor problem" "$d" \
-    "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written" recommended
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  sed -i 's/^Build gamma\.$/Nowhere./' "$d/tickets.md"
-  srt_step_refused "$sra_mode" "a declined ticket item's anchor problem" "$d" \
-    "orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body - nothing written" recommended
-  d="$(srt_collapsed)"
-  sed -i 's/^@@ item 1 section apply$/@@ item 1 section decline not now/; s/^Build the spec\.$/Nowhere./' "$d/tickets.md"
-  srt_step_refused "$sra_mode" "a declined ## Ticket item's anchor problem" "$d" \
-    "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written" recommended
-  d="$(srt_dir)"
-  srt_step_refused "$sra_mode" "a missing ticket" "$d" \
-    "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written" recommended
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  srt_step_refused "$sra_mode" "a block problem" "$d" \
-    "orch: tickets.md line 19: ticket item 5: #21 is already blocked by #20 - nothing written" all
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
-  srt_step_refused "$sra_mode" "an unblock problem" "$d" \
-    "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21 - nothing written" recommended
   d="$(srt_dir)"
   srt_fetch "$d"
   printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
@@ -1497,8 +1495,7 @@ done
 sra_in_mode issue
 rm -rf "$top/.orchestrator"
 
-# A failed ticket write stops apply, naming the writes already landed, in
-# both modes.
+# A failed ticket write stops apply, naming the writes already landed.
 srt_fail() {
   local mode="$1" how="$2" op="$3" n="$4"
   d="$(srt_dir)"
@@ -1510,16 +1507,20 @@ srt_fail() {
   assert_status "$mode: a failed $op stops apply" "$st" 1
   assert_eq "$mode: changelog.md stays after a failed $op" "$(on_disk "$d/changelog.md")" present
 }
+# The ticket loaders and writes (issue update, ticket block, ticket unblock) are
+# the same in both modes, so the ticket-body, unblock and block failures run in
+# issue mode only. The issue's body, retire and comment failures differ by
+# mode (cmd_spec writes them in flow mode) and run in both.
+srt_fail issue recommended adapter_issue_body_edit 0
+assert_contains "issue: a ticket update failure named" "$out" "could not write ticket #20's body"
+assert_contains "issue: nothing landed" "$out" "already landed: nothing"
+srt_fail issue recommended adapter_blocker_remove 0
+assert_contains "issue: an unblock failure named" "$out" "could not write unblock #21 by #20"
+assert_contains "issue: the text edit landed" "$out" "already landed: ticket #20's body;"
+srt_fail issue recommended adapter_blocker_add 0
+assert_contains "issue: a block failure named" "$out" "could not write block #20 by #21"
+assert_contains "issue: the text edit and the unblock landed" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
 for sra_mode in issue flow; do
-  srt_fail "$sra_mode" recommended adapter_issue_body_edit 0
-  assert_contains "$sra_mode: a ticket update failure named" "$out" "could not write ticket #20's body"
-  assert_contains "$sra_mode: nothing landed" "$out" "already landed: nothing"
-  srt_fail "$sra_mode" recommended adapter_blocker_remove 0
-  assert_contains "$sra_mode: an unblock failure named" "$out" "could not write unblock #21 by #20"
-  assert_contains "$sra_mode: the text edit landed" "$out" "already landed: ticket #20's body;"
-  srt_fail "$sra_mode" recommended adapter_blocker_add 0
-  assert_contains "$sra_mode: a block failure named" "$out" "could not write block #20 by #21"
-  assert_contains "$sra_mode: the text edit and the unblock landed" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
   # The ticket update, then the two edges' ## Blocked by rewrites, then the
   # body.
   srt_fail "$sra_mode" recommended adapter_issue_body_edit 3
