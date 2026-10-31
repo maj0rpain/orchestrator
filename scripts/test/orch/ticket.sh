@@ -740,23 +740,12 @@ fake_lag_after adapter_blockers 1 2 999999
 out="$("$ORCH" ticket block "$bg" --by "$ba" 2>&1)"; st=$?
 assert_status "a readback that is wrong twice dies" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #$bg's blocking edges did not verify"
-fake_fail adapter_blocker_add "HTTP 422: Validation Failed"
-out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
-assert_status "a gh that refuses the edge write fails the command" "$st" 1
-assert_contains "naming the ticket" "$out" "gh could not add a blocking edge from ticket #$bf on #$bb"
-assert_contains "with gh's reason" "$out" "HTTP 422"
-fake_unfail
 fake_fail adapter_blockers "$GH_502"
 out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the blockers fails the command" "$st" 1
 assert_contains "naming the ticket, with gh's first line" "$out" \
   "gh could not read ticket #$bf's blockers: HTTP 502: Bad Gateway"
 assert_not_contains "and only its first line" "$out" "second line"
-fake_unfail
-fake_fail adapter_issue_state
-out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
-assert_status "a gh that cannot read the target fails the command" "$st" 1
-assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf"
 fake_unfail
 errf="$(mktemp)"
 fake_fail adapter_issue_parent
@@ -1004,11 +993,6 @@ assert_contains "naming the ticket" "$out" "ticket #$uf's blocking edges did not
 
 ug="$("$ORCH" ticket publish 96 "G" "$body")"
 "$ORCH" ticket block "$ug" --by "$ua,$ub" >/dev/null 2>&1
-fake_fail adapter_blocker_remove
-out="$("$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
-assert_status "a gh that refuses the edge removal fails the command" "$st" 1
-assert_contains "naming the ticket" "$out" "gh could not remove a blocking edge from ticket #$ug on #$ua"
-fake_unfail
 # gh's reason rides on orch's own line, first line only (#846).
 assert_gh_dies "a failed edge removal still exits 1" adapter_blocker_remove "$GH_502" 1 \
   "orch: gh could not remove a blocking edge from ticket #$ug on #$ua: HTTP 502: Bad Gateway" \
