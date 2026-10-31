@@ -54,7 +54,7 @@ assert_eq "a flow labelled implement whose checkout moved to review is redone as
 rc=0"
 assert_eq "a flow labelled spec whose checkout moved to implement is redone as spec" "$(sourced_rc 'standing_redo_phase spec implement')" "spec
 rc=0"
-for pair in "spec review" "review spec" "done review" "spec done" "implement implement" "review implement"; do
+for pair in "spec review" "review spec" "review done" "done review" "spec done" "implement implement" "review implement"; do
   assert_eq "no redo for labelled/recorded $pair: nothing printed, status 1" "$(sourced_rc "standing_redo_phase $pair")" "rc=1"
 done
 

@@ -634,13 +634,19 @@ out="$(sourced_orch_script 'set +e; autopilot_pickup_contained false; echo "rc=$
 assert_eq "a silent failure reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
 ran_marker="$(mktemp -u)"
 out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker")"
-assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file"
+assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the step's stderr"
 assert_eq "and runs nothing" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
 rm -f "$ran_marker"
+# driven to the stop: worded as a temp-file failure, the claim released
+fake_issue 79 open orch:spec orch:running; fake_claim_seed 79
+first_call_marker="$(mktemp -u)"
+sourced_orch_script 'set +e; mktemp() { [ -e "'"$first_call_marker"'" ] || { : >"'"$first_call_marker"'"; return 1; }; command mktemp "$@"; }; autopilot_pickup 79 spec' >/dev/null 2>&1
+assert_contains "a temp-file failure in a step stops the issue worded as one" "$(fake_comments_of 79)" "Autopilot failed in the spec phase: step "
+assert_contains "naming the step's stderr temp file" "$(fake_comments_of 79)" "could not create a temp file for the step's stderr"
+assert_eq "and the claim is released" "$(fake_claim_held 79)" free
+rm -f "$first_call_marker"
 
 # the side-checkout add takes its reason by the same rule
-out="$(sourced_orch_script 'set +e; cmd_side_checkout_add() { return 1; }; side=""; autopilot_pickup_side_add 5 "A title" 2>&1; echo "rc=$? reason=$PICKUP_REASON"')"
-assert_contains "a side-checkout add failing with no stderr reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
 out="$(sourced_orch_script 'set +e; cmd_side_checkout_add() { echo "swept 2 stale entries" >&2; echo "orch: warning: odd entry" >&2; echo "orch: could not add the checkout" >&2; return 1; }; side=""; autopilot_pickup_side_add 5 "A title" 2>/tmp/pk_err.$$; echo "reason=$PICKUP_REASON"; cat /tmp/pk_err.$$; rm -f /tmp/pk_err.$$')"
 assert_eq "its die's line is the reason, the sweep report and warning reaching stderr" "$out" "reason=orch: could not add the checkout
 swept 2 stale entries

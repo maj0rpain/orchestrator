@@ -465,6 +465,11 @@ autopilot_pickup_settle() {
 autopilot_pickup_contained() {
   local err st=0
   capture_err err "$@" || st=$?
+  if [ "$st" -eq 1 ] && [ "$err" = "could not create a temp file" ]; then
+    # capture_err's own failure (a step's die carries an orch: prefix)
+    PICKUP_REASON="could not create a temp file for the step's stderr"
+    return 1
+  fi
   autopilot_pickup_settle "$st" "$err"
 }
 
