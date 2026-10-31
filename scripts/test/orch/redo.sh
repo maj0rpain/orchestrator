@@ -797,6 +797,8 @@ redo_review_scenario() {
   assert_eq "$mode: stepping back to implement" "$("$ORCH" state get phase)" implement
   assert_eq "$mode: the implement handoff is retired exactly once" \
     "$(rd_retired_count "$mode" 61 03-implement '.orchestrator/handoff/pre-redo-1')" 1
+  assert_eq "$mode: the review records retire into the matching pre-redo-1" \
+    "$(on_disk .orchestrator/review/pre-redo-1/iteration-01.md)" "present"
   restore_suite_env
 }
 
