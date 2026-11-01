@@ -181,17 +181,17 @@ name_placement() {
   shift 4
   for p in "$@"; do owners+=(! -path "$p"); done
   out="$(cd "$dir" && find . -name '*.sh' "${owners[@]}" ! -path './test/*' \
-    -exec awk -v rule="$rule" -v verb="$verb" -v opnames="$names" "$SHELL_CODE_AWK"'
-    BEGIN { nop = split(opnames, ops, " ") }
+    -exec awk -v rule="$rule" -v verb="$verb" -v namelist="$names" "$SHELL_CODE_AWK"'
+    BEGIN { nnames = split(namelist, name, " ") }
     {
       shell_code_line($0)
       s = sc_code; file = FILENAME; sub(/^\.\//, "scripts/", file)
-      for (k = 1; k <= nop; k++) {
+      for (k = 1; k <= nnames; k++) {
         t = s
-        while (match(t, ops[k])) {
+        while (match(t, name[k])) {
           before = substr(t, RSTART - 1, 1); after = substr(t, RSTART + RLENGTH, 1)
           if (before !~ /[A-Za-z0-9_]/ && after !~ /[A-Za-z0-9_]/) {
-            printf "%s %s %s. %s\n", file, verb, ops[k], rule; break
+            printf "%s %s %s. %s\n", file, verb, name[k], rule; break
           }
           t = substr(t, RSTART + 1)
         }
@@ -211,7 +211,7 @@ gh_op_placement() {
 
 # The Marked comment prelude placement rule, as marked_comment_jq_placement's
 # message states it.
-MARKED_COMMENT_JQ_PLACEMENT_RULE="The rule: only the Marked comment module, scripts/orch/marked-comment.sh, and the Issue timeline, scripts/orch/issue-timeline.sh, call marked_comment_jq; every other script reads a comment through the Marked comment module's readers or the Issue timeline's questions."
+MARKED_COMMENT_JQ_PLACEMENT_RULE="The rule: only the Marked comment module, scripts/orch/marked-comment.sh, and the Issue timeline, scripts/orch/issue-timeline.sh, call marked_comment_jq; every other script reads a comment through the Marked comment module's readers or the Issue timeline's queries."
 
 # marked_comment_jq_placement <dir>: name_placement for the name
 # marked_comment_jq, outside the Marked comment module, orch/marked-comment.sh,
