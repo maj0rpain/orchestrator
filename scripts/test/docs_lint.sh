@@ -130,6 +130,9 @@
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=git_env.sh
+source "$PLUGIN_ROOT/scripts/test/git_env.sh"
+test_git_env_clear || exit 1
 # shellcheck source=tally.sh
 source "$PLUGIN_ROOT/scripts/test/tally.sh"
 

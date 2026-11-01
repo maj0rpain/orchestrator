@@ -263,14 +263,59 @@ assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 # child suite run started with ORCH_AUTOPILOT and a probe variable exported;
 # the child (which has the probe set) asserts, and does not start a child.
 assert_eq "ORCH_AUTOPILOT is unset" "${ORCH_AUTOPILOT-unset}" "unset"
+# No repo-local git variable (git rev-parse --local-env-vars) and no commit
+# identity variable reaches the sections: the runner clears them, a hook's
+# GIT_DIR and GIT_INDEX_FILE included. Other GIT_* knobs are kept.
+git_env_set=""
+for git_env_name in $(git rev-parse --local-env-vars) \
+  $(source "$PLUGIN_ROOT/scripts/test/git_env.sh" && echo "${TEST_GIT_ENV_IDENTITY[*]}"); do
+  [ -z "${!git_env_name+x}" ] || git_env_set="$git_env_set $git_env_name"
+done
+assert_eq "no repo-local or identity git variable is set" "${git_env_set:-none}" "none"
+unset git_env_set git_env_name
+if [ -n "${ORCH_TEST_GIT_ENV_PROBE:-}" ]; then
+  assert_eq "GIT_SSH_COMMAND is kept" "${GIT_SSH_COMMAND-unset}" "ssh -v"
+fi
 if [ -n "${ORCH_TEST_ISOLATION_PROBE:-}" ]; then
   assert_eq "an ORCH_TEST_* variable is kept" "$ORCH_TEST_ISOLATION_PROBE" "kept"
-else
+elif [ -z "${ORCH_TEST_GIT_ENV_PROBE:-}" ]; then
   out="$(ORCH_AUTOPILOT=1 ORCH_TEST_ISOLATION_PROBE=kept ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' \
     ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
   assert_contains "a child run with ORCH_AUTOPILOT exported sees it unset" "$out" "ok   ORCH_AUTOPILOT is unset"
   assert_contains "a child run keeps an exported ORCH_TEST_* variable" "$out" "ok   an ORCH_TEST_* variable is kept"
 fi
+
+# --- isolation under a git hook (#1905) ---------------------------------------
+echo
+echo "isolation under a git hook (#1905)"
+# A child run started as a git hook in a linked worktree starts it: GIT_DIR
+# and GIT_INDEX_FILE are absolute paths into a victim repo. The child runs
+# isolation and branch create, whose fixtures write to a repo; the victim's
+# HEAD, refs and config must come back unchanged.
+victim="$(mktemp -d)"
+git -C "$victim" init -q main
+git -C "$victim/main" -c user.name=v -c user.email=v@example.com commit -q --allow-empty -m victim
+git -C "$victim/main" worktree add -q "$victim/wt" -b wt
+victim_gd="$victim/main/.git/worktrees/wt"
+victim_snap() {
+  git -C "$victim/main" symbolic-ref HEAD
+  git -C "$victim/wt" symbolic-ref HEAD
+  git -C "$victim/main" for-each-ref
+  cat "$victim/main/.git/config"
+}
+victim_before="$(victim_snap)"
+out="$(GIT_DIR="$victim_gd" GIT_INDEX_FILE="$victim_gd/index" GIT_AUTHOR_NAME=Hook \
+  GIT_COMMITTER_EMAIL=hook@example.com GIT_SSH_COMMAND="ssh -v" \
+  ORCH_TEST_GIT_ENV_PROBE=1 ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' \
+  ORCH_TEST_ONLY='^(isolation|branch create)$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+assert_status "a child run started with a hook's git variables passes" "$st" 0
+assert_contains "the child sees the repo-local and identity variables unset" "$out" \
+  "ok   no repo-local or identity git variable is set"
+assert_contains "the child keeps GIT_SSH_COMMAND" "$out" "ok   GIT_SSH_COMMAND is kept"
+assert_contains "the child ran branch create" "$out" "branch create"
+assert_eq "the victim's HEAD, refs and config are unchanged" "$(victim_snap)" "$victim_before"
+rm -rf "$victim"
+unset -f victim_snap
 
 # --- the section filter (ORCH_TEST_ONLY, #612) --------------------------------
 # The suite run as a child process under a filter, asserted on its stdout and
@@ -375,7 +420,11 @@ rm -rf "$quiet_dir"
 # Each of the other suites cut down to its own helpers, one planted check
 # and its own summary code: its lines before `# >>> checks`, a planted ok, then
 # its lines from its `# >>> summary` line on.
-cut_dir="$(mktemp -d)"
+# The copies sit in scripts/test/ of a fresh root, beside the git_env.sh every
+# runner sources first.
+cut_root="$(mktemp -d)"
+cut_dir="$cut_root/scripts/test"
+mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$cut_dir/"
 for quiet_suite in "${SUITES[@]}"; do
   [ "$quiet_suite" = orch_test.sh ] && continue
   awk '
@@ -391,7 +440,7 @@ for quiet_suite in "${SUITES[@]}"; do
     "$(count_lines '^  ok ' "$out")" "0"
   assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
 done
-rm -rf "$cut_dir"
+rm -rf "$cut_root"
 
 # --- the parallel runner (ORCH_TEST_JOBS, #780) -------------------------------
 # A copy of the scripts tree with planted sections. Two passing ones run with
@@ -461,7 +510,7 @@ assert_contains "reports a section that exits mid-way as a FAIL naming it" "$out
 assert_contains "keeps a planted FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "sums both failures into the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "11 passed, 2 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "12 passed, 2 failed"
 # Each failing path alone, so neither passes on the strength of the other.
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted exit$' \
   bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
@@ -469,14 +518,14 @@ assert_status "a parallel run whose only failing section exits mid-way exits 1" 
 assert_contains "reports that section alone as a FAIL naming it" "$out" \
   "  FAIL section 'planted exit' reported no counts"
 assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "9 passed, 1 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "10 passed, 1 failed"
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted failure$' \
   bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
 assert_status "a parallel run whose only failing section has a failing check exits 1" "$st" 1
 assert_contains "keeps that check's FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "9 passed, 1 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "10 passed, 1 failed"
 rm -rf "$par_dir"
 
 # --- assertions in a subshell (#1904) ----------------------------------------
@@ -793,7 +842,7 @@ assert_eq "reports exactly one FAIL" "$(printf '%s\n' "$out" | grep -c '^  FAIL 
 assert_contains "whose detail names the call" "$out" \
   "$(printf '  FAIL a section called the real gh\n     gh repo view o/r --json defaultBranchRef')"
 assert_eq "counts it in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
-  "9 passed, 1 failed"
+  "10 passed, 1 failed"
 rm -rf "$guard_dir"
 
 # --- all.sh, the single entry point (#615) ----------------------------------
@@ -1900,3 +1949,111 @@ for args in "--tests orch/zz-planted.sh" "orch/missing.sh" "--bogus" \
   assert_contains "and prints a usage line on stderr" "$out" "usage: "
 done
 rm -rf "${index_dir%/scripts}"
+
+# --- git env clear (#1905) ----------------------------------------------------
+# test_git_env_clear in scripts/test/git_env.sh, sourced in a child shell with
+# a fake git first on PATH: it unsets what the fake's `rev-parse
+# --local-env-vars` names, an invented variable included, so the set is git's
+# own and no copy; it keeps other GIT_* knobs; and it fails closed, with its
+# message, when git fails or prints nothing.
+echo
+echo "git env clear (#1905)"
+genv_dir="$(mktemp -d)"
+cat >"$genv_dir/git" <<'FAKE'
+#!/usr/bin/env bash
+[ "$1 $2" = "rev-parse --local-env-vars" ] || exit 99
+case "$FAKE_GIT_MODE" in
+  fail) exit 3 ;;
+  empty) exit 0 ;;
+  *) printf '%s\n' GIT_DIR GIT_PROBE_LOCAL ;;
+esac
+FAKE
+chmod +x "$genv_dir/git"
+genv_run() {
+  FAKE_GIT_MODE="$1" PATH="$genv_dir:$PATH" GIT_DIR=/x GIT_PROBE_LOCAL=1 GIT_SSH_COMMAND=ssh \
+    GIT_AUTHOR_NAME=a GIT_COMMITTER_DATE=d bash -c '
+      source "$1/git_env.sh"
+      test_git_env_clear; st=$?
+      echo "st=$st dir=${GIT_DIR-unset} probe=${GIT_PROBE_LOCAL-unset} ssh=${GIT_SSH_COMMAND-unset} an=${GIT_AUTHOR_NAME-unset} cd=${GIT_COMMITTER_DATE-unset}"' \
+    _ "$(dirname "$SUITE_SCRIPT")" 2>&1
+}
+assert_eq "clears what git names, invented variable included, and keeps other knobs" \
+  "$(genv_run ok)" "st=0 dir=unset probe=unset ssh=ssh an=unset cd=unset"
+out="$(genv_run fail)"
+assert_contains "a failing git makes it fail with its message" "$out" \
+  "cannot list git's repo-local variables"
+assert_contains "and it returns non-zero" "$out" "st=1"
+out="$(genv_run empty)"
+assert_contains "a git that prints nothing makes it fail with its message" "$out" \
+  "cannot list git's repo-local variables"
+assert_contains "and returns non-zero" "$out" "st=1"
+rm -rf "$genv_dir"
+unset -f genv_run
+
+# --- runner git isolation (#1905) ---------------------------------------------
+# Every runner in all.sh's suites list clears git's environment before any git
+# call: structurally, its first code line assigns its directory from
+# BASH_SOURCE, its second sources git_env.sh through that variable, its third
+# calls test_git_env_clear || exit 1. Tested over the real runners, then
+# planted ones.
+echo
+echo "runner git isolation (#1905)"
+RUNNER_GIT_RULE="The rule: a runner's first code line assigns its directory from BASH_SOURCE, its second sources git_env.sh through that variable, and its third calls test_git_env_clear || exit 1."
+
+# runner_git_isolation <dir> <runner>...: checks each runner of <dir> and
+# prints one line per runner that breaks the rule, naming it and the rule;
+# returns 1 when it printed any.
+runner_git_isolation() {
+  local dir="$1" runner code l1 l2 l3 var bad_n=0
+  shift
+  for runner in "$@"; do
+    code="$(awk "$SHELL_CODE_AWK"'
+      { shell_code_line($0) }
+      sc_code ~ /[^ \t]/ && n < 3 { n++; print sc_code }' "$dir/$runner")"
+    l1="$(sed -n 1p <<<"$code")"; l2="$(sed -n 2p <<<"$code")"; l3="$(sed -n 3p <<<"$code")"
+    var=""
+    if [[ "$l1" =~ ^([A-Za-z_]+)=.*BASH_SOURCE ]]; then var="${BASH_REMATCH[1]}"; fi
+    if [ -z "$var" ] || [[ "$l2" != "source \"\$$var/"*"git_env.sh\"" ]] \
+      || [ "$l3" != "test_git_env_clear || exit 1" ]; then
+      printf '%s does not clear git'"'"'s environment first. %s\n' "$runner" "$RUNNER_GIT_RULE"
+      bad_n=$((bad_n + 1))
+    fi
+  done
+  [ "$bad_n" -eq 0 ]
+}
+
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+out="$(runner_git_isolation "$(dirname "$SUITE_SCRIPT")" "${SUITES[@]}")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "every real runner clears git's environment first"
+else
+  bad "every real runner clears git's environment first" "$out"
+fi
+
+rgi_dir="$(mktemp -d)"
+# shellcheck disable=SC2016 # planted runner text, not expanded here
+{
+  printf '%s\n' '#!/usr/bin/env bash' '# a comment' '' \
+    'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+    'source "$DIR/git_env.sh"' 'test_git_env_clear || exit 1' >"$rgi_dir/good.sh"
+  printf '%s\n' 'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+    'source "$DIR/git_env.sh"' 'git init -q x' '# test_git_env_clear' >"$rgi_dir/nocall.sh"
+  printf '%s\n' 'PASS=0' 'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+    'source "$DIR/git_env.sh"' 'test_git_env_clear || exit 1' >"$rgi_dir/early.sh"
+  printf '%s\n' 'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+    'source "$DIR/git_env.sh"' 'test_git_env_clear' >"$rgi_dir/bare.sh"
+}
+out="$(runner_git_isolation "$rgi_dir" good.sh)"; st=$?
+assert_status "a runner that clears first passes" "$st" 0
+out="$(runner_git_isolation "$rgi_dir" nocall.sh)"; st=$?
+assert_status "a runner that misses the call fails" "$st" 1
+assert_eq "naming it and the rule" "$out" \
+  "nocall.sh does not clear git's environment first. $RUNNER_GIT_RULE"
+out="$(runner_git_isolation "$rgi_dir" early.sh)"; st=$?
+assert_status "a runner with a code line before its source line fails" "$st" 1
+assert_eq "naming it and the rule too" "$out" \
+  "early.sh does not clear git's environment first. $RUNNER_GIT_RULE"
+out="$(runner_git_isolation "$rgi_dir" bare.sh)"; st=$?
+assert_status "a runner that carries on when the call fails fails" "$st" 1
+rm -rf "$rgi_dir"
+unset -f runner_git_isolation
