@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.48
+
+Internal refactor of the Liveness module: its directory wrappers are dropped and the record writer is renamed, with no behaviour change.
+
 ## 4.38.47
 
 Autopilot: one Issue timeline module now reads an issue's comment history once and answers its newest question comment and whether a comment follows it, its latest stop, a phase's limit stops in a row, and its live handoffs. `autopilot answer`, `reply` and `questions`, Standing's limit stop, `handoff fetch` and the redo retire ask it instead of decoding the Marked comment readers' exit codes, a redo retiring several handoffs reads the comments once, and only the Marked comment module and the timeline use the marker prelude. No behaviour change.
