@@ -13,6 +13,9 @@
 # its exit status, stderr, the logs, the config and the clone directory.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=git_env.sh
+source "$DIR/test/git_env.sh"
+test_git_env_clear || exit 1
 ENTRY="$DIR/autopilot-container.sh"
 PASS=0
 FAIL=0
