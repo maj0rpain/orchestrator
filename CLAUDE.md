@@ -12,8 +12,9 @@ thin entry point: each noun's code lives in `scripts/orch/<noun>.sh`
 `marked-comment.sh` and `standing.sh`, among them too, each helper in the module
 of the concept it serves, and only the primitives no concept owns in
 `scripts/orch/common.sh`.
-Tests live in `scripts/test/` (`git_env.sh`, sourced by every runner, clears
-git's repo-local variables),
+Tests live in `scripts/test/` (`tally.sh`, the assertion tally, and
+`git_env.sh`, sourced by every runner, which clears git's repo-local
+variables, among them),
 with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per
 orch.sh noun, named as its module is, and `checkout.sh`, `filed-finding.sh`,
 `issue-timeline.sh`, `known-items.sh`, `liveness.sh`, `marked-comment.sh` and

@@ -6,9 +6,6 @@
 # summary runs from the `# >>> summary` line to the end of the file, after them.
 # The `# ---` blocks inside the shared setup are setup, not sections.
 # >>> shared setup
-PASS=0
-FAIL=0
-SKIP=0
 
 # The host signals doctor reads: the shell running the tests is often itself
 # a Claude Code or Junie session. Each test names its host.
@@ -65,12 +62,6 @@ restore_suite_env() {
   unset CLAUDE_PLUGIN_ROOT GH_REPO GH_FIXTURE ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE "$@"
   HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 }
-
-# ORCH_TEST_QUIET=1 hides the ok lines; the count, FAIL and skip lines,
-# section headers and the summary still print.
-ok()   { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
-bad()  { print_fail "$1" "$2"; FAIL=$((FAIL + 1)); }
-skip() { printf '  skip %s\n     %s\n' "$1" "$2"; SKIP=$((SKIP + 1)); }
 
 assert_eq() {
   if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi
@@ -932,6 +923,7 @@ repo_remedy="$repo_cause - set GH_REPO=<owner>/<repo>"
 while IFS= read -r gh_guard_call; do
   bad "a section called the real gh" "$gh_guard_call"
 done <"$GH_GUARD_LOG"
+tally_read
 # A child of the parallel runner hands its counts on instead of printing them.
 # shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
 if [ -n "$orch_child_counts" ]; then

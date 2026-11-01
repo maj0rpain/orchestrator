@@ -987,7 +987,7 @@ git checkout -q -- README.md
 sc_clone
 side="$(sc_add sidebr)"
 (
-  cd "$side" || exit 1
+  cd "$side" || { bad "cd into the side checkout" "cannot cd into $side"; exit 1; }
   orch_gh_failing init sidebr >/dev/null
   orch_gh_failing state set issue 16
   orch_gh_failing branch create >/dev/null

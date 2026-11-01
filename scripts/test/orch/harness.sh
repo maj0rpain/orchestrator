@@ -418,27 +418,31 @@ assert_eq "summarises the hidden passes, the failure and the skip" \
 assert_eq "still prints no ok line beside a failure" "$(count_lines '^  ok ' "$out")" "0"
 rm -rf "$quiet_dir"
 # Each of the other suites cut down to its own helpers, one planted check
-# and its own summary code: its lines before `# >>> checks`, a planted ok, then
+# and its own summary code: its lines before `# >>> checks`, a planted ok (after
+# a tally_init, for a suite that makes its tally file inside its checks), then
 # its lines from its `# >>> summary` line on.
 # The copies sit in scripts/test/ of a fresh root, beside the git_env.sh every
-# runner sources first.
+# runner sources first, and the tally.sh they all source.
 cut_root="$(mktemp -d)"
 cut_dir="$cut_root/scripts/test"
-mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$cut_dir/"
+mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$(dirname "$SUITE_SCRIPT")/tally.sh" "$cut_dir/"
 for quiet_suite in "${SUITES[@]}"; do
   [ "$quiet_suite" = orch_test.sh ] && continue
   awk '
-    $0 == "# >>> checks" { print "ok \"a planted check\""; skip = 1; next }
+    $0 == "# >>> checks" {
+      print "[ -n \"${tally_file:-}\" ] || tally_init"
+      print "ok \"a planted check\""; skip = 1; next }
     skip && $0 == "# >>> summary" { skip = 0 }
     !skip { print }' "$(dirname "$SUITE_SCRIPT")/$quiet_suite" >"$cut_dir/$quiet_suite"
   assert_eq "$quiet_suite's cut-down copy holds the planted check" \
     "$(grep -cx 'ok "a planted check"' "$cut_dir/$quiet_suite")" "1"
   assert_eq "$quiet_suite's cut-down copy holds its summary" \
     "$(grep -cxF 'echo "$PASS passed, $FAIL failed"' "$cut_dir/$quiet_suite")" "1"
-  out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"
+  out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"; st=$?
+  assert_status "$quiet_suite's cut-down copy exits 0 when quiet" "$st" 0
   assert_eq "$quiet_suite prints no ok line when quiet" \
     "$(count_lines '^  ok ' "$out")" "0"
-  assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
+  assert_contains "$quiet_suite still reports the planted pass when quiet" "$out" "1 passed, 0 failed"
 done
 rm -rf "$cut_root"
 
@@ -527,6 +531,64 @@ assert_contains "keeps that check's FAIL line with its detail line" "$out" \
 assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "10 passed, 1 failed"
 rm -rf "$par_dir"
+
+# --- assertions in a subshell (#1904) ----------------------------------------
+# A cut-down orch suite with one failing assertion inside ( ... ) and one
+# passing outside: the tally file counts both, whatever the job count.
+echo
+echo "assertions in a subshell (#1904)"
+sub_dir="$(planted_copy <<'PLANTED'
+  # --- planted subshell
+  echo; echo "planted subshell"
+  ( bad "a failure in a subshell" "its detail line" )
+  ok "a pass outside it"
+PLANTED
+)"
+for sub_jobs in 1 2; do
+  out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS="$sub_jobs" ORCH_TEST_ONLY='^planted subshell$' \
+    bash "$sub_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+  assert_status "a subshell failure exits 1 under ORCH_TEST_JOBS=$sub_jobs" "$st" 1
+  assert_contains "and is counted as failed under ORCH_TEST_JOBS=$sub_jobs" \
+    "$(printf '%s\n' "$out" | tail -n 1)" " 1 failed"
+done
+rm -rf "$sub_dir"
+
+# --- the standalone suites' tally (#1904) -------------------------------------
+# A tiny standalone suite sourcing tally.sh the way the hooks, docs lint,
+# version bump, lens bench and autopilot suites do, with one failing assertion
+# in ( ... ) and one passing outside it, counts both and exits non-zero. A
+# structural check then holds each of the seven suites to the shared tally.
+echo
+echo "the standalone suites' tally (#1904)"
+tally_dir="$(mktemp -d)"
+cat >"$tally_dir/suite.sh" <<SUITE
+source "$(dirname "$SUITE_SCRIPT")/tally.sh"
+tally_init
+( bad "a failure in a subshell" "its detail line" )
+ok "a pass outside it"
+tally_read
+echo "\$PASS passed, \$FAIL failed"
+[ "\$FAIL" -eq 0 ]
+SUITE
+out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
+assert_status "a standalone suite with a subshell failure exits 1" "$st" 1
+assert_eq "and counts the subshell failure in its summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
+rm -rf "$tally_dir"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for tally_suite in "${SUITES[@]}"; do
+  tally_path="$(dirname "$SUITE_SCRIPT")/$tally_suite"
+  assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
+  # orch_test.sh reads the tally in setup.sh's summary.
+  tally_reader="$tally_path"
+  [ "$tally_suite" != orch_test.sh ] || tally_reader="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
+  assert_contains "$tally_suite calls tally_read" "$(<"$tally_reader")" "tally_read"
+  # orch_test.sh's assertions once lived in setup.sh too.
+  tally_files=("$tally_path")
+  [ "$tally_suite" != orch_test.sh ] || tally_files+=("$tally_reader")
+  assert_eq "$tally_suite defines no ok, bad or skip of its own" \
+    "$(cat "${tally_files[@]}" | grep -cE '^(ok|bad|skip) *\(\)')" "0"
+done
 
 # --- the section files (#932) -------------------------------------------------
 # A copy of the scripts tree cut down to isolation - harness.sh keeps only its
@@ -1016,6 +1078,15 @@ all_restore() {
   mv "$all_root/$1.shared" "$all_dir/$1"
 }
 all_sc_stub 0
+
+# A suite that printed a FAIL block but a clean summary and exit 0 (a count
+# lost) still fails the run, and all.sh says so after the suite's summary.
+all_swap orch_test.sh "printf '  FAIL a lost failure\\n     its detail line\\n'"
+out="$(all_run 2>&1)"; st=$?
+all_restore orch_test.sh
+assert_status "exits non-zero when a suite printed FAIL lines but exited 0" "$st" 1
+assert_contains "says a suite printed FAIL lines but exited 0, after its summary" "$out" \
+  "$(printf 'orch_test.sh: 2 passed, 0 failed, 1 skipped\norch_test.sh: printed FAIL lines but exited 0')"
 
 all_swap orch_test.sh 'sleep 1' 'echo; echo "a section header"' \
   "printf '  FAIL a slow failure\\n     its detail line\\n'" \
@@ -1766,10 +1837,10 @@ index_expected() {
 
 index_modules=()
 for f in "$PLUGIN_ROOT"/scripts/orch/*.sh; do index_modules+=("scripts/orch/${f##*/}"); done
-index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh)
+index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh)
 
 grep_disagrees=""
-for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh; do
+for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh scripts/test/tally.sh; do
   [ "$(col0_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" = \
     "$(sourced_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" ] || grep_disagrees+=" $rel"
 done
@@ -1786,9 +1857,9 @@ index_default="$out"
 
 out="$(cd / && "$HELPERS" --tests)"; st=$?
 assert_status "the --tests listing succeeds" "$st" 0
-assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup and the gh fake" \
+assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup, the gh fake and the tally" \
   "$(index_names "$out")" "$(index_expected "${index_tests[@]}")"
-assert_eq "under their two headers" "$(printf '%s\n' "$out" | grep '^# ')" \
+assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
   "$(printf '# %s\n' "${index_tests[@]}")"
 
 undescribed=""
