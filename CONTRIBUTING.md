@@ -162,6 +162,7 @@ setup (`scripts/test/orch/setup.sh`), the gh adapter fake
 `( ... )` subshell) instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
+section checks it against what bash itself defines.
 
 The fixtures to reach for first:
 
