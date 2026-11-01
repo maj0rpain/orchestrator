@@ -500,6 +500,40 @@ for sub_jobs in 1 2; do
 done
 rm -rf "$sub_dir"
 
+# --- the standalone suites' tally (#1904) -------------------------------------
+# A tiny standalone suite sourcing tally.sh the way the hooks, docs lint,
+# version bump, lens bench and autopilot suites do, with one failing assertion
+# in ( ... ) and one passing outside it, counts both and exits non-zero. A
+# structural check then holds each of the seven suites to the shared tally.
+echo
+echo "the standalone suites' tally (#1904)"
+tally_dir="$(mktemp -d)"
+cat >"$tally_dir/suite.sh" <<SUITE
+source "$(dirname "$SUITE_SCRIPT")/tally.sh"
+tally_init
+( bad "a failure in a subshell" "its detail line" )
+ok "a pass outside it"
+tally_read
+echo "\$PASS passed, \$FAIL failed"
+[ "\$FAIL" -eq 0 ]
+SUITE
+out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
+assert_status "a standalone suite with a subshell failure exits 1" "$st" 1
+assert_eq "and counts the subshell failure in its summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
+rm -rf "$tally_dir"
+for tally_suite in orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh \
+  autopilot_container_test.sh autopilot_up_test.sh lens_bench_test.sh; do
+  tally_path="$(dirname "$SUITE_SCRIPT")/$tally_suite"
+  assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
+  # orch_test.sh reads the tally in setup.sh's summary.
+  tally_reader="$tally_path"
+  [ "$tally_suite" != orch_test.sh ] || tally_reader="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
+  assert_contains "$tally_suite calls tally_read" "$(<"$tally_reader")" "tally_read"
+  assert_eq "$tally_suite defines no ok, bad or skip of its own" \
+    "$(grep -cE '^(ok|bad|skip) *\(\)' "$tally_path")" "0"
+done
+
 # --- the section files (#932) -------------------------------------------------
 # A copy of the scripts tree cut down to isolation - harness.sh keeps only its
 # first section, and no other noun file is left - then given new noun files:

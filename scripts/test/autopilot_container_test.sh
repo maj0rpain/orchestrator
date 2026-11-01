@@ -13,14 +13,10 @@
 # its exit status, stderr, the logs, the config and the clone directory.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tally.sh
+source "$DIR/test/tally.sh"
 ENTRY="$DIR/autopilot-container.sh"
-PASS=0
-FAIL=0
 
-# ORCH_TEST_QUIET=1 hides the ok lines; the count, the FAIL lines and the
-# summary still print.
-ok()  { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
-bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected nothing, got: $2"; fi; }
@@ -37,6 +33,8 @@ remove_root() {
 }
 trap remove_root EXIT
 trap 'exit 130' INT TERM
+# The tally file lands in the temp root, removed with it.
+tally_init
 
 
 fake_bin="$root/bin"
@@ -299,5 +297,6 @@ esac
 
 # >>> summary
 echo
+tally_read
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

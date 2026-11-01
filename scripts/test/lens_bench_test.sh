@@ -12,15 +12,11 @@
 # instead of refused.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tally.sh
+source "$DIR/test/tally.sh"
 BENCH="$DIR/dev/lens-bench.sh"
 FIXTURE="$DIR/test/lens-bench"
-PASS=0
-FAIL=0
 
-# ORCH_TEST_QUIET=1 hides the ok lines; the count, the FAIL lines,
-# section headers and the summary still print.
-ok()  { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
-bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
 assert_lacks()    { case "$2" in *"$3"*) bad "$1" "unexpected '$3' in: $2" ;; *) ok "$1" ;; esac; }
@@ -41,6 +37,8 @@ bench_remove_root() {
 }
 trap bench_remove_root EXIT
 trap 'exit 130' INT TERM
+# The tally file lands in the temp root, removed with it.
+tally_init
 
 # >>> checks
 
@@ -471,5 +469,6 @@ assert_eq "a missing transcript removes the worktree" "$(worktrees)" 1
 
 # >>> summary
 echo
+tally_read
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
