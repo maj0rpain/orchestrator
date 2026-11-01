@@ -322,10 +322,10 @@ handoff_ready() { "handoff_$(handoff_store)_ready" "$@"; }
 # newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
 # <file> untouched, when there is none or the newest is tagged retired.
 handoff_comment_fetch() {
-  local issue="$1" name="$2" file="$3" i raw
+  local issue="$1" name="$2" file="$3" raw
   handoff_timeline_read "$issue"
-  i="$(timeline_handoff "$name")" || return 1
-  raw="$(timeline_body "$i")"
+  timeline_handoff "$name" || return 1
+  raw="$(timeline_body "$TIMELINE_HANDOFF_INDEX")"
   mkdir -p "$(dirname "$file")"
   if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
 }
@@ -441,7 +441,7 @@ handoff_comment_retire() {
   handoff_timeline_read "$issue"
   for file in "$@"; do
     name="${file%.md}"
-    timeline_handoff "$name" >/dev/null || continue
+    timeline_handoff "$name" || continue
     body="$(mktemp)" || die "could not create a temp file for the retired comment"
     { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
     capture_err gh_err adapter_issue_comment "$issue" "$body" || {

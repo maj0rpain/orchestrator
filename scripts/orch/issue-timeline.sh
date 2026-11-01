@@ -1,13 +1,20 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034 # TIMELINE_REASON is read by timeline_read's callers
+# shellcheck disable=SC2034 # the TIMELINE_* results are read by the queries' callers
 # issue-timeline.sh - the Issue timeline module: a concept module with no
 # orch.sh noun of its own, one reader over one issue's comment history. It reads
 # the comments once (timeline_read) and then answers domain questions from that
-# read, with no gh call and no 0/1/2 exit code: a query that finds nothing
-# prints nothing and returns 1, bar three: timeline_limit_count always prints a
-# number and returns 0, timeline_answers prints nothing and returns 0 when no
-# comment follows the question, and timeline_body always prints the indexed
-# comment's body (possibly empty) and returns 0. Only the read can fail. The
+# read, with no gh call and no 0/1/2 exit code. The three queries that find a
+# comment - timeline_question, timeline_stop and timeline_handoff - print
+# nothing: they report it through named results (TIMELINE_Q_*, TIMELINE_STOP_*,
+# TIMELINE_HANDOFF_INDEX), return 0 when they find it and 1 when they do not,
+# and clear their results first, so a miss leaves them empty. Call them
+# directly, never inside $(...), whose assignments do not reach the caller.
+# timeline_replied answers by its return code alone. Of the printing queries,
+# one that finds nothing prints nothing and returns 1, bar three:
+# timeline_limit_count always prints a number and returns 0, timeline_answers
+# prints nothing and returns 0 when no comment follows the question, and
+# timeline_body always prints the indexed comment's body (possibly empty) and
+# returns 0. Only the read can fail. The
 # marker grammar stays in the Marked comment module (its jq prelude) and here.
 # Its tests: scripts/test/orch/issue-timeline.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block; marked_comment_jq is
@@ -30,6 +37,11 @@ TIMELINE_KIND=()
 TIMELINE_ARG=()
 TIMELINE_RETIRED=()
 TIMELINE_URL=()
+# The named results of timeline_question, timeline_stop and timeline_handoff;
+# empty when the query found nothing.
+TIMELINE_Q_INDEX="" TIMELINE_Q_PHASE="" TIMELINE_Q_URL=""
+TIMELINE_STOP_INDEX="" TIMELINE_STOP_KIND="" TIMELINE_STOP_PHASE="" TIMELINE_STOP_URL=""
+TIMELINE_HANDOFF_INDEX=""
 
 # timeline_read <issue>: reads the issue's comments from GitHub once, into the
 # arrays above, replacing the last read - a failed read too, after which every
@@ -37,42 +49,47 @@ TIMELINE_URL=()
 # read: TIMELINE_REASON holds gh's reason, or is empty for output that is not a
 # comment list.
 timeline_read() {
-  local json gh_err text rows kind arg retired url
+  local json gh_err text rows line kind arg retired url
   TIMELINE_JSON='[]' TIMELINE_REASON=""
+  TIMELINE_Q_INDEX="" TIMELINE_Q_PHASE="" TIMELINE_Q_URL=""
+  TIMELINE_STOP_INDEX="" TIMELINE_STOP_KIND="" TIMELINE_STOP_PHASE="" TIMELINE_STOP_URL=""
+  TIMELINE_HANDOFF_INDEX=""
   TIMELINE_KIND=() TIMELINE_ARG=() TIMELINE_RETIRED=() TIMELINE_URL=()
   if ! capture json gh_err adapter_issue_comments_json "$1"; then
     TIMELINE_REASON="$(gh_reason "$gh_err")"
     return 1
   fi
   # One pass: the first line is the comment list, compact, then one row per
-  # comment. Every field is prefixed with _ so an empty one survives the tab
-  # split.
+  # comment.
   text="$(jq -r "$(marked_comment_jq)"'
     (marked_comment_list | tojson),
     (marked_comment_entries[]
-     | ["_" + (.info.kind // ""), "_" + (.info.arg // ""),
-        "_" + (if .info.retired then "r" else "" end), "_" + (.c.url // "")]
+     | [(.info.kind // ""), (.info.arg // ""),
+        (if .info.retired then "r" else "" end), (.c.url // "")]
      | @tsv)' <<<"$json" 2>/dev/null)" || return 1
   TIMELINE_JSON="${text%%$'\n'*}"
   rows=""
   case "$text" in *$'\n'*) rows="${text#*$'\n'}" ;; esac
-  [ -z "$rows" ] || while IFS=$'\t' read -r kind arg retired url; do
-    TIMELINE_KIND+=("${kind#_}")
-    TIMELINE_ARG+=("${arg#_}")
-    TIMELINE_RETIRED+=("${retired#_}")
-    TIMELINE_URL+=("${url#_}")
+  [ -z "$rows" ] || while IFS= read -r line; do
+    tsv_split "$line" kind arg retired url
+    TIMELINE_KIND+=("$kind")
+    TIMELINE_ARG+=("$arg")
+    TIMELINE_RETIRED+=("$retired")
+    TIMELINE_URL+=("$url")
   done <<<"$rows"
 }
 
 # timeline_question [<phase>]: the newest question comment, of <phase> when
-# given, else of any phase: prints its index, phase and URL, tab-separated.
-# Returns 1, printing nothing, when there is none.
+# given, else of any phase: sets TIMELINE_Q_INDEX, TIMELINE_Q_PHASE and
+# TIMELINE_Q_URL and returns 0. Returns 1, the results empty, when there is
+# none. Prints nothing.
 timeline_question() {
   local i
+  TIMELINE_Q_INDEX="" TIMELINE_Q_PHASE="" TIMELINE_Q_URL=""
   for ((i = ${#TIMELINE_KIND[@]} - 1; i >= 0; i--)); do
     [ "${TIMELINE_KIND[i]}" = question ] || continue
     [ -z "${1-}" ] || [ "${TIMELINE_ARG[i]}" = "$1" ] || continue
-    printf '%s\t%s\t%s\n' "$i" "${TIMELINE_ARG[i]}" "${TIMELINE_URL[i]}"
+    TIMELINE_Q_INDEX="$i" TIMELINE_Q_PHASE="${TIMELINE_ARG[i]}" TIMELINE_Q_URL="${TIMELINE_URL[i]}"
     return 0
   done
   return 1
@@ -82,9 +99,8 @@ timeline_question() {
 # question comment timeline_question finds; fails when none does or there is
 # no question.
 timeline_replied() {
-  local q
-  q="$(timeline_question "$@")" || return 1
-  [ "${q%%$'\t'*}" -lt $((${#TIMELINE_KIND[@]} - 1)) ]
+  timeline_question "$@" || return 1
+  [ "$TIMELINE_Q_INDEX" -lt $((${#TIMELINE_KIND[@]} - 1)) ]
 }
 
 # timeline_answers [<phase>]: the bodies of the comments after the newest
@@ -92,20 +108,22 @@ timeline_replied() {
 # (read it with a sentinel). Prints nothing when none follows; returns 1 only
 # when there is no question.
 timeline_answers() {
-  local q
-  q="$(timeline_question "$@")" || return 1
-  jq -j --argjson i "${q%%$'\t'*}" '.[$i + 1:] | map("\n---\n" + (.body // "")) | join("")' <<<"$TIMELINE_JSON"
+  timeline_question "$@" || return 1
+  jq -j --argjson i "$TIMELINE_Q_INDEX" '.[$i + 1:] | map("\n---\n" + (.body // "")) | join("")' <<<"$TIMELINE_JSON"
 }
 
 # timeline_stop: the latest stop - the newest refusal or failure comment: prints
-# its index, kind, phase and URL, tab-separated. Returns 1, printing nothing,
-# when there is none.
+# sets TIMELINE_STOP_INDEX, TIMELINE_STOP_KIND (refusal or failure),
+# TIMELINE_STOP_PHASE and TIMELINE_STOP_URL and returns 0. Returns 1, the
+# results empty, when there is none. Prints nothing.
 timeline_stop() {
   local i
+  TIMELINE_STOP_INDEX="" TIMELINE_STOP_KIND="" TIMELINE_STOP_PHASE="" TIMELINE_STOP_URL=""
   for ((i = ${#TIMELINE_KIND[@]} - 1; i >= 0; i--)); do
     case "${TIMELINE_KIND[i]}" in
       refusal | failure)
-        printf '%s\t%s\t%s\t%s\n' "$i" "${TIMELINE_KIND[i]}" "${TIMELINE_ARG[i]}" "${TIMELINE_URL[i]}"
+        TIMELINE_STOP_INDEX="$i" TIMELINE_STOP_KIND="${TIMELINE_KIND[i]}"
+        TIMELINE_STOP_PHASE="${TIMELINE_ARG[i]}" TIMELINE_STOP_URL="${TIMELINE_URL[i]}"
         return 0 ;;
     esac
   done
@@ -130,14 +148,16 @@ timeline_limit_count() {
 }
 
 # timeline_handoff <name>: the live handoff of <name> - its newest comment, when
-# it is not retired: prints its index. Returns 1, printing nothing, when there
-# is none or the newest is retired.
+# it is not retired: sets TIMELINE_HANDOFF_INDEX to its index and returns 0.
+# Returns 1, the result empty, when there is none or the newest is retired.
+# Prints nothing.
 timeline_handoff() {
   local i
+  TIMELINE_HANDOFF_INDEX=""
   for ((i = ${#TIMELINE_KIND[@]} - 1; i >= 0; i--)); do
     [ "${TIMELINE_KIND[i]}" = handoff ] && [ "${TIMELINE_ARG[i]}" = "$1" ] || continue
     [ -z "${TIMELINE_RETIRED[i]}" ] || return 1
-    printf '%s\n' "$i"
+    TIMELINE_HANDOFF_INDEX="$i"
     return 0
   done
   return 1
