@@ -884,11 +884,12 @@ lim_fresh() {
   fake_comments_clear 7; rm -f "$limit_file"
   fake_issue_relabel 7 orch:spec ready-for-agent orch:running
 }
-# limit_run <issue> [<out>]: a run of <issue>'s session, its claim held by a
-# dead process, that ends on the limit: the launcher prints <out>, by default
-# a rejecting event that resets at $lim_reset.
+# limit_run <issue>: a run of <issue>'s session, its claim held by a dead
+# process, that ends on the limit: the launcher prints a rejecting event that
+# resets at $lim_reset.
 limit_run() {
-  local out="${2:-$(rl_event rejected 1 "$lim_reset" allowed 0.2 "$lim_reset")}"
+  local out
+  out="$(rl_event rejected 1 "$lim_reset" allowed 0.2 "$lim_reset")"
   fake_claim_seed "$1" "$(hostname)" "$(dead_pid)"
   printf '%s\n' "$out" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
   "$ORCH" autopilot run "$1" 2>&1
@@ -1394,7 +1395,8 @@ assert_contains "no reset, early pause later: the comment names the one-hour fal
 assert_not_contains "and not the early-pause reset" "$(fake_last_comment_of 7)" "$(iso_of "$far_epoch")"
 assert_eq "while the limit file holds the early-pause reset" "$(se_limit)" "$(iso_of "$far_epoch")"
 
-# the limit stop's failure fallbacks
+# the limit stop's failure fallbacks: Session end still writes the limit file
+# on either (the fallbacks themselves are the Standing section's)
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 LIM_SPEC="$(marker_of limited spec)
 stopped"
@@ -1402,9 +1404,9 @@ se_fresh
 fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
 fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
 se_end 1
-assert_eq "and still writes the limit file" "$(se_limit)" "$i2"
+assert_eq "the third limit stop in a row still writes the limit file" "$(se_limit)" "$i2"
 se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; fake_unfail
-assert_eq "and still write the limit file" "$(se_limit)" "$i2"
+assert_eq "unreadable comments still write the limit file" "$(se_limit)" "$i2"
 
 # claims or the checkout that cannot be read: nothing is touched
 se_fresh; before="$(fake_snapshot)"
