@@ -267,8 +267,8 @@ assert_eq "ORCH_AUTOPILOT is unset" "${ORCH_AUTOPILOT-unset}" "unset"
 # identity variable reaches the sections: the runner clears them, a hook's
 # GIT_DIR and GIT_INDEX_FILE included. Other GIT_* knobs are kept.
 git_env_set=""
-for git_env_name in $(git rev-parse --local-env-vars) GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL \
-  GIT_AUTHOR_DATE GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_COMMITTER_DATE; do
+for git_env_name in $(git rev-parse --local-env-vars) \
+  $(source "$PLUGIN_ROOT/scripts/test/git_env.sh" && echo "${TEST_GIT_ENV_IDENTITY[*]}"); do
   [ -z "${!git_env_name+x}" ] || git_env_set="$git_env_set $git_env_name"
 done
 assert_eq "no repo-local or identity git variable is set" "${git_env_set:-none}" "none"
@@ -283,7 +283,6 @@ elif [ -z "${ORCH_TEST_GIT_ENV_PROBE:-}" ]; then
     ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
   assert_contains "a child run with ORCH_AUTOPILOT exported sees it unset" "$out" "ok   ORCH_AUTOPILOT is unset"
   assert_contains "a child run keeps an exported ORCH_TEST_* variable" "$out" "ok   an ORCH_TEST_* variable is kept"
-
 fi
 
 # --- isolation under a git hook (#1905) ---------------------------------------
@@ -300,6 +299,7 @@ git -C "$victim/main" worktree add -q "$victim/wt" -b wt
 victim_gd="$victim/main/.git/worktrees/wt"
 victim_snap() {
   git -C "$victim/main" symbolic-ref HEAD
+  git -C "$victim/wt" symbolic-ref HEAD
   git -C "$victim/main" for-each-ref
   cat "$victim/main/.git/config"
 }
@@ -1927,10 +1927,11 @@ unset -f genv_run
 # Every runner in all.sh's suites list clears git's environment before any git
 # call: structurally, its first code line assigns its directory from
 # BASH_SOURCE, its second sources git_env.sh through that variable, its third
-# calls test_git_env_clear. Tested over the real runners, then planted ones.
+# calls test_git_env_clear || exit 1. Tested over the real runners, then
+# planted ones.
 echo
 echo "runner git isolation (#1905)"
-RUNNER_GIT_RULE="The rule: a runner's first code line assigns its directory from BASH_SOURCE, its second sources git_env.sh through that variable, and its third calls test_git_env_clear."
+RUNNER_GIT_RULE="The rule: a runner's first code line assigns its directory from BASH_SOURCE, its second sources git_env.sh through that variable, and its third calls test_git_env_clear || exit 1."
 
 # runner_git_isolation <dir> <runner>...: checks each runner of <dir> and
 # prints one line per runner that breaks the rule, naming it and the rule;
@@ -1946,7 +1947,7 @@ runner_git_isolation() {
     var=""
     if [[ "$l1" =~ ^([A-Za-z_]+)=.*BASH_SOURCE ]]; then var="${BASH_REMATCH[1]}"; fi
     if [ -z "$var" ] || [[ "$l2" != "source \"\$$var/"*"git_env.sh\"" ]] \
-      || [[ "$l3" != "test_git_env_clear" && "$l3" != "test_git_env_clear || exit 1" ]]; then
+      || [ "$l3" != "test_git_env_clear || exit 1" ]; then
       printf '%s does not clear git'"'"'s environment first. %s\n' "$runner" "$RUNNER_GIT_RULE"
       bad_n=$((bad_n + 1))
     fi
@@ -1971,7 +1972,9 @@ rgi_dir="$(mktemp -d)"
   printf '%s\n' 'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
     'source "$DIR/git_env.sh"' 'git init -q x' '# test_git_env_clear' >"$rgi_dir/nocall.sh"
   printf '%s\n' 'PASS=0' 'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
-    'source "$DIR/git_env.sh"' 'test_git_env_clear' >"$rgi_dir/early.sh"
+    'source "$DIR/git_env.sh"' 'test_git_env_clear || exit 1' >"$rgi_dir/early.sh"
+  printf '%s\n' 'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+    'source "$DIR/git_env.sh"' 'test_git_env_clear' >"$rgi_dir/bare.sh"
 }
 out="$(runner_git_isolation "$rgi_dir" good.sh)"; st=$?
 assert_status "a runner that clears first passes" "$st" 0
@@ -1983,5 +1986,7 @@ out="$(runner_git_isolation "$rgi_dir" early.sh)"; st=$?
 assert_status "a runner with a code line before its source line fails" "$st" 1
 assert_eq "naming it and the rule too" "$out" \
   "early.sh does not clear git's environment first. $RUNNER_GIT_RULE"
+out="$(runner_git_isolation "$rgi_dir" bare.sh)"; st=$?
+assert_status "a runner that carries on when the call fails fails" "$st" 1
 rm -rf "$rgi_dir"
 unset -f runner_git_isolation
