@@ -137,6 +137,24 @@ fake_unfail
 bad_json='adapter_issue_comments_json() { echo "not json"; }; rc=0; timeline_read 7 || rc=$?; echo "rc=$rc reason=[$TIMELINE_REASON]"'
 assert_eq "output that is not JSON returns non-zero with an empty reason" "$(sourced_orch_script "$bad_json" 2>&1)" "rc=1 reason=[]"
 
+# timeline_read_or_die (and timeline_die through it): exit 1, one orch: line
+fake_fail adapter_issue_comments_json "HTTP 500 comments"
+assert_eq "timeline_read_or_die on a gh failure dies with exit 1 and gh's reason" \
+  "$(sourced_orch_script 'rc=0; (timeline_read_or_die 7) || rc=$?; echo "rc=$rc"' 2>&1)" \
+  "orch: gh could not read the comments of issue #7: HTTP 500 comments
+rc=1"
+fake_unfail
+assert_eq "timeline_read_or_die on output that is not a comment list dies with exit 1" \
+  "$(sourced_orch_script 'adapter_issue_comments_json() { echo "not json"; }; rc=0; (timeline_read_or_die 7) || rc=$?; echo "rc=$rc"' 2>&1)" \
+  "orch: could not read issue #7's comments
+rc=1"
+tl_seed "$Q_SPEC"
+assert_eq "timeline_read_or_die returns 0 and a query answers from its read" \
+  "$(sourced_orch_script 'timeline_read_or_die 7; echo "rc=$?"; timeline_question; echo "$TIMELINE_Q_PHASE"' 2>&1)" \
+  "rc=0
+spec"
+tl_seed "$HO_A"
+
 # reads in sequence
 break_read="$fake_helpers"'break_read() { fake_fail adapter_issue_comments_json; }; '
 two_reads="$fake_helpers"'timeline_read 7; timeline_handoff 01-plan; echo "$TIMELINE_HANDOFF_INDEX"; fake_comments_clear 7; timeline_read 7; rc=0; timeline_handoff 01-plan || rc=$?; echo "rc=$rc"'

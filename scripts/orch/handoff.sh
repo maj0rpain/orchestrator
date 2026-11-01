@@ -264,22 +264,6 @@ handoff_file_invalid() {
   die "$HANDOFF_DIR/$1 is not valid - fix it${2:+, $2}"
 }
 
-# handoff_timeline_read <issue>: timeline_read, dying when it cannot. Each
-# caller module words its own read failure (autopilot.sh has
-# autopilot_timeline_read), so the two look alike.
-handoff_timeline_read() {
-  timeline_read "$1" && return 0
-  handoff_timeline_die "$1"
-}
-
-# handoff_timeline_die <issue>: dies for the timeline read that just failed,
-# with gh's reason, or with `could not read issue #<n>'s comments` when gh
-# succeeded but its output was not a comment list.
-handoff_timeline_die() {
-  [ -n "$TIMELINE_REASON" ] || die "could not read issue #$1's comments"
-  gh_die "read the comments of issue #$1" "$TIMELINE_REASON"
-}
-
 # handoff_comment_invalid <file> <hint>: dies saying the handoff's comment on
 # the recorded issue is not valid, with a fix to post, then ", <hint>".
 handoff_comment_invalid() {
@@ -340,7 +324,7 @@ handoff_comment_write() {
 # handoff_comment_fetch <issue> <name> <file>: reads <issue>'s comments, then
 # handoff_comment_write. For single-handoff callers.
 handoff_comment_fetch() {
-  handoff_timeline_read "$1"
+  timeline_read_or_die "$1"
   handoff_comment_write "$2" "$3"
 }
 
@@ -449,7 +433,7 @@ handoff_comment_fetch_due() {
 handoff_comment_path() {
   local issue
   require_issue issue
-  handoff_comment_fetch_due "$1" || handoff_timeline_die "$issue"
+  handoff_comment_fetch_due "$1" || timeline_die "$issue"
   handoff_comment_fetched "$2" || handoff_comment_missing "$issue" "${2%.md}"
 }
 
@@ -465,7 +449,7 @@ handoff_comment_retire() {
   shift
   require_issue issue
   [ $# -gt 0 ] || return 0
-  handoff_timeline_read "$issue"
+  timeline_read_or_die "$issue"
   for file in "$@"; do
     name="${file%.md}"
     timeline_handoff "$name" || continue

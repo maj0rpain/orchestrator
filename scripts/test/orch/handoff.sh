@@ -622,6 +622,11 @@ fake_unfail
 assert_status "comment: a failed comments read dies" "$st" 1
 assert_contains "comment: showing the gh reason" "$out" "HTTP 503 read"
 assert_not_contains "comment: and not the missing line" "$out" "handoff comment"
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
+fake_unfail
+assert_status "comment: handoff path over unparseable comments dies" "$st" 1
+assert_eq "comment: with the parse-failure wording" "$out" "orch: could not read issue #7's comments"
 # the comments unreadable with no sibling due: gh's reason, not "missing"
 fake_fail adapter_issue_comments_json "HTTP 503 read"
 out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
