@@ -2068,7 +2068,11 @@ assert_not_contains "nor a complete line from an earlier run's copies" "$out" "c
 fake_lag adapter_issue_comments_json 1 'not json'
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "unparseable comments fail the check" "$st" 1
-assert_contains "as a single finding" "$out" "could not read issue #7's handoff comments: gh's output is not a comment list"
+assert_contains "with the not-a-comment-list reason" "$out" "could not read issue #7's handoff comments: gh's output is not a comment list"
+assert_eq "as a single finding" "$(grep -c "could not read issue #7's handoff comments" <<<"$out")" 1
+assert_not_contains "with no remedy for unparseable comments" "$out" "redo"
+assert_not_contains "and no per-handoff missing line for unparseable comments" "$out" "comment is missing"
+assert_not_contains "nor a complete line for unparseable comments" "$out" "complete"
 reads_before="$(fake_comment_reads)"
 ORCH_AUTOPILOT=1 "$ORCH" doctor --flow >/dev/null 2>&1
 assert_eq "doctor --flow with two due handoffs makes exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1

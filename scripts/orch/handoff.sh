@@ -273,7 +273,8 @@ handoff_timeline_read() {
 }
 
 # handoff_timeline_die <issue>: dies for the timeline read that just failed,
-# with gh's reason, or with the not-a-comment-list wording when it has none.
+# with gh's reason, or with `could not read issue #<n>'s comments` when gh
+# succeeded but its output was not a comment list.
 handoff_timeline_die() {
   [ -n "$TIMELINE_REASON" ] || die "could not read issue #$1's comments"
   gh_die "read the comments of issue #$1" "$TIMELINE_REASON"
