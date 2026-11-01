@@ -135,10 +135,11 @@ fi
 for suite_n in "${!suites[@]}"; do
   suite="${suites[$suite_n]}"
   out="$(<"$tmp/$suite")"
-  printf '%s\n' "$out" | awk '
+  fail_block="$(printf '%s\n' "$out" | awk '
     in_fail && /^     / { print; next }
     { in_fail = 0 }
-    /^  FAIL / { print; in_fail = 1 }'
+    /^  FAIL / { print; in_fail = 1 }')"
+  [ -z "$fail_block" ] || printf '%s\n' "$fail_block"
   last="$(printf '%s\n' "$out" | tail -n 1)"
   status="${suite_exits[$suite_n]}"
   if [ "$status" -ne 0 ] &&
@@ -147,7 +148,7 @@ for suite_n in "${!suites[@]}"; do
   else
     echo "$suite: $last"
   fi
-  if printf '%s\n' "$out" | awk '/^  FAIL / { found = 1 } END { exit !found }'; then
+  if [ -n "$fail_block" ]; then
     [ "$status" -eq 0 ] && echo "$suite: printed FAIL lines but exited 0"
     failed=1
   fi

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034 # PASS, FAIL and SKIP are read by the summary
 #
-# Sourced by orch_test.sh, which the orch.sh suite's sections then call through:
-# the assertion tally, kept in a file so an assertion made inside a `( ... )`
+# Sourced by every suite (orch_test.sh and the six standalone ones): the
+# assertion tally, kept in a file so an assertion made inside a `( ... )`
 # subshell still counts. Sourcing it only defines functions.
 #
 # Every assertion appends one line - ok, bad or skip - to the run's tally file,
@@ -15,7 +15,7 @@
 # assertion; exits 1 when the file cannot be made.
 tally_init() {
   tally_file="$(mktemp)" || {
-    echo "orch_test.sh: cannot create the tally file" >&2; exit 1; }
+    echo "${0##*/}: cannot create the tally file" >&2; exit 1; }
 }
 
 # tally_read: set PASS, FAIL and SKIP from the tally file. A missing or
@@ -23,7 +23,7 @@ tally_init() {
 tally_read() {
   PASS=0 FAIL=0 SKIP=0
   if [ -z "${tally_file:-}" ] || [ ! -r "$tally_file" ]; then
-    echo "orch_test.sh: the tally file is missing or unreadable: ${tally_file:-not created}" >&2
+    echo "${0##*/}: the tally file is missing or unreadable: ${tally_file:-not created}" >&2
     FAIL=1
     return 0
   fi

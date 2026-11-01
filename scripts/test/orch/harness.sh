@@ -530,8 +530,11 @@ for tally_suite in orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh 
   tally_reader="$tally_path"
   [ "$tally_suite" != orch_test.sh ] || tally_reader="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
   assert_contains "$tally_suite calls tally_read" "$(<"$tally_reader")" "tally_read"
+  # orch_test.sh's assertions once lived in setup.sh too.
+  tally_files=("$tally_path")
+  [ "$tally_suite" != orch_test.sh ] || tally_files+=("$tally_reader")
   assert_eq "$tally_suite defines no ok, bad or skip of its own" \
-    "$(grep -cE '^(ok|bad|skip) *\(\)' "$tally_path")" "0"
+    "$(cat "${tally_files[@]}" | grep -cE '^(ok|bad|skip) *\(\)')" "0"
 done
 
 # --- the section files (#932) -------------------------------------------------
