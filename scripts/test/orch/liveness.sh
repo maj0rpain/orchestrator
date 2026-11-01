@@ -116,6 +116,14 @@ sourced_orch_script 'liveness_run_begin 15; printf "999\n" >"$1"; liveness_run_e
 assert_eq "a newer run's record survives an older run's run_end" "$(cat "$rundir/15.pid")" "999"
 rm -f "$rundir/15.pid"
 
+# live_orch returns when its function ends the shell, or returns non-zero
+live_orch eval 'exit 3'
+wait "$LIVE_PID" 2>/dev/null
+assert_eq "live_orch returns when its function exits the shell" "$(kill -0 "$LIVE_PID" 2>/dev/null && echo live || echo gone)" gone
+live_orch eval 'set +e; false'
+assert_eq "live_orch returns when its function returns non-zero, the shell kept alive" "$(kill -0 "$LIVE_PID" 2>/dev/null && echo live || echo gone)" live
+live_stop
+
 # issue_forget and live_issues
 live_orch liveness_run_begin 20
 sourced_orch liveness_tick_begin 21

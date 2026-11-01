@@ -162,9 +162,13 @@ assert_contains "probe: lists a live bare-pid run" "$probed" "13 ?"
 # --- contract: the probe reads what the Liveness module writes
 contract="$root/contract-clone"
 mkdir "$contract" && git -C "$contract" init -q
-(cd "$contract" && exec bash -c 'source "$1"; liveness_run_begin 41 && : >"$(liveness_log_path 41 review)" && echo ready && sleep 30' _ "$DIR/orch.sh") >"$root/contract.out" 2>&1 &
+mkfifo "$root/contract.fifo"
+# The background shell opens the fifo's write end first, so its early death is EOF.
+(cd "$contract" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_run_begin 41 && : >"$(liveness_log_path 41 review)" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/contract.fifo") >"$root/contract.out" 2>&1 &
 contract_pid=$!
-for _ in $(seq 1 100); do grep -q ready "$root/contract.out" 2>/dev/null && break; sleep 0.1; done
+contract_line=""
+read -r contract_line <"$root/contract.fifo"
+assert_eq "probe contract: the setup reached ready" "$contract_line" "ready"
 probed="$(ORCH_CLONE_DIR="$contract" sh -c "$probe_text")"
 kill "$contract_pid" 2>/dev/null
 assert_contains "probe contract: lists the run liveness_run_begin recorded, with its phase" "$probed" "41 review"

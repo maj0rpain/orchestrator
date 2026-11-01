@@ -258,12 +258,15 @@ sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" 
 # record the function writes names a running process. Sets LIVE_PID; live_stop
 # kills the shell, leaving the record naming a process that is gone.
 live_orch() {
-  local ready_file
-  ready_file="$(mktemp -u)"
-  bash -c 'source "$1"; ready="$2"; shift 2; "$@"; : >"$ready"; exec sleep 600' _ "$ORCH" "$ready_file" "$@" &
+  local fifo line
+  fifo="$(mktemp -u)"
+  mkfifo "$fifo"
+  # The child opens the fifo's write end first, so its death before the ready
+  # line ends the read with EOF; it closes the end before its long sleep.
+  bash -c 'exec 9>"$2"; source "$1"; shift 2; "$@"; echo ready >&9; exec 9>&-; exec sleep 600' _ "$ORCH" "$fifo" "$@" &
   LIVE_PID=$!
-  until [ -e "$ready_file" ] || ! kill -0 "$LIVE_PID" 2>/dev/null; do sleep 0.05; done
-  rm -f "$ready_file"
+  read -r line <"$fifo"
+  rm -f "$fifo"
 }
 live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return 0; }
 # marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
