@@ -443,13 +443,14 @@ fake_github() {
   export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" ORCH_GH_FAKE_STORE
 }
 
-# fake_comment_seed <comments-dir> <author> <created-at> <body>: the body, byte
+# fake_comment_seed <comments-dir> <author> <created-at> <body> [<association>]:
+# the body, byte
 # for byte, appended as a comment by the fake's own fake_comment_append, so the
 # store's comment layout has one writer.
 fake_comment_seed() {
   printf '%s' "$4" |
-    bash -c 'source "$1"; fake_comment_append "$2" "$3" "$4" /dev/stdin' \
-      _ "$GH_ADAPTER_FAKE" "$1" "$2" "$3"
+    bash -c 'source "$1"; fake_comment_append "$2" "$3" "$4" /dev/stdin "$5"' \
+      _ "$GH_ADAPTER_FAKE" "$1" "$2" "$3" "${5:-OWNER}"
 }
 
 # fake_comment_bodies <comments-dir>: the bodies of the directory's comments,
@@ -503,9 +504,9 @@ orch_no_repo() {
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 
-# fake_comment <n> <author> <created-at> <body>: seeds a comment on issue #n,
-# after any it has.
-fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4"; }
+# fake_comment <n> <author> <created-at> <body> [<association>]: seeds a comment
+# on issue #n, after any it has; its association is OWNER unless given.
+fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5:-OWNER}"; }
 
 # handoff_orch <mode> <orch args>...: runs orch.sh as that handoff mode's
 # session: autopilot for "comment", interactive for "file".

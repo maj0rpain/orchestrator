@@ -41,7 +41,7 @@ is, beside the per-noun files: `checkout.sh` for `scripts/orch/checkout.sh`,
 `scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,
 `marked-comment.sh` for
 `scripts/orch/marked-comment.sh`, `standing.sh` for
-`scripts/orch/standing.sh`. A
+`scripts/orch/standing.sh`, `trust.sh` for `scripts/orch/trust.sh`. A
 ticket's tests go in the file for the noun it touches; a new
 noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
@@ -252,6 +252,7 @@ scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with 
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a claim on this host is alive - the run records, the start-time reader, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
+scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments orch.sh reads - the one filter dropping a comment whose author is not an owner, member or collaborator
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
@@ -287,6 +288,7 @@ scripts/test/orch/known-items.sh the Known items module's sections, named as the
 scripts/test/orch/liveness.sh      the Liveness module's sections, named as the module is
 scripts/test/orch/marked-comment.sh the Marked comment module's sections, named as the module is
 scripts/test/orch/standing.sh       the Standing module's sections, named as the module is
+scripts/test/orch/trust.sh          the Trust module's sections, named as the module is
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run

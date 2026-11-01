@@ -229,8 +229,9 @@ fake_issue_known() {
 
 fake_issue_labels() { cat "$(fake_issue_dir "$1")/labels" 2>/dev/null || true; }
 
-# fake_comment_append <comments-dir> <author> <created-at> <body-file>: one
-# comment appended to an issue's or PR's comments directory, numbered in order.
+# fake_comment_append <comments-dir> <author> <created-at> <body-file>
+# [<association>]: one comment appended to an issue's or PR's comments
+# directory, numbered in order, its authorAssociation OWNER unless given.
 fake_comment_append() {
   local d="$1" k
   mkdir -p "$d"
@@ -238,6 +239,7 @@ fake_comment_append() {
   mkdir "$d/$k"
   printf '%s\n' "$2" >"$d/$k/author"
   printf '%s\n' "$3" >"$d/$k/created"
+  printf '%s\n' "${5:-OWNER}" >"$d/$k/association"
   cat "$4" >"$d/$k/body"
 }
 
@@ -275,7 +277,8 @@ fake_comments_print() {
 }
 
 # fake_comments_json <comments-dir> <n>: the directory's comments, numerically
-# ordered, as one compact JSON array of author, createdAt, body and url, the url
+# ordered, as one compact JSON array of author, authorAssociation (OWNER for a
+# comment stored without one), createdAt, body and url, the url
 # being https://github.com/o/r/issues/<n>#issuecomment-<k> for the k-th
 # comment; [] for a missing or empty directory.
 fake_comments_json() {
@@ -283,9 +286,10 @@ fake_comments_json() {
   if [ -d "$d" ]; then
     for k in $(ls "$d" | sort -n); do
       comments="$(jq -c --arg a "$(cat "$d/$k/author")" \
+        --arg s "$(cat "$d/$k/association" 2>/dev/null || echo OWNER)" \
         --arg c "$(cat "$d/$k/created")" --rawfile b "$d/$k/body" \
         --arg u "https://github.com/o/r/issues/$2#issuecomment-$k" \
-        '. + [{author: $a, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
+        '. + [{author: $a, authorAssociation: $s, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
     done
   fi
   printf '%s\n' "$comments"
@@ -322,7 +326,7 @@ adapter_issue_json() {
   jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
     --rawfile b "$body" \
     --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
-    --argjson c "$(fake_comments_json "$d/comments" "$1" | jq -c 'map(del(.url))')" \
+    --argjson c "$(fake_comments_json "$d/comments" "$1" | jq -c 'map(del(.url, .authorAssociation))')" \
     '{number: $n, title: $t, body: $b, labels: $l, comments: $c}'
 }
 

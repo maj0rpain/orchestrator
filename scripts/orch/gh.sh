@@ -289,11 +289,12 @@ adapter_issue_json() {
 }
 
 # adapter_issue_comments_json <n>: the issue's comments as one JSON array, each
-# comment's author login, gh's ISO-8601 timestamp, body and url - the url
-# `issue fetch --json` leaves out, so ISSUE_JSON_JQ's shape is not changed.
+# comment's author login, author association, gh's ISO-8601 timestamp, body and
+# url - the url `issue fetch --json` leaves out, so ISSUE_JSON_JQ's shape is
+# not changed.
 adapter_issue_comments_json() {
   gh issue view "$1" --json comments \
-    --jq '[.comments[] | {author: .author.login, createdAt, body, url}]'
+    --jq '[.comments[] | {author: .author.login, authorAssociation, createdAt, body, url}]'
 }
 
 # adapter_issue_state_labels <n>: OPEN or CLOSED on the first line, then one

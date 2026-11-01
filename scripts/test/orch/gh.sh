@@ -539,15 +539,15 @@ assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body, label names a
   '{"body":"## Problem\n\nTracked in #6.","comments":[{"author":"pat","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}],"labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
 
 : >"$GH_FIXTURE/env.log"
-comments_json_jq='[.comments[] | {author: .author.login, createdAt, body, url}]'
-gh_reply 0 $'[{"author":"pat","body":"B.","createdAt":"2026-09-02T11:30:00Z","url":"https://github.com/acme/widgets/issues/23#issuecomment-1"}]\n' '' \
+comments_json_jq='[.comments[] | {author: .author.login, authorAssociation, createdAt, body, url}]'
+gh_reply 0 $'[{"author":"pat","authorAssociation":"OWNER","body":"B.","createdAt":"2026-09-02T11:30:00Z","url":"https://github.com/acme/widgets/issues/23#issuecomment-1"}]\n' '' \
   issue view 23 --json comments --jq "$comments_json_jq"
 out="$(contract adapter_issue_comments_json 23 2>&1)"; st=$?
 assert_status "issue comments json: reads author, date, body and url" "$st" 0
 assert_contains "printing the array it formatted" "$out" '"url":"https://github.com/acme/widgets/issues/23#issuecomment-1"'
 assert_eq "the jq keeps each comment's url, which gh-shaped JSON carries" \
-  "$(printf '%s' '{"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"body":"A.","createdAt":"2026-09-02T11:30:00Z","url":"https://x/1","isMinimized":false}]}' | jq -c "$comments_json_jq")" \
-  '[{"author":"pat","createdAt":"2026-09-02T11:30:00Z","body":"A.","url":"https://x/1"}]'
+  "$(printf '%s' '{"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"authorAssociation":"MEMBER","body":"A.","createdAt":"2026-09-02T11:30:00Z","url":"https://x/1","isMinimized":false}]}' | jq -c "$comments_json_jq")" \
+  '[{"author":"pat","authorAssociation":"MEMBER","createdAt":"2026-09-02T11:30:00Z","body":"A.","url":"https://x/1"}]'
 gh_reply 1 '' 'HTTP 502: Bad Gateway' issue view 404 --json comments --jq "$comments_json_jq"
 out="$(contract adapter_issue_comments_json 404 2>&1)"; st=$?
 assert_status "issue comments json: a gh failure fails it" "$st" 1
