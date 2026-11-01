@@ -18,7 +18,7 @@ out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with no spec handoff" "$st" 1
 assert_contains "names the missing handoff" "$out" "02-spec.md"
 assert_contains "dies with the uniform missing error and the mode's hint" "$out" \
-  "handoff not found: $PWD/.orchestrator/handoff/02-spec.md - write it before leaving the spec phase"
+  "$(handoff_missing_msg file 7 02-spec "before leaving the spec phase")"
 assert_eq "leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 "$ORCH" state set issue 7
@@ -215,13 +215,15 @@ complete_handoff "$spec_h"
 
 out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance with no posted handoff dies" "$st" 1
-assert_contains "naming the missing comment" "$out" "no 02-spec handoff comment"
-assert_contains "and the hint" "$out" "post it with handoff post before leaving the spec phase"
+assert_contains "naming the missing comment, with the hint" "$out" \
+  "$(handoff_missing_msg comment 7 02-spec "before leaving the spec phase")"
+assert_eq "leaving the phase at spec" "$("$ORCH" state get phase)" spec
 fake_comment 7 someone 2026-01-01T00:00:00Z "$(marker_of handoff 02-spec; printf "## Decisions\n")"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance with an invalid posted handoff dies" "$st" 1
 assert_contains "with the uniform invalid error" "$out" \
   "the 02-spec comment on issue #7 is not valid - post a fixed one, then run phase advance again; the flow stays at spec"
+assert_eq "leaving the phase at spec" "$("$ORCH" state get phase)" spec
 assert_eq "leaving the label" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_eq "and the claim held" "$(fake_claim_held 7)" held
 

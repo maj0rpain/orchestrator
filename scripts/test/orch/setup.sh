@@ -527,6 +527,51 @@ put_handoff() {
   fi
 }
 
+# retire_handoff <mode> <issue> <ts> <name> <folder>: sets the handoff <name>
+# aside as the mode does - a newer retired comment on issue #<issue> made at
+# <ts>, or the file moved into the pre-redo folder <folder>.
+retire_handoff() {
+  if [ "$1" = comment ]; then
+    fake_comment "$2" someone "$3" "$(marker_of handoff "$4" retired)"
+  else
+    mkdir -p "$5"
+    mv ".orchestrator/handoff/$4.md" "$5/"
+  fi
+}
+
+# handoff_missing_msg <mode> <issue> <name> [<hint>]: the mode's message for a
+# missing handoff <name>; the hint, when given, is the "post it with handoff
+# post <hint>" (comment) or "write it <hint>" (file) tail.
+handoff_missing_msg() {
+  if [ "$1" = comment ]; then
+    printf 'orch: issue #%s has no %s handoff comment%s' "$2" "$3" "${4:+ - post it with handoff post $4}"
+  else
+    printf 'orch: handoff not found: %s/.orchestrator/handoff/%s.md%s' "$PWD" "$3" "${4:+ - write it $4}"
+  fi
+}
+
+# handoff_retired_count <mode> <issue> <name> <folder-glob>: how many times the
+# handoff was retired: retired comments, or copies in matching folders.
+handoff_retired_count() {
+  if [ "$1" = comment ]; then
+    fake_comments_of "$2" | grep -c "orch:handoff $3 retired"
+  else
+    # shellcheck disable=SC2086 # the glob is the point
+    # shellcheck disable=SC2010 # counts what the glob matched
+    ls $4/$3.md 2>/dev/null | grep -c .
+  fi
+}
+
+# handoff_doctor_missing_msg <mode> <issue> <name>: doctor's finding for the
+# missing handoff <name>.
+handoff_doctor_missing_msg() {
+  if [ "$1" = comment ]; then
+    printf 'handoff %s comment is missing on issue #%s - the phase that writes it has already run.' "$3" "$2"
+  else
+    printf 'handoff %s.md is missing - the phase that writes it has already run.' "$3"
+  fi
+}
+
 # fake_next_issue <n>: the number the next issue created takes.
 fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
 
