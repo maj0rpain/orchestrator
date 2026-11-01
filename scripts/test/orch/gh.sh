@@ -500,11 +500,12 @@ assert_eq "passing gh's stderr through" "$out" \
   "GraphQL: Could not resolve to an issue or pull request with the number of 404."
 
 comments_jq="$(sourced_orch_script 'printf "%s" "$COMMENTS_JQ"')"
-gh_reply 0 $'<!-- comment @pat 2026-09-02T11:30:00Z -->\nA follow-up.\n' '' \
-  issue view 23 --json comments --jq "$comments_jq"
+gh_reply 0 $'{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}]}\n' '' \
+  issue view 23 --json comments
 out="$(contract adapter_issue_comments 23 2>&1)"; st=$?
-assert_status "issue comments: reads the comments through COMMENTS_JQ" "$st" 0
-assert_eq "printing what it formatted" "$out" "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.')"
+assert_status "issue comments: reads the comments as gh's raw JSON" "$st" 0
+assert_eq "printing what gh answered, unrendered" "$out" \
+  '{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}]}'
 # COMMENTS_JQ itself, run on gh-shaped JSON: what the fixture's canned reply
 # above stands in for.
 comments_json='{"comments":[{"author":{"login":"triage-bot"},"createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]}'
@@ -534,9 +535,9 @@ assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 # trimmed shape - a label's id and colour, a comment author's name and more -
 # is dropped.
 issue_gh_json='{"number":23,"title":"Widgets need a handle","body":"## Problem\n\nTracked in #6.","labels":[{"id":"LA_1","name":"bug","description":"Broken","color":"d73a4a"},{"id":"LA_2","name":"ready-for-agent","description":"","color":"0e8a16"}],"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z","includesCreatedEdit":false,"isMinimized":false,"minimizedReason":"","reactionGroups":[],"url":"https://github.com/acme/widgets/issues/23#issuecomment-1","viewerDidAuthor":true}]}'
-assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body, label names and comments" \
+assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body, label names and comments, each with its author association" \
   "$(printf '%s' "$issue_gh_json" | jq -cS "$issue_json_jq")" \
-  '{"body":"## Problem\n\nTracked in #6.","comments":[{"author":"pat","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}],"labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
+  '{"body":"## Problem\n\nTracked in #6.","comments":[{"author":"pat","authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}],"labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
 
 : >"$GH_FIXTURE/env.log"
 comments_json_jq='[.comments[] | {author: .author.login, authorAssociation, createdAt, body, url}]'

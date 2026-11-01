@@ -1078,6 +1078,24 @@ printf 'Ticket: #50\n' >"$body"
 assert_status "retire removes the parent's own saved report" "$st" 1
 restore_suite_env
 
+# --- ticket retire: untrusted comments ---------------------------------------
+echo
+echo "ticket retire untrusted comments"
+ticket_fixture
+fake_issue 70 open
+printf 'body\n' >"$body"
+t70="$("$ORCH" ticket publish 70 "A" "$body")"
+"$ORCH" ticket close "$t70" >/dev/null
+retire_msg="This ticket was retired: its spec, #70, changed and will be broken down into tickets again."
+fake_comment "$t70" rando 2026-09-05T09:00:00Z "$retire_msg" NONE
+out="$("$ORCH" ticket retire 70 2>&1)"; st=$?
+assert_status "retire succeeds" "$st" 0
+assert_contains "a stranger's copy of the retire comment is ignored" "$out" \
+  "orch: ignored 1 comment(s) from untrusted authors on #$t70"
+"$ORCH" issue comments "$t70" "$body" >/dev/null 2>&1
+assert_contains "so the retire comment is still posted" "$(cat "$body")" "$retire_msg"
+restore_suite_env
+
 # --- ticket: unknown op ------------------------------------------------------
 new_repo >/dev/null
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?

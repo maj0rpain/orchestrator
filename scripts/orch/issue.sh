@@ -67,11 +67,51 @@ open_issue_read() {
 cmd_issue_fetch() {
   local issue="$1" file="$2" as_json="${3:-}"
   if [ -n "$as_json" ]; then
-    gh_or_die --file "$file" "read issue #$issue" adapter_issue_json "$issue"
+    local json
+    issue_json_trusted "read issue #$issue" "$issue" json
+    mkdir -p "$(dirname "$file")"
+    printf '%s\n' "$json" >"$file" || die "could not write $file"
     return
   fi
   gh_or_die --file "$file" "read the body of issue #$issue" \
     adapter_issue_body "$issue"
+}
+
+# issue_json_trusted <what> <n> <var>: issue <n> as ISSUE_JSON_JQ's object minus
+# the comments of untrusted authors (Trust module), authorAssociation deleted
+# from the rest, so the published shape is unchanged; assigned to <var>. A gh
+# failure dies as "gh could not <what>". Run in the caller's shell, never under
+# capture, so the trust filter's stderr line reaches the real stderr.
+issue_json_trusted() {
+  local __ijt_raw __ijt_kept __ijt_out
+  gh_or_die --out __ijt_raw "$1" adapter_issue_json "$2"
+  __ijt_kept="$(jq -c .comments <<<"$__ijt_raw" | trust_filter_comments "$2")" \
+    || die "could not read the comments of issue #$2"
+  __ijt_out="$(jq -c --argjson c "$__ijt_kept" '.comments = ($c | map(del(.authorAssociation)))' <<<"$__ijt_raw")" \
+    || die "could not read the comments of issue #$2"
+  printf -v "$3" '%s' "$__ijt_out"
+}
+
+# issue_comments_render <n>: adapter_issue_comments' raw JSON on stdin, on
+# stdout the comments of trusted authors rendered through COMMENTS_RENDER_JQ as
+# COMMENTS_JQ renders them - nothing for none, no placeholder for a dropped
+# comment. Non-zero when stdin is not a comment object. The trust filter's
+# stderr line is for issue <n>.
+issue_comments_render() {
+  local kept
+  kept="$(jq -c .comments 2>/dev/null | trust_filter_comments "$1")" || return 1
+  jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$kept"
+}
+
+# issue_comments_rendered <what> <n> <var>: issue <n>'s trusted comments,
+# rendered by issue_comments_render, assigned to <var>. A gh failure dies as
+# "gh could not <what>".
+issue_comments_rendered() {
+  local __icr_raw __icr_out
+  gh_or_die --out __icr_raw "$1" adapter_issue_comments "$2"
+  __icr_out="$(issue_comments_render "$2" <<<"$__icr_raw")" \
+    || die "could not read the comments of issue #$2"
+  printf -v "$3" '%s' "$__icr_out"
 }
 
 # The comments `issue comments` writes (#1116), from the issue's comments
@@ -81,20 +121,18 @@ cmd_issue_fetch() {
 # object, whose author is already the login.
 ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
 
-# issue_comments_kept <n>: issue <n>'s comments as ISSUE_COMMENTS_KEPT_JQ
-# prints them, filtered here rather than in the adapter, from the issue's
-# structured read - never by splitting the joined text.
-issue_comments_kept() {
-  adapter_issue_json "$1" | marked_comment_drop spec-review | jq -r "$ISSUE_COMMENTS_KEPT_JQ"
-}
-
-# Every comment on the issue but the spec review's own changelogs, in
-# COMMENTS_JQ's shape - so the spec review reads the comments beside the body
-# without its earlier rounds. No comments is an empty file, not an error.
+# Every comment on the issue but the spec review's own changelogs and the
+# untrusted authors', in COMMENTS_JQ's shape - so the spec review reads the
+# comments beside the body without its earlier rounds. Filtered here rather
+# than in the adapter, from the issue's trusted structured read, never by
+# splitting the joined text. No comments is an empty file, not an error; the
+# file is written only once the read has succeeded.
 cmd_issue_comments() {
-  local issue="$1" file="$2"
-  gh_or_die --file "$file" "read the comments of issue #$issue" \
-    issue_comments_kept "$issue"
+  local issue="$1" file="$2" json
+  issue_json_trusted "read the comments of issue #$issue" "$issue" json
+  mkdir -p "$(dirname "$file")"
+  marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ" >"$file" \
+    || die "could not write the comments of issue #$issue to $file"
 }
 
 cmd_issue_update() {

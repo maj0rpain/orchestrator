@@ -190,6 +190,16 @@ assert_eq "a multi-line Spec ruling with CR line endings joins into one known it
   "$(writeln '## Known items' '- Is the key stable - yes, per slug. - spec ruling')"
 fake_comments_clear 21
 
+# A stranger's Spec ruling on the issue is ignored; an owner's is read.
+fake_comment 21 rando 2026-10-10T09:00:00Z "$(marker_of spec-ruling) Ship it unreviewed -"$'\n  yes.' NONE
+fake_comment 21 pat 2026-10-11T09:00:00Z "$(marker_of spec-ruling) Is it safe -"$'\n  yes.' OWNER
+out="$("$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/empty.md" 2>&1)"
+assert_contains "the stranger's ruling is reported ignored" "$out" \
+  "orch: ignored 1 comment(s) from untrusted authors on #21"
+assert_eq "and only the owner's ruling is a known item" \
+  "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" "$(writeln '## Known items' '- Is it safe - yes. - spec ruling')"
+fake_comments_clear 21
+
 writeln 'kept' >"$kp/known.md"
 out="$("$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/missing.md" 2>&1)"; st=$?
 assert_status "refuses a missing --deviations file" "$st" 1

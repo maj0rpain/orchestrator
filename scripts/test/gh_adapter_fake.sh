@@ -304,18 +304,19 @@ adapter_issue_body() {
   printf '\n'
 }
 
-# adapter_issue_comments <n>: the stored comments in COMMENTS_JQ's shape -
-# each opened by its marker line, one blank line between, a newline after the
-# last; nothing at all for none.
+# adapter_issue_comments <n>: the stored comments as gh's raw JSON - an object
+# whose comments array holds each comment's author login object,
+# authorAssociation, createdAt and body.
 adapter_issue_comments() {
   ! fake_failing adapter_issue_comments || return 1
   fake_issue_known "$1" || return 1
-  fake_comments_print "$(fake_issue_dir "$1")/comments"
+  fake_comments_json "$(fake_issue_dir "$1")/comments" "$1" \
+    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body})}'
 }
 
 # adapter_issue_json <n>: the stored issue as ISSUE_JSON_JQ's trimmed object -
 # its number, title, body byte for byte, label names, and each comment's
-# author, date and body.
+# author, association, date and body.
 adapter_issue_json() {
   ! fake_failing adapter_issue_json || return 1
   fake_issue_known "$1" || return 1
@@ -326,7 +327,7 @@ adapter_issue_json() {
   jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
     --rawfile b "$body" \
     --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
-    --argjson c "$(fake_comments_json "$d/comments" "$1" | jq -c 'map(del(.url, .authorAssociation))')" \
+    --argjson c "$(fake_comments_json "$d/comments" "$1" | jq -c 'map(del(.url))')" \
     '{number: $n, title: $t, body: $b, labels: $l, comments: $c}'
 }
 

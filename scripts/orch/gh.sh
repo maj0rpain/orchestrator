@@ -268,17 +268,22 @@ comments_split() {
 # The trimmed object `issue fetch --json` publishes (#528): the issue's number,
 # title and body, its label names, and each comment's author login, gh's
 # ISO-8601 timestamp and body - every other field gh answers with is dropped,
-# so the shape does not change with gh's version.
-ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name], comments: [.comments[] | {author: .author.login, createdAt, body}]}'
+# so the shape does not change with gh's version. The adapter also keeps each
+# comment's authorAssociation, which the domain layer's trust filter reads and
+# then deletes (issue_json_trusted), so the published shape has none.
+ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name], comments: [.comments[] | {author: .author.login, authorAssociation, createdAt, body}]}'
 
 # adapter_issue_body <n>: the issue's body as GitHub holds it, then a newline.
 adapter_issue_body() {
   gh issue view "$1" --json body --jq .body
 }
 
-# adapter_issue_comments <n>: the issue's comments in COMMENTS_JQ's shape.
+# adapter_issue_comments <n>: the issue's comments as gh answers them, raw JSON
+# - an object whose comments array holds each comment's author login object,
+# authorAssociation, createdAt and body, among gh's other fields. Rendering
+# happens above the adapter, after the trust filter (issue_comments_rendered).
 adapter_issue_comments() {
-  gh issue view "$1" --json comments --jq "$COMMENTS_JQ"
+  gh issue view "$1" --json comments
 }
 
 # adapter_issue_json <n>: the issue as ISSUE_JSON_JQ's one JSON object - the

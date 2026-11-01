@@ -475,6 +475,8 @@ bundle_members_close() {
     why=""
     if ! capture comments err adapter_issue_comments "$m"; then
       why="gh could not read member #$m's comments: $(gh_reason "$err")"
+    elif ! comments="$(issue_comments_render "$m" <<<"$comments")"; then
+      why="could not read member #$m's comments"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
       && ! triage_comment_post err "$m" "$comment_file"; then
       why="gh could not comment on member #$m: $(gh_reason "$err")"
