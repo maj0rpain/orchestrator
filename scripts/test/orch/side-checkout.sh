@@ -985,9 +985,9 @@ fake_github
 top="$(git rev-parse --show-toplevel)"
 fake_offline
 
-# fl_seed <root> [side]: gives the flow in the checkout at <root> a handoff, a review
-# record, a freely named spec-phase round directory, a flow's spec review round
-# directory under spec-rounds/ and its round marker (#1348), and puts a
+# fl_seed <root> [side]: gives the flow in the checkout at <root> a handoff, a
+# review record, a freely named spec-phase round directory, a flow's spec review
+# round directory under spec-rounds/ and its round marker (#1348), and puts a
 # standalone spec review's and a review pass's working directories beside it,
 # with a breakdown save point and a saved report and, unless <side> is given,
 # the autopilot watcher's records (#1907).
