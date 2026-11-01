@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.56
+
+The finished sweep keeps a side checkout whose local branch holds commits past its merged pull request's head, instead of deleting the branch and losing them; `doctor` no longer calls such a side checkout finished.
+
 ## 4.38.55
 
 Archiving a flow now leaves the autopilot watcher's records (`autopilot/`), breakdown save points (`breakdown/`) and saved ticket reports (`reports/`) in place, and a test makes any unclassified top-level `.orchestrator/` entry a suite failure. Copies a past archive already took stay in that archive.
