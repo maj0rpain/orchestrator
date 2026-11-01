@@ -482,7 +482,7 @@ assert_eq "an older one is left in place" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/co
 fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired)"
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
-assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
+assert_eq "saying so" "$out" "$(handoff_missing_msg comment 7 01-plan)"
 fake_lag adapter_issue_comments_json 1 'not json'
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "unparseable comments make handoff fetch fail" "$st" 1
