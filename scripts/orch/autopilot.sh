@@ -176,20 +176,6 @@ autopilot_ask() {
   standing_ask "$phase" "$text"
 }
 
-# autopilot_timeline_read <issue> [2]: timeline_read, dying when it cannot -
-# status 1, or 2 when the second argument is 2. Each caller module words its own
-# read failure (handoff.sh has handoff_timeline_read), so the two look alike.
-autopilot_timeline_read() {
-  local issue="$1" code="${2-1}"
-  timeline_read "$issue" && return 0
-  if [ -z "$TIMELINE_REASON" ]; then
-    if [ "$code" = 2 ]; then die2 "could not read issue #$issue's comments"; fi
-    die "could not read issue #$issue's comments"
-  fi
-  if [ "$code" = 2 ]; then gh_die --exit 2 "read the comments of issue #$issue" "$TIMELINE_REASON"; fi
-  gh_die "read the comments of issue #$issue" "$TIMELINE_REASON"
-}
-
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
 # marker stripped, and every comment after it to <file>, each later one after a
 # `---` line. Exits 1, writing nothing, when no comment follows the question -
@@ -200,7 +186,10 @@ autopilot_answer() {
   autopilot_phase_arg "$phase" die2
   require_state die2
   require_issue issue die2
-  autopilot_timeline_read "$issue" 2
+  if ! timeline_read "$issue"; then
+    [ -n "$TIMELINE_REASON" ] || die2 "could not read issue #$issue's comments"
+    gh_die --exit 2 "read the comments of issue #$issue" "$TIMELINE_REASON"
+  fi
   timeline_question "$phase" || die2 "issue #$issue has no $phase question comment"
   timeline_replied "$phase" || die "no reply to the $phase question on issue #$issue yet"
   # The stripped body is read with a sentinel so its trailing newlines survive
@@ -236,7 +225,7 @@ autopilot_reply() {
   [ -f "$file" ] || die "reply file not found: $file"
   [ -s "$file" ] || die "reply file is empty: $file"
   standing_human_guard "$issue"
-  autopilot_timeline_read "$issue"
+  timeline_read_or_die "$issue"
   timeline_question || die "issue #$issue has no question comment to reply to"
   ! timeline_replied || die "a comment already follows the newest question on issue #$issue"
   gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
@@ -256,7 +245,7 @@ autopilot_questions() {
     standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
     phase="$STANDING_PHASE"
     [ -n "$phase" ] || continue
-    autopilot_timeline_read "$n"
+    timeline_read_or_die "$n"
     timeline_question || true
     timeline_stop || true
     if [ -n "$TIMELINE_Q_INDEX" ] && { [ -z "$TIMELINE_STOP_INDEX" ] || [ "$TIMELINE_Q_INDEX" -gt "$TIMELINE_STOP_INDEX" ]; }; then

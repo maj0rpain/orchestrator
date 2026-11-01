@@ -259,6 +259,7 @@ fake_fail adapter_issue_comments_json "HTTP 500"
 out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "a failed comment read exits 2, never no reply's 1" "$st" 2
 assert_contains "naming the read" "$out" "read the comments of issue #7"
+assert_eq "and giving gh's reason" "$out" "orch: gh could not read the comments of issue #7: HTTP 500"
 fake_unfail
 # gh succeeds but its output is no comment list
 fake_lag adapter_issue_comments_json 1 'not json'
@@ -1039,6 +1040,7 @@ fake_fail adapter_issue_comments_json "$GH_502"
 out="$("$ORCH" autopilot questions 2>/dev/null)"; st=$?
 assert_status "an adapter read failure dies" "$st" 1
 assert_eq "listing nothing" "$out" ""
+assert_eq "naming the gh failure" "$("$ORCH" autopilot questions 2>&1 >/dev/null)" "orch: gh could not read the comments of issue #11: HTTP 502: Bad Gateway"
 fake_unfail
 fake_lag adapter_issue_comments_json 1 'not json'
 fake_issue 11 open needs-human orch:spec
@@ -1153,6 +1155,12 @@ out="$("$ORCH" autopilot reply 47 "$r" 2>&1)"; st=$?
 assert_status "reply over unparseable comments is refused" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #47's comments"
 assert_eq "posting nothing" "$(fake_comments_of 47 | grep -c 'Yes, keep')" "0"
+fake_unfail
+fake_fail adapter_issue_comments_json "HTTP 500 comments"
+out="$("$ORCH" autopilot reply 47 "$r" 2>&1)"; st=$?
+fake_unfail
+assert_status "reply over a failed comments read is refused" "$st" 1
+assert_eq "naming gh's reason" "$out" "orch: gh could not read the comments of issue #47: HTTP 500 comments"
 
 restore_suite_env
 

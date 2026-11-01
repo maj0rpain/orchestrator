@@ -14,7 +14,8 @@
 # timeline_limit_count always prints a number and returns 0, timeline_answers
 # prints nothing and returns 0 when no comment follows the question, and
 # timeline_body always prints the indexed comment's body (possibly empty) and
-# returns 0. Only the read can fail. The
+# returns 0. Only the read can fail, and the two helpers documented beside it,
+# timeline_die and timeline_read_or_die, are the module's only dying ones. The
 # marker grammar stays in the Marked comment module (its jq prelude) and here.
 # Its tests: scripts/test/orch/issue-timeline.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block; marked_comment_jq is
@@ -77,6 +78,19 @@ timeline_read() {
     TIMELINE_RETIRED+=("$retired")
     TIMELINE_URL+=("$url")
   done <<<"$rows"
+}
+
+# timeline_die <issue>: dies (exit 1) for the timeline read that just failed,
+# with gh's reason, or with `could not read issue #<n>'s comments` when gh
+# succeeded but its output was not a comment list.
+timeline_die() {
+  [ -n "$TIMELINE_REASON" ] || die "could not read issue #$1's comments"
+  gh_die "read the comments of issue #$1" "$TIMELINE_REASON"
+}
+
+# timeline_read_or_die <issue>: timeline_read, else timeline_die.
+timeline_read_or_die() {
+  timeline_read "$1" || timeline_die "$1"
 }
 
 # timeline_question [<phase>]: the newest question comment, of <phase> when
