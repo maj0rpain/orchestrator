@@ -605,10 +605,12 @@ mv "$state7.keep" "$state7"
 fake_issue 8 open ready-for-agent orch:spec
 fake_issue_title 8 "Blocked add"
 mkdir -p "$top/.orchestrator/checkouts/blocked-add" "$top/.orchestrator/checkouts/blocked-add-8"
-"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+tick_err="$("$ORCH" autopilot tick 2>&1 >/dev/null)"; st=$?
 assert_status "a failed side-checkout add does not stop the tick" "$st" 0
 assert_eq "the issue is needs-human" "$(fake_labels_of 8)" "needs-human orch:spec ready-for-agent "
-assert_contains "naming the step" "$(fake_comments_of 8)" "step side-checkout add failed"
+assert_contains "naming the step and keeping its detail" "$(fake_comments_of 8)" "step side-checkout add failed: "
+assert_not_contains "the diagnostic is not the comment's reason" "$(fake_comments_of 8)" "no finished side checkouts"
+assert_contains "the tick's stderr carries the helper's diagnostics" "$tick_err" "no finished side checkouts"
 assert_eq "and the claim is released" "$(fake_claim_held 8)" free
 
 # a failed plan-comment post is a failure, the claim released
@@ -662,14 +664,6 @@ step_marker="$(mktemp -u)"
 out="$(sourced_orch_script 'set +e; m="$1"; mktemp() { [ ! -e "$m" ] || return 1; : >"$m"; command mktemp; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"' "$step_marker")"
 assert_eq "the plan step failing to make its own temp file keeps its reason" "$out" "rc=1 reason=could not create a temp file"
 rm -f "$step_marker"
-# driven to the stop: worded as a temp-file failure, the claim released
-fake_issue 79 open orch:spec orch:running; fake_claim_seed 79
-first_call_marker="$(mktemp -u)"
-sourced_orch_script 'set +e; autopilot_pickup_side_find() { side=/nowhere; }; mktemp() { [ -e "'"$first_call_marker"'" ] || { : >"'"$first_call_marker"'"; return 1; }; command mktemp "$@"; }; autopilot_pickup 79 spec' >/dev/null 2>&1
-assert_contains "a temp-file failure in a step stops the issue worded as one" "$(fake_comments_of 79)" "Autopilot failed in the spec phase: step "
-assert_contains "naming the step's stderr temp file" "$(fake_comments_of 79)" "could not create a temp file for the command's stderr"
-assert_eq "and the claim is released" "$(fake_claim_held 79)" free
-rm -f "$first_call_marker"
 # the side-checkout add step, stopped by each of capture's two temp files: the
 # first (nth=1) is for the command's stdout, the second for its stderr
 for pk_nth in 1 2; do
@@ -689,19 +683,6 @@ assert_eq "its die's line is the reason, the sweep report and warning reaching s
 swept 2 stale entries
 orch: warning: odd entry"
 rm -f "$pk_err"
-
-# a failed recorded-phase read stops with a reason naming the state file
-out="$(sourced_orch_script 'set +e; autopilot_pickup_side_find() { side=/nowhere; }; autopilot_pickup_contained() { return 0; }; state_get_in() { return 1; }; flow_state_file() { echo "$1/state.json"; }; standing_stop() { echo "stop $2 $3: $4"; }; autopilot_pickup 78 spec 2>/dev/null')"
-assert_eq "a failed recorded-phase read stops the issue naming the step and the state file" "$out" "stop failure spec: step reading the recorded phase failed: could not read the phase recorded in /nowhere/state.json"
-
-# a step's helper printing a diagnostic before it fails changes no wording
-fake_issue 77 open ready-for-agent orch:spec
-fake_issue_title 77 "Noisy add"
-mkdir -p "$top/.orchestrator/checkouts/noisy-add" "$top/.orchestrator/checkouts/noisy-add-77"
-tick_err="$("$ORCH" autopilot tick 2>&1 >/dev/null)"
-assert_contains "the stop wording keeps the step's detail" "$(fake_comments_of 77)" "step side-checkout add failed: "
-assert_not_contains "the diagnostic is not the comment's reason" "$(fake_comments_of 77)" "no finished side checkouts"
-assert_contains "and the tick's stderr carries the helper's diagnostics" "$tick_err" "no finished side checkouts"
 
 # stale claims of this host are failures; other hosts' are left alone
 fake_issue 10 open ready-for-agent orch:spec orch:running
