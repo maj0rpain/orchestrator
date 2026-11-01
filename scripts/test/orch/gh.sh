@@ -865,11 +865,11 @@ out="$(contract adapter_prs_open down 2>&1)"; st=$?
 assert_status "prs open: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
-gh_reply 0 $'61\n' '' pr list --head quick/12-foo --base main --state merged --json number --jq '.[].number'
+gh_reply 0 $'61\tabc123\n' '' pr list --head quick/12-foo --base main --state merged --json number,headRefOid --jq '.[] | "\(.number)\t\(.headRefOid)"'
 out="$(contract adapter_prs_merged quick/12-foo main 2>&1)"; st=$?
 assert_status "prs merged: lists the merged PRs from a branch into a base" "$st" 0
-assert_eq "one number per line" "$out" "61"
-gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --base main --state merged --json number --jq '.[].number'
+assert_eq "one line per PR: its number, a tab, its head SHA" "$out" $'61\tabc123'
+gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --base main --state merged --json number,headRefOid --jq '.[] | "\(.number)\t\(.headRefOid)"'
 out="$(contract adapter_prs_merged down main 2>&1)"; st=$?
 assert_status "prs merged: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"

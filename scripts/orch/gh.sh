@@ -575,12 +575,13 @@ adapter_pr_diff() {
 }
 
 # adapter_prs_merged <head> <base>: the PRs from the head branch merged into
-# the base branch, one number per line, newest first - the finished sweep's
-# read for a quick implementation, which records no PR of its own. GitHub
+# the base branch, one line each, newest first: its number, a tab, its head
+# SHA - the finished sweep's read for a quick implementation, which records no
+# PR of its own. GitHub
 # reports a squash or rebase merge as merged too, which git ancestry never
 # would.
 adapter_prs_merged() {
-  gh pr list --head "$1" --base "$2" --state merged --json number --jq '.[].number'
+  gh pr list --head "$1" --base "$2" --state merged --json number,headRefOid --jq '.[] | "\(.number)\t\(.headRefOid)"'
 }
 
 # adapter_prs_merged_bodies <base>: the body of every PR merged into the base

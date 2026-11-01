@@ -678,7 +678,7 @@ adapter_pr_diff() {
 }
 
 # adapter_prs_merged <head> <base>: the merged PRs in the store from the head
-# branch into the base, newest first.
+# branch into the base, newest first: number, a tab, the head SHA.
 adapter_prs_merged() {
   local d
   ! fake_failing adapter_prs_merged || return 1
@@ -686,7 +686,7 @@ adapter_prs_merged() {
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = MERGED ] && [ "$(cat "$d/head")" = "$1" ] \
       && [ "$(cat "$d/base")" = "$2" ] || continue
-    basename "$d"
+    printf '%s\t%s\n' "$(basename "$d")" "$(cat "$d/head_oid" 2>/dev/null || echo 0000000000000000000000000000000000000000)"
   done | sort -rn
 }
 
