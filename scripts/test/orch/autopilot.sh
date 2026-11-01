@@ -555,6 +555,7 @@ printf '' >"$launcher_dir/calls"
 assert_eq "a forward skip starts no session" "$(tick_calls)" "0"
 assert_eq "and is needs-human" "$(fake_labels_of 7)" "needs-human orch:review ready-for-agent "
 assert_contains "the comment names the recorded phase" "$(fake_comments_of 7 | tail -3)" "last moved to phase spec"
+assert_contains "and words the redo rule in full" "$(fake_comments_of 7 | tail -3)" "the issue is labelled orch:review, but its side checkout last moved to phase spec - only a step back from review to implement or from implement to spec is a redo"
 assert_eq "the claim is released" "$(fake_claim_held 7)" free
 # a step back from done is refused
 side7="$top/.orchestrator/checkouts/needs-ready"
