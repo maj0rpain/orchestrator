@@ -116,8 +116,8 @@ require_poll_knobs() {
 capture_err() {
   local _capture_err_file _capture_err_text _capture_err_st=0
   _capture_err_file="$(mktemp)" || {
-    echo "could not create a temp file" >&2
-    printf -v "$1" '%s' "could not create a temp file"
+    echo "could not create a temp file for the command's stderr" >&2
+    printf -v "$1" '%s' "could not create a temp file for the command's stderr"
     return 1
   }
   ( "${@:2}" ) 2>"$_capture_err_file" || _capture_err_st=$?
@@ -134,8 +134,8 @@ capture_err() {
 capture() {
   local _capture_file _capture_st=0
   _capture_file="$(mktemp)" || {
-    echo "could not create a temp file" >&2
-    printf -v "$2" '%s' "could not create a temp file"
+    echo "could not create a temp file for the command's stdout" >&2
+    printf -v "$2" '%s' "could not create a temp file for the command's stdout"
     return 1
   }
   capture_err "$2" "${@:3}" >"$_capture_file" || _capture_st=$?

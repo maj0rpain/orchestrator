@@ -58,6 +58,13 @@ for pair in "spec review" "review spec" "review done" "done review" "spec done" 
   assert_eq "no redo for labelled/recorded $pair: nothing printed, status 1" "$(sourced_rc "standing_redo_phase $pair")" "rc=1"
 done
 
+assert_eq "the redo rule reads as a sentence" "$(sourced_rc 'standing_redo_rule')" "a step back from review to implement or from implement to spec
+rc=0"
+out="$(sourced_rc 'STANDING_REDO_PAIRS="done:review:review"; standing_redo_phase done review; standing_redo_phase implement review; standing_redo_rule')"
+assert_eq "a different table is followed by the lookup and the describer" "$out" "review
+a step back from review to done
+rc=0"
+
 # Pickup rule, the label half
 pickable() { sourced_rc "standing_read $1 && standing_pickable" | tail -n 1; }
 fake_issue 10 open orch:spec
@@ -243,6 +250,7 @@ fake_comment 67 o 2026-01-02T00:00:00Z "$(marker_of limited spec)"
 sourced_rc 'standing_limit_stop 67 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
 assert_eq "the third limit stop in a row takes the failure path: needs-human, not limited, claim released" "$(tr_standing 67)|$(fake_claim_held 67)" "spec|0|1|0|free"
 assert_contains "and posts a failure comment naming the third in a row" "$(fake_comments_of 67)" "the third in a row in the spec phase"
+assert_contains "and says the session gave no reset time" "$(fake_comments_of 67)" "(the session gave no reset time)"
 assert_contains "under the failure marker" "$(fake_comments_of 67)" "$(marker_of failure spec)"
 tr_seed 69 orch:spec orch:running
 fake_comment 69 o 2026-01-01T00:00:00Z "$(marker_of limited spec)"
@@ -255,6 +263,7 @@ sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/nul
 fake_unfail
 assert_eq "unreadable comments take the failure path: needs-human, not limited, claim released" "$(tr_standing 70)|$(fake_claim_held 70)" "spec|0|1|0|free"
 assert_contains "and the failure comment says the comments could not be read" "$(fake_comments_of 70)" "could not be read to count the stops in a row"
+assert_contains "and says the session gave no reset time" "$(fake_comments_of 70)" "(the session gave no reset time)"
 tr_seed 68 orch:spec orch:running
 out="$(sourced_rc 'standing_limit_stop 68 "" "" "" 1 log')"
 assert_contains "a limit stop of an empty phase dies" "$out" "rc=1"

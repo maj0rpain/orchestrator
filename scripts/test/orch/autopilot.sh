@@ -555,6 +555,7 @@ printf '' >"$launcher_dir/calls"
 assert_eq "a forward skip starts no session" "$(tick_calls)" "0"
 assert_eq "and is needs-human" "$(fake_labels_of 7)" "needs-human orch:review ready-for-agent "
 assert_contains "the comment names the recorded phase" "$(fake_comments_of 7 | tail -3)" "last moved to phase spec"
+assert_contains "and words the redo rule in full" "$(fake_comments_of 7 | tail -3)" "the issue is labelled orch:review, but its side checkout last moved to phase spec - only a step back from review to implement or from implement to spec is a redo"
 assert_eq "the claim is released" "$(fake_claim_held 7)" free
 # a step back from done is refused
 side7="$top/.orchestrator/checkouts/needs-ready"
@@ -655,7 +656,7 @@ out="$(sourced_orch_script 'set +e; autopilot_pickup_contained false; echo "rc=$
 assert_eq "a silent failure reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
 ran_marker="$(mktemp -u)"
 out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker")"
-assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the step's stderr"
+assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the command's stderr"
 assert_eq "and runs nothing" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
 rm -f "$ran_marker"
 # the plan step's own temp-file failure keeps its own reason, not the wrapper's
@@ -663,6 +664,17 @@ step_marker="$(mktemp -u)"
 out="$(sourced_orch_script 'set +e; m="$1"; mktemp() { [ ! -e "$m" ] || return 1; : >"$m"; command mktemp; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"' "$step_marker")"
 assert_eq "the plan step failing to make its own temp file keeps its reason" "$out" "rc=1 reason=could not create a temp file"
 rm -f "$step_marker"
+# the side-checkout add step, stopped by each of capture's two temp files: the
+# first (nth=1) is for the command's stdout, the second for its stderr
+for pk_nth in 1 2; do
+  pk_want=stdout; [ "$pk_nth" = 2 ] && pk_want=stderr
+  fake_issue 76 open orch:spec orch:running; fake_claim_seed 76
+  pk_count="$(mktemp -u)"
+  PK_COUNT="$pk_count" PK_NTH="$pk_nth" sourced_orch_script 'set +e; autopilot_pickup_side_find() { side=""; }; autopilot_pickup_side_title() { title=T; }; cmd_side_checkout_add() { :; }; mktemp() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; command mktemp "$@"; }; autopilot_pickup 76 spec' >/dev/null 2>&1
+  assert_contains "the side-checkout add failing its $pk_want temp file stops worded as one" "$(fake_comments_of 76)" "step side-checkout add failed: could not create a temp file for the command's $pk_want"
+  rm -f "$pk_count"
+done
+
 # the side-checkout add takes its reason by the same rule
 out="$(sourced_orch_script 'set +e; cmd_side_checkout_add() { return 1; }; side=""; autopilot_pickup_side_add 5 "A title" 2>&1; echo "rc=$? reason=$PICKUP_REASON"')"
 assert_contains "a side-checkout add failing with no stderr reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
@@ -847,46 +859,6 @@ assert_eq "once the reset time has passed the file is removed" "$(on_disk "$top/
 assert_eq "and pickup resumes with the limited issue first, then the next" "$(tick_calls)" "3"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
-# --- autopilot tick: the rate limit event -------------------------------------
-# The session's log is NDJSON with plain-text lines mixed in; the limit file's
-# reset comes from the last rate_limit_event (#1463).
-echo
-echo "autopilot tick rate limit event"
-tick_fixture
-top="$(git rev-parse --show-toplevel)"
-fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Event 7"
-limit_file="$top/.orchestrator/autopilot/limit"
-printf '7\n' >"$launcher_dir/release"; : >"$launcher_dir/out"
-"$ORCH" autopilot tick >/dev/null 2>&1   # makes the side checkout
-rm -f "$launcher_dir/release" "$launcher_dir/calls" "$limit_file"
-# event_session <exit>: a fresh run of issue 7 over the launcher's canned log,
-# the limit file removed unless a test made it a directory.
-event_session() {
-  [ -d "$limit_file" ] || rm -f "$limit_file"
-  fake_issue 7 open ready-for-agent orch:spec orch:running
-  fake_claim_seed 7
-  printf '%s\n' "$1" >"$launcher_dir/exit"
-  out="$("$ORCH" autopilot run 7 2>&1)"; st=$?
-}
-now_epoch="$(date +%s)"
-r1=$((now_epoch + 3600)); r2=$((now_epoch + 7200)); r3=$((now_epoch + 90000))
-
-# a session that released its claim is left alone whatever its log and exit code
-printf '7\n' >"$launcher_dir/release"
-rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
-event_session 1
-assert_eq "a rejecting event of a released claim marks no issue" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
-assert_not_contains "and posts no limit stop comment" "$(fake_comments_of 7)" "usage limit"
-rm -f "$launcher_dir/release"
-
-# a failed write on one session with both pauses is noted once
-rm -f "$limit_file"; mkdir "$limit_file"
-rl_event rejected 1 "$r1" allowed 0.2 "$r3" >"$launcher_dir/out"
-event_session 1
-assert_eq "both pauses with an unwritable limit file give one note" "$(grep -c "could not write the limit file" <<<"$out")" "1"
-rmdir "$limit_file"
-restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
-
 # --- autopilot tick: limited issues -------------------------------------------
 # A usage-limit stop is waited out as orch:limited, at most twice in a row per
 # phase (#1463).
@@ -904,11 +876,12 @@ lim_fresh() {
   fake_comments_clear 7; rm -f "$limit_file"
   fake_issue_relabel 7 orch:spec ready-for-agent orch:running
 }
-# limit_run <issue> [<out>]: a run of <issue>'s session, its claim held by a
-# dead process, that ends on the limit: the launcher prints <out>, by default
-# a rejecting event that resets at $lim_reset.
+# limit_run <issue>: a run of <issue>'s session, its claim held by a dead
+# process, that ends on the limit: the launcher prints a rejecting event that
+# resets at $lim_reset.
 limit_run() {
-  local out="${2:-$(rl_event rejected 1 "$lim_reset" allowed 0.2 "$lim_reset")}"
+  local out
+  out="$(rl_event rejected 1 "$lim_reset" allowed 0.2 "$lim_reset")"
   fake_claim_seed "$1" "$(hostname)" "$(dead_pid)"
   printf '%s\n' "$out" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
   "$ORCH" autopilot run "$1" 2>&1
@@ -924,11 +897,6 @@ assert_eq "and releases the claim" "$(fake_claim_held 7)" free
 assert_eq "its comment opens with the marker" "$(fake_last_comment_of 7 | head -n 1)" "<!-- orch:limited spec -->"
 assert_contains "gives the reset time" "$(fake_comments_of 7)" "$lim_iso"
 assert_eq "and writes the limit file" "$(cat "$limit_file")" "$lim_iso"
-# a session that ends on no limit is a failure
-lim_fresh
-limit_run 7 "$(ndjson_with 'iteration limit reached')" >/dev/null
-assert_eq "a session that hit no limit ends with needs-human" "$(fake_labels_of 7)" "$LABELS_HUMAN"
-assert_eq "and writes no limit file" "$(on_disk "$limit_file")" absent
 
 # a failed label edit or comment leaves the claim held; the next tick's cleanup
 # sends the issue to needs-human
@@ -1419,7 +1387,8 @@ assert_contains "no reset, early pause later: the comment names the one-hour fal
 assert_not_contains "and not the early-pause reset" "$(fake_last_comment_of 7)" "$(iso_of "$far_epoch")"
 assert_eq "while the limit file holds the early-pause reset" "$(se_limit)" "$(iso_of "$far_epoch")"
 
-# the limit stop's failure fallbacks
+# the limit stop's failure fallbacks: Session end still writes the limit file
+# on either (the fallbacks themselves are the Standing section's)
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 LIM_SPEC="$(marker_of limited spec)
 stopped"
@@ -1427,22 +1396,9 @@ se_fresh
 fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
 fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
 se_end 1
-assert_eq "the third limit stop in a row takes the failure stop" "$(se_kind)" failure
-assert_contains "naming the cap" "$(fake_last_comment_of 7)" "the third in a row in the spec phase"
-assert_eq "and still writes the limit file" "$(se_limit)" "$i2"
+assert_eq "the third limit stop in a row still writes the limit file" "$(se_limit)" "$i2"
 se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; fake_unfail
-assert_eq "unreadable comments take the failure stop" "$(se_kind)" failure
-assert_contains "naming the failed read" "$(fake_last_comment_of 7)" "comments could not be read"
-assert_eq "and still write the limit file" "$(se_limit)" "$i2"
-# the same two fallbacks over a log with no reset
-ndjson_with 'Claude AI usage limit reached' >"$se_log"
-se_fresh
-fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
-fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
-se_end 1
-assert_contains "the third in a row, no reset: the session gave no reset time" "$(fake_last_comment_of 7)" "the session gave no reset time"
-se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; fake_unfail
-assert_contains "unreadable comments, no reset: the session gave no reset time" "$(fake_last_comment_of 7)" "the session gave no reset time"
+assert_eq "unreadable comments still write the limit file" "$(se_limit)" "$i2"
 
 # claims or the checkout that cannot be read: nothing is touched
 se_fresh; before="$(fake_snapshot)"

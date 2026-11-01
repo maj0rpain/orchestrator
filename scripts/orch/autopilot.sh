@@ -425,14 +425,8 @@ autopilot_pickup_settle() {
 # success passes every stderr line on. When the stderr's temp file cannot be
 # made, the command is not run and the reason says so.
 autopilot_pickup_contained() {
-  local file err st=0
-  file="$(mktemp)" || {
-    PICKUP_REASON="could not create a temp file for the step's stderr"
-    return 1
-  }
-  ( "$@" ) 2>"$file" || st=$?
-  file_read err "$file" || err=""
-  rm -f "$file"
+  local err st=0
+  capture_err err "$@" || st=$?
   autopilot_pickup_settle "$st" "$err"
 }
 
@@ -512,7 +506,7 @@ autopilot_pickup_steps() {
   if [ "$recorded" != "$phase" ]; then
     redo="$(standing_redo_phase "$phase" "$recorded")" || {
       PICKUP_KIND=refusal
-      PICKUP_TEXT="the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only a step back from review to implement or from implement to spec is a redo"
+      PICKUP_TEXT="the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only $(standing_redo_rule) is a redo"
       return 1
     }
     autopilot_pickup_contained autopilot_pickup_redo "$side" "$redo" || autopilot_pickup_fail refusal "redo $redo refused" || return 1
