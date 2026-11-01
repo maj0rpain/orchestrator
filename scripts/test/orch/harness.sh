@@ -968,6 +968,15 @@ all_restore() {
 }
 all_sc_stub 0
 
+# A suite that printed a FAIL block but a clean summary and exit 0 (a count
+# lost) still fails the run, and all.sh says so after the suite's summary.
+all_swap orch_test.sh "printf '  FAIL a lost failure\\n     its detail line\\n'"
+out="$(all_run 2>&1)"; st=$?
+all_restore orch_test.sh
+assert_status "exits non-zero when a suite printed FAIL lines but exited 0" "$st" 1
+assert_contains "says a suite printed FAIL lines but exited 0, after its summary" "$out" \
+  "$(printf 'orch_test.sh: 2 passed, 0 failed, 1 skipped\norch_test.sh: printed FAIL lines but exited 0')"
+
 all_swap orch_test.sh 'sleep 1' 'echo; echo "a section header"' \
   "printf '  FAIL a slow failure\\n     its detail line\\n'" \
   'echo; echo "1 passed, 1 failed"; exit 1'
