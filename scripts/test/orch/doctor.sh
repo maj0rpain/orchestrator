@@ -1307,6 +1307,7 @@ dfin="$(sc_add dfin)"
 git -C "$dfin" checkout -q -b quick/20-dfin
 git -C "$dfin" commit -q --allow-empty -m "work on dfin"
 fake_pr 60 merged quick/20-dfin main
+fake_pr_head 60 "$(git rev-parse quick/20-dfin)"
 dopen="$(sc_add dopen)"
 git -C "$dopen" checkout -q -b quick/21-dopen
 git -C "$dopen" commit -q --allow-empty -m "work on dopen"
@@ -1316,6 +1317,13 @@ dflow="$(sc_add dflow)"
   && git checkout -q -b orch/dflow-flow \
   && state_fixture phase "done" && state_fixture branch orch/dflow-flow && state_fixture pr 62)
 fake_pr 62 merged orch/dflow-flow main
+fake_pr_head 62 "$(git rev-parse orch/dflow-flow)"
+dun="$(sc_add dun)"
+git -C "$dun" checkout -q -b quick/22-dun
+git -C "$dun" commit -q --allow-empty -m "work on dun"
+fake_pr 63 merged quick/22-dun main
+fake_pr_head 63 "$(git rev-parse quick/22-dun)"
+git -C "$dun" commit -q --allow-empty -m "follow-up, unpushed"
 dnd="$(sc_add dnd)"
 (cd "$dnd" && orch_gh_failing init dnd-flow >/dev/null && state_fixture phase implement)
 fake_online
@@ -1330,6 +1338,7 @@ assert_contains "warns on a finished flow side checkout" "$out" "warn  side chec
 assert_contains "naming its remove command" "$out" "orch.sh side-checkout remove dflow"
 assert_not_contains "says nothing for an open PR's side checkout" "$out" "side checkout dopen"
 assert_not_contains "says nothing for a flow not at done" "$out" "side checkout dnd"
+assert_not_contains "says nothing for a tip past its merged PR's head" "$out" "side checkout dun"
 assert_contains "and prints no FAIL" "$(printf '%s\n' "$out" | tail -1)" " 0 FAIL"
 out_in="$(cd "$dopen" && "$ORCH" doctor --env 2>&1)"
 assert_contains "warns the same from inside a side checkout" "$out_in" "orch.sh side-checkout remove dfin"
@@ -1346,7 +1355,7 @@ assert_not_contains "and no finished warning it could not check" "$out" "is fini
 assert_contains "counting the check in the GitHub skipped warn" "$out" "GitHub checks skipped: GitHub is not reachable"
 skip_n() { printf '%s\n' "$1" | sed -n 's/^warn  \([0-9]*\) GitHub checks\{0,1\} skipped.*/\1/p'; }
 with_n="$(skip_n "$out")"
-for p in "$dfin" "$dopen" "$dflow" "$dnd"; do git worktree remove --force "$p"; done
+for p in "$dfin" "$dopen" "$dflow" "$dun" "$dnd"; do git worktree remove --force "$p"; done
 without_n="$(skip_n "$("$ORCH" doctor --env 2>&1)")"
 assert_eq "as one more skipped check than with no side checkouts" "$with_n" "$((without_n + 1))"
 fake_online

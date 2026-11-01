@@ -434,6 +434,16 @@ fake_github() {
   export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" ORCH_GH_FAKE_STORE
 }
 
+# fake_pr_head <n> <sha> [commit...]: seeds PR #n's head SHA and its commits,
+# oldest first - given none, the head alone.
+fake_pr_head() {
+  local d="$ORCH_GH_FAKE_STORE/prs/$1"
+  printf '%s\n' "$2" >"$d/head_oid"
+  shift 2
+  rm -f "$d/commits"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
+}
+
 # fake_comment_seed <comments-dir> <author> <created-at> <body>: the body, byte
 # for byte, appended as a comment by the fake's own fake_comment_append, so the
 # store's comment layout has one writer.
