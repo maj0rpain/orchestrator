@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.52
+
+In an autopilot flow, `handoff path` and `doctor --flow` now read the issue's comments once however many handoffs are due. When the comments cannot be read, `doctor --flow` reports one failed check with gh's reason instead of a missing finding per handoff.
+
 ## 4.38.51
 
 Internal refactor of the Issue timeline module: its question, stop and handoff queries report through named results instead of printed records. No change to any command output.
