@@ -123,17 +123,39 @@ standing_label_verdict() {
   fi
 }
 
+# STANDING_REDO_PAIRS: the one source of the phase-redo rule - space-separated
+# rows `labelled:recorded:redo`, the redo being the `orch.sh redo` argument for
+# a flow labelled <labelled> whose checkout last moved to <recorded>. Read at
+# each call, never at source time, so a test can set it.
+STANDING_REDO_PAIRS="implement:review:review spec:implement:spec"
+
 # standing_redo_phase <labelled> <recorded>: the phase-redo rule. Prints the
 # `orch.sh redo` argument that steps a flow labelled <labelled> back to that
-# phase from the <recorded> phase its checkout last moved to: review for
-# implement:review, spec for spec:implement. Any other pair is no redo: prints
-# nothing and returns 1.
+# phase from the <recorded> phase its checkout last moved to, per
+# STANDING_REDO_PAIRS: review for implement:review, spec for spec:implement.
+# Any other pair is no redo: prints nothing and returns 1.
 standing_redo_phase() {
-  case "$1:$2" in
-    implement:review) printf 'review\n' ;;
-    spec:implement) printf 'spec\n' ;;
-    *) return 1 ;;
-  esac
+  local row labelled recorded redo
+  for row in $STANDING_REDO_PAIRS; do
+    IFS=: read -r labelled recorded redo <<<"$row"
+    if [ "$labelled:$recorded" = "$1:$2" ]; then
+      printf '%s\n' "$redo"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# standing_redo_rule: the phase-redo rule as one clause, from
+# STANDING_REDO_PAIRS: "a step back from review to implement or from implement
+# to spec". Each pair reads "from <recorded> to <labelled>".
+standing_redo_rule() {
+  local row labelled recorded redo rule=""
+  for row in $STANDING_REDO_PAIRS; do
+    IFS=: read -r labelled recorded redo <<<"$row"
+    rule="${rule:+$rule or }from $recorded to $labelled"
+  done
+  printf 'a step back %s\n' "$rule"
 }
 
 # standing_human_issues: the open or closed issues carrying needs-human, one

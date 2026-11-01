@@ -58,6 +58,13 @@ for pair in "spec review" "review spec" "review done" "done review" "spec done" 
   assert_eq "no redo for labelled/recorded $pair: nothing printed, status 1" "$(sourced_rc "standing_redo_phase $pair")" "rc=1"
 done
 
+assert_eq "the redo rule reads as a sentence" "$(sourced_rc 'standing_redo_rule')" "a step back from review to implement or from implement to spec
+rc=0"
+out="$(sourced_rc 'STANDING_REDO_PAIRS="done:review:review"; standing_redo_phase done review; standing_redo_phase implement review; standing_redo_rule')"
+assert_eq "a different table is followed by the lookup and the describer" "$out" "review
+a step back from review to done
+rc=0"
+
 # Pickup rule, the label half
 pickable() { sourced_rc "standing_read $1 && standing_pickable" | tail -n 1; }
 fake_issue 10 open orch:spec
