@@ -120,7 +120,6 @@ tl_case "a retired newest handoff is not live" "timeline_handoff 01-plan$TL_HO" 
 tl_case "a live handoff newer than a retired one is live" "timeline_handoff 01-plan$TL_HO" "1|rc=0" "$HO_A_RETIRED" "$HO_A"
 tl_case_exact "a comment of only its marker line has an empty body" 'timeline_body 0' "[]" "$(marker_of handoff 01-plan)"
 
-
 # a query that finds nothing clears the results an earlier call of it set, and a
 # query prints nothing, found or not
 tl_case "a question query finding nothing clears its results" "timeline_question spec; timeline_question implement$TL_Q" "~~|rc=1" "$Q_SPEC"
