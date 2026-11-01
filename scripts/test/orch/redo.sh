@@ -526,7 +526,7 @@ assert_contains "naming what failed" "$out" "gh could not unlink ticket #$rt4"
 assert_eq "leaving the phase at implement" "$("$ORCH" state get phase)" "implement"
 assert_eq "and the handoffs in a pre-redo-spec folder" "$(cat .orchestrator/handoff/pre-redo-spec-*/02-spec.md .orchestrator/handoff/pre-redo-spec-*/03-implement.md)" \
   "$(printf '# spec\n# implement')"
-assert_eq "and the spec-paused marker in place with them" "$(cat .orchestrator/handoff/spec-paused 2>/dev/null)" "53"
+assert_eq "and the spec-paused marker still in the handoff directory" "$(cat .orchestrator/handoff/spec-paused 2>/dev/null)" "53"
 rm -f .orchestrator/handoff/spec-paused
 fake_unfail
 fake_fail adapter_sub_issues
@@ -675,18 +675,6 @@ restore_suite_env
 # moves no state; a failure after it leaves the phase, and a re-run finishes
 # retiring each handoff exactly once.
 
-# rd_retired_count <mode> <issue> <name> <folder-glob>: how many times the
-# handoff was retired: retired comments, or copies in matching folders.
-rd_retired_count() {
-  if [ "$1" = comment ]; then
-    fake_comments_of "$2" | grep -c "orch:handoff $3 retired"
-  else
-    # shellcheck disable=SC2086 # the glob is the point
-    # shellcheck disable=SC2010 # counts what the glob matched
-    ls $4/$3.md 2>/dev/null | grep -c .
-  fi
-}
-
 redo_spec_scenario() {
   local mode="$1" out st
   echo
@@ -711,8 +699,9 @@ redo_spec_scenario() {
     shim="$(mktemp -d)"
     writeln '#!/bin/sh' 'case "$*" in "-u +%Y%m%d-%H%M%S") echo 20300101-000000 ;; *) exec /usr/bin/env date "$@" ;; esac' >"$shim/date"
     chmod +x "$shim/date"
-    mkdir -p .orchestrator/handoff/pre-redo-spec-20300101-000000
-    writeln '# older' >.orchestrator/handoff/pre-redo-spec-20300101-000000/02-spec.md
+    put_handoff file 60 2030-01-01T00:00:00Z 02-spec "# older"
+    retire_handoff file 60 2030-01-01T00:00:00Z 02-spec .orchestrator/handoff/pre-redo-spec-20300101-000000
+    put_handoff file 60 2030-01-01T00:00:00Z 02-spec "spec text"
   fi
   out="$(PATH="${shim:+$shim:}$PATH" handoff_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
   assert_status "$mode: a failure at the retire fails redo spec" "$st" 1
@@ -738,9 +727,9 @@ redo_spec_scenario() {
   assert_status "$mode: the re-run finishes" "$st" 0
   assert_eq "$mode: the phase is spec" "$("$ORCH" state get phase)" spec
   assert_eq "$mode: the spec handoff is retired exactly once" \
-    "$(rd_retired_count "$mode" 60 02-spec '.orchestrator/handoff/pre-redo-spec-*')" 1
+    "$(handoff_retired_count "$mode" 60 02-spec '.orchestrator/handoff/pre-redo-spec-*')" 1
   assert_eq "$mode: and the implement handoff" \
-    "$(rd_retired_count "$mode" 60 03-implement '.orchestrator/handoff/pre-redo-spec-*')" 1
+    "$(handoff_retired_count "$mode" 60 03-implement '.orchestrator/handoff/pre-redo-spec-*')" 1
   restore_suite_env
 }
 
@@ -770,20 +759,18 @@ redo_review_scenario() {
   mkdir -p .orchestrator/review
   writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
 
-  # A failure at the retire itself.
+  # A failure at the retire itself, in comment mode only: file mode's
+  # taken-destination refusal is checked in "redo review refuses a taken
+  # handoff destination".
   if [ "$mode" = comment ]; then
     fake_fail adapter_issue_comment "HTTP 500 comment"
-  else
-    mkdir -p .orchestrator/handoff/pre-redo-1
-    writeln '# older' >.orchestrator/handoff/pre-redo-1/03-implement.md
+    out="$(handoff_orch "$mode" redo review 2>&1)"; st=$?
+    assert_status "$mode: a failure at the retire fails redo review" "$st" 1
+    assert_eq "$mode: leaving the phase at review" "$("$ORCH" state get phase)" review
+    assert_eq "$mode: and the branch" "$("$ORCH" state get branch)" "orch/61-redo$mode"
+    assert_eq "$mode: and the redo count" "$("$ORCH" state get redo_count)" 0
+    fake_unfail
   fi
-  out="$(handoff_orch "$mode" redo review 2>&1)"; st=$?
-  assert_status "$mode: a failure at the retire fails redo review" "$st" 1
-  assert_eq "$mode: leaving the phase at review" "$("$ORCH" state get phase)" review
-  assert_eq "$mode: and the branch" "$("$ORCH" state get branch)" "orch/61-redo$mode"
-  assert_eq "$mode: and the redo count" "$("$ORCH" state get redo_count)" 0
-  fake_unfail
-  if [ "$mode" = file ]; then rm -rf .orchestrator/handoff/pre-redo-1; fi
 
   # A failure after it: the PR close.
   fake_fail adapter_pr_close "$GH_502"
@@ -796,7 +783,7 @@ redo_review_scenario() {
   assert_not_contains "$mode: with no taken-folder refusal" "$out" "already holds a retired handoff"
   assert_eq "$mode: stepping back to implement" "$("$ORCH" state get phase)" implement
   assert_eq "$mode: the implement handoff is retired exactly once" \
-    "$(rd_retired_count "$mode" 61 03-implement '.orchestrator/handoff/pre-redo-1')" 1
+    "$(handoff_retired_count "$mode" 61 03-implement '.orchestrator/handoff/pre-redo-1')" 1
   assert_eq "$mode: the review records retire into the matching pre-redo-1" \
     "$(on_disk .orchestrator/review/pre-redo-1/iteration-01.md)" "present"
   restore_suite_env

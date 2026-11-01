@@ -596,14 +596,14 @@ check_autopilot_side_flows() {
 # Silent where origin cannot be read, and for this host's claims where the main
 # checkout cannot be resolved.
 check_autopilot_claims() {
-  local issue host started now_epoch started_epoch me here=0 pid
+  local issue host started now_epoch started_epoch me main_known=0 pid
   standing_claims_read --quiet || return 0
   now_epoch="$(date -u +%s)"; me="$(standing_host_id)"
-  main_checkout >/dev/null 2>&1 && here=1
+  main_checkout >/dev/null 2>&1 && main_known=1
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
     host="${STANDING_CLAIM_HOST[$issue]}" started="${STANDING_CLAIM_STARTED[$issue]}"
     if [ "$host" = "$me" ]; then
-      [ "$here" = 1 ] || continue
+      [ "$main_known" = 1 ] || continue
       pid="$(liveness_issue_alive "$issue" 2>/dev/null)" && continue
       d_warn "issue #$issue is claimed by this host (phase ${STANDING_CLAIM_PHASE[$issue]}), but its process is gone ($([ -n "$pid" ] && echo "pid $pid" || echo "no record"))."
       d_remedy "orch.sh autopilot tick"
@@ -877,15 +877,15 @@ check_flow_worktree_clean() {
 # Which handoffs are due is the phase table's handoffs_due - phase names what
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
-  local phase files f path problems line ready ready_rc reason
+  local phase files f path problems line ready_finding ready_rc reason
   phase="$(state_get phase)"
   # A phase the table does not hold is due nothing, so the check skips it.
   files="$(handoffs_due "$phase")"
   if [ -n "$files" ]; then
     ready_rc=0
-    ready="$(handoff_ready)" || ready_rc=$?
+    ready_finding="$(handoff_ready)" || ready_rc=$?
     if [ "$ready_rc" -eq 1 ]; then
-      d_fail "$ready"
+      d_fail "$ready_finding"
       d_remedy "$(flow_cmd abort)"
       return 0
     fi

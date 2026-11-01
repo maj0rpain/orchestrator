@@ -2044,7 +2044,7 @@ assert_contains "with abort as the remedy" "$out" "abort"
 fake_issue 7 open ready-for-agent orch:implement
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow fails with the handoff comments missing" "$st" 1
-assert_contains "naming the missing plan comment" "$out" "handoff 01-plan comment is missing on issue #7"
+assert_contains "naming the missing plan comment" "$out" "$(handoff_doctor_missing_msg comment 7 01-plan)"
 plan_h="$(mktemp -d)/01-plan.md"
 plan_file "$plan_h" $'Rounds: 2\nBudget: 3'
 spec_h="$(mktemp -d)/02-spec.md"

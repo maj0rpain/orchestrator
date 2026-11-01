@@ -196,16 +196,16 @@ autopilot_timeline_read() {
 # the caller re-asks, or carries on - and 2 on any other failure, so a failed
 # read is never taken for no reply.
 autopilot_answer() {
-  local phase="$1" file="$2" issue out first rest q
+  local phase="$1" file="$2" issue out first rest
   autopilot_phase_arg "$phase" die2
   require_state die2
   require_issue issue die2
   autopilot_timeline_read "$issue" 2
-  q="$(timeline_question "$phase")" || die2 "issue #$issue has no $phase question comment"
+  timeline_question "$phase" || die2 "issue #$issue has no $phase question comment"
   timeline_replied "$phase" || die "no reply to the $phase question on issue #$issue yet"
   # The stripped body is read with a sentinel so its trailing newlines survive
   # into the `---` join.
-  first="$(timeline_body "${q%%$'\t'*}"; printf x)"
+  first="$(timeline_body "$TIMELINE_Q_INDEX"; printf x)"
   first="${first%x}"
   rest="$(timeline_answers "$phase")"
   out="$(printf '%s' "$first$rest")"  # as before, trailing newlines go; the file gets one
@@ -237,7 +237,7 @@ autopilot_reply() {
   [ -s "$file" ] || die "reply file is empty: $file"
   standing_human_guard "$issue"
   autopilot_timeline_read "$issue"
-  timeline_question >/dev/null || die "issue #$issue has no question comment to reply to"
+  timeline_question || die "issue #$issue has no question comment to reply to"
   ! timeline_replied || die "a comment already follows the newest question on issue #$issue"
   gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
   standing_resume "$issue" || die "the reply comment landed on issue #$issue, but $STANDING_HUMAN_LABEL could not be removed: $STANDING_REASON"
@@ -250,23 +250,20 @@ autopilot_reply() {
 # kind. Prints one line saying so when nothing is listed; dies, printing
 # nothing, when any read fails.
 autopilot_questions() {
-  local list n phase q s qi si row kind q_phase url lines=""
+  local list n phase row kind lines=""
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
     standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
     phase="$STANDING_PHASE"
     [ -n "$phase" ] || continue
     autopilot_timeline_read "$n"
-    q="$(timeline_question)" || q=""
-    s="$(timeline_stop)" || s=""
-    qi="${q%%$'\t'*}" si="${s%%$'\t'*}"
-    if [ -n "$q" ] && { [ -z "$s" ] || [ "$qi" -gt "$si" ]; }; then
+    timeline_question || true
+    timeline_stop || true
+    if [ -n "$TIMELINE_Q_INDEX" ] && { [ -z "$TIMELINE_STOP_INDEX" ] || [ "$TIMELINE_Q_INDEX" -gt "$TIMELINE_STOP_INDEX" ]; }; then
       if timeline_replied; then kind="replied"; else kind="question"; fi
-      IFS=$'\t' read -r _ q_phase url <<<"$q"
-      row="$n"$'\t'"$kind"$'\t'"$q_phase"$'\t'"$url"
-    elif [ -n "$s" ]; then
-      IFS=$'\t' read -r _ _ q_phase url <<<"$s"
-      row="$n"$'\tstop\t'"$q_phase"$'\t'"$url"
+      row="$n"$'\t'"$kind"$'\t'"$TIMELINE_Q_PHASE"$'\t'"$TIMELINE_Q_URL"
+    elif [ -n "$TIMELINE_STOP_INDEX" ]; then
+      row="$n"$'\tstop\t'"$TIMELINE_STOP_PHASE"$'\t'"$TIMELINE_STOP_URL"
     else
       row="$n"$'\tstop\t'"$phase"$'\t'
     fi

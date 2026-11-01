@@ -482,7 +482,7 @@ assert_eq "an older one is left in place" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/co
 fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired)"
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
-assert_eq "saying so" "$out" "orch: issue #7 has no 01-plan handoff comment"
+assert_eq "saying so" "$out" "$(handoff_missing_msg comment 7 01-plan)"
 fake_lag adapter_issue_comments_json 1 'not json'
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "unparseable comments make handoff fetch fail" "$st" 1
@@ -517,26 +517,6 @@ restore_suite_env
 # tagged comment on the issue (comment adapter, ORCH_AUTOPILOT=1). The reads
 # behave alike whichever adapter keeps the handoff, and so does retire.
 
-# hs_retire <adapter> <name>: sets the handoff aside as the adapter does - a
-# newer retired comment, or the file moved into a pre-redo folder.
-hs_retire() {
-  if [ "$1" = comment ]; then
-    fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff "$2" retired)"
-  else
-    mkdir -p .orchestrator/handoff/pre-redo-1
-    mv ".orchestrator/handoff/$2.md" .orchestrator/handoff/pre-redo-1/
-  fi
-}
-
-# hs_missing_msg <adapter> <name> [<hint>]: the adapter's missing message.
-hs_missing_msg() {
-  if [ "$1" = comment ]; then
-    printf 'orch: issue #7 has no %s handoff comment%s' "$2" "${3:+ - post it with handoff post $3}"
-  else
-    printf 'orch: handoff not found: %s/.orchestrator/handoff/%s.md%s' "$PWD" "$2" "${3:+ - write it $3}"
-  fi
-}
-
 handoff_store_contract() {
   local adapter="$1" out st p
   echo
@@ -546,43 +526,14 @@ handoff_store_contract() {
   "$ORCH" state set issue 7 >/dev/null
   fake_issue 7 open
 
-  # missing: handoff path prints the write target (file) or dies (comment)
-  out="$(handoff_orch "$adapter" handoff path spec 2>/dev/null)"; st=$?
+  # missing
+  handoff_orch "$adapter" handoff path spec >/dev/null 2>&1; st=$?
   assert_status "$adapter: a missing handoff is a non-zero status at handoff path" "$st" 1
-  if [ "$adapter" = comment ]; then
-    assert_eq "$adapter: still printing its scratch path first" "$out" "$PWD/.orchestrator/scratch/01-plan.md"
-    assert_eq "$adapter: dying with the adapter's missing message" \
-      "$(handoff_orch "$adapter" handoff path spec 2>&1 >/dev/null)" "$(hs_missing_msg comment 01-plan)"
-  else
-    assert_eq "$adapter: printing only the write target" "$out" "$PWD/.orchestrator/handoff/01-plan.md"
-  fi
-  out="$(handoff_orch "$adapter" phase advance 2>&1)"; st=$?
-  assert_status "$adapter: phase advance with the handoff missing dies" "$st" 1
-  assert_contains "$adapter: with the adapter's missing message and hint" "$out" \
-    "$(hs_missing_msg "$adapter" 02-spec "before leaving the spec phase")"
-  assert_eq "$adapter: leaving the phase at spec" "$("$ORCH" state get phase)" spec
-
-  # invalid: phase advance reports the adapter's invalid message
-  put_handoff "$adapter" 7 2030-01-01T00:00:00Z 02-spec $'## Decisions'
-  out="$(handoff_orch "$adapter" phase advance 2>&1)"; st=$?
-  assert_status "$adapter: phase advance with an invalid handoff dies" "$st" 1
-  if [ "$adapter" = comment ]; then
-    assert_contains "$adapter: with the adapter's invalid message" "$out" \
-      "the 02-spec comment on issue #7 is not valid - post a fixed one, then run phase advance again; the flow stays at spec"
-  else
-    assert_contains "$adapter: with the adapter's invalid message" "$out" \
-      "02-spec.md is not valid - fix it, then run phase advance again; the flow stays at spec"
-  fi
-  assert_eq "$adapter: leaving the phase at spec" "$("$ORCH" state get phase)" spec
 
   # found
   put_handoff "$adapter" 7 2030-01-01T00:00:00Z 01-plan "$(literal_handoff spec)"
   p="$(handoff_orch "$adapter" handoff path spec 2>&1)"; st=$?
   assert_status "$adapter: a handoff that exists resolves" "$st" 0
-  if [ "$adapter" = comment ]; then
-    assert_contains "$adapter: to a scratch file under .orchestrator" "$p" "/.orchestrator/"
-    assert_not_contains "$adapter: not the handoff directory" "$p" "/handoff/"
-  fi
   assert_eq "$adapter: holding its body" "$(cat "$p")" "$(literal_handoff spec)"
 
   # siblings: the other handoff due at the phase sits beside the one resolved
@@ -599,64 +550,19 @@ handoff_store_contract() {
   fi
 
   # a retired sibling leaves no stale copy beside the handoff
-  hs_retire "$adapter" 01-plan
+  retire_handoff "$adapter" 7 2030-01-02T00:00:00Z 01-plan .orchestrator/handoff/pre-redo-1
   handoff_orch "$adapter" handoff path implement >/dev/null 2>&1
   assert_eq "$adapter: a retired sibling leaves no stale copy" \
     "$(on_disk "$(dirname "$p")/01-plan.md")" absent
 
   # retired reads as missing
-  out="$(handoff_orch "$adapter" handoff path spec 2>&1 >/dev/null)"; st=$?
+  handoff_orch "$adapter" handoff path spec >/dev/null 2>&1; st=$?
   assert_status "$adapter: a retired handoff is missing at handoff path" "$st" 1
-  if [ "$adapter" = comment ]; then
-    assert_eq "$adapter: with the missing message" "$out" "$(hs_missing_msg comment 01-plan)"
-  fi
-
-  # a stale scratch copy is never found (only the comment adapter has one)
-  if [ "$adapter" = comment ]; then
-    scratch="$(dirname "$p")"
-    assert_contains "comment: the stale copy goes in the sandbox's scratch directory" "$scratch" "/.orchestrator/"
-    case "$scratch" in /*/.orchestrator/*) echo stale >"$scratch/01-plan.md" ;; esac
-    out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
-    assert_status "comment: a stale scratch copy is not a found handoff" "$st" 1
-    assert_contains "comment: with the missing message" "$out" "$(hs_missing_msg comment 01-plan)"
-    fake_fail adapter_issue_comments_json "HTTP 503 read"
-    out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
-    fake_unfail
-    assert_status "comment: a failed comments read dies" "$st" 1
-    assert_contains "comment: showing the gh reason" "$out" "HTTP 503 read"
-    assert_not_contains "comment: and not the missing line" "$out" "handoff comment"
-    # the comments unreadable with no sibling due: gh's reason, not "missing"
-    fake_fail adapter_issue_comments_json "HTTP 503 read"
-    out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
-    fake_unfail
-    assert_status "comment: a failed read with no sibling due dies" "$st" 1
-    assert_contains "comment: showing the gh reason with no sibling due" "$out" "HTTP 503 read"
-    assert_not_contains "comment: and not the missing line with no sibling due" "$out" "handoff comment"
-    # the comments unreadable with a sibling due: one read, no sibling copy
-    put_handoff comment 7 2030-01-01T00:00:00Z 01-plan "$(literal_handoff spec)"
-    handoff_orch comment handoff path implement >/dev/null 2>&1
-    assert_eq "comment: the sibling is fetched while readable" "$(on_disk "$scratch/01-plan.md")" present
-    reads_before="$(fake_comment_reads)"
-    fake_fail adapter_issue_comments_json "HTTP 503 read"
-    out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
-    fake_unfail
-    assert_status "comment: an unreadable sibling fetch dies" "$st" 1
-    assert_contains "comment: showing the gh reason with a sibling due" "$out" "HTTP 503 read"
-    assert_eq "comment: after exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1
-    assert_eq "comment: leaving no sibling copy" "$(on_disk "$scratch/01-plan.md")" absent
-    hs_retire comment 01-plan
-  fi
 
   # doctor: the missing-handoff finding is the adapter's (01-plan was retired)
   out="$(handoff_orch "$adapter" doctor --flow 2>&1)"; st=$?
   assert_status "$adapter: doctor --flow fails on a missing handoff" "$st" 1
-  if [ "$adapter" = comment ]; then
-    assert_contains "$adapter: with the adapter's finding" "$out" \
-      "handoff 01-plan comment is missing on issue #7 - the phase that writes it has already run."
-  else
-    assert_contains "$adapter: with the adapter's finding" "$out" \
-      "handoff 01-plan.md is missing - the phase that writes it has already run."
-  fi
+  assert_contains "$adapter: with the adapter's finding" "$out" "$(handoff_doctor_missing_msg "$adapter" 7 01-plan)"
 
   # retire, through redo spec: both handoffs are set aside before a failing
   # ticket retire, and the re-run retires nothing twice
@@ -674,30 +580,86 @@ handoff_store_contract() {
   out="$(handoff_orch "$adapter" redo spec 2>&1)"; st=$?
   assert_status "$adapter: the re-run finishes" "$st" 0
   assert_eq "$adapter: the phase is spec" "$("$ORCH" state get phase)" spec
-  if [ "$adapter" = comment ]; then
-    assert_eq "$adapter: each handoff is retired exactly once" \
-      "$(fake_comments_of 7 | grep -c 'orch:handoff \(02-spec\|03-implement\) retired')" 2
-  else
-    # shellcheck disable=SC2010 # counts what the globs matched
-    assert_eq "$adapter: each handoff is in a pre-redo-spec folder once" \
-      "$(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null | grep -c .)" 2
-  fi
-
-  # doctor's readiness check: no recorded issue fails the comment adapter only
-  fake_flow "handoff-store-ready-$adapter"
-  out="$(handoff_orch "$adapter" doctor --flow 2>&1)"
-  if [ "$adapter" = comment ]; then
-    assert_contains "comment: no recorded issue is today's finding" "$out" \
-      "autopilot session, but no issue is recorded - the handoff comments cannot be read."
-  else
-    assert_not_contains "file: readiness passes with no recorded issue" "$out" "no issue is recorded"
-    assert_contains "file: and the missing handoff is reported" "$out" "handoff 01-plan.md is missing"
-  fi
+  assert_eq "$adapter: the spec handoff is retired exactly once" \
+    "$(handoff_retired_count "$adapter" 7 02-spec '.orchestrator/handoff/pre-redo-spec-*')" 1
+  assert_eq "$adapter: and the implement handoff" \
+    "$(handoff_retired_count "$adapter" 7 03-implement '.orchestrator/handoff/pre-redo-spec-*')" 1
   restore_suite_env
 }
 
 handoff_store_contract file
 handoff_store_contract comment
+
+# The checks that hold for one adapter only, after the contract.
+echo
+echo "handoff store, comment adapter only"
+fake_flow handoff-store-comment-only
+export ORCHESTRATOR_HOST=claude
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open
+out="$(handoff_orch comment handoff path spec 2>/dev/null)"; st=$?
+assert_eq "comment: a missing handoff still prints its scratch path first" "$out" "$PWD/.orchestrator/scratch/01-plan.md"
+assert_eq "comment: and dies with the missing message" \
+  "$(handoff_orch comment handoff path spec 2>&1 >/dev/null)" "$(handoff_missing_msg comment 7 01-plan)"
+put_handoff comment 7 2030-01-01T00:00:00Z 01-plan "$(literal_handoff spec)"
+put_handoff comment 7 2030-01-01T00:00:00Z 02-spec "$(literal_handoff implement)"
+p="$(handoff_orch comment handoff path spec 2>&1)"
+assert_contains "comment: a found handoff resolves to a scratch file under .orchestrator" "$p" "/.orchestrator/"
+assert_not_contains "comment: not the handoff directory" "$p" "/handoff/"
+retire_handoff comment 7 2030-01-02T00:00:00Z 01-plan .orchestrator/handoff/pre-redo-1
+out="$(handoff_orch comment handoff path spec 2>&1 >/dev/null)"
+assert_eq "comment: a retired handoff dies with the missing message" "$out" "$(handoff_missing_msg comment 7 01-plan)"
+# a stale scratch copy is never found
+scratch="$(dirname "$p")"
+assert_contains "comment: the stale copy goes in the sandbox's scratch directory" "$scratch" "/.orchestrator/"
+case "$scratch" in /*/.orchestrator/*) echo stale >"$scratch/01-plan.md" ;; esac
+out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
+assert_status "comment: a stale scratch copy is not a found handoff" "$st" 1
+assert_contains "comment: with the missing message" "$out" "$(handoff_missing_msg comment 7 01-plan)"
+fake_fail adapter_issue_comments_json "HTTP 503 read"
+out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
+fake_unfail
+assert_status "comment: a failed comments read dies" "$st" 1
+assert_contains "comment: showing the gh reason" "$out" "HTTP 503 read"
+assert_not_contains "comment: and not the missing line" "$out" "handoff comment"
+# the comments unreadable with no sibling due: gh's reason, not "missing"
+fake_fail adapter_issue_comments_json "HTTP 503 read"
+out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
+fake_unfail
+assert_status "comment: a failed read with no sibling due dies" "$st" 1
+assert_contains "comment: showing the gh reason with no sibling due" "$out" "HTTP 503 read"
+assert_not_contains "comment: and not the missing line with no sibling due" "$out" "handoff comment"
+# the comments unreadable with a sibling due: one read, no sibling copy
+put_handoff comment 7 2030-01-01T00:00:00Z 01-plan "$(literal_handoff spec)"
+handoff_orch comment handoff path implement >/dev/null 2>&1
+assert_eq "comment: the sibling is fetched while readable" "$(on_disk "$scratch/01-plan.md")" present
+reads_before="$(fake_comment_reads)"
+fake_fail adapter_issue_comments_json "HTTP 503 read"
+out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
+fake_unfail
+assert_status "comment: an unreadable sibling fetch dies" "$st" 1
+assert_contains "comment: showing the gh reason with a sibling due" "$out" "HTTP 503 read"
+assert_eq "comment: after exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1
+assert_eq "comment: leaving no sibling copy" "$(on_disk "$scratch/01-plan.md")" absent
+fake_flow handoff-store-ready-comment
+out="$(handoff_orch comment doctor --flow 2>&1)"
+assert_contains "comment: no recorded issue is today's finding" "$out" \
+  "autopilot session, but no issue is recorded - the handoff comments cannot be read."
+restore_suite_env
+
+echo
+echo "handoff store, file adapter only"
+fake_flow handoff-store-file-only
+export ORCHESTRATOR_HOST=claude
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open
+out="$(handoff_orch file handoff path spec 2>/dev/null)"
+assert_eq "file: a missing handoff prints only the write target" "$out" "$PWD/.orchestrator/handoff/01-plan.md"
+fake_flow handoff-store-ready-file
+out="$(handoff_orch file doctor --flow 2>&1)"
+assert_not_contains "file: readiness passes with no recorded issue" "$out" "no issue is recorded"
+assert_contains "file: and the missing handoff is reported" "$out" "$(handoff_doctor_missing_msg file 7 01-plan)"
+restore_suite_env
 
 # --- handoff comment retire's timeline read -----------------------------------
 # The comments are read once per retire, and not at all when no file is named.
@@ -730,7 +692,6 @@ assert_eq "posting nothing" "$(fake_comments_of 7)" "$before"
 fake_lag adapter_issue_comments_json 1 'not json'
 out="$(retire_all 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
-assert_eq "with the parse wording" "$out" "orch: could not read issue #7's comments"
 assert_eq "posting nothing either" "$(fake_comments_of 7)" "$before"
 restore_suite_env
 

@@ -367,7 +367,7 @@ assert_contains "a second set leaves the copy carrying the new model" \
   "$(cat .junie/agents/orch-resolver.md)" "o3"
 assert_eq "and not the old one" "$(grep -c gpt-5 .junie/agents/orch-resolver.md)" "0"
 "$ORCH" agent clear resolver --host junie >/dev/null
-assert_eq "clear --host junie removes the copy" "$([ -e .junie/agents/orch-resolver.md ] && echo present || echo gone)" "gone"
+assert_eq "clear --host junie removes the copy" "$(on_disk .junie/agents/orch-resolver.md)" "absent"
 unset -f jkey
 unset -f key untouched
 restore_suite_env

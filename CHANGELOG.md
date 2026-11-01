@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.38.51
+
+Internal refactor of the Issue timeline module: its question, stop and handoff queries report through named results instead of printed records. No change to any command output.
+
+## 4.38.50
+
+Internal rename of two misleading locals in the Doctor's module; no change in behaviour.
+
 ## 4.38.49
 
 Pickup words its redo refusal from the Standing module's redo pair table, and its captured steps word a temp-file failure the same way: `capture_err` and `capture` now say whether the temp file was for the command's stderr or stdout.
