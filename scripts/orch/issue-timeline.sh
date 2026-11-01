@@ -112,7 +112,7 @@ timeline_answers() {
   jq -j --argjson i "$TIMELINE_Q_INDEX" '.[$i + 1:] | map("\n---\n" + (.body // "")) | join("")' <<<"$TIMELINE_JSON"
 }
 
-# timeline_stop: the latest stop - the newest refusal or failure comment: prints
+# timeline_stop: the latest stop - the newest refusal or failure comment:
 # sets TIMELINE_STOP_INDEX, TIMELINE_STOP_KIND (refusal or failure),
 # TIMELINE_STOP_PHASE and TIMELINE_STOP_URL and returns 0. Returns 1, the
 # results empty, when there is none. Prints nothing.

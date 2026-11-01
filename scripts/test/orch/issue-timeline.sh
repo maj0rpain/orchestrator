@@ -125,7 +125,7 @@ tl_case "a CR-terminated handoff marker is read" "timeline_handoff 01-plan$TL_HO
 # a query that finds nothing clears the results an earlier call of it set, and a
 # query prints nothing, found or not
 tl_case "a question query finding nothing clears its results" "timeline_question spec; timeline_question implement$TL_Q" "~~|rc=1" "$Q_SPEC"
-tl_case "a stop query finding nothing clears its results" "timeline_stop; TIMELINE_KIND=(); timeline_stop$TL_STOP" "~~~|rc=1" "$STOP_F"
+tl_case "a stop query finding nothing clears its results" "timeline_stop; rm -rf \"\$ORCH_GH_FAKE_STORE/issues/7/comments\"; timeline_read 7; timeline_stop$TL_STOP" "~~~|rc=1" "$STOP_F"
 tl_case "a handoff query finding nothing clears its result" "timeline_handoff 01-plan; timeline_handoff 02-build$TL_HO" "|rc=1" "$HO_A"
 tl_case "the queries print nothing when they find their comment" 'timeline_question spec; timeline_stop; timeline_handoff 01-plan' "rc=0" "$Q_SPEC" "$STOP_F" "$HO_A"
 tl_case "the queries print nothing when they find none" 'timeline_question implement || :; timeline_stop || :; timeline_handoff 02-build || :' "rc=0" "intro"
@@ -160,7 +160,7 @@ assert_eq "a failed read clears every named result" \
   "$(sourced_orch_script "$break_read$set_all"'break_read; timeline_read 7 || true; '"$all_results" 2>&1)" ""
 fake_unfail
 assert_eq "a successful read of a history with none of them clears every named result" \
-  "$(sourced_orch_script "$set_all"'fake=1; rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; timeline_read 7; '"$all_results" 2>&1)" ""
+  "$(sourced_orch_script "$set_all"'rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; timeline_read 7; '"$all_results" 2>&1)" ""
 tl_seed "$LIM_SPEC" "$LIM_SPEC"
 assert_eq "and the limit count after it is zero" \
   "$(sourced_orch_script "$break_read"'timeline_read 7; break_read; timeline_read 7 || true; timeline_limit_count spec' 2>&1)" "0"
