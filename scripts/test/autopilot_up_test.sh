@@ -163,7 +163,8 @@ assert_contains "probe: lists a live bare-pid run" "$probed" "13 ?"
 contract="$root/contract-clone"
 mkdir "$contract" && git -C "$contract" init -q
 mkfifo "$root/contract.fifo"
-# The background shell opens the fifo's write end first, so its early death is EOF.
+# The background shell opens the fifo's write end first, so its early death
+# is EOF.
 (cd "$contract" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_run_begin 41 && : >"$(liveness_log_path 41 review)" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/contract.fifo") >"$root/contract.out" 2>&1 &
 contract_pid=$!
 contract_line=""
