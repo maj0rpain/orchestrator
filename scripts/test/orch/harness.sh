@@ -1229,9 +1229,9 @@ for load_runner in all.sh orch_test.sh; do
   : >"$load_all/sc_log"
   rm -f "$load_all/scripts/test/log"
   baseline="$(load_nice_run "$load_runner" 10 0)"
-  assert_eq "$load_runner at niceness 10 calls no renice" "$([ -e "$load_dir/renice_args" ] && echo yes)" ""
+  assert_eq "$load_runner at niceness 10 calls no renice" "$(on_disk "$load_dir/renice_args")" absent
   load_nice_run "$load_runner" 15 0 >/dev/null
-  assert_eq "$load_runner at niceness 15 calls no renice" "$([ -e "$load_dir/renice_args" ] && echo yes)" ""
+  assert_eq "$load_runner at niceness 15 calls no renice" "$(on_disk "$load_dir/renice_args")" absent
   load_nice_run "$load_runner" 0 0 >/dev/null
   assert_eq "$load_runner at niceness 0 renices by an increment of 10 on its own pid" \
     "$(sed -E 's/[0-9]+$/PID/' "$load_dir/renice_args")" "-n 10 -p PID"
@@ -1243,11 +1243,11 @@ for load_runner in all.sh orch_test.sh; do
   assert_eq "$load_runner with a failing renice prints and exits as at niceness 10" \
     "$(load_nice_run "$load_runner" 0 1)" "$baseline"
   load_nice_run "$load_runner" 0 0 CI >/dev/null
-  assert_eq "$load_runner under CI calls no renice" "$([ -e "$load_dir/renice_args" ] && echo yes)" ""
+  assert_eq "$load_runner under CI calls no renice" "$(on_disk "$load_dir/renice_args")" absent
   : >"$load_dir/nice"
   load_nice_run "$load_runner" "" 0 >/dev/null
   assert_eq "$load_runner with ps printing no number calls no renice" \
-    "$([ -e "$load_dir/renice_args" ] && echo yes)" ""
+    "$(on_disk "$load_dir/renice_args")" absent
 done
 rm -rf "$load_dir"
 
