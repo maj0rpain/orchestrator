@@ -655,6 +655,12 @@ fake_fail() {
   fi
 }
 
+# fake_comment_reads: how many comment-list reads (adapter_issue_comments_json)
+# the fake has answered or refused - 0 for none.
+fake_comment_reads() {
+  if [ -f "$ORCH_GH_FAKE_STORE/comment_reads" ]; then wc -l <"$ORCH_GH_FAKE_STORE/comment_reads" | tr -d ' '; else echo 0; fi
+}
+
 # The seeded two-line gh stderr whose first line a death must carry.
 GH_502=$'HTTP 502: Bad Gateway\nsecond line'
 

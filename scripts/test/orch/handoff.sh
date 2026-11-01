@@ -592,6 +592,12 @@ handoff_store_contract() {
     "$(on_disk "$(dirname "$p")/01-plan.md")" present
   assert_eq "$adapter: and holds its body" "$(cat "$(dirname "$p")/01-plan.md")" "$(literal_handoff spec)"
 
+  if [ "$adapter" = comment ]; then
+    reads_before="$(fake_comment_reads)"
+    handoff_orch comment handoff path implement >/dev/null 2>&1
+    assert_eq "comment: handoff path with two due handoffs makes one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1
+  fi
+
   # a retired sibling leaves no stale copy beside the handoff
   hs_retire "$adapter" 01-plan
   handoff_orch "$adapter" handoff path implement >/dev/null 2>&1
@@ -618,6 +624,20 @@ handoff_store_contract() {
     fake_unfail
     assert_status "comment: a failed comments read dies" "$st" 1
     assert_contains "comment: showing the gh reason" "$out" "HTTP 503 read"
+    assert_not_contains "comment: and not the missing line" "$out" "handoff comment"
+    # the comments unreadable with a sibling due: one read, no sibling copy
+    put_handoff comment 7 2030-01-01T00:00:00Z 01-plan "$(literal_handoff spec)"
+    handoff_orch comment handoff path implement >/dev/null 2>&1
+    assert_eq "comment: the sibling is fetched while readable" "$(on_disk "$scratch/01-plan.md")" present
+    reads_before="$(fake_comment_reads)"
+    fake_fail adapter_issue_comments_json "HTTP 503 read"
+    out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
+    fake_unfail
+    assert_status "comment: an unreadable sibling fetch dies" "$st" 1
+    assert_contains "comment: showing the gh reason with a sibling due" "$out" "HTTP 503 read"
+    assert_eq "comment: after exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1
+    assert_eq "comment: leaving no sibling copy" "$(on_disk "$scratch/01-plan.md")" absent
+    hs_retire comment 01-plan
   fi
 
   # doctor: the missing-handoff finding is the adapter's (01-plan was retired)
@@ -674,12 +694,6 @@ handoff_store_contract comment
 
 # --- handoff comment retire's timeline read -----------------------------------
 # The comments are read once per retire, and not at all when no file is named.
-# fake_comment_reads: how many comment-list reads (adapter_issue_comments_json)
-# the fake has answered or refused - 0 for none.
-fake_comment_reads() {
-  if [ -f "$ORCH_GH_FAKE_STORE/comment_reads" ]; then wc -l <"$ORCH_GH_FAKE_STORE/comment_reads" | tr -d ' '; else echo 0; fi
-}
-
 echo
 echo "handoff comment retire's timeline read"
 fake_flow handoff-retire-reads

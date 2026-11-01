@@ -233,8 +233,8 @@ handoff_comment_post() {
 
 # The Handoff store: where a flow's handoffs live, behind one interface with a
 # file adapter (interactive: files in the handoff directory) and a comment
-# adapter (autopilot: marked comments on the issue). Operations: path, locate,
-# read, siblings, retire. handoff_store is the one place that chooses the
+# adapter (autopilot: marked comments on the issue). Operations: path, read,
+# fetch_due, fetched, retire. handoff_store is the one place that chooses the
 # adapter, per
 # call, so a test toggling ORCH_AUTOPILOT between commands keeps working.
 
@@ -269,6 +269,12 @@ handoff_file_invalid() {
 # autopilot_timeline_read), so the two look alike.
 handoff_timeline_read() {
   timeline_read "$1" && return 0
+  handoff_timeline_die "$1"
+}
+
+# handoff_timeline_die <issue>: dies for the timeline read that just failed,
+# with gh's reason, or with the not-a-comment-list wording when it has none.
+handoff_timeline_die() {
   [ -n "$TIMELINE_REASON" ] || die "could not read issue #$1's comments"
   gh_die "read the comments of issue #$1" "$TIMELINE_REASON"
 }
@@ -318,33 +324,39 @@ handoff_comment_ready() {
 # handoff_ready: the store's readiness check, the adapter's.
 handoff_ready() { "handoff_$(handoff_store)_ready" "$@"; }
 
-# handoff_comment_fetch <issue> <name> <file>: writes the body of <issue>'s
-# newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
-# <file> untouched, when there is none or the newest is tagged retired.
-handoff_comment_fetch() {
-  local issue="$1" name="$2" file="$3" i raw
-  handoff_timeline_read "$issue"
+# handoff_comment_write <name> <file>: writes the body of the newest comment
+# tagged for <name> in the last timeline read, marker stripped, to <file>. No gh
+# call. Non-zero, and <file> untouched, when there is none or the newest is
+# tagged retired.
+handoff_comment_write() {
+  local name="$1" file="$2" i raw
   i="$(timeline_handoff "$name")" || return 1
   raw="$(timeline_body "$i")"
   mkdir -p "$(dirname "$file")"
   if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
 }
 
-# handoff_locate <file>: the status lookup. Prints the readable path of the
-# handoff <file> and, by status, whether it exists; it never dies on a missing
-# one - each caller chooses its own reaction. A copy left by an earlier fetch
-# is never taken as found.
-handoff_locate() { "handoff_$(handoff_store)_locate" "$@"; }
+# handoff_comment_fetch <issue> <name> <file>: reads <issue>'s comments, then
+# handoff_comment_write. For single-handoff callers.
+handoff_comment_fetch() {
+  handoff_timeline_read "$1"
+  handoff_comment_write "$2" "$3"
+}
+
+# handoff_fetched <file>: the lookup that does not fetch. Prints the readable
+# path of the handoff <file> as of the last handoff_fetch_due and, by status,
+# whether it is there; it never dies on a missing one.
+handoff_fetched() { "handoff_$(handoff_store)_fetched" "$@"; }
 
 # handoff_read <file> [<hint>]: the dying read. Prints the readable path of the
-# handoff <file>, as handoff_locate does, then dies with the adapter's missing
-# message, <hint> naming the caller's situation, when there is no such handoff.
+# handoff <file>, as the adapter's lookup does, then dies with the adapter's
+# missing message, <hint> naming the caller's situation, when there is none.
 handoff_read() { "handoff_$(handoff_store)_read" "$@"; }
 
-# handoff_siblings <phase> <file>: fetches the handoffs due at <phase> other
-# than <file> beside it, where the adapter keeps them elsewhere than the
-# handoff directory.
-handoff_siblings() { "handoff_$(handoff_store)_siblings" "$@"; }
+# handoff_fetch_due <phase>: fetches every handoff due at <phase> where the
+# adapter keeps them elsewhere than the handoff directory, reading the issue's
+# comments once. Non-zero, never dying, when they cannot be read.
+handoff_fetch_due() { "handoff_$(handoff_store)_fetch_due" "$@"; }
 
 # handoff_path <phase> <file>: what `handoff path` prints for <file>, the
 # handoff <phase> writes.
@@ -367,8 +379,10 @@ handoff_file_read() {
   handoff_file_locate "$1" || handoff_file_missing "${1%.md}" "${2:-}"
 }
 
+handoff_file_fetched() { handoff_file_locate "$@"; }
+
 # The files are already in the handoff directory: nothing to fetch.
-handoff_file_siblings() { return 0; }
+handoff_file_fetch_due() { return 0; }
 
 # handoff_file_path <phase> <file>: prints the write target; non-zero when the
 # handoff is missing.
@@ -407,23 +421,35 @@ handoff_comment_read() {
   handoff_comment_locate "$file" || handoff_comment_missing "$issue" "${file%.md}" "${2:-}"
 }
 
-# handoff_comment_siblings <phase> <file>: fetches the other handoffs due at
-# <phase> into the scratch directory. A copy left by an earlier fetch is
-# cleared first, so a sibling with no live comment is absent.
-handoff_comment_siblings() {
-  local issue earlier
+# handoff_comment_fetched <file>: prints the scratch path; non-zero when the
+# last handoff_fetch_due left no copy.
+handoff_comment_fetched() {
+  printf '%s/%s\n' "$HANDOFF_SCRATCH_DIR" "$1"
+  [ -f "$HANDOFF_SCRATCH_DIR/$1" ]
+}
+
+# handoff_comment_fetch_due <phase>: requires the recorded issue, clears the
+# scratch copy of every handoff due at <phase>, reads the comments once and
+# writes each live one to the scratch directory. A handoff with no live comment
+# is absent. A failed read leaves no copy and returns non-zero, gh's reason in
+# TIMELINE_REASON.
+handoff_comment_fetch_due() {
+  local issue due
   require_issue issue
-  for earlier in $(handoffs_due "$1"); do
-    [ "$earlier" != "$2" ] || continue
-    rm -f "$HANDOFF_SCRATCH_DIR/$earlier"
-    handoff_comment_fetch "$issue" "${earlier%.md}" "$HANDOFF_SCRATCH_DIR/$earlier" || true
+  for due in $(handoffs_due "$1"); do rm -f "$HANDOFF_SCRATCH_DIR/$due"; done
+  timeline_read "$issue" || return 1
+  for due in $(handoffs_due "$1"); do
+    handoff_comment_write "${due%.md}" "$HANDOFF_SCRATCH_DIR/$due" || true
   done
 }
 
-# handoff_comment_path <phase> <file>: fetches the siblings, then reads.
+# handoff_comment_path <phase> <file>: fetches everything due at <phase> with
+# one read, then resolves <file> from the scratch directory.
 handoff_comment_path() {
-  handoff_comment_siblings "$1" "$2"
-  handoff_comment_read "$2"
+  local issue
+  require_issue issue
+  handoff_comment_fetch_due "$1" || handoff_timeline_die "$issue"
+  handoff_comment_fetched "$2" || handoff_comment_missing "$issue" "${2%.md}"
 }
 
 # handoff_comment_retire <label> <file>...: the label names a folder, which
