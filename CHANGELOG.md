@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.58
+
+A test assertion made inside a `( ... )` subshell now counts in its suite's summary and exit status, so CI no longer passes over its failure. All seven suites share one assertion tally, `scripts/test/tally.sh`, kept in a file. all.sh also fails any suite whose output has a FAIL line, even when the suite exited 0.
+
 ## 4.38.57
 
 The test runners now clear git's repo-local and identity variables, so a suite started from a git hook in a linked worktree no longer writes to the developer's repository.
