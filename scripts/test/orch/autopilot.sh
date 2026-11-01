@@ -258,8 +258,7 @@ assert_eq "and leaves the answer file as it was" "$(cat "$ans")" "$kept"
 fake_fail adapter_issue_comments_json "HTTP 500"
 out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "a failed comment read exits 2, never no reply's 1" "$st" 2
-assert_contains "naming the read" "$out" "read the comments of issue #7"
-assert_eq "and giving gh's reason" "$out" "orch: gh could not read the comments of issue #7: HTTP 500"
+assert_eq "naming the read, with gh's reason" "$out" "orch: gh could not read the comments of issue #7: HTTP 500"
 fake_unfail
 # gh succeeds but its output is no comment list
 fake_lag adapter_issue_comments_json 1 'not json'
