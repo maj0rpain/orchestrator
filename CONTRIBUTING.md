@@ -156,11 +156,12 @@ of orch.sh's modules (`scripts/orch/*.sh`) under a `# <path>` header per
 module, each with the first line of the comment above it - its second line
 where the first holds only the `<name> <args>:` signature - or `-` where there
 is none; `cmd_*` entry points are left out. `--tests` lists the shared test
-setup (`scripts/test/orch/setup.sh`) and the gh adapter fake
-(`scripts/test/gh_adapter_fake.sh`) instead - their fixtures, fakes and
-assertions. A `<file>` argument lists that one bash file alone, e.g.
+setup (`scripts/test/orch/setup.sh`), the gh adapter fake
+(`scripts/test/gh_adapter_fake.sh`) and the assertion tally
+(`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
+`( ... )` subshell) instead - their fixtures, fakes and assertions. A
+`<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
-section checks it against what bash itself defines.
 
 The fixtures to reach for first:
 
@@ -274,6 +275,7 @@ scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of 
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), and all.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
+scripts/test/tally.sh         the orch.sh suite's assertion tally: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; sourced by orch_test.sh
 scripts/test/test_jobs.sh     the job-count and priority helpers orch_test.sh and all.sh both source: the default ORCH_TEST_JOBS and the renice to 10
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

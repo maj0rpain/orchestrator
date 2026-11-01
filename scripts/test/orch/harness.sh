@@ -479,6 +479,27 @@ assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "9 passed, 1 failed"
 rm -rf "$par_dir"
 
+# --- assertions in a subshell (#1904) ----------------------------------------
+# A cut-down orch suite with one failing assertion inside ( ... ) and one
+# passing outside: the tally file counts both, whatever the job count.
+echo
+echo "assertions in a subshell (#1904)"
+sub_dir="$(planted_copy <<'PLANTED'
+  # --- planted subshell
+  echo; echo "planted subshell"
+  ( bad "a failure in a subshell" "its detail line" )
+  ok "a pass outside it"
+PLANTED
+)"
+for sub_jobs in 1 2; do
+  out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS="$sub_jobs" ORCH_TEST_ONLY='^planted subshell$' \
+    bash "$sub_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+  assert_status "a subshell failure exits 1 under ORCH_TEST_JOBS=$sub_jobs" "$st" 1
+  assert_contains "and is counted as failed under ORCH_TEST_JOBS=$sub_jobs" \
+    "$(printf '%s\n' "$out" | tail -n 1)" " 1 failed"
+done
+rm -rf "$sub_dir"
+
 # --- the section files (#932) -------------------------------------------------
 # A copy of the scripts tree cut down to isolation - harness.sh keeps only its
 # first section, and no other noun file is left - then given new noun files:
@@ -1726,10 +1747,10 @@ index_expected() {
 
 index_modules=()
 for f in "$PLUGIN_ROOT"/scripts/orch/*.sh; do index_modules+=("scripts/orch/${f##*/}"); done
-index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh)
+index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh)
 
 grep_disagrees=""
-for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh; do
+for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh scripts/test/tally.sh; do
   [ "$(col0_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" = \
     "$(sourced_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" ] || grep_disagrees+=" $rel"
 done
@@ -1746,9 +1767,9 @@ index_default="$out"
 
 out="$(cd / && "$HELPERS" --tests)"; st=$?
 assert_status "the --tests listing succeeds" "$st" 0
-assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup and the gh fake" \
+assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup, the gh fake and the tally" \
   "$(index_names "$out")" "$(index_expected "${index_tests[@]}")"
-assert_eq "under their two headers" "$(printf '%s\n' "$out" | grep '^# ')" \
+assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
   "$(printf '# %s\n' "${index_tests[@]}")"
 
 undescribed=""

@@ -52,6 +52,8 @@ SECTION_DIR="$TEST_DIR/orch"
 # shellcheck source=test_jobs.sh
 source "$TEST_DIR/test_jobs.sh"
 test_jobs_lower_priority
+# shellcheck source=tally.sh
+source "$TEST_DIR/tally.sh"
 SETUP_FILE="$SECTION_DIR/setup.sh"
 
 # The temp root. Every invocation - the parallel runner, each of its children,
@@ -181,10 +183,6 @@ print_summary() {
   fi
 }
 
-# print_fail <title> <detail>: one FAIL line and its detail line. bad() and the
-# parallel runner both print through it, so their FAIL lines cannot drift apart.
-print_fail() { printf '  FAIL %s\n     %s\n' "$1" "$2"; }
-
 # A child of the parallel runner: run its one section, and hand the counts file
 # to the summary through a plain, unexported variable, so a suite this section
 # starts in turn is no child.
@@ -194,6 +192,7 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   # shellcheck disable=SC2034 # read by the summary, eval'd from setup.sh
   orch_child_counts="$ORCH_TEST_CHILD_COUNTS"
   unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS
+  tally_init
   eval "$(section_text ",$orch_child_section,")"
   exit $?
 fi
@@ -214,6 +213,7 @@ else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
 fi
 if [ "$orch_jobs" -eq 1 ]; then
+  tally_init
   eval "$(section_text "$orch_kept")"
   exit $?
 fi

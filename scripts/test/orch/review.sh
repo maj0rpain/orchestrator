@@ -1239,7 +1239,7 @@ assert_eq "leaving a clean tree" "$(git status --porcelain)" ""
 sc_clone
 side="$(sc_add sideresume)"
 (
-  cd "$side" || exit 1
+  cd "$side" || { bad "cd into the side checkout" "cannot cd into $side"; exit 1; }
   "$ORCH" init sideresume >/dev/null
   state_fixture iteration 1
   git checkout -q -b sideflow
