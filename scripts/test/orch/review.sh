@@ -1397,7 +1397,7 @@ for f in 03-implement.md 01-plan.md; do
   mv ".orchestrator/handoff/$f" "$f.bak"
   out="$("$ORCH" review known-items fresh.md 0 2>&1)"; st=$?
   assert_status "refuses with no $f" "$st" 1
-  assert_contains "with the uniform missing error naming it" "$out" "orch: handoff not found: $PWD/.orchestrator/handoff/$f"
+  assert_contains "with the uniform missing error naming it" "$out" "$(handoff_missing_msg file 7 "${f%.md}")"
   assert_not_contains "not the old implement wording" "$out" "implement handoff not found"
   assert_not_contains "nor the old plan wording" "$out" "plan handoff not found"
   assert_eq "writing no file without $f" "$(on_disk fresh.md)" "absent"
