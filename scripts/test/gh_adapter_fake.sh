@@ -267,7 +267,7 @@ fake_close_comment() {
   rm -f "$c"
 }
 
-# fake_comments_print <comments-dir>: the directory's comments in COMMENTS_JQ's
+# fake_comments_print <comments-dir>: the directory's comments in the rendered
 # shape - each opened by its marker line, one blank line between, a newline
 # after the last; nothing at all for none.
 fake_comments_print() {
@@ -634,12 +634,13 @@ adapter_pr_body() {
   printf '\n'
 }
 
-# adapter_pr_comments <n>: the stored comments in COMMENTS_JQ's shape, as
+# adapter_pr_comments <n>: the stored comments as gh's raw JSON, as
 # adapter_issue_comments prints an issue's.
 adapter_pr_comments() {
   ! fake_failing adapter_pr_comments || return 1
   fake_pr_known "$1" || return 1
-  fake_comments_print "$(fake_pr_dir "$1")/comments"
+  fake_comments_json "$(fake_pr_dir "$1")/comments" "$1" \
+    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body})}'
 }
 
 # adapter_pr_refs <n>: the stored head SHA (default forty zeros, a SHA no

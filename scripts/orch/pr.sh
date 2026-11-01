@@ -421,8 +421,24 @@ cmd_pr_comments() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comments <file>"
   local file="$1" pr
   pr="$(current_open_pr)" || return $?
-  gh_or_die --exit 2 --file "$file" "read the comments of PR #$pr" \
-    adapter_pr_comments "$pr"
+  local text
+  pr_comments_rendered --exit 2 "read the comments of PR #$pr" "$pr" text
+  mkdir -p "$(dirname "$file")"
+  { [ -z "$text" ] || printf '%s\n' "$text"; } >"$file" || die2 "could not write $file"
+}
+
+# pr_comments_rendered [gh_or_die options] <what> <n> <var>: PR <n>'s trusted
+# comments, rendered by issue_comments_render (the Trust filter's stderr line
+# names the PR), assigned to <var>; no placeholder for a dropped comment. A gh
+# failure dies as "gh could not <what>"; a comment object that does not parse
+# dies as "could not read the comments of PR #<n>".
+pr_comments_rendered() {
+  local opts=() __pcr_raw __pcr_out
+  while [ $# -gt 3 ]; do opts+=("$1"); shift; done
+  gh_or_die --out __pcr_raw ${opts[@]+"${opts[@]}"} "$1" adapter_pr_comments "$2"
+  __pcr_out="$(issue_comments_render "$2" <<<"$__pcr_raw")" \
+    || { [ "${opts[1]:-1}" = 2 ] && die2 "could not read the comments of PR #$2"; die "could not read the comments of PR #$2"; }
+  printf -v "$3" '%s' "$__pcr_out"
 }
 
 # The PR counterpart of issue update, with one guard issue update has no need

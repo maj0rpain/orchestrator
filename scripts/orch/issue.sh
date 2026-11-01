@@ -94,7 +94,7 @@ issue_json_trusted() {
 
 # issue_comments_render <n>: adapter_issue_comments' raw JSON on stdin, on
 # stdout the comments of trusted authors rendered through COMMENTS_RENDER_JQ as
-# COMMENTS_JQ renders them - nothing for none, no placeholder for a dropped
+# it renders them - nothing for none, no placeholder for a dropped
 # comment. Non-zero when stdin is not a comment object. The trust filter's
 # stderr line is for issue <n>.
 issue_comments_render() {
@@ -116,13 +116,13 @@ issue_comments_rendered() {
 
 # The comments `issue comments` writes (#1116), from the issue's comments
 # already filtered to drop the spec review's own changelogs (the marked comments
-# of kind spec-review): rendered through COMMENTS_RENDER_JQ, as COMMENTS_JQ
-# renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
+# of kind spec-review): rendered through COMMENTS_RENDER_JQ, as every comments
+# read renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
 # object, whose author is already the login.
 ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
 
 # Every comment on the issue but the spec review's own changelogs and the
-# untrusted authors', in COMMENTS_JQ's shape - so the spec review reads the
+# untrusted authors', in the rendered shape - so the spec review reads the
 # comments beside the body without its earlier rounds. Filtered here rather
 # than in the adapter, from the issue's trusted structured read, never by
 # splitting the joined text. No comments is an empty file, not an error; the

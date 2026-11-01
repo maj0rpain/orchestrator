@@ -253,10 +253,10 @@ adapter_labels() {
 # an array of comments into the joined text, login reading each comment's
 # author, so every comments read - issue comments' filtered one among them
 # (#1116) - renders through the same definition.
+# shellcheck disable=SC2034 # read by the issue module, which renders the issue comments
 COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
-COMMENTS_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author.login)'
 
-# comments_split <file> <dir>: splits <file>, comments in COMMENTS_JQ's shape,
+# comments_split <file> <dir>: splits <file>, comments in its rendered shape,
 # into one file per comment under <dir>, numbered from 1 in order, each holding
 # the comment's body alone. A comment opens at its marker line, the one
 # COMMENTS_RENDER_JQ renders.
@@ -532,10 +532,11 @@ adapter_pr_body() {
   gh pr view "$1" --json body --jq .body
 }
 
-# adapter_pr_comments <n>: the PR's comments in COMMENTS_JQ's shape, as
-# adapter_issue_comments prints an issue's (issue #418).
+# adapter_pr_comments <n>: the PR's comments as gh answers them, raw JSON, as
+# adapter_issue_comments prints an issue's (issue #418). Rendering happens above
+# the adapter, after the trust filter (pr_comments_rendered).
 adapter_pr_comments() {
-  gh pr view "$1" --json comments --jq "$COMMENTS_JQ"
+  gh pr view "$1" --json comments
 }
 
 # adapter_pr_refs <n>: review ci's read of the PR's own head, base and commits

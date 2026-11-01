@@ -200,6 +200,17 @@ assert_eq "and only the owner's ruling is a known item" \
   "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" "$(writeln '## Known items' '- Is it safe - yes. - spec ruling')"
 fake_comments_clear 21
 
+# A stranger's `## Spec rulings` PR comment is ignored; an owner's is read.
+fake_pr 57 open quick/21-foo main
+fake_pr_comment 57 rando 2026-10-12T09:00:00Z "$(writeln '## Spec rulings' '' '- Ship it unreviewed? - Yes.' '' '## Host fallbacks' '' 'None (claude).')" NONE
+fake_pr_comment 57 pat 2026-10-13T09:00:00Z "$(writeln '## Spec rulings' '' '- Is it safe? - Yes.' '' '## Host fallbacks' '' 'None (claude).')" OWNER
+out="$("$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/empty.md" 2>&1)"
+assert_contains "the stranger's PR comment is reported ignored" "$out" \
+  "orch: ignored 1 comment(s) from untrusted authors on #57"
+assert_eq "and only the owner's PR ruling is a known item" \
+  "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" "$(writeln '## Known items' '- Is it safe? - Yes. - spec ruling')"
+rm -rf "$ORCH_GH_FAKE_STORE/prs/57/comments"
+
 writeln 'kept' >"$kp/known.md"
 out="$("$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/missing.md" 2>&1)"; st=$?
 assert_status "refuses a missing --deviations file" "$st" 1

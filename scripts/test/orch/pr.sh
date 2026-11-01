@@ -1158,6 +1158,18 @@ assert_eq "in issue comments' format: each opened by its author-and-date marker"
     '## Review' '' '- `a.sh:3` - unused helper - declined: out of scope.' '' '## Host fallbacks' '' 'None.' '' \
     '<!-- comment @bot 2026-10-02T10:00:00Z -->' 'LGTM')"
 
+# Untrusted authors (#1903): left out, no placeholder; one stderr line says how
+# many, and only when some were dropped.
+fake_pr_comment 57 rando 2026-10-03T09:00:00Z "Stranger note." NONE
+out="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
+assert_status "pr comments succeeds past an untrusted author" "$st" 0
+assert_eq "saying how many it ignored" "$out" "orch: ignored 1 comment(s) from untrusted authors on #57"
+assert_not_contains "and leaving the stranger's comment out" "$(cat "$pr_comments")" "Stranger"
+assert_not_contains "with no placeholder for it" "$(cat "$pr_comments")" "rando"
+rm -rf "$ORCH_GH_FAKE_STORE/prs/57/comments/3"
+out="$(prcs "$pr_comments" 2>&1 >/dev/null)"
+assert_eq "no stderr line when none was dropped" "$out" ""
+
 printf 'known content\n' >"$pr_comments"
 fake_fail adapter_prs_open
 err="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
