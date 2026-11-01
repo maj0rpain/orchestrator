@@ -31,10 +31,10 @@ liveness_proc_start() {
   printf '%s\n' "$t"
 }
 
-# liveness_pid_write <pid> <file>: writes the process's record,
+# liveness_record_write <pid> <file>: writes the process's record,
 # `<pid> <start-time>`, to the file. Fails with an orch: line when the start
 # time cannot be read.
-liveness_pid_write() {
+liveness_record_write() {
   local pid="$1" file="$2" start
   start="$(liveness_proc_start "$pid")" || { warn "could not read the start time of pid $pid"; return 1; }
   printf '%s %s\n' "$pid" "$start" >"$file"
@@ -59,17 +59,14 @@ liveness_subdir() {
   printf '%s/%s\n' "$(autopilot_dir "$root")" "$1"
 }
 
-# liveness_run_dir: the main checkout's run directory.
-liveness_run_dir() { liveness_subdir run; }
-
 # liveness_tick_begin <issue>: right after a tick takes a claim, writes the
 # calling process's record as the issue's tick record, overwriting an older
 # one. A failed write warns and carries on: with no record, the claim's
 # process counts as gone.
 liveness_tick_begin() {
   local dir
-  dir="$(liveness_run_dir 2>/dev/null)" || dir=""
-  { [ -n "$dir" ] && mkdir -p "$dir" && liveness_pid_write "$$" "$dir/$1.tick"; } 2>/dev/null ||
+  dir="$(liveness_subdir run 2>/dev/null)" || dir=""
+  { [ -n "$dir" ] && mkdir -p "$dir" && liveness_record_write "$$" "$dir/$1.tick"; } 2>/dev/null ||
     warn "could not write the tick record for issue #$1"
   return 0
 }
@@ -79,9 +76,9 @@ liveness_tick_begin() {
 # time cannot be read, leaving the tick record.
 liveness_run_begin() {
   local dir
-  dir="$(liveness_run_dir)" || return $?
+  dir="$(liveness_subdir run)" || return $?
   mkdir -p "$dir" || die "could not create $dir"
-  liveness_pid_write "$$" "$dir/$1.pid" || return 1
+  liveness_record_write "$$" "$dir/$1.pid" || return 1
   rm -f "$dir/$1.tick"
 }
 
@@ -90,7 +87,7 @@ liveness_run_begin() {
 # exit.
 liveness_run_end() {
   local dir record
-  dir="$(liveness_run_dir)" || return $?
+  dir="$(liveness_subdir run)" || return $?
   record="$(cat "$dir/$1.pid" 2>/dev/null)" || record=""
   [ "${record%% *}" = "$$" ] && liveness_record_alive "$record" || return 0
   rm -f "$dir/$1.pid"
@@ -100,7 +97,7 @@ liveness_run_end() {
 # there is one, else the tick record's, else nothing.
 liveness_issue_record() {
   local dir
-  dir="$(liveness_run_dir)" || return $?
+  dir="$(liveness_subdir run)" || return $?
   if [ -f "$dir/$1.pid" ]; then cat "$dir/$1.pid"
   elif [ -f "$dir/$1.tick" ]; then cat "$dir/$1.tick"; fi
   return 0
@@ -119,7 +116,7 @@ liveness_issue_alive() {
 # liveness_issue_forget <issue>: removes both of the issue's records.
 liveness_issue_forget() {
   local dir
-  dir="$(liveness_run_dir)" || return $?
+  dir="$(liveness_subdir run)" || return $?
   rm -f "$dir/$1.pid" "$dir/$1.tick"
 }
 
@@ -127,7 +124,7 @@ liveness_issue_forget() {
 # liveness_issue_alive's rule, one number per line, ascending.
 liveness_live_issues() {
   local dir f name issue
-  dir="$(liveness_run_dir)" || return $?
+  dir="$(liveness_subdir run)" || return $?
   for f in "$dir"/*.pid "$dir"/*.tick; do
     [ -e "$f" ] || continue
     name="${f##*/}"; printf '%s\n' "${name%.*}"
@@ -136,14 +133,11 @@ liveness_live_issues() {
   done
 }
 
-# liveness_logs_dir: the main checkout's session logs directory.
-liveness_logs_dir() { liveness_subdir logs; }
-
 # liveness_log_path <issue> <phase>: a new session log's path,
 # logs/<issue>-<phase>-<stamp>.log, creating the logs directory.
 liveness_log_path() {
   local dir
-  dir="$(liveness_logs_dir)" || return $?
+  dir="$(liveness_subdir logs)" || return $?
   mkdir -p "$dir" || die "could not create $dir"
   printf '%s/%s-%s-%s.log\n' "$dir" "$1" "$2" "$(dir_stamp)"
 }
@@ -152,7 +146,7 @@ liveness_log_path() {
 # (of that phase, when given); nothing when there is none.
 liveness_latest_log() {
   local dir f base rest prefix="$1-"
-  dir="$(liveness_logs_dir)" || return $?
+  dir="$(liveness_subdir logs)" || return $?
   [ -z "${2:-}" ] || prefix="$1-$2-"
   for f in "$dir/$prefix"*.log; do
     [ -e "$f" ] || continue
@@ -183,7 +177,7 @@ liveness_watch_begin() {
       die "another autopilot watch (pid ${other%% *}) is already running in this clone"
   fi
   mkdir -p "$(dirname "$pidfile")" || die "could not create $(dirname "$pidfile")"
-  liveness_pid_write "$$" "$pidfile" || return 1
+  liveness_record_write "$$" "$pidfile" || return 1
 }
 
 # liveness_watch_end: removes the watch pidfile.
