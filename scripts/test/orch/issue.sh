@@ -1092,3 +1092,31 @@ assert_eq "an empty OLDPWD gives the generic remedy" "$err" "$outside_generic"
 err="$(env -u OLDPWD bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
 assert_status "with OLDPWD unset, exits 1" "$st" 1
 assert_eq "an unset OLDPWD gives the generic remedy" "$err" "$outside_generic"
+
+# --- issue fetch trust warning ------------------------------------------------
+# Attended reads warn rather than refuse (ADR-0057).
+echo
+echo "issue fetch trust warning"
+healthy_repo
+fake_github
+fake_issue 31 open
+fake_issue_authorship 31 stranger NONE
+tw_file="$(mktemp)"
+for tw_mode in "" --json; do
+  out="$("$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
+  assert_status "fetch of an untrusted issue exits 0 ($tw_mode)" "$st" 0
+  assert_eq "with one warning naming the writer ($tw_mode)" "$(grep -c 'last written by stranger' <<<"$out")" "1"
+done
+fake_fail adapter_issue_authorship "HTTP 502 authorship"
+out="$("$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"; st=$?
+assert_status "a failing trust read does not fail fetch" "$st" 0
+assert_eq "it warns once that trust could not be checked" "$(grep -c 'issue trust could not be checked' <<<"$out")" "1"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
+assert_eq "under ORCH_AUTOPILOT=1 no trust read, no warning" "$out" ""
+fake_unfail
+out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
+assert_eq "under ORCH_AUTOPILOT=1 an untrusted issue gives no warning" "$out" ""
+fake_issue_authorship 31 someone OWNER
+out="$("$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
+assert_eq "a trusted issue gives no warning" "$out" ""
+rm -f "$tw_file"

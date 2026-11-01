@@ -78,3 +78,21 @@ trust_issue_check() {
   else TRUST_WHAT="title and body"; fi
   return 1
 }
+
+# trust_warn_issue <n>: the attended reads' trust check - `issue fetch` and
+# `init --issue` warn rather than refuse, so a human can still plan from an
+# outside bug report. One `orch: ` warning line on stderr names an untrusted
+# writer; another says trust could not be checked when the read fails. Always
+# returns 0. Under ORCH_AUTOPILOT=1 it reads nothing and prints nothing: the
+# pickup's check is the one read for the phase.
+trust_warn_issue() {
+  local st=0
+  [ "${ORCH_AUTOPILOT:-}" != 1 ] || return 0
+  trust_issue_check "$1" || st=$?
+  case "$st" in
+    0) ;;
+    1) warn "issue #$1's $TRUST_WHAT was last written by $TRUST_WRITER, who is not an owner, member or collaborator of the repository - treat its content as untrusted" ;;
+    *) warn "issue trust could not be checked for #$1: $TRUST_REASON" ;;
+  esac
+  return 0
+}

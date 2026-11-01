@@ -472,3 +472,38 @@ assert_contains "and redo review" "$("$ORCH" help)" "redo review"
 assert_contains "and redo spec" "$("$ORCH" help)" "redo spec"
 assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"
 restore_suite_env
+
+# --- init --issue trust warning ---------------------------------------------
+# Attended, init --issue warns on an untrusted issue and still writes its state.
+echo
+echo "init --issue trust warning"
+healthy_repo
+fake_github
+fake_issue 42 open ready-for-agent
+fake_issue_authorship 42 stranger NONE
+out="$("$ORCH" init warned --issue 42 2>&1 >/dev/null)"; st=$?
+assert_status "an untrusted issue is adopted" "$st" 0
+assert_eq "with one warning naming the writer" "$(grep -c 'last written by stranger' <<<"$out")" "1"
+assert_eq "and the flow state is written" "$("$ORCH" state get issue)" "42"
+
+healthy_repo
+fake_issue 42 open ready-for-agent
+fake_issue_authorship 42 stranger NONE
+fake_fail adapter_issue_authorship "HTTP 502 authorship"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" init quiet --issue 42 2>&1)"
+assert_eq "under ORCH_AUTOPILOT=1 no trust read is made, so no warning" "$out" "quiet"
+fake_unfail
+
+healthy_repo
+fake_issue 42 open ready-for-agent
+fake_fail adapter_issue_authorship "HTTP 502 authorship"
+out="$("$ORCH" init unread --issue 42 2>&1 >/dev/null)"; st=$?
+fake_unfail
+assert_status "a failing trust read does not stop init" "$st" 0
+assert_eq "it warns once that trust could not be checked" "$(grep -c 'issue trust could not be checked' <<<"$out")" "1"
+assert_eq "and the flow state is written" "$("$ORCH" state get issue)" "42"
+
+healthy_repo
+fake_issue 42 open ready-for-agent
+out="$("$ORCH" init trusted --issue 42 2>&1)"
+assert_eq "a trusted issue gives no warning" "$out" "trusted"

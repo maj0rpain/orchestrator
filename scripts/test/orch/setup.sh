@@ -478,6 +478,17 @@ fake_issue() {
 
 # fake_issue_title <n> <title>: seeds issue #n's title.
 fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
+# fake_issue_authorship <n> <author> <association> [<editor> [<renamer>]]: sets
+# issue #n's author and association, the last editor of its body and the latest
+# renamer of its title - the last two empty (never edited, never renamed) unless
+# given. The issue is kept as it is otherwise.
+fake_issue_authorship() {
+  local d="$ORCH_GH_FAKE_STORE/issues/$1"
+  printf '%s\n' "$2" >"$d/author"
+  printf '%s\n' "$3" >"$d/association"
+  printf '%s\n' "${4:-}" >"$d/editor"
+  printf '%s\n' "${5:-}" >"$d/renamer"
+}
 
 # fake_issue_relabel <n> <label>...: sets issue #n's labels; its state, title,
 # body and comments are kept.

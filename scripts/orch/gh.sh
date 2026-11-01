@@ -385,18 +385,8 @@ issue_title_labels_read() {
 }
 
 # The GraphQL query and --jq behind adapter_issue_authorship.
-ISSUE_AUTHORSHIP_QUERY='query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) {
-    issue(number: $number) {
-      author { login }
-      authorAssociation
-      editor { login }
-      timelineItems(last: 1, itemTypes: [RENAMED_TITLE_EVENT]) {
-        nodes { ... on RenamedTitleEvent { actor { login } } }
-      }
-    }
-  }
-}'
+# One line, so a logged argv (the gh fixture's) stays one line.
+ISSUE_AUTHORSHIP_QUERY='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { author { login } authorAssociation editor { login } timelineItems(last: 1, itemTypes: [RENAMED_TITLE_EVENT]) { nodes { ... on RenamedTitleEvent { actor { login } } } } } } }'
 ISSUE_AUTHORSHIP_JQ='.data.repository.issue | (.author.login // ""), (.authorAssociation // ""), (.editor.login // ""), (.timelineItems.nodes[0].actor.login // "")'
 
 # adapter_issue_authorship <n>: four lines, each possibly empty: the issue

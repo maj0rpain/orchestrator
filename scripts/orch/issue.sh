@@ -66,6 +66,7 @@ open_issue_read() {
 # scripts: compact JSON puts the whole issue on one line, which Read cuts off.
 cmd_issue_fetch() {
   local issue="$1" file="$2" as_json="${3:-}"
+  trust_warn_issue "$issue"
   if [ -n "$as_json" ]; then
     local json
     issue_json_trusted "read issue #$issue" "$issue" json
