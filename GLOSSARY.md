@@ -58,10 +58,11 @@ pickup, recording that issue as a quick implementation's does, and every later
 phase reuses it. _Avoid_: sibling worktree, flow worktree, second checkout.
 
 **Finished**:
-A side checkout is finished when its branch's pull request has merged into its
-base branch, its working tree is clean, and it holds no flow or a flow at
-`done`. A flow is finished when it is at `done` and its pull request has
-merged. `/orchestrator:finish` cleans up only finished work.
+A side checkout is finished when a pull request from its branch has merged into
+its base branch, every commit on its branch is held by one of its merged pull
+requests, its working tree is clean, and it holds no flow or a flow at `done`.
+A flow is finished when it is at `done` and its pull request has merged.
+`/orchestrator:finish` cleans up only finished work.
 
 **Phase**:
 One of the four stages a flow passes through: **plan**, **spec**, **implement**,

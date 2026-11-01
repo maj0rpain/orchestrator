@@ -35,15 +35,18 @@ is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 #
 # Finished is read from GitHub's PR state, never git ancestry: a squash or
 # rebase merge never makes the branch an ancestor of its base (ADR-0037). The
-# verdicts below assign to the caller's `verdict` and `branch`, which bash
-# scopes dynamically, and return 0 finished, 1 not finished - `verdict` the
-# reason - or 2 the verdict could not be read, GitHub or the checkout's own
-# git status - `verdict` naming which, and its error.
+# verdicts below assign to the caller's `verdict` and `branch` - and
+# finished_flow its `merged_prs` too - which bash scopes dynamically, and
+# return 0 finished, 1 not finished - `verdict` the reason - or 2 the verdict
+# could not be read, GitHub or the checkout's own git status - `verdict`
+# naming which, and its error.
 
 # finished_flow <state-file>: whether that flow is finished - at done, and its
-# recorded PR merged into its own base branch.
+# recorded PR merged into its own base branch. It also assigns the caller's
+# `merged_prs`: the merged PR's number, a tab, its head SHA - the one line
+# side_checkout_finished judges the branch tip against.
 finished_flow() {
-  local state="$1" phase pr base pr_state _is_draft shown_state _head_oid _head_ref merged_base _commits err
+  local state="$1" phase pr base pr_state _is_draft shown_state merged_head _head_ref merged_base _commits err
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
@@ -60,27 +63,65 @@ finished_flow() {
     state_word shown_state "$pr_state"
     verdict="PR #$pr is $shown_state"; return 1
   fi
-  pr_refs_read "$pr" _head_oid _head_ref merged_base _commits err \
+  pr_refs_read "$pr" merged_head _head_ref merged_base _commits err \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
+  # shellcheck disable=SC2034 # read by side_checkout_finished
+  merged_prs="$pr"$'\t'"$merged_head"
+}
+
+# tip_covered <path> <branch> <merged-prs>: whether the branch's local tip is
+# held by a merged PR - equal to its head SHA or an ancestor of it. The
+# merged PRs are lines of a number, a tab and a head SHA, newest first; any
+# covering head is enough. Returns 0 covered; 1 not, `verdict` naming the
+# newest PR whose head is missing from this repo (the sweep never fetches), or
+# else the newest PR; 2 when git cannot judge a head that is present.
+tip_covered() {
+  local path="$1" branch="$2" prs="$3" tip n head rc first_n="" first_head="" miss_n="" miss_head=""
+  tip="$(git -C "$path" rev-parse --verify -q "refs/heads/$branch^{commit}")" \
+    || { verdict="could not read the tip of $branch"; return 2; }
+  while IFS=$'\t' read -r n head; do
+    [ -n "$n" ] || continue
+    [ -n "$first_n" ] || { first_n="$n"; first_head="$head"; }
+    if [ -z "$head" ] || ! git -C "$path" cat-file -e "$head^{commit}" 2>/dev/null; then
+      [ -n "$miss_n" ] || { miss_n="$n"; miss_head="$head"; }
+      continue
+    fi
+    [ "$tip" != "$head" ] || return 0
+    rc=0; git -C "$path" merge-base --is-ancestor "$tip" "$head" 2>/dev/null || rc=$?
+    case "$rc" in
+      0) return 0 ;;
+      1) ;;
+      *) verdict="could not compare $branch with PR #$n's head ${head:0:7}"; return 2 ;;
+    esac
+  done <<<"$prs"
+  if [ -n "$miss_n" ]; then
+    verdict="$branch: PR #$miss_n's head ${miss_head:0:7} is not in this repo - fetch it to let the sweep judge"
+  else
+    verdict="$branch has commits past PR #$first_n's merged head ${first_head:0:7}"
+  fi
+  return 1
 }
 
 # side_checkout_finished <path>: whether the side checkout there is finished -
 # a clean tree, and either a finished flow, or no flow and a PR merged from
 # its checked-out branch into the base branch off recorded for it (see
-# recorded_base). A git status that cannot run returns 2, as an unreadable
-# GitHub does, so the sweep removes nothing on a tree it could not read.
+# recorded_base) - and the branch's tip held by a merged PR (tip_covered), so
+# the sweep's branch -D never drops a commit. A git status that cannot run
+# returns 2, as an unreadable GitHub does, so the sweep removes nothing on a
+# tree it could not read.
 # verdict is read by its callers, side-checkout prune, below, and
 # doctor.sh.
 # shellcheck disable=SC2034
 side_checkout_finished() {
-  local path="$1" base prs st err
+  local path="$1" base prs st err merged_prs=""
   st="$(tree_status "$path")" || { verdict="$st"; return 2; }
   if [ -n "$st" ]; then
     verdict="uncommitted changes or untracked files"; return 1
   fi
   if checkout_has_flow "$path"; then
-    finished_flow "$(flow_state_file "$path")"; return
+    finished_flow "$(flow_state_file "$path")" || return
+    tip_covered "$path" "$branch" "$merged_prs"; return
   fi
   branch="$(checkout_branch "$path")" \
     || { verdict="no branch"; return 1; }
@@ -88,6 +129,7 @@ side_checkout_finished() {
   capture prs err adapter_prs_merged "$branch" "$base" \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
+  tip_covered "$path" "$branch" "$prs"
 }
 
 # archive_root <root>: prints the checkout whose .orchestrator/archive/
@@ -349,7 +391,7 @@ cmd_side_checkout_remove() {
 # worktree holding a flow is reported and left alone.
 cmd_side_checkout_prune() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
-  local here main_root path line entry verdict branch rc teardown_rc unread=0 failed=0
+  local here main_root path line entry verdict branch merged_prs rc teardown_rc unread=0 failed=0
   # archive_out is the main checkout entry's archive_flow output - its note,
   # or its error - cleared at the top of each entry so none outlives its own;
   # a side checkout's is cleared by side_checkout_archive_and_remove.
