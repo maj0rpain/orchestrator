@@ -35,10 +35,11 @@ is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 #
 # Finished is read from GitHub's PR state, never git ancestry: a squash or
 # rebase merge never makes the branch an ancestor of its base (ADR-0037). The
-# verdicts below assign to the caller's `verdict` and `branch`, which bash
-# scopes dynamically, and return 0 finished, 1 not finished - `verdict` the
-# reason - or 2 the verdict could not be read, GitHub or the checkout's own
-# git status - `verdict` naming which, and its error.
+# verdicts below assign to the caller's `verdict` and `branch` - and
+# finished_flow its `merged_prs` too - which bash scopes dynamically, and
+# return 0 finished, 1 not finished - `verdict` the reason - or 2 the verdict
+# could not be read, GitHub or the checkout's own git status - `verdict`
+# naming which, and its error.
 
 # finished_flow <state-file>: whether that flow is finished - at done, and its
 # recorded PR merged into its own base branch. It also assigns the caller's
@@ -386,7 +387,7 @@ cmd_side_checkout_remove() {
 # worktree holding a flow is reported and left alone.
 cmd_side_checkout_prune() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
-  local here main_root path line entry verdict branch rc teardown_rc unread=0 failed=0
+  local here main_root path line entry verdict branch merged_prs rc teardown_rc unread=0 failed=0
   # archive_out is the main checkout entry's archive_flow output - its note,
   # or its error - cleared at the top of each entry so none outlives its own;
   # a side checkout's is cleared by side_checkout_archive_and_remove.

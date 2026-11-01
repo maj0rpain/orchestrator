@@ -624,8 +624,7 @@ adapter_pr_refs() {
   ! fake_failing adapter_pr_refs || return 1
   fake_pr_known "$1" || return 1
   d="$(fake_pr_dir "$1")"
-  oid="$(cat "$d/head_oid" 2>/dev/null)"
-  oid="${oid:-0000000000000000000000000000000000000000}"
+  oid="$(fake_pr_head_oid "$d")"
   printf '%s\n' "$oid"
   cat "$d/head" "$d/base"
   if [ -f "$d/commits" ]; then cat "$d/commits"; else printf '%s\n' "$oid"; fi
@@ -677,6 +676,14 @@ adapter_pr_diff() {
   return 0
 }
 
+# fake_pr_head_oid <pr-dir>: prints the stored PR's head SHA - its head_oid
+# file, or forty zeros when that is absent or empty - the store's one default.
+fake_pr_head_oid() {
+  local oid
+  oid="$(cat "$1/head_oid" 2>/dev/null)"
+  printf '%s\n' "${oid:-0000000000000000000000000000000000000000}"
+}
+
 # adapter_prs_merged <head> <base>: the merged PRs in the store from the head
 # branch into the base, newest first: number, a tab, the head SHA.
 adapter_prs_merged() {
@@ -686,7 +693,7 @@ adapter_prs_merged() {
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = MERGED ] && [ "$(cat "$d/head")" = "$1" ] \
       && [ "$(cat "$d/base")" = "$2" ] || continue
-    printf '%s\t%s\n' "$(basename "$d")" "$(cat "$d/head_oid" 2>/dev/null || echo 0000000000000000000000000000000000000000)"
+    printf '%s\t%s\n' "$(basename "$d")" "$(fake_pr_head_oid "$d")"
   done | sort -rn
 }
 
