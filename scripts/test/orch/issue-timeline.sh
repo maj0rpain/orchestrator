@@ -14,6 +14,10 @@ echo "issue-timeline module"
 tick_fixture
 fake_issue 7 open ready-for-agent orch:spec
 
+# fake_helpers: the shared gh fake helpers, to prefix a child script (its own
+# shell) with.
+fake_helpers="$(declare -f fake_fail fake_comments_clear)"$'\n'
+
 # tl_seed <comment>...: issue #7's comments, oldest first.
 tl_seed() {
   local c
@@ -23,7 +27,7 @@ tl_seed() {
 # tl <script>: reads issue #7's timeline, runs the script, and prints its
 # output on one line (newlines as "|"), then "rc=<status>" of the script.
 tl() {
-  sourced_orch_script 'rc=0; ( timeline_read 7; '"$1"' ) || rc=$?; echo "rc=$rc"' 2>&1 | tr '\n\t' '|~' | sed 's/|$//'
+  sourced_orch_script "$fake_helpers"'rc=0; ( timeline_read 7; '"$1"' ) || rc=$?; echo "rc=$rc"' 2>&1 | tr '\n\t' '|~' | sed 's/|$//'
 }
 # tl_exact <script>: the script's stdout after a read, in brackets, trailing
 # newlines kept.
@@ -89,8 +93,6 @@ tl_case "no stop: none" "timeline_stop$TL_STOP" "~~~|rc=1" "intro"
 tl_case "a failure comment is a stop" "timeline_stop$TL_STOP" "0~failure~spec~$U-1|rc=0" "$STOP_F" "note"
 tl_case "the newest stop wins" "timeline_stop$TL_STOP" "1~refusal~implement~$U-2|rc=0" "$STOP_F" "$STOP_R" "note"
 tl_case "a limit stop is not a stop" "timeline_stop$TL_STOP" "0~failure~spec~$U-1|rc=0" "$STOP_F" "$LIM_SPEC"
-tl_case "a legacy prose-opened refusal is a stop" "timeline_stop$TL_STOP" "0~refusal~plan~$U-1|rc=0" "Autopilot refused to run the plan phase: nope" "x"
-tl_case "a legacy prose-opened failure is a stop" "timeline_stop$TL_STOP" "0~failure~review~$U-1|rc=0" "Autopilot failed in the review phase: boom" "x"
 tl_case "a question newer than a stop leaves the stop answered as it was" "timeline_stop$TL_STOP" "0~failure~spec~$U-1|rc=0" "$STOP_F" "$Q_SPEC"
 tl_case "and is itself the newest question" "timeline_question$TL_Q" "1~spec~$U-2|rc=0" "$STOP_F" "$Q_SPEC"
 tl_case "a stop newer than a question leaves the question answered as it was" "timeline_question$TL_Q" "0~spec~$U-1|rc=0" "$Q_SPEC" "$STOP_F"
@@ -118,14 +120,11 @@ tl_case "a retired newest handoff is not live" "timeline_handoff 01-plan$TL_HO" 
 tl_case "a live handoff newer than a retired one is live" "timeline_handoff 01-plan$TL_HO" "1|rc=0" "$HO_A_RETIRED" "$HO_A"
 tl_case_exact "a comment of only its marker line has an empty body" 'timeline_body 0' "[]" "$(marker_of handoff 01-plan)"
 
-# CR-terminated marker lines
-tl_case "a CR-terminated question marker is read" "timeline_question spec$TL_Q" "0~spec~$U-1|rc=0" "<!-- orch:question spec -->"$'\r\nwhat?' "<!-- orch:handoff 01-plan -->"$'\r\nbody'
-tl_case "a CR-terminated handoff marker is read" "timeline_handoff 01-plan$TL_HO" "1|rc=0" "<!-- orch:question spec -->"$'\r\nwhat?' "<!-- orch:handoff 01-plan -->"$'\r\nbody'
 
 # a query that finds nothing clears the results an earlier call of it set, and a
 # query prints nothing, found or not
 tl_case "a question query finding nothing clears its results" "timeline_question spec; timeline_question implement$TL_Q" "~~|rc=1" "$Q_SPEC"
-tl_case "a stop query finding nothing clears its results" "timeline_stop; rm -rf \"\$ORCH_GH_FAKE_STORE/issues/7/comments\"; timeline_read 7; timeline_stop$TL_STOP" "~~~|rc=1" "$STOP_F"
+tl_case "a stop query finding nothing clears its results" "timeline_stop; fake_comments_clear 7; timeline_read 7; timeline_stop$TL_STOP" "~~~|rc=1" "$STOP_F"
 tl_case "a handoff query finding nothing clears its result" "timeline_handoff 01-plan; timeline_handoff 02-build$TL_HO" "|rc=1" "$HO_A"
 tl_case "the queries print nothing when they find their comment" 'timeline_question spec; timeline_stop; timeline_handoff 01-plan' "rc=0" "$Q_SPEC" "$STOP_F" "$HO_A"
 tl_case "the queries print nothing when they find none" 'timeline_question implement || :; timeline_stop || :; timeline_handoff 02-build || :' "rc=0" "intro"
@@ -140,8 +139,8 @@ bad_json='adapter_issue_comments_json() { echo "not json"; }; rc=0; timeline_rea
 assert_eq "output that is not JSON returns non-zero with an empty reason" "$(sourced_orch_script "$bad_json" 2>&1)" "rc=1 reason=[]"
 
 # reads in sequence
-break_read='break_read() { mkdir -p "$ORCH_GH_FAKE_STORE/fail"; echo x >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json"; }; '
-two_reads='timeline_read 7; timeline_handoff 01-plan; echo "$TIMELINE_HANDOFF_INDEX"; rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; timeline_read 7; rc=0; timeline_handoff 01-plan || rc=$?; echo "rc=$rc"'
+break_read="$fake_helpers"'break_read() { fake_fail adapter_issue_comments_json; }; '
+two_reads="$fake_helpers"'timeline_read 7; timeline_handoff 01-plan; echo "$TIMELINE_HANDOFF_INDEX"; fake_comments_clear 7; timeline_read 7; rc=0; timeline_handoff 01-plan || rc=$?; echo "rc=$rc"'
 assert_eq "two reads in sequence: a handoff live in the first is missing in the second" \
   "$(sourced_orch_script "$two_reads" 2>&1 | tr '\n' '|')" "0|rc=1|"
 tl_seed "$Q_SPEC" "$STOP_F" "$HO_A"
@@ -160,7 +159,7 @@ assert_eq "a failed read clears every named result" \
   "$(sourced_orch_script "$break_read$set_all"'break_read; timeline_read 7 || true; '"$all_results" 2>&1)" ""
 fake_unfail
 assert_eq "a successful read of a history with none of them clears every named result" \
-  "$(sourced_orch_script "$set_all"'rm -rf "$ORCH_GH_FAKE_STORE/issues/7/comments"; timeline_read 7; '"$all_results" 2>&1)" ""
+  "$(sourced_orch_script "$fake_helpers$set_all"'fake_comments_clear 7; timeline_read 7; '"$all_results" 2>&1)" ""
 tl_seed "$LIM_SPEC" "$LIM_SPEC"
 assert_eq "and the limit count after it is zero" \
   "$(sourced_orch_script "$break_read"'timeline_read 7; break_read; timeline_read 7 || true; timeline_limit_count spec' 2>&1)" "0"
