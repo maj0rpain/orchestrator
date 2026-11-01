@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.49
+
+Pickup words its redo refusal from the Standing module's redo pair table, and its captured steps word a temp-file failure the same way: `capture_err` and `capture` now say whether the temp file was for the command's stderr or stdout.
+
 ## 4.38.48
 
 Internal refactor of the Liveness module: its directory wrappers are dropped and the record writer is renamed, with no behaviour change.
