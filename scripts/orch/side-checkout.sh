@@ -105,14 +105,18 @@ archive_root() {
 
 # FLOW_LESS_ENTRIES: the top-level entries under .orchestrator/ that belong
 # to no flow, which archive_flow leaves in place: the archive itself, the side
-# checkouts, and the working directories of a standalone spec review
+# checkouts, the working directories of a standalone spec review
 # (spec-review/<n>/, an unattended one included) and of a review pass
-# (review-pass/<branch>/). The rule: an entry a command creates for work that
-# belongs to no flow goes on this list; every other entry is the flow's, a
-# spec phase's freely named round directories and a flow's spec review round
-# directories (spec-rounds/<k>/) included. The round marker lives in the
-# handoff folder, so it goes with it.
-FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass)
+# (review-pass/<branch>/), the autopilot watcher's records (autopilot/, kept
+# under the main checkout for the watcher), and the breakdown save points
+# (breakdown/<parent>/) and saved ticket reports (reports/<n>.md), which are
+# keyed by issue number and shared between a flow and flow-less work in the
+# same checkout. The rule: an entry a command creates for work that belongs to
+# no flow goes on this list; every other entry is the flow's, a spec phase's
+# freely named round directories and a flow's spec review round directories
+# (spec-rounds/<k>/) included. The round marker lives in the handoff folder, so
+# it goes with it.
+FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass autopilot breakdown reports)
 
 # archive_flow <root> <archive-root>: moves the flow in the checkout at <root>
 # into a directory under <archive-root>'s .orchestrator/archive/, and prints
