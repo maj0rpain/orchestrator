@@ -83,6 +83,11 @@ sourced_orch liveness_run_begin 10
 assert_eq "a successful run_begin leaves the run record" "$(on_disk "$rundir/10.pid")" present
 assert_eq "and no tick record" "$(on_disk "$rundir/10.tick")" absent
 rm -f "$rundir/10.pid"
+live_orch liveness_tick_begin 16
+sourced_orch liveness_run_begin 16
+assert_eq "run_begin removes a live tick's record too" "$(on_disk "$rundir/16.tick")" absent
+live_stop
+rm -f "$rundir/16.pid"
 printf 'old\n' >"$rundir/11.tick"
 unreadable="$(mktemp -d)"
 out="$(ORCH_PROC_DIR="$unreadable" sourced_orch_script 'ps() { return 1; }; export -f ps; liveness_run_begin 11' 2>&1)"; st=$?

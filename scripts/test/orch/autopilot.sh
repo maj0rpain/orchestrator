@@ -40,9 +40,6 @@ fake_last_comment_of() {
 }
 # dead_pid: the pid of a process that has exited.
 dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
-# watch_holds <pid>: succeeds while another process's liveness_watch_begin is
-# refused naming <pid>, i.e. while <pid> is the clone's live watch.
-watch_holds() { sourced_orch liveness_watch_begin 2>&1 | grep -q "autopilot watch (pid $1)"; }
 
 
 # --- autopilot ---------------------------------------------------------------
@@ -657,7 +654,7 @@ assert_eq "a silent failure reads the step gave no reason" "$out" "rc=1 reason=t
 ran_marker="$(mktemp -u)"
 out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker")"
 assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the command's stderr"
-assert_eq "and runs nothing" "$([ -e "$ran_marker" ] && echo ran || echo not-run)" not-run
+assert_eq "and runs nothing" "$(on_disk "$ran_marker")" absent
 rm -f "$ran_marker"
 # the plan step's own temp-file failure keeps its own reason, not the wrapper's
 step_marker="$(mktemp -u)"
@@ -756,14 +753,6 @@ printf '#!/bin/sh\nrm -f "%s/claims/7"\nexit 0\n' "$ORCH_GH_FAKE_STORE" >"$tick_
 chmod +x "$tick_seen_launcher"
 ORCH_AUTOPILOT_LAUNCHER="$tick_seen_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
 assert_eq "autopilot run removes run/<issue>.tick" "$(on_disk "$top/.orchestrator/autopilot/run/7.tick")" absent
-# the same when the tick's record is live: its process still runs, the run
-# takes the issue over all the same
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_claim_seed 7 "$(hostname)" 111
-live_orch liveness_tick_begin 7
-ORCH_AUTOPILOT_LAUNCHER="$tick_seen_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
-assert_eq "autopilot run removes a live tick's run/<issue>.tick too" "$(on_disk "$top/.orchestrator/autopilot/run/7.tick")" absent
-live_stop
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot watch ----------------------------------------------------------
@@ -776,11 +765,11 @@ top="$(git rev-parse --show-toplevel)"
 pidfile="$(git rev-parse --git-common-dir)/orchestrator/autopilot-watch.pid"
 watch_log="$(mktemp)"
 live_orch liveness_watch_begin
-live_pidfile="$(cat "$pidfile")"
+live_record="$(cat "$pidfile")"
 out="$("$ORCH" autopilot watch 2>&1)"; st=$?
 assert_status "a second watch of the same clone is refused" "$st" 1
 assert_contains "naming the live one" "$out" "already running"
-assert_eq "and leaves the live one's pidfile" "$(cat "$pidfile")" "$live_pidfile"
+assert_eq "and leaves the live one's pidfile" "$(cat "$pidfile")" "$live_record"
 live_stop
 
 # one watch, started over a dead pidfile while every tick fails
@@ -789,7 +778,9 @@ fake_fail adapter_label_upsert "HTTP 500 label"
 "$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
 watch_pid=$!
 for _ in $(seq 1 60); do [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
-watch_holds "$watch_pid"; st=$?
+# succeeds while another process's liveness_watch_begin is refused naming the
+# watch's pid, i.e. while it is the clone's live watch
+sourced_orch liveness_watch_begin 2>&1 | grep -q "autopilot watch (pid $watch_pid)"; st=$?
 assert_status "a dead pidfile is replaced by the new watch" "$st" 0
 kill -0 "$watch_pid" 2>/dev/null; st=$?
 assert_status "watch survives a failed tick" "$st" 0
