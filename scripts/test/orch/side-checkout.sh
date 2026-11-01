@@ -990,11 +990,14 @@ assert_contains "the CLI conventions' noun table names prune" \
 restore_suite_env
 
 # --- archive keeps flow-less directories (#1247) ------------------------------
-# A standalone spec review's spec-review/<n>/ and a review pass's
-# review-pass/<branch>/ belong to no flow, so archiving a flow - by any command
-# - leaves them in place; in a side checkout being removed they go with the
-# worktree. Checked through what stays under .orchestrator/ and what lands in
-# the archive.
+# A standalone spec review's spec-review/<n>/, a review pass's
+# review-pass/<branch>/, the autopilot watcher's autopilot/, the breakdown save
+# points under breakdown/ and the saved reports under reports/ belong to no
+# flow, so archiving a flow - by any command - leaves them in place; in a side
+# checkout being removed they go with the worktree (#1907). Checked through what
+# stays under .orchestrator/ and what lands in the archive. Then a scan checks
+# every top-level .orchestrator/ entry orch.sh builds is classified as the
+# flow's or as belonging to no flow, and fails on one that is neither.
 echo
 echo "archive keeps flow-less directories"
 
@@ -1003,10 +1006,12 @@ fake_github
 top="$(git rev-parse --show-toplevel)"
 fake_offline
 
-# fl_seed <root>: gives the flow in the checkout at <root> a handoff, a review
-# record, a freely named spec-phase round directory, a flow's spec review round
-# directory under spec-rounds/ and its round marker (#1348), and puts a
-# standalone spec review's and a review pass's working directories beside it.
+# fl_seed <root> [side]: gives the flow in the checkout at <root> a handoff, a
+# review record, a freely named spec-phase round directory, a flow's spec review
+# round directory under spec-rounds/ and its round marker (#1348), and puts a
+# standalone spec review's and a review pass's working directories beside it,
+# with a breakdown save point and a saved report and, unless <side> is given,
+# the autopilot watcher's records (#1907).
 fl_seed() {
   local o="$1/.orchestrator"
   mkdir -p "$o/handoff" "$o/review" "$o/round-2" "$o/spec-rounds/1" "$o/spec-review/1244" "$o/review-pass/quick-9-x"
@@ -1017,17 +1022,29 @@ fl_seed() {
   echo round >"$o/round-2/notes.md"
   echo body >"$o/spec-review/1244/body.md"
   echo report >"$o/review-pass/quick-9-x/pass-1.md"
+  mkdir -p "$o/breakdown/1244" "$o/reports"
+  echo draft >"$o/breakdown/1244/draft.md"
+  echo report >"$o/reports/1244.md"
+  [ "${2:-}" = side ] && return 0
+  mkdir -p "$o/autopilot/run" "$o/autopilot/logs"
+  echo 123 >"$o/autopilot/run/12.pid"
+  echo limit >"$o/autopilot/limit"
+  echo log >"$o/autopilot/logs/12.log"
 }
-# fl_kept <label> <root>: both flow-less directories are still in place under
-# the checkout at <root>, with their files.
+# fl_kept <label> <root>: every flow-less entry fl_seed wrote is still in place
+# under the checkout at <root>, with its files.
 fl_kept() {
   assert_eq "$1: spec-review/<n>/ stays in place with its files" \
     "$(on_disk "$2/.orchestrator/spec-review/1244/body.md")" "present"
   assert_eq "$1: review-pass/<branch>/ stays in place with its files" \
     "$(on_disk "$2/.orchestrator/review-pass/quick-9-x/pass-1.md")" "present"
+  local f
+  for f in autopilot/run/12.pid autopilot/limit autopilot/logs/12.log breakdown/1244/draft.md reports/1244.md; do
+    assert_eq "$1: $f stays in place" "$(on_disk "$2/.orchestrator/$f")" "present"
+  done
 }
 # fl_archived <label> <archive-dir>: the flow's own entries landed in
-# <archive-dir>, and neither flow-less directory did.
+# <archive-dir>, and no flow-less entry did.
 fl_archived() {
   local e
   for e in state.json handoff/01-plan.md handoff/spec-round review/r1.md round-2/notes.md spec-rounds/1/changelog.md; do
@@ -1035,6 +1052,9 @@ fl_archived() {
   done
   assert_eq "$1: no spec-review/ in the archive" "$(on_disk "$2/spec-review")" "absent"
   assert_eq "$1: no review-pass/ in the archive" "$(on_disk "$2/review-pass")" "absent"
+  for e in autopilot breakdown reports; do
+    assert_eq "$1: no $e/ in the archive" "$(on_disk "$2/$e")" "absent"
+  done
 }
 fl_dest() { find "$top/.orchestrator/archive" -maxdepth 1 -name "*-$1"; }
 
@@ -1061,11 +1081,11 @@ rm -rf "$top/.orchestrator/spec-review" "$top/.orchestrator/review-pass"
 # side-checkout remove of a side checkout holding a done flow.
 rmv="$(sc_add rmv)"
 (cd "$rmv" && orch_gh_failing init rmv-flow >/dev/null && state_fixture phase "done")
-fl_seed "$rmv"
+fl_seed "$rmv" side
 orch_gh_failing side-checkout remove rmv >/dev/null 2>&1; st=$?
 assert_status "side-checkout remove succeeds" "$st" 0
 fl_archived "remove" "$(fl_dest rmv-flow)"
-assert_eq "remove: the worktree, with both directories, is gone" "$(on_disk "$rmv")" "absent"
+assert_eq "remove: the worktree, with its flow-less entries, is gone" "$(on_disk "$rmv")" "absent"
 
 # The finished sweep over the main checkout's finished flow - the trigger
 # #1247 hit.
@@ -1170,3 +1190,39 @@ assert_eq "its opening sweep kept the uncovered side checkout" "$(on_disk "$up")
 assert_eq "and its branch" "$(sp_branch quick/31-up)" "kept"
 assert_eq "and the new one exists" "$(on_disk "$top/.orchestrator/checkouts/fresh")" "present"
 restore_suite_env
+
+# fl_classify <scripts-dir>: every top-level .orchestrator/<name> the code in
+# <scripts-dir> (orch.sh, flow-state.sh and orch/*.sh) builds - as $ORCH/<name>,
+# $ORCH_DIR_NAME/<name>, $home/<name>, or a printf format '%s/<name>' or
+# '%s/%s/<name>' on a line naming $ORCH or $ORCH_DIR_NAME - against
+# FLOW_LESS_ENTRIES plus the flow's own entries. Prints one line per name on
+# neither list and per listed name never found, stating the rule; returns 1
+# when it printed any.
+FL_FLOW_OWN="state.json handoff review scratch spec-rounds worktrees"
+fl_classify() {
+  local dir="$1" found listed out
+  found="$( { grep -hoE '\$\{?(ORCH|ORCH_DIR_NAME|home)\}?/[a-z][a-z.-]*' "$dir/orch.sh" "$dir/flow-state.sh" "$dir"/orch/*.sh | sed -E 's|.*/||'
+    grep -hE "printf '%s/(%s/)?[a-z]" "$dir/orch.sh" "$dir/flow-state.sh" "$dir"/orch/*.sh | grep -E '\$\{?ORCH(_DIR_NAME)?([^A-Za-z_]|$)' |
+      grep -oE "'%s/(%s/)?[a-z][a-z.-]*" | sed -E "s|.*/||"; } | sort -u)"
+  listed="$( { sourced_orch_script 'printf "%s\n" "${FLOW_LESS_ENTRIES[@]}"'; tr ' ' '\n' <<<"$FL_FLOW_OWN"; } | sort -u)"
+  out="$(comm -23 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|.orchestrator/& is built by orch.sh but is on neither FLOW_LESS_ENTRIES nor the flow'"'"'s own entries|'
+    comm -13 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|listed entry & was never found in the scan|')"
+  [ -z "$out" ] && return 0
+  printf '%s\nThe rule: an entry a command creates for work that belongs to no flow goes on FLOW_LESS_ENTRIES (scripts/orch/side-checkout.sh); every other entry is the flow'"'"'s and goes on the test'"'"'s list of the flow'"'"'s own entries.\n' "$out"
+  return 1
+}
+
+out="$(fl_classify "$PLUGIN_ROOT/scripts")"; st=$?
+assert_status "every top-level .orchestrator entry orch.sh builds is classified" "$st" 0
+assert_eq "the classification scan reports nothing" "$out" ""
+
+fl_fix="$(mktemp -d)"
+mkdir -p "$fl_fix/orch"
+cp "$PLUGIN_ROOT/scripts/orch.sh" "$PLUGIN_ROOT/scripts/flow-state.sh" "$fl_fix/"
+cp "$PLUGIN_ROOT/scripts/orch/"*.sh "$fl_fix/orch/"
+echo 'newthing_dir() { printf "%s\n" "$ORCH/brandnew"; }' >>"$fl_fix/orch/ticket.sh"
+out="$(fl_classify "$fl_fix")"; st=$?
+assert_status "an unclassified entry fails the classification" "$st" 1
+assert_contains "the failure names the entry" "$out" ".orchestrator/brandnew"
+assert_contains "the failure states the rule" "$out" "The rule: an entry a command creates"
+rm -rf "$fl_fix"

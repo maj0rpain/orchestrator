@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.55
+
+Archiving a flow now leaves the autopilot watcher's records (`autopilot/`), breakdown save points (`breakdown/`) and saved ticket reports (`reports/`) in place, and a test makes any unclassified top-level `.orchestrator/` entry a suite failure. Copies a past archive already took stay in that archive.
+
 ## 4.38.54
 
 Internal refactor: autopilot and handoff share one exit-1 "read the issue's comments, or die" pair in the Issue timeline module; messages and exit codes are unchanged.
