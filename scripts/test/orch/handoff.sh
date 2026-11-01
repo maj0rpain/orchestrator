@@ -625,6 +625,13 @@ handoff_store_contract() {
     assert_status "comment: a failed comments read dies" "$st" 1
     assert_contains "comment: showing the gh reason" "$out" "HTTP 503 read"
     assert_not_contains "comment: and not the missing line" "$out" "handoff comment"
+    # the comments unreadable with no sibling due: gh's reason, not "missing"
+    fake_fail adapter_issue_comments_json "HTTP 503 read"
+    out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
+    fake_unfail
+    assert_status "comment: a failed read with no sibling due dies" "$st" 1
+    assert_contains "comment: showing the gh reason with no sibling due" "$out" "HTTP 503 read"
+    assert_not_contains "comment: and not the missing line with no sibling due" "$out" "handoff comment"
     # the comments unreadable with a sibling due: one read, no sibling copy
     put_handoff comment 7 2030-01-01T00:00:00Z 01-plan "$(literal_handoff spec)"
     handoff_orch comment handoff path implement >/dev/null 2>&1

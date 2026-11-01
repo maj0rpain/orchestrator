@@ -890,12 +890,12 @@ check_flow_handoffs() {
       return 0
     fi
     if [ "$ready_rc" -eq 2 ]; then d_gh_gate || return 0; fi
-  fi
-  if [ -n "$files" ] && ! handoff_fetch_due "$phase"; then
-    reason="$TIMELINE_REASON"
-    [ -n "$reason" ] || reason="gh's output is not a comment list"
-    d_fail "could not read issue #$(state_get issue)'s handoff comments: $reason"
-    return 0
+    if ! handoff_fetch_due "$phase"; then
+      reason="$TIMELINE_REASON"
+      [ -n "$reason" ] || reason="gh's output is not a comment list"
+      d_fail "could not read issue #$(state_get issue)'s handoff comments: $reason"
+      return 0
+    fi
   fi
   for f in $files; do
     if ! path="$(handoff_fetched "$f")"; then
