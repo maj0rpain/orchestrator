@@ -83,6 +83,8 @@ mc_newest "$(mc_array "$q"$'\r\ntext')" question plan
 assert_eq "a marker line ending in CR is still a question comment" "$mc_out/$mc_rc" "0/0"
 mc texts "$(mc_array "$q"$'\r\ntext\r\n')" question
 assert_eq "the text of a CR comment drops the marker line and every CR" "$mc_out" '["text\n"]'
+mc_newest "$(mc_array "$(marker_of handoff 01-plan)"$'\r\nbody')" handoff 01-plan
+assert_eq "a handoff marker line ending in CR is still the newest handoff of its name" "$mc_out/$mc_rc" "0/0"
 
 # A retired handoff.
 live="$(marker_of handoff 01-plan)"; ret="$(marker_of handoff 01-plan retired)"
