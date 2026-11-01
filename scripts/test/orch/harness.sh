@@ -571,8 +571,8 @@ assert_status "a standalone suite with a subshell failure exits 1" "$st" 1
 assert_eq "and counts the subshell failure in its summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
 rm -rf "$tally_dir"
-for tally_suite in orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh \
-  autopilot_container_test.sh autopilot_up_test.sh lens_bench_test.sh; do
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for tally_suite in "${SUITES[@]}"; do
   tally_path="$(dirname "$SUITE_SCRIPT")/$tally_suite"
   assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
   # orch_test.sh reads the tally in setup.sh's summary.
