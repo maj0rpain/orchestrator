@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.53
+
+Reword the test harness placement check: its awk variables now match the names it checks, and the Marked comment prelude rule points at the Issue timeline's queries.
+
 ## 4.38.52
 
 In an autopilot flow, `handoff path` and `doctor --flow` now read the issue's comments once however many handoffs are due. When the comments cannot be read, `doctor --flow` reports one failed check with gh's reason instead of a missing finding per handoff.
