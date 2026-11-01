@@ -42,6 +42,9 @@
 
 # The suite's own directory, walked to once; every path below builds on it.
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=git_env.sh
+source "$TEST_DIR/git_env.sh"
+test_git_env_clear || exit 1
 ORCH="$(cd "$TEST_DIR/.." && pwd)/orch.sh"
 # shellcheck disable=SC2034 # read by the sections, eval'd from scripts/test/orch/
 GH_ADAPTER_FAKE="$TEST_DIR/gh_adapter_fake.sh"

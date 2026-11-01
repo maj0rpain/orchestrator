@@ -11,6 +11,9 @@
 # session that is not mid-review.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=git_env.sh
+source "$DIR/test/git_env.sh"
+test_git_env_clear || exit 1
 GRILL="$DIR/hook-grilling.sh"
 GUARD="$DIR/hook-guard.sh"
 QUICK="$DIR/hook-quick-implement.sh"

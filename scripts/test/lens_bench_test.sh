@@ -12,6 +12,9 @@
 # instead of refused.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=git_env.sh
+source "$DIR/test/git_env.sh"
+test_git_env_clear || exit 1
 BENCH="$DIR/dev/lens-bench.sh"
 FIXTURE="$DIR/test/lens-bench"
 PASS=0
