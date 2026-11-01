@@ -2059,8 +2059,23 @@ fake_fail adapter_issue_comments_json "HTTP 502 comments"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 fake_unfail
 assert_status "a comments read failing past the gh gate is a failed check" "$st" 1
-assert_contains "reported as the missing comment" "$out" "$(handoff_doctor_missing_msg comment 7 01-plan)"
-assert_contains "and doctor carries on to the next handoff" "$out" "$(handoff_doctor_missing_msg comment 7 02-spec)"
+assert_contains "reported once, with gh's reason" "$out" "could not read issue #7's handoff comments: "
+assert_contains "naming the reason" "$out" "HTTP 502 comments"
+assert_eq "as a single finding" "$(grep -c "could not read issue #7's handoff comments" <<<"$out")" 1
+assert_not_contains "with no remedy" "$out" "redo"
+assert_not_contains "and no per-handoff missing line" "$out" "comment is missing"
+assert_not_contains "nor a complete line from an earlier run's copies" "$out" "complete"
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "unparseable comments fail the check" "$st" 1
+assert_contains "with the not-a-comment-list reason" "$out" "could not read issue #7's handoff comments: gh's output is not a comment list"
+assert_eq "as a single finding" "$(grep -c "could not read issue #7's handoff comments" <<<"$out")" 1
+assert_not_contains "with no remedy for unparseable comments" "$out" "redo"
+assert_not_contains "and no per-handoff missing line for unparseable comments" "$out" "comment is missing"
+assert_not_contains "nor a complete line for unparseable comments" "$out" "complete"
+reads_before="$(fake_comment_reads)"
+ORCH_AUTOPILOT=1 "$ORCH" doctor --flow >/dev/null 2>&1
+assert_eq "doctor --flow with two due handoffs makes exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1
 fake_comment 7 o 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
 ## Decisions"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"

@@ -877,7 +877,7 @@ check_flow_worktree_clean() {
 # Which handoffs are due is the phase table's handoffs_due - phase names what
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
-  local phase files f path problems line ready_finding ready_rc
+  local phase files f path problems line ready_finding ready_rc reason
   phase="$(state_get phase)"
   # A phase the table does not hold is due nothing, so the check skips it.
   files="$(handoffs_due "$phase")"
@@ -890,9 +890,15 @@ check_flow_handoffs() {
       return 0
     fi
     if [ "$ready_rc" -eq 2 ]; then d_gh_gate || return 0; fi
+    if ! handoff_fetch_due "$phase"; then
+      reason="$TIMELINE_REASON"
+      [ -n "$reason" ] || reason="gh's output is not a comment list"
+      d_fail "could not read issue #$(state_get issue)'s handoff comments: $reason"
+      return 0
+    fi
   fi
   for f in $files; do
-    if ! path="$(handoff_locate "$f")"; then
+    if ! path="$(handoff_fetched "$f")"; then
       d_fail "$(handoff_doctor_missing "$f")"
       d_remedy "$(flow_cmd redo)"
       continue
