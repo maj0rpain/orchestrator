@@ -972,11 +972,14 @@ assert_contains "the CLI conventions' noun table names prune" \
 restore_suite_env
 
 # --- archive keeps flow-less directories (#1247) ------------------------------
-# A standalone spec review's spec-review/<n>/ and a review pass's
-# review-pass/<branch>/ belong to no flow, so archiving a flow - by any command
-# - leaves them in place; in a side checkout being removed they go with the
-# worktree. Checked through what stays under .orchestrator/ and what lands in
-# the archive.
+# A standalone spec review's spec-review/<n>/, a review pass's
+# review-pass/<branch>/, the autopilot watcher's autopilot/, the breakdown save
+# points under breakdown/ and the saved reports under reports/ belong to no
+# flow, so archiving a flow - by any command - leaves them in place; in a side
+# checkout being removed they go with the worktree (#1907). Checked through what
+# stays under .orchestrator/ and what lands in the archive. Then a scan checks
+# every top-level .orchestrator/ entry orch.sh builds is classified as the
+# flow's or as belonging to no flow, and fails on one that is neither.
 echo
 echo "archive keeps flow-less directories"
 
@@ -1010,8 +1013,8 @@ fl_seed() {
   echo limit >"$o/autopilot/limit"
   echo log >"$o/autopilot/logs/12.log"
 }
-# fl_kept <label> <root>: both flow-less directories are still in place under
-# the checkout at <root>, with their files.
+# fl_kept <label> <root>: every flow-less entry fl_seed wrote is still in place
+# under the checkout at <root>, with its files.
 fl_kept() {
   assert_eq "$1: spec-review/<n>/ stays in place with its files" \
     "$(on_disk "$2/.orchestrator/spec-review/1244/body.md")" "present"
@@ -1023,7 +1026,7 @@ fl_kept() {
   done
 }
 # fl_archived <label> <archive-dir>: the flow's own entries landed in
-# <archive-dir>, and neither flow-less directory did.
+# <archive-dir>, and no flow-less entry did.
 fl_archived() {
   local e
   for e in state.json handoff/01-plan.md handoff/spec-round review/r1.md round-2/notes.md spec-rounds/1/changelog.md; do
@@ -1064,7 +1067,7 @@ fl_seed "$rmv" side
 orch_gh_failing side-checkout remove rmv >/dev/null 2>&1; st=$?
 assert_status "side-checkout remove succeeds" "$st" 0
 fl_archived "remove" "$(fl_dest rmv-flow)"
-assert_eq "remove: the worktree, with both directories, is gone" "$(on_disk "$rmv")" "absent"
+assert_eq "remove: the worktree, with its flow-less entries, is gone" "$(on_disk "$rmv")" "absent"
 
 # The finished sweep over the main checkout's finished flow - the trigger
 # #1247 hit.
