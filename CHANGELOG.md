@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.38.54
+
+Internal refactor: autopilot and handoff share one exit-1 "read the issue's comments, or die" pair in the Issue timeline module; messages and exit codes are unchanged.
+
 ## 4.38.53
 
 Reword the test harness placement check: its awk variables now match the names it checks, and the Marked comment prelude rule points at the Issue timeline's queries.
