@@ -418,27 +418,31 @@ assert_eq "summarises the hidden passes, the failure and the skip" \
 assert_eq "still prints no ok line beside a failure" "$(count_lines '^  ok ' "$out")" "0"
 rm -rf "$quiet_dir"
 # Each of the other suites cut down to its own helpers, one planted check
-# and its own summary code: its lines before `# >>> checks`, a planted ok, then
+# and its own summary code: its lines before `# >>> checks`, a planted ok (after
+# a tally_init, for a suite that makes its tally file inside its checks), then
 # its lines from its `# >>> summary` line on.
 # The copies sit in scripts/test/ of a fresh root, beside the git_env.sh every
-# runner sources first.
+# runner sources first, and the tally.sh they all source.
 cut_root="$(mktemp -d)"
 cut_dir="$cut_root/scripts/test"
-mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$cut_dir/"
+mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$(dirname "$SUITE_SCRIPT")/tally.sh" "$cut_dir/"
 for quiet_suite in "${SUITES[@]}"; do
   [ "$quiet_suite" = orch_test.sh ] && continue
   awk '
-    $0 == "# >>> checks" { print "ok \"a planted check\""; skip = 1; next }
+    $0 == "# >>> checks" {
+      print "[ -n \"${tally_file:-}\" ] || tally_init"
+      print "ok \"a planted check\""; skip = 1; next }
     skip && $0 == "# >>> summary" { skip = 0 }
     !skip { print }' "$(dirname "$SUITE_SCRIPT")/$quiet_suite" >"$cut_dir/$quiet_suite"
   assert_eq "$quiet_suite's cut-down copy holds the planted check" \
     "$(grep -cx 'ok "a planted check"' "$cut_dir/$quiet_suite")" "1"
   assert_eq "$quiet_suite's cut-down copy holds its summary" \
     "$(grep -cxF 'echo "$PASS passed, $FAIL failed"' "$cut_dir/$quiet_suite")" "1"
-  out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"
+  out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"; st=$?
+  assert_status "$quiet_suite's cut-down copy exits 0 when quiet" "$st" 0
   assert_eq "$quiet_suite prints no ok line when quiet" \
     "$(count_lines '^  ok ' "$out")" "0"
-  assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
+  assert_contains "$quiet_suite still reports the planted pass when quiet" "$out" "1 passed, 0 failed"
 done
 rm -rf "$cut_root"
 
