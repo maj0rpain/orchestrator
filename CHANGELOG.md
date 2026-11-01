@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.38.57
+
+The test runners now clear git's repo-local and identity variables, so a suite started from a git hook in a linked worktree no longer writes to the developer's repository.
+
+## 4.38.56
+
+The finished sweep keeps a side checkout whose local branch holds commits past its merged pull request's head, instead of deleting the branch and losing them; `doctor` no longer calls such a side checkout finished.
+
+## 4.38.55
+
+Archiving a flow now leaves the autopilot watcher's records (`autopilot/`), breakdown save points (`breakdown/`) and saved ticket reports (`reports/`) in place, and a test makes any unclassified top-level `.orchestrator/` entry a suite failure. Copies a past archive already took stay in that archive.
+
 ## 4.38.54
 
 Internal refactor: autopilot and handoff share one exit-1 "read the issue's comments, or die" pair in the Issue timeline module; messages and exit codes are unchanged.

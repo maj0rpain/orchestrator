@@ -11,6 +11,9 @@
 # the log, the summary lines and the exit status.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=git_env.sh
+source "$DIR/test/git_env.sh"
+test_git_env_clear || exit 1
 PASS=0
 FAIL=0
 

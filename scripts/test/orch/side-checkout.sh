@@ -612,10 +612,12 @@ fl="$(sc_add fl)"
   && state_fixture phase "done" && state_fixture branch orch/fl-flow && state_fixture pr 41)
 sp_branch_off "$fl" orch/fl-flow
 fake_pr 41 merged orch/fl-flow main
+fake_pr_head 41 "$(git rev-parse orch/fl-flow)"
 # A finished quick-implementation side checkout.
 qk="$(sc_add qk)"
 sp_branch_off "$qk" quick/7-qk
 fake_pr 42 merged quick/7-qk main
+fake_pr_head 42 "$(git rev-parse quick/7-qk)"
 # The main checkout's own finished flow.
 orch_gh_failing init main-flow >/dev/null
 state_fixture phase "done"; state_fixture branch orch/main-flow; state_fixture pr 45
@@ -682,6 +684,7 @@ fake_pr 43 open quick/8-op main
 dt="$(sc_add dt)"
 sp_branch_off "$dt" quick/9-dt
 fake_pr 44 merged quick/9-dt main
+fake_pr_head 44 "$(git rev-parse quick/9-dt)"
 echo wip >"$dt/wip.txt"
 # A flow not at done.
 nd="$(sc_add nd)"
@@ -692,6 +695,7 @@ tm="$(sc_add tm)"
 sp_branch_off "$tm" quick/17-tm
 git merge -q --no-ff --no-edit quick/17-tm
 fake_pr 56 merged quick/17-tm main
+fake_pr_head 56 "$(git rev-parse quick/17-tm)"
 # A side checkout still on no branch.
 nb="$(sc_add nb)"
 # Flows at done whose recorded PR is still open, and closed unmerged: their
@@ -715,6 +719,7 @@ git worktree add -q -b orch/hand-flow "$hand" main
 (cd "$hand" && orch_gh_failing init hand-flow >/dev/null \
   && state_fixture phase "done" && state_fixture branch orch/hand-flow && state_fixture pr 46)
 fake_pr 46 merged orch/hand-flow main
+fake_pr_head 46 "$(git rev-parse orch/hand-flow)"
 
 fake_online
 
@@ -774,10 +779,12 @@ lk="$(sc_add lk)"
   && state_fixture phase "done" && state_fixture branch orch/lk-flow && state_fixture pr 47)
 sp_branch_off "$lk" orch/lk-flow
 fake_pr 47 merged orch/lk-flow main
+fake_pr_head 47 "$(git rev-parse orch/lk-flow)"
 git worktree lock "$lk"
 q2="$(sc_add q2)"
 sp_branch_off "$q2" quick/10-q2
 fake_pr 48 merged quick/10-q2 main
+fake_pr_head 48 "$(git rev-parse quick/10-q2)"
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune exits 1 when a removal fails" "$st" 1
@@ -796,6 +803,7 @@ tw="$(sc_add tw)"
   && state_fixture phase "done" && state_fixture branch orch/tw-flow && state_fixture pr 49)
 sp_branch_off "$tw" orch/tw-flow
 fake_pr 49 merged orch/tw-flow main
+fake_pr_head 49 "$(git rev-parse orch/tw-flow)"
 (cd "$tw" && orch_gh_failing ticket-worktree add 8 >/dev/null)
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
@@ -820,9 +828,11 @@ db="$(sc_add db)"
   && state_fixture phase "done" && state_fixture branch orch/main-flow && state_fixture pr 58)
 sp_branch_off "$db" quick/11-db
 fake_pr 58 merged orch/main-flow main
+fake_pr_head 58 "$(git rev-parse orch/main-flow)"
 dd="$(sc_add dd)"
 sp_branch_off "$dd" quick/14-dd
 fake_pr 63 merged quick/14-dd main
+fake_pr_head 63 "$(git rev-parse quick/14-dd)"
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune exits 1 when the branch cannot be deleted" "$st" 1
@@ -840,9 +850,11 @@ ab="$(sc_add ab)"
   && state_fixture phase "done" && state_fixture branch orch/ab-flow && state_fixture pr 57)
 sp_branch_off "$ab" orch/ab-flow
 fake_pr 57 merged orch/ab-flow main
+fake_pr_head 57 "$(git rev-parse orch/ab-flow)"
 ac="$(sc_add ac)"
 sp_branch_off "$ac" quick/12-ac
 fake_pr 59 merged quick/12-ac main
+fake_pr_head 59 "$(git rev-parse quick/12-ac)"
 fake_online
 archive_block
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
@@ -883,6 +895,7 @@ fake_pr 51 merged orch/main-flow main
 q5="$(sc_add q5)"
 sp_branch_off "$q5" quick/13-q5
 fake_pr 52 merged quick/13-q5 main
+fake_pr_head 52 "$(git rev-parse quick/13-q5)"
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds over the main flow and a flowless side checkout" "$st" 0
@@ -911,6 +924,7 @@ fake_offline
 q6="$(sc_add q6)"
 sp_branch_off "$q6" quick/14-q6
 fake_pr 53 merged quick/14-q6 main
+fake_pr_head 53 "$(git rev-parse quick/14-q6)"
 fake_online
 break_index "$q6"
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
@@ -935,7 +949,9 @@ rm2="$(sc_add rm2)"
 git -C "$rm2" commit -q --allow-empty -m "work on rm2"
 orch_gh_failing base set main >/dev/null
 fake_pr 54 merged quick/15-rb uat
+fake_pr_head 54 "$(git rev-parse quick/15-rb)"
 fake_pr 55 merged quick/16-rm2 main
+fake_pr_head 55 "$(git rev-parse quick/16-rm2)"
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds after the base setting moved" "$st" 0
@@ -948,6 +964,7 @@ assert_contains "skipped naming the recorded base" "$out" "skipped $rm2: no merg
 q3="$(sc_add q3)"
 sp_branch_off "$q3" quick/11-q3
 fake_pr 49 merged quick/11-q3 main
+fake_pr_head 49 "$(git rev-parse quick/11-q3)"
 out="$(orch_gh_failing side-checkout add after 2>/dev/null)"; st=$?
 assert_status "add succeeds after its sweep" "$st" 0
 assert_eq "printing only the new path on stdout" "$out" "$top/.orchestrator/checkouts/after"
@@ -956,6 +973,7 @@ assert_eq "the sweep removed the finished side checkout" "$(on_disk "$q3")" "abs
 q4="$(sc_add q4)"
 sp_branch_off "$q4" quick/12-q4
 fake_pr 50 merged quick/12-q4 main
+fake_pr_head 50 "$(git rev-parse quick/12-q4)"
 fake_offline
 out="$(orch_gh_failing side-checkout add after2 2>&1)"; st=$?
 assert_status "add carries on when its sweep fails" "$st" 0
@@ -972,11 +990,14 @@ assert_contains "the CLI conventions' noun table names prune" \
 restore_suite_env
 
 # --- archive keeps flow-less directories (#1247) ------------------------------
-# A standalone spec review's spec-review/<n>/ and a review pass's
-# review-pass/<branch>/ belong to no flow, so archiving a flow - by any command
-# - leaves them in place; in a side checkout being removed they go with the
-# worktree. Checked through what stays under .orchestrator/ and what lands in
-# the archive.
+# A standalone spec review's spec-review/<n>/, a review pass's
+# review-pass/<branch>/, the autopilot watcher's autopilot/, the breakdown save
+# points under breakdown/ and the saved reports under reports/ belong to no
+# flow, so archiving a flow - by any command - leaves them in place; in a side
+# checkout being removed they go with the worktree (#1907). Checked through what
+# stays under .orchestrator/ and what lands in the archive. Then a scan checks
+# every top-level .orchestrator/ entry orch.sh builds is classified as the
+# flow's or as belonging to no flow, and fails on one that is neither.
 echo
 echo "archive keeps flow-less directories"
 
@@ -985,10 +1006,12 @@ fake_github
 top="$(git rev-parse --show-toplevel)"
 fake_offline
 
-# fl_seed <root>: gives the flow in the checkout at <root> a handoff, a review
-# record, a freely named spec-phase round directory, a flow's spec review round
-# directory under spec-rounds/ and its round marker (#1348), and puts a
-# standalone spec review's and a review pass's working directories beside it.
+# fl_seed <root> [side]: gives the flow in the checkout at <root> a handoff, a
+# review record, a freely named spec-phase round directory, a flow's spec review
+# round directory under spec-rounds/ and its round marker (#1348), and puts a
+# standalone spec review's and a review pass's working directories beside it,
+# with a breakdown save point and a saved report and, unless <side> is given,
+# the autopilot watcher's records (#1907).
 fl_seed() {
   local o="$1/.orchestrator"
   mkdir -p "$o/handoff" "$o/review" "$o/round-2" "$o/spec-rounds/1" "$o/spec-review/1244" "$o/review-pass/quick-9-x"
@@ -999,17 +1022,29 @@ fl_seed() {
   echo round >"$o/round-2/notes.md"
   echo body >"$o/spec-review/1244/body.md"
   echo report >"$o/review-pass/quick-9-x/pass-1.md"
+  mkdir -p "$o/breakdown/1244" "$o/reports"
+  echo draft >"$o/breakdown/1244/draft.md"
+  echo report >"$o/reports/1244.md"
+  [ "${2:-}" = side ] && return 0
+  mkdir -p "$o/autopilot/run" "$o/autopilot/logs"
+  echo 123 >"$o/autopilot/run/12.pid"
+  echo limit >"$o/autopilot/limit"
+  echo log >"$o/autopilot/logs/12.log"
 }
-# fl_kept <label> <root>: both flow-less directories are still in place under
-# the checkout at <root>, with their files.
+# fl_kept <label> <root>: every flow-less entry fl_seed wrote is still in place
+# under the checkout at <root>, with its files.
 fl_kept() {
   assert_eq "$1: spec-review/<n>/ stays in place with its files" \
     "$(on_disk "$2/.orchestrator/spec-review/1244/body.md")" "present"
   assert_eq "$1: review-pass/<branch>/ stays in place with its files" \
     "$(on_disk "$2/.orchestrator/review-pass/quick-9-x/pass-1.md")" "present"
+  local f
+  for f in autopilot/run/12.pid autopilot/limit autopilot/logs/12.log breakdown/1244/draft.md reports/1244.md; do
+    assert_eq "$1: $f stays in place" "$(on_disk "$2/.orchestrator/$f")" "present"
+  done
 }
 # fl_archived <label> <archive-dir>: the flow's own entries landed in
-# <archive-dir>, and neither flow-less directory did.
+# <archive-dir>, and no flow-less entry did.
 fl_archived() {
   local e
   for e in state.json handoff/01-plan.md handoff/spec-round review/r1.md round-2/notes.md spec-rounds/1/changelog.md; do
@@ -1017,6 +1052,9 @@ fl_archived() {
   done
   assert_eq "$1: no spec-review/ in the archive" "$(on_disk "$2/spec-review")" "absent"
   assert_eq "$1: no review-pass/ in the archive" "$(on_disk "$2/review-pass")" "absent"
+  for e in autopilot breakdown reports; do
+    assert_eq "$1: no $e/ in the archive" "$(on_disk "$2/$e")" "absent"
+  done
 }
 fl_dest() { find "$top/.orchestrator/archive" -maxdepth 1 -name "*-$1"; }
 
@@ -1043,11 +1081,11 @@ rm -rf "$top/.orchestrator/spec-review" "$top/.orchestrator/review-pass"
 # side-checkout remove of a side checkout holding a done flow.
 rmv="$(sc_add rmv)"
 (cd "$rmv" && orch_gh_failing init rmv-flow >/dev/null && state_fixture phase "done")
-fl_seed "$rmv"
+fl_seed "$rmv" side
 orch_gh_failing side-checkout remove rmv >/dev/null 2>&1; st=$?
 assert_status "side-checkout remove succeeds" "$st" 0
 fl_archived "remove" "$(fl_dest rmv-flow)"
-assert_eq "remove: the worktree, with both directories, is gone" "$(on_disk "$rmv")" "absent"
+assert_eq "remove: the worktree, with its flow-less entries, is gone" "$(on_disk "$rmv")" "absent"
 
 # The finished sweep over the main checkout's finished flow - the trigger
 # #1247 hit.
@@ -1056,6 +1094,7 @@ orch_gh_failing init swp-flow >/dev/null
 git checkout -q -b orch/swp-flow
 state_fixture phase "done"; state_fixture branch orch/swp-flow; state_fixture pr 71
 fake_pr 71 merged orch/swp-flow main
+fake_pr_head 71 "$(git rev-parse orch/swp-flow)"
 fl_seed "$top"
 orch_gh_failing side-checkout prune >/dev/null 2>&1; st=$?
 assert_status "the finished sweep succeeds" "$st" 0
@@ -1063,3 +1102,127 @@ assert_eq "prune: the main checkout's flow is archived in place" "$(archived_cou
 fl_kept "prune" "$top"
 fl_archived "prune" "$(fl_dest swp-flow)"
 restore_suite_env
+
+# --- side-checkout prune: a covered branch tip (#1906) ------------------------
+# The sweep's branch -D is safe only when a merged PR holds everything on the
+# branch: a side checkout whose local tip is past every merged PR's head (or
+# whose head is not in this repo) is kept, worktree and branch, with a note.
+echo
+echo "side-checkout prune covered tip"
+sc_clone
+fake_github
+top="$(git rev-parse --show-toplevel)"
+fake_offline
+
+# stray_commit <message> [parent]: a commit outside every branch, as a merged
+# PR's head the local repo holds - a child of the parent, else a root.
+stray_commit() {
+  if [ -n "${2:-}" ]; then git commit-tree "$2^{tree}" -p "$2" -m "$1"
+  else git commit-tree "$(git hash-object -t tree /dev/null)" -m "$1"; fi
+}
+
+# The issue's repro: a merged PR, then a follow-up commit never pushed.
+up="$(sc_add up)"
+sp_branch_off "$up" quick/31-up
+fake_pr 81 merged quick/31-up main
+fake_pr_head 81 "$(git rev-parse quick/31-up)"
+git -C "$up" commit -q --allow-empty -m "local follow-up, unpushed"
+up_head="$(git rev-parse quick/31-up~1)"
+# The same on a flow at done.
+fp="$(sc_add fp)"
+(cd "$fp" && orch_gh_failing init fp-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/fp-flow && state_fixture pr 82)
+sp_branch_off "$fp" orch/fp-flow
+fake_pr 82 merged orch/fp-flow main
+fake_pr_head 82 "$(git rev-parse orch/fp-flow)"
+git -C "$fp" commit -q --allow-empty -m "local follow-up, unpushed"
+# A tip behind the PR's head.
+bh="$(sc_add bh)"
+sp_branch_off "$bh" quick/32-bh
+fake_pr 83 merged quick/32-bh main
+fake_pr_head 83 "$(stray_commit "ahead of the tip" "$(git rev-parse quick/32-bh)")"
+# A head this repo does not hold.
+ms="$(sc_add ms)"
+sp_branch_off "$ms" quick/35-ms
+fake_pr 84 merged quick/35-ms main
+fake_pr_head 84 1111111111111111111111111111111111111111
+# Several merged PRs: an older one's head covers the tip, the newest's does not.
+mc="$(sc_add mc)"
+sp_branch_off "$mc" quick/33-mc
+fake_pr 85 merged quick/33-mc main
+fake_pr_head 85 "$(git rev-parse quick/33-mc)"
+fake_pr 86 merged quick/33-mc main
+fake_pr_head 86 "$(stray_commit "unrelated")"
+# Several merged PRs, none covering the tip.
+mn="$(sc_add mn)"
+sp_branch_off "$mn" quick/34-mn
+fake_pr 87 merged quick/34-mn main
+fake_pr_head 87 "$(stray_commit "first unrelated")"
+fake_pr 88 merged quick/34-mn main
+fake_pr_head 88 "$(stray_commit "second unrelated")"
+mn_head="$(git rev-parse --short=7 "$(cat "$ORCH_GH_FAKE_STORE/prs/88/head_oid")")"
+fake_online
+
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune succeeds" "$st" 0
+assert_eq "a flow-less tip past its merged PR keeps the worktree" "$(on_disk "$up")" "present"
+assert_eq "and the branch" "$(sp_branch quick/31-up)" "kept"
+assert_contains "the uncovered-tip note names the branch, the PR and its head" "$out" \
+  "skipped $up: quick/31-up has commits past PR #81's merged head ${up_head:0:7}"
+assert_eq "a done flow's tip past its PR keeps the worktree" "$(on_disk "$fp")" "present"
+assert_eq "and the branch" "$(sp_branch orch/fp-flow)" "kept"
+assert_contains "with the same note" "$out" "skipped $fp: orch/fp-flow has commits past PR #82's merged head"
+assert_eq "a tip behind the PR's head is swept" "$(on_disk "$bh")" "absent"
+assert_eq "with its branch" "$(sp_branch quick/32-bh)" "gone"
+assert_eq "a head missing locally keeps the worktree" "$(on_disk "$ms")" "present"
+assert_eq "and the branch" "$(sp_branch quick/35-ms)" "kept"
+assert_contains "the missing-head note tells it to fetch" "$out" \
+  "skipped $ms: quick/35-ms: PR #84's head 1111111 is not in this repo - fetch it to let the sweep judge"
+assert_eq "an older PR's head covering the tip sweeps it" "$(on_disk "$mc")" "absent"
+assert_eq "no PR's head covering the tip keeps it" "$(on_disk "$mn")" "present"
+assert_contains "the note names the newest PR" "$out" \
+  "skipped $mn: quick/34-mn has commits past PR #88's merged head $mn_head"
+
+# side-checkout add: its opening sweep keeps the uncovered one, and adds.
+out="$(orch_gh_failing side-checkout add fresh 2>&1)"; st=$?
+assert_status "add succeeds" "$st" 0
+assert_eq "its opening sweep kept the uncovered side checkout" "$(on_disk "$up")" "present"
+assert_eq "and its branch" "$(sp_branch quick/31-up)" "kept"
+assert_eq "and the new one exists" "$(on_disk "$top/.orchestrator/checkouts/fresh")" "present"
+restore_suite_env
+
+# fl_classify <scripts-dir>: every top-level .orchestrator/<name> the code in
+# <scripts-dir> (orch.sh, flow-state.sh and orch/*.sh) builds - as $ORCH/<name>,
+# $ORCH_DIR_NAME/<name>, $home/<name>, or a printf format '%s/<name>' or
+# '%s/%s/<name>' on a line naming $ORCH or $ORCH_DIR_NAME - against
+# FLOW_LESS_ENTRIES plus the flow's own entries. Prints one line per name on
+# neither list and per listed name never found, stating the rule; returns 1
+# when it printed any.
+FL_FLOW_OWN="state.json handoff review scratch spec-rounds worktrees"
+fl_classify() {
+  local dir="$1" found listed out
+  found="$( { grep -hoE '\$\{?(ORCH|ORCH_DIR_NAME|home)\}?/[a-z][a-z.-]*' "$dir/orch.sh" "$dir/flow-state.sh" "$dir"/orch/*.sh | sed -E 's|.*/||'
+    grep -hE "printf '%s/(%s/)?[a-z]" "$dir/orch.sh" "$dir/flow-state.sh" "$dir"/orch/*.sh | grep -E '\$\{?ORCH(_DIR_NAME)?([^A-Za-z_]|$)' |
+      grep -oE "'%s/(%s/)?[a-z][a-z.-]*" | sed -E "s|.*/||"; } | sort -u)"
+  listed="$( { sourced_orch_script 'printf "%s\n" "${FLOW_LESS_ENTRIES[@]}"'; tr ' ' '\n' <<<"$FL_FLOW_OWN"; } | sort -u)"
+  out="$(comm -23 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|.orchestrator/& is built by orch.sh but is on neither FLOW_LESS_ENTRIES nor the flow'"'"'s own entries|'
+    comm -13 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|listed entry & was never found in the scan|')"
+  [ -z "$out" ] && return 0
+  printf '%s\nThe rule: an entry a command creates for work that belongs to no flow goes on FLOW_LESS_ENTRIES (scripts/orch/side-checkout.sh); every other entry is the flow'"'"'s and goes on the test'"'"'s list of the flow'"'"'s own entries.\n' "$out"
+  return 1
+}
+
+out="$(fl_classify "$PLUGIN_ROOT/scripts")"; st=$?
+assert_status "every top-level .orchestrator entry orch.sh builds is classified" "$st" 0
+assert_eq "the classification scan reports nothing" "$out" ""
+
+fl_fix="$(mktemp -d)"
+mkdir -p "$fl_fix/orch"
+cp "$PLUGIN_ROOT/scripts/orch.sh" "$PLUGIN_ROOT/scripts/flow-state.sh" "$fl_fix/"
+cp "$PLUGIN_ROOT/scripts/orch/"*.sh "$fl_fix/orch/"
+echo 'newthing_dir() { printf "%s\n" "$ORCH/brandnew"; }' >>"$fl_fix/orch/ticket.sh"
+out="$(fl_classify "$fl_fix")"; st=$?
+assert_status "an unclassified entry fails the classification" "$st" 1
+assert_contains "the failure names the entry" "$out" ".orchestrator/brandnew"
+assert_contains "the failure states the rule" "$out" "The rule: an entry a command creates"
+rm -rf "$fl_fix"
