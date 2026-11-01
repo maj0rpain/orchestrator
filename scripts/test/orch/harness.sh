@@ -160,11 +160,11 @@ helper_placement() {
   return 1
 }
 
-# The five multi-field gh ops gh_op_placement looks for, space-separated.
-GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs"
+# The six multi-field gh ops gh_op_placement looks for, space-separated.
+GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs adapter_issue_authorship"
 
 # The gh op placement rule, as gh_op_placement's message states it.
-GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (${GH_MULTI_FIELD_OPS// /, }); every other script reads one through its reader, which decodes its fields."
+GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (${GH_MULTI_FIELD_OPS// /, }); every other script reads one through its reader, which decodes its fields - and adapter_issue_authorship is also named by the Trust module, scripts/orch/trust.sh, whose reader it is."
 
 # name_placement <dir> <rule> <verb> <names> <owner-path>...: checks every shell
 # script under <dir> (a scripts/ tree) outside the owner paths (find's ./ form,
@@ -203,10 +203,22 @@ name_placement() {
   return 1
 }
 
-# gh_op_placement <dir>: name_placement for the five multi-field gh ops, outside
-# the gh module, orch/gh.sh; a line reads "<file> names <op>. <rule>".
+# gh_op_placement <dir>: name_placement for the six multi-field gh ops, outside
+# the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
+# module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
 gh_op_placement() {
-  name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_MULTI_FIELD_OPS" ./orch/gh.sh
+  local rc=0 out="" part
+  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "${GH_MULTI_FIELD_OPS% adapter_issue_authorship}" ./orch/gh.sh)" || rc=$?
+  [ "$rc" -ne 2 ] || return 2
+  [ -z "$part" ] || out="$part"
+  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names adapter_issue_authorship ./orch/gh.sh ./orch/trust.sh)" || {
+    [ "$?" -ne 2 ] || return 2
+  }
+  [ -z "$part" ] || out="${out:+$out
+}$part"
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out" | LC_ALL=C sort -u
+  return 1
 }
 
 # The Marked comment prelude placement rule, as marked_comment_jq_placement's
@@ -1592,6 +1604,16 @@ scripts/orch/zz-literal.sh names adapter_issue_state_labels_body. $GH_OP_PLACEME
 scripts/orch/zz-literal.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-multiline.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-param.sh names adapter_issue_state_labels. $GH_OP_PLACEMENT_RULE"
+rm -rf "${gh_op_dir%/scripts}"
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-trust.sh <<'PLANTED'
+  planted_read() { adapter_issue_authorship "$1"; }
+PLANTED
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "the authorship op outside the gh and Trust modules fails" "$st" 1
+assert_eq "naming the file and the op" "$out" \
+  "scripts/orch/zz-trust.sh names adapter_issue_authorship. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
 # --- marked comment prelude placement (#1853) ---------------------------------

@@ -585,6 +585,14 @@ out="$(contract adapter_issue_title_labels 23 2>&1)"; st=$?
 assert_status "issue title and labels: reads both" "$st" 0
 assert_eq "the title first, then one label per line" "$out" "$(writeln 'Widgets need a handle' ready-for-agent)"
 
+gh_reply 0 $'octo\nNONE\n\nocto\n' '' \
+  api graphql -f owner='{owner}' -f name='{repo}' -F number=23 \
+  -f query="$(sourced_orch_script 'printf %s "$ISSUE_AUTHORSHIP_QUERY"')" \
+  --jq "$(sourced_orch_script 'printf %s "$ISSUE_AUTHORSHIP_JQ"')"
+out="$(contract adapter_issue_authorship 23 2>&1)"; st=$?
+assert_status "issue authorship: reads the author, editor and renamer in one GraphQL call" "$st" 0
+assert_eq "the author, its association, the editor (empty here) and the renamer" "$out" "$(writeln octo NONE '' octo)"
+
 gh_reply 0 $'PULL\n' '' \
   issue view 62 --json state,url --jq 'if (.url | test("/pull/")) then "PULL" else .state end'
 out="$(contract adapter_issue_state 62 2>&1)"; st=$?

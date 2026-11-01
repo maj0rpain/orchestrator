@@ -150,7 +150,8 @@ gh_or_die() {
 # - issue: adapter_issue_body, adapter_issue_comments,
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
-#   adapter_issue_title_labels, adapter_issue_state, adapter_issues_labelled,
+#   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
+#   adapter_issues_labelled,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
@@ -381,6 +382,31 @@ adapter_issue_title_labels() {
 # writing neither, gh's stderr captured into <err_var>, never passed through.
 issue_title_labels_read() {
   gh_lines_read adapter_issue_title_labels "$1" "$4" "$2" "$3"
+}
+
+# The GraphQL query and --jq behind adapter_issue_authorship.
+ISSUE_AUTHORSHIP_QUERY='query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      author { login }
+      authorAssociation
+      editor { login }
+      timelineItems(last: 1, itemTypes: [RENAMED_TITLE_EVENT]) {
+        nodes { ... on RenamedTitleEvent { actor { login } } }
+      }
+    }
+  }
+}'
+ISSUE_AUTHORSHIP_JQ='.data.repository.issue | (.author.login // ""), (.authorAssociation // ""), (.editor.login // ""), (.timelineItems.nodes[0].actor.login // "")'
+
+# adapter_issue_authorship <n>: four lines, each possibly empty: the issue
+# author's login, the author's authorAssociation, the login of whoever last
+# edited the body (the issue's `editor`), and the login of whoever made the
+# newest rename of the title (the actor of its newest RenamedTitleEvent). One
+# GraphQL read, for the Trust module's reader.
+adapter_issue_authorship() {
+  gh api graphql -f owner='{owner}' -f name='{repo}' -F number="$1" \
+    -f query="$ISSUE_AUTHORSHIP_QUERY" --jq "$ISSUE_AUTHORSHIP_JQ"
 }
 
 # adapter_issue_state <n>: OPEN or CLOSED - or PULL where <n> is a pull

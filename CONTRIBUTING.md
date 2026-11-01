@@ -252,7 +252,7 @@ scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with 
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a claim on this host is alive - the run records, the start-time reader, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
-scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments orch.sh reads - the one filter dropping a comment whose author is not an owner, member or collaborator
+scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments orch.sh reads and which issues autopilot runs on - the one filter dropping a comment whose author is not an owner, member or collaborator, and the issue trust check
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)

@@ -26,6 +26,12 @@
 #   issues/<n>/duplicate_of
 #                     the issue a duplicate close named; absent, none
 #   issues/<n>/pull   present, #n is a pull request, not an issue
+#   issues/<n>/author, issues/<n>/association, issues/<n>/editor,
+#   issues/<n>/renamer
+#                     the issue author's login and authorAssociation, the
+#                     login of the body's last editor and of the title's
+#                     latest renamer; absent, the author is fake-gh as OWNER
+#                     and the body is never edited nor the title renamed
 #   issues/<n>/comments/<k>/{author,created,body}
 #                     the issue's k-th comment
 #   next_issue        the number the next created issue takes; absent, one
@@ -385,6 +391,21 @@ adapter_issue_title_labels() {
   fake_issue_known "$1" || return 1
   printf '%s\n' "$(cat "$(fake_issue_dir "$1")/title" 2>/dev/null)"
   fake_issue_labels "$1"
+}
+
+# adapter_issue_authorship <n>: the stored author login, its association, the
+# body's last editor and the title's latest renamer, one per line; fake-gh as
+# OWNER, never edited or renamed, for an issue seeded without them.
+adapter_issue_authorship() {
+  ! fake_failing adapter_issue_authorship || return 1
+  fake_issue_known "$1" || return 1
+  local d f
+  d="$(fake_issue_dir "$1")"
+  printf '%s\n' "$(cat "$d/author" 2>/dev/null || echo "$FAKE_COMMENT_AUTHOR")"
+  printf '%s\n' "$(cat "$d/association" 2>/dev/null || echo OWNER)"
+  for f in editor renamer; do
+    printf '%s\n' "$(cat "$d/$f" 2>/dev/null || true)"
+  done
 }
 
 # adapter_issue_state <n>: PULL for a PR the store holds or a number fake_pull
