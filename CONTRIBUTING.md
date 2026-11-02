@@ -99,8 +99,14 @@ every `*.md` under `skills/`, `agents/`, `commands/` and `docs/`, the root
 whole-line comments of every `*.sh` under `scripts/`, outside heredoc bodies;
 never `CHANGELOG.md`, `changelog.d/` or shell code. Frontmatter, fenced code,
 table rows, lines with a URL, `# shellcheck` directives and one-token lines
-are exempt. `docs_lint.sh`'s `scan_line_width` is the check, naming each
-over-long line's file, line and length.
+are exempt. `scripts/dev/width.sh` is the one rule, in two forms: `width.sh
+[--root <dir>] <file>...` checks the given files, judging coverage by each
+file's path inside `--root` or else its own git repo root, and `width.sh --root
+<dir>` scans every covered file under `<dir>`. It names each over-long line's
+file, line and length, and exits 0 with or without findings. `docs_lint.sh`'s
+`scan_line_width` wraps the second form.
+The project's edit hook, `scripts/dev/hook-edit-width.sh`, runs the width
+tool and, for a `.sh` file, shellcheck on each edited file.
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
@@ -240,7 +246,7 @@ skills/orch-review-pass/      the review pass, quick or standalone: one look by 
 skills/orch-sync/             a base sync on demand: branch sync, a resolver on a conflict, one PR comment, an offered review pass
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue (possibly rewritten from the plan by orch-to-spec's Unattended rewrite), unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
-skills/orch-interview/        the planning interview; hook-grilling.sh's message asks the closing question
+skills/orch-interview/        the planning interview, and its `## Closing` section: the closing rules hook-grilling.sh's message points to
 skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body - attended, or in the Unattended rewrite form a quick implementation takes
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
@@ -265,7 +271,7 @@ scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functio
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
 scripts/host.sh               the one host detector, host_detect, sourced by orch.sh and hook-common.sh
 scripts/flow-state.sh         the Flow state module: state.json's keys, defaults, reading and writing, sourced by orch.sh and hook-common.sh
-scripts/hook-*.sh             the six hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only, hook-paste-stop-guard.sh its Stop half
+scripts/hook-*.sh             the six hooks; hook-grilling.sh sends only the session's state and points to orch-interview's Closing section, and also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only, hook-paste-stop-guard.sh its Stop half
 scripts/paste-guard.sh        the transcript scan and paste check the two paste guards share, sourced by hook-paste-guard.sh and hook-paste-stop-guard.sh
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
@@ -275,13 +281,15 @@ docker/                       the autopilot container: `Dockerfile`, `compose.ya
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
+scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
+scripts/dev/hook-edit-width.sh the project's PostToolUse edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), and all.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts
 scripts/test/test_jobs.sh     the job-count and priority helpers orch_test.sh and all.sh both source: the default ORCH_TEST_JOBS and the renice to 10
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
-scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh and the helper index each load it whole
+scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
 scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
