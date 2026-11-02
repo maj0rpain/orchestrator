@@ -242,8 +242,8 @@ implementer follows it from here.
    output and exit code through unchanged and records a passing run's suite
    cost.
    Run it in the foreground and wait for it (host capability *Run a long
-   command*); never background it and sleep, poll or kill it. A run that times
-   out is a failure.
+   command*); never background it and sleep, poll or kill it. A run the host
+   moves to the background at its timeout is still waited for, as that row says.
    Fix a failure the merge caused, within the two sides' intents. A
    failure you cannot fix stays: record the command and `fail`, and carry on
    to finish.

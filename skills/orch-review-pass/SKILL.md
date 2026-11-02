@@ -93,8 +93,8 @@ a skipped check is reported.
    <command>` line in its instructions, else its full verification) through
    `bash "$ORCH" suite-cost run -- <command>`.
    Run it in the foreground and wait for it (host capability *Run a long
-   command*); never background it and sleep, poll or kill it. A run that times
-   out is a failed verification.
+   command*); never background it and sleep, poll or kill it. A run the host
+   moves to the background at its timeout is still waited for, as that row says.
    The Spec report's `## Set aside` lines are not findings: each is a
    requirement a known deviation set aside on purpose - one the caller
    handed in with `--deviations`, or, in a standalone pass, one the PR
@@ -127,8 +127,8 @@ a skipped check is reported.
    ```
 
    Run it in the foreground and wait for it (host capability *Run a long
-   command*); never background it and sleep, poll or kill it. A `check` that
-   times out is a `check` that dies, handled as below.
+   command*); never background it and sleep, poll or kill it. A `check` the host
+   moves to the background at its timeout is still waited for, as that row says.
 
    It prints one verdict line. Handle `grew <pct> - <finding text>` like
    any other finding, at location `suite` - the suite as a whole - with the

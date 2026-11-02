@@ -109,8 +109,8 @@ caller's numbered steps.
   and `pass` or `fail` go in **the record**, and in the PR body's Evidence.
   A failure does not stop the run: **the judge** carries it.
   Run it in the foreground and wait for it (host capability *Run a long
-  command*); never background it and sleep, poll or kill it. A run that times
-  out is a failed verification, recorded as `fail`.
+  command*); never background it and sleep, poll or kill it. A run the host
+  moves to the background at its timeout is still waited for, as that row says.
 
 Once loop step f has run, go **after loop step f**.
 
