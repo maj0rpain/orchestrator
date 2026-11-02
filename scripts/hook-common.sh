@@ -213,6 +213,8 @@ hook_bash_stdin_reader() {
     done
     if [ "$cont" = 1 ]; then
       :
+    elif [ -z "$quote" ] && [[ "$part" =~ \|[[:space:]]*$ ]]; then
+      :  # a trailing lone | continues the pipeline on the next line
     elif [ -z "$quote" ]; then
       hook_bash_stdin_hit "$part" && return 0
       part=""
@@ -254,12 +256,20 @@ hook_bash_stdin_script_is_stdin() {
 # Succeeds when the one part $1 is a plain stdin read; see
 # hook_bash_stdin_reader.
 hook_bash_stdin_is_reader() {
-  local -a words
+  local -a raw words=()
+  local x skip=0
   case "$1" in *'<'*|*'|'*) return 1 ;; esac
-  read -ra words <<<"$1"
+  read -ra raw <<<"$1"
+  # Drop output redirections (>f, 2>&1, &>f, >> f, a lone > and its target):
+  # they feed nothing to stdin, so they name no file argument.
+  for x in "${raw[@]}"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    if [[ "$x" =~ ^([0-9]*|&)\>\>?$ ]]; then skip=1; continue; fi
+    [[ "$x" =~ ^([0-9]*|&)\> ]] || words+=("$x")
+  done
   local k=0
   while [ "$k" -lt "${#words[@]}" ] && [[ "${words[k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do k=$((k + 1)); done
-  local w="${words[k]:-}" a1="${words[k+1]:-}" n=$(( ${#words[@]} - k - 1 ))
+  local w="${words[k]:-}" a1="${words[k+1]:-}"
   case "$w" in
     cat) hook_bash_stdin_only_options "${words[@]:k+1}" ;;
     python|python3|node) hook_bash_stdin_script_is_stdin "${words[@]:k+1}" ;;

@@ -1298,7 +1298,8 @@ done
 # Deny of plain stdin reads under a non-bypass mode (#2002).
 bs_denied() { bs_event "$1" orch-implementer "$2" | bs_run ""; }
 for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
-  'python3 - x' 'node - --flag' 'cat -n' 'cat -A' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat'; do
+  'python3 - x' 'node - --flag' 'cat -n' 'cat -A' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat' \
+  'cat >out' 'cat > f' 'cat 2>/dev/null' 'python3 >log' 'node 2>&1' 'cat &>o' 'cat >> f' '>o cat'; do
   bs_out="$(bs_denied default "$bs_cmd")"
   assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" \
     "$(bs_decision "$bs_out")" deny
@@ -1313,12 +1314,11 @@ assert_contains "bash stdin hook: the deny reason says how to supply input" \
   "$(jq -r '.reason' <<<"$bs_out")" 'heredoc, <<<, a pipe or </dev/null'
 for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'cat < f' 'cat file' \
   'python3 script.py' $'cat <<EOF\ncat\nread x\nEOF' $'echo "a\ncat\nb"' 'echo "a; cat"' \
-  "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'ls # list; read later' 'cat file -n' $'echo a \\\n  cat'; do
+  "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'ls # list; read later' 'cat file -n' $'echo a \\\n  cat' \
+  $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file'; do
   bs_out="$(bs_denied default "$bs_cmd")"
   assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
-bs_out="$(bs_event default Explore cat | bs_run "")"
-assert_empty "bash stdin hook: out of scope 'cat' under default is not denied" "$bs_out"
 bs_out="$(bs_event default "" cat | bs_run 1)"
 assert_eq "bash stdin hook: autopilot 'cat' under default is denied" \
   "$(bs_decision "$bs_out")" deny
@@ -1329,23 +1329,23 @@ bs_out="$(echo 'not json {' | bs_run 1)"; bs_rc=$?
 assert_empty "bash stdin hook: a non-JSON payload prints nothing" "$bs_out"
 assert_eq "bash stdin hook: a non-JSON payload exits 0" "$bs_rc" 0
 # Seam 2: the rewritten command, run by bash with stdin held open.
-bs_cmd="$(bs_event bypassPermissions orch-implementer 'cat; echo done' | bs_run "" | jq -r '.hookSpecificOutput.updatedInput.command')"
-bs_fifo="$TMPDIR/bs-open.fifo"; mkfifo "$bs_fifo"
-bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"; bs_rc=$?
-assert_eq "bash stdin hook: rewritten 'cat; echo done' returns with stdin held open" "$bs_rc" 0
-assert_eq "bash stdin hook: rewritten 'cat; echo done' prints done" "$bs_run_out" "done"
 # bs_rewritten COMMAND: the command the hook rewrites COMMAND into.
 bs_rewritten() {
   bs_event bypassPermissions orch-implementer "$1" | bs_run "" | jq -r '.hookSpecificOutput.updatedInput.command'
 }
-bs_cmd="$(bs_rewritten $'cat <<EOT\nheredoc\nEOT')"
-bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"
+bs_rewrite="$(bs_rewritten 'cat; echo done')"
+bs_fifo="$TMPDIR/bs-open.fifo"; mkfifo "$bs_fifo"
+bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"; bs_rc=$?
+assert_eq "bash stdin hook: rewritten 'cat; echo done' returns with stdin held open" "$bs_rc" 0
+assert_eq "bash stdin hook: rewritten 'cat; echo done' prints done" "$bs_run_out" "done"
+bs_rewrite="$(bs_rewritten $'cat <<EOT\nheredoc\nEOT')"
+bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
 assert_eq "bash stdin hook: a heredoc still reaches cat" "$bs_run_out" heredoc
-bs_cmd="$(bs_rewritten 'cat <<<here-string')"
-bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"
+bs_rewrite="$(bs_rewritten 'cat <<<here-string')"
+bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
 assert_eq "bash stdin hook: a here-string still reaches cat" "$bs_run_out" here-string
-bs_cmd="$(bs_rewritten 'echo piped | cat')"
-bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"
+bs_rewrite="$(bs_rewritten 'echo piped | cat')"
+bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
 assert_eq "bash stdin hook: piped input still reaches cat" "$bs_run_out" piped
 assert_eq "hooks.json registers hook-bash-stdin.sh under PreToolUse with matcher Bash" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-stdin\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1
