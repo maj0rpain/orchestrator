@@ -73,6 +73,8 @@
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=test_jobs.sh
 source "$dir/test_jobs.sh"
+# shellcheck source=report.sh
+source "$dir/report.sh"
 sc_jobs="$(test_jobs_count all.sh)" || exit 1
 test_jobs_lower_priority
 test_jobs_pool_init all.sh || exit 1
@@ -145,24 +147,7 @@ fi
 
 for suite_n in "${!suites[@]}"; do
   suite="${suites[$suite_n]}"
-  out="$(<"$tmp/$suite")"
-  fail_block="$(printf '%s\n' "$out" | awk '
-    in_fail && /^     / { print; next }
-    { in_fail = 0 }
-    /^  FAIL / { print; in_fail = 1 }')"
-  [ -z "$fail_block" ] || printf '%s\n' "$fail_block"
-  last="$(printf '%s\n' "$out" | tail -n 1)"
-  status="${suite_exits[$suite_n]}"
-  if [ "$status" -ne 0 ] &&
-    ! [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
-    echo "$suite: died before its summary (exit $status)"
-  else
-    echo "$suite: $last"
-  fi
-  if [ -n "$fail_block" ]; then
-    [ "$status" -eq 0 ] && echo "$suite: printed FAIL lines but exited 0"
-    failed=1
-  fi
+  report_suite "$suite" "${suite_exits[$suite_n]}" "$(<"$tmp/$suite")" || failed=1
 done
 
 leftovers=("$suites_tmp"/* "$suites_tmp"/.[!.]* "$suites_tmp"/..?*)
@@ -178,17 +163,6 @@ if [ "$have_sc" -eq 0 ]; then
   echo "shellcheck: not installed - skipped"
   [ -n "${CI:-}" ] && failed=1
 else
-  sc_findings="$(printf '%s\n' "$sc_out" | awk '/^[^:]+:[0-9]+:[0-9]+: /')"
-  if [ "$sc_status" -eq 0 ]; then
-    echo "shellcheck: 0 findings"
-  elif [ -n "$sc_findings" ]; then
-    printf '%s\n' "$sc_findings"
-    echo "shellcheck: $(printf '%s\n' "$sc_findings" | awk 'END { print NR }') findings"
-    failed=1
-  else
-    [ -n "$sc_out" ] && printf '%s\n' "$sc_out"
-    echo "shellcheck: failed (exit $sc_status)"
-    failed=1
-  fi
+  report_shellcheck "$sc_status" "$sc_out" || failed=1
 fi
 exit "$failed"

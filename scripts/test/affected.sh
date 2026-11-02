@@ -27,7 +27,7 @@
 #   skills, agents, docs, markdown, changelog fragments
 #                                     nothing beyond the always-run checks
 #   anything else, orch.sh, orch/common.sh, the shared test setup, the
-#   runners, the gh fake, test_jobs.sh   all.sh (this row wins over the rest)
+#   runners, the gh fake, test_jobs.sh, report.sh   all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
 # Always run: docs_lint.sh, orch_test.sh's placement sections (helper
@@ -128,7 +128,7 @@ classify() {
   case "$f" in
     scripts/orch.sh | scripts/orch/common.sh | scripts/test/orch/common.sh | \
       scripts/test/orch/setup.sh | scripts/test/all.sh | scripts/test/orch_test.sh | \
-      scripts/test/affected.sh | scripts/test/test_jobs.sh | scripts/test/gh_adapter_fake.sh)
+      scripts/test/affected.sh | scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/gh_adapter_fake.sh)
       full_suite ;;
     scripts/orch/*.sh)
       [ "$state" = deleted ] && full_suite
@@ -241,6 +241,8 @@ done
 
 # shellcheck source=test_jobs.sh
 source "$dir/test_jobs.sh"
+# shellcheck source=report.sh
+source "$dir/report.sh"
 test_jobs_lower_priority
 test_jobs_pool_init affected.sh || exit 1
 export ORCH_TEST_QUIET=1
@@ -281,44 +283,12 @@ sc_status=0
 
 for n in "${!selected[@]}"; do
   suite="${selected[$n]}"
-  out="$(<"$tmp/$suite")"
-  fail_block="$(printf '%s\n' "$out" | awk '
-    in_fail && /^     / { print; next }
-    { in_fail = 0 }
-    /^  FAIL / { print; in_fail = 1 }')"
-  [ -z "$fail_block" ] || printf '%s\n' "$fail_block"
-  last="$(printf '%s\n' "$out" | tail -n 1)"
-  status="${suite_exits[$n]}"
-  if [ "$status" -ne 0 ]; then
-    failed=1
-    if [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
-      echo "$suite: $last"
-    else
-      echo "$suite: died before its summary (exit $status)"
-    fi
-  else
-    echo "$suite: $last"
-  fi
-  if [ -n "$fail_block" ]; then
-    [ "$status" -eq 0 ] && echo "$suite: printed FAIL lines but exited 0"
-    failed=1
-  fi
+  report_suite "$suite" "${suite_exits[$n]}" "$(<"$tmp/$suite")" || failed=1
 done
 
 if [ "$have_sc" -eq 1 ]; then
   sc_out="$(<"$tmp/shellcheck")"
-  sc_findings="$(printf '%s\n' "$sc_out" | awk '/^[^:]+:[0-9]+:[0-9]+: /')"
-  if [ "$sc_status" -eq 0 ]; then
-    echo "shellcheck: 0 findings"
-  elif [ -n "$sc_findings" ]; then
-    printf '%s\n' "$sc_findings"
-    echo "shellcheck: $(printf '%s\n' "$sc_findings" | awk 'END { print NR }') findings"
-    failed=1
-  else
-    [ -n "$sc_out" ] && printf '%s\n' "$sc_out"
-    echo "shellcheck: failed (exit $sc_status)"
-    failed=1
-  fi
+  report_shellcheck "$sc_status" "$sc_out" || failed=1
 elif [ "${#sc_sorted[@]}" -gt 0 ]; then
   echo "shellcheck: not installed - skipped"
   [ -n "${CI:-}" ] && failed=1

@@ -45,16 +45,17 @@ suites_read() {
 }
 
 # stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
-# of all.sh and test_jobs.sh beside a passing stub for each name in SUITES
-# (suites_read first), with <dir>/bin holding links to the tools all.sh needs,
-# the extra ones included, and a shellcheck stub that logs "+" to the log when
-# it starts and "-" when it ends, 0.2 seconds apart. A stub suite logs
+# of all.sh, test_jobs.sh and report.sh beside a passing stub for each name in
+# SUITES (suites_read first), with <dir>/bin holding links to the tools all.sh
+# needs, the extra ones included, and a shellcheck stub that logs "+" to the log
+# when it starts and "-" when it ends, 0.2 seconds apart. A stub suite logs
 # "<name> ran" to scripts/test/log.
 stub_all_tree() {
   local dir="$1" log="$2" tool stub
   shift 2
   mkdir -p "$dir/scripts/test" "$dir/bin"
-  cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$dir/scripts/test/"
+  cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
+    "$(dirname "$SUITE_SCRIPT")/report.sh" "$dir/scripts/test/"
   for tool in bash dirname awk tail mktemp rm mkdir sleep cat "$@"; do
     ln -s "$(command -v "$tool")" "$dir/bin/$tool"
   done
@@ -876,7 +877,8 @@ done
 # an orch_test.sh stub that leaves a file in its TMPDIR.
 root_all="$root_dir/all"
 mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
-cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$root_all/scripts/test/"
+cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
+  "$(dirname "$SUITE_SCRIPT")/report.sh" "$root_all/scripts/test/"
 for root_tool in bash dirname awk tail mktemp rm mkdir; do
   ln -s "$(command -v "$root_tool")" "$root_all/bin/$root_tool"
 done
@@ -936,13 +938,14 @@ all_root="$(mktemp -d)"
 all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
 mkdir -p "$all_dir/orch" "$all_bin"
-cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$all_dir/"
+cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
+  "$(dirname "$SUITE_SCRIPT")/report.sh" "$all_dir/"
 for all_tool in bash dirname awk tail mktemp rm mkdir sleep; do
   ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
 done
 # all_written: every shell file the fixture writes, by path from <tmp>, for
 # the expected shellcheck arguments - never a glob.
-all_written=(scripts/test/all.sh scripts/test/test_jobs.sh)
+all_written=(scripts/test/all.sh scripts/test/test_jobs.sh scripts/test/report.sh)
 all_planted=(scripts/lint_me.sh scripts/test/lint_me.sh scripts/test/orch/lint_me.sh
   scripts/dev/deep/lint_me.sh)
 mkdir -p "$all_root/scripts/dev/deep"
@@ -1495,7 +1498,7 @@ wait "$jp_p2"; jp_s2=$?
 assert_status "two concurrent all.sh runs on a 1-slot pool pass" "$((jp_s1 + jp_s2))" 0
 assert_eq "their shellcheck processes never overlap on a 1-slot pool" "$(log_peak "$jp_log")" "1"
 assert_eq "every file was still checked, twice over" \
-  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + 2)))"
+  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + 3)))"
 assert_contains "a waiting all.sh names itself in the notice" \
   "$(cat "$jp_dir/erra" "$jp_dir/errb2")" "all.sh: waiting for a job slot (1 in use)"
 else
@@ -1576,7 +1579,7 @@ assert_eq "CI does not validate ORCH_TEST_POOL_PERCENT" \
   "$(load_default 8 -missing CI=true ORCH_TEST_POOL_PERCENT=abc)" "8"
 
 # all.sh's runs: a copy beside passing suite stubs, a shellcheck stub that logs
-# "+" when it starts and "-" when it ends, over the stubs and the two copies.
+# "+" when it starts and "-" when it ends, over the stubs and the three copies.
 load_all="$load_dir/all"
 stub_all_tree "$load_all" "$load_all/sc_log"
 # load_run_all [VAR=value...]: all.sh on the stub PATH, CI and ORCH_TEST_JOBS
@@ -1593,7 +1596,7 @@ out="$(load_run_all ORCH_TEST_JOBS=2 2>&1)"; st=$?
 assert_status "all.sh with ORCH_TEST_JOBS=2 passes" "$st" 0
 assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(log_peak "$load_all/sc_log")" "2"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
-  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 2))"
+  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 3))"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
 : >"$load_all/sc_log"
@@ -2395,7 +2398,8 @@ unset -f runner_git_isolation
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
-# layout: the real affected.sh, all.sh, git_env.sh and test_jobs.sh, a harness
+# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh and report.sh,
+# a harness
 # file holding the three placement sections, a branch section file with two
 # sections, and one tiny file for each other kind of path. origin's main is the
 # initial commit, origin's rel that commit plus a change to the branch module,
@@ -2420,7 +2424,7 @@ af_put() {
 af_git init -q -b main
 mkdir -p "$af/scripts/test/orch"
 cp "$af_tests/affected.sh" "$af_tests/all.sh" "$af_tests/git_env.sh" \
-  "$af_tests/test_jobs.sh" "$af/scripts/test/"
+  "$af_tests/test_jobs.sh" "$af_tests/report.sh" "$af/scripts/test/"
 af_put scripts/test/orch/harness.sh '# --- isolation ---' \
   '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
   '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---'
@@ -2520,7 +2524,7 @@ af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,do
 af_row "a markdown file selects nothing more" README.md "$af_gate,docs_lint.sh"
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/test/orch/common.sh \
   scripts/test/orch/setup.sh scripts/test/all.sh scripts/test/orch_test.sh \
-  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/dev/other.sh Makefile; do
+  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/dev/other.sh Makefile; do
   af_row "$af_f falls back to all.sh" "$af_f" "all.sh"
 done
 af_reset
