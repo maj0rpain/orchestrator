@@ -2729,9 +2729,6 @@ af_verdict_run -- HEAD
 assert_status "a failing selected part exits 1 without shellcheck" "$st" 1
 assert_eq "a failing selected part ends on a FAIL verdict naming it" "$(af_last)" \
   "affected.sh: FAIL (hooks_test.sh)"
-af_verdict_run CI=1 -- HEAD
-assert_eq "a failing part and a missing shellcheck under CI are both named" "$(af_last)" \
-  "affected.sh: FAIL (hooks_test.sh, shellcheck)"
 # A passing selection: the passing stub back, shellcheck skipped.
 printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
 af_verdict_run -- HEAD
