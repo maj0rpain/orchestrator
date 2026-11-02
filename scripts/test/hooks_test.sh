@@ -1355,6 +1355,60 @@ assert_eq "bash stdin hook: piped input still reaches cat" "$bs_run_out" piped
 assert_eq "hooks.json registers hook-bash-stdin.sh under PreToolUse with matcher Bash" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-stdin\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1
 
+# --- bash poll hook (scripts/hook-bash-poll.sh, #2085)
+BPOLL="$DIR/hook-bash-poll.sh"
+# bp_run AUTOPILOT: the hook on stdin with ORCH_AUTOPILOT set (empty: unset).
+bp_run() {
+  if [ -n "$1" ]; then ORCH_AUTOPILOT="$1" bash "$BPOLL"; else env -u ORCH_AUTOPILOT bash "$BPOLL"; fi
+}
+# bp_scan MODE COMMAND: the hook's output for COMMAND from an in-scope agent.
+bp_scan() { bs_event "$1" orch-implementer "$2" | bp_run ""; }
+bp_poll='until ! pgrep -f x; do sleep 5; done'
+for mode in default acceptEdits plan dontAsk bypassPermissions; do
+  bp_out="$(bp_scan "$mode" "$bp_poll")"
+  assert_eq "bash poll hook: $mode denies a pgrep poll" "$(bs_decision "$bp_out")" deny
+done
+bp_out="$(bs_event default orch-implementer "$bp_poll" | jq 'del(.permission_mode)' | bp_run "")"
+assert_eq "bash poll hook: no permission_mode denies a pgrep poll" "$(bs_decision "$bp_out")" deny
+for bp_cmd in 'pkill -f y' 'echo $(pgrep x)' 'echo `pgrep x`' 'ls | xargs pkill' 'timeout 5 pkill y' \
+  'while pgrep x; do sleep 5; done' 'true|pgrep x' '/usr/bin/pgrep x' '/usr/local/bin/pkill x' 'grep -n pgrep file' \
+  $'echo a\npgrep x' 'pgrep'; do
+  bp_out="$(bp_scan default "$bp_cmd")"
+  assert_eq "bash poll hook: denies '${bp_cmd//$'\n'/\\n}'" "$(bs_decision "$bp_out")" deny
+done
+for bp_agent in orchestrator:orch-implementer orch-implementer; do
+  bp_out="$(bs_event default "$bp_agent" 'pgrep x' | bp_run "")"
+  assert_eq "bash poll hook: agent_type '$bp_agent' is denied" "$(bs_decision "$bp_out")" deny
+done
+bp_out="$(bs_event default "" 'pgrep x' | bp_run 1)"
+assert_eq "bash poll hook: autopilot with an empty agent_type is denied" "$(bs_decision "$bp_out")" deny
+bp_out="$(bp_scan default 'pgrep x')"
+assert_contains "bash poll hook: the reason gives the foreground rerun" \
+  "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bp_out")" 'timeout: 600000'
+assert_contains "bash poll hook: the reason names the completion notice" \
+  "$(jq -r '.reason' <<<"$bp_out")" 'completion notice'
+for bp_agent in "" Explore; do
+  bp_out="$(bs_event default "$bp_agent" 'pgrep x' | bp_run "")"; bp_rc=$?
+  assert_empty "bash poll hook: out of scope '$bp_agent' prints nothing" "$bp_out"
+  assert_eq "bash poll hook: out of scope '$bp_agent' exits 0" "$bp_rc" 0
+done
+for bp_cmd in 'grep "pgrep -f" file' $'cat <<EOF\npgrep x\nEOF' 'ls -l' 'killall x' "bash -c 'pgrep x'" \
+  '[ -n "$(pgrep -f x)" ]' '[ -n "`pgrep -f x`" ]' 'sleep 5 # pgrep'; do
+  bp_out="$(bp_scan default "$bp_cmd")"; bp_rc=$?
+  assert_empty "bash poll hook: passes '${bp_cmd//$'\n'/\\n}'" "$bp_out"
+  assert_eq "bash poll hook: '${bp_cmd//$'\n'/\\n}' exits 0" "$bp_rc" 0
+done
+bp_out="$(bp_scan default "$(printf 'echo %9000s; pgrep x' '')")"
+assert_empty "bash poll hook: a command over 8 KB is not scanned" "$bp_out"
+bp_out="$(bs_event default orch-implementer pgrep | jq 'del(.tool_input.command)' | bp_run "")"; bp_rc=$?
+assert_empty "bash poll hook: no command prints nothing" "$bp_out"
+assert_eq "bash poll hook: no command exits 0" "$bp_rc" 0
+bp_out="$(echo 'not json {' | bp_run 1)"; bp_rc=$?
+assert_empty "bash poll hook: a non-JSON payload prints nothing" "$bp_out"
+assert_eq "bash poll hook: a non-JSON payload exits 0" "$bp_rc" 0
+assert_eq "hooks.json registers hook-bash-poll.sh under PreToolUse with matcher Bash" \
+  "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-poll\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1
+
 # >>> summary
 echo
 tally_read
