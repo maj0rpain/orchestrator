@@ -177,15 +177,14 @@ hook_bash_stdin_reader() {
       elif [[ "$quote" == "'" ]]; then re="^[^']+"
       else re='^[^"\\]+'; fi
       if [[ "$rest" =~ $re ]]; then part+="${BASH_REMATCH[0]}"; i=$((i + ${#BASH_REMATCH[0]})); continue; fi
+      c="${rest::1}"
       if [ -n "$quote" ]; then
-        c="${rest::1}"
         if [ "$quote" = '"' ] && [ "$c" = '\' ]; then
           part+="$c${line:i+1:1}"; i=$((i + 2)); continue
         fi
         [ "$c" = "$quote" ] && quote=""
         part+="$c"
       else
-        c="${rest::1}"
         case "$c" in
           "'"|'"') quote="$c"; part+="$c" ;;
           '\')
@@ -241,6 +240,14 @@ hook_bash_stdin_only_options() {
   for a in "$@"; do [[ "$a" == -* ]] || return 1; done
 }
 
+# Succeeds when any argument is --help or --version, which make a command print
+# and exit without reading stdin.
+hook_bash_stdin_has_info_option() {
+  local a
+  for a in "$@"; do [[ "$a" == --help || "$a" == --version ]] && return 0; done
+  return 1
+}
+
 # Succeeds when an interpreter's arguments name no script (none at all) or name
 # `-` as the script: the first argument that is not an option, a lone - counting
 # as the script. Options alone do not succeed (a false negative, accepted).
@@ -278,7 +285,7 @@ hook_bash_stdin_is_reader() {
   [ "${#words[@]}" -gt "$((k + 1))" ] && rest=("${words[@]:k+1}")
   local cmd_word="${words[k]:-}" first_arg="${words[k+1]:-}"
   case "$cmd_word" in
-    cat) hook_bash_stdin_only_options ${rest[@]+"${rest[@]}"} && [[ "${rest[0]:-}" != --help && "${rest[0]:-}" != --version ]] ;;
+    cat) hook_bash_stdin_only_options ${rest[@]+"${rest[@]}"} && ! hook_bash_stdin_has_info_option ${rest[@]+"${rest[@]}"} ;;
     python|python3|node) hook_bash_stdin_script_is_stdin ${rest[@]+"${rest[@]}"} ;;
     read) return 0 ;;
     bash|sh) [ "$first_arg" = -s ] ;;
