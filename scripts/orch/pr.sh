@@ -272,10 +272,10 @@ cmd_pr_release() {
   default="$(default_branch)"
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
-  local open
-  gh_or_die --out open "list the open PRs from $base into $default" \
+  local raw open
+  gh_or_die --out raw "list the open PRs from $base into $default" \
     adapter_prs_open "$base" "$default"
-  open="$(trust_filter_prs "$base" <<<"$open")" ||
+  open="$(trust_filter_prs "$base" <<<"$raw")" ||
     die "the open PRs from $base into $default could not be read"
   [ -z "$open" ] || die "a release PR from $base into $default is already open: #${open%%$'\n'*}"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
@@ -391,11 +391,11 @@ open_pr_draft_flag() {
 # so a caller in a subshell can tell "no PR" apart from an error and map each
 # to its own exit code.
 current_open_pr() {
-  local branch open
+  local branch raw open
   current_branch_or_die die2
-  gh_or_die --exit 2 --out open "list the open PRs from $branch" \
+  gh_or_die --exit 2 --out raw "list the open PRs from $branch" \
     adapter_prs_open "$branch"
-  open="$(trust_filter_prs "$branch" <<<"$open")" ||
+  open="$(trust_filter_prs "$branch" <<<"$raw")" ||
     die2 "the open PRs from $branch could not be read"
   [ -n "$open" ] || return 1
   printf '%s\n' "${open%%$'\n'*}"

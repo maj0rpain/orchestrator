@@ -662,6 +662,12 @@ adapter_pr_draft() {
   : >"$(fake_pr_dir "$1")/draft"
 }
 
+# fake_pr_cross_of <pr-dir>: prints the stored PR's cross_repository flag -
+# its cross_repository file, or false where unset.
+fake_pr_cross_of() {
+  cat "$1/cross_repository" 2>/dev/null || echo false
+}
+
 # adapter_prs_open <head> [base]: the open PRs in the store from the head
 # branch, into the base where one is named, newest first, each as
 # `<number>\t<flag>`, the flag the PR's stored cross_repository file (false
@@ -673,7 +679,7 @@ adapter_prs_open() {
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = OPEN ] && [ "$(cat "$d/head")" = "$1" ] || continue
     [ -z "${2:-}" ] || [ "$(cat "$d/base")" = "$2" ] || continue
-    printf '%s\t%s\n' "$(basename "$d")" "$(cat "$d/cross_repository" 2>/dev/null || echo false)"
+    printf '%s\t%s\n' "$(basename "$d")" "$(fake_pr_cross_of "$d")"
   done | sort -rn
 }
 
@@ -685,7 +691,7 @@ adapter_prs_open_all() {
   for d in "$(fake_store)"/prs/*/; do
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = OPEN ] || continue
-    printf '%s\t%s\n' "$(basename "$d")" "$(cat "$d/cross_repository" 2>/dev/null || echo false)"
+    printf '%s\t%s\n' "$(basename "$d")" "$(fake_pr_cross_of "$d")"
   done | sort -rn
 }
 
@@ -716,7 +722,7 @@ adapter_prs_merged() {
     [ "$(cat "$d/state")" = MERGED ] && [ "$(cat "$d/head")" = "$1" ] \
       && [ "$(cat "$d/base")" = "$2" ] || continue
     printf '%s\t%s\t%s\n' "$(basename "$d")" "$(fake_pr_head_oid "$d")" \
-      "$(cat "$d/cross_repository" 2>/dev/null || echo false)"
+      "$(fake_pr_cross_of "$d")"
   done | sort -rn
 }
 
