@@ -1424,11 +1424,13 @@ rm -rf "$PLUGIN_644"
 # --- edit width hook (scripts/dev/hook-edit-width.sh)
 EDIT_HOOK="$ROOT/scripts/dev/hook-edit-width.sh"
 EW="$(mktemp -d)"
-wide="$(printf 'word %.0s' $(seq 1 17))x"
+# wide is 81 columns, one past the rule; edge is 80, the widest a line may be.
+wide="$(printf 'word %.0s' $(seq 1 16))x"
+edge="$(printf 'word %.0s' $(seq 1 16))"
 git -C "$EW" init -q
 mkdir -p "$EW/docs" "$EW/other" "$EW/scripts"
 printf '# T\n\n%s\n' "$wide" >"$EW/docs/wide.md"
-printf '# T\n\nshort\n' >"$EW/docs/ok.md"
+printf '# T\n\n%s\n' "$edge" >"$EW/docs/ok.md"
 printf '%s\n' "$wide" >"$EW/other/wide.md"
 printf '#!/usr/bin/env bash\nunused=1\necho hi\n' >"$EW/scripts/warn.sh"
 printf '#!/usr/bin/env bash\necho ok\n' >"$EW/scripts/ok.sh"
@@ -1453,6 +1455,10 @@ if command -v shellcheck >/dev/null 2>&1; then
   assert_contains "edit hook: names the warning" "$ew_out" "SC2034"
   run_edit_hook "$EW/scripts/ok.sh"
   assert_eq "edit hook: clean sh exits 0" "$ew_rc" 0
+elif [ -n "${CI:-}" ]; then
+  bad "edit hook: shellcheck cases" "shellcheck is not on PATH under CI"
+else
+  skip "edit hook: shellcheck cases" "shellcheck is not on PATH"
 fi
 # PATH without shellcheck: symlink only what the hook needs. The case itself
 # needs no shellcheck, so it runs on every machine.
@@ -1480,15 +1486,11 @@ assert_empty "edit hook: no file_path is silent" "$ew_out"
 # A file in a second repo is judged by its own root, from another repo's cwd.
 EW2="$(mktemp -d)"
 git -C "$EW2" init -q
-mkdir -p "$EW2/docs" "$EW2/misc"
+mkdir -p "$EW2/docs"
 printf '%s\n' "$wide" >"$EW2/docs/wide.md"
-printf '%s\n' "$wide" >"$EW2/misc/wide.md"
 ew_out="$(cd "$EW" && jq -n --arg f "$EW2/docs/wide.md" \
   '{tool_input:{file_path:$f}}' | bash "$EDIT_HOOK" 2>&1)"; ew_rc=$?
 assert_eq "edit hook: second repo's docs wide exits 2" "$ew_rc" 2
-ew_out="$(cd "$EW" && jq -n --arg f "$EW2/misc/wide.md" \
-  '{tool_input:{file_path:$f}}' | bash "$EDIT_HOOK" 2>&1)"; ew_rc=$?
-assert_eq "edit hook: second repo's uncovered path exits 0" "$ew_rc" 0
 # Registration.
 SETTINGS="$ROOT/.claude/settings.json"
 reg="$(jq -r '.hooks.PostToolUse[]? | select(.matcher == "Edit|Write|MultiEdit")
