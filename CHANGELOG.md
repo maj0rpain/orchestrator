@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.43.0
+
+Set the test job pool's share of the usable CPUs with `ORCH_TEST_POOL_PERCENT` (any positive integer, above 100 included). The default share rises from half to 75%, a run with `ORCH_TEST_JOBS` unset runs as many jobs as the pool holds, and every runner refuses an invalid value. `CI` ignores the setting.
+
+A test suite sent INT or TERM now stops every process it started, a nested run inside a command substitution included, before it removes its temp root, so nothing left running can recreate it. That race made the temp-root and `hooks_test.sh` TERM tests flaky under load.
+
 ## 4.42.4
 
 Fix: one rule now decides which GitHub host gh targets for the repo, so a github.com origin pins `GH_HOST=github.com` even when the user exports another `GH_HOST`, and the gh guard, doctor's GitHub probe and `repo show --host` agree on it.
