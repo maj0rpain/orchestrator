@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.39.1
+
+Doctor's GitHub check now asks gh only about the active account on the repo's host, so a stale second account or an unused host no longer makes it report "gh is not authenticated". When that account really is unauthenticated, the FAIL line and its remedy name the host.
+
 ## 4.39.0
 
 orch.sh now reads only trusted comments: a comment counts only when its author is the repo's owner, a member or a collaborator. Comments from anyone else are dropped from every issue and PR comment read before any handoff, question, stop or ruling is read from them, and one `orch: ignored N comment(s) from untrusted authors` line says how many. Autopilot pickup refuses an untrusted issue, one whose title or body was last written by someone without that role. `issue fetch` and `init --issue` warn on such an issue in an attended session. ADR-0057 records the rule.
