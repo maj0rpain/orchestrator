@@ -3709,50 +3709,11 @@ fi
 echo
 echo "line width (#1524)"
 # CONTRIBUTING's Develop section states the width, 80 columns, and the files
-# it covers. A covered line fails when it is longer than 80, counted in
-# characters, so a multi-byte character is one column.
+# it covers. The rule lives in scripts/dev/width.sh; this is its wrapper.
 # scan_line_width <plugin root>: "<file>:<line>: <length> columns, past 80"
 # for each covered, non-exempt line longer than 80.
 scan_line_width() {
-  local f
-  while IFS= read -r f; do
-    F="$f" LC_ALL=C awk "$SHELL_CODE_AWK"'
-      FNR == 1 {
-        is_shell = ENVIRON["F"] ~ /\.sh$/
-        in_frontmatter = 0; fence = ""
-      }
-      { stripped = $0; sub(/^[[:space:]]+/, "", stripped) }
-      is_shell { shell_code_line($0) }
-      is_shell && (!sc_top || stripped !~ /^#/) { next }
-      is_shell && FNR == 1 && stripped ~ /^#!/ { next }
-      is_shell && stripped ~ /^#[[:space:]]*shellcheck/ { next }
-      !is_shell && FNR == 1 && $0 == "---" { in_frontmatter = 1; next }
-      in_frontmatter { if ($0 == "---") in_frontmatter = 0; next }
-      !is_shell && match(stripped, /^(```|~~~)/) {
-        marker = substr(stripped, 1, 3)
-        if (fence == "") fence = marker; else if (marker == fence) fence = ""
-        next
-      }
-      fence != "" || stripped ~ /^\|/ || /https?:\/\// { next }
-      {
-        bare = stripped; sub(/^#+[[:space:]]*/, "", bare)
-        sub(/[[:space:]]+$/, "", bare)
-        sub(/^([-*+]|[0-9]+[.)])[[:space:]]+/, "", bare)
-        if (bare !~ /[[:space:]]/) next
-      }
-      {
-        chars = $0
-        cols = length(chars) - gsub(/[\200-\277]/, "", chars)
-      }
-      cols > 80 { print ENVIRON["F"] ":" FNR ": " cols " columns, past 80" }' "$1/$f"
-  done < <(cd "$1" && {
-    find skills agents commands docs -name '*.md' 2>/dev/null
-    for f in README.md CONTRIBUTING.md GLOSSARY.md CLAUDE.md; do
-      [ -f "$f" ] && echo "$f"
-    done
-    find scripts -name '*.sh' 2>/dev/null
-  } | sort)
-  return 0
+  "$PLUGIN_ROOT/scripts/dev/width.sh" --root "$1"
 }
 # wide_line <prefix> <n>: <prefix> padded with x to <n> columns.
 wide_line() {
@@ -3863,6 +3824,15 @@ spares "an over-long line in CHANGELOG.md or changelog.d/ is not flagged" \
   "$out" '^(CHANGELOG\.md|changelog\.d/12\.md):'
 spares "an over-long line in a *.md outside the covered paths is not flagged" \
   "$out" '^\.out-of-scope/'
+# The per-file form agrees with the whole-root form, and skips uncovered files.
+width="$PLUGIN_ROOT/scripts/dev/width.sh"
+covered_files=()
+while IFS= read -r f; do covered_files+=("$fixture/${f%%:*}"); done \
+  < <(printf '%s\n' "$out" | cut -d: -f1 | sort -u)
+assert_eq "width.sh given every covered file prints what a root scan prints" \
+  "$("$width" --root "$fixture" "${covered_files[@]}")" "$out"
+assert_empty "width.sh given an uncovered file prints nothing" \
+  "$("$width" --root "$fixture" "$fixture/CHANGELOG.md")"
 check "no covered Markdown or shell comment line is past 80 columns" \
   "$(scan_line_width "$PLUGIN_ROOT")"
 

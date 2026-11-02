@@ -99,8 +99,12 @@ every `*.md` under `skills/`, `agents/`, `commands/` and `docs/`, the root
 whole-line comments of every `*.sh` under `scripts/`, outside heredoc bodies;
 never `CHANGELOG.md`, `changelog.d/` or shell code. Frontmatter, fenced code,
 table rows, lines with a URL, `# shellcheck` directives and one-token lines
-are exempt. `docs_lint.sh`'s `scan_line_width` is the check, naming each
-over-long line's file, line and length.
+are exempt. `scripts/dev/width.sh` is the one rule, in two forms: `width.sh
+[--root <dir>] <file>...` checks the given files, judging coverage by each
+file's path inside `--root` or else its own git repo root, and `width.sh --root
+<dir>` scans every covered file under `<dir>`. It names each over-long line's
+file, line and length, and exits 0 with or without findings. `docs_lint.sh`'s
+`scan_line_width` wraps the second form.
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
