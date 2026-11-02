@@ -1010,7 +1010,7 @@ all_sc_stub() {
 # all_print_order <output>: the names on all.sh's summary lines, in print
 # order, each followed by a space.
 all_print_order() {
-  printf '%s\n' "$1" | grep -E '^([a-z_]+\.sh|shellcheck): ' | cut -d: -f1 | tr '\n' ' '
+  printf '%s\n' "$1" | grep -E '^([a-z_]+\.sh|shellcheck): ' | grep -v '^all\.sh: ' | cut -d: -f1 | tr '\n' ' '
 }
 # The suite-list reader over the real all.sh, then over planted copies: one
 # with no suites=( line, one with two, one with an empty list, one naming a
@@ -1064,7 +1064,7 @@ assert_eq "prints one summary line per suite" \
   "$(all_summaries '2 passed, 2 failed, 1 skipped')"
 assert_eq "prints no section header" "$(count_lines 'a section header' "$out")" "0"
 assert_eq "still prints the shellcheck summary after a failing suite" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
+  "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: 0 findings"
 assert_eq "runs shellcheck at warning severity in gcc format once per shell file" \
   "$(LC_ALL=C sort "$all_root/sc_args" 2>/dev/null)" \
   "$(printf '%s\n' "${all_written[@]}" | LC_ALL=C sort | sed 's/^/-S warning -f gcc /')"
@@ -1091,19 +1091,23 @@ assert_status "exits 0 when every suite passed and shellcheck is clean" "$st" 0
 assert_eq "passes an empty CHANGELOG_BASE through as set" "$(grep -c 'base= ' "$all_dir/log")" "$all_n"
 assert_eq "passes an empty NO_VERSION_BUMP through as set" "$(grep -c 'nobump=$' "$all_dir/log")" "$all_n"
 assert_eq "prints shellcheck: 0 findings when shellcheck is clean" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
+  "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: 0 findings"
+assert_eq "an all-pass run ends on a PASS verdict counting the suites and shellcheck" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: PASS ($((all_n + 1)) parts)"
 
 rm -f "$all_dir/log"
 all_sc_stub 1 "$all_finding1" "$all_finding2"
 out="$(export CHANGELOG_BASE=abc123 NO_VERSION_BUMP=1; all_run 2>&1)"; st=$?
 assert_eq "leaves an unset CHANGELOG_BASE unset" "$(grep -c 'base=unset ' "$all_dir/log")" "$all_n"
 assert_eq "leaves an unset NO_VERSION_BUMP unset" "$(grep -c 'nobump=unset$' "$all_dir/log")" "$all_n"
-assert_eq "prints no FAIL line when every suite passed" "$(count_lines FAIL "$out")" "0"
+assert_eq "prints no FAIL line when every suite passed" "$(count_lines '^  FAIL ' "$out")" "0"
 assert_status "exits non-zero on a shellcheck finding" "$st" 1
 assert_contains "prints each finding, then shellcheck: N findings" "$out" \
   "$(printf '%s\n%s\nshellcheck: 2 findings' "$all_finding1" "$all_finding2")"
+assert_eq "shellcheck findings end the run on a FAIL verdict naming shellcheck" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (shellcheck)"
 assert_eq "a finding still lets every suite's summary print first" \
-  "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: ')" \
+  "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: ' | grep -v '^all\.sh: ')" \
   "$(all_summaries '2 passed, 0 failed, 1 skipped')"
 
 # Each planted file's call prints its own finding; the first file's call is
@@ -1120,6 +1124,8 @@ out="$(all_run 2>&1)"; st=$?
 assert_status "exits non-zero when shellcheck calls fail with no finding" "$st" 1
 assert_contains "prints every call's output in glob order, then the highest exit" "$out" \
   "$(printf 'a slow first call\na failing second call\nshellcheck: failed (exit 3)')"
+assert_eq "a shellcheck that fails with no finding line is named in the FAIL verdict" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (shellcheck)"
 all_sc_stub 1 "$all_finding1" "$all_finding2"
 sed -i.bak '/^all_file=/a [ "$all_file" = scripts/lint_me.sh ] \&\& sleep 0.5' "$all_bin/shellcheck"
 out="$(all_run 2>&1)"
@@ -1158,6 +1164,19 @@ all_restore orch_test.sh
 assert_status "exits non-zero when a suite printed FAIL lines but exited 0" "$st" 1
 assert_contains "says a suite printed FAIL lines but exited 0, after its summary" "$out" \
   "$(printf 'orch_test.sh: 2 passed, 0 failed, 1 skipped\norch_test.sh: printed FAIL lines but exited 0')"
+assert_eq "a suite that printed FAIL lines but exited 0 is named in the FAIL verdict" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh)"
+
+# Leftover temp files and shellcheck findings together: both are named, in
+# the order their messages print.
+all_sc_stub 1 "$all_finding1"
+all_swap hooks_test.sh ': >"$TMPDIR/left_behind"'
+out="$(all_run 2>&1)"; st=$?
+all_restore hooks_test.sh
+all_sc_stub 0
+assert_status "leftover temp files and a shellcheck finding fail the run" "$st" 1
+assert_eq "leftover temp files and shellcheck findings end exactly on both names" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (temp files, shellcheck)"
 
 all_swap orch_test.sh 'sleep 1' 'echo; echo "a section header"' \
   "printf '  FAIL a slow failure\\n     its detail line\\n'" \
@@ -1167,7 +1186,7 @@ all_restore orch_test.sh
 assert_status "a slow failing suite still fails the run" "$st" 1
 assert_eq "a slow orch_test.sh's FAIL block and summary still print first, shellcheck's summary last" \
   "$out" \
-  "$(printf '  FAIL a slow failure\n     its detail line\n%s\nshellcheck: 0 findings' "$(all_summaries '1 passed, 1 failed')")"
+  "$(printf '  FAIL a slow failure\n     its detail line\n%s\nshellcheck: 0 findings\nall.sh: FAIL (orch_test.sh)' "$(all_summaries '1 passed, 1 failed')")"
 
 # The overlap: every suite but orch_test.sh and the stub shellcheck are
 # swapped for ones that drop a marker file named after themselves in
@@ -1194,7 +1213,7 @@ out="$(all_run 2>&1)"; st=$?
 for all_suite in "${SUITES[@]}"; do all_restore "$all_suite"; done
 rm -rf "$all_root/markers"
 assert_status "runs every suite and shellcheck at the same time" "$st" 0
-assert_eq "prints no FAIL line when the suites overlap" "$(count_lines FAIL "$out")" "0"
+assert_eq "prints no FAIL line when the suites overlap" "$(count_lines '^  FAIL ' "$out")" "0"
 assert_eq "overlapping suites still print in order, shellcheck's summary last" \
   "$(all_print_order "$out")" "$all_order"
 all_sc_stub 0
@@ -1237,7 +1256,7 @@ all_swap orch_test.sh \
 (
   unset CI CHANGELOG_BASE NO_VERSION_BUMP ORCH_TEST_JOBS
   exec env TMPDIR="$all_kill/tmp" PATH="$all_bin" "$all_bash" "$all_dir/all.sh"
-) >/dev/null 2>&1 &
+) >"$all_kill/stdout" 2>&1 &
 all_pid=$!
 all_tries=0
 until [ -s "$all_kill/suite.pid" ] && [ -s "$all_kill/sc.pid" ] || [ "$all_tries" -gt 100 ]; do
@@ -1252,6 +1271,7 @@ for all_stub_pid in $(cat "$all_kill/suite.pid" "$all_kill/sc.pid"); do
   kill -0 "$all_stub_pid" 2>/dev/null && all_alive=$((all_alive + 1))
 done
 assert_status "TERM to all.sh makes it exit 130" "$st" 130
+assert_eq "TERM to all.sh prints no verdict" "$(grep -c '^all.sh: \(PASS\|FAIL\)' "$all_kill/stdout")" "0"
 assert_eq "TERM to all.sh stops the suite and every shellcheck before it returns" "$all_alive" "0"
 assert_eq "the suite's TMPDIR still existed when it stopped" "$(cat "$all_kill/suite.tmp" 2>/dev/null)" "yes"
 assert_eq "all.sh's temp directory still existed when every shellcheck stopped" \
@@ -1262,12 +1282,16 @@ all_sc_stub 0
 rm -f "$all_bin/shellcheck" "$all_bin/shellcheck.bak"
 out="$(export CI=true; all_run 2>&1)"; st=$?
 assert_eq "says shellcheck was skipped when it is not installed" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: not installed - skipped"
+  "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: not installed - skipped"
+assert_eq "a missing shellcheck outside CI ends on a PASS verdict counting the skipped line" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: PASS ($((all_n + 1)) parts)"
 assert_status "a missing shellcheck does not fail the run outside CI" "$st" 0
 out="$(all_run CI=true 2>&1)"; st=$?
 assert_status "a missing shellcheck fails the run in CI" "$st" 1
 assert_eq "still says shellcheck was skipped in CI" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: not installed - skipped"
+  "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: not installed - skipped"
+assert_eq "a missing shellcheck in CI ends on a FAIL verdict naming shellcheck" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (shellcheck)"
 
 # A suite that dies before its summary (#626): orch_test.sh's stub fails
 # after a FAIL line and ends on a line that is no summary, hooks_test.sh's
@@ -1286,6 +1310,8 @@ assert_contains "says a suite that printed nothing died before its summary" "$ou
   "hooks_test.sh: died before its summary (exit 4)"
 assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
   "docs_lint.sh: a stray last line"
+assert_eq "suites that died before their summary are named in the FAIL verdict" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh, hooks_test.sh)"
 rm -rf "$all_root"
 
 # --- the job pool (#2022) -----------------------------------------------------
@@ -1598,7 +1624,7 @@ assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(lo
 assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
   "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 3))"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
+  "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: 0 findings"
 : >"$load_all/sc_log"
 load_run_all >/dev/null 2>&1
 assert_eq "all.sh with ORCH_TEST_JOBS unset and 4 cores runs at most 3 shellcheck at once" \
@@ -2622,7 +2648,8 @@ if command -v shellcheck >/dev/null 2>&1; then
     "orch_test.sh: 7 passed, 0 failed
 hooks_test.sh: 7 passed, 0 failed
 docs_lint.sh: 7 passed, 0 failed
-shellcheck: 0 findings"
+shellcheck: 0 findings
+affected.sh: PASS (4 parts)"
 else
   skip "printing each part's summary in order, shellcheck last" "shellcheck is not installed"
 fi
@@ -2676,5 +2703,80 @@ if command -v shellcheck >/dev/null 2>&1; then
 else
   skip "and shellcheck's findings" "shellcheck is not installed"
 fi
+
+# The verdict line (the last stdout line), on a PATH without shellcheck: its
+# links are the tools the runners and the fixture need.
+af_bin="$af.bin"
+mkdir -p "$af_bin"
+for af_tool in bash git sort grep sed awk dirname basename mktemp rm mkdir cat tail head \
+  paste tr cut wc env sleep date uname getconf nice renice flock ls cp mv; do
+  af_path="$(command -v "$af_tool" 2>/dev/null)" && ln -s "$af_path" "$af_bin/$af_tool"
+done
+# af_verdict_run [VAR=value...] -- <affected.sh arg>...: affected.sh in the
+# fixture on that PATH with CI unset, then each assignment applied; its output
+# goes to af_out, its status to st.
+af_verdict_run() {
+  local env_args=()
+  while [ "$1" != -- ]; do env_args+=("$1"); shift; done
+  shift
+  af_out="$(cd "$af" && env -u CI -u ORCH_TEST_JOBS -u ORCH_TEST_POOL_PERCENT "${env_args[@]}" \
+    PATH="$af_bin" bash scripts/test/affected.sh "$@" 2>/dev/null)"
+  st=$?
+}
+af_last() { printf '%s\n' "$af_out" | tail -n 1; }
+# A failing part (hooks_test.sh is still the failing stub), naming only it.
+af_verdict_run -- HEAD
+assert_status "a failing selected part exits 1 without shellcheck" "$st" 1
+assert_eq "a failing selected part ends on a FAIL verdict naming it" "$(af_last)" \
+  "affected.sh: FAIL (hooks_test.sh)"
+af_verdict_run CI=1 -- HEAD
+assert_eq "a failing part and a missing shellcheck under CI are both named" "$(af_last)" \
+  "affected.sh: FAIL (hooks_test.sh, shellcheck)"
+# A passing selection: the passing stub back, shellcheck skipped.
+printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
+af_verdict_run -- HEAD
+assert_status "a passing selection exits 0 without shellcheck outside CI" "$st" 0
+assert_eq "a missing shellcheck outside CI ends on a PASS verdict counting the skipped line" \
+  "$(af_last)" "affected.sh: PASS (4 parts)"
+af_verdict_run CI=1 -- HEAD
+assert_status "a missing shellcheck under CI exits 1" "$st" 1
+assert_eq "a missing shellcheck under CI ends on a FAIL verdict naming shellcheck" \
+  "$(af_last)" "affected.sh: FAIL (shellcheck)"
+# No shell file changed: shellcheck's own line still counts.
+af_git checkout -q -f -- . 2>/dev/null
+rm -f "$af/scripts/hook-guard.sh"
+af_git reset -q --hard "$af_feat"
+af_verdict_run -- HEAD
+assert_eq "a selection with no changed shell file counts shellcheck's line" \
+  "$(af_last)" "affected.sh: PASS (3 parts)"
+# The full-suite fallback ends on all.sh's verdict.
+af_put scripts/orch.sh 'echo changed'
+af_verdict_run -- HEAD
+assert_eq "a full-suite fallback ends on all.sh's verdict, never affected.sh's" \
+  "$(af_last)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+af_reset
+# Paths that end before the report print no verdict.
+af_verdict_run -- --plan HEAD
+assert_eq "--plan prints no verdict" "$(printf '%s\n' "$af_out" | grep -c ': \(PASS\|FAIL\) (')" "0"
+af_verdict_run -- --bogus
+assert_status "a usage error exits 2" "$st" 2
+assert_eq "a usage error prints no verdict on stdout" "$af_out" ""
+af_verdict_run -- no-such-ref
+assert_eq "an unknown ref prints no verdict on stdout" "$af_out" ""
+af_verdict_run ORCH_TEST_POOL_PERCENT=abc -- HEAD
+assert_eq "an invalid ORCH_TEST_POOL_PERCENT prints no verdict on stdout" "$af_out" ""
+# A TERM stop prints no verdict.
+printf '%s\n' '#!/usr/bin/env bash' "echo \$\$ >'$af.pid'" 'sleep 30' >"$af/scripts/test/hooks_test.sh"
+af_put scripts/hook-guard.sh 'echo ok'
+(cd "$af" && exec env -u CI PATH="$af_bin" bash scripts/test/affected.sh HEAD) >"$af.stdout" 2>/dev/null &
+af_pid=$!
+af_tries=0
+until [ -s "$af.pid" ] || [ "$af_tries" -gt 100 ]; do af_tries=$((af_tries + 1)); sleep 0.1; done
+kill -TERM "$af_pid"
+wait "$af_pid"; st=$?
+kill "$(cat "$af.pid")" 2>/dev/null
+assert_status "TERM to affected.sh exits 130" "$st" 130
+assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
+rm -rf "$af_bin" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row

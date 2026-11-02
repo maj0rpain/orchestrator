@@ -42,6 +42,14 @@
 # failed. --plan prints the selection instead, one item per line in that order
 # (each suite, each orch_test.sh section title, each shellcheck file), or the
 # single line "all.sh" on the fallback, and runs nothing.
+#
+# The last stdout line is the verdict (report.sh): "affected.sh: PASS (<n>
+# parts)" when the run exits 0, else "affected.sh: FAIL (<part>, <part>, ...)",
+# each failed part named by its summary line's prefix, n counting the summary
+# lines printed (shellcheck's included, whatever it printed). The full-suite
+# fallback ends on all.sh's verdict instead. Usage errors, an unknown ref, an
+# invalid ORCH_TEST_JOBS or ORCH_TEST_POOL_PERCENT, an INT or TERM stop and
+# --plan print none.
 
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=git_env.sh
@@ -290,9 +298,9 @@ if [ "$have_sc" -eq 1 ]; then
   sc_out="$(<"$tmp/shellcheck")"
   report_shellcheck "$sc_status" "$sc_out" || failed=1
 elif [ "${#sc_sorted[@]}" -gt 0 ]; then
-  echo "shellcheck: not installed - skipped"
-  [ -n "${CI:-}" ] && failed=1
+  report_shellcheck_missing || failed=1
 else
-  echo "shellcheck: 0 findings"
+  report_shellcheck 0 "" || failed=1
 fi
+report_verdict affected.sh "$failed"
 exit "$failed"

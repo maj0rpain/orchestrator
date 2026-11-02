@@ -44,6 +44,16 @@
 # waits for each one, and exits 130; the temporary directory is removed only
 # after that. A child that ignores TERM keeps all.sh waiting on it.
 #
+# Last, on stdout, the verdict line (report.sh): "all.sh: PASS (<n> parts)" when
+# the run exits 0, else "all.sh: FAIL (<part>, <part>, ...)". A part is each
+# item that printed a summary line - every suite, and shellcheck - and n counts
+# those lines. A failed part is named by its summary line's prefix, in report
+# order; leftover temp files are named "temp files", where their message is
+# printed.
+# Shellcheck fails with findings, with no finding line, or missing under CI. The
+# paths that end before the report - an invalid ORCH_TEST_JOBS or
+# ORCH_TEST_POOL_PERCENT, an INT or TERM stop - print no verdict.
+#
 # Exits 1 when any suite failed or printed a FAIL line, a suite left temp files
 # behind, or shellcheck did not pass.
 #
@@ -154,15 +164,16 @@ leftovers=("$suites_tmp"/* "$suites_tmp"/.[!.]* "$suites_tmp"/..?*)
 for leftover in "${leftovers[@]}"; do
   if [ -e "$leftover" ] || [ -L "$leftover" ]; then
     echo "all.sh: the suites left temp files behind"
+    report_temp_files_left
     failed=1
     break
   fi
 done
 
 if [ "$have_sc" -eq 0 ]; then
-  echo "shellcheck: not installed - skipped"
-  [ -n "${CI:-}" ] && failed=1
+  report_shellcheck_missing || failed=1
 else
   report_shellcheck "$sc_status" "$sc_out" || failed=1
 fi
+report_verdict all.sh "$failed"
 exit "$failed"

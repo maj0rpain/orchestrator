@@ -30,6 +30,10 @@ shellcheck over every shell file at once, so they overlap, carries on past a
 failing one, and once all have finished prints each suite's FAIL lines and a
 summary line, then shellcheck's findings and a `shellcheck: N findings` summary
 line, or `shellcheck: not installed - skipped`, which fails the run only in CI.
+It ends on one verdict line, `all.sh: PASS (<n> parts)` or `all.sh: FAIL
+(<part>, <part>, ...)`, naming each failed part by its summary line's prefix
+(leftover temp files as `temp files`); affected.sh ends the same way on
+`affected.sh: ...`, or on all.sh's verdict when it falls back to the full suite.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
