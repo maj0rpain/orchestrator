@@ -199,9 +199,14 @@ site, the first, its leading `file:line`, included. It is one finding.
   **Waiting to be filed** rules: needs a decision, not mechanical,
   loop-authored lines (`git blame` the site against the fix SHAs, as triage
   does for the first site), final iteration, could not fix, or spec question.
-  It gets its own **Waiting to be filed** bullet, carrying that site's own
-  file and line and the finding's axis and severity, so the closer files it
-  and later iterations hold it as a known item. No other rule defers a site.
+  All of a pattern finding's deferred sites share one **Waiting to be filed**
+  bullet, led by the first deferred site's file and line, with the finding's
+  axis and severity and a `Sites:` list of the deferred sites only (the first
+  included), so the closer files it once and later iterations hold every
+  site as a known item. A finding with one deferred site carries no `Sites:`.
+  Sites kept out by different rules still share the bullet; its rule names
+  each rule with its sites, e.g. ``needs a decision (`a.sh:3`);
+  loop-authored lines (`b.sh:9`)``. No other rule defers a site.
 - **Blocking pattern findings** are never deferred or filed. A site you
   cannot fix keeps the whole finding **open blocking**, with the unfixed
   sites named in its reason. A site whose cause is out of reach takes **A
@@ -335,7 +340,7 @@ Host fallbacks: <each fallback taken, or None>
 
 ## Waiting to be filed
 
-- <Axis>/<severity>: `<file>:<line>` <claim> - <the rule that kept it out: needs a decision, spec question, not mechanical, loop-authored lines, final iteration, root cause out of reach, or could not fix>
+- <Axis>/<severity>: `<file>:<line>` <claim> [Sites: `<file>:<line>`, `<file>:<line>`.] - <the rule that kept it out: needs a decision, spec question, not mechanical, loop-authored lines, final iteration, root cause out of reach, or could not fix>
 
 ## Merge resolutions
 
@@ -368,8 +373,9 @@ a site your final grep found marked `found by the fixer's grep`. When some of
 its sites are deferred, its **Findings** entry and its **Fixed this
 iteration** line lead with its first fixed site, never a deferred one, so
 the closer's match against **Fixed this iteration** never drops a deferred
-site's bullet; each deferred site has its own **Waiting to be filed**
-bullet (see **Pattern findings**). A reviewer whose report went missing twice is
+site's bullet; a pattern finding's deferred sites share one **Waiting to
+be filed** bullet with a `Sites:` list (see **Pattern findings**).
+A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
 
@@ -379,7 +385,9 @@ verification, or the handed full command when the repo names none), never the
 
 Each **Waiting to be filed** bullet carries the finding's location, as the
 template shows, with `-` in its place when the finding gave `-`: later
-iterations' known items copy the bullet as written.
+iterations' known items copy the bullet as written. A pattern finding's
+`Sites:` list and its rule follow **Deferred sites** under **Pattern
+findings**.
 
 **Evidence** holds the red run of each failing test step 1 wrote, one entry
 per test: its name, then its failure on the unfixed code in one line as the

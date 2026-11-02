@@ -370,7 +370,10 @@ plan or from what the previous loop left instead of asking.
    iteration**, **Evidence** and **Open blocking** read `None`, and **Merge
    resolutions** holds step 2's. **Waiting to be filed** lists each major or nit
    left unfixed in the template's location-bearing bullet,
-   ``- <Axis>/<severity>: `<file>:<line>` <claim> - <rule>``, with `-` in
+   ``- <Axis>/<severity>: `<file>:<line>` <claim> - <rule>``, a pattern
+   finding's deferred sites in one such bullet led by the first, with
+   ``Sites: `<file>:<line>`, `<file>:<line>`.`` after the claim (none for
+   a single deferred site), with `-` in
    place of `<file>:<line>` when the finding gave `-`, and `suite` for a
    suite-cost finding, or reads `None`. **PR body** depends on that base sync:
    - **Merge resolutions** is not `None` - step 2 resolved a conflict, so

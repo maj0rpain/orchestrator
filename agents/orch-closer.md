@@ -48,7 +48,11 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    and so is one a later record of this loop lists under **Fixed this
    iteration** - the same file and line making the same claim, or for a
    suite-cost finding the same axis and location alone, read from that
-   record's **Findings** entry. Open blocking findings are excluded too:
+   record's **Findings** entry. A bullet with a `Sites:` list is matched
+   against every site of the list, not its leading site alone: a fixed site
+   drops out of the bullet, the sites left are filed, led by the first of
+   them, and the bullet is dropped only when none is left.
+   Open blocking findings are excluded too:
    `review file` files only majors and nits, and a blocking finding stays
    with the loop. Earlier loops' records are not read: whether a finding
    is already filed is the driver's call, made in triage. Done when every
@@ -120,6 +124,12 @@ order:
    phrased as a question, from which it renders `**Spec question:**
    <question>`, e.g. `**Spec question:** Should the high-water mark depend on
    the archive step?`.
+
+A **Waiting to be filed** bullet with a `Sites:` list is one finding, filed
+once: `--location` is its leading `file:line` (the first site left), the
+finding file is the reviewer's finding verbatim, and `--why` names the
+deferred sites after the rule, e.g. ``needs a decision; deferred sites:
+`a.sh:3`, `b.sh:9` ``. Deduplication stays on that leading location.
 
 Every value is one line. Finding triage parses the labelled lines, and a body
 without them is one it cannot place. A spec question is labelled and triaged
