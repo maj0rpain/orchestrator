@@ -275,6 +275,20 @@ orch_jobs="$(test_jobs_count orch_test.sh)" || exit 1
 # Every run, sequential or parallel, filtered or not, evals the text the walk
 # extracts for its kept set: no section runs from this file itself.
 orch_titles="$(section_titles)"
+
+# Refuse a selection: print each given line to stderr, the last ending in the
+# notice that the selectable sections follow, then the titles, and exit 1.
+refuse_selection() {
+  local last=$(( $# - 1 )) i=0 line
+  for line in "$@"; do
+    [ "$i" -lt "$last" ] || line="$line; the selectable sections are:"
+    echo "$line" >&2
+    i=$((i + 1))
+  done
+  printf '%s\n' "$orch_titles"
+  exit 1
+}
+
 if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   split_branches "$ORCH_TEST_ONLY"
   if [ "${#orch_branches[@]}" -gt 1 ]; then
@@ -283,20 +297,16 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
       printf '%s\n' "$orch_titles" | grep -qiE -- "$orch_branch" || orch_dead+=("$orch_branch")
     done
     if [ "${#orch_dead[@]}" -gt 0 ]; then
+      orch_lines=()
       for orch_i in "${!orch_dead[@]}"; do
-        orch_end=""
-        [ "$orch_i" -lt $((${#orch_dead[@]} - 1)) ] || orch_end="; the selectable sections are:"
-        echo "orch_test.sh: ORCH_TEST_ONLY branch '${orch_dead[orch_i]}' matches no section$orch_end" >&2
+        orch_lines+=("orch_test.sh: ORCH_TEST_ONLY branch '${orch_dead[orch_i]}' matches no section")
       done
-      printf '%s\n' "$orch_titles"
-      exit 1
+      refuse_selection "${orch_lines[@]}"
     fi
   fi
   orch_kept="$orch_kept_isolation$(printf '%s\n' "$orch_titles" | grep -niE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
   if [ "$orch_kept" = "$orch_kept_isolation" ]; then
-    echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the selectable sections are:" >&2
-    printf '%s\n' "$orch_titles"
-    exit 1
+    refuse_selection "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section"
   fi
 else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
