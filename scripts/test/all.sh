@@ -110,9 +110,9 @@ if command -v shellcheck >/dev/null 2>&1; then
     sc_rel="${sc_file#"$root/"}"
     test_jobs_slot_wait
     (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
-      >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
+      >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 8>&- &
     sc_pids+=("$!")
-    test_jobs_slot_release
+    test_jobs_slot_release "$!"
   done
 fi
 

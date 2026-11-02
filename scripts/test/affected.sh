@@ -265,9 +265,9 @@ sc_pid=""
 if [ "${#sc_sorted[@]}" -gt 0 ] && command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
   test_jobs_slot_wait
-  shellcheck -S warning -f gcc "${sc_sorted[@]}" >"$tmp/shellcheck" 2>&1 &
+  shellcheck -S warning -f gcc "${sc_sorted[@]}" >"$tmp/shellcheck" 2>&1 8>&- &
   sc_pid=$!
-  test_jobs_slot_release
+  test_jobs_slot_release "$sc_pid"
   pids+=("$sc_pid")
 fi
 

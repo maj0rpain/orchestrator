@@ -228,6 +228,8 @@ if [ "$orch_jobs" -eq 1 ]; then
   # run under it.
   test_jobs_slot_wait
   [ -z "$TEST_JOBS_SLOT_FD" ] || export ORCH_TEST_POOL_HELD="$TEST_JOBS_POOL"
+  # The slot stays with this shell, not with what its sections leave running.
+  test_jobs_slot_release "$$"
   tally_init
   eval "$(section_text "$orch_kept")"
   exit $?
@@ -261,9 +263,9 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
     ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
       ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
-      bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" &
-    test_jobs_slot_release
+      bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 8>&- &
     orch_pids[orch_started]=$!
+    test_jobs_slot_release "${orch_pids[orch_started]}"
     orch_started=$((orch_started + 1))
     orch_running=$((orch_running + 1))
   done

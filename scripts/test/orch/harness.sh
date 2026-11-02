@@ -1283,6 +1283,10 @@ jp_copy="$(planted_copy <<'PLANTED'
   echo; echo "pool hold"
   if flock -n "$JP_POOL/slot.1" true; then echo free >>"$JP_LOG"; else echo busy >>"$JP_LOG"; fi
   ok "probed"
+  # --- pool leak
+  echo; echo "pool leak"
+  sleep 30 >/dev/null 2>&1 & echo $! >"$JP_LOG.sleep"
+  ok "left a background process running"
   # --- pool nested
   echo; echo "pool nested"
   timeout 60 env ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^pool a$' bash "$JP_SUITE" >/dev/null 2>&1
@@ -1388,6 +1392,22 @@ for jp_jobs in 1 2; do
   assert_status "an outer run with ORCH_TEST_JOBS=$jp_jobs passes" "$jp_s1" 0
   assert_eq "its nested run on the 1-slot pool finishes (ORCH_TEST_JOBS=$jp_jobs)" \
     "$(grep nested "$jp_log")" "nested=0"
+done
+
+# A slot is free once its section has exited, though a process it started
+# still runs: the lock stays with the job alone.
+for jp_jobs in 1 2; do
+  : >"$jp_log"
+  jp_run 1 "$jp_dir/pool10" -- '^pool leak$' "$jp_jobs"
+  jp_sleeper="$(cat "$jp_log.sleep" 2>/dev/null)"
+  jp_free=busy
+  for _ in $(seq 60); do
+    flock -n "$jp_dir/pool10/slot.1" true && { jp_free=free; break; }
+    sleep 0.05
+  done
+  assert_eq "a slot is free after its section exited though a background process runs (ORCH_TEST_JOBS=$jp_jobs)" \
+    "$jp_free" "free"
+  [ -z "$jp_sleeper" ] || kill "$jp_sleeper" 2>/dev/null
 done
 
 # Pool trouble runs unpooled, with no notice and no failure.

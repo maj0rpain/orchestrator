@@ -55,8 +55,11 @@
 #
 # test_jobs_slot_wait: takes a slot, noting and polling while none is free.
 #
-# test_jobs_slot_release: closes the run's copy of the held fd, once the child
-# that inherited it has started. The lock lasts as long as any copy is open.
+# test_jobs_slot_release <pid>: hands the held slot to a holder process that
+# keeps the lock until <pid> has exited, then closes the run's own copy of the
+# fd. The job alone keeps the slot: a runner starts the job with fd 8 closed
+# (8>&-), so no process the job leaves running holds the lock after the job is
+# gone, and the kernel still frees it should the holder die.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
@@ -179,6 +182,9 @@ test_jobs_slot_wait() {
 
 test_jobs_slot_release() {
   [ -z "$TEST_JOBS_SLOT_FD" ] && return 0
+  (
+    while kill -0 "$1" 2>/dev/null; do sleep 0.1 8>&-; done
+  ) </dev/null >/dev/null 2>&1 &
   exec 8>&-
   TEST_JOBS_SLOT_FD=""
 }
