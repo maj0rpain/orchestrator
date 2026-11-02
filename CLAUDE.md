@@ -62,7 +62,10 @@ See `docs/agents/coding-standards.md`.
 While iterating, run only the section you are working on:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`,
 e.g. `ORCH_TEST_ONLY='^branch create$'`.
-Run `scripts/test/all.sh` once before committing.
+Run `scripts/test/affected.sh` before each commit, and `scripts/test/all.sh`
+once before opening a PR.
+Ticket verification: scripts/test/affected.sh
+Full verification: scripts/test/all.sh
 orch_test.sh is only the runner: its `# ---` sections live in
 `scripts/test/orch/<noun>.sh`, one file per orch.sh noun, and a ticket's tests
 go in the file for the noun it touches (a new noun gets a new file; a concept
