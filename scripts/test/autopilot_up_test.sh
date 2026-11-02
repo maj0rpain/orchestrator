@@ -14,11 +14,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=git_env.sh
 source "$DIR/test/git_env.sh"
 test_git_env_clear || exit 1
-PASS=0
-FAIL=0
+# shellcheck source=tally.sh
+source "$DIR/test/tally.sh"
 
-ok()  { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
-bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
 assert_lacks()    { case "$2" in *"$3"*) bad "$1" "unexpected '$3' in: $2" ;; *) ok "$1" ;; esac; }
@@ -35,6 +33,8 @@ remove_root() {
 }
 trap remove_root EXIT
 trap 'exit 130' INT TERM
+# The tally file lands in the temp root, removed with it.
+tally_init
 
 fake_bin="$root/bin"
 mkdir "$fake_bin"
@@ -243,5 +243,6 @@ assert_eq "dirty: git status untouched" "$(git -C "$case_dir" status --porcelain
 
 # >>> summary
 echo
+tally_read
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -9,7 +9,10 @@
 # failing suite does not stop the others. Printed per suite, in the order of
 # the `suites` list: its FAIL lines with their detail lines, then one summary
 # line, "<suite>: <its last line>", or "<suite>: died before its summary (exit
-# N)" when it exited non-zero and its last line is not a summary line. A
+# N)" when it exited non-zero and its last line is not a summary line. A suite
+# whose output has a "  FAIL " line is failed whatever its exit status: when
+# it exited 0, the line "<suite>: printed FAIL lines but exited 0" follows its
+# summary line, so a count lost in any way still turns the run red. A
 # suite's stderr is not captured: it passes straight through, and the suites'
 # stderr may interleave.
 #
@@ -40,8 +43,8 @@
 # waits for each one, and exits 130; the temporary directory is removed only
 # after that. A child that ignores TERM keeps all.sh waiting on it.
 #
-# Exits 1 when any suite failed, a suite left temp files behind, or shellcheck
-# did not pass.
+# Exits 1 when any suite failed or printed a FAIL line, a suite left temp files
+# behind, or shellcheck did not pass.
 #
 # ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs.
 # CHANGELOG_BASE and NO_VERSION_BUMP pass through untouched - set, empty or
@@ -132,10 +135,11 @@ fi
 for suite_n in "${!suites[@]}"; do
   suite="${suites[$suite_n]}"
   out="$(<"$tmp/$suite")"
-  printf '%s\n' "$out" | awk '
+  fail_block="$(printf '%s\n' "$out" | awk '
     in_fail && /^     / { print; next }
     { in_fail = 0 }
-    /^  FAIL / { print; in_fail = 1 }'
+    /^  FAIL / { print; in_fail = 1 }')"
+  [ -z "$fail_block" ] || printf '%s\n' "$fail_block"
   last="$(printf '%s\n' "$out" | tail -n 1)"
   status="${suite_exits[$suite_n]}"
   if [ "$status" -ne 0 ] &&
@@ -143,6 +147,10 @@ for suite_n in "${!suites[@]}"; do
     echo "$suite: died before its summary (exit $status)"
   else
     echo "$suite: $last"
+  fi
+  if [ -n "$fail_block" ]; then
+    [ "$status" -eq 0 ] && echo "$suite: printed FAIL lines but exited 0"
+    failed=1
   fi
 done
 

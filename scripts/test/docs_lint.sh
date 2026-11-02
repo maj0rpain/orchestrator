@@ -133,13 +133,9 @@ PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=git_env.sh
 source "$PLUGIN_ROOT/scripts/test/git_env.sh"
 test_git_env_clear || exit 1
-PASS=0
-FAIL=0
+# shellcheck source=tally.sh
+source "$PLUGIN_ROOT/scripts/test/tally.sh"
 
-# ORCH_TEST_QUIET=1 hides the ok lines; the count, the FAIL lines,
-# section headers and the summary still print.
-ok()  { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
-bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
 
@@ -190,10 +186,11 @@ check() {
 }
 # flags <test> <findings> <expected>: a fixture self-test. Run through check,
 # the findings must give a FAIL line carrying <expected> ("<file>: <problem>").
-# check runs in a subshell here, so the fixture's FAIL never reaches the count.
+# check runs in a subshell here, tallying into /dev/null, so the fixture's FAIL
+# never reaches the count.
 flags() {
   local out
-  out="$(check "rule" "$2")"
+  out="$(tally_file=/dev/null check "rule" "$2")"
   case "$out" in
     *"FAIL rule"*"$3"*) ok "$1" ;;
     *) bad "$1" "expected a FAIL line naming '$3', got: ${out:-nothing}" ;;
@@ -214,6 +211,8 @@ FIXTURES="$(mktemp -d)" || FIXTURES=""
   echo "docs_lint.sh: cannot create the fixture root" >&2; exit 1; }
 trap 'rm -rf "$FIXTURES"' EXIT
 trap 'exit 143' TERM
+# The tally file lives in the fixture root, removed on exit with it.
+TMPDIR="$FIXTURES" tally_init
 # The suite runs from its own temp directory, never the developer's checkout.
 cd "$FIXTURES" || exit 1
 # FIXTURE_ABORT_PID: the process a failed fixture kills, the suite's main shell
@@ -273,18 +272,18 @@ assert_eq "md_section matches the heading line exactly" \
   "$(md_section "$fixture/doc.md" "## Brie"; echo "exit $?")" "exit 1"
 
 # --- spares self-test --------------------------------------------------------
-# spares runs in a subshell here, so the deliberate FAIL never reaches the
-# count.
+# spares runs in a subshell here, tallying into /dev/null, so the deliberate
+# FAIL never reaches the count.
 echo
 echo "spares self-test"
 findings="$(printf '%s\n' 'skills/a.md:1: a problem' 'skills/b.md:2: another problem')"
-out="$(spares "probe" "$findings" '^skills/b\.md:')"
+out="$(tally_file=/dev/null spares "probe" "$findings" '^skills/b\.md:')"
 case "$out" in
   *"FAIL probe"*"skills/b.md:2: another problem"*) ok "spares fails on a matching finding, printing its line" ;;
   *) bad "spares fails on a matching finding, printing its line" "got: ${out:-nothing}" ;;
 esac
 assert_eq "spares passes when no finding matches" \
-  "$(ORCH_TEST_QUIET='' spares "probe" "$findings" '^skills/c\.md:')" "  ok   probe"
+  "$(ORCH_TEST_QUIET='' tally_file=/dev/null spares "probe" "$findings" '^skills/c\.md:')" "  ok   probe"
 
 # --- rule index (#1145) -------------------------------------------------------
 # The header's rule index, between the `# >>> rules` and `# <<< rules` lines,
@@ -3572,7 +3571,7 @@ for guard_case in "empty|" "relative|root.x" "outside|$guard_repo" "nested|$guar
   "multi-line|$guard_fixture"$'\n'"On branch pr"; do
   guard_err="$(cd "$guard_repo" && FIXTURE_ABORT_PID=$BASHPID && fixture_git "${guard_case#*|}" checkout -q -b pr 2>&1 >/dev/null)"
   guard_st=$?
-  flags "fixture_git refuses a ${guard_case%%|*} path" "$(check x "$guard_err")" "docs_lint.sh: fixture_git: "
+  flags "fixture_git refuses a ${guard_case%%|*} path" "$(tally_file=/dev/null check x "$guard_err")" "docs_lint.sh: fixture_git: "
   assert_eq "fixture_git kills its process on a ${guard_case%%|*} path" "$guard_st" 143
   [ "$(guard_state)" = "$guard_before" ] && ok "a refused ${guard_case%%|*} path leaves the caller's repository unchanged" ||
     bad "a refused ${guard_case%%|*} path leaves the caller's repository unchanged" "HEAD, branch or index changed"
@@ -3582,7 +3581,7 @@ fixture_git "$guard_fixture" init -q
 [ -d "$guard_fixture/.git" ] && ok "fixture_git runs git on a real fixture" || bad "fixture_git runs git on a real fixture" "no repository"
 guard_err="$(FIXTURES="$FIXTURES/gone" && rm -rf "$FIXTURES/gone" && FIXTURE_ABORT_PID=$BASHPID && new_fixture 2>&1)"
 assert_eq "new_fixture kills its process when its fixture root is gone" "$?" 143
-flags "new_fixture aborts when its fixture root is gone" "$(check x "$guard_err")" "docs_lint.sh: cannot create a fixture under $FIXTURES/gone"
+flags "new_fixture aborts when its fixture root is gone" "$(tally_file=/dev/null check x "$guard_err")" "docs_lint.sh: cannot create a fixture under $FIXTURES/gone"
 [ -z "$(fragment_commit "$guard_fixture" 2>&1)" ] && ok "fragment_commit prints nothing when there is nothing to commit" ||
   bad "fragment_commit prints nothing when there is nothing to commit" "printed output"
 guard_out="$(fragment_fixture)"
@@ -3869,5 +3868,6 @@ check "no covered Markdown or shell comment line is past 80 columns" \
 
 # >>> summary
 echo
+tally_read
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
