@@ -16,6 +16,8 @@ source "$DIR/test/git_env.sh"
 test_git_env_clear || exit 1
 # shellcheck source=tally.sh
 source "$DIR/test/tally.sh"
+# shellcheck source=test_jobs.sh
+source "$DIR/test/test_jobs.sh"
 BUMP="$DIR/version-bump.sh"
 
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
@@ -25,7 +27,8 @@ assert_status()   { if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1" "expected 
 
 # The temp root, created before anything else: TMPDIR is exported as it, so
 # every mktemp below, and the script's own, lands inside it. The EXIT trap
-# leaves the root, removes it, and keeps the exit status. An INT or TERM exits
+# leaves the root, removes it, and keeps the exit status. An INT or TERM first
+# stops every process below this shell (test_jobs_stop_descendants), then exits
 # 130 through that trap.
 bump_root="$(mktemp -d)" || {
   echo "version_bump_test.sh: cannot create the suite's temp root" >&2; exit 1; }
@@ -37,7 +40,7 @@ bump_remove_root() {
   exit "$status"
 }
 trap bump_remove_root EXIT
-trap 'exit 130' INT TERM
+trap test_jobs_stop_descendants INT TERM
 # The tally file lands in the temp root, removed with it.
 tally_init
 

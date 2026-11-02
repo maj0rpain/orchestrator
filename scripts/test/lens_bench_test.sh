@@ -17,6 +17,8 @@ source "$DIR/test/git_env.sh"
 test_git_env_clear || exit 1
 # shellcheck source=tally.sh
 source "$DIR/test/tally.sh"
+# shellcheck source=test_jobs.sh
+source "$DIR/test/test_jobs.sh"
 BENCH="$DIR/dev/lens-bench.sh"
 FIXTURE="$DIR/test/lens-bench"
 
@@ -28,7 +30,9 @@ assert_status()   { if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1" "expected 
 
 # The temp root, created before anything else: TMPDIR is exported as it, so
 # every mktemp below lands inside it. The EXIT trap leaves the root, removes
-# it, and keeps the exit status. An INT or TERM exits 130 through that trap.
+# it, and keeps the exit status. An INT or TERM first stops every process
+# below this shell (test_jobs_stop_descendants), then exits 130 through that
+# trap.
 bench_root="$(mktemp -d)" || {
   echo "lens_bench_test.sh: cannot create the suite's temp root" >&2; exit 1; }
 export TMPDIR="$bench_root"
@@ -39,7 +43,7 @@ bench_remove_root() {
   exit "$status"
 }
 trap bench_remove_root EXIT
-trap 'exit 130' INT TERM
+trap test_jobs_stop_descendants INT TERM
 # The tally file lands in the temp root, removed with it.
 tally_init
 

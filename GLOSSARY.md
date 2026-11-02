@@ -90,8 +90,9 @@ valid; the step back of a Redo retires the handoffs it makes stale.
 
 **Job pool**:
 The set of test job slots, one per home directory, that every test runner under
-that home directory draws from, sized to half the usable CPUs, so concurrent
-runs queue instead of oversubscribing the machine. CI bypasses it.
+that home directory draws from, sized to a share of the usable CPUs - three
+quarters unless the run's environment sets another - so concurrent runs queue
+instead of oversubscribing the machine. CI bypasses it.
 
 **Handoff**:
 The written record one phase leaves for the next, and the only thing that

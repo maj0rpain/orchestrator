@@ -57,22 +57,31 @@ own messages, plus exactly one partway-failure case, which shows the command
 passes its own reason first and exits 1.
 
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
-half the usable CPUs, rounded down, at least 1, and all of them under `CI`;
-usable CPUs are the online cores, lowered to a cgroup v2 `cpu.max` quota;
+75% of the usable CPUs, rounded down, at least 1, or `ORCH_TEST_POOL_PERCENT`
+percent of them (a positive integer, above 100 too), and all of them under `CI`,
+which ignores the setting; usable CPUs are the online cores, lowered to a
+cgroup v2 `cpu.max` quota;
 `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
 pass on its own. all.sh runs at most that many shellcheck processes at once, and
 both runners lower their own niceness to 10 outside `CI`.
 Every runner draws its jobs from the job pool (GLOSSARY.md): slot lock files
-under `~/.cache/orchestrator/test-job-pool`, as many as that default, each held
-with `flock` while one section child or one shellcheck process runs, so two or
-three sessions verifying at once queue for slots (`orch_test.sh: waiting for a
-job slot (N in use)` on stderr, once) and a killed holder's slot is freed by the
-kernel. `ORCH_TEST_JOBS=N` caps how many slots a run asks for and never bypasses
-the pool; `ORCH_TEST_JOBS=1` holds one slot for its whole one-shell run. `CI`
-bypasses the pool, as does a runner started inside a slot of the same pool (the
-runner marks its children with `ORCH_TEST_POOL_HELD`); a pool that cannot be
-created, opened or locked runs unpooled. The test-only `ORCH_TEST_POOL_DIR`
-names another pool directory.
+under `~/.cache/orchestrator/test-job-pool`, as many as that default (so
+`ORCH_TEST_POOL_PERCENT`, read from each run's own environment, sizes the pool;
+an invalid value fails every runner with
+`<runner>: ORCH_TEST_POOL_PERCENT='<value>' is not a positive integer`), each
+held with `flock` while one section child or one shellcheck process runs, so two
+or three sessions verifying at once queue for slots (`orch_test.sh: waiting for
+a job slot (N in use)` on stderr, once) and a killed holder's slot is freed by
+the kernel. `ORCH_TEST_JOBS=N` caps how many slots a run asks for and never
+bypasses the pool, so a run asking for more jobs than the pool holds queues;
+`ORCH_TEST_JOBS=1` holds one slot for its whole one-shell run. `CI` bypasses the
+pool, as does a runner started inside a slot of the same pool (the runner marks
+its children with `ORCH_TEST_POOL_HELD`); a pool that cannot be created, opened
+or locked runs unpooled. The test-only `ORCH_TEST_POOL_DIR` names another pool
+directory. Runs that disagree on the size share the directory unchanged: each
+tries slots 1 to its own size, so a larger run also uses the higher slots while
+all contend for the low ones, and concurrency is bounded by the largest size
+among the active runs; no size is recorded there.
 Helper placement is checked by harness.sh's placement section; its failure
 message states the rule.
 
@@ -300,7 +309,7 @@ scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per l
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts
-scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh and affected.sh all source: the default ORCH_TEST_JOBS and the renice to 10
+scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh and affected.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

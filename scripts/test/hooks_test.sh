@@ -16,6 +16,8 @@ source "$DIR/test/git_env.sh"
 test_git_env_clear || exit 1
 # shellcheck source=tally.sh
 source "$DIR/test/tally.sh"
+# shellcheck source=test_jobs.sh
+source "$DIR/test/test_jobs.sh"
 GRILL="$DIR/hook-grilling.sh"
 GUARD="$DIR/hook-guard.sh"
 QUICK="$DIR/hook-quick-implement.sh"
@@ -47,7 +49,8 @@ remove_markers() { rm -f "$TMPDIR/orchestrator-grilling-$1" "$TMPDIR/orchestrato
 # The temp root, created before anything else: TMPDIR is exported as it, so
 # every mktemp below lands inside it, and the hooks' markers too. The EXIT trap
 # leaves the root, makes it writable again (a run killed while RO_TMP is mode
-# 500), removes it, and keeps the exit status. An INT or TERM exits 130 through
+# 500), removes it, and keeps the exit status. An INT or TERM first stops every
+# process below this shell (test_jobs_stop_descendants), then exits 130 through
 # that trap.
 hooks_root="$(mktemp -d)" || {
   echo "hooks_test.sh: cannot create the suite's temp root" >&2; exit 1; }
@@ -60,7 +63,7 @@ hooks_remove_root() {
   exit "$status"
 }
 trap hooks_remove_root EXIT
-trap 'exit 130' INT TERM
+trap test_jobs_stop_descendants INT TERM
 # The tally file lands in the temp root, removed with it.
 tally_init
 

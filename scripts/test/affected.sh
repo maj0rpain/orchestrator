@@ -242,7 +242,7 @@ done
 # shellcheck source=test_jobs.sh
 source "$dir/test_jobs.sh"
 test_jobs_lower_priority
-test_jobs_pool_init affected.sh
+test_jobs_pool_init affected.sh || exit 1
 export ORCH_TEST_QUIET=1
 tmp="$(mktemp -d)" || exit 1
 pids=()

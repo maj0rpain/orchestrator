@@ -64,8 +64,9 @@ SETUP_FILE="$SECTION_DIR/setup.sh"
 # TMPDIR as it, so every mktemp below, orch.sh's own included, lands inside it;
 # a child's root nests inside its runner's. The EXIT trap leaves the root
 # (whose subdirectories may be the cwd), makes it writable again, removes it,
-# and keeps the exit status. An INT or TERM exits 130 through that trap; the
-# parallel runner replaces this INT/TERM trap with its own.
+# and keeps the exit status. An INT or TERM first stops every process below
+# this shell (test_jobs_stop_descendants), then exits 130 through that trap;
+# the parallel runner replaces this INT/TERM trap with its own.
 orch_root="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create the suite's temp root" >&2; exit 1; }
 export TMPDIR="$orch_root"
@@ -77,7 +78,7 @@ orch_remove_root() {
   exit "$status"
 }
 trap orch_remove_root EXIT
-trap 'exit 130' INT TERM
+trap test_jobs_stop_descendants INT TERM
 
 # The section filter. With ORCH_TEST_ONLY=<ERE> set, the suite runs only the
 # shared setup, the isolation section, every section whose title - the text
@@ -87,7 +88,8 @@ trap 'exit 130' INT TERM
 # exits 1, printing the selectable section titles, in walk order, one per line.
 #
 # The parallel runner. ORCH_TEST_JOBS sets how many sections run at once:
-# by default half the usable CPUs, rounded down, at least 1, and all of them
+# by default 75% of the usable CPUs (ORCH_TEST_POOL_PERCENT sets another
+# share), rounded down, at least 1, and all of them
 # under CI (test_jobs.sh: the online cores, lowered to a cgroup v2 quota);
 # 1 runs the suite - or the filtered text - in this one shell, sequentially.
 # A value that is not a positive integer exits 1 before any section runs.
@@ -222,7 +224,7 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
 else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
 fi
-test_jobs_pool_init orch_test.sh
+test_jobs_pool_init orch_test.sh || exit 1
 if [ "$orch_jobs" -eq 1 ]; then
   # One shell, one slot for the whole run; the runners its sections start
   # run under it.
