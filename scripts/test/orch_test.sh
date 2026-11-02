@@ -57,6 +57,8 @@ source "$TEST_DIR/test_jobs.sh"
 test_jobs_lower_priority
 # shellcheck source=tally.sh
 source "$TEST_DIR/tally.sh"
+# shellcheck source=fifo.sh
+source "$TEST_DIR/fifo.sh"
 SETUP_FILE="$SECTION_DIR/setup.sh"
 
 # The temp root. Every invocation - the parallel runner, each of its children,
