@@ -19,13 +19,14 @@ TRUST_ASSOCIATIONS_JSON='["OWNER", "MEMBER", "COLLABORATOR"]'
 # untrusted authors on #<issue>`. Non-zero, printing nothing, when stdin is not
 # a comment array.
 trust_filter_comments() {
-  local json kept total n
-  json="$(cat)"
-  kept="$(jq -c --argjson t "$TRUST_ASSOCIATIONS_JSON" \
-    '[.[] | select(.authorAssociation | IN($t[]))]' \
-    <<<"$json" 2>/dev/null)" || return 1
-  total="$(jq 'length' <<<"$json")"
-  n=$((total - $(jq 'length' <<<"$kept")))
+  local both kept n
+  both="$(jq -c --argjson t "$TRUST_ASSOCIATIONS_JSON" \
+    'if type == "array" then [.[] | select(.authorAssociation | IN($t[]))] as $k
+       | {kept: $k, dropped: (length - ($k | length))}
+     else error("not a comment array") end' 2>/dev/null)" || return 1
+  [ -n "$both" ] || return 1
+  n="$(jq -r .dropped <<<"$both")"
+  kept="$(jq -c .kept <<<"$both")"
   [ "$n" -eq 0 ] || warn "ignored $n comment(s) from untrusted authors on #$1"
   printf '%s\n' "$kept"
 }
