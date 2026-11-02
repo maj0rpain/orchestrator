@@ -76,8 +76,9 @@ you held back for the report's `Known items held back:` line.
    process docs, such as an issue-tracker or triage-label guide, are not
    standards. Read those that are, and only those. `Standards: none` means
    the repo documents no
-   standards: apply the smell baseline alone. Done when every listed
-   code-writing document is read.
+   standards: apply the smell baseline alone. Done when every entry of a
+   declared list is read (a `path#Heading` entry, its section), or, for a
+   crawled list, every code-writing document is read.
 3. **Review the diff** against every standard you found, against the
    **smell baseline** below, against the **test-cost smells** for every test
    hunk, and, for a hunk that fixes a defect, with the **root-cause check**

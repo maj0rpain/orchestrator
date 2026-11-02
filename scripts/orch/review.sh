@@ -409,7 +409,7 @@ review_standards_resolve() {
 # review_standards_mentions <file>: the repo-relative .md paths <file> mentions,
 # in backticks (against the repo root) or as Markdown links (against <file>'s
 # directory), one per line in the order they appear. Backticks pair per
-# paragraph (lines up to a blank one, joined), so a span may wrap a line break
+# paragraph (lines up to a blank one or a fence line, joined), so a span may wrap a line break
 # and a stray backtick never pairs across a blank line.
 review_standards_mentions() {
   local file="$1" dir="" m link
@@ -423,7 +423,7 @@ review_standards_mentions() {
         review_standards_resolve "$dir" "$link"
         ;;
     esac
-  done < <(awk 'NF { p = p " " $0; next } p != "" { print p; p = "" } END { if (p != "") print p }' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
+  done < <(awk '/^[[:space:]]*(```|~~~)/ { if (p != "") print p; p = ""; next } NF { p = p " " $0; next } p != "" { print p; p = "" } END { if (p != "") print p }' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
 }
 
 # review_standards_declaration <file>: the first `Standards:` paragraph of the
