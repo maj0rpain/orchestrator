@@ -180,6 +180,11 @@ resolutions** heading. Each caller says only where the record goes.
   and the record keeps the base sync's lines and every other resolved
   ticket's bullet.
 
+## Stdin
+
+Never run a command that reads stdin without supplying it: give it a heredoc,
+`<<<`, a pipe or `</dev/null`.
+
 ## Steps
 
 1. **Check where you are.** `git -C <checkout> rev-parse --show-toplevel`

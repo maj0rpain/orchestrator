@@ -2007,6 +2007,32 @@ check "the Junie README has an Agent settings on Junie section naming --host jun
 check "the Junie README's Agent settings on Junie section names orch.sh doctor" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/junie/README.md|## Agent settings on Junie' 'orch.sh doctor')"
 
+# --- stdin guard instruction (#2003) ------------------------------------------
+echo
+echo "stdin guard instruction (#2003)"
+stdin_agents='agents/orch-implementer.md|## Stdin
+agents/orch-fixer.md|## Stdin
+agents/orch-resolver.md|## Stdin
+agents/orch-closer.md|## Stdin
+agents/orch-reviewer-spec.md|## Stdin
+agents/orch-reviewer-standards.md|## Stdin'
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents"
+printf '# I\n\n## Stdin\n\nUse `</dev/null`.\n' >"$fixture/agents/orch-implementer.md"
+printf '# F\n\n## Steps\n\nBuild.\n' >"$fixture/agents/orch-fixer.md"
+out="$(scan_names_phrase "$fixture" "$stdin_agents" '</dev/null')"
+flags "an agent with no Stdin section is flagged" \
+  "$out" "agents/orch-fixer.md: no ## Stdin section"
+spares "an agent whose Stdin section names </dev/null is not flagged" \
+  "$out" "orch-implementer"
+check "the six Bash-running agents name </dev/null in their Stdin section" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$stdin_agents" '</dev/null')"
+stdin_row='A stray stdin read in a Bash call ends instead of hanging'
+check "host-capabilities has the stdin row" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/host-capabilities.md' "$stdin_row")"
+check "the stdin row marks Junie Unverified" \
+  "$(grep -F "$stdin_row" "$PLUGIN_ROOT/docs/host-capabilities.md" | grep -qF '**Unverified**' || echo "docs/host-capabilities.md: stdin row not Unverified")"
+
 # --- autopilot docs (#1497) ---------------------------------------------------
 echo
 echo "autopilot docs (#1497)"
