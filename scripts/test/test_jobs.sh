@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Sourced by orch_test.sh and all.sh, so the two runners never disagree on how
-# much of the machine a test run may use, or on how they stop their children
-# when signalled. Runs nothing; the job pool below keeps its state in
-# TEST_JOBS_* variables of the sourcing shell.
+# Sourced by orch_test.sh, all.sh and affected.sh, so the runners never
+# disagree on how much of the machine a test run may use, or on how they stop
+# their children when signalled. Runs nothing; the job pool below keeps its
+# state in TEST_JOBS_* variables of the sourcing shell.
 #
 # is_positive_integer <value>: true when it is digits only and above zero, so
 # `00` is no positive integer either.
