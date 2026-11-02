@@ -65,6 +65,7 @@ d_append() {
 # warn naming the cause - N warns, or worse N invented FAILs, would bury the one
 # real problem underneath them.
 D_GH=""            # "ok", or the reason GitHub could not be asked
+D_GH_HOST=""       # the GitHub host the probe asked about
 D_REPO_SEEN=""     # "ok" when GitHub answered for the repo, or empty
 D_REPO_REASON=""   # gh's stderr when that read failed, or empty
 D_REPO_BRANCH=""   # the default branch, as GitHub reports it, when valid
@@ -112,12 +113,17 @@ gh_installed() { type -P gh >/dev/null 2>&1; }
 # "could not connect" is the whole basis of the severity rule, and the only
 # signal gh offers for it is the text of the failure.
 d_probe_gh() {
-  local out
+  local out host
   if [ -n "$D_GH" ]; then return 0; fi
   if ! gh_installed; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
   if ! repo_resolve; then D_GH="$REPO_MISSING"; return 0; fi
-  if out="$(adapter_auth_status 2>&1)"; then
+  # The host gh targets for this repo: its explicit host, else the user's own
+  # GH_HOST, else github.com. Read here, as the gh guard pins GH_HOST only
+  # after the adapter's argv is built.
+  host="$(repo_host "$REPO_NAME")"
+  D_GH_HOST="${host:-${GH_HOST:-github.com}}"
+  if out="$(adapter_auth_status "$D_GH_HOST" 2>&1)"; then
     D_GH=ok
   else
     case "$out" in
@@ -203,8 +209,8 @@ check_gh_auth() {
   case "$D_GH" in
     ok) d_ok "gh authenticated" ;;
     "not authenticated")
-      d_fail "gh is not authenticated."
-      d_remedy "gh auth login" ;;
+      d_fail "gh is not authenticated to $D_GH_HOST."
+      d_remedy "gh auth login --hostname $D_GH_HOST" ;;
     *) d_gate "$D_GH" D_GH_SKIPPED || true ;;
   esac
 }
