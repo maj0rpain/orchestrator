@@ -1579,5 +1579,10 @@ writeln 'Standards: `docs/agents/h.md#Dup`' >CONTRIBUTING.md
 assert_eq "a fenced heading does not make an entry ambiguous" \
   "$(dstd)" "Standards: docs/agents/h.md#Dup"
 rm -f CONTRIBUTING.md
+# This repo's own declaration resolves, in the plugin root the suite checks.
+out="$(cd "$PLUGIN_ROOT" && "$ORCH" review standards 2>&1)"; st=$?
+assert_status "the plugin root's review standards exits 0" "$st" 0
+assert_eq "and prints its three declared entries" "$out" \
+  "Standards: CONTRIBUTING.md#Develop, docs/agents/cli-conventions.md, docs/agents/coding-standards.md"
 rm -rf "$out_dir"
 restore_suite_env

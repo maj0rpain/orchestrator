@@ -208,7 +208,8 @@ plan or from what the previous loop left instead of asking.
    iteration.
 7. Resolve the standards documents, once, for the whole loop: `bash "$ORCH"
    review standards` prints one line, `Standards: ` and the repo's standards
-   documents, every path one that exists, or `Standards: none`. Keep it
+   documents, every path one that exists (a declared list may name a section,
+   `path#Heading`), or `Standards: none`. Keep it
    verbatim: every reviewer this loop starts gets that same line, never
    re-resolved per iteration (see **The reviewers**).
 

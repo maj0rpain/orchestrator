@@ -65,12 +65,17 @@ you held back for the report's `Known items held back:` line.
    `git diff <base SHA>...HEAD` (three dots) must be non-empty. Note the
    commits with `git log <base SHA>..HEAD --oneline`. If either check fails,
    write a report saying which, and return.
-2. **Read the standards** your prompt's `Standards:` line lists: the
-   repo's root agent files and the documents they point to, as `orch.sh`
-   resolved them, every path one that exists. Which of them are about how
-   code should be written is your judgement; process docs, such as an
-   issue-tracker or triage-label guide, are not standards. Read those that
-   are, and only those. `Standards: none` means the repo documents no
+2. **Read the standards** your prompt's `Standards:` line lists, as `orch.sh`
+   resolved them, every path one that exists. When the repo declares its list
+   in its root agent file, the line is that declared list: read every entry in
+   full, with no judgement about which are standards. An entry `path#Heading`
+   is read as that section only: the heading, its subsections included, and
+   nothing past the next heading of the same or a higher level. Only a crawled
+   list (root agent files and the documents they point to) needs judgement:
+   which of its documents are about how code should be written is yours;
+   process docs, such as an issue-tracker or triage-label guide, are not
+   standards. Read those that are, and only those. `Standards: none` means
+   the repo documents no
    standards: apply the smell baseline alone. Done when every listed
    code-writing document is read.
 3. **Review the diff** against every standard you found, against the
