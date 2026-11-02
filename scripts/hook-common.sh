@@ -333,7 +333,6 @@ hook_bash_poll_hit() {
 hook_bash_poll_deny() {
   local cmd
   cmd="$(printf '%s' "$1" | jq -er --arg auto "$2" "$HOOK_BASH_SCOPE"'$c' 2>/dev/null)" || return 1
-  [ "${#cmd}" -le 8192 ] || return 1
   [ -n "$(hook_bash_walk "$cmd" 'hook_bash_poll_hit_out')" ] || return 1
   hook_emit_deny "This Bash call holds an unquoted pgrep or pkill word. pgrep and pkill match this shell's own command line, so a poll never ends and a kill kills this shell. To wait for a long command, rerun it in the foreground with timeout: 600000; if the host moves it to the background, wait for its completion notice and use its exit code (host capability *Run a long command*). If the word is only an argument, such as a grep pattern, quote it."
 }

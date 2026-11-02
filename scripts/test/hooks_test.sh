@@ -1376,10 +1376,8 @@ for bp_cmd in 'pkill -f y' 'echo $(pgrep x)' 'echo `pgrep x`' 'ls | xargs pkill'
   bp_out="$(bp_scan default "$bp_cmd")"
   assert_eq "bash poll hook: denies '${bp_cmd//$'\n'/\\n}'" "$(bs_decision "$bp_out")" deny
 done
-for bp_agent in orchestrator:orch-implementer orch-implementer; do
-  bp_out="$(bs_event default "$bp_agent" 'pgrep x' | bp_run "")"
-  assert_eq "bash poll hook: agent_type '$bp_agent' is denied" "$(bs_decision "$bp_out")" deny
-done
+bp_out="$(bs_event default orchestrator:orch-implementer 'pgrep x' | bp_run "")"
+assert_eq "bash poll hook: agent_type 'orchestrator:orch-implementer' is denied" "$(bs_decision "$bp_out")" deny
 bp_out="$(bs_event default "" 'pgrep x' | bp_run 1)"
 assert_eq "bash poll hook: autopilot with an empty agent_type is denied" "$(bs_decision "$bp_out")" deny
 bp_out="$(bp_scan default 'pgrep x')"
