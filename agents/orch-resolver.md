@@ -236,7 +236,8 @@ implementer follows it from here.
    `bash "<orch.sh>" suite-cost run -- <command>`, which passes their
    output and exit code through unchanged and records a passing run's suite
    cost. Fix a failure the merge caused, within the two sides' intents. A
-   failure you cannot fix stays: record the command and `fail`, and carry on to finish.
+   failure you cannot fix stays: record the command and `fail`, and carry on
+   to finish.
 7. **Finish.** Stage every resolved file by path and commit: a merge
    concludes with `git commit --no-edit`; a rebase with
    `git rebase --continue`. Repeat from step 1 for every remaining rebase
