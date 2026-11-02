@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.42.1
+
+A review loop files a pattern finding's deferred sites as one issue, not one per site: the fixer and the driver record them as one Waiting-to-be-filed bullet with a `Sites:` list, the closer files it once, and the reviewers hold back a finding at any listed site.
+
 ## 4.42.0
 
 A repo can now declare its coding standards list in its root agent file: a `Standards:` paragraph of backticked entries, each a path or a `path#Heading` that names one section. When a declaration is present, `orch.sh review standards` prints exactly those entries in place of the two-hop crawl, and an entry that names a missing file, a missing heading or an ambiguous heading fails with an `orch:` message. Both reviewers read every declared entry, and read a section entry as that section only. Backticks are now paired per paragraph, so a code span that wraps a line break no longer drops the paths after it. This is how `docs/agents/cli-conventions.md` was going missing. This repo declares CONTRIBUTING's Develop section, `docs/agents/cli-conventions.md` and `docs/agents/coding-standards.md`, so its list drops from 26 documents to those three.
