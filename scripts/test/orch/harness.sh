@@ -2492,11 +2492,15 @@ af_feat="$(af_git rev-parse HEAD)"
 af_put scripts/hook-guard.sh 'echo ok'
 af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a passing run exits 0" "$st" 0
-assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
-  "orch_test.sh: 7 passed, 0 failed
+if command -v shellcheck >/dev/null 2>&1; then
+  assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
+    "orch_test.sh: 7 passed, 0 failed
 hooks_test.sh: 7 passed, 0 failed
 docs_lint.sh: 7 passed, 0 failed
 shellcheck: 0 findings"
+else
+  skip "printing each part's summary in order, shellcheck last" "shellcheck is not installed"
+fi
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
@@ -2534,6 +2538,10 @@ assert_contains "printing its FAIL lines and its summary" "$af_out" \
   "  FAIL a thing
      its detail
 hooks_test.sh: 1 passed, 1 failed"
-assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
+if command -v shellcheck >/dev/null 2>&1; then
+  assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
+else
+  skip "and shellcheck's findings" "shellcheck is not installed"
+fi
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row
