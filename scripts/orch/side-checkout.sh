@@ -128,6 +128,8 @@ side_checkout_finished() {
   base="$(recorded_base "$branch")"
   capture prs err adapter_prs_merged "$branch" "$base" \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
+  prs="$(trust_filter_prs "$branch" <<<"$prs")" \
+    || { verdict="could not read GitHub: the merged PRs from $branch into $base"; return 2; }
   [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
   tip_covered "$path" "$branch" "$prs"
 }

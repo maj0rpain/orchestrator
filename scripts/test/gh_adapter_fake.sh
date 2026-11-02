@@ -706,7 +706,8 @@ fake_pr_head_oid() {
 }
 
 # adapter_prs_merged <head> <base>: the merged PRs in the store from the head
-# branch into the base, newest first: number, a tab, the head SHA.
+# branch into the base, newest first: number, head SHA and the PR's stored
+# cross_repository flag (false where unset), tab-separated, printed as stored.
 adapter_prs_merged() {
   local d
   ! fake_failing adapter_prs_merged || return 1
@@ -714,7 +715,8 @@ adapter_prs_merged() {
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = MERGED ] && [ "$(cat "$d/head")" = "$1" ] \
       && [ "$(cat "$d/base")" = "$2" ] || continue
-    printf '%s\t%s\n' "$(basename "$d")" "$(fake_pr_head_oid "$d")"
+    printf '%s\t%s\t%s\n' "$(basename "$d")" "$(fake_pr_head_oid "$d")" \
+      "$(cat "$d/cross_repository" 2>/dev/null || echo false)"
   done | sort -rn
 }
 
