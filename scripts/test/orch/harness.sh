@@ -2293,7 +2293,7 @@ unset -f runner_git_isolation
 echo
 echo "affected.sh, the ticket verification (#2023)"
 af_tests="$(dirname "$SUITE_SCRIPT")"
-[ -x "$af_tests/affected.sh" ]; st=$?
+if [ -x "$af_tests/affected.sh" ]; then st=0; else st=1; fi
 assert_eq "affected.sh is executable, as CLAUDE.md runs it directly" "$st" "0"
 af="$(mktemp -d)"
 af_git() { git -C "$af" -c user.name=t -c user.email=t@example.com "$@"; }
