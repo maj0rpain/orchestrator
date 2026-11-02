@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.39.3
+
+`orch.sh redo spec` now retires the implement attempt, as `redo review` does: it renames the flow's branch aside to its `-redo-<n>` name, closes its PR with the redo comment, bumps `redo_count`, and clears `branch`, `pr` and `base_sha`. The redone implement phase therefore starts a fresh branch and PR, instead of reusing the old commits or hitting a busy-checkout refusal after `--new-issue`. A branch retired by a redo no longer counts as a busy checkout. `redo spec` also refuses up front while ticket worktrees are left under the checkout, listing each one's remove command.
+
 ## 4.39.2
 
 The planning hook now sends only the state-dependent part of its message, well under Claude Code's 10 KB limit for hook context, so the closing rules are no longer cut to a 2 KB preview. The fixed closing rules moved into a new `## Closing` section of the orch-interview skill, which the grilling entry points and Junie's plan-confirmed prompt are pointed at by absolute path.
