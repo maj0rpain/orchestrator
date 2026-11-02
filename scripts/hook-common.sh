@@ -145,3 +145,95 @@ hook_bash_stdin_rewrite() {
           | .command = (if ($c | startswith($p)) then $c else $p + $c end))
       }}' 2>/dev/null
 }
+
+# Prints the first part of a Bash command that is a plain stdin read, or
+# nothing (#2002). $1 is the command. Parts split on `;`, `&&`, `||` and
+# newlines, outside single and double quotes and outside heredoc bodies. A
+# part is a plain read when its first word, after leading VAR=value words, is
+# `cat` with no file argument or `-`, `read`, `python`, `python3` or `node`
+# with no argument or `-`, or `bash`/`sh` with `-s` first - and the part holds
+# no `<` and no `|`, which would feed it. First-word matching only.
+hook_bash_stdin_reader() {
+  local cmd="$1" line part="" quote="" hd="" hdtab=0 i c n rest
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ -n "$hd" ]; then
+      [ "$hdtab" = 1 ] && line="${line#"${line%%[!$'\t']*}"}"
+      [ "$line" = "$hd" ] && hd=""
+      continue
+    fi
+    n=${#line}; i=0
+    while [ "$i" -lt "$n" ]; do
+      c="${line:i:1}"
+      if [ -n "$quote" ]; then
+        if [ "$quote" = '"' ] && [ "$c" = '\' ]; then
+          part+="$c${line:i+1:1}"; i=$((i + 2)); continue
+        fi
+        [ "$c" = "$quote" ] && quote=""
+        part+="$c"
+      else
+        case "$c" in
+          "'"|'"') quote="$c"; part+="$c" ;;
+          '\') part+="$c${line:i+1:1}"; i=$((i + 2)); continue ;;
+          ';') hook_bash_stdin_is_reader "$part" && { printf '%s' "${part#"${part%%[![:space:]]*}"}"; return 0; }; part="" ;;
+          '&'|'|')
+            if [ "${line:i+1:1}" = "$c" ]; then
+              hook_bash_stdin_is_reader "$part" && { printf '%s' "${part#"${part%%[![:space:]]*}"}"; return 0; }
+              part=""; i=$((i + 2)); continue
+            fi
+            part+="$c" ;;
+          '<')
+            if [ "${line:i:3}" = '<<<' ]; then part+='<<<'; i=$((i + 3)); continue; fi
+            rest="${line:i}"
+            if [[ "$rest" =~ ^\<\<(-?)[[:space:]]*[\'\"]?([A-Za-z_][A-Za-z0-9_]*)[\'\"]? ]]; then
+              hd="${BASH_REMATCH[2]}"; hdtab=0; [ -n "${BASH_REMATCH[1]}" ] && hdtab=1
+            fi
+            part+="$c" ;;
+          *) part+="$c" ;;
+        esac
+      fi
+      i=$((i + 1))
+    done
+    if [ -z "$quote" ]; then
+      hook_bash_stdin_is_reader "$part" && { printf '%s' "${part#"${part%%[![:space:]]*}"}"; return 0; }
+      part=""
+    else
+      part+=$'\n'
+    fi
+  done <<<"$cmd"
+  hook_bash_stdin_is_reader "$part" && printf '%s' "${part#"${part%%[![:space:]]*}"}"
+  return 0
+}
+
+# Succeeds when the one part $1 is a plain stdin read; see
+# hook_bash_stdin_reader.
+hook_bash_stdin_is_reader() {
+  local -a words
+  case "$1" in *'<'*|*'|'*) return 1 ;; esac
+  read -ra words <<<"$1"
+  local k=0
+  while [ "$k" -lt "${#words[@]}" ] && [[ "${words[k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do k=$((k + 1)); done
+  local w="${words[k]:-}" a1="${words[k+1]:-}" n=$(( ${#words[@]} - k - 1 ))
+  case "$w" in
+    cat|python|python3|node) [ "$n" -eq 0 ] || { [ "$n" -eq 1 ] && [ "$a1" = - ]; } ;;
+    read) return 0 ;;
+    bash|sh) [ "$a1" = -s ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# Writes the PreToolUse deny for an in-scope Bash call holding a plain stdin
+# read under a mode other than bypassPermissions, or nothing (#2002). $1 is
+# the raw payload, $2 the ORCH_AUTOPILOT value.
+hook_bash_stdin_deny() {
+  local cmd part
+  cmd="$(printf '%s' "$1" | jq -er --arg auto "$2" '
+    (.tool_input.command? // null) as $c
+    | select(($c | type) == "string")
+    | select(.permission_mode != "bypassPermissions")
+    | select($auto == "1" or ((.agent_type? // "") | type == "string"
+        and (startswith("orchestrator:orch-") or startswith("orch-"))))
+    | $c' 2>/dev/null)" || return 1
+  part="$(hook_bash_stdin_reader "$cmd")"
+  [ -n "$part" ] || return 1
+  hook_emit_deny "This Bash call reads stdin, which nothing will feed, so it would hang: '$part'. Supply input with a heredoc, <<<, a pipe or </dev/null."
+}

@@ -1293,8 +1293,32 @@ for mode in bypassPermissions default; do
     assert_eq "bash stdin hook: out of scope '$bs_agent' under $mode exits 0" "$bs_rc" 0
   done
 done
-bs_out="$(bs_event default orch-implementer cat | bs_run "")"
-assert_empty "bash stdin hook: in scope under a non-bypass mode prints nothing" "$bs_out"
+# Deny of plain stdin reads under a non-bypass mode (#2002).
+bs_denied() { bs_event "$1" orch-implementer "$2" | bs_run ""; }
+for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
+  'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat'; do
+  for bs_mode in default acceptEdits; do
+    bs_out="$(bs_denied "$bs_mode" "$bs_cmd")"
+    assert_eq "bash stdin hook: $bs_mode denies '${bs_cmd//$'\n'/\\n}'" \
+      "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" deny
+  done
+done
+bs_out="$(bs_denied default 'echo a; cat -')"
+assert_contains "bash stdin hook: the deny reason names the matched part" \
+  "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bs_out")" "'cat -'"
+assert_contains "bash stdin hook: the deny reason says how to supply input" \
+  "$(jq -r '.reason' <<<"$bs_out")" 'heredoc, <<<, a pipe or </dev/null'
+for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'cat < f' 'cat file' \
+  'python3 script.py' $'cat <<EOF\ncat\nread x\nEOF' $'echo "a\ncat\nb"' 'echo "a; cat"' \
+  "git commit -m 'x && read'" 'git status' 'read x </dev/null'; do
+  bs_out="$(bs_denied default "$bs_cmd")"
+  assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
+done
+bs_out="$(bs_event default Explore cat | bs_run "")"
+assert_empty "bash stdin hook: out of scope 'cat' under default is not denied" "$bs_out"
+bs_out="$(bs_event default "" cat | bs_run 1)"
+assert_eq "bash stdin hook: autopilot 'cat' under default is denied" \
+  "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" deny
 bs_out="$(bs_event bypassPermissions orch-implementer cat | jq 'del(.tool_input.command)' | bs_run "")"; bs_rc=$?
 assert_empty "bash stdin hook: no command prints nothing" "$bs_out"
 assert_eq "bash stdin hook: no command exits 0" "$bs_rc" 0
