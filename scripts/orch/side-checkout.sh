@@ -177,7 +177,7 @@ archive_flow() {
   local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" state slug dest entry kept i
   local entries=() moved
   state="$(flow_state_file "$root")"
-  refuse_ticket_worktrees "$root"
+  refuse_ticket_worktrees "$root" "moving them would break git's record of them"
   slug="$(state_get_in "$state" slug)" || die "could not read the flow's slug from $state - nothing was archived"
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest" 2>/dev/null || die "could not create the archive directory $dest - nothing was archived"
@@ -377,7 +377,7 @@ cmd_side_checkout_remove() {
     "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
   # archive_flow refuses ticket worktrees itself before anything moves, so
   # the refusal runs here only when there is no flow to archive.
-  checkout_has_flow "$path" || refuse_ticket_worktrees "$path"
+  checkout_has_flow "$path" || refuse_ticket_worktrees "$path" "moving them would break git's record of them"
   side_checkout_archive_and_remove_or_exit "$path" "$main_root" "$here" die
 }
 

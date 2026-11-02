@@ -954,13 +954,13 @@ fake_fail adapter_prs_open
 err="$(prc "$body" 2>&1 >/dev/null)"; st=$?
 assert_status "a GitHub that cannot be read exits 2" "$st" 2
 [ -n "$err" ] && ok "with a reason on stderr" || bad "with a reason on stderr" "stderr was empty"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 
 fake_fail adapter_pr_comment
 err="$(prc "$body" 2>&1 >/dev/null)"; st=$?
 assert_status "a failed post exits 2" "$st" 2
 assert_contains "naming the PR" "$err" "#57"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 
 err="$(prc /nonexistent/body.md 2>&1 >/dev/null)"; st=$?
 assert_status "a missing file exits 2" "$st" 2
@@ -1000,14 +1000,14 @@ out="$(prc "$body" 2>"$errf")"; st=$?
 assert_status "unreadable PR list: exit 2" "$st" 2
 assert_eq "unreadable PR list: exact stderr" "$(cat "$errf")" "orch: gh could not list the open PRs from quick/12-foo: fake gh: adapter_prs_open failed"
 assert_eq "unreadable PR list: empty stdout" "$out" ""
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 
 fake_fail adapter_pr_comment
 out="$(prc "$body" 2>"$errf")"; st=$?
 assert_status "failed post: exit 2" "$st" 2
 assert_eq "failed post: exact stderr" "$(cat "$errf")" "orch: gh could not comment on PR #57: fake gh: adapter_pr_comment failed"
 assert_eq "failed post: empty stdout" "$out" ""
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 
 # gh's reason rides on orch's own line, first line only (#846).
 assert_gh_dies "unreadable PR list with a reason: exit 2" adapter_prs_open "$GH_502" 2 \
@@ -1175,7 +1175,7 @@ fake_fail adapter_prs_open
 err="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
 assert_status "an unreadable PR list exits 2" "$st" 2
 assert_eq "and writes nothing" "$(cat "$pr_comments")" "known content"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 
 assert_gh_dies "unreadable comments exit 2" adapter_pr_comments "$GH_502" 2 \
   "orch: gh could not read the comments of PR #57: HTTP 502: Bad Gateway" \

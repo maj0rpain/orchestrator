@@ -228,7 +228,7 @@ for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_jso
   assert_eq "leaving the existing file untouched for $op" "$(cat "$kp/known.md")" "kept"
   out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" 2>&1)"
   assert_eq "and writing no file for $op" "$(on_disk "$kp/fresh.md")" "absent"
-  rm -rf "$ORCH_GH_FAKE_STORE/fail"
+  fake_unfail
 done
 
 for args in "" "21" "abc $kp/fresh.md" "21 $kp/fresh.md --deviations" \
