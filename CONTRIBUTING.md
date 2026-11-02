@@ -22,7 +22,8 @@ scripts/test/all.sh                           # every suite; run once before ope
 
 While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
-`<section>` is an extended regex matched against the `# ---` section titles,
+`<section>` is an extended regex matched, ignoring case, against the `# ---`
+section titles (every top-level branch of an alternation must match a section),
 e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^ticket'`. Run
 `scripts/test/affected.sh` before each commit, and `scripts/test/all.sh` once
 before opening a PR: all.sh starts every suite and
