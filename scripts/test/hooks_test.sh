@@ -40,6 +40,9 @@ assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no out
 # <kind> is grilling or planning: the marker $TMPDIR/orchestrator-<kind>-<id>.
 assert_marker_present() { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then ok "$1"; else bad "$1" "no orchestrator-$2-$3"; fi; }
 assert_marker_absent()  { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then bad "$1" "orchestrator-$2-$3 exists"; else ok "$1"; fi; }
+# Write, or remove, both markers of session <id>.
+make_markers()   { : >"$TMPDIR/orchestrator-grilling-$1"; : >"$TMPDIR/orchestrator-planning-$1"; }
+remove_markers() { rm -f "$TMPDIR/orchestrator-grilling-$1" "$TMPDIR/orchestrator-planning-$1"; }
 
 # The temp root, created before anything else: TMPDIR is exported as it, so
 # every mktemp below lands inside it, and the hooks' markers too. The EXIT trap
@@ -446,7 +449,7 @@ run_size_matrix() {
   )
   for entry in "${events[@]}"; do
     matrix_n=$((matrix_n + 1))
-    rm -f "$TMPDIR"/orchestrator-grilling-mx "$TMPDIR"/orchestrator-planning-mx
+    remove_markers mx
     ev="${entry#*|}"
     bytes="$(printf '%s' "$ev" | "$GRILL" | jq -r '.additionalContext' | wc -c)"
     assert_under_budget "${entry%%|*} ($flow)" "$bytes"
@@ -467,7 +470,8 @@ run_size_matrix "flow with neither"
 echo 'not json' >"$REPO/.orchestrator/state.json"
 run_size_matrix "flow with unreadable state"
 rm -rf "$REPO/.orchestrator"
-rm -f "$REPO/docs/agents/triage-labels.md" "$TMPDIR"/orchestrator-grilling-mx "$TMPDIR"/orchestrator-planning-mx
+rm -f "$REPO/docs/agents/triage-labels.md"
+remove_markers mx
 assert_eq "the size matrix ran 25 cases of the five entry points" "$matrix_n" "25"
 
 # Emitter coverage: every hook-*.sh that emits context through
@@ -677,9 +681,6 @@ markers_present() {
   [ -e "$TMPDIR/orchestrator-planning-$1" ] && n=$((n + 1))
   echo "$n"
 }
-# Write, or remove, both markers of session <id>.
-make_markers()   { : >"$TMPDIR/orchestrator-grilling-$1"; : >"$TMPDIR/orchestrator-planning-$1"; }
-remove_markers() { rm -f "$TMPDIR/orchestrator-grilling-$1" "$TMPDIR/orchestrator-planning-$1"; }
 
 make_markers ss1
 out="$(start_event clear ss1 | "$START")"; st=$?
