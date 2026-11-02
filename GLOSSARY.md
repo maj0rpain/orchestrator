@@ -88,6 +88,11 @@ one that just finished.
 A flow leaves a phase only once the handoff it writes for the next one is
 valid; the step back of a Redo retires the handoffs it makes stale.
 
+**Job pool**:
+The set of test job slots, one per home directory, that every test runner under
+that home directory draws from, sized to half the usable CPUs, so concurrent
+runs queue instead of oversubscribing the machine. CI bypasses it.
+
 **Handoff**:
 The written record one phase leaves for the next, and the only thing that
 crosses a phase boundary. A handoff references artefacts that already exist (an
@@ -848,6 +853,18 @@ head and base once more before it counts; below the floor nothing compares it.
 Growth past the threshold is a finding with no reviewer behind it: in a review
 loop a major the driver raises from `check`'s verdict, and in a review pass a
 finding the session handles like any other.
+
+**Ticket verification**:
+The verification command a ticket subagent, fixer, resolver or review pass
+session runs: the one a repo's instructions name as its ticket verification,
+or the repo's full verification when they name none. It checks the code a
+change can reach; the full verification runs once per branch, at the
+combined-branch check, and in CI.
+
+**Full verification**:
+The verification command a repo's instructions name as its full verification:
+the whole suite, run once per branch at the combined-branch check, and in CI.
+A repo that names no ticket verification runs it for every ticket too.
 
 ### Hosts
 

@@ -105,6 +105,13 @@ trap 'exit 130' INT TERM
 # temp root; an interrupt also kills the running children and waits for them
 # to exit.
 #
+# Each job draws a slot from the job pool (test_jobs.sh) for as long as it
+# runs, and a sequential run holds one for its whole run, so concurrent runs
+# under one home directory queue for slots; ORCH_TEST_JOBS caps how many this
+# run asks for. CI bypasses the pool, and so does a run started inside a slot
+# of the same pool. The first wait prints "orch_test.sh: waiting for a job slot
+# (N in use)" on stderr.
+#
 # Outside CI this runner lowers its own niceness to 10 at start (test_jobs.sh),
 # so the processes it starts inherit it; a niceness of 10 or more is left
 # alone, so nested runs never stack, and a failing renice is ignored.
@@ -215,7 +222,14 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
 else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
 fi
+test_jobs_pool_init orch_test.sh
 if [ "$orch_jobs" -eq 1 ]; then
+  # One shell, one slot for the whole run; the runners its sections start
+  # run under it.
+  test_jobs_slot_wait
+  [ -z "$TEST_JOBS_SLOT_FD" ] || export ORCH_TEST_POOL_HELD="$TEST_JOBS_POOL"
+  # The slot stays with this shell, not with what its sections leave running.
+  test_jobs_slot_release "$$"
   tally_init
   eval "$(section_text "$orch_kept")"
   exit $?
@@ -242,10 +256,16 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     orch_i=$((orch_i + 1))
   done
   while [ "$orch_started" -lt "$orch_total" ] && [ "$orch_running" -lt "$orch_jobs" ]; do
+    test_jobs_slot_take || { test_jobs_slot_note; break; }
     orch_pos="${orch_sections[$orch_started]}"
+    # A child of a slot marks its pool; an unpooled run passes its marker on.
+    orch_held="$TEST_JOBS_POOL"
+    [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
     ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
-      ORCH_TEST_JOBS=1 bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" &
+      ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
+      bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 8>&- &
     orch_pids[orch_started]=$!
+    test_jobs_slot_release "${orch_pids[orch_started]}"
     orch_started=$((orch_started + 1))
     orch_running=$((orch_running + 1))
   done

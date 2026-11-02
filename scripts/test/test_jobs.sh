@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Sourced by orch_test.sh and all.sh, so the two runners never disagree on how
-# much of the machine a test run may use, or on how they stop their children
-# when signalled. Defines no state and runs nothing.
+# Sourced by orch_test.sh, all.sh and affected.sh, so the runners never
+# disagree on how much of the machine a test run may use, or on how they stop
+# their children when signalled. Runs nothing; the job pool below keeps its
+# state in TEST_JOBS_* variables of the sourcing shell.
 #
 # is_positive_integer <value>: true when it is digits only and above zero, so
 # `00` is no positive integer either.
@@ -27,6 +28,38 @@
 # no renice. A failing renice is ignored, silently. renice is called with a
 # relative increment (-n, with POSIXLY_CORRECT set so util-linux reads -n as
 # relative, as macOS always does).
+#
+# The job pool. Every runner under one home directory draws its parallel jobs
+# from one pool of slot lock files, so concurrent runs queue for slots instead
+# of oversubscribing the machine. The pool holds test_jobs_default slots (the
+# job-count logic is untouched); a slot is held by an flock on its file, which
+# the kernel releases when the last process holding the open file dies. The pool
+# lives in $HOME/.cache/orchestrator/test-job-pool unless the test-only
+# ORCH_TEST_POOL_DIR names another directory.
+#
+# test_jobs_pool_init <runner>: decides whether this run is pooled, setting
+# TEST_JOBS_POOL to the pool directory, or to "" when it runs unpooled: under
+# CI, with no HOME and no ORCH_TEST_POOL_DIR, with no flock on PATH, when the
+# directory cannot be created, or when ORCH_TEST_POOL_HELD - which a runner sets
+# on the children that run under its slot - names this same directory, so a
+# nested run takes no slot of its own. <runner> names it in the waiting notice.
+#
+# test_jobs_slot_take: tries each slot in turn without blocking. Returns 0 with
+# TEST_JOBS_SLOT_FD set to the fd holding the slot's lock, or to "" when the run
+# is unpooled - including when a slot file cannot be opened or locked, which
+# unpools the rest of the run. Returns 1 with TEST_JOBS_IN_USE set when every
+# slot is taken.
+#
+# test_jobs_slot_note: on stderr, "<runner>: waiting for a job slot (N in use)",
+# the first time it is called in a run.
+#
+# test_jobs_slot_wait: takes a slot, noting and polling while none is free.
+#
+# test_jobs_slot_release <pid>: hands the held slot to a holder process that
+# keeps the lock until <pid> has exited, then closes the run's own copy of the
+# fd. The job alone keeps the slot: a runner starts the job with fd 8 closed
+# (8>&-), so no process the job leaves running holds the lock after the job is
+# gone, and the kernel still frees it should the holder die.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
@@ -88,4 +121,70 @@ test_jobs_stop_children() {
   kill "$@" 2>/dev/null
   for pid in "$@"; do wait "$pid"; done
   exit 130
+}
+
+TEST_JOBS_POOL=""
+TEST_JOBS_SLOTS=0
+TEST_JOBS_SLOT_FD=""
+TEST_JOBS_IN_USE=0
+TEST_JOBS_NOTED=0
+TEST_JOBS_RUNNER=""
+
+test_jobs_pool_init() {
+  local dir
+  TEST_JOBS_RUNNER="$1" TEST_JOBS_POOL="" TEST_JOBS_SLOT_FD="" TEST_JOBS_NOTED=0
+  [ -n "${CI:-}" ] && return 0
+  dir="${ORCH_TEST_POOL_DIR:-}"
+  if [ -z "$dir" ]; then
+    [ -n "${HOME:-}" ] || return 0
+    dir="$HOME/.cache/orchestrator/test-job-pool"
+  fi
+  [ "${ORCH_TEST_POOL_HELD:-}" = "$dir" ] && return 0
+  command -v flock >/dev/null 2>&1 || return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  TEST_JOBS_SLOTS="$(test_jobs_default)"
+  TEST_JOBS_POOL="$dir"
+}
+
+test_jobs_slot_take() {
+  local n rc busy=0
+  TEST_JOBS_SLOT_FD="" TEST_JOBS_IN_USE=0
+  [ -n "$TEST_JOBS_POOL" ] || return 0
+  for ((n = 1; n <= TEST_JOBS_SLOTS; n++)); do
+    if ! { exec 8>>"$TEST_JOBS_POOL/slot.$n"; } 2>/dev/null; then
+      TEST_JOBS_POOL=""
+      return 0
+    fi
+    flock -n -E 100 8 2>/dev/null
+    rc=$?
+    case "$rc" in
+      0) TEST_JOBS_SLOT_FD=8; return 0 ;;
+      100) busy=$((busy + 1)); exec 8>&- ;;
+      *) exec 8>&-; TEST_JOBS_POOL=""; return 0 ;;
+    esac
+  done
+  TEST_JOBS_IN_USE="$busy"
+  return 1
+}
+
+test_jobs_slot_note() {
+  [ "$TEST_JOBS_NOTED" -eq 0 ] || return 0
+  TEST_JOBS_NOTED=1
+  echo "$TEST_JOBS_RUNNER: waiting for a job slot ($TEST_JOBS_IN_USE in use)" >&2
+}
+
+test_jobs_slot_wait() {
+  until test_jobs_slot_take; do
+    test_jobs_slot_note
+    sleep 0.1
+  done
+}
+
+test_jobs_slot_release() {
+  [ -z "$TEST_JOBS_SLOT_FD" ] && return 0
+  (
+    while kill -0 "$1" 2>/dev/null; do sleep 0.1 8>&-; done
+  ) </dev/null >/dev/null 2>&1 &
+  exec 8>&-
+  TEST_JOBS_SLOT_FD=""
 }

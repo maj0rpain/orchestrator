@@ -358,6 +358,17 @@ assert_contains "the growth reached confirmation, whose failing head run left it
 assert_eq "nor is a failing confirming run recorded" "$(cat "$rec")" "$before"
 rm -f "$marker"
 
+# A clean record of the full command on one commit, then a further commit with
+# no record of its own: check uses that record as the head's, not unmeasured.
+: >"$rec"
+seed_run "$base" 100.00
+seed_run "$parent" 105.00
+assert_eq "a clean record on an earlier commit is used as the head's, not unmeasured" \
+  "$(verdict)" "ok"
+assert_eq "decided from the record, running nothing" "$(on_disk "$marker")" absent
+rm -f "$marker"
+
+seed_run "$base" 60.00
 seed_run "$head" 69.00
 assert_eq "growth at the threshold is ok, the newest head record counting" "$(verdict)" "ok"
 seed_run "$head" 50.00

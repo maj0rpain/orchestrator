@@ -203,6 +203,11 @@ Build the linked issue's ticket frontier with the driver loop in
   naming every failure;
 - **after loop step f**: **Base sync** below, then **6. Review**.
 
+The split is the flow's: each ticket subagent runs the repo's ticket
+verification (`Ticket verification:` in its instructions), and loop step f
+runs the full verification once (`Full verification:`), through
+`suite-cost run`.
+
 As each implementer's report is recorded, its `Deviation` line goes under
 **Deviations** when it is not `None`: one bullet per such ticket, naming the
 ticket, `- #<ticket>: <the Deviation line's text>`. With no such ticket,

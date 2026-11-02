@@ -105,10 +105,15 @@ and return that file's four-line **Report** in place of this file's.
    and carry on. Before writing tests, read any test-helpers reference or
    helper index the repo's agent files (`CLAUDE.md`, `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
-   and the repo's full verification once, at the end, through `bash
+   and the repo's **ticket verification** once, at the end, through `bash
    "<orch.sh>" suite-cost run -- <cmd>`: it passes the command's output and
-   exit code through unchanged and records a passing run's suite cost. The
-   report's `Verification` line names `<cmd>` itself, without the wrapper.
+   exit code through unchanged and records a passing run's suite cost. Find
+   the ticket verification where you find the full verification, in the
+   repo's instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`): a line
+   reading `Ticket verification: <command>`. When they name none, `<cmd>` is
+   the repo's full verification, its `Full verification: <command>` line or
+   the command they document. The report's `Verification` line names `<cmd>`
+   itself, without the wrapper.
 4. **Commit** your work to your ticket branch, already checked out in
    your ticket worktree: every commit you make lands on it, and the caller
    merges and opens the PR. Open no branch or PR of your own.
@@ -262,14 +267,15 @@ Exactly these six lines:
 ```
 Ticket: #<ticket>
 Commits: <sha> <sha> ... | none
-Verification: <full-verification command> - pass|fail
+Verification: <ticket-verification command> - pass|fail
 Criteria: <met>/<total> met[; unmet: <criterion>; <criterion> ...][; untested: <file> <file> ...]
 Deviation: <deviation>; <deviation> ... | None
 Evidence: <test name> - <one-line red failure>; ... | None
 ```
 
 - `Commits`: your commits' short SHAs, oldest first, space-separated.
-- `Verification`: the bare full-verification command, never the
+- `Verification`: the bare ticket-verification command (the full
+  verification when the repo names no ticket verification), never the
   `suite-cost run` wrapper you ran it through.
 - `Criteria`: each unmet criterion in its ticket wording, shortened to fit
   the line, after `unmet:`; then each changed source file no test exercises,

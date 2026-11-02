@@ -88,6 +88,9 @@ a skipped check is reported.
 5. **Fix.** Read both reports, and fix, yourself, every finding you agree
    with that is not a spec question (step 7). Use no fixer agent, no closer,
    no severity, no budget, and file nothing. Commit the fixes as one commit.
+   After the fixes, run the repo's ticket verification (a `Ticket verification:
+   <command>` line in its instructions, else its full verification) through
+   `bash "$ORCH" suite-cost run -- <command>`.
    The Spec report's `## Set aside` lines are not findings: each is a
    requirement a known deviation set aside on purpose - one the caller
    handed in with `--deviations`, or, in a standalone pass, one the PR

@@ -44,6 +44,34 @@ suites_read() {
   done
 }
 
+# stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
+# of all.sh and test_jobs.sh beside a passing stub for each name in SUITES
+# (suites_read first), with <dir>/bin holding links to the tools all.sh needs,
+# the extra ones included, and a shellcheck stub that logs "+" to the log when
+# it starts and "-" when it ends, 0.2 seconds apart. A stub suite logs
+# "<name> ran" to scripts/test/log.
+stub_all_tree() {
+  local dir="$1" log="$2" tool stub
+  shift 2
+  mkdir -p "$dir/scripts/test" "$dir/bin"
+  cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$dir/scripts/test/"
+  for tool in bash dirname awk tail mktemp rm mkdir sleep cat "$@"; do
+    ln -s "$(command -v "$tool")" "$dir/bin/$tool"
+  done
+  for stub in "${SUITES[@]}"; do
+    printf '#!/usr/bin/env bash\necho "%s ran" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
+      "$stub" >"$dir/scripts/test/$stub"
+  done
+  printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' "$log" "$log" \
+    >"$dir/bin/shellcheck"
+  chmod +x "$dir/bin/shellcheck"
+}
+# log_peak <log>: the most "+" lines the log shows open at once, a "-" closing
+# one.
+log_peak() {
+  awk '/^\+/ { n++; if (n > max) max = n } /^-/ { n-- } END { print max + 0 }' "$1"
+}
+
 # plant_file <dir> <name>: writes the lines read from stdin to <dir>/<name>,
 # each line's two-space indent stripped, and returns non-zero when the write
 # fails. A caller indents a planted file's lines two spaces, so a planted
@@ -1231,6 +1259,209 @@ assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
   "docs_lint.sh: a stray last line"
 rm -rf "$all_root"
 
+# --- the job pool (#2022) -----------------------------------------------------
+# The runners' shared job pool, test-only ORCH_TEST_POOL_DIR naming the pool
+# directory and ORCH_TEST_CPU_MAX_FILE sizing it (a quota of 200000 per slot:
+# half the usable CPUs are the slots). A copy of the scripts tree with planted
+# sections that log their start and end, run by orch_test.sh; then all.sh over
+# a stub shellcheck that logs the same way.
+echo
+echo "the job pool (#2022)"
+jp_dir="$(mktemp -d)"
+jp_tests="$(dirname "$SUITE_SCRIPT")"
+jp_log="$jp_dir/log"
+jp_copy="$(planted_copy <<'PLANTED'
+  # --- pool a
+  echo; echo "pool a"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran a"
+  # --- pool b
+  echo; echo "pool b"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran b"
+  # --- pool c
+  echo; echo "pool c"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran c"
+  # --- pool d
+  echo; echo "pool d"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran d"
+  # --- pool hold
+  echo; echo "pool hold"
+  if flock -n "$JP_POOL/slot.1" true; then echo free >>"$JP_LOG"; else echo busy >>"$JP_LOG"; fi
+  ok "probed"
+  # --- pool leak
+  echo; echo "pool leak"
+  sleep 30 >/dev/null 2>&1 & echo $! >"$JP_LOG.sleep"
+  ok "left a background process running"
+  # --- pool nested
+  echo; echo "pool nested"
+  timeout 60 env ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^pool a$' bash "$JP_SUITE" >/dev/null 2>&1
+  echo "nested=$?" >>"$JP_LOG"; ok "nested"
+PLANTED
+)"
+jp_suite="$jp_copy/scripts/test/orch_test.sh"
+printf "400000 100000\n" >"$jp_dir/cpu2"
+printf "200000 100000\n" >"$jp_dir/cpu1"
+printf "800000 100000\n" >"$jp_dir/cpu4"
+# jp_run <slots> <pool dir> [VAR=value...] -- <ORCH_TEST_ONLY> <jobs>: the
+# planted suite on a pool of <slots> slots, its stderr in $jp_dir/err.
+jp_run() {
+  local slots="$1" pool="$2" extra=()
+  shift 2
+  while [ "$1" != -- ]; do extra+=("$1"); shift; done
+  env -u CI ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu$slots" ORCH_TEST_POOL_DIR="$pool" \
+    JP_LOG="$jp_log" JP_POOL="$pool" JP_SUITE="$jp_suite" ORCH_TEST_QUIET=1 \
+    ORCH_TEST_ONLY="$2" ORCH_TEST_JOBS="$3" "${extra[@]}" bash "$jp_suite" >/dev/null 2>"${jp_err:-$jp_dir/err}"
+}
+# jp_hold <pool> <slot>: hold that slot's lock in a background process, its
+# pid in jp_holder.
+jp_hold() {
+  mkdir -p "$1"
+  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$1/slot.$2" &
+  jp_holder=$!
+  until ! flock -n "$1/slot.$2" true; do sleep 0.05; done
+}
+jp_notice='waiting for a job slot'
+
+if command -v flock >/dev/null 2>&1; then
+# Two concurrent runs on a 2-slot pool.
+: >"$jp_log"
+jp_err="$jp_dir/erra" jp_run 2 "$jp_dir/pool1" -- '^pool [a-d]$' 4 &
+jp_p1=$!
+jp_err="$jp_dir/errb" jp_run 2 "$jp_dir/pool1" -- '^pool [a-d]$' 4 &
+jp_p2=$!
+jp_err_b="$jp_dir/errb"
+wait "$jp_p1"; jp_s1=$?
+wait "$jp_p2"; jp_s2=$?
+assert_status "the first of two concurrent runs passes" "$jp_s1" 0
+assert_status "the second of two concurrent runs passes" "$jp_s2" 0
+assert_eq "two concurrent runs on a 2-slot pool never exceed 2 sections at once" "$(log_peak "$jp_log")" "2"
+assert_eq "both runs ran all their sections" "$(grep -c '^+' "$jp_log")" "8"
+assert_eq "the waiting notice appears once in a run that waits" \
+  "$(grep -c "$jp_notice" "$jp_err_b")" "1"
+assert_contains "the notice names the runner and the slots in use" "$(cat "$jp_err_b")" \
+  "orch_test.sh: waiting for a job slot (2 in use)"
+
+# A killed holder's slot is freed.
+rm -rf "$jp_dir/pool2"
+jp_hold "$jp_dir/pool2" 1
+: >"$jp_log"
+jp_run 1 "$jp_dir/pool2" -- '^pool a$' 2 &
+jp_p1=$!
+for _ in $(seq 100); do
+  grep -q "$jp_notice" "$jp_dir/err" 2>/dev/null && break
+  sleep 0.05
+done
+assert_eq "a run on a pool whose one slot is held waits" \
+  "$(grep -c "$jp_notice" "$jp_dir/err")" "1"
+assert_eq "and runs nothing while the slot is held" "$(grep -c '^+' "$jp_log")" "0"
+kill -9 "$jp_holder"
+wait "$jp_holder" 2>/dev/null
+wait "$jp_p1"; jp_s1=$?
+assert_status "the run finishes once the holder is killed" "$jp_s1" 0
+assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
+
+# CI bypasses the pool.
+jp_hold "$jp_dir/pool2" 1
+: >"$jp_log"
+jp_run 1 "$jp_dir/pool2" CI=true -- '^pool a$' 2; jp_s1=$?
+assert_status "a run under CI ignores a fully held pool" "$jp_s1" 0
+assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+
+# Another HOME has its own pool.
+mkdir "$jp_dir/home1" "$jp_dir/home2"
+jp_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1
+: >"$jp_log"
+timeout 30 env -u CI -u ORCH_TEST_POOL_DIR HOME="$jp_dir/home2" ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" \
+  JP_LOG="$jp_log" ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^pool a$' ORCH_TEST_JOBS=2 \
+  bash "$jp_suite" >/dev/null 2>"$jp_dir/err"; jp_s1=$?
+assert_status "a run under another HOME passes while the first HOME's slot is held" "$jp_s1" 0
+assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+assert_eq "and has drawn its slot from its own pool" \
+  "$(on_disk "$jp_dir/home2/.cache/orchestrator/test-job-pool/slot.1")" "present"
+kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
+
+# ORCH_TEST_JOBS caps the ask, and does not bypass the pool.
+: >"$jp_log"
+jp_run 4 "$jp_dir/pool4" -- '^pool [a-d]$' 2
+assert_eq "ORCH_TEST_JOBS=2 on a 4-slot pool runs 2 sections at once" "$(log_peak "$jp_log")" "2"
+
+# ORCH_TEST_JOBS=1 holds one slot for the whole run, in one shell.
+: >"$jp_log"
+jp_run 1 "$jp_dir/pool5" -- '^pool hold$' 1
+assert_eq "ORCH_TEST_JOBS=1 holds a slot while its section runs" "$(cat "$jp_log")" "busy"
+
+# A nested run takes no slot of the same pool, so it finishes on a 1-slot pool.
+for jp_jobs in 1 2; do
+  : >"$jp_log"
+  jp_run 1 "$jp_dir/pool6" -- '^pool nested$' "$jp_jobs"; jp_s1=$?
+  assert_status "an outer run with ORCH_TEST_JOBS=$jp_jobs passes" "$jp_s1" 0
+  assert_eq "its nested run on the 1-slot pool finishes (ORCH_TEST_JOBS=$jp_jobs)" \
+    "$(grep nested "$jp_log")" "nested=0"
+done
+
+# A slot is free once its section has exited, though a process it started
+# still runs: the lock stays with the job alone.
+for jp_jobs in 1 2; do
+  : >"$jp_log"
+  jp_run 1 "$jp_dir/pool10" -- '^pool leak$' "$jp_jobs"
+  jp_sleeper="$(cat "$jp_log.sleep" 2>/dev/null)"
+  jp_free=busy
+  for _ in $(seq 60); do
+    flock -n "$jp_dir/pool10/slot.1" true && { jp_free=free; break; }
+    sleep 0.05
+  done
+  assert_eq "a slot is free after its section exited though a background process runs (ORCH_TEST_JOBS=$jp_jobs)" \
+    "$jp_free" "free"
+  [ -z "$jp_sleeper" ] || kill "$jp_sleeper" 2>/dev/null
+done
+
+# Pool trouble runs unpooled, with no notice and no failure.
+: >"$jp_log"
+jp_run 1 /proc/no/such/pool -- '^pool a$' 2; jp_s1=$?
+assert_status "an uncreatable pool directory runs unpooled and passes" "$jp_s1" 0
+assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
+mkdir -p "$jp_dir/pool7/slot.1"
+jp_hold "$jp_dir/pool8" 1
+jp_run 1 "$jp_dir/pool7" -- '^pool a$' 2; jp_s1=$?
+assert_status "a slot file that cannot be opened runs unpooled and passes" "$jp_s1" 0
+assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
+mkdir "$jp_dir/noflock"
+printf '#!/bin/sh\nexit 1\n' >"$jp_dir/noflock/flock"
+chmod +x "$jp_dir/noflock/flock"
+jp_run 1 "$jp_dir/pool9" PATH="$jp_dir/noflock:$PATH" -- '^pool a$' 2; jp_s1=$?
+assert_status "a slot file that cannot be locked runs unpooled and passes" "$jp_s1" 0
+assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+else
+  skip "the job pool cases on a shared pool" "flock is not installed"
+fi
+rm -rf "$jp_copy"
+
+# all.sh's shellcheck processes take slots: two concurrent all.sh runs on a
+# 1-slot pool never have more than one shellcheck at a time, and the notice
+# comes from all.sh.
+if command -v flock >/dev/null 2>&1; then
+jp_all="$jp_dir/all"
+suites_read "$jp_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+stub_all_tree "$jp_all" "$jp_log" flock getconf
+# jp_all_run <errfile>: all.sh on the stub PATH and the 1-slot pool.
+jp_all_run() {
+  env -u CI ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu1" ORCH_TEST_POOL_DIR="$jp_dir/pool10" \
+    ORCH_TEST_JOBS=3 PATH="$jp_all/bin" bash "$jp_all/scripts/test/all.sh" >/dev/null 2>"$1"
+}
+: >"$jp_log"
+jp_all_run "$jp_dir/erra" &
+jp_p1=$!
+jp_all_run "$jp_dir/errb2" &
+jp_p2=$!
+wait "$jp_p1"; jp_s1=$?
+wait "$jp_p2"; jp_s2=$?
+assert_status "two concurrent all.sh runs on a 1-slot pool pass" "$((jp_s1 + jp_s2))" 0
+assert_eq "their shellcheck processes never overlap on a 1-slot pool" "$(log_peak "$jp_log")" "1"
+assert_eq "every file was still checked, twice over" \
+  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + 2)))"
+assert_contains "a waiting all.sh names itself in the notice" \
+  "$(cat "$jp_dir/erra" "$jp_dir/errb2")" "all.sh: waiting for a job slot (1 in use)"
+else
+  skip "two concurrent all.sh runs share a 1-slot pool" "flock is not installed"
+fi
+rm -rf "$jp_dir"
+
 # --- the test runners' CPU load (#1586) ---------------------------------------
 # The default job count, test_jobs.sh's test_jobs_default, with getconf faked
 # on PATH and ORCH_TEST_CPU_MAX_FILE naming a planted quota file; then all.sh's
@@ -1281,22 +1512,7 @@ assert_eq "CI honours the quota too" "$(load_default 32 '400000 100000' CI=true)
 # all.sh's runs: a copy beside passing suite stubs, a shellcheck stub that logs
 # "+" when it starts and "-" when it ends, over the stubs and the two copies.
 load_all="$load_dir/all"
-mkdir -p "$load_all/scripts/test" "$load_all/bin"
-cp "$load_tests/all.sh" "$load_tests/test_jobs.sh" "$load_all/scripts/test/"
-for load_tool in bash dirname awk tail mktemp rm mkdir sleep cat; do
-  ln -s "$(command -v "$load_tool")" "$load_all/bin/$load_tool"
-done
-for load_stub in "${SUITES[@]}"; do
-  printf '#!/usr/bin/env bash\necho "%s ran" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
-    "$load_stub" >"$load_all/scripts/test/$load_stub"
-done
-printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' \
-  "$load_all/sc_log" "$load_all/sc_log" >"$load_all/bin/shellcheck"
-chmod +x "$load_all/bin/shellcheck"
-# load_peak: the most shellcheck processes the log shows running at once.
-load_peak() {
-  awk '/^\+/ { n++; if (n > max) max = n } /^-/ { n-- } END { print max + 0 }' "$load_all/sc_log"
-}
+stub_all_tree "$load_all" "$load_all/sc_log"
 # load_run_all [VAR=value...]: all.sh on the stub PATH, CI and ORCH_TEST_JOBS
 # unset, then the assignments applied.
 load_run_all() {
@@ -1309,7 +1525,7 @@ printf '#!/bin/sh\necho 4\n' >"$load_dir/getconf/getconf"
 chmod +x "$load_dir/getconf/getconf"
 out="$(load_run_all ORCH_TEST_JOBS=2 2>&1)"; st=$?
 assert_status "all.sh with ORCH_TEST_JOBS=2 passes" "$st" 0
-assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(load_peak)" "2"
+assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(log_peak "$load_all/sc_log")" "2"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
   "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 2))"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
@@ -1317,10 +1533,10 @@ assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
 : >"$load_all/sc_log"
 load_run_all >/dev/null 2>&1
 assert_eq "all.sh with ORCH_TEST_JOBS unset and 4 cores runs at most 2 shellcheck at once" \
-  "$(load_peak)" "2"
+  "$(log_peak "$load_all/sc_log")" "2"
 : >"$load_all/sc_log"
 load_run_all ORCH_TEST_JOBS=1 >/dev/null 2>&1
-assert_eq "all.sh with ORCH_TEST_JOBS=1 runs one shellcheck at a time" "$(load_peak)" "1"
+assert_eq "all.sh with ORCH_TEST_JOBS=1 runs one shellcheck at a time" "$(log_peak "$load_all/sc_log")" "1"
 rm -f "$load_all/log" "$load_all/scripts/test/log" "$load_all/sc_log"
 out="$(load_run_all ORCH_TEST_JOBS=abc 2>&1)"; st=$?
 assert_status "all.sh with an invalid ORCH_TEST_JOBS exits 1" "$st" 1
@@ -2085,3 +2301,277 @@ out="$(runner_git_isolation "$rgi_dir" bare.sh)"; st=$?
 assert_status "a runner that carries on when the call fails fails" "$st" 1
 rm -rf "$rgi_dir"
 unset -f runner_git_isolation
+
+# --- affected.sh, the ticket verification (#2023) -----------------------------
+# affected.sh at its --plan seam, in a throwaway git repo that carries the test
+# layout: the real affected.sh, all.sh, git_env.sh and test_jobs.sh, a harness
+# file holding the three placement sections, a branch section file with two
+# sections, and one tiny file for each other kind of path. origin's main is the
+# initial commit, origin's rel that commit plus a change to the branch module,
+# and HEAD is feat, rel plus a change to a doc. Stub suites stand in for the
+# real ones in the end-to-end cases.
+echo
+echo "affected.sh, the ticket verification (#2023)"
+af_tests="$(dirname "$SUITE_SCRIPT")"
+if [ -x "$af_tests/affected.sh" ]; then st=0; else st=1; fi
+assert_eq "affected.sh is executable, as CLAUDE.md runs it directly" "$st" "0"
+af="$(mktemp -d)"
+af_git() { git -C "$af" -c user.name=t -c user.email=t@example.com "$@"; }
+# af_put <path> [<line>...]: write a tiny file (a shell file gets a shebang).
+af_put() {
+  local path="$1"
+  shift
+  mkdir -p "$af/$(dirname "$path")"
+  case "$path" in *.sh) set -- '#!/usr/bin/env bash' "$@" ;; esac
+  [ "$#" -eq 0 ] && set -- x
+  printf '%s\n' "$@" >"$af/$path"
+}
+af_git init -q -b main
+mkdir -p "$af/scripts/test/orch"
+cp "$af_tests/affected.sh" "$af_tests/all.sh" "$af_tests/git_env.sh" \
+  "$af_tests/test_jobs.sh" "$af/scripts/test/"
+af_put scripts/test/orch/harness.sh '# --- isolation ---' \
+  '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+  '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---'
+af_put scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
+af_put scripts/test/orch/state.sh '# --- state ---'
+for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
+  scripts/orch/state.sh scripts/test/orch/common.sh scripts/test/orch/setup.sh \
+  scripts/test/orch_test.sh scripts/test/gh_adapter_fake.sh scripts/hook-guard.sh \
+  scripts/version-bump.sh scripts/autopilot-container.sh scripts/autopilot-up.sh \
+  scripts/dev/lens-bench.sh scripts/dev/other.sh scripts/test/docs_lint.sh \
+  hooks/hooks.json docs/a.md skills/s/SKILL.md agents/a.md changelog.d/1.md Makefile; do
+  af_put "$af_f"
+done
+af_git add -A
+af_git commit -qm init
+af_c0="$(af_git rev-parse HEAD)"
+af_git update-ref refs/remotes/origin/main "$af_c0"
+af_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+af_put scripts/orch/branch.sh 'y=2'
+af_git commit -qam "branch module"
+af_git update-ref refs/remotes/origin/rel HEAD
+af_git checkout -q -b feat
+af_put docs/a.md changed
+af_git commit -qam "doc"
+af_feat="$(af_git rev-parse HEAD)"
+# af_reset: back to the committed feat, with no config but the fixture's.
+af_reset() {
+  af_git checkout -q -f feat
+  af_git reset -q --hard "$af_feat"
+  af_git clean -qfd
+  af_git config --remove-section branch.feat 2>/dev/null
+  af_git config --remove-section branch.feat--t1 2>/dev/null
+  af_git config --unset orchestrator.base 2>/dev/null
+  af_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+}
+# af_plan [<arg>...]: affected.sh --plan <arg>... in the fixture, one line per
+# item joined with commas.
+af_plan() {
+  (cd "$af" && bash scripts/test/affected.sh --plan "$@" 2>&1) | paste -sd, -
+}
+af_placement="helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853)"
+af_gate="orch_test.sh,$af_placement"
+af_branch_titles="branch create,branch (x.y) retire"
+
+af_reset
+assert_eq "a change to a doc selects only the always-run checks" \
+  "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
+assert_eq "a module selects its section file's sections, and shellchecks itself" \
+  "$(af_plan origin/main)" "$af_gate,$af_branch_titles,docs_lint.sh,scripts/orch/branch.sh"
+af_put scripts/test/orch/branch.sh 'x=2' '# --- branch create ---'
+assert_eq "a section file selects its own sections, uncommitted" "$(af_plan origin/rel)" \
+  "$af_gate,branch create,docs_lint.sh,scripts/test/orch/branch.sh"
+af_reset
+af_put scripts/test/orch/zz-new.sh '# --- zz new ---'
+assert_eq "an untracked section file selects its sections" "$(af_plan origin/rel)" \
+  "$af_gate,zz new,docs_lint.sh,scripts/test/orch/zz-new.sh"
+af_reset
+af_put scripts/test/orch/state.sh '# --- state ---' '# --- state two ---'
+af_git add -A
+assert_eq "a staged change counts" "$(af_plan origin/rel)" \
+  "$af_gate,state,state two,docs_lint.sh,scripts/test/orch/state.sh"
+af_reset
+af_put scripts/test/orch/harness.sh '# --- isolation ---' \
+  '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+  '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---' \
+  '# --- more ---'
+assert_eq "harness.sh selects all of its sections, the placement ones once" \
+  "$(af_plan origin/rel)" \
+  "$af_gate,isolation,the parallel runner (#780),more,docs_lint.sh,scripts/test/orch/harness.sh"
+
+# One row each.
+af_row() {
+  af_reset
+  af_put "$2" changed
+  assert_eq "$1" "$(af_plan origin/rel)" "$3"
+}
+af_row "a hook script selects hooks_test.sh" scripts/hook-guard.sh \
+  "$af_gate,hooks_test.sh,docs_lint.sh,scripts/hook-guard.sh"
+af_row "hooks.json selects hooks_test.sh, with nothing to shellcheck" hooks/hooks.json \
+  "$af_gate,hooks_test.sh,docs_lint.sh"
+af_row "version-bump.sh selects its test file" scripts/version-bump.sh \
+  "$af_gate,docs_lint.sh,version_bump_test.sh,scripts/version-bump.sh"
+af_row "autopilot-container.sh selects its test file" scripts/autopilot-container.sh \
+  "$af_gate,docs_lint.sh,autopilot_container_test.sh,scripts/autopilot-container.sh"
+af_row "autopilot-up.sh selects its test file" scripts/autopilot-up.sh \
+  "$af_gate,docs_lint.sh,autopilot_up_test.sh,scripts/autopilot-up.sh"
+af_row "the lens-bench script selects its test file" scripts/dev/lens-bench.sh \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh,scripts/dev/lens-bench.sh"
+af_row "a lens-bench fixture script falls back to all.sh" scripts/dev/lens-bench/case.sh "all.sh"
+af_row "a lens-bench test fixture falls back to all.sh" scripts/test/lens-bench/case.txt "all.sh"
+af_row "a markdown lens-bench fixture selects nothing more" scripts/dev/lens-bench/case.md \
+  "$af_gate,docs_lint.sh"
+af_row "a skill selects nothing more" skills/s/SKILL.md "$af_gate,docs_lint.sh"
+af_row "an agent selects nothing more" agents/a.md "$af_gate,docs_lint.sh"
+af_row "a non-markdown file under commands falls back to all.sh" commands/x.txt "all.sh"
+af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,docs_lint.sh"
+af_row "a markdown file selects nothing more" README.md "$af_gate,docs_lint.sh"
+for af_f in scripts/orch.sh scripts/orch/common.sh scripts/test/orch/common.sh \
+  scripts/test/orch/setup.sh scripts/test/all.sh scripts/test/orch_test.sh \
+  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/dev/other.sh Makefile; do
+  af_row "$af_f falls back to all.sh" "$af_f" "all.sh"
+done
+af_reset
+af_put scripts/orch/branch.sh 'z=3'
+af_put scripts/orch.sh 'z=3'
+assert_eq "an unmapped file wins over a module" "$(af_plan origin/rel)" "all.sh"
+
+# The line order, with every kind of change at once.
+af_reset
+for af_f in scripts/dev/lens-bench.sh scripts/autopilot-up.sh scripts/autopilot-container.sh \
+  scripts/version-bump.sh scripts/hook-guard.sh scripts/orch/state.sh; do
+  af_put "$af_f" changed
+done
+af_put scripts/test/orch/branch.sh 'x=2' '# --- branch create ---' '# --- branch (x.y) retire ---'
+assert_eq "the suites in all.sh's order, sections after orch_test.sh, shellcheck last" \
+  "$(af_plan origin/rel)" \
+  "$af_gate,branch create,branch (x.y) retire,state,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh,scripts/autopilot-container.sh,scripts/autopilot-up.sh,scripts/dev/lens-bench.sh,scripts/hook-guard.sh,scripts/orch/state.sh,scripts/test/orch/branch.sh,scripts/version-bump.sh"
+
+# Deletions.
+af_reset
+rm "$af/scripts/hook-guard.sh"
+assert_eq "a deleted shell file is not shellchecked" "$(af_plan origin/rel)" \
+  "$af_gate,hooks_test.sh,docs_lint.sh"
+rm "$af/scripts/orch/state.sh"
+assert_eq "a deleted module falls back to all.sh" "$(af_plan origin/rel)" "all.sh"
+af_reset
+af_git rm -q scripts/test/orch/state.sh
+assert_eq "a deleted section file falls back to all.sh" "$(af_plan origin/rel)" "all.sh"
+
+# The ref.
+af_reset
+af_put scripts/hook-guard.sh changed
+af_git add -A
+af_git commit -qm hook
+assert_eq "a given ref bounds the range" "$(af_plan HEAD~1)" \
+  "$af_gate,hooks_test.sh,docs_lint.sh,scripts/hook-guard.sh"
+assert_eq "--plan takes the ref after it, as a run takes it alone" \
+  "$(cd "$af" && bash scripts/test/affected.sh HEAD~1 --plan | paste -sd, -)" \
+  "$(af_plan HEAD~1)"
+af_out="$(cd "$af" && bash scripts/test/affected.sh --plan nosuch 2>&1 >/dev/null)"; st=$?
+assert_status "an unknown ref exits 2, --plan included" "$st" 2
+assert_eq "naming the ref on stderr" "$af_out" "affected.sh: unknown ref nosuch"
+af_out="$(cd "$af" && bash scripts/test/affected.sh nosuch 2>&1)"; st=$?
+assert_status "an unknown ref exits 2 without --plan too" "$st" 2
+assert_eq "and runs and prints nothing else" "$af_out" "affected.sh: unknown ref nosuch"
+
+# The default base. feat differs from main by the branch module and a doc,
+# from rel by the doc.
+af_reset
+af_from_main="$af_gate,$af_branch_titles,docs_lint.sh,scripts/orch/branch.sh"
+af_from_rel="$af_gate,docs_lint.sh"
+assert_eq "origin's default branch is the last resort" "$(af_plan)" "$af_from_main"
+af_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/rel
+assert_eq "origin's default branch is used when nothing is recorded" "$(af_plan)" "$af_from_rel"
+af_reset
+af_git config orchestrator.base rel
+assert_eq "orchestrator.base beats origin's default branch" "$(af_plan)" "$af_from_rel"
+af_git config branch.feat.orchestrator-base main
+assert_eq "the current branch's recorded base beats orchestrator.base" "$(af_plan)" "$af_from_main"
+af_reset
+af_git config branch.feat.orchestrator-base rel
+af_git checkout -q -b feat--t1
+af_git config branch.feat--t1.orchestrator-ticket-parent feat
+assert_eq "a ticket branch uses its parent's recorded base" "$(af_plan)" "$af_from_rel"
+af_git checkout -q feat
+af_git branch -q -D feat--t1
+
+# No base.
+af_reset
+af_git symbolic-ref --delete refs/remotes/origin/HEAD
+assert_eq "no base at all falls back to all.sh" "$(af_plan)" "all.sh"
+af_git config orchestrator.base gone
+assert_eq "a recorded base missing on origin falls back to all.sh" "$(af_plan)" "all.sh"
+af_tree="$(af_git hash-object -t tree -w /dev/null)"
+af_git update-ref refs/remotes/origin/orphan "$(af_git commit-tree "$af_tree" -m orphan)"
+af_git config orchestrator.base orphan
+assert_eq "a base with no merge-base falls back to all.sh" "$(af_plan)" "all.sh"
+af_reset
+
+# End to end, with stub suites for the real ones.
+suites_read "$af_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for af_s in "${SUITES[@]}"; do
+  printf '%s\n' '#!/usr/bin/env bash' \
+    "echo \"$af_s only=\${ORCH_TEST_ONLY-unset}\" >>\"$af.log\"" \
+    'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/$af_s"
+done
+af_git add -A
+af_git commit -qm stubs
+af_feat="$(af_git rev-parse HEAD)"
+af_put scripts/hook-guard.sh 'echo ok'
+af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+assert_status "a passing run exits 0" "$st" 0
+if command -v shellcheck >/dev/null 2>&1; then
+  assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
+    "orch_test.sh: 7 passed, 0 failed
+hooks_test.sh: 7 passed, 0 failed
+docs_lint.sh: 7 passed, 0 failed
+shellcheck: 0 findings"
+else
+  skip "printing each part's summary in order, shellcheck last" "shellcheck is not installed"
+fi
+assert_contains "orch_test.sh got the placement sections as its filter" \
+  "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
+assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
+
+# Its shellcheck process draws a slot from the job pool: with the pool's one
+# slot held, the run waits and says so, then finishes once the slot is freed.
+if command -v shellcheck >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
+  printf '200000 100000\n' >"$af.cpu"
+  mkdir -p "$af.pool"
+  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$af.pool/slot.1" &
+  af_holder=$!
+  until ! flock -n "$af.pool/slot.1" true; do sleep 0.05; done
+  af_put scripts/hook-guard.sh 'echo ok'
+  (cd "$af" && env -u CI ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
+    timeout 30 bash scripts/test/affected.sh HEAD >/dev/null 2>"$af.err") &
+  af_pid=$!
+  for _ in $(seq 100); do
+    grep -q 'waiting for a job slot' "$af.err" 2>/dev/null && break
+    sleep 0.05
+  done
+  assert_eq "a shellcheck run with the pool's slot held waits and says so" \
+    "$(cat "$af.err")" "affected.sh: waiting for a job slot (1 in use)"
+  kill -9 "$af_holder"
+  wait "$af_holder" 2>/dev/null
+  wait "$af_pid"; st=$?
+  assert_status "and the run finishes once the slot is freed" "$st" 0
+  rm -rf "$af.cpu" "$af.pool" "$af.err"
+fi
+printf '%s\n' '#!/usr/bin/env bash' 'printf "  FAIL a thing\n     its detail\n"' \
+  'echo; echo "1 passed, 1 failed"; exit 1' >"$af/scripts/test/hooks_test.sh"
+af_put scripts/hook-guard.sh 'for f in $(ls); do echo "$f"; done'
+af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+assert_status "a failing part makes the run exit 1" "$st" 1
+assert_contains "printing its FAIL lines and its summary" "$af_out" \
+  "  FAIL a thing
+     its detail
+hooks_test.sh: 1 passed, 1 failed"
+if command -v shellcheck >/dev/null 2>&1; then
+  assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
+else
+  skip "and shellcheck's findings" "shellcheck is not installed"
+fi
+rm -rf "$af" "$af.log"
+unset -f af_git af_put af_reset af_plan af_row

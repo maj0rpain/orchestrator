@@ -100,10 +100,14 @@ caller's numbered steps.
   process its report as in loop step d before refilling. When the frontier
   and queue are exhausted and nothing is in flight, go to loop step f.
 - **f. Verify the combined branch**, on every path, sequential included: run,
-  on **the branch**, the full-verification command the reports'
-  `Verification` lines name, once - joined with ` && ` into one line when
-  they name different commands. Its command and `pass` or `fail` go in **the
-  record**. A failure does not stop the run: **the judge** carries it.
+  on **the branch**, the repo's full verification once, through `bash
+  "$ORCH" suite-cost run -- <command>`: the command on the `Full
+  verification: <command>` line of the repo's instructions (`CLAUDE.md`,
+  `AGENTS.md`, `CONTRIBUTING.md`). When they carry no such line, run the
+  commands the reports' `Verification` lines name, as before - joined with
+  ` && ` into one line when they name different commands. Its bare command
+  and `pass` or `fail` go in **the record**, and in the PR body's Evidence.
+  A failure does not stop the run: **the judge** carries it.
 
 Once loop step f has run, go **after loop step f**.
 
