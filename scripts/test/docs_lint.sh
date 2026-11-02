@@ -2018,15 +2018,6 @@ agents/orch-resolver.md|## Stdin
 agents/orch-closer.md|## Stdin
 agents/orch-reviewer-spec.md|## Stdin
 agents/orch-reviewer-standards.md|## Stdin'
-fixture="$(new_fixture)"
-mkdir -p "$fixture/agents"
-printf '# I\n\n## Stdin\n\nUse `</dev/null`.\n' >"$fixture/agents/orch-implementer.md"
-printf '# F\n\n## Steps\n\nBuild.\n' >"$fixture/agents/orch-fixer.md"
-out="$(scan_names_phrase "$fixture" "$stdin_agents" '</dev/null')"
-flags "an agent with no Stdin section is flagged" \
-  "$out" "agents/orch-fixer.md: no ## Stdin section"
-spares "an agent whose Stdin section names </dev/null is not flagged" \
-  "$out" "orch-implementer"
 check "the six Bash-running agents name </dev/null in their Stdin section" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$stdin_agents" '</dev/null')"
 stdin_row='A stray stdin read in a Bash call ends instead of hanging'

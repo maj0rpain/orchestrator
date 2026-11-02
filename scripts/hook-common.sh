@@ -172,9 +172,11 @@ hook_bash_stdin_reader() {
     n=${#line}; i=0; cont=0
     while [ "$i" -lt "$n" ]; do
       rest="${line:i}"
+      if [ -z "$quote" ]; then re='^[^'"'"'"\\#;&|<]+'
+      elif [[ "$quote" == "'" ]]; then re="^[^']+"
+      else re='^[^"\\]+'; fi
+      if [[ "$rest" =~ $re ]]; then part+="${BASH_REMATCH[0]}"; i=$((i + ${#BASH_REMATCH[0]})); continue; fi
       if [ -n "$quote" ]; then
-        if [[ "$quote" == "'" ]]; then re="^[^']+"; else re='^[^"\\]+'; fi
-        if [[ "$rest" =~ $re ]]; then part+="${BASH_REMATCH[0]}"; i=$((i + ${#BASH_REMATCH[0]})); continue; fi
         c="${rest::1}"
         if [ "$quote" = '"' ] && [ "$c" = '\' ]; then
           part+="$c${line:i+1:1}"; i=$((i + 2)); continue
@@ -182,8 +184,6 @@ hook_bash_stdin_reader() {
         [ "$c" = "$quote" ] && quote=""
         part+="$c"
       else
-        re='^[^'"'"'"\\#;&|<]+'
-        if [[ "$rest" =~ $re ]]; then part+="${BASH_REMATCH[0]}"; i=$((i + ${#BASH_REMATCH[0]})); continue; fi
         c="${rest::1}"
         case "$c" in
           "'"|'"') quote="$c"; part+="$c" ;;
