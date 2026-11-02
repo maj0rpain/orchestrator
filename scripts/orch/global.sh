@@ -686,7 +686,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               the .md paths they mention in backticks or
                               Markdown links, then those mentioned there: two
                               hops, each path once, only paths that exist,
-                              joined by ", "; Standards: none when none do
+                              joined by ", "; Standards: none when none do.
+                              A Standards: paragraph in a root agent file
+                              replaces the crawl: its backticked entries are
+                              printed as declared, path#Heading too; an
+                              entry that does not resolve, or a declaration
+                              with no entries, fails with an orch: message
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review rerun <pr>           rerun the failed jobs of the Actions run behind

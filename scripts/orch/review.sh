@@ -409,8 +409,8 @@ review_standards_resolve() {
 # review_standards_mentions <file>: the repo-relative .md paths <file> mentions,
 # in backticks (against the repo root) or as Markdown links (against <file>'s
 # directory), one per line in the order they appear. Backticks pair per
-# paragraph (lines up to a blank one or a fence line, joined), so a span may wrap a line break
-# and a stray backtick never pairs across a blank line.
+# paragraph (lines up to a blank one or a fence line, joined), so a span may
+# wrap a line break and a stray backtick never pairs across a blank line.
 review_standards_mentions() {
   local file="$1" dir="" m link
   [[ $file == */* ]] && dir="${file%/*}"
@@ -423,7 +423,13 @@ review_standards_mentions() {
         review_standards_resolve "$dir" "$link"
         ;;
     esac
-  done < <(awk '/^[[:space:]]*(```|~~~)/ { if (p != "") print p; p = ""; next } NF { p = p " " $0; next } p != "" { print p; p = "" } END { if (p != "") print p }' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
+  done < <(awk "$FENCE_AWK"'
+    { was = fence_char; fenced($0) }
+    fence_char != was { if (p != "") print p; p = ""; next }
+    NF { p = p " " $0; next }
+    p != "" { print p; p = "" }
+    END { if (p != "") print p }
+  ' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
 }
 
 # review_standards_declaration <file>: the first `Standards:` paragraph of the
@@ -432,9 +438,8 @@ review_standards_mentions() {
 # the fence state runs from the opening fence to the closing one, blank lines
 # included.
 review_standards_declaration() {
-  awk '
-    /^[[:space:]]*(```|~~~)/ { if (p != "") { print p; done = 1; exit } fence = !fence; prev = 0; next }
-    fence { next }
+  awk "$FENCE_AWK"'
+    fenced($0) { if (p != "") { print p; done = 1; exit } prev = 0; next }
     p != "" { if (NF) { p = p " " $0; next } print p; done = 1; exit }
     /^Standards:/ && !prev { p = $0; next }
     { prev = NF ? 1 : 0 }
@@ -446,9 +451,8 @@ review_standards_declaration() {
 # repo file <file> read exactly <heading>, surrounding whitespace and closing #s
 # trimmed. Lines inside a fenced code block (blank lines too) are no headings.
 review_standards_heading_count() {
-  awk -v want="$2" '
-    /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
-    fence { next }
+  awk -v want="$2" "$FENCE_AWK"'
+    fenced($0) { next }
     /^ ? ? ?#/ {
       h = $0; sub(/^ */, "", h); hashes = h; sub(/[^#].*$/, "", hashes)
       if (length(hashes) > 6 || (h != hashes && substr(h, length(hashes) + 1, 1) !~ /[[:space:]]/)) next

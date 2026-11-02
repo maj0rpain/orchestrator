@@ -1551,6 +1551,9 @@ assert_eq "a Standards: line in a fence, after a blank line, is no declaration" 
 writeln '```' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
 assert_eq "a Standards: line directly after an opening fence is no declaration" \
   "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
+writeln '```' '~~~' '' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
+assert_eq "a ~~~ or info-string line inside a backtick fence does not close it" \
+  "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
 # Each unresolved entry dies naming the entry and the reason.
 mkdir -p docs/adir
 for case_ in 'docs/agents/nope.txt|missing file' '/etc/passwd|absolute path' \
