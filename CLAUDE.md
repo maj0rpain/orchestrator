@@ -11,9 +11,8 @@ Standards: `CONTRIBUTING.md#Develop`, `docs/agents/cli-conventions.md`,
 `orch.sh` is a thin entry point: each noun's code lives in
 `scripts/orch/<noun>.sh`, each helper in the module of the concept it serves,
 and only the primitives no concept owns in `scripts/orch/common.sh`. See
-CONTRIBUTING.md's Layout for the full map; harness.sh's placement section
-enforces it. There is no top-level `tests/`, and `hooks/` holds only
-`hooks.json`.
+CONTRIBUTING.md's Layout for the full map. There is no top-level `tests/`, and
+`hooks/` holds only `hooks.json`.
 
 ## Agent skills
 
