@@ -122,6 +122,18 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 4. **Commit** your work to your ticket branch, already checked out in
    your ticket worktree: every commit you make lands on it, and the caller
    merges and opens the PR. Open no branch or PR of your own.
+
+   **The release record** is the per-PR versioning change the repo's own
+   instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`) require: a
+   changelog fragment, a CHANGELOG entry, a version bump. This repo's
+   `changelog.d/<issue>.md` fragment is one example, never the rule. When
+   step 1's `ticket parent` check printed a parent, the breakdown has more
+   than one ticket: never create, edit or delete the release record or
+   anything in the place the repo keeps it - not even a scratch file to
+   probe or test; the driver writes it after the last ticket lands. When it
+   printed nothing, your ticket is the spec issue itself: write the one
+   release record as the repo's instructions say, named for it, if they
+   require one.
 5. **Acceptance self-check.** Read the ticket's acceptance criteria against
    `git diff` of your own commits. Mark each criterion met or unmet,
    with its evidence: a test name, or a file and line. A ticket with no

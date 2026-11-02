@@ -214,6 +214,14 @@ site, the first, its leading `file:line`, included. It is one finding.
   the cause recorded as a major under **Waiting to be filed** with the rule
   `root cause out of reach`.
 
+## The release record
+
+The release record is the per-PR versioning change the repo's own
+instructions require: a changelog fragment, a CHANGELOG entry, a version
+bump (this repo's `changelog.d/<issue>.md` is one example). Touch it only to
+fix a finding that names it - a wrong bump level, bad prose, a missing
+record - and never add a second record or a scratch file under its place.
+
 ## Strengthen, don't relax
 
 Fix the code under test. Never delete or weaken an assertion or a fixture
