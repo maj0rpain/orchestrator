@@ -122,3 +122,26 @@ hook_emit_context() {
     additionalContext: $c
   }'
 }
+
+# Writes the PreToolUse allow that closes a Bash call's stdin (#2001), or
+# nothing. $1 is the raw payload, $2 the ORCH_AUTOPILOT value. In scope under
+# bypassPermissions only (see hook-bash-stdin.sh), it prints
+# hookSpecificOutput with updatedInput - the whole tool_input, only command
+# prefixed with `exec </dev/null` and a newline, unless it already is - and
+# permissionDecision "allow". Fails, printing nothing, on a payload that is
+# not JSON.
+hook_bash_stdin_rewrite() {
+  printf '%s' "$1" | jq -e --arg auto "$2" '
+    (.tool_input.command? // null) as $c
+    | select(($c | type) == "string")
+    | select(.permission_mode == "bypassPermissions")
+    | select($auto == "1" or ((.agent_type? // "") | type == "string"
+        and (startswith("orchestrator:orch-") or startswith("orch-"))))
+    | "exec </dev/null\n" as $p
+    | {hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        updatedInput: (.tool_input
+          | .command = (if ($c | startswith($p)) then $c else $p + $c end))
+      }}' 2>/dev/null
+}

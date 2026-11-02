@@ -32,6 +32,12 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-bash-stdin.sh\"" }
+        ]
+      },
+      {
         "matcher": "AskUserQuestion",
         "hooks": [
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-paste-guard.sh\"" }
