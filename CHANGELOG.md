@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.39.0
+
+orch.sh now reads only trusted comments: a comment counts only when its author is the repo's owner, a member or a collaborator. Comments from anyone else are dropped from every issue and PR comment read before any handoff, question, stop or ruling is read from them, and one `orch: ignored N comment(s) from untrusted authors` line says how many. Autopilot pickup refuses an untrusted issue, one whose title or body was last written by someone without that role. `issue fetch` and `init --issue` warn on such an issue in an attended session. ADR-0057 records the rule.
+
 ## 4.38.58
 
 A test assertion made inside a `( ... )` subshell now counts in its suite's summary and exit status, so CI no longer passes over its failure. All seven suites share one assertion tally, `scripts/test/tally.sh`, kept in a file. all.sh also fails any suite whose output has a FAIL line, even when the suite exited 0.
