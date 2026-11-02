@@ -35,14 +35,13 @@ ticket_worktrees_under() {
   done <<<"$list"
 }
 
-# refuse_ticket_worktrees <root> [<reason>]: dies, naming every ticket worktree
+# refuse_ticket_worktrees <root> <reason>: dies, naming every ticket worktree
 # under the checkout at <root>, when any is left: moving .orchestrator/
 # wholesale would break git's record of each one, and removing the checkout
-# would delete them. <reason> is the clause after the dash; it defaults to the
-# side-checkout callers' one.
+# would delete them. <reason> is the clause after the dash, required: each
+# caller states its own.
 refuse_ticket_worktrees() {
-  local left reason="${2:-}"
-  [ -n "$reason" ] || reason="moving them would break git's record of them"
+  local left reason="$2"
   # Its die exits only the substitution, so its status is carried out here.
   left="$(ticket_worktrees_under "$1")" || exit $?
   [ -n "$left" ] || return 0
