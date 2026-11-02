@@ -172,8 +172,10 @@ for the roles named below (`ready-for-agent`, `wontfix`, `ready-for-human`), and
 whether a flow is active beside this session. Use those label strings wherever
 a step names a role. Every question below is asked as one blocking question to
 the user. On Junie: the ask tool is `ask_user`, and a skill is run by reading
-its `skills/<name>/SKILL.md` under the plugin root and following it verbatim,
-since Junie has no Skill tool.
+`"${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md"` and following it verbatim,
+since Junie has no Skill tool. If `CLAUDE_PLUGIN_ROOT` is unset, the plugin
+root is found as for `ORCH`: two directories above the `orch.sh` that `ls`
+printed, else two directories above this skill's own directory.
 
 ### Beside an active flow
 

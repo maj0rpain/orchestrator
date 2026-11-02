@@ -41,6 +41,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 # only ROOT, set below.
 source "$(dirname "${BASH_SOURCE[0]}")/triage-labels.sh"
 
+# Prints the regex for a "/" or "$" reference to an entry point, standing as
+# its own word: "$grill-me x" matches, "$grilling-notes" and prose do not. $1
+# is an alternation of names, each matched under any scope; $2, when given, is
+# one more alternative matched only as written, for a command such as
+# orchestrator:interview, because a bare /interview is not ours. One grammar
+# for both the hook's trigger and its orch-interview test, so they cannot drift.
+entry_pattern() {
+  local alt="([a-z-]+:)?($1)"
+  [ -z "${2:-}" ] || alt="$alt|$2"
+  printf '(^|[[:space:]])[/$](%s)([[:space:]]|$)' "$alt"
+}
+
 hook_read_skill_and_session
 
 event="$(printf '%s' "$input" | jq -r '.hook_event_name // "PostToolUse"')"
@@ -52,12 +64,10 @@ if [ "$event" = "UserPromptSubmit" ]; then
   # plan screen without asking the closing question. Confirming that
   # screen submits this fixed prompt to the main agent, which asks it instead.
   if [ "$prompt" = "Implement the suggested plan" ]; then plan_confirmed=1; fi
-  # A "/" or "$" reference to an entry point, optionally scoped, standing as
-  # its own word: "$grill-me x" matches, "$grilling-notes" and prose do not.
-  # orch-interview matches under any scope; its command, interview, only
-  # under orchestrator:, because a bare /interview is not ours.
-  entry='(^|[[:space:]])[/$](([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture|orch-interview)|orchestrator:interview)([[:space:]]|$)'
-  [ "$plan_confirmed" = 1 ] || [[ "$prompt" =~ $entry ]] || exit 0
+  # A planning entry point named in the prompt; see entry_pattern.
+  [ "$plan_confirmed" = 1 ] ||
+    [[ "$prompt" =~ $(entry_pattern 'grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture|orch-interview' orchestrator:interview) ]] ||
+    exit 0
 else
   # "grilling" or "orch-interview" only. grill-me and grill-with-docs route
   # through grilling rather than being it, so matching the substring catches
@@ -122,10 +132,9 @@ fi
 # Every other entry point, and Junie's plan-confirmed prompt, reads the section.
 point_to_closing=1
 if [ "$plan_confirmed" = 1 ]; then
-  point_to_closing=1
+  :
 elif [ "$event" = UserPromptSubmit ]; then
-  orch_entry='(^|[[:space:]])[/$]([a-z-]+:)?orch-interview([[:space:]]|$)'
-  if [[ "$prompt" =~ $orch_entry ]]; then point_to_closing=0; fi
+  if [[ "$prompt" =~ $(entry_pattern orch-interview) ]]; then point_to_closing=0; fi
 else
   case "$skill" in *orch-interview*) point_to_closing=0 ;; esac
 fi
@@ -175,7 +184,7 @@ if [ "$flow_active" = 1 ]; then
   confirm_lead="Only in the second case above (planning about anything else): before you implement anything"
 fi
 
-labels_line="- This repo's triage labels: ready-for-agent is \`${ready_label}\`, wontfix is \`${wontfix_label}\`, ready-for-human is \`${human_label}\`.
+session_facts="- This repo's triage labels: ready-for-agent is \`${ready_label}\`, wontfix is \`${wontfix_label}\`, ready-for-human is \`${human_label}\`.
 - Ask the closing questions with ${ask_tool}."
 
 if [ "$plan_confirmed" = 1 ]; then
@@ -184,7 +193,7 @@ confirmed a plan from a planning session.
 ${flow_branches:+
 $flow_branches}
 ${closing_line}
-${labels_line}
+${session_facts}
 - ${confirm_lead}, and without editing any file first, ask the
   user how to carry the plan out, by the Closing section's route question."
   exit 0
@@ -201,7 +210,7 @@ While this planning session is running:
 - Glossary and ADR changes ($(planning_records_text)) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
 ${flow_branches:+$flow_branches
 }${closing_line}
-${labels_line}
+${session_facts}
 - When you reach a shared understanding, do not close with a scripted line and
   do not decide the next step yourself: close as the Closing section says.
 

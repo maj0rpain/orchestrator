@@ -425,6 +425,15 @@ DOC
 mkdir -p "$REPO/.orchestrator"
 size_budget=8000
 matrix_n=0
+# assert_under_budget <label> <bytes>: the context is non-empty and under
+# size_budget bytes.
+assert_under_budget() {
+  if [ "$2" -gt 0 ] && [ "$2" -lt "$size_budget" ]; then
+    ok "$1 stays under $size_budget bytes"
+  else
+    bad "$1 stays under $size_budget bytes" "got $2 bytes"
+  fi
+}
 # $1 flow state label; state is already written by the caller.
 run_size_matrix() {
   local flow="$1" entry ev bytes
@@ -440,21 +449,13 @@ run_size_matrix() {
     rm -f "$TMPDIR"/orchestrator-grilling-mx "$TMPDIR"/orchestrator-planning-mx
     ev="${entry#*|}"
     bytes="$(printf '%s' "$ev" | "$GRILL" | jq -r '.additionalContext' | wc -c)"
-    if [ "$bytes" -gt 0 ] && [ "$bytes" -lt "$size_budget" ]; then
-      ok "${entry%%|*} ($flow) stays under $size_budget bytes"
-    else
-      bad "${entry%%|*} ($flow) stays under $size_budget bytes" "got $bytes bytes"
-    fi
+    assert_under_budget "${entry%%|*} ($flow)" "$bytes"
   done
   # Junie's plan-confirmed message needs a grilled session first.
   rm -f "$TMPDIR"/orchestrator-planning-mx
   prompt_event '$grill-me x' mx | "$GRILL" >/dev/null
   bytes="$(prompt_event "$confirm" mx | "$GRILL" | jq -r '.additionalContext' | wc -c)"
-  if [ "$bytes" -gt 0 ] && [ "$bytes" -lt "$size_budget" ]; then
-    ok "junie plan-confirmed ($flow) stays under $size_budget bytes"
-  else
-    bad "junie plan-confirmed ($flow) stays under $size_budget bytes" "got $bytes bytes"
-  fi
+  assert_under_budget "junie plan-confirmed ($flow)" "$bytes"
 }
 run_size_matrix "no flow"
 write_flow_state slug "$long" phase spec issue 42
