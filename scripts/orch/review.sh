@@ -442,17 +442,37 @@ review_standards_declaration() {
   ' "$ROOT/$1" 2>/dev/null
 }
 
+# review_standards_heading_count <file> <heading>: how many ATX headings of the
+# repo file <file> read exactly <heading>, surrounding whitespace and closing #s
+# trimmed. Lines inside a fenced code block (blank lines too) are no headings.
+review_standards_heading_count() {
+  awk -v want="$2" '
+    /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
+    fence { next }
+    /^ ? ? ?#/ {
+      h = $0; sub(/^ */, "", h); hashes = h; sub(/[^#].*$/, "", hashes)
+      if (length(hashes) > 6 || (h != hashes && substr(h, length(hashes) + 1, 1) !~ /[[:space:]]/)) next
+      sub(/^#+/, "", h); sub(/[[:space:]]+#+[[:space:]]*$/, "", h)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", h)
+      if (h == want) n++
+    }
+    END { print n + 0 }
+  ' "$ROOT/$1"
+}
+
 # review_standards_declared <entry>...: dies unless every entry is a
-# repo-relative path naming a regular file inside the repo.
+# repo-relative path naming a regular file inside the repo, optionally with a
+# #Heading naming one section that must match exactly once.
 review_standards_declared() {
-  local e seg depth segs
+  local e seg depth segs path n
   for e in "$@"; do
     case "$e" in
       /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
     esac
     [[ $e =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && die "Standards entry \`$e\` is a URL (want a repo-relative path)"
     depth=0
-    IFS=/ read -ra segs <<< "$e"
+    path="${e%%#*}"
+    IFS=/ read -ra segs <<< "$path"
     for seg in "${segs[@]}"; do
       case "$seg" in
         ''|.) ;;
@@ -460,8 +480,12 @@ review_standards_declared() {
         *) depth=$((depth + 1)) ;;
       esac
     done
-    [ -e "$ROOT/$e" ] || die "Standards entry \`$e\` names a missing file"
-    [ -f "$ROOT/$e" ] || die "Standards entry \`$e\` is not a regular file"
+    [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
+    [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
+    [ "$path" = "$e" ] && continue
+    n="$(review_standards_heading_count "$path" "${e#*#}")"
+    [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"
+    [ "$n" -eq 1 ] || die "Standards entry \`$e\` names an ambiguous heading (matches $n times)"
   done
 }
 

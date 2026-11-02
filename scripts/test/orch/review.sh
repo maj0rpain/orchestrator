@@ -1562,6 +1562,22 @@ writeln 'Standards: nothing backticked' >CONTRIBUTING.md
 out="$("$ORCH" review standards 2>&1)"; st=$?
 assert_status "a declaration with no entries fails" "$st" 1
 assert_contains "saying it declares no entries" "$out" "orch: CONTRIBUTING.md declares Standards: with no entries"
+# A path#Heading entry names one section: the heading must match exactly once.
+writeln '# Top' '' '## Develop ##' 'text' '### Sub' '' '```' '' '# Fenced' '## Dup' '```' '## Dup' '## Twice' '## Twice' >docs/agents/h.md
+writeln 'Standards: `docs/agents/h.md#Develop`, `docs/agents/h.md#Sub`' >CONTRIBUTING.md
+assert_eq "a path#Heading entry with subsections prints as declared, closed heading too" \
+  "$(dstd)" "Standards: docs/agents/h.md#Develop, docs/agents/h.md#Sub"
+for case_ in 'docs/agents/h.md#develop|missing heading' 'docs/agents/h.md#Fenced|missing heading' \
+  'docs/agents/h.md#Twice|ambiguous'; do
+  writeln "Standards: \`${case_%%|*}\`" >CONTRIBUTING.md
+  out="$("$ORCH" review standards 2>&1)"; st=$?
+  assert_status "a heading entry (${case_#*|}) fails" "$st" 1
+  assert_contains "naming the entry (${case_#*|})" "$out" "orch: Standards entry \`${case_%%|*}\`"
+  assert_contains "and the reason (${case_#*|})" "$out" "${case_#*|}"
+done
+writeln 'Standards: `docs/agents/h.md#Dup`' >CONTRIBUTING.md
+assert_eq "a fenced heading does not make an entry ambiguous" \
+  "$(dstd)" "Standards: docs/agents/h.md#Dup"
 rm -f CONTRIBUTING.md
 rm -rf "$out_dir"
 restore_suite_env
