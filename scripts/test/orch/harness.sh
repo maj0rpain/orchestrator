@@ -1313,6 +1313,7 @@ jp_hold() {
 }
 jp_notice='waiting for a job slot'
 
+if command -v flock >/dev/null 2>&1; then
 # Two concurrent runs on a 2-slot pool.
 : >"$jp_log"
 jp_err="$jp_dir/erra" jp_run 2 "$jp_dir/pool1" -- '^pool [a-d]$' 4 &
@@ -1406,11 +1407,15 @@ chmod +x "$jp_dir/noflock/flock"
 jp_run 1 "$jp_dir/pool9" PATH="$jp_dir/noflock:$PATH" -- '^pool a$' 2; jp_s1=$?
 assert_status "a slot file that cannot be locked runs unpooled and passes" "$jp_s1" 0
 assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+else
+  skip "the job pool cases on a shared pool" "flock is not installed"
+fi
 rm -rf "$jp_copy"
 
 # all.sh's shellcheck processes take slots: two concurrent all.sh runs on a
 # 1-slot pool never have more than one shellcheck at a time, and the notice
 # comes from all.sh.
+if command -v flock >/dev/null 2>&1; then
 jp_all="$jp_dir/all"
 suites_read "$jp_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
 stub_all_tree "$jp_all" "$jp_log" flock getconf
@@ -1432,6 +1437,9 @@ assert_eq "every file was still checked, twice over" \
   "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + 2)))"
 assert_contains "a waiting all.sh names itself in the notice" \
   "$(cat "$jp_dir/erra" "$jp_dir/errb2")" "all.sh: waiting for a job slot (1 in use)"
+else
+  skip "two concurrent all.sh runs share a 1-slot pool" "flock is not installed"
+fi
 rm -rf "$jp_dir"
 
 # --- the test runners' CPU load (#1586) ---------------------------------------
