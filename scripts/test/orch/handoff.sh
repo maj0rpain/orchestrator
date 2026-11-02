@@ -487,6 +487,10 @@ fake_lag adapter_issue_comments_json 1 'not json'
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "unparseable comments make handoff fetch fail" "$st" 1
 assert_eq "with the parse-failure wording" "$out" "orch: could not read issue #7's comments"
+fake_lag adapter_issue_comments_json 1 ''
+out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
+assert_status "an empty comments answer makes handoff fetch fail" "$st" 1
+assert_eq "with the parse-failure wording and no bash error" "$out" "orch: could not read issue #7's comments"
 out="$("$ORCH" handoff fetch 02-spec "$fetched" 2>&1)"; st=$?
 assert_status "a handoff never posted is none" "$st" 1
 out="$("$ORCH" handoff fetch bogus "$fetched" 2>&1)"; st=$?

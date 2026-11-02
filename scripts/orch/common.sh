@@ -245,6 +245,19 @@ file_read() {
   printf -v "$1" '%s' "${_file_read_s%x}"
 }
 
+# file_write_atomic <file> <text>: <text> written to <file>, exactly, through a
+# temp file beside it moved into place on success - so a failed write leaves an
+# existing <file> untouched and never a partly written one. Creates <file>'s
+# directory. Fails, saying nothing, when it cannot write.
+file_write_atomic() {
+  local _fwa_tmp
+  mkdir -p "$(dirname "$1")" || return 1
+  _fwa_tmp="$(mktemp "$1.XXXXXX")" || return 1
+  if printf '%s' "$2" >"$_fwa_tmp" && mv "$_fwa_tmp" "$1"; then return 0; fi
+  rm -f "$_fwa_tmp"
+  return 1
+}
+
 # array_index <array-name> <value>: the index of the first element of the
 # named indexed array equal to <value>, or nothing when none is.
 array_index() {

@@ -444,13 +444,14 @@ fake_pr_head() {
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
 }
 
-# fake_comment_seed <comments-dir> <author> <created-at> <body>: the body, byte
+# fake_comment_seed <comments-dir> <author> <created-at> <body> [<association>]:
+# the body, byte
 # for byte, appended as a comment by the fake's own fake_comment_append, so the
 # store's comment layout has one writer.
 fake_comment_seed() {
   printf '%s' "$4" |
-    bash -c 'source "$1"; fake_comment_append "$2" "$3" "$4" /dev/stdin' \
-      _ "$GH_ADAPTER_FAKE" "$1" "$2" "$3"
+    bash -c 'source "$1"; fake_comment_append "$2" "$3" "$4" /dev/stdin "$5"' \
+      _ "$GH_ADAPTER_FAKE" "$1" "$2" "$3" "${5-}"
 }
 
 # fake_comment_bodies <comments-dir>: the bodies of the directory's comments,
@@ -478,6 +479,17 @@ fake_issue() {
 
 # fake_issue_title <n> <title>: seeds issue #n's title.
 fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
+# fake_issue_authorship <n> <author> <association> [<editor> [<renamer>]]: sets
+# issue #n's author and association, the last editor of its body and the latest
+# renamer of its title - the last two empty (never edited, never renamed) unless
+# given. The issue is kept as it is otherwise.
+fake_issue_authorship() {
+  local d="$ORCH_GH_FAKE_STORE/issues/$1"
+  printf '%s\n' "$2" >"$d/author"
+  printf '%s\n' "$3" >"$d/association"
+  printf '%s\n' "${4:-}" >"$d/editor"
+  printf '%s\n' "${5:-}" >"$d/renamer"
+}
 
 # fake_issue_relabel <n> <label>...: sets issue #n's labels; its state, title,
 # body and comments are kept.
@@ -504,9 +516,9 @@ orch_no_repo() {
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 
-# fake_comment <n> <author> <created-at> <body>: seeds a comment on issue #n,
-# after any it has.
-fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4"; }
+# fake_comment <n> <author> <created-at> <body> [<association>]: seeds a comment
+# on issue #n, after any it has; its association is OWNER unless given.
+fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
 
 # handoff_orch <mode> <orch args>...: runs orch.sh as that handoff mode's
 # session: autopilot for "comment", interactive for "file".
@@ -662,9 +674,9 @@ fake_pr() {
 # fake_pr_body <n> <text>: seeds PR #n's body, byte for byte.
 fake_pr_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/body"; }
 
-# fake_pr_comment <n> <author> <created-at> <body>: seeds a comment on PR #n,
-# after any it has.
-fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4"; }
+# fake_pr_comment <n> <author> <created-at> <body> [association]: seeds a
+# comment on PR #n, after any it has; the association defaults to OWNER.
+fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4" "${5-}"; }
 
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }

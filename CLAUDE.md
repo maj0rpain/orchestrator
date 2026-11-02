@@ -9,17 +9,17 @@ Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a
 thin entry point: each noun's code lives in `scripts/orch/<noun>.sh`
 (`doctor.sh` among them), the concept modules with no noun, `checkout.sh`,
 `filed-finding.sh`, `issue-timeline.sh`, `known-items.sh`, `liveness.sh`,
-`marked-comment.sh` and `standing.sh`, among them too, each helper in the module
-of the concept it serves, and only the primitives no concept owns in
-`scripts/orch/common.sh`.
+`marked-comment.sh`, `standing.sh` and `trust.sh`, among them too, each helper
+in the module of the concept it serves, and only the primitives no concept owns
+in `scripts/orch/common.sh`.
 Tests live in `scripts/test/` (`tally.sh`, the assertion tally, and
 `git_env.sh`, sourced by every runner, which clears git's repo-local
 variables, among them),
 with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per
 orch.sh noun, named as its module is, and `checkout.sh`, `filed-finding.sh`,
-`issue-timeline.sh`, `known-items.sh`, `liveness.sh`, `marked-comment.sh` and
-`standing.sh` for the concept modules of those names, plus `common.sh`,
-`setup.sh` and
+`issue-timeline.sh`, `known-items.sh`, `liveness.sh`, `marked-comment.sh`,
+`standing.sh` and `trust.sh` for the concept modules of those names, plus
+`common.sh`, `setup.sh` and
 `harness.sh`). The autopilot
 container's files live in `docker/`
 (`Dockerfile`, `compose.yaml`, `.env.example`), its entrypoint is
@@ -67,8 +67,8 @@ orch_test.sh is only the runner: its `# ---` sections live in
 `scripts/test/orch/<noun>.sh`, one file per orch.sh noun, and a ticket's tests
 go in the file for the noun it touches (a new noun gets a new file; a concept
 module with no noun, `checkout.sh`, `filed-finding.sh`, `issue-timeline.sh`,
-`known-items.sh`, `liveness.sh`, `marked-comment.sh` or `standing.sh`, gets a
-section file named as it is).
+`known-items.sh`, `liveness.sh`, `marked-comment.sh`, `standing.sh` or
+`trust.sh`, gets a section file named as it is).
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 half the usable CPUs, rounded down, at least 1, and all of them under `CI`;
 usable CPUs are the online cores, lowered to a cgroup v2 `cpu.max` quota;

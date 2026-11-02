@@ -456,7 +456,29 @@ autopilot_pickup_side_add() {
 # autopilot_pickup_init <issue> <side>: the step initialising a side checkout
 # that holds no flow yet.
 autopilot_pickup_init() {
-  checkout_has_flow "$2" || autopilot_orch_in "$2" init "$(basename "$2")" --issue "$1"
+  checkout_has_flow "$2" || ORCH_AUTOPILOT=1 autopilot_orch_in "$2" init "$(basename "$2")" --issue "$1"
+}
+
+# autopilot_pickup_trust <issue>: the step refusing an untrusted issue - the
+# first of pickup, before any side checkout, init or plan comment, so it runs
+# before every phase. An untrusted one is a refusal naming the writer and
+# whether they last wrote the title or the body; a failed read is a failure
+# naming the read (it fails closed).
+autopilot_pickup_trust() {
+  local st=0
+  trust_issue_check "$1" || st=$?
+  case "$st" in
+    0) return 0 ;;
+    1)
+      PICKUP_KIND=refusal
+      PICKUP_TEXT="$(trust_writer_text "the issue") - an owner, member or collaborator must edit it before autopilot runs on it"
+      ;;
+    *)
+      PICKUP_REASON="$TRUST_REASON"
+      autopilot_pickup_fail failure "step trust read failed"
+      ;;
+  esac
+  return 1
 }
 
 # autopilot_pickup_recorded <side>: the step reading the side checkout's
@@ -481,6 +503,7 @@ autopilot_pickup_redo() {
 # PICKUP_TEXT and returns 1.
 autopilot_pickup_steps() {
   local issue="$1" phase="$2" limited="$3" side="" title="" recorded redo
+  autopilot_pickup_trust "$issue" || return 1
   autopilot_pickup_side_find "$issue"
   if [ -z "$side" ]; then
     autopilot_pickup_side_title "$issue" || autopilot_pickup_fail failure "step side-checkout add failed: could not read the issue's title" || return 1

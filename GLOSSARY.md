@@ -134,8 +134,9 @@ A flow whose phases are started by a watcher rather than a human. Its phase is
 recorded as a label on its issue, its handoffs are issue comments, and its
 questions reach the human as issue comments. It stops for the human only on a
 fundamental item, a bounded stop (a spec question the review loop meets among
-them), or a failure; a session cut off by a usage limit is waited out instead,
-as a limited issue, short of the third such stop in a row of one phase.
+them), a refusal (an untrusted issue among them), or a failure; a session cut
+off by a usage limit is waited out instead, as a limited issue, short of the
+third such stop in a row of one phase.
 _Avoid_: auto flow, headless flow.
 
 **Watcher**:
@@ -186,13 +187,29 @@ An issue comment whose first line names its kind to orch.sh: a hidden
 `<!-- orch:<kind> <arg> -->` marker (question, limit stop, handoff, refusal,
 failure), or a visible opening the human reads too (the spec review's
 `## Spec review` heading, a `Spec ruling:` line). Question comment, Plan comment
-and the rest are kinds of marked comment.
+and the rest are kinds of marked comment. Only a trusted comment can be one. A
+PR comment's `Spec ruling:` line, read by the review pass, is not a marked
+comment; the trust filter drops an untrusted PR comment before the review pass
+reads its rulings all the same.
+
+**Trusted comment**:
+An issue or PR comment whose author is the repo's owner, a member of its
+organisation, or a collaborator on it. orch.sh reads only trusted comments;
+any other comment is dropped before any marked comment, answer or spec text
+is read from it.
+_Avoid_: verified comment.
+
+**Trusted issue**:
+An issue whose author has a role on the repo (as for a trusted comment), or
+whose body and title were each last written by someone other than its
+author; a title never renamed follows the body, a renamed one its newest
+renamer. An autopilot flow runs only on a trusted issue.
 
 **Issue timeline**:
 An autopilot flow's issue's comment history, read once and asked in domain
-terms: its newest question comment and whether a comment follows it, its latest
-stop, its limit stops in a row for a phase, and its live handoffs. Only the
-timeline and the Marked comment module know how a comment's kind is marked.
+terms: its newest question comment and whether a trusted comment follows it, its
+latest stop, its limit stops in a row for a phase, and its live handoffs. Only
+the timeline and the Marked comment module know how a comment's kind is marked.
 _Avoid_: comment log.
 
 **Question comment**:
@@ -200,19 +217,20 @@ The issue comment tagged `<!-- orch:question <phase> -->` that asks the human an
 autopilot phase's numbered questions.
 
 **Pending question**:
-An autopilot flow's newest question comment that no comment follows yet, on an
-open issue labelled `needs-human`. `/orchestrator:questions` puts each one to
-the human with its own recommendation and posts the reply.
+An autopilot flow's newest question comment that no
+trusted comment follows yet, on an open issue labelled `needs-human`.
+`/orchestrator:questions` puts each one to the human with its own recommendation
+and posts the reply.
 
 **Pickup rule**:
 The rule a watcher picks issues by: open, a phase label other than `orch:done`,
 and neither `orch:running` nor `needs-human`, while no limit pause holds.
 
 **Pickup**:
-A watcher taking one claimed issue to a running session: its side checkout, its
-flow, its plan comment, a redo when the label stepped back one phase, then
-`orch:running` and the session. A failed or refused step stops the issue and
-releases the claim.
+A watcher taking one claimed issue to a running session: its issue-trust
+check, its side checkout, its flow, its plan comment, a redo when the label
+stepped back one phase, then `orch:running` and the session. A failed or refused
+step stops the issue and releases the claim.
 
 **Limited issue**:
 An autopilot flow's issue whose last session stopped on a Claude Code usage

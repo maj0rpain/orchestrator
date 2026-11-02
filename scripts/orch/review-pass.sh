@@ -112,15 +112,15 @@ review_pass_known_items() {
   # shellcheck disable=SC2064 # expanded now: $work is local, gone by exit
   trap "rm -rf $(printf '%q' "$work")" EXIT
 
-  local k comment issue_json issue_rulings deviations="" declined="" rulings=""
+  local k comment pr_text issue_json issue_rulings deviations="" declined="" rulings=""
   # A subshell's die has already said why; 1 alone means no open PR.
   pr="$(current_open_pr)" && st=0 || st=$?
   [ "$st" -le 1 ] || exit 1
   if [ "$st" -eq 0 ]; then
     gh_or_die --file "$work/body.raw" "read the body of PR #$pr" adapter_pr_body "$pr"
-    gh_or_die --file "$work/comments.raw" "read the comments of PR #$pr" adapter_pr_comments "$pr"
+    comments_rendered adapter_pr_comments "read the comments of PR #$pr" "$pr" pr_text
     tr -d '\r' <"$work/body.raw" >"$work/body"
-    tr -d '\r' <"$work/comments.raw" >"$work/comments"
+    { [ -z "$pr_text" ] || printf '%s\n' "$pr_text"; } | tr -d '\r' >"$work/comments"
     mkdir "$work/c"
     comments_split "$work/comments" "$work/c"
     [ -n "$devfile" ] || section_entries_append deviations "$work/body" '## Deviations'
@@ -138,7 +138,7 @@ review_pass_known_items() {
     tr -d '\r' <"$devfile" >"$work/deviations"
     text_entries_append deviations "$work/deviations"
   fi
-  gh_or_die --out issue_json "read the comments of issue #$issue" adapter_issue_json "$issue"
+  issue_json_trusted "read the comments of issue #$issue" "$issue" issue_json
   issue_rulings="$(marked_comment_texts spec-ruling <<<"$issue_json" | jq -r "$SPEC_RULING_ENTRIES_JQ")" \
     || die "could not read the comments of issue #$issue"
   printf '%s\n' "$issue_rulings" >"$work/rulings" \

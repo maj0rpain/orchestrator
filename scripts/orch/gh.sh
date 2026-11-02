@@ -150,7 +150,8 @@ gh_or_die() {
 # - issue: adapter_issue_body, adapter_issue_comments,
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
-#   adapter_issue_title_labels, adapter_issue_state, adapter_issues_labelled,
+#   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
+#   adapter_issues_labelled,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
@@ -244,18 +245,19 @@ adapter_labels() {
 
 # --- issue operations ---
 
-# Every comment on an issue or PR, in order, each opened by a marker line
+# The shape every comment read renders in: each comment opened by a marker line
 # naming its author and gh's ISO-8601 timestamp, one blank line between
-# comments and bodies unescaped; nothing at all for none. pr comments (issue
-# #418) reads a PR's comments through this same --jq, so the two read alike.
-# COMMENTS_RENDER_JQ is that shape, defined once: render_comments(login) turns
-# an array of comments into the joined text, login reading each comment's
+# comments and bodies unescaped; nothing at all for none. No adapter renders:
+# the adapters answer raw JSON, and the issue module renders the trusted
+# comments after the Trust filter (comments_rendered, for issue and PR comments
+# alike). COMMENTS_RENDER_JQ is that shape, defined once: render_comments(login)
+# turns an array of comments into the joined text, login reading each comment's
 # author, so every comments read - issue comments' filtered one among them
 # (#1116) - renders through the same definition.
+# shellcheck disable=SC2034 # read by the issue module's issue_comments_render and ISSUE_COMMENTS_KEPT_JQ
 COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
-COMMENTS_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author.login)'
 
-# comments_split <file> <dir>: splits <file>, comments in COMMENTS_JQ's shape,
+# comments_split <file> <dir>: splits <file>, comments in its rendered shape,
 # into one file per comment under <dir>, numbered from 1 in order, each holding
 # the comment's body alone. A comment opens at its marker line, the one
 # COMMENTS_RENDER_JQ renders.
@@ -268,17 +270,22 @@ comments_split() {
 # The trimmed object `issue fetch --json` publishes (#528): the issue's number,
 # title and body, its label names, and each comment's author login, gh's
 # ISO-8601 timestamp and body - every other field gh answers with is dropped,
-# so the shape does not change with gh's version.
-ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name], comments: [.comments[] | {author: .author.login, createdAt, body}]}'
+# so the shape does not change with gh's version. The adapter also keeps each
+# comment's authorAssociation, which the domain layer's trust filter reads and
+# then deletes (issue_json_trusted), so the published shape has none.
+ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name], comments: [.comments[] | {author: .author.login, authorAssociation, createdAt, body}]}'
 
 # adapter_issue_body <n>: the issue's body as GitHub holds it, then a newline.
 adapter_issue_body() {
   gh issue view "$1" --json body --jq .body
 }
 
-# adapter_issue_comments <n>: the issue's comments in COMMENTS_JQ's shape.
+# adapter_issue_comments <n>: the issue's comments as gh answers them, raw JSON
+# - an object whose comments array holds each comment's author login object,
+# authorAssociation, createdAt and body, among gh's other fields. Rendering
+# happens above the adapter, after the trust filter (comments_rendered).
 adapter_issue_comments() {
-  gh issue view "$1" --json comments --jq "$COMMENTS_JQ"
+  gh issue view "$1" --json comments
 }
 
 # adapter_issue_json <n>: the issue as ISSUE_JSON_JQ's one JSON object - the
@@ -289,11 +296,12 @@ adapter_issue_json() {
 }
 
 # adapter_issue_comments_json <n>: the issue's comments as one JSON array, each
-# comment's author login, gh's ISO-8601 timestamp, body and url - the url
-# `issue fetch --json` leaves out, so ISSUE_JSON_JQ's shape is not changed.
+# comment's author login, author association, gh's ISO-8601 timestamp, body and
+# url - the url `issue fetch --json` leaves out, so ISSUE_JSON_JQ's shape is
+# not changed.
 adapter_issue_comments_json() {
   gh issue view "$1" --json comments \
-    --jq '[.comments[] | {author: .author.login, createdAt, body, url}]'
+    --jq '[.comments[] | {author: .author.login, authorAssociation, createdAt, body, url}]'
 }
 
 # adapter_issue_state_labels <n>: OPEN or CLOSED on the first line, then one
@@ -375,6 +383,21 @@ adapter_issue_title_labels() {
 # writing neither, gh's stderr captured into <err_var>, never passed through.
 issue_title_labels_read() {
   gh_lines_read adapter_issue_title_labels "$1" "$4" "$2" "$3"
+}
+
+# The GraphQL query and --jq behind adapter_issue_authorship.
+# One line, so a logged argv (the gh fixture's) stays one line.
+ISSUE_AUTHORSHIP_QUERY='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { author { login } authorAssociation editor { login } timelineItems(last: 1, itemTypes: [RENAMED_TITLE_EVENT]) { nodes { ... on RenamedTitleEvent { actor { login } } } } } } }'
+ISSUE_AUTHORSHIP_JQ='.data.repository.issue | (.author.login // ""), (.authorAssociation // ""), (.editor.login // ""), (.timelineItems.nodes[0].actor.login // "")'
+
+# adapter_issue_authorship <n>: four lines, each possibly empty: the issue
+# author's login, the author's authorAssociation, the login of whoever last
+# edited the body (the issue's `editor`), and the login of whoever made the
+# newest rename of the title (the actor of its newest RenamedTitleEvent). One
+# GraphQL read, for the Trust module's reader.
+adapter_issue_authorship() {
+  gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$1" \
+    -f query="$ISSUE_AUTHORSHIP_QUERY" --jq "$ISSUE_AUTHORSHIP_JQ"
 }
 
 # adapter_issue_state <n>: OPEN or CLOSED - or PULL where <n> is a pull
@@ -500,10 +523,11 @@ adapter_pr_body() {
   gh pr view "$1" --json body --jq .body
 }
 
-# adapter_pr_comments <n>: the PR's comments in COMMENTS_JQ's shape, as
-# adapter_issue_comments prints an issue's (issue #418).
+# adapter_pr_comments <n>: the PR's comments as gh answers them, raw JSON, as
+# adapter_issue_comments prints an issue's (issue #418). Rendering happens above
+# the adapter, after the trust filter (comments_rendered).
 adapter_pr_comments() {
-  gh pr view "$1" --json comments --jq "$COMMENTS_JQ"
+  gh pr view "$1" --json comments
 }
 
 # adapter_pr_refs <n>: review ci's read of the PR's own head, base and commits

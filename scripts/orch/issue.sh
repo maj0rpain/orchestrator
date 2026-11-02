@@ -66,35 +66,78 @@ open_issue_read() {
 # scripts: compact JSON puts the whole issue on one line, which Read cuts off.
 cmd_issue_fetch() {
   local issue="$1" file="$2" as_json="${3:-}"
+  trust_warn_issue "$issue"
   if [ -n "$as_json" ]; then
-    gh_or_die --file "$file" "read issue #$issue" adapter_issue_json "$issue"
+    local json
+    issue_json_trusted "read issue #$issue" "$issue" json
+    file_write_atomic "$file" "$json"$'\n' || die "could not write $file"
     return
   fi
   gh_or_die --file "$file" "read the body of issue #$issue" \
     adapter_issue_body "$issue"
 }
 
+# issue_json_trusted <what> <n> <var>: issue <n> as ISSUE_JSON_JQ's object minus
+# the comments of untrusted authors (Trust module), authorAssociation deleted
+# from the rest, so the published shape is unchanged; assigned to <var>. A gh
+# failure dies as "gh could not <what>". Run in the caller's shell, never under
+# capture, so the trust filter's stderr line reaches the real stderr.
+issue_json_trusted() {
+  local __ijt_raw __ijt_kept __ijt_out
+  gh_or_die --out __ijt_raw "$1" adapter_issue_json "$2"
+  __ijt_kept="$(jq -c .comments <<<"$__ijt_raw" | trust_filter_comments "$2")" \
+    || die "could not read the comments of issue #$2"
+  __ijt_out="$(jq -c --argjson c "$__ijt_kept" '.comments = ($c | map(del(.authorAssociation)))' <<<"$__ijt_raw")" \
+    || die "could not read the comments of issue #$2"
+  printf -v "$3" '%s' "$__ijt_out"
+}
+
+# issue_comments_render <n>: adapter_issue_comments' raw JSON on stdin, on
+# stdout the comments of trusted authors rendered through COMMENTS_RENDER_JQ as
+# it renders them - nothing for none, no placeholder for a dropped
+# comment. Non-zero when stdin is not a comment object. The trust filter's
+# stderr line is for issue <n>.
+issue_comments_render() {
+  local kept
+  kept="$(jq -c .comments 2>/dev/null | trust_filter_comments "$1")" || return 1
+  jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$kept"
+}
+
+# comments_rendered <adapter> <what> <n> <var>: issue or PR <n>'s trusted
+# comments, read by <adapter> (adapter_issue_comments or adapter_pr_comments),
+# rendered by issue_comments_render, assigned to <var>; no placeholder for a
+# dropped comment, and the Trust filter's stderr line names <n>. A gh failure
+# dies as "gh could not <what>"; a comment object that does not parse dies as
+# "could not <what>: its comments did not parse", both with status 1.
+comments_rendered() {
+  local __cr_raw __cr_out
+  gh_or_die --out __cr_raw "$2" "$1" "$3"
+  __cr_out="$(issue_comments_render "$3" <<<"$__cr_raw")" \
+    || die "could not $2: its comments did not parse"
+  printf -v "$4" '%s' "$__cr_out"
+}
+
 # The comments `issue comments` writes (#1116), from the issue's comments
 # already filtered to drop the spec review's own changelogs (the marked comments
-# of kind spec-review): rendered through COMMENTS_RENDER_JQ, as COMMENTS_JQ
-# renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
+# of kind spec-review): rendered through COMMENTS_RENDER_JQ, as every comments
+# read renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
 # object, whose author is already the login.
 ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
 
-# issue_comments_kept <n>: issue <n>'s comments as ISSUE_COMMENTS_KEPT_JQ
-# prints them, filtered here rather than in the adapter, from the issue's
-# structured read - never by splitting the joined text.
-issue_comments_kept() {
-  adapter_issue_json "$1" | marked_comment_drop spec-review | jq -r "$ISSUE_COMMENTS_KEPT_JQ"
-}
-
-# Every comment on the issue but the spec review's own changelogs, in
-# COMMENTS_JQ's shape - so the spec review reads the comments beside the body
-# without its earlier rounds. No comments is an empty file, not an error.
+# Every comment on the issue but the spec review's own changelogs and the
+# untrusted authors', in the rendered shape - so the spec review reads the
+# comments beside the body without its earlier rounds. Filtered here rather
+# than in the adapter, from the issue's trusted structured read, never by
+# splitting the joined text. No comments is an empty file, not an error; the
+# file is written only once the read has succeeded.
 cmd_issue_comments() {
-  local issue="$1" file="$2"
-  gh_or_die --file "$file" "read the comments of issue #$issue" \
-    issue_comments_kept "$issue"
+  local issue="$1" file="$2" json text
+  issue_json_trusted "read the comments of issue #$issue" "$issue" json
+  text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ")" \
+    || die "could not read the comments of issue #$issue"
+  # $(...) drops the trailing newline jq -r printed; put it back unless empty.
+  file_write_atomic "$file" "${text:+$text$'\n'}" \
+    || die "could not write the comments of issue #$issue to $file"
 }
 
 cmd_issue_update() {

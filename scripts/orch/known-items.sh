@@ -64,11 +64,9 @@ entries_append_from() {
 # bullet lines, or None. when it has none. Built beside <path> and moved into
 # place, so a failed write leaves <path> as it was.
 known_items_write() {
-  local path="$1" deviations="$2" known="$3" tmp
+  local path="$1" deviations="$2" known="$3"
   [ -n "$deviations" ] || deviations=$'None.\n'
   [ -n "$known" ] || known=$'None.\n'
-  tmp="$(mktemp "$path.XXXXXX")" || die "could not create a temp file beside $path"
-  printf '## Deviations\n%s## Known items\n%s' "$deviations" "$known" >"$tmp" \
-    || { rm -f "$tmp"; die "could not write the known items"; }
-  mv "$tmp" "$path" || { rm -f "$tmp"; die "could not write the known items to $path"; }
+  file_write_atomic "$path" "$(printf '## Deviations\n%s## Known items\n%s' "$deviations" "$known")"$'\n' \
+    || die "could not write the known items to $path"
 }

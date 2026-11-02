@@ -1,5 +1,8 @@
 # The spec review folds an issue's comments into its body
 
+Amended by ADR-0057: comments from untrusted authors are left out of the
+folded body.
+
 Superseded in part by ADR-0044: orch.sh now leaves the review's own changelog
 comments out of the comments file.
 

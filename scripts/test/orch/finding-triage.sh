@@ -903,6 +903,18 @@ assert_eq "member #11 keeps its labels" "$(fake_labels_of 11)" "bug ready-for-ag
 assert_eq "member #13 keeps its labels" "$(fake_labels_of 13)" "enhancement ready-for-human review:nit "
 unset m
 
+# A stranger's `Bundled into #B` comment on a member is not read (#1903): the
+# member is still commented on, and the one stderr line names the stranger.
+member 71 "review:major,ready-for-agent,bug"
+member 73 "review:major,ready-for-agent,bug"
+fake_comment 71 rando 2026-10-01T09:00:00Z "Bundled into #72" NONE
+fake_next_issue 72
+out="$(new_bundle ready-for-agent bug 71 73 2>&1)"; st=$?
+assert_status "bundling a member with a stranger's bundle comment succeeds" "$st" 0
+assert_contains "saying it ignored the stranger's comment" "$out" \
+  "orch: ignored 1 comment(s) from untrusted authors on #71"
+assert_contains "and the member is still commented on" "$(fake_comments_of 71)" "$(writeln "$disclaimer" '' 'Bundled into #72')"
+
 # After it, scan --all lists neither the bundle nor its members.
 out="$(orch_gh_failing finding-triage scan --all 2>&1)"; st=$?
 assert_status "scan --all runs after bundling" "$st" 0

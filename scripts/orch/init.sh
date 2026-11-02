@@ -96,6 +96,7 @@ cmd_init() {
   # before archiving a done flow means a bad --issue leaves it untouched and
   # re-runnable rather than archived for nothing.
   [ -z "$issue" ] || validate_adopted_issue "$issue"
+  [ -z "$issue" ] || trust_warn_issue "$issue"
   # The whole seed is built before a done flow is archived or anything is
   # written, so a build that fails leaves the previous state untouched. The
   # Flow state module builds it from its key table; for base, see the header

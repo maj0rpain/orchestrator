@@ -421,8 +421,11 @@ cmd_pr_comments() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comments <file>"
   local file="$1" pr
   pr="$(current_open_pr)" || return $?
-  gh_or_die --exit 2 --file "$file" "read the comments of PR #$pr" \
-    adapter_pr_comments "$pr"
+  local text raw
+  gh_or_die --out raw --exit 2 "read the comments of PR #$pr" adapter_pr_comments "$pr"
+  text="$(issue_comments_render "$pr" <<<"$raw")" \
+    || die2 "could not read the comments of PR #$pr"
+  file_write_atomic "$file" "${text:+$text$'\n'}" || die2 "could not write $file"
 }
 
 # The PR counterpart of issue update, with one guard issue update has no need
@@ -458,8 +461,8 @@ cmd_pr_read() {
   done
   [ -n "$found" ] || die "no open PR closes or refers to issue #$issue"
   gh_or_die --out diff "read the diff of PR #$found" adapter_pr_diff "$found"
-  mkdir -p "$(dirname "$file")"
-  printf '%s\n\n---\n%s\n' "$body" "$diff" >"$file"
+  file_write_atomic "$file" "$(printf '%s\n\n---\n%s\n' "$body" "$diff")"$'\n' \
+    || die "could not write $file"
 }
 
 cmd_pr() {

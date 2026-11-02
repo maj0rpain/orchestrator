@@ -21,6 +21,7 @@ ndjson_with() {
 }
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
+
 # local_fields <iso>: the limit file's UTC timestamp as "<epoch> <%H> <%a>" in
 # local time.
 local_fields() {
@@ -667,7 +668,7 @@ for pk_nth in 1 2; do
   pk_want=stdout; [ "$pk_nth" = 2 ] && pk_want=stderr
   fake_issue 76 open orch:spec orch:running; fake_claim_seed 76
   pk_count="$(mktemp -u)"
-  PK_COUNT="$pk_count" PK_NTH="$pk_nth" sourced_orch_script 'set +e; autopilot_pickup_side_find() { side=""; }; autopilot_pickup_side_title() { title=T; }; cmd_side_checkout_add() { :; }; mktemp() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; command mktemp "$@"; }; autopilot_pickup 76 spec' >/dev/null 2>&1
+  PK_COUNT="$pk_count" PK_NTH="$pk_nth" sourced_orch_script 'set +e; autopilot_pickup_trust() { :; }; autopilot_pickup_side_find() { side=""; }; autopilot_pickup_side_title() { title=T; }; cmd_side_checkout_add() { :; }; mktemp() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; command mktemp "$@"; }; autopilot_pickup 76 spec' >/dev/null 2>&1
   assert_contains "the side-checkout add failing its $pk_want temp file stops worded as one" "$(fake_comments_of 76)" "step side-checkout add failed: could not create a temp file for the command's $pk_want"
   rm -f "$pk_count"
 done
@@ -1407,3 +1408,81 @@ assert_eq "leaving labels, comments and claim untouched" "$(fake_snapshot)" "$be
 assert_eq "and no limit file" "$(se_limit)" absent
 rm -rf "$se_dir"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
+# --- autopilot tick: the trust check -----------------------------------------
+# An autopilot flow runs only on a trusted issue (ADR-0057): the check is
+# pickup's first step, so a refused first pickup leaves no side checkout, no
+# flow and no plan comment.
+echo
+echo "autopilot tick trust"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+pt_issue() { # <issue> <author> <association> [<editor> [<renamer>]]: a labelled spec issue with that authorship
+  fake_issue "$1" open ready-for-agent orch:spec
+  fake_issue_title "$1" "Trust $1"
+  fake_issue_authorship "$@"
+  printf '%s\n' "$1" >"$launcher_dir/release"
+  printf '' >"$launcher_dir/calls"
+}
+pt_tick() { "$ORCH" autopilot tick >/dev/null 2>&1; }
+
+# the trusted associations and one untrusted author; the other untrusted
+# associations are pinned in the trust module's section
+for pt_assoc in OWNER MEMBER COLLABORATOR; do
+  pt_issue 7 someone "$pt_assoc"; fake_comments_clear 7; pt_tick
+  assert_eq "a $pt_assoc author's issue is picked up" "$(tick_calls)" "1"
+done
+pt_issue 7 stranger NONE; fake_comments_clear 7; pt_tick
+assert_eq "a NONE author's issue, never edited, is not picked up" "$(tick_calls)" "0"
+
+# a refused first pickup leaves nothing behind
+fake_unfail
+pt_issue 8 stranger NONE
+pt_before="$(ls "$top/.orchestrator/checkouts" 2>/dev/null)"
+pt_tick
+assert_eq "an untrusted issue starts no session" "$(tick_calls)" "0"
+assert_eq "it is needs-human" "$(fake_labels_of 8)" "needs-human orch:spec ready-for-agent "
+assert_contains "the refusal names the writer and the body" "$(fake_comments_of 8)" "the issue's title and body was last written by stranger"
+assert_contains "as a refusal" "$(fake_comments_of 8)" "refused to run the spec phase"
+assert_eq "its claim is released" "$(fake_claim_held 8)" free
+assert_eq "no side checkout was made" "$(ls "$top/.orchestrator/checkouts" 2>/dev/null)" "$pt_before"
+assert_not_contains "no plan comment was posted" "$(fake_comments_of 8)" "01-plan"
+
+# a stranger re-editing a trusted issue is refused at the next pickup
+pt_issue 11 stranger NONE maintainer; pt_tick
+assert_eq "phase one runs" "$(tick_calls)" "1"
+fake_issue_relabel 11 ready-for-agent orch:spec
+fake_issue_authorship 11 stranger NONE stranger
+printf '' >"$launcher_dir/calls"; printf '11\n' >"$launcher_dir/release"
+pt_tick
+assert_eq "the re-edited issue is refused at the next phase" "$(tick_calls)" "0"
+assert_contains "naming the writer" "$(fake_comments_of 11 | tail -3)" "last written by stranger"
+fake_issue_authorship 11 stranger NONE maintainer
+"$ORCH" autopilot resume 11 >/dev/null 2>&1
+pt_tick
+assert_eq "after a maintainer edits it and resume, the next tick goes on" "$(tick_calls)" "1"
+
+# title renames, through the pickup: a stranger's rename of a maintainer-edited
+# issue is refused naming the title alone; a maintainer's rename is picked up
+pt_issue 13 stranger NONE maintainer stranger; fake_comments_clear 13; pt_tick
+assert_eq "an issue whose title the stranger renamed is not picked up" "$(tick_calls)" "0"
+assert_contains "the refusal names the title alone" "$(fake_comments_of 13)" "the issue's title was last written by stranger"
+assert_contains "and is a refusal" "$(fake_comments_of 13)" "refused to run the spec phase"
+assert_eq "it is needs-human" "$(fake_labels_of 13)" "needs-human orch:spec ready-for-agent "
+pt_issue 14 stranger NONE maintainer maintainer; fake_comments_clear 14; pt_tick
+assert_eq "an issue whose title a maintainer renamed is picked up" "$(tick_calls)" "1"
+
+# a failed trust read fails closed
+pt_issue 12 someone OWNER
+fake_fail adapter_issue_authorship "HTTP 502 authorship"
+pt_tick
+fake_unfail
+assert_eq "a failed trust read starts no session" "$(tick_calls)" "0"
+assert_eq "and is needs-human" "$(fake_labels_of 12)" "needs-human orch:spec ready-for-agent "
+assert_contains "the failure names the read and the reason" "$(fake_comments_of 12)" "step trust read failed: HTTP 502 authorship"
+assert_eq "the claim is released" "$(fake_claim_held 12)" free
+
+# pickup's init runs under ORCH_AUTOPILOT=1
+out="$(sourced_orch_script 'autopilot_orch_in() { echo "ap=${ORCH_AUTOPILOT:-} $*"; }; unset ORCH_AUTOPILOT; autopilot_pickup_init 5 /nonexistent/side; echo "after=${ORCH_AUTOPILOT:-}"')"
+assert_eq "init runs with ORCH_AUTOPILOT=1, leaving the tick's own environment alone" "$out" "ap=1 /nonexistent/side init side --issue 5
+after="

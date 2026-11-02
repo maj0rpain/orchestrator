@@ -966,6 +966,31 @@ out="$("$ORCH" issue comments 961 "$issue_comments" 2>&1)"; st=$?
 assert_status "an issue with only review changelogs still succeeds" "$st" 0
 assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
 
+# Untrusted authors (#1903): a stranger's comments, a `## Spec review` one
+# among them, are left out of every read of the issue's comments; an owner's
+# is kept (every association is pinned in the trust module's section). One
+# stderr line says how many, and only when some were dropped.
+fake_issue 962 open bug
+fake_issue_title 962 "Trust"
+fake_comment 962 owner 2026-09-04T09:00:00Z "Owner note." OWNER
+fake_comment 962 rando 2026-09-04T12:00:00Z "Stranger note." NONE
+fake_comment 962 rando 2026-09-04T15:00:00Z "$(writeln "$(marker_of spec-review)" 'Round 9 of 9')" NONE
+out="$("$ORCH" issue comments 962 "$issue_comments" 2>&1)"; st=$?
+assert_status "comments succeeds past untrusted authors" "$st" 0
+assert_eq "and says how many it ignored, once" "$out" \
+  "orch: ignored 2 comment(s) from untrusted authors on #962"
+assert_eq "keeping the owner, with no placeholder" "$(cat "$issue_comments")" \
+  "$(writeln '<!-- comment @owner 2026-09-04T09:00:00Z -->' 'Owner note.')"
+issue_json_trust="$(mktemp)"
+out="$("$ORCH" issue fetch 962 "$issue_json_trust" --json 2>&1)"; st=$?
+assert_status "fetch --json succeeds past untrusted authors" "$st" 0
+assert_eq "saying how many it ignored" "$out" "orch: ignored 2 comment(s) from untrusted authors on #962"
+assert_eq "the published shape byte for byte, minus the strangers' comments" "$(od -c <"$issue_json_trust")" \
+  "$(printf '%s\n' '{"number":962,"title":"Trust","body":"","labels":["bug"],"comments":[{"author":"owner","createdAt":"2026-09-04T09:00:00Z","body":"Owner note."}]}' | od -c)"
+rm -f "$issue_json_trust"
+out="$("$ORCH" issue comments 24 "$issue_comments" 2>&1)"
+assert_eq "no line when nothing was dropped" "$out" ""
+
 printf 'known content\n' >"$issue_comments"
 assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_json "$GH_502" 1 \
   "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
@@ -1055,3 +1080,39 @@ assert_eq "an empty OLDPWD gives the generic remedy" "$err" "$outside_generic"
 err="$(env -u OLDPWD bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
 assert_status "with OLDPWD unset, exits 1" "$st" 1
 assert_eq "an unset OLDPWD gives the generic remedy" "$err" "$outside_generic"
+
+# --- issue fetch trust warning ------------------------------------------------
+# Attended reads warn rather than refuse (ADR-0057).
+echo
+echo "issue fetch trust warning"
+healthy_repo
+fake_github
+fake_issue 31 open
+fake_issue_authorship 31 stranger NONE
+tw_file="$(mktemp)"
+# (plain mode's warning is pinned in trust.sh's tr_warn)
+tw_mode=--json
+out="$("$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
+assert_status "fetch of an untrusted issue exits 0 ($tw_mode)" "$st" 0
+assert_eq "with one warning naming the writer ($tw_mode)" "$(grep -c 'last written by stranger' <<<"$out")" "1"
+# a failing trust read warns that trust could not be checked, and still writes
+fake_fail adapter_issue_authorship "HTTP 502 authorship"
+for tw_mode in "" --json; do
+  : >"$tw_file"
+  out="$("$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
+  assert_status "fetch past a failed trust read exits 0 ($tw_mode)" "$st" 0
+  assert_contains "warning that trust could not be checked ($tw_mode)" "$out" "orch: issue trust could not be checked for #31: "
+  assert_eq "and still writes the file ($tw_mode)" "$([ -s "$tw_file" ] && echo written)" "written"
+done
+# under ORCH_AUTOPILOT=1 the pickup's check is the one read: none is made, so
+# the failing read is never reached and nothing is printed
+for tw_mode in "" --json; do
+  out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
+  assert_status "an autopilot fetch exits 0 ($tw_mode)" "$st" 0
+  assert_eq "and makes no trust read and prints no warning ($tw_mode)" "$out" ""
+done
+fake_unfail
+fake_issue_authorship 31 stranger NONE
+out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
+assert_eq "an autopilot fetch of an untrusted issue prints no warning" "$out" ""
+rm -f "$tw_file"

@@ -60,6 +60,9 @@ timeline_read() {
     TIMELINE_REASON="$(gh_reason "$gh_err")"
     return 1
   fi
+  # Untrusted authors' comments are dropped here, once, before any marker or
+  # answer is read from them.
+  json="$(trust_filter_comments "$1" <<<"$json")" || return 1
   # One pass: the first line is the comment list, compact, then one row per
   # comment.
   text="$(jq -r "$(marked_comment_jq)"'

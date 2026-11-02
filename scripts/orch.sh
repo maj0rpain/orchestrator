@@ -99,7 +99,8 @@ readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 # The noun modules, after the ROOT block, whose constants they read, with the
 # concept modules that have no noun of their own, checkout.sh,
 # filed-finding.sh, issue-timeline.sh, known-items.sh, liveness.sh,
-# marked-comment.sh and standing.sh, all sourced in alphabetical order.
+# marked-comment.sh, standing.sh and trust.sh, all sourced in alphabetical
+# order.
 # doctor.sh is one of the noun modules, with one rule more: the dependency runs
 # one way, doctor.sh calling into this file and the other modules, which call
 # nothing doctor.sh defines but cmd_doctor, from main(), and the reporters d_ok,
@@ -140,6 +141,7 @@ source "$ORCH_SCRIPTS/orch/state.sh"
 source "$ORCH_SCRIPTS/orch/suite-cost.sh"
 source "$ORCH_SCRIPTS/orch/ticket.sh"
 source "$ORCH_SCRIPTS/orch/ticket-worktree.sh"
+source "$ORCH_SCRIPTS/orch/trust.sh"
 # The flow's phases, space-separated in flow order: read inside functions only
 # (the state writer, doctor's state-phase check), never while a module is
 # sourced, so it is set here, from the Handoff module's phase table.

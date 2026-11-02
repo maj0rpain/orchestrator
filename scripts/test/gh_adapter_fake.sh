@@ -26,6 +26,12 @@
 #   issues/<n>/duplicate_of
 #                     the issue a duplicate close named; absent, none
 #   issues/<n>/pull   present, #n is a pull request, not an issue
+#   issues/<n>/author, issues/<n>/association, issues/<n>/editor,
+#   issues/<n>/renamer
+#                     the issue author's login and authorAssociation, the
+#                     login of the body's last editor and of the title's
+#                     latest renamer; absent, the author is fake-gh as OWNER
+#                     and the body is never edited nor the title renamed
 #   issues/<n>/comments/<k>/{author,created,body}
 #                     the issue's k-th comment
 #   next_issue        the number the next created issue takes; absent, one
@@ -229,8 +235,9 @@ fake_issue_known() {
 
 fake_issue_labels() { cat "$(fake_issue_dir "$1")/labels" 2>/dev/null || true; }
 
-# fake_comment_append <comments-dir> <author> <created-at> <body-file>: one
-# comment appended to an issue's or PR's comments directory, numbered in order.
+# fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
+# one comment appended to an issue's or PR's comments directory, numbered in
+# order, its authorAssociation OWNER unless given.
 fake_comment_append() {
   local d="$1" k
   mkdir -p "$d"
@@ -238,6 +245,7 @@ fake_comment_append() {
   mkdir "$d/$k"
   printf '%s\n' "$2" >"$d/$k/author"
   printf '%s\n' "$3" >"$d/$k/created"
+  printf '%s\n' "${5:-OWNER}" >"$d/$k/association"
   cat "$4" >"$d/$k/body"
 }
 
@@ -259,23 +267,9 @@ fake_close_comment() {
   rm -f "$c"
 }
 
-# fake_comments_print <comments-dir>: the directory's comments in COMMENTS_JQ's
-# shape - each opened by its marker line, one blank line between, a newline
-# after the last; nothing at all for none.
-fake_comments_print() {
-  local d="$1" k first=1
-  [ -d "$d" ] || return 0
-  for k in $(ls "$d" | sort -n); do
-    [ "$first" = 1 ] || printf '\n\n'
-    first=0
-    printf '<!-- comment @%s %s -->\n' "$(cat "$d/$k/author")" "$(cat "$d/$k/created")"
-    cat "$d/$k/body"
-  done
-  printf '\n'
-}
-
 # fake_comments_json <comments-dir> <n>: the directory's comments, numerically
-# ordered, as one compact JSON array of author, createdAt, body and url, the url
+# ordered, as one compact JSON array of author, authorAssociation (OWNER for a
+# comment stored without one), createdAt, body and url, the url
 # being https://github.com/o/r/issues/<n>#issuecomment-<k> for the k-th
 # comment; [] for a missing or empty directory.
 fake_comments_json() {
@@ -283,12 +277,21 @@ fake_comments_json() {
   if [ -d "$d" ]; then
     for k in $(ls "$d" | sort -n); do
       comments="$(jq -c --arg a "$(cat "$d/$k/author")" \
+        --arg s "$(cat "$d/$k/association" 2>/dev/null || echo OWNER)" \
         --arg c "$(cat "$d/$k/created")" --rawfile b "$d/$k/body" \
         --arg u "https://github.com/o/r/issues/$2#issuecomment-$k" \
-        '. + [{author: $a, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
+        '. + [{author: $a, authorAssociation: $s, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
     done
   fi
   printf '%s\n' "$comments"
+}
+
+# fake_comments_raw <comments-dir> <n>: the stored comments as gh's raw JSON -
+# an object whose comments array holds each comment's author login object,
+# authorAssociation, createdAt and body.
+fake_comments_raw() {
+  fake_comments_json "$1" "$2" \
+    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body})}'
 }
 
 # adapter_issue_body <n>: the stored body, then a newline, as gh's --jq .body
@@ -300,18 +303,18 @@ adapter_issue_body() {
   printf '\n'
 }
 
-# adapter_issue_comments <n>: the stored comments in COMMENTS_JQ's shape -
-# each opened by its marker line, one blank line between, a newline after the
-# last; nothing at all for none.
+# adapter_issue_comments <n>: the stored comments as gh's raw JSON - an object
+# whose comments array holds each comment's author login object,
+# authorAssociation, createdAt and body.
 adapter_issue_comments() {
   ! fake_failing adapter_issue_comments || return 1
   fake_issue_known "$1" || return 1
-  fake_comments_print "$(fake_issue_dir "$1")/comments"
+  fake_comments_raw "$(fake_issue_dir "$1")/comments" "$1"
 }
 
 # adapter_issue_json <n>: the stored issue as ISSUE_JSON_JQ's trimmed object -
 # its number, title, body byte for byte, label names, and each comment's
-# author, date and body.
+# author, association, date and body.
 adapter_issue_json() {
   ! fake_failing adapter_issue_json || return 1
   fake_issue_known "$1" || return 1
@@ -380,6 +383,21 @@ adapter_issue_title_labels() {
   fake_issue_known "$1" || return 1
   printf '%s\n' "$(cat "$(fake_issue_dir "$1")/title" 2>/dev/null)"
   fake_issue_labels "$1"
+}
+
+# adapter_issue_authorship <n>: the stored author login, its association, the
+# body's last editor and the title's latest renamer, one per line; fake-gh as
+# OWNER, never edited or renamed, for an issue seeded without them.
+adapter_issue_authorship() {
+  ! fake_failing adapter_issue_authorship || return 1
+  fake_issue_known "$1" || return 1
+  local d f
+  d="$(fake_issue_dir "$1")"
+  printf '%s\n' "$(cat "$d/author" 2>/dev/null || echo "$FAKE_COMMENT_AUTHOR")"
+  printf '%s\n' "$(cat "$d/association" 2>/dev/null || echo OWNER)"
+  for f in editor renamer; do
+    printf '%s\n' "$(cat "$d/$f" 2>/dev/null || true)"
+  done
 }
 
 # adapter_issue_state <n>: PULL for a PR the store holds or a number fake_pull
@@ -608,12 +626,12 @@ adapter_pr_body() {
   printf '\n'
 }
 
-# adapter_pr_comments <n>: the stored comments in COMMENTS_JQ's shape, as
+# adapter_pr_comments <n>: the stored comments as gh's raw JSON, as
 # adapter_issue_comments prints an issue's.
 adapter_pr_comments() {
   ! fake_failing adapter_pr_comments || return 1
   fake_pr_known "$1" || return 1
-  fake_comments_print "$(fake_pr_dir "$1")/comments"
+  fake_comments_raw "$(fake_pr_dir "$1")/comments" "$1"
 }
 
 # adapter_pr_refs <n>: the stored head SHA (default forty zeros, a SHA no
