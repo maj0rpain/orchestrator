@@ -1,13 +1,14 @@
 ---
 name: orch-review
-description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop. Not the review pass - one look by the same two reviewers with no loop around it, quick or standalone - which is the orch-review-pass skill.
+description: Run one review loop over an orchestrator flow's draft PR - a budget of iterations, chosen by the human or, in an autopilot flow, taken from the plan, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop. Not the review pass - one look by the same two reviewers with no loop around it, quick or standalone - which is the orch-review-pass skill.
 ---
 
 # Orchestrator review loop
 
-One loop, one session, a **budget** of iterations the human names before the
-first one runs. Every iteration is an independent look at the whole change;
-the loop fixes what is **blocking** and whatever **major** or **nit** needs no
+One loop, one session, a **budget** of iterations: the human names it before
+the first one runs, or in an autopilot flow the plan sets it. Every iteration
+is an independent look at the whole change; the loop fixes what is
+**blocking** and whatever **major** or **nit** needs no
 decision, runs its whole budget whatever any iteration finds, files every
 other major and nit as a GitHub issue when it ends, and ends in exactly one
 of two places: the PR marked **ready**, or a **bounded stop** with the reason
@@ -133,11 +134,20 @@ plan or from what the previous loop left instead of asking.
    triage. A record with no `## Evidence` section is read per **Evidence**
    in `agents/orch-fixer.md` (under the plugin root).
 5. **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) the
-   budget is never asked. On a first loop (`iteration` is 0), `bash "$ORCH"
-   autopilot budget` prints the plan's budget: set `budget` to it. On a
-   re-entry (`iteration` not 0, after any bounded stop) pick the number of
-   further iterations `n` yourself, by the interactive re-entry rule below
-   (the "Re-entry" bullet). Then `budget` is `iteration + n`, bounded thus:
+   budget is never asked. On a first loop
+   (`iteration` is 0) `autopilot run` has already recorded the plan's budget:
+   read it with `bash "$ORCH" state get budget`, set nothing, ask nothing. On
+   a re-entry (`iteration` not 0, after any bounded stop) pick the number of
+   further iterations `n` yourself, by the **re-entry sizing rule**: judge it
+   from what the previous loop's records (step 4) left - any open blocking
+   still standing, and how much its final iterations still found - never from
+   the change's size.
+   - 2: a single stuck blocker (2, not 1: only a clean final iteration can
+     go Ready).
+   - 3: steady remaining churn.
+   - 5: the final iterations were still finding new blocking findings.
+
+   Then `budget` is `iteration + n`, bounded thus:
    - Floor: `n` is at least 2 when anything must be fixed - an open blocking
      finding carried in, or a reply or ruling that changes behaviour - because
      only a clean final iteration can go Ready; otherwise at least 1.
@@ -156,10 +166,11 @@ plan or from what the previous loop left instead of asking.
    and interactive re-entries carry no such line. It is for a human reading
    the record: nothing parses it.
 
-   Then `bash "$ORCH" state set budget <that number>` and go to step 6; the
-   rest of this step is the interactive question.
+   Then, on a re-entry, `bash "$ORCH" state set budget <that number>`. Go to
+   step 6.
 
-   Ask the budget. **The question blocks** - ask it as a question
+5i. **Interactive only.** Never reached in an autopilot flow. Ask the budget.
+   **The question blocks** - ask it as a question
    with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
    on Junie). Ask once, before the
    first iteration, and never again mid-loop:
@@ -180,14 +191,8 @@ plan or from what the previous loop left instead of asking.
      - 8: large - many modules, 4+ tickets, or the loop or state machinery
        itself.
    - Re-entry: "How many more?" Options 2, 3 and 5, plus Other for any
-     integer ≥ 1 (so 1 stays reachable). Suggest one from what the previous
-     loop's records (step 4)
-     left - any open blocking still standing, and how much its final
-     iterations still found - never from the change's size.
-     - 2: a single stuck blocker (2, not 1: only a clean final iteration can
-       go Ready).
-     - 3: steady remaining churn.
-     - 5: the final iterations were still finding new blocking findings.
+     integer ≥ 1 (so 1 stays reachable). Suggest one by step 5's re-entry
+     sizing rule.
 
      The new loop continues the iteration numbering, so set `budget` to
      `iteration + n`.

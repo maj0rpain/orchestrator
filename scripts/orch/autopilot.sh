@@ -710,6 +710,15 @@ autopilot_log_text() {
   autopilot_log_last_event "$1" result | jq -r '.result // empty | strings' 2>/dev/null || true
 }
 
+# autopilot_final_reply <log>: the text of <log>'s last result event as one
+# line - runs of whitespace one space, the ends trimmed - cut to its first 500
+# characters with "…" appended when cut; nothing when there is no text.
+autopilot_final_reply() {
+  autopilot_log_last_event "$1" result | jq -r '(.result // empty | strings
+    | gsub("\\s+"; " ") | gsub("^ | $"; "")) as $t
+    | if ($t | length) > 500 then $t[:500] + "…" else $t end' 2>/dev/null || true
+}
+
 # autopilot_event_rejecting_reset <event>: returns 0 when the rate_limit_event
 # has a window - the top level one or one under unifiedWindows - whose status is
 # neither allowed nor allowed_warning, printing the latest resetsAt among them
@@ -763,7 +772,7 @@ autopilot_limit_reset() {
 # stop. It dies, before any write, when the checkout or the claims cannot be
 # read.
 autopilot_session_end() {
-  local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0
+  local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
   local event="" early_epoch reject_epoch outcome=failure reset="" early="" limit="" pause released_note
   main_root="$(main_checkout_or_die)" || exit $?
   standing_claims_read
@@ -800,12 +809,18 @@ autopilot_session_end() {
       standing_limit_stop "$issue" "$phase" "$reset" "$limit" "$rc" "$log"
       return 0 ;;
   esac
-  standing_stop "$issue" failure "$phase" "the session exited with code $rc; log: $log"
+  reply="$(autopilot_final_reply "$log")"
+  detail="the session exited with code $rc; "
+  [ -z "$reply" ] || detail+="it ended on: *$reply*; "
+  standing_stop "$issue" failure "$phase" "${detail}log: $log"
 }
 
 # The tools a headless phase session gets: those the plugin's skills and agents
 # use.
-AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion"
+AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage"
+# Its system prompt addition: it is told it is headless, as print mode turns
+# AskUserQuestion off and a question asked in chat is never answered.
+AUTOPILOT_SYSTEM_PROMPT='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop.'
 # Its settings: no bundled skills, and no plugin-authoring, a built-in plugin
 # that disableBundledSkills leaves listed.
 AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-authoring@builtin":false}}'
@@ -815,6 +830,17 @@ AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-autho
 # failure handling. Not 0: nothing else limits a session, so a hung subagent
 # would hold its claim forever.
 AUTOPILOT_BG_WAIT_MS=7200000
+
+# autopilot_review_budget_record <side>: records the plan's Budget as <side>'s
+# review budget, each read and write orch.sh run in <side>, so the plan is read
+# for that checkout's issue. Run it contained (autopilot_pickup_contained): it
+# changes directory, and a failed step fails with the step's own reason.
+autopilot_review_budget_record() {
+  local budget
+  cd "$1" || return
+  budget="$("$(autopilot_self)" autopilot budget)" || return
+  autopilot_orch_in "$1" state set budget "$budget"
+}
 
 # autopilot_run <issue>: the session wrapper a tick starts: runs the headless
 # session in the issue's side checkout, its output in the session log, and
@@ -836,6 +862,12 @@ autopilot_run() {
   # fail.
   standing_claims_read
   mine="$(standing_claim_fields "$issue")" || mine=""
+  if [ "$phase" = review ] && [ "$(state_get_in "$(flow_state_file "$side")" iteration)" = 0 ]; then
+    # A first-loop review session is not asked its budget: the plan's is
+    # recorded, over any left by a loop before a redo.
+    autopilot_pickup_contained autopilot_review_budget_record "$side" ||
+      { standing_stop "$issue" failure review "could not record the plan's Budget as the review budget: $PICKUP_REASON"; return 0; }
+  fi
   for name in model effort; do
     autopilot_setting "$name"
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
@@ -846,6 +878,7 @@ autopilot_run() {
   ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
+      --append-system-prompt "$AUTOPILOT_SYSTEM_PROMPT" \
       --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
   autopilot_session_end "$issue" "$phase" "$log" "$rc" "$mine"
 }

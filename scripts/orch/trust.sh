@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 # trust.sh - the Trust module: a concept module with no orch.sh noun of its own,
-# owning which comments orch.sh reads and which issues autopilot runs on. A
+# owning which comments orch.sh reads, which PRs it takes for its own and which
+# issues autopilot runs on. A PR is its own when its head branch lives in the
+# repo (isCrossRepository false); a fork PR is dropped (trust_filter_prs). A
 # trusted comment is one whose authorAssociation is OWNER, MEMBER or
 # COLLABORATOR (ADR-0057); every other comment is dropped, once per read, in the
 # domain layer just above the gh adapters, before any marked comment, answer or
@@ -29,6 +31,27 @@ trust_filter_comments() {
   kept="$(jq -c .kept <<<"$both")"
   [ "$n" -eq 0 ] || warn "ignored $n comment(s) from untrusted authors on #$1"
   printf '%s\n' "$kept"
+}
+
+# trust_filter_prs <label>: an adapter's PR lines on stdin, each
+# `<number>[\t<field>...]\t<isCrossRepository>`, on stdout as the same lines
+# without the flag and without the fork PRs (flag `true`), in order. <label> is
+# a branch or `#<issue>`. When it dropped any, prints one stderr line, `orch:
+# ignored N PR(s) from forks for <label>`. Non-zero, printing nothing, when a
+# line's first field is not a PR number or its last is neither `true` nor
+# `false`.
+trust_filter_prs() {
+  local out n
+  out="$(awk -F'\t' -v OFS='\t' '
+    NF == 0 { next }
+    $1 !~ /^[0-9]+$/ || NF < 2 || ($NF != "true" && $NF != "false") { exit 1 }
+    $NF == "true" { dropped++; next }
+    { NF--; print }
+    END { print dropped + 0 }
+  ')" || return 1
+  n="${out##*$'\n'}"
+  [ "$n" -eq 0 ] || warn "ignored $n PR(s) from forks for $1"
+  [ "$out" = "$n" ] || printf '%s\n' "${out%$'\n'*}"
 }
 
 # trust_issue_read <n> <author> <assoc> <editor> <renamer> <err>:
