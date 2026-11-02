@@ -427,7 +427,7 @@ review_standards_mentions() {
   done < <(awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
     { l = $0; sub(/\r$/, "", l); was = fence_char; fenced($0) }
     fence_char != was { if (p != "") print p; p = ""; next }
-    is_heading(l) { if (p != "") print p; print l; p = ""; next }
+    was == "" && is_heading(l) { if (p != "") print p; print l; p = ""; next }
     l ~ /[^[:space:]]/ { p = p " " l; next }
     p != "" { print p; p = "" }
     END { if (p != "") print p }
@@ -466,7 +466,7 @@ review_standards_declaration() {
     fenced($0) { if (p != "") { print p; done = 1; exit } prev = 0; next }
     { l = $0; sub(/\r$/, "", l); head = is_heading(l); live = (l ~ /[^[:space:]]/) }
     p != "" { if (live && !head) { p = p " " l; next } print p; done = 1; exit }
-    /^Standards:/ && !prev { p = $0; next }
+    /^Standards:/ && !prev { p = l; next }
     { prev = (live && !head) ? 1 : 0 }
     END { if (p != "" && !done) print p }
   ' "$ROOT/$1" 2>/dev/null

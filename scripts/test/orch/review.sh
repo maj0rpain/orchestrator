@@ -1524,6 +1524,9 @@ assert_eq "a backtick left open does not pair across a CRLF blank line" \
 writeln '# claude' '## The `x' 'See `docs/agents/p.md`.' >CLAUDE.md
 assert_eq "an odd backtick in a heading does not pair into the line under it" \
   "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
+writeln '# claude' '```sh' '# run `orch.sh branch' '# retire <old> <new>` then see `docs/agents/p.md`' '```' >CLAUDE.md
+assert_eq "a # line inside a fence is no heading, so a span wrapping across it still pairs" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
 # A declared Standards: paragraph replaces the crawl.
 rm -f CLAUDE.md; : >docs/agents/q.md
 dstd() { "$ORCH" review standards 2>&1; }
@@ -1565,6 +1568,11 @@ assert_eq "a ~~~ or info-string line inside a backtick fence does not close it" 
   "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
 printf 'Standards: `docs/agents/q.md`\r\n\r\nSee `docs/agents/nope.md`.\r\n' >CONTRIBUTING.md
 assert_eq "a CRLF blank line ends a declaration paragraph" "$(dstd)" "Standards: docs/agents/q.md"
+printf '# A B\n' >docs/agents/wrap.md
+printf 'Standards: `docs/agents/wrap.md#A\r\nB`\r\n' >CLAUDE.md
+assert_eq "a CRLF declaration wrapping from its first line keeps no CR in its span" \
+  "$(dstd)" "Standards: docs/agents/wrap.md#A B"
+rm -f CLAUDE.md docs/agents/wrap.md
 # Each unresolved entry dies naming the entry and the reason.
 mkdir -p docs/adir
 ln -s /etc/passwd docs/agents/out.md
