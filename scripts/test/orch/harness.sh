@@ -574,6 +574,68 @@ assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "10 passed, 1 failed"
 rm -rf "$par_dir"
 
+# The section deadline (ORCH_TEST_SECTION_TIMEOUT). Planted sections hang on a
+# nested child that carries a unique marker in its command line.
+dl_mark="orchdeadline$$x$RANDOM"
+dl_dir="$(planted_copy <<PLANTED
+  # --- planted hang
+  echo; echo "planted hang"; echo "output before the hang"
+  bash -c 'sleep 600 # ${dl_mark}hang' &
+  wait
+  # --- planted stubborn
+  echo; echo "planted stubborn"
+  bash -c 'trap "" TERM; while :; do sleep 1; done # ${dl_mark}stubborn' &
+  wait
+  # --- planted fine
+  echo; echo "planted fine"; ok "fine ran"
+  # --- planted nap
+  echo; echo "planted nap"; sleep 2.5; ok "napped"
+  # --- planted nap two
+  echo; echo "planted nap two"; sleep 2.5; ok "napped two"
+  # --- planted nap three
+  echo; echo "planted nap three"; sleep 2.5; ok "napped three"
+  # --- planted long nap
+  echo; echo "planted long nap"; sleep 4; ok "napped long"
+PLANTED
+)"
+dl_suite="$dl_dir/scripts/test/orch_test.sh"
+dl_start=$SECONDS
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=3 ORCH_TEST_SECTION_TIMEOUT=2 \
+  ORCH_TEST_ONLY='^planted (hang|fine)$' bash "$dl_suite" 2>&1)"; st=$?
+dl_took=$((SECONDS - dl_start))
+assert_status "a parallel run with a hanging section exits non-zero" "$st" 1
+assert_eq "and finishes well within the hang" "$([ "$dl_took" -lt 60 ] && echo fast)" "fast"
+assert_contains "prints the hanging section's output, then its timeout FAIL" "$out" \
+  "$(printf 'output before the hang\n  FAIL section '"'"'planted hang'"'"' timed out\n     after 2s; its process tree was stopped')"
+assert_contains "still passes the section planted beside it" "$out" "  ok   fine ran"
+assert_eq "leaves no process with the hang's marker" \
+  "$(cat /proc/[0-9]*/cmdline 2>/dev/null | tr "\0" "\n" | grep -c "${dl_mark/#o/[o]}hang")" "0"
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_SECTION_TIMEOUT=2 \
+  ORCH_TEST_ONLY='^planted stubborn$' bash "$dl_suite" 2>&1)"; st=$?
+assert_status "a section whose child ignores TERM times out too" "$st" 1
+assert_contains "reporting it" "$out" "section 'planted stubborn' timed out"
+assert_eq "and the KILL escalation leaves no process with its marker" \
+  "$(cat /proc/[0-9]*/cmdline 2>/dev/null | tr "\0" "\n" | grep -c "${dl_mark/#o/[o]}stubborn")" "0"
+for dl_val in 0 abc; do
+  out="$(ORCH_TEST_JOBS=2 ORCH_TEST_SECTION_TIMEOUT="$dl_val" ORCH_TEST_ONLY='^planted fine$' \
+    bash "$dl_suite" 2>&1)"; st=$?
+  assert_status "ORCH_TEST_SECTION_TIMEOUT='$dl_val' exits 1" "$st" 1
+  assert_contains "names the variable" "$out" "ORCH_TEST_SECTION_TIMEOUT='$dl_val'"
+  assert_eq "and runs no section" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
+done
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=1 ORCH_TEST_SECTION_TIMEOUT=2 \
+  ORCH_TEST_ONLY='^planted long nap$' bash "$dl_suite" 2>&1)"; st=$?
+assert_status "a sequential run has no deadline" "$st" 0
+assert_eq "and reports no timeout" "$(printf '%s\n' "$out" | grep -c 'timed out')" "0"
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=1 ORCH_TEST_SECTION_TIMEOUT=abc \
+  ORCH_TEST_ONLY='^planted fine$' bash "$dl_suite" 2>&1)"; st=$?
+assert_status "a sequential run ignores an invalid deadline" "$st" 0
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_SECTION_TIMEOUT=4 \
+  ORCH_TEST_ONLY='^planted nap( two| three)?$' bash "$dl_suite" 2>&1)"; st=$?
+assert_status "the clock starts at the child's start, not its wait for a slot" "$st" 0
+assert_eq "so a queued section reports no timeout" "$(printf '%s\n' "$out" | grep -c 'timed out')" "0"
+rm -rf "$dl_dir"
+
 # --- assertions in a subshell (#1904) ----------------------------------------
 # A cut-down orch suite with one failing assertion inside ( ... ) and one
 # passing outside: the tally file counts both, whatever the job count.

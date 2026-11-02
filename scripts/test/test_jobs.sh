@@ -79,22 +79,26 @@
 # removes its temp directory only once no child can still write into it. A
 # child that ignores TERM keeps the runner waiting on it.
 #
-# test_jobs_descendants: prints the live (non-zombie) processes below this
-# shell, one pid a line, leaving out the command substitution it runs in and
-# what that starts (its ps and awk).
+# test_jobs_descendants [<root pid>]: prints the live (non-zombie) processes
+# below <root pid> - this shell when none is given - one pid a line, leaving
+# out the command substitution it runs in and what that starts (its ps and awk).
 #
 # test_jobs_process_table: prints every process as "<pid> <parent pid>
 # <state>", one a line, from ps, or from /proc/<pid>/stat on a host with no ps
 # (a slim container); with neither it prints nothing.
 #
+# test_jobs_stop_tree <pid> [below]: sends TERM, once each, to <pid> and every
+# live process below it - and what they started, until none is left - and sends
+# KILL to any still alive after 5 seconds. A process it has signalled stays in
+# its set even if its parent dies and it is orphaned. With the word `below`,
+# <pid> itself is left out and only the processes below it are signalled. With
+# no process table to read (test_jobs_process_table prints nothing), it signals
+# <pid> alone (TERM, then KILL after 5 s), or nothing with `below`.
+#
 # test_jobs_stop_descendants: a temp-root suite's INT/TERM handler, and a
-# sequential orch_test.sh run's. Sends TERM, once each, to every live process
-# below this shell - children, and what they started, such as the run inside a
-# command substitution a section was waiting on - until none is left, sends
-# KILL to any still alive after 5 seconds, and exits 130. So the EXIT trap
-# removes the temp root only once nothing the run started can still write into
-# it, or recreate it. With no process table to read (test_jobs_process_table
-# prints nothing), the handler just exits 130.
+# sequential orch_test.sh run's: test_jobs_stop_tree $$ below, then exit 130, so
+# it never signals its own shell and the EXIT trap removes the temp root only
+# once nothing the run started can still write into it, or recreate it.
 
 is_positive_integer() {
   case "$1" in '' | *[!0-9]*) return 1 ;; esac
@@ -179,7 +183,7 @@ test_jobs_descendants() {
   # Read here: inside the pipeline, BASHPID would be the forked element's own.
   local self="$BASHPID"
   test_jobs_process_table |
-    awk -v root="$$" -v self="$self" '
+    awk -v root="${1:-$$}" -v self="$self" '
       { pid[NR] = $1; parent[NR] = $2; zombie[NR] = ($3 ~ /^Z/) }
       END {
         below[root] = 1
@@ -195,12 +199,26 @@ test_jobs_descendants() {
       }'
 }
 
-test_jobs_stop_descendants() {
-  local pids pid sent=" " tick
+test_jobs_stop_tree() {
+  local root="$1" below="${2:-}" known="" sent=" " table walked live pid tick
+  [ "$below" = below ] || known="$root"
   for ((tick = 0; tick < 100; tick++)); do
-    pids="$(test_jobs_descendants)"
-    [ -n "$pids" ] || break
-    for pid in $pids; do
+    table="$(test_jobs_process_table)"
+    walked="$(test_jobs_descendants "$root")"
+    # What was signalled stays in the set, so a process its dead parent
+    # orphaned is still stopped.
+    if [ -n "$table" ]; then
+      live="$(printf '%s\n' "$table" | awk -v want="$walked $known" '
+        BEGIN { n = split(want, a, " "); for (i = 1; i <= n; i++) w[a[i]] = 1 }
+        ($1 in w) && $3 !~ /^Z/ && !($1 in done) { done[$1] = 1; print $1 }')"
+    else
+      live=""
+      for pid in $known; do kill -0 "$pid" 2>/dev/null && live="$live $pid"; done
+    fi
+    [ -n "${live// /}" ] || break
+    known=""
+    for pid in $live; do
+      known="$known $pid"
       if [ "$tick" -ge 50 ]; then
         kill -KILL "$pid" 2>/dev/null
       elif [[ "$sent" != *" $pid "* ]]; then
@@ -210,6 +228,11 @@ test_jobs_stop_descendants() {
     done
     sleep 0.1
   done
+  return 0
+}
+
+test_jobs_stop_descendants() {
+  test_jobs_stop_tree $$ below
   exit 130
 }
 
