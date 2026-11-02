@@ -302,8 +302,12 @@ fake_online
 fake_noauth
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when gh is not authenticated" "$st" 1
-assert_contains "gives the login command" "$out" "gh auth login"
+assert_contains "names the host in the FAIL line" "$out" "gh is not authenticated to github.com."
+assert_contains "gives the login command" "$out" "gh auth login --hostname github.com"
 assert_contains "skips the checks that depended on the answer" "$out" "skipped: not authenticated"
+out="$(GH_REPO=ghe.example.com/acme/widgets "$ORCH" doctor --env 2>&1)"
+assert_contains "names an enterprise host in the FAIL line" "$out" "gh is not authenticated to ghe.example.com."
+assert_contains "gives the enterprise login command" "$out" "gh auth login --hostname ghe.example.com"
 fake_online
 
 fake_default_branch ''

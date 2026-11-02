@@ -1204,16 +1204,20 @@ assert_eq "passing gh's stderr through" "$out" \
 # The doctor-only operations (#551). Each case that asks gh the same argv as
 # another runs in its own command substitution, with its own fixture gh, since
 # the fixture answers one reply per argv.
-gh_reply 0 $'github.com\n  Logged in to github.com account acme (keyring)\n' '' auth status
-out="$(contract adapter_auth_status 2>&1)"; st=$?
+gh_reply 0 $'github.com\n  Logged in to github.com account acme (keyring)\n' '' auth status --active --hostname github.com
+out="$(contract adapter_auth_status github.com 2>&1)"; st=$?
 assert_status "auth status: succeeds where gh is authenticated" "$st" 0
 assert_contains "printing gh's own report" "$out" "Logged in to github.com"
 assert_contains "pinned to the resolved repo" "$(cat "$GH_FIXTURE/env.log")" \
-  "GH_REPO=acme/widgets GH_HOST=<unset> auth status"
-out="$(gh_fixture; gh_reply 1 '' 'You are not logged into any GitHub hosts. To log in, run: gh auth login' auth status
-  contract adapter_auth_status 2>&1)"; st=$?
+  "GH_REPO=acme/widgets GH_HOST=<unset> auth status --active --hostname github.com"
+out="$(gh_fixture; gh_reply 1 '' 'You are not logged into any GitHub hosts. To log in, run: gh auth login' auth status --active --hostname github.com
+  contract adapter_auth_status github.com 2>&1)"; st=$?
 assert_status "auth status: an unauthenticated gh fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "You are not logged into any GitHub hosts. To log in, run: gh auth login"
+out="$(gh_fixture; gh_reply 0 'ghe ok' '' auth status --active --hostname ghe.example.com
+  contract adapter_auth_status ghe.example.com 2>&1)"; st=$?
+assert_status "auth status: asks the enterprise host it is given" "$st" 0
+assert_eq "passing the enterprise report" "$out" "ghe ok"
 
 gh_reply 0 $'upstream/widgets\n' '' repo set-default --view
 out="$(contract adapter_repo_local_default 2>&1)"; st=$?

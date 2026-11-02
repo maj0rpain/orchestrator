@@ -164,7 +164,7 @@ gh_or_die() {
 #   adapter_sub_issue_unlink, adapter_issue_parent, adapter_blockers,
 #   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
 # - repo: adapter_repo_default_branch, adapter_repo_local_default,
-#   adapter_auth_status
+#   adapter_auth_status <host>
 # - ci: adapter_pr_checks, adapter_branch_required_checks,
 #   adapter_branch_rules, adapter_commit_has_check_runs,
 #   adapter_commit_has_statuses, adapter_run_rerun
@@ -761,12 +761,13 @@ adapter_repo_local_default() {
   gh repo set-default --view
 }
 
-# adapter_auth_status: succeeds where gh is authenticated to the host,
-# printing gh's own report; fails where it is not, or cannot tell, with gh's
-# report passed through - its text is the only signal telling "not
-# authenticated" from "could not connect".
+# adapter_auth_status <host>: succeeds where gh's active account on the host
+# is authenticated, printing gh's own report; fails where it is not, or cannot
+# tell, with gh's report passed through - its text is the only signal telling
+# "not authenticated" from "could not connect". Both flags are needed: gh
+# checks every account on every host otherwise, and one stale account fails it.
 adapter_auth_status() {
-  gh auth status
+  gh auth status --active --hostname "$1"
 }
 
 # --- ci operations ---
