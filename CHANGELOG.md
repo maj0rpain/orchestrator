@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.42.0
+
+A repo can now declare its coding standards list in its root agent file: a `Standards:` paragraph of backticked entries, each a path or a `path#Heading` that names one section. When a declaration is present, `orch.sh review standards` prints exactly those entries in place of the two-hop crawl, and an entry that names a missing file, a missing heading or an ambiguous heading fails with an `orch:` message. Both reviewers read every declared entry, and read a section entry as that section only. Backticks are now paired per paragraph, so a code span that wraps a line break no longer drops the paths after it. This is how `docs/agents/cli-conventions.md` was going missing. This repo declares CONTRIBUTING's Develop section, `docs/agents/cli-conventions.md` and `docs/agents/coding-standards.md`, so its list drops from 26 documents to those three.
+
 ## 4.41.0
 
 A new `PreToolUse` hook on `Bash`, `hook-bash-stdin.sh`, stops a stray stdin read from hanging a plugin subagent or an autopilot session. Under `bypassPermissions` it closes the command's stdin with an `exec </dev/null` prefix. In any other permission mode it denies a plain `cat`, `read`, `python`/`python3`/`node` with no script, or `bash -s`/`sh -s`, and says how to supply the input. A human's own session is left alone. Every plugin agent that runs Bash now has a Stdin instruction, and `docs/host-capabilities.md` records the capability, with Junie marked unverified.
