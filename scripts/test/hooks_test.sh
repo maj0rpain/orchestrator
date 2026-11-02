@@ -1453,15 +1453,16 @@ if command -v shellcheck >/dev/null 2>&1; then
   assert_contains "edit hook: names the warning" "$ew_out" "SC2034"
   run_edit_hook "$EW/scripts/ok.sh"
   assert_eq "edit hook: clean sh exits 0" "$ew_rc" 0
-  # PATH without shellcheck: symlink only what the hook needs.
-  NOSC="$(mktemp -d)"
-  for t in bash jq git awk sed cat dirname basename env grep tr sort wc find head cut; do
-    p="$(command -v "$t")" && ln -s "$p" "$NOSC/$t"
-  done
-  run_edit_hook "$EW/scripts/warn.sh" "$NOSC"
-  assert_eq "edit hook: no shellcheck exits 0" "$ew_rc" 0
-  assert_empty "edit hook: no shellcheck is silent" "$ew_out"
 fi
+# PATH without shellcheck: symlink only what the hook needs. The case itself
+# needs no shellcheck, so it runs on every machine.
+NOSC="$(mktemp -d)"
+for t in bash jq git awk sed cat dirname basename env grep tr sort wc find head cut; do
+  p="$(command -v "$t")" && ln -s "$p" "$NOSC/$t"
+done
+run_edit_hook "$EW/scripts/warn.sh" "$NOSC"
+assert_eq "edit hook: no shellcheck exits 0" "$ew_rc" 0
+assert_empty "edit hook: no shellcheck is silent" "$ew_out"
 NOREPO="$(mktemp -d)"
 mkdir -p "$NOREPO/docs"
 printf '%s\n' "$wide" >"$NOREPO/docs/wide.md"

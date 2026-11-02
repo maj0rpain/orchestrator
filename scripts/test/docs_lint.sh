@@ -3825,12 +3825,14 @@ spares "an over-long line in CHANGELOG.md or changelog.d/ is not flagged" \
 spares "an over-long line in a *.md outside the covered paths is not flagged" \
   "$out" '^\.out-of-scope/'
 # The per-file form agrees with the whole-root form, and skips uncovered files.
+# It is given every file in the fixture, covered or not, flagged or clean.
 width="$PLUGIN_ROOT/scripts/dev/width.sh"
-covered_files=()
-while IFS= read -r f; do covered_files+=("$fixture/${f%%:*}"); done \
-  < <(printf '%s\n' "$out" | cut -d: -f1 | sort -u)
-assert_eq "width.sh given every covered file prints what a root scan prints" \
-  "$("$width" --root "$fixture" "${covered_files[@]}")" "$out"
+fixture_files=()
+while IFS= read -r f; do fixture_files+=("$f"); done \
+  < <(find "$fixture" -type f | LC_ALL=C sort)
+assert_eq "width.sh given every fixture file prints what a root scan prints" \
+  "$("$width" --root "$fixture" "${fixture_files[@]}" | LC_ALL=C sort)" \
+  "$(printf '%s\n' "$out" | LC_ALL=C sort)"
 assert_empty "width.sh given an uncovered file prints nothing" \
   "$("$width" --root "$fixture" "$fixture/CHANGELOG.md")"
 check "no covered Markdown or shell comment line is past 80 columns" \

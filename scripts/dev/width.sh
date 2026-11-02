@@ -92,12 +92,14 @@ if [ "${#files[@]}" -eq 0 ]; then
   while IFS= read -r f; do
     scan_file "$root" "$f"
   done < <(cd "$root" && {
-    find skills agents commands docs -name '*.md' 2>/dev/null || true
-    for f in README.md CONTRIBUTING.md GLOSSARY.md CLAUDE.md; do
+    # Candidates only: covered is the one statement of coverage.
+    find skills agents commands docs scripts -type f 2>/dev/null || true
+    for f in *.md; do
       if [ -f "$f" ]; then echo "$f"; fi
     done
-    find scripts -name '*.sh' 2>/dev/null || true
-  } | sort)
+  } | while IFS= read -r f; do
+    if covered "$f"; then echo "$f"; fi
+  done | sort)
   exit 0
 fi
 
