@@ -69,19 +69,19 @@ under `~/.cache/orchestrator/test-job-pool`, as many as that default (so
 `ORCH_TEST_POOL_PERCENT`, read from each run's own environment, sizes the pool;
 an invalid value fails every runner with
 `<runner>: ORCH_TEST_POOL_PERCENT='<value>' is not a positive integer`), each
-held with `flock` while one section child or one shellcheck process runs, so
-two or three sessions verifying at once queue for slots (`orch_test.sh: waiting for a
-job slot (N in use)` on stderr, once) and a killed holder's slot is freed by the
-kernel. `ORCH_TEST_JOBS=N` caps how many slots a run asks for and never bypasses
-the pool, so a run asking for more jobs than the pool holds queues;
-`ORCH_TEST_JOBS=1` holds one slot for its whole one-shell run. `CI`
-bypasses the pool, as does a runner started inside a slot of the same pool (the
-runner marks its children with `ORCH_TEST_POOL_HELD`); a pool that cannot be
-created, opened or locked runs unpooled. The test-only `ORCH_TEST_POOL_DIR`
-names another pool directory. Runs that disagree on the size share the
-directory unchanged: each tries slots 1 to its own size, so a larger run also
-uses the higher slots while all contend for the low ones, and concurrency is
-bounded by the largest size among the active runs; no size is recorded there.
+held with `flock` while one section child or one shellcheck process runs, so two
+or three sessions verifying at once queue for slots (`orch_test.sh: waiting for
+a job slot (N in use)` on stderr, once) and a killed holder's slot is freed by
+the kernel. `ORCH_TEST_JOBS=N` caps how many slots a run asks for and never
+bypasses the pool, so a run asking for more jobs than the pool holds queues;
+`ORCH_TEST_JOBS=1` holds one slot for its whole one-shell run. `CI` bypasses the
+pool, as does a runner started inside a slot of the same pool (the runner marks
+its children with `ORCH_TEST_POOL_HELD`); a pool that cannot be created, opened
+or locked runs unpooled. The test-only `ORCH_TEST_POOL_DIR` names another pool
+directory. Runs that disagree on the size share the directory unchanged: each
+tries slots 1 to its own size, so a larger run also uses the higher slots while
+all contend for the low ones, and concurrency is bounded by the largest size
+among the active runs; no size is recorded there.
 Helper placement is checked by harness.sh's placement section; its failure
 message states the rule.
 

@@ -10,14 +10,14 @@
 #
 # test_jobs_default <runner>: prints the default job count. The usable CPUs are
 # the online cores (getconf _NPROCESSORS_ONLN, 4 when that fails), lowered to
-# the cgroup v2 quota when one is set and lower: the file holds "<quota> <period>",
-# quota/period rounded up; a missing or unreadable file, or a quota of "max",
-# means no quota. The default is a share of the usable CPUs, rounded down, at
-# least 1: ORCH_TEST_POOL_PERCENT percent (any positive integer, normalized to
-# base 10, so 075 is 75), else 75. A set value that is not a positive integer
-# prints "<runner>: ORCH_TEST_POOL_PERCENT='<value>' is not a positive integer"
-# on stderr and returns 1. Under CI the default is the full usable count and
-# the variable is neither read nor validated. The quota file is
+# the cgroup v2 quota when one is set and lower: the file holds "<quota>
+# <period>", quota/period rounded up; a missing or unreadable file, or a quota
+# of "max", means no quota. The default is a share of the usable CPUs, rounded
+# down, at least 1: ORCH_TEST_POOL_PERCENT percent (any positive integer,
+# normalized to base 10, so 075 is 75), else 75. A set value that is not a
+# positive integer prints "<runner>: ORCH_TEST_POOL_PERCENT='<value>' is not a
+# positive integer" on stderr and returns 1. Under CI the default is the full
+# usable count and the variable is neither read nor validated. The quota file is
 # /sys/fs/cgroup/cpu.max unless the test-only ORCH_TEST_CPU_MAX_FILE names
 # another.
 #

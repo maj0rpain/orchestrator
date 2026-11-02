@@ -23,7 +23,8 @@
 # alongside the suites, at most as many at a time as the job count
 # (ORCH_TEST_JOBS when set, else test_jobs.sh's default: 75% of the usable CPUs,
 # or ORCH_TEST_POOL_PERCENT percent; all of them under CI), so no single
-# shellcheck run over every file is the critical path and the machine is not flooded with one process per file. Each
+# run of shellcheck over every file is the critical path and the machine is
+# not flooded with one process per file. Each
 # process's stdout and stderr go to its own captured
 # buffer, and all.sh waits on each one; the buffers are joined in glob order,
 # and the status taken is the highest exit among the processes. Its summary
