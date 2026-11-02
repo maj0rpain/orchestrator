@@ -105,6 +105,8 @@ file's path inside `--root` or else its own git repo root, and `width.sh --root
 <dir>` scans every covered file under `<dir>`. It names each over-long line's
 file, line and length, and exits 0 with or without findings. `docs_lint.sh`'s
 `scan_line_width` wraps the second form.
+The project's edit hook, `scripts/dev/hook-edit-width.sh`, runs the width
+tool and, for a `.sh` file, shellcheck on each edited file.
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the

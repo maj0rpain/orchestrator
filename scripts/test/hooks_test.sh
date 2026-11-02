@@ -1421,6 +1421,83 @@ while IFS= read -r cmd; do
 done < <(jq -r '.. | objects | select(.type? == "command") | .command' "$ROOT/hooks/hooks.json")
 rm -rf "$PLUGIN_644"
 
+# --- edit width hook (scripts/dev/hook-edit-width.sh)
+EDIT_HOOK="$ROOT/scripts/dev/hook-edit-width.sh"
+EW="$(mktemp -d)"
+wide="$(printf 'word %.0s' $(seq 1 17))x"
+git -C "$EW" init -q
+mkdir -p "$EW/docs" "$EW/other" "$EW/scripts"
+printf '# T\n\n%s\n' "$wide" >"$EW/docs/wide.md"
+printf '# T\n\nshort\n' >"$EW/docs/ok.md"
+printf '%s\n' "$wide" >"$EW/other/wide.md"
+printf '#!/usr/bin/env bash\nunused=1\necho hi\n' >"$EW/scripts/warn.sh"
+printf '#!/usr/bin/env bash\necho ok\n' >"$EW/scripts/ok.sh"
+# run_edit_hook FILE [PATH]: the hook on an edit of FILE; sets ew_rc, ew_out.
+run_edit_hook() {
+  ew_out="$(jq -n --arg f "$1" '{tool_input:{file_path:$f}}' \
+    | PATH="${2:-$PATH}" bash "$EDIT_HOOK" 2>&1)"
+  ew_rc=$?
+}
+run_edit_hook "$EW/docs/wide.md"
+assert_eq "edit hook: wide covered md exits 2" "$ew_rc" 2
+assert_contains "edit hook: names file:line" "$ew_out" "docs/wide.md:3"
+run_edit_hook "$EW/docs/ok.md"
+assert_eq "edit hook: clean covered md exits 0" "$ew_rc" 0
+assert_empty "edit hook: clean covered md is silent" "$ew_out"
+run_edit_hook "$EW/other/wide.md"
+assert_eq "edit hook: uncovered wide md exits 0" "$ew_rc" 0
+assert_empty "edit hook: uncovered md is silent" "$ew_out"
+if command -v shellcheck >/dev/null 2>&1; then
+  run_edit_hook "$EW/scripts/warn.sh"
+  assert_eq "edit hook: shellcheck warning exits 2" "$ew_rc" 2
+  assert_contains "edit hook: names the warning" "$ew_out" "SC2034"
+  run_edit_hook "$EW/scripts/ok.sh"
+  assert_eq "edit hook: clean sh exits 0" "$ew_rc" 0
+  # PATH without shellcheck: symlink only what the hook needs.
+  NOSC="$(mktemp -d)"
+  for t in bash jq git awk sed cat dirname basename env grep tr sort wc find head cut; do
+    p="$(command -v "$t")" && ln -s "$p" "$NOSC/$t"
+  done
+  run_edit_hook "$EW/scripts/warn.sh" "$NOSC"
+  assert_eq "edit hook: no shellcheck exits 0" "$ew_rc" 0
+  assert_empty "edit hook: no shellcheck is silent" "$ew_out"
+fi
+NOREPO="$(mktemp -d)"
+mkdir -p "$NOREPO/docs"
+printf '%s\n' "$wide" >"$NOREPO/docs/wide.md"
+run_edit_hook "$NOREPO/docs/wide.md"
+assert_eq "edit hook: file outside a repo exits 0" "$ew_rc" 0
+assert_empty "edit hook: file outside a repo is silent" "$ew_out"
+run_edit_hook "$EW/docs/missing.md"
+assert_eq "edit hook: missing file exits 0" "$ew_rc" 0
+ew_out="$(printf 'not json' | bash "$EDIT_HOOK" 2>&1)"; ew_rc=$?
+assert_eq "edit hook: malformed stdin exits 0" "$ew_rc" 0
+assert_empty "edit hook: malformed stdin is silent" "$ew_out"
+ew_out="$(printf '{"tool_input":{}}' | bash "$EDIT_HOOK" 2>&1)"; ew_rc=$?
+assert_eq "edit hook: no file_path exits 0" "$ew_rc" 0
+assert_empty "edit hook: no file_path is silent" "$ew_out"
+# A file in a second repo is judged by its own root, from another repo's cwd.
+EW2="$(mktemp -d)"
+git -C "$EW2" init -q
+mkdir -p "$EW2/docs" "$EW2/misc"
+printf '%s\n' "$wide" >"$EW2/docs/wide.md"
+printf '%s\n' "$wide" >"$EW2/misc/wide.md"
+ew_out="$(cd "$EW" && jq -n --arg f "$EW2/docs/wide.md" \
+  '{tool_input:{file_path:$f}}' | bash "$EDIT_HOOK" 2>&1)"; ew_rc=$?
+assert_eq "edit hook: second repo's docs wide exits 2" "$ew_rc" 2
+ew_out="$(cd "$EW" && jq -n --arg f "$EW2/misc/wide.md" \
+  '{tool_input:{file_path:$f}}' | bash "$EDIT_HOOK" 2>&1)"; ew_rc=$?
+assert_eq "edit hook: second repo's uncovered path exits 0" "$ew_rc" 0
+# Registration.
+SETTINGS="$ROOT/.claude/settings.json"
+reg="$(jq -r '.hooks.PostToolUse[]? | select(.matcher == "Edit|Write|MultiEdit")
+  | .hooks[].command' "$SETTINGS" 2>/dev/null)"
+assert_contains "edit hook: registered as PostToolUse Edit|Write|MultiEdit" \
+  "$reg" 'scripts/dev/hook-edit-width.sh'
+assert_contains "edit hook: runs through CLAUDE_PROJECT_DIR" "$reg" 'CLAUDE_PROJECT_DIR'
+assert_not_contains "edit hook: absent from hooks/hooks.json" \
+  "$(cat "$ROOT/hooks/hooks.json")" 'hook-edit-width'
+
 # >>> summary
 echo
 tally_read
