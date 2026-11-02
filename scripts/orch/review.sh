@@ -432,6 +432,27 @@ review_standards_mentions() {
   ' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
 }
 
+# STANDARDS_HEADING_AWK: awk functions, the one ATX heading rule of the
+# declaration and heading-count programs: is_heading(line) is true for 1 to 6
+# #s, at most 3 spaces in, then a space, a tab or the line's end; heading_text
+# (line) is that heading's text, surrounding whitespace and closing #s trimmed.
+# No interval braces: mawk and BSD awk lack them.
+# shellcheck disable=SC2016 # awk program, not shell
+STANDARDS_HEADING_AWK='
+  function is_heading(line,   h, hashes) {
+    if (line !~ /^ ? ? ?#/) return 0
+    h = line; sub(/^ */, "", h); hashes = h; sub(/[^#].*$/, "", hashes)
+    if (length(hashes) > 6) return 0
+    return (h == hashes || substr(h, length(hashes) + 1, 1) ~ /[ \t]/)
+  }
+  function heading_text(line,   h) {
+    h = line; sub(/^ */, "", h); sub(/^#+/, "", h)
+    sub(/[[:space:]]+#+[[:space:]]*$/, "", h)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", h)
+    return h
+  }
+'
+
 # review_standards_declaration <file>: the first `Standards:` paragraph of the
 # root file <file>, its lines joined, or nothing when it has none. A paragraph
 # whose first line starts with Standards: and sits outside a fenced code block
@@ -439,9 +460,9 @@ review_standards_mentions() {
 # the fence state runs from the opening fence to the closing one, blank lines
 # included.
 review_standards_declaration() {
-  awk "$FENCE_AWK"'
+  awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
     fenced($0) { if (p != "") { print p; done = 1; exit } prev = 0; next }
-    { head = ($0 ~ /^ ? ? ?#+([ \t]|$)/) }
+    { head = is_heading($0) }
     p != "" { if (NF && !head) { p = p " " $0; next } print p; done = 1; exit }
     /^Standards:/ && !prev { p = $0; next }
     { prev = (NF && !head) ? 1 : 0 }
@@ -453,15 +474,10 @@ review_standards_declaration() {
 # repo file <file> read exactly <heading>, surrounding whitespace and closing #s
 # trimmed. Lines inside a fenced code block (blank lines too) are no headings.
 review_standards_heading_count() {
-  awk -v want="$2" "$FENCE_AWK"'
+  WANT_HEADING="$2" awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
+    BEGIN { want = ENVIRON["WANT_HEADING"] }
     fenced($0) { next }
-    /^ ? ? ?#/ {
-      h = $0; sub(/^ */, "", h); hashes = h; sub(/[^#].*$/, "", hashes)
-      if (length(hashes) > 6 || (h != hashes && substr(h, length(hashes) + 1, 1) !~ /[[:space:]]/)) next
-      sub(/^#+/, "", h); sub(/[[:space:]]+#+[[:space:]]*$/, "", h)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", h)
-      if (h == want) n++
-    }
+    is_heading($0) && heading_text($0) == want { n++ }
     END { print n + 0 }
   ' "$ROOT/$1"
 }

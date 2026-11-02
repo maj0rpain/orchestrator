@@ -1594,6 +1594,13 @@ done
 writeln 'Standards: `docs/agents/h.md#Dup`' >CONTRIBUTING.md
 assert_eq "a fenced heading does not make an entry ambiguous" \
   "$(dstd)" "Standards: docs/agents/h.md#Dup"
+writeln '# Top' '## a\b' '## c\\d' >docs/agents/bs.md
+writeln 'Standards: `docs/agents/bs.md#a\b`, `docs/agents/bs.md#c\\d`' >CONTRIBUTING.md
+assert_eq "a heading entry with backslashes matches the heading literally" \
+  "$(dstd)" 'Standards: docs/agents/bs.md#a\b, docs/agents/bs.md#c\\d'
+writeln '####### seven' 'Standards: `docs/agents/p.md`' >CONTRIBUTING.md
+assert_eq "a line of seven #s is no heading, so a Standards: line under it is no declaration" \
+  "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
 rm -f CONTRIBUTING.md
 # This repo's own declaration resolves, in the plugin root the suite checks.
 out="$(cd "$PLUGIN_ROOT" && "$ORCH" review standards 2>&1)"; st=$?
