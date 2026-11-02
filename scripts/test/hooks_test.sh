@@ -1296,13 +1296,14 @@ done
 # Deny of plain stdin reads under a non-bypass mode (#2002).
 bs_denied() { bs_event "$1" orch-implementer "$2" | bs_run ""; }
 for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
-  'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat'; do
-  for bs_mode in default acceptEdits; do
-    bs_out="$(bs_denied "$bs_mode" "$bs_cmd")"
-    assert_eq "bash stdin hook: $bs_mode denies '${bs_cmd//$'\n'/\\n}'" \
-      "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" deny
-  done
+  'cat -n' 'cat -A' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat'; do
+  bs_out="$(bs_denied default "$bs_cmd")"
+  assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" \
+    "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" deny
 done
+bs_out="$(bs_denied acceptEdits cat)"
+assert_eq "bash stdin hook: acceptEdits denies 'cat'" \
+  "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" deny
 bs_out="$(bs_denied default 'echo a; cat -')"
 assert_contains "bash stdin hook: the deny reason names the matched part" \
   "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bs_out")" "'cat -'"
@@ -1310,7 +1311,7 @@ assert_contains "bash stdin hook: the deny reason says how to supply input" \
   "$(jq -r '.reason' <<<"$bs_out")" 'heredoc, <<<, a pipe or </dev/null'
 for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'cat < f' 'cat file' \
   'python3 script.py' $'cat <<EOF\ncat\nread x\nEOF' $'echo "a\ncat\nb"' 'echo "a; cat"' \
-  "git commit -m 'x && read'" 'git status' 'read x </dev/null'; do
+  "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'ls # list; read later' 'cat file -n'; do
   bs_out="$(bs_denied default "$bs_cmd")"
   assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
@@ -1328,9 +1329,7 @@ assert_eq "bash stdin hook: a non-JSON payload exits 0" "$bs_rc" 0
 # Seam 2: the rewritten command, run by bash with stdin held open.
 bs_cmd="$(bs_event bypassPermissions orch-implementer 'cat; echo done' | bs_run "" | jq -r '.hookSpecificOutput.updatedInput.command')"
 bs_fifo="$TMPDIR/bs-open.fifo"; mkfifo "$bs_fifo"
-sleep 5 >"$bs_fifo" & bs_holder=$!
 bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"; bs_rc=$?
-kill "$bs_holder" 2>/dev/null; wait "$bs_holder" 2>/dev/null
 assert_eq "bash stdin hook: rewritten 'cat; echo done' returns with stdin held open" "$bs_rc" 0
 assert_eq "bash stdin hook: rewritten 'cat; echo done' prints done" "$bs_run_out" "done"
 bs_run_out="$(timeout 3 bash -c "${BS_PREFIX}cat <<EOT

@@ -16,7 +16,8 @@
 # ORCH_AUTOPILOT=1 in the hook's environment. Everything else, any other
 # permission mode, a payload with no tool_input.command, and a payload that is
 # not JSON, passes through with no output. An already-prefixed command is
-# returned unchanged, still allowed. One jq call decides, to stay fast.
+# returned unchanged, still allowed. The bypass path is one jq call; the
+# other modes run up to three (rewrite, command read, deny emit).
 
 set -uo pipefail
 
