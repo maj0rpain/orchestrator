@@ -113,16 +113,13 @@ gh_installed() { type -P gh >/dev/null 2>&1; }
 # "could not connect" is the whole basis of the severity rule, and the only
 # signal gh offers for it is the text of the failure.
 d_probe_gh() {
-  local out host
+  local out
   if [ -n "$D_GH" ]; then return 0; fi
   if ! gh_installed; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
   if ! repo_resolve; then D_GH="$REPO_MISSING"; return 0; fi
-  # The host gh targets for this repo: its explicit host, else the user's own
-  # GH_HOST, else github.com. Read here, as the gh guard pins GH_HOST only
-  # after the adapter's argv is built.
-  host="$(repo_host "$REPO_NAME")"
-  D_GH_HOST="${host:-${GH_HOST:-github.com}}"
+  # The host gh targets for this repo, by the one rule the gh guard follows.
+  D_GH_HOST="$(repo_gh_host)"
   if out="$(adapter_auth_status "$D_GH_HOST" 2>&1)"; then
     D_GH=ok
   else
