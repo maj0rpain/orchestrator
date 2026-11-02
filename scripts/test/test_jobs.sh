@@ -8,6 +8,10 @@
 # is_positive_integer <value>: true when it is digits only and above zero, so
 # `00` is no positive integer either.
 #
+# test_jobs_require_positive <runner> <name> <value>: true when <value> is a
+# positive integer; else prints "<runner>: <name>='<value>' is not a positive
+# integer" on stderr and returns 1.
+#
 # test_jobs_default <runner>: prints the default job count. The usable CPUs are
 # the online cores (getconf _NPROCESSORS_ONLN, 4 when that fails), lowered to
 # the cgroup v2 quota when one is set and lower: the file holds "<quota>
@@ -78,13 +82,16 @@ is_positive_integer() {
   [ "$((10#$1))" -gt 0 ]
 }
 
+test_jobs_require_positive() {
+  is_positive_integer "$3" && return 0
+  echo "$1: $2='$3' is not a positive integer" >&2
+  return 1
+}
+
 test_jobs_default() {
   local cores quota period quota_cpus file usable percent=75 share
   if [ -z "${CI:-}" ] && [ -n "${ORCH_TEST_POOL_PERCENT+set}" ]; then
-    if ! is_positive_integer "$ORCH_TEST_POOL_PERCENT"; then
-      echo "$1: ORCH_TEST_POOL_PERCENT='$ORCH_TEST_POOL_PERCENT' is not a positive integer" >&2
-      return 1
-    fi
+    test_jobs_require_positive "$1" ORCH_TEST_POOL_PERCENT "$ORCH_TEST_POOL_PERCENT" || return 1
     percent=$((10#$ORCH_TEST_POOL_PERCENT))
   fi
   cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"
@@ -113,10 +120,7 @@ test_jobs_count() {
   else
     jobs="$(test_jobs_default "$1")" || return 1
   fi
-  if ! is_positive_integer "$jobs"; then
-    echo "$1: ORCH_TEST_JOBS='$jobs' is not a positive integer" >&2
-    return 1
-  fi
+  test_jobs_require_positive "$1" ORCH_TEST_JOBS "$jobs" || return 1
   echo "$((10#$jobs))"
 }
 

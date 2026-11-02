@@ -1367,7 +1367,8 @@ assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")"
 mkdir "$jp_dir/home1" "$jp_dir/home2"
 jp_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1
 : >"$jp_log"
-timeout 30 env -u CI -u ORCH_TEST_POOL_DIR HOME="$jp_dir/home2" ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" \
+timeout 30 env -u CI -u ORCH_TEST_POOL_DIR -u ORCH_TEST_POOL_PERCENT HOME="$jp_dir/home2" \
+  ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" \
   JP_LOG="$jp_log" ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^pool a$' ORCH_TEST_JOBS=2 \
   bash "$jp_suite" >/dev/null 2>"$jp_dir/err"; jp_s1=$?
 assert_status "a run under another HOME passes while the first HOME's slot is held" "$jp_s1" 0
@@ -1381,16 +1382,11 @@ kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
 jp_run 4 "$jp_dir/pool4" -- '^pool [a-d]$' 2
 assert_eq "ORCH_TEST_JOBS=2 on a 4-slot pool runs 2 sections at once" "$(log_peak "$jp_log")" "2"
 
-# ORCH_TEST_POOL_PERCENT sizes the pool: 100% of 4 CPUs, and 200% of 2, hold 4.
-: >"$jp_log"
-jp_run 2 "$jp_dir/pool11" ORCH_TEST_POOL_PERCENT=100 -- '^pool [a-d]$' 4
-assert_eq "ORCH_TEST_POOL_PERCENT=100 on 4 CPUs holds 4 slots" "$(log_peak "$jp_log")" "4"
+# ORCH_TEST_POOL_PERCENT sizes the pool: 200% of 2 CPUs holds 4. The percent
+# arithmetic itself is the CPU load section's, through test_jobs_default.
 : >"$jp_log"
 jp_run 1 "$jp_dir/pool12" ORCH_TEST_POOL_PERCENT=200 -- '^pool [a-d]$' 4
 assert_eq "ORCH_TEST_POOL_PERCENT=200 on 2 CPUs holds 4 slots" "$(log_peak "$jp_log")" "4"
-: >"$jp_log"
-jp_run 2 "$jp_dir/pool13" ORCH_TEST_POOL_PERCENT=25 -- '^pool [a-d]$' 4
-assert_eq "ORCH_TEST_POOL_PERCENT=25 on 4 CPUs holds 1 slot" "$(log_peak "$jp_log")" "1"
 
 # ORCH_TEST_JOBS=1 holds one slot for the whole run, in one shell.
 : >"$jp_log"
@@ -1532,6 +1528,8 @@ assert_eq "ORCH_TEST_POOL_PERCENT=075 means 75" \
   "$(load_default 8 -missing ORCH_TEST_POOL_PERCENT=075)" "6"
 assert_eq "ORCH_TEST_POOL_PERCENT=1 keeps the floor of 1 job" \
   "$(load_default 8 -missing ORCH_TEST_POOL_PERCENT=1)" "1"
+assert_eq "ORCH_TEST_POOL_PERCENT=25 on 4 cores gives 1 job" \
+  "$(load_default 4 -missing ORCH_TEST_POOL_PERCENT=25)" "1"
 assert_eq "ORCH_TEST_POOL_PERCENT=100 on a quota of 4 CPUs gives 4 jobs" \
   "$(load_default 32 '400000 100000' ORCH_TEST_POOL_PERCENT=100)" "4"
 for load_pct in 0 00 abc -5 ''; do
@@ -1595,11 +1593,13 @@ assert_eq "with both invalid, all.sh names ORCH_TEST_JOBS alone" "$out" \
 out="$(load_run_all CI=true ORCH_TEST_POOL_PERCENT=abc 2>&1)"; st=$?
 assert_status "all.sh under CI does not refuse an invalid ORCH_TEST_POOL_PERCENT" "$st" 0
 rm -f "$load_all/log" "$load_all/scripts/test/log" "$load_all/sc_log"
-out="$(ORCH_TEST_POOL_PERCENT=abc ORCH_TEST_ONLY='^isolation$' bash "$load_tests/orch_test.sh" 2>&1)"; st=$?
+out="$(env -u CI -u ORCH_TEST_JOBS ORCH_TEST_POOL_PERCENT=abc ORCH_TEST_ONLY='^isolation$' \
+  bash "$load_tests/orch_test.sh" 2>&1)"; st=$?
 assert_status "orch_test.sh with an invalid ORCH_TEST_POOL_PERCENT exits 1" "$st" 1
 assert_contains "orch_test.sh names the invalid ORCH_TEST_POOL_PERCENT" "$out" \
   "orch_test.sh: ORCH_TEST_POOL_PERCENT='abc' is not a positive integer"
-out="$(ORCH_TEST_POOL_PERCENT=abc ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^isolation$' bash "$load_tests/orch_test.sh" 2>&1)"; st=$?
+out="$(env -u CI ORCH_TEST_POOL_PERCENT=abc ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^isolation$' \
+  bash "$load_tests/orch_test.sh" 2>&1)"; st=$?
 assert_status "orch_test.sh with ORCH_TEST_JOBS set refuses it too" "$st" 1
 assert_contains "and names it" "$out" "orch_test.sh: ORCH_TEST_POOL_PERCENT='abc' is not a positive integer"
 
@@ -2610,7 +2610,7 @@ if command -v shellcheck >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; th
   af_holder=$!
   until ! flock -n "$af.pool/slot.1" true; do sleep 0.05; done
   af_put scripts/hook-guard.sh 'echo ok'
-  (cd "$af" && env -u CI ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
+  (cd "$af" && env -u CI -u ORCH_TEST_POOL_PERCENT ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
     timeout 30 bash scripts/test/affected.sh HEAD >/dev/null 2>"$af.err") &
   af_pid=$!
   for _ in $(seq 100); do
