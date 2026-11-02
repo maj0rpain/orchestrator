@@ -1283,14 +1283,21 @@ jp_dir="$(mktemp -d)"
 jp_tests="$(dirname "$SUITE_SCRIPT")"
 jp_log="$jp_dir/log"
 jp_copy="$(planted_copy <<'PLANTED'
+  # With JP_BARRIER set, a pool section waits, up to 10s, until that many
+  # sections have started, so a peak needs no luck in start-up timing.
+  pool_barrier() {
+    local i=0
+    while [ -n "${JP_BARRIER:-}" ] && [ "$(grep -c '^+' "$JP_LOG")" -lt "$JP_BARRIER" ] &&
+      [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  }
   # --- pool a
-  echo; echo "pool a"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran a"
+  echo; echo "pool a"; echo + >>"$JP_LOG"; pool_barrier; sleep 0.6; echo - >>"$JP_LOG"; ok "ran a"
   # --- pool b
-  echo; echo "pool b"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran b"
+  echo; echo "pool b"; echo + >>"$JP_LOG"; pool_barrier; sleep 0.6; echo - >>"$JP_LOG"; ok "ran b"
   # --- pool c
-  echo; echo "pool c"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran c"
+  echo; echo "pool c"; echo + >>"$JP_LOG"; pool_barrier; sleep 0.6; echo - >>"$JP_LOG"; ok "ran c"
   # --- pool d
-  echo; echo "pool d"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran d"
+  echo; echo "pool d"; echo + >>"$JP_LOG"; pool_barrier; sleep 0.6; echo - >>"$JP_LOG"; ok "ran d"
   # --- pool hold
   echo; echo "pool hold"
   if flock -n "$JP_POOL/slot.1" true; then echo free >>"$JP_LOG"; else echo busy >>"$JP_LOG"; fi
@@ -1396,7 +1403,7 @@ assert_eq "ORCH_TEST_JOBS=2 on a 4-slot pool runs 2 sections at once" "$(log_pea
 # ORCH_TEST_POOL_PERCENT sizes the pool: 200% of 2 CPUs holds 4. The percent
 # arithmetic itself is the CPU load section's, through test_jobs_default.
 : >"$jp_log"
-jp_run 1 "$jp_dir/pool12" ORCH_TEST_POOL_PERCENT=200 -- '^pool [a-d]$' 4
+jp_run 1 "$jp_dir/pool12" ORCH_TEST_POOL_PERCENT=200 JP_BARRIER=4 -- '^pool [a-d]$' 4
 assert_eq "ORCH_TEST_POOL_PERCENT=200 on 2 CPUs holds 4 slots" "$(log_peak "$jp_log")" "4"
 
 # ORCH_TEST_JOBS=1 holds one slot for the whole run, in one shell.
