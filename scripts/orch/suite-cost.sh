@@ -102,13 +102,27 @@ suite_cost_active() {
 # removed, a .contended file whose marker is gone counting as stale whether or
 # not its pid is live.
 suite_cost_register() {
-  local dir me f name p
+  local dir me p
   SUITE_COST_MARK="" SUITE_COST_SAW_LIVE=0
   dir="$(suite_cost_active 2>/dev/null)" || return 0
   me="$dir/$$"
   rm -f -- "$me.contended" 2>/dev/null || true
   { mkdir -p -- "$dir" && : >"$me"; } 2>/dev/null || return 0
   SUITE_COST_MARK="$me"
+  while IFS= read -r p; do
+    SUITE_COST_SAW_LIVE=1
+    : 2>/dev/null >"$dir/$p.contended" || true
+  done < <(suite_cost_sweep "$dir")
+}
+
+# suite_cost_sweep <dir>: the one pass over the active-runs directory <dir>
+# that registration and check's pre-check share. Removes each stale marker or
+# .contended file - its pid names no live process, or its marker is gone,
+# whether or not its pid is live - and prints the pid of each live marker of
+# another process, one per line, in glob order. A .contended file is never
+# taken for a marker.
+suite_cost_sweep() {
+  local dir="$1" f name p
   for f in "$dir"/*; do
     name="${f##*/}"
     p="${name%.contended}"
@@ -116,32 +130,22 @@ suite_cost_register() {
     if ! kill -0 "$p" 2>/dev/null || [ ! -e "$dir/$p" ]; then
       rm -f -- "$f" 2>/dev/null || true
     elif [ "$f" = "$dir/$p" ]; then
-      SUITE_COST_SAW_LIVE=1
-      : 2>/dev/null >"$f.contended" || true
+      printf '%s\n' "$p"
     fi
   done
 }
 
 # suite_cost_live_other: prints the pid of the first live marker of another
 # process in the active-runs directory and succeeds, else prints nothing and
-# fails. Stale markers and .contended files are removed as suite_cost_register
-# removes them, and a .contended file is never taken for a marker. An
-# unresolvable or unreadable directory finds no live run.
+# fails. The whole directory is swept, so every stale entry is removed, not
+# only those before the first live marker. An unresolvable or unreadable
+# directory finds no live run.
 suite_cost_live_other() {
-  local dir f name p found=""
+  local dir live
   dir="$(suite_cost_active 2>/dev/null)" || return 1
-  for f in "$dir"/*; do
-    name="${f##*/}"
-    p="${name%.contended}"
-    [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
-    if ! kill -0 "$p" 2>/dev/null || [ ! -e "$dir/$p" ]; then
-      rm -f -- "$f" 2>/dev/null || true
-    elif [ "$f" = "$dir/$p" ] && [ -z "$found" ]; then
-      found="$p"
-    fi
-  done
-  [ -n "$found" ] || return 1
-  printf '%s\n' "$found"
+  live="$(suite_cost_sweep "$dir")"
+  [ -n "$live" ] || return 1
+  printf '%s\n' "${live%%$'\n'*}"
 }
 
 # suite_cost_unregister: ends the run suite_cost_register began, removing its
