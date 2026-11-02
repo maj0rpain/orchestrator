@@ -85,26 +85,21 @@ assert_status "a local-only command is unaffected" "$st" 0
 # One host rule (#1976): an origin-resolved github.com repo pins github.com over
 # the user's own GH_HOST; a user-set OWNER/REPO GH_REPO keeps the user's GH_HOST
 # (set or unset); a parent's pinned GH_REPO and GH_HOST pass to a child.
-git remote remove origin
 git remote add origin https://github.com/fork/widgets.git
 : >"$GH_FIXTURE/env.log"
-pinned_replies fork/widgets
 out="$(env -u ORCH_GH_ADAPTER GH_HOST=other.example.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
 assert_status "issue fetch runs from a github.com origin under a user GH_HOST" "$st" 0
 assert_eq "a github.com origin pins GH_HOST=github.com over the user's"   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=github.com ' "$GH_FIXTURE/env.log")" "0"
 : >"$GH_FIXTURE/env.log"
-pinned_replies fork/widgets
 out="$(env -u ORCH_GH_ADAPTER GH_REPO=fork/widgets GH_HOST=ghe.example.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
 assert_status "issue fetch runs with a user-set GH_REPO" "$st" 0
 assert_eq "a user-set OWNER/REPO keeps the user's GH_HOST" \
   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
 : >"$GH_FIXTURE/env.log"
-pinned_replies fork/widgets
 out="$(env -u ORCH_GH_ADAPTER -u GH_HOST GH_REPO=fork/widgets "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
 assert_eq "a user-set OWNER/REPO with GH_HOST unset leaves it unset" \
   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=<unset> ' "$GH_FIXTURE/env.log")" "0"
 : >"$GH_FIXTURE/env.log"
-pinned_replies fork/widgets
 out="$(env -u ORCH_GH_ADAPTER GH_REPO=fork/widgets GH_HOST=github.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
 assert_eq "a child with GH_REPO preset keeps the parent's pinned GH_HOST=github.com" \
   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=github.com ' "$GH_FIXTURE/env.log")" "0"

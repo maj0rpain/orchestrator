@@ -11,8 +11,9 @@
 # The guard every GitHub call in orch.sh and its modules goes through by name
 # (#520): `gh` itself, defined ahead of the ORCH_GH_ADAPTER seam so a test
 # adapter picks it up. On first use it resolves the repo
-# and exports it as GH_REPO for the rest of the run - with GH_HOST beside it for
-# a host other than github.com - so every later call - `gh api`'s
+# and exports it as GH_REPO for the rest of the run - with GH_HOST beside it,
+# by repo_gh_host's one rule, whenever the repo itself decides its host - so
+# every later call - `gh api`'s
 # {owner}/{repo} placeholders and host included - is pinned to it, never to
 # gh's own default repo, which in a fork is the upstream. With no repo it dies
 # naming GH_REPO. Inside a command substitution `die` would end only that
