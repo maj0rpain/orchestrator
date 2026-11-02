@@ -2389,6 +2389,10 @@ af_row "autopilot-up.sh selects its test file" scripts/autopilot-up.sh \
   "$af_gate,docs_lint.sh,autopilot_up_test.sh,scripts/autopilot-up.sh"
 af_row "the lens-bench script selects its test file" scripts/dev/lens-bench.sh \
   "$af_gate,docs_lint.sh,lens_bench_test.sh,scripts/dev/lens-bench.sh"
+af_row "a lens-bench fixture script falls back to all.sh" scripts/dev/lens-bench/case.sh "all.sh"
+af_row "a lens-bench test fixture falls back to all.sh" scripts/test/lens-bench/case.txt "all.sh"
+af_row "a markdown lens-bench fixture selects nothing more" scripts/dev/lens-bench/case.md \
+  "$af_gate,docs_lint.sh"
 af_row "a skill selects nothing more" skills/s/SKILL.md "$af_gate,docs_lint.sh"
 af_row "an agent selects nothing more" agents/a.md "$af_gate,docs_lint.sh"
 af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,docs_lint.sh"

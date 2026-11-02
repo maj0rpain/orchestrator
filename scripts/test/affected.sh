@@ -142,9 +142,7 @@ classify() {
     scripts/autopilot-container.sh | scripts/test/autopilot_container_test.sh)
       want+=(autopilot_container_test.sh) ;;
     scripts/autopilot-up.sh | scripts/test/autopilot_up_test.sh) want+=(autopilot_up_test.sh) ;;
-    scripts/dev/lens-bench.sh | scripts/dev/lens-bench/* | scripts/test/lens-bench/* | \
-      scripts/test/lens_bench_test.sh)
-      want+=(lens_bench_test.sh) ;;
+    scripts/dev/lens-bench.sh | scripts/test/lens_bench_test.sh) want+=(lens_bench_test.sh) ;;
     scripts/test/docs_lint.sh) ;;
     skills/* | agents/* | docs/* | commands/* | changelog.d/* | *.md) return 0 ;;
     *) full_suite ;;
