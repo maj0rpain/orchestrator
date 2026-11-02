@@ -802,6 +802,21 @@ for root_jobs in 2 1; do
   done
 done
 
+# A host with no ps (the container image installs none) still lists what is
+# left running, from /proc: a shell with awk and sleep alone on PATH, and one
+# sleeping child.
+if [ -r "/proc/$$/stat" ]; then
+  mkdir "$root_dir/nops"
+  ln -s "$(command -v awk)" "$root_dir/nops/awk"
+  ln -s "$(command -v sleep)" "$root_dir/nops/sleep"
+  out="$(PATH="$root_dir/nops" "$BASH" -c 'source "$1"; sleep 30 & echo "$!"
+    test_jobs_descendants; kill "$!"' _ "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" 2>&1)"
+  assert_eq "with no ps on PATH, test_jobs_descendants lists the child from /proc" \
+    "$(printf '%s\n' "$out" | sed -n 2p)" "$(printf '%s\n' "$out" | sed -n 1p)"
+else
+  skip "with no ps on PATH, test_jobs_descendants lists the child from /proc" "no /proc here"
+fi
+
 # SIGINT reaches the run only with job control on - a non-interactive shell
 # starts a background job with SIGINT ignored - so the run is started from a
 # foreground `set -m` subshell. A shell that itself started with SIGINT ignored,

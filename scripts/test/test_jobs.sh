@@ -83,14 +83,18 @@
 # shell, one pid a line, leaving out the command substitution it runs in and
 # what that starts (its ps and awk).
 #
+# test_jobs_process_table: prints every process as "<pid> <parent pid>
+# <state>", one a line, from ps, or from /proc/<pid>/stat on a host with no ps
+# (a slim container); with neither it prints nothing.
+#
 # test_jobs_stop_descendants: a temp-root suite's INT/TERM handler, and a
 # sequential orch_test.sh run's. Sends TERM, once each, to every live process
 # below this shell - children, and what they started, such as the run inside a
 # command substitution a section was waiting on - until none is left, sends
 # KILL to any still alive after 5 seconds, and exits 130. So the EXIT trap
 # removes the temp root only once nothing the run started can still write into
-# it, or recreate it. A ps that fails lists no process, and the handler just
-# exits 130.
+# it, or recreate it. With no process table to read (test_jobs_process_table
+# prints nothing), the handler just exits 130.
 
 is_positive_integer() {
   case "$1" in '' | *[!0-9]*) return 1 ;; esac
@@ -157,10 +161,24 @@ test_jobs_stop_children() {
   exit 130
 }
 
+test_jobs_process_table() {
+  local stat line state parent
+  if command -v ps >/dev/null 2>&1; then
+    ps -A -o pid= -o ppid= -o stat= 2>/dev/null
+    return 0
+  fi
+  for stat in /proc/[0-9]*/stat; do
+    read -r line 2>/dev/null <"$stat" || continue
+    # The name between the parentheses may hold spaces: fields resume after it.
+    read -r state parent _ <<<"${line##*) }"
+    echo "${line%% *} $parent $state"
+  done
+}
+
 test_jobs_descendants() {
   # Read here: inside the pipeline, BASHPID would be the forked element's own.
   local self="$BASHPID"
-  ps -A -o pid= -o ppid= -o stat= 2>/dev/null |
+  test_jobs_process_table |
     awk -v root="$$" -v self="$self" '
       { pid[NR] = $1; parent[NR] = $2; zombie[NR] = ($3 ~ /^Z/) }
       END {
