@@ -747,6 +747,10 @@ root_dir="$(planted_copy <<'PLANTED'
   # --- planted wait
   echo; echo "planted wait"; new_repo >/dev/null; : >"$ROOT_TEST_MARKER"; sleep 30 & wait $!
   ok "waited"
+  # --- planted late write
+  echo; echo "planted late write"; new_repo >/dev/null
+  late="$(bash -c ': >"$ROOT_TEST_MARKER"; sleep 0.5; mkdir -p "$TMPDIR/late"')"
+  ok "wrote late$late"
 PLANTED
 )"
 root_suite="$root_dir/scripts/test/orch_test.sh"
@@ -776,19 +780,26 @@ for root_jobs in 2 1; do
   assert_eq "a failing run with ORCH_TEST_JOBS=$root_jobs leaves its TMPDIR empty" \
     "$(ls -A "$root_tmp")" ""
 
-  root_fresh
-  TMPDIR="$root_tmp" ROOT_TEST_MARKER="$root_marker" ORCH_TEST_JOBS="$root_jobs" \
-    ORCH_TEST_ONLY='^planted wait$' bash "$root_suite" >/dev/null 2>&1 &
-  root_pid=$!
-  if root_await_marker; then
-    kill -TERM "$root_pid"
-  else
-    kill -KILL "$root_pid" 2>/dev/null
-  fi
-  wait "$root_pid"; st=$?
-  assert_status "a run with ORCH_TEST_JOBS=$root_jobs sent TERM exits 130" "$st" 130
-  assert_eq "a run with ORCH_TEST_JOBS=$root_jobs sent TERM leaves its TMPDIR empty" \
-    "$(ls -A "$root_tmp")" ""
+  # planted late write is sent TERM inside a command substitution whose process
+  # writes into TMPDIR half a second later: the run must stop it before it
+  # removes its root, so the check waits past that write.
+  for root_section in wait 'late write'; do
+    root_fresh
+    TMPDIR="$root_tmp" ROOT_TEST_MARKER="$root_marker" ORCH_TEST_JOBS="$root_jobs" \
+      ORCH_TEST_ONLY="^planted $root_section\$" bash "$root_suite" >/dev/null 2>&1 &
+    root_pid=$!
+    if root_await_marker; then
+      kill -TERM "$root_pid"
+    else
+      kill -KILL "$root_pid" 2>/dev/null
+    fi
+    wait "$root_pid"; st=$?
+    [ "$root_section" = wait ] || sleep 1
+    assert_status "a run with ORCH_TEST_JOBS=$root_jobs sent TERM in planted $root_section exits 130" \
+      "$st" 130
+    assert_eq "a run with ORCH_TEST_JOBS=$root_jobs sent TERM in planted $root_section leaves its TMPDIR empty" \
+      "$(ls -A "$root_tmp")" ""
+  done
 done
 
 # SIGINT reaches the run only with job control on - a non-interactive shell

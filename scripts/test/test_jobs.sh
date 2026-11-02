@@ -2,7 +2,9 @@
 #
 # Sourced by orch_test.sh, all.sh and affected.sh, so the runners never
 # disagree on how much of the machine a test run may use, or on how they stop
-# their children when signalled. Runs nothing; the job pool below keeps its
+# their children when signalled; and by the suites that own a temp root
+# (hooks_test.sh, version_bump_test.sh, lens_bench_test.sh), for that stop
+# alone. Runs nothing; the job pool below keeps its
 # state in TEST_JOBS_* variables of the sourcing shell.
 #
 # is_positive_integer <value>: true when it is digits only and above zero, so
@@ -76,6 +78,19 @@
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
 # removes its temp directory only once no child can still write into it. A
 # child that ignores TERM keeps the runner waiting on it.
+#
+# test_jobs_descendants: prints the live (non-zombie) processes below this
+# shell, one pid a line, leaving out the command substitution it runs in and
+# what that starts (its ps and awk).
+#
+# test_jobs_stop_descendants: a temp-root suite's INT/TERM handler, and a
+# sequential orch_test.sh run's. Sends TERM, once each, to every live process
+# below this shell - children, and what they started, such as the run inside a
+# command substitution a section was waiting on - until none is left, sends
+# KILL to any still alive after 5 seconds, and exits 130. So the EXIT trap
+# removes the temp root only once nothing the run started can still write into
+# it, or recreate it. A ps that fails lists no process, and the handler just
+# exits 130.
 
 is_positive_integer() {
   case "$1" in '' | *[!0-9]*) return 1 ;; esac
@@ -139,6 +154,44 @@ test_jobs_stop_children() {
   local pid
   kill "$@" 2>/dev/null
   for pid in "$@"; do wait "$pid"; done
+  exit 130
+}
+
+test_jobs_descendants() {
+  # Read here: inside the pipeline, BASHPID would be the forked element's own.
+  local self="$BASHPID"
+  ps -A -o pid= -o ppid= -o stat= 2>/dev/null |
+    awk -v root="$$" -v self="$self" '
+      { pid[NR] = $1; parent[NR] = $2; zombie[NR] = ($3 ~ /^Z/) }
+      END {
+        below[root] = 1
+        for (grew = 1; grew;) {
+          grew = 0
+          for (i = 1; i <= NR; i++)
+            if (!(pid[i] in below) && pid[i] != self && (parent[i] in below)) {
+              below[pid[i]] = 1; grew = 1
+            }
+        }
+        for (i = 1; i <= NR; i++)
+          if (pid[i] != root && (pid[i] in below) && !zombie[i]) print pid[i]
+      }'
+}
+
+test_jobs_stop_descendants() {
+  local pids pid sent=" " tick
+  for ((tick = 0; tick < 100; tick++)); do
+    pids="$(test_jobs_descendants)"
+    [ -n "$pids" ] || break
+    for pid in $pids; do
+      if [ "$tick" -ge 50 ]; then
+        kill -KILL "$pid" 2>/dev/null
+      elif [[ "$sent" != *" $pid "* ]]; then
+        kill -TERM "$pid" 2>/dev/null
+        sent="$sent$pid "
+      fi
+    done
+    sleep 0.1
+  done
   exit 130
 }
 

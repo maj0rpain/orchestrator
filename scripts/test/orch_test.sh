@@ -64,8 +64,9 @@ SETUP_FILE="$SECTION_DIR/setup.sh"
 # TMPDIR as it, so every mktemp below, orch.sh's own included, lands inside it;
 # a child's root nests inside its runner's. The EXIT trap leaves the root
 # (whose subdirectories may be the cwd), makes it writable again, removes it,
-# and keeps the exit status. An INT or TERM exits 130 through that trap; the
-# parallel runner replaces this INT/TERM trap with its own.
+# and keeps the exit status. An INT or TERM first stops every process below
+# this shell (test_jobs_stop_descendants), then exits 130 through that trap;
+# the parallel runner replaces this INT/TERM trap with its own.
 orch_root="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create the suite's temp root" >&2; exit 1; }
 export TMPDIR="$orch_root"
@@ -77,7 +78,7 @@ orch_remove_root() {
   exit "$status"
 }
 trap orch_remove_root EXIT
-trap 'exit 130' INT TERM
+trap test_jobs_stop_descendants INT TERM
 
 # The section filter. With ORCH_TEST_ONLY=<ERE> set, the suite runs only the
 # shared setup, the isolation section, every section whose title - the text
