@@ -456,9 +456,9 @@ cmd_pr_update() {
 # with one stderr line, as the Trust module's PR filter words it.
 cmd_pr_read() {
   [ $# -eq 2 ] || die "usage: orch.sh pr read <issue> <file>"
-  local issue="$1" file="$2" open pr flag body line named="" kept found diff
+  local issue="$1" file="$2" raw pr flag body line named="" kept found diff
   is_positive_int "$issue" || die "not an issue number: $issue"
-  gh_or_die --out open "list the open PRs" adapter_prs_open_all
+  gh_or_die --out raw "list the open PRs" adapter_prs_open_all
   while IFS=$'\t' read -r pr flag; do
     [ -n "$pr" ] || continue
     gh_or_die --out body "read the body of PR #$pr" adapter_pr_body "$pr"
@@ -466,7 +466,7 @@ cmd_pr_read() {
     if [ "$line" = "Closes #$issue" ] || [ "$line" = "Refs #$issue" ]; then
       named+="$pr"$'\t'"$flag"$'\n'
     fi
-  done <<<"$open"
+  done <<<"$raw"
   kept="$(trust_filter_prs "#$issue" <<<"$named")" ||
     die "the open PRs for issue #$issue could not be read"
   found="${kept%%$'\n'*}"

@@ -1256,6 +1256,7 @@ for c in "update $fk_new" "comment $fk_comment" "draft" "ready"; do
   assert_status "pr ${c%% *}: only a fork PR exits 1" "$st" 1
   assert_eq "pr ${c%% *}: printing nothing" "$out" ""
   assert_contains "pr ${c%% *}: saying the fork PR was ignored" "$(cat "$errf")" "$forkline"
+  [ "${c%% *}" != update ] || assert_contains "pr update: saying no open PR" "$(cat "$errf")" "no open PR"
 done
 assert_eq "the fork PR's body, comments and draft state untouched" "$(fake_snapshot)" "$before"
 out="$("$ORCH" pr fetch "$fk_out" 2>&1)"; st=$?
