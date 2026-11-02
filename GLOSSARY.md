@@ -849,6 +849,18 @@ Growth past the threshold is a finding with no reviewer behind it: in a review
 loop a major the driver raises from `check`'s verdict, and in a review pass a
 finding the session handles like any other.
 
+**Ticket verification**:
+The verification command a ticket subagent, fixer, resolver or review pass
+session runs: the one a repo's instructions name as its ticket verification,
+or the repo's full verification when they name none. It checks the code a
+change can reach; the full verification runs once per branch, at the
+combined-branch check, and in CI.
+
+**Full verification**:
+The verification command a repo's instructions name as its full verification:
+the whole suite, run once per branch at the combined-branch check, and in CI.
+A repo that names no ticket verification runs it for every ticket too.
+
 ### Hosts
 
 **Host**:

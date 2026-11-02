@@ -230,11 +230,13 @@ implementer follows it from here.
 6. **Discover and run the repo's automated checks**, and fix what the
    merge broke. Find the checks the repo itself documents - its
    `CLAUDE.md`, `AGENTS.md`, README, CI workflows, or test runner - and run
-   them on the resolved tree through `bash "<orch.sh>" suite-cost run --
-   <command>`, which passes their output and exit code through unchanged and
-   records a passing run's suite cost. Fix a failure the merge caused, within
-   the two sides' intents. A failure you cannot fix stays: record the command
-   and `fail`, and carry on to finish.
+   them on the resolved tree - the repo's **ticket verification**, a line
+   reading `Ticket verification: <command>` in those instructions, is the
+   checks command when it names one - through
+   `bash "<orch.sh>" suite-cost run -- <command>`, which passes their
+   output and exit code through unchanged and records a passing run's suite
+   cost. Fix a failure the merge caused, within the two sides' intents. A
+   failure you cannot fix stays: record the command and `fail`, and carry on to finish.
 7. **Finish.** Stage every resolved file by path and commit: a merge
    concludes with `git commit --no-edit`; a rebase with
    `git rebase --continue`. Repeat from step 1 for every remaining rebase

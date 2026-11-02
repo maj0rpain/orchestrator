@@ -56,8 +56,12 @@ your return instead - see **Could not fix**.
    record of what it wrote, and the driver blames later findings against
    them. Done when every item is fixed or on your could-not-fix list, and
    every listed site of a pattern finding is fixed or deferred.
-2. **Verify.** Run the verification command through `bash "<orch.sh>"
-   suite-cost run -- <command>`, which passes its output and exit code
+2. **Verify.** Run the **ticket verification** through `bash "<orch.sh>"
+   suite-cost run -- <command>`. Find it in the repo's instructions
+   (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`) yourself: a line reading
+   `Ticket verification: <command>`. The prompt hands you only the full
+   verification command; when the instructions name no ticket verification,
+   run that one. The run passes its output and exit code
    through unchanged and records a passing run's suite cost. A failure is a
    blocking finding of this iteration: fix it. When a fix of yours turns it
    red and you cannot make it pass, undo that fix and move its finding to
@@ -364,7 +368,8 @@ bullet (see **Pattern findings**). A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
 
-**Verification** names the bare verification command, never the
+**Verification** names the bare command step 2 ran (the ticket
+verification, or the handed full command when the repo names none), never the
 `suite-cost run` wrapper step 2 ran it through.
 
 Each **Waiting to be filed** bullet carries the finding's location, as the

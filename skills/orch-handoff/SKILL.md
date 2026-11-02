@@ -155,7 +155,9 @@ it, and nothing else - the bare command, without the `orch.sh suite-cost run
 -- <cmd>` never nests it. The review loop runs this line every iteration and
 treats a failure as blocking. Then, on its own line, the result: `pass` or
 `fail`, naming no ticket - it is the combined verification, run once over the
-whole branch after the frontier was exhausted, and belongs to no ticket. You
+whole branch after the frontier was exhausted, and belongs to no ticket. The
+command is loop step f's full command, never a ticket verification, so the
+review loop's suite-cost check and verification command stay the full one. You
 have the tests fresh; review would be guessing.>
 
 ## Unmet criteria
