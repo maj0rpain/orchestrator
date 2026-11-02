@@ -156,20 +156,21 @@ hook_bash_stdin_rewrite() {
 # newlines, outside single and double quotes and outside heredoc bodies; an
 # unquoted `#` at a word start ends its line. A part is a plain read when its
 # first word, after leading VAR=value words, is `cat` with no file argument
-# (only options, or `-`), `read`, `python`, `python3` or `node` with no
-# argument or `-` as its script, or `bash`/`sh` with `-s` first - and the part
+# (only options other than `--help` and `--version`, or `-`), `read`,
+# `python`, `python3` or `node` with no argument or `-` as its script, or
+# `bash`/`sh` with `-s` first - and the part
 # holds no `<` and no `|`, which would feed it. First-word matching only. A
 # command over 8 KB is not scanned (a false negative), to stay fast.
 hook_bash_stdin_reader() {
-  local cmd="$1" line part="" quote="" hd="" hdtab=0 cont=0 i c n rest re
+  local cmd="$1" line part="" quote="" heredoc_end="" heredoc_strip_tabs=0 continued=0 i c n rest re
   [ "${#cmd}" -le 8192 ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ -n "$hd" ]; then
-      [ "$hdtab" = 1 ] && line="${line#"${line%%[!$'\t']*}"}"
-      [ "$line" = "$hd" ] && hd=""
+    if [ -n "$heredoc_end" ]; then
+      [ "$heredoc_strip_tabs" = 1 ] && line="${line#"${line%%[!$'\t']*}"}"
+      [ "$line" = "$heredoc_end" ] && heredoc_end=""
       continue
     fi
-    n=${#line}; i=0; cont=0
+    n=${#line}; i=0; continued=0
     while [ "$i" -lt "$n" ]; do
       rest="${line:i}"
       if [ -z "$quote" ]; then re='^[^'"'"'"\\#;&|<]+'
@@ -188,7 +189,7 @@ hook_bash_stdin_reader() {
         case "$c" in
           "'"|'"') quote="$c"; part+="$c" ;;
           '\')
-            if [ "$((i + 1))" -ge "$n" ]; then cont=1; i=$((i + 2)); continue; fi
+            if [ "$((i + 1))" -ge "$n" ]; then continued=1; i=$((i + 2)); continue; fi
             part+="$c${line:i+1:1}"; i=$((i + 2)); continue ;;
           '#')
             if [ -z "$part" ] || [[ "${part: -1}" == [[:space:]] ]]; then break; fi
@@ -203,7 +204,7 @@ hook_bash_stdin_reader() {
           '<')
             if [ "${line:i:3}" = '<<<' ]; then part+='<<<'; i=$((i + 3)); continue; fi
             if [[ "$rest" =~ ^\<\<(-?)[[:space:]]*\\?[\'\"]?([A-Za-z_][A-Za-z0-9_]*)[\'\"]? ]]; then
-              hd="${BASH_REMATCH[2]}"; hdtab=0; [ -n "${BASH_REMATCH[1]}" ] && hdtab=1
+              heredoc_end="${BASH_REMATCH[2]}"; heredoc_strip_tabs=0; [ -n "${BASH_REMATCH[1]}" ] && heredoc_strip_tabs=1
             fi
             part+="$c" ;;
           *) part+="$c" ;;
@@ -211,7 +212,7 @@ hook_bash_stdin_reader() {
       fi
       i=$((i + 1))
     done
-    if [ "$cont" = 1 ]; then
+    if [ "$continued" = 1 ]; then
       :
     elif [ -z "$quote" ] && [[ "$part" =~ \|[[:space:]]*$ ]]; then
       :  # a trailing lone | continues the pipeline on the next line
@@ -275,12 +276,12 @@ hook_bash_stdin_is_reader() {
   while [ "$k" -lt "${#words[@]}" ] && [[ "${words[k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do k=$((k + 1)); done
   local -a rest=()
   [ "${#words[@]}" -gt "$((k + 1))" ] && rest=("${words[@]:k+1}")
-  local w="${words[k]:-}" a1="${words[k+1]:-}"
-  case "$w" in
-    cat) hook_bash_stdin_only_options ${rest[@]+"${rest[@]}"} ;;
+  local cmd_word="${words[k]:-}" first_arg="${words[k+1]:-}"
+  case "$cmd_word" in
+    cat) hook_bash_stdin_only_options ${rest[@]+"${rest[@]}"} && [[ "${rest[0]:-}" != --help && "${rest[0]:-}" != --version ]] ;;
     python|python3|node) hook_bash_stdin_script_is_stdin ${rest[@]+"${rest[@]}"} ;;
     read) return 0 ;;
-    bash|sh) [ "$a1" = -s ] ;;
+    bash|sh) [ "$first_arg" = -s ] ;;
     *) return 1 ;;
   esac
 }
