@@ -108,6 +108,9 @@ caller's numbered steps.
   ` && ` into one line when they name different commands. Its bare command
   and `pass` or `fail` go in **the record**, and in the PR body's Evidence.
   A failure does not stop the run: **the judge** carries it.
+  Run it in the foreground and wait for it (host capability *Run a long
+  command*); never background it and sleep, poll or kill it. A run that times
+  out is a failed verification, recorded as `fail`.
 
 Once loop step f has run, go **after loop step f**.
 

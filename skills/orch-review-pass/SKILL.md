@@ -92,6 +92,9 @@ a skipped check is reported.
    After the fixes, run the repo's ticket verification (a `Ticket verification:
    <command>` line in its instructions, else its full verification) through
    `bash "$ORCH" suite-cost run -- <command>`.
+   Run it in the foreground and wait for it (host capability *Run a long
+   command*); never background it and sleep, poll or kill it. A run that times
+   out is a failed verification.
    The Spec report's `## Set aside` lines are not findings: each is a
    requirement a known deviation set aside on purpose - one the caller
    handed in with `--deviations`, or, in a standalone pass, one the PR
@@ -122,6 +125,10 @@ a skipped check is reported.
    ```
    bash "$ORCH" suite-cost check -- <verification command>
    ```
+
+   Run it in the foreground and wait for it (host capability *Run a long
+   command*); never background it and sleep, poll or kill it. A `check` that
+   times out is a `check` that dies, handled as below.
 
    It prints one verdict line. Handle `grew <pct> - <finding text>` like
    any other finding, at location `suite` - the suite as a whole - with the

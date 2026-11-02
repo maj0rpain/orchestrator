@@ -240,7 +240,11 @@ implementer follows it from here.
    checks command when it names one - through
    `bash "<orch.sh>" suite-cost run -- <command>`, which passes their
    output and exit code through unchanged and records a passing run's suite
-   cost. Fix a failure the merge caused, within the two sides' intents. A
+   cost.
+   Run it in the foreground and wait for it (host capability *Run a long
+   command*); never background it and sleep, poll or kill it. A run that times
+   out is a failure.
+   Fix a failure the merge caused, within the two sides' intents. A
    failure you cannot fix stays: record the command and `fail`, and carry on
    to finish.
 7. **Finish.** Stage every resolved file by path and commit: a merge

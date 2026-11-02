@@ -794,6 +794,12 @@ assert_contains "names the code search Junie cannot do as asked" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Search and read code"
 assert_eq "does not call the code search unverified on Junie" \
   "$(printf '%s\n' "$out" | grep -o 'unverified: .*' | grep -c 'Search and read code')" "0"
+# Nobody has confirmed how Junie runs a long command in the foreground: the
+# cell is Unverified, not a known gap (#1986).
+assert_contains "names the long-command run as unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Run a long command"
+assert_eq "does not claim Junie lacks the long-command run" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Run a long command')" "0"
 # A human on Junie still starts a skill with /<name>; only the model lacks it.
 assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
 assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"

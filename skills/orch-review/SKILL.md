@@ -337,7 +337,10 @@ plan or from what the previous loop left instead of asking.
    ```
 
    with the verification command from **Before the first iteration**, step
-   2. It prints one verdict line. `grew <pct> - <finding text>` is a finding
+   2. Run it in the foreground and wait for it (host capability *Run a long
+   command*); never background it and sleep, poll or kill it. A `check` that
+   times out is a `check` that dies, handled as below.
+   It prints one verdict line. `grew <pct> - <finding text>` is a finding
    with no reviewer behind it: a **major**, its axis `suite-cost`, its
    `file:line` the literal `suite` - the suite as a whole - and its claim
    the finding text. Triage it as any other major, by the **Severity** rule:
