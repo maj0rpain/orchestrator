@@ -21,9 +21,10 @@
 #   scripts/orch/<m>.sh               the sections of scripts/test/orch/<m>.sh
 #   scripts/test/orch/<n>.sh          its own sections
 #   hook-*.sh, hooks/hooks.json       hooks_test.sh
-#   version-bump.sh, autopilot-container.sh, autopilot-up.sh, the lens-bench
-#   files, and the suites themselves  their own test file
-#   skills, agents, docs, commands, markdown, changelog fragments
+#   version-bump.sh, autopilot-container.sh, autopilot-up.sh, and the suites
+#   themselves, scripts/dev/lens-bench.sh and lens_bench_test.sh included
+#                                     their own test file
+#   skills, agents, docs, markdown, changelog fragments
 #                                     nothing beyond the always-run checks
 #   anything else, orch.sh, orch/common.sh, the shared test setup, the
 #   runners, the gh fake, test_jobs.sh   all.sh (this row wins over the rest)
@@ -144,7 +145,7 @@ classify() {
     scripts/autopilot-up.sh | scripts/test/autopilot_up_test.sh) want+=(autopilot_up_test.sh) ;;
     scripts/dev/lens-bench.sh | scripts/test/lens_bench_test.sh) want+=(lens_bench_test.sh) ;;
     scripts/test/docs_lint.sh) ;;
-    skills/* | agents/* | docs/* | commands/* | changelog.d/* | *.md) return 0 ;;
+    skills/* | agents/* | docs/* | changelog.d/* | *.md) return 0 ;;
     *) full_suite ;;
   esac
   if [ "$state" = present ]; then

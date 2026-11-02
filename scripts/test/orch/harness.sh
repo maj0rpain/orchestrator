@@ -44,6 +44,34 @@ suites_read() {
   done
 }
 
+# stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
+# of all.sh and test_jobs.sh beside a passing stub for each name in SUITES
+# (suites_read first), with <dir>/bin holding links to the tools all.sh needs,
+# the extra ones included, and a shellcheck stub that logs "+" to the log when
+# it starts and "-" when it ends, 0.2 seconds apart. A stub suite logs
+# "<name> ran" to scripts/test/log.
+stub_all_tree() {
+  local dir="$1" log="$2" tool stub
+  shift 2
+  mkdir -p "$dir/scripts/test" "$dir/bin"
+  cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$dir/scripts/test/"
+  for tool in bash dirname awk tail mktemp rm mkdir sleep cat "$@"; do
+    ln -s "$(command -v "$tool")" "$dir/bin/$tool"
+  done
+  for stub in "${SUITES[@]}"; do
+    printf '#!/usr/bin/env bash\necho "%s ran" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
+      "$stub" >"$dir/scripts/test/$stub"
+  done
+  printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' "$log" "$log" \
+    >"$dir/bin/shellcheck"
+  chmod +x "$dir/bin/shellcheck"
+}
+# log_peak <log>: the most "+" lines the log shows open at once, a "-" closing
+# one.
+log_peak() {
+  awk '/^\+/ { n++; if (n > max) max = n } /^-/ { n-- } END { print max + 0 }' "$1"
+}
+
 # plant_file <dir> <name>: writes the lines read from stdin to <dir>/<name>,
 # each line's two-space indent stripped, and returns non-zero when the write
 # fails. A caller indents a planted file's lines two spaces, so a planted
@@ -1265,10 +1293,6 @@ jp_suite="$jp_copy/scripts/test/orch_test.sh"
 printf "400000 100000\n" >"$jp_dir/cpu2"
 printf "200000 100000\n" >"$jp_dir/cpu1"
 printf "800000 100000\n" >"$jp_dir/cpu4"
-# jp_peak: the most sections the log shows running at once.
-jp_peak() {
-  awk '/^\+/ { n++; if (n > max) max = n } /^-/ { n-- } END { print max + 0 }' "$jp_log"
-}
 # jp_run <slots> <pool dir> [VAR=value...] -- <ORCH_TEST_ONLY> <jobs>: the
 # planted suite on a pool of <slots> slots, its stderr in $jp_dir/err.
 jp_run() {
@@ -1300,7 +1324,7 @@ wait "$jp_p1"; jp_s1=$?
 wait "$jp_p2"; jp_s2=$?
 assert_status "the first of two concurrent runs passes" "$jp_s1" 0
 assert_status "the second of two concurrent runs passes" "$jp_s2" 0
-assert_eq "two concurrent runs on a 2-slot pool never exceed 2 sections at once" "$(jp_peak)" "2"
+assert_eq "two concurrent runs on a 2-slot pool never exceed 2 sections at once" "$(log_peak "$jp_log")" "2"
 assert_eq "both runs ran all their sections" "$(grep -c '^+' "$jp_log")" "8"
 assert_eq "the waiting notice appears once in a run that waits" \
   "$(grep -c "$jp_notice" "$jp_err_b")" "1"
@@ -1349,7 +1373,7 @@ kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
 # ORCH_TEST_JOBS caps the ask, and does not bypass the pool.
 : >"$jp_log"
 jp_run 4 "$jp_dir/pool4" -- '^pool [a-d]$' 2
-assert_eq "ORCH_TEST_JOBS=2 on a 4-slot pool runs 2 sections at once" "$(jp_peak)" "2"
+assert_eq "ORCH_TEST_JOBS=2 on a 4-slot pool runs 2 sections at once" "$(log_peak "$jp_log")" "2"
 
 # ORCH_TEST_JOBS=1 holds one slot for the whole run, in one shell.
 : >"$jp_log"
@@ -1388,18 +1412,8 @@ rm -rf "$jp_copy"
 # 1-slot pool never have more than one shellcheck at a time, and the notice
 # comes from all.sh.
 jp_all="$jp_dir/all"
-mkdir -p "$jp_all/scripts/test" "$jp_all/bin"
-cp "$jp_tests/all.sh" "$jp_tests/test_jobs.sh" "$jp_all/scripts/test/"
 suites_read "$jp_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
-for jp_tool in bash dirname awk tail mktemp rm mkdir sleep cat flock getconf; do
-  ln -s "$(command -v "$jp_tool")" "$jp_all/bin/$jp_tool"
-done
-for jp_stub in "${SUITES[@]}"; do
-  printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$jp_all/scripts/test/$jp_stub"
-done
-printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' "$jp_log" "$jp_log" \
-  >"$jp_all/bin/shellcheck"
-chmod +x "$jp_all/bin/shellcheck"
+stub_all_tree "$jp_all" "$jp_log" flock getconf
 # jp_all_run <errfile>: all.sh on the stub PATH and the 1-slot pool.
 jp_all_run() {
   env -u CI ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu1" ORCH_TEST_POOL_DIR="$jp_dir/pool10" \
@@ -1413,7 +1427,7 @@ jp_p2=$!
 wait "$jp_p1"; jp_s1=$?
 wait "$jp_p2"; jp_s2=$?
 assert_status "two concurrent all.sh runs on a 1-slot pool pass" "$((jp_s1 + jp_s2))" 0
-assert_eq "their shellcheck processes never overlap on a 1-slot pool" "$(jp_peak)" "1"
+assert_eq "their shellcheck processes never overlap on a 1-slot pool" "$(log_peak "$jp_log")" "1"
 assert_eq "every file was still checked, twice over" \
   "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + 2)))"
 assert_contains "a waiting all.sh names itself in the notice" \
@@ -1470,22 +1484,7 @@ assert_eq "CI honours the quota too" "$(load_default 32 '400000 100000' CI=true)
 # all.sh's runs: a copy beside passing suite stubs, a shellcheck stub that logs
 # "+" when it starts and "-" when it ends, over the stubs and the two copies.
 load_all="$load_dir/all"
-mkdir -p "$load_all/scripts/test" "$load_all/bin"
-cp "$load_tests/all.sh" "$load_tests/test_jobs.sh" "$load_all/scripts/test/"
-for load_tool in bash dirname awk tail mktemp rm mkdir sleep cat; do
-  ln -s "$(command -v "$load_tool")" "$load_all/bin/$load_tool"
-done
-for load_stub in "${SUITES[@]}"; do
-  printf '#!/usr/bin/env bash\necho "%s ran" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
-    "$load_stub" >"$load_all/scripts/test/$load_stub"
-done
-printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' \
-  "$load_all/sc_log" "$load_all/sc_log" >"$load_all/bin/shellcheck"
-chmod +x "$load_all/bin/shellcheck"
-# load_peak: the most shellcheck processes the log shows running at once.
-load_peak() {
-  awk '/^\+/ { n++; if (n > max) max = n } /^-/ { n-- } END { print max + 0 }' "$load_all/sc_log"
-}
+stub_all_tree "$load_all" "$load_all/sc_log"
 # load_run_all [VAR=value...]: all.sh on the stub PATH, CI and ORCH_TEST_JOBS
 # unset, then the assignments applied.
 load_run_all() {
@@ -1498,7 +1497,7 @@ printf '#!/bin/sh\necho 4\n' >"$load_dir/getconf/getconf"
 chmod +x "$load_dir/getconf/getconf"
 out="$(load_run_all ORCH_TEST_JOBS=2 2>&1)"; st=$?
 assert_status "all.sh with ORCH_TEST_JOBS=2 passes" "$st" 0
-assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(load_peak)" "2"
+assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(log_peak "$load_all/sc_log")" "2"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
   "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 2))"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
@@ -1506,10 +1505,10 @@ assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
 : >"$load_all/sc_log"
 load_run_all >/dev/null 2>&1
 assert_eq "all.sh with ORCH_TEST_JOBS unset and 4 cores runs at most 2 shellcheck at once" \
-  "$(load_peak)" "2"
+  "$(log_peak "$load_all/sc_log")" "2"
 : >"$load_all/sc_log"
 load_run_all ORCH_TEST_JOBS=1 >/dev/null 2>&1
-assert_eq "all.sh with ORCH_TEST_JOBS=1 runs one shellcheck at a time" "$(load_peak)" "1"
+assert_eq "all.sh with ORCH_TEST_JOBS=1 runs one shellcheck at a time" "$(log_peak "$load_all/sc_log")" "1"
 rm -f "$load_all/log" "$load_all/scripts/test/log" "$load_all/sc_log"
 out="$(load_run_all ORCH_TEST_JOBS=abc 2>&1)"; st=$?
 assert_status "all.sh with an invalid ORCH_TEST_JOBS exits 1" "$st" 1
@@ -2395,6 +2394,7 @@ af_row "a markdown lens-bench fixture selects nothing more" scripts/dev/lens-ben
   "$af_gate,docs_lint.sh"
 af_row "a skill selects nothing more" skills/s/SKILL.md "$af_gate,docs_lint.sh"
 af_row "an agent selects nothing more" agents/a.md "$af_gate,docs_lint.sh"
+af_row "a non-markdown file under commands falls back to all.sh" commands/x.txt "all.sh"
 af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,docs_lint.sh"
 af_row "a markdown file selects nothing more" README.md "$af_gate,docs_lint.sh"
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/test/orch/common.sh \

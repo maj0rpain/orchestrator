@@ -144,20 +144,20 @@ test_jobs_pool_init() {
 }
 
 test_jobs_slot_take() {
-  local n fd rc busy=0
+  local n rc busy=0
   TEST_JOBS_SLOT_FD="" TEST_JOBS_IN_USE=0
   [ -n "$TEST_JOBS_POOL" ] || return 0
   for ((n = 1; n <= TEST_JOBS_SLOTS; n++)); do
-    if ! { exec {fd}>>"$TEST_JOBS_POOL/slot.$n"; } 2>/dev/null; then
+    if ! { exec 8>>"$TEST_JOBS_POOL/slot.$n"; } 2>/dev/null; then
       TEST_JOBS_POOL=""
       return 0
     fi
-    flock -n -E 100 "$fd" 2>/dev/null
+    flock -n -E 100 8 2>/dev/null
     rc=$?
     case "$rc" in
-      0) TEST_JOBS_SLOT_FD="$fd"; return 0 ;;
-      100) busy=$((busy + 1)); exec {fd}>&- ;;
-      *) exec {fd}>&-; TEST_JOBS_POOL=""; return 0 ;;
+      0) TEST_JOBS_SLOT_FD=8; return 0 ;;
+      100) busy=$((busy + 1)); exec 8>&- ;;
+      *) exec 8>&-; TEST_JOBS_POOL=""; return 0 ;;
     esac
   done
   TEST_JOBS_IN_USE="$busy"
@@ -179,6 +179,6 @@ test_jobs_slot_wait() {
 
 test_jobs_slot_release() {
   [ -z "$TEST_JOBS_SLOT_FD" ] && return 0
-  exec {TEST_JOBS_SLOT_FD}>&-
+  exec 8>&-
   TEST_JOBS_SLOT_FD=""
 }
