@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.39.5
+
+An autopilot phase session is told it is headless and no longer offered `AskUserQuestion`; `autopilot run` records the plan's Budget for a first-loop review, the review skill's autopilot budget step stands apart from its interactive question, and a failure stop quotes the session's final reply.
+
 ## 4.39.4
 
 PR lookups now ignore pull requests from forks. A stranger's fork PR from a branch named like a flow's or a quick implementation's, or one whose body opens with `Closes #N`, is no longer taken as the plugin's own PR: `pr fetch`, `pr update`, `pr comment`, `pr comments`, `pr draft`, `pr ready` and the review pass act only on the same-repo PR, `pr read` skips fork PRs, `pr release` no longer counts a fork PR as an open release PR, and the finished sweep no longer counts a merged fork PR as proof that a side checkout is finished. When any fork PR is dropped, orch.sh prints `orch: ignored N PR(s) from forks for <branch>` on stderr.
