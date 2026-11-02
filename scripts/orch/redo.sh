@@ -3,8 +3,9 @@
 # Its tests: scripts/test/orch/redo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# The first retire step, shared by both redos: prints "<n> <resumed>", the
-# number the attempt's retire carries and whether its rename is already done.
+# The first retire step, shared by both redos: prints two lines, "<n>" then
+# "<resumed>": the number the attempt's retire carries and whether its rename
+# is already done.
 # A previous call at this same redo can have already retired the branch and
 # recorded it in state before dying on the PR close - branch and redo_count
 # are set together right after a real retire, so if the recorded branch
@@ -53,6 +54,14 @@ redo_retire_attempt() {
   gh_or_die "close PR #$pr" adapter_pr_close "$pr" "$msg"
 }
 
+# Clears the attempt's branch, pr and base_sha from state. The callers of
+# redo_retire_attempt run it last, so a rerun finds the retired branch.
+redo_clear_attempt() {
+  state_write branch null
+  state_write pr null
+  state_write base_sha null
+}
+
 # The full `review -> implement` transition: retire the old branch and PR,
 # reopen the spec issue's closed tickets, move the old loop's records aside,
 # and reset the state a fresh implement attempt needs - never mid-budget, and
@@ -62,7 +71,7 @@ redo_retire_attempt() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word detail slug issue branch pr new_n new_branch resumed
+  local phase i b word detail slug issue branch pr new_n resumed
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(state_get iteration)"
@@ -92,7 +101,6 @@ $detail" ;;
   local retire
   retire="$(redo_retire_number "$issue" "$slug" "$branch" "$(state_get redo_count)")"
   lines_split "$retire" new_n resumed
-  new_branch="$(branch_name_redo "$issue" "$slug" "$new_n")"
 
   # The implement handoff described the attempt being retired; left in place,
   # phase advance would let the redone implement phase leave on it (#279).
@@ -111,9 +119,7 @@ $detail" ;;
 
   cmd_review retire "$new_n" >/dev/null
 
-  state_write branch null
-  state_write pr null
-  state_write base_sha null
+  redo_clear_attempt
   state_write iteration 0
   phase_write implement
   note "$new_n"
@@ -173,9 +179,7 @@ cmd_redo_spec() {
   # The round directories stay in place, since round 1's `spec round-dir 1/<n>`
   # clears them.
   move_files_aside "$HANDOFF_DIR" "$HANDOFF_DIR/$label" "a retired handoff" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
-  state_write branch null
-  state_write pr null
-  state_write base_sha null
+  redo_clear_attempt
   phase_write spec
 }
 

@@ -188,6 +188,9 @@ echo "checkout busy redo"
 new_repo_with_origin
 git checkout -q -b orch/7-feature-redo-1
 git config branch.orch/7-feature-redo-1.orchestrator-base main
+out="$(orch_gh_failing branch off quick/8-beside-redo 2>&1)"; st=$?
+assert_status "branch off beside a -redo-<n> branch with a base and no PR is not refused" "$st" 0
+git checkout -q orch/7-feature-redo-1
 out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "a -redo-<n> branch with a base and no PR is free" "$st" 0
 assert_eq "and prints nothing" "$out" ""
@@ -197,3 +200,6 @@ git config branch.orch/7-feature.orchestrator-base main
 out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "a live orch/ branch with a base and no PR is busy" "$st" 3
 assert_contains "naming the branch" "$out" "orch/7-feature"
+out="$(orch_gh_failing branch off quick/9-beside-live 2>&1)"; st=$?
+assert_status "branch off beside a live orch/ branch with no PR exits 3" "$st" 3
+assert_contains "naming the branch that holds the checkout" "$out" "orch/7-feature"

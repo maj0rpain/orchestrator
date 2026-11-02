@@ -690,15 +690,19 @@ restore_suite_env
 # pr open and the gh fake; only state.json, git and the fake's store are read.
 echo
 echo "redo spec retires the implement attempt (#1910)"
-fresh_flow redoattempt
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-fake_github
-fake_issue 5 open
 attempt_body="$(mktemp)"
 pr_body_complete "$attempt_body"
+# attempt_flow <slug>: a fresh flow whose origin is a bare repo holding main,
+# with the gh fake on.
+attempt_flow() {
+  local bare_dir
+  fresh_flow "$1"
+  bare_dir="$(mktemp -d)/origin.git"
+  git init -q --bare "$bare_dir"
+  bare_origin "$bare_dir"
+  git push -q origin HEAD:refs/heads/main
+  fake_github
+}
 # attempt_start <issue>: the implement phase through branch create and a commit
 # with a fresh ticket handoff and no recorded PR.
 attempt_start() {
@@ -717,6 +721,8 @@ redone_spec() {
   writeln '# spec again' >.orchestrator/handoff/02-spec.md
   "$ORCH" phase advance >/dev/null 2>&1
 }
+attempt_flow redoattempt
+fake_issue 5 open
 slug_="$("$ORCH" state get slug)"
 
 attempt_start 5
@@ -743,16 +749,10 @@ assert_eq "pr open opens a new PR" "$(fake_pr_state_of "$new_pr")" "OPEN"
 assert_eq "other than the old one" "$([ "$new_pr" != "$old_pr" ] && echo yes)" "yes"
 
 # --new-issue, a branch and no PR: retired under the old issue's name.
-fresh_flow redoattempt2
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-fake_github
+attempt_flow redoattempt2
 fake_issue 6 open
 slug_="$("$ORCH" state get slug)"
 attempt_start 6
-before="$(fake_snapshot)"
 out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue with a branch and no PR succeeds" "$st" 0
 assert_eq "retires the branch under the old issue's name" \
@@ -765,12 +765,7 @@ assert_status "branch create then exits 0" "$st" 0
 assert_eq "on the new issue's branch" "$("$ORCH" state get branch)" "orch/9-$slug_"
 
 # --new-issue after pr open: the old PR is closed, a new one opens.
-fresh_flow redoattempt3
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-fake_github
+attempt_flow redoattempt3
 fake_issue 7 open
 fake_issue 9 open
 slug_="$("$ORCH" state get slug)"
@@ -804,12 +799,7 @@ assert_eq "leaves redo_count at 0" "$("$ORCH" state get redo_count)" "0"
 assert_eq "and base_sha null" "$("$ORCH" state get base_sha)" ""
 
 # Reruns after a GitHub failure resume without renaming twice.
-fresh_flow redoattempt5
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-fake_github
+attempt_flow redoattempt5
 fake_issue 10 open
 slug_="$("$ORCH" state get slug)"
 attempt_start 10
@@ -827,12 +817,7 @@ assert_eq "without a second rename" \
   "$(git rev-parse --verify --quiet "orch/10-$slug_-redo-2" >/dev/null && echo present || echo gone)" "gone"
 
 # Breakdown-retire failure after the attempt is retired.
-fresh_flow redoattempt6
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-fake_github
+attempt_flow redoattempt6
 fake_issue 11 open
 fake_next_issue 900
 tbody="$(mktemp)"; writeln 'A ticket.' >"$tbody"
@@ -854,12 +839,7 @@ assert_eq "the PR was closed once" "$(fake_pr_comments_of "$old_pr" | grep -c 'c
 assert_eq "and the breakdown ends up retired" "$(fake_state_of "$rt")" "CLOSED"
 
 # --new-issue: issue-close failure after the attempt is retired.
-fresh_flow redoattempt7
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-fake_github
+attempt_flow redoattempt7
 fake_issue 12 open
 slug_="$("$ORCH" state get slug)"
 attempt_start 12
