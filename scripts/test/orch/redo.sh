@@ -435,6 +435,22 @@ out="$("$ORCH" redo spec --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
 
+# A ticket worktree left under the checkout refuses the redo before anything
+# moves, so its unmerged ticket work is never stranded.
+"$ORCH" ticket-worktree add 4 >/dev/null 2>&1
+snap_state="$("$ORCH" state get phase)$("$ORCH" state get issue)$("$ORCH" state get redo_count)"
+snap_handoffs="$(ls .orchestrator/handoff)"
+snap_branch="$(git branch --show-current)"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "refuses while a ticket worktree is left" "$st" 1
+assert_contains "naming the worktree's path" "$out" ".orchestrator/worktrees/t4"
+assert_contains "and its remove hint" "$out" "orch.sh ticket-worktree remove 4"
+assert_eq "leaving the phase" "$("$ORCH" state get phase)" "implement"
+assert_eq "the state" "$("$ORCH" state get phase)$("$ORCH" state get issue)$("$ORCH" state get redo_count)" "$snap_state"
+assert_eq "the handoffs" "$(ls .orchestrator/handoff)" "$snap_handoffs"
+assert_eq "and the branch" "$(git branch --show-current)" "$snap_branch"
+"$ORCH" ticket-worktree remove 4 >/dev/null 2>&1
+
 fake_unfail
 state_fixture phase implement
 "$ORCH" state set issue 43

@@ -114,6 +114,7 @@ cmd_redo_spec() {
     *) die "usage: orch.sh redo spec [--new-issue]" ;;
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
+  refuse_ticket_worktrees "$ROOT" "a redo would strand their unmerged ticket work"
   # The spec handoff - and the implement handoff built on it, if any - are
   # stale once the spec is being redone, so phase advance must not pass on
   # them (#279). They are retired first, before any state moves, as in redo

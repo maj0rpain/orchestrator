@@ -35,15 +35,18 @@ ticket_worktrees_under() {
   done <<<"$list"
 }
 
-# refuse_ticket_worktrees <root>: dies, naming every ticket worktree under the
-# checkout at <root>, when any is left: moving .orchestrator/ wholesale would
-# break git's record of each one, and removing the checkout would delete them.
+# refuse_ticket_worktrees <root> [<reason>]: dies, naming every ticket worktree
+# under the checkout at <root>, when any is left: moving .orchestrator/
+# wholesale would break git's record of each one, and removing the checkout
+# would delete them. <reason> is the clause after the dash; it defaults to the
+# side-checkout callers' one.
 refuse_ticket_worktrees() {
-  local left
+  local left reason="${2:-}"
+  [ -n "$reason" ] || reason="moving them would break git's record of them"
   # Its die exits only the substitution, so its status is carried out here.
   left="$(ticket_worktrees_under "$1")" || exit $?
   [ -n "$left" ] || return 0
-  die "ticket worktrees are left under $1 - moving them would break git's record of them:
+  die "ticket worktrees are left under $1 - $reason:
 $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
