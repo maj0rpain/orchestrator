@@ -119,6 +119,9 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    the repo's full verification, its `Full verification: <command>` line or
    the command they document. The report's `Verification` line names `<cmd>`
    itself, without the wrapper.
+   Run it in the foreground and wait for it (host capability *Run a long
+   command*); never background it and sleep, poll or kill it. A run the host
+   moves to the background at its timeout is still waited for, as that row says.
 4. **Commit** your work to your ticket branch, already checked out in
    your ticket worktree: every commit you make lands on it, and the caller
    merges and opens the PR. Open no branch or PR of your own.

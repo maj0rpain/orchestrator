@@ -2028,6 +2028,24 @@ check "host-capabilities has the stdin row" \
 check "the stdin row marks Junie Unverified" \
   "$(grep -F "$stdin_row" "$PLUGIN_ROOT/docs/host-capabilities.md" | grep -qF '**Unverified**' || echo "docs/host-capabilities.md: stdin row not Unverified")"
 
+# --- run a long command in the foreground (#1986) -----------------------------
+echo
+echo "run a long command (#1986)"
+long_sites='agents/orch-implementer.md
+agents/orch-fixer.md
+agents/orch-resolver.md
+skills/orch-review-pass/SKILL.md
+docs/driver-loop.md
+skills/orch-review/SKILL.md
+skills/orch-improve-tests/SKILL.md'
+check "each verification site names Run a long command" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$long_sites" 'Run a long command')"
+long_row='| Run a long command |'
+check "host-capabilities has the Run a long command row" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/host-capabilities.md' "$long_row")"
+check "the Run a long command row marks Junie Unverified" \
+  "$(grep -F "$long_row" "$PLUGIN_ROOT/docs/host-capabilities.md" | grep -qF '**Unverified**' || echo "docs/host-capabilities.md: Run a long command row not Unverified")"
+
 # --- autopilot docs (#1497) ---------------------------------------------------
 echo
 echo "autopilot docs (#1497)"

@@ -308,6 +308,12 @@ assert_contains "skips the checks that depended on the answer" "$out" "skipped: 
 out="$(GH_REPO=ghe.example.com/acme/widgets "$ORCH" doctor --env 2>&1)"
 assert_contains "names an enterprise host in the FAIL line" "$out" "gh is not authenticated to ghe.example.com."
 assert_contains "gives the enterprise login command" "$out" "gh auth login --hostname ghe.example.com"
+out="$(GH_HOST=other.example.com "$ORCH" doctor --env 2>&1)"
+assert_contains "an origin github.com repo asks github.com despite a user GH_HOST" "$out" "gh is not authenticated to github.com."
+assert_contains "and its remedy names github.com" "$out" "gh auth login --hostname github.com"
+out="$(GH_REPO=acme/widgets GH_HOST=ghe.example.com "$ORCH" doctor --env 2>&1)"
+assert_contains "a user-set OWNER/REPO GH_REPO asks the user's GH_HOST" "$out" "gh is not authenticated to ghe.example.com."
+assert_contains "and its remedy names that host" "$out" "gh auth login --hostname ghe.example.com"
 fake_online
 
 fake_default_branch ''
@@ -794,6 +800,12 @@ assert_contains "names the code search Junie cannot do as asked" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Search and read code"
 assert_eq "does not call the code search unverified on Junie" \
   "$(printf '%s\n' "$out" | grep -o 'unverified: .*' | grep -c 'Search and read code')" "0"
+# Nobody has confirmed how Junie runs a long command in the foreground: the
+# cell is Unverified, not a known gap (#1986).
+assert_contains "names the long-command run as unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Run a long command"
+assert_eq "does not claim Junie lacks the long-command run" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Run a long command')" "0"
 # A human on Junie still starts a skill with /<name>; only the model lacks it.
 assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
 assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"

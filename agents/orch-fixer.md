@@ -67,7 +67,11 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    `Ticket verification: <command>`. The prompt hands you only the full
    verification command; when the instructions name no ticket verification,
    run that one. The run passes its output and exit code
-   through unchanged and records a passing run's suite cost. A failure is a
+   through unchanged and records a passing run's suite cost.
+   Run it in the foreground and wait for it (host capability *Run a long
+   command*); never background it and sleep, poll or kill it. A run the host
+   moves to the background at its timeout is still waited for, as that row says.
+   A failure is a
    blocking finding of this iteration: fix it. When a fix of yours turns it
    red and you cannot make it pass, undo that fix and move its finding to
    could-not-fix. When it is red with every fix of yours undone, the failure

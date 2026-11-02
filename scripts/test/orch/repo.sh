@@ -39,6 +39,10 @@ assert_eq "repo show --host prints github.com for an OWNER/REPO repo" \
   "$("$ORCH" repo show --host)" "github.com"
 assert_eq "repo show --host prints the explicit host of a HOST/OWNER/REPO repo" \
   "$(GH_REPO=ghe.example.com/fork/widgets "$ORCH" repo show --host)" "ghe.example.com"
+assert_eq "repo show --host prints github.com for a github.com origin under a user GH_HOST" \
+  "$(GH_HOST=other.example.com "$ORCH" repo show --host)" "github.com"
+assert_eq "repo show --host follows the user's GH_HOST for a user-set OWNER/REPO GH_REPO" \
+  "$(GH_REPO=fork/widgets GH_HOST=ghe.example.com "$ORCH" repo show --host)" "ghe.example.com"
 git remote set-url origin git@ghe.example.com:acme/widgets.git
 assert_eq "repo show --host reads the host from origin too" \
   "$("$ORCH" repo show --host)" "ghe.example.com"
