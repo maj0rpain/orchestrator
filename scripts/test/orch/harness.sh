@@ -2723,34 +2723,33 @@ af_verdict_run() {
     PATH="$af_bin" bash scripts/test/affected.sh "$@" 2>/dev/null)"
   st=$?
 }
-af_last() { printf '%s\n' "$af_out" | tail -n 1; }
 # A failing part (hooks_test.sh is still the failing stub), naming only it.
 af_verdict_run -- HEAD
 assert_status "a failing selected part exits 1 without shellcheck" "$st" 1
-assert_eq "a failing selected part ends on a FAIL verdict naming it" "$(af_last)" \
+assert_eq "a failing selected part ends on a FAIL verdict naming it" "$(printf '%s\n' "$af_out" | tail -n 1)" \
   "affected.sh: FAIL (hooks_test.sh)"
 # A passing selection: the passing stub back, shellcheck skipped.
 printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
 af_verdict_run -- HEAD
 assert_status "a passing selection exits 0 without shellcheck outside CI" "$st" 0
 assert_eq "a missing shellcheck outside CI ends on a PASS verdict counting the skipped line" \
-  "$(af_last)" "affected.sh: PASS (4 parts)"
+  "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (4 parts)"
 af_verdict_run CI=1 -- HEAD
 assert_status "a missing shellcheck under CI exits 1" "$st" 1
 assert_eq "a missing shellcheck under CI ends on a FAIL verdict naming shellcheck" \
-  "$(af_last)" "affected.sh: FAIL (shellcheck)"
+  "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: FAIL (shellcheck)"
 # No shell file changed: shellcheck's own line still counts.
 af_git checkout -q -f -- . 2>/dev/null
 rm -f "$af/scripts/hook-guard.sh"
 af_git reset -q --hard "$af_feat"
 af_verdict_run -- HEAD
 assert_eq "a selection with no changed shell file counts shellcheck's line" \
-  "$(af_last)" "affected.sh: PASS (3 parts)"
+  "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (3 parts)"
 # The full-suite fallback ends on all.sh's verdict.
 af_put scripts/orch.sh 'echo changed'
 af_verdict_run -- HEAD
 assert_eq "a full-suite fallback ends on all.sh's verdict, never affected.sh's" \
-  "$(af_last)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+  "$(printf '%s\n' "$af_out" | tail -n 1)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
 af_reset
 # Paths that end before the report print no verdict.
 af_verdict_run -- --plan HEAD
