@@ -179,3 +179,21 @@ assert_eq "with the suffix appended" "$out" "orch: not on a branch (detached HEA
 out="$(cd "$detached" && cbod ' - x' 2>&1)"; st=$?
 assert_status "a lone suffix argument exits 1" "$st" 1
 assert_eq "and is taken as the suffix" "$out" "orch: not on a branch (detached HEAD) - x"
+
+# --- checkout busy, redo-retired branch (#1981) -------------------------------
+# The branch signal ignores a current branch a redo retired (-redo-<n>), which
+# still records a base and no PR; a live orch/ branch with no PR stays busy.
+echo
+echo "checkout busy redo"
+new_repo_with_origin
+git checkout -q -b orch/7-feature-redo-1
+git config branch.orch/7-feature-redo-1.orchestrator-base main
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a -redo-<n> branch with a base and no PR is free" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+
+git checkout -q -b orch/7-feature
+git config branch.orch/7-feature.orchestrator-base main
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a live orch/ branch with a base and no PR is busy" "$st" 3
+assert_contains "naming the branch" "$out" "orch/7-feature"

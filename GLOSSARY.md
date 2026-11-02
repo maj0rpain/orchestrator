@@ -32,8 +32,9 @@ _Avoid_: worktree, when the main checkout is meant too.
 
 **Busy checkout**:
 A checkout that holds work a new branch must not move: a flow
-mid-pipeline, a branch the plugin made that has no PR yet, or a working
-tree with changes outside the planning allowlist. A quick implementation
+mid-pipeline, a branch the plugin made that has no PR yet and is not
+retired by a redo, or a working tree with changes outside the planning
+allowlist. A quick implementation
 started in a busy checkout goes to a side checkout; a flow started in one
 is offered a side checkout, except on a dirty tree, which `init` refuses.
 _Avoid_: locked checkout, active checkout.
