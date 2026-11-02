@@ -1270,6 +1270,8 @@ bs_run() {
   if [ -n "$1" ]; then ORCH_AUTOPILOT="$1" bash "$BSTDIN"; else env -u ORCH_AUTOPILOT bash "$BSTDIN"; fi
 }
 BS_PREFIX=$'exec </dev/null\n'
+# bs_decision OUTPUT: the permissionDecision the hook wrote.
+bs_decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
 for scope in "orchestrator:orch-implementer|" "orch-implementer|" "|1"; do
   bs_agent="${scope%|*}"; bs_auto="${scope#*|}"
   bs_label="agent_type '$bs_agent' autopilot '$bs_auto'"
@@ -1279,13 +1281,13 @@ for scope in "orchestrator:orch-implementer|" "orch-implementer|" "|1"; do
   assert_eq "bash stdin hook: $bs_label keeps the other tool_input fields" \
     "$(jq -c '.hookSpecificOutput.updatedInput | del(.command)' <<<"$bs_out")" '{"timeout":5000,"description":"d"}'
   assert_eq "bash stdin hook: $bs_label allows" \
-    "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" allow
+    "$(bs_decision "$bs_out")" allow
 done
 bs_out="$(bs_event bypassPermissions orch-implementer "${BS_PREFIX}cat; echo done" | bs_run "")"
 assert_eq "bash stdin hook: an already-prefixed command is not prefixed twice" \
   "$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$bs_out")" "${BS_PREFIX}cat; echo done"
 assert_eq "bash stdin hook: an already-prefixed command is still allowed" \
-  "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" allow
+  "$(bs_decision "$bs_out")" allow
 for mode in bypassPermissions default; do
   for bs_agent in "" Explore; do
     bs_out="$(bs_event "$mode" "$bs_agent" cat | bs_run "")"; bs_rc=$?
@@ -1296,14 +1298,14 @@ done
 # Deny of plain stdin reads under a non-bypass mode (#2002).
 bs_denied() { bs_event "$1" orch-implementer "$2" | bs_run ""; }
 for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
-  'cat -n' 'cat -A' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat'; do
+  'python3 - x' 'node - --flag' 'cat -n' 'cat -A' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat'; do
   bs_out="$(bs_denied default "$bs_cmd")"
   assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" \
-    "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" deny
+    "$(bs_decision "$bs_out")" deny
 done
 bs_out="$(bs_denied acceptEdits cat)"
 assert_eq "bash stdin hook: acceptEdits denies 'cat'" \
-  "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" deny
+  "$(bs_decision "$bs_out")" deny
 bs_out="$(bs_denied default 'echo a; cat -')"
 assert_contains "bash stdin hook: the deny reason names the matched part" \
   "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bs_out")" "'cat -'"
@@ -1311,7 +1313,7 @@ assert_contains "bash stdin hook: the deny reason says how to supply input" \
   "$(jq -r '.reason' <<<"$bs_out")" 'heredoc, <<<, a pipe or </dev/null'
 for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'cat < f' 'cat file' \
   'python3 script.py' $'cat <<EOF\ncat\nread x\nEOF' $'echo "a\ncat\nb"' 'echo "a; cat"' \
-  "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'ls # list; read later' 'cat file -n'; do
+  "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'ls # list; read later' 'cat file -n' $'echo a \\\n  cat'; do
   bs_out="$(bs_denied default "$bs_cmd")"
   assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
@@ -1319,7 +1321,7 @@ bs_out="$(bs_event default Explore cat | bs_run "")"
 assert_empty "bash stdin hook: out of scope 'cat' under default is not denied" "$bs_out"
 bs_out="$(bs_event default "" cat | bs_run 1)"
 assert_eq "bash stdin hook: autopilot 'cat' under default is denied" \
-  "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$bs_out")" deny
+  "$(bs_decision "$bs_out")" deny
 bs_out="$(bs_event bypassPermissions orch-implementer cat | jq 'del(.tool_input.command)' | bs_run "")"; bs_rc=$?
 assert_empty "bash stdin hook: no command prints nothing" "$bs_out"
 assert_eq "bash stdin hook: no command exits 0" "$bs_rc" 0
@@ -1332,13 +1334,18 @@ bs_fifo="$TMPDIR/bs-open.fifo"; mkfifo "$bs_fifo"
 bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"; bs_rc=$?
 assert_eq "bash stdin hook: rewritten 'cat; echo done' returns with stdin held open" "$bs_rc" 0
 assert_eq "bash stdin hook: rewritten 'cat; echo done' prints done" "$bs_run_out" "done"
-bs_run_out="$(timeout 3 bash -c "${BS_PREFIX}cat <<EOT
-heredoc
-EOT")"
+# bs_rewritten COMMAND: the command the hook rewrites COMMAND into.
+bs_rewritten() {
+  bs_event bypassPermissions orch-implementer "$1" | bs_run "" | jq -r '.hookSpecificOutput.updatedInput.command'
+}
+bs_cmd="$(bs_rewritten $'cat <<EOT\nheredoc\nEOT')"
+bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"
 assert_eq "bash stdin hook: a heredoc still reaches cat" "$bs_run_out" heredoc
-bs_run_out="$(timeout 3 bash -c "${BS_PREFIX}cat <<<here-string")"
+bs_cmd="$(bs_rewritten 'cat <<<here-string')"
+bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"
 assert_eq "bash stdin hook: a here-string still reaches cat" "$bs_run_out" here-string
-bs_run_out="$(timeout 3 bash -c "${BS_PREFIX}echo piped | cat")"
+bs_cmd="$(bs_rewritten 'echo piped | cat')"
+bs_run_out="$(timeout 3 bash -c "$bs_cmd" <>"$bs_fifo")"
 assert_eq "bash stdin hook: piped input still reaches cat" "$bs_run_out" piped
 assert_eq "hooks.json registers hook-bash-stdin.sh under PreToolUse with matcher Bash" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-stdin\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1

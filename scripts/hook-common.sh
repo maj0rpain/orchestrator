@@ -157,11 +157,11 @@ hook_bash_stdin_rewrite() {
 # unquoted `#` at a word start ends its line. A part is a plain read when its
 # first word, after leading VAR=value words, is `cat` with no file argument
 # (only options, or `-`), `read`, `python`, `python3` or `node` with no
-# argument or `-`, or `bash`/`sh` with `-s` first - and the part holds no `<`
-# and no `|`, which would feed it. First-word matching only. A command over
-# 8 KB is not scanned (a false negative), to stay fast.
+# argument or `-` as its script, or `bash`/`sh` with `-s` first - and the part
+# holds no `<` and no `|`, which would feed it. First-word matching only. A
+# command over 8 KB is not scanned (a false negative), to stay fast.
 hook_bash_stdin_reader() {
-  local cmd="$1" line part="" quote="" hd="" hdtab=0 i c n rest re
+  local cmd="$1" line part="" quote="" hd="" hdtab=0 cont=0 i c n rest re
   [ "${#cmd}" -le 8192 ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     if [ -n "$hd" ]; then
@@ -169,7 +169,7 @@ hook_bash_stdin_reader() {
       [ "$line" = "$hd" ] && hd=""
       continue
     fi
-    n=${#line}; i=0
+    n=${#line}; i=0; cont=0
     while [ "$i" -lt "$n" ]; do
       rest="${line:i}"
       if [ -n "$quote" ]; then
@@ -187,7 +187,9 @@ hook_bash_stdin_reader() {
         c="${rest::1}"
         case "$c" in
           "'"|'"') quote="$c"; part+="$c" ;;
-          '\') part+="$c${line:i+1:1}"; i=$((i + 2)); continue ;;
+          '\')
+            if [ "$((i + 1))" -ge "$n" ]; then cont=1; i=$((i + 2)); continue; fi
+            part+="$c${line:i+1:1}"; i=$((i + 2)); continue ;;
           '#')
             if [ -z "$part" ] || [[ "${part: -1}" == [[:space:]] ]]; then break; fi
             part+="$c" ;;
@@ -209,7 +211,9 @@ hook_bash_stdin_reader() {
       fi
       i=$((i + 1))
     done
-    if [ -z "$quote" ]; then
+    if [ "$cont" = 1 ]; then
+      :
+    elif [ -z "$quote" ]; then
       hook_bash_stdin_hit "$part" && return 0
       part=""
     else
@@ -234,6 +238,19 @@ hook_bash_stdin_only_options() {
   for a in "$@"; do [[ "$a" == -* ]] || return 1; done
 }
 
+# Succeeds when an interpreter's arguments name no script (none at all) or name
+# `-` as the script: the first argument that is not an option, a lone - counting
+# as the script. Options alone do not succeed (a false negative, accepted).
+hook_bash_stdin_script_is_stdin() {
+  local a
+  [ "$#" -eq 0 ] && return 0
+  for a in "$@"; do
+    [ "$a" = - ] && return 0
+    [[ "$a" == -* ]] || return 1
+  done
+  return 1
+}
+
 # Succeeds when the one part $1 is a plain stdin read; see
 # hook_bash_stdin_reader.
 hook_bash_stdin_is_reader() {
@@ -245,7 +262,7 @@ hook_bash_stdin_is_reader() {
   local w="${words[k]:-}" a1="${words[k+1]:-}" n=$(( ${#words[@]} - k - 1 ))
   case "$w" in
     cat) hook_bash_stdin_only_options "${words[@]:k+1}" ;;
-    python|python3|node) [ "$n" -eq 0 ] || { [ "$n" -eq 1 ] && [ "$a1" = - ]; } ;;
+    python|python3|node) hook_bash_stdin_script_is_stdin "${words[@]:k+1}" ;;
     read) return 0 ;;
     bash|sh) [ "$a1" = -s ] ;;
     *) return 1 ;;
