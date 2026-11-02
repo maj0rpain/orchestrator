@@ -127,6 +127,8 @@
 #     fragment, named for no sub-issue, and bumps nothing by hand
 #   scan_line_width  no covered Markdown or shell comment line is past 80
 #     columns, outside the exempt lines
+#   scan_interview_closing  orch-interview's SKILL.md's Closing section has
+#     four numbered route options
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -1443,6 +1445,7 @@ required_headings='agents/orch-fixer.md|## Checking the PR body
 agents/orch-fixer.md|## The record
 agents/orch-implementer.md|## Root-cause fixes
 agents/orch-reviewer-standards.md|## Root-cause check
+skills/orch-interview/SKILL.md|## Closing
 skills/orch-quick-implement/SKILL.md|## 1. Require a linked issue
 skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
@@ -3709,50 +3712,11 @@ fi
 echo
 echo "line width (#1524)"
 # CONTRIBUTING's Develop section states the width, 80 columns, and the files
-# it covers. A covered line fails when it is longer than 80, counted in
-# characters, so a multi-byte character is one column.
+# it covers. The rule lives in scripts/dev/width.sh; this is its wrapper.
 # scan_line_width <plugin root>: "<file>:<line>: <length> columns, past 80"
 # for each covered, non-exempt line longer than 80.
 scan_line_width() {
-  local f
-  while IFS= read -r f; do
-    F="$f" LC_ALL=C awk "$SHELL_CODE_AWK"'
-      FNR == 1 {
-        is_shell = ENVIRON["F"] ~ /\.sh$/
-        in_frontmatter = 0; fence = ""
-      }
-      { stripped = $0; sub(/^[[:space:]]+/, "", stripped) }
-      is_shell { shell_code_line($0) }
-      is_shell && (!sc_top || stripped !~ /^#/) { next }
-      is_shell && FNR == 1 && stripped ~ /^#!/ { next }
-      is_shell && stripped ~ /^#[[:space:]]*shellcheck/ { next }
-      !is_shell && FNR == 1 && $0 == "---" { in_frontmatter = 1; next }
-      in_frontmatter { if ($0 == "---") in_frontmatter = 0; next }
-      !is_shell && match(stripped, /^(```|~~~)/) {
-        marker = substr(stripped, 1, 3)
-        if (fence == "") fence = marker; else if (marker == fence) fence = ""
-        next
-      }
-      fence != "" || stripped ~ /^\|/ || /https?:\/\// { next }
-      {
-        bare = stripped; sub(/^#+[[:space:]]*/, "", bare)
-        sub(/[[:space:]]+$/, "", bare)
-        sub(/^([-*+]|[0-9]+[.)])[[:space:]]+/, "", bare)
-        if (bare !~ /[[:space:]]/) next
-      }
-      {
-        chars = $0
-        cols = length(chars) - gsub(/[\200-\277]/, "", chars)
-      }
-      cols > 80 { print ENVIRON["F"] ":" FNR ": " cols " columns, past 80" }' "$1/$f"
-  done < <(cd "$1" && {
-    find skills agents commands docs -name '*.md' 2>/dev/null
-    for f in README.md CONTRIBUTING.md GLOSSARY.md CLAUDE.md; do
-      [ -f "$f" ] && echo "$f"
-    done
-    find scripts -name '*.sh' 2>/dev/null
-  } | sort)
-  return 0
+  "$PLUGIN_ROOT/scripts/dev/width.sh" --root "$1"
 }
 # wide_line <prefix> <n>: <prefix> padded with x to <n> columns.
 wide_line() {
@@ -3863,8 +3827,49 @@ spares "an over-long line in CHANGELOG.md or changelog.d/ is not flagged" \
   "$out" '^(CHANGELOG\.md|changelog\.d/12\.md):'
 spares "an over-long line in a *.md outside the covered paths is not flagged" \
   "$out" '^\.out-of-scope/'
+# The per-file form agrees with the whole-root form, and skips uncovered files.
+# It is given every file in the fixture, covered or not, flagged or clean.
+width="$PLUGIN_ROOT/scripts/dev/width.sh"
+fixture_files=()
+while IFS= read -r f; do fixture_files+=("$f"); done \
+  < <(find "$fixture" -type f | LC_ALL=C sort)
+assert_eq "width.sh given every fixture file prints what a root scan prints" \
+  "$("$width" --root "$fixture" "${fixture_files[@]}" | LC_ALL=C sort)" \
+  "$(printf '%s\n' "$out" | LC_ALL=C sort)"
+assert_empty "width.sh given an uncovered file prints nothing" \
+  "$("$width" --root "$fixture" "$fixture/CHANGELOG.md")"
 check "no covered Markdown or shell comment line is past 80 columns" \
   "$(scan_line_width "$PLUGIN_ROOT")"
+
+# --- orch-interview's Closing section (#1980) --------------------------------
+echo
+echo "orch-interview's Closing section (#1980)"
+
+# scan_interview_closing <plugin root>: one line when orch-interview's SKILL.md
+# `## Closing` section does not hold exactly four numbered route options. A
+# missing section is scan_required_headings' to report. Structure only, never
+# wording (ADR-0027).
+scan_interview_closing() {
+  local r="$1" skill="skills/orch-interview/SKILL.md" body n
+  body="$(md_section "$r/$skill" "## Closing" 2>/dev/null)" || return 0
+  n="$(printf '%s\n' "$body" | grep -cE '^[[:space:]]*[0-9]+\. ' || true)"
+  [ "$n" = 4 ] || echo "$skill: the ## Closing section has $n numbered route options, not 4"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-interview"
+printf '# I\n\n## The interview\n' >"$fixture/skills/orch-interview/SKILL.md"
+assert_empty "a missing Closing section is left to the required-headings check" \
+  "$(scan_interview_closing "$fixture")"
+printf '# I\n\n## Closing\n\n1. a\n2. b\n3. c\n' >"$fixture/skills/orch-interview/SKILL.md"
+flags "a Closing section with three numbered route options is flagged" \
+  "$(scan_interview_closing "$fixture")" "has 3 numbered route options, not 4"
+printf '# I\n\n## Closing\n\n1. a\n2. b\n3. c\n4. d\n\n## Next\n\n5. e\n' \
+  >"$fixture/skills/orch-interview/SKILL.md"
+assert_empty "four numbered route options in the Closing section are not flagged" \
+  "$(scan_interview_closing "$fixture")"
+check "orch-interview's Closing section has four numbered route options" \
+  "$(scan_interview_closing "$PLUGIN_ROOT")"
 
 # >>> summary
 echo

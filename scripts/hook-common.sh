@@ -86,12 +86,6 @@ hook_plugin_root() {
   (cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 }
 
-# Prints the installed orch-quick-implement SKILL.md. A host with no Skill tool
-# is told to read this file.
-hook_quick_skill_file() {
-  printf '%s/skills/orch-quick-implement/SKILL.md' "$(hook_plugin_root)"
-}
-
 # Writes a PreToolUse deny as one JSON object both hosts understand: Claude
 # Code reads hookSpecificOutput, Junie reads the top-level decision/reason.
 # "block" is Claude Code's legacy top-level value; that Junie accepts it too is

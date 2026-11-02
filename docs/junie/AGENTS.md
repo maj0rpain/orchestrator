@@ -5,7 +5,8 @@ While planning (orch-interview, grilling, wayfinder, or any plan agent session),
 do not edit source files. Planning ends on a closing question with three
 options - an orchestrator flow, a quick implementation, or a blueprint only
 (publish the spec, offer a spec review, publish the ticket breakdown, then
-stop) - and source edits wait until the human has picked the flow or a quick
+stop); the rules are in the `## Closing` section of the orch-interview
+skill. Source edits wait until the human has picked the flow or a quick
 implementation and it has started. Glossary and ADR changes (GLOSSARY.md,
 GLOSSARY-MAP.md, CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are recorded,
 not edited: write the exact new or replaced wording, and where it goes,
