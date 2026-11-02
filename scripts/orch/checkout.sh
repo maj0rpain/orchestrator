@@ -165,7 +165,8 @@ current_branch_or_die() {
 #   flow    a flow mid-pipeline (phase not done)
 #   branch  the current branch records a base (branch.<b>.orchestrator-base,
 #           as branch off and branch create write) but no PR
-#           (branch.<b>.orchestrator-pr); a detached HEAD never does
+#           (branch.<b>.orchestrator-pr); a detached HEAD never does, nor
+#           does a branch a redo retired (its -redo-<n> name)
 #   tree    changes outside the planning allowlist, as dirty_outside_allowlist
 #           defines them
 # The tree is read only when no earlier signal holds; a tree that cannot be
@@ -178,6 +179,7 @@ checkout_busy() {
     busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
   elif word_listed "$signals" branch && b="$(checkout_branch)" \
     && branch_records_base "$b" \
+    && ! branch_redo_count_of "$b" >/dev/null \
     && ! branch_pr_get "$b" >/dev/null; then
     busy_line="busy: branch $b has no PR yet"
     busy_remedy="Open its PR, or switch off it."

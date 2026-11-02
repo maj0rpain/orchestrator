@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.39.4
+
+PR lookups now ignore pull requests from forks. A stranger's fork PR from a branch named like a flow's or a quick implementation's, or one whose body opens with `Closes #N`, is no longer taken as the plugin's own PR: `pr fetch`, `pr update`, `pr comment`, `pr comments`, `pr draft`, `pr ready` and the review pass act only on the same-repo PR, `pr read` skips fork PRs, `pr release` no longer counts a fork PR as an open release PR, and the finished sweep no longer counts a merged fork PR as proof that a side checkout is finished. When any fork PR is dropped, orch.sh prints `orch: ignored N PR(s) from forks for <branch>` on stderr.
+
+## 4.39.3
+
+`orch.sh redo spec` now retires the implement attempt, as `redo review` does: it renames the flow's branch aside to its `-redo-<n>` name, closes its PR with the redo comment, bumps `redo_count`, and clears `branch`, `pr` and `base_sha`. The redone implement phase therefore starts a fresh branch and PR, instead of reusing the old commits or hitting a busy-checkout refusal after `--new-issue`. A branch retired by a redo no longer counts as a busy checkout. `redo spec` also refuses up front while ticket worktrees are left under the checkout, listing each one's remove command.
+
 ## 4.39.2
 
 The planning hook now sends only the state-dependent part of its message, well under Claude Code's 10 KB limit for hook context, so the closing rules are no longer cut to a 2 KB preview. The fixed closing rules moved into a new `## Closing` section of the orch-interview skill, which the grilling entry points and Junie's plan-confirmed prompt are pointed at by absolute path.

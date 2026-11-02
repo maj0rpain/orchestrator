@@ -581,16 +581,22 @@ pr_state_draft_read() {
 }
 
 # adapter_prs_open <head> [base]: the open PRs from the head branch - into the
-# base branch, where one is named - one number per line, newest first.
+# base branch, where one is named - newest first, one per line as
+# `<number>\t<isCrossRepository>` (`true` or `false`), unfiltered: the Trust
+# module's trust_filter_prs drops the fork PRs.
 adapter_prs_open() {
   local args=(--head "$1")
   [ -z "${2:-}" ] || args+=(--base "$2")
-  gh pr list "${args[@]}" --state open --json number --jq '.[].number'
+  gh pr list "${args[@]}" --state open --json number,isCrossRepository \
+    --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 }
 
-# adapter_prs_open_all: every open PR, one number per line, newest first.
+# adapter_prs_open_all: every open PR, newest first, one per line as
+# `<number>\t<isCrossRepository>` (`true` or `false`), unfiltered: the Trust
+# module's trust_filter_prs drops the fork PRs.
 adapter_prs_open_all() {
-  gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+  gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number,isCrossRepository \
+    --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 }
 
 # adapter_pr_diff <n>: the PR's diff, as gh prints it.
@@ -599,13 +605,15 @@ adapter_pr_diff() {
 }
 
 # adapter_prs_merged <head> <base>: the PRs from the head branch merged into
-# the base branch, one line each, newest first: its number, a tab, its head
-# SHA - the finished sweep's read for a quick implementation, which records no
-# PR of its own. GitHub
+# the base branch, one line each, newest first: its number, its head SHA and
+# its isCrossRepository flag (`true` or `false`), tab-separated and unfiltered:
+# the Trust module's trust_filter_prs drops the fork PRs. The finished sweep's
+# read for a quick implementation, which records no PR of its own. GitHub
 # reports a squash or rebase merge as merged too, which git ancestry never
 # would.
 adapter_prs_merged() {
-  gh pr list --head "$1" --base "$2" --state merged --json number,headRefOid --jq '.[] | "\(.number)\t\(.headRefOid)"'
+  gh pr list --head "$1" --base "$2" --state merged --json number,headRefOid,isCrossRepository \
+    --jq '.[] | "\(.number)\t\(.headRefOid)\t\(.isCrossRepository)"'
 }
 
 # adapter_prs_merged_bodies <base>: the body of every PR merged into the base

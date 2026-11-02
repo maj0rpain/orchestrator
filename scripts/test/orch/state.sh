@@ -26,7 +26,7 @@ assert_eq "and leaves the phase as it was" "$("$ORCH" state get phase)" "$before
 # Each refusal is pinned as its whole line, so a change to any wording fails.
 for pair in "branch|branch create records it" "base_sha|branch create records it" \
             "pr|pr open records it" "iteration|review begin counts it" \
-            "redo_count|redo review counts it" "slug|init seeds it" \
+            "redo_count|a redo that retires a branch counts it" "slug|init seeds it" \
             "base|init seeds it" "created|init seeds it" \
             "host_fallbacks|init seeds it" "updated|every state change stamps it" \
             "bogus|settable keys are issue, budget, flake_rerun_used"; do
