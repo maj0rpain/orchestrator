@@ -1213,6 +1213,7 @@ fake_pr 58 open orch/120-bar main
 fake_pr_body 58 $'Closes #120\n'
 out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
 assert_status "pr read finds the PR whose issue line names the issue" "$st" 0
+assert_not_contains "no fork PR: no ignored line on stderr" "$out" "ignored"
 assert_eq "writing its body, a rule, then its diff" "$(cat "$out_file")" \
   "$(printf 'Refs #12\n\nAdds the widget.\n\n---\ndiff --git a/w b/w\n+widget')"
 out="$("$ORCH" pr read 12 2>&1)"; st=$?
@@ -1224,4 +1225,156 @@ assert_status "a failed diff read fails" "$st" 1
 fake_unfail
 help="$("$ORCH" help)"
 assert_contains "help documents pr read" "$help" "pr read <issue> <file>"
+restore_suite_env
+
+# --- pr: fork PRs (#1977) -----------------------------------------------------
+# A PR whose head branch lives in a fork (isCrossRepository) is never taken for
+# the plugin's own: every lookup by head branch drops it, with one stderr line.
+echo
+echo "pr: fork PRs (#1977)"
+new_repo >/dev/null
+git checkout -q -b orch/12-foo
+fake_github
+forkline="orch: ignored 1 PR(s) from forks for orch/12-foo"
+fk_out="$(mktemp -d)/body.md"
+fk_new="$(mktemp)"
+writeln 'Closes #12' '' 'Corrected.' >"$fk_new"
+fk_comment="$(mktemp)"
+printf 'a note\n' >"$fk_comment"
+fk_comments="$(mktemp)"
+errf="$(mktemp)"
+
+# Only a fork PR stands: "no open PR", and the fork PR is left untouched.
+fake_pr 60 open orch/12-foo main
+fake_pr_cross 60
+fake_pr_body 60 $'Closes #12\n\nStranger.'
+fake_pr_draft 60
+before="$(fake_snapshot)"
+for c in "update $fk_new" "comment $fk_comment" "draft" "ready"; do
+  # shellcheck disable=SC2086
+  out="$("$ORCH" pr $c 2>"$errf")"; st=$?
+  assert_status "pr ${c%% *}: only a fork PR exits 1" "$st" 1
+  assert_eq "pr ${c%% *}: printing nothing" "$out" ""
+  assert_contains "pr ${c%% *}: saying the fork PR was ignored" "$(cat "$errf")" "$forkline"
+  [ "${c%% *}" != update ] || assert_contains "pr update: saying no open PR" "$(cat "$errf")" "no open PR"
+done
+assert_eq "the fork PR's body, comments and draft state untouched" "$(fake_snapshot)" "$before"
+out="$("$ORCH" pr fetch "$fk_out" 2>&1)"; st=$?
+assert_status "pr fetch: only a fork PR exits 1" "$st" 1
+assert_contains "pr fetch: saying no open PR" "$out" "no open PR"
+
+# A newer fork PR beside the same-repo one: the command acts on the latter.
+fake_pr 57 open orch/12-foo main
+fake_pr_body 57 $'Closes #12\n\nMine.'
+fake_pr_draft 57
+fake_pr_comment 57 pat 2026-10-01T09:00:00Z "Mine too."
+fake_pr_comment 60 pat 2026-10-02T09:00:00Z "Stranger comment."
+fake_pr_draft 60
+out="$("$ORCH" pr fetch "$fk_out" 2>"$errf")"; st=$?
+assert_status "pr fetch beside a newer fork PR succeeds" "$st" 0
+assert_eq "reading the same-repo PR's body" "$(cat "$fk_out")" $'Closes #12\n\nMine.'
+assert_eq "and saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
+
+out="$("$ORCH" pr update "$fk_new" 2>"$errf")"; st=$?
+assert_status "pr update beside a newer fork PR succeeds" "$st" 0
+assert_eq "overwriting the same-repo PR's body" "$(fake_pr_body_of 57)" "$(cat "$fk_new")"
+assert_eq "and not the fork PR's" "$(fake_pr_body_of 60)" $'Closes #12\n\nStranger.'
+assert_eq "update: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
+
+out="$("$ORCH" pr comment "$fk_comment" 2>"$errf")"; st=$?
+assert_status "pr comment beside a newer fork PR succeeds" "$st" 0
+assert_eq "printing the same-repo PR's number" "$out" "57"
+assert_eq "posting nothing on the fork PR" "$(fake_pr_comments_of 60)" "Stranger comment."
+assert_eq "comment: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
+
+out="$("$ORCH" pr comments "$fk_comments" 2>"$errf")"; st=$?
+assert_status "pr comments beside a newer fork PR succeeds" "$st" 0
+assert_contains "reading the same-repo PR's comments" "$(cat "$fk_comments")" "Mine too."
+assert_not_contains "and not the fork PR's" "$(cat "$fk_comments")" "Stranger"
+assert_eq "comments: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
+
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "pr ready beside a newer fork PR succeeds" "$st" 0
+assert_eq "marking the same-repo PR ready" "$(fake_pr_draft_of 57)" "no"
+assert_eq "and not the fork PR" "$(fake_pr_draft_of 60)" "yes"
+assert_eq "ready: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "pr draft beside a newer fork PR succeeds" "$st" 0
+assert_eq "drafting the same-repo PR" "$(fake_pr_draft_of 57)" "yes"
+assert_eq "draft: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
+
+# Two same-repo PRs and a newer fork PR: the newer same-repo PR wins.
+fake_pr 58 open orch/12-foo main
+fake_pr_body 58 $'Closes #12\n\nNewer mine.'
+fake_pr 61 open orch/12-foo main
+fake_pr_cross 61
+fake_pr_body 61 "Closes #12"
+out="$("$ORCH" pr fetch "$fk_out" 2>"$errf")"; st=$?
+assert_eq "pr fetch reads the newest same-repo PR" "$(cat "$fk_out")" $'Closes #12\n\nNewer mine.'
+
+# No fork PR: no new stderr.
+rm -rf "$ORCH_GH_FAKE_STORE/prs/60" "$ORCH_GH_FAKE_STORE/prs/61"
+out="$("$ORCH" pr fetch "$fk_out" 2>&1)"; st=$?
+assert_eq "no fork PR: nothing on stderr" "$out" ""
+
+# A flag that is neither true nor false: the filter's own rule is in trust.sh;
+# here only the command's exit code.
+fake_pr_cross 58 maybe
+printf 'known content\n' >"$fk_comments"
+out="$("$ORCH" pr comments "$fk_comments" 2>"$errf")"; st=$?
+assert_status "pr comments with an unreadable flag exits 2" "$st" 2
+assert_eq "writing nothing" "$(cat "$fk_comments")" "known content"
+fake_pr_cross 58 false
+
+# pr read: a fork PR opening with the issue line is ignored.
+rm -rf "$ORCH_GH_FAKE_STORE/prs"/*
+rd_file="$(mktemp -d)/pr.md"
+fake_pr 70 open orch/12-foo main
+fake_pr_body 70 $'Closes #12\n\nMine.'
+printf 'mine diff\n' >"$ORCH_GH_FAKE_STORE/prs/70/diff"
+fake_pr 71 open stranger/main main
+fake_pr_cross 71
+fake_pr_body 71 $'Closes #12\n\nStranger.'
+out="$("$ORCH" pr read 12 "$rd_file" 2>"$errf")"; st=$?
+assert_status "pr read beside a newer fork PR succeeds" "$st" 0
+assert_contains "reading the same-repo PR" "$(cat "$rd_file")" "Mine."
+assert_not_contains "and not the fork PR" "$(cat "$rd_file")" "Stranger"
+assert_eq "saying one fork PR was ignored for the issue" "$(cat "$errf")" "orch: ignored 1 PR(s) from forks for #12"
+rm -rf "$ORCH_GH_FAKE_STORE/prs/70"
+out="$("$ORCH" pr read 12 "$rd_file" 2>&1)"; st=$?
+assert_status "pr read with only the fork PR fails" "$st" 1
+assert_contains "with the unchanged message" "$out" "orch: no open PR closes or refers to issue #12"
+fake_pr_body 71 $'Closes #99\n\nStranger.'
+out="$("$ORCH" pr read 12 "$rd_file" 2>&1)"; st=$?
+assert_not_contains "a fork PR naming another issue: no ignored line" "$out" "ignored"
+
+# pr release: a fork's release PR does not block, a same-repo one does.
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+orch_gh_failing base set uat >/dev/null
+fk_rel="$(mktemp)"
+writeln '## Summary' '' 'Ships uat.' >"$fk_rel"
+rm -rf "$ORCH_GH_FAKE_STORE/prs"
+fake_pr 57 open uat main
+fake_pr_cross 57 maybe
+out="$(orch_gh_failing pr release --force Release "$fk_rel" 2>&1)"; st=$?
+assert_status "pr release with an unreadable flag fails" "$st" 1
+assert_eq "opening no release PR" "$(fake_prs)" "57 "
+fake_pr_cross 57
+fake_next_pr 70
+out="$(orch_gh_failing pr release --force Release "$fk_rel" 2>"$errf")"; st=$?
+assert_status "pr release opens the release PR past a fork's" "$st" 0
+assert_eq "printing its number" "$out" "70"
+assert_eq "saying one fork PR was ignored" "$(cat "$errf")" "orch: ignored 1 PR(s) from forks for uat"
+fake_pr 57 open uat main
+out="$(orch_gh_failing pr release --force Release "$fk_rel" 2>&1)"; st=$?
+assert_status "pr release still refuses on a same-repo release PR" "$st" 1
+assert_eq "with its unchanged message and no ignored line" "$out" \
+  "orch: a release PR from uat into main is already open: #70"
+orch_gh_failing base clear >/dev/null
+rm -rf "$(dirname "$bare")"
 restore_suite_env

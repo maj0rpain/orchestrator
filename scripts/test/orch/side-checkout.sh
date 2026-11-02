@@ -1226,3 +1226,52 @@ assert_status "an unclassified entry fails the classification" "$st" 1
 assert_contains "the failure names the entry" "$out" ".orchestrator/brandnew"
 assert_contains "the failure states the rule" "$out" "The rule: an entry a command creates"
 rm -rf "$fl_fix"
+
+# --- side-checkout prune: fork PRs are not proof (#1979) ----------------------
+# A merged PR whose head lives in a fork, from a branch named as the side
+# checkout's, is not proof the side checkout is finished.
+echo
+echo "side-checkout prune fork PRs"
+sc_clone
+fake_github
+top="$(git rev-parse --show-toplevel)"
+fake_offline
+fk="$(sc_add fk)"
+sp_branch_off "$fk" quick/41-fk
+fake_pr 91 merged quick/41-fk main
+fake_pr_head 91 "$(git rev-parse quick/41-fk)"
+fake_pr_cross 91
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune succeeds" "$st" 0
+assert_eq "a side checkout with only a merged fork PR stays" "$(on_disk "$fk")" "present"
+assert_eq "with its branch" "$(sp_branch quick/41-fk)" "kept"
+assert_contains "skipped as having no merged PR" "$out" "skipped $fk: no merged PR from quick/41-fk into main"
+assert_contains "and the fork PR is reported as ignored" "$out" "ignored 1 PR(s) from forks"
+
+# A same-repo merged PR finishes it, with no ignored line (the fork PR above,
+# now same-repo, finishes its own).
+fake_offline
+rm "$ORCH_GH_FAKE_STORE/prs/91/cross_repository"
+sm="$(sc_add sm)"
+sp_branch_off "$sm" quick/42-sm
+fake_pr 92 merged quick/42-sm main
+fake_pr_head 92 "$(git rev-parse quick/42-sm)"
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_eq "a same-repo merged PR finishes its side checkout" "$(on_disk "$sm")" "absent"
+assert_not_contains "and no ignored line is printed" "$out" "ignored"
+
+# A flag that is neither true nor false cannot be read.
+fake_offline
+bf="$(sc_add bf)"
+sp_branch_off "$bf" quick/43-bf
+fake_pr 93 merged quick/43-bf main
+fake_pr_head 93 "$(git rev-parse quick/43-bf)"
+fake_pr_cross 93 maybe
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune fails on an unreadable flag" "$st" 1
+assert_contains "with the could-not-read verdict" "$out" "could not check $bf: could not read GitHub"
+assert_eq "the side checkout stays" "$(on_disk "$bf")" "present"
+assert_eq "with its branch" "$(sp_branch quick/43-bf)" "kept"

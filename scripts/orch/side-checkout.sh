@@ -114,7 +114,7 @@ tip_covered() {
 # doctor.sh.
 # shellcheck disable=SC2034
 side_checkout_finished() {
-  local path="$1" base prs st err merged_prs=""
+  local path="$1" base raw prs st err merged_prs=""
   st="$(tree_status "$path")" || { verdict="$st"; return 2; }
   if [ -n "$st" ]; then
     verdict="uncommitted changes or untracked files"; return 1
@@ -126,8 +126,10 @@ side_checkout_finished() {
   branch="$(checkout_branch "$path")" \
     || { verdict="no branch"; return 1; }
   base="$(recorded_base "$branch")"
-  capture prs err adapter_prs_merged "$branch" "$base" \
+  capture raw err adapter_prs_merged "$branch" "$base" \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
+  prs="$(trust_filter_prs "$branch" <<<"$raw")" \
+    || { verdict="could not read GitHub: the merged PRs from $branch into $base"; return 2; }
   [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
   tip_covered "$path" "$branch" "$prs"
 }

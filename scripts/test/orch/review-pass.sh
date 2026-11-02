@@ -243,3 +243,26 @@ assert_contains "orch.sh help lists review-pass known-items" "$("$ORCH" help)" \
   "review-pass known-items <issue> <path> [--deviations <file>]"
 rm -rf "$kp"
 restore_suite_env
+
+# --- review-pass known-items: fork PRs (#1977) --------------------------------
+echo
+echo "review-pass known-items: fork PRs (#1977)"
+new_repo >/dev/null
+git checkout -q -b quick/21-foo
+fake_github
+fake_issue 21 open
+kp="$(mktemp -d)"
+fake_pr 57 open quick/21-foo main
+fake_pr_body 57 "$(writeln 'Closes #21' '' '## Deviations' '' '- Kept the old cache' '' '## Host fallbacks' '' 'None (claude).')"
+fake_pr_comment 57 pat 2026-10-04T09:00:00Z "$(writeln '## Review' '' '- `c.sh:7` - duplicated parser - needs a decision' '' '## Host fallbacks' '' 'None (claude).')"
+fake_pr 58 open quick/21-foo main
+fake_pr_cross 58
+fake_pr_body 58 "$(writeln 'Closes #21' '' '## Deviations' '' '- Stranger entry' '' '## Host fallbacks' '' 'None (claude).')"
+fake_pr_comment 58 pat 2026-10-05T09:00:00Z "$(writeln '## Review' '' '- `z.sh:1` - stranger item - declined' '' '## Host fallbacks' '' 'None (claude).')"
+out="$("$ORCH" review-pass known-items 21 "$kp/known.md" 2>"$kp/err")"; st=$?
+assert_status "a newer fork PR beside the plugin's own: builds the file" "$st" 0
+assert_eq "from the same-repo PR's body and comments alone" "$(cat "$kp/known.md")" "$(writeln '## Deviations' \
+  '- Kept the old cache' '## Known items' '- `c.sh:7` - duplicated parser - needs a decision - declined')"
+assert_eq "stderr holds the ignored line" "$(cat "$kp/err")" "orch: ignored 1 PR(s) from forks for quick/21-foo"
+rm -rf "$kp"
+restore_suite_env

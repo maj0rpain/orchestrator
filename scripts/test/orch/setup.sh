@@ -681,6 +681,11 @@ fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2"
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
 
+# fake_pr_cross <n> [flag]: seeds PR #n's cross-repository flag - a fork PR
+# (true) by default; the fake prints the flag as given, so any other value
+# seeds one gh would never print. A PR never seeded is same-repo (false).
+fake_pr_cross() { printf '%s\n' "${2:-true}" >"$ORCH_GH_FAKE_STORE/prs/$1/cross_repository"; }
+
 # fake_next_pr <n>: the number the next PR opened takes.
 fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
 
