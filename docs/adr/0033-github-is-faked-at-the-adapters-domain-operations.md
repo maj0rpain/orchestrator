@@ -3,6 +3,10 @@
 Amended by #663: an operation prints plain text, except `adapter_issue_json`,
 whose JSON object is the shape `issue fetch --json` publishes.
 
+Amended by ADR-0057: `adapter_issue_comments` and `adapter_pr_comments` also
+return raw JSON, which the Trust module filters, so the plain-text rule has
+those exceptions too.
+
 orch.sh and doctor.sh reach GitHub only through adapter operations named for
 what their callers need; each owns gh's flags, `--jq` expressions, URL parsing
 and exit-code quirks, and prints plain text. Behaviour tests replace those

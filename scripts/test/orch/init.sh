@@ -485,3 +485,21 @@ out="$("$ORCH" init warned --issue 42 2>&1 >/dev/null)"; st=$?
 assert_status "an untrusted issue is adopted" "$st" 0
 assert_eq "with one warning naming the writer" "$(grep -c 'last written by stranger' <<<"$out")" "1"
 assert_eq "and the flow state is written" "$("$ORCH" state get issue)" "42"
+
+# a failing trust read warns, and the flow state is still written
+rm -f .orchestrator/state.json
+fake_fail adapter_issue_authorship "HTTP 502 authorship"
+out="$("$ORCH" init warned-read --issue 42 2>&1 >/dev/null)"; st=$?
+assert_status "init --issue past a failed trust read exits 0" "$st" 0
+assert_contains "warning that trust could not be checked" "$out" "orch: issue trust could not be checked for #42: "
+assert_eq "and the flow state is written" "$("$ORCH" state get issue)" "42"
+# pickup's init runs under ORCH_AUTOPILOT=1: no trust read, no warning
+rm -f .orchestrator/state.json
+out="$(ORCH_AUTOPILOT=1 "$ORCH" init picked --issue 42 2>&1 >/dev/null)"; st=$?
+assert_status "an autopilot init --issue exits 0" "$st" 0
+assert_eq "and makes no trust read and prints no warning" "$out" ""
+assert_eq "and the flow state is written" "$("$ORCH" state get issue)" "42"
+fake_unfail
+rm -f .orchestrator/state.json
+out="$(ORCH_AUTOPILOT=1 "$ORCH" init picked-again --issue 42 2>&1 >/dev/null)"
+assert_eq "an autopilot init of an untrusted issue prints no warning" "$out" ""

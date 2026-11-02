@@ -55,6 +55,18 @@ for assoc in CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER MANNEQUIN NONE; do
     "$(sourced_orch_script 'rc=0; trust_issue_check 7 || rc=$?; echo $rc' 2>&1)" "1"
 done
 
+# The editor and renamer rules, with the author a stranger.
+# tr_check <author-assoc> <editor> <renamer>: trust_issue_check 7's status and
+# TRUST_WHAT, as "status/what".
+tr_check() {
+  fake_issue_authorship 7 stranger "$1" "$2" "$3"
+  sourced_orch_script 'rc=0; trust_issue_check 7 || rc=$?; echo "$rc/$TRUST_WHAT"' 2>&1
+}
+assert_eq "a maintainer editor trusts a title never renamed" "$(tr_check NONE maintainer "")" "0/"
+assert_eq "a stranger re-edit is not trusted" "$(tr_check NONE stranger "")" "1/title and body"
+assert_eq "a stranger rename is not trusted, and names the title" "$(tr_check NONE maintainer stranger)" "1/title"
+assert_eq "a maintainer rename is trusted" "$(tr_check NONE maintainer maintainer)" "0/"
+
 # The attended reads' warning, in its four cases.
 tr_warn() { sourced_orch_script 'trust_warn_issue 7; echo "rc=$?"' 2>&1 | tr '\n' '|' | sed 's/|$//'; }
 fake_issue_authorship 7 stranger NONE

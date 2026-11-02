@@ -1446,20 +1446,6 @@ assert_eq "its claim is released" "$(fake_claim_held 8)" free
 assert_eq "no side checkout was made" "$(ls "$top/.orchestrator/checkouts" 2>/dev/null)" "$pt_before"
 assert_not_contains "no plan comment was posted" "$(fake_comments_of 8)" "01-plan"
 
-# a maintainer's last edit of the body trusts a title never renamed
-pt_issue 9 stranger NONE maintainer; pt_tick
-assert_eq "a stranger author's issue, a maintainer its last editor, is picked up" "$(tick_calls)" "1"
-# the stranger re-edits after a maintainer
-pt_issue 9 stranger NONE stranger; pt_tick
-assert_eq "an issue the stranger re-edited is not picked up" "$(tick_calls)" "0"
-assert_contains "naming the stranger and the body" "$(fake_comments_of 9)" "the issue's title and body was last written by stranger"
-# the title renamed
-pt_issue 10 stranger NONE maintainer stranger; pt_tick
-assert_eq "a title renamed by the stranger author is not picked up" "$(tick_calls)" "0"
-assert_contains "the refusal names the title" "$(fake_comments_of 10)" "the issue's title was last written by stranger"
-pt_issue 10 stranger NONE maintainer maintainer; pt_tick
-assert_eq "a title renamed by a maintainer is picked up" "$(tick_calls)" "1"
-
 # a stranger re-editing a trusted issue is refused at the next pickup
 pt_issue 11 stranger NONE maintainer; pt_tick
 assert_eq "phase one runs" "$(tick_calls)" "1"

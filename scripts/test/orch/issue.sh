@@ -985,12 +985,8 @@ issue_json_trust="$(mktemp)"
 out="$("$ORCH" issue fetch 962 "$issue_json_trust" --json 2>&1)"; st=$?
 assert_status "fetch --json succeeds past untrusted authors" "$st" 0
 assert_eq "saying how many it ignored" "$out" "orch: ignored 2 comment(s) from untrusted authors on #962"
-assert_eq "the published shape unchanged, minus the strangers' comments" "$(jq -cS . "$issue_json_trust")" \
-  "$(jq -cS . <<'JSON'
-{"number": 962, "title": "Trust", "body": "", "labels": ["bug"],
- "comments": [{"author": "owner", "createdAt": "2026-09-04T09:00:00Z", "body": "Owner note."}]}
-JSON
-)"
+assert_eq "the published shape byte for byte, minus the strangers' comments" "$(od -c <"$issue_json_trust")" \
+  "$(printf '%s\n' '{"number":962,"title":"Trust","body":"","labels":["bug"],"comments":[{"author":"owner","createdAt":"2026-09-04T09:00:00Z","body":"Owner note."}]}' | od -c)"
 rm -f "$issue_json_trust"
 out="$("$ORCH" issue comments 24 "$issue_comments" 2>&1)"
 assert_eq "no line when nothing was dropped" "$out" ""
@@ -1099,4 +1095,24 @@ for tw_mode in "" --json; do
   assert_status "fetch of an untrusted issue exits 0 ($tw_mode)" "$st" 0
   assert_eq "with one warning naming the writer ($tw_mode)" "$(grep -c 'last written by stranger' <<<"$out")" "1"
 done
+# a failing trust read warns that trust could not be checked, and still writes
+fake_fail adapter_issue_authorship "HTTP 502 authorship"
+for tw_mode in "" --json; do
+  : >"$tw_file"
+  out="$("$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
+  assert_status "fetch past a failed trust read exits 0 ($tw_mode)" "$st" 0
+  assert_contains "warning that trust could not be checked ($tw_mode)" "$out" "orch: issue trust could not be checked for #31: "
+  assert_eq "and still writes the file ($tw_mode)" "$([ -s "$tw_file" ] && echo written)" "written"
+done
+# under ORCH_AUTOPILOT=1 the pickup's check is the one read: none is made, so
+# the failing read is never reached and nothing is printed
+for tw_mode in "" --json; do
+  out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
+  assert_status "an autopilot fetch exits 0 ($tw_mode)" "$st" 0
+  assert_eq "and makes no trust read and prints no warning ($tw_mode)" "$out" ""
+done
+fake_unfail
+fake_issue_authorship 31 stranger NONE
+out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
+assert_eq "an autopilot fetch of an untrusted issue prints no warning" "$out" ""
 rm -f "$tw_file"
