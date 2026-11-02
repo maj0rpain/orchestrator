@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.42.3
+
+Every site that runs a verification command now says to run it in the foreground and wait for it, never to background it and sleep, poll or kill it. The host capabilities table gains a **Run a long command** row.
+
 ## 4.42.2
 
 The plugin now states its own release-record rule: a ticket subagent never touches the repo's per-PR versioning change (a changelog fragment, a CHANGELOG entry, a version bump) on a breakdown of more than one ticket and writes it on a collapsed one, the driver loop's driver writes it before the combined branch's verification, and the fixer touches it only to fix a finding that names it.
