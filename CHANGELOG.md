@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.41.0
+
+A new `PreToolUse` hook on `Bash`, `hook-bash-stdin.sh`, stops a stray stdin read from hanging a plugin subagent or an autopilot session. Under `bypassPermissions` it closes the command's stdin with an `exec </dev/null` prefix. In any other permission mode it denies a plain `cat`, `read`, `python`/`python3`/`node` with no script, or `bash -s`/`sh -s`, and says how to supply the input. A human's own session is left alone. Every plugin agent that runs Bash now has a Stdin instruction, and `docs/host-capabilities.md` records the capability, with Junie marked unverified.
+
 ## 4.40.0
 
 A repo can name a cheaper `Ticket verification:` beside its `Full verification:` in its instructions. Ticket subagents, fixers, resolvers and review pass sessions run the ticket verification, and driver loop step f runs the full verification once per branch, through `suite-cost run`. A repo that names none keeps today's behaviour. Every test runner under one home directory now draws its parallel jobs from a shared job pool sized to half the usable CPUs, so concurrent runs queue instead of oversubscribing the machine; CI bypasses it. This repo gains `scripts/test/affected.sh` as its ticket verification, and docs_lint checks that CLAUDE.md names both commands.
