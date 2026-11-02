@@ -31,16 +31,21 @@ trust_filter_comments() {
   printf '%s\n' "$kept"
 }
 
-# trust_issue_read <n> <author_var> <association_var> <editor_var>
-# <renamer_var> <err_var>: reads issue <n>'s authorship once through its gh op
+# trust_issue_read <n> <author> <assoc> <editor> <renamer> <err>:
+# reads issue <n>'s authorship once through its gh op
 # and writes the author's login, the author's association, the login of the
 # body's last editor and the login of the title's latest renamer (the last two
-# empty when none) into the caller-named variables. Non-zero when the read
-# fails, writing none of them and gh's stderr into <err_var>, as gh_lines_read
-# does.
+# empty when none) into the caller-named variables <author>, <assoc>,
+# <editor> and <renamer>. Non-zero when the read fails, writing none of them
+# and gh's stderr into <err>, as gh_lines_read does.
 trust_issue_read() {
   gh_lines_read adapter_issue_authorship "$1" "$6" "$2" "$3" "$4" "$5"
 }
+
+TRUST_WRITER=""
+TRUST_WHAT=""
+TRUST_REASON=""
+# shellcheck disable=SC2034 # the TRUST_ results are read by pickup
 
 # trust_issue_check <n>: whether issue <n> is trusted. The author is trusted
 # when its association is OWNER, MEMBER or COLLABORATOR. The body is trusted
@@ -51,10 +56,6 @@ trust_issue_read() {
 # untrusted writer's login and TRUST_WHAT to "title", "body" or "title and
 # body", whichever they last wrote. Returns 2 when the read fails, setting
 # TRUST_REASON to gh's reason: a failed read is never trusted.
-TRUST_WRITER=""
-TRUST_WHAT=""
-TRUST_REASON=""
-# shellcheck disable=SC2034 # the TRUST_ results are read by pickup
 trust_issue_check() {
   local author assoc editor renamer err trusted body_ok title_ok
   TRUST_WRITER="" TRUST_WHAT="" TRUST_REASON=""

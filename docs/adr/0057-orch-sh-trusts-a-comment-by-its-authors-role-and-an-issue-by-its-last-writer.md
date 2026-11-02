@@ -24,10 +24,14 @@ Decision:
   adapters return raw comment JSON carrying `authorAssociation`, and the
   rendering moves above them, after the filter. `issue fetch --json`'s
   published shape is unchanged.
-- An issue is trusted when its title and body were each last written by an
-  author with a role on the repo, or by someone other than the author (editing
-  another user's issue already needs a repo role). One GraphQL read gives the
-  author, the body's last editor and the latest title rename's actor.
+- An issue is trusted when its author has a role on the repo, or when its
+  body and its title were each last written by someone other than the author
+  (editing another user's issue already needs a repo role). A title never
+  renamed follows the body, and a renamed title follows its newest renamer:
+  the literal rule, "the title was last written by a non-author", would
+  refuse every stranger's issue that a maintainer only edited the body of.
+  One GraphQL read gives the author, the body's last editor and the latest
+  title rename's actor.
 - The issue rule is enforced only on unattended runs, as the first step of the
   watcher's pickup, before every phase. An untrusted issue gets a refusal stop
   naming the writer, plus `needs-human`; a failed read fails closed with a

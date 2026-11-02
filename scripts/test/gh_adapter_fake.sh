@@ -235,9 +235,9 @@ fake_issue_known() {
 
 fake_issue_labels() { cat "$(fake_issue_dir "$1")/labels" 2>/dev/null || true; }
 
-# fake_comment_append <comments-dir> <author> <created-at> <body-file>
-# [<association>]: one comment appended to an issue's or PR's comments
-# directory, numbered in order, its authorAssociation OWNER unless given.
+# fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
+# one comment appended to an issue's or PR's comments directory, numbered in
+# order, its authorAssociation OWNER unless given.
 fake_comment_append() {
   local d="$1" k
   mkdir -p "$d"
@@ -286,6 +286,14 @@ fake_comments_json() {
   printf '%s\n' "$comments"
 }
 
+# fake_comments_raw <comments-dir> <n>: the stored comments as gh's raw JSON -
+# an object whose comments array holds each comment's author login object,
+# authorAssociation, createdAt and body.
+fake_comments_raw() {
+  fake_comments_json "$1" "$2" \
+    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body})}'
+}
+
 # adapter_issue_body <n>: the stored body, then a newline, as gh's --jq .body
 # prints it.
 adapter_issue_body() {
@@ -301,8 +309,7 @@ adapter_issue_body() {
 adapter_issue_comments() {
   ! fake_failing adapter_issue_comments || return 1
   fake_issue_known "$1" || return 1
-  fake_comments_json "$(fake_issue_dir "$1")/comments" "$1" \
-    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body})}'
+  fake_comments_raw "$(fake_issue_dir "$1")/comments" "$1"
 }
 
 # adapter_issue_json <n>: the stored issue as ISSUE_JSON_JQ's trimmed object -
@@ -624,8 +631,7 @@ adapter_pr_body() {
 adapter_pr_comments() {
   ! fake_failing adapter_pr_comments || return 1
   fake_pr_known "$1" || return 1
-  fake_comments_json "$(fake_pr_dir "$1")/comments" "$1" \
-    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body})}'
+  fake_comments_raw "$(fake_pr_dir "$1")/comments" "$1"
 }
 
 # adapter_pr_refs <n>: the stored head SHA (default forty zeros, a SHA no

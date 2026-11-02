@@ -200,9 +200,10 @@ is read from it.
 _Avoid_: verified comment.
 
 **Trusted issue**:
-An issue whose title and body were each last written either by an author
-with a role on the repo (as for a trusted comment) or by someone other than
-its author. An autopilot flow runs only on a trusted issue.
+An issue whose author has a role on the repo (as for a trusted comment), or
+whose body and title were each last written by someone other than its
+author; a title never renamed follows the body, a renamed one its newest
+renamer. An autopilot flow runs only on a trusted issue.
 
 **Issue timeline**:
 An autopilot flow's issue's comment history, read once and asked in domain
