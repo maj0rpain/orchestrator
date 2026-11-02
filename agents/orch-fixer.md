@@ -205,7 +205,8 @@ site, the first, its leading `file:line`, included. It is one finding.
   included), so the closer files it once and later iterations hold every
   site as a known item. A finding with one deferred site carries no `Sites:`.
   Sites kept out by different rules still share the bullet; its rule names
-  each rule with its sites. No other rule defers a site.
+  each rule with its sites, e.g. ``needs a decision (`a.sh:3`);
+  loop-authored lines (`b.sh:9`)``. No other rule defers a site.
 - **Blocking pattern findings** are never deferred or filed. A site you
   cannot fix keeps the whole finding **open blocking**, with the unfixed
   sites named in its reason. A site whose cause is out of reach takes **A
@@ -384,10 +385,9 @@ verification, or the handed full command when the repo names none), never the
 
 Each **Waiting to be filed** bullet carries the finding's location, as the
 template shows, with `-` in its place when the finding gave `-`: later
-iterations' known items copy the bullet as written. The `Sites:` list is
-written only for a pattern finding with two or more deferred sites, and
-its rule names each rule with its sites when they differ, e.g. ``needs a
-decision (`a.sh:3`); loop-authored lines (`b.sh:9`)``.
+iterations' known items copy the bullet as written. A pattern finding's
+`Sites:` list and its rule follow **Deferred sites** under **Pattern
+findings**.
 
 **Evidence** holds the red run of each failing test step 1 wrote, one entry
 per test: its name, then its failure on the unfixed code in one line as the
