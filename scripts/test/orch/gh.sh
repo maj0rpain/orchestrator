@@ -586,7 +586,7 @@ assert_status "issue title and labels: reads both" "$st" 0
 assert_eq "the title first, then one label per line" "$out" "$(writeln 'Widgets need a handle' ready-for-agent)"
 
 gh_reply 0 $'octo\nNONE\n\nocto\n' '' \
-  api graphql -f owner='{owner}' -f name='{repo}' -F number=23 \
+  api graphql -F owner='{owner}' -F name='{repo}' -F number=23 \
   -f query="$(sourced_orch_script 'printf %s "$ISSUE_AUTHORSHIP_QUERY"')" \
   --jq "$(sourced_orch_script 'printf %s "$ISSUE_AUTHORSHIP_JQ"')"
 out="$(contract adapter_issue_authorship 23 2>&1)"; st=$?

@@ -396,7 +396,7 @@ ISSUE_AUTHORSHIP_JQ='.data.repository.issue | (.author.login // ""), (.authorAss
 # newest rename of the title (the actor of its newest RenamedTitleEvent). One
 # GraphQL read, for the Trust module's reader.
 adapter_issue_authorship() {
-  gh api graphql -f owner='{owner}' -f name='{repo}' -F number="$1" \
+  gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$1" \
     -f query="$ISSUE_AUTHORSHIP_QUERY" --jq "$ISSUE_AUTHORSHIP_JQ"
 }
 

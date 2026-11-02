@@ -1090,11 +1090,11 @@ fake_github
 fake_issue 31 open
 fake_issue_authorship 31 stranger NONE
 tw_file="$(mktemp)"
-for tw_mode in "" --json; do
-  out="$("$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
-  assert_status "fetch of an untrusted issue exits 0 ($tw_mode)" "$st" 0
-  assert_eq "with one warning naming the writer ($tw_mode)" "$(grep -c 'last written by stranger' <<<"$out")" "1"
-done
+# (plain mode's warning is pinned in trust.sh's tr_warn)
+tw_mode=--json
+out="$("$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
+assert_status "fetch of an untrusted issue exits 0 ($tw_mode)" "$st" 0
+assert_eq "with one warning naming the writer ($tw_mode)" "$(grep -c 'last written by stranger' <<<"$out")" "1"
 # a failing trust read warns that trust could not be checked, and still writes
 fake_fail adapter_issue_authorship "HTTP 502 authorship"
 for tw_mode in "" --json; do
