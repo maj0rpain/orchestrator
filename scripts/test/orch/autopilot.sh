@@ -134,6 +134,13 @@ assert_contains "the CLI conventions' noun table has an autopilot row" \
   "$(grep '^| `autopilot`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`active`'
 assert_contains "host-capabilities has the headless-session row" \
   "$(grep '^| Start a headless session' "$PLUGIN_ROOT/docs/host-capabilities.md")" '`claude -p`'
+hc_row="$(grep '^| Start a headless session' "$PLUGIN_ROOT/docs/host-capabilities.md")"
+assert_contains "the headless-session row carries --append-system-prompt" "$hc_row" '`--append-system-prompt`'
+assert_not_contains "and its allowlist omits AskUserQuestion" "$hc_row" "AskUserQuestion"
+assert_contains "the review skill's description takes the budget from the plan" \
+  "$(sed -n '3p' "$PLUGIN_ROOT/skills/orch-review/SKILL.md")" "taken from the plan"
+assert_contains "step 5i opens as never reached in an autopilot flow" \
+  "$(grep -A1 '^5i\.' "$PLUGIN_ROOT/skills/orch-review/SKILL.md")" "Never reached in an autopilot flow."
 restore_suite_env
 
 # --- autopilot rounds, budget and start ---------------------------------------
@@ -311,9 +318,10 @@ assert_contains "asking in words for orch-flow's Next phase" "$calls" "orchestra
 assert_contains "with ORCH_AUTOPILOT=1" "$calls" "autopilot:1"
 assert_contains "with the Explore and Plan agents disabled" "$calls" "explore-plan:1"
 assert_contains "with a 2-hour background wait, whatever the caller sets" "$calls" "bg-wait:7200000"
+headless_prompt='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop.'
 # Every argument but the second, the prompt, which the line above matches.
 assert_eq "the session runs claude -p with the permission mode and the lean flags" "$(grep '^arg:' "$launcher_dir/calls" | sed -n '1p;3,$p' | tr '\n' '|')" \
-  "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|arg:--output-format|arg:stream-json|arg:--verbose|"
+  "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|arg:--append-system-prompt|arg:${headless_prompt}|arg:--output-format|arg:stream-json|arg:--verbose|"
 assert_not_contains "no --model when the key is unset" "$calls" "arg:--model"
 assert_not_contains "and no --effort" "$calls" "arg:--effort"
 assert_contains "in the side checkout, slugged by the title" "$calls" "dir:$side7"
@@ -1486,3 +1494,69 @@ assert_eq "the claim is released" "$(fake_claim_held 12)" free
 out="$(sourced_orch_script 'autopilot_orch_in() { echo "ap=${ORCH_AUTOPILOT:-} $*"; }; unset ORCH_AUTOPILOT; autopilot_pickup_init 5 /nonexistent/side; echo "after=${ORCH_AUTOPILOT:-}"')"
 assert_eq "init runs with ORCH_AUTOPILOT=1, leaving the tick's own environment alone" "$out" "ap=1 /nonexistent/side init side --issue 5
 after="
+
+# --- autopilot run: the budget and the final reply (#2004) --------------------
+# A first-loop review session has its budget recorded from the plan by
+# autopilot run; a failure stop quotes the session's final reply.
+echo
+echo "autopilot run budget and final reply"
+tick_fixture
+git config orchestrator.autopilot.budget 6
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Bud 7"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1   # makes the side checkout, with a plan of Budget 6
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+side7="$top/.orchestrator/checkouts/bud-7"
+# bud_run <phase> <iteration> [<budget>]: the side checkout recorded at that
+# phase and iteration (and budget, when given), then a run of issue 7 whose
+# session exits 0 with its claim held.
+bud_run() {
+  (cd "$side7" && state_fixture phase "$1" && state_fixture iteration "$2" && state_fixture budget "${3:-}")
+  [ -n "${3:-}" ] || (cd "$side7" && state_fixture_drop budget)
+  rm -f "$launcher_dir/calls"; : >"$launcher_dir/out"; printf '0\n' >"$launcher_dir/exit"
+  fake_issue_relabel 7 orch:spec ready-for-agent orch:running
+  fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+  "$ORCH" autopilot run 7 >/dev/null 2>&1
+}
+bud_budget() { (cd "$side7" && "$ORCH" state get budget 2>/dev/null) || echo none; }
+
+bud_run review 0
+assert_eq "a first-loop review run records the plan's Budget" "$(bud_budget)" "6"
+assert_eq "and starts its session" "$(tick_calls)" "1"
+bud_run review 0 4
+assert_eq "a stale budget (after redo review) is overwritten" "$(bud_budget)" "6"
+bud_run review 2 4
+assert_eq "a re-entry run leaves the recorded budget" "$(bud_budget)" "4"
+bud_run implement 0
+assert_eq "a non-review phase writes no budget" "$(bud_budget)" ""
+sed -i 's/^Budget: .*$/Budget: lots/' "$ORCH_GH_FAKE_STORE"/issues/7/comments/*/body
+bud_run review 0 4
+assert_eq "an unreadable plan Budget starts no session" "$(tick_calls)" "0"
+assert_eq "and is needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
+assert_contains "with a reason naming the Budget" "$(fake_last_comment_of 7)" "Budget"
+assert_eq "and the claim released" "$(fake_claim_held 7)" free
+assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
+
+# The final reply
+# bud_reply <result-json-line>: a clean exit holding its claim over a log
+# ending in that line; the failure comment.
+bud_reply() {
+  printf '%s\n' '{"type":"system","subtype":"init"}' "$1" >"$launcher_dir/out"; printf '0\n' >"$launcher_dir/exit"
+  fake_issue_relabel 7 orch:spec ready-for-agent orch:running
+  fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+  (cd "$side7" && state_fixture phase spec)
+  "$ORCH" autopilot run 7 >/dev/null 2>&1
+  fake_last_comment_of 7
+}
+bud_result() { jq -cn --arg r "$1" '{type:"result",subtype:"success",result:$r}'; }
+c500="$(printf 'x%.0s' $(seq 1 500))"
+assert_contains "an exit-0 session's final reply is quoted" "$(bud_reply "$(bud_result 'How many review iterations? 3, 5 or 8')")" \
+  "the session exited with code 0; it ended on: *How many review iterations? 3, 5 or 8*; log: "
+assert_contains "a reply of exactly 500 characters is quoted whole" "$(bud_reply "$(bud_result "$c500")")" "it ended on: *$c500*; log: "
+assert_contains "one over 500 is cut with an ellipsis" "$(bud_reply "$(bud_result "${c500}y")")" "it ended on: *$c500…*; log: "
+assert_contains "a multi-line reply is collapsed to one line" "$(bud_reply "$(bud_result $'one\n\n  two\tthree')")" "it ended on: *one two three*; log: "
+assert_not_contains "an empty reply keeps the plain comment" "$(bud_reply "$(bud_result '')")" "it ended on"
+assert_contains "and names the exit code and log" "$(bud_reply "$(bud_result '')")" "the session exited with code 0; log: "
+assert_not_contains "a log with no result event keeps the plain comment" "$(bud_reply '{"type":"assistant","message":{"content":[]}}')" "it ended on"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
