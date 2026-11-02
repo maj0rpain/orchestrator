@@ -80,6 +80,11 @@ start `git rebase <parent branch>` yourself, then follow that file's
 **Resolving** section as written, with your ticket as the intent you hold,
 and return that file's four-line **Report** in place of this file's.
 
+## Stdin
+
+Never run a command that reads stdin without supplying it: give it a heredoc,
+`<<<`, a pipe or `</dev/null`.
+
 ## Steps
 
 1. **Fetch the ticket** before anything else, once, into a temporary file

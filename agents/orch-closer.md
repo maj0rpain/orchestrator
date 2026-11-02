@@ -35,6 +35,11 @@ loop's outcome either: the terminal state in your prompt is final, and
 - **What happens next.**
 - **orch.sh** - the path of the plugin's `orch.sh`.
 
+## Stdin
+
+Never run a command that reads stdin without supplying it: give it a heredoc,
+`<<<`, a pipe or `</dev/null`.
+
 ## Steps
 
 1. **Gather** every major and nit from this loop's records - those numbered

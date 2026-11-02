@@ -50,6 +50,11 @@ changed - a regression, a defect that moved - is still raised, its bullet
 ending `` re-raised (<known item's source>): <what changed> ``. Count what
 you held back for the report's `Known items held back:` line.
 
+## Stdin
+
+Never run a command that reads stdin without supplying it: give it a heredoc,
+`<<<`, a pipe or `</dev/null`.
+
 ## Steps
 
 1. **Pin the change.** `git rev-parse <base SHA>` must resolve, and

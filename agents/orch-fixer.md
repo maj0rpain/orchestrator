@@ -41,6 +41,11 @@ your return instead - see **Could not fix**.
   `iteration-NN-spec.md`; read them when a claim needs its full wording.
 - **orch.sh** - the path of the plugin's `orch.sh`.
 
+## Stdin
+
+Never run a command that reads stdin without supplying it: give it a heredoc,
+`<<<`, a pipe or `</dev/null`.
+
 ## Steps
 
 1. **Fix every item on the fixable list**, and only those. A blocking finding

@@ -74,8 +74,10 @@
 #     host-capabilities' Agent settings naming agent sync, the Junie README's
 #     Agent settings on Junie section naming --host junie and orch.sh doctor,
 #     the README's Running autopilot and how-it-works' Autopilot and Setup
-#     sections naming their autopilot phrases, and the turn-final reply sites
-#     docs/turn-final-reply.md and the glossary's Turn-final reply entry
+#     sections naming their autopilot phrases, the six agents' `## Stdin`
+#     sections naming `</dev/null`, host-capabilities' stdin row, and the
+#     turn-final reply sites docs/turn-final-reply.md and the glossary's
+#     Turn-final reply entry
 #   scan_dockerignore_secrets  .dockerignore lists each pattern of .gitignore's
 #     Secrets block, in its .dockerignore form
 #   scan_build_args  docker/compose.yaml and docker/.env.example exist, and
@@ -2008,6 +2010,23 @@ check "the Junie README has an Agent settings on Junie section naming --host jun
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/junie/README.md|## Agent settings on Junie' '--host junie')"
 check "the Junie README's Agent settings on Junie section names orch.sh doctor" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/junie/README.md|## Agent settings on Junie' 'orch.sh doctor')"
+
+# --- stdin guard instruction (#2003) ------------------------------------------
+echo
+echo "stdin guard instruction (#2003)"
+stdin_agents='agents/orch-implementer.md|## Stdin
+agents/orch-fixer.md|## Stdin
+agents/orch-resolver.md|## Stdin
+agents/orch-closer.md|## Stdin
+agents/orch-reviewer-spec.md|## Stdin
+agents/orch-reviewer-standards.md|## Stdin'
+check "the six Bash-running agents name </dev/null in their Stdin section" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$stdin_agents" '</dev/null')"
+stdin_row='A stray stdin read in a Bash call ends instead of hanging'
+check "host-capabilities has the stdin row" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/host-capabilities.md' "$stdin_row")"
+check "the stdin row marks Junie Unverified" \
+  "$(grep -F "$stdin_row" "$PLUGIN_ROOT/docs/host-capabilities.md" | grep -qF '**Unverified**' || echo "docs/host-capabilities.md: stdin row not Unverified")"
 
 # --- autopilot docs (#1497) ---------------------------------------------------
 echo
