@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.39.2
+
+The planning hook now sends only the state-dependent part of its message, well under Claude Code's 10 KB limit for hook context, so the closing rules are no longer cut to a 2 KB preview. The fixed closing rules moved into a new `## Closing` section of the orch-interview skill, which the grilling entry points and Junie's plan-confirmed prompt are pointed at by absolute path.
+
 ## 4.39.1
 
 Doctor's GitHub check now asks gh only about the active account on the repo's host, so a stale second account or an unused host no longer makes it report "gh is not authenticated". When that account really is unauthenticated, the FAIL line and its remedy name the host.

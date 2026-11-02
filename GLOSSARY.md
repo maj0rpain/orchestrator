@@ -460,10 +460,10 @@ have. _Avoid_: pass, iteration (the review loop's).
 
 **Round count**:
 The number of rounds a spec review runs. A flow's spec phase asks the human for
-it when the review starts, and a blueprint asks it in the planning hook's
-closing message, before the review; both recommend a count sized to the spec - 2
-by default, fewer for a one-site spec, more for a large one - and a blueprint
-may answer 0 to skip the review. A spec review run on demand runs 1 unless given
+it when the review starts, and a blueprint asks it at the planning close,
+before the review; both recommend a count sized to the spec - 2 by default,
+fewer for a one-site spec, more for a large one - and a blueprint may answer 0
+to skip the review. A spec review run on demand runs 1 unless given
 another. A spec review runs its whole round count: a round that finds nothing
 does not end it early. An autopilot flow's is chosen once, at the planning
 close, and recorded in its plan. _Avoid_: budget (the review loop's).
