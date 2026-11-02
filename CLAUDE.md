@@ -76,8 +76,10 @@ module with no noun, `checkout.sh`, `filed-finding.sh`, `issue-timeline.sh`,
 `known-items.sh`, `liveness.sh`, `marked-comment.sh`, `standing.sh` or
 `trust.sh`, gets a section file named as it is).
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
-half the usable CPUs, rounded down, at least 1, and all of them under `CI`;
-usable CPUs are the online cores, lowered to a cgroup v2 `cpu.max` quota;
+75% of the usable CPUs, rounded down, at least 1, or `ORCH_TEST_POOL_PERCENT`
+percent of them (a positive integer, above 100 too), and all of them under `CI`,
+which ignores the setting; usable CPUs are the online cores, lowered to a
+cgroup v2 `cpu.max` quota;
 `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
 pass on its own. all.sh runs at most that many shellcheck processes at once, and
 both runners lower their own niceness to 10 outside `CI`.

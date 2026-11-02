@@ -1262,7 +1262,8 @@ rm -rf "$all_root"
 # --- the job pool (#2022) -----------------------------------------------------
 # The runners' shared job pool, test-only ORCH_TEST_POOL_DIR naming the pool
 # directory and ORCH_TEST_CPU_MAX_FILE sizing it (a quota of 200000 per slot:
-# half the usable CPUs are the slots). A copy of the scripts tree with planted
+# 50% of the usable CPUs are the slots, set with ORCH_TEST_POOL_PERCENT=50). A
+# copy of the scripts tree with planted
 # sections that log their start and end, run by orch_test.sh; then all.sh over
 # a stub shellcheck that logs the same way.
 echo
@@ -1303,7 +1304,7 @@ jp_run() {
   local slots="$1" pool="$2" extra=()
   shift 2
   while [ "$1" != -- ]; do extra+=("$1"); shift; done
-  env -u CI ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu$slots" ORCH_TEST_POOL_DIR="$pool" \
+  env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu$slots" ORCH_TEST_POOL_DIR="$pool" \
     JP_LOG="$jp_log" JP_POOL="$pool" JP_SUITE="$jp_suite" ORCH_TEST_QUIET=1 \
     ORCH_TEST_ONLY="$2" ORCH_TEST_JOBS="$3" "${extra[@]}" bash "$jp_suite" >/dev/null 2>"${jp_err:-$jp_dir/err}"
 }
@@ -1380,6 +1381,17 @@ kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
 jp_run 4 "$jp_dir/pool4" -- '^pool [a-d]$' 2
 assert_eq "ORCH_TEST_JOBS=2 on a 4-slot pool runs 2 sections at once" "$(log_peak "$jp_log")" "2"
 
+# ORCH_TEST_POOL_PERCENT sizes the pool: 100% of 4 CPUs, and 200% of 2, hold 4.
+: >"$jp_log"
+jp_run 2 "$jp_dir/pool11" ORCH_TEST_POOL_PERCENT=100 -- '^pool [a-d]$' 4
+assert_eq "ORCH_TEST_POOL_PERCENT=100 on 4 CPUs holds 4 slots" "$(log_peak "$jp_log")" "4"
+: >"$jp_log"
+jp_run 1 "$jp_dir/pool12" ORCH_TEST_POOL_PERCENT=200 -- '^pool [a-d]$' 4
+assert_eq "ORCH_TEST_POOL_PERCENT=200 on 2 CPUs holds 4 slots" "$(log_peak "$jp_log")" "4"
+: >"$jp_log"
+jp_run 2 "$jp_dir/pool13" ORCH_TEST_POOL_PERCENT=25 -- '^pool [a-d]$' 4
+assert_eq "ORCH_TEST_POOL_PERCENT=25 on 4 CPUs holds 1 slot" "$(log_peak "$jp_log")" "1"
+
 # ORCH_TEST_JOBS=1 holds one slot for the whole run, in one shell.
 : >"$jp_log"
 jp_run 1 "$jp_dir/pool5" -- '^pool hold$' 1
@@ -1441,7 +1453,7 @@ suites_read "$jp_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
 stub_all_tree "$jp_all" "$jp_log" flock getconf
 # jp_all_run <errfile>: all.sh on the stub PATH and the 1-slot pool.
 jp_all_run() {
-  env -u CI ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu1" ORCH_TEST_POOL_DIR="$jp_dir/pool10" \
+  env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu1" ORCH_TEST_POOL_DIR="$jp_dir/pool10" \
     ORCH_TEST_JOBS=3 PATH="$jp_all/bin" bash "$jp_all/scripts/test/all.sh" >/dev/null 2>"$1"
 }
 : >"$jp_log"
@@ -1491,23 +1503,46 @@ load_default() {
     *) printf '%s\n' "$quota" >"$file" ;;
   esac
   (
-    unset CI ORCH_TEST_JOBS
+    unset CI ORCH_TEST_JOBS ORCH_TEST_POOL_PERCENT
     export ORCH_TEST_CPU_MAX_FILE="$file" PATH="$load_dir/getconf:$PATH"
     for load_kv in "$@"; do declare -x "$load_kv"; done
     source "$load_tests/test_jobs.sh"
-    test_jobs_default
+    test_jobs_default load.sh 2>&1
   )
 }
-assert_eq "32 cores and no quota file give 16 jobs" "$(load_default 32 -missing)" "16"
-assert_eq "32 cores and a quota of 4 CPUs give 2 jobs" "$(load_default 32 '400000 100000')" "2"
+assert_eq "32 cores and no quota file give 24 jobs" "$(load_default 32 -missing)" "24"
+assert_eq "32 cores and a quota of 4 CPUs give 3 jobs" "$(load_default 32 '400000 100000')" "3"
 assert_eq "32 cores and a quota of 1.5 CPUs (2 usable) give 1 job" "$(load_default 32 '150000 100000')" "1"
-assert_eq "4 cores and a quota above them give 2 jobs" "$(load_default 4 '800000 100000')" "2"
+assert_eq "4 cores and a quota above them give 3 jobs" "$(load_default 4 '800000 100000')" "3"
+assert_eq "2 cores give 1 job" "$(load_default 2 -missing)" "1"
+assert_eq "8 cores give 6 jobs" "$(load_default 8 -missing)" "6"
 assert_eq "1 core gives 1 job" "$(load_default 1 -missing)" "1"
-assert_eq "32 cores and a max quota give 16 jobs" "$(load_default 32 'max 100000')" "16"
-assert_eq "32 cores and an unreadable quota file give 16 jobs" "$(load_default 32 -dir)" "16"
-assert_eq "a failing getconf falls back to 4 cores, 2 jobs" "$(load_default fail -missing)" "2"
+assert_eq "32 cores and a max quota give 24 jobs" "$(load_default 32 'max 100000')" "24"
+assert_eq "32 cores and an unreadable quota file give 24 jobs" "$(load_default 32 -dir)" "24"
+assert_eq "a failing getconf falls back to 4 cores, 3 jobs" "$(load_default fail -missing)" "3"
 assert_eq "CI gives the full 32 usable CPUs" "$(load_default 32 -missing CI=true)" "32"
 assert_eq "CI honours the quota too" "$(load_default 32 '400000 100000' CI=true)" "4"
+assert_eq "ORCH_TEST_POOL_PERCENT=50 on 8 cores gives 4 jobs" \
+  "$(load_default 8 -missing ORCH_TEST_POOL_PERCENT=50)" "4"
+assert_eq "ORCH_TEST_POOL_PERCENT=100 on 8 cores gives 8 jobs" \
+  "$(load_default 8 -missing ORCH_TEST_POOL_PERCENT=100)" "8"
+assert_eq "ORCH_TEST_POOL_PERCENT=250 on 8 cores gives 20 jobs" \
+  "$(load_default 8 -missing ORCH_TEST_POOL_PERCENT=250)" "20"
+assert_eq "ORCH_TEST_POOL_PERCENT=075 means 75" \
+  "$(load_default 8 -missing ORCH_TEST_POOL_PERCENT=075)" "6"
+assert_eq "ORCH_TEST_POOL_PERCENT=1 keeps the floor of 1 job" \
+  "$(load_default 8 -missing ORCH_TEST_POOL_PERCENT=1)" "1"
+assert_eq "ORCH_TEST_POOL_PERCENT=100 on a quota of 4 CPUs gives 4 jobs" \
+  "$(load_default 32 '400000 100000' ORCH_TEST_POOL_PERCENT=100)" "4"
+for load_pct in 0 00 abc -5 ''; do
+  assert_eq "ORCH_TEST_POOL_PERCENT='$load_pct' is refused with the runner's message" \
+    "$(load_default 8 -missing "ORCH_TEST_POOL_PERCENT=$load_pct")" \
+    "load.sh: ORCH_TEST_POOL_PERCENT='$load_pct' is not a positive integer"
+done
+assert_eq "CI ignores ORCH_TEST_POOL_PERCENT" \
+  "$(load_default 8 -missing CI=true ORCH_TEST_POOL_PERCENT=50)" "8"
+assert_eq "CI does not validate ORCH_TEST_POOL_PERCENT" \
+  "$(load_default 8 -missing CI=true ORCH_TEST_POOL_PERCENT=abc)" "8"
 
 # all.sh's runs: a copy beside passing suite stubs, a shellcheck stub that logs
 # "+" when it starts and "-" when it ends, over the stubs and the two copies.
@@ -1517,7 +1552,7 @@ stub_all_tree "$load_all" "$load_all/sc_log"
 # unset, then the assignments applied.
 load_run_all() {
   (
-    unset CI ORCH_TEST_JOBS
+    unset CI ORCH_TEST_JOBS ORCH_TEST_POOL_PERCENT
     env "$@" PATH="$load_all/bin:$load_dir/getconf" bash "$load_all/scripts/test/all.sh"
   )
 }
@@ -1532,8 +1567,8 @@ assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
 : >"$load_all/sc_log"
 load_run_all >/dev/null 2>&1
-assert_eq "all.sh with ORCH_TEST_JOBS unset and 4 cores runs at most 2 shellcheck at once" \
-  "$(log_peak "$load_all/sc_log")" "2"
+assert_eq "all.sh with ORCH_TEST_JOBS unset and 4 cores runs at most 3 shellcheck at once" \
+  "$(log_peak "$load_all/sc_log")" "3"
 : >"$load_all/sc_log"
 load_run_all ORCH_TEST_JOBS=1 >/dev/null 2>&1
 assert_eq "all.sh with ORCH_TEST_JOBS=1 runs one shellcheck at a time" "$(log_peak "$load_all/sc_log")" "1"
@@ -1544,6 +1579,29 @@ assert_eq "all.sh with an invalid ORCH_TEST_JOBS names it on stderr" "$out" \
   "all.sh: ORCH_TEST_JOBS='abc' is not a positive integer"
 assert_eq "all.sh with an invalid ORCH_TEST_JOBS starts no suite or shellcheck" \
   "$(ls "$load_all/sc_log" "$load_all/scripts/test/log" 2>/dev/null)" ""
+for load_jobs in unset 2; do
+  load_env=(ORCH_TEST_POOL_PERCENT=abc)
+  [ "$load_jobs" = unset ] || load_env+=(ORCH_TEST_JOBS="$load_jobs")
+  out="$(load_run_all "${load_env[@]}" 2>&1)"; st=$?
+  assert_status "all.sh with an invalid ORCH_TEST_POOL_PERCENT (ORCH_TEST_JOBS $load_jobs) exits 1" "$st" 1
+  assert_eq "all.sh with an invalid ORCH_TEST_POOL_PERCENT (ORCH_TEST_JOBS $load_jobs) names it on stderr" \
+    "$out" "all.sh: ORCH_TEST_POOL_PERCENT='abc' is not a positive integer"
+done
+assert_eq "all.sh with an invalid ORCH_TEST_POOL_PERCENT starts no suite or shellcheck" \
+  "$(ls "$load_all/sc_log" "$load_all/scripts/test/log" 2>/dev/null)" ""
+out="$(load_run_all ORCH_TEST_POOL_PERCENT=0 ORCH_TEST_JOBS=abc 2>&1)"
+assert_eq "with both invalid, all.sh names ORCH_TEST_JOBS alone" "$out" \
+  "all.sh: ORCH_TEST_JOBS='abc' is not a positive integer"
+out="$(load_run_all CI=true ORCH_TEST_POOL_PERCENT=abc 2>&1)"; st=$?
+assert_status "all.sh under CI does not refuse an invalid ORCH_TEST_POOL_PERCENT" "$st" 0
+rm -f "$load_all/log" "$load_all/scripts/test/log" "$load_all/sc_log"
+out="$(ORCH_TEST_POOL_PERCENT=abc ORCH_TEST_ONLY='^isolation$' bash "$load_tests/orch_test.sh" 2>&1)"; st=$?
+assert_status "orch_test.sh with an invalid ORCH_TEST_POOL_PERCENT exits 1" "$st" 1
+assert_contains "orch_test.sh names the invalid ORCH_TEST_POOL_PERCENT" "$out" \
+  "orch_test.sh: ORCH_TEST_POOL_PERCENT='abc' is not a positive integer"
+out="$(ORCH_TEST_POOL_PERCENT=abc ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^isolation$' bash "$load_tests/orch_test.sh" 2>&1)"; st=$?
+assert_status "orch_test.sh with ORCH_TEST_JOBS set refuses it too" "$st" 1
+assert_contains "and names it" "$out" "orch_test.sh: ORCH_TEST_POOL_PERCENT='abc' is not a positive integer"
 
 # Niceness: ps prints the niceness in <dir>/nice and records the pid it was
 # asked about; renice records its arguments, and exits <dir>/renice_exit.
@@ -2534,6 +2592,14 @@ fi
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
+
+# An invalid ORCH_TEST_POOL_PERCENT is refused before anything runs.
+: >"$af.log"
+af_out="$(cd "$af" && env -u CI ORCH_TEST_POOL_PERCENT=abc bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+assert_status "an invalid ORCH_TEST_POOL_PERCENT makes affected.sh exit 1" "$st" 1
+assert_eq "and names the value" "$af_out" \
+  "affected.sh: ORCH_TEST_POOL_PERCENT='abc' is not a positive integer"
+assert_eq "and runs no suite" "$(grep -c . "$af.log")" "0"
 
 # Its shellcheck process draws a slot from the job pool: with the pool's one
 # slot held, the run waits and says so, then finishes once the slot is freed.

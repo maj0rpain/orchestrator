@@ -8,17 +8,22 @@
 # is_positive_integer <value>: true when it is digits only and above zero, so
 # `00` is no positive integer either.
 #
-# test_jobs_default: prints the default job count. The usable CPUs are the
-# online cores (getconf _NPROCESSORS_ONLN, 4 when that fails), lowered to the
-# cgroup v2 quota when one is set and lower: the file holds "<quota> <period>",
+# test_jobs_default <runner>: prints the default job count. The usable CPUs are
+# the online cores (getconf _NPROCESSORS_ONLN, 4 when that fails), lowered to
+# the cgroup v2 quota when one is set and lower: the file holds "<quota> <period>",
 # quota/period rounded up; a missing or unreadable file, or a quota of "max",
-# means no quota. The default is half the usable CPUs, rounded down, at least
-# 1; under CI it is the full usable count. The quota file is
+# means no quota. The default is a share of the usable CPUs, rounded down, at
+# least 1: ORCH_TEST_POOL_PERCENT percent (any positive integer, normalized to
+# base 10, so 075 is 75), else 75. A set value that is not a positive integer
+# prints "<runner>: ORCH_TEST_POOL_PERCENT='<value>' is not a positive integer"
+# on stderr and returns 1. Under CI the default is the full usable count and
+# the variable is neither read nor validated. The quota file is
 # /sys/fs/cgroup/cpu.max unless the test-only ORCH_TEST_CPU_MAX_FILE names
 # another.
 #
 # test_jobs_count <runner>: prints the run's job count - ORCH_TEST_JOBS when
-# set, else test_jobs_default - normalized to base 10. A set value that is not
+# set, else test_jobs_default (which can fail as above, for the caller to exit
+# on) - normalized to base 10. A set value that is not
 # a positive integer prints "<runner>: ORCH_TEST_JOBS='<value>' is not a
 # positive integer" on stderr and returns 1, for the caller to exit on.
 #
@@ -43,6 +48,8 @@
 # directory cannot be created, or when ORCH_TEST_POOL_HELD - which a runner sets
 # on the children that run under its slot - names this same directory, so a
 # nested run takes no slot of its own. <runner> names it in the waiting notice.
+# Outside CI an invalid ORCH_TEST_POOL_PERCENT fails it (returns 1) before any
+# of those unpooled returns.
 #
 # test_jobs_slot_take: tries each slot in turn without blocking. Returns 0 with
 # TEST_JOBS_SLOT_FD set to the fd holding the slot's lock, or to "" when the run
@@ -72,7 +79,14 @@ is_positive_integer() {
 }
 
 test_jobs_default() {
-  local cores quota period quota_cpus file usable
+  local cores quota period quota_cpus file usable percent=75 share
+  if [ -z "${CI:-}" ] && [ -n "${ORCH_TEST_POOL_PERCENT+set}" ]; then
+    if ! is_positive_integer "$ORCH_TEST_POOL_PERCENT"; then
+      echo "$1: ORCH_TEST_POOL_PERCENT='$ORCH_TEST_POOL_PERCENT' is not a positive integer" >&2
+      return 1
+    fi
+    percent=$((10#$ORCH_TEST_POOL_PERCENT))
+  fi
   cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"
   is_positive_integer "$cores" || cores=4
   cores=$((10#$cores))
@@ -87,7 +101,8 @@ test_jobs_default() {
   if [ -n "${CI:-}" ]; then
     echo "$usable"
   else
-    echo $((usable / 2 > 0 ? usable / 2 : 1))
+    share=$((usable * percent / 100))
+    echo $((share > 0 ? share : 1))
   fi
 }
 
@@ -96,7 +111,7 @@ test_jobs_count() {
   if [ -n "${ORCH_TEST_JOBS+set}" ]; then
     jobs="$ORCH_TEST_JOBS"
   else
-    jobs="$(test_jobs_default)"
+    jobs="$(test_jobs_default "$1")" || return 1
   fi
   if ! is_positive_integer "$jobs"; then
     echo "$1: ORCH_TEST_JOBS='$jobs' is not a positive integer" >&2
@@ -131,9 +146,10 @@ TEST_JOBS_NOTED=0
 TEST_JOBS_RUNNER=""
 
 test_jobs_pool_init() {
-  local dir
+  local dir slots
   TEST_JOBS_RUNNER="$1" TEST_JOBS_POOL="" TEST_JOBS_SLOT_FD="" TEST_JOBS_NOTED=0
   [ -n "${CI:-}" ] && return 0
+  slots="$(test_jobs_default "$1")" || return 1
   dir="${ORCH_TEST_POOL_DIR:-}"
   if [ -z "$dir" ]; then
     [ -n "${HOME:-}" ] || return 0
@@ -142,7 +158,7 @@ test_jobs_pool_init() {
   [ "${ORCH_TEST_POOL_HELD:-}" = "$dir" ] && return 0
   command -v flock >/dev/null 2>&1 || return 0
   mkdir -p "$dir" 2>/dev/null || return 0
-  TEST_JOBS_SLOTS="$(test_jobs_default)"
+  TEST_JOBS_SLOTS="$slots"
   TEST_JOBS_POOL="$dir"
 }
 

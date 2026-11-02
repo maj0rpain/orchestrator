@@ -21,9 +21,9 @@
 # with .shellcheckrc's source settings. A glob that matches nothing is dropped,
 # never passed to shellcheck as the literal pattern. The processes start
 # alongside the suites, at most as many at a time as the job count
-# (ORCH_TEST_JOBS when set, else test_jobs.sh's default: half the usable CPUs,
-# all of them under CI), so no single shellcheck run over every file is the
-# critical path and the machine is not flooded with one process per file. Each
+# (ORCH_TEST_JOBS when set, else test_jobs.sh's default: 75% of the usable CPUs,
+# or ORCH_TEST_POOL_PERCENT percent; all of them under CI), so no single
+# shellcheck run over every file is the critical path and the machine is not flooded with one process per file. Each
 # process's stdout and stderr go to its own captured
 # buffer, and all.sh waits on each one; the buffers are joined in glob order,
 # and the status taken is the highest exit among the processes. Its summary
@@ -51,10 +51,13 @@
 # unset - for docs_lint.sh's changelog fragment rule, which CI's "Read main's
 # commit" step feeds. ORCH_TEST_JOBS
 # passes through too: orch_test.sh runs that many sections at once, by default
-# half the usable CPUs (the full count under CI), and ORCH_TEST_JOBS=1 runs them
+# 75% of the usable CPUs (ORCH_TEST_POOL_PERCENT sets another share; the full
+# count under CI), and ORCH_TEST_JOBS=1 runs them
 # sequentially, in one shell. A set ORCH_TEST_JOBS that is not a positive
 # integer makes all.sh print "all.sh: ORCH_TEST_JOBS='<value>' is not a positive
-# integer" on stderr and exit 1 before anything starts. The default all.sh
+# integer" on stderr and exit 1 before anything starts; a set
+# ORCH_TEST_POOL_PERCENT that is not one does the same with its own name (not
+# under CI, which ignores it). The default all.sh
 # computes for its shellcheck limit is never exported: an unset ORCH_TEST_JOBS
 # stays unset for the suites.
 #
@@ -71,7 +74,7 @@ dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$dir/test_jobs.sh"
 sc_jobs="$(test_jobs_count all.sh)" || exit 1
 test_jobs_lower_priority
-test_jobs_pool_init all.sh
+test_jobs_pool_init all.sh || exit 1
 unset ORCH_TEST_ONLY
 export ORCH_TEST_QUIET=1
 tmp="$(mktemp -d)" || exit 1
