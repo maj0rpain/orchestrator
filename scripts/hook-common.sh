@@ -202,7 +202,7 @@ hook_bash_stdin_reader() {
             part+="$c" ;;
           '<')
             if [ "${line:i:3}" = '<<<' ]; then part+='<<<'; i=$((i + 3)); continue; fi
-            if [[ "$rest" =~ ^\<\<(-?)[[:space:]]*[\'\"]?([A-Za-z_][A-Za-z0-9_]*)[\'\"]? ]]; then
+            if [[ "$rest" =~ ^\<\<(-?)[[:space:]]*\\?[\'\"]?([A-Za-z_][A-Za-z0-9_]*)[\'\"]? ]]; then
               hd="${BASH_REMATCH[2]}"; hdtab=0; [ -n "${BASH_REMATCH[1]}" ] && hdtab=1
             fi
             part+="$c" ;;
@@ -267,7 +267,7 @@ hook_bash_stdin_is_reader() {
   # they feed nothing to stdin, so they name no file argument.
   for x in "${raw[@]}"; do
     if [ "$skip" = 1 ]; then skip=0; continue; fi
-    if [[ "$x" =~ ^([0-9]*|&)\>\>?$ ]]; then skip=1; continue; fi
+    if [[ "$x" =~ ^([0-9]*|&)\>(\>|&)?$ ]]; then skip=1; continue; fi
     [[ "$x" =~ ^([0-9]*|&)\> ]] || words+=("$x")
   done
   [ "${#words[@]}" -gt 0 ] || return 1

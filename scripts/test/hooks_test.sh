@@ -1299,7 +1299,7 @@ done
 bs_denied() { bs_event "$1" orch-implementer "$2" | bs_run ""; }
 for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
   'python3 - x' 'node - --flag' 'cat -n' 'cat -A' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat' \
-  'cat >out' 'cat > f' 'cat 2>/dev/null' 'python3 >log' 'node 2>&1' 'cat &>o' 'cat >> f' '>o cat' \
+  'cat >out' 'cat > f' 'cat 2>/dev/null' 'python3 >log' 'node 2>&1' 'cat &>o' 'cat >> f' '>o cat' 'cat >& out' 'cat 2>& f' 'node >& log' \
   $'\ncat' $'cd x &&\ncat' $'echo a;\n\ncat' 'cat;' '>o; cat'; do
   bs_out="$(bs_denied default "$bs_cmd")"
   assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" \
@@ -1316,7 +1316,7 @@ assert_contains "bash stdin hook: the deny reason says how to supply input" \
 for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'cat < f' 'cat file' \
   'python3 script.py' $'cat <<EOF\ncat\nread x\nEOF' $'echo "a\ncat\nb"' 'echo "a; cat"' \
   "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'ls # list; read later' 'cat file -n' $'echo a \\\n  cat' \
-  $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file'; do
+  $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file' $'cat <<\\EOF\ncat\nEOF'; do
   bs_out="$(bs_denied default "$bs_cmd")"
   assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
