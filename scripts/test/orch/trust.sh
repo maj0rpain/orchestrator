@@ -15,31 +15,20 @@ echo "trust module"
 tick_fixture
 fake_issue 7 open ready-for-agent orch:spec
 
-# tr_run <script>: reads issue #7's timeline, runs the script; its stdout and
-# stderr, newlines as "|", then "rc=<status>".
-tr_run() {
-  sourced_orch_script 'rc=0; ( timeline_read 7; '"$1"' ) || rc=$?; echo "rc=$rc"' 2>&1 | tr '\n' '|' | sed 's/|$//'
-}
-# tr_seed <association> <comment>: appends a comment by "someone" on issue #7.
-tr_seed() { fake_comment 7 someone 2026-01-01T00:00:00Z "$2" "$1"; }
-
-TR_Q="$(marker_of question spec)
-what?"
 TR_WARN='orch: ignored 1 comment(s) from untrusted authors on #7'
 
-# The comment filter's associations, observed through the Issue timeline's
-# question query.
+# The comment filter's associations, called directly; the Issue timeline's
+# section covers how timeline_read uses it.
+tr_filter() {
+  sourced_orch_script 'trust_filter_comments 7 <<<"[{\"authorAssociation\":\"'"$1"'\"}]"' 2>&1
+}
 for assoc in OWNER MEMBER COLLABORATOR; do
-  fake_comments_clear 7
-  tr_seed "$assoc" "$TR_Q"
-  assert_eq "a $assoc comment is read, and not reported" \
-    "$(tr_run 'timeline_question spec; echo "q=$TIMELINE_Q_INDEX"')" "q=0|rc=0"
+  assert_eq "a $assoc comment is kept, and not reported" \
+    "$(tr_filter "$assoc")" "[{\"authorAssociation\":\"$assoc\"}]"
 done
 for assoc in CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER MANNEQUIN NONE; do
-  fake_comments_clear 7
-  tr_seed "$assoc" "$TR_Q"
   assert_eq "a $assoc comment is dropped" \
-    "$(tr_run 'timeline_question spec; echo "q=[$TIMELINE_Q_INDEX]"')" "$TR_WARN|q=[]|rc=0"
+    "$(tr_filter "$assoc" | tr '\n' '|')" "$TR_WARN|[]|"
 done
 
 # The issue check, by the author's association: an issue never edited is as

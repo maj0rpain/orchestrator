@@ -1460,6 +1460,16 @@ fake_issue_authorship 11 stranger NONE maintainer
 pt_tick
 assert_eq "after a maintainer edits it and resume, the next tick goes on" "$(tick_calls)" "1"
 
+# title renames, through the pickup: a stranger's rename of a maintainer-edited
+# issue is refused naming the title alone; a maintainer's rename is picked up
+pt_issue 13 stranger NONE maintainer stranger; fake_comments_clear 13; pt_tick
+assert_eq "an issue whose title the stranger renamed is not picked up" "$(tick_calls)" "0"
+assert_contains "the refusal names the title alone" "$(fake_comments_of 13)" "the issue's title was last written by stranger"
+assert_contains "and is a refusal" "$(fake_comments_of 13)" "refused to run the spec phase"
+assert_eq "it is needs-human" "$(fake_labels_of 13)" "needs-human orch:spec ready-for-agent "
+pt_issue 14 stranger NONE maintainer maintainer; fake_comments_clear 14; pt_tick
+assert_eq "an issue whose title a maintainer renamed is picked up" "$(tick_calls)" "1"
+
 # a failed trust read fails closed
 pt_issue 12 someone OWNER
 fake_fail adapter_issue_authorship "HTTP 502 authorship"

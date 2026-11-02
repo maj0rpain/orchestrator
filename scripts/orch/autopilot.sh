@@ -471,7 +471,7 @@ autopilot_pickup_trust() {
     0) return 0 ;;
     1)
       PICKUP_KIND=refusal
-      PICKUP_TEXT="the issue's $TRUST_WHAT was last written by $TRUST_WRITER, who is not an owner, member or collaborator of the repository - an owner, member or collaborator must edit it before autopilot runs on it"
+      PICKUP_TEXT="$(trust_writer_text "the issue") - an owner, member or collaborator must edit it before autopilot runs on it"
       ;;
     *)
       PICKUP_REASON="$TRUST_REASON"

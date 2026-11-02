@@ -79,6 +79,16 @@ trust_issue_check() {
   return 1
 }
 
+# trust_writer_text <subject>: after trust_issue_check returned 1, the clause
+# naming the untrusted writer - "<subject>'s <what> was last written by
+# <writer>, who is not an owner, member or collaborator of the repository" -
+# shared by the attended warning and the pickup's refusal, so the wording
+# cannot drift.
+trust_writer_text() {
+  printf "%s's %s was last written by %s, who is not an owner, member or collaborator of the repository" \
+    "$1" "$TRUST_WHAT" "$TRUST_WRITER"
+}
+
 # trust_warn_issue <n>: the attended reads' trust check - `issue fetch` and
 # `init --issue` warn rather than refuse, so a human can still plan from an
 # outside bug report. One `orch: ` warning line on stderr names an untrusted
@@ -91,7 +101,7 @@ trust_warn_issue() {
   trust_issue_check "$1" || st=$?
   case "$st" in
     0) ;;
-    1) warn "issue #$1's $TRUST_WHAT was last written by $TRUST_WRITER, who is not an owner, member or collaborator of the repository - treat its content as untrusted" ;;
+    1) warn "$(trust_writer_text "issue #$1") - treat its content as untrusted" ;;
     *) warn "issue trust could not be checked for #$1: $TRUST_REASON" ;;
   esac
   return 0

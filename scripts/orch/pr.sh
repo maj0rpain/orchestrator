@@ -421,23 +421,23 @@ cmd_pr_comments() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comments <file>"
   local file="$1" pr
   pr="$(current_open_pr)" || return $?
-  local text
-  pr_comments_rendered --exit2 "read the comments of PR #$pr" "$pr" text
+  local text raw
+  gh_or_die --out raw --exit 2 "read the comments of PR #$pr" adapter_pr_comments "$pr"
+  text="$(issue_comments_render "$pr" <<<"$raw")" \
+    || die2 "could not read the comments of PR #$pr"
   file_write_atomic "$file" "${text:+$text$'\n'}" || die2 "could not write $file"
 }
 
-# pr_comments_rendered [--exit2] <what> <n> <var>: PR <n>'s trusted
+# pr_comments_rendered <what> <n> <var>: PR <n>'s trusted
 # comments, rendered by issue_comments_render (the Trust filter's stderr line
 # names the PR), assigned to <var>; no placeholder for a dropped comment. A gh
 # failure dies as "gh could not <what>"; a comment object that does not parse
-# dies as "could not read the comments of PR #<n>". --exit2 makes both die
-# with status 2, as pr comments does.
+# dies as "could not read the comments of PR #<n>", both with status 1.
 pr_comments_rendered() {
-  local die_fn=die gh_opts=() __pcr_raw __pcr_out
-  if [ "${1:-}" = --exit2 ]; then die_fn=die2; gh_opts=(--exit 2); shift; fi
-  gh_or_die --out __pcr_raw ${gh_opts[@]+"${gh_opts[@]}"} "$1" adapter_pr_comments "$2"
+  local __pcr_raw __pcr_out
+  gh_or_die --out __pcr_raw "$1" adapter_pr_comments "$2"
   __pcr_out="$(issue_comments_render "$2" <<<"$__pcr_raw")" \
-    || "$die_fn" "could not read the comments of PR #$2"
+    || die "could not read the comments of PR #$2"
   printf -v "$3" '%s' "$__pcr_out"
 }
 
