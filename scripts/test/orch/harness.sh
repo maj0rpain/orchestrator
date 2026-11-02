@@ -2085,3 +2085,239 @@ out="$(runner_git_isolation "$rgi_dir" bare.sh)"; st=$?
 assert_status "a runner that carries on when the call fails fails" "$st" 1
 rm -rf "$rgi_dir"
 unset -f runner_git_isolation
+
+# --- affected.sh, the ticket verification (#2023) -----------------------------
+# affected.sh at its --plan seam, in a throwaway git repo that carries the test
+# layout: the real affected.sh, all.sh, git_env.sh and test_jobs.sh, a harness
+# file holding the three placement sections, a branch section file with two
+# sections, and one tiny file for each other kind of path. origin's main is the
+# initial commit, origin's rel that commit plus a change to the branch module,
+# and HEAD is feat, rel plus a change to a doc. Stub suites stand in for the
+# real ones in the end-to-end cases.
+echo
+echo "affected.sh, the ticket verification (#2023)"
+af_tests="$(dirname "$SUITE_SCRIPT")"
+af="$(mktemp -d)"
+af_git() { git -C "$af" -c user.name=t -c user.email=t@example.com "$@"; }
+# af_put <path> [<line>...]: write a tiny file (a shell file gets a shebang).
+af_put() {
+  local path="$1"
+  shift
+  mkdir -p "$af/$(dirname "$path")"
+  case "$path" in *.sh) set -- '#!/usr/bin/env bash' "$@" ;; esac
+  [ "$#" -eq 0 ] && set -- x
+  printf '%s\n' "$@" >"$af/$path"
+}
+af_git init -q -b main
+mkdir -p "$af/scripts/test/orch"
+cp "$af_tests/affected.sh" "$af_tests/all.sh" "$af_tests/git_env.sh" \
+  "$af_tests/test_jobs.sh" "$af/scripts/test/"
+af_put scripts/test/orch/harness.sh '# --- isolation ---' \
+  '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+  '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---'
+af_put scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
+af_put scripts/test/orch/state.sh '# --- state ---'
+for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
+  scripts/orch/state.sh scripts/test/orch/common.sh scripts/test/orch/setup.sh \
+  scripts/test/orch_test.sh scripts/test/gh_adapter_fake.sh scripts/hook-guard.sh \
+  scripts/version-bump.sh scripts/autopilot-container.sh scripts/autopilot-up.sh \
+  scripts/dev/lens-bench.sh scripts/dev/other.sh scripts/test/docs_lint.sh \
+  hooks/hooks.json docs/a.md skills/s/SKILL.md agents/a.md changelog.d/1.md Makefile; do
+  af_put "$af_f"
+done
+af_git add -A
+af_git commit -qm init
+af_c0="$(af_git rev-parse HEAD)"
+af_git update-ref refs/remotes/origin/main "$af_c0"
+af_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+af_put scripts/orch/branch.sh 'y=2'
+af_git commit -qam "branch module"
+af_git update-ref refs/remotes/origin/rel HEAD
+af_git checkout -q -b feat
+af_put docs/a.md changed
+af_git commit -qam "doc"
+af_feat="$(af_git rev-parse HEAD)"
+# af_reset: back to the committed feat, with no config but the fixture's.
+af_reset() {
+  af_git checkout -q -f feat
+  af_git reset -q --hard "$af_feat"
+  af_git clean -qfd
+  af_git config --remove-section branch.feat 2>/dev/null
+  af_git config --remove-section branch.feat--t1 2>/dev/null
+  af_git config --unset orchestrator.base 2>/dev/null
+  af_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+}
+# af_plan [<arg>...]: affected.sh --plan <arg>... in the fixture, one line per
+# item joined with commas.
+af_plan() {
+  (cd "$af" && bash scripts/test/affected.sh --plan "$@" 2>&1) | paste -sd, -
+}
+af_placement="helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853)"
+af_gate="orch_test.sh,$af_placement"
+af_branch_titles="branch create,branch (x.y) retire"
+
+af_reset
+assert_eq "a change to a doc selects only the always-run checks" \
+  "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
+assert_eq "a module selects its section file's sections, and shellchecks itself" \
+  "$(af_plan origin/main)" "$af_gate,$af_branch_titles,docs_lint.sh,scripts/orch/branch.sh"
+assert_eq "no ref uses origin's default branch" "$(af_plan)" \
+  "$(af_plan origin/main)"
+af_put scripts/test/orch/branch.sh 'x=2' '# --- branch create ---'
+assert_eq "a section file selects its own sections, uncommitted" "$(af_plan origin/rel)" \
+  "$af_gate,branch create,docs_lint.sh,scripts/test/orch/branch.sh"
+af_reset
+af_put scripts/test/orch/zz-new.sh '# --- zz new ---'
+assert_eq "an untracked section file selects its sections" "$(af_plan origin/rel)" \
+  "$af_gate,zz new,docs_lint.sh,scripts/test/orch/zz-new.sh"
+af_reset
+af_put scripts/test/orch/state.sh '# --- state ---' '# --- state two ---'
+af_git add -A
+assert_eq "a staged change counts" "$(af_plan origin/rel)" \
+  "$af_gate,state,state two,docs_lint.sh,scripts/test/orch/state.sh"
+af_reset
+af_put scripts/test/orch/harness.sh '# --- isolation ---' \
+  '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+  '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---' \
+  '# --- more ---'
+assert_eq "harness.sh selects all of its sections, the placement ones once" \
+  "$(af_plan origin/rel)" \
+  "$af_gate,isolation,the parallel runner (#780),more,docs_lint.sh,scripts/test/orch/harness.sh"
+
+# One row each.
+af_row() {
+  af_reset
+  af_put "$2" changed
+  assert_eq "$1" "$(af_plan origin/rel)" "$3"
+}
+af_row "a hook script selects hooks_test.sh" scripts/hook-guard.sh \
+  "$af_gate,hooks_test.sh,docs_lint.sh,scripts/hook-guard.sh"
+af_row "hooks.json selects hooks_test.sh, with nothing to shellcheck" hooks/hooks.json \
+  "$af_gate,hooks_test.sh,docs_lint.sh"
+af_row "version-bump.sh selects its test file" scripts/version-bump.sh \
+  "$af_gate,docs_lint.sh,version_bump_test.sh,scripts/version-bump.sh"
+af_row "autopilot-container.sh selects its test file" scripts/autopilot-container.sh \
+  "$af_gate,docs_lint.sh,autopilot_container_test.sh,scripts/autopilot-container.sh"
+af_row "autopilot-up.sh selects its test file" scripts/autopilot-up.sh \
+  "$af_gate,docs_lint.sh,autopilot_up_test.sh,scripts/autopilot-up.sh"
+af_row "the lens-bench script selects its test file" scripts/dev/lens-bench.sh \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh,scripts/dev/lens-bench.sh"
+af_row "a skill selects nothing more" skills/s/SKILL.md "$af_gate,docs_lint.sh"
+af_row "an agent selects nothing more" agents/a.md "$af_gate,docs_lint.sh"
+af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,docs_lint.sh"
+af_row "a markdown file selects nothing more" README.md "$af_gate,docs_lint.sh"
+for af_f in scripts/orch.sh scripts/orch/common.sh scripts/test/orch/common.sh \
+  scripts/test/orch/setup.sh scripts/test/all.sh scripts/test/orch_test.sh \
+  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/dev/other.sh Makefile; do
+  af_row "$af_f falls back to all.sh" "$af_f" "all.sh"
+done
+af_reset
+af_put scripts/orch/branch.sh 'z=3'
+af_put scripts/orch.sh 'z=3'
+assert_eq "an unmapped file wins over a module" "$(af_plan origin/rel)" "all.sh"
+
+# The line order, with every kind of change at once.
+af_reset
+for af_f in scripts/dev/lens-bench.sh scripts/autopilot-up.sh scripts/autopilot-container.sh \
+  scripts/version-bump.sh scripts/hook-guard.sh scripts/orch/state.sh; do
+  af_put "$af_f" changed
+done
+af_put scripts/test/orch/branch.sh 'x=2' '# --- branch create ---' '# --- branch (x.y) retire ---'
+assert_eq "the suites in all.sh's order, sections after orch_test.sh, shellcheck last" \
+  "$(af_plan origin/rel)" \
+  "$af_gate,branch create,branch (x.y) retire,state,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh,scripts/autopilot-container.sh,scripts/autopilot-up.sh,scripts/dev/lens-bench.sh,scripts/hook-guard.sh,scripts/orch/state.sh,scripts/test/orch/branch.sh,scripts/version-bump.sh"
+
+# Deletions.
+af_reset
+rm "$af/scripts/hook-guard.sh"
+assert_eq "a deleted shell file is not shellchecked" "$(af_plan origin/rel)" \
+  "$af_gate,hooks_test.sh,docs_lint.sh"
+rm "$af/scripts/orch/state.sh"
+assert_eq "a deleted module falls back to all.sh" "$(af_plan origin/rel)" "all.sh"
+af_reset
+af_git rm -q scripts/test/orch/state.sh
+assert_eq "a deleted section file falls back to all.sh" "$(af_plan origin/rel)" "all.sh"
+
+# The ref.
+af_reset
+af_put scripts/hook-guard.sh changed
+af_git add -A
+af_git commit -qm hook
+assert_eq "a given ref bounds the range" "$(af_plan HEAD~1)" \
+  "$af_gate,hooks_test.sh,docs_lint.sh,scripts/hook-guard.sh"
+assert_eq "--plan takes the ref after it, as a run takes it alone" \
+  "$(cd "$af" && bash scripts/test/affected.sh --plan HEAD~1 | paste -sd, -)" \
+  "$(af_plan HEAD~1)"
+af_out="$(cd "$af" && bash scripts/test/affected.sh --plan nosuch 2>&1 >/dev/null)"; st=$?
+assert_status "an unknown ref exits 2, --plan included" "$st" 2
+assert_eq "naming the ref on stderr" "$af_out" "affected.sh: unknown ref nosuch"
+af_out="$(cd "$af" && bash scripts/test/affected.sh nosuch 2>&1)"; st=$?
+assert_status "an unknown ref exits 2 without --plan too" "$st" 2
+assert_eq "and runs and prints nothing else" "$af_out" "affected.sh: unknown ref nosuch"
+
+# The default base. feat differs from main by the branch module and a doc,
+# from rel by the doc.
+af_reset
+af_from_main="$af_gate,$af_branch_titles,docs_lint.sh,scripts/orch/branch.sh"
+af_from_rel="$af_gate,docs_lint.sh"
+assert_eq "origin's default branch is the last resort" "$(af_plan)" "$af_from_main"
+af_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/rel
+assert_eq "origin's default branch is used when nothing is recorded" "$(af_plan)" "$af_from_rel"
+af_reset
+af_git config orchestrator.base rel
+assert_eq "orchestrator.base beats origin's default branch" "$(af_plan)" "$af_from_rel"
+af_git config branch.feat.orchestrator-base main
+assert_eq "the current branch's recorded base beats orchestrator.base" "$(af_plan)" "$af_from_main"
+af_reset
+af_git config branch.feat.orchestrator-base rel
+af_git checkout -q -b feat--t1
+af_git config branch.feat--t1.orchestrator-ticket-parent feat
+assert_eq "a ticket branch uses its parent's recorded base" "$(af_plan)" "$af_from_rel"
+af_git checkout -q feat
+af_git branch -q -D feat--t1
+
+# No base.
+af_reset
+af_git symbolic-ref --delete refs/remotes/origin/HEAD
+assert_eq "no base at all falls back to all.sh" "$(af_plan)" "all.sh"
+af_git config orchestrator.base gone
+assert_eq "a recorded base missing on origin falls back to all.sh" "$(af_plan)" "all.sh"
+af_tree="$(af_git hash-object -t tree -w /dev/null)"
+af_git update-ref refs/remotes/origin/orphan "$(af_git commit-tree "$af_tree" -m orphan)"
+af_git config orchestrator.base orphan
+assert_eq "a base with no merge-base falls back to all.sh" "$(af_plan)" "all.sh"
+af_reset
+
+# End to end, with stub suites for the real ones.
+af_suites="$(sed -n 's/^suites=(\(.*\))$/\1/p' "$af_tests/all.sh")"
+for af_s in $af_suites; do
+  printf '%s\n' '#!/usr/bin/env bash' \
+    "echo \"$af_s only=\${ORCH_TEST_ONLY-unset}\" >>\"$af.log\"" \
+    'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/$af_s"
+done
+af_git add -A
+af_git commit -qm stubs
+af_feat="$(af_git rev-parse HEAD)"
+af_put scripts/hook-guard.sh 'echo ok'
+af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+assert_status "a passing run exits 0" "$st" 0
+assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
+  "orch_test.sh: 7 passed, 0 failed
+hooks_test.sh: 7 passed, 0 failed
+docs_lint.sh: 7 passed, 0 failed
+shellcheck: 0 findings"
+assert_contains "orch_test.sh got the placement sections as its filter" \
+  "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
+assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "  FAIL a thing\n     its detail\n"' \
+  'echo; echo "1 passed, 1 failed"; exit 1' >"$af/scripts/test/hooks_test.sh"
+af_put scripts/hook-guard.sh 'for f in $(ls); do echo "$f"; done'
+af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+assert_status "a failing part makes the run exit 1" "$st" 1
+assert_contains "printing its FAIL lines and its summary" "$af_out" \
+  "  FAIL a thing
+     its detail
+hooks_test.sh: 1 passed, 1 failed"
+assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
+rm -rf "$af" "$af.log"
+unset -f af_git af_put af_reset af_plan af_row
