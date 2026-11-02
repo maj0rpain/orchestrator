@@ -48,8 +48,9 @@
 # each failed part named by its summary line's prefix, n counting the summary
 # lines printed (shellcheck's included, whatever it printed). The full-suite
 # fallback ends on all.sh's verdict instead. Usage errors, an unknown ref, an
-# invalid ORCH_TEST_JOBS or ORCH_TEST_POOL_PERCENT, an INT or TERM stop and
-# --plan print none.
+# invalid ORCH_TEST_POOL_PERCENT, an INT or TERM stop and --plan print none.
+# An invalid ORCH_TEST_JOBS is not checked here: the orch_test.sh child fails
+# on it, so the run still ends on "affected.sh: FAIL (orch_test.sh)".
 
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=git_env.sh
