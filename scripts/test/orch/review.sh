@@ -1518,6 +1518,9 @@ assert_eq "a backtick left open at a paragraph's end does not pair across the bl
 writeln '# claude' '```sh' 'echo hi' '```' '' 'Then `docs/agents/p.md`.' >CLAUDE.md
 assert_eq "a code fence in one paragraph does not hide a path in the next" \
   "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
+printf '# claude\r\nAn open tick ` here.\r\n\r\nNext `docs/agents/q.md` and a stray ` tick.\r\n' >CLAUDE.md
+assert_eq "a backtick left open does not pair across a CRLF blank line" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/q.md"
 # A declared Standards: paragraph replaces the crawl.
 rm -f CLAUDE.md; : >docs/agents/q.md
 dstd() { "$ORCH" review standards 2>&1; }
@@ -1557,6 +1560,8 @@ assert_eq "a Standards: line directly after an opening fence is no declaration" 
 writeln '```' '~~~' '' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
 assert_eq "a ~~~ or info-string line inside a backtick fence does not close it" \
   "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
+printf 'Standards: `docs/agents/q.md`\r\n\r\nSee `docs/agents/nope.md`.\r\n' >CONTRIBUTING.md
+assert_eq "a CRLF blank line ends a declaration paragraph" "$(dstd)" "Standards: docs/agents/q.md"
 # Each unresolved entry dies naming the entry and the reason.
 mkdir -p docs/adir
 ln -s /etc/passwd docs/agents/out.md

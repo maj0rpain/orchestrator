@@ -424,9 +424,9 @@ review_standards_mentions() {
         ;;
     esac
   done < <(awk "$FENCE_AWK"'
-    { was = fence_char; fenced($0) }
+    { l = $0; sub(/\r$/, "", l); was = fence_char; fenced($0) }
     fence_char != was { if (p != "") print p; p = ""; next }
-    NF { p = p " " $0; next }
+    l ~ /[^[:space:]]/ { p = p " " l; next }
     p != "" { print p; p = "" }
     END { if (p != "") print p }
   ' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
@@ -462,10 +462,10 @@ STANDARDS_HEADING_AWK='
 review_standards_declaration() {
   awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
     fenced($0) { if (p != "") { print p; done = 1; exit } prev = 0; next }
-    { head = is_heading($0) }
-    p != "" { if (NF && !head) { p = p " " $0; next } print p; done = 1; exit }
+    { l = $0; sub(/\r$/, "", l); head = is_heading(l); live = (l ~ /[^[:space:]]/) }
+    p != "" { if (live && !head) { p = p " " l; next } print p; done = 1; exit }
     /^Standards:/ && !prev { p = $0; next }
-    { prev = (NF && !head) ? 1 : 0 }
+    { prev = (live && !head) ? 1 : 0 }
     END { if (p != "" && !done) print p }
   ' "$ROOT/$1" 2>/dev/null
 }
