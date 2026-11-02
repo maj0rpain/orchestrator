@@ -1391,8 +1391,9 @@ for bp_cmd in 'grep "pgrep -f" file' $'cat <<EOF\npgrep x\nEOF' 'ls -l' 'killall
   assert_empty "bash poll hook: passes '${bp_cmd//$'\n'/\\n}'" "$bp_out"
   assert_eq "bash poll hook: '${bp_cmd//$'\n'/\\n}' exits 0" "$bp_rc" 0
 done
-bp_out="$(bash_hook_scan "$BPOLL" default "$(printf 'echo %9000s; pgrep x' '')")"
+bp_out="$(bash_hook_scan "$BPOLL" default "$(printf 'echo %9000s; pgrep x' '')")"; bp_rc=$?
 assert_empty "bash poll hook: a command over 8 KB is not scanned" "$bp_out"
+assert_eq "bash poll hook: a command over 8 KB exits 0" "$bp_rc" 0
 bp_out="$(bs_event default orch-implementer pgrep | jq 'del(.tool_input.command)' | bash_hook_run "$BPOLL" "")"; bp_rc=$?
 assert_empty "bash poll hook: no command prints nothing" "$bp_out"
 assert_eq "bash poll hook: no command exits 0" "$bp_rc" 0
