@@ -125,147 +125,38 @@ assert_eq "defaults session_id to empty when absent" "$session" ""
 echo
 echo "grilling hook"
 
-out="$(skill_event "mattpocock-skills:grilling" s1 | "$GRILL")"
-assert_contains "fires on Skill(grilling)" "$out" "additionalContext"
-assert_contains "replaces the scripted closing line with a structured choice" "$out" "AskUserQuestion"
-assert_not_contains "drops the old scripted closing line" "$out" "Plan approved? I'll write the handoff and start the flow."
-assert_contains "offers starting the flow as an option" "$out" "Start the orchestrator flow"
-assert_contains "offers quick implementation as an option" "$out" "Quick implementation"
-assert_contains "offers Blueprint only as an option" "$out" "Blueprint only"
-# The closing question offers exactly three options (#237, #330): count its
-# numbered option lines, not only that each option is present. Every line
-# opening with a number and a period counts, indented or not, so no other line
-# of the message may open that way (#983).
-count_closing_options() { printf '%s' "$1" | jq -r '.additionalContext' | grep -cE '^ *[0-9]+\. '; }
-assert_contains "offers Autopilot flow as a fourth option on Claude Code" "$out" "4. Autopilot flow"
-assert_eq "offers exactly four options on Claude Code" "$(count_closing_options "$out")" "4"
-# The route options keep the hook's order unless one is recommended, and a
-# recommendation is labelled with a scope reason (#983). Matched by exact
-# rule substrings: the Blueprint rounds question has its own "(Recommended)".
-check_route_rules() {
+PLUGIN_ROOT="$(cd "$DIR/.." && pwd)"
+CLOSING_SKILL="$PLUGIN_ROOT/skills/orch-interview/SKILL.md"
+# The planning message's pointer to the Closing section (#1980): the absolute
+# path of orch-interview's SKILL.md, which must exist and hold the heading.
+pointer_text="Read that section by this absolute path"
+check_pointer() {
   local where="$1" ctx="$2"
-  local order='Keep the route options in the order above unless you recommend one'
-  assert_contains "keeps the route options' order unless recommending $where" "$ctx" "$order"
-  assert_contains "labels a recommended route with a scope reason $where" "$ctx" \
-    'append " (Recommended)" to its label, and give that scope-based reason in one clause in its description'
-  assert_contains "recommends at most one route option $where" "$ctx" 'At most one route option carries "(Recommended)"'
-  assert_contains "labels a moved route option recommended $where" "$ctx" \
-    'a route option moved out of the order above always carries it'
-  assert_eq "states the order rule once $where" "$(count_of "$ctx" "$order")" "1"
+  assert_contains "points at orch-interview's SKILL.md by absolute path $where" "$ctx" "$CLOSING_SKILL"
+  assert_contains "tells the agent to read the Closing section $where" "$ctx" "$pointer_text"
 }
-check_route_rules "on Claude Code" "$(printf '%s' "$out" | jq -r '.additionalContext')"
-assert_contains "says exactly four options" "$out" "exactly four options"
-assert_contains "autopilot route ends in autopilot start" "$out" "autopilot start <issue> <plan-file>"
-assert_contains "autopilot route forbids init and side-checkout add" "$out" 'neither `init` nor `side-checkout add`'
-assert_contains "autopilot route writes the plan's Autopilot block" "$out" "## Autopilot"
-assert_contains "autopilot route sizes Budget by the review loop's rule" "$out" "Budget, the review loop's iteration budget, sized by the review loop's rule from the scope the interview settled"
-assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:orch-flow"
-assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:orch-quick-implement"
-# With no active flow, a human's request for a side checkout is honoured
-# (#729): the skill runs on its side-checkout route.
-side_request='If the user asks for a side checkout'
-assert_contains "honours a request for a side checkout with no active flow" "$out" "$side_request"
-assert_contains "a requested side checkout passes --side on Claude Code" "$out" \
-  'pass args \"--side\" to whichever of those two skills runs'
-# Blueprint only publishes the spec, offers a review, publishes the tickets,
-# then stops; the run-next sentence names all three skills by their Claude name.
+check_no_pointer() {
+  local where="$1" ctx="$2"
+  assert_not_contains "carries no Read pointer $where" "$ctx" "$pointer_text"
+  assert_not_contains "names no SKILL.md path $where" "$ctx" "$CLOSING_SKILL"
+  assert_contains "says the closing rules are in the skill's Closing section $where" "$ctx" \
+    "\`## Closing\` section of the orch-interview skill"
+}
+if [ -f "$CLOSING_SKILL" ] && grep -qx '## Closing' "$CLOSING_SKILL"; then
+  ok "the pointer's path names an existing file holding a ## Closing heading"
+else
+  bad "the pointer's path names an existing file holding a ## Closing heading" "$CLOSING_SKILL"
+fi
+
+out="$(skill_event "mattpocock-skills:grilling" s1 | "$GRILL")"
 ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
-for s in orch-to-spec orch-spec-review orch-to-tickets; do
-  assert_contains "Blueprint names orchestrator:$s on Claude Code" "$ctx" "\"orchestrator:$s\""
-done
-assert_contains "Blueprint asks about a spec review every time" "$ctx" "every time"
-assert_contains "Blueprint says how to pick the issue up" "$ctx" "/orchestrator:start --issue"
-assert_contains "Blueprint puts glossary/ADR wording into the issue verbatim" "$ctx" "into the issue body verbatim"
-# Blueprint rewrites the interviewed issue (#707): rewrite mode on it whenever
-# one was settled - moved, already ready, skipped, the check failed, or named
-# under "It's a different issue" -
-# and a new issue only without one; the number is handed to orch-to-spec, and
-# orch-to-tickets runs unless rewrite mode reported the breakdown kept.
-# $1 where, $2 context, $3 host (claude|junie).
-check_blueprint_rewrite() {
-  local where="$1" ctx="$2" host="$3"
-  assert_contains "Blueprint rewrites the interviewed issue $where" "$ctx" \
-    "write the spec in rewrite mode on that issue, replacing #<n>'s body instead of publishing a new issue"
-  assert_contains "Blueprint publishes a new issue only without one $where" "$ctx" \
-    "Only with no interviewed issue, publish the spec as a new issue"
-  assert_contains "rewrite applies whatever happened to its label $where" "$ctx" \
-    "whatever happened to its label - moved, already ready, skipped, or the check failed -"
-  assert_not_contains "rewrite no longer hinges on a move or skip $where" "$ctx" \
-    "whether the user moved it to its triage label or answered \"Skip\""
-  assert_contains "rewrite applies to the issue named under a different issue $where" "$ctx" \
-    "or the one the user named under \"It's a different issue\""
-  assert_contains "skips orch-to-tickets when rewrite mode reports kept $where" "$ctx" \
-    "unless rewrite mode reported the breakdown \`kept\`"
-  assert_contains "runs no breakdown check of its own $where" "$ctx" "run no breakdown check of your own"
-  assert_contains "one stop rule covers every step $where" "$ctx" \
-    "The route's steps run in this order, and one rule covers every step: when a step stops or fails, stop there - run no later step, and report why it stopped."
-  assert_contains "orch-to-spec stops without an issue number $where" "$ctx" \
-    "orch-to-spec stops when it ends without reporting the issue number."
-  assert_contains "reports a retire with no breakdown $where" "$ctx" \
-    "If orch-to-tickets fails after rewrite mode retired a breakdown, the report also says that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>"
-  # The spec review question asks a round count (#873), not yes/no.
-  assert_contains "asks how many spec review rounds $where" "$ctx" \
-    "ask the user how many spec review rounds to run on it"
-  # The flow's options (#1345), plus 0 to skip, the recommendation sized to the
-  # spec.
-  assert_contains "offers the flow's round options $where" "$ctx" \
-    "with the options 2, 1, 3, and Other"
-  assert_contains "sizes the recommended round count to the spec $where" "$ctx" \
-    "1 for a one-site spec, 2 by default, 3 for a large or cross-cutting spec"
-  assert_not_contains "no longer offers 5 rounds $where" "$ctx" "1, 5, and Other"
-  local ask_tool="the ask_user tool"
-  [ "$host" = claude ] && ask_tool="the AskUserQuestion tool"
-  assert_contains "asks the round count as one blocking question $where" "$ctx" \
-    "as one blocking question with ${ask_tool}"
-  assert_contains "0 rounds skips the review $where" "$ctx" "0 skips the review"
-  assert_contains "asks the round count every time $where" "$ctx" "ask every time, never assume"
-  # The lower bound is deliberate, and an invalid Other is asked again (#887).
-  assert_contains "names 0 the deliberate lower bound $where" "$ctx" "0 is the deliberate lower bound."
-  assert_contains "asks an invalid Other again $where" "$ctx" \
-    "An Other that is not a whole number from 0 up is asked again, naming the range"
-  local yesno
-  for yesno in "only on a yes" "whether to run a spec review"; do
-    assert_not_contains "drops the yes/no question '$yesno' $where" "$ctx" "$yesno"
-  done
-  # One copy of the order and stop rules (#730), none per host.
-  assert_eq "states the kept skip once $where" \
-    "$(count_of "$ctx" "unless rewrite mode reported")" 1
-  assert_eq "states the stop rule once $where" \
-    "$(count_of "$ctx" "when a step stops or fails")" 1
-  local old
-  for old in "call nothing after it" "run nothing after it" \
-    "If orch-to-spec stops without reporting the issue number"; do
-    assert_not_contains "drops the old stop clause '$old' $where" "$ctx" "$old"
-  done
-  if [ "$host" = claude ]; then
-    assert_contains "calls the Skill tool for each step $where" "$ctx" \
-      "call the Skill tool yourself for each step of the Blueprint route below:"
-    assert_contains "hands the issue number as the Skill tool's args $where" "$ctx" \
-      "\"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one"
-    assert_contains "names the standalone spec review by Skill tool $where" "$ctx" \
-      "\"orchestrator:orch-spec-review\" (its standalone spec review)"
-    assert_contains "names orch-to-tickets by Skill tool $where" "$ctx" \
-      "and \"orchestrator:orch-to-tickets\""
-    # Worded like its "and args" siblings (#889).
-    assert_contains "hands the round count as Skill args $where" "$ctx" \
-      "call the Skill tool with \"orchestrator:orch-spec-review\" and args \"<n> --rounds <count>\""
-    assert_not_contains "drops the old 'with args' round count form $where" "$ctx" \
-      "with args \"<n> --rounds <count>\""
-  else
-    assert_contains "follows each step's skill, for issue #<n>, on Junie $where" "$ctx" \
-      "run each step of the Blueprint route below as its skill - orch-to-spec for issue #<n>, the interviewed issue, when there is one"
-    assert_contains "names the review and tickets skills on Junie $where" "$ctx" \
-      "orch-spec-review, and orch-to-tickets. This host has no Skill tool"
-    assert_contains "hands the round count on Junie $where" "$ctx" \
-      "follow orch-spec-review for issue #<n> with --rounds <count>"
-    local s
-    for s in orch-to-spec orch-spec-review orch-to-tickets; do
-      assert_contains "lists $s's SKILL.md on Junie $where" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
-    done
-  fi
-}
-check_blueprint_rewrite "on Claude Code" "$ctx" claude
-assert_not_contains "no route tells the model to delete the marker" "$ctx" "marker"
+assert_contains "fires on Skill(grilling)" "$out" "additionalContext"
+assert_contains "names the host's ask tool on Claude Code" "$ctx" "AskUserQuestion"
+assert_not_contains "names no Junie ask tool on Claude Code" "$ctx" "ask_user"
+check_pointer "on grilling" "$ctx"
+assert_contains "names the repo's ready-for-agent label" "$ctx" "ready-for-agent is \`ready-for-agent\`"
+assert_not_contains "drops the old scripted closing line" "$out" "Plan approved? I'll write the handoff and start the flow."
+assert_not_contains "carries no route options (they live in the Closing section)" "$ctx" "Quick implementation"
 assert_contains "forbids offering to implement" "$out" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat" "$out" "whole map is done"
 assert_eq "emits valid JSON" "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "PostToolUse"
@@ -299,9 +190,11 @@ assert_empty "ignores research"           "$(skill_event "mattpocock-skills:rese
 
 # orch-interview is the plugin's own planning entry point (#330, renamed from
 # orch-plan in #373): it arms the same message and the same edit guard as
-# grilling.
+# grilling, and loads the Closing section in full, so it gets no Read pointer.
 out="$(skill_event "orchestrator:orch-interview" p1 | "$GRILL")"
+ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_contains "fires on Skill(orchestrator:orch-interview)" "$out" "Do NOT offer to implement"
+check_no_pointer "on the orch-interview entry point" "$ctx"
 assert_eq "orch-interview arms the guard, which denies a source edit" \
   "$(edit_event "$REPO/src/main.ts" p1 | "$GUARD" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
 rm -f "$TMPDIR/orchestrator-grilling-p1"
@@ -317,50 +210,14 @@ assert_not_contains "no precondition warning without issue-tracker.md" "$out" "P
 mkdir -p "$REPO/.orchestrator"
 # Planning beside an active flow (#640, #649) gets the planning rules, with a
 # closing that names the flow and states two branches: about that flow, point
-# to its next or redo; otherwise the interviewed-issue step and the route
-# question, where only Blueprint runs in this checkout and Start and Quick
-# implementation proceed in a side checkout (#729).
-side_route='"Start the orchestrator flow" and "Quick implementation" proceed in a side checkout'
-# $1 where, $2 context, $3 the next/redo pointer text expected for the host,
-# $4 host (claude|junie), default claude.
+# to its next or redo; otherwise the Closing section's close.
+# $1 where, $2 context, $3 the next/redo pointer text expected for the host.
 check_flow_variant() {
-  local where="$1" ctx="$2" next_redo="$3" host="${4:-claude}"
-  check_blueprint_rewrite "beside an active flow $where" "$ctx" "$host"
+  local where="$1" ctx="$2" next_redo="$3"
   assert_contains "states the next/redo branch $where" "$ctx" "$next_redo"
   assert_contains "the same-flow branch asks no route question $where" "$ctx" "ask no route question"
-  assert_contains "routes Start and Quick implementation to a side checkout $where" "$ctx" "$side_route"
-  assert_not_contains "no longer says separate checkout $where" "$ctx" "separate checkout"
-  assert_contains "keeps Blueprint only as the route that runs here $where" "$ctx" \
-    "Blueprint only is the one route that runs in this checkout"
-  assert_contains "keeps the interviewed-issue step $where" "$ctx" "With no interviewed issue, skip this step entirely"
-  assert_contains "keeps the route question $where" "$ctx" "$route_block"
-  # The branches stand in place of the route question (#640): its bullet asks
-  # only in the second case, so the same-flow branch is not contradicted.
-  assert_contains "asks the route question only in the second case $where" "$ctx" \
-    "- Only in the second case above (planning about anything else): "
-  # Only Blueprint runs here (#640, story 6): Start and Quick implementation
-  # run their skills only on the side-checkout route (#729), never in this
-  # checkout, whose branch belongs to the running flow.
-  if [ "$host" = junie ]; then
-    assert_contains "runs both skills on their side-checkout route $where" "$ctx" \
-      "each as asked for a side checkout, so it takes its **Starting in a side checkout** route"
-    assert_contains "points at orch-quick-implement's SKILL.md $where" "$ctx" \
-      "$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
-  else
-    assert_contains "runs the flow skill with --side $where" "$ctx" \
-      'call the Skill tool with "orchestrator:orch-flow" and args "--side" yourself'
-    assert_contains "runs the quick-implement skill with --side $where" "$ctx" \
-      'call the Skill tool with "orchestrator:orch-quick-implement" and args "--side" yourself'
-  fi
-  assert_not_contains "never runs a skill without the side route $where" "$ctx" \
-    "orch-quick-implement\" yourself"
-  assert_not_contains "repeats no side-checkout request clause beside a flow $where" "$ctx" "$side_request"
+  assert_contains "the other branch runs the close unchanged $where" "$ctx" "Otherwise: run the interviewed-issue step and the done-close"
 }
-route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
-         review pipeline, with its own handoff and review loop.
-      2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
-      3. Blueprint only - write the spec (rewriting the interviewed issue, if
-         there is one) and its ticket breakdown, then stop; implement later.'
 cc_next_redo='/orchestrator:next or /orchestrator:redo'
 write_flow_state slug x phase spec issue 42
 out="$(skill_event "grilling" s6 | "$GRILL")"
@@ -369,8 +226,7 @@ assert_contains "sends the planning rules beside an active flow" "$ctx" "Do NOT 
 assert_contains "names the active flow's issue and phase" "$ctx" "the flow for #42 is active in this checkout, at phase spec"
 assert_contains "the same-flow branch names the flow's issue" "$ctx" "about this flow's issue, #42"
 check_flow_variant "on Claude Code" "$ctx" "$cc_next_redo"
-assert_eq "offers exactly four options beside an active flow" "$(count_closing_options "$out")" "4"
-check_route_rules "beside an active flow" "$ctx"
+check_pointer "beside an active flow" "$ctx"
 assert_marker_present "writes the grilling marker beside an active flow" grilling s6
 assert_empty "stays silent on a second planning call beside an active flow" \
   "$(skill_event "grilling" s6 | "$GRILL")"
@@ -429,33 +285,25 @@ out="$(prompt_event '$grill-with-docs probe test' j1 | "$GRILL")"
 ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_eq "fires on a \$grill-with-docs prompt, as UserPromptSubmit" \
   "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit"
-assert_contains "asks the closing question with Junie's ask_user tool" "$ctx" "Call the ask_user tool"
+assert_contains "names Junie's ask_user tool" "$ctx" "the ask_user tool"
 assert_not_contains "names no Claude question tool on Junie" "$ctx" "AskUserQuestion"
-assert_contains "offers starting the flow on Junie" "$ctx" "Start the orchestrator flow"
-assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementation"
-assert_contains "offers Blueprint only on Junie" "$ctx" "Blueprint only"
-assert_eq "offers exactly three options on Junie" "$(count_closing_options "$out")" "3"
-assert_not_contains "offers no Autopilot flow on Junie" "$ctx" "Autopilot flow"
-check_route_rules "on Junie" "$ctx"
-check_blueprint_rewrite "on Junie" "$ctx" junie
-assert_not_contains "no route tells the model to delete the marker on Junie" "$ctx" "marker"
+check_pointer "on a Junie grilling entry point" "$ctx"
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat on Junie" "$ctx" "whole map is done"
 assert_contains "names every planning artifact on Junie" "$ctx" \
   "docs/agents/, .scratch/, .orchestrator/"
-assert_contains "points at orch-flow's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
-assert_contains "points at orch-quick-implement's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
-assert_contains "says Junie has no Skill tool" "$ctx" "no Skill tool"
-assert_contains "honours a request for a side checkout on Junie" "$ctx" "$side_request"
-assert_contains "a requested side checkout takes the skill's side route on Junie" "$ctx" \
-  "follow that skill's **Starting in a side checkout** section"
-assert_not_contains "routes nothing to a side checkout unasked on Junie" "$ctx" "$side_route"
-assert_not_contains "names no Claude tool as the step on Junie" "$ctx" "call the Skill tool"
 assert_not_contains "names no Claude-scoped skill on Junie" "$ctx" "orchestrator:orch-"
 assert_not_contains "names no Claude-scoped mattpocock skill on Junie" "$ctx" "mattpocock-skills:"
 
 assert_empty "stays silent on the second grilling prompt in one Junie session" \
   "$(prompt_event '$grilling again' j1 | "$GRILL")"
+
+# Junie has no plugin commands to load the skill, so /orchestrator:interview
+# is pointed at the section; the orch-interview skill itself is not.
+ctx="$(prompt_event '/orchestrator:interview x' jo1 | "$GRILL" | jq -r '.additionalContext')"
+check_pointer "on Junie's orchestrator:interview" "$ctx"
+ctx="$(prompt_event '$orch-interview x' jo2 | "$GRILL" | jq -r '.additionalContext')"
+check_no_pointer "on Junie's orch-interview skill" "$ctx"
 
 # On Junie the guard does not arm (ADR-0025): the marker that keeps the
 # message to once per session is named so hook-guard.sh never reads it, and a
@@ -485,7 +333,7 @@ done
 # Junie's router sends grilling to its plan agent, which ends on its own
 # plan screen and ignores the closing question. Confirming that screen
 # submits this fixed prompt to the main agent, so the question is asked there
-# instead (#202).
+# instead (#202). It points at the Closing section.
 confirm='Implement the suggested plan'
 prompt_event '$grill-with-docs x' jc1 | "$GRILL" >/dev/null
 out="$(prompt_event "$confirm" jc1 | "$GRILL")"
@@ -493,15 +341,8 @@ ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_eq "fires on plan confirmation, as UserPromptSubmit" \
   "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit"
 assert_contains "asks before implementing the confirmed plan" "$ctx" "Before you implement"
-assert_contains "asks the closing question at plan confirmation" "$ctx" "Call the ask_user tool"
-assert_contains "offers starting the flow at plan confirmation" "$ctx" "Start the orchestrator flow"
-assert_contains "offers quick implementation at plan confirmation" "$ctx" "Quick implementation"
-assert_eq "offers exactly three options at plan confirmation" "$(count_closing_options "$out")" "3"
-check_route_rules "at Junie's plan confirmation" "$ctx"
-assert_contains "offers Blueprint only at plan confirmation" "$ctx" "Blueprint only"
-check_blueprint_rewrite "at Junie's plan confirmation" "$ctx" junie
-assert_contains "points at orch-flow's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
-assert_contains "honours a request for a side checkout at plan confirmation" "$ctx" "$side_request"
+assert_contains "names Junie's ask tool at plan confirmation" "$ctx" "the ask_user tool"
+check_pointer "at plan confirmation" "$ctx"
 assert_not_contains "repeats no planning rules at plan confirmation" "$ctx" "Do NOT offer to implement"
 assert_contains "asks again on a second plan confirmation" \
   "$(prompt_event "$confirm" jc1 | "$GRILL")" "Before you implement"
@@ -515,12 +356,12 @@ assert_not_contains "no precondition warning on Junie without issue-tracker.md" 
 
 mkdir -p "$REPO/.orchestrator"
 write_flow_state slug x phase review issue 7
-junie_next_redo="the **Next phase** and **Redo** sections of $(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
+junie_next_redo="the **Next phase** and **Redo** sections of $PLUGIN_ROOT/skills/orch-flow/SKILL.md"
 ctx="$(prompt_event '$grilling' j3 | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "sends the planning rules on Junie beside an active flow" "$ctx" "Do NOT offer to implement"
 assert_contains "names the active flow's issue and phase on Junie" "$ctx" \
   "the flow for #7 is active in this checkout, at phase review"
-check_flow_variant "on Junie" "$ctx" "$junie_next_redo" junie
+check_flow_variant "on Junie" "$ctx" "$junie_next_redo"
 assert_not_contains "names no plugin command on Junie" "$ctx" "/orchestrator:next"
 assert_marker_present "writes the planning marker on Junie beside an active flow" planning j3
 assert_empty "stays silent on a second Junie planning prompt beside an active flow" \
@@ -529,7 +370,8 @@ ctx="$(prompt_event "$confirm" jc1 | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "asks before implementing at plan confirmation beside an active flow" "$ctx" "before you implement anything"
 assert_contains "names the active flow at plan confirmation" "$ctx" \
   "the flow for #7 is active in this checkout, at phase review"
-check_flow_variant "at Junie's plan confirmation" "$ctx" "$junie_next_redo" junie
+check_flow_variant "at Junie's plan confirmation" "$ctx" "$junie_next_redo"
+check_pointer "at plan confirmation beside an active flow" "$ctx"
 echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
 run_tolerant "the grilling hook on Junie on a done flow" "$GRILL" < <(prompt_event '$grilling' j4)
 out="$hook_out"
@@ -540,177 +382,10 @@ assert_contains "still asks at plan confirmation when the flow is done" \
 rm -rf "$REPO/.orchestrator"
 
 echo
-echo "grilling hook's interviewed-issue step (#573)"
+echo "grilling hook's triage labels"
 
-# When a planning interview was about an open issue, the close
-# offers to move it to ready-for-agent before the route question, through
-# orch.sh issue triage. Checked on every message that carries the route
-# question: the start-of-session message on both hosts, and Junie's
-# plan-confirmed message (Claude Code has none, ADR-0025).
-ORCH_PATH="$(cd "$DIR/.." && pwd)/scripts/orch.sh"
-route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
-         review pipeline, with its own handoff and review loop.
-      2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
-      3. Blueprint only - write the spec (rewriting the interviewed issue, if
-         there is one) and its ticket breakdown, then stop; implement later.'
-# True when $2 occurs in $1 before $3 does, both present.
-occurs_before() {
-  case "$1" in *"$2"*) ;; *) return 1 ;; esac
-  case "$1" in *"$3"*) ;; *) return 1 ;; esac
-  local a="${1%%"$2"*}" b="${1%%"$3"*}"
-  [ "${#a}" -lt "${#b}" ]
-}
-check_interviewed_step() {
-  local where="$1" ctx="$2" tool="$3"
-  assert_contains "names the interviewed issue $where" "$ctx" "interviewed issue"
-  assert_contains "the step is conditional on an interviewed issue $where" "$ctx" \
-    "With no interviewed issue, skip this step entirely"
-  assert_contains "asks the move question with the host's tool $where" "$ctx" \
-    "ask one blocking question with $tool"
-  assert_contains "runs the check through the resolved path $where" "$ctx" \
-    "bash \"$ORCH_PATH\" issue triage <n> --check
-  through that path - never a raw gh call - and follow what it prints:"
-  if occurs_before "$ctx" "issue triage <n> --check" "ask one blocking question with $tool"; then
-    ok "runs the check before any question $where"
-  else
-    bad "runs the check before any question $where" "check not before the first question"
-  fi
-  assert_contains "the done-close replaces the step with no check $where" "$ctx" \
-    "When the done-close below applies, it replaces this step: run no check and ask no label question."
-  assert_contains "ready asks no label question $where" "$ctx" \
-    "- \`ready\`: ask no label question. Name #<n> as the interviewed issue in one sentence and go straight to the route question."
-  assert_contains "a held label asks one override question $where" "$ctx" \
-    "- \`wontfix\` or \`ready-for-human\`, a held label: ask one blocking question with $tool, naming that label:
-    \"#<n> carries \`<label>\`. Override it and move #<n> to \`ready-for-agent\`?\", with the options
-    \"Override and move\", \"Skip\", or \"It's a different issue\"."
-  assert_contains "override and move runs --override $where" "$ctx" \
-    "On \"Override and move\", run
-    bash \"$ORCH_PATH\" issue triage <n> --override
-    through that path."
-  assert_contains "a failed override reports, warns and continues $where" "$ctx" \
-    "If that fails, report its orch: message, warn the user that init --issue will refuse #<n> until it carries \`ready-for-agent\`, and continue to the route question."
-  assert_contains "movable asks today's question $where" "$ctx" \
-    "- \`movable\`: ask one blocking question with $tool, naming its number:
-    \"Move #<n> to \`ready-for-agent\`\", \"Skip\", or \"It's a different issue\"."
-  assert_contains "a failed check warns with its reason and continues $where" "$ctx" \
-    "- If the check itself fails, ask no label question: warn the user, relaying the check's orch: reason, that init --issue will refuse #<n> until it carries \`ready-for-agent\`, and continue to the route question."
-  assert_contains "a different issue is checked the same way $where" "$ctx" \
-    "On \"It's a different issue\", the user names it:
-  run the check on that issue instead and follow the same branches for it."
-  assert_contains "the question names the issue number $where" "$ctx" "Move #<n> to \`ready-for-agent\`"
-  assert_contains "offers skip $where" "$ctx" "\"Skip\""
-  assert_contains "offers a different issue $where" "$ctx" "\"It's a different issue\""
-  assert_contains "skip continues to the route question $where" "$ctx" \
-    "On \"Skip\", go straight to the route question"
-  assert_contains "runs orch.sh issue triage via the resolved path $where" "$ctx" \
-    "bash \"$ORCH_PATH\" issue triage <n>"
-  assert_contains "forbids a raw gh call $where" "$ctx" "never a raw gh call"
-  assert_not_contains "carries no raw gh issue call $where" "$ctx" "gh issue"
-  assert_contains "asks to override on exit 2 $where" "$ctx" "If it exits 2"
-  assert_contains "reruns with --override on a yes $where" "$ctx" "on a yes, rerun it with --override"
-  assert_contains "skips the relabel on a no $where" "$ctx" "on a no, skip the relabel"
-  assert_contains "warns and continues on any other failure $where" "$ctx" \
-    "On any other failure, warn the user that init --issue will refuse #<n> until it carries \`ready-for-agent\`, and continue to the route question"
-  assert_contains "keeps the route question's text unchanged $where" "$ctx" "$route_block"
-  if occurs_before "$ctx" "issue triage <n>" "$route_block"; then
-    ok "puts the interviewed-issue step before the route question $where"
-  else
-    bad "puts the interviewed-issue step before the route question $where" "step not before route question"
-  fi
-}
-# The step names a repo's renamed triage labels, never the canonical ones.
-check_renamed_labels() {
-  local where="$1" event="$2" arg="$3" session="$4" ctx
-  ctx="$("$event" "$arg" "$session" | "$GRILL" | jq -r '.additionalContext')"
-  assert_contains "names the repo's ready-for-agent label $where" "$ctx" "Move #<n> to \`agent-ready\`"
-  assert_contains "the override question names the repo's ready-for-agent label $where" "$ctx" \
-    "Override it and move #<n> to \`agent-ready\`?"
-  assert_contains "the held-label branch names the repo's labels $where" "$ctx" \
-    "- \`not-planned\` or \`human-only\`, a held label:"
-  assert_contains "warns with the repo's ready-for-agent label $where" "$ctx" "until it carries \`agent-ready\`"
-  assert_contains "names the repo's wontfix and ready-for-human labels $where" "$ctx" "\`not-planned\` or \`human-only\`"
-  assert_not_contains "names no canonical ready-for-agent label $where" "$ctx" "ready-for-agent"
-}
-
-# The step's text alone: its first line up to the next top-level bullet.
-interviewed_text() {
-  printf '%s\n' "$1" | awk '
-    /^- At the close, if this planning was about an open issue/ { on = 1; print; next }
-    on && /^- / { exit }
-    on { print }'
-}
-ctx="$(skill_event "mattpocock-skills:grilling" ii1 | "$GRILL" | jq -r '.additionalContext')"
-check_interviewed_step "on Claude Code" "$ctx" "the AskUserQuestion tool"
-claude_step="$(interviewed_text "$ctx")"
-ctx="$(prompt_event '$grilling' ii2 | "$GRILL" | jq -r '.additionalContext')"
-check_interviewed_step "on Junie" "$ctx" "the ask_user tool"
-junie_step="$(interviewed_text "$ctx")"
-ctx="$(prompt_event "$confirm" ii2 | "$GRILL" | jq -r '.additionalContext')"
-check_interviewed_step "at Junie's plan confirmation" "$ctx" "the ask_user tool"
-assert_contains "extracts the step's text through its last line" "$claude_step" \
-  "run the check on that issue instead and follow the same branches for it."
-assert_eq "the Claude Code and Junie steps differ only in the asking tool" \
-  "${claude_step//the AskUserQuestion tool/the ask_user tool}" "$junie_step"
-assert_eq "Junie's two messages carry the same step" "$(interviewed_text "$ctx")" "$junie_step"
-
-# The done-close (#985): when the planning finds the interviewed issue's work
-# already done, the close offers to close it as done through orch.sh issue
-# close, in place of the ready-for-agent move and the route question.
-check_done_close() {
-  local where="$1" ctx="$2" tool="$3"
-  assert_contains "asks the done-close question with the host's tool $where" "$ctx" \
-    "ask one blocking question with $tool that names the commit, PR or issue that did the work"
-  assert_contains "offers the duplicate close $where" "$ctx" "\"Close #<n> as done (duplicate of #<m>)\""
-  assert_contains "offers the completed close $where" "$ctx" "\"Close #<n> as done (completed)\""
-  assert_contains "offers leaving the issue open $where" "$ctx" "\"Leave #<n> open\""
-  assert_contains "runs orch.sh issue close via the resolved path $where" "$ctx" \
-    "bash \"$ORCH_PATH\" issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>"
-  assert_contains "writes the comment outside the tracked tree $where" "$ctx" \
-    "to a file outside the tracked tree"
-  assert_contains "skips the ready-for-agent move and the route question $where" "$ctx" \
-    "skip the interviewed-issue step's move to \`ready-for-agent\` and the route question"
-  assert_contains "leave open stops $where" "$ctx" "On \"Leave #<n> open\", stop"
-  assert_contains "free text resumes the rounds $where" "$ctx" \
-    "A free-text answer that the work is not done sends the interview back into rounds"
-  assert_contains "a failed close reports and stops $where" "$ctx" \
-    "If the close fails, report its orch: message and stop; the issue stays open"
-  assert_contains "no interviewed issue reports and stops $where" "$ctx" \
-    "With no interviewed issue and the plan's work already done, ask no question: report what did the work and stop"
-  assert_not_contains "carries no raw gh issue call $where" "$ctx" "gh issue"
-}
-ctx="$(skill_event "mattpocock-skills:grilling" dc1 | "$GRILL" | jq -r '.additionalContext')"
-check_done_close "on Claude Code" "$ctx" "the AskUserQuestion tool"
-assert_eq "keeps four numbered lines with the done-close on Claude Code" \
-  "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "4"
-ctx="$(prompt_event '$grilling' dc2 | "$GRILL" | jq -r '.additionalContext')"
-check_done_close "on Junie" "$ctx" "the ask_user tool"
-assert_eq "keeps three numbered lines with the done-close on Junie" \
-  "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
-ctx="$(prompt_event "$confirm" dc2 | "$GRILL" | jq -r '.additionalContext')"
-check_done_close "at Junie's plan confirmation" "$ctx" "the ask_user tool"
-assert_eq "keeps three numbered lines with the done-close at Junie's plan confirmation" \
-  "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
-mkdir -p "$REPO/.orchestrator"
-write_flow_state slug x phase spec issue 42
-ctx="$(skill_event "mattpocock-skills:grilling" dc3 | "$GRILL" | jq -r '.additionalContext')"
-check_done_close "beside an active flow on Claude Code" "$ctx" "the AskUserQuestion tool"
-assert_contains "the done-close applies in the second case on Claude Code" "$ctx" \
-  "- Only in the second case above (planning about anything else): at the close, if the planning settles that the interviewed issue's work"
-assert_contains "the same-flow branch skips the done-close on Claude Code" "$ctx" \
-  "skip the interviewed-issue step and the done-close below"
-assert_contains "the second case skips the route question when the done-close applies" "$ctx" \
-  "then the route question below unless the done-close applies"
-ctx="$(prompt_event '$grilling' dc4 | "$GRILL" | jq -r '.additionalContext')"
-check_done_close "beside an active flow on Junie" "$ctx" "the ask_user tool"
-assert_contains "the done-close applies in the second case on Junie" "$ctx" \
-  "- Only in the second case above (planning about anything else): at the close, if the planning settles that the interviewed issue's work"
-ctx="$(prompt_event "$confirm" dc4 | "$GRILL" | jq -r '.additionalContext')"
-check_done_close "beside an active flow at Junie's plan confirmation" "$ctx" "the ask_user tool"
-assert_contains "the done-close applies in the second case at Junie's plan confirmation" "$ctx" \
-  "- Only in the second case above (planning about anything else): at the close, if the planning settles that the interviewed issue's work"
-rm -rf "$REPO/.orchestrator"
-
-# A repo that renamed its triage labels gets its own names in the step.
+# A repo that renamed its triage labels gets its own names in the message,
+# never the canonical ones.
 cat >"$REPO/docs/agents/triage-labels.md" <<'DOC'
 | Role            | Ours          | Meaning |
 | --------------- | ------------- | ------- |
@@ -720,10 +395,87 @@ cat >"$REPO/docs/agents/triage-labels.md" <<'DOC'
 | ready-for-human | human-only    | x       |
 | wontfix         | not-planned   | x       |
 DOC
+check_renamed_labels() {
+  local where="$1" event="$2" arg="$3" session="$4" ctx
+  ctx="$("$event" "$arg" "$session" | "$GRILL" | jq -r '.additionalContext')"
+  assert_contains "names the repo's labels $where" "$ctx" \
+    "ready-for-agent is \`agent-ready\`, wontfix is \`not-planned\`, ready-for-human is \`human-only\`"
+  assert_not_contains "names no canonical ready-for-agent label $where" "$ctx" "is \`ready-for-agent\`"
+}
 check_renamed_labels "on Claude Code" skill_event "mattpocock-skills:grilling" ii3
 check_renamed_labels "on Junie" prompt_event '$grilling' ii4
 check_renamed_labels "at Junie's plan confirmation" prompt_event "$confirm" ii4
 rm -f "$REPO/docs/agents/triage-labels.md"
+
+# Size matrix (#1980): Claude Code keeps hook context of 10 KB or more out of
+# the conversation. Run the hook through every host, entry point and flow
+# state, in a repo whose triage labels map to long non-canonical strings, and
+# fail when any additionalContext reaches 8,000 bytes (below 10 KB because the
+# plugin root path and the flow slug vary by install).
+long="$(printf 'x%.0s' $(seq 1 60))"
+cat >"$REPO/docs/agents/triage-labels.md" <<DOC
+| Role            | Ours               | Meaning |
+| --------------- | ------------------ | ------- |
+| needs-triage    | triage-$long       | x       |
+| needs-info      | info-$long         | x       |
+| ready-for-agent | agent-ready-$long  | x       |
+| ready-for-human | human-only-$long   | x       |
+| wontfix         | not-planned-$long  | x       |
+DOC
+mkdir -p "$REPO/.orchestrator"
+size_budget=8000
+matrix_n=0
+# $1 flow state label; state is already written by the caller.
+run_size_matrix() {
+  local flow="$1" entry ev bytes
+  local -a events=(
+    "cc orch-interview|$(skill_event "orchestrator:orch-interview" mx)"
+    "cc grilling|$(skill_event "mattpocock-skills:grilling" mx)"
+    "junie orch-interview|$(prompt_event '$orch-interview x' mx)"
+    "junie grilling|$(prompt_event '$grill-me x' mx)"
+    "junie orchestrator:interview|$(prompt_event '/orchestrator:interview x' mx)"
+  )
+  for entry in "${events[@]}"; do
+    matrix_n=$((matrix_n + 1))
+    rm -f "$TMPDIR"/orchestrator-grilling-mx "$TMPDIR"/orchestrator-planning-mx
+    ev="${entry#*|}"
+    bytes="$(printf '%s' "$ev" | "$GRILL" | jq -r '.additionalContext' | wc -c)"
+    if [ "$bytes" -gt 0 ] && [ "$bytes" -lt "$size_budget" ]; then
+      ok "${entry%%|*} ($flow) stays under $size_budget bytes"
+    else
+      bad "${entry%%|*} ($flow) stays under $size_budget bytes" "got $bytes bytes"
+    fi
+  done
+  # Junie's plan-confirmed message needs a grilled session first.
+  rm -f "$TMPDIR"/orchestrator-planning-mx
+  prompt_event '$grill-me x' mx | "$GRILL" >/dev/null
+  bytes="$(prompt_event "$confirm" mx | "$GRILL" | jq -r '.additionalContext' | wc -c)"
+  if [ "$bytes" -gt 0 ] && [ "$bytes" -lt "$size_budget" ]; then
+    ok "junie plan-confirmed ($flow) stays under $size_budget bytes"
+  else
+    bad "junie plan-confirmed ($flow) stays under $size_budget bytes" "got $bytes bytes"
+  fi
+}
+run_size_matrix "no flow"
+write_flow_state slug "$long" phase spec issue 42
+run_size_matrix "flow with an issue"
+write_flow_state slug "$long" phase implement issue null
+run_size_matrix "flow with only a slug"
+write_flow_state slug null phase null issue null
+run_size_matrix "flow with neither"
+echo 'not json' >"$REPO/.orchestrator/state.json"
+run_size_matrix "flow with unreadable state"
+rm -rf "$REPO/.orchestrator"
+rm -f "$REPO/docs/agents/triage-labels.md" "$TMPDIR"/orchestrator-grilling-mx "$TMPDIR"/orchestrator-planning-mx
+assert_eq "the size matrix ran 25 cases of the five entry points" "$matrix_n" "25"
+
+# Emitter coverage: every hook-*.sh that emits context through
+# hook_emit_context must be in the size matrix above. Count call lines, not the
+# definition line, so a call added in hook-common.sh counts too.
+emitters="$(cd "$DIR" && grep -lE '^[^#]*hook_emit_context( |$)' hook-*.sh | grep -v '^hook-common.sh$' || true)"
+common_calls="$(grep -E '^[^#]*hook_emit_context( |$)' "$COMMON" | grep -vcE '^[[:space:]]*hook_emit_context\(\)' || true)"
+assert_eq "hook-grilling.sh is the only hook-*.sh calling hook_emit_context" "$emitters" "hook-grilling.sh"
+assert_eq "hook-common.sh has no call to hook_emit_context, only its definition" "$common_calls" "0"
 
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
 # delivers the message; its payload has no project_path.

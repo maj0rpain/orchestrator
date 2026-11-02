@@ -127,6 +127,8 @@
 #     fragment, named for no sub-issue, and bumps nothing by hand
 #   scan_line_width  no covered Markdown or shell comment line is past 80
 #     columns, outside the exempt lines
+#   scan_interview_closing  orch-interview's SKILL.md has a Closing section with
+#     four numbered route options
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -3865,6 +3867,34 @@ spares "an over-long line in a *.md outside the covered paths is not flagged" \
   "$out" '^\.out-of-scope/'
 check "no covered Markdown or shell comment line is past 80 columns" \
   "$(scan_line_width "$PLUGIN_ROOT")"
+
+# scan_interview_closing <plugin root>: one line when orch-interview's SKILL.md
+# has no `## Closing` section, or the section does not hold exactly four
+# numbered route options. Structure only, never wording (ADR-0027).
+scan_interview_closing() {
+  local r="$1" skill="skills/orch-interview/SKILL.md" body n
+  if ! body="$(md_section "$r/$skill" "## Closing" 2>/dev/null)"; then
+    echo "$skill: missing the ## Closing section"
+    return 0
+  fi
+  n="$(printf '%s\n' "$body" | grep -cE '^[[:space:]]*[0-9]+\. ' || true)"
+  [ "$n" = 4 ] || echo "$skill: the ## Closing section has $n numbered route options, not 4"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-interview"
+printf '# I\n\n## The interview\n' >"$fixture/skills/orch-interview/SKILL.md"
+flags "an orch-interview skill with no Closing section is flagged" \
+  "$(scan_interview_closing "$fixture")" "skills/orch-interview/SKILL.md: missing the ## Closing section"
+printf '# I\n\n## Closing\n\n1. a\n2. b\n3. c\n' >"$fixture/skills/orch-interview/SKILL.md"
+flags "a Closing section with three numbered route options is flagged" \
+  "$(scan_interview_closing "$fixture")" "has 3 numbered route options, not 4"
+printf '# I\n\n## Closing\n\n1. a\n2. b\n3. c\n4. d\n\n## Next\n\n5. e\n' \
+  >"$fixture/skills/orch-interview/SKILL.md"
+assert_empty "four numbered route options in the Closing section are not flagged" \
+  "$(scan_interview_closing "$fixture")"
+check "orch-interview's Closing section has four numbered route options" \
+  "$(scan_interview_closing "$PLUGIN_ROOT")"
 
 # >>> summary
 echo
