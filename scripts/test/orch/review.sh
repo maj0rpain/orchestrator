@@ -1545,6 +1545,9 @@ writeln '# claude' >CLAUDE.md
 assert_eq "with a CLAUDE.md present, a CONTRIBUTING.md declaration is ignored and the crawl runs" \
   "$(dstd)" "Standards: CLAUDE.md"
 rm CLAUDE.md CODING_STANDARDS.md
+writeln '# claude' 'Standards: `docs/agents/q.md`' >CONTRIBUTING.md
+assert_eq "a Standards: line directly under a heading is a declaration" \
+  "$(dstd)" "Standards: docs/agents/q.md"
 writeln '```' 'x' '' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
 assert_eq "a Standards: line in a fence, after a blank line, is no declaration" \
   "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"

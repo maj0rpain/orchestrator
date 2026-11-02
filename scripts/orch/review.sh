@@ -434,15 +434,17 @@ review_standards_mentions() {
 
 # review_standards_declaration <file>: the first `Standards:` paragraph of the
 # root file <file>, its lines joined, or nothing when it has none. A paragraph
-# whose first line starts with Standards: and sits outside a fenced code block;
+# whose first line starts with Standards: and sits outside a fenced code block
+# (an ATX heading line ends a paragraph, so one may sit directly under it);
 # the fence state runs from the opening fence to the closing one, blank lines
 # included.
 review_standards_declaration() {
   awk "$FENCE_AWK"'
     fenced($0) { if (p != "") { print p; done = 1; exit } prev = 0; next }
-    p != "" { if (NF) { p = p " " $0; next } print p; done = 1; exit }
+    { head = ($0 ~ /^ ? ? ?#+([ \t]|$)/) }
+    p != "" { if (NF && !head) { p = p " " $0; next } print p; done = 1; exit }
     /^Standards:/ && !prev { p = $0; next }
-    { prev = NF ? 1 : 0 }
+    { prev = (NF && !head) ? 1 : 0 }
     END { if (p != "" && !done) print p }
   ' "$ROOT/$1" 2>/dev/null
 }
