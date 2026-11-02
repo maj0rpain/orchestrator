@@ -56,11 +56,11 @@ for args in "issue fetch 5 $fetched" "issue update 5 $body" "ticket parent 50" "
   assert_status "$args runs in the fork" "$st" 0
 done
 assert_contains "the rerun reached gh pinned to the fork" \
-  "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets GH_HOST=<unset> run rerun 4242 --failed"
+  "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets GH_HOST=github.com run rerun 4242 --failed"
 assert_contains "gh repo view got the fork as its positional argument" \
-  "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets GH_HOST=<unset> repo view fork/widgets "
-assert_eq "every gh call carried the fork, and a github.com repo leaves GH_HOST unset" \
-  "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=<unset> ' "$GH_FIXTURE/env.log")" "0"
+  "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets GH_HOST=github.com repo view fork/widgets "
+assert_eq "every gh call carried the fork, and an origin github.com repo pins GH_HOST=github.com" \
+  "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=github.com ' "$GH_FIXTURE/env.log")" "0"
 assert_eq "command gh appears in orch.sh and its modules only inside the guard" \
   "$(cat "$ORCH" "$(dirname "$ORCH")"/orch/*.sh | grep -c '\bcommand gh\b')" "1"
 assert_contains "and that one is the gh guard's own" \
@@ -82,9 +82,33 @@ assert_eq "and nothing reached gh unpinned" "$(cat "$GH_FIXTURE/env.log")" ""
 out="$("$ORCH" slug "Some title" 2>&1)"; st=$?
 assert_status "a local-only command is unaffected" "$st" 0
 
+# One host rule (#1976): an origin-resolved github.com repo pins github.com over
+# the user's own GH_HOST; a user-set OWNER/REPO GH_REPO keeps the user's GH_HOST
+# (set or unset); a parent's pinned GH_REPO and GH_HOST pass to a child.
+git remote add origin https://github.com/fork/widgets.git
+: >"$GH_FIXTURE/env.log"
+out="$(env -u ORCH_GH_ADAPTER GH_HOST=other.example.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
+assert_status "issue fetch runs from a github.com origin under a user GH_HOST" "$st" 0
+assert_eq "a github.com origin pins GH_HOST=github.com over the user's"   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=github.com ' "$GH_FIXTURE/env.log")" "0"
+: >"$GH_FIXTURE/env.log"
+out="$(env -u ORCH_GH_ADAPTER GH_REPO=fork/widgets GH_HOST=ghe.example.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
+assert_status "issue fetch runs with a user-set GH_REPO" "$st" 0
+assert_eq "a user-set OWNER/REPO keeps the user's GH_HOST" \
+  "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+: >"$GH_FIXTURE/env.log"
+out="$(env -u ORCH_GH_ADAPTER -u GH_HOST GH_REPO=fork/widgets "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
+assert_eq "a user-set OWNER/REPO with GH_HOST unset leaves it unset" \
+  "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=<unset> ' "$GH_FIXTURE/env.log")" "0"
+: >"$GH_FIXTURE/env.log"
+out="$(env -u ORCH_GH_ADAPTER GH_REPO=fork/widgets GH_HOST=github.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
+assert_eq "a child with GH_REPO preset keeps the parent's pinned GH_HOST=github.com" \
+  "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=github.com ' "$GH_FIXTURE/env.log")" "0"
+git remote remove origin
+
 # A host other than github.com: gh api takes its host from GH_HOST, not from
 # GH_REPO's host part, so every call - gh api's included - must carry both.
 git remote add origin git@ghe.example.com:fork/widgets.git
+: >"$GH_FIXTURE/env.log"
 pinned_replies ghe.example.com/fork/widgets
 for args in "issue fetch 5 $fetched" "ticket parent 50" "base show" "review rerun 7"; do
   # shellcheck disable=SC2086 # each args string is a word list on purpose

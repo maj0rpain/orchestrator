@@ -3,7 +3,8 @@
 # Its tests: scripts/test/orch/repo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# REPO_SOURCE is read by repo show, below, and by doctor.sh.
+# REPO_SOURCE is read by repo show and repo_pinned_host, below, and so by
+# every gh call's pin and by doctor.sh.
 # shellcheck disable=SC2034
 repo_resolve() {
   local url
@@ -38,15 +39,14 @@ repo_owner_name() {
   esac
 }
 
-# repo_pin: pin every later gh call to the repo - when GH_REPO is unset, resolve
-# it and export it as GH_REPO, then pin its host (repo_pin_host). Returns 1,
+# repo_pin: pin every later gh call to the repo - resolve it, export it as
+# GH_REPO when that is unset, then pin its host (repo_pin_host). Returns 1,
 # exporting nothing, when nothing resolves, and never dies: each caller picks
 # its own exit, the gh guard's subshell signal or die, review rerun's die2.
 repo_pin() {
-  if [ -z "${GH_REPO:-}" ]; then
-    repo_resolve || return 1
-    export GH_REPO="$REPO_NAME"
-  fi
+  local preset="${GH_REPO:-}"
+  repo_resolve || return 1
+  if [ -z "$preset" ]; then export GH_REPO="$REPO_NAME"; fi
   repo_pin_host
 }
 
@@ -87,13 +87,38 @@ repo_from_url() {
   fi
 }
 
+# repo_gh_host: the GitHub host gh targets for the resolved repo (not the
+# glossary's Host, the agent CLI), read from REPO_NAME and REPO_SOURCE as
+# repo_resolve sets them. The one rule, followed by the gh guard's pin, doctor's
+# GitHub probe and repo show --host: the repo's pinned host (repo_pinned_host);
+# else (a user-set OWNER/REPO GH_REPO) the user's GH_HOST, or github.com when
+# unset, as gh does.
+repo_gh_host() {
+  local host
+  host="$(repo_pinned_host)"
+  printf '%s\n' "${host:-${GH_HOST:-github.com}}"
+}
+
+# repo_pinned_host: the host the repo itself decides, which the gh guard pins -
+# the repo name's explicit host; else github.com for a repo resolved from
+# origin; else nothing, for a user-set OWNER/REPO GH_REPO, whose host is the
+# user's own GH_HOST.
+repo_pinned_host() {
+  local host
+  host="$(repo_host "$REPO_NAME")"
+  if [ -n "$host" ]; then printf '%s\n' "$host"
+  elif [ "$REPO_SOURCE" = origin ]; then printf '%s\n' github.com
+  fi
+}
+
 # gh api fills {owner}/{repo} from GH_REPO but takes its host only from
-# GH_HOST, never from GH_REPO's host part (gh 2.102.0). So a HOST/OWNER/REPO
-# GH_REPO also exports GH_HOST=HOST; an OWNER/REPO one, a github.com repo,
-# leaves GH_HOST as it is.
+# GH_HOST, never from GH_REPO's host part (gh 2.102.0). So the pin exports the
+# repo's pinned host as GH_HOST; for a user-set OWNER/REPO GH_REPO it leaves the
+# user's GH_HOST as it is, set or unset. It reads REPO_NAME and REPO_SOURCE as
+# repo_pin's repo_resolve set them.
 repo_pin_host() {
   local host
-  host="$(repo_host "$GH_REPO")"
+  host="$(repo_pinned_host)"
   if [ -n "$host" ]; then export GH_HOST="$host"; fi
 }
 trap 'die "$REPO_REMEDY"' USR1
@@ -114,7 +139,7 @@ cmd_default_branch() {
 }
 
 cmd_repo() {
-  local op="${1:-}" host
+  local op="${1:-}"
   shift || true
   case "$op" in
     show)
@@ -125,7 +150,7 @@ cmd_repo() {
       repo_resolve || die "$REPO_REMEDY"
       case "${1:-}" in
         --name) note "$REPO_NAME" ;;
-        --host) host="$(repo_host "$REPO_NAME")"; note "${host:-github.com}" ;;
+        --host) note "$(repo_gh_host)" ;;
         *) note "$REPO_NAME ($REPO_SOURCE)" ;;
       esac
       ;;
