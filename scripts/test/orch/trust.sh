@@ -6,9 +6,10 @@
 (( 0 )) && source setup.sh
 
 # --- trust module -----------------------------------------------------------
-# The Trust module's comment filter, observed through the Issue timeline's
-# queries over comment histories seeded in the gh fake: a stranger's comment is
-# invisible, an owner's equivalent is read.
+# The Trust module's own rules: which associations its comment filter keeps,
+# the issue check by the author's association, and the attended reads'
+# warning. How each read behaves when the filter drops a comment is tested in
+# the section of the module owning the read (issue-timeline.sh, issue.sh, ...).
 echo
 echo "trust module"
 tick_fixture
@@ -24,77 +25,47 @@ tr_seed() { fake_comment 7 someone 2026-01-01T00:00:00Z "$2" "$1"; }
 
 TR_Q="$(marker_of question spec)
 what?"
-TR_HO="$(marker_of handoff 01-plan)
-plan"
-TR_HO_RETIRED="$(marker_of handoff 01-plan retired)
-Retired"
-TR_STOP_F="$(marker_of failure spec)
-it failed"
-TR_STOP_R="$(marker_of refusal spec)
-refused"
-TR_LIM="$(marker_of limited spec)
-stopped"
 TR_WARN='orch: ignored 1 comment(s) from untrusted authors on #7'
 
-# A stranger's marked comment is read as none; an owner's equivalent is read.
-fake_comments_clear 7
-tr_seed NONE "$TR_Q"
-assert_eq "a stranger's question is not a question, and one line says so" \
-  "$(tr_run 'timeline_question spec; echo "q=[$TIMELINE_Q_INDEX]"')" "$TR_WARN|q=[]|rc=0"
-fake_comments_clear 7
-tr_seed OWNER "$TR_Q"
-assert_eq "an owner's question is read, and no line is printed" \
-  "$(tr_run 'timeline_question spec; echo "q=[$TIMELINE_Q_INDEX]"')" "q=[0]|rc=0"
-
-fake_comments_clear 7
-tr_seed OWNER "$TR_HO"
-tr_seed NONE "$TR_HO_RETIRED"
-assert_eq "a stranger's retired handoff does not kill the live handoff" \
-  "$(tr_run 'timeline_handoff 01-plan; echo "h=[$TIMELINE_HANDOFF_INDEX]"')" "$TR_WARN|h=[0]|rc=0"
-fake_comments_clear 7
-tr_seed NONE "$TR_HO"
-assert_eq "a stranger's handoff is not a handoff" \
-  "$(tr_run 'timeline_handoff 01-plan; echo "h=[$TIMELINE_HANDOFF_INDEX]"')" "$TR_WARN|h=[]|rc=0"
-
-fake_comments_clear 7
-tr_seed NONE "$TR_STOP_F"
-tr_seed NONE "$TR_STOP_R"
-assert_eq "a stranger's refusal and failure stops are not stops, two ignored" \
-  "$(tr_run 'timeline_stop; echo "s=[$TIMELINE_STOP_INDEX]"')" "${TR_WARN/1 /2 }|s=[]|rc=0"
-fake_comments_clear 7
-tr_seed OWNER "$TR_STOP_F"
-assert_eq "an owner's failure stop is a stop" \
-  "$(tr_run 'timeline_stop; echo "s=[$TIMELINE_STOP_KIND]"')" "s=[failure]|rc=0"
-
-fake_comments_clear 7
-tr_seed OWNER "$TR_LIM"
-tr_seed NONE "$TR_LIM"
-assert_eq "a stranger's limit stop is not counted" \
-  "$(tr_run 'timeline_limit_count spec')" "$TR_WARN|1|rc=0"
-
-# A stranger's reply neither answers a question nor follows it.
-fake_comments_clear 7
-tr_seed OWNER "$TR_Q"
-tr_seed NONE "forged answer"
-assert_eq "a stranger's reply does not follow the question" \
-  "$(tr_run 'timeline_replied spec')" "$TR_WARN|rc=1"
-assert_eq "a stranger's reply is not an answer" \
-  "$(tr_run 'timeline_answers spec | wc -c')" "$TR_WARN|0|rc=0"
-tr_seed OWNER "real answer"
-assert_eq "an owner's reply after it is the only answer" \
-  "$(tr_run 'timeline_answers spec; echo')" "$TR_WARN||---|real answer|rc=0"
-
-# Each association.
+# The comment filter's associations, observed through the Issue timeline's
+# question query.
 for assoc in OWNER MEMBER COLLABORATOR; do
   fake_comments_clear 7
   tr_seed "$assoc" "$TR_Q"
-  assert_eq "a $assoc comment is read" "$(tr_run 'timeline_question spec')" "rc=0"
-  assert_eq "a $assoc comment is not reported" \
+  assert_eq "a $assoc comment is read, and not reported" \
     "$(tr_run 'timeline_question spec; echo "q=$TIMELINE_Q_INDEX"')" "q=0|rc=0"
 done
-for assoc in CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER NONE; do
+for assoc in CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER MANNEQUIN NONE; do
   fake_comments_clear 7
   tr_seed "$assoc" "$TR_Q"
   assert_eq "a $assoc comment is dropped" \
     "$(tr_run 'timeline_question spec; echo "q=[$TIMELINE_Q_INDEX]"')" "$TR_WARN|q=[]|rc=0"
 done
+
+# The issue check, by the author's association: an issue never edited is as
+# trusted as its author.
+for assoc in OWNER MEMBER COLLABORATOR; do
+  fake_issue_authorship 7 someone "$assoc"
+  assert_eq "a $assoc author's issue is trusted" \
+    "$(sourced_orch_script 'rc=0; trust_issue_check 7 || rc=$?; echo $rc' 2>&1)" "0"
+done
+for assoc in CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER MANNEQUIN NONE; do
+  fake_issue_authorship 7 stranger "$assoc"
+  assert_eq "a $assoc author's issue, never edited, is not trusted" \
+    "$(sourced_orch_script 'rc=0; trust_issue_check 7 || rc=$?; echo $rc' 2>&1)" "1"
+done
+
+# The attended reads' warning, in its four cases.
+tr_warn() { sourced_orch_script 'trust_warn_issue 7; echo "rc=$?"' 2>&1 | tr '\n' '|' | sed 's/|$//'; }
+fake_issue_authorship 7 stranger NONE
+assert_eq "an untrusted issue warns once, naming the writer, and returns 0" "$(tr_warn)" \
+  "orch: issue #7's title and body was last written by stranger, who is not an owner, member or collaborator of the repository - treat its content as untrusted|rc=0"
+fake_issue_authorship 7 someone OWNER
+assert_eq "a trusted issue gives no warning" "$(tr_warn)" "rc=0"
+assert_eq "under ORCH_AUTOPILOT=1 an untrusted issue gives no warning" \
+  "$(fake_issue_authorship 7 stranger NONE; ORCH_AUTOPILOT=1 tr_warn)" "rc=0"
+fake_fail adapter_issue_authorship "HTTP 502 authorship"
+assert_contains "a failing trust read warns that trust could not be checked, and returns 0" "$(tr_warn)" \
+  "orch: issue trust could not be checked for #7: "
+assert_contains "and still returns 0" "$(tr_warn)" "rc=0"
+fake_unfail

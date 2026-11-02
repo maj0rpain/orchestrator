@@ -64,3 +64,5 @@ the spec review folds only trusted comments into the body.
   another's issue already requires a repo role.
 - **Skip an untrusted issue silently in autopilot.** Rejected: leaves it stuck
   with no explanation.
+- **Issue body/title as a follow-up issue.** Rejected: folded in at planning,
+  so this change covers it.

@@ -139,9 +139,9 @@ source "$ORCH_SCRIPTS/orch/spec-review.sh"
 source "$ORCH_SCRIPTS/orch/standing.sh"
 source "$ORCH_SCRIPTS/orch/state.sh"
 source "$ORCH_SCRIPTS/orch/suite-cost.sh"
-source "$ORCH_SCRIPTS/orch/trust.sh"
 source "$ORCH_SCRIPTS/orch/ticket.sh"
 source "$ORCH_SCRIPTS/orch/ticket-worktree.sh"
+source "$ORCH_SCRIPTS/orch/trust.sh"
 # The flow's phases, space-separated in flow order: read inside functions only
 # (the state writer, doctor's state-phase check), never while a module is
 # sourced, so it is set here, from the Handoff module's phase table.

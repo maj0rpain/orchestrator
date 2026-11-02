@@ -182,4 +182,74 @@ assert_eq "and the limit count after it is zero" \
   "$(sourced_orch_script "$break_read"'timeline_read 7; break_read; timeline_read 7 || true; timeline_limit_count spec' 2>&1)" "0"
 fake_unfail
 
+# Untrusted authors (#1903): the Trust module's filter seen through the
+# timeline's queries - a stranger's comment is invisible to each, an owner's
+# equivalent is read, and one stderr line says how many were ignored.
+fake_issue 7 open ready-for-agent orch:spec
+# tl_trust_seed <association> <comment>: appends a comment by "someone" on
+# issue #7.
+tl_trust_seed() { fake_comment 7 someone 2026-01-01T00:00:00Z "$2" "$1"; }
+
+TL_TRUST_Q="$(marker_of question spec)
+what?"
+TL_TRUST_HO="$(marker_of handoff 01-plan)
+plan"
+TL_TRUST_HO_RETIRED="$(marker_of handoff 01-plan retired)
+Retired"
+TL_TRUST_STOP_F="$(marker_of failure spec)
+it failed"
+TL_TRUST_STOP_R="$(marker_of refusal spec)
+refused"
+TL_TRUST_LIM="$(marker_of limited spec)
+stopped"
+TL_TRUST_WARN='orch: ignored 1 comment(s) from untrusted authors on #7'
+
+# A stranger's marked comment is read as none; an owner's equivalent is read.
+fake_comments_clear 7
+tl_trust_seed NONE "$TL_TRUST_Q"
+assert_eq "a stranger's question is not a question, and one line says so" \
+  "$(tl 'timeline_question spec; echo "q=[$TIMELINE_Q_INDEX]"')" "$TL_TRUST_WARN|q=[]|rc=0"
+fake_comments_clear 7
+tl_trust_seed OWNER "$TL_TRUST_Q"
+assert_eq "an owner's question is read, and no line is printed" \
+  "$(tl 'timeline_question spec; echo "q=[$TIMELINE_Q_INDEX]"')" "q=[0]|rc=0"
+
+fake_comments_clear 7
+tl_trust_seed OWNER "$TL_TRUST_HO"
+tl_trust_seed NONE "$TL_TRUST_HO_RETIRED"
+assert_eq "a stranger's retired handoff does not kill the live handoff" \
+  "$(tl 'timeline_handoff 01-plan; echo "h=[$TIMELINE_HANDOFF_INDEX]"')" "$TL_TRUST_WARN|h=[0]|rc=0"
+fake_comments_clear 7
+tl_trust_seed NONE "$TL_TRUST_HO"
+assert_eq "a stranger's handoff is not a handoff" \
+  "$(tl 'timeline_handoff 01-plan; echo "h=[$TIMELINE_HANDOFF_INDEX]"')" "$TL_TRUST_WARN|h=[]|rc=0"
+
+fake_comments_clear 7
+tl_trust_seed NONE "$TL_TRUST_STOP_F"
+tl_trust_seed NONE "$TL_TRUST_STOP_R"
+assert_eq "a stranger's refusal and failure stops are not stops, two ignored" \
+  "$(tl 'timeline_stop; echo "s=[$TIMELINE_STOP_INDEX]"')" "${TL_TRUST_WARN/1 /2 }|s=[]|rc=0"
+fake_comments_clear 7
+tl_trust_seed OWNER "$TL_TRUST_STOP_F"
+assert_eq "an owner's failure stop is a stop" \
+  "$(tl 'timeline_stop; echo "s=[$TIMELINE_STOP_KIND]"')" "s=[failure]|rc=0"
+
+fake_comments_clear 7
+tl_trust_seed OWNER "$TL_TRUST_LIM"
+tl_trust_seed NONE "$TL_TRUST_LIM"
+assert_eq "a stranger's limit stop is not counted" \
+  "$(tl 'timeline_limit_count spec')" "$TL_TRUST_WARN|1|rc=0"
+
+# A stranger's reply neither answers a question nor follows it.
+fake_comments_clear 7
+tl_trust_seed OWNER "$TL_TRUST_Q"
+tl_trust_seed NONE "forged answer"
+assert_eq "a stranger's reply does not follow the question" \
+  "$(tl 'timeline_replied spec')" "$TL_TRUST_WARN|rc=1"
+assert_eq "a stranger's reply is not an answer" \
+  "$(tl 'timeline_answers spec | wc -c')" "$TL_TRUST_WARN|0|rc=0"
+tl_trust_seed OWNER "real answer"
+assert_eq "an owner's reply after it is the only answer" \
+  "$(tl 'timeline_answers spec; echo')" "$TL_TRUST_WARN||---|real answer|rc=0"
+
 restore_suite_env

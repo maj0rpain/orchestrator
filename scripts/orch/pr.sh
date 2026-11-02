@@ -422,22 +422,22 @@ cmd_pr_comments() {
   local file="$1" pr
   pr="$(current_open_pr)" || return $?
   local text
-  pr_comments_rendered --exit 2 "read the comments of PR #$pr" "$pr" text
-  mkdir -p "$(dirname "$file")"
-  { [ -z "$text" ] || printf '%s\n' "$text"; } >"$file" || die2 "could not write $file"
+  pr_comments_rendered --exit2 "read the comments of PR #$pr" "$pr" text
+  file_write_atomic "$file" "${text:+$text$'\n'}" || die2 "could not write $file"
 }
 
-# pr_comments_rendered [gh_or_die options] <what> <n> <var>: PR <n>'s trusted
+# pr_comments_rendered [--exit2] <what> <n> <var>: PR <n>'s trusted
 # comments, rendered by issue_comments_render (the Trust filter's stderr line
 # names the PR), assigned to <var>; no placeholder for a dropped comment. A gh
 # failure dies as "gh could not <what>"; a comment object that does not parse
-# dies as "could not read the comments of PR #<n>".
+# dies as "could not read the comments of PR #<n>". --exit2 makes both die
+# with status 2, as pr comments does.
 pr_comments_rendered() {
-  local opts=() __pcr_raw __pcr_out
-  while [ $# -gt 3 ]; do opts+=("$1"); shift; done
-  gh_or_die --out __pcr_raw ${opts[@]+"${opts[@]}"} "$1" adapter_pr_comments "$2"
+  local die_fn=die gh_opts=() __pcr_raw __pcr_out
+  if [ "${1:-}" = --exit2 ]; then die_fn=die2; gh_opts=(--exit 2); shift; fi
+  gh_or_die --out __pcr_raw ${gh_opts[@]+"${gh_opts[@]}"} "$1" adapter_pr_comments "$2"
   __pcr_out="$(issue_comments_render "$2" <<<"$__pcr_raw")" \
-    || { [ "${opts[1]:-1}" = 2 ] && die2 "could not read the comments of PR #$2"; die "could not read the comments of PR #$2"; }
+    || "$die_fn" "could not read the comments of PR #$2"
   printf -v "$3" '%s' "$__pcr_out"
 }
 
@@ -474,8 +474,8 @@ cmd_pr_read() {
   done
   [ -n "$found" ] || die "no open PR closes or refers to issue #$issue"
   gh_or_die --out diff "read the diff of PR #$found" adapter_pr_diff "$found"
-  mkdir -p "$(dirname "$file")"
-  printf '%s\n\n---\n%s\n' "$body" "$diff" >"$file"
+  file_write_atomic "$file" "$(printf '%s\n\n---\n%s\n' "$body" "$diff")"$'\n' \
+    || die "could not write $file"
 }
 
 cmd_pr() {

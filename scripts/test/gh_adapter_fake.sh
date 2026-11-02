@@ -267,21 +267,6 @@ fake_close_comment() {
   rm -f "$c"
 }
 
-# fake_comments_print <comments-dir>: the directory's comments in the rendered
-# shape - each opened by its marker line, one blank line between, a newline
-# after the last; nothing at all for none.
-fake_comments_print() {
-  local d="$1" k first=1
-  [ -d "$d" ] || return 0
-  for k in $(ls "$d" | sort -n); do
-    [ "$first" = 1 ] || printf '\n\n'
-    first=0
-    printf '<!-- comment @%s %s -->\n' "$(cat "$d/$k/author")" "$(cat "$d/$k/created")"
-    cat "$d/$k/body"
-  done
-  printf '\n'
-}
-
 # fake_comments_json <comments-dir> <n>: the directory's comments, numerically
 # ordered, as one compact JSON array of author, authorAssociation (OWNER for a
 # comment stored without one), createdAt, body and url, the url

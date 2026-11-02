@@ -70,8 +70,7 @@ cmd_issue_fetch() {
   if [ -n "$as_json" ]; then
     local json
     issue_json_trusted "read issue #$issue" "$issue" json
-    mkdir -p "$(dirname "$file")"
-    printf '%s\n' "$json" >"$file" || die "could not write $file"
+    file_write_atomic "$file" "$json"$'\n' || die "could not write $file"
     return
   fi
   gh_or_die --file "$file" "read the body of issue #$issue" \
@@ -129,10 +128,12 @@ ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.autho
 # splitting the joined text. No comments is an empty file, not an error; the
 # file is written only once the read has succeeded.
 cmd_issue_comments() {
-  local issue="$1" file="$2" json
+  local issue="$1" file="$2" json text
   issue_json_trusted "read the comments of issue #$issue" "$issue" json
-  mkdir -p "$(dirname "$file")"
-  marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ" >"$file" \
+  text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ")" \
+    || die "could not read the comments of issue #$issue"
+  # $(...) drops the trailing newline jq -r printed; put it back unless empty.
+  file_write_atomic "$file" "${text:+$text$'\n'}" \
     || die "could not write the comments of issue #$issue to $file"
 }
 

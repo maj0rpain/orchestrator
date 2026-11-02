@@ -466,16 +466,16 @@ cmd_finding_triage_bundle() {
 # what failed, the members left open - that one and every one after it - and
 # the --into command that resumes.
 bundle_members_close() {
-  local b="$1" comment_file m i=0 comments state why left err
+  local b="$1" comment_file m i=0 comments raw state why left err
   shift
   local members=("$@")
   comment_file="$(mktemp)" || die "could not create a temp file for the bundle comments"
   printf 'Bundled into #%s\n' "$b" >"$comment_file"
   for m in "${members[@]}"; do
     why=""
-    if ! capture comments err adapter_issue_comments "$m"; then
+    if ! capture raw err adapter_issue_comments "$m"; then
       why="gh could not read member #$m's comments: $(gh_reason "$err")"
-    elif ! comments="$(issue_comments_render "$m" <<<"$comments")"; then
+    elif ! comments="$(issue_comments_render "$m" <<<"$raw")"; then
       why="could not read member #$m's comments"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
       && ! triage_comment_post err "$m" "$comment_file"; then

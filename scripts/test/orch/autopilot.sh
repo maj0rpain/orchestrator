@@ -1426,15 +1426,12 @@ pt_issue() { # <issue> <author> <association> [<editor> [<renamer>]]: a labelled
 }
 pt_tick() { "$ORCH" autopilot tick >/dev/null 2>&1; }
 
-# every association is pinned as for comments
-for assoc in OWNER MEMBER COLLABORATOR; do
-  pt_issue 7 someone "$assoc"; fake_comments_clear 7; pt_tick
-  assert_eq "a $assoc author's issue is picked up" "$(tick_calls)" "1"
-done
-for assoc in CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER MANNEQUIN NONE; do
-  pt_issue 7 stranger "$assoc"; fake_comments_clear 7; pt_tick
-  assert_eq "a $assoc author's issue, never edited, is not picked up" "$(tick_calls)" "0"
-done
+# one trusted and one untrusted author; every association is pinned in the
+# trust module's section
+pt_issue 7 someone OWNER; fake_comments_clear 7; pt_tick
+assert_eq "an OWNER author's issue is picked up" "$(tick_calls)" "1"
+pt_issue 7 stranger NONE; fake_comments_clear 7; pt_tick
+assert_eq "a NONE author's issue, never edited, is not picked up" "$(tick_calls)" "0"
 
 # a refused first pickup leaves nothing behind
 fake_unfail

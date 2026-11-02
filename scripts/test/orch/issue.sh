@@ -968,35 +968,27 @@ assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
 
 # Untrusted authors (#1903): a stranger's comments, a `## Spec review` one
 # among them, are left out of every read of the issue's comments; an owner's
-# are kept, MEMBER and COLLABORATOR included, CONTRIBUTOR and the first-timer
-# dropped. One stderr line says how many, and only when some were dropped.
+# is kept (every association is pinned in the trust module's section). One
+# stderr line says how many, and only when some were dropped.
 fake_issue 962 open bug
 fake_issue_title 962 "Trust"
 fake_comment 962 owner 2026-09-04T09:00:00Z "Owner note." OWNER
-fake_comment 962 member 2026-09-04T10:00:00Z "Member note." MEMBER
-fake_comment 962 collab 2026-09-04T11:00:00Z "Collaborator note." COLLABORATOR
 fake_comment 962 rando 2026-09-04T12:00:00Z "Stranger note." NONE
-fake_comment 962 contrib 2026-09-04T13:00:00Z "Contributor note." CONTRIBUTOR
-fake_comment 962 newbie 2026-09-04T14:00:00Z "First-timer note." FIRST_TIME_CONTRIBUTOR
 fake_comment 962 rando 2026-09-04T15:00:00Z "$(writeln "$(marker_of spec-review)" 'Round 9 of 9')" NONE
 out="$("$ORCH" issue comments 962 "$issue_comments" 2>&1)"; st=$?
 assert_status "comments succeeds past untrusted authors" "$st" 0
 assert_eq "and says how many it ignored, once" "$out" \
-  "orch: ignored 4 comment(s) from untrusted authors on #962"
-assert_eq "keeping the owner, member and collaborator, with no placeholder" "$(cat "$issue_comments")" \
-  "$(writeln '<!-- comment @owner 2026-09-04T09:00:00Z -->' 'Owner note.' '' \
-    '<!-- comment @member 2026-09-04T10:00:00Z -->' 'Member note.' '' \
-    '<!-- comment @collab 2026-09-04T11:00:00Z -->' 'Collaborator note.')"
+  "orch: ignored 2 comment(s) from untrusted authors on #962"
+assert_eq "keeping the owner, with no placeholder" "$(cat "$issue_comments")" \
+  "$(writeln '<!-- comment @owner 2026-09-04T09:00:00Z -->' 'Owner note.')"
 issue_json_trust="$(mktemp)"
 out="$("$ORCH" issue fetch 962 "$issue_json_trust" --json 2>&1)"; st=$?
 assert_status "fetch --json succeeds past untrusted authors" "$st" 0
-assert_eq "saying how many it ignored" "$out" "orch: ignored 4 comment(s) from untrusted authors on #962"
+assert_eq "saying how many it ignored" "$out" "orch: ignored 2 comment(s) from untrusted authors on #962"
 assert_eq "the published shape unchanged, minus the strangers' comments" "$(jq -cS . "$issue_json_trust")" \
   "$(jq -cS . <<'JSON'
 {"number": 962, "title": "Trust", "body": "", "labels": ["bug"],
- "comments": [{"author": "owner", "createdAt": "2026-09-04T09:00:00Z", "body": "Owner note."},
-  {"author": "member", "createdAt": "2026-09-04T10:00:00Z", "body": "Member note."},
-  {"author": "collab", "createdAt": "2026-09-04T11:00:00Z", "body": "Collaborator note."}]}
+ "comments": [{"author": "owner", "createdAt": "2026-09-04T09:00:00Z", "body": "Owner note."}]}
 JSON
 )"
 rm -f "$issue_json_trust"
@@ -1107,16 +1099,4 @@ for tw_mode in "" --json; do
   assert_status "fetch of an untrusted issue exits 0 ($tw_mode)" "$st" 0
   assert_eq "with one warning naming the writer ($tw_mode)" "$(grep -c 'last written by stranger' <<<"$out")" "1"
 done
-fake_fail adapter_issue_authorship "HTTP 502 authorship"
-out="$("$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"; st=$?
-assert_status "a failing trust read does not fail fetch" "$st" 0
-assert_eq "it warns once that trust could not be checked" "$(grep -c 'issue trust could not be checked' <<<"$out")" "1"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
-assert_eq "under ORCH_AUTOPILOT=1 no trust read, no warning" "$out" ""
-fake_unfail
-out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
-assert_eq "under ORCH_AUTOPILOT=1 an untrusted issue gives no warning" "$out" ""
-fake_issue_authorship 31 someone OWNER
-out="$("$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
-assert_eq "a trusted issue gives no warning" "$out" ""
 rm -f "$tw_file"
