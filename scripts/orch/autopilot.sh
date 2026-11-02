@@ -836,10 +836,10 @@ AUTOPILOT_BG_WAIT_MS=7200000
 # for that checkout's issue. Run it contained (autopilot_pickup_contained): it
 # changes directory, and a failed step fails with the step's own reason.
 autopilot_review_budget_record() {
-  local b
+  local budget
   cd "$1" || return
-  b="$("$(autopilot_self)" autopilot budget)" || return
-  "$(autopilot_self)" state set budget "$b" >/dev/null
+  budget="$("$(autopilot_self)" autopilot budget)" || return
+  autopilot_orch_in "$1" state set budget "$budget"
 }
 
 # autopilot_run <issue>: the session wrapper a tick starts: runs the headless

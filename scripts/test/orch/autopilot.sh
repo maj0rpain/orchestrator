@@ -1276,6 +1276,24 @@ for wording in "iteration limit reached" "API rate limit reached, retrying"; do
 done
 assert_contains "the failure comment names the exit code and the log" "$(fake_last_comment_of 7)" "the session exited with code 1; log: $se_log"
 
+# the final reply (#2004)
+# se_reply <result>: a fresh held session exiting 0 over a log ending in a
+# result event with that text; its failure comment.
+se_reply() {
+  printf '%s\n' '{"type":"system","subtype":"init"}' "$(jq -cn --arg r "$1" '{type:"result",subtype:"success",result:$r}')" >"$se_log"
+  se_fresh; se_end 0
+  fake_last_comment_of 7
+}
+c500="$(printf 'x%.0s' $(seq 1 500))"
+assert_contains "an exit-0 session's final reply is quoted" "$(se_reply 'How many review iterations? 3, 5 or 8')" \
+  "the session exited with code 0; it ended on: *How many review iterations? 3, 5 or 8*; log: $se_log"
+assert_contains "a reply of exactly 500 characters is quoted whole" "$(se_reply "$c500")" "it ended on: *$c500*; log: "
+assert_contains "one over 500 is cut with an ellipsis" "$(se_reply "${c500}y")" "it ended on: *$c500…*; log: "
+assert_contains "a multi-line reply is collapsed to one line" "$(se_reply $'one\n\n  two\tthree')" "it ended on: *one two three*; log: "
+empty_reply="$(se_reply '')"
+assert_not_contains "an empty reply keeps the plain comment" "$empty_reply" "it ended on"
+assert_contains "and names the exit code and log" "$empty_reply" "the session exited with code 0; log: $se_log"
+
 # resets <time>
 ndjson_with '5-hour limit reached ∙ resets 3pm' >"$se_log"
 se_fresh; se_end 1
@@ -1538,26 +1556,17 @@ assert_contains "with a reason naming the Budget and the plan reader's own cause
 assert_eq "and the claim released" "$(fake_claim_held 7)" free
 assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
 
-# The final reply
-# bud_reply <result-json-line>: a clean exit holding its claim over a log
-# ending in that line; the failure comment.
-bud_reply() {
-  printf '%s\n' '{"type":"system","subtype":"init"}' "$1" >"$launcher_dir/out"; printf '0\n' >"$launcher_dir/exit"
-  fake_issue_relabel 7 orch:spec ready-for-agent orch:running
-  fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
-  (cd "$side7" && state_fixture phase spec)
-  "$ORCH" autopilot run 7 >/dev/null 2>&1
-  fake_last_comment_of 7
-}
-bud_result() { jq -cn --arg r "$1" '{type:"result",subtype:"success",result:$r}'; }
-c500="$(printf 'x%.0s' $(seq 1 500))"
-assert_contains "an exit-0 session's final reply is quoted" "$(bud_reply "$(bud_result 'How many review iterations? 3, 5 or 8')")" \
-  "the session exited with code 0; it ended on: *How many review iterations? 3, 5 or 8*; log: "
-assert_contains "a reply of exactly 500 characters is quoted whole" "$(bud_reply "$(bud_result "$c500")")" "it ended on: *$c500*; log: "
-assert_contains "one over 500 is cut with an ellipsis" "$(bud_reply "$(bud_result "${c500}y")")" "it ended on: *$c500…*; log: "
-assert_contains "a multi-line reply is collapsed to one line" "$(bud_reply "$(bud_result $'one\n\n  two\tthree')")" "it ended on: *one two three*; log: "
-empty_reply="$(bud_reply "$(bud_result '')")"
-assert_not_contains "an empty reply keeps the plain comment" "$empty_reply" "it ended on"
-assert_contains "and names the exit code and log" "$empty_reply" "the session exited with code 0; log: "
-assert_not_contains "a log with no result event keeps the plain comment" "$(bud_reply '{"type":"assistant","message":{"content":[]}}')" "it ended on"
+# The final reply, end to end: a fake launcher writes a long, multi-line result
+# event, and the failure comment quotes it collapsed and cut (the "autopilot
+# session end" section covers the rest of the quote).
+printf '%s\n' '{"type":"system","subtype":"init"}' \
+  "$(jq -cn --arg r "$(printf 'x%.0s' $(seq 1 300))"$'\n\n  '"$(printf 'y%.0s' $(seq 1 300))" '{type:"result",subtype:"success",result:$r}')" \
+  >"$launcher_dir/out"
+printf '0\n' >"$launcher_dir/exit"
+fake_issue_relabel 7 orch:spec ready-for-agent orch:running
+fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+(cd "$side7" && state_fixture phase spec)
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_contains "an exit-0 session's long multi-line final reply is quoted collapsed and cut" "$(fake_last_comment_of 7)" \
+  "the session exited with code 0; it ended on: *$(printf 'x%.0s' $(seq 1 300)) $(printf 'y%.0s' $(seq 1 199))…*; log: "
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
