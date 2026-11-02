@@ -862,15 +862,15 @@ out="$(contract adapter_pr_state_draft 58 2>&1)"; st=$?
 assert_status "pr state draft: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "GraphQL: Could not resolve to a PullRequest with the number of 58."
 
-gh_reply 0 $'57\n' '' pr list --head quick/12-foo --state open --json number --jq '.[].number'
+gh_reply 0 $'57\ttrue\n58\tfalse\n' '' pr list --head quick/12-foo --state open --json number,isCrossRepository --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 out="$(contract adapter_prs_open quick/12-foo 2>&1)"; st=$?
 assert_status "prs open: lists the open PRs from a branch" "$st" 0
-assert_eq "one number per line" "$out" "57"
-gh_reply 0 '' '' pr list --head uat --base main --state open --json number --jq '.[].number'
+assert_eq "one number-tab-flag line per PR, the flag unfiltered" "$out" "$(printf '57\ttrue\n58\tfalse')"
+gh_reply 0 '' '' pr list --head uat --base main --state open --json number,isCrossRepository --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 out="$(contract adapter_prs_open uat main 2>&1)"; st=$?
 assert_status "prs open: lists the open PRs from a branch into a base" "$st" 0
 assert_eq "nothing at all for none" "$out" ""
-gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --state open --json number --jq '.[].number'
+gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --state open --json number,isCrossRepository --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 out="$(contract adapter_prs_open down 2>&1)"; st=$?
 assert_status "prs open: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"

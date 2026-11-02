@@ -663,7 +663,9 @@ adapter_pr_draft() {
 }
 
 # adapter_prs_open <head> [base]: the open PRs in the store from the head
-# branch, into the base where one is named, newest first.
+# branch, into the base where one is named, newest first, each as
+# `<number>\t<flag>`, the flag the PR's stored cross_repository file (false
+# where unset), printed as stored.
 adapter_prs_open() {
   local d
   ! fake_failing adapter_prs_open || return 1
@@ -671,7 +673,7 @@ adapter_prs_open() {
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = OPEN ] && [ "$(cat "$d/head")" = "$1" ] || continue
     [ -z "${2:-}" ] || [ "$(cat "$d/base")" = "$2" ] || continue
-    basename "$d"
+    printf '%s\t%s\n' "$(basename "$d")" "$(cat "$d/cross_repository" 2>/dev/null || echo false)"
   done | sort -rn
 }
 

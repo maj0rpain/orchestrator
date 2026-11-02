@@ -581,11 +581,14 @@ pr_state_draft_read() {
 }
 
 # adapter_prs_open <head> [base]: the open PRs from the head branch - into the
-# base branch, where one is named - one number per line, newest first.
+# base branch, where one is named - newest first, one per line as
+# `<number>\t<isCrossRepository>` (`true` or `false`), unfiltered: the Trust
+# module's trust_filter_prs drops the fork PRs.
 adapter_prs_open() {
   local args=(--head "$1")
   [ -z "${2:-}" ] || args+=(--base "$2")
-  gh pr list "${args[@]}" --state open --json number --jq '.[].number'
+  gh pr list "${args[@]}" --state open --json number,isCrossRepository \
+    --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 }
 
 # adapter_prs_open_all: every open PR, one number per line, newest first.

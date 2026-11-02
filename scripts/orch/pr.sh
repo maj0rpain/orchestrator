@@ -275,6 +275,8 @@ cmd_pr_release() {
   local open
   gh_or_die --out open "list the open PRs from $base into $default" \
     adapter_prs_open "$base" "$default"
+  open="$(trust_filter_prs "$base" <<<"$open")" ||
+    die "the open PRs from $base into $default could not be read"
   [ -z "$open" ] || die "a release PR from $base into $default is already open: #${open%%$'\n'*}"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
   # GitHub only links closing keywords on PRs into the default branch, and a
@@ -393,6 +395,8 @@ current_open_pr() {
   current_branch_or_die die2
   gh_or_die --exit 2 --out open "list the open PRs from $branch" \
     adapter_prs_open "$branch"
+  open="$(trust_filter_prs "$branch" <<<"$open")" ||
+    die2 "the open PRs from $branch could not be read"
   [ -n "$open" ] || return 1
   printf '%s\n' "${open%%$'\n'*}"
 }
