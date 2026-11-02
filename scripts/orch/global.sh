@@ -107,7 +107,7 @@ orch.sh - deterministic operations for the orchestrator flow
   base set <branch> --flow    correct the active flow's own base branch
                               instead, leaving the checkout setting alone;
                               only while the flow has no branch (before
-                              branch create, or after redo review). Stores
+                              branch create, or after a redo). Stores
                               the name as given; refuses a name that is not
                               a valid branch or that origin does not have
   base show                   print the base branch in effect and its source:
@@ -964,7 +964,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               clears state.issue so orch-to-spec starts fresh;
                               the spec handoff and any implement handoff
                               (orch.sh handoff path implement, and review)
-                              move into handoff/pre-redo-spec-<UTC timestamp>/
+                              move into handoff/pre-redo-spec-<UTC timestamp>/;
+                              the attempt's branch and PR are retired too
+                              (branch to -redo-<n>, PR closed, redo_count
+                              bumped when a branch is retired)
   status                      human-readable summary of this checkout's flow,
                               then one line for every other checkout holding
                               a flow and every side checkout

@@ -538,8 +538,11 @@ stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
 `.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`, so `phase advance`
 cannot leave the redone spec phase on them, and the `spec-paused` marker and
 the round marker move with them, so neither can carry the redone phase past
-step 0 or past round 1; `state.redo_count`
-is not bumped.
+step 0 or past round 1. It also retires the attempt's branch and PR, as
+`redo review` does (branch renamed to `orch/<issue>-<slug>-redo-N`, PR closed
+with a comment, `branch`, `pr` and `base_sha` cleared), and bumps
+`state.redo_count` when it retires a branch; with no branch yet it retires
+nothing. It refuses up front while ticket worktrees are left.
 `01-plan.md` is never touched by either redo. `--new-issue`
 additionally closes the old issue first (never deletes it) with a comment
 explaining why, and clears `state.issue`, so `orch-to-spec` runs again from

@@ -684,6 +684,197 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
 restore_suite_env
 
+# --- redo spec retires the implement attempt (#1910) --------------------------
+# redo spec retires the attempt's branch and PR as redo review does, so the
+# redone implement phase starts a fresh one. Driven through branch create,
+# pr open and the gh fake; only state.json, git and the fake's store are read.
+echo
+echo "redo spec retires the implement attempt (#1910)"
+fresh_flow redoattempt
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+fake_github
+fake_issue 5 open
+attempt_body="$(mktemp)"
+pr_body_complete "$attempt_body"
+# attempt_start <issue>: the implement phase through branch create and a commit
+# with a fresh ticket handoff and no recorded PR.
+attempt_start() {
+  state_fixture phase implement
+  "$ORCH" state set issue "$1"
+  writeln '# spec' >.orchestrator/handoff/02-spec.md
+  "$ORCH" branch create >/dev/null 2>&1
+  writeln "work for $1" >"work-$1.txt"
+  git add "work-$1.txt"
+  git commit -q -m "ticket for old spec $1"
+}
+# attempt_pr: opens the attempt's PR and prints its number.
+attempt_pr() { "$ORCH" pr open "Title" "$attempt_body" >/dev/null 2>&1; "$ORCH" state get pr; }
+# redone_spec: the spec phase done again, back to implement.
+redone_spec() {
+  writeln '# spec again' >.orchestrator/handoff/02-spec.md
+  "$ORCH" phase advance >/dev/null 2>&1
+}
+slug_="$("$ORCH" state get slug)"
+
+attempt_start 5
+old_pr="$(attempt_pr)"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "default redo spec with a branch and PR succeeds" "$st" 0
+assert_eq "renames the branch aside to -redo-1" \
+  "$(git rev-parse --verify --quiet "orch/5-$slug_-redo-1" >/dev/null && echo present || echo gone)" "present"
+assert_eq "closes the old PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
+assert_contains "with a comment naming the retired branch" "$(fake_pr_comments_of "$old_pr")" "orch/5-$slug_-redo-1"
+assert_eq "clears branch, pr and base_sha" \
+  "$("$ORCH" state get branch)|$("$ORCH" state get pr)|$("$ORCH" state get base_sha)" "||"
+assert_eq "and counts the redo" "$("$ORCH" state get redo_count)" "1"
+redone_spec
+out="$("$ORCH" branch create 2>&1)"; st=$?
+assert_status "the redone implement phase's branch create succeeds" "$st" 0
+assert_eq "on a fresh branch" "$("$ORCH" state get branch)" "orch/5-$slug_"
+assert_eq "with none of the old commits" "$(git log --format=%s "$("$ORCH" state get base_sha)..HEAD")" ""
+writeln new >new.txt
+git add new.txt
+git commit -q -m "ticket for new spec"
+new_pr="$(attempt_pr)"
+assert_eq "pr open opens a new PR" "$(fake_pr_state_of "$new_pr")" "OPEN"
+assert_eq "other than the old one" "$([ "$new_pr" != "$old_pr" ] && echo yes)" "yes"
+
+# --new-issue, a branch and no PR: retired under the old issue's name.
+fresh_flow redoattempt2
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+fake_github
+fake_issue 6 open
+slug_="$("$ORCH" state get slug)"
+attempt_start 6
+before="$(fake_snapshot)"
+out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "--new-issue with a branch and no PR succeeds" "$st" 0
+assert_eq "retires the branch under the old issue's name" \
+  "$(git rev-parse --verify --quiet "orch/6-$slug_-redo-1" >/dev/null && echo present || echo gone)" "present"
+assert_eq "closing only the old issue" "$(fake_state_of 6)" "CLOSED"
+"$ORCH" state set issue 9
+redone_spec
+out="$("$ORCH" branch create 2>&1)"; st=$?
+assert_status "branch create then exits 0" "$st" 0
+assert_eq "on the new issue's branch" "$("$ORCH" state get branch)" "orch/9-$slug_"
+
+# --new-issue after pr open: the old PR is closed, a new one opens.
+fresh_flow redoattempt3
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+fake_github
+fake_issue 7 open
+fake_issue 9 open
+slug_="$("$ORCH" state get slug)"
+attempt_start 7
+old_pr="$(attempt_pr)"
+out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "--new-issue after pr open succeeds" "$st" 0
+assert_eq "closes the old PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
+"$ORCH" state set issue 9
+redone_spec
+"$ORCH" branch create >/dev/null 2>&1
+writeln new >new.txt
+git add new.txt
+git commit -q -m "ticket for new spec"
+out="$("$ORCH" pr open "Title" "$attempt_body" 2>&1)"; st=$?
+assert_status "the redone phase's pr open exits 0" "$st" 0
+assert_eq "recording a new PR" "$([ -n "$("$ORCH" state get pr)" ] && [ "$("$ORCH" state get pr)" != "$old_pr" ] && echo yes)" "yes"
+assert_eq "on the new issue's branch" "$("$ORCH" state get branch)" "orch/9-$slug_"
+
+# No branch yet: nothing retires.
+fresh_flow redoattempt4
+fake_github
+fake_issue 8 open
+state_fixture phase implement
+"$ORCH" state set issue 8
+before="$(fake_snapshot)"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "redo spec with no branch succeeds" "$st" 0
+assert_eq "writes nothing to GitHub" "$(fake_snapshot)" "$before"
+assert_eq "leaves redo_count at 0" "$("$ORCH" state get redo_count)" "0"
+assert_eq "and base_sha null" "$("$ORCH" state get base_sha)" ""
+
+# Reruns after a GitHub failure resume without renaming twice.
+fresh_flow redoattempt5
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+fake_github
+fake_issue 10 open
+slug_="$("$ORCH" state get slug)"
+attempt_start 10
+old_pr="$(attempt_pr)"
+fake_fail adapter_pr_close "$GH_502"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a PR-close failure fails redo spec" "$st" 1
+assert_eq "the PR stays open" "$(fake_pr_state_of "$old_pr")" "OPEN"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "the rerun succeeds" "$st" 0
+assert_eq "closing the PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
+assert_eq "retiring the branch once" "$("$ORCH" state get redo_count)" "1"
+assert_eq "without a second rename" \
+  "$(git rev-parse --verify --quiet "orch/10-$slug_-redo-2" >/dev/null && echo present || echo gone)" "gone"
+
+# Breakdown-retire failure after the attempt is retired.
+fresh_flow redoattempt6
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+fake_github
+fake_issue 11 open
+fake_next_issue 900
+tbody="$(mktemp)"; writeln 'A ticket.' >"$tbody"
+slug_="$("$ORCH" state get slug)"
+attempt_start 11
+old_pr="$(attempt_pr)"
+rt="$("$ORCH" ticket publish 11 "One" "$tbody")"
+fake_fail adapter_issue_close "$GH_502"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a breakdown-retire failure fails redo spec" "$st" 1
+assert_eq "after the attempt is retired" "$(fake_pr_state_of "$old_pr")" "CLOSED"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "the rerun succeeds" "$st" 0
+assert_eq "redo_count stays 1" "$("$ORCH" state get redo_count)" "1"
+assert_eq "the branch is not renamed again" \
+  "$(git rev-parse --verify --quiet "orch/11-$slug_-redo-2" >/dev/null && echo present || echo gone)" "gone"
+assert_eq "the PR was closed once" "$(fake_pr_comments_of "$old_pr" | grep -c 'closed by an orchestrator redo')" "1"
+assert_eq "and the breakdown ends up retired" "$(fake_state_of "$rt")" "CLOSED"
+
+# --new-issue: issue-close failure after the attempt is retired.
+fresh_flow redoattempt7
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+fake_github
+fake_issue 12 open
+slug_="$("$ORCH" state get slug)"
+attempt_start 12
+fake_fail adapter_issue_close "$GH_502"
+out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "an issue-close failure fails redo spec --new-issue" "$st" 1
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "the rerun succeeds" "$st" 0
+assert_eq "redo_count stays 1" "$("$ORCH" state get redo_count)" "1"
+assert_eq "the branch is not renamed again" \
+  "$(git rev-parse --verify --quiet "orch/12-$slug_-redo-2" >/dev/null && echo present || echo gone)" "gone"
+assert_eq "and the issue ends up closed" "$(fake_state_of 12)" "CLOSED"
+restore_suite_env
+
 # --- redo spec and redo review, per handoff mode (#1820) ----------------------
 # One scenario per redo per mode, at the orch.sh CLI over the gh fake: the
 # handoffs are files moved into a pre-redo folder (interactive) or comments

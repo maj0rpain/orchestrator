@@ -3,6 +3,56 @@
 # Its tests: scripts/test/orch/redo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
+# The first retire step, shared by both redos: prints "<n> <resumed>", the
+# number the attempt's retire carries and whether its rename is already done.
+# A previous call at this same redo can have already retired the branch and
+# recorded it in state before dying on the PR close - branch and redo_count
+# are set together right after a real retire, so if the recorded branch
+# already matches what this redo_count's retire would have produced, the
+# rename is done: resume at the PR close instead of retiring an
+# already-retired branch a second time (issue #63).
+redo_retire_number() {
+  local issue="$1" slug="$2" branch="$3" redo_count="$4"
+  if [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$issue" "$slug" "$redo_count")" ]; then
+    printf '%s\n1\n' "$redo_count"
+  else
+    printf '%s\n0\n' $(( redo_count + 1 ))
+  fi
+}
+
+# The second retire step, shared by both redos: rename state.branch to its
+# -redo-<n> name unless <resumed> says it is done, record it at once, then
+# close state.pr with the redo comment. With no branch recorded it renames
+# nothing, closes nothing and leaves redo_count alone. The caller clears
+# branch, pr and base_sha itself, last, so a rerun finds the retired branch.
+redo_retire_attempt() {
+  local issue="$1" slug="$2" n="$3" resumed="$4" branch pr new_branch msg
+  branch="$(state_get branch)"
+  [ -n "$branch" ] || return 0
+  new_branch="$(branch_name_redo "$issue" "$slug" "$n")"
+  if [ "$resumed" -eq 0 ]; then
+    cmd_branch retire "$branch" "$new_branch" >/dev/null
+    # Recorded immediately, before the gh call below that can still fail:
+    # the rename already happened for real, so state.branch has to track it.
+    state_write_string branch "$new_branch"
+    state_write redo_count "$n"
+  fi
+  pr="$(state_get pr)"
+  [ -n "$pr" ] || return 0
+  # A resumed rerun can find the PR already closed by the run that died after
+  # it: skip the close, so the PR is not commented on twice. A read that
+  # fails falls through to the close.
+  if [ "$resumed" -eq 1 ]; then
+    # shellcheck disable=SC2034 # pr_draft and pr_err are filled, not read
+    local pr_state pr_draft pr_err
+    if pr_state_draft_read "$pr" pr_state pr_draft pr_err && [ "$pr_state" = CLOSED ]; then
+      return 0
+    fi
+  fi
+  msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
+  gh_or_die "close PR #$pr" adapter_pr_close "$pr" "$msg"
+}
+
 # The full `review -> implement` transition: retire the old branch and PR,
 # reopen the spec issue's closed tickets, move the old loop's records aside,
 # and reset the state a fresh implement attempt needs - never mid-budget, and
@@ -12,7 +62,7 @@
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word detail slug issue branch pr redo_count new_n new_branch msg
+  local phase i b word detail slug issue branch pr new_n new_branch resumed
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(state_get iteration)"
@@ -39,23 +89,10 @@ $detail" ;;
   require_issue issue
   require_branch branch
   require_pr pr
-  redo_count="$(state_get redo_count)"
-  # A previous call at this same redo can have already retired the branch
-  # and recorded it here before dying on the PR close below - branch and
-  # redo_count are set together right after a real retire, so if the
-  # recorded branch already matches what this redo_count's retire would
-  # have produced, the retire already happened: resume at closing the PR
-  # instead of retiring an already-retired branch a second time, which
-  # issue #63 called out by name as not what a retry should do.
-  local resumed=0
-  if [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$issue" "$slug" "$redo_count")" ]; then
-    new_n="$redo_count"
-    new_branch="$branch"
-    resumed=1
-  else
-    new_n=$(( redo_count + 1 ))
-    new_branch="$(branch_name_redo "$issue" "$slug" "$new_n")"
-  fi
+  local retire
+  retire="$(redo_retire_number "$issue" "$slug" "$branch" "$(state_get redo_count)")"
+  lines_split "$retire" new_n resumed
+  new_branch="$(branch_name_redo "$issue" "$slug" "$new_n")"
 
   # The implement handoff described the attempt being retired; left in place,
   # phase advance would let the redone implement phase leave on it (#279).
@@ -65,18 +102,7 @@ $detail" ;;
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
   handoff_retire "pre-redo-$new_n" $(handoffs_written_from implement)
 
-  if [ "$resumed" -eq 0 ]; then
-    cmd_branch retire "$branch" "$new_branch" >/dev/null
-    # Recorded immediately, before the gh call below that can still fail:
-    # the rename already happened for real, so state.branch has to track it
-    # now rather than keep naming a branch that no longer exists if pr
-    # close dies and a retry has to find the real current name.
-    state_write_string branch "$new_branch"
-    state_write redo_count "$new_n"
-  fi
-
-  msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
-  gh_or_die "close PR #$pr" adapter_pr_close "$pr" "$msg"
+  redo_retire_attempt "$issue" "$slug" "$new_n" "$resumed"
 
   # The prior implement phase closed every ticket it finished, so the redone
   # implement phase's frontier query (ticket next) would otherwise find
@@ -118,13 +144,18 @@ cmd_redo_spec() {
   # The spec handoff - and the implement handoff built on it, if any - are
   # stale once the spec is being redone, so phase advance must not pass on
   # them (#279). They are retired first, before any state moves, as in redo
-  # review. redo_count stays put: it counts review step-backs and names the
-  # retired branch, so the folder is told apart by a UTC timestamp.
-  local issue label
+  # review. The folder is told apart by a UTC timestamp. The implement attempt
+  # retires next, under the old issue number, bumping redo_count when it
+  # retires a branch.
+  local issue label slug retire n resumed
   require_issue issue
   label="pre-redo-spec-$(dir_stamp)"
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
   handoff_retire "$label" $(handoffs_written_from spec)
+  slug="$(state_get slug)"
+  retire="$(redo_retire_number "$issue" "$slug" "$(state_get branch)" "$(state_get redo_count)")"
+  lines_split "$retire" n resumed
+  redo_retire_attempt "$issue" "$slug" "$n" "$resumed"
   if [ "$new_issue" -eq 1 ]; then
     local msg
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
@@ -142,6 +173,9 @@ cmd_redo_spec() {
   # The round directories stay in place, since round 1's `spec round-dir 1/<n>`
   # clears them.
   move_files_aside "$HANDOFF_DIR" "$HANDOFF_DIR/$label" "a retired handoff" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
+  state_write branch null
+  state_write pr null
+  state_write base_sha null
   phase_write spec
 }
 
