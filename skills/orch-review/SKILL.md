@@ -410,7 +410,8 @@ plan or from what the previous loop left instead of asking.
 You never edit the change: every line the loop fixes is the fixer's. The one
 exception is a host with no fresh subagent: there the **Host fallback** under
 **Starting an agent** has you do the fixer's and the closer's work in this
-session, and you record it as a host fallback.
+session, from the fixer's brief, so you follow the fixer's release-record
+rule, and you record it as a host fallback.
 
 ## The reviewers
 

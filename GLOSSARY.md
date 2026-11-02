@@ -293,6 +293,12 @@ each side changed before resolving a hunk, keeps both intents where it can,
 names any intent it drops, runs the repo's checks, and commits. It never
 aborts.
 
+**Release record**:
+The per-PR versioning change a repo's own instructions require - a changelog
+fragment, a CHANGELOG entry, a version bump. Written once per PR, for its
+spec issue: by the ticket subagent when the ticket breakdown collapsed onto
+the issue, else by the driver loop's driver after the last ticket lands.
+
 **Release PR**:
 The PR that carries a base branch other than the default back into the
 default branch, closing every still-open issue whose work reached the base
@@ -624,7 +630,9 @@ host-capabilities **Start a fresh subagent** fallback, does the fixer's
 and the closer's work in its own session, and records that as a host
 fallback. A driver loop's driver starts one ticket subagent per ticket
 and saves each ticket's report as it returns, then merges and closes the
-ticket - a collapsed breakdown's merged, never closed.
+ticket - a collapsed breakdown's merged, never closed; on a breakdown that
+did not collapse, it then writes the release record, before the combined
+branch's verification.
 
 **Reviewer**:
 A fresh agent a review loop's driver starts for one axis - Standards or Spec -

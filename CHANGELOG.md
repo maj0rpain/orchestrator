@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.42.2
+
+The plugin now states its own release-record rule: a ticket subagent never touches the repo's per-PR versioning change (a changelog fragment, a CHANGELOG entry, a version bump) on a breakdown of more than one ticket and writes it on a collapsed one, the driver loop's driver writes it before the combined branch's verification, and the fixer touches it only to fix a finding that names it.
+
 ## 4.42.1
 
 A review loop files a pattern finding's deferred sites as one issue, not one per site: the fixer and the driver record them as one Waiting-to-be-filed bullet with a `Sites:` list, the closer files it once, and the reviewers hold back a finding at any listed site.

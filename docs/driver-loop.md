@@ -99,8 +99,15 @@ caller's numbered steps.
   worktree (`ticket-worktree add`) from the updated tip, on its own, and
   process its report as in loop step d before refilling. When the frontier
   and queue are exhausted and nothing is in flight, go to loop step f.
-- **f. Verify the combined branch**, on every path, sequential included: run,
-  on **the branch**, the repo's full verification once, through `bash
+- **f. Verify the combined branch**, on every path, sequential included.
+  First, when the breakdown was not collapsed, write the release record the
+  repo's instructions require, if any (a changelog fragment, a CHANGELOG
+  entry, a version bump), named for the spec issue and never a ticket, and
+  commit it on **the branch**; on a collapsed breakdown the ticket subagent
+  wrote it. When the branch already holds a release record for the spec
+  issue, leave it as it is and add none. A failed commit goes in **the
+  record** and **the judge** carries it, as a failed verification is. Then
+  run, on **the branch**, the repo's full verification once, through `bash
   "$ORCH" suite-cost run -- <command>`: the command on the `Full
   verification: <command>` line of the repo's instructions (`CLAUDE.md`,
   `AGENTS.md`, `CONTRIBUTING.md`). When they carry no such line, run the
