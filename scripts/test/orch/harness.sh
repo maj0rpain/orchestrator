@@ -1354,9 +1354,9 @@ jp_notice='waiting for a job slot'
 if command -v flock >/dev/null 2>&1; then
 # Two concurrent runs on a 2-slot pool.
 : >"$jp_log"
-jp_err="$jp_dir/erra" jp_run 2 "$jp_dir/pool1" -- '^pool [a-d]$' 4 &
+jp_err="$jp_dir/erra" jp_run 2 "$jp_dir/pool1" JP_BARRIER=2 -- '^pool [a-d]$' 4 &
 jp_p1=$!
-jp_err="$jp_dir/errb" jp_run 2 "$jp_dir/pool1" -- '^pool [a-d]$' 4 &
+jp_err="$jp_dir/errb" jp_run 2 "$jp_dir/pool1" JP_BARRIER=2 -- '^pool [a-d]$' 4 &
 jp_p2=$!
 jp_err_b="$jp_dir/errb"
 wait "$jp_p1"; jp_s1=$?
@@ -1412,7 +1412,7 @@ kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
 
 # ORCH_TEST_JOBS caps the ask, and does not bypass the pool.
 : >"$jp_log"
-jp_run 4 "$jp_dir/pool4" -- '^pool [a-d]$' 2
+jp_run 4 "$jp_dir/pool4" JP_BARRIER=2 -- '^pool [a-d]$' 2
 assert_eq "ORCH_TEST_JOBS=2 on a 4-slot pool runs 2 sections at once" "$(log_peak "$jp_log")" "2"
 
 # ORCH_TEST_POOL_PERCENT sizes the pool: 200% of 2 CPUs holds 4. The percent
