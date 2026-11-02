@@ -464,11 +464,28 @@ review_standards_heading_count() {
   ' "$ROOT/$1"
 }
 
+# review_standards_realpath <file>: the physical path of the existing file
+# <file>, every symlink in it followed (no realpath or readlink -f: macOS).
+review_standards_realpath() {
+  local f="$1" dir link i
+  for ((i = 0; i < 40; i++)); do
+    [ -L "$f" ] || break
+    link="$(readlink "$f")"
+    case "$link" in
+      /*) f="$link" ;;
+      *) f="${f%/*}/$link" ;;
+    esac
+  done
+  dir="${f%/*}"
+  [ "$dir" != "$f" ] || dir=.
+  printf '%s/%s\n' "$(cd -P "$dir" && pwd -P)" "${f##*/}"
+}
+
 # review_standards_declared <entry>...: dies unless every entry is a
 # repo-relative path naming a regular file inside the repo, optionally with a
 # #Heading naming one section that must match exactly once.
 review_standards_declared() {
-  local e seg depth segs path n
+  local e seg depth segs path n real root_real
   for e in "$@"; do
     case "$e" in
       /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
@@ -486,6 +503,12 @@ review_standards_declared() {
     done
     [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
     [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
+    real="$(review_standards_realpath "$ROOT/$path")"
+    root_real="$(cd -P "$ROOT" && pwd -P)"
+    case "$real" in
+      "$root_real"/*) ;;
+      *) die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
+    esac
     [ "$path" = "$e" ] && continue
     n="$(review_standards_heading_count "$path" "${e#*#}")"
     [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"

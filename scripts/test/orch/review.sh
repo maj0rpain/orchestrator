@@ -1556,14 +1556,20 @@ assert_eq "a ~~~ or info-string line inside a backtick fence does not close it" 
   "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
 # Each unresolved entry dies naming the entry and the reason.
 mkdir -p docs/adir
+ln -s /etc/passwd docs/agents/out.md
+ln -s q.md docs/agents/in.md
 for case_ in 'docs/agents/nope.txt|missing file' '/etc/passwd|absolute path' \
-  'https://example.com/a|URL' '../outside.md|leaves the repo' 'docs/adir|not a regular file'; do
+  'https://example.com/a|URL' '../outside.md|leaves the repo' 'docs/adir|not a regular file' \
+  'docs/agents/out.md|leaves the repo'; do
   writeln "Standards: \`docs/agents/p.md\`, \`${case_%%|*}\`" >CONTRIBUTING.md
   out="$("$ORCH" review standards 2>&1)"; st=$?
   assert_status "a declared ${case_#*|} fails" "$st" 1
   assert_contains "naming the entry (${case_#*|})" "$out" "orch: Standards entry \`${case_%%|*}\`"
   assert_contains "and the reason (${case_#*|})" "$out" "${case_#*|}"
 done
+writeln 'Standards: `docs/agents/in.md`' >CONTRIBUTING.md
+assert_eq "a symlink to a file inside the repo resolves" "$(dstd)" "Standards: docs/agents/in.md"
+rm docs/agents/out.md docs/agents/in.md
 writeln 'Standards: nothing backticked' >CONTRIBUTING.md
 out="$("$ORCH" review standards 2>&1)"; st=$?
 assert_status "a declaration with no entries fails" "$st" 1
