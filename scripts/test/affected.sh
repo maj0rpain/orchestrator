@@ -69,11 +69,6 @@ done
 cd "$root" || exit 1
 git_q() { git -c core.quotepath=off "$@"; }
 
-# The all.sh suite list, read the way the harness reads it.
-suites_line="$(grep '^suites=(' "$dir/all.sh")"
-suites_list="${suites_line#suites=(}"
-read -ra suites <<<"${suites_list%%)*}"
-
 # full_suite: the fallback - the whole of all.sh, or its name on --plan.
 full_suite() {
   if [ "$plan" -eq 1 ]; then
@@ -196,6 +191,20 @@ if [ "${#sec_files[@]}" -gt 0 ]; then
   done < <(printf '%s\n' "${sec_files[@]}" | LC_ALL=C sort -u)
 fi
 
+# The all.sh suite list, read the way the harness reads it.
+suites_n="$(grep -c '^suites=(' "$dir/all.sh")" || true
+if [ "$suites_n" -ne 1 ]; then
+  echo "orch: $dir/all.sh holds $suites_n suites=( lines, not one" >&2
+  exit 1
+fi
+suites_line="$(grep '^suites=(' "$dir/all.sh")"
+suites_list="${suites_line#suites=(}"
+read -ra suites <<<"${suites_list%%)*}"
+if [ "${#suites[@]}" -eq 0 ]; then
+  echo "orch: $dir/all.sh holds an empty suites list" >&2
+  exit 1
+fi
+
 # The suites to run, in all.sh's order: orch_test.sh and docs_lint.sh always.
 selected=()
 for suite in "${suites[@]}"; do
@@ -234,6 +243,7 @@ done
 # shellcheck source=test_jobs.sh
 source "$dir/test_jobs.sh"
 test_jobs_lower_priority
+test_jobs_pool_init affected.sh
 export ORCH_TEST_QUIET=1
 tmp="$(mktemp -d)" || exit 1
 pids=()
@@ -255,8 +265,10 @@ have_sc=0
 sc_pid=""
 if [ "${#sc_sorted[@]}" -gt 0 ] && command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
+  test_jobs_slot_wait
   shellcheck -S warning -f gcc "${sc_sorted[@]}" >"$tmp/shellcheck" 2>&1 &
   sc_pid=$!
+  test_jobs_slot_release
   pids+=("$sc_pid")
 fi
 

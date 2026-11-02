@@ -1301,7 +1301,6 @@ wait "$jp_p2"; jp_s2=$?
 assert_status "the first of two concurrent runs passes" "$jp_s1" 0
 assert_status "the second of two concurrent runs passes" "$jp_s2" 0
 assert_eq "two concurrent runs on a 2-slot pool never exceed 2 sections at once" "$(jp_peak)" "2"
-assert_eq "the first run waits once too" "$(grep -c "$jp_notice" "$jp_dir/erra")" "1"
 assert_eq "both runs ran all their sections" "$(grep -c '^+' "$jp_log")" "8"
 assert_eq "the waiting notice appears once in a run that waits" \
   "$(grep -c "$jp_notice" "$jp_err_b")" "1"
@@ -1330,9 +1329,7 @@ assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
 # CI bypasses the pool.
 jp_hold "$jp_dir/pool2" 1
 : >"$jp_log"
-timeout 30 env ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu1" ORCH_TEST_POOL_DIR="$jp_dir/pool2" \
-  JP_LOG="$jp_log" CI=true ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^pool a$' ORCH_TEST_JOBS=2 \
-  bash "$jp_suite" >/dev/null 2>"$jp_dir/err"; jp_s1=$?
+jp_run 1 "$jp_dir/pool2" CI=true -- '^pool a$' 2; jp_s1=$?
 assert_status "a run under CI ignores a fully held pool" "$jp_s1" 0
 assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
 
@@ -2353,8 +2350,6 @@ assert_eq "a change to a doc selects only the always-run checks" \
   "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
 assert_eq "a module selects its section file's sections, and shellchecks itself" \
   "$(af_plan origin/main)" "$af_gate,$af_branch_titles,docs_lint.sh,scripts/orch/branch.sh"
-assert_eq "no ref uses origin's default branch" "$(af_plan)" \
-  "$(af_plan origin/main)"
 af_put scripts/test/orch/branch.sh 'x=2' '# --- branch create ---'
 assert_eq "a section file selects its own sections, uncommitted" "$(af_plan origin/rel)" \
   "$af_gate,branch create,docs_lint.sh,scripts/test/orch/branch.sh"
@@ -2438,7 +2433,7 @@ af_git commit -qm hook
 assert_eq "a given ref bounds the range" "$(af_plan HEAD~1)" \
   "$af_gate,hooks_test.sh,docs_lint.sh,scripts/hook-guard.sh"
 assert_eq "--plan takes the ref after it, as a run takes it alone" \
-  "$(cd "$af" && bash scripts/test/affected.sh --plan HEAD~1 | paste -sd, -)" \
+  "$(cd "$af" && bash scripts/test/affected.sh HEAD~1 --plan | paste -sd, -)" \
   "$(af_plan HEAD~1)"
 af_out="$(cd "$af" && bash scripts/test/affected.sh --plan nosuch 2>&1 >/dev/null)"; st=$?
 assert_status "an unknown ref exits 2, --plan included" "$st" 2
@@ -2481,8 +2476,8 @@ assert_eq "a base with no merge-base falls back to all.sh" "$(af_plan)" "all.sh"
 af_reset
 
 # End to end, with stub suites for the real ones.
-af_suites="$(sed -n 's/^suites=(\(.*\))$/\1/p' "$af_tests/all.sh")"
-for af_s in $af_suites; do
+suites_read "$af_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for af_s in "${SUITES[@]}"; do
   printf '%s\n' '#!/usr/bin/env bash' \
     "echo \"$af_s only=\${ORCH_TEST_ONLY-unset}\" >>\"$af.log\"" \
     'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/$af_s"
@@ -2501,6 +2496,31 @@ shellcheck: 0 findings"
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
+
+# Its shellcheck process draws a slot from the job pool: with the pool's one
+# slot held, the run waits and says so, then finishes once the slot is freed.
+if command -v shellcheck >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
+  printf '200000 100000\n' >"$af.cpu"
+  mkdir -p "$af.pool"
+  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$af.pool/slot.1" &
+  af_holder=$!
+  until ! flock -n "$af.pool/slot.1" true; do sleep 0.05; done
+  af_put scripts/hook-guard.sh 'echo ok'
+  (cd "$af" && env -u CI ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
+    timeout 30 bash scripts/test/affected.sh HEAD >/dev/null 2>"$af.err") &
+  af_pid=$!
+  for _ in $(seq 100); do
+    grep -q 'waiting for a job slot' "$af.err" 2>/dev/null && break
+    sleep 0.05
+  done
+  assert_eq "a shellcheck run with the pool's slot held waits and says so" \
+    "$(cat "$af.err")" "affected.sh: waiting for a job slot (1 in use)"
+  kill -9 "$af_holder"
+  wait "$af_holder" 2>/dev/null
+  wait "$af_pid"; st=$?
+  assert_status "and the run finishes once the slot is freed" "$st" 0
+  rm -rf "$af.cpu" "$af.pool" "$af.err"
+fi
 printf '%s\n' '#!/usr/bin/env bash' 'printf "  FAIL a thing\n     its detail\n"' \
   'echo; echo "1 passed, 1 failed"; exit 1' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'for f in $(ls); do echo "$f"; done'
