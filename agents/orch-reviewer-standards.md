@@ -70,14 +70,24 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    `git diff <base SHA>...HEAD` (three dots) must be non-empty. Note the
    commits with `git log <base SHA>..HEAD --oneline`. If either check fails,
    write a report saying which, and return.
-2. **Read the standards** your prompt's `Standards:` line lists: the
-   repo's root agent files and the documents they point to, as `orch.sh`
-   resolved them, every path one that exists. Which of them are about how
-   code should be written is your judgement; process docs, such as an
-   issue-tracker or triage-label guide, are not standards. Read those that
-   are, and only those. `Standards: none` means the repo documents no
-   standards: apply the smell baseline alone. Done when every listed
-   code-writing document is read.
+2. **Read the standards** your prompt's `Standards:` line lists, as `orch.sh`
+   resolved them, every path one that exists. When the repo declares its list
+   in its root agent file, the line is that declared list: read every entry in
+   full, with no judgement about which are standards. The list is declared
+   when a root agent file the crawl starts from (root CLAUDE.md or AGENTS.md;
+   with neither, CODING_STANDARDS.md or CONTRIBUTING.md) carries a paragraph
+   starting `Standards:` outside a code fence, or when any entry of the line
+   is a `path#Heading`; the line prints the same either way.
+   An entry `path#Heading` is read as that section only: the heading, its
+   subsections included, and nothing past the next heading of the same or a
+   higher level. Only a crawled list (root agent files and the documents they
+   point to) needs judgement: which of its documents are about how code should
+   be written is yours; process docs, such as an issue-tracker or
+   triage-label guide, are not standards. Read those that are, and only
+   those. `Standards: none` means the repo documents no standards: apply the
+   smell baseline alone. Done when every entry of a
+   declared list is read (a `path#Heading` entry, its section), or, for a
+   crawled list, every code-writing document is read.
 3. **Review the diff** against every standard you found, against the
    **smell baseline** below, against the **test-cost smells** for every test
    hunk, and, for a hunk that fixes a defect, with the **root-cause check**

@@ -437,7 +437,7 @@ require_clean_tree() {
 # delimiter or a line inside a fence, else 0. Callers still print or cut
 # delimiter lines as any other; fenced only gates heading and section tests.
 # State is fence_-prefixed.
-# shellcheck disable=SC2034 # used by the pr and ticket modules
+# shellcheck disable=SC2034 # used by the pr, review and ticket modules
 FENCE_AWK='
   function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
   function fenced(line,   s, c, n) {

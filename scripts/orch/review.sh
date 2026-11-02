@@ -408,7 +408,10 @@ review_standards_resolve() {
 
 # review_standards_mentions <file>: the repo-relative .md paths <file> mentions,
 # in backticks (against the repo root) or as Markdown links (against <file>'s
-# directory), one per line in the order they appear.
+# directory), one per line in the order they appear. Backticks pair per
+# paragraph (lines up to a blank one, a fence line or an ATX heading, joined; a
+# heading is a paragraph of its own), so a span may wrap a line break and a
+# stray backtick never pairs across a blank line.
 review_standards_mentions() {
   local file="$1" dir="" m link
   [[ $file == */* ]] && dir="${file%/*}"
@@ -421,17 +424,127 @@ review_standards_mentions() {
         review_standards_resolve "$dir" "$link"
         ;;
     esac
-  done < <(grep -oE '`[^`]+`|\]\([^)]+\)' "$ROOT/$file" 2>/dev/null)
+  done < <(awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
+    { l = $0; sub(/\r$/, "", l); was = fence_char; fenced($0) }
+    fence_char != was { if (p != "") print p; p = ""; next }
+    was == "" && is_heading(l) { if (p != "") print p; print l; p = ""; next }
+    l ~ /[^[:space:]]/ { p = p " " l; next }
+    p != "" { print p; p = "" }
+    END { if (p != "") print p }
+  ' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
+}
+
+# STANDARDS_HEADING_AWK: awk functions, the one ATX heading rule of the
+# declaration and heading-count programs: is_heading(line) is true for 1 to 6
+# #s, at most 3 spaces in, then a space, a tab or the line's end; heading_text
+# (line) is that heading's text, surrounding whitespace and closing #s trimmed.
+# No interval braces: mawk and BSD awk lack them.
+# shellcheck disable=SC2016 # awk program, not shell
+STANDARDS_HEADING_AWK='
+  function is_heading(line,   h, hashes) {
+    if (line !~ /^ ? ? ?#/) return 0
+    h = line; sub(/^ */, "", h); hashes = h; sub(/[^#].*$/, "", hashes)
+    if (length(hashes) > 6) return 0
+    return (h == hashes || substr(h, length(hashes) + 1, 1) ~ /[ \t]/)
+  }
+  function heading_text(line,   h) {
+    h = line; sub(/^ */, "", h); sub(/^#+/, "", h)
+    sub(/[[:space:]]+#+[[:space:]]*$/, "", h)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", h)
+    return h
+  }
+'
+
+# review_standards_declaration <file>: the first `Standards:` paragraph of the
+# root file <file>, its lines joined, or nothing when it has none. A paragraph
+# whose first line starts with Standards: and sits outside a fenced code block
+# (an ATX heading line ends a paragraph, so one may sit directly under it);
+# the fence state runs from the opening fence to the closing one, blank lines
+# included.
+review_standards_declaration() {
+  awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
+    fenced($0) { if (p != "") { print p; done = 1; exit } prev = 0; next }
+    { l = $0; sub(/\r$/, "", l); head = is_heading(l); live = (l ~ /[^[:space:]]/) }
+    p != "" { if (live && !head) { p = p " " l; next } print p; done = 1; exit }
+    /^Standards:/ && !prev { p = l; next }
+    { prev = (live && !head) ? 1 : 0 }
+    END { if (p != "" && !done) print p }
+  ' "$ROOT/$1" 2>/dev/null
+}
+
+# review_standards_heading_count <file> <heading>: how many ATX headings of the
+# repo file <file> read exactly <heading>, surrounding whitespace and closing #s
+# trimmed. Lines inside a fenced code block (blank lines too) are no headings.
+review_standards_heading_count() {
+  WANT_HEADING="$2" awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
+    BEGIN { want = ENVIRON["WANT_HEADING"] }
+    fenced($0) { next }
+    is_heading($0) && heading_text($0) == want { n++ }
+    END { print n + 0 }
+  ' "$ROOT/$1"
+}
+
+# review_standards_realpath <file>: the physical path of the existing file
+# <file>, every symlink in it followed (no realpath or readlink -f: macOS).
+review_standards_realpath() {
+  local f="$1" dir link i
+  for ((i = 0; i < 40; i++)); do
+    [ -L "$f" ] || break
+    link="$(readlink "$f")"
+    case "$link" in
+      /*) f="$link" ;;
+      *) f="${f%/*}/$link" ;;
+    esac
+  done
+  dir="${f%/*}"
+  [ "$dir" != "$f" ] || dir=.
+  printf '%s/%s\n' "$(cd -P "$dir" && pwd -P)" "${f##*/}"
+}
+
+# review_standards_declared <entry>...: dies unless every entry is a
+# repo-relative path naming a regular file inside the repo, optionally with a
+# #Heading naming one section that must match exactly once.
+review_standards_declared() {
+  local e seg depth segs path n real root_real
+  for e in "$@"; do
+    case "$e" in
+      /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
+    esac
+    [[ $e =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && die "Standards entry \`$e\` is a URL (want a repo-relative path)"
+    depth=0
+    path="${e%%#*}"
+    IFS=/ read -ra segs <<< "$path"
+    for seg in "${segs[@]}"; do
+      case "$seg" in
+        ''|.) ;;
+        ..) depth=$((depth - 1)); [ "$depth" -ge 0 ] || die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
+        *) depth=$((depth + 1)) ;;
+      esac
+    done
+    [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
+    [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
+    real="$(review_standards_realpath "$ROOT/$path")"
+    root_real="$(cd -P "$ROOT" && pwd -P)"
+    case "$real" in
+      "$root_real"/*) ;;
+      *) die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
+    esac
+    [ "$path" = "$e" ] && continue
+    n="$(review_standards_heading_count "$path" "${e#*#}")"
+    [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"
+    [ "$n" -eq 1 ] || die "Standards entry \`$e\` names an ambiguous heading (matches $n times)"
+  done
 }
 
 # review_standards: the one Standards: line both reviewers' prompts end with -
+# a declaration in the root files when one exists, else the crawl:
 # root CLAUDE.md and AGENTS.md, or with neither CODING_STANDARDS.md and
 # CONTRIBUTING.md, then the .md paths they mention, then the ones those
 # mention: two hops, never a third, each path listed once at its first place
 # and only when it exists.
 review_standards() {
   [ $# -eq 0 ] || die "usage: orch.sh review standards"
-  local listed=() hop=() next=() f p
+  local listed=() hop=() next=() f p span
   for f in CLAUDE.md AGENTS.md; do
     [ ! -f "$ROOT/$f" ] || listed+=("$f")
   done
@@ -440,6 +553,18 @@ review_standards() {
       [ ! -f "$ROOT/$f" ] || listed+=("$f")
     done
   fi
+  local decl entries=()
+  for f in ${listed[@]+"${listed[@]}"}; do
+    decl="$(review_standards_declaration "$f")"
+    [ -n "$decl" ] || continue
+    while IFS= read -r span; do
+      entries+=("${span:1:${#span}-2}")
+    done < <(grep -oE '`[^`]+`' <<< "$decl")
+    [ "${#entries[@]}" -gt 0 ] || die "$f declares Standards: with no entries (want backticked paths)"
+    review_standards_declared "${entries[@]}"
+    note "Standards: $(list_join "$(printf '%s\n' "${entries[@]}")")"
+    return 0
+  done
   hop=(${listed[@]+"${listed[@]}"})
   local i
   for ((i = 0; i < 2; i++)); do

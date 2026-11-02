@@ -88,9 +88,12 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    unfixed is **missing**.
 
    Before reporting a hunk as scope creep, check whether the repo's coding
-   standards require it: the code-writing documents among those your
-   prompt's `Standards:` line lists, read as the Standards reviewer reads
-   them. `Standards: none` means no standard requires any hunk.
+   standards require it: the entries of your prompt's `Standards:` line,
+   read as the Standards reviewer reads them (including how it tells a
+   declared list from a crawled one): a declared list in full, a
+   `path#Heading` entry as that section only, and from a crawled list only
+   the code-writing documents. `Standards: none` means no standard requires
+   any hunk.
    A hunk a standard requires traces to that standard, and is not scope creep -
    for example, moving an existing caller onto a helper the change introduces.
 

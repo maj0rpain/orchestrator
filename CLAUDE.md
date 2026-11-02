@@ -3,6 +3,9 @@
 A Claude Code plugin. See [CONTRIBUTING.md](CONTRIBUTING.md) for layout and
 authoring reference.
 
+Standards: `CONTRIBUTING.md#Develop`, `docs/agents/cli-conventions.md`,
+`docs/agents/coding-standards.md`.
+
 ## Layout
 
 Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a

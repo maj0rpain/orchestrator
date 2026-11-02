@@ -8,6 +8,10 @@ Amended by #1521: the reviewer prompt carries a seventh line, `Standards:`,
 the standards documents `orch.sh review standards` resolved, so both
 reviewers read that list instead of discovering it.
 
+Amended by #1983: a repo may declare its standards list, sections included,
+in its root agent file, and `orch.sh review standards` prints that list in
+place of the crawl.
+
 Superseded in part by ADR-0019: the implement phase's ticket subagents no
 longer use `code-review` either; only quick implementation's single pass does.
 

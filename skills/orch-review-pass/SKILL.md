@@ -59,7 +59,8 @@ a skipped check is reported.
    dies, relay its message and stop the pass, as a failed review does. Then
    resolve the standards documents, once for the pass: `bash "$ORCH" review
    standards` prints one line, `Standards: ` and the repo's standards
-   documents, every path one that exists, or `Standards: none`; keep it
+   documents, every path one that exists (a declared list may name a section,
+   `path#Heading`), or `Standards: none`; keep it
    verbatim, for both reviewers and any restart step 4 makes. Then
    start `orch-reviewer-standards` and `orch-reviewer-spec` at once, both in one
    message, each as a fresh subagent, never a fork, which would inherit this

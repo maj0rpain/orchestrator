@@ -1506,5 +1506,122 @@ writeln '# contributing' 'See [the pair](docs/agents/a,b.md) and `docs/agents/c.
 assert_eq "a path containing a comma is listed whole, every other path unchanged" \
   "$("$ORCH" review standards)" \
   "Standards: CODING_STANDARDS.md, CONTRIBUTING.md, docs/agents/a,b.md, docs/agents/c.md"
+# Backticks pair per paragraph, never per line and never across a blank line.
+rm -f CODING_STANDARDS.md CONTRIBUTING.md
+: >docs/agents/p.md; : >docs/agents/q.md
+writeln '# claude' 'A span `wrapped' 'over a line` then `docs/agents/p.md` here.' >CLAUDE.md
+assert_eq "a backtick span wrapping a line break does not swallow the path after it" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
+writeln '# claude' 'An open tick ` here.' '' 'Next `docs/agents/q.md` and a stray ` tick.' >CLAUDE.md
+assert_eq "a backtick left open at a paragraph's end does not pair across the blank line" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/q.md"
+writeln '# claude' '```sh' 'echo hi' '```' '' 'Then `docs/agents/p.md`.' >CLAUDE.md
+assert_eq "a code fence in one paragraph does not hide a path in the next" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
+printf '# claude\r\nAn open tick ` here.\r\n\r\nNext `docs/agents/q.md` and a stray ` tick.\r\n' >CLAUDE.md
+assert_eq "a backtick left open does not pair across a CRLF blank line" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/q.md"
+writeln '# claude' '## The `x' 'See `docs/agents/p.md`.' >CLAUDE.md
+assert_eq "an odd backtick in a heading does not pair into the line under it" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
+writeln '# claude' '```sh' '# run `orch.sh branch' '# retire <old> <new>` then see `docs/agents/p.md`' '```' >CLAUDE.md
+assert_eq "a # line inside a fence is no heading, so a span wrapping across it still pairs" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
+# A declared Standards: paragraph replaces the crawl.
+rm -f CLAUDE.md; : >docs/agents/q.md
+dstd() { "$ORCH" review standards 2>&1; }
+writeln '# claude' 'See `docs/agents/p.md`.' '' 'Standards: `docs/agents/q.md`, then prose' \
+  'wrapped with `docs/agents/c.md`.' '' 'Standards: `docs/agents/p.md`' >CLAUDE.md
+assert_eq "a declaration replaces the crawl: declared order, wrapped whole, first paragraph only, no root file" \
+  "$(dstd)" "Standards: docs/agents/q.md, docs/agents/c.md"
+writeln '# claude' 'Nothing.' >CLAUDE.md
+writeln 'Standards: `docs/agents/p.md`' >AGENTS.md
+assert_eq "AGENTS.md's declaration is used when CLAUDE.md declares nothing" \
+  "$(dstd)" "Standards: docs/agents/p.md"
+writeln 'Standards: `docs/agents/q.md`' >CLAUDE.md
+assert_eq "CLAUDE.md's declaration wins over AGENTS.md's" "$(dstd)" "Standards: docs/agents/q.md"
+rm AGENTS.md CLAUDE.md
+writeln 'Standards: `docs/agents/q.md`' >CONTRIBUTING.md
+assert_eq "with no CLAUDE.md or AGENTS.md, CONTRIBUTING.md's declaration is used" \
+  "$(dstd)" "Standards: docs/agents/q.md"
+writeln 'Standards: `docs/agents/p.md`' >CODING_STANDARDS.md
+assert_eq "CODING_STANDARDS.md's declaration wins over CONTRIBUTING.md's" \
+  "$(dstd)" "Standards: docs/agents/p.md"
+writeln '# coding' >CODING_STANDARDS.md
+assert_eq "CONTRIBUTING.md's is used when CODING_STANDARDS.md declares nothing" \
+  "$(dstd)" "Standards: docs/agents/q.md"
+writeln '# claude' >CLAUDE.md
+assert_eq "with a CLAUDE.md present, a CONTRIBUTING.md declaration is ignored and the crawl runs" \
+  "$(dstd)" "Standards: CLAUDE.md"
+rm CLAUDE.md CODING_STANDARDS.md
+writeln '# claude' 'Standards: `docs/agents/q.md`' >CONTRIBUTING.md
+assert_eq "a Standards: line directly under a heading is a declaration" \
+  "$(dstd)" "Standards: docs/agents/q.md"
+writeln '```' 'x' '' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
+assert_eq "a Standards: line in a fence, after a blank line, is no declaration" \
+  "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
+writeln '```' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
+assert_eq "a Standards: line directly after an opening fence is no declaration" \
+  "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
+writeln '```' '~~~' '' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
+assert_eq "a ~~~ or info-string line inside a backtick fence does not close it" \
+  "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
+printf 'Standards: `docs/agents/q.md`\r\n\r\nSee `docs/agents/nope.md`.\r\n' >CONTRIBUTING.md
+assert_eq "a CRLF blank line ends a declaration paragraph" "$(dstd)" "Standards: docs/agents/q.md"
+printf '# A B\n' >docs/agents/wrap.md
+printf 'Standards: `docs/agents/wrap.md#A\r\nB`\r\n' >CLAUDE.md
+assert_eq "a CRLF declaration wrapping from its first line keeps no CR in its span" \
+  "$(dstd)" "Standards: docs/agents/wrap.md#A B"
+rm -f CLAUDE.md docs/agents/wrap.md
+# Each unresolved entry dies naming the entry and the reason.
+mkdir -p docs/adir
+ln -s /etc/passwd docs/agents/out.md
+ln -s q.md docs/agents/in.md
+for case_ in 'docs/agents/nope.txt|missing file' '/etc/passwd|absolute path' \
+  'https://example.com/a|URL' '../outside.md|leaves the repo' 'docs/adir|not a regular file' \
+  'docs/agents/out.md|leaves the repo'; do
+  writeln "Standards: \`docs/agents/p.md\`, \`${case_%%|*}\`" >CONTRIBUTING.md
+  out="$("$ORCH" review standards 2>&1)"; st=$?
+  assert_status "a declared ${case_#*|} fails" "$st" 1
+  assert_contains "naming the entry (${case_#*|})" "$out" "orch: Standards entry \`${case_%%|*}\`"
+  assert_contains "and the reason (${case_#*|})" "$out" "${case_#*|}"
+done
+writeln 'Standards: `docs/agents/in.md`' >CONTRIBUTING.md
+assert_eq "a symlink to a file inside the repo resolves" "$(dstd)" "Standards: docs/agents/in.md"
+rm docs/agents/out.md docs/agents/in.md
+writeln 'Standards: nothing backticked' >CONTRIBUTING.md
+out="$("$ORCH" review standards 2>&1)"; st=$?
+assert_status "a declaration with no entries fails" "$st" 1
+assert_contains "saying it declares no entries" "$out" "orch: CONTRIBUTING.md declares Standards: with no entries"
+# A path#Heading entry names one section: the heading must match exactly once.
+writeln '# Top' '' '## Develop ##' 'text' '### Sub' '' '```' '# Fenced' '## Dup' '' '# Blanked' '' '## Dup' '```' '## Dup' '## Twice' '## Twice' >docs/agents/h.md
+writeln 'Standards: `docs/agents/h.md#Develop`, `docs/agents/h.md#Sub`' >CONTRIBUTING.md
+assert_eq "a path#Heading entry with subsections prints as declared, closed heading too" \
+  "$(dstd)" "Standards: docs/agents/h.md#Develop, docs/agents/h.md#Sub"
+for case_ in 'docs/agents/h.md#develop|missing heading' 'docs/agents/h.md#Fenced|missing heading' \
+  'docs/agents/h.md#Blanked|missing heading' \
+  'docs/agents/h.md#Twice|ambiguous'; do
+  writeln "Standards: \`${case_%%|*}\`" >CONTRIBUTING.md
+  out="$("$ORCH" review standards 2>&1)"; st=$?
+  assert_status "a heading entry (${case_#*|}) fails" "$st" 1
+  assert_contains "naming the entry (${case_#*|})" "$out" "orch: Standards entry \`${case_%%|*}\`"
+  assert_contains "and the reason (${case_#*|})" "$out" "${case_#*|}"
+done
+writeln 'Standards: `docs/agents/h.md#Dup`' >CONTRIBUTING.md
+assert_eq "a fenced heading does not make an entry ambiguous" \
+  "$(dstd)" "Standards: docs/agents/h.md#Dup"
+writeln '# Top' '## a\b' '## c\\d' >docs/agents/bs.md
+writeln 'Standards: `docs/agents/bs.md#a\b`, `docs/agents/bs.md#c\\d`' >CONTRIBUTING.md
+assert_eq "a heading entry with backslashes matches the heading literally" \
+  "$(dstd)" 'Standards: docs/agents/bs.md#a\b, docs/agents/bs.md#c\\d'
+writeln '####### seven' 'Standards: `docs/agents/p.md`' >CONTRIBUTING.md
+assert_eq "a line of seven #s is no heading, so a Standards: line under it is no declaration" \
+  "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
+rm -f CONTRIBUTING.md
+# This repo's own declaration resolves, in the plugin root the suite checks.
+out="$(cd "$PLUGIN_ROOT" && "$ORCH" review standards 2>&1)"; st=$?
+assert_status "the plugin root's review standards exits 0" "$st" 0
+assert_eq "and prints its three declared entries" "$out" \
+  "Standards: CONTRIBUTING.md#Develop, docs/agents/cli-conventions.md, docs/agents/coding-standards.md"
 rm -rf "$out_dir"
 restore_suite_env
