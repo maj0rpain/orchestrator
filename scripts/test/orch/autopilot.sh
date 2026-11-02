@@ -132,9 +132,8 @@ assert_contains "autopilot show is in the usage text" "$out" "autopilot show"
 assert_contains "autopilot active is in the usage text" "$out" "autopilot active"
 assert_contains "the CLI conventions' noun table has an autopilot row" \
   "$(grep '^| `autopilot`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`active`'
-assert_contains "host-capabilities has the headless-session row" \
-  "$(grep '^| Start a headless session' "$PLUGIN_ROOT/docs/host-capabilities.md")" '`claude -p`'
 hc_row="$(grep '^| Start a headless session' "$PLUGIN_ROOT/docs/host-capabilities.md")"
+assert_contains "host-capabilities has the headless-session row" "$hc_row" '`claude -p`'
 assert_contains "the headless-session row carries --append-system-prompt" "$hc_row" '`--append-system-prompt`'
 assert_not_contains "and its allowlist omits AskUserQuestion" "$hc_row" "AskUserQuestion"
 assert_contains "the review skill's description takes the budget from the plan" \
@@ -1534,7 +1533,8 @@ sed -i 's/^Budget: .*$/Budget: lots/' "$ORCH_GH_FAKE_STORE"/issues/7/comments/*/
 bud_run review 0 4
 assert_eq "an unreadable plan Budget starts no session" "$(tick_calls)" "0"
 assert_eq "and is needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
-assert_contains "with a reason naming the Budget" "$(fake_last_comment_of 7)" "Budget"
+assert_contains "with a reason naming the Budget and the plan reader's own cause" "$(fake_last_comment_of 7)" \
+  "could not record the plan's Budget as the review budget: orch: issue #7's plan comment has no valid ## Autopilot Budget line"
 assert_eq "and the claim released" "$(fake_claim_held 7)" free
 assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
 
@@ -1556,7 +1556,8 @@ assert_contains "an exit-0 session's final reply is quoted" "$(bud_reply "$(bud_
 assert_contains "a reply of exactly 500 characters is quoted whole" "$(bud_reply "$(bud_result "$c500")")" "it ended on: *$c500*; log: "
 assert_contains "one over 500 is cut with an ellipsis" "$(bud_reply "$(bud_result "${c500}y")")" "it ended on: *$c500…*; log: "
 assert_contains "a multi-line reply is collapsed to one line" "$(bud_reply "$(bud_result $'one\n\n  two\tthree')")" "it ended on: *one two three*; log: "
-assert_not_contains "an empty reply keeps the plain comment" "$(bud_reply "$(bud_result '')")" "it ended on"
-assert_contains "and names the exit code and log" "$(bud_reply "$(bud_result '')")" "the session exited with code 0; log: "
+empty_reply="$(bud_reply "$(bud_result '')")"
+assert_not_contains "an empty reply keeps the plain comment" "$empty_reply" "it ended on"
+assert_contains "and names the exit code and log" "$empty_reply" "the session exited with code 0; log: "
 assert_not_contains "a log with no result event keeps the plain comment" "$(bud_reply '{"type":"assistant","message":{"content":[]}}')" "it ended on"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND

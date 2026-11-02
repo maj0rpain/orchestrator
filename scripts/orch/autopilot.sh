@@ -712,7 +712,7 @@ autopilot_log_text() {
 
 # autopilot_final_reply <log>: the text of <log>'s last result event as one
 # line - runs of whitespace one space, the ends trimmed - cut to its first 500
-# characters with "..." appended when cut; nothing when there is no text.
+# characters with "…" appended when cut; nothing when there is no text.
 autopilot_final_reply() {
   autopilot_log_last_event "$1" result | jq -r '(.result // empty | strings
     | gsub("\\s+"; " ") | gsub("^ | $"; "")) as $t
@@ -831,11 +831,22 @@ AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-autho
 # would hold its claim forever.
 AUTOPILOT_BG_WAIT_MS=7200000
 
+# autopilot_review_budget_record <side>: records the plan's Budget as <side>'s
+# review budget, each read and write orch.sh run in <side>, so the plan is read
+# for that checkout's issue. Run it contained (autopilot_pickup_contained): it
+# changes directory, and a failed step fails with the step's own reason.
+autopilot_review_budget_record() {
+  local b
+  cd "$1" || return
+  b="$("$(autopilot_self)" autopilot budget)" || return
+  "$(autopilot_self)" state set budget "$b" >/dev/null
+}
+
 # autopilot_run <issue>: the session wrapper a tick starts: runs the headless
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher log prompt rc=0 mine name budget flags=()
+  local issue="$1" main_root side phase mode launcher log prompt rc=0 mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -854,10 +865,8 @@ autopilot_run() {
   if [ "$phase" = review ] && [ "$(state_get_in "$(flow_state_file "$side")" iteration)" = 0 ]; then
     # A first-loop review session is not asked its budget: the plan's is
     # recorded, over any left by a loop before a redo.
-    budget="$(cd "$side" && "$(autopilot_self)" autopilot budget)" ||
-      { standing_stop "$issue" failure review "orch: could not read the plan's Budget for the review loop"; return 0; }
-    autopilot_orch_in "$side" state set budget "$budget" ||
-      { standing_stop "$issue" failure review "orch: could not record the plan's Budget ($budget) as the review budget"; return 0; }
+    autopilot_pickup_contained autopilot_review_budget_record "$side" ||
+      { standing_stop "$issue" failure review "could not record the plan's Budget as the review budget: $PICKUP_REASON"; return 0; }
   fi
   for name in model effort; do
     autopilot_setting "$name"
