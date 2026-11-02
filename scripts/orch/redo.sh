@@ -13,7 +13,9 @@
 # rename is done: resume at the PR close instead of retiring an
 # already-retired branch a second time (issue #63).
 redo_retire_number() {
-  local issue="$1" slug="$2" branch="$3" redo_count="$4"
+  local issue="$1" slug="$2" branch redo_count
+  branch="$(state_get branch)"
+  redo_count="$(state_get redo_count)"
   if [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$issue" "$slug" "$redo_count")" ]; then
     printf '%s\n1\n' "$redo_count"
   else
@@ -99,7 +101,7 @@ $detail" ;;
   require_branch branch
   require_pr pr
   local retire
-  retire="$(redo_retire_number "$issue" "$slug" "$branch" "$(state_get redo_count)")"
+  retire="$(redo_retire_number "$issue" "$slug")"
   lines_split "$retire" new_n resumed
 
   # The implement handoff described the attempt being retired; left in place,
@@ -159,7 +161,7 @@ cmd_redo_spec() {
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
   handoff_retire "$label" $(handoffs_written_from spec)
   slug="$(state_get slug)"
-  retire="$(redo_retire_number "$issue" "$slug" "$(state_get branch)" "$(state_get redo_count)")"
+  retire="$(redo_retire_number "$issue" "$slug")"
   lines_split "$retire" n resumed
   redo_retire_attempt "$issue" "$slug" "$n" "$resumed"
   if [ "$new_issue" -eq 1 ]; then

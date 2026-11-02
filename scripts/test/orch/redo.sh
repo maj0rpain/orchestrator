@@ -210,7 +210,7 @@ assert_eq "and records the bumped redo_count so a retry numbers on, not over" \
 # A retry after that failure has to work from the state the failure left
 # behind, and must not retire the already-retired branch a second time -
 # issue #63 acceptance criterion 3: it should pick up from closing the PR.
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "retrying redo review after the gh failure now succeeds" "$st" 0
 assert_eq "closing the PR this time" "$(fake_pr_state_of 32)" "CLOSED"
@@ -808,7 +808,7 @@ fake_fail adapter_pr_close "$GH_502"
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a PR-close failure fails redo spec" "$st" 1
 assert_eq "the PR stays open" "$(fake_pr_state_of "$old_pr")" "OPEN"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "the rerun succeeds" "$st" 0
 assert_eq "closing the PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
@@ -829,7 +829,7 @@ fake_fail adapter_issue_close "$GH_502"
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a breakdown-retire failure fails redo spec" "$st" 1
 assert_eq "after the attempt is retired" "$(fake_pr_state_of "$old_pr")" "CLOSED"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "the rerun succeeds" "$st" 0
 assert_eq "redo_count stays 1" "$("$ORCH" state get redo_count)" "1"
@@ -846,7 +846,7 @@ attempt_start 12
 fake_fail adapter_issue_close "$GH_502"
 out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "an issue-close failure fails redo spec --new-issue" "$st" 1
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "the rerun succeeds" "$st" 0
 assert_eq "redo_count stays 1" "$("$ORCH" state get redo_count)" "1"
