@@ -48,6 +48,7 @@ on exactly its own cells.
 | Open a report in the browser | `xdg-open <file>` on Linux or `open <file>` on macOS, through the Bash tool. Where neither command is there or it fails (a headless or remote machine), take the fallback. | Its shell runs the same commands; whether a browser opens from it is unverified. **Unverified**. |
 | A stray stdin read in a Bash call ends instead of hanging | A `PreToolUse` hook on `Bash` (`hook-bash-stdin.sh`, #2001, #2002) acts on plugin subagents (an `agent_type` starting `orchestrator:orch-` or `orch-`) and `ORCH_AUTOPILOT=1` sessions only; a human's own session is untouched. Under `bypassPermissions` it rewrites the command to start with `exec </dev/null`, so a stray read gets end-of-file at once. Under any other mode it denies a command whose parts include a plain stdin read from a fixed list (`cat` with no file argument or with `-`, `read`, `python`, `python3` or `node` with no arguments or with `-` as the script, `bash -s`, `sh -s`), with a reason saying how to supply input. | Whether Junie fires a `PreToolUse` hook on its Bash tool, and what its payload holds, is not confirmed; the hook fails open on its payload. **Unverified**. The agent instruction line (never run a command that reads stdin without supplying it, with `</dev/null` as the plain case) is the fallback. |
 | Search and read code | The three steps of a lens's search-and-read rules. List the matching files: Grep with `output_mode: files_with_matches`. Search the content: Grep with `-n` and `head_limit`, scoped to the files from step one. Read a range: Read with `offset` and `limit`. Glob for path patterns. | Per the bundled docs, the tool groups are `Read`, `Glob` and `Grep`, and a `tools:` allowlist or hook matcher uses those names. Observed in Junie CLI 3419.7 sessions, the model calls `grep_search(regex, path, file_extension_list)`, in the `Grep` group; `glob_search(glob, path)`, in `Glob`; and `open(path, line_number)`, plus `open_entire_file`, `scroll_up` and `scroll_down`, in `Read`. `grep_search` returns matches grouped by file with line ranges, so line numbers are there, but it has no files-only mode and no result cap the caller sets; its own truncation threshold is unverified. `open` has no offset and limit, and its window size is unverified. **Fallback**. |
+| Run a long command | The Bash tool in the foreground, `timeout: 600000` (its maximum), waiting for the command to exit. A call still running at the timeout is not killed: the harness moves it to the background and notifies the session when it exits, so wait for that notice and use its exit code, never starting a second copy. Never `run_in_background` followed by a sleep, poll or kill, which the harness blocks or kills. | Whether Junie's shell waits for a command this long in the foreground, and its timeout, is not confirmed. **Unverified**. |
 
 ## Agent settings
 
@@ -225,6 +226,13 @@ Write a Markdown summary in chat instead of opening the HTML report: the
 skill that wrote the report (`orch-improve-tests`) says what the summary
 holds. Still name the HTML file's path, so a human on a machine with a
 browser can open it by hand.
+
+### Run a long command
+
+A host with no foreground run that long runs the command in the foreground
+with the longest timeout it allows, and waits for it to exit. A run the host
+kills at its timeout is a failed run, handled as the site that ran it handles
+a failure; never run the command in the background and sleep, poll or kill it.
 
 ## Finding orch.sh
 
