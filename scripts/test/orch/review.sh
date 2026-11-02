@@ -671,7 +671,7 @@ out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "checks nobody could read stop the loop" "$st" 1
 assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
 assert_contains "saying what it could not read" "$out" "could not read"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 review_ci_restore
 
 # --- the grace counts from the push (issue #475) ---
@@ -849,10 +849,10 @@ no_ci none "a single-commit PR has no earlier-commit signal"
 # adapter_branch_required_checks fails on (its contract test).
 ci_absent; fake_fail adapter_branch_required_checks "gh: Not Found (HTTP 404)"
 no_ci green "a protection read that fails keeps the grace"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 ci_absent; fake_fail adapter_branch_rules
 no_ci green "a ruleset read that fails keeps the grace"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 ci_absent; fake_unreadable_ref main
 no_ci green "a base-tip read that fails keeps the grace"
 fake_pr_head 7 "$head_sha" "$earlier" "$head_sha"
@@ -864,7 +864,7 @@ no_ci green "a head this clone does not hold keeps the grace"
 fake_pr_head 7 "$head_sha"
 ci_absent; fake_fail adapter_pr_refs
 no_ci green "a PR that will not say what its head is keeps the grace"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 
 state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
@@ -958,7 +958,7 @@ out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a rerun gh refuses silently is exit 2" "$st" 2
 assert_eq "ending in gh gave no reason" "$out" \
   "orch: gh could not rerun the failed jobs of Actions run 4242: gh gave no reason"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_unfail
 out="$("$ORCH" review rerun 2>&1)"; st=$?
 assert_status "no PR is a usage error, exit 2" "$st" 2
 out="$("$ORCH" review rerun abc 2>&1)"; st=$?

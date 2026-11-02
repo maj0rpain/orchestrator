@@ -32,8 +32,9 @@ _Avoid_: worktree, when the main checkout is meant too.
 
 **Busy checkout**:
 A checkout that holds work a new branch must not move: a flow
-mid-pipeline, a branch the plugin made that has no PR yet, or a working
-tree with changes outside the planning allowlist. A quick implementation
+mid-pipeline, a branch the plugin made that has no PR yet and is not
+retired by a redo, or a working tree with changes outside the planning
+allowlist. A quick implementation
 started in a busy checkout goes to a side checkout; a flow started in one
 is offered a side checkout, except on a dirty tree, which `init` refuses.
 _Avoid_: locked checkout, active checkout.
@@ -106,7 +107,9 @@ a terminal state, never mid-budget - re-entry already covers "give this change
 more looks," so Redo only has a distinct meaning once the loop is done deciding
 that on its own. Redoing back to `spec` re-reviews the flow's existing issue by
 default, rather than publishing a second one, and retires that issue's ticket
-breakdown so the redone spec is broken down again.
+breakdown so the redone spec is broken down again; like redoing back to
+`implement`, it retires the implement attempt's branch and closes its PR, when
+they exist, so the redone implement phase starts a fresh one.
 
 **Adopted issue**:
 An issue given to a flow at init, instead of one the spec phase publishes.
@@ -265,7 +268,7 @@ checkout - an integration branch such as `uat`, or a long-running feature
 branch that several tickets feed. A flow fixes its base branch when it starts.
 Neither a later change to the setting nor a redo moves it; a human can correct
 it explicitly only while the flow has no branch: before it first branches, or
-after `redo review` retires that branch. A quick implementation reads it when
+after a redo retires that branch. A quick implementation reads it when
 it branches. A flow's base SHA is the base
 branch's tip at the moment it branched, or at its latest base sync. A quick
 implementation's base SHA means the same, recorded on its branch.

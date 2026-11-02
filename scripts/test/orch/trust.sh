@@ -77,3 +77,20 @@ assert_contains "a failing trust read warns that trust could not be checked, and
   "orch: issue trust could not be checked for #7: "
 assert_contains "and still returns 0" "$(tr_warn)" "rc=0"
 fake_unfail
+
+# The PR filter's own rules (trust_filter_prs), on lines as the adapter gives
+# them. The commands using it (pr.sh, side-checkout.sh) test only their own
+# exit codes and verdicts.
+tr_pf() { printf '%b' "$1" | sourced_orch trust_filter_prs "$2" 2>"$tr_file"; }
+assert_eq "a same-repo PR is kept, without its flag" "$(tr_pf '5\tfalse\n' x)" "5"
+assert_eq "a fork PR is dropped" "$(tr_pf '5\ttrue\n' x)" ""
+assert_eq "kept lines keep their other fields, in order" \
+  "$(tr_pf '5\ta\tfalse\n6\tb\ttrue\n7\tc\tfalse\n' x)" "$(printf '5\ta\n7\tc')"
+tr_pf '5\ttrue\n6\ttrue\n7\tfalse\n' orch/12-foo >/dev/null
+assert_eq "two drops are counted in one stderr line, naming the subject" "$(cat "$tr_file")" \
+  "orch: ignored 2 PR(s) from forks for orch/12-foo"
+tr_pf '5\tfalse\n' x >/dev/null
+assert_eq "no drop, no stderr line" "$(cat "$tr_file")" ""
+tr_out="$(tr_pf '5\tfalse\n6\tmaybe\n' x)"; tr_st=$?
+assert_status "a flag that is neither true nor false is rejected" "$tr_st" 1
+assert_eq "printing nothing" "$tr_out" ""

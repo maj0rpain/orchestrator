@@ -194,7 +194,7 @@ branch that gathers a multi-ticket project:
 | Command | What it does |
 | --- | --- |
 | `orch.sh base set <branch>` | Set the base branch. Refuses a branch `origin` does not have. Stored in the clone's local git config (`orchestrator.base`): shared by every worktree, never committed, kept through `abort` and archiving. Setting the default branch's name clears it. |
-| `orch.sh base set <branch> --flow` | Correct the active flow's own base branch instead, leaving the checkout setting alone. Only while the flow has no branch: before `branch create`, or after `redo review` retires it. Stores the name as given. Refuses an invalid branch name or one `origin` does not have. |
+| `orch.sh base set <branch> --flow` | Correct the active flow's own base branch instead, leaving the checkout setting alone. Only while the flow has no branch: before `branch create`, or after a redo retires it. Stores the name as given. Refuses an invalid branch name or one `origin` does not have. |
 | `orch.sh base show` | Print the base branch in effect and its source: `set`, or `default`. |
 | `orch.sh base clear` | Go back to the default branch. Succeeds when nothing was set. |
 | `orch.sh branch sync` | Bring the current plugin-made branch up to date with its base branch: merge `origin`'s tip of the base into it (never a rebase, never the local base), record that tip as its base SHA, and push with a plain push when the branch has an upstream. Exit 3 on a conflict, the merge left in progress for a resolver; exit 1 on a refusal. Rerunning it after the conflict is committed finishes the sync. |

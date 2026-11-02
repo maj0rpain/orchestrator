@@ -272,9 +272,11 @@ cmd_pr_release() {
   default="$(default_branch)"
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
-  local open
-  gh_or_die --out open "list the open PRs from $base into $default" \
+  local raw open
+  gh_or_die --out raw "list the open PRs from $base into $default" \
     adapter_prs_open "$base" "$default"
+  open="$(trust_filter_prs "$base" <<<"$raw")" ||
+    die "the open PRs from $base into $default could not be read"
   [ -z "$open" ] || die "a release PR from $base into $default is already open: #${open%%$'\n'*}"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
   # GitHub only links closing keywords on PRs into the default branch, and a
@@ -389,10 +391,12 @@ open_pr_draft_flag() {
 # so a caller in a subshell can tell "no PR" apart from an error and map each
 # to its own exit code.
 current_open_pr() {
-  local branch open
+  local branch raw open
   current_branch_or_die die2
-  gh_or_die --exit 2 --out open "list the open PRs from $branch" \
+  gh_or_die --exit 2 --out raw "list the open PRs from $branch" \
     adapter_prs_open "$branch"
+  open="$(trust_filter_prs "$branch" <<<"$raw")" ||
+    die2 "the open PRs from $branch could not be read"
   [ -n "$open" ] || return 1
   printf '%s\n' "${open%%$'\n'*}"
 }
@@ -448,18 +452,26 @@ cmd_pr_update() {
 
 # pr read <issue> <file>: writes the body of the open PR whose body opens with
 # the issue line `Closes #<issue>` or `Refs #<issue>` (the newest, where
-# several do), a `---` line, then its diff, to <file>.
+# several do), a `---` line, then its diff, to <file>. A fork PR is ignored,
+# with one stderr line, as the Trust module's PR filter words it.
 cmd_pr_read() {
   [ $# -eq 2 ] || die "usage: orch.sh pr read <issue> <file>"
-  local issue="$1" file="$2" open pr body line found="" diff
+  local issue="$1" file="$2" raw pr flag body line named="" kept found diff
   is_positive_int "$issue" || die "not an issue number: $issue"
-  gh_or_die --out open "list the open PRs" adapter_prs_open_all
-  for pr in $open; do
+  gh_or_die --out raw "list the open PRs" adapter_prs_open_all
+  while IFS=$'\t' read -r pr flag; do
+    [ -n "$pr" ] || continue
     gh_or_die --out body "read the body of PR #$pr" adapter_pr_body "$pr"
     line="$(printf '%s\n' "$body" | sed -n '1{s/\r$//;p;}')"
-    if [ "$line" = "Closes #$issue" ] || [ "$line" = "Refs #$issue" ]; then found="$pr"; break; fi
-  done
+    if [ "$line" = "Closes #$issue" ] || [ "$line" = "Refs #$issue" ]; then
+      named+="$pr"$'\t'"$flag"$'\n'
+    fi
+  done <<<"$raw"
+  kept="$(trust_filter_prs "#$issue" <<<"$named")" ||
+    die "the open PRs for issue #$issue could not be read"
+  found="${kept%%$'\n'*}"
   [ -n "$found" ] || die "no open PR closes or refers to issue #$issue"
+  gh_or_die --out body "read the body of PR #$found" adapter_pr_body "$found"
   gh_or_die --out diff "read the diff of PR #$found" adapter_pr_diff "$found"
   file_write_atomic "$file" "$(printf '%s\n\n---\n%s\n' "$body" "$diff")"$'\n' \
     || die "could not write $file"

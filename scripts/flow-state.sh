@@ -77,7 +77,7 @@ iteration|0|0|review begin counts it
 # the flow: one per flow, spent or not, so that one refilled each iteration
 # could not become an infinite retry loop.
 flake_rerun_used|false|false|-
-redo_count|0|0|redo review counts it
+redo_count|0|0|a redo that retires a branch counts it
 # Marks a flow whose handoffs must record Host fallbacks (see
 # host_fallbacks_required); an older flow without it reads false.
 host_fallbacks|false|true|init seeds it

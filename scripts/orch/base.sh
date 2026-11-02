@@ -90,7 +90,7 @@ require_on_origin() {
 # checkout setting rewrites it, so its fork point and PR target cannot move
 # under it. base set --flow is the one exception: the explicit correction of
 # the active flow's own base, allowed only while the flow has no branch -
-# before it first branches, or after redo review retires that branch. The
+# before it first branches, or after a redo retires that branch. The
 # checks run in a fixed order and the first that fails is reported; nothing is
 # written unless all pass. The name is stored literally, the default branch's
 # own included: a flow's base is pinned, unlike the checkout setting.

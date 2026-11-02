@@ -179,3 +179,55 @@ assert_eq "with the suffix appended" "$out" "orch: not on a branch (detached HEA
 out="$(cd "$detached" && cbod ' - x' 2>&1)"; st=$?
 assert_status "a lone suffix argument exits 1" "$st" 1
 assert_eq "and is taken as the suffix" "$out" "orch: not on a branch (detached HEAD) - x"
+
+# --- checkout busy, redo-retired branch (#1981) -------------------------------
+# The branch signal ignores a current branch a redo retired (-redo-<n>), which
+# still records a base and no PR; a live orch/ branch with no PR stays busy.
+echo
+echo "checkout busy redo"
+new_repo_with_origin
+git checkout -q -b orch/7-feature-redo-1
+git config branch.orch/7-feature-redo-1.orchestrator-base main
+out="$(orch_gh_failing branch off quick/8-beside-redo 2>&1)"; st=$?
+assert_status "branch off beside a -redo-<n> branch with a base and no PR is not refused" "$st" 0
+git checkout -q orch/7-feature-redo-1
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a -redo-<n> branch with a base and no PR is free" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+
+git checkout -q -b orch/7-feature
+git config branch.orch/7-feature.orchestrator-base main
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a live orch/ branch with a base and no PR is busy" "$st" 3
+assert_contains "naming the branch" "$out" "orch/7-feature"
+out="$(orch_gh_failing branch off quick/9-beside-live 2>&1)"; st=$?
+assert_status "branch off beside a live orch/ branch with no PR exits 3" "$st" 3
+assert_contains "naming the branch that holds the checkout" "$out" "orch/7-feature"
+
+# The busy check through init and branch create, the spec's seam (exit 3).
+git checkout -q orch/7-feature-redo-1
+out="$(orch_gh_failing init beside-redo 2>&1)"; st=$?
+assert_status "init on a -redo-<n> branch with a base and no PR is not refused as busy" "$st" 0
+git checkout -q orch/7-feature
+rm -rf .orchestrator
+out="$(orch_gh_failing init beside-live 2>&1)"; st=$?
+assert_status "init on a live orch/ branch with a base and no PR exits 3" "$st" 3
+assert_contains "naming the branch (init)" "$out" "orch/7-feature"
+
+new_repo_with_origin
+orch_gh_failing init own >/dev/null
+orch_gh_failing state set issue 12
+default="$(git branch --show-current)"
+git checkout -q -b orch/6-earlier-redo-2
+git config branch.orch/6-earlier-redo-2.orchestrator-base "$default"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on a -redo-<n> branch with a base and no PR is not refused as busy" "$st" 0
+new_repo_with_origin
+orch_gh_failing init own2 >/dev/null
+orch_gh_failing state set issue 13
+default="$(git branch --show-current)"
+git checkout -q -b orch/6-earlier
+git config branch.orch/6-earlier.orchestrator-base "$default"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on a live orch/ branch with no PR exits 3" "$st" 3
+assert_contains "naming the branch (branch create)" "$out" "orch/6-earlier"
