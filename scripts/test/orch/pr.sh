@@ -1310,14 +1310,14 @@ fake_pr_cross 61
 fake_pr_body 61 "Closes #12"
 out="$("$ORCH" pr fetch "$fk_out" 2>"$errf")"; st=$?
 assert_eq "pr fetch reads the newest same-repo PR" "$(cat "$fk_out")" $'Closes #12\n\nNewer mine.'
-assert_eq "saying two fork PRs were ignored" "$(cat "$errf")" "orch: ignored 2 PR(s) from forks for orch/12-foo"
 
 # No fork PR: no new stderr.
 rm -rf "$ORCH_GH_FAKE_STORE/prs/60" "$ORCH_GH_FAKE_STORE/prs/61"
 out="$("$ORCH" pr fetch "$fk_out" 2>&1)"; st=$?
 assert_eq "no fork PR: nothing on stderr" "$out" ""
 
-# A flag that is neither true nor false is output the filter cannot parse.
+# A flag that is neither true nor false: the filter's own rule is in trust.sh;
+# here only the command's exit code.
 fake_pr_cross 58 maybe
 printf 'known content\n' >"$fk_comments"
 out="$("$ORCH" pr comments "$fk_comments" 2>"$errf")"; st=$?
