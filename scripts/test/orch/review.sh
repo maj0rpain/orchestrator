@@ -1546,7 +1546,10 @@ assert_eq "with a CLAUDE.md present, a CONTRIBUTING.md declaration is ignored an
   "$(dstd)" "Standards: CLAUDE.md"
 rm CLAUDE.md CODING_STANDARDS.md
 writeln '```' 'x' '' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
-assert_eq "a Standards: line in a fence, after a blank line too, is no declaration" \
+assert_eq "a Standards: line in a fence, after a blank line, is no declaration" \
+  "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
+writeln '```' 'Standards: `docs/agents/p.md`' '```' >CONTRIBUTING.md
+assert_eq "a Standards: line directly after an opening fence is no declaration" \
   "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
 # Each unresolved entry dies naming the entry and the reason.
 mkdir -p docs/adir
@@ -1563,11 +1566,12 @@ out="$("$ORCH" review standards 2>&1)"; st=$?
 assert_status "a declaration with no entries fails" "$st" 1
 assert_contains "saying it declares no entries" "$out" "orch: CONTRIBUTING.md declares Standards: with no entries"
 # A path#Heading entry names one section: the heading must match exactly once.
-writeln '# Top' '' '## Develop ##' 'text' '### Sub' '' '```' '' '# Fenced' '## Dup' '```' '## Dup' '## Twice' '## Twice' >docs/agents/h.md
+writeln '# Top' '' '## Develop ##' 'text' '### Sub' '' '```' '# Fenced' '## Dup' '' '# Blanked' '' '## Dup' '```' '## Dup' '## Twice' '## Twice' >docs/agents/h.md
 writeln 'Standards: `docs/agents/h.md#Develop`, `docs/agents/h.md#Sub`' >CONTRIBUTING.md
 assert_eq "a path#Heading entry with subsections prints as declared, closed heading too" \
   "$(dstd)" "Standards: docs/agents/h.md#Develop, docs/agents/h.md#Sub"
 for case_ in 'docs/agents/h.md#develop|missing heading' 'docs/agents/h.md#Fenced|missing heading' \
+  'docs/agents/h.md#Blanked|missing heading' \
   'docs/agents/h.md#Twice|ambiguous'; do
   writeln "Standards: \`${case_%%|*}\`" >CONTRIBUTING.md
   out="$("$ORCH" review standards 2>&1)"; st=$?

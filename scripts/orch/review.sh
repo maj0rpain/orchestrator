@@ -423,7 +423,7 @@ review_standards_mentions() {
         review_standards_resolve "$dir" "$link"
         ;;
     esac
-  done < <(awk 'NF { p = p " " $0; next } p != "" { print p; p = "" } END { if (p != "" && !done) print p }' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
+  done < <(awk 'NF { p = p " " $0; next } p != "" { print p; p = "" } END { if (p != "") print p }' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
 }
 
 # review_standards_declaration <file>: the first `Standards:` paragraph of the
@@ -497,7 +497,7 @@ review_standards_declared() {
 # and only when it exists.
 review_standards() {
   [ $# -eq 0 ] || die "usage: orch.sh review standards"
-  local listed=() hop=() next=() f p
+  local listed=() hop=() next=() f p span
   for f in CLAUDE.md AGENTS.md; do
     [ ! -f "$ROOT/$f" ] || listed+=("$f")
   done
@@ -510,8 +510,8 @@ review_standards() {
   for f in ${listed[@]+"${listed[@]}"}; do
     decl="$(review_standards_declaration "$f")"
     [ -n "$decl" ] || continue
-    while IFS= read -r p; do
-      entries+=("${p:1:${#p}-2}")
+    while IFS= read -r span; do
+      entries+=("${span:1:${#span}-2}")
     done < <(grep -oE '`[^`]+`' <<< "$decl")
     [ "${#entries[@]}" -gt 0 ] || die "$f declares Standards: with no entries (want backticked paths)"
     review_standards_declared "${entries[@]}"
