@@ -643,10 +643,12 @@ hs="$(handshake_fifos)"
 waiter=(sh -c "$(handshake_first "$hs")")
 seed_run "$head" 70.00 "${waiter[*]}"
 before="$(cat "$rec")"
-handshake_partner "$hs" >/dev/null 2>&1 &
-pid_partner=$!
-out="$("$ORCH" suite-cost check -- "${waiter[@]}" 2>"$hs/err")"; st=$?
-wait "$pid_partner"
+"$ORCH" suite-cost check -- "${waiter[@]}" >"$hs/out" 2>"$hs/err" &
+pid_c=$!
+read -r _ <"$hs/one"
+"$ORCH" suite-cost run -- sh -c 'printf "x\n" >"$0"' "$hs/two" >/dev/null 2>&1
+wait "$pid_c"; st=$?
+out="$(cat "$hs/out")"
 assert_status "an overlapped base run's check exits 0" "$st" 0
 assert_eq "and is unmeasured" "$out" "unmeasured"
 assert_contains "warning the base run overlapped another" "$(cat "$hs/err")" \
@@ -855,10 +857,12 @@ hs="$(handshake_fifos)"
 marker="$hs/base-ran"
 confirm_repo "touch $marker" "$(handshake_first "$hs")"
 before="$(cat "$rec")"
-handshake_partner "$hs" >/dev/null 2>&1 &
-pid_partner=$!
-out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
-wait "$pid_partner"
+"$ORCH" suite-cost check -- "${cmd[@]}" >"$hs/out" 2>"$errf" &
+pid_c=$!
+read -r _ <"$hs/one"
+"$ORCH" suite-cost run -- sh -c 'printf "x\n" >"$0"' "$hs/two" >/dev/null 2>&1
+wait "$pid_c"
+out="$(cat "$hs/out")"
 assert_eq "an overlapped head confirming run is unmeasured" "$out" "unmeasured"
 assert_contains "warning of the contention at the head" "$(cat "$errf")" \
   "orch: the confirming run at $head $overlap_tail"
@@ -979,4 +983,124 @@ rm -rf "$vf" "$cnt"
 
 rm -rf "$hs" "$errf"
 rm -f "$ORCH_SUITE_COST_FAKE_CPU"
+restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU
+
+# --- suite-cost check pre-check -----------------------------------------------
+# Before a measured run, check looks for another live suite-cost run in the
+# active-runs directory and, finding one, starts nothing and is unmeasured.
+# A live foreign marker is seeded under the test shell's own pid.
+echo
+echo "suite-cost check pre-check"
+ORCH_SUITE_COST_FAKE_CPU="$(mktemp)"
+export ORCH_SUITE_COST_TIMER="$TEST_DIR/suite_cost_timer_fake.sh" ORCH_SUITE_COST_FAKE_CPU
+errf="$(mktemp)"
+sh -c 'exit 0' &
+dead=$!
+wait "$dead"
+
+# pre_repo: a repo with a seeded growth, head 100 over base 50, the timer fake
+# reporting 50 for either commit, and no .active directory. Sets base, head,
+# rec, active, cmd.
+pre_repo() {
+  new_repo >/dev/null
+  printf ':\n' >run.sh
+  git add run.sh
+  git commit -q -m base
+  base="$(git rev-parse HEAD)"
+  git checkout -q -b feat
+  git config branch.feat.orchestrator-base-sha "$base"
+  printf '#\n' >>run.sh
+  git add run.sh
+  git commit -q -m head
+  head="$(git rev-parse HEAD)"
+  rec_path made
+  active="$rec.active"
+  cmd=(sh run.sh) cmd_str="sh run.sh"
+  : >"$ORCH_SUITE_COST_FAKE_CPU"
+  printf '%s 50.00\n%s 50.00\n' "$base" "$head" >>"$ORCH_SUITE_COST_FAKE_CPU"
+  git config orchestrator.suiteCost.floor 0.01
+  git config --unset orchestrator.suiteCost.setup || true
+  : >"$rec"
+  seed_run "$head" 100.00
+}
+
+# (a) no base record: a live marker beside a stale one blocks the base run.
+pre_repo
+mkdir -p "$active"
+: >"$active/$$"
+: >"$active/$dead"
+before="$(cat "$rec")"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
+assert_status "a check beside a live run exits 0" "$st" 0
+assert_eq "and is unmeasured" "$out" "unmeasured"
+assert_contains "warning naming the live pid" "$(cat "$errf")" \
+  "orch: another suite-cost run (pid $$) is in progress - the suite cost is unmeasured"
+assert_eq "recording nothing" "$(cat "$rec")" "$before"
+assert_eq "marking the live run not contended" "$(on_disk "$active/$$.contended")" absent
+assert_eq "leaving only the live marker" "$(ls "$active")" "$$"
+assert_eq "and adding no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
+
+# (b) a grew comparison with a live marker: no confirming run.
+pre_repo
+seed_run "$base" 50.00
+mkdir -p "$active"
+: >"$active/$$"
+before="$(cat "$rec")"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a grew comparison beside a live run is unmeasured" "$out" "unmeasured"
+assert_contains "warning the growth is unconfirmed, naming the pid" "$(cat "$errf")" \
+  "orch: another suite-cost run (pid $$) is in progress - the growth is unconfirmed"
+assert_eq "with no confirming run recorded" "$(cat "$rec")" "$before"
+
+# (c) a live run appearing during the head confirming run stops the base one.
+pre_repo
+seed_run "$base" 50.00
+cmd=(sh -c 'if [ "$(git rev-parse HEAD)" = "$0" ]; then mkdir -p "$1" && : >"$1/$2"; fi' "$head" "$active" "$$")
+rm -f "$rec"; : >"$rec"; cmd_str="${cmd[*]}"; seed_run "$head" 100.00; seed_run "$base" 50.00
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a live run seeded by the head confirming run leaves check unmeasured" "$out" "unmeasured"
+assert_contains "warning before the base confirming run" "$(cat "$errf")" \
+  "orch: another suite-cost run (pid $$) is in progress - the growth is unconfirmed"
+assert_eq "the head confirming run is recorded" "$(grep -c "^$head" "$rec")" 2
+assert_eq "and the base confirming run never ran" "$(grep -c "^$base" "$rec")" 1
+
+# (d) answers needing no run are unchanged beside a live run.
+pre_repo
+seed_run "$base" 50.00
+printf '%s 50.00\n' "$head" >"$ORCH_SUITE_COST_FAKE_CPU"
+: >"$rec"
+seed_run "$base" 100.00
+seed_run "$head" 100.00
+mkdir -p "$active"
+: >"$active/$$"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a recorded base whose comparison is ok prints ok" "$out" "ok"
+assert_eq "without a warning" "$(cat "$errf")" ""
+git config orchestrator.suiteCost.floor 1000
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a recorded base whose comparison is off prints off" "$out" "off"
+assert_eq "without a warning" "$(cat "$errf")" ""
+git config orchestrator.suiteCost.floor 0.01
+printf '%s\t%s\t0.01\t15\t2021-01-01T00:00:00Z\t%s\tgrew 7 - stored\n' "$head" "$base" "${cmd[*]}" >"$rec.verdicts"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a stored verdict is printed" "$out" "grew 7 - stored"
+assert_eq "without a warning" "$(cat "$errf")" ""
+
+# (e) a stale marker does not block the base run.
+pre_repo
+mkdir -p "$active"
+: >"$active/$dead"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a stale marker does not block the base run" "$out" "ok"
+assert_eq "and the base run is recorded" "$(grep -c "^$base" "$rec")" 2
+
+# (f) a .contended file under a live pid, no marker, does not block it.
+pre_repo
+mkdir -p "$active"
+: >"$active/$$.contended"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a .contended file with no marker does not block the base run" "$out" "ok"
+assert_eq "and the base run is recorded" "$(grep -c "^$base" "$rec")" 2
+
+rm -rf "$errf" "$ORCH_SUITE_COST_FAKE_CPU"
 restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU

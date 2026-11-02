@@ -856,12 +856,13 @@ verdict `check` confirmed is stored and reused while the head, base commit,
 command and threshold are unchanged, so an unchanged tree is not measured again.
 A run made with uncommitted changes is recorded as dirty: it can measure the
 head, never the base. Recorded only for a run no other suite-cost run
-overlapped. Compared, lowest sample against lowest sample, only between runs of
-the same command on the same machine, and a growth is confirmed by measuring
-head and base once more before it counts; below the floor nothing compares it.
-Growth past the threshold is a finding with no reviewer behind it: in a review
-loop a major the driver raises from `check`'s verdict, and in a review pass a
-finding the session handles like any other.
+overlapped. `check` starts no run while another suite-cost run is in
+progress, and is unmeasured instead. Compared, lowest sample against lowest
+sample, only between runs of the same command on the same machine, and a
+growth is confirmed by measuring head and base once more before it counts; below
+the floor nothing compares it. Growth past the threshold is a finding with no
+reviewer behind it: in a review loop a major the driver raises from `check`'s
+verdict, and in a review pass a finding the session handles like any other.
 
 **Ticket verification**:
 The verification command a ticket subagent, fixer, resolver or review pass

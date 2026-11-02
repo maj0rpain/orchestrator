@@ -28,7 +28,9 @@
 # gone: no contention, and removed by the run that finds it. A failed .contended
 # write for another run is not retried, and a failed removal is ignored. A run
 # that cannot register still runs but is not recorded. No run ever waits for
-# another.
+# another. Before each of its measured runs, check looks for a live marker of
+# another process, removing stale ones: on one it starts nothing, warns naming
+# its pid and is unmeasured.
 #
 # A verdict check confirmed (both confirming runs succeeded) is stored in a
 # second clone-wide file, suite-cost.verdicts beside the record, so a later
@@ -118,6 +120,28 @@ suite_cost_register() {
       : 2>/dev/null >"$f.contended" || true
     fi
   done
+}
+
+# suite_cost_live_other: prints the pid of the first live marker of another
+# process in the active-runs directory and succeeds, else prints nothing and
+# fails. Stale markers and .contended files are removed as suite_cost_register
+# removes them, and a .contended file is never taken for a marker. An
+# unresolvable or unreadable directory finds no live run.
+suite_cost_live_other() {
+  local dir f name p found=""
+  dir="$(suite_cost_active 2>/dev/null)" || return 1
+  for f in "$dir"/*; do
+    name="${f##*/}"
+    p="${name%.contended}"
+    [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
+    if ! kill -0 "$p" 2>/dev/null || [ ! -e "$dir/$p" ]; then
+      rm -f -- "$f" 2>/dev/null || true
+    elif [ "$f" = "$dir/$p" ] && [ -z "$found" ]; then
+      found="$p"
+    fi
+  done
+  [ -n "$found" ] || return 1
+  printf '%s\n' "$found"
 }
 
 # suite_cost_unregister: ends the run suite_cost_register began, removing its
@@ -447,7 +471,7 @@ suite_cost_min() {
 # and the worktree is gone; a failed removal after a pass keeps the record and
 # names the left-over worktree.
 suite_cost_tree_run() {
-  local role="$1" sha="$2" tmp wt here="$PWD" status=0 setup setup_status=0 run_label msg_tail msg_no_worktree
+  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 run_label msg_tail msg_no_worktree
   shift 2
   if [ "$role" = base ]; then
     run_label="the base run" msg_tail="the suite cost is unmeasured"
@@ -455,6 +479,10 @@ suite_cost_tree_run() {
   else
     run_label="the confirming run" msg_tail="the growth is unconfirmed"
     msg_no_worktree="could not add a worktree for $run_label at $sha - $msg_tail"
+  fi
+  if live="$(suite_cost_live_other)"; then
+    warn "another suite-cost run (pid $live) is in progress - $msg_tail"
+    return 1
   fi
   tmp="$(mktemp -d)" || { warn "could not make a temp directory for $run_label"; return 1; }
   wt="$tmp/$role"
