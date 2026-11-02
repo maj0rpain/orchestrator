@@ -54,7 +54,8 @@ orch_test.sh is only the runner: its `# ---` sections live in
 `scripts/test/orch/<noun>.sh`, and a ticket's tests go in the file for the noun
 it touches (a new noun gets a new file; a concept module with no noun gets a
 section file named as it is). Sections run in parallel, so every section must
-pass on its own.
+pass on its own. The runners share one job pool, holding 75% of the usable CPUs
+unless `ORCH_TEST_POOL_PERCENT` sets another share (see CONTRIBUTING.md).
 Helper placement is checked by harness.sh's placement section; its failure
 message states the rule. Before writing or reusing a helper, run
 `scripts/dev/helpers.sh` (orch.sh's modules) or `scripts/dev/helpers.sh --tests`
