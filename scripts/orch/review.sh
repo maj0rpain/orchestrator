@@ -409,8 +409,9 @@ review_standards_resolve() {
 # review_standards_mentions <file>: the repo-relative .md paths <file> mentions,
 # in backticks (against the repo root) or as Markdown links (against <file>'s
 # directory), one per line in the order they appear. Backticks pair per
-# paragraph (lines up to a blank one or a fence line, joined), so a span may
-# wrap a line break and a stray backtick never pairs across a blank line.
+# paragraph (lines up to a blank one, a fence line or an ATX heading, joined; a
+# heading is a paragraph of its own), so a span may wrap a line break and a
+# stray backtick never pairs across a blank line.
 review_standards_mentions() {
   local file="$1" dir="" m link
   [[ $file == */* ]] && dir="${file%/*}"
@@ -423,9 +424,10 @@ review_standards_mentions() {
         review_standards_resolve "$dir" "$link"
         ;;
     esac
-  done < <(awk "$FENCE_AWK"'
+  done < <(awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
     { l = $0; sub(/\r$/, "", l); was = fence_char; fenced($0) }
     fence_char != was { if (p != "") print p; p = ""; next }
+    is_heading(l) { if (p != "") print p; print l; p = ""; next }
     l ~ /[^[:space:]]/ { p = p " " l; next }
     p != "" { print p; p = "" }
     END { if (p != "") print p }

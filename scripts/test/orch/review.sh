@@ -1521,6 +1521,9 @@ assert_eq "a code fence in one paragraph does not hide a path in the next" \
 printf '# claude\r\nAn open tick ` here.\r\n\r\nNext `docs/agents/q.md` and a stray ` tick.\r\n' >CLAUDE.md
 assert_eq "a backtick left open does not pair across a CRLF blank line" \
   "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/q.md"
+writeln '# claude' '## The `x' 'See `docs/agents/p.md`.' >CLAUDE.md
+assert_eq "an odd backtick in a heading does not pair into the line under it" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
 # A declared Standards: paragraph replaces the crawl.
 rm -f CLAUDE.md; : >docs/agents/q.md
 dstd() { "$ORCH" review standards 2>&1; }
