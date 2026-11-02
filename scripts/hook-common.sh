@@ -260,6 +260,9 @@ hook_bash_stdin_is_reader() {
   local x skip=0
   case "$1" in *'<'*|*'|'*) return 1 ;; esac
   read -ra raw <<<"$1"
+  # An empty part has nothing to read; "${raw[@]}" of an empty array is an
+  # unbound variable under set -u on bash before 4.4.
+  [ "${#raw[@]}" -gt 0 ] || return 1
   # Drop output redirections (>f, 2>&1, &>f, >> f, a lone > and its target):
   # they feed nothing to stdin, so they name no file argument.
   for x in "${raw[@]}"; do
@@ -267,12 +270,15 @@ hook_bash_stdin_is_reader() {
     if [[ "$x" =~ ^([0-9]*|&)\>\>?$ ]]; then skip=1; continue; fi
     [[ "$x" =~ ^([0-9]*|&)\> ]] || words+=("$x")
   done
+  [ "${#words[@]}" -gt 0 ] || return 1
   local k=0
   while [ "$k" -lt "${#words[@]}" ] && [[ "${words[k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do k=$((k + 1)); done
+  local -a rest=()
+  [ "${#words[@]}" -gt "$((k + 1))" ] && rest=("${words[@]:k+1}")
   local w="${words[k]:-}" a1="${words[k+1]:-}"
   case "$w" in
-    cat) hook_bash_stdin_only_options "${words[@]:k+1}" ;;
-    python|python3|node) hook_bash_stdin_script_is_stdin "${words[@]:k+1}" ;;
+    cat) hook_bash_stdin_only_options ${rest[@]+"${rest[@]}"} ;;
+    python|python3|node) hook_bash_stdin_script_is_stdin ${rest[@]+"${rest[@]}"} ;;
     read) return 0 ;;
     bash|sh) [ "$a1" = -s ] ;;
     *) return 1 ;;

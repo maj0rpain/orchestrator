@@ -1299,7 +1299,8 @@ done
 bs_denied() { bs_event "$1" orch-implementer "$2" | bs_run ""; }
 for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
   'python3 - x' 'node - --flag' 'cat -n' 'cat -A' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat' \
-  'cat >out' 'cat > f' 'cat 2>/dev/null' 'python3 >log' 'node 2>&1' 'cat &>o' 'cat >> f' '>o cat'; do
+  'cat >out' 'cat > f' 'cat 2>/dev/null' 'python3 >log' 'node 2>&1' 'cat &>o' 'cat >> f' '>o cat' \
+  $'\ncat' $'cd x &&\ncat' $'echo a;\n\ncat' 'cat;' '>o; cat'; do
   bs_out="$(bs_denied default "$bs_cmd")"
   assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" \
     "$(bs_decision "$bs_out")" deny
