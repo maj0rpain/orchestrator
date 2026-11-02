@@ -160,8 +160,10 @@ helper_placement() {
   return 1
 }
 
-# The six multi-field gh ops gh_op_placement looks for, space-separated.
-GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs adapter_issue_authorship"
+# The five multi-field gh ops gh_op_placement looks for outside the gh module,
+# space-separated, and the trust read it also lets the Trust module name.
+GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs"
+GH_TRUST_READ_OPS="adapter_issue_authorship"
 
 # The gh op placement rule, as gh_op_placement's message states it.
 GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (${GH_MULTI_FIELD_OPS// /, }); every other script reads one through its reader, which decodes its fields - and adapter_issue_authorship is also named by the Trust module, scripts/orch/trust.sh, whose reader it is."
@@ -203,17 +205,17 @@ name_placement() {
   return 1
 }
 
-# gh_op_placement <dir>: name_placement for the six multi-field gh ops, outside
+# gh_op_placement <dir>: name_placement for the multi-field gh ops, outside
 # the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
 # module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
 gh_op_placement() {
   local rc=0 out="" part
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "${GH_MULTI_FIELD_OPS% adapter_issue_authorship}" ./orch/gh.sh)" || rc=$?
+  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_MULTI_FIELD_OPS" ./orch/gh.sh)" || rc=$?
   [ "$rc" -ne 2 ] || return 2
   [ -z "$part" ] || out="$part"
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names adapter_issue_authorship ./orch/gh.sh ./orch/trust.sh)" || {
-    [ "$?" -ne 2 ] || return 2
-  }
+  rc=0
+  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_TRUST_READ_OPS" ./orch/gh.sh ./orch/trust.sh)" || rc=$?
+  [ "$rc" -ne 2 ] || return 2
   [ -z "$part" ] || out="${out:+$out
 }$part"
   [ -z "$out" ] && return 0

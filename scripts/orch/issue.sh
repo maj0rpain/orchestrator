@@ -103,15 +103,18 @@ issue_comments_render() {
   jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$kept"
 }
 
-# issue_comments_rendered <what> <n> <var>: issue <n>'s trusted comments,
-# rendered by issue_comments_render, assigned to <var>. A gh failure dies as
-# "gh could not <what>".
-issue_comments_rendered() {
-  local __icr_raw __icr_out
-  gh_or_die --out __icr_raw "$1" adapter_issue_comments "$2"
-  __icr_out="$(issue_comments_render "$2" <<<"$__icr_raw")" \
-    || die "could not read the comments of issue #$2"
-  printf -v "$3" '%s' "$__icr_out"
+# comments_rendered <adapter> <what> <n> <var>: issue or PR <n>'s trusted
+# comments, read by <adapter> (adapter_issue_comments or adapter_pr_comments),
+# rendered by issue_comments_render, assigned to <var>; no placeholder for a
+# dropped comment, and the Trust filter's stderr line names <n>. A gh failure
+# dies as "gh could not <what>"; a comment object that does not parse dies as
+# "could not <what>: its comments did not parse", both with status 1.
+comments_rendered() {
+  local __cr_raw __cr_out
+  gh_or_die --out __cr_raw "$2" "$1" "$3"
+  __cr_out="$(issue_comments_render "$3" <<<"$__cr_raw")" \
+    || die "could not $2: its comments did not parse"
+  printf -v "$4" '%s' "$__cr_out"
 }
 
 # The comments `issue comments` writes (#1116), from the issue's comments

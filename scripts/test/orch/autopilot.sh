@@ -1426,10 +1426,12 @@ pt_issue() { # <issue> <author> <association> [<editor> [<renamer>]]: a labelled
 }
 pt_tick() { "$ORCH" autopilot tick >/dev/null 2>&1; }
 
-# one trusted and one untrusted author; every association is pinned in the
-# trust module's section
-pt_issue 7 someone OWNER; fake_comments_clear 7; pt_tick
-assert_eq "an OWNER author's issue is picked up" "$(tick_calls)" "1"
+# the trusted associations and one untrusted author; the other untrusted
+# associations are pinned in the trust module's section
+for pt_assoc in OWNER MEMBER COLLABORATOR; do
+  pt_issue 7 someone "$pt_assoc"; fake_comments_clear 7; pt_tick
+  assert_eq "a $pt_assoc author's issue is picked up" "$(tick_calls)" "1"
+done
 pt_issue 7 stranger NONE; fake_comments_clear 7; pt_tick
 assert_eq "a NONE author's issue, never edited, is not picked up" "$(tick_calls)" "0"
 

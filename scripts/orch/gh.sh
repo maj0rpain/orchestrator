@@ -245,15 +245,16 @@ adapter_labels() {
 
 # --- issue operations ---
 
-# Every comment on an issue or PR, in order, each opened by a marker line
+# The shape every comment read renders in: each comment opened by a marker line
 # naming its author and gh's ISO-8601 timestamp, one blank line between
-# comments and bodies unescaped; nothing at all for none. pr comments (issue
-# #418) reads a PR's comments through this same --jq, so the two read alike.
-# COMMENTS_RENDER_JQ is that shape, defined once: render_comments(login) turns
-# an array of comments into the joined text, login reading each comment's
+# comments and bodies unescaped; nothing at all for none. No adapter renders:
+# the adapters answer raw JSON, and the issue module renders the trusted
+# comments after the Trust filter (comments_rendered, for issue and PR comments
+# alike). COMMENTS_RENDER_JQ is that shape, defined once: render_comments(login)
+# turns an array of comments into the joined text, login reading each comment's
 # author, so every comments read - issue comments' filtered one among them
 # (#1116) - renders through the same definition.
-# shellcheck disable=SC2034 # read by the issue module, which renders the issue comments
+# shellcheck disable=SC2034 # read by the issue module's issue_comments_render and ISSUE_COMMENTS_KEPT_JQ
 COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
 
 # comments_split <file> <dir>: splits <file>, comments in its rendered shape,
@@ -282,7 +283,7 @@ adapter_issue_body() {
 # adapter_issue_comments <n>: the issue's comments as gh answers them, raw JSON
 # - an object whose comments array holds each comment's author login object,
 # authorAssociation, createdAt and body, among gh's other fields. Rendering
-# happens above the adapter, after the trust filter (issue_comments_rendered).
+# happens above the adapter, after the trust filter (comments_rendered).
 adapter_issue_comments() {
   gh issue view "$1" --json comments
 }
@@ -524,7 +525,7 @@ adapter_pr_body() {
 
 # adapter_pr_comments <n>: the PR's comments as gh answers them, raw JSON, as
 # adapter_issue_comments prints an issue's (issue #418). Rendering happens above
-# the adapter, after the trust filter (pr_comments_rendered).
+# the adapter, after the trust filter (comments_rendered).
 adapter_pr_comments() {
   gh pr view "$1" --json comments
 }

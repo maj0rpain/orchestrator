@@ -385,7 +385,7 @@ cmd_ticket_retire() {
       gh_or_die "close ticket #$n" \
         adapter_issue_close "$n" --reason "not planned" --comment "$msg"
     else
-      issue_comments_rendered "read ticket #$n's comments" "$n" comments
+      comments_rendered adapter_issue_comments "read ticket #$n's comments" "$n" comments
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
         comment_file="$(mktemp)" || die "could not create a temp file for the comment on ticket #$n"
         printf '%s\n' "$msg" >"$comment_file"

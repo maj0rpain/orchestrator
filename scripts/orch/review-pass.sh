@@ -118,7 +118,7 @@ review_pass_known_items() {
   [ "$st" -le 1 ] || exit 1
   if [ "$st" -eq 0 ]; then
     gh_or_die --file "$work/body.raw" "read the body of PR #$pr" adapter_pr_body "$pr"
-    pr_comments_rendered "read the comments of PR #$pr" "$pr" pr_text
+    comments_rendered adapter_pr_comments "read the comments of PR #$pr" "$pr" pr_text
     tr -d '\r' <"$work/body.raw" >"$work/body"
     { [ -z "$pr_text" ] || printf '%s\n' "$pr_text"; } | tr -d '\r' >"$work/comments"
     mkdir "$work/c"

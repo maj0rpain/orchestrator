@@ -428,19 +428,6 @@ cmd_pr_comments() {
   file_write_atomic "$file" "${text:+$text$'\n'}" || die2 "could not write $file"
 }
 
-# pr_comments_rendered <what> <n> <var>: PR <n>'s trusted
-# comments, rendered by issue_comments_render (the Trust filter's stderr line
-# names the PR), assigned to <var>; no placeholder for a dropped comment. A gh
-# failure dies as "gh could not <what>"; a comment object that does not parse
-# dies as "could not read the comments of PR #<n>", both with status 1.
-pr_comments_rendered() {
-  local __pcr_raw __pcr_out
-  gh_or_die --out __pcr_raw "$1" adapter_pr_comments "$2"
-  __pcr_out="$(issue_comments_render "$2" <<<"$__pcr_raw")" \
-    || die "could not read the comments of PR #$2"
-  printf -v "$3" '%s' "$__pcr_out"
-}
-
 # The PR counterpart of issue update, with one guard issue update has no need
 # for: the body's first line is the Closes/Refs line open_pr wrote, and a
 # correction must never drop or change it, so a file that does not open with
