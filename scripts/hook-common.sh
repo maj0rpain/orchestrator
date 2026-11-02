@@ -152,21 +152,22 @@ hook_bash_stdin_rewrite() {
 }
 
 # Prints the first part of a Bash command that is a plain stdin read, or
-# nothing (#2002). $1 is the command. Parts split on `;`, `&&`, `||` and
-# newlines, outside single and double quotes and outside heredoc bodies; an
-# unquoted `#` at a word start ends its line. A part is a plain read when its
+# nothing (#2002). $1 is the command, split into parts by hook_bash_walk. A
+# part is a plain read when its
 # first word, after leading VAR=value words, is `cat` with no file argument
 # (only options other than `--help` and `--version`, or `-`), `read`,
 # `python`, `python3` or `node` with no argument or `-` as its script, or
 # `bash`/`sh` with `-s` first - and the part
-# holds no `<` and no `|`, which would feed it. First-word matching only. A
-# command over 8 KB is not scanned (a false negative), to stay fast.
+# holds no `<` and no `|`, which would feed it. First-word matching only.
 hook_bash_stdin_reader() { hook_bash_walk "$1" hook_bash_stdin_hit; }
 
-# The command walker (#2085): splits command $1 into parts (see above) and
+# The command walker (#2085): splits command $1 into parts - on `;`, `&&`, `||`
+# and newlines, outside single and double quotes and outside heredoc bodies; an
+# unquoted `#` at a word start ends its line - and
 # calls the test "$2" with each part and its unquoted text (the part with every
 # quoted span, quotes included, replaced by a space). The first part whose test
-# succeeds ends the walk, with the test's output; the walk always succeeds.
+# succeeds ends the walk, with the test's output; the walk always succeeds. A
+# command over 8 KB is not scanned (a false negative), to stay fast.
 hook_bash_walk() {
   local cmd="$1" test_fn="$2" line part="" unq="" quote="" heredoc_end="" heredoc_strip_tabs=0 continued=0 i c n rest re
   [ "${#cmd}" -le 8192 ] || return 0
@@ -314,14 +315,15 @@ hook_bash_stdin_deny() {
 # Succeeds when the unquoted text $2 of a command part holds a word equal to
 # pgrep or pkill, or a path ending in /pgrep or /pkill (#2085). Words split on
 # whitespace and on `;`, `&`, `|`, `(`, `)`, `$` and backtick. $1, the part
-# itself, is unused: this test is a hook_bash_walk callback.
+# itself, is unused: this test is a hook_bash_walk callback, printing "hit"
+# when it succeeds.
 hook_bash_poll_hit() {
   local -a words
   local w
   read -ra words <<<"${2//[;&|()\$\`]/ }"
   [ "${#words[@]}" -gt 0 ] || return 1
   for w in "${words[@]}"; do
-    case "$w" in pgrep|pkill|*/pgrep|*/pkill) return 0 ;; esac
+    case "$w" in pgrep|pkill|*/pgrep|*/pkill) printf hit; return 0 ;; esac
   done
   return 1
 }
@@ -333,11 +335,6 @@ hook_bash_poll_hit() {
 hook_bash_poll_deny() {
   local cmd
   cmd="$(printf '%s' "$1" | jq -er --arg auto "$2" "$HOOK_BASH_SCOPE"'$c' 2>/dev/null)" || return 1
-  [ -n "$(hook_bash_walk "$cmd" 'hook_bash_poll_hit_out')" ] || return 1
+  [ -n "$(hook_bash_walk "$cmd" hook_bash_poll_hit)" ] || return 1
   hook_emit_deny "This Bash call holds an unquoted pgrep or pkill word. pgrep and pkill match this shell's own command line, so a poll never ends and a kill kills this shell. To wait for a long command, rerun it in the foreground with timeout: 600000; if the host moves it to the background, wait for its completion notice and use its exit code (host capability *Run a long command*). If the word is only an argument, such as a grep pattern, quote it."
-}
-
-# hook_bash_walk callback: prints "hit" when hook_bash_poll_hit holds.
-hook_bash_poll_hit_out() {
-  hook_bash_poll_hit "$@" && printf hit
 }
