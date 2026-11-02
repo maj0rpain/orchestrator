@@ -51,7 +51,8 @@ yours to verify.
 
 When you write the report, hold back each finding a known item already
 carries: the same file and the same claim, judged on substance - line numbers
-may move - or, for an item with no location, the same claim alone. Hold it
+may move - or, for an item with no location, the same claim alone. A known
+item with a `Sites:` list carries a finding at any of its sites. Hold it
 back only while its location and cause are unchanged: read the current code
 at the item's location against its claim, and an item with no location
 against the change as a whole. A known item whose location or cause has

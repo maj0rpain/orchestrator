@@ -1367,6 +1367,16 @@ assert_not_contains "nothing is waiting to be filed then" "$(cat known.md)" "wai
 assert_contains "and every record at or below it contributes Filed" \
   "$(cat known.md)" "- #99 major: b.sh:1 never read below the boundary - filed #99"
 
+# A pattern finding's deferred sites are one bullet with a Sites: list.
+writeln '# Review iteration 4' '## Waiting to be filed' '' \
+  '- Standards/nit: `a.sh:3` the helper is copied per script Sites: `a.sh:3`, `b.sh:9`. - needs a decision (`a.sh:3`); loop-authored lines (`b.sh:9`)' \
+  '## Filed' 'None.' >.orchestrator/review/iteration-04.md
+"$ORCH" review known-items known.md 3 >/dev/null; st=$?
+assert_status "builds with a Sites: bullet" "$st" 0
+assert_contains "a Waiting-to-be-filed bullet with a Sites: list is one whole known item" \
+  "$(cat known.md)" '- Standards/nit: `a.sh:3` the helper is copied per script Sites: `a.sh:3`, `b.sh:9`. - needs a decision (`a.sh:3`); loop-authored lines (`b.sh:9`) - waiting to be filed, iteration 04'
+rm .orchestrator/review/iteration-04.md
+
 writeln '## Rejected alternatives' 'None.' >.orchestrator/handoff/01-plan.md
 writeln '## Deviations' '- None' >.orchestrator/handoff/03-implement.md
 rm .orchestrator/review/iteration-0[13].md
