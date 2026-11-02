@@ -423,10 +423,50 @@ review_standards_mentions() {
         review_standards_resolve "$dir" "$link"
         ;;
     esac
-  done < <(awk 'NF { p = p " " $0; next } p != "" { print p; p = "" } END { if (p != "") print p }' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
+  done < <(awk 'NF { p = p " " $0; next } p != "" { print p; p = "" } END { if (p != "" && !done) print p }' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
+}
+
+# review_standards_declaration <file>: the first `Standards:` paragraph of the
+# root file <file>, its lines joined, or nothing when it has none. A paragraph
+# whose first line starts with Standards: and sits outside a fenced code block;
+# the fence state runs from the opening fence to the closing one, blank lines
+# included.
+review_standards_declaration() {
+  awk '
+    /^[[:space:]]*(```|~~~)/ { if (p != "") { print p; done = 1; exit } fence = !fence; prev = 0; next }
+    fence { next }
+    p != "" { if (NF) { p = p " " $0; next } print p; done = 1; exit }
+    /^Standards:/ && !prev { p = $0; next }
+    { prev = NF ? 1 : 0 }
+    END { if (p != "" && !done) print p }
+  ' "$ROOT/$1" 2>/dev/null
+}
+
+# review_standards_declared <entry>...: dies unless every entry is a
+# repo-relative path naming a regular file inside the repo.
+review_standards_declared() {
+  local e seg depth segs
+  for e in "$@"; do
+    case "$e" in
+      /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
+    esac
+    [[ $e =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && die "Standards entry \`$e\` is a URL (want a repo-relative path)"
+    depth=0
+    IFS=/ read -ra segs <<< "$e"
+    for seg in "${segs[@]}"; do
+      case "$seg" in
+        ''|.) ;;
+        ..) depth=$((depth - 1)); [ "$depth" -ge 0 ] || die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
+        *) depth=$((depth + 1)) ;;
+      esac
+    done
+    [ -e "$ROOT/$e" ] || die "Standards entry \`$e\` names a missing file"
+    [ -f "$ROOT/$e" ] || die "Standards entry \`$e\` is not a regular file"
+  done
 }
 
 # review_standards: the one Standards: line both reviewers' prompts end with -
+# a declaration in the root files when one exists, else the crawl:
 # root CLAUDE.md and AGENTS.md, or with neither CODING_STANDARDS.md and
 # CONTRIBUTING.md, then the .md paths they mention, then the ones those
 # mention: two hops, never a third, each path listed once at its first place
@@ -442,6 +482,18 @@ review_standards() {
       [ ! -f "$ROOT/$f" ] || listed+=("$f")
     done
   fi
+  local decl entries=()
+  for f in ${listed[@]+"${listed[@]}"}; do
+    decl="$(review_standards_declaration "$f")"
+    [ -n "$decl" ] || continue
+    while IFS= read -r p; do
+      entries+=("${p:1:${#p}-2}")
+    done < <(grep -oE '`[^`]+`' <<< "$decl")
+    [ "${#entries[@]}" -gt 0 ] || die "$f declares Standards: with no entries (want backticked paths)"
+    review_standards_declared "${entries[@]}"
+    note "Standards: $(list_join "$(printf '%s\n' "${entries[@]}")")"
+    return 0
+  done
   hop=(${listed[@]+"${listed[@]}"})
   local i
   for ((i = 0; i < 2; i++)); do
