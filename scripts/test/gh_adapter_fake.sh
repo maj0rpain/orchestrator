@@ -677,14 +677,15 @@ adapter_prs_open() {
   done | sort -rn
 }
 
-# adapter_prs_open_all: every open PR in the store, newest first.
+# adapter_prs_open_all: every open PR in the store, newest first, each as
+# `<number>\t<flag>`, the flag as adapter_prs_open prints it.
 adapter_prs_open_all() {
   local d
   ! fake_failing adapter_prs_open_all || return 1
   for d in "$(fake_store)"/prs/*/; do
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = OPEN ] || continue
-    basename "$d"
+    printf '%s\t%s\n' "$(basename "$d")" "$(cat "$d/cross_repository" 2>/dev/null || echo false)"
   done | sort -rn
 }
 

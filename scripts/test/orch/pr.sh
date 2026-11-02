@@ -1213,6 +1213,7 @@ fake_pr 58 open orch/120-bar main
 fake_pr_body 58 $'Closes #120\n'
 out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
 assert_status "pr read finds the PR whose issue line names the issue" "$st" 0
+assert_not_contains "no fork PR: no ignored line on stderr" "$out" "ignored"
 assert_eq "writing its body, a rule, then its diff" "$(cat "$out_file")" \
   "$(printf 'Refs #12\n\nAdds the widget.\n\n---\ndiff --git a/w b/w\n+widget')"
 out="$("$ORCH" pr read 12 2>&1)"; st=$?
@@ -1323,6 +1324,28 @@ out="$("$ORCH" pr comments "$fk_comments" 2>"$errf")"; st=$?
 assert_status "pr comments with an unreadable flag exits 2" "$st" 2
 assert_eq "writing nothing" "$(cat "$fk_comments")" "known content"
 fake_pr_cross 58 false
+
+# pr read: a fork PR opening with the issue line is ignored.
+rm -rf "$ORCH_GH_FAKE_STORE/prs"/*
+rd_file="$(mktemp -d)/pr.md"
+fake_pr 70 open orch/12-foo main
+fake_pr_body 70 $'Closes #12\n\nMine.'
+printf 'mine diff\n' >"$ORCH_GH_FAKE_STORE/prs/70/diff"
+fake_pr 71 open stranger/main main
+fake_pr_cross 71
+fake_pr_body 71 $'Closes #12\n\nStranger.'
+out="$("$ORCH" pr read 12 "$rd_file" 2>"$errf")"; st=$?
+assert_status "pr read beside a newer fork PR succeeds" "$st" 0
+assert_contains "reading the same-repo PR" "$(cat "$rd_file")" "Mine."
+assert_not_contains "and not the fork PR" "$(cat "$rd_file")" "Stranger"
+assert_eq "saying one fork PR was ignored for the issue" "$(cat "$errf")" "orch: ignored 1 PR(s) from forks for #12"
+rm -rf "$ORCH_GH_FAKE_STORE/prs/70"
+out="$("$ORCH" pr read 12 "$rd_file" 2>&1)"; st=$?
+assert_status "pr read with only the fork PR fails" "$st" 1
+assert_contains "with the unchanged message" "$out" "orch: no open PR closes or refers to issue #12"
+fake_pr_body 71 $'Closes #99\n\nStranger.'
+out="$("$ORCH" pr read 12 "$rd_file" 2>&1)"; st=$?
+assert_not_contains "a fork PR naming another issue: no ignored line" "$out" "ignored"
 
 # pr release: a fork's release PR does not block, a same-repo one does.
 bare="$(mktemp -d)/origin.git"

@@ -591,9 +591,12 @@ adapter_prs_open() {
     --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 }
 
-# adapter_prs_open_all: every open PR, one number per line, newest first.
+# adapter_prs_open_all: every open PR, newest first, one per line as
+# `<number>\t<isCrossRepository>` (`true` or `false`), unfiltered: the Trust
+# module's trust_filter_prs drops the fork PRs.
 adapter_prs_open_all() {
-  gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+  gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number,isCrossRepository \
+    --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 }
 
 # adapter_pr_diff <n>: the PR's diff, as gh prints it.

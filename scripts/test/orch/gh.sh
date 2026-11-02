@@ -553,10 +553,10 @@ gh_reply 1 '' 'HTTP 502: Bad Gateway' issue view 404 --json comments --jq "$comm
 out="$(contract adapter_issue_comments_json 404 2>&1)"; st=$?
 assert_status "issue comments json: a gh failure fails it" "$st" 1
 
-gh_reply 0 $'58\n57\n' '' pr list --state open --limit 1000 --json number --jq '.[].number'
+gh_reply 0 $'58\ttrue\n57\tfalse\n' '' pr list --state open --limit 1000 --json number,isCrossRepository --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 out="$(contract adapter_prs_open_all 2>&1)"; st=$?
 assert_status "open PRs: lists every open PR" "$st" 0
-assert_eq "newest first, one number per line" "$out" "$(writeln 58 57)"
+assert_eq "newest first, each with its fork flag, unfiltered" "$out" "$(printf '58\ttrue\n57\tfalse')"
 gh_reply 0 $'diff --git a/w b/w\n+widget\n' '' pr diff 57
 out="$(contract adapter_pr_diff 57 2>&1)"; st=$?
 assert_status "pr diff: reads the diff" "$st" 0
