@@ -1,6 +1,6 @@
 ---
 name: orch-quick-implement
-description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, runs /orchestrator:quick-implement [<issue>], or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue - possibly rewritten from the plan, unattended - an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
+description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at the planning interview's closing question, runs /orchestrator:quick-implement [<issue>], or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue - possibly rewritten from the plan, unattended - an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
 ---
 
 # Orchestrator quick implementation

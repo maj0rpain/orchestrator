@@ -22,14 +22,15 @@
 # It injects context only. It cannot force compliance, which is why the real
 # durability lives in .orchestrator/state.json and, on Claude Code, the edit
 # guard; on Junie, orch.sh init's flow-start working-tree check (ADR-0025).
-# Fires once per session. Beside a running flow it still sends the planning
-# rules, with a closing that names that flow and states two branches: about that
-# flow, point to its next or redo; about anything else, the interviewed-issue
-# step and the route question, where only Blueprint runs in this checkout and
-# Start and Quick implementation proceed in a side checkout (#640, #729). With
-# no flow, a human's request for a side checkout is honoured. When the planning
-# finds the interviewed issue's work already done, the done-close (#985) stands
-# in for the ready-for-agent move and the route question.
+# Fires once per session. It sends only what depends on the session: the
+# planning rules, this repo's triage labels, the host's ask tool, and, beside a
+# running flow, that flow and its two cases (about that flow, point to its next
+# or redo; about anything else, the close). The fixed closing rules - the
+# interviewed-issue step, the done-close (#985), the route question and the
+# routes, side checkout included (#640, #729) - live in orch-interview's
+# "## Closing" section (#1980), because Claude Code keeps hook context of 10 KB
+# or more out of the conversation. Entry points that do not load that skill
+# are pointed at the section by absolute path.
 
 set -euo pipefail
 
@@ -39,6 +40,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 # labels. The module reads the labels doc at $ROOT/$LABELS_DOC and needs
 # only ROOT, set below.
 source "$(dirname "${BASH_SOURCE[0]}")/triage-labels.sh"
+
+# Prints the regex for a "/" or "$" reference to an entry point, standing as
+# its own word: "$grill-me x" matches, "$grilling-notes" and prose do not. $1
+# is an alternation of names, each matched under any scope; $2, when given, is
+# one more alternative matched only as written, for a command such as
+# orchestrator:interview, because a bare /interview is not ours. One grammar
+# for both the hook's trigger and its orch-interview test, so they cannot drift.
+entry_pattern() {
+  local alt="([a-z-]+:)?($1)"
+  [ -z "${2:-}" ] || alt="$alt|$2"
+  printf '(^|[[:space:]])[/$](%s)([[:space:]]|$)' "$alt"
+}
 
 hook_read_skill_and_session
 
@@ -51,12 +64,10 @@ if [ "$event" = "UserPromptSubmit" ]; then
   # plan screen without asking the closing question. Confirming that
   # screen submits this fixed prompt to the main agent, which asks it instead.
   if [ "$prompt" = "Implement the suggested plan" ]; then plan_confirmed=1; fi
-  # A "/" or "$" reference to an entry point, optionally scoped, standing as
-  # its own word: "$grill-me x" matches, "$grilling-notes" and prose do not.
-  # orch-interview matches under any scope; its command, interview, only
-  # under orchestrator:, because a bare /interview is not ours.
-  entry='(^|[[:space:]])[/$](([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture|orch-interview)|orchestrator:interview)([[:space:]]|$)'
-  [ "$plan_confirmed" = 1 ] || [[ "$prompt" =~ $entry ]] || exit 0
+  # A planning entry point named in the prompt; see entry_pattern.
+  [ "$plan_confirmed" = 1 ] ||
+    [[ "$prompt" =~ $(entry_pattern 'grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture|orch-interview' orchestrator:interview) ]] ||
+    exit 0
 else
   # "grilling" or "orch-interview" only. grill-me and grill-with-docs route
   # through grilling rather than being it, so matching the substring catches
@@ -101,78 +112,38 @@ ready_label="$(triage_label_for ready-for-agent)"
 wontfix_label="$(triage_label_for wontfix)"
 human_label="$(triage_label_for ready-for-human)"
 
-# How to run each route, split so that beside an active flow (#640, #729) the
-# flow and quick-implementation routes run on their side-checkout route: they
-# must not run in a checkout whose branch belongs to the running flow. With no
-# active flow, a human's request for a side checkout is honoured instead.
+# The fixed closing rules live in orch-interview's SKILL.md, under "## Closing"
+# (#1980): Claude Code keeps hook context of 10 KB or more out of the
+# conversation, so this message carries only what depends on the session.
+plugin_root="$(hook_plugin_root)"
+closing_skill="$plugin_root/skills/orch-interview/SKILL.md"
+orch_path="$plugin_root/scripts/orch.sh"
 if [ "$host" = junie ]; then
   ask_tool="the ask_user tool"
-  ask_step="Call the ask_user tool with
-  exactly three options:"
-  autopilot_option=""
-  run_autopilot=""
-  autopilot_route=""
-  plugin_root="$(hook_plugin_root)"
   next_redo="the **Next phase** and **Redo** sections of $plugin_root/skills/orch-flow/SKILL.md
     (this host has no plugin commands: read that file and follow the section
     the user picks)"
-  run_flow_quick="On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
-  \"Quick implementation\", the orch-quick-implement skill. "
-  run_blueprint="On \"Blueprint
-  only\", run each step of the Blueprint route below as its skill - orch-to-spec for issue #<n>, the interviewed issue, when there is one
-  (its rewrite mode), orch-spec-review, and orch-to-tickets. This host has no Skill tool, so read each
-  skill's file and follow it verbatim:"
-  run_review_rounds="follow orch-spec-review for issue #<n> with --rounds <count>"
-  flow_quick_files="
-  $plugin_root/skills/orch-flow/SKILL.md,
-  $(hook_quick_skill_file),"
-  run_flow_quick_side="On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
-  \"Quick implementation\", the orch-quick-implement skill - each as asked for a side checkout, so it takes its **Starting in a side checkout** route. "
-  side_request="
-  If the user asks for a side checkout - a git worktree of its own, opened in
-  its own session - honour it: on \"Start the orchestrator flow\" or \"Quick
-  implementation\", follow that skill's **Starting in a side checkout** section."
-  blueprint_files="
-  $plugin_root/skills/orch-to-spec/SKILL.md,
-  $plugin_root/skills/orch-spec-review/SKILL.md (its standalone spec review), and
-  $plugin_root/skills/orch-to-tickets/SKILL.md."
 else
   ask_tool="the AskUserQuestion tool"
   next_redo="/orchestrator:next or /orchestrator:redo"
-  ask_step="Call the AskUserQuestion tool with
-  exactly four options:"
-  autopilot_option="
-      4. Autopilot flow - hands the plan to the autopilot watcher, which carries it through spec, implement and review unattended and asks the human only by comment on the issue."
-  run_autopilot="On \"Autopilot flow\", follow the Autopilot route below yourself. "
-  autopilot_route="
-- On \"Autopilot flow\" (Claude Code only), the route ends in the plan handoff; this planning session writes no flow state and makes no side checkout, so run neither \`init\` nor \`side-checkout add\`.
-  First write the spec: call the Skill tool with \"orchestrator:orch-to-spec\" - in rewrite mode, args set to the interviewed issue's number, when there is one, else in publish mode - with its test-seams check.
-  Then write the plan with the \`orch-handoff\` skill's \`01-plan.md\` template, including its \`## Autopilot\` block, to a file named \`01-plan.md\` in a fresh \`mktemp -d\` directory outside the repo (\`handoff validate\` looks sections up by basename; this session runs without ORCH_AUTOPILOT, so \`autopilot start\` is the check that covers the \`## Autopilot\` block):
-  Rounds sized by the spec phase's rule - 1 for a one-site spec, 2 by default, 3 for a large or cross-cutting spec - and Budget, the review loop's iteration budget, sized by the review loop's rule from the scope the interview settled - 3 for one site and one ticket, 5 for a few files and 2-3 tickets, 8 for many modules, 4+ tickets, or the review loop's or flow state's own machinery, risk weighing above size.
-  Last run
-  bash \"$(hook_plugin_root)/scripts/orch.sh\" autopilot start <issue> <plan-file>
-  through that path, <issue> being the spec's issue number. When a step stops or fails, stop there and report why; the route ends in \`autopilot start\`.
-  Then report that the watcher picks the issue up."
-  run_flow_quick="On \"Start the orchestrator flow\", call the Skill tool with
-  \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
-  tool with \"orchestrator:orch-quick-implement\" yourself. "
-  run_blueprint="On \"Blueprint
-  only\", call the Skill tool yourself for each step of the Blueprint route below:
-  \"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one
-  (its rewrite mode), \"orchestrator:orch-spec-review\" (its standalone spec review),
-  and \"orchestrator:orch-to-tickets\". The
-  orchestrator's skills are model-invocable: call them, do not hand them to the
-  user."
-  run_review_rounds="call the Skill tool with \"orchestrator:orch-spec-review\" and args \"<n> --rounds <count>\""
-  run_flow_quick_side="On \"Start the orchestrator flow\",
-  call the Skill tool with \"orchestrator:orch-flow\" and args \"--side\" yourself.
-  On \"Quick implementation\",
-  call the Skill tool with \"orchestrator:orch-quick-implement\" and args \"--side\" yourself. "
-  side_request="
-  If the user asks for a side checkout - a git worktree of its own, opened in
-  its own session - honour it: pass args \"--side\" to whichever of those two skills runs."
-  flow_quick_files=""
-  blueprint_files=""
+fi
+
+# The orch-interview skill loads in full, so its entry point needs no pointer.
+# Every other entry point, and Junie's plan-confirmed prompt, reads the section.
+point_to_closing=1
+if [ "$plan_confirmed" = 1 ]; then
+  :
+elif [ "$event" = UserPromptSubmit ]; then
+  if [[ "$prompt" =~ $(entry_pattern orch-interview) ]]; then point_to_closing=0; fi
+else
+  case "$skill" in *orch-interview*) point_to_closing=0 ;; esac
+fi
+if [ "$point_to_closing" = 1 ]; then
+  closing_line="- The rules for closing this planning are in the \`## Closing\` section of
+  $closing_skill. Read that section by this absolute path before the close, with
+  \$ORCH there being $orch_path."
+else
+  closing_line="- The rules for closing this planning are in the \`## Closing\` section of the orch-interview skill."
 fi
 
 # The active flow, named by whatever state.json holds: its issue, else its
@@ -180,12 +151,7 @@ fi
 # phase is a flow init just started. Only state that cannot be read as a JSON
 # object leaves it unnamed, with no phase claimed.
 flow_branches=""
-route_here="$side_request"
-# The branches stand in place of the route question (#640): beside a flow, the
-# question's bullet opens by scoping itself to the second case.
 confirm_lead="Before you implement anything"
-close_lead="When you reach a shared understanding"
-done_lead="At the close"
 if [ "$flow_active" = 1 ]; then
   flow_readable=0 flow_issue="" flow_slug="" flow_phase=""
   if flow_state_readable "$state"; then
@@ -211,125 +177,25 @@ if [ "$flow_active" = 1 ]; then
   flow_branches="- Beside this planning session, ${flow_named}. At the close, decide
   from this planning session's conversation which of two cases applies:
   - If this planning was about ${flow_subject}: ask no route question and
-    skip the interviewed-issue step and the done-close below, since that flow already holds the
+    skip the interviewed-issue step and the done-close, since that flow already holds the
     work. The next step is that flow's: point the user to ${next_redo}.
-  - Otherwise: run the interviewed-issue step and the done-close below
-    unchanged, then the route question below unless the done-close applies."
-  only_second="Only in the second case above (planning about anything else):"
-  confirm_lead="$only_second before you implement anything"
-  close_lead="$only_second when you reach a shared understanding"
-  done_lead="$only_second at the close"
-  route_here="
-  Blueprint only is the one route that runs in this checkout, whose branch
-  belongs to the running flow: \"Start the orchestrator flow\" and \"Quick implementation\" proceed in a side checkout,
-  a git worktree of their own opened in its own session, so run their skills
-  only on that route, as above - never in this checkout."
-  # Beside a flow, Start and Quick implementation take the side-checkout route.
-  run_flow_quick="$run_flow_quick_side"
+  - Otherwise: run the interviewed-issue step and the done-close
+    unchanged, then the route question unless the done-close applies."
+  confirm_lead="Only in the second case above (planning about anything else): before you implement anything"
 fi
-run_next="- ${run_flow_quick}${run_autopilot}${run_blueprint}${flow_quick_files}${blueprint_files}"
 
-# The interviewed issue (#571): an open issue the planning was about is
-# offered a move to ready-for-agent before the route question, so init
-# --issue can adopt it. The step reads the issue's triage state first, through
-# issue triage --check (#989), so it asks nothing of an issue already ready
-# and one question of an issue with a held label. Its lines are bullets, never
-# numbered: the route question's three options are the only numbered lines in
-# the message.
-orch_cmd="bash \"$(hook_plugin_root)/scripts/orch.sh\""
-refuse_warning="init --issue will refuse #<n> until it carries \`${ready_label}\`"
-interviewed_step="- At the close, if this planning was about an open issue - named in the
-  interview's arguments or its conversation - that is the interviewed issue,
-  and this step comes before the route question below.
-  With no interviewed issue, skip this step entirely.
-  When the done-close below applies, it replaces this step: run no check and ask no label question.
-  Otherwise, before asking anything, run
-  ${orch_cmd} issue triage <n> --check
-  through that path - never a raw gh call - and follow what it prints:
-  - \`ready\`: ask no label question. Name #<n> as the interviewed issue in one sentence and go straight to the route question.
-  - \`${wontfix_label}\` or \`${human_label}\`, a held label: ask one blocking question with ${ask_tool}, naming that label:
-    \"#<n> carries \`<label>\`. Override it and move #<n> to \`${ready_label}\`?\", with the options
-    \"Override and move\", \"Skip\", or \"It's a different issue\". On \"Override and move\", run
-    ${orch_cmd} issue triage <n> --override
-    through that path. If that fails, report its orch: message, warn the user that ${refuse_warning}, and continue to the route question.
-  - \`movable\`: ask one blocking question with ${ask_tool}, naming its number:
-    \"Move #<n> to \`${ready_label}\`\", \"Skip\", or \"It's a different issue\".
-    On a move, run
-    ${orch_cmd} issue triage <n>
-    through that path. If it exits 2, the issue carries
-    \`${wontfix_label}\` or \`${human_label}\` and it printed which: ask the user
-    whether to override that label; on a yes, rerun it with --override;
-    on a no, skip the relabel. On any other failure, warn the user that ${refuse_warning}, and continue to the route question.
-  - If the check itself fails, ask no label question: warn the user, relaying the check's orch: reason, that ${refuse_warning}, and continue to the route question.
-  On \"Skip\", go straight to the route question. On \"It's a different issue\", the user names it:
-  run the check on that issue instead and follow the same branches for it."
-
-# The done-close (#985): an interviewed issue whose work the planning finds
-# already done is offered a close as done, through orch.sh issue close, in
-# place of the ready-for-agent move and the route question. Its options are
-# not numbered, so the route options stay the only numbered lines.
-done_step="- ${done_lead}, if the planning settles that the interviewed issue's work
-  is already done - a commit, PR or issue already did it - skip the interviewed-issue step's move to \`${ready_label}\` and the route question.
-  Instead ask one blocking question with ${ask_tool} that names the commit, PR or issue that did the work,
-  with two options: \"Close #<n> as done (duplicate of #<m>)\" when another issue, #<m>,
-  did the work, else \"Close #<n> as done (completed)\"; and \"Leave #<n> open\".
-  On the close, write the closing comment, naming what did the work, to a file outside the tracked tree
-  (mktemp), then run
-  ${orch_cmd} issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
-  through that path - never a raw gh call - and report the outcome.
-  If the close fails, report its orch: message and stop; the issue stays open.
-  On \"Leave #<n> open\", stop.
-  A free-text answer that the work is not done sends the interview back into rounds.
-  With no interviewed issue and the plan's work already done, ask no question: report what did the work and stop."
-
-choice="${ask_step}
-
-      1. Start the orchestrator flow - the full plan -> spec -> implement ->
-         review pipeline, with its own handoff and review loop.
-      2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
-      3. Blueprint only - write the spec (rewriting the interviewed issue, if
-         there is one) and its ticket breakdown, then stop; implement later.${autopilot_option}
-
-Keep the route options in the order above unless you recommend one.
-To recommend a route from the scope of the work (Quick implementation for a one-site fix, say), list it first, append \" (Recommended)\" to its label, and give that scope-based reason in one clause in its description, or in the question text where options have no description.
-At most one route option carries \"(Recommended)\", and a route option moved out of the order above always carries it.
-
-${run_next} Do not ask the user to type a command.${route_here}
-
-- On \"Blueprint only\": when the interviewed-issue step settled an
-  interviewed issue - the one this planning was about, or the one the user named under \"It's a different issue\" -
-  whatever happened to its label - moved, already ready, skipped, or the check failed -
-  write the spec in rewrite mode on that issue, replacing #<n>'s body instead of publishing a new issue
-  (orch-to-spec, handed #<n>). Only with no interviewed issue, publish the spec as a new issue
-  (orch-to-spec). Either way, write any glossary or
-  ADR wording the planning decided into the issue body verbatim.
-  The route's steps run in this order, and one rule covers every step: when a step stops or fails, stop there - run no later step, and report why it stopped.
-  orch-to-spec stops when it ends without reporting the issue number. Once it has reported the number,
-  ask the user how many spec review rounds to run on it, as one blocking question with ${ask_tool},
-  with the options 2, 1, 3, and Other for any other whole number from 0 up,
-  where 0 skips the review. 0 is the deliberate lower bound.
-  Recommend a count sized to the spec you just wrote: 1 for a one-site spec, 2 by default, 3 for a large or cross-cutting spec (many acceptance criteria, several modules, a new noun or ADR).
-  List the recommended count first, append \" (Recommended)\" to its label, and give that scope-based reason in one clause.
-  An Other that is not a whole number from 0 up is asked again, naming the range;
-  ask every time, never assume.
-  On a count of 1 or more, run the standalone orch-spec-review for that many
-  rounds: ${run_review_rounds}. Then publish
-  its ticket breakdown (orch-to-tickets) against that issue, unless rewrite mode reported the breakdown \`kept\`:
-  then skip that step. Rewrite mode reports the breakdown; run no breakdown check of your own.
-  If orch-to-tickets fails after rewrite mode retired a breakdown, the report also says that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>. Then stop: do not
-  implement or edit source. Report the issue number and how to pick it up
-  later: /orchestrator:start --issue <n>, or a quick implementation that names
-  the issue.${autopilot_route}"
+session_facts="- This repo's triage labels: ready-for-agent is \`${ready_label}\`, wontfix is \`${wontfix_label}\`, ready-for-human is \`${human_label}\`.
+- Ask the closing questions with ${ask_tool}."
 
 if [ "$plan_confirmed" = 1 ]; then
   hook_emit_context "$event" "The orchestrator plugin is installed in this repo, and the user just
 confirmed a plan from a planning session.
 ${flow_branches:+
 $flow_branches}
-${interviewed_step}
-${done_step}
+${closing_line}
+${session_facts}
 - ${confirm_lead}, and without editing any file first, ask the
-  user how to carry the plan out. ${choice}"
+  user how to carry the plan out, by the Closing section's route question."
   exit 0
 fi
 
@@ -343,10 +209,10 @@ While this planning session is running:
   ($(planning_allowlist_text)) are fine; source files are not.
 - Glossary and ADR changes ($(planning_records_text)) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
 ${flow_branches:+$flow_branches
-}${interviewed_step}
-${done_step}
-- ${close_lead}, do not close with a scripted line and
-  do not decide the next step yourself. ${choice}
+}${closing_line}
+${session_facts}
+- When you reach a shared understanding, do not close with a scripted line and
+  do not decide the next step yourself: close as the Closing section says.
 
 If this session runs under a wayfinder skill, \"approved\" means the
 whole map is done, not that one ticket resolved. Do not start the flow after a single ticket."

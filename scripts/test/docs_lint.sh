@@ -127,6 +127,8 @@
 #     fragment, named for no sub-issue, and bumps nothing by hand
 #   scan_line_width  no covered Markdown or shell comment line is past 80
 #     columns, outside the exempt lines
+#   scan_interview_closing  orch-interview's SKILL.md's Closing section has
+#     four numbered route options
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -1443,6 +1445,7 @@ required_headings='agents/orch-fixer.md|## Checking the PR body
 agents/orch-fixer.md|## The record
 agents/orch-implementer.md|## Root-cause fixes
 agents/orch-reviewer-standards.md|## Root-cause check
+skills/orch-interview/SKILL.md|## Closing
 skills/orch-quick-implement/SKILL.md|## 1. Require a linked issue
 skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
@@ -3837,6 +3840,36 @@ assert_empty "width.sh given an uncovered file prints nothing" \
   "$("$width" --root "$fixture" "$fixture/CHANGELOG.md")"
 check "no covered Markdown or shell comment line is past 80 columns" \
   "$(scan_line_width "$PLUGIN_ROOT")"
+
+# --- orch-interview's Closing section (#1980) --------------------------------
+echo
+echo "orch-interview's Closing section (#1980)"
+
+# scan_interview_closing <plugin root>: one line when orch-interview's SKILL.md
+# `## Closing` section does not hold exactly four numbered route options. A
+# missing section is scan_required_headings' to report. Structure only, never
+# wording (ADR-0027).
+scan_interview_closing() {
+  local r="$1" skill="skills/orch-interview/SKILL.md" body n
+  body="$(md_section "$r/$skill" "## Closing" 2>/dev/null)" || return 0
+  n="$(printf '%s\n' "$body" | grep -cE '^[[:space:]]*[0-9]+\. ' || true)"
+  [ "$n" = 4 ] || echo "$skill: the ## Closing section has $n numbered route options, not 4"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-interview"
+printf '# I\n\n## The interview\n' >"$fixture/skills/orch-interview/SKILL.md"
+assert_empty "a missing Closing section is left to the required-headings check" \
+  "$(scan_interview_closing "$fixture")"
+printf '# I\n\n## Closing\n\n1. a\n2. b\n3. c\n' >"$fixture/skills/orch-interview/SKILL.md"
+flags "a Closing section with three numbered route options is flagged" \
+  "$(scan_interview_closing "$fixture")" "has 3 numbered route options, not 4"
+printf '# I\n\n## Closing\n\n1. a\n2. b\n3. c\n4. d\n\n## Next\n\n5. e\n' \
+  >"$fixture/skills/orch-interview/SKILL.md"
+assert_empty "four numbered route options in the Closing section are not flagged" \
+  "$(scan_interview_closing "$fixture")"
+check "orch-interview's Closing section has four numbered route options" \
+  "$(scan_interview_closing "$PLUGIN_ROOT")"
 
 # >>> summary
 echo

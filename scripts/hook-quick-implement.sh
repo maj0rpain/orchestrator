@@ -2,7 +2,7 @@
 #
 # PostToolUse hook on the Skill tool, same matcher as hook-grilling.sh.
 #
-# A human choosing "quick implementation" at hook-grilling.sh's closing
+# A human choosing "quick implementation" at the planning interview's closing
 # question calls Skill("orchestrator:orch-quick-implement"), which is the one
 # reliable choke point for noticing that the marker no longer applies. This
 # hook deletes it, so hook-guard.sh's edit guard lifts without hook-guard.sh
