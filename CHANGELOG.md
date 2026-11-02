@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.1
+
+`suite-cost check` starts no base or confirming run while another suite-cost run is in progress in the clone, and answers `unmeasured` at once instead of spending a run that would be thrown away.
+
 ## 4.43.0
 
 Set the test job pool's share of the usable CPUs with `ORCH_TEST_POOL_PERCENT` (any positive integer, above 100 included). The default share rises from half to 75%, a run with `ORCH_TEST_JOBS` unset runs as many jobs as the pool holds, and every runner refuses an invalid value. `CI` ignores the setting.
