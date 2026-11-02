@@ -1506,5 +1506,17 @@ writeln '# contributing' 'See [the pair](docs/agents/a,b.md) and `docs/agents/c.
 assert_eq "a path containing a comma is listed whole, every other path unchanged" \
   "$("$ORCH" review standards)" \
   "Standards: CODING_STANDARDS.md, CONTRIBUTING.md, docs/agents/a,b.md, docs/agents/c.md"
+# Backticks pair per paragraph, never per line and never across a blank line.
+rm -f CODING_STANDARDS.md CONTRIBUTING.md
+: >docs/agents/p.md; : >docs/agents/q.md
+writeln '# claude' 'A span `wrapped' 'over a line` then `docs/agents/p.md` here.' >CLAUDE.md
+assert_eq "a backtick span wrapping a line break does not swallow the path after it" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
+writeln '# claude' 'An open tick ` here.' '' 'Next `docs/agents/q.md` and a stray ` tick.' >CLAUDE.md
+assert_eq "a backtick left open at a paragraph's end does not pair across the blank line" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/q.md"
+writeln '# claude' '```sh' 'echo hi' '```' '' 'Then `docs/agents/p.md`.' >CLAUDE.md
+assert_eq "a code fence in one paragraph does not hide a path in the next" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
 rm -rf "$out_dir"
 restore_suite_env
