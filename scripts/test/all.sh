@@ -58,6 +58,10 @@
 # computes for its shellcheck limit is never exported: an unset ORCH_TEST_JOBS
 # stays unset for the suites.
 #
+# Each shellcheck process holds a slot of the job pool (test_jobs.sh) while it
+# runs, waiting for one when none is free, and printing "all.sh: waiting for a
+# job slot (N in use)" on stderr the first time; CI bypasses the pool.
+#
 # Outside CI all.sh lowers its own niceness to 10 at start (test_jobs.sh), so
 # every process it starts inherits it; a niceness of 10 or more is left alone,
 # and a failing renice is ignored.
@@ -67,6 +71,7 @@ dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$dir/test_jobs.sh"
 sc_jobs="$(test_jobs_count all.sh)" || exit 1
 test_jobs_lower_priority
+test_jobs_pool_init all.sh
 unset ORCH_TEST_ONLY
 export ORCH_TEST_QUIET=1
 tmp="$(mktemp -d)" || exit 1
@@ -103,9 +108,11 @@ if command -v shellcheck >/dev/null 2>&1; then
       sc_next=$((sc_next + 1))
     done
     sc_rel="${sc_file#"$root/"}"
+    test_jobs_slot_wait
     (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
       >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
     sc_pids+=("$!")
+    test_jobs_slot_release
   done
 fi
 

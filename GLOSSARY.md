@@ -88,6 +88,11 @@ one that just finished.
 A flow leaves a phase only once the handoff it writes for the next one is
 valid; the step back of a Redo retires the handoffs it makes stale.
 
+**Job pool**:
+The set of test job slots, one per home directory, that every test runner under
+that home directory draws from, sized to half the usable CPUs, so concurrent
+runs queue instead of oversubscribing the machine. CI bypasses it.
+
 **Handoff**:
 The written record one phase leaves for the next, and the only thing that
 crosses a phase boundary. A handoff references artefacts that already exist (an

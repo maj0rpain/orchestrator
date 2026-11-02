@@ -1231,6 +1231,198 @@ assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
   "docs_lint.sh: a stray last line"
 rm -rf "$all_root"
 
+# --- the job pool (#2022) -----------------------------------------------------
+# The runners' shared job pool, test-only ORCH_TEST_POOL_DIR naming the pool
+# directory and ORCH_TEST_CPU_MAX_FILE sizing it (a quota of 200000 per slot:
+# half the usable CPUs are the slots). A copy of the scripts tree with planted
+# sections that log their start and end, run by orch_test.sh; then all.sh over
+# a stub shellcheck that logs the same way.
+echo
+echo "the job pool (#2022)"
+jp_dir="$(mktemp -d)"
+jp_tests="$(dirname "$SUITE_SCRIPT")"
+jp_log="$jp_dir/log"
+jp_copy="$(planted_copy <<'PLANTED'
+  # --- pool a
+  echo; echo "pool a"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran a"
+  # --- pool b
+  echo; echo "pool b"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran b"
+  # --- pool c
+  echo; echo "pool c"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran c"
+  # --- pool d
+  echo; echo "pool d"; echo + >>"$JP_LOG"; sleep 0.6; echo - >>"$JP_LOG"; ok "ran d"
+  # --- pool hold
+  echo; echo "pool hold"
+  if flock -n "$JP_POOL/slot.1" true; then echo free >>"$JP_LOG"; else echo busy >>"$JP_LOG"; fi
+  ok "probed"
+  # --- pool nested
+  echo; echo "pool nested"
+  timeout 60 env ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^pool a$' bash "$JP_SUITE" >/dev/null 2>&1
+  echo "nested=$?" >>"$JP_LOG"; ok "nested"
+PLANTED
+)"
+jp_suite="$jp_copy/scripts/test/orch_test.sh"
+printf "400000 100000\n" >"$jp_dir/cpu2"
+printf "200000 100000\n" >"$jp_dir/cpu1"
+printf "800000 100000\n" >"$jp_dir/cpu4"
+# jp_peak: the most sections the log shows running at once.
+jp_peak() {
+  awk '/^\+/ { n++; if (n > max) max = n } /^-/ { n-- } END { print max + 0 }' "$jp_log"
+}
+# jp_run <slots> <pool dir> [VAR=value...] -- <ORCH_TEST_ONLY> <jobs>: the
+# planted suite on a pool of <slots> slots, its stderr in $jp_dir/err.
+jp_run() {
+  local slots="$1" pool="$2" extra=()
+  shift 2
+  while [ "$1" != -- ]; do extra+=("$1"); shift; done
+  env -u CI ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu$slots" ORCH_TEST_POOL_DIR="$pool" \
+    JP_LOG="$jp_log" JP_POOL="$pool" JP_SUITE="$jp_suite" ORCH_TEST_QUIET=1 \
+    ORCH_TEST_ONLY="$2" ORCH_TEST_JOBS="$3" "${extra[@]}" bash "$jp_suite" >/dev/null 2>"${jp_err:-$jp_dir/err}"
+}
+# jp_hold <pool> <slot>: hold that slot's lock in a background process, its
+# pid in jp_holder.
+jp_hold() {
+  mkdir -p "$1"
+  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$1/slot.$2" &
+  jp_holder=$!
+  until ! flock -n "$1/slot.$2" true; do sleep 0.05; done
+}
+jp_notice='waiting for a job slot'
+
+# Two concurrent runs on a 2-slot pool.
+: >"$jp_log"
+jp_err="$jp_dir/erra" jp_run 2 "$jp_dir/pool1" -- '^pool [a-d]$' 4 &
+jp_p1=$!
+jp_err="$jp_dir/errb" jp_run 2 "$jp_dir/pool1" -- '^pool [a-d]$' 4 &
+jp_p2=$!
+jp_err_b="$jp_dir/errb"
+wait "$jp_p1"; jp_s1=$?
+wait "$jp_p2"; jp_s2=$?
+assert_status "the first of two concurrent runs passes" "$jp_s1" 0
+assert_status "the second of two concurrent runs passes" "$jp_s2" 0
+assert_eq "two concurrent runs on a 2-slot pool never exceed 2 sections at once" "$(jp_peak)" "2"
+assert_eq "the first run waits once too" "$(grep -c "$jp_notice" "$jp_dir/erra")" "1"
+assert_eq "both runs ran all their sections" "$(grep -c '^+' "$jp_log")" "8"
+assert_eq "the waiting notice appears once in a run that waits" \
+  "$(grep -c "$jp_notice" "$jp_err_b")" "1"
+assert_contains "the notice names the runner and the slots in use" "$(cat "$jp_err_b")" \
+  "orch_test.sh: waiting for a job slot (2 in use)"
+
+# A killed holder's slot is freed.
+rm -rf "$jp_dir/pool2"
+jp_hold "$jp_dir/pool2" 1
+: >"$jp_log"
+jp_run 1 "$jp_dir/pool2" -- '^pool a$' 2 &
+jp_p1=$!
+for _ in $(seq 100); do
+  grep -q "$jp_notice" "$jp_dir/err" 2>/dev/null && break
+  sleep 0.05
+done
+assert_eq "a run on a pool whose one slot is held waits" \
+  "$(grep -c "$jp_notice" "$jp_dir/err")" "1"
+assert_eq "and runs nothing while the slot is held" "$(grep -c '^+' "$jp_log")" "0"
+kill -9 "$jp_holder"
+wait "$jp_holder" 2>/dev/null
+wait "$jp_p1"; jp_s1=$?
+assert_status "the run finishes once the holder is killed" "$jp_s1" 0
+assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
+
+# CI bypasses the pool.
+jp_hold "$jp_dir/pool2" 1
+: >"$jp_log"
+timeout 30 env ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu1" ORCH_TEST_POOL_DIR="$jp_dir/pool2" \
+  JP_LOG="$jp_log" CI=true ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^pool a$' ORCH_TEST_JOBS=2 \
+  bash "$jp_suite" >/dev/null 2>"$jp_dir/err"; jp_s1=$?
+assert_status "a run under CI ignores a fully held pool" "$jp_s1" 0
+assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+
+# Another HOME has its own pool.
+mkdir "$jp_dir/home1" "$jp_dir/home2"
+jp_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1
+: >"$jp_log"
+timeout 30 env -u CI -u ORCH_TEST_POOL_DIR HOME="$jp_dir/home2" ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" \
+  JP_LOG="$jp_log" ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^pool a$' ORCH_TEST_JOBS=2 \
+  bash "$jp_suite" >/dev/null 2>"$jp_dir/err"; jp_s1=$?
+assert_status "a run under another HOME passes while the first HOME's slot is held" "$jp_s1" 0
+assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+assert_eq "and has drawn its slot from its own pool" \
+  "$(on_disk "$jp_dir/home2/.cache/orchestrator/test-job-pool/slot.1")" "present"
+kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
+
+# ORCH_TEST_JOBS caps the ask, and does not bypass the pool.
+: >"$jp_log"
+jp_run 4 "$jp_dir/pool4" -- '^pool [a-d]$' 2
+assert_eq "ORCH_TEST_JOBS=2 on a 4-slot pool runs 2 sections at once" "$(jp_peak)" "2"
+
+# ORCH_TEST_JOBS=1 holds one slot for the whole run, in one shell.
+: >"$jp_log"
+jp_run 1 "$jp_dir/pool5" -- '^pool hold$' 1
+assert_eq "ORCH_TEST_JOBS=1 holds a slot while its section runs" "$(cat "$jp_log")" "busy"
+
+# A nested run takes no slot of the same pool, so it finishes on a 1-slot pool.
+for jp_jobs in 1 2; do
+  : >"$jp_log"
+  jp_run 1 "$jp_dir/pool6" -- '^pool nested$' "$jp_jobs"; jp_s1=$?
+  assert_status "an outer run with ORCH_TEST_JOBS=$jp_jobs passes" "$jp_s1" 0
+  assert_eq "its nested run on the 1-slot pool finishes (ORCH_TEST_JOBS=$jp_jobs)" \
+    "$(grep nested "$jp_log")" "nested=0"
+done
+
+# Pool trouble runs unpooled, with no notice and no failure.
+: >"$jp_log"
+jp_run 1 /proc/no/such/pool -- '^pool a$' 2; jp_s1=$?
+assert_status "an uncreatable pool directory runs unpooled and passes" "$jp_s1" 0
+assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
+mkdir -p "$jp_dir/pool7/slot.1"
+jp_hold "$jp_dir/pool8" 1
+jp_run 1 "$jp_dir/pool7" -- '^pool a$' 2; jp_s1=$?
+assert_status "a slot file that cannot be opened runs unpooled and passes" "$jp_s1" 0
+assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
+mkdir "$jp_dir/noflock"
+printf '#!/bin/sh\nexit 1\n' >"$jp_dir/noflock/flock"
+chmod +x "$jp_dir/noflock/flock"
+jp_run 1 "$jp_dir/pool9" PATH="$jp_dir/noflock:$PATH" -- '^pool a$' 2; jp_s1=$?
+assert_status "a slot file that cannot be locked runs unpooled and passes" "$jp_s1" 0
+assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+rm -rf "$jp_copy"
+
+# all.sh's shellcheck processes take slots: two concurrent all.sh runs on a
+# 1-slot pool never have more than one shellcheck at a time, and the notice
+# comes from all.sh.
+jp_all="$jp_dir/all"
+mkdir -p "$jp_all/scripts/test" "$jp_all/bin"
+cp "$jp_tests/all.sh" "$jp_tests/test_jobs.sh" "$jp_all/scripts/test/"
+suites_read "$jp_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for jp_tool in bash dirname awk tail mktemp rm mkdir sleep cat flock getconf; do
+  ln -s "$(command -v "$jp_tool")" "$jp_all/bin/$jp_tool"
+done
+for jp_stub in "${SUITES[@]}"; do
+  printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$jp_all/scripts/test/$jp_stub"
+done
+printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' "$jp_log" "$jp_log" \
+  >"$jp_all/bin/shellcheck"
+chmod +x "$jp_all/bin/shellcheck"
+# jp_all_run <errfile>: all.sh on the stub PATH and the 1-slot pool.
+jp_all_run() {
+  env -u CI ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu1" ORCH_TEST_POOL_DIR="$jp_dir/pool10" \
+    ORCH_TEST_JOBS=3 PATH="$jp_all/bin" bash "$jp_all/scripts/test/all.sh" >/dev/null 2>"$1"
+}
+: >"$jp_log"
+jp_all_run "$jp_dir/erra" &
+jp_p1=$!
+jp_all_run "$jp_dir/errb2" &
+jp_p2=$!
+wait "$jp_p1"; jp_s1=$?
+wait "$jp_p2"; jp_s2=$?
+assert_status "two concurrent all.sh runs on a 1-slot pool pass" "$((jp_s1 + jp_s2))" 0
+assert_eq "their shellcheck processes never overlap on a 1-slot pool" "$(jp_peak)" "1"
+assert_eq "every file was still checked, twice over" \
+  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + 2)))"
+assert_contains "a waiting all.sh names itself in the notice" \
+  "$(cat "$jp_dir/erra" "$jp_dir/errb2")" "all.sh: waiting for a job slot (1 in use)"
+rm -rf "$jp_dir"
+
 # --- the test runners' CPU load (#1586) ---------------------------------------
 # The default job count, test_jobs.sh's test_jobs_default, with getconf faked
 # on PATH and ORCH_TEST_CPU_MAX_FILE naming a planted quota file; then all.sh's
