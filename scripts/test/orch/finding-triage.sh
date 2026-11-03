@@ -787,6 +787,14 @@ out="$(apply 31 ready-for-human --category enhancement --comment-file "$comment"
 assert_status "applies over labels in another casing" "$st" 0
 assert_eq "removing the stale triage and category labels whatever their casing" \
   "$(fake_labels_of 31)" "Review:Major enhancement ready-for-human "
+# fake_labels_of is called under a case-folding collation, so this fails if its
+# own LC_ALL=C pin is ever dropped; apply above runs under the caller's locale.
+if casing_locale="$(dictionary_locale)"; then
+  assert_eq "reads the labels back in C order under a dictionary locale" \
+    "$(LC_ALL="$casing_locale" fake_labels_of 31)" "Review:Major enhancement ready-for-human "
+else
+  skip "reads the labels back in C order under a dictionary locale" "no dictionary locale here"
+fi
 restore_suite_env
 
 # --- finding-triage bundle ----------------------------------------------------
