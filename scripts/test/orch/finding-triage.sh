@@ -727,6 +727,42 @@ assert_eq "and before the labels change" "$(fake_labels_of 7)" "bug ready-for-ag
 fake_unfail
 rm -f "$relabel_log" "$traced_adapter"
 
+# Re-running apply after a failed close posts the triage comment once (#1944).
+triaged 50 "review:major,needs-triage,bug"
+fake_fail_after adapter_issue_close 0 "$GH_502"
+out="$(apply 50 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "the first close fails" "$st" 1
+fake_unfail
+out="$(apply 50 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a re-run after a failed close finishes" "$st" 0
+assert_eq "the re-run leaves the issue closed" "$(fake_state_of 50)" "CLOSED"
+assert_eq "and exactly one triage comment" "$(fake_comments_of 50)" \
+  "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
+# A different triage comment never suppresses the post.
+triaged 51 "review:major,needs-triage,bug"
+fake_comment 51 maj0rpain 2026-11-01T00:00:00Z "$(writeln "$disclaimer" '' 'Fixed by other on main.')"
+out="$(apply 51 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a different earlier triage comment does not stop apply" "$st" 0
+assert_contains "its own comment is posted too" "$(fake_comments_of 51)" "Fixed by abc1234 on main."
+assert_contains "beside the earlier one" "$(fake_comments_of 51)" "Fixed by other on main."
+# A match followed by a later, different comment still skips the post.
+triaged 52 "review:major,needs-triage,bug"
+fake_comment 52 maj0rpain 2026-11-01T00:00:00Z "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
+fake_comment 52 maj0rpain 2026-11-02T00:00:00Z "thanks"
+out="$(apply 52 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a matching comment that is not the newest" "$st" 0
+assert_eq "posts nothing" "$(fake_comments_of 52 | grep -c 'Fixed by abc1234')" "1"
+assert_eq "and still relabels and closes" "$(fake_state_of 52) $(fake_labels_of 52)" "CLOSED bug review:major wontfix "
+# A failed comments read dies before any write.
+triaged 53 "review:major,needs-triage,bug"
+fake_fail_after adapter_issue_comments 0 "$GH_502"
+out="$(apply 53 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a failed comments read dies" "$st" 1
+assert_contains "naming the read" "$out" "gh could not read issue #53's comments"
+assert_eq "posting nothing" "$(fake_comments_of 53)" ""
+assert_eq "leaving the labels and the state" "$(fake_state_of 53) $(fake_labels_of 53)" "OPEN bug needs-triage review:major "
+fake_unfail
+
 # Every state label is the repo's name for the role.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
