@@ -43,21 +43,24 @@ hook_read_skill_and_session() {
   skill="$(printf '%s' "$input" | jq -r '.tool_input.skill // ""')"
 }
 
-# Prints the path a tool call names, absolute and normalized, or nothing when
-# it names none. Call after hook_read_payload. Claude Code names the file under
-# file_path; Junie's tool input may use path instead, and may give it relative
-# to the working directory, so a relative path is resolved against `cwd`.
+# Prints the physical path a tool call names - every symlink followed, the
+# form git gives the repo root - or nothing when it names none. Call after
+# hook_read_payload. Claude Code names the file under file_path; Junie's tool
+# input may use path instead, and may give it relative to the working
+# directory, so a relative path is resolved against `cwd`. Always prints a
+# path when one is named: an empty result would make the edit guard allow it.
 hook_tool_path() {
   local file
   file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""')"
   [ -n "$file" ] || return 0
   case "$file" in /*) ;; *) file="$cwd/$file" ;; esac
-  hook_normalize_path "$file"
+  hook_physical_path "$(hook_normalize_path "$file")"
 }
 
 # Collapses "." and ".." segments lexically, so a path is judged by where it
 # lands: docs/adr/../../src/x.ts is source, not an ADR. Lexical, not
-# realpath, because the file being written may not exist yet.
+# realpath, because the file being written may not exist yet; this is the
+# first step of hook_physical_path, which then follows the symlinks.
 hook_normalize_path() {
   local seg out="" parts
   IFS=/ read -ra parts <<<"$1"
@@ -69,6 +72,43 @@ hook_normalize_path() {
     esac
   done
   printf '%s' "${out:-/}"
+}
+
+# Prints the physical path of an absolute, lexically normalized path that may
+# not exist yet: the deepest existing ancestor resolved with cd -P, the
+# missing segments appended, and a final-segment symlink (dangling ones
+# included) followed, up to 40 hops; at the cap the last path reached is
+# resolved as if it did not exist. No realpath or readlink -f: macOS lacks
+# them. Never fails and never prints nothing; an ancestor cd -P cannot enter
+# keeps its lexical form.
+hook_physical_path() {
+  local path="$1" hops=0 max_hops=40 dir base tail resolved target
+  while :; do
+    tail=""
+    dir="$path"
+    # Walk up to the deepest ancestor that exists as a directory.
+    while [ "$dir" != "/" ] && [ ! -d "$dir" ]; do
+      base="${dir##*/}"
+      tail="/$base$tail"
+      dir="${dir%/*}"
+      [ -n "$dir" ] || dir="/"
+    done
+    resolved="$(cd -P "$dir" 2>/dev/null && pwd -P)" || resolved="$dir"
+    path="${resolved%/}$tail"
+    [ "$resolved" != "/" ] || path="$tail"
+    [ -n "$path" ] || path="/"
+    # A symlink as the last segment of the resolved path: follow it, its
+    # relative target taken against its physical directory.
+    if [ -L "$path" ] && [ "$hops" -lt "$max_hops" ]; then
+      target="$(readlink "$path")" || break
+      case "$target" in /*) ;; *) target="${path%/*}/$target" ;; esac
+      path="$(hook_normalize_path "$target")"
+      hops=$((hops + 1))
+      continue
+    fi
+    break
+  done
+  printf '%s' "$path"
 }
 
 # Prints the session's marker of the given kind: grilling, the marker that
