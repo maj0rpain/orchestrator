@@ -1050,7 +1050,7 @@ cmd_doctor() {
     # --flow asks about a flow specifically, so having none is a failure there.
     # Bare doctor did not ask, so it states the absence and carries on: an empty
     # answer must never be mistaken for a healthy one.
-    if [ "$scope" = flow ]; then require_state; fi
+    if [ "$scope" = flow ]; then require_state_exists; fi
     if [ ! -f "$STATE" ]; then
       h_flow
       d_ok "no active flow"

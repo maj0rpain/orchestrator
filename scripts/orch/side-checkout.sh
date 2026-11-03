@@ -186,7 +186,13 @@ archive_flow() {
   local entries=() moved
   state="$(flow_state_file "$root")"
   side_checkout_refuse_ticket_worktrees "$root"
-  slug="$(state_get_in "$state" slug)" || die "could not read the flow's slug from $state - nothing was archived"
+  # A state.json that does not parse still archives - abort is the remedy for
+  # it - under a slug standing in for the one it cannot give.
+  if flow_state_readable "$state"; then
+    slug="$(state_get_in "$state" slug)" || die "could not read the flow's slug from $state - nothing was archived"
+  else
+    slug=unreadable
+  fi
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest" 2>/dev/null || die "could not create the archive directory $dest - nothing was archived"
   for entry in "$orch"/*; do

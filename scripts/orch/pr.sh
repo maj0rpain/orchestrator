@@ -377,7 +377,7 @@ open_pr_draft_flag() {
   case "$rc" in
     0) die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop" ;;
     1) ;;
-    *) die2 "state.json cannot be read - run orch.sh doctor --flow" ;;
+    *) die2 "$STATE_UNREADABLE_MSG" ;;
   esac
   pr="$(current_open_pr)" || return $?
   pr_state_draft_read "$pr" _pr_state is_draft err \

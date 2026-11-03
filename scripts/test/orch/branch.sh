@@ -1141,3 +1141,19 @@ out="$(orch_gh_failing branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
 assert_contains "naming all six" "$out" "create|off|busy|base-sha|sync|retire"
+
+# --- busy checkout with a truncated state.json (#1929) -----------------------
+echo
+echo "busy checkout with a truncated state.json"
+fresh_flow busytrunc
+head -c 40 .orchestrator/state.json >.orchestrator/state.cut
+mv .orchestrator/state.cut .orchestrator/state.json
+for cmd in "branch busy" "branch off quick/1-x" "init other"; do
+  # shellcheck disable=SC2086 # the words of cmd are the arguments
+  out="$(orch_gh_failing $cmd 2>&1)"; st=$?
+  assert_status "$cmd exits 3" "$st" 3
+  assert_contains "$cmd names the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+  case "$cmd" in "branch busy") ;; *) assert_contains "$cmd names doctor --flow as the remedy" "$out" "Run orch.sh doctor --flow, or " ;; esac
+  assert_not_contains "$cmd prints no jq text" "$out" "parse error"
+done
+restore_suite_env

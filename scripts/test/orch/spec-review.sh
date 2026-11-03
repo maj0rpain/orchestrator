@@ -3107,3 +3107,15 @@ assert_contains "and publishes the edit" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/b
 assert_eq "with no CR in the published body" "$(tr -cd '\r' <"$ORCH_GH_FAKE_STORE/issues/14/body" | wc -c | tr -d ' ')" "0"
 rm -rf "$d"
 unset d
+
+# --- spec-review begin on a truncated state.json (#1929) ---------------------
+echo
+echo "spec-review begin on a truncated state.json"
+fresh_flow srtrunc
+head -c 40 .orchestrator/state.json >.orchestrator/state.cut
+mv .orchestrator/state.cut .orchestrator/state.json
+out="$("$ORCH" spec-review begin 14 2>&1)"; st=$?
+assert_status "spec-review begin exits 1" "$st" 1
+assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_not_contains "and no jq text" "$out" "parse error"
+restore_suite_env

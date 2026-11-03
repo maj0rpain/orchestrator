@@ -560,3 +560,17 @@ assert_contains "naming the claim ref" "$out" "delete the claim ref"
 assert_contains "seeding its own reason" "$out" "wrote the round marker"
 fake_unfail
 restore_suite_env
+
+# --- spec fetch on a truncated state.json (#1929) ---------------------------
+echo
+echo "spec fetch on a truncated state.json"
+fresh_flow spectrunc
+fake_github
+head -c 40 .orchestrator/state.json >.orchestrator/state.cut
+mv .orchestrator/state.cut .orchestrator/state.json
+spec_body="$(mktemp)"
+out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
+assert_status "spec fetch exits 1" "$st" 1
+assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_not_contains "and no jq text" "$out" "parse error"
+restore_suite_env
