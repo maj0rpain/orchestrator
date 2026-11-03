@@ -37,7 +37,7 @@ suites_read() {
   fi
   for name in "${SUITES[@]}"; do
     if [ ! -f "$suite_dir/$name" ]; then
-      SUITES_ERR="$file names $name, which is no file in scripts/test/"
+      SUITES_ERR="$file names $name, which is no file in $suite_dir"
       return 1
     fi
   done

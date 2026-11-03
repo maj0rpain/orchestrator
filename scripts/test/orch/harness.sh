@@ -2732,31 +2732,23 @@ af_defs="$(grep -l 'function title(' "$af_tests/affected.sh" "$af_tests/orch_tes
 assert_eq "the title function is defined only in test_tree.sh" "$af_defs" "test_tree.sh"
 
 # An all.sh the shared reader refuses stops affected.sh, with its own prefix.
-af2="$(mktemp -d)"
-mkdir -p "$af2/scripts/test"
-cp "$af_tests/affected.sh" "$af_tests/git_env.sh" "$af_tests/test_jobs.sh" \
-  "$af_tests/report.sh" "$af_tests/test_tree.sh" "$af2/scripts/test/"
-git -C "$af2" init -q -b main
-git -C "$af2" -c user.name=t -c user.email=t@example.com add -A
-git -C "$af2" -c user.name=t -c user.email=t@example.com commit -qm init
 for af_case in none two empty missing; do
+  af_reset
   case "$af_case" in
-    none) af_text='suites_list=(a.sh)' ;;
-    two) af_text="$(printf 'suites=(affected.sh)\nsuites=(report.sh)')" ;;
-    empty) af_text='suites=()' ;;
-    missing) af_text='suites=(affected.sh no_such_suite.sh)' ;;
+    none) af_put scripts/test/all.sh 'suites_list=(a.sh)' ;;
+    two) af_put scripts/test/all.sh 'suites=(orch_test.sh)' 'suites=(docs_lint.sh)' ;;
+    empty) af_put scripts/test/all.sh 'suites=()' ;;
+    missing) af_put scripts/test/all.sh 'suites=(orch_test.sh no_such_suite.sh)' ;;
   esac
-  printf '%s\n' "$af_text" >"$af2/scripts/test/all.sh"
-  git -C "$af2" -c user.name=t -c user.email=t@example.com add -A
-  git -C "$af2" -c user.name=t -c user.email=t@example.com commit -qm "$af_case"
-  suites_read "$af2/scripts/test/all.sh" "$af2/scripts/test"
+  af_git commit -qam "$af_case"
+  suites_read "$af/scripts/test/all.sh" "$af/scripts/test"
   af_msg="$SUITES_ERR"
-  af_out="$(cd "$af2" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+  af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
   assert_status "affected.sh exits 1 over an all.sh with $af_case" "$st" 1
   assert_eq "and prints the reader's message with its own prefix and runs nothing ($af_case)" \
     "$af_out" "affected.sh: $af_msg"
 done
-rm -rf "$af2"
+af_reset
 
 # End to end, with stub suites for the real ones.
 suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
