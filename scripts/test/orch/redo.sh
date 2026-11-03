@@ -9,6 +9,10 @@
 # or MERGED.
 fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
 
+# redo_note_count <pr>: how many of PR #pr's comments in the fake store carry
+# the redo note, the comment redo posts on the PR it closes.
+redo_note_count() { fake_pr_comments_of "$1" | grep -c 'closed by an orchestrator redo'; }
+
 # redo_state_snapshot: the state a refused redo must leave as it was.
 redo_state_snapshot() {
   printf '%s|' "$("$ORCH" state get branch)" "$("$ORCH" state get pr)" \
@@ -222,7 +226,7 @@ assert_status "retrying redo review after the gh failure now succeeds" "$st" 0
 assert_eq "closing the PR this time" "$(fake_pr_state_of 32)" "CLOSED"
 assert_eq "numbering the redo 3" "$out" "3"
 assert_eq "posting the redo note exactly once" \
-  "$(fake_pr_comments_of 32 | grep -c 'closed by an orchestrator redo')" "1"
+  "$(redo_note_count 32)" "1"
 assert_eq "retiring the branch as redo-3" \
   "$(branch_presence orch/21-redotest-redo-3)" "present"
 assert_eq "and not as redo-4" \
@@ -786,51 +790,33 @@ assert_eq "writes nothing to GitHub" "$(fake_snapshot)" "$before"
 assert_eq "leaves redo_count at 0" "$("$ORCH" state get redo_count)" "0"
 assert_eq "and base_sha null" "$("$ORCH" state get base_sha)" ""
 
-# Reruns after a GitHub failure resume without renaming twice.
+# A death between the PR close and the rename (the -redo-1 push rejected)
+# leaves the PR closed with its one note and the state as it was; the rerun
+# closes again as gh's no-op, retires the branch, and adds no second note.
 attempt_flow redoattempt5
 fake_issue 10 open
 slug_="$("$ORCH" state get slug)"
 attempt_start 10
 old_pr="$(attempt_pr)"
-fake_fail adapter_pr_close "$GH_502"
-out="$("$ORCH" redo spec 2>&1)"; st=$?
-assert_status "a PR-close failure fails redo spec" "$st" 1
-assert_eq "the PR stays open" "$(fake_pr_state_of "$old_pr")" "OPEN"
-assert_eq "the branch is not renamed" "$("$ORCH" state get redo_count)" "0"
-fake_unfail
-out="$("$ORCH" redo spec 2>&1)"; st=$?
-assert_status "the rerun succeeds" "$st" 0
-assert_eq "closing the PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
-assert_eq "retiring the branch once" "$("$ORCH" state get redo_count)" "1"
-assert_eq "without a second rename" \
-  "$(branch_presence "orch/10-$slug_-redo-2")" "gone"
-assert_eq "posting exactly one note" "$(fake_pr_comments_of "$old_pr" | grep -c 'closed by an orchestrator redo')" "1"
-
-# A death between the close and the rename (the -redo-1 push rejected) leaves
-# the PR closed with its one note and the state as it was; the rerun closes
-# again as gh's no-op, retires the branch, and adds no second note.
-attempt_flow redoattempt5b
-fake_issue 13 open
-slug_="$("$ORCH" state get slug)"
-attempt_start 13
-old_pr="$(attempt_pr)"
-hook="$(git remote get-url origin)/hooks/pre-receive"
-printf '#!/bin/sh\nwhile read old new ref; do case "$ref" in *-redo-1) exit 1 ;; esac; done\n' >"$hook"
-chmod +x "$hook"
+origin_bare="$(git remote get-url origin)"
+origin_rejects "$origin_bare"
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a rejected -redo-1 push fails redo spec" "$st" 1
 assert_eq "the PR was already closed" "$(fake_pr_state_of "$old_pr")" "CLOSED"
-assert_eq "with its one note" "$(fake_pr_comments_of "$old_pr" | grep -c 'closed by an orchestrator redo')" "1"
-assert_eq "state.branch is unchanged" "$("$ORCH" state get branch)" "orch/13-$slug_"
-assert_eq "and redo_count" "$("$ORCH" state get redo_count)" "0"
-rm -f "$hook"
+assert_eq "with its one note" "$(redo_note_count "$old_pr")" "1"
+assert_eq "state.branch is unchanged" "$("$ORCH" state get branch)" "orch/10-$slug_"
+assert_eq "the branch is not renamed" \
+  "$(branch_presence "orch/10-$slug_-redo-1")" "gone"
+assert_eq "and redo_count is unchanged" "$("$ORCH" state get redo_count)" "0"
+rm -f "$origin_bare/hooks/pre-receive"
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "the rerun succeeds" "$st" 0
 assert_eq "retiring the branch" \
-  "$(branch_presence "orch/13-$slug_-redo-1")" "present"
+  "$(branch_presence "orch/10-$slug_-redo-1")" "present"
 assert_eq "counting the redo once" "$("$ORCH" state get redo_count)" "1"
-assert_eq "the PR still carries exactly one note" \
-  "$(fake_pr_comments_of "$old_pr" | grep -c 'closed by an orchestrator redo')" "1"
+assert_eq "without a second rename" \
+  "$(branch_presence "orch/10-$slug_-redo-2")" "gone"
+assert_eq "the PR still carries exactly one note" "$(redo_note_count "$old_pr")" "1"
 
 # Breakdown-retire failure after the attempt is retired.
 attempt_flow redoattempt6
@@ -852,7 +838,7 @@ assert_status "the rerun succeeds" "$st" 0
 assert_eq "redo_count stays 1" "$("$ORCH" state get redo_count)" "1"
 assert_eq "the branch is not renamed again" \
   "$(branch_presence "orch/11-$slug_-redo-2")" "gone"
-assert_eq "the PR was closed once" "$(fake_pr_comments_of "$old_pr" | grep -c 'closed by an orchestrator redo')" "1"
+assert_eq "the PR was closed once" "$(redo_note_count "$old_pr")" "1"
 assert_eq "and the breakdown ends up retired" "$(fake_state_of "$rt")" "CLOSED"
 
 # --new-issue: issue-close failure after the attempt is retired.
