@@ -16,16 +16,24 @@ section_entries() {
 # text_entries: the entries of the text on stdin, one per line - each
 # top-level `- ` bullet joined with its indented continuation lines by single
 # spaces, its leading `- ` stripped, and each non-blank line at the margin that
-# is no bullet as an entry of its own. An entry reading None, None. or None
-# declined. is a source saying it has nothing, and is dropped.
+# is no bullet as an entry of its own. A line inside a code fence, delimiters
+# included, is a continuation of the open bullet whatever its column, and with
+# no bullet open an entry of its own: it never ends an entry or opens one. An
+# entry reading None, None. or None declined. is a source saying it has
+# nothing, and is dropped.
 text_entries() {
-  awk '
+  awk "$FENCE_AWK"'
     function flush() {
       if (entry != "" && entry !~ /^None( declined)?\.?$/) print entry
       entry = ""; bullet = 0
     }
-    { sub(/[[:space:]]+$/, "") }
+    { sub(/[[:space:]]+$/, ""); f = fenced($0) }
     /^$/ { next }
+    f {
+      line = $0; sub(/^[[:space:]]+/, "", line)
+      if (bullet) entry = entry " " line; else { flush(); entry = line; flush() }
+      next
+    }
     /^- / { flush(); entry = substr($0, 3); sub(/^[[:space:]]+/, "", entry); bullet = 1; next }
     /^[[:space:]]/ {
       line = $0; sub(/^[[:space:]]+/, "", line)

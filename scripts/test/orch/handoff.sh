@@ -292,6 +292,22 @@ assert_not_contains "and printing no body" "$out" "First."
 assert_not_contains "nor the second body" "$out" "Second."
 rm -f "$hd"
 
+# A heading quoted in a code fence is never a heading (#1922).
+hf="$(mktemp)"
+writeln '## Decisions' 'Use X.' '' '```' '## Rejected alternatives' 'Y.' '```' \
+        '## Constraints' 'None.' '' '## Open assumptions' 'None.' >"$hf"
+cp "$h" "$hf.bak"; cp "$hf" "$h"
+out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
+assert_status "validate fails when the heading is only fenced" "$st" 1
+assert_contains "reporting it missing, not empty" "$out" "missing section: ## Rejected alternatives"
+cp "$hf.bak" "$h"; rm -f "$hf.bak"
+writeln '## X' '```' '## X' 'quoted' '```' 'Real.' '## Y' 'Other.' >"$hf"
+out="$("$ORCH" handoff section "$hf" X 2>&1)"; st=$?
+assert_status "a fenced copy of the heading is not a repeat" "$st" 0
+assert_eq "fenced lines inside the real section are its body, delimiters included" "$out" \
+  "$(writeln '```' '## X' 'quoted' '```' 'Real.')"
+rm -f "$hf"
+
 # The match is on the whole `## <heading>` line: a prefix is not the section.
 out="$("$ORCH" handoff section "$h" "Rejected" 2>&1)"; st=$?
 assert_status "a heading prefix does not match" "$st" 1
@@ -757,4 +773,16 @@ for body in $'Rounds: 0\nBudget: 3' $'Rounds: two\nBudget: 3' $'Rounds: 2' $'Bud
   out="$(env -u ORCH_AUTOPILOT "$ORCH" handoff validate "$f" 2>&1)"; st=$?
   assert_status "and is ignored interactively" "$st" 0
 done
+
+# A fenced `## Autopilot` block is never the block (#1922).
+plan_file "$f"
+printf '\n```\n## Autopilot\n\nRounds: 2\nBudget: 3\n```\n' >>"$f"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+assert_status "a plan whose only Autopilot block is fenced fails in autopilot" "$st" 1
+assert_contains "reported missing" "$out" "missing section: ## Autopilot"
+plan_file "$f"
+printf '\n```\n## Autopilot\n\nRounds: 0\nBudget: 9\n```\n' >>"$f"
+printf '\n## Autopilot\n\nRounds: 2\nBudget: 3\n' >>"$f"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+assert_status "a fenced example block ahead of the real one is not read" "$st" 0
 restore_suite_env

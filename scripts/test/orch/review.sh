@@ -1068,6 +1068,21 @@ assert_first_line "classified as stop" "$out" "stop"
 assert_contains "carrying the recorded reason on the lines after it" \
   "$out" "CI failed twice, flake rerun spent."
 
+# A heading quoted inside a code fence is never a heading (#1922): the fenced
+# `ready` in a finding does not answer for the driver's real Terminal state.
+writeln '## Findings' '- Fix the template:' '  ```' '## Terminal state' 'ready' '  ```' '' \
+  '## Terminal state' 'stop - CI failing: build failed' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a fenced Terminal state ahead of the real one leaves it terminal" "$st" 0
+assert_eq "classified from the real heading, not the quoted one" "$out" \
+  "$(printf 'stop\nCI failing: build failed')"
+writeln '## Findings' '- Fix the template:' '```' '## Terminal state' 'stop' '```' '' \
+  '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_eq "a fenced stop ahead of a real ready answers ready" "$out" "ready"
+
+writeln '## Terminal state' 'stop' 'CI failed twice, flake rerun spent.' \
+  >.orchestrator/review/iteration-05.md
 # Per-reviewer report files sit beside the records under a suffixed name, and
 # records are addressed only by their exact iteration-NN.md name - so a report
 # never changes a classification, even one that reads like a record.
@@ -1397,6 +1412,15 @@ writeln '# Review iteration 4' '## Waiting to be filed' '' \
 assert_status "builds with a Sites: bullet" "$st" 0
 assert_contains "a Waiting-to-be-filed bullet with a Sites: list is one whole known item" \
   "$(cat known.md)" '- Standards/nit: `a.sh:3` the helper is copied per script Sites: `a.sh:3`, `b.sh:9`. - needs a decision (`a.sh:3`); loop-authored lines (`b.sh:9`) - waiting to be filed, iteration 04'
+
+# A fenced column-0 `## ` line does not cut a Filed entry short (#1922).
+writeln '# Review iteration 4' '## Filed' '' '- #41 nit: quoted template' '```' '## Heading' '```' \
+  '- #42 nit: next' >.orchestrator/review/iteration-04.md
+"$ORCH" review known-items known.md 4 >/dev/null; st=$?
+assert_status "builds with a fenced heading in a Filed entry" "$st" 0
+assert_contains "the entry is carried whole" "$(cat known.md)" \
+  '- #41 nit: quoted template ``` ## Heading ``` - filed #41'
+assert_contains "and the next entry stays its own" "$(cat known.md)" '- #42 nit: next - filed #42'
 rm .orchestrator/review/iteration-04.md
 
 writeln '## Rejected alternatives' 'None.' >.orchestrator/handoff/01-plan.md
