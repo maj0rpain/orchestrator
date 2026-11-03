@@ -229,6 +229,11 @@ assert_eq "issue is recorded as a number" "$("$ORCH" state get | jq -r '.issue |
 assert_eq "issue value matches the adopted number" "$("$ORCH" state get issue)" "42"
 
 healthy_repo
+fake_issue 43 open Ready-For-Agent
+out="$("$ORCH" init adopted-ci --issue 43 2>&1)"; st=$?
+assert_status "adopts an issue carrying Ready-For-Agent" "$st" 0
+
+healthy_repo
 out="$("$ORCH" init nope --issue 99 2>&1)"; st=$?
 assert_status "refuses to adopt an issue gh cannot read" "$st" 1
 assert_contains "names the issue number" "$out" "99"
