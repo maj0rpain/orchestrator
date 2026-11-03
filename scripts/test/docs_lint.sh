@@ -111,6 +111,8 @@
 #     report and a Markdown-summary fallback
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
+#   scan_skill_description_length  no skill's frontmatter description is over
+#     1024 characters
 #   scan_review_pass_callers  each caller of the review pass names
 #     orch-review-pass and the section it follows
 #   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass
@@ -2824,6 +2826,41 @@ printf '%s\n' '---' 'name: orch-review-pass' \
 assert_empty "a self-contained pass is not flagged" "$(scan_review_pass_self_contained "$fixture")"
 check "orch-review-pass refers into no orch-review section and says how to start a reviewer" \
   "$(scan_review_pass_self_contained "$PLUGIN_ROOT")"
+
+# --- skill descriptions fit the Agent Skills limit
+# scan_skill_description_length <plugin root>: one line per skill whose
+# frontmatter description is over 1024 characters, the Agent Skills spec's cap.
+# Characters, not bytes: counted under a pinned UTF-8 locale.
+scan_skill_description_length() {
+  local r="$1" f desc len
+  for f in "$r"/skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    desc="$(skill_description "$f")"
+    desc="${desc#description: }"
+    len="$(LC_ALL=C.UTF-8; printf %s "${#desc}")"
+    [ "$len" -gt 1024 ] \
+      && echo "${f#"$r"/}: description is $len characters, over 1024"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/long" "$fixture/skills/exact" "$fixture/skills/dash" "$fixture/skills/body"
+a1000="$(printf 'a%.0s' $(seq 1 1000))"
+printf '%s\n' '---' 'name: long' "description: $a1000$a1000" '---' >"$fixture/skills/long/SKILL.md"
+printf '%s\n' '---' 'name: exact' "description: $a1000$(printf 'a%.0s' $(seq 1 24))" '---' \
+  >"$fixture/skills/exact/SKILL.md"
+printf '%s\n' '---' 'name: dash' "description: $a1000$(printf 'a%.0s' $(seq 1 20)) — x" '---' \
+  >"$fixture/skills/dash/SKILL.md"
+printf '%s\n' '---' 'name: body' 'description: Short.' '---' '' "description: $a1000$a1000" \
+  >"$fixture/skills/body/SKILL.md"
+out="$(scan_skill_description_length "$fixture")"
+flags "a description over 1024 characters is flagged with its length" \
+  "$out" "skills/long/SKILL.md: description is 2000 characters, over 1024"
+spares "a description of exactly 1024 characters is spared" "$out" 'skills/exact/'
+spares "a 1024-character description holding an em dash is spared" "$out" 'skills/dash/'
+spares "a description line in the body is not flagged" "$out" 'skills/body/'
+check "every skill description fits the Agent Skills 1024-character limit" \
+  "$(scan_skill_description_length "$PLUGIN_ROOT")"
 
 # follows_standalone_pass <text> <prefix>: one line, after <prefix> and a
 # space, when the text does not name orch-review-pass's **Standalone review
