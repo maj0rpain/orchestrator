@@ -32,7 +32,6 @@ contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH"
 echo
 echo "every gh call pinned to the repo"
 new_repo >/dev/null
-unset GH_REPO GH_HOST
 git remote set-url origin https://github.com/fork/widgets.git
 gh_fixture
 body="$(mktemp)"

@@ -30,7 +30,10 @@ SUITE_CWD="$(mktemp -d)" && cd "$SUITE_CWD" || {
 SUITE_HOME="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create a temp HOME" >&2; exit 1; }
 export HOME="$SUITE_HOME"
-unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL
+# GH_REPO and GH_HOST go too: they are the gh variables orch.sh reads to resolve
+# the Repo and its GitHub host, so a caller's value would change what orch.sh
+# resolves in every section.
+unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL GH_REPO GH_HOST
 
 # The real-gh guard: a stub gh, first on PATH before SUITE_PATH is captured so
 # restore_suite_env keeps it, that appends its arguments to GH_GUARD_LOG, in

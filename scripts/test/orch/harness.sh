@@ -310,6 +310,7 @@ assert_ne "HOME is not the HOME the suite started with" "$HOME" "$CALLER_HOME"
 assert_eq "CLAUDE_PLUGIN_ROOT is unset" "${CLAUDE_PLUGIN_ROOT-unset}" "unset"
 assert_eq "no caller git config is reachable" \
   "${XDG_CONFIG_HOME-unset} ${GIT_CONFIG_GLOBAL-unset}" "unset unset"
+assert_eq "GH_REPO and GH_HOST are unset" "${GH_REPO-unset} ${GH_HOST-unset}" "unset unset"
 assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 # The caller's ORCH_* knobs are cleared, ORCH_TEST_* kept. The probe run is a
 # child suite run started with ORCH_AUTOPILOT and a probe variable exported;
@@ -331,9 +332,11 @@ fi
 if [ -n "${ORCH_TEST_ISOLATION_PROBE:-}" ]; then
   assert_eq "an ORCH_TEST_* variable is kept" "$ORCH_TEST_ISOLATION_PROBE" "kept"
 elif [ -z "${ORCH_TEST_GIT_ENV_PROBE:-}" ]; then
-  out="$(ORCH_AUTOPILOT=1 ORCH_TEST_ISOLATION_PROBE=kept ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' \
+  out="$(ORCH_AUTOPILOT=1 GH_REPO=dev/own GH_HOST=ghe.example.com \
+    ORCH_TEST_ISOLATION_PROBE=kept ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' \
     ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
   assert_contains "a child run with ORCH_AUTOPILOT exported sees it unset" "$out" "ok   ORCH_AUTOPILOT is unset"
+  assert_contains "a child run with GH_REPO and GH_HOST exported sees them unset" "$out" "ok   GH_REPO and GH_HOST are unset"
   assert_contains "a child run keeps an exported ORCH_TEST_* variable" "$out" "ok   an ORCH_TEST_* variable is kept"
 fi
 
