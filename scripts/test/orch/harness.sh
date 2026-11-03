@@ -636,6 +636,35 @@ assert_contains "keeps that check's FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "10 passed, 1 failed"
+# The sequential path: a section that exits before the summary is a failure.
+seq_dir="$(planted_copy <<'PLANTED'
+  # --- planted early exit
+  echo; echo "planted early exit"; ok "before the exit"; exit 0
+  # --- planted later failure
+  echo; echo "planted later failure"; bad "a planted failure" "its detail line"
+  # --- planted clean
+  echo; echo "planted clean"; ok "a clean pass"
+PLANTED
+)"
+seq_run() { ORCH_TEST_QUIET="${2:-}" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY="$1" bash "$seq_dir/scripts/test/orch_test.sh" 2>&1; }
+out="$(seq_run '^planted (early exit|later failure)$')"; st=$?
+assert_status "a sequential run whose section exits 0 early exits 1" "$st" 1
+assert_contains "reports it as no counts, with the exit status" "$out" \
+  "$(printf '  FAIL the run reported no counts\n     it exited 0 before its summary')"
+assert_eq "counts the miss in the summary" "$(printf '%s\n' "$out" | tail -n 1)" "11 passed, 1 failed"
+assert_eq "prints the header once" "$(printf '%s\n' "$out" | grep -cx 'orch.sh tests')" "1"
+out="$(seq_run '^planted early exit$' 1)"; st=$?
+assert_status "the quiet early-exit run exits 1" "$st" 1
+assert_contains "still prints the FAIL line" "$out" "  FAIL the run reported no counts"
+assert_eq "and the summary" "$(printf '%s\n' "$out" | tail -n 1)" "11 passed, 1 failed"
+out="$(seq_run '^planted clean$')"; st=$?
+assert_status "a clean sequential run exits 0" "$st" 0
+assert_eq "keeps its summary" "$(printf '%s\n' "$out" | tail -n 1)" "11 passed, 0 failed"
+assert_eq "prints the header once in a clean run" "$(printf '%s\n' "$out" | grep -cx 'orch.sh tests')" "1"
+out="$(seq_run '^planted later failure$')"; st=$?
+assert_status "a sequential run with a failing section exits 1" "$st" 1
+assert_eq "counts the failure" "$(printf '%s\n' "$out" | tail -n 1)" "10 passed, 1 failed"
+rm -rf "$seq_dir"
 rm -rf "$par_dir"
 
 # --- assertions in a subshell (#1904) ----------------------------------------

@@ -97,7 +97,10 @@ trap test_jobs_stop_descendants INT TERM
 # by default 75% of the usable CPUs (ORCH_TEST_POOL_PERCENT sets another
 # share), rounded down, at least 1, and all of them
 # under CI (test_jobs.sh: the online cores, lowered to a cgroup v2 quota);
-# 1 runs the suite - or the filtered text - in this one shell, sequentially.
+# 1 runs the suite - or the filtered text - in this one shell, sequentially,
+# its sections in a subshell: it checks that the summary ran, and a run that
+# exited before it fails with "the run reported no counts" and a summary from
+# the tally file.
 # A value that is not a positive integer exits 1 before any section runs.
 # Above 1, each section chosen (every one, or the isolation section plus those
 # ORCH_TEST_ONLY matches) runs as its own child: this script re-invoked with
@@ -317,8 +320,24 @@ if [ "$orch_jobs" -eq 1 ]; then
   # The slot stays with this shell, not with what its sections leave running.
   test_jobs_slot_release "$$"
   tally_init
-  eval "$(section_text "$orch_kept")"
-  exit $?
+  echo "orch.sh tests"
+  orch_child_counts="$(mktemp)" || {
+    echo "orch_test.sh: cannot create a temp file for the run's counts" >&2; exit 1; }
+  # The sections run in a subshell so an `exit` in one cannot skip the summary;
+  # the counts file the summary writes is the proof it ran.
+  ( eval "$(section_text "$orch_kept")" ); orch_status=$?
+  orch_counts="$(cat "$orch_child_counts")"
+  case "$orch_counts" in
+    [0-9]*' '[0-9]*' '[0-9]*)
+      read -r orch_pass orch_fail orch_skip <<<"$orch_counts"
+      print_summary "$orch_pass" "$orch_fail" "$orch_skip"
+      [ "$orch_fail" -eq 0 ] && [ "$orch_status" -eq 0 ]
+      exit $? ;;
+  esac
+  print_fail "the run reported no counts" "it exited $orch_status before its summary"
+  tally_read
+  print_summary "$PASS" "$((FAIL + 1))" "$SKIP"
+  exit 1
 fi
 
 orch_buf="$(mktemp -d)" || {
