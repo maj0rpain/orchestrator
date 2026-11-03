@@ -758,8 +758,9 @@ autopilot_sync_detect() {
   done <<<"$out"
 }
 
-# autopilot_tick: one pass - labels, stale claims, then pickup (see the spec's
-# One tick). A claim create that fails for a reason other than a lost race
+# autopilot_tick: one pass - labels, stale claims, the limit-pause check,
+# sync detection (when auto-sync is true), then pickup (see the spec's One
+# tick). A claim create that fails for a reason other than a lost race
 # stops the tick, naming it.
 autopilot_tick() {
   local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync

@@ -146,14 +146,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               in <file>: needs-human, not orch:sync
   autopilot sync-fail <reason>
                               stop a failed sync, keeping orch:sync
-  autopilot tick              one watcher pass: ensure the eight labels, detect
-                              done issues whose PR needs a sync (unless
-                              auto-sync is false) and label them orch:sync,
-                              clean up this host's stale claims, then claim
-                              each open phase-labelled or orch:sync issue
-                              (oldest first, below the
-                              cap), make or reuse its side checkout and start
-                              `autopilot run` detached. Claude Code only;
+  autopilot tick              one watcher pass: ensure the eight labels,
+                              clean up this host's stale claims, then (unless
+                              a limit pause holds the tick, or auto-sync is
+                              false) detect done issues whose PR needs a sync
+                              and label them orch:sync, then claim each open
+                              phase-labelled or orch:sync issue (oldest first,
+                              below the cap), make or reuse its side checkout
+                              (a phase issue only) and start `autopilot run`
+                              detached. Claude Code only;
                               needs orchestrator.autopilot.permission-mode
   autopilot watch [--every <seconds>]
                               repeat tick (default 60 s) until interrupted;
