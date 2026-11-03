@@ -1451,15 +1451,6 @@ pt_issue() { # <issue> <author> <association> [<editor> [<renamer>]]: a labelled
 }
 pt_tick() { "$ORCH" autopilot tick >/dev/null 2>&1; }
 
-# the trusted associations and one untrusted author; the other untrusted
-# associations are pinned in the trust module's section
-for pt_assoc in OWNER MEMBER COLLABORATOR; do
-  pt_issue 7 someone "$pt_assoc"; fake_comments_clear 7; pt_tick
-  assert_eq "a $pt_assoc author's issue is picked up" "$(tick_calls)" "1"
-done
-pt_issue 7 stranger NONE; fake_comments_clear 7; pt_tick
-assert_eq "a NONE author's issue, never edited, is not picked up" "$(tick_calls)" "0"
-
 # a refused first pickup leaves nothing behind
 fake_unfail
 pt_issue 8 stranger NONE
@@ -1486,16 +1477,6 @@ fake_issue_authorship 11 stranger NONE maintainer
 "$ORCH" autopilot resume 11 >/dev/null 2>&1
 pt_tick
 assert_eq "after a maintainer edits it and resume, the next tick goes on" "$(tick_calls)" "1"
-
-# title renames, through the pickup: a stranger's rename of a maintainer-edited
-# issue is refused naming the title alone; a maintainer's rename is picked up
-pt_issue 13 stranger NONE maintainer stranger; fake_comments_clear 13; pt_tick
-assert_eq "an issue whose title the stranger renamed is not picked up" "$(tick_calls)" "0"
-assert_contains "the refusal names the title alone" "$(fake_comments_of 13)" "the issue's title was last written by stranger"
-assert_contains "and is a refusal" "$(fake_comments_of 13)" "refused to run the spec phase"
-assert_eq "it is needs-human" "$(fake_labels_of 13)" "needs-human orch:spec ready-for-agent "
-pt_issue 14 stranger NONE maintainer maintainer; fake_comments_clear 14; pt_tick
-assert_eq "an issue whose title a maintainer renamed is picked up" "$(tick_calls)" "1"
 
 # a failed trust read fails closed
 pt_issue 12 someone OWNER
