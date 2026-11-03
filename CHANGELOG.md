@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.30
+
+orch-review's CI section states how to run `review ci` before the flake rerun refers back to it.
+
 ## 4.43.29
 
 A `## ` line inside a code fence is never a heading to the readers of named sections, so a record or handoff that quotes a heading no longer misleads `review terminal`, `review known-items`, `review-pass known-items`, `handoff validate`, `handoff section` or the `## Autopilot` block check.
