@@ -112,8 +112,8 @@ files_marks() {
   printf '%s\n' "$1" | grep -xE 'isolation|planted [a-z ]+' | tr '\n' ','
 }
 
-# The placement rule, as helper_placement's message states it.
-HELPER_PLACEMENT_RULE="The rule: a helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
+# The test-helper placement rule, as helper_placement's message states it.
+HELPER_PLACEMENT_RULE="The test-helper placement rule: a test helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
 
 # tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
 # under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
@@ -2057,12 +2057,12 @@ assert_eq "a file ending inside a heredoc leaves the next file's code alone" \
   "$(printf '%s\n' 'cat <<EOF' '# inside' '' 'y=1 ')"
 rm -rf "$shell_code_dir"
 
-# --- helper placement (#1006) -------------------------------------------------
+# --- test-helper placement (#1006) --------------------------------------------
 # helper_placement over the real scripts/test/orch/, then over copies of it,
 # each with planted helpers: four placements that break the rule, and one copy
 # whose plantings all keep it.
 echo
-echo "helper placement (#1006)"
+echo "test-helper placement (#1006)"
 out="$(helper_placement "$PLUGIN_ROOT/scripts/test/orch")"; st=$?
 if [ "$st" -eq 0 ] && [ -z "$out" ]; then
   ok "every helper of the real tree is placed by the rule"
@@ -2076,6 +2076,7 @@ out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "a shared helper with no caller fails" "$st" 1
 assert_eq "naming it, its file, no caller and the rule" "$out" \
   "planted_uncalled is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
+assert_contains "the failure message names the test-helper placement rule" "$out" "test-helper placement rule"
 rm -rf "${placement_dir%/orch}"
 
 placement_dir="$(tree_copy scripts/test/orch)"
@@ -2672,7 +2673,7 @@ for af_s in "${SUITES[@]}"; do
   [ -e "$af/scripts/test/$af_s" ] || af_put "scripts/test/$af_s"
 done
 af_put scripts/test/orch/harness.sh '# --- isolation ---' \
-  '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+  '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
   '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---'
 af_put scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 af_put scripts/test/orch/state.sh '# --- state ---'
@@ -2711,7 +2712,7 @@ af_reset() {
 af_plan() {
   (cd "$af" && bash scripts/test/affected.sh --plan "$@" 2>&1) | paste -sd, -
 }
-af_placement="helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853)"
+af_placement="test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853)"
 af_gate="orch_test.sh,$af_placement"
 af_branch_titles="branch create,branch (x.y) retire"
 
@@ -2734,7 +2735,7 @@ assert_eq "a staged change counts" "$(af_plan origin/rel)" \
   "$af_gate,state,state two,docs_lint.sh,scripts/test/orch/state.sh"
 af_reset
 af_put scripts/test/orch/harness.sh '# --- isolation ---' \
-  '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+  '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
   '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---' \
   '# --- more ---'
 assert_eq "harness.sh selects all of its sections, the placement ones once" \
@@ -2918,7 +2919,7 @@ docs_lint.sh: 7 passed, 0 failed
 shellcheck: 0 findings
 affected.sh: PASS (4 parts)"
 assert_contains "orch_test.sh got the placement sections as its filter" \
-  "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
+  "$(cat "$af.log")" "orch_test.sh only=^(test-helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
 
 # An invalid ORCH_TEST_POOL_PERCENT is refused before anything runs.

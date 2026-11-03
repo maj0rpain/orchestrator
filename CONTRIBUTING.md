@@ -91,8 +91,8 @@ directory. Runs that disagree on the size share the directory unchanged: each
 tries slots 1 to its own size, so a larger run also uses the higher slots while
 all contend for the low ones, and concurrency is bounded by the largest size
 among the active runs; no size is recorded there.
-Helper placement is checked by harness.sh's placement section; its failure
-message states the rule.
+Test-helper placement is checked by harness.sh's test-helper placement
+section; its failure message states the rule.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
 noun's code, named as that noun's test file is, and a helper lives in the
