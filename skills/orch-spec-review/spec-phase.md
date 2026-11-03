@@ -47,7 +47,9 @@ When a round has a fundamental item:
 
 1. Run `spec-review apply <dir> recommended --round <k>/<n>` as usual: it holds
    the fundamental items back into `<dir>/fundamental.md`, applies every other
-   item as recommended, publishes the body and posts no changelog yet.
+   item as recommended, publishes the body and posts no changelog yet. The
+   hold also rebases the ticket copies on the tickets as it published them, so
+   the resumed run's ticket edits build on them.
 2. Write the question to a scratch file: only the fundamental items, each with
    its options and recommendation, and post it with `bash "$ORCH" autopilot
    ask spec <file>`. It @mentions the human, adds `needs-human` and releases the
