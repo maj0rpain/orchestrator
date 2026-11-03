@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.2
+
+`orch.sh issue` now names each file op's flag in one place; usage and behaviour are unchanged.
+
 ## 4.44.1
 
 The planning edit guard now takes the repo it polices from the edited file instead of the session's current directory, so `cd` into a nested repo, a side checkout, a ticket worktree or outside git no longer disarms it, and a side checkout's source is denied unless its own flow is active.

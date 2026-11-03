@@ -177,15 +177,19 @@ cmd_issue() {
   shift || true
   case "$op" in
     fetch|update|comment|comments)
-      local usage="usage: orch.sh issue $op <n> <file>"
-      [ "$op" = fetch ] && usage="usage: orch.sh issue fetch <n> <file> [--json]"
-      [ "$op" = comments ] && usage="usage: orch.sh issue comments <n> <file> [--with-spec-review]"
-      # A flag only as the third argument, and only the op's own (--json for
-      # fetch, --with-spec-review for comments); any other shape is a usage
-      # error.
+      # The op's one optional flag is named here and nowhere else (--json for
+      # fetch, --with-spec-review for comments, none for the rest); the usage
+      # line and the argument check both read it. The flag is only the third
+      # argument; any other shape is a usage error.
+      local flag
+      case "$op" in
+        fetch) flag=--json ;;
+        comments) flag=--with-spec-review ;;
+        *) flag="" ;;
+      esac
+      local usage="usage: orch.sh issue $op <n> <file>${flag:+ [$flag]}"
       [ $# -eq 2 ] \
-        || { [ "$op" = fetch ] && [ $# -eq 3 ] && [ "$3" = --json ]; } \
-        || { [ "$op" = comments ] && [ $# -eq 3 ] && [ "$3" = --with-spec-review ]; } \
+        || { [ -n "$flag" ] && [ $# -eq 3 ] && [ "$3" = "$flag" ]; } \
         || die "$usage"
       case "$1" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $1 ($usage)" ;; esac
       "cmd_issue_$op" "$@"
