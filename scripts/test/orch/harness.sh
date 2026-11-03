@@ -401,6 +401,74 @@ assert_eq "skips the sections the pattern does not match" \
   "$(count_lines -x 'planted gamma' "$out")" "0"
 rm -rf "$filter_dir"
 
+# Case-insensitive match, and the top-level branches of an alternation.
+filter_dir="$(planted_copy <<'PLANTED'
+  # --- Planted Alpha ------------------------------------------------------
+  echo; echo "planted alpha"; ok "alpha ran"
+  # --- planted beta -------------------------------------------------------
+  echo; echo "planted beta"; ok "beta ran"
+PLANTED
+)"
+filter_suite="$filter_dir/scripts/test/orch_test.sh"
+filter_err="$(mktemp)"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha$' bash "$filter_suite" 2>&1)"; st=$?
+assert_status "a lowercase filter selects a capitalised title" "$st" 0
+assert_contains "runs the capitalised section" "$out" "ok   alpha ran"
+
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha|^nonexistent' \
+  bash "$filter_suite" 2>"$filter_err")"; st=$?
+assert_status "an alternation with a dead branch exits 1" "$st" 1
+assert_eq "names the dead branch, ending with the list notice" "$(cat "$filter_err")" \
+  "orch_test.sh: ORCH_TEST_ONLY branch '^nonexistent' matches no section; the selectable sections are:"
+assert_contains "lists the selectable sections on stdout" "$out" "planted beta"
+assert_eq "runs no section for a dead branch" "$(count_lines 'alpha ran' "$out")" "0"
+
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^nonexistent|^planted alpha|^missing' \
+  bash "$filter_suite" 2>"$filter_err")"; st=$?
+assert_status "two dead branches beside a live one exit 1" "$st" 1
+assert_eq "names each dead branch in order, only the last ending the notice" "$(cat "$filter_err")" \
+  "orch_test.sh: ORCH_TEST_ONLY branch '^nonexistent' matches no section
+orch_test.sh: ORCH_TEST_ONLY branch '^missing' matches no section; the selectable sections are:"
+assert_contains "lists the sections on stdout for two dead branches" "$out" "planted beta"
+
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^nonexistent|^missing' bash "$filter_suite" 2>"$filter_err")"; st=$?
+assert_status "an all-dead alternation exits 1" "$st" 1
+assert_eq "names each branch of an all-dead alternation" "$(cat "$filter_err")" \
+  "orch_test.sh: ORCH_TEST_ONLY branch '^nonexistent' matches no section
+orch_test.sh: ORCH_TEST_ONLY branch '^missing' matches no section; the selectable sections are:"
+
+out="$(ORCH_TEST_JOBS=2 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha|^nonexistent' \
+  bash "$filter_suite" 2>"$filter_err")"; st=$?
+assert_status "a dead branch exits 1 in parallel" "$st" 1
+assert_eq "runs no section in parallel for a dead branch" "$(count_lines 'alpha ran' "$out")" "0"
+assert_contains "names the dead branch in parallel" "$(cat "$filter_err")" \
+  "branch '^nonexistent' matches no section"
+
+# Grouped, nested, bracketed and escaped bars are not split points; an empty
+# branch is handed to grep as it stands.
+for filter_pat in '^planted (alpha|nonexistent)$' '^planted ((alpha)|(nonexistent))$' \
+  '^planted alph[]|a]' '^planted alph[^x|]$' '^planted alpha\|*'; do
+  out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY="$filter_pat" bash "$filter_suite" 2>&1)"; st=$?
+  assert_status "the filter $filter_pat is not refused" "$st" 0
+  assert_contains "the filter $filter_pat runs alpha" "$out" "ok   alpha ran"
+done
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha$|^planted beta$' \
+  bash "$filter_suite" 2>&1)"; st=$?
+assert_status "an all-live alternation passes" "$st" 0
+assert_contains "an all-live alternation runs its second branch" "$out" "ok   beta ran"
+rm -f "$filter_err"
+
+# An empty branch matches every title, so the whole suite would run: the copy
+# is trimmed to the isolation section and the planted ones first.
+find "$filter_dir/scripts/test/orch" -name '*.sh' ! -name harness.sh ! -name setup.sh ! -name zz-planted.sh -delete
+filter_cut="$(grep -n '^# --- isolation under a git hook' "$filter_dir/scripts/test/orch/harness.sh" | cut -d: -f1)"
+sed -i "${filter_cut},\$d" "$filter_dir/scripts/test/orch/harness.sh"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha||^planted beta' \
+  bash "$filter_suite" 2>&1)"; st=$?
+assert_status "an alternation with an empty branch is not refused" "$st" 0
+assert_contains "an empty branch still runs the matched sections" "$out" "ok   beta ran"
+rm -rf "$filter_dir"
+
 filter_err="$(mktemp)"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>"$filter_err")"; st=$?
 assert_status "a pattern matching no section exits 1" "$st" 1

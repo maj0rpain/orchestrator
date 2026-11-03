@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.2
+
+`ORCH_TEST_ONLY` now matches section titles ignoring case, and refuses a pattern with a top-level alternative that matches no section, naming each such branch, instead of silently running only the others.
+
 ## 4.43.1
 
 `suite-cost check` starts no base or confirming run while another suite-cost run is in progress in the clone, and answers `unmeasured` at once instead of spending a run that would be thrown away.
