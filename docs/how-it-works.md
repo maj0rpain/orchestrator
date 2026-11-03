@@ -269,6 +269,7 @@ global git config. `orch.sh autopilot` has no `set` verb, so set one with
 | `rounds` | 2 | Spec review rounds. |
 | `budget` | 3 | Review loop iterations. |
 | `model` | unset: the session's own default; else one of Claude Code's allowed models, `sonnet`, `opus`, `haiku` or `fable`, or `inherit` | The `--model` the headless phase session runs on. |
+| `auto-sync` | `true`: one of `true`, `false` | Turns the tick's sync-request detection on or off. |
 | `effort` | unset: the session's own default; else one of Claude Code's allowed efforts, `low`, `medium`, `high`, `xhigh` or `max`, or `inherit` | The `--effort` the headless phase session runs on. |
 
 `rounds` and `budget` are only the defaults a hand-labelled issue's minimal
@@ -426,18 +427,22 @@ line:
 
 Run `orch.sh autopilot watch [--every <seconds>]` (60 seconds by default), or
 have a scheduler (cron or similar) call `orch.sh autopilot tick`. The **pickup
-rule**: an open issue with a phase label other than `orch:done`, and neither
-`orch:running` nor `needs-human`.
+rule**: open, neither `orch:running` nor `needs-human`, and either a phase
+label other than `orch:done` or `orch:done` with a sync request, while no limit
+pause holds.
 
 ### When it needs you
 
-It stops for three things:
+It stops for these things:
 
 - a **fundamental item** in the spec review;
 - a review-loop bounded stop (a spec question the review loop files among
   them);
 - a failed session, which is never retried except a usage-limit stop labelled
-  `orch:limited`.
+  `orch:limited`;
+- a sync refusal;
+- a sync failure;
+- a dropped intent after a pushed merge: the sync's resolver dropped an intent.
 
 It posts a **question comment** that @mentions the handle and adds
 `needs-human`. `/orchestrator:questions` gathers the pending questions and
@@ -479,8 +484,8 @@ old claims. It also warns about this host's claims whose process is gone;
 | `orch.sh autopilot resume <issue>` | Remove `needs-human` from the issue, nothing else. |
 | `orch.sh autopilot sync <issue>` | Add `orch:sync` to an `orch:done` issue, asking the next tick to sync its PR with the base branch. |
 
-The rest (`active`, `rounds`, `budget`, `run`, `ask`, `answer`) are called by
-the sessions themselves.
+The rest (`active`, `rounds`, `budget`, `run`, `ask`, `answer`, `sync-finish`,
+`sync-dropped`, `sync-fail`) are called by the sessions themselves.
 
 ## Hosts
 
