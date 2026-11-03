@@ -26,7 +26,8 @@ slot_hold() {
   mkfifo "$fifo" || return 1
   bash -c 'exec 8>"$2" && exec 9>>"$1" && flock 9 && echo ready >&8 && exec 8>&- && exec sleep 60' _ "$1/slot.$2" "$fifo" &
   SLOT_HOLDER=$!
-  read -r -t 10 line <"$fifo" || { rm -f "$fifo"; return 1; }
+  line="$(fifo_bounded 10 "slot_hold ($fifo)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$fifo")"
+  [ "$line" = ready ] || { rm -f "$fifo"; return 1; }
   rm -f "$fifo"
 }
 # slot_release: kills the holder slot_hold started, and waits for it.
@@ -694,6 +695,7 @@ assert_eq "and reports no timeout" "$(printf '%s\n' "$out" | grep -c 'timed out'
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=1 ORCH_TEST_SECTION_TIMEOUT=abc \
   ORCH_TEST_ONLY='^planted fine$' bash "$dl_suite" 2>&1)"; st=$?
 assert_status "a sequential run ignores an invalid deadline" "$st" 0
+assert_eq "and reports no timeout" "$(printf '%s\n' "$out" | grep -c 'timed out')" "0"
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_SECTION_TIMEOUT=4 \
   ORCH_TEST_ONLY='^planted nap( two| three)?$' bash "$dl_suite" 2>&1)"; st=$?
 assert_status "the clock starts at the child's start, not its wait for a slot" "$st" 0
@@ -2951,3 +2953,26 @@ assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (
 rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row
+
+# --- fifo_bounded -------------------------------------------------------------
+# A FIFO handshake whose partner never arrives fails fast, naming the side and
+# its FIFO, instead of hanging the run.
+echo
+echo "fifo_bounded"
+fb_dir="$(mktemp -d)" && mkfifo "$fb_dir/one"
+SECONDS=0
+err="$(fifo_bounded 1 "side X ($fb_dir/one)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$fb_dir/one" 2>&1 >/dev/null)"; st=$?
+assert_status "fifo_bounded: a partnerless FIFO read returns 124" "$st" 124
+assert_eq "and gives up within a few seconds" "$([ "$SECONDS" -le 5 ] && echo yes)" "yes"
+assert_eq "and names the side and the FIFO" "$err" "side X ($fb_dir/one): no partner within 1s"
+
+err="$(fifo_bounded 5 "side Y" sh -c 'exit 3' 2>&1)"; st=$?
+assert_status "fifo_bounded: another status passes through" "$st" 3
+assert_eq "and prints no message" "$err" ""
+
+( printf x >"$fb_dir/one" ) &
+out="$(fifo_bounded 5 "side Z" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$fb_dir/one")"; st=$?
+wait
+assert_status "fifo_bounded: a read of a last line with no newline succeeds" "$st" 0
+assert_eq "and yields the line" "$out" "x"
+rm -rf "$fb_dir"
