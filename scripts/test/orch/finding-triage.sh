@@ -1133,6 +1133,16 @@ rm -f "$bad_comments_adapter"
 assert_status "--into: a closed member whose comments do not parse dies" "$st" 1
 assert_eq "naming the issue and saying so" \
   "$(has_line "$out" "orch: could not read issue #66's comments: its comments did not parse")" yes
+# A trusted comment the render cannot read (its author a string, not an object)
+# dies the same way, rather than as a closed member that is not bundled.
+bad_comments_adapter="$(mktemp)"
+writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+  'adapter_issue_comments() { printf "%s\n" "{\"comments\": [{\"authorAssociation\": \"OWNER\", \"author\": \"x\", \"body\": \"b\", \"createdAt\": \"t\"}]}"; }' >"$bad_comments_adapter"
+out="$(ORCH_GH_ADAPTER="$bad_comments_adapter" bundle --into 63 66 2>&1)"; st=$?
+rm -f "$bad_comments_adapter"
+assert_status "--into: a closed member whose comments do not render dies" "$st" 1
+assert_eq "naming the issue and saying so (unrenderable comments)" \
+  "$(has_line "$out" "orch: could not read issue #66's comments: its comments did not parse")" yes
 
 # --into checks its members as the new form does - one is enough - and B
 # itself, before any write.

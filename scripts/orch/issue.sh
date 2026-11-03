@@ -144,7 +144,8 @@ comments_rendered() {
     __cr_hint=(--hint "$2"); shift 2
   fi
   comments_trusted ${__cr_hint[@]+"${__cr_hint[@]}"} "$1" "$2" "$3" __cr_kept
-  __cr_out="$(jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$__cr_kept")"
+  __cr_out="$(jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$__cr_kept")" \
+    || die "could not $2: its comments did not parse"
   printf -v "$4" '%s' "$__cr_out"
 }
 
