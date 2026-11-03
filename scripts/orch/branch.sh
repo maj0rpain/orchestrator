@@ -5,11 +5,13 @@
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # Forking a named branch off a base branch has exactly one right answer -
-# fetch it, then check out the start point that fetch decided: origin's tip
-# when origin answered, or, only when origin could not be asked, the local
-# fallback - so both branch create (a flow's own naming and state) and
-# branch off (a quick implementation's, which keeps no state) share it rather
-# than each hand-rolling the fetch/checkout-fallback idiom. The caller names
+# decide the start point with new_branch_start (origin's tip when origin
+# answered, or, only when origin could not be asked, the local fallback;
+# refusing - a taken name, a base gone from origin, a failed fetch - is the
+# ways it fails), then check out that start point with fork_new_branch - so
+# both branch create (a flow's own naming and state) and branch off (a quick
+# implementation's, which keeps no state) share it rather than each
+# hand-rolling the fetch/checkout-fallback idiom. The caller names
 # the base: a flow's is the one it recorded at init. The caller also names
 # the remedy for a base origin says is gone ($3), since only a flow has a
 # base it can correct.
