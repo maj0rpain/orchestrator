@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.8
+
+The autopilot container entrypoint now also removes a reused clone's local `user.name` and `user.email`, and the local `orchestrator.model.<role>`/`orchestrator.effort.<role>` keys by reading git config directly instead of parsing `agent show`, so `docker/.env` always wins. Every failure line now names its own step.
+
 ## 4.44.7
 
 Internal test-runner cleanup: one helper for the parallel runner's section FAIL, `print_fail` indents every line of a multi-line detail, one counts-file name, one `orch.sh tests` banner, and clearer names and header comments in `test_jobs.sh`.
