@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.7
+
+`branch create` no longer discards a human's uncommitted work on a branch that is not the flow's: on any other branch a clean tree goes on, and a dirty tree or a merge or rebase in progress is refused with nothing discarded.
+
 ## 4.43.6
 
 The orchestrator now ends an unterminated last line of the shared git exclude file before it appends, and doctor's remedy for missing exclude lines does the same, so a user's last pattern is no longer glued to the first added line.
