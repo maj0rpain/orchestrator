@@ -906,7 +906,7 @@ pg_decide() {
   printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' >"$PG/reason" 2>/dev/null
   if [ "$st" -ne 0 ]; then echo "exit $st"
   elif [ -z "$out" ]; then echo allow
-  else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'
+  else bash_hook_decision "$out"
   fi
 }
 
