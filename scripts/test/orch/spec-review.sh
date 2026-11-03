@@ -1061,8 +1061,14 @@ BATCH
 d="$(srr_dir)"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review check "$d" 2>&1)"; st=$?
 assert_status "check passes the batch" "$st" 0
+snap="$(fake_snapshot)"
 ORCH_AUTOPILOT=1 sra "$d" recommended
+assert_status "the hold run exits 0" "$st" 0
 assert_eq "the hold run wrote fundamental.md" "$(on_disk "$d/fundamental.md")" present
+assert_eq "the hold run leaves spec.md as fetched" "$(cat "$d/spec.md")" "$srr_body"
+assert_eq "the hold run leaves spec.fetched.md as fetched" "$(cat "$d/spec.fetched.md")" "$srr_body"
+assert_eq "the hold run leaves no apply-answer" "$(on_disk "$d/apply-answer")" absent
+assert_eq "the hold run changes neither body nor comments" "$(fake_snapshot)" "$snap"
 srr_hold="$(cp -r "$d" "$d.hold"; echo "$d.hold")"
 ORCH_AUTOPILOT=1 sra "$d" recommended
 assert_status "the resumed recommended exits 0" "$st" 0
