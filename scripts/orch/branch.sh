@@ -4,7 +4,6 @@
 # Its tests: scripts/test/orch/branch.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-
 # Forking a named branch off a base branch has exactly one right answer -
 # fetch it, then check out the start point that fetch decided: origin's tip
 # when origin answered, or, only when origin could not be asked, the local
@@ -21,7 +20,8 @@ checkout_new_branch() {
 }
 
 # new_branch_refusals <start_var> <name> <base> [<remedy>]: the refusals of
-# checkout_new_branch - the name taken, or the base gone from origin - alone,
+# checkout_new_branch - the name taken, the base gone from origin, or a failed
+# fetch while origin has the base (could not fetch <base> from origin) - alone,
 # so a caller with something to write first (branch create's discard) runs
 # them before it.
 # It also decides the start point, the ref the branch forks from, and returns it
@@ -29,11 +29,11 @@ checkout_new_branch() {
 # worked; when origin could not be asked, origin/<base> if that remote-tracking
 # ref exists, else the local <base>.
 new_branch_refusals() {
-  local start_v="$1" name="$2" base="$3" remedy="${4:-start again on another base branch}"
-  local start_r
+  local __nbr_out="$1" name="$2" base="$3" remedy="${4:-start again on another base branch}"
+  local __nbr_start
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
   if git fetch --quiet origin "$base" 2>/dev/null; then
-    start_r="origin/$base"
+    __nbr_start="origin/$base"
   else
     # Only an origin that could not be asked earns the local fallback: one
     # that answered "no such branch" means the base is gone, and forking from
@@ -44,12 +44,12 @@ new_branch_refusals() {
     [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or $remedy"
     [ "$st" -ne 0 ] || die "could not fetch $base from origin"
     if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null; then
-      start_r="origin/$base"
+      __nbr_start="origin/$base"
     else
-      start_r="$base"
+      __nbr_start="$base"
     fi
   fi
-  printf -v "$start_v" '%s' "$start_r"
+  printf -v "$__nbr_out" '%s' "$__nbr_start"
 }
 
 # fork_new_branch <name> <start>: the checkout half, after new_branch_refusals:
@@ -59,7 +59,7 @@ fork_new_branch() {
   # --no-track: the base is recorded in the branch's own config, so the
   # upstream branch.autoSetupMerge would set is never wanted; pr publish sets
   # the real one on the first push.
-  err="$(git checkout -q --no-track -b "$name" "$start" 2>&1)" \
+  capture_err err git checkout -q --no-track -b "$name" "$start" \
     || die "could not create $name from $start: $err"
 }
 
