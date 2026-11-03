@@ -982,20 +982,14 @@ assert_status "a resolved item refuses the mark, in autopilot" "$st" 1
 assert_contains "saying it carries no mark" "$out" "a resolved item carries no mark"
 
 d="$(srf_dir)"
+snap="$(fake_snapshot)"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
-assert_status "a round with a fundamental item applies" "$st" 0
+assert_status "a round with a fundamental item holds" "$st" 0
 assert_eq "the hold-back leaves no apply-answer" "$(on_disk "$d/apply-answer")" absent
-assert_eq "the rest is applied and the held item's edit left out" "$(cat "$d/spec.md")" '# Spec
-
-Alpha prime line.
-Beta line.
-Gamma line.
-Delta line.
-Test note.
-Twice.
-Twice.'
-assert_eq "the body is published" "$(fake_body_of 14)" "$(cat "$d/spec.md")"
-assert_eq "no changelog is posted yet" "$(fake_comments_of 14)" ""
+assert_eq "spec.md is as fetched" "$(cat "$d/spec.md")" "${sra_body%$'\n'}"
+assert_eq "spec.fetched.md is as fetched" "$(cat "$d/spec.fetched.md")" "${sra_body%$'\n'}"
+assert_eq "the hold makes no GitHub write" "$(fake_snapshot)" "$snap"
+assert_eq "no changelog is posted" "$(fake_comments_of 14)" ""
 assert_eq "fundamental.md holds the item's block" "$(grep -c '^@@ item ' "$d/fundamental.md")" 1
 assert_contains "item 3 among them" "$(cat "$d/fundamental.md")" "@@ item 3 consistency decision A fundamental"
 assert_eq "no round-complete" "$(on_disk "$d/round-complete")" absent
@@ -1006,6 +1000,8 @@ assert_status "the resumed apply refuses an option the item lacks" "$st" 1
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" -4 --round 1/2 --issue 14 2>&1)"; st=$?
 assert_status "the resumed apply refuses naming an item already applied" "$st" 1
 assert_contains "saying so" "$out" "names only fundamental items"
+assert_contains "and that the rest are taken as recommended" "$out" "the rest being taken as recommended"
+assert_not_contains "without the old wording" "$out" "applied before the fundamental items were held back"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
 assert_status "the resumed apply succeeds" "$st" 0
 assert_eq "the held-back decision's option B lands" "$(cat "$d/spec.md" | sed -n 5p)" "Gamma dropped."
@@ -1028,6 +1024,67 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14
 assert_status "and apply without --resume is refused" "$st" 1
 assert_contains "naming --resume" "$out" "--resume"
 assert_eq "fundamental.md is kept" "$(on_disk "$d/fundamental.md")" present
+ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 >/dev/null 2>&1; st=$?
+assert_status "apply --resume finishes the round" "$st" 0
+assert_eq "with exactly one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+assert_eq "fundamental.md removed" "$(on_disk "$d/fundamental.md")" absent
+assert_eq "round-complete written" "$(on_disk "$d/round-complete")" present
+
+# The #1915 reproduction: a minor edit rewrites text a fundamental item anchors.
+srr_body='Exports run nightly and write one file.'
+srr_dir() {
+  local d
+  d="$(srf_dir)"
+  printf '%s' "$srr_body" >"$d/spec.md"; printf '%s' "$srr_body" >"$d/spec.fetched.md"
+  fake_issue_body 14 "$srr_body"
+  sed -i '/^@@ item /,$d' "$d/batch.md"
+  cat >>"$d/batch.md" <<'BATCH'
+@@ item 1 consistency apply fundamental
+@@ finding consistency 1
+@@ summary Run exports nightly in one place
+@@ anchor
+Exports run nightly
+@@ replace
+Exports run nightly (kept)
+@@ end
+@@ why Keep the schedule
+@@ item 2 testability apply minor
+@@ finding testability 1
+@@ summary Reword nightly
+@@ anchor
+nightly
+@@ replace
+each night
+@@ end
+BATCH
+  printf '%s\n' "$d"
+}
+srr_run() { out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" "$@" --round 1/2 --issue 14 2>&1)"; st=$?; }
+d="$(srr_dir)"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review check "$d" 2>&1)"; st=$?
+assert_status "check passes the batch" "$st" 0
+snap="$(fake_snapshot)"
+srr_run recommended
+assert_status "the hold run exits 0" "$st" 0
+assert_eq "fundamental.md written" "$(on_disk "$d/fundamental.md")" present
+assert_eq "spec.md still fetched" "$(cat "$d/spec.md")" "$srr_body"
+assert_eq "spec.fetched.md still fetched" "$(cat "$d/spec.fetched.md")" "$srr_body"
+assert_eq "no apply-answer" "$(on_disk "$d/apply-answer")" absent
+assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
+srr_hold="$(cp -r "$d" "$d.hold"; echo "$d.hold")"
+srr_run recommended
+assert_status "the resumed recommended exits 0" "$st" 0
+assert_eq "publishing the batch-order result" "$(fake_body_of 14)" 'Exports run each night (kept) and write one file.'
+assert_eq "one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+for srr_ans in -1 none; do
+  d="$srr_hold-$srr_ans"; rm -rf "$d"; cp -r "$srr_hold" "$d"
+  fake_issue_body 14 "$srr_body"; fake_comments_clear 14
+  srr_run "$srr_ans"
+  assert_status "the resumed $srr_ans exits 0" "$st" 0
+  assert_eq "$srr_ans publishes the minor edit alone" "$(fake_body_of 14)" 'Exports run each night and write one file.'
+  assert_eq "$srr_ans posts one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+  assert_contains "$srr_ans records item 1 declined" "$(fake_comments_of 14)" "(1)"
+done
 
 # Write order and failure.
 d="$(sra_dir)"
@@ -1173,6 +1230,26 @@ srt_refused() {
   sra_refused "$@"
   assert_eq "$1: the ticket files unchanged" "$(srt_files "$2")" "$before"
 }
+
+# An autopilot round (#1915): the hold run takes no ticket pause; the resumed
+# run pauses, writing nothing, and its --tickets rerun finishes the round.
+d="$(srt_dir)"
+sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
+export ORCH_AUTOPILOT=1
+sra "$d" recommended
+assert_status "an open breakdown: the hold run does not pause" "$st" 0
+assert_eq "fundamental.md written" "$(on_disk "$d/fundamental.md")" present
+snap="$(fake_snapshot)"
+sra "$d" 3B
+assert_status "the resumed run pauses for the tickets" "$st" 3
+assert_eq "nothing written to GitHub" "$(fake_snapshot)" "$snap"
+assert_eq "fundamental.md kept" "$(on_disk "$d/fundamental.md")" present
+assert_eq "no apply-answer" "$(on_disk "$d/apply-answer")" absent
+srt_fetch "$d"
+sra "$d" 3B --tickets recommended
+assert_status "the --tickets rerun succeeds" "$st" 0
+assert_eq "posting one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+unset ORCH_AUTOPILOT
 
 # The pause, then the --tickets rerun.
 d="$(srt_dir)"

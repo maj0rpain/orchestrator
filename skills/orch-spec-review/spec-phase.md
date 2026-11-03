@@ -46,8 +46,9 @@ under `ORCH_AUTOPILOT=1`.
 When a round has a fundamental item:
 
 1. Run `spec-review apply <dir> recommended --round <k>/<n>` as usual: it holds
-   the fundamental items back into `<dir>/fundamental.md`, applies every other
-   item as recommended, publishes the body and posts no changelog yet.
+   the fundamental items back into `<dir>/fundamental.md` and stops: it
+   publishes nothing, follows no tickets, posts no changelog and makes no
+   GitHub write.
 2. Write the question to a scratch file: only the fundamental items, each with
    its options and recommendation, and post it with `bash "$ORCH" autopilot
    ask spec <file>`. It @mentions the human, adds `needs-human` and releases the
