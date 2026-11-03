@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.48
+
+The test runners now fail a suite that ends without its `N passed, M failed` summary, even when it exits 0: all.sh and affected.sh report it as `died before its summary (exit 0)`, and a sequential `orch_test.sh` run (`ORCH_TEST_JOBS=1`) that stops early prints `the run reported no counts`, counts the miss as a failure, and exits 1 (#1939).
+
 ## 4.43.47
 
 orch-spec-review's skill description is shortened to fit the Agent Skills 1024-character limit, and docs_lint now fails any skill whose frontmatter description is over it.
