@@ -23,11 +23,12 @@ is part of the change, not scope beyond it.
 Never write a hand-rolled `printf 'orch: ...' >&2`. `die` and `die2` print the
 message and exit; `warn` prints it and returns, for a non-fatal message.
 
-## 3. No local named after a file-level helper
+## 3. No variable named after a file-level helper
 
-A local variable never takes the name of a function defined at file level -
-for example `note`, `die`, `now` or `trim`. The shadowing reads as a call where
-there is none.
+A variable - a function's local or a test section's top-level one - never takes
+the name of a function defined at file level - for example `note`, `die`,
+`now`, `trim` or tally's `bad`. The shadowing reads as a call where there is
+none.
 
 ## 4. One meaning per variable
 
