@@ -645,7 +645,7 @@ dl_mark="orchdeadline$$x$RANDOM"
 dl_dir="$(planted_copy <<PLANTED
   # --- planted hang
   echo; echo "planted hang"; echo "output before the hang"
-  bash -c 'sleep 600 # ${dl_mark}hang' &
+  bash -c 'sleep 600; : ${dl_mark}hang' &
   wait
   # --- planted stubborn
   echo; echo "planted stubborn"
