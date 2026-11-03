@@ -1,5 +1,141 @@
 # Changelog
 
+## 4.43.35
+
+The autopilot container now refuses to reuse a clone whose origin is not `REPO` (or is unreadable), naming the two fixes, instead of silently watching the old repo.
+
+## 4.43.34
+
+The version-bump script, and so the PR's fragment lint, now refuses a changelog fragment whose prose holds a heading line, which would have split the release entry in CHANGELOG.md (#1927).
+
+## 4.43.33
+
+Internal cleanup of the spec review's uncited-finding check and its tests: one loop over the lens findings, duplicate test cases removed, test helpers reused, and `spec_review_item_unnamed` renamed `spec_review_item_resumed_as_recommended`. No behaviour changes.
+
+## 4.43.32
+
+`orch.sh pr fetch` now writes a PR body with LF line endings, and `orch.sh review-pass` reads the PR body through that same LF read.
+
+## 4.43.31
+
+`branch create`'s Discard rule now decides on the branch it is making, so a fresh run on a retired `-redo-<n>` branch refuses instead of discarding; one `work_to_discard` predicate defines the work to discard for both discard sites.
+
+## 4.43.30
+
+orch-review's CI section states how to run `review ci` before the flake rerun refers back to it.
+
+## 4.43.29
+
+A `## ` line inside a code fence is never a heading to the readers of named sections, so a record or handoff that quotes a heading no longer misleads `review terminal`, `review known-items`, `review-pass known-items`, `handoff validate`, `handoff section` or the `## Autopilot` block check.
+
+## 4.43.28
+
+`spec-review apply --tickets` now refuses, before any write, a ticket text item, edge item or `@@ closed` line that names an issue outside the spec issue's breakdown or a ticket in the wrong state.
+
+## 4.43.27
+
+`orch.sh issue comments` takes an optional `--with-spec-review` flag that keeps the spec review's changelog comments in the file, and `/orchestrator:questions` passes it, so its recommender sees what earlier spec-review rounds settled and declined.
+
+## 4.43.26
+
+`orch.sh review standards` no longer lists a root file or a crawled mention that is an in-repo symlink to a file outside the repo; such a path is treated as missing, as a declared one already was. Its mentions and declaration scanners now share one paragraph rule, and the Spec reviewer brief states the Standards reading rule on its own.
+
+## 4.43.25
+
+`orch.sh doctor --flow`'s remedy for a done flow whose PR is still a draft is now `orch.sh pr ready` on the flow's branch, which reads the PR's checks first, instead of the ungated `gh pr ready`. A failed check whose name holds a comma now reads whole in `pr ready`'s and `review ready`'s refusal. `ci_ready_gate` and `gh_die` share one `die_hinted` helper and its `die_opt_check` option rule in the common module, and the tests count and clear the gh fake's checks through `fake_checks_reads` and `fake_checks_clear`.
+
+## 4.43.24
+
+The spec review's `spec-review wait` and the review loop's `review ci` now run as long commands: in the foreground, still waited for when the host moves them to the background. A lens is judged missing only from the wait's own timeout, and a `review ci` the host kills is unreachable, a bounded stop. docs_lint covers orch-spec-review's skill.
+
+## 4.43.23
+
+Trim the test runner's section-filter tests: drop a duplicated parallel dead-branch case, share one planted scripts copy across the filter cases, and fold the dead-branch refusal's intermediate array into its message list.
+
+## 4.43.22
+
+`affected.sh` and `orch_test.sh` now share one section-title rule and one reader of `all.sh`'s suite list (`scripts/test/test_tree.sh`). `affected.sh` rejects an `all.sh` naming a suite with no file, prints its errors with an `affected.sh: ` prefix, and renames `mb`, `base` and `git_q`.
+
+## 4.43.21
+
+The stdin hook now denies an interpreter run with options only (`python3 -u`, `node --input-type=module`), which reads stdin and hangs, and still allows each interpreter's info options such as `python3 -V` and `node -v`. The Bash hooks' walker moved to its own module.
+
+## 4.43.20
+
+A spec review's paste guard now disarms on the human's next message as well as on `spec-review apply`, so a review that is abandoned, stops on a failure or is aborted no longer makes every later turn re-paste a stale view or refuses every later ask. A re-run `check` arms it again.
+
+## 4.43.19
+
+The six standalone test suites now end with a shared `tally_summary` from tally.sh, and the duplicated structural tally checks in the harness are gone.
+
+## 4.43.18
+
+A failed `autopilot answer` or handoff write no longer leaves a partly written file and is reported as a write failure, not a missing handoff; `trust_warn_issue` reads autopilot mode through `autopilot_active`; `issue_comments_render` is now `comments_render_trusted`; `trust_filter_prs` names its argument `<subject>`.
+
+## 4.43.17
+
+The planning edit guard now resolves the edited path through symlinks, so it denies source and records edits made through a symlinked repo path instead of allowing them.
+
+## 4.43.16
+
+Pin the `exclude_line` empty-file test to the exact bytes in one assertion.
+
+## 4.43.15
+
+`orch.sh redo review` now refuses while a ticket worktree is left under the checkout, as `redo spec` does. The busy-signal descriptions carry the redo exemption, and the redo and branch tests share a `branch_presence` helper.
+
+## 4.43.14
+
+Fixed an autopilot spec round whose fundamental item could not be applied after the human replied: the first run now only holds the fundamental items back, and the resumed run applies the whole batch in batch order and posts the one changelog.
+
+## 4.43.13
+
+Share the test harness's job-slot hold, release, notice wait and quota file helpers between its job pool and affected.sh sections.
+
+## 4.43.12
+
+The docs lint checks that the stdin and Run a long command rows mark Junie Unverified through one named rule, `scan_row_unverified`, which reads only the Junie CLI cell and is listed in the lint header.
+
+## 4.43.11
+
+`orch.sh issue fetch` now writes an issue body with its carriage returns removed, so a spec last edited in the GitHub web UI reaches the spec review as LF lines and its multi-line anchors match.
+
+## 4.43.10
+
+Simplify the harness's gh op placement check to state its capture-and-append step once, in a loop over its (ops, owners) pairs.
+
+## 4.43.9
+
+An autopilot spec review round held for a fundamental item now rebases each ticket's fetched copy on the ticket as the hold published it, refetching a ticket a block or unblock edit touched, so the resumed run's ticket edits and `check --tickets` build on the published tickets instead of overwriting the hold's edits. The hold also keeps its ticket lines in `held-tickets.md` beside `fundamental.md`, so the round's one changelog reports both runs' ticket outcomes.
+
+## 4.43.8
+
+`spec-review check` and `spec-review apply` now refuse a batch that leaves a finding of a lens that ran uncited, naming every uncited finding, so no finding is dropped silently.
+
+## 4.43.7
+
+`branch create` no longer discards a human's uncommitted work on a branch that is not the flow's: on any other branch a clean tree goes on, and a dirty tree or a merge or rebase in progress is refused with nothing discarded.
+
+## 4.43.6
+
+The orchestrator now ends an unterminated last line of the shared git exclude file before it appends, and doctor's remedy for missing exclude lines does the same, so a user's last pattern is no longer glued to the first added line.
+
+## 4.43.5
+
+`orch.sh pr ready` and `orch.sh review ready` now read the PR's required checks before marking it ready: they refuse over a failed check or checks GitHub cannot report, and note on stderr when checks are still pending. The implementer, fixer and resolver agents call a local failure flaky only after its section has been rerun alone at least 3 times and passed every time.
+
+## 4.43.4
+
+A new PreToolUse Bash hook, `hook-bash-poll.sh`, denies a plugin subagent's or autopilot session's Bash call holding an unquoted `pgrep` or `pkill` word, under every permission mode, and tells the agent to rerun the long command in the foreground instead. The stdin hook's command walker now takes a per-part test, shared by both hooks.
+
+## 4.43.3
+
+`scripts/test/all.sh` and `scripts/test/affected.sh` now end every run that reaches their report on one verdict line - `all.sh: PASS (<n> parts)` or `all.sh: FAIL (<part>, ...)`, and the same for `affected.sh` - naming each failed suite, `shellcheck`, or `temp files`, so a `tail` of the output can no longer show a pass when the run failed. The report code both runners shared now lives once, in `scripts/test/report.sh`.
+
+## 4.43.2
+
+`ORCH_TEST_ONLY` now matches section titles ignoring case, and refuses a pattern with a top-level alternative that matches no section, naming each such branch, instead of silently running only the others.
+
 ## 4.43.1
 
 `suite-cost check` starts no base or confirming run while another suite-cost run is in progress in the clone, and answers `unmeasured` at once instead of spending a run that would be thrown away.

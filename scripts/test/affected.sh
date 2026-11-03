@@ -27,7 +27,8 @@
 #   skills, agents, docs, markdown, changelog fragments
 #                                     nothing beyond the always-run checks
 #   anything else, orch.sh, orch/common.sh, the shared test setup, the
-#   runners, the gh fake, test_jobs.sh   all.sh (this row wins over the rest)
+#   runners, the gh fake, test_jobs.sh, report.sh, test_tree.sh
+#                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
 # Always run: docs_lint.sh, orch_test.sh's placement sections (helper
@@ -42,6 +43,15 @@
 # failed. --plan prints the selection instead, one item per line in that order
 # (each suite, each orch_test.sh section title, each shellcheck file), or the
 # single line "all.sh" on the fallback, and runs nothing.
+#
+# The last stdout line is the verdict (report.sh): "affected.sh: PASS (<n>
+# parts)" when the run exits 0, else "affected.sh: FAIL (<part>, <part>, ...)",
+# each failed part named by its summary line's prefix, n counting the summary
+# lines printed (shellcheck's included, whatever it printed). The full-suite
+# fallback ends on all.sh's verdict instead. Usage errors, an unknown ref, an
+# invalid ORCH_TEST_POOL_PERCENT, an INT or TERM stop and --plan print none.
+# An invalid ORCH_TEST_JOBS is not checked here: the orch_test.sh child fails
+# on it, so the run still ends on "affected.sh: FAIL (orch_test.sh)".
 
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=git_env.sh
@@ -68,7 +78,7 @@ for arg in "$@"; do
 done
 
 cd "$root" || exit 1
-git_q() { git -c core.quotepath=off "$@"; }
+git_raw_paths() { git -c core.quotepath=off "$@"; }
 
 # full_suite: the fallback - the whole of all.sh, or its name on --plan.
 full_suite() {
@@ -108,13 +118,13 @@ resolve_base() {
   git merge-base HEAD "$target" 2>/dev/null || true
 }
 
-mb="$(resolve_base)" || exit $?
-[ -n "$mb" ] || full_suite
+merge_base="$(resolve_base)" || exit $?
+[ -n "$merge_base" ] || full_suite
 
 # changed: files present now (tracked changes and untracked); deleted: gone.
-changed="$( { git_q diff --no-renames --name-only --diff-filter=d "$mb" --
-  git_q ls-files --others --exclude-standard; } | LC_ALL=C sort -u)"
-deleted="$(git_q diff --no-renames --name-only --diff-filter=D "$mb" -- | LC_ALL=C sort -u)"
+changed="$( { git_raw_paths diff --no-renames --name-only --diff-filter=d "$merge_base" --
+  git_raw_paths ls-files --others --exclude-standard; } | LC_ALL=C sort -u)"
+deleted="$(git_raw_paths diff --no-renames --name-only --diff-filter=D "$merge_base" -- | LC_ALL=C sort -u)"
 
 want=()        # suites to run besides orch_test.sh and docs_lint.sh
 sec_files=()   # scripts/test/orch/<n>.sh files whose sections run
@@ -123,17 +133,17 @@ sc_files=()    # the lint targets
 # classify <file> <present|deleted>: record what the file selects, or run the
 # full suite when its reach is unclear.
 classify() {
-  local f="$1" state="$2" base
-  base="$(basename "$f")"
+  local f="$1" state="$2" file_name
+  file_name="$(basename "$f")"
   case "$f" in
     scripts/orch.sh | scripts/orch/common.sh | scripts/test/orch/common.sh | \
       scripts/test/orch/setup.sh | scripts/test/all.sh | scripts/test/orch_test.sh | \
-      scripts/test/affected.sh | scripts/test/test_jobs.sh | scripts/test/gh_adapter_fake.sh)
+      scripts/test/affected.sh | scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/gh_adapter_fake.sh)
       full_suite ;;
     scripts/orch/*.sh)
       [ "$state" = deleted ] && full_suite
-      [ -f "scripts/test/orch/$base" ] || full_suite
-      sec_files+=("scripts/test/orch/$base") ;;
+      [ -f "scripts/test/orch/$file_name" ] || full_suite
+      sec_files+=("scripts/test/orch/$file_name") ;;
     scripts/test/orch/*.sh)
       [ "$state" = deleted ] && full_suite
       sec_files+=("$f") ;;
@@ -160,10 +170,13 @@ while IFS= read -r f; do
   [ -n "$f" ] && classify "$f" deleted
 done <<<"$deleted"
 
-# A section file's titles: its `# --- ` lines, trailing dashes dropped, as
-# orch_test.sh's walk reads them.
+# shellcheck source=test_tree.sh
+source "$dir/test_tree.sh"
+
+# A section file's titles: its `# --- ` lines, read by test_tree.sh's
+# SECTION_TITLE_AWK, as orch_test.sh's walk reads them.
 titles_of() {
-  grep '^# --- ' "$1" | sed -e 's/^# --- //' -e 's/[ -]*$//'
+  awk "$SECTION_TITLE_AWK"'/^# --- / { print title($0) }' "$1"
 }
 
 # The placement titles come first, then the selected files' sections.
@@ -190,19 +203,12 @@ if [ "${#sec_files[@]}" -gt 0 ]; then
   done < <(printf '%s\n' "${sec_files[@]}" | LC_ALL=C sort -u)
 fi
 
-# The all.sh suite list, read the way the harness reads it.
-suites_n="$(grep -c '^suites=(' "$dir/all.sh")" || true
-if [ "$suites_n" -ne 1 ]; then
-  echo "orch: $dir/all.sh holds $suites_n suites=( lines, not one" >&2
+# The all.sh suite list.
+suites_read "$dir/all.sh" "$dir" || {
+  echo "affected.sh: $SUITES_ERR" >&2
   exit 1
-fi
-suites_line="$(grep '^suites=(' "$dir/all.sh")"
-suites_list="${suites_line#suites=(}"
-read -ra suites <<<"${suites_list%%)*}"
-if [ "${#suites[@]}" -eq 0 ]; then
-  echo "orch: $dir/all.sh holds an empty suites list" >&2
-  exit 1
-fi
+}
+suites=("${SUITES[@]}")
 
 # The suites to run, in all.sh's order: orch_test.sh and docs_lint.sh always.
 selected=()
@@ -241,6 +247,8 @@ done
 
 # shellcheck source=test_jobs.sh
 source "$dir/test_jobs.sh"
+# shellcheck source=report.sh
+source "$dir/report.sh"
 test_jobs_lower_priority
 test_jobs_pool_init affected.sh || exit 1
 export ORCH_TEST_QUIET=1
@@ -281,48 +289,16 @@ sc_status=0
 
 for n in "${!selected[@]}"; do
   suite="${selected[$n]}"
-  out="$(<"$tmp/$suite")"
-  fail_block="$(printf '%s\n' "$out" | awk '
-    in_fail && /^     / { print; next }
-    { in_fail = 0 }
-    /^  FAIL / { print; in_fail = 1 }')"
-  [ -z "$fail_block" ] || printf '%s\n' "$fail_block"
-  last="$(printf '%s\n' "$out" | tail -n 1)"
-  status="${suite_exits[$n]}"
-  if [ "$status" -ne 0 ]; then
-    failed=1
-    if [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
-      echo "$suite: $last"
-    else
-      echo "$suite: died before its summary (exit $status)"
-    fi
-  else
-    echo "$suite: $last"
-  fi
-  if [ -n "$fail_block" ]; then
-    [ "$status" -eq 0 ] && echo "$suite: printed FAIL lines but exited 0"
-    failed=1
-  fi
+  report_suite "$suite" "${suite_exits[$n]}" "$(<"$tmp/$suite")" || failed=1
 done
 
 if [ "$have_sc" -eq 1 ]; then
   sc_out="$(<"$tmp/shellcheck")"
-  sc_findings="$(printf '%s\n' "$sc_out" | awk '/^[^:]+:[0-9]+:[0-9]+: /')"
-  if [ "$sc_status" -eq 0 ]; then
-    echo "shellcheck: 0 findings"
-  elif [ -n "$sc_findings" ]; then
-    printf '%s\n' "$sc_findings"
-    echo "shellcheck: $(printf '%s\n' "$sc_findings" | awk 'END { print NR }') findings"
-    failed=1
-  else
-    [ -n "$sc_out" ] && printf '%s\n' "$sc_out"
-    echo "shellcheck: failed (exit $sc_status)"
-    failed=1
-  fi
+  report_shellcheck "$sc_status" "$sc_out" || failed=1
 elif [ "${#sc_sorted[@]}" -gt 0 ]; then
-  echo "shellcheck: not installed - skipped"
-  [ -n "${CI:-}" ] && failed=1
+  report_shellcheck_missing || failed=1
 else
-  echo "shellcheck: 0 findings"
+  report_shellcheck 0 "" || failed=1
 fi
+report_verdict affected.sh "$failed"
 exit "$failed"

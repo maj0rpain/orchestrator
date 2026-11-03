@@ -70,11 +70,11 @@ SPEC_RULING_ENTRIES_JQ='.[] | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
   | map(select(length > 0)) | join(" ")'
 
 # has_headings <file> <heading>...: true when <file> has every <heading> as a
-# line of its own.
+# line of its own outside any code fence.
 has_headings() {
   local file="$1" h
   shift
-  for h in "$@"; do grep -qxF -- "$h" "$file" || return 1; done
+  for h in "$@"; do [ "$(section_count "$file" "$h")" -gt 0 ] || return 1; done
 }
 
 # review_pass_known_items <issue> <path> [--deviations <file>]: writes the
@@ -117,9 +117,8 @@ review_pass_known_items() {
   pr="$(current_open_pr)" && st=0 || st=$?
   [ "$st" -le 1 ] || exit 1
   if [ "$st" -eq 0 ]; then
-    gh_or_die --file "$work/body.raw" "read the body of PR #$pr" adapter_pr_body "$pr"
+    gh_or_die --file "$work/body" "read the body of PR #$pr" pr_body_lf "$pr"
     comments_rendered adapter_pr_comments "read the comments of PR #$pr" "$pr" pr_text
-    tr -d '\r' <"$work/body.raw" >"$work/body"
     { [ -z "$pr_text" ] || printf '%s\n' "$pr_text"; } | tr -d '\r' >"$work/comments"
     mkdir "$work/c"
     comments_split "$work/comments" "$work/c"

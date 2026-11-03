@@ -6,10 +6,11 @@
 #
 # A fragment is changelog.d/<issue>.md, <issue> all digits: its first line is
 # exactly "bump: patch", "bump: minor" or "bump: major", and the rest, after
-# any blank lines, is the CHANGELOG prose, non-empty. changelog.d/.gitkeep,
-# tracked so the directory survives a release, is not a fragment: it is never
-# refused, read or deleted, and the directory is never removed. Any other
-# file under changelog.d/, dotfiles included, is refused.
+# any blank lines, is the CHANGELOG prose, non-empty and holding no heading
+# line (a line of # marks at column 0 followed by a space or nothing).
+# changelog.d/.gitkeep, tracked so the directory survives a release, is not a
+# fragment: it is never refused, read or deleted, and the directory is never
+# removed. Any other file under changelog.d/, dotfiles included, is refused.
 #
 # With no fragment it changes nothing, prints nothing and exits 0. Otherwise
 # it bumps .claude-plugin/plugin.json's version by the highest level among
@@ -64,6 +65,12 @@ for name in "${names[@]}"; do
     /[^[:space:]]/ { while (held > 0) { print ""; held-- } print; seen = 1; next }
     seen { held++ }' >"$work/$name"
   [ -s "$work/$name" ] || refuse "$f" "it has no prose after its bump: line"
+  # A heading line would split the release entry, whose one ## heading the
+  # release adds. Fences are not tracked: no CHANGELOG reader tracks them.
+  heading="$(awk 'NR > 1 && /^#+([[:space:]]|$)/ { print NR ":" $0; exit }' "$f")"
+  if [ -n "$heading" ]; then
+    refuse "$f" "line ${heading%%:*} is a heading ('${heading#*:}'); its prose holds no heading, since the release adds the entry's one ## heading"
+  fi
 done
 
 [ -f "$PLUGIN_JSON" ] || refuse "$PLUGIN_JSON" "missing"

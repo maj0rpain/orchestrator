@@ -470,7 +470,10 @@ check_git_exclude() {
   # arrived mid-flow in a repo that is not theirs. One warning for every missing
   # line, and a remedy that appends only those.
   d_warn "$(list_join "$(printf '%s\n' "${missing[@]}")") not git-excluded - flow state and planning drafts would show as untracked."
-  d_remedy "printf '%s\\n' $(printf "'%s' " "${missing[@]}")>>\"\$(git rev-parse --git-common-dir)/info/exclude\""
+  # The leading echo ends an unterminated last line, so pasting it never
+  # glues onto the user's pattern; on a terminated file it adds a blank line,
+  # which git ignores.
+  d_remedy "{ echo; printf '%s\\n' $(printf "'%s' " "${missing[@]}"); }>>\"\$(git rev-parse --git-common-dir)/info/exclude\""
 }
 
 # The base branch every new flow and quick implementation will fork from and
@@ -834,7 +837,7 @@ check_flow_review_draft() {
   [ "$pr_state" = OPEN ] || return 0
   if [ "$phase" = "done" ] && [ "$is_draft" = true ]; then
     d_fail "PR #$pr is still a draft but the flow phase is done - review ready did not take."
-    d_remedy "gh pr ready $pr"
+    d_remedy "orch.sh pr ready    # on $(state_get branch)"
   elif [ "$phase" = review ] && [ "$is_draft" = false ]; then
     d_fail "PR #$pr was marked ready on GitHub but the flow phase is still review - state.json fell out of sync."
     d_remedy "gh pr view $pr"
@@ -880,7 +883,7 @@ check_flow_worktree_clean() {
 # Which handoffs are due is the phase table's handoffs_due - phase names what
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
-  local phase files f path problems line ready_finding ready_rc reason
+  local phase files f path problems line ready_finding ready_rc reason fetch_rc
   phase="$(state_get phase)"
   # A phase the table does not hold is due nothing, so the check skips it.
   files="$(handoffs_due "$phase")"
@@ -893,7 +896,13 @@ check_flow_handoffs() {
       return 0
     fi
     if [ "$ready_rc" -eq 2 ]; then d_gh_gate || return 0; fi
-    if ! handoff_fetch_due "$phase"; then
+    fetch_rc=0
+    handoff_fetch_due "$phase" || fetch_rc=$?
+    if [ "$fetch_rc" -eq 2 ]; then
+      d_fail "could not write the copies of issue #$(state_get issue)'s handoff comments to $HANDOFF_SCRATCH_DIR"
+      return 0
+    fi
+    if [ "$fetch_rc" -ne 0 ]; then
       reason="$TIMELINE_REASON"
       [ -n "$reason" ] || reason="gh's output is not a comment list"
       d_fail "could not read issue #$(state_get issue)'s handoff comments: $reason"

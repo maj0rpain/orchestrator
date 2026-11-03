@@ -190,6 +190,16 @@ refused() {
 }
 
 echo
+echo "prose lines that only look like headings"
+c="$(checkout 4.5.6)"
+fragment "$c" 12.md 'bump: patch' '' '#883, #884 and #885 are fixed.' '  ## x' 'End.'
+run_bump "$c"
+assert_eq "an issue-reference line and an indented ## line bump" "$out" "4.5.7"
+assert_eq "an issue-reference line and an indented ## line render as written" \
+  "$(sed -n '5,12p' "$c/CHANGELOG.md")" \
+  "$(printf '%s\n' '## 4.5.7' '' '#883, #884 and #885 are fixed.' '  ## x' 'End.' '' '## 4.5.6' '')"
+
+echo
 echo "refusals"
 # Each malformed fragment sits beside a well-formed one, so the refusal is
 # shown to stop the whole run, not to skip the bad fragment.
@@ -205,6 +215,21 @@ c="$(checkout 4.5.6)"
 fragment "$c" 11.md 'bump: patch' '' 'A good one.'
 fragment "$c" 12.md 'bump: minor' '' '   '
 refused "a fragment with no prose" "$c" "changelog.d/12.md"
+# heading_case <name> <line number> <line> <prose line>...: a fragment whose
+# prose holds a heading line, beside a well-formed one, is refused.
+heading_case() {
+  local name="$1" k="$2" line="$3"
+  shift 3
+  c="$(checkout 4.5.6)"
+  fragment "$c" 11.md 'bump: patch' '' 'A good one.'
+  fragment "$c" 12.md 'bump: patch' '' "$@"
+  refused "a fragment whose prose holds $name" "$c" "changelog.d/12.md: line $k is a heading ('$line'); its prose holds no heading"
+}
+heading_case "a ## heading" 3 '## Breaking' '## Breaking' '' 'The foo flag is gone.'
+heading_case "a # heading" 3 '# Title' '# Title' 'Text.'
+heading_case "a ### heading" 4 '### Sub' 'Text.' '### Sub'
+heading_case "a bare #" 3 '#' '#' 'Text.'
+heading_case "a ## heading inside a fence" 4 '## x' '```' '## x' '```'
 c="$(checkout 4.5.6)"
 fragment "$c" 11.md 'bump: patch' '' 'A good one.'
 fragment "$c" notes.md 'bump: patch' '' 'Misnamed.'
@@ -247,7 +272,4 @@ printf '%s\n' '# Changelog' '' 'No entries yet.' >"$c/CHANGELOG.md"
 refused "a CHANGELOG.md with no ## heading" "$c" "CHANGELOG.md"
 
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary

@@ -59,6 +59,7 @@ case "$1 $2" in
       exit 1
     fi
     git init -q "$4"
+    git -C "$4" remote add origin "https://github.com/$3.git"
     exit 0 ;;
 esac
 exit 2
@@ -69,6 +70,8 @@ cat >"$root/orch.sh" <<'FAKE'
 # `agent roles`; and refuses, with an `orch:` line, any call whose arguments
 # contain $FAKE_ORCH_FAIL.
 printf 'pid=%s pwd=%s host=%s args=%s\n' "$$" "$PWD" "${ORCH_HOST_ID:-}" "$*" >>"$ORCH_LOG"
+# `repo show` goes to the real orch.sh, so its origin parser is the one tested.
+[ "$1 $2" = "repo show" ] && exec bash "$REAL_ORCH_SH" "$@"
 if [ -n "${FAKE_ORCH_FAIL:-}" ]; then
   case "$*" in *"$FAKE_ORCH_FAIL"*) echo "orch: refused $*" >&2; exit 1 ;; esac
 fi
@@ -96,7 +99,7 @@ entry_env() {
   [ -z "${clone_prep:-}" ] || (eval "$clone_prep")
   local -a envs=(
     "PATH=$fake_bin:$PATH" "HOME=$home" "GH_LOG=$gh_log" "ORCH_LOG=$orch_log"
-    "ORCH_SH=$root/orch.sh" "ORCH_CLONE_DIR=$clone" "FAKE_GH_FAIL=${FAKE_GH_FAIL:-}"
+    "ORCH_SH=$root/orch.sh" "REAL_ORCH_SH=$DIR/orch.sh" "ORCH_CLONE_DIR=$clone" "FAKE_GH_FAIL=${FAKE_GH_FAIL:-}"
     "FAKE_ORCH_FAIL=${FAKE_ORCH_FAIL:-}"
     "REPO=owner/name" "GH_TOKEN=tok" "CLAUDE_CODE_OAUTH_TOKEN=oauth"
   )
@@ -250,6 +253,47 @@ run_entry -HOME "HOME=$default_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$default_cl
 assert_status "second start succeeds" "$st" 0
 assert_eq "second start does not clone again" "$(grep -c 'repo clone' "$gh_log")" 0
 
+# A reused clone's origin must name REPO.
+mismatch_msg() { # <old> <new>
+  echo "orch: clone: $clone is a clone of $1, not REPO=$2; remove the repo volume (docker compose down -v) or run a separate compose project (-p <name>) for the new repo"
+}
+unreadable_msg() { # <new>
+  echo "orch: clone: $clone has an unreadable origin, so it cannot be confirmed as REPO=$1; remove the repo volume (docker compose down -v) or run a separate compose project (-p <name>) for the new repo"
+}
+clone_prep='git init -q "$clone" && git -C "$clone" remote add origin https://github.com/owner/old-repo.git' \
+  run_entry REPO=owner/new-repo
+assert_status "a clone of another repo refuses" "$st" 1
+assert_eq "a clone of another repo: exactly the mismatch line" "$err" "$(mismatch_msg owner/old-repo owner/new-repo)"
+assert_eq "a clone of another repo is not cloned over" "$(grep -c 'repo clone' "$gh_log")" 0
+assert_eq "a clone of another repo never runs the agent, show or watch" "$(grep -c 'args=\(agent\|autopilot\)' "$orch_log")" 0
+assert_eq "a clone of another repo gets no host id" "$([ -e "$clone/.orchestrator/autopilot/host-id" ] && echo yes || echo no)" no
+assert_eq "a clone of another repo keeps its origin" "$(git -C "$clone" remote get-url origin)" https://github.com/owner/old-repo.git
+
+clone_prep='git init -q "$clone" && git -C "$clone" remote add origin https://github.com/owner/old-repo.git' \
+  run_entry REPO=owner/new-repo GH_REPO=owner/new-repo
+assert_status "a clone of another repo refuses despite GH_REPO" "$st" 1
+assert_eq "a clone of another repo despite GH_REPO: the mismatch line" "$err" "$(mismatch_msg owner/old-repo owner/new-repo)"
+
+clone_prep='git init -q "$clone" && git -C "$clone" remote add origin https://github.com/Owner/Name.git' \
+  run_entry REPO=owner/name
+assert_status "an origin differing only in case is accepted" "$st" 0
+assert_eq "an origin differing only in case runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 1
+
+clone_prep='git init -q "$clone"' run_entry
+assert_status "a clone with no origin refuses" "$st" 1
+assert_eq "a clone with no origin: the unreadable line" "$err" "$(unreadable_msg owner/name)"
+assert_eq "a clone with no origin never runs the watcher" "$(grep -c 'args=autopilot' "$orch_log")" 0
+
+clone_prep='git init -q "$clone" && git -C "$clone" remote add origin /srv/git/some-repo' run_entry
+assert_status "a clone with an unparseable origin refuses" "$st" 1
+assert_eq "a clone with an unparseable origin: the unreadable line" "$err" "$(unreadable_msg owner/name)"
+assert_eq "a clone with an unparseable origin never runs the watcher" "$(grep -c 'args=autopilot' "$orch_log")" 0
+
+run_entry ORCH_SH="$root/missing-orch.sh"
+assert_status "a missing orch.sh refuses before the clone" "$st" 1
+assert_contains "a missing orch.sh names ORCH_SH" "$err" "orch: exec: ORCH_SH does not name an orch.sh"
+assert_eq "a missing orch.sh leaves the repo uncloned" "$(grep -c 'repo clone' "$gh_log")" 0
+
 FAKE_GH_FAIL=clone run_entry
 assert_status "a failing clone refuses" "$st" 1
 assert_contains "a failing clone names its step" "$err" "orch: clone"
@@ -299,7 +343,4 @@ case "$(<"$id_file")" in
 esac
 
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary

@@ -267,11 +267,33 @@ require_flow_branch() {
   branch_held "$b" || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
 }
 
+# work_to_discard <merging-var> <rebasing-var> <dirty-var>: the one definition
+# of "work to discard" in the current checkout ($ROOT): a merge in progress, a
+# rebase in progress, a tree dirty outside the planning allowlist. Probes once
+# and assigns the merging flag, the rebasing flag and the dirty-path list (as
+# dirty_outside_allowlist prints it) to the named variables. Succeeds when any
+# is set, fails when none is. A tree that cannot be read exits 1, never read as
+# "no work to discard". Called as a bare statement or in a condition; the exit
+# stops the caller.
+work_to_discard() {
+  local merging_v="" rebasing_v="" dirty_v
+  ! merge_in_progress "$ROOT" || merging_v=1
+  ! rebase_in_progress "$ROOT" || rebasing_v=1
+  dirty_v="$(dirty_outside_allowlist)" || exit 1
+  printf -v "$1" '%s' "$merging_v"
+  printf -v "$2" '%s' "$rebasing_v"
+  printf -v "$3" '%s' "$dirty_v"
+  [ -n "$merging_v$rebasing_v$dirty_v" ]
+}
+
 # discard_flow_branch_work: the flow-branch case of the discard rule (ADR-0054),
 # the one primitive every site meeting uncommitted or in-progress work a dead
 # session left on the flow's own branch - or, for ticket reclaim, a quick
-# implementation's own branch - applies: branch create now, ticket reclaim and
-# review resume next. Each caller first settles that the branch is the one to
+# implementation's own branch, or, for branch create, a detached HEAD (a side
+# checkout's, with no rebase in progress) - applies: branch create (through
+# discard_create_work, which proves the current branch is the flow's or
+# detached; on any other branch it discards nothing), ticket reclaim and
+# review resume. Each caller first settles that the branch is the one to
 # discard on; this primitive checks no ownership. In the current checkout
 # ($ROOT): a merge or rebase in progress is aborted, and a tree dirty outside
 # the planning allowlist is reset and cleaned. Nothing to discard changes
@@ -282,10 +304,7 @@ require_flow_branch() {
 # statement, so the die stops the caller.
 discard_flow_branch_work() {
   local merging="" rebasing="" dirty kind cmds=""
-  ! merge_in_progress "$ROOT" || merging=1
-  ! rebase_in_progress "$ROOT" || rebasing=1
-  dirty="$(dirty_outside_allowlist)" || exit 1
-  [ -n "$merging$rebasing$dirty" ] || return 0
+  work_to_discard merging rebasing dirty || return 0
   if ! autopilot_active; then
     kind="$(checkout_kind "$ROOT")" || die "could not tell whether $ROOT is the main checkout - nothing was discarded"
     if [ "$kind" = main ]; then

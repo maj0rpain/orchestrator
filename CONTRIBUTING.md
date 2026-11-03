@@ -22,7 +22,8 @@ scripts/test/all.sh                           # every suite; run once before ope
 
 While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
-`<section>` is an extended regex matched against the `# ---` section titles,
+`<section>` is an extended regex matched, ignoring case, against the `# ---`
+section titles (every top-level branch of an alternation must match a section),
 e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^ticket'`. Run
 `scripts/test/affected.sh` before each commit, and `scripts/test/all.sh` once
 before opening a PR: all.sh starts every suite and
@@ -30,6 +31,10 @@ shellcheck over every shell file at once, so they overlap, carries on past a
 failing one, and once all have finished prints each suite's FAIL lines and a
 summary line, then shellcheck's findings and a `shellcheck: N findings` summary
 line, or `shellcheck: not installed - skipped`, which fails the run only in CI.
+It ends on one verdict line, `all.sh: PASS (<n> parts)` or `all.sh: FAIL
+(<part>, <part>, ...)`, naming each failed part by its summary line's prefix
+(leftover temp files as `temp files`); affected.sh ends the same way on
+`affected.sh: ...`, or on all.sh's verdict when it falls back to the full suite.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
@@ -151,7 +156,9 @@ or quick implementation after its last ticket lands; no other ticket subagent
 writes or edits it. Its first line is exactly
 `bump: patch`, `bump: minor` or `bump: major` - semver judgement: patch for
 fixes and docs, minor for new features, major for breaking changes - and the
-rest, after any blank lines, is the CHANGELOG prose for the change, non-empty:
+rest, after any blank lines, is the CHANGELOG prose for the change, non-empty
+and holding no heading line (a line of `#` marks at column 0 followed by a space
+or nothing), since the release adds the entry's one `## ` heading:
 
 ```
 bump: minor
@@ -192,7 +199,8 @@ is none; `cmd_*` entry points are left out. `--tests` lists the shared test
 setup (`scripts/test/orch/setup.sh`), the gh adapter fake
 (`scripts/test/gh_adapter_fake.sh`) and the assertion tally
 (`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
-`( ... )` subshell) instead - their fixtures, fakes and assertions. A
+`( ... )` subshell, and `tally_summary`, the ending each standalone suite
+calls) instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
 section checks it against what bash itself defines.
@@ -215,9 +223,11 @@ child bash that does not inherit `-x`, so run it sequentially:
 scripts/test/orch_test.sh`.
 
 `orch.sh`, its modules and the test suite target bash 4.0+: `mapfile`, `declare
--A` and `printf -v` are fine. `scripts/flow-state.sh` and the `hook-*.sh`
-scripts stay bash 3.2-compatible (no namerefs, no `mapfile`, no `declare -A`),
-because they run under macOS's `/bin/bash`.
+-A` and `printf -v` are fine. The `hook-*.sh` scripts and every module a hook
+sources (`flow-state.sh`, `host.sh`, `bash-walk.sh`, `paste-guard.sh`,
+`planning-allowlist.sh`, `triage-labels.sh`) stay bash 3.2-compatible (no
+namerefs, no `mapfile`, no `declare -A`), because they run under macOS's
+`/bin/bash`.
 The code and tests also run on the autopilot image's tools - jq 1.6, bookworm's
 mawk (no regex interval expressions) and git 2.39 - as their floor, and the
 container CI job enforces it.
@@ -297,8 +307,9 @@ scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functio
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
 scripts/host.sh               the one host detector, host_detect, sourced by orch.sh and hook-common.sh
 scripts/flow-state.sh         the Flow state module: state.json's keys, defaults, reading and writing, sourced by orch.sh and hook-common.sh
-scripts/hook-*.sh             the seven hooks; hook-bash-stdin.sh closes stdin for plugin subagents' and autopilot Bash calls (rewrite under bypassPermissions, deny of plain stdin reads otherwise); hook-grilling.sh sends only the session's state and points to orch-interview's Closing section, and also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only, hook-paste-stop-guard.sh its Stop half
+scripts/hook-*.sh             the eight hooks; hook-bash-stdin.sh closes stdin for plugin subagents' and autopilot Bash calls (rewrite under bypassPermissions, deny of plain stdin reads otherwise); hook-bash-poll.sh denies those calls an unquoted pgrep or pkill word under every mode; hook-grilling.sh sends only the session's state and points to orch-interview's Closing section, and also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only, hook-paste-stop-guard.sh its Stop half
 scripts/paste-guard.sh        the transcript scan and paste check the two paste guards share, sourced by hook-paste-guard.sh and hook-paste-stop-guard.sh
+scripts/bash-walk.sh          the command walker and in-scope filter the two Bash hooks share, sourced by hook-bash-stdin.sh and hook-bash-poll.sh
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/autopilot-container.sh the autopilot container's entrypoint: checks the env file, configures git and the permission mode, clones the repo, writes and validates the other autopilot and role settings in it, then execs the watcher; `scripts/test/autopilot_container_test.sh` tests it
@@ -312,8 +323,10 @@ scripts/dev/hook-edit-width.sh the project's PostToolUse edit hook, registered i
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
-scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts
+scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh and affected.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10
+scripts/test/report.sh       the report helpers all.sh and affected.sh both source: a suite's FAIL block and summary line, and the shellcheck summary
+scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh and affected.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, and suites_read, the reader of all.sh's suite list
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

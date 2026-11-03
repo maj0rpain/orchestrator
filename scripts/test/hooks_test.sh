@@ -76,10 +76,12 @@ skill_event() {
   jq -n --arg s "$1" --arg sid "$2" --arg cwd "$REPO" \
     '{hook_event_name:"PostToolUse", tool_name:"Skill", session_id:$sid, cwd:$cwd, tool_input:{skill:$s}}'
 }
-edit_event() {
-  jq -n --arg f "$1" --arg sid "$2" --arg cwd "$REPO" \
+# edit_event_at <file> <session> <cwd>: an Edit payload, the cwd chosen.
+edit_event_at() {
+  jq -n --arg f "$1" --arg sid "$2" --arg cwd "$3" \
     '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:$sid, cwd:$cwd, tool_input:{file_path:$f}}'
 }
+edit_event() { edit_event_at "$1" "$2" "$REPO"; }
 
 echo "hook tests"
 echo
@@ -484,6 +486,13 @@ emitters="$(cd "$DIR" && grep -lE '^[^#]*hook_emit_context( |$)' hook-*.sh | gre
 common_calls="$(grep -E '^[^#]*hook_emit_context( |$)' "$COMMON" | grep -vcE '^[[:space:]]*hook_emit_context\(\)' || true)"
 assert_eq "hook-grilling.sh is the only hook-*.sh calling hook_emit_context" "$emitters" "hook-grilling.sh"
 assert_eq "hook-common.sh has no call to hook_emit_context, only its definition" "$common_calls" "0"
+# The Bash hooks' code lives in the module of the concept it serves (#2153).
+assert_eq "hook-common.sh defines no hook_bash_ function and no HOOK_BASH_SCOPE" \
+  "$(grep -cE '^(hook_bash_[a-z_]*\(\)|HOOK_BASH_SCOPE=)' "$COMMON")" 0
+assert_eq "bash-walk.sh defines hook_bash_walk and HOOK_BASH_SCOPE" \
+  "$(grep -cE '^(hook_bash_walk\(\)|HOOK_BASH_SCOPE=)' "$DIR/bash-walk.sh")" 2
+assert_eq "no script names hook_bash_stdin_reader, hook_bash_stdin_hit or hook_bash_poll_hit" \
+  "$(grep -rlE 'hook_bash_stdin_reader|hook_bash_stdin_hit|hook_bash_poll_hit' "$DIR" --include='*.sh' --exclude=hooks_test.sh | wc -l | tr -d ' ')" 0
 
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
 # delivers the message; its payload has no project_path.
@@ -547,6 +556,55 @@ assert_contains "source denial names the quick-implement Skill lift" "$source_re
   'call the Skill tool with "orchestrator:orch-quick-implement"'
 assert_not_contains "source denial names no SKILL.md" "$source_reason" "SKILL.md"
 assert_not_contains "source denial names no Read tool" "$source_reason" "Read tool"
+
+# A repo reached through a symlink is judged by where the write lands (#1919).
+SL="$(mktemp -d)"
+LINK="$SL/link"
+ln -s "$REPO" "$LINK"
+OUTSIDE="$(mktemp -d)"
+mkdir -p "$REPO/docs/agents" "$REPO/src"
+ln -s "$OUTSIDE" "$REPO/src/out"
+ln -s ../../src/real.ts "$REPO/docs/agents/toSrc.ts"
+ln -s ../../src/notyet.ts "$REPO/docs/agents/dangling.ts"
+ln -s loop "$REPO/src/loop"
+src_deny='this is a planning session and no flow has'
+out="$(edit_event_at "$LINK/src/x.ts" s1 "$LINK" | "$GUARD")"
+assert_eq "denies a source edit via a symlinked repo, cwd the link" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+assert_contains "names the repo-relative path, not the link spelling" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "so 'src/x.ts' should not be edited yet"
+out="$(edit_event_at "$LINK/src/x.ts" s1 "$REPO" | "$GUARD")"
+assert_eq "denies a source edit via a symlinked repo, cwd the physical repo" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+out="$(edit_event_at "$LINK/nodir/deeper/new.ts" s1 "$LINK" | "$GUARD")"
+assert_eq "denies a new file in a missing directory via the link" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+assert_empty "allows a planning artifact via the link" \
+  "$(edit_event_at "$LINK/docs/agents/domain.md" s1 "$LINK" | "$GUARD")"
+out="$(edit_event_at "$LINK/docs/adr/0001-x.md" s1 "$LINK" | "$GUARD")"
+assert_contains "denies an ADR via the link with the records reason" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "is a record of decisions"
+assert_empty "allows an edit through an in-repo symlink to outside the repo" \
+  "$(edit_event_at "$LINK/src/out/f.ts" s1 "$LINK" | "$GUARD")"
+out="$(edit_event_at "$LINK/docs/agents/toSrc.ts" s1 "$LINK" | "$GUARD")"
+assert_contains "denies an allowlisted name symlinked to source, as source" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+out="$(edit_event_at "src/x.ts" s1 "$LINK" | "$GUARD")"
+assert_eq "denies a relative source path with cwd the link" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+out="$(edit_event_at "$LINK/src/loop" s1 "$LINK" | "$GUARD")"
+assert_contains "denies a symlink loop under src as source" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+out="$(edit_event_at "$LINK/docs/agents/dangling.ts" s1 "$LINK" | "$GUARD")"
+assert_contains "denies an allowlisted dangling symlink to missing source as source" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+mkdir -p "$REPO/src/deep"
+ln -s ../../src/deep "$REPO/docs/agents/sub"
+ln -s ../g.ts "$REPO/src/deep/f.ts"
+out="$(edit_event_at "$LINK/docs/agents/sub/f.ts" s1 "$LINK" | "$GUARD")"
+assert_contains "denies a file symlink under a directory symlink, its target taken from the physical directory" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
 
 # Junie's PreToolUse payload carries no cwd, and its bundled docs show no
 # session_id either, though build 3419.7 sends one. No session
@@ -771,12 +829,13 @@ echo
 echo "hook-paste-guard (#1287, #1350)"
 
 # The guard refuses every AskUserQuestion after an arming `spec-review check`
-# pass line, until the next `spec-review apply`, unless one assistant text
-# block written after the pass line holds every non-blank line of the view
-# (hook-paste-guard.sh's header). Fixture transcripts are Claude Code's JSONL
-# shape: one entry per content block, a tool result in a user entry, a
-# tool_use in an assistant entry. ORCH_PASTE_GUARD_WAIT=0 drops the re-read
-# window, so a refused case returns at once; the window's own cases set it.
+# pass line, until the next `spec-review apply` or human message, unless
+# one assistant text block written after the pass line holds every non-blank
+# line of the view (hook-paste-guard.sh's header). Fixture transcripts are
+# Claude Code's JSONL shape: one entry per content block, a tool result in
+# a user entry, a tool_use in an assistant entry. ORCH_PASTE_GUARD_WAIT=0
+# drops the re-read window, so a refused case returns at once; the window's
+# own cases set it.
 export ORCH_PASTE_GUARD_WAIT=0
 PG="$(mktemp -d)"
 mkdir "$PG/batch" "$PG/full" "$PG/tickets" "$PG/gone" "$PG/empty"
@@ -867,17 +926,6 @@ pg_ask "$T3b" toolu_a2
 pg_result "$T3b" toolu_a2 "The user wants to clarify these questions." true
 pg_text "$T3b" "Understood."
 assert_eq "the view pasted in an earlier response after the pass line: allowed" "$(pg_decide "$T3b" toolu_a3)" allow
-
-# A human message: a user entry whose content is a string, as Claude Code
-# writes a typed reply.
-T3h="$PG/turn-final.jsonl"; cp "$T" "$T3h"
-pg_text "$T3h" "$(cat "$PG/batch/view.md")
-
-Answer recommended, none, a departure list, show <n>, or a question."
-jq -nc '{type:"user", message:{role:"user", content:"recommended but not 4"}}' >>"$T3h"
-pg_text "$T3h" "Apply as recommended, except item 4 declined?"
-assert_eq "the view in an earlier turn's final reply, then a human message, then the confirmation ask: allowed" \
-  "$(pg_decide "$T3h")" allow
 
 T3c="$PG/split.jsonl"; cp "$T" "$T3c"
 pg_text "$T3c" "## The batch
@@ -988,13 +1036,8 @@ else
   assert_eq "a pass line naming an unreadable view.md allows" "$(pg_decide "$T13")" allow
   chmod 600 "$PG/locked/view.md"
 fi
-# The module seam: paste_guard_check's mode, and paste_guard_instruction's
-# view argument, with the module sourced in a subshell.
-pg_mode() { (source "$DIR/paste-guard.sh"; ORCH_PASTE_GUARD_WAIT=0 paste_guard_check "$T" "$1"; echo $?); }
-assert_eq "paste_guard_check with a bogus mode allows" "$(pg_mode bogus)" 0
-assert_eq "paste_guard_check with an empty mode allows" "$(pg_mode '')" 0
-assert_eq "paste_guard_check with mode since refuses" "$(pg_mode since)" 1
-assert_eq "paste_guard_check with mode final refuses" "$(pg_mode final)" 1
+# The module seam: paste_guard_instruction's view argument, with the module
+# sourced in a subshell.
 pg_instr="$( (source "$DIR/paste-guard.sh"; unset view paste_guard_view; paste_guard_instruction "$PG/tickets/view.md") )"
 assert_contains "paste_guard_instruction names the view.md it is given" "$pg_instr" "$PG/tickets/view.md"
 pg_vw="$(cat "$PG/tickets/view.md")"
@@ -1032,8 +1075,8 @@ echo
 echo "hook-paste-stop-guard (#1421)"
 
 # The Stop guard refuses to end the turn while the paste guard is armed,
-# unless one assistant text block written after the later of the last human
-# message and the arming pass line holds every non-blank line of the view
+# unless one assistant text block written after the arming pass line - the same
+# window as the paste guard's - holds every non-blank line of the view
 # (hook-paste-stop-guard.sh's header). It reuses the paste guard's fixture
 # transcripts and helpers above; ORCH_PASTE_GUARD_WAIT=0 still holds.
 
@@ -1065,26 +1108,39 @@ assert_contains "naming view.md" "$(cat "$PG/reason")" "$PG/batch/view.md"
 assert_eq "its output names no PreToolUse decision" \
   "$(jq -n --arg t "$T" '{transcript_path:$t}' | "$STOP" | jq -r '.hookSpecificOutput // "none"')" none
 
-S1="$PG/stop-earlier-string.jsonl"; cp "$T3" "$S1"
-pg_result "$S1" toolu_now "User has answered your questions: recommended"
-sg_human "$S1" '"what does item 2 change?"'
-pg_text "$S1" "Item 2 makes the term consistent."
-assert_eq "the view pasted only before a human message with string content: refused" "$(sg_decide "$S1")" block
-
-S2="$PG/stop-earlier-blocks.jsonl"; cp "$T3" "$S2"
-pg_result "$S2" toolu_now "User has answered your questions: recommended"
-sg_human "$S2" '[{"type":"text","text":"what does item 2 change?"}]'
-pg_text "$S2" "Item 2 makes the term consistent."
-assert_eq "the view pasted only before a human message of text blocks: refused" "$(sg_decide "$S2")" block
-
-S3="$PG/stop-tool-results.jsonl"; cp "$T" "$S3"
-pg_text "$S3" "$(cat "$PG/batch/view.md")"
-pg_bash "$S3" toolu_s3 "git status"
-pg_result "$S3" toolu_s3 "nothing to commit"
-sg_human "$S3" '"Base directory for this skill: /plugin/skills/orch-spec-review"' true
-sg_human "$S3" '[{"type":"text","text":"<local-command-caveat>Caveat</local-command-caveat>"}]' true
-pg_text "$S3" "Answer recommended, none, a departure list, show <n>, or a question."
-assert_eq "tool results and isMeta entries after the paste do not mark the boundary: allowed" "$(sg_decide "$S3")" allow
+# A human message after the arming pass line disarms both guards; a re-run
+# check arms them again (#1917).
+D1="$PG/disarm-unpasted.jsonl"; cp "$T" "$D1"
+sg_human "$D1" '"recommended but not 4"'
+pg_text "$D1" "Apply as recommended, except item 4 declined?"
+assert_eq "the view never pasted, then a near-miss answer, then the confirmation ask: allowed" "$(pg_decide "$D1")" allow
+D1b="$PG/disarm-blocks.jsonl"; cp "$T" "$D1b"
+sg_human "$D1b" '[{"type":"text","text":"what does item 2 change?"}]'
+pg_text "$D1b" "Item 2 makes the term consistent."
+assert_eq "the view never pasted, then a human message of text blocks, then an unrelated ask: allowed" "$(pg_decide "$D1b")" allow
+assert_eq "and the Stop guard allows" "$(sg_decide "$D1b")" allow
+D0="$PG/disarm-midturn.jsonl"; cp "$T" "$D0"
+sg_human "$D0" '"never mind, drop it"'
+assert_eq "mid-turn fail-open: a pass line, a human message, then Stop with no paste: the Stop guard allows" "$(sg_decide "$D0")" allow
+D2="$PG/disarm-rerun.jsonl"; cp "$D1" "$D2"
+pg_check "$D2" toolu_d2 batch "$PG/batch/view.md"
+assert_eq "a check re-run after the human message arms again: an ask without a paste is refused" "$(pg_decide "$D2")" deny
+assert_eq "and the Stop guard blocks" "$(sg_decide "$D2")" block
+D3="$PG/disarm-slash.jsonl"; cp "$T" "$D3"
+sg_human "$D3" '"<command-name>/orchestrator:abort</command-name>"'
+pg_text "$D3" "Aborted."
+assert_eq "a slash-command entry after the pass line: an unrelated ask is allowed" "$(pg_decide "$D3")" allow
+assert_eq "and the Stop guard allows" "$(sg_decide "$D3")" allow
+D4="$PG/disarm-not-human.jsonl"; cp "$T" "$D4"
+pg_bash "$D4" toolu_d4 "git status"
+pg_result "$D4" toolu_d4 "nothing to commit"
+sg_human "$D4" '"Base directory for this skill: /plugin/skills/orch-spec-review"' true
+sg_human "$D4" '[{"type":"text","text":"<local-command-caveat>Caveat</local-command-caveat>"}]' true
+pg_entry "$D4" user '[{"type":"tool_result","tool_use_id":"toolu_d4","content":"ok"},{"type":"text","text":"note"}]'
+pg_entry "$D4" user '[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]'
+pg_text "$D4" "Working."
+assert_eq "none of a tool result, an isMeta string or text-block entry, a tool_result with text, or a non-text-only array after the pass line disarms: an ask is refused" "$(pg_decide "$D4")" deny
+assert_eq "and the Stop guard blocks" "$(sg_decide "$D4")" block
 
 assert_eq "a final reply holding the view only split across two text blocks: refused" "$(sg_decide "$T3c")" block
 
@@ -1260,59 +1316,60 @@ assert_not_contains "edit hook: absent from hooks/hooks.json" \
 
 # --- bash stdin hook (scripts/hook-bash-stdin.sh, #2001)
 BSTDIN="$DIR/hook-bash-stdin.sh"
-# bs_event MODE AGENT_TYPE COMMAND: a Bash PreToolUse payload; an empty
+# bash_hook_event MODE AGENT_TYPE COMMAND: a Bash PreToolUse payload; an empty
 # AGENT_TYPE leaves the field out.
-bs_event() {
+bash_hook_event() {
   jq -n --arg m "$1" --arg a "$2" --arg c "$3" \
     '{hook_event_name:"PreToolUse", tool_name:"Bash", permission_mode:$m, tool_input:{command:$c, timeout:5000, description:"d"}}
      + (if $a == "" then {} else {agent_type:$a} end)'
 }
-# bs_run AUTOPILOT: the hook on stdin with ORCH_AUTOPILOT set to AUTOPILOT
-# (empty: unset).
-bs_run() {
-  if [ -n "$1" ]; then ORCH_AUTOPILOT="$1" bash "$BSTDIN"; else env -u ORCH_AUTOPILOT bash "$BSTDIN"; fi
+# bash_hook_run SCRIPT AUTOPILOT: the Bash hook SCRIPT on stdin with
+# ORCH_AUTOPILOT set to AUTOPILOT (empty: unset).
+bash_hook_run() {
+  if [ -n "$2" ]; then ORCH_AUTOPILOT="$2" bash "$1"; else env -u ORCH_AUTOPILOT bash "$1"; fi
 }
+# bash_hook_scan SCRIPT MODE COMMAND: the hook's output for COMMAND from an
+# in-scope agent under MODE.
+bash_hook_scan() { bash_hook_event "$2" orch-implementer "$3" | bash_hook_run "$1" ""; }
 BS_PREFIX=$'exec </dev/null\n'
-# bs_decision OUTPUT: the permissionDecision the hook wrote.
-bs_decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
+# bash_hook_decision OUTPUT: the permissionDecision the hook wrote.
+bash_hook_decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
 for scope in "orchestrator:orch-implementer|" "orch-implementer|" "|1"; do
   bs_agent="${scope%|*}"; bs_auto="${scope#*|}"
   bs_label="agent_type '$bs_agent' autopilot '$bs_auto'"
-  bs_out="$(bs_event bypassPermissions "$bs_agent" 'cat; echo done' | bs_run "$bs_auto")"
+  bs_out="$(bash_hook_event bypassPermissions "$bs_agent" 'cat; echo done' | bash_hook_run "$BSTDIN" "$bs_auto")"
   assert_eq "bash stdin hook: $bs_label rewrites the command" \
     "$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$bs_out")" "${BS_PREFIX}cat; echo done"
   assert_eq "bash stdin hook: $bs_label keeps the other tool_input fields" \
     "$(jq -c '.hookSpecificOutput.updatedInput | del(.command)' <<<"$bs_out")" '{"timeout":5000,"description":"d"}'
   assert_eq "bash stdin hook: $bs_label allows" \
-    "$(bs_decision "$bs_out")" allow
+    "$(bash_hook_decision "$bs_out")" allow
 done
-bs_out="$(bs_event bypassPermissions orch-implementer "${BS_PREFIX}cat; echo done" | bs_run "")"
+bs_out="$(bash_hook_event bypassPermissions orch-implementer "${BS_PREFIX}cat; echo done" | bash_hook_run "$BSTDIN" "")"
 assert_eq "bash stdin hook: an already-prefixed command is not prefixed twice" \
   "$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$bs_out")" "${BS_PREFIX}cat; echo done"
 assert_eq "bash stdin hook: an already-prefixed command is still allowed" \
-  "$(bs_decision "$bs_out")" allow
+  "$(bash_hook_decision "$bs_out")" allow
 for mode in bypassPermissions default; do
   for bs_agent in "" Explore; do
-    bs_out="$(bs_event "$mode" "$bs_agent" cat | bs_run "")"; bs_rc=$?
+    bs_out="$(bash_hook_event "$mode" "$bs_agent" cat | bash_hook_run "$BSTDIN" "")"; bs_rc=$?
     assert_empty "bash stdin hook: out of scope '$bs_agent' under $mode prints nothing" "$bs_out"
     assert_eq "bash stdin hook: out of scope '$bs_agent' under $mode exits 0" "$bs_rc" 0
   done
 done
 # Deny of plain stdin reads under a non-bypass mode (#2002).
-# bs_scan MODE COMMAND: the hook's output for COMMAND under MODE.
-bs_scan() { bs_event "$1" orch-implementer "$2" | bs_run ""; }
 for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
-  'python3 - x' 'node - --flag' 'cat -n' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat' \
+  'python3 - x' 'node - --flag' 'python3 -u' 'node --input-type=module' 'python3 -v' 'cat -n' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat' \
   'cat >out' 'cat > f' 'cat 2>/dev/null' 'python3 >log' 'cat &>o' 'cat >> f' '>o cat' 'cat >& out' 'cat 2>& f' \
   $'\ncat' $'cd x &&\ncat' $'echo a;\n\ncat' 'cat;' '>o; cat'; do
-  bs_out="$(bs_scan default "$bs_cmd")"
+  bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
   assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" \
-    "$(bs_decision "$bs_out")" deny
+    "$(bash_hook_decision "$bs_out")" deny
 done
-bs_out="$(bs_scan acceptEdits cat)"
+bs_out="$(bash_hook_scan "$BSTDIN" acceptEdits cat)"
 assert_eq "bash stdin hook: acceptEdits denies 'cat'" \
-  "$(bs_decision "$bs_out")" deny
-bs_out="$(bs_scan default 'echo a; cat -')"
+  "$(bash_hook_decision "$bs_out")" deny
+bs_out="$(bash_hook_scan "$BSTDIN" default 'echo a; cat -')"
 assert_contains "bash stdin hook: the deny reason names the matched part" \
   "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bs_out")" "'cat -'"
 assert_contains "bash stdin hook: the deny reason says how to supply input" \
@@ -1320,43 +1377,85 @@ assert_contains "bash stdin hook: the deny reason says how to supply input" \
 for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'cat < f' 'cat file' \
   'python3 script.py' $'cat <<EOF\ncat\nread x\nEOF' $'echo "a\ncat\nb"' 'echo "a; cat"' \
   "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'cat file -n' $'echo a \\\n  cat' \
-  $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file' $'cat <<\\EOF\ncat\nEOF' 'cat --help' 'cat --version' 'cat -n --help' 'cat -A --version'; do
-  bs_out="$(bs_scan default "$bs_cmd")"
+  $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file' $'cat <<\\EOF\ncat\nEOF' 'cat --help' 'cat --version' 'cat -n --help' \
+  'python3 -h' 'python3 -V' 'python3 --help' 'python3 --version' 'node -h' 'node -v' 'node --help' 'node --version' \
+  "python3 -c 'print(1)'" 'python3 -m json.tool f'; do
+  bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
   assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
-bs_out="$(bs_event default "" cat | bs_run 1)"
+bs_out="$(bash_hook_event default "" cat | bash_hook_run "$BSTDIN" 1)"
 assert_eq "bash stdin hook: autopilot 'cat' under default is denied" \
-  "$(bs_decision "$bs_out")" deny
-bs_out="$(bs_event bypassPermissions orch-implementer cat | jq 'del(.tool_input.command)' | bs_run "")"; bs_rc=$?
+  "$(bash_hook_decision "$bs_out")" deny
+bs_out="$(bash_hook_event bypassPermissions orch-implementer cat | jq 'del(.tool_input.command)' | bash_hook_run "$BSTDIN" "")"; bs_rc=$?
 assert_empty "bash stdin hook: no command prints nothing" "$bs_out"
 assert_eq "bash stdin hook: no command exits 0" "$bs_rc" 0
-bs_out="$(echo 'not json {' | bs_run 1)"; bs_rc=$?
+bs_out="$(echo 'not json {' | bash_hook_run "$BSTDIN" 1)"; bs_rc=$?
 assert_empty "bash stdin hook: a non-JSON payload prints nothing" "$bs_out"
 assert_eq "bash stdin hook: a non-JSON payload exits 0" "$bs_rc" 0
 # Seam 2: the rewritten command, run by bash with stdin held open.
 # bs_rewritten COMMAND: the command the hook rewrites COMMAND into.
 bs_rewritten() {
-  bs_event bypassPermissions orch-implementer "$1" | bs_run "" | jq -r '.hookSpecificOutput.updatedInput.command'
+  bash_hook_event bypassPermissions orch-implementer "$1" | bash_hook_run "$BSTDIN" "" | jq -r '.hookSpecificOutput.updatedInput.command'
 }
-bs_rewrite="$(bs_rewritten 'cat; echo done')"
+# bs_run_rewritten COMMAND: prints the rewrite of COMMAND run under timeout 3
+# with stdin held open on the section's FIFO; leaves bash's exit status.
 bs_fifo="$TMPDIR/bs-open.fifo"; mkfifo "$bs_fifo"
-bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"; bs_rc=$?
+bs_run_rewritten() { timeout 3 bash -c "$(bs_rewritten "$1")" <>"$bs_fifo"; }
+bs_run_out="$(bs_run_rewritten 'cat; echo done')"; bs_rc=$?
 assert_eq "bash stdin hook: rewritten 'cat; echo done' returns with stdin held open" "$bs_rc" 0
 assert_eq "bash stdin hook: rewritten 'cat; echo done' prints done" "$bs_run_out" "done"
-bs_rewrite="$(bs_rewritten $'cat <<EOT\nheredoc\nEOT')"
-bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
-assert_eq "bash stdin hook: a heredoc still reaches cat" "$bs_run_out" heredoc
-bs_rewrite="$(bs_rewritten 'cat <<<here-string')"
-bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
-assert_eq "bash stdin hook: a here-string still reaches cat" "$bs_run_out" here-string
-bs_rewrite="$(bs_rewritten 'echo piped | cat')"
-bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
-assert_eq "bash stdin hook: piped input still reaches cat" "$bs_run_out" piped
+assert_eq "bash stdin hook: a heredoc still reaches cat" "$(bs_run_rewritten $'cat <<EOT\nheredoc\nEOT')" heredoc
+assert_eq "bash stdin hook: a here-string still reaches cat" "$(bs_run_rewritten 'cat <<<here-string')" here-string
+assert_eq "bash stdin hook: piped input still reaches cat" "$(bs_run_rewritten 'echo piped | cat')" piped
 assert_eq "hooks.json registers hook-bash-stdin.sh under PreToolUse with matcher Bash" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-stdin\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1
 
+# --- bash poll hook (scripts/hook-bash-poll.sh, #2085)
+BPOLL="$DIR/hook-bash-poll.sh"
+bp_poll='until ! pgrep -f x; do sleep 5; done'
+for mode in default acceptEdits plan dontAsk bypassPermissions; do
+  bp_out="$(bash_hook_scan "$BPOLL" "$mode" "$bp_poll")"
+  assert_eq "bash poll hook: $mode denies a pgrep poll" "$(bash_hook_decision "$bp_out")" deny
+done
+bp_out="$(bash_hook_event default orch-implementer "$bp_poll" | jq 'del(.permission_mode)' | bash_hook_run "$BPOLL" "")"
+assert_eq "bash poll hook: no permission_mode denies a pgrep poll" "$(bash_hook_decision "$bp_out")" deny
+for bp_cmd in 'pkill -f y' 'echo $(pgrep x)' 'echo `pgrep x`' 'ls | xargs pkill' 'timeout 5 pkill y' \
+  'while pgrep x; do sleep 5; done' 'true|pgrep x' '/usr/bin/pgrep x' '/usr/local/bin/pkill x' 'grep -n pgrep file' \
+  $'echo a\npgrep x' 'pgrep'; do
+  bp_out="$(bash_hook_scan "$BPOLL" default "$bp_cmd")"
+  assert_eq "bash poll hook: denies '${bp_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bp_out")" deny
+done
+bp_out="$(bash_hook_event default orchestrator:orch-implementer 'pgrep x' | bash_hook_run "$BPOLL" "")"
+assert_eq "bash poll hook: agent_type 'orchestrator:orch-implementer' is denied" "$(bash_hook_decision "$bp_out")" deny
+bp_out="$(bash_hook_event default "" 'pgrep x' | bash_hook_run "$BPOLL" 1)"
+assert_eq "bash poll hook: autopilot with an empty agent_type is denied" "$(bash_hook_decision "$bp_out")" deny
+bp_out="$(bash_hook_scan "$BPOLL" default 'pgrep x')"
+assert_contains "bash poll hook: the reason gives the foreground rerun" \
+  "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bp_out")" 'timeout: 600000'
+assert_contains "bash poll hook: the reason names the completion notice" \
+  "$(jq -r '.reason' <<<"$bp_out")" 'completion notice'
+for bp_agent in "" Explore; do
+  bp_out="$(bash_hook_event default "$bp_agent" 'pgrep x' | bash_hook_run "$BPOLL" "")"; bp_rc=$?
+  assert_empty "bash poll hook: out of scope '$bp_agent' prints nothing" "$bp_out"
+  assert_eq "bash poll hook: out of scope '$bp_agent' exits 0" "$bp_rc" 0
+done
+for bp_cmd in 'grep "pgrep -f" file' $'cat <<EOF\npgrep x\nEOF' 'ls -l' 'killall x' "bash -c 'pgrep x'" \
+  '[ -n "$(pgrep -f x)" ]' '[ -n "`pgrep -f x`" ]' 'sleep 5 # pgrep'; do
+  bp_out="$(bash_hook_scan "$BPOLL" default "$bp_cmd")"; bp_rc=$?
+  assert_empty "bash poll hook: passes '${bp_cmd//$'\n'/\\n}'" "$bp_out"
+  assert_eq "bash poll hook: '${bp_cmd//$'\n'/\\n}' exits 0" "$bp_rc" 0
+done
+bp_out="$(bash_hook_scan "$BPOLL" default "$(printf 'echo %9000s; pgrep x' '')")"; bp_rc=$?
+assert_empty "bash poll hook: a command over 8 KB is not scanned" "$bp_out"
+assert_eq "bash poll hook: a command over 8 KB exits 0" "$bp_rc" 0
+bp_out="$(bash_hook_event default orch-implementer pgrep | jq 'del(.tool_input.command)' | bash_hook_run "$BPOLL" "")"; bp_rc=$?
+assert_empty "bash poll hook: no command prints nothing" "$bp_out"
+assert_eq "bash poll hook: no command exits 0" "$bp_rc" 0
+bp_out="$(echo 'not json {' | bash_hook_run "$BPOLL" 1)"; bp_rc=$?
+assert_empty "bash poll hook: a non-JSON payload prints nothing" "$bp_out"
+assert_eq "bash poll hook: a non-JSON payload exits 0" "$bp_rc" 0
+assert_eq "hooks.json registers hook-bash-poll.sh under PreToolUse with matcher Bash" \
+  "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-poll\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1
+
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary

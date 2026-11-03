@@ -44,48 +44,29 @@ gh_reason() {
   printf '%s\n' "${line:-gh gave no reason}"
 }
 
-# gh_die_opt_check <caller> <argc> <option> [value]: the one rule for gh_die's
-# own options, checked by gh_die and gh_or_die alike. <argc> is the caller's
-# "$#" at <option>, so a trailing option with no value is told from an empty
-# one. --exit must take 2; --hint must have a value, "" included. A bad pair
-# dies with status 1, naming <caller> (gh_die or gh_or_die) and the option.
-gh_die_opt_check() {
-  case "$3" in
-    --exit) [ "${4-}" = 2 ] || die "$1: --exit takes 2, not '${4-}'" ;;
-    --hint) [ "$2" -ge 2 ] || die "$1: --hint needs a value" ;;
-  esac
-}
-
 # gh_die [--exit 2] [--hint <text>] <what> <stderr>: dies with
 # "gh could not <what>: <gh_reason of stderr>", then " - <hint>" when a hint is
 # given - through die, or through die2 under --exit 2. A bad option dies with
-# status 1, naming it, through gh_die_opt_check.
+# status 1, naming it, through die_opt_check.
 gh_die() {
-  local code=1 hint=""
+  local opts=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --exit)
-        gh_die_opt_check gh_die $# "$@"
-        code=2; shift 2 ;;
-      --hint)
-        gh_die_opt_check gh_die $# "$@"
-        hint="$2"; shift 2 ;;
+      --exit|--hint)
+        die_opt_check gh_die $# "$@"
+        opts+=("$1" "$2"); shift 2 ;;
       -*) die "gh_die: unknown option $1" ;;
       *) break ;;
     esac
   done
-  local msg
-  msg="gh could not $1: $(gh_reason "${2-}")"
-  [ -z "$hint" ] || msg="$msg - $hint"
-  [ "$code" != 2 ] || die2 "$msg"
-  die "$msg"
+  die_hinted ${opts[@]+"${opts[@]}"} "gh could not $1: $(gh_reason "${2-}")"
 }
 
 # gh_or_die [--exit 2] [--hint <text>] [--out <var> | --file <path>] <what>
 # <op> [args...]: runs the operation through capture/capture_err - so in their
 # subshell, and the gh guard's no-repo death still reaches the real stderr -
 # and on failure dies through gh_die with the same --exit and --hint. Those
-# are checked through gh_die_opt_check before the operation runs, so a bad one
+# are checked through die_opt_check before the operation runs, so a bad one
 # dies with status 1, naming gh_or_die, and the operation never runs.
 # --out <var> assigns the operation's stdout to the caller's variable (trailing
 # newlines gone, as capture reads it). --file <path> streams it into a temp
@@ -104,7 +85,7 @@ gh_or_die() {
     case "$1" in
       --exit|--hint)
         # gh_die's own options: checked now, passed on to gh_die.
-        gh_die_opt_check gh_or_die $# "$@"
+        die_opt_check gh_or_die $# "$@"
         _gh_or_die_die_opts+=("$1" "$2")
         shift 2 ;;
       --out|--file)
@@ -255,7 +236,7 @@ adapter_labels() {
 # turns an array of comments into the joined text, login reading each comment's
 # author, so every comments read - issue comments' filtered one among them
 # (#1116) - renders through the same definition.
-# shellcheck disable=SC2034 # read by the issue module's issue_comments_render and ISSUE_COMMENTS_KEPT_JQ
+# shellcheck disable=SC2034 # read by the issue module's comments_render_trusted and ISSUE_COMMENTS_KEPT_JQ
 COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
 
 # comments_split <file> <dir>: splits <file>, comments in its rendered shape,

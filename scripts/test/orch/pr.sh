@@ -722,9 +722,55 @@ assert_eq "saying so" "$out" "PR #57 is now ready"
 assert_eq "the PR is no longer a draft" "$(fake_pr_draft_of 57)" "no"
 assert_eq "the other branch's PR untouched" "$(fake_pr_draft_of 50)" "yes"
 
+fake_checks_clear
+fake_checks 57 required failing
 out="$("$ORCH" pr ready 2>"$errf")"; st=$?
 assert_status "a PR already ready exits 0" "$st" 0
 assert_eq "saying so" "$out" "PR #57 is already ready"
+assert_eq "reading no checks" "$(fake_checks_reads 57)" "0"
+
+# The CI gate: one look at the head's checks before a draft turns ready.
+gate_try() { # <required answer> <all answer>
+  fake_checks_clear
+  [ -z "$1" ] || fake_checks 57 required "$1"
+  [ -z "$2" ] || fake_checks 57 all "$2"
+  fake_pr_draft 57
+  out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+}
+gate_try failing ""
+assert_status "a failed required check exits 2" "$st" 2
+assert_contains "naming the check" "$(cat "$errf")" "orch: PR #57 has failed checks: build"
+assert_eq "leaving the PR a draft" "$(fake_pr_draft_of 57)" "yes"
+gate_try green ""
+assert_status "green checks exit 0" "$st" 0
+assert_eq "reading the checks once" "$(fake_checks_reads 57)" "1"
+assert_eq "marking the PR ready" "$(fake_pr_draft_of 57)" "no"
+gate_try comma ""
+assert_status "a failing check named with a comma exits 2" "$st" 2
+assert_eq "the name stays whole" "$(cat "$errf")" "orch: PR #57 has failed checks: build (linux, x64)"
+gate_try pending ""
+assert_status "a pending check exits 0" "$st" 0
+assert_contains "noting it on stderr" "$(cat "$errf")" "checks are still pending"
+assert_eq "marking the PR ready over pending" "$(fake_pr_draft_of 57)" "no"
+gate_try boom ""
+assert_status "unreachable checks exit 2" "$st" 2
+assert_contains "relaying the reason" "$(cat "$errf")" "orch: PR #57 checks cannot be read: dial tcp: lookup api.github.com: no such host"
+assert_eq "leaving the PR a draft when unreadable" "$(fake_pr_draft_of 57)" "yes"
+gate_try "" ""
+assert_status "no checks at all exit 0" "$st" 0
+assert_eq "marking the PR ready with no checks" "$(fake_pr_draft_of 57)" "no"
+gate_try none failing
+assert_status "no required checks, every check failing, exits 2" "$st" 2
+assert_eq "reading required, then every check" "$(fake_checks_reads 57)" "2"
+assert_eq "leaving the PR a draft when all fail" "$(fake_pr_draft_of 57)" "yes"
+gate_try none boom
+assert_status "no required checks, every check unreachable, exits 2" "$st" 2
+assert_contains "relaying the reason from all" "$(cat "$errf")" "dial tcp: lookup api.github.com: no such host"
+assert_eq "leaving the PR a draft when all are unreadable" "$(fake_pr_draft_of 57)" "yes"
+gate_try green failing
+assert_status "green required beside a failing other check exits 0" "$st" 0
+assert_eq "marking the PR ready beside a non-required failure" "$(fake_pr_draft_of 57)" "no"
+fake_checks_clear
 
 fake_pr_draft 57
 fake_fail adapter_pr_ready $'HTTP 403: Resource not accessible by integration\nsecond line'
@@ -754,6 +800,17 @@ assert_status "a state.json that cannot be read is refused (#1334)" "$st" 2
 assert_contains "naming doctor --flow" "$(cat "$errf")" \
   "orch: state.json cannot be read - run orch.sh doctor --flow"
 assert_eq "leaving the PR a draft" "$(fake_pr_draft_of 57)" "yes"
+# doctor --flow's remedy for a done flow with a draft PR: the done flow's hold
+# does not refuse, so the gate is what answers.
+printf '{"slug":"x","phase":"done","issue":30,"branch":"quick/12-foo"}\n' >"$state_file"
+fake_checks_clear
+fake_checks 57 required failing
+fake_pr_draft 57
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "a done flow's branch gets past the guard and is refused at the gate" "$st" 2
+assert_contains "naming the failed checks" "$(cat "$errf")" "has failed checks"
+assert_eq "leaving the PR a draft behind a done flow" "$(fake_pr_draft_of 57)" "yes"
+fake_checks_clear
 rm -f "$state_file"
 
 out="$("$ORCH" pr ready extra 2>"$errf")"; st=$?
@@ -1064,6 +1121,15 @@ assert_eq "and no other" "$(fake_pr_body_of 56)" "Closes #99"
 prb fetch "$out_file" >/dev/null 2>&1
 assert_eq "a fetch after the update reads the new body back" "$(cat "$out_file")" "$(cat "$newbody")"
 
+fake_pr_body 57 $'Closes #12\r\n\r\nAlpha line.\r\nBeta line.\r\n'
+prb fetch "$out_file" >/dev/null 2>&1
+assert_eq "pr fetch of a CRLF body writes the same text with LF line endings and no CR" \
+  "$(od -c <"$out_file")" "$(printf 'Closes #12\n\nAlpha line.\nBeta line.\n\n' | od -c)"
+fake_pr_body 57 $'Closes #12\r\nBeta line.'
+prb fetch "$out_file" >/dev/null 2>&1
+assert_eq "a CRLF body with no final line ending ends as an LF one does" \
+  "$(od -c <"$out_file")" "$(printf 'Closes #12\nBeta line.\n' | od -c)"
+
 set_pr_body 'Refs #12' '' 'Into uat.'
 writeln 'Refs #12' '' 'Into uat, corrected.' >"$newbody"
 out="$(prb update "$newbody" 2>&1)"; st=$?
@@ -1116,6 +1182,8 @@ assert_gh_dies "a failed read fails" adapter_pr_body "$GH_502" 1 \
   "orch: gh could not read the body of PR #57: HTTP 502: Bad Gateway" \
   prb fetch "$out_file"
 assert_eq "leaving the body as it was" "$(fake_pr_body_of 57)" "$(writeln 'Closes #12')"
+assert_eq "leaving the target untouched" "$(cat "$out_file")" "$(writeln "Closes #12" "Beta line.")"
+assert_eq "and no temp file beside it" "$(ls "$(dirname "$out_file")" | tr '\n' ' ')" "body.md "
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 help="$("$ORCH" help)"
@@ -1213,7 +1281,6 @@ fake_pr 58 open orch/120-bar main
 fake_pr_body 58 $'Closes #120\n'
 out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
 assert_status "pr read finds the PR whose issue line names the issue" "$st" 0
-assert_not_contains "no fork PR: no ignored line on stderr" "$out" "ignored"
 assert_eq "writing its body, a rule, then its diff" "$(cat "$out_file")" \
   "$(printf 'Refs #12\n\nAdds the widget.\n\n---\ndiff --git a/w b/w\n+widget')"
 out="$("$ORCH" pr read 12 2>&1)"; st=$?
@@ -1255,7 +1322,6 @@ for c in "update $fk_new" "comment $fk_comment" "draft" "ready"; do
   out="$("$ORCH" pr $c 2>"$errf")"; st=$?
   assert_status "pr ${c%% *}: only a fork PR exits 1" "$st" 1
   assert_eq "pr ${c%% *}: printing nothing" "$out" ""
-  assert_contains "pr ${c%% *}: saying the fork PR was ignored" "$(cat "$errf")" "$forkline"
   [ "${c%% *}" != update ] || assert_contains "pr update: saying no open PR" "$(cat "$errf")" "no open PR"
 done
 assert_eq "the fork PR's body, comments and draft state untouched" "$(fake_snapshot)" "$before"
@@ -1279,29 +1345,24 @@ out="$("$ORCH" pr update "$fk_new" 2>"$errf")"; st=$?
 assert_status "pr update beside a newer fork PR succeeds" "$st" 0
 assert_eq "overwriting the same-repo PR's body" "$(fake_pr_body_of 57)" "$(cat "$fk_new")"
 assert_eq "and not the fork PR's" "$(fake_pr_body_of 60)" $'Closes #12\n\nStranger.'
-assert_eq "update: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 
 out="$("$ORCH" pr comment "$fk_comment" 2>"$errf")"; st=$?
 assert_status "pr comment beside a newer fork PR succeeds" "$st" 0
 assert_eq "printing the same-repo PR's number" "$out" "57"
 assert_eq "posting nothing on the fork PR" "$(fake_pr_comments_of 60)" "Stranger comment."
-assert_eq "comment: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 
 out="$("$ORCH" pr comments "$fk_comments" 2>"$errf")"; st=$?
 assert_status "pr comments beside a newer fork PR succeeds" "$st" 0
 assert_contains "reading the same-repo PR's comments" "$(cat "$fk_comments")" "Mine too."
 assert_not_contains "and not the fork PR's" "$(cat "$fk_comments")" "Stranger"
-assert_eq "comments: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 
 out="$("$ORCH" pr ready 2>"$errf")"; st=$?
 assert_status "pr ready beside a newer fork PR succeeds" "$st" 0
 assert_eq "marking the same-repo PR ready" "$(fake_pr_draft_of 57)" "no"
 assert_eq "and not the fork PR" "$(fake_pr_draft_of 60)" "yes"
-assert_eq "ready: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 out="$("$ORCH" pr draft 2>"$errf")"; st=$?
 assert_status "pr draft beside a newer fork PR succeeds" "$st" 0
 assert_eq "drafting the same-repo PR" "$(fake_pr_draft_of 57)" "yes"
-assert_eq "draft: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 
 # Two same-repo PRs and a newer fork PR: the newer same-repo PR wins.
 fake_pr 58 open orch/12-foo main
@@ -1312,10 +1373,7 @@ fake_pr_body 61 "Closes #12"
 out="$("$ORCH" pr fetch "$fk_out" 2>"$errf")"; st=$?
 assert_eq "pr fetch reads the newest same-repo PR" "$(cat "$fk_out")" $'Closes #12\n\nNewer mine.'
 
-# No fork PR: no new stderr.
 rm -rf "$ORCH_GH_FAKE_STORE/prs/60" "$ORCH_GH_FAKE_STORE/prs/61"
-out="$("$ORCH" pr fetch "$fk_out" 2>&1)"; st=$?
-assert_eq "no fork PR: nothing on stderr" "$out" ""
 
 # A flag that is neither true nor false: the filter's own rule is in trust.sh;
 # here only the command's exit code.

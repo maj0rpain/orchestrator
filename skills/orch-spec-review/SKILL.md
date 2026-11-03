@@ -228,10 +228,14 @@ three in a standalone review, four in a flow's, Fidelity included:
 bash "$ORCH" spec-review wait <dir> <lens>...
 ```
 
-It blocks until every named lens's findings file exists, so no lens's
-hand-back takes a turn of its own, and prints one line, `lenses back: <name>
-<count>, ...`. On exit 0, read the findings files. On a host whose lenses ran
-in this session, the files already exist and it returns at once.
+Run it in the foreground and wait for it (host capability *Run a long
+command*); never background it and sleep, poll or kill it. A wait the host
+moves to the background at its timeout is still waited for, as that row says,
+and never started a second time. It blocks until every named lens's findings
+file exists, so no lens's hand-back takes a turn of its own, and prints one
+line, `lenses back: <name> <count>, ...`. On exit 0, read the findings files.
+On a host whose lenses ran in this session, the files already exist and it
+returns at once.
 
 | Lens | Agent | Prompt |
 |---|---|---|
@@ -246,11 +250,16 @@ plugin root, as its brief, and record it under **Host fallbacks** - see
 **Standalone spec review**.
 
 A lens that errors, returns nothing usable, or writes no readable findings
-file has failed. When the wait times out, the hand-backs that queued during it
-are now visible, and each lens it names as missing has failed. A failed lens's
-findings file, if it left an unreadable one, is removed; then the lens is
-spawned once more with the same prompt, and in the same response a second
-`spec-review wait` names only the respawned lenses. A second failure makes it
+file has failed. A lens is judged missing only from the wait's own exit, its
+`orch:` "lenses not back" timeout, never because the call moved to the
+background or a turn passed without a hand-back; no lens is restarted while
+its wait is still running. When the wait times out, the hand-backs that queued
+during it are now visible, and each lens it names as missing has failed. A
+failed lens's findings file, if it left an unreadable one, is removed; then
+the lens is spawned once more with the same prompt, and in the same response a
+second
+`spec-review wait` names only the respawned lenses, run the same way (host
+capability *Run a long command*). A second failure makes it
 **not run - <reason>**: it appears that way in the batch and in the
 changelog, and the review continues on the lenses that answered. Three
 lenses and a recorded gap is a spec review; a silent gap is not.
@@ -358,10 +367,10 @@ expansion, in any round: the view the human reads is `check`'s, every round
 alike. The turn ends on the list and the question, in one reply. No edit is
 applied and no changelog is posted before the answer arrives. On Claude Code
 an ask-tool call is refused while the view is unpasted: after each `check`
-that wrote a `view.md`, and until the next `apply`, a hook refuses every ask
-until one text block after that `check` holds the whole view, handing back
-that view each time - end the turn on it and the batch question in plain
-text. The answers:
+that wrote a `view.md`, and until the next `apply` or human message, a hook
+refuses every ask until one text block after that `check` holds the whole view,
+handing back that view each time - end the turn on it and the batch question
+in plain text. The answers:
 
 - **Apply as recommended (Recommended)**, answer word `recommended` - every
   proposed edit applied, every decision item takes its recommended option,
@@ -397,8 +406,7 @@ forms: a typo, extra words around an answer word, or mixed forms such as
 `recommended but not 4`. It is never re-pasted. Its one-line restatement is in
 the grammar `apply` accepts (e.g. "Apply as recommended, except item 4
 declined" - `-4`). *No* runs the question path below. On Claude Code the
-confirmation ask passes the hook: the view is already in the turn-final reply
-above it.
+confirmation ask passes the hook: the near-miss message disarmed the guard.
 
 An Other answer of `show <n>...` is not an answer to the batch question.
 Run `bash "$ORCH" spec-review check <dir> --full <n>...` with the numbers it
@@ -416,8 +424,8 @@ batch question either: the doc's **Question path** runs. Do not run `apply`,
 which never receives a question. Re-run `bash "$ORCH" spec-review check
 <dir>`, and end the turn again on its new view word for word and the batch
 question. The re-run's pass
-line arms the guard again, so on Claude Code only a paste made after it lets
-a later ask through.
+line arms the guard again (the human's message disarmed it), so on Claude Code
+only a paste made after it lets a later ask through.
 
 The spec batch is asked once; a long spec is one longer question, not twenty
 prompts.
@@ -469,7 +477,9 @@ material item without one, naming its `@@ item` line, and a `@@ why` that is
 empty, on a minor or resolved item, under an option, or a second on one
 item. The changelog never carries it. A `@@ finding` cites
 the `<k>`-th finding in `<dir>/lens-<lens>.md`, which `apply` copies into the
-changelog, so the batch file never quotes a lens.
+changelog, so the batch file never quotes a lens. Every finding of a lens that
+ran is cited by at least one item; `check` and `apply` refuse a batch that
+leaves one uncited, naming each.
 
 `check` and `apply` verify every anchor: each must match the body exactly
 once, and `check` names the `batch.md` line of each one that does not. No

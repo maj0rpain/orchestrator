@@ -165,6 +165,29 @@ assert_eq "its entries replacing the PR body's Deviations" \
   "$(sed -n '1,/^## Known items$/p' "$kp/known.md")" \
   "$(writeln '## Deviations' '- Built the key from the slug, not from the member' '## Known items')"
 
+# A fenced heading or bullet is never structure (#1922).
+fake_pr_comment 57 pat 2026-10-07T09:00:00Z "$(writeln 'Quoting a template:' '```' '## Review' '- `q.sh:1` - quoted, not declined' '## Host fallbacks' '```')"
+fake_pr_comment 57 pat 2026-10-08T09:00:00Z "$(writeln '## Review' '' '- `e.sh:4` - quotes markdown' '```' '## Quoted' '```' \
+  '- `f.sh:5` - next decline' '' '## Host fallbacks' '' 'None (claude).')"
+writeln '- Kept a fence:' '```' '- not a new entry' '```' >"$kp/fdev.md"
+"$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/fdev.md" >/dev/null; st=$?
+assert_status "builds with fenced headings and bullets" "$st" 0
+assert_not_contains "a comment with fenced-only headings is no earlier pass's" "$(cat "$kp/known.md")" 'q.sh:1'
+assert_contains "an earlier pass's entry keeps its fenced heading line" "$(cat "$kp/known.md")" \
+  '- `e.sh:4` - quotes markdown ``` ## Quoted ``` - declined'
+assert_contains "and the next entry stays its own" "$(cat "$kp/known.md")" '- `f.sh:5` - next decline - declined'
+assert_contains "a deviation with a fenced column-0 bullet is one entry" "$(cat "$kp/known.md")" \
+  '- Kept a fence: ``` - not a new entry ```'
+
+fake_pr_body 57 "$(writeln 'Closes #21' '' '## Review' '' \
+  '- `a.sh:3` - unused helper - out of scope' '' '## Deviations' '' '- Kept the old cache' \
+  '' '## Host fallbacks' '' 'None (claude).' | sed 's/$/\r/')"
+"$ORCH" review-pass known-items 21 "$kp/known.md"; st=$?
+assert_status "a CRLF PR body builds the file" "$st" 0
+assert_contains "reading its Deviations entries" "$(cat "$kp/known.md")" "- Kept the old cache"
+assert_contains "and its Review entries" "$(cat "$kp/known.md")" "- \`a.sh:3\` - unused helper - out of scope - declined"
+assert_not_contains "with no CR left" "$(od -c <"$kp/known.md")" '\r'
+
 : >"$kp/empty.md"
 fake_pr 57 closed quick/21-foo main
 fake_comments_clear 21
@@ -241,28 +264,5 @@ done
 assert_eq "writing no file for any of them" "$(on_disk "$kp/fresh.md")" "absent"
 assert_contains "orch.sh help lists review-pass known-items" "$("$ORCH" help)" \
   "review-pass known-items <issue> <path> [--deviations <file>]"
-rm -rf "$kp"
-restore_suite_env
-
-# --- review-pass known-items: fork PRs (#1977) --------------------------------
-echo
-echo "review-pass known-items: fork PRs (#1977)"
-new_repo >/dev/null
-git checkout -q -b quick/21-foo
-fake_github
-fake_issue 21 open
-kp="$(mktemp -d)"
-fake_pr 57 open quick/21-foo main
-fake_pr_body 57 "$(writeln 'Closes #21' '' '## Deviations' '' '- Kept the old cache' '' '## Host fallbacks' '' 'None (claude).')"
-fake_pr_comment 57 pat 2026-10-04T09:00:00Z "$(writeln '## Review' '' '- `c.sh:7` - duplicated parser - needs a decision' '' '## Host fallbacks' '' 'None (claude).')"
-fake_pr 58 open quick/21-foo main
-fake_pr_cross 58
-fake_pr_body 58 "$(writeln 'Closes #21' '' '## Deviations' '' '- Stranger entry' '' '## Host fallbacks' '' 'None (claude).')"
-fake_pr_comment 58 pat 2026-10-05T09:00:00Z "$(writeln '## Review' '' '- `z.sh:1` - stranger item - declined' '' '## Host fallbacks' '' 'None (claude).')"
-out="$("$ORCH" review-pass known-items 21 "$kp/known.md" 2>"$kp/err")"; st=$?
-assert_status "a newer fork PR beside the plugin's own: builds the file" "$st" 0
-assert_eq "from the same-repo PR's body and comments alone" "$(cat "$kp/known.md")" "$(writeln '## Deviations' \
-  '- Kept the old cache' '## Known items' '- `c.sh:7` - duplicated parser - needs a decision - declined')"
-assert_eq "stderr holds the ignored line" "$(cat "$kp/err")" "orch: ignored 1 PR(s) from forks for quick/21-foo"
 rm -rf "$kp"
 restore_suite_env

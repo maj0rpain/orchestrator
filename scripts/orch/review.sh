@@ -66,6 +66,34 @@ ci_probe() {
   note green
 }
 
+# ci_ready_gate [--exit 2] [--hint <text>] <pr>: the check before a PR is
+# marked ready. One look, no grace and no polling, through ci_probe: the
+# required checks first, every check when none are required. It only refuses;
+# `review ci` keeps the waiting. Failed and unreadable checks die (through
+# die2 under --exit 2, with the hint appended); pending ones note it on stderr
+# and return; green or none return silently.
+ci_ready_gate() {
+  local opts=() pr res verdict detail checks
+  while [ $# -gt 1 ]; do
+    case "$1" in
+      --exit|--hint) die_opt_check ci_ready_gate $# "$@"; opts+=("$1" "$2"); shift 2 ;;
+      *) die "ci_ready_gate: unknown option $1" ;;
+    esac
+  done
+  pr="$1"
+  res="$(ci_probe "$pr" required)"
+  [ "${res%%$'\n'*}" != none ] || res="$(ci_probe "$pr" all)"
+  lines_split "$res" verdict detail
+  # ci_probe indents each detail line; the message joins them, comma-separated.
+  checks="$(list_join "$(sed 's/^ *//' <<<"$detail")")"
+  case "$verdict" in
+    failing)     die_hinted ${opts[@]+"${opts[@]}"} "PR #$pr has failed checks: $checks" ;;
+    unreachable) die_hinted ${opts[@]+"${opts[@]}"} "PR #$pr checks cannot be read: $checks" ;;
+    pending)     warn "PR #$pr checks are still pending"; return 0 ;;
+    *)           return 0 ;;
+  esac
+}
+
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
@@ -409,9 +437,8 @@ review_standards_resolve() {
 # review_standards_mentions <file>: the repo-relative .md paths <file> mentions,
 # in backticks (against the repo root) or as Markdown links (against <file>'s
 # directory), one per line in the order they appear. Backticks pair per
-# paragraph (lines up to a blank one, a fence line or an ATX heading, joined; a
-# heading is a paragraph of its own), so a span may wrap a line break and a
-# stray backtick never pairs across a blank line.
+# paragraph of review_standards_paragraphs, so a span may wrap a line break
+# and a stray backtick never pairs across a blank line.
 review_standards_mentions() {
   local file="$1" dir="" m link
   [[ $file == */* ]] && dir="${file%/*}"
@@ -424,20 +451,33 @@ review_standards_mentions() {
         review_standards_resolve "$dir" "$link"
         ;;
     esac
-  done < <(awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
-    { l = $0; sub(/\r$/, "", l); was = fence_char; fenced($0) }
-    fence_char != was { if (p != "") print p; p = ""; next }
-    was == "" && is_heading(l) { if (p != "") print p; print l; p = ""; next }
-    l ~ /[^[:space:]]/ { p = p " " l; next }
-    p != "" { print p; p = "" }
-    END { if (p != "") print p }
-  ' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
+  done < <(review_standards_paragraphs "$file" | cut -f2- | grep -oE '`[^`]+`|\]\([^)]+\)')
 }
 
-# STANDARDS_HEADING_AWK: awk functions, the one ATX heading rule of the
-# declaration and heading-count programs: is_heading(line) is true for 1 to 6
-# #s, at most 3 spaces in, then a space, a tab or the line's end; heading_text
-# (line) is that heading's text, surrounding whitespace and closing #s trimmed.
+# review_standards_paragraphs <file>: the paragraphs of the repo file <file>,
+# one per line, each tagged `U` (unfenced) or `F` (fenced) and a tab before its
+# lines joined by spaces. A paragraph ends at a blank line (inside a fence or
+# out), an ATX heading outside a fence or a fence delimiter line; a heading is
+# a paragraph of its own; lines inside a fence join into fenced paragraphs;
+# delimiter lines are in no paragraph.
+review_standards_paragraphs() {
+  awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
+    function flush() { if (p != "") print kind "\t" p; p = "" }
+    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
+    f == 2 { flush(); next }
+    f == 1 && l !~ /[^[:space:]]/ { flush(); next }
+    f == 1 { kind = "F"; p = (p == "" ? l : p " " l); next }
+    is_heading(l) { flush(); print "U\t" l; next }
+    l !~ /[^[:space:]]/ { flush(); next }
+    { kind = "U"; p = (p == "" ? l : p " " l) }
+    END { flush() }
+  ' "$ROOT/$1" 2>/dev/null
+}
+
+# STANDARDS_HEADING_AWK: awk functions, the one ATX heading rule:
+# is_heading(line) is true for 1 to 6 #s, at most 3 spaces in, then a space, a
+# tab or the line's end; heading_text(line) is that heading's text,
+# surrounding whitespace and closing #s trimmed.
 # No interval braces: mawk and BSD awk lack them.
 # shellcheck disable=SC2016 # awk program, not shell
 STANDARDS_HEADING_AWK='
@@ -456,20 +496,10 @@ STANDARDS_HEADING_AWK='
 '
 
 # review_standards_declaration <file>: the first `Standards:` paragraph of the
-# root file <file>, its lines joined, or nothing when it has none. A paragraph
-# whose first line starts with Standards: and sits outside a fenced code block
-# (an ATX heading line ends a paragraph, so one may sit directly under it);
-# the fence state runs from the opening fence to the closing one, blank lines
-# included.
+# root file <file>, its lines joined, or nothing when it has none: the first
+# unfenced paragraph of review_standards_paragraphs that starts with Standards:.
 review_standards_declaration() {
-  awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
-    fenced($0) { if (p != "") { print p; done = 1; exit } prev = 0; next }
-    { l = $0; sub(/\r$/, "", l); head = is_heading(l); live = (l ~ /[^[:space:]]/) }
-    p != "" { if (live && !head) { p = p " " l; next } print p; done = 1; exit }
-    /^Standards:/ && !prev { p = l; next }
-    { prev = (live && !head) ? 1 : 0 }
-    END { if (p != "" && !done) print p }
-  ' "$ROOT/$1" 2>/dev/null
+  review_standards_paragraphs "$1" | awk '/^U\tStandards:/ { sub(/^U\t/, ""); print; exit }'
 }
 
 # review_standards_heading_count <file> <heading>: how many ATX headings of the
@@ -501,11 +531,24 @@ review_standards_realpath() {
   printf '%s/%s\n' "$(cd -P "$dir" && pwd -P)" "${f##*/}"
 }
 
+# review_standards_inside <path>: succeeds when the existing file <path>
+# (repo-relative), every symlink followed, lies under the repo's physical root.
+review_standards_inside() {
+  local real root_real
+  [ -f "$ROOT/$1" ] || return 1
+  real="$(review_standards_realpath "$ROOT/$1")" || return 1
+  root_real="$(cd -P "$ROOT" && pwd -P)"
+  case "$real" in
+    "$root_real"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # review_standards_declared <entry>...: dies unless every entry is a
 # repo-relative path naming a regular file inside the repo, optionally with a
 # #Heading naming one section that must match exactly once.
 review_standards_declared() {
-  local e seg depth segs path n real root_real
+  local e seg depth segs path n
   for e in "$@"; do
     case "$e" in
       /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
@@ -523,12 +566,7 @@ review_standards_declared() {
     done
     [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
     [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
-    real="$(review_standards_realpath "$ROOT/$path")"
-    root_real="$(cd -P "$ROOT" && pwd -P)"
-    case "$real" in
-      "$root_real"/*) ;;
-      *) die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
-    esac
+    review_standards_inside "$path" || die "Standards entry \`$e\` leaves the repo (want a path inside it)"
     [ "$path" = "$e" ] && continue
     n="$(review_standards_heading_count "$path" "${e#*#}")"
     [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"
@@ -546,11 +584,11 @@ review_standards() {
   [ $# -eq 0 ] || die "usage: orch.sh review standards"
   local listed=() hop=() next=() f p span
   for f in CLAUDE.md AGENTS.md; do
-    [ ! -f "$ROOT/$f" ] || listed+=("$f")
+    ! review_standards_inside "$f" || listed+=("$f")
   done
   if [ "${#listed[@]}" -eq 0 ]; then
     for f in CODING_STANDARDS.md CONTRIBUTING.md; do
-      [ ! -f "$ROOT/$f" ] || listed+=("$f")
+      ! review_standards_inside "$f" || listed+=("$f")
     done
   fi
   local decl entries=()
@@ -571,7 +609,7 @@ review_standards() {
     next=()
     for f in ${hop[@]+"${hop[@]}"}; do
       while IFS= read -r p; do
-        [ -f "$ROOT/$p" ] || continue
+        review_standards_inside "$p" || continue
         list_has "$(printf '%s\n' "${listed[@]}")" "$p" && continue
         listed+=("$p"); next+=("$p")
       done < <(review_standards_mentions "$f")
@@ -658,6 +696,7 @@ cmd_review() {
       require_state
       local pr
       require_pr pr
+      ci_ready_gate --hint "the flow stays in review" "$pr"
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.

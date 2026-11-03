@@ -244,7 +244,4 @@ assert_contains "dirty: still builds" "$log" "up -d --build"
 assert_eq "dirty: git status untouched" "$(git -C "$case_dir" status --porcelain)" "?? dirty.txt"
 
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary

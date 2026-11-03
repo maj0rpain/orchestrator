@@ -55,6 +55,8 @@ SECTION_DIR="$TEST_DIR/orch"
 # shellcheck source=test_jobs.sh
 source "$TEST_DIR/test_jobs.sh"
 test_jobs_lower_priority
+# shellcheck source=test_tree.sh
+source "$TEST_DIR/test_tree.sh"
 # shellcheck source=tally.sh
 source "$TEST_DIR/tally.sh"
 # shellcheck source=fifo.sh
@@ -84,10 +86,14 @@ trap test_jobs_stop_descendants INT TERM
 
 # The section filter. With ORCH_TEST_ONLY=<ERE> set, the suite runs only the
 # shared setup, the isolation section, every section whose title - the text
-# after `# --- `, trailing dashes dropped - matches under grep -E, each behind
+# after `# --- `, trailing dashes dropped - matches under grep -iE (the match
+# ignores case), each behind
 # its file's preamble, and the summary. The text is extracted from the section
 # files and eval'd, so no file is written. A pattern that matches no section
 # exits 1, printing the selectable section titles, in walk order, one per line.
+# So does a pattern with two or more top-level branches (alternatives of the
+# outermost `|`, outside parentheses, brackets and backslash escapes) of which
+# any matches no section: each dead branch is named on stderr first.
 #
 # The parallel runner. ORCH_TEST_JOBS sets how many sections run at once:
 # by default 75% of the usable CPUs (ORCH_TEST_POOL_PERCENT sets another
@@ -144,10 +150,8 @@ section_files() {
 # read the second time; "skip" the rest of setup.sh. In a noun file, "preamble"
 # is the text before its first `# --- ` line, and "sections" the rest, each
 # `# --- ` header numbering its section n across the whole walk, so isolation,
-# harness.sh's first, is 1. title() drops a header's `# --- ` and trailing
-# dashes.
-section_walk_awk='
-  function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }
+# harness.sh's first, is 1. title() is test_tree.sh's SECTION_TITLE_AWK.
+section_walk_awk="$SECTION_TITLE_AWK"'
   BEGIN { setup = ENVIRON["ORCH_SETUP_FILE"] }
   FNR == 1 { phase = "skip"; pre = ""; shown = 0; if (FILENAME == setup) setups++; else phase = "preamble" }
   FILENAME == setup && $0 == "# >>> shared setup" { if (setups == 1) phase = "setup"; next }
@@ -193,6 +197,63 @@ section_text() {
 # filter whose set is still this one matched no section.
 readonly orch_kept_isolation=",1,"
 
+# split_branches <pattern>: set orch_branches to the pattern's top-level
+# branches - the alternatives of its outermost `|`. A `|` inside parentheses,
+# inside a bracket expression (a `]` right after `[` or `[^` is literal, and a
+# `[:class:]` is skipped whole) or after a backslash is no split point.
+orch_branches=()
+split_branches() {
+  local pat="$1" i=0 n ch next depth=0 inbr=0 cur="" rest
+  n=${#pat}
+  orch_branches=()
+  while [ "$i" -lt "$n" ]; do
+    ch="${pat:i:1}"
+    cur="$cur$ch"
+    i=$((i + 1))
+    if [ "$inbr" -eq 1 ]; then
+      if [ "$ch" = "[" ] && [ "${pat:i:1}" = ":" ]; then
+        rest="${pat:i}"
+        rest="${rest#*:]}"
+        if [ "$rest" != "${pat:i}" ]; then
+          cur="$cur${pat:i:$((${#pat} - i - ${#rest}))}"
+          i=$((n - ${#rest}))
+        fi
+      elif [ "$ch" = "]" ]; then
+        inbr=0
+      fi
+      continue
+    fi
+    case "$ch" in
+      '\')
+        cur="$cur${pat:i:1}"
+        i=$((i + 1))
+        ;;
+      '[')
+        inbr=1
+        next="${pat:i:1}"
+        if [ "$next" = "^" ]; then
+          cur="$cur^"
+          i=$((i + 1))
+          next="${pat:i:1}"
+        fi
+        if [ "$next" = "]" ]; then
+          cur="$cur]"
+          i=$((i + 1))
+        fi
+        ;;
+      '(') depth=$((depth + 1)) ;;
+      ')') [ "$depth" -eq 0 ] || depth=$((depth - 1)) ;;
+      '|')
+        if [ "$depth" -eq 0 ]; then
+          orch_branches+=("${cur%|}")
+          cur=""
+        fi
+        ;;
+    esac
+  done
+  orch_branches+=("$cur")
+}
+
 # print_summary <pass> <fail> <skip>: the suite's closing lines, a blank line
 # then the counts, the skips only when there were any. The parallel runner and
 # the summary section both print through it, so their stdout cannot drift apart.
@@ -224,12 +285,35 @@ orch_jobs="$(test_jobs_count orch_test.sh)" || exit 1
 # Every run, sequential or parallel, filtered or not, evals the text the walk
 # extracts for its kept set: no section runs from this file itself.
 orch_titles="$(section_titles)"
+
+# Refuse a selection: print each given line to stderr, the last ending in the
+# notice that the selectable sections follow, then the titles, and exit 1.
+refuse_selection() {
+  local last=$(( $# - 1 )) i=0 line
+  for line in "$@"; do
+    [ "$i" -lt "$last" ] || line="$line; the selectable sections are:"
+    echo "$line" >&2
+    i=$((i + 1))
+  done
+  printf '%s\n' "$orch_titles"
+  exit 1
+}
+
 if [ -n "${ORCH_TEST_ONLY:-}" ]; then
-  orch_kept="$orch_kept_isolation$(printf '%s\n' "$orch_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
+  split_branches "$ORCH_TEST_ONLY"
+  if [ "${#orch_branches[@]}" -gt 1 ]; then
+    orch_lines=()
+    for orch_branch in "${orch_branches[@]}"; do
+      printf '%s\n' "$orch_titles" | grep -qiE -- "$orch_branch" ||
+        orch_lines+=("orch_test.sh: ORCH_TEST_ONLY branch '$orch_branch' matches no section")
+    done
+    if [ "${#orch_lines[@]}" -gt 0 ]; then
+      refuse_selection "${orch_lines[@]}"
+    fi
+  fi
+  orch_kept="$orch_kept_isolation$(printf '%s\n' "$orch_titles" | grep -niE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
   if [ "$orch_kept" = "$orch_kept_isolation" ]; then
-    echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the selectable sections are:" >&2
-    printf '%s\n' "$orch_titles"
-    exit 1
+    refuse_selection "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section"
   fi
 else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"

@@ -267,7 +267,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout: a flow mid-pipeline - a done flow is
                               archived, unless a ticket worktree is left, and
                               the new one starts over it - or a branch the
-                              plugin made with no PR yet; refuses with exit 1
+                              plugin made with no PR yet and not retired
+                              by a redo; refuses with exit 1
                               if the working tree has changes outside the
                               planning allowlist);
                               --issue adopts an already-open,
@@ -401,12 +402,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               no state
   issue comment <n> <file>    post <file> as a comment on issue <n>,
                               recording no state
-  issue comments <n> <file>   write every comment on issue <n> to <file>, in
+  issue comments <n> <file> [--with-spec-review]
+                              write every comment on issue <n> to <file>, in
                               order, each opened by a line
                               <!-- comment @<login> <createdAt> --> - recording
                               no state; a comment whose body opens with the
                               ## Spec review heading is left out; no comments
-                              is an empty file
+                              is an empty file; with --with-spec-review,
+                              comments opening with the ## Spec review
+                              heading are kept
   issue triage <n> [--override]
                               move open issue <n> to ready-for-agent, removing
                               its other triage labels, verify by reading the
@@ -491,7 +495,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               the call fails (relaying gh's reason), the call
                               is wrong, or an active flow holds the branch
   pr ready                    mark the current branch's open PR ready, as pr
-                              draft does: 0 also when it is already ready
+                              draft does: 0 also when it is already ready. Refuses (2) over
+                              failed or unreadable checks
   pr fetch <file>             write the current branch's open PR body to
                               <file>, recording no state
   pr update <file>            replace the current branch's open PR body with
@@ -699,6 +704,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               the run id. Exits 1 when that check is no Actions
                               run, 2 on any other failure
   review ready                mark the draft PR ready and set the phase to done,
+                              refusing (1) over failed or unreadable checks,
                               printing the PR number; in a side checkout, a
                               pointer to the finish command on stderr
   review terminal             classify the last iteration: none, pending,

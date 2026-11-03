@@ -485,9 +485,10 @@ spec_review_finding_text() {
 
 # spec_review_findings_check: dies, naming the batch line, on a citation of a
 # lens that did not run or past its file's count of findings, and on an item
-# in a lens's group when that lens did not run.
+# in a lens's group when that lens did not run, then on a finding of a lens that
+# ran which no item cites, naming every one at once (#1914).
 spec_review_findings_check() {
-  local j l count lf it
+  local j l count lf it lens uncited="" cited
   for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
     l="$(array_index SR_LENS_NAME "${SR_FD_LENS[$j]}")"
     spec_review_lens_known "${SR_FD_LENS[$j]}" \
@@ -507,6 +508,16 @@ spec_review_findings_check() {
     [ "${SR_LENS_STATE[$l]}" = ran ] \
       || spec_review_batch_die "${SR_IT_LINE[$it]}" "item ${SR_IT_N[$it]} is in group ${SR_IT_GROUP[$it]}, which did not run"
   done
+  for lf in ${SR_LF_LENS[@]+"${!SR_LF_LENS[@]}"}; do
+    lens="${SR_LF_LENS[$lf]}"
+    cited=""
+    for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
+      [ "${SR_FD_LENS[$j]}" = "$lens" ] && [ "${SR_FD_K[$j]}" = "${SR_LF_K[$lf]}" ] && { cited=1; break; }
+    done
+    [ -n "$cited" ] || uncited="${uncited:+$uncited, }$lens ${SR_LF_K[$lf]}"
+  done
+  [ -z "$uncited" ] \
+    || die "batch.md leaves findings uncited: $uncited - every lens finding goes in the batch, if only as a recommend-decline item"
 }
 
 # spec_review_answer_tokens <answer> <array-var>: an Other-list answer split
@@ -526,9 +537,10 @@ spec_review_answer_tokens() {
 # autopilot round's first run holds back for the human's reply.
 spec_review_item_held() { [ "${SR_FUNDAMENTAL_RUN:-}" = hold ] && [ -n "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
-# spec_review_item_skipped <i>: whether item <i> is one the resumed run leaves
-# alone - the round already applied it before the fundamental items were held.
-spec_review_item_skipped() { [ "${SR_FUNDAMENTAL_RUN:-}" = resume ] && [ -z "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
+# spec_review_item_resumed_as_recommended <i>: whether item <i> is one the
+# resumed run's answer cannot name - a non-fundamental item, taken as
+# recommended.
+spec_review_item_resumed_as_recommended() { [ "${SR_FUNDAMENTAL_RUN:-}" = resume ] && [ -z "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
 # spec_review_answer <answer>: each item's disposition into
 # SR_DISP (applied, declined, taken, undecided or resolved), SR_ASREC (1 where
@@ -567,8 +579,8 @@ spec_review_answer() {
         [ -z "${SR_DISP[$i]+x}" ] || die "the answer names item $n twice"
         ! spec_review_item_held "$i" \
           || die "the answer names item $n, a fundamental item held back for the human's reply - it takes no answer in this run"
-        ! spec_review_item_skipped "$i" \
-          || die "the answer names item $n, which this round applied before the fundamental items were held back - the resumed answer names only fundamental items"
+        ! spec_review_item_resumed_as_recommended "$i" \
+          || die "the answer names item $n, which is not a fundamental item - the resumed answer names only fundamental items, the rest being taken as recommended"
         [ "${SR_IT_REC[$i]}" != resolved ] \
           || die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer"
         case "$sign:${SR_IT_REC[$i]}" in
@@ -592,12 +604,12 @@ spec_review_answer() {
     case "${SR_IT_REC[$i]}" in
       resolved) SR_DISP[i]=resolved; continue ;;
     esac
-    # A fundamental item is held back in an autopilot round's first run; the
-    # resumed run's answer is the fundamental items' alone, the rest
-    # recommended.
-    if spec_review_item_held "$i"; then SR_DISP[i]=held; continue; fi
+    # A fundamental item is validated as recommended in an autopilot round's
+    # first run; the resumed run's answer is the fundamental items' alone,
+    # the rest recommended.
     ibase="$base"
-    ! spec_review_item_skipped "$i" || ibase=recommended
+    ! spec_review_item_held "$i" || ibase=recommended
+    ! spec_review_item_resumed_as_recommended "$i" || ibase=recommended
     [ -z "${SR_DISP[$i]+x}" ] || continue
     case "$ibase:${SR_IT_REC[$i]}" in
       recommended:apply|all:apply|all:decline) SR_DISP[i]=applied; SR_ASREC[i]=1 ;;
@@ -737,8 +749,6 @@ spec_review_validate() {
   SR_TEXT="$SR_FETCHED"
   SR_PROBLEMS=(); SR_ANCHOR_COUNT=0
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    # The resumed run's body already holds the other items' edits.
-    ! spec_review_item_skipped "$i" || continue
     case "${SR_IT_REC[$i]}" in
       apply|decline)
         accepted=""
@@ -1268,7 +1278,7 @@ spec_review_tickets_parse() {
   local buf="" bufn=0 block_line=0 n kind tail t by b rec arg what
   ST_RECOMMEND=""; ST_NONE=""
   ST_N=(); ST_KIND=(); ST_T=(); ST_B=(); ST_REC=(); ST_ARG=(); ST_LINE=()
-  ST_SUMMARY=(); ST_ANCHOR=(); ST_ANCHOR_LINE=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=()
+  ST_SUMMARY=(); ST_ANCHOR=(); ST_ANCHOR_LINE=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=(); ST_CL_LINE=()
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     case "$line" in
@@ -1366,7 +1376,7 @@ spec_review_tickets_parse() {
         read -r t what <<<"$args"
         case "$t" in ''|*[!0-9]*) spec_review_tickets_die "$lineno" "@@ closed wants <t> <what changed>, t a plain issue number" ;; esac
         [ -n "$what" ] || spec_review_tickets_die "$lineno" "@@ closed $t needs what changed"
-        ST_CL_T[${#ST_CL_T[@]}]="$t"; ST_CL_WHAT[${#ST_CL_WHAT[@]}]="$what" ;;
+        ST_CL_T[${#ST_CL_T[@]}]="$t"; ST_CL_WHAT[${#ST_CL_WHAT[@]}]="$what"; ST_CL_LINE[${#ST_CL_LINE[@]}]="$lineno" ;;
       replace|end) spec_review_tickets_die "$lineno" "@@ $kw with no @@ anchor open" ;;
       *) spec_review_tickets_die "$lineno" "unknown line '@@ $kw'" ;;
     esac
@@ -1415,9 +1425,11 @@ spec_review_tickets_answer() {
 
 # spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s copy into
 # TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
-# apply run has taken that copy, ticket-<t>.md. When the session wrote no
-# ticket-<t>.md, the problem, naming <what>, is appended to SR_PROBLEMS and it
-# returns 1; a copy it cannot read dies, naming <what> too.
+# apply run has taken that copy, ticket-<t>.md. After a hold, the fetched copy
+# is the ticket as the hold run published it (see spec_review_hold, which
+# rebases the ticket copies and keeps its ticket lines). When the
+# session wrote no ticket-<t>.md, the problem, naming <what>, is appended to
+# SR_PROBLEMS and it returns 1; a copy it cannot read dies, naming <what> too.
 spec_review_ticket_load() {
   local j copy file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0
@@ -1480,40 +1492,56 @@ spec_review_ticket_item_offline() {
   esac
 }
 
+# spec_review_ticket_named_check <where> <t> <want> <listing> <issue>: dies,
+# before any write, unless #<t> is a sub-issue of <issue> in the state <want>
+# (OPEN, CLOSED or any) in <listing>, ticket_sub_issues' output. <where> is the
+# message's prefix, up to and including its colon.
+spec_review_ticket_named_check() {
+  local where="$1" t="$2" want="$3" listing="$4" issue="$5" state
+  state="$(ticket_listing_state "$listing" "$t")"
+  [ -n "$state" ] || die "$where #$t is not a ticket of #$issue's breakdown - nothing written"
+  case "$want:$state" in
+    OPEN:CLOSED) die "$where #$t is a closed ticket of #$issue's breakdown - nothing written" ;;
+    CLOSED:OPEN) die "$where #$t is an open ticket of #$issue's breakdown - nothing written" ;;
+  esac
+}
+
 # spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every ticket
 # item checked, an accepted one applied in memory and a declined text item's
 # anchor checked on its own against a scratch copy - see
 # spec_review_ticket_item_offline - and the checks that read GitHub: every
-# edge item's tickets in the breakdown, and a `## Ticket` item only on a
+# entry naming a ticket is a ticket of the breakdown in the state its kind
+# needs (a text item's and an edge item's ticket open, an edge item's blocker
+# either, a `@@ closed` line's closed), and a `## Ticket` item only on a
 # collapsed one. Dies, before any write, on the first GitHub-reading check
-# that fails, else, after the loop, on the first problem
-# spec_review_ticket_item_offline collected.
+# that fails - the items in order, then the `@@ closed` lines - else, after the
+# loop, on the first problem spec_review_ticket_item_offline collected.
 spec_review_tickets_follow() {
-  local body_var="$1" dir="$2" kind="$3" issue="$4" i t what batch_body subs="" listed
+  local body_var="$1" dir="$2" kind="$3" issue="$4" i what batch_body listed="" named=""
   [ -z "$ST_RETIRE" ] || return 0
   SR_PROBLEMS=()
+  [ "${#ST_CL_T[@]}" -eq 0 ] || named=1
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    case "${ST_KIND[$i]}" in
-      block|unblock)
-        listed="$(ticket_sub_issues "$issue")" || exit 1
-        subs="$(printf '%s\n' "$listed" | cut -f1)"
-        break ;;
-    esac
+    [ "${ST_KIND[$i]}" = section ] || named=1
   done
+  [ -z "$named" ] || listed="$(ticket_sub_issues "$issue")" || exit 1
   batch_body="${!body_var}"
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    what="tickets.md line ${ST_LINE[$i]}: ticket item ${ST_N[$i]}"
+    what="tickets.md line ${ST_LINE[$i]}: ticket item ${ST_N[$i]}:"
     case "${ST_KIND[$i]}" in
       section)
         [ "$kind" = collapsed ] \
-          || die "$what: a ## Ticket item, but #$issue's breakdown is $kind - nothing written" ;;
+          || die "${what%:}: a ## Ticket item, but #$issue's breakdown is $kind - nothing written" ;;
+      ticket)
+        spec_review_ticket_named_check "$what" "${ST_T[$i]}" OPEN "$listed" "$issue" ;;
       block|unblock)
-        for t in "${ST_T[$i]}" "${ST_B[$i]}"; do
-          list_has "$subs" "$t" \
-            || die "$what: #$t is not a ticket of #$issue's breakdown - nothing written"
-        done ;;
+        spec_review_ticket_named_check "$what" "${ST_T[$i]}" OPEN "$listed" "$issue"
+        spec_review_ticket_named_check "$what" "${ST_B[$i]}" any "$listed" "$issue" ;;
     esac
     spec_review_ticket_item_offline "$i" "$body_var" "$batch_body" "$dir"
+  done
+  for i in ${ST_CL_T[@]+"${!ST_CL_T[@]}"}; do
+    spec_review_ticket_named_check "tickets.md line ${ST_CL_LINE[$i]}:" "${ST_CL_T[$i]}" CLOSED "$listed" "$issue"
   done
   [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing written"
 }
@@ -1592,6 +1620,11 @@ spec_review_tickets_view() {
   esac
 }
 
+# The Tickets lines that report no ticket outcome.
+readonly TICKETS_NO_EDIT="Not checked - no edit applied"
+readonly TICKETS_NO_BREAKDOWN="None - no ticket breakdown"
+readonly TICKETS_NONE_AFFECTED="None - no ticket affected"
+
 # spec_review_tickets_lines: the changelog's Tickets lines, from tickets.md,
 # the ticket answer and the reasons.
 spec_review_tickets_lines() {
@@ -1621,7 +1654,7 @@ spec_review_tickets_lines() {
     out="$out- #${ST_CL_T[$i]} closed, built against the earlier spec: ${ST_CL_WHAT[$i]}"$'\n'
   done
   printf '%s' "${out%$'\n'}"
-  [ -n "$out" ] || printf 'None - no ticket affected'
+  [ -n "$out" ] || printf '%s' "$TICKETS_NONE_AFFECTED"
 }
 
 # spec_review_landed <dir>: the writes <dir>/applied.log records, joined for
@@ -1722,13 +1755,10 @@ spec_review_finish() {
 }
 
 # spec_review_hold <dir>: the end of an autopilot round's first run, when the
-# batch held fundamental items back - every other item is applied and the body
-# published, and no changelog is posted yet. Writes <dir>/fundamental.md, the
-# held-back items' blocks in the batch grammar behind the batch's `@@ lens`
-# lines: the round's save point, which spec round reports as waiting and the
-# resumed apply reads as its cue. Then clears applied.log, whose body write
-# is no failure the resumed run must refuse, and makes spec.fetched.md the
-# body as published, the base the resumed run's edits anchor in.
+# batch held fundamental items back - validated, nothing applied, nothing
+# published. Writes <dir>/fundamental.md, the held-back items' blocks in the
+# batch grammar behind the batch's `@@ lens` lines: the round's save point,
+# which spec round reports as waiting and the resumed apply reads as its cue.
 spec_review_hold() {
   local dir="$1" held=" " i
   for i in ${SR_IT_FUNDAMENTAL[@]+"${!SR_IT_FUNDAMENTAL[@]}"}; do held="$held${SR_IT_N[$i]} "; done
@@ -1738,12 +1768,18 @@ spec_review_hold() {
       /^@@ item / { keep = index(held, " " $3 " ") > 0 }
       keep { print }' "$dir/batch.md"
   } >"$dir/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
-    || die "could not write $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed: $(spec_review_landed "$dir")"
-  cp "$dir/spec.md" "$dir/spec.fetched.md" 2>/dev/null \
-    || die "could not copy spec.md to $dir/spec.fetched.md - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
-  rm -f "$dir/applied.log" 2>/dev/null \
-    || die "could not clear $dir/applied.log - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
-  spec_review_clear_answer "$dir"
+    || die "could not write $dir/$SPEC_ROUND_FUNDAMENTAL - nothing written to GitHub"
+}
+
+# spec_review_ticket_numbers <dir>: the numbers of <dir>'s ticket-<n>.md files,
+# one per line; the .fetched.md copies are not among them.
+spec_review_ticket_numbers() {
+  local tf tn
+  for tf in "$1"/ticket-*.md; do
+    tn="${tf##*/ticket-}"; tn="${tn%.md}"
+    case "$tn" in ''|*[!0-9]*) continue ;; esac
+    printf '%s\n' "$tn"
+  done
 }
 
 # spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
@@ -1853,8 +1889,8 @@ spec_review_apply() {
   [ -n "$resume" ] || [ ! -s "$dir/applied.log" ] \
     || die "$dir/applied.log records writes that already landed: $(spec_review_landed "$dir") - this review stopped at a failed write; apply refuses to run again"
   # An autopilot round's two runs (see spec_review_hold): the first holds the
-  # fundamental items back, the run after the reply, finding fundamental.md,
-  # applies only those.
+  # fundamental items back and writes nothing else, the run after the reply,
+  # finding fundamental.md, applies the whole batch.
   SR_FUNDAMENTAL_RUN=""
   if autopilot_active; then
     if [ -f "$dir/$SPEC_ROUND_FUNDAMENTAL" ]; then SR_FUNDAMENTAL_RUN=resume; else SR_FUNDAMENTAL_RUN=hold; fi
@@ -1892,9 +1928,8 @@ spec_review_apply() {
   # Each ticket file's fetched copy, taken by the first run that finds the
   # file - the --tickets rerun, as the session fetches tickets after the pause.
   local tf tn
-  for tf in "$dir"/ticket-*.md; do
-    tn="${tf##*/ticket-}"; tn="${tn%.md}"
-    case "$tn" in ''|*[!0-9]*) continue ;; esac
+  for tn in $(spec_review_ticket_numbers "$dir"); do
+    tf="$dir/ticket-$tn.md"
     [ -e "$dir/ticket-$tn.fetched.md" ] \
       || cp "$tf" "$dir/ticket-$tn.fetched.md" 2>/dev/null \
       || die "could not copy ticket-$tn.md to $dir/ticket-$tn.fetched.md - nothing written"
@@ -1906,6 +1941,10 @@ spec_review_apply() {
   spec_review_validate "$dir" "$dir/spec.fetched.md" "$answer"
   [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing applied, nothing written"
   fetched="$SR_FETCHED"; text="$SR_TEXT"
+  if [ "$SR_FUNDAMENTAL_RUN" = hold ] && [ "${#SR_IT_FUNDAMENTAL[@]}" -gt 0 ]; then
+    spec_review_hold "$dir"
+    return 0
+  fi
   spec_review_reasons --reasons "$reasons" SR_IT_N SR_DISP SR_REASON \
     item batch.md "the answer"
 
@@ -1914,7 +1953,7 @@ spec_review_apply() {
   ST_N=(); ST_RETIRE=""; TK_T=(); TK_FETCHED=(); TK_TEXT=()
   [ "$text" = "$fetched" ] || changed=1
   if [ -z "$changed" ]; then
-    tickets="Not checked - no edit applied"
+    tickets="$TICKETS_NO_EDIT"
   elif [ -n "$resume" ] && grep -Fxq -- "$(spec_review_label_retire "$issue")" "$dir/applied.log" 2>/dev/null; then
     # The dead run's retire landed, so the live state no longer shows the
     # breakdown it decided on; the rerun keeps that decision.
@@ -1923,7 +1962,7 @@ spec_review_apply() {
     capture kind err cmd_ticket_exists "$issue" || st=$?
     case "$st" in
       0) ;;
-      1) tickets="None - no ticket breakdown" ;;
+      1) tickets="$TICKETS_NO_BREAKDOWN" ;;
       *)
         die "ticket exists #$issue exited $st: $(err_line "$err") - nothing written" ;;
     esac
@@ -1954,13 +1993,9 @@ spec_review_apply() {
   # resumed run keeps the file it was resumed from.
   [ -n "$resume" ] || spec_review_save_answer "$dir" "${save_args[@]}"
 
-  local held_any=""
-  [ "$SR_FUNDAMENTAL_RUN" != hold ] || [ "${#SR_IT_FUNDAMENTAL[@]}" -eq 0 ] || held_any=1
-  local log=""
-  if [ -z "$held_any" ]; then
-    log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
-    spec_review_local_write "$dir/changelog.md" "$log"$'\n'
-  fi
+  local log
+  log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
+  spec_review_local_write "$dir/changelog.md" "$log"$'\n'
 
   # Flow mode writes through the spec command, whose guards hold; the
   # standalone entry through the stateless issue commands.
@@ -1989,10 +2024,6 @@ spec_review_apply() {
   fi
   if [ -n "$ST_RETIRE" ]; then
     spec_review_write "$dir" "$(spec_review_label_retire "$issue")" cmd_ticket_retire "$issue"
-  fi
-  if [ -n "$held_any" ]; then
-    spec_review_hold "$dir"
-    return 0
   fi
   spec_review_write "$dir" "$(spec_review_label_changelog "$issue")" "${comment[@]}" "$dir/changelog.md"
   spec_review_finish "$dir" "$log"
