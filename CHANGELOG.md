@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.43.13
+
+Share the test harness's job-slot hold, release, notice wait and quota file helpers between its job pool and affected.sh sections.
+
+## 4.43.12
+
+The docs lint checks that the stdin and Run a long command rows mark Junie Unverified through one named rule, `scan_row_unverified`, which reads only the Junie CLI cell and is listed in the lint header.
+
 ## 4.43.11
 
 `orch.sh issue fetch` now writes an issue body with its carriage returns removed, so a spec last edited in the GitHub web UI reaches the spec review as LF lines and its multi-line anchors match.

@@ -68,6 +68,8 @@
 #     restates the planning allowlist and records
 #   scan_capability_table  each docs/host-capabilities.md row has both hosts'
 #     cells filled
+#   scan_row_unverified  the named docs/host-capabilities.md row marks its Junie
+#     cell **Unverified**
 #   scan_names_phrase  each listed file, or section of one, names its phrase:
 #     the verifying agents suite-cost run, the review loop's triage and the
 #     review pass suite-cost check, and the PR-writing sites docs/pr-writing.md,
@@ -75,8 +77,9 @@
 #     Agent settings on Junie section naming --host junie and orch.sh doctor,
 #     the README's Running autopilot and how-it-works' Autopilot and Setup
 #     sections naming their autopilot phrases, the six agents' `## Stdin`
-#     sections naming `</dev/null`, host-capabilities' stdin row, and the
-#     turn-final reply sites docs/turn-final-reply.md and the glossary's
+#     sections naming `</dev/null`, host-capabilities' stdin row, the Run a long
+#     command verification sites and host-capabilities' Run a long command row,
+#     and the turn-final reply sites docs/turn-final-reply.md and the glossary's
 #     Turn-final reply entry
 #   scan_dockerignore_secrets  .dockerignore lists each pattern of .gitignore's
 #     Secrets block, in its .dockerignore form
@@ -1968,6 +1971,38 @@ spares "a filled row is not flagged" "$out" ':(1|2|3):'
 check "every host capability row has both hosts' cells filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
 
+# scan_row_unverified <plugin root> <row>: <row> is the text of a
+# docs/host-capabilities.md row's first (Capability) cell, matched trimmed and
+# exactly. One line when no row matches, or when the matching row's third
+# (Junie CLI) cell lacks **Unverified**.
+scan_row_unverified() {
+  local doc="docs/host-capabilities.md"
+  awk -F'|' -v f="$doc" -v row="$2" '
+    function trim(s) { gsub(/^ +| +$/, "", s); return s }
+    /^\|/ && trim($2) == row { found = 1; if (index($4, "**Unverified**") == 0) bad = 1 }
+    END {
+      if (!found) print f ": no " row " row"
+      else if (bad) print f ": " row " row'"'"'s Junie cell not **Unverified**"
+    }' "$1/$doc"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Good | Works. | **Unverified**. |' '| Bare | Works. | Works. |' \
+  '| Swapped | **Unverified**. | Works. |' \
+  '| Other | Mentions Later here. | **Unverified**. |' >"$fixture/docs/host-capabilities.md"
+out="$(scan_row_unverified "$fixture" 'Good')"
+spares "a row whose Junie cell is Unverified is not flagged" "$out" 'Good'
+out="$(scan_row_unverified "$fixture" 'Bare')"
+flags "a row whose Junie cell lacks Unverified is flagged" "$out" "docs/host-capabilities.md: Bare row's Junie cell not **Unverified**"
+out="$(scan_row_unverified "$fixture" 'Swapped')"
+flags "a row Unverified only in the Claude Code cell is flagged" "$out" "docs/host-capabilities.md: Swapped row's Junie cell not **Unverified**"
+out="$(scan_row_unverified "$fixture" 'Missing')"
+flags "a row absent from the table is flagged" "$out" "docs/host-capabilities.md: no Missing row"
+out="$(scan_row_unverified "$fixture" 'Mentions Later here.')"
+flags "a row named only in another cell is flagged" "$out" "docs/host-capabilities.md: no Mentions Later here. row"
+
 # names_with_bold <text> <token> <bold>: the text names <token>, as given,
 # and <bold> in bold, as **<bold>**.
 names_with_bold() { grep -qF -- "$2" <<<"$1" && grep -qF -- "**$3**" <<<"$1"; }
@@ -2026,7 +2061,7 @@ stdin_row='A stray stdin read in a Bash call ends instead of hanging'
 check "host-capabilities has the stdin row" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/host-capabilities.md' "$stdin_row")"
 check "the stdin row marks Junie Unverified" \
-  "$(grep -F "$stdin_row" "$PLUGIN_ROOT/docs/host-capabilities.md" | grep -qF '**Unverified**' || echo "docs/host-capabilities.md: stdin row not Unverified")"
+  "$(scan_row_unverified "$PLUGIN_ROOT" "$stdin_row")"
 
 # --- run a long command in the foreground (#1986) -----------------------------
 echo
@@ -2044,7 +2079,7 @@ long_row='| Run a long command |'
 check "host-capabilities has the Run a long command row" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/host-capabilities.md' "$long_row")"
 check "the Run a long command row marks Junie Unverified" \
-  "$(grep -F "$long_row" "$PLUGIN_ROOT/docs/host-capabilities.md" | grep -qF '**Unverified**' || echo "docs/host-capabilities.md: Run a long command row not Unverified")"
+  "$(scan_row_unverified "$PLUGIN_ROOT" 'Run a long command')"
 
 # --- autopilot docs (#1497) ---------------------------------------------------
 echo
