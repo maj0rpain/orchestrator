@@ -597,11 +597,7 @@ iteration: that would block a single session for most of an hour, and the fix
 commits are pushed as they land anyway.
 
 `bash "$ORCH" review ci` polls the PR's checks and prints one of four words,
-exiting non-zero on the last two. Run it in the foreground and wait for it
-(host capability *Run a long command*); never background it and sleep, poll or
-kill it. A `review ci` the host moves to the background at its timeout is still
-waited for, as that row says, and never started a second time. One the host
-kills at its timeout (the Junie fallback) is **unreachable**:
+exiting non-zero on the last two:
 
 - **green** - carry on.
 - **none** - the repo has no checks. Carry on: requiring CI in a repo that has
@@ -633,6 +629,12 @@ kills at its timeout (the Junie fallback) is **unreachable**:
 - **unreachable** - GitHub would not answer, or the checks were still pending at
   the cap. A **bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.
+
+Run `review ci` in the foreground and wait for it (host capability *Run a long
+command*); never background it and sleep, poll or kill it. A `review ci` the
+host moves to the background at its timeout is still waited for, as that row
+says, and never started a second time. One the host kills at its timeout (the
+Junie fallback) is **unreachable**.
 
 ## Termination
 
