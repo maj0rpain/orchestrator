@@ -90,6 +90,14 @@ ci_counted() {
   capture "$1" "$2" adapter_pr_checks "$3" all
 }
 
+# ci_counted_probe <pr>: ci_probe's classification of the counted checks (see
+# ci_counted), the counterpart of `ci_probe <pr> <scope>`.
+ci_counted_probe() {
+  local out err rc=0
+  ci_counted out err "$1" || rc=$?
+  ci_classify "$rc" "$out" "$err"
+}
+
 # ci_ready_gate [--exit 2] [--hint <text>] <pr>: the check before a PR is
 # marked ready. One look, no grace and no polling, through ci_counted: the
 # required checks first, every check when none are required. It only refuses;
@@ -97,7 +105,7 @@ ci_counted() {
 # die2 under --exit 2, with the hint appended); pending ones note it on stderr
 # and return; green or none return silently.
 ci_ready_gate() {
-  local opts=() pr res verdict detail checks cout cerr crc=0
+  local opts=() pr res verdict detail checks
   while [ $# -gt 1 ]; do
     case "$1" in
       --exit|--hint) die_opt_check ci_ready_gate $# "$@"; opts+=("$1" "$2"); shift 2 ;;
@@ -105,8 +113,7 @@ ci_ready_gate() {
     esac
   done
   pr="$1"
-  ci_counted cout cerr "$pr" || crc=$?
-  res="$(ci_classify "$crc" "$cout" "$cerr")"
+  res="$(ci_counted_probe "$pr")"
   lines_split "$res" verdict detail
   # ci_probe indents each detail line; the message joins them, comma-separated.
   checks="$(list_join "$(sed 's/^ *//' <<<"$detail")")"
@@ -752,7 +759,7 @@ cmd_review() {
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
       local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
-      local commits="" no_ci=0 cout cerr crc
+      local commits="" no_ci=0
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
       require_pr pr
       started="$(date +%s)"
@@ -791,9 +798,7 @@ cmd_review() {
           res="$(ci_probe "$pr" required)"
           if [ "${res%%$'\n'*}" = none ]; then ci_tick; continue; fi
         else
-          crc=0
-          ci_counted cout cerr "$pr" || crc=$?
-          res="$(ci_classify "$crc" "$cout" "$cerr")"
+          res="$(ci_counted_probe "$pr")"
         fi
         verdict="${res%%$'\n'*}"
         case "$verdict" in
