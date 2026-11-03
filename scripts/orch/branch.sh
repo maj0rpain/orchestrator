@@ -32,7 +32,7 @@ new_branch_refusals() {
   local __nbr_out="$1" name="$2" base="$3" remedy="${4:-start again on another base branch}"
   local __nbr_start
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
-  if git fetch --quiet origin "$base" 2>/dev/null; then
+  if git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null; then
     __nbr_start="origin/$base"
   else
     # Only an origin that could not be asked earns the local fallback: one
