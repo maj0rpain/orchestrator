@@ -77,9 +77,7 @@ out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
 assert_status "an active flow on another issue and branch lets it through" "$st" 0
 printf '{\n' >"$rp_state"
 out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
-assert_status "a state.json that cannot be read refuses it (#1334)" "$st" 1
-assert_contains "naming doctor --flow" "$out" \
-  "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_state_unreadable "a state.json that cannot be read (#1334)" 1 "$out" "$st"
 assert_not_contains "printing no report prefix" "$out" "$rp_dir/iteration-"
 rm -f "$rp_state"
 

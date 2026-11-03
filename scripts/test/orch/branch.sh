@@ -816,9 +816,7 @@ assert_eq "printing nothing (done flow)" "$out" ""
 
 state_truncate
 out="$(orch_gh_failing branch busy 2>&1)"; st=$?
-assert_status "a flow whose state.json does not parse is busy" "$st" 3
-assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
-assert_not_contains "printing no jq text" "$out" "parse error"
+assert_busy_unreadable "a flow whose state.json does not parse" "$out" "$st"
 
 sc_clone
 side="$(sc_add fresh)"
@@ -891,10 +889,8 @@ new_repo_with_origin
 orch_gh_failing init held >/dev/null
 state_truncate
 out="$(orch_gh_failing branch off quick/1-x 2>&1)"; st=$?
-assert_status "branch off beside an unparseable state.json exits 3" "$st" 3
-assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_busy_unreadable "branch off beside an unparseable state.json" "$out" "$st"
 assert_contains "and the remedy" "$out" "Run orch.sh doctor --flow, or "
-assert_not_contains "printing no jq text" "$out" "parse error"
 
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
