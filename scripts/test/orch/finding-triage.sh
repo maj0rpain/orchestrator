@@ -753,7 +753,7 @@ out="$(apply 31 ready-for-human --category enhancement --comment-file "$comment"
 assert_status "applies over labels in another casing" "$st" 0
 assert_eq "removing the stale triage and category labels whatever their casing" \
   "$(fake_labels_of 31)" "Review:Major enhancement ready-for-human "
-
+restore_suite_env
 
 # --- finding-triage bundle ----------------------------------------------------
 # Bundle is finding triage's write for a group of already-triaged findings: one

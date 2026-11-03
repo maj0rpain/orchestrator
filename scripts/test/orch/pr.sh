@@ -207,7 +207,7 @@ assert_eq "and on the branch" "$(pr_marker_of orch/16-propen)" "41"
 git config --unset "branch.orch/16-propen.orchestrator-pr"
 state_fixture pr ""
 fake_next_pr 60
-printf "No-Version-Bump\t\t\n" >"$ORCH_GH_FAKE_STORE/labels"; rm -f "$ORCH_GH_FAKE_STORE/pr_label_drops"
+: >"$ORCH_GH_FAKE_STORE/labels"; fake_label No-Version-Bump "" ""; rm -f "$ORCH_GH_FAKE_STORE/pr_label_drops"
 out="$("$ORCH" pr open "Title" "$body" --label no-version-bump 2>"$errf")"; st=$?
 assert_status "a label landed in the repo's casing is not reported missing" "$st" 0
 assert_eq "and the PR carries the repo's casing" "$(fake_pr_labels_of 60)" "No-Version-Bump"

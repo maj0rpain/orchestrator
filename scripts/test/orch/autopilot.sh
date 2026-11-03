@@ -742,7 +742,6 @@ fake_claim_seed 13 otherhost
 # a session that released its claim exits after the next phase's claim is made:
 # the new claim is not this run's to fail, and the new run's pidfile survives
 rm -f "$top/.orchestrator/autopilot/limit"
-rm -f "$launcher_dir/calls"
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" 111
 overlap_launcher="$(mktemp)"
@@ -1566,8 +1565,6 @@ echo
 echo "autopilot label casing"
 tick_fixture
 top="$(git rev-parse --show-toplevel)"
-# repo_label <name>: the repo's label store holds <name>, in that casing.
-repo_label() { printf '%s\tededed\tseeded\n' "$1" >>"$ORCH_GH_FAKE_STORE/labels"; }
 
 fake_issue 7 open ready-for-agent orch:spec Needs-Human
 fake_issue_title 7 "Case 7"
@@ -1587,6 +1584,13 @@ assert_eq "the limit pause holds an issue carrying orch:Limited" "$(tick_calls)"
 rm -f "$top/.orchestrator/autopilot/limit"
 rm -f "$launcher_dir/calls"
 
+# a pickup of an issue carrying orch:Limited removes it once the claim is won
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick picks up the issue carrying orch:Limited" "$(tick_calls)" "1"
+assert_not_contains "its session sees no orch:Limited" "$(grep '^labels:7:' "$launcher_dir/calls" | tail -1)" "orch:Limited"
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
 # the live phase is found under a mixed-case phase label
 printf '7\n' >"$launcher_dir/release"
 fake_issue 7 open ready-for-agent Orch:Spec
@@ -1599,7 +1603,7 @@ rm -f "$launcher_dir/release" "$launcher_dir/calls"
 # end to end: the repo holds Needs-Human; a question is asked as needs-human and
 # stored as Needs-Human; the next tick does not re-run the phase
 : >"$ORCH_GH_FAKE_STORE/labels"
-repo_label Needs-Human
+fake_label Needs-Human ededed seeded
 side7="$top/.orchestrator/checkouts/case-7"
 fake_issue_relabel 7 orch:spec ready-for-agent orch:running
 fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
@@ -1639,3 +1643,4 @@ plan_file "$planf" $'Rounds: 4\nBudget: 5'
 fake_issue 7 open Ready-For-Agent
 out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
 assert_status "start accepts an issue carrying Ready-For-Agent" "$st" 0
+restore_suite_env

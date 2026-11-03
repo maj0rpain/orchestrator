@@ -1391,7 +1391,7 @@ assert_status "label_listed finds a label in another casing" "$(sourced_orch lab
 assert_status "label_listed is whole-line" "$(sourced_orch label_listed $'a\nNeeds-Human' needs >/dev/null; echo $?)" 1
 assert_status "label_listed is literal" "$(sourced_orch label_listed $'a\nb' 'a.*' >/dev/null; echo $?)" 1
 assert_status "list_has stays case-sensitive" "$(sourced_orch list_has $'a\nNeeds-Human' needs-human >/dev/null; echo $?)" 1
-printf 'Needs-Human\tededed\told\n' >"$ORCH_GH_FAKE_STORE/labels"
+: >"$ORCH_GH_FAKE_STORE/labels"; fake_label Needs-Human ededed old
 fake_issue 5 open
 sourced_orch adapter_issue_relabel 5 --add needs-human >/dev/null
 assert_eq "an add stores the repo's casing" "$(fake_labels_of 5)" "Needs-Human "
@@ -1408,3 +1408,4 @@ assert_eq "an issue create stores the repo's casing" "$(fake_labels_of "$n")" "N
 body="$(mktemp)"
 pn="$(sourced_orch adapter_pr_create main feat t "$body" --label needs-human --label Other)"
 assert_eq "the PR-create drop knob matches case-insensitively" "$(sourced_orch adapter_pr_labels "$pn")" "Other"
+restore_suite_env
