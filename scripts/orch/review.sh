@@ -533,11 +533,24 @@ review_standards_realpath() {
   printf '%s/%s\n' "$(cd -P "$dir" && pwd -P)" "${f##*/}"
 }
 
+# review_standards_inside <path>: succeeds when the existing file <path>
+# (repo-relative), every symlink followed, lies under the repo's physical root.
+review_standards_inside() {
+  local real root_real
+  [ -f "$ROOT/$1" ] || return 1
+  real="$(review_standards_realpath "$ROOT/$1")" || return 1
+  root_real="$(cd -P "$ROOT" && pwd -P)"
+  case "$real" in
+    "$root_real"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # review_standards_declared <entry>...: dies unless every entry is a
 # repo-relative path naming a regular file inside the repo, optionally with a
 # #Heading naming one section that must match exactly once.
 review_standards_declared() {
-  local e seg depth segs path n real root_real
+  local e seg depth segs path n
   for e in "$@"; do
     case "$e" in
       /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
@@ -555,12 +568,7 @@ review_standards_declared() {
     done
     [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
     [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
-    real="$(review_standards_realpath "$ROOT/$path")"
-    root_real="$(cd -P "$ROOT" && pwd -P)"
-    case "$real" in
-      "$root_real"/*) ;;
-      *) die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
-    esac
+    review_standards_inside "$path" || die "Standards entry \`$e\` leaves the repo (want a path inside it)"
     [ "$path" = "$e" ] && continue
     n="$(review_standards_heading_count "$path" "${e#*#}")"
     [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"
@@ -578,11 +586,11 @@ review_standards() {
   [ $# -eq 0 ] || die "usage: orch.sh review standards"
   local listed=() hop=() next=() f p span
   for f in CLAUDE.md AGENTS.md; do
-    [ ! -f "$ROOT/$f" ] || listed+=("$f")
+    ! review_standards_inside "$f" || listed+=("$f")
   done
   if [ "${#listed[@]}" -eq 0 ]; then
     for f in CODING_STANDARDS.md CONTRIBUTING.md; do
-      [ ! -f "$ROOT/$f" ] || listed+=("$f")
+      ! review_standards_inside "$f" || listed+=("$f")
     done
   fi
   local decl entries=()
@@ -603,7 +611,7 @@ review_standards() {
     next=()
     for f in ${hop[@]+"${hop[@]}"}; do
       while IFS= read -r p; do
-        [ -f "$ROOT/$p" ] || continue
+        review_standards_inside "$p" || continue
         list_has "$(printf '%s\n' "${listed[@]}")" "$p" && continue
         listed+=("$p"); next+=("$p")
       done < <(review_standards_mentions "$f")
