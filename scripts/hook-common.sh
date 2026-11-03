@@ -45,13 +45,14 @@ hook_read_skill_and_session() {
 
 # Prints the physical path a tool call names - every symlink followed, the
 # form git gives the repo root - or nothing when it names none. Call after
-# hook_read_payload. Claude Code names the file under file_path; Junie's tool
-# input may use path instead, and may give it relative to the working
-# directory, so a relative path is resolved against `cwd`. Always prints a
-# path when one is named: an empty result would make the edit guard allow it.
+# hook_read_payload. Claude Code names the file under file_path, or under
+# notebook_path for NotebookEdit; Junie's tool input may use path instead, and
+# may give it relative to the working directory, so a relative path is resolved
+# against `cwd`. Always prints a path when one is named: an empty result would
+# make the edit guard allow it.
 hook_tool_path() {
   local file
-  file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""')"
+  file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // .tool_input.path // ""')"
   [ -n "$file" ] || return 0
   case "$file" in /*) ;; *) file="$cwd/$file" ;; esac
   hook_physical_path "$(hook_normalize_path "$file")"
