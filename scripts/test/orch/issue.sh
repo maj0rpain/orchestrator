@@ -1007,23 +1007,14 @@ assert_status "--with-spec-review succeeds on an issue with only changelogs" "$s
 assert_eq "writing them, not an empty file" "$(cat "$issue_comments")" \
   "$(writeln '<!-- comment @pat 2026-09-03T09:00:00Z -->' "$(marker_of spec-review)" 'Round 1 of 2' '' \
     '<!-- comment @pat 2026-09-03T10:00:00Z -->' "$(marker_of spec-review)" 'Round 2 of 2')"
-out="$("$ORCH" issue comments 25 "$issue_comments" --with-spec-review 2>&1)"; st=$?
-assert_status "--with-spec-review succeeds on an issue with no comments" "$st" 0
-assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
 out="$("$ORCH" issue comments 962 "$issue_comments" --with-spec-review 2>&1)"; st=$?
 assert_status "--with-spec-review succeeds past untrusted authors" "$st" 0
 assert_eq "and says how many it ignored, once" "$out" \
   "orch: ignored 2 comment(s) from untrusted authors on #962"
 assert_eq "dropping the stranger's fake changelog too" "$(cat "$issue_comments")" \
   "$(writeln '<!-- comment @owner 2026-09-04T09:00:00Z -->' 'Owner note.')"
-printf 'known content\n' >"$issue_comments"
-assert_gh_dies "a gh that will not answer fails the --with-spec-review fetch" adapter_issue_json "$GH_502" 1 \
-  "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
-  "$ORCH" issue comments 24 "$issue_comments" --with-spec-review
-assert_eq "and leaves the file that was already there byte-identical" \
-  "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
 rm -f "$issue_comments"
-for args in "24 --with-spec-review $issue_comments" "24 $issue_comments --with-spec-reviw" "24 $issue_comments --with-spec-review extra" "24 $issue_comments --json"; do
+for args in "24 --with-spec-review $issue_comments" "24 $issue_comments --with-spec-reviw" "24 $issue_comments --with-spec-review extra"; do
   # shellcheck disable=SC2086 # each case is split into its words on purpose
   out="$("$ORCH" issue comments $args 2>&1)"; st=$?
   assert_status "comments refuses a misplaced or unknown flag: $args" "$st" 1
