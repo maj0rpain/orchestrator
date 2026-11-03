@@ -30,7 +30,7 @@ labels_verified() {
 open_issue_read() {
   local __oir_hint=() __oir_state __oir_labels __oir_body __oir_err
   if [ "${1-}" = --hint ]; then
-    [ $# -ge 2 ] || die "open_issue_read: --hint needs a value"
+    die_opt_check open_issue_read $# "$@"
     __oir_hint=(--hint "$2"); shift 2
   fi
   if [ $# -ge 4 ]; then
@@ -113,16 +113,38 @@ comments_render_trusted() {
   jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$kept"
 }
 
-# comments_rendered <adapter> <what> <n> <var>: issue or PR <n>'s trusted
+# comments_trusted [--hint <h>] <adapter> <what> <n> <var>: issue or PR <n>'s
 # comments, read by <adapter> (adapter_issue_comments or adapter_pr_comments),
-# rendered by comments_render_trusted, assigned to <var>; no placeholder for a
-# dropped comment, and the Trust filter's stderr line names <n>. A gh failure
-# dies as "gh could not <what>"; a comment object that does not parse dies as
-# "could not <what>: its comments did not parse", both with status 1.
+# kept to the trusted authors' (Trust module) as a JSON array, assigned to
+# <var>; the Trust filter's stderr line names <n>. A gh failure dies as "gh
+# could not <what>" (--hint passed on to gh_or_die); a comment object that does
+# not parse dies as "could not <what>: its comments did not parse", both with
+# status 1. Out-params through `printf -v`, its locals prefixed so no caller's
+# variable name is shadowed.
+comments_trusted() {
+  local __ct_hint=() __ct_raw __ct_kept
+  if [ "${1-}" = --hint ]; then
+    die_opt_check comments_trusted $# "$@"
+    __ct_hint=(--hint "$2"); shift 2
+  fi
+  gh_or_die ${__ct_hint[@]+"${__ct_hint[@]}"} --out __ct_raw "$2" "$1" "$3"
+  __ct_kept="$(jq -c .comments 2>/dev/null <<<"$__ct_raw" | trust_filter_comments "$3")" \
+    || die "could not $2: its comments did not parse"
+  printf -v "$4" '%s' "$__ct_kept"
+}
+
+# comments_rendered [--hint <h>] <adapter> <what> <n> <var>: comments_trusted's
+# comments rendered through COMMENTS_RENDER_JQ as comments_render_trusted
+# renders them, assigned to <var>; no placeholder for a dropped comment. Its
+# failures and --hint are comments_trusted's.
 comments_rendered() {
-  local __cr_raw __cr_out
-  gh_or_die --out __cr_raw "$2" "$1" "$3"
-  __cr_out="$(comments_render_trusted "$3" <<<"$__cr_raw")" \
+  local __cr_hint=() __cr_kept __cr_out
+  if [ "${1-}" = --hint ]; then
+    die_opt_check comments_rendered $# "$@"
+    __cr_hint=(--hint "$2"); shift 2
+  fi
+  comments_trusted ${__cr_hint[@]+"${__cr_hint[@]}"} "$1" "$2" "$3" __cr_kept
+  __cr_out="$(jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$__cr_kept")" \
     || die "could not $2: its comments did not parse"
   printf -v "$4" '%s' "$__cr_out"
 }
