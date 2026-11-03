@@ -21,8 +21,9 @@
 # ORCH_PERMISSION_MODE defaults to bypassPermissions instead. Local keys in the
 # clone would override .env, so each start removes the clone's local
 # orchestrator.autopilot.* and agent-setting keys, warning for each. Once the
-# clone exists the settings are written in it, `orch.sh autopilot show` validates
-# them, and a refusal keeps what was written and never starts the watcher.
+# clone exists the settings are written in it, `orch.sh autopilot show`
+# validates them, and a refusal keeps what was written and never starts the
+# watcher.
 # The first failing step exits non-zero with an `orch:` line on stderr.
 
 # shellcheck source=orch/common.sh
