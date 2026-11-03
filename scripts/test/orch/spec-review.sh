@@ -1055,6 +1055,33 @@ nightly
 @@ replace
 each night
 @@ end
+@@ item 3 fidelity decline material not wanted
+@@ finding fidelity 1
+@@ summary Leave fidelity 1 be
+@@ anchor
+write one file
+@@ replace
+write one file
+@@ end
+@@ why Out of scope
+@@ item 4 testability decline material not wanted
+@@ finding testability 2
+@@ summary Leave testability 2 be
+@@ anchor
+write one file
+@@ replace
+write one file
+@@ end
+@@ why Out of scope
+@@ item 5 testability decline material not wanted
+@@ finding testability 3
+@@ summary Leave testability 3 be
+@@ anchor
+write one file
+@@ replace
+write one file
+@@ end
+@@ why Out of scope
 BATCH
   printf '%s\n' "$d"
 }

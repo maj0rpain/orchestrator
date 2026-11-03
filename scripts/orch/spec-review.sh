@@ -1428,9 +1428,11 @@ spec_review_tickets_answer() {
 
 # spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s copy into
 # TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
-# apply run has taken that copy, ticket-<t>.md. When the session wrote no
-# ticket-<t>.md, the problem, naming <what>, is appended to SR_PROBLEMS and it
-# returns 1; a copy it cannot read dies, naming <what> too.
+# apply run has taken that copy, ticket-<t>.md. After a hold, the fetched copy
+# is the ticket as the hold run published it (see spec_review_hold, which
+# rebases the ticket copies and keeps its ticket lines). When the
+# session wrote no ticket-<t>.md, the problem, naming <what>, is appended to
+# SR_PROBLEMS and it returns 1; a copy it cannot read dies, naming <what> too.
 spec_review_ticket_load() {
   local j copy file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0
@@ -1605,6 +1607,11 @@ spec_review_tickets_view() {
   esac
 }
 
+# The Tickets lines that report no ticket outcome.
+readonly TICKETS_NO_EDIT="Not checked - no edit applied"
+readonly TICKETS_NO_BREAKDOWN="None - no ticket breakdown"
+readonly TICKETS_NONE_AFFECTED="None - no ticket affected"
+
 # spec_review_tickets_lines: the changelog's Tickets lines, from tickets.md,
 # the ticket answer and the reasons.
 spec_review_tickets_lines() {
@@ -1634,7 +1641,7 @@ spec_review_tickets_lines() {
     out="$out- #${ST_CL_T[$i]} closed, built against the earlier spec: ${ST_CL_WHAT[$i]}"$'\n'
   done
   printf '%s' "${out%$'\n'}"
-  [ -n "$out" ] || printf 'None - no ticket affected'
+  [ -n "$out" ] || printf '%s' "$TICKETS_NONE_AFFECTED"
 }
 
 # spec_review_landed <dir>: the writes <dir>/applied.log records, joined for
@@ -1749,6 +1756,17 @@ spec_review_hold() {
       keep { print }' "$dir/batch.md"
   } >"$dir/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
     || die "could not write $dir/$SPEC_ROUND_FUNDAMENTAL - nothing written to GitHub"
+}
+
+# spec_review_ticket_numbers <dir>: the numbers of <dir>'s ticket-<n>.md files,
+# one per line; the .fetched.md copies are not among them.
+spec_review_ticket_numbers() {
+  local tf tn
+  for tf in "$1"/ticket-*.md; do
+    tn="${tf##*/ticket-}"; tn="${tn%.md}"
+    case "$tn" in ''|*[!0-9]*) continue ;; esac
+    printf '%s\n' "$tn"
+  done
 }
 
 # spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
@@ -1897,9 +1915,8 @@ spec_review_apply() {
   # Each ticket file's fetched copy, taken by the first run that finds the
   # file - the --tickets rerun, as the session fetches tickets after the pause.
   local tf tn
-  for tf in "$dir"/ticket-*.md; do
-    tn="${tf##*/ticket-}"; tn="${tn%.md}"
-    case "$tn" in ''|*[!0-9]*) continue ;; esac
+  for tn in $(spec_review_ticket_numbers "$dir"); do
+    tf="$dir/ticket-$tn.md"
     [ -e "$dir/ticket-$tn.fetched.md" ] \
       || cp "$tf" "$dir/ticket-$tn.fetched.md" 2>/dev/null \
       || die "could not copy ticket-$tn.md to $dir/ticket-$tn.fetched.md - nothing written"
@@ -1923,7 +1940,7 @@ spec_review_apply() {
   ST_N=(); ST_RETIRE=""; TK_T=(); TK_FETCHED=(); TK_TEXT=()
   [ "$text" = "$fetched" ] || changed=1
   if [ -z "$changed" ]; then
-    tickets="Not checked - no edit applied"
+    tickets="$TICKETS_NO_EDIT"
   elif [ -n "$resume" ] && grep -Fxq -- "$(spec_review_label_retire "$issue")" "$dir/applied.log" 2>/dev/null; then
     # The dead run's retire landed, so the live state no longer shows the
     # breakdown it decided on; the rerun keeps that decision.
@@ -1932,7 +1949,7 @@ spec_review_apply() {
     capture kind err cmd_ticket_exists "$issue" || st=$?
     case "$st" in
       0) ;;
-      1) tickets="None - no ticket breakdown" ;;
+      1) tickets="$TICKETS_NO_BREAKDOWN" ;;
       *)
         die "ticket exists #$issue exited $st: $(err_line "$err") - nothing written" ;;
     esac
