@@ -75,6 +75,14 @@ hook_normalize_path() {
   printf '%s' "${out:-/}"
 }
 
+# Prints the path itself when it exists as a directory, else its deepest
+# ancestor that does, or / when none does. Never prints nothing.
+hook_existing_ancestor() {
+  local dir="$1"
+  while [ -n "$dir" ] && [ ! -d "$dir" ]; do dir="${dir%/*}"; done
+  printf '%s' "${dir:-/}"
+}
+
 # Prints the physical path of an absolute, lexically normalized path that may
 # not exist yet: the deepest existing ancestor resolved with cd -P, the
 # missing segments appended, and a final-segment symlink (dangling ones
@@ -83,17 +91,13 @@ hook_normalize_path() {
 # them. Never fails and never prints nothing; an ancestor cd -P cannot enter
 # keeps its lexical form.
 hook_physical_path() {
-  local path="$1" hops=0 max_hops=40 dir base tail resolved target
+  local path="$1" hops=0 max_hops=40 dir tail resolved target
   while :; do
-    tail=""
-    dir="$path"
-    # Walk up to the deepest ancestor that exists as a directory.
-    while [ "$dir" != "/" ] && [ ! -d "$dir" ]; do
-      base="${dir##*/}"
-      tail="/$base$tail"
-      dir="${dir%/*}"
-      [ -n "$dir" ] || dir="/"
-    done
+    # The deepest ancestor that exists as a directory, and the missing tail.
+    dir="$(hook_existing_ancestor "$path")"
+    tail="${path#"${dir%/}"}"
+    [ "$dir" != "/" ] || tail="$path"
+    [ "$path" != "$dir" ] || tail=""
     resolved="$(cd -P "$dir" 2>/dev/null && pwd -P)" || resolved="$dir"
     path="${resolved%/}$tail"
     [ "$resolved" != "/" ] || path="$tail"
