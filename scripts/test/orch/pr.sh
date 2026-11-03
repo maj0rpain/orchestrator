@@ -325,6 +325,17 @@ out="$("$ORCH" pr open "Fifth title" "$body" 2>&1)"; st=$?
 assert_status "restart: a failed body write fails pr open" "$st" 1
 assert_contains "restart: naming the body" "$out" "body"
 assert_contains "restart: and the title that landed" "$out" "title"
+
+# A tag named like the branch outranks it as a bare push source (#2337).
+git config --unset "branch.orch/16-propen.orchestrator-pr"
+state_fixture pr ""
+fake_next_pr 90
+git tag orch/16-propen
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "opens the PR beside a tag named like the branch" "$st" 0
+assert_eq "and prints the PR number" "$out" "90"
+git tag -d orch/16-propen >/dev/null
+
 fake_unfail
 
 assert_contains "help documents --label" "$("$ORCH" help)" \

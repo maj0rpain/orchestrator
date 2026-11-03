@@ -16,7 +16,8 @@ pr_push_and_body() {
   local _pr_pb_why _pr_pb_tmp _pr_pb_keyword=Closes
   # A bare push would rely on set -e, which bash turns off inside the $(...)
   # open_pr's callers run it in (#1300), so the status is checked here.
-  git_push _pr_pb_why -q -u origin "$1" \
+  # Full refs: a tag named like the branch outranks a bare source (#2337).
+  git_push _pr_pb_why -q -u origin "refs/heads/$1:refs/heads/$1" \
     || die "could not push branch $1 to origin - $6: $_pr_pb_why"
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of

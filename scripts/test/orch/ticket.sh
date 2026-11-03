@@ -17,6 +17,10 @@ ticket_fixture() {
   writeln 'Build the thing.' >"$body"
 }
 
+# commit_file <dir> <file> <content>: commit <content> to <file> in <dir>.
+# Shared by this file's merge, same-named tag and reclaim sections.
+commit_file() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
+
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
 # sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`
@@ -1108,8 +1112,6 @@ assert_contains "listed alongside the ops that exist" "$out" "unknown ticket op"
 # checked out. Checked through branches, tips and exit status.
 echo
 echo "ticket merge"
-# tm_commit <dir> <file> <content>: commit <content> to <file> in <dir>.
-tm_commit() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
 # tm_rebasing <dir>: "yes" when a rebase is in progress in <dir>'s checkout.
 tm_rebasing() {
   local d
@@ -1121,9 +1123,9 @@ tm_rebasing() {
 
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
-tm_commit "$wt" ticket.txt one
-tm_commit "$wt" ticket2.txt two
-tm_commit . other.txt landed-first
+commit_file "$wt" ticket.txt one
+commit_file "$wt" ticket2.txt two
+commit_file . other.txt landed-first
 flow_tip="$(git rev-parse orch/5-feature)"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge of a clean ticket succeeds" "$st" 0
@@ -1142,7 +1144,7 @@ assert_status "a merged ticket's worktree then removes without --unmerged" "$st"
 # reading the forked-from branch as checked out nowhere.
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
-tm_commit "$wt" ticket.txt one
+commit_file "$wt" ticket.txt one
 flow_tip="$(git rev-parse orch/5-feature)"
 out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge dies when the checkouts cannot be read" "$st" 1
@@ -1152,8 +1154,8 @@ assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/
 # Conflict: both sides change the same line.
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
-tm_commit "$wt" feature.txt from-ticket
-tm_commit . feature.txt from-flow
+commit_file "$wt" feature.txt from-ticket
+commit_file . feature.txt from-flow
 flow_tip="$(git rev-parse orch/5-feature)"
 ticket_tip="$(git rev-parse orch/5-feature--t7)"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
@@ -1181,8 +1183,8 @@ git -C "$wt" rebase --abort
 # git's first line, never 3.
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
-tm_commit "$wt" ticket.txt one
-tm_commit . other.txt landed-first
+commit_file "$wt" ticket.txt one
+commit_file . other.txt landed-first
 flow_tip="$(git rev-parse orch/5-feature)"
 ticket_tip="$(git rev-parse orch/5-feature--t7)"
 hooks="$(mktemp -d)"
@@ -1211,8 +1213,8 @@ git config --unset core.hooksPath
 # Refusals: each exits 1 and changes nothing.
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
-tm_commit "$wt" ticket.txt one
-tm_commit . other.txt landed-first
+commit_file "$wt" ticket.txt one
+commit_file . other.txt landed-first
 flow_tip="$(git rev-parse orch/5-feature)"
 ticket_tip="$(git rev-parse orch/5-feature--t7)"
 echo dirty >"$wt/README.md"
@@ -1266,8 +1268,8 @@ linked="$(mktemp -d)/linked"
 git worktree add -q -b orch/6-other "$linked"
 cd "$linked" || exit 1
 wt="$("$ORCH" ticket-worktree add 4)"
-tm_commit "$wt" ticket.txt four
-tm_commit . other.txt landed-first
+commit_file "$wt" ticket.txt four
+commit_file . other.txt landed-first
 out="$("$ORCH" ticket merge 4 2>&1)"; st=$?
 assert_status "merge succeeds when the forked-from branch is in a linked worktree" "$st" 0
 assert_eq "fast-forwarding it there" "$(git -C "$linked" rev-parse HEAD)" "$(git rev-parse orch/6-other--t4)"
@@ -1288,13 +1290,11 @@ restore_suite_env
 # full refs. Each case plants the tag at an older commit than the branch's tip.
 echo
 echo "ticket merge beside a same-named tag"
-# tt_commit <dir> <file> <content>: commit <content> to <file> in <dir>.
-tt_commit() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
 tw_repo
 old_commit="$(git rev-parse HEAD~1)"
 wt="$("$ORCH" ticket-worktree add 7)"
-tt_commit "$wt" ticket.txt one
-tt_commit . other.txt landed-first
+commit_file "$wt" ticket.txt one
+commit_file . other.txt landed-first
 git tag orch/5-feature "$old_commit"
 flow_tip="$(git rev-parse refs/heads/orch/5-feature)"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
@@ -1305,7 +1305,7 @@ assert_eq "the ticket branch descends from the parent's tip, not the tag" \
 tw_repo
 old_commit="$(git rev-parse HEAD~1)"
 wt="$("$ORCH" ticket-worktree add 7)"
-tt_commit "$wt" ticket.txt one
+commit_file "$wt" ticket.txt one
 git tag orch/5-feature--t7 "$old_commit"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge succeeds beside a tag named like the ticket branch" "$st" 0
@@ -1319,8 +1319,6 @@ restore_suite_env
 # worktrees and exit status.
 echo
 echo "ticket reclaim"
-# rc_commit <dir> <file> <content>: commit <content> to <file> in <dir>.
-rc_commit() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
 # rc_wt <n>: ticket <n>'s worktree path.
 rc_wt() { printf '%s/.orchestrator/worktrees/t%s\n' "$(pwd -P)" "$1"; }
 # rc_setup <count>: a flow branch with spec issue 90 and <count> published
@@ -1337,7 +1335,7 @@ rc_setup() {
     k=$((7 + i))
     "$ORCH" ticket publish 90 "T$k" "$body" >/dev/null
     "$ORCH" ticket-worktree add "$k" >/dev/null
-    rc_commit "$(rc_wt "$k")" "t$k.txt" "work $k"
+    commit_file "$(rc_wt "$k")" "t$k.txt" "work $k"
   done
   rc_flow
 }
@@ -1358,8 +1356,8 @@ rc_has_worktree() { if [ -e "$(rc_wt "$1")/.git" ]; then echo yes; else echo no;
 rc_has_branch() { if git rev-parse --verify --quiet "refs/heads/orch/5-feature--t$1" >/dev/null; then echo yes; else echo no; fi; }
 # rc_midrebase <n>: leave ticket <n> stopped mid-rebase on a conflict.
 rc_midrebase() {
-  rc_commit "$(rc_wt "$1")" feature.txt from-ticket
-  rc_commit . feature.txt from-flow
+  commit_file "$(rc_wt "$1")" feature.txt from-ticket
+  commit_file . feature.txt from-flow
   git -C "$(rc_wt "$1")" rebase -q orch/5-feature >/dev/null 2>&1 || true
   assert_eq "(fixture) ticket $1 is mid-rebase" \
     "$(cd "$(rc_wt "$1")" && rebase_state)" "rebasing"
@@ -1394,7 +1392,7 @@ rc_setup 1
 rc_report 7
 echo junk >"$(rc_wt 7)/untracked.txt"
 echo more >>"$(rc_wt 7)/t7.txt"
-rc_commit . other.txt landed-first
+commit_file . other.txt landed-first
 out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "reclaim of a reported unmerged dirty ticket succeeds" "$st" 0
 assert_eq "closing it" "$(fake_state_of 7)" "CLOSED"
@@ -1418,8 +1416,8 @@ assert_eq "no rebase is left in progress" \
 rc_setup 2
 rc_report 7
 rc_report 8
-rc_commit "$(rc_wt 7)" feature.txt from-ticket
-rc_commit . feature.txt from-flow
+commit_file "$(rc_wt 7)" feature.txt from-ticket
+commit_file . feature.txt from-flow
 flow_tip="$(git rev-parse orch/5-feature)"
 tip7="$(git rev-parse orch/5-feature--t7)"
 out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
@@ -1449,7 +1447,7 @@ fake_github
 fake_issue 90 open
 rc_flow
 "$ORCH" ticket-worktree add 90 >/dev/null
-rc_commit "$(rc_wt 90)" t90.txt work
+commit_file "$(rc_wt 90)" t90.txt work
 rc_report 90
 "$ORCH" ticket merge 90 >/dev/null 2>&1
 out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
