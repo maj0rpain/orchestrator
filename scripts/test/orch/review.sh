@@ -1665,7 +1665,7 @@ writeln '####### seven' 'Standards: `docs/agents/p.md`' >CONTRIBUTING.md
 assert_eq "a line of seven #s is no heading, so a Standards: line under it is no declaration" \
   "$(dstd)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
 rm -f CONTRIBUTING.md
-# A root file or mention that is an in-repo symlink out of the repo is a missing file (#2177).
+# A root file or mention symlinked out of the repo counts as missing (#2177).
 outside="$out_dir/outside.md"; writeln '# outside' 'See `docs/agents/p.md`.' >"$outside"
 writeln '# claude' 'See `docs/agents/lnk.md` and `docs/agents/p.md`.' >CLAUDE.md
 ln -s "$outside" docs/agents/lnk.md
@@ -1675,7 +1675,8 @@ writeln 'See `docs/agents/lnk.md`.' >docs/agents/hop.md
 assert_eq "a second-hop mention symlinked out of the repo is left off" "$(dstd)" "Standards: CLAUDE.md, docs/agents/hop.md"
 ln -s p.md docs/agents/inlnk.md
 writeln 'See `docs/agents/inlnk.md`.' >docs/agents/hop.md
-assert_eq "a mention symlinked to a file inside the repo is still listed" "$(dstd)" "Standards: CLAUDE.md, docs/agents/hop.md, docs/agents/inlnk.md"
+assert_eq "a mention symlinked to a file inside the repo is still listed" \
+  "$(dstd)" "Standards: CLAUDE.md, docs/agents/hop.md, docs/agents/inlnk.md"
 rm -f docs/agents/hop.md docs/agents/inlnk.md CLAUDE.md
 ln -s "$outside" CLAUDE.md
 assert_eq "a CLAUDE.md symlinked out of the repo is left off" "$(dstd)" "Standards: none"
