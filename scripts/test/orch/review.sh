@@ -1739,6 +1739,7 @@ state_fixture issue 7
 state_fixture pr 9
 fake_github
 fake_pr 9 open
+fake_pr_draft 9
 fake_issue 7 open ready-for-agent orch:review orch:running
 fake_claim_seed 7
 bad="$(state_write_fails_bin)"
