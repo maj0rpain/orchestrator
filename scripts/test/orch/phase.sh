@@ -263,8 +263,7 @@ fake_flow failedadvance
 export ORCHESTRATOR_HOST=claude
 "$ORCH" state set issue 7 >/dev/null
 complete_handoff "$("$ORCH" handoff path implement)"
-bad="$(state_write_fails_bin)"
-out="$(PATH="$bad:$PATH" "$ORCH" phase advance 2>&1)"; st=$?
+out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" phase advance 2>&1)"; st=$?
 assert_ne "a failed phase write exits non-zero" "$st" 0
 assert_contains "naming the key and the state file" "$out" \
   "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
@@ -275,29 +274,3 @@ assert_status "the re-run succeeds" "$st" 0
 assert_eq "recording the implement phase" "$("$ORCH" state get phase)" implement
 restore_suite_env
 
-echo
-echo "phase advance with a failed phase write in an autopilot flow"
-fake_flow failedadvance-ap
-export ORCHESTRATOR_HOST=claude
-"$ORCH" state set issue 7 >/dev/null
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_claim_seed 7
-spec_h="$(mktemp -d)/02-spec.md"
-complete_handoff "$spec_h"
-ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
-bad="$(state_write_fails_bin)"
-out="$(PATH="$bad:$PATH" ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
-assert_ne "a failed phase write exits non-zero" "$st" 0
-assert_contains "naming the phase and the state file" "$out" \
-  "could not record phase implement in $PWD/.orchestrator/state.json"
-assert_contains "and that the claim stays held" "$out" "the claim stays held"
-assert_not_contains "posting no handoff note" "$out" "Handoff posted"
-assert_eq "the label is at the next phase" "$(fake_labels_of 7)" "orch:implement orch:running ready-for-agent "
-assert_eq "the claim is held" "$(fake_claim_held 7)" held
-assert_eq "the phase is unchanged" "$("$ORCH" state get phase)" spec
-out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
-assert_status "the re-run succeeds" "$st" 0
-assert_eq "recording the implement phase" "$("$ORCH" state get phase)" implement
-assert_eq "the label at that phase, running removed" "$(fake_labels_of 7)" "orch:implement ready-for-agent "
-assert_eq "the claim released" "$(fake_claim_held 7)" free
-restore_suite_env

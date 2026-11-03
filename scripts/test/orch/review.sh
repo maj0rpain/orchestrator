@@ -458,15 +458,15 @@ assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 # The PR's head and URL come from GitHub, read before any write. Each case
 # reseeds the store, so each snapshots its own.
-for bad in HEAD ""; do
+for sha in HEAD ""; do
   file_github
-  fake_pr_head 7 "$bad"
+  fake_pr_head 7 "$sha"
   before_bad="$(fake_snapshot)"
   out="$("$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
-  assert_status "refuses a PR head that is not hex ('$bad')" "$st" 1
-  assert_eq "naming the sha, not a field of the round trip ('$bad')" "$out" \
-    "orch: not a sha: $bad (want a hex commit SHA)"
-  assert_eq "and writes nothing ('$bad')" "$(fake_snapshot)" "$before_bad"
+  assert_status "refuses a PR head that is not hex ('$sha')" "$st" 1
+  assert_eq "naming the sha, not a field of the round trip ('$sha')" "$out" \
+    "orch: not a sha: $sha (want a hex commit SHA)"
+  assert_eq "and writes nothing ('$sha')" "$(fake_snapshot)" "$before_bad"
 done
 
 file_github
@@ -1595,15 +1595,6 @@ assert_contains "naming the claim ref" "$out" "delete the claim ref"
 assert_contains "and the writes that landed" "$out" "marked PR #9 ready, moved the phase label to orch:done, recorded phase done, removed orch:running"
 assert_eq "the claim is still held" "$(fake_claim_held 7)" held
 fake_unfail
-fake_issue 7 open ready-for-agent orch:review orch:running
-state_fixture phase review
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
-assert_status "a failed label move dies" "$st" 1
-assert_contains "naming the PR write that landed" "$out" "writes that landed: marked PR #9 ready;"
-assert_eq "recording no phase" "$("$ORCH" state get phase)" "review"
-assert_eq "the claim is still held after it" "$(fake_claim_held 7)" held
-fake_unfail
 restore_suite_env
 
 # --- review known-items in an autopilot flow (#1457) --------------------------
@@ -1823,9 +1814,8 @@ state_fixture pr 7
 fake_github
 fake_pr 7 open orch/1-failedready main
 fake_pr_draft 7
-bad="$(state_write_fails_bin)"
 err_file="$(mktemp)"
-out="$(PATH="$bad:$PATH" "$ORCH" review ready 2>"$err_file")"; st=$?
+out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" review ready 2>"$err_file")"; st=$?
 err="$(cat "$err_file")"
 assert_ne "a failed phase write exits non-zero" "$st" 0
 assert_contains "naming the key and the state file" "$err" \
@@ -1839,31 +1829,3 @@ assert_eq "recording done" "$("$ORCH" state get phase)" "done"
 assert_eq "the PR is ready" "$(fake_pr_draft_of 7)" "no"
 restore_suite_env
 
-echo
-echo "review ready with a failed phase write in an autopilot flow"
-review_flow failedready-ap
-state_fixture issue 7
-state_fixture pr 9
-fake_github
-fake_pr 9 open
-fake_pr_draft 9
-fake_issue 7 open ready-for-agent orch:review orch:running
-fake_claim_seed 7
-bad="$(state_write_fails_bin)"
-err_file="$(mktemp)"
-out="$(PATH="$bad:$PATH" ORCH_AUTOPILOT=1 "$ORCH" review ready 2>"$err_file")"; st=$?
-err="$(cat "$err_file")"
-assert_ne "a failed phase write exits non-zero" "$st" 0
-assert_contains "naming the phase and the state file" "$err" \
-  "could not record phase done in $PWD/.orchestrator/state.json - writes that landed: marked PR #9 ready, moved the phase label to orch:done; the claim stays held"
-assert_eq "printing no PR number" "$out" ""
-assert_eq "the label is orch:done" "$(fake_labels_of 7)" "orch:done orch:running ready-for-agent "
-assert_eq "the claim is held" "$(fake_claim_held 7)" held
-assert_eq "the phase stays review" "$("$ORCH" state get phase)" review
-out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>/dev/null)"; st=$?
-assert_status "the re-run succeeds" "$st" 0
-assert_eq "recording done" "$("$ORCH" state get phase)" "done"
-assert_eq "the PR is ready" "$(fake_pr_draft_of 9)" "no"
-assert_eq "the label at done, running removed" "$(fake_labels_of 7)" "orch:done ready-for-agent "
-assert_eq "the claim released" "$(fake_claim_held 7)" free
-restore_suite_env

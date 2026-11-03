@@ -269,6 +269,17 @@ out="$(sourced_rc 'standing_stop 93 refusal spec "no plan"')"
 assert_contains "a refusal stop failing on the claim delete names every write before it" "$out" "could not delete the claim ref on issue #93: HTTP 500 - writes that landed: added needs-human, posted the refusal comment, removed orch:running; the claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 93)" held
 fake_unfail
+tr_seed 94 orch:spec orch:running
+state_fixture phase spec
+out="$(PATH="$(state_write_fails_bin):$PATH" sourced_rc 'standing_finish 94 implement "wrote the spec"')"
+assert_contains "finish failing on its phase write names the chain" "$out" "could not record phase implement in $PWD/.orchestrator/state.json - writes that landed: wrote the spec, moved the phase label to orch:implement; the claim stays held"
+assert_eq "the label is one step ahead, running kept" "$(fake_labels_of 94)" "orch:implement orch:running "
+assert_eq "the claim stays held" "$(fake_claim_held 94)" held
+assert_eq "the phase stays unrecorded" "$("$ORCH" state get phase)" spec
+sourced_rc 'standing_finish 94 implement "wrote the spec"' >/dev/null
+assert_eq "the re-run leaves the label at the phase, running removed" "$(fake_labels_of 94)" "orch:implement "
+assert_eq "and releases the claim" "$(fake_claim_held 94)" free
+assert_eq "and records the phase" "$("$ORCH" state get phase)" implement
 
 # limit-stop
 tr_seed 60 orch:spec orch:running
