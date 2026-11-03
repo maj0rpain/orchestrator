@@ -37,8 +37,8 @@
 # tests gh's own argv; the fixture gh, prepended later, still wins over it.
 #
 # Every section must pass on its own, as the parallel runner runs each one;
-# where a helper lives is checked by harness.sh's placement section, whose
-# failure message states the rule.
+# where a test helper lives is checked by harness.sh's test-helper placement
+# section, whose failure message states the rule.
 
 # The suite's own directory, walked to once; every path below builds on it.
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,6 +59,8 @@ test_jobs_lower_priority
 source "$TEST_DIR/test_tree.sh"
 # shellcheck source=tally.sh
 source "$TEST_DIR/tally.sh"
+# shellcheck source=fifo.sh
+source "$TEST_DIR/fifo.sh"
 SETUP_FILE="$SECTION_DIR/setup.sh"
 
 # The temp root. Every invocation - the parallel runner, each of its children,
@@ -112,6 +114,14 @@ trap test_jobs_stop_descendants INT TERM
 # Exits 1 when any child failed. Buffers live in one temp directory under the
 # temp root; an interrupt also kills the running children and waits for them
 # to exit.
+#
+# Each section of a parallel run has a deadline, ORCH_TEST_SECTION_TIMEOUT whole
+# seconds (default 600), counted from the child's own start, not from when it
+# queued for a slot. Past it the runner stops the section's whole process tree
+# (test_jobs_stop_tree), prints its output so far, and adds a FAIL "section
+# '<title>' timed out" ("after <N>s; its process tree was stopped"). Only the
+# parallel run validates the variable (an invalid value exits 1 before any
+# section); a sequential run, each section child included, ignores it.
 #
 # Each job draws a slot from the job pool (test_jobs.sh) for as long as it
 # runs, and a sequential run holds one for its whole run, so concurrent runs
@@ -323,7 +333,12 @@ fi
 
 orch_buf="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create a temp directory for the section buffers" >&2; exit 1; }
+orch_timeout="${ORCH_TEST_SECTION_TIMEOUT-600}"
+test_jobs_require_positive orch_test.sh ORCH_TEST_SECTION_TIMEOUT "$orch_timeout" || exit 1
+orch_timeout=$((10#$orch_timeout))
 orch_pids=()
+orch_starts=()
+orch_timed_out=()
 orch_sections=()
 # Kill the children, then wait for each to exit, so the root is removed
 # only once no child can still write into it.
@@ -349,11 +364,22 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
     ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
       ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
-      bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 8>&- &
+      test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" &
     orch_pids[orch_started]=$!
+    orch_starts[orch_started]=$SECONDS
     test_jobs_slot_release "${orch_pids[orch_started]}"
     orch_started=$((orch_started + 1))
     orch_running=$((orch_running + 1))
+  done
+  # Stop the tree of any child past its deadline, counted from its start. The
+  # clock counts whole seconds, so only a difference above the deadline proves
+  # the full deadline has passed.
+  for ((orch_i = orch_flushed; orch_i < orch_started; orch_i++)); do
+    if kill -0 "${orch_pids[$orch_i]}" 2>/dev/null &&
+      [ $((SECONDS - orch_starts[orch_i])) -gt "$orch_timeout" ]; then
+      orch_timed_out[orch_i]=1
+      test_jobs_stop_tree "${orch_pids[$orch_i]}"
+    fi
   done
   # Print every finished child next in file order.
   orch_progress=0
@@ -364,17 +390,24 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     cat "$orch_buf/$orch_pos.out"
     orch_counts=""
     [ -f "$orch_buf/$orch_pos.counts" ] && orch_counts="$(cat "$orch_buf/$orch_pos.counts")"
-    case "$orch_counts" in
-      [0-9]*' '[0-9]*' '[0-9]*)
-        read -r orch_child_pass orch_child_fail orch_child_skip <<<"$orch_counts"
-        orch_pass=$((orch_pass + orch_child_pass)); orch_fail=$((orch_fail + orch_child_fail))
-        orch_skip=$((orch_skip + orch_child_skip))
-        [ "$orch_child_fail" -eq 0 ] || orch_any_failed=1 ;;
-      *)
-        print_fail "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")' reported no counts" \
-          "it exited $orch_status before its summary"
-        orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
-    esac
+    orch_title="$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")"
+    if [ -n "${orch_timed_out[$orch_flushed]:-}" ]; then
+      print_fail "section '$orch_title' timed out" \
+        "after ${orch_timeout}s; its process tree was stopped"
+      orch_fail=$((orch_fail + 1)); orch_any_failed=1
+    else
+      case "$orch_counts" in
+        [0-9]*' '[0-9]*' '[0-9]*)
+          read -r orch_child_pass orch_child_fail orch_child_skip <<<"$orch_counts"
+          orch_pass=$((orch_pass + orch_child_pass)); orch_fail=$((orch_fail + orch_child_fail))
+          orch_skip=$((orch_skip + orch_child_skip))
+          [ "$orch_child_fail" -eq 0 ] || orch_any_failed=1 ;;
+        *)
+          print_fail "section '$orch_title' reported no counts" \
+            "it exited $orch_status before its summary"
+          orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
+      esac
+    fi
     [ "$orch_status" -eq 0 ] || orch_any_failed=1
     orch_flushed=$((orch_flushed + 1))
     orch_progress=1

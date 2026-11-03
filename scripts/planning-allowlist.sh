@@ -4,8 +4,9 @@
 #
 # The allowlist holds the files a planning session may legitimately write:
 # agent docs (setup configuration the grilling hook itself asks for), tickets
-# wayfinder writes under .scratch/ on a local tracker, and the flow's own state
-# under .orchestrator/. The records - the glossary and ADRs - are not on it:
+# wayfinder writes under .scratch/ on a local tracker, and scratch files
+# under .orchestrator/ (never its flow state or nested checkouts). The records -
+# the glossary and ADRs - are not on it:
 # planning records a glossary or ADR change as spec wording, word for word, not
 # as an edit, so it lands with the change it describes. The edit guard
 # (hook-guard.sh) denies edits outside the allowlist during planning; the
@@ -18,6 +19,12 @@
 # Entries ending in "/" are directory prefixes; the rest are exact paths.
 # All are relative to the repo root.
 PLANNING_ALLOWLIST=(docs/agents/ .scratch/ .orchestrator/)
+
+# Paths under an allowlisted prefix that are not planning artifacts, so they
+# stay guarded: the flow state file, which only orch.sh writes, and the
+# side-checkout and ticket-worktree directories, which hold other checkouts'
+# source. Same entry format as the allowlist.
+PLANNING_EXCLUSIONS=(.orchestrator/state.json .orchestrator/checkouts/ .orchestrator/worktrees/)
 
 # The planning records: decisions planning never changes in place. Same entry
 # format as the allowlist. The glossary is GLOSSARY.md / GLOSSARY-MAP.md,
@@ -39,10 +46,16 @@ planning_list_match() {
   return 1
 }
 
+# planning_excluded <repo-relative path> - succeeds when the path matches one of
+# the exclusions.
+planning_excluded() {
+  planning_list_match "$1" "${PLANNING_EXCLUSIONS[@]}"
+}
+
 # planning_allowlisted <repo-relative path> - succeeds when the path is inside
 # the planning allowlist.
 planning_allowlisted() {
-  planning_list_match "$1" "${PLANNING_ALLOWLIST[@]}"
+  ! planning_excluded "$1" && planning_list_match "$1" "${PLANNING_ALLOWLIST[@]}"
 }
 
 # planning_record <repo-relative path> - succeeds when the path is a planning

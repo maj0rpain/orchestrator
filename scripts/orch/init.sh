@@ -58,7 +58,7 @@ validate_adopted_issue() {
   label="$(triage_label_for ready-for-agent)"
   open_issue_read --hint "check it exists and gh is authenticated" "$issue" \
     "issue #$issue is not open - adoption requires an open issue." labels
-  list_has "$labels" "$label" \
+  label_listed "$labels" "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
 }
 
