@@ -39,8 +39,8 @@ fork_new_branch() {
   # --no-track: the base is recorded in the branch's own config, so the
   # upstream branch.autoSetupMerge would set is never wanted; pr publish sets
   # the real one on the first push.
-  git checkout -q --no-track -b "$name" "origin/$base" 2>/dev/null \
-    || git checkout -q --no-track -b "$name" "$base"
+  git checkout -q --no-track -b "$name" "refs/remotes/origin/$base" 2>/dev/null \
+    || git checkout -q --no-track -b "$name" "refs/heads/$base"
 }
 
 # branch_upstream <branch>: prints <branch>'s upstream ref in full
@@ -323,7 +323,7 @@ cmd_branch_sync() {
   git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch $base from origin - nothing was synced"
   tip="$(git rev-parse "refs/remotes/origin/$base")"
-  if ! git merge --quiet --no-edit "origin/$base" >/dev/null 2>&1; then
+  if ! git merge --quiet --no-edit "refs/remotes/origin/$base" >/dev/null 2>&1; then
     if merge_in_progress "$ROOT"; then
       warn "merging origin/$base into $branch hit a conflict - the merge is left in progress; resolve and commit it, then rerun orch.sh branch sync"
       exit 3
