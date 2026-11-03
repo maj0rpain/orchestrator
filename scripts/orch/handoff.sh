@@ -258,6 +258,18 @@ handoff_comment_missing() {
   die "issue #$1 has no $2 handoff comment${3:+ - post it with handoff post $3}"
 }
 
+# handoff_comment_status <status> <issue> <name> [<hint>]: a handoff comment
+# read's reaction to its status - nothing on 0, handoff_comment_missing on 1,
+# exit 1 on any other: a failed write, its line already on stderr, so it never
+# reads as a missing handoff.
+handoff_comment_status() {
+  case "$1" in
+    0) ;;
+    1) handoff_comment_missing "$2" "$3" "${4:-}" ;;
+    *) exit 1 ;;
+  esac
+}
+
 # handoff_file_invalid <file> <hint>: dies saying the handoff file is not
 # valid, with a fix to make, then ", <hint>".
 handoff_file_invalid() {
@@ -340,7 +352,8 @@ handoff_read() { "handoff_$(handoff_store)_read" "$@"; }
 
 # handoff_fetch_due <phase>: fetches every handoff due at <phase> where the
 # adapter keeps them elsewhere than the handoff directory, reading the issue's
-# comments once. Non-zero, never dying, when they cannot be read.
+# comments once. Never dies: 1 when they cannot be read, 2 when a copy cannot
+# be written (its line on stderr).
 handoff_fetch_due() { "handoff_$(handoff_store)_fetch_due" "$@"; }
 
 # handoff_path <phase> <file>: what `handoff path` prints for <file>, the
@@ -406,7 +419,7 @@ handoff_comment_read() {
   local file="$1" issue="" st=0
   require_issue issue
   handoff_comment_locate "$file" || st=$?
-  case "$st" in 0) ;; 1) handoff_comment_missing "$issue" "${file%.md}" "${2:-}" ;; *) exit 1 ;; esac
+  handoff_comment_status "$st" "$issue" "${file%.md}" "${2:-}"
 }
 
 # handoff_comment_fetched <file>: prints the scratch path; non-zero when the
@@ -419,24 +432,28 @@ handoff_comment_fetched() {
 # handoff_comment_fetch_due <phase>: requires the recorded issue, clears the
 # scratch copy of every handoff due at <phase>, reads the comments once and
 # writes each live one to the scratch directory. A handoff with no live comment
-# is absent. A failed read leaves no copy and returns non-zero, gh's reason in
-# TIMELINE_REASON.
+# is absent. A failed read leaves no copy and returns 1, gh's reason in
+# TIMELINE_REASON. A copy that cannot be written is absent too, its line on
+# stderr, and the loop goes on to write the others, then returns 2.
 handoff_comment_fetch_due() {
-  local issue due
+  local issue due st=0
   require_issue issue
   for due in $(handoffs_due "$1"); do rm -f "$HANDOFF_SCRATCH_DIR/$due"; done
   timeline_read "$issue" || return 1
   for due in $(handoffs_due "$1"); do
-    handoff_comment_write "${due%.md}" "$HANDOFF_SCRATCH_DIR/$due" || true
+    handoff_comment_write "${due%.md}" "$HANDOFF_SCRATCH_DIR/$due" || [ $? -eq 1 ] || st=2
   done
+  return "$st"
 }
 
 # handoff_comment_path <phase> <file>: fetches everything due at <phase> with
 # one read, then resolves <file> from the scratch directory.
 handoff_comment_path() {
-  local issue
+  local issue st=0
   require_issue issue
-  handoff_comment_fetch_due "$1" || timeline_die "$issue"
+  handoff_comment_fetch_due "$1" || st=$?
+  [ "$st" -ne 1 ] || timeline_die "$issue"
+  [ "$st" -eq 0 ] || exit 1
   handoff_comment_fetched "$2" || handoff_comment_missing "$issue" "${2%.md}"
 }
 
@@ -505,7 +522,7 @@ cmd_handoff() {
       require_issue issue
       local st=0
       handoff_comment_fetch "$issue" "$1" "$2" || st=$?
-      case "$st" in 0) ;; 1) handoff_comment_missing "$issue" "$1" ;; *) exit 1 ;; esac
+      handoff_comment_status "$st" "$issue" "$1"
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"

@@ -487,6 +487,22 @@ fake_comment 7 someone 2030-01-01T00:00:00Z "unrelated chatter"
 assert_contains "the newest tagged comment wins" "$(cat "$fetched")" "Newer decisions."
 assert_eq "an older one is left in place" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "3"
 
+# a failed scratch copy at handoff path is a write failure, never a missing
+# handoff
+scratch="$(dirname "$("$ORCH" handoff path spec 2>/dev/null)")"
+chmod a-w "$scratch"
+out="$("$ORCH" handoff path spec 2>&1)"; st=$?
+chmod u+w "$scratch"
+assert_status "handoff path with an unwritable scratch copy fails" "$st" 1
+assert_contains "saying it could not write" "$out" "orch: could not write $scratch/01-plan.md"
+assert_not_contains "and nothing about a missing handoff" "$out" "has no 01-plan handoff comment"
+
+# an empty handoff body is written as an empty file
+fake_comment 7 someone 2030-01-01T12:00:00Z "$(marker_of handoff 01-plan)"
+"$ORCH" handoff fetch 01-plan "$fetched" >/dev/null 2>&1; st=$?
+assert_status "an empty handoff body is fetched" "$st" 0
+assert_eq "as an empty file" "$(wc -c <"$fetched" | tr -d ' ')" "0"
+
 # a retired newest comment reads as no handoff
 fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired)"
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?

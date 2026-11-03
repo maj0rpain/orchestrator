@@ -146,7 +146,7 @@ autopilot_plan_value() {
   st=0
   handoff_comment_fetch "$issue" 01-plan "$file" || st=$?
   [ "$st" -eq 0 ] || rm -f "$file"
-  case "$st" in 0) ;; 1) handoff_comment_missing "$issue" 01-plan ;; *) exit 1 ;; esac
+  handoff_comment_status "$st" "$issue" 01-plan
   value="$(autopilot_block_values "$file" "$1")"
   rm -f "$file"
   is_positive_int "$value" ||
