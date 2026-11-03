@@ -41,11 +41,12 @@ if [ "$(git -C "$dir" rev-parse --is-inside-git-dir 2>/dev/null)" = true ]; then
   # answers --show-toplevel with its own tree, so this is asked first: judge the
   # file against the working tree above the outermost .git it sits in.
   [ "$(git -C "$dir" rev-parse --is-bare-repository 2>/dev/null)" = false ] || exit 0
-  gitdir="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
-  case "$gitdir" in
-    */.git/*) gitdir="${gitdir%%/.git/*}/.git" ;;
+  common_gitdir="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
+  outer_gitdir="$common_gitdir"
+  case "$common_gitdir" in
+    */.git/*) outer_gitdir="${common_gitdir%%/.git/*}/.git" ;;
   esac
-  root="$(cd "${gitdir%/*}" && pwd -P)" || exit 0
+  root="$(cd "${outer_gitdir%/*}" && pwd -P)" || exit 0
 elif ! root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)"; then
   exit 0
 fi
