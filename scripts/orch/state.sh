@@ -59,8 +59,9 @@ state_write_string() {
     die "could not record $1 in $STATE - the flow is unchanged"
 }
 
-# require_state [die2]: dies unless an active flow's state file exists - with
-# die2 for a command that reserves exit 1 for a meaningful "no".
+# require_state [die2]: dies unless an active flow's state file exists and
+# parses (require_state_exists, then require_state_readable) - with die2 for a
+# command that reserves exit 1 for a meaningful "no".
 # shellcheck disable=SC2120 # die2 is passed by spec_phase_guard, in spec.sh
 require_state() {
   require_state_exists "$@"

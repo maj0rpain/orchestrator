@@ -244,7 +244,7 @@ out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
 assert_state_unreadable "handoff validate" 1 "$out" "$st"
 restore_suite_env
 
-# --- handoff section--------------------------------------------------------
+# --- handoff section --------------------------------------------------------
 # The review loop's driver reads Rejected alternatives and Deviations through
 # this rather than reading whole handoffs, so it has to print exactly one
 # section's body and nothing of its neighbours.
