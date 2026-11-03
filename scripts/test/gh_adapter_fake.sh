@@ -650,6 +650,18 @@ adapter_pr_refs() {
   if [ -f "$d/commits" ]; then cat "$d/commits"; else printf '%s\n' "$oid"; fi
 }
 
+# adapter_pr_url_head <n>: the stored PR's url (default
+# https://github.com/o/r/pull/<n>), then its head_oid as stored - an empty
+# seeded head comes back empty - or forty zeros when the file is absent.
+adapter_pr_url_head() {
+  local d
+  ! fake_failing adapter_pr_url_head || return 1
+  fake_pr_known "$1" || return 1
+  d="$(fake_pr_dir "$1")"
+  if [ -f "$d/url" ]; then cat "$d/url"; else printf 'https://github.com/o/r/pull/%s\n' "$1"; fi
+  if [ -f "$d/head_oid" ]; then cat "$d/head_oid"; else fake_pr_head_oid "$d"; fi
+}
+
 # adapter_pr_ready <n>: the stored PR no longer a draft.
 adapter_pr_ready() {
   ! fake_failing adapter_pr_ready || return 1

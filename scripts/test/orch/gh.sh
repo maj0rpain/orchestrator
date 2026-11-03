@@ -858,6 +858,19 @@ out="$(contract adapter_pr_refs 58 2>&1)"; st=$?
 assert_status "pr refs: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
+url_jq='(.url // ""), (.headRefOid // "")'
+gh_reply 0 $'https://github.com/acme/widgets/pull/57\nbbbb\n' '' \
+  pr view 57 --json url,headRefOid --jq "$url_jq"
+out="$(contract adapter_pr_url_head 57 2>&1)"; st=$?
+assert_status "pr url head: reads the PR's URL and head" "$st" 0
+assert_eq "the URL on the first line, the head SHA on the second" \
+  "$out" "$(writeln https://github.com/acme/widgets/pull/57 bbbb)"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' \
+  pr view 58 --json url,headRefOid --jq "$url_jq"
+out="$(contract adapter_pr_url_head 58 2>&1)"; st=$?
+assert_status "pr url head: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
 gh_reply 0 '✓ Pull request acme/widgets#57 is marked as "ready for review"' '' pr ready 57
 out="$(contract adapter_pr_ready 57 2>&1)"; st=$?
 assert_status "pr ready: marks the PR ready" "$st" 0
