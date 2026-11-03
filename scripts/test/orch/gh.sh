@@ -485,6 +485,32 @@ fake_pr 73 open topic main
 (cd "$close_repo/noorigin" && faked adapter_pr_close 73 "Redone.")
 assert_eq "pr close: an unreadable origin still closes the PR" "$(cat "$ORCH_GH_FAKE_STORE/prs/73/state")" "CLOSED"
 assert_eq "and appends its comment" "$(fake_pr_comments_of 73)" "Redone."
+# One head rule for every read of a PR's head: absent is forty zeros, present is
+# as stored, so an empty head stands for GitHub's null headRefOid. A sentinel
+# keeps the trailing empty line a command substitution would strip.
+fake_github
+zeros=0000000000000000000000000000000000000000
+fake_pr 80 merged topic main
+fake_pr_head 80 ""
+out="$(faked adapter_pr_refs 80; echo x)"
+assert_eq "gh fake: pr refs of an empty head prints an empty line, the branches and no commit" \
+  "$out" "$(writeln '' topic main x)"
+assert_eq "its merged-PRs read prints the empty head in its slot" \
+  "$(faked adapter_prs_merged topic main)" "$(printf '80\t\tfalse')"
+out="$(faked adapter_pr_url_head 80; echo x)"
+assert_eq "its URL-and-head read prints the URL, then an empty line" \
+  "$out" "$(writeln https://github.com/o/r/pull/80 '' x)"
+fake_pr 81 merged topic2 main
+assert_eq "an absent head reads as forty zeros from the refs read, as head and commit" \
+  "$(faked adapter_pr_refs 81)" "$(writeln "$zeros" topic2 main "$zeros")"
+assert_eq "from the merged-PRs read" \
+  "$(faked adapter_prs_merged topic2 main)" "$(printf '81\t%s\tfalse' "$zeros")"
+assert_eq "and from the URL-and-head read" \
+  "$(faked adapter_pr_url_head 81)" "$(writeln https://github.com/o/r/pull/81 "$zeros")"
+fake_pr 82 open topic3 main
+fake_pr_head 82 abc123
+assert_eq "a non-empty head with no seeded commits is its own single commit" \
+  "$(faked adapter_pr_refs 82)" "$(writeln abc123 topic3 main abc123)"
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"

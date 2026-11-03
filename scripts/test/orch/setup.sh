@@ -483,7 +483,7 @@ fake_github() {
 }
 
 # fake_pr_head <n> <sha> [commit...]: seeds PR #n's head SHA and its commits,
-# oldest first - given none, the head alone.
+# oldest first - given none, the head alone, or none when the head is empty.
 fake_pr_head() {
   local d="$ORCH_GH_FAKE_STORE/prs/$1"
   printf '%s\n' "$2" >"$d/head_oid"
