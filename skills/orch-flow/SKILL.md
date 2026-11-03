@@ -67,7 +67,8 @@ session, which holds the only copy of the plan.
    Starting over a `done` flow archives it automatically and reports where.
    `init` exits 3, and only then, in a busy checkout: a flow still
    mid-pipeline (`spec`/`implement`/`review`), or a quick implementation
-   still running here - a branch the plugin made that has no PR yet. Dirty
+   still running here - a branch the plugin made that has no PR yet and was
+   not retired by a redo. Dirty
    paths are not a busy signal here: they get the exit-1 refusal above.
    **On exit 3, and on no other failure**, offer the human a side checkout
    as a multiple-choice question, quoting the busy line `init` printed: start
@@ -314,8 +315,10 @@ from `fundamental.md`, as the round's first ask wrote them) and stop: the
 phase never assumes the recommendations. With a reply, translate it into
 `spec-review apply`'s answer grammar over the fundamental items, run
 `bash "$ORCH" spec-review apply <dir> <answer> --round <k>/<n>` again - it
-applies only the held-back items, posts the round's one changelog and removes
-`fundamental.md` - and go on to the round's pause, or, after round n, to step 5.
+applies the whole batch in batch order (the other items as recommended),
+follows the tickets, publishes the body, posts the round's one changelog and
+removes `fundamental.md` - and go on to the round's pause, or, after round n,
+to step 5.
 Rounds run through the `orch-spec-review` skill, which runs unattended in
 autopilot; step 5's breakdown runs `orch-to-tickets`' **Unattended breakdown**.
 A plan amendment after `apply` (a declined `contradicts the plan` item) is
@@ -337,8 +340,7 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    discard command and touching nothing. Relay that line and tell the human to
    run the command if the changes are not wanted, or commit them, then run
    `/orchestrator:next` again. When it exits 3, the checkout is a busy
-   checkout - a branch the plugin made that has no PR yet, as after `redo
-   review` of a flow whose PR opened before the PR marker existed. Stop the
+   checkout - a branch the plugin made that has no PR yet. Stop the
    phase with the state left where it is, relay the busy line it printed, and
    tell the human to switch off the named branch, then run
    `/orchestrator:next` again. The flow's state already exists here, so it is

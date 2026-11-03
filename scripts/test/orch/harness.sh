@@ -13,6 +13,40 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
+# slot_hold <pool> <slot>: creates <pool> and holds <slot>'s lock in a
+# background process, its pid in SLOT_HOLDER. The holder opens the fifo's write
+# end on fd 8, then opens and locks the slot file on fd 9, and writes the ready
+# line only when both worked; the read returns 1 on EOF (the holder died first)
+# or after 10 seconds. SLOT_HOLDER names the holder on that path too, so
+# slot_release is safe after it.
+slot_hold() {
+  local fifo line
+  mkdir -p "$1"
+  fifo="$(mktemp -u)"
+  mkfifo "$fifo" || return 1
+  bash -c 'exec 8>"$2" && exec 9>>"$1" && flock 9 && echo ready >&8 && exec 8>&- && exec sleep 60' _ "$1/slot.$2" "$fifo" &
+  SLOT_HOLDER=$!
+  read -r -t 10 line <"$fifo" || { rm -f "$fifo"; return 1; }
+  rm -f "$fifo"
+}
+# slot_release: kills the holder slot_hold started, and waits for it.
+slot_release() { kill -9 "$SLOT_HOLDER" 2>/dev/null; wait "$SLOT_HOLDER" 2>/dev/null; return 0; }
+# notice_wait <file>: waits, up to 5 seconds, for the waiting notice in <file>;
+# returns 0 either way, the assertion after it reports a missing notice.
+notice_wait() {
+  local _
+  for _ in $(seq 100); do
+    grep -q 'waiting for a job slot' "$1" 2>/dev/null && break
+    sleep 0.05
+  done
+  return 0
+}
+# pool_cpu_file <file> <slots>: writes a CPU quota file of 2 CPUs per slot (a
+# quota of 200000 per slot), which a 50% pool share, as jp_run sets, sizes to
+# <slots> slots. Under another share the slot count follows that share: at the
+# default 75%, 1 still gives 1 slot (1.5 rounded down).
+pool_cpu_file() { printf '%s 100000\n' "$(($2 * 200000))" >"$1"; }
+
 # stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
 # of all.sh, test_jobs.sh and report.sh beside a passing stub for each name in
 # SUITES (suites_read first), with <dir>/bin holding links to the tools all.sh
@@ -207,15 +241,21 @@ name_placement() {
 # the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
 # module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
 gh_op_placement() {
-  local rc=0 out="" part
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_MULTI_FIELD_OPS" ./orch/gh.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="$part"
-  rc=0
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_TRUST_READ_OPS" ./orch/gh.sh ./orch/trust.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="${out:+$out
+  local rc=0 out="" part ops owners pair
+  local pairs=(
+    "$GH_MULTI_FIELD_OPS|./orch/gh.sh"
+    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
+  )
+  for pair in "${pairs[@]}"; do
+    ops="${pair%%|*}" owners="${pair#*|}"
+    rc=0
+    # owners is a space-separated path list: split it into arguments
+    # shellcheck disable=SC2086
+    part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$ops" $owners)" || rc=$?
+    [ "$rc" -ne 2 ] || return 2
+    [ -z "$part" ] || out="${out:+$out
 }$part"
+  done
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort -u
   return 1
@@ -1395,9 +1435,9 @@ jp_copy="$(planted_copy <<'PLANTED'
 PLANTED
 )"
 jp_suite="$jp_copy/scripts/test/orch_test.sh"
-printf "400000 100000\n" >"$jp_dir/cpu2"
-printf "200000 100000\n" >"$jp_dir/cpu1"
-printf "800000 100000\n" >"$jp_dir/cpu4"
+pool_cpu_file "$jp_dir/cpu2" 2
+pool_cpu_file "$jp_dir/cpu1" 1
+pool_cpu_file "$jp_dir/cpu4" 4
 # jp_run <slots> <pool dir> [VAR=value...] -- <ORCH_TEST_ONLY> <jobs>: the
 # planted suite on a pool of <slots> slots, its stderr in $jp_dir/err.
 jp_run() {
@@ -1407,14 +1447,6 @@ jp_run() {
   env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu$slots" ORCH_TEST_POOL_DIR="$pool" \
     JP_LOG="$jp_log" JP_POOL="$pool" JP_SUITE="$jp_suite" ORCH_TEST_QUIET=1 \
     ORCH_TEST_ONLY="$2" ORCH_TEST_JOBS="$3" "${extra[@]}" bash "$jp_suite" >/dev/null 2>"${jp_err:-$jp_dir/err}"
-}
-# jp_hold <pool> <slot>: hold that slot's lock in a background process, its
-# pid in jp_holder.
-jp_hold() {
-  mkdir -p "$1"
-  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$1/slot.$2" &
-  jp_holder=$!
-  until ! flock -n "$1/slot.$2" true; do sleep 0.05; done
 }
 jp_notice='waiting for a job slot'
 
@@ -1439,33 +1471,30 @@ assert_contains "the notice names the runner and the slots in use" "$(cat "$jp_e
 
 # A killed holder's slot is freed.
 rm -rf "$jp_dir/pool2"
-jp_hold "$jp_dir/pool2" 1
+slot_hold "$jp_dir/pool2" 1 || bad "holds the slot"
 : >"$jp_log"
 jp_run 1 "$jp_dir/pool2" -- '^pool a$' 2 &
 jp_p1=$!
-for _ in $(seq 100); do
-  grep -q "$jp_notice" "$jp_dir/err" 2>/dev/null && break
-  sleep 0.05
-done
+notice_wait "$jp_dir/err"
 assert_eq "a run on a pool whose one slot is held waits" \
   "$(grep -c "$jp_notice" "$jp_dir/err")" "1"
 assert_eq "and runs nothing while the slot is held" "$(grep -c '^+' "$jp_log")" "0"
-kill -9 "$jp_holder"
-wait "$jp_holder" 2>/dev/null
+slot_release
 wait "$jp_p1"; jp_s1=$?
 assert_status "the run finishes once the holder is killed" "$jp_s1" 0
 assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
 
 # CI bypasses the pool.
-jp_hold "$jp_dir/pool2" 1
+slot_hold "$jp_dir/pool2" 1 || bad "holds the slot"
 : >"$jp_log"
 jp_run 1 "$jp_dir/pool2" CI=true -- '^pool a$' 2; jp_s1=$?
 assert_status "a run under CI ignores a fully held pool" "$jp_s1" 0
 assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+slot_release
 
 # Another HOME has its own pool.
 mkdir "$jp_dir/home1" "$jp_dir/home2"
-jp_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1
+slot_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1 || bad "holds the slot"
 : >"$jp_log"
 timeout 30 env -u CI -u ORCH_TEST_POOL_DIR -u ORCH_TEST_POOL_PERCENT HOME="$jp_dir/home2" \
   ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" \
@@ -1475,7 +1504,25 @@ assert_status "a run under another HOME passes while the first HOME's slot is he
 assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
 assert_eq "and has drawn its slot from its own pool" \
   "$(on_disk "$jp_dir/home2/.cache/orchestrator/test-job-pool/slot.1")" "present"
-kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
+slot_release
+
+# slot_hold fails on a slot it cannot lock: the slot path is a directory.
+mkdir -p "$jp_dir/pool11/slot.1"
+jp_t0=$SECONDS
+slot_hold "$jp_dir/pool11" 1 2>/dev/null; jp_s1=$?
+assert_status "slot_hold returns 1 on a slot path it cannot lock" "$jp_s1" 1
+# A read that timed out would also return 1, after 10s: the EOF path is quicker.
+assert_eq "and returns on the holder's EOF, well within its read timeout" \
+  "$(( SECONDS - jp_t0 < 5 ))" "1"
+slot_release
+
+# A released holder no longer runs and no longer holds the lock.
+slot_hold "$jp_dir/pool13" 1 || bad "holds the slot"
+slot_release
+kill -0 "$SLOT_HOLDER" 2>/dev/null; jp_s1=$?
+assert_status "a released holder is no longer running" "$jp_s1" 1
+flock -n "$jp_dir/pool13/slot.1" true; jp_s1=$?
+assert_status "and its slot's lock is free" "$jp_s1" 0
 
 # ORCH_TEST_JOBS caps the ask, and does not bypass the pool.
 : >"$jp_log"
@@ -1524,11 +1571,9 @@ jp_run 1 /proc/no/such/pool -- '^pool a$' 2; jp_s1=$?
 assert_status "an uncreatable pool directory runs unpooled and passes" "$jp_s1" 0
 assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
 mkdir -p "$jp_dir/pool7/slot.1"
-jp_hold "$jp_dir/pool8" 1
 jp_run 1 "$jp_dir/pool7" -- '^pool a$' 2; jp_s1=$?
 assert_status "a slot file that cannot be opened runs unpooled and passes" "$jp_s1" 0
 assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
-kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
 mkdir "$jp_dir/noflock"
 printf '#!/bin/sh\nexit 1\n' >"$jp_dir/noflock/flock"
 chmod +x "$jp_dir/noflock/flock"
@@ -2751,23 +2796,16 @@ assert_eq "and runs no suite" "$(grep -c . "$af.log")" "0"
 # Its shellcheck process draws a slot from the job pool: with the pool's one
 # slot held, the run waits and says so, then finishes once the slot is freed.
 if command -v shellcheck >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
-  printf '200000 100000\n' >"$af.cpu"
-  mkdir -p "$af.pool"
-  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$af.pool/slot.1" &
-  af_holder=$!
-  until ! flock -n "$af.pool/slot.1" true; do sleep 0.05; done
+  pool_cpu_file "$af.cpu" 1
+  slot_hold "$af.pool" 1 || bad "holds the slot"
   af_put scripts/hook-guard.sh 'echo ok'
   (cd "$af" && env -u CI -u ORCH_TEST_POOL_PERCENT ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
     timeout 30 bash scripts/test/affected.sh HEAD >/dev/null 2>"$af.err") &
   af_pid=$!
-  for _ in $(seq 100); do
-    grep -q 'waiting for a job slot' "$af.err" 2>/dev/null && break
-    sleep 0.05
-  done
+  notice_wait "$af.err"
   assert_eq "a shellcheck run with the pool's slot held waits and says so" \
     "$(cat "$af.err")" "affected.sh: waiting for a job slot (1 in use)"
-  kill -9 "$af_holder"
-  wait "$af_holder" 2>/dev/null
+  slot_release
   wait "$af_pid"; st=$?
   assert_status "and the run finishes once the slot is freed" "$st" 0
   rm -rf "$af.cpu" "$af.pool" "$af.err"

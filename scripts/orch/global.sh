@@ -267,7 +267,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout: a flow mid-pipeline - a done flow is
                               archived, unless a ticket worktree is left, and
                               the new one starts over it - or a branch the
-                              plugin made with no PR yet; refuses with exit 1
+                              plugin made with no PR yet and not retired
+                              by a redo; refuses with exit 1
                               if the working tree has changes outside the
                               planning allowlist);
                               --issue adopts an already-open,

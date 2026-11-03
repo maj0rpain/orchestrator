@@ -1,5 +1,25 @@
 # Changelog
 
+## 4.43.14
+
+Fixed an autopilot spec round whose fundamental item could not be applied after the human replied: the first run now only holds the fundamental items back, and the resumed run applies the whole batch in batch order and posts the one changelog.
+
+## 4.43.13
+
+Share the test harness's job-slot hold, release, notice wait and quota file helpers between its job pool and affected.sh sections.
+
+## 4.43.12
+
+The docs lint checks that the stdin and Run a long command rows mark Junie Unverified through one named rule, `scan_row_unverified`, which reads only the Junie CLI cell and is listed in the lint header.
+
+## 4.43.11
+
+`orch.sh issue fetch` now writes an issue body with its carriage returns removed, so a spec last edited in the GitHub web UI reaches the spec review as LF lines and its multi-line anchors match.
+
+## 4.43.10
+
+Simplify the harness's gh op placement check to state its capture-and-append step once, in a loop over its (ops, owners) pairs.
+
 ## 4.43.9
 
 An autopilot spec review round held for a fundamental item now rebases each ticket's fetched copy on the ticket as the hold published it, refetching a ticket a block or unblock edit touched, so the resumed run's ticket edits and `check --tickets` build on the published tickets instead of overwriting the hold's edits. The hold also keeps its ticket lines in `held-tickets.md` beside `fundamental.md`, so the round's one changelog reports both runs' ticket outcomes.
