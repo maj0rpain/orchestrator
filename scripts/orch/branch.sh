@@ -15,26 +15,25 @@
 # base it can correct.
 checkout_new_branch() {
   local start
-  new_branch_refusals start "$@"
+  new_branch_start start "$@"
   fork_new_branch "$1" "$start"
 }
 
-# new_branch_refusals <start_var> <name> <base> [<remedy>]: the refusals of
-# checkout_new_branch - the name taken, the base gone from origin, or a failed
-# fetch while origin has the base (could not fetch <base> from origin) - alone,
-# so a caller with something to write first (branch create's discard) runs
-# them before it.
-# It also decides the start point, the ref the branch forks from, and returns it
-# through the caller-named <start_var>, named in full so a local branch or tag
-# called origin/<base> cannot capture it: refs/remotes/origin/<base> after a
-# fetch that worked; when origin could not be asked, that remote-tracking ref
-# if it exists, else the local refs/heads/<base>.
-new_branch_refusals() {
-  local __nbr_out="$1" name="$2" base="$3" remedy="${4:-start again on another base branch}"
-  local __nbr_start
+# new_branch_start <start_var> <name> <base> [<remedy>]: decides the start
+# point, the ref the branch forks from, and returns it through the caller-named
+# <start_var>, named in full so a local branch or tag called origin/<base>
+# cannot capture it: refs/remotes/origin/<base> after a fetch that worked; when
+# origin could not be asked, that remote-tracking ref if it exists, else the
+# local refs/heads/<base>. It dies when the name is taken, the base is gone from
+# origin, or the fetch fails while origin has the base (could not fetch <base>
+# from origin). It is checkout_new_branch's first half, alone, so a caller with
+# something to write first (branch create's discard) runs it before.
+new_branch_start() {
+  local __nbs_out="$1" name="$2" base="$3" remedy="${4:-start again on another base branch}"
+  local __nbs_start
   if git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then die "branch $name already exists"; fi
   if git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null; then
-    __nbr_start="refs/remotes/origin/$base"
+    __nbs_start="refs/remotes/origin/$base"
   else
     # Only an origin that could not be asked earns the local fallback: one
     # that answered "no such branch" means the base is gone, and forking from
@@ -45,16 +44,17 @@ new_branch_refusals() {
     [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or $remedy"
     [ "$st" -ne 0 ] || die "could not fetch $base from origin"
     if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null; then
-      __nbr_start="refs/remotes/origin/$base"
+      __nbs_start="refs/remotes/origin/$base"
     else
-      __nbr_start="refs/heads/$base"
+      __nbs_start="refs/heads/$base"
     fi
   fi
-  printf -v "$__nbr_out" '%s' "$__nbr_start"
+  printf -v "$__nbs_out" '%s' "$__nbs_start"
 }
 
-# fork_new_branch <name> <start>: the checkout half, after new_branch_refusals:
-# checks out exactly the start point it decided, with no fallback of its own.
+# fork_new_branch <name> <start>: the checkout half, after
+# new_branch_start decided the start point: checks out exactly that start
+# point, with no fallback of its own.
 fork_new_branch() {
   local name="$1" start="$2" err
   # --no-track: the base is recorded in the branch's own config, so the
@@ -247,10 +247,10 @@ cmd_branch_create() {
     return
   fi
   refuse_busy_checkout branch
-  # The refusals come before the discard, so a refusal exits with nothing
-  # written.
+  # The start point comes before the discard, so a refusal exits with
+  # nothing written.
   base="$(flow_base)"
-  new_branch_refusals start "$name" "$base" \
+  new_branch_start start "$name" "$base" \
     "point this flow at another base: orch.sh base set <branch> --flow"
   discard_create_work "$name"
   fork_new_branch "$name" "$start"
