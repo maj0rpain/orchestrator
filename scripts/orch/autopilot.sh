@@ -140,10 +140,13 @@ autopilot_block_report() {
 # integer. Dies when the issue has no plan handoff or its block has no valid
 # value.
 autopilot_plan_value() {
-  local issue file value
+  local issue file value st
   require_issue issue
   file="$(mktemp)" || die "could not create a temp file for the plan comment"
-  handoff_comment_fetch "$issue" 01-plan "$file" || { rm -f "$file"; handoff_comment_missing "$issue" 01-plan; }
+  st=0
+  handoff_comment_fetch "$issue" 01-plan "$file" || st=$?
+  [ "$st" -eq 0 ] || rm -f "$file"
+  case "$st" in 0) ;; 1) handoff_comment_missing "$issue" 01-plan ;; *) exit 1 ;; esac
   value="$(autopilot_block_values "$file" "$1")"
   rm -f "$file"
   is_positive_int "$value" ||
@@ -198,8 +201,7 @@ autopilot_answer() {
   first="${first%x}"
   rest="$(timeline_answers "$phase")"
   out="$(printf '%s' "$first$rest")"  # as before, trailing newlines go; the file gets one
-  mkdir -p "$(dirname "$file")" || die2 "could not create the directory of $file"
-  printf '%s\n' "$out" >"$file" || die2 "could not write $file"
+  file_write_atomic "$file" "$out"$'\n' 2>/dev/null || die2 "could not write $file"
 }
 
 # --- questions, reply and resume (#1571) ------------------------------------
@@ -325,12 +327,14 @@ autopilot_minimal_plan() {
 }
 
 # autopilot_post_minimal_plan <issue>: posts the minimal plan comment when the
-# issue has no plan comment. Non-zero, the reason on stderr, where a read or
-# the post fails.
+# issue has no plan comment. Non-zero, the reason on stderr, where a read, the
+# write of its copy or the post fails; a failed write posts no plan.
 autopilot_post_minimal_plan() {
-  local issue="$1" file
+  local issue="$1" file st=0
   file="$(mktemp)" || { echo "could not create a temp file" >&2; return 1; }
-  if handoff_comment_fetch "$issue" 01-plan "$file"; then rm -f "$file"; return 0; fi
+  handoff_comment_fetch "$issue" 01-plan "$file" || st=$?
+  if [ "$st" -eq 0 ]; then rm -f "$file"; return 0; fi
+  if [ "$st" -ne 1 ]; then rm -f "$file"; return "$st"; fi
   autopilot_minimal_plan "$file"
   handoff_check "$file" "" 01-plan.md autopilot >&2 || { rm -f "$file"; echo "the minimal plan does not validate" >&2; return 1; }
   handoff_comment_post "$issue" 01-plan "$file" || { rm -f "$file"; return 1; }

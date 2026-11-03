@@ -469,6 +469,15 @@ fetched="$(mktemp -d)/got.md"
 "$ORCH" handoff fetch 01-plan "$fetched" >/dev/null 2>&1; st=$?
 assert_status "handoff fetch succeeds" "$st" 0
 assert_eq "writing the body with the marker stripped" "$(cat "$fetched")" "$(cat "$planf")"
+assert_eq "the file is the body plus one newline" "$(cat "$fetched"; printf x)" "$(cat "$planf"; printf x)"
+
+# a failed write is a write failure, never a missing handoff
+rodir="$(mktemp -d)"; printf 'keep\n' >"$rodir/got.md"; chmod a-w "$rodir"
+out="$("$ORCH" handoff fetch 01-plan "$rodir/got.md" 2>&1)"; st=$?
+assert_status "handoff fetch into a read-only directory fails" "$st" 1
+assert_eq "saying it could not write, and nothing about a missing handoff" "$out" "orch: could not write $rodir/got.md"
+assert_eq "leaving the existing file untouched" "$(cat "$rodir/got.md")" "keep"
+chmod u+w "$rodir"
 
 # the newest tagged comment wins; untagged comments are not handoffs
 sed -i 's/Placeholder for Decisions\./Newer decisions./' "$planf"

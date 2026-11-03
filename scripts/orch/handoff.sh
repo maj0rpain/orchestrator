@@ -311,14 +311,14 @@ handoff_ready() { "handoff_$(handoff_store)_ready" "$@"; }
 
 # handoff_comment_write <name> <file>: writes the body of the newest comment
 # tagged for <name> in the last timeline read, marker stripped, to <file>. No gh
-# call. Non-zero, and <file> untouched, when there is none or the newest is
-# tagged retired.
+# call. Returns 1, <file> untouched, when there is none or the newest is
+# tagged retired; 2, <file> untouched, after one `orch: could not write <file>`
+# line on stderr, when the write fails. Never dies.
 handoff_comment_write() {
   local name="$1" file="$2" raw
   timeline_handoff "$name" || return 1
   raw="$(timeline_body "$TIMELINE_HANDOFF_INDEX")"
-  mkdir -p "$(dirname "$file")"
-  if [ -n "$raw" ]; then printf '%s\n' "$raw" >"$file"; else : >"$file"; fi
+  file_write_atomic "$file" "${raw:+$raw$'\n'}" 2>/dev/null || { warn "could not write $file"; return 2; }
 }
 
 # handoff_comment_fetch <issue> <name> <file>: reads <issue>'s comments, then
@@ -389,21 +389,24 @@ handoff_file_retire() {
 
 # handoff_comment_locate <file>: prints the scratch path the comment is
 # fetched to; non-zero when no issue is recorded, the comments cannot be read
-# (the gh reason on stderr) or there is no live comment.
+# (the gh reason on stderr) or there is no live comment (status 1); 2 when the
+# copy cannot be written.
 handoff_comment_locate() {
   local file="$1" issue dir="$HANDOFF_SCRATCH_DIR"
   printf '%s/%s\n' "$dir" "$file"
   issue="$(state_get issue 2>/dev/null)" || issue=""
   [ -n "$issue" ] || return 1
   rm -f "$dir/$file"
-  (handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file") && [ -f "$dir/$file" ]
+  (handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file") || return $?
+  [ -f "$dir/$file" ]
 }
 
 # handoff_comment_read <file> [<hint>]: requires the recorded issue first.
 handoff_comment_read() {
-  local file="$1" issue=""
+  local file="$1" issue="" st=0
   require_issue issue
-  handoff_comment_locate "$file" || handoff_comment_missing "$issue" "${file%.md}" "${2:-}"
+  handoff_comment_locate "$file" || st=$?
+  case "$st" in 0) ;; 1) handoff_comment_missing "$issue" "${file%.md}" "${2:-}" ;; *) exit 1 ;; esac
 }
 
 # handoff_comment_fetched <file>: prints the scratch path; non-zero when the
@@ -500,7 +503,9 @@ cmd_handoff() {
       handoff_name_check "$1"
       local issue
       require_issue issue
-      handoff_comment_fetch "$issue" "$1" "$2" || handoff_comment_missing "$issue" "$1"
+      local st=0
+      handoff_comment_fetch "$issue" "$1" "$2" || st=$?
+      case "$st" in 0) ;; 1) handoff_comment_missing "$issue" "$1" ;; *) exit 1 ;; esac
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"

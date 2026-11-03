@@ -89,6 +89,10 @@ assert_eq "kept lines keep their other fields, in order" \
 tr_pf '5\ttrue\n6\ttrue\n7\tfalse\n' orch/12-foo >/dev/null
 assert_eq "two drops are counted in one stderr line, naming the subject" "$(cat "$tr_file")" \
   "orch: ignored 2 PR(s) from forks for orch/12-foo"
+tr_out="$(tr_pf '5\ttrue\n6\ttrue\n' x)"
+assert_eq "all forks: nothing on stdout" "$tr_out" ""
+tr_pf '5\ttrue\n6\ttrue\n' x >/dev/null
+assert_eq "and one stderr line" "$(cat "$tr_file")" "orch: ignored 2 PR(s) from forks for x"
 tr_pf '5\tfalse\n' x >/dev/null
 assert_eq "no drop, no stderr line" "$(cat "$tr_file")" ""
 tr_out="$(tr_pf '5\tfalse\n6\tmaybe\n' x)"; tr_st=$?

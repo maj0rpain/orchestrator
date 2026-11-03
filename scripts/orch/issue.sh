@@ -92,12 +92,12 @@ issue_json_trusted() {
   printf -v "$3" '%s' "$__ijt_out"
 }
 
-# issue_comments_render <n>: adapter_issue_comments' raw JSON on stdin, on
+# comments_render_trusted <n>: adapter_issue_comments' raw JSON on stdin, on
 # stdout the comments of trusted authors rendered through COMMENTS_RENDER_JQ as
 # it renders them - nothing for none, no placeholder for a dropped
-# comment. Non-zero when stdin is not a comment object. The trust filter's
-# stderr line is for issue <n>.
-issue_comments_render() {
+# comment. Non-zero when stdin is not a comment object. <n> is the issue or PR
+# number; the trust filter's stderr line names `#<n>`.
+comments_render_trusted() {
   local kept
   kept="$(jq -c .comments 2>/dev/null | trust_filter_comments "$1")" || return 1
   jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$kept"
@@ -105,14 +105,14 @@ issue_comments_render() {
 
 # comments_rendered <adapter> <what> <n> <var>: issue or PR <n>'s trusted
 # comments, read by <adapter> (adapter_issue_comments or adapter_pr_comments),
-# rendered by issue_comments_render, assigned to <var>; no placeholder for a
+# rendered by comments_render_trusted, assigned to <var>; no placeholder for a
 # dropped comment, and the Trust filter's stderr line names <n>. A gh failure
 # dies as "gh could not <what>"; a comment object that does not parse dies as
 # "could not <what>: its comments did not parse", both with status 1.
 comments_rendered() {
   local __cr_raw __cr_out
   gh_or_die --out __cr_raw "$2" "$1" "$3"
-  __cr_out="$(issue_comments_render "$3" <<<"$__cr_raw")" \
+  __cr_out="$(comments_render_trusted "$3" <<<"$__cr_raw")" \
     || die "could not $2: its comments did not parse"
   printf -v "$4" '%s' "$__cr_out"
 }
