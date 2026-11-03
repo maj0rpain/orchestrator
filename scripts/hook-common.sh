@@ -96,7 +96,8 @@ hook_physical_path() {
       dir="${dir%/*}"
       [ -n "$dir" ] || dir="/"
     done
-    if [ "$dir" = "$path" ] && [ -L "$path" ] && [ ! -d "$path" ] && [ "$hops" -lt 40 ]; then
+    if [ "$dir" = "$path" ] && [ -L "$path" ] && [ ! -d "$path" ] \
+      && [ "$hops" -lt 40 ]; then
       # Final segment is a dangling or file symlink: follow it.
       target="$(readlink "$path")" || break
       case "$target" in /*) ;; *) target="${path%/*}/$target" ;; esac
