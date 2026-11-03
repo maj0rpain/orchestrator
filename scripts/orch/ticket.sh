@@ -81,16 +81,6 @@ issue_number_list() {
   printf '%s\n' $list | sort -un
 }
 
-# ticket_listing_has <listing> <n>: 0 when <n> is the first tab field of a line
-# of the sub-issue <listing>.
-ticket_listing_has() {
-  local line
-  while IFS= read -r line; do
-    if [ "${line%%$'\t'*}" = "$2" ]; then return 0; fi
-  done <<<"$1"
-  return 1
-}
-
 # ticket_listing_state <listing> <n>: the state field (second) of the line of
 # the sub-issue <listing> whose first field is <n>; nothing when none is.
 ticket_listing_state() {
@@ -101,6 +91,11 @@ ticket_listing_state() {
   done <<<"$1"
   return 0
 }
+
+# ticket_listing_has <listing> <n>: 0 when <n> is listed in the sub-issue
+# <listing>, 1 when not. The listing always fills the state field, so a
+# non-empty state means listed.
+ticket_listing_has() { [ -n "$(ticket_listing_state "$1" "$2")" ]; }
 
 # ticket_links_verified <err_var> <parent> <child> <want>: 0 only once both
 # links read back exactly as published: the parent's sub-issue listing

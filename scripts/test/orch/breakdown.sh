@@ -64,6 +64,20 @@ assert_eq "the unlinked ticket got its edge" "$(fake_blockers_of 101)" "100"
 assert_eq "marker written" "$(on_disk .orchestrator/breakdown/50/published)" "present"
 restore_suite_env
 
+# A ticket created whose link already landed: the resume finds it listed and
+# attempts no link (the fake's link is made to fail).
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail adapter_sub_issue_link
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+fake_unfail
+mkdir -p "$ORCH_GH_FAKE_STORE/subs" && echo 100 >>"$ORCH_GH_FAKE_STORE/subs/50"
+fake_fail adapter_sub_issue_link
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a resume of an already-linked ticket succeeds without linking again" "$st" 0
+fake_unfail
+restore_suite_env
+
 breakdown_fixture
 fake_fail adapter_issue_create
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
