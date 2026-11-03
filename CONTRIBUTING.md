@@ -69,6 +69,10 @@ cgroup v2 `cpu.max` quota;
 `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
 pass on its own. all.sh runs at most that many shellcheck processes at once, and
 both runners lower their own niceness to 10 outside `CI`.
+Each section of a parallel run has a deadline, `ORCH_TEST_SECTION_TIMEOUT` whole
+seconds (default 600), counted from the section's own start; past it the runner
+stops the section's process tree and reports `section '<title>' timed out`. A
+positive integer is required, and `ORCH_TEST_JOBS=1` runs have no deadline.
 Every runner draws its jobs from the job pool (GLOSSARY.md): slot lock files
 under `~/.cache/orchestrator/test-job-pool`, as many as that default (so
 `ORCH_TEST_POOL_PERCENT`, read from each run's own environment, sizes the pool;
@@ -196,7 +200,8 @@ setup (`scripts/test/orch/setup.sh`), the gh adapter fake
 (`scripts/test/gh_adapter_fake.sh`) and the assertion tally
 (`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
 `( ... )` subshell, and `tally_summary`, the ending each standalone suite
-calls) instead - their fixtures, fakes and assertions. A
+calls) and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`)
+instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
 section checks it against what bash itself defines.
