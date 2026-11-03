@@ -49,22 +49,17 @@ gh_reason() {
 # given - through die, or through die2 under --exit 2. A bad option dies with
 # status 1, naming it, through die_opt_check.
 gh_die() {
-  local code=1 hint=""
+  local opts=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --exit)
+      --exit|--hint)
         die_opt_check gh_die $# "$@"
-        code=2; shift 2 ;;
-      --hint)
-        die_opt_check gh_die $# "$@"
-        hint="$2"; shift 2 ;;
+        opts+=("$1" "$2"); shift 2 ;;
       -*) die "gh_die: unknown option $1" ;;
       *) break ;;
     esac
   done
-  local opts=(--hint "$hint")
-  [ "$code" != 2 ] || opts+=(--exit 2)
-  die_hinted "${opts[@]}" "gh could not $1: $(gh_reason "${2-}")"
+  die_hinted ${opts[@]+"${opts[@]}"} "gh could not $1: $(gh_reason "${2-}")"
 }
 
 # gh_or_die [--exit 2] [--hint <text>] [--out <var> | --file <path>] <what>
