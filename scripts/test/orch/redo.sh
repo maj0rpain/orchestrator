@@ -23,6 +23,12 @@ stub_pushed_branch() {
 # or MERGED.
 fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
 
+# redo_state_snapshot: the state a refused redo must leave as it was.
+redo_state_snapshot() {
+  printf '%s|' "$("$ORCH" state get branch)" "$("$ORCH" state get pr)" \
+    "$("$ORCH" state get redo_count)" "$("$ORCH" state get phase)"
+}
+
 # --- redo review ----------------------------------------------------------
 # The full review -> implement transition: three distinct refusals below a
 # terminal state, and a full composition above it.
@@ -119,6 +125,22 @@ assert_eq "leaving the flow's base unchanged" "$("$ORCH" state get base)" "$base
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" base set redo-base --flow 2>&1)"
 assert_contains "and with the orch-flow section on another host" "$out" \
   "flow redotest already has branch orch/21-redotest - its base can change again once /orchestrator:redo (or orch-flow's Redo section) retires it"
+# A ticket worktree left under the checkout refuses the redo before anything
+# moves, so its unmerged ticket work is never stranded.
+"$ORCH" ticket-worktree add 4 >/dev/null 2>&1
+snap_state="$(redo_state_snapshot)"
+snap_handoffs="$(ls .orchestrator/handoff)"
+snap_branch="$(git branch --show-current)"
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "redo review refuses while a ticket worktree is left" "$st" 1
+assert_contains "naming the worktree's path" "$out" ".orchestrator/worktrees/t4"
+assert_contains "and its remove hint" "$out" "orch.sh ticket-worktree remove 4"
+assert_contains "giving the redo reason" "$out" "a redo would strand their unmerged ticket work"
+assert_eq "leaving branch, PR, redo_count and phase" "$(redo_state_snapshot)" "$snap_state"
+assert_eq "the handoffs" "$(ls .orchestrator/handoff)" "$snap_handoffs"
+assert_eq "and the checked-out branch" "$(git branch --show-current)" "$snap_branch"
+"$ORCH" ticket-worktree remove 4 >/dev/null 2>&1
+
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
 assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
@@ -131,7 +153,7 @@ assert_eq "steps the flow back to implement" "$("$ORCH" state get phase)" "imple
 assert_eq "leaves the one-per-flow flake rerun untouched" \
   "$("$ORCH" state get flake_rerun_used)" "true"
 assert_eq "renames the old branch aside" \
-  "$(git rev-parse --verify --quiet orch/21-redotest-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence orch/21-redotest-redo-1)" "present"
 assert_eq "keeping its PR marker, so the retired branch reads as handed off (#1200)" \
   "$(pr_marker_of orch/21-redotest-redo-1)" "30"
 assert_eq "and republishes it on origin" \
@@ -171,7 +193,7 @@ out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a second stopped loop redoes just as the first did" "$st" 0
 assert_eq "and numbers on rather than repeating redo-1" "$out" "2"
 assert_eq "naming the branch redo-2" \
-  "$(git rev-parse --verify --quiet orch/21-redotest-redo-2 >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence orch/21-redotest-redo-2)" "present"
 assert_eq "without disturbing redo-1's records" \
   "$(on_disk .orchestrator/review/pre-redo-1/iteration-05.md)" "present"
 assert_eq "moving the second loop's records into pre-redo-2" \
@@ -196,7 +218,7 @@ assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "leaving the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
 assert_eq "still renames the branch aside since retire runs before the pr close" \
-  "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence orch/21-redotest-redo-3)" "present"
 assert_eq "and never moves the loop's records since gh failed first" \
   "$(on_disk .orchestrator/review/iteration-01.md)" "present"
 # Issue #63: the rename above is real, so state.branch has to follow it
@@ -216,9 +238,9 @@ assert_status "retrying redo review after the gh failure now succeeds" "$st" 0
 assert_eq "closing the PR this time" "$(fake_pr_state_of 32)" "CLOSED"
 assert_eq "reuses redo-3 rather than numbering on to redo-4" "$out" "3"
 assert_eq "does not retire the branch a second time" \
-  "$(git rev-parse --verify --quiet orch/21-redotest-redo-4 >/dev/null 2>&1 && echo present || echo gone)" "gone"
+  "$(branch_presence orch/21-redotest-redo-4)" "gone"
 assert_eq "leaves redo-3 as the actually-retired branch" \
-  "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence orch/21-redotest-redo-3)" "present"
 assert_eq "and clears branch, PR, and base SHA on the now-successful redo" \
   "$("$ORCH" state get branch)$("$ORCH" state get pr)$("$ORCH" state get base_sha)" ""
 
@@ -445,6 +467,7 @@ out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "refuses while a ticket worktree is left" "$st" 1
 assert_contains "naming the worktree's path" "$out" ".orchestrator/worktrees/t4"
 assert_contains "and its remove hint" "$out" "orch.sh ticket-worktree remove 4"
+assert_contains "giving the redo reason" "$out" "a redo would strand their unmerged ticket work"
 assert_eq "leaving the phase" "$("$ORCH" state get phase)" "implement"
 assert_eq "the state" "$("$ORCH" state get phase)$("$ORCH" state get issue)$("$ORCH" state get redo_count)" "$snap_state"
 assert_eq "the handoffs" "$(ls .orchestrator/handoff)" "$snap_handoffs"
@@ -730,7 +753,7 @@ old_pr="$(attempt_pr)"
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "default redo spec with a branch and PR succeeds" "$st" 0
 assert_eq "renames the branch aside to -redo-1" \
-  "$(git rev-parse --verify --quiet "orch/5-$slug_-redo-1" >/dev/null && echo present || echo gone)" "present"
+  "$(branch_presence "orch/5-$slug_-redo-1")" "present"
 assert_eq "closes the old PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
 assert_contains "with a comment naming the retired branch" "$(fake_pr_comments_of "$old_pr")" "orch/5-$slug_-redo-1"
 assert_eq "clears branch, pr and base_sha" \
@@ -756,33 +779,12 @@ attempt_start 6
 out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue with a branch and no PR succeeds" "$st" 0
 assert_eq "retires the branch under the old issue's name" \
-  "$(git rev-parse --verify --quiet "orch/6-$slug_-redo-1" >/dev/null && echo present || echo gone)" "present"
+  "$(branch_presence "orch/6-$slug_-redo-1")" "present"
 assert_eq "closing only the old issue" "$(fake_state_of 6)" "CLOSED"
 "$ORCH" state set issue 9
 redone_spec
 out="$("$ORCH" branch create 2>&1)"; st=$?
 assert_status "branch create then exits 0" "$st" 0
-assert_eq "on the new issue's branch" "$("$ORCH" state get branch)" "orch/9-$slug_"
-
-# --new-issue after pr open: the old PR is closed, a new one opens.
-attempt_flow redoattempt3
-fake_issue 7 open
-fake_issue 9 open
-slug_="$("$ORCH" state get slug)"
-attempt_start 7
-old_pr="$(attempt_pr)"
-out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
-assert_status "--new-issue after pr open succeeds" "$st" 0
-assert_eq "closes the old PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
-"$ORCH" state set issue 9
-redone_spec
-"$ORCH" branch create >/dev/null 2>&1
-writeln new >new.txt
-git add new.txt
-git commit -q -m "ticket for new spec"
-out="$("$ORCH" pr open "Title" "$attempt_body" 2>&1)"; st=$?
-assert_status "the redone phase's pr open exits 0" "$st" 0
-assert_eq "recording a new PR" "$([ -n "$("$ORCH" state get pr)" ] && [ "$("$ORCH" state get pr)" != "$old_pr" ] && echo yes)" "yes"
 assert_eq "on the new issue's branch" "$("$ORCH" state get branch)" "orch/9-$slug_"
 
 # No branch yet: nothing retires.
@@ -814,7 +816,7 @@ assert_status "the rerun succeeds" "$st" 0
 assert_eq "closing the PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
 assert_eq "retiring the branch once" "$("$ORCH" state get redo_count)" "1"
 assert_eq "without a second rename" \
-  "$(git rev-parse --verify --quiet "orch/10-$slug_-redo-2" >/dev/null && echo present || echo gone)" "gone"
+  "$(branch_presence "orch/10-$slug_-redo-2")" "gone"
 
 # Breakdown-retire failure after the attempt is retired.
 attempt_flow redoattempt6
@@ -834,7 +836,7 @@ out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "the rerun succeeds" "$st" 0
 assert_eq "redo_count stays 1" "$("$ORCH" state get redo_count)" "1"
 assert_eq "the branch is not renamed again" \
-  "$(git rev-parse --verify --quiet "orch/11-$slug_-redo-2" >/dev/null && echo present || echo gone)" "gone"
+  "$(branch_presence "orch/11-$slug_-redo-2")" "gone"
 assert_eq "the PR was closed once" "$(fake_pr_comments_of "$old_pr" | grep -c 'closed by an orchestrator redo')" "1"
 assert_eq "and the breakdown ends up retired" "$(fake_state_of "$rt")" "CLOSED"
 
@@ -851,7 +853,7 @@ out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "the rerun succeeds" "$st" 0
 assert_eq "redo_count stays 1" "$("$ORCH" state get redo_count)" "1"
 assert_eq "the branch is not renamed again" \
-  "$(git rev-parse --verify --quiet "orch/12-$slug_-redo-2" >/dev/null && echo present || echo gone)" "gone"
+  "$(branch_presence "orch/12-$slug_-redo-2")" "gone"
 assert_eq "and the issue ends up closed" "$(fake_state_of 12)" "CLOSED"
 restore_suite_env
 

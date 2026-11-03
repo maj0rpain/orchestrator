@@ -3,16 +3,16 @@
 # Its tests: scripts/test/orch/redo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# The first retire step, shared by both redos: prints two lines, "<n>" then
-# "<resumed>": the number the attempt's retire carries and whether its rename
-# is already done.
+# The first retire step, shared by both redos: prints the pair the retire
+# plans, two lines, "<n>" then "<resumed>": the number the attempt's retire
+# carries and whether its rename is already done.
 # A previous call at this same redo can have already retired the branch and
 # recorded it in state before dying on the PR close - branch and redo_count
 # are set together right after a real retire, so if the recorded branch
 # already matches what this redo_count's retire would have produced, the
 # rename is done: resume at the PR close instead of retiring an
 # already-retired branch a second time (issue #63).
-redo_retire_number() {
+redo_retire_plan() {
   local issue="$1" slug="$2" branch redo_count
   branch="$(state_get branch)"
   redo_count="$(state_get redo_count)"
@@ -21,6 +21,12 @@ redo_retire_number() {
   else
     printf '%s\n0\n' $(( redo_count + 1 ))
   fi
+}
+
+# redo_refuse_ticket_worktrees: both redos' guard, dying while ticket
+# worktrees are left under the checkout, before anything moves.
+redo_refuse_ticket_worktrees() {
+  refuse_ticket_worktrees "$ROOT" "a redo would strand their unmerged ticket work"
 }
 
 # The second retire step, shared by both redos: rename state.branch to its
@@ -95,13 +101,14 @@ $detail" ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
+  redo_refuse_ticket_worktrees
 
   slug="$(state_get slug)"
   require_issue issue
   require_branch branch
   require_pr pr
   local retire
-  retire="$(redo_retire_number "$issue" "$slug")"
+  retire="$(redo_retire_plan "$issue" "$slug")"
   lines_split "$retire" new_n resumed
 
   # The implement handoff described the attempt being retired; left in place,
@@ -148,7 +155,7 @@ cmd_redo_spec() {
     *) die "usage: orch.sh redo spec [--new-issue]" ;;
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
-  refuse_ticket_worktrees "$ROOT" "a redo would strand their unmerged ticket work"
+  redo_refuse_ticket_worktrees
   # The spec handoff - and the implement handoff built on it, if any - are
   # stale once the spec is being redone, so phase advance must not pass on
   # them (#279). They are retired first, before any state moves, as in redo
@@ -161,7 +168,7 @@ cmd_redo_spec() {
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
   handoff_retire "$label" $(handoffs_written_from spec)
   slug="$(state_get slug)"
-  retire="$(redo_retire_number "$issue" "$slug")"
+  retire="$(redo_retire_plan "$issue" "$slug")"
   lines_split "$retire" n resumed
   redo_retire_attempt "$issue" "$slug" "$n" "$resumed"
   if [ "$new_issue" -eq 1 ]; then
