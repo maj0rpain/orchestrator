@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.44.7
+
+Internal test-runner cleanup: one helper for the parallel runner's section FAIL, `print_fail` indents every line of a multi-line detail, one counts-file name, one `orch.sh tests` banner, and clearer names and header comments in `test_jobs.sh`.
+
+Tidied the review rerun code and tests, with no behaviour change.
+
 ## 4.44.6
 
 Fixed a tag named like a local branch taking the branch's place in `ticket merge`, the merged check behind `ticket-worktree remove` and `ticket close`, `branch retire`, `branch create` / `branch off` and `doctor --flow`: each now hands git the full `refs/heads/<name>`.
