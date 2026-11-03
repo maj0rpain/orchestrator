@@ -5,6 +5,11 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# ALL_RUNNER_FILES: the files, by name in scripts/test/, that make up all.sh's
+# runnable copy. Every fixture that copies all.sh derives its copy, its written
+# list and its shellcheck counts from it.
+ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh)
+
 # count_lines [<grep flag>...] <pattern> <text>: prints how many lines of
 # <text> match <pattern>. Every argument before the last two goes to grep
 # as-is.
@@ -57,8 +62,7 @@ stub_all_tree() {
   local dir="$1" log="$2" tool stub
   shift 2
   mkdir -p "$dir/scripts/test" "$dir/bin"
-  cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
-    "$(dirname "$SUITE_SCRIPT")/report.sh" "$dir/scripts/test/"
+  (cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" "$dir/scripts/test/")
   for tool in bash dirname awk tail mktemp rm mkdir sleep cat "$@"; do
     ln -s "$(command -v "$tool")" "$dir/bin/$tool"
   done
@@ -951,8 +955,7 @@ done
 # an orch_test.sh stub that leaves a file in its TMPDIR.
 root_all="$root_dir/all"
 mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
-cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
-  "$(dirname "$SUITE_SCRIPT")/report.sh" "$root_all/scripts/test/"
+(cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" "$root_all/scripts/test/")
 for root_tool in bash dirname awk tail mktemp rm mkdir; do
   ln -s "$(command -v "$root_tool")" "$root_all/bin/$root_tool"
 done
@@ -1012,14 +1015,13 @@ all_root="$(mktemp -d)"
 all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
 mkdir -p "$all_dir/orch" "$all_bin"
-cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
-  "$(dirname "$SUITE_SCRIPT")/report.sh" "$all_dir/"
+(cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" "$all_dir/")
 for all_tool in bash dirname awk tail mktemp rm mkdir sleep; do
   ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
 done
 # all_written: every shell file the fixture writes, by path from <tmp>, for
 # the expected shellcheck arguments - never a glob.
-all_written=(scripts/test/all.sh scripts/test/test_jobs.sh scripts/test/report.sh)
+all_written=("${ALL_RUNNER_FILES[@]/#/scripts/test/}")
 all_planted=(scripts/lint_me.sh scripts/test/lint_me.sh scripts/test/orch/lint_me.sh
   scripts/dev/deep/lint_me.sh)
 mkdir -p "$all_root/scripts/dev/deep"
@@ -1604,7 +1606,7 @@ wait "$jp_p2"; jp_s2=$?
 assert_status "two concurrent all.sh runs on a 1-slot pool pass" "$((jp_s1 + jp_s2))" 0
 assert_eq "their shellcheck processes never overlap on a 1-slot pool" "$(log_peak "$jp_log")" "1"
 assert_eq "every file was still checked, twice over" \
-  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + 3)))"
+  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + ${#ALL_RUNNER_FILES[@]})))"
 assert_contains "a waiting all.sh names itself in the notice" \
   "$(cat "$jp_dir/erra" "$jp_dir/errb2")" "all.sh: waiting for a job slot (1 in use)"
 else
@@ -1702,7 +1704,7 @@ out="$(load_run_all ORCH_TEST_JOBS=2 2>&1)"; st=$?
 assert_status "all.sh with ORCH_TEST_JOBS=2 passes" "$st" 0
 assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(log_peak "$load_all/sc_log")" "2"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
-  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 3))"
+  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + ${#ALL_RUNNER_FILES[@]}))"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
   "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: 0 findings"
 : >"$load_all/sc_log"
@@ -2530,8 +2532,7 @@ af_put() {
 }
 af_git init -q -b main
 mkdir -p "$af/scripts/test/orch"
-cp "$af_tests/affected.sh" "$af_tests/all.sh" "$af_tests/git_env.sh" \
-  "$af_tests/test_jobs.sh" "$af_tests/report.sh" "$af_tests/test_tree.sh" "$af/scripts/test/"
+(cd "$af_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh test_tree.sh "$af/scripts/test/")
 suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for af_s in "${SUITES[@]}"; do
   [ -e "$af/scripts/test/$af_s" ] || af_put "scripts/test/$af_s"
