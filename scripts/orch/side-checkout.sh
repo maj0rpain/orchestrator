@@ -162,6 +162,12 @@ archive_root() {
 # it goes with it.
 FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass autopilot breakdown reports)
 
+# side_checkout_refuse_ticket_worktrees <root>: refuses while ticket worktrees
+# are left under the checkout at <root>, the one reason this module gives.
+side_checkout_refuse_ticket_worktrees() {
+  refuse_ticket_worktrees "$1" "moving them would break git's record of them"
+}
+
 # archive_flow <root> <archive-root>: moves the flow in the checkout at <root>
 # into a directory under <archive-root>'s .orchestrator/archive/, and prints
 # that directory - relative to this checkout when inside it, else in full.
@@ -179,7 +185,7 @@ archive_flow() {
   local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" state slug dest entry kept i
   local entries=() moved
   state="$(flow_state_file "$root")"
-  refuse_ticket_worktrees "$root" "moving them would break git's record of them"
+  side_checkout_refuse_ticket_worktrees "$root"
   slug="$(state_get_in "$state" slug)" || die "could not read the flow's slug from $state - nothing was archived"
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest" 2>/dev/null || die "could not create the archive directory $dest - nothing was archived"
@@ -379,7 +385,7 @@ cmd_side_checkout_remove() {
     "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
   # archive_flow refuses ticket worktrees itself before anything moves, so
   # the refusal runs here only when there is no flow to archive.
-  checkout_has_flow "$path" || refuse_ticket_worktrees "$path" "moving them would break git's record of them"
+  checkout_has_flow "$path" || side_checkout_refuse_ticket_worktrees "$path"
   side_checkout_archive_and_remove_or_exit "$path" "$main_root" "$here" die
 }
 
