@@ -1499,6 +1499,8 @@ for ev in PreToolUse PostToolUse PostToolUseFailure; do
   assert_contains "bash hook: $ev Bash runs through CLAUDE_PROJECT_DIR" \
     "$reg" 'CLAUDE_PROJECT_DIR'
 done
+assert_not_contains "bash hook: absent from hooks/hooks.json" \
+  "$(cat "$ROOT/hooks/hooks.json")" 'hook-edit-width'
 rm -rf "$BW" "$BW2" "$BWP" "$BW_TMP" "$BW_FILE"
 
 # --- bash stdin hook (scripts/hook-bash-stdin.sh, #2001)
