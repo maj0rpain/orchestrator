@@ -44,7 +44,7 @@ on exactly its own cells.
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. Where commands do not load, `orch-spec-review` is invoked directly with the issue number. |
 | Inject context at planning time | A `PostToolUse` hook on `Skill` (`hook-grilling.sh`) that fires when the skill name contains `grilling` or `orch-interview`. It sends a short state block (the planning rules, the repo's triage label strings, the ask tool, any flow running beside the session) well under Claude Code's 10 KB inline limit for hook context, and on `grilling` points the agent at the `## Closing` section of `skills/orch-interview/SKILL.md` by absolute path; `orch-interview` loads that section in full. | A `UserPromptSubmit` hook (`hook-grilling.sh`, #202) that fires when the prompt names a grilling entry point as `/<name>` or `$<name>` (`grilling`, `grill-me`, `grill-with-docs`, `wayfinder`, `improve-codebase-architecture`, or `orch-interview`, each under any scope, or `orchestrator:interview`). The message is the same short state block; every entry point except the `orch-interview` skill itself, and the plan-confirmed prompt below, is pointed at the `## Closing` section of `skills/orch-interview/SKILL.md` by absolute path. Per the bundled docs, only the interactive TUI fires the event and its context reaches the main agent only. A live probe on #202 confirmed the hook fires from the extension's `hooks.json` and that Junie rewrites a typed `/<name>` into `$<name>`. When Junie picks grilling on its own, no prompt names it and no message is sent. Junie's router sends a grilling prompt to its plan agent, which ends on Junie's own plan screen and skips the closing question, so the hook asks it again when the human picks "Confirm and implement". That submits the fixed prompt `Implement the suggested plan` to the main agent, and a live run on #202 showed the question appear there. "Save the plan and stop" submits no prompt, so nothing is asked. |
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0006). A `Skill` call to `orchestrator:orch-quick-implement` lifts it. | None: the guard does not arm on Junie (ADR-0025). The planning message and the `docs/junie/AGENTS.md` planning section steer planning away from source edits, and `orch.sh init`'s working-tree check catches any at flow start. **Fallback**. |
-| Guard the batch question | Two hooks, armed by a `spec-review check` pass line naming a `view.md` and disarmed by the next `spec-review apply` (which wins within its own tool call, so a combined `check && apply` call stays disarmed; an `--unattended` pass line carries no such tail and never arms), sharing one transcript scan (`paste-guard.sh`). A `PreToolUse` hook on `AskUserQuestion` (`hook-paste-guard.sh`) refuses every ask with the view, told to end the turn on it and the question in one plain-text reply, not the ask tool, until one text block after that pass line holds the whole view. A `Stop` hook (`hook-paste-stop-guard.sh`) refuses to end the turn, handing the view back the same way, unless one text block of the final reply - after the later of the last human message and that pass line - holds it (#1287, #1350, #1421, ADR-0051). | No `PreToolUse` guard: the nudge in `check`'s pass line instead. **Fallback**. The `Stop` hook has no tool matcher, so it may fire; whether Junie fires `Stop`, and what its payload holds, is not confirmed. **Unverified**. On Junie's payload or transcript it fails open. |
+| Guard the batch question | Two hooks, armed by a `spec-review check` pass line naming a `view.md` and disarmed by the next `spec-review apply` or human message (apply wins within its own tool call, so a combined `check && apply` call stays disarmed; an `--unattended` pass line carries no such tail and never arms), sharing one transcript scan (`paste-guard.sh`). A `PreToolUse` hook on `AskUserQuestion` (`hook-paste-guard.sh`) refuses every ask with the view, told to end the turn on it and the question in one plain-text reply, not the ask tool, until one text block after that pass line holds the whole view. A `Stop` hook (`hook-paste-stop-guard.sh`) refuses to end the turn, handing the view back the same way, unless one text block after that pass line - the same window - holds it (#1287, #1350, #1421, ADR-0051). | No `PreToolUse` guard: the nudge in `check`'s pass line instead. **Fallback**. The `Stop` hook has no tool matcher, so it may fire; whether Junie fires `Stop`, and what its payload holds, is not confirmed. **Unverified**. On Junie's payload or transcript it fails open. |
 | Open a report in the browser | `xdg-open <file>` on Linux or `open <file>` on macOS, through the Bash tool. Where neither command is there or it fails (a headless or remote machine), take the fallback. | Its shell runs the same commands; whether a browser opens from it is unverified. **Unverified**. |
 | A stray stdin read in a Bash call ends instead of hanging | A `PreToolUse` hook on `Bash` (`hook-bash-stdin.sh`, #2001, #2002) acts on plugin subagents (an `agent_type` starting `orchestrator:orch-` or `orch-`) and `ORCH_AUTOPILOT=1` sessions only; a human's own session is untouched. Under `bypassPermissions` it rewrites the command to start with `exec </dev/null`, so a stray read gets end-of-file at once. Under any other mode it denies a command whose parts include a plain stdin read from a fixed list (`cat` with no file argument or with `-`, `read`, `python`, `python3` or `node` with no arguments or with `-` as the script, `bash -s`, `sh -s`), with a reason saying how to supply input. | Whether Junie fires a `PreToolUse` hook on its Bash tool, and what its payload holds, is not confirmed; the hook fails open on its payload. **Unverified**. The agent instruction line (never run a command that reads stdin without supplying it, with `</dev/null` as the plain case) is the fallback. |
 | A process poll or kill by pattern is refused | A `PreToolUse` hook on `Bash` (`hook-bash-poll.sh`, #2085) acts on plugin subagents (an `agent_type` starting `orchestrator:orch-` or `orch-`) and `ORCH_AUTOPILOT=1` sessions only, under every permission mode; a human's own session is untouched. It denies a command with an unquoted `pgrep` or `pkill` word, or a path ending in `/pgrep` or `/pkill`, with a reason pointing to *Run a long command*. | Whether Junie fires a `PreToolUse` hook on its Bash tool is not confirmed. **Unverified**. The agent instruction line (never background it and sleep, poll or kill it) is the fallback. |
@@ -172,24 +172,30 @@ question and the ticket question are asked the same way, as a turn-final
 reply, per `docs/turn-final-reply.md`, holding `check`'s view word for word.
 
 On Claude Code two guards enforce it, arming on the same pass line, disarming
-on the same `spec-review apply`, and reading the transcript through one
-shared scan, so they match the paste and fail open alike. The paste guard,
-on `PreToolUse`, refuses every ask until the view is in chat, not just the
-first. Its deny message hands the view back and says to end the turn on it
-and the question in plain text, and not to use the ask tool for it.
-The short confirmation ask that follows a near-miss answer passes, since the
-view is already in the turn-final reply above it. The Stop guard refuses to
-end the turn unless the final reply holds the view: one text block written
-after the later of the last human message and the arming pass line, so a
-view pasted in an earlier turn, or before a re-run `check`, does not count.
-It hands the view back with the same instruction, and lets the turn end once
-the payload's `stop_hook_active` is set, so it cannot loop. Both re-read the
-transcript for a few seconds before refusing, so a reply written late still
-counts. Where a host fires `Stop` before the final reply is in the
-transcript, the Stop guard does not fail open: past the window it refuses
-the reply not yet written, and the turn ends on the next stop, once
-`stop_hook_active` is set. Where a host never fires `Stop`, the Stop guard
-does nothing, and the paste guard and the skill text carry the enforcement.
+on the same `spec-review apply` or human message, and reading the transcript
+through one shared scan, so they match the paste and fail open alike. The
+paste guard, on `PreToolUse`, refuses every ask until the view is in chat,
+not just the first. Its deny message hands the view back and says to end
+the turn on it and the question in plain text, and not to use the ask
+tool for it.  The short confirmation ask that follows a near-miss answer
+passes, since the human's near-miss message disarmed the guard. The Stop
+guard refuses to end the turn unless the view is in chat: one text block
+written after the arming pass line, the same window as the paste guard's,
+so a view pasted before a re-run `check` does not count. A human message
+after the pass line disarms both guards: the obligation is one turn long,
+so a review the human walks away from - abandoned, stopped on a failure,
+aborted - stops guarding at their next message, and a re-run `check` arms
+them again. A human message queued mid-turn, if the host writes it to
+the transcript before the turn ends, disarms early, and that turn's Stop
+allows without a paste. The Stop guard hands the view back with the same
+instruction, and lets the turn end once the payload's `stop_hook_active`
+is set, so it cannot loop. Both re-read the transcript for a few seconds
+before refusing, so a reply written late still counts. Where a host fires
+`Stop` before the final reply is in the transcript, the Stop guard does not
+fail open: past the window it refuses the reply not yet written, and the
+turn ends on the next stop, once `stop_hook_active` is set. Where a host
+never fires `Stop`, the Stop guard does nothing, and the paste guard and
+the skill text carry the enforcement.
 
 Junie has no paste guard, so nothing refuses an ask the view was not pasted
 before. Junie reads the same hooks file, and the Stop guard has no tool

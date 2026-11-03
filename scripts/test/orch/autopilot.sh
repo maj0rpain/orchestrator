@@ -258,6 +258,12 @@ Reply in one comment like \`1: A, 2: recommended, 3: <free text>\` (\`all: recom
 thanks
 x"
 kept="$(cat "$ans")"
+rodir="$(mktemp -d)"; printf 'keep\n' >"$rodir/ans.md"; chmod a-w "$rodir"
+out="$("$ORCH" autopilot answer spec "$rodir/ans.md" 2>&1)"; st=$?
+assert_status "answer into a read-only directory exits 2" "$st" 2
+assert_contains "saying it could not write" "$out" "could not write $rodir/ans.md"
+assert_eq "and leaves the existing file untouched" "$(cat "$rodir/ans.md")" "keep"
+chmod u+w "$rodir"
 out="$("$ORCH" autopilot answer implement "$ans" 2>&1)"; st=$?
 assert_status "answer for a phase never asked exits 2, never no reply's 1" "$st" 2
 assert_contains "naming the phase" "$out" "has no implement question comment"

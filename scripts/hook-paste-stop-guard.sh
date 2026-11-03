@@ -12,10 +12,12 @@
 #
 # The arming, disarming, paste matching, re-read window and fail-open cases
 # are paste-guard.sh's, shared with the PreToolUse guard, hook-paste-guard.sh.
-# Here the paste must be in the final reply: one assistant text block written
-# after the later of the last human message and the arming pass line. A view
-# pasted in an earlier turn, or before a re-run check's pass line, does not
-# count.
+# The guard lasts until the next `spec-review apply` or human message, so the
+# paste must be in the turn that ran `check`: one assistant text block written
+# after the arming pass line, the same window as the PreToolUse guard's. A view
+# pasted before a re-run check's pass line does not count; a human message
+# after the pass line disarms the guard, so a review the human walked away from
+# no longer blocks later turns.
 #
 # - Allows when the payload's stop_hook_active is set: the session is already
 #   going on from this guard's refusal, so it cannot loop.
@@ -32,6 +34,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/paste-guard.sh"
 
 paste_guard_payload || exit 0
 [ "$(printf '%s' "$input" | jq -r '.stop_hook_active == true')" = true ] && exit 0
-paste_guard_check "$transcript" final && exit 0
+paste_guard_check "$transcript" && exit 0
 
 hook_emit_block "Blocked by the orchestrator: the human has not seen this round's view in your final reply. $(paste_guard_instruction "$paste_guard_view")"

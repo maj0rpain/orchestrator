@@ -299,7 +299,4 @@ case "$(<"$id_file")" in
 esac
 
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary

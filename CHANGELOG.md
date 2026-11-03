@@ -1,5 +1,25 @@
 # Changelog
 
+## 4.43.21
+
+The stdin hook now denies an interpreter run with options only (`python3 -u`, `node --input-type=module`), which reads stdin and hangs, and still allows each interpreter's info options such as `python3 -V` and `node -v`. The Bash hooks' walker moved to its own module.
+
+## 4.43.20
+
+A spec review's paste guard now disarms on the human's next message as well as on `spec-review apply`, so a review that is abandoned, stops on a failure or is aborted no longer makes every later turn re-paste a stale view or refuses every later ask. A re-run `check` arms it again.
+
+## 4.43.19
+
+The six standalone test suites now end with a shared `tally_summary` from tally.sh, and the duplicated structural tally checks in the harness are gone.
+
+## 4.43.18
+
+A failed `autopilot answer` or handoff write no longer leaves a partly written file and is reported as a write failure, not a missing handoff; `trust_warn_issue` reads autopilot mode through `autopilot_active`; `issue_comments_render` is now `comments_render_trusted`; `trust_filter_prs` names its argument `<subject>`.
+
+## 4.43.17
+
+The planning edit guard now resolves the edited path through symlinks, so it denies source and records edits made through a symlinked repo path instead of allowing them.
+
 ## 4.43.16
 
 Pin the `exclude_line` empty-file test to the exact bytes in one assertion.
