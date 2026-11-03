@@ -167,6 +167,25 @@ discard_own_branch_work() {
   discard_flow_branch_work
 }
 
+# discard_create_work <name>: the Discard rule's decision for both `branch
+# create` paths, <name> being the flow's branch. On the flow's own branch, or a
+# detached HEAD with no rebase in progress, it applies discard_flow_branch_work.
+# On any other branch - foreign, or plugin-made but not the flow's - it
+# discards nothing: a clean tree (no merge or rebase in progress) returns so
+# the caller goes on, and a dirty one dies, exit 1, naming that branch.
+# Called as a bare statement, so a die stops the caller.
+discard_create_work() {
+  local name="$1" b dirty
+  if ! b="$(checkout_branch_or_rebasing "$ROOT")" || branch_held "$b"; then
+    discard_flow_branch_work
+    return
+  fi
+  dirty="$(dirty_outside_allowlist)" || exit 1
+  if [ -n "$dirty" ] || merge_in_progress "$ROOT" || rebase_in_progress "$ROOT"; then
+    die "branch create: the current branch $b is not the flow's branch $name - nothing was discarded"
+  fi
+}
+
 # Records <base> and <sha> as branch <name>'s base and base SHA in its git
 # config, where branch sync and branch base-sha read them.
 record_branch_base() {
@@ -181,12 +200,13 @@ record_branch_base() {
 # refused. It refuses a busy checkout with exit 3 - a branch the plugin made
 # with no PR yet, except the flow's own - but not on the flow signal, since
 # the flow mid-pipeline is its own. Uncommitted or in-progress work is the
-# discard rule's (discard_own_branch_work on the flow's own branch,
-# discard_flow_branch_work before a fork), applied before anything else
-# changes: discarded, or refused in an interactive main checkout. Besides
-# state, it records the base and base SHA in the branch's git config, as
-# branch off does, so branch sync and branch base-sha still find them once
-# the flow is done or archived.
+# discard rule's (discard_create_work, on both paths), applied before anything
+# else changes: discarded on the flow's own branch or a detached HEAD, or
+# refused in an interactive main checkout; on any other branch never discarded,
+# and refused while the tree is dirty or a merge or rebase is in progress.
+# Besides state, it records the base and base SHA in the branch's git
+# config, as branch off does, so branch sync and branch base-sha still find
+# them once the flow is done or archived.
 cmd_branch_create() {
   require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"
@@ -198,7 +218,7 @@ cmd_branch_create() {
     own=1
   fi
   if [ -n "$own" ]; then
-    discard_own_branch_work "branch create" "$name"
+    discard_create_work "$name"
     [ "$(checkout_branch)" = "$name" ] || git checkout -q "$name" \
       || die "could not check out $name"
     note "$name"
@@ -210,7 +230,7 @@ cmd_branch_create() {
   base="$(flow_base)"
   new_branch_refusals "$name" "$base" \
     "point this flow at another base: orch.sh base set <branch> --flow"
-  discard_flow_branch_work
+  discard_create_work "$name"
   fork_new_branch "$name" "$base"
   sha="$(git rev-parse HEAD)"
   state_write_string branch "$name"

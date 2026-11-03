@@ -832,6 +832,7 @@ assert_status "branch off on an unreadable tree exits 1" "$st" 1
 assert_eq "leaving the branch and the git config (branch off)" "$(branch_and_config)" "$before"
 restore_index
 
+default="$(git branch --show-current)"
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
 orch_gh_failing state set issue 12
@@ -839,7 +840,7 @@ echo edit >>README.md
 before="$(checkout_facts)"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on a dirty tree in an interactive main checkout is refused (exit 1)" "$st" 1
-assert_contains "naming the changed path (branch create)" "$out" "README.md"
+assert_contains "naming the current branch as not the flow's (branch create)" "$out" "the current branch $default is not the flow's branch orch/12-own"
 assert_eq "leaving the checkout as it was (branch create, dirty)" "$(checkout_facts)" "$before"
 assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
 git checkout -q README.md
@@ -952,7 +953,6 @@ assert_eq "leaving no rebase in progress" \
 
 # A done flow still holds its branch: a restart discards dirty work and checks
 # the branch out.
-git checkout -q "$default"
 state_fixture phase "done"
 echo hand >>README.md
 out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
@@ -996,6 +996,128 @@ side="$(sc_add sidebr)"
   assert_status "a dirty tree in a side checkout is discarded" "$st" 0
   assert_eq "leaving it clean" "$(git status --porcelain)" ""
 )
+
+# --- branch create off the flow's branch (#1911) ------------------------------
+# The discard rule runs only on the flow's own branch or a detached HEAD. On any
+# other branch a clean tree goes on, and a dirty tree, or a merge or rebase in
+# progress, is refused with nothing discarded - on both the restart and the
+# fresh path.
+echo
+echo "branch create off the flow's branch (#1911)"
+# foreign_flow <slug>: a fresh repo with a flow on issue 5 and no branch made.
+foreign_flow() {
+  new_repo_with_origin
+  orch_gh_failing init "$1" >/dev/null
+  orch_gh_failing state set issue 5
+}
+# refusal_facts: the state a refusal must leave as it was.
+refusal_facts() {
+  git branch --show-current; git status --porcelain
+  orch_gh_failing state get branch; orch_gh_failing state get base_sha
+}
+
+# 1 and 6: the restart on a dirty foreign branch, interactive main checkout
+foreign_flow feat
+orch_gh_failing branch create >/dev/null
+git checkout -q -b human-scratch
+echo hand >>README.md
+echo mine >untracked.txt
+before="$(refusal_facts)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a restart on a dirty foreign branch is refused with exit 1" "$st" 1
+assert_contains "naming the current branch as not the flow's" "$out" "the current branch human-scratch is not the flow's branch orch/5-feat"
+assert_contains "saying nothing was discarded" "$out" "nothing was discarded"
+assert_not_contains "never calling it work on the flow's branch" "$out" "work on the flow's branch"
+assert_eq "staying on it, edits and state intact" "$(refusal_facts)" "$before"
+assert_contains "keeping the tracked edit" "$(git diff --stat)" "README.md"
+assert_eq "keeping the untracked file" "$(cat untracked.txt)" "mine"
+# the same in autopilot
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "the same in an autopilot flow is refused too" "$st" 1
+assert_eq "leaving everything intact" "$(refusal_facts)" "$before"
+# 2: clean tree
+rm untracked.txt
+git checkout -q -- README.md
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a restart on a clean foreign branch succeeds" "$st" 0
+assert_eq "printing the flow's branch" "$out" "orch/5-feat"
+assert_eq "checking it out" "$(git branch --show-current)" "orch/5-feat"
+
+# 1 again, in a hand-made worktree
+new_repo_with_origin
+hm="$(mktemp -d)/hand"
+git worktree add -q -b hm-start "$hm"
+(
+  cd "$hm" || { bad "cd into the hand-made worktree" "cannot cd into $hm"; exit 1; }
+  orch_gh_failing init feat >/dev/null
+  orch_gh_failing state set issue 5
+  orch_gh_failing branch create >/dev/null
+  git checkout -q -b human-scratch
+  echo hand >>README.md
+  echo mine >untracked.txt
+  before="$(refusal_facts)"
+  out="$(orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "a hand-made worktree's restart on a dirty foreign branch is refused" "$st" 1
+  assert_contains "naming that branch" "$out" "human-scratch"
+  assert_eq "leaving edits, branch and state intact" "$(refusal_facts)" "$before"
+  assert_eq "keeping the untracked file" "$(cat untracked.txt)" "mine"
+)
+
+# 3: the fresh path on a dirty foreign branch
+foreign_flow fresh
+git checkout -q -b human-scratch
+echo hand >>README.md
+echo mine >untracked.txt
+before="$(refusal_facts)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "the fresh path on a dirty foreign branch is refused with exit 1" "$st" 1
+assert_contains "naming the current branch" "$out" "the current branch human-scratch is not the flow's branch orch/5-fresh"
+assert_eq "leaving edits and state intact" "$(refusal_facts)" "$before"
+assert_eq "making no flow branch" "$(git branch --list orch/5-fresh)" ""
+assert_eq "keeping the untracked file" "$(cat untracked.txt)" "mine"
+
+# 4 and 7: a side checkout on its detached HEAD discards
+sc_clone
+side="$(sc_add sideb)"
+(
+  cd "$side" || { bad "cd into the side checkout" "cannot cd into $side"; exit 1; }
+  orch_gh_failing init sideb >/dev/null
+  orch_gh_failing state set issue 5
+  echo hand >>README.md
+  echo mine >untracked.txt
+  out="$(orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "the fresh path on a detached HEAD discards and forks" "$st" 0
+  assert_eq "leaving it clean" "$(git status --porcelain)" ""
+  assert_eq "on the flow's branch" "$(git branch --show-current)" "orch/5-sideb"
+  git checkout -q --detach
+  echo hand >>README.md
+  echo mine >untracked.txt
+  out="$(orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "a restart on a detached HEAD discards and checks out" "$st" 0
+  assert_eq "leaving it clean" "$(git status --porcelain)" ""
+  assert_eq "on the flow's branch again" "$(git branch --show-current)" "orch/5-sideb"
+)
+
+# 5: a merge or rebase in progress on a foreign branch
+foreign_flow feat
+orch_gh_failing branch create >/dev/null
+git checkout -q -b scratch-m
+leave_merge_in_progress clash-m
+before="$(refusal_facts)"
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a merge in progress on a foreign branch is refused" "$st" 1
+assert_eq "leaving the merge in progress" "$(merge_state)" "merging"
+assert_eq "and state as it was" "$(refusal_facts)" "$before"
+git merge --abort
+git checkout -q -b scratch-r
+leave_rebase_in_progress clash-r
+assert_eq "(fixture) a rebase is in progress" "$(rebase_state)" "rebasing"
+before="$(refusal_facts)"
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a rebase of a foreign branch in progress is refused" "$st" 1
+assert_contains "naming the branch being rebased" "$out" "the current branch scratch-r is not the flow's"
+assert_eq "leaving the rebase in progress" "$(rebase_state)" "rebasing"
+assert_eq "and state as it was" "$(refusal_facts)" "$before"
 
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null
