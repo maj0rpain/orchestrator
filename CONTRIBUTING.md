@@ -152,7 +152,9 @@ or quick implementation after its last ticket lands; no other ticket subagent
 writes or edits it. Its first line is exactly
 `bump: patch`, `bump: minor` or `bump: major` - semver judgement: patch for
 fixes and docs, minor for new features, major for breaking changes - and the
-rest, after any blank lines, is the CHANGELOG prose for the change, non-empty:
+rest, after any blank lines, is the CHANGELOG prose for the change, non-empty
+and holding no heading line (a line of `#` marks at column 0 followed by a space
+or nothing), since the release adds the entry's one `## ` heading:
 
 ```
 bump: minor
