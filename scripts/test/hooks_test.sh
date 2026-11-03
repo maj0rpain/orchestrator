@@ -531,6 +531,21 @@ for f in docs/agents/domain.md docs/agents/x.md .scratch/ticket.md .scratch/x.md
   assert_empty "allows planning artifact: $f" "$(edit_event "$REPO/$f" s1 | "$GUARD")"
 done
 
+# The flow state and nested checkouts sit under .orchestrator/ but stay guarded.
+out="$(edit_event "$REPO/.orchestrator/state.json" s1 | "$GUARD")"
+assert_eq "denies a write of the flow state file" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+assert_contains "flow state denial names the path" "$out" ".orchestrator/state.json"
+assert_contains "flow state denial says only orch.sh writes it" "$out" "written only by orch.sh"
+assert_contains "flow state denial points at orch-flow" "$out" 'call the Skill tool with \"orchestrator:orch-flow\"'
+for f in .orchestrator/checkouts/x/src/a.ts .orchestrator/worktrees/t1/src/a.ts; do
+  out="$(edit_event "$REPO/$f" s1 | "$GUARD")"
+  assert_eq "denies another checkout's file: $f" \
+    "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  assert_contains "other-checkout denial names $f" "$out" "$f"
+  assert_contains "other-checkout denial redirects for $f" "$out" "Edit it from a session opened in that checkout"
+done
+
 # The glossary and ADRs are planning records: planning never changes them in
 # place, and the denial redirects the wording into the plan instead (#186).
 # The legacy CONTEXT names stay records for repos not yet renamed (#461).

@@ -40,6 +40,16 @@ if planning_allowlisted "$rel"; then exit 0; fi
 # Anything outside the repo is somebody else's business.
 case "$file" in "$root"/*) ;; *) exit 0 ;; esac
 
+# Under an allowlisted prefix but no planning artifact: say what to do.
+if planning_excluded "$rel"; then
+  if [ "$rel" = ".orchestrator/state.json" ]; then
+    hook_emit_deny "Blocked by the orchestrator: '$rel' is flow state, and flow state is written only by orch.sh. To begin a flow, call the Skill tool with \"orchestrator:orch-flow\"."
+  else
+    hook_emit_deny "Blocked by the orchestrator: '$rel' is another checkout's source. Edit it from a session opened in that checkout."
+  fi
+  exit 0
+fi
+
 if planning_record "$rel"; then
   hook_emit_deny "Blocked by the orchestrator: '$rel' is a record of decisions, and planning does not change records in place. $(planning_record_redirect)"
   exit 0
