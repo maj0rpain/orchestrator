@@ -45,6 +45,8 @@ assert_marker_absent()  { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then bad "$1" 
 # Write, or remove, both markers of session <id>.
 make_markers()   { : >"$TMPDIR/orchestrator-grilling-$1"; : >"$TMPDIR/orchestrator-planning-$1"; }
 remove_markers() { rm -f "$TMPDIR/orchestrator-grilling-$1" "$TMPDIR/orchestrator-planning-$1"; }
+# dec: print the permissionDecision of the hook JSON on stdin (allow if none).
+dec() { jq -r '.hookSpecificOutput.permissionDecision // "allow"'; }
 
 # The temp root, created before anything else: TMPDIR is exported as it, so
 # every mktemp below lands inside it, and the hooks' markers too. The EXIT trap
@@ -207,7 +209,7 @@ ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_contains "fires on Skill(orchestrator:orch-interview)" "$out" "Do NOT offer to implement"
 check_no_pointer "on the orch-interview entry point" "$ctx"
 assert_eq "orch-interview arms the guard, which denies a source edit" \
-  "$(edit_event "$REPO/src/main.ts" p1 | "$GUARD" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(edit_event "$REPO/src/main.ts" p1 | "$GUARD" | dec)" "deny"
 rm -f "$TMPDIR/orchestrator-grilling-p1"
 # The old name is removed outright, with no alias.
 assert_empty "ignores the removed Skill(orchestrator:orch-plan)" \
@@ -519,7 +521,7 @@ assert_empty "ignores sessions that were never planning" \
 : >"$TMPDIR/orchestrator-grilling-s1"
 out="$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
 assert_eq "denies a source edit during planning" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(printf '%s' "$out" | dec)" "deny"
 assert_contains "explains what to do instead" "$out" "orchestrator:orch-flow"
 assert_contains "names the blocked file" "$out" "src/main.ts"
 # One JSON object serves both hosts: Junie reads the top-level decision/reason.
@@ -540,7 +542,7 @@ done
 for f in GLOSSARY.md GLOSSARY-MAP.md CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/adr/../adr/x.md; do
   out="$(edit_event "$REPO/$f" s1 | "$GUARD")"
   assert_eq "denies planning record: $f" \
-    "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+    "$(printf '%s' "$out" | dec)" "deny"
   assert_contains "gives the records reason for $f" "$(printf '%s' "$out" | jq -r '.reason')" \
     "is a record of decisions, and planning does not change records in place. Write the exact wording you intended - the new or replaced text, and where it goes - into the plan, so the spec carries it verbatim as an Implementation Decision and it lands with the change it describes. For a quick implementation, put it in the linked issue's body."
 done
@@ -573,15 +575,15 @@ ln -s loop "$REPO/src/loop"
 src_deny='this is a planning session and no flow has'
 out="$(edit_event_at "$LINK/src/x.ts" s1 "$LINK" | "$GUARD")"
 assert_eq "denies a source edit via a symlinked repo, cwd the link" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(printf '%s' "$out" | dec)" "deny"
 assert_contains "names the repo-relative path, not the link spelling" \
   "$(printf '%s' "$out" | jq -r '.reason')" "so 'src/x.ts' should not be edited yet"
 out="$(edit_event_at "$LINK/src/x.ts" s1 "$REPO" | "$GUARD")"
 assert_eq "denies a source edit via a symlinked repo, cwd the physical repo" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(printf '%s' "$out" | dec)" "deny"
 out="$(edit_event_at "$LINK/nodir/deeper/new.ts" s1 "$LINK" | "$GUARD")"
 assert_eq "denies a new file in a missing directory via the link" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(printf '%s' "$out" | dec)" "deny"
 assert_empty "allows a planning artifact via the link" \
   "$(edit_event_at "$LINK/docs/agents/domain.md" s1 "$LINK" | "$GUARD")"
 out="$(edit_event_at "$LINK/docs/adr/0001-x.md" s1 "$LINK" | "$GUARD")"
@@ -594,7 +596,7 @@ assert_contains "denies an allowlisted name symlinked to source, as source" \
   "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
 out="$(edit_event_at "src/x.ts" s1 "$LINK" | "$GUARD")"
 assert_eq "denies a relative source path with cwd the link" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(printf '%s' "$out" | dec)" "deny"
 out="$(edit_event_at "$LINK/src/loop" s1 "$LINK" | "$GUARD")"
 assert_contains "denies a symlink loop under src as source" \
   "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
@@ -610,7 +612,6 @@ assert_contains "denies a file symlink under a directory symlink, its target tak
 rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
 
 # The guard polices the file's own working tree, whatever the cwd (#1933).
-dec() { jq -r '.hookSpecificOutput.permissionDecision // "allow"'; }
 NEST="$REPO/vendor/lib"
 mkdir -p "$NEST" "$REPO/.orchestrator/checkouts" "$REPO/.orchestrator/worktrees"
 git -C "$NEST" init -q
@@ -864,7 +865,7 @@ assert_contains "on Junie, after SessionStart clear the planning message is sent
 # End to end across the guard: planning arms it, clear disarms it.
 skill_event "mattpocock-skills:grilling" ss7 | "$GRILL" >/dev/null
 assert_eq "the planning hook arms the guard on a source file" \
-  "$(edit_event "$REPO/src/main.ts" ss7 | "$GUARD" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(edit_event "$REPO/src/main.ts" ss7 | "$GUARD" | dec)" "deny"
 start_event clear ss7 | "$START" >/dev/null
 assert_empty "after SessionStart clear, the edit guard allows the source edit" \
   "$(edit_event "$REPO/src/main.ts" ss7 | "$GUARD")"
