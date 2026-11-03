@@ -766,6 +766,20 @@ assert_gh_dies "a failed comments read dies" adapter_issue_comments "$GH_502" 1 
   "orch: gh could not read issue #53's comments: HTTP 502: Bad Gateway" \
   apply 53 close-fixed --comment-file "$comment"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
+# A comments answer that does not parse dies the same way, before any write. The
+# stand-in adapter answers with a malformed .comments, which the fake never
+# writes.
+bad_comments_adapter="$(mktemp)"
+writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+  'adapter_issue_comments() { printf "%s\n" "{\"comments\": \"not a list\"}"; }' >"$bad_comments_adapter"
+triaged 54 "review:major,needs-triage,bug"
+before="$(fake_snapshot)"
+out="$(ORCH_GH_ADAPTER="$bad_comments_adapter" apply 54 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+rm -f "$bad_comments_adapter"
+assert_status "an unparseable comments answer dies" "$st" 1
+assert_eq "saying its comments did not parse" \
+  "$(has_line "$out" "orch: could not read issue #54's comments: its comments did not parse")" yes
+assert_eq "and writes nothing (unparseable comments)" "$(fake_snapshot)" "$before"
 
 # Every state label is the repo's name for the role.
 writeln '# Triage Labels' '' \
@@ -929,7 +943,7 @@ member 13 "review:nit,ready-for-human,enhancement"
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 refused "a member gh cannot read" "gh could not read issue #11: HTTP 502: Bad Gateway" new_bundle ready-for-human bug 11 13
 assert_eq "the whole read-failure line (a member gh cannot read)" \
-  "$(has_line "$out" "orch: gh could not read issue #11: HTTP 502: Bad Gateway")" yes
+  "$(has_line "$out" "orch: gh could not read issue #11: HTTP 502: Bad Gateway - no member was touched")" yes
 fake_unfail
 
 # Before bundling, scan --all lists the members.
@@ -1064,7 +1078,7 @@ partial "a failed comment" 40 \
   "orch: bundle #40: gh could not comment on member #32: HTTP 502: Bad Gateway - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 40 32 33" "32 33" "left open"
 fake_fail_after adapter_issue_close 1 "$GH_502"
 partial "a failed close" 41 \
-  "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33" "left open"
+  "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members not confirmed closed: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33" "not confirmed closed"
 fake_fail adapter_issue_comments "$GH_502"
 partial "a failed comments read" 42 \
   "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33" "left open"
@@ -1108,6 +1122,20 @@ member 66 "review:major,ready-for-agent,bug" closed
 fake_fail adapter_issue_comments "$GH_502"
 refused "--into: a closed member whose comments gh cannot read" "gh could not read issue #66's comments: HTTP 502: Bad Gateway - no member was touched" bundle --into 63 66
 fake_unfail
+# The not-open refusal reads the same for a closed unmarked member here and
+# on a new bundle.
+refused "--into: a closed member without the marker (whole line)" "issue #64 is not open" bundle --into 63 64
+assert_eq "the same not-open line as a new bundle's" \
+  "$(has_line "$out" "orch: issue #64 is not open - a bundle takes open filed findings only")" yes
+# A closed member whose comments do not parse names the issue.
+bad_comments_adapter="$(mktemp)"
+writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+  'adapter_issue_comments() { printf "%s\n" "{\"comments\": \"not a list\"}"; }' >"$bad_comments_adapter"
+out="$(ORCH_GH_ADAPTER="$bad_comments_adapter" bundle --into 63 66 2>&1)"; st=$?
+rm -f "$bad_comments_adapter"
+assert_status "--into: a closed member whose comments do not parse dies" "$st" 1
+assert_eq "naming the issue and saying so" \
+  "$(has_line "$out" "orch: could not read issue #66's comments: its comments did not parse")" yes
 
 # --into checks its members as the new form does - one is enough - and B
 # itself, before any write.
@@ -1128,6 +1156,23 @@ refused "--into: a bundle gh cannot read" "gh could not read issue #47: HTTP 502
 assert_eq "the whole read-failure line (--into: a bundle gh cannot read)" \
   "$(has_line "$out" "orch: gh could not read issue #47: HTTP 502: Bad Gateway")" yes
 fake_unfail
+# A member's state is read once: the bundle's read and the member's pass;
+# a second member read would fail.
+fake_fail_after adapter_issue_state_labels 2 "$GH_502"
+out="$(bundle --into 47 34 2>&1)"; st=$?
+fake_unfail
+assert_status "--into reads each member's state once" "$st" 0
+member 34 "review:major,ready-for-agent,bug"
+# With the bundle's own read passing, a failed member read says nothing
+# was touched.
+fake_fail_after adapter_issue_state_labels 1 "$GH_502"
+before="$(fake_snapshot | grep -v "./fail/")"
+out="$(bundle --into 47 34 2>&1)"; st=$?
+fake_unfail
+assert_status "--into: a member gh cannot read dies" "$st" 1
+assert_eq "writing nothing (--into: a member gh cannot read)" "$(fake_snapshot | grep -v "./fail/")" "$before"
+assert_eq "saying no member was touched" \
+  "$(has_line "$out" "orch: gh could not read issue #34: HTTP 502: Bad Gateway - no member was touched")" yes
 out="$(bundle --into 47 34 2>&1)"; st=$?
 assert_status "--into takes a single member" "$st" 0
 assert_eq "closing it into the bundle" "$(fake_state_of 34) $(fake_duplicate_of 34)" "CLOSED 47"
