@@ -149,6 +149,7 @@ gh_or_die() {
 #   adapter_pr_comments, adapter_pr_refs, adapter_pr_url_head,
 #   adapter_pr_ready, adapter_pr_draft,
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_all,
+#   adapter_prs_open_mergeability,
 #   adapter_pr_diff, adapter_prs_merged,
 #   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
 #   adapter_pr_body_edit, adapter_pr_title_edit, adapter_pr_label_add
@@ -605,6 +606,16 @@ adapter_prs_open() {
 adapter_prs_open_all() {
   gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number,isCrossRepository \
     --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
+}
+
+# adapter_prs_open_mergeability: every open PR, newest first, one per line as
+# `<number>\t<head branch>\t<mergeable>\t<isCrossRepository>` - mergeable is
+# gh's MERGEABLE, CONFLICTING or UNKNOWN, the flag `true` or `false` -
+# unfiltered: the Trust module's trust_filter_prs drops the fork PRs. The
+# autopilot watcher's one read per tick (issue #2325).
+adapter_prs_open_mergeability() {
+  gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number,headRefName,mergeable,isCrossRepository \
+    --jq '.[] | "\(.number)\t\(.headRefName)\t\(.mergeable)\t\(.isCrossRepository)"'
 }
 
 # adapter_pr_diff <n>: the PR's diff, as gh prints it.

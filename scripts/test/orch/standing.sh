@@ -139,6 +139,43 @@ echo
 echo "standing transitions"
 fake_flow standing-transitions
 
+# sync request
+tr_seed 49 orch:done
+out="$(sourced_rc 'standing_sync_request 49')"
+assert_eq "sync request adds orch:sync and keeps orch:done" "$(fake_labels_of 49)" "orch:done orch:sync "
+assert_eq "and reads back as a sync request" "$(sourced_rc 'standing_read 49 && echo "$STANDING_SYNC|$STANDING_PHASE"' | head -n 1)" "1|"
+
+# sync finish, the dropped-intent stop and the failure stop
+tr_seed 140 orch:done orch:sync orch:running
+sourced_rc 'standing_sync_finish 140' >/dev/null
+assert_eq "sync finish removes orch:sync, keeps orch:done, drops running and releases" "$(fake_labels_of 140)|$(fake_claim_held 140)" "orch:done |free"
+tr_seed 141 orch:done orch:sync orch:running
+sourced_rc 'standing_sync_dropped 141 "- keep the cache flag (see https://x/y#c1)"' >/dev/null
+assert_eq "the dropped-intent stop removes orch:sync, adds needs-human and releases" "$(fake_labels_of 141)|$(fake_claim_held 141)" "needs-human orch:done |free"
+assert_eq "its comment is a failure stop marked sync" "$(fake_comments_of 141 | head -1)" "$(marker_of failure sync)"
+assert_contains "listing the dropped intent" "$(fake_comments_of 141)" "keep the cache flag (see https://x/y#c1)"
+assert_contains "and saying lifting needs-human re-runs nothing" "$(fake_comments_of 141)" "re-runs nothing"
+tr_seed 142 orch:done orch:sync orch:running
+sourced_rc 'standing_stop 142 failure sync "the resolver gave up"' >/dev/null
+assert_eq "the failure stop keeps orch:sync and adds needs-human" "$(fake_labels_of 142)|$(fake_claim_held 142)" "needs-human orch:done orch:sync |free"
+assert_contains "naming the sync and the reason" "$(fake_comments_of 142)" "Autopilot failed in the sync: the resolver gave up"
+tr_seed 143 orch:done orch:sync orch:running
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(sourced_rc 'standing_sync_finish 143')"
+assert_contains "sync finish failing on the release names the writes that landed" "$out" "writes that landed: removed orch:sync, removed orch:running; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 143)" held
+fake_unfail
+tr_seed 144 orch:done orch:sync orch:running
+fake_fail adapter_issue_comment "HTTP 500"
+out="$(sourced_rc 'standing_sync_dropped 144 x')"
+assert_contains "the dropped-intent stop failing on its comment names the label write that landed" "$out" "writes that landed: added needs-human, removed orch:sync; the claim stays held"
+fake_unfail
+tr_seed 145 orch:done orch:sync orch:running
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(sourced_rc 'standing_sync_dropped 145 x')"
+assert_contains "the dropped-intent stop failing on its relabel says it was also removing orch:sync" "$out" "could not add needs-human, remove orch:sync on issue #145: HTTP 500"
+fake_unfail
+
 # finish
 tr_seed 50 orch:spec orch:running
 out="$(sourced_rc 'standing_finish 50 implement "wrote the spec"')"

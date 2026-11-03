@@ -55,6 +55,12 @@ autopilot_setting() {
       [ "$AUTOPILOT_SOURCE" != unset ] || return 0
       agent_allowed "$name" "$AUTOPILOT_VALUE" ||
         die "$key is $AUTOPILOT_VALUE - not an allowed $name (want $(agent_values "$name"))" ;;
+    auto-sync)
+      if [ "$AUTOPILOT_SOURCE" = unset ]; then AUTOPILOT_VALUE=true; AUTOPILOT_SOURCE=default; fi
+      case "$AUTOPILOT_VALUE" in
+        true|false) ;;
+        *) die "$key is $AUTOPILOT_VALUE - it must be true or false (git config $key true|false)" ;;
+      esac ;;
     cap|rounds|budget)
       case "$name" in
         cap) def="$AUTOPILOT_CAP_DEFAULT" ;;
@@ -73,7 +79,7 @@ autopilot_setting() {
 # range, naming key and value.
 autopilot_show() {
   local name
-  for name in permission-mode cap handle rounds budget model effort; do
+  for name in permission-mode cap handle rounds budget model effort auto-sync; do
     autopilot_setting "$name"
     printf 'orchestrator.autopilot.%s %s (%s)\n' "$name" "${AUTOPILOT_VALUE:-(none)}" "$AUTOPILOT_SOURCE"
   done
@@ -169,14 +175,50 @@ autopilot_phase_arg() {
   [ "$1" != "done" ] || "$die_fn" "a done flow asks no question"
 }
 
+# autopilot_file_text <var> <what> <file>: sets <var> to <file>'s text; dies,
+# naming <what>, when <file> is missing or unreadable.
+autopilot_file_text() {
+  [ -f "$3" ] || die "$2 file not found: $3"
+  file_read "$1" "$3" || die "could not read $3"
+}
+
 # autopilot_ask <phase> <file>: posts <file> as <phase>'s question comment, the
 # configured handle @mentioned, adds needs-human, then releases the claim.
 autopilot_ask() {
   local phase="$1" file="$2" text
   autopilot_phase_arg "$phase"
-  [ -f "$file" ] || die "question file not found: $file"
-  file_read text "$file" || die "could not read $file"
+  autopilot_file_text text question "$file"
   standing_ask "$phase" "$text"
+}
+
+# The three ends of a sync session, each a Standing transition the orch-sync
+# skill's autopilot branch calls. The issue comes from flow state, as ask's.
+
+# autopilot_sync_finish: orch:sync removed, the claim released.
+autopilot_sync_finish() {
+  local issue
+  require_state
+  require_issue issue
+  standing_sync_finish "$issue"
+}
+
+# autopilot_sync_dropped <file>: the dropped-intent stop; <file> lists the
+# intents the resolver dropped, with a link to the Merge resolutions comment.
+autopilot_sync_dropped() {
+  local file="$1" issue text
+  autopilot_file_text text dropped-intents "$file"
+  require_state
+  require_issue issue
+  standing_sync_dropped "$issue" "$text"
+}
+
+# autopilot_sync_fail <reason>: the failure stop, orch:sync kept.
+autopilot_sync_fail() {
+  local issue
+  [ -n "$1" ] || die "a sync failure needs a reason"
+  require_state
+  require_issue issue
+  standing_stop "$issue" failure "$STANDING_SYNC_PHASE" "$1"
 }
 
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
@@ -218,6 +260,21 @@ autopilot_resume() {
   standing_resume "$issue" || gh_die "remove $STANDING_HUMAN_LABEL from issue #$issue" "$STANDING_REASON"
 }
 
+# autopilot_sync <issue>: files a sync request on an open orch:done issue,
+# through the Standing sync request transition - refused, with an `orch: `
+# message, for an issue that is closed, not at orch:done or already carrying
+# orch:sync.
+autopilot_sync() {
+  local issue="$1"
+  is_positive_int "$issue" || die "not an issue number: $issue"
+  standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
+  [ "$STANDING_STATE" = OPEN ] || die "issue #$issue is closed"
+  standing_is_done ||
+    die "issue #$issue is not at $(standing_phase_label "done") - a sync request needs a done flow"
+  [ "$STANDING_SYNC" = 0 ] || die "issue #$issue already carries $STANDING_SYNC_LABEL"
+  standing_sync_request "$issue" || gh_die "add $STANDING_SYNC_LABEL to issue #$issue" "$STANDING_REASON"
+}
+
 # autopilot_reply <issue> <file>: posts <file> as a comment on the issue, then
 # removes needs-human - refused unless the label is still on and no comment
 # follows the issue's newest question comment.
@@ -235,26 +292,37 @@ autopilot_reply() {
 }
 
 # autopilot_questions: one tab-separated line per open needs-human issue that
-# carries a phase label other than orch:done: the issue, its kind (question,
+# carries a phase label other than orch:done, or sits at orch:done stopped by a
+# sync (phase sync): the issue, its kind (question,
 # replied or stop), the phase, and the URL of the comment the kind is about.
 # The newest of the issue's question comments and stop comments decides the
 # kind. Prints one line saying so when nothing is listed; dies, printing
 # nothing, when any read fails.
 autopilot_questions() {
-  local list n phase row kind lines=""
+  local list n phase row kind lines="" q_phase stop_phase
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
     standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
     phase="$STANDING_PHASE"
-    [ -n "$phase" ] || continue
     timeline_read_or_die "$n"
     timeline_question || true
     timeline_stop || true
+    q_phase="$TIMELINE_Q_PHASE" stop_phase="$TIMELINE_STOP_PHASE"
+    if [ -z "$phase" ]; then
+      # a done issue is listed only when a sync stopped it: orch:sync is still
+      # on it (a failure stop), or its newest stop comment is a sync stop
+      standing_is_done || continue
+      if [ "$STANDING_SYNC" = 1 ] || [ "$TIMELINE_STOP_PHASE" = "$STANDING_SYNC_PHASE" ]; then
+        phase="$STANDING_SYNC_PHASE" q_phase="$STANDING_SYNC_PHASE" stop_phase="$STANDING_SYNC_PHASE"
+      else
+        continue
+      fi
+    fi
     if [ -n "$TIMELINE_Q_INDEX" ] && { [ -z "$TIMELINE_STOP_INDEX" ] || [ "$TIMELINE_Q_INDEX" -gt "$TIMELINE_STOP_INDEX" ]; }; then
       if timeline_replied; then kind="replied"; else kind="question"; fi
-      row="$n"$'\t'"$kind"$'\t'"$TIMELINE_Q_PHASE"$'\t'"$TIMELINE_Q_URL"
+      row="$n"$'\t'"$kind"$'\t'"$q_phase"$'\t'"$TIMELINE_Q_URL"
     elif [ -n "$TIMELINE_STOP_INDEX" ]; then
-      row="$n"$'\tstop\t'"$TIMELINE_STOP_PHASE"$'\t'"$TIMELINE_STOP_URL"
+      row="$n"$'\tstop\t'"$stop_phase"$'\t'"$TIMELINE_STOP_URL"
     else
       row="$n"$'\tstop\t'"$phase"$'\t'
     fi
@@ -502,21 +570,47 @@ autopilot_pickup_redo() {
   ORCH_AUTOPILOT=1 autopilot_orch_in "$1" redo "$2"
 }
 
+# autopilot_pickup_sync_refusals <issue> <side> [<recorded>]: a sync request's
+# own refusals, called twice by pickup_steps: with no recorded phase, the side
+# checkout must exist; with it, the checkout must record phase done. A sync adds
+# no side checkout, runs no init, posts no plan comment and runs no redo. A
+# refusal leaves PICKUP_KIND and PICKUP_TEXT and returns 1.
+autopilot_pickup_sync_refusals() {
+  local issue="$1" side="$2" recorded="${3:-}"
+  if [ -z "$side" ]; then
+    PICKUP_KIND=refusal
+    PICKUP_TEXT="no side checkout on this host holds issue #$issue - run $(plugin_cmd sync "the orch-sync skill") where it lives"
+    return 1
+  fi
+  if [ -n "$recorded" ] && [ "$recorded" != "done" ]; then
+    PICKUP_KIND=refusal
+    PICKUP_TEXT="the issue carries a sync request, but its side checkout records phase $recorded, not done"
+    return 1
+  fi
+}
+
 # autopilot_pickup_steps <issue> <phase> <limited>: Pickup's steps in order, up
 # to the session's start. The first that fails leaves PICKUP_KIND and
 # PICKUP_TEXT and returns 1.
 autopilot_pickup_steps() {
-  local issue="$1" phase="$2" limited="$3" side="" title="" recorded redo
+  local issue="$1" phase="$2" limited="$3" side="" title="" recorded redo sync=0
+  [ "$phase" != "$STANDING_SYNC_PHASE" ] || sync=1
   autopilot_pickup_trust "$issue" || return 1
   autopilot_pickup_side_find "$issue"
-  if [ -z "$side" ]; then
-    autopilot_pickup_side_title "$issue" || autopilot_pickup_fail failure "step side-checkout add failed: could not read the issue's title" || return 1
-    autopilot_pickup_side_add "$issue" "$title" || autopilot_pickup_fail failure "step side-checkout add failed" || return 1
+  if [ "$sync" = 1 ]; then
+    autopilot_pickup_sync_refusals "$issue" "$side" || return 1
+  else
+    if [ -z "$side" ]; then
+      autopilot_pickup_side_title "$issue" || autopilot_pickup_fail failure "step side-checkout add failed: could not read the issue's title" || return 1
+      autopilot_pickup_side_add "$issue" "$title" || autopilot_pickup_fail failure "step side-checkout add failed" || return 1
+    fi
+    autopilot_pickup_contained autopilot_pickup_init "$issue" "$side" || autopilot_pickup_fail failure "step init failed" || return 1
+    autopilot_pickup_contained autopilot_post_minimal_plan "$issue" || autopilot_pickup_fail failure "step minimal plan comment failed" || return 1
   fi
-  autopilot_pickup_contained autopilot_pickup_init "$issue" "$side" || autopilot_pickup_fail failure "step init failed" || return 1
-  autopilot_pickup_contained autopilot_post_minimal_plan "$issue" || autopilot_pickup_fail failure "step minimal plan comment failed" || return 1
   autopilot_pickup_recorded "$side" || autopilot_pickup_fail failure "step reading the recorded phase failed" || return 1
-  if [ "$recorded" != "$phase" ]; then
+  if [ "$sync" = 1 ]; then
+    autopilot_pickup_sync_refusals "$issue" "$side" "$recorded" || return 1
+  elif [ "$recorded" != "$phase" ]; then
     redo="$(standing_redo_phase "$phase" "$recorded")" || {
       PICKUP_KIND=refusal
       PICKUP_TEXT="the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only $(standing_redo_rule) is a redo"
@@ -610,29 +704,79 @@ autopilot_pause_extend() {
 }
 
 # autopilot_candidates: the open issues carrying a phase label other than
-# orch:done, oldest first, one number per line.
+# orch:done, or orch:sync, deduplicated and oldest first, one number per line.
 autopilot_candidates() {
-  local phase out gh_err all=""
+  local label out gh_err all="" labels=() phase
   for phase in $PHASES; do
     [ "$phase" != "done" ] || continue
-    capture out gh_err adapter_issues_labelled "$(standing_phase_label "$phase")" ||
-      die "could not list the issues labelled $(standing_phase_label "$phase"): $(gh_reason "$gh_err")"
+    labels+=("$(standing_phase_label "$phase")")
+  done
+  labels+=("$STANDING_SYNC_LABEL")
+  for label in "${labels[@]}"; do
+    capture out gh_err adapter_issues_labelled "$label" ||
+      die "could not list the issues labelled $label: $(gh_reason "$gh_err")"
     all="$all$out"$'\n'
   done
   printf '%s' "$all" | grep -v '^$' | sort -nu || true
 }
 
-# autopilot_tick: one pass - labels, stale claims, then pickup (see the spec's
-# One tick). A claim create that fails for a reason other than a lost race
+# autopilot_sync_detect: the sync request auto-detection. Reads the repo's open
+# PRs once, then files a sync request, through the Standing transition, on
+# every open orch:done issue carrying none of orch:sync, needs-human and
+# orch:running whose one open same-repository PR (head branch `orch/<issue>-`)
+# is CONFLICTING. An issue with no such PR is skipped silently, one with
+# several warned about; a failed read or write warns and skips that issue only.
+autopilot_sync_detect() {
+  local out raw="" prs="" gh_err issue pr_lines head_prefix count done_label reason=""
+  done_label="$(standing_phase_label "done")"
+  capture out gh_err adapter_issues_labelled "$done_label" || {
+    warn "could not list the issues labelled $done_label: $(gh_reason "$gh_err") - no sync detection this tick"
+    return 0
+  }
+  [ -n "$out" ] || return 0
+  if capture raw gh_err adapter_prs_open_mergeability; then
+    prs="$(printf '%s\n' "$raw" | trust_filter_prs "the open PRs")" || reason="the open PRs could not be read: a malformed line"
+  else
+    reason="$(gh_reason "$gh_err")"
+  fi
+  while IFS= read -r issue; do
+    [ -n "$issue" ] || continue
+    standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - sync detection skips it"; continue; }
+    [ "$STANDING_STATE" = OPEN ] || continue
+    standing_is_done || continue
+    [ "$STANDING_SYNC" = 0 ] && [ "$STANDING_HUMAN" = 0 ] && [ "$STANDING_RUNNING" = 0 ] || continue
+    if [ -n "$reason" ]; then
+      warn "could not read the PR of issue #$issue: $reason - sync detection skips it"
+      continue
+    fi
+    head_prefix="$(branch_name_flow "$issue" "")"
+    pr_lines="$(printf '%s\n' "$prs" | awk -F'\t' -v p="$head_prefix" 'index($2, p) == 1')"
+    count="$(printf '%s' "$pr_lines" | grep -c . || true)"
+    [ "$count" -ne 0 ] || continue
+    if [ "$count" -gt 1 ]; then
+      warn "issue #$issue has $count open PRs from a branch starting $head_prefix - sync detection skips it"
+      continue
+    fi
+    [ "$(printf '%s' "$pr_lines" | cut -f3)" = CONFLICTING ] || continue
+    standing_sync_request "$issue" ||
+      warn "could not add $STANDING_SYNC_LABEL to issue #$issue: $STANDING_REASON - sync detection skips it"
+  done <<<"$out"
+}
+
+# autopilot_tick: one pass - labels, stale claims, the limit-pause check,
+# sync detection (when auto-sync is true), then pickup (see the spec's One
+# tick). A claim create that fails for a reason other than a lost race
 # stops the tick, naming it.
 autopilot_tick() {
-  local main_root cap count issue gh_err phase rc candidates limited_arg
+  local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
+  autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale
   if autopilot_pause_until "$main_root"; then return 0; fi
+  if [ "$auto_sync" = true ]; then autopilot_sync_detect; fi
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
   candidates="$(autopilot_candidates)"
@@ -642,7 +786,7 @@ autopilot_tick() {
     standing_read "$issue" ||
       die "could not read issue #$issue: $STANDING_REASON"
     standing_pickable || continue
-    phase="$STANDING_PHASE"
+    phase="$(standing_session_phase)"
     rc=0
     capture_err gh_err standing_claim "$issue" "$phase" "$$" || rc=$?
     case "$rc" in
@@ -850,12 +994,20 @@ autopilot_review_budget_record() {
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher log prompt rc=0 mine name flags=()
+  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
-  phase="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
+  recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
+  # a sync request is told by orch:sync on a done issue; its phase word is sync
+  standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
+  prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
+  phase="$recorded"
+  if [ "$recorded" = "done" ] && standing_is_sync; then
+    phase="$(standing_session_phase)"
+    prompt="Run the orchestrator:orch-sync skill's autopilot branch in this checkout: sync the branch with its base, and stop when the sync is finished."
+  fi
   liveness_run_begin "$issue" || exit 1
   # A later run of the same issue may have replaced the record by the time this
   # one exits: liveness_run_end removes it only while it still names this run.
@@ -878,7 +1030,6 @@ autopilot_run() {
   done
   log="$(liveness_log_path "$issue" "$phase")" || exit $?
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
-  prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
@@ -980,10 +1131,26 @@ cmd_autopilot() {
       [ $# -eq 1 ] || die "usage: orch.sh autopilot resume <issue>"
       autopilot_resume "$1"
       ;;
+    sync)
+      [ $# -eq 1 ] || die "usage: orch.sh autopilot sync <issue>"
+      autopilot_sync "$1"
+      ;;
+    sync-finish)
+      [ $# -eq 0 ] || die "usage: orch.sh autopilot sync-finish"
+      autopilot_sync_finish
+      ;;
+    sync-dropped)
+      [ $# -eq 1 ] || die "usage: orch.sh autopilot sync-dropped <file>"
+      autopilot_sync_dropped "$1"
+      ;;
+    sync-fail)
+      [ $# -eq 1 ] || die "usage: orch.sh autopilot sync-fail <reason>"
+      autopilot_sync_fail "$1"
+      ;;
     ask|answer)
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|questions|reply|resume)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
   esac
 }

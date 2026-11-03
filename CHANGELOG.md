@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.0
+
+Autopilot can now sync a done flow's branch with its base. An `orch:sync` label on an open `orch:done` issue is a sync request. The watcher adds it when the issue's PR conflicts with its base, unless `orchestrator.autopilot.auto-sync` is false, and a human can add it by hand or with `orch.sh autopilot sync <issue>`. A tick picks the request up and runs orch-sync's new autopilot branch in the issue's side checkout. That branch merges the base, resolves any conflict, pushes and posts the Merge resolutions comment. The issue stays at `orch:done`, and the human is asked only when the sync is refused, fails, or drops an intent (#2325).
+
 ## 4.43.53
 
 The review loop skill's CI section now says `state get flake_rerun_used` reads `false` while the flake rerun is unspent, not empty.

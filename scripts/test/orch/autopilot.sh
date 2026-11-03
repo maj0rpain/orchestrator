@@ -29,6 +29,9 @@ local_fields() {
   e="$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s)"
   printf '%s %s\n' "$e" "$(date -d "@$e" '+%H %a' 2>/dev/null || date -r "$e" '+%H %a')"
 }
+# fake_pr_mergeable <n> <value>: seeds PR #n's mergeability - MERGEABLE,
+# CONFLICTING or UNKNOWN, which a PR never seeded reports.
+fake_pr_mergeable() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/mergeable"; }
 # fake_issue_drop <n>...: each issue is gone from the store.
 fake_issue_drop() { local n; for n in "$@"; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done; }
 # fake_claim_release <issue>: the store holds no claim on it.
@@ -342,7 +345,8 @@ orch:implement	0e8a16	Autopilot flow: implement phase next
 orch:limited	c5def5	Autopilot session stopped on a usage limit; retried after the reset
 orch:review	5319e7	Autopilot flow: review phase next
 orch:running	fbca04	Autopilot session running
-orch:spec	1d76db	Autopilot flow: spec phase next"
+orch:spec	1d76db	Autopilot flow: spec phase next
+orch:sync	0075ca	Autopilot: base sync requested on a done flow"
 assert_eq "a session that released its claim leaves no needs-human" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_eq "and no claim" "$(fake_claim_held 7)" free
 assert_eq "its run pidfile is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
@@ -1110,6 +1114,36 @@ assert_status "resume on a failed issue read dies" "$st" 1
 assert_eq "in one line naming gh and the reason" "$(printf '%s\n' "$out" | grep -c .)|${out#orch: gh could not read issue #33: }" "1|HTTP 502"
 fake_unfail
 
+# sync request
+fake_issue 60 open orch:done
+"$ORCH" autopilot sync 60 >/dev/null 2>&1; st=$?
+assert_status "sync on an open done issue succeeds" "$st" 0
+assert_eq "adding only orch:sync" "$(fake_labels_of 60)" "orch:done orch:sync "
+out="$("$ORCH" autopilot sync 60 2>&1)"; st=$?
+assert_status "sync on an issue already carrying orch:sync dies" "$st" 1
+assert_contains "saying so" "$out" "orch: issue #60 already carries orch:sync"
+fake_issue 61 closed orch:done
+out="$("$ORCH" autopilot sync 61 2>&1)"; st=$?
+assert_status "sync on a closed issue dies" "$st" 1
+assert_eq "with its message" "$out" "orch: issue #61 is closed"
+assert_eq "leaving its labels" "$(fake_labels_of 61)" "orch:done "
+fake_issue 62 open orch:review
+out="$("$ORCH" autopilot sync 62 2>&1)"; st=$?
+assert_status "sync on an issue not at orch:done dies" "$st" 1
+assert_contains "saying so" "$out" "orch: issue #62 is not at orch:done"
+assert_eq "leaving its labels" "$(fake_labels_of 62)" "orch:review "
+fake_issue 63 open orch:done
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$("$ORCH" autopilot sync 63 2>&1)"; st=$?
+assert_status "sync on a failed label write dies" "$st" 1
+assert_eq "with gh's reason" "$out" "orch: gh could not add orch:sync to issue #63: HTTP 500"
+fake_unfail
+out="$("$ORCH" autopilot sync 2>&1)"; st=$?
+assert_status "sync without an issue dies" "$st" 1
+assert_contains "with its usage" "$out" "orch: usage: orch.sh autopilot sync <issue>"
+out="$("$ORCH" autopilot bogus 2>&1)"
+assert_contains "the unknown-op list names the sync verbs" "$out" "|sync|sync-finish|sync-dropped|sync-fail)"
+
 # reply
 r="$(mktemp)"; printf '1: Yes, keep it\n' >"$r"
 fake_issue 40 open needs-human orch:spec
@@ -1655,3 +1689,335 @@ fake_issue 7 open Ready-For-Agent
 out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
 assert_status "start accepts an issue carrying Ready-For-Agent" "$st" 0
 restore_suite_env
+
+# --- autopilot tick and run: sync requests -----------------------------------
+# A sync request - orch:sync on an open orch:done issue - is picked up under the
+# phase word sync: claimed, counted toward the cap, oldest first, and refused
+# without a side checkout recording phase done.
+echo
+echo "autopilot sync requests"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Sync seven"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1   # makes the side checkout of issue 7
+side7="$top/.orchestrator/checkouts/sync-seven"
+(cd "$side7" && state_fixture phase "done")
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+sync_before="$(ls "$top/.orchestrator/checkouts")"
+
+# a sync request with a done side checkout is claimed and its session started
+fake_issue 7 open orch:done orch:sync
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a sync request starts one session" "$(tick_calls)" "1"
+assert_contains "its session sees orch:running beside orch:sync" "$(grep '^labels:7:' "$launcher_dir/calls" | tail -1)" "orch:done orch:running orch:sync"
+assert_contains "and the sync prompt" "$(cat "$launcher_dir/calls")" "orch-sync skill's autopilot branch"
+assert_not_contains "not the phase prompt" "$(cat "$launcher_dir/calls")" "orch-flow skill's Next phase"
+assert_eq "no side checkout was added" "$(ls "$top/.orchestrator/checkouts")" "$sync_before"
+assert_eq "its session log is named with the sync phase word" "$(find "$top/.orchestrator/autopilot/logs" -name "7-sync-*" | wc -l | tr -d " ")" "1"
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# auto-sync false only stops a tick adding the label: a hand-added request is
+# still picked up
+git config orchestrator.autopilot.auto-sync false
+fake_issue 7 open orch:done orch:sync
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with auto-sync false a hand-added sync request is still picked up" "$(tick_calls)" "1"
+assert_contains "under the sync prompt" "$(cat "$launcher_dir/calls")" "orch-sync skill's autopilot branch"
+git config --unset-all orchestrator.autopilot.auto-sync
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# a phase session still gets the phase prompt; a sync request counts toward
+# the cap, oldest first
+fake_issue 7 open orch:done orch:sync
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Sync eight"
+fake_issue 6 open ready-for-agent orch:spec; fake_issue_title 6 "Sync six"
+printf '6 7 8\n' >"$launcher_dir/release"
+git config orchestrator.autopilot.cap 2
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a cap of 2 starts two sessions" "$(tick_calls)" "2"
+assert_eq "the oldest issues first, the sync request among them" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "sync-six sync-seven "
+assert_eq "the third waits" "$(fake_labels_of 8)" "orch:spec ready-for-agent "
+assert_contains "the phase issue got the phase prompt" "$(cat "$launcher_dir/calls")" "orch-flow skill's Next phase"
+git config orchestrator.autopilot.cap 5
+fake_issue_drop 6 8
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# orch:sync without orch:done is no sync request; a live phase label still
+# picks the issue up for its phase
+fake_issue 9 open ready-for-agent orch:sync
+fake_issue_title 9 "Slip nine"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "orch:sync without orch:done starts no session" "$(tick_calls)" "0"
+assert_eq "and changes nothing" "$(fake_labels_of 9)" "orch:sync ready-for-agent "
+fake_issue_relabel 9 orch:spec ready-for-agent orch:sync
+printf '9\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with a live phase label it is picked up for its phase" "$(tick_calls)" "1"
+assert_contains "under the phase prompt" "$(cat "$launcher_dir/calls")" "orch-flow skill's Next phase"
+fake_issue_drop 9
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# a limit pause holds a sync request
+fake_issue 7 open orch:done orch:sync
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of $(( $(date +%s) + 3600 )))" >"$top/.orchestrator/autopilot/limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "no sync request is picked up while a limit pause holds" "$(tick_calls)" "0"
+rm -f "$top/.orchestrator/autopilot/limit"
+
+# a recorded phase other than done is refused, naming it, keeping orch:sync
+(cd "$side7" && state_fixture phase review)
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a side checkout not at done starts no session" "$(tick_calls)" "0"
+assert_eq "the issue is needs-human, keeping orch:sync" "$(fake_labels_of 7)" "needs-human orch:done orch:sync "
+assert_contains "the stop comment is marked sync" "$(fake_last_comment_of 7)" "<!-- orch:refusal sync -->"
+assert_contains "and names the recorded phase" "$(fake_last_comment_of 7)" "records phase review, not done"
+assert_eq "the claim is released" "$(fake_claim_held 7)" free
+assert_not_contains "no plan comment was posted" "$(fake_comments_of 7 | tail -2)" "01-plan"
+(cd "$side7" && state_fixture phase "done")
+
+# no side checkout: refused, saying where to sync by hand, creating nothing
+fake_issue 12 open orch:done orch:sync
+sync_before="$(ls "$top/.orchestrator/checkouts")"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a sync request without a side checkout starts no session" "$(tick_calls)" "0"
+assert_eq "it is needs-human, keeping orch:sync" "$(fake_labels_of 12)" "needs-human orch:done orch:sync "
+assert_contains "the stop comment is marked sync" "$(fake_last_comment_of 12)" "<!-- orch:refusal sync -->"
+assert_contains "and says to run /orchestrator:sync" "$(fake_last_comment_of 12)" "run /orchestrator:sync"
+assert_contains "where it lives" "$(fake_last_comment_of 12)" "where it lives"
+assert_eq "the claim is released" "$(fake_claim_held 12)" free
+assert_eq "no side checkout was created" "$(ls "$top/.orchestrator/checkouts")" "$sync_before"
+
+# an untrusted issue is refused by the trust check, before anything else
+fake_issue 13 open orch:done orch:sync
+fake_issue_authorship 13 stranger NONE
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an untrusted sync request starts no session" "$(tick_calls)" "0"
+assert_contains "it is refused by the trust check" "$(fake_last_comment_of 13)" "last written by stranger"
+assert_eq "keeping orch:sync" "$(fake_labels_of 13)" "needs-human orch:done orch:sync "
+assert_eq "and no side checkout was created" "$(ls "$top/.orchestrator/checkouts")" "$sync_before"
+
+# a sync session's limit stop keeps orch:sync, with a streak of its own
+(cd "$side7" && state_fixture phase "done")
+sync_limit_run() { # a sync session that hits the usage limit, claim held
+  ndjson_with "Claude AI usage limit reached|4102444800" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
+  fake_issue_relabel 7 orch:done orch:sync orch:running
+  fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+  "$ORCH" autopilot run 7 >/dev/null 2>&1
+  rm -f "$top/.orchestrator/autopilot/limit"
+}
+sync_limit_run
+assert_eq "a sync session's limit stop adds orch:limited, keeping orch:sync" "$(fake_labels_of 7)" "orch:done orch:limited orch:sync "
+assert_contains "its comment is a limited stop marked sync" "$(fake_last_comment_of 7)" "<!-- orch:limited sync -->"
+assert_contains "naming the sync, not a phase" "$(fake_last_comment_of 7)" "usage limit in the sync, which resets"
+sync_limit_run
+sync_limit_run
+assert_eq "the third in a row waits on the human, keeping orch:sync" "$(fake_labels_of 7)" "needs-human orch:done orch:sync "
+assert_contains "as a failure marked sync" "$(fake_last_comment_of 7)" "<!-- orch:failure sync -->"
+
+# a sync session's failure ending keeps orch:sync
+rm -f "$launcher_dir/out"; printf '3\n' >"$launcher_dir/exit"
+fake_issue_relabel 7 orch:done orch:sync orch:running
+fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_eq "a sync session's failure ending adds needs-human, keeping orch:sync" "$(fake_labels_of 7)" "needs-human orch:done orch:sync "
+assert_contains "as a failure stop naming the sync" "$(fake_last_comment_of 7)" "Autopilot failed in the sync"
+assert_eq "and releases the claim" "$(fake_claim_held 7)" free
+
+# the stale-claim cleanup of a dead sync session's claim keeps orch:sync
+fake_issue 14 open orch:done orch:sync orch:running
+fake_claim_seed 14 "$(hostname)" "$(dead_pid)" "" sync
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a dead sync claim is stopped, keeping orch:sync" "$(fake_labels_of 14)" "needs-human orch:done orch:sync "
+assert_contains "with a stop comment marked sync" "$(fake_comments_of 14)" "<!-- orch:failure sync -->"
+assert_eq "and its claim released" "$(fake_claim_held 14)" free
+
+# questions lists a done issue a sync stopped, and only that
+fake_issue 20 open needs-human orch:done orch:sync
+fake_issue 21 open needs-human orch:done
+sourced_orch standing_sync_dropped 21 "- a dropped intent" >/dev/null 2>&1
+fake_issue 22 open needs-human orch:done
+sourced_orch standing_stop 22 failure review "old" >/dev/null 2>&1
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "a done issue with orch:sync and needs-human is listed as sync" "$out" "20	stop	sync"
+assert_contains "a done issue whose newest stop is a sync stop is listed as sync" "$out" "21	stop	sync"
+assert_not_contains "a done issue needs-human for another reason is omitted" "$out" "22	"
+fake_issue 23 open needs-human orch:done orch:sync
+sourced_orch standing_stop 23 failure review "old" >/dev/null 2>&1
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "a sync request whose newest stop is another phase's lists as sync" "$out" "23	stop	sync"
+
+# --- autopilot tick: sync request auto-detection (#2325) -------------
+# A tick files a sync request on an open orch:done issue whose open PR GitHub
+# reports as CONFLICTING.
+echo
+echo "autopilot tick sync detection"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_done_pr() { # <issue> <state> <mergeable> [head]: issue #n at orch:done and its PR #(100+n)
+  fake_issue "$1" open orch:done
+  fake_pr "$((100 + $1))" "$2" "${4:-orch/$1-widget}" main
+  fake_pr_mergeable "$((100 + $1))" "$3"
+}
+fake_done_pr 30 open CONFLICTING
+fake_done_pr 31 open UNKNOWN
+fake_done_pr 32 open MERGEABLE
+fake_done_pr 33 closed CONFLICTING
+fake_done_pr 34 merged CONFLICTING
+fake_done_pr 35 open CONFLICTING
+fake_issue 35 open orch:done orch:sync
+fake_done_pr 36 open CONFLICTING
+fake_issue 36 open orch:done needs-human
+fake_done_pr 37 open CONFLICTING
+fake_issue 37 open orch:done orch:running
+fake_issue 38 open orch:done
+fake_pr 138 open orch/380-other main
+fake_pr_mergeable 138 CONFLICTING
+fake_done_pr 39 open CONFLICTING
+fake_pr 139 open orch/39-widget main
+fake_pr_cross 139
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with conflicting done flows succeeds" "$st" 0
+assert_eq "a CONFLICTING open PR gets orch:sync, with no side checkout, and its pickup stops as a refusal" "$(fake_labels_of 30)" "needs-human orch:done orch:sync "
+assert_eq "an UNKNOWN PR is left alone" "$(fake_labels_of 31)" "orch:done "
+assert_eq "a MERGEABLE PR is left alone" "$(fake_labels_of 32)" "orch:done "
+assert_eq "a closed PR is left alone" "$(fake_labels_of 33)" "orch:done "
+assert_eq "a merged PR is left alone" "$(fake_labels_of 34)" "orch:done "
+assert_eq "an issue already labelled orch:sync is left alone" "$(fake_labels_of 35)" "needs-human orch:done orch:sync "
+assert_eq "an issue labelled needs-human is left alone" "$(fake_labels_of 36)" "needs-human orch:done "
+assert_eq "an issue labelled orch:running is left alone" "$(fake_labels_of 37)" "orch:done orch:running "
+assert_eq "a branch of another issue sharing the number prefix does not match" "$(fake_labels_of 38)" "orch:done "
+assert_eq "a fork PR is not the issue's PR" "$(fake_labels_of 39)" "orch:done "
+assert_contains "and the Trust module's fork warning shows" "$out" "ignored 1 PR(s) from forks"
+assert_not_contains "no PR-less issue is warned about" "$out" "issue #38"
+assert_eq "no session starts for a sync request without a side checkout" "$(tick_calls)" "0"
+
+# several open PRs: warned about and skipped
+fake_done_pr 40 open CONFLICTING
+fake_pr 140 open orch/40-a main; fake_pr_mergeable 140 CONFLICTING
+fake_pr 240 open orch/40-b main; fake_pr_mergeable 240 CONFLICTING
+out="$("$ORCH" autopilot tick 2>&1)"
+assert_eq "an issue with two open PRs gets no orch:sync" "$(fake_labels_of 40)" "orch:done "
+assert_contains "and is warned about" "$out" "issue #40 has 2 open PRs"
+
+# a failing label write warns and skips its issue, and the tick carries on
+fake_issue_drop 40
+for n in 31 32 33 34 35 36 37 38 39; do fake_issue_drop "$n"; done
+fake_done_pr 30 open CONFLICTING
+fake_done_pr 41 open CONFLICTING
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing label write does not stop the tick" "$st" 0
+assert_contains "it warns for the first issue and gh's reason" "$out" "could not add orch:sync to issue #30: HTTP 500"
+assert_contains "and the second issue is still tried" "$out" "could not add orch:sync to issue #41: HTTP 500"
+fake_unfail
+
+# a failing PR read warns and skips
+fake_done_pr 30 open CONFLICTING
+
+fake_fail adapter_prs_open_mergeability "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing PR read does not stop the tick" "$st" 0
+assert_contains "it warns, naming the issue" "$out" "could not read the PR of issue #30: HTTP 502"
+assert_eq "and files nothing" "$(fake_labels_of 30)" "orch:done "
+fake_unfail
+
+# a malformed PR read warns and skips, never reads as no PR
+fake_done_pr 30 open CONFLICTING
+printf 'maybe\n' >"$ORCH_GH_FAKE_STORE/prs/130/cross_repository"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a malformed PR read does not stop the tick" "$st" 0
+assert_contains "it warns, naming the issue" "$out" "could not read the PR of issue #30: the open PRs could not be read"
+assert_eq "and files nothing" "$(fake_labels_of 30)" "orch:done "
+rm -f "$ORCH_GH_FAKE_STORE/prs/130/cross_repository"
+
+# auto-sync false adds nothing
+fake_done_pr 30 open CONFLICTING
+git config orchestrator.autopilot.auto-sync false
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with auto-sync false a tick adds no orch:sync" "$(fake_labels_of 30)" "orch:done "
+git config --unset-all orchestrator.autopilot.auto-sync
+
+# a limit pause reads no PR and adds no label
+fake_done_pr 30 open CONFLICTING
+fake_fail adapter_prs_open_mergeability "HTTP 502"
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of $(( $(date +%s) + 3600 )))" >"$top/.orchestrator/autopilot/limit"
+out="$("$ORCH" autopilot tick 2>&1)"
+assert_eq "while a limit pause holds, no orch:sync is added" "$(fake_labels_of 30)" "orch:done "
+assert_not_contains "and no PR is read" "$out" "could not read the PR"
+rm -f "$top/.orchestrator/autopilot/limit"
+fake_unfail
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "once the pause has passed the label is added" "$(fake_labels_of 30)" "needs-human orch:done orch:sync "
+
+# the setting
+git config orchestrator.autopilot.auto-sync maybe
+fake_fail adapter_prs_open_mergeability "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with a bad auto-sync dies" "$st" 1
+assert_contains "naming key and value" "$out" "orchestrator.autopilot.auto-sync is maybe"
+assert_not_contains "before any PR is read" "$out" "could not read the PR"
+out="$("$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "show dies on a bad auto-sync" "$st" 1
+assert_contains "naming key and value" "$out" "orchestrator.autopilot.auto-sync is maybe"
+git config --unset-all orchestrator.autopilot.auto-sync
+fake_unfail
+out="$("$ORCH" autopilot show 2>&1)"
+assert_contains "show lists auto-sync with its default" "$out" "orchestrator.autopilot.auto-sync true (default)"
+git config orchestrator.autopilot.auto-sync false
+out="$("$ORCH" autopilot show 2>&1)"
+assert_contains "a set auto-sync shows with its source" "$out" "orchestrator.autopilot.auto-sync false (local)"
+restore_suite_env
+
+# --- autopilot sync-finish, sync-dropped and sync-fail -----------------------
+# The three ends of a sync session, each reading the issue from flow state.
+echo
+echo "autopilot sync verbs"
+fake_flow autopilot-sync-verbs
+dropped="$(mktemp)"; printf -- '- dropped thing\n' >"$dropped"
+
+out="$("$ORCH" autopilot sync-finish 2>&1)"; st=$?
+assert_status "sync-finish with no issue in state exits 1" "$st" 1
+assert_contains "naming the missing issue" "$out" "no issue recorded in state"
+"$ORCH" state set issue 145 >/dev/null
+out="$("$ORCH" autopilot sync-finish extra 2>&1)"; st=$?
+assert_status "sync-finish takes no argument" "$st" 1
+assert_contains "and prints its usage" "$out" "usage: orch.sh autopilot sync-finish"
+out="$("$ORCH" autopilot sync-dropped 2>&1)"; st=$?
+assert_status "sync-dropped needs its file" "$st" 1
+assert_contains "and prints its usage" "$out" "usage: orch.sh autopilot sync-dropped <file>"
+out="$("$ORCH" autopilot sync-dropped /nonexistent/dropped.txt 2>&1)"; st=$?
+assert_status "sync-dropped with a missing file exits 1" "$st" 1
+assert_contains "naming the file" "$out" "dropped-intents file not found: /nonexistent/dropped.txt"
+out="$("$ORCH" autopilot sync-fail 2>&1)"; st=$?
+assert_status "sync-fail needs its reason" "$st" 1
+assert_contains "and prints its usage" "$out" "usage: orch.sh autopilot sync-fail <reason>"
+out="$("$ORCH" autopilot sync-fail "" 2>&1)"; st=$?
+assert_status "sync-fail with an empty reason exits 1" "$st" 1
+assert_contains "saying it needs a reason" "$out" "a sync failure needs a reason"
+
+fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
+"$ORCH" autopilot sync-finish >/dev/null 2>&1
+assert_eq "sync-finish removes orch:sync, keeps orch:done and releases the claim" "$(fake_labels_of 145)|$(fake_claim_held 145)" "orch:done |free"
+fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
+"$ORCH" autopilot sync-dropped "$dropped" >/dev/null 2>&1
+assert_eq "sync-dropped stops it" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done |free"
+assert_contains "listing the file's text" "$(fake_comments_of 145)" "- dropped thing"
+fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
+"$ORCH" autopilot sync-fail "push rejected" >/dev/null 2>&1
+assert_eq "sync-fail keeps orch:sync" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done orch:sync |free"
+assert_contains "naming the reason" "$(fake_comments_of 145)" "push rejected"
+"$ORCH" autopilot resume 145 >/dev/null 2>&1
+assert_eq "resume lifts needs-human and keeps orch:sync" "$(fake_labels_of 145)" "orch:done orch:sync "
+
+fake_issue 146 open orch:done orch:sync orch:running; fake_claim_seed 146
+"$ORCH" state set issue 146 >/dev/null
+fake_fail adapter_claim_delete "HTTP 500"
+out="$("$ORCH" autopilot sync-finish 2>&1)"; st=$?
+assert_status "sync-finish failing on the release exits 1" "$st" 1
+assert_contains "naming the writes that landed" "$out" "writes that landed: removed orch:sync, removed orch:running; the claim stays held"
+fake_unfail
