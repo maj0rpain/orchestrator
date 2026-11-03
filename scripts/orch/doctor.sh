@@ -470,7 +470,10 @@ check_git_exclude() {
   # arrived mid-flow in a repo that is not theirs. One warning for every missing
   # line, and a remedy that appends only those.
   d_warn "$(list_join "$(printf '%s\n' "${missing[@]}")") not git-excluded - flow state and planning drafts would show as untracked."
-  d_remedy "printf '%s\\n' $(printf "'%s' " "${missing[@]}")>>\"\$(git rev-parse --git-common-dir)/info/exclude\""
+  # The leading echo ends an unterminated last line, so pasting it never
+  # glues onto the user's pattern; on a terminated file it adds a blank line,
+  # which git ignores.
+  d_remedy "{ echo; printf '%s\\n' $(printf "'%s' " "${missing[@]}"); }>>\"\$(git rev-parse --git-common-dir)/info/exclude\""
 }
 
 # The base branch every new flow and quick implementation will fork from and

@@ -65,9 +65,10 @@ printf '%s\n' '.orchestrator/' >>"$ude_ex"
 assert_eq "nothing prints when every entry is present" \
   "$(sourced_orch orch_dirs_unexcluded)" ""
 
-# --- exclude_line's failed write (#1548) --------------------------------------
+# --- exclude_line -------------------------------------------------------------
 # exclude_orch_dirs' four callers (init, side-checkout add, the ticket worktree,
-# the review pass) call it bare under set -e, so this pins their message.
+# the review pass) call it bare under set -e, so a failed write (#1548) pins
+# their message; the appends keep an unterminated last line whole (#1912).
 echo
 echo "exclude_line"
 new_repo >/dev/null
@@ -97,6 +98,34 @@ else
     "orch: cannot add .orchestrator/ to the git exclude file $el_dir/info/exclude"
 fi
 chmod u+w "$el_dir/info/exclude"
+
+# An unterminated last line is ended before the append (#1912).
+new_repo >/dev/null
+el_ex="$(git rev-parse --git-common-dir)/info/exclude"
+printf 'secrets.env' >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "an unterminated last line stays whole beside the appended one" \
+  "$(cat "$el_ex")" $'secrets.env\nextra/'
+rm -f "$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "a missing file gets just the line" "$(od -An -c "$el_ex" | tr -s ' ')" " e x t r a / \\n"
+: >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "an empty file gets just the line" "$(cat "$el_ex")" "extra/"
+assert_eq "with no leading blank line" "$(wc -l <"$el_ex" | tr -d ' ')" "1"
+printf 'a\n' >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "a terminated file gets no blank line" "$(od -An -c "$el_ex" | tr -s ' ')" " a \\n e x t r a / \\n"
+printf 'secrets.env' >"$el_ex"
+chmod a-w "$el_ex"
+if [ -w "$el_ex" ]; then
+  skip "a read-only unterminated file dies as before" "$el_ex stays writable (running as root?)"
+else
+  out="$(sourced_orch exclude_line "extra/" 2>&1)"; st=$?
+  assert_eq "a read-only unterminated file dies as before" "$out" \
+    "orch: cannot add extra/ to the git exclude file $el_ex"
+fi
+chmod u+w "$el_ex"
 
 # --- list_has -----------------------------------------------------------------
 # The one newline-list membership test: whole lines, matched literally.

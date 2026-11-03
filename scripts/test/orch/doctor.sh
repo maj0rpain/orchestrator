@@ -747,6 +747,19 @@ assert_eq "the remedy appends .scratch/" "$(exclude_count .scratch/)" "1"
 assert_eq "without repeating .orchestrator/" "$(exclude_count .orchestrator/)" "1"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "and clears the warning" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+
+# The remedy on an unterminated and on a terminated file (#1912).
+printf 'secrets.env' >.git/info/exclude
+out="$("$ORCH" doctor --env 2>&1)"
+remedy="$(printf '%s\n' "$out" | grep -A1 'not git-excluded' | sed -n '2s/^ *//p')"
+eval "$remedy"
+assert_eq "the remedy keeps an unterminated last pattern whole" "$(exclude_count secrets.env)" "1"
+assert_eq "and writes .orchestrator/ once" "$(exclude_count .orchestrator/)" "1"
+assert_eq "and .scratch/ once" "$(exclude_count .scratch/)" "1"
+printf 'secrets.env\n' >.git/info/exclude
+eval "$remedy"
+assert_eq "on a terminated file the remedy adds one blank line, then the directories" \
+  "$(cat .git/info/exclude)" $'secrets.env\n\n.orchestrator/\n.scratch/'
 : >.git/info/exclude
 
 # The exclude line is still truncated from the check above, so this one does
