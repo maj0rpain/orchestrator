@@ -433,8 +433,9 @@ filter_dir="$(planted_copy <<'PLANTED'
   echo; echo "planted gamma"; ok "gamma ran"
 PLANTED
 )"
+filter_suite="$filter_dir/scripts/test/orch_test.sh"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted (alpha|beta)$' \
-  bash "$filter_dir/scripts/test/orch_test.sh" 2>/dev/null)"
+  bash "$filter_suite" 2>/dev/null)"
 assert_eq "matches titles without their trailing dashes" \
   "$(count_lines -xE 'planted alpha|planted beta' "$out")" "2"
 assert_eq "runs isolation alongside the matched sections" \
@@ -443,7 +444,6 @@ assert_eq "skips the sections the pattern does not match" \
   "$(count_lines -x 'planted gamma' "$out")" "0"
 
 # Case-insensitive match, and the top-level branches of an alternation.
-filter_suite="$filter_dir/scripts/test/orch_test.sh"
 filter_err="$(mktemp)"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha$' bash "$filter_suite" 2>&1)"; st=$?
 assert_status "a lowercase filter selects a capitalised title" "$st" 0
