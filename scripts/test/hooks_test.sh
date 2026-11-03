@@ -95,9 +95,12 @@ source "$COMMON"
 # to {} once per key and value. The hooks tests' well-formed states (slug,
 # phase and issue present) come from here; partial and invalid ones stay raw,
 # to prove the hooks tolerate anything on disk. A failed write fails its case.
-write_flow_state() {
-  local file
-  file="$(flow_state_file "$REPO")"
+write_flow_state() { write_flow_state_at "$REPO" "$@"; }
+# write_flow_state_at <root> <key> <value>...: the same, for <root>'s state.
+write_flow_state_at() {
+  local file root="$1"
+  shift
+  file="$(flow_state_file "$root")"
   mkdir -p "${file%/*}"
   echo '{}' >"$file"
   while [ "$#" -gt 1 ]; do
@@ -605,6 +608,51 @@ out="$(edit_event_at "$LINK/docs/agents/sub/f.ts" s1 "$LINK" | "$GUARD")"
 assert_contains "denies a file symlink under a directory symlink, its target taken from the physical directory" \
   "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
 rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
+
+# The guard polices the file's own working tree, whatever the cwd (#1933).
+dec() { jq -r '.hookSpecificOutput.permissionDecision // "allow"'; }
+NEST="$REPO/vendor/lib"
+mkdir -p "$NEST" "$REPO/.orchestrator/checkouts" "$REPO/.orchestrator/worktrees"
+git -C "$NEST" init -q
+git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$REPO" worktree add -q -b side "$REPO/.orchestrator/checkouts/foo"
+git -C "$REPO" worktree add -q -b tkt "$REPO/.orchestrator/worktrees/t1"
+SIDE="$REPO/.orchestrator/checkouts/foo"
+mkdir -p "$SIDE/src" "$SIDE/docs/adr" "$SIDE/docs/agents" "$NEST/src"
+assert_eq "denies main source with cwd in a nested repo" \
+  "$(edit_event_at "$REPO/src/x.ts" s1 "$NEST" | "$GUARD" | dec)" "deny"
+assert_eq "denies main source with cwd in a side checkout" \
+  "$(edit_event_at "$REPO/src/x.ts" s1 "$SIDE" | "$GUARD" | dec)" "deny"
+assert_eq "denies main source with cwd /" \
+  "$(edit_event_at "$REPO/src/x.ts" s1 / | "$GUARD" | dec)" "deny"
+assert_eq "denies a side checkout's source from the main cwd" \
+  "$(edit_event_at "$SIDE/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+assert_eq "denies a ticket worktree's source from the main cwd" \
+  "$(edit_event_at "$REPO/.orchestrator/worktrees/t1/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+assert_eq "denies a source edit inside a nested repo" \
+  "$(edit_event_at "$NEST/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+assert_eq "denies a new file in a missing directory, cwd /" \
+  "$(edit_event_at "$REPO/nodir/deeper/new.ts" s1 / | "$GUARD" | dec)" "deny"
+SL2="$(mktemp -d)"; ln -s "$REPO" "$SL2/link"
+assert_eq "denies via a symlinked repo with cwd in the nested repo" \
+  "$(edit_event_at "$SL2/link/src/x.ts" s1 "$NEST" | "$GUARD" | dec)" "deny"
+rm -rf "$SL2"
+assert_contains "denies a side checkout ADR with the records reason" \
+  "$(edit_event_at "$SIDE/docs/adr/0001-x.md" s1 "$REPO" | "$GUARD" | jq -r '.reason')" "is a record of decisions"
+assert_empty "allows a side checkout's allowlisted file" \
+  "$(edit_event_at "$SIDE/docs/agents/x.md" s1 "$REPO" | "$GUARD")"
+NOGIT="$(mktemp -d)"
+assert_empty "allows a file outside any git repo" \
+  "$(edit_event_at "$NOGIT/x.ts" s1 "$REPO" | "$GUARD")"
+rm -rf "$NOGIT"
+write_flow_state_at "$SIDE" slug x phase implement issue null
+assert_empty "allows the side checkout's source when its flow is active" \
+  "$(edit_event_at "$SIDE/src/x.ts" s1 "$REPO" | "$GUARD")"
+assert_eq "denies main source while only a side checkout's flow is active" \
+  "$(edit_event_at "$REPO/src/x.ts" s1 "$SIDE" | "$GUARD" | dec)" "deny"
+git -C "$REPO" worktree remove --force "$SIDE"
+git -C "$REPO" worktree remove --force "$REPO/.orchestrator/worktrees/t1"
+rm -rf "$REPO/vendor" "$REPO/.orchestrator"
 
 # Junie's PreToolUse payload carries no cwd, and its bundled docs show no
 # session_id either, though build 3419.7 sends one. No session

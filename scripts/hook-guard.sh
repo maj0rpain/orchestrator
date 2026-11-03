@@ -28,7 +28,13 @@ file="$(hook_tool_path)"
 [ -e "$(hook_marker_path grilling)" ] || exit 0
 [ -n "$file" ] || exit 0
 
-root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
+# The repo policed is the file's own: the git toplevel of its nearest existing
+# ancestor directory. The file is physical, so the toplevel is too. The payload
+# cwd follows the model's cd and decides nothing here. A file in no git repo is
+# somebody else's business.
+dir="${file%/*}"
+while [ -n "$dir" ] && [ ! -d "$dir" ]; do dir="${dir%/*}"; done
+root="$(git -C "${dir:-/}" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
 # A flow is already running: the guard's job is done and the phases police
 # themselves from here. A done flow is not running, so it keeps the guard armed.
