@@ -71,6 +71,14 @@ assert_status "fetch creates the directory it is told to write into" "$st" 0
 assert_eq "and the body lands there" "$(cat .orchestrator/spec-review/spec.md)" "$(cat "$tricky")"
 rm -rf .orchestrator/spec-review
 
+# A body last edited in the web UI is stored with CRLF; spec fetch writes the
+# same LF text issue fetch does (#1916).
+fake_issue_body 14 $'Alpha line.\r\nBeta line.\r\n'
+"$ORCH" spec fetch "$spec_body"; st=$?
+assert_status "fetch of a CRLF body succeeds" "$st" 0
+assert_eq "and writes it with LF lines, no CR" "$(od -c <"$spec_body")" "$(printf 'Alpha line.\nBeta line.\n\n' | od -c)"
+fake_issue_body 14 "$(cat "$tricky")"
+
 rm -f "$spec_body"
 fake_fail adapter_issue_body "fake gh: issue view refused"
 out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
