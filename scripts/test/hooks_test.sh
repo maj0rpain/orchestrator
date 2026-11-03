@@ -81,6 +81,12 @@ edit_event() {
     '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:$sid, cwd:$cwd, tool_input:{file_path:$f}}'
 }
 
+# edit_event_at <file> <session> <cwd>: edit_event, the payload's cwd chosen.
+edit_event_at() {
+  jq -n --arg f "$1" --arg sid "$2" --arg cwd "$3" \
+    '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:$sid, cwd:$cwd, tool_input:{file_path:$f}}'
+}
+
 echo "hook tests"
 echo
 echo "hook-common"
@@ -547,6 +553,49 @@ assert_contains "source denial names the quick-implement Skill lift" "$source_re
   'call the Skill tool with "orchestrator:orch-quick-implement"'
 assert_not_contains "source denial names no SKILL.md" "$source_reason" "SKILL.md"
 assert_not_contains "source denial names no Read tool" "$source_reason" "Read tool"
+
+# A repo reached through a symlink is judged by where the write lands (#1919).
+SL="$(mktemp -d)"
+LINK="$SL/link"
+ln -s "$REPO" "$LINK"
+OUTSIDE="$(mktemp -d)"
+mkdir -p "$REPO/docs/agents" "$REPO/src"
+ln -s "$OUTSIDE" "$REPO/src/out"
+ln -s ../../src/real.ts "$REPO/docs/agents/toSrc.ts"
+ln -s ../../src/notyet.ts "$REPO/docs/agents/dangling.ts"
+ln -s loop "$REPO/src/loop"
+src_deny='this is a planning session and no flow has'
+out="$(edit_event_at "$LINK/src/x.ts" s1 "$LINK" | "$GUARD")"
+assert_eq "denies a source edit via a symlinked repo, cwd the link" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+assert_contains "names the repo-relative path, not the link spelling" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "so 'src/x.ts' should not be edited yet"
+out="$(edit_event_at "$LINK/src/x.ts" s1 "$REPO" | "$GUARD")"
+assert_eq "denies a source edit via a symlinked repo, cwd the physical repo" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+out="$(edit_event_at "$LINK/nodir/deeper/new.ts" s1 "$LINK" | "$GUARD")"
+assert_eq "denies a new file in a missing directory via the link" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+assert_empty "allows a planning artifact via the link" \
+  "$(edit_event_at "$LINK/docs/agents/domain.md" s1 "$LINK" | "$GUARD")"
+out="$(edit_event_at "$LINK/docs/adr/0001-x.md" s1 "$LINK" | "$GUARD")"
+assert_contains "denies an ADR via the link with the records reason" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "is a record of decisions"
+assert_empty "allows an edit through an in-repo symlink to outside the repo" \
+  "$(edit_event_at "$LINK/src/out/f.ts" s1 "$LINK" | "$GUARD")"
+out="$(edit_event_at "$LINK/docs/agents/toSrc.ts" s1 "$LINK" | "$GUARD")"
+assert_contains "denies an allowlisted name symlinked to source, as source" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+out="$(edit_event_at "src/x.ts" s1 "$LINK" | "$GUARD")"
+assert_eq "denies a relative source path with cwd the link" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+out="$(edit_event_at "$LINK/src/loop" s1 "$LINK" | "$GUARD")"
+assert_contains "denies a symlink loop under src as source" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+out="$(edit_event_at "$LINK/docs/agents/dangling.ts" s1 "$LINK" | "$GUARD")"
+assert_contains "denies an allowlisted dangling symlink to missing source as source" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+rm -rf "$SL" "$OUTSIDE" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
 
 # Junie's PreToolUse payload carries no cwd, and its bundled docs show no
 # session_id either, though build 3419.7 sends one. No session
