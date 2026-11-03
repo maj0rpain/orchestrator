@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.5
+
+`orch.sh pr ready` and `orch.sh review ready` now read the PR's required checks before marking it ready: they refuse over a failed check or checks GitHub cannot report, and note on stderr when checks are still pending. The implementer, fixer and resolver agents call a local failure flaky only after its section has been rerun alone at least 3 times and passed every time.
+
 ## 4.43.4
 
 A new PreToolUse Bash hook, `hook-bash-poll.sh`, denies a plugin subagent's or autopilot session's Bash call holding an unquoted `pgrep` or `pkill` word, under every permission mode, and tells the agent to rerun the long command in the foreground instead. The stdin hook's command walker now takes a per-part test, shared by both hooks.

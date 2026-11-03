@@ -66,6 +66,38 @@ ci_probe() {
   note green
 }
 
+# ci_ready_gate [--exit 2] [--hint <text>] <pr>: the check before a PR is
+# marked ready. One look, no grace and no polling, through ci_probe: the
+# required checks first, every check when none are required. It only refuses;
+# `review ci` keeps the waiting. Failed and unreadable checks die (through
+# die2 under --exit 2, with the hint appended); pending ones note it on stderr
+# and return; green or none return silently.
+ci_ready_gate() {
+  local code=1 hint="" pr res verdict detail checks suffix="" msg
+  while [ $# -gt 1 ]; do
+    case "$1" in
+      --exit) gh_die_opt_check ci_ready_gate $# "$@"; code=2; shift 2 ;;
+      --hint) gh_die_opt_check ci_ready_gate $# "$@"; hint="$2"; shift 2 ;;
+      *) die "ci_ready_gate: unknown option $1" ;;
+    esac
+  done
+  pr="$1"
+  res="$(ci_probe "$pr" required)"
+  [ "${res%%$'\n'*}" != none ] || res="$(ci_probe "$pr" all)"
+  lines_split "$res" verdict detail
+  # ci_probe indents each detail line; the message joins them, comma-separated.
+  checks="$(printf '%s\n' "$detail" | sed 's/^ *//' | paste -sd, - | sed 's/,/, /g')"
+  [ -z "$hint" ] || suffix=" - $hint"
+  case "$verdict" in
+    failing)     msg="PR #$pr has failed checks: $checks$suffix" ;;
+    unreachable) msg="PR #$pr checks cannot be read: $checks$suffix" ;;
+    pending)     warn "PR #$pr checks are still pending"; return 0 ;;
+    *)           return 0 ;;
+  esac
+  [ "$code" != 2 ] || die2 "$msg"
+  die "$msg"
+}
+
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
@@ -658,6 +690,7 @@ cmd_review() {
       require_state
       local pr
       require_pr pr
+      ci_ready_gate --hint "the flow stays in review" "$pr"
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.

@@ -361,6 +361,7 @@ cmd_pr_ready() {
     note "PR #$pr is already ready"
     return 0
   fi
+  ci_ready_gate --exit 2 "$pr"
   gh_or_die --exit 2 "mark PR #$pr ready" adapter_pr_ready "$pr"
   note "PR #$pr is now ready"
 }
