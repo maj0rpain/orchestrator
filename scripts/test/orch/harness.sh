@@ -1623,6 +1623,27 @@ else
 fi
 rm -rf "$jp_dir"
 
+# --- the slot fd contract (#2300) ---------------------------------------------
+# Only test_jobs.sh knows the slot fd: the runners start jobs through
+# test_jobs_job, and none holds the raw redirection, or writes the report's list.
+echo
+echo "the slot fd contract (#2300)"
+fd_tests="$(dirname "$SUITE_SCRIPT")"
+for fd_file in all.sh affected.sh orch_test.sh report.sh; do
+  assert_eq "$fd_file holds no raw slot fd" \
+    "$(grep -cE '8>&-|exec 8' "$fd_tests/$fd_file")" "0"
+done
+for fd_file in all.sh affected.sh orch_test.sh; do
+  assert_eq "$fd_file starts its jobs through test_jobs_job" \
+    "$(grep -c 'test_jobs_job ' "$fd_tests/$fd_file" | awk '{print ($1 > 0)}')" "1"
+  assert_eq "$fd_file never writes REPORT_FAILED" \
+    "$(grep -c 'REPORT_FAILED' "$fd_tests/$fd_file")" "0"
+done
+fd_out="$(bash -c 'source "$1"; test_jobs_job bash -c "exit 7"' _ "$fd_tests/test_jobs.sh" 2>&1)"
+fd_st=$?
+assert_status "test_jobs_job returns the command's exit status" "$fd_st" 7
+unset fd_file fd_out fd_st fd_tests
+
 # --- the test runners' CPU load (#1586) ---------------------------------------
 # The default job count, test_jobs.sh's test_jobs_default, with getconf faked
 # on PATH and ORCH_TEST_CPU_MAX_FILE naming a planted quota file; then all.sh's

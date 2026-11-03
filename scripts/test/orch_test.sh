@@ -349,7 +349,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
     ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
       ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
-      bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 8>&- &
+      test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" &
     orch_pids[orch_started]=$!
     test_jobs_slot_release "${orch_pids[orch_started]}"
     orch_started=$((orch_started + 1))

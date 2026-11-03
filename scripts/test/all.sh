@@ -124,8 +124,8 @@ if command -v shellcheck >/dev/null 2>&1; then
     done
     sc_rel="${sc_file#"$root/"}"
     test_jobs_slot_wait
-    (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
-      >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 8>&- &
+    (cd "$root" && test_jobs_job shellcheck -S warning -f gcc "$sc_rel") \
+      >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
     sc_pids+=("$!")
     test_jobs_slot_release "$!"
   done
