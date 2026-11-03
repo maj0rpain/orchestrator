@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.43.46
+
+The autopilot container's entrypoint now removes the clone's local
+`orchestrator.autopilot` config keys and each role's local agent-setting keys at
+start, warning once per key, so `docker/.env` is the one source of truth; and
+`autopilot show`'s output now reaches the container log on stderr.
+
+The edit guard now denies Edit and Write of the flow state file and of files in side checkouts and ticket worktrees during planning, so a planning session can no longer disarm its own guard.
+
 ## 4.43.45
 
 `orch.sh finding-triage bundle --into` is now an idempotent resume: a member already closed into the bundle is skipped, so the resume command printed after any member failure finishes the bundle. The failure message says "members not confirmed closed" where the close may have landed.
