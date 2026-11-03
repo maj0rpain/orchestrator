@@ -566,7 +566,8 @@ rm -rf "$cut_root"
 # A copy of the scripts tree with planted sections. Two passing ones run with
 # ORCH_TEST_JOBS=2, compared with the same filter run sequentially; then the
 # others - one slow, one writing to stderr, one exiting mid-way, one failing -
-# run in parallel, asserted on their combined output.
+# run in parallel, asserted on their combined output. The copy also holds
+# `seq early exit`, which only the sequential path runs (see below).
 echo
 echo "the parallel runner (ORCH_TEST_JOBS, #780)"
 par_dir="$(planted_copy <<'PLANTED'
@@ -663,7 +664,8 @@ assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "13 passed, 1 failed"
 assert_eq "leaves the section's stderr off the real stderr" \
   "$(grep -c 'a planted stderr line' "$par_dir/stderr")" "0"
-# The sequential path: a section that exits before the summary is a failure.
+# The sequential path, reusing the parallel copy above (its `seq early exit`
+# section runs only here): a section that exits before the summary is a failure.
 seq_run() { ORCH_TEST_QUIET="${2:-}" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY="$1" bash "$par_suite" 2>&1; }
 out="$(seq_run '^(seq early exit|planted failure)$')"; st=$?
 assert_status "a sequential run whose section exits 0 early exits 1" "$st" 1
