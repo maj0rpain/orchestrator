@@ -41,8 +41,10 @@ notice_wait() {
   done
   return 0
 }
-# pool_cpu_file <file> <slots>: writes a CPU quota file sizing a pool at 50% of
-# the CPUs to <slots> slots, a quota of 200000 per slot.
+# pool_cpu_file <file> <slots>: writes a CPU quota file of 2 CPUs per slot (a
+# quota of 200000 per slot), which a 50% pool share, as jp_run sets, sizes to
+# <slots> slots. Under another share the slot count follows that share: at the
+# default 75%, 1 still gives 1 slot (1.5 rounded down).
 pool_cpu_file() { printf '%s 100000\n' "$(($2 * 200000))" >"$1"; }
 
 # suites_read <all.sh>: reads the suite list from the one `suites=(...)` line
@@ -1536,8 +1538,12 @@ slot_release
 
 # slot_hold fails on a slot it cannot lock: the slot path is a directory.
 mkdir -p "$jp_dir/pool11/slot.1"
+jp_t0=$SECONDS
 slot_hold "$jp_dir/pool11" 1 2>/dev/null; jp_s1=$?
 assert_status "slot_hold returns 1 on a slot path it cannot lock" "$jp_s1" 1
+# A read that timed out would also return 1, after 10s: the EOF path is quicker.
+assert_eq "and returns on the holder's EOF, well within its read timeout" \
+  "$(( SECONDS - jp_t0 < 5 ))" "1"
 slot_release
 
 # A released holder no longer runs and no longer holds the lock.
