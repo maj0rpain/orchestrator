@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.25
+
+`orch.sh doctor --flow`'s remedy for a done flow whose PR is still a draft is now `orch.sh pr ready` on the flow's branch, which reads the PR's checks first, instead of the ungated `gh pr ready`. A failed check whose name holds a comma now reads whole in `pr ready`'s and `review ready`'s refusal. `ci_ready_gate` and `gh_die` share one `die_hinted` helper and its `die_opt_check` option rule in the common module, and the tests count and clear the gh fake's checks through `fake_checks_reads` and `fake_checks_clear`.
+
 ## 4.43.24
 
 The spec review's `spec-review wait` and the review loop's `review ci` now run as long commands: in the foreground, still waited for when the host moves them to the background. A lens is judged missing only from the wait's own timeout, and a `review ci` the host kills is unreachable, a bounded stop. docs_lint covers orch-spec-review's skill.

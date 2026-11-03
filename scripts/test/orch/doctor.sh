@@ -1651,11 +1651,14 @@ assert_contains "reports it matches phase" "$out" \
   "PR #40 draft state matches phase (done)"
 
 fake_pr_draft 40
+state_fixture branch orch/doctordraft
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a draft PR left behind once the flow is done fails" "$st" 1
 assert_contains "names the mismatch" "$out" \
   "PR #40 is still a draft but the flow phase is done"
-assert_contains "gives the command that promotes it" "$out" "gh pr ready 40"
+assert_contains "gives the command that promotes it" "$out" \
+  "orch.sh pr ready    # on orch/doctordraft"
+assert_not_contains "and not the ungated gh pr ready" "$out" "gh pr ready"
 
 fake_pr 40 merged orch/doctordraft main
 fake_pr_draft 40
