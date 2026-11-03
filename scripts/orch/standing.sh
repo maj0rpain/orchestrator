@@ -285,8 +285,10 @@ standing_begin() {
 standing_finish() {
   STANDING_LANDED="${3:-}"
   standing_move_label "$1" "$2"
-  phase_write "$2"
-  standing_landed_add "moved the phase label to $(standing_phase_label "$2"), recorded phase $2"
+  standing_landed_add "moved the phase label to $(standing_phase_label "$2")"
+  phase_write_try "$2" ||
+    die "could not record phase $2 in $STATE - writes that landed: $STANDING_LANDED; the claim stays held"
+  standing_landed_add "recorded phase $2"
   standing_release "$1"
 }
 

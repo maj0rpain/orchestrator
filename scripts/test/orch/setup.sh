@@ -216,6 +216,17 @@ git_fails_bin() {
   chmod +x "$dir/git"
   printf '%s\n' "$dir"
 }
+# state_write_fails_bin: a new directory holding a mktemp that fails for a
+# state.json.* template - the temp file every state write makes - and passes
+# every other call through to the real one; first on PATH, it fails state
+# writes and nothing else. Unlike chmod a-w, it also fails as root.
+state_write_fails_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  writeln '#!/bin/sh' 'case "$*" in *state.json.*) exit 1 ;; esac' "exec $(command -v mktemp) \"\$@\"" >"$dir/mktemp"
+  chmod +x "$dir/mktemp"
+  printf '%s\n' "$dir"
+}
 # nowalk_bin: a git_fails_bin that fails `worktree list` alone, so it fails the
 # checkouts walk and nothing else.
 nowalk_bin() { git_fails_bin '" worktree list "*'; }

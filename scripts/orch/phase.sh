@@ -37,17 +37,17 @@ print_boundary() {
 
 # phase_finish <next> <reason>: records <next> as the flow's phase. In an
 # autopilot session it also moves the issue's phase label and releases the
-# claim, <reason> naming what was done, and returns 0; otherwise it only writes
-# the phase and returns 1, so a caller keeps its own output for each.
+# claim, <reason> naming what was done. It reports success only, never its
+# mode - a caller asks autopilot_active for that - so it is called as a plain
+# statement, never in a condition, where set -e would be suspended.
 phase_finish() {
   local issue
   if autopilot_active; then
     require_issue issue
     standing_finish "$issue" "$1" "$2"
-    return 0
+  else
+    phase_write "$1"
   fi
-  phase_write "$1"
-  return 1
 }
 
 cmd_phase() {
@@ -82,7 +82,8 @@ cmd_phase() {
         review)    require_branch _unused; require_base_sha _unused; require_pr _unused
                require_issue issue; require_no_open_tickets "$issue" "phase advance" ;;
       esac
-      if phase_finish "$next" ""; then
+      phase_finish "$next" ""
+      if autopilot_active; then
         issue="$(state_get issue)"
         note "Phase $(phase_cell writer "$next") complete. Handoff posted on issue #$issue; the watcher starts the $next phase."
       else
