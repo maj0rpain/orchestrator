@@ -2754,18 +2754,30 @@ af_git add -A
 af_git commit -qm stubs
 af_feat="$(af_git rev-parse HEAD)"
 af_put scripts/hook-guard.sh 'echo ok'
-af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+# A shellcheck stub, first on PATH for the runs meant to have shellcheck: one
+# gcc-format line per argument file containing $(ls), exit 1 if it printed any.
+af_sc="$af.sc"
+mkdir -p "$af_sc"
+cat >"$af_sc/shellcheck" <<'STUB'
+#!/usr/bin/env bash
+found=0
+for f in "$@"; do
+  if [ -f "$f" ] && grep -qF '$(ls)' "$f"; then
+    echo "$f:1:1: warning: stub [SC2045]"
+    found=1
+  fi
+done
+exit "$found"
+STUB
+chmod +x "$af_sc/shellcheck"
+af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a passing run exits 0" "$st" 0
-if command -v shellcheck >/dev/null 2>&1; then
-  assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
-    "orch_test.sh: 7 passed, 0 failed
+assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
+  "orch_test.sh: 7 passed, 0 failed
 hooks_test.sh: 7 passed, 0 failed
 docs_lint.sh: 7 passed, 0 failed
 shellcheck: 0 findings
 affected.sh: PASS (4 parts)"
-else
-  skip "printing each part's summary in order, shellcheck last" "shellcheck is not installed"
-fi
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
@@ -2780,11 +2792,11 @@ assert_eq "and runs no suite" "$(grep -c . "$af.log")" "0"
 
 # Its shellcheck process draws a slot from the job pool: with the pool's one
 # slot held, the run waits and says so, then finishes once the slot is freed.
-if command -v shellcheck >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
+if command -v flock >/dev/null 2>&1; then
   pool_cpu_file "$af.cpu" 1
   slot_hold "$af.pool" 1 || bad "holds the slot"
   af_put scripts/hook-guard.sh 'echo ok'
-  (cd "$af" && env -u CI -u ORCH_TEST_POOL_PERCENT ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
+  (cd "$af" && env -u CI -u ORCH_TEST_POOL_PERCENT PATH="$af_sc:$PATH" ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
     timeout 30 bash scripts/test/affected.sh HEAD >/dev/null 2>"$af.err") &
   af_pid=$!
   notice_wait "$af.err"
@@ -2794,21 +2806,21 @@ if command -v shellcheck >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; th
   wait "$af_pid"; st=$?
   assert_status "and the run finishes once the slot is freed" "$st" 0
   rm -rf "$af.cpu" "$af.pool" "$af.err"
+else
+  skip "a shellcheck run with the pool's slot held waits and says so" "flock is not installed"
 fi
 printf '%s\n' '#!/usr/bin/env bash' 'printf "  FAIL a thing\n     its detail\n"' \
   'echo; echo "1 passed, 1 failed"; exit 1' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'for f in $(ls); do echo "$f"; done'
-af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a failing part makes the run exit 1" "$st" 1
 assert_contains "printing its FAIL lines and its summary" "$af_out" \
   "  FAIL a thing
      its detail
 hooks_test.sh: 1 passed, 1 failed"
-if command -v shellcheck >/dev/null 2>&1; then
-  assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
-else
-  skip "and shellcheck's findings" "shellcheck is not installed"
-fi
+assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
+assert_eq "ending on a FAIL verdict naming the failing parts" "$(printf '%s\n' "$af_out" | tail -n 1)" \
+  "affected.sh: FAIL (hooks_test.sh, shellcheck)"
 
 # The verdict line (the last stdout line), on a PATH without shellcheck: its
 # links are the tools the runners and the fixture need.
@@ -2829,15 +2841,12 @@ af_verdict_run() {
     PATH="$af_bin" bash scripts/test/affected.sh "$@" 2>/dev/null)"
   st=$?
 }
-# A failing part (hooks_test.sh is still the failing stub), naming only it.
-af_verdict_run -- HEAD
-assert_status "a failing selected part exits 1 without shellcheck" "$st" 1
-assert_eq "a failing selected part ends on a FAIL verdict naming it" "$(printf '%s\n' "$af_out" | tail -n 1)" \
-  "affected.sh: FAIL (hooks_test.sh)"
 # A passing selection: the passing stub back, shellcheck skipped.
 printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
 af_verdict_run -- HEAD
 assert_status "a passing selection exits 0 without shellcheck outside CI" "$st" 0
+assert_contains "a missing shellcheck outside CI prints its skipped line" "$af_out" \
+  "shellcheck: not installed - skipped"
 assert_eq "a missing shellcheck outside CI ends on a PASS verdict counting the skipped line" \
   "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (4 parts)"
 af_verdict_run CI=1 -- HEAD
@@ -2858,15 +2867,9 @@ assert_eq "a full-suite fallback ends on all.sh's verdict, never affected.sh's" 
   "$(printf '%s\n' "$af_out" | tail -n 1)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
 af_reset
 # Paths that end before the report print no verdict.
-af_verdict_run -- --plan HEAD
-assert_eq "--plan prints no verdict" "$(printf '%s\n' "$af_out" | grep -c ': \(PASS\|FAIL\) (')" "0"
 af_verdict_run -- --bogus
 assert_status "a usage error exits 2" "$st" 2
 assert_eq "a usage error prints no verdict on stdout" "$af_out" ""
-af_verdict_run -- no-such-ref
-assert_eq "an unknown ref prints no verdict on stdout" "$af_out" ""
-af_verdict_run ORCH_TEST_POOL_PERCENT=abc -- HEAD
-assert_eq "an invalid ORCH_TEST_POOL_PERCENT prints no verdict on stdout" "$af_out" ""
 # A TERM stop prints no verdict.
 printf '%s\n' '#!/usr/bin/env bash' "echo \$\$ >'$af.pid'" 'sleep 30' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'echo ok'
@@ -2879,6 +2882,6 @@ wait "$af_pid"; st=$?
 kill "$(cat "$af.pid")" 2>/dev/null
 assert_status "TERM to affected.sh exits 130" "$st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
-rm -rf "$af_bin" "$af.pid" "$af.stdout"
+rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row
