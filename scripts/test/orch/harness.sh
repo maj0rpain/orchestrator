@@ -554,7 +554,7 @@ for quiet_suite in "${SUITES[@]}"; do
   assert_eq "$quiet_suite's cut-down copy holds the planted check" \
     "$(grep -cx 'ok "a planted check"' "$cut_dir/$quiet_suite")" "1"
   assert_eq "$quiet_suite's cut-down copy holds its summary" \
-    "$(grep -cxF 'echo "$PASS passed, $FAIL failed"' "$cut_dir/$quiet_suite")" "1"
+    "$(grep -cx 'tally_summary' "$cut_dir/$quiet_suite")" "1"
   out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"; st=$?
   assert_status "$quiet_suite's cut-down copy exits 0 when quiet" "$st" 0
   assert_eq "$quiet_suite prints no ok line when quiet" \
@@ -674,7 +674,10 @@ rm -rf "$sub_dir"
 # A tiny standalone suite sourcing tally.sh the way the hooks, docs lint,
 # version bump, lens bench and autopilot suites do, with one failing assertion
 # in ( ... ) and one passing outside it, counts both and exits non-zero. A
-# structural check then holds each of the seven suites to the shared tally.
+# structural check then holds the suites to the shared tally: no suite defines
+# an ok, bad or skip of its own (all seven, setup.sh included for orch_test.sh);
+# orch_test.sh alone is checked for sourcing tally.sh and calling tally_read,
+# as the quiet-mode run proves both for the six standalone suites.
 echo
 echo "the standalone suites' tally (#1904)"
 tally_dir="$(mktemp -d)"
@@ -683,26 +686,34 @@ source "$(dirname "$SUITE_SCRIPT")/tally.sh"
 tally_init
 ( bad "a failure in a subshell" "its detail line" )
 ok "a pass outside it"
-tally_read
-echo "\$PASS passed, \$FAIL failed"
-[ "\$FAIL" -eq 0 ]
+tally_summary
 SUITE
 out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a standalone suite with a subshell failure exits 1" "$st" 1
 assert_eq "and counts the subshell failure in its summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
+assert_eq "after a blank line" "$(printf '%s\n' "$out" | tail -n 2 | head -n 1)" ""
+sed -i '/^( bad /d' "$tally_dir/suite.sh"
+out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
+assert_status "a passing standalone suite exits 0" "$st" 0
+assert_eq "and reports no failure" "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 0 failed"
+sed -i 's/^tally_summary$/rm -f "$tally_file"\ntally_summary/' "$tally_dir/suite.sh"
+out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
+assert_status "a standalone suite whose tally file is gone exits 1" "$st" 1
+assert_eq "and reports it as a failure" "$(printf '%s\n' "$out" | tail -n 1)" "0 passed, 1 failed"
 rm -rf "$tally_dir"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for tally_suite in "${SUITES[@]}"; do
   tally_path="$(dirname "$SUITE_SCRIPT")/$tally_suite"
-  assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
-  # orch_test.sh reads the tally in setup.sh's summary.
-  tally_reader="$tally_path"
-  [ "$tally_suite" != orch_test.sh ] || tally_reader="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
-  assert_contains "$tally_suite calls tally_read" "$(<"$tally_reader")" "tally_read"
-  # orch_test.sh's assertions once lived in setup.sh too.
   tally_files=("$tally_path")
-  [ "$tally_suite" != orch_test.sh ] || tally_files+=("$tally_reader")
+  if [ "$tally_suite" = orch_test.sh ]; then
+    setup_path="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
+    assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
+    # orch_test.sh reads the tally in setup.sh's summary, and its assertions
+    # once lived in setup.sh too.
+    assert_contains "$tally_suite calls tally_read" "$(<"$setup_path")" "tally_read"
+    tally_files+=("$setup_path")
+  fi
   assert_eq "$tally_suite defines no ok, bad or skip of its own" \
     "$(cat "${tally_files[@]}" | grep -cE '^(ok|bad|skip) *\(\)')" "0"
 done

@@ -475,7 +475,4 @@ assert_eq "a missing transcript keeps the finished runs and removes its own" \
 assert_eq "a missing transcript removes the worktree" "$(worktrees)" 1
 
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary

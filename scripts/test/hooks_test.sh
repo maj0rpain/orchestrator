@@ -1404,7 +1404,4 @@ assert_eq "hooks.json registers hook-bash-poll.sh under PreToolUse with matcher 
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-poll\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1
 
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary
