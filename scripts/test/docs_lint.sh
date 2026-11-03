@@ -3999,7 +3999,7 @@ scan_repo_verification() {
     return 0
   }
   for label in "Ticket verification" "Full verification"; do
-    printf '%s\n' "$body" | grep -qE "^$label: [^[:space:]]" ||
+    grep -qE "^$label: [^[:space:]]" <<<"$body" ||
       echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
   done
   return 0

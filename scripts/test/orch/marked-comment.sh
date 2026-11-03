@@ -21,11 +21,13 @@ mc_object() { jq -cn '{number: 1, comments: ($ARGS.positional | map({body: .}))}
 # mc_jq <program>: runs the jq <program> over the module's prelude, on stdin.
 # shellcheck disable=SC2016 # the program is single-quoted, and the module expands in the child
 mc_jq() { sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' $1'"; }
-# mc <function> <comments-json> [<arg>...]: sets mc_out and mc_rc from running
-# the module's <function> on the JSON.
+# mc <function> <comments-json> [<arg>...]: sets mc_out, mc_rc and mc_err from
+# running the module's <function> on the JSON: stdout, status and stderr.
 mc() {
-  local fn="$1" json="$2"; shift 2
-  mc_out="$(sourced_orch "marked_comment_$fn" "$@" <<<"$json"; echo "rc=$?")"
+  local fn="$1" json="$2" err_file; shift 2
+  err_file="$(mktemp)"
+  mc_out="$(sourced_orch "marked_comment_$fn" "$@" <<<"$json" 2>"$err_file"; echo "rc=$?")"
+  mc_err="$(cat "$err_file")"; rm -f "$err_file"
   mc_rc="${mc_out##*rc=}"; mc_out="${mc_out%rc=*}"
   mc_out="${mc_out%$'\n'}"
 }
@@ -146,6 +148,7 @@ mc texts "$(mc_array "Spec ruling:")" spec-ruling
 assert_eq "a ruling that is only its opening gives an empty string" "$mc_out" '[""]'
 mc texts "not json" spec-ruling
 assert_eq "texts on unreadable comments exits 2, printing nothing" "$mc_rc:$mc_out" "2:"
+assert_contains "and reports jq's parse error on stderr" "$mc_err" "parse error"
 mc drop "not json" spec-review
 assert_eq "drop on unreadable comments fails, printing nothing" "$([ "$mc_rc" != 0 ] && echo failed):$mc_out" "failed:"
 

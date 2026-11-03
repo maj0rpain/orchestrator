@@ -375,7 +375,7 @@ layer_calls() {
   code="$(shell_code "$@")"
   for def in "${defs[@]}"; do col0_names "$def"; done | sort -u \
     | while IFS= read -r name; do
-        if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
+        if grep -qw -- "$name" <<<"$code"; then printf '%s\n' "$name"; fi
       done
 }
 
