@@ -45,6 +45,8 @@ assert_marker_absent()  { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then bad "$1" 
 # Write, or remove, both markers of session <id>.
 make_markers()   { : >"$TMPDIR/orchestrator-grilling-$1"; : >"$TMPDIR/orchestrator-planning-$1"; }
 remove_markers() { rm -f "$TMPDIR/orchestrator-grilling-$1" "$TMPDIR/orchestrator-planning-$1"; }
+# dec: print the permissionDecision of the hook JSON on stdin (allow if none).
+dec() { jq -r '.hookSpecificOutput.permissionDecision // "allow"'; }
 
 # The temp root, created before anything else: TMPDIR is exported as it, so
 # every mktemp below lands inside it, and the hooks' markers too. The EXIT trap
@@ -99,9 +101,12 @@ source "$COMMON"
 # to {} once per key and value. The hooks tests' well-formed states (slug,
 # phase and issue present) come from here; partial and invalid ones stay raw,
 # to prove the hooks tolerate anything on disk. A failed write fails its case.
-write_flow_state() {
-  local file
-  file="$(flow_state_file "$REPO")"
+write_flow_state() { write_flow_state_at "$REPO" "$@"; }
+# write_flow_state_at <root> <key> <value>...: the same, for <root>'s state.
+write_flow_state_at() {
+  local file root="$1"
+  shift
+  file="$(flow_state_file "$root")"
   mkdir -p "${file%/*}"
   echo '{}' >"$file"
   while [ "$#" -gt 1 ]; do
@@ -650,6 +655,65 @@ assert_eq "denies a NotebookEdit of a source notebook via the link" "$(bash_hook
 assert_contains "redirects a NotebookEdit of GLOSSARY.md via the link to the records reason" \
   "$(nb_event_at "$LINK/GLOSSARY.md" s1 "$LINK" | "$GUARD" | jq -r '.reason')" "'GLOSSARY.md' is a record of decisions"
 rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
+
+# The guard polices the file's own working tree, whatever the cwd (#1933).
+NEST="$REPO/vendor/lib"
+mkdir -p "$NEST" "$REPO/.orchestrator/checkouts" "$REPO/.orchestrator/worktrees"
+git -C "$NEST" init -q
+git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$REPO" worktree add -q -b side "$REPO/.orchestrator/checkouts/foo"
+git -C "$REPO" worktree add -q -b tkt "$REPO/.orchestrator/worktrees/t1"
+SIDE="$REPO/.orchestrator/checkouts/foo"
+mkdir -p "$SIDE/src" "$SIDE/docs/adr" "$SIDE/docs/agents" "$NEST/src"
+assert_eq "denies main source with cwd in a nested repo" \
+  "$(edit_event_at "$REPO/src/x.ts" s1 "$NEST" | "$GUARD" | dec)" "deny"
+assert_eq "denies main source with cwd in a side checkout" \
+  "$(edit_event_at "$REPO/src/x.ts" s1 "$SIDE" | "$GUARD" | dec)" "deny"
+assert_eq "denies main source with cwd /" \
+  "$(edit_event_at "$REPO/src/x.ts" s1 / | "$GUARD" | dec)" "deny"
+assert_eq "denies a side checkout's source from the main cwd" \
+  "$(edit_event_at "$SIDE/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+assert_eq "denies a ticket worktree's source from the main cwd" \
+  "$(edit_event_at "$REPO/.orchestrator/worktrees/t1/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+assert_eq "denies a source edit inside a nested repo" \
+  "$(edit_event_at "$NEST/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+assert_eq "denies a new file in a missing directory, cwd /" \
+  "$(edit_event_at "$(cd "$REPO" && pwd -P)/nodir/deeper/new.ts" s1 / | "$GUARD" | dec)" "deny"
+assert_eq "denies an edit of a hook under the repo's .git, cwd /" \
+  "$(edit_event_at "$(cd "$REPO" && pwd -P)/.git/hooks/pre-commit" s1 / | "$GUARD" | dec)" "deny"
+git -C "$REPO" -c protocol.file.allow=always -c user.email=t@t -c user.name=t submodule add -q "$NEST" lib >/dev/null 2>&1
+assert_eq "denies an edit of a hook under a submodule's git dir, cwd /" \
+  "$(edit_event_at "$(cd "$REPO" && pwd -P)/.git/modules/lib/hooks/pre-commit" s1 / | "$GUARD" | dec)" "deny"
+SL2="$(mktemp -d)"; ln -s "$REPO" "$SL2/link"
+assert_eq "denies via a symlinked repo with cwd in the nested repo" \
+  "$(edit_event_at "$SL2/link/src/x.ts" s1 "$NEST" | "$GUARD" | dec)" "deny"
+rm -rf "$SL2"
+assert_contains "denies a side checkout ADR with the records reason" \
+  "$(edit_event_at "$SIDE/docs/adr/0001-x.md" s1 "$REPO" | "$GUARD" | jq -r '.reason')" "is a record of decisions"
+assert_empty "allows a side checkout's allowlisted file" \
+  "$(edit_event_at "$SIDE/docs/agents/x.md" s1 "$REPO" | "$GUARD")"
+NOGIT="$(mktemp -d)"
+assert_empty "allows a file outside any git repo" \
+  "$(edit_event_at "$NOGIT/x.ts" s1 "$REPO" | "$GUARD")"
+rm -rf "$NOGIT"
+SEPWT="$(mktemp -d)"; SEPGD="$(mktemp -d)/store.git"
+git -C "$SEPWT" init -q --separate-git-dir "$SEPGD"
+assert_empty "allows a file inside a separate git dir outside the working tree (#2335)" \
+  "$(edit_event_at "$(cd "$SEPGD" && pwd -P)/hooks/pre-commit" s1 "$REPO" | "$GUARD")"
+rm -rf "$SEPWT" "${SEPGD%/*}"
+SEPWT="$(mktemp -d)"; SEPIN="$REPO/store.git"
+git -C "$SEPWT" init -q --separate-git-dir "$SEPIN"
+assert_eq "denies a hook inside a separate git dir placed in a repo's working tree" \
+  "$(edit_event_at "$(cd "$SEPIN" && pwd -P)/hooks/pre-commit" s1 / | "$GUARD" | dec)" "deny"
+rm -rf "$SEPWT" "$SEPIN"
+write_flow_state_at "$SIDE" slug x phase implement issue null
+assert_empty "allows the side checkout's source when its flow is active" \
+  "$(edit_event_at "$SIDE/src/x.ts" s1 "$REPO" | "$GUARD")"
+assert_eq "denies main source while only a side checkout's flow is active" \
+  "$(edit_event_at "$REPO/src/x.ts" s1 "$SIDE" | "$GUARD" | dec)" "deny"
+git -C "$REPO" worktree remove --force "$SIDE"
+git -C "$REPO" worktree remove --force "$REPO/.orchestrator/worktrees/t1"
+rm -rf "$REPO/vendor" "$REPO/.orchestrator"
 
 # Junie's PreToolUse payload carries no cwd, and its bundled docs show no
 # session_id either, though build 3419.7 sends one. No session

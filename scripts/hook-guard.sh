@@ -28,7 +28,37 @@ file="$(hook_tool_path)"
 [ -e "$(hook_marker_path grilling)" ] || exit 0
 [ -n "$file" ] || exit 0
 
-root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
+# The repo policed is the file's own: the git toplevel of its nearest existing
+# ancestor directory. The file is physical, so the toplevel is too. The payload
+# cwd follows the model's cd and decides nothing here. A file in no git repo is
+# somebody else's business.
+dir="${file%/*}"
+while [ -n "$dir" ] && [ ! -d "$dir" ]; do dir="${dir%/*}"; done
+dir="${dir:-/}"
+if [ "$(git -C "$dir" rev-parse --is-inside-git-dir 2>/dev/null)" = true ]; then
+  # Inside a git dir the file belongs to the repo whose git dir it is (a hook is
+  # code). A git dir with core.worktree set, a submodule's absorbed one, still
+  # answers --show-toplevel with its own tree, so this is asked first: judge the
+  # file against the working tree above the outermost .git it sits in.
+  [ "$(git -C "$dir" rev-parse --is-bare-repository 2>/dev/null)" = false ] || exit 0
+  common_gitdir="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
+  # A git dir that is no .git and sits under none (a separate git dir) names no
+  # working tree of its own: judge the file against the repo its parent
+  # directory is in, and let it go when there is none.
+  outer_gitdir="$common_gitdir"
+  case "$common_gitdir" in
+    */.git) ;;
+    */.git/*) outer_gitdir="${common_gitdir%%/.git/*}/.git" ;;
+    *) outer_gitdir="" ;;
+  esac
+  if [ -n "$outer_gitdir" ]; then
+    root="$(cd "${outer_gitdir%/*}" && pwd -P)" || exit 0
+  else
+    root="$(git -C "${common_gitdir%/*}" rev-parse --show-toplevel 2>/dev/null)" || exit 0
+  fi
+elif ! root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)"; then
+  exit 0
+fi
 
 # A flow is already running: the guard's job is done and the phases police
 # themselves from here. A done flow is not running, so it keeps the guard armed.
