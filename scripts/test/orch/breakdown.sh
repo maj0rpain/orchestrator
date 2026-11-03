@@ -126,7 +126,7 @@ printf '@@ ticket 1 A\nok\n@@ end\n@@ ticket 2 B\n@@ note hi\n@@ end\n' >"$draft
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a stray @@ line dies" "$st" 1
 assert_contains "naming the line" "$out" "line 5"
-assert_contains "with the escape hint" "$out" '\@@'
+assert_contains "with the escape hint" "$out" ' - a body line starting with @@ is written \@@'
 assert_eq "publishing nothing" "$(fake_issues)" "50 "
 restore_suite_env
 
@@ -135,7 +135,7 @@ printf '@@ ticket 1 A\nok\n@@ end\n@@ ticket 2 B\n@@ ticket 3 C\n@@ end\n' >"$dr
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "@@ ticket in an unfinished block dies" "$st" 1
 assert_contains "naming the line" "$out" "line 5"
-assert_contains "with the escape hint" "$out" '\@@'
+assert_contains "with the escape hint" "$out" ' - a body line starting with @@ is written \@@'
 assert_eq "publishing nothing" "$(fake_issues)" "50 "
 restore_suite_env
 

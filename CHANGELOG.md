@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.13
+
+The `@@` body-line escape hint is now one wording in both the breakdown draft and the spec review, and the `orch-to-tickets` writer doc names the two unescaped `@@` lines a ticket block accepts.
+
 ## 4.44.12
 
 Fixed `pr draft`, `pr ready` and `review-pass begin` leaking jq's `parse error` text ahead of their refusal when state.json cannot be read; they now print only the `orch:` line. The tests now check the unreadable-state.json refusal and its busy form through one shared assertion each.
