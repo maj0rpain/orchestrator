@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.49
+
+A parallel `orch_test.sh` run now fails any section that writes to stderr, naming the section and showing what it wrote, and the two sections that leaked (the marked-comment helper and the autopilot tick temp-file case) no longer do.
+
 ## 4.43.48
 
 The test runners now fail a suite that ends without its `N passed, M failed` summary, even when it exits 0: all.sh and affected.sh report it as `died before its summary (exit 0)`, and a sequential `orch_test.sh` run (`ORCH_TEST_JOBS=1`) that stops early prints `the run reported no counts`, counts the miss as a failure, and exits 1 (#1939).
