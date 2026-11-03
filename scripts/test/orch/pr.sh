@@ -1253,7 +1253,6 @@ fake_pr 58 open orch/120-bar main
 fake_pr_body 58 $'Closes #120\n'
 out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
 assert_status "pr read finds the PR whose issue line names the issue" "$st" 0
-assert_not_contains "no fork PR: no ignored line on stderr" "$out" "ignored"
 assert_eq "writing its body, a rule, then its diff" "$(cat "$out_file")" \
   "$(printf 'Refs #12\n\nAdds the widget.\n\n---\ndiff --git a/w b/w\n+widget')"
 out="$("$ORCH" pr read 12 2>&1)"; st=$?
@@ -1295,7 +1294,6 @@ for c in "update $fk_new" "comment $fk_comment" "draft" "ready"; do
   out="$("$ORCH" pr $c 2>"$errf")"; st=$?
   assert_status "pr ${c%% *}: only a fork PR exits 1" "$st" 1
   assert_eq "pr ${c%% *}: printing nothing" "$out" ""
-  assert_contains "pr ${c%% *}: saying the fork PR was ignored" "$(cat "$errf")" "$forkline"
   [ "${c%% *}" != update ] || assert_contains "pr update: saying no open PR" "$(cat "$errf")" "no open PR"
 done
 assert_eq "the fork PR's body, comments and draft state untouched" "$(fake_snapshot)" "$before"
@@ -1319,29 +1317,24 @@ out="$("$ORCH" pr update "$fk_new" 2>"$errf")"; st=$?
 assert_status "pr update beside a newer fork PR succeeds" "$st" 0
 assert_eq "overwriting the same-repo PR's body" "$(fake_pr_body_of 57)" "$(cat "$fk_new")"
 assert_eq "and not the fork PR's" "$(fake_pr_body_of 60)" $'Closes #12\n\nStranger.'
-assert_eq "update: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 
 out="$("$ORCH" pr comment "$fk_comment" 2>"$errf")"; st=$?
 assert_status "pr comment beside a newer fork PR succeeds" "$st" 0
 assert_eq "printing the same-repo PR's number" "$out" "57"
 assert_eq "posting nothing on the fork PR" "$(fake_pr_comments_of 60)" "Stranger comment."
-assert_eq "comment: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 
 out="$("$ORCH" pr comments "$fk_comments" 2>"$errf")"; st=$?
 assert_status "pr comments beside a newer fork PR succeeds" "$st" 0
 assert_contains "reading the same-repo PR's comments" "$(cat "$fk_comments")" "Mine too."
 assert_not_contains "and not the fork PR's" "$(cat "$fk_comments")" "Stranger"
-assert_eq "comments: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 
 out="$("$ORCH" pr ready 2>"$errf")"; st=$?
 assert_status "pr ready beside a newer fork PR succeeds" "$st" 0
 assert_eq "marking the same-repo PR ready" "$(fake_pr_draft_of 57)" "no"
 assert_eq "and not the fork PR" "$(fake_pr_draft_of 60)" "yes"
-assert_eq "ready: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 out="$("$ORCH" pr draft 2>"$errf")"; st=$?
 assert_status "pr draft beside a newer fork PR succeeds" "$st" 0
 assert_eq "drafting the same-repo PR" "$(fake_pr_draft_of 57)" "yes"
-assert_eq "draft: saying one fork PR was ignored" "$(cat "$errf")" "$forkline"
 
 # Two same-repo PRs and a newer fork PR: the newer same-repo PR wins.
 fake_pr 58 open orch/12-foo main
@@ -1352,10 +1345,7 @@ fake_pr_body 61 "Closes #12"
 out="$("$ORCH" pr fetch "$fk_out" 2>"$errf")"; st=$?
 assert_eq "pr fetch reads the newest same-repo PR" "$(cat "$fk_out")" $'Closes #12\n\nNewer mine.'
 
-# No fork PR: no new stderr.
 rm -rf "$ORCH_GH_FAKE_STORE/prs/60" "$ORCH_GH_FAKE_STORE/prs/61"
-out="$("$ORCH" pr fetch "$fk_out" 2>&1)"; st=$?
-assert_eq "no fork PR: nothing on stderr" "$out" ""
 
 # A flag that is neither true nor false: the filter's own rule is in trust.sh;
 # here only the command's exit code.

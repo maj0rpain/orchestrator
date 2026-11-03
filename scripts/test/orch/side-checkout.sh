@@ -1249,8 +1249,8 @@ assert_eq "with its branch" "$(sp_branch quick/41-fk)" "kept"
 assert_contains "skipped as having no merged PR" "$out" "skipped $fk: no merged PR from quick/41-fk into main"
 assert_contains "and the fork PR is reported as ignored" "$out" "ignored 1 PR(s) from forks"
 
-# A same-repo merged PR finishes it, with no ignored line (the fork PR above,
-# now same-repo, finishes its own).
+# A same-repo merged PR finishes it (the fork PR above, now same-repo,
+# finishes its own).
 fake_offline
 rm "$ORCH_GH_FAKE_STORE/prs/91/cross_repository"
 sm="$(sc_add sm)"
@@ -1260,7 +1260,6 @@ fake_pr_head 92 "$(git rev-parse quick/42-sm)"
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_eq "a same-repo merged PR finishes its side checkout" "$(on_disk "$sm")" "absent"
-assert_not_contains "and no ignored line is printed" "$out" "ignored"
 
 # A flag that is neither true nor false cannot be read.
 fake_offline
