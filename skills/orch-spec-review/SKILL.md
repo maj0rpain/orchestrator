@@ -358,10 +358,10 @@ expansion, in any round: the view the human reads is `check`'s, every round
 alike. The turn ends on the list and the question, in one reply. No edit is
 applied and no changelog is posted before the answer arrives. On Claude Code
 an ask-tool call is refused while the view is unpasted: after each `check`
-that wrote a `view.md`, and until the next `apply`, a hook refuses every ask
-until one text block after that `check` holds the whole view, handing back
-that view each time - end the turn on it and the batch question in plain
-text. The answers:
+that wrote a `view.md`, and until the next `apply` or human message, a hook
+refuses every ask until one text block after that `check` holds the whole view,
+handing back that view each time - end the turn on it and the batch question
+in plain text. The answers:
 
 - **Apply as recommended (Recommended)**, answer word `recommended` - every
   proposed edit applied, every decision item takes its recommended option,
@@ -397,8 +397,7 @@ forms: a typo, extra words around an answer word, or mixed forms such as
 `recommended but not 4`. It is never re-pasted. Its one-line restatement is in
 the grammar `apply` accepts (e.g. "Apply as recommended, except item 4
 declined" - `-4`). *No* runs the question path below. On Claude Code the
-confirmation ask passes the hook: the view is already in the turn-final reply
-above it.
+confirmation ask passes the hook: the near-miss message disarmed the guard.
 
 An Other answer of `show <n>...` is not an answer to the batch question.
 Run `bash "$ORCH" spec-review check <dir> --full <n>...` with the numbers it
@@ -416,8 +415,8 @@ batch question either: the doc's **Question path** runs. Do not run `apply`,
 which never receives a question. Re-run `bash "$ORCH" spec-review check
 <dir>`, and end the turn again on its new view word for word and the batch
 question. The re-run's pass
-line arms the guard again, so on Claude Code only a paste made after it lets
-a later ask through.
+line arms the guard again (the human's message disarmed it), so on Claude Code
+only a paste made after it lets a later ask through.
 
 The spec batch is asked once; a long spec is one longer question, not twenty
 prompts.
