@@ -47,8 +47,8 @@ Run `bash "$ORCH" default-branch` to name the default branch.
 
 ## 2. Write the title and summary
 
-Read what the release carries, for instance with
-`git fetch origin` and `git log --oneline origin/<default>..origin/<base>`.
+Read what the release carries, for instance with `git fetch origin` and
+`git log --oneline refs/remotes/origin/<default>..refs/remotes/origin/<base>`.
 
 - **Title:** short, naming the base branch and what the release delivers,
   e.g. `Release uat: base branch setting and release PRs`.

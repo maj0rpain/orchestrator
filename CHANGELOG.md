@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.52
+
+branch sync, branch off, branch create and side-checkout add now name origin's base branch as refs/remotes/origin/<base> and the local fallback as refs/heads/<base>, so a stray local branch origin/<base> or a tag of the base's name can no longer stand in for it.
+
 ## 4.43.51
 
 The planning edit guard now also covers NotebookEdit and MultiEdit, so a notebook or multi-edit of repo source is denied during planning like a Write.
