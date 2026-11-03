@@ -142,7 +142,10 @@ draft order, each ticket's body written from the template below:
 ```
 
 `<k>` is the ticket's position in the draft; the `@@ blocked-by` line is
-optional and names blockers by position. Then publish:
+optional and names blockers by position. A body line that begins with one or
+more `\` then `@@` loses one leading `\` on publish, so write a body line
+starting with `@@` as `\@@`; any other unescaped `@@` line in a block dies.
+Then publish:
 
 ```
 bash "$ORCH" breakdown publish <parent> <draft-file>

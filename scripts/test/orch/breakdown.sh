@@ -80,6 +80,50 @@ assert_status "a cycle is refused" "$st" 1
 assert_eq "saving nothing" "$(on_disk .orchestrator/breakdown/50)" "absent"
 restore_suite_env
 
+# Escaped grammar lines (#1945): one leading backslash is removed from a body
+# line of \*@@, and a stray unescaped @@ line dies naming itself.
+breakdown_fixture
+cat >"$draft" <<'DRAFT'
+@@ ticket 1 First
+\@@ blocked-by 1
+\@@ end
+\@@ ticket 9 x
+\\@@ x
+\a @@ y
+@@x
+@@-1
+@@ end
+@@ ticket 2 Second
+Two.
+@@ end
+DRAFT
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "escaped grammar lines publish" "$st" 0
+assert_eq "two tickets, no more" "$(fake_sub_issues_of 50)" "100 101"
+assert_eq "no blocking edge from an escaped blocked-by" "$(fake_blockers_of 100)" ""
+body="$(fake_body_of 100)"
+assert_contains "unescaped grammar lines" "$body" $'@@ blocked-by 1\n@@ end\n@@ ticket 9 x\n'
+assert_contains "double backslash loses one" "$body" $'\n\\@@ x\n'
+assert_contains "backslash not before @@ stays" "$body" $'\n\\a @@ y\n@@x\n@@-1'
+restore_suite_env
+
+breakdown_fixture
+printf '@@ ticket 1 A\nok\n@@ end\n@@ ticket 2 B\n@@ note hi\n@@ end\n' >"$draft"
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a stray @@ line dies" "$st" 1
+assert_contains "naming the line" "$out" "line 5"
+assert_contains "with the escape hint" "$out" '\@@'
+assert_eq "publishing nothing" "$(fake_issues)" "50 "
+restore_suite_env
+
+breakdown_fixture
+printf '@@ ticket 1 A\nok\n@@ ticket 2 B\n@@ end\n' >"$draft"
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "@@ ticket in an unfinished block dies" "$st" 1
+assert_contains "with the escape hint" "$out" '\@@'
+assert_eq "publishing nothing" "$(fake_issues)" "50 "
+restore_suite_env
+
 # --- breakdown state ---------------------------------------------------------
 echo
 echo "breakdown state"
