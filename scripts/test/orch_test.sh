@@ -369,6 +369,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     ! kill -0 "${orch_pids[$orch_flushed]}" 2>/dev/null; do
     wait "${orch_pids[$orch_flushed]}"; orch_status=$?
     orch_pos="${orch_sections[$orch_flushed]}"
+    orch_title="$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")"
     cat "$orch_buf/$orch_pos.out"
     orch_counts=""
     [ -f "$orch_buf/$orch_pos.counts" ] && orch_counts="$(cat "$orch_buf/$orch_pos.counts")"
@@ -379,13 +380,13 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
         orch_skip=$((orch_skip + orch_child_skip))
         [ "$orch_child_fail" -eq 0 ] || orch_any_failed=1 ;;
       *)
-        print_fail "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")' reported no counts" \
+        print_fail "section '$orch_title' reported no counts" \
           "it exited $orch_status before its summary"
         orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
     esac
     if [ -s "$orch_buf/$orch_pos.err" ]; then
       orch_err_lines="$(sed '2,$s/^/     /' "$orch_buf/$orch_pos.err")"
-      print_fail "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")' wrote to stderr" \
+      print_fail "section '$orch_title' wrote to stderr" \
         "$orch_err_lines"
       orch_fail=$((orch_fail + 1)); orch_any_failed=1
     fi

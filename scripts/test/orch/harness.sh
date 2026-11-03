@@ -654,9 +654,8 @@ assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "11 passed, 1 failed"
 assert_eq "leaves the section's stderr off the real stderr" \
   "$(grep -c 'a planted stderr line' "$par_dir/stderr")" "0"
-out="$(ORCH_TEST_JOBS=two ORCH_TEST_ONLY='^isolation$' bash "$par_suite" 2>&1 >/dev/null)"
-assert_contains "keeps the runner's own usage error on stderr" "$out" "ORCH_TEST_JOBS='two'"
-out="$(ORCH_TEST_JOBS=two ORCH_TEST_ONLY='^isolation$' bash "$par_suite" 2>/dev/null)"
+out="$(ORCH_TEST_JOBS=two ORCH_TEST_ONLY='^isolation$' bash "$par_suite" 2>"$par_dir/stderr")"
+assert_contains "keeps the runner's own usage error on stderr" "$(cat "$par_dir/stderr")" "ORCH_TEST_JOBS='two'"
 assert_eq "and none of it on stdout" "$(printf '%s\n' "$out" | grep -c 'ORCH_TEST_JOBS')" "0"
 rm -rf "$par_dir"
 
