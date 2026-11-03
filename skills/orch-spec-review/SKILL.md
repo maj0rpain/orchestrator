@@ -397,8 +397,7 @@ forms: a typo, extra words around an answer word, or mixed forms such as
 `recommended but not 4`. It is never re-pasted. Its one-line restatement is in
 the grammar `apply` accepts (e.g. "Apply as recommended, except item 4
 declined" - `-4`). *No* runs the question path below. On Claude Code the
-confirmation ask passes the hook: the view is already in the turn-final reply
-above it.
+confirmation ask passes the hook: the near-miss message disarmed the guard.
 
 An Other answer of `show <n>...` is not an answer to the batch question.
 Run `bash "$ORCH" spec-review check <dir> --full <n>...` with the numbers it

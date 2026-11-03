@@ -178,7 +178,7 @@ paste guard, on `PreToolUse`, refuses every ask until the view is in chat,
 not just the first. Its deny message hands the view back and says to end
 the turn on it and the question in plain text, and not to use the ask
 tool for it.  The short confirmation ask that follows a near-miss answer
-passes, since the view is already in the turn-final reply above it. The Stop
+passes, since the human's near-miss message disarmed the guard. The Stop
 guard refuses to end the turn unless the view is in chat: one text block
 written after the arming pass line, the same window as the paste guard's,
 so a view pasted before a re-run `check` does not count. A human message
