@@ -1567,6 +1567,10 @@ assert_eq "an odd backtick in a heading does not pair into the line under it" \
 writeln '# claude' '```sh' '# run `orch.sh branch' '# retire <old> <new>` then see `docs/agents/p.md`' '```' >CLAUDE.md
 assert_eq "a # line inside a fence is no heading, so a span wrapping across it still pairs" \
   "$(standards_out)" "Standards: CLAUDE.md, docs/agents/p.md"
+writeln '# claude' 'See `docs/agents/q.md` and a stray ` tick' '```sh' 'a stray ` tick' '' \
+  'run `docs/agents/p.md`' '```' 'then `docs/agents/c.md` and a stray ` tick' >CLAUDE.md
+assert_eq "a fence directly under and above a paragraph line, a blank line inside it, keeps each path paired within its own paragraph" \
+  "$(standards_out)" "Standards: CLAUDE.md, docs/agents/q.md, docs/agents/p.md, docs/agents/c.md"
 # A declared Standards: paragraph replaces the crawl.
 rm -f CLAUDE.md; : >docs/agents/q.md
 writeln '# claude' 'See `docs/agents/p.md`.' '' 'Standards: `docs/agents/q.md`, then prose' \
@@ -1649,6 +1653,30 @@ writeln '####### seven' 'Standards: `docs/agents/p.md`' >CONTRIBUTING.md
 assert_eq "a line of seven #s is no heading, so a Standards: line under it is no declaration" \
   "$(standards_out)" "Standards: CONTRIBUTING.md, docs/agents/p.md"
 rm -f CONTRIBUTING.md
+# A root file or mention symlinked out of the repo counts as missing (#2177).
+outside="$out_dir/outside.md"; writeln '# outside' 'See `docs/agents/p.md`.' >"$outside"
+writeln '# claude' 'See `docs/agents/lnk.md` and `docs/agents/p.md`.' >CLAUDE.md
+ln -s "$outside" docs/agents/lnk.md
+assert_eq "a first-hop mention symlinked out of the repo is left off" "$(standards_out)" "Standards: CLAUDE.md, docs/agents/p.md"
+writeln '# claude' 'See `docs/agents/hop.md`.' >CLAUDE.md
+writeln 'See `docs/agents/lnk.md`.' >docs/agents/hop.md
+assert_eq "a second-hop mention symlinked out of the repo is left off" "$(standards_out)" "Standards: CLAUDE.md, docs/agents/hop.md"
+ln -s p.md docs/agents/inlnk.md
+writeln 'See `docs/agents/inlnk.md`.' >docs/agents/hop.md
+assert_eq "a mention symlinked to a file inside the repo is still listed" \
+  "$(standards_out)" "Standards: CLAUDE.md, docs/agents/hop.md, docs/agents/inlnk.md"
+rm -f docs/agents/hop.md docs/agents/inlnk.md CLAUDE.md
+ln -s "$outside" CLAUDE.md
+assert_eq "a CLAUDE.md symlinked out of the repo is left off" "$(standards_out)" "Standards: none"
+ln -s "$outside" AGENTS.md
+writeln '# contributing' 'See `docs/agents/q.md`.' >CONTRIBUTING.md
+assert_eq "with CLAUDE.md and AGENTS.md symlinked out, the fallback runs as with them absent" \
+  "$(standards_out)" "Standards: CONTRIBUTING.md, docs/agents/q.md"
+rm -f CLAUDE.md CONTRIBUTING.md
+assert_eq "an AGENTS.md symlinked out of the repo is left off" "$(standards_out)" "Standards: none"
+rm -f AGENTS.md; ln -s "$outside" CONTRIBUTING.md
+assert_eq "a CONTRIBUTING.md symlinked out of the repo is left off" "$(standards_out)" "Standards: none"
+rm -f CONTRIBUTING.md docs/agents/lnk.md "$outside"
 # This repo's own declaration resolves, in the plugin root the suite checks.
 out="$(cd "$PLUGIN_ROOT" && "$ORCH" review standards 2>&1)"; st=$?
 assert_status "the plugin root's review standards exits 0" "$st" 0
