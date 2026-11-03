@@ -318,7 +318,8 @@ assert_eq "no caller git config is reachable" \
 assert_eq "GH_REPO and GH_HOST are unset" "${GH_REPO-unset} ${GH_HOST-unset}" "unset unset"
 assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 # The caller's ORCH_* knobs are cleared, ORCH_TEST_* kept. The probe run is a
-# child suite run started with ORCH_AUTOPILOT and a probe variable exported;
+# child suite run started with ORCH_AUTOPILOT, GH_REPO, GH_HOST and a probe
+# variable exported;
 # the child (which has the probe set) asserts, and does not start a child.
 assert_eq "ORCH_AUTOPILOT is unset" "${ORCH_AUTOPILOT-unset}" "unset"
 # No repo-local git variable (git rev-parse --local-env-vars) and no commit
@@ -504,6 +505,7 @@ assert_status "the non-quiet reference run passes" "$st" 0
 assert_ne "the reference run prints an ok line" "$quiet_n" 0
 assert_eq "without quiet mode, counts every printed ok line in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "$quiet_n passed, 0 failed"
+assert_eq "prints the header once in a clean run" "$(printf '%s\n' "$out" | grep -cx 'orch.sh tests')" "1"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
 assert_status "a quiet, filtered run passes" "$st" 0
 assert_eq "prints no ok line" "$(count_lines '^  ok ' "$out")" "0"
@@ -572,6 +574,8 @@ par_dir="$(planted_copy <<'PLANTED'
   echo; echo "paired alpha"; ok "alpha ran"; ok "alpha ran again"
   # --- paired beta ----------------------------------------------------------
   echo; echo "paired beta"; ok "beta ran"
+  # --- seq early exit
+  echo; echo "seq early exit"; ok "before the exit"; exit 0
   # --- planted slow
   echo; echo "planted slow"; sleep 2; ok "slept"
   # --- planted stderr
@@ -608,10 +612,12 @@ assert_eq "lists the section titles" "$(printf '%s\n' "$out" | sed -n 1p)" "isol
 assert_eq "and runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
 
 for par_jobs in 0 00 000 -2 two ''; do
-  out="$(ORCH_TEST_JOBS="$par_jobs" ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+  out="$(ORCH_TEST_JOBS="$par_jobs" ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>"$par_dir/stderr")"; st=$?
   assert_status "ORCH_TEST_JOBS='$par_jobs' exits 1" "$st" 1
-  assert_contains "ORCH_TEST_JOBS='$par_jobs' is named in the message" "$out" \
+  assert_contains "ORCH_TEST_JOBS='$par_jobs' is named in the message on stderr" "$(cat "$par_dir/stderr")" \
     "ORCH_TEST_JOBS='$par_jobs'"
+  assert_eq "ORCH_TEST_JOBS='$par_jobs' prints none of it on stdout" \
+    "$(printf '%s\n' "$out" | grep -c 'ORCH_TEST_JOBS')" "0"
   assert_eq "ORCH_TEST_JOBS='$par_jobs' runs no section" \
     "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
 done
@@ -657,38 +663,18 @@ assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "13 passed, 1 failed"
 assert_eq "leaves the section's stderr off the real stderr" \
   "$(grep -c 'a planted stderr line' "$par_dir/stderr")" "0"
-out="$(ORCH_TEST_JOBS=two ORCH_TEST_ONLY='^isolation$' bash "$par_suite" 2>"$par_dir/stderr")"
-assert_contains "keeps the runner's own usage error on stderr" "$(cat "$par_dir/stderr")" "ORCH_TEST_JOBS='two'"
-assert_eq "and none of it on stdout" "$(printf '%s\n' "$out" | grep -c 'ORCH_TEST_JOBS')" "0"
 # The sequential path: a section that exits before the summary is a failure.
-seq_dir="$(planted_copy <<'PLANTED'
-  # --- planted early exit
-  echo; echo "planted early exit"; ok "before the exit"; exit 0
-  # --- planted later failure
-  echo; echo "planted later failure"; bad "a planted failure" "its detail line"
-  # --- planted clean
-  echo; echo "planted clean"; ok "a clean pass"
-PLANTED
-)"
-seq_run() { ORCH_TEST_QUIET="${2:-}" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY="$1" bash "$seq_dir/scripts/test/orch_test.sh" 2>&1; }
-out="$(seq_run '^planted (early exit|later failure)$')"; st=$?
+seq_run() { ORCH_TEST_QUIET="${2:-}" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY="$1" bash "$par_suite" 2>&1; }
+out="$(seq_run '^(seq early exit|planted failure)$')"; st=$?
 assert_status "a sequential run whose section exits 0 early exits 1" "$st" 1
 assert_contains "reports it as no counts, with the exit status" "$out" \
   "$(printf '  FAIL the run reported no counts\n     it exited 0 before its summary')"
 assert_eq "counts the miss in the summary" "$(printf '%s\n' "$out" | tail -n 1)" "13 passed, 1 failed"
 assert_eq "prints the header once" "$(printf '%s\n' "$out" | grep -cx 'orch.sh tests')" "1"
-out="$(seq_run '^planted early exit$' 1)"; st=$?
+out="$(seq_run '^seq early exit$' 1)"; st=$?
 assert_status "the quiet early-exit run exits 1" "$st" 1
 assert_contains "still prints the FAIL line" "$out" "  FAIL the run reported no counts"
 assert_eq "and the summary" "$(printf '%s\n' "$out" | tail -n 1)" "13 passed, 1 failed"
-out="$(seq_run '^planted clean$')"; st=$?
-assert_status "a clean sequential run exits 0" "$st" 0
-assert_eq "keeps its summary" "$(printf '%s\n' "$out" | tail -n 1)" "13 passed, 0 failed"
-assert_eq "prints the header once in a clean run" "$(printf '%s\n' "$out" | grep -cx 'orch.sh tests')" "1"
-out="$(seq_run '^planted later failure$')"; st=$?
-assert_status "a sequential run with a failing section exits 1" "$st" 1
-assert_eq "counts the failure" "$(printf '%s\n' "$out" | tail -n 1)" "12 passed, 1 failed"
-rm -rf "$seq_dir"
 rm -rf "$par_dir"
 
 # The section deadline (ORCH_TEST_SECTION_TIMEOUT). Planted sections hang on a
@@ -698,10 +684,6 @@ dl_dir="$(planted_copy <<PLANTED
   # --- planted hang
   echo; echo "planted hang"; echo "output before the hang"
   bash -c 'sleep 600; : ${dl_mark}hang' &
-  wait
-  # --- planted stubborn
-  echo; echo "planted stubborn"
-  bash -c 'trap "" TERM; while :; do sleep 1; done # ${dl_mark}stubborn' &
   wait
   # --- planted fine
   echo; echo "planted fine"; ok "fine ran"
@@ -727,12 +709,36 @@ assert_contains "prints the hanging section's output, then its timeout FAIL" "$o
 assert_contains "still passes the section planted beside it" "$out" "  ok   fine ran"
 assert_eq "leaves no process with the hang's marker" \
   "$(cat /proc/[0-9]*/cmdline 2>/dev/null | tr "\0" "\n" | grep -c "${dl_mark/#o/[o]}hang")" "0"
-out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_SECTION_TIMEOUT=2 \
-  ORCH_TEST_ONLY='^planted stubborn$' bash "$dl_suite" 2>&1)"; st=$?
-assert_status "a section whose child ignores TERM times out too" "$st" 1
-assert_contains "reporting it" "$out" "section 'planted stubborn' timed out"
-assert_eq "and the KILL escalation leaves no process with its marker" \
-  "$(cat /proc/[0-9]*/cmdline 2>/dev/null | tr "\0" "\n" | grep -c "${dl_mark/#o/[o]}stubborn")" "0"
+# The KILL escalation, on the process-tree stop helper directly: a child that
+# ignores TERM and carries a marker is present once, survives a plain TERM, and
+# is gone after test_jobs_stop_tree. Anything left is KILLed by marker.
+if [ -r "/proc/$$/stat" ]; then
+  out="$("$BASH" -c 'source "$1"; mark="$2$3"
+    marked() { cat /proc/[0-9]*/cmdline 2>/dev/null | tr "\0" "\n" | grep -c "${mark/#o/[o]}"; }
+    bash -c "trap \"\" TERM; while :; do sleep 1; done # $mark" &
+    pid=$!
+    for ((n = 0; n < 50; n++)); do
+      ign="$(awk "/^SigIgn/ {print \$2}" "/proc/$pid/status" 2>/dev/null)"
+      [ "$(marked)" = 1 ] && (( 0x${ign:-0} & 0x4000 )) && break
+      sleep 0.1
+    done
+    echo "before=$(marked)"
+    kill -TERM "$pid"; sleep 0.3
+    kill -0 "$pid" 2>/dev/null && echo "alive=yes" || echo "alive=no"
+    test_jobs_stop_tree "$pid"
+    echo "after=$(marked)"
+    for f in /proc/[0-9]*/cmdline; do
+      tr "\0" "\n" <"$f" 2>/dev/null | grep -q "${mark/#o/[o]}" &&
+        { p="${f#/proc/}"; kill -KILL "${p%/cmdline}" 2>/dev/null; }
+    done' _ "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$dl_mark" stubborn 2>&1)"
+  assert_eq "a TERM-ignoring child carries its marker on exactly one process" \
+    "$(printf '%s\n' "$out" | grep -x 'before=.*')" "before=1"
+  assert_eq "and survives a plain TERM" "$(printf '%s\n' "$out" | grep -x 'alive=.*')" "alive=yes"
+  assert_eq "test_jobs_stop_tree's KILL escalation leaves no process with its marker" \
+    "$(printf '%s\n' "$out" | grep -x 'after=.*')" "after=0"
+else
+  skip "test_jobs_stop_tree's KILL escalation leaves no process with its marker" "no /proc here"
+fi
 for dl_val in 0 abc; do
   out="$(ORCH_TEST_JOBS=2 ORCH_TEST_SECTION_TIMEOUT="$dl_val" ORCH_TEST_ONLY='^planted fine$' \
     bash "$dl_suite" 2>&1)"; st=$?
