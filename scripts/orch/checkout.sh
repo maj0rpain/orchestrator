@@ -270,8 +270,9 @@ require_flow_branch() {
 # discard_flow_branch_work: the flow-branch case of the discard rule (ADR-0054),
 # the one primitive every site meeting uncommitted or in-progress work a dead
 # session left on the flow's own branch - or, for ticket reclaim, a quick
-# implementation's own branch - applies: branch create now, ticket reclaim and
-# review resume next. Each caller first settles that the branch is the one to
+# implementation's own branch - applies: branch create (through
+# discard_create_work, which proves the current branch), ticket reclaim and
+# review resume. Each caller first settles that the branch is the one to
 # discard on; this primitive checks no ownership. In the current checkout
 # ($ROOT): a merge or rebase in progress is aborted, and a tree dirty outside
 # the planning allowlist is reset and cleaned. Nothing to discard changes
