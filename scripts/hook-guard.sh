@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# PreToolUse hook on Edit and Write.
+# PreToolUse hook on Edit, Write, MultiEdit and NotebookEdit.
 #
 # Injected context is a suggestion that can drift an hour into a long planning
 # session - which is exactly when it matters. This is the mechanism half: while

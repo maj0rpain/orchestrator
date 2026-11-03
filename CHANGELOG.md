@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.43.51
+
+The planning edit guard now also covers NotebookEdit and MultiEdit, so a notebook or multi-edit of repo source is denied during planning like a Write.
+
+## 4.43.50
+
+An unparseable `.orchestrator/state.json` no longer kills `orch.sh` with jq's parse error and status 5: `branch busy`, `init` and `branch off` report the checkout as busy (exit 3, with a doctor/abort remedy), and the commands that need the flow's state - `branch create`, `status`, `base set`, `spec fetch`, `spec-review begin`, `autopilot answer`, `suite-cost` and the rest - refuse with "state.json cannot be read - run orch.sh doctor --flow". `doctor --flow` still diagnoses the file, and `abort` archives it (#1929).
+
+## 4.43.49
+
+A parallel `orch_test.sh` run now fails any section that writes to stderr, naming the section and showing what it wrote, and the two sections that leaked (the marked-comment helper and the autopilot tick temp-file case) no longer do.
+
 ## 4.43.48
 
 The test runners now fail a suite that ends without its `N passed, M failed` summary, even when it exits 0: all.sh and affected.sh report it as `died before its summary (exit 0)`, and a sequential `orch_test.sh` run (`ORCH_TEST_JOBS=1`) that stops early prints `the run reported no counts`, counts the miss as a failure, and exits 1 (#1939).

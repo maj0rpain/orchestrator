@@ -666,7 +666,7 @@ rc=0"
 out="$(sourced_orch_script 'set +e; autopilot_pickup_contained false; echo "rc=$? reason=$PICKUP_REASON"')"
 assert_eq "a silent failure reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
 ran_marker="$(mktemp -u)"
-out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker")"
+out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker" 2>/dev/null)"
 assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the command's stderr"
 assert_eq "and runs nothing" "$(on_disk "$ran_marker")" absent
 rm -f "$ran_marker"
@@ -1557,6 +1557,17 @@ fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
 assert_contains "an exit-0 session's long multi-line final reply is quoted collapsed and cut" "$(fake_last_comment_of 7)" \
   "the session exited with code 0; it ended on: *$(printf 'x%.0s' $(seq 1 300)) $(printf 'y%.0s' $(seq 1 199))…*; log: "
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
+# --- autopilot answer on a truncated state.json (#1929) ----------------------
+echo
+echo "autopilot answer on a truncated state.json"
+fresh_flow aptrunc
+fake_github
+state_truncate
+ans="$(mktemp)"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
+assert_state_unreadable "autopilot answer" 2 "$out" "$st"
+restore_suite_env
 
 # --- autopilot: labels in the repo's casing (#1943) ------------------------
 # GitHub label names are case-insensitive and it attaches a label in the repo's

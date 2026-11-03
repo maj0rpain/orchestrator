@@ -97,6 +97,7 @@ require_on_origin() {
 base_set_flow() {
   local b="$1" branch slug
   flow_active || die "no active flow - nothing was set"
+  require_state_readable
   branch="$(state_get branch)"
   if [ -n "$branch" ]; then
     slug="$(state_get slug)"
@@ -126,6 +127,7 @@ cmd_base() {
       done
       [ -n "$b" ] || die "usage: orch.sh base set <branch> [--flow]"
       if [ "$flow" -eq 1 ]; then base_set_flow "$b"; return; fi
+      require_state_readable
       require_on_origin "$b"
       # The default branch's own name is no setting at all: storing it would
       # pin today's default and outlive a rename of it.

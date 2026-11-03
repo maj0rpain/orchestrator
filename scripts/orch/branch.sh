@@ -325,6 +325,7 @@ cmd_branch_sync() {
   [ $# -eq 0 ] || die "usage: orch.sh branch sync"
   local branch base held="" tip remote why
   current_branch_or_die ' - nothing was synced'
+  require_state_readable
   if branch_held "$branch"; then
     held=1
     base="$(flow_base)"

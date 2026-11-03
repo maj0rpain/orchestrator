@@ -41,6 +41,7 @@ spec_review_begin() {
   local issue="$1"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   if flow_active; then
+    require_state_readable
     local phase held
     phase="$(state_get phase)"
     held="$(state_get issue)"

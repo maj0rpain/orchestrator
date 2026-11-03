@@ -45,7 +45,7 @@ review_pass_begin() {
           die "the active flow holds issue #$held at phase '$phase', which is not a flow phase - refusing to review it; run orch.sh doctor --flow" ;;
       esac ;;
     1) ;;
-    *) die "state.json cannot be read - run orch.sh doctor --flow" ;;
+    *) die "$STATE_UNREADABLE_MSG" ;;
   esac
   exclude_orch_dirs
   local dir="$ORCH/review-pass/$branch" f n max=0

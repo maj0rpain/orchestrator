@@ -212,6 +212,13 @@ echo planned >docs/agents/note.md
 out="$(orch_gh_failing init beside 2>&1)"; st=$?
 assert_status "allowlisted edits still let it start" "$st" 0
 assert_eq "recording the flow" "$(orch_gh_failing state get slug)" "beside"
+
+state_truncate
+out="$(orch_gh_failing init other 2>&1)"; st=$?
+assert_status "exits 3 beside a state.json that does not parse" "$st" 3
+assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_contains "and the remedy" "$out" "Run orch.sh doctor --flow, or "
+assert_not_contains "printing no jq text" "$out" "parse error"
 restore_suite_env
 
 # --- init --issue -------------------------------------------------------

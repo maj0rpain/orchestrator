@@ -175,8 +175,13 @@ current_branch_or_die() {
 checkout_busy() {
   local line_var="$1" remedy_var="$2" signals="${*:3}" b dirty busy_line="" busy_remedy=""
   if word_listed "$signals" flow && flow_active; then
-    busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
-    busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
+    if flow_state_readable "$STATE"; then
+      busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
+      busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
+    else
+      busy_line="busy: a flow's state.json cannot be read"
+      busy_remedy="Run orch.sh doctor --flow, or $(flow_cmd abort)."
+    fi
   elif word_listed "$signals" branch && b="$(checkout_branch)" \
     && branch_records_base "$b" \
     && ! branch_redo_count_of "$b" >/dev/null \

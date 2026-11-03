@@ -581,6 +581,29 @@ assert_contains "source denial names the quick-implement Skill lift" "$source_re
 assert_not_contains "source denial names no SKILL.md" "$source_reason" "SKILL.md"
 assert_not_contains "source denial names no Read tool" "$source_reason" "Read tool"
 
+# NotebookEdit and MultiEdit are judged as a Write to the same path is (#1935).
+# nb_event_at <file> <session> <cwd>: a NotebookEdit payload, the cwd chosen.
+nb_event_at() {
+  edit_event_at "$1" "$2" "$3" \
+    | jq '.tool_name="NotebookEdit" | .tool_input={notebook_path:.tool_input.file_path}'
+}
+src_deny='this is a planning session and no flow has'
+out="$(nb_event_at "$REPO/analysis/model.ipynb" s1 "$REPO" | "$GUARD")"
+assert_eq "denies a NotebookEdit of a repo source notebook" "$(bash_hook_decision "$out")" "deny"
+assert_empty "allows a NotebookEdit of a planning-allowlist path" \
+  "$(nb_event_at "$REPO/docs/agents/n.ipynb" s1 "$REPO" | "$GUARD")"
+assert_contains "redirects a NotebookEdit of an ADR to the records reason" \
+  "$(nb_event_at "$REPO/docs/adr/0001-x.md" s1 "$REPO" | "$GUARD" | jq -r '.reason')" "is a record of decisions"
+assert_contains "redirects a NotebookEdit of GLOSSARY.md to the records reason" \
+  "$(nb_event_at "$REPO/GLOSSARY.md" s1 "$REPO" | "$GUARD" | jq -r '.reason')" "'GLOSSARY.md' is a record of decisions"
+out="$(nb_event_at "$REPO/docs/agents/n.ipynb" s1 "$REPO" | jq --arg f "$REPO/src/x.ts" '.tool_input.file_path=$f' | "$GUARD")"
+assert_contains "judges a payload with file_path and notebook_path by file_path" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+out="$(edit_event "$REPO/src/x.ts" s1 | jq '.tool_name="MultiEdit"' | "$GUARD")"
+assert_eq "denies a MultiEdit of a repo source file" "$(bash_hook_decision "$out")" "deny"
+assert_eq "hooks.json registers hook-guard.sh under PreToolUse with matcher Edit|Write|MultiEdit|NotebookEdit" \
+  "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Edit|Write|MultiEdit|NotebookEdit") | .hooks[]?.command | select(test("hook-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
+
 # A repo reached through a symlink is judged by where the write lands (#1919).
 SL="$(mktemp -d)"
 LINK="$SL/link"
@@ -591,7 +614,6 @@ ln -s "$OUTSIDE" "$REPO/src/out"
 ln -s ../../src/real.ts "$REPO/docs/agents/toSrc.ts"
 ln -s ../../src/notyet.ts "$REPO/docs/agents/dangling.ts"
 ln -s loop "$REPO/src/loop"
-src_deny='this is a planning session and no flow has'
 out="$(edit_event_at "$LINK/src/x.ts" s1 "$LINK" | "$GUARD")"
 assert_eq "denies a source edit via a symlinked repo, cwd the link" \
   "$(bash_hook_decision "$out")" "deny"
@@ -628,6 +650,10 @@ ln -s ../g.ts "$REPO/src/deep/f.ts"
 out="$(edit_event_at "$LINK/docs/agents/sub/f.ts" s1 "$LINK" | "$GUARD")"
 assert_contains "denies a file symlink under a directory symlink, its target taken from the physical directory" \
   "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+out="$(nb_event_at "$LINK/analysis/model.ipynb" s1 "$LINK" | "$GUARD")"
+assert_eq "denies a NotebookEdit of a source notebook via the link" "$(bash_hook_decision "$out")" "deny"
+assert_contains "redirects a NotebookEdit of GLOSSARY.md via the link to the records reason" \
+  "$(nb_event_at "$LINK/GLOSSARY.md" s1 "$LINK" | "$GUARD" | jq -r '.reason')" "'GLOSSARY.md' is a record of decisions"
 rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
 
 # The guard polices the file's own working tree, whatever the cwd (#1933).
@@ -1199,6 +1225,15 @@ D2="$PG/disarm-rerun.jsonl"; cp "$D1" "$D2"
 pg_check "$D2" toolu_d2 batch "$PG/batch/view.md"
 assert_eq "a check re-run after the human message arms again: an ask without a paste is refused" "$(pg_decide "$D2")" deny
 assert_eq "and the Stop guard blocks" "$(sg_decide "$D2")" block
+D1c="$PG/disarm-interrupt.jsonl"; cp "$T" "$D1c"
+sg_human "$D1c" '[{"type":"text","text":"[Request interrupted by user]"}]'
+assert_eq "the interrupt marker alone after the pass line, no paste: an ask is allowed" "$(pg_decide "$D1c")" allow
+assert_eq "and the Stop guard allows" "$(sg_decide "$D1c")" allow
+D1d="$PG/disarm-interrupt-moveon.jsonl"; cp "$D1c" "$D1d"
+sg_human "$D1d" '"forget the spec review, ask me something else"'
+pg_text "$D1d" "Sure."
+assert_eq "the interrupt marker, a new human message, then an ask: allowed" "$(pg_decide "$D1d")" allow
+assert_eq "and the Stop guard allows after the new message" "$(sg_decide "$D1d")" allow
 D3="$PG/disarm-slash.jsonl"; cp "$T" "$D3"
 sg_human "$D3" '"<command-name>/orchestrator:abort</command-name>"'
 pg_text "$D3" "Aborted."

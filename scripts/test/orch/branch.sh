@@ -765,6 +765,12 @@ out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "a done flow is free" "$st" 0
 assert_eq "printing nothing (done flow)" "$out" ""
 
+state_truncate
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a flow whose state.json does not parse is busy" "$st" 3
+assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_not_contains "printing no jq text" "$out" "parse error"
+
 sc_clone
 side="$(sc_add fresh)"
 out="$(cd "$side" && orch_gh_failing branch busy 2>&1)"; st=$?
@@ -831,6 +837,15 @@ out="$(orch_gh_failing branch off quick/5-unread 2>&1)"; st=$?
 assert_status "branch off on an unreadable tree exits 1" "$st" 1
 assert_eq "leaving the branch and the git config (branch off)" "$(branch_and_config)" "$before"
 restore_index
+
+new_repo_with_origin
+orch_gh_failing init held >/dev/null
+state_truncate
+out="$(orch_gh_failing branch off quick/1-x 2>&1)"; st=$?
+assert_status "branch off beside an unparseable state.json exits 3" "$st" 3
+assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_contains "and the remedy" "$out" "Run orch.sh doctor --flow, or "
+assert_not_contains "printing no jq text" "$out" "parse error"
 
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
@@ -955,8 +970,7 @@ assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 # whether the flow holds the branch.
 echo '{ not json' >.orchestrator/state.json
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
-assert_status "branch sync on an unreadable state exits 1" "$st" 1
-assert_contains "branch sync shows the state read's own error" "$out" "parse error"
+assert_state_unreadable "branch sync" 1 "$out" "$st"
 
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin
