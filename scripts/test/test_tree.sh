@@ -42,3 +42,27 @@ suites_read() {
     fi
   done
 }
+
+# suites_unlisted <all.sh> <suite dir>: reads the list with suites_read, then
+# prints, in name order, one line per runner in <suite dir> that the list does
+# not name, and returns 0; nothing when every runner is listed. A runner is a
+# top-level <suite dir>/*.sh with a line that starts `source ` or `. ` and ends
+# `tally.sh"`. Each line reads `orch: scripts/test/<x>.sh sources tally.sh but
+# is not in all.sh's suites list`. When suites_read fails it prints nothing and
+# returns 1, with SUITES_ERR holding the reader's message.
+suites_unlisted() {
+  local file="$1" suite_dir="$2" path name listed s
+  suites_read "$file" "$suite_dir" || return 1
+  for path in "$suite_dir"/*.sh; do
+    [ -f "$path" ] || continue
+    grep -Eq '^(source |\. ).*tally\.sh"$' "$path" || continue
+    name="${path##*/}"
+    listed=no
+    for s in "${SUITES[@]}"; do
+      [ "$s" = "$name" ] && listed=yes
+    done
+    [ "$listed" = yes ] ||
+      echo "orch: scripts/test/$name sources tally.sh but is not in all.sh's suites list"
+  done
+  return 0
+}

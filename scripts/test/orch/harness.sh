@@ -1464,6 +1464,49 @@ assert_eq "suites that died before their summary are named in the FAIL verdict" 
   "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh, hooks_test.sh)"
 rm -rf "$all_root"
 
+# --- all.sh's suite list holds every runner (#1941) ---------------------------
+# A runner is a top-level scripts/test/*.sh with a line that sources tally.sh.
+# suites_unlisted prints one orch: line per runner the suites=( list leaves out.
+ul_root="$(mktemp -d)"
+printf '%s\n' 'suites=(listed_test.sh)' >"$ul_root/all.sh"
+mkdir "$ul_root/sub"
+plant_file "$ul_root" listed_test.sh <<'PLANTED'
+  source "$DIR/test/tally.sh"
+PLANTED
+plant_file "$ul_root" b_unlisted.sh <<'PLANTED'
+  . "$DIR/test/tally.sh"
+PLANTED
+plant_file "$ul_root" a_unlisted.sh <<'PLANTED'
+  source "$DIR/test/tally.sh"
+PLANTED
+plant_file "$ul_root" helper.sh <<'PLANTED'
+  echo "a fake, not a runner"
+PLANTED
+plant_file "$ul_root" mention.sh <<'PLANTED'
+  # shellcheck source=tally.sh
+  # source "$DIR/test/tally.sh"
+  echo "see tally.sh"
+PLANTED
+plant_file "$ul_root/sub" deep.sh <<'PLANTED'
+  source "$DIR/test/tally.sh"
+PLANTED
+ul_out="$(suites_unlisted "$ul_root/all.sh" "$ul_root")"; st=$?
+assert_status "the planted tree reads" "$st" 0
+assert_eq "an unlisted runner is named, in name order, and nothing else is" "$ul_out" \
+  "$(printf '%s\n' "orch: scripts/test/a_unlisted.sh sources tally.sh but is not in all.sh's suites list" \
+    "orch: scripts/test/b_unlisted.sh sources tally.sh but is not in all.sh's suites list")"
+printf '%s\n' 'suites_list=(listed_test.sh)' >"$ul_root/all.sh"
+ul_out="$(suites_unlisted "$ul_root/all.sh" "$ul_root")"; st=$?
+assert_status "an all.sh with no suites=( line returns 1" "$st" 1
+assert_eq "and prints nothing" "$ul_out" ""
+suites_unlisted "$ul_root/all.sh" "$ul_root" >/dev/null
+assert_contains "and sets SUITES_ERR" "$SUITES_ERR" "$ul_root/all.sh"
+rm -rf "$ul_root"
+ul_dir="$(dirname "$SUITE_SCRIPT")"
+ul_out="$(suites_unlisted "$ul_dir/all.sh" "$ul_dir")"; st=$?
+assert_status "the real test directory reads" "$st" 0
+assert_eq "the real test directory has no unlisted runner" "$ul_out" ""
+
 # --- the job pool (#2022) -----------------------------------------------------
 # The runners' shared job pool, test-only ORCH_TEST_POOL_DIR naming the pool
 # directory and ORCH_TEST_CPU_MAX_FILE sizing it (a quota of 200000 per slot:
