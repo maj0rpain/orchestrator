@@ -2907,7 +2907,9 @@ srct_escaped_dir() {
 d="$(srct_escaped_dir $'@@ anchor\n\\@@ note <text>\n\\\\@@ keep\n\\x stays\n@@x stays\n@@ replace\n\\@@ remark <text>\n@@-1 new\n@@ end')"
 srct "$d"
 assert_status "escaped lines in a tickets.md anchor and replacement: check passes" "$st" 0
-assert_contains "the view shows the unescaped replacement" "$out" "@@ remark <text>"
+assert_contains "the view shows the unescaped replacement" "$out" $'\n@@ remark <text>\n'
+assert_contains "the view shows the unescaped @@-1 line" "$out" $'\n@@-1 new\n'
+assert_not_contains "the view keeps no backslash on the replacement" "$out" '\@@ remark'
 d="$(srct_escaped_dir $'@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end')"
 srct "$d"
 assert_status "an escaped tickets.md anchor with an empty replacement: check passes" "$st" 0
