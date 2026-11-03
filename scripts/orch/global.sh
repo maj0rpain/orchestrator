@@ -360,7 +360,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout (see branch busy), changing nothing
   branch busy                 tell whether this checkout is a busy checkout,
                               from local git and state only: a flow
-                              mid-pipeline, a branch the plugin made with no
+                              mid-pipeline (a state.json that cannot be read
+                              counts as one), a branch the plugin made with no
                               PR yet (no branch.<name>.orchestrator-pr) and
                               not retired by a redo (-redo-<n>), or
                               changes outside the planning allowlist, checked

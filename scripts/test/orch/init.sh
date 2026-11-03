@@ -208,6 +208,19 @@ assert_status "a dirty path outside the allowlist still gets the exit-1 refusal"
 assert_contains "with today's message" "$out" "the working tree has changes outside the planning allowlist:"
 rm stray.sh
 
+new_repo_with_origin
+orch_gh_failing init held >/dev/null
+head -c 40 .orchestrator/state.json >.orchestrator/state.trunc
+mv .orchestrator/state.trunc .orchestrator/state.json
+out="$(orch_gh_failing init other 2>&1)"; st=$?
+assert_status "exits 3 beside a state.json that does not parse" "$st" 3
+assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_contains "and the remedy" "$out" "Run orch.sh doctor --flow, or "
+assert_not_contains "printing no jq text" "$out" "parse error"
+
+new_repo_with_origin
+orch_gh_failing branch off quick/3-running >/dev/null
+git config branch.quick/3-running.orchestrator-pr 7
 echo planned >docs/agents/note.md
 out="$(orch_gh_failing init beside 2>&1)"; st=$?
 assert_status "allowlisted edits still let it start" "$st" 0

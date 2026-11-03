@@ -760,6 +760,19 @@ for phase in spec implement review; do
   assert_contains "naming the flow's slug and phase ($phase)" "$out" "slug: held, phase: $phase"
 done
 
+new_repo_with_origin
+orch_gh_failing init held >/dev/null
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_contains "a parseable state.json keeps the slug/phase line" "$out" "busy: a flow is mid-pipeline (slug: held, phase: spec)"
+head -c 40 .orchestrator/state.json >.orchestrator/state.trunc
+mv .orchestrator/state.trunc .orchestrator/state.json
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a flow whose state.json does not parse is busy" "$st" 3
+assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_not_contains "printing no jq text" "$out" "parse error"
+
+new_repo_with_origin
+orch_gh_failing init held >/dev/null
 state_fixture phase "done"
 out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "a done flow is free" "$st" 0
@@ -831,6 +844,20 @@ out="$(orch_gh_failing branch off quick/5-unread 2>&1)"; st=$?
 assert_status "branch off on an unreadable tree exits 1" "$st" 1
 assert_eq "leaving the branch and the git config (branch off)" "$(branch_and_config)" "$before"
 restore_index
+
+new_repo_with_origin
+orch_gh_failing init own >/dev/null
+orch_gh_failing state set issue 12
+
+new_repo_with_origin
+orch_gh_failing init held >/dev/null
+head -c 40 .orchestrator/state.json >.orchestrator/state.trunc
+mv .orchestrator/state.trunc .orchestrator/state.json
+out="$(orch_gh_failing branch off quick/1-x 2>&1)"; st=$?
+assert_status "branch off beside an unparseable state.json exits 3" "$st" 3
+assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_contains "and the remedy" "$out" "Run orch.sh doctor --flow, or "
+assert_not_contains "printing no jq text" "$out" "parse error"
 
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
