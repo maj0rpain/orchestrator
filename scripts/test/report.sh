@@ -8,7 +8,6 @@
 # "<suite>: died before its summary (exit N)" when the last line of <output> is
 # not a summary line, whatever <status> is, even 0. When <output> has a
 # "  FAIL " line and <status> is 0, "<suite>: printed FAIL lines but exited 0"
-# follows.
 # follows. Returns 1 when <status> is non-zero, <output> has a FAIL line, or its
 # last line is not a summary line, else 0.
 #
