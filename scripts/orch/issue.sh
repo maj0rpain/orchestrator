@@ -30,7 +30,7 @@ labels_verified() {
 open_issue_read() {
   local __oir_hint=() __oir_state __oir_labels __oir_body __oir_err
   if [ "${1-}" = --hint ]; then
-    [ $# -ge 2 ] || die "open_issue_read: --hint needs a value"
+    die_opt_check open_issue_read $# "$@"
     __oir_hint=(--hint "$2"); shift 2
   fi
   if [ $# -ge 4 ]; then
@@ -124,7 +124,7 @@ comments_render_trusted() {
 comments_trusted() {
   local __ct_hint=() __ct_raw __ct_kept
   if [ "${1-}" = --hint ]; then
-    [ $# -ge 2 ] || die "comments_trusted: --hint needs a value"
+    die_opt_check comments_trusted $# "$@"
     __ct_hint=(--hint "$2"); shift 2
   fi
   gh_or_die ${__ct_hint[@]+"${__ct_hint[@]}"} --out __ct_raw "$2" "$1" "$3"
@@ -140,7 +140,7 @@ comments_trusted() {
 comments_rendered() {
   local __cr_hint=() __cr_kept __cr_out
   if [ "${1-}" = --hint ]; then
-    [ $# -ge 2 ] || die "comments_rendered: --hint needs a value"
+    die_opt_check comments_rendered $# "$@"
     __cr_hint=(--hint "$2"); shift 2
   fi
   comments_trusted ${__cr_hint[@]+"${__cr_hint[@]}"} "$1" "$2" "$3" __cr_kept
