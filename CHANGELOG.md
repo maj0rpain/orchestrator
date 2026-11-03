@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.17
+
+The planning edit guard now resolves the edited path through symlinks, so it denies source and records edits made through a symlinked repo path instead of allowing them.
+
 ## 4.43.16
 
 Pin the `exclude_line` empty-file test to the exact bytes in one assertion.
