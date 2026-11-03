@@ -165,6 +165,20 @@ assert_eq "its entries replacing the PR body's Deviations" \
   "$(sed -n '1,/^## Known items$/p' "$kp/known.md")" \
   "$(writeln '## Deviations' '- Built the key from the slug, not from the member' '## Known items')"
 
+# A fenced heading or bullet is never structure (#1922).
+fake_pr_comment 57 pat 2026-10-07T09:00:00Z "$(writeln 'Quoting a template:' '```' '## Review' '- `q.sh:1` - quoted, not declined' '## Host fallbacks' '```')"
+fake_pr_comment 57 pat 2026-10-08T09:00:00Z "$(writeln '## Review' '' '- `e.sh:4` - quotes markdown' '```' '## Quoted' '```' \
+  '- `f.sh:5` - next decline' '' '## Host fallbacks' '' 'None (claude).')"
+writeln '- Kept a fence:' '```' '- not a new entry' '```' >"$kp/fdev.md"
+"$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/fdev.md" >/dev/null; st=$?
+assert_status "builds with fenced headings and bullets" "$st" 0
+assert_not_contains "a comment with fenced-only headings is no earlier pass's" "$(cat "$kp/known.md")" 'q.sh:1'
+assert_contains "an earlier pass's entry keeps its fenced heading line" "$(cat "$kp/known.md")" \
+  '- `e.sh:4` - quotes markdown ``` ## Quoted ``` - declined'
+assert_contains "and the next entry stays its own" "$(cat "$kp/known.md")" '- `f.sh:5` - next decline - declined'
+assert_contains "a deviation with a fenced column-0 bullet is one entry" "$(cat "$kp/known.md")" \
+  '- Kept a fence: ``` - not a new entry ```'
+
 : >"$kp/empty.md"
 fake_pr 57 closed quick/21-foo main
 fake_comments_clear 21
