@@ -596,6 +596,9 @@ Waited on **once per loop**, at **Termination**, and never inside an
 iteration: that would block a single session for most of an hour, and the fix
 commits are pushed as they land anyway.
 
+Run `bash "$ORCH" review ci` in the foreground and wait for it (host capability
+*Run a long command*); never background it and sleep, poll or kill it.
+
 `bash "$ORCH" review ci` polls the PR's checks and prints one of four words,
 exiting non-zero on the last two:
 
@@ -630,8 +633,7 @@ exiting non-zero on the last two:
   the cap. A **bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.
 
-Run `review ci` in the foreground and wait for it (host capability *Run a long
-command*); never background it and sleep, poll or kill it. A `review ci` the
+A `review ci` the
 host moves to the background at its timeout is still waited for, as that row
 says, and never started a second time. One the host kills at its timeout (the
 Junie fallback) is **unreachable**.
