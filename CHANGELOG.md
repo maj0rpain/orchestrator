@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.4
+
+A new PreToolUse Bash hook, `hook-bash-poll.sh`, denies a plugin subagent's or autopilot session's Bash call holding an unquoted `pgrep` or `pkill` word, under every permission mode, and tells the agent to rerun the long command in the foreground instead. The stdin hook's command walker now takes a per-part test, shared by both hooks.
+
 ## 4.43.3
 
 `scripts/test/all.sh` and `scripts/test/affected.sh` now end every run that reaches their report on one verdict line - `all.sh: PASS (<n> parts)` or `all.sh: FAIL (<part>, ...)`, and the same for `affected.sh` - naming each failed suite, `shellcheck`, or `temp files`, so a `tail` of the output can no longer show a pass when the run failed. The report code both runners shared now lives once, in `scripts/test/report.sh`.
