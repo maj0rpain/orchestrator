@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.37
+
+orch.sh now matches label names case-insensitively, as GitHub does, so a repo label in another casing (`Needs-Human`, `Orch:Running`, `Ready-For-Agent`, ...) counts as carried: the autopilot Standing read, `issue ready`/`triage`, `init --issue`, finding triage, the PR label checks and the Doctor no longer miss it. Existing labels keep their casing.
+
 ## 4.43.36
 
 A hung test no longer hangs a verification run: each FIFO handshake in the test suite waits at most 60 s for its partner and names the side that never arrived, and the parallel test runner gives each section a deadline (`ORCH_TEST_SECTION_TIMEOUT`, default 600 s), past which it stops the section's process tree and reports `section '<title>' timed out`.
