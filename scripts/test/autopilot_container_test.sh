@@ -74,6 +74,12 @@ cat >"$root/orch.sh" <<'FAKE'
 printf 'pid=%s pwd=%s host=%s args=%s\n' "$$" "$PWD" "${ORCH_HOST_ID:-}" "$*" >>"$ORCH_LOG"
 # `repo show` goes to the real orch.sh, so its origin parser is the one tested.
 [ "$1 $2" = "repo show" ] && exec bash "$REAL_ORCH_SH" "$@"
+# Each agent set/clear records, in $ORCH_LOG.shadows, how many local keys that
+# shadow .env are left in the clone at the moment of the call.
+case "$1 $2" in "agent set"|"agent clear")
+  git config --local --get-regexp '^(orchestrator\.autopilot\.|orchestrator\.(model|effort)\.|user\.(name|email)$)' 2>/dev/null |
+    wc -l >>"$ORCH_LOG.shadows" ;;
+esac
 if [ -n "${FAKE_ORCH_FAIL:-}" ]; then
   case "$*" in *"$FAKE_ORCH_FAIL"*) echo "orch: refused $*" >&2; exit 1 ;; esac
 fi
@@ -257,7 +263,7 @@ local_prep='git init -q "$clone" && git -C "$clone" remote add origin https://gi
   git -C "$clone" config orchestrator.autopilot.bogus x &&
   git -C "$clone" config orchestrator.model.implementer opus &&
   git -C "$clone" config orchestrator.effort.lens low &&
-  git -C "$clone" config orchestrator.junie.model keepme &&
+  git -C "$clone" config orchestrator.junie.model.implementer keepme &&
   git -C "$clone" config user.name Stale &&
   git -C "$clone" config user.email stale@example.com'
 clone_prep="$local_prep" run_entry ORCH_CAP=2 ORCH_GIT_NAME=Bot ORCH_GIT_EMAIL=bot@example.com -ORCH_PERMISSION_MODE
@@ -265,11 +271,9 @@ assert_status "stale local keys: the start succeeds" "$st" 0
 assert_empty "stale local keys: no local autopilot key remains" "$(git -C "$clone" config --local --get-regexp '^orchestrator\.autopilot\.')"
 assert_empty "stale local keys: no local agent-setting key remains" "$(git -C "$clone" config --local --get-regexp '^orchestrator\.(model|effort)\.')"
 assert_empty "stale local keys: no local identity key remains" "$(git -C "$clone" config --local --get-regexp '^user\.(name|email)$')"
-assert_eq "stale local keys: the Junie key stays" "$(git -C "$clone" config --local orchestrator.junie.model)" keepme
+assert_eq "stale local keys: the Junie key stays" "$(git -C "$clone" config --local orchestrator.junie.model.implementer)" keepme
 assert_eq "stale local keys: global cap follows .env" "$(cfg orchestrator.autopilot.cap)" 2
 assert_eq "stale local keys: global permission-mode is the default" "$(cfg orchestrator.autopilot.permission-mode)" bypassPermissions
-assert_eq "stale local keys: global name is .env's" "$(cfg user.name)" Bot
-assert_eq "stale local keys: global email is .env's" "$(cfg user.email)" bot@example.com
 assert_eq "stale local keys: git in the clone resolves the name" "$(HOME="$home" git -C "$clone" config user.name)" Bot
 assert_eq "stale local keys: git in the clone resolves the email" "$(HOME="$home" git -C "$clone" config user.email)" bot@example.com
 assert_contains "stale local keys: cap warning names its value" "$err" "orch: removed local orchestrator.autopilot.cap (9) - docker/.env is the one source of truth"
@@ -285,7 +289,8 @@ assert_eq "stale local keys: no local agent clear" "$(grep 'args=agent clear' "$
 last_removal="$(printf '%s\n' "$err" | grep -n '^orch: removed local ' | tail -1 | cut -d: -f1)"
 marker_at="$(printf '%s\n' "$err" | grep -n '^autopilot-show-marker' | cut -d: -f1)"
 assert_eq "removal lines come before the autopilot show output" "$([ -n "$marker_at" ] && [ "$last_removal" -lt "$marker_at" ] && echo yes)" yes
-assert_eq "removal lines are the first stderr lines, ahead of the global writes" "$(printf '%s\n' "$err" | sed -n 1,7p | grep -c '^orch: removed local ')" 7
+assert_eq "no shadowing local key is left at any global agent write" "$(tr -d ' ' <"$orch_log.shadows" | sort -u)" 0
+assert_eq "every global agent write is checked for shadowing keys" "$(wc -l <"$orch_log.shadows" | tr -d ' ')" 12
 first_agent_at="$(grep -n 'args=agent \(set\|clear\)' "$orch_log" | sed -n 1p | cut -d: -f1)"
 show_at="$(grep -n 'args=autopilot show' "$orch_log" | cut -d: -f1)"
 watch_at="$(grep -n 'args=autopilot watch' "$orch_log" | cut -d: -f1)"

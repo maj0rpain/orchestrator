@@ -100,13 +100,12 @@ cd "$clone_dir" || die "clone: cannot enter $clone_dir"
 # each: the whole local orchestrator.autopilot section (unknown keys too), each
 # role's local Claude Code agent-setting keys (orchestrator.model.<role>,
 # orchestrator.effort.<role>) and the local commit identity. Junie's keys stay.
-removal_warn() { warn "removed local $1 ($2) - docker/.env is the one source of truth"; }
 local_shadows="$(git config --local --get-regexp '^(orchestrator\.autopilot\.|orchestrator\.(model|effort)\.|user\.(name|email)$)')" ||
   [ $? -eq 1 ] || die "autopilot settings: cannot read the local keys that would shadow .env"
 while read -r key value; do
   [ -n "$key" ] || continue
   git_config_unset local "$key" || die "autopilot settings: cannot remove local $key"
-  removal_warn "$key" "$value"
+  warn "removed local $key ($value) - docker/.env is the one source of truth"
 done <<<"$local_shadows"
 
 # autopilot_set <key> <value>: writes the key; an empty value clears it.
