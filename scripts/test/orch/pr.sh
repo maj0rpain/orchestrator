@@ -1121,6 +1121,15 @@ assert_eq "and no other" "$(fake_pr_body_of 56)" "Closes #99"
 prb fetch "$out_file" >/dev/null 2>&1
 assert_eq "a fetch after the update reads the new body back" "$(cat "$out_file")" "$(cat "$newbody")"
 
+fake_pr_body 57 $'Closes #12\r\n\r\nAlpha line.\r\nBeta line.\r\n'
+prb fetch "$out_file" >/dev/null 2>&1
+assert_eq "pr fetch of a CRLF body writes the same text with LF line endings and no CR" \
+  "$(od -c <"$out_file")" "$(printf 'Closes #12\n\nAlpha line.\nBeta line.\n\n' | od -c)"
+fake_pr_body 57 $'Closes #12\r\nBeta line.'
+prb fetch "$out_file" >/dev/null 2>&1
+assert_eq "a CRLF body with no final line ending ends as an LF one does" \
+  "$(od -c <"$out_file")" "$(printf 'Closes #12\nBeta line.\n' | od -c)"
+
 set_pr_body 'Refs #12' '' 'Into uat.'
 writeln 'Refs #12' '' 'Into uat, corrected.' >"$newbody"
 out="$(prb update "$newbody" 2>&1)"; st=$?
@@ -1173,6 +1182,8 @@ assert_gh_dies "a failed read fails" adapter_pr_body "$GH_502" 1 \
   "orch: gh could not read the body of PR #57: HTTP 502: Bad Gateway" \
   prb fetch "$out_file"
 assert_eq "leaving the body as it was" "$(fake_pr_body_of 57)" "$(writeln 'Closes #12')"
+assert_eq "leaving the target untouched" "$(cat "$out_file")" "$(writeln "Closes #12" "Beta line.")"
+assert_eq "and no temp file beside it" "$(ls "$(dirname "$out_file")" | tr '\n' ' ')" "body.md "
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 help="$("$ORCH" help)"

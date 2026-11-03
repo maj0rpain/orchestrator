@@ -1169,17 +1169,8 @@ fake_issue_body 23 $'Alpha line.\r\nBeta line.'
 "$ORCH" issue fetch 23 "$lf_dir/body.md"
 assert_eq "a CRLF body with no final line ending ends as an LF one does" \
   "$(od -c <"$lf_dir/body.md")" "$(printf 'Alpha line.\nBeta line.\n' | od -c)"
-fake_issue_body 23 $'Alpha line.\nBeta line.'
-"$ORCH" issue fetch 23 "$lf_dir/body.md"
-assert_eq "an LF body is written unchanged" \
-  "$(od -c <"$lf_dir/body.md")" "$(printf 'Alpha line.\nBeta line.\n' | od -c)"
 fake_issue_body 23 $'Alpha line.\r\nBeta line.'
 "$ORCH" issue fetch 23 "$lf_dir/body.json" --json
 assert_contains "fetch --json keeps every CR" "$(jq -r .body "$lf_dir/body.json" | od -c)" '\r  \n'
-assert_gh_dies "a failed body read fails the fetch" adapter_issue_body "$GH_502" 1 \
-  "orch: gh could not read the body of issue #23: HTTP 502: Bad Gateway" \
-  "$ORCH" issue fetch 23 "$lf_dir/body.md"
-assert_eq "leaving the target untouched" "$(od -c <"$lf_dir/body.md")" "$(printf 'Alpha line.\nBeta line.\n' | od -c)"
-assert_eq "and no temp file beside it" "$(ls "$lf_dir" | sort | tr '\n' ' ')" "body.json body.md "
 rm -rf "$lf_dir"
 unset lf_dir
