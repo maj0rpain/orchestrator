@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.32
+
+`orch.sh pr fetch` now writes a PR body with LF line endings, and `orch.sh review-pass` reads the PR body through that same LF read.
+
 ## 4.43.31
 
 `branch create`'s Discard rule now decides on the branch it is making, so a fresh run on a retired `-redo-<n>` branch refuses instead of discarding; one `work_to_discard` predicate defines the work to discard for both discard sites.
