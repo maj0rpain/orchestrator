@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.35
+
+The autopilot container now refuses to reuse a clone whose origin is not `REPO` (or is unreadable), naming the two fixes, instead of silently watching the old repo.
+
 ## 4.43.34
 
 The version-bump script, and so the PR's fragment lint, now refuses a changelog fragment whose prose holds a heading line, which would have split the release entry in CHANGELOG.md (#1927).
