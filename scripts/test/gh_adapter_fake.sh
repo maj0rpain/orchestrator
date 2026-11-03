@@ -46,10 +46,11 @@
 #   prs/<n>/labels    the PR's label names, one per line
 #   pr_label_drops    label names, one per line, a PR create never stores -
 #                     as a gh whose label mutation did not land
-#   prs/<n>/head_oid  the head commit's SHA; absent, forty zeros
+#   prs/<n>/head_oid  the head commit's SHA; absent, forty zeros; empty, as
+#                     GitHub's null head
 #   prs/<n>/url       the PR's URL; absent, https://github.com/o/r/pull/<n>
 #   prs/<n>/commits   the PR's commit SHAs, one per line, oldest first;
-#                     absent, the head alone
+#                     absent, the head alone, or none when the head is empty
 #   prs/<n>/diff      the PR's diff, byte for byte; absent, an empty one
 #   prs/<n>/comments/<k>/{author,created,body}
 #                     the PR's k-th comment
@@ -659,7 +660,8 @@ adapter_pr_comments() {
 
 # adapter_pr_refs <n>: the stored head SHA (default forty zeros, a SHA no
 # reflog or object store holds), head branch and base branch, then the stored
-# commits (default the head alone, a single-commit PR).
+# commits (default the head alone, a single-commit PR, or none when the head
+# is empty).
 adapter_pr_refs() {
   local d oid
   ! fake_failing adapter_pr_refs || return 1
@@ -668,19 +670,18 @@ adapter_pr_refs() {
   oid="$(fake_pr_head_oid "$d")"
   printf '%s\n' "$oid"
   cat "$d/head" "$d/base"
-  if [ -f "$d/commits" ]; then cat "$d/commits"; else printf '%s\n' "$oid"; fi
+  if [ -f "$d/commits" ]; then cat "$d/commits"; elif [ -n "$oid" ]; then printf '%s\n' "$oid"; fi
 }
 
 # adapter_pr_url_head <n>: the stored PR's url (default
-# https://github.com/o/r/pull/<n>), then its head_oid as stored - an empty
-# seeded head comes back empty - or forty zeros when the file is absent.
+# https://github.com/o/r/pull/<n>), then its head SHA as fake_pr_head_oid reads it.
 adapter_pr_url_head() {
   local d
   ! fake_failing adapter_pr_url_head || return 1
   fake_pr_known "$1" || return 1
   d="$(fake_pr_dir "$1")"
   if [ -f "$d/url" ]; then cat "$d/url"; else printf 'https://github.com/o/r/pull/%s\n' "$1"; fi
-  if [ -f "$d/head_oid" ]; then cat "$d/head_oid"; else fake_pr_head_oid "$d"; fi
+  fake_pr_head_oid "$d"
 }
 
 # adapter_pr_ready <n>: the stored PR no longer a draft.
@@ -754,11 +755,14 @@ adapter_pr_diff() {
 }
 
 # fake_pr_head_oid <pr-dir>: prints the stored PR's head SHA - its head_oid
-# file, or forty zeros when that is absent or empty - the store's one default.
+# file as stored, empty included (GitHub's null head), or forty zeros when that
+# is absent - the store's one head rule, which every reader goes through.
 fake_pr_head_oid() {
-  local oid
-  oid="$(cat "$1/head_oid" 2>/dev/null)"
-  printf '%s\n' "${oid:-0000000000000000000000000000000000000000}"
+  if [ -f "$1/head_oid" ]; then
+    printf '%s\n' "$(cat "$1/head_oid")"
+  else
+    printf '%s\n' 0000000000000000000000000000000000000000
+  fi
 }
 
 # adapter_prs_merged <head> <base>: the merged PRs in the store from the head
