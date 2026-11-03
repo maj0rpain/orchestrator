@@ -460,6 +460,32 @@ err="$(faked adapter_issue_state_labels 20 2>&1 >/dev/null)"; st=$?
 assert_status "fake_fail_after with no stderr fails too" "$st" 1
 assert_eq "with fake_fail's message" "$err" "fake gh: adapter_issue_state_labels failed"
 fake_unfail
+# adapter_pr_close models GitHub: a PR already CLOSED, or OPEN with its head
+# gone from a readable origin (GitHub closed it itself), closes with no comment.
+fake_github
+close_repo="$(mktemp -d)"
+git init -q --bare "$close_repo/origin.git"
+git init -q "$close_repo/work"
+git -C "$close_repo/work" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$close_repo/work" remote add origin "$close_repo/origin.git"
+git -C "$close_repo/work" push -q origin HEAD:refs/heads/topic
+fake_pr 70 closed topic main
+(cd "$close_repo/work" && faked adapter_pr_close 70 "Redone.")
+assert_eq "pr close: a PR already CLOSED gets no comment" "$(fake_pr_comments_of 70)" ""
+fake_pr 71 open topic main
+(cd "$close_repo/work" && faked adapter_pr_close 71 "Redone.")
+assert_eq "pr close: an OPEN PR whose head is on origin is CLOSED" "$(cat "$ORCH_GH_FAKE_STORE/prs/71/state")" "CLOSED"
+assert_eq "with its comment" "$(fake_pr_comments_of 71)" "Redone."
+git -C "$close_repo/work" push -q origin :refs/heads/topic
+fake_pr 72 open topic main
+(cd "$close_repo/work" && faked adapter_pr_close 72 "Redone.")
+assert_eq "pr close: an OPEN PR whose head was deleted from origin is CLOSED" "$(cat "$ORCH_GH_FAKE_STORE/prs/72/state")" "CLOSED"
+assert_eq "with no comment, as GitHub's auto-close leaves it" "$(fake_pr_comments_of 72)" ""
+git init -q "$close_repo/noorigin"
+fake_pr 73 open topic main
+(cd "$close_repo/noorigin" && faked adapter_pr_close 73 "Redone.")
+assert_eq "pr close: an unreadable origin still closes the PR" "$(cat "$ORCH_GH_FAKE_STORE/prs/73/state")" "CLOSED"
+assert_eq "and appends its comment" "$(fake_pr_comments_of 73)" "Redone."
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
