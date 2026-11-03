@@ -258,7 +258,7 @@ live_orch() {
   # line ends the read with EOF; it closes the end before its long sleep.
   bash -c 'exec 9>"$2"; source "$1"; shift 2; "$@"; echo ready >&9; exec 9>&-; exec sleep 600' _ "$ORCH" "$fifo" "$@" &
   LIVE_PID=$!
-  read -r line <"$fifo"
+  line="$(fifo_bounded 60 "live_orch ready read ($fifo)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$fifo")"
   rm -f "$fifo"
 }
 live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return 0; }

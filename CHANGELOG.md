@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.36
+
+A hung test no longer hangs a verification run: each FIFO handshake in the test suite waits at most 60 s for its partner and names the side that never arrived, and the parallel test runner gives each section a deadline (`ORCH_TEST_SECTION_TIMEOUT`, default 600 s), past which it stops the section's process tree and reports `section '<title>' timed out`.
+
 ## 4.43.35
 
 The autopilot container now refuses to reuse a clone whose origin is not `REPO` (or is unreadable), naming the two fixes, instead of silently watching the old repo.
