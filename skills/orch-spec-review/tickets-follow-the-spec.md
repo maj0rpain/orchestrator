@@ -44,6 +44,9 @@ this is reconciliation, the same kind of work as **Consolidation**.
   down again**. "Open tickets" names the ticket whose edges change: its
   blocker may be open or closed. Each edge change - one edge added or
   removed - is its own numbered item.
+  `spec-review apply` refuses a ticket, edge or closed entry that names an
+  issue outside the breakdown, or a ticket in the wrong state: an open
+  ticket for a text or edge item, a closed one for `@@ closed`.
 - A drafted edit you believe is wrong is still presented, marked **recommend
   decline** with the reason.
 
