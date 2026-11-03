@@ -90,8 +90,7 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 
    Before reporting a hunk as scope creep, check whether the repo's coding
    standards require it: the entries of your prompt's `Standards:` line,
-   read as the Standards reviewer reads them (including how it tells a
-   declared list from a crawled one): a declared list in full, a
+   read thus: a declared list in full, a
    `path#Heading` entry as that section only, and from a crawled list only
    the code-writing documents. `Standards: none` means no standard requires
    any hunk.
