@@ -320,8 +320,8 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
   `ORCH_HANDLE`, `ORCH_ROUNDS`, `ORCH_BUDGET`, `ORCH_MODEL`, `ORCH_EFFORT` and
   every role variable, unset or empty, clears its global key at each start,
   so a line deleted from `.env` takes effect after `docker restart`. Local
-  `orchestrator.autopilot.*` and agent-setting keys in the clone are removed at
-  each start, so they cannot override `.env`.
+  `orchestrator.autopilot.*`, agent-setting and `user.name`/`user.email` keys in
+  the clone are removed at each start, so they cannot override `.env`.
 - **Validated at startup:** once the clone exists, the entrypoint writes these
   keys inside it and runs `orch.sh autopilot show`. Any refusal exits non-zero
   with its `orch:` line, so a typo fails `docker compose up` and never runs the
