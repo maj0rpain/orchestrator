@@ -97,7 +97,6 @@ sc_pids=()
 # exit 130; the EXIT trap removes the temp directory only after that.
 trap 'test_jobs_stop_children "${pids[@]}" "${sc_pids[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
-failed=0
 suites_tmp="$tmp/suites-tmp"
 mkdir "$suites_tmp" || exit 1
 
@@ -137,7 +136,6 @@ for suite_pid in "${pids[@]}"; do
   wait "$suite_pid"
   suite_exit=$?
   suite_exits+=("$suite_exit")
-  [ "$suite_exit" -ne 0 ] && failed=1
 done
 if [ "$have_sc" -eq 1 ]; then
   sc_status=0
@@ -157,7 +155,7 @@ fi
 
 for suite_n in "${!suites[@]}"; do
   suite="${suites[$suite_n]}"
-  report_suite "$suite" "${suite_exits[$suite_n]}" "$(<"$tmp/$suite")" || failed=1
+  report_suite "$suite" "${suite_exits[$suite_n]}" "$(<"$tmp/$suite")"
 done
 
 leftovers=("$suites_tmp"/* "$suites_tmp"/.[!.]* "$suites_tmp"/..?*)
@@ -165,15 +163,14 @@ for leftover in "${leftovers[@]}"; do
   if [ -e "$leftover" ] || [ -L "$leftover" ]; then
     echo "all.sh: the suites left temp files behind"
     report_temp_files_left
-    failed=1
     break
   fi
 done
 
 if [ "$have_sc" -eq 0 ]; then
-  report_shellcheck_missing || failed=1
+  report_shellcheck_missing
 else
-  report_shellcheck "$sc_status" "$sc_out" || failed=1
+  report_shellcheck "$sc_status" "$sc_out"
 fi
-report_verdict all.sh "$failed"
-exit "$failed"
+report_verdict all.sh
+exit $?

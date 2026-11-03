@@ -1244,6 +1244,15 @@ assert_contains "says a suite printed FAIL lines but exited 0, after its summary
 assert_eq "a suite that printed FAIL lines but exited 0 is named in the FAIL verdict" \
   "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh)"
 
+# A suite that exits non-zero after printing a valid summary line still fails
+# the run: the verdict needs no raw-exit flag.
+all_swap orch_test.sh "trap 'exit 1' EXIT"
+out="$(all_run 2>&1)"; st=$?
+all_restore orch_test.sh
+assert_status "exits non-zero when a suite exits non-zero after a valid summary" "$st" 1
+assert_eq "a suite that exits non-zero after a valid summary is named in the FAIL verdict" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh)"
+
 # Leftover temp files and shellcheck findings together: both are named, in
 # the order their messages print.
 all_sc_stub 1 "$all_finding1"
