@@ -549,6 +549,28 @@ assert_gh_dies "fails when gh fails silently too" adapter_pr_ready '' 1 \
   "$ORCH" review ready
 assert_eq "the phase still review" "$("$ORCH" state get phase)" "review"
 assert_eq "and the PR still a draft" "$(fake_pr_draft_of 7)" "yes"
+# The CI gate: a refusal leaves GitHub and the phase as they were.
+fake_checks 7 required failing
+out="$("$ORCH" review ready 2>&1)"; st=$?
+assert_status "a failed check refuses" "$st" 1
+assert_contains "naming the check and the hint" "$out" "orch: PR #7 has failed checks: build - the flow stays in review"
+assert_eq "the phase stays review after a failed check" "$("$ORCH" state get phase)" "review"
+assert_eq "the PR stays a draft after a failed check" "$(fake_pr_draft_of 7)" "yes"
+fake_checks 7 required boom
+out="$("$ORCH" review ready 2>&1)"; st=$?
+assert_status "unreachable checks refuse" "$st" 1
+assert_contains "relaying the reason" "$out" "orch: PR #7 checks cannot be read: dial tcp: lookup api.github.com: no such host - the flow stays in review"
+assert_eq "the phase stays review when unreadable" "$("$ORCH" state get phase)" "review"
+assert_eq "the PR stays a draft when unreadable" "$(fake_pr_draft_of 7)" "yes"
+fake_checks 7 required pending
+out="$("$ORCH" review ready 2>&1)"; st=$?
+assert_status "a pending check proceeds" "$st" 0
+assert_contains "noting it is pending" "$out" "checks are still pending"
+assert_eq "recording done over pending" "$("$ORCH" state get phase)" "done"
+assert_eq "the PR ready over pending" "$(fake_pr_draft_of 7)" "no"
+fake_pr_draft 7
+state_fixture phase review
+fake_checks 7 required green
 "$ORCH" review ready >/dev/null
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
 assert_eq "the PR no longer a draft" "$(fake_pr_draft_of 7)" "no"
@@ -1426,6 +1448,19 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
 assert_status "review ready in autopilot succeeds" "$st" 0
 assert_eq "moving the label to orch:done" "$(fake_labels_of 7)" "orch:done ready-for-agent "
 assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+
+# a failed check refuses and leaves label, running mark and claim alone
+fake_issue 7 open ready-for-agent orch:review orch:running
+state_fixture phase review
+fake_claim_seed 7
+fake_checks 9 required failing
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
+assert_status "a failed check refuses under autopilot" "$st" 1
+assert_contains "naming the check" "$out" "has failed checks: build - the flow stays in review"
+assert_eq "the label stays orch:review" "$(fake_labels_of 7)" "orch:review orch:running ready-for-agent "
+assert_eq "the claim stays held after a refusal" "$(fake_claim_held 7)" held
+rm -rf "$ORCH_GH_FAKE_STORE/checks"
+fake_pr_draft 9
 
 # a failure partway leaves the claim held and names the writes that landed
 fake_issue 7 open ready-for-agent orch:review orch:running

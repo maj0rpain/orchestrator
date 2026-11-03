@@ -700,6 +700,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               the run id. Exits 1 when that check is no Actions
                               run, 2 on any other failure
   review ready                mark the draft PR ready and set the phase to done,
+                              refusing (1) over failed or unreadable checks,
                               printing the PR number; in a side checkout, a
                               pointer to the finish command on stderr
   review terminal             classify the last iteration: none, pending,

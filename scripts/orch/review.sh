@@ -695,6 +695,7 @@ cmd_review() {
       require_state
       local pr
       require_pr pr
+      ci_ready_gate --hint "the flow stays in review" "$pr"
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
