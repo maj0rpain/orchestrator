@@ -761,7 +761,6 @@ eval "$remedy"
 assert_eq "on a terminated file the remedy adds one blank line, then the directories" \
   "$(cat .git/info/exclude)" $'secrets.env\n\n.orchestrator/\n.scratch/'
 : >.git/info/exclude
-: >.git/info/exclude
 
 # The exclude line is still truncated from the check above, so this one does
 # need a real reset before layering CLAUDE_PLUGIN_ROOT's own warning on top.

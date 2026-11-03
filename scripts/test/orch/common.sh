@@ -65,9 +65,10 @@ printf '%s\n' '.orchestrator/' >>"$ude_ex"
 assert_eq "nothing prints when every entry is present" \
   "$(sourced_orch orch_dirs_unexcluded)" ""
 
-# --- exclude_line's failed write (#1548) --------------------------------------
+# --- exclude_line -------------------------------------------------------------
 # exclude_orch_dirs' four callers (init, side-checkout add, the ticket worktree,
-# the review pass) call it bare under set -e, so this pins their message.
+# the review pass) call it bare under set -e, so a failed write (#1548) pins
+# their message; the appends keep an unterminated last line whole (#1912).
 echo
 echo "exclude_line"
 new_repo >/dev/null
@@ -114,7 +115,7 @@ assert_eq "an empty file gets just the line" "$(cat "$el_ex")" "extra/"
 assert_eq "with no leading blank line" "$(wc -l <"$el_ex" | tr -d ' ')" "1"
 printf 'a\n' >"$el_ex"
 sourced_orch exclude_line "extra/"
-assert_eq "a terminated file gets no blank line" "$(cat "$el_ex")" $'a\nextra/'
+assert_eq "a terminated file gets no blank line" "$(od -An -c "$el_ex" | tr -s ' ')" " a \\n e x t r a / \\n"
 printf 'secrets.env' >"$el_ex"
 chmod a-w "$el_ex"
 if [ -w "$el_ex" ]; then
