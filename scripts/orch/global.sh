@@ -491,7 +491,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               the call fails (relaying gh's reason), the call
                               is wrong, or an active flow holds the branch
   pr ready                    mark the current branch's open PR ready, as pr
-                              draft does: 0 also when it is already ready
+                              draft does: 0 also when it is already ready. Refuses (2) over
+                              failed or unreadable checks
   pr fetch <file>             write the current branch's open PR body to
                               <file>, recording no state
   pr update <file>            replace the current branch's open PR body with

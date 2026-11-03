@@ -66,6 +66,43 @@ ci_probe() {
   note green
 }
 
+# ci_ready_gate [--exit 2] [--hint <text>] <pr>: the check before a PR is
+# marked ready. One look, no grace and no polling, through ci_probe: the
+# required checks first, every check when none are required. It only refuses;
+# `review ci` keeps the waiting. Failed and unreadable checks die (through
+# die2 under --exit 2, with the hint appended); pending ones note it on stderr
+# and return; green or none return silently.
+ci_ready_gate() {
+  local code=1 hint="" pr res verdict detail
+  while [ $# -gt 1 ]; do
+    case "$1" in
+      --exit) [ "${2-}" = 2 ] || die "ci_ready_gate: --exit takes 2, not '${2-}'"; code=2; shift 2 ;;
+      --hint) hint="$2"; shift 2 ;;
+      *) die "ci_ready_gate: unknown option $1" ;;
+    esac
+  done
+  pr="$1"
+  res="$(ci_probe "$pr" required)"
+  [ "${res%%$'\n'*}" != none ] || res="$(ci_probe "$pr" all)"
+  verdict="${res%%$'\n'*}"
+  detail=""
+  case "$res" in *$'\n'*) detail="${res#*$'\n'}" ;; esac
+  # ci_probe indents each detail line; the message joins them, comma-separated.
+  detail="$(printf '%s\n' "$detail" | sed 's/^ *//' | paste -sd, - | sed 's/,/, /g')"
+  [ -z "$hint" ] || hint=" - $hint"
+  case "$verdict" in
+    failing)     gate_die "$code" "PR #$pr has failed checks: $detail$hint" ;;
+    unreachable) gate_die "$code" "PR #$pr checks cannot be read: $detail$hint" ;;
+    pending)     warn "PR #$pr checks are still pending" ;;
+  esac
+}
+
+# gate_die <code> <message>: die, or die2 for code 2.
+gate_die() {
+  if [ "$1" = 2 ]; then die2 "$2"; fi
+  die "$2"
+}
+
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
