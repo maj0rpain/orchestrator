@@ -198,12 +198,13 @@ record_branch_base() {
 # checked out if not current and printed, with base_sha and the branch's
 # recorded base untouched (ADR-0054). Any other existing branch is still
 # refused. It refuses a busy checkout with exit 3 - a branch the plugin made
-# with no PR yet, except the flow's own - but not on the flow signal, since
-# the flow mid-pipeline is its own. Uncommitted or in-progress work is the
-# discard rule's (discard_create_work, on both paths), applied before anything
-# else changes: discarded on the flow's own branch or a detached HEAD, or
-# refused in an interactive main checkout; on any other branch never discarded,
-# and refused while the tree is dirty or a merge or rebase is in progress.
+# with no PR yet and not retired by a redo, except the flow's own - but not on
+# the flow signal, since the flow mid-pipeline is its own. Uncommitted or
+# in-progress work is the discard rule's (discard_create_work, on both paths),
+# applied before anything else changes: discarded on the flow's own branch or
+# a detached HEAD, or refused in an interactive main checkout; on any other
+# branch never discarded, and refused while the tree is dirty or a merge or
+# rebase is in progress.
 # Besides state, it records the base and base SHA in the branch's git
 # config, as branch off does, so branch sync and branch base-sha still find
 # them once the flow is done or archived.

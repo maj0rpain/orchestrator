@@ -395,6 +395,43 @@ assert_eq "printing done and the count" "$out" "done 2"
 # An autopilot round holding fundamental items back waits for the human's
 # answer.
 "$ORCH" spec round-dir 1/2 >/dev/null
+# A flow round's real hold run (autopilot apply with a fundamental item) writes
+# fundamental.md and no apply-answer, and the round then waits.
+fake_github
+fake_issue 21 open
+fake_issue_body 21 "Gamma line."
+printf '%s' "Gamma line." >"$rounds/1/spec.md"
+cat >"$rounds/1/batch.md" <<'BATCH'
+@@ lens fidelity not-run skipped
+@@ lens consistency ran
+@@ lens testability not-run skipped
+@@ lens implementability not-run skipped
+
+@@ item 1 consistency decision A fundamental
+@@ finding consistency 1
+@@ why Gamma must agree with the summary
+@@ option A Keep gamma
+@@ summary Gamma kept
+@@ anchor
+Gamma line.
+@@ replace
+Gamma line (kept).
+@@ end
+@@ option B Drop gamma
+@@ summary Gamma dropped
+@@ anchor
+Gamma line.
+@@ replace
+Gamma dropped.
+@@ end
+BATCH
+printf '@@ finding 1\nGamma contradicts the summary.\n' >"$rounds/1/lens-consistency.md"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$rounds/1" recommended --round 1/2 2>&1)"; st=$?
+assert_status "a flow round's hold run exits 0" "$st" 0
+assert_eq "the hold run leaves no apply-answer" "$(on_disk "$rounds/1/apply-answer")" absent
+assert_eq "spec round prints waiting after the hold run" "$("$ORCH" spec round 2>&1)" "1 2 waiting"
+rm -f "$rounds/1/fundamental.md" "$rounds/1/batch.md" "$rounds/1/lens-consistency.md" "$rounds/1/spec.md" "$rounds/1/spec.fetched.md"
+restore_suite_env
 assert_eq "a round without fundamental.md is the round to run" "$("$ORCH" spec round 2>&1)" "1 2"
 : >"$rounds/1/fundamental.md"
 assert_eq "a round holding fundamental.md waits" "$("$ORCH" spec round 2>&1)" "1 2 waiting"

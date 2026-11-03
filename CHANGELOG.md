@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.43.16
+
+Pin the `exclude_line` empty-file test to the exact bytes in one assertion.
+
+## 4.43.15
+
+`orch.sh redo review` now refuses while a ticket worktree is left under the checkout, as `redo spec` does. The busy-signal descriptions carry the redo exemption, and the redo and branch tests share a `branch_presence` helper.
+
+## 4.43.14
+
+Fixed an autopilot spec round whose fundamental item could not be applied after the human replied: the first run now only holds the fundamental items back, and the resumed run applies the whole batch in batch order and posts the one changelog.
+
 ## 4.43.13
 
 Share the test harness's job-slot hold, release, notice wait and quota file helpers between its job pool and affected.sh sections.

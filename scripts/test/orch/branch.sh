@@ -322,9 +322,9 @@ out="$(orch_gh_failing branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$
 assert_status "renames a branch with no upstream" "$st" 0
 assert_eq "prints the new name" "$out" "old-attempt-redo-1"
 assert_eq "the old name is gone locally" \
-  "$(git rev-parse --verify --quiet old-attempt >/dev/null 2>&1 && echo present || echo gone)" "gone"
+  "$(branch_presence old-attempt)" "gone"
 assert_eq "the new name exists" \
-  "$(git rev-parse --verify --quiet old-attempt-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence old-attempt-redo-1)" "present"
 
 git checkout -q -b to-retire
 git push -q -u origin to-retire
@@ -366,9 +366,9 @@ assert_eq "relaying git's fatal: line as the reason (#1300)" "$out" \
 # without a rollback, a push failure leaves `old` gone locally with nothing
 # a retry could find, even though nothing was ever published.
 assert_eq "rolls the local rename back so the old name still exists" \
-  "$(git rev-parse --verify --quiet to-fail >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence to-fail)" "present"
 assert_eq "and the new name is not left dangling in its place" \
-  "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "gone"
+  "$(branch_presence to-fail-redo-1)" "gone"
 
 # Retrying with the same old/new names must succeed once whatever blocked
 # the push clears - issue #63 acceptance criterion 1.
@@ -379,7 +379,7 @@ out="$(orch_gh_failing branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
 assert_eq "prints the new name" "$out" "to-fail-redo-1"
 assert_eq "renames locally" \
-  "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence to-fail-redo-1)" "present"
 assert_eq "and publishes it" \
   "$(origin_branch_state "$bare2" to-fail-redo-1)" "pushed"
 
