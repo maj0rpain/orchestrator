@@ -441,9 +441,8 @@ review_standards_resolve() {
 # review_standards_mentions <file>: the repo-relative .md paths <file> mentions,
 # in backticks (against the repo root) or as Markdown links (against <file>'s
 # directory), one per line in the order they appear. Backticks pair per
-# paragraph (lines up to a blank one, a fence line or an ATX heading, joined; a
-# heading is a paragraph of its own), so a span may wrap a line break and a
-# stray backtick never pairs across a blank line.
+# paragraph of review_standards_paragraphs, so a span may wrap a line break
+# and a stray backtick never pairs across a blank line.
 review_standards_mentions() {
   local file="$1" dir="" m link
   [[ $file == */* ]] && dir="${file%/*}"
@@ -456,18 +455,30 @@ review_standards_mentions() {
         review_standards_resolve "$dir" "$link"
         ;;
     esac
-  done < <(awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
-    { l = $0; sub(/\r$/, "", l); was = fence_char; fenced($0) }
-    fence_char != was { if (p != "") print p; p = ""; next }
-    was == "" && is_heading(l) { if (p != "") print p; print l; p = ""; next }
-    l ~ /[^[:space:]]/ { p = p " " l; next }
-    p != "" { print p; p = "" }
-    END { if (p != "") print p }
-  ' "$ROOT/$file" 2>/dev/null | grep -oE '`[^`]+`|\]\([^)]+\)')
+  done < <(review_standards_paragraphs "$file" | cut -f2- | grep -oE '`[^`]+`|\]\([^)]+\)')
 }
 
-# STANDARDS_HEADING_AWK: awk functions, the one ATX heading rule of the
-# declaration and heading-count programs: is_heading(line) is true for 1 to 6
+# review_standards_paragraphs <file>: the paragraphs of the root file <file>,
+# one per line, each tagged `U` (unfenced) or `F` (fenced) and a tab before its
+# lines joined by spaces. A paragraph ends at a blank line, an ATX heading
+# outside a fence or a fence delimiter line; a heading is a paragraph of its
+# own; lines inside a fence join into fenced paragraphs; delimiter lines are in
+# no paragraph.
+review_standards_paragraphs() {
+  awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
+    function flush() { if (p != "") print kind "\t" p; p = "" }
+    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
+    f == 2 { flush(); next }
+    f == 1 { kind = "F"; p = (p == "" ? l : p " " l); next }
+    is_heading(l) { flush(); print "U\t" l; next }
+    l !~ /[^[:space:]]/ { flush(); next }
+    { kind = "U"; p = (p == "" ? l : p " " l) }
+    END { flush() }
+  ' "$ROOT/$1" 2>/dev/null
+}
+
+# STANDARDS_HEADING_AWK: awk functions, the one ATX heading rule:
+# is_heading(line) is true for 1 to 6
 # #s, at most 3 spaces in, then a space, a tab or the line's end; heading_text
 # (line) is that heading's text, surrounding whitespace and closing #s trimmed.
 # No interval braces: mawk and BSD awk lack them.
@@ -488,20 +499,10 @@ STANDARDS_HEADING_AWK='
 '
 
 # review_standards_declaration <file>: the first `Standards:` paragraph of the
-# root file <file>, its lines joined, or nothing when it has none. A paragraph
-# whose first line starts with Standards: and sits outside a fenced code block
-# (an ATX heading line ends a paragraph, so one may sit directly under it);
-# the fence state runs from the opening fence to the closing one, blank lines
-# included.
+# root file <file>, its lines joined, or nothing when it has none: the first
+# unfenced paragraph of review_standards_paragraphs that starts with Standards:.
 review_standards_declaration() {
-  awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
-    fenced($0) { if (p != "") { print p; done = 1; exit } prev = 0; next }
-    { l = $0; sub(/\r$/, "", l); head = is_heading(l); live = (l ~ /[^[:space:]]/) }
-    p != "" { if (live && !head) { p = p " " l; next } print p; done = 1; exit }
-    /^Standards:/ && !prev { p = l; next }
-    { prev = (live && !head) ? 1 : 0 }
-    END { if (p != "" && !done) print p }
-  ' "$ROOT/$1" 2>/dev/null
+  review_standards_paragraphs "$1" | awk '/^U\tStandards:/ { sub(/^U\t/, ""); print; exit }'
 }
 
 # review_standards_heading_count <file> <heading>: how many ATX headings of the

@@ -1574,6 +1574,9 @@ assert_eq "an odd backtick in a heading does not pair into the line under it" \
 writeln '# claude' '```sh' '# run `orch.sh branch' '# retire <old> <new>` then see `docs/agents/p.md`' '```' >CLAUDE.md
 assert_eq "a # line inside a fence is no heading, so a span wrapping across it still pairs" \
   "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
+writeln '# claude' 'Stray ` tick' '```sh' 'echo hi' '```' 'then `docs/agents/p.md` and a stray ` tick' >CLAUDE.md
+assert_eq "a fence directly under and above a paragraph line keeps the path paired within its own paragraph" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md, docs/agents/p.md"
 # A declared Standards: paragraph replaces the crawl.
 rm -f CLAUDE.md; : >docs/agents/q.md
 dstd() { "$ORCH" review standards 2>&1; }
