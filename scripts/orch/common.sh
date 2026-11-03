@@ -354,7 +354,11 @@ exclude_line() {
   missing="$(exclude_missing "$1")"
   [ -n "$missing" ] || return 0
   ex="$(git rev-parse --git-common-dir)/info/exclude"
-  { mkdir -p "${ex%/*}" && printf '%s\n' "$missing" >>"$ex"; } 2>/dev/null ||
+  # A last line the user left unterminated is ended first, so the first line
+  # added is never glued onto their pattern.
+  { mkdir -p "${ex%/*}" &&
+    { ! [ -s "$ex" ] || [ -z "$(tail -c1 "$ex")" ] || printf '\n' >>"$ex"; } &&
+    printf '%s\n' "$missing" >>"$ex"; } 2>/dev/null ||
     die "cannot add $(list_join "$missing") to the git exclude file $ex"
 }
 

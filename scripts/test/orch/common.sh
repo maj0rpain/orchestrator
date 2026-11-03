@@ -98,6 +98,34 @@ else
 fi
 chmod u+w "$el_dir/info/exclude"
 
+# An unterminated last line is ended before the append (#1912).
+new_repo >/dev/null
+el_ex="$(git rev-parse --git-common-dir)/info/exclude"
+printf 'secrets.env' >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "an unterminated last line stays whole beside the appended one" \
+  "$(cat "$el_ex")" $'secrets.env\nextra/'
+rm -f "$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "a missing file gets just the line" "$(od -An -c "$el_ex" | tr -s ' ')" " e x t r a / \\n"
+: >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "an empty file gets just the line" "$(cat "$el_ex")" "extra/"
+assert_eq "with no leading blank line" "$(wc -l <"$el_ex" | tr -d ' ')" "1"
+printf 'a\n' >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "a terminated file gets no blank line" "$(cat "$el_ex")" $'a\nextra/'
+printf 'secrets.env' >"$el_ex"
+chmod a-w "$el_ex"
+if [ -w "$el_ex" ]; then
+  skip "a read-only unterminated file dies as before" "$el_ex stays writable (running as root?)"
+else
+  out="$(sourced_orch exclude_line "extra/" 2>&1)"; st=$?
+  assert_eq "a read-only unterminated file dies as before" "$out" \
+    "orch: cannot add extra/ to the git exclude file $el_ex"
+fi
+chmod u+w "$el_ex"
+
 # --- list_has -----------------------------------------------------------------
 # The one newline-list membership test: whole lines, matched literally.
 echo
