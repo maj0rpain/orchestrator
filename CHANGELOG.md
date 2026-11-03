@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.21
+
+The stdin hook now denies an interpreter run with options only (`python3 -u`, `node --input-type=module`), which reads stdin and hangs, and still allows each interpreter's info options such as `python3 -V` and `node -v`. The Bash hooks' walker moved to its own module.
+
 ## 4.43.20
 
 A spec review's paste guard now disarms on the human's next message as well as on `spec-review apply`, so a review that is abandoned, stops on a failure or is aborted no longer makes every later turn re-paste a stale view or refuses every later ask. A re-run `check` arms it again.
