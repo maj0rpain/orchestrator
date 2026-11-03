@@ -32,9 +32,7 @@ file="$(hook_tool_path)"
 # ancestor directory. The file is physical, so the toplevel is too. The payload
 # cwd follows the model's cd and decides nothing here. A file in no git repo is
 # somebody else's business.
-dir="${file%/*}"
-while [ -n "$dir" ] && [ ! -d "$dir" ]; do dir="${dir%/*}"; done
-dir="${dir:-/}"
+dir="$(hook_existing_ancestor "${file%/*}")"
 if [ "$(git -C "$dir" rev-parse --is-inside-git-dir 2>/dev/null)" = true ]; then
   # Inside a git dir the file belongs to the repo whose git dir it is (a hook is
   # code). A git dir with core.worktree set, a submodule's absorbed one, still
@@ -60,24 +58,29 @@ elif ! root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)"; then
   exit 0
 fi
 
+# root with no trailing /, so a repo at / gives the prefix / and not //.
+prefix="${root%/}/"
 # A flow is already running: the guard's job is done and the phases police
 # themselves from here. A done flow is not running, so it keeps the guard armed.
-state_file="$(flow_state_file "$root")"
+state_file="$(flow_state_file "${root%/}")"
 if flow_state_active "$state_file"; then exit 0; fi
 
-rel="${file#"$root"/}"
-if planning_allowlisted "$rel"; then exit 0; fi
+# A file can fall outside root: a repo whose core.worktree names another
+# directory answers --show-toplevel with that directory. Such a file is
+# somebody else's business.
+case "$file" in "$prefix"*) ;; *) exit 0 ;; esac
+rel="${file#"$prefix"}"
 
-# Anything outside the repo is somebody else's business.
-case "$file" in "$root"/*) ;; *) exit 0 ;; esac
+# The flow state is written only by orch.sh, allowlisted directory or not.
+if [ "$file" = "$state_file" ]; then
+  hook_emit_deny "Blocked by the orchestrator: '$rel' is flow state, and flow state is written only by orch.sh. To begin a flow, call the Skill tool with \"orchestrator:orch-flow\"."
+  exit 0
+fi
+if planning_allowlisted "$rel"; then exit 0; fi
 
 # Under an allowlisted prefix but no planning artifact: say what to do.
 if planning_excluded "$rel"; then
-  if [ "$file" = "$state_file" ]; then
-    hook_emit_deny "Blocked by the orchestrator: '$rel' is flow state, and flow state is written only by orch.sh. To begin a flow, call the Skill tool with \"orchestrator:orch-flow\"."
-  else
-    hook_emit_deny "Blocked by the orchestrator: '$rel' is another checkout's source. Edit it from a session opened in that checkout."
-  fi
+  hook_emit_deny "Blocked by the orchestrator: '$rel' is another checkout's source. Edit it from a session opened in that checkout."
   exit 0
 fi
 

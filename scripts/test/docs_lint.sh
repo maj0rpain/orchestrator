@@ -2850,19 +2850,16 @@ scan_skill_description_length() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/long" "$fixture/skills/exact" "$fixture/skills/dash" "$fixture/skills/body"
+mkdir -p "$fixture/skills/long" "$fixture/skills/dash" "$fixture/skills/body"
 a1000="$(printf 'a%.0s' $(seq 1 1000))"
 printf '%s\n' '---' 'name: long' "description: $a1000$a1000" '---' >"$fixture/skills/long/SKILL.md"
-printf '%s\n' '---' 'name: exact' "description: $a1000$(printf 'a%.0s' $(seq 1 24))" '---' \
-  >"$fixture/skills/exact/SKILL.md"
-printf '%s\n' '---' 'name: dash' "description: $a1000$(printf 'a%.0s' $(seq 1 20)) — x" '---' \
+printf '%s\n' '---' 'name: dash' "description: $a1000${a1000:0:20} — x" '---' \
   >"$fixture/skills/dash/SKILL.md"
 printf '%s\n' '---' 'name: body' 'description: Short.' '---' '' "description: $a1000$a1000" \
   >"$fixture/skills/body/SKILL.md"
 out="$(scan_skill_description_length "$fixture")"
 flags "a description over 1024 characters is flagged with its length" \
   "$out" "skills/long/SKILL.md: description is 2000 characters, over 1024"
-spares "a description of exactly 1024 characters is spared" "$out" 'skills/exact/'
 spares "a 1024-character description holding an em dash is spared" "$out" 'skills/dash/'
 spares "a description line in the body is not flagged" "$out" 'skills/body/'
 check "every skill description fits the Agent Skills 1024-character limit" \
