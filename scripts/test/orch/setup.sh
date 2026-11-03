@@ -198,6 +198,8 @@ col0_names() {
 
 # on_disk <path>: present or absent, whether anything is at <path>.
 on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
+# branch_presence <ref>: present or gone, whether the branch <ref> exists.
+branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then echo present; else echo gone; fi; }
 # exclude_count <line>: how many times <line> appears whole in the current
 # clone's shared exclude file, the one every checkout of it reads.
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }

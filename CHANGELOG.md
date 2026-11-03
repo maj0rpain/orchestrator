@@ -1,5 +1,45 @@
 # Changelog
 
+## 4.43.19
+
+The six standalone test suites now end with a shared `tally_summary` from tally.sh, and the duplicated structural tally checks in the harness are gone.
+
+## 4.43.18
+
+A failed `autopilot answer` or handoff write no longer leaves a partly written file and is reported as a write failure, not a missing handoff; `trust_warn_issue` reads autopilot mode through `autopilot_active`; `issue_comments_render` is now `comments_render_trusted`; `trust_filter_prs` names its argument `<subject>`.
+
+## 4.43.17
+
+The planning edit guard now resolves the edited path through symlinks, so it denies source and records edits made through a symlinked repo path instead of allowing them.
+
+## 4.43.16
+
+Pin the `exclude_line` empty-file test to the exact bytes in one assertion.
+
+## 4.43.15
+
+`orch.sh redo review` now refuses while a ticket worktree is left under the checkout, as `redo spec` does. The busy-signal descriptions carry the redo exemption, and the redo and branch tests share a `branch_presence` helper.
+
+## 4.43.14
+
+Fixed an autopilot spec round whose fundamental item could not be applied after the human replied: the first run now only holds the fundamental items back, and the resumed run applies the whole batch in batch order and posts the one changelog.
+
+## 4.43.13
+
+Share the test harness's job-slot hold, release, notice wait and quota file helpers between its job pool and affected.sh sections.
+
+## 4.43.12
+
+The docs lint checks that the stdin and Run a long command rows mark Junie Unverified through one named rule, `scan_row_unverified`, which reads only the Junie CLI cell and is listed in the lint header.
+
+## 4.43.11
+
+`orch.sh issue fetch` now writes an issue body with its carriage returns removed, so a spec last edited in the GitHub web UI reaches the spec review as LF lines and its multi-line anchors match.
+
+## 4.43.10
+
+Simplify the harness's gh op placement check to state its capture-and-append step once, in a loop over its (ops, owners) pairs.
+
 ## 4.43.9
 
 An autopilot spec review round held for a fundamental item now rebases each ticket's fetched copy on the ticket as the hold published it, refetching a ticket a block or unblock edit touched, so the resumed run's ticket edits and `check --tickets` build on the published tickets instead of overwriting the hold's edits. The hold also keeps its ticket lines in `held-tickets.md` beside `fundamental.md`, so the round's one changelog reports both runs' ticket outcomes.

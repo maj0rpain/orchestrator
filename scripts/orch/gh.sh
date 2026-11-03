@@ -241,7 +241,7 @@ adapter_labels() {
 # turns an array of comments into the joined text, login reading each comment's
 # author, so every comments read - issue comments' filtered one among them
 # (#1116) - renders through the same definition.
-# shellcheck disable=SC2034 # read by the issue module's issue_comments_render and ISSUE_COMMENTS_KEPT_JQ
+# shellcheck disable=SC2034 # read by the issue module's comments_render_trusted and ISSUE_COMMENTS_KEPT_JQ
 COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
 
 # comments_split <file> <dir>: splits <file>, comments in its rendered shape,

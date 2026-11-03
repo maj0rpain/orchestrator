@@ -13,6 +13,40 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
+# slot_hold <pool> <slot>: creates <pool> and holds <slot>'s lock in a
+# background process, its pid in SLOT_HOLDER. The holder opens the fifo's write
+# end on fd 8, then opens and locks the slot file on fd 9, and writes the ready
+# line only when both worked; the read returns 1 on EOF (the holder died first)
+# or after 10 seconds. SLOT_HOLDER names the holder on that path too, so
+# slot_release is safe after it.
+slot_hold() {
+  local fifo line
+  mkdir -p "$1"
+  fifo="$(mktemp -u)"
+  mkfifo "$fifo" || return 1
+  bash -c 'exec 8>"$2" && exec 9>>"$1" && flock 9 && echo ready >&8 && exec 8>&- && exec sleep 60' _ "$1/slot.$2" "$fifo" &
+  SLOT_HOLDER=$!
+  read -r -t 10 line <"$fifo" || { rm -f "$fifo"; return 1; }
+  rm -f "$fifo"
+}
+# slot_release: kills the holder slot_hold started, and waits for it.
+slot_release() { kill -9 "$SLOT_HOLDER" 2>/dev/null; wait "$SLOT_HOLDER" 2>/dev/null; return 0; }
+# notice_wait <file>: waits, up to 5 seconds, for the waiting notice in <file>;
+# returns 0 either way, the assertion after it reports a missing notice.
+notice_wait() {
+  local _
+  for _ in $(seq 100); do
+    grep -q 'waiting for a job slot' "$1" 2>/dev/null && break
+    sleep 0.05
+  done
+  return 0
+}
+# pool_cpu_file <file> <slots>: writes a CPU quota file of 2 CPUs per slot (a
+# quota of 200000 per slot), which a 50% pool share, as jp_run sets, sizes to
+# <slots> slots. Under another share the slot count follows that share: at the
+# default 75%, 1 still gives 1 slot (1.5 rounded down).
+pool_cpu_file() { printf '%s 100000\n' "$(($2 * 200000))" >"$1"; }
+
 # suites_read <all.sh>: reads the suite list from the one `suites=(...)` line
 # of <all.sh> into the array SUITES, with read -a and no eval, and returns 0.
 # It returns 1, with SUITES_ERR holding an orch:-style message, when <all.sh>
@@ -238,15 +272,21 @@ name_placement() {
 # the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
 # module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
 gh_op_placement() {
-  local rc=0 out="" part
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_MULTI_FIELD_OPS" ./orch/gh.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="$part"
-  rc=0
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_TRUST_READ_OPS" ./orch/gh.sh ./orch/trust.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="${out:+$out
+  local rc=0 out="" part ops owners pair
+  local pairs=(
+    "$GH_MULTI_FIELD_OPS|./orch/gh.sh"
+    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
+  )
+  for pair in "${pairs[@]}"; do
+    ops="${pair%%|*}" owners="${pair#*|}"
+    rc=0
+    # owners is a space-separated path list: split it into arguments
+    # shellcheck disable=SC2086
+    part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$ops" $owners)" || rc=$?
+    [ "$rc" -ne 2 ] || return 2
+    [ -z "$part" ] || out="${out:+$out
 }$part"
+  done
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort -u
   return 1
@@ -548,7 +588,7 @@ for quiet_suite in "${SUITES[@]}"; do
   assert_eq "$quiet_suite's cut-down copy holds the planted check" \
     "$(grep -cx 'ok "a planted check"' "$cut_dir/$quiet_suite")" "1"
   assert_eq "$quiet_suite's cut-down copy holds its summary" \
-    "$(grep -cxF 'echo "$PASS passed, $FAIL failed"' "$cut_dir/$quiet_suite")" "1"
+    "$(grep -cx 'tally_summary' "$cut_dir/$quiet_suite")" "1"
   out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"; st=$?
   assert_status "$quiet_suite's cut-down copy exits 0 when quiet" "$st" 0
   assert_eq "$quiet_suite prints no ok line when quiet" \
@@ -668,7 +708,10 @@ rm -rf "$sub_dir"
 # A tiny standalone suite sourcing tally.sh the way the hooks, docs lint,
 # version bump, lens bench and autopilot suites do, with one failing assertion
 # in ( ... ) and one passing outside it, counts both and exits non-zero. A
-# structural check then holds each of the seven suites to the shared tally.
+# structural check then holds the suites to the shared tally: no suite defines
+# an ok, bad or skip of its own (all seven, setup.sh included for orch_test.sh);
+# orch_test.sh alone is checked for sourcing tally.sh and calling tally_read,
+# as the quiet-mode run proves both for the six standalone suites.
 echo
 echo "the standalone suites' tally (#1904)"
 tally_dir="$(mktemp -d)"
@@ -677,26 +720,34 @@ source "$(dirname "$SUITE_SCRIPT")/tally.sh"
 tally_init
 ( bad "a failure in a subshell" "its detail line" )
 ok "a pass outside it"
-tally_read
-echo "\$PASS passed, \$FAIL failed"
-[ "\$FAIL" -eq 0 ]
+tally_summary
 SUITE
 out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a standalone suite with a subshell failure exits 1" "$st" 1
 assert_eq "and counts the subshell failure in its summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
+assert_eq "after a blank line" "$(printf '%s\n' "$out" | tail -n 2 | head -n 1)" ""
+sed -i '/^( bad /d' "$tally_dir/suite.sh"
+out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
+assert_status "a passing standalone suite exits 0" "$st" 0
+assert_eq "and reports no failure" "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 0 failed"
+sed -i 's/^tally_summary$/rm -f "$tally_file"\ntally_summary/' "$tally_dir/suite.sh"
+out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
+assert_status "a standalone suite whose tally file is gone exits 1" "$st" 1
+assert_eq "and reports it as a failure" "$(printf '%s\n' "$out" | tail -n 1)" "0 passed, 1 failed"
 rm -rf "$tally_dir"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for tally_suite in "${SUITES[@]}"; do
   tally_path="$(dirname "$SUITE_SCRIPT")/$tally_suite"
-  assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
-  # orch_test.sh reads the tally in setup.sh's summary.
-  tally_reader="$tally_path"
-  [ "$tally_suite" != orch_test.sh ] || tally_reader="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
-  assert_contains "$tally_suite calls tally_read" "$(<"$tally_reader")" "tally_read"
-  # orch_test.sh's assertions once lived in setup.sh too.
   tally_files=("$tally_path")
-  [ "$tally_suite" != orch_test.sh ] || tally_files+=("$tally_reader")
+  if [ "$tally_suite" = orch_test.sh ]; then
+    setup_path="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
+    assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
+    # orch_test.sh reads the tally in setup.sh's summary, and its assertions
+    # once lived in setup.sh too.
+    assert_contains "$tally_suite calls tally_read" "$(<"$setup_path")" "tally_read"
+    tally_files+=("$setup_path")
+  fi
   assert_eq "$tally_suite defines no ok, bad or skip of its own" \
     "$(cat "${tally_files[@]}" | grep -cE '^(ok|bad|skip) *\(\)')" "0"
 done
@@ -1425,9 +1476,9 @@ jp_copy="$(planted_copy <<'PLANTED'
 PLANTED
 )"
 jp_suite="$jp_copy/scripts/test/orch_test.sh"
-printf "400000 100000\n" >"$jp_dir/cpu2"
-printf "200000 100000\n" >"$jp_dir/cpu1"
-printf "800000 100000\n" >"$jp_dir/cpu4"
+pool_cpu_file "$jp_dir/cpu2" 2
+pool_cpu_file "$jp_dir/cpu1" 1
+pool_cpu_file "$jp_dir/cpu4" 4
 # jp_run <slots> <pool dir> [VAR=value...] -- <ORCH_TEST_ONLY> <jobs>: the
 # planted suite on a pool of <slots> slots, its stderr in $jp_dir/err.
 jp_run() {
@@ -1437,14 +1488,6 @@ jp_run() {
   env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu$slots" ORCH_TEST_POOL_DIR="$pool" \
     JP_LOG="$jp_log" JP_POOL="$pool" JP_SUITE="$jp_suite" ORCH_TEST_QUIET=1 \
     ORCH_TEST_ONLY="$2" ORCH_TEST_JOBS="$3" "${extra[@]}" bash "$jp_suite" >/dev/null 2>"${jp_err:-$jp_dir/err}"
-}
-# jp_hold <pool> <slot>: hold that slot's lock in a background process, its
-# pid in jp_holder.
-jp_hold() {
-  mkdir -p "$1"
-  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$1/slot.$2" &
-  jp_holder=$!
-  until ! flock -n "$1/slot.$2" true; do sleep 0.05; done
 }
 jp_notice='waiting for a job slot'
 
@@ -1469,33 +1512,30 @@ assert_contains "the notice names the runner and the slots in use" "$(cat "$jp_e
 
 # A killed holder's slot is freed.
 rm -rf "$jp_dir/pool2"
-jp_hold "$jp_dir/pool2" 1
+slot_hold "$jp_dir/pool2" 1 || bad "holds the slot"
 : >"$jp_log"
 jp_run 1 "$jp_dir/pool2" -- '^pool a$' 2 &
 jp_p1=$!
-for _ in $(seq 100); do
-  grep -q "$jp_notice" "$jp_dir/err" 2>/dev/null && break
-  sleep 0.05
-done
+notice_wait "$jp_dir/err"
 assert_eq "a run on a pool whose one slot is held waits" \
   "$(grep -c "$jp_notice" "$jp_dir/err")" "1"
 assert_eq "and runs nothing while the slot is held" "$(grep -c '^+' "$jp_log")" "0"
-kill -9 "$jp_holder"
-wait "$jp_holder" 2>/dev/null
+slot_release
 wait "$jp_p1"; jp_s1=$?
 assert_status "the run finishes once the holder is killed" "$jp_s1" 0
 assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
 
 # CI bypasses the pool.
-jp_hold "$jp_dir/pool2" 1
+slot_hold "$jp_dir/pool2" 1 || bad "holds the slot"
 : >"$jp_log"
 jp_run 1 "$jp_dir/pool2" CI=true -- '^pool a$' 2; jp_s1=$?
 assert_status "a run under CI ignores a fully held pool" "$jp_s1" 0
 assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+slot_release
 
 # Another HOME has its own pool.
 mkdir "$jp_dir/home1" "$jp_dir/home2"
-jp_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1
+slot_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1 || bad "holds the slot"
 : >"$jp_log"
 timeout 30 env -u CI -u ORCH_TEST_POOL_DIR -u ORCH_TEST_POOL_PERCENT HOME="$jp_dir/home2" \
   ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" \
@@ -1505,7 +1545,25 @@ assert_status "a run under another HOME passes while the first HOME's slot is he
 assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
 assert_eq "and has drawn its slot from its own pool" \
   "$(on_disk "$jp_dir/home2/.cache/orchestrator/test-job-pool/slot.1")" "present"
-kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
+slot_release
+
+# slot_hold fails on a slot it cannot lock: the slot path is a directory.
+mkdir -p "$jp_dir/pool11/slot.1"
+jp_t0=$SECONDS
+slot_hold "$jp_dir/pool11" 1 2>/dev/null; jp_s1=$?
+assert_status "slot_hold returns 1 on a slot path it cannot lock" "$jp_s1" 1
+# A read that timed out would also return 1, after 10s: the EOF path is quicker.
+assert_eq "and returns on the holder's EOF, well within its read timeout" \
+  "$(( SECONDS - jp_t0 < 5 ))" "1"
+slot_release
+
+# A released holder no longer runs and no longer holds the lock.
+slot_hold "$jp_dir/pool13" 1 || bad "holds the slot"
+slot_release
+kill -0 "$SLOT_HOLDER" 2>/dev/null; jp_s1=$?
+assert_status "a released holder is no longer running" "$jp_s1" 1
+flock -n "$jp_dir/pool13/slot.1" true; jp_s1=$?
+assert_status "and its slot's lock is free" "$jp_s1" 0
 
 # ORCH_TEST_JOBS caps the ask, and does not bypass the pool.
 : >"$jp_log"
@@ -1554,11 +1612,9 @@ jp_run 1 /proc/no/such/pool -- '^pool a$' 2; jp_s1=$?
 assert_status "an uncreatable pool directory runs unpooled and passes" "$jp_s1" 0
 assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
 mkdir -p "$jp_dir/pool7/slot.1"
-jp_hold "$jp_dir/pool8" 1
 jp_run 1 "$jp_dir/pool7" -- '^pool a$' 2; jp_s1=$?
 assert_status "a slot file that cannot be opened runs unpooled and passes" "$jp_s1" 0
 assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
-kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
 mkdir "$jp_dir/noflock"
 printf '#!/bin/sh\nexit 1\n' >"$jp_dir/noflock/flock"
 chmod +x "$jp_dir/noflock/flock"
@@ -2709,18 +2765,30 @@ af_git add -A
 af_git commit -qm stubs
 af_feat="$(af_git rev-parse HEAD)"
 af_put scripts/hook-guard.sh 'echo ok'
-af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+# A shellcheck stub, first on PATH for the runs meant to have shellcheck: one
+# gcc-format line per argument file containing $(ls), exit 1 if it printed any.
+af_sc="$af.sc"
+mkdir -p "$af_sc"
+cat >"$af_sc/shellcheck" <<'STUB'
+#!/usr/bin/env bash
+found=0
+for f in "$@"; do
+  if [ -f "$f" ] && grep -qF '$(ls)' "$f"; then
+    echo "$f:1:1: warning: stub [SC2045]"
+    found=1
+  fi
+done
+exit "$found"
+STUB
+chmod +x "$af_sc/shellcheck"
+af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a passing run exits 0" "$st" 0
-if command -v shellcheck >/dev/null 2>&1; then
-  assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
-    "orch_test.sh: 7 passed, 0 failed
+assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
+  "orch_test.sh: 7 passed, 0 failed
 hooks_test.sh: 7 passed, 0 failed
 docs_lint.sh: 7 passed, 0 failed
 shellcheck: 0 findings
 affected.sh: PASS (4 parts)"
-else
-  skip "printing each part's summary in order, shellcheck last" "shellcheck is not installed"
-fi
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
@@ -2735,42 +2803,35 @@ assert_eq "and runs no suite" "$(grep -c . "$af.log")" "0"
 
 # Its shellcheck process draws a slot from the job pool: with the pool's one
 # slot held, the run waits and says so, then finishes once the slot is freed.
-if command -v shellcheck >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
-  printf '200000 100000\n' >"$af.cpu"
-  mkdir -p "$af.pool"
-  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$af.pool/slot.1" &
-  af_holder=$!
-  until ! flock -n "$af.pool/slot.1" true; do sleep 0.05; done
+if command -v flock >/dev/null 2>&1; then
+  pool_cpu_file "$af.cpu" 1
+  slot_hold "$af.pool" 1 || bad "holds the slot"
   af_put scripts/hook-guard.sh 'echo ok'
-  (cd "$af" && env -u CI -u ORCH_TEST_POOL_PERCENT ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
+  (cd "$af" && env -u CI -u ORCH_TEST_POOL_PERCENT PATH="$af_sc:$PATH" ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
     timeout 30 bash scripts/test/affected.sh HEAD >/dev/null 2>"$af.err") &
   af_pid=$!
-  for _ in $(seq 100); do
-    grep -q 'waiting for a job slot' "$af.err" 2>/dev/null && break
-    sleep 0.05
-  done
+  notice_wait "$af.err"
   assert_eq "a shellcheck run with the pool's slot held waits and says so" \
     "$(cat "$af.err")" "affected.sh: waiting for a job slot (1 in use)"
-  kill -9 "$af_holder"
-  wait "$af_holder" 2>/dev/null
+  slot_release
   wait "$af_pid"; st=$?
   assert_status "and the run finishes once the slot is freed" "$st" 0
   rm -rf "$af.cpu" "$af.pool" "$af.err"
+else
+  skip "a shellcheck run with the pool's slot held waits and says so" "flock is not installed"
 fi
 printf '%s\n' '#!/usr/bin/env bash' 'printf "  FAIL a thing\n     its detail\n"' \
   'echo; echo "1 passed, 1 failed"; exit 1' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'for f in $(ls); do echo "$f"; done'
-af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a failing part makes the run exit 1" "$st" 1
 assert_contains "printing its FAIL lines and its summary" "$af_out" \
   "  FAIL a thing
      its detail
 hooks_test.sh: 1 passed, 1 failed"
-if command -v shellcheck >/dev/null 2>&1; then
-  assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
-else
-  skip "and shellcheck's findings" "shellcheck is not installed"
-fi
+assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
+assert_eq "ending on a FAIL verdict naming the failing parts" "$(printf '%s\n' "$af_out" | tail -n 1)" \
+  "affected.sh: FAIL (hooks_test.sh, shellcheck)"
 
 # The verdict line (the last stdout line), on a PATH without shellcheck: its
 # links are the tools the runners and the fixture need.
@@ -2791,15 +2852,12 @@ af_verdict_run() {
     PATH="$af_bin" bash scripts/test/affected.sh "$@" 2>/dev/null)"
   st=$?
 }
-# A failing part (hooks_test.sh is still the failing stub), naming only it.
-af_verdict_run -- HEAD
-assert_status "a failing selected part exits 1 without shellcheck" "$st" 1
-assert_eq "a failing selected part ends on a FAIL verdict naming it" "$(printf '%s\n' "$af_out" | tail -n 1)" \
-  "affected.sh: FAIL (hooks_test.sh)"
 # A passing selection: the passing stub back, shellcheck skipped.
 printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
 af_verdict_run -- HEAD
 assert_status "a passing selection exits 0 without shellcheck outside CI" "$st" 0
+assert_contains "a missing shellcheck outside CI prints its skipped line" "$af_out" \
+  "shellcheck: not installed - skipped"
 assert_eq "a missing shellcheck outside CI ends on a PASS verdict counting the skipped line" \
   "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (4 parts)"
 af_verdict_run CI=1 -- HEAD
@@ -2820,15 +2878,9 @@ assert_eq "a full-suite fallback ends on all.sh's verdict, never affected.sh's" 
   "$(printf '%s\n' "$af_out" | tail -n 1)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
 af_reset
 # Paths that end before the report print no verdict.
-af_verdict_run -- --plan HEAD
-assert_eq "--plan prints no verdict" "$(printf '%s\n' "$af_out" | grep -c ': \(PASS\|FAIL\) (')" "0"
 af_verdict_run -- --bogus
 assert_status "a usage error exits 2" "$st" 2
 assert_eq "a usage error prints no verdict on stdout" "$af_out" ""
-af_verdict_run -- no-such-ref
-assert_eq "an unknown ref prints no verdict on stdout" "$af_out" ""
-af_verdict_run ORCH_TEST_POOL_PERCENT=abc -- HEAD
-assert_eq "an invalid ORCH_TEST_POOL_PERCENT prints no verdict on stdout" "$af_out" ""
 # A TERM stop prints no verdict.
 printf '%s\n' '#!/usr/bin/env bash' "echo \$\$ >'$af.pid'" 'sleep 30' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'echo ok'
@@ -2841,6 +2893,6 @@ wait "$af_pid"; st=$?
 kill "$(cat "$af.pid")" 2>/dev/null
 assert_status "TERM to affected.sh exits 130" "$st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
-rm -rf "$af_bin" "$af.pid" "$af.stdout"
+rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row

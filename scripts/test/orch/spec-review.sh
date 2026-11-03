@@ -957,9 +957,10 @@ fake_unfail
 assert_eq "and leaves no changelog.md" "$(on_disk "$d/changelog.md")" absent
 
 # Fundamental items (autopilot): the mark stands in for `material` only with
-# ORCH_AUTOPILOT=1; apply holds those items back into fundamental.md, applies
-# the rest and publishes without a changelog, and the resumed apply applies only
-# the held-back items and posts the round's one changelog.
+# ORCH_AUTOPILOT=1; apply holds those items back into fundamental.md and stops,
+# publishing nothing and posting no changelog, and the resumed apply applies the
+# whole answer - the rest taken as recommended - and posts the round's one
+# changelog.
 # srf_dir: sra_dir's fixture with item 3 (a decision) marked fundamental.
 srf_dir() {
   local d
@@ -982,31 +983,25 @@ assert_status "a resolved item refuses the mark, in autopilot" "$st" 1
 assert_contains "saying it carries no mark" "$out" "a resolved item carries no mark"
 
 d="$(srf_dir)"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
-assert_status "a round with a fundamental item applies" "$st" 0
+snap="$(fake_snapshot)"
+ORCH_AUTOPILOT=1 sra "$d" recommended
+assert_status "a round with a fundamental item holds" "$st" 0
 assert_eq "the hold-back leaves no apply-answer" "$(on_disk "$d/apply-answer")" absent
-assert_eq "the rest is applied and the held item's edit left out" "$(cat "$d/spec.md")" '# Spec
-
-Alpha prime line.
-Beta line.
-Gamma line.
-Delta line.
-Test note.
-Twice.
-Twice.'
-assert_eq "the body is published" "$(fake_body_of 14)" "$(cat "$d/spec.md")"
-assert_eq "no changelog is posted yet" "$(fake_comments_of 14)" ""
+assert_eq "spec.md is as fetched" "$(cat "$d/spec.md")" "${sra_body%$'\n'}"
+assert_eq "spec.fetched.md is as fetched" "$(cat "$d/spec.fetched.md")" "${sra_body%$'\n'}"
+assert_eq "the hold makes no GitHub write" "$(fake_snapshot)" "$snap"
 assert_eq "fundamental.md holds the item's block" "$(grep -c '^@@ item ' "$d/fundamental.md")" 1
 assert_contains "item 3 among them" "$(cat "$d/fundamental.md")" "@@ item 3 consistency decision A fundamental"
 assert_eq "no round-complete" "$(on_disk "$d/round-complete")" absent
 assert_eq "no settled.md" "$(on_disk "$d/settled.md")" absent
 
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 1C --round 1/2 --issue 14 2>&1)"; st=$?
+ORCH_AUTOPILOT=1 sra "$d" 1C
 assert_status "the resumed apply refuses an option the item lacks" "$st" 1
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" -4 --round 1/2 --issue 14 2>&1)"; st=$?
-assert_status "the resumed apply refuses naming an item already applied" "$st" 1
+ORCH_AUTOPILOT=1 sra "$d" -4
+assert_status "the resumed apply refuses an item the hold run did not hold back" "$st" 1
 assert_contains "saying so" "$out" "names only fundamental items"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+assert_contains "and that the rest are taken as recommended" "$out" "the rest being taken as recommended"
+ORCH_AUTOPILOT=1 sra "$d" 3B
 assert_status "the resumed apply succeeds" "$st" 0
 assert_eq "the held-back decision's option B lands" "$(cat "$d/spec.md" | sed -n 5p)" "Gamma dropped."
 assert_eq "published" "$(fake_body_of 14)" "$(cat "$d/spec.md")"
@@ -1018,16 +1013,103 @@ assert_eq "fundamental.md removed" "$(on_disk "$d/fundamental.md")" absent
 assert_eq "round-complete written" "$(on_disk "$d/round-complete")" present
 
 d="$(srf_dir)"
-ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 >/dev/null 2>&1
+ORCH_AUTOPILOT=1 sra "$d" recommended
 fake_fail adapter_issue_comment
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+ORCH_AUTOPILOT=1 sra "$d" 3B
 fake_unfail
 assert_status "a failed changelog write in the resumed apply stops it" "$st" 1
 assert_contains "naming the writes that landed" "$out" "already landed: the body of issue #14"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+ORCH_AUTOPILOT=1 sra "$d" 3B
 assert_status "and apply without --resume is refused" "$st" 1
 assert_contains "naming --resume" "$out" "--resume"
 assert_eq "fundamental.md is kept" "$(on_disk "$d/fundamental.md")" present
+ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 >/dev/null 2>&1; st=$?
+assert_status "apply --resume finishes the round" "$st" 0
+assert_eq "with exactly one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+assert_eq "fundamental.md removed" "$(on_disk "$d/fundamental.md")" absent
+assert_eq "round-complete written" "$(on_disk "$d/round-complete")" present
+
+# The #1915 reproduction: a minor edit rewrites text a fundamental item anchors.
+srr_body='Exports run nightly and write one file.'
+srr_dir() {
+  local d
+  d="$(srf_dir)"
+  printf '%s' "$srr_body" >"$d/spec.md"; printf '%s' "$srr_body" >"$d/spec.fetched.md"
+  fake_issue_body 14 "$srr_body"
+  sed -i '/^@@ item /,$d' "$d/batch.md"
+  cat >>"$d/batch.md" <<'BATCH'
+@@ item 1 consistency apply fundamental
+@@ finding consistency 1
+@@ summary Run exports nightly in one place
+@@ anchor
+Exports run nightly
+@@ replace
+Exports run nightly (kept)
+@@ end
+@@ why Keep the schedule
+@@ item 2 testability apply minor
+@@ finding testability 1
+@@ summary Reword nightly
+@@ anchor
+nightly
+@@ replace
+each night
+@@ end
+@@ item 3 fidelity decline material not wanted
+@@ finding fidelity 1
+@@ summary Leave fidelity 1 be
+@@ anchor
+write one file
+@@ replace
+write one file
+@@ end
+@@ why Out of scope
+@@ item 4 testability decline material not wanted
+@@ finding testability 2
+@@ summary Leave testability 2 be
+@@ anchor
+write one file
+@@ replace
+write one file
+@@ end
+@@ why Out of scope
+@@ item 5 testability decline material not wanted
+@@ finding testability 3
+@@ summary Leave testability 3 be
+@@ anchor
+write one file
+@@ replace
+write one file
+@@ end
+@@ why Out of scope
+BATCH
+  printf '%s\n' "$d"
+}
+d="$(srr_dir)"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review check "$d" 2>&1)"; st=$?
+assert_status "check passes the batch" "$st" 0
+snap="$(fake_snapshot)"
+ORCH_AUTOPILOT=1 sra "$d" recommended
+assert_status "the hold run exits 0" "$st" 0
+assert_eq "the hold run wrote fundamental.md" "$(on_disk "$d/fundamental.md")" present
+assert_eq "the hold run leaves spec.md as fetched" "$(cat "$d/spec.md")" "$srr_body"
+assert_eq "the hold run leaves spec.fetched.md as fetched" "$(cat "$d/spec.fetched.md")" "$srr_body"
+assert_eq "the hold run leaves no apply-answer" "$(on_disk "$d/apply-answer")" absent
+assert_eq "the hold run changes neither body nor comments" "$(fake_snapshot)" "$snap"
+srr_hold="$(cp -r "$d" "$d.hold"; echo "$d.hold")"
+ORCH_AUTOPILOT=1 sra "$d" recommended
+assert_status "the resumed recommended exits 0" "$st" 0
+assert_eq "publishing the batch-order result" "$(fake_body_of 14)" 'Exports run each night (kept) and write one file.'
+assert_eq "one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+for srr_ans in -1 none; do
+  d="$srr_hold-$srr_ans"; rm -rf "$d"; cp -r "$srr_hold" "$d"
+  fake_issue_body 14 "$srr_body"; fake_comments_clear 14
+  ORCH_AUTOPILOT=1 sra "$d" "$srr_ans"
+  assert_status "the resumed $srr_ans exits 0" "$st" 0
+  assert_eq "$srr_ans publishes the minor edit alone" "$(fake_body_of 14)" 'Exports run each night and write one file.'
+  assert_eq "$srr_ans posts one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+  assert_contains "$srr_ans records item 1 declined" "$(fake_comments_of 14)" "- (1) \"Gamma contradicts the summary.\" - declined"
+done
 
 # Write order and failure.
 d="$(sra_dir)"
@@ -1173,6 +1255,26 @@ srt_refused() {
   sra_refused "$@"
   assert_eq "$1: the ticket files unchanged" "$(srt_files "$2")" "$before"
 }
+
+# An autopilot round (#1915): the hold run takes no ticket pause; the resumed
+# run pauses, writing nothing, and its --tickets rerun finishes the round.
+d="$(srt_dir)"
+sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
+export ORCH_AUTOPILOT=1
+sra "$d" recommended
+assert_status "an open breakdown: the hold run does not pause" "$st" 0
+assert_eq "fundamental.md written" "$(on_disk "$d/fundamental.md")" present
+snap="$(fake_snapshot)"
+sra "$d" 3B
+assert_status "the resumed run pauses for the tickets" "$st" 3
+assert_eq "nothing written to GitHub" "$(fake_snapshot)" "$snap"
+assert_eq "fundamental.md kept" "$(on_disk "$d/fundamental.md")" present
+assert_eq "no apply-answer" "$(on_disk "$d/apply-answer")" absent
+srt_fetch "$d"
+sra "$d" 3B --tickets recommended
+assert_status "the --tickets rerun succeeds" "$st" 0
+assert_eq "posting one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+unset ORCH_AUTOPILOT
 
 # The pause, then the --tickets rerun.
 d="$(srt_dir)"
@@ -1540,163 +1642,8 @@ sra "$d" recommended --unattended --tickets recommended
 fake_unfail
 assert_status "an unattended ticket write failure stops apply" "$st" 1
 assert_contains "naming the landed writes" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
-
-
-# The hold rebases the ticket copies (#2131): a ticket edit the hold run
-# published survives the resumed run, and the resumed run's anchors are checked
-# against the tickets as published.
-# srh_edit <anchor> <replace>: a tickets.md with one text item on #20.
-srh_edit() {
-  printf '@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ summary #20 edited\n@@ anchor\n%s\n@@ replace\n%s\n@@ end\n' "$1" "$2"
-}
-# srh_hold_run <tickets.md>: srf_dir's round with #14's tickets and the hold
-# run's first half done - <tickets.md> written, item 3 held back (fundamental),
-# the session's pause and ticket fetch behind it; prints the directory. The hold
-# run itself is left to the caller.
-srh_hold_run() {
-  local d
-  d="$(srt_dir)"
-  sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
-  printf '%s\n' "$1" >"$d/tickets.md"
-  ORCH_AUTOPILOT=1 sra "$d" recommended
-  srt_fetch "$d"
-  printf '%s\n' "$d"
-}
-srh_edges='@@ recommend apply
-@@ item 1 unblock 21 by 20 apply
-@@ item 2 block 20 by 21 apply'
-# srh_hold [<tickets.md>]: srh_hold_run, then the hold run done - its
-# tickets.md edits "Build alpha." unless given (srh_edges instead holds the
-# unblock/block of #20); the session then refetches #20.
-srh_hold() {
-  local d
-  d="$(srh_hold_run "${1:-$(srh_edit "Build alpha." "Build alpha prime.")}")"
-  ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
-  printf '%s\n' "$d"
-}
-srh_tail='None at all'
-# The hold keeps its ticket lines (#2132): the round's one changelog reports
-# both runs' ticket outcomes.
-srh_tickets() { fake_comments_of 14 | sed -n '/^### Tickets$/,$p'; }
-
-d="$(srh_hold)"
-assert_eq "the hold run publishes #20's edit" "$(fake_body_of 20 | sed -n 3p)" "Build alpha prime."
-fake_body_of 20 >"$d/ticket-20.md"
-srh_edit "None (can start immediately)" "$srh_tail" >"$d/tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
-assert_status "the resumed run applies its ticket edit" "$st" 0
-assert_eq "#20 holds the hold run's edit and the resumed run's" "$(fake_body_of 20)" '## What to build
-
-Build alpha prime.
-
-## Blocked by
-
-None at all'
-assert_contains "the hold's part is labelled, first" "$(srh_tickets)" "Before the reply:
-- (1) #20 edited
-After the reply:
-- (1) #20 edited"
-
-d="$(srh_hold)"
-fake_body_of 20 >"$d/ticket-20.md"
-srh_edit "Build alpha prime." "Build alpha primer." >"$d/tickets.md"
-out="$("$ORCH" spec-review check "$d" --tickets 2>&1)"; st=$?
-assert_status "check --tickets accepts an anchor only the post-hold ticket holds" "$st" 0
-srh_edit "Build alpha." "Build alpha primer." >"$d/tickets.md"
-out="$("$ORCH" spec-review check "$d" --tickets 2>&1)"; st=$?
-assert_status "check --tickets refuses an anchor only the pre-hold ticket held" "$st" 1
-
-d="$(srh_hold "$srh_edges")"
-fake_body_of 20 >"$d/ticket-20.md"
-srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
-assert_status "the resumed run edits #20 after a block" "$st" 0
-assert_eq "#20 holds the Blocked by rewrite and the edit" "$(fake_body_of 20)" '## What to build
-
-Build alpha prime.
-
-## Blocked by
-
-- #21'
-
-d="$(srh_hold "$srh_edges")"
-fake_body_of 20 >"$d/ticket-20.md"
-srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
-fake_fail adapter_issue_comment
-ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
-fake_unfail
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 2>&1)"; st=$?
-assert_status "a resumed run rerun with --resume" "$st" 0
-assert_eq "#20 still holds both" "$(fake_body_of 20 | sed -n '3p;7p')" "Build alpha prime.
-- #21"
-assert_eq "the Tickets comment is posted once" "$(srh_tickets | grep -c 'Before the reply:')" 1
-assert_eq "the posted Tickets hold both runs' lines" "$(srh_tickets)" "### Tickets
-Before the reply:
-- (1) #21 no longer blocked by #20
-- (2) #20 now blocked by #21
-After the reply:
-- (1) #20 edited"
-
-d="$(srh_hold)"
-fake_body_of 20 >"$d/ticket-20.md"
-srh_edit "None (can start immediately)" "$srh_tail" >"$d/tickets.md"
-fake_fail adapter_issue_body_edit
-ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
-fake_unfail
-assert_status "a ticket write failure stops the resumed run" "$st" 1
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 2>&1)"; st=$?
-assert_status "and --resume finishes it" "$st" 0
-assert_eq "#20 keeps the hold run's edit beside the resumed run's" "$(fake_body_of 20 | sed -n '3p;7p')" "Build alpha prime.
-None at all"
-
-d="$(srh_hold)"
-fake_body_of 20 >"$d/ticket-20.md"
-printf '@@ recommend apply\n' >"$d/tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
-assert_status "the resumed run applies no ticket edit" "$st" 0
-assert_eq "the hold's lines stand alone, unlabelled" "$(srh_tickets)" "### Tickets
-- (1) #20 edited"
-
-d="$(srh_hold '@@ recommend retire')"
-ORCH_AUTOPILOT=1 sra "$d" 3B
-assert_status "the resumed run after the hold retired the breakdown" "$st" 0
-assert_eq "the retire line stands alone" "$(srh_tickets)" "### Tickets
-- retired, to be broken down again"
-
-d="$(srh_hold '@@ recommend apply
-@@ closed 22 the gamma API')"
-printf '@@ recommend apply\n' >"$d/tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
-assert_status "the resumed run after the hold closed a ticket" "$st" 0
-assert_eq "the closed-ticket line stands alone" "$(srh_tickets)" "### Tickets
-- #22 closed, built against the earlier spec: the gamma API"
-
-d="$(srh_hold_run "$(srh_edit "Build alpha." "Build alpha prime.")")"
-mkdir "$d/held-tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
-assert_status "a held-tickets write that cannot land stops the hold" "$st" 1
-assert_contains "naming the file" "$out" "could not write $d/held-tickets.md"
-assert_contains "and fundamental.md" "$out" "$d/fundamental.md"
-assert_contains "and the landed writes" "$out" "every GitHub write landed: ticket #20's body"
-
-# The hold's failures: a copy that cannot land, a refetch that fails.
-d="$(srh_hold_run "$(srh_edit "Build alpha." "Build alpha prime.")")"
-mkdir -p "$d/ticket-21.fetched.md/ticket-21.md"
-ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
-assert_status "a ticket copy that cannot be rebased stops the hold" "$st" 1
-assert_contains "naming the file" "$out" "could not copy ticket-21.md to $d/ticket-21.fetched.md"
-assert_contains "and fundamental.md" "$out" "$d/fundamental.md"
-assert_contains "and the landed writes" "$out" "every GitHub write landed: ticket #20's body"
-
-d="$(srh_hold_run "$srh_edges")"
-fake_fail_after adapter_issue_body 2  # the two edge writes read first
-ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
-fake_unfail
-assert_status "a failed refetch of a block-edited ticket stops the hold" "$st" 1
-assert_contains "naming the ticket" "$out" "could not refetch ticket #21"
-assert_contains "and fundamental.md" "$out" "$d/fundamental.md"
-assert_contains "and the landed writes" "$out" "every GitHub write landed:"
 restore_suite_env
+
 
 # --- spec-review check (#1137) ------------------------------------------------
 # A round's batch validated before the batch question: everything apply checks
@@ -3175,3 +3122,40 @@ assert_status "the resumed apply over the same batch passes too" "$st" 0
 assert_eq "the resumed run removed fundamental.md" "$(on_disk "$d/fundamental.md")" absent
 assert_contains "the held edit landed" "$(cat "$d/spec.md")" "Beta reversed."
 assert_contains "the changelog is posted" "$(fake_comments_of 14)" "## Spec review"
+
+# --- spec-review check on a CRLF body (#1916) ---------------------------------
+# A body last edited in the GitHub web UI is stored with CRLF; issue fetch
+# writes it as LF, so a multi-line anchor matches and a round publishes LF.
+echo
+echo "spec-review check on a CRLF body (#1916)"
+new_repo >/dev/null
+fake_github
+d="$(mktemp -d)"
+fake_issue 14 open
+fake_issue_body 14 $'# Spec\r\n\r\nAlpha line.\r\nBeta line.\r\n'
+"$ORCH" issue fetch 14 "$d/spec.md"
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity ran
+@@ lens consistency not-run timed out
+@@ lens testability not-run timed out
+@@ lens implementability not-run timed out
+
+@@ item 1 fidelity apply minor
+@@ finding fidelity 1
+@@ summary Merge the two lines
+@@ anchor
+Alpha line.
+Beta line.
+@@ replace
+Alpha and Beta line.
+@@ end
+BATCH
+printf '@@ finding 1\nMerge them.\n' >"$d/lens-fidelity.md"
+out="$("$ORCH" spec-review check "$d" 2>&1)"; st=$?
+assert_status "check passes a two-line anchor on a body fetched from CRLF" "$st" 0
+out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "apply on that batch succeeds" "$st" 0
+assert_contains "and publishes the edit" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" "Alpha and Beta line."
+assert_eq "with no CR in the published body" "$(tr -cd '\r' <"$ORCH_GH_FAKE_STORE/issues/14/body" | wc -c | tr -d ' ')" "0"
+rm -rf "$d"
+unset d

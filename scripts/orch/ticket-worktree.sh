@@ -36,10 +36,9 @@ ticket_worktrees_under() {
 }
 
 # refuse_ticket_worktrees <root> <reason>: dies, naming every ticket worktree
-# under the checkout at <root>, when any is left: moving .orchestrator/
-# wholesale would break git's record of each one, and removing the checkout
-# would delete them. <reason> is the clause after the dash, required: each
-# caller states its own.
+# under the checkout at <root> and the command that removes each, when any is
+# left. <reason>, required, is the clause after the dash: why the caller
+# cannot proceed.
 refuse_ticket_worktrees() {
   local left reason="$2"
   # Its die exits only the substitution, so its status is carried out here.

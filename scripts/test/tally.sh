@@ -34,6 +34,17 @@ tally_read() {
   done
 }
 
+# tally_summary: the standalone suites' shared ending, the last command of each.
+# Calls tally_read, prints a blank line and "<PASS> passed, <FAIL> failed", and
+# returns non-zero when any assertion failed, so its status is the suite's exit
+# status. Prints no skip count.
+tally_summary() {
+  tally_read
+  echo
+  echo "$PASS passed, $FAIL failed"
+  [ "$FAIL" -eq 0 ]
+}
+
 # print_fail <title> <detail>: one FAIL line and its detail line. bad() and the
 # parallel runner both print through it, so their FAIL lines cannot drift apart.
 print_fail() { printf '  FAIL %s\n     %s\n' "$1" "$2"; }

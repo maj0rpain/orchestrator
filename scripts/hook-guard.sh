@@ -17,7 +17,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 
 hook_read_payload
-# The file being written, absolute and normalized - see hook_tool_path.
+# The file being written, absolute and physical - see hook_tool_path.
 file="$(hook_tool_path)"
 
 # Only guard sessions the grilling hook has marked as planning. A payload

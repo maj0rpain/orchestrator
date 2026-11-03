@@ -428,7 +428,7 @@ cmd_pr_comments() {
   pr="$(current_open_pr)" || return $?
   local text raw
   gh_or_die --out raw --exit 2 "read the comments of PR #$pr" adapter_pr_comments "$pr"
-  text="$(issue_comments_render "$pr" <<<"$raw")" \
+  text="$(comments_render_trusted "$pr" <<<"$raw")" \
     || die2 "could not read the comments of PR #$pr"
   file_write_atomic "$file" "${text:+$text$'\n'}" || die2 "could not write $file"
 }
