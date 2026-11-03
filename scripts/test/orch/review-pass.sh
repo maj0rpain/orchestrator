@@ -165,6 +165,15 @@ assert_eq "its entries replacing the PR body's Deviations" \
   "$(sed -n '1,/^## Known items$/p' "$kp/known.md")" \
   "$(writeln '## Deviations' '- Built the key from the slug, not from the member' '## Known items')"
 
+fake_pr_body 57 "$(writeln 'Closes #21' '' '## Review' '' \
+  '- `a.sh:3` - unused helper - out of scope' '' '## Deviations' '' '- Kept the old cache' \
+  '' '## Host fallbacks' '' 'None (claude).' | sed 's/$/\r/')"
+"$ORCH" review-pass known-items 21 "$kp/known.md"; st=$?
+assert_status "a CRLF PR body builds the file" "$st" 0
+assert_contains "reading its Deviations entries" "$(cat "$kp/known.md")" "- Kept the old cache"
+assert_contains "and its Review entries" "$(cat "$kp/known.md")" "- \`a.sh:3\` - unused helper - out of scope - declined"
+assert_not_contains "with no CR left" "$(od -c <"$kp/known.md")" '\r'
+
 : >"$kp/empty.md"
 fake_pr 57 closed quick/21-foo main
 fake_comments_clear 21

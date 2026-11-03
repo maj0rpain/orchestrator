@@ -415,8 +415,16 @@ cmd_pr_fetch() {
   [ $# -eq 1 ] || die "usage: orch.sh pr fetch <file>"
   local file="$1" pr
   pr="$(required_open_pr)" || exit 1
-  gh_or_die --file "$file" "read the body of PR #$pr" adapter_pr_body "$pr"
+  gh_or_die --file "$file" "read the body of PR #$pr" pr_body_lf "$pr"
 }
+
+# pr_body_lf <n>: PR <n>'s body on stdout with every carriage return removed,
+# so GitHub's web-UI CRLF lines reach agents as LF. A failed read fails the
+# pipeline, stderr untouched. adapter_pr_body stays byte-exact.
+pr_body_lf() (
+  set -o pipefail
+  adapter_pr_body "$1" | tr -d '\r'
+)
 
 # The PR counterpart of issue comments (issue #418), so a standalone review
 # pass reads earlier passes' declines. Exits as pr comment does: 1, writing
