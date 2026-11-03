@@ -484,6 +484,13 @@ emitters="$(cd "$DIR" && grep -lE '^[^#]*hook_emit_context( |$)' hook-*.sh | gre
 common_calls="$(grep -E '^[^#]*hook_emit_context( |$)' "$COMMON" | grep -vcE '^[[:space:]]*hook_emit_context\(\)' || true)"
 assert_eq "hook-grilling.sh is the only hook-*.sh calling hook_emit_context" "$emitters" "hook-grilling.sh"
 assert_eq "hook-common.sh has no call to hook_emit_context, only its definition" "$common_calls" "0"
+# The Bash hooks' code lives in the module of the concept it serves (#2153).
+assert_eq "hook-common.sh defines no hook_bash_ function and no HOOK_BASH_SCOPE" \
+  "$(grep -cE '^(hook_bash_[a-z_]*\(\)|HOOK_BASH_SCOPE=)' "$COMMON")" 0
+assert_eq "bash-walk.sh defines hook_bash_walk and HOOK_BASH_SCOPE" \
+  "$(grep -cE '^(hook_bash_walk\(\)|HOOK_BASH_SCOPE=)' "$DIR/bash-walk.sh")" 2
+assert_eq "no script names hook_bash_stdin_reader, hook_bash_stdin_hit or hook_bash_poll_hit" \
+  "$(grep -rlE 'hook_bash_stdin_reader|hook_bash_stdin_hit|hook_bash_poll_hit' "$DIR" --include='*.sh' --exclude=hooks_test.sh | wc -l | tr -d ' ')" 0
 
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
 # delivers the message; its payload has no project_path.
@@ -1351,13 +1358,6 @@ assert_eq "bash stdin hook: rewritten 'cat; echo done' prints done" "$bs_run_out
 assert_eq "bash stdin hook: a heredoc still reaches cat" "$(bs_run_rewritten $'cat <<EOT\nheredoc\nEOT')" heredoc
 assert_eq "bash stdin hook: a here-string still reaches cat" "$(bs_run_rewritten 'cat <<<here-string')" here-string
 assert_eq "bash stdin hook: piped input still reaches cat" "$(bs_run_rewritten 'echo piped | cat')" piped
-# The Bash hooks' code lives in the module of the concept it serves (#2153).
-assert_eq "hook-common.sh defines no hook_bash_ function and no HOOK_BASH_SCOPE" \
-  "$(grep -cE '^(hook_bash_[a-z_]*\(\)|HOOK_BASH_SCOPE=)' "$COMMON")" 0
-assert_eq "bash-walk.sh defines hook_bash_walk and HOOK_BASH_SCOPE" \
-  "$(grep -cE '^(hook_bash_walk\(\)|HOOK_BASH_SCOPE=)' "$DIR/bash-walk.sh")" 2
-assert_eq "no script names hook_bash_stdin_reader, hook_bash_stdin_hit or hook_bash_poll_hit" \
-  "$(grep -rlE 'hook_bash_stdin_reader|hook_bash_stdin_hit|hook_bash_poll_hit' "$DIR" --include='*.sh' --exclude=hooks_test.sh | wc -l | tr -d ' ')" 0
 assert_eq "hooks.json registers hook-bash-stdin.sh under PreToolUse with matcher Bash" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-stdin\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1
 
