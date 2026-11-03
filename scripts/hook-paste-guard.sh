@@ -15,9 +15,10 @@
 #
 # The arming, disarming, paste matching, re-read window and fail-open cases
 # are paste-guard.sh's, shared with the Stop guard, hook-paste-stop-guard.sh.
-# Here, while armed, every AskUserQuestion is refused, an ask unrelated to the
-# spec review too, unless one assistant text block written after the arming
-# pass line holds the view; an earlier ask, refused or not, proves nothing.
+# The guard lasts until the next `spec-review apply` or human message. Here,
+# while armed, every AskUserQuestion is refused, an ask unrelated to the spec
+# review too, unless one assistant text block written after the arming pass
+# line holds the view; an earlier ask, refused or not, proves nothing.
 # An unknown payload, or one with no transcript_path, allows the ask too.
 #
 # Claude Code only: Junie's nudge in the pass line is the whole enforcement
@@ -29,6 +30,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/paste-guard.sh"
 paste_guard_payload || exit 0
 tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
 [ "$tool" = "AskUserQuestion" ] || exit 0
-paste_guard_check "$transcript" since && exit 0
+paste_guard_check "$transcript" && exit 0
 
 hook_emit_deny "Blocked by the orchestrator: the human has not seen this round's view in chat. Do not ask this question with the ask tool. $(paste_guard_instruction "$paste_guard_view")"

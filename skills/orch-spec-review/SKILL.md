@@ -358,7 +358,7 @@ expansion, in any round: the view the human reads is `check`'s, every round
 alike. The turn ends on the list and the question, in one reply. No edit is
 applied and no changelog is posted before the answer arrives. On Claude Code
 an ask-tool call is refused while the view is unpasted: after each `check`
-that wrote a `view.md`, and until the next `apply`, a hook refuses every ask
+that wrote a `view.md`, and until the next `apply` or human message, a hook refuses every ask
 until one text block after that `check` holds the whole view, handing back
 that view each time - end the turn on it and the batch question in plain
 text. The answers:
@@ -416,8 +416,8 @@ batch question either: the doc's **Question path** runs. Do not run `apply`,
 which never receives a question. Re-run `bash "$ORCH" spec-review check
 <dir>`, and end the turn again on its new view word for word and the batch
 question. The re-run's pass
-line arms the guard again, so on Claude Code only a paste made after it lets
-a later ask through.
+line arms the guard again (the human's message disarmed it), so on Claude Code
+only a paste made after it lets a later ask through.
 
 The spec batch is asked once; a long spec is one longer question, not twenty
 prompts.
