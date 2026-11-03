@@ -2919,11 +2919,7 @@ assert_contains "naming batch.md and both findings, in lens order" "$err" \
   "orch: batch.md leaves findings uncited: consistency 2, testability 1"
 assert_contains "and saying where they go" "$err" "recommend-decline"
 
-snap="$(fake_snapshot)"
-out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
-assert_status "apply refuses the same batch" "$st" 1
-assert_contains "with the same message" "$out" "batch.md leaves findings uncited: consistency 2, testability 1"
-assert_eq "posting and editing nothing" "$(fake_snapshot)" "$snap"
+sra_refused "apply refuses the same batch" "$d" "batch.md leaves findings uncited: consistency 2, testability 1" recommended
 assert_eq "no applied.log written" "$(on_disk "$d/applied.log")" absent
 
 # Resolved, recommend-decline and decision citations each cover a finding.
