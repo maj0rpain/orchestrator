@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.14
+
+Refactor finding triage's comments and member reads onto one trusted-comments read and one state read per bundle member. A failed member close now reads "members not confirmed closed", a new bundle's failed member read says "no member was touched", and a closed member's unparseable comments name the issue.
+
 ## 4.44.13
 
 The `@@` body-line escape hint is now one wording in both the breakdown draft and the spec review, and the `orch-to-tickets` writer doc names the two unescaped `@@` lines a ticket block accepts.
