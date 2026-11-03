@@ -153,9 +153,11 @@ Run step 1 as written. Then:
 - **Exit 0 on the first `branch sync`** - a clean merge, or nothing to merge
   (`branch sync` pushes a clean merge itself): run **Sync finish**, with no PR
   body check and no comment.
-- **A failed sync** - the resolver gave up, or the rerun of `branch sync` did
-  not exit 0, a rejected push included: run the **Failure stop** with that
-  failure as its reason. Leave any merge in progress; never abort it.
+- **A failed sync** - the first `branch sync` refused (exit 1: a refused
+  branch, a failed fetch, a dirty tree), the resolver gave up, or the rerun of
+  `branch sync` did not exit 0, a rejected push included: run the
+  **Failure stop** with that failure as its reason. Leave any merge in
+  progress; never abort it.
 - **A conflict resolved** - run step 2 unattended (a missing PR skips the
   check and the comment). Then, when the resolver's report lists dropped
   intents, run the **Dropped-intent stop**; otherwise **Sync finish**. A

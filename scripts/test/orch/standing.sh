@@ -171,28 +171,6 @@ out="$(sourced_rc 'standing_sync_dropped 144 x')"
 assert_contains "the dropped-intent stop failing on its comment names the label write that landed" "$out" "writes that landed: added needs-human; the claim stays held"
 fake_unfail
 
-# the verbs read the issue from flow state
-tr_seed 145 orch:done orch:sync orch:running
-"$ORCH" state set issue 145 >/dev/null
-"$ORCH" autopilot sync-finish >/dev/null 2>&1
-assert_eq "autopilot sync-finish finishes the sync of the flow's issue" "$(fake_labels_of 145)|$(fake_claim_held 145)" "orch:done |free"
-tr_seed 146 orch:done orch:sync orch:running
-"$ORCH" state set issue 146 >/dev/null
-printf -- '- dropped thing\n' >"${TMPDIR:-/tmp}/dropped.txt"
-"$ORCH" autopilot sync-dropped "${TMPDIR:-/tmp}/dropped.txt" >/dev/null 2>&1
-assert_eq "autopilot sync-dropped stops it with the intents" "$(fake_labels_of 146)|$(fake_claim_held 146)" "needs-human orch:done |free"
-assert_contains "listing the file's text" "$(fake_comments_of 146)" "- dropped thing"
-tr_seed 147 orch:done orch:sync orch:running
-"$ORCH" state set issue 147 >/dev/null
-"$ORCH" autopilot sync-fail "push rejected" >/dev/null 2>&1
-assert_eq "autopilot sync-fail keeps orch:sync" "$(fake_labels_of 147)|$(fake_claim_held 147)" "needs-human orch:done orch:sync |free"
-assert_contains "naming the reason" "$(fake_comments_of 147)" "push rejected"
-
-# resume on a failed sync keeps the request
-fake_issue 148 open orch:done orch:sync needs-human
-"$ORCH" autopilot resume 148 >/dev/null 2>&1
-assert_eq "resume lifts needs-human and keeps orch:sync" "$(fake_labels_of 148)" "orch:done orch:sync "
-
 # finish
 tr_seed 50 orch:spec orch:running
 out="$(sourced_rc 'standing_finish 50 implement "wrote the spec"')"

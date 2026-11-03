@@ -294,7 +294,7 @@ autopilot_reply() {
 # kind. Prints one line saying so when nothing is listed; dies, printing
 # nothing, when any read fails.
 autopilot_questions() {
-  local list n phase row kind lines=""
+  local list n phase row kind lines="" q_phase stop_phase
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
     standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
@@ -302,21 +302,22 @@ autopilot_questions() {
     timeline_read_or_die "$n"
     timeline_question || true
     timeline_stop || true
+    q_phase="$TIMELINE_Q_PHASE" stop_phase="$TIMELINE_STOP_PHASE"
     if [ -z "$phase" ]; then
       # a done issue is listed only when a sync stopped it: orch:sync is still
       # on it (a failure stop), or its newest stop comment is a sync stop
       label_listed "$STANDING_LABELS" "$(standing_phase_label "done")" || continue
       if [ "$STANDING_SYNC" = 1 ] || [ "$TIMELINE_STOP_PHASE" = "$STANDING_SYNC_PHASE" ]; then
-        phase="$STANDING_SYNC_PHASE"
+        phase="$STANDING_SYNC_PHASE" q_phase="$STANDING_SYNC_PHASE" stop_phase="$STANDING_SYNC_PHASE"
       else
         continue
       fi
     fi
     if [ -n "$TIMELINE_Q_INDEX" ] && { [ -z "$TIMELINE_STOP_INDEX" ] || [ "$TIMELINE_Q_INDEX" -gt "$TIMELINE_STOP_INDEX" ]; }; then
       if timeline_replied; then kind="replied"; else kind="question"; fi
-      row="$n"$'\t'"$kind"$'\t'"$TIMELINE_Q_PHASE"$'\t'"$TIMELINE_Q_URL"
+      row="$n"$'\t'"$kind"$'\t'"$q_phase"$'\t'"$TIMELINE_Q_URL"
     elif [ -n "$TIMELINE_STOP_INDEX" ]; then
-      row="$n"$'\tstop\t'"$TIMELINE_STOP_PHASE"$'\t'"$TIMELINE_STOP_URL"
+      row="$n"$'\tstop\t'"$stop_phase"$'\t'"$TIMELINE_STOP_URL"
     else
       row="$n"$'\tstop\t'"$phase"$'\t'
     fi
@@ -729,7 +730,7 @@ autopilot_sync_detect() {
   }
   [ -n "$out" ] || return 0
   if capture prs gh_err adapter_prs_open_mergeability; then
-    prs="$(printf '%s\n' "$prs" | trust_filter_prs "the open PRs" 2>/dev/null)" || prs=""
+    prs="$(printf '%s\n' "$prs" | trust_filter_prs "the open PRs")" || reason="the open PRs could not be read: a malformed line"
   else
     reason="$(gh_reason "$gh_err")"
   fi
@@ -779,8 +780,7 @@ autopilot_tick() {
     standing_read "$issue" ||
       die "could not read issue #$issue: $STANDING_REASON"
     standing_pickable || continue
-    phase="$STANDING_PHASE"
-    if standing_is_sync; then phase="$STANDING_SYNC_PHASE"; fi
+    phase="$(standing_session_phase)"
     rc=0
     capture_err gh_err standing_claim "$issue" "$phase" "$$" || rc=$?
     case "$rc" in
@@ -988,17 +988,18 @@ autopilot_review_budget_record() {
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher log prompt rc=0 mine name flags=()
+  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
-  phase="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
+  recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
   # a sync request is told by orch:sync on a done issue; its phase word is sync
   standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
-  if [ "$phase" = "done" ] && standing_is_sync; then
-    phase="$STANDING_SYNC_PHASE"
+  phase="$recorded"
+  if [ "$recorded" = "done" ] && standing_is_sync; then
+    phase="$(standing_session_phase)"
     prompt="Run the orchestrator:orch-sync skill's autopilot branch in this checkout: sync the branch with its base, and stop when the sync is finished."
   fi
   liveness_run_begin "$issue" || exit 1

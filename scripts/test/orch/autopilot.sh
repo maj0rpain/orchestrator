@@ -1834,6 +1834,10 @@ out="$("$ORCH" autopilot questions 2>&1)"
 assert_contains "a done issue with orch:sync and needs-human is listed as sync" "$out" "20	stop	sync"
 assert_contains "a done issue whose newest stop is a sync stop is listed as sync" "$out" "21	stop	sync"
 assert_not_contains "a done issue needs-human for another reason is omitted" "$out" "22	"
+fake_issue 23 open needs-human orch:done orch:sync
+sourced_orch standing_stop 23 failure review "old" >/dev/null 2>&1
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "a sync request whose newest stop is another phase's lists as sync" "$out" "23	stop	sync"
 
 # --- autopilot tick: sync request auto-detection (#2325) -------------
 # A tick files a sync request on an open orch:done issue whose open PR GitHub
@@ -1876,6 +1880,7 @@ assert_eq "an issue labelled needs-human is left alone" "$(fake_labels_of 36)" "
 assert_eq "an issue labelled orch:running is left alone" "$(fake_labels_of 37)" "orch:done orch:running "
 assert_eq "a branch of another issue sharing the number prefix does not match" "$(fake_labels_of 38)" "orch:done "
 assert_eq "a fork PR is not the issue's PR" "$(fake_labels_of 39)" "orch:done "
+assert_contains "and the Trust module's fork warning shows" "$out" "ignored 1 PR(s) from forks"
 assert_not_contains "no PR-less issue is warned about" "$out" "issue #38"
 assert_eq "no session starts for a sync request without a side checkout" "$(tick_calls)" "0"
 
@@ -1908,6 +1913,15 @@ assert_status "a failing PR read does not stop the tick" "$st" 0
 assert_contains "it warns, naming the issue" "$out" "could not read the PR of issue #30: HTTP 502"
 assert_eq "and files nothing" "$(fake_labels_of 30)" "orch:done "
 fake_unfail
+
+# a malformed PR read warns and skips, never reads as no PR
+fake_done_pr 30 open CONFLICTING
+printf 'maybe\n' >"$ORCH_GH_FAKE_STORE/prs/130/cross_repository"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a malformed PR read does not stop the tick" "$st" 0
+assert_contains "it warns, naming the issue" "$out" "could not read the PR of issue #30: the open PRs could not be read"
+assert_eq "and files nothing" "$(fake_labels_of 30)" "orch:done "
+rm -f "$ORCH_GH_FAKE_STORE/prs/130/cross_repository"
 
 # auto-sync false adds nothing
 fake_done_pr 30 open CONFLICTING
@@ -1947,3 +1961,52 @@ git config orchestrator.autopilot.auto-sync false
 out="$("$ORCH" autopilot show 2>&1)"
 assert_contains "a set auto-sync shows with its source" "$out" "orchestrator.autopilot.auto-sync false (local)"
 restore_suite_env
+
+# --- autopilot sync-finish, sync-dropped and sync-fail -----------------------
+# The three ends of a sync session, each reading the issue from flow state.
+echo
+echo "autopilot sync verbs"
+fake_flow autopilot-sync-verbs
+dropped="$(mktemp)"; printf -- '- dropped thing\n' >"$dropped"
+
+out="$("$ORCH" autopilot sync-finish 2>&1)"; st=$?
+assert_status "sync-finish with no issue in state exits 1" "$st" 1
+assert_contains "naming the missing issue" "$out" "no issue recorded in state"
+"$ORCH" state set issue 145 >/dev/null
+out="$("$ORCH" autopilot sync-finish extra 2>&1)"; st=$?
+assert_status "sync-finish takes no argument" "$st" 1
+assert_contains "and prints its usage" "$out" "usage: orch.sh autopilot sync-finish"
+out="$("$ORCH" autopilot sync-dropped 2>&1)"; st=$?
+assert_status "sync-dropped needs its file" "$st" 1
+assert_contains "and prints its usage" "$out" "usage: orch.sh autopilot sync-dropped <file>"
+out="$("$ORCH" autopilot sync-dropped /nonexistent/dropped.txt 2>&1)"; st=$?
+assert_status "sync-dropped with a missing file exits 1" "$st" 1
+assert_contains "naming the file" "$out" "dropped-intents file not found: /nonexistent/dropped.txt"
+out="$("$ORCH" autopilot sync-fail 2>&1)"; st=$?
+assert_status "sync-fail needs its reason" "$st" 1
+assert_contains "and prints its usage" "$out" "usage: orch.sh autopilot sync-fail <reason>"
+out="$("$ORCH" autopilot sync-fail "" 2>&1)"; st=$?
+assert_status "sync-fail with an empty reason exits 1" "$st" 1
+assert_contains "saying it needs a reason" "$out" "a sync failure needs a reason"
+
+fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
+"$ORCH" autopilot sync-finish >/dev/null 2>&1
+assert_eq "sync-finish removes orch:sync, keeps orch:done and releases the claim" "$(fake_labels_of 145)|$(fake_claim_held 145)" "orch:done |free"
+fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
+"$ORCH" autopilot sync-dropped "$dropped" >/dev/null 2>&1
+assert_eq "sync-dropped stops it" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done |free"
+assert_contains "listing the file's text" "$(fake_comments_of 145)" "- dropped thing"
+fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
+"$ORCH" autopilot sync-fail "push rejected" >/dev/null 2>&1
+assert_eq "sync-fail keeps orch:sync" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done orch:sync |free"
+assert_contains "naming the reason" "$(fake_comments_of 145)" "push rejected"
+"$ORCH" autopilot resume 145 >/dev/null 2>&1
+assert_eq "resume lifts needs-human and keeps orch:sync" "$(fake_labels_of 145)" "orch:done orch:sync "
+
+fake_issue 146 open orch:done orch:sync orch:running; fake_claim_seed 146
+"$ORCH" state set issue 146 >/dev/null
+fake_fail adapter_claim_delete "HTTP 500"
+out="$("$ORCH" autopilot sync-finish 2>&1)"; st=$?
+assert_status "sync-finish failing on the release exits 1" "$st" 1
+assert_contains "naming the writes that landed" "$out" "writes that landed: removed orch:sync, removed orch:running; the claim stays held"
+fake_unfail

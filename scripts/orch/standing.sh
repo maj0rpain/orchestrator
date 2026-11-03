@@ -120,6 +120,12 @@ standing_is_sync() {
     label_listed "$STANDING_LABELS" "$(standing_phase_label "done")"
 }
 
+# standing_session_phase: the phase word of the session the last read starts:
+# sync for a sync request, else the live phase.
+standing_session_phase() {
+  if standing_is_sync; then printf '%s' "$STANDING_SYNC_PHASE"; else printf '%s' "$STANDING_PHASE"; fi
+}
+
 # standing_pickable: the label half of the Pickup rule, from the last read:
 # the issue is open, has a live phase or is a sync request, and is neither
 # running nor waiting on the human. The limit pause is the tick's own check.
@@ -199,39 +205,37 @@ standing_human_guard() {
   [ "$STANDING_HUMAN" = 1 ] || die "issue #$1 does not carry $STANDING_HUMAN_LABEL"
 }
 
-# standing_resume <issue>: removes needs-human. Returns 0, or 1 with the reason
-# in STANDING_REASON when the removal fails, printing nothing: each caller
-# dies with its own message. A single write, not a chain: it leaves
-# STANDING_LANDED alone.
-standing_resume() {
+# standing_relabel_one <issue> <flag> <label>: one label write - <flag>
+# (--add or --remove) <label> on <issue>. Returns 0, or 1 with the reason in
+# STANDING_REASON when the write fails, printing nothing: each caller words its
+# own death or warning. A single write, not a chain: it leaves STANDING_LANDED
+# alone.
+standing_relabel_one() {
   local gh_err
-  capture_err gh_err adapter_issue_relabel "$1" --remove "$STANDING_HUMAN_LABEL" && return 0
+  capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" && return 0
   STANDING_REASON="$(gh_reason "$gh_err")"
   return 1
 }
 
-# standing_sync_request <issue>: the sync request transition - adds orch:sync,
-# one write. Returns 0, or 1 with the reason in STANDING_REASON when the write
-# fails, printing nothing: each caller words its own death or warning. A single
-# write, not a chain: it leaves STANDING_LANDED alone.
-standing_sync_request() {
-  local gh_err
-  capture_err gh_err adapter_issue_relabel "$1" --add "$STANDING_SYNC_LABEL" && return 0
-  STANDING_REASON="$(gh_reason "$gh_err")"
-  return 1
+# standing_resume <issue>: removes needs-human, one write, through
+# standing_relabel_one.
+standing_resume() {
+  standing_relabel_one "$1" --remove "$STANDING_HUMAN_LABEL"
 }
 
 # --- transitions ------------------------------------------------------------
 #
-# Every write to Standing goes through one transition below: begin,
-# sync request, start, finish, pause, ask, stop, limit-stop and resume. Begin
-# and resume are single writes; the others are chains. A chain of writes a
+# Every write to Standing goes through one transition: begin, sync request,
+# start, finish, pause, ask, stop, sync finish, sync dropped, limit-stop and
+# resume. Begin, sync request and resume are single writes; the others are
+# chains. A chain of writes a
 # session makes under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
 # fails partway leaves the claim held, and dies naming the writes that landed,
 # so the next tick cleans it up as a failure. STANDING_LANDED accumulates those
-# writes; each chain transition (start, finish, pause, ask, stop and limit-stop)
-# resets it at its start, and begin and resume neither reset nor add to it.
+# writes; each chain transition (start, finish, pause, ask, stop, sync finish,
+# sync dropped and limit-stop) resets it at its start, and begin, sync request
+# and resume neither reset nor add to it.
 
 STANDING_LANDED=""
 
@@ -298,6 +302,13 @@ standing_start() {
   first="$(standing_phase_label "${PHASES%% *}")"
   capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
+}
+
+# standing_sync_request <issue>: the sync request transition - adds orch:sync,
+# one write, through standing_relabel_one: returns 0, or 1 with the reason in
+# STANDING_REASON.
+standing_sync_request() {
+  standing_relabel_one "$1" --add "$STANDING_SYNC_LABEL"
 }
 
 # standing_begin <issue> [limited]: pickup's last step - removes
