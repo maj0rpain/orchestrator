@@ -508,17 +508,13 @@ spec_review_findings_check() {
     [ "${SR_LENS_STATE[$l]}" = ran ] \
       || spec_review_batch_die "${SR_IT_LINE[$it]}" "item ${SR_IT_N[$it]} is in group ${SR_IT_GROUP[$it]}, which did not run"
   done
-  for lens in $SPEC_REVIEW_LENSES; do
-    l="$(array_index SR_LENS_NAME "$lens")"
-    [ "${SR_LENS_STATE[$l]:-}" = ran ] || continue
-    for lf in ${SR_LF_LENS[@]+"${!SR_LF_LENS[@]}"}; do
-      [ "${SR_LF_LENS[$lf]}" = "$lens" ] || continue
-      cited=""
-      for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
-        [ "${SR_FD_LENS[$j]}" = "$lens" ] && [ "${SR_FD_K[$j]}" = "${SR_LF_K[$lf]}" ] && { cited=1; break; }
-      done
-      [ -n "$cited" ] || uncited="${uncited:+$uncited, }$lens ${SR_LF_K[$lf]}"
+  for lf in ${SR_LF_LENS[@]+"${!SR_LF_LENS[@]}"}; do
+    lens="${SR_LF_LENS[$lf]}"
+    cited=""
+    for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
+      [ "${SR_FD_LENS[$j]}" = "$lens" ] && [ "${SR_FD_K[$j]}" = "${SR_LF_K[$lf]}" ] && { cited=1; break; }
     done
+    [ -n "$cited" ] || uncited="${uncited:+$uncited, }$lens ${SR_LF_K[$lf]}"
   done
   [ -z "$uncited" ] \
     || die "batch.md leaves findings uncited: $uncited - every lens finding goes in the batch, if only as a recommend-decline item"
@@ -541,9 +537,10 @@ spec_review_answer_tokens() {
 # autopilot round's first run holds back for the human's reply.
 spec_review_item_held() { [ "${SR_FUNDAMENTAL_RUN:-}" = hold ] && [ -n "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
-# spec_review_item_unnamed <i>: whether item <i> is one the resumed run's
-# answer cannot name - a non-fundamental item, taken as recommended.
-spec_review_item_unnamed() { [ "${SR_FUNDAMENTAL_RUN:-}" = resume ] && [ -z "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
+# spec_review_item_resumed_as_recommended <i>: whether item <i> is one the
+# resumed run's answer cannot name - a non-fundamental item, taken as
+# recommended.
+spec_review_item_resumed_as_recommended() { [ "${SR_FUNDAMENTAL_RUN:-}" = resume ] && [ -z "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
 # spec_review_answer <answer>: each item's disposition into
 # SR_DISP (applied, declined, taken, undecided or resolved), SR_ASREC (1 where
@@ -582,7 +579,7 @@ spec_review_answer() {
         [ -z "${SR_DISP[$i]+x}" ] || die "the answer names item $n twice"
         ! spec_review_item_held "$i" \
           || die "the answer names item $n, a fundamental item held back for the human's reply - it takes no answer in this run"
-        ! spec_review_item_unnamed "$i" \
+        ! spec_review_item_resumed_as_recommended "$i" \
           || die "the answer names item $n, which is not a fundamental item - the resumed answer names only fundamental items, the rest being taken as recommended"
         [ "${SR_IT_REC[$i]}" != resolved ] \
           || die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer"
@@ -612,7 +609,7 @@ spec_review_answer() {
     # the rest recommended.
     ibase="$base"
     ! spec_review_item_held "$i" || ibase=recommended
-    ! spec_review_item_unnamed "$i" || ibase=recommended
+    ! spec_review_item_resumed_as_recommended "$i" || ibase=recommended
     [ -z "${SR_DISP[$i]+x}" ] || continue
     case "$ibase:${SR_IT_REC[$i]}" in
       recommended:apply|all:apply|all:decline) SR_DISP[i]=applied; SR_ASREC[i]=1 ;;

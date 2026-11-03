@@ -175,13 +175,13 @@ discard_own_branch_work() {
 # the caller goes on, and a dirty one dies, exit 1, naming that branch.
 # Called as a bare statement, so a die stops the caller.
 discard_create_work() {
-  local name="$1" b dirty
-  if ! b="$(checkout_branch_or_rebasing "$ROOT")" || branch_held "$b"; then
+  # shellcheck disable=SC2034 # out-params the caller does not need
+  local name="$1" b merging rebasing dirty
+  if ! b="$(checkout_branch_or_rebasing "$ROOT")" || [ "$b" = "$name" ]; then
     discard_flow_branch_work
     return
   fi
-  dirty="$(dirty_outside_allowlist)" || exit 1
-  if [ -n "$dirty" ] || merge_in_progress "$ROOT" || rebase_in_progress "$ROOT"; then
+  if work_to_discard merging rebasing dirty; then
     die "branch create: the current branch $b is not the flow's branch $name - nothing was discarded"
   fi
 }

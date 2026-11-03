@@ -179,6 +179,15 @@ assert_contains "and the next entry stays its own" "$(cat "$kp/known.md")" '- `f
 assert_contains "a deviation with a fenced column-0 bullet is one entry" "$(cat "$kp/known.md")" \
   '- Kept a fence: ``` - not a new entry ```'
 
+fake_pr_body 57 "$(writeln 'Closes #21' '' '## Review' '' \
+  '- `a.sh:3` - unused helper - out of scope' '' '## Deviations' '' '- Kept the old cache' \
+  '' '## Host fallbacks' '' 'None (claude).' | sed 's/$/\r/')"
+"$ORCH" review-pass known-items 21 "$kp/known.md"; st=$?
+assert_status "a CRLF PR body builds the file" "$st" 0
+assert_contains "reading its Deviations entries" "$(cat "$kp/known.md")" "- Kept the old cache"
+assert_contains "and its Review entries" "$(cat "$kp/known.md")" "- \`a.sh:3\` - unused helper - out of scope - declined"
+assert_not_contains "with no CR left" "$(od -c <"$kp/known.md")" '\r'
+
 : >"$kp/empty.md"
 fake_pr 57 closed quick/21-foo main
 fake_comments_clear 21
