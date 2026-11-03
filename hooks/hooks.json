@@ -34,7 +34,8 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-bash-stdin.sh\"" }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-bash-stdin.sh\"" },
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-bash-poll.sh\"" }
         ]
       },
       {
