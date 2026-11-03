@@ -32,7 +32,7 @@ checkout_new_branch() {
 new_branch_refusals() {
   local __nbr_out="$1" name="$2" base="$3" remedy="${4:-start again on another base branch}"
   local __nbr_start
-  if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
+  if git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then die "branch $name already exists"; fi
   if git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null; then
     __nbr_start="refs/remotes/origin/$base"
   else
@@ -376,8 +376,8 @@ cmd_branch() {
     retire)
       [ $# -eq 2 ] || die "usage: orch.sh branch retire <old> <new>"
       local old="$1" new="$2" upstream="" old_ok=1 new_ok=1 why
-      git rev-parse --verify --quiet "$old" >/dev/null 2>&1 || old_ok=0
-      git rev-parse --verify --quiet "$new" >/dev/null 2>&1 || new_ok=0
+      git rev-parse --verify --quiet "refs/heads/$old" >/dev/null 2>&1 || old_ok=0
+      git rev-parse --verify --quiet "refs/heads/$new" >/dev/null 2>&1 || new_ok=0
       if [ "$old_ok" = 1 ] && [ "$new_ok" = 1 ]; then
         die "branch $new already exists"
       elif [ "$old_ok" = 0 ] && [ "$new_ok" = 0 ]; then
@@ -404,9 +404,9 @@ cmd_branch() {
         # The rename above is local-only and free to undo - if the push
         # never lands, undoing it is what keeps `$old` a real, retryable
         # branch instead of a name a retry can no longer find.
-        git_push why -q -u origin "$new" \
+        git_push why -q -u origin "refs/heads/$new:refs/heads/$new" \
           || { git branch -m "$new" "$old"; die "could not push $new to origin: $why"; }
-        if ! git_push why -q origin --delete "$old"; then
+        if ! git_push why -q origin --delete "refs/heads/$old"; then
           # Already gone - a previous call's delete already succeeded before
           # something else failed - is not an error to retry into; only a
           # ref that is still there and won't go is.

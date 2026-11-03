@@ -76,7 +76,7 @@ under the plugin root: two directories above the `orch.sh` your prompt
 named.
 
 That message is not a new ticket: build nothing. In your ticket worktree,
-start `git rebase <parent branch>` yourself, then follow that file's
+start `git rebase refs/heads/<parent branch>` yourself, then follow that file's
 **Resolving** section as written, with your ticket as the intent you hold,
 and return that file's four-line **Report** in place of this file's.
 

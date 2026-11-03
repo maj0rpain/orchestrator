@@ -359,3 +359,25 @@ git config branch.autoSetupMerge inherit
 assert_status "add succeeds under autoSetupMerge=inherit" "$st" 0
 assert_eq "the ticket branch has no upstream" "$(upstream_of orch/5-feature--t4)" "none"
 restore_suite_env
+
+# --- the merged check beside a same-named tag (#2337) -------------------------
+# A tag named like a branch outranks it in git's lookup; the merged check
+# behind remove must still judge the branches, with the tag at an old commit.
+echo
+echo "the merged check beside a same-named tag"
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" commit -q --allow-empty -m "ticket work"
+git merge -q --ff-only orch/5-feature--t7
+git tag orch/5-feature HEAD~1
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove accepts a merged ticket beside a tag named like the parent" "$st" 0
+
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" commit -q --allow-empty -m "ticket work"
+git tag orch/5-feature--t7 HEAD
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove refuses an unmerged ticket beside a tag named like the ticket branch" "$st" 1
+assert_contains "saying it is not merged" "$out" "not merged"
+restore_suite_env
