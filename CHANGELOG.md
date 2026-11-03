@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.6
+
+The orchestrator now ends an unterminated last line of the shared git exclude file before it appends, and doctor's remedy for missing exclude lines does the same, so a user's last pattern is no longer glued to the first added line.
+
 ## 4.43.5
 
 `orch.sh pr ready` and `orch.sh review ready` now read the PR's required checks before marking it ready: they refuse over a failed check or checks GitHub cannot report, and note on stderr when checks are still pending. The implementer, fixer and resolver agents call a local failure flaky only after its section has been rerun alone at least 3 times and passed every time.
