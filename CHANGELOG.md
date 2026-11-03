@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.39
+
+`orch.sh review rerun` now reruns every distinct Actions run behind the failing checks `review ci` counts (required checks where any are reported, else all), instead of the first failing check of all checks. One helper owns which checks count.
+
 ## 4.43.38
 
 A spec-review batch, a tickets file or a breakdown draft can now carry a content line that begins with `@@`: write it with a leading backslash (`\@@ note <text>`), and the parser removes one backslash. An unescaped `@@` grammar line out of place in a block dies naming the line and how to escape it, and a breakdown draft's ticket body no longer keeps a stray `@@` grammar line as text.
