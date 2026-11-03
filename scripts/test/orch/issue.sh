@@ -709,7 +709,7 @@ issue_body="$(mktemp)"
 out="$("$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
 assert_status "fetch writes the issue's body to the file, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
-assert_eq "exactly what GitHub holds" "$(cat "$issue_body")" "Body of #23."
+assert_eq "exactly what GitHub holds, for an LF body" "$(cat "$issue_body")" "Body of #23."
 assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 
@@ -721,7 +721,8 @@ assert_eq "and leaves no file a caller could mistake for a body" \
   "$(on_disk "$issue_body")" "absent"
 
 # issue fetch streams gh's stdout to the file, so what gh printed - the body
-# and the one newline gh's --jq adds - round-trips byte for byte, and its
+# and the one newline gh's --jq adds - round-trips byte for byte for an LF
+# body (a CRLF body loses its CRs, below), and its
 # death carries gh's first line (#846). A read that prints nothing writes
 # nothing: issue comments' empty file, below.
 fidir="$(mktemp -d)"
@@ -1116,3 +1117,36 @@ fake_issue_authorship 31 stranger NONE
 out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
 assert_eq "an autopilot fetch of an untrusted issue prints no warning" "$out" ""
 rm -f "$tw_file"
+
+# --- issue fetch writes LF lines (#1916) --------------------------------------
+# A body last edited in the GitHub web UI is stored with CRLF; the plain fetch
+# hands agents and the spec review LF lines, the machine form stays byte-exact.
+echo
+echo "issue fetch writes LF lines (#1916)"
+healthy_repo
+fake_github
+fake_issue 23 open
+lf_dir="$(mktemp -d)"
+fake_issue_body 23 $'# Spec\r\n\r\nAlpha line.\r\nBeta line.\r\n'
+"$ORCH" issue fetch 23 "$lf_dir/body.md"; st=$?
+assert_status "fetch of a CRLF body succeeds" "$st" 0
+assert_eq "writing the same text with LF line endings and no CR" \
+  "$(od -c <"$lf_dir/body.md")" "$(printf '# Spec\n\nAlpha line.\nBeta line.\n\n' | od -c)"
+fake_issue_body 23 $'Alpha line.\r\nBeta line.'
+"$ORCH" issue fetch 23 "$lf_dir/body.md"
+assert_eq "a CRLF body with no final line ending ends as an LF one does" \
+  "$(od -c <"$lf_dir/body.md")" "$(printf 'Alpha line.\nBeta line.\n' | od -c)"
+fake_issue_body 23 $'Alpha line.\nBeta line.'
+"$ORCH" issue fetch 23 "$lf_dir/body.md"
+assert_eq "an LF body is written unchanged" \
+  "$(od -c <"$lf_dir/body.md")" "$(printf 'Alpha line.\nBeta line.\n' | od -c)"
+fake_issue_body 23 $'Alpha line.\r\nBeta line.'
+"$ORCH" issue fetch 23 "$lf_dir/body.json" --json
+assert_contains "fetch --json keeps every CR" "$(jq -r .body "$lf_dir/body.json" | od -c)" '\r  \n'
+assert_gh_dies "a failed body read fails the fetch" adapter_issue_body "$GH_502" 1 \
+  "orch: gh could not read the body of issue #23: HTTP 502: Bad Gateway" \
+  "$ORCH" issue fetch 23 "$lf_dir/body.md"
+assert_eq "leaving the target untouched" "$(od -c <"$lf_dir/body.md")" "$(printf 'Alpha line.\nBeta line.\n' | od -c)"
+assert_eq "and no temp file beside it" "$(ls "$lf_dir" | sort | tr '\n' ' ')" "body.json body.md "
+rm -rf "$lf_dir"
+unset lf_dir
