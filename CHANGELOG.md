@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.19
+
+The six standalone test suites now end with a shared `tally_summary` from tally.sh, and the duplicated structural tally checks in the harness are gone.
+
 ## 4.43.18
 
 A failed `autopilot answer` or handoff write no longer leaves a partly written file and is reported as a write failure, not a missing handoff; `trust_warn_issue` reads autopilot mode through `autopilot_active`; `issue_comments_render` is now `comments_render_trusted`; `trust_filter_prs` names its argument `<subject>`.
