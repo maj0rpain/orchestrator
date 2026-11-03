@@ -486,6 +486,13 @@ emitters="$(cd "$DIR" && grep -lE '^[^#]*hook_emit_context( |$)' hook-*.sh | gre
 common_calls="$(grep -E '^[^#]*hook_emit_context( |$)' "$COMMON" | grep -vcE '^[[:space:]]*hook_emit_context\(\)' || true)"
 assert_eq "hook-grilling.sh is the only hook-*.sh calling hook_emit_context" "$emitters" "hook-grilling.sh"
 assert_eq "hook-common.sh has no call to hook_emit_context, only its definition" "$common_calls" "0"
+# The Bash hooks' code lives in the module of the concept it serves (#2153).
+assert_eq "hook-common.sh defines no hook_bash_ function and no HOOK_BASH_SCOPE" \
+  "$(grep -cE '^(hook_bash_[a-z_]*\(\)|HOOK_BASH_SCOPE=)' "$COMMON")" 0
+assert_eq "bash-walk.sh defines hook_bash_walk and HOOK_BASH_SCOPE" \
+  "$(grep -cE '^(hook_bash_walk\(\)|HOOK_BASH_SCOPE=)' "$DIR/bash-walk.sh")" 2
+assert_eq "no script names hook_bash_stdin_reader, hook_bash_stdin_hit or hook_bash_poll_hit" \
+  "$(grep -rlE 'hook_bash_stdin_reader|hook_bash_stdin_hit|hook_bash_poll_hit' "$DIR" --include='*.sh' --exclude=hooks_test.sh | wc -l | tr -d ' ')" 0
 
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
 # delivers the message; its payload has no project_path.
@@ -1337,9 +1344,9 @@ assert_not_contains "edit hook: absent from hooks/hooks.json" \
 
 # --- bash stdin hook (scripts/hook-bash-stdin.sh, #2001)
 BSTDIN="$DIR/hook-bash-stdin.sh"
-# bs_event MODE AGENT_TYPE COMMAND: a Bash PreToolUse payload; an empty
+# bash_hook_event MODE AGENT_TYPE COMMAND: a Bash PreToolUse payload; an empty
 # AGENT_TYPE leaves the field out.
-bs_event() {
+bash_hook_event() {
   jq -n --arg m "$1" --arg a "$2" --arg c "$3" \
     '{hook_event_name:"PreToolUse", tool_name:"Bash", permission_mode:$m, tool_input:{command:$c, timeout:5000, description:"d"}}
      + (if $a == "" then {} else {agent_type:$a} end)'
@@ -1351,45 +1358,45 @@ bash_hook_run() {
 }
 # bash_hook_scan SCRIPT MODE COMMAND: the hook's output for COMMAND from an
 # in-scope agent under MODE.
-bash_hook_scan() { bs_event "$2" orch-implementer "$3" | bash_hook_run "$1" ""; }
+bash_hook_scan() { bash_hook_event "$2" orch-implementer "$3" | bash_hook_run "$1" ""; }
 BS_PREFIX=$'exec </dev/null\n'
-# bs_decision OUTPUT: the permissionDecision the hook wrote.
-bs_decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
+# bash_hook_decision OUTPUT: the permissionDecision the hook wrote.
+bash_hook_decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
 for scope in "orchestrator:orch-implementer|" "orch-implementer|" "|1"; do
   bs_agent="${scope%|*}"; bs_auto="${scope#*|}"
   bs_label="agent_type '$bs_agent' autopilot '$bs_auto'"
-  bs_out="$(bs_event bypassPermissions "$bs_agent" 'cat; echo done' | bash_hook_run "$BSTDIN" "$bs_auto")"
+  bs_out="$(bash_hook_event bypassPermissions "$bs_agent" 'cat; echo done' | bash_hook_run "$BSTDIN" "$bs_auto")"
   assert_eq "bash stdin hook: $bs_label rewrites the command" \
     "$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$bs_out")" "${BS_PREFIX}cat; echo done"
   assert_eq "bash stdin hook: $bs_label keeps the other tool_input fields" \
     "$(jq -c '.hookSpecificOutput.updatedInput | del(.command)' <<<"$bs_out")" '{"timeout":5000,"description":"d"}'
   assert_eq "bash stdin hook: $bs_label allows" \
-    "$(bs_decision "$bs_out")" allow
+    "$(bash_hook_decision "$bs_out")" allow
 done
-bs_out="$(bs_event bypassPermissions orch-implementer "${BS_PREFIX}cat; echo done" | bash_hook_run "$BSTDIN" "")"
+bs_out="$(bash_hook_event bypassPermissions orch-implementer "${BS_PREFIX}cat; echo done" | bash_hook_run "$BSTDIN" "")"
 assert_eq "bash stdin hook: an already-prefixed command is not prefixed twice" \
   "$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$bs_out")" "${BS_PREFIX}cat; echo done"
 assert_eq "bash stdin hook: an already-prefixed command is still allowed" \
-  "$(bs_decision "$bs_out")" allow
+  "$(bash_hook_decision "$bs_out")" allow
 for mode in bypassPermissions default; do
   for bs_agent in "" Explore; do
-    bs_out="$(bs_event "$mode" "$bs_agent" cat | bash_hook_run "$BSTDIN" "")"; bs_rc=$?
+    bs_out="$(bash_hook_event "$mode" "$bs_agent" cat | bash_hook_run "$BSTDIN" "")"; bs_rc=$?
     assert_empty "bash stdin hook: out of scope '$bs_agent' under $mode prints nothing" "$bs_out"
     assert_eq "bash stdin hook: out of scope '$bs_agent' under $mode exits 0" "$bs_rc" 0
   done
 done
 # Deny of plain stdin reads under a non-bypass mode (#2002).
 for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
-  'python3 - x' 'node - --flag' 'cat -n' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat' \
+  'python3 - x' 'node - --flag' 'python3 -u' 'node --input-type=module' 'python3 -v' 'cat -n' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat' \
   'cat >out' 'cat > f' 'cat 2>/dev/null' 'python3 >log' 'cat &>o' 'cat >> f' '>o cat' 'cat >& out' 'cat 2>& f' \
   $'\ncat' $'cd x &&\ncat' $'echo a;\n\ncat' 'cat;' '>o; cat'; do
   bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
   assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" \
-    "$(bs_decision "$bs_out")" deny
+    "$(bash_hook_decision "$bs_out")" deny
 done
 bs_out="$(bash_hook_scan "$BSTDIN" acceptEdits cat)"
 assert_eq "bash stdin hook: acceptEdits denies 'cat'" \
-  "$(bs_decision "$bs_out")" deny
+  "$(bash_hook_decision "$bs_out")" deny
 bs_out="$(bash_hook_scan "$BSTDIN" default 'echo a; cat -')"
 assert_contains "bash stdin hook: the deny reason names the matched part" \
   "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bs_out")" "'cat -'"
@@ -1398,14 +1405,16 @@ assert_contains "bash stdin hook: the deny reason says how to supply input" \
 for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'cat < f' 'cat file' \
   'python3 script.py' $'cat <<EOF\ncat\nread x\nEOF' $'echo "a\ncat\nb"' 'echo "a; cat"' \
   "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'cat file -n' $'echo a \\\n  cat' \
-  $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file' $'cat <<\\EOF\ncat\nEOF' 'cat --help' 'cat --version' 'cat -n --help' 'cat -A --version'; do
+  $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file' $'cat <<\\EOF\ncat\nEOF' 'cat --help' 'cat --version' 'cat -n --help' \
+  'python3 -h' 'python3 -V' 'python3 --help' 'python3 --version' 'node -h' 'node -v' 'node --help' 'node --version' \
+  "python3 -c 'print(1)'" 'python3 -m json.tool f'; do
   bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
   assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
-bs_out="$(bs_event default "" cat | bash_hook_run "$BSTDIN" 1)"
+bs_out="$(bash_hook_event default "" cat | bash_hook_run "$BSTDIN" 1)"
 assert_eq "bash stdin hook: autopilot 'cat' under default is denied" \
-  "$(bs_decision "$bs_out")" deny
-bs_out="$(bs_event bypassPermissions orch-implementer cat | jq 'del(.tool_input.command)' | bash_hook_run "$BSTDIN" "")"; bs_rc=$?
+  "$(bash_hook_decision "$bs_out")" deny
+bs_out="$(bash_hook_event bypassPermissions orch-implementer cat | jq 'del(.tool_input.command)' | bash_hook_run "$BSTDIN" "")"; bs_rc=$?
 assert_empty "bash stdin hook: no command prints nothing" "$bs_out"
 assert_eq "bash stdin hook: no command exits 0" "$bs_rc" 0
 bs_out="$(echo 'not json {' | bash_hook_run "$BSTDIN" 1)"; bs_rc=$?
@@ -1414,22 +1423,18 @@ assert_eq "bash stdin hook: a non-JSON payload exits 0" "$bs_rc" 0
 # Seam 2: the rewritten command, run by bash with stdin held open.
 # bs_rewritten COMMAND: the command the hook rewrites COMMAND into.
 bs_rewritten() {
-  bs_event bypassPermissions orch-implementer "$1" | bash_hook_run "$BSTDIN" "" | jq -r '.hookSpecificOutput.updatedInput.command'
+  bash_hook_event bypassPermissions orch-implementer "$1" | bash_hook_run "$BSTDIN" "" | jq -r '.hookSpecificOutput.updatedInput.command'
 }
-bs_rewrite="$(bs_rewritten 'cat; echo done')"
+# bs_run_rewritten COMMAND: prints the rewrite of COMMAND run under timeout 3
+# with stdin held open on the section's FIFO; leaves bash's exit status.
 bs_fifo="$TMPDIR/bs-open.fifo"; mkfifo "$bs_fifo"
-bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"; bs_rc=$?
+bs_run_rewritten() { timeout 3 bash -c "$(bs_rewritten "$1")" <>"$bs_fifo"; }
+bs_run_out="$(bs_run_rewritten 'cat; echo done')"; bs_rc=$?
 assert_eq "bash stdin hook: rewritten 'cat; echo done' returns with stdin held open" "$bs_rc" 0
 assert_eq "bash stdin hook: rewritten 'cat; echo done' prints done" "$bs_run_out" "done"
-bs_rewrite="$(bs_rewritten $'cat <<EOT\nheredoc\nEOT')"
-bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
-assert_eq "bash stdin hook: a heredoc still reaches cat" "$bs_run_out" heredoc
-bs_rewrite="$(bs_rewritten 'cat <<<here-string')"
-bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
-assert_eq "bash stdin hook: a here-string still reaches cat" "$bs_run_out" here-string
-bs_rewrite="$(bs_rewritten 'echo piped | cat')"
-bs_run_out="$(timeout 3 bash -c "$bs_rewrite" <>"$bs_fifo")"
-assert_eq "bash stdin hook: piped input still reaches cat" "$bs_run_out" piped
+assert_eq "bash stdin hook: a heredoc still reaches cat" "$(bs_run_rewritten $'cat <<EOT\nheredoc\nEOT')" heredoc
+assert_eq "bash stdin hook: a here-string still reaches cat" "$(bs_run_rewritten 'cat <<<here-string')" here-string
+assert_eq "bash stdin hook: piped input still reaches cat" "$(bs_run_rewritten 'echo piped | cat')" piped
 assert_eq "hooks.json registers hook-bash-stdin.sh under PreToolUse with matcher Bash" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command | select(test("^bash .*hook-bash-stdin\\.sh"))] | length' "$ROOT/hooks/hooks.json")" 1
 
@@ -1438,27 +1443,27 @@ BPOLL="$DIR/hook-bash-poll.sh"
 bp_poll='until ! pgrep -f x; do sleep 5; done'
 for mode in default acceptEdits plan dontAsk bypassPermissions; do
   bp_out="$(bash_hook_scan "$BPOLL" "$mode" "$bp_poll")"
-  assert_eq "bash poll hook: $mode denies a pgrep poll" "$(bs_decision "$bp_out")" deny
+  assert_eq "bash poll hook: $mode denies a pgrep poll" "$(bash_hook_decision "$bp_out")" deny
 done
-bp_out="$(bs_event default orch-implementer "$bp_poll" | jq 'del(.permission_mode)' | bash_hook_run "$BPOLL" "")"
-assert_eq "bash poll hook: no permission_mode denies a pgrep poll" "$(bs_decision "$bp_out")" deny
+bp_out="$(bash_hook_event default orch-implementer "$bp_poll" | jq 'del(.permission_mode)' | bash_hook_run "$BPOLL" "")"
+assert_eq "bash poll hook: no permission_mode denies a pgrep poll" "$(bash_hook_decision "$bp_out")" deny
 for bp_cmd in 'pkill -f y' 'echo $(pgrep x)' 'echo `pgrep x`' 'ls | xargs pkill' 'timeout 5 pkill y' \
   'while pgrep x; do sleep 5; done' 'true|pgrep x' '/usr/bin/pgrep x' '/usr/local/bin/pkill x' 'grep -n pgrep file' \
   $'echo a\npgrep x' 'pgrep'; do
   bp_out="$(bash_hook_scan "$BPOLL" default "$bp_cmd")"
-  assert_eq "bash poll hook: denies '${bp_cmd//$'\n'/\\n}'" "$(bs_decision "$bp_out")" deny
+  assert_eq "bash poll hook: denies '${bp_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bp_out")" deny
 done
-bp_out="$(bs_event default orchestrator:orch-implementer 'pgrep x' | bash_hook_run "$BPOLL" "")"
-assert_eq "bash poll hook: agent_type 'orchestrator:orch-implementer' is denied" "$(bs_decision "$bp_out")" deny
-bp_out="$(bs_event default "" 'pgrep x' | bash_hook_run "$BPOLL" 1)"
-assert_eq "bash poll hook: autopilot with an empty agent_type is denied" "$(bs_decision "$bp_out")" deny
+bp_out="$(bash_hook_event default orchestrator:orch-implementer 'pgrep x' | bash_hook_run "$BPOLL" "")"
+assert_eq "bash poll hook: agent_type 'orchestrator:orch-implementer' is denied" "$(bash_hook_decision "$bp_out")" deny
+bp_out="$(bash_hook_event default "" 'pgrep x' | bash_hook_run "$BPOLL" 1)"
+assert_eq "bash poll hook: autopilot with an empty agent_type is denied" "$(bash_hook_decision "$bp_out")" deny
 bp_out="$(bash_hook_scan "$BPOLL" default 'pgrep x')"
 assert_contains "bash poll hook: the reason gives the foreground rerun" \
   "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bp_out")" 'timeout: 600000'
 assert_contains "bash poll hook: the reason names the completion notice" \
   "$(jq -r '.reason' <<<"$bp_out")" 'completion notice'
 for bp_agent in "" Explore; do
-  bp_out="$(bs_event default "$bp_agent" 'pgrep x' | bash_hook_run "$BPOLL" "")"; bp_rc=$?
+  bp_out="$(bash_hook_event default "$bp_agent" 'pgrep x' | bash_hook_run "$BPOLL" "")"; bp_rc=$?
   assert_empty "bash poll hook: out of scope '$bp_agent' prints nothing" "$bp_out"
   assert_eq "bash poll hook: out of scope '$bp_agent' exits 0" "$bp_rc" 0
 done
@@ -1471,7 +1476,7 @@ done
 bp_out="$(bash_hook_scan "$BPOLL" default "$(printf 'echo %9000s; pgrep x' '')")"; bp_rc=$?
 assert_empty "bash poll hook: a command over 8 KB is not scanned" "$bp_out"
 assert_eq "bash poll hook: a command over 8 KB exits 0" "$bp_rc" 0
-bp_out="$(bs_event default orch-implementer pgrep | jq 'del(.tool_input.command)' | bash_hook_run "$BPOLL" "")"; bp_rc=$?
+bp_out="$(bash_hook_event default orch-implementer pgrep | jq 'del(.tool_input.command)' | bash_hook_run "$BPOLL" "")"; bp_rc=$?
 assert_empty "bash poll hook: no command prints nothing" "$bp_out"
 assert_eq "bash poll hook: no command exits 0" "$bp_rc" 0
 bp_out="$(echo 'not json {' | bash_hook_run "$BPOLL" 1)"; bp_rc=$?
