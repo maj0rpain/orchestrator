@@ -144,8 +144,9 @@ draft order, each ticket's body written from the template below:
 `<k>` is the ticket's position in the draft; the `@@ blocked-by` line is
 optional and names blockers by position. A body line that begins with one or
 more `\` then `@@` loses one leading `\` on publish, so write a body line
-starting with `@@` as `\@@`; any other line in a block that is `@@` alone or
-begins with `@@ ` dies.
+starting with `@@` as `\@@`. Inside a block, the only unescaped `@@` lines
+accepted are `@@ end`, ending the block, and a `@@ blocked-by` directly after
+`@@ ticket`; any other line that is `@@` alone or begins with `@@ ` dies.
 Then publish:
 
 ```

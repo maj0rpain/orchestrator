@@ -1714,24 +1714,23 @@ restore_suite_env
 # Block lines that read as grammar are escaped with a leading backslash (#1945).
 new_repo >/dev/null
 fake_github
-sre_body_now() { cat "$ORCH_GH_FAKE_STORE/issues/14/body"; }
 d="$(sre_dir "$sre_item_esc")"
 sra "$d" recommended
 assert_status "an escaped anchor and replacement: apply succeeds" "$st" 0
-assert_contains "and writes the unescaped replacement" "$(sre_body_now)" $'\n@@ remark <text>\n'
-assert_not_contains "and the old line is gone" "$(sre_body_now)" "@@ note <text>"
+assert_contains "and writes the unescaped replacement" "$(fake_body_of 14)" $'\n@@ remark <text>\n'
+assert_not_contains "and the old line is gone" "$(fake_body_of 14)" "@@ note <text>"
 d="$(sre_dir "$sre_item_empty")"
 sra "$d" recommended
 assert_status "an escaped anchor with an empty replacement: apply succeeds" "$st" 0
-assert_not_contains "and the line is removed from the body" "$(sre_body_now)" "@@ note <text>"
+assert_not_contains "and the line is removed from the body" "$(fake_body_of 14)" "@@ note <text>"
 d="$(sre_dir "$sre_item_misc")"
 sra "$d" recommended
 assert_status "a double backslash, a bare backslash, @@x and @@-1 lines: apply succeeds" "$st" 0
-assert_contains "\\\\@@ reads as \\@@, the rest unchanged" "$(sre_body_now)" $'\n\\\\@@ kept\n\\y stays\n@@z\nOmega.'
+assert_contains "\\\\@@ reads as \\@@, the rest unchanged" "$(fake_body_of 14)" $'\n\\\\@@ kept\n\\y stays\n@@z\nOmega.'
 d="$(sre_dir "$sre_item_opt")"
 sra "$d" recommended
 assert_status "escaped lines in an @@ option's blocks: apply succeeds" "$st" 0
-assert_contains "and writes the option's unescaped replacement" "$(sre_body_now)" $'\n@@ remark <text>\n'
+assert_contains "and writes the option's unescaped replacement" "$(fake_body_of 14)" $'\n@@ remark <text>\n'
 
 # --- spec-review check (#1137) ------------------------------------------------
 # A round's batch validated before the batch question: everything apply checks
@@ -2438,19 +2437,6 @@ d="$(src_dir)"
 src_view_unwritable src "check" "$d"
 src_view_unwritable src_full_1 "check --full" "$d"
 
-# Block lines that read as grammar are escaped with a leading backslash (#1945).
-d="$(sre_dir "$sre_item_esc")"
-src "$d"
-assert_status "an escaped anchor and replacement: check passes" "$st" 0
-d="$(sre_dir "$sre_item_empty")"
-src "$d"
-assert_status "an escaped anchor with an empty replacement: check passes" "$st" 0
-d="$(sre_dir "$sre_item_misc")"
-src "$d"
-assert_status "a double backslash, a bare backslash, @@x and @@-1 lines: check passes" "$st" 0
-d="$(sre_dir "$sre_item_opt")"
-src "$d"
-assert_status "escaped lines in an @@ option's blocks: check passes" "$st" 0
 # A comment's quote: an escaped line folds in; an unescaped one keeps the
 # existing message, no hint.
 sre_quote_item() {
