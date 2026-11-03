@@ -205,28 +205,23 @@ branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
-# git_fails_bin <pattern>: a new directory holding a git that fails when its
-# arguments, space-joined and padded with a space either side, match the glob
-# <pattern>, and passes every other call through; first on PATH, it fails
-# those calls and nothing else.
-git_fails_bin() {
+# fails_bin <command> <pattern>: a new directory holding a <command> that fails
+# when its arguments, space-joined and padded with a space either side, match
+# the glob <pattern>, and passes every other call through to the real one;
+# first on PATH, it fails those calls and nothing else.
+fails_bin() {
   local dir
   dir="$(mktemp -d)"
-  writeln '#!/bin/sh' 'case " $* " in '"$1"') exit 1 ;; esac' "exec $(command -v git) \"\$@\"" >"$dir/git"
-  chmod +x "$dir/git"
+  writeln '#!/bin/sh' 'case " $* " in '"$2"') exit 1 ;; esac' "exec $(command -v "$1") \"\$@\"" >"$dir/$1"
+  chmod +x "$dir/$1"
   printf '%s\n' "$dir"
 }
-# state_write_fails_bin: a new directory holding a mktemp that fails for a
-# state.json.* template - the temp file every state write makes - and passes
-# every other call through to the real one; first on PATH, it fails state
-# writes and nothing else. Unlike chmod a-w, it also fails as root.
-state_write_fails_bin() {
-  local dir
-  dir="$(mktemp -d)"
-  writeln '#!/bin/sh' 'case "$*" in *state.json.*) exit 1 ;; esac' "exec $(command -v mktemp) \"\$@\"" >"$dir/mktemp"
-  chmod +x "$dir/mktemp"
-  printf '%s\n' "$dir"
-}
+# git_fails_bin <pattern>: a fails_bin for git.
+git_fails_bin() { fails_bin git "$1"; }
+# state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*
+# template - the temp file every state write makes - and nothing else. Unlike
+# chmod a-w, it also fails as root.
+state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
 # nowalk_bin: a git_fails_bin that fails `worktree list` alone, so it fails the
 # checkouts walk and nothing else.
 nowalk_bin() { git_fails_bin '" worktree list "*'; }

@@ -1718,8 +1718,9 @@ fake_github
 fake_pr 7 open orch/1-failedready main
 fake_pr_draft 7
 bad="$(state_write_fails_bin)"
-out="$(PATH="$bad:$PATH" "$ORCH" review ready 2>/tmp/rr_err.$$)"; st=$?
-err="$(cat /tmp/rr_err.$$)"; rm -f /tmp/rr_err.$$
+err_file="$(mktemp)"
+out="$(PATH="$bad:$PATH" "$ORCH" review ready 2>"$err_file")"; st=$?
+err="$(cat "$err_file")"
 assert_ne "a failed phase write exits non-zero" "$st" 0
 assert_contains "naming the key and the state file" "$err" \
   "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
@@ -1743,8 +1744,9 @@ fake_pr_draft 9
 fake_issue 7 open ready-for-agent orch:review orch:running
 fake_claim_seed 7
 bad="$(state_write_fails_bin)"
-out="$(PATH="$bad:$PATH" ORCH_AUTOPILOT=1 "$ORCH" review ready 2>/tmp/rr_err.$$)"; st=$?
-err="$(cat /tmp/rr_err.$$)"; rm -f /tmp/rr_err.$$
+err_file="$(mktemp)"
+out="$(PATH="$bad:$PATH" ORCH_AUTOPILOT=1 "$ORCH" review ready 2>"$err_file")"; st=$?
+err="$(cat "$err_file")"
 assert_ne "a failed phase write exits non-zero" "$st" 0
 assert_contains "naming the phase and the state file" "$err" \
   "could not record phase done in $PWD/.orchestrator/state.json - writes that landed: marked PR #9 ready, moved the phase label to orch:done; the claim stays held"
