@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.33
+
+Internal cleanup of the spec review's uncited-finding check and its tests: one loop over the lens findings, duplicate test cases removed, test helpers reused, and `spec_review_item_unnamed` renamed `spec_review_item_resumed_as_recommended`. No behaviour changes.
+
 ## 4.43.32
 
 `orch.sh pr fetch` now writes a PR body with LF line endings, and `orch.sh review-pass` reads the PR body through that same LF read.
