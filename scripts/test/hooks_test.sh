@@ -581,7 +581,7 @@ nb_event_at() {
   jq -n --arg f "$1" --arg sid "$2" --arg cwd "$3" \
     '{hook_event_name:"PreToolUse", tool_name:"NotebookEdit", session_id:$sid, cwd:$cwd, tool_input:{notebook_path:$f}}'
 }
-nb_src_deny='this is a planning session and no flow has'
+src_deny='this is a planning session and no flow has'
 out="$(nb_event_at "$REPO/analysis/model.ipynb" s1 "$REPO" | "$GUARD")"
 assert_eq "denies a NotebookEdit of a repo source notebook" "$(bash_hook_decision "$out")" "deny"
 assert_empty "allows a NotebookEdit of a planning-allowlist path" \
@@ -592,7 +592,7 @@ assert_contains "redirects a NotebookEdit of GLOSSARY.md to the records reason" 
   "$(nb_event_at "$REPO/GLOSSARY.md" s1 "$REPO" | "$GUARD" | jq -r '.reason')" "'GLOSSARY.md' is a record of decisions"
 out="$(nb_event_at "$REPO/docs/agents/n.ipynb" s1 "$REPO" | jq --arg f "$REPO/src/x.ts" '.tool_input.file_path=$f' | "$GUARD")"
 assert_contains "judges a payload with file_path and notebook_path by file_path" \
-  "$(printf '%s' "$out" | jq -r '.reason')" "$nb_src_deny"
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
 out="$(edit_event "$REPO/src/x.ts" s1 | jq '.tool_name="MultiEdit"' | "$GUARD")"
 assert_eq "denies a MultiEdit of a repo source file" "$(bash_hook_decision "$out")" "deny"
 assert_eq "hooks.json registers hook-guard.sh under PreToolUse with matcher Edit|Write|MultiEdit|NotebookEdit" \
@@ -608,7 +608,6 @@ ln -s "$OUTSIDE" "$REPO/src/out"
 ln -s ../../src/real.ts "$REPO/docs/agents/toSrc.ts"
 ln -s ../../src/notyet.ts "$REPO/docs/agents/dangling.ts"
 ln -s loop "$REPO/src/loop"
-src_deny='this is a planning session and no flow has'
 out="$(edit_event_at "$LINK/src/x.ts" s1 "$LINK" | "$GUARD")"
 assert_eq "denies a source edit via a symlinked repo, cwd the link" \
   "$(bash_hook_decision "$out")" "deny"
