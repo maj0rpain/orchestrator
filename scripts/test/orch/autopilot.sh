@@ -1442,7 +1442,7 @@ echo
 echo "autopilot tick trust"
 tick_fixture
 top="$(git rev-parse --show-toplevel)"
-pt_issue() { # <issue> <author> <association> [<editor> [<renamer>]]: a labelled spec issue with that authorship
+pt_issue() { # <issue> <author> <association> [<editor>]: a labelled spec issue with that authorship
   fake_issue "$1" open ready-for-agent orch:spec
   fake_issue_title "$1" "Trust $1"
   fake_issue_authorship "$@"
