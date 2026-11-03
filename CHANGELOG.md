@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.5
+
+docs_lint's "no pipe into a quiet grep or head" rule now scans the test runners too, and every flagged site is converted, so a killed writer's "Broken pipe" can no longer fail a test section.
+
 ## 4.44.4
 
 The gh test fake now reads a PR's head through one rule in all three reads: an absent head is forty zeros and an empty head stands for GitHub's null head.
