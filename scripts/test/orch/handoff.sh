@@ -237,9 +237,14 @@ out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
 assert_status "and still fails an incomplete one" "$st" 1
 rm -f "$(dirname "$h")/spec-paused" "$(dirname "$h")/spec-round"
 complete_handoff "$h"
+# A truncated state.json is refused, not read as a pre-1.0.0 flow (#1929).
+literal_handoff spec >"$h"
+state_truncate
+out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
+assert_state_unreadable "handoff validate" 1 "$out" "$st"
 restore_suite_env
 
-# --- handoff section --------------------------------------------------------
+# --- handoff section--------------------------------------------------------
 # The review loop's driver reads Rejected alternatives and Deviations through
 # this rather than reading whole handoffs, so it has to print exactly one
 # section's body and nothing of its neighbours.
