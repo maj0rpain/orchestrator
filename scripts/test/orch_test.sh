@@ -292,15 +292,12 @@ refuse_selection() {
 if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   split_branches "$ORCH_TEST_ONLY"
   if [ "${#orch_branches[@]}" -gt 1 ]; then
-    orch_dead=()
+    orch_lines=()
     for orch_branch in "${orch_branches[@]}"; do
-      printf '%s\n' "$orch_titles" | grep -qiE -- "$orch_branch" || orch_dead+=("$orch_branch")
+      printf '%s\n' "$orch_titles" | grep -qiE -- "$orch_branch" ||
+        orch_lines+=("orch_test.sh: ORCH_TEST_ONLY branch '$orch_branch' matches no section")
     done
-    if [ "${#orch_dead[@]}" -gt 0 ]; then
-      orch_lines=()
-      for orch_i in "${!orch_dead[@]}"; do
-        orch_lines+=("orch_test.sh: ORCH_TEST_ONLY branch '${orch_dead[orch_i]}' matches no section")
-      done
+    if [ "${#orch_lines[@]}" -gt 0 ]; then
       refuse_selection "${orch_lines[@]}"
     fi
   fi
