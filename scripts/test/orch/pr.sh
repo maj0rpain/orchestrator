@@ -797,6 +797,17 @@ assert_status "a state.json that cannot be read is refused (#1334)" "$st" 2
 assert_contains "naming doctor --flow" "$(cat "$errf")" \
   "orch: state.json cannot be read - run orch.sh doctor --flow"
 assert_eq "leaving the PR a draft" "$(fake_pr_draft_of 57)" "yes"
+# doctor --flow's remedy for a done flow with a draft PR: the done flow's hold
+# does not refuse, so the gate is what answers.
+printf '{"slug":"x","phase":"done","issue":30,"branch":"quick/12-foo"}\n' >"$state_file"
+rm -rf "$ORCH_GH_FAKE_STORE/checks"
+fake_checks 57 required failing
+fake_pr_draft 57
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "a done flow's branch gets past the guard and is refused at the gate" "$st" 2
+assert_contains "naming the failed checks" "$(cat "$errf")" "has failed checks"
+assert_eq "leaving the PR a draft behind a done flow" "$(fake_pr_draft_of 57)" "yes"
+rm -rf "$ORCH_GH_FAKE_STORE/checks"
 rm -f "$state_file"
 
 out="$("$ORCH" pr ready extra 2>"$errf")"; st=$?
