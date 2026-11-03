@@ -10,8 +10,8 @@
 # in chat, handing the view back with the instruction to end the turn on it
 # and the question in plain text, not the ask tool (#1350, ADR-0051):
 # some hosts hide a long text written in the same response as a tool call.
-# The short confirmation ask after a near-miss answer passes, its view
-# already in the turn-final reply above.
+# The short confirmation ask after a near-miss answer passes: the human's
+# near-miss message disarmed the guard.
 #
 # The arming, disarming, paste matching, re-read window and fail-open cases
 # are paste-guard.sh's, shared with the Stop guard, hook-paste-stop-guard.sh.
