@@ -118,7 +118,7 @@ triage_state() {
   local role label out=""
   for role in $TRIAGE_ROLES; do
     label="$(triage_label_for "$role")"
-    list_has "$1" "$label" && out="${out:+$out,}$label"
+    label_listed "$1" "$label" && out="${out:+$out,}$label"
   done
   printf '%s\n' "${out:--}"
 }
@@ -231,7 +231,7 @@ cmd_finding_triage_scan() {
     open_issue_read "$issue" "issue #$issue is not open - finding triage takes open filed findings only" labels body
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
-    $all || list_has "$labels" "$triage" \
+    $all || label_listed "$labels" "$triage" \
       || die "issue #$issue is not in triage - it carries no '$triage' label"
     nums="$issue"
   else
@@ -331,7 +331,7 @@ cmd_finding_triage_apply() {
   for role in $TRIAGE_ROLES; do
     [ "$role" != "$outcome" ] || continue
     label="$(triage_label_for "$role")"
-    if list_has "$labels" "$label"; then remove_opts+=(--remove "$label"); fi
+    if label_listed "$labels" "$label"; then remove_opts+=(--remove "$label"); fi
   done
 
   triage_comment_post gh_err "$issue" "$file" || gh_die "comment on issue #$issue" "$gh_err"
@@ -348,7 +348,7 @@ cmd_finding_triage_apply() {
       gh_or_die "close issue #$issue" adapter_issue_close "$issue" --reason "not planned" ;;
     *)
       category_label_ensure "$category"
-      if list_has "$labels" "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
+      if label_listed "$labels" "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
       gh_or_die "relabel issue #$issue" \
         adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
         ${remove_opts[@]+"${remove_opts[@]}"} ;;
@@ -368,12 +368,12 @@ bundle_member_check() {
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
   for __bmc_role in needs-triage needs-info wontfix; do
     __bmc_label="$(triage_label_for "$__bmc_role")"
-    ! list_has "$__bmc_labels" "$__bmc_label" \
+    ! label_listed "$__bmc_labels" "$__bmc_label" \
       || die "issue #$1 carries '$__bmc_label' - a bundle takes findings already triaged to ready-for-agent or ready-for-human only"
   done
   for __bmc_role in ready-for-agent ready-for-human; do
     __bmc_label="$(triage_label_for "$__bmc_role")"
-    list_has "$__bmc_labels" "$__bmc_label" || continue
+    label_listed "$__bmc_labels" "$__bmc_label" || continue
     [ -z "$__bmc_ready" ] \
       || die "issue #$1 carries both '$__bmc_ready' and '$__bmc_label' - a member carries exactly one"
     __bmc_ready="$__bmc_label"
@@ -420,7 +420,7 @@ cmd_finding_triage_bundle() {
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
     local b_labels
     open_issue_read "$into" "bundle #$into is not open - --into resumes an open bundle only" b_labels
-    list_has "$b_labels" "$BUNDLE_LABEL" \
+    label_listed "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
   else
     $have_title && [ -n "$title" ] && [ -n "$file" ] && [ -n "$state" ] && [ -n "$category" ] || die "$usage"
@@ -436,9 +436,9 @@ cmd_finding_triage_bundle() {
     seen="$seen$m "
     bundle_member_check "$m" labels
     if [ -z "$into" ]; then
-      [ "$state" != ready-for-agent ] || ! list_has "$labels" "$human_label" \
+      [ "$state" != ready-for-agent ] || ! label_listed "$labels" "$human_label" \
         || die "--state ready-for-agent, but issue #$m carries '$human_label' - a bundle is ready-for-human whenever any member is"
-      [ "$category" != enhancement ] || ! list_has "$labels" bug \
+      [ "$category" != enhancement ] || ! label_listed "$labels" bug \
         || die "--category enhancement, but issue #$m carries 'bug' - a bundle is a bug whenever any member is"
     fi
   done

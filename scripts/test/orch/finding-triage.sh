@@ -470,6 +470,12 @@ assert_eq "listing nothing" "$(printf '%s\n' "$out" | grep -c "$(printf '\t')")"
 assert_eq "and changing nothing" "$(fake_snapshot)" "$before_store"
 fake_unfail
 fake_issue 18 closed
+# A finding carrying its labels in another casing is still a filed finding in
+# needs-triage.
+finding 30 "Review:Nit,Needs-Triage" "\`src/other.sh:2\` at $head_sha"
+out="$(scan 30 2>&1)"; st=$?
+assert_status "a finding carrying Review:Nit and Needs-Triage is scanned" "$st" 0
+assert_eq "its triage label recognised in another casing" "$(field_of 30 6 "$out")" "needs-triage"
 restore_suite_env
 
 # --- finding-triage apply -----------------------------------------------------
@@ -741,6 +747,12 @@ triaged 3 "review:nit,triage me,enhancement"
 out="$(apply 3 wontfix --comment-file "$comment" 2>&1)"; st=$?
 assert_eq "wontfix included" "$(fake_labels_of 3)" "enhancement nope review:nit "
 rm docs/agents/triage-labels.md
+# Stale triage and category labels carried in another casing are removed.
+triaged 31 "Review:Major,Needs-Triage,Bug"
+out="$(apply 31 ready-for-human --category enhancement --comment-file "$comment" 2>&1)"; st=$?
+assert_status "applies over labels in another casing" "$st" 0
+assert_eq "removing the stale triage and category labels whatever their casing" \
+  "$(fake_labels_of 31)" "Review:Major enhancement ready-for-human "
 restore_suite_env
 
 # --- finding-triage bundle ----------------------------------------------------
@@ -857,6 +869,12 @@ refused "ready-for-agent with a ready-for-human member" \
   "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent bug 11 13
 refused "enhancement with a bug member" \
   "--category enhancement, but issue #11 carries 'bug'" new_bundle ready-for-human enhancement 11 13
+member 13 "review:nit,Ready-For-Human,enhancement"
+refused "a ready-for-human member in another casing under ready-for-agent" \
+  "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent bug 11 13
+member 13 "review:nit,ready-for-human,Bug"
+refused "a bug member in another casing under enhancement" \
+  "--category enhancement, but issue #13 carries 'bug'" new_bundle ready-for-human enhancement 13 11
 # A member with two faults is refused for the one checked first: the member
 # check before the state, the state before the category.
 member 13 "review:nit,needs-triage,ready-for-human,bug"

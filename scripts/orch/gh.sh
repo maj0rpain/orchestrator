@@ -28,6 +28,15 @@ gh() {
   command gh "$@"
 }
 
+# label_listed <labels> <label>: whether <label> is one of the newline-separated
+# <labels>, matched whole-line, literally and case-insensitively: GitHub's label
+# names are case-insensitive, and it attaches a label in the repo's existing
+# casing. The one label-membership test; list_has is its case-sensitive sibling
+# for what is not a label. Folds ASCII case, as grep -i does.
+label_listed() {
+  [[ $2 != *$'\n'* ]] && grep -qxiF -- "$2" <<<"$1"
+}
+
 # --- gh failure contract (#1022) ----------------------------------------------
 #
 # How a caller reacts to a failed adapter operation. gh_reason cuts gh's stderr
