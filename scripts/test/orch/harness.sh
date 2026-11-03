@@ -53,7 +53,7 @@ notice_wait() {
 pool_cpu_file() { printf '%s 100000\n' "$(($2 * 200000))" >"$1"; }
 
 # stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
-# of all.sh, test_jobs.sh and report.sh beside a passing stub for each name in
+# of ALL_RUNNER_FILES beside a passing stub for each name in
 # SUITES (suites_read first), with <dir>/bin holding links to the tools all.sh
 # needs, the extra ones included, and a shellcheck stub that logs "+" to the log
 # when it starts and "-" when it ends, 0.2 seconds apart. A stub suite logs
@@ -2533,7 +2533,7 @@ unset -f runner_git_isolation
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
-# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh, report.sh and
+# layout: the real affected.sh, ALL_RUNNER_FILES, git_env.sh and
 # test_tree.sh,
 # a harness
 # file holding the three placement sections, a branch section file with two
