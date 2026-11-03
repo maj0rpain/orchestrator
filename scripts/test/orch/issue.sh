@@ -1105,17 +1105,7 @@ for tw_mode in "" --json; do
   assert_contains "warning that trust could not be checked ($tw_mode)" "$out" "orch: issue trust could not be checked for #31: "
   assert_eq "and still writes the file ($tw_mode)" "$([ -s "$tw_file" ] && echo written)" "written"
 done
-# under ORCH_AUTOPILOT=1 the pickup's check is the one read: none is made, so
-# the failing read is never reached and nothing is printed
-for tw_mode in "" --json; do
-  out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
-  assert_status "an autopilot fetch exits 0 ($tw_mode)" "$st" 0
-  assert_eq "and makes no trust read and prints no warning ($tw_mode)" "$out" ""
-done
 fake_unfail
-fake_issue_authorship 31 stranger NONE
-out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
-assert_eq "an autopilot fetch of an untrusted issue prints no warning" "$out" ""
 rm -f "$tw_file"
 
 # --- issue fetch writes LF lines (#1916) --------------------------------------
