@@ -31,7 +31,7 @@
 #                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
-# Always run: docs_lint.sh, orch_test.sh's placement sections (helper
+# Always run: docs_lint.sh, orch_test.sh's placement sections (test-helper
 # placement, gh op placement, marked comment prelude placement), and
 # the shellcheck run, at warning severity, on the changed scripts/**/*.sh
 # files that still exist. Sections are chosen through orch_test.sh's
@@ -190,7 +190,7 @@ harness="scripts/test/orch/harness.sh"
 if [ -f "$harness" ]; then
   while IFS= read -r t; do
     case "$t" in
-      "helper placement ("* | "gh op placement ("* | "marked comment prelude placement ("*)
+      "test-helper placement ("* | "gh op placement ("* | "marked comment prelude placement ("*)
         add_title "$t" ;;
     esac
   done < <(titles_of "$harness")

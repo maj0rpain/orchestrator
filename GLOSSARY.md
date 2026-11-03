@@ -319,11 +319,13 @@ of three states - `ok`, `warn`, or `FAIL` - and the overall report reflects the
 worst state seen without aborting partway through.
 
 **Planning allowlist**:
-The files a planning session may legitimately change: agent docs, and
-scratch and flow-state files. Anything outside it is either source, which
-planning never touches, or a record - the glossary and ADRs - which planning
-never changes in place: a change planning decides for a record is written
-word for word into the spec, or into the linked issue's body for a quick
+The files a planning session may legitimately change: agent docs, and scratch
+files - but never the flow state itself, which only orch.sh writes, nor a
+side checkout's or ticket worktree's files. Anything outside it is either
+source, which planning never touches, or a record - the glossary and ADRs -
+which planning never changes in place: a change planning decides for a record
+is written word for word into the spec, or into the linked issue's body for a
+quick
 implementation, and lands with the change it describes. The edit
 guard denies edits outside it while planning, on a host where the guard
 arms - not Junie (ADR-0025) - and a flow at `done` does not disarm it. A flow
