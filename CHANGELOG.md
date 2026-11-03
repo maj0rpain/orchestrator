@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.14
+
+Fixed an autopilot spec round whose fundamental item could not be applied after the human replied: the first run now only holds the fundamental items back, and the resumed run applies the whole batch in batch order and posts the one changelog.
+
 ## 4.43.13
 
 Share the test harness's job-slot hold, release, notice wait and quota file helpers between its job pool and affected.sh sections.
