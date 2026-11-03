@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.1
+
+The planning edit guard now takes the repo it polices from the edited file instead of the session's current directory, so `cd` into a nested repo, a side checkout, a ticket worktree or outside git no longer disarms it, and a side checkout's source is denied unless its own flow is active.
+
 ## 4.44.0
 
 Autopilot can now sync a done flow's branch with its base. An `orch:sync` label on an open `orch:done` issue is a sync request. The watcher adds it when the issue's PR conflicts with its base, unless `orchestrator.autopilot.auto-sync` is false, and a human can add it by hand or with `orch.sh autopilot sync <issue>`. A tick picks the request up and runs orch-sync's new autopilot branch in the issue's side checkout. That branch merges the base, resolves any conflict, pushes and posts the Merge resolutions comment. The issue stays at `orch:done`, and the human is asked only when the sync is refused, fails, or drops an intent (#2325).
