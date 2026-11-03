@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.11
+
+`orch.sh issue fetch` now writes an issue body with its carriage returns removed, so a spec last edited in the GitHub web UI reaches the spec review as LF lines and its multi-line anchors match.
+
 ## 4.43.10
 
 Simplify the harness's gh op placement check to state its capture-and-append step once, in a loop over its (ops, owners) pairs.
