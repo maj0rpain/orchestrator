@@ -458,17 +458,18 @@ review_standards_mentions() {
   done < <(review_standards_paragraphs "$file" | cut -f2- | grep -oE '`[^`]+`|\]\([^)]+\)')
 }
 
-# review_standards_paragraphs <file>: the paragraphs of the root file <file>,
+# review_standards_paragraphs <file>: the paragraphs of the repo file <file>,
 # one per line, each tagged `U` (unfenced) or `F` (fenced) and a tab before its
-# lines joined by spaces. A paragraph ends at a blank line, an ATX heading
-# outside a fence or a fence delimiter line; a heading is a paragraph of its
-# own; lines inside a fence join into fenced paragraphs; delimiter lines are in
-# no paragraph.
+# lines joined by spaces. A paragraph ends at a blank line (inside a fence or
+# out), an ATX heading outside a fence or a fence delimiter line; a heading is
+# a paragraph of its own; lines inside a fence join into fenced paragraphs;
+# delimiter lines are in no paragraph.
 review_standards_paragraphs() {
   awk "$FENCE_AWK$STANDARDS_HEADING_AWK"'
     function flush() { if (p != "") print kind "\t" p; p = "" }
     { l = $0; sub(/\r$/, "", l); f = fenced(l) }
     f == 2 { flush(); next }
+    f == 1 && l !~ /[^[:space:]]/ { flush(); next }
     f == 1 { kind = "F"; p = (p == "" ? l : p " " l); next }
     is_heading(l) { flush(); print "U\t" l; next }
     l !~ /[^[:space:]]/ { flush(); next }
@@ -478,9 +479,9 @@ review_standards_paragraphs() {
 }
 
 # STANDARDS_HEADING_AWK: awk functions, the one ATX heading rule:
-# is_heading(line) is true for 1 to 6
-# #s, at most 3 spaces in, then a space, a tab or the line's end; heading_text
-# (line) is that heading's text, surrounding whitespace and closing #s trimmed.
+# is_heading(line) is true for 1 to 6 #s, at most 3 spaces in, then a space, a
+# tab or the line's end; heading_text(line) is that heading's text,
+# surrounding whitespace and closing #s trimmed.
 # No interval braces: mawk and BSD awk lack them.
 # shellcheck disable=SC2016 # awk program, not shell
 STANDARDS_HEADING_AWK='
