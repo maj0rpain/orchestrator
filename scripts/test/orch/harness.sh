@@ -806,6 +806,28 @@ sed -i 's/^tally_summary$/rm -f "$tally_file"\ntally_summary/' "$tally_dir/suite
 out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a standalone suite whose tally file is gone exits 1" "$st" 1
 assert_eq "and reports it as a failure" "$(printf '%s\n' "$out" | tail -n 1)" "0 passed, 1 failed"
+# print_fail indents every line of a detail; bad() prints through it.
+cat >"$tally_dir/fail.sh" <<SUITE
+source "$(dirname "$SUITE_SCRIPT")/tally.sh"
+tally_init
+print_fail "one line" "only detail"
+print_fail "many lines" "first
+second
+
+fourth"
+bad "bad many" "alpha
+beta"
+tally_read
+echo "recorded \$FAIL"
+SUITE
+out="$(bash "$tally_dir/fail.sh" 2>&1)"
+assert_eq "print_fail prints a single-line detail under its FAIL line" \
+  "$(printf '%s\n' "$out" | sed -n 1,2p)" "$(printf '  FAIL one line\n     only detail')"
+assert_eq "and indents every line of a multi-line detail, an empty one included" \
+  "$(printf '%s\n' "$out" | sed -n 3,7p)" "$(printf '  FAIL many lines\n     first\n     second\n     \n     fourth')"
+assert_eq "bad() indents a multi-line detail the same way" \
+  "$(printf '%s\n' "$out" | sed -n 8,10p)" "$(printf '  FAIL bad many\n     alpha\n     beta')"
+assert_eq "and records exactly one failure" "$(printf '%s\n' "$out" | tail -n 1)" "recorded 1"
 rm -rf "$tally_dir"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for tally_suite in "${SUITES[@]}"; do

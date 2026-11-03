@@ -1007,5 +1007,5 @@ tally_read
 # A parallel child or the sequential run's subshell hands its counts on to the
 # runner, which prints them; orch_test.sh always sets the counts file.
 # shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
-echo "$PASS $FAIL $SKIP" >"$orch_child_counts"
+echo "$PASS $FAIL $SKIP" >"$orch_counts_file"
 [ "$FAIL" -eq 0 ]

@@ -290,15 +290,14 @@ read_counts() {
   esac
 }
 
-# orch_child_counts names the counts file the summary writes instead of printing
-# its counts. Two runs hold it, through a plain, unexported variable so a suite
-# a section starts in turn holds none: a child of the parallel runner (running
-# its one section), and the subshell of the sequential run (running them all).
-orch_child_counts=""
+# orch_counts_file names the counts file the summary writes instead of printing
+# its counts, held in a plain, unexported variable so a suite a section starts
+# holds none.
+orch_counts_file=""
 if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   orch_child_section="$ORCH_TEST_CHILD_SECTION"
   # shellcheck disable=SC2034 # read by the summary, eval'd from setup.sh
-  orch_child_counts="$ORCH_TEST_CHILD_COUNTS"
+  orch_counts_file="$ORCH_TEST_CHILD_COUNTS"
   unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS
   tally_init
   eval "$(section_text ",$orch_child_section,")"
@@ -344,6 +343,7 @@ else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
 fi
 test_jobs_pool_init orch_test.sh || exit 1
+echo "orch.sh tests"
 if [ "$orch_jobs" -eq 1 ]; then
   # One shell, one slot for the whole run; the runners its sections start
   # run under it.
@@ -352,13 +352,12 @@ if [ "$orch_jobs" -eq 1 ]; then
   # The slot stays with this shell, not with what its sections leave running.
   test_jobs_slot_release "$$"
   tally_init
-  echo "orch.sh tests"
-  orch_child_counts="$(mktemp)" || {
+  orch_counts_file="$(mktemp)" || {
     echo "orch_test.sh: cannot create a temp file for the run's counts" >&2; exit 1; }
   # The sections run in a subshell so an `exit` in one cannot skip the summary;
   # the counts file the summary writes is the proof it ran.
   ( eval "$(section_text "$orch_kept")" ); orch_status=$?
-  if read_counts "$orch_child_counts" "the run" "$orch_status"; then
+  if read_counts "$orch_counts_file" "the run" "$orch_status"; then
     print_summary "$orch_c_pass" "$orch_c_fail" "$orch_c_skip"
     [ "$orch_c_fail" -eq 0 ] && [ "$orch_status" -eq 0 ]
     exit $?
@@ -383,7 +382,11 @@ trap 'test_jobs_stop_children "${orch_pids[@]}"' INT TERM
 IFS=, read -r -a orch_sections <<<"${orch_kept#,}"
 orch_total=${#orch_sections[@]}
 orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_any_failed=0
-echo "orch.sh tests"
+# orch_section_fail <reason> <detail>: print the section's FAIL and count it.
+orch_section_fail() {
+  print_fail "section '$orch_title' $1" "$2"
+  orch_fail=$((orch_fail + 1)); orch_any_failed=1
+}
 while [ "$orch_flushed" -lt "$orch_total" ]; do
   # Start children while a slot is free: a slot is held by every child
   # started and still alive.
@@ -427,9 +430,8 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     orch_title="$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")"
     cat "$orch_buf/$orch_pos.out"
     if [ -n "${orch_timed_out[$orch_flushed]:-}" ]; then
-      print_fail "section '$orch_title' timed out" \
+      orch_section_fail "timed out" \
         "after ${orch_timeout}s; its process tree was stopped"
-      orch_fail=$((orch_fail + 1)); orch_any_failed=1
     elif read_counts "$orch_buf/$orch_pos.counts" "section '$orch_title'" "$orch_status"; then
       orch_pass=$((orch_pass + orch_c_pass)); orch_fail=$((orch_fail + orch_c_fail))
       orch_skip=$((orch_skip + orch_c_skip))
@@ -438,10 +440,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
       orch_fail=$((orch_fail + 1)); orch_any_failed=1
     fi
     if [ -s "$orch_buf/$orch_pos.err" ]; then
-      orch_err_lines="$(sed '2,$s/^/     /' "$orch_buf/$orch_pos.err")"
-      print_fail "section '$orch_title' wrote to stderr" \
-        "$orch_err_lines"
-      orch_fail=$((orch_fail + 1)); orch_any_failed=1
+      orch_section_fail "wrote to stderr" "$(<"$orch_buf/$orch_pos.err")"
     fi
     [ "$orch_status" -eq 0 ] || orch_any_failed=1
     orch_flushed=$((orch_flushed + 1))
