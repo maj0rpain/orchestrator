@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.41
+
+Fix `redo review` and `redo spec` closing the old draft PR without its redo note: the redo now closes the PR, with the note naming the retired `-redo-N` branch, before it retires the branch, because deleting an open PR's head branch makes GitHub close the PR itself and skip the comment.
+
 ## 4.43.40
 
 `orch.sh review file` no longer takes `--pr` or `--sha`: it reads the flow's PR from state and asks GitHub for that PR's URL and remote head commit, so the review loop's closer has no URL or SHA to supply or guess.
