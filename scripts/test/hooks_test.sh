@@ -927,17 +927,6 @@ pg_result "$T3b" toolu_a2 "The user wants to clarify these questions." true
 pg_text "$T3b" "Understood."
 assert_eq "the view pasted in an earlier response after the pass line: allowed" "$(pg_decide "$T3b" toolu_a3)" allow
 
-# A human message: a user entry whose content is a string, as Claude Code
-# writes a typed reply.
-T3h="$PG/turn-final.jsonl"; cp "$T" "$T3h"
-pg_text "$T3h" "$(cat "$PG/batch/view.md")
-
-Answer recommended, none, a departure list, show <n>, or a question."
-jq -nc '{type:"user", message:{role:"user", content:"recommended but not 4"}}' >>"$T3h"
-pg_text "$T3h" "Apply as recommended, except item 4 declined?"
-assert_eq "the view in an earlier turn's final reply, then a human message, then the confirmation ask: allowed" \
-  "$(pg_decide "$T3h")" allow
-
 T3c="$PG/split.jsonl"; cp "$T" "$T3c"
 pg_text "$T3c" "## The batch
 
@@ -1119,28 +1108,17 @@ assert_contains "naming view.md" "$(cat "$PG/reason")" "$PG/batch/view.md"
 assert_eq "its output names no PreToolUse decision" \
   "$(jq -n --arg t "$T" '{transcript_path:$t}' | "$STOP" | jq -r '.hookSpecificOutput // "none"')" none
 
-S1="$PG/stop-earlier-string.jsonl"; cp "$T3" "$S1"
-pg_result "$S1" toolu_now "User has answered your questions: recommended"
-sg_human "$S1" '"what does item 2 change?"'
-pg_text "$S1" "Item 2 makes the term consistent."
-assert_eq "the view pasted, then a human message with string content, then an unrelated reply: allowed" "$(sg_decide "$S1")" allow
-sg_human "$S1" '"never mind, drop it"'
-pg_text "$S1" "Dropped."
-assert_eq "another human and assistant pair: allowed again" "$(sg_decide "$S1")" allow
-
-S2="$PG/stop-earlier-blocks.jsonl"; cp "$T3" "$S2"
-pg_result "$S2" toolu_now "User has answered your questions: recommended"
-sg_human "$S2" '[{"type":"text","text":"what does item 2 change?"}]'
-pg_text "$S2" "Item 2 makes the term consistent."
-assert_eq "the view pasted, then a human message of text blocks, then an unrelated reply: allowed" "$(sg_decide "$S2")" allow
-
 # A human message after the arming pass line disarms both guards; a re-run
 # check arms them again (#1917).
 D1="$PG/disarm-unpasted.jsonl"; cp "$T" "$D1"
-sg_human "$D1" '"never mind, drop it"'
-pg_text "$D1" "Sure, what next?"
-assert_eq "the view never pasted, then a human message, then an unrelated ask: allowed" "$(pg_decide "$D1")" allow
-assert_eq "and the Stop guard allows" "$(sg_decide "$D1")" allow
+sg_human "$D1" '"recommended but not 4"'
+pg_text "$D1" "Apply as recommended, except item 4 declined?"
+assert_eq "the view never pasted, then a near-miss answer, then the confirmation ask: allowed" "$(pg_decide "$D1")" allow
+D1b="$PG/disarm-blocks.jsonl"; cp "$T" "$D1b"
+sg_human "$D1b" '[{"type":"text","text":"what does item 2 change?"}]'
+pg_text "$D1b" "Item 2 makes the term consistent."
+assert_eq "the view never pasted, then a human message of text blocks, then an unrelated ask: allowed" "$(pg_decide "$D1b")" allow
+assert_eq "and the Stop guard allows" "$(sg_decide "$D1b")" allow
 D0="$PG/disarm-midturn.jsonl"; cp "$T" "$D0"
 sg_human "$D0" '"never mind, drop it"'
 assert_eq "mid-turn fail-open: a pass line, a human message, then Stop with no paste: the Stop guard allows" "$(sg_decide "$D0")" allow
@@ -1157,18 +1135,12 @@ D4="$PG/disarm-not-human.jsonl"; cp "$T" "$D4"
 pg_bash "$D4" toolu_d4 "git status"
 pg_result "$D4" toolu_d4 "nothing to commit"
 sg_human "$D4" '"Base directory for this skill: /plugin/skills/orch-spec-review"' true
+sg_human "$D4" '[{"type":"text","text":"<local-command-caveat>Caveat</local-command-caveat>"}]' true
+pg_entry "$D4" user '[{"type":"tool_result","tool_use_id":"toolu_d4","content":"ok"},{"type":"text","text":"note"}]'
+pg_entry "$D4" user '[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]'
 pg_text "$D4" "Working."
-assert_eq "a tool result and an isMeta entry after the pass line do not disarm: an ask is refused" "$(pg_decide "$D4")" deny
+assert_eq "none of a tool result, an isMeta string or text-block entry, a tool_result with text, or a non-text-only array after the pass line disarms: an ask is refused" "$(pg_decide "$D4")" deny
 assert_eq "and the Stop guard blocks" "$(sg_decide "$D4")" block
-
-S3="$PG/stop-tool-results.jsonl"; cp "$T" "$S3"
-pg_text "$S3" "$(cat "$PG/batch/view.md")"
-pg_bash "$S3" toolu_s3 "git status"
-pg_result "$S3" toolu_s3 "nothing to commit"
-sg_human "$S3" '"Base directory for this skill: /plugin/skills/orch-spec-review"' true
-sg_human "$S3" '[{"type":"text","text":"<local-command-caveat>Caveat</local-command-caveat>"}]' true
-pg_text "$S3" "Answer recommended, none, a departure list, show <n>, or a question."
-assert_eq "tool results and isMeta entries after the paste do not mark the boundary: allowed" "$(sg_decide "$S3")" allow
 
 assert_eq "a final reply holding the view only split across two text blocks: refused" "$(sg_decide "$T3c")" block
 

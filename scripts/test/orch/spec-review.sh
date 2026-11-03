@@ -8,6 +8,31 @@
 # round_snapshot <dir>: dir_snapshot without the view.md a passing check
 # writes - the rest of the round directory a check must leave as it was.
 round_snapshot() { dir_snapshot "$1" | grep -v ' \./view\.md$'; }
+# sra <dir> <answer> [flags...]: apply on issue #14, standalone, round
+# $sra_rnd (1/2 when unset), its output and status into out and st. With
+# $sra_in = flow (see sra_in_mode) it runs in the flow instead, without
+# --issue 14.
+sra() {
+  local d="$1" a="$2" issue=(--issue 14)
+  shift 2
+  [ "${sra_in:-issue}" = flow ] && issue=()
+  out="$("$ORCH" spec-review apply "$d" "$a" --round "${sra_rnd:-1/2}" "${issue[@]}" "$@" 2>&1)"; st=$?
+}
+# sra_refused <label> <dir> <want-in-message> <answer> [flags...]: apply is
+# refused, naming <want>, with nothing written: spec.md, changelog.md and
+# settled.md as they were, and the store untouched.
+sra_refused() {
+  local label="$1" d="$2" want="$3" before snap
+  shift 3
+  before="$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)"
+  snap="$(fake_snapshot)"
+  sra "$d" "$@"
+  assert_status "$label: refused" "$st" 1
+  assert_contains "$label: naming it" "$out" "$want"
+  assert_eq "$label: spec.md, changelog.md and settled.md unchanged" \
+    "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)" "$before"
+  assert_eq "$label: no GitHub write" "$(fake_snapshot)" "$snap"
+}
 # check_refused <runner> <label> <dir> <stderr>: <runner> <dir> - a check
 # run that sets out, err and st - exits 1 with exactly <stderr>, nothing on
 # stdout, and <dir> unchanged.
@@ -372,16 +397,6 @@ BATCH
   fake_issue_body 14 "$sra_body"
   printf '%s\n' "$d"
 }
-# sra <dir> <answer> [flags...]: apply on issue #14, standalone, round
-# $sra_rnd (1/2 when unset), its output and status into out and st. With
-# $sra_in = flow (see sra_in_mode) it runs in the flow instead, without
-# --issue 14.
-sra() {
-  local d="$1" a="$2" issue=(--issue 14)
-  shift 2
-  [ "${sra_in:-issue}" = flow ] && issue=()
-  out="$("$ORCH" spec-review apply "$d" "$a" --round "${sra_rnd:-1/2}" "${issue[@]}" "$@" 2>&1)"; st=$?
-}
 # sra_in_mode <issue|flow>: a fresh start for sra in <mode> - no state.json,
 # and in flow mode a flow, sra, on issue 14. Sets sra_in, which sra reads;
 # every loop over both modes ends with sra_in_mode issue.
@@ -391,21 +406,6 @@ sra_in_mode() {
   if [ "$1" = flow ]; then
     "$ORCH" init sra >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
   fi
-}
-# sra_refused <label> <dir> <want-in-message> <answer> [flags...]: apply is
-# refused, naming <want>, with nothing written: spec.md, changelog.md and
-# settled.md as they were, and the store untouched.
-sra_refused() {
-  local label="$1" d="$2" want="$3" before snap
-  shift 3
-  before="$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)"
-  snap="$(fake_snapshot)"
-  sra "$d" "$@"
-  assert_status "$label: refused" "$st" 1
-  assert_contains "$label: naming it" "$out" "$want"
-  assert_eq "$label: spec.md, changelog.md and settled.md unchanged" \
-    "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)" "$before"
-  assert_eq "$label: no GitHub write" "$(fake_snapshot)" "$snap"
 }
 
 # srr_resume <dir>: apply --resume for round $sra_rnd (1/2 when unset).
@@ -984,6 +984,7 @@ assert_contains "saying it carries no mark" "$out" "a resolved item carries no m
 
 d="$(srf_dir)"
 snap="$(fake_snapshot)"
+# Also pins a finding cited only by a fundamental item as covered on both runs.
 ORCH_AUTOPILOT=1 sra "$d" recommended
 assert_status "a round with a fundamental item holds" "$st" 0
 assert_eq "the hold-back leaves no apply-answer" "$(on_disk "$d/apply-answer")" absent
@@ -1023,7 +1024,7 @@ ORCH_AUTOPILOT=1 sra "$d" 3B
 assert_status "and apply without --resume is refused" "$st" 1
 assert_contains "naming --resume" "$out" "--resume"
 assert_eq "fundamental.md is kept" "$(on_disk "$d/fundamental.md")" present
-ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 >/dev/null 2>&1; st=$?
+ORCH_AUTOPILOT=1 srr_resume "$d"
 assert_status "apply --resume finishes the round" "$st" 0
 assert_eq "with exactly one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
 assert_eq "fundamental.md removed" "$(on_disk "$d/fundamental.md")" absent
@@ -1773,6 +1774,8 @@ BATCH
 d="$(src_dir)"
 before="$(round_snapshot "$d")"
 src "$d"
+# Also pins a finding cited by each item kind (apply, decline, decision,
+# resolved) as covered.
 assert_status "a clean batch passes" "$st" 0
 assert_eq "with a one-line summary on stderr" "$err" \
   "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
@@ -2108,6 +2111,7 @@ BATCH
 printf '@@ finding 1\nThe plan decided hourly; the spec says nightly.\n' >"$d/lens-fidelity.md"
 printf '@@ none\n' >"$d/lens-consistency.md"
 printf '@@ none\n' >"$d/lens-implementability.md"
+# Also pins that a @@ none lens and a not-run lens need no citation.
 check_passes src "a flow batch, the fenced edit as its summary and reason alone" "$d" '## The batch
 
 ### Lenses
@@ -2214,7 +2218,7 @@ check_refused src "a missing @@ lens line" "$d" \
 d="$(src_dir)"
 src "$d"
 assert_status "check passes the batch" "$st" 0
-out="$("$ORCH" spec-review apply "$d" all --round 1/1 --issue 14 2>&1)"; st=$?
+sra_rnd=1/1 sra "$d" all
 assert_status "which apply then takes with all" "$st" 0
 assert_eq "every edit landing" "$(cat "$d/spec.md")" '# Spec
 
@@ -2238,7 +2242,7 @@ src_dir_unmatched_anchor() {
 for answer in none "3A, -2"; do
   d="$(src_dir_unmatched_anchor)"
   snap="$(fake_snapshot)"
-  out="$("$ORCH" spec-review apply "$d" "$answer" --round 1/1 --issue 14 2>&1)"; st=$?
+  sra_rnd=1/1 sra "$d" "$answer"
   assert_status "apply '$answer' refuses a declined item's bad anchor" "$st" 1
   assert_eq "apply '$answer' names the bad anchor's batch line" "$out" \
     "orch: batch.md line 18: item 2: its anchor matches no text in the body - nothing applied, nothing written"
@@ -2249,7 +2253,7 @@ d="$(src_dir_unmatched_anchor)"
 src "$d"
 assert_eq "check names the bad anchor's line" "$err" \
   "orch: batch.md line 18: item 2: its anchor matches no text in the body"
-out="$("$ORCH" spec-review apply "$d" all --round 1/1 --issue 14 2>&1)"; st=$?
+sra_rnd=1/1 sra "$d" all
 assert_status "apply all refuses it" "$st" 1
 assert_eq "naming the same batch line" "$out" \
   "orch: batch.md line 18: item 2: its anchor matches no text in the body - nothing applied, nothing written"
@@ -3067,105 +3071,6 @@ assert_contains "and saying where they go" "$err" "recommend-decline"
 sra_refused "apply refuses the same batch" "$d" "batch.md leaves findings uncited: consistency 2, testability 1" recommended
 assert_eq "no applied.log written" "$(on_disk "$d/applied.log")" absent
 
-# Resolved, recommend-decline and decision citations each cover a finding.
-unc_kinds='@@ lens fidelity ran
-@@ lens consistency not-run timed out
-@@ lens testability not-run timed out
-@@ lens implementability not-run timed out
-
-@@ item 1 fidelity apply minor
-@@ finding fidelity 1
-@@ summary Alpha primed
-@@ anchor
-Alpha line.
-@@ replace
-Alpha prime line.
-@@ end
-@@ item 2 fidelity resolved
-@@ finding fidelity 2
-@@ resolved-by 1
-@@ item 3 fidelity decline material the plan chose this
-@@ finding fidelity 3
-@@ summary Beta reversed
-@@ anchor
-Beta line.
-@@ replace
-Beta reversed.
-@@ end
-@@ why Beta contradicts the plan
-@@ item 4 fidelity decision A material
-@@ finding fidelity 4
-@@ why Gamma must be testable
-@@ option A Keep gamma
-@@ summary Gamma kept
-@@ anchor
-Gamma line.
-@@ replace
-Gamma line (kept).
-@@ end
-@@ option B Drop gamma
-@@ summary Gamma dropped
-@@ anchor
-Gamma line.
-@@ replace
-Gamma dropped.
-@@ end'
-d="$(unc_dir "$unc_kinds" fidelity=4)"
-src "$d"
-assert_status "findings cited only by resolved, decline and decision items pass" "$st" 0
-
-# A @@ none lens and a not-run lens need no citation.
-unc_none='@@ lens fidelity ran
-@@ lens consistency ran
-@@ lens testability not-run timed out
-@@ lens implementability not-run timed out
-
-@@ item 1 fidelity apply minor
-@@ finding fidelity 1
-@@ summary Alpha primed
-@@ anchor
-Alpha line.
-@@ replace
-Alpha prime line.
-@@ end'
-d="$(unc_dir "$unc_none" fidelity=1 consistency=0)"
-src "$d"
-assert_status "a none lens and a not-run lens beside cited lenses pass" "$st" 0
-
-# Autopilot: a finding cited only by a fundamental item is covered on both runs.
-unc_fund='@@ lens fidelity ran
-@@ lens consistency not-run timed out
-@@ lens testability not-run timed out
-@@ lens implementability not-run timed out
-
-@@ item 1 fidelity apply minor
-@@ finding fidelity 1
-@@ summary Alpha primed
-@@ anchor
-Alpha line.
-@@ replace
-Alpha prime line.
-@@ end
-@@ item 2 fidelity apply fundamental
-@@ finding fidelity 2
-@@ summary Beta reversed
-@@ anchor
-Beta line.
-@@ replace
-Beta reversed.
-@@ end
-@@ why Beta contradicts the plan'
-d="$(unc_dir "$unc_fund" fidelity=2)"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
-assert_status "the first apply holds the fundamental item back and passes" "$st" 0
-assert_eq "fundamental.md holds the held item" "$(grep -c '^@@ item 2 ' "$d/fundamental.md")" 1
-assert_eq "no changelog is posted on the first run" "$(fake_comments_of 14)" ""
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
-assert_status "the resumed apply over the same batch passes too" "$st" 0
-assert_eq "the resumed run removed fundamental.md" "$(on_disk "$d/fundamental.md")" absent
-assert_contains "the held edit landed" "$(cat "$d/spec.md")" "Beta reversed."
-assert_contains "the changelog is posted" "$(fake_comments_of 14)" "## Spec review"
-
 # --- spec-review check on a CRLF body (#1916) ---------------------------------
 # A body last edited in the GitHub web UI is stored with CRLF; issue fetch
 # writes it as LF, so a multi-line anchor matches and a round publishes LF.
@@ -3196,7 +3101,7 @@ BATCH
 printf '@@ finding 1\nMerge them.\n' >"$d/lens-fidelity.md"
 out="$("$ORCH" spec-review check "$d" 2>&1)"; st=$?
 assert_status "check passes a two-line anchor on a body fetched from CRLF" "$st" 0
-out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
+sra "$d" recommended
 assert_status "apply on that batch succeeds" "$st" 0
 assert_contains "and publishes the edit" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" "Alpha and Beta line."
 assert_eq "with no CR in the published body" "$(tr -cd '\r' <"$ORCH_GH_FAKE_STORE/issues/14/body" | wc -c | tr -d ' ')" "0"
