@@ -45,8 +45,6 @@ assert_marker_absent()  { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then bad "$1" 
 # Write, or remove, both markers of session <id>.
 make_markers()   { : >"$TMPDIR/orchestrator-grilling-$1"; : >"$TMPDIR/orchestrator-planning-$1"; }
 remove_markers() { rm -f "$TMPDIR/orchestrator-grilling-$1" "$TMPDIR/orchestrator-planning-$1"; }
-# dec: print the permissionDecision of the hook JSON on stdin (allow if none).
-dec() { jq -r '.hookSpecificOutput.permissionDecision // "allow"'; }
 
 # The temp root, created before anything else: TMPDIR is exported as it, so
 # every mktemp below lands inside it, and the hooks' markers too. The EXIT trap
@@ -664,29 +662,30 @@ git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 git -C "$REPO" worktree add -q -b side "$REPO/.orchestrator/checkouts/foo"
 git -C "$REPO" worktree add -q -b tkt "$REPO/.orchestrator/worktrees/t1"
 SIDE="$REPO/.orchestrator/checkouts/foo"
+REPO_P="$(cd "$REPO" && pwd -P)"
 mkdir -p "$SIDE/src" "$SIDE/docs/adr" "$SIDE/docs/agents" "$NEST/src"
 assert_eq "denies main source with cwd in a nested repo" \
-  "$(edit_event_at "$REPO/src/x.ts" s1 "$NEST" | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$REPO/src/x.ts" s1 "$NEST" | "$GUARD")")" "deny"
 assert_eq "denies main source with cwd in a side checkout" \
-  "$(edit_event_at "$REPO/src/x.ts" s1 "$SIDE" | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$REPO/src/x.ts" s1 "$SIDE" | "$GUARD")")" "deny"
 assert_eq "denies main source with cwd /" \
-  "$(edit_event_at "$REPO/src/x.ts" s1 / | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$REPO/src/x.ts" s1 / | "$GUARD")")" "deny"
 assert_eq "denies a side checkout's source from the main cwd" \
-  "$(edit_event_at "$SIDE/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$SIDE/src/x.ts" s1 "$REPO" | "$GUARD")")" "deny"
 assert_eq "denies a ticket worktree's source from the main cwd" \
-  "$(edit_event_at "$REPO/.orchestrator/worktrees/t1/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$REPO/.orchestrator/worktrees/t1/src/x.ts" s1 "$REPO" | "$GUARD")")" "deny"
 assert_eq "denies a source edit inside a nested repo" \
-  "$(edit_event_at "$NEST/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$NEST/src/x.ts" s1 "$REPO" | "$GUARD")")" "deny"
 assert_eq "denies a new file in a missing directory, cwd /" \
-  "$(edit_event_at "$(cd "$REPO" && pwd -P)/nodir/deeper/new.ts" s1 / | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$REPO_P/nodir/deeper/new.ts" s1 / | "$GUARD")")" "deny"
 assert_eq "denies an edit of a hook under the repo's .git, cwd /" \
-  "$(edit_event_at "$(cd "$REPO" && pwd -P)/.git/hooks/pre-commit" s1 / | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$REPO_P/.git/hooks/pre-commit" s1 / | "$GUARD")")" "deny"
 git -C "$REPO" -c protocol.file.allow=always -c user.email=t@t -c user.name=t submodule add -q "$NEST" lib >/dev/null 2>&1
 assert_eq "denies an edit of a hook under a submodule's git dir, cwd /" \
-  "$(edit_event_at "$(cd "$REPO" && pwd -P)/.git/modules/lib/hooks/pre-commit" s1 / | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$REPO_P/.git/modules/lib/hooks/pre-commit" s1 / | "$GUARD")")" "deny"
 SL2="$(mktemp -d)"; ln -s "$REPO" "$SL2/link"
 assert_eq "denies via a symlinked repo with cwd in the nested repo" \
-  "$(edit_event_at "$SL2/link/src/x.ts" s1 "$NEST" | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$SL2/link/src/x.ts" s1 "$NEST" | "$GUARD")")" "deny"
 rm -rf "$SL2"
 assert_contains "denies a side checkout ADR with the records reason" \
   "$(edit_event_at "$SIDE/docs/adr/0001-x.md" s1 "$REPO" | "$GUARD" | jq -r '.reason')" "is a record of decisions"
@@ -704,13 +703,42 @@ rm -rf "$SEPWT" "${SEPGD%/*}"
 SEPWT="$(mktemp -d)"; SEPIN="$REPO/store.git"
 git -C "$SEPWT" init -q --separate-git-dir "$SEPIN"
 assert_eq "denies a hook inside a separate git dir placed in a repo's working tree" \
-  "$(edit_event_at "$(cd "$SEPIN" && pwd -P)/hooks/pre-commit" s1 / | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$(cd "$SEPIN" && pwd -P)/hooks/pre-commit" s1 / | "$GUARD")")" "deny"
 rm -rf "$SEPWT" "$SEPIN"
+# A repo whose toplevel is / is guarded like any other. A stub git first on
+# PATH answers rev-parse --show-toplevel with / and hands the rest to real git.
+ROOTGIT="$(mktemp -d)"
+REAL_GIT="$(command -v git)"
+cat >"$ROOTGIT/git" <<STUB
+#!/usr/bin/env bash
+case "\$*" in *"rev-parse --show-toplevel"*) echo /; exit 0 ;; esac
+exec "$REAL_GIT" "\$@"
+STUB
+chmod +x "$ROOTGIT/git"
+out="$(edit_event_at "/orch-rootrepo-nodir/src/x.ts" s1 / | PATH="$ROOTGIT:$PATH" "$GUARD")"
+assert_eq "denies a source edit in a repo at /" "$(bash_hook_decision "$out")" "deny"
+assert_contains "names a repo-at-/ file's path with no leading /" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "'orch-rootrepo-nodir/src/x.ts'"
+out="$(edit_event_at "/.orchestrator/state.json" s1 / | PATH="$ROOTGIT:$PATH" "$GUARD")"
+assert_contains "denies the flow state file of a repo at / as flow state" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "written only by orch.sh"
+rm -rf "$ROOTGIT"
+# A repo whose core.worktree names another directory: a file under the repo
+# but outside that working tree is somebody else's business.
+CWT="$(mktemp -d)"; CWT_OTHER="$(mktemp -d)"
+git -C "$CWT" init -q
+git -C "$CWT" config core.worktree "$CWT_OTHER"
+mkdir -p "$CWT/outside"
+assert_empty "allows a file outside the core.worktree working tree" \
+  "$(edit_event_at "$(cd "$CWT" && pwd -P)/outside/x.ts" s1 / | "$GUARD")"
+rm -rf "$CWT" "$CWT_OTHER"
+assert_empty "allows a file under a missing top-level directory" \
+  "$(edit_event_at "/orch-no-such-top-dir/x.ts" s1 / | "$GUARD")"
 write_flow_state_at "$SIDE" slug x phase implement issue null
 assert_empty "allows the side checkout's source when its flow is active" \
   "$(edit_event_at "$SIDE/src/x.ts" s1 "$REPO" | "$GUARD")"
 assert_eq "denies main source while only a side checkout's flow is active" \
-  "$(edit_event_at "$REPO/src/x.ts" s1 "$SIDE" | "$GUARD" | dec)" "deny"
+  "$(bash_hook_decision "$(edit_event_at "$REPO/src/x.ts" s1 "$SIDE" | "$GUARD")")" "deny"
 git -C "$REPO" worktree remove --force "$SIDE"
 git -C "$REPO" worktree remove --force "$REPO/.orchestrator/worktrees/t1"
 rm -rf "$REPO/vendor" "$REPO/.orchestrator"
