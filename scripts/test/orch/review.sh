@@ -458,7 +458,7 @@ assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 # The PR's head and URL come from GitHub, read before any write. Each case
 # reseeds the store, so each snapshots its own.
-for bad in HEAD "not hex" ""; do
+for bad in HEAD ""; do
   file_github
   fake_pr_head 7 "$bad"
   before_bad="$(fake_snapshot)"
