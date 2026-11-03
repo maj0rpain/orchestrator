@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.10
+
+The edit guard now guards a repo whose toplevel is `/` like any other and names the repo-relative path in its denial. The root-prefix check is documented as covering `core.worktree`, one `hook_existing_ancestor` helper serves the guard and `hook_physical_path`, and the flow state file is recognised through `flow_state_file` alone.
+
 ## 4.44.9
 
 Trimmed duplicate branch tests and renamed the start-point function `new_branch_start`.
