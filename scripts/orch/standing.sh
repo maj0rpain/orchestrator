@@ -199,10 +199,16 @@ standing_resume() {
 
 STANDING_LANDED=""
 
+# standing_landed_die <what failed>: dies with the clause, then the writes that
+# landed and that the claim stays held.
+standing_landed_die() {
+  die "$1 - writes that landed: ${STANDING_LANDED:-none}; the claim stays held"
+}
+
 # standing_chain_die <issue> <what> <gh-stderr>: dies for a write of a chain
 # that failed, naming the reason and the writes that landed before it.
 standing_chain_die() {
-  die "could not $2 on issue #$1: $(gh_reason "$3") - writes that landed: ${STANDING_LANDED:-none}; the claim stays held"
+  standing_landed_die "could not $2 on issue #$1: $(gh_reason "$3")"
 }
 
 # standing_landed_add <write>: notes a write that landed.
@@ -285,8 +291,10 @@ standing_begin() {
 standing_finish() {
   STANDING_LANDED="${3:-}"
   standing_move_label "$1" "$2"
-  phase_write "$2"
-  standing_landed_add "moved the phase label to $(standing_phase_label "$2"), recorded phase $2"
+  standing_landed_add "moved the phase label to $(standing_phase_label "$2")"
+  phase_write_try "$2" ||
+    standing_landed_die "could not record phase $2 in $STATE"
+  standing_landed_add "recorded phase $2"
   standing_release "$1"
 }
 

@@ -1827,3 +1827,58 @@ assert_eq "and prints its three declared entries" "$out" \
   "Standards: CONTRIBUTING.md#Develop, docs/agents/cli-conventions.md, docs/agents/coding-standards.md"
 rm -rf "$out_dir"
 restore_suite_env
+
+# --- review ready with a failed phase write (#1931) ---------------------------
+# The PR is marked ready first; a phase write that cannot land then stops
+# review ready with no PR number, and the re-run records done.
+echo
+echo "review ready with a failed phase write"
+review_flow failedready
+state_fixture pr 7
+fake_github
+fake_pr 7 open orch/1-failedready main
+fake_pr_draft 7
+bad="$(state_write_fails_bin)"
+err_file="$(mktemp)"
+out="$(PATH="$bad:$PATH" "$ORCH" review ready 2>"$err_file")"; st=$?
+err="$(cat "$err_file")"
+assert_ne "a failed phase write exits non-zero" "$st" 0
+assert_contains "naming the key and the state file" "$err" \
+  "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
+assert_eq "printing no PR number" "$out" ""
+assert_eq "the phase stays review" "$("$ORCH" state get phase)" review
+out="$("$ORCH" review ready 2>/dev/null)"; st=$?
+assert_status "the re-run succeeds" "$st" 0
+assert_eq "printing the PR number" "$out" "7"
+assert_eq "recording done" "$("$ORCH" state get phase)" "done"
+assert_eq "the PR is ready" "$(fake_pr_draft_of 7)" "no"
+restore_suite_env
+
+echo
+echo "review ready with a failed phase write in an autopilot flow"
+review_flow failedready-ap
+state_fixture issue 7
+state_fixture pr 9
+fake_github
+fake_pr 9 open
+fake_pr_draft 9
+fake_issue 7 open ready-for-agent orch:review orch:running
+fake_claim_seed 7
+bad="$(state_write_fails_bin)"
+err_file="$(mktemp)"
+out="$(PATH="$bad:$PATH" ORCH_AUTOPILOT=1 "$ORCH" review ready 2>"$err_file")"; st=$?
+err="$(cat "$err_file")"
+assert_ne "a failed phase write exits non-zero" "$st" 0
+assert_contains "naming the phase and the state file" "$err" \
+  "could not record phase done in $PWD/.orchestrator/state.json - writes that landed: marked PR #9 ready, moved the phase label to orch:done; the claim stays held"
+assert_eq "printing no PR number" "$out" ""
+assert_eq "the label is orch:done" "$(fake_labels_of 7)" "orch:done orch:running ready-for-agent "
+assert_eq "the claim is held" "$(fake_claim_held 7)" held
+assert_eq "the phase stays review" "$("$ORCH" state get phase)" review
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>/dev/null)"; st=$?
+assert_status "the re-run succeeds" "$st" 0
+assert_eq "recording done" "$("$ORCH" state get phase)" "done"
+assert_eq "the PR is ready" "$(fake_pr_draft_of 9)" "no"
+assert_eq "the label at done, running removed" "$(fake_labels_of 7)" "orch:done ready-for-agent "
+assert_eq "the claim released" "$(fake_claim_held 7)" free
+restore_suite_env

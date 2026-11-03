@@ -749,7 +749,7 @@ cmd_review() {
       # phase left to retry it from.
       gh_or_die --hint "the flow stays in review" "mark PR #$pr ready" \
         adapter_pr_ready "$pr"
-      phase_finish "done" "marked PR #$pr ready" || true
+      phase_finish "done" "marked PR #$pr ready"
       note "$pr"
       # stdout stays the PR number alone; the pointer goes to stderr. A side
       # checkout outlives its PR, so the human is told how to clear it once
