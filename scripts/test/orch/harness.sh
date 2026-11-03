@@ -1625,7 +1625,7 @@ rm -rf "$jp_dir"
 
 # --- the slot fd contract (#2300) ---------------------------------------------
 # Only test_jobs.sh knows the slot fd: the runners start jobs through
-# test_jobs_job, and none holds the raw redirection, or writes the report's list.
+# test_jobs_job, and none holds the raw redirection or writes the report list.
 echo
 echo "the slot fd contract (#2300)"
 fd_tests="$(dirname "$SUITE_SCRIPT")"

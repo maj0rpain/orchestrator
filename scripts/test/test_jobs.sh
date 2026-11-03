@@ -77,10 +77,11 @@
 # test_jobs_job <cmd>...: closes the slot fd and runs <cmd>, returning its own
 # exit status. A runner starts every job through it, in the background, after
 # test_jobs_slot_wait or test_jobs_slot_take, also inside a subshell that
-# changes directory first. It closes the fd in a subshell of its own, so the
-# caller's copy is untouched. The fd's number lives in one constant,
+# changes directory first. It closes the fd and execs <cmd>, replacing the
+# subshell it runs in, so call it only there. The fd number lives in one
+# constant,
 # TEST_JOBS_FD, read through eval (bash 4.0 has no {var} redirection); no
-# runner writes the number.
+# runner writes the number. <cmd> is an external command.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
@@ -289,7 +290,7 @@ test_jobs_slot_release() {
   TEST_JOBS_SLOT_FD=""
 }
 
-test_jobs_job() (
+test_jobs_job() {
   eval "exec $TEST_JOBS_FD>&-"
-  "$@"
-)
+  exec "$@"
+}
