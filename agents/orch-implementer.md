@@ -123,8 +123,8 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    command*); never background it and sleep, poll or kill it. A run the host
    moves to the background at its timeout is still waited for, as that row says.
    A local test failure is reported as flaky only after its section was
-   rerun alone at least 3 times and passed every time; this is not the CI
-   **Flake rerun**, which stays one per flow.
+   rerun alone at least 3 times and passed every time; otherwise it is a
+   failure. This is not the CI **Flake rerun**, which stays one per flow.
 4. **Commit** your work to your ticket branch, already checked out in
    your ticket worktree: every commit you make lands on it, and the caller
    merges and opens the PR. Open no branch or PR of your own.

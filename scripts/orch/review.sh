@@ -73,34 +73,29 @@ ci_probe() {
 # die2 under --exit 2, with the hint appended); pending ones note it on stderr
 # and return; green or none return silently.
 ci_ready_gate() {
-  local code=1 hint="" pr res verdict detail
+  local code=1 hint="" pr res verdict detail checks suffix="" msg
   while [ $# -gt 1 ]; do
     case "$1" in
-      --exit) [ "${2-}" = 2 ] || die "ci_ready_gate: --exit takes 2, not '${2-}'"; code=2; shift 2 ;;
-      --hint) hint="$2"; shift 2 ;;
+      --exit) gh_die_opt_check ci_ready_gate $# "$@"; code=2; shift 2 ;;
+      --hint) gh_die_opt_check ci_ready_gate $# "$@"; hint="$2"; shift 2 ;;
       *) die "ci_ready_gate: unknown option $1" ;;
     esac
   done
   pr="$1"
   res="$(ci_probe "$pr" required)"
   [ "${res%%$'\n'*}" != none ] || res="$(ci_probe "$pr" all)"
-  verdict="${res%%$'\n'*}"
-  detail=""
-  case "$res" in *$'\n'*) detail="${res#*$'\n'}" ;; esac
+  lines_split "$res" verdict detail
   # ci_probe indents each detail line; the message joins them, comma-separated.
-  detail="$(printf '%s\n' "$detail" | sed 's/^ *//' | paste -sd, - | sed 's/,/, /g')"
-  [ -z "$hint" ] || hint=" - $hint"
+  checks="$(printf '%s\n' "$detail" | sed 's/^ *//' | paste -sd, - | sed 's/,/, /g')"
+  [ -z "$hint" ] || suffix=" - $hint"
   case "$verdict" in
-    failing)     gate_die "$code" "PR #$pr has failed checks: $detail$hint" ;;
-    unreachable) gate_die "$code" "PR #$pr checks cannot be read: $detail$hint" ;;
-    pending)     warn "PR #$pr checks are still pending" ;;
+    failing)     msg="PR #$pr has failed checks: $checks$suffix" ;;
+    unreachable) msg="PR #$pr checks cannot be read: $checks$suffix" ;;
+    pending)     warn "PR #$pr checks are still pending"; return 0 ;;
+    *)           return 0 ;;
   esac
-}
-
-# gate_die <code> <message>: die, or die2 for code 2.
-gate_die() {
-  if [ "$1" = 2 ]; then die2 "$2"; fi
-  die "$2"
+  [ "$code" != 2 ] || die2 "$msg"
+  die "$msg"
 }
 
 # Classifies the review loop's last iteration against its budget - the one

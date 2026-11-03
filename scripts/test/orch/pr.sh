@@ -722,6 +722,7 @@ assert_eq "saying so" "$out" "PR #57 is now ready"
 assert_eq "the PR is no longer a draft" "$(fake_pr_draft_of 57)" "no"
 assert_eq "the other branch's PR untouched" "$(fake_pr_draft_of 50)" "yes"
 
+fake_checks 57 required failing
 out="$("$ORCH" pr ready 2>"$errf")"; st=$?
 assert_status "a PR already ready exits 0" "$st" 0
 assert_eq "saying so" "$out" "PR #57 is already ready"
