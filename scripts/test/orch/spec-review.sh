@@ -1720,7 +1720,7 @@ src "$d"
 assert_status "a round with a resolved item but no minor one passes" "$st" 0
 assert_eq "its Minor edits list holds the resolved item alone" "${out#*$'\n\n### Minor edits\n\n'}" \
   '- **4** - Testability: resolved by item 3'
-sed -i '/^@@ item 4 /,$d' "$d/batch.md"
+sed -i "/^@@ item 4 /,\$d; s/^@@ finding testability 1\$/&\n@@ finding testability 2/" "$d/batch.md"
 src "$d"
 assert_status "a round with nothing minor or resolved passes" "$st" 0
 assert_not_contains "and prints no Minor edits heading" "$out" "Minor edits"
@@ -2865,3 +2865,158 @@ sourced_orch spec_review_lens_known "consistency testability"; st=$?
 assert_status "two adjacent lens names are refused" "$st" 1
 sourced_orch spec_review_lens_known ""; st=$?
 assert_status "the empty name is refused" "$st" 1
+
+# --- spec-review check requires every finding cited (#1914) -------------------
+# A lens that ran has every finding cited by some item, of any kind; check and
+# apply refuse a batch that leaves one uncited.
+echo
+echo "spec-review check requires every finding cited (#1914)"
+new_repo >/dev/null
+fake_github
+top="$(git rev-parse --show-toplevel)"
+unc_body='# Spec
+
+Alpha line.
+Beta line.
+Gamma line.
+'
+# unc_dir <batch-body> <lens-spec>...: a fresh round directory with the fixture
+# spec, the batch and the lens files named as <lens>=<findings count> (a count
+# of 0 writes `@@ none`); issue #14 reset to the fixture body; prints its path.
+unc_dir() {
+  local d lens_spec lens n k batch="$1"
+  shift
+  d="$(mktemp -d)"
+  printf '%s' "$unc_body" >"$d/spec.md"
+  printf '%s\n' "$batch" >"$d/batch.md"
+  for lens_spec in "$@"; do
+    lens="${lens_spec%=*}"; n="${lens_spec#*=}"
+    if [ "$n" -eq 0 ]; then printf '@@ none\n' >"$d/lens-$lens.md"; continue; fi
+    : >"$d/lens-$lens.md"
+    for k in $(seq 1 "$n"); do printf '@@ finding %s\nFinding %s.\n' "$k" "$k" >>"$d/lens-$lens.md"; done
+  done
+  fake_issue 14 open
+  fake_issue_body 14 "$unc_body"
+  printf '%s\n' "$d"
+}
+unc_partial='@@ lens fidelity not-run timed out
+@@ lens consistency ran
+@@ lens testability ran
+@@ lens implementability not-run timed out
+
+@@ item 1 consistency apply minor
+@@ finding consistency 1
+@@ summary Alpha primed
+@@ anchor
+Alpha line.
+@@ replace
+Alpha prime line.
+@@ end'
+d="$(unc_dir "$unc_partial" consistency=2 testability=1)"
+src "$d"
+assert_status "check refuses a batch that leaves findings uncited" "$st" 1
+assert_contains "naming batch.md and both findings, in lens order" "$err" \
+  "orch: batch.md leaves findings uncited: consistency 2, testability 1"
+assert_contains "and saying where they go" "$err" "recommend-decline"
+
+sra_refused "apply refuses the same batch" "$d" "batch.md leaves findings uncited: consistency 2, testability 1" recommended
+assert_eq "no applied.log written" "$(on_disk "$d/applied.log")" absent
+
+# Resolved, recommend-decline and decision citations each cover a finding.
+unc_kinds='@@ lens fidelity ran
+@@ lens consistency not-run timed out
+@@ lens testability not-run timed out
+@@ lens implementability not-run timed out
+
+@@ item 1 fidelity apply minor
+@@ finding fidelity 1
+@@ summary Alpha primed
+@@ anchor
+Alpha line.
+@@ replace
+Alpha prime line.
+@@ end
+@@ item 2 fidelity resolved
+@@ finding fidelity 2
+@@ resolved-by 1
+@@ item 3 fidelity decline material the plan chose this
+@@ finding fidelity 3
+@@ summary Beta reversed
+@@ anchor
+Beta line.
+@@ replace
+Beta reversed.
+@@ end
+@@ why Beta contradicts the plan
+@@ item 4 fidelity decision A material
+@@ finding fidelity 4
+@@ why Gamma must be testable
+@@ option A Keep gamma
+@@ summary Gamma kept
+@@ anchor
+Gamma line.
+@@ replace
+Gamma line (kept).
+@@ end
+@@ option B Drop gamma
+@@ summary Gamma dropped
+@@ anchor
+Gamma line.
+@@ replace
+Gamma dropped.
+@@ end'
+d="$(unc_dir "$unc_kinds" fidelity=4)"
+src "$d"
+assert_status "findings cited only by resolved, decline and decision items pass" "$st" 0
+
+# A @@ none lens and a not-run lens need no citation.
+unc_none='@@ lens fidelity ran
+@@ lens consistency ran
+@@ lens testability not-run timed out
+@@ lens implementability not-run timed out
+
+@@ item 1 fidelity apply minor
+@@ finding fidelity 1
+@@ summary Alpha primed
+@@ anchor
+Alpha line.
+@@ replace
+Alpha prime line.
+@@ end'
+d="$(unc_dir "$unc_none" fidelity=1 consistency=0)"
+src "$d"
+assert_status "a none lens and a not-run lens beside cited lenses pass" "$st" 0
+
+# Autopilot: a finding cited only by a fundamental item is covered on both runs.
+unc_fund='@@ lens fidelity ran
+@@ lens consistency not-run timed out
+@@ lens testability not-run timed out
+@@ lens implementability not-run timed out
+
+@@ item 1 fidelity apply minor
+@@ finding fidelity 1
+@@ summary Alpha primed
+@@ anchor
+Alpha line.
+@@ replace
+Alpha prime line.
+@@ end
+@@ item 2 fidelity apply fundamental
+@@ finding fidelity 2
+@@ summary Beta reversed
+@@ anchor
+Beta line.
+@@ replace
+Beta reversed.
+@@ end
+@@ why Beta contradicts the plan'
+d="$(unc_dir "$unc_fund" fidelity=2)"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "the first apply holds the fundamental item back and passes" "$st" 0
+assert_eq "fundamental.md holds the held item" "$(grep -c '^@@ item 2 ' "$d/fundamental.md")" 1
+assert_eq "no changelog is posted on the first run" "$(fake_comments_of 14)" ""
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "the resumed apply over the same batch passes too" "$st" 0
+assert_eq "the resumed run removed fundamental.md" "$(on_disk "$d/fundamental.md")" absent
+assert_contains "the held edit landed" "$(cat "$d/spec.md")" "Beta reversed."
+assert_contains "the changelog is posted" "$(fake_comments_of 14)" "## Spec review"
