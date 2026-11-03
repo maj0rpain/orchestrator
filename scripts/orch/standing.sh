@@ -403,6 +403,31 @@ standing_stop() {
   standing_stop_write "$issue" "$kind" "$text" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL"
 }
 
+# standing_sync_finish <issue>: a finished sync's close under its claim -
+# orch:sync removed, then the claim released. orch:done stays and no phase is
+# recorded: the issue is a plain done flow again.
+standing_sync_finish() {
+  local gh_err
+  STANDING_LANDED=""
+  capture_err gh_err adapter_issue_relabel "$1" --remove "$STANDING_SYNC_LABEL" ||
+    standing_chain_die "$1" "remove $STANDING_SYNC_LABEL" "$gh_err"
+  standing_landed_add "removed $STANDING_SYNC_LABEL"
+  standing_release "$1"
+}
+
+# standing_sync_dropped <issue> <intents>: the dropped-intent stop of a sync
+# whose merge was pushed: orch:sync removed and needs-human added in one edit,
+# a failure-kind stop comment marked with the phase word sync listing
+# <intents>, then the claim released, last.
+standing_sync_dropped() {
+  local issue="$1" intents="$2" marker text
+  STANDING_LANDED=""
+  marker="$(marked_comment_write failure "$STANDING_SYNC_PHASE")" || exit 1
+  printf -v text '%s\nThe sync pushed its merge, but its resolver dropped these intents:\n\n%s\n\nThe issue is labelled %s and no longer carries %s. Lifting %s re-runs nothing: the issue is a plain %s again.\n' \
+    "$marker" "$intents" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL" "$STANDING_HUMAN_LABEL" "$(standing_phase_label "done")"
+  standing_stop_write "$issue" failure "$text" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL"
+}
+
 # standing_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a
 # phase whose session stopped on a usage limit. With fewer than two such stops
 # of the phase before it, adds orch:limited, comments, then releases the claim;

@@ -127,3 +127,38 @@ against step 1's issue - the one the branch's name carries, or the one the
 human gave: run it now, or not. On a yes, invoke the `orch-review-pass`
 skill and follow its **Standalone review pass** section with that issue -
 one pass, never a review loop. On a no, stop.
+
+## Autopilot branch
+
+Taken when `bash "$ORCH" autopilot active` exits 0: a watcher started this
+session on a **sync request** (see `GLOSSARY.md`), headless, in the done flow's
+side checkout. No human reads it, so ask no question and run no review pass:
+step 3 never runs. The issue is the one the branch's name carries, and the
+session ends in exactly one of three transitions, each an `orch.sh autopilot`
+call:
+
+- **Sync finish** - `bash "$ORCH" autopilot sync-finish`: removes `orch:sync`
+  and releases the claim. `orch:done` stays and no phase is recorded.
+- **Dropped-intent stop** - `bash "$ORCH" autopilot sync-dropped <file>`:
+  after the push, removes `orch:sync`, adds `needs-human`, posts a stop
+  comment and releases the claim. `<file>` (a `mktemp` file outside the repo)
+  lists each intent the resolver dropped, with a link to the Merge
+  resolutions comment. Lifting `needs-human` afterwards re-runs nothing.
+- **Failure stop** - `bash "$ORCH" autopilot sync-fail "<reason>"`: adds
+  `needs-human` with a stop comment naming the reason and **keeps**
+  `orch:sync`, so `orch.sh autopilot resume` retries the sync.
+
+Run step 1 as written. Then:
+
+- **Exit 0 on the first `branch sync`** - a clean merge, or nothing to merge
+  (`branch sync` pushes a clean merge itself): run **Sync finish**, with no PR
+  body check and no comment.
+- **A failed sync** - the resolver gave up, or the rerun of `branch sync` did
+  not exit 0, a rejected push included: run the **Failure stop** with that
+  failure as its reason. Leave any merge in progress; never abort it.
+- **A conflict resolved** - run step 2 unattended (a missing PR skips the
+  check and the comment). Then, when the resolver's report lists dropped
+  intents, run the **Dropped-intent stop**; otherwise **Sync finish**. A
+  resolver `Verification` line reading `fail` is not a failure: it is
+  reported in the Merge resolutions comment, as step 2 says, and the sync
+  ends as it otherwise would.

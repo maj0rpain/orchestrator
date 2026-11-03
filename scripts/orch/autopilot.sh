@@ -179,6 +179,37 @@ autopilot_ask() {
   standing_ask "$phase" "$text"
 }
 
+# The three ends of a sync session, each a Standing transition the orch-sync
+# skill's autopilot branch calls. The issue comes from flow state, as ask's.
+
+# autopilot_sync_finish: orch:sync removed, the claim released.
+autopilot_sync_finish() {
+  local issue
+  require_state
+  require_issue issue
+  standing_sync_finish "$issue"
+}
+
+# autopilot_sync_dropped <file>: the dropped-intent stop; <file> lists the
+# intents the resolver dropped, with a link to the Merge resolutions comment.
+autopilot_sync_dropped() {
+  local file="$1" issue text
+  [ -f "$file" ] || die "dropped-intents file not found: $file"
+  file_read text "$file" || die "could not read $file"
+  require_state
+  require_issue issue
+  standing_sync_dropped "$issue" "$text"
+}
+
+# autopilot_sync_fail <reason>: the failure stop, orch:sync kept.
+autopilot_sync_fail() {
+  local issue
+  [ -n "$1" ] || die "a sync failure needs a reason"
+  require_state
+  require_issue issue
+  standing_stop "$issue" failure "$STANDING_SYNC_PHASE" "$1"
+}
+
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
 # marker stripped, and every comment after it to <file>, each later one after a
 # `---` line. Exits 1, writing nothing, when no comment follows the question -
@@ -250,7 +281,8 @@ autopilot_reply() {
 }
 
 # autopilot_questions: one tab-separated line per open needs-human issue that
-# carries a phase label other than orch:done: the issue, its kind (question,
+# carries a phase label other than orch:done, or sits at orch:done stopped by a
+# sync (phase sync): the issue, its kind (question,
 # replied or stop), the phase, and the URL of the comment the kind is about.
 # The newest of the issue's question comments and stop comments decides the
 # kind. Prints one line saying so when nothing is listed; dies, printing
@@ -261,10 +293,19 @@ autopilot_questions() {
   for n in $(printf '%s\n' "$list" | sort -n); do
     standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
     phase="$STANDING_PHASE"
-    [ -n "$phase" ] || continue
     timeline_read_or_die "$n"
     timeline_question || true
     timeline_stop || true
+    if [ -z "$phase" ]; then
+      # a done issue is listed only when a sync stopped it: orch:sync is still
+      # on it (a failure stop), or its newest stop comment is a sync stop
+      label_listed "$STANDING_LABELS" "$(standing_phase_label "done")" || continue
+      if [ "$STANDING_SYNC" = 1 ] || [ "$TIMELINE_STOP_PHASE" = "$STANDING_SYNC_PHASE" ]; then
+        phase="$STANDING_SYNC_PHASE"
+      else
+        continue
+      fi
+    fi
     if [ -n "$TIMELINE_Q_INDEX" ] && { [ -z "$TIMELINE_STOP_INDEX" ] || [ "$TIMELINE_Q_INDEX" -gt "$TIMELINE_STOP_INDEX" ]; }; then
       if timeline_replied; then kind="replied"; else kind="question"; fi
       row="$n"$'\t'"$kind"$'\t'"$TIMELINE_Q_PHASE"$'\t'"$TIMELINE_Q_URL"
@@ -1036,10 +1077,22 @@ cmd_autopilot() {
       [ $# -eq 1 ] || die "usage: orch.sh autopilot sync <issue>"
       autopilot_sync "$1"
       ;;
+    sync-finish)
+      [ $# -eq 0 ] || die "usage: orch.sh autopilot sync-finish"
+      autopilot_sync_finish
+      ;;
+    sync-dropped)
+      [ $# -eq 1 ] || die "usage: orch.sh autopilot sync-dropped <file>"
+      autopilot_sync_dropped "$1"
+      ;;
+    sync-fail)
+      [ $# -eq 1 ] || die "usage: orch.sh autopilot sync-fail <reason>"
+      autopilot_sync_fail "$1"
+      ;;
     ask|answer)
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|questions|reply|resume|sync)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
   esac
 }

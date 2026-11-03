@@ -1139,7 +1139,7 @@ out="$("$ORCH" autopilot sync 2>&1)"; st=$?
 assert_status "sync without an issue dies" "$st" 1
 assert_contains "with its usage" "$out" "orch: usage: orch.sh autopilot sync <issue>"
 out="$("$ORCH" autopilot bogus 2>&1)"
-assert_contains "the unknown-op list names sync" "$out" "|sync)"
+assert_contains "the unknown-op list names the sync verbs" "$out" "|sync|sync-finish|sync-dropped|sync-fail)"
 
 # reply
 r="$(mktemp)"; printf '1: Yes, keep it\n' >"$r"
@@ -1792,3 +1792,31 @@ sync_limit_run
 sync_limit_run
 assert_eq "the third in a row waits on the human, keeping orch:sync" "$(fake_labels_of 7)" "needs-human orch:done orch:sync "
 assert_contains "as a failure marked sync" "$(fake_last_comment_of 7)" "<!-- orch:failure sync -->"
+
+# a sync session's failure ending keeps orch:sync
+rm -f "$launcher_dir/out"; printf '3\n' >"$launcher_dir/exit"
+fake_issue_relabel 7 orch:done orch:sync orch:running
+fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_eq "a sync session's failure ending adds needs-human, keeping orch:sync" "$(fake_labels_of 7)" "needs-human orch:done orch:sync "
+assert_contains "as a failure stop naming the sync" "$(fake_last_comment_of 7)" "Autopilot failed in the sync"
+assert_eq "and releases the claim" "$(fake_claim_held 7)" free
+
+# the stale-claim cleanup of a dead sync session's claim keeps orch:sync
+fake_issue 14 open orch:done orch:sync orch:running
+fake_claim_seed 14 "$(hostname)" "$(dead_pid)" "" sync
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a dead sync claim is stopped, keeping orch:sync" "$(fake_labels_of 14)" "needs-human orch:done orch:sync "
+assert_contains "with a stop comment marked sync" "$(fake_comments_of 14)" "<!-- orch:failure sync -->"
+assert_eq "and its claim released" "$(fake_claim_held 14)" free
+
+# questions lists a done issue a sync stopped, and only that
+fake_issue 20 open needs-human orch:done orch:sync
+fake_issue 21 open needs-human orch:done
+sourced_orch standing_sync_dropped 21 "- a dropped intent" >/dev/null 2>&1
+fake_issue 22 open needs-human orch:done
+sourced_orch standing_stop 22 failure review "old" >/dev/null 2>&1
+out="$("$ORCH" autopilot questions 2>&1)"
+assert_contains "a done issue with orch:sync and needs-human is listed as sync" "$out" "20	stop	sync"
+assert_contains "a done issue whose newest stop is a sync stop is listed as sync" "$out" "21	stop	sync"
+assert_not_contains "a done issue needs-human for another reason is omitted" "$out" "22	"

@@ -143,9 +143,10 @@ A flow whose phases are started by a watcher rather than a human. Its phase is
 recorded as a label on its issue, its handoffs are issue comments, and its
 questions reach the human as issue comments. It stops for the human only on a
 fundamental item, a bounded stop (a spec question the review loop meets among
-them), a refusal (an untrusted issue among them), or a failure; a session cut
-off by a usage limit is waited out instead, as a limited issue, short of the
-third such stop in a row of one phase.
+them), a refusal (an untrusted issue among them), a failure, or an intent a
+sync request's resolver dropped; a session cut off by a usage limit is waited
+out instead, as a limited issue, short of the third such stop in a row of one
+phase, or of one issue's sync requests.
 _Avoid_: auto flow, headless flow.
 
 **Watcher**:
@@ -257,8 +258,9 @@ the session: no new side checkout, flow, plan comment or redo.
 **Limited issue**:
 An autopilot flow's issue whose last session stopped on a Claude Code usage
 limit, labelled `orch:limited` in place of `needs-human`. A tick once the limit
-pause has passed picks its phase up again; a third such stop in a row of one
-phase waits on the human. _Avoid_: rate-limited issue.
+pause has passed picks its phase, or its sync request, up again; a third such
+stop in a row of one phase, or of one issue's sync requests, waits on the
+human. _Avoid_: rate-limited issue.
 
 **Limit pause**:
 The stretch in which a clone's watcher picks up no issue: from a session
@@ -298,7 +300,7 @@ Bringing a flow's or quick implementation's branch up to date with its base
 branch: merging the remote base branch's tip into it, never rebasing, and
 moving its base SHA to that tip. A conflict is resolved by what each side
 meant, never by picking a side. It runs before the change is first reviewed,
-at the start of every review-loop iteration, and on demand.
+at the start of every review-loop iteration, on demand, and on a sync request.
 _Avoid_: rebase, update branch.
 
 **Resolver**:
