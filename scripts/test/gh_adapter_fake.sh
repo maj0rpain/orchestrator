@@ -41,6 +41,7 @@
 #                     the head and base branch names
 #   prs/<n>/title     the title
 #   prs/<n>/body      the body, byte for byte; absent, an empty one
+#   prs/<n>/mergeable MERGEABLE, CONFLICTING or UNKNOWN; absent, UNKNOWN
 #   prs/<n>/draft     present, the PR is a draft
 #   prs/<n>/labels    the PR's label names, one per line
 #   pr_label_drops    label names, one per line, a PR create never stores -
@@ -726,6 +727,21 @@ adapter_prs_open_all() {
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = OPEN ] || continue
     printf '%s\t%s\n' "$(basename "$d")" "$(fake_pr_cross_of "$d")"
+  done | sort -rn
+}
+
+# adapter_prs_open_mergeability: every open PR in the store, newest first, each
+# as `<number>\t<head>\t<mergeable>\t<flag>`, the mergeable value the PR's
+# stored mergeable file (UNKNOWN where unset), the flag as adapter_prs_open
+# prints it.
+adapter_prs_open_mergeability() {
+  local d
+  ! fake_failing adapter_prs_open_mergeability || return 1
+  for d in "$(fake_store)"/prs/*/; do
+    [ -d "$d" ] || continue
+    [ "$(cat "$d/state")" = OPEN ] || continue
+    printf '%s\t%s\t%s\t%s\n' "$(basename "$d")" "$(cat "$d/head")" \
+      "$(cat "$d/mergeable" 2>/dev/null || echo UNKNOWN)" "$(fake_pr_cross_of "$d")"
   done | sort -rn
 }
 

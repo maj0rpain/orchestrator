@@ -143,26 +143,35 @@ A flow whose phases are started by a watcher rather than a human. Its phase is
 recorded as a label on its issue, its handoffs are issue comments, and its
 questions reach the human as issue comments. It stops for the human only on a
 fundamental item, a bounded stop (a spec question the review loop meets among
-them), a refusal (an untrusted issue among them), or a failure; a session cut
-off by a usage limit is waited out instead, as a limited issue, short of the
-third such stop in a row of one phase.
+them), a refusal (an untrusted issue among them), a failure, or an intent a
+sync request's resolver dropped; a session cut off by a usage limit is waited
+out instead, as a limited issue, short of the third such stop in a row of one
+phase, or of one issue's sync requests.
 _Avoid_: auto flow, headless flow.
 
 **Watcher**:
-The process that starts each autopilot flow's next phase, in that flow's side
-checkout, within the repo's cap.
+The process that starts each autopilot flow's next phase, or its sync on a sync
+request, in that flow's side checkout, within the repo's cap.
 
 **Claim**:
-A watcher's exclusive hold on one issue's next phase - a ref on origin that only
-one watcher can create. _Avoid_: lock (unqualified).
+A watcher's exclusive hold on one issue's next phase or sync request - a ref on
+origin that only one watcher can create. _Avoid_: lock (unqualified).
 
 **Phase label**:
 The `orch:` label on an issue that records an autopilot flow's phase.
 
+**Sync request**:
+The `orch:sync` label on an open autopilot issue at `orch:done`, asking a
+watcher for one base sync of its branch. A human or the watcher adds it; the
+sync session removes it once the sync lands, or when its resolver dropped an
+intent.
+_Avoid_: resync label.
+
 **Standing**:
 Where an autopilot flow's issue stands: its phase label, whether a session is
-running on it, whether it waits on the human or on a usage limit, and the claim
-held on it, if any. Every change to it is one of a fixed set of transitions.
+running on it, whether it waits on the human or on a usage limit, whether a
+sync is requested, and the claim held on it, if any. Every change to it is one
+of a fixed set of transitions.
 _Avoid_: protocol state, issue status.
 
 **Fundamental item**:
@@ -234,20 +243,24 @@ trusted comment follows yet, on an open issue labelled `needs-human`.
 and posts the reply.
 
 **Pickup rule**:
-The rule a watcher picks issues by: open, a phase label other than `orch:done`,
-and neither `orch:running` nor `needs-human`, while no limit pause holds.
+The rule a watcher picks issues by: open, neither `orch:running` nor
+`needs-human`, and either a phase label other than `orch:done` or `orch:done`
+with a sync request, while no limit pause holds.
 
 **Pickup**:
 A watcher taking one claimed issue to a running session: its issue-trust
 check, its side checkout, its flow, its plan comment, a redo when the label
 stepped back one phase, then `orch:running` and the session. A failed or refused
-step stops the issue and releases the claim.
+step stops the issue and releases the claim. A sync request's pickup is its
+issue-trust check, its side checkout's recorded phase, then `orch:running` and
+the session: no new side checkout, flow, plan comment or redo.
 
 **Limited issue**:
 An autopilot flow's issue whose last session stopped on a Claude Code usage
 limit, labelled `orch:limited` in place of `needs-human`. A tick once the limit
-pause has passed picks its phase up again; a third such stop in a row of one
-phase waits on the human. _Avoid_: rate-limited issue.
+pause has passed picks its phase, or its sync request, up again; a third such
+stop in a row of one phase, or of one issue's sync requests, waits on the
+human. _Avoid_: rate-limited issue.
 
 **Limit pause**:
 The stretch in which a clone's watcher picks up no issue: from a session
@@ -287,7 +300,7 @@ Bringing a flow's or quick implementation's branch up to date with its base
 branch: merging the remote base branch's tip into it, never rebasing, and
 moving its base SHA to that tip. A conflict is resolved by what each side
 meant, never by picking a side. It runs before the change is first reviewed,
-at the start of every review-loop iteration, and on demand.
+at the start of every review-loop iteration, on demand, and on a sync request.
 _Avoid_: rebase, update branch.
 
 **Resolver**:

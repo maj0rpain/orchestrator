@@ -11,6 +11,8 @@
 STANDING_RUNNING_LABEL="orch:running"
 STANDING_HUMAN_LABEL="needs-human"
 STANDING_LIMITED_LABEL="orch:limited"
+# The sync request: not a phase label - an issue carrying it keeps orch:done.
+STANDING_SYNC_LABEL="orch:sync"
 
 # standing_phase_label <phase>: the label that records an autopilot flow's
 # phase on its issue, `orch:<phase>` - the label is the flow's phase record.
@@ -48,7 +50,7 @@ standing_live_phase() {
 
 # standing_label_entries: the labels a tick ensures, one
 # `name|colour|description` each: a label per phase of the table, then the
-# running, human and limited labels.
+# running, human, limited and sync labels.
 standing_label_entries() {
   local p colour what
   for p in $PHASES; do
@@ -64,6 +66,7 @@ standing_label_entries() {
   printf '%s|fbca04|Autopilot session running\n' "$STANDING_RUNNING_LABEL"
   printf '%s|d93f0b|Waiting on the human\n' "$STANDING_HUMAN_LABEL"
   printf '%s|c5def5|Autopilot session stopped on a usage limit; retried after the reset\n' "$STANDING_LIMITED_LABEL"
+  printf '%s|0075ca|Autopilot: base sync requested on a done flow\n' "$STANDING_SYNC_LABEL"
 }
 
 # standing_host_id: the identity a claim records as its host - ORCH_HOST_ID
@@ -81,9 +84,10 @@ STANDING_REASON=""
 # STANDING_STATE (OPEN or CLOSED), STANDING_LABELS (every label, one per line),
 # STANDING_PHASE (the live phase: the first phase other than done whose label is
 # present, in table order; empty when none), STANDING_PHASE_LABELS (the text of
-# every phase label, in table order) and STANDING_RUNNING, STANDING_HUMAN and
-# STANDING_LIMITED, each 0 or 1. Non-zero when the read fails: the reason only
-# in STANDING_REASON, printing nothing, for a caller that words its own death.
+# every phase label, in table order) and STANDING_RUNNING, STANDING_HUMAN,
+# STANDING_LIMITED and STANDING_SYNC, each 0 or 1. Non-zero when the read fails:
+# the reason only in STANDING_REASON, printing nothing, for a caller that words
+# its own death.
 # Call it in the current shell, never inside capture_err or $(...).
 standing_read() {
   local gh_err
@@ -93,7 +97,10 @@ standing_read() {
   fi
   STANDING_PHASE="$(standing_live_phase "$STANDING_LABELS")"
   STANDING_PHASE_LABELS="$(standing_phase_labels_text "$STANDING_LABELS")"
-  STANDING_RUNNING=0 STANDING_HUMAN=0 STANDING_LIMITED=0
+  STANDING_RUNNING=0 STANDING_HUMAN=0 STANDING_LIMITED=0 STANDING_SYNC=0
+  # the variable is the module's read, used by its callers
+  # shellcheck disable=SC2034
+  ! label_listed "$STANDING_LABELS" "$STANDING_SYNC_LABEL" || STANDING_SYNC=1
   ! label_listed "$STANDING_LABELS" "$STANDING_RUNNING_LABEL" || STANDING_RUNNING=1
   ! label_listed "$STANDING_LABELS" "$STANDING_HUMAN_LABEL" || STANDING_HUMAN=1
   # the variables are the module's read, used by its callers
@@ -101,12 +108,40 @@ standing_read() {
   ! label_listed "$STANDING_LABELS" "$STANDING_LIMITED_LABEL" || STANDING_LIMITED=1
 }
 
+# The phase word of a sync request: where a transition takes a phase argument
+# for a sync, it takes this.
+STANDING_SYNC_PHASE="sync"
+
+# standing_is_done: whether the last read carries orch:done.
+standing_is_done() {
+  label_listed "$STANDING_LABELS" "$(standing_phase_label "done")"
+}
+
+# standing_is_sync: whether the last read is a sync request - orch:sync on an
+# issue at orch:done. An issue with a live phase label is its phase's, and one
+# with orch:sync but no orch:done is no sync request.
+standing_is_sync() {
+  [ "$STANDING_SYNC" = 1 ] && [ -z "$STANDING_PHASE" ] && standing_is_done
+}
+
+# standing_session_phase: the phase word of the session the last read starts:
+# sync for a sync request, else the live phase.
+standing_session_phase() {
+  if standing_is_sync; then printf '%s' "$STANDING_SYNC_PHASE"; else printf '%s' "$STANDING_PHASE"; fi
+}
+
 # standing_pickable: the label half of the Pickup rule, from the last read:
-# the issue is open, has a live phase, and is neither running nor waiting on
-# the human. The limit pause is the tick's own check.
+# the issue is open, has a live phase or is a sync request, and is neither
+# running nor waiting on the human. The limit pause is the tick's own check.
 standing_pickable() {
-  [ "$STANDING_STATE" = OPEN ] && [ -n "$STANDING_PHASE" ] &&
+  [ "$STANDING_STATE" = OPEN ] && { [ -n "$STANDING_PHASE" ] || standing_is_sync; } &&
     [ "$STANDING_RUNNING" = 0 ] && [ "$STANDING_HUMAN" = 0 ]
+}
+
+# standing_phase_text <phase>: how a stop comment names what stopped - "the
+# <phase> phase", or "the sync" for a sync request, which is no phase.
+standing_phase_text() {
+  if [ "$1" = "$STANDING_SYNC_PHASE" ]; then printf 'the sync'; else printf 'the %s phase' "$1"; fi
 }
 
 # standing_label_verdict <labels> <phase> <verdict-var> <text-var>: whether the
@@ -174,28 +209,37 @@ standing_human_guard() {
   [ "$STANDING_HUMAN" = 1 ] || die "issue #$1 does not carry $STANDING_HUMAN_LABEL"
 }
 
-# standing_resume <issue>: removes needs-human. Returns 0, or 1 with the reason
-# in STANDING_REASON when the removal fails, printing nothing: each caller
-# dies with its own message. A single write, not a chain: it leaves
-# STANDING_LANDED alone.
-standing_resume() {
+# standing_relabel_one <issue> <flag> <label>: one label write - <flag>
+# (--add or --remove) <label> on <issue>. Returns 0, or 1 with the reason in
+# STANDING_REASON when the write fails, printing nothing: each caller words its
+# own death or warning. A single write, not a chain: it leaves STANDING_LANDED
+# alone.
+standing_relabel_one() {
   local gh_err
-  capture_err gh_err adapter_issue_relabel "$1" --remove "$STANDING_HUMAN_LABEL" && return 0
+  capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" && return 0
   STANDING_REASON="$(gh_reason "$gh_err")"
   return 1
 }
 
+# standing_resume <issue>: removes needs-human, one write, through
+# standing_relabel_one.
+standing_resume() {
+  standing_relabel_one "$1" --remove "$STANDING_HUMAN_LABEL"
+}
+
 # --- transitions ------------------------------------------------------------
 #
-# Every write to Standing goes through one transition below: begin,
-# start, finish, pause, ask, stop, limit-stop and resume. Begin and resume are
-# single writes; the others are chains. A chain of writes a
+# Every write to Standing goes through one transition: begin, sync request,
+# start, finish, pause, ask, stop, sync finish, sync dropped, limit-stop and
+# resume. Begin, sync request and resume are single writes; the others are
+# chains. A chain of writes a
 # session makes under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
 # fails partway leaves the claim held, and dies naming the writes that landed,
 # so the next tick cleans it up as a failure. STANDING_LANDED accumulates those
-# writes; each chain transition (start, finish, pause, ask, stop and limit-stop)
-# resets it at its start, and begin and resume neither reset nor add to it.
+# writes; each chain transition (start, finish, pause, ask, stop, sync finish,
+# sync dropped and limit-stop) resets it at its start, and begin, sync request
+# and resume neither reset nor add to it.
 
 STANDING_LANDED=""
 
@@ -214,12 +258,21 @@ standing_chain_die() {
 # standing_landed_add <write>: notes a write that landed.
 standing_landed_add() { STANDING_LANDED="${STANDING_LANDED:+$STANDING_LANDED, }$1"; }
 
+# standing_chain_relabel <issue> <flag> <label>: one label write of a chain -
+# <flag> (--add or --remove) <label> - dying as a chain does when it fails, and
+# noting the write that landed.
+standing_chain_relabel() {
+  local gh_err verb=add past=added
+  [ "$2" != --remove ] || { verb=remove; past=removed; }
+  capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" ||
+    standing_chain_die "$1" "$verb $3" "$gh_err"
+  standing_landed_add "$past $3"
+}
+
 # standing_release <issue>: deletes orch:running, then the claim ref, last.
 standing_release() {
   local issue="$1" gh_err
-  capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_RUNNING_LABEL" ||
-    standing_chain_die "$issue" "remove $STANDING_RUNNING_LABEL" "$gh_err"
-  standing_landed_add "removed $STANDING_RUNNING_LABEL"
+  standing_chain_relabel "$issue" --remove "$STANDING_RUNNING_LABEL"
   capture_err gh_err adapter_claim_delete "$issue" ||
     standing_chain_die "$issue" "delete the claim ref" "$gh_err"
 }
@@ -262,6 +315,13 @@ standing_start() {
   first="$(standing_phase_label "${PHASES%% *}")"
   capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
+}
+
+# standing_sync_request <issue>: the sync request transition - adds orch:sync,
+# one write, through standing_relabel_one: returns 0, or 1 with the reason in
+# STANDING_REASON.
+standing_sync_request() {
+  standing_relabel_one "$1" --add "$STANDING_SYNC_LABEL"
 }
 
 # standing_begin <issue> [limited]: pickup's last step - removes
@@ -322,22 +382,26 @@ standing_ask() {
   capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
   rm -f "$body"
   standing_landed_add "posted the $phase question comment"
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_HUMAN_LABEL" ||
-    standing_chain_die "$issue" "add $STANDING_HUMAN_LABEL" "$gh_err"
-  standing_landed_add "added $STANDING_HUMAN_LABEL"
+  standing_chain_relabel "$issue" --add "$STANDING_HUMAN_LABEL"
   standing_release "$issue"
 }
 
-# standing_stop_write <issue> <kind> <text> <label> [<remove-label>]: the write
-# chain of a stop: adds <label> (removing <remove-label> when given), posts
-# <text> as the <kind> comment, then releases the claim, last.
+# standing_stop_write <issue> <kind> <text> <label> [<remove-label>]:
+# the write chain of a stop: adds <label> (removing <remove-label> when given),
+# posts <text> as the <kind> comment, then releases the claim, last. The label
+# write is worded "add <label>[, remove <remove-label>]" in a failure and
+# "added ...[, removed ...]" once landed; orch:limited's removal is a no-op the
+# words leave out.
 standing_stop_write() {
-  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=()
+  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=() said=""
   relabel=(--add "$label")
-  [ -z "$remove" ] || relabel+=(--remove "$remove")
+  if [ -n "$remove" ]; then
+    relabel+=(--remove "$remove")
+    [ "$remove" = "$STANDING_LIMITED_LABEL" ] || said="$remove"
+  fi
   capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
-    standing_chain_die "$issue" "add $label" "$gh_err"
-  standing_landed_add "added $label"
+    standing_chain_die "$issue" "add $label${said:+, remove $said}" "$gh_err"
+  standing_landed_add "added $label${said:+, removed $said}"
   body="$(mktemp)" || die "could not create a temp file for the $kind comment"
   printf '%s' "$text" >"$body"
   capture_err gh_err adapter_issue_comment "$issue" "$body" || {
@@ -355,16 +419,39 @@ standing_stop_write() {
 # releases the claim, last. The marker is written first: a refusal of the
 # writer dies before any label, comment or claim is touched.
 standing_stop() {
-  local issue="$1" kind="$2" phase="$3" detail="$4" text marker
+  local issue="$1" kind="$2" phase="$3" detail="$4" text marker what
   STANDING_LANDED=""
   marker="$(marked_comment_write "$kind" "$phase")" || exit 1
+  what="$(standing_phase_text "$phase")"
   case "$kind" in
-    refusal) printf -v text '%s\nAutopilot refused to run the %s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
-      "$marker" "$phase" "$detail" "$STANDING_HUMAN_LABEL" ;;
-    *) printf -v text '%s\nAutopilot failed in the %s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
-      "$marker" "$phase" "$detail" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL" ;;
+    refusal) printf -v text '%s\nAutopilot refused to run %s: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks %s up again.\n' \
+      "$marker" "$what" "$detail" "$STANDING_HUMAN_LABEL" "$what" ;;
+    *) printf -v text '%s\nAutopilot failed in %s: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start %s again.\n' \
+      "$marker" "$what" "$detail" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL" "$what" ;;
   esac
   standing_stop_write "$issue" "$kind" "$text" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL"
+}
+
+# standing_sync_finish <issue>: a finished sync's close under its claim -
+# orch:sync removed, then the claim released. orch:done stays and no phase is
+# recorded: the issue is a plain done flow again.
+standing_sync_finish() {
+  STANDING_LANDED=""
+  standing_chain_relabel "$1" --remove "$STANDING_SYNC_LABEL"
+  standing_release "$1"
+}
+
+# standing_sync_dropped <issue> <intents>: the dropped-intent stop of a sync
+# whose merge was pushed: orch:sync removed and needs-human added in one edit,
+# a failure-kind stop comment marked with the phase word sync listing
+# <intents>, then the claim released, last.
+standing_sync_dropped() {
+  local issue="$1" intents="$2" marker text
+  STANDING_LANDED=""
+  marker="$(marked_comment_write failure "$STANDING_SYNC_PHASE")" || exit 1
+  printf -v text '%s\nThe sync pushed its merge, but its resolver dropped these intents:\n\n%s\n\nThe issue is labelled %s and no longer carries %s. Lifting %s re-runs nothing: the issue is a plain %s again.\n' \
+    "$marker" "$intents" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL" "$STANDING_HUMAN_LABEL" "$(standing_phase_label "done")"
+  standing_stop_write "$issue" failure "$text" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL"
 }
 
 # standing_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a
@@ -383,14 +470,14 @@ standing_limit_stop() {
     return 0
   }
   if [ "$count" -ge 2 ]; then
-    standing_stop "$issue" failure "$phase" "$stopped, the third in a row in the $phase phase; log: $log"
+    standing_stop "$issue" failure "$phase" "$stopped, the third in a row in $(standing_phase_text "$phase"); log: $log"
     return 0
   fi
   marker="$(marked_comment_write limited "$phase")" || exit 1
   at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
   [ -z "$reset" ] || at=", which resets $reset"
-  printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
-    "$marker" "$phase" "$at" "$STANDING_LIMITED_LABEL" "$((count + 1))" "$log"
+  printf -v text '%s\nThe session stopped on a usage limit in %s%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
+    "$marker" "$(standing_phase_text "$phase")" "$at" "$STANDING_LIMITED_LABEL" "$((count + 1))" "$log"
   standing_stop_write "$issue" "limit stop" "$text" "$STANDING_LIMITED_LABEL"
 }
 
