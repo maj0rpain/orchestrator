@@ -57,7 +57,7 @@ is_filed_severity() {
 # a review finding - review: followed by at least one character. The one scan
 # the two checks below share.
 review_labels() {
-  printf '%s\n' "$1" | grep '^review:.' || true
+  printf '%s\n' "$1" | grep -i '^review:.' || true
 }
 
 # has_review_label <labels>: whether any label marks a review finding, at any
@@ -72,7 +72,7 @@ has_filed_severity_label() {
   local label
   while IFS= read -r label; do
     [ -n "$label" ] || continue
-    ! is_filed_severity "${label#review:}" || return 0
+    ! is_filed_severity "$(printf '%s' "${label:7}" | tr '[:upper:]' '[:lower:]')" || return 0
   done <<<"$(review_labels "$1")"
   return 1
 }

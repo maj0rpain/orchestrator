@@ -18,6 +18,10 @@ filed_sev nit; assert_status "accepts nit" "$?" 0
 filed_sev blocking; assert_status "refuses blocking - it is always fixed, never filed" "$?" 1
 filed_sev ""; assert_status "refuses an empty severity" "$?" 1
 
+filed_gate() { sourced_orch has_filed_severity_label "$1"; }
+filed_gate $'bug\nReview:Major'; assert_status "a Review:Major label passes the filed-finding gate" "$?" 0
+filed_gate $'bug\nreview:blocking'; assert_status "a blocking review label does not" "$?" 1
+
 # --- severity table ---------------------------------------------------------
 # Every filed severity has a label colour and description, so `review file`
 # needs no fallback for a severity the table leaves out.
