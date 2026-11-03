@@ -27,7 +27,8 @@
 #   skills, agents, docs, markdown, changelog fragments
 #                                     nothing beyond the always-run checks
 #   anything else, orch.sh, orch/common.sh, the shared test setup, the
-#   runners, the gh fake, test_jobs.sh, report.sh, test_tree.sh   all.sh (this row wins)
+#   runners, the gh fake, test_jobs.sh, report.sh, test_tree.sh
+#                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
 # Always run: docs_lint.sh, orch_test.sh's placement sections (helper

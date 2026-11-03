@@ -2462,7 +2462,8 @@ unset -f runner_git_isolation
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
-# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh, report.sh and test_tree.sh,
+# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh, report.sh and
+# test_tree.sh,
 # a harness
 # file holding the three placement sections, a branch section file with two
 # sections, and one tiny file for each other kind of path. origin's main is the
