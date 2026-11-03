@@ -10,14 +10,15 @@
 # in chat, handing the view back with the instruction to end the turn on it
 # and the question in plain text, not the ask tool (#1350, ADR-0051):
 # some hosts hide a long text written in the same response as a tool call.
-# The short confirmation ask after a near-miss answer passes, its view
-# already in the turn-final reply above.
+# The short confirmation ask after a near-miss answer passes: the human's
+# near-miss message disarmed the guard.
 #
 # The arming, disarming, paste matching, re-read window and fail-open cases
 # are paste-guard.sh's, shared with the Stop guard, hook-paste-stop-guard.sh.
-# Here, while armed, every AskUserQuestion is refused, an ask unrelated to the
-# spec review too, unless one assistant text block written after the arming
-# pass line holds the view; an earlier ask, refused or not, proves nothing.
+# The guard lasts until the next `spec-review apply` or human message. Here,
+# while armed, every AskUserQuestion is refused, an ask unrelated to the spec
+# review too, unless one assistant text block written after the arming pass
+# line holds the view; an earlier ask, refused or not, proves nothing.
 # An unknown payload, or one with no transcript_path, allows the ask too.
 #
 # Claude Code only: Junie's nudge in the pass line is the whole enforcement
@@ -29,6 +30,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/paste-guard.sh"
 paste_guard_payload || exit 0
 tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
 [ "$tool" = "AskUserQuestion" ] || exit 0
-paste_guard_check "$transcript" since && exit 0
+paste_guard_check "$transcript" && exit 0
 
 hook_emit_deny "Blocked by the orchestrator: the human has not seen this round's view in chat. Do not ask this question with the ask tool. $(paste_guard_instruction "$paste_guard_view")"

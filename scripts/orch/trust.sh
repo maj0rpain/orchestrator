@@ -9,7 +9,7 @@
 # spec text is read from it. An issue is trusted when its body and its title
 # both are (trust_issue_check).
 # Its tests: scripts/test/orch/trust.sh.
-# Sourced by orch.sh, after common.sh; it calls nothing a noun module defines.
+# Sourced by orch.sh, after common.sh.
 
 # The associations of a trusted author, as a JSON array - the one list the
 # comment filter and the issue check share.
@@ -33,25 +33,27 @@ trust_filter_comments() {
   printf '%s\n' "$kept"
 }
 
-# trust_filter_prs <label>: an adapter's PR lines on stdin, each
+# trust_filter_prs <subject>: an adapter's PR lines on stdin, each
 # `<number>[\t<field>...]\t<isCrossRepository>`, on stdout as the same lines
-# without the flag and without the fork PRs (flag `true`), in order. <label> is
-# a branch or `#<issue>`. When it dropped any, prints one stderr line, `orch:
-# ignored N PR(s) from forks for <label>`. Non-zero, printing nothing, when a
-# line's first field is not a PR number or its last is neither `true` nor
-# `false`.
+# without the flag and without the fork PRs (flag `true`), in order. <subject>
+# is the branch or `#<issue>` the PRs were looked up for. When it dropped any,
+# prints one stderr line, `orch: ignored N PR(s) from forks for <subject>`.
+# Non-zero, printing nothing, when a line's first field is not a PR number or
+# its last is neither `true` nor `false`.
 trust_filter_prs() {
-  local out n
-  out="$(awk -F'\t' -v OFS='\t' '
+  local kept_and_count n kept
+  kept_and_count="$(awk -F'\t' -v OFS='\t' '
     NF == 0 { next }
     $1 !~ /^[0-9]+$/ || NF < 2 || ($NF != "true" && $NF != "false") { exit 1 }
     $NF == "true" { dropped++; next }
     { NF--; print }
     END { print dropped + 0 }
   ')" || return 1
-  n="${out##*$'\n'}"
+  n="${kept_and_count##*$'\n'}"
+  kept=""
+  [ "$kept_and_count" = "$n" ] || kept="${kept_and_count%$'\n'*}"
   [ "$n" -eq 0 ] || warn "ignored $n PR(s) from forks for $1"
-  [ "$out" = "$n" ] || printf '%s\n' "${out%$'\n'*}"
+  [ -z "$kept" ] || printf '%s\n' "$kept"
 }
 
 # trust_issue_read <n> <author> <assoc> <editor> <renamer> <err>:
@@ -122,7 +124,7 @@ trust_writer_text() {
 # pickup's check is the one read for the phase.
 trust_warn_issue() {
   local st=0
-  [ "${ORCH_AUTOPILOT:-}" != 1 ] || return 0
+  ! autopilot_active || return 0
   trust_issue_check "$1" || st=$?
   case "$st" in
     0) ;;

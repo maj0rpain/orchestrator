@@ -41,6 +41,36 @@ die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 # open PR; ticket exists: no breakdown), so their failures exit with status 2
 # instead.
 die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
+
+# die_opt_check <caller> <argc> <option> [value]: the one rule for die_hinted's
+# options, checked by whatever takes them. <argc> is the caller's "$#" at
+# <option>, so a trailing option with no value is told from an empty one.
+# --exit must take 2; --hint must have a value, "" included. A bad pair dies
+# with status 1, naming <caller> and the option.
+die_opt_check() {
+  case "$3" in
+    --exit) [ "${4-}" = 2 ] || die "$1: --exit takes 2, not '${4-}'" ;;
+    --hint) [ "$2" -ge 2 ] || die "$1: --hint needs a value" ;;
+  esac
+}
+
+# die_hinted [--exit 2] [--hint <text>] <msg>: dies with <msg>, then " - <hint>"
+# for a non-empty hint (--hint "" adds nothing) - through die2 under --exit 2,
+# else die. Its options are the ones die_opt_check checks.
+die_hinted() {
+  local code=1 hint=""
+  while [ $# -gt 1 ]; do
+    case "$1" in
+      --exit) die_opt_check die_hinted $# "$@"; code=2; shift 2 ;;
+      --hint) die_opt_check die_hinted $# "$@"; hint="$2"; shift 2 ;;
+      *) die "die_hinted: unknown option $1" ;;
+    esac
+  done
+  local msg="$1"
+  [ -z "$hint" ] || msg="$msg - $hint"
+  [ "$code" != 2 ] || die2 "$msg"
+  die "$msg"
+}
 # warn: die's line on stderr, without the exit - for a refusal that returns its
 # own status, or a warning the command carries on past.
 warn() { printf 'orch: %s\n' "$*" >&2; }
@@ -354,7 +384,11 @@ exclude_line() {
   missing="$(exclude_missing "$1")"
   [ -n "$missing" ] || return 0
   ex="$(git rev-parse --git-common-dir)/info/exclude"
-  { mkdir -p "${ex%/*}" && printf '%s\n' "$missing" >>"$ex"; } 2>/dev/null ||
+  # A last line the user left unterminated is ended first, so the first line
+  # added is never glued onto their pattern.
+  { mkdir -p "${ex%/*}" &&
+    { ! [ -s "$ex" ] || [ -z "$(tail -c1 "$ex")" ] || printf '\n' >>"$ex"; } &&
+    printf '%s\n' "$missing" >>"$ex"; } 2>/dev/null ||
     die "cannot add $(list_join "$missing") to the git exclude file $ex"
 }
 
@@ -433,10 +467,11 @@ require_clean_tree() {
 # at least three backticks or tildes; it closes only on a line that, with the
 # same indent allowance, is a bare run of the same character at least as long.
 # fenced(line) is called once per input line, in order, and strips the line's
-# CR and trailing whitespace from its own copy; it returns 1 for a fence
-# delimiter or a line inside a fence, else 0. Callers still print or cut
-# delimiter lines as any other; fenced only gates heading and section tests.
-# State is fence_-prefixed.
+# CR and trailing whitespace from its own copy; it returns 2 for a fence
+# delimiter line (opening or closing), 1 for a line inside a fence and 0
+# otherwise. A caller uses the result to gate its own tests - headings,
+# sections, paragraph breaks - and decides itself what to do with a fence's
+# lines, delimiters included. State is fence_-prefixed.
 # shellcheck disable=SC2034 # used by the pr, review and ticket modules
 FENCE_AWK='
   function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
@@ -445,10 +480,10 @@ FENCE_AWK='
     n = fence_run(s, " "); if (n <= 3) s = substr(s, n + 1)
     c = substr(s, 1, 1)
     if (fence_char != "") {
-      if (c == fence_char && fence_run(s, c) >= fence_len && fence_run(s, c) == length(s)) fence_char = ""
+      if (c == fence_char && fence_run(s, c) >= fence_len && fence_run(s, c) == length(s)) { fence_char = ""; return 2 }
       return 1
     }
-    if ((c == "`" || c == "~") && fence_run(s, c) >= 3) { fence_char = c; fence_len = fence_run(s, c); return 1 }
+    if ((c == "`" || c == "~") && fence_run(s, c) >= 3) { fence_char = c; fence_len = fence_run(s, c); return 2 }
     return 0
   }
 '

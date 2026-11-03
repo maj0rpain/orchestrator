@@ -65,9 +65,10 @@ printf '%s\n' '.orchestrator/' >>"$ude_ex"
 assert_eq "nothing prints when every entry is present" \
   "$(sourced_orch orch_dirs_unexcluded)" ""
 
-# --- exclude_line's failed write (#1548) --------------------------------------
+# --- exclude_line -------------------------------------------------------------
 # exclude_orch_dirs' four callers (init, side-checkout add, the ticket worktree,
-# the review pass) call it bare under set -e, so this pins their message.
+# the review pass) call it bare under set -e, so a failed write (#1548) pins
+# their message; the appends keep an unterminated last line whole (#1912).
 echo
 echo "exclude_line"
 new_repo >/dev/null
@@ -97,6 +98,33 @@ else
     "orch: cannot add .orchestrator/ to the git exclude file $el_dir/info/exclude"
 fi
 chmod u+w "$el_dir/info/exclude"
+
+# An unterminated last line is ended before the append (#1912).
+new_repo >/dev/null
+el_ex="$(git rev-parse --git-common-dir)/info/exclude"
+printf 'secrets.env' >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "an unterminated last line stays whole beside the appended one" \
+  "$(cat "$el_ex")" $'secrets.env\nextra/'
+rm -f "$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "a missing file gets just the line" "$(od -An -c "$el_ex" | tr -s ' ')" " e x t r a / \\n"
+: >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "an empty file gets just the line" "$(od -An -c "$el_ex" | tr -s ' ')" " e x t r a / \\n"
+printf 'a\n' >"$el_ex"
+sourced_orch exclude_line "extra/"
+assert_eq "a terminated file gets no blank line" "$(od -An -c "$el_ex" | tr -s ' ')" " a \\n e x t r a / \\n"
+printf 'secrets.env' >"$el_ex"
+chmod a-w "$el_ex"
+if [ -w "$el_ex" ]; then
+  skip "a read-only unterminated file dies as before" "$el_ex stays writable (running as root?)"
+else
+  out="$(sourced_orch exclude_line "extra/" 2>&1)"; st=$?
+  assert_eq "a read-only unterminated file dies as before" "$out" \
+    "orch: cannot add extra/ to the git exclude file $el_ex"
+fi
+chmod u+w "$el_ex"
 
 # --- list_has -----------------------------------------------------------------
 # The one newline-list membership test: whole lines, matched literally.
@@ -201,3 +229,21 @@ assert_eq "capture too runs no command" "$(on_disk "$ran_marker")" absent
 out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; d="$(dirty_outside_allowlist)" || echo "refused"' 2>&1)"
 assert_contains "a git-status check under || names the temp file, not git" "$out" "could not create a temp file for git status"
 restore_suite_env
+
+# --- die_hinted and die_opt_check ---------------------------------------------
+echo
+echo "die_hinted and die_opt_check"
+new_repo >/dev/null
+out="$(sourced_orch die_hinted --hint "try again" "it broke" 2>&1)"; st=$?
+assert_status "die_hinted dies with status 1" "$st" 1
+assert_eq "a hint ends the message as ' - <hint>'" "$out" "orch: it broke - try again"
+out="$(sourced_orch die_hinted --hint "" "it broke" 2>&1)"
+assert_eq "an empty hint adds nothing" "$out" "orch: it broke"
+out="$(sourced_orch die_hinted --exit 2 "it broke" 2>&1)"; st=$?
+assert_status "die_hinted --exit 2 dies with status 2" "$st" 2
+out="$(sourced_orch die_opt_check demo 2 --exit 3 2>&1)"; st=$?
+assert_status "die_opt_check refuses an --exit other than 2" "$st" 1
+assert_eq "naming the caller and the option" "$out" "orch: demo: --exit takes 2, not '3'"
+out="$(sourced_orch die_opt_check demo 1 --hint 2>&1)"; st=$?
+assert_status "die_opt_check refuses a trailing --hint" "$st" 1
+assert_eq "naming the caller and the option for a bare --hint" "$out" "orch: demo: --hint needs a value"

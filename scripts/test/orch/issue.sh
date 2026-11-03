@@ -709,7 +709,7 @@ issue_body="$(mktemp)"
 out="$("$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
 assert_status "fetch writes the issue's body to the file, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
-assert_eq "exactly what GitHub holds" "$(cat "$issue_body")" "Body of #23."
+assert_eq "exactly what GitHub holds, for an LF body" "$(cat "$issue_body")" "Body of #23."
 assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 
@@ -721,7 +721,8 @@ assert_eq "and leaves no file a caller could mistake for a body" \
   "$(on_disk "$issue_body")" "absent"
 
 # issue fetch streams gh's stdout to the file, so what gh printed - the body
-# and the one newline gh's --jq adds - round-trips byte for byte, and its
+# and the one newline gh's --jq adds - round-trips byte for byte for an LF
+# body (a CRLF body loses its CRs, below), and its
 # death carries gh's first line (#846). A read that prints nothing writes
 # nothing: issue comments' empty file, below.
 fidir="$(mktemp -d)"
@@ -822,7 +823,7 @@ done
 assert_eq "and writes no file" "$(on_disk "$issue_json")" "absent"
 out="$("$ORCH" issue comments 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "--json is fetch's alone: comments refuses it" "$st" 1
-assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file> [--with-spec-review]"
 assert_eq "and writes no file" "$(on_disk "$issue_json")" "absent"
 assert_contains "help lists --json under issue fetch" "$("$ORCH" help)" "issue fetch <n> <file> [--json]"
 
@@ -991,6 +992,49 @@ rm -f "$issue_json_trust"
 out="$("$ORCH" issue comments 24 "$issue_comments" 2>&1)"
 assert_eq "no line when nothing was dropped" "$out" ""
 
+# --with-spec-review (#1921): the same read and rendering, the spec review's
+# changelogs kept; the trust filter and the failed-read contract unchanged.
+out="$("$ORCH" issue comments 960 "$issue_comments" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review succeeds on an issue mixing changelogs and other comments" "$st" 0
+assert_eq "keeping every comment in order, changelogs included" \
+  "$(cat "$issue_comments")" "$(writeln '<!-- comment @pat 2026-09-03T09:00:00Z -->' \
+    "$(marker_of spec-review)" 'Round 1 of 1' '' 'Nothing changed.' '' \
+    '<!-- comment @triage-bot 2026-09-03T10:00:00Z -->' 'A follow-up that quotes' '## Spec review' 'lower down.' '' \
+    '<!-- comment @pat 2026-09-03T11:00:00Z -->' "$(marker_of spec-review)" 'Round 1 of 2' '' \
+    '<!-- comment @sam 2026-09-03T12:00:00Z -->' '## Spec reviewer notes' 'Not a changelog.')"
+out="$("$ORCH" issue comments 961 "$issue_comments" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review succeeds on an issue with only changelogs" "$st" 0
+assert_eq "writing them, not an empty file" "$(cat "$issue_comments")" \
+  "$(writeln '<!-- comment @pat 2026-09-03T09:00:00Z -->' "$(marker_of spec-review)" 'Round 1 of 2' '' \
+    '<!-- comment @pat 2026-09-03T10:00:00Z -->' "$(marker_of spec-review)" 'Round 2 of 2')"
+out="$("$ORCH" issue comments 25 "$issue_comments" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review succeeds on an issue with no comments" "$st" 0
+assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
+out="$("$ORCH" issue comments 962 "$issue_comments" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review succeeds past untrusted authors" "$st" 0
+assert_eq "and says how many it ignored, once" "$out" \
+  "orch: ignored 2 comment(s) from untrusted authors on #962"
+assert_eq "dropping the stranger's fake changelog too" "$(cat "$issue_comments")" \
+  "$(writeln '<!-- comment @owner 2026-09-04T09:00:00Z -->' 'Owner note.')"
+printf 'known content\n' >"$issue_comments"
+assert_gh_dies "a gh that will not answer fails the --with-spec-review fetch" adapter_issue_json "$GH_502" 1 \
+  "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
+  "$ORCH" issue comments 24 "$issue_comments" --with-spec-review
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
+rm -f "$issue_comments"
+for args in "24 --with-spec-review $issue_comments" "24 $issue_comments --with-spec-reviw" "24 $issue_comments --with-spec-review extra"; do
+  # shellcheck disable=SC2086 # each case is split into its words on purpose
+  out="$("$ORCH" issue comments $args 2>&1)"; st=$?
+  assert_status "comments refuses a misplaced or unknown flag: $args" "$st" 1
+  assert_contains "with the usage line" "$out" "usage: orch.sh issue comments <n> <file> [--with-spec-review]"
+done
+assert_eq "and writes no file" "$(on_disk "$issue_comments")" "absent"
+issue_comments="$(mktemp)"
+assert_contains "help lists the flag" "$("$ORCH" help)" "issue comments <n> <file> [--with-spec-review]"
+assert_contains "and says it keeps the ## Spec review comments" "$("$ORCH" help | tr -s ' \n' '  ')" \
+  "with --with-spec-review, comments opening with the ## Spec review heading are kept"
+
 printf 'known content\n' >"$issue_comments"
 assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_json "$GH_502" 1 \
   "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
@@ -1001,7 +1045,7 @@ assert_eq "and leaves the file that was already there byte-identical" \
 out="$("$ORCH" issue comments abc "$issue_comments" 2>&1)"; st=$?
 assert_status "comments refuses an issue number that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
-assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file> [--with-spec-review]"
 
 out="$("$ORCH" issue comments 23 2>&1)"; st=$?
 assert_status "comments refuses with no file" "$st" 1
@@ -1104,15 +1148,29 @@ for tw_mode in "" --json; do
   assert_contains "warning that trust could not be checked ($tw_mode)" "$out" "orch: issue trust could not be checked for #31: "
   assert_eq "and still writes the file ($tw_mode)" "$([ -s "$tw_file" ] && echo written)" "written"
 done
-# under ORCH_AUTOPILOT=1 the pickup's check is the one read: none is made, so
-# the failing read is never reached and nothing is printed
-for tw_mode in "" --json; do
-  out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" $tw_mode 2>&1 >/dev/null)"; st=$?
-  assert_status "an autopilot fetch exits 0 ($tw_mode)" "$st" 0
-  assert_eq "and makes no trust read and prints no warning ($tw_mode)" "$out" ""
-done
 fake_unfail
-fake_issue_authorship 31 stranger NONE
-out="$(ORCH_AUTOPILOT=1 "$ORCH" issue fetch 31 "$tw_file" 2>&1 >/dev/null)"
-assert_eq "an autopilot fetch of an untrusted issue prints no warning" "$out" ""
 rm -f "$tw_file"
+
+# --- issue fetch writes LF lines (#1916) --------------------------------------
+# A body last edited in the GitHub web UI is stored with CRLF; the plain fetch
+# hands agents and the spec review LF lines, the machine form stays byte-exact.
+echo
+echo "issue fetch writes LF lines (#1916)"
+healthy_repo
+fake_github
+fake_issue 23 open
+lf_dir="$(mktemp -d)"
+fake_issue_body 23 $'# Spec\r\n\r\nAlpha line.\r\nBeta line.\r\n'
+"$ORCH" issue fetch 23 "$lf_dir/body.md"; st=$?
+assert_status "fetch of a CRLF body succeeds" "$st" 0
+assert_eq "writing the same text with LF line endings and no CR" \
+  "$(od -c <"$lf_dir/body.md")" "$(printf '# Spec\n\nAlpha line.\nBeta line.\n\n' | od -c)"
+fake_issue_body 23 $'Alpha line.\r\nBeta line.'
+"$ORCH" issue fetch 23 "$lf_dir/body.md"
+assert_eq "a CRLF body with no final line ending ends as an LF one does" \
+  "$(od -c <"$lf_dir/body.md")" "$(printf 'Alpha line.\nBeta line.\n' | od -c)"
+fake_issue_body 23 $'Alpha line.\r\nBeta line.'
+"$ORCH" issue fetch 23 "$lf_dir/body.json" --json
+assert_contains "fetch --json keeps every CR" "$(jq -r .body "$lf_dir/body.json" | od -c)" '\r  \n'
+rm -rf "$lf_dir"
+unset lf_dir

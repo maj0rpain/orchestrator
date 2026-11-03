@@ -322,9 +322,9 @@ out="$(orch_gh_failing branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$
 assert_status "renames a branch with no upstream" "$st" 0
 assert_eq "prints the new name" "$out" "old-attempt-redo-1"
 assert_eq "the old name is gone locally" \
-  "$(git rev-parse --verify --quiet old-attempt >/dev/null 2>&1 && echo present || echo gone)" "gone"
+  "$(branch_presence old-attempt)" "gone"
 assert_eq "the new name exists" \
-  "$(git rev-parse --verify --quiet old-attempt-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence old-attempt-redo-1)" "present"
 
 git checkout -q -b to-retire
 git push -q -u origin to-retire
@@ -366,9 +366,9 @@ assert_eq "relaying git's fatal: line as the reason (#1300)" "$out" \
 # without a rollback, a push failure leaves `old` gone locally with nothing
 # a retry could find, even though nothing was ever published.
 assert_eq "rolls the local rename back so the old name still exists" \
-  "$(git rev-parse --verify --quiet to-fail >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence to-fail)" "present"
 assert_eq "and the new name is not left dangling in its place" \
-  "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "gone"
+  "$(branch_presence to-fail-redo-1)" "gone"
 
 # Retrying with the same old/new names must succeed once whatever blocked
 # the push clears - issue #63 acceptance criterion 1.
@@ -379,7 +379,7 @@ out="$(orch_gh_failing branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
 assert_eq "prints the new name" "$out" "to-fail-redo-1"
 assert_eq "renames locally" \
-  "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+  "$(branch_presence to-fail-redo-1)" "present"
 assert_eq "and publishes it" \
   "$(origin_branch_state "$bare2" to-fail-redo-1)" "pushed"
 
@@ -835,14 +835,6 @@ restore_index
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
 orch_gh_failing state set issue 12
-echo edit >>README.md
-before="$(checkout_facts)"
-out="$(orch_gh_failing branch create 2>&1)"; st=$?
-assert_status "branch create on a dirty tree in an interactive main checkout is refused (exit 1)" "$st" 1
-assert_contains "naming the changed path (branch create)" "$out" "README.md"
-assert_eq "leaving the checkout as it was (branch create, dirty)" "$(checkout_facts)" "$before"
-assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
-git checkout -q README.md
 
 # The flow mid-pipeline refuses branch off, so the earlier branch is made by
 # hand, as redo review leaves a retired branch with no PR key.
@@ -950,14 +942,13 @@ assert_status "a rebase in progress in an autopilot flow is aborted" "$st" 0
 assert_eq "leaving no rebase in progress" \
   "$(rebase_state)" "none"
 
-# A done flow still holds its branch: a restart discards dirty work and checks
-# the branch out.
-git checkout -q "$default"
+# A done flow still holds its branch: a restart discards dirty work and stays
+# on the branch.
 state_fixture phase "done"
 echo hand >>README.md
 out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on a done flow's existing branch succeeds" "$st" 0
-assert_eq "checking the branch out" "$(git branch --show-current)" "orch/15-again"
+assert_eq "staying on the branch" "$(git branch --show-current)" "orch/15-again"
 assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 
 # An unreadable state.json is reported, not swallowed, when branch sync asks
@@ -996,6 +987,126 @@ side="$(sc_add sidebr)"
   assert_status "a dirty tree in a side checkout is discarded" "$st" 0
   assert_eq "leaving it clean" "$(git status --porcelain)" ""
 )
+
+# --- branch create off the flow's branch (#1911) ------------------------------
+# The discard rule runs only on the flow's own branch or a detached HEAD. On any
+# other branch a clean tree goes on, and a dirty tree, or a merge or rebase in
+# progress, is refused with nothing discarded - on both the restart and the
+# fresh path.
+echo
+echo "branch create off the flow's branch (#1911)"
+# foreign_flow <slug>: a fresh repo with a flow on issue 5 and no branch made.
+foreign_flow() {
+  new_repo_with_origin
+  orch_gh_failing init "$1" >/dev/null
+  orch_gh_failing state set issue 5
+}
+# dirty_tree: the tree the refusals and discards are checked against - a
+# tracked edit and an untracked file.
+dirty_tree() {
+  echo hand >>README.md
+  echo mine >untracked.txt
+}
+# refusal_facts: the state a refusal must leave as it was.
+refusal_facts() {
+  git branch --show-current; git status --porcelain
+  orch_gh_failing state get branch; orch_gh_failing state get base_sha
+}
+
+# 1 and 6: the restart on a dirty foreign branch, interactive main checkout
+foreign_flow feat
+orch_gh_failing branch create >/dev/null
+git checkout -q -b human-scratch
+dirty_tree
+before="$(refusal_facts)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a restart on a dirty foreign branch is refused with exit 1" "$st" 1
+assert_contains "naming the current branch as not the flow's" "$out" "the current branch human-scratch is not the flow's branch orch/5-feat"
+assert_contains "saying nothing was discarded" "$out" "nothing was discarded"
+assert_not_contains "never calling it work on the flow's branch" "$out" "work on the flow's branch"
+assert_eq "staying on it, edits and state intact" "$(refusal_facts)" "$before"
+assert_contains "keeping the tracked edit" "$(git diff --stat)" "README.md"
+assert_eq "keeping the untracked file" "$(cat untracked.txt)" "mine"
+# the same in autopilot
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "the same in an autopilot flow is refused too" "$st" 1
+assert_eq "leaving everything intact" "$(refusal_facts)" "$before"
+# 2: clean tree
+rm untracked.txt
+git checkout -q -- README.md
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a restart on a clean foreign branch succeeds" "$st" 0
+assert_eq "printing the flow's branch" "$out" "orch/5-feat"
+assert_eq "checking it out" "$(git branch --show-current)" "orch/5-feat"
+
+# 3: the fresh path on a dirty foreign branch
+foreign_flow fresh
+git checkout -q -b human-scratch
+dirty_tree
+before="$(refusal_facts)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "the fresh path on a dirty foreign branch is refused with exit 1" "$st" 1
+assert_contains "naming the current branch" "$out" "the current branch human-scratch is not the flow's branch orch/5-fresh"
+assert_eq "leaving edits and state intact" "$(refusal_facts)" "$before"
+assert_eq "making no flow branch" "$(git branch --list orch/5-fresh)" ""
+
+# 8: the fresh path on a retired -redo-<n> branch that state.branch still
+# records (a redo died between its rename and its clear)
+foreign_flow redo
+orch_gh_failing branch create >/dev/null
+git branch -q -m orch/5-redo orch/5-redo-redo-1
+state_fixture branch orch/5-redo-redo-1
+dirty_tree
+before="$(refusal_facts)"
+for ap in 1 ""; do
+  out="$(ORCH_AUTOPILOT=$ap orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "the fresh path on a retired branch is refused (autopilot='$ap')" "$st" 1
+  assert_contains "naming it as not the flow's branch (autopilot='$ap')" "$out" "the current branch orch/5-redo-redo-1 is not the flow's branch orch/5-redo"
+  assert_contains "saying nothing was discarded (autopilot='$ap')" "$out" "nothing was discarded"
+  assert_eq "leaving edits and state intact (autopilot='$ap')" "$(refusal_facts)" "$before"
+  assert_eq "making no flow branch (autopilot='$ap')" "$(git branch --list orch/5-redo)" ""
+done
+
+# 4 and 7: a side checkout on its detached HEAD discards
+sc_clone
+side="$(sc_add sideb)"
+(
+  cd "$side" || { bad "cd into the side checkout" "cannot cd into $side"; exit 1; }
+  orch_gh_failing init sideb >/dev/null
+  orch_gh_failing state set issue 5
+  dirty_tree
+  out="$(orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "the fresh path on a detached HEAD discards and forks" "$st" 0
+  assert_eq "leaving it clean" "$(git status --porcelain)" ""
+  assert_eq "on the flow's branch" "$(git branch --show-current)" "orch/5-sideb"
+  git checkout -q --detach
+  dirty_tree
+  out="$(orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "a restart on a detached HEAD discards and checks out" "$st" 0
+  assert_eq "leaving it clean" "$(git status --porcelain)" ""
+  assert_eq "on the flow's branch again" "$(git branch --show-current)" "orch/5-sideb"
+)
+
+# 5: a merge or rebase in progress on a foreign branch
+foreign_flow feat
+orch_gh_failing branch create >/dev/null
+git checkout -q -b scratch-m
+leave_merge_in_progress clash-m
+before="$(refusal_facts)"
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a merge in progress on a foreign branch is refused" "$st" 1
+assert_eq "leaving the merge in progress" "$(merge_state)" "merging"
+assert_eq "and state as it was" "$(refusal_facts)" "$before"
+git merge --abort
+git checkout -q -b scratch-r
+leave_rebase_in_progress clash-r
+assert_eq "(fixture) a rebase is in progress" "$(rebase_state)" "rebasing"
+before="$(refusal_facts)"
+out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "a rebase of a foreign branch in progress is refused" "$st" 1
+assert_contains "naming the branch being rebased" "$out" "the current branch scratch-r is not the flow's"
+assert_eq "leaving the rebase in progress" "$(rebase_state)" "rebasing"
+assert_eq "and state as it was" "$(refusal_facts)" "$before"
 
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null

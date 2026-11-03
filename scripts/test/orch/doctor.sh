@@ -747,6 +747,19 @@ assert_eq "the remedy appends .scratch/" "$(exclude_count .scratch/)" "1"
 assert_eq "without repeating .orchestrator/" "$(exclude_count .orchestrator/)" "1"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "and clears the warning" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+
+# The remedy on an unterminated and on a terminated file (#1912).
+printf 'secrets.env' >.git/info/exclude
+out="$("$ORCH" doctor --env 2>&1)"
+remedy="$(printf '%s\n' "$out" | grep -A1 'not git-excluded' | sed -n '2s/^ *//p')"
+eval "$remedy"
+assert_eq "the remedy keeps an unterminated last pattern whole" "$(exclude_count secrets.env)" "1"
+assert_eq "and writes .orchestrator/ once" "$(exclude_count .orchestrator/)" "1"
+assert_eq "and .scratch/ once" "$(exclude_count .scratch/)" "1"
+printf 'secrets.env\n' >.git/info/exclude
+eval "$remedy"
+assert_eq "on a terminated file the remedy adds one blank line, then the directories" \
+  "$(cat .git/info/exclude)" $'secrets.env\n\n.orchestrator/\n.scratch/'
 : >.git/info/exclude
 
 # The exclude line is still truncated from the check above, so this one does
@@ -1638,11 +1651,14 @@ assert_contains "reports it matches phase" "$out" \
   "PR #40 draft state matches phase (done)"
 
 fake_pr_draft 40
+state_fixture branch orch/doctordraft
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a draft PR left behind once the flow is done fails" "$st" 1
 assert_contains "names the mismatch" "$out" \
   "PR #40 is still a draft but the flow phase is done"
-assert_contains "gives the command that promotes it" "$out" "gh pr ready 40"
+assert_contains "gives the command that promotes it" "$out" \
+  "orch.sh pr ready    # on orch/doctordraft"
+assert_not_contains "and not the ungated gh pr ready" "$out" "gh pr ready"
 
 fake_pr 40 merged orch/doctordraft main
 fake_pr_draft 40
@@ -2101,6 +2117,15 @@ assert_not_contains "nor a complete line for unparseable comments" "$out" "compl
 reads_before="$(fake_comment_reads)"
 ORCH_AUTOPILOT=1 "$ORCH" doctor --flow >/dev/null 2>&1
 assert_eq "doctor --flow with two due handoffs makes exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1
+scratch="$(dirname "$(ORCH_AUTOPILOT=1 "$ORCH" handoff path implement 2>/dev/null)")"
+chmod a-w "$scratch"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+chmod u+w "$scratch"
+assert_status "an unwritable scratch copy fails the check" "$st" 1
+assert_contains "named as a write failure" "$out" \
+  "could not write the copies of issue #7's handoff comments to $scratch"
+assert_not_contains "never as a missing handoff" "$out" "comment is missing"
+assert_not_contains "nor as an unreadable read" "$out" "could not read issue #7's handoff comments"
 fake_comment 7 o 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
 ## Decisions"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"

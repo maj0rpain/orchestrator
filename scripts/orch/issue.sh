@@ -74,8 +74,18 @@ cmd_issue_fetch() {
     return
   fi
   gh_or_die --file "$file" "read the body of issue #$issue" \
-    adapter_issue_body "$issue"
+    issue_body_lf "$issue"
 }
+
+# issue_body_lf <n>: issue <n>'s body on stdout with every carriage return
+# removed, so GitHub's web-UI CRLF lines reach the spec review as LF. A failed
+# read fails the pipeline, stderr untouched. Plain fetch only:
+# adapter_issue_body stays byte-exact for the ticket module's CRLF-preserving
+# rewrites.
+issue_body_lf() (
+  set -o pipefail
+  adapter_issue_body "$1" | tr -d '\r'
+)
 
 # issue_json_trusted <what> <n> <var>: issue <n> as ISSUE_JSON_JQ's object minus
 # the comments of untrusted authors (Trust module), authorAssociation deleted
@@ -92,12 +102,12 @@ issue_json_trusted() {
   printf -v "$3" '%s' "$__ijt_out"
 }
 
-# issue_comments_render <n>: adapter_issue_comments' raw JSON on stdin, on
+# comments_render_trusted <n>: adapter_issue_comments' raw JSON on stdin, on
 # stdout the comments of trusted authors rendered through COMMENTS_RENDER_JQ as
 # it renders them - nothing for none, no placeholder for a dropped
-# comment. Non-zero when stdin is not a comment object. The trust filter's
-# stderr line is for issue <n>.
-issue_comments_render() {
+# comment. Non-zero when stdin is not a comment object. <n> is the issue or PR
+# number; the trust filter's stderr line names `#<n>`.
+comments_render_trusted() {
   local kept
   kept="$(jq -c .comments 2>/dev/null | trust_filter_comments "$1")" || return 1
   jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)' <<<"$kept"
@@ -105,35 +115,41 @@ issue_comments_render() {
 
 # comments_rendered <adapter> <what> <n> <var>: issue or PR <n>'s trusted
 # comments, read by <adapter> (adapter_issue_comments or adapter_pr_comments),
-# rendered by issue_comments_render, assigned to <var>; no placeholder for a
+# rendered by comments_render_trusted, assigned to <var>; no placeholder for a
 # dropped comment, and the Trust filter's stderr line names <n>. A gh failure
 # dies as "gh could not <what>"; a comment object that does not parse dies as
 # "could not <what>: its comments did not parse", both with status 1.
 comments_rendered() {
   local __cr_raw __cr_out
   gh_or_die --out __cr_raw "$2" "$1" "$3"
-  __cr_out="$(issue_comments_render "$3" <<<"$__cr_raw")" \
+  __cr_out="$(comments_render_trusted "$3" <<<"$__cr_raw")" \
     || die "could not $2: its comments did not parse"
   printf -v "$4" '%s' "$__cr_out"
 }
 
-# The comments `issue comments` writes (#1116), from the issue's comments
-# already filtered to drop the spec review's own changelogs (the marked comments
-# of kind spec-review): rendered through COMMENTS_RENDER_JQ, as every comments
+# The comments `issue comments` writes (#1116), from the issue's comments,
+# filtered or not as the caller chooses (the spec review's own changelogs, the
+# marked comments of kind spec-review, are dropped by default and kept with
+# --with-spec-review): rendered through COMMENTS_RENDER_JQ, as every comments
 # read renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
 # object, whose author is already the login.
 ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
 
-# Every comment on the issue but the spec review's own changelogs and the
-# untrusted authors', in the rendered shape - so the spec review reads the
-# comments beside the body without its earlier rounds. Filtered here rather
+# Every comment on the issue but the untrusted authors', and by default but the
+# spec review's own changelogs, in the rendered shape - so the spec review reads
+# the comments beside the body without its earlier rounds. Filtered here rather
 # than in the adapter, from the issue's trusted structured read, never by
 # splitting the joined text. No comments is an empty file, not an error; the
-# file is written only once the read has succeeded.
+# file is written only once the read has succeeded. With --with-spec-review
+# (#1921; orch-questions passes it) the changelogs are kept, the one difference.
 cmd_issue_comments() {
-  local issue="$1" file="$2" json text
+  local issue="$1" file="$2" keep_reviews="${3:-}" json text
   issue_json_trusted "read the comments of issue #$issue" "$issue" json
-  text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ")" \
+  if [ -n "$keep_reviews" ]; then
+    text="$(jq -r "$ISSUE_COMMENTS_KEPT_JQ" <<<"$json")"
+  else
+    text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ")"
+  fi \
     || die "could not read the comments of issue #$issue"
   # $(...) drops the trailing newline jq -r printed; put it back unless empty.
   file_write_atomic "$file" "${text:+$text$'\n'}" \
@@ -163,9 +179,13 @@ cmd_issue() {
     fetch|update|comment|comments)
       local usage="usage: orch.sh issue $op <n> <file>"
       [ "$op" = fetch ] && usage="usage: orch.sh issue fetch <n> <file> [--json]"
-      # For fetch alone, --json only as the third argument; any other shape is
-      # a usage error.
-      [ $# -eq 2 ] || { [ "$op" = fetch ] && [ $# -eq 3 ] && [ "$3" = --json ]; } \
+      [ "$op" = comments ] && usage="usage: orch.sh issue comments <n> <file> [--with-spec-review]"
+      # A flag only as the third argument, and only the op's own (--json for
+      # fetch, --with-spec-review for comments); any other shape is a usage
+      # error.
+      [ $# -eq 2 ] \
+        || { [ "$op" = fetch ] && [ $# -eq 3 ] && [ "$3" = --json ]; } \
+        || { [ "$op" = comments ] && [ $# -eq 3 ] && [ "$3" = --with-spec-review ]; } \
         || die "$usage"
       case "$1" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $1 ($usage)" ;; esac
       "cmd_issue_$op" "$@"

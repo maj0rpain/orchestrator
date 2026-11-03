@@ -327,7 +327,10 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
   `.env` fixed, writes or clears every key again.
 
 The repo is cloned into a named volume on first start and reused after, so
-side checkouts, flow state and logs survive a restart. Session logs stay
+side checkouts, flow state and logs survive a restart. A reused clone whose
+origin is not `REPO` is refused, not repaired: remove the repo volume
+(`docker compose down -v`) or run a separate compose project (`-p <name>`) for
+the new repo. Session logs stay
 where the watcher writes them, under `.orchestrator/autopilot/logs/` in that
 volume; the watcher's stderr is the container's output, shown by `docker
 compose logs`.

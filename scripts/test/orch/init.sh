@@ -64,6 +64,15 @@ assert_eq "a .scratch/ line already present is not written again" "$(exclude_cou
 assert_eq "and .orchestrator/ is still added beside it" "$(exclude_count .orchestrator/)" "1"
 mkdir -p .scratch && echo plan >.scratch/plan.md
 assert_eq "an untracked .scratch/ stays out of git status" "$(git status --porcelain)" ""
+
+# An exclude file whose last line has no final newline (#1912).
+new_repo >/dev/null
+fake_github
+printf 'secrets.env' >>.git/info/exclude
+"$ORCH" init feat >/dev/null
+assert_eq "init leaves an unterminated last pattern whole" "$(exclude_count secrets.env)" "1"
+assert_eq "init still excludes .orchestrator/ once beside it" "$(exclude_count .orchestrator/)" "1"
+assert_eq "init still excludes .scratch/ once beside it" "$(exclude_count .scratch/)" "1"
 restore_suite_env
 
 # --- init refuses a dirty working tree ----------------------------------------
@@ -493,13 +502,4 @@ out="$("$ORCH" init warned-read --issue 42 2>&1 >/dev/null)"; st=$?
 assert_status "init --issue past a failed trust read exits 0" "$st" 0
 assert_contains "warning that trust could not be checked" "$out" "orch: issue trust could not be checked for #42: "
 assert_eq "and the flow state is written" "$("$ORCH" state get issue)" "42"
-# pickup's init runs under ORCH_AUTOPILOT=1: no trust read, no warning
-rm -f .orchestrator/state.json
-out="$(ORCH_AUTOPILOT=1 "$ORCH" init picked --issue 42 2>&1 >/dev/null)"; st=$?
-assert_status "an autopilot init --issue exits 0" "$st" 0
-assert_eq "and makes no trust read and prints no warning" "$out" ""
-assert_eq "and the flow state is written" "$("$ORCH" state get issue)" "42"
 fake_unfail
-rm -f .orchestrator/state.json
-out="$(ORCH_AUTOPILOT=1 "$ORCH" init picked-again --issue 42 2>&1 >/dev/null)"
-assert_eq "an autopilot init of an untrusted issue prints no warning" "$out" ""

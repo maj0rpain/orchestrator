@@ -198,6 +198,8 @@ col0_names() {
 
 # on_disk <path>: present or absent, whether anything is at <path>.
 on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
+# branch_presence <ref>: present or gone, whether the branch <ref> exists.
+branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then echo present; else echo gone; fi; }
 # exclude_count <line>: how many times <line> appears whole in the current
 # clone's shared exclude file, the one every checkout of it reads.
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
@@ -809,8 +811,9 @@ fake_body_read() {
 # scope, answered one per call, the last repeating: green, failing (build
 # fails, Actions run 4242; lint passes), cancel (build cancelled, run 5150),
 # external (a failing outside-CI check, ext-ci, ahead of build failing in run
-# 4242), pending, none (no checks reported) or boom (a connection error). An
-# unscripted scope has no checks.
+# 4242), comma (one failing check named `build (linux, x64)`), pending, none
+# (no checks reported) or boom (a connection error). An unscripted scope has
+# no checks.
 fake_checks() {
   local d="$ORCH_GH_FAKE_STORE/checks/$1" scope="$2"
   shift 2
@@ -818,6 +821,13 @@ fake_checks() {
   printf '%s\n' "$@" >"$d/$scope"
   rm -f "$d/$scope.n"
 }
+
+# fake_checks_clear: no scripted checks for any PR, read counter included.
+fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
+
+# fake_checks_reads <n>: how many times PR #n's checks were read, scripted
+# scope or not; 0 when never read.
+fake_checks_reads() { { wc -l <"$ORCH_GH_FAKE_STORE/checks/$1/reads" || echo 0; } 2>/dev/null | tr -d ' '; }
 
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.

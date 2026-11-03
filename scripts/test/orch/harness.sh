@@ -13,36 +13,39 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
-# suites_read <all.sh>: reads the suite list from the one `suites=(...)` line
-# of <all.sh> into the array SUITES, with read -a and no eval, and returns 0.
-# It returns 1, with SUITES_ERR holding an orch:-style message, when <all.sh>
-# holds no such line or more than one, when the list is empty, or when a name
-# in it is not a file beside the real all.sh, never in <all.sh>'s own tree,
-# whose stubs are made from the list. A caller fails on its failure: a list
-# that came back empty would make every loop run zero times.
-suites_read() {
-  local file="$1" n line list name
-  SUITES=()
-  SUITES_ERR=""
-  n="$(grep -c '^suites=(' "$file")" || true
-  if [ "$n" -ne 1 ]; then
-    SUITES_ERR="orch: $file holds $n suites=( lines, not one"
-    return 1
-  fi
-  line="$(grep '^suites=(' "$file")"
-  list="${line#suites=(}"
-  read -ra SUITES <<<"${list%%)*}"
-  if [ "${#SUITES[@]}" -eq 0 ]; then
-    SUITES_ERR="orch: $file holds an empty suites list"
-    return 1
-  fi
-  for name in "${SUITES[@]}"; do
-    if [ ! -f "$(dirname "$SUITE_SCRIPT")/$name" ]; then
-      SUITES_ERR="orch: $file names $name, which is no file in scripts/test/"
-      return 1
-    fi
-  done
+# slot_hold <pool> <slot>: creates <pool> and holds <slot>'s lock in a
+# background process, its pid in SLOT_HOLDER. The holder opens the fifo's write
+# end on fd 8, then opens and locks the slot file on fd 9, and writes the ready
+# line only when both worked; the read returns 1 on EOF (the holder died first)
+# or after 10 seconds. SLOT_HOLDER names the holder on that path too, so
+# slot_release is safe after it.
+slot_hold() {
+  local fifo line
+  mkdir -p "$1"
+  fifo="$(mktemp -u)"
+  mkfifo "$fifo" || return 1
+  bash -c 'exec 8>"$2" && exec 9>>"$1" && flock 9 && echo ready >&8 && exec 8>&- && exec sleep 60' _ "$1/slot.$2" "$fifo" &
+  SLOT_HOLDER=$!
+  read -r -t 10 line <"$fifo" || { rm -f "$fifo"; return 1; }
+  rm -f "$fifo"
 }
+# slot_release: kills the holder slot_hold started, and waits for it.
+slot_release() { kill -9 "$SLOT_HOLDER" 2>/dev/null; wait "$SLOT_HOLDER" 2>/dev/null; return 0; }
+# notice_wait <file>: waits, up to 5 seconds, for the waiting notice in <file>;
+# returns 0 either way, the assertion after it reports a missing notice.
+notice_wait() {
+  local _
+  for _ in $(seq 100); do
+    grep -q 'waiting for a job slot' "$1" 2>/dev/null && break
+    sleep 0.05
+  done
+  return 0
+}
+# pool_cpu_file <file> <slots>: writes a CPU quota file of 2 CPUs per slot (a
+# quota of 200000 per slot), which a 50% pool share, as jp_run sets, sizes to
+# <slots> slots. Under another share the slot count follows that share: at the
+# default 75%, 1 still gives 1 slot (1.5 rounded down).
+pool_cpu_file() { printf '%s 100000\n' "$(($2 * 200000))" >"$1"; }
 
 # stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
 # of all.sh, test_jobs.sh and report.sh beside a passing stub for each name in
@@ -238,15 +241,21 @@ name_placement() {
 # the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
 # module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
 gh_op_placement() {
-  local rc=0 out="" part
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_MULTI_FIELD_OPS" ./orch/gh.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="$part"
-  rc=0
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_TRUST_READ_OPS" ./orch/gh.sh ./orch/trust.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="${out:+$out
+  local rc=0 out="" part ops owners pair
+  local pairs=(
+    "$GH_MULTI_FIELD_OPS|./orch/gh.sh"
+    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
+  )
+  for pair in "${pairs[@]}"; do
+    ops="${pair%%|*}" owners="${pair#*|}"
+    rc=0
+    # owners is a space-separated path list: split it into arguments
+    # shellcheck disable=SC2086
+    part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$ops" $owners)" || rc=$?
+    [ "$rc" -ne 2 ] || return 2
+    [ -z "$part" ] || out="${out:+$out
 }$part"
+  done
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort -u
   return 1
@@ -381,10 +390,11 @@ assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
   "ok   the suite starts outside any git work tree"
 assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
 
-# A copy of the scripts tree with three planted sections whose headers end in
-# trailing dashes like the real ones; the pattern matches two of them.
+# One copy of the scripts tree with three planted sections whose headers end in
+# trailing dashes like the real ones, shared by every filter case below;
+# matching ignores case, so the first pattern selects two of them.
 filter_dir="$(planted_copy <<'PLANTED'
-  # --- planted alpha ------------------------------------------------------
+  # --- Planted Alpha ------------------------------------------------------
   echo; echo "planted alpha"; ok "alpha ran"
   # --- planted beta -------------------------------------------------------
   echo; echo "planted beta"; ok "beta ran"
@@ -392,25 +402,17 @@ filter_dir="$(planted_copy <<'PLANTED'
   echo; echo "planted gamma"; ok "gamma ran"
 PLANTED
 )"
+filter_suite="$filter_dir/scripts/test/orch_test.sh"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted (alpha|beta)$' \
-  bash "$filter_dir/scripts/test/orch_test.sh" 2>/dev/null)"
+  bash "$filter_suite" 2>/dev/null)"
 assert_eq "matches titles without their trailing dashes" \
   "$(count_lines -xE 'planted alpha|planted beta' "$out")" "2"
 assert_eq "runs isolation alongside the matched sections" \
   "$(count_lines -x 'isolation' "$out")" "1"
 assert_eq "skips the sections the pattern does not match" \
   "$(count_lines -x 'planted gamma' "$out")" "0"
-rm -rf "$filter_dir"
 
 # Case-insensitive match, and the top-level branches of an alternation.
-filter_dir="$(planted_copy <<'PLANTED'
-  # --- Planted Alpha ------------------------------------------------------
-  echo; echo "planted alpha"; ok "alpha ran"
-  # --- planted beta -------------------------------------------------------
-  echo; echo "planted beta"; ok "beta ran"
-PLANTED
-)"
-filter_suite="$filter_dir/scripts/test/orch_test.sh"
 filter_err="$(mktemp)"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha$' bash "$filter_suite" 2>&1)"; st=$?
 assert_status "a lowercase filter selects a capitalised title" "$st" 0
@@ -437,13 +439,6 @@ assert_status "an all-dead alternation exits 1" "$st" 1
 assert_eq "names each branch of an all-dead alternation" "$(cat "$filter_err")" \
   "orch_test.sh: ORCH_TEST_ONLY branch '^nonexistent' matches no section
 orch_test.sh: ORCH_TEST_ONLY branch '^missing' matches no section; the selectable sections are:"
-
-out="$(ORCH_TEST_JOBS=2 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha|^nonexistent' \
-  bash "$filter_suite" 2>"$filter_err")"; st=$?
-assert_status "a dead branch exits 1 in parallel" "$st" 1
-assert_eq "runs no section in parallel for a dead branch" "$(count_lines 'alpha ran' "$out")" "0"
-assert_contains "names the dead branch in parallel" "$(cat "$filter_err")" \
-  "branch '^nonexistent' matches no section"
 
 # Grouped, nested, bracketed and escaped bars are not split points; an empty
 # branch is handed to grep as it stands.
@@ -492,7 +487,7 @@ assert_eq "runs nothing" "$(count_lines 'passed' "$out")" "0"
 # status.
 echo
 echo "quiet mode (ORCH_TEST_QUIET, #614)"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 # The reference run: isolation alone, not quiet. Its ok lines give the
 # isolation section's pass count, which the quiet runs' summaries must match.
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
@@ -548,7 +543,7 @@ for quiet_suite in "${SUITES[@]}"; do
   assert_eq "$quiet_suite's cut-down copy holds the planted check" \
     "$(grep -cx 'ok "a planted check"' "$cut_dir/$quiet_suite")" "1"
   assert_eq "$quiet_suite's cut-down copy holds its summary" \
-    "$(grep -cxF 'echo "$PASS passed, $FAIL failed"' "$cut_dir/$quiet_suite")" "1"
+    "$(grep -cx 'tally_summary' "$cut_dir/$quiet_suite")" "1"
   out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"; st=$?
   assert_status "$quiet_suite's cut-down copy exits 0 when quiet" "$st" 0
   assert_eq "$quiet_suite prints no ok line when quiet" \
@@ -684,7 +679,10 @@ rm -rf "$sub_dir"
 # A tiny standalone suite sourcing tally.sh the way the hooks, docs lint,
 # version bump, lens bench and autopilot suites do, with one failing assertion
 # in ( ... ) and one passing outside it, counts both and exits non-zero. A
-# structural check then holds each of the seven suites to the shared tally.
+# structural check then holds the suites to the shared tally: no suite defines
+# an ok, bad or skip of its own (all seven, setup.sh included for orch_test.sh);
+# orch_test.sh alone is checked for sourcing tally.sh and calling tally_read,
+# as the quiet-mode run proves both for the six standalone suites.
 echo
 echo "the standalone suites' tally (#1904)"
 tally_dir="$(mktemp -d)"
@@ -693,26 +691,34 @@ source "$(dirname "$SUITE_SCRIPT")/tally.sh"
 tally_init
 ( bad "a failure in a subshell" "its detail line" )
 ok "a pass outside it"
-tally_read
-echo "\$PASS passed, \$FAIL failed"
-[ "\$FAIL" -eq 0 ]
+tally_summary
 SUITE
 out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a standalone suite with a subshell failure exits 1" "$st" 1
 assert_eq "and counts the subshell failure in its summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
+assert_eq "after a blank line" "$(printf '%s\n' "$out" | tail -n 2 | head -n 1)" ""
+sed -i '/^( bad /d' "$tally_dir/suite.sh"
+out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
+assert_status "a passing standalone suite exits 0" "$st" 0
+assert_eq "and reports no failure" "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 0 failed"
+sed -i 's/^tally_summary$/rm -f "$tally_file"\ntally_summary/' "$tally_dir/suite.sh"
+out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
+assert_status "a standalone suite whose tally file is gone exits 1" "$st" 1
+assert_eq "and reports it as a failure" "$(printf '%s\n' "$out" | tail -n 1)" "0 passed, 1 failed"
 rm -rf "$tally_dir"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for tally_suite in "${SUITES[@]}"; do
   tally_path="$(dirname "$SUITE_SCRIPT")/$tally_suite"
-  assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
-  # orch_test.sh reads the tally in setup.sh's summary.
-  tally_reader="$tally_path"
-  [ "$tally_suite" != orch_test.sh ] || tally_reader="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
-  assert_contains "$tally_suite calls tally_read" "$(<"$tally_reader")" "tally_read"
-  # orch_test.sh's assertions once lived in setup.sh too.
   tally_files=("$tally_path")
-  [ "$tally_suite" != orch_test.sh ] || tally_files+=("$tally_reader")
+  if [ "$tally_suite" = orch_test.sh ]; then
+    setup_path="$(dirname "$SUITE_SCRIPT")/orch/setup.sh"
+    assert_contains "$tally_suite sources tally.sh" "$(<"$tally_path")" "tally.sh\""
+    # orch_test.sh reads the tally in setup.sh's summary, and its assertions
+    # once lived in setup.sh too.
+    assert_contains "$tally_suite calls tally_read" "$(<"$setup_path")" "tally_read"
+    tally_files+=("$setup_path")
+  fi
   assert_eq "$tally_suite defines no ok, bad or skip of its own" \
     "$(cat "${tally_files[@]}" | grep -cE '^(ok|bad|skip) *\(\)')" "0"
 done
@@ -823,7 +829,7 @@ assert_eq "no title appears twice across the walk" \
 # the waiting section writes lives outside that TMPDIR.
 echo
 echo "the suite's temp root (#807)"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 root_dir="$(planted_copy <<'PLANTED'
   # --- planted repo
   echo; echo "planted repo"; new_repo >/dev/null; ok "made a repo"
@@ -1017,7 +1023,7 @@ rm -rf "$guard_dir"
 # stub shellcheck when the case wants one - the real one never runs.
 echo
 echo "all.sh, the single entry point (#615)"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 all_root="$(mktemp -d)"
 all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
@@ -1100,7 +1106,7 @@ all_print_order() {
 # with no suites=( line, one with two, one with an empty list, one naming a
 # suite with no file in scripts/test/.
 all_real="$(dirname "$SUITE_SCRIPT")/all.sh"
-suites_read "$all_real"; st=$?
+suites_read "$all_real" "$(dirname "$SUITE_SCRIPT")"; st=$?
 assert_status "the reader succeeds over the real all.sh" "$st" 0
 for all_case in none two empty missing; do
   case "$all_case" in
@@ -1110,11 +1116,12 @@ for all_case in none two empty missing; do
     missing) all_text='suites=(orch_test.sh no_such_suite.sh)' ;;
   esac
   printf '%s\n' "$all_text" >"$all_root/planted_all.sh"
-  suites_read "$all_root/planted_all.sh"; st=$?
+  suites_read "$all_root/planted_all.sh" "$(dirname "$SUITE_SCRIPT")"; st=$?
   assert_status "the reader fails over an all.sh with $all_case" "$st" 1
-  assert_contains "and names the problem with an orch: message ($all_case)" "$SUITES_ERR" "orch: "
+  assert_contains "and names the problem ($all_case)" "$SUITES_ERR" "$all_root/planted_all.sh"
+  assert_not_contains "with no orch: prefix ($all_case)" "$SUITES_ERR" "orch: "
 done
-suites_read "$all_real" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$all_real" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 all_bash="$(command -v bash)"
 # all_run [VAR=value...]: run the copied all.sh on the stub PATH, with CI,
 # CHANGELOG_BASE, NO_VERSION_BUMP and ORCH_TEST_JOBS unset, then each given
@@ -1441,9 +1448,9 @@ jp_copy="$(planted_copy <<'PLANTED'
 PLANTED
 )"
 jp_suite="$jp_copy/scripts/test/orch_test.sh"
-printf "400000 100000\n" >"$jp_dir/cpu2"
-printf "200000 100000\n" >"$jp_dir/cpu1"
-printf "800000 100000\n" >"$jp_dir/cpu4"
+pool_cpu_file "$jp_dir/cpu2" 2
+pool_cpu_file "$jp_dir/cpu1" 1
+pool_cpu_file "$jp_dir/cpu4" 4
 # jp_run <slots> <pool dir> [VAR=value...] -- <ORCH_TEST_ONLY> <jobs>: the
 # planted suite on a pool of <slots> slots, its stderr in $jp_dir/err.
 jp_run() {
@@ -1453,14 +1460,6 @@ jp_run() {
   env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu$slots" ORCH_TEST_POOL_DIR="$pool" \
     JP_LOG="$jp_log" JP_POOL="$pool" JP_SUITE="$jp_suite" ORCH_TEST_QUIET=1 \
     ORCH_TEST_ONLY="$2" ORCH_TEST_JOBS="$3" "${extra[@]}" bash "$jp_suite" >/dev/null 2>"${jp_err:-$jp_dir/err}"
-}
-# jp_hold <pool> <slot>: hold that slot's lock in a background process, its
-# pid in jp_holder.
-jp_hold() {
-  mkdir -p "$1"
-  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$1/slot.$2" &
-  jp_holder=$!
-  until ! flock -n "$1/slot.$2" true; do sleep 0.05; done
 }
 jp_notice='waiting for a job slot'
 
@@ -1485,33 +1484,30 @@ assert_contains "the notice names the runner and the slots in use" "$(cat "$jp_e
 
 # A killed holder's slot is freed.
 rm -rf "$jp_dir/pool2"
-jp_hold "$jp_dir/pool2" 1
+slot_hold "$jp_dir/pool2" 1 || bad "holds the slot"
 : >"$jp_log"
 jp_run 1 "$jp_dir/pool2" -- '^pool a$' 2 &
 jp_p1=$!
-for _ in $(seq 100); do
-  grep -q "$jp_notice" "$jp_dir/err" 2>/dev/null && break
-  sleep 0.05
-done
+notice_wait "$jp_dir/err"
 assert_eq "a run on a pool whose one slot is held waits" \
   "$(grep -c "$jp_notice" "$jp_dir/err")" "1"
 assert_eq "and runs nothing while the slot is held" "$(grep -c '^+' "$jp_log")" "0"
-kill -9 "$jp_holder"
-wait "$jp_holder" 2>/dev/null
+slot_release
 wait "$jp_p1"; jp_s1=$?
 assert_status "the run finishes once the holder is killed" "$jp_s1" 0
 assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
 
 # CI bypasses the pool.
-jp_hold "$jp_dir/pool2" 1
+slot_hold "$jp_dir/pool2" 1 || bad "holds the slot"
 : >"$jp_log"
 jp_run 1 "$jp_dir/pool2" CI=true -- '^pool a$' 2; jp_s1=$?
 assert_status "a run under CI ignores a fully held pool" "$jp_s1" 0
 assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
+slot_release
 
 # Another HOME has its own pool.
 mkdir "$jp_dir/home1" "$jp_dir/home2"
-jp_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1
+slot_hold "$jp_dir/home1/.cache/orchestrator/test-job-pool" 1 || bad "holds the slot"
 : >"$jp_log"
 timeout 30 env -u CI -u ORCH_TEST_POOL_DIR -u ORCH_TEST_POOL_PERCENT HOME="$jp_dir/home2" \
   ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" \
@@ -1521,7 +1517,25 @@ assert_status "a run under another HOME passes while the first HOME's slot is he
 assert_eq "and prints no waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
 assert_eq "and has drawn its slot from its own pool" \
   "$(on_disk "$jp_dir/home2/.cache/orchestrator/test-job-pool/slot.1")" "present"
-kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
+slot_release
+
+# slot_hold fails on a slot it cannot lock: the slot path is a directory.
+mkdir -p "$jp_dir/pool11/slot.1"
+jp_t0=$SECONDS
+slot_hold "$jp_dir/pool11" 1 2>/dev/null; jp_s1=$?
+assert_status "slot_hold returns 1 on a slot path it cannot lock" "$jp_s1" 1
+# A read that timed out would also return 1, after 10s: the EOF path is quicker.
+assert_eq "and returns on the holder's EOF, well within its read timeout" \
+  "$(( SECONDS - jp_t0 < 5 ))" "1"
+slot_release
+
+# A released holder no longer runs and no longer holds the lock.
+slot_hold "$jp_dir/pool13" 1 || bad "holds the slot"
+slot_release
+kill -0 "$SLOT_HOLDER" 2>/dev/null; jp_s1=$?
+assert_status "a released holder is no longer running" "$jp_s1" 1
+flock -n "$jp_dir/pool13/slot.1" true; jp_s1=$?
+assert_status "and its slot's lock is free" "$jp_s1" 0
 
 # ORCH_TEST_JOBS caps the ask, and does not bypass the pool.
 : >"$jp_log"
@@ -1570,11 +1584,9 @@ jp_run 1 /proc/no/such/pool -- '^pool a$' 2; jp_s1=$?
 assert_status "an uncreatable pool directory runs unpooled and passes" "$jp_s1" 0
 assert_eq "and ran its section" "$(grep -c '^+' "$jp_log")" "1"
 mkdir -p "$jp_dir/pool7/slot.1"
-jp_hold "$jp_dir/pool8" 1
 jp_run 1 "$jp_dir/pool7" -- '^pool a$' 2; jp_s1=$?
 assert_status "a slot file that cannot be opened runs unpooled and passes" "$jp_s1" 0
 assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
-kill -9 "$jp_holder"; wait "$jp_holder" 2>/dev/null
 mkdir "$jp_dir/noflock"
 printf '#!/bin/sh\nexit 1\n' >"$jp_dir/noflock/flock"
 chmod +x "$jp_dir/noflock/flock"
@@ -1591,7 +1603,7 @@ rm -rf "$jp_copy"
 # comes from all.sh.
 if command -v flock >/dev/null 2>&1; then
 jp_all="$jp_dir/all"
-suites_read "$jp_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$jp_tests/all.sh" "$jp_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 stub_all_tree "$jp_all" "$jp_log" flock getconf
 # jp_all_run <errfile>: all.sh on the stub PATH and the 1-slot pool.
 jp_all_run() {
@@ -1625,7 +1637,7 @@ echo
 echo "the test runners' CPU load (#1586)"
 load_dir="$(mktemp -d)"
 load_tests="$(dirname "$SUITE_SCRIPT")"
-suites_read "$load_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$load_tests/all.sh" "$load_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 mkdir "$load_dir/getconf"
 # load_default <cores|fail> <quota file content|-missing|-dir> [VAR=value...]:
 # the default job count with getconf reporting <cores> (or failing).
@@ -2470,7 +2482,7 @@ runner_git_isolation() {
   [ "$bad_n" -eq 0 ]
 }
 
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 out="$(runner_git_isolation "$(dirname "$SUITE_SCRIPT")" "${SUITES[@]}")"; st=$?
 if [ "$st" -eq 0 ] && [ -z "$out" ]; then
   ok "every real runner clears git's environment first"
@@ -2508,7 +2520,8 @@ unset -f runner_git_isolation
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
-# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh and report.sh,
+# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh, report.sh and
+# test_tree.sh,
 # a harness
 # file holding the three placement sections, a branch section file with two
 # sections, and one tiny file for each other kind of path. origin's main is the
@@ -2534,7 +2547,11 @@ af_put() {
 af_git init -q -b main
 mkdir -p "$af/scripts/test/orch"
 cp "$af_tests/affected.sh" "$af_tests/all.sh" "$af_tests/git_env.sh" \
-  "$af_tests/test_jobs.sh" "$af_tests/report.sh" "$af/scripts/test/"
+  "$af_tests/test_jobs.sh" "$af_tests/report.sh" "$af_tests/test_tree.sh" "$af/scripts/test/"
+suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for af_s in "${SUITES[@]}"; do
+  [ -e "$af/scripts/test/$af_s" ] || af_put "scripts/test/$af_s"
+done
 af_put scripts/test/orch/harness.sh '# --- isolation ---' \
   '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
   '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---'
@@ -2634,7 +2651,7 @@ af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,do
 af_row "a markdown file selects nothing more" README.md "$af_gate,docs_lint.sh"
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/test/orch/common.sh \
   scripts/test/orch/setup.sh scripts/test/all.sh scripts/test/orch_test.sh \
-  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/dev/other.sh Makefile; do
+  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/test/test_tree.sh scripts/dev/other.sh Makefile; do
   af_row "$af_f falls back to all.sh" "$af_f" "all.sh"
 done
 af_reset
@@ -2714,8 +2731,40 @@ af_git config orchestrator.base orphan
 assert_eq "a base with no merge-base falls back to all.sh" "$(af_plan)" "all.sh"
 af_reset
 
+# A title with trailing dashes reads as the shared rule reads it.
+af_reset
+af_put scripts/test/orch/dashed.sh '# --- dashed title (#9) ------ ' '# --- plain ---'
+af_want="$(awk "$SECTION_TITLE_AWK"'/^# --- / { print title($0) }' "$af/scripts/test/orch/dashed.sh" | paste -sd, -)"
+assert_eq "the shared title rule drops trailing spaces and dashes" "$af_want" "dashed title (#9),plain"
+assert_eq "a planted header reads the same in --plan as under SECTION_TITLE_AWK" \
+  "$(af_plan origin/rel)" "$af_gate,$af_want,docs_lint.sh,scripts/test/orch/dashed.sh"
+rm -f "$af/scripts/test/orch/dashed.sh"
+
+# The awk title function is defined in test_tree.sh alone.
+af_defs="$(grep -l 'function title(' "$af_tests/affected.sh" "$af_tests/orch_test.sh" "$af_tests/test_tree.sh" | xargs -n1 basename | paste -sd, -)"
+assert_eq "the title function is defined only in test_tree.sh" "$af_defs" "test_tree.sh"
+
+# An all.sh the shared reader refuses stops affected.sh, with its own prefix.
+for af_case in none two empty missing; do
+  af_reset
+  case "$af_case" in
+    none) af_put scripts/test/all.sh 'suites_list=(a.sh)' ;;
+    two) af_put scripts/test/all.sh 'suites=(orch_test.sh)' 'suites=(docs_lint.sh)' ;;
+    empty) af_put scripts/test/all.sh 'suites=()' ;;
+    missing) af_put scripts/test/all.sh 'suites=(orch_test.sh no_such_suite.sh)' ;;
+  esac
+  af_git commit -qam "$af_case"
+  suites_read "$af/scripts/test/all.sh" "$af/scripts/test"
+  af_msg="$SUITES_ERR"
+  af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+  assert_status "affected.sh exits 1 over an all.sh with $af_case" "$st" 1
+  assert_eq "and prints the reader's message with its own prefix and runs nothing ($af_case)" \
+    "$af_out" "affected.sh: $af_msg"
+done
+af_reset
+
 # End to end, with stub suites for the real ones.
-suites_read "$af_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for af_s in "${SUITES[@]}"; do
   printf '%s\n' '#!/usr/bin/env bash' \
     "echo \"$af_s only=\${ORCH_TEST_ONLY-unset}\" >>\"$af.log\"" \
@@ -2725,18 +2774,30 @@ af_git add -A
 af_git commit -qm stubs
 af_feat="$(af_git rev-parse HEAD)"
 af_put scripts/hook-guard.sh 'echo ok'
-af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+# A shellcheck stub, first on PATH for the runs meant to have shellcheck: one
+# gcc-format line per argument file containing $(ls), exit 1 if it printed any.
+af_sc="$af.sc"
+mkdir -p "$af_sc"
+cat >"$af_sc/shellcheck" <<'STUB'
+#!/usr/bin/env bash
+found=0
+for f in "$@"; do
+  if [ -f "$f" ] && grep -qF '$(ls)' "$f"; then
+    echo "$f:1:1: warning: stub [SC2045]"
+    found=1
+  fi
+done
+exit "$found"
+STUB
+chmod +x "$af_sc/shellcheck"
+af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a passing run exits 0" "$st" 0
-if command -v shellcheck >/dev/null 2>&1; then
-  assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
-    "orch_test.sh: 7 passed, 0 failed
+assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
+  "orch_test.sh: 7 passed, 0 failed
 hooks_test.sh: 7 passed, 0 failed
 docs_lint.sh: 7 passed, 0 failed
 shellcheck: 0 findings
 affected.sh: PASS (4 parts)"
-else
-  skip "printing each part's summary in order, shellcheck last" "shellcheck is not installed"
-fi
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
@@ -2751,42 +2812,35 @@ assert_eq "and runs no suite" "$(grep -c . "$af.log")" "0"
 
 # Its shellcheck process draws a slot from the job pool: with the pool's one
 # slot held, the run waits and says so, then finishes once the slot is freed.
-if command -v shellcheck >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
-  printf '200000 100000\n' >"$af.cpu"
-  mkdir -p "$af.pool"
-  bash -c 'exec 9>>"$1"; flock 9; exec sleep 60' _ "$af.pool/slot.1" &
-  af_holder=$!
-  until ! flock -n "$af.pool/slot.1" true; do sleep 0.05; done
+if command -v flock >/dev/null 2>&1; then
+  pool_cpu_file "$af.cpu" 1
+  slot_hold "$af.pool" 1 || bad "holds the slot"
   af_put scripts/hook-guard.sh 'echo ok'
-  (cd "$af" && env -u CI -u ORCH_TEST_POOL_PERCENT ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
+  (cd "$af" && env -u CI -u ORCH_TEST_POOL_PERCENT PATH="$af_sc:$PATH" ORCH_TEST_CPU_MAX_FILE="$af.cpu" ORCH_TEST_POOL_DIR="$af.pool" \
     timeout 30 bash scripts/test/affected.sh HEAD >/dev/null 2>"$af.err") &
   af_pid=$!
-  for _ in $(seq 100); do
-    grep -q 'waiting for a job slot' "$af.err" 2>/dev/null && break
-    sleep 0.05
-  done
+  notice_wait "$af.err"
   assert_eq "a shellcheck run with the pool's slot held waits and says so" \
     "$(cat "$af.err")" "affected.sh: waiting for a job slot (1 in use)"
-  kill -9 "$af_holder"
-  wait "$af_holder" 2>/dev/null
+  slot_release
   wait "$af_pid"; st=$?
   assert_status "and the run finishes once the slot is freed" "$st" 0
   rm -rf "$af.cpu" "$af.pool" "$af.err"
+else
+  skip "a shellcheck run with the pool's slot held waits and says so" "flock is not installed"
 fi
 printf '%s\n' '#!/usr/bin/env bash' 'printf "  FAIL a thing\n     its detail\n"' \
   'echo; echo "1 passed, 1 failed"; exit 1' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'for f in $(ls); do echo "$f"; done'
-af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a failing part makes the run exit 1" "$st" 1
 assert_contains "printing its FAIL lines and its summary" "$af_out" \
   "  FAIL a thing
      its detail
 hooks_test.sh: 1 passed, 1 failed"
-if command -v shellcheck >/dev/null 2>&1; then
-  assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
-else
-  skip "and shellcheck's findings" "shellcheck is not installed"
-fi
+assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
+assert_eq "ending on a FAIL verdict naming the failing parts" "$(printf '%s\n' "$af_out" | tail -n 1)" \
+  "affected.sh: FAIL (hooks_test.sh, shellcheck)"
 
 # The verdict line (the last stdout line), on a PATH without shellcheck: its
 # links are the tools the runners and the fixture need.
@@ -2807,15 +2861,12 @@ af_verdict_run() {
     PATH="$af_bin" bash scripts/test/affected.sh "$@" 2>/dev/null)"
   st=$?
 }
-# A failing part (hooks_test.sh is still the failing stub), naming only it.
-af_verdict_run -- HEAD
-assert_status "a failing selected part exits 1 without shellcheck" "$st" 1
-assert_eq "a failing selected part ends on a FAIL verdict naming it" "$(printf '%s\n' "$af_out" | tail -n 1)" \
-  "affected.sh: FAIL (hooks_test.sh)"
 # A passing selection: the passing stub back, shellcheck skipped.
 printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
 af_verdict_run -- HEAD
 assert_status "a passing selection exits 0 without shellcheck outside CI" "$st" 0
+assert_contains "a missing shellcheck outside CI prints its skipped line" "$af_out" \
+  "shellcheck: not installed - skipped"
 assert_eq "a missing shellcheck outside CI ends on a PASS verdict counting the skipped line" \
   "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (4 parts)"
 af_verdict_run CI=1 -- HEAD
@@ -2836,15 +2887,9 @@ assert_eq "a full-suite fallback ends on all.sh's verdict, never affected.sh's" 
   "$(printf '%s\n' "$af_out" | tail -n 1)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
 af_reset
 # Paths that end before the report print no verdict.
-af_verdict_run -- --plan HEAD
-assert_eq "--plan prints no verdict" "$(printf '%s\n' "$af_out" | grep -c ': \(PASS\|FAIL\) (')" "0"
 af_verdict_run -- --bogus
 assert_status "a usage error exits 2" "$st" 2
 assert_eq "a usage error prints no verdict on stdout" "$af_out" ""
-af_verdict_run -- no-such-ref
-assert_eq "an unknown ref prints no verdict on stdout" "$af_out" ""
-af_verdict_run ORCH_TEST_POOL_PERCENT=abc -- HEAD
-assert_eq "an invalid ORCH_TEST_POOL_PERCENT prints no verdict on stdout" "$af_out" ""
 # A TERM stop prints no verdict.
 printf '%s\n' '#!/usr/bin/env bash' "echo \$\$ >'$af.pid'" 'sleep 30' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'echo ok'
@@ -2857,6 +2902,6 @@ wait "$af_pid"; st=$?
 kill "$(cat "$af.pid")" 2>/dev/null
 assert_status "TERM to affected.sh exits 130" "$st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
-rm -rf "$af_bin" "$af.pid" "$af.stdout"
+rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row

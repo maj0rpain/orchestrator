@@ -3,8 +3,8 @@
 # paste guards: hook-paste-guard.sh (PreToolUse on AskUserQuestion, #1287) and
 # hook-paste-stop-guard.sh (Stop, #1421). Sourced by each, not executed on its
 # own. Both arm on the same `spec-review check` pass line, disarm on the same
-# `spec-review apply`, match the paste the same way and re-read over the same
-# window; they differ only in which text blocks may hold the paste.
+# `spec-review apply` or human message, match the paste the same way, read the
+# same window of text blocks and re-read over the same wait.
 #
 # - Armed by the latest `check` pass line in a tool result that names a
 #   view.md (scripts/orch/spec-review.sh's spec_review_nudge words it). An
@@ -14,6 +14,11 @@
 #   own call: a tool_result answering such a tool_use (by tool_use_id) never
 #   arms, so a combined `check && apply` call leaves the guard disarmed. A
 #   result with no tool_use_id, or another id, arms as usual.
+# - Disarmed too by a later human message (defined below): the guard's
+#   obligation is one turn long, the turn that ran `check`. A review the human
+#   walks away from - abandoned, stopped on a failure before apply, aborted -
+#   stops guarding at their next message; a review that carries on re-runs
+#   `check`, and that pass line arms the guard again.
 # - A paste is one assistant text block holding every non-blank line of
 #   view.md, both compared with their whitespace normalised (runs collapsed to
 #   one space, ends trimmed), so a re-wrapped paste counts and a view split
@@ -29,8 +34,10 @@
 #   seen on the first read. ORCH_PASTE_GUARD_WAIT may shorten the window, for
 #   the tests.
 # - Fails open: a missing or unreadable transcript, a view.md deleted, empty
-#   or unreadable, a transcript with no arming pass line, or a mode other than
-#   since or final all allow.
+#   or unreadable, or a transcript with no arming pass line all allow. So does
+#   a human message queued mid-turn - typed while the `check` turn is still
+#   running, if the host writes it to the transcript before that turn ends: it
+#   disarms the guard early, and that turn's Stop allows without a paste.
 
 # Seconds the guards keep re-reading the transcript for the paste before they
 # refuse. ORCH_PASTE_GUARD_WAIT, a whole number of seconds no larger, may
@@ -50,11 +57,10 @@ paste_guard_payload() {
 }
 
 # paste_guard_scan <transcript>: prints the armed view.md's path on its first
-# line, then a JSON array of the assistant text blocks written after its pass
-# line, then a JSON array of those written after the later of that pass line
-# and the last human message - or nothing when the guard is not armed: no
-# arming pass line, or an apply after it. One pass over the transcript, a
-# line at a time.
+# line, then one JSON array of the assistant text blocks written after its pass
+# line - or nothing when the guard is not armed: no arming pass line, or an
+# apply or human message after it. One pass over the transcript, a line at a
+# time.
 paste_guard_scan() {
   jq -nrR '
     def text: if type == "string" then . elif type == "array"
@@ -65,25 +71,25 @@ paste_guard_scan() {
         and any(.[]; type == "object" and .type == "text")
         and (any(.[]; type == "object" and .type == "tool_result") | not)));
     reduce (inputs | fromjson? | select(type == "object")) as $e (
-      {view: null, texts: [], final: [], applied: []};
-      if ($e | human) then .final = []
+      {view: null, texts: [], applied: []};
+      if ($e | human) then .view = null | .texts = []
       elif $e.type == "user" and ($e.message.content | type) == "array" then
         . as $st
         | reduce ($e.message.content[] | select(type == "object" and .type == "tool_result")
                 | select(((.tool_use_id // null) as $id | $id != null and ($st.applied | index($id) != null)) | not)
                 | .content | text | split("\n")[]
                 | capture("\\.md passes: .*; it is saved in (?<p>/.*/view\\.md)$")?
-                | .p) as $p (.; .view = $p | .texts = [] | .final = [])
+                | .p) as $p (.; .view = $p | .texts = [])
       elif $e.type == "assistant" and ($e.message.content | type) == "array" then
         reduce ($e.message.content[] | select(type == "object")) as $b (.;
           if $b.type == "tool_use" and $b.name == "Bash"
             and (($b.input.command // "") | tostring | contains("spec-review apply"))
-            then .applied += [$b.id // ""] | .view = null | .texts = [] | .final = []
+            then .applied += [$b.id // ""] | .view = null | .texts = []
           elif .view == null then .
-          elif $b.type == "text" then ($b.text // "" | tostring) as $t | .texts += [$t] | .final += [$t]
+          elif $b.type == "text" then ($b.text // "" | tostring) as $t | .texts += [$t]
           else . end)
       else . end)
-    | if .view != null then .view, (.texts | tojson), (.final | tojson) else empty end
+    | if .view != null then .view, (.texts | tojson) else empty end
   ' <"$1" 2>/dev/null
 }
 
@@ -99,14 +105,12 @@ paste_guard_pasted() {
   ' >/dev/null 2>&1
 }
 
-# paste_guard_check <transcript> <blocks>: succeeds - allow - when the guard is
+# paste_guard_check <transcript>: succeeds - allow - when the guard is
 # not armed, fails open, or finds the paste within the re-read window; fails -
 # refuse - otherwise, with `paste_guard_view` set in the caller's shell to the
-# armed view.md (pass it to paste_guard_instruction). <blocks> picks the text
-# blocks that may hold the paste: since, those after the arming pass line;
-# final, the final reply. Any other mode allows.
+# armed view.md (pass it to paste_guard_instruction).
 paste_guard_check() {
-  local wait_s tries scan rest blocks
+  local wait_s tries scan blocks
   wait_s="$PASTE_GUARD_WAIT"
   case "${ORCH_PASTE_GUARD_WAIT:-}" in
     ''|*[!0-9]*) ;;
@@ -118,12 +122,7 @@ paste_guard_check() {
     scan="$(paste_guard_scan "$1")" || return 0
     paste_guard_view="${scan%%$'\n'*}"
     [ -n "$paste_guard_view" ] && [ -s "$paste_guard_view" ] && [ -r "$paste_guard_view" ] || return 0
-    rest="${scan#*$'\n'}"
-    case "$2" in
-      since) blocks="${rest%%$'\n'*}" ;;
-      final) blocks="${rest#*$'\n'}" ;;
-      *) return 0 ;;
-    esac
+    blocks="${scan#*$'\n'}"
     paste_guard_pasted "$blocks" "$paste_guard_view" && return 0
     [ "$tries" -gt 0 ] || return 1
     tries=$((tries - 1))
