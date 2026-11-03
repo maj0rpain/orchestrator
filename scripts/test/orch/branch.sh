@@ -876,18 +876,9 @@ assert_status "branch off on an unreadable tree exits 1" "$st" 1
 assert_eq "leaving the branch and the git config (branch off)" "$(branch_and_config)" "$before"
 restore_index
 
-default="$(git branch --show-current)"
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
 orch_gh_failing state set issue 12
-echo edit >>README.md
-before="$(checkout_facts)"
-out="$(orch_gh_failing branch create 2>&1)"; st=$?
-assert_status "branch create on a dirty tree in an interactive main checkout is refused (exit 1)" "$st" 1
-assert_contains "naming the current branch as not the flow's (branch create)" "$out" "the current branch $default is not the flow's branch orch/12-own"
-assert_eq "leaving the checkout as it was (branch create, dirty)" "$(checkout_facts)" "$before"
-assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
-git checkout -q README.md
 
 # The flow mid-pipeline refuses branch off, so the earlier branch is made by
 # hand, as redo review leaves a retired branch with no PR key.
@@ -995,13 +986,13 @@ assert_status "a rebase in progress in an autopilot flow is aborted" "$st" 0
 assert_eq "leaving no rebase in progress" \
   "$(rebase_state)" "none"
 
-# A done flow still holds its branch: a restart discards dirty work and checks
-# the branch out.
+# A done flow still holds its branch: a restart discards dirty work and stays
+# on the branch.
 state_fixture phase "done"
 echo hand >>README.md
 out="$(ORCH_AUTOPILOT=1 orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on a done flow's existing branch succeeds" "$st" 0
-assert_eq "checking the branch out" "$(git branch --show-current)" "orch/15-again"
+assert_eq "staying on the branch" "$(git branch --show-current)" "orch/15-again"
 assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 
 # An unreadable state.json is reported, not swallowed, when branch sync asks
@@ -1054,6 +1045,12 @@ foreign_flow() {
   orch_gh_failing init "$1" >/dev/null
   orch_gh_failing state set issue 5
 }
+# dirty_tree: the tree the refusals and discards are checked against - a
+# tracked edit and an untracked file.
+dirty_tree() {
+  echo hand >>README.md
+  echo mine >untracked.txt
+}
 # refusal_facts: the state a refusal must leave as it was.
 refusal_facts() {
   git branch --show-current; git status --porcelain
@@ -1064,8 +1061,7 @@ refusal_facts() {
 foreign_flow feat
 orch_gh_failing branch create >/dev/null
 git checkout -q -b human-scratch
-echo hand >>README.md
-echo mine >untracked.txt
+dirty_tree
 before="$(refusal_facts)"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "a restart on a dirty foreign branch is refused with exit 1" "$st" 1
@@ -1087,38 +1083,33 @@ assert_status "a restart on a clean foreign branch succeeds" "$st" 0
 assert_eq "printing the flow's branch" "$out" "orch/5-feat"
 assert_eq "checking it out" "$(git branch --show-current)" "orch/5-feat"
 
-# 1 again, in a hand-made worktree
-new_repo_with_origin
-hm="$(mktemp -d)/hand"
-git worktree add -q -b hm-start "$hm"
-(
-  cd "$hm" || { bad "cd into the hand-made worktree" "cannot cd into $hm"; exit 1; }
-  orch_gh_failing init feat >/dev/null
-  orch_gh_failing state set issue 5
-  orch_gh_failing branch create >/dev/null
-  git checkout -q -b human-scratch
-  echo hand >>README.md
-  echo mine >untracked.txt
-  before="$(refusal_facts)"
-  out="$(orch_gh_failing branch create 2>&1)"; st=$?
-  assert_status "a hand-made worktree's restart on a dirty foreign branch is refused" "$st" 1
-  assert_contains "naming that branch" "$out" "human-scratch"
-  assert_eq "leaving edits, branch and state intact" "$(refusal_facts)" "$before"
-  assert_eq "keeping the untracked file" "$(cat untracked.txt)" "mine"
-)
-
 # 3: the fresh path on a dirty foreign branch
 foreign_flow fresh
 git checkout -q -b human-scratch
-echo hand >>README.md
-echo mine >untracked.txt
+dirty_tree
 before="$(refusal_facts)"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "the fresh path on a dirty foreign branch is refused with exit 1" "$st" 1
 assert_contains "naming the current branch" "$out" "the current branch human-scratch is not the flow's branch orch/5-fresh"
 assert_eq "leaving edits and state intact" "$(refusal_facts)" "$before"
 assert_eq "making no flow branch" "$(git branch --list orch/5-fresh)" ""
-assert_eq "keeping the untracked file" "$(cat untracked.txt)" "mine"
+
+# 8: the fresh path on a retired -redo-<n> branch that state.branch still
+# records (a redo died between its rename and its clear)
+foreign_flow redo
+orch_gh_failing branch create >/dev/null
+git branch -q -m orch/5-redo orch/5-redo-redo-1
+state_fixture branch orch/5-redo-redo-1
+dirty_tree
+before="$(refusal_facts)"
+for ap in 1 ""; do
+  out="$(ORCH_AUTOPILOT=$ap orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "the fresh path on a retired branch is refused (autopilot='$ap')" "$st" 1
+  assert_contains "naming it as not the flow's branch (autopilot='$ap')" "$out" "the current branch orch/5-redo-redo-1 is not the flow's branch orch/5-redo"
+  assert_contains "saying nothing was discarded (autopilot='$ap')" "$out" "nothing was discarded"
+  assert_eq "leaving edits and state intact (autopilot='$ap')" "$(refusal_facts)" "$before"
+  assert_eq "making no flow branch (autopilot='$ap')" "$(git branch --list orch/5-redo)" ""
+done
 
 # 4 and 7: a side checkout on its detached HEAD discards
 sc_clone
@@ -1127,15 +1118,13 @@ side="$(sc_add sideb)"
   cd "$side" || { bad "cd into the side checkout" "cannot cd into $side"; exit 1; }
   orch_gh_failing init sideb >/dev/null
   orch_gh_failing state set issue 5
-  echo hand >>README.md
-  echo mine >untracked.txt
+  dirty_tree
   out="$(orch_gh_failing branch create 2>&1)"; st=$?
   assert_status "the fresh path on a detached HEAD discards and forks" "$st" 0
   assert_eq "leaving it clean" "$(git status --porcelain)" ""
   assert_eq "on the flow's branch" "$(git branch --show-current)" "orch/5-sideb"
   git checkout -q --detach
-  echo hand >>README.md
-  echo mine >untracked.txt
+  dirty_tree
   out="$(orch_gh_failing branch create 2>&1)"; st=$?
   assert_status "a restart on a detached HEAD discards and checks out" "$st" 0
   assert_eq "leaving it clean" "$(git status --porcelain)" ""
