@@ -29,17 +29,12 @@ text_entries() {
     }
     { sub(/[[:space:]]+$/, ""); f = fenced($0) }
     /^$/ { next }
-    f {
+    f || /^[[:space:]]/ {
       line = $0; sub(/^[[:space:]]+/, "", line)
       if (bullet) entry = entry " " line; else { flush(); entry = line; flush() }
       next
     }
     /^- / { flush(); entry = substr($0, 3); sub(/^[[:space:]]+/, "", entry); bullet = 1; next }
-    /^[[:space:]]/ {
-      line = $0; sub(/^[[:space:]]+/, "", line)
-      if (bullet) entry = entry " " line; else { flush(); entry = line; flush() }
-      next
-    }
     { flush(); entry = $0; flush() }
     END { flush() }'
 }
