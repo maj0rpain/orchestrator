@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.20
+
+A spec review's paste guard now disarms on the human's next message as well as on `spec-review apply`, so a review that is abandoned, stops on a failure or is aborted no longer makes every later turn re-paste a stale view or refuses every later ask. A re-run `check` arms it again.
+
 ## 4.43.19
 
 The six standalone test suites now end with a shared `tally_summary` from tally.sh, and the duplicated structural tally checks in the harness are gone.
