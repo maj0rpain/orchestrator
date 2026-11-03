@@ -74,8 +74,18 @@ cmd_issue_fetch() {
     return
   fi
   gh_or_die --file "$file" "read the body of issue #$issue" \
-    adapter_issue_body "$issue"
+    issue_body_lf "$issue"
 }
+
+# issue_body_lf <n>: issue <n>'s body on stdout with every carriage return
+# removed, so GitHub's web-UI CRLF lines reach the spec review as LF. A failed
+# read fails the pipeline, stderr untouched. Plain fetch only:
+# adapter_issue_body stays byte-exact for the ticket module's CRLF-preserving
+# rewrites.
+issue_body_lf() (
+  set -o pipefail
+  adapter_issue_body "$1" | tr -d '\r'
+)
 
 # issue_json_trusted <what> <n> <var>: issue <n> as ISSUE_JSON_JQ's object minus
 # the comments of untrusted authors (Trust module), authorAssociation deleted

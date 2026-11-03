@@ -3122,3 +3122,40 @@ assert_status "the resumed apply over the same batch passes too" "$st" 0
 assert_eq "the resumed run removed fundamental.md" "$(on_disk "$d/fundamental.md")" absent
 assert_contains "the held edit landed" "$(cat "$d/spec.md")" "Beta reversed."
 assert_contains "the changelog is posted" "$(fake_comments_of 14)" "## Spec review"
+
+# --- spec-review check on a CRLF body (#1916) ---------------------------------
+# A body last edited in the GitHub web UI is stored with CRLF; issue fetch
+# writes it as LF, so a multi-line anchor matches and a round publishes LF.
+echo
+echo "spec-review check on a CRLF body (#1916)"
+new_repo >/dev/null
+fake_github
+d="$(mktemp -d)"
+fake_issue 14 open
+fake_issue_body 14 $'# Spec\r\n\r\nAlpha line.\r\nBeta line.\r\n'
+"$ORCH" issue fetch 14 "$d/spec.md"
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity ran
+@@ lens consistency not-run timed out
+@@ lens testability not-run timed out
+@@ lens implementability not-run timed out
+
+@@ item 1 fidelity apply minor
+@@ finding fidelity 1
+@@ summary Merge the two lines
+@@ anchor
+Alpha line.
+Beta line.
+@@ replace
+Alpha and Beta line.
+@@ end
+BATCH
+printf '@@ finding 1\nMerge them.\n' >"$d/lens-fidelity.md"
+out="$("$ORCH" spec-review check "$d" 2>&1)"; st=$?
+assert_status "check passes a two-line anchor on a body fetched from CRLF" "$st" 0
+out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "apply on that batch succeeds" "$st" 0
+assert_contains "and publishes the edit" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" "Alpha and Beta line."
+assert_eq "with no CR in the published body" "$(tr -cd '\r' <"$ORCH_GH_FAKE_STORE/issues/14/body" | wc -c | tr -d ' ')" "0"
+rm -rf "$d"
+unset d
