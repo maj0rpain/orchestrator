@@ -1083,6 +1083,9 @@ sg_human "$D1" '"never mind, drop it"'
 pg_text "$D1" "Sure, what next?"
 assert_eq "the view never pasted, then a human message, then an unrelated ask: allowed" "$(pg_decide "$D1")" allow
 assert_eq "and the Stop guard allows" "$(sg_decide "$D1")" allow
+D0="$PG/disarm-midturn.jsonl"; cp "$T" "$D0"
+sg_human "$D0" '"never mind, drop it"'
+assert_eq "mid-turn fail-open: a pass line, a human message, then Stop with no paste: the Stop guard allows" "$(sg_decide "$D0")" allow
 D2="$PG/disarm-rerun.jsonl"; cp "$D1" "$D2"
 pg_check "$D2" toolu_d2 batch "$PG/batch/view.md"
 assert_eq "a check re-run after the human message arms again: an ask without a paste is refused" "$(pg_decide "$D2")" deny
