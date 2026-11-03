@@ -283,7 +283,7 @@ ci_ref_unchecked() {
 # death exits 1 and would read as "nothing to rerun".
 review_rerun() {
   local pr="${1:-}" out err rc=0 link run name line bucket no_checks
-  local runs=() r bad=0 seen=" " failing=0
+  local runs=() r unrerunnable=0 seen=" " failing=0
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
@@ -307,17 +307,17 @@ review_rerun() {
     case "$link" in
       */actions/runs/[0-9]*) ;;
       *) warn "check $name on PR #$pr is not a GitHub Actions run - nothing to rerun"
-         bad=1; continue ;;
+         unrerunnable=1; continue ;;
     esac
     run="${link##*/actions/runs/}"   # N/job/M -> N
     run="${run%%/*}"
     case "$run" in
-      ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; bad=1; continue ;;
+      ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; unrerunnable=1; continue ;;
     esac
     case "$seen" in *" $run "*) ;; *) seen+="$run "; runs+=("$run") ;; esac
   done <<<"$out"
   [ "$failing" -eq 1 ] || die2 "PR #$pr has no failed or cancelled check to rerun"
-  [ "$bad" -eq 0 ] || return 1
+  [ "$unrerunnable" -eq 0 ] || return 1
   for r in "${runs[@]}"; do
     gh_or_die --exit 2 "rerun the failed jobs of Actions run $r" \
       adapter_run_rerun "$r" >/dev/null

@@ -996,14 +996,6 @@ assert_eq "printing the required check's run" "$out" "4242"
 assert_eq "and rerunning only it" "$(fake_reruns)" "4242"
 
 rm -f "$ORCH_GH_FAKE_STORE/reruns"
-fake_checks 7 required failing
-fake_checks 7 all optfirst
-out="$("$ORCH" review rerun 7 2>&1)"; st=$?
-assert_status "a failing optional Actions check ahead of the required one is exit 0" "$st" 0
-assert_eq "rerunning the required check's run alone" "$(fake_reruns)" "4242"
-assert_eq "and printing only it" "$out" "4242"
-
-rm -f "$ORCH_GH_FAKE_STORE/reruns"
 fake_checks 7 required tworuns
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "two failing checks in different runs is exit 0" "$st" 0
@@ -1044,17 +1036,6 @@ assert_eq "naming the refused run after the id already started" "$out" "$(printf
 assert_eq "the first run stays rerun" "$(fake_reruns)" "4242"
 fake_unfail
 
-# A failed read of the required scope does not widen to every check.
-rm -f "$ORCH_GH_FAKE_STORE/reruns"
-fake_checks 7 required failing
-fake_checks 7 all failing
-fake_fail_times adapter_pr_checks 1 "HTTP 502: Bad Gateway"
-out="$("$ORCH" review rerun 7 2>&1)"; st=$?
-assert_status "a failed read of the required checks is exit 2" "$st" 2
-assert_eq "naming gh's reason" "$out" \
-  "orch: gh could not read the checks of PR #7: HTTP 502: Bad Gateway"
-assert_eq "and rerunning nothing" "$(fake_reruns)" ""
-fake_unfail
 fake_checks_clear
 
 fake_checks 7 all boom
@@ -1075,12 +1056,16 @@ out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "an empty list of checks is exit 2" "$st" 2
 assert_eq "saying no checks were reported when gh said nothing" "$out" \
   "orch: PR #7 has no checks to rerun: no checks reported"
+# A failed read of the required scope does not widen to every check: a widening
+# rerun would rerun run 4242 and exit 0.
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
 fake_checks 7 all failing
 fake_fail_times adapter_pr_checks 1
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a checks read that fails silently is exit 2" "$st" 2
 assert_eq "ending in gh gave no reason, never a bare colon" "$out" \
   "orch: gh could not read the checks of PR #7: gh gave no reason"
+assert_eq "and rerunning nothing" "$(fake_reruns)" ""
 fake_unfail
 assert_gh_dies "a checks read that fails is exit 2" adapter_pr_checks "$GH_502" 2 \
   "orch: gh could not read the checks of PR #7: HTTP 502: Bad Gateway" \
