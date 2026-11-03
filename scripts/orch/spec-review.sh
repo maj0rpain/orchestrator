@@ -220,6 +220,21 @@ spec_review_mark_check() {
   esac
 }
 
+# SPEC_REVIEW_ESCAPE_HINT: appended to the deaths of an unescaped @@ line
+# inside an anchor or replacement block (#1945).
+SPEC_REVIEW_ESCAPE_HINT=' - a body line starting with @@ is written \@@'
+
+# spec_review_block_line <line> <var>: a block line into <var>, with one
+# leading backslash removed when the line is backslashes then `@@` (#1945).
+spec_review_block_line() {
+  local __srbl_line="$1" __srbl_bs=""
+  __srbl_bs="${__srbl_line%%[!\\]*}"
+  case "${__srbl_line#"$__srbl_bs"}" in
+    @@*) [ -z "$__srbl_bs" ] || __srbl_line="${__srbl_line#\\}" ;;
+  esac
+  printf -v "$2" '%s' "$__srbl_line"
+}
+
 # spec_review_at_line <line> <kw-var> <args-var>: an `@@` line of the batch
 # or tickets file split, its trailing CR stripped, into its keyword and the
 # rest of the line after one space - empty when there is none.
@@ -236,7 +251,7 @@ spec_review_at_line() {
 # options - dying on the first malformed line, named by its number. The
 # citations' ranges are checked later, against the lens files.
 spec_review_batch_parse() {
-  local file="$1" line lineno=0 mode=top kw args cur=-1 opt=-1
+  local file="$1" line content lineno=0 mode=top kw args cur=-1 opt=-1
   local buf="" bufn=0 block_line=0 quote_wanted="" n group rec rec_tail arg lens state reason
   local fd_lens fd_k login created letter label extra lens_slot fd_slot cm_slot target mark fundamental
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
@@ -253,7 +268,8 @@ spec_review_batch_parse() {
       *)
         case "$mode" in
           anchor|replace|quote)
-            if [ "$bufn" -eq 0 ]; then buf="$line"; else buf="$buf"$'\n'"$line"; fi
+            spec_review_block_line "$line" content
+            if [ "$bufn" -eq 0 ]; then buf="$content"; else buf="$buf"$'\n'"$content"; fi
             bufn=$((bufn + 1))
             continue ;;
         esac
@@ -266,7 +282,7 @@ spec_review_batch_parse() {
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'"
+          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'$SPEC_REVIEW_ESCAPE_HINT"
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
         if [ "$opt" -ge 0 ]; then
           SR_OP_ANCHOR[opt]="$buf"; SR_OP_ANCHOR_LINE[opt]="$block_line"
@@ -277,7 +293,7 @@ spec_review_batch_parse() {
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'"
+          || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'$SPEC_REVIEW_ESCAPE_HINT"
         if [ "$opt" -ge 0 ]; then SR_OP_REPLACE[opt]="$buf"; else SR_IT_REPLACE[cur]="$buf"; fi
         mode=item; buf=""; bufn=0
         continue ;;
@@ -1275,7 +1291,7 @@ spec_review_ticket_item_check() {
 # by its number. ST_LINE holds each item's header line, ST_ANCHOR_LINE a text
 # item's `@@ anchor` line.
 spec_review_tickets_parse() {
-  local file="$1" line lineno=0 mode=top kw args cur=-1 seen=""
+  local file="$1" line content lineno=0 mode=top kw args cur=-1 seen=""
   local buf="" bufn=0 block_line=0 n kind tail t by b rec arg what
   ST_RECOMMEND=""; ST_NONE=""
   ST_N=(); ST_KIND=(); ST_T=(); ST_B=(); ST_REC=(); ST_ARG=(); ST_LINE=()
@@ -1286,7 +1302,8 @@ spec_review_tickets_parse() {
       '@@ '*|'@@'|$'@@\r') ;;
       *)
         if [ "$mode" = anchor ] || [ "$mode" = replace ]; then
-          if [ "$bufn" -eq 0 ]; then buf="$line"; else buf="$buf"$'\n'"$line"; fi
+          spec_review_block_line "$line" content
+          if [ "$bufn" -eq 0 ]; then buf="$content"; else buf="$buf"$'\n'"$content"; fi
           bufn=$((bufn + 1))
           continue
         fi
@@ -1298,14 +1315,14 @@ spec_review_tickets_parse() {
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_tickets_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'"
+          || spec_review_tickets_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'$SPEC_REVIEW_ESCAPE_HINT"
         [ -n "$(trim "$buf")" ] || spec_review_tickets_die "$block_line" "the anchor is empty"
         ST_ANCHOR[cur]="$buf"
         mode=replace; buf=""; bufn=0; block_line="$lineno"
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
-          || spec_review_tickets_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'"
+          || spec_review_tickets_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'$SPEC_REVIEW_ESCAPE_HINT"
         ST_REPLACE[cur]="$buf"
         mode=top; buf=""; bufn=0
         continue ;;

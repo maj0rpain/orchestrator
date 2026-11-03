@@ -1312,9 +1312,11 @@ rc_setup() {
   rc_flow
 }
 # rc_flow: the active flow the reclaim guard requires in this checkout - it
-# owns the branch orch/5-feature and issue 90.
+# owns the branch orch/5-feature and issue 90, and has .orchestrator/
+# git-excluded as a real flow does: its state file is no working-tree change.
 rc_flow() {
   local file
+  sourced_orch exclude_orch_dirs
   file="$(flow_state_file "$(git rev-parse --show-toplevel)")"
   mkdir -p "$(dirname "$file")" && echo '{}' >"$file"
   state_fixture phase implement

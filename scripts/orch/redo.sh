@@ -7,11 +7,11 @@
 # plans, two lines, "<n>" then "<resumed>": the number the attempt's retire
 # carries and whether its rename is already done.
 # A previous call at this same redo can have already retired the branch and
-# recorded it in state before dying on the PR close - branch and redo_count
-# are set together right after a real retire, so if the recorded branch
-# already matches what this redo_count's retire would have produced, the
-# rename is done: resume at the PR close instead of retiring an
-# already-retired branch a second time (issue #63).
+# recorded it in state before dying: branch and redo_count are set together
+# right after a real retire, so if the recorded branch already matches what this
+# redo_count's retire would have produced, the rename is done. The PR close ran
+# before the rename, so a rerun that finds it done skips the close outright
+# rather than retiring an already-retired branch a second time (issue #63).
 redo_retire_plan() {
   local issue="$1" slug="$2" branch redo_count
   branch="$(state_get branch)"
@@ -29,37 +29,32 @@ redo_refuse_ticket_worktrees() {
   refuse_ticket_worktrees "$ROOT" "a redo would strand their unmerged ticket work"
 }
 
-# The second retire step, shared by both redos: rename state.branch to its
-# -redo-<n> name unless <resumed> says it is done, record it at once, then
-# close state.pr with the redo comment. With no branch recorded it renames
-# nothing, closes nothing and leaves redo_count alone. The caller clears
-# branch, pr and base_sha itself, last, so a rerun finds the retired branch.
+# The second retire step, shared by both redos: close state.pr with the redo
+# comment, then rename state.branch to its -redo-<n> name and record it at
+# once - unless <resumed> says the rename is done, which also means the close
+# came before it, so a resumed rerun does neither. The close comes first
+# because deleting an open PR's head branch makes GitHub close the PR itself,
+# and gh's later close-with-comment would then post nothing (issue #1932). A
+# rerun after a death between the two closes again, which gh treats as a no-op.
+# With no branch recorded it closes nothing, renames nothing and leaves
+# redo_count alone. The caller clears branch, pr and base_sha itself, last, so
+# a rerun finds the retired branch.
 redo_retire_attempt() {
   local issue="$1" slug="$2" n="$3" resumed="$4" branch pr new_branch msg
   branch="$(state_get branch)"
   [ -n "$branch" ] || return 0
+  [ "$resumed" -eq 0 ] || return 0
   new_branch="$(branch_name_redo "$issue" "$slug" "$n")"
-  if [ "$resumed" -eq 0 ]; then
-    cmd_branch retire "$branch" "$new_branch" >/dev/null
-    # Recorded immediately, before the gh call below that can still fail:
-    # the rename already happened for real, so state.branch has to track it.
-    state_write_string branch "$new_branch"
-    state_write redo_count "$n"
-  fi
   pr="$(state_get pr)"
-  [ -n "$pr" ] || return 0
-  # A resumed rerun can find the PR already closed by the run that died after
-  # it: skip the close, so the PR is not commented on twice. A read that
-  # fails falls through to the close.
-  if [ "$resumed" -eq 1 ]; then
-    # shellcheck disable=SC2034 # pr_draft and pr_err are filled, not read
-    local pr_state pr_draft pr_err
-    if pr_state_draft_read "$pr" pr_state pr_draft pr_err && [ "$pr_state" = CLOSED ]; then
-      return 0
-    fi
+  if [ -n "$pr" ]; then
+    msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
+    gh_or_die "close PR #$pr" adapter_pr_close "$pr" "$msg"
   fi
-  msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
-  gh_or_die "close PR #$pr" adapter_pr_close "$pr" "$msg"
+  cmd_branch retire "$branch" "$new_branch" >/dev/null
+  # Recorded immediately: the rename already happened for real, so
+  # state.branch has to track it.
+  state_write_string branch "$new_branch"
+  state_write redo_count "$n"
 }
 
 # Clears the attempt's branch, pr and base_sha from state. The callers of

@@ -99,7 +99,7 @@ update_pr() {
   capture have err adapter_pr_labels "$pr" \
     || gh_die --hint "already written: $landed" "read the labels of PR #$pr" "$err"
   for label; do
-    list_has "$have" "$label" && continue
+    label_listed "$have" "$label" && continue
     capture ignored err adapter_pr_label_add "$pr" "$label" \
       || gh_die --hint "already written: $landed" "add the label '$label' to PR #$pr" "$err"
     landed="$landed, the label '$label'"
@@ -130,7 +130,7 @@ pr_labels_check() {
   capture have err adapter_pr_labels "$pr" \
     || gh_die "read the labels of PR #$pr, open and recorded on its branch" "$err"
   for label; do
-    list_has "$have" "$label" && continue
+    label_listed "$have" "$label" && continue
     missing="${missing:+$missing, }'$label'"
     count=$((count + 1))
   done

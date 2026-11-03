@@ -69,6 +69,10 @@ cgroup v2 `cpu.max` quota;
 `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
 pass on its own. all.sh runs at most that many shellcheck processes at once, and
 both runners lower their own niceness to 10 outside `CI`.
+Each section of a parallel run has a deadline, `ORCH_TEST_SECTION_TIMEOUT` whole
+seconds (default 600), counted from the section's own start; past it the runner
+stops the section's process tree and reports `section '<title>' timed out`. A
+positive integer is required, and `ORCH_TEST_JOBS=1` runs have no deadline.
 Every runner draws its jobs from the job pool (GLOSSARY.md): slot lock files
 under `~/.cache/orchestrator/test-job-pool`, as many as that default (so
 `ORCH_TEST_POOL_PERCENT`, read from each run's own environment, sizes the pool;
@@ -87,8 +91,8 @@ directory. Runs that disagree on the size share the directory unchanged: each
 tries slots 1 to its own size, so a larger run also uses the higher slots while
 all contend for the low ones, and concurrency is bounded by the largest size
 among the active runs; no size is recorded there.
-Helper placement is checked by harness.sh's placement section; its failure
-message states the rule.
+Test-helper placement is checked by harness.sh's test-helper placement
+section; its failure message states the rule.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
 noun's code, named as that noun's test file is, and a helper lives in the
@@ -133,7 +137,9 @@ file's path inside `--root` or else its own git repo root, and `width.sh --root
 file, line and length, and exits 0 with or without findings. `docs_lint.sh`'s
 `scan_line_width` wraps the second form.
 The project's edit hook, `scripts/dev/hook-edit-width.sh`, runs the width
-tool and, for a `.sh` file, shellcheck on each edited file.
+tool and, for a `.sh` file, shellcheck on each edited file, and on each `.md` or
+`.sh` file a Bash call changed in the checkout holding its cwd (a PreToolUse
+snapshot of the dirty files, compared on PostToolUse or PostToolUseFailure).
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
@@ -196,7 +202,8 @@ setup (`scripts/test/orch/setup.sh`), the gh adapter fake
 (`scripts/test/gh_adapter_fake.sh`) and the assertion tally
 (`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
 `( ... )` subshell, and `tally_summary`, the ending each standalone suite
-calls) instead - their fixtures, fakes and assertions. A
+calls) and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`)
+instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
 section checks it against what bash itself defines.
@@ -315,13 +322,13 @@ scripts/version-bump.sh       the version-bump Action's script: changelog fragme
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
 scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
-scripts/dev/hook-edit-width.sh the project's PostToolUse edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file (Develop)
+scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh and affected.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10
-scripts/test/report.sh       the report helpers all.sh and affected.sh both source: a suite's FAIL block and summary line, and the shellcheck summary
+scripts/test/report.sh       the report helpers all.sh and affected.sh both source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
 scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh and affected.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, and suites_read, the reader of all.sh's suite list
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole

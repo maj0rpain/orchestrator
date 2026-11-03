@@ -236,6 +236,11 @@ assert_eq "issue is recorded as a number" "$("$ORCH" state get | jq -r '.issue |
 assert_eq "issue value matches the adopted number" "$("$ORCH" state get issue)" "42"
 
 healthy_repo
+fake_issue 43 open Ready-For-Agent
+out="$("$ORCH" init adopted-ci --issue 43 2>&1)"; st=$?
+assert_status "adopts an issue carrying Ready-For-Agent" "$st" 0
+
+healthy_repo
 out="$("$ORCH" init nope --issue 99 2>&1)"; st=$?
 assert_status "refuses to adopt an issue gh cannot read" "$st" 1
 assert_contains "names the issue number" "$out" "99"
@@ -464,7 +469,7 @@ sevs="$(sourced_orch_script 'printf "%s" "${FILED_SEVERITIES// /|}"')"
 # shellcheck disable=SC2016 # expanded by the inner bash
 axes="$(sourced_orch_script 'printf "%s" "${FILED_AXES// /|}"')"
 assert_contains "with the finding's parts as flags" "$("$ORCH" help | flat_text)" \
-  "review file <$sevs> <title> --axis <$axes> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+  "review file <$sevs> <title> --axis <$axes> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --why <reason> [--spec-question <q>]"
 assert_not_contains "and no --body-file" "$("$ORCH" help | grep -A3 'review file')" "--body-file"
 assert_contains "and finding triage's scan" "$("$ORCH" help)" "finding-triage scan [--all] [<issue> | --pr <n>]"
 assert_contains "with --all's re-check" "$("$ORCH" help)" "--all: every open review:<severity> finding"

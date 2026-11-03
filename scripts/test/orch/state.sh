@@ -333,3 +333,17 @@ assert_contains "doctor --flow still reports it as not a JSON object" "$out" "st
 assert_status "archive on it exits 0" "$st" 0
 assert_eq "and leaves no state.json behind" "$([ -e .orchestrator/state.json ] && echo present || echo gone)" "gone"
 restore_suite_env
+
+# --- state set with a failed write (#1931) ------------------------------------
+# A write that cannot land stops orch.sh with an orch: message, whatever
+# context the write runs in, and leaves the flow as it was.
+echo
+echo "state set with a failed write"
+fresh_flow failedwrite
+bad="$(state_write_fails_bin)"
+out="$(PATH="$bad:$PATH" "$ORCH" state set budget 3 2>&1)"; st=$?
+assert_status "state set with a failed write exits 1" "$st" 1
+assert_contains "naming the key and the state file" "$out" \
+  "orch: could not record budget in $PWD/.orchestrator/state.json - the flow is unchanged"
+assert_eq "leaving the budget unset" "$("$ORCH" state get budget)" ""
+restore_suite_env

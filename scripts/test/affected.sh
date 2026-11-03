@@ -31,7 +31,7 @@
 #                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
-# Always run: docs_lint.sh, orch_test.sh's placement sections (helper
+# Always run: docs_lint.sh, orch_test.sh's placement sections (test-helper
 # placement, gh op placement, marked comment prelude placement), and
 # the shellcheck run, at warning severity, on the changed scripts/**/*.sh
 # files that still exist. Sections are chosen through orch_test.sh's
@@ -190,7 +190,7 @@ harness="scripts/test/orch/harness.sh"
 if [ -f "$harness" ]; then
   while IFS= read -r t; do
     case "$t" in
-      "helper placement ("* | "gh op placement ("* | "marked comment prelude placement ("*)
+      "test-helper placement ("* | "gh op placement ("* | "marked comment prelude placement ("*)
         add_title "$t" ;;
     esac
   done < <(titles_of "$harness")
@@ -256,7 +256,6 @@ tmp="$(mktemp -d)" || exit 1
 pids=()
 trap 'test_jobs_stop_children "${pids[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
-failed=0
 
 for suite in "${selected[@]}"; do
   if [ "$suite" = orch_test.sh ] && [ -n "$only" ]; then
@@ -273,7 +272,7 @@ sc_pid=""
 if [ "${#sc_sorted[@]}" -gt 0 ] && command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
   test_jobs_slot_wait
-  shellcheck -S warning -f gcc "${sc_sorted[@]}" >"$tmp/shellcheck" 2>&1 8>&- &
+  test_jobs_job shellcheck -S warning -f gcc "${sc_sorted[@]}" >"$tmp/shellcheck" 2>&1 &
   sc_pid=$!
   test_jobs_slot_release "$sc_pid"
   pids+=("$sc_pid")
@@ -289,16 +288,16 @@ sc_status=0
 
 for n in "${!selected[@]}"; do
   suite="${selected[$n]}"
-  report_suite "$suite" "${suite_exits[$n]}" "$(<"$tmp/$suite")" || failed=1
+  report_suite "$suite" "${suite_exits[$n]}" "$(<"$tmp/$suite")"
 done
 
 if [ "$have_sc" -eq 1 ]; then
   sc_out="$(<"$tmp/shellcheck")"
-  report_shellcheck "$sc_status" "$sc_out" || failed=1
+  report_shellcheck "$sc_status" "$sc_out"
 elif [ "${#sc_sorted[@]}" -gt 0 ]; then
-  report_shellcheck_missing || failed=1
+  report_shellcheck_missing
 else
-  report_shellcheck 0 "" || failed=1
+  report_shellcheck 0 ""
 fi
-report_verdict affected.sh "$failed"
-exit "$failed"
+report_verdict affected.sh
+exit $?

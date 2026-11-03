@@ -11,9 +11,9 @@
 labels_verified() {
   local labels="$1" want="$2" l
   shift 2
-  list_has "$labels" "$want" || return 1
+  label_listed "$labels" "$want" || return 1
   for l in "$@"; do
-    ! list_has "$labels" "$l" || return 1
+    ! label_listed "$labels" "$l" || return 1
   done
 }
 
@@ -260,7 +260,7 @@ cmd_issue_ready() {
   ready="$(triage_label_for ready-for-agent)"
   issue_state_labels_read "$issue" state labels gh_err \
     || gh_die --exit 2 "read issue #$issue" "$gh_err"
-  list_has "$labels" "$ready"
+  label_listed "$labels" "$ready"
 }
 
 # issue_publish_verified <err_var> <n> <title> <label>: 0 only once the
@@ -353,7 +353,7 @@ cmd_issue_triage() {
   local is_ready=false wontfix_label="" human_label="" held
   for role in $TRIAGE_ROLES; do
     label="$(triage_label_for "$role")"
-    list_has "$labels" "$label" || continue
+    label_listed "$labels" "$label" || continue
     case "$role" in
       ready-for-agent) is_ready=true; continue ;;
       wontfix) wontfix_label="$label" ;;
