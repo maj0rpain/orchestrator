@@ -323,7 +323,7 @@ tw_repo
 fake_github
 fake_issue 7 open
 wt="$("$ORCH" ticket-worktree add 7)"
-echo one >"$wt/ticket.txt" && git -C "$wt" add ticket.txt && git -C "$wt" commit -qm one
+commit_file "$wt" ticket.txt one
 out="$("$ORCH" ticket close 7 2>&1)"; st=$?
 assert_status "close refuses a ticket whose ticket branch is unmerged" "$st" 1
 assert_contains "naming the ticket branch and its forked-from branch" "$out" \
@@ -342,7 +342,7 @@ assert_eq "closing it" "$(fake_state_of 7)" "CLOSED"
 # Merged by ticket merge: closes.
 fake_issue 8 open
 wt="$("$ORCH" ticket-worktree add 8)"
-echo two >"$wt/ticket8.txt" && git -C "$wt" add ticket8.txt && git -C "$wt" commit -qm two
+commit_file "$wt" ticket8.txt two
 "$ORCH" ticket merge 8 >/dev/null 2>&1
 out="$("$ORCH" ticket close 8 2>&1)"; st=$?
 assert_status "close closes a ticket merged by ticket merge" "$st" 0
