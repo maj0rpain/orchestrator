@@ -314,8 +314,10 @@ from `fundamental.md`, as the round's first ask wrote them) and stop: the
 phase never assumes the recommendations. With a reply, translate it into
 `spec-review apply`'s answer grammar over the fundamental items, run
 `bash "$ORCH" spec-review apply <dir> <answer> --round <k>/<n>` again - it
-applies only the held-back items, posts the round's one changelog and removes
-`fundamental.md` - and go on to the round's pause, or, after round n, to step 5.
+applies the whole batch in batch order (the other items as recommended),
+follows the tickets, publishes the body, posts the round's one changelog and
+removes `fundamental.md` - and go on to the round's pause, or, after round n,
+to step 5.
 Rounds run through the `orch-spec-review` skill, which runs unattended in
 autopilot; step 5's breakdown runs `orch-to-tickets`' **Unattended breakdown**.
 A plan amendment after `apply` (a declined `contradicts the plan` item) is
