@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.3
+
+The ticket module walks a parent's sub-issue listing in one place: `ticket_listing_has` is now a predicate over `ticket_listing_state`.
+
 ## 4.44.2
 
 `orch.sh issue` now names each file op's flag in one place; usage and behaviour are unchanged.
