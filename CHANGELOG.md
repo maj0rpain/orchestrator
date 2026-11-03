@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.40
+
+`orch.sh review file` no longer takes `--pr` or `--sha`: it reads the flow's PR from state and asks GitHub for that PR's URL and remote head commit, so the review loop's closer has no URL or SHA to supply or guess.
+
 ## 4.43.39
 
 `orch.sh review rerun` now reruns every distinct Actions run behind the failing checks `review ci` counts (required checks where any are reported, else all), instead of the first failing check of all checks. One helper owns which checks count.
