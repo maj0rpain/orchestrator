@@ -608,7 +608,7 @@ fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
 fake_duplicate_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/duplicate_of" 2>/dev/null; }
 fake_title_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
-fake_labels_of() { sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
+fake_labels_of() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
 fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
 
 # fake_claim_seed <issue> [host] [pid] [started] [phase]: seeds a claim on the
@@ -644,7 +644,7 @@ tick_fixture() {
   printf 'bg-wait:%s\n' "\${CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS:-}"
   printf 'dir:%s\n' "\$(pwd -P)"
   for d in "$ORCH_GH_FAKE_STORE"/issues/*/; do
-    printf 'labels:%s:%s\n' "\$(basename "\$d")" "\$(sort "\$d/labels" | tr '\n' ' ')"
+    printf 'labels:%s:%s\n' "\$(basename "\$d")" "\$(LC_ALL=C sort "\$d/labels" | tr '\n' ' ')"
   done
 } >>"$launcher_dir/calls"
 [ -f "$launcher_dir/out" ] && cat "$launcher_dir/out"
@@ -721,7 +721,7 @@ fake_label_names() {
 
 # fake_labels: the store's labels read back, sorted, one per line as
 # "<name><TAB><colour><TAB><description>".
-fake_labels() { sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }
+fake_labels() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }
 
 # fake_fail <operation> [stderr]: every later call of the named adapter
 # operation fails, non-zero, with stderr (default "fake gh: <operation>

@@ -785,8 +785,10 @@ rm docs/agents/triage-labels.md
 triaged 31 "Review:Major,Needs-Triage,Bug"
 out="$(apply 31 ready-for-human --category enhancement --comment-file "$comment" 2>&1)"; st=$?
 assert_status "applies over labels in another casing" "$st" 0
+# The read-back runs under en_US.UTF-8 (case-folding collation); apply above
+# runs under the caller's locale.
 assert_eq "removing the stale triage and category labels whatever their casing" \
-  "$(fake_labels_of 31)" "Review:Major enhancement ready-for-human "
+  "$(LC_ALL=en_US.UTF-8 fake_labels_of 31)" "Review:Major enhancement ready-for-human "
 restore_suite_env
 
 # --- finding-triage bundle ----------------------------------------------------
