@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.44
+
+`branch off` and `branch create` fork from origin's freshly fetched base whenever origin answered, and die with git's message when that checkout fails, instead of silently forking from a stale local base.
+
 ## 4.43.43
 
 The test runners now start jobs through one job pool helper, `test_jobs_job`, which owns the slot fd, and take their PASS/FAIL verdict from the failed parts alone: `report_verdict <runner>` decides from the recorded parts, and the reporters record their own.
