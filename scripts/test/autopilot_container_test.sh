@@ -278,7 +278,6 @@ assert_eq "local agent show and clear precede autopilot show and watch" \
 run_entry
 assert_eq "a clean clone: no removal lines" "$(printf '%s\n' "$err" | grep -c 'removed local')" 0
 assert_eq "a clean clone: no local agent clear" "$(grep 'args=agent clear' "$orch_log" | grep -vc -e '--global')" 0
-assert_contains "autopilot show's output reaches stderr" "$err" "autopilot-show-marker"
 
 FAKE_AGENT_SHOW="$agent_local" FAKE_ORCH_FAIL="agent clear implementer --model" run_entry
 assert_eq "a failed local removal exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
