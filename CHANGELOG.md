@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.3
+
+`scripts/test/all.sh` and `scripts/test/affected.sh` now end every run that reaches their report on one verdict line - `all.sh: PASS (<n> parts)` or `all.sh: FAIL (<part>, ...)`, and the same for `affected.sh` - naming each failed suite, `shellcheck`, or `temp files`, so a `tail` of the output can no longer show a pass when the run failed. The report code both runners shared now lives once, in `scripts/test/report.sh`.
+
 ## 4.43.2
 
 `ORCH_TEST_ONLY` now matches section titles ignoring case, and refuses a pattern with a top-level alternative that matches no section, naming each such branch, instead of silently running only the others.
