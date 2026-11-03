@@ -1452,7 +1452,8 @@ assert_status "review ready in autopilot succeeds" "$st" 0
 assert_eq "moving the label to orch:done" "$(fake_labels_of 7)" "orch:done ready-for-agent "
 assert_eq "releasing the claim" "$(fake_claim_held 7)" free
 
-# Failed-check refusal: pr ready's gate case covers it. Bring it back here if
+# Failed-check refusal: review ready's plain failed-check case covers it, since
+# the label and claim move only after the gate. Bring it back here if
 # this path ever gains a write ahead of the gate.
 
 # a failure partway leaves the claim held and names the writes that landed
