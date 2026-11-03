@@ -869,15 +869,14 @@ refused "ready-for-agent with a ready-for-human member" \
   "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent bug 11 13
 refused "enhancement with a bug member" \
   "--category enhancement, but issue #11 carries 'bug'" new_bundle ready-for-human enhancement 11 13
-# A member with two faults is refused for the one checked first: the member
-# check before the state, the state before the category.
 member 13 "review:nit,Ready-For-Human,enhancement"
 refused "a ready-for-human member in another casing under ready-for-agent" \
   "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent bug 11 13
 member 13 "review:nit,ready-for-human,Bug"
 refused "a bug member in another casing under enhancement" \
   "--category enhancement, but issue #13 carries 'bug'" new_bundle ready-for-human enhancement 13 11
-member 13 "review:nit,ready-for-human,enhancement"
+# A member with two faults is refused for the one checked first: the member
+# check before the state, the state before the category.
 member 13 "review:nit,needs-triage,ready-for-human,bug"
 refused "a needs-triage, ready-for-human member under ready-for-agent" \
   "issue #13 carries 'needs-triage'" new_bundle ready-for-agent bug 11 13
