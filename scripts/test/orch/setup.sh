@@ -951,7 +951,8 @@ while IFS= read -r gh_guard_call; do
   bad "a section called the real gh" "$gh_guard_call"
 done <"$GH_GUARD_LOG"
 tally_read
-# A child of the parallel runner hands its counts on instead of printing them.
+# A parallel child or the sequential run's subshell (the two holders of
+# orch_child_counts) hands its counts on instead of printing them.
 # shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
 if [ -n "$orch_child_counts" ]; then
   echo "$PASS $FAIL $SKIP" >"$orch_child_counts"

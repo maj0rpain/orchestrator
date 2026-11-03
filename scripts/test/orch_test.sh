@@ -259,9 +259,26 @@ print_summary() {
   fi
 }
 
-# A child of the parallel runner: run its one section, and hand the counts file
-# to the summary through a plain, unexported variable, so a suite this section
-# starts in turn is no child.
+# read_counts <file> <subject> <status>: read a counts file into orch_c_pass,
+# orch_c_fail and orch_c_skip. A missing or malformed file prints the FAIL
+# "<subject> reported no counts" naming the exit <status>, and returns 1.
+read_counts() {
+  local counts=""
+  [ -f "$1" ] && counts="$(cat "$1")"
+  case "$counts" in
+    [0-9]*' '[0-9]*' '[0-9]*)
+      # shellcheck disable=SC2034 # read by both runners below
+      read -r orch_c_pass orch_c_fail orch_c_skip <<<"$counts" ;;
+    *)
+      print_fail "$2 reported no counts" "it exited $3 before its summary"
+      return 1 ;;
+  esac
+}
+
+# orch_child_counts names the counts file the summary writes instead of printing
+# its counts. Two runs hold it, through a plain, unexported variable so a suite
+# a section starts in turn holds none: a child of the parallel runner (running
+# its one section), and the subshell of the sequential run (running them all).
 orch_child_counts=""
 if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   orch_child_section="$ORCH_TEST_CHILD_SECTION"
@@ -326,15 +343,11 @@ if [ "$orch_jobs" -eq 1 ]; then
   # The sections run in a subshell so an `exit` in one cannot skip the summary;
   # the counts file the summary writes is the proof it ran.
   ( eval "$(section_text "$orch_kept")" ); orch_status=$?
-  orch_counts="$(cat "$orch_child_counts")"
-  case "$orch_counts" in
-    [0-9]*' '[0-9]*' '[0-9]*)
-      read -r orch_pass orch_fail orch_skip <<<"$orch_counts"
-      print_summary "$orch_pass" "$orch_fail" "$orch_skip"
-      [ "$orch_fail" -eq 0 ] && [ "$orch_status" -eq 0 ]
-      exit $? ;;
-  esac
-  print_fail "the run reported no counts" "it exited $orch_status before its summary"
+  if read_counts "$orch_child_counts" "the run" "$orch_status"; then
+    print_summary "$orch_c_pass" "$orch_c_fail" "$orch_c_skip"
+    [ "$orch_c_fail" -eq 0 ] && [ "$orch_status" -eq 0 ]
+    exit $?
+  fi
   tally_read
   print_summary "$PASS" "$((FAIL + 1))" "$SKIP"
   exit 1
@@ -381,19 +394,14 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     wait "${orch_pids[$orch_flushed]}"; orch_status=$?
     orch_pos="${orch_sections[$orch_flushed]}"
     cat "$orch_buf/$orch_pos.out"
-    orch_counts=""
-    [ -f "$orch_buf/$orch_pos.counts" ] && orch_counts="$(cat "$orch_buf/$orch_pos.counts")"
-    case "$orch_counts" in
-      [0-9]*' '[0-9]*' '[0-9]*)
-        read -r orch_child_pass orch_child_fail orch_child_skip <<<"$orch_counts"
-        orch_pass=$((orch_pass + orch_child_pass)); orch_fail=$((orch_fail + orch_child_fail))
-        orch_skip=$((orch_skip + orch_child_skip))
-        [ "$orch_child_fail" -eq 0 ] || orch_any_failed=1 ;;
-      *)
-        print_fail "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")' reported no counts" \
-          "it exited $orch_status before its summary"
-        orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
-    esac
+    if read_counts "$orch_buf/$orch_pos.counts" \
+      "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")'" "$orch_status"; then
+      orch_pass=$((orch_pass + orch_c_pass)); orch_fail=$((orch_fail + orch_c_fail))
+      orch_skip=$((orch_skip + orch_c_skip))
+      [ "$orch_c_fail" -eq 0 ] || orch_any_failed=1
+    else
+      orch_fail=$((orch_fail + 1)); orch_any_failed=1
+    fi
     [ "$orch_status" -eq 0 ] || orch_any_failed=1
     orch_flushed=$((orch_flushed + 1))
     orch_progress=1
