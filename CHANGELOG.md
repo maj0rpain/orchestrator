@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.43.24
+
+The spec review's `spec-review wait` and the review loop's `review ci` now run as long commands: in the foreground, still waited for when the host moves them to the background. A lens is judged missing only from the wait's own timeout, and a `review ci` the host kills is unreachable, a bounded stop. docs_lint covers orch-spec-review's skill.
+
+## 4.43.23
+
+Trim the test runner's section-filter tests: drop a duplicated parallel dead-branch case, share one planted scripts copy across the filter cases, and fold the dead-branch refusal's intermediate array into its message list.
+
+## 4.43.22
+
+`affected.sh` and `orch_test.sh` now share one section-title rule and one reader of `all.sh`'s suite list (`scripts/test/test_tree.sh`). `affected.sh` rejects an `all.sh` naming a suite with no file, prints its errors with an `affected.sh: ` prefix, and renames `mb`, `base` and `git_q`.
+
 ## 4.43.21
 
 The stdin hook now denies an interpreter run with options only (`python3 -u`, `node --input-type=module`), which reads stdin and hangs, and still allows each interpreter's info options such as `python3 -V` and `node -v`. The Bash hooks' walker moved to its own module.
