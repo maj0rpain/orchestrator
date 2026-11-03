@@ -954,13 +954,12 @@ assert_gh_dies "a silent bundle create failure dies" adapter_issue_create '' 1 \
 # the members left open, with the --into command that resumes, and that
 # command finishes the job - no second bundle, never an edit to the bundle,
 # and exactly one `Bundled into #B` comment on every member.
-# partial <name> <B> <wants> <left> [adapter]: a new bundle #B of members 31,
-# 32 and 33 dies with <wants>, leaving <left> (space-separated) open; the
-# fake's failure is seeded by the caller, and <adapter> stands in for the
-# fake where given.
+# partial <name> <B> <wants> <left> <held> [adapter]: a new bundle #B of
+# members 31, 32 and 33 dies with <wants>, leaving <left> (space-separated)
+# <held> ("left open" or "not confirmed closed"); the fake's failure is seeded
+# by the caller, and <adapter> stands in for the fake where given.
 partial() {
-  local name="$1" b="$2" wants="$3" left="$4" adapter="${5:-$GH_ADAPTER_FAKE}" m held="left open"
-  case "$wants" in *"state back"*|*"did not read back"*) held="not confirmed closed" ;; esac
+  local name="$1" b="$2" wants="$3" left="$4" held="$5" adapter="${6:-$GH_ADAPTER_FAKE}" m
   for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
   fake_next_issue "$b"
   out="$(ORCH_GH_ADAPTER="$adapter" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
@@ -1002,25 +1001,25 @@ resumed() {
 }
 fake_fail_after adapter_issue_comment 1 "$GH_502"
 partial "a failed comment" 40 \
-  "orch: bundle #40: gh could not comment on member #32: HTTP 502: Bad Gateway - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 40 32 33" "32 33"
+  "orch: bundle #40: gh could not comment on member #32: HTTP 502: Bad Gateway - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 40 32 33" "32 33" "left open"
 fake_fail_after adapter_issue_close 1 "$GH_502"
 partial "a failed close" 41 \
-  "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33"
+  "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33" "left open"
 fake_fail adapter_issue_comments "$GH_502"
 partial "a failed comments read" 42 \
-  "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33"
+  "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33" "left open"
 fake_fail_after adapter_issue_comment 1 ""
 partial "a silent failed comment" 48 \
-  "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33"
+  "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33" "left open"
 # A failed state read-back dies the same way, but the member may in truth be
 # closed: the message does not call it open, and the resume skips it.
 fake_fail_after adapter_issue_state 1 "$GH_502"
 partial "a failed state read-back" 43 \
-  "orch: bundle #43: gh could not read member #32's state back: HTTP 502: Bad Gateway - members not confirmed closed: #32 #33; resume with: orch.sh finding-triage bundle --into 43 32 33" "32 33"
+  "orch: bundle #43: gh could not read member #32's state back: HTTP 502: Bad Gateway - members not confirmed closed: #32 #33; resume with: orch.sh finding-triage bundle --into 43 32 33" "32 33" "not confirmed closed"
 noop_close_adapter="$(mktemp)"
 writeln "source $(printf %q "$GH_ADAPTER_FAKE")" 'adapter_issue_close() { :; }' >"$noop_close_adapter"
 partial "a close that reports success but reads back open" 44 \
-  "member #31 did not read back as closed" "31 32 33" "$noop_close_adapter"
+  "member #31 did not read back as closed" "31 32 33" "not confirmed closed" "$noop_close_adapter"
 rm -f "$noop_close_adapter"
 
 # --into skips a member already closed into B, even one whose labels would
@@ -1034,6 +1033,10 @@ assert_status "--into skips a member already closed into B" "$st" 0
 assert_eq "no second comment on it" "$(fake_comments_of 62 | grep -c "Bundled into")" "1"
 assert_eq "and it stays closed with its labels" "$(fake_state_of 62) $(fake_labels_of 62)" "CLOSED bug needs-triage review:major "
 assert_eq "and the next member is closed into B" "$(fake_state_of 61) $(fake_duplicate_of 61)" "CLOSED 63"
+# Resuming again, with every member already closed into B, is a no-op.
+out="$(bundle --into 63 62 61 2>&1)"; st=$?
+assert_status "--into with every member already closed succeeds" "$st" 0
+assert_eq "and comments no member again" "$(fake_comments_of 61 | grep -c "Bundled into")" "1"
 # A closed member never bundled into B, or with a stranger's marker, is refused.
 member 64 "review:major,ready-for-agent,bug" closed
 refused "--into: a closed member without the marker" "issue #64 is not open" bundle --into 63 64
