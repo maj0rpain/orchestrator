@@ -368,9 +368,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               changes outside the planning allowlist, checked
                               in that order. Exit 0 printing nothing when
                               free; exit 3 printing the first that holds; exit
-                              1 when the working tree cannot be read. A
-                              state.json that cannot be read counts as a
-                              flow mid-pipeline
+                              1 when the working tree cannot be read
   branch base-sha             print the current branch's base SHA as branch
                               off, branch create or branch sync recorded it;
                               a branch without one falls

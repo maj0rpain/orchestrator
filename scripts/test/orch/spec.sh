@@ -566,8 +566,7 @@ echo
 echo "spec fetch on a truncated state.json"
 fresh_flow spectrunc
 fake_github
-head -c 40 .orchestrator/state.json >.orchestrator/state.cut
-mv .orchestrator/state.cut .orchestrator/state.json
+state_truncate
 spec_body="$(mktemp)"
 out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "spec fetch exits 1" "$st" 1

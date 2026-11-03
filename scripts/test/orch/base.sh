@@ -250,8 +250,7 @@ rm -rf "$(dirname "$bare")"
 echo
 echo "base set on a truncated state.json"
 fresh_flow basetrunc
-head -c 40 .orchestrator/state.json >.orchestrator/state.cut
-mv .orchestrator/state.cut .orchestrator/state.json
+state_truncate
 out="$(orch_gh_failing base set uat --flow 2>&1)"; st=$?
 assert_status "base set --flow exits 1" "$st" 1
 assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"

@@ -714,6 +714,7 @@ ticket_reclaim_remove() {
 ticket_reclaim_guard() {
   local parent="$1" b="$2" fissue
   if flow_active; then
+    require_state_readable
     fissue="$(state_get issue)" || die "ticket reclaim: cannot read the flow's issue from $STATE"
     require_flow_branch "ticket reclaim" "$b"
     [ -n "$fissue" ] || die "ticket reclaim: on $b, the active flow records no issue yet - nothing was discarded"

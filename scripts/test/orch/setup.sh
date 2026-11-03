@@ -303,6 +303,15 @@ state_fixture() {
   flow_state_write "$(flow_state_file "$(git rev-parse --show-toplevel)")" "$1" "$2"
 }
 
+# state_truncate [bytes]: cuts the checkout's state file to its first <bytes>
+# bytes (40 by default), leaving a file that does not parse as JSON. The cut
+# goes through a temp file beside it, moved back over it.
+state_truncate() {
+  local file
+  file="$(flow_state_file "$(git rev-parse --show-toplevel)")"
+  head -c "${1:-40}" "$file" >"$file.cut" && mv "$file.cut" "$file"
+}
+
 # state_fixture_drop <key>...: deletes each named key from the checkout's
 # state file in place, as a flow started by an older release lacks keys a
 # fresh one seeds. Raw jq, not the Flow state module: the module has no delete

@@ -322,8 +322,7 @@ restore_suite_env
 echo
 echo "commands on a truncated state.json"
 fresh_flow trunc
-head -c 40 .orchestrator/state.json >.orchestrator/state.cut
-mv .orchestrator/state.cut .orchestrator/state.json
+state_truncate
 unreadable_line="orch: state.json cannot be read - run orch.sh doctor --flow"
 out="$("$ORCH" branch create 2>&1)"; st=$?
 assert_status "branch create on a truncated state.json exits 1" "$st" 1

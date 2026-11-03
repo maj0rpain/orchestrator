@@ -1563,8 +1563,7 @@ echo
 echo "autopilot answer on a truncated state.json"
 fresh_flow aptrunc
 fake_github
-head -c 40 .orchestrator/state.json >.orchestrator/state.cut
-mv .orchestrator/state.cut .orchestrator/state.json
+state_truncate
 ans="$(mktemp)"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "autopilot answer exits 2" "$st" 2

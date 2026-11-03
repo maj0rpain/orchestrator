@@ -3112,8 +3112,7 @@ unset d
 echo
 echo "spec-review begin on a truncated state.json"
 fresh_flow srtrunc
-head -c 40 .orchestrator/state.json >.orchestrator/state.cut
-mv .orchestrator/state.cut .orchestrator/state.json
+state_truncate
 out="$("$ORCH" spec-review begin 14 2>&1)"; st=$?
 assert_status "spec-review begin exits 1" "$st" 1
 assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
