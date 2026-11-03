@@ -42,15 +42,20 @@ if [ "$(git -C "$dir" rev-parse --is-inside-git-dir 2>/dev/null)" = true ]; then
   # file against the working tree above the outermost .git it sits in.
   [ "$(git -C "$dir" rev-parse --is-bare-repository 2>/dev/null)" = false ] || exit 0
   common_gitdir="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
-  # A git dir that is no .git and sits under none (a separate git dir, a bare
-  # repo's) names no working tree: the file is in no working tree.
+  # A git dir that is no .git and sits under none (a separate git dir) names no
+  # working tree of its own: judge the file against the repo its parent
+  # directory is in, and let it go when there is none.
   outer_gitdir="$common_gitdir"
   case "$common_gitdir" in
     */.git) ;;
     */.git/*) outer_gitdir="${common_gitdir%%/.git/*}/.git" ;;
-    *) exit 0 ;;
+    *) outer_gitdir="" ;;
   esac
-  root="$(cd "${outer_gitdir%/*}" && pwd -P)" || exit 0
+  if [ -n "$outer_gitdir" ]; then
+    root="$(cd "${outer_gitdir%/*}" && pwd -P)" || exit 0
+  else
+    root="$(git -C "${common_gitdir%/*}" rev-parse --show-toplevel 2>/dev/null)" || exit 0
+  fi
 elif ! root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)"; then
   exit 0
 fi
