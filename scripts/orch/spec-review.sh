@@ -541,9 +541,9 @@ spec_review_answer_tokens() {
 # autopilot round's first run holds back for the human's reply.
 spec_review_item_held() { [ "${SR_FUNDAMENTAL_RUN:-}" = hold ] && [ -n "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
-# spec_review_item_skipped <i>: whether item <i> is one the resumed run leaves
-# alone - the round already applied it before the fundamental items were held.
-spec_review_item_skipped() { [ "${SR_FUNDAMENTAL_RUN:-}" = resume ] && [ -z "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
+# spec_review_item_unnamed <i>: whether item <i> is one the resumed run's
+# answer cannot name - a non-fundamental item, taken as recommended.
+spec_review_item_unnamed() { [ "${SR_FUNDAMENTAL_RUN:-}" = resume ] && [ -z "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
 # spec_review_answer <answer>: each item's disposition into
 # SR_DISP (applied, declined, taken, undecided or resolved), SR_ASREC (1 where
@@ -582,8 +582,8 @@ spec_review_answer() {
         [ -z "${SR_DISP[$i]+x}" ] || die "the answer names item $n twice"
         ! spec_review_item_held "$i" \
           || die "the answer names item $n, a fundamental item held back for the human's reply - it takes no answer in this run"
-        ! spec_review_item_skipped "$i" \
-          || die "the answer names item $n, which this round applied before the fundamental items were held back - the resumed answer names only fundamental items"
+        ! spec_review_item_unnamed "$i" \
+          || die "the answer names item $n, which is not a fundamental item - the resumed answer names only fundamental items, the rest being taken as recommended"
         [ "${SR_IT_REC[$i]}" != resolved ] \
           || die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer"
         case "$sign:${SR_IT_REC[$i]}" in
@@ -607,12 +607,12 @@ spec_review_answer() {
     case "${SR_IT_REC[$i]}" in
       resolved) SR_DISP[i]=resolved; continue ;;
     esac
-    # A fundamental item is held back in an autopilot round's first run; the
-    # resumed run's answer is the fundamental items' alone, the rest
-    # recommended.
-    if spec_review_item_held "$i"; then SR_DISP[i]=held; continue; fi
+    # A fundamental item is validated as recommended in an autopilot round's
+    # first run; the resumed run's answer is the fundamental items' alone,
+    # the rest recommended.
     ibase="$base"
-    ! spec_review_item_skipped "$i" || ibase=recommended
+    ! spec_review_item_held "$i" || ibase=recommended
+    ! spec_review_item_unnamed "$i" || ibase=recommended
     [ -z "${SR_DISP[$i]+x}" ] || continue
     case "$ibase:${SR_IT_REC[$i]}" in
       recommended:apply|all:apply|all:decline) SR_DISP[i]=applied; SR_ASREC[i]=1 ;;
@@ -752,8 +752,6 @@ spec_review_validate() {
   SR_TEXT="$SR_FETCHED"
   SR_PROBLEMS=(); SR_ANCHOR_COUNT=0
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    # The resumed run's body already holds the other items' edits.
-    ! spec_review_item_skipped "$i" || continue
     case "${SR_IT_REC[$i]}" in
       apply|decline)
         accepted=""
@@ -1609,18 +1607,10 @@ spec_review_tickets_view() {
   esac
 }
 
-# The Tickets lines that report no ticket outcome: one definition each, for
-# the code that produces them and spec_review_tickets_placeholder.
+# The Tickets lines that report no ticket outcome.
 readonly TICKETS_NO_EDIT="Not checked - no edit applied"
 readonly TICKETS_NO_BREAKDOWN="None - no ticket breakdown"
 readonly TICKETS_NONE_AFFECTED="None - no ticket affected"
-
-# spec_review_tickets_placeholder <lines>: succeeds when <lines> is only one of
-# those placeholders.
-spec_review_tickets_placeholder() {
-  case "$1" in "$TICKETS_NO_EDIT"|"$TICKETS_NO_BREAKDOWN"|"$TICKETS_NONE_AFFECTED") return 0 ;; esac
-  return 1
-}
 
 # spec_review_tickets_lines: the changelog's Tickets lines, from tickets.md,
 # the ticket answer and the reasons.
@@ -1730,9 +1720,8 @@ spec_review_clear_answer() {
 }
 
 # spec_review_finish <dir> <log>: the local tail of a round once its changelog
-# comment landed: <log> appended to settled.md, fundamental.md and
-# held-tickets.md removed in a resumed autopilot run, round-complete written,
-# the saved answer removed.
+# comment landed: <log> appended to settled.md, fundamental.md removed in a
+# resumed autopilot run, round-complete written, the saved answer removed.
 spec_review_finish() {
   local dir="$1" log="$2"
   # The settled file, last: a pause or a failed write before this point
@@ -1740,12 +1729,9 @@ spec_review_finish() {
   { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
     || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
   if [ "$SR_FUNDAMENTAL_RUN" = resume ]; then
-    local held_file
-    for held_file in "$SPEC_ROUND_FUNDAMENTAL" "$SPEC_ROUND_HELD_TICKETS"; do
-      rm -f "$dir/$held_file" 2>/dev/null \
-        && [ ! -e "$dir/$held_file" ] \
-        || die "could not remove $dir/$held_file - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
-    done
+    rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
+      && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
+      || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
   fi
   # The round's completion, the very last step: spec round reads it to tell
   # a resumed flow which round runs next, so it exists only once every write
@@ -1755,44 +1741,13 @@ spec_review_finish() {
   spec_review_clear_answer "$dir"
 }
 
-# spec_review_tickets_merge <hold lines> <resumed lines>: the Tickets lines of
-# a round with a hold. A part that is only a placeholder gives way to the other
-# part, printed unlabelled; two real parts are labelled, hold first; two
-# placeholders leave the resumed run's line.
-spec_review_tickets_merge() {
-  local hold="$1" resumed="$2" hold_placeholder="" resumed_placeholder=""
-  ! spec_review_tickets_placeholder "$hold" || hold_placeholder=1
-  ! spec_review_tickets_placeholder "$resumed" || resumed_placeholder=1
-  if [ -n "$resumed_placeholder" ]; then
-    if [ -n "$hold_placeholder" ]; then printf '%s' "$resumed"; else printf '%s' "$hold"; fi
-  elif [ -n "$hold_placeholder" ]; then
-    printf '%s' "$resumed"
-  else
-    printf 'Before the reply:\n%s\nAfter the reply:\n%s' "$hold" "$resumed"
-  fi
-}
-
-# spec_review_hold <dir> <tickets>: the end of an autopilot round's first run
-# (<tickets>: the hold run's Tickets lines, written to held-tickets.md),
-# when the batch held fundamental items back - every other item is applied and
-# the body published, and no changelog is posted yet. Writes
-# <dir>/fundamental.md, the held-back items' blocks in the batch grammar
-# behind the batch's `@@ lens` lines: the round's save point, which spec round
-# reports as waiting and the resumed apply reads as its cue. Then clears
-# applied.log, whose body write is no failure the resumed run must refuse, and
-# makes spec.fetched.md the body as published, the base the resumed run's
-# edits anchor in. The hold rebases the ticket copies too (rebase: overwrite a
-# fetched copy, no git rebase): each ticket-<t>.md, the ticket as the hold run
-# published it, overwrites ticket-<t>.fetched.md, after refetching a ticket
-# the run applied a block or unblock item to, whose ## Blocked by rewrite
-# landed after that file was written. The hold keeps its ticket lines in
-# <dir>/held-tickets.md, after the ticket copies, for the resumed run's
-# changelog: the round's one changelog reports both runs' ticket outcomes. The
-# order: fundamental.md, the ticket copies, held-tickets.md, spec.fetched.md,
-# applied.log.
+# spec_review_hold <dir>: the end of an autopilot round's first run, when the
+# batch held fundamental items back - validated, nothing applied, nothing
+# published. Writes <dir>/fundamental.md, the held-back items' blocks in the
+# batch grammar behind the batch's `@@ lens` lines: the round's save point,
+# which spec round reports as waiting and the resumed apply reads as its cue.
 spec_review_hold() {
-  local dir="$1" tickets="$2" held=" " i tf tn err suffix
-  suffix=" - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+  local dir="$1" held=" " i
   for i in ${SR_IT_FUNDAMENTAL[@]+"${!SR_IT_FUNDAMENTAL[@]}"}; do held="$held${SR_IT_N[$i]} "; done
   { {
     grep '^@@ lens ' "$dir/batch.md" || true
@@ -1800,24 +1755,7 @@ spec_review_hold() {
       /^@@ item / { keep = index(held, " " $3 " ") > 0 }
       keep { print }' "$dir/batch.md"
   } >"$dir/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
-    || die "could not write $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed: $(spec_review_landed "$dir")"
-  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    case "${ST_KIND[$i]}:${ST_DISP[$i]:-}" in block:applied|unblock:applied) ;; *) continue ;; esac
-    capture_err err cmd_issue fetch "${ST_T[$i]}" "$dir/ticket-${ST_T[$i]}.md" >/dev/null \
-      || die "could not refetch ticket #${ST_T[$i]} into $dir/ticket-${ST_T[$i]}.md: $(err_line "$err")$suffix"
-  done
-  for tn in $(spec_review_ticket_numbers "$dir"); do
-    tf="$dir/ticket-$tn.md"
-    cp "$tf" "$dir/ticket-$tn.fetched.md" 2>/dev/null \
-      || die "could not copy ticket-$tn.md to $dir/ticket-$tn.fetched.md$suffix"
-  done
-  { printf '%s\n' "$tickets" >"$dir/$SPEC_ROUND_HELD_TICKETS"; } 2>/dev/null \
-    || die "could not write $dir/$SPEC_ROUND_HELD_TICKETS$suffix"
-  cp "$dir/spec.md" "$dir/spec.fetched.md" 2>/dev/null \
-    || die "could not copy spec.md to $dir/spec.fetched.md$suffix"
-  rm -f "$dir/applied.log" 2>/dev/null \
-    || die "could not clear $dir/applied.log$suffix"
-  spec_review_clear_answer "$dir"
+    || die "could not write $dir/$SPEC_ROUND_FUNDAMENTAL - nothing written to GitHub"
 }
 
 # spec_review_ticket_numbers <dir>: the numbers of <dir>'s ticket-<n>.md files,
@@ -1938,8 +1876,8 @@ spec_review_apply() {
   [ -n "$resume" ] || [ ! -s "$dir/applied.log" ] \
     || die "$dir/applied.log records writes that already landed: $(spec_review_landed "$dir") - this review stopped at a failed write; apply refuses to run again"
   # An autopilot round's two runs (see spec_review_hold): the first holds the
-  # fundamental items back, the run after the reply, finding fundamental.md,
-  # applies only those.
+  # fundamental items back and writes nothing else, the run after the reply,
+  # finding fundamental.md, applies the whole batch.
   SR_FUNDAMENTAL_RUN=""
   if autopilot_active; then
     if [ -f "$dir/$SPEC_ROUND_FUNDAMENTAL" ]; then SR_FUNDAMENTAL_RUN=resume; else SR_FUNDAMENTAL_RUN=hold; fi
@@ -1976,8 +1914,6 @@ spec_review_apply() {
   fi
   # Each ticket file's fetched copy, taken by the first run that finds the
   # file - the --tickets rerun, as the session fetches tickets after the pause.
-  # The hold rebases these copies on the tickets as published, and keeps its
-  # ticket lines.
   local tf tn
   for tn in $(spec_review_ticket_numbers "$dir"); do
     tf="$dir/ticket-$tn.md"
@@ -1992,6 +1928,10 @@ spec_review_apply() {
   spec_review_validate "$dir" "$dir/spec.fetched.md" "$answer"
   [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing applied, nothing written"
   fetched="$SR_FETCHED"; text="$SR_TEXT"
+  if [ "$SR_FUNDAMENTAL_RUN" = hold ] && [ "${#SR_IT_FUNDAMENTAL[@]}" -gt 0 ]; then
+    spec_review_hold "$dir"
+    return 0
+  fi
   spec_review_reasons --reasons "$reasons" SR_IT_N SR_DISP SR_REASON \
     item batch.md "the answer"
 
@@ -2040,21 +1980,9 @@ spec_review_apply() {
   # resumed run keeps the file it was resumed from.
   [ -n "$resume" ] || spec_review_save_answer "$dir" "${save_args[@]}"
 
-  local held_any="" round_tickets="$tickets"
-  if [ "$SR_FUNDAMENTAL_RUN" = resume ]; then
-    local held_tickets="$TICKETS_NO_EDIT"
-    if [ -f "$dir/$SPEC_ROUND_HELD_TICKETS" ]; then
-      held_tickets="$(cat "$dir/$SPEC_ROUND_HELD_TICKETS" 2>/dev/null)" && [ -n "$held_tickets" ] \
-        || die "could not read $dir/$SPEC_ROUND_HELD_TICKETS - the held tickets' outcomes would be missing from the changelog"
-    fi
-    round_tickets="$(spec_review_tickets_merge "$held_tickets" "$tickets")"
-  fi
-  [ "$SR_FUNDAMENTAL_RUN" != hold ] || [ "${#SR_IT_FUNDAMENTAL[@]}" -eq 0 ] || held_any=1
-  local log=""
-  if [ -z "$held_any" ]; then
-    log="$(spec_review_changelog "$round" "$unattended" "$round_tickets" "$hosts")"
-    spec_review_local_write "$dir/changelog.md" "$log"$'\n'
-  fi
+  local log
+  log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
+  spec_review_local_write "$dir/changelog.md" "$log"$'\n'
 
   # Flow mode writes through the spec command, whose guards hold; the
   # standalone entry through the stateless issue commands.
@@ -2083,10 +2011,6 @@ spec_review_apply() {
   fi
   if [ -n "$ST_RETIRE" ]; then
     spec_review_write "$dir" "$(spec_review_label_retire "$issue")" cmd_ticket_retire "$issue"
-  fi
-  if [ -n "$held_any" ]; then
-    spec_review_hold "$dir" "$tickets"
-    return 0
   fi
   spec_review_write "$dir" "$(spec_review_label_changelog "$issue")" "${comment[@]}" "$dir/changelog.md"
   spec_review_finish "$dir" "$log"
