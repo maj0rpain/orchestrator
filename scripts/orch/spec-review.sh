@@ -1281,7 +1281,7 @@ spec_review_tickets_parse() {
   local buf="" bufn=0 block_line=0 n kind tail t by b rec arg what
   ST_RECOMMEND=""; ST_NONE=""
   ST_N=(); ST_KIND=(); ST_T=(); ST_B=(); ST_REC=(); ST_ARG=(); ST_LINE=()
-  ST_SUMMARY=(); ST_ANCHOR=(); ST_ANCHOR_LINE=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=()
+  ST_SUMMARY=(); ST_ANCHOR=(); ST_ANCHOR_LINE=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=(); ST_CL_LINE=()
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     case "$line" in
@@ -1379,7 +1379,7 @@ spec_review_tickets_parse() {
         read -r t what <<<"$args"
         case "$t" in ''|*[!0-9]*) spec_review_tickets_die "$lineno" "@@ closed wants <t> <what changed>, t a plain issue number" ;; esac
         [ -n "$what" ] || spec_review_tickets_die "$lineno" "@@ closed $t needs what changed"
-        ST_CL_T[${#ST_CL_T[@]}]="$t"; ST_CL_WHAT[${#ST_CL_WHAT[@]}]="$what" ;;
+        ST_CL_T[${#ST_CL_T[@]}]="$t"; ST_CL_WHAT[${#ST_CL_WHAT[@]}]="$what"; ST_CL_LINE[${#ST_CL_LINE[@]}]="$lineno" ;;
       replace|end) spec_review_tickets_die "$lineno" "@@ $kw with no @@ anchor open" ;;
       *) spec_review_tickets_die "$lineno" "unknown line '@@ $kw'" ;;
     esac
@@ -1495,40 +1495,56 @@ spec_review_ticket_item_offline() {
   esac
 }
 
+# spec_review_ticket_named_check <where> <t> <want> <listing> <issue>: dies,
+# before any write, unless #<t> is a sub-issue of <issue> in the state <want>
+# (OPEN, CLOSED or any) in <listing>, ticket_sub_issues' output. <where> is the
+# message's prefix, up to and including its colon.
+spec_review_ticket_named_check() {
+  local where="$1" t="$2" want="$3" listing="$4" issue="$5" state
+  state="$(printf '%s\n' "$listing" | awk -F'\t' -v t="$t" '$1 == t { print $2 }')"
+  [ -n "$state" ] || die "$where #$t is not a ticket of #$issue's breakdown - nothing written"
+  case "$want:$state" in
+    OPEN:CLOSED) die "$where #$t is a closed ticket of #$issue's breakdown - nothing written" ;;
+    CLOSED:OPEN) die "$where #$t is an open ticket of #$issue's breakdown - nothing written" ;;
+  esac
+}
+
 # spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every ticket
 # item checked, an accepted one applied in memory and a declined text item's
 # anchor checked on its own against a scratch copy - see
 # spec_review_ticket_item_offline - and the checks that read GitHub: every
-# edge item's tickets in the breakdown, and a `## Ticket` item only on a
+# entry naming a ticket is a ticket of the breakdown in the state its kind
+# needs (a text item's and an edge item's ticket open, an edge item's blocker
+# either, a `@@ closed` line's closed), and a `## Ticket` item only on a
 # collapsed one. Dies, before any write, on the first GitHub-reading check
-# that fails, else, after the loop, on the first problem
-# spec_review_ticket_item_offline collected.
+# that fails - the items in order, then the `@@ closed` lines - else, after the
+# loop, on the first problem spec_review_ticket_item_offline collected.
 spec_review_tickets_follow() {
-  local body_var="$1" dir="$2" kind="$3" issue="$4" i t what batch_body subs="" listed
+  local body_var="$1" dir="$2" kind="$3" issue="$4" i what batch_body listed="" named=""
   [ -z "$ST_RETIRE" ] || return 0
   SR_PROBLEMS=()
+  [ "${#ST_CL_T[@]}" -eq 0 ] || named=1
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    case "${ST_KIND[$i]}" in
-      block|unblock)
-        listed="$(ticket_sub_issues "$issue")" || exit 1
-        subs="$(printf '%s\n' "$listed" | cut -f1)"
-        break ;;
-    esac
+    [ "${ST_KIND[$i]}" = section ] || named=1
   done
+  [ -z "$named" ] || listed="$(ticket_sub_issues "$issue")" || exit 1
   batch_body="${!body_var}"
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    what="tickets.md line ${ST_LINE[$i]}: ticket item ${ST_N[$i]}"
+    what="tickets.md line ${ST_LINE[$i]}: ticket item ${ST_N[$i]}:"
     case "${ST_KIND[$i]}" in
       section)
         [ "$kind" = collapsed ] \
-          || die "$what: a ## Ticket item, but #$issue's breakdown is $kind - nothing written" ;;
+          || die "${what%:}: a ## Ticket item, but #$issue's breakdown is $kind - nothing written" ;;
+      ticket)
+        spec_review_ticket_named_check "$what" "${ST_T[$i]}" OPEN "$listed" "$issue" ;;
       block|unblock)
-        for t in "${ST_T[$i]}" "${ST_B[$i]}"; do
-          list_has "$subs" "$t" \
-            || die "$what: #$t is not a ticket of #$issue's breakdown - nothing written"
-        done ;;
+        spec_review_ticket_named_check "$what" "${ST_T[$i]}" OPEN "$listed" "$issue"
+        spec_review_ticket_named_check "$what" "${ST_B[$i]}" any "$listed" "$issue" ;;
     esac
     spec_review_ticket_item_offline "$i" "$body_var" "$batch_body" "$dir"
+  done
+  for i in ${ST_CL_T[@]+"${!ST_CL_T[@]}"}; do
+    spec_review_ticket_named_check "tickets.md line ${ST_CL_LINE[$i]}:" "${ST_CL_T[$i]}" CLOSED "$listed" "$issue"
   done
   [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing written"
 }
