@@ -45,9 +45,11 @@ tally_summary() {
   [ "$FAIL" -eq 0 ]
 }
 
-# print_fail <title> <detail>: one FAIL line and its detail line. bad() and the
-# parallel runner both print through it, so their FAIL lines cannot drift apart.
-print_fail() { printf '  FAIL %s\n     %s\n' "$1" "$2"; }
+# print_fail <title> <detail>: one FAIL line, then every line of the detail
+# (an empty one included) indented five spaces; a single-line detail is one
+# indented line. bad() and the parallel runner both print through it, so their
+# FAIL lines and detail indent cannot drift apart.
+print_fail() { printf '  FAIL %s\n' "$1"; printf '%s\n' "$2" | sed 's/^/     /'; }
 
 # ORCH_TEST_QUIET=1 hides the ok lines; the count, FAIL and skip lines,
 # section headers and the summary still print.

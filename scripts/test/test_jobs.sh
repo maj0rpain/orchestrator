@@ -74,14 +74,14 @@
 # test_jobs_job, so no process the job leaves running holds the lock after the
 # job is gone, and the kernel still frees it should the holder die.
 #
-# test_jobs_job <cmd>...: closes the slot fd and runs <cmd>, returning its own
-# exit status. A runner starts every job through it, in the background, after
-# test_jobs_slot_wait or test_jobs_slot_take, also inside a subshell that
-# changes directory first. It closes the fd and execs <cmd>, replacing the
-# subshell it runs in, so call it only there. The fd number lives in one
-# constant,
-# TEST_JOBS_FD, read through eval (bash 4.0 has no {var} redirection); no
-# runner writes the number. <cmd> is an external command.
+# test_jobs_job <cmd>...: closes the slot fd and execs <cmd> in place of the
+# calling subshell, so the job's exit status is <cmd>'s. A runner starts every
+# job through it, in the background, after test_jobs_slot_wait or
+# test_jobs_slot_take, also inside a subshell that changes directory first. It
+# never returns, so call it only in such a subshell, never in a runner's
+# foreground. The fd number lives in one constant, TEST_JOBS_FD, read through
+# eval (bash 4.0 has no {var} redirection); no runner writes the number. <cmd>
+# is an external command.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
@@ -209,25 +209,25 @@ test_jobs_descendants() {
 }
 
 test_jobs_stop_tree() {
-  local root="$1" below="${2:-}" known="" sent=" " table walked live pid tick
-  [ "$below" = below ] || known="$root"
+  local root="$1" below="${2:-}" carried="" sent=" " table walked live pid tick
+  [ "$below" = below ] || carried="$root"  # seed carried with the root pid
   for ((tick = 0; tick < 100; tick++)); do
     table="$(test_jobs_process_table)"
     walked="$(test_jobs_descendants "$root")"
-    # What was signalled stays in the set, so a process its dead parent
+    # What was signalled stays in carried, so a process its dead parent
     # orphaned is still stopped.
     if [ -n "$table" ]; then
-      live="$(printf '%s\n' "$table" | awk -v want="$walked $known" '
+      live="$(printf '%s\n' "$table" | awk -v want="$walked $carried" '
         BEGIN { n = split(want, a, " "); for (i = 1; i <= n; i++) w[a[i]] = 1 }
         ($1 in w) && $3 !~ /^Z/ && !($1 in done) { done[$1] = 1; print $1 }')"
     else
       live=""
-      for pid in $known; do kill -0 "$pid" 2>/dev/null && live="$live $pid"; done
+      for pid in $carried; do kill -0 "$pid" 2>/dev/null && live="$live $pid"; done
     fi
     [ -n "${live// /}" ] || break
-    known=""
+    carried=""
     for pid in $live; do
-      known="$known $pid"
+      carried="$carried $pid"
       if [ "$tick" -ge 50 ]; then
         kill -KILL "$pid" 2>/dev/null
       elif [[ "$sent" != *" $pid "* ]]; then
