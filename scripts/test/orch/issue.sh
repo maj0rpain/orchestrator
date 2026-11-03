@@ -839,6 +839,10 @@ out="$("$ORCH" issue comments 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "--json is fetch's alone: comments refuses it" "$st" 1
 assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file> [--with-spec-review]"
 assert_eq "and writes no file" "$(on_disk "$issue_json")" "absent"
+out="$("$ORCH" issue fetch 27 "$issue_json" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review is comments' alone: fetch refuses it" "$st" 1
+assert_eq "with its own usage line, exactly" "$out" "orch: usage: orch.sh issue fetch <n> <file> [--json]"
+assert_eq "and writes no file" "$(on_disk "$issue_json")" "absent"
 assert_contains "help lists --json under issue fetch" "$("$ORCH" help)" "issue fetch <n> <file> [--json]"
 
 tricky="$(mktemp)"
@@ -855,11 +859,15 @@ out="$("$ORCH" issue update 23 "$tricky" --json 2>&1)"; st=$?
 assert_status "--json is fetch's alone: update refuses it" "$st" 1
 assert_contains "with its own usage line" "$out" "usage: orch.sh issue update <n> <file>"
 assert_eq "and leaves the issue's body unchanged" "$(fake_body_of 23)" "$(cat "$tricky")"
+out="$("$ORCH" issue update 23 "$tricky" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review is comments' alone: update refuses it" "$st" 1
+assert_eq "with its own flagless usage line, exactly" "$out" "orch: usage: orch.sh issue update <n> <file>"
+assert_eq "and leaves the issue's body unchanged" "$(fake_body_of 23)" "$(cat "$tricky")"
 for args in "23" "23 $tricky extra"; do
   # shellcheck disable=SC2086 # each case is split into its words on purpose
   out="$("$ORCH" issue update $args 2>&1)"; st=$?
   assert_status "update refuses the wrong argument count: $args" "$st" 1
-  assert_contains "with its own usage line" "$out" "usage: orch.sh issue update <n> <file>"
+  assert_eq "with exactly its own flagless usage line" "$out" "orch: usage: orch.sh issue update <n> <file>"
 done
 
 out="$("$ORCH" issue update 23 /nonexistent/body.md 2>&1)"; st=$?
@@ -895,10 +903,15 @@ assert_status "comment refuses an issue number that is not a plain number" "$st"
 assert_contains "naming it" "$out" "abc"
 assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
 
+out="$("$ORCH" issue comment 23 "$tricky" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review is comments' alone: comment refuses it" "$st" 1
+assert_eq "with its own flagless usage line, exactly" "$out" "orch: usage: orch.sh issue comment <n> <file>"
+assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
+
 for extra in --json extra; do
   out="$("$ORCH" issue comment 23 "$tricky" "$extra" 2>&1)"; st=$?
   assert_status "comment refuses a third argument (--json is fetch's alone): $extra" "$st" 1
-  assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
+  assert_eq "with exactly its own flagless usage line" "$out" "orch: usage: orch.sh issue comment <n> <file>"
   assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
 done
 
@@ -1058,8 +1071,8 @@ assert_eq "and leaves the file that was already there byte-identical" \
 
 out="$("$ORCH" issue comments abc "$issue_comments" 2>&1)"; st=$?
 assert_status "comments refuses an issue number that is not a plain number" "$st" 1
-assert_contains "naming it" "$out" "abc"
-assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file> [--with-spec-review]"
+assert_eq "with exactly the plain-number refusal and its own usage line" "$out" \
+  "orch: issue must be a plain issue number, got: abc (usage: orch.sh issue comments <n> <file> [--with-spec-review])"
 
 out="$("$ORCH" issue comments 23 2>&1)"; st=$?
 assert_status "comments refuses with no file" "$st" 1
