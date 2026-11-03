@@ -142,9 +142,24 @@ host_fallbacks_required() {
 }
 
 # section_body <file> <heading>: prints the lines of <file> under the line
-# exactly <heading>, up to the next `## ` heading.
+# exactly <heading>, up to the next `## ` heading. A line inside a code fence,
+# delimiters included, is never a heading: it neither opens nor closes a
+# section, and inside the open one it is part of the body.
 section_body() {
-  awk -v h="$2" '$0 == h { inside = 1; next } /^## / { inside = 0 } inside { print }' "$1"
+  awk -v h="$2" "$FENCE_AWK"'
+    { f = fenced($0) }
+    !f && $0 == h { inside = 1; next }
+    !f && /^## / { inside = 0 }
+    inside { print }' "$1"
+}
+
+# section_count <file> <heading>: the number of lines of <file> exactly equal
+# to <heading> outside any code fence.
+section_count() {
+  awk -v h="$2" "$FENCE_AWK"'
+    { f = fenced($0) }
+    !f && $0 == h { n++ }
+    END { print n + 0 }' "$1"
 }
 
 # The single statement of what a valid handoff is: one line per required
@@ -163,7 +178,7 @@ handoff_report() {
   # sections at all would validate clean.
   required="$(handoff_required "$base")" || return 1
   while IFS= read -r heading; do
-    if ! grep -qxF "$heading" "$file"; then
+    if [ "$(section_count "$file" "$heading")" -eq 0 ]; then
       printf 'FAIL missing section: %s\n' "$heading"
       failed=1
     elif [ -z "$(section_body "$file" "$heading" | tr -d '[:space:]')" ]; then
@@ -533,7 +548,7 @@ cmd_handoff() {
       local file="$1" heading="## $2"
       [ -f "$file" ] || die "handoff not found: $file"
       local count
-      count="$(grep -cxF "$heading" "$file")" || true
+      count="$(section_count "$file" "$heading")"
       [ "$count" -gt 0 ] || die "section not found: $heading in $file"
       # A handoff with two identical sections is malformed; section_body would
       # print both bodies joined as if they were one.
