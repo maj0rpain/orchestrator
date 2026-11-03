@@ -70,9 +70,18 @@
 #
 # test_jobs_slot_release <pid>: hands the held slot to a holder process that
 # keeps the lock until <pid> has exited, then closes the run's own copy of the
-# fd. The job alone keeps the slot: a runner starts the job with fd 8 closed
-# (8>&-), so no process the job leaves running holds the lock after the job is
-# gone, and the kernel still frees it should the holder die.
+# fd. The job alone keeps the slot: a runner starts the job through
+# test_jobs_job, so no process the job leaves running holds the lock after the
+# job is gone, and the kernel still frees it should the holder die.
+#
+# test_jobs_job <cmd>...: closes the slot fd and runs <cmd>, returning its own
+# exit status. A runner starts every job through it, in the background, after
+# test_jobs_slot_wait or test_jobs_slot_take, also inside a subshell that
+# changes directory first. It closes the fd and execs <cmd>, replacing the
+# subshell it runs in, so call it only there. The fd number lives in one
+# constant,
+# TEST_JOBS_FD, read through eval (bash 4.0 has no {var} redirection); no
+# runner writes the number. <cmd> is an external command.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
@@ -236,6 +245,7 @@ test_jobs_stop_descendants() {
   exit 130
 }
 
+TEST_JOBS_FD=8
 TEST_JOBS_POOL=""
 TEST_JOBS_SLOTS=0
 TEST_JOBS_SLOT_FD=""
@@ -265,16 +275,16 @@ test_jobs_slot_take() {
   TEST_JOBS_SLOT_FD="" TEST_JOBS_IN_USE=0
   [ -n "$TEST_JOBS_POOL" ] || return 0
   for ((n = 1; n <= TEST_JOBS_SLOTS; n++)); do
-    if ! { exec 8>>"$TEST_JOBS_POOL/slot.$n"; } 2>/dev/null; then
+    if ! { eval "exec $TEST_JOBS_FD>>\"\$TEST_JOBS_POOL/slot.\$n\""; } 2>/dev/null; then
       TEST_JOBS_POOL=""
       return 0
     fi
-    flock -n -E 100 8 2>/dev/null
+    flock -n -E 100 "$TEST_JOBS_FD" 2>/dev/null
     rc=$?
     case "$rc" in
-      0) TEST_JOBS_SLOT_FD=8; return 0 ;;
-      100) busy=$((busy + 1)); exec 8>&- ;;
-      *) exec 8>&-; TEST_JOBS_POOL=""; return 0 ;;
+      0) TEST_JOBS_SLOT_FD="$TEST_JOBS_FD"; return 0 ;;
+      100) busy=$((busy + 1)); eval "exec $TEST_JOBS_FD>&-" ;;
+      *) eval "exec $TEST_JOBS_FD>&-"; TEST_JOBS_POOL=""; return 0 ;;
     esac
   done
   TEST_JOBS_IN_USE="$busy"
@@ -297,8 +307,13 @@ test_jobs_slot_wait() {
 test_jobs_slot_release() {
   [ -z "$TEST_JOBS_SLOT_FD" ] && return 0
   (
-    while kill -0 "$1" 2>/dev/null; do sleep 0.1 8>&-; done
+    while kill -0 "$1" 2>/dev/null; do eval "sleep 0.1 $TEST_JOBS_FD>&-"; done
   ) </dev/null >/dev/null 2>&1 &
-  exec 8>&-
+  eval "exec $TEST_JOBS_FD>&-"
   TEST_JOBS_SLOT_FD=""
+}
+
+test_jobs_job() {
+  eval "exec $TEST_JOBS_FD>&-"
+  exec "$@"
 }
