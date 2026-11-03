@@ -101,11 +101,16 @@ trap test_jobs_stop_descendants INT TERM
 # neither the banner nor the summary block; it writes its counts to a file
 # instead. This shell prints the banner, each child's stdout in walk order,
 # then one summary summed over the children, so the stdout is the stdout of a
-# sequential run. stderr passes straight through and may interleave. A child
-# that reports no counts - it exited mid-way - adds a FAIL naming its section.
-# Exits 1 when any child failed. Buffers live in one temp directory under the
-# temp root; an interrupt also kills the running children and waits for them
-# to exit.
+# sequential run. A child's stderr goes to its own buffer beside its stdout:
+# a child that wrote any adds a FAIL, "section '<title>' wrote to stderr", with
+# the buffered lines as detail lines, printed after that child's stdout. The
+# guard covers parallel runs only; a sequential run evals every section in one
+# shell, so it has no section boundary to attribute stderr to and is unguarded.
+# This shell's own stderr (the job-slot note, usage errors) is not buffered.
+# A child that reports no counts - it exited mid-way - adds a FAIL naming its
+# section. Exits 1 when any child failed. Buffers live in one temp directory
+# under the temp root; an interrupt also kills the running children and waits
+# for them to exit.
 #
 # Each job draws a slot from the job pool (test_jobs.sh) for as long as it
 # runs, and a sequential run holds one for its whole run, so concurrent runs
@@ -265,7 +270,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
     ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
       ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
-      bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 8>&- &
+      bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err" 8>&- &
     orch_pids[orch_started]=$!
     test_jobs_slot_release "${orch_pids[orch_started]}"
     orch_started=$((orch_started + 1))
@@ -291,6 +296,12 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
           "it exited $orch_status before its summary"
         orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
     esac
+    if [ -s "$orch_buf/$orch_pos.err" ]; then
+      orch_err_lines="$(sed '2,$s/^/     /' "$orch_buf/$orch_pos.err")"
+      print_fail "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")' wrote to stderr" \
+        "$orch_err_lines"
+      orch_fail=$((orch_fail + 1)); orch_any_failed=1
+    fi
     [ "$orch_status" -eq 0 ] || orch_any_failed=1
     orch_flushed=$((orch_flushed + 1))
     orch_progress=1

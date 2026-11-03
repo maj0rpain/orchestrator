@@ -503,7 +503,7 @@ par_dir="$(planted_copy <<'PLANTED'
   # --- planted slow
   echo; echo "planted slow"; sleep 2; ok "slept"
   # --- planted stderr
-  echo; echo "planted stderr"; echo "a planted stderr line" >&2; ok "wrote"
+  echo; echo "planted stderr"; echo "a planted stderr line" >&2; echo "a second planted stderr line" >&2; ok "wrote"
   # --- planted exit
   echo; echo "planted exit"; ok "before the exit"; exit 3
   # --- planted failure
@@ -550,13 +550,17 @@ assert_status "a parallel run with a failing section exits 1" "$st" 1
 assert_eq "prints a slow early section in file order" \
   "$(printf '%s\n' "$out" | grep -xE 'isolation|planted [a-z]+' | tr '\n' ',')" \
   "isolation,planted slow,planted stderr,planted exit,planted failure,"
-assert_contains "passes a section's stderr through" "$out" "a planted stderr line"
+assert_contains "fails a section that wrote to stderr, with its lines as details" "$out" \
+  "$(printf "  FAIL section 'planted stderr' wrote to stderr\n     a planted stderr line\n     a second planted stderr line")"
+assert_eq "puts that FAIL in the section's place in the walk order" \
+  "$(printf '%s\n' "$out" | grep -xE "isolation|planted [a-z]+|  FAIL section 'planted stderr' wrote to stderr" | tr '\n' ',')" \
+  "isolation,planted slow,planted stderr,  FAIL section 'planted stderr' wrote to stderr,planted exit,planted failure,"
 assert_contains "reports a section that exits mid-way as a FAIL naming it" "$out" \
   "  FAIL section 'planted exit' reported no counts"
 assert_contains "keeps a planted FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "sums both failures into the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "12 passed, 2 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "12 passed, 3 failed"
 # Each failing path alone, so neither passes on the strength of the other.
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted exit$' \
   bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
@@ -572,6 +576,19 @@ assert_contains "keeps that check's FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "10 passed, 1 failed"
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted stderr$' \
+  bash "$par_dir/scripts/test/orch_test.sh" 2>"$par_dir/stderr")"; st=$?
+assert_status "a parallel run whose only failing section wrote to stderr exits 1" "$st" 1
+assert_contains "prints that section's stderr lines on stdout" "$out" \
+  "$(printf "  FAIL section 'planted stderr' wrote to stderr\n     a planted stderr line\n     a second planted stderr line")"
+assert_eq "counts that one failure in the summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "11 passed, 1 failed"
+assert_eq "leaves the section's stderr off the real stderr" \
+  "$(grep -c 'a planted stderr line' "$par_dir/stderr")" "0"
+out="$(ORCH_TEST_JOBS=two ORCH_TEST_ONLY='^isolation$' bash "$par_suite" 2>&1 >/dev/null)"
+assert_contains "keeps the runner's own usage error on stderr" "$out" "ORCH_TEST_JOBS='two'"
+out="$(ORCH_TEST_JOBS=two ORCH_TEST_ONLY='^isolation$' bash "$par_suite" 2>/dev/null)"
+assert_eq "and none of it on stdout" "$(printf '%s\n' "$out" | grep -c 'ORCH_TEST_JOBS')" "0"
 rm -rf "$par_dir"
 
 # --- assertions in a subshell (#1904) ----------------------------------------
