@@ -50,7 +50,9 @@ dirty_hashes() {
   done < <(git -C "$root" status --porcelain -uall -z 2>/dev/null)
 }
 
-report() {
+# report_and_exit FINDINGS: exits 0 when FINDINGS is empty, else prints it to
+# stderr and exits 2. Never returns.
+report_and_exit() {
   [ -z "$1" ] && exit 0
   printf '%s\n' "$1" >&2
   exit 2
@@ -62,7 +64,7 @@ tool="$(jq -r '.tool_name // empty' <<<"$payload" 2>/dev/null)" || exit 0
 if [ "$tool" != Bash ]; then
   file="$(jq -r '.tool_input.file_path // empty' <<<"$payload" \
     2>/dev/null)" || exit 0
-  report "$(check_file "$file")"
+  report_and_exit "$(check_file "$file")"
 fi
 
 # The Bash path.
@@ -70,12 +72,13 @@ event="$(jq -r '.hook_event_name // empty' <<<"$payload")" || exit 0
 cwd="$(jq -r '.cwd // empty' <<<"$payload")" || exit 0
 sid="$(jq -r '.session_id // empty' <<<"$payload")" || exit 0
 tid="$(jq -r '.tool_use_id // empty' <<<"$payload")" || exit 0
-[ -n "$tid" ] && [ -n "$cwd" ] || exit 0
+[ -n "$tid" ] || exit 0
 key="$(printf '%s-%s' "$sid" "$tid" | tr -c 'A-Za-z0-9_-' '_')"
 snap="${TMPDIR:-/tmp}/orch-width-hook-$key"
 
 case "$event" in
   PreToolUse)
+    [ -n "$cwd" ] || exit 0
     root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
     [ -n "$root" ] || exit 0
     # The first line records the checkout, so Post can tell a call that
@@ -88,6 +91,11 @@ case "$event" in
   *) exit 0 ;;
 esac
 
+# No cwd: nothing to scan, but the snapshot Pre wrote is still dropped.
+if [ -z "$cwd" ]; then
+  rm -f "$snap" 2>/dev/null
+  exit 0
+fi
 [ -f "$snap" ] || exit 0
 IFS= read -r head <"$snap" 2>/dev/null
 root="${head#root$'\t'}"
@@ -105,4 +113,4 @@ while IFS=$'\t' read -r hash path; do
   [ -z "$out" ] || findings="${findings:+$findings$'\n'}$out"
 done < <(dirty_hashes "$root")
 rm -f "$snap" 2>/dev/null
-report "$findings"
+report_and_exit "$findings"

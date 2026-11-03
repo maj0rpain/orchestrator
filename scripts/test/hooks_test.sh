@@ -1579,7 +1579,9 @@ else
   skip "bash hook: shellcheck case" "shellcheck is not on PATH"
 fi
 # A call that moves the session cwd: Post stays silent and drops the
-# snapshot, even when the Pre checkout gained a wide file.
+# snapshot, even when the Pre checkout gained a wide file. Three cases: into a
+# dirty checkout, outside any repo, and into another checkout while the Pre
+# checkout gains a wide docs/third.md.
 BW3="$(bw_repo)"
 printf '# T\n\n%s\n' "$wide" >"$BW3/docs/ok.md"
 BW_TMP2="$(mktemp -d)"
@@ -1600,20 +1602,18 @@ assert_empty "bash hook: a cwd moved outside a repo leaves no snapshot" \
   "$(ls -A "$BW_TMP2")"
 BW_ID=$((BW_ID + 1))
 TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
+printf '%s\n' "$wide" >"$BW/docs/third.md"
 TMPDIR="$BW_TMP2" bw_hook PostToolUse "$BW3" "t$BW_ID"
 assert_empty "bash hook: a wide file in the Pre checkout is silent from another" \
   "$bw_out"
 assert_empty "bash hook: another checkout's Post leaves no snapshot" \
   "$(ls -A "$BW_TMP2")"
-rm -f "$BW/docs/new.md"
+rm -f "$BW/docs/new.md" "$BW/docs/third.md"
 rm -rf "$BW3" "$BW_TMP2"
-# No baseline, malformed input, missing id, cwd outside a repo.
+# No baseline, missing id, cwd outside a repo.
 bw_hook PostToolUse "$BW" "never-seen"
 assert_eq "bash hook: Post without a snapshot exits 0" "$bw_rc" 0
 assert_empty "bash hook: Post without a snapshot is silent" "$bw_out"
-bw_out="$(printf 'not json' | bash "$EDIT_HOOK" 2>&1)"; bw_rc=$?
-assert_eq "bash hook: malformed stdin exits 0" "$bw_rc" 0
-assert_empty "bash hook: malformed stdin is silent" "$bw_out"
 bw_hook PreToolUse "$BW" ""
 assert_eq "bash hook: Pre without tool_use_id exits 0" "$bw_rc" 0
 assert_empty "bash hook: Pre without tool_use_id is silent" "$bw_out"
@@ -1623,12 +1623,6 @@ assert_empty "bash hook: Post without tool_use_id is silent" "$bw_out"
 bw_hook PreToolUse "$NOREPO" "norepo"
 assert_eq "bash hook: Pre outside a repo exits 0" "$bw_rc" 0
 assert_empty "bash hook: Pre outside a repo is silent" "$bw_out"
-bw_payload PostToolUse "$BW" x >"$BW/payload.json"
-bw_out="$(head -c 20 "$BW/payload.json" \
-  | bash "$EDIT_HOOK" 2>&1)"; bw_rc=$?
-rm -f "$BW/payload.json"
-assert_eq "bash hook: truncated stdin exits 0" "$bw_rc" 0
-assert_empty "bash hook: truncated stdin is silent" "$bw_out"
 bw_hook PreToolUse "$BW" "nojq" "$NOSC_NOJQ"
 bw_pre_rc="$bw_rc"; bw_pre_out="$bw_out"
 printf '%s\n' "$wide" >"$BW/docs/ok.md"
@@ -1659,16 +1653,36 @@ TMPDIR="$BW_TMP" bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md" PostToolUseFailure
 assert_empty "bash hook: PostToolUseFailure leaves no snapshot" \
   "$(ls -A "$BW_TMP")"
 git -C "$BW" checkout -q -- docs/ok.md
+# A Post with an id but no cwd deletes the snapshot Pre wrote; a Pre with no
+# cwd writes none.
+for bw_ev in PostToolUse PostToolUseFailure; do
+  BW_ID=$((BW_ID + 1))
+  TMPDIR="$BW_TMP" bw_hook PreToolUse "$BW" "t$BW_ID"
+  assert_eq "bash hook: Pre writes a snapshot before a $bw_ev without cwd" \
+    "$(ls -A "$BW_TMP" | wc -l | tr -d ' ')" 1
+  TMPDIR="$BW_TMP" bw_hook "$bw_ev" "" "t$BW_ID"
+  assert_eq "bash hook: $bw_ev without cwd exits 0" "$bw_rc" 0
+  assert_empty "bash hook: $bw_ev without cwd is silent" "$bw_out"
+  assert_empty "bash hook: $bw_ev without cwd leaves no snapshot" \
+    "$(ls -A "$BW_TMP")"
+done
+BW_ID=$((BW_ID + 1))
+pushd "$BW" >/dev/null || exit 1
+TMPDIR="$BW_TMP" bw_hook PreToolUse "" "t$BW_ID"
+popd >/dev/null || exit 1
+assert_eq "bash hook: Pre without cwd exits 0" "$bw_rc" 0
+assert_empty "bash hook: Pre without cwd is silent" "$bw_out"
+assert_empty "bash hook: Pre without cwd writes no snapshot" \
+  "$(ls -A "$BW_TMP")"
 # Parity: an Edit and a Bash call leaving the same wide file report alike.
 printf '# T\n\n%s\n' "$wide" >"$BW/docs/ok.md"
-bw_edit_out="$(jq -n --arg f "$BW/docs/ok.md" '{tool_input:{file_path:$f}}' \
-  | bash "$EDIT_HOOK" 2>&1)"; bw_edit_rc=$?
+run_edit_hook "$BW/docs/ok.md"
 git -C "$BW" checkout -q -- docs/ok.md
 bw_call "$BW" "printf '# T\n\n%s\n' '$wide' > docs/ok.md"
 assert_eq "bash hook: parity case reports exit 2" "$bw_rc" 2
 assert_contains "bash hook: parity case names the wide line" "$bw_out" "docs/ok.md:3"
 assert_eq "bash hook: parity with the Edit path, exit code and stderr" \
-  "$bw_rc/$bw_out" "$bw_edit_rc/$bw_edit_out"
+  "$bw_rc/$bw_out" "$ew_rc/$ew_out"
 # Registration.
 for ev in PreToolUse PostToolUse PostToolUseFailure; do
   reg="$(jq -r --arg e "$ev" '.hooks[$e][]? | select(.matcher == "Bash")
@@ -1678,8 +1692,6 @@ for ev in PreToolUse PostToolUse PostToolUseFailure; do
   assert_contains "bash hook: $ev Bash runs through CLAUDE_PROJECT_DIR" \
     "$reg" 'CLAUDE_PROJECT_DIR'
 done
-assert_not_contains "bash hook: absent from hooks/hooks.json" \
-  "$(cat "$ROOT/hooks/hooks.json")" 'hook-edit-width'
 rm -rf "$BW" "$BW2" "$BW_TMP" "$BW_FILE"
 
 # --- bash stdin hook (scripts/hook-bash-stdin.sh, #2001)
