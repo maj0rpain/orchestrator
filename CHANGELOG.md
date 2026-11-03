@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.24
+
+The spec review's `spec-review wait` and the review loop's `review ci` now run as long commands: in the foreground, still waited for when the host moves them to the background. A lens is judged missing only from the wait's own timeout, and a `review ci` the host kills is unreachable, a bounded stop. docs_lint covers orch-spec-review's skill.
+
 ## 4.43.23
 
 Trim the test runner's section-filter tests: drop a duplicated parallel dead-branch case, share one planted scripts copy across the filter cases, and fold the dead-branch refusal's intermediate array into its message list.
