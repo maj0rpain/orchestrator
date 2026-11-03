@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.43
+
+The test runners now start jobs through one job pool helper, `test_jobs_job`, which owns the slot fd, and take their PASS/FAIL verdict from the failed parts alone: `report_verdict <runner>` decides from the recorded parts, and the reporters record their own.
+
 ## 4.43.42
 
 A failed state write now always stops orch.sh with an `orch:` message. `phase advance` and `review ready` exit non-zero, print no boundary block or success line, and leave the recorded phase as it was, so re-running the command finishes the transition.
