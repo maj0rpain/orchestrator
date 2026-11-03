@@ -1108,6 +1108,95 @@ assert_contains "naming the branch being rebased" "$out" "the current branch scr
 assert_eq "leaving the rebase in progress" "$(rebase_state)" "rebasing"
 assert_eq "and state as it was" "$(refusal_facts)" "$before"
 
+# --- the fork start point is decided where origin is asked (#1930) -----------
+# A branch forks from origin's freshly fetched base whenever origin answered;
+# only an origin that could not be asked earns the local fallback. A checkout
+# that fails with origin reachable dies with git's message, never forking from
+# a stale local base.
+echo
+echo "the fork start point is decided where origin is asked (#1930)"
+# stale_fork_repo: a fresh repo whose local base is behind a bare origin's,
+# which advanced docs/agents/notes.md (fetched). Sets $bare, $main, $origin_tip.
+stale_fork_repo() {
+  new_repo >/dev/null
+  main="$(git branch --show-current)"
+  echo one >docs/agents/notes.md && git add -A && git commit -qm notes
+  bare="$(mktemp -d)/origin.git"
+  git init -q --bare "$bare"
+  bare_origin "$bare"
+  git push -q origin "HEAD:refs/heads/$main"
+  git fetch -q origin
+  git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$main"
+  echo two >docs/agents/notes.md && git commit -qam "origin moves notes"
+  git push -q origin "HEAD:refs/heads/$main"
+  origin_tip="$(git rev-parse HEAD)"
+  git reset -q --hard HEAD~1
+  git fetch -q origin
+}
+# fork_facts <branch>: whether the branch exists and the base SHA it recorded.
+fork_facts() {
+  git rev-parse --verify --quiet "refs/heads/$1" >/dev/null && echo made || echo none
+  git config --get "branch.$1.orchestrator-base-sha" || echo "<unset>"
+}
+
+stale_fork_repo
+assert_ne "(fixture) local base is behind origin" "$(git rev-parse HEAD)" "$origin_tip"
+out="$(orch_gh_failing branch off quick/7-fresh 2>&1)"; st=$?
+assert_status "branch off forks from a behind local base" "$st" 0
+assert_eq "recording origin's tip as the base SHA" \
+  "$(git config --get branch.quick/7-fresh.orchestrator-base-sha)" "$origin_tip"
+
+stale_fork_repo
+echo mine >>docs/agents/notes.md
+out="$(orch_gh_failing branch off quick/7-x 2>&1)"; st=$?
+assert_status "branch off refuses when the checkout from origin's tip clashes" "$st" 1
+assert_contains "naming the branch and the start point" "$out" "quick/7-x from origin/$main"
+assert_contains "carrying git's message" "$out" "would be overwritten"
+assert_contains "listing the clashing file" "$out" "docs/agents/notes.md"
+assert_eq "leaving no branch and no base SHA" "$(fork_facts quick/7-x)" $'none\n<unset>'
+assert_eq "staying on the base" "$(git branch --show-current)" "$main"
+assert_contains "keeping the edit" "$(cat docs/agents/notes.md)" "mine"
+
+stale_fork_repo
+orch_gh_failing init clash >/dev/null
+orch_gh_failing state set issue 7
+echo mine >>docs/agents/notes.md
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create refuses on the same clash" "$st" 1
+assert_contains "carrying git's message" "$out" "would be overwritten"
+assert_eq "making no flow branch" "$(fork_facts orch/7-clash)" $'none\n<unset>'
+assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
+assert_eq "recording no base SHA in state" "$(orch_gh_failing state get base_sha)" ""
+assert_contains "keeping the edit in the tree" "$(cat docs/agents/notes.md)" "mine"
+
+stale_fork_repo
+# A lock on the stale remote-tracking ref fails the fetch; ls-remote answers.
+git update-ref "refs/remotes/origin/$main" HEAD
+touch ".git/refs/remotes/origin/$main.lock"
+out="$(orch_gh_failing branch off quick/7-lock 2>&1)"; st=$?
+assert_status "branch off dies when the fetch fails while origin answers" "$st" 1
+assert_contains "saying so" "$out" "could not fetch $main from origin"
+assert_eq "leaving no branch and no base SHA" "$(fork_facts quick/7-lock)" $'none\n<unset>'
+
+stale_fork_repo
+# A lock on the stale remote-tracking ref fails the fetch; ls-remote answers.
+git update-ref "refs/remotes/origin/$main" HEAD
+touch ".git/refs/remotes/origin/$main.lock"
+orch_gh_failing init lock >/dev/null
+orch_gh_failing state set issue 7
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create dies on the same failed fetch" "$st" 1
+assert_contains "saying so" "$out" "could not fetch $main from origin"
+assert_eq "making no flow branch" "$(fork_facts orch/7-lock)" $'none\n<unset>'
+assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
+
+stale_fork_repo
+git remote set-url origin "$(mktemp -d)/missing.git"
+out="$(orch_gh_failing branch off quick/7-offline 2>&1)"; st=$?
+assert_status "branch off with origin unreachable succeeds" "$st" 0
+assert_eq "forking from the remote-tracking origin base, ahead of local" \
+  "$(git config --get branch.quick/7-offline.orchestrator-base-sha)" "$origin_tip"
+
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null
 out="$(orch_gh_failing branch bogus 2>&1)"; st=$?

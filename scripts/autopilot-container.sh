@@ -18,9 +18,12 @@
 # inherits the phase session's model and effort. Unset clears: an unset
 # ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET, ORCH_MODEL, ORCH_EFFORT or
 # role variable clears its global key, so .env is the one source of truth;
-# ORCH_PERMISSION_MODE defaults to bypassPermissions instead. Once the clone
-# exists the settings are written in it, `orch.sh autopilot show` validates
-# them, and a refusal keeps what was written and never starts the watcher.
+# ORCH_PERMISSION_MODE defaults to bypassPermissions instead. Local keys in the
+# clone would override .env, so each start removes the clone's local
+# orchestrator.autopilot.* and agent-setting keys, warning for each. Once the
+# clone exists the settings are written in it, `orch.sh autopilot show`
+# validates them, and a refusal keeps what was written and never starts the
+# watcher.
 # The first failing step exits non-zero with an `orch:` line on stderr.
 
 # shellcheck source=orch/common.sh
@@ -92,6 +95,31 @@ fi
 # was already written and never reaches the watcher.
 cd "$clone_dir" || die "exec: cannot enter $clone_dir"
 
+# Local keys in the reused clone are read before the global ones written below
+# and would silently override .env, so remove them first, one `orch:` warning
+# each: the whole local orchestrator.autopilot section (unknown keys too), and
+# each role's local Claude Code agent-setting keys, found from `agent show`'s
+# `<kind> <value> (local)` pairs and removed with a local-scope `agent clear`.
+removal_warn() { warn "removed local $1 ($2) - docker/.env is the one source of truth"; }
+local_autopilot="$(git config --local --get-regexp '^orchestrator\.autopilot\.')" || [ $? -eq 1 ] ||
+  die "autopilot settings: cannot read the local orchestrator.autopilot keys"
+while read -r key value; do
+  [ -n "$key" ] || continue
+  git_config_unset local "$key" || die "autopilot settings: cannot remove local $key"
+  removal_warn "$key" "$value"
+done <<<"$local_autopilot"
+agent_show="$(bash "$ORCH_SH" agent show)" || die "agent show failed"
+while read -r -a words; do
+  [ "${#words[@]}" -gt 0 ] && [ "${words[0]}" != junie ] || continue
+  for ((i = 1; i + 2 < ${#words[@]}; i++)); do
+    case "${words[i]} ${words[i + 2]}" in
+      "model (local)"* | "effort (local)"* | "model (local,"* | "effort (local,"*)
+        bash "$ORCH_SH" agent clear "${words[0]}" "--${words[i]}" || exit 1
+        removal_warn "${words[0]} ${words[i]} agent setting" "${words[i + 1]}" ;;
+    esac
+  done
+done <<<"$agent_show"
+
 # autopilot_set <key> <value>: writes the key; an empty value clears it.
 autopilot_set() {
   if [ -z "$2" ]; then git_config_unset global "orchestrator.autopilot.$1" ||
@@ -119,7 +147,7 @@ for role in $roles; do
   done
 done
 
-bash "$ORCH_SH" autopilot show >/dev/null || exit 1
+bash "$ORCH_SH" autopilot show >&2 || exit 1
 
 # The claim identity: kept in the clone's volume so a recreated container
 # keeps it, and so another project or machine has its own.

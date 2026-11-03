@@ -325,7 +325,7 @@ cmd_side_checkout_add() {
   [ ! -e "$path" ] || die "side checkout $path already exists"
   exclude_orch_dirs
   base="$(base_branch)"
-  git fetch --quiet origin "$base" 2>/dev/null \
+  git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch base branch $base from origin - no side checkout was made"
   git worktree add -q --detach "$path" "origin/$base" \
     || die "could not add side checkout $path"

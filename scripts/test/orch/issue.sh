@@ -221,6 +221,11 @@ assert_eq "leaving ready-for-agent and no other triage label" "$(fake_labels_of 
 assert_eq "with exactly one comment" "$(comment_count 40)" "1"
 assert_contains "naming ready-for-agent in it" "$(fake_comments_of 40)" "ready-for-agent"
 
+fake_issue 46 open Needs-Triage bug
+out="$(triage 46 2>&1)"; st=$?
+assert_status "triage removing a role carried as Needs-Triage passes its read-back" "$st" 0
+assert_eq "leaving the store without Needs-Triage" "$(fake_labels_of 46)" "bug ready-for-agent "
+
 fake_issue 41 open needs-info
 out="$(triage 41 2>&1)"; st=$?
 assert_status "triages a needs-info issue" "$st" 0
@@ -497,6 +502,11 @@ check_says "ready-for-agent beside a held label is ready" 76 ready
 fake_issue 77 open review:major bug ready-for-human
 check_says "a finding finding triage has labelled takes the ordinary walk" 77 ready-for-human
 
+fake_issue 79 open Ready-For-Agent bug
+check_says "a mixed-case ready label is ready" 79 ready
+fake_issue 80 open Wontfix
+check_says "a mixed-case Wontfix is held" 80 wontfix
+
 fake_issue 78 closed needs-triage
 check_dies "a closed issue dies" 78 "orch: issue #78 is not open"
 fake_issue 79 open needs-triage review:major
@@ -575,6 +585,10 @@ ready() { "$ORCH" issue ready "$@"; }
 fake_issue 70 open ready-for-agent bug
 ready 70 >/dev/null 2>&1; st=$?
 assert_status "an issue carrying ready-for-agent is ready" "$st" 0
+
+fake_issue 69 open Ready-For-Agent
+ready 69 >/dev/null 2>&1; st=$?
+assert_status "an issue carrying Ready-For-Agent is ready" "$st" 0
 
 fake_issue 71 open needs-triage bug
 out="$(ready 71 2>&1)"; st=$?

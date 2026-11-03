@@ -70,31 +70,44 @@
 #
 # test_jobs_slot_release <pid>: hands the held slot to a holder process that
 # keeps the lock until <pid> has exited, then closes the run's own copy of the
-# fd. The job alone keeps the slot: a runner starts the job with fd 8 closed
-# (8>&-), so no process the job leaves running holds the lock after the job is
-# gone, and the kernel still frees it should the holder die.
+# fd. The job alone keeps the slot: a runner starts the job through
+# test_jobs_job, so no process the job leaves running holds the lock after the
+# job is gone, and the kernel still frees it should the holder die.
+#
+# test_jobs_job <cmd>...: closes the slot fd and runs <cmd>, returning its own
+# exit status. A runner starts every job through it, in the background, after
+# test_jobs_slot_wait or test_jobs_slot_take, also inside a subshell that
+# changes directory first. It closes the fd and execs <cmd>, replacing the
+# subshell it runs in, so call it only there. The fd number lives in one
+# constant,
+# TEST_JOBS_FD, read through eval (bash 4.0 has no {var} redirection); no
+# runner writes the number. <cmd> is an external command.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
 # removes its temp directory only once no child can still write into it. A
 # child that ignores TERM keeps the runner waiting on it.
 #
-# test_jobs_descendants: prints the live (non-zombie) processes below this
-# shell, one pid a line, leaving out the command substitution it runs in and
-# what that starts (its ps and awk).
+# test_jobs_descendants [<root pid>]: prints the live (non-zombie) processes
+# below <root pid> - this shell when none is given - one pid a line, leaving
+# out the command substitution it runs in and what that starts (its ps and awk).
 #
 # test_jobs_process_table: prints every process as "<pid> <parent pid>
 # <state>", one a line, from ps, or from /proc/<pid>/stat on a host with no ps
 # (a slim container); with neither it prints nothing.
 #
+# test_jobs_stop_tree <pid> [below]: sends TERM, once each, to <pid> and every
+# live process below it - and what they started, until none is left - and sends
+# KILL to any still alive after 5 seconds. A process it has signalled stays in
+# its set even if its parent dies and it is orphaned. With the word `below`,
+# <pid> itself is left out and only the processes below it are signalled. With
+# no process table to read (test_jobs_process_table prints nothing), it signals
+# <pid> alone (TERM, then KILL after 5 s), or nothing with `below`.
+#
 # test_jobs_stop_descendants: a temp-root suite's INT/TERM handler, and a
-# sequential orch_test.sh run's. Sends TERM, once each, to every live process
-# below this shell - children, and what they started, such as the run inside a
-# command substitution a section was waiting on - until none is left, sends
-# KILL to any still alive after 5 seconds, and exits 130. So the EXIT trap
-# removes the temp root only once nothing the run started can still write into
-# it, or recreate it. With no process table to read (test_jobs_process_table
-# prints nothing), the handler just exits 130.
+# sequential orch_test.sh run's: test_jobs_stop_tree $$ below, then exit 130, so
+# it never signals its own shell and the EXIT trap removes the temp root only
+# once nothing the run started can still write into it, or recreate it.
 
 is_positive_integer() {
   case "$1" in '' | *[!0-9]*) return 1 ;; esac
@@ -179,7 +192,7 @@ test_jobs_descendants() {
   # Read here: inside the pipeline, BASHPID would be the forked element's own.
   local self="$BASHPID"
   test_jobs_process_table |
-    awk -v root="$$" -v self="$self" '
+    awk -v root="${1:-$$}" -v self="$self" '
       { pid[NR] = $1; parent[NR] = $2; zombie[NR] = ($3 ~ /^Z/) }
       END {
         below[root] = 1
@@ -195,12 +208,26 @@ test_jobs_descendants() {
       }'
 }
 
-test_jobs_stop_descendants() {
-  local pids pid sent=" " tick
+test_jobs_stop_tree() {
+  local root="$1" below="${2:-}" known="" sent=" " table walked live pid tick
+  [ "$below" = below ] || known="$root"
   for ((tick = 0; tick < 100; tick++)); do
-    pids="$(test_jobs_descendants)"
-    [ -n "$pids" ] || break
-    for pid in $pids; do
+    table="$(test_jobs_process_table)"
+    walked="$(test_jobs_descendants "$root")"
+    # What was signalled stays in the set, so a process its dead parent
+    # orphaned is still stopped.
+    if [ -n "$table" ]; then
+      live="$(printf '%s\n' "$table" | awk -v want="$walked $known" '
+        BEGIN { n = split(want, a, " "); for (i = 1; i <= n; i++) w[a[i]] = 1 }
+        ($1 in w) && $3 !~ /^Z/ && !($1 in done) { done[$1] = 1; print $1 }')"
+    else
+      live=""
+      for pid in $known; do kill -0 "$pid" 2>/dev/null && live="$live $pid"; done
+    fi
+    [ -n "${live// /}" ] || break
+    known=""
+    for pid in $live; do
+      known="$known $pid"
       if [ "$tick" -ge 50 ]; then
         kill -KILL "$pid" 2>/dev/null
       elif [[ "$sent" != *" $pid "* ]]; then
@@ -210,9 +237,15 @@ test_jobs_stop_descendants() {
     done
     sleep 0.1
   done
+  return 0
+}
+
+test_jobs_stop_descendants() {
+  test_jobs_stop_tree $$ below
   exit 130
 }
 
+TEST_JOBS_FD=8
 TEST_JOBS_POOL=""
 TEST_JOBS_SLOTS=0
 TEST_JOBS_SLOT_FD=""
@@ -242,16 +275,16 @@ test_jobs_slot_take() {
   TEST_JOBS_SLOT_FD="" TEST_JOBS_IN_USE=0
   [ -n "$TEST_JOBS_POOL" ] || return 0
   for ((n = 1; n <= TEST_JOBS_SLOTS; n++)); do
-    if ! { exec 8>>"$TEST_JOBS_POOL/slot.$n"; } 2>/dev/null; then
+    if ! { eval "exec $TEST_JOBS_FD>>\"\$TEST_JOBS_POOL/slot.\$n\""; } 2>/dev/null; then
       TEST_JOBS_POOL=""
       return 0
     fi
-    flock -n -E 100 8 2>/dev/null
+    flock -n -E 100 "$TEST_JOBS_FD" 2>/dev/null
     rc=$?
     case "$rc" in
-      0) TEST_JOBS_SLOT_FD=8; return 0 ;;
-      100) busy=$((busy + 1)); exec 8>&- ;;
-      *) exec 8>&-; TEST_JOBS_POOL=""; return 0 ;;
+      0) TEST_JOBS_SLOT_FD="$TEST_JOBS_FD"; return 0 ;;
+      100) busy=$((busy + 1)); eval "exec $TEST_JOBS_FD>&-" ;;
+      *) eval "exec $TEST_JOBS_FD>&-"; TEST_JOBS_POOL=""; return 0 ;;
     esac
   done
   TEST_JOBS_IN_USE="$busy"
@@ -274,8 +307,13 @@ test_jobs_slot_wait() {
 test_jobs_slot_release() {
   [ -z "$TEST_JOBS_SLOT_FD" ] && return 0
   (
-    while kill -0 "$1" 2>/dev/null; do sleep 0.1 8>&-; done
+    while kill -0 "$1" 2>/dev/null; do eval "sleep 0.1 $TEST_JOBS_FD>&-"; done
   ) </dev/null >/dev/null 2>&1 &
-  exec 8>&-
+  eval "exec $TEST_JOBS_FD>&-"
   TEST_JOBS_SLOT_FD=""
+}
+
+test_jobs_job() {
+  eval "exec $TEST_JOBS_FD>&-"
+  exec "$@"
 }

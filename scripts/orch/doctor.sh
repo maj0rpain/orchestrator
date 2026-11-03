@@ -407,7 +407,7 @@ check_labels_exist() {
   fi
   while IFS= read -r l; do
     if [ -z "$l" ]; then continue; fi
-    if ! list_has "$have" "$l"; then missing="$(d_append "$missing" "$l")"; fi
+    if ! label_listed "$have" "$l"; then missing="$(d_append "$missing" "$l")"; fi
   done <<<"$want"
   if [ -z "$missing" ]; then d_ok "every triage label exists on the repo"; return 0; fi
   # Found every one of them is a definitive answer whatever the page held, so

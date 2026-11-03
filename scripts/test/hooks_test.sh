@@ -82,6 +82,10 @@ edit_event_at() {
     '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:$sid, cwd:$cwd, tool_input:{file_path:$f}}'
 }
 edit_event() { edit_event_at "$1" "$2" "$REPO"; }
+# bash_hook_decision OUTPUT: the permissionDecision the hook wrote.
+bash_hook_decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
+# write_event <file> <session>: a Write payload for $REPO.
+write_event() { edit_event_at "$1" "$2" "$REPO" | jq '.tool_name="Write"'; }
 
 echo "hook tests"
 echo
@@ -204,7 +208,7 @@ ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_contains "fires on Skill(orchestrator:orch-interview)" "$out" "Do NOT offer to implement"
 check_no_pointer "on the orch-interview entry point" "$ctx"
 assert_eq "orch-interview arms the guard, which denies a source edit" \
-  "$(edit_event "$REPO/src/main.ts" p1 | "$GUARD" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(bash_hook_decision "$(edit_event "$REPO/src/main.ts" p1 | "$GUARD")")" "deny"
 rm -f "$TMPDIR/orchestrator-grilling-p1"
 # The old name is removed outright, with no alias.
 assert_empty "ignores the removed Skill(orchestrator:orch-plan)" \
@@ -516,7 +520,7 @@ assert_empty "ignores sessions that were never planning" \
 : >"$TMPDIR/orchestrator-grilling-s1"
 out="$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
 assert_eq "denies a source edit during planning" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(bash_hook_decision "$out")" "deny"
 assert_contains "explains what to do instead" "$out" "orchestrator:orch-flow"
 assert_contains "names the blocked file" "$out" "src/main.ts"
 # One JSON object serves both hosts: Junie reads the top-level decision/reason.
@@ -531,13 +535,28 @@ for f in docs/agents/domain.md docs/agents/x.md .scratch/ticket.md .scratch/x.md
   assert_empty "allows planning artifact: $f" "$(edit_event "$REPO/$f" s1 | "$GUARD")"
 done
 
+# The flow state and nested checkouts sit under .orchestrator/ but stay guarded.
+out="$(write_event "$REPO/.orchestrator/state.json" s1 | "$GUARD")"
+assert_eq "denies a write of the flow state file" \
+  "$(bash_hook_decision "$out")" "deny"
+assert_contains "flow state denial names the path" "$out" ".orchestrator/state.json"
+assert_contains "flow state denial says only orch.sh writes it" "$out" "written only by orch.sh"
+assert_contains "flow state denial points at orch-flow" "$out" 'call the Skill tool with \"orchestrator:orch-flow\"'
+for f in .orchestrator/checkouts/x/src/a.ts .orchestrator/worktrees/t1/src/a.ts; do
+  out="$(edit_event "$REPO/$f" s1 | "$GUARD")"
+  assert_eq "denies another checkout's file: $f" \
+    "$(bash_hook_decision "$out")" "deny"
+  assert_contains "other-checkout denial names $f" "$out" "$f"
+  assert_contains "other-checkout denial redirects for $f" "$out" "Edit it from a session opened in that checkout"
+done
+
 # The glossary and ADRs are planning records: planning never changes them in
 # place, and the denial redirects the wording into the plan instead (#186).
 # The legacy CONTEXT names stay records for repos not yet renamed (#461).
 for f in GLOSSARY.md GLOSSARY-MAP.md CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/adr/../adr/x.md; do
   out="$(edit_event "$REPO/$f" s1 | "$GUARD")"
   assert_eq "denies planning record: $f" \
-    "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+    "$(bash_hook_decision "$out")" "deny"
   assert_contains "gives the records reason for $f" "$(printf '%s' "$out" | jq -r '.reason')" \
     "is a record of decisions, and planning does not change records in place. Write the exact wording you intended - the new or replaced text, and where it goes - into the plan, so the spec carries it verbatim as an Implementation Decision and it lands with the change it describes. For a quick implementation, put it in the linked issue's body."
 done
@@ -570,15 +589,15 @@ ln -s loop "$REPO/src/loop"
 src_deny='this is a planning session and no flow has'
 out="$(edit_event_at "$LINK/src/x.ts" s1 "$LINK" | "$GUARD")"
 assert_eq "denies a source edit via a symlinked repo, cwd the link" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(bash_hook_decision "$out")" "deny"
 assert_contains "names the repo-relative path, not the link spelling" \
   "$(printf '%s' "$out" | jq -r '.reason')" "so 'src/x.ts' should not be edited yet"
 out="$(edit_event_at "$LINK/src/x.ts" s1 "$REPO" | "$GUARD")"
 assert_eq "denies a source edit via a symlinked repo, cwd the physical repo" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(bash_hook_decision "$out")" "deny"
 out="$(edit_event_at "$LINK/nodir/deeper/new.ts" s1 "$LINK" | "$GUARD")"
 assert_eq "denies a new file in a missing directory via the link" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(bash_hook_decision "$out")" "deny"
 assert_empty "allows a planning artifact via the link" \
   "$(edit_event_at "$LINK/docs/agents/domain.md" s1 "$LINK" | "$GUARD")"
 out="$(edit_event_at "$LINK/docs/adr/0001-x.md" s1 "$LINK" | "$GUARD")"
@@ -591,7 +610,7 @@ assert_contains "denies an allowlisted name symlinked to source, as source" \
   "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
 out="$(edit_event_at "src/x.ts" s1 "$LINK" | "$GUARD")"
 assert_eq "denies a relative source path with cwd the link" \
-  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(bash_hook_decision "$out")" "deny"
 out="$(edit_event_at "$LINK/src/loop" s1 "$LINK" | "$GUARD")"
 assert_contains "denies a symlink loop under src as source" \
   "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
@@ -816,7 +835,7 @@ assert_contains "on Junie, after SessionStart clear the planning message is sent
 # End to end across the guard: planning arms it, clear disarms it.
 skill_event "mattpocock-skills:grilling" ss7 | "$GRILL" >/dev/null
 assert_eq "the planning hook arms the guard on a source file" \
-  "$(edit_event "$REPO/src/main.ts" ss7 | "$GUARD" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  "$(bash_hook_decision "$(edit_event "$REPO/src/main.ts" ss7 | "$GUARD")")" "deny"
 start_event clear ss7 | "$START" >/dev/null
 assert_empty "after SessionStart clear, the edit guard allows the source edit" \
   "$(edit_event "$REPO/src/main.ts" ss7 | "$GUARD")"
@@ -887,7 +906,7 @@ pg_decide() {
   printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' >"$PG/reason" 2>/dev/null
   if [ "$st" -ne 0 ]; then echo "exit $st"
   elif [ -z "$out" ]; then echo allow
-  else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'
+  else bash_hook_decision "$out"
   fi
 }
 
@@ -1314,6 +1333,226 @@ assert_contains "edit hook: runs through CLAUDE_PROJECT_DIR" "$reg" 'CLAUDE_PROJ
 assert_not_contains "edit hook: absent from hooks/hooks.json" \
   "$(cat "$ROOT/hooks/hooks.json")" 'hook-edit-width'
 
+
+# --- bash width hook (scripts/dev/hook-edit-width.sh on Bash calls)
+EDIT_HOOK="$ROOT/scripts/dev/hook-edit-width.sh"
+SETTINGS="$ROOT/.claude/settings.json"
+wide="$(printf "word %.0s" $(seq 1 16))x"
+edge="$(printf "word %.0s" $(seq 1 16))"
+NOREPO="$(mktemp -d)"
+# A PATH holding what the hook needs but no jq.
+NOSC_NOJQ="$(mktemp -d)"
+for t in bash git awk sed cat dirname basename env grep tr sort wc find head cut rm; do
+  p="$(command -v "$t")" && ln -s "$p" "$NOSC_NOJQ/$t"
+done
+BW_ID=0
+# bw_payload EVENT CWD ID: a Bash hook payload; an empty ID leaves it out.
+bw_payload() {
+  jq -n --arg e "$1" --arg c "$2" --arg i "$3" \
+    '{hook_event_name:$e, tool_name:"Bash", session_id:"s1", cwd:$c,
+      tool_input:{command:"x"}} + (if $i == "" then {} else {tool_use_id:$i} end)'
+}
+# bw_hook EVENT CWD ID [PATH]: the hook on one payload; sets bw_rc, bw_out.
+bw_hook() {
+  bw_out="$(bw_payload "$1" "$2" "$3" | PATH="${4:-$PATH}" bash "$EDIT_HOOK" 2>&1)"
+  bw_rc=$?
+}
+# bw_call REPO CMD [EVENT]: Pre, then CMD run in REPO (its exit ignored), then
+# EVENT (default PostToolUse) with the same tool_use_id; sets bw_rc, bw_out.
+bw_call() {
+  BW_ID=$((BW_ID + 1))
+  bw_hook PreToolUse "$1" "t$BW_ID"
+  (cd "$1" && bash -c "$2") >/dev/null 2>&1
+  bw_hook "${3:-PostToolUse}" "$1" "t$BW_ID"
+}
+# bw_repo: a fresh temp git repo with one committed covered doc, ok.md.
+bw_repo() {
+  local d
+  d="$(mktemp -d)"
+  git -C "$d" init -q
+  mkdir -p "$d/docs"
+  printf '# T\n\n%s\n' "$edge" >"$d/docs/ok.md"
+  printf '#!/usr/bin/env bash\necho ok\n' >"$d/ok.sh"
+  git -C "$d" add -A
+  git -C "$d" -c user.name=t -c user.email=t@t commit -q -m init
+  printf '%s' "$d"
+}
+BW="$(bw_repo)"
+bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md"
+assert_eq "bash hook: sed -i making a line wide exits 2" "$bw_rc" 2
+assert_contains "bash hook: sed -i names file:line" "$bw_out" "docs/ok.md:3"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "ls; git log --oneline"
+assert_eq "bash hook: a call changing no file exits 0" "$bw_rc" 0
+assert_empty "bash hook: a call changing no file is silent" "$bw_out"
+printf '# T\n\n%s\n' "$wide" >"$BW/docs/ok.md"
+bw_call "$BW" "ls"
+assert_eq "bash hook: an already-dirty wide file left alone exits 0" "$bw_rc" 0
+assert_empty "bash hook: an already-dirty wide file left alone is silent" "$bw_out"
+git -C "$BW" checkout -q -- docs/ok.md
+printf '# T\n\n%s\nextra\n' "$edge" >"$BW/docs/ok.md"
+bw_call "$BW" "sed -i 's/^word.*\$/&x/' docs/ok.md"
+assert_eq "bash hook: a dirty file the call widens exits 2" "$bw_rc" 2
+assert_contains "bash hook: a dirty file the call widens is named" \
+  "$bw_out" "docs/ok.md:3"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "printf '%s\n' '$wide' > README.md"
+assert_eq "bash hook: a new top-level untracked file exits 2" "$bw_rc" 2
+assert_contains "bash hook: a new top-level untracked file is named" \
+  "$bw_out" "README.md:1"
+rm -f "$BW/README.md"
+bw_call "$BW" "mkdir -p docs/sub/deep && printf '%s\n' '$wide' > docs/sub/deep/n.md"
+assert_eq "bash hook: a file in a new directory exits 2" "$bw_rc" 2
+assert_contains "bash hook: a file in a new directory is named" \
+  "$bw_out" "docs/sub/deep/n.md:1"
+rm -rf "$BW/docs/sub"
+bw_call "$BW" "git mv docs/ok.md docs/moved.md && sed -i 's/\$/x/' docs/moved.md"
+assert_eq "bash hook: a renamed and widened file exits 2" "$bw_rc" 2
+assert_contains "bash hook: the rename is reported under its new path" \
+  "$bw_out" "docs/moved.md:3"
+git -C "$BW" reset -q --hard
+bw_call "$BW" "perl -pi -e 's/\$/x/' docs/ok.md"
+assert_eq "bash hook: perl -pi making a line wide exits 2" "$bw_rc" 2
+git -C "$BW" checkout -q -- docs/ok.md
+if command -v python3 >/dev/null 2>&1; then
+  bw_call "$BW" "python3 -c \"
+p='docs/ok.md'; s=open(p).read(); open(p,'w').write(s.replace('word \n','word x\n'))\""
+  assert_eq "bash hook: a python rewrite making a line wide exits 2" "$bw_rc" 2
+  git -C "$BW" checkout -q -- docs/ok.md
+elif [ -n "${CI:-}" ]; then
+  bad "bash hook: python rewrite case" "python3 is not on PATH under CI"
+else
+  skip "bash hook: python rewrite case" "python3 is not on PATH"
+fi
+bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md; false" PostToolUseFailure
+assert_eq "bash hook: PostToolUseFailure reports the same call" "$bw_rc" 2
+assert_contains "bash hook: PostToolUseFailure names file:line" \
+  "$bw_out" "docs/ok.md:3"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "rm docs/ok.md"
+assert_eq "bash hook: a deleted file exits 0" "$bw_rc" 0
+assert_empty "bash hook: a deleted file is silent" "$bw_out"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "printf '%s\n' '$wide' > notes.txt"
+assert_eq "bash hook: a non-md non-sh file exits 0" "$bw_rc" 0
+assert_empty "bash hook: a non-md non-sh file is silent" "$bw_out"
+rm -f "$BW/notes.txt"
+BW2="$(bw_repo)"
+bw_call "$BW" "printf '%s\n' '$wide' > '$BW2/docs/ok.md'"
+assert_eq "bash hook: an edit in another checkout exits 0" "$bw_rc" 0
+assert_empty "bash hook: an edit in another checkout is silent" "$bw_out"
+if command -v shellcheck >/dev/null 2>&1; then
+  bw_call "$BW" "printf 'unused=1\n' >> ok.sh"
+  assert_eq "bash hook: a shellcheck warning exits 2" "$bw_rc" 2
+  assert_contains "bash hook: names the warning" "$bw_out" "SC2034"
+  git -C "$BW" checkout -q -- ok.sh
+elif [ -n "${CI:-}" ]; then
+  bad "bash hook: shellcheck case" "shellcheck is not on PATH under CI"
+else
+  skip "bash hook: shellcheck case" "shellcheck is not on PATH"
+fi
+# A call that moves the session cwd: Post stays silent and drops the
+# snapshot, even when the Pre checkout gained a wide file.
+BW3="$(bw_repo)"
+printf '# T\n\n%s\n' "$wide" >"$BW3/docs/ok.md"
+BW_TMP2="$(mktemp -d)"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
+TMPDIR="$BW_TMP2" bw_hook PostToolUse "$BW3" "t$BW_ID"
+assert_eq "bash hook: a cwd moved into a dirty checkout exits 0" "$bw_rc" 0
+assert_empty "bash hook: a cwd moved into a dirty checkout is silent" "$bw_out"
+assert_empty "bash hook: a cwd moved into another checkout leaves no snapshot" \
+  "$(ls -A "$BW_TMP2")"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
+printf '%s\n' "$wide" >"$BW/docs/new.md"
+TMPDIR="$BW_TMP2" bw_hook PostToolUse "$NOREPO" "t$BW_ID"
+assert_eq "bash hook: a cwd moved outside a repo exits 0" "$bw_rc" 0
+assert_empty "bash hook: a cwd moved outside a repo is silent" "$bw_out"
+assert_empty "bash hook: a cwd moved outside a repo leaves no snapshot" \
+  "$(ls -A "$BW_TMP2")"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
+TMPDIR="$BW_TMP2" bw_hook PostToolUse "$BW3" "t$BW_ID"
+assert_empty "bash hook: a wide file in the Pre checkout is silent from another" \
+  "$bw_out"
+assert_empty "bash hook: another checkout's Post leaves no snapshot" \
+  "$(ls -A "$BW_TMP2")"
+rm -f "$BW/docs/new.md"
+rm -rf "$BW3" "$BW_TMP2"
+# No baseline, malformed input, missing id, cwd outside a repo.
+bw_hook PostToolUse "$BW" "never-seen"
+assert_eq "bash hook: Post without a snapshot exits 0" "$bw_rc" 0
+assert_empty "bash hook: Post without a snapshot is silent" "$bw_out"
+bw_out="$(printf 'not json' | bash "$EDIT_HOOK" 2>&1)"; bw_rc=$?
+assert_eq "bash hook: malformed stdin exits 0" "$bw_rc" 0
+assert_empty "bash hook: malformed stdin is silent" "$bw_out"
+bw_hook PreToolUse "$BW" ""
+assert_eq "bash hook: Pre without tool_use_id exits 0" "$bw_rc" 0
+assert_empty "bash hook: Pre without tool_use_id is silent" "$bw_out"
+bw_hook PostToolUse "$BW" ""
+assert_eq "bash hook: Post without tool_use_id exits 0" "$bw_rc" 0
+assert_empty "bash hook: Post without tool_use_id is silent" "$bw_out"
+bw_hook PreToolUse "$NOREPO" "norepo"
+assert_eq "bash hook: Pre outside a repo exits 0" "$bw_rc" 0
+assert_empty "bash hook: Pre outside a repo is silent" "$bw_out"
+bw_out="$(bw_payload PostToolUse "$BW" x | head -c 20 \
+  | bash "$EDIT_HOOK" 2>&1)"; bw_rc=$?
+assert_eq "bash hook: truncated stdin exits 0" "$bw_rc" 0
+assert_empty "bash hook: truncated stdin is silent" "$bw_out"
+bw_hook PreToolUse "$BW" "nojq" "$NOSC_NOJQ"
+bw_pre_rc="$bw_rc"; bw_pre_out="$bw_out"
+printf '%s\n' "$wide" >"$BW/docs/ok.md"
+bw_hook PostToolUse "$BW" "nojq" "$NOSC_NOJQ"
+assert_eq "bash hook: no jq, Pre and Post exit 0" "$bw_pre_rc$bw_rc" 00
+assert_empty "bash hook: no jq is silent" "$bw_pre_out$bw_out"
+git -C "$BW" checkout -q -- docs/ok.md
+# An unwritable snapshot: TMPDIR is a regular file.
+BW_FILE="$(mktemp)"
+TMPDIR="$BW_FILE" bw_hook PreToolUse "$BW" unw2
+bw_pre_rc="$bw_rc"; bw_pre_out="$bw_out"
+printf '%s\n' "$wide" >"$BW/docs/ok.md"
+TMPDIR="$BW_FILE" bw_hook PostToolUse "$BW" unw2
+assert_eq "bash hook: an unwritable TMPDIR leaves Pre and Post at exit 0" \
+  "$bw_pre_rc$bw_rc" 00
+assert_empty "bash hook: an unwritable TMPDIR is silent" "$bw_pre_out$bw_out"
+git -C "$BW" checkout -q -- docs/ok.md
+# Cleanup: a pinned empty TMPDIR is empty again after every Post.
+BW_TMP="$(mktemp -d)"
+TMPDIR="$BW_TMP" bw_call "$BW" "ls"
+assert_empty "bash hook: Post leaves no snapshot after a silent call" \
+  "$(ls -A "$BW_TMP")"
+TMPDIR="$BW_TMP" bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md"
+assert_empty "bash hook: Post leaves no snapshot after an exit 2" \
+  "$(ls -A "$BW_TMP")"
+git -C "$BW" checkout -q -- docs/ok.md
+TMPDIR="$BW_TMP" bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md" PostToolUseFailure
+assert_empty "bash hook: PostToolUseFailure leaves no snapshot" \
+  "$(ls -A "$BW_TMP")"
+git -C "$BW" checkout -q -- docs/ok.md
+# Parity: an Edit and a Bash call leaving the same wide file report alike.
+printf '# T\n\n%s\n' "$wide" >"$BW/docs/ok.md"
+bw_edit_out="$(jq -n --arg f "$BW/docs/ok.md" '{tool_input:{file_path:$f}}' \
+  | bash "$EDIT_HOOK" 2>&1)"; bw_edit_rc=$?
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "printf '# T\n\n%s\n' '$wide' > docs/ok.md"
+assert_eq "bash hook: parity case reports exit 2" "$bw_rc" 2
+assert_contains "bash hook: parity case names the wide line" "$bw_out" "docs/ok.md:3"
+assert_eq "bash hook: parity with the Edit path, exit code and stderr" \
+  "$bw_rc/$bw_out" "$bw_edit_rc/$bw_edit_out"
+# Registration.
+for ev in PreToolUse PostToolUse PostToolUseFailure; do
+  reg="$(jq -r --arg e "$ev" '.hooks[$e][]? | select(.matcher == "Bash")
+    | .hooks[].command' "$SETTINGS" 2>/dev/null)"
+  assert_contains "bash hook: $ev Bash runs the script" "$reg" \
+    'scripts/dev/hook-edit-width.sh'
+  assert_contains "bash hook: $ev Bash runs through CLAUDE_PROJECT_DIR" \
+    "$reg" 'CLAUDE_PROJECT_DIR'
+done
+assert_not_contains "bash hook: absent from hooks/hooks.json" \
+  "$(cat "$ROOT/hooks/hooks.json")" 'hook-edit-width'
+rm -rf "$BW" "$BW2" "$BW_TMP" "$BW_FILE"
+
 # --- bash stdin hook (scripts/hook-bash-stdin.sh, #2001)
 BSTDIN="$DIR/hook-bash-stdin.sh"
 # bash_hook_event MODE AGENT_TYPE COMMAND: a Bash PreToolUse payload; an empty
@@ -1332,8 +1571,6 @@ bash_hook_run() {
 # in-scope agent under MODE.
 bash_hook_scan() { bash_hook_event "$2" orch-implementer "$3" | bash_hook_run "$1" ""; }
 BS_PREFIX=$'exec </dev/null\n'
-# bash_hook_decision OUTPUT: the permissionDecision the hook wrote.
-bash_hook_decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
 for scope in "orchestrator:orch-implementer|" "orch-implementer|" "|1"; do
   bs_agent="${scope%|*}"; bs_auto="${scope#*|}"
   bs_label="agent_type '$bs_agent' autopilot '$bs_auto'"

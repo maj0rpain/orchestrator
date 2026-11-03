@@ -43,13 +43,21 @@ state_get_in() {
 }
 
 # The unrestricted writer behind every internal state change, over
-# flow_state_write's coercion on $STATE. A failed write stops orch.sh through
-# set -e with jq's status.
-state_write() { flow_state_write "$STATE" "$1" "$2"; }
+# flow_state_write's coercion on $STATE. A failed write dies, whatever context
+# the caller runs in: flow_state_write returns its status, and a caller in a
+# condition would suspend set -e.
+state_write() {
+  flow_state_write "$STATE" "$1" "$2" ||
+    die "could not record $1 in $STATE - the flow is unchanged"
+}
 
 # Stores value $2 under key $1 as a JSON string, always, over
 # flow_state_write_string on $STATE.
-state_write_string() { flow_state_write_string "$STATE" "$1" "$2"; }
+# A failed write dies, as state_write's does.
+state_write_string() {
+  flow_state_write_string "$STATE" "$1" "$2" ||
+    die "could not record $1 in $STATE - the flow is unchanged"
+}
 
 # require_state [die2]: dies unless an active flow's state file exists - with
 # die2 for a command that reserves exit 1 for a meaningful "no".
@@ -93,12 +101,17 @@ require_issue() { require_field "$1" issue "no issue recorded in state - the spe
 # pr open and redo review both need the flow's branch before touching GitHub.
 require_branch() { require_field "$1" branch "no branch recorded in state"; }
 
-# The one writer of state.phase. It knows only which phases exist: every caller
-# - advance, review ready, both redos, and init's seed - keeps its own guard on
-# which transition it may make, so a step back needs no handoff check here.
+# The writers of state.phase: phase_write, which dies on a failed write, and
+# phase_write_try, which returns the writer's status for a caller that words
+# its own failure. They know only which phases exist: every caller - advance,
+# review ready, both redos, and init's seed - keeps its own guard on which
+# transition it may make, so a step back needs no handoff check here.
 phase_write() {
+  phase_write_try "$1" || die "could not record phase in $STATE - the flow is unchanged"
+}
+phase_write_try() {
   word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
-  state_write phase "$1"
+  flow_state_write "$STATE" phase "$1"
 }
 
 # The active flow's own base branch, recorded by init. A flow started before
