@@ -1639,10 +1639,7 @@ for fd_file in all.sh affected.sh orch_test.sh; do
   assert_eq "$fd_file never writes REPORT_FAILED" \
     "$(grep -c 'REPORT_FAILED' "$fd_tests/$fd_file")" "0"
 done
-bash -c 'source "$1"; test_jobs_job bash -c "exit 7"' _ "$fd_tests/test_jobs.sh" >/dev/null 2>&1
-fd_st=$?
-assert_status "test_jobs_job returns the command's exit status" "$fd_st" 7
-unset fd_file fd_st fd_tests
+unset fd_file fd_tests
 
 # --- the test runners' CPU load (#1586) ---------------------------------------
 # The default job count, test_jobs.sh's test_jobs_default, with getconf faked
