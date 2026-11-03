@@ -469,7 +469,9 @@ material item without one, naming its `@@ item` line, and a `@@ why` that is
 empty, on a minor or resolved item, under an option, or a second on one
 item. The changelog never carries it. A `@@ finding` cites
 the `<k>`-th finding in `<dir>/lens-<lens>.md`, which `apply` copies into the
-changelog, so the batch file never quotes a lens.
+changelog, so the batch file never quotes a lens. Every finding of a lens that
+ran is cited by at least one item; `check` and `apply` refuse a batch that
+leaves one uncited, naming each.
 
 `check` and `apply` verify every anchor: each must match the body exactly
 once, and `check` names the `batch.md` line of each one that does not. No

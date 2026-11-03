@@ -485,9 +485,10 @@ spec_review_finding_text() {
 
 # spec_review_findings_check: dies, naming the batch line, on a citation of a
 # lens that did not run or past its file's count of findings, and on an item
-# in a lens's group when that lens did not run.
+# in a lens's group when that lens did not run, then on a finding of a lens that
+# ran which no item cites, naming every one at once (#1914).
 spec_review_findings_check() {
-  local j l count lf it
+  local j l count lf it lens uncited="" cited
   for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
     l="$(array_index SR_LENS_NAME "${SR_FD_LENS[$j]}")"
     spec_review_lens_known "${SR_FD_LENS[$j]}" \
@@ -507,6 +508,20 @@ spec_review_findings_check() {
     [ "${SR_LENS_STATE[$l]}" = ran ] \
       || spec_review_batch_die "${SR_IT_LINE[$it]}" "item ${SR_IT_N[$it]} is in group ${SR_IT_GROUP[$it]}, which did not run"
   done
+  for lens in $SPEC_REVIEW_LENSES; do
+    l="$(array_index SR_LENS_NAME "$lens")"
+    [ "${SR_LENS_STATE[$l]:-}" = ran ] || continue
+    for lf in ${SR_LF_LENS[@]+"${!SR_LF_LENS[@]}"}; do
+      [ "${SR_LF_LENS[$lf]}" = "$lens" ] || continue
+      cited=""
+      for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
+        [ "${SR_FD_LENS[$j]}" = "$lens" ] && [ "${SR_FD_K[$j]}" = "${SR_LF_K[$lf]}" ] && { cited=1; break; }
+      done
+      [ -n "$cited" ] || uncited="${uncited:+$uncited, }$lens ${SR_LF_K[$lf]}"
+    done
+  done
+  [ -z "$uncited" ] \
+    || die "batch.md leaves findings uncited: $uncited - every lens finding goes in the batch, if only as a recommend-decline item"
 }
 
 # spec_review_answer_tokens <answer> <array-var>: an Other-list answer split
