@@ -47,37 +47,6 @@ notice_wait() {
 # default 75%, 1 still gives 1 slot (1.5 rounded down).
 pool_cpu_file() { printf '%s 100000\n' "$(($2 * 200000))" >"$1"; }
 
-# suites_read <all.sh>: reads the suite list from the one `suites=(...)` line
-# of <all.sh> into the array SUITES, with read -a and no eval, and returns 0.
-# It returns 1, with SUITES_ERR holding an orch:-style message, when <all.sh>
-# holds no such line or more than one, when the list is empty, or when a name
-# in it is not a file beside the real all.sh, never in <all.sh>'s own tree,
-# whose stubs are made from the list. A caller fails on its failure: a list
-# that came back empty would make every loop run zero times.
-suites_read() {
-  local file="$1" n line list name
-  SUITES=()
-  SUITES_ERR=""
-  n="$(grep -c '^suites=(' "$file")" || true
-  if [ "$n" -ne 1 ]; then
-    SUITES_ERR="orch: $file holds $n suites=( lines, not one"
-    return 1
-  fi
-  line="$(grep '^suites=(' "$file")"
-  list="${line#suites=(}"
-  read -ra SUITES <<<"${list%%)*}"
-  if [ "${#SUITES[@]}" -eq 0 ]; then
-    SUITES_ERR="orch: $file holds an empty suites list"
-    return 1
-  fi
-  for name in "${SUITES[@]}"; do
-    if [ ! -f "$(dirname "$SUITE_SCRIPT")/$name" ]; then
-      SUITES_ERR="orch: $file names $name, which is no file in scripts/test/"
-      return 1
-    fi
-  done
-}
-
 # stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
 # of all.sh, test_jobs.sh and report.sh beside a passing stub for each name in
 # SUITES (suites_read first), with <dir>/bin holding links to the tools all.sh
@@ -532,7 +501,7 @@ assert_eq "runs nothing" "$(count_lines 'passed' "$out")" "0"
 # status.
 echo
 echo "quiet mode (ORCH_TEST_QUIET, #614)"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 # The reference run: isolation alone, not quiet. Its ok lines give the
 # isolation section's pass count, which the quiet runs' summaries must match.
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
@@ -736,7 +705,7 @@ out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a standalone suite whose tally file is gone exits 1" "$st" 1
 assert_eq "and reports it as a failure" "$(printf '%s\n' "$out" | tail -n 1)" "0 passed, 1 failed"
 rm -rf "$tally_dir"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for tally_suite in "${SUITES[@]}"; do
   tally_path="$(dirname "$SUITE_SCRIPT")/$tally_suite"
   tally_files=("$tally_path")
@@ -858,7 +827,7 @@ assert_eq "no title appears twice across the walk" \
 # the waiting section writes lives outside that TMPDIR.
 echo
 echo "the suite's temp root (#807)"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 root_dir="$(planted_copy <<'PLANTED'
   # --- planted repo
   echo; echo "planted repo"; new_repo >/dev/null; ok "made a repo"
@@ -1052,7 +1021,7 @@ rm -rf "$guard_dir"
 # stub shellcheck when the case wants one - the real one never runs.
 echo
 echo "all.sh, the single entry point (#615)"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 all_root="$(mktemp -d)"
 all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
@@ -1135,7 +1104,7 @@ all_print_order() {
 # with no suites=( line, one with two, one with an empty list, one naming a
 # suite with no file in scripts/test/.
 all_real="$(dirname "$SUITE_SCRIPT")/all.sh"
-suites_read "$all_real"; st=$?
+suites_read "$all_real" "$(dirname "$SUITE_SCRIPT")"; st=$?
 assert_status "the reader succeeds over the real all.sh" "$st" 0
 for all_case in none two empty missing; do
   case "$all_case" in
@@ -1145,11 +1114,12 @@ for all_case in none two empty missing; do
     missing) all_text='suites=(orch_test.sh no_such_suite.sh)' ;;
   esac
   printf '%s\n' "$all_text" >"$all_root/planted_all.sh"
-  suites_read "$all_root/planted_all.sh"; st=$?
+  suites_read "$all_root/planted_all.sh" "$(dirname "$SUITE_SCRIPT")"; st=$?
   assert_status "the reader fails over an all.sh with $all_case" "$st" 1
-  assert_contains "and names the problem with an orch: message ($all_case)" "$SUITES_ERR" "orch: "
+  assert_contains "and names the problem ($all_case)" "$SUITES_ERR" "$all_root/planted_all.sh"
+  assert_not_contains "with no orch: prefix ($all_case)" "$SUITES_ERR" "orch: "
 done
-suites_read "$all_real" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$all_real" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 all_bash="$(command -v bash)"
 # all_run [VAR=value...]: run the copied all.sh on the stub PATH, with CI,
 # CHANGELOG_BASE, NO_VERSION_BUMP and ORCH_TEST_JOBS unset, then each given
@@ -1631,7 +1601,7 @@ rm -rf "$jp_copy"
 # comes from all.sh.
 if command -v flock >/dev/null 2>&1; then
 jp_all="$jp_dir/all"
-suites_read "$jp_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$jp_tests/all.sh" "$jp_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 stub_all_tree "$jp_all" "$jp_log" flock getconf
 # jp_all_run <errfile>: all.sh on the stub PATH and the 1-slot pool.
 jp_all_run() {
@@ -1665,7 +1635,7 @@ echo
 echo "the test runners' CPU load (#1586)"
 load_dir="$(mktemp -d)"
 load_tests="$(dirname "$SUITE_SCRIPT")"
-suites_read "$load_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$load_tests/all.sh" "$load_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 mkdir "$load_dir/getconf"
 # load_default <cores|fail> <quota file content|-missing|-dir> [VAR=value...]:
 # the default job count with getconf reporting <cores> (or failing).
@@ -2510,7 +2480,7 @@ runner_git_isolation() {
   [ "$bad_n" -eq 0 ]
 }
 
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 out="$(runner_git_isolation "$(dirname "$SUITE_SCRIPT")" "${SUITES[@]}")"; st=$?
 if [ "$st" -eq 0 ] && [ -z "$out" ]; then
   ok "every real runner clears git's environment first"
@@ -2548,7 +2518,8 @@ unset -f runner_git_isolation
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
-# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh and report.sh,
+# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh, report.sh and
+# test_tree.sh,
 # a harness
 # file holding the three placement sections, a branch section file with two
 # sections, and one tiny file for each other kind of path. origin's main is the
@@ -2574,7 +2545,11 @@ af_put() {
 af_git init -q -b main
 mkdir -p "$af/scripts/test/orch"
 cp "$af_tests/affected.sh" "$af_tests/all.sh" "$af_tests/git_env.sh" \
-  "$af_tests/test_jobs.sh" "$af_tests/report.sh" "$af/scripts/test/"
+  "$af_tests/test_jobs.sh" "$af_tests/report.sh" "$af_tests/test_tree.sh" "$af/scripts/test/"
+suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for af_s in "${SUITES[@]}"; do
+  [ -e "$af/scripts/test/$af_s" ] || af_put "scripts/test/$af_s"
+done
 af_put scripts/test/orch/harness.sh '# --- isolation ---' \
   '# --- helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
   '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---'
@@ -2674,7 +2649,7 @@ af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,do
 af_row "a markdown file selects nothing more" README.md "$af_gate,docs_lint.sh"
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/test/orch/common.sh \
   scripts/test/orch/setup.sh scripts/test/all.sh scripts/test/orch_test.sh \
-  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/dev/other.sh Makefile; do
+  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/test/test_tree.sh scripts/dev/other.sh Makefile; do
   af_row "$af_f falls back to all.sh" "$af_f" "all.sh"
 done
 af_reset
@@ -2754,8 +2729,40 @@ af_git config orchestrator.base orphan
 assert_eq "a base with no merge-base falls back to all.sh" "$(af_plan)" "all.sh"
 af_reset
 
+# A title with trailing dashes reads as the shared rule reads it.
+af_reset
+af_put scripts/test/orch/dashed.sh '# --- dashed title (#9) ------ ' '# --- plain ---'
+af_want="$(awk "$SECTION_TITLE_AWK"'/^# --- / { print title($0) }' "$af/scripts/test/orch/dashed.sh" | paste -sd, -)"
+assert_eq "the shared title rule drops trailing spaces and dashes" "$af_want" "dashed title (#9),plain"
+assert_eq "a planted header reads the same in --plan as under SECTION_TITLE_AWK" \
+  "$(af_plan origin/rel)" "$af_gate,$af_want,docs_lint.sh,scripts/test/orch/dashed.sh"
+rm -f "$af/scripts/test/orch/dashed.sh"
+
+# The awk title function is defined in test_tree.sh alone.
+af_defs="$(grep -l 'function title(' "$af_tests/affected.sh" "$af_tests/orch_test.sh" "$af_tests/test_tree.sh" | xargs -n1 basename | paste -sd, -)"
+assert_eq "the title function is defined only in test_tree.sh" "$af_defs" "test_tree.sh"
+
+# An all.sh the shared reader refuses stops affected.sh, with its own prefix.
+for af_case in none two empty missing; do
+  af_reset
+  case "$af_case" in
+    none) af_put scripts/test/all.sh 'suites_list=(a.sh)' ;;
+    two) af_put scripts/test/all.sh 'suites=(orch_test.sh)' 'suites=(docs_lint.sh)' ;;
+    empty) af_put scripts/test/all.sh 'suites=()' ;;
+    missing) af_put scripts/test/all.sh 'suites=(orch_test.sh no_such_suite.sh)' ;;
+  esac
+  af_git commit -qam "$af_case"
+  suites_read "$af/scripts/test/all.sh" "$af/scripts/test"
+  af_msg="$SUITES_ERR"
+  af_out="$(cd "$af" && bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+  assert_status "affected.sh exits 1 over an all.sh with $af_case" "$st" 1
+  assert_eq "and prints the reader's message with its own prefix and runs nothing ($af_case)" \
+    "$af_out" "affected.sh: $af_msg"
+done
+af_reset
+
 # End to end, with stub suites for the real ones.
-suites_read "$af_tests/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
+suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for af_s in "${SUITES[@]}"; do
   printf '%s\n' '#!/usr/bin/env bash' \
     "echo \"$af_s only=\${ORCH_TEST_ONLY-unset}\" >>\"$af.log\"" \

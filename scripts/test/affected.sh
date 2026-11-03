@@ -27,7 +27,8 @@
 #   skills, agents, docs, markdown, changelog fragments
 #                                     nothing beyond the always-run checks
 #   anything else, orch.sh, orch/common.sh, the shared test setup, the
-#   runners, the gh fake, test_jobs.sh, report.sh   all.sh (this row wins)
+#   runners, the gh fake, test_jobs.sh, report.sh, test_tree.sh
+#                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
 # Always run: docs_lint.sh, orch_test.sh's placement sections (helper
@@ -77,7 +78,7 @@ for arg in "$@"; do
 done
 
 cd "$root" || exit 1
-git_q() { git -c core.quotepath=off "$@"; }
+git_raw_paths() { git -c core.quotepath=off "$@"; }
 
 # full_suite: the fallback - the whole of all.sh, or its name on --plan.
 full_suite() {
@@ -117,13 +118,13 @@ resolve_base() {
   git merge-base HEAD "$target" 2>/dev/null || true
 }
 
-mb="$(resolve_base)" || exit $?
-[ -n "$mb" ] || full_suite
+merge_base="$(resolve_base)" || exit $?
+[ -n "$merge_base" ] || full_suite
 
 # changed: files present now (tracked changes and untracked); deleted: gone.
-changed="$( { git_q diff --no-renames --name-only --diff-filter=d "$mb" --
-  git_q ls-files --others --exclude-standard; } | LC_ALL=C sort -u)"
-deleted="$(git_q diff --no-renames --name-only --diff-filter=D "$mb" -- | LC_ALL=C sort -u)"
+changed="$( { git_raw_paths diff --no-renames --name-only --diff-filter=d "$merge_base" --
+  git_raw_paths ls-files --others --exclude-standard; } | LC_ALL=C sort -u)"
+deleted="$(git_raw_paths diff --no-renames --name-only --diff-filter=D "$merge_base" -- | LC_ALL=C sort -u)"
 
 want=()        # suites to run besides orch_test.sh and docs_lint.sh
 sec_files=()   # scripts/test/orch/<n>.sh files whose sections run
@@ -132,17 +133,17 @@ sc_files=()    # the lint targets
 # classify <file> <present|deleted>: record what the file selects, or run the
 # full suite when its reach is unclear.
 classify() {
-  local f="$1" state="$2" base
-  base="$(basename "$f")"
+  local f="$1" state="$2" file_name
+  file_name="$(basename "$f")"
   case "$f" in
     scripts/orch.sh | scripts/orch/common.sh | scripts/test/orch/common.sh | \
       scripts/test/orch/setup.sh | scripts/test/all.sh | scripts/test/orch_test.sh | \
-      scripts/test/affected.sh | scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/gh_adapter_fake.sh)
+      scripts/test/affected.sh | scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/gh_adapter_fake.sh)
       full_suite ;;
     scripts/orch/*.sh)
       [ "$state" = deleted ] && full_suite
-      [ -f "scripts/test/orch/$base" ] || full_suite
-      sec_files+=("scripts/test/orch/$base") ;;
+      [ -f "scripts/test/orch/$file_name" ] || full_suite
+      sec_files+=("scripts/test/orch/$file_name") ;;
     scripts/test/orch/*.sh)
       [ "$state" = deleted ] && full_suite
       sec_files+=("$f") ;;
@@ -169,10 +170,13 @@ while IFS= read -r f; do
   [ -n "$f" ] && classify "$f" deleted
 done <<<"$deleted"
 
-# A section file's titles: its `# --- ` lines, trailing dashes dropped, as
-# orch_test.sh's walk reads them.
+# shellcheck source=test_tree.sh
+source "$dir/test_tree.sh"
+
+# A section file's titles: its `# --- ` lines, read by test_tree.sh's
+# SECTION_TITLE_AWK, as orch_test.sh's walk reads them.
 titles_of() {
-  grep '^# --- ' "$1" | sed -e 's/^# --- //' -e 's/[ -]*$//'
+  awk "$SECTION_TITLE_AWK"'/^# --- / { print title($0) }' "$1"
 }
 
 # The placement titles come first, then the selected files' sections.
@@ -199,19 +203,12 @@ if [ "${#sec_files[@]}" -gt 0 ]; then
   done < <(printf '%s\n' "${sec_files[@]}" | LC_ALL=C sort -u)
 fi
 
-# The all.sh suite list, read the way the harness reads it.
-suites_n="$(grep -c '^suites=(' "$dir/all.sh")" || true
-if [ "$suites_n" -ne 1 ]; then
-  echo "orch: $dir/all.sh holds $suites_n suites=( lines, not one" >&2
+# The all.sh suite list.
+suites_read "$dir/all.sh" "$dir" || {
+  echo "affected.sh: $SUITES_ERR" >&2
   exit 1
-fi
-suites_line="$(grep '^suites=(' "$dir/all.sh")"
-suites_list="${suites_line#suites=(}"
-read -ra suites <<<"${suites_list%%)*}"
-if [ "${#suites[@]}" -eq 0 ]; then
-  echo "orch: $dir/all.sh holds an empty suites list" >&2
-  exit 1
-fi
+}
+suites=("${SUITES[@]}")
 
 # The suites to run, in all.sh's order: orch_test.sh and docs_lint.sh always.
 selected=()

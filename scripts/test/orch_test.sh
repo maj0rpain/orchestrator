@@ -55,6 +55,8 @@ SECTION_DIR="$TEST_DIR/orch"
 # shellcheck source=test_jobs.sh
 source "$TEST_DIR/test_jobs.sh"
 test_jobs_lower_priority
+# shellcheck source=test_tree.sh
+source "$TEST_DIR/test_tree.sh"
 # shellcheck source=tally.sh
 source "$TEST_DIR/tally.sh"
 SETUP_FILE="$SECTION_DIR/setup.sh"
@@ -138,10 +140,8 @@ section_files() {
 # read the second time; "skip" the rest of setup.sh. In a noun file, "preamble"
 # is the text before its first `# --- ` line, and "sections" the rest, each
 # `# --- ` header numbering its section n across the whole walk, so isolation,
-# harness.sh's first, is 1. title() drops a header's `# --- ` and trailing
-# dashes.
-section_walk_awk='
-  function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }
+# harness.sh's first, is 1. title() is test_tree.sh's SECTION_TITLE_AWK.
+section_walk_awk="$SECTION_TITLE_AWK"'
   BEGIN { setup = ENVIRON["ORCH_SETUP_FILE"] }
   FNR == 1 { phase = "skip"; pre = ""; shown = 0; if (FILENAME == setup) setups++; else phase = "preamble" }
   FILENAME == setup && $0 == "# >>> shared setup" { if (setups == 1) phase = "setup"; next }
