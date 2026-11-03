@@ -1290,6 +1290,8 @@ assert_eq "and the new branch is the renamed one" \
 git checkout -q -b tg-old2
 git push -q -u origin tg-old2
 git tag tg-new2 "$old_commit"
+git tag tg-old2 "$old_commit"
+git push -q origin refs/tags/tg-old2
 out="$(orch_gh_failing branch retire tg-old2 tg-new2 2>&1)"; st=$?
 assert_status "retire with an upstream succeeds beside a tag named <new>" "$st" 0
 assert_eq "origin gets the new branch at the renamed tip" \

@@ -406,7 +406,7 @@ cmd_branch() {
         # branch instead of a name a retry can no longer find.
         git_push why -q -u origin "refs/heads/$new:refs/heads/$new" \
           || { git branch -m "$new" "$old"; die "could not push $new to origin: $why"; }
-        if ! git_push why -q origin --delete "$old"; then
+        if ! git_push why -q origin --delete "refs/heads/$old"; then
           # Already gone - a previous call's delete already succeeded before
           # something else failed - is not an error to retry into; only a
           # ref that is still there and won't go is.

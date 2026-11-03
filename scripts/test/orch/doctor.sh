@@ -1085,7 +1085,7 @@ state_fixture phase implement
 complete_handoff "$("$ORCH" handoff path implement)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unpushed branch warns rather than blocking the implement phase" "$st" 0
-assert_contains "gives the command that pushes it" "$out" "git push -u origin orch/9-gone"
+assert_contains "gives the command that pushes it" "$out" "git push -u origin refs/heads/orch/9-gone:refs/heads/orch/9-gone"
 
 # branch create forks off origin/<default>, so an unpushed branch already has an
 # upstream - just not its own. Accepting any upstream would call a branch nobody
@@ -1195,7 +1195,7 @@ git update-ref -d refs/remotes/origin/orch/9-merged
 state_fixture branch orch/9-gone
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "an unpushed review flow still warns" "$out" "not on origin yet"
-assert_contains "and still gives the push remedy" "$out" "git push -u origin orch/9-gone"
+assert_contains "and still gives the push remedy" "$out" "git push -u origin refs/heads/orch/9-gone:refs/heads/orch/9-gone"
 state_fixture phase implement
 
 state_fixture pr 7
@@ -2161,5 +2161,5 @@ state_fixture branch orch/11-gone
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a deleted flow branch with a same-named tag fails doctor" "$st" 1
 assert_contains "saying the branch no longer exists, by its short name" "$out" "FAIL  branch orch/11-gone no longer exists"
-assert_not_contains "without a full ref" "$out" "refs/heads/"
+assert_not_contains "the message line has no full ref" "$(grep "no longer exists" <<<"$out")" "refs/heads/"
 restore_suite_env

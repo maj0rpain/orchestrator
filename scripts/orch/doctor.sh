@@ -684,7 +684,7 @@ check_flow_upstream() {
   # would recreate a branch somebody removed on purpose.
   if [ "$phase" = "done" ]; then d_ok "upstream: none - expected after merge"; return 0; fi
   d_warn "branch $branch is not on origin yet."
-  d_remedy "git push -u origin $branch"
+  d_remedy "git push -u origin refs/heads/$branch:refs/heads/$branch"
 }
 
 # Unconditional on how the issue arrived - adopted at init or published by
