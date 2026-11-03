@@ -822,12 +822,13 @@ echo
 echo "hook-paste-guard (#1287, #1350)"
 
 # The guard refuses every AskUserQuestion after an arming `spec-review check`
-# pass line, until the next `spec-review apply`, unless one assistant text
-# block written after the pass line holds every non-blank line of the view
-# (hook-paste-guard.sh's header). Fixture transcripts are Claude Code's JSONL
-# shape: one entry per content block, a tool result in a user entry, a
-# tool_use in an assistant entry. ORCH_PASTE_GUARD_WAIT=0 drops the re-read
-# window, so a refused case returns at once; the window's own cases set it.
+# pass line, until the next `spec-review apply` or human message, unless
+# one assistant text block written after the pass line holds every non-blank
+# line of the view (hook-paste-guard.sh's header). Fixture transcripts are
+# Claude Code's JSONL shape: one entry per content block, a tool result in
+# a user entry, a tool_use in an assistant entry. ORCH_PASTE_GUARD_WAIT=0
+# drops the re-read window, so a refused case returns at once; the window's
+# own cases set it.
 export ORCH_PASTE_GUARD_WAIT=0
 PG="$(mktemp -d)"
 mkdir "$PG/batch" "$PG/full" "$PG/tickets" "$PG/gone" "$PG/empty"
@@ -1039,13 +1040,8 @@ else
   assert_eq "a pass line naming an unreadable view.md allows" "$(pg_decide "$T13")" allow
   chmod 600 "$PG/locked/view.md"
 fi
-# The module seam: paste_guard_check's mode, and paste_guard_instruction's
-# view argument, with the module sourced in a subshell.
-pg_mode() { (source "$DIR/paste-guard.sh"; ORCH_PASTE_GUARD_WAIT=0 paste_guard_check "$T" "$1"; echo $?); }
-assert_eq "paste_guard_check with a bogus mode allows" "$(pg_mode bogus)" 0
-assert_eq "paste_guard_check with an empty mode allows" "$(pg_mode '')" 0
-assert_eq "paste_guard_check with mode since refuses" "$(pg_mode since)" 1
-assert_eq "paste_guard_check with mode final refuses" "$(pg_mode final)" 1
+# The module seam: paste_guard_instruction's view argument, with the module
+# sourced in a subshell.
 pg_instr="$( (source "$DIR/paste-guard.sh"; unset view paste_guard_view; paste_guard_instruction "$PG/tickets/view.md") )"
 assert_contains "paste_guard_instruction names the view.md it is given" "$pg_instr" "$PG/tickets/view.md"
 pg_vw="$(cat "$PG/tickets/view.md")"
@@ -1083,8 +1079,8 @@ echo
 echo "hook-paste-stop-guard (#1421)"
 
 # The Stop guard refuses to end the turn while the paste guard is armed,
-# unless one assistant text block written after the later of the last human
-# message and the arming pass line holds every non-blank line of the view
+# unless one assistant text block written after the arming pass line - the same
+# window as the paste guard's - holds every non-blank line of the view
 # (hook-paste-stop-guard.sh's header). It reuses the paste guard's fixture
 # transcripts and helpers above; ORCH_PASTE_GUARD_WAIT=0 still holds.
 
@@ -1120,13 +1116,43 @@ S1="$PG/stop-earlier-string.jsonl"; cp "$T3" "$S1"
 pg_result "$S1" toolu_now "User has answered your questions: recommended"
 sg_human "$S1" '"what does item 2 change?"'
 pg_text "$S1" "Item 2 makes the term consistent."
-assert_eq "the view pasted only before a human message with string content: refused" "$(sg_decide "$S1")" block
+assert_eq "the view pasted, then a human message with string content, then an unrelated reply: allowed" "$(sg_decide "$S1")" allow
+sg_human "$S1" '"never mind, drop it"'
+pg_text "$S1" "Dropped."
+assert_eq "another human and assistant pair: allowed again" "$(sg_decide "$S1")" allow
 
 S2="$PG/stop-earlier-blocks.jsonl"; cp "$T3" "$S2"
 pg_result "$S2" toolu_now "User has answered your questions: recommended"
 sg_human "$S2" '[{"type":"text","text":"what does item 2 change?"}]'
 pg_text "$S2" "Item 2 makes the term consistent."
-assert_eq "the view pasted only before a human message of text blocks: refused" "$(sg_decide "$S2")" block
+assert_eq "the view pasted, then a human message of text blocks, then an unrelated reply: allowed" "$(sg_decide "$S2")" allow
+
+# A human message after the arming pass line disarms both guards; a re-run
+# check arms them again (#1917).
+D1="$PG/disarm-unpasted.jsonl"; cp "$T" "$D1"
+sg_human "$D1" '"never mind, drop it"'
+pg_text "$D1" "Sure, what next?"
+assert_eq "the view never pasted, then a human message, then an unrelated ask: allowed" "$(pg_decide "$D1")" allow
+assert_eq "and the Stop guard allows" "$(sg_decide "$D1")" allow
+D0="$PG/disarm-midturn.jsonl"; cp "$T" "$D0"
+sg_human "$D0" '"never mind, drop it"'
+assert_eq "mid-turn fail-open: a pass line, a human message, then Stop with no paste: the Stop guard allows" "$(sg_decide "$D0")" allow
+D2="$PG/disarm-rerun.jsonl"; cp "$D1" "$D2"
+pg_check "$D2" toolu_d2 batch "$PG/batch/view.md"
+assert_eq "a check re-run after the human message arms again: an ask without a paste is refused" "$(pg_decide "$D2")" deny
+assert_eq "and the Stop guard blocks" "$(sg_decide "$D2")" block
+D3="$PG/disarm-slash.jsonl"; cp "$T" "$D3"
+sg_human "$D3" '"<command-name>/orchestrator:abort</command-name>"'
+pg_text "$D3" "Aborted."
+assert_eq "a slash-command entry after the pass line: an unrelated ask is allowed" "$(pg_decide "$D3")" allow
+assert_eq "and the Stop guard allows" "$(sg_decide "$D3")" allow
+D4="$PG/disarm-not-human.jsonl"; cp "$T" "$D4"
+pg_bash "$D4" toolu_d4 "git status"
+pg_result "$D4" toolu_d4 "nothing to commit"
+sg_human "$D4" '"Base directory for this skill: /plugin/skills/orch-spec-review"' true
+pg_text "$D4" "Working."
+assert_eq "a tool result and an isMeta entry after the pass line do not disarm: an ask is refused" "$(pg_decide "$D4")" deny
+assert_eq "and the Stop guard blocks" "$(sg_decide "$D4")" block
 
 S3="$PG/stop-tool-results.jsonl"; cp "$T" "$S3"
 pg_text "$S3" "$(cat "$PG/batch/view.md")"
