@@ -358,8 +358,8 @@ expansion, in any round: the view the human reads is `check`'s, every round
 alike. The turn ends on the list and the question, in one reply. No edit is
 applied and no changelog is posted before the answer arrives. On Claude Code
 an ask-tool call is refused while the view is unpasted: after each `check`
-that wrote a `view.md`, and until the next `apply` or human message, a hook refuses every ask
-until one text block after that `check` holds the whole view, handing back
+that wrote a `view.md`, and until the next `apply` or human message, a hook
+refuses every ask until one text block after that `check` holds the whole view, handing back
 that view each time - end the turn on it and the batch question in plain
 text. The answers:
 

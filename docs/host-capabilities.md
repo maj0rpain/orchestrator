@@ -172,8 +172,8 @@ question and the ticket question are asked the same way, as a turn-final
 reply, per `docs/turn-final-reply.md`, holding `check`'s view word for word.
 
 On Claude Code two guards enforce it, arming on the same pass line, disarming
-on the same `spec-review apply` or human message, and reading the transcript through one
-shared scan, so they match the paste and fail open alike. The paste guard,
+on the same `spec-review apply` or human message, and reading the transcript
+through one shared scan, so they match the paste and fail open alike. The paste guard,
 on `PreToolUse`, refuses every ask until the view is in chat, not just the
 first. Its deny message hands the view back and says to end the turn on it
 and the question in plain text, and not to use the ask tool for it.
@@ -186,7 +186,8 @@ disarms both guards: the obligation is one turn long, so a review the human
 walks away from - abandoned, stopped on a failure, aborted - stops guarding
 at their next message, and a re-run `check` arms them again. A human message
 queued mid-turn, if the host writes it to the transcript before the turn
-ends, disarms early, and that turn's Stop allows without a paste. It hands the view back with the same instruction, and lets the turn end once
+ends, disarms early, and that turn's Stop allows without a paste. The Stop guard
+hands the view back with the same instruction, and lets the turn end once
 the payload's `stop_hook_active` is set, so it cannot loop. Both re-read the
 transcript for a few seconds before refusing, so a reply written late still
 counts. Where a host fires `Stop` before the final reply is in the
