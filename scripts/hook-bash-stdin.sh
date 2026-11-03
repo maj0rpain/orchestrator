@@ -9,8 +9,9 @@
 # end-of-file at once; heredocs, here-strings and pipes inside the command
 # still feed their readers, as they redirect after the exec.
 #
-# Under any other permission mode an in-scope call whose command holds a plain
-# stdin read (hook_bash_stdin_is_reader) is denied with a reason instead (#2002).
+# Under any other permission mode an in-scope call whose command holds a
+# plain stdin read (hook_bash_stdin_is_reader) is denied with a reason
+# instead (#2002).
 #
 # In scope: an agent_type starting `orchestrator:orch-` or `orch-`, or
 # ORCH_AUTOPILOT=1 in the hook's environment. Everything else, any other

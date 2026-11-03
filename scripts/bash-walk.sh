@@ -5,6 +5,7 @@
 
 # The jq prefix the Bash hooks' filters share: binds $c to the command string
 # and keeps only an in-scope payload ($auto is the ORCH_AUTOPILOT value).
+# shellcheck disable=SC2034 # read by the hooks that source this file
 HOOK_BASH_SCOPE='
   (.tool_input.command? // null) as $c
   | select(($c | type) == "string")
