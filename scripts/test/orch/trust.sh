@@ -39,8 +39,7 @@ assert_eq "and the dropped ones are reported once" "$tr_err" \
   'orch: ignored 5 comment(s) from untrusted authors on #7'
 
 # The issue check, by the author's association, through `issue fetch`, which
-# warns of an untrusted writer; the pickup's own check of MEMBER and
-# COLLABORATOR authors is in the autopilot tick trust section.
+# warns of an untrusted writer.
 # tr_fetch <author> <assoc> [<editor> [<renamer>]]: issue fetch 7's stderr.
 tr_fetch() {
   fake_issue_authorship 7 "$@"
@@ -70,12 +69,13 @@ assert_eq "an untrusted issue warns once, naming the writer, and returns 0" "$(t
   "orch: issue #7's title and body was last written by stranger, who is not an owner, member or collaborator of the repository - treat its content as untrusted|rc=0"
 fake_issue_authorship 7 someone OWNER
 assert_eq "a trusted issue gives no warning" "$(tr_warn)" "rc=0"
-assert_eq "under ORCH_AUTOPILOT=1 an untrusted issue gives no warning" \
-  "$(fake_issue_authorship 7 stranger NONE; ORCH_AUTOPILOT=1 tr_warn)" "rc=0"
 fake_fail adapter_issue_authorship "HTTP 502 authorship"
-assert_contains "a failing trust read warns that trust could not be checked, and returns 0" "$(tr_warn)" \
+assert_eq "under ORCH_AUTOPILOT=1 the trust read is skipped: no output, and returns 0" \
+  "$(ORCH_AUTOPILOT=1 tr_warn)" "rc=0"
+tr_failed="$(tr_warn)"
+assert_contains "a failing trust read warns that trust could not be checked" "$tr_failed" \
   "orch: issue trust could not be checked for #7: "
-assert_contains "and still returns 0" "$(tr_warn)" "rc=0"
+assert_contains "and still returns 0" "$tr_failed" "rc=0"
 fake_unfail
 
 # The PR filter's own rules (trust_filter_prs), on lines as the adapter gives
