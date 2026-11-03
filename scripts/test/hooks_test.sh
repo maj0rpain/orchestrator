@@ -82,6 +82,8 @@ edit_event_at() {
     '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:$sid, cwd:$cwd, tool_input:{file_path:$f}}'
 }
 edit_event() { edit_event_at "$1" "$2" "$REPO"; }
+# write_event <file> <session>: a Write payload for $REPO.
+write_event() { edit_event_at "$1" "$2" "$REPO" | jq '.tool_name="Write"'; }
 
 echo "hook tests"
 echo
@@ -532,7 +534,7 @@ for f in docs/agents/domain.md docs/agents/x.md .scratch/ticket.md .scratch/x.md
 done
 
 # The flow state and nested checkouts sit under .orchestrator/ but stay guarded.
-out="$(edit_event "$REPO/.orchestrator/state.json" s1 | "$GUARD")"
+out="$(write_event "$REPO/.orchestrator/state.json" s1 | "$GUARD")"
 assert_eq "denies a write of the flow state file" \
   "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
 assert_contains "flow state denial names the path" "$out" ".orchestrator/state.json"
