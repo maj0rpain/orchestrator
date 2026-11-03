@@ -3983,7 +3983,4 @@ check "CLAUDE.md's Testing section names a Ticket verification and a Full verifi
 
 
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary

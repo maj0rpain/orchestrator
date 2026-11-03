@@ -2114,6 +2114,15 @@ assert_not_contains "nor a complete line for unparseable comments" "$out" "compl
 reads_before="$(fake_comment_reads)"
 ORCH_AUTOPILOT=1 "$ORCH" doctor --flow >/dev/null 2>&1
 assert_eq "doctor --flow with two due handoffs makes exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1
+scratch="$(dirname "$(ORCH_AUTOPILOT=1 "$ORCH" handoff path implement 2>/dev/null)")"
+chmod a-w "$scratch"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+chmod u+w "$scratch"
+assert_status "an unwritable scratch copy fails the check" "$st" 1
+assert_contains "named as a write failure" "$out" \
+  "could not write the copies of issue #7's handoff comments to $scratch"
+assert_not_contains "never as a missing handoff" "$out" "comment is missing"
+assert_not_contains "nor as an unreadable read" "$out" "could not read issue #7's handoff comments"
 fake_comment 7 o 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
 ## Decisions"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"

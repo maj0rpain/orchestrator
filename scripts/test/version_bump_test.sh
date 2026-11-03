@@ -247,7 +247,4 @@ printf '%s\n' '# Changelog' '' 'No entries yet.' >"$c/CHANGELOG.md"
 refused "a CHANGELOG.md with no ## heading" "$c" "CHANGELOG.md"
 
 # >>> summary
-echo
-tally_read
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+tally_summary

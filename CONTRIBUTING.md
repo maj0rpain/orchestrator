@@ -193,7 +193,8 @@ is none; `cmd_*` entry points are left out. `--tests` lists the shared test
 setup (`scripts/test/orch/setup.sh`), the gh adapter fake
 (`scripts/test/gh_adapter_fake.sh`) and the assertion tally
 (`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
-`( ... )` subshell) instead - their fixtures, fakes and assertions. A
+`( ... )` subshell, and `tally_summary`, the ending each standalone suite
+calls) instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
 section checks it against what bash itself defines.
@@ -313,7 +314,7 @@ scripts/dev/hook-edit-width.sh the project's PostToolUse edit hook, registered i
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
-scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts
+scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh and affected.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10
 scripts/test/report.sh       the report helpers all.sh and affected.sh both source: a suite's FAIL block and summary line, and the shellcheck summary
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
