@@ -296,11 +296,11 @@ rm -f "$hd"
 hf="$(mktemp)"
 writeln '## Decisions' 'Use X.' '' '```' '## Rejected alternatives' 'Y.' '```' \
         '## Constraints' 'None.' '' '## Open assumptions' 'None.' >"$hf"
-cp "$h" "$hf.bak"; cp "$hf" "$h"
+cp "$hf" "$h"
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
 assert_status "validate fails when the heading is only fenced" "$st" 1
 assert_contains "reporting it missing, not empty" "$out" "missing section: ## Rejected alternatives"
-cp "$hf.bak" "$h"; rm -f "$hf.bak"
+complete_handoff "$h"
 writeln '## X' '```' '## X' 'quoted' '```' 'Real.' '## Y' 'Other.' >"$hf"
 out="$("$ORCH" handoff section "$hf" X 2>&1)"; st=$?
 assert_status "a fenced copy of the heading is not a repeat" "$st" 0

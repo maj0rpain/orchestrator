@@ -1071,21 +1071,6 @@ assert_first_line "classified as stop" "$out" "stop"
 assert_contains "carrying the recorded reason on the lines after it" \
   "$out" "CI failed twice, flake rerun spent."
 
-# A heading quoted inside a code fence is never a heading (#1922): the fenced
-# `ready` in a finding does not answer for the driver's real Terminal state.
-writeln '## Findings' '- Fix the template:' '  ```' '## Terminal state' 'ready' '  ```' '' \
-  '## Terminal state' 'stop - CI failing: build failed' >.orchestrator/review/iteration-05.md
-out="$("$ORCH" review terminal 2>&1)"; st=$?
-assert_status "a fenced Terminal state ahead of the real one leaves it terminal" "$st" 0
-assert_eq "classified from the real heading, not the quoted one" "$out" \
-  "$(printf 'stop\nCI failing: build failed')"
-writeln '## Findings' '- Fix the template:' '```' '## Terminal state' 'stop' '```' '' \
-  '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md
-out="$("$ORCH" review terminal 2>&1)"; st=$?
-assert_eq "a fenced stop ahead of a real ready answers ready" "$out" "ready"
-
-writeln '## Terminal state' 'stop' 'CI failed twice, flake rerun spent.' \
-  >.orchestrator/review/iteration-05.md
 # Per-reviewer report files sit beside the records under a suffixed name, and
 # records are addressed only by their exact iteration-NN.md name - so a report
 # never changes a classification, even one that reads like a record.
@@ -1103,6 +1088,19 @@ assert_first_line "classified as interrupted" "$out" "interrupted"
 assert_contains "and review path still names the missing record" \
   "$("$ORCH" review path)" "/review/iteration-05.md"
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
+
+# A heading quoted inside a code fence is never a heading (#1922): the fenced
+# `ready` in a finding does not answer for the driver's real Terminal state.
+writeln '## Findings' '- Fix the template:' '  ```' '## Terminal state' 'ready' '  ```' '' \
+  '## Terminal state' 'stop - CI failing: build failed' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a fenced Terminal state ahead of the real one leaves it terminal" "$st" 0
+assert_eq "classified from the real heading, not the quoted one" "$out" \
+  "$(printf 'stop\nCI failing: build failed')"
+writeln '## Findings' '- Fix the template:' '```' '## Terminal state' 'stop' '```' '' \
+  '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_eq "a fenced stop ahead of a real ready answers ready" "$out" "ready"
 
 # A record written as ordinary markdown reads the way it was meant (#604):
 # blank lines under the heading, whitespace around the first line, and a stop
