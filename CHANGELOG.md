@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.22
+
+`affected.sh` and `orch_test.sh` now share one section-title rule and one reader of `all.sh`'s suite list (`scripts/test/test_tree.sh`). `affected.sh` rejects an `all.sh` naming a suite with no file, prints its errors with an `affected.sh: ` prefix, and renames `mb`, `base` and `git_q`.
+
 ## 4.43.21
 
 The stdin hook now denies an interpreter run with options only (`python3 -u`, `node --input-type=module`), which reads stdin and hangs, and still allows each interpreter's info options such as `python3 -V` and `node -v`. The Bash hooks' walker moved to its own module.
