@@ -958,11 +958,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               bundle. --state may not be ready-for-agent with
                               a ready-for-human member, nor --category
                               enhancement with a bug member. A member failure
-                              dies naming the members left open and the
-                              --into command that resumes. --into <B>: close
-                              the members (one is enough) into the open
+                              dies naming the members left open (or not
+                              confirmed closed, where the close may have
+                              landed) and the --into command that resumes.
+                              --into <B>: close the members into the open
                               finding-bundle issue B, never editing it, nor
-                              commenting a member twice
+                              commenting a member twice; a member already
+                              closed into B (a trusted "Bundled into #B"
+                              comment) is skipped, the others are checked
+                              as above (one is enough)
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, retire
                               the implement handoff (orch.sh handoff path
