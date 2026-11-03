@@ -101,7 +101,7 @@ run_up() {
 new_case ".env .env.work .env.example"
 run_up
 assert_status "discovery: exits 0" "$status" 0
-assert_eq "discovery: engine line first" "$(printf '%s\n' "$out" | head -n 1)" "engine: test-engine"
+assert_eq "discovery: engine line first" "$(printf '%s\n' "$out" | awk -v n=1 'NR<=n')" "engine: test-engine"
 assert_contains "discovery: default project created" "$out" ".env "
 assert_contains "discovery: default summary" "$out" "(default)  created  orchestrator 9.8.7 @ $commit"
 assert_contains "discovery: work summary" "$out" "(work)  created  orchestrator 9.8.7 @ $commit"

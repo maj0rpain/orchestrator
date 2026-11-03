@@ -454,7 +454,7 @@ assert_status "remove refuses untracked files" "$st" 1
 assert_contains "naming the side checkout" "$out" "$gamma"
 assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
 rm "$gamma/wip.txt"
-echo changed >>"$gamma/$(git -C "$gamma" ls-files | head -1)"
+echo changed >>"$gamma/$(git -C "$gamma" ls-files | awk -v n=1 'NR<=n')"
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses uncommitted changes" "$st" 1
 assert_contains "saying so" "$out" \
@@ -477,7 +477,7 @@ out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses a ticket worktree under a side checkout holding a flow" "$st" 1
 assert_contains "naming it" "$out" "$gamma/.orchestrator/worktrees/t6"
 assert_contains "with ticket-worktree remove as the remedy" "$out" "orch.sh ticket-worktree remove 6"
-assert_eq "its refusal's first line carries one prefix (#1718)" "$(printf '%s\n' "$out" | head -n 1)" \
+assert_eq "its refusal's first line carries one prefix (#1718)" "$(printf '%s\n' "$out" | awk -v n=1 'NR<=n')" \
   "orch: ticket worktrees are left under $gamma - moving them would break git's record of them:"
 assert_eq "and the refusal arrives whole" "$(printf '%s\n' "$out" | tail -n 1)" \
   "     Remove each with orch.sh ticket-worktree remove <n> first."

@@ -272,7 +272,7 @@ assert_eq "stale local keys: only the one local agent clear" "$(grep 'args=agent
 last_removal="$(printf '%s\n' "$err" | grep -n '^orch: removed local ' | tail -1 | cut -d: -f1)"
 marker_at="$(printf '%s\n' "$err" | grep -n '^autopilot-show-marker' | cut -d: -f1)"
 assert_eq "removal lines come before the autopilot show output" "$([ -n "$marker_at" ] && [ "$last_removal" -lt "$marker_at" ] && echo yes)" yes
-agent_show_at="$(grep -n 'args=agent show' "$orch_log" | head -1 | cut -d: -f1)"
+agent_show_at="$(grep -n 'args=agent show' "$orch_log" | awk -v n=1 'NR<=n' | cut -d: -f1)"
 clear_at="$(grep -n 'args=agent clear implementer --model$' "$orch_log" | cut -d: -f1)"
 show_at="$(grep -n 'args=autopilot show' "$orch_log" | cut -d: -f1)"
 watch_at="$(grep -n 'args=autopilot watch' "$orch_log" | cut -d: -f1)"

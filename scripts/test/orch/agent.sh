@@ -248,11 +248,11 @@ assert_eq "Junie lookup combines a global model and a local effort" \
 effort low"
 "$ORCH" agent set reviewer --host junie --model o3 >/dev/null
 assert_eq "a local Junie model wins over the global one" \
-  "$("$ORCH" agent get reviewer --host junie 2>&1 | head -n 1)" "model o3"
+  "$("$ORCH" agent get reviewer --host junie 2>&1 | awk -v n=1 'NR<=n')" "model o3"
 "$ORCH" agent set reviewer --host junie --model inherit >/dev/null
 assert_eq "set --host junie --model inherit clears the local key" "$(jkey local model reviewer)" "<unset>"
 assert_eq "so the global Junie model shows through" \
-  "$("$ORCH" agent get reviewer --host junie 2>&1 | head -n 1)" "model gpt-5"
+  "$("$ORCH" agent get reviewer --host junie 2>&1 | awk -v n=1 'NR<=n')" "model gpt-5"
 
 before="$(git config --local --get-regexp '^orchestrator\.' ; git config --global --get-regexp '^orchestrator\.')"
 out="$("$ORCH" agent set lens --host junie --model "GPT 5" 2>&1)"; st=$?
@@ -338,7 +338,7 @@ git config --local --add orchestrator.model.resolver sonnet
 assert_eq "agent show reads the last of a key written twice" \
   "$("$ORCH" agent show | grep '^resolver')" "resolver model sonnet (local) effort inherit (inherit)"
 assert_eq "agent get reads the last of a key written twice" \
-  "$("$ORCH" agent get resolver 2>&1 | head -n 1)" "model sonnet"
+  "$("$ORCH" agent get resolver 2>&1 | awk -v n=1 'NR<=n')" "model sonnet"
 git config --local --unset-all orchestrator.model.resolver
 printf '[orchestrator "effort"]\n\tresolver\n' >>.git/config
 out="$("$ORCH" agent show | grep '^resolver')"

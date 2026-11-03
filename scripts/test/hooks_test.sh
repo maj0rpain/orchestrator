@@ -1595,8 +1595,10 @@ assert_empty "bash hook: Post without tool_use_id is silent" "$bw_out"
 bw_hook PreToolUse "$NOREPO" "norepo"
 assert_eq "bash hook: Pre outside a repo exits 0" "$bw_rc" 0
 assert_empty "bash hook: Pre outside a repo is silent" "$bw_out"
-bw_out="$(bw_payload PostToolUse "$BW" x | head -c 20 \
+bw_payload PostToolUse "$BW" x >"$BW/payload.json"
+bw_out="$(head -c 20 "$BW/payload.json" \
   | bash "$EDIT_HOOK" 2>&1)"; bw_rc=$?
+rm -f "$BW/payload.json"
 assert_eq "bash hook: truncated stdin exits 0" "$bw_rc" 0
 assert_empty "bash hook: truncated stdin is silent" "$bw_out"
 bw_hook PreToolUse "$BW" "nojq" "$NOSC_NOJQ"

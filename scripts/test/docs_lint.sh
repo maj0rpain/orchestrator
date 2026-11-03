@@ -586,7 +586,7 @@ scan_skill_names() {
     [ -d "$d" ] || continue
     n="$(basename "$d")"
     case "$n" in orch-*) ;; *) echo "skills/$n/: no orch- prefix" ;; esac
-    name="$(sed -n 's/^name: //p' "$d/SKILL.md" 2>/dev/null | head -1)"
+    name="$(sed -n 's/^name: //p' "$d/SKILL.md" 2>/dev/null | awk -v n=1 'NR<=n')"
     [ "$name" = "$n" ] || echo "skills/$n/SKILL.md: name: is '$name', not its directory"
   done
 }
@@ -1116,7 +1116,7 @@ scan_command_routes() {
   for f in "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     body="$(flat_text "$f")"
-    route="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
+    route="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | awk -v n=1 'NR<=n')"
     section="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$route")"
     skill="$(sed 's/^`orchestrator://; s/`.*//' <<<"$route")"
     if [ -z "$skill" ]; then echo "${f#"$r"/}: routes to no orch- skill"
@@ -1397,7 +1397,8 @@ scan_lens_briefs() {
       fi
       # A lens writes its findings to one file (#1115), so it needs Write and
       # a brief section saying which file.
-      grep -m1 '^tools:' "$a" | tr -d '[] ' | tr ',' '\n' | grep -qx 'tools:Write\|Write' ||
+      tools_list="$(grep -m1 '^tools:' "$a" | tr -d '[] ' | tr ',' '\n')"
+      grep -qx 'tools:Write\|Write' <<<"$tools_list" ||
         echo "${a#"$r"/}: has no Write in its tools: list"
       md_section "$a" "## The findings file" >/dev/null ||
         echo "${a#"$r"/}: has no ## The findings file section"
@@ -1488,7 +1489,7 @@ scan_required_headings() {
   while IFS='|' read -r file heading; do
     [ -n "$file" ] || continue
     [ "$file" = "$last" ] || { last="$file"; prev=0; }
-    n="$(grep -nxF -- "$heading" "$r/$file" 2>/dev/null | head -n1 | cut -d: -f1)"
+    n="$(grep -nxF -- "$heading" "$r/$file" 2>/dev/null | awk -v n=1 'NR<=n' | cut -d: -f1)"
     if [ -z "$n" ]; then echo "$file: missing required heading: $heading"
     elif [ "$n" -lt "$prev" ]; then echo "$file: required heading out of order: $heading"
     else prev="$n"; fi
@@ -1578,7 +1579,7 @@ scan_agent_frontmatter() {
   for a in "$r"/agents/*.md; do
     [ -f "$a" ] || continue
     n="$(basename "$a" .md)"
-    name="$(sed -n 's/^name: //p' "$a" | head -1)"
+    name="$(sed -n 's/^name: //p' "$a" | awk -v n=1 'NR<=n')"
     [ "$name" = "$n" ] || echo "agents/$n.md: name: is '$name', not its file"
     t="$(grep -m1 '^tools:' "$a")" || { echo "agents/$n.md: declares no tools:"; continue; }
     case "$t" in
@@ -1787,8 +1788,9 @@ echo "no pipe into a quiet grep or head (#987, #1019)"
 # herestring, `grep -q y <<<"$v"`, written in full before grep runs, and cuts
 # lines with a reader of all its input,
 # `awk -v n=1 'NR<=n'`. Every .sh under scripts/ is scanned, whether or not it
-# sets pipefail, except scripts/test/, whose runners run outside orch.sh; the gh
-# fake is scanned, since orch.sh sources it. A pipe is a single |, never ||. The
+# sets pipefail, test runners included: orch_test.sh's section guard fails a
+# section that writes to stderr, and a killed writer's "Broken pipe" is such a
+# write (#2291). A pipe is a single |, never ||. The
 # quiet flags are -q or -m in any short-flag bundle or as a word, --quiet,
 # --silent and --max-count, anywhere among that grep's words up to the next |,
 # ;, && or ||. head is flagged whatever its flags, when it is the first word
@@ -1805,7 +1807,6 @@ echo "no pipe into a quiet grep or head (#987, #1019)"
 scan_early_exit_pipe() {
   local f
   while IFS= read -r f; do
-    case "$f" in scripts/test/gh_adapter_fake.sh) ;; scripts/test/*) continue ;; esac
     F="$f" awk "$SHELL_CODE_AWK"'
       {
         t = $0; sub(/^[[:space:]]+/, "", t)
@@ -1901,7 +1902,10 @@ flags "a pipe continued with a backslash into grep -q is flagged" \
 flags "a pipe at a line's end into head is flagged" "$out" 'scripts/orch/words.sh:7: head -n 1'
 flags "a quiet grep piped inside \"\$(...)\" is flagged" \
   "$out" 'scripts/orch/words.sh:8: v="$(echo y | grep -q z)"'
-spares "a pipe into grep -q or head elsewhere under scripts/test/ is not flagged" "$out" '^scripts/test/runner\.sh:'
+flags "a pipe into grep -q in a scripts/test/ runner is flagged" \
+  "$out" 'scripts/test/runner.sh:1: echo "$x" | grep -q y'
+flags "a pipe into head in a scripts/test/ runner is flagged" \
+  "$out" 'scripts/test/runner.sh:2: echo "$x" | head -n 1'
 check "no plugin script pipes into a quiet grep or head" "$(scan_early_exit_pipe "$PLUGIN_ROOT")"
 
 # --- Junie planning snippet (ADR-0025) ----------------------------------------
@@ -2031,11 +2035,12 @@ scan_names_phrase() {
   while IFS='|' read -r f h; do
     [ -n "$f" ] || continue
     if [ -z "$h" ]; then
-      flat_text "$r/$f" 2>/dev/null | grep -qF -- "$phrase" \
+      flat="$(flat_text "$r/$f" 2>/dev/null)"
+      grep -qF -- "$phrase" <<<"$flat" \
         || echo "$f: does not name $phrase"
     elif ! body="$(md_section "$r/$f" "$h" 2>/dev/null)"; then
       echo "$f: no $h section"
-    elif ! flat_text <<<"$body" | grep -qF -- "$phrase"; then
+    elif flat="$(flat_text <<<"$body")"; ! grep -qF -- "$phrase" <<<"$flat"; then
       echo "$f: $h does not name $phrase"
     fi
   done <<<"$list"
@@ -2473,7 +2478,8 @@ echo "standalone pass smells (#419)"
 scan_standalone_smells() {
   local r="$1" pass="skills/orch-review-pass/SKILL.md" cmd="commands/review-pass.md"
   scan_names_phrase "$r" "$pass|## Standalone review pass" '--smells'
-  grep -E '^argument-hint:' "$r/$cmd" 2>/dev/null | grep -qF -- '--smells' \
+  hint="$(grep -E '^argument-hint:' "$r/$cmd" 2>/dev/null)"
+  grep -qF -- '--smells' <<<"$hint" \
     || echo "$cmd: argument-hint does not name --smells"
   return 0
 }
@@ -2667,7 +2673,7 @@ open_report_capability='Open a report in the browser'
 scan_improve_tests() {
   local r="$1" cmd="commands/improve-tests.md" step n=0 pairs=""
   if [ ! -f "$r/$cmd" ]; then echo "$cmd: missing"
-  elif ! flat_text "$r/$cmd" | grep -qF '`orchestrator:orch-improve-tests` and follow it'; then
+  elif flat="$(flat_text "$r/$cmd")"; ! grep -qF '`orchestrator:orch-improve-tests` and follow it' <<<"$flat"; then
     echo "$cmd: does not route to orch-improve-tests"
   fi
   while IFS= read -r step; do
@@ -2685,7 +2691,7 @@ scan_report_capability() {
     || echo "$doc: no row for $open_report_capability"
   if ! body="$(md_section "$r/$doc" "### $open_report_capability" 2>/dev/null)"; then
     echo "$doc: no fallback for $open_report_capability"
-  elif ! flat_text <<<"$body" | grep -qiF 'markdown summary'; then
+  elif flat="$(flat_text <<<"$body")"; ! grep -qiF 'markdown summary' <<<"$flat"; then
     echo "$doc: the fallback for $open_report_capability gives no Markdown summary"
   fi
   return 0
@@ -2777,8 +2783,8 @@ scan_review_pass_self_contained() {
   local r="$1" pass="skills/orch-review-pass/SKILL.md" text name desc
   text="$(flat_text "$r/$pass" 2>/dev/null)"
   while IFS= read -r name; do
-    grep -oE '\*\*[^*]+\*\*' <<<"$text" | sed 's/^\*\*//; s/\*\*$//' \
-      | grep -qxE -e "$name" -e "$name:.*" \
+    bold="$(grep -oE '\*\*[^*]+\*\*' <<<"$text" | sed 's/^\*\*//; s/\*\*$//')"
+    grep -qxE -e "$name" -e "$name:.*" <<<"$bold" \
       && echo "$pass: names orch-review's loop-only **$name**"
   done <<<"$review_loop_only"
   names_orch_review <"$r/$pass" 2>/dev/null && echo "$pass: names the orch-review skill"
@@ -2927,7 +2933,8 @@ scan_review_loop_sheds_pass() {
   desc="$(skill_description "$r/$review")"
   grep -qF 'orch-review-pass' <<<"$desc" || echo "$review: description does not name orch-review-pass"
   grep -qF '/orchestrator:review-pass' <<<"$desc" && echo "$review: description names /orchestrator:review-pass"
-  skill_part "$r/$review" body | grep -qF 'orch-review-pass' \
+  part="$(skill_part "$r/$review" body)"
+  grep -qF 'orch-review-pass' <<<"$part" \
     || echo "$review: body does not name orch-review-pass"
   return 0
 }
@@ -3110,7 +3117,7 @@ scan_cli_nouns() {
     [ -n "$noun" ] || continue
     module="scripts/orch/$noun.sh"
     verbs="$(noun_verbs "$r/$module" "$noun")"
-    row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | head -n 1)"
+    row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | awk -v n=1 'NR<=n')"
     if [ -z "$row" ]; then
       if ! grep -qE -- "\`${noun}[\` ]" <<<"$exceptions"; then
         echo "$doc: routed noun $noun is in neither the Current nouns table nor Exceptions"
@@ -3252,7 +3259,8 @@ scan_side_checkout_issue() {
   body="$(md_section "$r/$flow" "### Starting in a side checkout" | flat_text)"
   grep -qF 'claude "/orchestrator:next"' <<<"$body" \
     || echo "$flow: ### Starting in a side checkout does not prefill claude \"/orchestrator:next\""
-  glossary_entry "$r/GLOSSARY.md" "Side checkout" | grep -qF -- "$side_checkout_sentence" \
+  entry="$(glossary_entry "$r/GLOSSARY.md" "Side checkout")"
+  grep -qF -- "$side_checkout_sentence" <<<"$entry" \
     || echo "GLOSSARY.md: the **Side checkout** entry does not carry the recorded-issue sentence"
   return 0
 }
@@ -3508,7 +3516,7 @@ echo "version and CHANGELOG (CLAUDE.md Versioning)"
 # version_field: the version field of the plugin.json on stdin, empty when
 # there is none. The linter needs no jq: plugin.json keeps it on one line.
 version_field() {
-  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | awk -v n=1 'NR<=n'
 }
 # plugin_version <plugin root>: the version field of its plugin.json.
 plugin_version() { version_field <"$1/.claude-plugin/plugin.json" 2>/dev/null; }
@@ -3525,7 +3533,8 @@ scan_changelog() {
     echo "CHANGELOG.md: top entry is '${top:-none}', not '## $v'"
     return 0
   fi
-  md_section "$r/CHANGELOG.md" "## $v" | grep -q '[^[:space:]]' ||
+  entry="$(md_section "$r/CHANGELOG.md" "## $v")"
+  grep -q '[^[:space:]]' <<<"$entry" ||
     echo "CHANGELOG.md: the ## $v entry is empty"
   [ "$(sed 's/[[:space:]]*$//' "$r/CHANGELOG.md" | grep -cxF -- "## $v")" -le 1 ] ||
     echo "CHANGELOG.md: more than one ## $v entry"

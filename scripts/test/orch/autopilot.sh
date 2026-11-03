@@ -199,7 +199,7 @@ assert_status "a failed label add dies" "$st" 1
 assert_contains "naming the comment posted" "$out" "posted the 01-plan comment on issue #7"
 assert_contains "and that the issue is unlabelled, so no watcher picks it up" "$out" "the issue is unlabelled, so no watcher picks it up"
 assert_eq "leaving the issue without a phase label" "$(fake_labels_of 7)" "ready-for-agent "
-assert_eq "the comment is there" "$(fake_comments_of 7 | head -1)" "<!-- orch:handoff 01-plan -->"
+assert_eq "the comment is there" "$(fake_comments_of 7 | awk -v n=1 'NR<=n')" "<!-- orch:handoff 01-plan -->"
 fake_unfail
 
 # a re-run on an unlabelled issue posts a newer plan comment, then labels last
@@ -232,7 +232,7 @@ fake_claim_seed 7
 q="$(mktemp)"; printf '1. Keep it? Recommended: yes\n\nReply like `1: A`.\n' >"$q"
 ORCH_AUTOPILOT=1 "$ORCH" autopilot ask spec "$q" >/dev/null 2>&1; st=$?
 assert_status "autopilot ask succeeds" "$st" 0
-assert_eq "the question is tagged and mentions the handle" "$(fake_comments_of 7 | head -2 | tr '\n' ' ')" "<!-- orch:question spec --> @o "
+assert_eq "the question is tagged and mentions the handle" "$(fake_comments_of 7 | awk -v n=2 'NR<=n' | tr '\n' ' ')" "<!-- orch:question spec --> @o "
 assert_contains "carrying the question" "$(fake_comments_of 7)" "1. Keep it?"
 assert_contains "and the reply format" "$(fake_comments_of 7)" 'Reply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).'
 assert_eq "adding needs-human, dropping orch:running" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
@@ -439,7 +439,7 @@ pickup_titled() { # <issue> <title>: ticks over the issue; prints its side check
   printf '%s\n' "$1" >"$launcher_dir/release"
   local before side; before="$(ls "$top/.orchestrator/checkouts" 2>/dev/null)"
   "$ORCH" autopilot tick >/dev/null 2>&1
-  side="$(comm -13 <(printf '%s\n' "$before") <(ls "$top/.orchestrator/checkouts") | head -1)"
+  side="$(comm -13 <(printf '%s\n' "$before") <(ls "$top/.orchestrator/checkouts") | awk -v n=1 'NR<=n')"
   [ -n "$side" ] || { echo none; return; }
   side="$top/.orchestrator/checkouts/$side"
   printf '%s %s\n' "$(basename "$side")" "$(cd "$side" && "$ORCH" state get slug)"
@@ -798,7 +798,8 @@ watch_pid=$!
 for _ in $(seq 1 60); do [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
 # succeeds while another process's liveness_watch_begin is refused naming the
 # watch's pid, i.e. while it is the clone's live watch
-sourced_orch liveness_watch_begin 2>&1 | grep -q "autopilot watch (pid $watch_pid)"; st=$?
+refusal="$(sourced_orch liveness_watch_begin 2>&1)"
+grep -q "autopilot watch (pid $watch_pid)" <<<"$refusal"; st=$?
 assert_status "a dead pidfile is replaced by the new watch" "$st" 0
 kill -0 "$watch_pid" 2>/dev/null; st=$?
 assert_status "watch survives a failed tick" "$st" 0
@@ -903,7 +904,7 @@ fake_issue_relabel 7 orch:spec ready-for-agent orch:running
 limit_run 7 >/dev/null
 assert_eq "a first limit stop leaves orch:limited, not needs-human" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 assert_eq "and releases the claim" "$(fake_claim_held 7)" free
-assert_eq "its comment opens with the marker" "$(fake_last_comment_of 7 | head -n 1)" "<!-- orch:limited spec -->"
+assert_eq "its comment opens with the marker" "$(fake_last_comment_of 7 | awk -v n=1 'NR<=n')" "<!-- orch:limited spec -->"
 assert_contains "gives the reset time" "$(fake_comments_of 7)" "$lim_iso"
 assert_eq "and writes the limit file" "$(cat "$limit_file")" "$lim_iso"
 
