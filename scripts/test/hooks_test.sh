@@ -771,12 +771,13 @@ echo
 echo "hook-paste-guard (#1287, #1350)"
 
 # The guard refuses every AskUserQuestion after an arming `spec-review check`
-# pass line, until the next `spec-review apply` or human message, unless one
-# assistant text block written after the pass line holds every non-blank line
-# of the view (hook-paste-guard.sh's header). Fixture transcripts are Claude Code's JSONL
-# shape: one entry per content block, a tool result in a user entry, a
-# tool_use in an assistant entry. ORCH_PASTE_GUARD_WAIT=0 drops the re-read
-# window, so a refused case returns at once; the window's own cases set it.
+# pass line, until the next `spec-review apply` or human message, unless
+# one assistant text block written after the pass line holds every non-blank
+# line of the view (hook-paste-guard.sh's header). Fixture transcripts are
+# Claude Code's JSONL shape: one entry per content block, a tool result in
+# a user entry, a tool_use in an assistant entry. ORCH_PASTE_GUARD_WAIT=0
+# drops the re-read window, so a refused case returns at once; the window's
+# own cases set it.
 export ORCH_PASTE_GUARD_WAIT=0
 PG="$(mktemp -d)"
 mkdir "$PG/batch" "$PG/full" "$PG/tickets" "$PG/gone" "$PG/empty"
