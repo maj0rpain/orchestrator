@@ -2321,7 +2321,7 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
 undescribed=""
 for name in base_branch base_source section_body review_budget float_add \
   require_state ticket_worktree_path fake_online orch_gh_failing; do
-  printf '%s\n' "$index_default"$'\n'"$out" | grep -qE "^$name"$'\t''[^-]' \
+  grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"
 done
 assert_eq "each of the nine newly commented helpers prints a description" "$undescribed" ""

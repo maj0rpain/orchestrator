@@ -299,7 +299,7 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   if [ "${#orch_branches[@]}" -gt 1 ]; then
     orch_lines=()
     for orch_branch in "${orch_branches[@]}"; do
-      printf '%s\n' "$orch_titles" | grep -qiE -- "$orch_branch" ||
+      grep -qiE -- "$orch_branch" <<<"$orch_titles" ||
         orch_lines+=("orch_test.sh: ORCH_TEST_ONLY branch '$orch_branch' matches no section")
     done
     if [ "${#orch_lines[@]}" -gt 0 ]; then
