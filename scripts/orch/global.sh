@@ -696,10 +696,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               with no entries, fails with an orch: message
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
-  review rerun <pr>           rerun the failed jobs of the Actions run behind
-                              the PR's first failed or cancelled check; prints
-                              the run id. Exits 1 when that check is no Actions
-                              run, 2 on any other failure
+  review rerun <pr>           rerun the failed jobs of every Actions run
+                              behind the failing checks review ci counts;
+                              prints each run id. Exits 1 when a failing check
+                              is no Actions run, 2 on any other failure
   review ready                mark the draft PR ready and set the phase to done,
                               refusing (1) over failed or unreadable checks,
                               printing the PR number; in a side checkout, a

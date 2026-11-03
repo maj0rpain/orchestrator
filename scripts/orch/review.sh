@@ -40,8 +40,17 @@ review_budget() {
 # backwards is what would make the loop declare a CI-having repo CI-less, or
 # mark a PR ready over checks nobody read.
 ci_probe() {
-  local pr="$1" scope="$2" out err failed="" pending="" line bucket name
-  if ! capture out err adapter_pr_checks "$pr" "$scope"; then
+  local out err rc=0
+  capture out err adapter_pr_checks "$1" "$2" || rc=$?
+  ci_classify "$rc" "$out" "$err"
+}
+
+# ci_classify <rc> <checks> <stderr>: ci_probe's classification of one
+# adapter_pr_checks answer - its status, its TSV and its stderr - so a caller
+# that read the checks itself (ci_counted) classifies them the same way.
+ci_classify() {
+  local rc="$1" out="$2" err="$3" failed="" pending="" line bucket name
+  if [ "$rc" -ne 0 ]; then
     note unreachable
     note "      $(gh_reason "$err")"
     return 0
@@ -66,14 +75,29 @@ ci_probe() {
   note green
 }
 
+# ci_counted <out-var> <err-var> <pr>: the one owner of which checks count for
+# a PR - the required checks where any are reported, else every check. It sets
+# <out-var> to the checks in adapter_pr_checks's TSV shape and <err-var> to the
+# stderr of the last read it made (gh's reason on a failure, gh's no-checks
+# line on an empty answer), and returns that read's status, so a failed read
+# stays apart from an empty one. It has no grace: callers that wait do so
+# before calling it. Runs in the current shell, as capture does.
+ci_counted() {
+  local _cc_rc=0
+  capture "$1" "$2" adapter_pr_checks "$3" required || _cc_rc=$?
+  [ "$_cc_rc" -eq 0 ] || return "$_cc_rc"
+  [ -z "${!1}" ] || return 0
+  capture "$1" "$2" adapter_pr_checks "$3" all
+}
+
 # ci_ready_gate [--exit 2] [--hint <text>] <pr>: the check before a PR is
-# marked ready. One look, no grace and no polling, through ci_probe: the
+# marked ready. One look, no grace and no polling, through ci_counted: the
 # required checks first, every check when none are required. It only refuses;
 # `review ci` keeps the waiting. Failed and unreadable checks die (through
 # die2 under --exit 2, with the hint appended); pending ones note it on stderr
 # and return; green or none return silently.
 ci_ready_gate() {
-  local opts=() pr res verdict detail checks
+  local opts=() pr res verdict detail checks cout cerr crc=0
   while [ $# -gt 1 ]; do
     case "$1" in
       --exit|--hint) die_opt_check ci_ready_gate $# "$@"; opts+=("$1" "$2"); shift 2 ;;
@@ -81,8 +105,8 @@ ci_ready_gate() {
     esac
   done
   pr="$1"
-  res="$(ci_probe "$pr" required)"
-  [ "${res%%$'\n'*}" != none ] || res="$(ci_probe "$pr" all)"
+  ci_counted cout cerr "$pr" || crc=$?
+  res="$(ci_classify "$crc" "$cout" "$cerr")"
   lines_split "$res" verdict detail
   # ci_probe indents each detail line; the message joins them, comma-separated.
   checks="$(list_join "$(sed 's/^ *//' <<<"$detail")")"
@@ -235,51 +259,63 @@ ci_ref_unchecked() {
   [ "$(adapter_commit_has_statuses "$1" 2>/dev/null)" = no ]
 }
 
-# The flow's flake rerun (issue #525): the failed jobs of the GitHub Actions
-# run behind the PR's first failed or cancelled check, whose id is the
-# `runs/<id>` segment of that check's link. `gh run rerun` with no id opens a
+# The flow's flake rerun (issue #525): the failed jobs of every distinct
+# GitHub Actions run behind the failing counted checks - the checks `review ci`
+# reads (ci_counted: the required checks where any are reported, else every
+# check), every failed or cancelled one, not only the first. A run's id is the
+# `runs/<id>` segment of a check's link. `gh run rerun` with no id opens a
 # prompt a non-interactive caller cannot answer, so the id is always passed.
-# Exit 0 means the rerun started, and is the only answer that spends the
-# flow's rerun. Exit 1 means the first failing check is no Actions run - an
-# outside CI's status - so there is nothing to rerun. Everything else - a usage
-# error, no repo, a GitHub that cannot be read, no failing check, a refused
-# rerun - goes through die2. The repo is resolved here rather than left to the
-# guard, whose death exits 1 and would read as "nothing to rerun".
+# Every failing check's link is verified before any rerun starts, so exit 1
+# never leaves a rerun half started. Each run is rerun once, in the order first
+# met, and its id printed as its rerun starts. Exit 0 means every rerun
+# started, and is the only answer that spends the flow's rerun. Exit 1 means a
+# failing check is no Actions run - an outside CI's status - so no rerun could
+# make CI green, and nothing is rerun. Everything else - a usage error, no
+# repo, a GitHub that cannot be read, no failing check, a refused rerun - goes
+# through die2. The repo is resolved here rather than left to the guard, whose
+# death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out err rc=0 link="" run name="" line bucket no_checks
+  local pr="${1:-}" out err rc=0 link run name line bucket no_checks
+  local runs=() r bad=0 seen=" " failing=0
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
   # gh's stderr is kept apart from the checks, so its line - a failure's
   # reason, or the "no checks" answer naming the branch - is what the death
   # message carries.
-  capture out err adapter_pr_checks "$pr" all || rc=$?
+  ci_counted out err "$pr" || rc=$?
   [ "$rc" -eq 0 ] || gh_die --exit 2 "read the checks of PR #$pr" "$err"
   # gh's "no checks" answer, not a failure reason, so not gh_reason's to cut.
   if [ -z "$out" ]; then
     no_checks="${err%%$'\n'*}"
     die2 "PR #$pr has no checks to rerun: ${no_checks:-no checks reported}"
   fi
-  # The first failed or cancelled check's name and link, split by tsv_split
-  # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
-  # IFS whitespace. No failed check leaves both empty.
+  # Each failed or cancelled check's name and link, split by tsv_split so an
+  # empty name survives: IFS=$'\t' read would collapse it, a tab being IFS
+  # whitespace.
   while IFS= read -r line; do
     tsv_split "$line" bucket name link
-    case "$bucket" in fail|cancel) break ;; esac
-    name=""; link=""
+    case "$bucket" in fail|cancel) ;; *) continue ;; esac
+    failing=1
+    case "$link" in
+      */actions/runs/[0-9]*) ;;
+      *) warn "check $name on PR #$pr is not a GitHub Actions run - nothing to rerun"
+         bad=1; continue ;;
+    esac
+    run="${link##*/actions/runs/}"   # N/job/M -> N
+    run="${run%%/*}"
+    case "$run" in
+      ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; bad=1; continue ;;
+    esac
+    case "$seen" in *" $run "*) ;; *) seen+="$run "; runs+=("$run") ;; esac
   done <<<"$out"
-  [ -n "$link" ] || die2 "PR #$pr has no failed or cancelled check to rerun"
-  case "$link" in
-    */actions/runs/[0-9]*) ;;
-    *) warn "check $name on PR #$pr is not a GitHub Actions run - nothing to rerun"
-       return 1 ;;
-  esac
-  run="${link##*/actions/runs/}"   # N/job/M -> N
-  run="${run%%/*}"
-  case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
-  gh_or_die --exit 2 "rerun the failed jobs of Actions run $run" \
-    adapter_run_rerun "$run" >/dev/null
-  note "$run"
+  [ "$failing" -eq 1 ] || die2 "PR #$pr has no failed or cancelled check to rerun"
+  [ "$bad" -eq 0 ] || return 1
+  for r in "${runs[@]}"; do
+    gh_or_die --exit 2 "rerun the failed jobs of Actions run $r" \
+      adapter_run_rerun "$r" >/dev/null
+    note "$r"
+  done
 }
 
 # review_file <sev> <title> <flag> <value> ...: files a finding as a GitHub
@@ -716,7 +752,7 @@ cmd_review() {
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
       local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
-      local commits="" no_ci=0
+      local commits="" no_ci=0 cout cerr crc
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
       require_pr pr
       started="$(date +%s)"
@@ -748,15 +784,18 @@ cmd_review() {
         # widen to every check on the commit. Widening sooner is how an
         # unrelated green check gets mistaken for a required one that never
         # arrived, and the PR marked ready over it.
-        res="$(ci_probe "$pr" required)"
-        verdict="${res%%$'\n'*}"
-        if [ "$verdict" = none ]; then
-          if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
-            ci_tick; continue
-          fi
-          res="$(ci_probe "$pr" all)"
-          verdict="${res%%$'\n'*}"
+        # While the grace remains a pass probes the required checks alone and
+        # waits on none; once it is spent or skipped, the pass reads through
+        # ci_counted, which widens to every check.
+        if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
+          res="$(ci_probe "$pr" required)"
+          if [ "${res%%$'\n'*}" = none ]; then ci_tick; continue; fi
+        else
+          crc=0
+          ci_counted cout cerr "$pr" || crc=$?
+          res="$(ci_classify "$crc" "$cout" "$cerr")"
         fi
+        verdict="${res%%$'\n'*}"
         case "$verdict" in
           green)       printf '%s\n' "$res"; return 0 ;;
           # Reported, not fixed: which failure is worth a flake rerun is a

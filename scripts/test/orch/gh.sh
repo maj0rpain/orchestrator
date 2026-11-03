@@ -47,6 +47,8 @@ pinned_replies() {
   gh_reply 0 $'main\n' '' repo view "$1" --json defaultBranchRef --jq .defaultBranchRef.name
   gh_reply 0 '[{"bucket":"fail","name":"build","link":"https://github.com/x/y/actions/runs/4242/job/1"}]' '' \
     pr checks 7 --json bucket,name,link
+  gh_reply 0 '[{"bucket":"fail","name":"build","link":"https://github.com/x/y/actions/runs/4242/job/1"}]' '' \
+    pr checks 7 --required --json bucket,name,link
   gh_reply 0 '' '' run rerun 4242 --failed
 }
 pinned_replies fork/widgets
