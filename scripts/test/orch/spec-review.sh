@@ -2461,12 +2461,25 @@ d="$(sre_dir "$(sre_quote_item '\@@ note <text>')")"
 printf '@@ none\n' >"$d/lens-fidelity.md"
 src "$d"
 assert_status "an escaped @@ quote line: check passes" "$st" 0
+src "$d" --full 1
+assert_contains "and the view quotes it unescaped" "$out" '> @@ note <text>'
+assert_not_contains "without the backslash" "$out" '\@@'
 d="$(sre_dir "$(sre_quote_item '@@ note <text>')")"
 printf '@@ none\n' >"$d/lens-fidelity.md"
 src "$d"
 assert_status "an unescaped @@ note in a quote: refused" "$st" 1
 assert_contains "with the existing message" "$err" "the quote is empty"
 assert_not_contains "and no escape hint" "$err" '\@@'
+# An unescaped @@ note <text> content line in a block names its line and
+# carries the escape hint.
+d="$(sre_dir "$sre_item"$'\n@@ anchor\n@@ note <text>\n@@ replace\nNew.\n@@ end')"
+src "$d"
+assert_status "an unescaped @@ note inside an anchor: refused" "$st" 1
+assert_contains "naming its line and the hint" "$err" "batch.md line 10: expected @@ replace to end the anchor begun on line 9, got '@@ note <text>' - a body line starting with @@ is written \\@@"
+d="$(sre_dir "$sre_item"$'\n@@ anchor\nAlpha line.\n@@ replace\n@@ note <text>\n@@ end')"
+src "$d"
+assert_status "an unescaped @@ note inside a replacement: refused" "$st" 1
+assert_contains "naming its line and the hint" "$err" "batch.md line 12: expected @@ end to end the replacement begun on line 11, got '@@ note <text>' - a body line starting with @@ is written \\@@"
 
 # Discoverability.
 out="$("$ORCH" spec-review wipe 2>&1)"
@@ -2898,6 +2911,14 @@ assert_contains "the view shows the unescaped replacement" "$out" "@@ remark <te
 d="$(srct_escaped_dir $'@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end')"
 srct "$d"
 assert_status "an escaped tickets.md anchor with an empty replacement: check passes" "$st" 0
+d="$(srct_escaped_dir $'@@ anchor\n@@ note <text>\n@@ replace\nNew.\n@@ end')"
+srct "$d"
+assert_status "an unescaped @@ note inside a tickets.md anchor: refused" "$st" 1
+assert_contains "naming its line and the hint" "$err" "tickets.md line 5: expected @@ replace to end the anchor begun on line 4, got '@@ note <text>' - a body line starting with @@ is written \\@@"
+d="$(srct_escaped_dir $'@@ anchor\nAlpha.\n@@ replace\n@@ note <text>\n@@ end')"
+srct "$d"
+assert_status "an unescaped @@ note inside a tickets.md replacement: refused" "$st" 1
+assert_contains "naming its line and the hint" "$err" "tickets.md line 7: expected @@ end to end the replacement begun on line 6, got '@@ note <text>' - a body line starting with @@ is written \\@@"
 
 # --- spec-review wait (#1183) -------------------------------------------------
 # The session running a spec review starts its lenses and waits for all of them
