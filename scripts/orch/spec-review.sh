@@ -1501,7 +1501,7 @@ spec_review_ticket_item_offline() {
 # message's prefix, up to and including its colon.
 spec_review_ticket_named_check() {
   local where="$1" t="$2" want="$3" listing="$4" issue="$5" state
-  state="$(printf '%s\n' "$listing" | awk -F'\t' -v t="$t" '$1 == t { print $2 }')"
+  state="$(ticket_listing_state "$listing" "$t")"
   [ -n "$state" ] || die "$where #$t is not a ticket of #$issue's breakdown - nothing written"
   case "$want:$state" in
     OPEN:CLOSED) die "$where #$t is a closed ticket of #$issue's breakdown - nothing written" ;;
