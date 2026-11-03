@@ -64,6 +64,10 @@ format:
 @@ none-affected                                         alone in the file: no open ticket affected
 ```
 
+An anchor or replacement line that is `@@` alone or begins with `@@ ` is
+written with one extra leading `\` (`\@@ note <text>` reads as
+`@@ note <text>`); a line of one or more `\` then `@@` loses exactly one.
+
 A `ticket` item's anchor is text in `<dir>/ticket-<t>.md`; a `section`
 item's is text in the body as the accepted edits left it.
 
