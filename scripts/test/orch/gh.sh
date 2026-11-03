@@ -606,6 +606,10 @@ gh_reply 0 $'58\ttrue\n57\tfalse\n' '' pr list --state open --limit 1000 --json 
 out="$(contract adapter_prs_open_all 2>&1)"; st=$?
 assert_status "open PRs: lists every open PR" "$st" 0
 assert_eq "newest first, each with its fork flag, unfiltered" "$out" "$(printf '58\ttrue\n57\tfalse')"
+gh_reply 0 $'58\torch/9-x\tCONFLICTING\ttrue\n57\torch/8-y\tUNKNOWN\tfalse\n' '' pr list --state open --limit 1000 --json number,headRefName,mergeable,isCrossRepository --jq '.[] | "\(.number)\t\(.headRefName)\t\(.mergeable)\t\(.isCrossRepository)"'
+out="$(contract adapter_prs_open_mergeability 2>&1)"; st=$?
+assert_status "open PRs with mergeability: lists them" "$st" 0
+assert_eq "newest first, each with head, mergeability and fork flag, unfiltered" "$out" "$(printf '58\torch/9-x\tCONFLICTING\ttrue\n57\torch/8-y\tUNKNOWN\tfalse')"
 gh_reply 0 $'diff --git a/w b/w\n+widget\n' '' pr diff 57
 out="$(contract adapter_pr_diff 57 2>&1)"; st=$?
 assert_status "pr diff: reads the diff" "$st" 0

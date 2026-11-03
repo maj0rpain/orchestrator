@@ -29,6 +29,9 @@ local_fields() {
   e="$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s)"
   printf '%s %s\n' "$e" "$(date -d "@$e" '+%H %a' 2>/dev/null || date -r "$e" '+%H %a')"
 }
+# fake_pr_mergeable <n> <value>: seeds PR #n's mergeability - MERGEABLE,
+# CONFLICTING or UNKNOWN, which a PR never seeded reports.
+fake_pr_mergeable() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/mergeable"; }
 # fake_issue_drop <n>...: each issue is gone from the store.
 fake_issue_drop() { local n; for n in "$@"; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done; }
 # fake_claim_release <issue>: the store holds no claim on it.
@@ -1820,3 +1823,114 @@ out="$("$ORCH" autopilot questions 2>&1)"
 assert_contains "a done issue with orch:sync and needs-human is listed as sync" "$out" "20	stop	sync"
 assert_contains "a done issue whose newest stop is a sync stop is listed as sync" "$out" "21	stop	sync"
 assert_not_contains "a done issue needs-human for another reason is omitted" "$out" "22	"
+
+# --- autopilot tick: sync request auto-detection (#2325) -------------
+# A tick files a sync request on an open orch:done issue whose open PR GitHub
+# reports as CONFLICTING.
+echo
+echo "autopilot tick sync detection"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_done_pr() { # <issue> <state> <mergeable> [head]: issue #n at orch:done and its PR #(100+n)
+  fake_issue "$1" open orch:done
+  fake_pr "$((100 + $1))" "$2" "${4:-orch/$1-widget}" main
+  fake_pr_mergeable "$((100 + $1))" "$3"
+}
+fake_done_pr 30 open CONFLICTING
+fake_done_pr 31 open UNKNOWN
+fake_done_pr 32 open MERGEABLE
+fake_done_pr 33 closed CONFLICTING
+fake_done_pr 34 merged CONFLICTING
+fake_done_pr 35 open CONFLICTING
+fake_issue 35 open orch:done orch:sync
+fake_done_pr 36 open CONFLICTING
+fake_issue 36 open orch:done needs-human
+fake_done_pr 37 open CONFLICTING
+fake_issue 37 open orch:done orch:running
+fake_issue 38 open orch:done
+fake_pr 138 open orch/380-other main
+fake_pr_mergeable 138 CONFLICTING
+fake_done_pr 39 open CONFLICTING
+fake_pr 139 open orch/39-widget main
+fake_pr_cross 139
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with conflicting done flows succeeds" "$st" 0
+assert_eq "a CONFLICTING open PR gets orch:sync, with no side checkout" "$(fake_labels_of 30)" "orch:done orch:sync "
+assert_eq "an UNKNOWN PR is left alone" "$(fake_labels_of 31)" "orch:done "
+assert_eq "a MERGEABLE PR is left alone" "$(fake_labels_of 32)" "orch:done "
+assert_eq "a closed PR is left alone" "$(fake_labels_of 33)" "orch:done "
+assert_eq "a merged PR is left alone" "$(fake_labels_of 34)" "orch:done "
+assert_eq "an issue already labelled orch:sync is left alone" "$(fake_labels_of 35)" "orch:done orch:sync "
+assert_eq "an issue labelled needs-human is left alone" "$(fake_labels_of 36)" "needs-human orch:done "
+assert_eq "an issue labelled orch:running is left alone" "$(fake_labels_of 37)" "orch:done orch:running "
+assert_eq "a branch of another issue sharing the number prefix does not match" "$(fake_labels_of 38)" "orch:done "
+assert_eq "a fork PR is not the issue's PR" "$(fake_labels_of 39)" "orch:done "
+assert_not_contains "no PR-less issue is warned about" "$out" "issue #38"
+assert_eq "no session starts for a sync request yet unpickable" "$(tick_calls)" "0"
+
+# several open PRs: warned about and skipped
+fake_done_pr 40 open CONFLICTING
+fake_pr 140 open orch/40-a main; fake_pr_mergeable 140 CONFLICTING
+fake_pr 240 open orch/40-b main; fake_pr_mergeable 240 CONFLICTING
+out="$("$ORCH" autopilot tick 2>&1)"
+assert_eq "an issue with two open PRs gets no orch:sync" "$(fake_labels_of 40)" "orch:done "
+assert_contains "and is warned about" "$out" "issue #40 has 2 open PRs"
+
+# one failing label write skips that issue only
+fake_issue_drop 40
+for n in 31 32 33 34 35 36 37 38 39; do fake_issue_drop "$n"; done
+fake_done_pr 30 open CONFLICTING
+fake_done_pr 41 open CONFLICTING
+fake_fail_after adapter_issue_relabel 1 "HTTP 500"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing label write does not stop the tick" "$st" 0
+assert_contains "it warns, naming the issue and gh's reason" "$out" "could not add orch:sync to issue #"
+assert_contains "and the reason" "$out" "HTTP 500"
+assert_eq "exactly one of the two issues got the label" "$(( $(fake_labels_of 30 | grep -c sync) + $(fake_labels_of 41 | grep -c sync) ))" "1"
+fake_unfail
+
+# a failing PR read warns and skips
+fake_issue 30 open orch:done
+fake_fail adapter_prs_open_mergeability "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing PR read does not stop the tick" "$st" 0
+assert_contains "it warns, naming the issue" "$out" "could not read the PR of issue #30: HTTP 502"
+assert_eq "and files nothing" "$(fake_labels_of 30)" "orch:done "
+fake_unfail
+
+# auto-sync false adds nothing
+git config orchestrator.autopilot.auto-sync false
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with auto-sync false a tick adds no orch:sync" "$(fake_labels_of 30)" "orch:done "
+git config --unset-all orchestrator.autopilot.auto-sync
+
+# a limit pause reads no PR and adds no label
+fake_fail adapter_prs_open_mergeability "HTTP 502"
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of $(( $(date +%s) + 3600 )))" >"$top/.orchestrator/autopilot/limit"
+out="$("$ORCH" autopilot tick 2>&1)"
+assert_eq "while a limit pause holds, no orch:sync is added" "$(fake_labels_of 30)" "orch:done "
+assert_not_contains "and no PR is read" "$out" "could not read the PR"
+rm -f "$top/.orchestrator/autopilot/limit"
+fake_unfail
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "once the pause has passed the label is added" "$(fake_labels_of 30)" "orch:done orch:sync "
+
+# the setting
+git config orchestrator.autopilot.auto-sync maybe
+fake_fail adapter_prs_open_mergeability "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with a bad auto-sync dies" "$st" 1
+assert_contains "naming key and value" "$out" "orchestrator.autopilot.auto-sync is maybe"
+assert_not_contains "before any PR is read" "$out" "could not read the PR"
+out="$("$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "show dies on a bad auto-sync" "$st" 1
+assert_contains "naming key and value" "$out" "orchestrator.autopilot.auto-sync is maybe"
+git config --unset-all orchestrator.autopilot.auto-sync
+fake_unfail
+out="$("$ORCH" autopilot show 2>&1)"
+assert_contains "show lists auto-sync with its default" "$out" "orchestrator.autopilot.auto-sync true (default)"
+git config orchestrator.autopilot.auto-sync false
+out="$("$ORCH" autopilot show 2>&1)"
+assert_contains "a set auto-sync shows with its source" "$out" "orchestrator.autopilot.auto-sync false (local)"
+restore_suite_env

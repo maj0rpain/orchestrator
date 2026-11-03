@@ -55,6 +55,12 @@ autopilot_setting() {
       [ "$AUTOPILOT_SOURCE" != unset ] || return 0
       agent_allowed "$name" "$AUTOPILOT_VALUE" ||
         die "$key is $AUTOPILOT_VALUE - not an allowed $name (want $(agent_values "$name"))" ;;
+    auto-sync)
+      if [ "$AUTOPILOT_SOURCE" = unset ]; then AUTOPILOT_VALUE=true; AUTOPILOT_SOURCE=default; fi
+      case "$AUTOPILOT_VALUE" in
+        true|false) ;;
+        *) die "$key is $AUTOPILOT_VALUE - it must be true or false (git config $key true|false)" ;;
+      esac ;;
     cap|rounds|budget)
       case "$name" in
         cap) def="$AUTOPILOT_CAP_DEFAULT" ;;
@@ -73,7 +79,7 @@ autopilot_setting() {
 # range, naming key and value.
 autopilot_show() {
   local name
-  for name in permission-mode cap handle rounds budget model effort; do
+  for name in permission-mode cap handle rounds budget model effort auto-sync; do
     autopilot_setting "$name"
     printf 'orchestrator.autopilot.%s %s (%s)\n' "$name" "${AUTOPILOT_VALUE:-(none)}" "$AUTOPILOT_SOURCE"
   done
@@ -708,17 +714,62 @@ autopilot_candidates() {
   printf '%s' "$all" | grep -v '^$' | sort -nu || true
 }
 
+# autopilot_sync_detect: the sync request auto-detection. Reads the repo's open
+# PRs once, then files a sync request, through the Standing transition, on
+# every open orch:done issue carrying none of orch:sync, needs-human and
+# orch:running whose one open same-repository PR (head branch `orch/<issue>-`)
+# is CONFLICTING. An issue with no such PR is skipped silently, one with
+# several warned about; a failed read or write warns and skips that issue only.
+autopilot_sync_detect() {
+  local out prs="" gh_err issue pr_lines head_prefix count done_label reason=""
+  done_label="$(standing_phase_label "done")"
+  capture out gh_err adapter_issues_labelled "$done_label" || {
+    warn "could not list the issues labelled $done_label: $(gh_reason "$gh_err") - no sync detection this tick"
+    return 0
+  }
+  [ -n "$out" ] || return 0
+  if capture prs gh_err adapter_prs_open_mergeability; then
+    prs="$(printf '%s\n' "$prs" | trust_filter_prs "the open PRs" 2>/dev/null)" || prs=""
+  else
+    reason="$(gh_reason "$gh_err")"
+  fi
+  while IFS= read -r issue; do
+    [ -n "$issue" ] || continue
+    standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - sync detection skips it"; continue; }
+    [ "$STANDING_STATE" = OPEN ] || continue
+    label_listed "$STANDING_LABELS" "$done_label" || continue
+    [ "$STANDING_SYNC" = 0 ] && [ "$STANDING_HUMAN" = 0 ] && [ "$STANDING_RUNNING" = 0 ] || continue
+    if [ -n "$reason" ]; then
+      warn "could not read the PR of issue #$issue: $reason - sync detection skips it"
+      continue
+    fi
+    head_prefix="$(branch_name_flow "$issue" "")"
+    pr_lines="$(printf '%s\n' "$prs" | awk -F'\t' -v p="$head_prefix" 'index($2, p) == 1')"
+    count="$(printf '%s' "$pr_lines" | grep -c . || true)"
+    [ "$count" -ne 0 ] || continue
+    if [ "$count" -gt 1 ]; then
+      warn "issue #$issue has $count open PRs from a branch starting $head_prefix - sync detection skips it"
+      continue
+    fi
+    [ "$(printf '%s' "$pr_lines" | cut -f3)" = CONFLICTING ] || continue
+    standing_sync_request "$issue" ||
+      warn "could not add $STANDING_SYNC_LABEL to issue #$issue: $STANDING_REASON - sync detection skips it"
+  done <<<"$out"
+}
+
 # autopilot_tick: one pass - labels, stale claims, then pickup (see the spec's
 # One tick). A claim create that fails for a reason other than a lost race
 # stops the tick, naming it.
 autopilot_tick() {
-  local main_root cap count issue gh_err phase rc candidates limited_arg
+  local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
+  autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale
   if autopilot_pause_until "$main_root"; then return 0; fi
+  if [ "$auto_sync" = true ]; then autopilot_sync_detect; fi
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
   candidates="$(autopilot_candidates)"
