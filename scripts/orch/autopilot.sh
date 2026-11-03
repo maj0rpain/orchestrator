@@ -218,6 +218,21 @@ autopilot_resume() {
   standing_resume "$issue" || gh_die "remove $STANDING_HUMAN_LABEL from issue #$issue" "$STANDING_REASON"
 }
 
+# autopilot_sync <issue>: files a sync request on an open orch:done issue,
+# through the Standing sync request transition - refused, with an `orch: `
+# message, for an issue that is closed, not at orch:done or already carrying
+# orch:sync.
+autopilot_sync() {
+  local issue="$1"
+  is_positive_int "$issue" || die "not an issue number: $issue"
+  standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
+  [ "$STANDING_STATE" = OPEN ] || die "issue #$issue is closed"
+  label_listed "$STANDING_LABELS" "$(standing_phase_label "done")" ||
+    die "issue #$issue is not at $(standing_phase_label "done") - a sync request needs a done flow"
+  [ "$STANDING_SYNC" = 0 ] || die "issue #$issue already carries $STANDING_SYNC_LABEL"
+  standing_sync_request "$issue" || gh_die "add $STANDING_SYNC_LABEL to issue #$issue" "$STANDING_REASON"
+}
+
 # autopilot_reply <issue> <file>: posts <file> as a comment on the issue, then
 # removes needs-human - refused unless the label is still on and no comment
 # follows the issue's newest question comment.
@@ -980,10 +995,14 @@ cmd_autopilot() {
       [ $# -eq 1 ] || die "usage: orch.sh autopilot resume <issue>"
       autopilot_resume "$1"
       ;;
+    sync)
+      [ $# -eq 1 ] || die "usage: orch.sh autopilot sync <issue>"
+      autopilot_sync "$1"
+      ;;
     ask|answer)
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|questions|reply|resume)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|questions|reply|resume|sync)" ;;
   esac
 }

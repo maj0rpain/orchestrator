@@ -139,6 +139,12 @@ echo
 echo "standing transitions"
 fake_flow standing-transitions
 
+# sync request
+tr_seed 49 orch:done
+out="$(sourced_rc 'standing_sync_request 49')"
+assert_eq "sync request adds orch:sync and keeps orch:done" "$(fake_labels_of 49)" "orch:done orch:sync "
+assert_eq "and reads back as a sync request" "$(sourced_rc 'standing_read 49 && echo "$STANDING_SYNC|$STANDING_PHASE"' | head -n 1)" "1|"
+
 # finish
 tr_seed 50 orch:spec orch:running
 out="$(sourced_rc 'standing_finish 50 implement "wrote the spec"')"

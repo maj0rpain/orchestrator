@@ -342,7 +342,8 @@ orch:implement	0e8a16	Autopilot flow: implement phase next
 orch:limited	c5def5	Autopilot session stopped on a usage limit; retried after the reset
 orch:review	5319e7	Autopilot flow: review phase next
 orch:running	fbca04	Autopilot session running
-orch:spec	1d76db	Autopilot flow: spec phase next"
+orch:spec	1d76db	Autopilot flow: spec phase next
+orch:sync	0075ca	Autopilot: base sync requested on a done flow"
 assert_eq "a session that released its claim leaves no needs-human" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_eq "and no claim" "$(fake_claim_held 7)" free
 assert_eq "its run pidfile is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
@@ -1109,6 +1110,36 @@ out="$("$ORCH" autopilot resume 33 2>&1)"; st=$?
 assert_status "resume on a failed issue read dies" "$st" 1
 assert_eq "in one line naming gh and the reason" "$(printf '%s\n' "$out" | grep -c .)|${out#orch: gh could not read issue #33: }" "1|HTTP 502"
 fake_unfail
+
+# sync request
+fake_issue 60 open orch:done
+"$ORCH" autopilot sync 60 >/dev/null 2>&1; st=$?
+assert_status "sync on an open done issue succeeds" "$st" 0
+assert_eq "adding only orch:sync" "$(fake_labels_of 60)" "orch:done orch:sync "
+out="$("$ORCH" autopilot sync 60 2>&1)"; st=$?
+assert_status "sync on an issue already carrying orch:sync dies" "$st" 1
+assert_contains "saying so" "$out" "orch: issue #60 already carries orch:sync"
+fake_issue 61 closed orch:done
+out="$("$ORCH" autopilot sync 61 2>&1)"; st=$?
+assert_status "sync on a closed issue dies" "$st" 1
+assert_eq "with its message" "$out" "orch: issue #61 is closed"
+assert_eq "leaving its labels" "$(fake_labels_of 61)" "orch:done "
+fake_issue 62 open orch:review
+out="$("$ORCH" autopilot sync 62 2>&1)"; st=$?
+assert_status "sync on an issue not at orch:done dies" "$st" 1
+assert_contains "saying so" "$out" "orch: issue #62 is not at orch:done"
+assert_eq "leaving its labels" "$(fake_labels_of 62)" "orch:review "
+fake_issue 63 open orch:done
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$("$ORCH" autopilot sync 63 2>&1)"; st=$?
+assert_status "sync on a failed label write dies" "$st" 1
+assert_eq "with gh's reason" "$out" "orch: gh could not add orch:sync to issue #63: HTTP 500"
+fake_unfail
+out="$("$ORCH" autopilot sync 2>&1)"; st=$?
+assert_status "sync without an issue dies" "$st" 1
+assert_contains "with its usage" "$out" "orch: usage: orch.sh autopilot sync <issue>"
+out="$("$ORCH" autopilot bogus 2>&1)"
+assert_contains "the unknown-op list names sync" "$out" "|sync)"
 
 # reply
 r="$(mktemp)"; printf '1: Yes, keep it\n' >"$r"

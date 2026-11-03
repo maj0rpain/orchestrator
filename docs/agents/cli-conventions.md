@@ -13,7 +13,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | --------- | --------------------------------------------------- |
 | `base`    | `set`, `show`, `clear`                               |
 | `parallel` | `show`                                             |
-| `autopilot` | `show`, `active`, `rounds`, `budget`, `start`, `tick`, `watch`, `run`, `ask`, `answer`, `questions`, `reply`, `resume` |
+| `autopilot` | `show`, `active`, `rounds`, `budget`, `start`, `tick`, `watch`, `run`, `ask`, `answer`, `questions`, `reply`, `resume`, `sync` |
 | `agent`   | `set`, `show`, `clear`, `get`, `sync`, `roles`      |
 | `suite-cost` | `run`, `check`, `history`                     |
 | `repo`    | `show`                                               |

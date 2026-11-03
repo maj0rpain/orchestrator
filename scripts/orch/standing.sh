@@ -11,6 +11,8 @@
 STANDING_RUNNING_LABEL="orch:running"
 STANDING_HUMAN_LABEL="needs-human"
 STANDING_LIMITED_LABEL="orch:limited"
+# The sync request: not a phase label - an issue carrying it keeps orch:done.
+STANDING_SYNC_LABEL="orch:sync"
 
 # standing_phase_label <phase>: the label that records an autopilot flow's
 # phase on its issue, `orch:<phase>` - the label is the flow's phase record.
@@ -48,7 +50,7 @@ standing_live_phase() {
 
 # standing_label_entries: the labels a tick ensures, one
 # `name|colour|description` each: a label per phase of the table, then the
-# running, human and limited labels.
+# running, human, limited and sync labels.
 standing_label_entries() {
   local p colour what
   for p in $PHASES; do
@@ -64,6 +66,7 @@ standing_label_entries() {
   printf '%s|fbca04|Autopilot session running\n' "$STANDING_RUNNING_LABEL"
   printf '%s|d93f0b|Waiting on the human\n' "$STANDING_HUMAN_LABEL"
   printf '%s|c5def5|Autopilot session stopped on a usage limit; retried after the reset\n' "$STANDING_LIMITED_LABEL"
+  printf '%s|0075ca|Autopilot: base sync requested on a done flow\n' "$STANDING_SYNC_LABEL"
 }
 
 # standing_host_id: the identity a claim records as its host - ORCH_HOST_ID
@@ -81,9 +84,10 @@ STANDING_REASON=""
 # STANDING_STATE (OPEN or CLOSED), STANDING_LABELS (every label, one per line),
 # STANDING_PHASE (the live phase: the first phase other than done whose label is
 # present, in table order; empty when none), STANDING_PHASE_LABELS (the text of
-# every phase label, in table order) and STANDING_RUNNING, STANDING_HUMAN and
-# STANDING_LIMITED, each 0 or 1. Non-zero when the read fails: the reason only
-# in STANDING_REASON, printing nothing, for a caller that words its own death.
+# every phase label, in table order) and STANDING_RUNNING, STANDING_HUMAN,
+# STANDING_LIMITED and STANDING_SYNC, each 0 or 1. Non-zero when the read fails:
+# the reason only in STANDING_REASON, printing nothing, for a caller that words
+# its own death.
 # Call it in the current shell, never inside capture_err or $(...).
 standing_read() {
   local gh_err
@@ -93,7 +97,10 @@ standing_read() {
   fi
   STANDING_PHASE="$(standing_live_phase "$STANDING_LABELS")"
   STANDING_PHASE_LABELS="$(standing_phase_labels_text "$STANDING_LABELS")"
-  STANDING_RUNNING=0 STANDING_HUMAN=0 STANDING_LIMITED=0
+  STANDING_RUNNING=0 STANDING_HUMAN=0 STANDING_LIMITED=0 STANDING_SYNC=0
+  # the variable is the module's read, used by its callers
+  # shellcheck disable=SC2034
+  ! label_listed "$STANDING_LABELS" "$STANDING_SYNC_LABEL" || STANDING_SYNC=1
   ! label_listed "$STANDING_LABELS" "$STANDING_RUNNING_LABEL" || STANDING_RUNNING=1
   ! label_listed "$STANDING_LABELS" "$STANDING_HUMAN_LABEL" || STANDING_HUMAN=1
   # the variables are the module's read, used by its callers
@@ -185,11 +192,22 @@ standing_resume() {
   return 1
 }
 
+# standing_sync_request <issue>: the sync request transition - adds orch:sync,
+# one write. Returns 0, or 1 with the reason in STANDING_REASON when the write
+# fails, printing nothing: each caller words its own death or warning. A single
+# write, not a chain: it leaves STANDING_LANDED alone.
+standing_sync_request() {
+  local gh_err
+  capture_err gh_err adapter_issue_relabel "$1" --add "$STANDING_SYNC_LABEL" && return 0
+  STANDING_REASON="$(gh_reason "$gh_err")"
+  return 1
+}
+
 # --- transitions ------------------------------------------------------------
 #
 # Every write to Standing goes through one transition below: begin,
-# start, finish, pause, ask, stop, limit-stop and resume. Begin and resume are
-# single writes; the others are chains. A chain of writes a
+# sync request, start, finish, pause, ask, stop, limit-stop and resume. Begin
+# and resume are single writes; the others are chains. A chain of writes a
 # session makes under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
 # fails partway leaves the claim held, and dies naming the writes that landed,

@@ -159,10 +159,18 @@ one watcher can create. _Avoid_: lock (unqualified).
 **Phase label**:
 The `orch:` label on an issue that records an autopilot flow's phase.
 
+**Sync request**:
+The `orch:sync` label on an open autopilot issue at `orch:done`, asking a
+watcher for one base sync of its branch. A human or the watcher adds it; the
+sync session removes it once the sync lands, or when its resolver dropped an
+intent.
+_Avoid_: resync label.
+
 **Standing**:
 Where an autopilot flow's issue stands: its phase label, whether a session is
-running on it, whether it waits on the human or on a usage limit, and the claim
-held on it, if any. Every change to it is one of a fixed set of transitions.
+running on it, whether it waits on the human or on a usage limit, whether a
+sync is requested, and the claim held on it, if any. Every change to it is one
+of a fixed set of transitions.
 _Avoid_: protocol state, issue status.
 
 **Fundamental item**:
