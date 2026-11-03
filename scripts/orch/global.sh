@@ -16,6 +16,7 @@ cmd_status() {
   if [ ! -f "$STATE" ]; then
     note "No active flow. Run $(flow_cmd start) from an approved plan."
   else
+    require_state_readable
     status_flow
   fi
   status_others
@@ -78,7 +79,7 @@ status_flow() {
 # worktree - it deletes ignored files - so the flow moves to the main
 # checkout's archive first, and only then is the worktree removed (ADR-0037).
 cmd_archive() {
-  require_state
+  require_state_exists
   local archive_home
   archive_home="$(archive_root "$ROOT")" || die "could not read the checkouts - nothing was archived"
   # Only a side checkout archives anywhere but in place.
@@ -360,7 +361,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout (see branch busy), changing nothing
   branch busy                 tell whether this checkout is a busy checkout,
                               from local git and state only: a flow
-                              mid-pipeline, a branch the plugin made with no
+                              mid-pipeline (a state.json that cannot be read
+                              counts as one), a branch the plugin made with no
                               PR yet (no branch.<name>.orchestrator-pr) and
                               not retired by a redo (-redo-<n>), or
                               changes outside the planning allowlist, checked

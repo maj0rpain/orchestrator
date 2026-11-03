@@ -112,11 +112,16 @@ trap test_jobs_stop_descendants INT TERM
 # neither the banner nor the summary block; it writes its counts to a file
 # instead. This shell prints the banner, each child's stdout in walk order,
 # then one summary summed over the children, so the stdout is the stdout of a
-# sequential run. stderr passes straight through and may interleave. A child
-# that reports no counts - it exited mid-way - adds a FAIL naming its section.
-# Exits 1 when any child failed. Buffers live in one temp directory under the
-# temp root; an interrupt also kills the running children and waits for them
-# to exit.
+# sequential run. A child's stderr goes to its own buffer beside its stdout:
+# a child that wrote any adds a FAIL, "section '<title>' wrote to stderr", with
+# the buffered lines as detail lines, printed after that child's stdout. The
+# guard covers parallel runs only; a sequential run evals every section in one
+# shell, so it has no section boundary to attribute stderr to and is unguarded.
+# This shell's own stderr (the job-slot note, usage errors) is not buffered.
+# A child that reports no counts - it exited mid-way - adds a FAIL naming its
+# section. Exits 1 when any child failed. Buffers live in one temp directory
+# under the temp root; an interrupt also kills the running children and waits
+# for them to exit.
 #
 # Each section of a parallel run has a deadline, ORCH_TEST_SECTION_TIMEOUT whole
 # seconds (default 600), counted from the child's own start, not from when it
@@ -324,7 +329,7 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   if [ "${#orch_branches[@]}" -gt 1 ]; then
     orch_lines=()
     for orch_branch in "${orch_branches[@]}"; do
-      printf '%s\n' "$orch_titles" | grep -qiE -- "$orch_branch" ||
+      grep -qiE -- "$orch_branch" <<<"$orch_titles" ||
         orch_lines+=("orch_test.sh: ORCH_TEST_ONLY branch '$orch_branch' matches no section")
     done
     if [ "${#orch_lines[@]}" -gt 0 ]; then
@@ -396,7 +401,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
     ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
       ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
-      test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" &
+      test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err" &
     orch_pids[orch_started]=$!
     orch_starts[orch_started]=$SECONDS
     test_jobs_slot_release "${orch_pids[orch_started]}"
@@ -419,8 +424,8 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     ! kill -0 "${orch_pids[$orch_flushed]}" 2>/dev/null; do
     wait "${orch_pids[$orch_flushed]}"; orch_status=$?
     orch_pos="${orch_sections[$orch_flushed]}"
-    cat "$orch_buf/$orch_pos.out"
     orch_title="$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")"
+    cat "$orch_buf/$orch_pos.out"
     if [ -n "${orch_timed_out[$orch_flushed]:-}" ]; then
       print_fail "section '$orch_title' timed out" \
         "after ${orch_timeout}s; its process tree was stopped"
@@ -430,6 +435,12 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
       orch_skip=$((orch_skip + orch_c_skip))
       [ "$orch_c_fail" -eq 0 ] || orch_any_failed=1
     else
+      orch_fail=$((orch_fail + 1)); orch_any_failed=1
+    fi
+    if [ -s "$orch_buf/$orch_pos.err" ]; then
+      orch_err_lines="$(sed '2,$s/^/     /' "$orch_buf/$orch_pos.err")"
+      print_fail "section '$orch_title' wrote to stderr" \
+        "$orch_err_lines"
       orch_fail=$((orch_fail + 1)); orch_any_failed=1
     fi
     [ "$orch_status" -eq 0 ] || orch_any_failed=1

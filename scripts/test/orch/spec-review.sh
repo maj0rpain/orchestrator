@@ -3222,3 +3222,12 @@ assert_contains "and publishes the edit" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/b
 assert_eq "with no CR in the published body" "$(tr -cd '\r' <"$ORCH_GH_FAKE_STORE/issues/14/body" | wc -c | tr -d ' ')" "0"
 rm -rf "$d"
 unset d
+
+# --- spec-review begin on a truncated state.json (#1929) ---------------------
+echo
+echo "spec-review begin on a truncated state.json"
+fresh_flow srtrunc
+state_truncate
+out="$("$ORCH" spec-review begin 14 2>&1)"; st=$?
+assert_state_unreadable "spec-review begin" 1 "$out" "$st"
+restore_suite_env

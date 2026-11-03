@@ -1706,12 +1706,12 @@ phase_reports() {
   local out
   state_fixture phase "$1"
   out="$("$ORCH" doctor --flow 2>&1)"
-  if printf '%s\n' "$out" | grep -qE 'upstream: |is not on origin yet'; then echo upstream; fi
-  if printf '%s\n' "$out" | grep -qE "review loop: not started|review loop at a terminal|review loop hasn't|review loop's last"; then echo terminal; fi
-  if printf '%s\n' "$out" | grep -qF 'review loop iteration ('; then echo budget; fi
-  if printf '%s\n' "$out" | grep -qF 'CI: '; then echo ci; fi
-  if printf '%s\n' "$out" | grep -qE 'draft state|still a draft'; then echo draft; fi
-  if printf '%s\n' "$out" | grep -qF 'PR #40 open'; then echo pr; fi
+  if grep -qE 'upstream: |is not on origin yet' <<<"$out"; then echo upstream; fi
+  if grep -qE "review loop: not started|review loop at a terminal|review loop hasn't|review loop's last" <<<"$out"; then echo terminal; fi
+  if grep -qF 'review loop iteration (' <<<"$out"; then echo budget; fi
+  if grep -qF 'CI: ' <<<"$out"; then echo ci; fi
+  if grep -qE 'draft state|still a draft' <<<"$out"; then echo draft; fi
+  if grep -qF 'PR #40 open' <<<"$out"; then echo pr; fi
 }
 assert_eq "at spec only the unlisted check reports" \
   "$(phase_reports spec | tr '\n' ' ')" "pr "
