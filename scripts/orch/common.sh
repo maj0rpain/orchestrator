@@ -439,8 +439,9 @@ require_clean_tree() {
 # fenced(line) is called once per input line, in order, and strips the line's
 # CR and trailing whitespace from its own copy; it returns 2 for a fence
 # delimiter line (opening or closing), 1 for a line inside a fence and 0
-# otherwise. Callers still print or cut delimiter lines as any other; fenced
-# only gates heading and section tests. State is fence_-prefixed.
+# otherwise. A caller uses the result to gate its own tests - headings,
+# sections, paragraph breaks - and decides itself what to do with a fence's
+# lines, delimiters included. State is fence_-prefixed.
 # shellcheck disable=SC2034 # used by the pr, review and ticket modules
 FENCE_AWK='
   function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
