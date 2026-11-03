@@ -1316,7 +1316,7 @@ rc_setup() {
 # git-excluded as a real flow does: its state file is no working-tree change.
 rc_flow() {
   local file
-  printf "%s\n" .orchestrator/ >>"$(git rev-parse --git-common-dir)/info/exclude"
+  sourced_orch exclude_orch_dirs
   file="$(flow_state_file "$(git rev-parse --show-toplevel)")"
   mkdir -p "$(dirname "$file")" && echo '{}' >"$file"
   state_fixture phase implement

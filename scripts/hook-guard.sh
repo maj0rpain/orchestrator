@@ -32,7 +32,8 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
 # A flow is already running: the guard's job is done and the phases police
 # themselves from here. A done flow is not running, so it keeps the guard armed.
-if flow_state_active "$(flow_state_file "$root")"; then exit 0; fi
+state_file="$(flow_state_file "$root")"
+if flow_state_active "$state_file"; then exit 0; fi
 
 rel="${file#"$root"/}"
 if planning_allowlisted "$rel"; then exit 0; fi
@@ -42,7 +43,7 @@ case "$file" in "$root"/*) ;; *) exit 0 ;; esac
 
 # Under an allowlisted prefix but no planning artifact: say what to do.
 if planning_excluded "$rel"; then
-  if [ "$rel" = ".orchestrator/state.json" ]; then
+  if [ "$file" = "$state_file" ]; then
     hook_emit_deny "Blocked by the orchestrator: '$rel' is flow state, and flow state is written only by orch.sh. To begin a flow, call the Skill tool with \"orchestrator:orch-flow\"."
   else
     hook_emit_deny "Blocked by the orchestrator: '$rel' is another checkout's source. Edit it from a session opened in that checkout."
