@@ -56,10 +56,12 @@ it touches (a new noun gets a new file; a concept module with no noun gets a
 section file named as it is). Sections run in parallel, so every section must
 pass on its own. The runners share one job pool, holding 75% of the usable CPUs
 unless `ORCH_TEST_POOL_PERCENT` sets another share (see CONTRIBUTING.md).
-Helper placement is checked by harness.sh's placement section; its failure
-message states the rule. Before writing or reusing a helper, run
-`scripts/dev/helpers.sh` (orch.sh's modules) or `scripts/dev/helpers.sh --tests`
-(the shared test setup and the gh fake) instead of grepping, and read
+Test-helper placement is checked by harness.sh's test-helper placement
+section; its failure message states the rule. Before writing or reusing a
+helper, run
+`scripts/dev/helpers.sh` (orch.sh's modules), `scripts/dev/helpers.sh --tests`
+(the shared test setup and the gh fake), or `scripts/dev/helpers.sh <file>` (any
+one bash file, e.g. `scripts/test/docs_lint.sh`) instead of grepping, and read
 CONTRIBUTING's Test helpers subsection: the fixtures to reach for first, running
 one section under `bash -x`, and the bash-version rule.
 See CONTRIBUTING.md's Develop section.

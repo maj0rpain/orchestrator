@@ -37,8 +37,8 @@
 # tests gh's own argv; the fixture gh, prepended later, still wins over it.
 #
 # Every section must pass on its own, as the parallel runner runs each one;
-# where a helper lives is checked by harness.sh's placement section, whose
-# failure message states the rule.
+# where a test helper lives is checked by harness.sh's test-helper placement
+# section, whose failure message states the rule.
 
 # The suite's own directory, walked to once; every path below builds on it.
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
