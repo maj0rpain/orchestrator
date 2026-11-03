@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.50
+
+An unparseable `.orchestrator/state.json` no longer kills `orch.sh` with jq's parse error and status 5: `branch busy`, `init` and `branch off` report the checkout as busy (exit 3, with a doctor/abort remedy), and the commands that need the flow's state - `branch create`, `status`, `base set`, `spec fetch`, `spec-review begin`, `autopilot answer`, `suite-cost` and the rest - refuse with "state.json cannot be read - run orch.sh doctor --flow". `doctor --flow` still diagnoses the file, and `abort` archives it (#1929).
+
 ## 4.43.49
 
 A parallel `orch_test.sh` run now fails any section that writes to stderr, naming the section and showing what it wrote, and the two sections that leaked (the marked-comment helper and the autopilot tick temp-file case) no longer do.
