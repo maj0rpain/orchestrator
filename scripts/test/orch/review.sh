@@ -949,6 +949,7 @@ assert_eq "printing the required check's run" "$out" "4242"
 assert_eq "and rerunning only it" "$(fake_reruns)" "4242"
 
 rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 required failing
 fake_checks 7 all optfirst
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a failing optional Actions check ahead of the required one is exit 0" "$st" 0
