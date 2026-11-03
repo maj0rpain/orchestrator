@@ -612,7 +612,7 @@ exiting non-zero on the last two:
   Required means required by the branch protection of the PR's base branch. If
   it looks flaky rather than caused by the change, the flow has **one** flake
   rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent
-  and empty while it is not. Spend it with `bash "$ORCH" review rerun <pr>`,
+  and `false` while it is not. Spend it with `bash "$ORCH" review rerun <pr>`,
   which reruns the failed jobs of every GitHub Actions run behind the failing
   checks `review ci` counted (the required ones, else all), once each:
 
