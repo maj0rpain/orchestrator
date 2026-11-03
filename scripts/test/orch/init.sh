@@ -65,6 +65,16 @@ assert_eq "and .orchestrator/ is still added beside it" "$(exclude_count .orches
 mkdir -p .scratch && echo plan >.scratch/plan.md
 assert_eq "an untracked .scratch/ stays out of git status" "$(git status --porcelain)" ""
 
+# An exclude file whose last line has no final newline (#1912).
+new_repo >/dev/null
+fake_github
+printf 'secrets.env' >>.git/info/exclude
+"$ORCH" init feat >/dev/null
+assert_eq "init leaves an unterminated last pattern whole" "$(exclude_count secrets.env)" "1"
+assert_eq "init still excludes .orchestrator/ once beside it" "$(exclude_count .orchestrator/)" "1"
+assert_eq "init still excludes .scratch/ once beside it" "$(exclude_count .scratch/)" "1"
+restore_suite_env
+
 # --- init refuses a dirty working tree ----------------------------------------
 # The git-based backstop from ADR-0013: a host with no mechanical trigger for
 # the edit guard can still edit source during planning, so flow start is where
