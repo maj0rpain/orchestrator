@@ -69,6 +69,28 @@ src() {
   err="$(cat "$src_err")"
   rm -f "$src_err"
 }
+# The #1945 escape cases' fixture. sre_body holds lines that read as grammar;
+# sre_item is the head of a one-lens batch's item 1 and the sre_item_* strings
+# complete it (esc: an escaped anchor and replacement; empty: an empty
+# replacement; misc: backslash forms that stay; opt: a decision item).
+# sre_dir <items> makes a round dir for issue #14 holding that body, the fixed
+# lens header, <items> and one lens finding.
+sre_body=$'# Spec\n\nAlpha line.\n@@ note <text>\n\\@@ keep\n\\x stays\n@@x stays\n@@-1 stays\nOmega.\n'
+sre_item=$'@@ item 1 fidelity apply minor\n@@ finding fidelity 1\n@@ summary Reword the quoted line'
+sre_item_esc="$sre_item"$'\n@@ anchor\n\\@@ note <text>\n@@ replace\n\\@@ remark <text>\n@@ end'
+sre_item_empty="$sre_item"$'\n@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end'
+sre_item_misc="$sre_item"$'\n@@ anchor\n\\\\@@ keep\n\\x stays\n@@x stays\n@@-1 stays\n@@ replace\n\\\\\\@@ kept\n\\y stays\n@@z\n@@ end'
+sre_item_opt=$'@@ item 1 fidelity decision A material\n@@ finding fidelity 1\n@@ why Two ways\n@@ option A Reword\n@@ summary Reword it\n@@ anchor\n\\@@ note <text>\n@@ replace\n\\@@ remark <text>\n@@ end\n@@ option B Drop\n@@ summary Drop it\n@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end'
+sre_dir() {
+  local d
+  d="$(mktemp -d)"
+  fake_issue 14 open
+  fake_issue_body 14 "$sre_body"
+  printf '%s' "$sre_body" >"$d/spec.md"
+  printf '@@ lens fidelity ran\n@@ lens consistency not-run timed out\n@@ lens testability not-run timed out\n@@ lens implementability not-run timed out\n\n%s\n' "$1" >"$d/batch.md"
+  printf '@@ finding 1\nReword.\n' >"$d/lens-fidelity.md"
+  printf '%s\n' "$d"
+}
 # src_nudge <dir>: what a check pass line that wrote a view ends with - the
 # turn-final nudge, naming <dir>/view.md, <dir> given absolute.
 src_nudge() {
@@ -1689,6 +1711,28 @@ assert_contains "naming the landed writes" "$out" "already landed: ticket #20's 
 restore_suite_env
 
 
+# Block lines that read as grammar are escaped with a leading backslash (#1945).
+new_repo >/dev/null
+fake_github
+sre_body_now() { cat "$ORCH_GH_FAKE_STORE/issues/14/body"; }
+d="$(sre_dir "$sre_item_esc")"
+sra "$d" recommended
+assert_status "an escaped anchor and replacement: apply succeeds" "$st" 0
+assert_contains "and writes the unescaped replacement" "$(sre_body_now)" $'\n@@ remark <text>\n'
+assert_not_contains "and the old line is gone" "$(sre_body_now)" "@@ note <text>"
+d="$(sre_dir "$sre_item_empty")"
+sra "$d" recommended
+assert_status "an escaped anchor with an empty replacement: apply succeeds" "$st" 0
+assert_not_contains "and the line is removed from the body" "$(sre_body_now)" "@@ note <text>"
+d="$(sre_dir "$sre_item_misc")"
+sra "$d" recommended
+assert_status "a double backslash, a bare backslash, @@x and @@-1 lines: apply succeeds" "$st" 0
+assert_contains "\\\\@@ reads as \\@@, the rest unchanged" "$(sre_body_now)" $'\n\\\\@@ kept\n\\y stays\n@@z\nOmega.'
+d="$(sre_dir "$sre_item_opt")"
+sra "$d" recommended
+assert_status "escaped lines in an @@ option's blocks: apply succeeds" "$st" 0
+assert_contains "and writes the option's unescaped replacement" "$(sre_body_now)" $'\n@@ remark <text>\n'
+
 # --- spec-review check (#1137) ------------------------------------------------
 # A round's batch validated before the batch question: everything apply checks
 # that does not depend on the answer - grammar, lens files, citations, every
@@ -2394,6 +2438,36 @@ d="$(src_dir)"
 src_view_unwritable src "check" "$d"
 src_view_unwritable src_full_1 "check --full" "$d"
 
+# Block lines that read as grammar are escaped with a leading backslash (#1945).
+d="$(sre_dir "$sre_item_esc")"
+src "$d"
+assert_status "an escaped anchor and replacement: check passes" "$st" 0
+d="$(sre_dir "$sre_item_empty")"
+src "$d"
+assert_status "an escaped anchor with an empty replacement: check passes" "$st" 0
+d="$(sre_dir "$sre_item_misc")"
+src "$d"
+assert_status "a double backslash, a bare backslash, @@x and @@-1 lines: check passes" "$st" 0
+d="$(sre_dir "$sre_item_opt")"
+src "$d"
+assert_status "escaped lines in an @@ option's blocks: check passes" "$st" 0
+# A comment's quote: an escaped line folds in; an unescaped one keeps the
+# existing message, no hint.
+sre_quote_item() {
+  printf '%s\n' '@@ item 1 consolidation apply minor' '@@ comment @bob 2026-01-01T00:00:00Z' '@@ quote' "$1" \
+    '@@ summary Add a line' '@@ anchor' 'Alpha line.' '@@ replace' 'Alpha line.' 'Beta.' '@@ end'
+}
+d="$(sre_dir "$(sre_quote_item '\@@ note <text>')")"
+printf '@@ none\n' >"$d/lens-fidelity.md"
+src "$d"
+assert_status "an escaped @@ quote line: check passes" "$st" 0
+d="$(sre_dir "$(sre_quote_item '@@ note <text>')")"
+printf '@@ none\n' >"$d/lens-fidelity.md"
+src "$d"
+assert_status "an unescaped @@ note in a quote: refused" "$st" 1
+assert_contains "with the existing message" "$err" "the quote is empty"
+assert_not_contains "and no escape hint" "$err" '\@@'
+
 # Discoverability.
 out="$("$ORCH" spec-review wipe 2>&1)"
 assert_contains "the unknown-op message lists check" "$out" "want begin|check|apply"
@@ -2807,6 +2881,24 @@ assert_contains "help names the file each check error names a line of" "$("$ORCH
   "Exit 1 with one orch: line per error, each naming its batch.md or lens-<name>.md line where it has one - the first grammar error only"
 restore_suite_env
 
+# Block lines that read as grammar are escaped with a leading backslash (#1945).
+# srct_escaped_dir <items>: a round dir whose #20 holds grammar-like lines.
+srct_escaped_dir() {
+  local d
+  d="$(mktemp -d)"
+  printf '# Spec\n\nAlpha line.\n' >"$d/spec.md"
+  printf '## What to build\n\nBuild alpha.\n@@ note <text>\n\\@@ keep\n\\x stays\n@@x stays\n\n## Blocked by\n\nNone (can start immediately)' >"$d/ticket-20.md"
+  printf '@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ summary Reword\n%s\n' "$1" >"$d/tickets.md"
+  printf '%s\n' "$d"
+}
+d="$(srct_escaped_dir $'@@ anchor\n\\@@ note <text>\n\\\\@@ keep\n\\x stays\n@@x stays\n@@ replace\n\\@@ remark <text>\n@@-1 new\n@@ end')"
+srct "$d"
+assert_status "escaped lines in a tickets.md anchor and replacement: check passes" "$st" 0
+assert_contains "the view shows the unescaped replacement" "$out" "@@ remark <text>"
+d="$(srct_escaped_dir $'@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end')"
+srct "$d"
+assert_status "an escaped tickets.md anchor with an empty replacement: check passes" "$st" 0
+
 # --- spec-review wait (#1183) -------------------------------------------------
 # The session running a spec review starts its lenses and waits for all of them
 # in one blocking call: a lens is back when its findings file exists, and the
@@ -3107,127 +3199,3 @@ assert_contains "and publishes the edit" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/b
 assert_eq "with no CR in the published body" "$(tr -cd '\r' <"$ORCH_GH_FAKE_STORE/issues/14/body" | wc -c | tr -d ' ')" "0"
 rm -rf "$d"
 unset d
-
-# --- spec-review block lines escape @@ (#1945) --------------------------------
-# A block line that begins with \ then @@ loses exactly one leading \, so a
-# spec or ticket line that reads as grammar can be anchored, replaced, removed
-# and quoted.
-echo
-echo "spec-review block lines escape @@ (#1945)"
-new_repo >/dev/null
-fake_github
-sre_body=$'# Spec\n\nAlpha line.\n@@ note <text>\n\\@@ keep\n\\x stays\n@@x stays\n@@-1 stays\nOmega.\n'
-# sre_dir <item-block>...: a round dir for issue 14 with the body above and
-# a one-lens batch holding the item blocks given (item 1 on, header on line 6).
-sre_dir() {
-  local d
-  d="$(mktemp -d)"
-  fake_issue 14 open
-  fake_issue_body 14 "$sre_body"
-  "$ORCH" issue fetch 14 "$d/spec.md"
-  {
-    printf '@@ lens fidelity ran\n@@ lens consistency not-run timed out\n'
-    printf '@@ lens testability not-run timed out\n@@ lens implementability not-run timed out\n\n'
-    printf '@@ item 1 fidelity apply minor\n@@ finding fidelity 1\n@@ summary Reword the quoted line\n'
-    printf '%s\n' "$1"
-  } >"$d/batch.md"
-  printf '@@ finding 1\nReword.\n' >"$d/lens-fidelity.md"
-  printf '%s\n' "$d"
-}
-sre_check() { out="$("$ORCH" spec-review check "$1" 2>&1)"; st=$?; }
-
-d="$(sre_dir $'@@ anchor\n\\@@ note <text>\n@@ replace\n\\@@ remark <text>\n@@ end')"
-sre_check "$d"
-assert_status "an escaped anchor and replacement: check passes" "$st" 0
-sra "$d" recommended
-assert_status "apply on it succeeds" "$st" 0
-assert_contains "and writes the unescaped replacement" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" $'\n@@ remark <text>\n'
-assert_not_contains "and the old line is gone" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" "@@ note <text>"
-
-d="$(sre_dir $'@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end')"
-sre_check "$d"
-assert_status "an escaped anchor with an empty replacement: check passes" "$st" 0
-sra "$d" recommended
-assert_status "apply removing it succeeds" "$st" 0
-assert_not_contains "and the line is removed from the body" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" "@@ note <text>"
-
-d="$(sre_dir $'@@ anchor\n\\\\@@ keep\n\\x stays\n@@x stays\n@@-1 stays\n@@ replace\n\\\\\\@@ kept\n\\y stays\n@@z\n@@ end')"
-sre_check "$d"
-assert_status "a double backslash, a bare backslash, @@x and @@-1 lines: check passes" "$st" 0
-sra "$d" recommended
-assert_status "apply on it succeeds" "$st" 0
-assert_contains "\\\\@@ reads as \\@@, the rest unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" $'\n\\\\@@ kept\n\\y stays\n@@z\nOmega.'
-
-d="$(sre_dir $'@@ anchor\n@@ note <text>\n@@ replace\nx\n@@ end')"
-sre_check "$d"
-assert_status "an unescaped @@ note in an anchor: refused" "$st" 1
-assert_contains "naming its line with the escape hint" "$out" "got '@@ note <text>'"
-assert_contains "the hint says how to escape" "$out" '\@@'
-
-d="$(sre_dir $'@@ anchor\nAlpha line.\n@@ replace\n@@ note <text>\n@@ end')"
-sre_check "$d"
-assert_status "an unescaped @@ note in a replacement: refused" "$st" 1
-assert_contains "naming the expected @@ end" "$out" "expected @@ end to end the replacement begun on line 11, got '@@ note <text>'"
-assert_contains "with the escape hint" "$out" '\@@'
-
-# A comment's quote: an escaped line folds in; an unescaped one keeps the
-# existing message, no hint.
-sre_quote_batch() {
-  printf '%s\n' '@@ lens fidelity ran' '@@ lens consistency not-run timed out' \
-    '@@ lens testability not-run timed out' '@@ lens implementability not-run timed out' '' \
-    '@@ item 1 consolidation apply minor' '@@ comment @bob 2026-01-01T00:00:00Z' '@@ quote' "$1" \
-    '@@ summary Add a line' '@@ anchor' 'Alpha line.' '@@ replace' 'Alpha line.' 'Beta.' '@@ end'
-}
-d="$(sre_dir x)"
-sre_quote_batch '\@@ note <text>' >"$d/batch.md"
-printf '@@ none\n' >"$d/lens-fidelity.md"
-sre_check "$d"
-assert_status "an escaped @@ quote line: check passes" "$st" 0
-d="$(sre_dir x)"
-sre_quote_batch '@@ note <text>' >"$d/batch.md"
-sre_check "$d"
-assert_status "an unescaped @@ note in a quote: refused" "$st" 1
-assert_contains "with the existing message" "$out" "the quote is empty"
-assert_not_contains "and no escape hint" "$out" '\@@'
-
-# An option's blocks.
-d="$(sre_dir x)"
-{
-  printf '%s\n' '@@ lens fidelity ran' '@@ lens consistency not-run timed out' \
-    '@@ lens testability not-run timed out' '@@ lens implementability not-run timed out' '' \
-    '@@ item 1 fidelity decision A material' '@@ finding fidelity 1' '@@ why Two ways' \
-    '@@ option A Reword' '@@ summary Reword it' '@@ anchor' '\@@ note <text>' '@@ replace' '\@@ remark <text>' '@@ end' \
-    '@@ option B Drop' '@@ summary Drop it' '@@ anchor' '\@@ note <text>' '@@ replace' '@@ end'
-} >"$d/batch.md"
-sre_check "$d"
-assert_status "escaped lines in an @@ option's blocks: check passes" "$st" 0
-sra "$d" recommended
-assert_status "apply on it succeeds" "$st" 0
-assert_contains "and writes the option's unescaped replacement" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" $'\n@@ remark <text>\n'
-
-# tickets.md.
-sre_tdir() {
-  local d
-  d="$(mktemp -d)"
-  printf '# Spec\n\nAlpha line.\n' >"$d/spec.md"
-  printf '## What to build\n\nBuild alpha.\n@@ note <text>\n\\@@ keep\n\\x stays\n@@x stays\n\n## Blocked by\n\nNone (can start immediately)' >"$d/ticket-20.md"
-  printf '@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ summary Reword\n%s\n' "$1" >"$d/tickets.md"
-  printf '%s\n' "$d"
-}
-sre_tcheck() { out="$("$ORCH" spec-review check "$1" --tickets 2>&1)"; st=$?; }
-d="$(sre_tdir $'@@ anchor\n\\@@ note <text>\n\\\\@@ keep\n\\x stays\n@@x stays\n@@ replace\n\\@@ remark <text>\n@@-1 new\n@@ end')"
-sre_tcheck "$d"
-assert_status "escaped lines in a tickets.md anchor and replacement: check passes" "$st" 0
-assert_contains "the view shows the unescaped replacement" "$out" "@@ remark <text>"
-d="$(sre_tdir $'@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end')"
-sre_tcheck "$d"
-assert_status "an escaped tickets.md anchor with an empty replacement: check passes" "$st" 0
-d="$(sre_tdir $'@@ anchor\n@@ note <text>\n@@ replace\nx\n@@ end')"
-sre_tcheck "$d"
-assert_status "an unescaped @@ note in a tickets.md anchor: refused" "$st" 1
-assert_contains "naming the escape hint" "$out" '\@@'
-d="$(sre_tdir $'@@ anchor\nBuild alpha.\n@@ replace\n@@ note <text>\n@@ end')"
-sre_tcheck "$d"
-assert_status "an unescaped @@ note in a tickets.md replacement: refused" "$st" 1
-assert_contains "naming its line" "$out" "got '@@ note <text>'"
-assert_contains "with the escape hint" "$out" '\@@'
