@@ -80,6 +80,11 @@ fake_ci_reset() {
 # fake_reruns: the Actions run ids rerun, read back, space-separated, in order.
 fake_reruns() { tr '\n' ' ' 2>/dev/null <"$ORCH_GH_FAKE_STORE/reruns" | sed 's/ $//'; }
 
+# fake_pr_url <n> <url>: seeds PR #n's url, the one adapter_pr_url_head answers.
+fake_pr_url() {
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/url"
+}
+
 # parts_with <flag> [<value>]: sets args to review file's parts - its --flag
 # value pairs - with <flag>'s value replaced by <value>, in place, or, given no
 # value, with <flag> and its value dropped. An empty <value> still replaces.
@@ -208,12 +213,22 @@ restore_suite_env
 echo
 echo "review file"
 fresh_flow reviewfile
-fake_github
+state_fixture pr 7
+
+# file_github: a fresh store holding the flow's PR 7, its url and head SHA
+# seeded to differ from anything derived from the repo or its local HEAD.
+file_github() {
+  fake_github
+  fake_pr 7 open topic main
+  fake_pr_url 7 "$pr_url"
+  fake_pr_head 7 abc1234
+}
+pr_url=https://ghe.example.com/x/y/pull/7
+file_github
 finding="$(mktemp)"
 printf 'The reviewer said this.\n\nIt spans two paragraphs.\n\n\n\n' >"$finding"
-pr_url=https://github.com/o/r/pull/7
 parts=(--axis standards --finding-file "$finding" --severity-reason "Misleads a reader"
-  --location scripts/a.sh:12 --sha abc1234 --pr "$pr_url" --why "found in the final iteration")
+  --location scripts/a.sh:12 --why "found in the final iteration")
 : >"$GH_FIXTURE/env.log"
 tab="$(printf '\t')"
 fake_label review:major ffffff "An older description"
@@ -246,10 +261,10 @@ assert_eq "neither the labels nor the issue create reached a real gh subprocess"
 # The flags come in any order; a spec question adds its line, last; a line
 # range files; a padded value files trimmed; and the axis is accepted in any
 # case, rendered capitalised.
-fake_github
+file_github
 fake_next_issue 18
 out="$("$ORCH" review file major "Misses a criterion" --why "  it is a spec question  " \
-  --spec-question " Should it archive first? " --pr "$pr_url" --sha abc1234 \
+  --spec-question " Should it archive first? " \
   --location scripts/a.sh:12-20 --severity-reason "Misses a criterion - the second one" \
   --finding-file "$finding" --axis SPEC 2>&1)"; st=$?
 assert_status "files with the flags in any order" "$st" 0
@@ -267,11 +282,11 @@ assert_eq "--axis SPEC files as bug" "$(fake_labels_of 18)" "bug needs-triage re
 # A suite-cost finding - the `grew` major the driver raises from
 # `suite-cost check` - names the suite as a whole: axis suite-cost, location
 # the literal suite, with no line. It files as an enhancement.
-fake_github
+file_github
 fake_next_issue 19
 out="$("$ORCH" review file major "Suite cost grew 25%" --axis suite-cost --finding-file "$finding" \
-  --severity-reason "Suite cost grew past the threshold" --location suite --sha abc1234 \
-  --pr "$pr_url" --why "found in the final iteration" 2>&1)"; st=$?
+  --severity-reason "Suite cost grew past the threshold" --location suite \
+  --why "found in the final iteration" 2>&1)"; st=$?
 assert_status "files a suite-cost finding located at the suite" "$st" 0
 assert_eq "printing its number" "$out" "19"
 want="$(printf '%s\n' 'The reviewer said this.' '' 'It spans two paragraphs.' '' \
@@ -284,15 +299,15 @@ assert_eq "rendering the suite-cost axis and the suite as its location" \
   "$(fake_body_of 19; printf x)" "$want"
 assert_eq "--axis suite-cost files as enhancement" "$(fake_labels_of 19)" "enhancement needs-triage review:major "
 
-# A sha in upper-case hex files as given.
-fake_github
-parts_with --sha ABC1234
-out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
+# A head sha in upper-case hex files as given.
+file_github
+fake_pr_head 7 ABC1234
+out="$("$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
 assert_status "files an upper-case hex sha" "$st" 0
 assert_contains "naming it in the location line" "$(fake_body_of "$out")" \
   '**Location:** `scripts/a.sh:12` at ABC1234'
 
-fake_github
+file_github
 out="$("$ORCH" review file nit "Rename it" "${parts[@]}" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
 assert_contains "under the nit label" "$(fake_labels_of "$out")" "review:nit "
@@ -304,7 +319,7 @@ assert_contains "the severity line naming the nit" "$(fake_body_of "$out")" "**S
 # The category is the axis's: a Spec finding is a defect against what was
 # asked for, a Standards finding an improvement on how it was built.
 parts_with --axis spec
-fake_github
+file_github
 out="$("$ORCH" review file major "Misses a criterion" "${args[@]}" 2>&1)"; st=$?
 assert_status "files a Spec finding" "$st" 0
 assert_eq "labelled bug, and not enhancement" "$(fake_labels_of "$out")" "bug needs-triage review:major "
@@ -312,7 +327,7 @@ assert_contains "creating bug with GitHub's default colour and description" \
   "$(fake_labels)" "bug${tab}d73a4a${tab}Something isn't working"
 assert_not_contains "and no enhancement label" "$(fake_labels)" "enhancement${tab}"
 
-fake_github
+file_github
 parts_with --axis Standards
 out="$("$ORCH" review file nit "Rename it" "${args[@]}" 2>&1)"; st=$?
 assert_status "files a Standards finding, whatever the axis's case" "$st" 0
@@ -322,7 +337,7 @@ assert_contains "creating enhancement with GitHub's default colour and descripti
 
 # A category label that cannot be created - most often because the repo has
 # it already - does not stop the filing, and the repo's own is left as it is.
-fake_github
+file_github
 fake_label bug 123456 "The repo's own bug"
 fake_label enhancement 654321 "The repo's own enhancement"
 fake_next_issue 23
@@ -336,7 +351,7 @@ out="$("$ORCH" review file nit "Rename it" "${parts[@]}" 2>&1)"; st=$?
 assert_contains "nor over its own enhancement label" "$(fake_labels)" \
   "enhancement${tab}654321${tab}The repo's own enhancement"
 
-fake_github
+file_github
 fake_fail adapter_label_create "HTTP 502: Bad Gateway"
 fake_next_issue 24
 parts_with --axis spec
@@ -347,12 +362,12 @@ fake_unfail
 
 # Every refusal comes before any write: the fake's label and issue stores are
 # as they were. The store starts empty, so "as they were" is also "nothing".
-fake_github
+file_github
 # shellcheck disable=SC2016 # expanded by the inner bash
 sevs="$(sourced_orch_script 'printf "%s" "${FILED_SEVERITIES// /|}"')"
 # shellcheck disable=SC2016 # expanded by the inner bash
 axes="$(sourced_orch_script 'printf "%s" "${FILED_AXES// /|}"')"
-usage="orch: usage: orch.sh review file <$sevs> <title> --axis <$axes> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+usage="orch: usage: orch.sh review file <$sevs> <title> --axis <$axes> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --why <reason> [--spec-question <q>]"
 before="$(fake_snapshot)"
 # each case is one line, label|drop|add: parts less the flag named by drop and
 # its value, then add, word-split on spaces, so no value in add may hold one
@@ -369,15 +384,15 @@ a missing --axis|--axis|
 a missing --finding-file|--finding-file|
 a missing --severity-reason|--severity-reason|
 a missing --location|--location|
-a missing --sha|--sha|
-a missing --pr|--pr|
 a missing --why|--why|
-a repeated flag||--sha def5678
+a repeated flag||--why again
 an unknown flag||--frobnicate x
 a flag with no value||--spec-question
 the old --body-file||--body-file x
+the removed --sha||--sha abc1234
+the removed --pr||--pr https://github.com/o/r/pull/7
 CASES
-for flag in --axis --finding-file --severity-reason --location --sha --pr --why --spec-question; do
+for flag in --axis --finding-file --severity-reason --location --why --spec-question; do
   # --spec-question is not in parts, so its empty value is appended instead
   if [ "$flag" = --spec-question ]; then args=("${parts[@]}" "$flag" ""); else parts_with "$flag" "   "; fi
   out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
@@ -441,12 +456,44 @@ for loc in scripts/a.sh scripts/a.sh: :12 scripts/a.sh:x scripts/a.sh:12- script
 done
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
-parts_with --sha HEAD
-out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
-assert_status "refuses a sha that is not hex" "$st" 1
-assert_eq "naming the sha, not a field of the round trip" "$out" \
-  "orch: not a sha: HEAD (want a hex commit SHA)"
-assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
+# The PR's head and URL come from GitHub, read before any write. Each case
+# reseeds the store, so each snapshots its own.
+for bad in HEAD ""; do
+  file_github
+  fake_pr_head 7 "$bad"
+  before_bad="$(fake_snapshot)"
+  out="$("$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
+  assert_status "refuses a PR head that is not hex ('$bad')" "$st" 1
+  assert_eq "naming the sha, not a field of the round trip ('$bad')" "$out" \
+    "orch: not a sha: $bad (want a hex commit SHA)"
+  assert_eq "and writes nothing ('$bad')" "$(fake_snapshot)" "$before_bad"
+done
+
+file_github
+fake_pr_url 7 https://ghe.example.com/x/y/issues/7
+before_bad="$(fake_snapshot)"
+out="$("$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "refuses a PR url without /pull/<n>" "$st" 1
+assert_contains "saying the body does not parse back" "$out" "the rendered body does not parse back: pr"
+assert_eq "and writes nothing" "$(fake_snapshot)" "$before_bad"
+
+file_github
+before_bad="$(fake_snapshot)"
+assert_gh_dies "dies when GitHub cannot be read" adapter_pr_url_head "$GH_502" 1 \
+  "orch: gh could not read the URL and head of PR #7, recorded in state: HTTP 502: Bad Gateway" \
+  "$ORCH" review file major "Title" "${parts[@]}"
+assert_eq "and writes nothing" "$(fake_snapshot)" "$before_bad"
+
+state_fixture_drop pr
+file_github
+before_bad="$(fake_snapshot)"
+out="$("$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "dies with no PR in state" "$st" 1
+assert_eq "in require_pr's words" "$out" \
+  "orch: no PR recorded in state - the implement phase opens it"
+assert_eq "and writes nothing" "$(fake_snapshot)" "$before_bad"
+state_fixture pr 7
+file_github
 
 # The round trip: a body that does not parse back to its parts is refused,
 # naming the first field that did not.
@@ -483,14 +530,14 @@ assert_eq "filing no issue" "$(fake_issues)" ""
 assert_contains "and the labels already ensured stay" "$(fake_labels)" \
   "review:major${tab}d93f0b${tab}Review finding filed at major severity"
 
-fake_github
+file_github
 assert_gh_dies "a gh that will not create the label fails it too" adapter_label_upsert "$GH_502" 1 \
   "orch: gh could not create label review:major: HTTP 502: Bad Gateway" \
   "$ORCH" review file major "Title" "${parts[@]}"
 assert_eq "filing no issue" "$(fake_issues)" ""
 
 # The rendered body's temp file is gone on every exit.
-fake_github
+file_github
 empty_tmp="$(mktemp -d)"
 out="$(TMPDIR="$empty_tmp" "$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
 assert_status "files with TMPDIR an empty directory" "$st" 0
@@ -508,7 +555,7 @@ fake_unfail
 # The triage label is the repo's vocabulary, read from the doc the spec phase
 # labels from: a repo that renamed it must not get a second label the name
 # this plugin happens to know.
-fake_github
+file_github
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \

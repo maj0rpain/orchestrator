@@ -328,21 +328,21 @@ review_rerun() {
 # review_file <sev> <title> <flag> <value> ...: files a finding as a GitHub
 # issue, its body rendered from its parts by the Filed finding module. Every
 # check - the flags, the severity, the axis, the title, the finding file, the
-# location, the sha, and the round trip of the rendered body through the
-# parser - comes before any label or issue write, so a malformed finding never
-# reaches GitHub rather than surfacing weeks later as "body does not parse" in
-# triage.
+# location, the PR's head sha, and the round trip of the rendered body
+# through the parser - comes before any label or issue write, so a malformed
+# finding never reaches GitHub rather than surfacing weeks later as "body
+# does not parse" in triage.
 review_file() {
-  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
   local severity="$1" title="$2" flag value
-  local axis="" finding="" reason="" location="" sha="" pr="" why="" question=""
+  local axis="" finding="" reason="" location="" why="" question=""
   local seen=" "
   shift 2
   while [ $# -gt 0 ]; do
     flag="$1"
     case "$flag" in
-      --axis|--finding-file|--severity-reason|--location|--sha|--pr|--why|--spec-question) ;;
+      --axis|--finding-file|--severity-reason|--location|--why|--spec-question) ;;
       *) die "$usage" ;;
     esac
     [ $# -ge 2 ] || die "$usage"
@@ -355,18 +355,16 @@ review_file() {
       --finding-file)    finding="$value" ;;
       --severity-reason) reason="$value" ;;
       --location)        location="$value" ;;
-      --sha)             sha="$value" ;;
-      --pr)              pr="$value" ;;
       --why)             why="$value" ;;
       --spec-question)   question="$value" ;;
     esac
     shift 2
   done
-  for flag in --axis --finding-file --severity-reason --location --sha --pr --why; do
+  for flag in --axis --finding-file --severity-reason --location --why; do
     word_listed "$seen" "$flag" || die "$usage"
   done
 
-  local colour desc category triage n file line body_file
+  local colour desc category triage n file line body_file pr_n pr sha err
   is_filed_severity "$severity" \
     || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
   filed_severity_label "$severity" colour desc
@@ -385,6 +383,12 @@ review_file() {
     [[ $location == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
       || die "not a location: $location (want <file>:<line>, <file>:<start>-<end> or suite)"
   fi
+  # The PR's URL and remote head come from GitHub for the flow's recorded PR,
+  # before any write: the URL is right on any host, and the remote head is
+  # what finding triage scan fetches.
+  require_pr pr_n
+  pr_url_head_read "$pr_n" pr sha err \
+    || gh_die "read the URL and head of PR #$pr_n, recorded in state" "$err"
   [[ $sha =~ ^[0-9a-fA-F]+$ ]] || die "not a sha: $sha (want a hex commit SHA)"
 
   # The round trip. The temp file is removed on every exit - a refusal or a
