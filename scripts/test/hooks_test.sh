@@ -1377,10 +1377,6 @@ assert_eq "bash hook: a dirty file the call widens exits 2" "$bw_rc" 2
 assert_contains "bash hook: a dirty file the call widens is named" \
   "$bw_out" "docs/ok.md:3"
 git -C "$BW" checkout -q -- docs/ok.md
-bw_call "$BW" "printf '%s\n' '$wide' > docs/new.md"
-assert_eq "bash hook: a new untracked wide file exits 2" "$bw_rc" 2
-assert_contains "bash hook: a new untracked file is named" "$bw_out" "docs/new.md:1"
-rm -f "$BW/docs/new.md"
 bw_call "$BW" "printf '%s\n' '$wide' > README.md"
 assert_eq "bash hook: a new top-level untracked file exits 2" "$bw_rc" 2
 assert_contains "bash hook: a new top-level untracked file is named" \
@@ -1436,7 +1432,8 @@ elif [ -n "${CI:-}" ]; then
 else
   skip "bash hook: shellcheck case" "shellcheck is not on PATH"
 fi
-# A call that moves the session cwd: Post scans the Pre checkout.
+# A call that moves the session cwd: Post stays silent and drops the
+# snapshot, even when the Pre checkout gained a wide file.
 BW3="$(bw_repo)"
 printf '# T\n\n%s\n' "$wide" >"$BW3/docs/ok.md"
 BW_TMP2="$(mktemp -d)"
@@ -1445,11 +1442,24 @@ TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
 TMPDIR="$BW_TMP2" bw_hook PostToolUse "$BW3" "t$BW_ID"
 assert_eq "bash hook: a cwd moved into a dirty checkout exits 0" "$bw_rc" 0
 assert_empty "bash hook: a cwd moved into a dirty checkout is silent" "$bw_out"
+assert_empty "bash hook: a cwd moved into another checkout leaves no snapshot" \
+  "$(ls -A "$BW_TMP2")"
 BW_ID=$((BW_ID + 1))
 TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
+printf '%s\n' "$wide" >"$BW/docs/new.md"
 TMPDIR="$BW_TMP2" bw_hook PostToolUse "$NOREPO" "t$BW_ID"
+assert_eq "bash hook: a cwd moved outside a repo exits 0" "$bw_rc" 0
+assert_empty "bash hook: a cwd moved outside a repo is silent" "$bw_out"
 assert_empty "bash hook: a cwd moved outside a repo leaves no snapshot" \
   "$(ls -A "$BW_TMP2")"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
+TMPDIR="$BW_TMP2" bw_hook PostToolUse "$BW3" "t$BW_ID"
+assert_empty "bash hook: a wide file in the Pre checkout is silent from another" \
+  "$bw_out"
+assert_empty "bash hook: another checkout's Post leaves no snapshot" \
+  "$(ls -A "$BW_TMP2")"
+rm -f "$BW/docs/new.md"
 rm -rf "$BW3" "$BW_TMP2"
 # No baseline, malformed input, missing id, cwd outside a repo.
 bw_hook PostToolUse "$BW" "never-seen"
@@ -1502,12 +1512,11 @@ assert_empty "bash hook: PostToolUseFailure leaves no snapshot" \
   "$(ls -A "$BW_TMP")"
 git -C "$BW" checkout -q -- docs/ok.md
 # Parity: an Edit and a Bash call leaving the same wide file report alike.
-BWP="$(bw_repo)"
-printf '# T\n\n%s\n' "$wide" >"$BWP/docs/ok.md"
-bw_edit_out="$(jq -n --arg f "$BWP/docs/ok.md" '{tool_input:{file_path:$f}}' \
+printf '# T\n\n%s\n' "$wide" >"$BW/docs/ok.md"
+bw_edit_out="$(jq -n --arg f "$BW/docs/ok.md" '{tool_input:{file_path:$f}}' \
   | bash "$EDIT_HOOK" 2>&1)"; bw_edit_rc=$?
-git -C "$BWP" checkout -q -- docs/ok.md
-bw_call "$BWP" "printf '# T\n\n%s\n' '$wide' > docs/ok.md"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "printf '# T\n\n%s\n' '$wide' > docs/ok.md"
 assert_eq "bash hook: parity case reports exit 2" "$bw_rc" 2
 assert_contains "bash hook: parity case names the wide line" "$bw_out" "docs/ok.md:3"
 assert_eq "bash hook: parity with the Edit path, exit code and stderr" \
@@ -1523,7 +1532,7 @@ for ev in PreToolUse PostToolUse PostToolUseFailure; do
 done
 assert_not_contains "bash hook: absent from hooks/hooks.json" \
   "$(cat "$ROOT/hooks/hooks.json")" 'hook-edit-width'
-rm -rf "$BW" "$BW2" "$BWP" "$BW_TMP" "$BW_FILE"
+rm -rf "$BW" "$BW2" "$BW_TMP" "$BW_FILE"
 
 # --- bash stdin hook (scripts/hook-bash-stdin.sh, #2001)
 BSTDIN="$DIR/hook-bash-stdin.sh"

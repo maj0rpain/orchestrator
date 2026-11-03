@@ -78,8 +78,8 @@ case "$event" in
   PreToolUse)
     root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
     [ -n "$root" ] || exit 0
-    # The first line records the checkout, so Post scans it even when the call
-    # moved the session's cwd.
+    # The first line records the checkout, so Post can tell a call that
+    # moved the session's cwd into another checkout.
     { printf 'root\t%s\n' "$root" && dirty_hashes "$root"; } 2>/dev/null \
       >"$snap" || rm -f "$snap" 2>/dev/null
     exit 0
@@ -91,7 +91,10 @@ esac
 [ -f "$snap" ] || exit 0
 IFS= read -r head <"$snap" 2>/dev/null
 root="${head#root$'\t'}"
-if [ "$root" = "$head" ] || [ ! -d "$root" ]; then
+cwd_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
+# Only the checkout holding the payload's cwd is scanned: a cwd outside any
+# repo, or in another checkout than Pre's, drops the snapshot and stays silent.
+if [ "$root" = "$head" ] || [ ! -d "$root" ] || [ "$cwd_root" != "$root" ]; then
   rm -f "$snap" 2>/dev/null
   exit 0
 fi
