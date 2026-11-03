@@ -137,7 +137,9 @@ file's path inside `--root` or else its own git repo root, and `width.sh --root
 file, line and length, and exits 0 with or without findings. `docs_lint.sh`'s
 `scan_line_width` wraps the second form.
 The project's edit hook, `scripts/dev/hook-edit-width.sh`, runs the width
-tool and, for a `.sh` file, shellcheck on each edited file.
+tool and, for a `.sh` file, shellcheck on each edited file, and on each `.md` or
+`.sh` file a Bash call changed in the checkout holding its cwd (a PreToolUse
+snapshot of the dirty files, compared on PostToolUse or PostToolUseFailure).
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
@@ -320,13 +322,13 @@ scripts/version-bump.sh       the version-bump Action's script: changelog fragme
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
 scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
-scripts/dev/hook-edit-width.sh the project's PostToolUse edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file (Develop)
+scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh and affected.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10
-scripts/test/report.sh       the report helpers all.sh and affected.sh both source: a suite's FAIL block and summary line, and the shellcheck summary
+scripts/test/report.sh       the report helpers all.sh and affected.sh both source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
 scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh and affected.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, and suites_read, the reader of all.sh's suite list
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole

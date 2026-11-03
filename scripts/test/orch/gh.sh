@@ -46,7 +46,7 @@ pinned_replies() {
   gh_reply 0 '' '' api 'repos/{owner}/{repo}/issues/50' --jq '.parent_issue_url // empty'
   gh_reply 0 $'main\n' '' repo view "$1" --json defaultBranchRef --jq .defaultBranchRef.name
   gh_reply 0 '[{"bucket":"fail","name":"build","link":"https://github.com/x/y/actions/runs/4242/job/1"}]' '' \
-    pr checks 7 --json bucket,name,link
+    pr checks 7 --required --json bucket,name,link
   gh_reply 0 '' '' run rerun 4242 --failed
 }
 pinned_replies fork/widgets
@@ -460,6 +460,32 @@ err="$(faked adapter_issue_state_labels 20 2>&1 >/dev/null)"; st=$?
 assert_status "fake_fail_after with no stderr fails too" "$st" 1
 assert_eq "with fake_fail's message" "$err" "fake gh: adapter_issue_state_labels failed"
 fake_unfail
+# adapter_pr_close models GitHub: a PR already CLOSED, or OPEN with its head
+# gone from a readable origin (GitHub closed it itself), closes with no comment.
+fake_github
+close_repo="$(mktemp -d)"
+git init -q --bare "$close_repo/origin.git"
+git init -q "$close_repo/work"
+git -C "$close_repo/work" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$close_repo/work" remote add origin "$close_repo/origin.git"
+git -C "$close_repo/work" push -q origin HEAD:refs/heads/topic
+fake_pr 70 closed topic main
+(cd "$close_repo/work" && faked adapter_pr_close 70 "Redone.")
+assert_eq "pr close: a PR already CLOSED gets no comment" "$(fake_pr_comments_of 70)" ""
+fake_pr 71 open topic main
+(cd "$close_repo/work" && faked adapter_pr_close 71 "Redone.")
+assert_eq "pr close: an OPEN PR whose head is on origin is CLOSED" "$(cat "$ORCH_GH_FAKE_STORE/prs/71/state")" "CLOSED"
+assert_eq "with its comment" "$(fake_pr_comments_of 71)" "Redone."
+git -C "$close_repo/work" push -q origin :refs/heads/topic
+fake_pr 72 open topic main
+(cd "$close_repo/work" && faked adapter_pr_close 72 "Redone.")
+assert_eq "pr close: an OPEN PR whose head was deleted from origin is CLOSED" "$(cat "$ORCH_GH_FAKE_STORE/prs/72/state")" "CLOSED"
+assert_eq "with no comment, as GitHub's auto-close leaves it" "$(fake_pr_comments_of 72)" ""
+git init -q "$close_repo/noorigin"
+fake_pr 73 open topic main
+(cd "$close_repo/noorigin" && faked adapter_pr_close 73 "Redone.")
+assert_eq "pr close: an unreadable origin still closes the PR" "$(cat "$ORCH_GH_FAKE_STORE/prs/73/state")" "CLOSED"
+assert_eq "and appends its comment" "$(fake_pr_comments_of 73)" "Redone."
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
@@ -856,6 +882,19 @@ gh_reply 1 '' 'HTTP 502: Bad Gateway' \
   pr view 58 --json headRefOid,headRefName,baseRefName,commits --jq "$refs_jq"
 out="$(contract adapter_pr_refs 58 2>&1)"; st=$?
 assert_status "pr refs: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+url_jq='(.url // ""), (.headRefOid // "")'
+gh_reply 0 $'https://github.com/acme/widgets/pull/57\nbbbb\n' '' \
+  pr view 57 --json url,headRefOid --jq "$url_jq"
+out="$(contract adapter_pr_url_head 57 2>&1)"; st=$?
+assert_status "pr url head: reads the PR's URL and head" "$st" 0
+assert_eq "the URL on the first line, the head SHA on the second" \
+  "$out" "$(writeln https://github.com/acme/widgets/pull/57 bbbb)"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' \
+  pr view 58 --json url,headRefOid --jq "$url_jq"
+out="$(contract adapter_pr_url_head 58 2>&1)"; st=$?
+assert_status "pr url head: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
 gh_reply 0 '✓ Pull request acme/widgets#57 is marked as "ready for review"' '' pr ready 57
@@ -1380,4 +1419,28 @@ assert_status "fake: a seeded failure fails a create with status 1" "$st" 1
 assert_eq "fake: with the seeded stderr" "$out" "boom"
 fake_unfail
 rm -rf "$claim_origin"
+restore_suite_env
+
+# --- label casing (#1943) -----------------------------------------------------
+echo
+echo "label casing"
+new_repo >/dev/null
+fake_github
+: >"$ORCH_GH_FAKE_STORE/labels"; fake_label Needs-Human ededed old
+fake_issue 5 open
+sourced_orch adapter_issue_relabel 5 --add needs-human >/dev/null
+assert_eq "an add stores the repo's casing" "$(fake_labels_of 5)" "Needs-Human "
+sourced_orch adapter_issue_relabel 5 --add NEEDS-HUMAN >/dev/null
+assert_eq "an add of a carried label in any casing leaves it" "$(fake_labels_of 5)" "Needs-Human "
+sourced_orch adapter_issue_relabel 5 --remove needs-human >/dev/null
+assert_eq "a removal matches case-insensitively" "$(fake_labels_of 5)" ""
+sourced_orch adapter_label_upsert needs-human d93f0b "Waiting" >/dev/null
+assert_eq "an upsert keeps the existing name and rewrites colour and description" "$(fake_labels)" "Needs-Human	d93f0b	Waiting"
+assert_status "create's exists check folds case" "$(sourced_orch adapter_label_create NEEDS-HUMAN 000000 x >/dev/null 2>&1; echo $?)" 1
+printf 'Needs-Human\n' >"$ORCH_GH_FAKE_STORE/pr_label_drops"
+n="$(sourced_orch adapter_issue_create t /dev/null needs-human)"
+assert_eq "an issue create stores the repo's casing" "$(fake_labels_of "$n")" "Needs-Human "
+body="$(mktemp)"
+pn="$(sourced_orch adapter_pr_create main feat t "$body" --label needs-human --label Other)"
+assert_eq "the PR-create drop knob matches case-insensitively" "$(sourced_orch adapter_pr_labels "$pn")" "Other"
 restore_suite_env

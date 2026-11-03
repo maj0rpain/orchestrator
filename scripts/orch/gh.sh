@@ -28,6 +28,15 @@ gh() {
   command gh "$@"
 }
 
+# label_listed <labels> <label>: whether <label> is one of the newline-separated
+# <labels>, matched whole-line, literally and case-insensitively: GitHub's label
+# names are case-insensitive, and it attaches a label in the repo's existing
+# casing. The one label-membership test; list_has is its case-sensitive sibling
+# for what is not a label. Folds ASCII case, as grep -i does.
+label_listed() {
+  [[ $2 != *$'\n'* ]] && grep -qxiF -- "$2" <<<"$1"
+}
+
 # --- gh failure contract (#1022) ----------------------------------------------
 #
 # How a caller reacts to a failed adapter operation. gh_reason cuts gh's stderr
@@ -137,7 +146,8 @@ gh_or_die() {
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
-#   adapter_pr_comments, adapter_pr_refs, adapter_pr_ready, adapter_pr_draft,
+#   adapter_pr_comments, adapter_pr_refs, adapter_pr_url_head,
+#   adapter_pr_ready, adapter_pr_draft,
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_all,
 #   adapter_pr_diff, adapter_prs_merged,
 #   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
@@ -530,6 +540,22 @@ adapter_pr_refs() {
 # variables, on gh_lines_read's contract.
 pr_refs_read() {
   gh_lines_read adapter_pr_refs "$1" "$6" "$2" "$3" "$4" "$5"
+}
+
+# adapter_pr_url_head <n>: review file's read of the PR's canonical URL and
+# remote head commit (issue #1936). Prints the URL on the first line and the
+# head SHA on the second, an empty line for one GitHub leaves unset.
+adapter_pr_url_head() {
+  gh pr view "$1" --json url,headRefOid --jq '(.url // ""), (.headRefOid // "")'
+}
+
+# pr_url_head_read <n> <url_var> <sha_var> <err_var>: reads PR <n> once through
+# adapter_pr_url_head and writes its URL and head SHA (each empty where GitHub
+# leaves it unset) into the first two caller-named variables, on
+# gh_lines_read's contract.
+pr_url_head_read() {
+  local __puhr_rest
+  gh_lines_read adapter_pr_url_head "$1" "$4" "$2" "$3" __puhr_rest
 }
 
 # adapter_pr_ready <n>: marks the draft PR ready for review. Prints nothing.

@@ -1,5 +1,41 @@
 # Changelog
 
+## 4.43.45
+
+`orch.sh finding-triage bundle --into` is now an idempotent resume: a member already closed into the bundle is skipped, so the resume command printed after any member failure finishes the bundle. The failure message says "members not confirmed closed" where the close may have landed.
+
+## 4.43.44
+
+`branch off` and `branch create` fork from origin's freshly fetched base whenever origin answered, and die with git's message when that checkout fails, instead of silently forking from a stale local base.
+
+## 4.43.43
+
+The test runners now start jobs through one job pool helper, `test_jobs_job`, which owns the slot fd, and take their PASS/FAIL verdict from the failed parts alone: `report_verdict <runner>` decides from the recorded parts, and the reporters record their own.
+
+## 4.43.42
+
+A failed state write now always stops orch.sh with an `orch:` message. `phase advance` and `review ready` exit non-zero, print no boundary block or success line, and leave the recorded phase as it was, so re-running the command finishes the transition.
+
+## 4.43.41
+
+Fix `redo review` and `redo spec` closing the old draft PR without its redo note: the redo now closes the PR, with the note naming the retired `-redo-N` branch, before it retires the branch, because deleting an open PR's head branch makes GitHub close the PR itself and skip the comment.
+
+## 4.43.40
+
+`orch.sh review file` no longer takes `--pr` or `--sha`: it reads the flow's PR from state and asks GitHub for that PR's URL and remote head commit, so the review loop's closer has no URL or SHA to supply or guess.
+
+## 4.43.39
+
+`orch.sh review rerun` now reruns every distinct Actions run behind the failing checks `review ci` counts (required checks where any are reported, else all), instead of the first failing check of all checks. One helper owns which checks count.
+
+## 4.43.38
+
+A spec-review batch, a tickets file or a breakdown draft can now carry a content line that begins with `@@`: write it with a leading backslash (`\@@ note <text>`), and the parser removes one backslash. An unescaped `@@` grammar line out of place in a block dies naming the line and how to escape it, and a breakdown draft's ticket body no longer keeps a stray `@@` grammar line as text.
+
+## 4.43.37
+
+orch.sh now matches label names case-insensitively, as GitHub does, so a repo label in another casing (`Needs-Human`, `Orch:Running`, `Ready-For-Agent`, ...) counts as carried: the autopilot Standing read, `issue ready`/`triage`, `init --issue`, finding triage, the PR label checks and the Doctor no longer miss it. Existing labels keep their casing.
+
 ## 4.43.36
 
 A hung test no longer hangs a verification run: each FIFO handshake in the test suite waits at most 60 s for its partner and names the side that never arrived, and the parallel test runner gives each section a deadline (`ORCH_TEST_SECTION_TIMEOUT`, default 600 s), past which it stops the section's process tree and reports `section '<title>' timed out`.

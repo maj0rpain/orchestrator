@@ -5,6 +5,11 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# ALL_RUNNER_FILES: the files, by name in scripts/test/, that make up all.sh's
+# runnable copy. Every fixture that copies all.sh derives its copy, its written
+# list and its shellcheck counts from it.
+ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh)
+
 # count_lines [<grep flag>...] <pattern> <text>: prints how many lines of
 # <text> match <pattern>. Every argument before the last two goes to grep
 # as-is.
@@ -49,7 +54,7 @@ notice_wait() {
 pool_cpu_file() { printf '%s 100000\n' "$(($2 * 200000))" >"$1"; }
 
 # stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
-# of all.sh, test_jobs.sh and report.sh beside a passing stub for each name in
+# of ALL_RUNNER_FILES beside a passing stub for each name in
 # SUITES (suites_read first), with <dir>/bin holding links to the tools all.sh
 # needs, the extra ones included, and a shellcheck stub that logs "+" to the log
 # when it starts and "-" when it ends, 0.2 seconds apart. A stub suite logs
@@ -58,8 +63,7 @@ stub_all_tree() {
   local dir="$1" log="$2" tool stub
   shift 2
   mkdir -p "$dir/scripts/test" "$dir/bin"
-  cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
-    "$(dirname "$SUITE_SCRIPT")/report.sh" "$dir/scripts/test/"
+  (cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" "$dir/scripts/test/")
   for tool in bash dirname awk tail mktemp rm mkdir sleep cat "$@"; do
     ln -s "$(command -v "$tool")" "$dir/bin/$tool"
   done
@@ -193,9 +197,9 @@ helper_placement() {
   return 1
 }
 
-# The five multi-field gh ops gh_op_placement looks for outside the gh module,
+# The multi-field gh ops gh_op_placement looks for outside the gh module,
 # space-separated, and the trust read it also lets the Trust module name.
-GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs"
+GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs adapter_pr_url_head"
 GH_TRUST_READ_OPS="adapter_issue_authorship"
 
 # The gh op placement rule, as gh_op_placement's message states it.
@@ -1031,8 +1035,7 @@ done
 # an orch_test.sh stub that leaves a file in its TMPDIR.
 root_all="$root_dir/all"
 mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
-cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
-  "$(dirname "$SUITE_SCRIPT")/report.sh" "$root_all/scripts/test/"
+(cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" "$root_all/scripts/test/")
 for root_tool in bash dirname awk tail mktemp rm mkdir; do
   ln -s "$(command -v "$root_tool")" "$root_all/bin/$root_tool"
 done
@@ -1092,14 +1095,13 @@ all_root="$(mktemp -d)"
 all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
 mkdir -p "$all_dir/orch" "$all_bin"
-cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" \
-  "$(dirname "$SUITE_SCRIPT")/report.sh" "$all_dir/"
+(cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" "$all_dir/")
 for all_tool in bash dirname awk tail mktemp rm mkdir sleep; do
   ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
 done
 # all_written: every shell file the fixture writes, by path from <tmp>, for
 # the expected shellcheck arguments - never a glob.
-all_written=(scripts/test/all.sh scripts/test/test_jobs.sh scripts/test/report.sh)
+all_written=("${ALL_RUNNER_FILES[@]/#/scripts/test/}")
 all_planted=(scripts/lint_me.sh scripts/test/lint_me.sh scripts/test/orch/lint_me.sh
   scripts/dev/deep/lint_me.sh)
 mkdir -p "$all_root/scripts/dev/deep"
@@ -1320,6 +1322,15 @@ assert_status "exits non-zero when a suite printed FAIL lines but exited 0" "$st
 assert_contains "says a suite printed FAIL lines but exited 0, after its summary" "$out" \
   "$(printf 'orch_test.sh: 2 passed, 0 failed, 1 skipped\norch_test.sh: printed FAIL lines but exited 0')"
 assert_eq "a suite that printed FAIL lines but exited 0 is named in the FAIL verdict" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh)"
+
+# A suite that exits non-zero after printing a valid summary line still fails
+# the run: the verdict needs no raw-exit flag.
+all_swap orch_test.sh "trap 'exit 1' EXIT"
+out="$(all_run 2>&1)"; st=$?
+all_restore orch_test.sh
+assert_status "exits non-zero when a suite exits non-zero after a valid summary" "$st" 1
+assert_eq "a suite that exits non-zero after a valid summary is named in the FAIL verdict" \
   "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh)"
 
 # Leftover temp files and shellcheck findings together: both are named, in
@@ -1684,13 +1695,31 @@ wait "$jp_p2"; jp_s2=$?
 assert_status "two concurrent all.sh runs on a 1-slot pool pass" "$((jp_s1 + jp_s2))" 0
 assert_eq "their shellcheck processes never overlap on a 1-slot pool" "$(log_peak "$jp_log")" "1"
 assert_eq "every file was still checked, twice over" \
-  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + 3)))"
+  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + ${#ALL_RUNNER_FILES[@]})))"
 assert_contains "a waiting all.sh names itself in the notice" \
   "$(cat "$jp_dir/erra" "$jp_dir/errb2")" "all.sh: waiting for a job slot (1 in use)"
 else
   skip "two concurrent all.sh runs share a 1-slot pool" "flock is not installed"
 fi
 rm -rf "$jp_dir"
+
+# --- the slot fd contract (#2300) ---------------------------------------------
+# Only test_jobs.sh knows the slot fd: the runners start jobs through
+# test_jobs_job, and none holds the raw redirection or writes the report list.
+echo
+echo "the slot fd contract (#2300)"
+fd_tests="$(dirname "$SUITE_SCRIPT")"
+for fd_file in all.sh affected.sh orch_test.sh report.sh; do
+  assert_eq "$fd_file holds no raw slot fd" \
+    "$(grep -cE '8>&-|exec 8' "$fd_tests/$fd_file")" "0"
+done
+for fd_file in all.sh affected.sh orch_test.sh; do
+  assert_eq "$fd_file starts its jobs through test_jobs_job" \
+    "$(grep -c 'test_jobs_job ' "$fd_tests/$fd_file" | awk '{print ($1 > 0)}')" "1"
+  assert_eq "$fd_file never writes REPORT_FAILED" \
+    "$(grep -c 'REPORT_FAILED' "$fd_tests/$fd_file")" "0"
+done
+unset fd_file fd_tests
 
 # --- the test runners' CPU load (#1586) ---------------------------------------
 # The default job count, test_jobs.sh's test_jobs_default, with getconf faked
@@ -1782,7 +1811,7 @@ out="$(load_run_all ORCH_TEST_JOBS=2 2>&1)"; st=$?
 assert_status "all.sh with ORCH_TEST_JOBS=2 passes" "$st" 0
 assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(log_peak "$load_all/sc_log")" "2"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
-  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + 3))"
+  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + ${#ALL_RUNNER_FILES[@]}))"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
   "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: 0 findings"
 : >"$load_all/sc_log"
@@ -2584,7 +2613,7 @@ unset -f runner_git_isolation
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
-# layout: the real affected.sh, all.sh, git_env.sh, test_jobs.sh, report.sh and
+# layout: the real affected.sh, ALL_RUNNER_FILES, git_env.sh and
 # test_tree.sh,
 # a harness
 # file holding the three placement sections, a branch section file with two
@@ -2610,8 +2639,7 @@ af_put() {
 }
 af_git init -q -b main
 mkdir -p "$af/scripts/test/orch"
-cp "$af_tests/affected.sh" "$af_tests/all.sh" "$af_tests/git_env.sh" \
-  "$af_tests/test_jobs.sh" "$af_tests/report.sh" "$af_tests/test_tree.sh" "$af/scripts/test/"
+(cd "$af_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh test_tree.sh "$af/scripts/test/")
 suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for af_s in "${SUITES[@]}"; do
   [ -e "$af/scripts/test/$af_s" ] || af_put "scripts/test/$af_s"
