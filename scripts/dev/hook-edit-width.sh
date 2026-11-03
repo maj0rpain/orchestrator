@@ -88,7 +88,6 @@ esac
 [ -f "$snap" ] || exit 0
 findings=""
 while IFS=$'\t' read -r hash path; do
-  case "$path" in *.md | *.sh) ;; *) continue ;; esac
   grep -qxF -- "$hash"$'\t'"$path" "$snap" && continue
   out="$(check_file "$root/$path")"
   [ -z "$out" ] || findings="${findings:+$findings$'\n'}$out"

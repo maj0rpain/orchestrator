@@ -1394,9 +1394,13 @@ assert_eq "bash hook: perl -pi making a line wide exits 2" "$bw_rc" 2
 git -C "$BW" checkout -q -- docs/ok.md
 if command -v python3 >/dev/null 2>&1; then
   bw_call "$BW" "python3 -c \"
-p='docs/ok.md'; s=open(p).read(); open(p,'w').write(s.replace('word\n','word x\n'))\""
+p='docs/ok.md'; s=open(p).read(); open(p,'w').write(s.replace('word \n','word x\n'))\""
   assert_eq "bash hook: a python rewrite making a line wide exits 2" "$bw_rc" 2
   git -C "$BW" checkout -q -- docs/ok.md
+elif [ -n "${CI:-}" ]; then
+  bad "bash hook: python rewrite case" "python3 is not on PATH under CI"
+else
+  skip "bash hook: python rewrite case" "python3 is not on PATH"
 fi
 bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md; false" PostToolUseFailure
 assert_eq "bash hook: PostToolUseFailure reports the same call" "$bw_rc" 2
@@ -1454,31 +1458,24 @@ assert_empty "bash hook: no jq is silent" "$bw_pre_out$bw_out"
 git -C "$BW" checkout -q -- docs/ok.md
 # An unwritable snapshot: TMPDIR is a regular file.
 BW_FILE="$(mktemp)"
-bw_out="$(bw_payload PreToolUse "$BW" unw2 | TMPDIR="$BW_FILE" bash "$EDIT_HOOK" 2>&1)"
-bw_rc=$?
+TMPDIR="$BW_FILE" bw_hook PreToolUse "$BW" unw2
+bw_pre_rc="$bw_rc"; bw_pre_out="$bw_out"
 printf '%s\n' "$wide" >"$BW/docs/ok.md"
-bw_out2="$(bw_payload PostToolUse "$BW" unw2 | TMPDIR="$BW_FILE" bash "$EDIT_HOOK" 2>&1)"
-bw_rc2=$?
+TMPDIR="$BW_FILE" bw_hook PostToolUse "$BW" unw2
 assert_eq "bash hook: an unwritable TMPDIR leaves Pre and Post at exit 0" \
-  "$bw_rc$bw_rc2" 00
-assert_empty "bash hook: an unwritable TMPDIR is silent" "$bw_out$bw_out2"
+  "$bw_pre_rc$bw_rc" 00
+assert_empty "bash hook: an unwritable TMPDIR is silent" "$bw_pre_out$bw_out"
 git -C "$BW" checkout -q -- docs/ok.md
 # Cleanup: a pinned empty TMPDIR is empty again after every Post.
 BW_TMP="$(mktemp -d)"
-bw_cleanup_call() {
-  BW_ID=$((BW_ID + 1))
-  bw_payload PreToolUse "$BW" "c$BW_ID" | TMPDIR="$BW_TMP" bash "$EDIT_HOOK" >/dev/null 2>&1
-  (cd "$BW" && bash -c "$1") >/dev/null 2>&1
-  bw_payload "$2" "$BW" "c$BW_ID" | TMPDIR="$BW_TMP" bash "$EDIT_HOOK" >/dev/null 2>&1
-}
-bw_cleanup_call "ls" PostToolUse
+TMPDIR="$BW_TMP" bw_call "$BW" "ls"
 assert_empty "bash hook: Post leaves no snapshot after a silent call" \
   "$(ls -A "$BW_TMP")"
-bw_cleanup_call "sed -i 's/\$/x/' docs/ok.md" PostToolUse
+TMPDIR="$BW_TMP" bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md"
 assert_empty "bash hook: Post leaves no snapshot after an exit 2" \
   "$(ls -A "$BW_TMP")"
 git -C "$BW" checkout -q -- docs/ok.md
-bw_cleanup_call "sed -i 's/\$/x/' docs/ok.md" PostToolUseFailure
+TMPDIR="$BW_TMP" bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md" PostToolUseFailure
 assert_empty "bash hook: PostToolUseFailure leaves no snapshot" \
   "$(ls -A "$BW_TMP")"
 git -C "$BW" checkout -q -- docs/ok.md
@@ -1489,7 +1486,9 @@ bw_edit_out="$(jq -n --arg f "$BWP/docs/ok.md" '{tool_input:{file_path:$f}}' \
   | bash "$EDIT_HOOK" 2>&1)"; bw_edit_rc=$?
 git -C "$BWP" checkout -q -- docs/ok.md
 bw_call "$BWP" "printf '# T\n\n%s\n' '$wide' > docs/ok.md"
-assert_eq "bash hook: parity with the Edit path, exit code" \
+assert_eq "bash hook: parity case reports exit 2" "$bw_rc" 2
+assert_contains "bash hook: parity case names the wide line" "$bw_out" "docs/ok.md:3"
+assert_eq "bash hook: parity with the Edit path, exit code and stderr" \
   "$bw_rc/$bw_out" "$bw_edit_rc/$bw_edit_out"
 # Registration.
 for ev in PreToolUse PostToolUse PostToolUseFailure; do
