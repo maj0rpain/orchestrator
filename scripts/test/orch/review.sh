@@ -1729,6 +1729,7 @@ out="$("$ORCH" review ready 2>/dev/null)"; st=$?
 assert_status "the re-run succeeds" "$st" 0
 assert_eq "printing the PR number" "$out" "7"
 assert_eq "recording done" "$("$ORCH" state get phase)" "done"
+assert_eq "the PR is ready" "$(fake_pr_draft_of 7)" "no"
 restore_suite_env
 
 echo
@@ -1753,6 +1754,7 @@ assert_eq "the phase stays review" "$("$ORCH" state get phase)" review
 out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>/dev/null)"; st=$?
 assert_status "the re-run succeeds" "$st" 0
 assert_eq "recording done" "$("$ORCH" state get phase)" "done"
+assert_eq "the PR is ready" "$(fake_pr_draft_of 9)" "no"
 assert_eq "the label at done, running removed" "$(fake_labels_of 7)" "orch:done ready-for-agent "
 assert_eq "the claim released" "$(fake_claim_held 7)" free
 restore_suite_env
