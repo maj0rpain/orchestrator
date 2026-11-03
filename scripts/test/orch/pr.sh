@@ -211,7 +211,7 @@ fake_next_pr 60
 out="$("$ORCH" pr open "Title" "$body" --label no-version-bump 2>"$errf")"; st=$?
 assert_status "a label landed in the repo's casing is not reported missing" "$st" 0
 assert_eq "and the PR carries the repo's casing" "$(fake_pr_labels_of 60)" "No-Version-Bump"
-: >"$ORCH_GH_FAKE_STORE/labels"; rm -rf "$ORCH_GH_FAKE_STORE/prs/60"
+fake_label_names; rm -rf "$ORCH_GH_FAKE_STORE/prs/60"
 git config --unset "branch.orch/16-propen.orchestrator-pr"
 state_fixture pr ""
 fake_next_pr 42

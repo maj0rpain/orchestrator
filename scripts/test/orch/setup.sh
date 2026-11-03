@@ -703,6 +703,13 @@ fake_pr_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/prs/$1/comments
 # has. An unseeded store has no labels.
 fake_label() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$ORCH_GH_FAKE_STORE/labels"; }
 
+# fake_label_names <name>...: the repo's labels are exactly the names given,
+# each with no colour or description - none given, the repo has no labels.
+fake_label_names() {
+  : >"$ORCH_GH_FAKE_STORE/labels"
+  [ $# -eq 0 ] || printf '%s\t\t\n' "$@" >"$ORCH_GH_FAKE_STORE/labels"
+}
+
 # fake_labels: the store's labels read back, sorted, one per line as
 # "<name><TAB><colour><TAB><description>".
 fake_labels() { sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }

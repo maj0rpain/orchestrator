@@ -1602,7 +1602,7 @@ rm -f "$launcher_dir/release" "$launcher_dir/calls"
 
 # end to end: the repo holds Needs-Human; a question is asked as needs-human and
 # stored as Needs-Human; the next tick does not re-run the phase
-: >"$ORCH_GH_FAKE_STORE/labels"
+fake_label_names
 fake_label Needs-Human ededed seeded
 side7="$top/.orchestrator/checkouts/case-7"
 fake_issue_relabel 7 orch:spec ready-for-agent orch:running

@@ -33,13 +33,6 @@ path_without_jq() {
   printf '%s\n' "$d"
 }
 
-# fake_label_names <name>...: the repo's labels are exactly the names given,
-# each with no colour or description - none given, the repo has no labels.
-fake_label_names() {
-  : >"$ORCH_GH_FAKE_STORE/labels"
-  [ $# -eq 0 ] || printf '%s\t\t\n' "$@" >"$ORCH_GH_FAKE_STORE/labels"
-}
-
 # fake_local_default <owner/name>: gh's own local default repo for the
 # checkout; given an empty one, none is set.
 fake_local_default() {
