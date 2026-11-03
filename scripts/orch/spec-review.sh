@@ -1593,6 +1593,19 @@ spec_review_tickets_view() {
   esac
 }
 
+# The Tickets lines that report no ticket outcome: one definition each, for
+# the code that produces them and spec_review_tickets_placeholder.
+readonly TICKETS_NO_EDIT="Not checked - no edit applied"
+readonly TICKETS_NO_BREAKDOWN="None - no ticket breakdown"
+readonly TICKETS_NONE_AFFECTED="None - no ticket affected"
+
+# spec_review_tickets_placeholder <lines>: succeeds when <lines> is only one of
+# those placeholders.
+spec_review_tickets_placeholder() {
+  case "$1" in "$TICKETS_NO_EDIT"|"$TICKETS_NO_BREAKDOWN"|"$TICKETS_NONE_AFFECTED") return 0 ;; esac
+  return 1
+}
+
 # spec_review_tickets_lines: the changelog's Tickets lines, from tickets.md,
 # the ticket answer and the reasons.
 spec_review_tickets_lines() {
@@ -1622,7 +1635,7 @@ spec_review_tickets_lines() {
     out="$out- #${ST_CL_T[$i]} closed, built against the earlier spec: ${ST_CL_WHAT[$i]}"$'\n'
   done
   printf '%s' "${out%$'\n'}"
-  [ -n "$out" ] || printf 'None - no ticket affected'
+  [ -n "$out" ] || printf '%s' "$TICKETS_NONE_AFFECTED"
 }
 
 # spec_review_landed <dir>: the writes <dir>/applied.log records, joined for
@@ -1732,14 +1745,14 @@ spec_review_finish() {
 # placeholders leave the resumed run's line.
 spec_review_tickets_merge() {
   local hold="$1" resumed="$2" hp="" rp=""
-  case "$hold" in "Not checked - no edit applied"|"None - no ticket breakdown"|"None - no ticket affected") hp=1 ;; esac
-  case "$resumed" in "Not checked - no edit applied"|"None - no ticket breakdown"|"None - no ticket affected") rp=1 ;; esac
+  ! spec_review_tickets_placeholder "$hold" || hp=1
+  ! spec_review_tickets_placeholder "$resumed" || rp=1
   if [ -n "$rp" ]; then
     if [ -n "$hp" ]; then printf '%s' "$resumed"; else printf '%s' "$hold"; fi
   elif [ -n "$hp" ]; then
     printf '%s' "$resumed"
   else
-    printf 'Before the reply:\n%s\n\nAfter the reply:\n%s' "$hold" "$resumed"
+    printf 'Before the reply:\n%s\nAfter the reply:\n%s' "$hold" "$resumed"
   fi
 }
 
@@ -1958,7 +1971,7 @@ spec_review_apply() {
   ST_N=(); ST_RETIRE=""; TK_T=(); TK_FETCHED=(); TK_TEXT=()
   [ "$text" = "$fetched" ] || changed=1
   if [ -z "$changed" ]; then
-    tickets="Not checked - no edit applied"
+    tickets="$TICKETS_NO_EDIT"
   elif [ -n "$resume" ] && grep -Fxq -- "$(spec_review_label_retire "$issue")" "$dir/applied.log" 2>/dev/null; then
     # The dead run's retire landed, so the live state no longer shows the
     # breakdown it decided on; the rerun keeps that decision.
@@ -1967,7 +1980,7 @@ spec_review_apply() {
     capture kind err cmd_ticket_exists "$issue" || st=$?
     case "$st" in
       0) ;;
-      1) tickets="None - no ticket breakdown" ;;
+      1) tickets="$TICKETS_NO_BREAKDOWN" ;;
       *)
         die "ticket exists #$issue exited $st: $(err_line "$err") - nothing written" ;;
     esac
@@ -1998,16 +2011,16 @@ spec_review_apply() {
   # resumed run keeps the file it was resumed from.
   [ -n "$resume" ] || spec_review_save_answer "$dir" "${save_args[@]}"
 
-  local held_any=""
+  local held_any="" round_tickets="$tickets"
   if [ "$SR_FUNDAMENTAL_RUN" = resume ]; then
-    local held_tickets="Not checked - no edit applied"
+    local held_tickets="$TICKETS_NO_EDIT"
     [ ! -f "$dir/$SPEC_ROUND_HELD_TICKETS" ] || held_tickets="$(cat "$dir/$SPEC_ROUND_HELD_TICKETS")"
-    tickets="$(spec_review_tickets_merge "$held_tickets" "$tickets")"
+    round_tickets="$(spec_review_tickets_merge "$held_tickets" "$tickets")"
   fi
   [ "$SR_FUNDAMENTAL_RUN" != hold ] || [ "${#SR_IT_FUNDAMENTAL[@]}" -eq 0 ] || held_any=1
   local log=""
   if [ -z "$held_any" ]; then
-    log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
+    log="$(spec_review_changelog "$round" "$unattended" "$round_tickets" "$hosts")"
     spec_review_local_write "$dir/changelog.md" "$log"$'\n'
   fi
 

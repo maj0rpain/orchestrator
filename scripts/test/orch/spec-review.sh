@@ -1549,24 +1549,31 @@ assert_contains "naming the landed writes" "$out" "already landed: ticket #20's 
 srh_edit() {
   printf '@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ summary #20 edited\n@@ anchor\n%s\n@@ replace\n%s\n@@ end\n' "$1" "$2"
 }
-# srh_hold <edges>: srf_dir with #14's tickets, and the hold run done - its
-# tickets.md edits "Build alpha." ("edges" instead holds the unblock/block of
-# #20) and item 3 held back; the session then refetches #20.
-srh_hold() {
+# srh_hold_run <tickets.md>: srf_dir's round with #14's tickets and the hold
+# run's first half done - <tickets.md> written, item 3 held back (fundamental),
+# the session's pause and ticket fetch behind it; prints the directory. The hold
+# run itself is left to the caller.
+srh_hold_run() {
   local d
   d="$(srt_dir)"
   sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
-  if [ "${1:-}" = edges ]; then
-    printf '@@ recommend apply\n@@ item 1 unblock 21 by 20 apply\n@@ item 2 block 20 by 21 apply\n' >"$d/tickets.md"
-  else
-    srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
-  fi
+  printf '%s\n' "$1" >"$d/tickets.md"
   ORCH_AUTOPILOT=1 sra "$d" recommended
   srt_fetch "$d"
+  printf '%s\n' "$d"
+}
+srh_edges='@@ recommend apply
+@@ item 1 unblock 21 by 20 apply
+@@ item 2 block 20 by 21 apply'
+# srh_hold [<tickets.md>]: srh_hold_run, then the hold run done - its
+# tickets.md edits "Build alpha." unless given (srh_edges instead holds the
+# unblock/block of #20); the session then refetches #20.
+srh_hold() {
+  local d
+  d="$(srh_hold_run "${1:-$(srh_edit "Build alpha." "Build alpha prime.")}")"
   ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
   printf '%s\n' "$d"
 }
-srh_resume() { out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$@" --round 1/2 --issue 14 2>&1)"; st=$?; }
 srh_tail='None at all'
 
 d="$(srh_hold)"
@@ -1574,7 +1581,7 @@ assert_eq "the hold run holds the fundamental item" "$(on_disk "$d/fundamental.m
 assert_eq "the hold run publishes #20's edit" "$(fake_body_of 20 | sed -n 3p)" "Build alpha prime."
 fake_body_of 20 >"$d/ticket-20.md"
 srh_edit "None (can start immediately)" "$srh_tail" >"$d/tickets.md"
-srh_resume "$d" 3B --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
 assert_status "the resumed run applies its ticket edit" "$st" 0
 assert_eq "#20 holds the hold run's edit and the resumed run's" "$(fake_body_of 20)" '## What to build
 
@@ -1593,11 +1600,11 @@ srh_edit "Build alpha." "Build alpha primer." >"$d/tickets.md"
 out="$("$ORCH" spec-review check "$d" --tickets 2>&1)"; st=$?
 assert_status "check --tickets refuses an anchor only the pre-hold ticket held" "$st" 1
 
-d="$(srh_hold edges)"
+d="$(srh_hold "$srh_edges")"
 assert_eq "the hold run held the item" "$(on_disk "$d/fundamental.md")" present
 fake_body_of 20 >"$d/ticket-20.md"
 srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
-srh_resume "$d" 3B --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
 assert_status "the resumed run edits #20 after a block" "$st" 0
 assert_eq "#20 holds the Blocked by rewrite and the edit" "$(fake_body_of 20)" '## What to build
 
@@ -1607,22 +1614,27 @@ Build alpha prime.
 
 - #21'
 
-d="$(srh_hold edges)"
+# The hold keeps its ticket lines (#2132): the round's one changelog reports
+# both runs' ticket outcomes.
+srh_tickets() { fake_comments_of 14 | sed -n '/^### Tickets$/,$p'; }
+
+d="$(srh_hold "$srh_edges")"
 fake_body_of 20 >"$d/ticket-20.md"
 srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
 fake_fail adapter_issue_comment
-srh_resume "$d" 3B --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
 fake_unfail
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 2>&1)"; st=$?
 assert_status "a resumed run rerun with --resume" "$st" 0
 assert_eq "#20 still holds both" "$(fake_body_of 20 | sed -n '3p;7p')" "Build alpha prime.
 - #21"
+assert_eq "the Tickets comment is posted once" "$(srh_tickets | grep -c 'Before the reply:')" 1
 
 d="$(srh_hold)"
 fake_body_of 20 >"$d/ticket-20.md"
 srh_edit "None (can start immediately)" "$srh_tail" >"$d/tickets.md"
 fake_fail adapter_issue_body_edit
-srh_resume "$d" 3B --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
 fake_unfail
 assert_status "a ticket write failure stops the resumed run" "$st" 1
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 2>&1)"; st=$?
@@ -1630,72 +1642,59 @@ assert_status "and --resume finishes it" "$st" 0
 assert_eq "#20 keeps the hold run's edit beside the resumed run's" "$(fake_body_of 20 | sed -n '3p;7p')" "Build alpha prime.
 None at all"
 
-# The hold keeps its ticket lines (#2132): the round's one changelog reports
-# both runs' ticket outcomes.
-srh_tickets() { fake_comments_of 14 | sed -n '/^### Tickets$/,$p'; }
 d="$(srh_hold)"
 fake_body_of 20 >"$d/ticket-20.md"
 srh_edit "None (can start immediately)" "$srh_tail" >"$d/tickets.md"
-srh_resume "$d" 3B --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
 assert_status "both runs edit a ticket" "$st" 0
 assert_contains "the hold's part is labelled, first" "$(srh_tickets)" "Before the reply:
 - (1) #20 edited
-
 After the reply:
 - (1) #20 edited"
-assert_eq "held-tickets.md is removed" "$(on_disk "$d/held-tickets.md")" absent
 
 d="$(srh_hold)"
 fake_body_of 20 >"$d/ticket-20.md"
 printf '@@ recommend apply\n' >"$d/tickets.md"
-srh_resume "$d" 3B --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
 assert_status "the resumed run applies no ticket edit" "$st" 0
 assert_eq "the hold's lines stand alone, unlabelled" "$(srh_tickets)" "### Tickets
 - (1) #20 edited"
 
-d="$(srh_hold edges)"
-fake_body_of 20 >"$d/ticket-20.md"
-srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
-fake_fail adapter_issue_comment
-srh_resume "$d" 3B --tickets recommended
-fake_unfail
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 2>&1)"; st=$?
-assert_status "a changelog write that failed, rerun with --resume" "$st" 0
-assert_eq "posts the ticket lines once" "$(srh_tickets | grep -c 'Before the reply:')" 1
+d="$(srh_hold '@@ recommend retire')"
+ORCH_AUTOPILOT=1 sra "$d" 3B
+assert_status "the resumed run after the hold retired the breakdown" "$st" 0
+assert_eq "the retire line stands alone" "$(srh_tickets)" "### Tickets
+- retired, to be broken down again"
 
-d="$(srt_dir)"
-sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
-srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" recommended
-srt_fetch "$d"
+d="$(srh_hold '@@ recommend apply
+@@ closed 22 the gamma API')"
+printf '@@ recommend apply\n' >"$d/tickets.md"
+ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
+assert_status "the resumed run after the hold closed a ticket" "$st" 0
+assert_eq "the closed-ticket line stands alone" "$(srh_tickets)" "### Tickets
+- #22 closed, built against the earlier spec: the gamma API"
+
+d="$(srh_hold_run "$(srh_edit "Build alpha." "Build alpha prime.")")"
 mkdir "$d/held-tickets.md"
-srh_resume "$d" recommended --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
 assert_status "a held-tickets write that cannot land stops the hold" "$st" 1
 assert_contains "naming the file" "$out" "could not write $d/held-tickets.md"
 assert_contains "and fundamental.md" "$out" "$d/fundamental.md"
 assert_contains "and the landed writes" "$out" "every GitHub write landed: ticket #20's body"
 
 # The hold's failures: a copy that cannot land, a refetch that fails.
-d="$(srt_dir)"
-sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
-srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" recommended
-srt_fetch "$d"
+d="$(srh_hold_run "$(srh_edit "Build alpha." "Build alpha prime.")")"
 mkdir -p "$d/ticket-21.fetched.md/ticket-21.md"
-srh_resume "$d" recommended --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
 assert_status "a ticket copy that cannot be rebased stops the hold" "$st" 1
 assert_contains "naming the file" "$out" "could not copy ticket-21.md to $d/ticket-21.fetched.md"
 assert_contains "and fundamental.md" "$out" "$d/fundamental.md"
 assert_contains "and the landed writes" "$out" "every GitHub write landed: ticket #20's body"
 
-d="$(srt_dir)"
-sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
-printf '@@ recommend apply\n@@ item 1 unblock 21 by 20 apply\n@@ item 2 block 20 by 21 apply\n' >"$d/tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" recommended
-srt_fetch "$d"
+d="$(srh_hold_run "$srh_edges")"
 fake_fail adapter_issue_body
 printf "2\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_body.after"  # the two edge writes read first
-srh_resume "$d" recommended --tickets recommended
+ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
 fake_unfail
 assert_status "a failed refetch of a block-edited ticket stops the hold" "$st" 1
 assert_contains "naming the ticket" "$out" "could not refetch ticket #21"
