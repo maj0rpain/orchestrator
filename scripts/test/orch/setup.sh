@@ -942,21 +942,14 @@ repo_missing="no GitHub repo to work on"
 repo_cause="$repo_missing: origin is missing or not a GitHub owner/name"
 repo_remedy="$repo_cause - set GH_REPO=<owner>/<repo>"
 
-# shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
-[ -n "$orch_child_counts" ] || echo "orch.sh tests"
-
 # >>> summary
 # Each call the real-gh guard logged is one FAIL naming it.
 while IFS= read -r gh_guard_call; do
   bad "a section called the real gh" "$gh_guard_call"
 done <"$GH_GUARD_LOG"
 tally_read
-# A parallel child or the sequential run's subshell (the two holders of
-# orch_child_counts) hands its counts on instead of printing them.
+# A parallel child or the sequential run's subshell hands its counts on to the
+# runner, which prints them; orch_test.sh always sets the counts file.
 # shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
-if [ -n "$orch_child_counts" ]; then
-  echo "$PASS $FAIL $SKIP" >"$orch_child_counts"
-else
-  print_summary "$PASS" "$FAIL" "$SKIP"
-fi
+echo "$PASS $FAIL $SKIP" >"$orch_child_counts"
 [ "$FAIL" -eq 0 ]

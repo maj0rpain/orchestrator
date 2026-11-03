@@ -248,8 +248,8 @@ split_branches() {
 }
 
 # print_summary <pass> <fail> <skip>: the suite's closing lines, a blank line
-# then the counts, the skips only when there were any. The parallel runner and
-# the summary section both print through it, so their stdout cannot drift apart.
+# then the counts, the skips only when there were any. The parallel and the
+# sequential runner both print through it, so their stdout cannot drift apart.
 print_summary() {
   echo
   if [ "$3" -gt 0 ]; then

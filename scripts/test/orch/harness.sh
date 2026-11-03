@@ -1423,6 +1423,8 @@ out="$(all_run 2>&1)"
 assert_contains "a suite with a header then a summary line passes" "$out" \
   "docs_lint.sh: 3 passed, 0 failed"
 assert_not_contains "and is not said to have died" "$out" "docs_lint.sh: died"
+assert_eq "and is left out of the FAIL verdict" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh, hooks_test.sh)"
 rm -rf "$all_root"
 
 # --- the job pool (#2022) -----------------------------------------------------
@@ -2864,10 +2866,13 @@ assert_eq "ending on a FAIL verdict naming the failing parts" "$(printf '%s\n' "
 
 # A suite that exits 0 on a header, with no summary line, died before it.
 printf '%s\n' '#!/usr/bin/env bash' 'echo "a section header"' >"$af/scripts/test/hooks_test.sh"
+af_put scripts/hook-guard.sh 'echo ok'
 af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a suite that exited 0 without its summary makes the run exit 1" "$st" 1
 assert_contains "and is reported as died before its summary" "$af_out" \
   "hooks_test.sh: died before its summary (exit 0)"
+assert_eq "ending on a FAIL verdict naming only that suite" "$(printf '%s\n' "$af_out" | tail -n 1)" \
+  "affected.sh: FAIL (hooks_test.sh)"
 
 # The verdict line (the last stdout line), on a PATH without shellcheck: its
 # links are the tools the runners and the fixture need.
