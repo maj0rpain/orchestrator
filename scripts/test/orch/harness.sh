@@ -1423,13 +1423,12 @@ assert_eq "an unlisted runner is named, in name order, and nothing else is" "$ul
 printf '%s\n' 'suites_list=(listed_test.sh)' >"$ul_root/all.sh"
 ul_out="$(suites_unlisted "$ul_root/all.sh" "$ul_root"; echo "st=$?")"
 assert_eq "an all.sh with no suites=( line prints nothing and returns 1" "$ul_out" "st=1"
-suites_unlisted "$ul_root/all.sh" "$ul_root" >/dev/null; st=$?
+suites_unlisted "$ul_root/all.sh" "$ul_root" >/dev/null
 assert_contains "and sets SUITES_ERR" "$SUITES_ERR" "$ul_root/all.sh"
 rm -rf "$ul_root"
 ul_dir="$(dirname "$SUITE_SCRIPT")"
 ul_out="$(suites_unlisted "$ul_dir/all.sh" "$ul_dir")"; st=$?
 assert_status "the real test directory reads" "$st" 0
-[ -z "$ul_out" ] || bad "every runner is in all.sh's suites list" "$ul_out"
 assert_eq "the real test directory has no unlisted runner" "$ul_out" ""
 
 # --- the job pool (#2022) -----------------------------------------------------
