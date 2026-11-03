@@ -70,11 +70,11 @@ SPEC_RULING_ENTRIES_JQ='.[] | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
   | map(select(length > 0)) | join(" ")'
 
 # has_headings <file> <heading>...: true when <file> has every <heading> as a
-# line of its own.
+# line of its own outside any code fence.
 has_headings() {
   local file="$1" h
   shift
-  for h in "$@"; do grep -qxF -- "$h" "$file" || return 1; done
+  for h in "$@"; do [ "$(section_count "$file" "$h")" -gt 0 ] || return 1; done
 }
 
 # review_pass_known_items <issue> <path> [--deviations <file>]: writes the
