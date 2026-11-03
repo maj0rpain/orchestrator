@@ -85,6 +85,15 @@ out="$(orch_gh_failing side-checkout add on-uat 2>/dev/null)"
 assert_eq "add forks from the base branch in effect" "$(git -C "$out" rev-parse HEAD)" "$uat_tip"
 git worktree remove "$out"
 
+# A stray local branch named origin/main must not stand in for origin's tip.
+git branch origin/main "$(git rev-list --max-parents=0 HEAD | tail -1)"
+git config --unset orchestrator.base
+out="$(orch_gh_failing side-checkout add stray 2>/dev/null)"
+assert_eq "add forks from origin's tip, not a stray origin/main branch" \
+  "$(git -C "$out" rev-parse HEAD)" "$moved_tip"
+git worktree remove "$out"
+git branch -q -D origin/main
+
 # A failed fetch dies before any worktree exists.
 git config orchestrator.base nosuch
 out="$(orch_gh_failing side-checkout add nofetch 2>&1)"; st=$?

@@ -333,7 +333,7 @@ cmd_side_checkout_add() {
   base="$(base_branch)"
   git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch base branch $base from origin - no side checkout was made"
-  git worktree add -q --detach "$path" "origin/$base" \
+  git worktree add -q --detach "$path" "refs/remotes/origin/$base" \
     || die "could not add side checkout $path"
   if ! gd="$(git -C "$path" rev-parse --absolute-git-dir)" \
      || ! printf '%s' "${issue:+$issue$'\n'}" 2>/dev/null >"$gd/$SIDE_CHECKOUT_MARKER"; then

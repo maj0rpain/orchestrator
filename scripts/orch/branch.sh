@@ -25,15 +25,16 @@ checkout_new_branch() {
 # so a caller with something to write first (branch create's discard) runs
 # them before it.
 # It also decides the start point, the ref the branch forks from, and returns it
-# through the caller-named <start_var>: origin/<base> after a fetch that
-# worked; when origin could not be asked, origin/<base> if that remote-tracking
-# ref exists, else the local <base>.
+# through the caller-named <start_var>, named in full so a local branch or tag
+# called origin/<base> cannot capture it: refs/remotes/origin/<base> after a
+# fetch that worked; when origin could not be asked, that remote-tracking ref
+# if it exists, else the local refs/heads/<base>.
 new_branch_refusals() {
   local __nbr_out="$1" name="$2" base="$3" remedy="${4:-start again on another base branch}"
   local __nbr_start
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
   if git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null; then
-    __nbr_start="origin/$base"
+    __nbr_start="refs/remotes/origin/$base"
   else
     # Only an origin that could not be asked earns the local fallback: one
     # that answered "no such branch" means the base is gone, and forking from
@@ -44,9 +45,9 @@ new_branch_refusals() {
     [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or $remedy"
     [ "$st" -ne 0 ] || die "could not fetch $base from origin"
     if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null; then
-      __nbr_start="origin/$base"
+      __nbr_start="refs/remotes/origin/$base"
     else
-      __nbr_start="$base"
+      __nbr_start="refs/heads/$base"
     fi
   fi
   printf -v "$__nbr_out" '%s' "$__nbr_start"
@@ -344,7 +345,7 @@ cmd_branch_sync() {
   git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch $base from origin - nothing was synced"
   tip="$(git rev-parse "refs/remotes/origin/$base")"
-  if ! git merge --quiet --no-edit "origin/$base" >/dev/null 2>&1; then
+  if ! git merge --quiet --no-edit "refs/remotes/origin/$base" >/dev/null 2>&1; then
     if merge_in_progress "$ROOT"; then
       warn "merging origin/$base into $branch hit a conflict - the merge is left in progress; resolve and commit it, then rerun orch.sh branch sync"
       exit 3
