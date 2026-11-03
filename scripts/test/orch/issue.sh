@@ -823,7 +823,7 @@ done
 assert_eq "and writes no file" "$(on_disk "$issue_json")" "absent"
 out="$("$ORCH" issue comments 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "--json is fetch's alone: comments refuses it" "$st" 1
-assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file> [--with-spec-review]"
 assert_eq "and writes no file" "$(on_disk "$issue_json")" "absent"
 assert_contains "help lists --json under issue fetch" "$("$ORCH" help)" "issue fetch <n> <file> [--json]"
 
@@ -992,6 +992,49 @@ rm -f "$issue_json_trust"
 out="$("$ORCH" issue comments 24 "$issue_comments" 2>&1)"
 assert_eq "no line when nothing was dropped" "$out" ""
 
+# --with-spec-review (#1921): the same read and rendering, the spec review's
+# changelogs kept; the trust filter and the failed-read contract unchanged.
+out="$("$ORCH" issue comments 960 "$issue_comments" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review succeeds on an issue mixing changelogs and other comments" "$st" 0
+assert_eq "keeping every comment in order, changelogs included" \
+  "$(cat "$issue_comments")" "$(writeln '<!-- comment @pat 2026-09-03T09:00:00Z -->' \
+    "$(marker_of spec-review)" 'Round 1 of 1' '' 'Nothing changed.' '' \
+    '<!-- comment @triage-bot 2026-09-03T10:00:00Z -->' 'A follow-up that quotes' '## Spec review' 'lower down.' '' \
+    '<!-- comment @pat 2026-09-03T11:00:00Z -->' "$(marker_of spec-review)" 'Round 1 of 2' '' \
+    '<!-- comment @sam 2026-09-03T12:00:00Z -->' '## Spec reviewer notes' 'Not a changelog.')"
+out="$("$ORCH" issue comments 961 "$issue_comments" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review succeeds on an issue with only changelogs" "$st" 0
+assert_eq "writing them, not an empty file" "$(cat "$issue_comments")" \
+  "$(writeln '<!-- comment @pat 2026-09-03T09:00:00Z -->' "$(marker_of spec-review)" 'Round 1 of 2' '' \
+    '<!-- comment @pat 2026-09-03T10:00:00Z -->' "$(marker_of spec-review)" 'Round 2 of 2')"
+out="$("$ORCH" issue comments 25 "$issue_comments" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review succeeds on an issue with no comments" "$st" 0
+assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
+out="$("$ORCH" issue comments 962 "$issue_comments" --with-spec-review 2>&1)"; st=$?
+assert_status "--with-spec-review succeeds past untrusted authors" "$st" 0
+assert_eq "and says how many it ignored, once" "$out" \
+  "orch: ignored 2 comment(s) from untrusted authors on #962"
+assert_eq "dropping the stranger's fake changelog too" "$(cat "$issue_comments")" \
+  "$(writeln '<!-- comment @owner 2026-09-04T09:00:00Z -->' 'Owner note.')"
+printf 'known content\n' >"$issue_comments"
+assert_gh_dies "a gh that will not answer fails the --with-spec-review fetch" adapter_issue_json "$GH_502" 1 \
+  "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
+  "$ORCH" issue comments 24 "$issue_comments" --with-spec-review
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
+rm -f "$issue_comments"
+for args in "24 --with-spec-review $issue_comments" "24 $issue_comments --with-spec-reviw" "24 $issue_comments --with-spec-review extra" "24 $issue_comments --json"; do
+  # shellcheck disable=SC2086 # each case is split into its words on purpose
+  out="$("$ORCH" issue comments $args 2>&1)"; st=$?
+  assert_status "comments refuses a misplaced or unknown flag: $args" "$st" 1
+  assert_contains "with the usage line" "$out" "usage: orch.sh issue comments <n> <file> [--with-spec-review]"
+done
+assert_eq "and writes no file" "$(on_disk "$issue_comments")" "absent"
+issue_comments="$(mktemp)"
+assert_contains "help lists the flag" "$("$ORCH" help)" "issue comments <n> <file> [--with-spec-review]"
+assert_contains "and says it keeps the ## Spec review comments" "$("$ORCH" help | tr -s ' \n' '  ')" \
+  "with --with-spec-review, comments opening with the ## Spec review heading are kept"
+
 printf 'known content\n' >"$issue_comments"
 assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_json "$GH_502" 1 \
   "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
@@ -1002,7 +1045,7 @@ assert_eq "and leaves the file that was already there byte-identical" \
 out="$("$ORCH" issue comments abc "$issue_comments" 2>&1)"; st=$?
 assert_status "comments refuses an issue number that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
-assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file> [--with-spec-review]"
 
 out="$("$ORCH" issue comments 23 2>&1)"; st=$?
 assert_status "comments refuses with no file" "$st" 1

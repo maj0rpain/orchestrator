@@ -402,12 +402,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               no state
   issue comment <n> <file>    post <file> as a comment on issue <n>,
                               recording no state
-  issue comments <n> <file>   write every comment on issue <n> to <file>, in
+  issue comments <n> <file> [--with-spec-review]
+                              write every comment on issue <n> to <file>, in
                               order, each opened by a line
                               <!-- comment @<login> <createdAt> --> - recording
                               no state; a comment whose body opens with the
                               ## Spec review heading is left out; no comments
-                              is an empty file
+                              is an empty file; with --with-spec-review,
+                              comments opening with the ## Spec review
+                              heading are kept
   issue triage <n> [--override]
                               move open issue <n> to ready-for-agent, removing
                               its other triage labels, verify by reading the

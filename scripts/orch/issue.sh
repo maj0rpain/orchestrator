@@ -139,11 +139,16 @@ ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.autho
 # comments beside the body without its earlier rounds. Filtered here rather
 # than in the adapter, from the issue's trusted structured read, never by
 # splitting the joined text. No comments is an empty file, not an error; the
-# file is written only once the read has succeeded.
+# file is written only once the read has succeeded. With --with-spec-review
+# (#1921; orch-questions passes it) the changelogs are kept, the one difference.
 cmd_issue_comments() {
-  local issue="$1" file="$2" json text
+  local issue="$1" file="$2" keep_reviews="${3:-}" json text
   issue_json_trusted "read the comments of issue #$issue" "$issue" json
-  text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ")" \
+  if [ -n "$keep_reviews" ]; then
+    text="$(jq -r "$ISSUE_COMMENTS_KEPT_JQ" <<<"$json")"
+  else
+    text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ")"
+  fi \
     || die "could not read the comments of issue #$issue"
   # $(...) drops the trailing newline jq -r printed; put it back unless empty.
   file_write_atomic "$file" "${text:+$text$'\n'}" \
@@ -173,9 +178,13 @@ cmd_issue() {
     fetch|update|comment|comments)
       local usage="usage: orch.sh issue $op <n> <file>"
       [ "$op" = fetch ] && usage="usage: orch.sh issue fetch <n> <file> [--json]"
-      # For fetch alone, --json only as the third argument; any other shape is
-      # a usage error.
-      [ $# -eq 2 ] || { [ "$op" = fetch ] && [ $# -eq 3 ] && [ "$3" = --json ]; } \
+      [ "$op" = comments ] && usage="usage: orch.sh issue comments <n> <file> [--with-spec-review]"
+      # A flag only as the third argument, and only the op's own (--json for
+      # fetch, --with-spec-review for comments); any other shape is a usage
+      # error.
+      [ $# -eq 2 ] \
+        || { [ "$op" = fetch ] && [ $# -eq 3 ] && [ "$3" = --json ]; } \
+        || { [ "$op" = comments ] && [ $# -eq 3 ] && [ "$3" = --with-spec-review ]; } \
         || die "$usage"
       case "$1" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $1 ($usage)" ;; esac
       "cmd_issue_$op" "$@"
