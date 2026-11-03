@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.31
+
+`branch create`'s Discard rule now decides on the branch it is making, so a fresh run on a retired `-redo-<n>` branch refuses instead of discarding; one `work_to_discard` predicate defines the work to discard for both discard sites.
+
 ## 4.43.30
 
 orch-review's CI section states how to run `review ci` before the flake rerun refers back to it.
