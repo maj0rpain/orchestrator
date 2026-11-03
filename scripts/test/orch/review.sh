@@ -479,12 +479,9 @@ assert_eq "and writes nothing" "$(fake_snapshot)" "$before_bad"
 
 file_github
 before_bad="$(fake_snapshot)"
-fake_fail adapter_pr_url_head "$GH_502"
-out="$("$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
-fake_unfail
-assert_status "dies when GitHub cannot be read" "$st" 1
-assert_eq "naming the read" "$out" \
-  "orch: gh could not read the URL and head of PR #7, recorded in state: HTTP 502: Bad Gateway"
+assert_gh_dies "dies when GitHub cannot be read" adapter_pr_url_head "$GH_502" 1 \
+  "orch: gh could not read the URL and head of PR #7, recorded in state: HTTP 502: Bad Gateway" \
+  "$ORCH" review file major "Title" "${parts[@]}"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before_bad"
 
 state_fixture_drop pr

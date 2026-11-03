@@ -192,7 +192,7 @@ helper_placement() {
   return 1
 }
 
-# The five multi-field gh ops gh_op_placement looks for outside the gh module,
+# The multi-field gh ops gh_op_placement looks for outside the gh module,
 # space-separated, and the trust read it also lets the Trust module name.
 GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs adapter_pr_url_head"
 GH_TRUST_READ_OPS="adapter_issue_authorship"
