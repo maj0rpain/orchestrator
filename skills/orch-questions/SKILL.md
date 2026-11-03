@@ -58,7 +58,7 @@ It reads, through `orch.sh` and never raw `gh`:
 - the issue body (the spec): `bash "$ORCH" issue fetch <issue> <file>`;
 - the comments, including the plan comment (`<!-- orch:handoff 01-plan -->`),
   the spec-review changelogs and the question comment itself: `bash "$ORCH"
-  issue comments <issue> <file>`;
+  issue comments <issue> <file> --with-spec-review`;
 - for a `review`-phase question, the linked PR's body and diff: `bash "$ORCH"
   pr read <issue> <file>`.
 
