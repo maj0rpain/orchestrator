@@ -655,6 +655,9 @@ assert_eq "denies a new file in a missing directory, cwd /" \
   "$(edit_event_at "$(cd "$REPO" && pwd -P)/nodir/deeper/new.ts" s1 / | "$GUARD" | dec)" "deny"
 assert_eq "denies an edit of a hook under the repo's .git, cwd /" \
   "$(edit_event_at "$(cd "$REPO" && pwd -P)/.git/hooks/pre-commit" s1 / | "$GUARD" | dec)" "deny"
+git -C "$REPO" -c protocol.file.allow=always -c user.email=t@t -c user.name=t submodule add -q "$NEST" lib >/dev/null 2>&1
+assert_eq "denies an edit of a hook under a submodule's git dir, cwd /" \
+  "$(edit_event_at "$(cd "$REPO" && pwd -P)/.git/modules/lib/hooks/pre-commit" s1 / | "$GUARD" | dec)" "deny"
 SL2="$(mktemp -d)"; ln -s "$REPO" "$SL2/link"
 assert_eq "denies via a symlinked repo with cwd in the nested repo" \
   "$(edit_event_at "$SL2/link/src/x.ts" s1 "$NEST" | "$GUARD" | dec)" "deny"

@@ -35,14 +35,19 @@ file="$(hook_tool_path)"
 dir="${file%/*}"
 while [ -n "$dir" ] && [ ! -d "$dir" ]; do dir="${dir%/*}"; done
 dir="${dir:-/}"
-if ! root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)"; then
-  # Inside a non-bare repo's git dir there is no toplevel, yet the file belongs
-  # to that repo (a hook is code): judge it against the working tree above the
-  # common git dir.
-  [ "$(git -C "$dir" rev-parse --is-inside-git-dir 2>/dev/null)" = true ] || exit 0
+if [ "$(git -C "$dir" rev-parse --is-inside-git-dir 2>/dev/null)" = true ]; then
+  # Inside a git dir the file belongs to the repo whose git dir it is (a hook is
+  # code). A git dir with core.worktree set, a submodule's absorbed one, still
+  # answers --show-toplevel with its own tree, so this is asked first: judge the
+  # file against the working tree above the outermost .git it sits in.
   [ "$(git -C "$dir" rev-parse --is-bare-repository 2>/dev/null)" = false ] || exit 0
   gitdir="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
+  case "$gitdir" in
+    */.git/*) gitdir="${gitdir%%/.git/*}/.git" ;;
+  esac
   root="$(cd "${gitdir%/*}" && pwd -P)" || exit 0
+elif ! root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)"; then
+  exit 0
 fi
 
 # A flow is already running: the guard's job is done and the phases police
