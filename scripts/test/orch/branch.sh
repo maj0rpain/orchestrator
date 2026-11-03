@@ -1319,23 +1319,23 @@ echo
 echo "branch create and branch off beside a same-named tag"
 new_repo_with_origin
 git commit -q --allow-empty -m "later"
-old_commit="$(git rev-parse HEAD~1)"
-git tag quick/9-tagged "$old_commit"
+start_commit="$(git rev-parse HEAD~1)"
+git tag quick/9-tagged HEAD
 out="$(orch_gh_failing branch off "quick/9-tagged" 2>&1)"; st=$?
 assert_status "branch off succeeds beside a tag of the new name" "$st" 0
 assert_not_contains "with no already-exists refusal" "$out" "already exists"
-assert_eq "the new branch starts at the current tip, not the tag" \
-  "$(git rev-parse refs/heads/quick/9-tagged)" "$(git rev-parse HEAD)"
+assert_eq "the new branch starts at origin's base tip, not the tag's commit" \
+  "$(git rev-parse refs/heads/quick/9-tagged)" "$start_commit"
 
 new_repo_with_origin
 orch_gh_failing init tagged >/dev/null
 orch_gh_failing state set issue 12
 git commit -q --allow-empty -m "later"
-old_commit="$(git rev-parse HEAD~1)"
-git tag orch/12-tagged "$old_commit"
+start_commit="$(git rev-parse HEAD~1)"
+git tag orch/12-tagged HEAD
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create succeeds beside a tag of the new name" "$st" 0
 assert_not_contains "with no already-exists refusal" "$out" "already exists"
-assert_eq "the new branch starts at the current tip, not the tag" \
-  "$(git rev-parse refs/heads/orch/12-tagged)" "$(git rev-parse HEAD)"
+assert_eq "the new branch starts at origin's base tip, not the tag's commit" \
+  "$(git rev-parse refs/heads/orch/12-tagged)" "$start_commit"
 restore_suite_env
