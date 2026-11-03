@@ -742,6 +742,7 @@ fake_claim_seed 13 otherhost
 # a session that released its claim exits after the next phase's claim is made:
 # the new claim is not this run's to fail, and the new run's pidfile survives
 rm -f "$top/.orchestrator/autopilot/limit"
+rm -f "$launcher_dir/calls"
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" 111
 overlap_launcher="$(mktemp)"
@@ -1557,3 +1558,84 @@ fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
 assert_contains "an exit-0 session's long multi-line final reply is quoted collapsed and cut" "$(fake_last_comment_of 7)" \
   "the session exited with code 0; it ended on: *$(printf 'x%.0s' $(seq 1 300)) $(printf 'y%.0s' $(seq 1 199))…*; log: "
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
+# --- autopilot: labels in the repo's casing (#1943) ------------------------
+# GitHub label names are case-insensitive and it attaches a label in the repo's
+# existing casing, so the Standing reads must find a label in any casing.
+echo
+echo "autopilot label casing"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+# repo_label <name>: the repo's label store holds <name>, in that casing.
+repo_label() { printf '%s\tededed\tseeded\n' "$1" >>"$ORCH_GH_FAKE_STORE/labels"; }
+
+fake_issue 7 open ready-for-agent orch:spec Needs-Human
+fake_issue_title 7 "Case 7"
+fake_issue 8 open ready-for-agent orch:spec Orch:Running
+fake_issue_title 8 "Case 8"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick starts no session for issues carrying Needs-Human or Orch:Running" "$(tick_calls)" "0"
+
+# the limit pause holds under orch:Limited
+fake_issue 7 open ready-for-agent orch:spec orch:Limited
+fake_issue_title 7 "Case 7"
+fake_issue_drop 8
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of $(( $(date +%s) + 3600 )))" >"$top/.orchestrator/autopilot/limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the limit pause holds an issue carrying orch:Limited" "$(tick_calls)" "0"
+rm -f "$top/.orchestrator/autopilot/limit"
+rm -f "$launcher_dir/calls"
+
+# the live phase is found under a mixed-case phase label
+printf '7\n' >"$launcher_dir/release"
+fake_issue 7 open ready-for-agent Orch:Spec
+fake_issue_title 7 "Case 7"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick finds the live phase under Orch:Spec and starts a session" "$(tick_calls)" "1"
+assert_contains "in the spec phase's session" "$(cat "$launcher_dir/calls")" "orchestrator:orch-flow skill's Next phase"
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# end to end: the repo holds Needs-Human; a question is asked as needs-human and
+# stored as Needs-Human; the next tick does not re-run the phase
+: >"$ORCH_GH_FAKE_STORE/labels"
+repo_label Needs-Human
+side7="$top/.orchestrator/checkouts/case-7"
+fake_issue_relabel 7 orch:spec ready-for-agent orch:running
+fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+q="$(mktemp)"; printf '1. Keep it? Recommended: yes\n' >"$q"
+(cd "$side7" && state_fixture phase spec && ORCH_AUTOPILOT=1 "$ORCH" autopilot ask spec "$q" >/dev/null 2>&1)
+assert_eq "the question is stored as the repo's Needs-Human" "$(fake_labels_of 7)" "Needs-Human orch:spec ready-for-agent "
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the next tick does not re-run the phase" "$(tick_calls)" "0"
+assert_eq "the repo store still holds Needs-Human" "$(fake_labels | cut -f1 | grep -c '^Needs-Human$')" "1"
+assert_eq "and no needs-human" "$(fake_labels | cut -f1 | grep -c '^needs-human$')" "0"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
+# reply, resume and start accept the labels in the repo's casing
+echo
+echo "autopilot reply, resume and start label casing"
+new_repo >/dev/null
+fake_github
+r="$(mktemp)"; printf '1: Yes\n' >"$r"
+fake_issue 50 open Needs-Human orch:spec
+"$ORCH" autopilot resume 50 >/dev/null 2>&1; st=$?
+assert_status "resume accepts an issue carrying Needs-Human" "$st" 0
+assert_eq "and removes it" "$(fake_labels_of 50)" "orch:spec "
+fake_issue 51 open Needs-Human orch:spec
+fake_comment 51 o 2026-01-01T00:00:00Z "$(marker_of question spec)
+@o
+
+1. Keep it? Recommended: yes"
+"$ORCH" autopilot reply 51 "$r" >/dev/null 2>&1; st=$?
+assert_status "reply accepts an issue carrying Needs-Human" "$st" 0
+assert_eq "and removes it" "$(fake_labels_of 51)" "orch:spec "
+
+echo "autopilot start label casing"
+fake_flow autopilot-start-case
+"$ORCH" state set issue 7 >/dev/null
+planf="$(mktemp -d)/01-plan.md"
+plan_file "$planf" $'Rounds: 4\nBudget: 5'
+fake_issue 7 open Ready-For-Agent
+out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
+assert_status "start accepts an issue carrying Ready-For-Agent" "$st" 0

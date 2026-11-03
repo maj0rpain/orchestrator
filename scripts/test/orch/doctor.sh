@@ -2131,3 +2131,15 @@ fake_comment 7 o 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"
 assert_contains "an incomplete newest comment is flagged" "$out" "handoff 02-spec.md: "
 restore_suite_env
+
+# --- doctor: phase label in the repo's casing (#1943) ------------------------
+echo
+echo "doctor: phase label casing"
+fake_flow autopilot-doctor-case
+"$ORCH" state set issue 7 >/dev/null
+state_fixture phase implement
+fake_issue 7 open ready-for-agent Orch:Implement
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "a phase label in another casing agrees with the recorded phase, shown canonically" "$out" "phase label: orch:implement"
+assert_not_contains "and no disagreement" "$out" "last moved to phase"
+restore_suite_env

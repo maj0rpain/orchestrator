@@ -1381,3 +1381,30 @@ assert_eq "fake: with the seeded stderr" "$out" "boom"
 fake_unfail
 rm -rf "$claim_origin"
 restore_suite_env
+
+# --- label casing (#1943) -----------------------------------------------------
+echo
+echo "label casing"
+new_repo >/dev/null
+fake_github
+assert_status "label_listed finds a label in another casing" "$(sourced_orch label_listed $'a\nNeeds-Human' needs-human >/dev/null; echo $?)" 0
+assert_status "label_listed is whole-line" "$(sourced_orch label_listed $'a\nNeeds-Human' needs >/dev/null; echo $?)" 1
+assert_status "label_listed is literal" "$(sourced_orch label_listed $'a\nb' 'a.*' >/dev/null; echo $?)" 1
+assert_status "list_has stays case-sensitive" "$(sourced_orch list_has $'a\nNeeds-Human' needs-human >/dev/null; echo $?)" 1
+printf 'Needs-Human\tededed\told\n' >"$ORCH_GH_FAKE_STORE/labels"
+fake_issue 5 open
+sourced_orch adapter_issue_relabel 5 --add needs-human >/dev/null
+assert_eq "an add stores the repo's casing" "$(fake_labels_of 5)" "Needs-Human "
+sourced_orch adapter_issue_relabel 5 --add NEEDS-HUMAN >/dev/null
+assert_eq "an add of a carried label in any casing leaves it" "$(fake_labels_of 5)" "Needs-Human "
+sourced_orch adapter_issue_relabel 5 --remove needs-human >/dev/null
+assert_eq "a removal matches case-insensitively" "$(fake_labels_of 5)" ""
+sourced_orch adapter_label_upsert needs-human d93f0b "Waiting" >/dev/null
+assert_eq "an upsert keeps the existing name and rewrites colour and description" "$(fake_labels)" "Needs-Human	d93f0b	Waiting"
+assert_status "create's exists check folds case" "$(sourced_orch adapter_label_create NEEDS-HUMAN 000000 x >/dev/null 2>&1; echo $?)" 1
+printf 'Needs-Human\n' >"$ORCH_GH_FAKE_STORE/pr_label_drops"
+n="$(sourced_orch adapter_issue_create t /dev/null needs-human)"
+assert_eq "an issue create stores the repo's casing" "$(fake_labels_of "$n")" "Needs-Human "
+body="$(mktemp)"
+pn="$(sourced_orch adapter_pr_create main feat t "$body" --label needs-human --label Other)"
+assert_eq "the PR-create drop knob matches case-insensitively" "$(sourced_orch adapter_pr_labels "$pn")" "Other"

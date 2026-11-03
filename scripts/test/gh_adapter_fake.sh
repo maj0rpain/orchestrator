@@ -181,16 +181,35 @@ fake_stale() {
 fake_label_exists() {
   local f
   f="$(fake_store)/labels"
-  [ -f "$f" ] && grep -qxF -- "$1" <<<"$(cut -f1 "$f")"
+  [ -f "$f" ] && grep -qxiF -- "$1" <<<"$(cut -f1 "$f")"
 }
 
-fake_label_put() {
-  local f
+# fake_label_canon <name>: GitHub's casing rule - the name as the repo's label
+# store holds it where it holds it in any casing, else the name as given.
+fake_label_canon() {
+  local f found=""
   f="$(fake_store)/labels"
+  [ ! -f "$f" ] || found="$(awk -F '\t' -v n="$1" '!d && tolower($1) == tolower(n) { print $1; d = 1 }' "$f")"
+  printf '%s\n' "${found:-$1}"
+}
+
+# fake_labels_add <file> <name>: the label appended to the label file in the
+# repo's casing, unless the file already carries it in any casing.
+fake_labels_add() {
+  grep -qxiF -- "$2" "$1" 2>/dev/null || fake_label_canon "$2" >>"$1"
+}
+
+# fake_label_put <name> <colour> <description>: the label stored; one the store
+# holds in any casing keeps its name and has its colour and description
+# rewritten.
+fake_label_put() {
+  local f name
+  f="$(fake_store)/labels"
+  name="$(fake_label_canon "$1")"
   if [ -f "$f" ]; then
-    awk -F '\t' -v n="$1" '$1 != n' "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+    awk -F '\t' -v n="$name" '$1 != n' "$f" >"$f.tmp" && mv "$f.tmp" "$f"
   fi
-  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$f"
+  printf '%s\t%s\t%s\n' "$name" "$2" "$3" >>"$f"
 }
 
 # adapter_label_upsert <name> <colour> <description>: the label, created or
@@ -424,7 +443,7 @@ adapter_issues_labelled() {
     n="$(basename "$d")"
     [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
     keep=1
-    for l in "$@"; do grep -qxF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
+    for l in "$@"; do grep -qxiF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
     [ "$keep" = 1 ] || continue
     printf '%s\n' "$n"
   done | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
@@ -456,7 +475,7 @@ fake_take_number() {
 # store, numbered as fake_next_issue set (default one past the highest issue
 # or PR number the store holds), its number printed.
 adapter_issue_create() {
-  local title="$1" body="$2" n d
+  local title="$1" body="$2" n d l
   shift 2
   ! fake_failing adapter_issue_create || return 1
   n="$(fake_take_number next_issue)" || return 1
@@ -466,7 +485,7 @@ adapter_issue_create() {
   printf '%s\n' "$title" >"$d/title"
   cat "$body" >"$d/body"
   : >"$d/labels"
-  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/labels"
+  for l in "$@"; do fake_labels_add "$d/labels" "$l"; done
   printf '%s\n' "$n"
 }
 
@@ -524,10 +543,10 @@ adapter_issue_relabel() {
   fake_issue_known "$n" || return 1
   f="$(fake_issue_dir "$n")/labels"
   for l in ${removes[@]+"${removes[@]}"}; do
-    { grep -vxF -- "$l" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f"
+    { grep -vxiF -- "$l" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f"
   done
   for l in ${adds[@]+"${adds[@]}"}; do
-    grep -qxF -- "$l" "$f" || printf '%s\n' "$l" >>"$f"
+    fake_labels_add "$f" "$l"
   done
 }
 
@@ -607,7 +626,7 @@ adapter_pr_create() {
   [ "$draft" != true ] || : >"$d/draft"
   : >"$d/labels"
   for l in ${labels[@]+"${labels[@]}"}; do
-    grep -qxF -- "$l" "$(fake_store)/pr_label_drops" 2>/dev/null || printf '%s\n' "$l" >>"$d/labels"
+    grep -qxiF -- "$l" "$(fake_store)/pr_label_drops" 2>/dev/null || fake_labels_add "$d/labels" "$l"
   done
   printf '%s\n' "$n"
 }
@@ -785,7 +804,7 @@ adapter_pr_title_edit() {
 adapter_pr_label_add() {
   ! fake_failing adapter_pr_label_add || return 1
   fake_pr_known "$1" || return 1
-  printf '%s\n' "$2" >>"$(fake_pr_dir "$1")/labels"
+  fake_labels_add "$(fake_pr_dir "$1")/labels" "$2"
 }
 
 # --- sub-issue and dependency operations, on the store ------------------------
