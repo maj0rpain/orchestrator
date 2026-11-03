@@ -239,6 +239,7 @@ fake_unfail
 tr_seed 59 orch:spec orch:running
 out="$(sourced_rc 'standing_stop 59 failure "" boom')"
 assert_eq "an empty phase dies" "$(printf %s "$out" | tail -n 1)" "rc=1"
+assert_eq "and writes nothing, the claim still held" "$(tr_standing 59)|$(fake_comments_of 59)|$(fake_claim_held 59)" "spec|1|0|0||held"
 
 # a general stop names its orch:limited removal, the label there or not
 tr_seed 95 orch:spec orch:running orch:limited
@@ -256,7 +257,6 @@ fake_fail adapter_issue_comment "HTTP 500"
 out="$(sourced_rc 'standing_stop 97 failure spec boom')"
 assert_contains "a stop on an issue without orch:limited still names the orch:limited removal as landed" "$out" "writes that landed: added needs-human, removed orch:limited; the claim stays held"
 fake_unfail
-assert_eq "and writes nothing, the claim still held" "$(tr_standing 59)|$(fake_comments_of 59)|$(fake_claim_held 59)" "spec|1|0|0||held"
 
 # the chain points a command section no longer asserts: each transition's own
 # writes, and the claim held when one fails
