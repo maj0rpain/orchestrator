@@ -85,7 +85,7 @@ Each finding is filed with:
 ```
 bash "<orch.sh>" review file <major|nit> "<title>" --axis <spec|standards|suite-cost> \
   --finding-file <file> --severity-reason "<reason>" --location <<file>:<line>|suite> \
-  --sha <head SHA> --pr <url> --why "<reason>" [--spec-question "<question>"]
+  --why "<reason>" [--spec-question "<question>"]
 ```
 
 It creates the `review:<severity>` label if the repo lacks it, resolves the
@@ -107,12 +107,14 @@ order:
    `**Axis:** <Spec|Standards|Suite-cost>`;
 3. `--severity-reason`: the one-line reason the severity was assigned, from
    which, with the severity, it renders `**Severity:** <major|nit> - <reason>`;
-4. `--location` and `--sha`: the file and line - `<file>:<line>` or
-   `<file>:<start>-<end>` - at the PR's head SHA, from which it renders
+4. `--location`: the file and line - `<file>:<line>` or
+   `<file>:<start>-<end>` - at the PR's head SHA, which `review file` reads
+   itself, from which it renders
    ``**Location:** `<file>:<line>` at <head SHA>``. A suite-cost finding's
    location is the literal `suite`, the suite as a whole, rendered
    ``**Location:** `suite` at <head SHA>``;
-5. `--pr`: the PR's URL, from which it renders `**PR:** <url>`;
+5. The PR: `review file` renders `**PR:** <url>` from the flow's PR itself;
+   it takes no flag for it;
 6. `--why`: one line on why it was not fixed in the loop, from which it
    renders `**Why not fixed in the loop:** <reason>`. It names the rule that
    kept the finding out: its fix needs a decision (list the options), it is a

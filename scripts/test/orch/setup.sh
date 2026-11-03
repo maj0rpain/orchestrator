@@ -30,7 +30,10 @@ SUITE_CWD="$(mktemp -d)" && cd "$SUITE_CWD" || {
 SUITE_HOME="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create a temp HOME" >&2; exit 1; }
 export HOME="$SUITE_HOME"
-unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL
+# GH_REPO and GH_HOST go too: they are the gh variables orch.sh reads to resolve
+# the Repo and its GitHub host, so a caller's value would change what orch.sh
+# resolves in every section.
+unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL GH_REPO GH_HOST
 
 # The real-gh guard: a stub gh, first on PATH before SUITE_PATH is captured so
 # restore_suite_env keeps it, that appends its arguments to GH_GUARD_LOG, in
@@ -205,17 +208,23 @@ branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
-# git_fails_bin <pattern>: a new directory holding a git that fails when its
-# arguments, space-joined and padded with a space either side, match the glob
-# <pattern>, and passes every other call through; first on PATH, it fails
-# those calls and nothing else.
-git_fails_bin() {
+# fails_bin <command> <pattern>: a new directory holding a <command> that fails
+# when its arguments, space-joined and padded with a space either side, match
+# the glob <pattern>, and passes every other call through to the real one;
+# first on PATH, it fails those calls and nothing else.
+fails_bin() {
   local dir
   dir="$(mktemp -d)"
-  writeln '#!/bin/sh' 'case " $* " in '"$1"') exit 1 ;; esac' "exec $(command -v git) \"\$@\"" >"$dir/git"
-  chmod +x "$dir/git"
+  writeln '#!/bin/sh' 'case " $* " in '"$2"') exit 1 ;; esac' "exec $(command -v "$1") \"\$@\"" >"$dir/$1"
+  chmod +x "$dir/$1"
   printf '%s\n' "$dir"
 }
+# git_fails_bin <pattern>: a fails_bin for git.
+git_fails_bin() { fails_bin git "$1"; }
+# state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*
+# template - the temp file every state write makes - and nothing else. Unlike
+# chmod a-w, it also fails as root.
+state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
 # nowalk_bin: a git_fails_bin that fails `worktree list` alone, so it fails the
 # checkouts walk and nothing else.
 nowalk_bin() { git_fails_bin '" worktree list "*'; }
@@ -258,7 +267,7 @@ live_orch() {
   # line ends the read with EOF; it closes the end before its long sleep.
   bash -c 'exec 9>"$2"; source "$1"; shift 2; "$@"; echo ready >&9; exec 9>&-; exec sleep 600' _ "$ORCH" "$fifo" "$@" &
   LIVE_PID=$!
-  read -r line <"$fifo"
+  line="$(fifo_bounded 60 "live_orch ready read ($fifo)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$fifo")"
   rm -f "$fifo"
 }
 live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return 0; }
@@ -301,6 +310,26 @@ source "${ORCH%/*}/flow-state.sh" || {
 # and fails the arrangement.
 state_fixture() {
   flow_state_write "$(flow_state_file "$(git rev-parse --show-toplevel)")" "$1" "$2"
+}
+
+# state_truncate [bytes]: cuts the checkout's state file to its first <bytes>
+# bytes (40 by default), leaving a file that does not parse as JSON. The cut
+# goes through a temp file beside it, moved back over it.
+state_truncate() {
+  local file
+  file="$(flow_state_file "$(git rev-parse --show-toplevel)")"
+  head -c "${1:-40}" "$file" >"$file.cut" && mv "$file.cut" "$file"
+}
+
+# assert_state_unreadable <label> <want-status> <out> <st>: asserts a command
+# run on a truncated state.json (see state_truncate) exited <st> as
+# <want-status>, printed the shared unreadable line in <out>, and leaked no jq
+# parse error. The one place tests spell that line.
+assert_state_unreadable() {
+  assert_status "$1 exits $2" "$4" "$2"
+  assert_contains "$1 prints the unreadable line" "$3" \
+    "orch: state.json cannot be read - run orch.sh doctor --flow"
+  assert_not_contains "$1 leaks no jq text" "$3" "parse error"
 }
 
 # state_fixture_drop <key>...: deletes each named key from the checkout's
@@ -366,7 +395,7 @@ layer_calls() {
   code="$(shell_code "$@")"
   for def in "${defs[@]}"; do col0_names "$def"; done | sort -u \
     | while IFS= read -r name; do
-        if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
+        if grep -qw -- "$name" <<<"$code"; then printf '%s\n' "$name"; fi
       done
 }
 
@@ -703,6 +732,13 @@ fake_pr_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/prs/$1/comments
 # has. An unseeded store has no labels.
 fake_label() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$ORCH_GH_FAKE_STORE/labels"; }
 
+# fake_label_names <name>...: the repo's labels are exactly the names given,
+# each with no colour or description - none given, the repo has no labels.
+fake_label_names() {
+  : >"$ORCH_GH_FAKE_STORE/labels"
+  [ $# -eq 0 ] || printf '%s\t\t\n' "$@" >"$ORCH_GH_FAKE_STORE/labels"
+}
+
 # fake_labels: the store's labels read back, sorted, one per line as
 # "<name><TAB><colour><TAB><description>".
 fake_labels() { sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }
@@ -811,7 +847,10 @@ fake_body_read() {
 # scope, answered one per call, the last repeating: green, failing (build
 # fails, Actions run 4242; lint passes), cancel (build cancelled, run 5150),
 # external (a failing outside-CI check, ext-ci, ahead of build failing in run
-# 4242), comma (one failing check named `build (linux, x64)`), pending, none
+# 4242), tworuns (build run 4242, test run 4343), onerun (build and test both
+# in run 4242), mixed (build run 4242, then failing ext-ci), optfirst (a failing
+# optional check, run 9999, ahead of build run 4242), comma (one failing check
+# named `build (linux, x64)`), pending, none
 # (no checks reported) or boom (a connection error). An unscripted scope has
 # no checks.
 fake_checks() {
@@ -942,20 +981,14 @@ repo_missing="no GitHub repo to work on"
 repo_cause="$repo_missing: origin is missing or not a GitHub owner/name"
 repo_remedy="$repo_cause - set GH_REPO=<owner>/<repo>"
 
-# shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
-[ -n "$orch_child_counts" ] || echo "orch.sh tests"
-
 # >>> summary
 # Each call the real-gh guard logged is one FAIL naming it.
 while IFS= read -r gh_guard_call; do
   bad "a section called the real gh" "$gh_guard_call"
 done <"$GH_GUARD_LOG"
 tally_read
-# A child of the parallel runner hands its counts on instead of printing them.
+# A parallel child or the sequential run's subshell hands its counts on to the
+# runner, which prints them; orch_test.sh always sets the counts file.
 # shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
-if [ -n "$orch_child_counts" ]; then
-  echo "$PASS $FAIL $SKIP" >"$orch_child_counts"
-else
-  print_summary "$PASS" "$FAIL" "$SKIP"
-fi
+echo "$PASS $FAIL $SKIP" >"$orch_child_counts"
 [ "$FAIL" -eq 0 ]

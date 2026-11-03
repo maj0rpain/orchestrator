@@ -407,7 +407,7 @@ check_labels_exist() {
   fi
   while IFS= read -r l; do
     if [ -z "$l" ]; then continue; fi
-    if ! list_has "$have" "$l"; then missing="$(d_append "$missing" "$l")"; fi
+    if ! label_listed "$have" "$l"; then missing="$(d_append "$missing" "$l")"; fi
   done <<<"$want"
   if [ -z "$missing" ]; then d_ok "every triage label exists on the repo"; return 0; fi
   # Found every one of them is a definitive answer whatever the page held, so
@@ -1050,7 +1050,7 @@ cmd_doctor() {
     # --flow asks about a flow specifically, so having none is a failure there.
     # Bare doctor did not ask, so it states the absence and carries on: an empty
     # answer must never be mistaken for a healthy one.
-    if [ "$scope" = flow ]; then require_state; fi
+    if [ "$scope" = flow ]; then require_state_exists; fi
     if [ ! -f "$STATE" ]; then
       h_flow
       d_ok "no active flow"

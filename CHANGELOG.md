@@ -1,5 +1,78 @@
 # Changelog
 
+## 4.43.51
+
+The planning edit guard now also covers NotebookEdit and MultiEdit, so a notebook or multi-edit of repo source is denied during planning like a Write.
+
+## 4.43.50
+
+An unparseable `.orchestrator/state.json` no longer kills `orch.sh` with jq's parse error and status 5: `branch busy`, `init` and `branch off` report the checkout as busy (exit 3, with a doctor/abort remedy), and the commands that need the flow's state - `branch create`, `status`, `base set`, `spec fetch`, `spec-review begin`, `autopilot answer`, `suite-cost` and the rest - refuse with "state.json cannot be read - run orch.sh doctor --flow". `doctor --flow` still diagnoses the file, and `abort` archives it (#1929).
+
+## 4.43.49
+
+A parallel `orch_test.sh` run now fails any section that writes to stderr, naming the section and showing what it wrote, and the two sections that leaked (the marked-comment helper and the autopilot tick temp-file case) no longer do.
+
+## 4.43.48
+
+The test runners now fail a suite that ends without its `N passed, M failed` summary, even when it exits 0: all.sh and affected.sh report it as `died before its summary (exit 0)`, and a sequential `orch_test.sh` run (`ORCH_TEST_JOBS=1`) that stops early prints `the run reported no counts`, counts the miss as a failure, and exits 1 (#1939).
+
+## 4.43.47
+
+orch-spec-review's skill description is shortened to fit the Agent Skills 1024-character limit, and docs_lint now fails any skill whose frontmatter description is over it.
+
+The test harness now fails when a test runner sourcing tally.sh is missing from all.sh's suite list, so a runner nothing starts can no longer pass the full verification and CI.
+
+Re-running `finding-triage apply` after a failed relabel or close no longer posts its triage comment a second time: apply skips the post when an identical comment is already on the finding, and dies before posting when it cannot read the comments.
+
+## 4.43.46
+
+The autopilot container's entrypoint now removes the clone's local
+`orchestrator.autopilot` config keys and each role's local agent-setting keys at
+start, warning once per key, so `docker/.env` is the one source of truth; and
+`autopilot show`'s output now reaches the container log on stderr.
+
+The edit guard now denies Edit and Write of the flow state file and of files in side checkouts and ticket worktrees during planning, so a planning session can no longer disarm its own guard.
+
+## 4.43.45
+
+`orch.sh finding-triage bundle --into` is now an idempotent resume: a member already closed into the bundle is skipped, so the resume command printed after any member failure finishes the bundle. The failure message says "members not confirmed closed" where the close may have landed.
+
+## 4.43.44
+
+`branch off` and `branch create` fork from origin's freshly fetched base whenever origin answered, and die with git's message when that checkout fails, instead of silently forking from a stale local base.
+
+## 4.43.43
+
+The test runners now start jobs through one job pool helper, `test_jobs_job`, which owns the slot fd, and take their PASS/FAIL verdict from the failed parts alone: `report_verdict <runner>` decides from the recorded parts, and the reporters record their own.
+
+## 4.43.42
+
+A failed state write now always stops orch.sh with an `orch:` message. `phase advance` and `review ready` exit non-zero, print no boundary block or success line, and leave the recorded phase as it was, so re-running the command finishes the transition.
+
+## 4.43.41
+
+Fix `redo review` and `redo spec` closing the old draft PR without its redo note: the redo now closes the PR, with the note naming the retired `-redo-N` branch, before it retires the branch, because deleting an open PR's head branch makes GitHub close the PR itself and skip the comment.
+
+## 4.43.40
+
+`orch.sh review file` no longer takes `--pr` or `--sha`: it reads the flow's PR from state and asks GitHub for that PR's URL and remote head commit, so the review loop's closer has no URL or SHA to supply or guess.
+
+## 4.43.39
+
+`orch.sh review rerun` now reruns every distinct Actions run behind the failing checks `review ci` counts (required checks where any are reported, else all), instead of the first failing check of all checks. One helper owns which checks count.
+
+## 4.43.38
+
+A spec-review batch, a tickets file or a breakdown draft can now carry a content line that begins with `@@`: write it with a leading backslash (`\@@ note <text>`), and the parser removes one backslash. An unescaped `@@` grammar line out of place in a block dies naming the line and how to escape it, and a breakdown draft's ticket body no longer keeps a stray `@@` grammar line as text.
+
+## 4.43.37
+
+orch.sh now matches label names case-insensitively, as GitHub does, so a repo label in another casing (`Needs-Human`, `Orch:Running`, `Ready-For-Agent`, ...) counts as carried: the autopilot Standing read, `issue ready`/`triage`, `init --issue`, finding triage, the PR label checks and the Doctor no longer miss it. Existing labels keep their casing.
+
+## 4.43.36
+
+A hung test no longer hangs a verification run: each FIFO handshake in the test suite waits at most 60 s for its partner and names the side that never arrived, and the parallel test runner gives each section a deadline (`ORCH_TEST_SECTION_TIMEOUT`, default 600 s), past which it stops the section's process tree and reports `section '<title>' timed out`.
+
 ## 4.43.35
 
 The autopilot container now refuses to reuse a clone whose origin is not `REPO` (or is unreadable), naming the two fixes, instead of silently watching the old repo.

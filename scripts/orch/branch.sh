@@ -5,42 +5,63 @@
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # Forking a named branch off a base branch has exactly one right answer -
-# fetch it, then check it out, falling back to the local ref if origin was
-# unreachable - so both branch create (a flow's own naming and state) and
+# fetch it, then check out the start point that fetch decided: origin's tip
+# when origin answered, or, only when origin could not be asked, the local
+# fallback - so both branch create (a flow's own naming and state) and
 # branch off (a quick implementation's, which keeps no state) share it rather
 # than each hand-rolling the fetch/checkout-fallback idiom. The caller names
 # the base: a flow's is the one it recorded at init. The caller also names
 # the remedy for a base origin says is gone ($3), since only a flow has a
 # base it can correct.
 checkout_new_branch() {
-  new_branch_refusals "$@"
-  fork_new_branch "$1" "$2"
+  local start
+  new_branch_refusals start "$@"
+  fork_new_branch "$1" "$start"
 }
 
-# new_branch_refusals <name> <base> [<remedy>]: checkout_new_branch's refusals -
-# the name taken, or the base gone from origin - alone, so a caller with
-# something to write first (branch create's discard) runs them before it.
+# new_branch_refusals <start_var> <name> <base> [<remedy>]: the refusals of
+# checkout_new_branch - the name taken, the base gone from origin, or a failed
+# fetch while origin has the base (could not fetch <base> from origin) - alone,
+# so a caller with something to write first (branch create's discard) runs
+# them before it.
+# It also decides the start point, the ref the branch forks from, and returns it
+# through the caller-named <start_var>, named in full so a local branch or tag
+# called origin/<base> cannot capture it: refs/remotes/origin/<base> after a
+# fetch that worked; when origin could not be asked, that remote-tracking ref
+# if it exists, else the local refs/heads/<base>.
 new_branch_refusals() {
-  local name="$1" base="$2" remedy="${3:-start again on another base branch}"
+  local __nbr_out="$1" name="$2" base="$3" remedy="${4:-start again on another base branch}"
+  local __nbr_start
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
-  if ! git fetch --quiet origin "$base" 2>/dev/null; then
+  if git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null; then
+    __nbr_start="refs/remotes/origin/$base"
+  else
     # Only an origin that could not be asked earns the local fallback: one
     # that answered "no such branch" means the base is gone, and forking from
-    # a stale local copy of it would build on work nobody will merge.
+    # a stale local copy of it would build on work nobody will merge; one
+    # that has the base but failed the fetch could leave a stale ref.
     local st=0
     origin_has_branch "$base" || st=$?
     [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or $remedy"
+    [ "$st" -ne 0 ] || die "could not fetch $base from origin"
+    if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null; then
+      __nbr_start="refs/remotes/origin/$base"
+    else
+      __nbr_start="refs/heads/$base"
+    fi
   fi
+  printf -v "$__nbr_out" '%s' "$__nbr_start"
 }
 
-# fork_new_branch <name> <base>: the checkout half, after new_branch_refusals.
+# fork_new_branch <name> <start>: the checkout half, after new_branch_refusals:
+# checks out exactly the start point it decided, with no fallback of its own.
 fork_new_branch() {
-  local name="$1" base="$2"
+  local name="$1" start="$2" err
   # --no-track: the base is recorded in the branch's own config, so the
   # upstream branch.autoSetupMerge would set is never wanted; pr publish sets
   # the real one on the first push.
-  git checkout -q --no-track -b "$name" "refs/remotes/origin/$base" 2>/dev/null \
-    || git checkout -q --no-track -b "$name" "refs/heads/$base"
+  capture_err err git checkout -q --no-track -b "$name" "$start" \
+    || die "could not create $name from $start: $err"
 }
 
 # branch_upstream <branch>: prints <branch>'s upstream ref in full
@@ -211,7 +232,7 @@ record_branch_base() {
 cmd_branch_create() {
   require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"
-  local slug issue name base sha own=""
+  local slug issue name base sha own="" start
   slug="$(state_get slug)"
   require_issue issue
   name="$(branch_name_flow "$issue" "$slug")"
@@ -229,10 +250,10 @@ cmd_branch_create() {
   # The refusals come before the discard, so a refusal exits with nothing
   # written.
   base="$(flow_base)"
-  new_branch_refusals "$name" "$base" \
+  new_branch_refusals start "$name" "$base" \
     "point this flow at another base: orch.sh base set <branch> --flow"
   discard_create_work "$name"
-  fork_new_branch "$name" "$base"
+  fork_new_branch "$name" "$start"
   sha="$(git rev-parse HEAD)"
   state_write_string branch "$name"
   state_write_string base_sha "$sha"
@@ -305,6 +326,7 @@ cmd_branch_sync() {
   [ $# -eq 0 ] || die "usage: orch.sh branch sync"
   local branch base held="" tip remote why
   current_branch_or_die ' - nothing was synced'
+  require_state_readable
   if branch_held "$branch"; then
     held=1
     base="$(flow_base)"

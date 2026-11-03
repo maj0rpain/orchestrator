@@ -1312,9 +1312,11 @@ rc_setup() {
   rc_flow
 }
 # rc_flow: the active flow the reclaim guard requires in this checkout - it
-# owns the branch orch/5-feature and issue 90.
+# owns the branch orch/5-feature and issue 90, and has .orchestrator/
+# git-excluded as a real flow does: its state file is no working-tree change.
 rc_flow() {
   local file
+  sourced_orch exclude_orch_dirs
   file="$(flow_state_file "$(git rev-parse --show-toplevel)")"
   mkdir -p "$(dirname "$file")" && echo '{}' >"$file"
   state_fixture phase implement
@@ -1347,6 +1349,15 @@ assert_contains "and one for the worktree" "$out" "removed the worktree of ticke
 out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "a rerun with nothing left succeeds" "$st" 0
 assert_eq "printing nothing" "$out" ""
+
+# a state.json that does not parse: the shared refusal, nothing discarded
+rc_setup 1
+state_truncate
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim on a truncated state.json exits 1" "$st" 1
+assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_not_contains "printing no jq text" "$out" "parse error"
+assert_eq "keeping the worktree" "$(rc_has_worktree 7)" "yes"
 
 # reported, unmerged and dirty: reset, merged, closed, removed
 rc_setup 1

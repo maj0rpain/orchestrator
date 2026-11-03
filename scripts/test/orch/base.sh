@@ -245,3 +245,16 @@ assert_contains "no state.json plus an invalid name reports no active flow" "$ou
 assert_eq "and never touches the checkout setting" "$(checkout_setting)" "<unset>"
 assert_contains "orch.sh help lists base set --flow" "$(orch_gh_failing help)" "base set <branch> --flow"
 rm -rf "$(dirname "$bare")"
+
+# --- base set on a truncated state.json (#1929) ------------------------------
+echo
+echo "base set on a truncated state.json"
+fresh_flow basetrunc
+state_truncate
+out="$(orch_gh_failing base set uat --flow 2>&1)"; st=$?
+assert_state_unreadable "base set --flow" 1 "$out" "$st"
+git config orchestrator.base keep
+out="$(orch_gh_failing base set uat 2>&1)"; st=$?
+assert_state_unreadable "plain base set" 1 "$out" "$st"
+assert_eq "and leaves orchestrator.base unchanged" "$(git config --get orchestrator.base)" "keep"
+restore_suite_env

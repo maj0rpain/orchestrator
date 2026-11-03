@@ -71,19 +71,27 @@ handshake_fifos() {
   dir="$(mktemp -d)" && mkfifo "$dir/one" "$dir/two" && printf '%s\n' "$dir"
 }
 
-# handshake_first <dir>: prints the handshake's first side as a shell script
-# line - it writes to <dir>/one, blocking until the second side reads it, then
-# reads <dir>/two, which the second side writes - for sh -c or a run.sh body.
+# handshake_first <dir> [seconds]: prints the handshake's first side as a shell
+# script line - it writes to <dir>/one, blocking until the second side reads it,
+# then reads <dir>/two, which the second side writes - for sh -c or a run.sh
+# body. The two FIFO operations run under timeout [seconds] (default 60); on
+# expiry the line prints "first side (<dir>/one, <dir>/two): no partner within
+# <seconds>s" on stderr and ends with status 124.
 handshake_first() {
-  printf 'printf x >%s/one; read -r _ <%s/two\n' "$1" "$1"
+  local n="${2:-60}"
+  printf 'timeout %s sh -c '\''printf x >"$0"; read -r _ <"$1"'\'' %s/one %s/two || { s=$?; [ $s -ne 124 ] || echo "first side (%s/one, %s/two): no partner within %ss" >&2; (exit $s); }\n' \
+    "$n" "$1" "$1" "$1" "$1" "$n"
 }
 
-# handshake_partner <dir>: a suite-cost run whose command is the handshake's
-# second side - it reads <dir>/one, which the other side writes, then writes a
-# line to <dir>/two, which the other side reads - so it is running while the
-# other side's run is. Its output goes wherever the caller sends it.
+# handshake_partner <dir> [seconds]: a suite-cost run whose command is the
+# handshake's second side - it reads <dir>/one, which the other side writes,
+# then writes a line to <dir>/two, which the other side reads - so it is running
+# while the other side's run is. Its output goes wherever the caller sends it.
+# The FIFO operations run under timeout [seconds] (default 60); on expiry it
+# prints "partner (<dir>/one, <dir>/two): no partner within <seconds>s" on
+# stderr and exits 124.
 handshake_partner() {
-  "$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$1/one" "$1/two"
+  "$ORCH" suite-cost run -- sh -c 'timeout "$2" sh -c '\''read -r _ <"$0"; printf "x\n" >"$1"'\'' "$0" "$1"; s=$?; [ $s -ne 124 ] || echo "partner ($0, $1): no partner within ${2}s" >&2; exit $s' "$1/one" "$1/two" "${2:-60}"
 }
 
 # handshake_overlap_check <dir> <cmd> [args...]: runs suite-cost check on the
@@ -98,8 +106,8 @@ handshake_overlap_check() {
   shift
   "$ORCH" suite-cost check -- "$@" >"$dir/out" 2>"$dir/err" &
   pid=$!
-  read -r _ <"$dir/one"
-  "$ORCH" suite-cost run -- sh -c 'printf "x\n" >"$0"' "$dir/two" >/dev/null 2>&1
+  fifo_bounded 60 "overlap check ($dir/one)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$dir/one" >/dev/null
+  "$ORCH" suite-cost run -- sh -c 'timeout "$1" sh -c '\''printf "x\n" >"$0"'\'' "$0"; s=$?; [ $s -ne 124 ] || echo "overlap check ($0): no partner within ${1}s" >&2; exit $s' "$dir/two" 60 >/dev/null 2>&1
   wait "$pid"; st=$?
 }
 
@@ -253,7 +261,7 @@ assert_eq "neither is recorded" "$("$ORCH" suite-cost history)" ""
 # one or two.
 "$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>&1 &
 pid_a=$!
-"$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; ls "$2" >"$3"; printf "x\n" >"$1"' \
+"$ORCH" suite-cost run -- sh -c 'timeout 60 sh -c '\''read -r _ <"$0"; ls "$2" >"$3"; printf "x\n" >"$1"'\'' "$0" "$1" "$2" "$3"; s=$?; [ $s -ne 124 ] || echo "listing partner ($0, $1): no partner within 60s" >&2; exit $s' \
   "$hs/one" "$hs/two" "$rec.active" "$hs/listing" >/dev/null 2>&1
 wait "$pid_a"
 n="$(grep -c '\.contended$' "$hs/listing")"
@@ -549,6 +557,9 @@ mkdir -p .orchestrator && echo '{}' >.orchestrator/state.json
 state_fixture phase review
 state_fixture base_sha "$parent"
 assert_eq "inside a flow, it is state.base_sha" "$(verdict)" "unmeasured"
+state_truncate 10
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>&1)"; st=$?
+assert_state_unreadable "suite-cost check" 1 "$out" "$st"
 
 # Floor and growth overrides. 60 to 70 is 17% growth on a 60 baseline.
 check_repo
@@ -1092,3 +1103,35 @@ assert_eq "and the base run is recorded" "$(grep -c "^$base" "$rec")" 2
 
 rm -rf "$errf" "$ORCH_SUITE_COST_FAKE_CPU"
 restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU
+
+# --- suite-cost barrier -------------------------------------------------------
+# A FIFO handshake whose partner never arrives fails fast, naming the side and
+# its FIFO, instead of hanging the run.
+hs="$(handshake_fifos)"
+SECONDS=0
+err="$(fifo_bounded 1 "side X ($hs/one)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$hs/one" 2>&1 >/dev/null)"; st=$?
+assert_status "fifo_bounded: a partnerless FIFO read returns 124" "$st" 124
+assert_eq "and gives up within a few seconds" "$([ "$SECONDS" -le 5 ] && echo yes)" "yes"
+assert_eq "and names the side and the FIFO" "$err" "side X ($hs/one): no partner within 1s"
+
+err="$(fifo_bounded 5 "side Y" sh -c 'exit 3' 2>&1)"; st=$?
+assert_status "fifo_bounded: another status passes through" "$st" 3
+assert_eq "and prints no message" "$err" ""
+
+( printf x >"$hs/one" ) &
+out="$(fifo_bounded 5 "side Z" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$hs/one")"; st=$?
+wait
+assert_status "fifo_bounded: a read of a last line with no newline succeeds" "$st" 0
+assert_eq "and yields the line" "$out" "x"
+
+new_repo >/dev/null
+rec_path
+SECONDS=0
+bash -c "$(handshake_first "$hs" 1)" >/dev/null 2>"$hs/err-first"; st=$?
+assert_status "the first side with no partner ends 124" "$st" 124
+assert_contains "and its message names the first side and its FIFO" "$(cat "$hs/err-first")" "first side ($hs/one, $hs/two): no partner within 1s"
+handshake_partner "$hs" 1 >/dev/null 2>"$hs/err-partner"; st=$?
+assert_status "the partner with no first side ends 124" "$st" 124
+assert_contains "and its message names the partner and its FIFO" "$(cat "$hs/err-partner")" "partner ($hs/one, $hs/two): no partner within 1s"
+assert_eq "and neither waited long" "$([ "$SECONDS" -le 10 ] && echo yes)" "yes"
+rm -rf "$hs"

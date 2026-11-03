@@ -11,7 +11,6 @@
 echo
 echo "repo show"
 new_repo >/dev/null
-unset GH_REPO
 assert_eq "a fresh test repo resolves to its github.com origin" \
   "$("$ORCH" repo show)" "o/r (origin)"
 for url in https://github.com/acme/widgets.git https://github.com/acme/widgets \

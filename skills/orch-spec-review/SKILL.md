@@ -1,6 +1,6 @@
 ---
 name: orch-spec-review
-description: Review a spec issue in one or more rounds - each round proposes folding into its body what its comments say that the body does not, then read body and comments through its lenses, each independent - Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone, and in a flow Fidelity to the plan - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask the ticket question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again; each round reads the body the previous round published, and the review runs its whole round count. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue> [--rounds <n>]: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
+description: Review a spec issue in a chosen number of rounds - each proposes folding into the body what the issue's comments say that the body does not, reads body and comments through independent lenses (Consistency, Testability, Implementability, and in a flow Fidelity), puts every finding to the human as one batch of proposed edits, and rewrites the body with the accepted ones. Use from orch-flow's spec phase, after the issue exists and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue> [--rounds <n>]: three lenses, no plan handoff, nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
 ---
 
 # Orchestrator spec review
@@ -459,6 +459,10 @@ block per item, in the batch's order:
 @@ replace                                its replacement
 @@ end
 ```
+
+A block line that is `@@` alone or begins with `@@ ` is written with one extra
+leading `\` (`\@@ note <text>` reads as `@@ note <text>`); a line of one or
+more `\` then `@@` loses exactly one.
 
 `<group>` is `consolidation`, a lens name, or `contradicts-the-plan`.
 `<mark>` is `material` or `minor`, the last fixed token of the `@@ item`

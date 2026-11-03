@@ -9,10 +9,10 @@
 # failing suite does not stop the others. Printed per suite, in the order of
 # the `suites` list: its FAIL lines with their detail lines, then one summary
 # line, "<suite>: <its last line>", or "<suite>: died before its summary (exit
-# N)" when it exited non-zero and its last line is not a summary line. A suite
-# whose output has a "  FAIL " line is failed whatever its exit status: when
-# it exited 0, the line "<suite>: printed FAIL lines but exited 0" follows its
-# summary line, so a count lost in any way still turns the run red. A
+# N)" when its last line is not a summary line, whatever its exit status. A
+# suite whose output has a "  FAIL " line is failed whatever its exit status:
+# when it exited 0, the line "<suite>: printed FAIL lines but exited 0" follows
+# its summary line, so a count lost in any way still turns the run red. A
 # suite's stderr is not captured: it passes straight through, and the suites'
 # stderr may interleave.
 #
@@ -97,7 +97,6 @@ sc_pids=()
 # exit 130; the EXIT trap removes the temp directory only after that.
 trap 'test_jobs_stop_children "${pids[@]}" "${sc_pids[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
-failed=0
 suites_tmp="$tmp/suites-tmp"
 mkdir "$suites_tmp" || exit 1
 
@@ -125,8 +124,8 @@ if command -v shellcheck >/dev/null 2>&1; then
     done
     sc_rel="${sc_file#"$root/"}"
     test_jobs_slot_wait
-    (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
-      >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 8>&- &
+    (cd "$root" && test_jobs_job shellcheck -S warning -f gcc "$sc_rel") \
+      >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
     sc_pids+=("$!")
     test_jobs_slot_release "$!"
   done
@@ -137,7 +136,6 @@ for suite_pid in "${pids[@]}"; do
   wait "$suite_pid"
   suite_exit=$?
   suite_exits+=("$suite_exit")
-  [ "$suite_exit" -ne 0 ] && failed=1
 done
 if [ "$have_sc" -eq 1 ]; then
   sc_status=0
@@ -157,7 +155,7 @@ fi
 
 for suite_n in "${!suites[@]}"; do
   suite="${suites[$suite_n]}"
-  report_suite "$suite" "${suite_exits[$suite_n]}" "$(<"$tmp/$suite")" || failed=1
+  report_suite "$suite" "${suite_exits[$suite_n]}" "$(<"$tmp/$suite")"
 done
 
 leftovers=("$suites_tmp"/* "$suites_tmp"/.[!.]* "$suites_tmp"/..?*)
@@ -165,15 +163,14 @@ for leftover in "${leftovers[@]}"; do
   if [ -e "$leftover" ] || [ -L "$leftover" ]; then
     echo "all.sh: the suites left temp files behind"
     report_temp_files_left
-    failed=1
     break
   fi
 done
 
 if [ "$have_sc" -eq 0 ]; then
-  report_shellcheck_missing || failed=1
+  report_shellcheck_missing
 else
-  report_shellcheck "$sc_status" "$sc_out" || failed=1
+  report_shellcheck "$sc_status" "$sc_out"
 fi
-report_verdict all.sh "$failed"
-exit "$failed"
+report_verdict all.sh
+exit $?
