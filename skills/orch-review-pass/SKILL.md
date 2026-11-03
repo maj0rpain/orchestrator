@@ -330,7 +330,8 @@ the only Standards look the change gets before its PR (ADR-0021).
      is ruled - in this pass, or as step 2 found - and none of this pass's
      own is left unruled, run `bash "$ORCH" pr ready`. A draft held for any
      other reason, with no spec question in its body or comments, is never
-     marked ready. On failure, relay its reason and say the PR stays a
+     marked ready. On failure, relay its reason (a failed or unreadable check
+     included) and say the PR stays a
      draft.
 
    Either way, then post the report: run
