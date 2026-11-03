@@ -270,15 +270,21 @@ name_placement() {
 # the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
 # module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
 gh_op_placement() {
-  local rc=0 out="" part
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_MULTI_FIELD_OPS" ./orch/gh.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="$part"
-  rc=0
-  part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$GH_TRUST_READ_OPS" ./orch/gh.sh ./orch/trust.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="${out:+$out
+  local rc=0 out="" part ops owners pair
+  local pairs=(
+    "$GH_MULTI_FIELD_OPS|./orch/gh.sh"
+    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
+  )
+  for pair in "${pairs[@]}"; do
+    ops="${pair%%|*}" owners="${pair#*|}"
+    rc=0
+    # owners is a space-separated path list: split it into arguments
+    # shellcheck disable=SC2086
+    part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$ops" $owners)" || rc=$?
+    [ "$rc" -ne 2 ] || return 2
+    [ -z "$part" ] || out="${out:+$out
 }$part"
+  done
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort -u
   return 1
