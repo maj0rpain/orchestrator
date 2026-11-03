@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.38
+
+A spec-review batch, a tickets file or a breakdown draft can now carry a content line that begins with `@@`: write it with a leading backslash (`\@@ note <text>`), and the parser removes one backslash. An unescaped `@@` grammar line out of place in a block dies naming the line and how to escape it, and a breakdown draft's ticket body no longer keeps a stray `@@` grammar line as text.
+
 ## 4.43.37
 
 orch.sh now matches label names case-insensitively, as GitHub does, so a repo label in another casing (`Needs-Human`, `Orch:Running`, `Ready-For-Agent`, ...) counts as carried: the autopilot Standing read, `issue ready`/`triage`, `init --issue`, finding triage, the PR label checks and the Doctor no longer miss it. Existing labels keep their casing.
