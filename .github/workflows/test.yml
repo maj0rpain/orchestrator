@@ -43,7 +43,7 @@ jobs:
           base="$(git rev-parse --verify origin/main)"
           echo "CHANGELOG_BASE=$base" >>"$GITHUB_ENV"
           labels="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')"
-          if grep -qxF no-version-bump <<<"$labels"; then
+          if grep -qxiF no-version-bump <<<"$labels"; then
             echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
           fi
       # GH_TOKEN for docs_lint.sh's fragment rule, whose gh api call reads the

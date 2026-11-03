@@ -34,6 +34,10 @@ fake_issue 6 closed orch:done orch:spec orch:running orch:limited
 out="$(sourced_rc 'standing_read 6 && echo "$STANDING_STATE|$STANDING_PHASE|$STANDING_PHASE_LABELS|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED"')"
 assert_eq "the live phase skips done, the label text keeps table order, running and limited read 1" "$out" "CLOSED|spec|orch:spec orch:done|1|0|1
 rc=0"
+fake_issue 7 open Orch:Spec Needs-Human Orch:Running orch:Limited
+out="$(sourced_rc 'standing_read 7 && echo "$STANDING_PHASE|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED"')"
+assert_eq "standing_read finds the phase and the three flags under any label casing" "$out" "spec|1|1|1
+rc=0"
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$(sourced_rc 'standing_read 5; echo "reason=$STANDING_REASON"')"
 assert_eq "a failed standing_read keeps the reason in STANDING_REASON and prints nothing" "$out" "reason=HTTP 502
