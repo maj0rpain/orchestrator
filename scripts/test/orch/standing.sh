@@ -133,7 +133,7 @@ fake_unfail
 # Each transition driven against the fake, read back through standing_read and
 # the fake's read-back helpers. tr_standing <n>: the issue's live phase,
 # running, needs-human and limited flags as "phase|running|human|limited".
-tr_standing() { sourced_rc "standing_read $1 && echo \"\$STANDING_PHASE|\$STANDING_RUNNING|\$STANDING_HUMAN|\$STANDING_LIMITED\"" | head -n 1; }
+tr_standing() { sourced_rc "standing_read $1 && echo \"\$STANDING_PHASE|\$STANDING_RUNNING|\$STANDING_HUMAN|\$STANDING_LIMITED\"" | awk -v n=1 'NR<=n'; }
 tr_seed() { fake_issue "$1" open "${@:2}"; fake_claim_seed "$1"; }
 echo
 echo "standing transitions"
@@ -143,7 +143,7 @@ fake_flow standing-transitions
 tr_seed 49 orch:done
 out="$(sourced_rc 'standing_sync_request 49')"
 assert_eq "sync request adds orch:sync and keeps orch:done" "$(fake_labels_of 49)" "orch:done orch:sync "
-assert_eq "and reads back as a sync request" "$(sourced_rc 'standing_read 49 && echo "$STANDING_SYNC|$STANDING_PHASE"' | head -n 1)" "1|"
+assert_first_line "and reads back as a sync request" "$(sourced_rc 'standing_read 49 && echo "$STANDING_SYNC|$STANDING_PHASE"')" "1|"
 
 # sync finish, the dropped-intent stop and the failure stop
 tr_seed 140 orch:done orch:sync orch:running
@@ -152,7 +152,7 @@ assert_eq "sync finish removes orch:sync, keeps orch:done, drops running and rel
 tr_seed 141 orch:done orch:sync orch:running
 sourced_rc 'standing_sync_dropped 141 "- keep the cache flag (see https://x/y#c1)"' >/dev/null
 assert_eq "the dropped-intent stop removes orch:sync, adds needs-human and releases" "$(fake_labels_of 141)|$(fake_claim_held 141)" "needs-human orch:done |free"
-assert_eq "its comment is a failure stop marked sync" "$(fake_comments_of 141 | head -1)" "$(marker_of failure sync)"
+assert_first_line "its comment is a failure stop marked sync" "$(fake_comments_of 141)" "$(marker_of failure sync)"
 assert_contains "listing the dropped intent" "$(fake_comments_of 141)" "keep the cache flag (see https://x/y#c1)"
 assert_contains "and saying lifting needs-human re-runs nothing" "$(fake_comments_of 141)" "re-runs nothing"
 tr_seed 142 orch:done orch:sync orch:running
@@ -219,11 +219,11 @@ fake_unfail
 tr_seed 56 orch:spec orch:running orch:limited
 sourced_rc 'standing_stop 56 refusal spec "no plan"' >/dev/null
 assert_eq "stop adds needs-human, drops limited and running, and releases" "$(tr_standing 56)|$(fake_claim_held 56)" "spec|0|1|0|free"
-assert_eq "and posts the marked stop comment" "$(fake_comments_of 56 | head -1)" "$(marker_of refusal spec)"
+assert_first_line "and posts the marked stop comment" "$(fake_comments_of 56)" "$(marker_of refusal spec)"
 assert_contains "and keeps its prose beneath the marker" "$(fake_comments_of 56 | sed -n 2p)" "Autopilot refused to run the spec phase: no plan"
 tr_seed 66 orch:spec orch:running
 sourced_rc 'standing_stop 66 failure review "boom"' >/dev/null
-assert_eq "a failure stop opens with its own marked comment" "$(fake_comments_of 66 | head -1)" "$(marker_of failure review)"
+assert_first_line "a failure stop opens with its own marked comment" "$(fake_comments_of 66)" "$(marker_of failure review)"
 assert_contains "and keeps its prose beneath the marker" "$(fake_comments_of 66 | sed -n 2p)" "Autopilot failed in the review phase: boom"
 tr_seed 57 orch:spec orch:running
 fake_fail adapter_issue_relabel "HTTP 500"
@@ -274,7 +274,7 @@ fake_unfail
 tr_seed 60 orch:spec orch:running
 sourced_rc 'standing_limit_stop 60 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
 assert_eq "limit-stop adds limited, drops running and releases the claim" "$(tr_standing 60)|$(fake_claim_held 60)" "spec|0|0|1|free"
-assert_eq "and posts the limited comment" "$(fake_comments_of 60 | head -1)" "$(marker_of limited spec)"
+assert_first_line "and posts the limited comment" "$(fake_comments_of 60)" "$(marker_of limited spec)"
 tr_seed 61 orch:spec orch:running
 fake_fail adapter_issue_comment "HTTP 500"
 out="$(sourced_rc 'standing_limit_stop 61 spec "" 2026-01-01T01:00:00Z 1 log')"

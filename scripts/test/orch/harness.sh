@@ -797,7 +797,7 @@ out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a standalone suite with a subshell failure exits 1" "$st" 1
 assert_eq "and counts the subshell failure in its summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
-assert_eq "after a blank line" "$(printf '%s\n' "$out" | tail -n 2 | head -n 1)" ""
+assert_eq "after a blank line" "$(printf '%s\n' "$out" | tail -n 2 | awk -v n=1 'NR<=n')" ""
 sed -i '/^( bad /d' "$tally_dir/suite.sh"
 out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a passing standalone suite exits 0" "$st" 0

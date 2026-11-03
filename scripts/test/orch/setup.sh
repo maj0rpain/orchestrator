@@ -408,8 +408,8 @@ layer_calls() {
 dictionary_locale() {
   local try
   for try in en_US.UTF-8 en_US.utf8; do
-    if [ "$(printf '_p\na\n' | LC_ALL="$try" sort 2>/dev/null | head -n 1)" = a ] \
-      && [ "$(printf 'Review\nbug\n' | LC_ALL="$try" sort 2>/dev/null | head -n 1)" = bug ]; then
+    if [ "$(printf '_p\na\n' | LC_ALL="$try" sort 2>/dev/null | awk -v n=1 'NR<=n')" = a ] \
+      && [ "$(printf 'Review\nbug\n' | LC_ALL="$try" sort 2>/dev/null | awk -v n=1 'NR<=n')" = bug ]; then
       printf '%s\n' "$try"; return 0
     fi
   done

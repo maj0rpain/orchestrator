@@ -448,8 +448,8 @@ writeln '## PR' '#3.' '' '## Spec issue' '#1.' '' '## Base SHA' 'abc1234.' '' \
         '## Host fallbacks' 'None (Claude Code).' >"$h3"
 out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "a Verification section recording a failure and its ticket validates" "$st" 0
-assert_eq "its first line is still the bare command the review loop runs" \
-  "$("$ORCH" handoff section "$h3" Verification | head -n 1)" "bash scripts/test/orch_test.sh"
+assert_first_line "its first line is still the bare command the review loop runs" \
+  "$("$ORCH" handoff section "$h3" Verification)" "bash scripts/test/orch_test.sh"
 
 # Merge resolutions records what a base-sync resolver dropped (#791). The
 # template carries it, but a handoff written before it existed still
@@ -484,7 +484,7 @@ export ORCH_AUTOPILOT=1
 out="$("$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
 assert_status "handoff post posts a valid plan" "$st" 0
 assert_eq "as one comment" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "1"
-assert_eq "tagged with the handoff's name" "$(fake_comments_of 7 | head -1)" "<!-- orch:handoff 01-plan -->"
+assert_first_line "tagged with the handoff's name" "$(fake_comments_of 7)" "<!-- orch:handoff 01-plan -->"
 
 fetched="$(mktemp -d)/got.md"
 "$ORCH" handoff fetch 01-plan "$fetched" >/dev/null 2>&1; st=$?
