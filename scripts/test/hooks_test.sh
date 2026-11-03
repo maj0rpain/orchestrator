@@ -76,16 +76,12 @@ skill_event() {
   jq -n --arg s "$1" --arg sid "$2" --arg cwd "$REPO" \
     '{hook_event_name:"PostToolUse", tool_name:"Skill", session_id:$sid, cwd:$cwd, tool_input:{skill:$s}}'
 }
-edit_event() {
-  jq -n --arg f "$1" --arg sid "$2" --arg cwd "$REPO" \
-    '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:$sid, cwd:$cwd, tool_input:{file_path:$f}}'
-}
-
-# edit_event_at <file> <session> <cwd>: edit_event, the payload's cwd chosen.
+# edit_event_at <file> <session> <cwd>: an Edit payload, the cwd chosen.
 edit_event_at() {
   jq -n --arg f "$1" --arg sid "$2" --arg cwd "$3" \
     '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:$sid, cwd:$cwd, tool_input:{file_path:$f}}'
 }
+edit_event() { edit_event_at "$1" "$2" "$REPO"; }
 
 echo "hook tests"
 echo
@@ -595,7 +591,13 @@ assert_contains "denies a symlink loop under src as source" \
 out="$(edit_event_at "$LINK/docs/agents/dangling.ts" s1 "$LINK" | "$GUARD")"
 assert_contains "denies an allowlisted dangling symlink to missing source as source" \
   "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
-rm -rf "$SL" "$OUTSIDE" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
+mkdir -p "$REPO/src/deep"
+ln -s ../../src/deep "$REPO/docs/agents/sub"
+ln -s ../g.ts "$REPO/src/deep/f.ts"
+out="$(edit_event_at "$LINK/docs/agents/sub/f.ts" s1 "$LINK" | "$GUARD")"
+assert_contains "denies a file symlink under a directory symlink, its target taken from the physical directory" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "$src_deny"
+rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
 
 # Junie's PreToolUse payload carries no cwd, and its bundled docs show no
 # session_id either, though build 3419.7 sends one. No session

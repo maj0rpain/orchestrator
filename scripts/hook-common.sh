@@ -82,35 +82,24 @@ hook_normalize_path() {
 # them. Never fails and never prints nothing; an ancestor cd -P cannot enter
 # keeps its lexical form.
 hook_physical_path() {
-  local path="$1" hops=0 dir base tail resolved target
+  local path="$1" hops=0 max_hops=40 dir base tail resolved target
   while :; do
     tail=""
     dir="$path"
     # Walk up to the deepest ancestor that exists as a directory.
     while [ "$dir" != "/" ] && [ ! -d "$dir" ]; do
-      if [ "$dir" = "$path" ] && [ -L "$path" ] && [ "$hops" -lt 40 ]; then
-        break
-      fi
       base="${dir##*/}"
       tail="/$base$tail"
       dir="${dir%/*}"
       [ -n "$dir" ] || dir="/"
     done
-    if [ "$dir" = "$path" ] && [ -L "$path" ] && [ ! -d "$path" ] \
-      && [ "$hops" -lt 40 ]; then
-      # Final segment is a dangling or file symlink: follow it.
-      target="$(readlink "$path")" || break
-      case "$target" in /*) ;; *) target="${path%/*}/$target" ;; esac
-      path="$(hook_normalize_path "$target")"
-      hops=$((hops + 1))
-      continue
-    fi
     resolved="$(cd -P "$dir" 2>/dev/null && pwd -P)" || resolved="$dir"
     path="${resolved%/}$tail"
     [ "$resolved" != "/" ] || path="$tail"
     [ -n "$path" ] || path="/"
-    # A symlink as the last segment of the resolved path: follow it too.
-    if [ -L "$path" ] && [ "$hops" -lt 40 ]; then
+    # A symlink as the last segment of the resolved path: follow it, its
+    # relative target taken against its physical directory.
+    if [ -L "$path" ] && [ "$hops" -lt "$max_hops" ]; then
       target="$(readlink "$path")" || break
       case "$target" in /*) ;; *) target="${path%/*}/$target" ;; esac
       path="$(hook_normalize_path "$target")"
