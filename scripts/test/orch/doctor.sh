@@ -2147,3 +2147,19 @@ out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "a phase label in another casing agrees with the recorded phase, shown canonically" "$out" "phase label: orch:implement"
 assert_not_contains "and no disagreement" "$out" "last moved to phase"
 restore_suite_env
+
+# --- doctor --flow: a deleted flow branch beside a same-named tag (#2337) -----
+echo
+echo "doctor --flow: a deleted flow branch beside a same-named tag"
+fake_flow doctor-tagged-branch
+fake_issue 11 open ready-for-agent Orch:Implement
+"$ORCH" state set issue 11 >/dev/null
+git commit -q --allow-empty -m "later"
+git tag orch/11-gone HEAD~1
+state_fixture phase implement
+state_fixture branch orch/11-gone
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a deleted flow branch with a same-named tag fails doctor" "$st" 1
+assert_contains "saying the branch no longer exists, by its short name" "$out" "FAIL  branch orch/11-gone no longer exists"
+assert_not_contains "without a full ref" "$out" "refs/heads/"
+restore_suite_env

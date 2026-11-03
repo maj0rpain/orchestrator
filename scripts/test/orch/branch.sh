@@ -1266,3 +1266,74 @@ out="$(orch_gh_failing branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
 assert_contains "naming all six" "$out" "create|off|busy|base-sha|sync|retire"
+
+# --- branch retire beside a same-named tag (#2337) ----------------------------
+# A tag named like a branch outranks it in git's lookup, so each existence
+# check and push must name the full ref. Tags sit at an older commit.
+echo
+echo "branch retire beside a same-named tag"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git commit -q --allow-empty -m "later"
+old_commit="$(git rev-parse HEAD~1)"
+
+git branch tg-old1
+git tag tg-new1 "$old_commit"
+out="$(orch_gh_failing branch retire tg-old1 tg-new1 2>&1)"; st=$?
+assert_status "retire with no upstream succeeds beside a tag named <new>" "$st" 0
+assert_eq "and the new branch is the renamed one" \
+  "$(git rev-parse refs/heads/tg-new1)" "$(git rev-parse HEAD)"
+
+git checkout -q -b tg-old2
+git push -q -u origin tg-old2
+git tag tg-new2 "$old_commit"
+out="$(orch_gh_failing branch retire tg-old2 tg-new2 2>&1)"; st=$?
+assert_status "retire with an upstream succeeds beside a tag named <new>" "$st" 0
+assert_eq "origin gets the new branch at the renamed tip" \
+  "$(git --git-dir="$bare" rev-parse refs/heads/tg-new2)" "$(git rev-parse refs/heads/tg-new2)"
+assert_eq "origin loses the old branch" "$(origin_branch_state "$bare" tg-old2)" "missing"
+assert_eq "the new branch tracks origin's" \
+  "$(git config --get branch.tg-new2.merge)" "refs/heads/tg-new2"
+
+git tag tg-old3 "$old_commit"
+out="$(orch_gh_failing branch retire tg-old3 tg-new3 2>&1)"; st=$?
+assert_status "retire dies when only a tag has the <old> name" "$st" 1
+assert_contains "saying the branch does not exist, by its short name" "$out" "orch: branch tg-old3 does not exist"
+assert_not_contains "without a full ref" "$out" "refs/heads/"
+
+git checkout -q -b tg-new4
+git push -q origin tg-new4:refs/heads/tg-old4
+git tag tg-old4 "$old_commit"
+out="$(orch_gh_failing branch retire tg-old4 tg-new4 2>&1)"; st=$?
+assert_status "retire resumes beside a tag named <old> once <new> exists" "$st" 0
+assert_eq "origin has the new branch" "$(origin_branch_state "$bare" tg-new4)" "pushed"
+assert_eq "and not the old one" "$(origin_branch_state "$bare" tg-old4)" "missing"
+
+# --- branch create and branch off beside a same-named tag (#2337) -------------
+echo
+echo "branch create and branch off beside a same-named tag"
+new_repo_with_origin
+git commit -q --allow-empty -m "later"
+old_commit="$(git rev-parse HEAD~1)"
+git tag quick/9-tagged "$old_commit"
+out="$(orch_gh_failing branch off "quick/9-tagged" 2>&1)"; st=$?
+assert_status "branch off succeeds beside a tag of the new name" "$st" 0
+assert_not_contains "with no already-exists refusal" "$out" "already exists"
+assert_eq "the new branch starts at the current tip, not the tag" \
+  "$(git rev-parse refs/heads/quick/9-tagged)" "$(git rev-parse HEAD)"
+
+new_repo_with_origin
+orch_gh_failing init tagged >/dev/null
+orch_gh_failing state set issue 12
+git commit -q --allow-empty -m "later"
+old_commit="$(git rev-parse HEAD~1)"
+git tag orch/12-tagged "$old_commit"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create succeeds beside a tag of the new name" "$st" 0
+assert_not_contains "with no already-exists refusal" "$out" "already exists"
+assert_eq "the new branch starts at the current tip, not the tag" \
+  "$(git rev-parse refs/heads/orch/12-tagged)" "$(git rev-parse HEAD)"
+restore_suite_env

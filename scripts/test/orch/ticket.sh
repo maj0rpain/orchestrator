@@ -1283,6 +1283,36 @@ assert_contains "the CLI conventions' noun table lists merge among ticket's verb
   "$(grep '^| `ticket` ' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`merge`'
 restore_suite_env
 
+# --- ticket merge beside a same-named tag (#2337) -----------------------------
+# A tag named like a branch outranks it in git's lookup, so merge must hand git
+# full refs. Each case plants the tag at an older commit than the branch's tip.
+echo
+echo "ticket merge beside a same-named tag"
+# tt_commit <dir> <file> <content>: commit <content> to <file> in <dir>.
+tt_commit() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
+tw_repo
+old_commit="$(git rev-parse HEAD~1)"
+wt="$("$ORCH" ticket-worktree add 7)"
+tt_commit "$wt" ticket.txt one
+tt_commit . other.txt landed-first
+git tag orch/5-feature "$old_commit"
+flow_tip="$(git rev-parse refs/heads/orch/5-feature)"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge succeeds beside a tag named like the parent" "$st" 0
+assert_eq "the ticket branch descends from the parent's tip, not the tag" \
+  "$(git rev-parse refs/heads/orch/5-feature--t7~1)" "$flow_tip"
+
+tw_repo
+old_commit="$(git rev-parse HEAD~1)"
+wt="$("$ORCH" ticket-worktree add 7)"
+tt_commit "$wt" ticket.txt one
+git tag orch/5-feature--t7 "$old_commit"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge succeeds beside a tag named like the ticket branch" "$st" 0
+assert_eq "the parent fast-forwards to the ticket branch's tip" \
+  "$(git rev-parse refs/heads/orch/5-feature)" "$(git rev-parse refs/heads/orch/5-feature--t7)"
+restore_suite_env
+
 # --- ticket reclaim (ADR-0054) -----------------------------------------------
 # Recovers what a dead implement run left: closes merged tickets, merges
 # reported ones, discards the rest. Checked through issue states, branches,

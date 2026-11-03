@@ -653,7 +653,7 @@ check_flow_branch() {
   local branch
   branch="$(state_get branch)"
   if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
-  if git rev-parse --verify --quiet "$branch" >/dev/null; then d_ok "branch: $branch"; return 0; fi
+  if git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then d_ok "branch: $branch"; return 0; fi
   # A done flow stays put until the next init archives it (ADR-0009), and its
   # branch being deleted after the merge is the routine end of a flow, not a
   # broken one - the same reading check_flow_issue gives its closed issue.

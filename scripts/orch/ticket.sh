@@ -656,7 +656,7 @@ cmd_ticket_merge() {
     || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
   require_clean_tree "$parent_checkout" \
     "$parent_checkout, the checkout of $parent, is dirty - commit or discard its changes first"
-  if ! capture rebase_out rebase_err git -C "$path" rebase -q "$parent"; then
+  if ! capture rebase_out rebase_err git -C "$path" rebase -q "refs/heads/$parent"; then
     # A conflict is a rebase stopped with unmerged paths; anything else - a
     # refusing hook, say - is a plain failure, named by git's first line.
     unmerged="$(git -C "$path" diff --name-only --diff-filter=U 2>/dev/null)" || unmerged=""
@@ -671,7 +671,7 @@ cmd_ticket_merge() {
     said="${rebase_err%%$'\n'*}"
     die "rebasing $branch onto $parent failed: ${said:-git gave no reason}"
   fi
-  git -C "$parent_checkout" merge -q --ff-only "$branch" \
+  git -C "$parent_checkout" merge -q --ff-only "refs/heads/$branch" \
     || die "could not fast-forward $parent to $branch in $parent_checkout"
 }
 

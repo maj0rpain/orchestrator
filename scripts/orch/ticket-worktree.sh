@@ -78,7 +78,7 @@ ticket_worktree_resolve() {
 ticket_branch_merged() {
   local parent
   parent="$(forked_from_branch "$1")" || return 1
-  git merge-base --is-ancestor "$1" "$parent" 2>/dev/null
+  git merge-base --is-ancestor "refs/heads/$1" "refs/heads/$parent" 2>/dev/null
 }
 
 # ticket_branch_merged_or_die <branch> <what>: dies unless ticket_branch_merged
