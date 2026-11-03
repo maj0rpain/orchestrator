@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.6
+
+Fixed a tag named like a local branch taking the branch's place in `ticket merge`, the merged check behind `ticket-worktree remove` and `ticket close`, `branch retire`, `branch create` / `branch off` and `doctor --flow`: each now hands git the full `refs/heads/<name>`.
+
 ## 4.44.5
 
 docs_lint's "no pipe into a quiet grep or head" rule now scans the test runners too, and every flagged site is converted, so a killed writer's "Broken pipe" can no longer fail a test section.
