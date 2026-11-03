@@ -7,11 +7,11 @@
 # plans, two lines, "<n>" then "<resumed>": the number the attempt's retire
 # carries and whether its rename is already done.
 # A previous call at this same redo can have already retired the branch and
-# recorded it in state before dying on the PR close - branch and redo_count
-# are set together right after a real retire, so if the recorded branch
-# already matches what this redo_count's retire would have produced, the
-# rename is done: resume at the PR close instead of retiring an
-# already-retired branch a second time (issue #63).
+# recorded it in state before dying: branch and redo_count are set together
+# right after a real retire, so if the recorded branch already matches what this
+# redo_count's retire would have produced, the rename is done. The PR close ran
+# before the rename, so a rerun that finds it done skips the close outright
+# rather than retiring an already-retired branch a second time (issue #63).
 redo_retire_plan() {
   local issue="$1" slug="$2" branch redo_count
   branch="$(state_get branch)"

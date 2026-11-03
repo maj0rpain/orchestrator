@@ -756,11 +756,7 @@ adapter_pr_close() {
   [ "$st" != CLOSED ] || return 0
   head="$(cat "$d/head" 2>/dev/null)"
   git ls-remote --exit-code origin "refs/heads/$head" >/dev/null 2>&1
-  if [ $? -eq 2 ]; then
-    printf 'CLOSED\n' >"$d/state"
-    return 0
-  fi
-  fake_close_comment "$d/comments" "$2"
+  [ $? -eq 2 ] || fake_close_comment "$d/comments" "$2"
   printf 'CLOSED\n' >"$d/state"
 }
 

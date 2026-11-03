@@ -5,20 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# Marks $1 as pushed to origin without a real push - it only has to make
-# "$1@{upstream}" resolve, so that cmd_branch retire's own push/delete (the
-# real git I/O the redo review assertions actually check) has something to
-# run against. The genuine push/checkout cycle for a redo's
-# rename-and-republish is proven once by "redo review"'s first iteration
-# and, at the lower branch-retire level, by "branch retire"'s own
-# to-retire/to-retire-redo-1 assertions - later redo iterations only need the
-# upstream to look real, not a second full round trip to the same bare repo.
-stub_pushed_branch() {
-  local branch="$1"
-  git update-ref "refs/remotes/origin/$branch" "$(git rev-parse "$branch")"
-  git branch -q --set-upstream-to="origin/$branch" "$branch"
-}
-
 # fake_pr_state_of <n>: PR #n's state read back from the store - OPEN, CLOSED
 # or MERGED.
 fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
@@ -182,7 +168,7 @@ assert_eq "recording the corrected base" "$("$ORCH" state get base)" "redo-base"
 state_fixture phase review
 "$ORCH" state set issue 21
 git checkout -q -b orch/21-redotest orch/21-redotest-redo-1
-stub_pushed_branch orch/21-redotest
+git push -q -u origin orch/21-redotest
 state_fixture branch orch/21-redotest
 state_fixture pr 31
 state_fixture iteration 5
@@ -194,6 +180,8 @@ assert_status "a second stopped loop redoes just as the first did" "$st" 0
 assert_eq "and numbers on rather than repeating redo-1" "$out" "2"
 assert_eq "naming the branch redo-2" \
   "$(branch_presence orch/21-redotest-redo-2)" "present"
+assert_contains "closing PR 31 with the redo note" \
+  "$(fake_pr_comments_of 31)" "closed by an orchestrator redo"
 assert_eq "without disturbing redo-1's records" \
   "$(on_disk .orchestrator/review/pre-redo-1/iteration-05.md)" "present"
 assert_eq "moving the second loop's records into pre-redo-2" \
