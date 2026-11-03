@@ -1610,7 +1610,7 @@ assert_empty "bash hook: another checkout's Post leaves no snapshot" \
   "$(ls -A "$BW_TMP2")"
 rm -f "$BW/docs/new.md" "$BW/docs/third.md"
 rm -rf "$BW3" "$BW_TMP2"
-# No baseline, malformed input, missing id, cwd outside a repo.
+# No baseline, missing id, cwd outside a repo.
 bw_hook PostToolUse "$BW" "never-seen"
 assert_eq "bash hook: Post without a snapshot exits 0" "$bw_rc" 0
 assert_empty "bash hook: Post without a snapshot is silent" "$bw_out"
@@ -1656,28 +1656,24 @@ git -C "$BW" checkout -q -- docs/ok.md
 # A Post with an id but no cwd deletes the snapshot Pre wrote; a Pre with no
 # cwd writes none.
 for bw_ev in PostToolUse PostToolUseFailure; do
-  BW_TMP3="$(mktemp -d)"
   BW_ID=$((BW_ID + 1))
-  TMPDIR="$BW_TMP3" bw_hook PreToolUse "$BW" "t$BW_ID"
+  TMPDIR="$BW_TMP" bw_hook PreToolUse "$BW" "t$BW_ID"
   assert_eq "bash hook: Pre writes a snapshot before a $bw_ev without cwd" \
-    "$(ls -A "$BW_TMP3" | wc -l | tr -d ' ')" 1
-  TMPDIR="$BW_TMP3" bw_hook "$bw_ev" "" "t$BW_ID"
+    "$(ls -A "$BW_TMP" | wc -l | tr -d ' ')" 1
+  TMPDIR="$BW_TMP" bw_hook "$bw_ev" "" "t$BW_ID"
   assert_eq "bash hook: $bw_ev without cwd exits 0" "$bw_rc" 0
   assert_empty "bash hook: $bw_ev without cwd is silent" "$bw_out"
   assert_empty "bash hook: $bw_ev without cwd leaves no snapshot" \
-    "$(ls -A "$BW_TMP3")"
-  rm -rf "$BW_TMP3"
+    "$(ls -A "$BW_TMP")"
 done
-BW_TMP3="$(mktemp -d)"
 BW_ID=$((BW_ID + 1))
 pushd "$BW" >/dev/null || exit 1
-TMPDIR="$BW_TMP3" bw_hook PreToolUse "" "t$BW_ID"
+TMPDIR="$BW_TMP" bw_hook PreToolUse "" "t$BW_ID"
 popd >/dev/null || exit 1
 assert_eq "bash hook: Pre without cwd exits 0" "$bw_rc" 0
 assert_empty "bash hook: Pre without cwd is silent" "$bw_out"
 assert_empty "bash hook: Pre without cwd writes no snapshot" \
-  "$(ls -A "$BW_TMP3")"
-rm -rf "$BW_TMP3"
+  "$(ls -A "$BW_TMP")"
 # Parity: an Edit and a Bash call leaving the same wide file report alike.
 printf '# T\n\n%s\n' "$wide" >"$BW/docs/ok.md"
 run_edit_hook "$BW/docs/ok.md"
