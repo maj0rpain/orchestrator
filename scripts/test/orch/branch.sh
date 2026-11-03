@@ -41,6 +41,19 @@ merge_state() {
   git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none
 }
 
+# stray_fork <command...>: a fresh repo with a stray local branch named
+# origin/main planted and origin moved on; runs <command...> and leaves
+# origin's new tip in stray_tip.
+stray_tip=
+stray_fork() {
+  sc_clone
+  git branch origin/main HEAD
+  git -C "$sc_seed" commit -q --allow-empty -m "origin moves on"
+  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
+  stray_tip="$(git -C "$sc_seed" rev-parse HEAD)"
+  "$@" >/dev/null
+}
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
@@ -64,23 +77,10 @@ assert_eq "and the fork point as its base SHA there" \
   "$(git config --get branch.orch/11-bcreate.orchestrator-base-sha)" "$before_sha"
 
 # A stray local branch named origin/main must not stand in for origin's tip.
-# stray_fork <command...>: a fresh repo with the stray branch planted and
-# origin moved on; runs <command...> and leaves its tip in stray_tip.
-stray_fork() {
-  sc_clone
-  git branch origin/main HEAD
-  git -C "$sc_seed" commit -q --allow-empty -m "origin moves on"
-  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
-  stray_tip="$(git -C "$sc_seed" rev-parse HEAD)"
-  "$@" >/dev/null
-}
 stray_fork orch_gh_failing init strayc
 orch_gh_failing state set issue 13
 orch_gh_failing branch create >/dev/null
 assert_eq "branch create forks from origin's tip, not a stray origin/main branch" \
-  "$(git rev-parse HEAD)" "$stray_tip"
-stray_fork orch_gh_failing branch off quick/13-stray
-assert_eq "branch off forks from origin's tip, not a stray origin/main branch" \
   "$(git rev-parse HEAD)" "$stray_tip"
 
 # --- branch off --------------------------------------------------------------
@@ -130,6 +130,23 @@ state_fixture phase "done"
 out="$(orch_gh_failing branch off quick/4-after)"; st=$?
 assert_status "a done flow does not block branch off" "$st" 0
 assert_eq "which checks the branch out as before" "$(git branch --show-current)" "quick/4-after"
+
+# A stray local branch named origin/main must not stand in for origin's tip.
+stray_fork orch_gh_failing branch off quick/13-stray
+assert_eq "branch off forks from origin's tip, not a stray origin/main branch" \
+  "$(git rev-parse HEAD)" "$stray_tip"
+
+# The local fallback names the local branch, so a same-named tag cannot win.
+new_repo >/dev/null
+git remote set-url origin "$(mktemp -d)/missing.git"
+fb_base="$(git branch --show-current)"
+git config orchestrator.base "$fb_base"
+git tag "$fb_base" HEAD
+git commit -q --allow-empty -m "local base moves on"
+out="$(orch_gh_failing branch off quick/2-tagged 2>&1)"; st=$?
+assert_status "branch off with a tag of the base's name exits 0" "$st" 0
+assert_eq "branch off falls back to the local branch, not a tag of its name" \
+  "$(git rev-parse HEAD)" "$(git rev-parse "refs/heads/$fb_base")"
 
 # --- a quick implementation's base branch -------------------------------------
 # A quick implementation keeps no state.json, so branch off records the base
@@ -295,18 +312,6 @@ git config orchestrator.base "$(git branch --show-current)"
 out="$(orch_gh_failing branch off quick/2-local 2>&1)"; st=$?
 assert_status "branch off falls back to the local base with origin unreachable" "$st" 0
 assert_eq "and leaves no upstream under autoSetupMerge=always" "$(upstream_of quick/2-local)" "none"
-
-# The fallback names the local branch, so a tag called main cannot replace it.
-new_repo >/dev/null
-git remote set-url origin "$(mktemp -d)/missing.git"
-fb_base="$(git branch --show-current)"
-git config orchestrator.base "$fb_base"
-git tag "$fb_base" HEAD
-git commit -q --allow-empty -m "local base moves on"
-out="$(orch_gh_failing branch off quick/2-tagged 2>&1)"; st=$?
-assert_status "branch off with a tag of the base's name exits 0" "$st" 0
-assert_eq "branch off falls back to the local branch, not a tag of its name" \
-  "$(git rev-parse HEAD)" "$(git rev-parse "refs/heads/$fb_base")"
 
 # retire reads the upstream to decide whether to push: a never-pushed branch
 # made by branch off has none, so it is renamed locally only.
