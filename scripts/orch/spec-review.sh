@@ -220,9 +220,6 @@ spec_review_mark_check() {
   esac
 }
 
-# SPEC_REVIEW_ESCAPE_HINT: appended to the deaths of an unescaped @@ line
-# inside an anchor or replacement block (#1945).
-SPEC_REVIEW_ESCAPE_HINT=' - a body line starting with @@ is written \@@'
 
 # spec_review_block_line <line> <var>: a block line into <var>, with one
 # leading backslash removed when the line is backslashes then `@@` (#1945).
@@ -282,7 +279,7 @@ spec_review_batch_parse() {
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'$SPEC_REVIEW_ESCAPE_HINT"
+          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'$ESCAPE_HINT"
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
         if [ "$opt" -ge 0 ]; then
           SR_OP_ANCHOR[opt]="$buf"; SR_OP_ANCHOR_LINE[opt]="$block_line"
@@ -293,7 +290,7 @@ spec_review_batch_parse() {
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'$SPEC_REVIEW_ESCAPE_HINT"
+          || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'$ESCAPE_HINT"
         if [ "$opt" -ge 0 ]; then SR_OP_REPLACE[opt]="$buf"; else SR_IT_REPLACE[cur]="$buf"; fi
         mode=item; buf=""; bufn=0
         continue ;;
@@ -1315,14 +1312,14 @@ spec_review_tickets_parse() {
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_tickets_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'$SPEC_REVIEW_ESCAPE_HINT"
+          || spec_review_tickets_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'$ESCAPE_HINT"
         [ -n "$(trim "$buf")" ] || spec_review_tickets_die "$block_line" "the anchor is empty"
         ST_ANCHOR[cur]="$buf"
         mode=replace; buf=""; bufn=0; block_line="$lineno"
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
-          || spec_review_tickets_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'$SPEC_REVIEW_ESCAPE_HINT"
+          || spec_review_tickets_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'$ESCAPE_HINT"
         ST_REPLACE[cur]="$buf"
         mode=top; buf=""; bufn=0
         continue ;;
