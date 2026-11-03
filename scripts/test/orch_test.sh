@@ -371,10 +371,12 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     orch_started=$((orch_started + 1))
     orch_running=$((orch_running + 1))
   done
-  # Stop the tree of any child past its deadline, counted from its start.
+  # Stop the tree of any child past its deadline, counted from its start. The
+  # clock counts whole seconds, so only a difference above the deadline proves
+  # the full deadline has passed.
   for ((orch_i = orch_flushed; orch_i < orch_started; orch_i++)); do
     if kill -0 "${orch_pids[$orch_i]}" 2>/dev/null &&
-      [ $((SECONDS - orch_starts[orch_i])) -ge "$orch_timeout" ]; then
+      [ $((SECONDS - orch_starts[orch_i])) -gt "$orch_timeout" ]; then
       orch_timed_out[orch_i]=1
       test_jobs_stop_tree "${orch_pids[$orch_i]}"
     fi
@@ -388,22 +390,24 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     cat "$orch_buf/$orch_pos.out"
     orch_counts=""
     [ -f "$orch_buf/$orch_pos.counts" ] && orch_counts="$(cat "$orch_buf/$orch_pos.counts")"
-    if [ -n "${orch_timed_out[$orch_flushed]:-}" ]; then orch_counts=timed-out; fi
-    case "$orch_counts" in
-      timed-out)
-        print_fail "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")' timed out" \
-          "after ${orch_timeout}s; its process tree was stopped"
-        orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
-      [0-9]*' '[0-9]*' '[0-9]*)
-        read -r orch_child_pass orch_child_fail orch_child_skip <<<"$orch_counts"
-        orch_pass=$((orch_pass + orch_child_pass)); orch_fail=$((orch_fail + orch_child_fail))
-        orch_skip=$((orch_skip + orch_child_skip))
-        [ "$orch_child_fail" -eq 0 ] || orch_any_failed=1 ;;
-      *)
-        print_fail "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")' reported no counts" \
-          "it exited $orch_status before its summary"
-        orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
-    esac
+    orch_title="$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")"
+    if [ -n "${orch_timed_out[$orch_flushed]:-}" ]; then
+      print_fail "section '$orch_title' timed out" \
+        "after ${orch_timeout}s; its process tree was stopped"
+      orch_fail=$((orch_fail + 1)); orch_any_failed=1
+    else
+      case "$orch_counts" in
+        [0-9]*' '[0-9]*' '[0-9]*)
+          read -r orch_child_pass orch_child_fail orch_child_skip <<<"$orch_counts"
+          orch_pass=$((orch_pass + orch_child_pass)); orch_fail=$((orch_fail + orch_child_fail))
+          orch_skip=$((orch_skip + orch_child_skip))
+          [ "$orch_child_fail" -eq 0 ] || orch_any_failed=1 ;;
+        *)
+          print_fail "section '$orch_title' reported no counts" \
+            "it exited $orch_status before its summary"
+          orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
+      esac
+    fi
     [ "$orch_status" -eq 0 ] || orch_any_failed=1
     orch_flushed=$((orch_flushed + 1))
     orch_progress=1

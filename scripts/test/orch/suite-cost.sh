@@ -107,7 +107,7 @@ handshake_overlap_check() {
   "$ORCH" suite-cost check -- "$@" >"$dir/out" 2>"$dir/err" &
   pid=$!
   fifo_bounded 60 "overlap check ($dir/one)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$dir/one" >/dev/null
-  "$ORCH" suite-cost run -- sh -c 'printf "x\n" >"$0"' "$dir/two" >/dev/null 2>&1
+  "$ORCH" suite-cost run -- sh -c 'timeout "$1" sh -c '\''printf "x\n" >"$0"'\'' "$0"; s=$?; [ $s -ne 124 ] || echo "overlap check ($0): no partner within ${1}s" >&2; exit $s' "$dir/two" 60 >/dev/null 2>&1
   wait "$pid"; st=$?
 }
 
