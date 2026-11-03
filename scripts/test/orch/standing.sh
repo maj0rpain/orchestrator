@@ -168,7 +168,7 @@ fake_unfail
 tr_seed 144 orch:done orch:sync orch:running
 fake_fail adapter_issue_comment "HTTP 500"
 out="$(sourced_rc 'standing_sync_dropped 144 x')"
-assert_contains "the dropped-intent stop failing on its comment names the label write that landed" "$out" "writes that landed: added needs-human; the claim stays held"
+assert_contains "the dropped-intent stop failing on its comment names the label write that landed" "$out" "writes that landed: added needs-human, removed orch:sync; the claim stays held"
 fake_unfail
 
 # finish

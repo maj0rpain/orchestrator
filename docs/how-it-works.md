@@ -477,6 +477,7 @@ old claims. It also warns about this host's claims whose process is gone;
 | `orch.sh autopilot questions` | List the repo's open `needs-human` autopilot issues: issue, kind (`question`, `replied` or `stop`), phase and comment URL. |
 | `orch.sh autopilot reply <issue> <file>` | Post `<file>` as a comment, then remove `needs-human`; refused unless the label is on and no comment follows the newest question. |
 | `orch.sh autopilot resume <issue>` | Remove `needs-human` from the issue, nothing else. |
+| `orch.sh autopilot sync <issue>` | Add `orch:sync` to an `orch:done` issue, asking the next tick to sync its PR with the base branch. |
 
 The rest (`active`, `rounds`, `budget`, `run`, `ask`, `answer`) are called by
 the sessions themselves.

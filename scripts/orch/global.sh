@@ -125,8 +125,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               (no default), .cap (3), .handle (the repo's
                               owner), .rounds (2), .budget (3), .model and
                               .effort (no default; the agent setting's Claude
-                              Code values or inherit). Dies naming the key
-                              and value when one is out of range
+                              Code values or inherit) and .auto-sync (true).
+                              Dies naming the key and value when one is out
+                              of range
   autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),
                               1 otherwise
   autopilot rounds            print the Rounds line of the flow's issue's
@@ -137,9 +138,20 @@ orch.sh - deterministic operations for the orchestrator flow
                               validate the plan (## Autopilot block included),
                               post it as the plan handoff comment, then add
                               orch:spec
-  autopilot tick              one watcher pass: ensure the seven labels, clean up
-                              this host's stale claims, then claim each open
-                              phase-labelled issue (oldest first, below the
+  autopilot sync <issue>      add orch:sync to an orch:done issue, asking the
+                              next tick to merge the base branch into its PR
+  autopilot sync-finish       close a sync: remove orch:sync, release the claim
+  autopilot sync-dropped <file>
+                              stop a sync whose resolver dropped the intents
+                              in <file>: needs-human, not orch:sync
+  autopilot sync-fail <reason>
+                              stop a failed sync, keeping orch:sync
+  autopilot tick              one watcher pass: ensure the eight labels, detect
+                              done issues whose PR needs a sync (unless
+                              auto-sync is false) and label them orch:sync,
+                              clean up this host's stale claims, then claim
+                              each open phase-labelled or orch:sync issue
+                              (oldest first, below the
                               cap), make or reuse its side checkout and start
                               `autopilot run` detached. Claude Code only;
                               needs orchestrator.autopilot.permission-mode

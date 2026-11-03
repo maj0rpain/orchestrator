@@ -386,16 +386,17 @@ standing_ask() {
   standing_release "$issue"
 }
 
-# standing_stop_write <issue> <kind> <text> <label> [<remove-label>]: the write
-# chain of a stop: adds <label> (removing <remove-label> when given), posts
-# <text> as the <kind> comment, then releases the claim, last.
+# standing_stop_write <issue> <kind> <text> <label> [<remove-label> [<landed>]]:
+# the write chain of a stop: adds <label> (removing <remove-label> when given),
+# posts <text> as the <kind> comment, then releases the claim, last. <landed>
+# words the label write in a failure message (default "added <label>").
 standing_stop_write() {
-  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=()
+  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" landed="${6:-added $4}" body gh_err relabel=()
   relabel=(--add "$label")
   [ -z "$remove" ] || relabel+=(--remove "$remove")
   capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
     standing_chain_die "$issue" "add $label" "$gh_err"
-  standing_landed_add "added $label"
+  standing_landed_add "$landed"
   body="$(mktemp)" || die "could not create a temp file for the $kind comment"
   printf '%s' "$text" >"$body"
   capture_err gh_err adapter_issue_comment "$issue" "$body" || {
@@ -445,7 +446,7 @@ standing_sync_dropped() {
   marker="$(marked_comment_write failure "$STANDING_SYNC_PHASE")" || exit 1
   printf -v text '%s\nThe sync pushed its merge, but its resolver dropped these intents:\n\n%s\n\nThe issue is labelled %s and no longer carries %s. Lifting %s re-runs nothing: the issue is a plain %s again.\n' \
     "$marker" "$intents" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL" "$STANDING_HUMAN_LABEL" "$(standing_phase_label "done")"
-  standing_stop_write "$issue" failure "$text" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL"
+  standing_stop_write "$issue" failure "$text" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL" "added $STANDING_HUMAN_LABEL, removed $STANDING_SYNC_LABEL"
 }
 
 # standing_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a
