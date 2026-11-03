@@ -2832,12 +2832,12 @@ check "orch-review-pass refers into no orch-review section and says how to start
 # frontmatter description is over 1024 characters, the Agent Skills spec's cap.
 # Characters, not bytes: counted under a pinned UTF-8 locale.
 scan_skill_description_length() {
-  local r="$1" f desc len
+  local r="$1" f line text len
   for f in "$r"/skills/*/SKILL.md; do
     [ -f "$f" ] || continue
-    desc="$(skill_description "$f")"
-    desc="${desc#description: }"
-    len="$(LC_ALL=C.UTF-8; printf %s "${#desc}")"
+    line="$(skill_description "$f")"
+    text="${line#description: }"
+    len="$(LC_ALL=C.UTF-8; printf %s "${#text}")"
     [ "$len" -gt 1024 ] \
       && echo "${f#"$r"/}: description is $len characters, over 1024"
   done
