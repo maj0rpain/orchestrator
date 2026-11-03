@@ -721,7 +721,8 @@ assert_eq "and leaves no file a caller could mistake for a body" \
   "$(on_disk "$issue_body")" "absent"
 
 # issue fetch streams gh's stdout to the file, so what gh printed - the body
-# and the one newline gh's --jq adds - round-trips byte for byte, and its
+# and the one newline gh's --jq adds - round-trips byte for byte for an LF
+# body (a CRLF body loses its CRs, below), and its
 # death carries gh's first line (#846). A read that prints nothing writes
 # nothing: issue comments' empty file, below.
 fidir="$(mktemp -d)"
