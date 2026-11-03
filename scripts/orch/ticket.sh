@@ -91,6 +91,17 @@ ticket_listing_has() {
   return 1
 }
 
+# ticket_listing_state <listing> <n>: the state field (second) of the line of
+# the sub-issue <listing> whose first field is <n>; nothing when none is.
+ticket_listing_state() {
+  local line num state
+  while IFS= read -r line; do
+    tsv_split "$line" num state
+    if [ "$num" = "$2" ]; then printf '%s\n' "$state"; return 0; fi
+  done <<<"$1"
+  return 0
+}
+
 # ticket_links_verified <err_var> <parent> <child> <want>: 0 only once both
 # links read back exactly as published: the parent's sub-issue listing
 # contains the child, and the child's blocked-by listing is the same set of
