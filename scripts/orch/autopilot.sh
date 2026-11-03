@@ -264,7 +264,7 @@ autopilot_sync() {
   is_positive_int "$issue" || die "not an issue number: $issue"
   standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
   [ "$STANDING_STATE" = OPEN ] || die "issue #$issue is closed"
-  label_listed "$STANDING_LABELS" "$(standing_phase_label "done")" ||
+  standing_is_done ||
     die "issue #$issue is not at $(standing_phase_label "done") - a sync request needs a done flow"
   [ "$STANDING_SYNC" = 0 ] || die "issue #$issue already carries $STANDING_SYNC_LABEL"
   standing_sync_request "$issue" || gh_die "add $STANDING_SYNC_LABEL to issue #$issue" "$STANDING_REASON"
@@ -306,7 +306,7 @@ autopilot_questions() {
     if [ -z "$phase" ]; then
       # a done issue is listed only when a sync stopped it: orch:sync is still
       # on it (a failure stop), or its newest stop comment is a sync stop
-      label_listed "$STANDING_LABELS" "$(standing_phase_label "done")" || continue
+      standing_is_done || continue
       if [ "$STANDING_SYNC" = 1 ] || [ "$TIMELINE_STOP_PHASE" = "$STANDING_SYNC_PHASE" ]; then
         phase="$STANDING_SYNC_PHASE" q_phase="$STANDING_SYNC_PHASE" stop_phase="$STANDING_SYNC_PHASE"
       else
@@ -565,47 +565,47 @@ autopilot_pickup_redo() {
   ORCH_AUTOPILOT=1 autopilot_orch_in "$1" redo "$2"
 }
 
-# autopilot_pickup_sync_steps <issue> <limited>: a sync request's steps after
-# the trust check: its side checkout must exist and record phase done. It adds
+# autopilot_pickup_sync_refusals <issue> <side> [<recorded>]: a sync request's
+# own refusals, called twice by pickup_steps: with no recorded phase, the side
+# checkout must exist; with it, the checkout must record phase done. A sync adds
 # no side checkout, runs no init, posts no plan comment and runs no redo. A
 # refusal leaves PICKUP_KIND and PICKUP_TEXT and returns 1.
-autopilot_pickup_sync_steps() {
-  local issue="$1" limited="$2" side="" recorded
-  autopilot_pickup_side_find "$issue"
+autopilot_pickup_sync_refusals() {
+  local issue="$1" side="$2" recorded="${3:-}"
   if [ -z "$side" ]; then
     PICKUP_KIND=refusal
     PICKUP_TEXT="no side checkout on this host holds issue #$issue - run $(plugin_cmd sync "the orch-sync skill") where it lives"
     return 1
   fi
-  autopilot_pickup_recorded "$side" || autopilot_pickup_fail failure "step reading the recorded phase failed" || return 1
-  if [ "$recorded" != "done" ]; then
+  if [ -n "$recorded" ] && [ "$recorded" != "done" ]; then
     PICKUP_KIND=refusal
     PICKUP_TEXT="the issue carries a sync request, but its side checkout records phase $recorded, not done"
     return 1
   fi
-  standing_begin "$issue" "$limited" || {
-    PICKUP_KIND=failure
-    PICKUP_TEXT="$STANDING_REASON"
-    return 1
-  }
 }
 
 # autopilot_pickup_steps <issue> <phase> <limited>: Pickup's steps in order, up
 # to the session's start. The first that fails leaves PICKUP_KIND and
 # PICKUP_TEXT and returns 1.
 autopilot_pickup_steps() {
-  local issue="$1" phase="$2" limited="$3" side="" title="" recorded redo
+  local issue="$1" phase="$2" limited="$3" side="" title="" recorded redo sync=0
+  [ "$phase" != "$STANDING_SYNC_PHASE" ] || sync=1
   autopilot_pickup_trust "$issue" || return 1
-  [ "$phase" != "$STANDING_SYNC_PHASE" ] || { autopilot_pickup_sync_steps "$issue" "$limited"; return; }
   autopilot_pickup_side_find "$issue"
-  if [ -z "$side" ]; then
-    autopilot_pickup_side_title "$issue" || autopilot_pickup_fail failure "step side-checkout add failed: could not read the issue's title" || return 1
-    autopilot_pickup_side_add "$issue" "$title" || autopilot_pickup_fail failure "step side-checkout add failed" || return 1
+  if [ "$sync" = 1 ]; then
+    autopilot_pickup_sync_refusals "$issue" "$side" || return 1
+  else
+    if [ -z "$side" ]; then
+      autopilot_pickup_side_title "$issue" || autopilot_pickup_fail failure "step side-checkout add failed: could not read the issue's title" || return 1
+      autopilot_pickup_side_add "$issue" "$title" || autopilot_pickup_fail failure "step side-checkout add failed" || return 1
+    fi
+    autopilot_pickup_contained autopilot_pickup_init "$issue" "$side" || autopilot_pickup_fail failure "step init failed" || return 1
+    autopilot_pickup_contained autopilot_post_minimal_plan "$issue" || autopilot_pickup_fail failure "step minimal plan comment failed" || return 1
   fi
-  autopilot_pickup_contained autopilot_pickup_init "$issue" "$side" || autopilot_pickup_fail failure "step init failed" || return 1
-  autopilot_pickup_contained autopilot_post_minimal_plan "$issue" || autopilot_pickup_fail failure "step minimal plan comment failed" || return 1
   autopilot_pickup_recorded "$side" || autopilot_pickup_fail failure "step reading the recorded phase failed" || return 1
-  if [ "$recorded" != "$phase" ]; then
+  if [ "$sync" = 1 ]; then
+    autopilot_pickup_sync_refusals "$issue" "$side" "$recorded" || return 1
+  elif [ "$recorded" != "$phase" ]; then
     redo="$(standing_redo_phase "$phase" "$recorded")" || {
       PICKUP_KIND=refusal
       PICKUP_TEXT="the issue is labelled $(standing_phase_label "$phase"), but its side checkout last moved to phase $recorded - only $(standing_redo_rule) is a redo"
@@ -722,15 +722,15 @@ autopilot_candidates() {
 # is CONFLICTING. An issue with no such PR is skipped silently, one with
 # several warned about; a failed read or write warns and skips that issue only.
 autopilot_sync_detect() {
-  local out prs="" gh_err issue pr_lines head_prefix count done_label reason=""
+  local out raw="" prs="" gh_err issue pr_lines head_prefix count done_label reason=""
   done_label="$(standing_phase_label "done")"
   capture out gh_err adapter_issues_labelled "$done_label" || {
     warn "could not list the issues labelled $done_label: $(gh_reason "$gh_err") - no sync detection this tick"
     return 0
   }
   [ -n "$out" ] || return 0
-  if capture prs gh_err adapter_prs_open_mergeability; then
-    prs="$(printf '%s\n' "$prs" | trust_filter_prs "the open PRs")" || reason="the open PRs could not be read: a malformed line"
+  if capture raw gh_err adapter_prs_open_mergeability; then
+    prs="$(printf '%s\n' "$raw" | trust_filter_prs "the open PRs")" || reason="the open PRs could not be read: a malformed line"
   else
     reason="$(gh_reason "$gh_err")"
   fi
@@ -738,7 +738,7 @@ autopilot_sync_detect() {
     [ -n "$issue" ] || continue
     standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - sync detection skips it"; continue; }
     [ "$STANDING_STATE" = OPEN ] || continue
-    label_listed "$STANDING_LABELS" "$done_label" || continue
+    standing_is_done || continue
     [ "$STANDING_SYNC" = 0 ] && [ "$STANDING_HUMAN" = 0 ] && [ "$STANDING_RUNNING" = 0 ] || continue
     if [ -n "$reason" ]; then
       warn "could not read the PR of issue #$issue: $reason - sync detection skips it"

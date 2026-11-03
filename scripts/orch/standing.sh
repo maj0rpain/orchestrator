@@ -112,12 +112,16 @@ standing_read() {
 # for a sync, it takes this.
 STANDING_SYNC_PHASE="sync"
 
+# standing_is_done: whether the last read carries orch:done.
+standing_is_done() {
+  label_listed "$STANDING_LABELS" "$(standing_phase_label "done")"
+}
+
 # standing_is_sync: whether the last read is a sync request - orch:sync on an
 # issue at orch:done. An issue with a live phase label is its phase's, and one
 # with orch:sync but no orch:done is no sync request.
 standing_is_sync() {
-  [ "$STANDING_SYNC" = 1 ] && [ -z "$STANDING_PHASE" ] &&
-    label_listed "$STANDING_LABELS" "$(standing_phase_label "done")"
+  [ "$STANDING_SYNC" = 1 ] && [ -z "$STANDING_PHASE" ] && standing_is_done
 }
 
 # standing_session_phase: the phase word of the session the last read starts:
@@ -254,12 +258,21 @@ standing_chain_die() {
 # standing_landed_add <write>: notes a write that landed.
 standing_landed_add() { STANDING_LANDED="${STANDING_LANDED:+$STANDING_LANDED, }$1"; }
 
+# standing_chain_relabel <issue> <flag> <label>: one label write of a chain -
+# <flag> (--add or --remove) <label> - dying as a chain does when it fails, and
+# noting the write that landed.
+standing_chain_relabel() {
+  local gh_err verb=add past=added
+  [ "$2" != --remove ] || { verb=remove; past=removed; }
+  capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" ||
+    standing_chain_die "$1" "$verb $3" "$gh_err"
+  standing_landed_add "$past $3"
+}
+
 # standing_release <issue>: deletes orch:running, then the claim ref, last.
 standing_release() {
   local issue="$1" gh_err
-  capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_RUNNING_LABEL" ||
-    standing_chain_die "$issue" "remove $STANDING_RUNNING_LABEL" "$gh_err"
-  standing_landed_add "removed $STANDING_RUNNING_LABEL"
+  standing_chain_relabel "$issue" --remove "$STANDING_RUNNING_LABEL"
   capture_err gh_err adapter_claim_delete "$issue" ||
     standing_chain_die "$issue" "delete the claim ref" "$gh_err"
 }
@@ -369,9 +382,7 @@ standing_ask() {
   capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
   rm -f "$body"
   standing_landed_add "posted the $phase question comment"
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_HUMAN_LABEL" ||
-    standing_chain_die "$issue" "add $STANDING_HUMAN_LABEL" "$gh_err"
-  standing_landed_add "added $STANDING_HUMAN_LABEL"
+  standing_chain_relabel "$issue" --add "$STANDING_HUMAN_LABEL"
   standing_release "$issue"
 }
 
@@ -402,14 +413,15 @@ standing_stop_write() {
 # releases the claim, last. The marker is written first: a refusal of the
 # writer dies before any label, comment or claim is touched.
 standing_stop() {
-  local issue="$1" kind="$2" phase="$3" detail="$4" text marker
+  local issue="$1" kind="$2" phase="$3" detail="$4" text marker what
   STANDING_LANDED=""
   marker="$(marked_comment_write "$kind" "$phase")" || exit 1
+  what="$(standing_phase_text "$phase")"
   case "$kind" in
     refusal) printf -v text '%s\nAutopilot refused to run %s: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks %s up again.\n' \
-      "$marker" "$(standing_phase_text "$phase")" "$detail" "$STANDING_HUMAN_LABEL" "$(standing_phase_text "$phase")" ;;
+      "$marker" "$what" "$detail" "$STANDING_HUMAN_LABEL" "$what" ;;
     *) printf -v text '%s\nAutopilot failed in %s: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start %s again.\n' \
-      "$marker" "$(standing_phase_text "$phase")" "$detail" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL" "$(standing_phase_text "$phase")" ;;
+      "$marker" "$what" "$detail" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL" "$what" ;;
   esac
   standing_stop_write "$issue" "$kind" "$text" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL"
 }
@@ -418,11 +430,8 @@ standing_stop() {
 # orch:sync removed, then the claim released. orch:done stays and no phase is
 # recorded: the issue is a plain done flow again.
 standing_sync_finish() {
-  local gh_err
   STANDING_LANDED=""
-  capture_err gh_err adapter_issue_relabel "$1" --remove "$STANDING_SYNC_LABEL" ||
-    standing_chain_die "$1" "remove $STANDING_SYNC_LABEL" "$gh_err"
-  standing_landed_add "removed $STANDING_SYNC_LABEL"
+  standing_chain_relabel "$1" --remove "$STANDING_SYNC_LABEL"
   standing_release "$1"
 }
 
