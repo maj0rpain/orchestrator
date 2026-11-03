@@ -1454,13 +1454,15 @@ fake_issue 7 open ready-for-agent orch:review orch:running
 state_fixture phase review
 fake_claim_seed 7
 fake_checks 9 required failing
+fake_pr_draft 9
 out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
 assert_status "a failed check refuses under autopilot" "$st" 1
 assert_contains "naming the check" "$out" "has failed checks: build - the flow stays in review"
 assert_eq "the label stays orch:review" "$(fake_labels_of 7)" "orch:review orch:running ready-for-agent "
 assert_eq "the claim stays held after a refusal" "$(fake_claim_held 7)" held
+assert_eq "the phase stays review after a refusal" "$("$ORCH" state get phase)" "review"
+assert_eq "the PR stays a draft after a refusal" "$(fake_pr_draft_of 9)" "yes"
 rm -rf "$ORCH_GH_FAKE_STORE/checks"
-fake_pr_draft 9
 
 # a failure partway leaves the claim held and names the writes that landed
 fake_issue 7 open ready-for-agent orch:review orch:running
