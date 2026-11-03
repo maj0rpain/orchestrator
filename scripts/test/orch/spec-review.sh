@@ -957,9 +957,10 @@ fake_unfail
 assert_eq "and leaves no changelog.md" "$(on_disk "$d/changelog.md")" absent
 
 # Fundamental items (autopilot): the mark stands in for `material` only with
-# ORCH_AUTOPILOT=1; apply holds those items back into fundamental.md, applies
-# the rest and publishes without a changelog, and the resumed apply applies only
-# the held-back items and posts the round's one changelog.
+# ORCH_AUTOPILOT=1; apply holds those items back into fundamental.md and stops,
+# publishing nothing and posting no changelog, and the resumed apply applies the
+# whole answer - the rest taken as recommended - and posts the round's one
+# changelog.
 # srf_dir: sra_dir's fixture with item 3 (a decision) marked fundamental.
 srf_dir() {
   local d
@@ -983,26 +984,24 @@ assert_contains "saying it carries no mark" "$out" "a resolved item carries no m
 
 d="$(srf_dir)"
 snap="$(fake_snapshot)"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
+ORCH_AUTOPILOT=1 sra "$d" recommended
 assert_status "a round with a fundamental item holds" "$st" 0
 assert_eq "the hold-back leaves no apply-answer" "$(on_disk "$d/apply-answer")" absent
 assert_eq "spec.md is as fetched" "$(cat "$d/spec.md")" "${sra_body%$'\n'}"
 assert_eq "spec.fetched.md is as fetched" "$(cat "$d/spec.fetched.md")" "${sra_body%$'\n'}"
 assert_eq "the hold makes no GitHub write" "$(fake_snapshot)" "$snap"
-assert_eq "no changelog is posted" "$(fake_comments_of 14)" ""
 assert_eq "fundamental.md holds the item's block" "$(grep -c '^@@ item ' "$d/fundamental.md")" 1
 assert_contains "item 3 among them" "$(cat "$d/fundamental.md")" "@@ item 3 consistency decision A fundamental"
 assert_eq "no round-complete" "$(on_disk "$d/round-complete")" absent
 assert_eq "no settled.md" "$(on_disk "$d/settled.md")" absent
 
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 1C --round 1/2 --issue 14 2>&1)"; st=$?
+ORCH_AUTOPILOT=1 sra "$d" 1C
 assert_status "the resumed apply refuses an option the item lacks" "$st" 1
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" -4 --round 1/2 --issue 14 2>&1)"; st=$?
-assert_status "the resumed apply refuses naming an item already applied" "$st" 1
+ORCH_AUTOPILOT=1 sra "$d" -4
+assert_status "the resumed apply refuses an item the hold run did not hold back" "$st" 1
 assert_contains "saying so" "$out" "names only fundamental items"
 assert_contains "and that the rest are taken as recommended" "$out" "the rest being taken as recommended"
-assert_not_contains "without the old wording" "$out" "applied before the fundamental items were held back"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+ORCH_AUTOPILOT=1 sra "$d" 3B
 assert_status "the resumed apply succeeds" "$st" 0
 assert_eq "the held-back decision's option B lands" "$(cat "$d/spec.md" | sed -n 5p)" "Gamma dropped."
 assert_eq "published" "$(fake_body_of 14)" "$(cat "$d/spec.md")"
@@ -1014,13 +1013,13 @@ assert_eq "fundamental.md removed" "$(on_disk "$d/fundamental.md")" absent
 assert_eq "round-complete written" "$(on_disk "$d/round-complete")" present
 
 d="$(srf_dir)"
-ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 >/dev/null 2>&1
+ORCH_AUTOPILOT=1 sra "$d" recommended
 fake_fail adapter_issue_comment
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+ORCH_AUTOPILOT=1 sra "$d" 3B
 fake_unfail
 assert_status "a failed changelog write in the resumed apply stops it" "$st" 1
 assert_contains "naming the writes that landed" "$out" "already landed: the body of issue #14"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+ORCH_AUTOPILOT=1 sra "$d" 3B
 assert_status "and apply without --resume is refused" "$st" 1
 assert_contains "naming --resume" "$out" "--resume"
 assert_eq "fundamental.md is kept" "$(on_disk "$d/fundamental.md")" present
@@ -1059,31 +1058,24 @@ each night
 BATCH
   printf '%s\n' "$d"
 }
-srr_run() { out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" "$@" --round 1/2 --issue 14 2>&1)"; st=$?; }
 d="$(srr_dir)"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review check "$d" 2>&1)"; st=$?
 assert_status "check passes the batch" "$st" 0
-snap="$(fake_snapshot)"
-srr_run recommended
-assert_status "the hold run exits 0" "$st" 0
-assert_eq "fundamental.md written" "$(on_disk "$d/fundamental.md")" present
-assert_eq "spec.md still fetched" "$(cat "$d/spec.md")" "$srr_body"
-assert_eq "spec.fetched.md still fetched" "$(cat "$d/spec.fetched.md")" "$srr_body"
-assert_eq "no apply-answer" "$(on_disk "$d/apply-answer")" absent
-assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
+ORCH_AUTOPILOT=1 sra "$d" recommended
+assert_eq "the hold run wrote fundamental.md" "$(on_disk "$d/fundamental.md")" present
 srr_hold="$(cp -r "$d" "$d.hold"; echo "$d.hold")"
-srr_run recommended
+ORCH_AUTOPILOT=1 sra "$d" recommended
 assert_status "the resumed recommended exits 0" "$st" 0
 assert_eq "publishing the batch-order result" "$(fake_body_of 14)" 'Exports run each night (kept) and write one file.'
 assert_eq "one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
 for srr_ans in -1 none; do
   d="$srr_hold-$srr_ans"; rm -rf "$d"; cp -r "$srr_hold" "$d"
   fake_issue_body 14 "$srr_body"; fake_comments_clear 14
-  srr_run "$srr_ans"
+  ORCH_AUTOPILOT=1 sra "$d" "$srr_ans"
   assert_status "the resumed $srr_ans exits 0" "$st" 0
   assert_eq "$srr_ans publishes the minor edit alone" "$(fake_body_of 14)" 'Exports run each night and write one file.'
   assert_eq "$srr_ans posts one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
-  assert_contains "$srr_ans records item 1 declined" "$(fake_comments_of 14)" "(1)"
+  assert_contains "$srr_ans records item 1 declined" "$(fake_comments_of 14)" "- (1) \"Gamma contradicts the summary.\" - declined"
 done
 
 # Write order and failure.
