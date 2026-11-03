@@ -809,8 +809,9 @@ fake_body_read() {
 # scope, answered one per call, the last repeating: green, failing (build
 # fails, Actions run 4242; lint passes), cancel (build cancelled, run 5150),
 # external (a failing outside-CI check, ext-ci, ahead of build failing in run
-# 4242), pending, none (no checks reported) or boom (a connection error). An
-# unscripted scope has no checks.
+# 4242), comma (one failing check named `build (linux, x64)`), pending, none
+# (no checks reported) or boom (a connection error). An unscripted scope has
+# no checks.
 fake_checks() {
   local d="$ORCH_GH_FAKE_STORE/checks/$1" scope="$2"
   shift 2
@@ -824,7 +825,7 @@ fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
 
 # fake_checks_reads <n>: how many times PR #n's checks were read, scripted
 # scope or not; 0 when never read.
-fake_checks_reads() { { wc -l <"$ORCH_GH_FAKE_STORE/checks/$1/reads" 2>/dev/null || echo 0; } | tr -d ' '; }
+fake_checks_reads() { { wc -l <"$ORCH_GH_FAKE_STORE/checks/$1/reads" || echo 0; } 2>/dev/null | tr -d ' '; }
 
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.

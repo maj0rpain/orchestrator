@@ -559,6 +559,12 @@ assert_eq "the refusal came from one read of the checks" "$(fake_checks_reads 7)
 assert_contains "naming the check and the hint" "$out" "orch: PR #7 has failed checks: build - the flow stays in review"
 assert_eq "the phase stays review after a failed check" "$("$ORCH" state get phase)" "review"
 assert_eq "the PR stays a draft after a failed check" "$(fake_pr_draft_of 7)" "yes"
+fake_checks_clear
+fake_checks 7 required failing
+out="$(sourced_orch ci_ready_gate --exit 3 7 2>&1)"; st=$?
+assert_status "ci_ready_gate refuses an --exit other than 2" "$st" 1
+assert_contains "naming the caller and the option" "$out" "orch: ci_ready_gate: --exit takes 2, not '3'"
+assert_eq "before any check is read" "$(fake_checks_reads 7)" "0"
 fake_checks 7 required pending
 out="$("$ORCH" review ready 2>&1)"; st=$?
 assert_status "a pending check proceeds" "$st" 0

@@ -745,6 +745,12 @@ gate_try green ""
 assert_status "green checks exit 0" "$st" 0
 assert_eq "reading the checks once" "$(fake_checks_reads 57)" "1"
 assert_eq "marking the PR ready" "$(fake_pr_draft_of 57)" "no"
+fake_checks_clear
+fake_checks 57 required comma
+fake_pr_draft 57
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "a failing check named with a comma exits 2" "$st" 2
+assert_eq "the name stays whole" "$(cat "$errf")" "orch: PR #57 has failed checks: build (linux, x64)"
 gate_try pending ""
 assert_status "a pending check exits 0" "$st" 0
 assert_contains "noting it on stderr" "$(cat "$errf")" "checks are still pending"

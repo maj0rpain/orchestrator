@@ -937,6 +937,8 @@ fake_checks_answer() {
     external) printf 'pass\tlint\t%s/1/job/1\nfail\text-ci\thttps://ci.example.com/build/9\nfail\tbuild\t%s/4242/job/77\n' "$runs" "$runs" ;;
     # A failing check whose Actions link carries no numeric run id.
     badrunid) printf 'fail\tbuild\t%s/12abc\n' "$runs" ;;
+    # One failing check whose name contains a comma.
+    comma)    printf 'fail\tbuild (linux, x64)\t%s/4242/job/77\n' "$runs" ;;
     pending)  printf 'pending\tbuild\t\n' ;;
     # The fake records no head branch, so gh's no-checks line names a fixed one.
     none)     fake_no_checks ;;
