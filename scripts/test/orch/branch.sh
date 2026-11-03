@@ -68,12 +68,12 @@ sc_clone
 git branch origin/main HEAD
 git -C "$sc_seed" commit -q --allow-empty -m "origin moves on"
 git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
-stray_tip="$(git -C "$sc_seed" rev-parse HEAD)"
+origin_tip="$(git -C "$sc_seed" rev-parse HEAD)"
 orch_gh_failing init strayc >/dev/null
 orch_gh_failing state set issue 13
 orch_gh_failing branch create >/dev/null
 assert_eq "branch create forks from origin's tip, not a stray origin/main branch" \
-  "$(git rev-parse HEAD)" "$stray_tip"
+  "$(git rev-parse HEAD)" "$origin_tip"
 
 # --- branch off --------------------------------------------------------------
 # A quick implementation keeps no state, so this is the primitive it shares
