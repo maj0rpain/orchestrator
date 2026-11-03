@@ -20,10 +20,10 @@
 # role variable clears its global key, so .env is the one source of truth;
 # ORCH_PERMISSION_MODE defaults to bypassPermissions instead. Local keys in the
 # clone would override .env, so each start removes the clone's local
-# orchestrator.autopilot.* and agent-setting keys, warning for each. Once the
-# clone exists the settings are written in it, `orch.sh autopilot show`
-# validates them, and a refusal keeps what was written and never starts the
-# watcher.
+# orchestrator.autopilot.* keys, agent-setting keys and user.name/user.email,
+# warning for each. Once the clone exists the settings are written in it,
+# `orch.sh autopilot show` validates them, and a refusal keeps what was
+# written and never starts the watcher.
 # The first failing step exits non-zero with an `orch:` line on stderr.
 
 # shellcheck source=orch/common.sh
@@ -44,7 +44,7 @@ fi
 [ "$missing" -eq 0 ] || exit 1
 
 # 2. gh as git's HTTPS credential helper.
-gh auth setup-git || die "gh auth setup-git failed"
+gh auth setup-git || die "credential helper: gh auth setup-git failed"
 
 # 3. Commit identity; each key falls back on its own to the token owner.
 git_name="${ORCH_GIT_NAME:-}"
@@ -68,7 +68,7 @@ git config --global orchestrator.autopilot.permission-mode "${ORCH_PERMISSION_MO
 # 5. Clone, or reuse the clone. A reused clone must be a clone of REPO: its
 # origin, read by orch.sh's one parser, is compared case-insensitively, and an
 # origin that is missing or unparseable is refused too.
-[ -n "${ORCH_SH:-}" ] && [ -f "$ORCH_SH" ] || die "exec: ORCH_SH does not name an orch.sh"
+[ -n "${ORCH_SH:-}" ] && [ -f "$ORCH_SH" ] || die "clone: ORCH_SH does not name an orch.sh"
 clone_dir="${ORCH_CLONE_DIR:-/home/orch/repo}"
 clone_fix="remove the repo volume (docker compose down -v) or run a separate compose project (-p <name>) for the new repo"
 if [ -e "$clone_dir/.git" ]; then
@@ -88,37 +88,25 @@ elif [ ! -d "$clone_dir" ] || [ -z "$(ls -A "$clone_dir")" ]; then
 else
   die "clone: $clone_dir is not empty and is not a git clone"
 fi
+cd "$clone_dir" || die "clone: cannot enter $clone_dir"
 
 # 6. The other settings, from .env alone: a variable set is written, one unset
 # or empty clears its global key. orch.sh refuses outside a git repository, so
 # this waits for the clone. A refusal exits with its `orch:` line, keeps what
 # was already written and never reaches the watcher.
-cd "$clone_dir" || die "exec: cannot enter $clone_dir"
 
 # Local keys in the reused clone are read before the global ones written below
 # and would silently override .env, so remove them first, one `orch:` warning
-# each: the whole local orchestrator.autopilot section (unknown keys too), and
-# each role's local Claude Code agent-setting keys, found from `agent show`'s
-# `<kind> <value> (local)` pairs and removed with a local-scope `agent clear`.
-removal_warn() { warn "removed local $1 ($2) - docker/.env is the one source of truth"; }
-local_autopilot="$(git config --local --get-regexp '^orchestrator\.autopilot\.')" || [ $? -eq 1 ] ||
-  die "autopilot settings: cannot read the local orchestrator.autopilot keys"
+# each: the whole local orchestrator.autopilot section (unknown keys too), each
+# role's local Claude Code agent-setting keys (orchestrator.model.<role>,
+# orchestrator.effort.<role>) and the local commit identity. Junie's keys stay.
+local_shadows="$(git config --local --get-regexp '^(orchestrator\.autopilot\.|orchestrator\.(model|effort)\.|user\.(name|email)$)')" ||
+  [ $? -eq 1 ] || die "autopilot settings: cannot read the local keys that would shadow .env"
 while read -r key value; do
   [ -n "$key" ] || continue
   git_config_unset local "$key" || die "autopilot settings: cannot remove local $key"
-  removal_warn "$key" "$value"
-done <<<"$local_autopilot"
-agent_show="$(bash "$ORCH_SH" agent show)" || die "agent show failed"
-while read -r -a words; do
-  [ "${#words[@]}" -gt 0 ] && [ "${words[0]}" != junie ] || continue
-  for ((i = 1; i + 2 < ${#words[@]}; i++)); do
-    case "${words[i]} ${words[i + 2]}" in
-      "model (local)"* | "effort (local)"* | "model (local,"* | "effort (local,"*)
-        bash "$ORCH_SH" agent clear "${words[0]}" "--${words[i]}" || exit 1
-        removal_warn "${words[0]} ${words[i]} agent setting" "${words[i + 1]}" ;;
-    esac
-  done
-done <<<"$agent_show"
+  warn "removed local $key ($value) - docker/.env is the one source of truth"
+done <<<"$local_shadows"
 
 # autopilot_set <key> <value>: writes the key; an empty value clears it.
 autopilot_set() {
@@ -134,7 +122,7 @@ autopilot_set budget "${ORCH_BUDGET:-}"
 autopilot_set model "${ORCH_MODEL:-}"
 autopilot_set effort "${ORCH_EFFORT:-}"
 
-roles="$(bash "$ORCH_SH" agent roles)" || die "agent roles failed"
+roles="$(bash "$ORCH_SH" agent roles)" || die "autopilot settings: agent roles failed"
 for role in $roles; do
   upper="$(printf '%s' "$role" | tr '[:lower:]' '[:upper:]')"
   for kind in model effort; do

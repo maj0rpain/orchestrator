@@ -340,8 +340,7 @@ restore_suite_env
 echo
 echo "state set with a failed write"
 fresh_flow failedwrite
-bad="$(state_write_fails_bin)"
-out="$(PATH="$bad:$PATH" "$ORCH" state set budget 3 2>&1)"; st=$?
+out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" state set budget 3 2>&1)"; st=$?
 assert_status "state set with a failed write exits 1" "$st" 1
 assert_contains "naming the key and the state file" "$out" \
   "orch: could not record budget in $PWD/.orchestrator/state.json - the flow is unchanged"
