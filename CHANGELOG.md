@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.27
+
+`orch.sh issue comments` takes an optional `--with-spec-review` flag that keeps the spec review's changelog comments in the file, and `/orchestrator:questions` passes it, so its recommender sees what earlier spec-review rounds settled and declined.
+
 ## 4.43.26
 
 `orch.sh review standards` no longer lists a root file or a crawled mention that is an in-repo symlink to a file outside the repo; such a path is treated as missing, as a declared one already was. Its mentions and declaration scanners now share one paragraph rule, and the Spec reviewer brief states the Standards reading rule on its own.
