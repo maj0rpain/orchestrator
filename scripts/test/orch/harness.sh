@@ -1399,8 +1399,8 @@ assert_eq "a missing shellcheck in CI ends on a FAIL verdict naming shellcheck" 
 
 # A suite that dies before its summary (#626): orch_test.sh's stub fails
 # after a FAIL line and ends on a line that is no summary, hooks_test.sh's
-# prints nothing, and docs_lint.sh's passes on a stray last line. Last, so
-# the stubs are overwritten outright and never restored.
+# prints nothing, and docs_lint.sh exits 0 on a stray last line (#2260). Last,
+# so the stubs are overwritten outright and never restored.
 printf '%s\n' '#!/usr/bin/env bash' \
   "printf '  FAIL a dying failure\\n     its dying detail\\nsomething went wrong\\n'" \
   'exit 3' >"$all_dir/orch_test.sh"
@@ -1412,10 +1412,17 @@ assert_contains "says a suite died before its summary, after its FAIL lines" "$o
   "$(printf '  FAIL a dying failure\n     its dying detail\norch_test.sh: died before its summary (exit 3)')"
 assert_contains "says a suite that printed nothing died before its summary" "$out" \
   "hooks_test.sh: died before its summary (exit 4)"
-assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
-  "docs_lint.sh: a stray last line"
+assert_contains "says a suite that exited 0 on a non-summary last line died before its summary" "$out" \
+  "docs_lint.sh: died before its summary (exit 0)"
 assert_eq "suites that died before their summary are named in the FAIL verdict" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh, hooks_test.sh)"
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh, hooks_test.sh, docs_lint.sh)"
+# A header then a summary line passes: the last line is read, not any line.
+printf '%s\n' '#!/usr/bin/env bash' 'echo "a section header"' 'echo; echo "3 passed, 0 failed"' \
+  >"$all_dir/docs_lint.sh"
+out="$(all_run 2>&1)"
+assert_contains "a suite with a header then a summary line passes" "$out" \
+  "docs_lint.sh: 3 passed, 0 failed"
+assert_not_contains "and is not said to have died" "$out" "docs_lint.sh: died"
 rm -rf "$all_root"
 
 # --- the job pool (#2022) -----------------------------------------------------
@@ -2854,6 +2861,13 @@ hooks_test.sh: 1 passed, 1 failed"
 assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
 assert_eq "ending on a FAIL verdict naming the failing parts" "$(printf '%s\n' "$af_out" | tail -n 1)" \
   "affected.sh: FAIL (hooks_test.sh, shellcheck)"
+
+# A suite that exits 0 on a header, with no summary line, died before it.
+printf '%s\n' '#!/usr/bin/env bash' 'echo "a section header"' >"$af/scripts/test/hooks_test.sh"
+af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+assert_status "a suite that exited 0 without its summary makes the run exit 1" "$st" 1
+assert_contains "and is reported as died before its summary" "$af_out" \
+  "hooks_test.sh: died before its summary (exit 0)"
 
 # The verdict line (the last stdout line), on a PATH without shellcheck: its
 # links are the tools the runners and the fixture need.

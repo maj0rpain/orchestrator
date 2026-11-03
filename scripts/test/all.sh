@@ -9,10 +9,10 @@
 # failing suite does not stop the others. Printed per suite, in the order of
 # the `suites` list: its FAIL lines with their detail lines, then one summary
 # line, "<suite>: <its last line>", or "<suite>: died before its summary (exit
-# N)" when it exited non-zero and its last line is not a summary line. A suite
-# whose output has a "  FAIL " line is failed whatever its exit status: when
-# it exited 0, the line "<suite>: printed FAIL lines but exited 0" follows its
-# summary line, so a count lost in any way still turns the run red. A
+# N)" when its last line is not a summary line, whatever its exit status. A
+# suite whose output has a "  FAIL " line is failed whatever its exit status:
+# when it exited 0, the line "<suite>: printed FAIL lines but exited 0" follows
+# its summary line, so a count lost in any way still turns the run red. A
 # suite's stderr is not captured: it passes straight through, and the suites'
 # stderr may interleave.
 #
