@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.45
+
+`orch.sh finding-triage bundle --into` is now an idempotent resume: a member already closed into the bundle is skipped, so the resume command printed after any member failure finishes the bundle. The failure message says "members not confirmed closed" where the close may have landed.
+
 ## 4.43.44
 
 `branch off` and `branch create` fork from origin's freshly fetched base whenever origin answered, and die with git's message when that checkout fails, instead of silently forking from a stale local base.
