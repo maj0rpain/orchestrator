@@ -1370,15 +1370,22 @@ printf '# T\n\n%s\n' "$wide" >"$BW/docs/ok.md"
 bw_call "$BW" "ls"
 assert_eq "bash hook: an already-dirty wide file left alone exits 0" "$bw_rc" 0
 assert_empty "bash hook: an already-dirty wide file left alone is silent" "$bw_out"
-bw_call "$BW" "echo more >> docs/ok.md"
-assert_eq "bash hook: a dirty file edited by the call exits 2" "$bw_rc" 2
-assert_contains "bash hook: a dirty file edited by the call is named" \
-  "$bw_out" "docs/ok.md"
+git -C "$BW" checkout -q -- docs/ok.md
+printf '# T\n\n%s\nextra\n' "$edge" >"$BW/docs/ok.md"
+bw_call "$BW" "sed -i 's/^word.*\$/&x/' docs/ok.md"
+assert_eq "bash hook: a dirty file the call widens exits 2" "$bw_rc" 2
+assert_contains "bash hook: a dirty file the call widens is named" \
+  "$bw_out" "docs/ok.md:3"
 git -C "$BW" checkout -q -- docs/ok.md
 bw_call "$BW" "printf '%s\n' '$wide' > docs/new.md"
 assert_eq "bash hook: a new untracked wide file exits 2" "$bw_rc" 2
 assert_contains "bash hook: a new untracked file is named" "$bw_out" "docs/new.md:1"
 rm -f "$BW/docs/new.md"
+bw_call "$BW" "printf '%s\n' '$wide' > README.md"
+assert_eq "bash hook: a new top-level untracked file exits 2" "$bw_rc" 2
+assert_contains "bash hook: a new top-level untracked file is named" \
+  "$bw_out" "README.md:1"
+rm -f "$BW/README.md"
 bw_call "$BW" "mkdir -p docs/sub/deep && printf '%s\n' '$wide' > docs/sub/deep/n.md"
 assert_eq "bash hook: a file in a new directory exits 2" "$bw_rc" 2
 assert_contains "bash hook: a file in a new directory is named" \
@@ -1429,6 +1436,21 @@ elif [ -n "${CI:-}" ]; then
 else
   skip "bash hook: shellcheck case" "shellcheck is not on PATH"
 fi
+# A call that moves the session cwd: Post scans the Pre checkout.
+BW3="$(bw_repo)"
+printf '# T\n\n%s\n' "$wide" >"$BW3/docs/ok.md"
+BW_TMP2="$(mktemp -d)"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
+TMPDIR="$BW_TMP2" bw_hook PostToolUse "$BW3" "t$BW_ID"
+assert_eq "bash hook: a cwd moved into a dirty checkout exits 0" "$bw_rc" 0
+assert_empty "bash hook: a cwd moved into a dirty checkout is silent" "$bw_out"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP2" bw_hook PreToolUse "$BW" "t$BW_ID"
+TMPDIR="$BW_TMP2" bw_hook PostToolUse "$NOREPO" "t$BW_ID"
+assert_empty "bash hook: a cwd moved outside a repo leaves no snapshot" \
+  "$(ls -A "$BW_TMP2")"
+rm -rf "$BW3" "$BW_TMP2"
 # No baseline, malformed input, missing id, cwd outside a repo.
 bw_hook PostToolUse "$BW" "never-seen"
 assert_eq "bash hook: Post without a snapshot exits 0" "$bw_rc" 0

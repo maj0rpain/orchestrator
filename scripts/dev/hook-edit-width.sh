@@ -71,14 +71,17 @@ cwd="$(jq -r '.cwd // empty' <<<"$payload")" || exit 0
 sid="$(jq -r '.session_id // empty' <<<"$payload")" || exit 0
 tid="$(jq -r '.tool_use_id // empty' <<<"$payload")" || exit 0
 [ -n "$tid" ] && [ -n "$cwd" ] || exit 0
-root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
-[ -n "$root" ] || exit 0
 key="$(printf '%s-%s' "$sid" "$tid" | tr -c 'A-Za-z0-9_-' '_')"
 snap="${TMPDIR:-/tmp}/orch-width-hook-$key"
 
 case "$event" in
   PreToolUse)
-    dirty_hashes "$root" 2>/dev/null >"$snap" || rm -f "$snap" 2>/dev/null
+    root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
+    [ -n "$root" ] || exit 0
+    # The first line records the checkout, so Post scans it even when the call
+    # moved the session's cwd.
+    { printf 'root\t%s\n' "$root" && dirty_hashes "$root"; } 2>/dev/null \
+      >"$snap" || rm -f "$snap" 2>/dev/null
     exit 0
     ;;
   PostToolUse | PostToolUseFailure) ;;
@@ -86,6 +89,12 @@ case "$event" in
 esac
 
 [ -f "$snap" ] || exit 0
+IFS= read -r head <"$snap" 2>/dev/null
+root="${head#root$'\t'}"
+if [ "$root" = "$head" ] || [ ! -d "$root" ]; then
+  rm -f "$snap" 2>/dev/null
+  exit 0
+fi
 findings=""
 while IFS=$'\t' read -r hash path; do
   grep -qxF -- "$hash"$'\t'"$path" "$snap" && continue
