@@ -379,6 +379,23 @@ layer_calls() {
       done
 }
 
+# dictionary_locale: prints the first of en_US.UTF-8 and en_US.utf8 whose sort
+# collates as a dictionary does - punctuation ignored (a before _p) and case
+# folded (bug before Review) - listed by locale -a or not, and returns 1,
+# printing nothing, when neither does. A check that sets LC_ALL to a locale the
+# machine lacks makes bash warn on stderr, so such a check runs only under what
+# this prints and skips otherwise.
+dictionary_locale() {
+  local try
+  for try in en_US.UTF-8 en_US.utf8; do
+    if [ "$(printf '_p\na\n' | LC_ALL="$try" sort 2>/dev/null | head -n 1)" = a ] \
+      && [ "$(printf 'Review\nbug\n' | LC_ALL="$try" sort 2>/dev/null | head -n 1)" = bug ]; then
+      printf '%s\n' "$try"; return 0
+    fi
+  done
+  return 1
+}
+
 # --- doctor harness ---------------------------------------------------------
 
 # The documented triage-label table, in the shape the setup skill writes it:

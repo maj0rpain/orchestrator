@@ -883,21 +883,13 @@ out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$files_suite" 2
 assert_eq "lists the titles in walk order: harness.sh, then the files in LC_ALL=C order" \
   "$(printf '%s\n' "$out" | tr '\n' ',')" \
   "isolation,planted underscore,planted a,planted preamble a one,planted preamble a two,planted preamble b one,planted new file,"
-# The dictionary locale: the first of these whose sort puts a before _p, so the
-# check below runs wherever such a collation exists, listed by locale -a or not.
-files_locale=""
-for files_try in en_US.UTF-8 en_US.utf8; do
-  if [ "$(printf '_p\na\n' | LC_ALL="$files_try" sort 2>/dev/null | head -n 1)" = a ]; then
-    files_locale="$files_try"; break
-  fi
-done
-if [ -n "$files_locale" ]; then
+if files_locale="$(dictionary_locale)"; then
   out="$(LC_ALL="$files_locale" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' \
     bash "$files_suite" 2>/dev/null)"
   assert_eq "keeps LC_ALL=C order under a dictionary locale" \
     "$(printf '%s\n' "$out" | sed -n 2,3p | tr '\n' ',')" "planted underscore,planted a,"
 else
-  skip "keeps LC_ALL=C order under a dictionary locale" "no locale here sorts a before _p"
+  skip "keeps LC_ALL=C order under a dictionary locale" "no dictionary locale here"
 fi
 rm -rf "$files_dir"
 
