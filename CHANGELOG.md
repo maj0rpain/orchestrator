@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.9
+
+An autopilot spec review round held for a fundamental item now rebases each ticket's fetched copy on the ticket as the hold published it, refetching a ticket a block or unblock edit touched, so the resumed run's ticket edits and `check --tickets` build on the published tickets instead of overwriting the hold's edits. The hold also keeps its ticket lines in `held-tickets.md` beside `fundamental.md`, so the round's one changelog reports both runs' ticket outcomes.
+
 ## 4.43.8
 
 `spec-review check` and `spec-review apply` now refuse a batch that leaves a finding of a lens that ran uncited, naming every uncited finding, so no finding is dropped silently.
