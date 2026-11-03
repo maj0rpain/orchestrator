@@ -65,10 +65,19 @@ git config --global user.email "$git_email" || die "commit identity: cannot writ
 git config --global orchestrator.autopilot.permission-mode "${ORCH_PERMISSION_MODE:-bypassPermissions}" ||
   die "autopilot settings: cannot write orchestrator.autopilot.permission-mode"
 
-# 5. Clone, or reuse the clone.
+# 5. Clone, or reuse the clone. A reused clone must be a clone of REPO: its
+# origin, read by orch.sh's one parser, is compared case-insensitively, and an
+# origin that is missing or unparseable is refused too.
+[ -n "${ORCH_SH:-}" ] && [ -f "$ORCH_SH" ] || die "exec: ORCH_SH does not name an orch.sh"
 clone_dir="${ORCH_CLONE_DIR:-/home/orch/repo}"
+clone_fix="remove the repo volume (docker compose down -v) or run a separate compose project (-p <name>) for the new repo"
 if [ -e "$clone_dir/.git" ]; then
-  :
+  if ! clone_repo="$(cd "$clone_dir" && env -u GH_REPO bash "$ORCH_SH" repo show --name 2>/dev/null)" ||
+    [ -z "$clone_repo" ]; then
+    die "clone: $clone_dir has an unreadable origin, so it cannot be confirmed as REPO=$REPO; $clone_fix"
+  fi
+  [ "${clone_repo,,}" = "${REPO,,}" ] ||
+    die "clone: $clone_dir is a clone of $clone_repo, not REPO=$REPO; $clone_fix"
 elif [ ! -d "$clone_dir" ] || [ -z "$(ls -A "$clone_dir")" ]; then
   if ! gh repo clone "$REPO" "$clone_dir"; then
     if [ -d "$clone_dir" ]; then
@@ -84,7 +93,6 @@ fi
 # or empty clears its global key. orch.sh refuses outside a git repository, so
 # this waits for the clone. A refusal exits with its `orch:` line, keeps what
 # was already written and never reaches the watcher.
-[ -n "${ORCH_SH:-}" ] && [ -f "$ORCH_SH" ] || die "exec: ORCH_SH does not name an orch.sh"
 cd "$clone_dir" || die "exec: cannot enter $clone_dir"
 
 # Local keys in the reused clone are read before the global ones written below
