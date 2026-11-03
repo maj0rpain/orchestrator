@@ -2024,5 +2024,8 @@ fake_fail adapter_claim_delete "HTTP 500"
 out="$("$ORCH" autopilot sync-finish 2>&1)"; st=$?
 assert_status "sync-finish failing on the release exits 1" "$st" 1
 first="$(printf '%s\n' "$out" | sed -n 1p)"
-assert_contains "and passes the transition's message through" "$first" "orch: could not delete the claim ref on issue #146"
+case "$first" in
+  "orch: could not delete the claim ref on issue #146"*) ok "and passes the transition's message through" ;;
+  *) bad "and passes the transition's message through" "first line: $first" ;;
+esac
 fake_unfail
