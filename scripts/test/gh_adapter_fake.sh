@@ -774,12 +774,22 @@ adapter_prs_merged_bodies() {
 }
 
 # adapter_pr_close <n> <comment>: the stored PR CLOSED, the comment appended
-# by fake-gh.
+# by fake-gh - except as GitHub behaves: closing a PR already CLOSED, or an
+# OPEN one whose head branch is gone from a readable origin (GitHub closed it
+# itself when the branch was deleted), succeeds and appends no comment. The
+# origin is read with git ls-remote in the working directory; only exit 2 (no
+# such ref) counts as gone, any other failure closes with the comment.
 adapter_pr_close() {
+  local d head st
   ! fake_failing adapter_pr_close || return 1
   fake_pr_known "$1" || return 1
-  fake_close_comment "$(fake_pr_dir "$1")/comments" "$2"
-  printf 'CLOSED\n' >"$(fake_pr_dir "$1")/state"
+  d="$(fake_pr_dir "$1")"
+  st="$(cat "$d/state" 2>/dev/null)"
+  [ "$st" != CLOSED ] || return 0
+  head="$(cat "$d/head" 2>/dev/null)"
+  git ls-remote --exit-code origin "refs/heads/$head" >/dev/null 2>&1
+  [ $? -eq 2 ] || fake_close_comment "$d/comments" "$2"
+  printf 'CLOSED\n' >"$d/state"
 }
 
 # adapter_pr_comment <n> <file>: the file's contents appended as a comment, by
