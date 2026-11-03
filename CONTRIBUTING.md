@@ -137,7 +137,9 @@ file's path inside `--root` or else its own git repo root, and `width.sh --root
 file, line and length, and exits 0 with or without findings. `docs_lint.sh`'s
 `scan_line_width` wraps the second form.
 The project's edit hook, `scripts/dev/hook-edit-width.sh`, runs the width
-tool and, for a `.sh` file, shellcheck on each edited file.
+tool and, for a `.sh` file, shellcheck on each edited file, and on each `.md` or
+`.sh` file a Bash call changed in the checkout holding its cwd (a PreToolUse
+snapshot of the dirty files, compared on PostToolUse or PostToolUseFailure).
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
@@ -320,7 +322,7 @@ scripts/version-bump.sh       the version-bump Action's script: changelog fragme
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
 scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
-scripts/dev/hook-edit-width.sh the project's PostToolUse edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file (Develop)
+scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
