@@ -2868,7 +2868,7 @@ assert_status "the empty name is refused" "$st" 1
 
 # --- spec-review check requires every finding cited (#1914) -------------------
 # A lens that ran has every finding cited by some item, of any kind; check and
-# --- spec-review check requires every finding cited (#1914) -----------------
+# apply refuse a batch that leaves one uncited.
 echo
 echo "spec-review check requires every finding cited (#1914)"
 new_repo >/dev/null
