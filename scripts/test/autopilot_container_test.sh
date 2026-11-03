@@ -66,13 +66,16 @@ FAKE
 cat >"$root/orch.sh" <<'FAKE'
 #!/usr/bin/env bash
 # The fake orch.sh: logs pid, directory and arguments; prints a role list for
-# `agent roles`; and refuses, with an `orch:` line, any call whose arguments
+# `agent roles`; prints $FAKE_AGENT_SHOW for `agent show` and a marker for
+# `autopilot show`; and refuses, with an `orch:` line, any call whose arguments
 # contain $FAKE_ORCH_FAIL.
 printf 'pid=%s pwd=%s host=%s args=%s\n' "$$" "$PWD" "${ORCH_HOST_ID:-}" "$*" >>"$ORCH_LOG"
 if [ -n "${FAKE_ORCH_FAIL:-}" ]; then
   case "$*" in *"$FAKE_ORCH_FAIL"*) echo "orch: refused $*" >&2; exit 1 ;; esac
 fi
 [ "$*" = "agent roles" ] && printf '%s\n' implementer lens reviewer fixer closer resolver
+[ "$*" = "agent show" ] && [ -n "${FAKE_AGENT_SHOW:-}" ] && printf '%s\n' "$FAKE_AGENT_SHOW"
+[ "$*" = "autopilot show" ] && echo autopilot-show-marker
 exit 0
 FAKE
 chmod +x "$fake_bin/gh"
@@ -97,7 +100,7 @@ entry_env() {
   local -a envs=(
     "PATH=$fake_bin:$PATH" "HOME=$home" "GH_LOG=$gh_log" "ORCH_LOG=$orch_log"
     "ORCH_SH=$root/orch.sh" "ORCH_CLONE_DIR=$clone" "FAKE_GH_FAIL=${FAKE_GH_FAIL:-}"
-    "FAKE_ORCH_FAIL=${FAKE_ORCH_FAIL:-}"
+    "FAKE_ORCH_FAIL=${FAKE_ORCH_FAIL:-}" "FAKE_AGENT_SHOW=${FAKE_AGENT_SHOW:-}"
     "REPO=owner/name" "GH_TOKEN=tok" "CLAUDE_CODE_OAUTH_TOKEN=oauth"
   )
   local arg entry
@@ -243,6 +246,44 @@ done
 FAKE_ORCH_FAIL="agent set" run_entry ORCH_MODEL=opus ORCH_MODEL_LENS=low
 assert_eq "a refused start keeps what it already wrote" "$(cfg orchestrator.autopilot.model)" opus
 
+
+# Local keys in a reused clone are removed, with one warning each, before
+# autopilot show validates and the watcher starts.
+local_prep='git init -q "$clone" && git -C "$clone" config orchestrator.autopilot.cap 9 &&
+  git -C "$clone" config orchestrator.autopilot.permission-mode plan &&
+  git -C "$clone" config orchestrator.autopilot.bogus x'
+agent_local="implementer model opus (local) effort inherit (inherit)"
+FAKE_AGENT_SHOW="$agent_local" clone_prep="$local_prep" run_entry ORCH_CAP=2 -ORCH_PERMISSION_MODE
+assert_status "stale local keys: the start succeeds" "$st" 0
+assert_empty "stale local keys: no local autopilot key remains" "$(git -C "$clone" config --local --get-regexp '^orchestrator\.autopilot\.')"
+assert_eq "stale local keys: global cap follows .env" "$(cfg orchestrator.autopilot.cap)" 2
+assert_eq "stale local keys: global permission-mode is the default" "$(cfg orchestrator.autopilot.permission-mode)" bypassPermissions
+assert_contains "stale local keys: cap warning names its value" "$err" "orch: removed local orchestrator.autopilot.cap (9) - docker/.env is the one source of truth"
+assert_contains "stale local keys: permission-mode warning names its value" "$err" "orch: removed local orchestrator.autopilot.permission-mode (plan)"
+assert_contains "stale local keys: unknown key warning names its value" "$err" "orch: removed local orchestrator.autopilot.bogus (x)"
+assert_contains "stale local keys: agent warning names role, kind and value" "$err" "orch: removed local implementer model agent setting (opus) - docker/.env is the one source of truth"
+assert_eq "stale local keys: one warning per key" "$(printf '%s\n' "$err" | grep -c '^orch: removed local ')" 4
+assert_eq "stale local keys: the agent key is cleared at local scope" "$(grep 'args=agent clear implementer --model' "$orch_log" | grep -vc -e '--global')" 1
+assert_eq "stale local keys: only the one local agent clear" "$(grep 'args=agent clear' "$orch_log" | grep -vc -e '--global')" 1
+last_removal="$(printf '%s\n' "$err" | grep -n '^orch: removed local ' | tail -1 | cut -d: -f1)"
+marker_at="$(printf '%s\n' "$err" | grep -n '^autopilot-show-marker' | cut -d: -f1)"
+assert_eq "removal lines come before the autopilot show output" "$([ -n "$marker_at" ] && [ "$last_removal" -lt "$marker_at" ] && echo yes)" yes
+agent_show_at="$(grep -n 'args=agent show' "$orch_log" | head -1 | cut -d: -f1)"
+clear_at="$(grep -n 'args=agent clear implementer --model$' "$orch_log" | cut -d: -f1)"
+show_at="$(grep -n 'args=autopilot show' "$orch_log" | cut -d: -f1)"
+watch_at="$(grep -n 'args=autopilot watch' "$orch_log" | cut -d: -f1)"
+assert_eq "local agent show and clear precede autopilot show and watch" \
+  "$([ -n "$agent_show_at" ] && [ -n "$clear_at" ] && [ "$agent_show_at" -lt "$show_at" ] && [ "$clear_at" -lt "$show_at" ] && [ "$show_at" -lt "$watch_at" ] && echo yes)" yes
+
+run_entry
+assert_eq "a clean clone: no removal lines" "$(printf '%s\n' "$err" | grep -c 'removed local')" 0
+assert_eq "a clean clone: no local agent clear" "$(grep 'args=agent clear' "$orch_log" | grep -vc -e '--global')" 0
+assert_contains "autopilot show's output reaches stderr" "$err" "autopilot-show-marker"
+
+FAKE_AGENT_SHOW="$agent_local" FAKE_ORCH_FAIL="agent clear implementer --model" run_entry
+assert_eq "a failed local removal exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
+assert_contains "a failed local removal shows its orch line" "$err" "orch: refused agent clear implementer --model"
+assert_eq "a failed local removal never runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 0
 
 assert_contains "first start clones the repo into the clone dir" "$(<"$default_gh_log")" "repo clone owner/name $default_clone"
 assert_eq "first start leaves a git clone" "$([ -d "$default_clone/.git" ] && echo yes)" yes
