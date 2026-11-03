@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.8
+
+`spec-review check` and `spec-review apply` now refuse a batch that leaves a finding of a lens that ran uncited, naming every uncited finding, so no finding is dropped silently.
+
 ## 4.43.7
 
 `branch create` no longer discards a human's uncommitted work on a branch that is not the flow's: on any other branch a clean tree goes on, and a dirty tree or a merge or rebase in progress is refused with nothing discarded.
