@@ -107,7 +107,7 @@ files_marks() {
   printf '%s\n' "$1" | grep -xE 'isolation|planted [a-z ]+' | tr '\n' ','
 }
 
-# The placement rule, as helper_placement's message states it.
+# The test-helper placement rule, as helper_placement's message states it.
 HELPER_PLACEMENT_RULE="The test-helper placement rule: a test helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
 
 # tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
