@@ -5,10 +5,11 @@
 #
 # report_suite <suite> <status> <output>: prints the suite's FAIL lines with
 # their detail lines, then one summary line, "<suite>: <its last line>", or
-# "<suite>: died before its summary (exit N)" when <status> is non-zero and the
-# last line of <output> is not a summary line. When <output> has a "  FAIL "
-# line and <status> is 0, "<suite>: printed FAIL lines but exited 0" follows.
-# Returns 1 when <status> is non-zero or <output> has a FAIL line, else 0.
+# "<suite>: died before its summary (exit N)" when the last line of <output> is
+# not a summary line, whatever <status> is, even 0. When <output> has a
+# "  FAIL " line and <status> is 0, "<suite>: printed FAIL lines but exited 0"
+# follows. Returns 1 when <status> is non-zero, <output> has a FAIL line, or its
+# last line is not a summary line, else 0.
 #
 # report_shellcheck <status> <output>: prints shellcheck's summary: "shellcheck:
 # 0 findings" on status 0; else each finding line then "shellcheck: N findings";
@@ -49,9 +50,9 @@ report_suite() {
     /^  FAIL / { print; in_fail = 1 }')"
   [ -z "$fail_block" ] || printf '%s\n' "$fail_block"
   last="$(printf '%s\n' "$out" | tail -n 1)"
-  if [ "$status" -ne 0 ] &&
-    ! [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
+  if ! [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
     echo "$suite: died before its summary (exit $status)"
+    rc=1
   else
     echo "$suite: $last"
   fi
