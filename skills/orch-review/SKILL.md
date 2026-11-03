@@ -633,10 +633,9 @@ exiting non-zero on the last two:
   the cap. A **bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.
 
-A `review ci` the
-host moves to the background at its timeout is still waited for, as that row
-says, and never started a second time. One the host kills at its timeout (the
-Junie fallback) is **unreachable**.
+A `review ci` the host moves to the background at its timeout is still waited
+for, as that row says, and never started a second time. One the host kills at
+its timeout (the Junie fallback) is **unreachable**.
 
 ## Termination
 
