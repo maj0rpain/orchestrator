@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.4
+
+The gh test fake now reads a PR's head through one rule in all three reads: an absent head is forty zeros and an empty head stands for GitHub's null head.
+
 ## 4.44.3
 
 The ticket module walks a parent's sub-issue listing in one place: `ticket_listing_has` is now a predicate over `ticket_listing_state`.
