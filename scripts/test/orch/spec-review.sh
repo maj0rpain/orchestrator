@@ -3017,5 +3017,10 @@ Beta reversed.
 d="$(unc_dir "$unc_fund" fidelity=2)"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
 assert_status "the first apply holds the fundamental item back and passes" "$st" 0
+assert_eq "fundamental.md holds the held item" "$(grep -c '^@@ item 2 ' "$d/fundamental.md")" 1
+assert_eq "no changelog is posted on the first run" "$(fake_comments_of 14)" ""
 out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
 assert_status "the resumed apply over the same batch passes too" "$st" 0
+assert_eq "the resumed run removed fundamental.md" "$(on_disk "$d/fundamental.md")" absent
+assert_contains "the held edit landed" "$(cat "$d/spec.md")" "Beta reversed."
+assert_contains "the changelog is posted" "$(fake_comments_of 14)" "## Spec review"
