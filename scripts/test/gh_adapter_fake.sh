@@ -85,6 +85,8 @@
 #                     call, the last repeating; absent, no checks
 #   checks/<n>/<scope>.n
 #                     how many calls the script has answered
+#   checks/<n>/reads  one line per read of PR #n's checks, scripted scope or
+#                     not; rescripting a scope never resets it
 #   protection/<branch>
 #                     the check contexts classic protection requires on the
 #                     branch, one per line; absent, the branch is unprotected
@@ -960,6 +962,8 @@ adapter_pr_checks() {
   ! fake_failing adapter_pr_checks || return 1
   d="$(fake_store)/checks/$1"
   f="$d/$2"
+  mkdir -p "$d"
+  echo read >>"$d/reads"
   [ -f "$f" ] || { fake_no_checks; return 0; }
   i=$(( $(cat "$f.n" 2>/dev/null || echo 0) + 1 ))
   printf '%s\n' "$i" >"$f.n"

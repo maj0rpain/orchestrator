@@ -819,6 +819,13 @@ fake_checks() {
   rm -f "$d/$scope.n"
 }
 
+# fake_checks_clear: no scripted checks for any PR, read counter included.
+fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
+
+# fake_checks_reads <n>: how many times PR #n's checks were read, scripted
+# scope or not; 0 when never read.
+fake_checks_reads() { { wc -l <"$ORCH_GH_FAKE_STORE/checks/$1/reads" 2>/dev/null || echo 0; } | tr -d ' '; }
+
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.
 fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }

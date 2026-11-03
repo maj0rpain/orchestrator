@@ -722,15 +722,16 @@ assert_eq "saying so" "$out" "PR #57 is now ready"
 assert_eq "the PR is no longer a draft" "$(fake_pr_draft_of 57)" "no"
 assert_eq "the other branch's PR untouched" "$(fake_pr_draft_of 50)" "yes"
 
+fake_checks_clear
 fake_checks 57 required failing
 out="$("$ORCH" pr ready 2>"$errf")"; st=$?
 assert_status "a PR already ready exits 0" "$st" 0
 assert_eq "saying so" "$out" "PR #57 is already ready"
-assert_eq "reading no checks" "$(ls "$ORCH_GH_FAKE_STORE"/checks/57/*.n 2>/dev/null)" ""
+assert_eq "reading no checks" "$(fake_checks_reads 57)" "0"
 
 # The CI gate: one look at the head's checks before a draft turns ready.
 gate_try() { # <required answer> <all answer>
-  rm -rf "$ORCH_GH_FAKE_STORE/checks"
+  fake_checks_clear
   [ -z "$1" ] || fake_checks 57 required "$1"
   [ -z "$2" ] || fake_checks 57 all "$2"
   fake_pr_draft 57
@@ -742,6 +743,7 @@ assert_contains "naming the check" "$(cat "$errf")" "orch: PR #57 has failed che
 assert_eq "leaving the PR a draft" "$(fake_pr_draft_of 57)" "yes"
 gate_try green ""
 assert_status "green checks exit 0" "$st" 0
+assert_eq "reading the checks once" "$(fake_checks_reads 57)" "1"
 assert_eq "marking the PR ready" "$(fake_pr_draft_of 57)" "no"
 gate_try pending ""
 assert_status "a pending check exits 0" "$st" 0
@@ -756,6 +758,7 @@ assert_status "no checks at all exit 0" "$st" 0
 assert_eq "marking the PR ready with no checks" "$(fake_pr_draft_of 57)" "no"
 gate_try none failing
 assert_status "no required checks, every check failing, exits 2" "$st" 2
+assert_eq "reading required, then every check" "$(fake_checks_reads 57)" "2"
 assert_eq "leaving the PR a draft when all fail" "$(fake_pr_draft_of 57)" "yes"
 gate_try none boom
 assert_status "no required checks, every check unreachable, exits 2" "$st" 2
@@ -764,7 +767,7 @@ assert_eq "leaving the PR a draft when all are unreadable" "$(fake_pr_draft_of 5
 gate_try green failing
 assert_status "green required beside a failing other check exits 0" "$st" 0
 assert_eq "marking the PR ready beside a non-required failure" "$(fake_pr_draft_of 57)" "no"
-rm -rf "$ORCH_GH_FAKE_STORE/checks"
+fake_checks_clear
 
 fake_pr_draft 57
 fake_fail adapter_pr_ready $'HTTP 403: Resource not accessible by integration\nsecond line'
