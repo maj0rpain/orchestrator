@@ -117,7 +117,7 @@ autopilot_block_values() {
 # line holding a whole number of 1 or more.
 autopilot_block_report() {
   local file="$1" key values failed=0
-  if ! grep -qxF '## Autopilot' "$file"; then
+  if [ "$(section_count "$file" '## Autopilot')" -eq 0 ]; then
     printf 'FAIL missing section: ## Autopilot\n'
     return 1
   fi
