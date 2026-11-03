@@ -220,6 +220,17 @@ fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "quotes a multi-word label in the remedy" "$out" 'gh label create "needs triage"'
 
+# A triage label the repo holds in another casing exists (#1943).
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
+        '| -------------------------- | -------------------- | ------- |' \
+        '| `needs-triage`             | `needs-triage`       | Look    |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | Go      |' >docs/agents/triage-labels.md
+fake_label_names Needs-Triage Ready-For-Agent
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a triage label in another casing earns no FAIL" "$st" 0
+assert_contains "and counts as existing" "$out" "every triage label exists on the repo"
+
 # A label beginning with '-' is a label, never a grep option.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
