@@ -837,7 +837,7 @@ check_flow_review_draft() {
   [ "$pr_state" = OPEN ] || return 0
   if [ "$phase" = "done" ] && [ "$is_draft" = true ]; then
     d_fail "PR #$pr is still a draft but the flow phase is done - review ready did not take."
-    d_remedy "gh pr ready $pr"
+    d_remedy "orch.sh pr ready    # on $(state_get branch)"
   elif [ "$phase" = review ] && [ "$is_draft" = false ]; then
     d_fail "PR #$pr was marked ready on GitHub but the flow phase is still review - state.json fell out of sync."
     d_remedy "gh pr view $pr"

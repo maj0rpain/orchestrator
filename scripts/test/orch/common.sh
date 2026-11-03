@@ -229,3 +229,21 @@ assert_eq "capture too runs no command" "$(on_disk "$ran_marker")" absent
 out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; d="$(dirty_outside_allowlist)" || echo "refused"' 2>&1)"
 assert_contains "a git-status check under || names the temp file, not git" "$out" "could not create a temp file for git status"
 restore_suite_env
+
+# --- die_hinted and die_opt_check ---------------------------------------------
+echo
+echo "die_hinted and die_opt_check"
+new_repo >/dev/null
+out="$(sourced_orch die_hinted --hint "try again" "it broke" 2>&1)"; st=$?
+assert_status "die_hinted dies with status 1" "$st" 1
+assert_eq "a hint ends the message as ' - <hint>'" "$out" "orch: it broke - try again"
+out="$(sourced_orch die_hinted --hint "" "it broke" 2>&1)"
+assert_eq "an empty hint adds nothing" "$out" "orch: it broke"
+out="$(sourced_orch die_hinted --exit 2 "it broke" 2>&1)"; st=$?
+assert_status "die_hinted --exit 2 dies with status 2" "$st" 2
+out="$(sourced_orch die_opt_check demo 2 --exit 3 2>&1)"; st=$?
+assert_status "die_opt_check refuses an --exit other than 2" "$st" 1
+assert_eq "naming the caller and the option" "$out" "orch: demo: --exit takes 2, not '3'"
+out="$(sourced_orch die_opt_check demo 1 --hint 2>&1)"; st=$?
+assert_status "die_opt_check refuses a trailing --hint" "$st" 1
+assert_eq "naming the caller and the option for a bare --hint" "$out" "orch: demo: --hint needs a value"

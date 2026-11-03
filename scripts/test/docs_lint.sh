@@ -78,7 +78,8 @@
 #     the README's Running autopilot and how-it-works' Autopilot and Setup
 #     sections naming their autopilot phrases, the six agents' `## Stdin`
 #     sections naming `</dev/null`, host-capabilities' stdin row, the Run a long
-#     command verification sites and host-capabilities' Run a long command row,
+#     command sites (verifications and blocking waits) and host-capabilities'
+#     Run a long command row,
 #     and the turn-final reply sites docs/turn-final-reply.md and the glossary's
 #     Turn-final reply entry
 #   scan_dockerignore_secrets  .dockerignore lists each pattern of .gitignore's
@@ -2072,8 +2073,9 @@ agents/orch-resolver.md
 skills/orch-review-pass/SKILL.md
 docs/driver-loop.md
 skills/orch-review/SKILL.md
-skills/orch-improve-tests/SKILL.md'
-check "each verification site names Run a long command" \
+skills/orch-improve-tests/SKILL.md
+skills/orch-spec-review/SKILL.md'
+check "each long-command site names Run a long command" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$long_sites" 'Run a long command')"
 long_row='| Run a long command |'
 check "host-capabilities has the Run a long command row" \

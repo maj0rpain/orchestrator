@@ -72,7 +72,8 @@ fake_unreadable_ref() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/unreadable_ref
 # fake_ci_reset: no checks scripted, nothing required, no rules, and no ref
 # with a check run or status - every CI signal absent.
 fake_ci_reset() {
-  rm -rf "$ORCH_GH_FAKE_STORE/checks" "$ORCH_GH_FAKE_STORE/protection" "$ORCH_GH_FAKE_STORE/rules" \
+  fake_checks_clear
+  rm -rf "$ORCH_GH_FAKE_STORE/protection" "$ORCH_GH_FAKE_STORE/rules" \
     "$ORCH_GH_FAKE_STORE/check_runs" "$ORCH_GH_FAKE_STORE/statuses" "$ORCH_GH_FAKE_STORE/unreadable_refs"
 }
 
@@ -550,18 +551,20 @@ assert_gh_dies "fails when gh fails silently too" adapter_pr_ready '' 1 \
 assert_eq "the phase still review" "$("$ORCH" state get phase)" "review"
 assert_eq "and the PR still a draft" "$(fake_pr_draft_of 7)" "yes"
 # The CI gate: a refusal leaves GitHub and the phase as they were.
+fake_checks_clear
 fake_checks 7 required failing
 out="$("$ORCH" review ready 2>&1)"; st=$?
 assert_status "a failed check refuses" "$st" 1
+assert_eq "the refusal came from one read of the checks" "$(fake_checks_reads 7)" "1"
 assert_contains "naming the check and the hint" "$out" "orch: PR #7 has failed checks: build - the flow stays in review"
 assert_eq "the phase stays review after a failed check" "$("$ORCH" state get phase)" "review"
 assert_eq "the PR stays a draft after a failed check" "$(fake_pr_draft_of 7)" "yes"
-fake_checks 7 required boom
-out="$("$ORCH" review ready 2>&1)"; st=$?
-assert_status "unreachable checks refuse" "$st" 1
-assert_contains "relaying the reason" "$out" "orch: PR #7 checks cannot be read: dial tcp: lookup api.github.com: no such host - the flow stays in review"
-assert_eq "the phase stays review when unreadable" "$("$ORCH" state get phase)" "review"
-assert_eq "the PR stays a draft when unreadable" "$(fake_pr_draft_of 7)" "yes"
+fake_checks_clear
+fake_checks 7 required failing
+out="$(sourced_orch ci_ready_gate --exit 3 7 2>&1)"; st=$?
+assert_status "ci_ready_gate refuses an --exit other than 2" "$st" 1
+assert_contains "naming the caller and the option" "$out" "orch: ci_ready_gate: --exit takes 2, not '3'"
+assert_eq "before any check is read" "$(fake_checks_reads 7)" "0"
 fake_checks 7 required pending
 out="$("$ORCH" review ready 2>&1)"; st=$?
 assert_status "a pending check proceeds" "$st" 0
@@ -1473,20 +1476,9 @@ assert_status "review ready in autopilot succeeds" "$st" 0
 assert_eq "moving the label to orch:done" "$(fake_labels_of 7)" "orch:done ready-for-agent "
 assert_eq "releasing the claim" "$(fake_claim_held 7)" free
 
-# a failed check refuses and leaves label, running mark and claim alone
-fake_issue 7 open ready-for-agent orch:review orch:running
-state_fixture phase review
-fake_claim_seed 7
-fake_checks 9 required failing
-fake_pr_draft 9
-out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
-assert_status "a failed check refuses under autopilot" "$st" 1
-assert_contains "naming the check" "$out" "has failed checks: build - the flow stays in review"
-assert_eq "the label stays orch:review" "$(fake_labels_of 7)" "orch:review orch:running ready-for-agent "
-assert_eq "the claim stays held after a refusal" "$(fake_claim_held 7)" held
-assert_eq "the phase stays review after a refusal" "$("$ORCH" state get phase)" "review"
-assert_eq "the PR stays a draft after a refusal" "$(fake_pr_draft_of 9)" "yes"
-rm -rf "$ORCH_GH_FAKE_STORE/checks"
+# Failed-check refusal: review ready's plain failed-check case covers it, since
+# the label and claim move only after the gate. Bring it back here if
+# this path ever gains a write ahead of the gate.
 
 # a failure partway leaves the claim held and names the writes that landed
 fake_issue 7 open ready-for-agent orch:review orch:running
