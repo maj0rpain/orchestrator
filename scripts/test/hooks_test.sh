@@ -1314,6 +1314,194 @@ assert_contains "edit hook: runs through CLAUDE_PROJECT_DIR" "$reg" 'CLAUDE_PROJ
 assert_not_contains "edit hook: absent from hooks/hooks.json" \
   "$(cat "$ROOT/hooks/hooks.json")" 'hook-edit-width'
 
+
+# --- bash width hook (scripts/dev/hook-edit-width.sh on Bash calls)
+EDIT_HOOK="$ROOT/scripts/dev/hook-edit-width.sh"
+SETTINGS="$ROOT/.claude/settings.json"
+wide="$(printf "word %.0s" $(seq 1 16))x"
+edge="$(printf "word %.0s" $(seq 1 16))"
+NOREPO="$(mktemp -d)"
+# A PATH holding what the hook needs but no jq.
+NOSC_NOJQ="$(mktemp -d)"
+for t in bash git awk sed cat dirname basename env grep tr sort wc find head cut rm; do
+  p="$(command -v "$t")" && ln -s "$p" "$NOSC_NOJQ/$t"
+done
+BW_ID=0
+# bw_payload EVENT CWD ID: a Bash hook payload; an empty ID leaves it out.
+bw_payload() {
+  jq -n --arg e "$1" --arg c "$2" --arg i "$3" \
+    '{hook_event_name:$e, tool_name:"Bash", session_id:"s1", cwd:$c,
+      tool_input:{command:"x"}} + (if $i == "" then {} else {tool_use_id:$i} end)'
+}
+# bw_hook EVENT CWD ID [PATH]: the hook on one payload; sets bw_rc, bw_out.
+bw_hook() {
+  bw_out="$(bw_payload "$1" "$2" "$3" | PATH="${4:-$PATH}" bash "$EDIT_HOOK" 2>&1)"
+  bw_rc=$?
+}
+# bw_call REPO CMD [EVENT]: Pre, then CMD run in REPO (its exit ignored), then
+# EVENT (default PostToolUse) with the same tool_use_id; sets bw_rc, bw_out.
+bw_call() {
+  BW_ID=$((BW_ID + 1))
+  bw_hook PreToolUse "$1" "t$BW_ID"
+  (cd "$1" && bash -c "$2") >/dev/null 2>&1
+  bw_hook "${3:-PostToolUse}" "$1" "t$BW_ID"
+}
+# bw_repo: a fresh temp git repo with one committed covered doc, ok.md.
+bw_repo() {
+  local d
+  d="$(mktemp -d)"
+  git -C "$d" init -q
+  mkdir -p "$d/docs"
+  printf '# T\n\n%s\n' "$edge" >"$d/docs/ok.md"
+  printf '#!/usr/bin/env bash\necho ok\n' >"$d/ok.sh"
+  git -C "$d" add -A
+  git -C "$d" -c user.name=t -c user.email=t@t commit -q -m init
+  printf '%s' "$d"
+}
+BW="$(bw_repo)"
+bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md"
+assert_eq "bash hook: sed -i making a line wide exits 2" "$bw_rc" 2
+assert_contains "bash hook: sed -i names file:line" "$bw_out" "docs/ok.md:3"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "ls; git log --oneline"
+assert_eq "bash hook: a call changing no file exits 0" "$bw_rc" 0
+assert_empty "bash hook: a call changing no file is silent" "$bw_out"
+printf '# T\n\n%s\n' "$wide" >"$BW/docs/ok.md"
+bw_call "$BW" "ls"
+assert_eq "bash hook: an already-dirty wide file left alone exits 0" "$bw_rc" 0
+assert_empty "bash hook: an already-dirty wide file left alone is silent" "$bw_out"
+bw_call "$BW" "echo more >> docs/ok.md"
+assert_eq "bash hook: a dirty file edited by the call exits 2" "$bw_rc" 2
+assert_contains "bash hook: a dirty file edited by the call is named" \
+  "$bw_out" "docs/ok.md"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "printf '%s\n' '$wide' > docs/new.md"
+assert_eq "bash hook: a new untracked wide file exits 2" "$bw_rc" 2
+assert_contains "bash hook: a new untracked file is named" "$bw_out" "docs/new.md:1"
+rm -f "$BW/docs/new.md"
+bw_call "$BW" "mkdir -p docs/sub/deep && printf '%s\n' '$wide' > docs/sub/deep/n.md"
+assert_eq "bash hook: a file in a new directory exits 2" "$bw_rc" 2
+assert_contains "bash hook: a file in a new directory is named" \
+  "$bw_out" "docs/sub/deep/n.md:1"
+rm -rf "$BW/docs/sub"
+bw_call "$BW" "git mv docs/ok.md docs/moved.md && sed -i 's/\$/x/' docs/moved.md"
+assert_eq "bash hook: a renamed and widened file exits 2" "$bw_rc" 2
+assert_contains "bash hook: the rename is reported under its new path" \
+  "$bw_out" "docs/moved.md:3"
+git -C "$BW" reset -q --hard
+bw_call "$BW" "perl -pi -e 's/\$/x/' docs/ok.md"
+assert_eq "bash hook: perl -pi making a line wide exits 2" "$bw_rc" 2
+git -C "$BW" checkout -q -- docs/ok.md
+if command -v python3 >/dev/null 2>&1; then
+  bw_call "$BW" "python3 -c \"
+p='docs/ok.md'; s=open(p).read(); open(p,'w').write(s.replace('word\n','word x\n'))\""
+  assert_eq "bash hook: a python rewrite making a line wide exits 2" "$bw_rc" 2
+  git -C "$BW" checkout -q -- docs/ok.md
+fi
+bw_call "$BW" "sed -i 's/\$/x/' docs/ok.md; false" PostToolUseFailure
+assert_eq "bash hook: PostToolUseFailure reports the same call" "$bw_rc" 2
+assert_contains "bash hook: PostToolUseFailure names file:line" \
+  "$bw_out" "docs/ok.md:3"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "rm docs/ok.md"
+assert_eq "bash hook: a deleted file exits 0" "$bw_rc" 0
+assert_empty "bash hook: a deleted file is silent" "$bw_out"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_call "$BW" "printf '%s\n' '$wide' > notes.txt"
+assert_eq "bash hook: a non-md non-sh file exits 0" "$bw_rc" 0
+assert_empty "bash hook: a non-md non-sh file is silent" "$bw_out"
+rm -f "$BW/notes.txt"
+BW2="$(bw_repo)"
+bw_call "$BW" "printf '%s\n' '$wide' > '$BW2/docs/ok.md'"
+assert_eq "bash hook: an edit in another checkout exits 0" "$bw_rc" 0
+assert_empty "bash hook: an edit in another checkout is silent" "$bw_out"
+if command -v shellcheck >/dev/null 2>&1; then
+  bw_call "$BW" "printf 'unused=1\n' >> ok.sh"
+  assert_eq "bash hook: a shellcheck warning exits 2" "$bw_rc" 2
+  assert_contains "bash hook: names the warning" "$bw_out" "SC2034"
+  git -C "$BW" checkout -q -- ok.sh
+elif [ -n "${CI:-}" ]; then
+  bad "bash hook: shellcheck case" "shellcheck is not on PATH under CI"
+else
+  skip "bash hook: shellcheck case" "shellcheck is not on PATH"
+fi
+# No baseline, malformed input, missing id, cwd outside a repo.
+bw_hook PostToolUse "$BW" "never-seen"
+assert_eq "bash hook: Post without a snapshot exits 0" "$bw_rc" 0
+assert_empty "bash hook: Post without a snapshot is silent" "$bw_out"
+bw_out="$(printf 'not json' | bash "$EDIT_HOOK" 2>&1)"; bw_rc=$?
+assert_eq "bash hook: malformed stdin exits 0" "$bw_rc" 0
+assert_empty "bash hook: malformed stdin is silent" "$bw_out"
+bw_hook PreToolUse "$BW" ""
+assert_eq "bash hook: Pre without tool_use_id exits 0" "$bw_rc" 0
+assert_empty "bash hook: Pre without tool_use_id is silent" "$bw_out"
+bw_hook PostToolUse "$BW" ""
+assert_eq "bash hook: Post without tool_use_id exits 0" "$bw_rc" 0
+assert_empty "bash hook: Post without tool_use_id is silent" "$bw_out"
+bw_hook PreToolUse "$NOREPO" "norepo"
+assert_eq "bash hook: Pre outside a repo exits 0" "$bw_rc" 0
+assert_empty "bash hook: Pre outside a repo is silent" "$bw_out"
+bw_out="$(bw_payload PostToolUse "$BW" x | head -c 20 \
+  | bash "$EDIT_HOOK" 2>&1)"; bw_rc=$?
+assert_eq "bash hook: truncated stdin exits 0" "$bw_rc" 0
+assert_empty "bash hook: truncated stdin is silent" "$bw_out"
+bw_hook PreToolUse "$BW" "nojq" "$NOSC_NOJQ"
+bw_pre_rc="$bw_rc"; bw_pre_out="$bw_out"
+printf '%s\n' "$wide" >"$BW/docs/ok.md"
+bw_hook PostToolUse "$BW" "nojq" "$NOSC_NOJQ"
+assert_eq "bash hook: no jq, Pre and Post exit 0" "$bw_pre_rc$bw_rc" 00
+assert_empty "bash hook: no jq is silent" "$bw_pre_out$bw_out"
+git -C "$BW" checkout -q -- docs/ok.md
+# An unwritable snapshot: TMPDIR is a regular file.
+BW_FILE="$(mktemp)"
+bw_out="$(bw_payload PreToolUse "$BW" unw2 | TMPDIR="$BW_FILE" bash "$EDIT_HOOK" 2>&1)"
+bw_rc=$?
+printf '%s\n' "$wide" >"$BW/docs/ok.md"
+bw_out2="$(bw_payload PostToolUse "$BW" unw2 | TMPDIR="$BW_FILE" bash "$EDIT_HOOK" 2>&1)"
+bw_rc2=$?
+assert_eq "bash hook: an unwritable TMPDIR leaves Pre and Post at exit 0" \
+  "$bw_rc$bw_rc2" 00
+assert_empty "bash hook: an unwritable TMPDIR is silent" "$bw_out$bw_out2"
+git -C "$BW" checkout -q -- docs/ok.md
+# Cleanup: a pinned empty TMPDIR is empty again after every Post.
+BW_TMP="$(mktemp -d)"
+bw_cleanup_call() {
+  BW_ID=$((BW_ID + 1))
+  bw_payload PreToolUse "$BW" "c$BW_ID" | TMPDIR="$BW_TMP" bash "$EDIT_HOOK" >/dev/null 2>&1
+  (cd "$BW" && bash -c "$1") >/dev/null 2>&1
+  bw_payload "$2" "$BW" "c$BW_ID" | TMPDIR="$BW_TMP" bash "$EDIT_HOOK" >/dev/null 2>&1
+}
+bw_cleanup_call "ls" PostToolUse
+assert_empty "bash hook: Post leaves no snapshot after a silent call" \
+  "$(ls -A "$BW_TMP")"
+bw_cleanup_call "sed -i 's/\$/x/' docs/ok.md" PostToolUse
+assert_empty "bash hook: Post leaves no snapshot after an exit 2" \
+  "$(ls -A "$BW_TMP")"
+git -C "$BW" checkout -q -- docs/ok.md
+bw_cleanup_call "sed -i 's/\$/x/' docs/ok.md" PostToolUseFailure
+assert_empty "bash hook: PostToolUseFailure leaves no snapshot" \
+  "$(ls -A "$BW_TMP")"
+git -C "$BW" checkout -q -- docs/ok.md
+# Parity: an Edit and a Bash call leaving the same wide file report alike.
+BWP="$(bw_repo)"
+printf '# T\n\n%s\n' "$wide" >"$BWP/docs/ok.md"
+bw_edit_out="$(jq -n --arg f "$BWP/docs/ok.md" '{tool_input:{file_path:$f}}' \
+  | bash "$EDIT_HOOK" 2>&1)"; bw_edit_rc=$?
+git -C "$BWP" checkout -q -- docs/ok.md
+bw_call "$BWP" "printf '# T\n\n%s\n' '$wide' > docs/ok.md"
+assert_eq "bash hook: parity with the Edit path, exit code" \
+  "$bw_rc/$bw_out" "$bw_edit_rc/$bw_edit_out"
+# Registration.
+for ev in PreToolUse PostToolUse PostToolUseFailure; do
+  reg="$(jq -r --arg e "$ev" '.hooks[$e][]? | select(.matcher == "Bash")
+    | .hooks[].command' "$SETTINGS" 2>/dev/null)"
+  assert_contains "bash hook: $ev Bash runs the script" "$reg" \
+    'scripts/dev/hook-edit-width.sh'
+  assert_contains "bash hook: $ev Bash runs through CLAUDE_PROJECT_DIR" \
+    "$reg" 'CLAUDE_PROJECT_DIR'
+done
+rm -rf "$BW" "$BW2" "$BWP" "$BW_TMP" "$BW_FILE"
+
 # --- bash stdin hook (scripts/hook-bash-stdin.sh, #2001)
 BSTDIN="$DIR/hook-bash-stdin.sh"
 # bash_hook_event MODE AGENT_TYPE COMMAND: a Bash PreToolUse payload; an empty
