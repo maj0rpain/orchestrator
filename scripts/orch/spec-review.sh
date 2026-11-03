@@ -1789,9 +1789,8 @@ spec_review_hold() {
     capture_err err cmd_issue fetch "${ST_T[$i]}" "$dir/ticket-${ST_T[$i]}.md" >/dev/null \
       || die "could not refetch ticket #${ST_T[$i]} into $dir/ticket-${ST_T[$i]}.md: $(err_line "$err")$suffix"
   done
-  for tf in "$dir"/ticket-*.md; do
-    tn="${tf##*/ticket-}"; tn="${tn%.md}"
-    case "$tn" in ''|*[!0-9]*) continue ;; esac
+  for tn in $(spec_review_ticket_numbers "$dir"); do
+    tf="$dir/ticket-$tn.md"
     cp "$tf" "$dir/ticket-$tn.fetched.md" 2>/dev/null \
       || die "could not copy ticket-$tn.md to $dir/ticket-$tn.fetched.md$suffix"
   done
@@ -1802,6 +1801,17 @@ spec_review_hold() {
   rm -f "$dir/applied.log" 2>/dev/null \
     || die "could not clear $dir/applied.log$suffix"
   spec_review_clear_answer "$dir"
+}
+
+# The numbers of <dir>'s ticket-<n>.md files, one per line; the .fetched.md
+# copies are not among them.
+spec_review_ticket_numbers() {
+  local tf tn
+  for tf in "$1"/ticket-*.md; do
+    tn="${tf##*/ticket-}"; tn="${tn%.md}"
+    case "$tn" in ''|*[!0-9]*) continue ;; esac
+    printf '%s\n' "$tn"
+  done
 }
 
 # spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
@@ -1952,9 +1962,8 @@ spec_review_apply() {
   # The hold rebases these copies on the tickets as published, and keeps its
   # ticket lines.
   local tf tn
-  for tf in "$dir"/ticket-*.md; do
-    tn="${tf##*/ticket-}"; tn="${tn%.md}"
-    case "$tn" in ''|*[!0-9]*) continue ;; esac
+  for tn in $(spec_review_ticket_numbers "$dir"); do
+    tf="$dir/ticket-$tn.md"
     [ -e "$dir/ticket-$tn.fetched.md" ] \
       || cp "$tf" "$dir/ticket-$tn.fetched.md" 2>/dev/null \
       || die "could not copy ticket-$tn.md to $dir/ticket-$tn.fetched.md - nothing written"
@@ -2017,7 +2026,10 @@ spec_review_apply() {
   local held_any="" round_tickets="$tickets"
   if [ "$SR_FUNDAMENTAL_RUN" = resume ]; then
     local held_tickets="$TICKETS_NO_EDIT"
-    [ ! -f "$dir/$SPEC_ROUND_HELD_TICKETS" ] || held_tickets="$(cat "$dir/$SPEC_ROUND_HELD_TICKETS")"
+    if [ -f "$dir/$SPEC_ROUND_HELD_TICKETS" ]; then
+      held_tickets="$(cat "$dir/$SPEC_ROUND_HELD_TICKETS" 2>/dev/null)" && [ -n "$held_tickets" ] \
+        || die "could not read $dir/$SPEC_ROUND_HELD_TICKETS - the held tickets' outcomes would be missing from the changelog"
+    fi
     round_tickets="$(spec_review_tickets_merge "$held_tickets" "$tickets")"
   fi
   [ "$SR_FUNDAMENTAL_RUN" != hold ] || [ "${#SR_IT_FUNDAMENTAL[@]}" -eq 0 ] || held_any=1

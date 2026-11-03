@@ -1690,8 +1690,7 @@ assert_contains "and fundamental.md" "$out" "$d/fundamental.md"
 assert_contains "and the landed writes" "$out" "every GitHub write landed: ticket #20's body"
 
 d="$(srh_hold_run "$srh_edges")"
-fake_fail adapter_issue_body
-printf "2\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_body.after"  # the two edge writes read first
+fake_fail_after adapter_issue_body 2  # the two edge writes read first
 ORCH_AUTOPILOT=1 sra "$d" recommended --tickets recommended
 fake_unfail
 assert_status "a failed refetch of a block-edited ticket stops the hold" "$st" 1
