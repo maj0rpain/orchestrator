@@ -1630,6 +1630,51 @@ assert_status "and --resume finishes it" "$st" 0
 assert_eq "#20 keeps the hold run's edit beside the resumed run's" "$(fake_body_of 20 | sed -n '3p;7p')" "Build alpha prime.
 None at all"
 
+# The hold keeps its ticket lines (#2132): the round's one changelog reports
+# both runs' ticket outcomes.
+srh_tickets() { fake_comments_of 14 | sed -n '/^### Tickets$/,$p'; }
+d="$(srh_hold)"
+fake_body_of 20 >"$d/ticket-20.md"
+srh_edit "None (can start immediately)" "$srh_tail" >"$d/tickets.md"
+srh_resume "$d" 3B --tickets recommended
+assert_status "both runs edit a ticket" "$st" 0
+assert_contains "the hold's part is labelled, first" "$(srh_tickets)" "Before the reply:
+- (1) #20 edited
+
+After the reply:
+- (1) #20 edited"
+assert_eq "held-tickets.md is removed" "$(on_disk "$d/held-tickets.md")" absent
+
+d="$(srh_hold)"
+fake_body_of 20 >"$d/ticket-20.md"
+printf '@@ recommend apply\n' >"$d/tickets.md"
+srh_resume "$d" 3B --tickets recommended
+assert_status "the resumed run applies no ticket edit" "$st" 0
+assert_eq "the hold's lines stand alone, unlabelled" "$(srh_tickets)" "### Tickets
+- (1) #20 edited"
+
+d="$(srh_hold edges)"
+fake_body_of 20 >"$d/ticket-20.md"
+srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
+fake_fail adapter_issue_comment
+srh_resume "$d" 3B --tickets recommended
+fake_unfail
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 2>&1)"; st=$?
+assert_status "a changelog write that failed, rerun with --resume" "$st" 0
+assert_eq "posts the ticket lines once" "$(srh_tickets | grep -c 'Before the reply:')" 1
+
+d="$(srt_dir)"
+sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
+srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
+ORCH_AUTOPILOT=1 sra "$d" recommended
+srt_fetch "$d"
+mkdir "$d/held-tickets.md"
+srh_resume "$d" recommended --tickets recommended
+assert_status "a held-tickets write that cannot land stops the hold" "$st" 1
+assert_contains "naming the file" "$out" "could not write $d/held-tickets.md"
+assert_contains "and fundamental.md" "$out" "$d/fundamental.md"
+assert_contains "and the landed writes" "$out" "every GitHub write landed: ticket #20's body"
+
 # The hold's failures: a copy that cannot land, a refetch that fails.
 d="$(srt_dir)"
 sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"

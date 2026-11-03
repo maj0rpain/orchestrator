@@ -99,6 +99,11 @@ readonly SPEC_ROUND_COMPLETE=round-complete
 # apply in the round's directory: while it exists the round waits for the
 # human's answer, and spec round says so.
 readonly SPEC_ROUND_FUNDAMENTAL=fundamental.md
+# The ticket lines of an autopilot round's first run (the hold), written beside
+# fundamental.md: the resumed run reports them with its own in the round's one
+# changelog, and removes the file with fundamental.md.
+# shellcheck disable=SC2034 # read by spec-review.sh
+readonly SPEC_ROUND_HELD_TICKETS=held-tickets.md
 # The saved answer of a spec-review apply that is running or died in the round's
 # directory: while it exists the round is applying, and spec round says so.
 readonly SPEC_ROUND_APPLY_ANSWER=apply-answer
