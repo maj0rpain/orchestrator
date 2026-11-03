@@ -1855,18 +1855,18 @@ fake_pr 139 open orch/39-widget main
 fake_pr_cross 139
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick with conflicting done flows succeeds" "$st" 0
-assert_eq "a CONFLICTING open PR gets orch:sync, with no side checkout" "$(fake_labels_of 30)" "orch:done orch:sync "
+assert_eq "a CONFLICTING open PR gets orch:sync, with no side checkout, and its pickup stops as a refusal" "$(fake_labels_of 30)" "needs-human orch:done orch:sync "
 assert_eq "an UNKNOWN PR is left alone" "$(fake_labels_of 31)" "orch:done "
 assert_eq "a MERGEABLE PR is left alone" "$(fake_labels_of 32)" "orch:done "
 assert_eq "a closed PR is left alone" "$(fake_labels_of 33)" "orch:done "
 assert_eq "a merged PR is left alone" "$(fake_labels_of 34)" "orch:done "
-assert_eq "an issue already labelled orch:sync is left alone" "$(fake_labels_of 35)" "orch:done orch:sync "
+assert_eq "an issue already labelled orch:sync is left alone" "$(fake_labels_of 35)" "needs-human orch:done orch:sync "
 assert_eq "an issue labelled needs-human is left alone" "$(fake_labels_of 36)" "needs-human orch:done "
 assert_eq "an issue labelled orch:running is left alone" "$(fake_labels_of 37)" "orch:done orch:running "
 assert_eq "a branch of another issue sharing the number prefix does not match" "$(fake_labels_of 38)" "orch:done "
 assert_eq "a fork PR is not the issue's PR" "$(fake_labels_of 39)" "orch:done "
 assert_not_contains "no PR-less issue is warned about" "$out" "issue #38"
-assert_eq "no session starts for a sync request yet unpickable" "$(tick_calls)" "0"
+assert_eq "no session starts for a sync request without a side checkout" "$(tick_calls)" "0"
 
 # several open PRs: warned about and skipped
 fake_done_pr 40 open CONFLICTING
@@ -1876,21 +1876,21 @@ out="$("$ORCH" autopilot tick 2>&1)"
 assert_eq "an issue with two open PRs gets no orch:sync" "$(fake_labels_of 40)" "orch:done "
 assert_contains "and is warned about" "$out" "issue #40 has 2 open PRs"
 
-# one failing label write skips that issue only
+# a failing label write warns and skips its issue, and the tick carries on
 fake_issue_drop 40
 for n in 31 32 33 34 35 36 37 38 39; do fake_issue_drop "$n"; done
 fake_done_pr 30 open CONFLICTING
 fake_done_pr 41 open CONFLICTING
-fake_fail_after adapter_issue_relabel 1 "HTTP 500"
+fake_fail adapter_issue_relabel "HTTP 500"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a failing label write does not stop the tick" "$st" 0
-assert_contains "it warns, naming the issue and gh's reason" "$out" "could not add orch:sync to issue #"
-assert_contains "and the reason" "$out" "HTTP 500"
-assert_eq "exactly one of the two issues got the label" "$(( $(fake_labels_of 30 | grep -c sync) + $(fake_labels_of 41 | grep -c sync) ))" "1"
+assert_contains "it warns for the first issue and gh's reason" "$out" "could not add orch:sync to issue #30: HTTP 500"
+assert_contains "and the second issue is still tried" "$out" "could not add orch:sync to issue #41: HTTP 500"
 fake_unfail
 
 # a failing PR read warns and skips
-fake_issue 30 open orch:done
+fake_done_pr 30 open CONFLICTING
+
 fake_fail adapter_prs_open_mergeability "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a failing PR read does not stop the tick" "$st" 0
@@ -1899,12 +1899,14 @@ assert_eq "and files nothing" "$(fake_labels_of 30)" "orch:done "
 fake_unfail
 
 # auto-sync false adds nothing
+fake_done_pr 30 open CONFLICTING
 git config orchestrator.autopilot.auto-sync false
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "with auto-sync false a tick adds no orch:sync" "$(fake_labels_of 30)" "orch:done "
 git config --unset-all orchestrator.autopilot.auto-sync
 
 # a limit pause reads no PR and adds no label
+fake_done_pr 30 open CONFLICTING
 fake_fail adapter_prs_open_mergeability "HTTP 502"
 mkdir -p "$top/.orchestrator/autopilot"
 printf '%s\n' "$(iso_of $(( $(date +%s) + 3600 )))" >"$top/.orchestrator/autopilot/limit"
@@ -1914,7 +1916,7 @@ assert_not_contains "and no PR is read" "$out" "could not read the PR"
 rm -f "$top/.orchestrator/autopilot/limit"
 fake_unfail
 "$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "once the pause has passed the label is added" "$(fake_labels_of 30)" "orch:done orch:sync "
+assert_eq "once the pause has passed the label is added" "$(fake_labels_of 30)" "needs-human orch:done orch:sync "
 
 # the setting
 git config orchestrator.autopilot.auto-sync maybe
