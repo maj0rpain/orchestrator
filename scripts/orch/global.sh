@@ -16,6 +16,7 @@ cmd_status() {
   if [ ! -f "$STATE" ]; then
     note "No active flow. Run $(flow_cmd start) from an approved plan."
   else
+    require_state_readable
     status_flow
   fi
   status_others
@@ -78,7 +79,7 @@ status_flow() {
 # worktree - it deletes ignored files - so the flow moves to the main
 # checkout's archive first, and only then is the worktree removed (ADR-0037).
 cmd_archive() {
-  require_state
+  require_state_exists
   local archive_home
   archive_home="$(archive_root "$ROOT")" || die "could not read the checkouts - nothing was archived"
   # Only a side checkout archives anywhere but in place.
@@ -360,7 +361,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout (see branch busy), changing nothing
   branch busy                 tell whether this checkout is a busy checkout,
                               from local git and state only: a flow
-                              mid-pipeline, a branch the plugin made with no
+                              mid-pipeline (a state.json that cannot be read
+                              counts as one), a branch the plugin made with no
                               PR yet (no branch.<name>.orchestrator-pr) and
                               not retired by a redo (-redo-<n>), or
                               changes outside the planning allowlist, checked
@@ -665,8 +667,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               creating the directory if it is not there yet
   review file <major|nit> <title> --axis <spec|standards|suite-cost>
               --finding-file <f> --severity-reason <r>
-              --location <<file>:<line>|suite> --sha <sha>
-              --pr <url> --why <reason> [--spec-question <q>]
+              --location <<file>:<line>|suite> --why <reason>
+              [--spec-question <q>]
                               file a finding as a GitHub issue labelled
                               review:<severity>, the repo's needs-triage, and
                               bug (spec axis) or enhancement (standards or
@@ -699,10 +701,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               with no entries, fails with an orch: message
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
-  review rerun <pr>           rerun the failed jobs of the Actions run behind
-                              the PR's first failed or cancelled check; prints
-                              the run id. Exits 1 when that check is no Actions
-                              run, 2 on any other failure
+  review rerun <pr>           rerun the failed jobs of every Actions run
+                              behind the failing checks review ci counts;
+                              prints each run id. Exits 1 when a failing check
+                              is no Actions run, 2 on any other failure
   review ready                mark the draft PR ready and set the phase to done,
                               refusing (1) over failed or unreadable checks,
                               printing the PR number; in a side checkout, a
@@ -958,11 +960,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               bundle. --state may not be ready-for-agent with
                               a ready-for-human member, nor --category
                               enhancement with a bug member. A member failure
-                              dies naming the members left open and the
-                              --into command that resumes. --into <B>: close
-                              the members (one is enough) into the open
+                              dies naming the members left open (or not
+                              confirmed closed, where the close may have
+                              landed) and the --into command that resumes.
+                              --into <B>: close the members into the open
                               finding-bundle issue B, never editing it, nor
-                              commenting a member twice
+                              commenting a member twice; a member already
+                              closed into B (a trusted "Bundled into #B"
+                              comment) is skipped, the others are checked
+                              as above (one is enough)
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, retire
                               the implement handoff (orch.sh handoff path

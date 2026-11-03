@@ -470,6 +470,12 @@ assert_eq "listing nothing" "$(printf '%s\n' "$out" | grep -c "$(printf '\t')")"
 assert_eq "and changing nothing" "$(fake_snapshot)" "$before_store"
 fake_unfail
 fake_issue 18 closed
+# A finding carrying its labels in another casing is still a filed finding in
+# needs-triage.
+finding 30 "Review:Nit,Needs-Triage" "\`src/other.sh:2\` at $head_sha"
+out="$(scan 30 2>&1)"; st=$?
+assert_status "a finding carrying Review:Nit and Needs-Triage is scanned" "$st" 0
+assert_eq "its triage label recognised in another casing" "$(field_of 30 6 "$out")" "needs-triage"
 restore_suite_env
 
 # --- finding-triage apply -----------------------------------------------------
@@ -727,6 +733,40 @@ assert_eq "and before the labels change" "$(fake_labels_of 7)" "bug ready-for-ag
 fake_unfail
 rm -f "$relabel_log" "$traced_adapter"
 
+# Re-running apply after a failed close posts the triage comment once (#1944).
+triaged 50 "review:major,needs-triage,bug"
+fake_fail_after adapter_issue_close 0 "$GH_502"
+out="$(apply 50 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "the first close fails" "$st" 1
+fake_unfail
+out="$(apply 50 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a re-run after a failed close finishes" "$st" 0
+assert_eq "the re-run leaves the issue closed" "$(fake_state_of 50)" "CLOSED"
+assert_eq "and exactly one triage comment" "$(fake_comments_of 50)" \
+  "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
+# A different triage comment never suppresses the post.
+triaged 51 "review:major,needs-triage,bug"
+fake_comment 51 maj0rpain 2026-11-01T00:00:00Z "$(writeln "$disclaimer" '' 'Fixed by other on main.')"
+out="$(apply 51 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a different earlier triage comment does not stop apply" "$st" 0
+assert_contains "its own comment is posted too" "$(fake_comments_of 51)" "Fixed by abc1234 on main."
+assert_contains "beside the earlier one" "$(fake_comments_of 51)" "Fixed by other on main."
+# A match followed by a later, different comment still skips the post.
+triaged 52 "review:major,needs-triage,bug"
+fake_comment 52 maj0rpain 2026-11-01T00:00:00Z "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
+fake_comment 52 maj0rpain 2026-11-02T00:00:00Z "thanks"
+out="$(apply 52 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a matching comment that is not the newest" "$st" 0
+assert_eq "posts nothing" "$(fake_comments_of 52 | grep -c 'Fixed by abc1234')" "1"
+assert_eq "and still relabels and closes" "$(fake_state_of 52) $(fake_labels_of 52)" "CLOSED bug review:major wontfix "
+# A failed comments read dies before any write.
+triaged 53 "review:major,needs-triage,bug"
+before="$(fake_snapshot)"
+assert_gh_dies "a failed comments read dies" adapter_issue_comments "$GH_502" 1 \
+  "orch: gh could not read issue #53's comments: HTTP 502: Bad Gateway" \
+  apply 53 close-fixed --comment-file "$comment"
+assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
+
 # Every state label is the repo's name for the role.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
@@ -741,6 +781,20 @@ triaged 3 "review:nit,triage me,enhancement"
 out="$(apply 3 wontfix --comment-file "$comment" 2>&1)"; st=$?
 assert_eq "wontfix included" "$(fake_labels_of 3)" "enhancement nope review:nit "
 rm docs/agents/triage-labels.md
+# Stale triage and category labels carried in another casing are removed.
+triaged 31 "Review:Major,Needs-Triage,Bug"
+out="$(apply 31 ready-for-human --category enhancement --comment-file "$comment" 2>&1)"; st=$?
+assert_status "applies over labels in another casing" "$st" 0
+assert_eq "removing the stale triage and category labels whatever their casing" \
+  "$(fake_labels_of 31)" "Review:Major enhancement ready-for-human "
+# fake_labels_of is called under a case-folding collation, so this fails if its
+# own LC_ALL=C pin is ever dropped; apply above runs under the caller's locale.
+if casing_locale="$(dictionary_locale)"; then
+  assert_eq "reads the labels back in C order under a dictionary locale" \
+    "$(LC_ALL="$casing_locale" fake_labels_of 31)" "Review:Major enhancement ready-for-human "
+else
+  skip "reads the labels back in C order under a dictionary locale" "no dictionary locale here"
+fi
 restore_suite_env
 
 # --- finding-triage bundle ----------------------------------------------------
@@ -857,6 +911,12 @@ refused "ready-for-agent with a ready-for-human member" \
   "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent bug 11 13
 refused "enhancement with a bug member" \
   "--category enhancement, but issue #11 carries 'bug'" new_bundle ready-for-human enhancement 11 13
+member 13 "review:nit,Ready-For-Human,enhancement"
+refused "a ready-for-human member in another casing under ready-for-agent" \
+  "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent bug 11 13
+member 13 "review:nit,ready-for-human,Bug"
+refused "a bug member in another casing under enhancement" \
+  "--category enhancement, but issue #13 carries 'bug'" new_bundle ready-for-human enhancement 13 11
 # A member with two faults is refused for the one checked first: the member
 # check before the state, the state before the category.
 member 13 "review:nit,needs-triage,ready-for-human,bug"
@@ -954,12 +1014,12 @@ assert_gh_dies "a silent bundle create failure dies" adapter_issue_create '' 1 \
 # the members left open, with the --into command that resumes, and that
 # command finishes the job - no second bundle, never an edit to the bundle,
 # and exactly one `Bundled into #B` comment on every member.
-# partial <name> <B> <wants> <left> [adapter]: a new bundle #B of members 31,
-# 32 and 33 dies with <wants>, leaving <left> (space-separated) open; the
-# fake's failure is seeded by the caller, and <adapter> stands in for the
-# fake where given.
+# partial <name> <B> <wants> <left> <held> [adapter]: a new bundle #B of
+# members 31, 32 and 33 dies with <wants>, leaving <left> (space-separated)
+# <held> ("left open" or "not confirmed closed"); the fake's failure is seeded
+# by the caller, and <adapter> stands in for the fake where given.
 partial() {
-  local name="$1" b="$2" wants="$3" left="$4" adapter="${5:-$GH_ADAPTER_FAKE}" m
+  local name="$1" b="$2" wants="$3" left="$4" held="$5" adapter="${6:-$GH_ADAPTER_FAKE}" m
   for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
   fake_next_issue "$b"
   out="$(ORCH_GH_ADAPTER="$adapter" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
@@ -969,12 +1029,14 @@ partial() {
   assert_not_contains "$name: with gh's first line only" "$out" "second line"
   assert_contains "$name: naming the bundle and the members left open" "$out" \
     "bundle #$b: "
-  assert_contains "$name: listing the members left open" "$out" "members left open: #${left// / #};"
+  assert_contains "$name: listing the members $held" "$out" "members $held: #${left// / #};"
   assert_contains "$name: with the --into command that resumes" "$out" \
     "resume with: orch.sh finding-triage bundle --into $b $left"
-  for m in $left; do
-    assert_eq "$name: member #$m left open" "$(fake_state_of "$m")" "OPEN"
-  done
+  if [ "$held" = "left open" ]; then
+    for m in $left; do
+      assert_eq "$name: member #$m left open" "$(fake_state_of "$m")" "OPEN"
+    done
+  fi
   resumed "$name" "$b" "$left"
 }
 # resumed <name> <B> <members>: --into <B> <members> finishes the bundle,
@@ -999,33 +1061,53 @@ resumed() {
 }
 fake_fail_after adapter_issue_comment 1 "$GH_502"
 partial "a failed comment" 40 \
-  "orch: bundle #40: gh could not comment on member #32: HTTP 502: Bad Gateway - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 40 32 33" "32 33"
+  "orch: bundle #40: gh could not comment on member #32: HTTP 502: Bad Gateway - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 40 32 33" "32 33" "left open"
 fake_fail_after adapter_issue_close 1 "$GH_502"
 partial "a failed close" 41 \
-  "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33"
+  "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33" "left open"
 fake_fail adapter_issue_comments "$GH_502"
 partial "a failed comments read" 42 \
-  "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33"
+  "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33" "left open"
 fake_fail_after adapter_issue_comment 1 ""
 partial "a silent failed comment" 48 \
-  "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33"
-# A failed state read-back dies the same way; the member may in truth be
-# closed, so it is not resumed here.
-for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
-fake_next_issue 43
-fake_fail_after adapter_issue_state 2 "$GH_502"
-out="$(new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
-fake_unfail
-assert_status "a failed state read-back dies" "$st" 1
-assert_contains "naming the bundle, the member, gh's line and the --into command" "$out" \
-  "orch: bundle #43: gh could not read member #33's state back: HTTP 502: Bad Gateway - members left open: #33; resume with: orch.sh finding-triage bundle --into 43 33"
-assert_not_contains "with gh's first line only" "$out" "second line"
-unset m
+  "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33" "left open"
+# A failed state read-back dies the same way, but the member may in truth be
+# closed: the message does not call it open, and the resume skips it.
+fake_fail_after adapter_issue_state 1 "$GH_502"
+partial "a failed state read-back" 43 \
+  "orch: bundle #43: gh could not read member #32's state back: HTTP 502: Bad Gateway - members not confirmed closed: #32 #33; resume with: orch.sh finding-triage bundle --into 43 32 33" "32 33" "not confirmed closed"
 noop_close_adapter="$(mktemp)"
 writeln "source $(printf %q "$GH_ADAPTER_FAKE")" 'adapter_issue_close() { :; }' >"$noop_close_adapter"
 partial "a close that reports success but reads back open" 44 \
-  "member #31 did not read back as closed" "31 32 33" "$noop_close_adapter"
+  "member #31 did not read back as closed" "31 32 33" "not confirmed closed" "$noop_close_adapter"
 rm -f "$noop_close_adapter"
+
+# --into skips a member already closed into B, even one whose labels would
+# fail a member check, with no second comment and no second close.
+member 61 "review:major,ready-for-agent,bug"
+member 62 "review:major,needs-triage,bug" closed
+fake_issue 63 open finding-bundle ready-for-agent bug
+fake_comment 62 maj0rpain 2026-10-01T09:00:00Z "Bundled into #63" OWNER
+out="$(bundle --into 63 62 61 2>&1)"; st=$?
+assert_status "--into skips a member already closed into B" "$st" 0
+assert_eq "no second comment on it" "$(fake_comments_of 62 | grep -c "Bundled into")" "1"
+assert_eq "and it stays closed with its labels" "$(fake_state_of 62) $(fake_labels_of 62)" "CLOSED bug needs-triage review:major "
+assert_eq "and gets no second close" "$(fake_reason_of 62)|$(fake_duplicate_of 62)" "|"
+assert_eq "and the next member is closed into B" "$(fake_state_of 61) $(fake_duplicate_of 61)" "CLOSED 63"
+# Resuming again, with every member already closed into B, is a no-op.
+out="$(bundle --into 63 62 61 2>&1)"; st=$?
+assert_status "--into with every member already closed succeeds" "$st" 0
+assert_eq "and comments no member again" "$(fake_comments_of 61 | grep -c "Bundled into")" "1"
+# A closed member never bundled into B, or with a stranger's marker, is refused.
+member 64 "review:major,ready-for-agent,bug" closed
+refused "--into: a closed member without the marker" "issue #64 is not open" bundle --into 63 64
+member 65 "review:major,ready-for-agent,bug" closed
+fake_comment 65 rando 2026-10-01T09:00:00Z "Bundled into #63" NONE
+refused "--into: a closed member with only a stranger's marker" "issue #65 is not open" bundle --into 63 65
+member 66 "review:major,ready-for-agent,bug" closed
+fake_fail adapter_issue_comments "$GH_502"
+refused "--into: a closed member whose comments gh cannot read" "gh could not read issue #66's comments: HTTP 502: Bad Gateway - no member was touched" bundle --into 63 66
+fake_unfail
 
 # --into checks its members as the new form does - one is enough - and B
 # itself, before any write.

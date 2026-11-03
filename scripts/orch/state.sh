@@ -43,19 +43,46 @@ state_get_in() {
 }
 
 # The unrestricted writer behind every internal state change, over
-# flow_state_write's coercion on $STATE. A failed write stops orch.sh through
-# set -e with jq's status.
-state_write() { flow_state_write "$STATE" "$1" "$2"; }
+# flow_state_write's coercion on $STATE. A failed write dies, whatever context
+# the caller runs in: flow_state_write returns its status, and a caller in a
+# condition would suspend set -e.
+state_write() {
+  flow_state_write "$STATE" "$1" "$2" ||
+    die "could not record $1 in $STATE - the flow is unchanged"
+}
 
 # Stores value $2 under key $1 as a JSON string, always, over
 # flow_state_write_string on $STATE.
-state_write_string() { flow_state_write_string "$STATE" "$1" "$2"; }
+# A failed write dies, as state_write's does.
+state_write_string() {
+  flow_state_write_string "$STATE" "$1" "$2" ||
+    die "could not record $1 in $STATE - the flow is unchanged"
+}
 
-# require_state [die2]: dies unless an active flow's state file exists - with
-# die2 for a command that reserves exit 1 for a meaningful "no".
+# require_state [die2]: dies unless an active flow's state file exists and
+# parses (require_state_exists, then require_state_readable) - with die2 for a
+# command that reserves exit 1 for a meaningful "no".
 # shellcheck disable=SC2120 # die2 is passed by spec_phase_guard, in spec.sh
 require_state() {
+  require_state_exists "$@"
+  require_state_readable "$@"
+}
+
+# The one spelling of the refusal an unparseable state.json earns.
+STATE_UNREADABLE_MSG="state.json cannot be read - run orch.sh doctor --flow"
+
+# require_state_exists [die2]: require_state's existence check alone, for
+# doctor --flow and abort, which must still run on a state.json that does not
+# parse.
+require_state_exists() {
   [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
+}
+
+# require_state_readable [die2]: dies, through the dier given, when the state
+# file exists but does not parse as a JSON object. A missing file passes: the
+# caller settles whether a flow must exist.
+require_state_readable() {
+  [ ! -f "$STATE" ] || flow_state_readable "$STATE" || "${1:-die}" "$STATE_UNREADABLE_MSG"
 }
 
 # Fetches a required state field through state_get, dies with $3 if it comes
@@ -76,6 +103,7 @@ require_state() {
 # reserves exit 1 for a meaningful "no".
 require_field() {
   local __rf_out="$1" __rf_key="$2" __rf_msg="$3" __rf_die="${4:-die}" __rf_val
+  require_state_readable "$__rf_die"
   __rf_val="$(state_get "$__rf_key")"
   [ -n "$__rf_val" ] || "$__rf_die" "$__rf_msg"
   printf -v "$__rf_out" '%s' "$__rf_val"
@@ -93,12 +121,17 @@ require_issue() { require_field "$1" issue "no issue recorded in state - the spe
 # pr open and redo review both need the flow's branch before touching GitHub.
 require_branch() { require_field "$1" branch "no branch recorded in state"; }
 
-# The one writer of state.phase. It knows only which phases exist: every caller
-# - advance, review ready, both redos, and init's seed - keeps its own guard on
-# which transition it may make, so a step back needs no handoff check here.
+# The writers of state.phase: phase_write, which dies on a failed write, and
+# phase_write_try, which returns the writer's status for a caller that words
+# its own failure. They know only which phases exist: every caller - advance,
+# review ready, both redos, and init's seed - keeps its own guard on which
+# transition it may make, so a step back needs no handoff check here.
 phase_write() {
+  phase_write_try "$1" || die "could not record phase in $STATE - the flow is unchanged"
+}
+phase_write_try() {
   word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
-  state_write phase "$1"
+  flow_state_write "$STATE" phase "$1"
 }
 
 # The active flow's own base branch, recorded by init. A flow started before
@@ -165,11 +198,11 @@ cmd_state() {
   shift || true
   case "$op" in
     get)
-      require_state
+      require_state_exists
       if [ $# -gt 0 ]; then state_get "$1"; else cat "$STATE"; fi
       ;;
     set)
-      require_state
+      require_state_exists
       [ $# -eq 2 ] || die "usage: orch.sh state set <key> <value>"
       # Only the keys skill prose sets are public. Every other key has a
       # command that owns it, and that command's guard is the point: a phase

@@ -160,7 +160,8 @@ a skill, so the skill alone is complete.
 
 ### Arm the edit guard
 
-The guard does not arm on Junie (ADR-0025), so there is no real-time guard
+The guard covers Edit, Write, MultiEdit and NotebookEdit on Claude Code. It does
+not arm on Junie (ADR-0025), so there is no real-time guard
 there. `orch.sh init` refuses to start a flow while the working tree has
 changes outside the planning allowlist (#126), so planning edits are caught at
 flow start instead of prevented.

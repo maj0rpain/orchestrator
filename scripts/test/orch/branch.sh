@@ -41,6 +41,19 @@ merge_state() {
   git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none
 }
 
+# stray_fork <command...>: a fresh repo with a stray local branch named
+# origin/main planted and origin moved on; runs <command...> and leaves
+# origin's new tip in stray_tip.
+stray_tip=
+stray_fork() {
+  sc_clone
+  git branch origin/main HEAD
+  git -C "$sc_seed" commit -q --allow-empty -m "origin moves on"
+  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
+  stray_tip="$(git -C "$sc_seed" rev-parse HEAD)"
+  "$@" >/dev/null
+}
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
@@ -62,6 +75,13 @@ assert_eq "records the flow's base in the branch's git config" \
   "$(base_key orch/11-bcreate)" "$(orch_gh_failing state get base)"
 assert_eq "and the fork point as its base SHA there" \
   "$(git config --get branch.orch/11-bcreate.orchestrator-base-sha)" "$before_sha"
+
+# A stray local branch named origin/main must not stand in for origin's tip.
+stray_fork orch_gh_failing init strayc
+orch_gh_failing state set issue 13
+orch_gh_failing branch create >/dev/null
+assert_eq "branch create forks from origin's tip, not a stray origin/main branch" \
+  "$(git rev-parse HEAD)" "$stray_tip"
 
 # --- branch off --------------------------------------------------------------
 # A quick implementation keeps no state, so this is the primitive it shares
@@ -110,6 +130,23 @@ state_fixture phase "done"
 out="$(orch_gh_failing branch off quick/4-after)"; st=$?
 assert_status "a done flow does not block branch off" "$st" 0
 assert_eq "which checks the branch out as before" "$(git branch --show-current)" "quick/4-after"
+
+# A stray local branch named origin/main must not stand in for origin's tip.
+stray_fork orch_gh_failing branch off quick/13-stray
+assert_eq "branch off forks from origin's tip, not a stray origin/main branch" \
+  "$(git rev-parse HEAD)" "$stray_tip"
+
+# The local fallback names the local branch, so a same-named tag cannot win.
+new_repo >/dev/null
+git remote set-url origin "$(mktemp -d)/missing.git"
+fb_base="$(git branch --show-current)"
+git config orchestrator.base "$fb_base"
+git tag "$fb_base" HEAD
+git commit -q --allow-empty -m "local base moves on"
+out="$(orch_gh_failing branch off quick/2-tagged 2>&1)"; st=$?
+assert_status "branch off with a tag of the base's name exits 0" "$st" 0
+assert_eq "branch off falls back to the local branch, not a tag of its name" \
+  "$(git rev-parse HEAD)" "$(git rev-parse "refs/heads/$fb_base")"
 
 # --- a quick implementation's base branch -------------------------------------
 # A quick implementation keeps no state.json, so branch off records the base
@@ -491,6 +528,18 @@ assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$new_tip"
 assert_eq "branch base-sha prints the merged base tip" "$(orch_gh_failing branch base-sha)" "$new_tip"
 assert_eq "a branch with no upstream is not pushed" "$(bs_origin_tip orch/11-bsync)" ""
 
+# A stray local branch named origin/main must not stand in for origin's tip.
+git branch origin/main "$local_main"
+new_tip="$(bs_advance stray.txt from-main-again)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a stray local branch origin/main: sync exits 0" "$st" 0
+assert_eq "its merge's second parent is origin's real tip" "$(git rev-parse HEAD^2)" "$new_tip"
+git merge-base --is-ancestor refs/remotes/origin/main HEAD; st=$?
+assert_status "HEAD contains refs/remotes/origin/main" "$st" 0
+git merge-base --is-ancestor "$(bs_sha)" HEAD; st=$?
+assert_status "and the recorded base SHA is an ancestor of HEAD" "$st" 0
+git branch -q -D origin/main
+
 # The base the flow records, never the branch config's or the setting's.
 git -C "$sc_seed" push -q "$sc_origin" "$new_tip:refs/heads/uat"
 git -C "$sc_seed" checkout -q -b seed-uat "$new_tip"
@@ -765,6 +814,12 @@ out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "a done flow is free" "$st" 0
 assert_eq "printing nothing (done flow)" "$out" ""
 
+state_truncate
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a flow whose state.json does not parse is busy" "$st" 3
+assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_not_contains "printing no jq text" "$out" "parse error"
+
 sc_clone
 side="$(sc_add fresh)"
 out="$(cd "$side" && orch_gh_failing branch busy 2>&1)"; st=$?
@@ -831,6 +886,15 @@ out="$(orch_gh_failing branch off quick/5-unread 2>&1)"; st=$?
 assert_status "branch off on an unreadable tree exits 1" "$st" 1
 assert_eq "leaving the branch and the git config (branch off)" "$(branch_and_config)" "$before"
 restore_index
+
+new_repo_with_origin
+orch_gh_failing init held >/dev/null
+state_truncate
+out="$(orch_gh_failing branch off quick/1-x 2>&1)"; st=$?
+assert_status "branch off beside an unparseable state.json exits 3" "$st" 3
+assert_contains "naming the unreadable state.json" "$out" "busy: a flow's state.json cannot be read"
+assert_contains "and the remedy" "$out" "Run orch.sh doctor --flow, or "
+assert_not_contains "printing no jq text" "$out" "parse error"
 
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
@@ -955,8 +1019,7 @@ assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 # whether the flow holds the branch.
 echo '{ not json' >.orchestrator/state.json
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
-assert_status "branch sync on an unreadable state exits 1" "$st" 1
-assert_contains "branch sync shows the state read's own error" "$out" "parse error"
+assert_state_unreadable "branch sync" 1 "$out" "$st"
 
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin
@@ -1107,6 +1170,95 @@ assert_status "a rebase of a foreign branch in progress is refused" "$st" 1
 assert_contains "naming the branch being rebased" "$out" "the current branch scratch-r is not the flow's"
 assert_eq "leaving the rebase in progress" "$(rebase_state)" "rebasing"
 assert_eq "and state as it was" "$(refusal_facts)" "$before"
+
+# --- the fork start point is decided where origin is asked (#1930) -----------
+# A branch forks from origin's freshly fetched base whenever origin answered;
+# only an origin that could not be asked earns the local fallback. A checkout
+# that fails with origin reachable dies with git's message, never forking from
+# a stale local base.
+echo
+echo "the fork start point is decided where origin is asked (#1930)"
+# stale_fork_repo: a fresh repo whose local base is behind a bare origin's,
+# which advanced docs/agents/notes.md (fetched). Sets $bare, $main, $origin_tip.
+stale_fork_repo() {
+  new_repo >/dev/null
+  main="$(git branch --show-current)"
+  echo one >docs/agents/notes.md && git add -A && git commit -qm notes
+  bare="$(mktemp -d)/origin.git"
+  git init -q --bare "$bare"
+  bare_origin "$bare"
+  git push -q origin "HEAD:refs/heads/$main"
+  git fetch -q origin
+  git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$main"
+  echo two >docs/agents/notes.md && git commit -qam "origin moves notes"
+  git push -q origin "HEAD:refs/heads/$main"
+  origin_tip="$(git rev-parse HEAD)"
+  git reset -q --hard HEAD~1
+  git fetch -q origin
+}
+# fork_facts <branch>: whether the branch exists and the base SHA it recorded.
+fork_facts() {
+  git rev-parse --verify --quiet "refs/heads/$1" >/dev/null && echo made || echo none
+  git config --get "branch.$1.orchestrator-base-sha" || echo "<unset>"
+}
+
+stale_fork_repo
+assert_ne "(fixture) local base is behind origin" "$(git rev-parse HEAD)" "$origin_tip"
+out="$(orch_gh_failing branch off quick/7-fresh 2>&1)"; st=$?
+assert_status "branch off forks from a behind local base" "$st" 0
+assert_eq "recording origin's tip as the base SHA" \
+  "$(git config --get branch.quick/7-fresh.orchestrator-base-sha)" "$origin_tip"
+
+stale_fork_repo
+echo mine >>docs/agents/notes.md
+out="$(orch_gh_failing branch off quick/7-x 2>&1)"; st=$?
+assert_status "branch off refuses when the checkout from origin's tip clashes" "$st" 1
+assert_contains "naming the branch and the start point" "$out" "quick/7-x from refs/remotes/origin/$main"
+assert_contains "carrying git's message" "$out" "would be overwritten"
+assert_contains "listing the clashing file" "$out" "docs/agents/notes.md"
+assert_eq "leaving no branch and no base SHA" "$(fork_facts quick/7-x)" $'none\n<unset>'
+assert_eq "staying on the base" "$(git branch --show-current)" "$main"
+assert_contains "keeping the edit" "$(cat docs/agents/notes.md)" "mine"
+
+stale_fork_repo
+orch_gh_failing init clash >/dev/null
+orch_gh_failing state set issue 7
+echo mine >>docs/agents/notes.md
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create refuses on the same clash" "$st" 1
+assert_contains "carrying git's message" "$out" "would be overwritten"
+assert_eq "making no flow branch" "$(fork_facts orch/7-clash)" $'none\n<unset>'
+assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
+assert_eq "recording no base SHA in state" "$(orch_gh_failing state get base_sha)" ""
+assert_contains "keeping the edit in the tree" "$(cat docs/agents/notes.md)" "mine"
+
+stale_fork_repo
+# A lock on the stale remote-tracking ref fails the fetch; ls-remote answers.
+git update-ref "refs/remotes/origin/$main" HEAD
+touch ".git/refs/remotes/origin/$main.lock"
+out="$(orch_gh_failing branch off quick/7-lock 2>&1)"; st=$?
+assert_status "branch off dies when the fetch fails while origin answers" "$st" 1
+assert_contains "saying so" "$out" "could not fetch $main from origin"
+assert_eq "leaving no branch and no base SHA" "$(fork_facts quick/7-lock)" $'none\n<unset>'
+
+stale_fork_repo
+# A lock on the stale remote-tracking ref fails the fetch; ls-remote answers.
+git update-ref "refs/remotes/origin/$main" HEAD
+touch ".git/refs/remotes/origin/$main.lock"
+orch_gh_failing init lock >/dev/null
+orch_gh_failing state set issue 7
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create dies on the same failed fetch" "$st" 1
+assert_contains "saying so" "$out" "could not fetch $main from origin"
+assert_eq "making no flow branch" "$(fork_facts orch/7-lock)" $'none\n<unset>'
+assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
+
+stale_fork_repo
+git remote set-url origin "$(mktemp -d)/missing.git"
+out="$(orch_gh_failing branch off quick/7-offline 2>&1)"; st=$?
+assert_status "branch off with origin unreachable succeeds" "$st" 0
+assert_eq "forking from the remote-tracking origin base, ahead of local" \
+  "$(git config --get branch.quick/7-offline.orchestrator-base-sha)" "$origin_tip"
 
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null

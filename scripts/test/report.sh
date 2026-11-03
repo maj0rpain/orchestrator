@@ -5,10 +5,11 @@
 #
 # report_suite <suite> <status> <output>: prints the suite's FAIL lines with
 # their detail lines, then one summary line, "<suite>: <its last line>", or
-# "<suite>: died before its summary (exit N)" when <status> is non-zero and the
-# last line of <output> is not a summary line. When <output> has a "  FAIL "
-# line and <status> is 0, "<suite>: printed FAIL lines but exited 0" follows.
-# Returns 1 when <status> is non-zero or <output> has a FAIL line, else 0.
+# "<suite>: died before its summary (exit N)" when the last line of <output> is
+# not a summary line, whatever <status> is, even 0. When <output> has a
+# "  FAIL " line and <status> is 0, "<suite>: printed FAIL lines but exited 0"
+# follows. Returns 1 when <status> is non-zero, <output> has a FAIL line, or its
+# last line is not a summary line, else 0.
 #
 # report_shellcheck <status> <output>: prints shellcheck's summary: "shellcheck:
 # 0 findings" on status 0; else each finding line then "shellcheck: N findings";
@@ -18,14 +19,17 @@
 # report_shellcheck_missing: prints "shellcheck: not installed - skipped".
 # Returns 1 under CI (CI set and non-empty), else 0.
 #
-# report_temp_files_left: records a failure named "temp files", for the runner
-# to call where it prints its own message about the suites' leftover temp files.
+# report_temp_files_left: records a failure named "temp files". It is the
+# runners' only way to record a failure the reporters above do not make, so no
+# runner writes REPORT_FAILED itself; all.sh calls it where it prints its own
+# message about the suites' leftover temp files.
 #
-# report_verdict <runner> <status>: prints the run's last stdout line,
-# "<runner>: PASS (<n> parts)" when <status> is 0, else "<runner>: FAIL (<part>,
-# <part>, ...)". n counts the summary lines the report functions printed; the
-# failed parts are those functions' failures, in the order they were called.
-# Call it last. Returns <status>.
+# report_verdict <runner>: prints the run's last stdout line, "<runner>: PASS
+# (<n> parts)" when no part failed, else "<runner>: FAIL (<part>, <part>, ...)".
+# n counts the summary lines the report functions printed; the failed parts are
+# the ones recorded, in the order they were recorded. It decides from those
+# alone and returns 0 for PASS, 1 for FAIL. Call it last, as
+# `report_verdict <runner>; exit $?`.
 
 REPORT_PARTS=0
 REPORT_FAILED=()
@@ -38,7 +42,7 @@ report_note() {
   return "$2"
 }
 
-_report_suite() {
+report_suite() {
   local suite="$1" status="$2" out="$3" fail_block last rc=0
   fail_block="$(printf '%s\n' "$out" | awk '
     in_fail && /^     / { print; next }
@@ -46,9 +50,9 @@ _report_suite() {
     /^  FAIL / { print; in_fail = 1 }')"
   [ -z "$fail_block" ] || printf '%s\n' "$fail_block"
   last="$(printf '%s\n' "$out" | tail -n 1)"
-  if [ "$status" -ne 0 ] &&
-    ! [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
+  if ! [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
     echo "$suite: died before its summary (exit $status)"
+    rc=1
   else
     echo "$suite: $last"
   fi
@@ -57,34 +61,23 @@ _report_suite() {
     [ "$status" -eq 0 ] && echo "$suite: printed FAIL lines but exited 0"
     rc=1
   fi
-  return "$rc"
+  report_note "$suite" "$rc"
 }
 
-_report_shellcheck() {
-  local status="$1" out="$2" findings
+report_shellcheck() {
+  local status="$1" out="$2" findings rc=0
   findings="$(printf '%s\n' "$out" | awk '/^[^:]+:[0-9]+:[0-9]+: /')"
   if [ "$status" -eq 0 ]; then
     echo "shellcheck: 0 findings"
   elif [ -n "$findings" ]; then
     printf '%s\n' "$findings"
     echo "shellcheck: $(printf '%s\n' "$findings" | awk 'END { print NR }') findings"
-    return 1
+    rc=1
   else
     [ -n "$out" ] && printf '%s\n' "$out"
     echo "shellcheck: failed (exit $status)"
-    return 1
+    rc=1
   fi
-}
-
-report_suite() {
-  local rc=0
-  _report_suite "$@" || rc=1
-  report_note "$1" "$rc"
-}
-
-report_shellcheck() {
-  local rc=0
-  _report_shellcheck "$@" || rc=1
   report_note shellcheck "$rc"
 }
 
@@ -100,12 +93,12 @@ report_temp_files_left() {
 }
 
 report_verdict() {
-  local runner="$1" status="$2" list="" part
-  if [ "$status" -eq 0 ]; then
+  local runner="$1" list="" part
+  if [ "${#REPORT_FAILED[@]}" -eq 0 ]; then
     echo "$runner: PASS ($REPORT_PARTS parts)"
-  else
-    for part in "${REPORT_FAILED[@]}"; do list+="${list:+, }$part"; done
-    echo "$runner: FAIL ($list)"
+    return 0
   fi
-  return "$status"
+  for part in "${REPORT_FAILED[@]}"; do list+="${list:+, }$part"; done
+  echo "$runner: FAIL ($list)"
+  return 1
 }

@@ -186,7 +186,13 @@ archive_flow() {
   local entries=() moved
   state="$(flow_state_file "$root")"
   side_checkout_refuse_ticket_worktrees "$root"
-  slug="$(state_get_in "$state" slug)" || die "could not read the flow's slug from $state - nothing was archived"
+  # A state.json that does not parse still archives - abort is the remedy for
+  # it - under a slug standing in for the one it cannot give.
+  if flow_state_readable "$state"; then
+    slug="$(state_get_in "$state" slug)" || die "could not read the flow's slug from $state - nothing was archived"
+  else
+    slug=unreadable
+  fi
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest" 2>/dev/null || die "could not create the archive directory $dest - nothing was archived"
   for entry in "$orch"/*; do
@@ -325,9 +331,9 @@ cmd_side_checkout_add() {
   [ ! -e "$path" ] || die "side checkout $path already exists"
   exclude_orch_dirs
   base="$(base_branch)"
-  git fetch --quiet origin "$base" 2>/dev/null \
+  git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch base branch $base from origin - no side checkout was made"
-  git worktree add -q --detach "$path" "origin/$base" \
+  git worktree add -q --detach "$path" "refs/remotes/origin/$base" \
     || die "could not add side checkout $path"
   if ! gd="$(git -C "$path" rev-parse --absolute-git-dir)" \
      || ! printf '%s' "${issue:+$issue$'\n'}" 2>/dev/null >"$gd/$SIDE_CHECKOUT_MARKER"; then

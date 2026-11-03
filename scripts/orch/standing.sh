@@ -21,7 +21,7 @@ standing_phase_label() { printf 'orch:%s\n' "$1"; }
 standing_phase_labels_in() {
   local p
   for p in $PHASES; do
-    ! list_has "$1" "$(standing_phase_label "$p")" || printf '%s\n' "$p"
+    ! label_listed "$1" "$(standing_phase_label "$p")" || printf '%s\n' "$p"
   done
 }
 
@@ -94,11 +94,11 @@ standing_read() {
   STANDING_PHASE="$(standing_live_phase "$STANDING_LABELS")"
   STANDING_PHASE_LABELS="$(standing_phase_labels_text "$STANDING_LABELS")"
   STANDING_RUNNING=0 STANDING_HUMAN=0 STANDING_LIMITED=0
-  ! list_has "$STANDING_LABELS" "$STANDING_RUNNING_LABEL" || STANDING_RUNNING=1
-  ! list_has "$STANDING_LABELS" "$STANDING_HUMAN_LABEL" || STANDING_HUMAN=1
+  ! label_listed "$STANDING_LABELS" "$STANDING_RUNNING_LABEL" || STANDING_RUNNING=1
+  ! label_listed "$STANDING_LABELS" "$STANDING_HUMAN_LABEL" || STANDING_HUMAN=1
   # the variables are the module's read, used by its callers
   # shellcheck disable=SC2034
-  ! list_has "$STANDING_LABELS" "$STANDING_LIMITED_LABEL" || STANDING_LIMITED=1
+  ! label_listed "$STANDING_LABELS" "$STANDING_LIMITED_LABEL" || STANDING_LIMITED=1
 }
 
 # standing_pickable: the label half of the Pickup rule, from the last read:
@@ -199,10 +199,16 @@ standing_resume() {
 
 STANDING_LANDED=""
 
+# standing_landed_die <what failed>: dies with the clause, then the writes that
+# landed and that the claim stays held.
+standing_landed_die() {
+  die "$1 - writes that landed: ${STANDING_LANDED:-none}; the claim stays held"
+}
+
 # standing_chain_die <issue> <what> <gh-stderr>: dies for a write of a chain
 # that failed, naming the reason and the writes that landed before it.
 standing_chain_die() {
-  die "could not $2 on issue #$1: $(gh_reason "$3") - writes that landed: ${STANDING_LANDED:-none}; the claim stays held"
+  standing_landed_die "could not $2 on issue #$1: $(gh_reason "$3")"
 }
 
 # standing_landed_add <write>: notes a write that landed.
@@ -247,7 +253,7 @@ standing_start() {
   [ -f "$file" ] || die "plan file not found: $file"
   ready="$(triage_label_for ready-for-agent)"
   standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
-  list_has "$STANDING_LABELS" "$ready" ||
+  label_listed "$STANDING_LABELS" "$ready" ||
     die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"
   [ -z "$STANDING_PHASE_LABELS" ] ||
     die "issue #$issue already carries the phase label ${STANDING_PHASE_LABELS%% *} - it is already an autopilot flow"
@@ -285,8 +291,10 @@ standing_begin() {
 standing_finish() {
   STANDING_LANDED="${3:-}"
   standing_move_label "$1" "$2"
-  phase_write "$2"
-  standing_landed_add "moved the phase label to $(standing_phase_label "$2"), recorded phase $2"
+  standing_landed_add "moved the phase label to $(standing_phase_label "$2")"
+  phase_write_try "$2" ||
+    standing_landed_die "could not record phase $2 in $STATE"
+  standing_landed_add "recorded phase $2"
   standing_release "$1"
 }
 

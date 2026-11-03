@@ -33,13 +33,6 @@ path_without_jq() {
   printf '%s\n' "$d"
 }
 
-# fake_label_names <name>...: the repo's labels are exactly the names given,
-# each with no colour or description - none given, the repo has no labels.
-fake_label_names() {
-  : >"$ORCH_GH_FAKE_STORE/labels"
-  [ $# -eq 0 ] || printf '%s\t\t\n' "$@" >"$ORCH_GH_FAKE_STORE/labels"
-}
-
 # fake_local_default <owner/name>: gh's own local default repo for the
 # checkout; given an empty one, none is set.
 fake_local_default() {
@@ -219,6 +212,17 @@ assert_status "a label with a space in it is one label, not two" "$st" 0
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "quotes a multi-word label in the remedy" "$out" 'gh label create "needs triage"'
+
+# A triage label the repo holds in another casing exists (#1943).
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
+        '| -------------------------- | -------------------- | ------- |' \
+        '| `needs-triage`             | `needs-triage`       | Look    |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | Go      |' >docs/agents/triage-labels.md
+fake_label_names Needs-Triage Ready-For-Agent
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a triage label in another casing earns no FAIL" "$st" 0
+assert_contains "and counts as existing" "$out" "every triage label exists on the repo"
 
 # A label beginning with '-' is a label, never a grep option.
 writeln '# Triage Labels' '' \
@@ -1702,12 +1706,12 @@ phase_reports() {
   local out
   state_fixture phase "$1"
   out="$("$ORCH" doctor --flow 2>&1)"
-  if printf '%s\n' "$out" | grep -qE 'upstream: |is not on origin yet'; then echo upstream; fi
-  if printf '%s\n' "$out" | grep -qE "review loop: not started|review loop at a terminal|review loop hasn't|review loop's last"; then echo terminal; fi
-  if printf '%s\n' "$out" | grep -qF 'review loop iteration ('; then echo budget; fi
-  if printf '%s\n' "$out" | grep -qF 'CI: '; then echo ci; fi
-  if printf '%s\n' "$out" | grep -qE 'draft state|still a draft'; then echo draft; fi
-  if printf '%s\n' "$out" | grep -qF 'PR #40 open'; then echo pr; fi
+  if grep -qE 'upstream: |is not on origin yet' <<<"$out"; then echo upstream; fi
+  if grep -qE "review loop: not started|review loop at a terminal|review loop hasn't|review loop's last" <<<"$out"; then echo terminal; fi
+  if grep -qF 'review loop iteration (' <<<"$out"; then echo budget; fi
+  if grep -qF 'CI: ' <<<"$out"; then echo ci; fi
+  if grep -qE 'draft state|still a draft' <<<"$out"; then echo draft; fi
+  if grep -qF 'PR #40 open' <<<"$out"; then echo pr; fi
 }
 assert_eq "at spec only the unlisted check reports" \
   "$(phase_reports spec | tr '\n' ' ')" "pr "
@@ -2130,4 +2134,16 @@ fake_comment 7 o 2030-01-01T00:00:00Z "$(marker_of handoff 02-spec)
 ## Decisions"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"
 assert_contains "an incomplete newest comment is flagged" "$out" "handoff 02-spec.md: "
+restore_suite_env
+
+# --- doctor: phase label in the repo's casing (#1943) ------------------------
+echo
+echo "doctor: phase label casing"
+fake_flow autopilot-doctor-case
+"$ORCH" state set issue 7 >/dev/null
+state_fixture phase implement
+fake_issue 7 open ready-for-agent Orch:Implement
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "a phase label in another casing agrees with the recorded phase, shown canonically" "$out" "phase label: orch:implement"
+assert_not_contains "and no disagreement" "$out" "last moved to phase"
 restore_suite_env

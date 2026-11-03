@@ -560,3 +560,14 @@ assert_contains "naming the claim ref" "$out" "delete the claim ref"
 assert_contains "seeding its own reason" "$out" "wrote the round marker"
 fake_unfail
 restore_suite_env
+
+# --- spec fetch on a truncated state.json (#1929) ---------------------------
+echo
+echo "spec fetch on a truncated state.json"
+fresh_flow spectrunc
+fake_github
+state_truncate
+spec_body="$(mktemp)"
+out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
+assert_state_unreadable "spec fetch" 1 "$out" "$st"
+restore_suite_env

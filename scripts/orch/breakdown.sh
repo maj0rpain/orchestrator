@@ -23,9 +23,11 @@ breakdown_dir() { printf '%s/breakdown/%s' "$ORCH" "$1"; }
 breakdown_parse() {
   local err
   err="$(awk -v dir="$2" '
-    function fail(m) { print "line " NR ": " m; bad = 1; exit 1 }
+    function fail(m) { print "line " NR ": " m > "/dev/stderr"; bad = 1; exit 1 }
+    function hint() { return " (a body line starting with @@ is written \\@@)" }
+    inb && /^\\+@@/ { line = $0; sub(/^\\/, "", line); first = 0; print line > body; next }
     /^@@ ticket / {
-      if (inb) fail("@@ ticket inside an unfinished block")
+      if (inb) fail("@@ ticket inside an unfinished block" hint())
       line = $0; sub(/^@@ ticket /, "", line)
       k = line; sub(/ .*/, "", k)
       title = line; sub(/^[^ ]* */, "", title)
@@ -45,9 +47,10 @@ breakdown_parse() {
       first = 0; next
     }
     /^@@ end[ \t]*$/ && inb { close(body); inb = 0; next }
+    inb && /^@@( |\r?$)/ { fail("stray grammar line inside ticket " k ": " $0 hint()) }
     inb { first = 0; print > body; next }
     $0 !~ /^[ \t]*$/ { fail("text outside a ticket block") }
-    END { if (!bad && inb) { print "ticket " k " has no @@ end"; exit 1 } }
+    END { if (!bad && inb) { print "ticket " k " has no @@ end" > "/dev/stderr"; exit 1 } }
   ' "$1" 2>&1 >/dev/null)" || die "the breakdown draft is malformed: ${err:-no ticket blocks}"
   [ -s "$2/order" ] || die "the breakdown draft is malformed: no ticket blocks"
 }

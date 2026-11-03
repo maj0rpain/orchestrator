@@ -355,6 +355,7 @@ suite_cost_check() {
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
+  require_state_readable
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
   head_field="$(suite_cost_head_commit)"
   head_commit="${head_field%-dirty}"

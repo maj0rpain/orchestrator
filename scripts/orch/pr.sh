@@ -99,7 +99,7 @@ update_pr() {
   capture have err adapter_pr_labels "$pr" \
     || gh_die --hint "already written: $landed" "read the labels of PR #$pr" "$err"
   for label; do
-    list_has "$have" "$label" && continue
+    label_listed "$have" "$label" && continue
     capture ignored err adapter_pr_label_add "$pr" "$label" \
       || gh_die --hint "already written: $landed" "add the label '$label' to PR #$pr" "$err"
     landed="$landed, the label '$label'"
@@ -130,7 +130,7 @@ pr_labels_check() {
   capture have err adapter_pr_labels "$pr" \
     || gh_die "read the labels of PR #$pr, open and recorded on its branch" "$err"
   for label; do
-    list_has "$have" "$label" && continue
+    label_listed "$have" "$label" && continue
     missing="${missing:+$missing, }'$label'"
     count=$((count + 1))
   done
@@ -377,7 +377,7 @@ open_pr_draft_flag() {
   case "$rc" in
     0) die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop" ;;
     1) ;;
-    *) die2 "state.json cannot be read - run orch.sh doctor --flow" ;;
+    *) die2 "$STATE_UNREADABLE_MSG" ;;
   esac
   pr="$(current_open_pr)" || return $?
   pr_state_draft_read "$pr" _pr_state is_draft err \

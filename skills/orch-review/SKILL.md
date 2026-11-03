@@ -613,12 +613,13 @@ exiting non-zero on the last two:
   it looks flaky rather than caused by the change, the flow has **one** flake
   rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent
   and `false` while it is not. Spend it with `bash "$ORCH" review rerun <pr>`,
-  which reruns the failed jobs of the GitHub Actions run behind the PR's first
-  failed or cancelled check:
+  which reruns the failed jobs of every GitHub Actions run behind the failing
+  checks `review ci` counted (the required ones, else all), once each:
 
-  - **exit 0** - the rerun started. Only this spends the flake rerun.
-  - **exit 1** - that check is not an Actions run, so there is no rerun to
-    spend: a **bounded stop** on the spot, spending nothing.
+  - **exit 0** - every rerun started. Only this spends the flake rerun.
+  - **exit 1** - a failing check is not an Actions run, so no rerun could
+    make CI green and none was started: a **bounded
+    stop** on the spot, spending nothing.
   - **exit 2** - anything else (GitHub unreadable, the rerun refused): a
     **bounded stop**.
 
