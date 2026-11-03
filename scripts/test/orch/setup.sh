@@ -332,6 +332,17 @@ assert_state_unreadable() {
   assert_not_contains "$1 leaks no jq text" "$3" "parse error"
 }
 
+# assert_busy_unreadable <label> <out> <st>: asserts a busy-checkout question
+# on a truncated state.json (see state_truncate) exited 3, printed the busy
+# line naming the unreadable state.json in <out>, and leaked no jq parse error.
+# The one place tests spell that line; a remedy is the caller's own assertion.
+assert_busy_unreadable() {
+  assert_status "$1 exits 3" "$3" 3
+  assert_contains "$1 names the unreadable state.json" "$2" \
+    "busy: a flow's state.json cannot be read"
+  assert_not_contains "$1 leaks no jq text" "$2" "parse error"
+}
+
 # state_fixture_drop <key>...: deletes each named key from the checkout's
 # state file in place, as a flow started by an older release lacks keys a
 # fresh one seeds. Raw jq, not the Flow state module: the module has no delete

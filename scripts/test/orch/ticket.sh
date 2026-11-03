@@ -1382,9 +1382,7 @@ assert_eq "printing nothing" "$out" ""
 rc_setup 1
 state_truncate
 out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
-assert_status "reclaim on a truncated state.json exits 1" "$st" 1
-assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
-assert_not_contains "printing no jq text" "$out" "parse error"
+assert_state_unreadable "reclaim on a truncated state.json" 1 "$out" "$st"
 assert_eq "keeping the worktree" "$(rc_has_worktree 7)" "yes"
 
 # reported, unmerged and dirty: reset, merged, closed, removed
