@@ -696,9 +696,7 @@ assert_status "an active flow on another branch lets it through" "$st" 0
 rm -f "$ORCH_GH_FAKE_STORE/prs/57/draft"
 printf '{\n' >"$state_file"
 out="$("$ORCH" pr draft 2>"$errf")"; st=$?
-assert_status "a state.json that cannot be read is refused (#1334)" "$st" 2
-assert_contains "naming doctor --flow" "$(cat "$errf")" \
-  "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_state_unreadable "a state.json that cannot be read (#1334)" 2 "$(cat "$errf")" "$st"
 assert_eq "leaving the PR ready" "$(fake_pr_draft_of 57)" "no"
 rm -f "$state_file"
 
@@ -820,9 +818,7 @@ for p in spec implement review; do
 done
 printf '{\n' >"$state_file"
 out="$("$ORCH" pr ready 2>"$errf")"; st=$?
-assert_status "a state.json that cannot be read is refused (#1334)" "$st" 2
-assert_contains "naming doctor --flow" "$(cat "$errf")" \
-  "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_state_unreadable "a state.json that cannot be read (#1334)" 2 "$(cat "$errf")" "$st"
 assert_eq "leaving the PR a draft" "$(fake_pr_draft_of 57)" "yes"
 # doctor --flow's remedy for a done flow with a draft PR: the done flow's hold
 # does not refuse, so the gate is what answers.

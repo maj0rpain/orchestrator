@@ -78,9 +78,21 @@ handshake_fifos() {
 # expiry the line prints "first side (<dir>/one, <dir>/two): no partner within
 # <seconds>s" on stderr and ends with status 124.
 handshake_first() {
-  local n="${2:-60}"
-  printf 'timeout %s sh -c '\''printf x >"$0"; read -r _ <"$1"'\'' %s/one %s/two || { s=$?; [ $s -ne 124 ] || echo "first side (%s/one, %s/two): no partner within %ss" >&2; (exit $s); }\n' \
-    "$n" "$1" "$1" "$1" "$1" "$n"
+  printf '%q ' "${FIFO_BOUNDED[@]}" "${2:-60}" "first side ($1/one, $1/two)" \
+    sh -c 'printf x >"$0"; read -r _ <"$1"' "$1/one" "$1/two"
+  printf '\n'
+}
+
+# FIFO_BOUNDED: the prefix that runs the one fifo_bounded (fifo.sh) as a
+# command: <seconds> <side> <command...> follow it.
+FIFO_BOUNDED=(bash -c '. "$0"; fifo_bounded "$@"' "$TEST_DIR/fifo.sh")
+
+# replay_on_expiry <status> <errfile>: when <status> is 124, timeout's expiry
+# status (the one fifo_bounded signals), copies <errfile> verbatim to stderr;
+# any other status prints nothing. Always returns 0.
+replay_on_expiry() {
+  [ "$1" -ne 124 ] || cat "$2" >&2
+  return 0
 }
 
 # handshake_partner <dir> [seconds]: a suite-cost run whose command is the
@@ -91,7 +103,8 @@ handshake_first() {
 # prints "partner (<dir>/one, <dir>/two): no partner within <seconds>s" on
 # stderr and exits 124.
 handshake_partner() {
-  "$ORCH" suite-cost run -- sh -c 'timeout "$2" sh -c '\''read -r _ <"$0"; printf "x\n" >"$1"'\'' "$0" "$1"; s=$?; [ $s -ne 124 ] || echo "partner ($0, $1): no partner within ${2}s" >&2; exit $s' "$1/one" "$1/two" "${2:-60}"
+  "$ORCH" suite-cost run -- "${FIFO_BOUNDED[@]}" "${2:-60}" "partner ($1/one, $1/two)" \
+    sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$1/one" "$1/two"
 }
 
 # handshake_overlap_check <dir> <cmd> [args...]: runs suite-cost check on the
@@ -107,7 +120,9 @@ handshake_overlap_check() {
   "$ORCH" suite-cost check -- "$@" >"$dir/out" 2>"$dir/err" &
   pid=$!
   fifo_bounded 60 "overlap check ($dir/one)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$dir/one" >/dev/null
-  "$ORCH" suite-cost run -- sh -c 'timeout "$1" sh -c '\''printf "x\n" >"$0"'\'' "$0"; s=$?; [ $s -ne 124 ] || echo "overlap check ($0): no partner within ${1}s" >&2; exit $s' "$dir/two" 60 >/dev/null 2>&1
+  "$ORCH" suite-cost run -- "${FIFO_BOUNDED[@]}" 60 "overlap check ($dir/two)" \
+    sh -c 'printf "x\n" >"$0"' "$dir/two" >/dev/null 2>"$dir/err-writer"
+  replay_on_expiry "$?" "$dir/err-writer"
   wait "$pid"; st=$?
 }
 
@@ -259,11 +274,14 @@ assert_eq "neither is recorded" "$("$ORCH" suite-cost history)" ""
 # does not mark itself. The later run to scan marks the earlier; when both
 # write their markers before either scans, each marks the other, so there are
 # one or two.
-"$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>&1 &
+"$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>"$hs/err-first" &
 pid_a=$!
-"$ORCH" suite-cost run -- sh -c 'timeout 60 sh -c '\''read -r _ <"$0"; ls "$2" >"$3"; printf "x\n" >"$1"'\'' "$0" "$1" "$2" "$3"; s=$?; [ $s -ne 124 ] || echo "listing partner ($0, $1): no partner within 60s" >&2; exit $s' \
-  "$hs/one" "$hs/two" "$rec.active" "$hs/listing" >/dev/null 2>&1
+"$ORCH" suite-cost run -- "${FIFO_BOUNDED[@]}" 60 "listing partner ($hs/one, $hs/two)" \
+  sh -c 'read -r _ <"$0"; ls "$2" >"$3"; printf "x\n" >"$1"' \
+  "$hs/one" "$hs/two" "$rec.active" "$hs/listing" >/dev/null 2>"$hs/err-listing"
+replay_on_expiry "$?" "$hs/err-listing"
 wait "$pid_a"
+replay_on_expiry "$?" "$hs/err-first"
 n="$(grep -c '\.contended$' "$hs/listing")"
 assert_eq "two overlapping runs leave one or two .contended files between them" \
   "$(case "$n" in 1|2) echo "one or two" ;; *) echo "$n" ;; esac)" "one or two"
@@ -1134,4 +1152,40 @@ handshake_partner "$hs" 1 >/dev/null 2>"$hs/err-partner"; st=$?
 assert_status "the partner with no first side ends 124" "$st" 124
 assert_contains "and its message names the partner and its FIFO" "$(cat "$hs/err-partner")" "partner ($hs/one, $hs/two): no partner within 1s"
 assert_eq "and neither waited long" "$([ "$SECONDS" -le 10 ] && echo yes)" "yes"
+
+# replay_on_expiry copies the captured stderr on timeout's status only.
+printf 'warn\nside Q: no partner within 1s\n' >"$hs/captured"
+err="$(replay_on_expiry 124 "$hs/captured" 2>&1 >/dev/null)"; st=$?
+assert_eq "replay_on_expiry: status 124 replays the whole file to stderr" "$err" "$(cat "$hs/captured")"
+assert_status "and returns 0" "$st" 0
+for rst in 0 1; do
+  err="$(replay_on_expiry "$rst" "$hs/captured" 2>&1 >/dev/null)"; st=$?
+  assert_eq "replay_on_expiry: status $rst prints nothing" "$err" ""
+  assert_status "and returns 0 at $rst" "$st" 0
+done
+
+# A lone partner and a lone listing-style partner, handled as the handshake
+# sites handle them, end 124 and put the message on stderr; a first side's line
+# does too under sh.
+handshake_partner "$hs" 1 >/dev/null 2>"$hs/err-lone"; st=$?
+err="$(replay_on_expiry "$st" "$hs/err-lone" 2>&1 >/dev/null)"
+assert_contains "a lone partner's expiry reaches stderr through the replay" "$err" "partner ($hs/one, $hs/two): no partner within 1s"
+"$ORCH" suite-cost run -- "${FIFO_BOUNDED[@]}" 1 "listing partner ($hs/one, $hs/two)" sh -c 'read -r _ <"$0"' "$hs/one" >/dev/null 2>"$hs/err-lone"; st=$?
+assert_status "a lone listing-style partner ends 124" "$st" 124
+assert_contains "and names itself and its FIFOs" "$(cat "$hs/err-lone")" "listing partner ($hs/one, $hs/two): no partner within 1s"
+sh -c "$(handshake_first "$hs" 1)" >/dev/null 2>"$hs/err-lone"; st=$?
+assert_status "the first side's line under sh with no partner ends 124" "$st" 124
+assert_contains "and names the first side and its FIFOs" "$(cat "$hs/err-lone")" "first side ($hs/one, $hs/two): no partner within 1s"
+
+# A completed handshake, handled the same way, writes nothing to stderr.
+sh -c "$(handshake_first "$hs" 5)" >/dev/null 2>"$hs/err-done-first" &
+pid_first=$!
+"${FIFO_BOUNDED[@]}" 5 "partner ($hs/one, $hs/two)" sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" >/dev/null 2>"$hs/err-done"; st=$?
+wait "$pid_first"; st_first=$?
+err="$(replay_on_expiry "$st" "$hs/err-done" 2>&1 >/dev/null)"
+assert_status "a completed handshake's partner ends 0" "$st" 0
+assert_status "and so does its first side" "$st_first" 0
+assert_eq "and the replay writes nothing to stderr" "$err" ""
+assert_eq "and the partner captured nothing" "$(cat "$hs/err-done")" ""
+assert_eq "and the first side wrote nothing to stderr" "$(cat "$hs/err-done-first")" ""
 rm -rf "$hs"

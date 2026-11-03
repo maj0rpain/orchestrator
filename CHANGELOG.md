@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.44.12
+
+Fixed `pr draft`, `pr ready` and `review-pass begin` leaking jq's `parse error` text ahead of their refusal when state.json cannot be read; they now print only the `orch:` line. The tests now check the unreadable-state.json refusal and its busy form through one shared assertion each.
+
+## 4.44.11
+
+Suite-cost test handshakes now surface a partner-expiry message on the section's stderr and share one bounded-wait helper.
+
 ## 4.44.10
 
 The edit guard now guards a repo whose toplevel is `/` like any other and names the repo-relative path in its denial. The root-prefix check is documented as covering `core.worktree`, one `hook_existing_ancestor` helper serves the guard and `hook_physical_path`, and the flow state file is recognised through `flow_state_file` alone.
