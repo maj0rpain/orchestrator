@@ -577,9 +577,10 @@ assert_not_contains "source denial names no SKILL.md" "$source_reason" "SKILL.md
 assert_not_contains "source denial names no Read tool" "$source_reason" "Read tool"
 
 # NotebookEdit and MultiEdit are judged as a Write to the same path is (#1935).
+# nb_event_at <file> <session> <cwd>: a NotebookEdit payload, the cwd chosen.
 nb_event_at() {
-  jq -n --arg f "$1" --arg sid "$2" --arg cwd "$3" \
-    '{hook_event_name:"PreToolUse", tool_name:"NotebookEdit", session_id:$sid, cwd:$cwd, tool_input:{notebook_path:$f}}'
+  edit_event_at "$1" "$2" "$3" \
+    | jq '.tool_name="NotebookEdit" | .tool_input={notebook_path:.tool_input.file_path}'
 }
 src_deny='this is a planning session and no flow has'
 out="$(nb_event_at "$REPO/analysis/model.ipynb" s1 "$REPO" | "$GUARD")"
