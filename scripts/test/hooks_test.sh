@@ -633,7 +633,7 @@ assert_eq "denies a ticket worktree's source from the main cwd" \
 assert_eq "denies a source edit inside a nested repo" \
   "$(edit_event_at "$NEST/src/x.ts" s1 "$REPO" | "$GUARD" | dec)" "deny"
 assert_eq "denies a new file in a missing directory, cwd /" \
-  "$(edit_event_at "$REPO/nodir/deeper/new.ts" s1 / | "$GUARD" | dec)" "deny"
+  "$(edit_event_at "$(cd "$REPO" && pwd -P)/nodir/deeper/new.ts" s1 / | "$GUARD" | dec)" "deny"
 SL2="$(mktemp -d)"; ln -s "$REPO" "$SL2/link"
 assert_eq "denies via a symlinked repo with cwd in the nested repo" \
   "$(edit_event_at "$SL2/link/src/x.ts" s1 "$NEST" | "$GUARD" | dec)" "deny"
