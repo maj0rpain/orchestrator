@@ -3693,6 +3693,10 @@ fragment_add "$fixture" 12.md 'bump: patch'
 flags "a fragment with no prose is flagged, naming it" \
   "$(scan_changelog_fragments "$fixture" main)" "changelog.d/12.md: it has no prose"
 fixture="$(fragment_fixture)"
+fragment_add "$fixture" 12.md 'bump: patch' '' '## Breaking' '' 'The foo flag is gone.'
+flags "a fragment whose prose holds a heading line is flagged with the script's message" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/12.md: line 3 is a heading ('## Breaking'); its prose holds no heading, since the release adds the entry's one ## heading"
+fixture="$(fragment_fixture)"
 fragment_add "$fixture" fix-12.md 'bump: patch' '' 'A fix.'
 flags "a misnamed fragment is flagged, naming it" \
   "$(scan_changelog_fragments "$fixture" main)" "changelog.d/fix-12.md: not named <issue>.md"
