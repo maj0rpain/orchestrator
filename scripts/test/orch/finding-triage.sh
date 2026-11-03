@@ -1115,6 +1115,8 @@ assert_eq "and comments no member again" "$(fake_comments_of 61 | grep -c "Bundl
 # A closed member never bundled into B, or with a stranger's marker, is refused.
 member 64 "review:major,ready-for-agent,bug" closed
 refused "--into: a closed member without the marker" "issue #64 is not open" bundle --into 63 64
+assert_eq "the same not-open line as a new bundle's" \
+  "$(has_line "$out" "orch: issue #64 is not open - a bundle takes open filed findings only")" yes
 member 65 "review:major,ready-for-agent,bug" closed
 fake_comment 65 rando 2026-10-01T09:00:00Z "Bundled into #63" NONE
 refused "--into: a closed member with only a stranger's marker" "issue #65 is not open" bundle --into 63 65
@@ -1122,11 +1124,6 @@ member 66 "review:major,ready-for-agent,bug" closed
 fake_fail adapter_issue_comments "$GH_502"
 refused "--into: a closed member whose comments gh cannot read" "gh could not read issue #66's comments: HTTP 502: Bad Gateway - no member was touched" bundle --into 63 66
 fake_unfail
-# The not-open refusal reads the same for a closed unmarked member here and
-# on a new bundle.
-refused "--into: a closed member without the marker (whole line)" "issue #64 is not open" bundle --into 63 64
-assert_eq "the same not-open line as a new bundle's" \
-  "$(has_line "$out" "orch: issue #64 is not open - a bundle takes open filed findings only")" yes
 # A closed member whose comments do not parse names the issue.
 bad_comments_adapter="$(mktemp)"
 writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
