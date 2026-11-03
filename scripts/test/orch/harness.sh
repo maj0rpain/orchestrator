@@ -1421,8 +1421,9 @@ assert_eq "an unlisted runner is named, in name order, and nothing else is" "$ul
   "$(printf '%s\n' "orch: scripts/test/a_unlisted.sh sources tally.sh but is not in all.sh's suites list" \
     "orch: scripts/test/b_unlisted.sh sources tally.sh but is not in all.sh's suites list")"
 printf '%s\n' 'suites_list=(listed_test.sh)' >"$ul_root/all.sh"
-ul_out="$(suites_unlisted "$ul_root/all.sh" "$ul_root"; echo "st=$?")"
-assert_eq "an all.sh with no suites=( line prints nothing and returns 1" "$ul_out" "st=1"
+ul_out="$(suites_unlisted "$ul_root/all.sh" "$ul_root")"; st=$?
+assert_status "an all.sh with no suites=( line returns 1" "$st" 1
+assert_eq "and prints nothing" "$ul_out" ""
 suites_unlisted "$ul_root/all.sh" "$ul_root" >/dev/null
 assert_contains "and sets SUITES_ERR" "$SUITES_ERR" "$ul_root/all.sh"
 rm -rf "$ul_root"
