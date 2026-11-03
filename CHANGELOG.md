@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.29
+
+A `## ` line inside a code fence is never a heading to the readers of named sections, so a record or handoff that quotes a heading no longer misleads `review terminal`, `review known-items`, `review-pass known-items`, `handoff validate`, `handoff section` or the `## Autopilot` block check.
+
 ## 4.43.28
 
 `spec-review apply --tickets` now refuses, before any write, a ticket text item, edge item or `@@ closed` line that names an issue outside the spec issue's breakdown or a ticket in the wrong state.
