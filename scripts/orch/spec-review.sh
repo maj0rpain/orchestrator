@@ -1416,7 +1416,8 @@ spec_review_tickets_answer() {
 # spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s copy into
 # TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
 # apply run has taken that copy, ticket-<t>.md. After a hold, the fetched copy
-# is the ticket as the hold run published it (see spec_review_hold). When the
+# is the ticket as the hold run published it (see spec_review_hold, which
+# rebases the ticket copies and keeps its ticket lines). When the
 # session wrote no ticket-<t>.md, the problem, naming <what>, is appended to
 # SR_PROBLEMS and it returns 1; a copy it cannot read dies, naming <what> too.
 spec_review_ticket_load() {
@@ -1724,12 +1725,12 @@ spec_review_finish() {
   { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
     || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
   if [ "$SR_FUNDAMENTAL_RUN" = resume ]; then
-    rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
-      && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
-      || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
-    rm -f "$dir/$SPEC_ROUND_HELD_TICKETS" 2>/dev/null \
-      && [ ! -e "$dir/$SPEC_ROUND_HELD_TICKETS" ] \
-      || die "could not remove $dir/$SPEC_ROUND_HELD_TICKETS - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
+    local held_file
+    for held_file in "$SPEC_ROUND_FUNDAMENTAL" "$SPEC_ROUND_HELD_TICKETS"; do
+      rm -f "$dir/$held_file" 2>/dev/null \
+        && [ ! -e "$dir/$held_file" ] \
+        || die "could not remove $dir/$held_file - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
+    done
   fi
   # The round's completion, the very last step: spec round reads it to tell
   # a resumed flow which round runs next, so it exists only once every write
@@ -1744,12 +1745,12 @@ spec_review_finish() {
 # part, printed unlabelled; two real parts are labelled, hold first; two
 # placeholders leave the resumed run's line.
 spec_review_tickets_merge() {
-  local hold="$1" resumed="$2" hp="" rp=""
-  ! spec_review_tickets_placeholder "$hold" || hp=1
-  ! spec_review_tickets_placeholder "$resumed" || rp=1
-  if [ -n "$rp" ]; then
-    if [ -n "$hp" ]; then printf '%s' "$resumed"; else printf '%s' "$hold"; fi
-  elif [ -n "$hp" ]; then
+  local hold="$1" resumed="$2" hold_placeholder="" resumed_placeholder=""
+  ! spec_review_tickets_placeholder "$hold" || hold_placeholder=1
+  ! spec_review_tickets_placeholder "$resumed" || resumed_placeholder=1
+  if [ -n "$resumed_placeholder" ]; then
+    if [ -n "$hold_placeholder" ]; then printf '%s' "$resumed"; else printf '%s' "$hold"; fi
+  elif [ -n "$hold_placeholder" ]; then
     printf '%s' "$resumed"
   else
     printf 'Before the reply:\n%s\nAfter the reply:\n%s' "$hold" "$resumed"
@@ -1773,7 +1774,8 @@ spec_review_tickets_merge() {
 # changelog reports both runs' ticket outcomes. The order: fundamental.md, the
 # ticket copies, held-tickets.md, spec.fetched.md, applied.log.
 spec_review_hold() {
-  local dir="$1" tickets="$2" held=" " i tf tn err
+  local dir="$1" tickets="$2" held=" " i tf tn err suffix
+  suffix=" - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
   for i in ${SR_IT_FUNDAMENTAL[@]+"${!SR_IT_FUNDAMENTAL[@]}"}; do held="$held${SR_IT_N[$i]} "; done
   { {
     grep '^@@ lens ' "$dir/batch.md" || true
@@ -1785,20 +1787,20 @@ spec_review_hold() {
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     case "${ST_KIND[$i]}:${ST_DISP[$i]:-}" in block:applied|unblock:applied) ;; *) continue ;; esac
     capture_err err cmd_issue fetch "${ST_T[$i]}" "$dir/ticket-${ST_T[$i]}.md" >/dev/null \
-      || die "could not refetch ticket #${ST_T[$i]} into $dir/ticket-${ST_T[$i]}.md: $(err_line "$err") - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+      || die "could not refetch ticket #${ST_T[$i]} into $dir/ticket-${ST_T[$i]}.md: $(err_line "$err")$suffix"
   done
   for tf in "$dir"/ticket-*.md; do
     tn="${tf##*/ticket-}"; tn="${tn%.md}"
     case "$tn" in ''|*[!0-9]*) continue ;; esac
     cp "$tf" "$dir/ticket-$tn.fetched.md" 2>/dev/null \
-      || die "could not copy ticket-$tn.md to $dir/ticket-$tn.fetched.md - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+      || die "could not copy ticket-$tn.md to $dir/ticket-$tn.fetched.md$suffix"
   done
   { printf '%s\n' "$tickets" >"$dir/$SPEC_ROUND_HELD_TICKETS"; } 2>/dev/null \
-    || die "could not write $dir/$SPEC_ROUND_HELD_TICKETS - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+    || die "could not write $dir/$SPEC_ROUND_HELD_TICKETS$suffix"
   cp "$dir/spec.md" "$dir/spec.fetched.md" 2>/dev/null \
-    || die "could not copy spec.md to $dir/spec.fetched.md - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+    || die "could not copy spec.md to $dir/spec.fetched.md$suffix"
   rm -f "$dir/applied.log" 2>/dev/null \
-    || die "could not clear $dir/applied.log - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+    || die "could not clear $dir/applied.log$suffix"
   spec_review_clear_answer "$dir"
 }
 
@@ -1947,7 +1949,8 @@ spec_review_apply() {
   fi
   # Each ticket file's fetched copy, taken by the first run that finds the
   # file - the --tickets rerun, as the session fetches tickets after the pause.
-  # The hold rebases these copies on the tickets as published.
+  # The hold rebases these copies on the tickets as published, and keeps its
+  # ticket lines.
   local tf tn
   for tf in "$dir"/ticket-*.md; do
     tn="${tf##*/ticket-}"; tn="${tn%.md}"

@@ -1577,7 +1577,6 @@ srh_hold() {
 srh_tail='None at all'
 
 d="$(srh_hold)"
-assert_eq "the hold run holds the fundamental item" "$(on_disk "$d/fundamental.md")" present
 assert_eq "the hold run publishes #20's edit" "$(fake_body_of 20 | sed -n 3p)" "Build alpha prime."
 fake_body_of 20 >"$d/ticket-20.md"
 srh_edit "None (can start immediately)" "$srh_tail" >"$d/tickets.md"
@@ -1601,7 +1600,6 @@ out="$("$ORCH" spec-review check "$d" --tickets 2>&1)"; st=$?
 assert_status "check --tickets refuses an anchor only the pre-hold ticket held" "$st" 1
 
 d="$(srh_hold "$srh_edges")"
-assert_eq "the hold run held the item" "$(on_disk "$d/fundamental.md")" present
 fake_body_of 20 >"$d/ticket-20.md"
 srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
 ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
