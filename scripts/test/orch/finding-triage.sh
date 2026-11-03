@@ -1032,6 +1032,7 @@ out="$(bundle --into 63 62 61 2>&1)"; st=$?
 assert_status "--into skips a member already closed into B" "$st" 0
 assert_eq "no second comment on it" "$(fake_comments_of 62 | grep -c "Bundled into")" "1"
 assert_eq "and it stays closed with its labels" "$(fake_state_of 62) $(fake_labels_of 62)" "CLOSED bug needs-triage review:major "
+assert_eq "and gets no second close" "$(fake_reason_of 62)|$(fake_duplicate_of 62)" "|"
 assert_eq "and the next member is closed into B" "$(fake_state_of 61) $(fake_duplicate_of 61)" "CLOSED 63"
 # Resuming again, with every member already closed into B, is a no-op.
 out="$(bundle --into 63 62 61 2>&1)"; st=$?
