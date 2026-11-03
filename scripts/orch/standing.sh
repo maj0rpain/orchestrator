@@ -392,15 +392,14 @@ standing_ask() {
 # write is worded "add <label>[, remove <remove-label>]" in a failure and
 # "added ...[, removed ...]" once landed, whenever a removal label is given.
 standing_stop_write() {
-  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=() said=""
+  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=()
   relabel=(--add "$label")
   if [ -n "$remove" ]; then
     relabel+=(--remove "$remove")
-    said="$remove"
   fi
   capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
-    standing_chain_die "$issue" "add $label${said:+, remove $said}" "$gh_err"
-  standing_landed_add "added $label${said:+, removed $said}"
+    standing_chain_die "$issue" "add $label${remove:+, remove $remove}" "$gh_err"
+  standing_landed_add "added $label${remove:+, removed $remove}"
   body="$(mktemp)" || die "could not create a temp file for the $kind comment"
   printf '%s' "$text" >"$body"
   capture_err gh_err adapter_issue_comment "$issue" "$body" || {
