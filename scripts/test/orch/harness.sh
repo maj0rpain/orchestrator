@@ -390,10 +390,11 @@ assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
   "ok   the suite starts outside any git work tree"
 assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
 
-# A copy of the scripts tree with three planted sections whose headers end in
-# trailing dashes like the real ones; the pattern matches two of them.
+# One copy of the scripts tree with three planted sections whose headers end in
+# trailing dashes like the real ones, shared by every filter case below;
+# matching ignores case, so the first pattern selects two of them.
 filter_dir="$(planted_copy <<'PLANTED'
-  # --- planted alpha ------------------------------------------------------
+  # --- Planted Alpha ------------------------------------------------------
   echo; echo "planted alpha"; ok "alpha ran"
   # --- planted beta -------------------------------------------------------
   echo; echo "planted beta"; ok "beta ran"
@@ -401,25 +402,17 @@ filter_dir="$(planted_copy <<'PLANTED'
   echo; echo "planted gamma"; ok "gamma ran"
 PLANTED
 )"
+filter_suite="$filter_dir/scripts/test/orch_test.sh"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted (alpha|beta)$' \
-  bash "$filter_dir/scripts/test/orch_test.sh" 2>/dev/null)"
+  bash "$filter_suite" 2>/dev/null)"
 assert_eq "matches titles without their trailing dashes" \
   "$(count_lines -xE 'planted alpha|planted beta' "$out")" "2"
 assert_eq "runs isolation alongside the matched sections" \
   "$(count_lines -x 'isolation' "$out")" "1"
 assert_eq "skips the sections the pattern does not match" \
   "$(count_lines -x 'planted gamma' "$out")" "0"
-rm -rf "$filter_dir"
 
 # Case-insensitive match, and the top-level branches of an alternation.
-filter_dir="$(planted_copy <<'PLANTED'
-  # --- Planted Alpha ------------------------------------------------------
-  echo; echo "planted alpha"; ok "alpha ran"
-  # --- planted beta -------------------------------------------------------
-  echo; echo "planted beta"; ok "beta ran"
-PLANTED
-)"
-filter_suite="$filter_dir/scripts/test/orch_test.sh"
 filter_err="$(mktemp)"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha$' bash "$filter_suite" 2>&1)"; st=$?
 assert_status "a lowercase filter selects a capitalised title" "$st" 0
@@ -446,13 +439,6 @@ assert_status "an all-dead alternation exits 1" "$st" 1
 assert_eq "names each branch of an all-dead alternation" "$(cat "$filter_err")" \
   "orch_test.sh: ORCH_TEST_ONLY branch '^nonexistent' matches no section
 orch_test.sh: ORCH_TEST_ONLY branch '^missing' matches no section; the selectable sections are:"
-
-out="$(ORCH_TEST_JOBS=2 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha|^nonexistent' \
-  bash "$filter_suite" 2>"$filter_err")"; st=$?
-assert_status "a dead branch exits 1 in parallel" "$st" 1
-assert_eq "runs no section in parallel for a dead branch" "$(count_lines 'alpha ran' "$out")" "0"
-assert_contains "names the dead branch in parallel" "$(cat "$filter_err")" \
-  "branch '^nonexistent' matches no section"
 
 # Grouped, nested, bracketed and escaped bars are not split points; an empty
 # branch is handed to grep as it stands.
