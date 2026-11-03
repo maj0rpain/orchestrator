@@ -755,13 +755,11 @@ assert_eq "posts nothing" "$(fake_comments_of 52 | grep -c 'Fixed by abc1234')" 
 assert_eq "and still relabels and closes" "$(fake_state_of 52) $(fake_labels_of 52)" "CLOSED bug review:major wontfix "
 # A failed comments read dies before any write.
 triaged 53 "review:major,needs-triage,bug"
-fake_fail_after adapter_issue_comments 0 "$GH_502"
-out="$(apply 53 close-fixed --comment-file "$comment" 2>&1)"; st=$?
-assert_status "a failed comments read dies" "$st" 1
-assert_contains "naming the read" "$out" "gh could not read issue #53's comments"
-assert_eq "posting nothing" "$(fake_comments_of 53)" ""
-assert_eq "leaving the labels and the state" "$(fake_state_of 53) $(fake_labels_of 53)" "OPEN bug needs-triage review:major "
-fake_unfail
+before="$(fake_snapshot)"
+assert_gh_dies "a failed comments read dies" adapter_issue_comments "$GH_502" 1 \
+  "orch: gh could not read issue #53's comments: HTTP 502: Bad Gateway" \
+  apply 53 close-fixed --comment-file "$comment"
+assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 # Every state label is the repo's name for the role.
 writeln '# Triage Labels' '' \
