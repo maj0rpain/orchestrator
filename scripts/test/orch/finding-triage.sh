@@ -959,7 +959,8 @@ assert_gh_dies "a silent bundle create failure dies" adapter_issue_create '' 1 \
 # fake's failure is seeded by the caller, and <adapter> stands in for the
 # fake where given.
 partial() {
-  local name="$1" b="$2" wants="$3" left="$4" adapter="${5:-$GH_ADAPTER_FAKE}" m
+  local name="$1" b="$2" wants="$3" left="$4" adapter="${5:-$GH_ADAPTER_FAKE}" m held="left open"
+  case "$wants" in *"state back"*|*"did not read back"*) held="not confirmed closed" ;; esac
   for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
   fake_next_issue "$b"
   out="$(ORCH_GH_ADAPTER="$adapter" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
@@ -969,12 +970,14 @@ partial() {
   assert_not_contains "$name: with gh's first line only" "$out" "second line"
   assert_contains "$name: naming the bundle and the members left open" "$out" \
     "bundle #$b: "
-  assert_contains "$name: listing the members left open" "$out" "members left open: #${left// / #};"
+  assert_contains "$name: listing the members $held" "$out" "members $held: #${left// / #};"
   assert_contains "$name: with the --into command that resumes" "$out" \
     "resume with: orch.sh finding-triage bundle --into $b $left"
-  for m in $left; do
-    assert_eq "$name: member #$m left open" "$(fake_state_of "$m")" "OPEN"
-  done
+  if [ "$held" = "left open" ]; then
+    for m in $left; do
+      assert_eq "$name: member #$m left open" "$(fake_state_of "$m")" "OPEN"
+    done
+  fi
   resumed "$name" "$b" "$left"
 }
 # resumed <name> <B> <members>: --into <B> <members> finishes the bundle,
@@ -1009,23 +1012,38 @@ partial "a failed comments read" 42 \
 fake_fail_after adapter_issue_comment 1 ""
 partial "a silent failed comment" 48 \
   "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33"
-# A failed state read-back dies the same way; the member may in truth be
-# closed, so it is not resumed here.
-for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
-fake_next_issue 43
-fake_fail_after adapter_issue_state 2 "$GH_502"
-out="$(new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
-fake_unfail
-assert_status "a failed state read-back dies" "$st" 1
-assert_contains "naming the bundle, the member, gh's line and the --into command" "$out" \
-  "orch: bundle #43: gh could not read member #33's state back: HTTP 502: Bad Gateway - members left open: #33; resume with: orch.sh finding-triage bundle --into 43 33"
-assert_not_contains "with gh's first line only" "$out" "second line"
-unset m
+# A failed state read-back dies the same way, but the member may in truth be
+# closed: the message does not call it open, and the resume skips it.
+fake_fail_after adapter_issue_state 1 "$GH_502"
+partial "a failed state read-back" 43 \
+  "orch: bundle #43: gh could not read member #32's state back: HTTP 502: Bad Gateway - members not confirmed closed: #32 #33; resume with: orch.sh finding-triage bundle --into 43 32 33" "32 33"
 noop_close_adapter="$(mktemp)"
 writeln "source $(printf %q "$GH_ADAPTER_FAKE")" 'adapter_issue_close() { :; }' >"$noop_close_adapter"
 partial "a close that reports success but reads back open" 44 \
   "member #31 did not read back as closed" "31 32 33" "$noop_close_adapter"
 rm -f "$noop_close_adapter"
+
+# --into skips a member already closed into B, even one whose labels would
+# fail a member check, with no second comment and no second close.
+member 61 "review:major,ready-for-agent,bug"
+member 62 "review:major,needs-triage,bug" closed
+fake_issue 63 open finding-bundle ready-for-agent bug
+fake_comment 62 maj0rpain 2026-10-01T09:00:00Z "Bundled into #63" OWNER
+out="$(bundle --into 63 62 61 2>&1)"; st=$?
+assert_status "--into skips a member already closed into B" "$st" 0
+assert_eq "no second comment on it" "$(fake_comments_of 62 | grep -c "Bundled into")" "1"
+assert_eq "and it stays closed with its labels" "$(fake_state_of 62) $(fake_labels_of 62)" "CLOSED bug needs-triage review:major "
+assert_eq "and the next member is closed into B" "$(fake_state_of 61) $(fake_duplicate_of 61)" "CLOSED 63"
+# A closed member never bundled into B, or with a stranger's marker, is refused.
+member 64 "review:major,ready-for-agent,bug" closed
+refused "--into: a closed member without the marker" "issue #64 is not open" bundle --into 63 64
+member 65 "review:major,ready-for-agent,bug" closed
+fake_comment 65 rando 2026-10-01T09:00:00Z "Bundled into #63" NONE
+refused "--into: a closed member with only a stranger's marker" "issue #65 is not open" bundle --into 63 65
+member 66 "review:major,ready-for-agent,bug" closed
+fake_fail adapter_issue_comments "$GH_502"
+refused "--into: a closed member whose comments gh cannot read" "gh could not read issue #66's comments: HTTP 502: Bad Gateway - no member was touched" bundle --into 63 66
+fake_unfail
 
 # --into checks its members as the new form does - one is enough - and B
 # itself, before any write.

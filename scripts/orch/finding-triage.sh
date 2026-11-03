@@ -431,9 +431,12 @@ cmd_finding_triage_bundle() {
     human_label="$(triage_label_for ready-for-human)"
   fi
 
+  local pending=()
   for m in "${members[@]}"; do
     ! word_listed "$seen" "$m" || die "issue #$m is named twice"
     seen="$seen$m "
+    if [ -n "$into" ] && bundle_member_done "$into" "$m"; then continue; fi
+    pending+=("$m")
     bundle_member_check "$m" labels
     if [ -z "$into" ]; then
       [ "$state" != ready-for-agent ] || ! list_has "$labels" "$human_label" \
@@ -444,7 +447,7 @@ cmd_finding_triage_bundle() {
   done
 
   if [ -n "$into" ]; then
-    bundle_members_close "$into" "${members[@]}"
+    bundle_members_close "$into" ${pending[@]+"${pending[@]}"}
     return
   fi
 
@@ -459,14 +462,33 @@ cmd_finding_triage_bundle() {
   bundle_members_close "$b" "${members[@]}"
 }
 
+# bundle_member_done <B> <member>: succeeds when member #<member> is already
+# closed into bundle #B - it reads CLOSED and a trusted comment holds `Bundled
+# into #B`, which the close loop posts before it closes. Fails for an open
+# member, and dies "not open" for a closed one without the marker. A failed
+# read dies naming the member, before any write.
+bundle_member_done() {
+  local b="$1" m="$2" state labels err raw comments
+  issue_state_labels_read "$m" state labels err \
+    || gh_die --hint "no member was touched" "read issue #$m" "$err"
+  [ "$state" = CLOSED ] || return 1
+  capture raw err adapter_issue_comments "$m" \
+    || gh_die --hint "no member was touched" "read issue #$m's comments" "$err"
+  comments="$(comments_render_trusted "$m" <<<"$raw")" \
+    || die "could not read member #$m's comments"
+  grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
+    || die "issue #$m is not open - a bundle takes open filed findings only"
+}
+
 # bundle_members_close <B> <member>...: closes each member into bundle #B, in
 # order - reads its comments and, unless one already holds `Bundled into #B`,
 # posts that under the AI disclaimer; closes it as a duplicate of B; reads its
 # state back as CLOSED. The first member that fails dies naming the bundle,
-# what failed, the members left open - that one and every one after it - and
-# the --into command that resumes.
+# what failed, the members left open (not confirmed closed where the close
+# may have landed) - that one and every one after it - and the --into command
+# that resumes. --into skips a member already closed into B before this runs.
 bundle_members_close() {
-  local b="$1" comment_file m i=0 comments raw state why left err
+  local b="$1" comment_file m i=0 comments raw state why left err held
   shift
   local members=("$@")
   comment_file="$(mktemp)" || die "could not create a temp file for the bundle comments"
@@ -490,7 +512,11 @@ bundle_members_close() {
     if [ -n "$why" ]; then
       rm -f "$comment_file"
       left="${members[*]:$i}"
-      die "bundle #$b: $why - members left open: #${left// / #}; resume with: orch.sh finding-triage bundle --into $b $left"
+      case "$why" in
+        *"state back"*|*"did not read back"*) held="not confirmed closed" ;;
+        *) held="left open" ;;
+      esac
+      die "bundle #$b: $why - members $held: #${left// / #}; resume with: orch.sh finding-triage bundle --into $b $left"
     fi
     i=$((i + 1))
   done
