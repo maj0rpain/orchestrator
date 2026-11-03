@@ -46,6 +46,7 @@
 #   pr_label_drops    label names, one per line, a PR create never stores -
 #                     as a gh whose label mutation did not land
 #   prs/<n>/head_oid  the head commit's SHA; absent, forty zeros
+#   prs/<n>/url       the PR's URL; absent, https://github.com/o/r/pull/<n>
 #   prs/<n>/commits   the PR's commit SHAs, one per line, oldest first;
 #                     absent, the head alone
 #   prs/<n>/diff      the PR's diff, byte for byte; absent, an empty one
