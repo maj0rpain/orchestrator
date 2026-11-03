@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.42
+
+A failed state write now always stops orch.sh with an `orch:` message. `phase advance` and `review ready` exit non-zero, print no boundary block or success line, and leave the recorded phase as it was, so re-running the command finishes the transition.
+
 ## 4.43.41
 
 Fix `redo review` and `redo spec` closing the old draft PR without its redo note: the redo now closes the PR, with the note naming the retired `-redo-N` branch, before it retires the branch, because deleting an open PR's head branch makes GitHub close the PR itself and skip the comment.
