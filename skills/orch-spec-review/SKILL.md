@@ -460,6 +460,10 @@ block per item, in the batch's order:
 @@ end
 ```
 
+A block line that is `@@` alone or begins with `@@ ` is written with one extra
+leading `\` (`\@@ note <text>` reads as `@@ note <text>`); a line of one or
+more `\` then `@@` loses exactly one.
+
 `<group>` is `consolidation`, a lens name, or `contradicts-the-plan`.
 `<mark>` is `material` or `minor`, the last fixed token of the `@@ item`
 line, before any reason; a decision item and a `contradicts-the-plan` item

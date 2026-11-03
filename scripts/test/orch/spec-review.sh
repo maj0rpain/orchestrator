@@ -815,7 +815,7 @@ sed -i '14d' "$d/batch.md"
 sra "$d" recommended
 assert_status "an anchor left open: refused" "$st" 1
 assert_eq "an anchor left open shows the line it got" "$out" \
-  "orch: batch.md line 15: expected @@ replace to end the anchor begun on line 12, got '@@ end'"
+  "orch: batch.md line 15: expected @@ replace to end the anchor begun on line 12, got '@@ end' - a body line starting with @@ is written \\@@"
 d="$(sra_dir)"
 printf '@@ anchor\nx\n@@ replace\ny\n@@ end\n' >>"$d/batch.md"
 sra "$d" recommended
@@ -1934,7 +1934,7 @@ assert_eq "and the same summary, naming its own view.md" "$err" "${src_lf_err//"
 d="$(src_dir)"
 sed -i '13d; /^@@/s/$/\r/' "$d/batch.md"
 check_refused src "a CRLF @@ line ending a replacement left open" "$d" \
-  "orch: batch.md line 14: expected @@ end to end the replacement begun on line 11, got '@@ item 2 consistency decline material the plan chose this'"
+  "orch: batch.md line 14: expected @@ end to end the replacement begun on line 11, got '@@ item 2 consistency decline material the plan chose this' - a body line starting with @@ is written \\@@"
 d="$(src_dir)"
 printf '@@ bogus\r\n' >>"$d/batch.md"
 check_refused src "an unknown CRLF @@ line" "$d" "orch: batch.md line 44: unknown line '@@ bogus'"
@@ -2758,15 +2758,15 @@ check_refused srct "a grammar error" "$d" "orch: tickets.md line 20: unknown lin
 d="$(srct_dir)"
 sed -i '6d' "$d/tickets.md"
 check_refused srct "an anchor left open" "$d" \
-  "orch: tickets.md line 7: expected @@ replace to end the anchor begun on line 4, got '@@ end'"
+  "orch: tickets.md line 7: expected @@ replace to end the anchor begun on line 4, got '@@ end' - a body line starting with @@ is written \\@@"
 d="$(srct_dir)"
 sed -i '8d' "$d/tickets.md"
 check_refused srct "a replacement left open" "$d" \
-  "orch: tickets.md line 9: expected @@ end to end the replacement begun on line 6, got '@@ item 2 unblock 21 by 20 apply'"
+  "orch: tickets.md line 9: expected @@ end to end the replacement begun on line 6, got '@@ item 2 unblock 21 by 20 apply' - a body line starting with @@ is written \\@@"
 d="$(srct_dir)"
 sed -i '8d; 10s/$/\r/' "$d/tickets.md"
 check_refused srct "a replacement left open at a CRLF line" "$d" \
-  "orch: tickets.md line 9: expected @@ end to end the replacement begun on line 6, got '@@ item 2 unblock 21 by 20 apply'"
+  "orch: tickets.md line 9: expected @@ end to end the replacement begun on line 6, got '@@ item 2 unblock 21 by 20 apply' - a body line starting with @@ is written \\@@"
 d="$(srct_dir)"
 srct "$d"
 srct_lf_out="$out"; srct_lf_err="$err"; srct_lf_dir="$d"
@@ -3107,3 +3107,127 @@ assert_contains "and publishes the edit" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/b
 assert_eq "with no CR in the published body" "$(tr -cd '\r' <"$ORCH_GH_FAKE_STORE/issues/14/body" | wc -c | tr -d ' ')" "0"
 rm -rf "$d"
 unset d
+
+# --- spec-review block lines escape @@ (#1945) --------------------------------
+# A block line that begins with \ then @@ loses exactly one leading \, so a
+# spec or ticket line that reads as grammar can be anchored, replaced, removed
+# and quoted.
+echo
+echo "spec-review block lines escape @@ (#1945)"
+new_repo >/dev/null
+fake_github
+sre_body=$'# Spec\n\nAlpha line.\n@@ note <text>\n\\@@ keep\n\\x stays\n@@x stays\n@@-1 stays\nOmega.\n'
+# sre_dir <item-block>...: a round dir for issue 14 with the body above and
+# a one-lens batch holding the item blocks given (item 1 on, header on line 6).
+sre_dir() {
+  local d
+  d="$(mktemp -d)"
+  fake_issue 14 open
+  fake_issue_body 14 "$sre_body"
+  "$ORCH" issue fetch 14 "$d/spec.md"
+  {
+    printf '@@ lens fidelity ran\n@@ lens consistency not-run timed out\n'
+    printf '@@ lens testability not-run timed out\n@@ lens implementability not-run timed out\n\n'
+    printf '@@ item 1 fidelity apply minor\n@@ finding fidelity 1\n@@ summary Reword the quoted line\n'
+    printf '%s\n' "$1"
+  } >"$d/batch.md"
+  printf '@@ finding 1\nReword.\n' >"$d/lens-fidelity.md"
+  printf '%s\n' "$d"
+}
+sre_check() { out="$("$ORCH" spec-review check "$1" 2>&1)"; st=$?; }
+
+d="$(sre_dir $'@@ anchor\n\\@@ note <text>\n@@ replace\n\\@@ remark <text>\n@@ end')"
+sre_check "$d"
+assert_status "an escaped anchor and replacement: check passes" "$st" 0
+sra "$d" recommended
+assert_status "apply on it succeeds" "$st" 0
+assert_contains "and writes the unescaped replacement" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" $'\n@@ remark <text>\n'
+assert_not_contains "and the old line is gone" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" "@@ note <text>"
+
+d="$(sre_dir $'@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end')"
+sre_check "$d"
+assert_status "an escaped anchor with an empty replacement: check passes" "$st" 0
+sra "$d" recommended
+assert_status "apply removing it succeeds" "$st" 0
+assert_not_contains "and the line is removed from the body" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" "@@ note <text>"
+
+d="$(sre_dir $'@@ anchor\n\\\\@@ keep\n\\x stays\n@@x stays\n@@-1 stays\n@@ replace\n\\\\\\@@ kept\n\\y stays\n@@z\n@@ end')"
+sre_check "$d"
+assert_status "a double backslash, a bare backslash, @@x and @@-1 lines: check passes" "$st" 0
+sra "$d" recommended
+assert_status "apply on it succeeds" "$st" 0
+assert_contains "\\\\@@ reads as \\@@, the rest unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" $'\n\\\\@@ kept\n\\y stays\n@@z\nOmega.'
+
+d="$(sre_dir $'@@ anchor\n@@ note <text>\n@@ replace\nx\n@@ end')"
+sre_check "$d"
+assert_status "an unescaped @@ note in an anchor: refused" "$st" 1
+assert_contains "naming its line with the escape hint" "$out" "got '@@ note <text>'"
+assert_contains "the hint says how to escape" "$out" '\@@'
+
+d="$(sre_dir $'@@ anchor\nAlpha line.\n@@ replace\n@@ note <text>\n@@ end')"
+sre_check "$d"
+assert_status "an unescaped @@ note in a replacement: refused" "$st" 1
+assert_contains "naming the expected @@ end" "$out" "expected @@ end to end the replacement begun on line 11, got '@@ note <text>'"
+assert_contains "with the escape hint" "$out" '\@@'
+
+# A comment's quote: an escaped line folds in; an unescaped one keeps the
+# existing message, no hint.
+sre_quote_batch() {
+  printf '%s\n' '@@ lens fidelity ran' '@@ lens consistency not-run timed out' \
+    '@@ lens testability not-run timed out' '@@ lens implementability not-run timed out' '' \
+    '@@ item 1 consolidation apply minor' '@@ comment @bob 2026-01-01T00:00:00Z' '@@ quote' "$1" \
+    '@@ summary Add a line' '@@ anchor' 'Alpha line.' '@@ replace' 'Alpha line.' 'Beta.' '@@ end'
+}
+d="$(sre_dir x)"
+sre_quote_batch '\@@ note <text>' >"$d/batch.md"
+printf '@@ none\n' >"$d/lens-fidelity.md"
+sre_check "$d"
+assert_status "an escaped @@ quote line: check passes" "$st" 0
+d="$(sre_dir x)"
+sre_quote_batch '@@ note <text>' >"$d/batch.md"
+sre_check "$d"
+assert_status "an unescaped @@ note in a quote: refused" "$st" 1
+assert_contains "with the existing message" "$out" "the quote is empty"
+assert_not_contains "and no escape hint" "$out" '\@@'
+
+# An option's blocks.
+d="$(sre_dir x)"
+{
+  printf '%s\n' '@@ lens fidelity ran' '@@ lens consistency not-run timed out' \
+    '@@ lens testability not-run timed out' '@@ lens implementability not-run timed out' '' \
+    '@@ item 1 fidelity decision A material' '@@ finding fidelity 1' '@@ why Two ways' \
+    '@@ option A Reword' '@@ summary Reword it' '@@ anchor' '\@@ note <text>' '@@ replace' '\@@ remark <text>' '@@ end' \
+    '@@ option B Drop' '@@ summary Drop it' '@@ anchor' '\@@ note <text>' '@@ replace' '@@ end'
+} >"$d/batch.md"
+sre_check "$d"
+assert_status "escaped lines in an @@ option's blocks: check passes" "$st" 0
+sra "$d" recommended
+assert_status "apply on it succeeds" "$st" 0
+assert_contains "and writes the option's unescaped replacement" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" $'\n@@ remark <text>\n'
+
+# tickets.md.
+sre_tdir() {
+  local d
+  d="$(mktemp -d)"
+  printf '# Spec\n\nAlpha line.\n' >"$d/spec.md"
+  printf '## What to build\n\nBuild alpha.\n@@ note <text>\n\\@@ keep\n\\x stays\n@@x stays\n\n## Blocked by\n\nNone (can start immediately)' >"$d/ticket-20.md"
+  printf '@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ summary Reword\n%s\n' "$1" >"$d/tickets.md"
+  printf '%s\n' "$d"
+}
+sre_tcheck() { out="$("$ORCH" spec-review check "$1" --tickets 2>&1)"; st=$?; }
+d="$(sre_tdir $'@@ anchor\n\\@@ note <text>\n\\\\@@ keep\n\\x stays\n@@x stays\n@@ replace\n\\@@ remark <text>\n@@-1 new\n@@ end')"
+sre_tcheck "$d"
+assert_status "escaped lines in a tickets.md anchor and replacement: check passes" "$st" 0
+assert_contains "the view shows the unescaped replacement" "$out" "@@ remark <text>"
+d="$(sre_tdir $'@@ anchor\n\\@@ note <text>\n@@ replace\n@@ end')"
+sre_tcheck "$d"
+assert_status "an escaped tickets.md anchor with an empty replacement: check passes" "$st" 0
+d="$(sre_tdir $'@@ anchor\n@@ note <text>\n@@ replace\nx\n@@ end')"
+sre_tcheck "$d"
+assert_status "an unescaped @@ note in a tickets.md anchor: refused" "$st" 1
+assert_contains "naming the escape hint" "$out" '\@@'
+d="$(sre_tdir $'@@ anchor\nBuild alpha.\n@@ replace\n@@ note <text>\n@@ end')"
+sre_tcheck "$d"
+assert_status "an unescaped @@ note in a tickets.md replacement: refused" "$st" 1
+assert_contains "naming its line" "$out" "got '@@ note <text>'"
+assert_contains "with the escape hint" "$out" '\@@'
