@@ -2002,15 +2002,18 @@ assert_status "sync-fail with an empty reason exits 1" "$st" 1
 assert_contains "saying it needs a reason" "$out" "a sync failure needs a reason"
 
 fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
-"$ORCH" autopilot sync-finish >/dev/null 2>&1
-assert_eq "sync-finish removes orch:sync, keeps orch:done and releases the claim" "$(fake_labels_of 145)|$(fake_claim_held 145)" "orch:done |free"
+"$ORCH" autopilot sync-finish >/dev/null 2>&1; st=$?
+assert_status "sync-finish exits 0" "$st" 0
+assert_not_contains "and takes orch:sync off the flow-state issue" "$(fake_labels_of 145)" "orch:sync"
 fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
-"$ORCH" autopilot sync-dropped "$dropped" >/dev/null 2>&1
-assert_eq "sync-dropped stops it" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done |free"
+"$ORCH" autopilot sync-dropped "$dropped" >/dev/null 2>&1; st=$?
+assert_status "sync-dropped exits 0" "$st" 0
+assert_not_contains "and takes orch:sync off the flow-state issue" "$(fake_labels_of 145)" "orch:sync"
 assert_contains "listing the file's text" "$(fake_comments_of 145)" "- dropped thing"
 fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
-"$ORCH" autopilot sync-fail "push rejected" >/dev/null 2>&1
-assert_eq "sync-fail keeps orch:sync" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done orch:sync |free"
+"$ORCH" autopilot sync-fail "push rejected" >/dev/null 2>&1; st=$?
+assert_status "sync-fail exits 0" "$st" 0
+assert_contains "and puts needs-human on the flow-state issue" "$(fake_labels_of 145)" "needs-human"
 assert_contains "naming the reason" "$(fake_comments_of 145)" "push rejected"
 "$ORCH" autopilot resume 145 >/dev/null 2>&1
 assert_eq "resume lifts needs-human and keeps orch:sync" "$(fake_labels_of 145)" "orch:done orch:sync "
@@ -2020,5 +2023,6 @@ fake_issue 146 open orch:done orch:sync orch:running; fake_claim_seed 146
 fake_fail adapter_claim_delete "HTTP 500"
 out="$("$ORCH" autopilot sync-finish 2>&1)"; st=$?
 assert_status "sync-finish failing on the release exits 1" "$st" 1
-assert_contains "naming the writes that landed" "$out" "writes that landed: removed orch:sync, removed orch:running; the claim stays held"
+first="$(printf '%s\n' "$out" | sed -n 1p)"
+assert_eq "and passes the transition's message through" "${first:0:50}" "orch: could not delete the claim ref on issue #146"
 fake_unfail

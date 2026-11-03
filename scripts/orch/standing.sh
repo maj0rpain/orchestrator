@@ -390,14 +390,13 @@ standing_ask() {
 # the write chain of a stop: adds <label> (removing <remove-label> when given),
 # posts <text> as the <kind> comment, then releases the claim, last. The label
 # write is worded "add <label>[, remove <remove-label>]" in a failure and
-# "added ...[, removed ...]" once landed; orch:limited's removal is a no-op the
-# words leave out.
+# "added ...[, removed ...]" once landed, whenever a removal label is given.
 standing_stop_write() {
   local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=() said=""
   relabel=(--add "$label")
   if [ -n "$remove" ]; then
     relabel+=(--remove "$remove")
-    [ "$remove" = "$STANDING_LIMITED_LABEL" ] || said="$remove"
+    said="$remove"
   fi
   capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
     standing_chain_die "$issue" "add $label${said:+, remove $said}" "$gh_err"
