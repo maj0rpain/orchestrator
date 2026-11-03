@@ -537,8 +537,8 @@ spec_review_answer_tokens() {
 # autopilot round's first run holds back for the human's reply.
 spec_review_item_held() { [ "${SR_FUNDAMENTAL_RUN:-}" = hold ] && [ -n "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
-# spec_review_item_resumed_as_recommended <i>: whether item <i> is one the resumed run's
-# answer cannot name - a non-fundamental item, taken as recommended.
+# spec_review_item_resumed_as_recommended <i>: whether item <i> is one the
+# resumed run's answer cannot name - a non-fundamental item, taken as recommended.
 spec_review_item_resumed_as_recommended() { [ "${SR_FUNDAMENTAL_RUN:-}" = resume ] && [ -z "${SR_IT_FUNDAMENTAL[$1]:-}" ]; }
 
 # spec_review_answer <answer>: each item's disposition into

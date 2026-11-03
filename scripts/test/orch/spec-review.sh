@@ -1731,7 +1731,8 @@ BATCH
 d="$(src_dir)"
 before="$(round_snapshot "$d")"
 src "$d"
-# Also pins a finding cited by each item kind (apply, decline, decision, resolved) as covered.
+# Also pins a finding cited by each item kind (apply, decline, decision,
+# resolved) as covered.
 assert_status "a clean batch passes" "$st" 0
 assert_eq "with a one-line summary on stderr" "$err" \
   "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
