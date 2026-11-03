@@ -1566,7 +1566,5 @@ fake_github
 state_truncate
 ans="$(mktemp)"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
-assert_status "autopilot answer exits 2" "$st" 2
-assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
-assert_not_contains "and no jq text" "$out" "parse error"
+assert_state_unreadable "autopilot answer" 2 "$out" "$st"
 restore_suite_env

@@ -551,9 +551,7 @@ state_fixture base_sha "$parent"
 assert_eq "inside a flow, it is state.base_sha" "$(verdict)" "unmeasured"
 state_truncate 10
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>&1)"; st=$?
-assert_status "check on a truncated state.json exits 1" "$st" 1
-assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
-assert_not_contains "and no jq text" "$out" "parse error"
+assert_state_unreadable "suite-cost check" 1 "$out" "$st"
 
 # Floor and growth overrides. 60 to 70 is 17% growth on a 60 baseline.
 check_repo

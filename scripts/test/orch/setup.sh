@@ -312,6 +312,17 @@ state_truncate() {
   head -c "${1:-40}" "$file" >"$file.cut" && mv "$file.cut" "$file"
 }
 
+# assert_state_unreadable <label> <want-status> <out> <st>: asserts a command
+# run on a truncated state.json (see state_truncate) exited <st> as
+# <want-status>, printed the shared unreadable line in <out>, and leaked no jq
+# parse error. The one place tests spell that line.
+assert_state_unreadable() {
+  assert_status "$1 exits $2" "$4" "$2"
+  assert_contains "$1 prints the unreadable line" "$3" \
+    "orch: state.json cannot be read - run orch.sh doctor --flow"
+  assert_not_contains "$1 leaks no jq text" "$3" "parse error"
+}
+
 # state_fixture_drop <key>...: deletes each named key from the checkout's
 # state file in place, as a flow started by an older release lacks keys a
 # fresh one seeds. Raw jq, not the Flow state module: the module has no delete

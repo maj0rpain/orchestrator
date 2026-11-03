@@ -970,8 +970,7 @@ assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 # whether the flow holds the branch.
 echo '{ not json' >.orchestrator/state.json
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
-assert_status "branch sync on an unreadable state exits 1" "$st" 1
-assert_contains "branch sync shows the state read's own error" "$out" "parse error"
+assert_state_unreadable "branch sync" 1 "$out" "$st"
 
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin

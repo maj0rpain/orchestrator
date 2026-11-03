@@ -323,15 +323,10 @@ echo
 echo "commands on a truncated state.json"
 fresh_flow trunc
 state_truncate
-unreadable_line="orch: state.json cannot be read - run orch.sh doctor --flow"
 out="$("$ORCH" branch create 2>&1)"; st=$?
-assert_status "branch create on a truncated state.json exits 1" "$st" 1
-assert_contains "with the unreadable line" "$out" "$unreadable_line"
-assert_not_contains "and no jq text" "$out" "parse error"
+assert_state_unreadable "branch create" 1 "$out" "$st"
 out="$("$ORCH" status 2>&1)"; st=$?
-assert_status "status on it exits 1" "$st" 1
-assert_contains "with the unreadable line" "$out" "$unreadable_line"
-assert_not_contains "and no jq text" "$out" "parse error"
+assert_state_unreadable "status" 1 "$out" "$st"
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "doctor --flow still reports it as not a JSON object" "$out" "state.json is not a JSON object"
 "$ORCH" archive >/dev/null 2>&1; st=$?

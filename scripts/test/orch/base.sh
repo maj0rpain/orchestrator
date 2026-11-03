@@ -252,12 +252,9 @@ echo "base set on a truncated state.json"
 fresh_flow basetrunc
 state_truncate
 out="$(orch_gh_failing base set uat --flow 2>&1)"; st=$?
-assert_status "base set --flow exits 1" "$st" 1
-assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
-assert_not_contains "and no jq text" "$out" "parse error"
+assert_state_unreadable "base set --flow" 1 "$out" "$st"
 git config orchestrator.base keep
 out="$(orch_gh_failing base set uat 2>&1)"; st=$?
-assert_status "plain base set exits 1" "$st" 1
-assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_state_unreadable "plain base set" 1 "$out" "$st"
 assert_eq "and leaves orchestrator.base unchanged" "$(git config --get orchestrator.base)" "keep"
 restore_suite_env

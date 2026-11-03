@@ -569,7 +569,5 @@ fake_github
 state_truncate
 spec_body="$(mktemp)"
 out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
-assert_status "spec fetch exits 1" "$st" 1
-assert_contains "with the unreadable line" "$out" "orch: state.json cannot be read - run orch.sh doctor --flow"
-assert_not_contains "and no jq text" "$out" "parse error"
+assert_state_unreadable "spec fetch" 1 "$out" "$st"
 restore_suite_env
