@@ -696,6 +696,11 @@ NOGIT="$(mktemp -d)"
 assert_empty "allows a file outside any git repo" \
   "$(edit_event_at "$NOGIT/x.ts" s1 "$REPO" | "$GUARD")"
 rm -rf "$NOGIT"
+SEPWT="$(mktemp -d)"; SEPGD="$(mktemp -d)/store.git"
+git -C "$SEPWT" init -q --separate-git-dir "$SEPGD"
+assert_empty "allows a file inside a separate git dir outside the working tree (#2335)" \
+  "$(edit_event_at "$(cd "$SEPGD" && pwd -P)/hooks/pre-commit" s1 "$REPO" | "$GUARD")"
+rm -rf "$SEPWT" "${SEPGD%/*}"
 write_flow_state_at "$SIDE" slug x phase implement issue null
 assert_empty "allows the side checkout's source when its flow is active" \
   "$(edit_event_at "$SIDE/src/x.ts" s1 "$REPO" | "$GUARD")"
