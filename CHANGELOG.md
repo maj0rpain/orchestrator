@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.18
+
+A failed `autopilot answer` or handoff write no longer leaves a partly written file and is reported as a write failure, not a missing handoff; `trust_warn_issue` reads autopilot mode through `autopilot_active`; `issue_comments_render` is now `comments_render_trusted`; `trust_filter_prs` names its argument `<subject>`.
+
 ## 4.43.17
 
 The planning edit guard now resolves the edited path through symlinks, so it denies source and records edits made through a symlinked repo path instead of allowing them.
