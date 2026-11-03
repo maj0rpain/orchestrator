@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.9
+
+Trimmed duplicate branch tests and renamed the start-point function `new_branch_start`.
+
 ## 4.44.8
 
 The autopilot container entrypoint now also removes a reused clone's local `user.name` and `user.email`, and the local `orchestrator.model.<role>`/`orchestrator.effort.<role>` keys by reading git config directly instead of parsing `agent show`, so `docker/.env` always wins. Every failure line now names its own step.
