@@ -96,7 +96,6 @@ hook_physical_path() {
     # The deepest ancestor that exists as a directory, and the missing tail.
     dir="$(hook_existing_ancestor "$path")"
     tail="${path#"${dir%/}"}"
-    [ "$dir" != "/" ] || tail="$path"
     [ "$path" != "$dir" ] || tail=""
     resolved="$(cd -P "$dir" 2>/dev/null && pwd -P)" || resolved="$dir"
     path="${resolved%/}$tail"
