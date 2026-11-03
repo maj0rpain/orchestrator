@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.43.33
+
+Internal cleanup of the spec review's uncited-finding check and its tests: one loop over the lens findings, duplicate test cases removed, test helpers reused, and `spec_review_item_unnamed` renamed `spec_review_item_resumed_as_recommended`. No behaviour changes.
+
+## 4.43.32
+
+`orch.sh pr fetch` now writes a PR body with LF line endings, and `orch.sh review-pass` reads the PR body through that same LF read.
+
+## 4.43.31
+
+`branch create`'s Discard rule now decides on the branch it is making, so a fresh run on a retired `-redo-<n>` branch refuses instead of discarding; one `work_to_discard` predicate defines the work to discard for both discard sites.
+
+## 4.43.30
+
+orch-review's CI section states how to run `review ci` before the flake rerun refers back to it.
+
 ## 4.43.29
 
 A `## ` line inside a code fence is never a heading to the readers of named sections, so a record or handoff that quotes a heading no longer misleads `review terminal`, `review known-items`, `review-pass known-items`, `handoff validate`, `handoff section` or the `## Autopilot` block check.
