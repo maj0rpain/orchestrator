@@ -41,6 +41,36 @@ die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 # open PR; ticket exists: no breakdown), so their failures exit with status 2
 # instead.
 die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
+
+# die_opt_check <caller> <argc> <option> [value]: the one rule for die_hinted's
+# options, checked by whatever takes them. <argc> is the caller's "$#" at
+# <option>, so a trailing option with no value is told from an empty one.
+# --exit must take 2; --hint must have a value, "" included. A bad pair dies
+# with status 1, naming <caller> and the option.
+die_opt_check() {
+  case "$3" in
+    --exit) [ "${4-}" = 2 ] || die "$1: --exit takes 2, not '${4-}'" ;;
+    --hint) [ "$2" -ge 2 ] || die "$1: --hint needs a value" ;;
+  esac
+}
+
+# die_hinted [--exit 2] [--hint <text>] <msg>: dies with <msg>, then " - <hint>"
+# for a non-empty hint (--hint "" adds nothing) - through die2 under --exit 2,
+# else die. Its options are the ones die_opt_check checks.
+die_hinted() {
+  local code=1 hint=""
+  while [ $# -gt 1 ]; do
+    case "$1" in
+      --exit) die_opt_check die_hinted $# "$@"; code=2; shift 2 ;;
+      --hint) die_opt_check die_hinted $# "$@"; hint="$2"; shift 2 ;;
+      *) die "die_hinted: unknown option $1" ;;
+    esac
+  done
+  local msg="$1"
+  [ -z "$hint" ] || msg="$msg - $hint"
+  [ "$code" != 2 ] || die2 "$msg"
+  die "$msg"
+}
 # warn: die's line on stderr, without the exit - for a refusal that returns its
 # own status, or a warning the command carries on past.
 warn() { printf 'orch: %s\n' "$*" >&2; }
