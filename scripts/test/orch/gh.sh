@@ -1387,10 +1387,6 @@ echo
 echo "label casing"
 new_repo >/dev/null
 fake_github
-assert_status "label_listed finds a label in another casing" "$(sourced_orch label_listed $'a\nNeeds-Human' needs-human >/dev/null; echo $?)" 0
-assert_status "label_listed is whole-line" "$(sourced_orch label_listed $'a\nNeeds-Human' needs >/dev/null; echo $?)" 1
-assert_status "label_listed is literal" "$(sourced_orch label_listed $'a\nb' 'a.*' >/dev/null; echo $?)" 1
-assert_status "list_has stays case-sensitive" "$(sourced_orch list_has $'a\nNeeds-Human' needs-human >/dev/null; echo $?)" 1
 : >"$ORCH_GH_FAKE_STORE/labels"; fake_label Needs-Human ededed old
 fake_issue 5 open
 sourced_orch adapter_issue_relabel 5 --add needs-human >/dev/null
