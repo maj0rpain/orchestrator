@@ -175,13 +175,19 @@ autopilot_phase_arg() {
   [ "$1" != "done" ] || "$die_fn" "a done flow asks no question"
 }
 
+# autopilot_file_text <var> <what> <file>: sets <var> to <file>'s text; dies,
+# naming <what>, when <file> is missing or unreadable.
+autopilot_file_text() {
+  [ -f "$3" ] || die "$2 file not found: $3"
+  file_read "$1" "$3" || die "could not read $3"
+}
+
 # autopilot_ask <phase> <file>: posts <file> as <phase>'s question comment, the
 # configured handle @mentioned, adds needs-human, then releases the claim.
 autopilot_ask() {
   local phase="$1" file="$2" text
   autopilot_phase_arg "$phase"
-  [ -f "$file" ] || die "question file not found: $file"
-  file_read text "$file" || die "could not read $file"
+  autopilot_file_text text question "$file"
   standing_ask "$phase" "$text"
 }
 
@@ -200,8 +206,7 @@ autopilot_sync_finish() {
 # intents the resolver dropped, with a link to the Merge resolutions comment.
 autopilot_sync_dropped() {
   local file="$1" issue text
-  [ -f "$file" ] || die "dropped-intents file not found: $file"
-  file_read text "$file" || die "could not read $file"
+  autopilot_file_text text dropped-intents "$file"
   require_state
   require_issue issue
   standing_sync_dropped "$issue" "$text"

@@ -1718,6 +1718,17 @@ assert_eq "no side checkout was added" "$(ls "$top/.orchestrator/checkouts")" "$
 assert_eq "its session log is named with the sync phase word" "$(find "$top/.orchestrator/autopilot/logs" -name "7-sync-*" | wc -l | tr -d " ")" "1"
 rm -f "$launcher_dir/release" "$launcher_dir/calls"
 
+# auto-sync false only stops a tick adding the label: a hand-added request is
+# still picked up
+git config orchestrator.autopilot.auto-sync false
+fake_issue 7 open orch:done orch:sync
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with auto-sync false a hand-added sync request is still picked up" "$(tick_calls)" "1"
+assert_contains "under the sync prompt" "$(cat "$launcher_dir/calls")" "orch-sync skill's autopilot branch"
+git config --unset-all orchestrator.autopilot.auto-sync
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
 # a phase session still gets the phase prompt; a sync request counts toward
 # the cap, oldest first
 fake_issue 7 open orch:done orch:sync
