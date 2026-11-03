@@ -1386,7 +1386,7 @@ echo "spec-review lenses run as plugin agents (#177)"
 # `## The findings file` section, the file it writes its findings to.
 lenses="fidelity consistency testability implementability"
 scan_lens_briefs() {
-  local r="$1" lens a heading brief f
+  local r="$1" lens a heading brief f tools_list
   for lens in $lenses; do
     a="$r/agents/orch-lens-$lens.md"
     if [ -f "$a" ]; then
@@ -2031,7 +2031,7 @@ quick_step_refers() {
 # missing, or when the file, or that section of it, never names the phrase,
 # read flattened so a phrase wrapped across lines still counts.
 scan_names_phrase() {
-  local r="$1" list="$2" phrase="$3" f h body
+  local r="$1" list="$2" phrase="$3" f h body flat
   while IFS='|' read -r f h; do
     [ -n "$f" ] || continue
     if [ -z "$h" ]; then
@@ -2476,7 +2476,7 @@ echo "standalone pass smells (#419)"
 # names --smells, and the command's argument-hint offers it.
 # scan_standalone_smells <plugin root>: one line per place that drops the flag.
 scan_standalone_smells() {
-  local r="$1" pass="skills/orch-review-pass/SKILL.md" cmd="commands/review-pass.md"
+  local r="$1" pass="skills/orch-review-pass/SKILL.md" cmd="commands/review-pass.md" hint
   scan_names_phrase "$r" "$pass|## Standalone review pass" '--smells'
   hint="$(grep -E '^argument-hint:' "$r/$cmd" 2>/dev/null)"
   grep -qF -- '--smells' <<<"$hint" \
@@ -2671,7 +2671,7 @@ open_report_capability='Open a report in the browser'
 # or routes elsewhere, and one per step heading (## <n>. <step>) missing from
 # the skill or out of order.
 scan_improve_tests() {
-  local r="$1" cmd="commands/improve-tests.md" step n=0 pairs=""
+  local r="$1" cmd="commands/improve-tests.md" step n=0 pairs="" flat
   if [ ! -f "$r/$cmd" ]; then echo "$cmd: missing"
   elif flat="$(flat_text "$r/$cmd")"; ! grep -qF '`orchestrator:orch-improve-tests` and follow it' <<<"$flat"; then
     echo "$cmd: does not route to orch-improve-tests"
@@ -2686,7 +2686,7 @@ scan_improve_tests() {
 # has no row for opening the report, and one when its Fallbacks have no
 # subsection for it naming a Markdown summary.
 scan_report_capability() {
-  local r="$1" doc="docs/host-capabilities.md" body
+  local r="$1" doc="docs/host-capabilities.md" body flat
   grep -qF -- "| $open_report_capability |" "$r/$doc" 2>/dev/null \
     || echo "$doc: no row for $open_report_capability"
   if ! body="$(md_section "$r/$doc" "### $open_report_capability" 2>/dev/null)"; then
@@ -2780,7 +2780,7 @@ skill_description() { skill_part "$1" frontmatter | grep '^description:'; }
 # orch-review-pass into orch-review, and per missing reviewer-start or
 # description token.
 scan_review_pass_self_contained() {
-  local r="$1" pass="skills/orch-review-pass/SKILL.md" text name desc
+  local r="$1" pass="skills/orch-review-pass/SKILL.md" text name desc bold
   text="$(flat_text "$r/$pass" 2>/dev/null)"
   while IFS= read -r name; do
     bold="$(grep -oE '\*\*[^*]+\*\*' <<<"$text" | sed 's/^\*\*//; s/\*\*$//')"
@@ -2923,7 +2923,7 @@ check "every caller of the review pass invokes orch-review-pass, never orch-revi
 # scan_review_loop_sheds_pass <plugin root>: one line per copy of the pass
 # left in orch-review, or per missing pointer to orch-review-pass.
 scan_review_loop_sheds_pass() {
-  local r="$1" review="skills/orch-review/SKILL.md" text desc heading
+  local r="$1" review="skills/orch-review/SKILL.md" text desc heading part
   text="$(flat_text "$r/$review" 2>/dev/null)"
   for heading in "Review pass" "Standalone review pass"; do
     md_section "$r/$review" "## $heading" >/dev/null 2>&1 \
@@ -3247,7 +3247,7 @@ glossary_entry() {
 }
 # scan_side_checkout_issue <plugin root>: one line per break of that rule.
 scan_side_checkout_issue() {
-  local r="$1" quick="skills/orch-quick-implement/SKILL.md" flow="skills/orch-flow/SKILL.md" body
+  local r="$1" quick="skills/orch-quick-implement/SKILL.md" flow="skills/orch-flow/SKILL.md" body entry
   body="$(md_section "$r/$quick" "## 1. Require a linked issue" | flat_text)"
   grep -qF 'side-checkout issue' <<<"$body" \
     || echo "$quick: step 1 does not name side-checkout issue"
@@ -3524,7 +3524,7 @@ plugin_version() { version_field <"$1/.claude-plugin/plugin.json" 2>/dev/null; }
 # ## <version>, its section is non-empty, and no other ## <version> heading
 # for that version exists.
 scan_changelog() {
-  local r="$1" v top
+  local r="$1" v top entry
   v="$(plugin_version "$r")"
   if [ -z "$v" ]; then echo ".claude-plugin/plugin.json: no version"; return 0; fi
   if [ ! -f "$r/CHANGELOG.md" ]; then echo "CHANGELOG.md: missing, so it has no ## $v entry"; return 0; fi

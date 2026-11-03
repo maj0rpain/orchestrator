@@ -199,7 +199,7 @@ assert_status "a failed label add dies" "$st" 1
 assert_contains "naming the comment posted" "$out" "posted the 01-plan comment on issue #7"
 assert_contains "and that the issue is unlabelled, so no watcher picks it up" "$out" "the issue is unlabelled, so no watcher picks it up"
 assert_eq "leaving the issue without a phase label" "$(fake_labels_of 7)" "ready-for-agent "
-assert_eq "the comment is there" "$(fake_comments_of 7 | awk -v n=1 'NR<=n')" "<!-- orch:handoff 01-plan -->"
+assert_first_line "the comment is there" "$(fake_comments_of 7)" "<!-- orch:handoff 01-plan -->"
 fake_unfail
 
 # a re-run on an unlabelled issue posts a newer plan comment, then labels last
@@ -904,7 +904,7 @@ fake_issue_relabel 7 orch:spec ready-for-agent orch:running
 limit_run 7 >/dev/null
 assert_eq "a first limit stop leaves orch:limited, not needs-human" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 assert_eq "and releases the claim" "$(fake_claim_held 7)" free
-assert_eq "its comment opens with the marker" "$(fake_last_comment_of 7 | awk -v n=1 'NR<=n')" "<!-- orch:limited spec -->"
+assert_first_line "its comment opens with the marker" "$(fake_last_comment_of 7)" "<!-- orch:limited spec -->"
 assert_contains "gives the reset time" "$(fake_comments_of 7)" "$lim_iso"
 assert_eq "and writes the limit file" "$(cat "$limit_file")" "$lim_iso"
 
