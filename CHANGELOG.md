@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.23
+
+Trim the test runner's section-filter tests: drop a duplicated parallel dead-branch case, share one planted scripts copy across the filter cases, and fold the dead-branch refusal's intermediate array into its message list.
+
 ## 4.43.22
 
 `affected.sh` and `orch_test.sh` now share one section-title rule and one reader of `all.sh`'s suite list (`scripts/test/test_tree.sh`). `affected.sh` rejects an `all.sh` naming a suite with no file, prints its errors with an `affected.sh: ` prefix, and renames `mb`, `base` and `git_q`.
