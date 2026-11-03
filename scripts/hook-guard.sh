@@ -34,13 +34,14 @@ file="$(hook_tool_path)"
 # somebody else's business.
 dir="${file%/*}"
 while [ -n "$dir" ] && [ ! -d "$dir" ]; do dir="${dir%/*}"; done
-if ! root="$(git -C "${dir:-/}" rev-parse --show-toplevel 2>/dev/null)"; then
+dir="${dir:-/}"
+if ! root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)"; then
   # Inside a non-bare repo's git dir there is no toplevel, yet the file belongs
   # to that repo (a hook is code): judge it against the working tree above the
   # common git dir.
-  [ "$(git -C "${dir:-/}" rev-parse --is-inside-git-dir 2>/dev/null)" = true ] || exit 0
-  [ "$(git -C "${dir:-/}" rev-parse --is-bare-repository 2>/dev/null)" = false ] || exit 0
-  gitdir="$(git -C "${dir:-/}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
+  [ "$(git -C "$dir" rev-parse --is-inside-git-dir 2>/dev/null)" = true ] || exit 0
+  [ "$(git -C "$dir" rev-parse --is-bare-repository 2>/dev/null)" = false ] || exit 0
+  gitdir="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
   root="$(cd "${gitdir%/*}" && pwd -P)" || exit 0
 fi
 
