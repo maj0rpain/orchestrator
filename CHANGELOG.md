@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.26
+
+`orch.sh review standards` no longer lists a root file or a crawled mention that is an in-repo symlink to a file outside the repo; such a path is treated as missing, as a declared one already was. Its mentions and declaration scanners now share one paragraph rule, and the Spec reviewer brief states the Standards reading rule on its own.
+
 ## 4.43.25
 
 `orch.sh doctor --flow`'s remedy for a done flow whose PR is still a draft is now `orch.sh pr ready` on the flow's branch, which reads the PR's checks first, instead of the ungated `gh pr ready`. A failed check whose name holds a comma now reads whole in `pr ready`'s and `review ready`'s refusal. `ci_ready_gate` and `gh_die` share one `die_hinted` helper and its `die_opt_check` option rule in the common module, and the tests count and clear the gh fake's checks through `fake_checks_reads` and `fake_checks_clear`.
