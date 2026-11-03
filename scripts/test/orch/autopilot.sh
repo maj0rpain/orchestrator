@@ -1675,3 +1675,120 @@ fake_issue 7 open Ready-For-Agent
 out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
 assert_status "start accepts an issue carrying Ready-For-Agent" "$st" 0
 restore_suite_env
+
+# --- autopilot tick and run: sync requests -----------------------------------
+# A sync request - orch:sync on an open orch:done issue - is picked up under the
+# phase word sync: claimed, counted toward the cap, oldest first, and refused
+# without a side checkout recording phase done.
+echo
+echo "autopilot sync requests"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Sync seven"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1   # makes the side checkout of issue 7
+side7="$top/.orchestrator/checkouts/sync-seven"
+(cd "$side7" && state_fixture phase "done")
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+sync_before="$(ls "$top/.orchestrator/checkouts")"
+
+# a sync request with a done side checkout is claimed and its session started
+fake_issue 7 open orch:done orch:sync
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a sync request starts one session" "$(tick_calls)" "1"
+assert_contains "its session sees orch:running beside orch:sync" "$(grep '^labels:7:' "$launcher_dir/calls" | tail -1)" "orch:done orch:running orch:sync"
+assert_contains "and the sync prompt" "$(cat "$launcher_dir/calls")" "orch-sync skill's autopilot branch"
+assert_not_contains "not the phase prompt" "$(cat "$launcher_dir/calls")" "orch-flow skill's Next phase"
+assert_eq "no side checkout was added" "$(ls "$top/.orchestrator/checkouts")" "$sync_before"
+assert_eq "its session log is named with the sync phase word" "$(find "$top/.orchestrator/autopilot/logs" -name "7-sync-*" | wc -l | tr -d " ")" "1"
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# a phase session still gets the phase prompt; a sync request counts toward
+# the cap, oldest first
+fake_issue 7 open orch:done orch:sync
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Sync eight"
+fake_issue 6 open ready-for-agent orch:spec; fake_issue_title 6 "Sync six"
+printf '6 7 8\n' >"$launcher_dir/release"
+git config orchestrator.autopilot.cap 2
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a cap of 2 starts two sessions" "$(tick_calls)" "2"
+assert_eq "the oldest issues first, the sync request among them" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "sync-six sync-seven "
+assert_eq "the third waits" "$(fake_labels_of 8)" "orch:spec ready-for-agent "
+assert_contains "the phase issue got the phase prompt" "$(cat "$launcher_dir/calls")" "orch-flow skill's Next phase"
+git config orchestrator.autopilot.cap 5
+fake_issue_drop 6 8
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# orch:sync without orch:done is no sync request; a live phase label still
+# picks the issue up for its phase
+fake_issue 9 open ready-for-agent orch:sync
+fake_issue_title 9 "Slip nine"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "orch:sync without orch:done starts no session" "$(tick_calls)" "0"
+assert_eq "and changes nothing" "$(fake_labels_of 9)" "orch:sync ready-for-agent "
+fake_issue_relabel 9 orch:spec ready-for-agent orch:sync
+printf '9\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with a live phase label it is picked up for its phase" "$(tick_calls)" "1"
+assert_contains "under the phase prompt" "$(cat "$launcher_dir/calls")" "orch-flow skill's Next phase"
+fake_issue_drop 9
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# a limit pause holds a sync request
+fake_issue 7 open orch:done orch:sync
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of $(( $(date +%s) + 3600 )))" >"$top/.orchestrator/autopilot/limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "no sync request is picked up while a limit pause holds" "$(tick_calls)" "0"
+rm -f "$top/.orchestrator/autopilot/limit"
+
+# a recorded phase other than done is refused, naming it, keeping orch:sync
+(cd "$side7" && state_fixture phase review)
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a side checkout not at done starts no session" "$(tick_calls)" "0"
+assert_eq "the issue is needs-human, keeping orch:sync" "$(fake_labels_of 7)" "needs-human orch:done orch:sync "
+assert_contains "the stop comment is marked sync" "$(fake_last_comment_of 7)" "<!-- orch:refusal sync -->"
+assert_contains "and names the recorded phase" "$(fake_last_comment_of 7)" "records phase review, not done"
+assert_eq "the claim is released" "$(fake_claim_held 7)" free
+assert_not_contains "no plan comment was posted" "$(fake_comments_of 7 | tail -2)" "01-plan"
+(cd "$side7" && state_fixture phase "done")
+
+# no side checkout: refused, saying where to sync by hand, creating nothing
+fake_issue 12 open orch:done orch:sync
+sync_before="$(ls "$top/.orchestrator/checkouts")"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a sync request without a side checkout starts no session" "$(tick_calls)" "0"
+assert_eq "it is needs-human, keeping orch:sync" "$(fake_labels_of 12)" "needs-human orch:done orch:sync "
+assert_contains "the stop comment is marked sync" "$(fake_last_comment_of 12)" "<!-- orch:refusal sync -->"
+assert_contains "and says to run /orchestrator:sync" "$(fake_last_comment_of 12)" "run /orchestrator:sync"
+assert_contains "where it lives" "$(fake_last_comment_of 12)" "where it lives"
+assert_eq "the claim is released" "$(fake_claim_held 12)" free
+assert_eq "no side checkout was created" "$(ls "$top/.orchestrator/checkouts")" "$sync_before"
+
+# an untrusted issue is refused by the trust check, before anything else
+fake_issue 13 open orch:done orch:sync
+fake_issue_authorship 13 stranger NONE
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an untrusted sync request starts no session" "$(tick_calls)" "0"
+assert_contains "it is refused by the trust check" "$(fake_last_comment_of 13)" "last written by stranger"
+assert_eq "keeping orch:sync" "$(fake_labels_of 13)" "needs-human orch:done orch:sync "
+assert_eq "and no side checkout was created" "$(ls "$top/.orchestrator/checkouts")" "$sync_before"
+
+# a sync session's limit stop keeps orch:sync, with a streak of its own
+(cd "$side7" && state_fixture phase "done")
+sync_limit_run() { # a sync session that hits the usage limit, claim held
+  ndjson_with "Claude AI usage limit reached|4102444800" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
+  fake_issue_relabel 7 orch:done orch:sync orch:running
+  fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
+  "$ORCH" autopilot run 7 >/dev/null 2>&1
+  rm -f "$top/.orchestrator/autopilot/limit"
+}
+sync_limit_run
+assert_eq "a sync session's limit stop adds orch:limited, keeping orch:sync" "$(fake_labels_of 7)" "orch:done orch:limited orch:sync "
+assert_contains "its comment is a limited stop marked sync" "$(fake_last_comment_of 7)" "<!-- orch:limited sync -->"
+assert_contains "naming the sync, not a phase" "$(fake_last_comment_of 7)" "usage limit in the sync, which resets"
+sync_limit_run
+sync_limit_run
+assert_eq "the third in a row waits on the human, keeping orch:sync" "$(fake_labels_of 7)" "needs-human orch:done orch:sync "
+assert_contains "as a failure marked sync" "$(fake_last_comment_of 7)" "<!-- orch:failure sync -->"

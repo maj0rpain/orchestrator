@@ -149,12 +149,12 @@ third such stop in a row of one phase.
 _Avoid_: auto flow, headless flow.
 
 **Watcher**:
-The process that starts each autopilot flow's next phase, in that flow's side
-checkout, within the repo's cap.
+The process that starts each autopilot flow's next phase, or its sync on a sync
+request, in that flow's side checkout, within the repo's cap.
 
 **Claim**:
-A watcher's exclusive hold on one issue's next phase - a ref on origin that only
-one watcher can create. _Avoid_: lock (unqualified).
+A watcher's exclusive hold on one issue's next phase or sync request - a ref on
+origin that only one watcher can create. _Avoid_: lock (unqualified).
 
 **Phase label**:
 The `orch:` label on an issue that records an autopilot flow's phase.
@@ -242,14 +242,17 @@ trusted comment follows yet, on an open issue labelled `needs-human`.
 and posts the reply.
 
 **Pickup rule**:
-The rule a watcher picks issues by: open, a phase label other than `orch:done`,
-and neither `orch:running` nor `needs-human`, while no limit pause holds.
+The rule a watcher picks issues by: open, neither `orch:running` nor
+`needs-human`, and either a phase label other than `orch:done` or `orch:done`
+with a sync request, while no limit pause holds.
 
 **Pickup**:
 A watcher taking one claimed issue to a running session: its issue-trust
 check, its side checkout, its flow, its plan comment, a redo when the label
 stepped back one phase, then `orch:running` and the session. A failed or refused
-step stops the issue and releases the claim.
+step stops the issue and releases the claim. A sync request's pickup is its
+issue-trust check, its side checkout's recorded phase, then `orch:running` and
+the session: no new side checkout, flow, plan comment or redo.
 
 **Limited issue**:
 An autopilot flow's issue whose last session stopped on a Claude Code usage

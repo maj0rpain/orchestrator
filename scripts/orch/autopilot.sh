@@ -517,12 +517,38 @@ autopilot_pickup_redo() {
   ORCH_AUTOPILOT=1 autopilot_orch_in "$1" redo "$2"
 }
 
+# autopilot_pickup_sync_steps <issue> <limited>: a sync request's steps after
+# the trust check: its side checkout must exist and record phase done. It adds
+# no side checkout, runs no init, posts no plan comment and runs no redo. A
+# refusal leaves PICKUP_KIND and PICKUP_TEXT and returns 1.
+autopilot_pickup_sync_steps() {
+  local issue="$1" limited="$2" side="" recorded
+  autopilot_pickup_side_find "$issue"
+  if [ -z "$side" ]; then
+    PICKUP_KIND=refusal
+    PICKUP_TEXT="no side checkout on this host holds issue #$issue - run $(plugin_cmd sync "the orch-sync skill") where it lives"
+    return 1
+  fi
+  autopilot_pickup_recorded "$side" || autopilot_pickup_fail failure "step reading the recorded phase failed" || return 1
+  if [ "$recorded" != "done" ]; then
+    PICKUP_KIND=refusal
+    PICKUP_TEXT="the issue carries a sync request, but its side checkout records phase $recorded, not done"
+    return 1
+  fi
+  standing_begin "$issue" "$limited" || {
+    PICKUP_KIND=failure
+    PICKUP_TEXT="$STANDING_REASON"
+    return 1
+  }
+}
+
 # autopilot_pickup_steps <issue> <phase> <limited>: Pickup's steps in order, up
 # to the session's start. The first that fails leaves PICKUP_KIND and
 # PICKUP_TEXT and returns 1.
 autopilot_pickup_steps() {
   local issue="$1" phase="$2" limited="$3" side="" title="" recorded redo
   autopilot_pickup_trust "$issue" || return 1
+  [ "$phase" != "$STANDING_SYNC_PHASE" ] || { autopilot_pickup_sync_steps "$issue" "$limited"; return; }
   autopilot_pickup_side_find "$issue"
   if [ -z "$side" ]; then
     autopilot_pickup_side_title "$issue" || autopilot_pickup_fail failure "step side-checkout add failed: could not read the issue's title" || return 1
@@ -625,13 +651,17 @@ autopilot_pause_extend() {
 }
 
 # autopilot_candidates: the open issues carrying a phase label other than
-# orch:done, oldest first, one number per line.
+# orch:done, or orch:sync, deduplicated and oldest first, one number per line.
 autopilot_candidates() {
-  local phase out gh_err all=""
+  local label out gh_err all="" labels=() phase
   for phase in $PHASES; do
     [ "$phase" != "done" ] || continue
-    capture out gh_err adapter_issues_labelled "$(standing_phase_label "$phase")" ||
-      die "could not list the issues labelled $(standing_phase_label "$phase"): $(gh_reason "$gh_err")"
+    labels+=("$(standing_phase_label "$phase")")
+  done
+  labels+=("$STANDING_SYNC_LABEL")
+  for label in "${labels[@]}"; do
+    capture out gh_err adapter_issues_labelled "$label" ||
+      die "could not list the issues labelled $label: $(gh_reason "$gh_err")"
     all="$all$out"$'\n'
   done
   printf '%s' "$all" | grep -v '^$' | sort -nu || true
@@ -658,6 +688,7 @@ autopilot_tick() {
       die "could not read issue #$issue: $STANDING_REASON"
     standing_pickable || continue
     phase="$STANDING_PHASE"
+    if standing_is_sync; then phase="$STANDING_SYNC_PHASE"; fi
     rc=0
     capture_err gh_err standing_claim "$issue" "$phase" "$$" || rc=$?
     case "$rc" in
@@ -871,6 +902,13 @@ autopilot_run() {
   main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
   phase="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
+  # a sync request is told by orch:sync on a done issue; its phase word is sync
+  standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
+  prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
+  if [ "$phase" = "done" ] && standing_is_sync; then
+    phase="$STANDING_SYNC_PHASE"
+    prompt="Run the orchestrator:orch-sync skill's autopilot branch in this checkout: sync the branch with its base, and stop when the sync is finished."
+  fi
   liveness_run_begin "$issue" || exit 1
   # A later run of the same issue may have replaced the record by the time this
   # one exits: liveness_run_end removes it only while it still names this run.
@@ -893,7 +931,6 @@ autopilot_run() {
   done
   log="$(liveness_log_path "$issue" "$phase")" || exit $?
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
-  prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \

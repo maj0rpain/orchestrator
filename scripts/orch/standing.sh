@@ -108,12 +108,30 @@ standing_read() {
   ! label_listed "$STANDING_LABELS" "$STANDING_LIMITED_LABEL" || STANDING_LIMITED=1
 }
 
+# The phase word of a sync request: where a transition takes a phase argument
+# for a sync, it takes this.
+STANDING_SYNC_PHASE="sync"
+
+# standing_is_sync: whether the last read is a sync request - orch:sync on an
+# issue at orch:done. An issue with a live phase label is its phase's, and one
+# with orch:sync but no orch:done is no sync request.
+standing_is_sync() {
+  [ "$STANDING_SYNC" = 1 ] && [ -z "$STANDING_PHASE" ] &&
+    label_listed "$STANDING_LABELS" "$(standing_phase_label "done")"
+}
+
 # standing_pickable: the label half of the Pickup rule, from the last read:
-# the issue is open, has a live phase, and is neither running nor waiting on
-# the human. The limit pause is the tick's own check.
+# the issue is open, has a live phase or is a sync request, and is neither
+# running nor waiting on the human. The limit pause is the tick's own check.
 standing_pickable() {
-  [ "$STANDING_STATE" = OPEN ] && [ -n "$STANDING_PHASE" ] &&
+  [ "$STANDING_STATE" = OPEN ] && { [ -n "$STANDING_PHASE" ] || standing_is_sync; } &&
     [ "$STANDING_RUNNING" = 0 ] && [ "$STANDING_HUMAN" = 0 ]
+}
+
+# standing_phase_text <phase>: how a stop comment names what stopped - "the
+# <phase> phase", or "the sync" for a sync request, which is no phase.
+standing_phase_text() {
+  if [ "$1" = "$STANDING_SYNC_PHASE" ]; then printf 'the sync'; else printf 'the %s phase' "$1"; fi
 }
 
 # standing_label_verdict <labels> <phase> <verdict-var> <text-var>: whether the
@@ -377,10 +395,10 @@ standing_stop() {
   STANDING_LANDED=""
   marker="$(marked_comment_write "$kind" "$phase")" || exit 1
   case "$kind" in
-    refusal) printf -v text '%s\nAutopilot refused to run the %s phase: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks the phase up again.\n' \
-      "$marker" "$phase" "$detail" "$STANDING_HUMAN_LABEL" ;;
-    *) printf -v text '%s\nAutopilot failed in the %s phase: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start the phase again.\n' \
-      "$marker" "$phase" "$detail" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL" ;;
+    refusal) printf -v text '%s\nAutopilot refused to run %s: %s\n\nThe issue is labelled %s. Remove the label once this is settled and the watcher picks %s up again.\n' \
+      "$marker" "$(standing_phase_text "$phase")" "$detail" "$STANDING_HUMAN_LABEL" "$(standing_phase_text "$phase")" ;;
+    *) printf -v text '%s\nAutopilot failed in %s: %s\n\nThe issue is labelled %s; nothing is retried automatically except a usage-limit stop labelled `%s`. Remove the label to have the watcher start %s again.\n' \
+      "$marker" "$(standing_phase_text "$phase")" "$detail" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL" "$(standing_phase_text "$phase")" ;;
   esac
   standing_stop_write "$issue" "$kind" "$text" "$STANDING_HUMAN_LABEL" "$STANDING_LIMITED_LABEL"
 }
@@ -401,14 +419,14 @@ standing_limit_stop() {
     return 0
   }
   if [ "$count" -ge 2 ]; then
-    standing_stop "$issue" failure "$phase" "$stopped, the third in a row in the $phase phase; log: $log"
+    standing_stop "$issue" failure "$phase" "$stopped, the third in a row in $(standing_phase_text "$phase"); log: $log"
     return 0
   fi
   marker="$(marked_comment_write limited "$phase")" || exit 1
   at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
   [ -z "$reset" ] || at=", which resets $reset"
-  printf -v text '%s\nThe session stopped on a usage limit in the %s phase%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
-    "$marker" "$phase" "$at" "$STANDING_LIMITED_LABEL" "$((count + 1))" "$log"
+  printf -v text '%s\nThe session stopped on a usage limit in %s%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \
+    "$marker" "$(standing_phase_text "$phase")" "$at" "$STANDING_LIMITED_LABEL" "$((count + 1))" "$log"
   standing_stop_write "$issue" "limit stop" "$text" "$STANDING_LIMITED_LABEL"
 }
 
