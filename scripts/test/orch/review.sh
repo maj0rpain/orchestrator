@@ -901,10 +901,11 @@ assert_contains "saying which phase was supposed to open it" "$out" "the impleme
 review_ci_restore
 
 # --- review rerun -------------------------------------------------------------
-# The flow's one flake rerun (#525): the failed jobs of the Actions run behind
-# the PR's first failed or cancelled check, taken from that check's link. Exit 0
-# is the only answer that spends the rerun; 1 is "no Actions run to rerun" and
-# 2 everything else. Stateless: the PR is named on the command line.
+# The flow's one flake rerun (#525): the failed jobs of every Actions run behind
+# the failing counted checks - review ci's rule: the required checks where any
+# are reported, else every check - taken from the checks' links. Exit 0 is the
+# only answer that spends the rerun; 1 is "a failing check is no Actions run"
+# and 2 everything else. Stateless: the PR is named on the command line.
 echo
 echo "review rerun"
 new_repo >/dev/null
@@ -935,6 +936,79 @@ assert_status "a failing check linking no Actions run id has nothing to rerun" "
 assert_eq "warning that the check links no run id" "$out" \
   "orch: check build on PR #7 links no Actions run id - nothing to rerun"
 assert_eq "and reruns nothing" "$(fake_reruns)" ""
+
+# Which checks count is review ci's rule: the required checks where any are
+# reported, else every check. The optional outside status listed first is not
+# the failure review ci reported.
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 required failing
+fake_checks 7 all external
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a failing required check is rerun past an optional outside status" "$st" 0
+assert_eq "printing the required check's run" "$out" "4242"
+assert_eq "and rerunning only it" "$(fake_reruns)" "4242"
+
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 required failing
+fake_checks 7 all optfirst
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a failing optional Actions check ahead of the required one is exit 0" "$st" 0
+assert_eq "rerunning the required check's run alone" "$(fake_reruns)" "4242"
+assert_eq "and printing only it" "$out" "4242"
+
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 required tworuns
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "two failing checks in different runs is exit 0" "$st" 0
+assert_eq "rerunning both runs" "$(fake_reruns)" "4242 4343"
+assert_eq "printing both ids, one per line" "$out" "$(printf '4242\n4343')"
+
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 required onerun
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "two failing checks in one run is exit 0" "$st" 0
+assert_eq "rerunning that run once" "$(fake_reruns)" "4242"
+assert_eq "printing its id once" "$out" "4242"
+
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 required mixed
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "an outside status among the failing checks is exit 1" "$st" 1
+assert_eq "warning once, for the outside status" "$out" \
+  "orch: check ext-ci on PR #7 is not a GitHub Actions run - nothing to rerun"
+assert_eq "and rerunning nothing, not even the Actions run listed first" "$(fake_reruns)" ""
+
+# Nothing required has reported: every check at once, with no grace of its own.
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks_clear
+fake_checks 7 all failing
+out="$(ORCH_CI_GRACE=600 timeout 20 "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "no required check reported reads every check at once" "$st" 0
+assert_eq "rerunning the run behind the failing check" "$(fake_reruns)" "4242"
+
+# A refused rerun after one started: the started one stays, the refused is
+# named.
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 required tworuns
+fake_fail_after adapter_run_rerun 1 "HTTP 403: Resource not accessible by integration"
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a refused second rerun is exit 2" "$st" 2
+assert_eq "naming the refused run after the id already started" "$out" "$(printf '4242\norch: gh could not rerun the failed jobs of Actions run 4343: HTTP 403: Resource not accessible by integration')"
+assert_eq "the first run stays rerun" "$(fake_reruns)" "4242"
+fake_unfail
+
+# A failed read of the required scope does not widen to every check.
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 required failing
+fake_checks 7 all failing
+fake_fail_times adapter_pr_checks 1 "HTTP 502: Bad Gateway"
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a failed read of the required checks is exit 2" "$st" 2
+assert_eq "naming gh's reason" "$out" \
+  "orch: gh could not read the checks of PR #7: HTTP 502: Bad Gateway"
+assert_eq "and rerunning nothing" "$(fake_reruns)" ""
+fake_unfail
+fake_checks_clear
 
 fake_checks 7 all boom
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?

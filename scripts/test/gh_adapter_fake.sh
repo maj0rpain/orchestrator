@@ -954,6 +954,12 @@ fake_checks_answer() {
     # A failing check that is no Actions run - a commit status from an outside
     # CI - listed first, ahead of a failing Actions run.
     external) printf 'pass\tlint\t%s/1/job/1\nfail\text-ci\thttps://ci.example.com/build/9\nfail\tbuild\t%s/4242/job/77\n' "$runs" "$runs" ;;
+    # Two failing checks in different Actions runs; in one run; an Actions check
+    # then an outside status; an optional check in another run ahead of build.
+    tworuns)  printf 'fail\tbuild\t%s/4242/job/77\nfail\ttest\t%s/4343/job/78\n' "$runs" "$runs" ;;
+    onerun)   printf 'fail\tbuild\t%s/4242/job/77\nfail\ttest\t%s/4242/job/78\n' "$runs" "$runs" ;;
+    mixed)    printf 'fail\tbuild\t%s/4242/job/77\nfail\text-ci\thttps://ci.example.com/build/9\n' "$runs" ;;
+    optfirst) printf 'fail\toptional\t%s/9999/job/5\nfail\tbuild\t%s/4242/job/77\n' "$runs" "$runs" ;;
     # A failing check whose Actions link carries no numeric run id.
     badrunid) printf 'fail\tbuild\t%s/12abc\n' "$runs" ;;
     # One failing check whose name contains a comma.
