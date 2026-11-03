@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.43.28
+
+`spec-review apply --tickets` now refuses, before any write, a ticket text item, edge item or `@@ closed` line that names an issue outside the spec issue's breakdown or a ticket in the wrong state.
+
 ## 4.43.27
 
 `orch.sh issue comments` takes an optional `--with-spec-review` flag that keeps the spec review's changelog comments in the file, and `/orchestrator:questions` passes it, so its recommender sees what earlier spec-review rounds settled and declined.
