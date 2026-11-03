@@ -1757,22 +1757,24 @@ spec_review_tickets_merge() {
   fi
 }
 
-# spec_review_hold <dir>: the end of an autopilot round's first run, when the
-# batch held fundamental items back - every other item is applied and the body
-# published, and no changelog is posted yet. Writes <dir>/fundamental.md, the
-# held-back items' blocks in the batch grammar behind the batch's `@@ lens`
-# lines: the round's save point, which spec round reports as waiting and the
-# resumed apply reads as its cue. Then clears applied.log, whose body write
-# is no failure the resumed run must refuse, and makes spec.fetched.md the
-# body as published, the base the resumed run's edits anchor in. The hold
-# rebases the ticket copies too (rebase: overwrite a fetched copy, no git
-# rebase): each ticket-<t>.md, the ticket as the hold run published it,
-# overwrites ticket-<t>.fetched.md, after refetching a ticket the run applied a
-# block or unblock item to, whose ## Blocked by rewrite landed after that file
-# was written. The hold keeps its ticket lines in <dir>/held-tickets.md, after
-# the ticket copies, for the resumed run's changelog: the round's one
-# changelog reports both runs' ticket outcomes. The order: fundamental.md, the
-# ticket copies, held-tickets.md, spec.fetched.md, applied.log.
+# spec_review_hold <dir> <tickets>: the end of an autopilot round's first run
+# (<tickets>: the hold run's Tickets lines, written to held-tickets.md),
+# when the batch held fundamental items back - every other item is applied and
+# the body published, and no changelog is posted yet. Writes
+# <dir>/fundamental.md, the held-back items' blocks in the batch grammar
+# behind the batch's `@@ lens` lines: the round's save point, which spec round
+# reports as waiting and the resumed apply reads as its cue. Then clears
+# applied.log, whose body write is no failure the resumed run must refuse, and
+# makes spec.fetched.md the body as published, the base the resumed run's
+# edits anchor in. The hold rebases the ticket copies too (rebase: overwrite a
+# fetched copy, no git rebase): each ticket-<t>.md, the ticket as the hold run
+# published it, overwrites ticket-<t>.fetched.md, after refetching a ticket
+# the run applied a block or unblock item to, whose ## Blocked by rewrite
+# landed after that file was written. The hold keeps its ticket lines in
+# <dir>/held-tickets.md, after the ticket copies, for the resumed run's
+# changelog: the round's one changelog reports both runs' ticket outcomes. The
+# order: fundamental.md, the ticket copies, held-tickets.md, spec.fetched.md,
+# applied.log.
 spec_review_hold() {
   local dir="$1" tickets="$2" held=" " i tf tn err suffix
   suffix=" - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
@@ -1803,8 +1805,8 @@ spec_review_hold() {
   spec_review_clear_answer "$dir"
 }
 
-# The numbers of <dir>'s ticket-<n>.md files, one per line; the .fetched.md
-# copies are not among them.
+# spec_review_ticket_numbers <dir>: the numbers of <dir>'s ticket-<n>.md files,
+# one per line; the .fetched.md copies are not among them.
 spec_review_ticket_numbers() {
   local tf tn
   for tf in "$1"/ticket-*.md; do

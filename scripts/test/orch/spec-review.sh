@@ -1575,6 +1575,9 @@ srh_hold() {
   printf '%s\n' "$d"
 }
 srh_tail='None at all'
+# The hold keeps its ticket lines (#2132): the round's one changelog reports
+# both runs' ticket outcomes.
+srh_tickets() { fake_comments_of 14 | sed -n '/^### Tickets$/,$p'; }
 
 d="$(srh_hold)"
 assert_eq "the hold run publishes #20's edit" "$(fake_body_of 20 | sed -n 3p)" "Build alpha prime."
@@ -1589,6 +1592,10 @@ Build alpha prime.
 ## Blocked by
 
 None at all'
+assert_contains "the hold's part is labelled, first" "$(srh_tickets)" "Before the reply:
+- (1) #20 edited
+After the reply:
+- (1) #20 edited"
 
 d="$(srh_hold)"
 fake_body_of 20 >"$d/ticket-20.md"
@@ -1612,10 +1619,6 @@ Build alpha prime.
 
 - #21'
 
-# The hold keeps its ticket lines (#2132): the round's one changelog reports
-# both runs' ticket outcomes.
-srh_tickets() { fake_comments_of 14 | sed -n '/^### Tickets$/,$p'; }
-
 d="$(srh_hold "$srh_edges")"
 fake_body_of 20 >"$d/ticket-20.md"
 srh_edit "Build alpha." "Build alpha prime." >"$d/tickets.md"
@@ -1627,6 +1630,12 @@ assert_status "a resumed run rerun with --resume" "$st" 0
 assert_eq "#20 still holds both" "$(fake_body_of 20 | sed -n '3p;7p')" "Build alpha prime.
 - #21"
 assert_eq "the Tickets comment is posted once" "$(srh_tickets | grep -c 'Before the reply:')" 1
+assert_eq "the posted Tickets hold both runs' lines" "$(srh_tickets)" "### Tickets
+Before the reply:
+- (1) #21 no longer blocked by #20
+- (2) #20 now blocked by #21
+After the reply:
+- (1) #20 edited"
 
 d="$(srh_hold)"
 fake_body_of 20 >"$d/ticket-20.md"
@@ -1639,16 +1648,6 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" --resume --round 1/2 2>&1
 assert_status "and --resume finishes it" "$st" 0
 assert_eq "#20 keeps the hold run's edit beside the resumed run's" "$(fake_body_of 20 | sed -n '3p;7p')" "Build alpha prime.
 None at all"
-
-d="$(srh_hold)"
-fake_body_of 20 >"$d/ticket-20.md"
-srh_edit "None (can start immediately)" "$srh_tail" >"$d/tickets.md"
-ORCH_AUTOPILOT=1 sra "$d" 3B --tickets recommended
-assert_status "both runs edit a ticket" "$st" 0
-assert_contains "the hold's part is labelled, first" "$(srh_tickets)" "Before the reply:
-- (1) #20 edited
-After the reply:
-- (1) #20 edited"
 
 d="$(srh_hold)"
 fake_body_of 20 >"$d/ticket-20.md"
