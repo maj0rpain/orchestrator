@@ -1558,6 +1558,17 @@ assert_contains "an exit-0 session's long multi-line final reply is quoted colla
   "the session exited with code 0; it ended on: *$(printf 'x%.0s' $(seq 1 300)) $(printf 'y%.0s' $(seq 1 199))…*; log: "
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
+# --- autopilot answer on a truncated state.json (#1929) ----------------------
+echo
+echo "autopilot answer on a truncated state.json"
+fresh_flow aptrunc
+fake_github
+state_truncate
+ans="$(mktemp)"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
+assert_state_unreadable "autopilot answer" 2 "$out" "$st"
+restore_suite_env
+
 # --- autopilot: labels in the repo's casing (#1943) ------------------------
 # GitHub label names are case-insensitive and it attaches a label in the repo's
 # existing casing, so the Standing reads must find a label in any casing.

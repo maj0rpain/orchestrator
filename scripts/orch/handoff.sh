@@ -541,6 +541,7 @@ cmd_handoff() {
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"
+      require_state_readable
       handoff_check "$1" ok || return 1
       ;;
     section)
