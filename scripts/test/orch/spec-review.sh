@@ -1592,34 +1592,36 @@ for sra_mode in issue flow; do
   srt_step_refused "$sra_mode" "an edge outside the breakdown" "$d" \
     "orch: tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written" recommended
 done
-sra_in_mode issue
 # Every entry naming a ticket is checked whatever its disposition (#1923).
 fake_issue 99 open; fake_issue_body 99 'Unrelated issue: nightly backup job.'
-srt_named_refused() { # <label> <sed script> <want>
-  d="$(srt_dir)"
-  srt_fetch "$d"
-  sed -i "$2" "$d/tickets.md"
-  srt_step_refused issue "$1" "$d" "$3" recommended
-  assert_eq "$1: the unrelated issue's body unchanged" "$(fake_body_of 99)" 'Unrelated issue: nightly backup job.'
-}
-srt_named_refused "a ticket item outside the breakdown" 's/^@@ item 1 ticket 20 apply$/@@ item 1 ticket 99 apply/' \
-  "orch: tickets.md line 2: ticket item 1: #99 is not a ticket of #14's breakdown - nothing written"
-srt_named_refused "a declined ticket item outside the breakdown" 's/^@@ item 4 ticket 21 decline /@@ item 4 ticket 99 decline /' \
-  "orch: tickets.md line 12: ticket item 4: #99 is not a ticket of #14's breakdown - nothing written"
-srt_named_refused "a ticket item naming a closed ticket" 's/^@@ item 1 ticket 20 apply$/@@ item 1 ticket 22 apply/' \
-  "orch: tickets.md line 2: ticket item 1: #22 is a closed ticket of #14's breakdown - nothing written"
-srt_named_refused "an edge whose ticket is closed" 's/^@@ item 5 block 21 by 20 /@@ item 5 block 22 by 20 /' \
-  "orch: tickets.md line 19: ticket item 5: #22 is a closed ticket of #14's breakdown - nothing written"
-srt_named_refused "a closed line outside the breakdown" 's/^@@ closed 22 /@@ closed 99 /' \
-  "orch: tickets.md line 20: #99 is not a ticket of #14's breakdown - nothing written"
-srt_named_refused "a closed line naming an open ticket" 's/^@@ closed 22 /@@ closed 20 /' \
-  "orch: tickets.md line 20: #20 is an open ticket of #14's breakdown - nothing written"
-srt_named_refused "the first failure, an item before a closed line" 's/^@@ item 1 ticket 20 apply$/@@ item 1 ticket 99 apply/; s/^@@ closed 22 /@@ closed 99 /' \
-  "orch: tickets.md line 2: ticket item 1: #99 is not a ticket of #14's breakdown - nothing written"
-d="$(srt_collapsed)"
-sed -i 's/^@@ item 1 section apply$/@@ item 1 ticket 20 apply/' "$d/tickets.md"
-srt_step_refused issue "a ticket item on a collapsed breakdown" "$d" \
-  "orch: tickets.md line 2: ticket item 1: #20 is not a ticket of #14's breakdown - nothing written" recommended
+for sra_mode in issue flow; do
+  srt_named_refused() { # <label> <sed script> <want>
+    d="$(srt_dir)"
+    srt_fetch "$d"
+    sed -i "$2" "$d/tickets.md"
+    srt_step_refused "$sra_mode" "$1" "$d" "$3" recommended
+    assert_eq "$1: the unrelated issue's body unchanged" "$(fake_body_of 99)" 'Unrelated issue: nightly backup job.'
+  }
+  srt_named_refused "a ticket item outside the breakdown" 's/^@@ item 1 ticket 20 apply$/@@ item 1 ticket 99 apply/' \
+    "orch: tickets.md line 2: ticket item 1: #99 is not a ticket of #14's breakdown - nothing written"
+  srt_named_refused "a declined ticket item outside the breakdown" 's/^@@ item 4 ticket 21 decline /@@ item 4 ticket 99 decline /' \
+    "orch: tickets.md line 12: ticket item 4: #99 is not a ticket of #14's breakdown - nothing written"
+  srt_named_refused "a ticket item naming a closed ticket" 's/^@@ item 1 ticket 20 apply$/@@ item 1 ticket 22 apply/' \
+    "orch: tickets.md line 2: ticket item 1: #22 is a closed ticket of #14's breakdown - nothing written"
+  srt_named_refused "an edge whose ticket is closed" 's/^@@ item 5 block 21 by 20 /@@ item 5 block 22 by 20 /' \
+    "orch: tickets.md line 19: ticket item 5: #22 is a closed ticket of #14's breakdown - nothing written"
+  srt_named_refused "a closed line outside the breakdown" 's/^@@ closed 22 /@@ closed 99 /' \
+    "orch: tickets.md line 20: #99 is not a ticket of #14's breakdown - nothing written"
+  srt_named_refused "a closed line naming an open ticket" 's/^@@ closed 22 /@@ closed 20 /' \
+    "orch: tickets.md line 20: #20 is an open ticket of #14's breakdown - nothing written"
+  srt_named_refused "the first failure, an item before a closed line" 's/^@@ item 1 ticket 20 apply$/@@ item 1 ticket 99 apply/; s/^@@ closed 22 /@@ closed 99 /' \
+    "orch: tickets.md line 2: ticket item 1: #99 is not a ticket of #14's breakdown - nothing written"
+  d="$(srt_collapsed)"
+  sed -i 's/^@@ item 1 section apply$/@@ item 1 ticket 20 apply/' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "a ticket item on a collapsed breakdown" "$d" \
+    "orch: tickets.md line 2: ticket item 1: #20 is not a ticket of #14's breakdown - nothing written" recommended
+done
+sra_in_mode issue
 d="$(srt_dir)"
 srt_fetch "$d"
 sed -i 's/^@@ item 3 block 20 by 21 apply$/@@ item 3 block 20 by 22 apply/' "$d/tickets.md"
