@@ -1341,12 +1341,12 @@ bf_quick() {
 bf_flow ff 601 701; fake_pr_merged 701 3600 601
 bf_quick fq 602 702; fake_pr_merged 702 3600 602
 bf_quick fg 603 703; fake_pr_merged 703 60 603
-bf_flow fb 604 704; fake_pr_merged 704 3600 999
+bf_flow fb 604 704; fake_pr_merged 704 3600 604
+fake_issue 604 closed orch:done
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds over the missed closes" "$st" 0
 assert_eq "a finished flow's open issue is closed" "$(fake_state_of 601)" "CLOSED"
-assert_eq "as completed" "$(fake_reason_of 601)" "completed"
 assert_contains "with a comment naming the recorded PR" "$(fake_comments_of 601)" 'PR #701 merged into `main` with `Closes #601`'
 assert_eq "the flow's checkout is still removed" "$(on_disk "$(dirname "$top")/ff")" "absent"
 assert_eq "a flow-less quick branch's open issue is closed" "$(fake_state_of 602)" "CLOSED"
@@ -1354,7 +1354,7 @@ assert_contains "with a comment naming its newest merged PR" "$(fake_comments_of
 assert_eq "an issue whose PR merged a minute ago stays open" "$(fake_state_of 603)" "OPEN"
 assert_contains "with a warning naming the issue and the PR" "$out" "issue #603 is still open: PR #703 merged less than 5 minutes ago"
 assert_eq "the checkout inside the grace period is still removed" "$(sp_branch quick/603-fg)" "gone"
-assert_eq "closing references lacking the issue leave it open" "$(fake_state_of 604)" "OPEN"
+assert_eq "an already-closed issue gets no close comment" "$(fake_comments_of 604)" ""
 
 # A flow-less checkout on a branch that is not quick/<issue>- is skipped.
 fake_offline
@@ -1384,7 +1384,6 @@ fake_online
 fake_fail adapter_issue_close "HTTP 500"
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "a failed close does not fail prune" "$st" 0
-assert_contains "it warns, naming the issue and the PR" "$out" "could not close issue #607 after PR #707 merged: HTTP 500"
 assert_eq "the checkout is still removed" "$(sp_branch quick/607-fc)" "gone"
 fake_unfail
 

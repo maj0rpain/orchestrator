@@ -9,20 +9,19 @@
 # never races it.
 PR_CLOSE_GRACE=300
 
-# pr_close_missed <issue> <pr> <base> <merged-at> <closing> <default>: the
-# backstop for GitHub's auto-close (#2477). <issue> is open and its work
-# finished - the caller checked both. Closes it as completed, with a comment
-# naming the PR and the default branch, when PR <pr> merged into <base> equal
-# to <default> at <merged-at> (a UTC timestamp), at least PR_CLOSE_GRACE
-# seconds ago, and <closing> - its closingIssuesReferences, comma-separated
-# numbers - lists <issue>. Labels are left as they are. Returns 0 when it
-# closed the issue, 1 on a silent skip, 2 when the close failed, after a
-# warning that skips this issue only, 3 when every other condition held but
-# the merge is inside the grace period (the caller may warn).
+# pr_close_missed <issue> <pr> <merged-at> <closing> <default>: the backstop
+# for GitHub's auto-close (#2477). <issue> is open and its work finished - the
+# caller checked both - and PR <pr> merged into <default>, the default branch,
+# at <merged-at> (a UTC timestamp). Closes the issue as completed, with a
+# comment naming the PR and the default branch, when the merge is at least
+# PR_CLOSE_GRACE seconds old and <closing> - its closingIssuesReferences,
+# comma-separated numbers - lists <issue>. Labels are left as they are.
+# Returns 0 when it closed the issue, 1 on a silent skip, 2 when the close
+# failed, after a warning that skips this issue only, 3 when every other
+# condition held but the merge is inside the grace period (the caller may warn).
 pr_close_missed() {
-  local issue="$1" pr="$2" base="$3" merged_at="$4" closing="$5" default="$6"
+  local issue="$1" pr="$2" merged_at="$3" closing="$4" default="$5"
   local merged_epoch gh_err
-  [ "$base" = "$default" ] || return 1
   case ",$closing," in *",$issue,"*) ;; *) return 1 ;; esac
   merged_epoch="$(autopilot_iso_epoch "$merged_at")" || return 1
   [ $(( $(date -u +%s) - merged_epoch )) -ge "$PR_CLOSE_GRACE" ] || return 3
@@ -31,6 +30,39 @@ pr_close_missed() {
     warn "could not close issue #$issue after PR #$pr merged: $(gh_reason "$gh_err")"
     return 2
   }
+}
+
+# pr_merged_closing_read <default-var> <prs-var> <skip>: the backstop's one read
+# - the default branch, then the PRs merged into it, fork PRs dropped
+# (trust_filter_prs) - written into the two caller-named variables, the PRs as
+# adapter_prs_merged_closing's lines. Returns 1 after a warning ending in
+# <skip>, the caller's words for what it gives up, when any read fails.
+pr_merged_closing_read() {
+  local _default _raw _prs _err
+  _default="$(default_branch)" || { warn "could not find the default branch - $3"; return 1; }
+  capture _raw _err adapter_prs_merged_closing "$_default" || {
+    warn "could not read the merged PRs: $(gh_reason "$_err") - $3"
+    return 1
+  }
+  _prs="$(printf '%s\n' "$_raw" | trust_filter_prs "the merged PRs")" || {
+    warn "the merged PRs could not be read: a malformed line - $3"
+    return 1
+  }
+  printf -v "$1" '%s' "$_default"
+  printf -v "$2" '%s' "$_prs"
+}
+
+# pr_close_newest <issue> <default> <lines>: runs pr_close_missed on the newest
+# merge among <lines> - the caller's pick of pr_merged_closing_read's PRs, the
+# ones that may close <issue> - and returns its status, with the PR's number
+# in the caller's `pr`, which bash scopes dynamically. Returns 1 when <lines>
+# is empty.
+pr_close_newest() {
+  local line merged_at closing
+  line="$(printf '%s\n' "$3" | awk -F'\t' 'NF && $3 > best { best = $3; line = $0 } END { if (line != "") print line }')"
+  [ -n "$line" ] || return 1
+  IFS=$'\t' read -r pr _ merged_at closing <<<"$line"
+  pr_close_missed "$1" "$pr" "$merged_at" "$closing" "$2"
 }
 
 # pr_push_and_body <branch> <base> <issue> <body-file> <tmp-var> <outcome>:
