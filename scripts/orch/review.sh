@@ -276,7 +276,7 @@ ci_ref_unchecked() {
   [ "$(adapter_commit_has_statuses "$1" 2>/dev/null)" = no ]
 }
 
-# The flow's flake rerun (issue #525): the failed jobs of every distinct
+# The loop's flake rerun (issue #525): the failed jobs of every distinct
 # GitHub Actions run behind the failing counted checks - the checks `review ci`
 # reads (ci_counted: the required checks where any are reported, else every
 # check), every failed or cancelled one, not only the first. A run's id is the
@@ -285,7 +285,7 @@ ci_ref_unchecked() {
 # Every failing check's link is verified before any rerun starts, so exit 1
 # never leaves a rerun half started. Each run is rerun once, in the order first
 # met, and its id printed as its rerun starts. Exit 0 means every rerun
-# started, and is the only answer that spends the flow's rerun. Exit 1 means a
+# started, and is the only answer that spends the loop's rerun. Exit 1 means a
 # failing check is no Actions run - an outside CI's status - so no rerun could
 # make CI green, and nothing is rerun. Everything else - a usage error, no
 # repo, a GitHub that cannot be read, no failing check, a refused rerun - goes

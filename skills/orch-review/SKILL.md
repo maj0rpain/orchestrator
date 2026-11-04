@@ -714,9 +714,10 @@ the first iteration** describes it.
 **In an autopilot flow** the terminal action differs. Ready ends with
 `bash "$ORCH" review ready` as above, which also moves the label to `orch:done`
 and releases the claim; nothing more runs. A bounded stop - the PR staying in
-draft - never ends by telling the human in the session. Write the stop reason
-(and, for a spec question, each question with its recommendation, numbered, as
-the interview formats them) to `.orchestrator/review/question.md` in the side
+draft - never ends by telling the human in the session. Write the stop reason,
+the closer's filed issue numbers (and, for a spec question, each question with
+its recommendation, numbered, as the interview formats them) to
+`.orchestrator/review/question.md` in the side
 checkout - the save point, which a fresh session re-posts when the human removes
 `needs-human` without replying. Then classify each reason of the stop:
 
