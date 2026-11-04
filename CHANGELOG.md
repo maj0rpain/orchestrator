@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.47.2
+
+Test-only: one shared `adapter_stood_in` helper replaces the hand-built stand-in adapters in the finding-triage, redo, issue and pr tests, and `partial` takes one optional stand-in definition and pins any whole `orch: ` message.
+
 ## 4.47.1
 
 An unreadable side-checkout `state.json` is now reported plainly instead of leaking jq's parse error: `status` and `side-checkout list` say the state cannot be read, `side-checkout prune` and `finish` skip the checkout naming the unreadable file, `autopilot run` and the watcher's pickup give a plain reason, `doctor --flow` skips it quietly, and `suite-cost` reports its base commit unmeasured. The flow's state file path is also right for a repo rooted at `/`.
