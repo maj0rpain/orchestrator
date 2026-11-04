@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.47.0
+
+An autopilot review loop whose bounded stop asks nothing of the human - an unclean final iteration, an open blocking finding, a missing look, or a CI failure the change can fix - now re-enters on its own: it posts a re-entry comment with no @mention, keeps the issue at `orch:review` without `needs-human`, and the watcher starts the next loop. Stops that need a decision still ask, and so does the third bounded stop in a row. The new `orch.sh autopilot reenter` posts the re-entry, the new `orch.sh review ci-log` prints the failing Actions jobs' failed-step logs, and the next loop carries a failing CI into its first triage as a blocking finding. The flake rerun is now one per review loop rather than one per flow (ADR-0059).
+
 ## 4.46.5
 
 The test suite's skip lines now print through the same labelled printer as FAIL lines, so a multi-line skip reason is indented on every line. The KILL-escalation check waits for its child through the bounded FIFO handshake instead of a /proc poll, and a redundant single-line print_fail case is dropped.
