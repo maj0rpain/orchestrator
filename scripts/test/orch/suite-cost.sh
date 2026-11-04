@@ -1186,22 +1186,15 @@ sh -c "$(handshake_first "$hs" 1)" >/dev/null 2>"$hs/err-lone"; st=$?
 assert_status "the first side's line under sh with no partner ends 124" "$st" 124
 assert_contains "and names the first side and its FIFOs" "$(cat "$hs/err-lone")" "first side ($hs/one, $hs/two): no partner within 1s"
 
-# A completed handshake writes nothing to stderr.
-sh -c "$(handshake_first "$hs" 5)" >/dev/null 2>"$hs/err-done-first" &
-pid_first=$!
-"${FIFO_BOUNDED[@]}" 5 "partner ($hs/one, $hs/two)" sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" >/dev/null 2>"$hs/err-done"; st=$?
-wait "$pid_first"; st_first=$?
-assert_status "a completed handshake's partner ends 0" "$st" 0
-assert_status "and so does its first side" "$st_first" 0
-assert_eq "and the partner captured nothing" "$(cat "$hs/err-done")" ""
-assert_eq "and the first side wrote nothing to stderr" "$(cat "$hs/err-done-first")" ""
-
-# bounded_run_replayed as the partner of a completed handshake returns 0 and
-# writes nothing to stderr.
+# A completed handshake writes nothing to stderr, the partner run through
+# bounded_run_replayed as the handshake sites run theirs.
 sh -c "$(handshake_first "$hs" 5)" >/dev/null 2>"$hs/err-done-first" &
 pid_first=$!
 err="$(bounded_run_replayed "$hs/err-done" 5 "partner ($hs/one, $hs/two)" sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" 2>&1 >/dev/null)"; st=$?
-wait "$pid_first"
-assert_status "bounded_run_replayed: a completed handshake's side returns 0" "$st" 0
-assert_eq "and writes nothing to stderr" "$err" ""
+wait "$pid_first"; st_first=$?
+assert_status "bounded_run_replayed: a completed handshake's partner ends 0" "$st" 0
+assert_status "and so does its first side" "$st_first" 0
+assert_eq "and the partner captured nothing" "$(cat "$hs/err-done")" ""
+assert_eq "and the first side wrote nothing to stderr" "$(cat "$hs/err-done-first")" ""
+assert_eq "and the replay wrote nothing to stderr" "$err" ""
 rm -rf "$hs"
