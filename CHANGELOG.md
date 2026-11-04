@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.46.2
+
+The autopilot container's step-1 environment refusals (`REPO`, `GH_TOKEN` and the Claude credential) now carry the `environment:` step label, like every other failure line.
+
+## 4.46.1
+
+The issue module's trusted comment readers now share one trust-filter step and one render step, and `issue fetch --json` no longer prints jq's own parse error before its `orch:` line for a comment object that does not parse.
+
+## 4.46.0
+
+Autopilot image: an `EXTRA_BUILD_COMMAND` build arg runs a shell command as root at image build, under bash with pipefail, for toolchains apt lacks (e.g. uv). Set it in `docker/.env` or `docker/.env.<name>`.
+
 ## 4.45.1
 
 Renamed two test variables that shadowed tally helpers, keeping coding-standards rule 3.

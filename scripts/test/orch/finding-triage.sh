@@ -1082,6 +1082,11 @@ partial "a failed close" 41 \
 fake_fail adapter_issue_comments "$GH_502"
 partial "a failed comments read" 42 \
   "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33" "left open"
+unparsed_adapter="$(mktemp)"
+writeln "source $(printf %q "$GH_ADAPTER_FAKE")" "adapter_issue_comments() { printf 'not json\\n'; }" >"$unparsed_adapter"
+partial "a comment object that does not parse" 49 \
+  "could not read member #31's comments" "31 32 33" "left open" "$unparsed_adapter"
+rm -f "$unparsed_adapter"
 fake_fail_after adapter_issue_comment 1 ""
 partial "a silent failed comment" 48 \
   "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33" "left open"
