@@ -39,6 +39,12 @@ fake_pr_mergeable() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/mergeable"
 fake_issue_drop() { local n; for n in "$@"; do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done; }
 # fake_claim_release <issue>: the store holds no claim on it.
 fake_claim_release() { rm -f "$ORCH_GH_FAKE_STORE/claims/$1"; }
+# fake_last_comment_of <n>: the body of issue #n's newest comment in the gh
+# fake's store (newest by numeric comment order); the issue holds a comment.
+fake_last_comment_of() {
+  local d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
+  cat "$d/$(ls "$d" | sort -n | tail -n 1)/body"
+}
 # dead_pid: the pid of a process that has exited.
 dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
 
@@ -325,6 +331,49 @@ fake_unfail
 assert_status "a failed re-entry comment post dies" "$st" 1
 assert_contains "naming it" "$out" "could not post the re-entry comment on issue #76: HTTP 500 - writes that landed: none; the claim stays held"
 assert_eq "the claim is held" "$(fake_claim_held 76)" held
+re_issue 72
+fake_comment 72 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+first"
+re_run >/dev/null
+assert_eq "with one earlier re-entry it re-enters again" "$(fake_labels_of 72)|$(fake_last_comment_of 72 | awk "NR==1")" "orch:review |<!-- orch:reentry review -->"
+re_issue 73
+fake_comment 73 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+first"
+fake_comment 73 o 2026-01-02T00:00:00Z "$(marker_of limited review)
+wait"
+fake_comment 73 o 2026-01-03T00:00:00Z "$(marker_of reentry review)
+second"
+re_run >/dev/null
+assert_eq "with two earlier re-entries it posts a question comment" "$(fake_last_comment_of 73 | awk "NR==1")" "<!-- orch:question review -->"
+assert_contains "noting the two automatic re-entries" "$(fake_last_comment_of 73)" "This follows two automatic re-entries"
+assert_eq "adding needs-human and releasing the claim" "$(fake_labels_of 73)|$(fake_claim_held 73)" "needs-human orch:review |free"
+# a failed timeline read is a failure stop
+re_issue 75
+fake_fail adapter_issue_comments_json "HTTP 500"
+re_run >/dev/null
+fake_unfail
+assert_eq "a failed timeline read takes the failure stop" "$(fake_labels_of 75)|$(fake_claim_held 75)" "needs-human orch:review |free"
+assert_contains "naming the phase" "$(fake_last_comment_of 75)" "<!-- orch:failure review -->"
+# failed writes die naming the landed ones, the claim held
+re_issue 77
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(re_run)"; st=$?
+fake_unfail
+assert_status "a failed claim release dies" "$st" 1
+assert_contains "a failed claim release names the comment that landed" "$out" "writes that landed: posted the review re-entry comment, removed orch:running; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 77)" held
+re_issue 78
+fake_comment 78 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+a"
+fake_comment 78 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
+b"
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(re_run)"; st=$?
+fake_unfail
+assert_status "on the ask path a failed needs-human add dies" "$st" 1
+assert_contains "on the ask path a failed needs-human add names the question comment" "$out" "writes that landed: posted the review question comment; the claim stays held"
+
+assert_eq "and the claim stays held" "$(fake_claim_held 78)" held
 # another phase is refused before any write
 re_issue 79
 out="$(re_run implement)"; st=$?

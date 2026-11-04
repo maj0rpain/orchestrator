@@ -137,7 +137,7 @@ severity the loop assigned), the repo's `needs-triage` (a label meaning a
 human hasn't looked at it yet), and a category - `bug` for a Spec-axis
 finding, `enhancement` for a Standards-axis one - with the reviewer's finding
 and the loop's reasoning in the body. CI is waited on once per loop with a
-single flake rerun per flow.
+single flake rerun per loop.
 
 It ends one of two ways: by marking the draft PR ready, or by a **bounded
 stop** - the loop giving up before the PR is ready and recording why, rather

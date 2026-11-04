@@ -658,12 +658,6 @@ fake_title_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_labels_of() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
 fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
-# fake_last_comment_of <n>: the body of issue #n's newest comment in the gh
-# fake's store (newest by numeric comment order); the issue holds a comment.
-fake_last_comment_of() {
-  local d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
-  cat "$d/$(ls "$d" | sort -n | tail -n 1)/body"
-}
 
 # fake_claim_seed <issue> [host] [pid] [started] [phase]: seeds a claim on the
 # issue, held by this host with pid 1, a start long past and the spec phase

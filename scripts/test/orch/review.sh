@@ -976,7 +976,7 @@ assert_contains "saying which phase was supposed to open it" "$out" "the impleme
 review_ci_restore
 
 # --- review rerun -------------------------------------------------------------
-# The flow's one flake rerun (#525): the failed jobs of every Actions run behind
+# The loop's one flake rerun (#525): the failed jobs of every Actions run behind
 # the failing counted checks - review ci's rule: the required checks where any
 # are reported, else every check - taken from the checks' links. Exit 0 is the
 # only answer that spends the rerun; 1 is "a failing check is no Actions run"
@@ -1203,6 +1203,13 @@ assert_status "unreadable checks fail the verb" "$st" 1
 assert_contains "with an orch: message carrying gh's reason" "$out" "orch: gh could not read the checks of PR #7: dial tcp"
 out="$("$ORCH" review ci-log 2>&1)"; st=$?
 assert_status "no PR is a usage error" "$st" 1
+out="$("$ORCH" review ci-log abc 2>&1)"; st=$?
+assert_status "a PR that is not a number dies" "$st" 1
+assert_eq "naming it" "$out" "orch: not a PR number: abc"
+git remote remove origin
+out="$("$ORCH" review ci-log 7 2>&1)"; st=$?
+assert_status "no repo to work on dies" "$st" 1
+assert_eq "with the repo remedy" "$out" "orch: $repo_remedy"
 fake_checks_clear
 
 # --- review terminal ----------------------------------------------------
