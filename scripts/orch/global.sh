@@ -395,17 +395,24 @@ orch.sh - deterministic operations for the orchestrator flow
                               back to the merge-base with its recorded base
                               branch (else the base branch in effect), on
                               origin if there, else local
-  branch sync                 merge origin's tip of the current plugin-made
+  branch sync [--finish]      merge origin's tip of the current plugin-made
                               branch's base into it (never a rebase, never
                               the local base), record that tip as its base
                               SHA (branch config, and state when this
                               checkout's flow holds it), and push when it
-                              has an upstream. Exit 3 on a conflict, the
-                              merge left in progress; exit 1 on a dirty
+                              has an upstream. Exit 3 on a conflict, or on
+                              a pending merge of origin's base a failed
+                              sync left (nothing fetched), the merge left
+                              in progress; exit 1 on a dirty
                               tree, failed fetch, detached HEAD, a merge
-                              already in progress, a branch that is its own
-                              base, or a branch the plugin did not make,
-                              nothing moved; exit
+                              in progress that is not of the base, a branch
+                              that is its own base, or a branch the plugin
+                              did not make, nothing moved.
+                              --finish finishes a resolved conflict without
+                              fetching: HEAD must be a merge commit whose
+                              second parent is on origin's base, no merge in
+                              progress, else exit 1; it records that parent
+                              as the base SHA and pushes. Exit
                               1 on a failed push, the merge recorded - rerun
                               to push
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on

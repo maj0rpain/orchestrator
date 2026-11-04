@@ -54,11 +54,12 @@ carries no issue, it is the issue the human gives: ask for one and wait.
   merge: tell the human which, and stop. Nothing more happens: no PR body
   check, no comment, no review pass. Neither rewrites the branch's own
   lines, so the PR body stands as it is.
-- **A failed sync** - a refusal, a failed resolution, or a rerun that does
-  not exit 0: relay the failure and stop, as that section's step 4 says,
-  leaving any merge in progress for the human. Never abort it.
-- **A conflict resolved** - the rerun exited 0: the sync stands. Go to
-  step 2.
+- **A failed sync** - a refusal, a failed resolution, or a `branch sync
+  --finish` that does not exit 0: relay the failure and stop, as that
+  section's step 4 says, leaving any merge in progress for the human. Never
+  abort it.
+- **A conflict resolved** - `branch sync --finish` exited 0: the sync
+  stands. Go to step 2.
 
 ## 2. Check the PR body and record the Merge resolutions
 
@@ -154,10 +155,11 @@ Run step 1 as written. Then:
   (`branch sync` pushes a clean merge itself): run **Sync finish**, with no PR
   body check and no comment.
 - **A failed sync** - the first `branch sync` refused (exit 1: a refused
-  branch, a failed fetch, a dirty tree), the resolver gave up, or the rerun of
-  `branch sync` did not exit 0, a rejected push included: run the
-  **Failure stop** with that failure as its reason. Leave any merge in
-  progress; never abort it.
+  branch, a failed fetch, a dirty tree, a merge in progress that is not of
+  the base), the
+  resolver gave up, or `branch sync --finish` did not exit 0, a rejected
+  push included: run the **Failure stop** with that failure as its reason.
+  Leave any merge in progress; never abort it.
 - **A conflict resolved** - run step 2 unattended (a missing PR skips the
   check and the comment). Then, when the resolver's report lists dropped
   intents, run the **Dropped-intent stop**; otherwise **Sync finish**. A
