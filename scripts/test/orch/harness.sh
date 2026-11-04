@@ -815,7 +815,8 @@ sed -i 's/^tally_summary$/rm -f "$tally_file"\ntally_summary/' "$tally_dir/suite
 out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a standalone suite whose tally file is gone exits 1" "$st" 1
 assert_eq "and reports it as a failure" "$(printf '%s\n' "$out" | tail -n 1)" "0 passed, 1 failed"
-# print_fail indents every line of a detail; bad() prints through it.
+# print_labelled indents every line of a detail; print_fail, bad() and skip()
+# print through it.
 cat >"$tally_dir/fail.sh" <<SUITE
 source "$(dirname "$SUITE_SCRIPT")/tally.sh"
 tally_init
@@ -840,7 +841,7 @@ assert_eq "bad() indents a multi-line detail the same way" \
 assert_eq "skip() indents every line of a multi-line reason, an empty one included" \
   "$(printf '%s\n' "$out" | sed -n 9,12p)" "$(printf '  skip skip many\n     why\n     \n     last')"
 assert_eq "and the tally records exactly one skip" \
-  "$(printf '%s\n' "$out" | sed -n 13p)" "skipped 1"
+  "$(printf '%s\n' "$out" | tail -n 2 | sed -n 1p)" "skipped 1"
 assert_eq "and records exactly one failure" "$(printf '%s\n' "$out" | tail -n 1)" "recorded 1"
 rm -rf "$tally_dir"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
