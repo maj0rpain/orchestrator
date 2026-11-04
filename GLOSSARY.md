@@ -726,8 +726,9 @@ and not a successful one.
 
 **Flake rerun**:
 The one permitted re-run of a failing CI check on the theory that it failed for
-reasons unrelated to the change. The allowance belongs to the flow, not to the
-iteration: one per flow, spent or not.
+reasons unrelated to the change. The allowance belongs to the review loop,
+not to the iteration: one per loop, spent or not, renewed when the next loop
+begins.
 
 **Required check**:
 A CI check that must pass before a change can land. Where branch protection

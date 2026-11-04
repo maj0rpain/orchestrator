@@ -158,6 +158,26 @@ echo
 echo "review begin"
 healthy_repo
 
+# The flake rerun belongs to the loop: begin renews it when a loop's first
+# iteration starts - iteration 0, or a previous loop's Terminal state - and
+# leaves it alone for a later iteration of the same loop.
+fresh_flow flakebegin
+state_fixture budget 5
+state_fixture flake_rerun_used true
+"$ORCH" review begin >/dev/null
+assert_eq "a flake rerun spent before a redo is unspent at iteration 0" \
+  "$("$ORCH" state get flake_rerun_used)" "false"
+state_fixture flake_rerun_used true
+"$ORCH" review begin >/dev/null
+assert_eq "a later iteration of the same loop leaves it spent" \
+  "$("$ORCH" state get flake_rerun_used)" "true"
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop - CI failing.' >.orchestrator/review/iteration-02.md
+"$ORCH" review begin >/dev/null
+assert_eq "a flake rerun spent in one loop is unspent in the next loop's first iteration" \
+  "$("$ORCH" state get flake_rerun_used)" "false"
+restore_suite_env
+
 # --- review path ------------------------------------------------------------
 # One flow, one trail: the records sit flat under review/, numbered on across
 # every loop the flow runs, so nothing is ever moved aside.

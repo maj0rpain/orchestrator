@@ -610,7 +610,7 @@ exiting non-zero on the last two:
   on an earlier PR commit or the base tip - and its detail line says which.
 - **failing** - a required check failed, and the detail lines name which.
   Required means required by the branch protection of the PR's base branch. If
-  it looks flaky rather than caused by the change, the flow has **one** flake
+  it looks flaky rather than caused by the change, the loop has **one** flake
   rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent
   and `false` while it is not. Spend it with `bash "$ORCH" review rerun <pr>`,
   which reruns the failed jobs of every GitHub Actions run behind the failing
@@ -627,7 +627,7 @@ exiting non-zero on the last two:
   `review ci` again, run the same way (host capability *Run a long command*). A
   second failure is a **bounded stop**. That second ask
   restarts the fifteen-minute wait rather than inheriting what is left of the
-  first, because a rerun restarts the checks - so this one path, once per flow,
+  first, because a rerun restarts the checks - so this one path, once per loop,
   can wait longer than the cap. A second ask that times out or is killed is
   **unreachable** like the first.
 - **unreachable** - GitHub would not answer, or the checks were still pending at

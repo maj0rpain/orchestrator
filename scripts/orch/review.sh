@@ -748,12 +748,19 @@ cmd_review() {
   case "$op" in
     begin)
       require_state
-      local n budget
-      n=$(( $(state_get iteration) + 1 ))
+      local n budget prior prior_path
+      prior="$(state_get iteration)"
+      n=$(( prior + 1 ))
       budget="$(review_budget)"
       [ "$n" -le "$budget" ] || \
         die "budget of $budget iterations spent - stop the loop and report, do not start another"
       state_write iteration "$n"
+      # A loop's first iteration - iteration 0, or the one after a record with a
+      # Terminal state - renews the loop's flake rerun; resume never gets here.
+      prior_path="$(printf '%s/iteration-%02d.md' "$REVIEW_DIR" "$prior")"
+      if [ "$prior" -eq 0 ] || { [ -f "$prior_path" ] && [ -n "$(section_body "$prior_path" '## Terminal state' | tr -d '[:space:]')" ]; }; then
+        state_write flake_rerun_used false
+      fi
       note "$n"
       ;;
     path)
