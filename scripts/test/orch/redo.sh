@@ -140,8 +140,13 @@ assert_eq "resets the iteration for a fresh budget" "$("$ORCH" state get iterati
 assert_eq "and clears branch, PR, and base SHA" \
   "$("$ORCH" state get branch)$("$ORCH" state get pr)$("$ORCH" state get base_sha)" ""
 assert_eq "steps the flow back to implement" "$("$ORCH" state get phase)" "implement"
-assert_eq "leaves the one-per-flow flake rerun untouched" \
+assert_eq "leaves the flake rerun spent in the old loop untouched" \
   "$("$ORCH" state get flake_rerun_used)" "true"
+"$ORCH" review begin >/dev/null
+assert_eq "and review begin unspends it at the redone loop's iteration 0" \
+  "$("$ORCH" state get flake_rerun_used)" "false"
+state_fixture iteration 0
+state_fixture flake_rerun_used true
 assert_eq "renames the old branch aside" \
   "$(branch_presence orch/21-redotest-redo-1)" "present"
 assert_eq "keeping its PR marker, so the retired branch reads as handed off (#1200)" \

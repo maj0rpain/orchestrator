@@ -160,7 +160,7 @@ gh_or_die() {
 #   adapter_auth_status <host>
 # - ci: adapter_pr_checks, adapter_branch_required_checks,
 #   adapter_branch_rules, adapter_commit_has_check_runs,
-#   adapter_commit_has_statuses, adapter_run_rerun
+#   adapter_commit_has_statuses, adapter_run_rerun, adapter_job_failed_log
 #
 # ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review.sh's
 # ORCH_CI_* ones, but read differently: not a value substituted at load time,
@@ -890,6 +890,13 @@ adapter_commit_has_statuses() {
 # (issue #525). Prints nothing.
 adapter_run_rerun() {
   gh run rerun "$1" --failed >/dev/null
+}
+
+# adapter_job_failed_log <job>: the failed steps' log of GitHub Actions job
+# <job>, as gh prints it. Fails, with gh's stderr passed through, where gh
+# could not read the log.
+adapter_job_failed_log() {
+  gh run view --job "$1" --log-failed
 }
 
 # --- claim operations (#1454) ---

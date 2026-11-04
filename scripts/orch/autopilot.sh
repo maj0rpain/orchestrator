@@ -191,6 +191,18 @@ autopilot_ask() {
   standing_ask "$phase" "$text"
 }
 
+# autopilot_reenter <phase> <file>: the automatic re-entry of a review loop
+# whose stop asks nothing: <file> posted as a re-entry comment, the claim
+# released. Only the review phase re-enters, refused before any write.
+autopilot_reenter() {
+  local phase="$1" file="$2" text issue
+  [ "$phase" = review ] || die "only the review phase re-enters automatically, got: $phase"
+  autopilot_file_text text re-entry "$file"
+  require_state
+  require_issue issue
+  standing_reenter "$issue" "$phase" "$text"
+}
+
 # The three ends of a sync session, each a Standing transition the orch-sync
 # skill's autopilot branch calls. The issue comes from flow state, as ask's.
 
@@ -223,9 +235,10 @@ autopilot_sync_fail() {
 
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
 # marker stripped, and every comment after it to <file>, each later one after a
-# `---` line. Exits 1, writing nothing, when no comment follows the question -
-# the caller re-asks, or carries on - and 2 on any other failure, so a failed
-# read is never taken for no reply.
+# `---` line. Exits 1, writing nothing, when no comment follows the question, or
+# the phase was re-entered automatically (a re-entry comment newer than its
+# newest question, or one and no question) - the caller re-asks, or carries on
+# - and 2 on any other failure, so a failed read is never taken for no reply.
 autopilot_answer() {
   local phase="$1" file="$2" issue out first rest
   autopilot_phase_arg "$phase" die2
@@ -235,6 +248,7 @@ autopilot_answer() {
     [ -n "$TIMELINE_REASON" ] || die2 "could not read issue #$issue's comments"
     gh_die --exit 2 "read the comments of issue #$issue" "$TIMELINE_REASON"
   fi
+  ! timeline_reentered "$phase" || die "issue #$issue was re-entered automatically in $phase - no reply to read"
   timeline_question "$phase" || die2 "issue #$issue has no $phase question comment"
   timeline_replied "$phase" || die "no reply to the $phase question on issue #$issue yet"
   # The stripped body is read with a sentinel so its trailing newlines survive
@@ -1172,10 +1186,14 @@ cmd_autopilot() {
       [ $# -eq 1 ] || die "usage: orch.sh autopilot sync-fail <reason>"
       autopilot_sync_fail "$1"
       ;;
+    reenter)
+      [ $# -eq 2 ] || die "usage: orch.sh autopilot reenter <phase> <file>"
+      autopilot_reenter "$1" "$2"
+      ;;
     ask|answer)
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
   esac
 }

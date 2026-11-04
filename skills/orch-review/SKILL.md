@@ -79,7 +79,8 @@ runs headless and asks the human nothing directly. First, when
 `iteration` is not 0 - the previous loop ended in a bounded stop of any kind -
 read the human's reply before anything else:
 `bash "$ORCH" autopilot answer review <file>` (a `mktemp` file). It exits 1
-when no comment follows the question. After a stop for a spec question, re-post
+when no comment follows the question, and after an automatic re-entry (a
+re-entry comment is never a reply). After a stop for a spec question, re-post
 the same question then with
 `bash "$ORCH" autopilot ask review .orchestrator/review/question.md` (the
 save point the asking site wrote) and stop - never assume
@@ -125,7 +126,9 @@ plan or from what the previous loop left instead of asking.
    Both are authority over the findings you are about to get.
 4. `bash "$ORCH" state get iteration`. Zero means this is the flow's first loop.
    Anything else means a previous loop ended in a bounded stop and a human
-   asked for more: read every `.orchestrator/review/iteration-NN.md` record
+   asked for more, or an autopilot flow re-entered automatically (only a human
+   decides that a further loop happens, except an autopilot flow's automatic
+   re-entry): read every `.orchestrator/review/iteration-NN.md` record
    already there - the records, not the reviewers' reports beside them -
    because their **Filed** lists are what stop this loop re-filing what the
    previous one filed. Triage's **Met again** is the only check against them,
@@ -149,8 +152,9 @@ plan or from what the previous loop left instead of asking.
 
    Then `budget` is `iteration + n`, bounded thus:
    - Floor: `n` is at least 2 when anything must be fixed - an open blocking
-     finding carried in, or a reply or ruling that changes behaviour - because
-     only a clean final iteration can go Ready; otherwise at least 1.
+     finding carried in (a failing `## CI` among them), or a reply or ruling
+     that changes behaviour - because only a clean final iteration can go
+     Ready; otherwise at least 1.
    - Ceiling: `n` is never more than the plan's budget (`autopilot budget`),
      except that the floor wins when the two conflict (a plan budget of 1 with
      something to fix runs 2), because a budget that cannot end clean only
@@ -272,7 +276,11 @@ plan or from what the previous loop left instead of asking.
 4. Read both report files, once each, and triage every finding in them, plus
    any **open blocking** finding the previous iteration left - or, on a
    re-entry's first iteration, the previous loop's final record: it still
-   stands whether or not a reviewer met it again. Apply the two
+   stands whether or not a reviewer met it again.
+   When that record's `## CI` section reads `failing`, it enters this first
+   triage as a blocking finding too, alongside any open blocking finding: name
+   the failing check, and run `bash "$ORCH" review ci-log <pr>` yourself for the
+   log excerpt (the record holds none). Apply the two
    demotions under **Authority** first, then the **Severity** rubric, then
    give each finding one disposition:
    - **Fix** - every blocking finding, every major that needs no decision,
@@ -610,7 +618,7 @@ exiting non-zero on the last two:
   on an earlier PR commit or the base tip - and its detail line says which.
 - **failing** - a required check failed, and the detail lines name which.
   Required means required by the branch protection of the PR's base branch. If
-  it looks flaky rather than caused by the change, the flow has **one** flake
+  it looks flaky rather than caused by the change, the loop has **one** flake
   rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent
   and `false` while it is not. Spend it with `bash "$ORCH" review rerun <pr>`,
   which reruns the failed jobs of every GitHub Actions run behind the failing
@@ -627,9 +635,18 @@ exiting non-zero on the last two:
   `review ci` again, run the same way (host capability *Run a long command*). A
   second failure is a **bounded stop**. That second ask
   restarts the fifteen-minute wait rather than inheriting what is left of the
-  first, because a rerun restarts the checks - so this one path, once per flow,
+  first, because a rerun restarts the checks - so this one path, once per loop,
   can wait longer than the cap. A second ask that times out or is killed is
   **unreachable** like the first.
+- **failing**, at **Termination** in an autopilot flow: judge it before it
+  is called a reason. Read `bash "$ORCH" review ci-log <pr>`. The failure needs
+  a decision, a human reason, when any of these holds: it would fail on the
+  base tip too (judged from the log and the diff: it lies in code or config the
+  change does not touch); its cause is infrastructure (secrets, permissions,
+  runners, quota); a failing check is not an Actions run (the output says so);
+  the fix needs a choice the spec leaves open; or you cannot tell which case it
+  is, a job whose log could not be read among them. Otherwise it is a failure
+  the change can fix, an automatic reason.
 - **unreachable** - GitHub would not answer, or the checks were still pending at
   the cap. A **bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.
@@ -696,18 +713,36 @@ the first iteration** describes it.
 
 **In an autopilot flow** the terminal action differs. Ready ends with
 `bash "$ORCH" review ready` as above, which also moves the label to `orch:done`
-and releases the claim; nothing more runs. A bounded stop - a spec question
-among them, the PR staying in draft - never ends by telling the human in the
-session: write the stop reason (and, for a spec question, each question with
+and releases the claim; nothing more runs. A bounded stop - the PR staying in
+draft - never ends by telling the human in the session. Write the stop reason,
+the closer's filed issue numbers (and, for a spec question, each question with
 its recommendation, numbered, as the interview formats them) to
-`.orchestrator/review/question.md` in the side checkout - the question's save
-point, which a fresh session re-posts when the human removes `needs-human`
-without replying - and run
+`.orchestrator/review/question.md` in the side
+checkout - the save point, which a fresh session re-posts when the human removes
+`needs-human` without replying. Then classify each reason of the stop:
+
+- **Automatic** - the final iteration was not clean, an open blocking finding
+  remains, a look is missing, or CI is `failing` for a cause the change can fix
+  (the **CI** judgement).
+- **Human** - a spec question, CI `unreachable`, a failed base sync, known
+  items that could not be built, or a CI failure that needs a decision (the
+  **CI** judgement).
+
+A stop with any human reason runs
 `bash "$ORCH" autopilot ask review .orchestrator/review/question.md`, which
 posts it as a question comment, labels the issue `needs-human` and releases the
 claim; then stop. Removing `needs-human` starts another loop, with a budget the
 driver sizes from what this one left, which reads the reply first, per the
 top of **Before the first iteration**.
+
+A stop whose every reason is automatic is an **automatic re-entry**: run
+`bash "$ORCH" autopilot reenter review .orchestrator/review/question.md` with
+the same file, holding the stop reason and the closer's filed issue numbers. It
+posts a re-entry comment with no @mention, adds no label, leaves the phase at
+`orch:review` and releases the claim; then stop. The watcher starts another
+loop, which sizes its budget by step 5's re-entry sizing rule. The third bounded
+stop in a row asks the human instead; `autopilot reenter` takes that path
+itself.
 
 `## Terminal state` is written exactly once, here, only once a terminal state
 has actually been decided - never guessed or backfilled. It is what

@@ -10,7 +10,8 @@
 # one other module that calls marked_comment_jq, expands it at call time, inside
 # a function, never into a constant.
 #
-# The kinds: question, limited (a limit stop), handoff (argument: its name,
+# The kinds: question, limited (a limit stop), reentry (an automatic re-entry;
+# argument: a phase), handoff (argument: its name,
 # optionally tagged retired), refusal and failure (arguments: a phase; a stop
 # comment posted before the hidden marker existed is read by its prose
 # opening), spec-review (the first line `## Spec review`) and spec-ruling (a
@@ -31,7 +32,7 @@ MARKED_COMMENT_LEGACY_FAILURE='Autopilot failed in the '
 # as their marker text), the one kind that can be retired, and the two visible
 # openings. The writer's checks and the jq prelude's recognition are built
 # from these.
-MARKED_COMMENT_KINDS='question limited handoff refusal failure'
+MARKED_COMMENT_KINDS='question limited reentry handoff refusal failure'
 MARKED_COMMENT_RETIRABLE='handoff'
 MARKED_COMMENT_SPEC_REVIEW_OPENING='## Spec review'
 MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'

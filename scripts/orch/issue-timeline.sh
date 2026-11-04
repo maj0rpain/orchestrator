@@ -10,8 +10,9 @@
 # and clear their results first, so a miss leaves them empty. Call them
 # directly, never inside $(...), whose assignments do not reach the caller.
 # timeline_replied answers by its return code alone. Of the printing queries,
-# one that finds nothing prints nothing and returns 1, bar three:
-# timeline_limit_count always prints a number and returns 0, timeline_answers
+# one that finds nothing prints nothing and returns 1, bar four:
+# timeline_limit_count and timeline_reentry_count always print a number and
+# return 0, timeline_answers
 # prints nothing and returns 0 when no comment follows the question, and
 # timeline_body always prints the indexed comment's body (possibly empty) and
 # returns 0. Only the read can fail, and the two helpers documented beside it,
@@ -27,7 +28,8 @@
 # comment module already reads as those kinds.
 #
 # The queries: timeline_question, timeline_replied, timeline_answers,
-# timeline_stop, timeline_limit_count, timeline_handoff and timeline_body.
+# timeline_stop, timeline_limit_count, timeline_reentry_count,
+# timeline_reentered, timeline_handoff and timeline_body.
 
 # The last read: the comments JSON, why the read failed (gh's reason, or empty
 # when gh succeeded but its output could not be parsed), and per comment, by
@@ -162,6 +164,34 @@ timeline_limit_count() {
     esac
   done
   printf '%s\n' "$n"
+}
+
+# timeline_reentry_count <phase>: prints the number of <phase>'s re-entry
+# comments in a row, counted newest first up to the first question, refusal,
+# failure or handoff comment, or unmarked comment (a reply); other marked
+# comments are skipped. Always prints a number (0 for none) and returns 0.
+timeline_reentry_count() {
+  local i n=0
+  for ((i = ${#TIMELINE_KIND[@]} - 1; i >= 0; i--)); do
+    case "${TIMELINE_KIND[i]}" in
+      refusal | failure | question | handoff | "") break ;;
+      reentry)
+        [ "${TIMELINE_ARG[i]}" = "$1" ] && n=$((n + 1)) ;;
+    esac
+  done
+  printf '%s\n' "$n"
+}
+
+# timeline_reentered <phase>: succeeds when a re-entry comment of <phase> is
+# newer than <phase>'s newest question comment, or the issue has one and no
+# question comment of <phase>; fails otherwise.
+timeline_reentered() {
+  local i q=-1
+  timeline_question "$1" && q="$TIMELINE_Q_INDEX"
+  for ((i = ${#TIMELINE_KIND[@]} - 1; i > q; i--)); do
+    [ "${TIMELINE_KIND[i]}" = reentry ] && [ "${TIMELINE_ARG[i]}" = "$1" ] && return 0
+  done
+  return 1
 }
 
 # timeline_handoff <name>: the live handoff of <name> - its newest comment, when

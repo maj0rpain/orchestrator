@@ -69,8 +69,8 @@ redo_clear_attempt() {
 # reopen the spec issue's closed tickets, move the old loop's records aside,
 # and reset the state a fresh implement attempt needs - never mid-budget, and
 # never over a loop nobody has confirmed actually ended. `flake_rerun_used` is
-# deliberately untouched throughout, per docs/adr/0007: it is a per-flow
-# allowance, not a per-loop one.
+# deliberately untouched throughout: it is one per loop, and review begin
+# resets it when the next loop starts.
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state

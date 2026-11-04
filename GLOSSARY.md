@@ -142,8 +142,9 @@ implementation** says. _Avoid_: planned issue, subject issue.
 A flow whose phases are started by a watcher rather than a human. Its phase is
 recorded as a label on its issue, its handoffs are issue comments, and its
 questions reach the human as issue comments. It stops for the human only on a
-fundamental item, a bounded stop (a spec question the review loop meets among
-them), a refusal (an untrusted issue among them), a failure, or an intent a
+fundamental item, a bounded stop that is not an automatic re-entry (a spec
+question the review loop meets among them), a refusal (an untrusted issue
+among them), a failure, or an intent a
 sync request's resolver dropped; a session cut off by a usage limit is waited
 out instead, as a limited issue, short of the third such stop in a row of one
 phase, or of one issue's sync requests.
@@ -204,8 +205,8 @@ flow's plan handoff.
 
 **Marked comment**:
 An issue comment whose first line names its kind to orch.sh: a hidden
-`<!-- orch:<kind> <arg> -->` marker (question, limit stop, handoff, refusal,
-failure), or a visible opening the human reads too (the spec review's
+`<!-- orch:<kind> <arg> -->` marker (question, limit stop, re-entry, handoff,
+refusal, failure), or a visible opening the human reads too (the spec review's
 `## Spec review` heading, a `Spec ruling:` line). Question comment, Plan comment
 and the rest are kinds of marked comment. Only a trusted comment can be one. A
 PR comment's `Spec ruling:` line, read by the review pass, is not a marked
@@ -228,8 +229,9 @@ renamer. An autopilot flow runs only on a trusted issue.
 **Issue timeline**:
 An autopilot flow's issue's comment history, read once and asked in domain
 terms: its newest question comment and whether a trusted comment follows it, its
-latest stop, its limit stops in a row for a phase, and its live handoffs. Only
-the timeline and the Marked comment module know how a comment's kind is marked.
+latest stop, its limit stops in a row for a phase, its re-entry comments in a
+row for a phase, and its live handoffs. Only the timeline and the Marked comment
+module know how a comment's kind is marked.
 _Avoid_: comment log.
 
 **Question comment**:
@@ -586,7 +588,8 @@ change itself - that is the fixer's work, and filing is the closer's - except
 on a host with no fresh subagent, where it does their work itself (see
 **Driver**).
 A flow runs a loop each time it enters the review phase; a flow's loops share
-one iteration numbering, and only a human decides that a further loop happens.
+one iteration numbering, and only a human decides that a further loop happens,
+except an autopilot flow's automatic re-entry.
 That further-loop decision is re-entry, not Redo: re-entry reviews the same
 accepted change for more looks, Redo disowns it.
 
@@ -617,7 +620,8 @@ size of the change; for a further loop, from what the loop before it left. A
 loop runs its whole budget: finding nothing does not end it early, because
 every iteration is an independent look at the same change, and the value of
 the loop is in the number of looks. An autopilot flow's first loop runs the
-budget chosen at the planning close; each loop after a bounded stop runs one
+budget chosen at the planning close; each loop after a bounded stop, an
+automatic re-entry among them, runs one
 the driver chooses from what the loop before it left, never more than that
 first budget, unless the human's reply names one.
 A loop that resumes a pending or interrupted iteration asks for and picks no
@@ -720,13 +724,23 @@ The terminal state of a loop that ended without the change being ready - because
 its final iteration was not clean (it started a fixer, whose work nothing has
 reviewed), left a blocking
 finding its fixer could not fix, lacked one of its two looks, or filed a spec
-question, or because CI could not be called green. A stop is not a failed change
-and not a successful one.
+question, or because its base sync failed, its known items could not be built,
+or CI could not be called green. A stop is not a failed change and not a
+successful one.
+
+**Automatic re-entry**:
+An autopilot review loop's bounded stop whose every reason the next loop can act
+on without the human - an unclean final iteration, open blocking, a missing
+look, or a CI failure the change can fix. It posts a re-entry comment - a
+marked comment of kind `reentry`, with no @mention - instead of a question and
+leaves the issue to the watcher for another loop; the third bounded stop in a
+row asks the human instead.
 
 **Flake rerun**:
 The one permitted re-run of a failing CI check on the theory that it failed for
-reasons unrelated to the change. The allowance belongs to the flow, not to the
-iteration: one per flow, spent or not.
+reasons unrelated to the change. The allowance belongs to the review loop,
+not to the iteration: one per loop, spent or not, renewed when the next loop
+begins.
 
 **Required check**:
 A CI check that must pass before a change can land. Where branch protection

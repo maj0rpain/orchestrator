@@ -90,6 +90,8 @@
 #                     how many calls the script has answered
 #   checks/<n>/reads  one line per read of PR #n's checks, scripted scope or
 #                     not; rescripting a scope never resets it
+#   job_logs/<job>    the failed-step log of Actions job <job>; absent, the
+#                     log cannot be read
 #   protection/<branch>
 #                     the check contexts classic protection requires on the
 #                     branch, one per line; absent, the branch is unprotected
@@ -1082,6 +1084,16 @@ adapter_commit_has_statuses() {
 adapter_run_rerun() {
   ! fake_failing adapter_run_rerun || return 1
   printf '%s\n' "$1" >>"$(fake_store)/reruns"
+}
+
+# adapter_job_failed_log <job>: the log stored for the job under job_logs/<job>;
+# a job with none stored fails, as gh does for a log it cannot read.
+adapter_job_failed_log() {
+  ! fake_failing adapter_job_failed_log || return 1
+  local f
+  f="$(fake_store)/job_logs/$1"
+  [ -f "$f" ] || { echo "log not found" >&2; return 1; }
+  cat "$f"
 }
 
 # adapter_claim_create <issue> <phase> <pid> <host>: the claim stored as one
