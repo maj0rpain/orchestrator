@@ -205,10 +205,10 @@ git worktree remove "$marked"
 git branch -q -D main--t41
 
 worktrees_before="$(git worktree list | wc -l | tr -d ' ')"
-for bad in "" "12a" "#5"; do
-  if [ -z "$bad" ]; then out="$(orch_gh_failing side-checkout add badissue --issue 2>&1)"; st=$?
-  else out="$(orch_gh_failing side-checkout add badissue --issue "$bad" 2>&1)"; st=$?; fi
-  assert_status "add refuses --issue '$bad'" "$st" 1
+for issue_arg in "" "12a" "#5"; do
+  if [ -z "$issue_arg" ]; then out="$(orch_gh_failing side-checkout add badissue --issue 2>&1)"; st=$?
+  else out="$(orch_gh_failing side-checkout add badissue --issue "$issue_arg" 2>&1)"; st=$?; fi
+  assert_status "add refuses --issue '$issue_arg'" "$st" 1
   assert_eq "leaving no side checkout" "$(on_disk .orchestrator/checkouts/badissue)" "absent"
   assert_eq "nor any worktree" "$(git worktree list | wc -l | tr -d ' ')" "$worktrees_before"
 done
