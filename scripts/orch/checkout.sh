@@ -122,7 +122,9 @@ checkout_has_flow() { [ -f "$(flow_state_file "$1")" ]; }
 checkout_holding() {
   local state issue issue_label branch
   state="$(flow_state_file "$1")"
-  if [ -f "$state" ]; then
+  if [ -f "$state" ] && ! flow_state_readable "$state"; then
+    note "flow (state.json cannot be read)"
+  elif [ -f "$state" ]; then
     issue="$(state_get_in "$state" issue)"
     if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
     note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"

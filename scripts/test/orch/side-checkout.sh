@@ -321,6 +321,16 @@ git checkout -q -b quick/9-main
 out="$(cd "$beta" && orch_gh_failing status)"
 assert_not_contains "a quick implementation in the main checkout never appears" "$out" "$top "
 assert_not_contains "nor its branch" "$out" "quick/9-main"
+
+# A side checkout whose state.json is truncated is listed plainly, by status
+# and by side-checkout list, with no jq text.
+(cd "$gamma" && state_truncate 10)
+out="$(orch_gh_failing status 2>&1)"
+assert_contains "status lists an unreadable side checkout plainly" "$out" "$gamma flow (state.json cannot be read)"
+assert_not_contains "status prints no jq text" "$out" "parse error"
+out="$(orch_gh_failing side-checkout list 2>&1)"
+assert_contains "side-checkout list says the same" "$out" "gamma $gamma flow (state.json cannot be read)"
+assert_not_contains "list prints no jq text" "$out" "parse error"
 restore_suite_env
 
 # --- side-checkout archive and remove (#724) ----------------------------------
@@ -631,6 +641,17 @@ fake_pr_head 42 "$(git rev-parse quick/7-qk)"
 orch_gh_failing init main-flow >/dev/null
 state_fixture phase "done"; state_fixture branch orch/main-flow; state_fixture pr 45
 fake_pr 45 merged orch/main-flow main
+
+# A side checkout whose state.json is truncated has a verdict that could not be
+# read: reported, left in place, with no jq text.
+bad="$(sc_add bad)"
+(cd "$bad" && orch_gh_failing init bad-flow >/dev/null && state_truncate 10)
+out="$(orch_gh_failing side-checkout prune 2>&1)"
+assert_contains "prune reports the unreadable state file" "$out" \
+  "could not check $bad: could not read $bad/.orchestrator/state.json"
+assert_not_contains "prune prints no jq text" "$out" "parse error"
+assert_eq "the unreadable side checkout stays" "$(on_disk "$bad")" "present"
+git worktree remove --force "$bad"
 
 # GitHub unreachable: nothing is removed.
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
