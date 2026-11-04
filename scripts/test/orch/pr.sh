@@ -1272,6 +1272,14 @@ assert_eq "leaving the file that was already there unchanged" "$(cat "$pr_commen
 assert_gh_dies "comments that fail silently exit 2 too" adapter_pr_comments '' 2 \
   "orch: gh could not read the comments of PR #57: gh gave no reason" \
   prcs "$pr_comments"
+
+unparsed_adapter="$(mktemp)"
+printf 'source %q\nadapter_pr_comments() { printf "not json\\n"; }\n' "$GH_ADAPTER_FAKE" >"$unparsed_adapter"
+err="$(ORCH_GH_ADAPTER="$unparsed_adapter" prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
+assert_status "a comment object that does not parse exits 2" "$st" 2
+assert_contains "naming the PR" "$err" "orch: could not read the comments of PR #57"
+assert_eq "leaving the file that was already there unchanged too" "$(cat "$pr_comments")" "known content"
+rm -f "$unparsed_adapter"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 err="$(prcs 2>&1 >/dev/null)"; st=$?
