@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.46.2
+
+The autopilot container's step-1 environment refusals (`REPO`, `GH_TOKEN` and the Claude credential) now carry the `environment:` step label, like every other failure line.
+
 ## 4.46.1
 
 The issue module's trusted comment readers now share one trust-filter step and one render step, and `issue fetch --json` no longer prints jq's own parse error before its `orch:` line for a comment object that does not parse.
