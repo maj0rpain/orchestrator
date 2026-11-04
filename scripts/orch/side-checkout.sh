@@ -47,6 +47,7 @@ is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 # side_checkout_finished judges the branch tip against.
 finished_flow() {
   local state="$1" phase pr base pr_state _is_draft shown_state merged_head _head_ref merged_base _commits err
+  flow_state_readable "$state" || { verdict="could not read $state"; return 2; }
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1

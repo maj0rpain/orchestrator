@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # state.sh - orch.sh's state command (state get and state set), with the state
 # helpers every module calls (state_get, state_write, require_state,
-# require_pr, require_issue, flow_active).
+# require_pr, require_issue, flow_active). Two readers: state_get, the
+# unguarded own-checkout reader, and state_get_in, the guarded shared one.
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -24,22 +25,42 @@ state_key_field() {
   }
 }
 
-# Every read of state.json goes through here, so what an absent key means is
-# decided in the STATE_KEYS table rather than at each call site. A key outside
-# the table dies: a misspelt read would otherwise look exactly like an unset
-# one.
-state_get() { state_get_in "$STATE" "$1"; }
+# The own-checkout reader, unguarded: every read of this checkout's state.json
+# goes through here, so what an absent key means is decided in the STATE_KEYS
+# table rather than at each call site. A key outside the table dies: a
+# misspelt read would otherwise look exactly like an unset one. It calls the
+# Flow state module's reader directly and does not check the file parses, so
+# on an unreadable state.json jq's own parse error and status come through;
+# commands that must refuse such a file do it first, with
+# require_state_readable.
+state_get() {
+  state_read "$STATE" "$1"
+}
 
-# state_get against the state file <file>: reads <key> from any checkout's
-# state file, not only this one's. The key is looked up only when the read
-# fails, to pick the message: a key outside the table dies, and any other
-# failure returns the read's status, which is jq's own, never a lookup's.
+# The shared reader, guarded: reads <key> from the state file <file> of any
+# checkout, not only this one's. An unreadable <file> (flow_state_readable)
+# returns status 2 and prints nothing - no jq text, so a caller scanning other
+# checkouts can skip it. On a readable one it behaves as state_get does.
 state_get_in() {
+  flow_state_readable "$1" || return 2
+  state_read "$1" "$2"
+}
+
+# state_read <file> <key>: the unguarded read both readers share - the Flow
+# state module's reader, then, on failure, state_get_failed's lookup.
+state_read() {
   local rc
   flow_state_get "$1" "$2" && return
   rc=$?
-  flow_state_key_field "$2" default >/dev/null || die "unknown state key: $2"
-  return "$rc"
+  state_get_failed "$2" "$rc"
+}
+
+# state_get_failed <key> <status>: what a failed read of <key> returns. The key
+# is looked up only now, to pick the message: a key outside the table dies, and
+# any other failure returns <status>, the read's own (jq's), never a lookup's.
+state_get_failed() {
+  flow_state_key_field "$1" default >/dev/null || die "unknown state key: $1"
+  return "$2"
 }
 
 # The unrestricted writer behind every internal state change, over

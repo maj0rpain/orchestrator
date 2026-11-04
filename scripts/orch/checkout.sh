@@ -120,10 +120,15 @@ checkout_has_flow() { [ -f "$(flow_state_file "$1")" ]; }
 # What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
 # else its checked-out branch (branch <name>), else (no branch).
 checkout_holding() {
-  local state issue issue_label branch
+  local state issue issue_label branch rc=0
   state="$(flow_state_file "$1")"
   if [ -f "$state" ]; then
-    issue="$(state_get_in "$state" issue)"
+    issue="$(state_get_in "$state" issue)" || rc=$?
+    if [ "$rc" -eq 2 ]; then
+      note "flow (state.json cannot be read)"
+      return 0
+    fi
+    [ "$rc" -eq 0 ] || return "$rc"
     if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
     note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"
   elif branch="$(checkout_branch "$1")"; then

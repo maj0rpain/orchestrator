@@ -131,6 +131,12 @@ out="$(sourced_orch_script 'cd "$1" && checkout_kind "$1"' "$outside" 2>/dev/nul
 assert_ne "checkout_kind outside a repo fails" "$st" 0
 assert_eq "and checkout_kind prints nothing" "$out" ""
 
+# checkout_holding shows a checkout whose state.json cannot be parsed plainly,
+# with no jq text.
+(cd "$flowed" && state_truncate 1)
+out="$(sourced_orch checkout_holding "$flowed" 2>&1)"
+assert_eq "checkout_holding: an unreadable state.json is shown plainly" "$out" "flow (state.json cannot be read)"
+
 # --- checkout current branch (#1079) ------------------------------------------
 # The Checkout module's one current-branch read: checkout_branch prints the
 # branch checked out, and current_branch_or_die assigns it to the caller's

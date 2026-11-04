@@ -276,10 +276,14 @@ suite_cost_knob() {
 }
 
 # suite_cost_base_commit: prints the base commit - state.base_sha inside a
-# flow, else what branch base-sha prints - or fails, its reason on stderr.
+# flow, else what branch base-sha prints - or fails, its reason on stderr. An
+# unreadable state.json fails with the shared warning, never the fallback.
 suite_cost_base_commit() {
   local sha=""
-  ! flow_active || sha="$(state_get base_sha)"
+  if flow_active; then
+    flow_state_readable "$STATE" || { warn "$STATE_UNREADABLE_MSG"; return 1; }
+    sha="$(state_get base_sha)"
+  fi
   if [ -z "$sha" ]; then
     sha="$(cmd_branch_base_sha)" || return 1
   fi
@@ -355,7 +359,6 @@ suite_cost_check() {
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
-  require_state_readable
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
   head_field="$(suite_cost_head_commit)"
   head_commit="${head_field%-dirty}"
