@@ -340,7 +340,8 @@ restore_suite_env
 
 # --- the shared and own-checkout readers on a truncated state.json -----------
 # state_get_in guards: an unreadable file returns 2 and prints nothing, a
-# readable one reads as ever. state_get stays unguarded: jq's text comes through.
+# readable one reads as ever. state_get stays unguarded: jq's text comes
+# through.
 echo
 echo "state readers on an unreadable state.json"
 fresh_flow readers
