@@ -461,11 +461,11 @@ require_clean_tree() {
   [ -z "$status" ] || die "$2"
 }
 
-# ESCAPE_HINT: appended to the death of an unescaped @@ line inside a block, in
-# the breakdown draft and the spec review grammars (#1945, #2357). Breakdown's
-# awk reads it through ENVIRON, as -v would turn \@@ into @@.
+# AT_LINE_ESCAPE_HINT: appended to the death of an unescaped @@ line inside a
+# block, in the breakdown draft and the spec review grammars (#1945, #2357).
+# Breakdown's awk reads it through ENVIRON, as -v would turn \@@ into @@.
 # shellcheck disable=SC2034 # used by the breakdown and spec-review modules
-ESCAPE_HINT=' - a body line starting with @@ is written \@@'
+AT_LINE_ESCAPE_HINT=' - a body line starting with @@ is written \@@'
 
 # FENCE_AWK: the one markdown code-fence rule, an awk function fragment each
 # scanner prepends to its own program. A fence opens on a line whose first

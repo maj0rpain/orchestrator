@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.46.3
+
+Rename the shared `@@` body-line escape hint constant to `AT_LINE_ESCAPE_HINT`; the hint text and error messages are unchanged.
+
+The edit width hook's Bash path now drops its snapshot under one guard, with or without a cwd, and never runs `git -C ""` on an empty cwd. No behaviour change.
+
+The resolver rebases onto the parent branch by its full ref, and the same-named-tag tests follow #2337's spec: the tag sits at a commit older than the start point, and the base-name fallback case lives in the same-named-tag section.
+
+## 4.46.2
+
+The autopilot container's step-1 environment refusals (`REPO`, `GH_TOKEN` and the Claude credential) now carry the `environment:` step label, like every other failure line.
+
+## 4.46.1
+
+The issue module's trusted comment readers now share one trust-filter step and one render step, and `issue fetch --json` no longer prints jq's own parse error before its `orch:` line for a comment object that does not parse.
+
 ## 4.46.0
 
 Autopilot image: an `EXTRA_BUILD_COMMAND` build arg runs a shell command as root at image build, under bash with pipefail, for toolchains apt lacks (e.g. uv). Set it in `docker/.env` or `docker/.env.<name>`.
