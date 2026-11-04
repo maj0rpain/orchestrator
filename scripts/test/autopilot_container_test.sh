@@ -266,8 +266,8 @@ assert_eq "a refused start keeps what it already wrote" "$(cfg orchestrator.auto
 
 # Local keys in a reused clone that would shadow a global key are removed, with
 # one warning each, before the global writes, autopilot show and the watcher.
-# The shadowing keys the case seeds, once: one <key>=<value> per line. The seeding
-# and the fake orch.sh's count both read this list.
+# The shadowing keys the case seeds, once: one <key>=<value> per line. The
+# seeding and the fake orch.sh's count both read this list.
 shadow_list='orchestrator.autopilot.cap=9
 orchestrator.autopilot.permission-mode=plan
 orchestrator.autopilot.bogus=x
