@@ -840,7 +840,7 @@ assert_eq "bad() indents a multi-line detail the same way" \
 assert_eq "skip() indents every line of a multi-line reason, an empty one included" \
   "$(printf '%s\n' "$out" | sed -n 9,12p)" "$(printf '  skip skip many\n     why\n     \n     last')"
 assert_eq "and the tally records exactly one skip" \
-  "$(printf '%s\n' "$out" | tail -n 2 | head -n 1)" "skipped 1"
+  "$(printf '%s\n' "$out" | sed -n 13p)" "skipped 1"
 assert_eq "and records exactly one failure" "$(printf '%s\n' "$out" | tail -n 1)" "recorded 1"
 rm -rf "$tally_dir"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"

@@ -47,7 +47,7 @@ tally_summary() {
 
 # print_labelled <label> <title> <detail>: one "  <label> <title>" line, then
 # every line of the detail (an empty one included) indented five spaces; a
-# single-line detail is one indented line. FAIL and skip lines both print through
+# single-line detail is one indented line. FAIL and skip lines both print via
 # it, so the detail indent is defined here once and cannot drift apart.
 print_labelled() { printf '  %s %s\n' "$1" "$2"; printf '%s\n' "$3" | sed 's/^/     /'; }
 
