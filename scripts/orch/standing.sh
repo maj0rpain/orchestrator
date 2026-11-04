@@ -471,16 +471,23 @@ standing_sync_finish() {
   standing_release "$1"
 }
 
-# standing_sync_dropped <issue> <intents>: the dropped-intent stop of a sync
-# whose merge was pushed: orch:sync removed and needs-human added in one edit,
-# a failure-kind stop comment marked with the phase word sync listing
-# <intents>, then the claim released, last.
+# standing_sync_dropped <issue> <intents> <auto_sync>: the dropped-intent
+# stop of a sync whose merge was pushed: orch:sync removed and needs-human
+# added in one edit, a failure-kind stop comment marked with the phase word
+# sync listing <intents>, then the claim released, last. The stop asks
+# nothing; <auto_sync>, true or false, picks what the comment says follows.
+# The caller reads the setting and passes it in.
 standing_sync_dropped() {
-  local issue="$1" intents="$2" marker text
+  local issue="$1" intents="$2" auto_sync="$3" marker text next
   STANDING_LANDED=""
   marker="$(marked_comment_write failure "$STANDING_SYNC_PHASE")" || exit 1
-  printf -v text '%s\nThe sync pushed its merge, but its resolver dropped these intents:\n\n%s\n\nThe issue is labelled %s and no longer carries %s. Lifting %s re-runs nothing: the issue is a plain %s again.\n' \
-    "$marker" "$intents" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL" "$STANDING_HUMAN_LABEL" "$(standing_phase_label "done")"
+  if [ "$auto_sync" = true ]; then
+    next="Once the label is gone, the watcher files a new sync request by itself whenever the PR conflicts with its base; or run \`orch.sh autopilot sync $issue\` to sync now."
+  else
+    next="To sync again, run \`orch.sh autopilot sync $issue\`."
+  fi
+  printf -v text '%s\nThe sync pushed its merge, but its resolver dropped these intents:\n\n%s\n\nNo reply is needed. Review the dropped intents; if you accept them, remove %s. To reject one, restore it on the branch first, then remove the label. The issue no longer carries %s. %s\n' \
+    "$marker" "$intents" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL" "$next"
   standing_stop_write "$issue" failure "$text" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL"
 }
 

@@ -144,7 +144,11 @@ call:
   after the push, removes `orch:sync`, adds `needs-human`, posts a stop
   comment and releases the claim. `<file>` (a `mktemp` file outside the repo)
   lists each intent the resolver dropped, with a link to the Merge
-  resolutions comment. Lifting `needs-human` afterwards re-runs nothing.
+  resolutions comment. It asks nothing:
+  removing `needs-human` accepts the drops (restore a rejected one on the
+  branch first). With `auto-sync` on, the watcher then files a new sync
+  request by itself once the PR conflicts with its base, or `orch.sh
+  autopilot sync <issue>` syncs now; with it off, that command syncs again.
 - **Failure stop** - `bash "$ORCH" autopilot sync-fail "<reason>"`: adds
   `needs-human` with a stop comment naming the reason and **keeps**
   `orch:sync`, so `orch.sh autopilot resume` retries the sync. A retried
