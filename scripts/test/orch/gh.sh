@@ -1455,7 +1455,7 @@ echo
 echo "label casing"
 new_repo >/dev/null
 fake_github
-: >"$ORCH_GH_FAKE_STORE/labels"; fake_label Needs-Human ededed old
+fake_label_names; fake_label Needs-Human ededed old
 fake_issue 5 open
 sourced_orch adapter_issue_relabel 5 --add needs-human >/dev/null
 assert_eq "an add stores the repo's casing" "$(fake_labels_of 5)" "Needs-Human "

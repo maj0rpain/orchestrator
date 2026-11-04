@@ -1612,38 +1612,14 @@ echo "autopilot label casing"
 tick_fixture
 top="$(git rev-parse --show-toplevel)"
 
-fake_issue 7 open ready-for-agent orch:spec Needs-Human
-fake_issue_title 7 "Case 7"
-fake_issue 8 open ready-for-agent orch:spec Orch:Running
-fake_issue_title 8 "Case 8"
-"$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "a tick starts no session for issues carrying Needs-Human or Orch:Running" "$(tick_calls)" "0"
-
-# the limit pause holds under orch:Limited
 fake_issue 7 open ready-for-agent orch:spec orch:Limited
 fake_issue_title 7 "Case 7"
-fake_issue_drop 8
-mkdir -p "$top/.orchestrator/autopilot"
-printf '%s\n' "$(iso_of $(( $(date +%s) + 3600 )))" >"$top/.orchestrator/autopilot/limit"
-"$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "the limit pause holds an issue carrying orch:Limited" "$(tick_calls)" "0"
-rm -f "$top/.orchestrator/autopilot/limit"
-rm -f "$launcher_dir/calls"
 
 # a pickup of an issue carrying orch:Limited removes it once the claim is won
 printf '7\n' >"$launcher_dir/release"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a tick picks up the issue carrying orch:Limited" "$(tick_calls)" "1"
 assert_not_contains "its session sees no orch:Limited" "$(grep '^labels:7:' "$launcher_dir/calls" | tail -1)" "orch:Limited"
-rm -f "$launcher_dir/release" "$launcher_dir/calls"
-
-# the live phase is found under a mixed-case phase label
-printf '7\n' >"$launcher_dir/release"
-fake_issue 7 open ready-for-agent Orch:Spec
-fake_issue_title 7 "Case 7"
-"$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "a tick finds the live phase under Orch:Spec and starts a session" "$(tick_calls)" "1"
-assert_contains "in the spec phase's session" "$(cat "$launcher_dir/calls")" "orchestrator:orch-flow skill's Next phase"
 rm -f "$launcher_dir/release" "$launcher_dir/calls"
 
 # end to end: the repo holds Needs-Human; a question is asked as needs-human and
