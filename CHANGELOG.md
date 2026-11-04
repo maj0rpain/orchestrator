@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.44.15
+
+Tidy the leftovers of autopilot sync requests. A stop's failure message now names the `orch:limited` removal its label edit carried. The questions listing uses Standing's sync-request predicate, and pickup's sync refusals are written inline. The how-it-works guide's autopilot section now describes sync requests: the pickup rule, the sync stops, the `auto-sync` setting and the sync commands.
+
 ## 4.44.14
 
 Refactor finding triage's comments and member reads onto one trusted-comments read and one state read per bundle member. A failed member close now reads "members not confirmed closed", a new bundle's failed member read says "no member was touched", and a closed member's unparseable comments name the issue.
