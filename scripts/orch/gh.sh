@@ -635,6 +635,18 @@ adapter_prs_merged() {
     --jq '.[] | "\(.number)\t\(.headRefOid)\t\(.isCrossRepository)"'
 }
 
+# adapter_prs_merged_closing <base>: every PR merged into the base branch,
+# newest created first, one per line as `<number>\t<head branch>\t<mergedAt>\t
+# <closing issues>\t<isCrossRepository>` - the closing issues the numbers of its
+# closingIssuesReferences, comma-separated, empty when none - unfiltered: the
+# Trust module's trust_filter_prs drops the fork PRs. The merged-PR backstop's
+# one read per tick (issue #2478).
+adapter_prs_merged_closing() {
+  gh pr list --base "$1" --state merged --limit "$ISSUE_LIST_LIMIT" \
+    --json number,headRefName,mergedAt,closingIssuesReferences,isCrossRepository \
+    --jq '.[] | "\(.number)\t\(.headRefName)\t\(.mergedAt)\t\([.closingIssuesReferences[].number] | map(tostring) | join(","))\t\(.isCrossRepository)"'
+}
+
 # adapter_prs_merged_bodies <base>: the body of every PR merged into the base
 # branch, each followed by a newline - pr release reads its issue references
 # out of them (issue #139).

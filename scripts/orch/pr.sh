@@ -4,6 +4,34 @@
 # Its tests: scripts/test/orch/pr.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
+# The grace period, in seconds, after a merge before the backstop closes an
+# issue GitHub left open: GitHub's own close lands within it, so the backstop
+# never races it.
+PR_CLOSE_GRACE=300
+
+# pr_close_missed <issue> <pr> <base> <merged-at> <closing> <default>: the
+# backstop for GitHub's auto-close (#2477). <issue> is open and its work
+# finished - the caller checked both. Closes it as completed, with a comment
+# naming the PR and the default branch, when PR <pr> merged into <base> equal
+# to <default> at <merged-at> (a UTC timestamp), at least PR_CLOSE_GRACE
+# seconds ago, and <closing> - its closingIssuesReferences, comma-separated
+# numbers - lists <issue>. Labels are left as they are. Returns 0 when it
+# closed the issue, 1 on a silent skip, 2 when the close failed, after a
+# warning that skips this issue only.
+pr_close_missed() {
+  local issue="$1" pr="$2" base="$3" merged_at="$4" closing="$5" default="$6"
+  local merged_epoch gh_err
+  [ "$base" = "$default" ] || return 1
+  case ",$closing," in *",$issue,"*) ;; *) return 1 ;; esac
+  merged_epoch="$(autopilot_iso_epoch "$merged_at")" || return 1
+  [ $(( $(date -u +%s) - merged_epoch )) -ge "$PR_CLOSE_GRACE" ] || return 1
+  capture_err gh_err adapter_issue_close "$issue" --reason completed \
+    --comment "Closed by the orchestrator: PR #$pr merged into \`$default\` with \`Closes #$issue\`, but GitHub did not close this issue." || {
+    warn "could not close issue #$issue after PR #$pr merged: $(gh_reason "$gh_err")"
+    return 2
+  }
+}
+
 # pr_push_and_body <branch> <base> <issue> <body-file> <tmp-var> <outcome>:
 # the one place the push-then-issue-line rule lives, for open_pr and
 # update_pr. Pushes <branch>, then writes <body-file> behind its issue line -

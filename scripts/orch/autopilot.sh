@@ -787,6 +787,45 @@ autopilot_sync_detect() {
   done <<<"$out"
 }
 
+# autopilot_close_missed: the merged-PR backstop (#2478), run every tick
+# whatever the auto-sync setting. When an open orch:done issue exists, reads the
+# PRs merged into the default branch once, and closes - through pr_close_missed
+# - each such issue not carrying orch:running whose newest merged PR from
+# `orch/<issue>-` should have closed it. orch:sync and needs-human do not stop
+# it. A failed read or close warns and skips, never stopping the tick.
+autopilot_close_missed() {
+  local out raw prs gh_err issue done_label default head_prefix line pr merged_at closing
+  done_label="$(standing_phase_label "done")"
+  capture out gh_err adapter_issues_labelled "$done_label" || {
+    warn "could not list the issues labelled $done_label: $(gh_reason "$gh_err") - no merged-PR close this tick"
+    return 0
+  }
+  [ -n "$out" ] || return 0
+  default="$(default_branch)" || { warn "could not find the default branch - no merged-PR close this tick"; return 0; }
+  capture raw gh_err adapter_prs_merged_closing "$default" || {
+    warn "could not read the merged PRs: $(gh_reason "$gh_err") - no merged-PR close this tick"
+    return 0
+  }
+  prs="$(printf '%s\n' "$raw" | trust_filter_prs "the merged PRs")" || {
+    warn "the merged PRs could not be read: a malformed line - no merged-PR close this tick"
+    return 0
+  }
+  while IFS= read -r issue; do
+    [ -n "$issue" ] || continue
+    standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - the merged-PR close skips it"; continue; }
+    [ "$STANDING_STATE" = OPEN ] || continue
+    standing_is_done || continue
+    [ "$STANDING_RUNNING" = 0 ] || continue
+    head_prefix="$(branch_name_flow "$issue" "")"
+    line="$(printf '%s\n' "$prs" | awk -F'\t' -v p="$head_prefix" '
+      index($2, p) == 1 && $3 > best { best = $3; line = $0 }
+      END { if (line != "") print line }')"
+    [ -n "$line" ] || continue
+    IFS=$'\t' read -r pr _ merged_at closing <<<"$line"
+    pr_close_missed "$issue" "$pr" "$default" "$merged_at" "$closing" "$default" || true
+  done <<<"$out"
+}
+
 # autopilot_rank <phase word>: the pickup rank of a session's phase word, lowest
 # first: a sync request 0, then the phases in reverse order of the phase table
 # (review 1, implement 2, spec 3), the phase furthest along first. done is no
@@ -806,9 +845,9 @@ autopilot_rank() {
 }
 
 # autopilot_tick: one pass - labels, stale claims, the limit-pause check,
-# sync detection (when auto-sync is true), then pickup (see the spec's One
-# tick). Every candidate is read before the first claim, the unpickable ones
-# dropped, and the rest taken by rank - sync requests, then the phases furthest
+# sync detection (when auto-sync is true), the merged-PR close, then pickup
+# (see the spec's One tick). Every candidate is read before the first claim,
+# the unpickable ones dropped, and the rest taken by rank - sync requests, then the phases furthest
 # along first, oldest issue first within a rank. A phase is claimed while the
 # claim count is below the cap, a sync request while it is below the cap plus
 # the sync slots (half the cap, rounded down); the first phase candidate not
@@ -825,6 +864,7 @@ autopilot_tick() {
   autopilot_cleanup_stale
   if autopilot_pause_until "$main_root"; then return 0; fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect; fi
+  autopilot_close_missed
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
   slots=$((cap / 2))
