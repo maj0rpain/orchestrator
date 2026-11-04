@@ -212,7 +212,7 @@ tr_seed 55 orch:spec orch:running
 tr_seed 54 orch:spec orch:running
 fake_fail_after adapter_claim_delete 1 "HTTP 500"
 out="$(sourced_rc 'standing_pause 54 "wrote the round marker"; standing_stop 55 failure spec boom')"
-assert_contains "a stop failing in the same shell as an earlier succeeding pause names only its own writes" "$out" "writes that landed: added needs-human, posted the failure comment, removed orch:running; the claim stays held"
+assert_contains "a stop failing in the same shell as an earlier succeeding pause names only its own writes" "$out" "writes that landed: added needs-human, removed orch:limited, posted the failure comment, removed orch:running; the claim stays held"
 fake_unfail
 
 # stop
@@ -228,18 +228,35 @@ assert_contains "and keeps its prose beneath the marker" "$(fake_comments_of 66 
 tr_seed 57 orch:spec orch:running
 fake_fail adapter_issue_relabel "HTTP 500"
 out="$(sourced_rc 'standing_stop 57 failure spec boom')"
-assert_contains "stop failing on its first write names none landed" "$out" "could not add needs-human on issue #57: HTTP 500 - writes that landed: none; the claim stays held"
+assert_contains "stop failing on its first write names none landed" "$out" "could not add needs-human, remove orch:limited on issue #57: HTTP 500 - writes that landed: none; the claim stays held"
 fake_unfail
 tr_seed 58 orch:spec orch:running
 fake_fail adapter_issue_comment "HTTP 500"
 out="$(sourced_rc 'standing_stop 58 failure spec boom')"
-assert_contains "stop failing on its comment names the label that landed" "$out" "could not post the failure comment on issue #58: HTTP 500 - writes that landed: added needs-human; the claim stays held"
+assert_contains "stop failing on its comment names the label that landed" "$out" "could not post the failure comment on issue #58: HTTP 500 - writes that landed: added needs-human, removed orch:limited; the claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 58)" held
 fake_unfail
 tr_seed 59 orch:spec orch:running
 out="$(sourced_rc 'standing_stop 59 failure "" boom')"
 assert_eq "an empty phase dies" "$(printf %s "$out" | tail -n 1)" "rc=1"
 assert_eq "and writes nothing, the claim still held" "$(tr_standing 59)|$(fake_comments_of 59)|$(fake_claim_held 59)" "spec|1|0|0||held"
+
+# a general stop names its orch:limited removal, the label there or not
+tr_seed 95 orch:spec orch:running orch:limited
+fake_fail adapter_issue_comment "HTTP 500"
+out="$(sourced_rc 'standing_stop 95 failure spec boom')"
+assert_contains "a stop on a limited issue failing on its comment names the orch:limited removal that landed" "$out" "writes that landed: added needs-human, removed orch:limited; the claim stays held"
+fake_unfail
+tr_seed 96 orch:spec orch:running orch:limited
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(sourced_rc 'standing_stop 96 failure spec boom')"
+assert_contains "a stop on a limited issue failing on its label edit says it was also removing orch:limited" "$out" "could not add needs-human, remove orch:limited on issue #96: HTTP 500"
+fake_unfail
+tr_seed 97 orch:spec orch:running
+fake_fail adapter_issue_comment "HTTP 500"
+out="$(sourced_rc 'standing_stop 97 failure spec boom')"
+assert_contains "a stop on an issue without orch:limited still names the orch:limited removal as landed" "$out" "writes that landed: added needs-human, removed orch:limited; the claim stays held"
+fake_unfail
 
 # the chain points a command section no longer asserts: each transition's own
 # writes, and the claim held when one fails
@@ -260,13 +277,13 @@ fake_unfail
 tr_seed 92 orch:spec orch:running
 fake_fail_after adapter_issue_relabel 1 "HTTP 500"
 out="$(sourced_rc 'standing_stop 92 failure spec boom')"
-assert_contains "stop failing on the running removal names the label add and the comment" "$out" "could not remove orch:running on issue #92: HTTP 500 - writes that landed: added needs-human, posted the failure comment; the claim stays held"
+assert_contains "stop failing on the running removal names the label add and the comment" "$out" "could not remove orch:running on issue #92: HTTP 500 - writes that landed: added needs-human, removed orch:limited, posted the failure comment; the claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 92)" held
 fake_unfail
 tr_seed 93 orch:spec orch:running
 fake_fail adapter_claim_delete "HTTP 500"
 out="$(sourced_rc 'standing_stop 93 refusal spec "no plan"')"
-assert_contains "a refusal stop failing on the claim delete names every write before it" "$out" "could not delete the claim ref on issue #93: HTTP 500 - writes that landed: added needs-human, posted the refusal comment, removed orch:running; the claim stays held"
+assert_contains "a refusal stop failing on the claim delete names every write before it" "$out" "could not delete the claim ref on issue #93: HTTP 500 - writes that landed: added needs-human, removed orch:limited, posted the refusal comment, removed orch:running; the claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 93)" held
 fake_unfail
 tr_seed 94 orch:spec orch:running

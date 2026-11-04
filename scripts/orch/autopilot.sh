@@ -312,7 +312,7 @@ autopilot_questions() {
       # a done issue is listed only when a sync stopped it: orch:sync is still
       # on it (a failure stop), or its newest stop comment is a sync stop
       standing_is_done || continue
-      if [ "$STANDING_SYNC" = 1 ] || [ "$TIMELINE_STOP_PHASE" = "$STANDING_SYNC_PHASE" ]; then
+      if standing_is_sync || [ "$TIMELINE_STOP_PHASE" = "$STANDING_SYNC_PHASE" ]; then
         phase="$STANDING_SYNC_PHASE" q_phase="$STANDING_SYNC_PHASE" stop_phase="$STANDING_SYNC_PHASE"
       else
         continue
@@ -570,25 +570,6 @@ autopilot_pickup_redo() {
   ORCH_AUTOPILOT=1 autopilot_orch_in "$1" redo "$2"
 }
 
-# autopilot_pickup_sync_refusals <issue> <side> [<recorded>]: a sync request's
-# own refusals, called twice by pickup_steps: with no recorded phase, the side
-# checkout must exist; with it, the checkout must record phase done. A sync adds
-# no side checkout, runs no init, posts no plan comment and runs no redo. A
-# refusal leaves PICKUP_KIND and PICKUP_TEXT and returns 1.
-autopilot_pickup_sync_refusals() {
-  local issue="$1" side="$2" recorded="${3:-}"
-  if [ -z "$side" ]; then
-    PICKUP_KIND=refusal
-    PICKUP_TEXT="no side checkout on this host holds issue #$issue - run $(plugin_cmd sync "the orch-sync skill") where it lives"
-    return 1
-  fi
-  if [ -n "$recorded" ] && [ "$recorded" != "done" ]; then
-    PICKUP_KIND=refusal
-    PICKUP_TEXT="the issue carries a sync request, but its side checkout records phase $recorded, not done"
-    return 1
-  fi
-}
-
 # autopilot_pickup_steps <issue> <phase> <limited>: Pickup's steps in order, up
 # to the session's start. The first that fails leaves PICKUP_KIND and
 # PICKUP_TEXT and returns 1.
@@ -598,7 +579,13 @@ autopilot_pickup_steps() {
   autopilot_pickup_trust "$issue" || return 1
   autopilot_pickup_side_find "$issue"
   if [ "$sync" = 1 ]; then
-    autopilot_pickup_sync_refusals "$issue" "$side" || return 1
+    # a sync adds no side checkout, runs no init, posts no plan comment
+    # and runs no redo
+    if [ -z "$side" ]; then
+      PICKUP_KIND=refusal
+      PICKUP_TEXT="no side checkout on this host holds issue #$issue - run $(plugin_cmd sync "the orch-sync skill") where it lives"
+      return 1
+    fi
   else
     if [ -z "$side" ]; then
       autopilot_pickup_side_title "$issue" || autopilot_pickup_fail failure "step side-checkout add failed: could not read the issue's title" || return 1
@@ -609,7 +596,11 @@ autopilot_pickup_steps() {
   fi
   autopilot_pickup_recorded "$side" || autopilot_pickup_fail failure "step reading the recorded phase failed" || return 1
   if [ "$sync" = 1 ]; then
-    autopilot_pickup_sync_refusals "$issue" "$side" "$recorded" || return 1
+    if [ -n "$recorded" ] && [ "$recorded" != "done" ]; then
+      PICKUP_KIND=refusal
+      PICKUP_TEXT="the issue carries a sync request, but its side checkout records phase $recorded, not done"
+      return 1
+    fi
   elif [ "$recorded" != "$phase" ]; then
     redo="$(standing_redo_phase "$phase" "$recorded")" || {
       PICKUP_KIND=refusal
