@@ -1,5 +1,8 @@
 # Redo resets the review loop's iteration and budget
 
+Amended by ADR-0059: the flake rerun allowance is one per review loop,
+not one per flow.
+
 Everywhere else, `iteration`, `budget`, and the flake-rerun allowance belong to
 the *flow*: they run on across every loop a flow enters and never reset on
 ordinary re-entry after a bounded stop. Redo breaks that rule on purpose.
