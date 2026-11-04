@@ -74,11 +74,18 @@ cat >"$root/orch.sh" <<'FAKE'
 printf 'pid=%s pwd=%s host=%s args=%s\n' "$$" "$PWD" "${ORCH_HOST_ID:-}" "$*" >>"$ORCH_LOG"
 # `repo show` goes to the real orch.sh, so its origin parser is the one tested.
 [ "$1 $2" = "repo show" ] && exec bash "$REAL_ORCH_SH" "$@"
-# Each agent set/clear records, in $ORCH_LOG.shadows, how many local keys that
-# shadow .env are left in the clone at the moment of the call.
+# Each agent set/clear records, in $ORCH_LOG.shadows, "<left> <listed>": how many
+# keys of $FAKE_SHADOW_KEYS (one <key>=<value> per line, the keys the case
+# seeded) the clone still holds locally at the moment of the call, and how many
+# entries the list holds. No pattern is matched.
 case "$1 $2" in "agent set"|"agent clear")
-  git config --local --get-regexp '^(orchestrator\.autopilot\.|orchestrator\.(model|effort)\.|user\.(name|email)$)' 2>/dev/null |
-    wc -l >>"$ORCH_LOG.shadows" ;;
+  left=0 listed=0
+  while IFS= read -r shadow_entry; do
+    [ -n "$shadow_entry" ] || continue
+    listed=$((listed + 1))
+    ! git config --local --get "${shadow_entry%%=*}" >/dev/null 2>&1 || left=$((left + 1))
+  done <<<"${FAKE_SHADOW_KEYS:-}"
+  echo "$left $listed" >>"$ORCH_LOG.shadows" ;;
 esac
 if [ -n "${FAKE_ORCH_FAIL:-}" ]; then
   case "$*" in *"$FAKE_ORCH_FAIL"*) echo "orch: refused $*" >&2; exit 1 ;; esac
@@ -110,6 +117,7 @@ entry_env() {
     "PATH=$fake_bin:$PATH" "HOME=$home" "GH_LOG=$gh_log" "ORCH_LOG=$orch_log"
     "ORCH_SH=$root/orch.sh" "REAL_ORCH_SH=$DIR/orch.sh" "ORCH_CLONE_DIR=$clone"
     "FAKE_GH_FAIL=${FAKE_GH_FAIL:-}" "FAKE_ORCH_FAIL=${FAKE_ORCH_FAIL:-}"
+    "FAKE_SHADOW_KEYS=${shadow_list:-}"
     "REPO=owner/name" "GH_TOKEN=tok" "CLAUDE_CODE_OAUTH_TOKEN=oauth"
   )
   local arg entry
@@ -143,7 +151,7 @@ refusal() { # <label> <expected message> <VAR=value or -VAR>...
   shift 2
   run_entry "$@"
   assert_status "$label: exits 1" "$st" 1
-  assert_contains "$label: says so" "$err" "orch: $want"
+  assert_contains "$label: says so" "$err" "orch: environment: $want"
   assert_empty "$label: gh never ran" "$(<"$gh_log")"
   assert_empty "$label: orch.sh never ran" "$(<"$orch_log")"
 }
@@ -156,8 +164,8 @@ refusal "empty Claude credentials" "neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPI
 
 run_entry -REPO -GH_TOKEN -CLAUDE_CODE_OAUTH_TOKEN
 assert_status "all three missing: one exit 1" "$st" 1
-assert_eq "all three missing: one line each" "$(printf '%s\n' "$err" | grep -c '^orch: ')" 3
-assert_eq "all three missing: nothing but orch lines" "$(printf '%s\n' "$err" | grep -vc '^orch: ')" 0
+assert_eq "all three missing: one environment line each" "$(printf '%s\n' "$err" | grep -c '^orch: environment: ')" 3
+assert_eq "all three missing: nothing but environment lines" "$(printf '%s\n' "$err" | grep -vc '^orch: environment: ')" 0
 assert_empty "all three missing: gh never ran" "$(<"$gh_log")"
 assert_empty "all three missing: orch.sh never ran" "$(<"$orch_log")"
 
@@ -258,14 +266,18 @@ assert_eq "a refused start keeps what it already wrote" "$(cfg orchestrator.auto
 
 # Local keys in a reused clone that would shadow a global key are removed, with
 # one warning each, before the global writes, autopilot show and the watcher.
-local_prep='git init -q "$clone" && git -C "$clone" remote add origin https://github.com/owner/name.git && git -C "$clone" config orchestrator.autopilot.cap 9 &&
-  git -C "$clone" config orchestrator.autopilot.permission-mode plan &&
-  git -C "$clone" config orchestrator.autopilot.bogus x &&
-  git -C "$clone" config orchestrator.model.implementer opus &&
-  git -C "$clone" config orchestrator.effort.lens low &&
-  git -C "$clone" config orchestrator.junie.model.implementer keepme &&
-  git -C "$clone" config user.name Stale &&
-  git -C "$clone" config user.email stale@example.com'
+# The shadowing keys the case seeds, once: one <key>=<value> per line. The
+# seeding and the fake orch.sh's count both read this list.
+shadow_list='orchestrator.autopilot.cap=9
+orchestrator.autopilot.permission-mode=plan
+orchestrator.autopilot.bogus=x
+orchestrator.model.implementer=opus
+orchestrator.effort.lens=low
+user.name=Stale
+user.email=stale@example.com'
+local_prep='git init -q "$clone" && git -C "$clone" remote add origin https://github.com/owner/name.git &&
+  while IFS= read -r seed; do git -C "$clone" config "${seed%%=*}" "${seed#*=}" || exit 1; done <<<"$shadow_list" &&
+  git -C "$clone" config orchestrator.junie.model.implementer keepme'
 clone_prep="$local_prep" run_entry ORCH_CAP=2 ORCH_GIT_NAME=Bot ORCH_GIT_EMAIL=bot@example.com -ORCH_PERMISSION_MODE
 assert_status "stale local keys: the start succeeds" "$st" 0
 assert_empty "stale local keys: no local autopilot key remains" "$(git -C "$clone" config --local --get-regexp '^orchestrator\.autopilot\.')"
@@ -289,7 +301,8 @@ assert_eq "stale local keys: no local agent clear" "$(grep 'args=agent clear' "$
 last_removal="$(printf '%s\n' "$err" | grep -n '^orch: removed local ' | tail -1 | cut -d: -f1)"
 marker_at="$(printf '%s\n' "$err" | grep -n '^autopilot-show-marker' | cut -d: -f1)"
 assert_eq "removal lines come before the autopilot show output" "$([ -n "$marker_at" ] && [ "$last_removal" -lt "$marker_at" ] && echo yes)" yes
-assert_eq "no shadowing local key is left at any global agent write" "$(tr -d ' ' <"$orch_log.shadows" | sort -u)" 0
+assert_eq "no shadowing local key is left at any global agent write" "$(cut -d' ' -f1 "$orch_log.shadows" | sort -u)" 0
+assert_eq "the fake received the whole seeded list at every global agent write" "$(cut -d' ' -f2 "$orch_log.shadows" | sort -u)" "$(printf '%s\n' "$shadow_list" | wc -l | tr -d ' ')"
 assert_eq "every global agent write is checked for shadowing keys" "$(wc -l <"$orch_log.shadows" | tr -d ' ')" 12
 first_agent_at="$(grep -n 'args=agent \(set\|clear\)' "$orch_log" | sed -n 1p | cut -d: -f1)"
 show_at="$(grep -n 'args=autopilot show' "$orch_log" | cut -d: -f1)"
@@ -307,6 +320,7 @@ assert_eq "a failed local removal exits non-zero" "$([ "$st" -ne 0 ] && echo yes
 assert_contains "a failed local removal shows its orch line" "$err" "orch: autopilot settings:"
 assert_eq "a failed local removal never runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 0
 
+shadow_list=
 FAKE_ORCH_FAIL="agent roles" run_entry
 assert_contains "a refused agent roles names its step" "$err" "orch: autopilot settings: agent roles failed"
 

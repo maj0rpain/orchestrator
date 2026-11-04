@@ -828,6 +828,16 @@ assert_eq "and leaves no file behind" \
   "$(on_disk "$issue_json")" "absent"
 fake_unfail
 
+printf 'old contents\n' >"$issue_json"
+unparsed_adapter="$(mktemp)"
+printf 'source %q\nadapter_issue_json() { printf "not json\\n"; }\n' "$GH_ADAPTER_FAKE" >"$unparsed_adapter"
+out="$(ORCH_GH_ADAPTER="$unparsed_adapter" "$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "a comment object that does not parse fails fetch --json" "$st" 1
+assert_eq "naming the issue, with no jq error before it" "$out" "orch: could not read the comments of issue #27"
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_json")" "$(printf 'old contents\n' | od -c)"
+rm -f "$unparsed_adapter" "$issue_json"
+
 for args in "27 --json $issue_json" "--json 27 $issue_json" "27 $issue_json --jsn" "27 $issue_json --json extra"; do
   # shellcheck disable=SC2086 # each case is split into its words on purpose
   out="$("$ORCH" issue fetch $args 2>&1)"; st=$?
