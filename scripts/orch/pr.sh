@@ -17,14 +17,15 @@ PR_CLOSE_GRACE=300
 # seconds ago, and <closing> - its closingIssuesReferences, comma-separated
 # numbers - lists <issue>. Labels are left as they are. Returns 0 when it
 # closed the issue, 1 on a silent skip, 2 when the close failed, after a
-# warning that skips this issue only.
+# warning that skips this issue only, 3 when every other condition held but
+# the merge is inside the grace period (the caller may warn).
 pr_close_missed() {
   local issue="$1" pr="$2" base="$3" merged_at="$4" closing="$5" default="$6"
   local merged_epoch gh_err
   [ "$base" = "$default" ] || return 1
   case ",$closing," in *",$issue,"*) ;; *) return 1 ;; esac
   merged_epoch="$(autopilot_iso_epoch "$merged_at")" || return 1
-  [ $(( $(date -u +%s) - merged_epoch )) -ge "$PR_CLOSE_GRACE" ] || return 1
+  [ $(( $(date -u +%s) - merged_epoch )) -ge "$PR_CLOSE_GRACE" ] || return 3
   capture_err gh_err adapter_issue_close "$issue" --reason completed \
     --comment "Closed by the orchestrator: PR #$pr merged into \`$default\` with \`Closes #$issue\`, but GitHub did not close this issue." || {
     warn "could not close issue #$issue after PR #$pr merged: $(gh_reason "$gh_err")"

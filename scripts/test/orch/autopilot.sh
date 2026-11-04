@@ -32,18 +32,6 @@ local_fields() {
   e="$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s)"
   printf '%s %s\n' "$e" "$(date -d "@$e" '+%H %a' 2>/dev/null || date -r "$e" '+%H %a')"
 }
-# fake_pr_merged <n> <age-seconds> [issue...]: PR #n merged <age-seconds> ago,
-# by the current time, its closingIssuesReferences the issues given.
-fake_pr_merged() {
-  local n="$1" age="$2" d
-  shift 2
-  d="$ORCH_GH_FAKE_STORE/prs/$n"
-  date -u -d "@$(( $(date -u +%s) - age ))" +%Y-%m-%dT%H:%M:%SZ >"$d/merged_at" 2>/dev/null ||
-    date -u -r "$(( $(date -u +%s) - age ))" +%Y-%m-%dT%H:%M:%SZ >"$d/merged_at"
-  : >"$d/closing"
-  for i in "$@"; do printf '%s\n' "$i" >>"$d/closing"; done
-}
-
 # fake_pr_mergeable <n> <value>: seeds PR #n's mergeability - MERGEABLE,
 # CONFLICTING or UNKNOWN, which a PR never seeded reports.
 fake_pr_mergeable() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/mergeable"; }

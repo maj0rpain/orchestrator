@@ -396,6 +396,48 @@ cmd_side_checkout_remove() {
   side_checkout_archive_and_remove_or_exit "$path" "$main_root" "$here" die
 }
 
+# side_checkout_close_missed <path> <branch>: the merged-PR backstop (#2477) for
+# a checkout the sweep judged finished, run before it is archived or removed.
+# A flow's issue and PR are the ones its state records; a flow-less checkout's
+# PR is the newest merged from <branch> and its issue the one a `quick/<issue>-`
+# branch names - any other branch is skipped. Closes the issue, when open,
+# through pr_close_missed. An open issue whose PR merged inside the grace period
+# gets a warning, since no later sweep will see it. A failed read or close warns
+# and never fails the sweep: always returns 0.
+side_checkout_close_missed() {
+  local path="$1" br="$2" state issue pr="" default raw prs line gh_err merged_at closing rc=0
+  if checkout_has_flow "$path"; then
+    state="$(flow_state_file "$path")"
+    issue="$(state_get_in "$state" issue 2>/dev/null)" || return 0
+    pr="$(state_get_in "$state" pr 2>/dev/null)" || return 0
+    [ -n "$issue" ] && [ -n "$pr" ] || return 0
+  else
+    case "$br" in quick/*) ;; *) return 0 ;; esac
+    issue="$(branch_issue_of "$br")" || return 0
+  fi
+  default="$(default_branch)" || return 0
+  standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - the merged-PR close skips it"; return 0; }
+  [ "$STANDING_STATE" = OPEN ] || return 0
+  capture raw gh_err adapter_prs_merged_closing "$default" || {
+    warn "could not read the merged PRs: $(gh_reason "$gh_err") - no merged-PR close for issue #$issue"
+    return 0
+  }
+  prs="$(printf '%s\n' "$raw" | trust_filter_prs "the merged PRs")" || {
+    warn "the merged PRs could not be read: a malformed line - no merged-PR close for issue #$issue"
+    return 0
+  }
+  line="$(printf '%s\n' "$prs" | awk -F'\t' -v pr="$pr" -v br="$br" '
+    (pr != "" ? $1 == pr : $2 == br) && $3 > best { best = $3; line = $0 }
+    END { if (line != "") print line }')"
+  [ -n "$line" ] || return 0
+  IFS=$'\t' read -r pr _ merged_at closing <<<"$line"
+  pr_close_missed "$issue" "$pr" "$default" "$merged_at" "$closing" "$default" || rc=$?
+  if [ "$rc" -eq 3 ]; then
+    warn "issue #$issue is still open: PR #$pr merged less than $((PR_CLOSE_GRACE / 60)) minutes ago - GitHub may yet close it, and no later sweep will check"
+  fi
+  return 0
+}
+
 # The sweep behind /orchestrator:finish. Every verdict is read first, so a
 # GitHub that cannot be read removes nothing at all. Then each finished side
 # checkout, in git's order, has its flow archived into the main checkout, its
@@ -444,6 +486,7 @@ cmd_side_checkout_prune() {
   for entry in "${finished[@]}"; do
     path="${entry%%$'\t'*}"; branch="${entry#*$'\t'}"
     archive_out=""
+    side_checkout_close_missed "$path" "$branch"
     if [ "$path" = "$main_root" ]; then
       if ! archive_out="$(archive_flow "$path" "$main_root" 2>&1)"; then
         warn "could not archive the main checkout's flow: $(err_line "$archive_out")"; failed=1; continue
