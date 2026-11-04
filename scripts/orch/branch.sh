@@ -314,6 +314,13 @@ cmd_branch_base_sha() {
   git merge-base HEAD "$ref" || die "$branch shares no history with base branch $base"
 }
 
+# on_origin_base <sha> <base>: succeeds when the local origin/<base> resolves
+# and <sha> is on it - its tip or an ancestor of it.
+on_origin_base() {
+  git rev-parse --verify --quiet "refs/remotes/origin/$2" >/dev/null \
+    && git merge-base --is-ancestor "$1" "refs/remotes/origin/$2"
+}
+
 # Brings the current plugin-made branch up to date with its base branch: merges
 # origin's tip of that base into it - never a rebase, never the local base -
 # moves its base SHA to that tip, and pushes when it has an upstream. A
@@ -323,10 +330,23 @@ cmd_branch_base_sha() {
 # a conflict, the merge left in progress for a resolver, with nothing else
 # moved; every refusal is exit 1 with nothing moved. A failed push is the one
 # exit 1 after something moved: the merge and base SHA stand, and a rerun -
-# nothing left to merge - retries the push, as it finishes a resolved conflict.
+# nothing left to merge - retries the push.
+# A merge in progress whose MERGE_HEAD is on origin's local base ref is a
+# pending base merge a failed sync left: exit 3, nothing fetched or moved, so a
+# resolver resumes it; any other merge in progress is refused with exit 1.
+# --finish, never a plain rerun, finishes a resolved conflict without
+# fetching: HEAD must be a merge commit whose second parent is on the local
+# origin/<base> and no merge may be in progress, else exit 1 with nothing
+# moved. It records that second parent as the base SHA and pushes, leaving a
+# newer base tip for the next sync.
 cmd_branch_sync() {
-  [ $# -eq 0 ] || die "usage: orch.sh branch sync"
-  local branch base held="" tip remote why
+  local finish=""
+  case "$*" in
+    "") ;;
+    --finish) finish=1 ;;
+    *) die "usage: orch.sh branch sync [--finish]" ;;
+  esac
+  local branch base held="" tip remote why mh
   current_branch_or_die ' - nothing was synced'
   require_state_readable
   if branch_held "$branch"; then
@@ -340,19 +360,34 @@ cmd_branch_sync() {
     fi
   fi
   [ "$branch" != "$base" ] || die "$branch is its own base branch - nothing was synced"
-  if merge_in_progress "$ROOT"; then
-    die "a merge is in progress on $branch - commit it (or git merge --abort), then rerun orch.sh branch sync"
-  fi
-  require_clean_tree "$ROOT" "the working tree is dirty - commit or discard its changes first; nothing was synced"
-  git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
-    || die "could not fetch $base from origin - nothing was synced"
-  tip="$(git rev-parse "refs/remotes/origin/$base")"
-  if ! git merge --quiet --no-edit "refs/remotes/origin/$base" >/dev/null 2>&1; then
+  if [ -n "$finish" ]; then
     if merge_in_progress "$ROOT"; then
-      warn "merging origin/$base into $branch hit a conflict - the merge is left in progress; resolve and commit it, then rerun orch.sh branch sync"
-      exit 3
+      die "a merge is in progress on $branch - commit it (or git merge --abort), then rerun orch.sh branch sync --finish; nothing was synced"
     fi
-    die "git could not merge origin/$base into $branch"
+    tip="$(git rev-parse --verify --quiet "HEAD^2^{commit}")" \
+      || die "HEAD of $branch is not a merge commit - nothing to finish; nothing was synced"
+    on_origin_base "$tip" "$base" \
+      || die "the second parent of HEAD is not on origin/$base - nothing to finish; nothing was synced"
+  else
+    if merge_in_progress "$ROOT"; then
+      mh="$(git rev-parse --verify --quiet MERGE_HEAD)"
+      if on_origin_base "$mh" "$base"; then
+        warn "a merge of origin/$base into $branch is pending resolution - the merge is left in progress; resolve and commit it, then run orch.sh branch sync --finish"
+        exit 3
+      fi
+      die "a merge is in progress on $branch - commit it (or git merge --abort), then rerun orch.sh branch sync"
+    fi
+    require_clean_tree "$ROOT" "the working tree is dirty - commit or discard its changes first; nothing was synced"
+    git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
+      || die "could not fetch $base from origin - nothing was synced"
+    tip="$(git rev-parse "refs/remotes/origin/$base")"
+    if ! git merge --quiet --no-edit "refs/remotes/origin/$base" >/dev/null 2>&1; then
+      if merge_in_progress "$ROOT"; then
+        warn "merging origin/$base into $branch hit a conflict - the merge is left in progress; resolve and commit it, then run orch.sh branch sync --finish"
+        exit 3
+      fi
+      die "git could not merge origin/$base into $branch"
+    fi
   fi
   branch_base_sha_set "$branch" "$tip"
   [ -z "$held" ] || state_write_string base_sha "$tip"
@@ -361,7 +396,7 @@ cmd_branch_sync() {
   if [ "$(git config --get "branch.$branch.merge" 2>/dev/null)" = "refs/heads/$branch" ]; then
     remote="$(git config --get "branch.$branch.remote" 2>/dev/null)" || remote=origin
     git_push why --quiet "$remote" "refs/heads/$branch:refs/heads/$branch" \
-      || die "could not push $branch - the merge and base SHA are recorded; rerun orch.sh branch sync to push: $why"
+      || die "could not push $branch - the merge and base SHA are recorded; rerun orch.sh branch sync${finish:+ --finish} to push: $why"
   fi
   note "$branch synced with origin/$base at $tip"
 }

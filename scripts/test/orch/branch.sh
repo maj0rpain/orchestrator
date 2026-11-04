@@ -551,37 +551,107 @@ assert_eq "the base SHA unmoved in branch config" "$(bs_sha)" "$sha_before"
 assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$sha_before"
 assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
 
+mh="$(git rev-parse MERGE_HEAD)"; idx="$(git write-tree 2>&1; git status --porcelain)"
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
-assert_status "a rerun before the merge is committed refuses" "$st" 1
-assert_eq "leaving the merge in progress" "$(merge_state)" "merging"
+assert_status "a pending merge of origin's base exits 3" "$st" 3
+assert_contains "saying it is pending resolution" "$out" "pending resolution"
+assert_contains "and left in progress" "$out" "left in progress"
+assert_eq "leaving MERGE_HEAD" "$(git rev-parse MERGE_HEAD)" "$mh"
+assert_eq "and the index and tree" "$(git write-tree 2>&1; git status --porcelain)" "$idx"
 
-# The resolver commits; the rerun finishes the sync.
+# The resolver commits; origin's base then moves on and conflicts again.
 echo both >clash.txt; git add clash.txt; git commit -q --no-edit
 resolved="$(git rev-parse HEAD)"
-out="$(orch_gh_failing branch sync 2>&1)"; st=$?
-assert_status "a rerun after the resolution is committed exits 0" "$st" 0
-assert_eq "with nothing more to merge" "$(git rev-parse HEAD)" "$resolved"
-assert_eq "recording the base SHA" "$(bs_sha)" "$new_tip"
+bs_advance clash.txt theirs-again >/dev/null
+git fetch -q origin "+refs/heads/main:refs/remotes/origin/main"
+out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
+assert_status "--finish on a resolved conflict exits 0" "$st" 0
+assert_eq "starting no new merge" "$(merge_state)" "none"
+assert_eq "with the tip unmoved" "$(git rev-parse HEAD)" "$resolved"
+assert_eq "recording the merge's second parent as the base SHA" "$(bs_sha)" "$new_tip"
 assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$new_tip"
+assert_eq "branch base-sha prints the merge's second parent" "$(orch_gh_failing branch base-sha)" "$new_tip"
 assert_eq "and pushing the resolution" "$(bs_origin_tip orch/11-bsync)" "$resolved"
 
-# A failed push: the merge and base SHA stand; a rerun pushes.
-new_tip="$(bs_advance push.txt push)"
-pushed="$(bs_origin_tip orch/11-bsync)"
+# --finish refusals move nothing.
+sha_before="$(bs_sha)"
+git reset -q --hard HEAD^1
+out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
+assert_status "--finish refuses a HEAD that is not a merge commit" "$st" 1
+assert_eq "moving no base SHA (not a merge)" "$(bs_sha)" "$sha_before"
+git reset -q --hard "$resolved"
+side="$(git commit-tree -p HEAD -m side 'HEAD^{tree}')"
+git reset -q --hard "$(git commit-tree -p HEAD -p "$side" -m "foreign merge" 'HEAD^{tree}')"
+foreign="$(git rev-parse HEAD)"
+out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
+assert_status "--finish refuses a second parent not on origin's base" "$st" 1
+assert_eq "moving no base SHA (foreign parent)" "$(bs_sha)" "$sha_before"
+assert_eq "and no tip" "$(git rev-parse HEAD)" "$foreign"
+git reset -q --hard "$resolved"
+
+# --finish with a merge in progress refuses.
+bs_advance clash2.txt theirs >/dev/null
+echo ours2 >clash2.txt; git add clash2.txt; git commit -qm "clash2: ours"
+orch_gh_failing branch sync >/dev/null 2>&1
+out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
+assert_status "--finish refuses while a merge is in progress" "$st" 1
+assert_eq "leaving the merge in progress" "$(merge_state)" "merging"
+git merge --abort
+
+# A merge in progress of a ref not on origin's base is still refused.
+git checkout -q -b bs-other "$resolved"
+echo other >other-clash.txt; git add other-clash.txt; git commit -qm "other side"
+git checkout -q orch/11-bsync
+echo mine >other-clash.txt; git add other-clash.txt; git commit -qm "mine"
+git merge -q --no-edit bs-other >/dev/null 2>&1
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a merge of a ref not on the base still refuses" "$st" 1
+assert_contains "with the merge-in-progress refusal" "$out" "a merge is in progress"
+git merge --abort
+git reset -q --hard "$resolved"
+git branch -q -D bs-other
+
+# --finish whose push is rejected: exit 1 with the base SHA recorded; a rerun
+# pushes. Built from a merge commit made by hand, so nothing is fetched.
+new_tip="$(bs_advance finish.txt finish)"
+git fetch -q origin "+refs/heads/main:refs/remotes/origin/main"
+git merge -q -X ours --no-edit origin/main >/dev/null 2>&1
+merged="$(git rev-parse HEAD)"; pushed="$(bs_origin_tip orch/11-bsync)"
+origin_rejects "$sc_origin"
+out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
+rm -f "$sc_origin/hooks/pre-receive"
+assert_status "--finish with a rejected push exits 1" "$st" 1
+assert_eq "saying the push failed, with git's reason (#1300)" "$out" \
+  "orch: could not push orch/11-bsync - the merge and base SHA are recorded; rerun orch.sh branch sync --finish to push: ! [remote rejected] orch/11-bsync -> orch/11-bsync (pre-receive hook declined)"
+assert_eq "with the base SHA recorded" "$(bs_sha)" "$new_tip"
+assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
+out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
+assert_status "a --finish rerun once the push is allowed exits 0" "$st" 0
+assert_eq "and pushes" "$(bs_origin_tip orch/11-bsync)" "$merged"
+
+# On a branch no flow holds: branch config only, state.json untouched; with no
+# upstream of its own, nothing is pushed.
+git checkout -q -b quick/12-unheld "$merged"
+git config branch.quick/12-unheld.orchestrator-base main
+git config --unset branch.quick/12-unheld.merge 2>/dev/null
+state_before="$(cat .orchestrator/state.json 2>/dev/null)"
+git branch -q --unset-upstream 2>/dev/null
+out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
+assert_status "--finish on an unheld branch exits 0" "$st" 0
+assert_eq "recording the base SHA in branch config" "$(bs_sha)" "$new_tip"
+assert_eq "leaving state.json untouched" "$(cat .orchestrator/state.json 2>/dev/null)" "$state_before"
+assert_eq "and pushing nothing without an upstream" "$(bs_origin_tip quick/12-unheld)" ""
+git checkout -q orch/11-bsync
+git branch -q -D quick/12-unheld
+
+# A plain sync's failed push keeps its plain rerun hint; the --finish case
+# above covers the recorded base SHA and the rerun that pushes.
+bs_advance push.txt push >/dev/null
 origin_rejects "$sc_origin"
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 rm -f "$sc_origin/hooks/pre-receive"
-assert_status "a failed push exits 1" "$st" 1
-assert_eq "saying the push failed, with git's reason (#1300)" "$out" \
-  "orch: could not push orch/11-bsync - the merge and base SHA are recorded; rerun orch.sh branch sync to push: ! [remote rejected] orch/11-bsync -> orch/11-bsync (pre-receive hook declined)"
-assert_eq "with the merge commit made" "$(git rev-parse HEAD^2)" "$new_tip"
-assert_eq "and the base SHA recorded" "$(bs_sha)" "$new_tip"
-assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
-merged="$(git rev-parse HEAD)"
-out="$(orch_gh_failing branch sync 2>&1)"; st=$?
-assert_status "a rerun with origin reachable exits 0" "$st" 0
-assert_eq "merging nothing more" "$(git rev-parse HEAD)" "$merged"
-assert_eq "and pushes" "$(bs_origin_tip orch/11-bsync)" "$merged"
+assert_status "a plain sync's failed push exits 1" "$st" 1
+assert_contains "naming the plain rerun" "$out" "rerun orch.sh branch sync to push:"
 
 # A merge failing with no merge in progress is no conflict: merge.ff=only
 # refuses the diverged merge before git writes any merge state.
@@ -645,7 +715,7 @@ git checkout -q orch/11-bsync
 
 out="$(orch_gh_failing branch sync extra 2>&1)"; st=$?
 assert_status "refuses arguments" "$st" 1
-assert_contains "with the usage" "$out" "usage: orch.sh branch sync"
+assert_contains "with the usage" "$out" "usage: orch.sh branch sync [--finish]"
 
 # A done flow's branch, then an archived one's, still finds its base.
 state_fixture phase "done"

@@ -73,10 +73,13 @@ failed sync stops and where its **Merge resolutions** go.
    - **Exit 0**: synced, or nothing to merge. Nothing was resolved; the
      sync is done.
    - **Exit 1**: a refusal - a dirty tree, a failed fetch, a detached HEAD,
-     a merge already in progress, a branch that is its own base, a branch
+     a merge in progress that is not of the base, a branch that is its own
+     base, a branch
      the plugin did not make, or a failed push. A **failed sync**:
      go to step 4.
-   - **Exit 3**: a conflict, the merge left in progress. Go to step 2.
+   - **Exit 3**: a conflict, the merge left in progress - a fresh conflict,
+     or a pending merge of the base that an earlier failed sync left. Go to
+     step 2.
 2. **Resolve.** Start a fresh `orch-resolver` per **Starting this agent**
    above, on the `resolver` setting: the caller runs `bash "$ORCH" agent get
    resolver` once, at its run's start, per **Agent settings** in
@@ -96,14 +99,16 @@ failed sync stops and where its **Merge resolutions** go.
 
    If the resolution **failed**, as **Report** below defines it, that is a
    **failed sync**: go to step 4.
-3. **Finish.** Rerun `bash "$ORCH" branch sync`. Exit 0 finishes the sync:
-   it records the base SHA and pushes when the branch has an upstream.
+3. **Finish.** Run `bash "$ORCH" branch sync --finish`, which fetches
+   nothing, so a base that moved meanwhile cannot undo the resolution. Exit 0
+   finishes the sync: it records the merged tip as the base SHA and pushes when
+   the branch has an upstream.
    Record the resolver's report per **Merge resolutions** below. Any other
    exit is a **failed sync**: go to step 4.
 4. **A failed sync** stops the driver, as a phase that cannot finish does:
    name the failure - the refusal's message, or the resolver's report - and
-   leave any merge in progress for the human to finish and rerun `orch.sh
-   branch sync`, or to `git merge --abort`. Never abort it yourself.
+   leave any merge in progress for the human to finish and run `orch.sh
+   branch sync --finish`, or to `git merge --abort`. Never abort it yourself.
 
 ## A driver's ticket resolution
 
