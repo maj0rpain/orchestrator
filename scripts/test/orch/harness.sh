@@ -715,24 +715,25 @@ assert_eq "leaves no process with the hang's marker" \
 # ignores TERM and carries a marker is present once, survives a plain TERM, and
 # is gone after test_jobs_stop_tree. Anything left is KILLed by marker.
 if [ -r "/proc/$$/stat" ]; then
-  out="$("$BASH" -c 'source "$1"; mark="$2$3"
+  out="$("$BASH" -c 'source "$1"; source "$4"; mark="$2$3"
     marked() { cat /proc/[0-9]*/cmdline 2>/dev/null | tr "\0" "\n" | grep -c "${mark/#o/[o]}"; }
-    bash -c "trap \"\" TERM; while :; do sleep 1; done # $mark" &
+    fdir="$(mktemp -d)"; mkfifo "$fdir/trap"
+    bash -c "trap \"\" TERM; echo ready >\"$fdir/trap\"; while :; do sleep 1; done # $mark" &
     pid=$!
-    for ((n = 0; n < 50; n++)); do
-      ign="$(awk "/^SigIgn/ {print \$2}" "/proc/$pid/status" 2>/dev/null)"
-      [ "$(marked)" = 1 ] && (( 0x${ign:-0} & 0x4000 )) && break
-      sleep 0.1
-    done
-    echo "before=$(marked)"
-    kill -TERM "$pid"; sleep 0.3
-    kill -0 "$pid" 2>/dev/null && echo "alive=yes" || echo "alive=no"
-    test_jobs_stop_tree "$pid"
-    echo "after=$(marked)"
+    if msg="$(fifo_bounded 5 "KILL check ($fdir/trap)" sh -c "IFS= read -r l <\"\$0\"; printf \"%s\\n\" \"\$l\"" "$fdir/trap" 2>&1 >/dev/null)"; then
+      echo "before=$(marked)"
+      kill -TERM "$pid"; sleep 0.3
+      kill -0 "$pid" 2>/dev/null && echo "alive=yes" || echo "alive=no"
+      test_jobs_stop_tree "$pid"
+      echo "after=$(marked)"
+    else
+      echo "before=$msg"
+    fi
     for f in /proc/[0-9]*/cmdline; do
       tr "\0" "\n" <"$f" 2>/dev/null | grep -q "${mark/#o/[o]}" &&
         { p="${f#/proc/}"; kill -KILL "${p%/cmdline}" 2>/dev/null; }
-    done' _ "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$dl_mark" stubborn 2>&1)"
+    done
+    rm -rf "$fdir"' _ "$(dirname "$SUITE_SCRIPT")/test_jobs.sh" "$dl_mark" stubborn "$(dirname "$SUITE_SCRIPT")/fifo.sh" 2>&1)"
   assert_eq "a TERM-ignoring child carries its marker on exactly one process" \
     "$(printf '%s\n' "$out" | grep -x 'before=.*')" "before=1"
   assert_eq "and survives a plain TERM" "$(printf '%s\n' "$out" | grep -x 'alive=.*')" "alive=yes"
@@ -814,27 +815,33 @@ sed -i 's/^tally_summary$/rm -f "$tally_file"\ntally_summary/' "$tally_dir/suite
 out="$(ORCH_TEST_QUIET=1 bash "$tally_dir/suite.sh" 2>&1)"; st=$?
 assert_status "a standalone suite whose tally file is gone exits 1" "$st" 1
 assert_eq "and reports it as a failure" "$(printf '%s\n' "$out" | tail -n 1)" "0 passed, 1 failed"
-# print_fail indents every line of a detail; bad() prints through it.
+# print_labelled indents every line of a detail; print_fail, bad() and skip()
+# print through it.
 cat >"$tally_dir/fail.sh" <<SUITE
 source "$(dirname "$SUITE_SCRIPT")/tally.sh"
 tally_init
-print_fail "one line" "only detail"
 print_fail "many lines" "first
 second
 
 fourth"
 bad "bad many" "alpha
 beta"
+skip "skip many" "why
+
+last"
 tally_read
+echo "skipped \$SKIP"
 echo "recorded \$FAIL"
 SUITE
 out="$(bash "$tally_dir/fail.sh" 2>&1)"
-assert_eq "print_fail prints a single-line detail under its FAIL line" \
-  "$(printf '%s\n' "$out" | sed -n 1,2p)" "$(printf '  FAIL one line\n     only detail')"
 assert_eq "and indents every line of a multi-line detail, an empty one included" \
-  "$(printf '%s\n' "$out" | sed -n 3,7p)" "$(printf '  FAIL many lines\n     first\n     second\n     \n     fourth')"
+  "$(printf '%s\n' "$out" | sed -n 1,5p)" "$(printf '  FAIL many lines\n     first\n     second\n     \n     fourth')"
 assert_eq "bad() indents a multi-line detail the same way" \
-  "$(printf '%s\n' "$out" | sed -n 8,10p)" "$(printf '  FAIL bad many\n     alpha\n     beta')"
+  "$(printf '%s\n' "$out" | sed -n 6,8p)" "$(printf '  FAIL bad many\n     alpha\n     beta')"
+assert_eq "skip() indents every line of a multi-line reason, an empty one included" \
+  "$(printf '%s\n' "$out" | sed -n 9,12p)" "$(printf '  skip skip many\n     why\n     \n     last')"
+assert_eq "and the tally records exactly one skip" \
+  "$(printf '%s\n' "$out" | tail -n 2 | sed -n 1p)" "skipped 1"
 assert_eq "and records exactly one failure" "$(printf '%s\n' "$out" | tail -n 1)" "recorded 1"
 rm -rf "$tally_dir"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
