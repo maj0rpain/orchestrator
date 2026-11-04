@@ -1042,17 +1042,14 @@ assert_gh_dies "a silent bundle create failure dies" adapter_issue_create '' 1 \
 # members 31, 32 and 33 dies with <wants>, leaving <left> (space-separated)
 # <held> ("left open" or "not confirmed closed"); the fake's failure is seeded
 # by the caller, and <definitions>, where given, is the stand-in adapter the
-# bundle runs against (adapter_stood_in). A <wants> starting with "orch: " is
-# also pinned as one whole line of the output.
+# bundle runs against (adapter_stood_in; with none, the fake as it is). A
+# <wants> starting with "orch: " is also pinned as one whole line of the
+# output.
 partial() {
   local name="$1" b="$2" wants="$3" left="$4" held="$5" stand_in="${6:-}" m
   for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
   fake_next_issue "$b"
-  if [ -n "$stand_in" ]; then
-    out="$(adapter_stood_in "$stand_in" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
-  else
-    out="$(new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
-  fi
+  out="$(adapter_stood_in "$stand_in" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
   fake_unfail
   assert_status "$name dies" "$st" 1
   assert_contains "$name: saying what failed" "$out" "$wants"
