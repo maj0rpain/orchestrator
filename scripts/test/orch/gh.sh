@@ -1173,8 +1173,16 @@ gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' run rerun 4243 
 out="$(contract adapter_run_rerun 4243 2>&1)"; st=$?
 assert_status "run rerun: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
+gh_reply 0 $'build\tstep\tline one\n' '' run view --job 77 --log-failed
+out="$(contract adapter_job_failed_log 77 2>&1)"; st=$?
+assert_status "job failed log: reads the job's failed steps" "$st" 0
+assert_eq "printing gh's log as it came" "$out" $'build\tstep\tline one'
+gh_reply 1 '' 'failed to get run log: log not found' run view --job 78 --log-failed
+out="$(contract adapter_job_failed_log 78 2>&1)"; st=$?
+assert_status "job failed log: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "failed to get run log: log not found"
 assert_eq "every CI operation was pinned to the resolved repo" \
-  "$(grep -E ' (pr checks|api|run rerun) ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
+  "$(grep -E ' (pr checks|api|run rerun|run view) ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
 
 # The sub-issue and dependency operations. These run gh api, whose --jq the
 # operation owns, so each reply here is what that --jq printed. The writes

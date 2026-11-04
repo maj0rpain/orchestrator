@@ -724,6 +724,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               behind the failing checks review ci counts;
                               prints each run id. Exits 1 when a failing check
                               is no Actions run, 2 on any other failure
+  review ci-log <pr>          print the failed-step log of each failing Actions
+                              job behind the checks review ci counts, cut to
+                              its last 200 lines; a failing check that is no
+                              Actions run, or whose log cannot be read, gets
+                              a line saying so
   review ready                mark the draft PR ready and set the phase to done,
                               refusing (1) over failed or unreadable checks,
                               printing the PR number; in a side checkout, a

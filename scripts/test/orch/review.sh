@@ -23,6 +23,14 @@ pushed_head() {
   printf '%s\n' "$sha"
 }
 
+# fake_job_log <job> <lines>: stores a failed-step log of <lines> lines
+# ("log line 1" ...) for Actions job <job>. A job with none stored has a log
+# that cannot be read.
+fake_job_log() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/job_logs"
+  seq 1 "$2" | sed 's/^/log line /' >"$ORCH_GH_FAKE_STORE/job_logs/$1"
+}
+
 # review_ci_flow <slug>: a review ci section's starting point - review_flow
 # <slug> with PR #7 recorded in state and open from topic onto main in the
 # store-backed fake (fake_github), the base tip's one check run as the CI
@@ -1101,6 +1109,81 @@ assert_eq "dying with the repo remedy" "$out" \
   "orch: $repo_remedy"
 assert_contains "help documents review rerun" "$("$ORCH" help)" "review rerun <pr>"
 restore_suite_env
+
+# --- review ci-log ------------------------------------------------------------
+# The failed-step log of each failing Actions job behind the counted checks -
+# review ci's rule: the required checks where any are reported, else every
+# check - cut to its last 200 lines, the cut counted. A failing check that is
+# no Actions run, or whose log cannot be read, gets a line saying so.
+echo
+echo "review ci-log"
+new_repo >/dev/null
+fake_github
+fake_checks 7 all failing
+fake_job_log 77 3
+out="$("$ORCH" review ci-log 7 2>&1)"; st=$?
+assert_status "a failing Actions job's log is printed" "$st" 0
+assert_eq "headed by its check and job, the whole short log below" "$out" \
+  "$(printf 'check build: failed-step log of job 77\nlog line 1\nlog line 2\nlog line 3')"
+
+fake_job_log 77 250
+out="$("$ORCH" review ci-log 7 2>&1)"
+assert_contains "a long log says how many lines were cut" "$out" "[cut: 50 earlier lines of 250]"
+assert_eq "and keeps its last 200 lines" "$(grep -c '^log line' <<<"$out")" "200"
+assert_contains "the last of them is the log's last" "$(tail -n 1 <<<"$out")" "log line 250"
+assert_eq "the first kept is line 51" "$(grep -m1 '^log line' <<<"$out")" "log line 51"
+
+fake_job_log 77 200
+out="$("$ORCH" review ci-log 7 2>&1)"
+assert_eq "a log of exactly 200 lines is not cut" "$(grep -c 'cut' <<<"$out")" "0"
+
+# Required checks only, where any are reported.
+fake_checks_clear
+fake_checks 7 required failing
+fake_checks 7 all tworuns
+fake_job_log 77 1
+fake_job_log 78 1
+out="$("$ORCH" review ci-log 7 2>&1)"
+assert_contains "a failing required check is read" "$out" "job 77"
+assert_eq "an optional failing check is not" "$(grep -c 'job 78' <<<"$out")" "0"
+fake_checks_clear
+fake_checks 7 all tworuns
+out="$("$ORCH" review ci-log 7 2>&1)"
+assert_contains "with no required checks every failing check is read: first" "$out" "job 77"
+assert_contains "and second" "$out" "job 78"
+
+# A log that cannot be read is named, and the next job goes on.
+rm -f "$ORCH_GH_FAKE_STORE/job_logs/77"
+out="$("$ORCH" review ci-log 7 2>&1)"; st=$?
+assert_status "an unreadable log is no failure of the verb" "$st" 0
+assert_contains "naming the job whose log could not be read" "$out" \
+  "check build: the log of job 77 could not be read: log not found"
+assert_contains "and reading the next job" "$out" "check test: failed-step log of job 78"
+
+# A failing check that is no Actions run.
+fake_checks_clear
+fake_checks 7 all external
+out="$("$ORCH" review ci-log 7 2>&1)"; st=$?
+assert_status "an outside check is no failure of the verb" "$st" 0
+assert_contains "saying it is no Actions run" "$out" \
+  "check ext-ci is not a GitHub Actions run - no log to read"
+assert_contains "and still reading the Actions job after it" "$out" "job 77"
+
+# Nothing failing prints nothing.
+fake_checks_clear
+fake_checks 7 all green
+out="$("$ORCH" review ci-log 7 2>&1)"; st=$?
+assert_status "green checks: exit 0" "$st" 0
+assert_eq "printing nothing" "$out" ""
+
+# A GitHub that cannot be read dies.
+fake_checks 7 all boom
+out="$("$ORCH" review ci-log 7 2>&1)"; st=$?
+assert_status "unreadable checks fail the verb" "$st" 1
+assert_contains "with an orch: message carrying gh's reason" "$out" "orch: gh could not read the checks of PR #7: dial tcp"
+out="$("$ORCH" review ci-log 2>&1)"; st=$?
+assert_status "no PR is a usage error" "$st" 1
+fake_checks_clear
 
 # --- review terminal ----------------------------------------------------
 # The one classifier `review terminal` and doctor's check both read - none and

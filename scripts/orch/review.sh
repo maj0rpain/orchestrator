@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # review.sh - orch.sh's review command, with its command-level CI logic
-# (review ci, review rerun) and the labels review file creates.
+# (review ci, review ci-log, review rerun) and the labels review file creates.
 # Its tests: scripts/test/orch/review.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -323,6 +323,41 @@ review_rerun() {
       adapter_run_rerun "$r" >/dev/null
     note "$r"
   done
+}
+
+# review_ci_log <pr>: the failed-step log of each failing Actions job behind
+# the counted checks (ci_counted), for the driver to judge a failing CI. A
+# job's log is cut to its last 200 lines, a line before it counting the lines
+# cut. A failing check that is no Actions job gets a line saying so, and a
+# job whose log cannot be read a line naming it, and the next job goes on.
+# Everything on stdout. A GitHub that cannot be read dies.
+review_ci_log() {
+  local pr="${1:-}" out err rc=0 line bucket name link job log total
+  [ $# -eq 1 ] || die "usage: orch.sh review ci-log <pr>"
+  case "$pr" in ''|*[!0-9]*) die "not a PR number: $pr" ;; esac
+  repo_pin || die "$REPO_REMEDY"
+  ci_counted out err "$pr" || rc=$?
+  [ "$rc" -eq 0 ] || gh_die "read the checks of PR #$pr" "$err"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    tsv_split "$line" bucket name link
+    case "$bucket" in fail|cancel) ;; *) continue ;; esac
+    case "$link" in
+      */actions/runs/[0-9]*/job/[0-9]*) job="${link##*/job/}"; job="${job%%[!0-9]*}" ;;
+      *) note "check $name is not a GitHub Actions run - no log to read"; continue ;;
+    esac
+    err=""
+    if ! capture log err adapter_job_failed_log "$job"; then
+      note "check $name: the log of job $job could not be read: $(gh_reason "$err")"
+      continue
+    fi
+    total="$(printf '%s\n' "$log" | wc -l | tr -d ' ')"
+    note "check $name: failed-step log of job $job"
+    if [ "$total" -gt 200 ]; then
+      note "[cut: $((total - 200)) earlier lines of $total]"
+    fi
+    printf '%s\n' "$log" | tail -n 200
+  done <<<"$out"
 }
 
 # review_file <sev> <title> <flag> <value> ...: files a finding as a GitHub
@@ -847,6 +882,7 @@ cmd_review() {
       review_known_items "$@"
       ;;
     standards) review_standards "$@" ;;
+    ci-log) review_ci_log "$@" ;;
     rerun) review_rerun "$@" ;;
     resume) review_resume "$@" ;;
     terminal)
@@ -869,6 +905,6 @@ cmd_review() {
       done
       note "$dest"
       ;;
-    *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|standards|ci|rerun|ready|terminal|resume|retire)" ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|standards|ci|ci-log|rerun|ready|terminal|resume|retire)" ;;
   esac
 }
