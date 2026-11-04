@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.47.5
+
+A sync's dropped-intent stop now says no reply is needed, that removing `needs-human` accepts the dropped intents, that a rejected one is restored on the branch first, and what follows by the `auto-sync` setting. How it works separates stops that ask a question from stops that only report.
+
 ## 4.47.4
 
 A base sync whose conflict resolution finished no longer fails when the base moves meanwhile, and a base merge a failed sync left in progress is resumed instead of refused. `orch.sh branch sync --finish` records the merged tip as the base SHA and pushes without fetching; `branch sync` exits 3 for a pending merge of the base so the driver starts a resolver on it.
