@@ -562,11 +562,21 @@ autopilot_pickup_recorded() {
   recorded="$(state_get_in "$state_file" phase)" || rc=$?
   [ "$rc" -ne 0 ] || return 0
   if [ "$rc" -eq 2 ]; then
-    PICKUP_REASON="state.json in $1 cannot be read - run orch.sh doctor --flow"
+    PICKUP_REASON="$1: $STATE_UNREADABLE_MSG"
   else
     PICKUP_REASON="could not read the phase recorded in $state_file"
   fi
   return 1
+}
+
+# autopilot_read_die <key> <side> <status>: dies over a failed read of <key>
+# from <side>'s state.json; only status 2, the unreadable file, earns the
+# plain reason.
+autopilot_read_die() {
+  if [ "$3" -eq 2 ]; then
+    die "could not read the recorded $1 of $2: $STATE_UNREADABLE_MSG"
+  fi
+  die "could not read the recorded $1 of $2"
 }
 
 # autopilot_pickup_redo <side> <redo>: the step redoing a phase.
@@ -1028,7 +1038,7 @@ autopilot_run() {
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
-  recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side - state.json cannot be read"
+  recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || autopilot_read_die phase "$side" $?
   # a sync request is told by orch:sync on a done issue; its phase word is sync
   standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
@@ -1048,7 +1058,7 @@ autopilot_run() {
   standing_claims_read
   mine="$(standing_claim_fields "$issue")" || mine=""
   if [ "$phase" = review ]; then
-    iteration="$(state_get_in "$(flow_state_file "$side")" iteration)" || die "could not read the recorded iteration of $side - state.json cannot be read"
+    iteration="$(state_get_in "$(flow_state_file "$side")" iteration)" || autopilot_read_die iteration "$side" $?
   fi
   if [ "$phase" = review ] && [ "$iteration" = 0 ]; then
     # A first-loop review session is not asked its budget: the plan's is

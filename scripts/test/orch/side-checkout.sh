@@ -644,14 +644,14 @@ fake_pr 45 merged orch/main-flow main
 
 # A side checkout whose state.json is truncated has a verdict that could not be
 # read: reported, left in place, with no jq text.
-bad="$(sc_add bad)"
-(cd "$bad" && orch_gh_failing init bad-flow >/dev/null && state_truncate 10)
+unreadable="$(sc_add bad)"
+(cd "$unreadable" && orch_gh_failing init bad-flow >/dev/null && state_truncate 10)
 out="$(orch_gh_failing side-checkout prune 2>&1)"
 assert_contains "prune reports the unreadable state file" "$out" \
-  "could not check $bad: could not read $bad/.orchestrator/state.json"
+  "could not check $unreadable: could not read $unreadable/.orchestrator/state.json"
 assert_not_contains "prune prints no jq text" "$out" "parse error"
-assert_eq "the unreadable side checkout stays" "$(on_disk "$bad")" "present"
-git worktree remove --force "$bad"
+assert_eq "the unreadable side checkout stays" "$(on_disk "$unreadable")" "present"
+git worktree remove --force "$unreadable"
 
 # GitHub unreachable: nothing is removed.
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
