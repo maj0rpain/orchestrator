@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.46.5
+
+The test suite's skip lines now print through the same labelled printer as FAIL lines, so a multi-line skip reason is indented on every line. The KILL-escalation check waits for its child through the bounded FIFO handshake instead of a /proc poll, and a redundant single-line print_fail case is dropped.
+
+## 4.46.4
+
+`finding-triage bundle --into` now says "no member was touched" when gh cannot read the bundle itself, and a member whose comments do not parse in the close loop is reported with that cause.
+
 ## 4.46.3
 
 Rename the shared `@@` body-line escape hint constant to `AT_LINE_ESCAPE_HINT`; the hint text and error messages are unchanged.
