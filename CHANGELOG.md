@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.46.0
+
+Autopilot image: an `EXTRA_BUILD_COMMAND` build arg runs a shell command as root at image build, under bash with pipefail, for toolchains apt lacks (e.g. uv). Set it in `docker/.env` or `docker/.env.<name>`.
+
 ## 4.45.1
 
 Renamed two test variables that shadowed tally helpers, keeping coding-standards rule 3.
