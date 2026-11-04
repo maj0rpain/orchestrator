@@ -70,6 +70,34 @@ jobs:
           docker build -f docker/Dockerfile
           --build-arg EXTRA_APT_PACKAGES=shellcheck
           -t orchestrator-autopilot .
+      # The EXTRA_BUILD_COMMAND hook: a root-installed artifact in a system path
+      # is usable by orch, and a failure anywhere in the command fails the build
+      # on the step's own failure line. The apt layer is cached from above.
+      - name: Build with EXTRA_BUILD_COMMAND
+        run: >-
+          docker build -f docker/Dockerfile
+          --build-arg EXTRA_APT_PACKAGES=shellcheck
+          --build-arg "EXTRA_BUILD_COMMAND=printf ok > /usr/local/share/orch-extra-build"
+          -t orchestrator-autopilot-extra .
+      - name: EXTRA_BUILD_COMMAND output is usable by orch
+        run: |
+          set -euo pipefail
+          out="$(docker run --rm --entrypoint sh orchestrator-autopilot-extra \
+            -c 'id -un; cat /usr/local/share/orch-extra-build')"
+          test "$out" = "$(printf 'orch\nok')"
+      - name: A failing EXTRA_BUILD_COMMAND fails the build
+        run: |
+          set -uo pipefail
+          for cmd in 'false | true' 'false; true'; do
+            if out="$(docker build -f docker/Dockerfile \
+                --build-arg EXTRA_APT_PACKAGES=shellcheck \
+                --build-arg "EXTRA_BUILD_COMMAND=$cmd" \
+                -t orchestrator-autopilot-fail . 2>&1)"; then
+              echo "build with '$cmd' passed" >&2; exit 1
+            fi
+            grep -q 'build failed: EXTRA_BUILD_COMMAND' <<<"$out" \
+              || { echo "no step failure line for '$cmd'" >&2; echo "$out" >&2; exit 1; }
+          done
       # CHANGELOG_BASE stays unset: the host job enforces the changelog
       # fragment rule. ORCH_SH is already set by the image.
       - name: Verify in the container
