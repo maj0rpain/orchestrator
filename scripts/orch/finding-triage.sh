@@ -444,7 +444,7 @@ cmd_finding_triage_bundle() {
     case "$into" in *[!0-9]*) die "$usage" ;; esac
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
     local b_labels
-    open_issue_read "$into" "bundle #$into is not open - --into resumes an open bundle only" b_labels
+    open_issue_read --hint "no member was touched" "$into" "bundle #$into is not open - --into resumes an open bundle only" b_labels
     label_listed "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
   else
@@ -523,7 +523,7 @@ bundle_members_close() {
     if ! capture raw err adapter_issue_comments "$m"; then
       why="gh could not read member #$m's comments: $(gh_reason "$err")"
     elif ! comments="$(comments_render_trusted "$m" <<<"$raw")"; then
-      why="could not read member #$m's comments"
+      why="could not read member #$m's comments: its comments did not parse"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
       && ! triage_comment_post err "$m" "$comment_file"; then
       why="gh could not comment on member #$m: $(gh_reason "$err")"

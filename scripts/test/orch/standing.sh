@@ -229,6 +229,9 @@ tr_seed 66 orch:spec orch:running
 sourced_rc 'standing_stop 66 failure review "boom"' >/dev/null
 assert_first_line "a failure stop opens with its own marked comment" "$(fake_comments_of 66)" "$(marker_of failure review)"
 assert_contains "and keeps its prose beneath the marker" "$(fake_comments_of 66 | sed -n 2p)" "Autopilot failed in the review phase: boom"
+# cases 57 and 58 also cover the orch:limited removal whether or not the issue
+# carries the label: a general stop always passes the removal and the writer
+# never reads the labels
 tr_seed 57 orch:spec orch:running
 fake_fail adapter_issue_relabel "HTTP 500"
 out="$(sourced_rc 'standing_stop 57 failure spec boom')"
@@ -244,23 +247,6 @@ tr_seed 59 orch:spec orch:running
 out="$(sourced_rc 'standing_stop 59 failure "" boom')"
 assert_eq "an empty phase dies" "$(printf %s "$out" | tail -n 1)" "rc=1"
 assert_eq "and writes nothing, the claim still held" "$(tr_standing 59)|$(fake_comments_of 59)|$(fake_claim_held 59)" "spec|1|0|0||held"
-
-# a general stop names its orch:limited removal, the label there or not
-tr_seed 95 orch:spec orch:running orch:limited
-fake_fail adapter_issue_comment "HTTP 500"
-out="$(sourced_rc 'standing_stop 95 failure spec boom')"
-assert_contains "a stop on a limited issue failing on its comment names the orch:limited removal that landed" "$out" "writes that landed: added needs-human, removed orch:limited; the claim stays held"
-fake_unfail
-tr_seed 96 orch:spec orch:running orch:limited
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(sourced_rc 'standing_stop 96 failure spec boom')"
-assert_contains "a stop on a limited issue failing on its label edit says it was also removing orch:limited" "$out" "could not add needs-human, remove orch:limited on issue #96: HTTP 500"
-fake_unfail
-tr_seed 97 orch:spec orch:running
-fake_fail adapter_issue_comment "HTTP 500"
-out="$(sourced_rc 'standing_stop 97 failure spec boom')"
-assert_contains "a stop on an issue without orch:limited still names the orch:limited removal as landed" "$out" "writes that landed: added needs-human, removed orch:limited; the claim stays held"
-fake_unfail
 
 # the chain points a command section no longer asserts: each transition's own
 # writes, and the claim held when one fails

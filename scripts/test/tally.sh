@@ -45,14 +45,18 @@ tally_summary() {
   [ "$FAIL" -eq 0 ]
 }
 
-# print_fail <title> <detail>: one FAIL line, then every line of the detail
-# (an empty one included) indented five spaces; a single-line detail is one
-# indented line. bad() and the parallel runner both print through it, so their
-# FAIL lines and detail indent cannot drift apart.
-print_fail() { printf '  FAIL %s\n' "$1"; printf '%s\n' "$2" | sed 's/^/     /'; }
+# print_labelled <label> <title> <detail>: one "  <label> <title>" line, then
+# every line of the detail (an empty one included) indented five spaces; a
+# single-line detail is one indented line. FAIL and skip lines both print via
+# it, so the detail indent is defined here once and cannot drift apart.
+print_labelled() { printf '  %s %s\n' "$1" "$2"; printf '%s\n' "$3" | sed 's/^/     /'; }
+
+# print_fail <title> <detail>: a FAIL line. bad() and the parallel runner both
+# print through it.
+print_fail() { print_labelled FAIL "$1" "$2"; }
 
 # ORCH_TEST_QUIET=1 hides the ok lines; the count, FAIL and skip lines,
 # section headers and the summary still print.
 ok()   { echo ok >>"$tally_file"; [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
 bad()  { print_fail "$1" "$2"; echo bad >>"$tally_file"; }
-skip() { printf '  skip %s\n     %s\n' "$1" "$2"; echo skip >>"$tally_file"; }
+skip() { print_labelled skip "$1" "$2"; echo skip >>"$tally_file"; }
