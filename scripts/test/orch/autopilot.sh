@@ -347,6 +347,29 @@ re_run >/dev/null
 assert_eq "with two earlier re-entries it posts a question comment" "$(fake_last_comment_of 73 | awk "NR==1")" "<!-- orch:question review -->"
 assert_contains "noting the two automatic re-entries" "$(fake_last_comment_of 73)" "This follows two automatic re-entries"
 assert_eq "adding needs-human and releasing the claim" "$(fake_labels_of 73)|$(fake_claim_held 73)" "needs-human orch:review |free"
+# what ends the count: two earlier re-entries then a newer comment of each kind;
+# a trusted one ends the count, so the run re-enters again, and an untrusted
+# author's reply does not, so the run asks
+re_ends() { # <issue> <label> <association> <body>
+  re_issue "$1"
+  fake_comment "$1" o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+a"
+  fake_comment "$1" o 2026-01-02T00:00:00Z "$(marker_of reentry review)
+b"
+  fake_comment "$1" someone 2026-01-03T00:00:00Z "$4" "$3"
+  re_run >/dev/null
+  assert_eq "$2" "$(fake_last_comment_of "$1" | awk "NR==1")" "$5"
+}
+re_ends 80 "a trusted reply ends the re-entry count" OWNER "a reply" "<!-- orch:reentry review -->"
+re_ends 81 "a newer question ends the re-entry count" OWNER "$(marker_of question review)
+q" "<!-- orch:reentry review -->"
+re_ends 82 "a refusal comment ends the re-entry count" OWNER "$(marker_of refusal review)
+x" "<!-- orch:reentry review -->"
+re_ends 83 "a failure comment ends the re-entry count" OWNER "$(marker_of failure review)
+x" "<!-- orch:reentry review -->"
+re_ends 84 "a handoff comment ends the re-entry count" OWNER "$(marker_of handoff 01-plan)
+x" "<!-- orch:reentry review -->"
+re_ends 85 "an untrusted author's reply does not end the re-entry count" NONE "a reply" "<!-- orch:question review -->"
 # a failed timeline read is a failure stop
 re_issue 75
 fake_fail adapter_issue_comments_json "HTTP 500"
