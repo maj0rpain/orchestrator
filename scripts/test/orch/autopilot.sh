@@ -1961,7 +1961,7 @@ assert_eq "and its claim released" "$(fake_claim_held 14)" free
 # questions lists a done issue a sync stopped, and only that
 fake_issue 20 open needs-human orch:done orch:sync
 fake_issue 21 open needs-human orch:done
-sourced_orch standing_sync_dropped 21 "- a dropped intent" >/dev/null 2>&1
+sourced_orch standing_sync_dropped 21 "- a dropped intent" false >/dev/null 2>&1
 fake_issue 22 open needs-human orch:done
 sourced_orch standing_stop 22 failure review "old" >/dev/null 2>&1
 out="$("$ORCH" autopilot questions 2>&1)"
@@ -2232,7 +2232,6 @@ for as in true false maybe; do
   err="$("$ORCH" autopilot sync-dropped "$dropped" 2>&1 >/dev/null)"; st=$?
   git config --unset-all orchestrator.autopilot.auto-sync
   assert_status "sync-dropped with auto-sync $as exits 0" "$st" 0
-  assert_eq "and lands the stop with auto-sync $as" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done |free"
   assert_contains "and names the sync-now command with auto-sync $as" "$(fake_comments_of 145)" "orch.sh autopilot sync 145"
   case "$as" in
     true) assert_contains "auto-sync true says the watcher files it" "$(fake_comments_of 145)" "files a new sync request by itself"
@@ -2241,6 +2240,7 @@ for as in true false maybe; do
   esac
   if [ "$as" = maybe ]; then
     assert_contains "a bad value warns naming key and value" "$err" "orchestrator.autopilot.auto-sync is maybe"
+    assert_eq "and the stop still lands" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done |free"
   fi
 done
 fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145

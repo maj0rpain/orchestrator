@@ -482,7 +482,8 @@ or accept it, then remove `needs-human`):
   intent. Removing the label accepts the drops (restore a rejected one on the
   branch first) and runs nothing; with `auto-sync` on, the watcher then files
   a new sync request by itself once the PR conflicts with its base, and
-  `orch.sh autopilot sync <issue>` syncs now.
+  `orch.sh autopilot sync <issue>` syncs now; with it off, run that command
+  to sync again.
 
 ### Steering
 

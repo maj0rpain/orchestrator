@@ -218,12 +218,13 @@ autopilot_sync_finish() {
 # intents the resolver dropped, with a link to the Merge resolutions comment.
 # The repo's auto-sync setting picks the comment's what-happens-next wording.
 autopilot_sync_dropped() {
-  local file="$1" issue text auto_sync=false
+  local file="$1" issue text auto_sync
   autopilot_file_text text dropped-intents "$file"
   require_state
   require_issue issue
-  # The merge is pushed: a bad auto-sync value warns and takes false, never
-  # kills the stop.
+  # The merge is pushed, so a bad auto-sync value must not kill the stop: the
+  # read runs in a subshell, its die line on stderr serves as the warning, and
+  # the stop takes false.
   auto_sync="$(autopilot_setting auto-sync && printf %s "$AUTOPILOT_VALUE")" || auto_sync=false
   standing_sync_dropped "$issue" "$text" "$auto_sync"
 }

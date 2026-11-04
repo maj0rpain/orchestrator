@@ -471,14 +471,14 @@ standing_sync_finish() {
   standing_release "$1"
 }
 
-# standing_sync_dropped <issue> <intents> [<auto_sync>]: the dropped-intent
+# standing_sync_dropped <issue> <intents> <auto_sync>: the dropped-intent
 # stop of a sync whose merge was pushed: orch:sync removed and needs-human
 # added in one edit, a failure-kind stop comment marked with the phase word
 # sync listing <intents>, then the claim released, last. The stop asks
-# nothing; <auto_sync> (true or false, false when omitted) picks what the
-# comment says follows. This module reads no autopilot setting.
+# nothing; <auto_sync>, true or false, picks what the comment says follows.
+# The caller reads the setting and passes it in.
 standing_sync_dropped() {
-  local issue="$1" intents="$2" auto_sync="${3:-false}" marker text next
+  local issue="$1" intents="$2" auto_sync="$3" marker text next
   STANDING_LANDED=""
   marker="$(marked_comment_write failure "$STANDING_SYNC_PHASE")" || exit 1
   if [ "$auto_sync" = true ]; then
