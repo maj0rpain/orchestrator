@@ -1043,8 +1043,10 @@ assert_gh_dies "a silent bundle create failure dies" adapter_issue_create '' 1 \
 # <held> ("left open" or "not confirmed closed"); the fake's failure is seeded
 # by the caller, <adapter> stands in for the fake where given, and <json>, where
 # given, is the answer a stand-in comments adapter gives to every comments read.
+# A <wants> that is the whole message is also pinned as one whole line of the
+# output when <whole> is "whole".
 partial() {
-  local name="$1" b="$2" wants="$3" left="$4" held="$5" adapter="${6:-$GH_ADAPTER_FAKE}" json="${7:-}" m
+  local name="$1" b="$2" wants="$3" left="$4" held="$5" adapter="${6:-$GH_ADAPTER_FAKE}" json="${7:-}" whole="${8:-}" m
   for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
   fake_next_issue "$b"
   if [ -n "$json" ]; then
@@ -1055,6 +1057,9 @@ partial() {
   fake_unfail
   assert_status "$name dies" "$st" 1
   assert_contains "$name: saying what failed" "$out" "$wants"
+  if [ "$whole" = "whole" ]; then
+    assert_eq "$name: as one whole line" "$(has_line "$out" "$wants")" yes
+  fi
   assert_not_contains "$name: with gh's first line only" "$out" "second line"
   assert_contains "$name: naming the bundle and the members left open" "$out" \
     "bundle #$b: "
@@ -1100,7 +1105,7 @@ partial "a failed comments read" 42 \
 # A comments answer that does not parse stops the close loop at its first
 # member, with the cause, the members left open and the resume command.
 partial "an unparseable member comments answer" 49 \
-  "orch: bundle #49: could not read member #31's comments: its comments did not parse - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 49 31 32 33" "31 32 33" "left open" "" '{"comments": "not a list"}'
+  "orch: bundle #49: could not read member #31's comments: its comments did not parse - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 49 31 32 33" "31 32 33" "left open" "" '{"comments": "not a list"}' whole
 fake_fail_after adapter_issue_comment 1 ""
 partial "a silent failed comment" 48 \
   "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33" "left open"
