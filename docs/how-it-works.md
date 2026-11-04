@@ -251,7 +251,10 @@ labels then advance `orch:spec` -> `orch:implement` -> `orch:review` ->
 Before starting a session, the **watcher** (`watch`, or a scheduled `tick`,
 which is the same watcher run once) takes a **claim** on the issue's next
 phase: a ref under `refs/orch/claims` on origin, held until the session ends.
-At most **cap** sessions run at once per repo; the cap is soft.
+At most **cap** sessions run at once per repo; the cap is soft. A tick takes
+sync requests first, then the phase furthest along (review, implement, spec),
+oldest issue first within each, and sync requests may also take the **sync
+slots** - half the cap rounded down - beyond the cap.
 
 ### Setup
 
@@ -264,7 +267,7 @@ global git config. `orch.sh autopilot` has no `set` verb, so set one with
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `permission-mode` | required, no default: one of `default`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions` | The `--permission-mode` every headless session runs in. |
-| `cap` | 3 | Sessions that may run at once per repo. |
+| `cap` | 3 | Sessions that may run at once per repo, sync slots (half of it, rounded down) aside. |
 | `handle` | the repo's owner | Who gets @mentioned when it needs you. |
 | `rounds` | 2 | Spec review rounds. |
 | `budget` | 3 | Review loop iterations. |

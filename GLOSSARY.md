@@ -151,7 +151,7 @@ _Avoid_: auto flow, headless flow.
 
 **Watcher**:
 The process that starts each autopilot flow's next phase, or its sync on a sync
-request, in that flow's side checkout, within the repo's cap.
+request, in that flow's side checkout, within the repo's cap and its sync slots.
 
 **Claim**:
 A watcher's exclusive hold on one issue's next phase or sync request - a ref on
@@ -245,7 +245,9 @@ and posts the reply.
 **Pickup rule**:
 The rule a watcher picks issues by: open, neither `orch:running` nor
 `needs-human`, and either a phase label other than `orch:done` or `orch:done`
-with a sync request, while no limit pause holds.
+with a sync request, while no limit pause holds. A tick takes pickable issues
+by rank - sync requests first, then the review, implement and spec phases, the
+phase furthest along first - and oldest issue first within a rank.
 
 **Pickup**:
 A watcher taking one claimed issue to a running session: its issue-trust
@@ -269,8 +271,15 @@ until the latest usage reset any of them named - or, for a stop that named
 none, an hour after it. Running sessions are left alone.
 
 **Cap**:
-The most autopilot sessions a repo runs at once, counted as the claim refs on
-origin. It is soft: watchers acting in the same instant can overshoot it.
+The most autopilot sessions a repo runs at once, sync slots aside, counted as
+the claim refs on origin. It is soft: watchers acting in the same instant can
+overshoot it. A sync request may also take a sync slot beyond it.
+
+**Sync slots**:
+The sessions beyond the cap, half the cap rounded down, that only sync requests
+may take, so a sync need not wait for a phase session to end while a sync slot
+is free.
+_Avoid_: reserved slots.
 
 ### Repository and tooling
 
