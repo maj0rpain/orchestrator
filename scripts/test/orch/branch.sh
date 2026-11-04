@@ -285,13 +285,9 @@ git remote set-url origin "$(mktemp -d)/missing.git"
 git config branch.autoSetupMerge always
 fb_base="$(git branch --show-current)"
 git config orchestrator.base "$fb_base"
-# A tag of the base's name: the fallback names the local branch, not the tag.
-git tag "$fb_base" HEAD
 git commit -q --allow-empty -m "local base moves on"
 out="$(orch_gh_failing branch off quick/2-local 2>&1)"; st=$?
 assert_status "branch off falls back to the local base with origin unreachable" "$st" 0
-assert_eq "and HEAD is the local base branch, not the tag" \
-  "$(git rev-parse HEAD)" "$(git rev-parse "refs/heads/$fb_base")"
 assert_eq "and leaves no upstream under autoSetupMerge=always" "$(upstream_of quick/2-local)" "none"
 
 # retire reads the upstream to decide whether to push: a never-pushed branch
@@ -1279,9 +1275,11 @@ assert_eq "and not the old one" "$(origin_branch_state "$bare" tg-old4)" "missin
 echo
 echo "branch create and branch off beside a same-named tag"
 new_repo_with_origin
-git commit -q --allow-empty -m "later"
-start_commit="$(git rev-parse HEAD~1)"
+# The tag sits at the repo's first commit, older than origin's base tip.
 git tag quick/9-tagged HEAD
+git commit -q --allow-empty -m "later"
+git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
+start_commit="$(git rev-parse HEAD)"
 out="$(orch_gh_failing branch off "quick/9-tagged" 2>&1)"; st=$?
 assert_status "branch off succeeds beside a tag of the new name" "$st" 0
 assert_not_contains "with no already-exists refusal" "$out" "already exists"
@@ -1291,12 +1289,26 @@ assert_eq "the new branch starts at origin's base tip, not the tag's commit" \
 new_repo_with_origin
 orch_gh_failing init tagged >/dev/null
 orch_gh_failing state set issue 12
-git commit -q --allow-empty -m "later"
-start_commit="$(git rev-parse HEAD~1)"
 git tag orch/12-tagged HEAD
+git commit -q --allow-empty -m "later"
+git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
+start_commit="$(git rev-parse HEAD)"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create succeeds beside a tag of the new name" "$st" 0
 assert_not_contains "with no already-exists refusal" "$out" "already exists"
 assert_eq "the new branch starts at origin's base tip, not the tag's commit" \
   "$(git rev-parse refs/heads/orch/12-tagged)" "$start_commit"
+
+# The local fallback: origin unreachable, a tag of the base's name at the local
+# base's tip, then the local base moves on past it.
+new_repo >/dev/null
+git remote set-url origin "$(mktemp -d)/missing.git"
+fb_base="$(git branch --show-current)"
+git config orchestrator.base "$fb_base"
+git tag "$fb_base" HEAD
+git commit -q --allow-empty -m "local base moves on"
+out="$(orch_gh_failing branch off quick/10-local 2>&1)"; st=$?
+assert_status "branch off succeeds with origin unreachable beside a tag of the base's name" "$st" 0
+assert_eq "and forks from the local base branch, not the tag" \
+  "$(git rev-parse HEAD)" "$(git rev-parse "refs/heads/$fb_base")"
 restore_suite_env

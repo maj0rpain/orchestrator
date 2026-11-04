@@ -193,7 +193,7 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    `rebase-merge` or `rebase-apply` directory under `git -C <checkout>
    rev-parse --absolute-git-dir`) must be in progress, as the prompt says. With
    `Rebase onto:`, the working tree must be clean; start the rebase:
-   `git -C <checkout> rebase <parent branch>`. A rebase that applies cleanly
+   `git -C <checkout> rebase refs/heads/<parent branch>`. A rebase that applies cleanly
    has nothing to resolve: go to step 3. On a mismatch, stop and return the
    report with `Result: failed` and the mismatch on the `Dropped` line.
 2. **Resolve**, per **Resolving** below.
