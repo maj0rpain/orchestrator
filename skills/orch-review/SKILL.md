@@ -126,7 +126,9 @@ plan or from what the previous loop left instead of asking.
    Both are authority over the findings you are about to get.
 4. `bash "$ORCH" state get iteration`. Zero means this is the flow's first loop.
    Anything else means a previous loop ended in a bounded stop and a human
-   asked for more: read every `.orchestrator/review/iteration-NN.md` record
+   asked for more, or an autopilot flow re-entered automatically (only a human
+   decides that a further loop happens, except an autopilot flow's automatic
+   re-entry): read every `.orchestrator/review/iteration-NN.md` record
    already there - the records, not the reviewers' reports beside them -
    because their **Filed** lists are what stop this loop re-filing what the
    previous one filed. Triage's **Met again** is the only check against them,
