@@ -1059,12 +1059,12 @@ autopilot_run() {
   mine="$(standing_claim_fields "$issue")" || mine=""
   if [ "$phase" = review ]; then
     iteration="$(state_get_in "$(flow_state_file "$side")" iteration)" || autopilot_read_die iteration "$side" $?
-  fi
-  if [ "$phase" = review ] && [ "$iteration" = 0 ]; then
-    # A first-loop review session is not asked its budget: the plan's is
-    # recorded, over any left by a loop before a redo.
-    autopilot_pickup_contained autopilot_review_budget_record "$side" ||
-      { standing_stop "$issue" failure review "could not record the plan's Budget as the review budget: $PICKUP_REASON"; return 0; }
+    if [ "$iteration" = 0 ]; then
+      # A first-loop review session is not asked its budget: the plan's is
+      # recorded, over any left by a loop before a redo.
+      autopilot_pickup_contained autopilot_review_budget_record "$side" ||
+        { standing_stop "$issue" failure review "could not record the plan's Budget as the review budget: $PICKUP_REASON"; return 0; }
+    fi
   fi
   for name in model effort; do
     autopilot_setting "$name"

@@ -609,7 +609,7 @@ printf '' >"$launcher_dir/calls"
 # a state file that cannot be read stops the issue naming the step and the file
 state7="$side7/.orchestrator/state.json"
 cp "$state7" "$state7.keep"
-printf 'not json' >"$state7"
+(cd "$side7" && state_truncate)
 fake_issue 7 open ready-for-agent orch:spec
 "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
 assert_status "an unreadable state file does not stop the tick" "$st" 0
@@ -620,7 +620,7 @@ assert_eq "the claim is released" "$(fake_claim_held 7)" free
 assert_eq "and no session starts" "$(tick_calls)" "0"
 
 # autopilot run on the same unreadable file dies plainly, with no jq text
-printf 'not json' >"$state7"
+(cd "$side7" && state_truncate)
 run_out="$("$ORCH" autopilot run 7 2>&1)"; st=$?
 assert_status "autopilot run on an unreadable state file dies" "$st" 1
 assert_contains "with the plain recorded-phase line" "$run_out" "could not read the recorded phase of $side7 - state.json cannot be read"

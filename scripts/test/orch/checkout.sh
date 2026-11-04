@@ -133,7 +133,7 @@ assert_eq "and checkout_kind prints nothing" "$out" ""
 
 # checkout_holding shows a checkout whose state.json cannot be parsed plainly,
 # with no jq text.
-printf 'not json' >"$flowed/.orchestrator/state.json"
+(cd "$flowed" && state_truncate 1)
 out="$(sourced_orch checkout_holding "$flowed" 2>&1)"
 assert_eq "checkout_holding: an unreadable state.json is shown plainly" "$out" "flow (state.json cannot be read)"
 
