@@ -5,6 +5,20 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# comments_answered <json> <cmd>...: runs <cmd> with a stand-in comments adapter
+# that answers every comments read with <json> (the gh adapter fake otherwise),
+# removes the stand-in, and returns <cmd>'s status.
+comments_answered() {
+  local json="$1" adapter st
+  shift
+  adapter="$(mktemp)"
+  writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+    "adapter_issue_comments() { printf '%s\n' '$json'; }" >"$adapter"
+  ORCH_GH_ADAPTER="$adapter" "$@"; st=$?
+  rm -f "$adapter"
+  return "$st"
+}
+
 # del_commit <file> <sed script> <message>: commits the edit to src/<file> in
 # the scan section's second clone, $work, printing its SHA.
 del_commit() {
@@ -769,13 +783,9 @@ assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 # A comments answer that does not parse dies the same way, before any write. The
 # stand-in adapter answers with a malformed .comments, which the fake never
 # writes.
-bad_comments_adapter="$(mktemp)"
-writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
-  'adapter_issue_comments() { printf "%s\n" "{\"comments\": \"not a list\"}"; }' >"$bad_comments_adapter"
 triaged 54 "review:major,needs-triage,bug"
 before="$(fake_snapshot)"
-out="$(ORCH_GH_ADAPTER="$bad_comments_adapter" apply 54 close-fixed --comment-file "$comment" 2>&1)"; st=$?
-rm -f "$bad_comments_adapter"
+out="$(comments_answered '{"comments": "not a list"}' apply 54 close-fixed --comment-file "$comment" 2>&1)"; st=$?
 assert_status "an unparseable comments answer dies" "$st" 1
 assert_eq "saying its comments did not parse" \
   "$(has_line "$out" "orch: could not read issue #54's comments: its comments did not parse")" yes
@@ -1082,6 +1092,17 @@ partial "a failed close" 41 \
 fake_fail adapter_issue_comments "$GH_502"
 partial "a failed comments read" 42 \
   "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33" "left open"
+# A comments answer that does not parse stops the close loop at its first
+# member, with the cause, the members left open and the resume command.
+for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
+fake_next_issue 49
+out="$(comments_answered '{"comments": "not a list"}' new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
+assert_status "an unparseable member comments answer dies" "$st" 1
+assert_eq "saying its comments did not parse, the members left open and the resume" \
+  "$(has_line "$out" "orch: bundle #49: could not read member #31's comments: its comments did not parse - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 49 31 32 33")" yes
+for m in 31 32 33; do
+  assert_eq "member #$m left open (unparseable comments)" "$(fake_state_of "$m")" "OPEN"
+done
 fake_fail_after adapter_issue_comment 1 ""
 partial "a silent failed comment" 48 \
   "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33" "left open"
@@ -1125,21 +1146,13 @@ fake_fail adapter_issue_comments "$GH_502"
 refused "--into: a closed member whose comments gh cannot read" "gh could not read issue #66's comments: HTTP 502: Bad Gateway - no member was touched" bundle --into 63 66
 fake_unfail
 # A closed member whose comments do not parse names the issue.
-bad_comments_adapter="$(mktemp)"
-writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
-  'adapter_issue_comments() { printf "%s\n" "{\"comments\": \"not a list\"}"; }' >"$bad_comments_adapter"
-out="$(ORCH_GH_ADAPTER="$bad_comments_adapter" bundle --into 63 66 2>&1)"; st=$?
-rm -f "$bad_comments_adapter"
+out="$(comments_answered '{"comments": "not a list"}' bundle --into 63 66 2>&1)"; st=$?
 assert_status "--into: a closed member whose comments do not parse dies" "$st" 1
 assert_eq "naming the issue and saying so" \
   "$(has_line "$out" "orch: could not read issue #66's comments: its comments did not parse")" yes
 # A trusted comment the render cannot read (its author a string, not an object)
 # dies the same way, rather than as a closed member that is not bundled.
-bad_comments_adapter="$(mktemp)"
-writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
-  'adapter_issue_comments() { printf "%s\n" "{\"comments\": [{\"authorAssociation\": \"OWNER\", \"author\": \"x\", \"body\": \"b\", \"createdAt\": \"t\"}]}"; }' >"$bad_comments_adapter"
-out="$(ORCH_GH_ADAPTER="$bad_comments_adapter" bundle --into 63 66 2>&1)"; st=$?
-rm -f "$bad_comments_adapter"
+out="$(comments_answered '{"comments": [{"authorAssociation": "OWNER", "author": "x", "body": "b", "createdAt": "t"}]}' bundle --into 63 66 2>&1)"; st=$?
 assert_status "--into: a closed member whose comments do not render dies" "$st" 1
 assert_eq "naming the issue and saying so (unrenderable comments)" \
   "$(has_line "$out" "orch: could not read issue #66's comments: its comments did not parse")" yes
@@ -1159,9 +1172,9 @@ refused "--into: a member already closed" "issue #31 is not open" bundle --into 
 refused "--into: a needs-triage member" "issue #35 carries 'needs-triage'" bundle --into 47 34 35
 refused "--into: a member named twice" "issue #34 is named twice" bundle --into 47 34 34
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
-refused "--into: a bundle gh cannot read" "gh could not read issue #47: HTTP 502: Bad Gateway" bundle --into 47 34
+refused "--into: a bundle gh cannot read" "gh could not read issue #47: HTTP 502: Bad Gateway - no member was touched" bundle --into 47 34
 assert_eq "the whole read-failure line (--into: a bundle gh cannot read)" \
-  "$(has_line "$out" "orch: gh could not read issue #47: HTTP 502: Bad Gateway")" yes
+  "$(has_line "$out" "orch: gh could not read issue #47: HTTP 502: Bad Gateway - no member was touched")" yes
 fake_unfail
 # A member's state is read once: the bundle's read and the member's pass;
 # a second member read would fail.
