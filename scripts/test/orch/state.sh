@@ -199,8 +199,9 @@ assert_eq "with nothing new beside it, after the fixture" "$(ls -A .orchestrator
 # A read of it fails with the status jq itself gives on the file, not a
 # lookup's; a known key still reads, and an unknown one is still refused.
 jq . .orchestrator/state.json >/dev/null 2>&1; jq_st=$?
-"$ORCH" state get budget >/dev/null 2>&1; st=$?
+out="$("$ORCH" state get budget 2>&1 >/dev/null)"; st=$?
 assert_status "state get on an unparseable state.json fails with jq's own status" "$st" "$jq_st"
+assert_contains "printing jq's parse error" "$out" "parse error"
 out="$("$ORCH" state get nonsense 2>&1)"; st=$?
 assert_status "state get of an unknown key on it still dies" "$st" 1
 assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
@@ -353,9 +354,6 @@ state_truncate
 out="$(sourced_orch state_get_in "$rd_file" phase 2>&1)"; st=$?
 assert_status "state_get_in on a truncated file returns 2" "$st" 2
 assert_eq "and prints nothing" "$out" ""
-out="$(sourced_orch state_get phase 2>&1)"; st=$?
-assert_ne "state_get on a truncated own state.json fails" "$st" 0
-assert_contains "printing jq's parse error" "$out" "parse error"
 restore_suite_env
 
 # --- state set with a failed write (#1931) ------------------------------------

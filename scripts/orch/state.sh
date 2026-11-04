@@ -34,10 +34,7 @@ state_key_field() {
 # commands that must refuse such a file do it first, with
 # require_state_readable.
 state_get() {
-  local rc
-  flow_state_get "$STATE" "$1" && return
-  rc=$?
-  state_get_failed "$1" "$rc"
+  state_read "$STATE" "$1"
 }
 
 # The shared reader, guarded: reads <key> from the state file <file> of any
@@ -45,8 +42,14 @@ state_get() {
 # returns status 2 and prints nothing - no jq text, so a caller scanning other
 # checkouts can skip it. On a readable one it behaves as state_get does.
 state_get_in() {
-  local rc
   flow_state_readable "$1" || return 2
+  state_read "$1" "$2"
+}
+
+# state_read <file> <key>: the unguarded read both readers share - the Flow
+# state module's reader, then, on failure, state_get_failed's lookup.
+state_read() {
+  local rc
   flow_state_get "$1" "$2" && return
   rc=$?
   state_get_failed "$2" "$rc"

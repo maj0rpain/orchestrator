@@ -562,7 +562,7 @@ autopilot_pickup_recorded() {
   recorded="$(state_get_in "$state_file" phase)" || rc=$?
   [ "$rc" -ne 0 ] || return 0
   if [ "$rc" -eq 2 ]; then
-    PICKUP_REASON="$1: $STATE_UNREADABLE_MSG"
+    PICKUP_REASON="state.json in $1 cannot be read - run orch.sh doctor --flow"
   else
     PICKUP_REASON="could not read the phase recorded in $state_file"
   fi
@@ -574,7 +574,7 @@ autopilot_pickup_recorded() {
 # plain reason.
 autopilot_read_die() {
   if [ "$3" -eq 2 ]; then
-    die "could not read the recorded $1 of $2: $STATE_UNREADABLE_MSG"
+    die "could not read the recorded $1 of $2 - state.json cannot be read"
   fi
   die "could not read the recorded $1 of $2"
 }
