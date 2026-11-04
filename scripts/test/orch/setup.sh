@@ -92,6 +92,21 @@ has_line() {
   case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) echo yes ;; *) echo no ;; esac
 }
 
+# adapter_stood_in <definitions> <cmd>...: runs <cmd> with ORCH_GH_ADAPTER at a
+# stand-in adapter, a temp file that sources the gh adapter fake and then holds
+# <definitions> (bash text) verbatim. The file is removed whatever <cmd>'s
+# status, and that status is returned. When the mktemp or the write fails,
+# nothing runs, any file made is removed, and it returns non-zero.
+adapter_stood_in() {
+  local defs="$1" adapter st
+  shift
+  adapter="$(mktemp)" || return 1
+  printf 'source %q\n%s\n' "$GH_ADAPTER_FAKE" "$defs" >"$adapter" || { rm -f "$adapter"; return 1; }
+  ORCH_GH_ADAPTER="$adapter" "$@"; st=$?
+  rm -f "$adapter"
+  return "$st"
+}
+
 # A fresh repo with one commit, an empty docs/agents/ for a labels doc and an
 # origin of https://github.com/o/r.git (so it resolves to the repo o/r), cwd
 # inside it. No setup is required of it (ADR-0028).

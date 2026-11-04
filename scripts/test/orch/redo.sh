@@ -660,19 +660,17 @@ assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
 rm -rf "$rw_tmp"
 
 # A body gh reads back with no final newline gets none back from the cut.
-bare_adapter="$(mktemp)"
-writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+bare_defs="$(writeln \
         'adapter_issue_body() {' \
         '  ! fake_failing adapter_issue_body || return 1' \
         '  fake_issue_known "$1" || return 1' \
         '  cat "$(fake_issue_dir "$1")/body"' \
-        '}' >"$bare_adapter"
+        '}')"
 fake_body_read 58 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n'
-ORCH_GH_ADAPTER="$bare_adapter" "$ORCH" ticket retire 58 >/dev/null 2>&1; st=$?
+adapter_stood_in "$bare_defs" "$ORCH" ticket retire 58 >/dev/null 2>&1; st=$?
 assert_status "a body read with no final newline: retire succeeds" "$st" 0
 assert_eq "the cut body gets no final newline back" \
   "$(fake_body_of 58 | od -c)" "$(printf 'Spec.\n\n## After\nTail.' | od -c)"
-rm -f "$bare_adapter"
 
 for p in 59 60; do fake_issue "$p" open; done
 rt6="$("$ORCH" ticket publish 59 "Six" "$tbody")"

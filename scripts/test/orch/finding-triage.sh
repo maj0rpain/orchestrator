@@ -5,18 +5,19 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# comments_answer <json>: prints the adapter_issue_comments definition that
+# answers every comments read with <json>, quoted with %q so any JSON fits.
+comments_answer() {
+  printf 'adapter_issue_comments() { printf "%%s\\n" %q; }\n' "$1"
+}
+
 # comments_answered <json> <cmd>...: runs <cmd> with a stand-in comments adapter
 # that answers every comments read with <json> (the gh adapter fake otherwise),
 # removes the stand-in, and returns <cmd>'s status.
 comments_answered() {
-  local json="$1" adapter st
+  local json="$1"
   shift
-  adapter="$(mktemp)"
-  writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
-    "adapter_issue_comments() { printf '%s\n' '$json'; }" >"$adapter"
-  ORCH_GH_ADAPTER="$adapter" "$@"; st=$?
-  rm -f "$adapter"
-  return "$st"
+  adapter_stood_in "$(comments_answer "$json")" "$@"
 }
 
 # del_commit <file> <sed script> <message>: commits the edit to src/<file> in
@@ -683,17 +684,16 @@ fake_unfail
 # refuses to remove a label the repo does not have. The removes are read off a
 # relabel that records them, at the gh boundary, before the fake applies it.
 relabel_log="$(mktemp)"
-traced_adapter="$(mktemp)"
-writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+traced_defs="$(writeln \
         'eval "fake_relabel_applied() $(declare -f adapter_issue_relabel | tail -n +2)"' \
         'adapter_issue_relabel() {' \
         '  local a prev=""' \
         '  for a in "$@"; do [ "$prev" != --remove ] || printf "%s\n" "$a" >>"$RELABEL_LOG"; prev="$a"; done' \
         '  fake_relabel_applied "$@"' \
-        '}' >"$traced_adapter"
+        '}')"
 traced_apply() {
   : >"$relabel_log"
-  RELABEL_LOG="$relabel_log" ORCH_GH_ADAPTER="$traced_adapter" orch_gh_failing finding-triage apply "$@"
+  RELABEL_LOG="$relabel_log" adapter_stood_in "$traced_defs" orch_gh_failing finding-triage apply "$@"
 }
 removed_labels() { sort "$relabel_log" | tr '\n' ' '; }
 for outcome in close-fixed wontfix ready-for-agent ready-for-human; do
@@ -745,7 +745,7 @@ assert_eq "after the comment is posted" "$(fake_comments_of 7)" \
   "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
 assert_eq "and before the labels change" "$(fake_labels_of 7)" "bug ready-for-agent review:minor "
 fake_unfail
-rm -f "$relabel_log" "$traced_adapter"
+rm -f "$relabel_log"
 
 # Re-running apply after a failed close posts the triage comment once (#1944).
 triaged 50 "review:major,needs-triage,bug"
@@ -1038,28 +1038,27 @@ assert_gh_dies "a silent bundle create failure dies" adapter_issue_create '' 1 \
 # the members left open, with the --into command that resumes, and that
 # command finishes the job - no second bundle, never an edit to the bundle,
 # and exactly one `Bundled into #B` comment on every member.
-# partial <name> <B> <wants> <left> <held> [adapter [json]]: a new bundle #B of
+# partial <name> <B> <wants> <left> <held> [<definitions>]: a new bundle #B of
 # members 31, 32 and 33 dies with <wants>, leaving <left> (space-separated)
 # <held> ("left open" or "not confirmed closed"); the fake's failure is seeded
-# by the caller, <adapter> stands in for the fake where given, and <json>, where
-# given, is the answer a stand-in comments adapter gives to every comments read.
-# A <wants> that is the whole message is also pinned as one whole line of the
-# output when <whole> is "whole".
+# by the caller, and <definitions>, where given, is the stand-in adapter the
+# bundle runs against (adapter_stood_in). A <wants> starting with "orch: " is
+# also pinned as one whole line of the output.
 partial() {
-  local name="$1" b="$2" wants="$3" left="$4" held="$5" adapter="${6:-$GH_ADAPTER_FAKE}" json="${7:-}" whole="${8:-}" m
+  local name="$1" b="$2" wants="$3" left="$4" held="$5" stand_in="${6:-}" m
   for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
   fake_next_issue "$b"
-  if [ -n "$json" ]; then
-    out="$(comments_answered "$json" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
+  if [ -n "$stand_in" ]; then
+    out="$(adapter_stood_in "$stand_in" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
   else
-    out="$(ORCH_GH_ADAPTER="$adapter" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
+    out="$(new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
   fi
   fake_unfail
   assert_status "$name dies" "$st" 1
   assert_contains "$name: saying what failed" "$out" "$wants"
-  if [ "$whole" = "whole" ]; then
-    assert_eq "$name: as one whole line" "$(has_line "$out" "$wants")" yes
-  fi
+  case "$wants" in
+  "orch: "*) assert_eq "$name: as one whole line" "$(has_line "$out" "$wants")" yes ;;
+  esac
   assert_not_contains "$name: with gh's first line only" "$out" "second line"
   assert_contains "$name: naming the bundle and the members left open" "$out" \
     "bundle #$b: "
@@ -1105,7 +1104,7 @@ partial "a failed comments read" 42 \
 # A comments answer that does not parse stops the close loop at its first
 # member, with the cause, the members left open and the resume command.
 partial "an unparseable member comments answer" 49 \
-  "orch: bundle #49: could not read member #31's comments: its comments did not parse - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 49 31 32 33" "31 32 33" "left open" "" '{"comments": "not a list"}' whole
+  "orch: bundle #49: could not read member #31's comments: its comments did not parse - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 49 31 32 33" "31 32 33" "left open" "$(comments_answer '{"comments": "not a list"}')"
 fake_fail_after adapter_issue_comment 1 ""
 partial "a silent failed comment" 48 \
   "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33" "left open"
@@ -1114,11 +1113,8 @@ partial "a silent failed comment" 48 \
 fake_fail_after adapter_issue_state 1 "$GH_502"
 partial "a failed state read-back" 43 \
   "orch: bundle #43: gh could not read member #32's state back: HTTP 502: Bad Gateway - members not confirmed closed: #32 #33; resume with: orch.sh finding-triage bundle --into 43 32 33" "32 33" "not confirmed closed"
-noop_close_adapter="$(mktemp)"
-writeln "source $(printf %q "$GH_ADAPTER_FAKE")" 'adapter_issue_close() { :; }' >"$noop_close_adapter"
 partial "a close that reports success but reads back open" 44 \
-  "member #31 did not read back as closed" "31 32 33" "not confirmed closed" "$noop_close_adapter"
-rm -f "$noop_close_adapter"
+  "member #31 did not read back as closed" "31 32 33" "not confirmed closed" 'adapter_issue_close() { :; }'
 
 # --into skips a member already closed into B, even one whose labels would
 # fail a member check, with no second comment and no second close.

@@ -2617,6 +2617,30 @@ for args in "--tests orch/zz-planted.sh" "orch/missing.sh" "--bogus" \
 done
 rm -rf "${index_dir%/scripts}"
 
+# --- stand-in adapter (#2465) ------------------------------------------------
+# adapter_stood_in <definitions> <cmd>...: runs <cmd> against a temp adapter
+# that sources the gh fake and holds <definitions>, removes it whatever <cmd>'s
+# status, and returns that status; a failed mktemp or write runs nothing.
+echo
+echo "stand-in adapter (#2465)"
+sia_dir="$(mktemp -d)"
+sia_cmd='printf "%s" "$(adapter_issue_json)"'
+out="$(TMPDIR="$sia_dir" adapter_stood_in 'adapter_issue_json() { printf "it'"'"'s stood in"; }' \
+  bash -c 'source "$ORCH_GH_ADAPTER"; '"$sia_cmd")"; st=$?
+assert_eq "the command sees the redefined function, a quote honoured" "$out" "it's stood in"
+assert_status "a passing command returns its status" "$st" 0
+assert_eq "and leaves TMPDIR empty" "$(ls -A "$sia_dir")" ""
+TMPDIR="$sia_dir" adapter_stood_in 'true' bash -c 'exit 7'; st=$?
+assert_status "a failing command's status passes through" "$st" 7
+assert_eq "and leaves TMPDIR empty (failing)" "$(ls -A "$sia_dir")" ""
+rm -rf "$sia_dir"
+sia_ran="$(mktemp)"
+TMPDIR=/nonexistent/zz adapter_stood_in 'true' bash -c "echo ran >$(printf %q "$sia_ran")" 2>/dev/null; st=$?
+assert_ne "a failed mktemp returns non-zero" "$st" 0
+assert_eq "and runs nothing" "$(cat "$sia_ran")" ""
+rm -f "$sia_ran"
+unset sia_dir sia_cmd sia_ran
+
 # --- git env clear (#1905) ----------------------------------------------------
 # test_git_env_clear in scripts/test/git_env.sh, sourced in a child shell with
 # a fake git first on PATH: it unsets what the fake's `rev-parse
