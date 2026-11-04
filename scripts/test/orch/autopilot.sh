@@ -2224,6 +2224,25 @@ fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
 assert_status "sync-dropped exits 0" "$st" 0
 assert_not_contains "and takes orch:sync off the flow-state issue" "$(fake_labels_of 145)" "orch:sync"
 assert_contains "listing the file's text" "$(fake_comments_of 145)" "- dropped thing"
+assert_contains "with no auto-sync set, the watcher files the next sync itself" "$(fake_comments_of 145)" "files a new sync request by itself"
+assert_contains "and the sync-now command" "$(fake_comments_of 145)" "orch.sh autopilot sync 145"
+for as in true false maybe; do
+  fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
+  git config orchestrator.autopilot.auto-sync "$as"
+  err="$("$ORCH" autopilot sync-dropped "$dropped" 2>&1 >/dev/null)"; st=$?
+  git config --unset-all orchestrator.autopilot.auto-sync
+  assert_status "sync-dropped with auto-sync $as exits 0" "$st" 0
+  assert_eq "and lands the stop with auto-sync $as" "$(fake_labels_of 145)|$(fake_claim_held 145)" "needs-human orch:done |free"
+  assert_contains "and names the sync-now command with auto-sync $as" "$(fake_comments_of 145)" "orch.sh autopilot sync 145"
+  case "$as" in
+    true) assert_contains "auto-sync true says the watcher files it" "$(fake_comments_of 145)" "files a new sync request by itself"
+          assert_eq "and warns of nothing" "$err" "" ;;
+    *) assert_not_contains "auto-sync $as takes the manual wording" "$(fake_comments_of 145)" "by itself" ;;
+  esac
+  if [ "$as" = maybe ]; then
+    assert_contains "a bad value warns naming key and value" "$err" "orchestrator.autopilot.auto-sync is maybe"
+  fi
+done
 fake_issue 145 open orch:done orch:sync orch:running; fake_claim_seed 145
 "$ORCH" autopilot sync-fail "push rejected" >/dev/null 2>&1; st=$?
 assert_status "sync-fail exits 0" "$st" 0

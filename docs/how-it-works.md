@@ -450,24 +450,39 @@ pause holds.
 
 ### When it needs you
 
-It stops for these things:
+It stops for these things, in two kinds.
+
+Stops that ask a question:
 
 - a **fundamental item** in the spec review;
-- a review-loop bounded stop (a spec question the review loop files among
-  them);
-- a failed session, which is never retried except a usage-limit stop labelled
-  `orch:limited`;
-- a sync refusal;
-- a sync failure;
-- a dropped intent after a pushed merge: the sync's resolver dropped an intent.
+- a review-loop bounded stop that needs the human: a spec question, CI
+  unreachable, a failed base sync, known items not built, or a CI failure
+  needing a decision.
 
-It posts a **question comment** that @mentions the handle and adds
+Each posts a **question comment** that @mentions the handle and adds
 `needs-human`. `/orchestrator:questions` gathers the pending questions and
 replies for you. Or reply in one comment like
 `1: A, 2: recommended, 3: <free text>`
 (`all: recommended` accepts everything), then remove `needs-human`. The next
 tick picks the issue up again, and a review-loop stop starts another loop with
-a budget the driver sizes from what the last loop left.
+a budget the driver sizes from what the last loop left. A bounded stop that
+asks nothing is an automatic re-entry (ADR-0059): no `needs-human`, nothing to
+reply to.
+
+Stops that only report (no reply format applies; fix what the comment names,
+or accept it, then remove `needs-human`):
+
+- a failed session, which is never retried except a usage-limit stop labelled
+  `orch:limited`; removing the label starts the phase again;
+- a sync refusal; removing the label lets the refused phase be picked up
+  again;
+- a sync session's own failure, which keeps `orch:sync`; removing the label
+  retries the sync;
+- a dropped intent after a pushed merge: the sync's resolver dropped an
+  intent. Removing the label accepts the drops (restore a rejected one on the
+  branch first) and runs nothing; with `auto-sync` on, the watcher then files
+  a new sync request by itself once the PR conflicts with its base, and
+  `orch.sh autopilot sync <issue>` syncs now.
 
 ### Steering
 

@@ -158,7 +158,10 @@ sourced_rc 'standing_sync_dropped 141 "- keep the cache flag (see https://x/y#c1
 assert_eq "the dropped-intent stop removes orch:sync, adds needs-human and releases" "$(fake_labels_of 141)|$(fake_claim_held 141)" "needs-human orch:done |free"
 assert_first_line "its comment is a failure stop marked sync" "$(fake_comments_of 141)" "$(marker_of failure sync)"
 assert_contains "listing the dropped intent" "$(fake_comments_of 141)" "keep the cache flag (see https://x/y#c1)"
-assert_contains "and saying lifting needs-human re-runs nothing" "$(fake_comments_of 141)" "re-runs nothing"
+assert_contains "saying no reply is needed" "$(fake_comments_of 141)" "No reply is needed"
+assert_contains "that removing needs-human accepts the dropped intents" "$(fake_comments_of 141)" "remove needs-human"
+assert_contains "and that a rejected drop is restored on the branch before the label comes off" "$(fake_comments_of 141)" "restore it on the branch first"
+assert_not_contains "without the bare re-runs-nothing sentence" "$(fake_comments_of 141)" "re-runs nothing"
 tr_seed 142 orch:done orch:sync orch:running
 sourced_rc 'standing_stop 142 failure sync "the resolver gave up"' >/dev/null
 assert_eq "the failure stop keeps orch:sync and adds needs-human" "$(fake_labels_of 142)|$(fake_claim_held 142)" "needs-human orch:done orch:sync |free"
