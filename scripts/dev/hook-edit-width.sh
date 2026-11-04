@@ -91,18 +91,15 @@ case "$event" in
   *) exit 0 ;;
 esac
 
-# No cwd: nothing to scan, but the snapshot Pre wrote is still dropped.
-if [ -z "$cwd" ]; then
-  rm -f "$snap" 2>/dev/null
-  exit 0
-fi
 [ -f "$snap" ] || exit 0
 IFS= read -r head <"$snap" 2>/dev/null
 root="${head#root$'\t'}"
-cwd_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
-# Only the checkout holding the payload's cwd is scanned: a cwd outside any
-# repo, or in another checkout than Pre's, drops the snapshot and stays silent.
-if [ "$root" = "$head" ] || [ ! -d "$root" ] || [ "$cwd_root" != "$root" ]; then
+cwd_root=""
+[ -z "$cwd" ] || cwd_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
+# Only the checkout holding the payload's cwd is scanned: no cwd, a cwd outside
+# any repo, or a cwd in another checkout than Pre's drops the snapshot and
+# stays silent.
+if [ -z "$cwd" ] || [ "$root" = "$head" ] || [ ! -d "$root" ] || [ "$cwd_root" != "$root" ]; then
   rm -f "$snap" 2>/dev/null
   exit 0
 fi

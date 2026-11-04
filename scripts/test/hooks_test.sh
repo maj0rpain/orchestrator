@@ -1667,6 +1667,11 @@ for bw_ev in PostToolUse PostToolUseFailure; do
     "$(ls -A "$BW_TMP")"
 done
 BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP" bw_hook PostToolUse "" "t$BW_ID"
+assert_eq "bash hook: Post without cwd and without a snapshot exits 0" "$bw_rc" 0
+assert_empty "bash hook: Post without cwd and without a snapshot is silent" \
+  "$bw_out"
+BW_ID=$((BW_ID + 1))
 pushd "$BW" >/dev/null || exit 1
 TMPDIR="$BW_TMP" bw_hook PreToolUse "" "t$BW_ID"
 popd >/dev/null || exit 1
