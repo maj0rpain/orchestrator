@@ -6,8 +6,8 @@
 # (only .env and .env.* are gitignored and kept out of the image):
 # `ORCH_ENV_FILE=.env.other docker compose --env-file .env.other -p other up -d
 # --build`. Both flags: ORCH_ENV_FILE gives the container its settings,
-# --env-file gives the build its args (EXTRA_APT_PACKAGES, EXTRA_BUILD_COMMAND). The host's
-# ~/.claude is never mounted.
+# --env-file gives the build its args (EXTRA_APT_PACKAGES,
+# EXTRA_BUILD_COMMAND). The host's ~/.claude is never mounted.
 services:
   autopilot:
     build:
