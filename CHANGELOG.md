@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.45.1
+
+Renamed two test variables that shadowed tally helpers, keeping coding-standards rule 3.
+
 ## 4.45.0
 
 The autopilot watcher now takes pickable issues by rank - sync requests first, then the review, implement and spec phases, oldest issue first within a rank - and lets a sync request take one of the sync slots (half the cap, rounded down) beyond the cap.
