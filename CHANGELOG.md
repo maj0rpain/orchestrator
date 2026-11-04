@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.47.1
+
+An unreadable side-checkout `state.json` is now reported plainly instead of leaking jq's parse error: `status` and `side-checkout list` say the state cannot be read, `side-checkout prune` and `finish` skip the checkout naming the unreadable file, `autopilot run` and the watcher's pickup give a plain reason, `doctor --flow` skips it quietly, and `suite-cost` reports its base commit unmeasured. The flow's state file path is also right for a repo rooted at `/`.
+
 ## 4.47.0
 
 An autopilot review loop whose bounded stop asks nothing of the human - an unclean final iteration, an open blocking finding, a missing look, or a CI failure the change can fix - now re-enters on its own: it posts a re-entry comment with no @mention, keeps the issue at `orch:review` without `needs-human`, and the watcher starts the next loop. Stops that need a decision still ask, and so does the third bounded stop in a row. The new `orch.sh autopilot reenter` posts the re-entry, the new `orch.sh review ci-log` prints the failing Actions jobs' failed-step logs, and the next loop carries a failing CI into its first triage as a blocking finding. The flake rerun is now one per review loop rather than one per flow (ADR-0059).
