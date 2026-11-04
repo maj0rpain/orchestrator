@@ -52,17 +52,18 @@ pr_merged_closing_read() {
   printf -v "$2" '%s' "$_prs"
 }
 
-# pr_close_newest <issue> <default> <lines>: runs pr_close_missed on the newest
-# merge among <lines> - the caller's pick of pr_merged_closing_read's PRs, the
-# ones that may close <issue> - and returns its status, with the PR's number
-# in the caller's `pr`, which bash scopes dynamically. Returns 1 when <lines>
-# is empty.
+# pr_close_newest <issue> <default> <lines> [<pr-var>]: runs pr_close_missed on
+# the newest merge among <lines> - the caller's pick of pr_merged_closing_read's
+# PRs, the ones that may close <issue> - and returns its status, writing the
+# PR's number into the caller-named <pr-var> when one is given. Returns 1 when
+# <lines> is empty.
 pr_close_newest() {
-  local line merged_at closing
-  line="$(printf '%s\n' "$3" | awk -F'\t' 'NF && $3 > best { best = $3; line = $0 } END { if (line != "") print line }')"
-  [ -n "$line" ] || return 1
-  IFS=$'\t' read -r pr _ merged_at closing <<<"$line"
-  pr_close_missed "$1" "$pr" "$merged_at" "$closing" "$2"
+  local _line _pr _merged_at _closing
+  _line="$(printf '%s\n' "$3" | awk -F'\t' 'NF && $3 > best { best = $3; line = $0 } END { if (line != "") print line }')"
+  [ -n "$_line" ] || return 1
+  IFS=$'\t' read -r _pr _ _merged_at _closing <<<"$_line"
+  [ -z "${4:-}" ] || printf -v "$4" '%s' "$_pr"
+  pr_close_missed "$1" "$_pr" "$_merged_at" "$_closing" "$2"
 }
 
 # pr_push_and_body <branch> <base> <issue> <body-file> <tmp-var> <outcome>:

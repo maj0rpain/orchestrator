@@ -794,9 +794,7 @@ autopilot_sync_detect() {
 # `orch/<issue>-` should have closed it. orch:sync and needs-human do not stop
 # it. A failed read or close warns and skips, never stopping the tick.
 autopilot_close_missed() {
-  # pr is pr_close_newest's out-variable, unread here: local keeps it local.
-  # shellcheck disable=SC2034
-  local out prs gh_err issue done_label default pr
+  local out prs gh_err issue done_label default
   done_label="$(standing_phase_label "done")"
   capture out gh_err adapter_issues_labelled "$done_label" || {
     warn "could not list the issues labelled $done_label: $(gh_reason "$gh_err") - no merged-PR close this tick"
