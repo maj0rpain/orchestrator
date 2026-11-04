@@ -484,7 +484,6 @@ fake_pr 73 open topic main
 assert_eq "pr close: an unreadable origin still closes the PR" "$(cat "$ORCH_GH_FAKE_STORE/prs/73/state")" "CLOSED"
 assert_eq "and appends its comment" "$(fake_pr_comments_of 73)" "Redone."
 cd "$close_saved" || exit 1
-assert_eq "the section restores its working directory" "$PWD" "$close_saved"
 # One head rule for every read of a PR's head: absent is forty zeros, present is
 # as stored, so an empty head stands for GitHub's null headRefOid. A sentinel
 # keeps the trailing empty line a command substitution would strip.
