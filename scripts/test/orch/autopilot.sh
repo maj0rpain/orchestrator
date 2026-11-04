@@ -47,6 +47,14 @@ fake_last_comment_of() {
 }
 # dead_pid: the pid of a process that has exited.
 dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
+# re_issue <n>: a fresh orch:review issue holding the claim, the flow's issue.
+re_issue() {
+  fake_issue_drop "$1"; fake_issue "$1" open orch:review orch:running; fake_claim_seed "$1"
+  "$ORCH" state set issue "$1" >/dev/null
+}
+# re_run <file> [<phase>]: autopilot reenter for the phase (default review) with
+# the file's text, as the autopilot; prints its output.
+re_run() { ORCH_AUTOPILOT=1 "$ORCH" autopilot reenter "${2:-review}" "$1" 2>&1; }
 
 
 # --- autopilot ---------------------------------------------------------------
@@ -307,102 +315,6 @@ fake_fail adapter_issue_relabel "HTTP 500"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" autopilot ask spec "$q" 2>&1)"; st=$?
 assert_status "a failed needs-human add dies" "$st" 1
 fake_unfail
-# autopilot reenter: the command's refusal, success and one partway failure; the
-# transition itself is tested in standing transitions
-re_issue() { # <n>: a fresh orch:review issue holding the claim, the flow's issue
-  fake_issue_drop "$1"; fake_issue "$1" open orch:review orch:running; fake_claim_seed "$1"
-  "$ORCH" state set issue "$1" >/dev/null
-}
-re_run() { ORCH_AUTOPILOT=1 "$ORCH" autopilot reenter "${1:-review}" "$re_file" 2>&1; }
-re_file="$(mktemp)"; printf 'Stop: final iteration not clean. Filed #99.\n' >"$re_file"
-re_issue 71
-out="$(re_run)"; st=$?
-assert_status "autopilot reenter review succeeds" "$st" 0
-assert_eq "the re-entry comment is marked and carries the file's text" "$(fake_comments_of 71 | awk "NR<=2" | tr '\n' ' ')" "<!-- orch:reentry review --> Stop: final iteration not clean. Filed #99. "
-assert_contains "saying the watcher starts another loop" "$(fake_comments_of 71)" "The watcher starts another review loop."
-assert_not_contains "with no @mention" "$(fake_comments_of 71)" "@"
-assert_eq "keeping orch:review, adding no needs-human, dropping orch:running" "$(fake_labels_of 71)" "orch:review "
-assert_eq "and releasing the claim" "$(fake_claim_held 71)" free
-# failed writes die naming the landed ones, the claim held
-re_issue 76
-fake_fail adapter_issue_comment "HTTP 500"
-out="$(re_run)"; st=$?
-fake_unfail
-assert_status "a failed re-entry comment post dies" "$st" 1
-assert_contains "naming it" "$out" "could not post the re-entry comment on issue #76: HTTP 500 - writes that landed: none; the claim stays held"
-assert_eq "the claim is held" "$(fake_claim_held 76)" held
-re_issue 72
-fake_comment 72 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
-first"
-re_run >/dev/null
-assert_eq "with one earlier re-entry it re-enters again" "$(fake_labels_of 72)|$(fake_last_comment_of 72 | awk "NR==1")" "orch:review |<!-- orch:reentry review -->"
-re_issue 73
-fake_comment 73 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
-first"
-fake_comment 73 o 2026-01-02T00:00:00Z "$(marker_of limited review)
-wait"
-fake_comment 73 o 2026-01-03T00:00:00Z "$(marker_of reentry review)
-second"
-re_run >/dev/null
-assert_eq "with two earlier re-entries it posts a question comment" "$(fake_last_comment_of 73 | awk "NR==1")" "<!-- orch:question review -->"
-assert_contains "noting the two automatic re-entries" "$(fake_last_comment_of 73)" "This follows two automatic re-entries of the review loop"
-assert_eq "adding needs-human and releasing the claim" "$(fake_labels_of 73)|$(fake_claim_held 73)" "needs-human orch:review |free"
-# what ends the count: two earlier re-entries then a newer comment of each kind;
-# a trusted one ends the count, so the run re-enters again, and an untrusted
-# author's reply does not, so the run asks
-re_ends() { # <issue> <label> <association> <body>
-  re_issue "$1"
-  fake_comment "$1" o 2026-01-01T00:00:00Z "$(marker_of reentry review)
-a"
-  fake_comment "$1" o 2026-01-02T00:00:00Z "$(marker_of reentry review)
-b"
-  fake_comment "$1" someone 2026-01-03T00:00:00Z "$4" "$3"
-  re_run >/dev/null
-  assert_eq "$2" "$(fake_last_comment_of "$1" | awk "NR==1")" "$5"
-}
-re_ends 80 "a trusted reply ends the re-entry count" OWNER "a reply" "<!-- orch:reentry review -->"
-re_ends 81 "a newer question ends the re-entry count" OWNER "$(marker_of question review)
-q" "<!-- orch:reentry review -->"
-re_ends 82 "a refusal comment ends the re-entry count" OWNER "$(marker_of refusal review)
-x" "<!-- orch:reentry review -->"
-re_ends 83 "a failure comment ends the re-entry count" OWNER "$(marker_of failure review)
-x" "<!-- orch:reentry review -->"
-re_ends 84 "a handoff comment ends the re-entry count" OWNER "$(marker_of handoff 01-plan)
-x" "<!-- orch:reentry review -->"
-re_ends 85 "an untrusted author's reply does not end the re-entry count" NONE "a reply" "<!-- orch:question review -->"
-# a failed timeline read is a failure stop
-re_issue 75
-fake_fail adapter_issue_comments_json "HTTP 500"
-re_run >/dev/null
-fake_unfail
-assert_eq "a failed timeline read takes the failure stop" "$(fake_labels_of 75)|$(fake_claim_held 75)" "needs-human orch:review |free"
-assert_contains "naming the phase" "$(fake_last_comment_of 75)" "<!-- orch:failure review -->"
-# failed writes die naming the landed ones, the claim held
-re_issue 77
-fake_fail adapter_claim_delete "HTTP 500"
-out="$(re_run)"; st=$?
-fake_unfail
-assert_status "a failed claim release dies" "$st" 1
-assert_contains "a failed claim release names the comment that landed" "$out" "writes that landed: posted the review re-entry comment, removed orch:running; the claim stays held"
-assert_eq "and the claim stays held" "$(fake_claim_held 77)" held
-re_issue 78
-fake_comment 78 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
-a"
-fake_comment 78 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
-b"
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(re_run)"; st=$?
-fake_unfail
-assert_status "on the ask path a failed needs-human add dies" "$st" 1
-assert_contains "on the ask path a failed needs-human add names the question comment" "$out" "writes that landed: posted the review question comment; the claim stays held"
-
-assert_eq "and the claim stays held" "$(fake_claim_held 78)" held
-# another phase is refused before any write
-re_issue 79
-out="$(re_run implement)"; st=$?
-assert_status "a phase other than review is refused" "$st" 1
-assert_contains "naming it" "$out" "only the review phase re-enters automatically, got: implement"
-assert_eq "writing nothing, the claim untouched" "$(fake_comments_of 79 | wc -l | tr -d ' ')|$(fake_labels_of 79)|$(fake_claim_held 79)" "0|orch:review orch:running |held"
 # answer after a re-entry: exit 1, writes nothing
 ans="$(mktemp)"; printf 'keep\n' >"$ans"
 re_issue 80
@@ -432,6 +344,104 @@ fake_issue 83 open orch:review
 fake_comment 83 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
 r"
 assert_not_contains "autopilot questions lists no re-entered issue" "$("$ORCH" autopilot questions 2>&1)" "83"
+restore_suite_env
+# --- autopilot reenter --------------------------------------------------------
+# This section holds both the command's cases (refusal, usage, success and its
+# partway failure) and the automatic re-entry transition's cases (the re-entry
+# count, the ask path, a failed timeline read and the write-chain failures).
+# #2417's Testing Decisions placed the transition's cases here, through the
+# orch.sh CLI, so this section carries more than the one partway-failure case
+# CONTRIBUTING asks of a command section.
+echo
+echo "autopilot reenter"
+fake_flow autopilot-reenter
+export ORCHESTRATOR_HOST=claude
+re_file="$(mktemp)"; printf 'Stop: final iteration not clean. Filed #99.\n' >"$re_file"
+re_issue 71
+out="$(re_run "$re_file")"; st=$?
+assert_status "autopilot reenter review succeeds" "$st" 0
+assert_eq "the re-entry comment is marked and carries the file's text" "$(fake_comments_of 71 | awk "NR<=2" | tr '\n' ' ')" "<!-- orch:reentry review --> Stop: final iteration not clean. Filed #99. "
+assert_contains "saying the watcher starts another loop" "$(fake_comments_of 71)" "The watcher starts another review loop."
+assert_not_contains "with no @mention" "$(fake_comments_of 71)" "@"
+assert_eq "keeping orch:review, adding no needs-human, dropping orch:running" "$(fake_labels_of 71)" "orch:review "
+assert_eq "and releasing the claim" "$(fake_claim_held 71)" free
+# failed writes die naming the landed ones, the claim held
+re_issue 76
+fake_fail adapter_issue_comment "HTTP 500"
+out="$(re_run "$re_file")"; st=$?
+fake_unfail
+assert_status "a failed re-entry comment post dies" "$st" 1
+assert_contains "naming it" "$out" "could not post the re-entry comment on issue #76: HTTP 500 - writes that landed: none; the claim stays held"
+assert_eq "the claim is held" "$(fake_claim_held 76)" held
+re_issue 72
+fake_comment 72 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+first"
+re_run "$re_file" >/dev/null
+assert_eq "with one earlier re-entry it re-enters again" "$(fake_labels_of 72)|$(fake_last_comment_of 72 | awk "NR==1")" "orch:review |<!-- orch:reentry review -->"
+re_issue 73
+fake_comment 73 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+first"
+fake_comment 73 o 2026-01-02T00:00:00Z "$(marker_of limited review)
+wait"
+fake_comment 73 o 2026-01-03T00:00:00Z "$(marker_of reentry review)
+second"
+re_run "$re_file" >/dev/null
+assert_eq "with two earlier re-entries it posts a question comment" "$(fake_last_comment_of 73 | awk "NR==1")" "<!-- orch:question review -->"
+assert_contains "noting the two automatic re-entries" "$(fake_last_comment_of 73)" "This follows two automatic re-entries of the review loop"
+assert_eq "adding needs-human and releasing the claim" "$(fake_labels_of 73)|$(fake_claim_held 73)" "needs-human orch:review |free"
+# what the CLI path adds to the count: the trust filter. A trusted reply
+# ends the count, so the run re-enters again; an untrusted author's reply
+# does not, so the run asks. The other kinds that end the count are tested
+# at timeline_reentry_count in the issue-timeline section.
+re_ends() { # <issue> <label> <association> <body>
+  re_issue "$1"
+  fake_comment "$1" o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+a"
+  fake_comment "$1" o 2026-01-02T00:00:00Z "$(marker_of reentry review)
+b"
+  fake_comment "$1" someone 2026-01-03T00:00:00Z "$4" "$3"
+  re_run "$re_file" >/dev/null
+  assert_eq "$2" "$(fake_last_comment_of "$1" | awk "NR==1")" "$5"
+}
+re_ends 80 "a trusted reply ends the re-entry count" OWNER "a reply" "<!-- orch:reentry review -->"
+re_ends 85 "an untrusted author's reply does not end the re-entry count" NONE "a reply" "<!-- orch:question review -->"
+# a failed timeline read is a failure stop
+re_issue 75
+fake_fail adapter_issue_comments_json "HTTP 500"
+re_run "$re_file" >/dev/null
+fake_unfail
+assert_eq "a failed timeline read takes the failure stop" "$(fake_labels_of 75)|$(fake_claim_held 75)" "needs-human orch:review |free"
+assert_contains "naming the phase" "$(fake_last_comment_of 75)" "<!-- orch:failure review -->"
+# failed writes die naming the landed ones, the claim held
+re_issue 77
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(re_run "$re_file")"; st=$?
+fake_unfail
+assert_status "a failed claim release dies" "$st" 1
+assert_contains "a failed claim release names the comment that landed" "$out" "writes that landed: posted the review re-entry comment, removed orch:running; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 77)" held
+re_issue 78
+fake_comment 78 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+a"
+fake_comment 78 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
+b"
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(re_run "$re_file")"; st=$?
+fake_unfail
+assert_status "on the ask path a failed needs-human add dies" "$st" 1
+assert_contains "on the ask path a failed needs-human add names the question comment" "$out" "writes that landed: posted the review question comment; the claim stays held"
+
+assert_eq "and the claim stays held" "$(fake_claim_held 78)" held
+# a wrong argument count prints the usage line
+out="$("$ORCH" autopilot reenter review 2>&1)"; st=$?
+assert_status "autopilot reenter with one argument exits 1" "$st" 1
+assert_eq "and prints its usage line" "$out" "orch: usage: orch.sh autopilot reenter <phase> <file>"
+# another phase is refused before any write
+re_issue 79
+out="$(re_run "$re_file" implement)"; st=$?
+assert_status "a phase other than review is refused" "$st" 1
+assert_contains "naming it" "$out" "only the review phase re-enters automatically, got: implement"
+assert_eq "writing nothing, the claim untouched" "$(fake_comments_of 79 | wc -l | tr -d ' ')|$(fake_labels_of 79)|$(fake_claim_held 79)" "0|orch:review orch:running |held"
 restore_suite_env
 
 # --- autopilot tick and run ---------------------------------------------------
