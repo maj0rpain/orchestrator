@@ -21,6 +21,9 @@ ndjson_with() {
 }
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
+# picked: the side checkouts the launcher started sessions in, in order, one
+# basename and a space each.
+picked() { grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' '; }
 
 # local_fields <iso>: the limit file's UTC timestamp as "<epoch> <%H> <%a>" in
 # local time.
@@ -430,7 +433,7 @@ git config orchestrator.autopilot.cap 2
 "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
 assert_status "a tick under a cap of 2 succeeds" "$st" 0
 assert_eq "it starts two sessions" "$(tick_calls)" "2"
-assert_eq "the oldest first" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "issue-7 issue-8 "
+assert_eq "the oldest first" "$(picked)" "issue-7 issue-8 "
 assert_eq "the third waits" "$(fake_labels_of 9)" "orch:spec ready-for-agent "
 
 # the slug: the issue title alone, whole words, at most 40 characters
@@ -484,7 +487,7 @@ fake_claim_seed 7 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fake_claim_seed 90 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf '8\n' >"$launcher_dir/release"
 "$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "a claim lost to another host skips its issue, the cap leaving room for one" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "issue-8 "
+assert_eq "a claim lost to another host skips its issue, the cap leaving room for one" "$(picked)" "issue-8 "
 assert_eq "the lost claim stays theirs" "$(fake_claim_held 7)" held
 assert_eq "and its issue untouched" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
 fake_claim_release 7; fake_claim_release 90
@@ -937,7 +940,7 @@ printf '2020-01-01T00:00:00Z\n' >"$limit_file"
 printf '5 6 7\n' >"$launcher_dir/release"; printf '0\n' >"$launcher_dir/exit"; : >"$launcher_dir/out"
 git config orchestrator.autopilot.cap 2
 "$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "after the pause two sessions start, oldest first" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "lim-5 lim-6 "
+assert_eq "after the pause two sessions start, oldest first" "$(picked)" "lim-5 lim-6 "
 assert_contains "the limited issue's session sees orch:running and no orch:limited" "$(grep '^labels:6:' "$launcher_dir/calls" | tail -1)" "labels:6:orch:running orch:spec ready-for-agent "
 assert_eq "the one over the cap keeps orch:limited" "$(fake_labels_of 7)" "orch:limited orch:spec ready-for-agent "
 git config --unset orchestrator.autopilot.cap
@@ -974,7 +977,7 @@ rm -f "$limit_file" "$launcher_dir/calls"
 fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Lim 8"
 printf '8\n' >"$launcher_dir/release"; printf '0\n' >"$launcher_dir/exit"; : >"$launcher_dir/out"
 "$ORCH" autopilot tick >/dev/null 2>&1
-assert_contains "another clone's limit file starts no pause" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "lim-8"
+assert_contains "another clone's limit file starts no pause" "$(picked)" "lim-8"
 rm -rf "$other_clone"
 
 # autopilot questions does not list a limited issue
@@ -1715,7 +1718,7 @@ printf '6 7 8\n' >"$launcher_dir/release"
 git config orchestrator.autopilot.cap 2
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a cap of 2 starts two sessions" "$(tick_calls)" "2"
-assert_eq "the oldest issues first, the sync request among them" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "sync-seven sync-six "
+assert_eq "the sync request first, then the oldest phase" "$(picked)" "sync-seven sync-six "
 assert_eq "the third waits" "$(fake_labels_of 8)" "orch:spec ready-for-agent "
 assert_contains "the phase issue got the phase prompt" "$(cat "$launcher_dir/calls")" "orch-flow skill's Next phase"
 git config orchestrator.autopilot.cap 5
@@ -1847,7 +1850,6 @@ done
 fake_issue_drop 20 21 22
 fake_issue 31 open orch:done orch:sync; fake_issue 32 open orch:done orch:sync
 rm -f "$launcher_dir/release" "$launcher_dir/calls"
-picked() { grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' '; }
 
 # rank order, regardless of issue number across ranks
 fake_issue 20 open ready-for-agent orch:spec

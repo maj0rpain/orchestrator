@@ -783,7 +783,7 @@ autopilot_rank() {
 # other than a lost race stops the tick, naming it.
 autopilot_tick() {
   local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
-  local ranked="" slots limit rank
+  local ranked="" slots limit limited
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -805,11 +805,11 @@ autopilot_tick() {
     ranked="$ranked$(autopilot_rank "$phase") $issue $phase $STANDING_LIMITED"$'\n'
   done <<<"$candidates"
   ranked="$(printf '%s' "$ranked" | sort -k1,1n -k2,2n)"
-  while read -r rank issue phase limited_arg; do
+  while read -r _ issue phase limited; do
     [ -n "$issue" ] || continue
-    if [ "$rank" = 0 ]; then limit=$((cap + slots)); else limit="$cap"; fi
+    if [ "$phase" = "$STANDING_SYNC_PHASE" ]; then limit=$((cap + slots)); else limit="$cap"; fi
     if [ "$count" -ge "$limit" ]; then
-      [ "$rank" = 0 ] && continue
+      [ "$phase" = "$STANDING_SYNC_PHASE" ] && continue
       break
     fi
     rc=0
@@ -821,7 +821,8 @@ autopilot_tick() {
     esac
     liveness_tick_begin "$issue"
     count=$((count + 1))
-    if [ "$limited_arg" = 1 ]; then limited_arg=limited; else limited_arg=""; fi
+    limited_arg=""
+    if [ "$limited" = 1 ]; then limited_arg=limited; fi
     autopilot_pickup "$issue" "$phase" "$limited_arg"
   done <<<"$ranked"
 }
