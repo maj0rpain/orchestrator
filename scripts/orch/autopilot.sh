@@ -847,12 +847,13 @@ autopilot_rank() {
 # autopilot_tick: one pass - labels, stale claims, the limit-pause check,
 # sync detection (when auto-sync is true), the merged-PR close, then pickup
 # (see the spec's One tick). Every candidate is read before the first claim,
-# the unpickable ones dropped, and the rest taken by rank - sync requests, then the phases furthest
-# along first, oldest issue first within a rank. A phase is claimed while the
-# claim count is below the cap, a sync request while it is below the cap plus
-# the sync slots (half the cap, rounded down); the first phase candidate not
-# claimed for the cap ends the tick. A claim create that fails for a reason
-# other than a lost race stops the tick, naming it.
+# the unpickable ones dropped, and the rest taken by rank - sync requests,
+# then the phases furthest along first, oldest issue first within a rank. A
+# phase is claimed while the claim count is below the cap, a sync request
+# while it is below the cap plus the sync slots (half the cap, rounded down);
+# the first phase candidate not claimed for the cap ends the tick. A claim
+# create that fails for a reason other than a lost race stops the tick, naming
+# it.
 autopilot_tick() {
   local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
   local ranked="" slots limit limited
