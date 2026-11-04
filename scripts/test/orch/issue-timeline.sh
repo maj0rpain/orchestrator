@@ -110,6 +110,24 @@ tl_case "a refusal comment ends it" 'timeline_limit_count spec' "0|rc=0" "$LIM_S
 x"
 tl_case "a stop older than the streak does not count" 'timeline_limit_count spec' "1|rc=0" "$STOP_F" "$LIM_SPEC"
 
+# re-entry comments in a row
+RE_REV="$(marker_of reentry review)
+again"
+tl_case "two re-entry comments in a row are counted" 'timeline_reentry_count review' "2|rc=0" "$RE_REV" "$RE_REV"
+tl_case "no comments count none" 'timeline_reentry_count review' "0|rc=0"
+tl_case "other marked comments are skipped" 'timeline_reentry_count review' "2|rc=0" "$RE_REV" "$LIM_SPEC" "$RE_REV"
+tl_case "an unmarked comment, a reply, ends the count" 'timeline_reentry_count review' "1|rc=0" "$RE_REV" "a reply" "$RE_REV"
+tl_case "a question comment ends it" 'timeline_reentry_count review' "0|rc=0" "$RE_REV" "$RE_REV" "$Q_SPEC"
+tl_case "a handoff comment ends it" 'timeline_reentry_count review' "0|rc=0" "$RE_REV" "$HO_A"
+tl_case "a failure comment ends it" 'timeline_reentry_count review' "0|rc=0" "$RE_REV" "$STOP_F"
+tl_case "a refusal comment ends it" 'timeline_reentry_count review' "0|rc=0" "$RE_REV" "$STOP_R"
+tl_case "another phase's re-entry comment is not counted" 'timeline_reentry_count review' "1|rc=0" "$RE_REV" "$(marker_of reentry implement)
+x"
+tl_case "a re-entry newer than the question is a re-entered phase" 'timeline_reentered review' "rc=0" "$Q_SPEC" "$RE_REV"
+tl_case "a re-entry with no question at all is re-entered" 'timeline_reentered review' "rc=0" "$RE_REV"
+tl_case "a question newer than the re-entry is not" 'timeline_reentered review' "rc=1" "$RE_REV" "$(marker_of question review)
+q"
+
 # handoffs
 tl_case "a live handoff is found" "timeline_handoff 01-plan$TL_HO" "1|rc=0" "intro" "$HO_A"
 tl_case_exact "its body is exact, trailing newlines kept" 'timeline_body 1' "[the plan

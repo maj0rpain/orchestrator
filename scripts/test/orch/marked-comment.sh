@@ -151,6 +151,10 @@ assert_eq "texts on unreadable comments exits 2, printing nothing" "$mc_rc:$mc_o
 assert_contains "and reports jq's parse error on stderr" "$mc_err" "parse error"
 mc drop "not json" spec-review
 assert_eq "drop on unreadable comments fails, printing nothing" "$([ "$mc_rc" != 0 ] && echo failed):$mc_out" "failed:"
+mc_newest "$(mc_array "$q" "$(marker_of reentry review)"$'\nrecorded')" reentry review
+assert_eq "a re-entry comment is found by its kind and phase" "$mc_rc:$mc_out" "0:1"
+got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$(mc_array "$(marker_of reentry review)")")"
+assert_eq "the prelude reads a re-entry comment's kind and phase" "$got" '[{"kind":"reentry","arg":"review","retired":false}]'
 
 # The exported prelude, through jq: each comment's {kind, arg, retired}.
 arr="$(mc_array "$q" "$ret" "$(marker_of limited build)"$'\r\n' "Autopilot refused to run the plan phase: x" \

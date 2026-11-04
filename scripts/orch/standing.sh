@@ -386,6 +386,30 @@ standing_ask() {
   standing_release "$issue"
 }
 
+# standing_reenter <issue> <phase> <text>: the automatic re-entry transition,
+# under the claim. With fewer than two re-entry comments of <phase> in a row
+# it posts <text> as a re-entry comment - no @mention, no label change - then
+# releases the claim; with two or more it asks instead, noting that. A
+# timeline that cannot be read takes the failure stop.
+standing_reenter() {
+  local issue="$1" phase="$2" text="$3" count body gh_err
+  STANDING_LANDED=""
+  { timeline_read "$issue" && count="$(timeline_reentry_count "$phase")"; } || {
+    standing_stop "$issue" failure "$phase" "the issue's comments could not be read to count the automatic re-entries in a row"
+    return 0
+  }
+  if [ "$count" -ge 2 ]; then
+    standing_ask "$phase" "$text"$'\n\nThis follows two automatic re-entries of the review loop, so it asks instead of starting another.\n'
+    return 0
+  fi
+  body="$(mktemp)" || die "could not create a temp file for the re-entry comment"
+  { marked_comment_write reentry "$phase"; printf '%s\n\nThe watcher starts another %s loop.\n' "$text" "$phase"; } >"$body"
+  capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; standing_chain_die "$issue" "post the re-entry comment" "$gh_err"; }
+  rm -f "$body"
+  standing_landed_add "posted the $phase re-entry comment"
+  standing_release "$issue"
+}
+
 # standing_stop_write <issue> <kind> <text> <label> [<remove-label>]:
 # the write chain of a stop: adds <label> (removing <remove-label> when given),
 # posts <text> as the <kind> comment, then releases the claim, last. The label

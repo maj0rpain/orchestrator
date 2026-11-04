@@ -204,8 +204,8 @@ flow's plan handoff.
 
 **Marked comment**:
 An issue comment whose first line names its kind to orch.sh: a hidden
-`<!-- orch:<kind> <arg> -->` marker (question, limit stop, handoff, refusal,
-failure), or a visible opening the human reads too (the spec review's
+`<!-- orch:<kind> <arg> -->` marker (question, limit stop, re-entry, handoff,
+refusal, failure), or a visible opening the human reads too (the spec review's
 `## Spec review` heading, a `Spec ruling:` line). Question comment, Plan comment
 and the rest are kinds of marked comment. Only a trusted comment can be one. A
 PR comment's `Spec ruling:` line, read by the review pass, is not a marked
@@ -228,8 +228,9 @@ renamer. An autopilot flow runs only on a trusted issue.
 **Issue timeline**:
 An autopilot flow's issue's comment history, read once and asked in domain
 terms: its newest question comment and whether a trusted comment follows it, its
-latest stop, its limit stops in a row for a phase, and its live handoffs. Only
-the timeline and the Marked comment module know how a comment's kind is marked.
+latest stop, its limit stops in a row for a phase, its re-entry comments in a
+row for a phase, and its live handoffs. Only the timeline and the Marked comment
+module know how a comment's kind is marked.
 _Avoid_: comment log.
 
 **Question comment**:
