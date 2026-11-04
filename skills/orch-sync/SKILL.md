@@ -147,7 +147,9 @@ call:
   resolutions comment. Lifting `needs-human` afterwards re-runs nothing.
 - **Failure stop** - `bash "$ORCH" autopilot sync-fail "<reason>"`: adds
   `needs-human` with a stop comment naming the reason and **keeps**
-  `orch:sync`, so `orch.sh autopilot resume` retries the sync.
+  `orch:sync`, so `orch.sh autopilot resume` retries the sync. A retried
+  sync request that finds the previous attempt's base merge still in progress
+  resumes it through the resolver: step 1's `branch sync` exits 3 for it.
 
 Run step 1 as written. Then:
 

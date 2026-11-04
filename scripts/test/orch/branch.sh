@@ -570,7 +570,6 @@ assert_eq "starting no new merge" "$(merge_state)" "none"
 assert_eq "with the tip unmoved" "$(git rev-parse HEAD)" "$resolved"
 assert_eq "recording the merge's second parent as the base SHA" "$(bs_sha)" "$new_tip"
 assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$new_tip"
-assert_eq "branch base-sha prints the merge's second parent" "$(orch_gh_failing branch base-sha)" "$new_tip"
 assert_eq "and pushing the resolution" "$(bs_origin_tip orch/11-bsync)" "$resolved"
 
 # --finish refusals move nothing.

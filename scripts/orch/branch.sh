@@ -314,6 +314,13 @@ cmd_branch_base_sha() {
   git merge-base HEAD "$ref" || die "$branch shares no history with base branch $base"
 }
 
+# on_origin_base <sha> <base>: succeeds when the local origin/<base> resolves
+# and <sha> is on it - its tip or an ancestor of it.
+on_origin_base() {
+  git rev-parse --verify --quiet "refs/remotes/origin/$2" >/dev/null \
+    && git merge-base --is-ancestor "$1" "refs/remotes/origin/$2"
+}
+
 # Brings the current plugin-made branch up to date with its base branch: merges
 # origin's tip of that base into it - never a rebase, never the local base -
 # moves its base SHA to that tip, and pushes when it has an upstream. A
@@ -359,14 +366,12 @@ cmd_branch_sync() {
     fi
     tip="$(git rev-parse --verify --quiet "HEAD^2^{commit}")" \
       || die "HEAD of $branch is not a merge commit - nothing to finish; nothing was synced"
-    git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null \
-      && git merge-base --is-ancestor "$tip" "refs/remotes/origin/$base" \
+    on_origin_base "$tip" "$base" \
       || die "the second parent of HEAD is not on origin/$base - nothing to finish; nothing was synced"
   else
     if merge_in_progress "$ROOT"; then
       mh="$(git rev-parse --verify --quiet MERGE_HEAD)"
-      if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null \
-        && git merge-base --is-ancestor "$mh" "refs/remotes/origin/$base"; then
+      if on_origin_base "$mh" "$base"; then
         warn "a merge of origin/$base into $branch is pending resolution - the merge is left in progress; resolve and commit it, then run orch.sh branch sync --finish"
         exit 3
       fi
