@@ -1584,7 +1584,8 @@ assert_eq "releasing the claim" "$(fake_claim_held 7)" free
 # the label and claim move only after the gate. Bring it back here if
 # this path ever gains a write ahead of the gate.
 
-# a failure partway leaves the claim held and names the writes that landed
+# a failure partway dies with the claim ref's reason and seeds its own; Standing
+# owns the rest of the writes that landed and the held claim
 fake_issue 7 open ready-for-agent orch:review orch:running
 state_fixture phase review
 fake_claim_seed 7
@@ -1592,8 +1593,7 @@ fake_fail adapter_claim_delete "HTTP 500"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
 assert_status "a failed claim delete dies" "$st" 1
 assert_contains "naming the claim ref" "$out" "delete the claim ref"
-assert_contains "and the writes that landed" "$out" "marked PR #9 ready, moved the phase label to orch:done, recorded phase done, removed orch:running"
-assert_eq "the claim is still held" "$(fake_claim_held 7)" held
+assert_contains "seeding its own write first" "$out" "writes that landed: marked PR #9 ready"
 fake_unfail
 restore_suite_env
 
