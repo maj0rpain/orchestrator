@@ -4,7 +4,8 @@
 # orch:running, needs-human, orch:limited), the phase-label helpers, the label
 # table a tick upserts, the host id, the read of an issue's Standing, the
 # claim record's parsing, the claim transition and every other write to it
-# (start, finish, pause, ask, stop, limit-stop, resume). Its tests:
+# (begin, sync request, start, finish, pause, ask, stop, reenter, sync finish,
+# sync dropped, limit-stop, resume). Its tests:
 # scripts/test/orch/standing.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -230,16 +231,16 @@ standing_resume() {
 # --- transitions ------------------------------------------------------------
 #
 # Every write to Standing goes through one transition: begin, sync request,
-# start, finish, pause, ask, stop, sync finish, sync dropped, limit-stop and
-# resume. Begin, sync request and resume are single writes; the others are
-# chains. A chain of writes a
-# session makes under its claim ends in the release - deletes orch:running and
+# start, finish, pause, ask, stop, reenter, sync finish, sync dropped,
+# limit-stop and resume. Begin, sync request and resume are single writes;
+# the others are chains. A chain of writes a session makes under its claim
+# ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
 # fails partway leaves the claim held, and dies naming the writes that landed,
 # so the next tick cleans it up as a failure. STANDING_LANDED accumulates those
-# writes; each chain transition (start, finish, pause, ask, stop, sync finish,
-# sync dropped and limit-stop) resets it at its start, and begin, sync request
-# and resume neither reset nor add to it.
+# writes; each chain transition (start, finish, pause, ask, stop, reenter,
+# sync finish, sync dropped and limit-stop) resets it at its start, and begin,
+# sync request and resume neither reset nor add to it.
 
 STANDING_LANDED=""
 
@@ -416,7 +417,7 @@ standing_reenter() {
     return 0
   }
   if [ "$count" -ge 2 ]; then
-    standing_ask "$phase" "$text"$'\n\nThis follows two automatic re-entries of the review loop, so it asks instead of starting another.\n'
+    standing_ask "$phase" "$text"$'\n\nThis follows two automatic re-entries of the '"$phase"$' loop, so it asks instead of starting another.\n'
     return 0
   fi
   printf -v body '%s\n\nThe watcher starts another %s loop.\n' "$text" "$phase"

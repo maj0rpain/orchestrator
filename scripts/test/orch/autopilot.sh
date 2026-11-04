@@ -387,7 +387,7 @@ fake_comment 73 o 2026-01-03T00:00:00Z "$(marker_of reentry review)
 second"
 re_run "$re_file" >/dev/null
 assert_eq "with two earlier re-entries it posts a question comment" "$(fake_last_comment_of 73 | awk "NR==1")" "<!-- orch:question review -->"
-assert_contains "noting the two automatic re-entries" "$(fake_last_comment_of 73)" "This follows two automatic re-entries"
+assert_contains "noting the two automatic re-entries" "$(fake_last_comment_of 73)" "This follows two automatic re-entries of the review loop"
 assert_eq "adding needs-human and releasing the claim" "$(fake_labels_of 73)|$(fake_claim_held 73)" "needs-human orch:review |free"
 # what the CLI path adds to the count: the trust filter. A trusted reply
 # ends the count, so the run re-enters again; an untrusted author's reply
