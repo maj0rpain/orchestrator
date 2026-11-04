@@ -554,15 +554,19 @@ autopilot_pickup_trust() {
 }
 
 # autopilot_pickup_recorded <side>: the step reading the side checkout's
-# recorded phase, into pickup's recorded. The read's own stderr goes on to the
-# tick's.
+# recorded phase, into pickup's recorded. An unreadable state.json earns its
+# plain reason; any other failure, the read-failed one.
 autopilot_pickup_recorded() {
-  local state_file
+  local state_file rc=0
   state_file="$(flow_state_file "$1")"
-  recorded="$(state_get_in "$state_file" phase)" || {
+  recorded="$(state_get_in "$state_file" phase)" || rc=$?
+  [ "$rc" -ne 0 ] || return 0
+  if [ "$rc" -eq 2 ]; then
+    PICKUP_REASON="state.json in $1 cannot be read - run orch.sh doctor --flow"
+  else
     PICKUP_REASON="could not read the phase recorded in $state_file"
-    return 1
-  }
+  fi
+  return 1
 }
 
 # autopilot_pickup_redo <side> <redo>: the step redoing a phase.
@@ -1019,12 +1023,12 @@ autopilot_review_budget_record() {
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name flags=()
+  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
-  recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
+  recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side - state.json cannot be read"
   # a sync request is told by orch:sync on a done issue; its phase word is sync
   standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
@@ -1043,7 +1047,10 @@ autopilot_run() {
   # fail.
   standing_claims_read
   mine="$(standing_claim_fields "$issue")" || mine=""
-  if [ "$phase" = review ] && [ "$(state_get_in "$(flow_state_file "$side")" iteration)" = 0 ]; then
+  if [ "$phase" = review ]; then
+    iteration="$(state_get_in "$(flow_state_file "$side")" iteration)" || die "could not read the recorded iteration of $side - state.json cannot be read"
+  fi
+  if [ "$phase" = review ] && [ "$iteration" = 0 ]; then
     # A first-loop review session is not asked its budget: the plan's is
     # recorded, over any left by a loop before a redo.
     autopilot_pickup_contained autopilot_review_budget_record "$side" ||

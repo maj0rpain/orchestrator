@@ -613,10 +613,18 @@ printf 'not json' >"$state7"
 fake_issue 7 open ready-for-agent orch:spec
 "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
 assert_status "an unreadable state file does not stop the tick" "$st" 0
-assert_contains "the comment names the step and the state file" "$(fake_comments_of 7 | tail -3)" "step reading the recorded phase failed: could not read the phase recorded in $state7"
+assert_contains "the comment gives the plain pickup reason" "$(fake_comments_of 7 | tail -3)" "step reading the recorded phase failed: state.json in $side7 cannot be read - run orch.sh doctor --flow"
+assert_not_contains "and no jq text" "$(fake_comments_of 7 | tail -3)" "parse error"
 assert_eq "leaving needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
 assert_eq "the claim is released" "$(fake_claim_held 7)" free
 assert_eq "and no session starts" "$(tick_calls)" "0"
+
+# autopilot run on the same unreadable file dies plainly, with no jq text
+printf 'not json' >"$state7"
+run_out="$("$ORCH" autopilot run 7 2>&1)"; st=$?
+assert_status "autopilot run on an unreadable state file dies" "$st" 1
+assert_contains "with the plain recorded-phase line" "$run_out" "could not read the recorded phase of $side7 - state.json cannot be read"
+assert_not_contains "and no jq text" "$run_out" "parse error"
 mv "$state7.keep" "$state7"
 
 # a failed side-checkout add is a failure, the claim released
