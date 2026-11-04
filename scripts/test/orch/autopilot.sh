@@ -1707,7 +1707,7 @@ git config --unset-all orchestrator.autopilot.auto-sync
 rm -f "$launcher_dir/release" "$launcher_dir/calls"
 
 # a phase session still gets the phase prompt; a sync request counts toward
-# the cap, oldest first
+# the cap, ahead of the phase
 fake_issue 7 open orch:done orch:sync
 fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Sync eight"
 fake_issue 6 open ready-for-agent orch:spec; fake_issue_title 6 "Sync six"
@@ -1715,7 +1715,7 @@ printf '6 7 8\n' >"$launcher_dir/release"
 git config orchestrator.autopilot.cap 2
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a cap of 2 starts two sessions" "$(tick_calls)" "2"
-assert_eq "the oldest issues first, the sync request among them" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "sync-six sync-seven "
+assert_eq "the oldest issues first, the sync request among them" "$(grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' ')" "sync-seven sync-six "
 assert_eq "the third waits" "$(fake_labels_of 8)" "orch:spec ready-for-agent "
 assert_contains "the phase issue got the phase prompt" "$(cat "$launcher_dir/calls")" "orch-flow skill's Next phase"
 git config orchestrator.autopilot.cap 5
@@ -1826,6 +1826,89 @@ fake_issue 23 open needs-human orch:done orch:sync
 sourced_orch standing_stop 23 failure review "old" >/dev/null 2>&1
 out="$("$ORCH" autopilot questions 2>&1)"
 assert_contains "a sync request whose newest stop is another phase's lists as sync" "$out" "23	stop	sync"
+
+# --- autopilot tick: pickup rank and sync slots -------------------------------
+# A tick takes sync requests first, then review, implement and spec, oldest
+# issue first within a rank; a sync request may also take the sync slots (half
+# the cap, rounded down) beyond the cap.
+echo
+echo "autopilot tick rank and sync slots"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+git config orchestrator.autopilot.cap 6
+for n in 20 21 22 31 32; do # each gets a side checkout, recording the phase its label will name
+  fake_issue "$n" open ready-for-agent orch:spec; fake_issue_title "$n" "Rank $n"
+done
+printf '20 21 22 31 32\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+for p in 20:spec 21:implement 22:review 31:done 32:done; do
+  (cd "$top/.orchestrator/checkouts/rank-${p%%:*}" && state_fixture phase "${p##*:}")
+done
+fake_issue_drop 20 21 22
+fake_issue 31 open orch:done orch:sync; fake_issue 32 open orch:done orch:sync
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+picked() { grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' '; }
+
+# rank order, regardless of issue number across ranks
+fake_issue 20 open ready-for-agent orch:spec
+fake_issue 21 open ready-for-agent orch:implement
+fake_issue 22 open ready-for-agent orch:review
+printf '20 21 22 31 32\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "sync first, then review, implement, spec, oldest first within a rank" "$(picked)" "rank-31 rank-32 rank-22 rank-21 rank-20 "
+fake_issue_drop 20 21 22
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# the cap full of phase sessions: a sync request takes a sync slot, a phase
+# does not
+git config orchestrator.autopilot.cap 4
+fake_issue 31 open orch:done orch:sync; fake_issue 32 open orch:done orch:sync
+for n in 90 91 92 93; do fake_claim_seed "$n" otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; done
+fake_issue 20 open ready-for-agent orch:spec
+printf '20 31 32\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "at a full cap of 4, two sync slots take both sync requests and no phase" "$(picked)" "rank-31 rank-32 "
+assert_eq "the phase waits" "$(fake_labels_of 20)" "orch:spec ready-for-agent "
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# every sync slot taken: no further sync request
+fake_issue 31 open orch:done orch:sync; fake_issue 32 open orch:done orch:sync
+fake_claim_seed 94 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fake_claim_seed 95 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '31 32\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with cap + sync slots claimed, no sync request is claimed" "$(tick_calls)" "0"
+for n in 90 91 92 93 94 95; do fake_claim_release "$n"; done
+
+# cap 1 has no sync slot
+git config orchestrator.autopilot.cap 1
+fake_claim_seed 90 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "at cap 1 a sync request is not claimed while one session runs" "$(tick_calls)" "0"
+fake_claim_release 90
+
+# a limited issue ranks by what it resumes
+git config orchestrator.autopilot.cap 6
+fake_issue 21 open ready-for-agent orch:implement orch:limited
+fake_issue 31 open orch:done orch:sync orch:limited; fake_issue 32 open orch:done orch:sync
+fake_issue_drop 20
+printf '21 31 32\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a limited sync request ranks as a sync, a limited phase as its phase" "$(picked)" "rank-31 rank-32 rank-21 "
+fake_issue_drop 21
+rm -f "$launcher_dir/release" "$launcher_dir/calls"
+
+# a lost claim race on a sync candidate skips it, and the tick goes on
+fake_issue 31 open orch:done orch:sync; fake_issue 32 open orch:done orch:sync
+fake_claim_seed 31 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '32\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a sync request lost to another host is skipped and the next one claimed" "$(picked)" "rank-32 "
+fake_claim_release 31
+
+# autopilot show lists no setting for it
+assert_not_contains "show lists no sync slot setting" "$("$ORCH" autopilot show 2>&1)" "slot"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: sync request auto-detection (#2325) -------------
 # A tick files a sync request on an open orch:done issue whose open PR GitHub

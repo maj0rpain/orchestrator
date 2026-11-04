@@ -754,12 +754,36 @@ autopilot_sync_detect() {
   done <<<"$out"
 }
 
+# autopilot_rank <phase word>: the pickup rank of a session's phase word, lowest
+# first: a sync request 0, then the phases in reverse order of the phase table
+# (review 1, implement 2, spec 3), the phase furthest along first. done is no
+# candidate and has no rank.
+autopilot_rank() {
+  local phase i=0 n=0
+  [ "$1" != "$STANDING_SYNC_PHASE" ] || { printf '0'; return; }
+  for phase in $PHASES; do
+    [ "$phase" = "done" ] || n=$((n + 1))
+  done
+  for phase in $PHASES; do
+    [ "$phase" != "done" ] || continue
+    [ "$phase" != "$1" ] || { printf '%s' "$((n - i))"; return; }
+    i=$((i + 1))
+  done
+  printf '%s' "$((n + 1))"
+}
+
 # autopilot_tick: one pass - labels, stale claims, the limit-pause check,
 # sync detection (when auto-sync is true), then pickup (see the spec's One
-# tick). A claim create that fails for a reason other than a lost race
-# stops the tick, naming it.
+# tick). Every candidate is read before the first claim, the unpickable ones
+# dropped, and the rest taken by rank - sync requests, then the phases furthest
+# along first, oldest issue first within a rank. A phase is claimed while the
+# claim count is below the cap, a sync request while it is below the cap plus
+# the sync slots (half the cap, rounded down); the first phase candidate not
+# claimed for the cap ends the tick. A claim create that fails for a reason
+# other than a lost race stops the tick, naming it.
 autopilot_tick() {
   local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
+  local ranked="" slots limit rank
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -770,14 +794,24 @@ autopilot_tick() {
   if [ "$auto_sync" = true ]; then autopilot_sync_detect; fi
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
+  slots=$((cap / 2))
   candidates="$(autopilot_candidates)"
   while IFS= read -r issue; do
     [ -n "$issue" ] || continue
-    [ "$count" -lt "$cap" ] || break
     standing_read "$issue" ||
       die "could not read issue #$issue: $STANDING_REASON"
     standing_pickable || continue
     phase="$(standing_session_phase)"
+    ranked="$ranked$(autopilot_rank "$phase") $issue $phase $STANDING_LIMITED"$'\n'
+  done <<<"$candidates"
+  ranked="$(printf '%s' "$ranked" | sort -k1,1n -k2,2n)"
+  while read -r rank issue phase limited_arg; do
+    [ -n "$issue" ] || continue
+    if [ "$rank" = 0 ]; then limit=$((cap + slots)); else limit="$cap"; fi
+    if [ "$count" -ge "$limit" ]; then
+      [ "$rank" = 0 ] && continue
+      break
+    fi
     rc=0
     capture_err gh_err standing_claim "$issue" "$phase" "$$" || rc=$?
     case "$rc" in
@@ -787,10 +821,9 @@ autopilot_tick() {
     esac
     liveness_tick_begin "$issue"
     count=$((count + 1))
-    limited_arg=""
-    if [ "$STANDING_LIMITED" = 1 ]; then limited_arg=limited; fi
+    if [ "$limited_arg" = 1 ]; then limited_arg=limited; else limited_arg=""; fi
     autopilot_pickup "$issue" "$phase" "$limited_arg"
-  done <<<"$candidates"
+  done <<<"$ranked"
 }
 
 # autopilot_resets_epoch <text>: the next moment, in local time and as epoch
