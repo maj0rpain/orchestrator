@@ -165,7 +165,7 @@ fresh_flow flakebegin
 state_fixture budget 5
 state_fixture flake_rerun_used true
 "$ORCH" review begin >/dev/null
-assert_eq "a flake rerun spent before a redo is unspent at iteration 0" \
+assert_eq "a flake rerun spent in a flow is unspent at its iteration 0" \
   "$("$ORCH" state get flake_rerun_used)" "false"
 state_fixture flake_rerun_used true
 "$ORCH" review begin >/dev/null

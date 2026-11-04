@@ -386,13 +386,30 @@ standing_ask() {
   standing_release "$issue"
 }
 
+# standing_post_release <issue> <text> <post-what> <landed-what>: the tail of a
+# write chain that ends in a comment - posts <text> as an issue comment
+# (<post-what> names it in a failure, "post the ... comment"; <landed-what>
+# once landed, "posted the ... comment"), then releases the claim, last.
+standing_post_release() {
+  local issue="$1" text="$2" post_what="$3" landed_what="$4" body gh_err
+  body="$(mktemp)" || die "could not create a temp file to $post_what"
+  printf '%s' "$text" >"$body"
+  capture_err gh_err adapter_issue_comment "$issue" "$body" || {
+    rm -f "$body"
+    standing_chain_die "$issue" "$post_what" "$gh_err"
+  }
+  rm -f "$body"
+  standing_landed_add "$landed_what"
+  standing_release "$issue"
+}
+
 # standing_reenter <issue> <phase> <text>: the automatic re-entry transition,
 # under the claim. With fewer than two re-entry comments of <phase> in a row
 # it posts <text> as a re-entry comment - no @mention, no label change - then
 # releases the claim; with two or more it asks instead, noting that. A
 # timeline that cannot be read takes the failure stop.
 standing_reenter() {
-  local issue="$1" phase="$2" text="$3" count body gh_err
+  local issue="$1" phase="$2" text="$3" count body
   STANDING_LANDED=""
   { timeline_read "$issue" && count="$(timeline_reentry_count "$phase")"; } || {
     standing_stop "$issue" failure "$phase" "the issue's comments could not be read to count the automatic re-entries in a row"
@@ -402,12 +419,10 @@ standing_reenter() {
     standing_ask "$phase" "$text"$'\n\nThis follows two automatic re-entries of the review loop, so it asks instead of starting another.\n'
     return 0
   fi
-  body="$(mktemp)" || die "could not create a temp file for the re-entry comment"
-  { marked_comment_write reentry "$phase"; printf '%s\n\nThe watcher starts another %s loop.\n' "$text" "$phase"; } >"$body"
-  capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; standing_chain_die "$issue" "post the re-entry comment" "$gh_err"; }
-  rm -f "$body"
-  standing_landed_add "posted the $phase re-entry comment"
-  standing_release "$issue"
+  printf -v body '%s\n\nThe watcher starts another %s loop.\n' "$text" "$phase"
+  body="$(marked_comment_write reentry "$phase")"$'\n'"$body"
+  standing_post_release "$issue" "$body" \
+    "post the re-entry comment" "posted the $phase re-entry comment"
 }
 
 # standing_stop_write <issue> <kind> <text> <label> [<remove-label>]:
@@ -416,7 +431,7 @@ standing_reenter() {
 # write is worded "add <label>[, remove <remove-label>]" in a failure and
 # "added ...[, removed ...]" once landed, whenever a removal label is given.
 standing_stop_write() {
-  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" body gh_err relabel=()
+  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" gh_err relabel=()
   relabel=(--add "$label")
   if [ -n "$remove" ]; then
     relabel+=(--remove "$remove")
@@ -424,15 +439,7 @@ standing_stop_write() {
   capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
     standing_chain_die "$issue" "add $label${remove:+, remove $remove}" "$gh_err"
   standing_landed_add "added $label${remove:+, removed $remove}"
-  body="$(mktemp)" || die "could not create a temp file for the $kind comment"
-  printf '%s' "$text" >"$body"
-  capture_err gh_err adapter_issue_comment "$issue" "$body" || {
-    rm -f "$body"
-    standing_chain_die "$issue" "post the $kind comment" "$gh_err"
-  }
-  rm -f "$body"
-  standing_landed_add "posted the $kind comment"
-  standing_release "$issue"
+  standing_post_release "$issue" "$text" "post the $kind comment" "posted the $kind comment"
 }
 
 # standing_stop <issue> <refusal|failure> <phase> <detail>: ends a phase that

@@ -235,9 +235,10 @@ autopilot_sync_fail() {
 
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
 # marker stripped, and every comment after it to <file>, each later one after a
-# `---` line. Exits 1, writing nothing, when no comment follows the question -
-# the caller re-asks, or carries on - and 2 on any other failure, so a failed
-# read is never taken for no reply.
+# `---` line. Exits 1, writing nothing, when no comment follows the question, or
+# the phase was re-entered automatically (a re-entry comment newer than its
+# newest question, or one and no question) - the caller re-asks, or carries on
+# - and 2 on any other failure, so a failed read is never taken for no reply.
 autopilot_answer() {
   local phase="$1" file="$2" issue out first rest
   autopilot_phase_arg "$phase" die2

@@ -353,6 +353,47 @@ assert_contains "ask failing on the release names all three writes" "$out" "writ
 assert_eq "and the claim stays held" "$(fake_claim_held 65)" held
 fake_unfail
 
+# reenter: under fewer than two re-entries in a row it re-enters, else it asks
+ask_seed 72 orch:review orch:running
+fake_comment 72 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+first"
+sourced_rc 'standing_reenter 72 review Q' >/dev/null
+assert_eq "with one earlier re-entry it re-enters again" "$(fake_labels_of 72)|$(fake_last_comment_of 72 | awk "NR==1")" "orch:review |<!-- orch:reentry review -->"
+ask_seed 73 orch:review orch:running
+fake_comment 73 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+first"
+fake_comment 73 o 2026-01-02T00:00:00Z "$(marker_of limited review)
+wait"
+fake_comment 73 o 2026-01-03T00:00:00Z "$(marker_of reentry review)
+second"
+sourced_rc 'standing_reenter 73 review Q' >/dev/null
+assert_eq "with two earlier re-entries it posts a question comment" "$(fake_last_comment_of 73 | awk "NR==1")" "<!-- orch:question review -->"
+assert_contains "noting the two automatic re-entries" "$(fake_last_comment_of 73)" "This follows two automatic re-entries"
+assert_eq "adding needs-human and releasing the claim" "$(fake_labels_of 73)|$(fake_claim_held 73)" "needs-human orch:review |free"
+# a failed timeline read is a failure stop
+ask_seed 75 orch:review orch:running
+fake_fail adapter_issue_comments_json "HTTP 500"
+sourced_rc 'standing_reenter 75 review Q' >/dev/null
+fake_unfail
+assert_eq "a failed timeline read takes the failure stop" "$(fake_labels_of 75)|$(fake_claim_held 75)" "needs-human orch:review |free"
+assert_contains "naming the phase" "$(fake_last_comment_of 75)" "<!-- orch:failure review -->"
+# failed writes die naming the landed ones, the claim held
+ask_seed 77 orch:review orch:running
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(sourced_rc 'standing_reenter 77 review Q')"
+fake_unfail
+assert_contains "a failed claim release names the comment that landed" "$out" "writes that landed: posted the review re-entry comment, removed orch:running; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 77)" held
+ask_seed 78 orch:review orch:running
+fake_comment 78 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
+a"
+fake_comment 78 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
+b"
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(sourced_rc 'standing_reenter 78 review Q')"
+fake_unfail
+assert_contains "on the ask path a failed needs-human add names the question comment" "$out" "writes that landed: posted the review question comment; the claim stays held"
+
 # start
 fake_issue 72 open ready-for-agent
 out="$(sourced_rc 'standing_start 72 /nonexistent')"

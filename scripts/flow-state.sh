@@ -73,9 +73,10 @@ base_sha||null|branch create records it
 # the default.
 budget||null|-
 iteration|0|0|review begin counts it
-# Seeded here rather than at the review phase because its allowance belongs to
-# the review loop: one per loop, spent or not, renewed by review begin when a
-# loop starts, so that one refilled each iteration could not become an infinite retry loop.
+# Seeded here, at flow level, because redo and a re-entry leave it alone and a
+# later loop renews it: one per loop, spent or not, renewed by review begin at
+# the first iteration of each loop, so that one refilled each iteration could
+# not become an infinite retry loop.
 flake_rerun_used|false|false|-
 redo_count|0|0|a redo that retires a branch counts it
 # Marks a flow whose handoffs must record Host fallbacks (see

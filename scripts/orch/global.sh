@@ -172,8 +172,9 @@ orch.sh - deterministic operations for the orchestrator flow
   autopilot answer <phase> <file>
                               write the newest question and every later
                               comment to <file>; exit 1 when none follows or the
-                              phase was re-entered after its question,
-                              2 on any other failure
+                              phase was re-entered after its question (or
+                              re-entered with no question), 2 on any other
+                              failure
   autopilot reenter review <file>
                               post <file> as a re-entry comment (no @mention,
                               no label change) and release the claim, so the

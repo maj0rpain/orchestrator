@@ -125,6 +125,17 @@ ci_ready_gate() {
   esac
 }
 
+# review_record_terminal <path> <var>: sets <var> to the Terminal state section
+# of the record at <path>, and succeeds only when the record exists and that
+# section holds more than whitespace - the one test of a loop's recorded end.
+review_record_terminal() {
+  local text=""
+  [ -f "$1" ] || { printf -v "$2" '%s' ""; return 1; }
+  text="$(section_body "$1" '## Terminal state')" || true
+  printf -v "$2" '%s' "$text"
+  [ -n "${text//[[:space:]]/}" ]
+}
+
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
@@ -160,8 +171,7 @@ review_terminal_state() {
   # Termination), so a recorded terminal state is read whatever the
   # iteration; only its absence depends on the budget - pending before it is
   # spent, interrupted once it is.
-  if [ -f "$path" ]; then sec="$(section_body "$path" '## Terminal state')" || true; fi
-  if [ ! -f "$path" ] || [ -z "${sec//[[:space:]]/}" ]; then
+  if ! review_record_terminal "$path" sec; then
     if [ "$i" -lt "$b" ]; then note pending; else note interrupted; fi
     return 1
   fi
@@ -748,7 +758,7 @@ cmd_review() {
   case "$op" in
     begin)
       require_state
-      local n budget prior prior_path
+      local n budget prior prior_path sec
       prior="$(state_get iteration)"
       n=$(( prior + 1 ))
       budget="$(review_budget)"
@@ -757,8 +767,8 @@ cmd_review() {
       state_write iteration "$n"
       # A loop's first iteration - iteration 0, or the one after a record with a
       # Terminal state - renews the loop's flake rerun; resume never gets here.
-      prior_path="$(printf '%s/iteration-%02d.md' "$REVIEW_DIR" "$prior")"
-      if [ "$prior" -eq 0 ] || { [ -f "$prior_path" ] && [ -n "$(section_body "$prior_path" '## Terminal state' | tr -d '[:space:]')" ]; }; then
+      if [ "$prior" -eq 0 ] ||
+        { prior_path="$(cmd_review path "$prior")" && review_record_terminal "$prior_path" sec; }; then
         state_write flake_rerun_used false
       fi
       note "$n"
