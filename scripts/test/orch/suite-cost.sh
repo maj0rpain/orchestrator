@@ -95,6 +95,19 @@ replay_on_expiry() {
   return 0
 }
 
+# bounded_run_replayed <errfile> <seconds> <side> <cmd...>: runs <cmd...> as one
+# bounded handshake side under suite-cost run (FIFO_BOUNDED, <seconds>, <side>),
+# stdout to /dev/null and stderr to <errfile>, then replays <errfile> to stderr
+# on timeout's expiry status (replay_on_expiry). Returns the run's own status,
+# not the replay's 0.
+bounded_run_replayed() {
+  local errfile="$1" seconds="$2" side="$3" st
+  shift 3
+  "$ORCH" suite-cost run -- "${FIFO_BOUNDED[@]}" "$seconds" "$side" "$@" >/dev/null 2>"$errfile"; st=$?
+  replay_on_expiry "$st" "$errfile"
+  return "$st"
+}
+
 # handshake_partner <dir> [seconds]: a suite-cost run whose command is the
 # handshake's second side - it reads <dir>/one, which the other side writes,
 # then writes a line to <dir>/two, which the other side reads - so it is running
@@ -120,9 +133,7 @@ handshake_overlap_check() {
   "$ORCH" suite-cost check -- "$@" >"$dir/out" 2>"$dir/err" &
   pid=$!
   fifo_bounded 60 "overlap check ($dir/one)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$dir/one" >/dev/null
-  "$ORCH" suite-cost run -- "${FIFO_BOUNDED[@]}" 60 "overlap check ($dir/two)" \
-    sh -c 'printf "x\n" >"$0"' "$dir/two" >/dev/null 2>"$dir/err-writer"
-  replay_on_expiry "$?" "$dir/err-writer"
+  bounded_run_replayed "$dir/err-writer" 60 "overlap check ($dir/two)" sh -c 'printf "x\n" >"$0"' "$dir/two"
   wait "$pid"; st=$?
 }
 
@@ -276,10 +287,9 @@ assert_eq "neither is recorded" "$("$ORCH" suite-cost history)" ""
 # one or two.
 "$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>"$hs/err-first" &
 pid_a=$!
-"$ORCH" suite-cost run -- "${FIFO_BOUNDED[@]}" 60 "listing partner ($hs/one, $hs/two)" \
+bounded_run_replayed "$hs/err-listing" 60 "listing partner ($hs/one, $hs/two)" \
   sh -c 'read -r _ <"$0"; ls "$2" >"$3"; printf "x\n" >"$1"' \
-  "$hs/one" "$hs/two" "$rec.active" "$hs/listing" >/dev/null 2>"$hs/err-listing"
-replay_on_expiry "$?" "$hs/err-listing"
+  "$hs/one" "$hs/two" "$rec.active" "$hs/listing"
 wait "$pid_a"
 replay_on_expiry "$?" "$hs/err-first"
 n="$(grep -c '\.contended$' "$hs/listing")"
@@ -1166,28 +1176,32 @@ for rst in 0 1; do
   assert_status "and returns 0 at $rst" "$st" 0
 done
 
-# A lone partner and a lone listing-style partner, handled as the handshake
-# sites handle them, end 124 and put the message on stderr; a first side's line
-# does too under sh.
-handshake_partner "$hs" 1 >/dev/null 2>"$hs/err-lone"; st=$?
-err="$(replay_on_expiry "$st" "$hs/err-lone" 2>&1 >/dev/null)"
-assert_contains "a lone partner's expiry reaches stderr through the replay" "$err" "partner ($hs/one, $hs/two): no partner within 1s"
-"$ORCH" suite-cost run -- "${FIFO_BOUNDED[@]}" 1 "listing partner ($hs/one, $hs/two)" sh -c 'read -r _ <"$0"' "$hs/one" >/dev/null 2>"$hs/err-lone"; st=$?
-assert_status "a lone listing-style partner ends 124" "$st" 124
-assert_contains "and names itself and its FIFOs" "$(cat "$hs/err-lone")" "listing partner ($hs/one, $hs/two): no partner within 1s"
+# A lone side run through bounded_run_replayed, as the handshake sites run
+# theirs, ends 124 and its expiry reaches stderr through the replay; a first
+# side's line does too under sh.
+err="$(bounded_run_replayed "$hs/err-lone" 1 "listing partner ($hs/one, $hs/two)" sh -c 'read -r _ <"$0"' "$hs/one" 2>&1 >/dev/null)"; st=$?
+assert_status "bounded_run_replayed: a lone side ends 124" "$st" 124
+assert_contains "and its expiry reaches stderr through the replay" "$err" "listing partner ($hs/one, $hs/two): no partner within 1s"
 sh -c "$(handshake_first "$hs" 1)" >/dev/null 2>"$hs/err-lone"; st=$?
 assert_status "the first side's line under sh with no partner ends 124" "$st" 124
 assert_contains "and names the first side and its FIFOs" "$(cat "$hs/err-lone")" "first side ($hs/one, $hs/two): no partner within 1s"
 
-# A completed handshake, handled the same way, writes nothing to stderr.
+# A completed handshake writes nothing to stderr.
 sh -c "$(handshake_first "$hs" 5)" >/dev/null 2>"$hs/err-done-first" &
 pid_first=$!
 "${FIFO_BOUNDED[@]}" 5 "partner ($hs/one, $hs/two)" sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" >/dev/null 2>"$hs/err-done"; st=$?
 wait "$pid_first"; st_first=$?
-err="$(replay_on_expiry "$st" "$hs/err-done" 2>&1 >/dev/null)"
 assert_status "a completed handshake's partner ends 0" "$st" 0
 assert_status "and so does its first side" "$st_first" 0
-assert_eq "and the replay writes nothing to stderr" "$err" ""
 assert_eq "and the partner captured nothing" "$(cat "$hs/err-done")" ""
 assert_eq "and the first side wrote nothing to stderr" "$(cat "$hs/err-done-first")" ""
+
+# bounded_run_replayed as the partner of a completed handshake returns 0 and
+# writes nothing to stderr.
+sh -c "$(handshake_first "$hs" 5)" >/dev/null 2>"$hs/err-done-first" &
+pid_first=$!
+err="$(bounded_run_replayed "$hs/err-done" 5 "partner ($hs/one, $hs/two)" sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" 2>&1 >/dev/null)"; st=$?
+wait "$pid_first"
+assert_status "bounded_run_replayed: a completed handshake's side returns 0" "$st" 0
+assert_eq "and writes nothing to stderr" "$err" ""
 rm -rf "$hs"

@@ -29,16 +29,16 @@
 # shellcheck source=orch/common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/orch/common.sh"
 
-# 1. Refuse: one line per missing variable, then one exit.
+# 1. Environment; refuse: one line per missing variable, then one exit.
 missing=0
 for required in REPO GH_TOKEN; do
   if [ -z "${!required:-}" ]; then
-    warn "$required is not set"
+    warn "environment: $required is not set"
     missing=1
   fi
 done
 if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  warn "neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set"
+  warn "environment: neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set"
   missing=1
 fi
 [ "$missing" -eq 0 ] || exit 1

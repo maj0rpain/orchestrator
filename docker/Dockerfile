@@ -13,6 +13,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g @anthropic-ai/claude-code
 
+# Per-project build hook, run as root once the base tools are installed. Declared
+# here so the apt layer stays cached when only the command changes. bash, not
+# sh (dash has no pipefail), so a failing `curl` in `curl ... | sh` fails the build.
+ARG EXTRA_BUILD_COMMAND=""
+RUN if [ -n "$EXTRA_BUILD_COMMAND" ]; then \
+      bash -eo pipefail -c "$EXTRA_BUILD_COMMAND" \
+        || { echo "build failed: EXTRA_BUILD_COMMAND" >&2; exit 1; }; \
+    fi
+
 # Claude Code refuses bypassPermissions as root, so the watcher runs as orch.
 # The node base image ships a uid-1000 "node" user; drop it so orch can take 1000.
 RUN userdel -r node 2>/dev/null; useradd --create-home --shell /bin/bash --uid 1000 orch \
