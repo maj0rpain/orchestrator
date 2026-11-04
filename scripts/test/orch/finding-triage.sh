@@ -1038,15 +1038,20 @@ assert_gh_dies "a silent bundle create failure dies" adapter_issue_create '' 1 \
 # the members left open, with the --into command that resumes, and that
 # command finishes the job - no second bundle, never an edit to the bundle,
 # and exactly one `Bundled into #B` comment on every member.
-# partial <name> <B> <wants> <left> <held> [adapter]: a new bundle #B of
+# partial <name> <B> <wants> <left> <held> [adapter [json]]: a new bundle #B of
 # members 31, 32 and 33 dies with <wants>, leaving <left> (space-separated)
 # <held> ("left open" or "not confirmed closed"); the fake's failure is seeded
-# by the caller, and <adapter> stands in for the fake where given.
+# by the caller, <adapter> stands in for the fake where given, and <json>, where
+# given, is the answer a stand-in comments adapter gives to every comments read.
 partial() {
-  local name="$1" b="$2" wants="$3" left="$4" held="$5" adapter="${6:-$GH_ADAPTER_FAKE}" m
+  local name="$1" b="$2" wants="$3" left="$4" held="$5" adapter="${6:-$GH_ADAPTER_FAKE}" json="${7:-}" m
   for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
   fake_next_issue "$b"
-  out="$(ORCH_GH_ADAPTER="$adapter" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
+  if [ -n "$json" ]; then
+    out="$(comments_answered "$json" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
+  else
+    out="$(ORCH_GH_ADAPTER="$adapter" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
+  fi
   fake_unfail
   assert_status "$name dies" "$st" 1
   assert_contains "$name: saying what failed" "$out" "$wants"
@@ -1094,15 +1099,8 @@ partial "a failed comments read" 42 \
   "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33" "left open"
 # A comments answer that does not parse stops the close loop at its first
 # member, with the cause, the members left open and the resume command.
-for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
-fake_next_issue 49
-out="$(comments_answered '{"comments": "not a list"}' new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
-assert_status "an unparseable member comments answer dies" "$st" 1
-assert_eq "saying its comments did not parse, the members left open and the resume" \
-  "$(has_line "$out" "orch: bundle #49: could not read member #31's comments: its comments did not parse - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 49 31 32 33")" yes
-for m in 31 32 33; do
-  assert_eq "member #$m left open (unparseable comments)" "$(fake_state_of "$m")" "OPEN"
-done
+partial "an unparseable member comments answer" 49 \
+  "orch: bundle #49: could not read member #31's comments: its comments did not parse - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 49 31 32 33" "31 32 33" "left open" "" '{"comments": "not a list"}'
 fake_fail_after adapter_issue_comment 1 ""
 partial "a silent failed comment" 48 \
   "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33" "left open"
