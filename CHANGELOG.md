@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.47.4
+
+A base sync whose conflict resolution finished no longer fails when the base moves meanwhile, and a base merge a failed sync left in progress is resumed instead of refused. `orch.sh branch sync --finish` records the merged tip as the base SHA and pushes without fetching; `branch sync` exits 3 for a pending merge of the base so the driver starts a resolver on it.
+
 ## 4.47.3
 
 The Standing module's transition lists now name automatic re-entry (and the header the sync transitions), and the re-entry ask note is worded from its phase argument, unchanged for review.
