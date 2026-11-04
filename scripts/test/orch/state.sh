@@ -228,6 +228,12 @@ assert_eq "with no die, ROOT or STATE" \
 assert_eq "flow_state_file prints the state file under a root" \
   "$(fs_run 'flow_state_file /r')" "/r/.orchestrator/state.json
 status 0"
+assert_eq "flow_state_file for a root of / is /.orchestrator/state.json" \
+  "$(fs_run 'flow_state_file /')" "/.orchestrator/state.json
+status 0"
+assert_eq "flow_state_file strips one trailing / from a root" \
+  "$(fs_run 'flow_state_file /r/')" "/r/.orchestrator/state.json
+status 0"
 printf '{"slug":"s"}' >"$fs_dir/object.json"
 printf 'not json' >"$fs_dir/invalid.json"
 printf '[1]' >"$fs_dir/array.json"
@@ -330,6 +336,25 @@ assert_state_unreadable "status" 1 "$out" "$st"
 "$ORCH" archive >/dev/null 2>&1; st=$?
 assert_status "archive on it exits 0" "$st" 0
 assert_eq "and leaves no state.json behind" "$([ -e .orchestrator/state.json ] && echo present || echo gone)" "gone"
+restore_suite_env
+
+# --- the shared and own-checkout readers on a truncated state.json -----------
+# state_get_in guards: an unreadable file returns 2 and prints nothing, a
+# readable one reads as ever. state_get stays unguarded: jq's text comes through.
+echo
+echo "state readers on an unreadable state.json"
+fresh_flow readers
+rd_file="$PWD/.orchestrator/state.json"
+out="$(sourced_orch state_get_in "$rd_file" nonsense 2>&1)"; st=$?
+assert_status "state_get_in of an unknown key on a readable file dies" "$st" 1
+assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
+state_truncate
+out="$(sourced_orch state_get_in "$rd_file" phase 2>&1)"; st=$?
+assert_status "state_get_in on a truncated file returns 2" "$st" 2
+assert_eq "and prints nothing" "$out" ""
+out="$(sourced_orch state_get phase 2>&1)"; st=$?
+assert_ne "state_get on a truncated own state.json fails" "$st" 0
+assert_contains "printing jq's parse error" "$out" "parse error"
 restore_suite_env
 
 # --- state set with a failed write (#1931) ------------------------------------

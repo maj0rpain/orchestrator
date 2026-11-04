@@ -125,7 +125,9 @@ EOT
 }
 
 # flow_state_file <root>: prints the state file path of the checkout at <root>.
-flow_state_file() { printf '%s/%s/state.json\n' "$1" "$ORCH_DIR_NAME"; }
+# One trailing / is stripped from <root>, so a repo at / gets
+# /.orchestrator/state.json.
+flow_state_file() { printf '%s/%s/state.json\n' "${1%/}" "$ORCH_DIR_NAME"; }
 
 # flow_state_readable <file>: true when <file> parses as a JSON object.
 flow_state_readable() {

@@ -2163,3 +2163,19 @@ assert_status "a deleted flow branch with a same-named tag fails doctor" "$st" 1
 assert_contains "saying the branch no longer exists, by its short name" "$out" "FAIL  branch orch/11-gone no longer exists"
 assert_not_contains "the message line has no full ref" "$(grep "no longer exists" <<<"$out")" "refs/heads/"
 restore_suite_env
+
+# --- doctor --flow: a side checkout with a truncated state.json ---------------
+# The other-checkouts check skips a side checkout whose state.json does not
+# parse, without jq's text.
+echo
+echo "doctor: side checkout with a truncated state.json"
+tick_fixture
+fake_issue 7 open ready-for-agent orch:spec
+fake_issue_title 7 "Side flow"
+side7="$("$ORCH" side-checkout add 7-side-flow --issue 7 2>/dev/null)"
+(cd "$side7" && "$ORCH" init 7-side-flow --issue 7 >/dev/null 2>&1 && state_truncate)
+fake_issue 7 open ready-for-agent orch:implement
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "doctor --flow prints no jq parse error for it" "$out" "parse error"
+assert_not_contains "and skips it in the other-checkouts check" "$out" "issue #7 is labelled"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND

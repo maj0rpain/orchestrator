@@ -62,7 +62,7 @@ fi
 prefix="${root%/}/"
 # A flow is already running: the guard's job is done and the phases police
 # themselves from here. A done flow is not running, so it keeps the guard armed.
-state_file="$(flow_state_file "${root%/}")"
+state_file="$(flow_state_file "$root")"
 if flow_state_active "$state_file"; then exit 0; fi
 
 # A file can fall outside root: a repo whose core.worktree names another
