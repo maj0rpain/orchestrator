@@ -833,9 +833,10 @@ autopilot_rank() {
   printf '%s' "$((n + 1))"
 }
 
-# autopilot_tick: one pass - labels, stale claims, the limit-pause check,
-# sync detection (when auto-sync is true), the merged-PR close, then pickup
-# (see the spec's One tick). Every candidate is read before the first claim,
+# autopilot_tick: one pass - labels, stale claims, the merged-PR close (which
+# needs no session, so a limit pause never holds it), the limit-pause check,
+# sync detection (when auto-sync is true), then pickup (see the spec's One
+# tick). Every candidate is read before the first claim,
 # the unpickable ones dropped, and the rest taken by rank - sync requests,
 # then the phases furthest along first, oldest issue first within a rank. A
 # phase is claimed while the claim count is below the cap, a sync request
@@ -852,9 +853,9 @@ autopilot_tick() {
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale
+  autopilot_close_missed
   if autopilot_pause_until "$main_root"; then return 0; fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect; fi
-  autopilot_close_missed
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
   slots=$((cap / 2))

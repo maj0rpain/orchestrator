@@ -1343,6 +1343,7 @@ bf_quick fq 602 702; fake_pr_merged 702 3600 602
 bf_quick fg 603 703; fake_pr_merged 703 60 603
 bf_flow fb 604 704; fake_pr_merged 704 3600 604
 fake_issue 604 closed orch:done
+bf_quick fn 609 709; fake_pr_merged 709 3600 99
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds over the missed closes" "$st" 0
@@ -1355,6 +1356,7 @@ assert_eq "an issue whose PR merged a minute ago stays open" "$(fake_state_of 60
 assert_contains "with a warning naming the issue and the PR" "$out" "issue #603 is still open: PR #703 merged less than 5 minutes ago"
 assert_eq "the checkout inside the grace period is still removed" "$(sp_branch quick/603-fg)" "gone"
 assert_eq "an already-closed issue gets no close comment" "$(fake_comments_of 604)" ""
+assert_eq "closing references lacking the issue leave it open" "$(fake_state_of 609)" "OPEN"
 
 # A flow-less checkout on a branch that is not quick/<issue>- is skipped.
 fake_offline

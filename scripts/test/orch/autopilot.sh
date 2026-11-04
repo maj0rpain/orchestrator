@@ -2204,7 +2204,7 @@ fake_merged 50 3600
 fake_merged 51 60
 fake_merged 52 3600 release
 fake_merged 53 3600 main 99
-fake_merged 54 3600; printf 'CLOSED\n' >"$ORCH_GH_FAKE_STORE/issues/54/state"
+fake_merged 54 3600; fake_issue 54 closed orch:done
 fake_merged 55 3600; fake_issue_relabel 55 orch:review
 fake_merged 56 3600; fake_issue_relabel 56 orch:done orch:running
 fake_merged 57 3600; fake_issue_relabel 57 orch:done orch:sync needs-human
@@ -2240,8 +2240,16 @@ assert_status "a failing close does not stop the tick" "$st" 0
 assert_contains "it warns, naming the issue and the PR" "$out" "could not close issue #50 after PR #150 merged: HTTP 500"
 fake_unfail
 
+# a usage-limit pause stops pickup, never the close
+limit="$(git rev-parse --show-toplevel)/.orchestrator/autopilot/limit"
+mkdir -p "${limit%/*}"; printf '2999-01-01T00:00:00Z\n' >"$limit"
+fake_merged 59 3600
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick under a usage limit still closes the issue" "$(fake_state_of 59)" "CLOSED"
+rm -f "$limit"
+
 # no open orch:done issue: no merged PRs are read
-fake_issue_drop 50 51 52 53 54 55 56 57 58
+fake_issue_drop 50 51 52 53 54 55 56 57 58 59
 fake_fail adapter_prs_merged_closing "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"
 assert_not_contains "with no done issue the merged PRs are not read" "$out" "could not read the merged PRs"
