@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.47.3
+
+The Standing module's transition lists now name automatic re-entry (and the header the sync transitions), and the re-entry ask note is worded from its phase argument, unchanged for review.
+
 ## 4.47.2
 
 Test-only: one shared `adapter_stood_in` helper replaces the hand-built stand-in adapters in the finding-triage, redo, issue and pr tests, and `partial` takes one optional stand-in definition and pins any whole `orch: ` message.
