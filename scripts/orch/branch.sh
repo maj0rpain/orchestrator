@@ -323,14 +323,15 @@ cmd_branch_base_sha() {
 # a conflict, the merge left in progress for a resolver, with nothing else
 # moved; every refusal is exit 1 with nothing moved. A failed push is the one
 # exit 1 after something moved: the merge and base SHA stand, and a rerun -
-# nothing left to merge - retries the push, as it finishes a resolved conflict.
+# nothing left to merge - retries the push.
 # A merge in progress whose MERGE_HEAD is on origin's local base ref is a
 # pending base merge a failed sync left: exit 3, nothing fetched or moved, so a
 # resolver resumes it; any other merge in progress is refused with exit 1.
-# --finish finishes a resolved conflict without fetching: HEAD must be a merge
-# commit whose second parent is on the local origin/<base> and no merge may be
-# in progress, else exit 1 with nothing moved. It records that second parent as
-# the base SHA and pushes, leaving a newer base tip for the next sync.
+# --finish, never a plain rerun, finishes a resolved conflict without
+# fetching: HEAD must be a merge commit whose second parent is on the local
+# origin/<base> and no merge may be in progress, else exit 1 with nothing
+# moved. It records that second parent as the base SHA and pushes, leaving a
+# newer base tip for the next sync.
 cmd_branch_sync() {
   local finish=""
   case "$*" in

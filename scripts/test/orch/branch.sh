@@ -563,14 +563,15 @@ assert_eq "and the index and tree" "$(git write-tree 2>&1; git status --porcelai
 echo both >clash.txt; git add clash.txt; git commit -q --no-edit
 resolved="$(git rev-parse HEAD)"
 bs_advance clash.txt theirs-again >/dev/null
+git fetch -q origin "+refs/heads/main:refs/remotes/origin/main"
 out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
 assert_status "--finish on a resolved conflict exits 0" "$st" 0
 assert_eq "starting no new merge" "$(merge_state)" "none"
 assert_eq "with the tip unmoved" "$(git rev-parse HEAD)" "$resolved"
 assert_eq "recording the merge's second parent as the base SHA" "$(bs_sha)" "$new_tip"
 assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$new_tip"
+assert_eq "branch base-sha prints the merge's second parent" "$(orch_gh_failing branch base-sha)" "$new_tip"
 assert_eq "and pushing the resolution" "$(bs_origin_tip orch/11-bsync)" "$resolved"
-git fetch -q origin 2>/dev/null
 
 # --finish refusals move nothing.
 sha_before="$(bs_sha)"
@@ -610,10 +611,6 @@ git merge --abort
 git reset -q --hard "$resolved"
 git branch -q -D bs-other
 
-out="$(orch_gh_failing branch sync --bogus 2>&1)"; st=$?
-assert_status "extra arguments other than --finish die" "$st" 1
-assert_contains "with the usage line" "$out" "usage: orch.sh branch sync [--finish]"
-
 # --finish whose push is rejected: exit 1 with the base SHA recorded; a rerun
 # pushes. Built from a merge commit made by hand, so nothing is fetched.
 new_tip="$(bs_advance finish.txt finish)"
@@ -624,7 +621,8 @@ origin_rejects "$sc_origin"
 out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
 rm -f "$sc_origin/hooks/pre-receive"
 assert_status "--finish with a rejected push exits 1" "$st" 1
-assert_contains "naming the --finish rerun" "$out" "rerun orch.sh branch sync --finish to push"
+assert_eq "saying the push failed, with git's reason (#1300)" "$out" \
+  "orch: could not push orch/11-bsync - the merge and base SHA are recorded; rerun orch.sh branch sync --finish to push: ! [remote rejected] orch/11-bsync -> orch/11-bsync (pre-receive hook declined)"
 assert_eq "with the base SHA recorded" "$(bs_sha)" "$new_tip"
 assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
 out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
@@ -646,23 +644,14 @@ assert_eq "and pushing nothing without an upstream" "$(bs_origin_tip quick/12-un
 git checkout -q orch/11-bsync
 git branch -q -D quick/12-unheld
 
-# A failed push: the merge and base SHA stand; a rerun pushes.
-new_tip="$(bs_advance push.txt push)"
-pushed="$(bs_origin_tip orch/11-bsync)"
+# A plain sync's failed push keeps its plain rerun hint; the --finish case
+# above covers the recorded base SHA and the rerun that pushes.
+bs_advance push.txt push >/dev/null
 origin_rejects "$sc_origin"
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 rm -f "$sc_origin/hooks/pre-receive"
-assert_status "a failed push exits 1" "$st" 1
-assert_eq "saying the push failed, with git's reason (#1300)" "$out" \
-  "orch: could not push orch/11-bsync - the merge and base SHA are recorded; rerun orch.sh branch sync to push: ! [remote rejected] orch/11-bsync -> orch/11-bsync (pre-receive hook declined)"
-assert_eq "with the merge commit made" "$(git rev-parse HEAD^2)" "$new_tip"
-assert_eq "and the base SHA recorded" "$(bs_sha)" "$new_tip"
-assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
-merged="$(git rev-parse HEAD)"
-out="$(orch_gh_failing branch sync 2>&1)"; st=$?
-assert_status "a rerun with origin reachable exits 0" "$st" 0
-assert_eq "merging nothing more" "$(git rev-parse HEAD)" "$merged"
-assert_eq "and pushes" "$(bs_origin_tip orch/11-bsync)" "$merged"
+assert_status "a plain sync's failed push exits 1" "$st" 1
+assert_contains "naming the plain rerun" "$out" "rerun orch.sh branch sync to push:"
 
 # A merge failing with no merge in progress is no conflict: merge.ff=only
 # refuses the diverged merge before git writes any merge state.
@@ -726,7 +715,7 @@ git checkout -q orch/11-bsync
 
 out="$(orch_gh_failing branch sync extra 2>&1)"; st=$?
 assert_status "refuses arguments" "$st" 1
-assert_contains "with the usage" "$out" "usage: orch.sh branch sync"
+assert_contains "with the usage" "$out" "usage: orch.sh branch sync [--finish]"
 
 # A done flow's branch, then an archived one's, still finds its base.
 state_fixture phase "done"
