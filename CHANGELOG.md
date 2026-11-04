@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.46.4
+
+`finding-triage bundle --into` now says "no member was touched" when gh cannot read the bundle itself, and a member whose comments do not parse in the close loop is reported with that cause.
+
 ## 4.46.3
 
 Rename the shared `@@` body-line escape hint constant to `AT_LINE_ESCAPE_HINT`; the hint text and error messages are unchanged.
