@@ -682,10 +682,10 @@ flags "the scan flags orch.sh resolved without the Junie step" \
 documented_orch_form() {
   local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
     "$orch_fallback two directories above this skill's own directory.")
-  local step skip
+  local step omit
   printf '%s\n' '```' "$orch_line" '```'
   for step in "${steps[@]}"; do
-    for skip in "$@"; do [ "$step" = "$skip" ] && continue 2; done
+    for omit in "$@"; do [ "$step" = "$omit" ] && continue 2; done
     printf '%s\n' "$step"
   done
 }
