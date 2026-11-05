@@ -47,20 +47,15 @@ state_get_in() {
 }
 
 # state_read <file> <key>: the unguarded read both readers share - the Flow
-# state module's reader, then, on failure, state_get_failed's lookup.
+# state module's reader. The key is looked up only on a failed read, to pick the
+# message: a key outside the table dies, and any other failure returns the
+# read's own status (jq's), never a lookup's.
 state_read() {
   local rc
   flow_state_get "$1" "$2" && return
   rc=$?
-  state_get_failed "$2" "$rc"
-}
-
-# state_get_failed <key> <status>: what a failed read of <key> returns. The key
-# is looked up only now, to pick the message: a key outside the table dies, and
-# any other failure returns <status>, the read's own (jq's), never a lookup's.
-state_get_failed() {
-  flow_state_key_field "$1" default >/dev/null || die "unknown state key: $1"
-  return "$2"
+  flow_state_key_field "$2" default >/dev/null || die "unknown state key: $2"
+  return "$rc"
 }
 
 # The unrestricted writer behind every internal state change, over
