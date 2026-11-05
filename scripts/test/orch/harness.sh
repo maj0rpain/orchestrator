@@ -31,7 +31,7 @@ slot_hold() {
   mkfifo "$fifo" || return 1
   bash -c 'exec 8>"$2" && exec 9>>"$1" && flock 9 && echo ready >&8 && exec 8>&- && exec sleep 60' _ "$1/slot.$2" "$fifo" &
   SLOT_HOLDER=$!
-  line="$(fifo_bounded 10 "slot_hold ($fifo)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$fifo")"
+  line="$(fifo_read_line 10 "slot_hold ($fifo)" "$fifo")"
   [ "$line" = ready ] || { rm -f "$fifo"; return 1; }
   rm -f "$fifo"
 }
@@ -720,7 +720,7 @@ if [ -r "/proc/$$/stat" ]; then
     fdir="$(mktemp -d)"; mkfifo "$fdir/trap"
     bash -c "trap \"\" TERM; echo ready >\"$fdir/trap\"; while :; do sleep 1; done # $mark" &
     pid=$!
-    if msg="$(fifo_bounded 5 "KILL check ($fdir/trap)" sh -c "IFS= read -r l <\"\$0\"; printf \"%s\\n\" \"\$l\"" "$fdir/trap" 2>&1 >/dev/null)"; then
+    if msg="$(fifo_read_line 5 "KILL check ($fdir/trap)" "$fdir/trap" 2>&1 >/dev/null)"; then
       echo "before=$(marked)"
       kill -TERM "$pid"; sleep 0.3
       kill -0 "$pid" 2>/dev/null && echo "alive=yes" || echo "alive=no"

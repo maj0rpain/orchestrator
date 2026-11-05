@@ -132,7 +132,7 @@ handshake_overlap_check() {
   shift
   "$ORCH" suite-cost check -- "$@" >"$dir/out" 2>"$dir/err" &
   pid=$!
-  fifo_bounded 60 "overlap check ($dir/one)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$dir/one" >/dev/null
+  fifo_read_line 60 "overlap check ($dir/one)" "$dir/one" >/dev/null
   bounded_run_replayed "$dir/err-writer" 60 "overlap check ($dir/two)" sh -c 'printf "x\n" >"$0"' "$dir/two"
   wait "$pid"; st=$?
 }
@@ -1139,20 +1139,25 @@ restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU
 # its FIFO, instead of hanging the run.
 hs="$(handshake_fifos)"
 SECONDS=0
-err="$(fifo_bounded 1 "side X ($hs/one)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$hs/one" 2>&1 >/dev/null)"; st=$?
-assert_status "fifo_bounded: a partnerless FIFO read returns 124" "$st" 124
+err="$(fifo_read_line 1 "side X ($hs/one)" "$hs/one" 2>&1 >/dev/null)"; st=$?
+assert_status "fifo_read_line: a partnerless FIFO read returns 124" "$st" 124
 assert_eq "and gives up within a few seconds" "$([ "$SECONDS" -le 5 ] && echo yes)" "yes"
 assert_eq "and names the side and the FIFO" "$err" "side X ($hs/one): no partner within 1s"
+
+err="$(fifo_bounded 1 "side W" sleep 5 2>&1)"; st=$?
+assert_status "fifo_bounded: a command outlasting the bound returns 124" "$st" 124
+assert_eq "and names the side" "$err" "side W: no partner within 1s"
 
 err="$(fifo_bounded 5 "side Y" sh -c 'exit 3' 2>&1)"; st=$?
 assert_status "fifo_bounded: another status passes through" "$st" 3
 assert_eq "and prints no message" "$err" ""
 
 ( printf x >"$hs/one" ) &
-out="$(fifo_bounded 5 "side Z" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$hs/one")"; st=$?
+out="$(fifo_read_line 5 "side Z" "$hs/one"; echo "END$?")"
 wait
-assert_status "fifo_bounded: a read of a last line with no newline succeeds" "$st" 0
-assert_eq "and yields the line" "$out" "x"
+assert_eq "fifo_read_line: a read of a last line with no newline succeeds" "${out##*END}" 0
+assert_eq "and yields the line plus one newline" "${out%END*}" "x
+"
 
 new_repo >/dev/null
 rec_path

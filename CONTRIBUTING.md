@@ -202,7 +202,8 @@ setup (`scripts/test/orch/setup.sh`), the gh adapter fake
 (`scripts/test/gh_adapter_fake.sh`) and the assertion tally
 (`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
 `( ... )` subshell, and `tally_summary`, the ending each standalone suite
-calls) and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`)
+calls) and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`,
+`fifo_read_line` for a read)
 instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index

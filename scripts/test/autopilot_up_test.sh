@@ -173,7 +173,7 @@ mkfifo "$root/contract.fifo"
 (cd "$contract" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_run_begin 41 && : >"$(liveness_log_path 41 review)" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/contract.fifo") >"$root/contract.out" 2>&1 &
 contract_pid=$!
 contract_line=""
-contract_line="$(fifo_bounded 60 "contract read ($root/contract.fifo)" sh -c 'IFS= read -r l <"$0"; printf "%s\n" "$l"' "$root/contract.fifo")"
+contract_line="$(fifo_read_line 60 "contract read ($root/contract.fifo)" "$root/contract.fifo")"
 assert_eq "probe contract: the setup reached ready" "$contract_line" "ready"
 probed="$(ORCH_CLONE_DIR="$contract" sh -c "$probe_text")"
 kill "$contract_pid" 2>/dev/null
