@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.48.1
+
+Internal cleanup: `state_get_failed` is inlined into its one caller, `state_read`; behaviour is unchanged.
+
 ## 4.48.0
 
 The orchestrator now closes an issue GitHub failed to auto-close after its PR merged into the default branch with `Closes #<issue>`. The autopilot watcher checks open `orch:done` issues on every tick, and `side-checkout prune` (`/orchestrator:finish`) checks each finished checkout's issue. Each closes the issue as completed, with a comment naming the PR, once the merge is at least 5 minutes old. Prune warns about an issue still open inside that grace period.
