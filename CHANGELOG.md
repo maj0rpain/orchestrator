@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.48.2
+
+`orch.sh pr comments` and the issue trusted read now report a comment object that does not parse as "could not read the comments of ...: its comments did not parse", and `pr comments` reads through the shared `comments_rendered`, which with `comments_trusted` gains a leading `--exit 2` option.
+
 ## 4.48.1
 
 Internal cleanup: `state_get_failed` is inlined into its one caller, `state_read`; behaviour is unchanged.
