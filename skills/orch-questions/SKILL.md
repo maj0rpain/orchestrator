@@ -1,6 +1,6 @@
 ---
 name: orch-questions
-description: Gather the current repo's pending autopilot questions (open needs-human issues whose newest question comment no comment follows), form a second recommendation for each in a fresh parallel subagent, put them to the human one batch per issue, oldest first, post each confirmed reply with orch.sh autopilot reply, then offer orch.sh autopilot resume on refusal and failure stops and on issues already replied to. Use when the human asks for the pending autopilot questions or runs /orchestrator:questions.
+description: Gather the current repo's pending autopilot questions (open needs-human issues whose newest question comment no reply follows - a re-entry comment is no reply), form a second recommendation for each in a fresh parallel subagent, put them to the human one batch per issue, oldest first, post each confirmed reply with orch.sh autopilot reply, then offer orch.sh autopilot resume on refusal and failure stops and on issues already replied to. Use when the human asks for the pending autopilot questions or runs /orchestrator:questions.
 ---
 
 # Orchestrator questions

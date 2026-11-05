@@ -228,10 +228,10 @@ renamer. An autopilot flow runs only on a trusted issue.
 
 **Issue timeline**:
 An autopilot flow's issue's comment history, read once and asked in domain
-terms: its newest question comment and whether a trusted comment follows it, its
-latest stop, its limit stops in a row for a phase, its re-entry comments in a
-row for a phase, and its live handoffs. Only the timeline and the Marked comment
-module know how a comment's kind is marked.
+terms: its newest question comment and whether a trusted comment other than a
+re-entry comment follows it, its latest stop, its limit stops in a row for a
+phase, its re-entry comments in a row for a phase, and its live handoffs. Only
+the timeline and the Marked comment module know how a comment's kind is marked.
 _Avoid_: comment log.
 
 **Question comment**:
@@ -239,8 +239,8 @@ The issue comment tagged `<!-- orch:question <phase> -->` that asks the human an
 autopilot phase's numbered questions.
 
 **Pending question**:
-An autopilot flow's newest question comment that no
-trusted comment follows yet, on an open issue labelled `needs-human`.
+An autopilot flow's newest question comment that no trusted comment other than a
+re-entry comment follows yet, on an open issue labelled `needs-human`.
 `/orchestrator:questions` puts each one to the human with its own recommendation
 and posts the reply.
 

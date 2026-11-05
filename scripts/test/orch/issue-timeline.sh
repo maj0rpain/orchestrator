@@ -88,6 +88,21 @@ one
 two]" "$Q_SPEC" $'one\n' "two"
 tl_case_exact "no reply: nothing" 'timeline_answers spec' "[]" "$Q_SPEC"
 
+# a re-entry comment is never a reply
+RE_SPEC="$(marker_of reentry spec)
+re-entering"
+RE_IMPL="$(marker_of reentry implement)
+re-entering"
+tl_case "a question followed only by a re-entry comment is not replied" 'timeline_replied spec' "rc=1" "$Q_SPEC" "$RE_SPEC"
+tl_case_exact "a question followed only by re-entry comments has no answers" 'timeline_answers spec; echo "rc=$?"' "[rc=0
+]" "$Q_SPEC" "$RE_SPEC" "$RE_SPEC"
+tl_case "a reply after a re-entry comment is replied" 'timeline_replied spec' "rc=0" "$Q_SPEC" "$RE_SPEC" "the answer"
+tl_case_exact "a reply after a re-entry comment is the only answer" 'timeline_answers spec' "[
+---
+the answer]" "$Q_SPEC" "$RE_SPEC" "the answer"
+tl_case "a limit stop after the question still counts as a reply" 'timeline_replied spec' "rc=0" "$Q_SPEC" "$LIM_SPEC"
+tl_case "a re-entry comment of another phase is skipped too" 'timeline_replied spec' "rc=1" "$Q_SPEC" "$RE_IMPL"
+
 # the latest stop
 tl_case "no stop: none" "timeline_stop$TL_STOP" "~~~|rc=1" "intro"
 tl_case "a failure comment is a stop" "timeline_stop$TL_STOP" "0~failure~spec~$U-1|rc=0" "$STOP_F" "note"

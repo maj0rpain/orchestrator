@@ -79,7 +79,7 @@ runs headless and asks the human nothing directly. First, when
 `iteration` is not 0 - the previous loop ended in a bounded stop of any kind -
 read the human's reply before anything else:
 `bash "$ORCH" autopilot answer review <file>` (a `mktemp` file). It exits 1
-when no comment follows the question, and after an automatic re-entry (a
+when no reply follows the question, and after an automatic re-entry (a
 re-entry comment is never a reply). After a stop for a spec question, re-post
 the same question then with
 `bash "$ORCH" autopilot ask review .orchestrator/review/question.md` (the

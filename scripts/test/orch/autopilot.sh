@@ -322,8 +322,9 @@ fake_comment 80 o 2026-01-01T00:00:00Z "$(marker_of question review)
 q"
 fake_comment 80 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
 r"
-"$ORCH" autopilot answer review "$ans" >/dev/null 2>&1; st=$?
+out="$("$ORCH" autopilot answer review "$ans" 2>&1)"; st=$?
 assert_status "answer after a re-entry newer than the question exits 1" "$st" 1
+assert_contains "saying it re-entered automatically, with no reply" "$out" "re-entered automatically"
 assert_eq "writing nothing" "$(cat "$ans")" keep
 re_issue 81
 fake_comment 81 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
@@ -339,6 +340,15 @@ q"
 fake_comment 82 o 2026-01-03T00:00:00Z "1: A"
 "$ORCH" autopilot answer review "$ans" >/dev/null 2>&1; st=$?
 assert_status "a question newer than the re-entry is answered as ever" "$st" 0
+re_issue 84
+fake_comment 84 o 2026-01-01T00:00:00Z "$(marker_of question review)
+q"
+fake_comment 84 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
+r"
+fake_comment 84 o 2026-01-03T00:00:00Z "1: A"
+out="$("$ORCH" autopilot answer review "$ans" 2>&1)"; st=$?
+assert_status "answer after a question, a re-entry comment, then a reply exits 1" "$st" 1
+assert_contains "saying it re-entered automatically" "$out" "re-entered automatically"
 # questions lists no re-entered issue
 fake_issue 83 open orch:review
 fake_comment 83 o 2026-01-01T00:00:00Z "$(marker_of reentry review)
@@ -1330,6 +1340,16 @@ out="$("$ORCH" autopilot reply 44 "$r" 2>&1)"; st=$?
 assert_status "reply after a comment followed the question is refused" "$st" 1
 assert_eq "posting nothing" "$(fake_comments_of 44 | grep -c 'Yes, keep')" "0"
 assert_eq "and keeping the label" "$(fake_labels_of 44)" "needs-human orch:spec "
+# a re-entry comment is no reply
+fake_issue 940 open needs-human orch:spec
+fake_comment 940 o 2026-01-01T00:00:00Z "$(question_of spec)"
+fake_comment 940 o 2026-01-02T00:00:00Z "$(marker_of reentry spec)
+re-entering"
+assert_contains "questions lists a question only a re-entry comment follows as a question" "$("$ORCH" autopilot questions 2>&1)" "940"$'\t'"question"
+"$ORCH" autopilot reply 940 "$r" >/dev/null 2>&1; st=$?
+assert_status "reply posts when only a re-entry comment follows the question" "$st" 0
+assert_eq "posting the file as a comment" "$(fake_comments_of 940 | tail -1)" "1: Yes, keep it"
+assert_eq "and removing needs-human" "$(fake_labels_of 940)" "orch:spec "
 fake_issue 45 open needs-human orch:spec
 out="$("$ORCH" autopilot reply 45 "$r" 2>&1)"; st=$?
 assert_status "reply with no question comment is refused" "$st" 1

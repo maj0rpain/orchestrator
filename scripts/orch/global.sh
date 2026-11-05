@@ -188,7 +188,8 @@ orch.sh - deterministic operations for the orchestrator flow
   autopilot reply <issue> <file>
                               post <file> as a comment, then remove
                               needs-human; refused unless the label is still
-                              on and no comment follows the newest question
+                              on and no reply follows the newest question (a
+                              re-entry comment is no reply)
   autopilot resume <issue>    remove needs-human from the issue, nothing else
   agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]
                               set a role's agent setting in local config,

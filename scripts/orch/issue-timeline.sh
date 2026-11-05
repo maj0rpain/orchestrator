@@ -9,11 +9,14 @@
 # TIMELINE_HANDOFF_INDEX), return 0 when they find it and 1 when they do not,
 # and clear their results first, so a miss leaves them empty. Call them
 # directly, never inside $(...), whose assignments do not reach the caller.
-# timeline_replied answers by its return code alone. Of the printing queries,
-# one that finds nothing prints nothing and returns 1, bar four:
-# timeline_limit_count and timeline_reentry_count always print a number and
-# return 0, timeline_answers
-# prints nothing and returns 0 when no comment follows the question, and
+# timeline_reply_indexes reports the same way, through TIMELINE_REPLIES, and
+# returns 1 only when there is no question. timeline_replied answers by its
+# return code alone. A reply is any comment after the newest question comment
+# but a re-entry comment (kind reentry): timeline_replied and timeline_answers
+# read only replies. Of the printing queries, one that finds nothing prints
+# nothing and returns 1, bar four: timeline_limit_count and
+# timeline_reentry_count always print a number and return 0, timeline_answers
+# prints nothing and returns 0 when no reply follows the question, and
 # timeline_body always prints the indexed comment's body (possibly empty) and
 # returns 0. Only the read can fail, and the two helpers documented beside it,
 # timeline_die and timeline_read_or_die, are the module's only dying ones. The
@@ -27,7 +30,8 @@
 # limit stop is not), the legacy prose-opened ones included, which the Marked
 # comment module already reads as those kinds.
 #
-# The queries: timeline_question, timeline_replied, timeline_answers,
+# The queries: timeline_question, timeline_reply_indexes, timeline_replied,
+# timeline_answers,
 # timeline_stop, timeline_limit_count, timeline_reentry_count,
 # timeline_reentered, timeline_handoff and timeline_body.
 
@@ -40,9 +44,10 @@ TIMELINE_KIND=()
 TIMELINE_ARG=()
 TIMELINE_RETIRED=()
 TIMELINE_URL=()
-# The named results of timeline_question, timeline_stop and timeline_handoff;
-# empty when the query found nothing.
+# The named results of timeline_question, timeline_reply_indexes,
+# timeline_stop and timeline_handoff; empty when the query found nothing.
 TIMELINE_Q_INDEX="" TIMELINE_Q_PHASE="" TIMELINE_Q_URL=""
+TIMELINE_REPLIES=()
 TIMELINE_STOP_INDEX="" TIMELINE_STOP_KIND="" TIMELINE_STOP_PHASE="" TIMELINE_STOP_URL=""
 TIMELINE_HANDOFF_INDEX=""
 
@@ -56,7 +61,7 @@ timeline_read() {
   TIMELINE_JSON='[]' TIMELINE_REASON=""
   TIMELINE_Q_INDEX="" TIMELINE_Q_PHASE="" TIMELINE_Q_URL=""
   TIMELINE_STOP_INDEX="" TIMELINE_STOP_KIND="" TIMELINE_STOP_PHASE="" TIMELINE_STOP_URL=""
-  TIMELINE_HANDOFF_INDEX=""
+  TIMELINE_HANDOFF_INDEX="" TIMELINE_REPLIES=()
   TIMELINE_KIND=() TIMELINE_ARG=() TIMELINE_RETIRED=() TIMELINE_URL=()
   if ! capture json gh_err adapter_issue_comments_json "$1"; then
     TIMELINE_REASON="$(gh_reason "$gh_err")"
@@ -114,21 +119,36 @@ timeline_question() {
   return 1
 }
 
-# timeline_replied [<phase>]: succeeds when a comment follows the newest
-# question comment timeline_question finds; fails when none does or there is
-# no question.
-timeline_replied() {
+# timeline_reply_indexes [<phase>]: the one definition of a reply. Sets
+# TIMELINE_REPLIES to the indexes of the replies to the newest question comment
+# timeline_question finds - every comment after it but a re-entry comment - and
+# returns 0, the array empty when none follows. Returns 1, the array empty,
+# when there is no question. Prints nothing.
+timeline_reply_indexes() {
+  local i
+  TIMELINE_REPLIES=()
   timeline_question "$@" || return 1
-  [ "$TIMELINE_Q_INDEX" -lt $((${#TIMELINE_KIND[@]} - 1)) ]
+  for ((i = TIMELINE_Q_INDEX + 1; i < ${#TIMELINE_KIND[@]}; i++)); do
+    [ "${TIMELINE_KIND[i]}" = reentry ] || TIMELINE_REPLIES+=("$i")
+  done
 }
 
-# timeline_answers [<phase>]: the bodies of the comments after the newest
-# question comment, each after a `---` line, exactly, trailing newlines kept
-# (read it with a sentinel). Prints nothing when none follows; returns 1 only
-# when there is no question.
+# timeline_replied [<phase>]: succeeds when a reply - any comment but a
+# re-entry comment - follows the newest question comment timeline_question
+# finds; fails when none does or there is no question.
+timeline_replied() {
+  timeline_reply_indexes "$@" || return 1
+  [ "${#TIMELINE_REPLIES[@]}" -gt 0 ]
+}
+
+# timeline_answers [<phase>]: the bodies of the replies to the newest question
+# comment - re-entry comments left out - each after a `---` line, exactly,
+# trailing newlines kept (read it with a sentinel). Prints nothing when no
+# reply follows; returns 1 only when there is no question.
 timeline_answers() {
-  timeline_question "$@" || return 1
-  jq -j --argjson i "$TIMELINE_Q_INDEX" '.[$i + 1:] | map("\n---\n" + (.body // "")) | join("")' <<<"$TIMELINE_JSON"
+  timeline_reply_indexes "$@" || return 1
+  jq -j --argjson keep "[$(IFS=,; printf '%s' "${TIMELINE_REPLIES[*]}")]" \
+    '. as $all | [$all[$keep[]]] | map("\n---\n" + (.body // "")) | join("")' <<<"$TIMELINE_JSON"
 }
 
 # timeline_stop: the latest stop - the newest refusal or failure comment:
