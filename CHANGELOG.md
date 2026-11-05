@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.48.3
+
+A re-entry comment is no longer taken for a reply: `autopilot questions` lists a question that only a re-entry comment follows as pending, and `autopilot reply` posts the human's reply to it.
+
 ## 4.48.2
 
 `orch.sh pr comments` and the issue trusted read now report a comment object that does not parse as "could not read the comments of ...: its comments did not parse", and `pr comments` reads through the shared `comments_rendered`, which with `comments_trusted` gains a leading `--exit 2` option.
