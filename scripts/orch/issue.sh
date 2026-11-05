@@ -131,21 +131,23 @@ comments_render_trusted() {
 # PR <n>'s comments, read by <adapter> (adapter_issue_comments or
 # adapter_pr_comments), kept to the trusted authors' (Trust module) as a JSON
 # array, assigned to <var>; the Trust filter's stderr line names <n>. A gh
-# failure dies as "gh could not <what>" (--hint passed on to gh_or_die); a
-# comment object that does not parse dies as "could not <what>: its comments
-# did not parse", both with status 1, or status 2 under --exit 2 (a caller that
-# reserves exit 1, like pr comments; also passed on to gh_or_die). The options
-# are die_opt_check's and may come in either order. Out-params through
-# `printf -v`, its locals prefixed so no caller's variable name is shadowed.
+# failure dies as "gh could not <what>" (--hint passed on to gh_or_die, never
+# added to the parse failure); a comment object that does not parse dies as
+# "could not <what>: its comments did not parse", both with status 1, or status
+# 2 under --exit 2 (a caller that reserves exit 1, like pr comments; also passed
+# on to gh_or_die). The options are die_opt_check's and may come in either
+# order. Out-params through `printf -v`, its locals prefixed so no caller's
+# variable name is shadowed.
 comments_trusted() {
-  local __ct_opts=() __ct_raw __ct_kept
+  local __ct_opts=() __ct_exit=() __ct_raw __ct_kept
   while [ "${1-}" = --hint ] || [ "${1-}" = --exit ]; do
     die_opt_check comments_trusted $# "$@"
+    [ "$1" != --exit ] || __ct_exit=(--exit 2)
     __ct_opts+=("$1" "$2"); shift 2
   done
   gh_or_die ${__ct_opts[@]+"${__ct_opts[@]}"} --out __ct_raw "$2" "$1" "$3"
   __ct_kept="$(comments_trust_filter "$3" <<<"$__ct_raw")" \
-    || die_hinted ${__ct_opts[@]+"${__ct_opts[@]}"} "could not $2: its comments did not parse"
+    || die_hinted ${__ct_exit[@]+"${__ct_exit[@]}"} "could not $2: its comments did not parse"
   printf -v "$4" '%s' "$__ct_kept"
 }
 
@@ -154,8 +156,14 @@ comments_trusted() {
 # comments_render_trusted renders them, assigned to <var>; no placeholder for a
 # dropped comment. Its failures, --exit and --hint are comments_trusted's.
 comments_rendered() {
-  local __cr_kept __cr_out __cr_exit=()
-  case " $* " in *" --exit 2 "*) __cr_exit=(--exit 2) ;; esac
+  local __cr_kept __cr_out __cr_exit=() __cr_i
+  for ((__cr_i = 1; __cr_i < $#; __cr_i += 2)); do
+    case "${!__cr_i}" in
+      --exit) __cr_exit=(--exit 2) ;;
+      --hint) ;;
+      *) break ;;
+    esac
+  done
   comments_trusted "${@:1:$#-1}" __cr_kept
   __cr_out="$(comments_render <<<"$__cr_kept")" \
     || die_hinted ${__cr_exit[@]+"${__cr_exit[@]}"} "could not ${*: -3:1}: its comments did not parse"
