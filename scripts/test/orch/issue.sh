@@ -831,7 +831,7 @@ fake_unfail
 printf 'old contents\n' >"$issue_json"
 out="$(adapter_stood_in 'adapter_issue_json() { printf "not json\n"; }' "$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "a comment object that does not parse fails fetch --json" "$st" 1
-assert_eq "naming the issue, with no jq error before it" "$out" "orch: could not read the comments of issue #27"
+assert_eq "naming the issue and its cause, with no jq error before it" "$out" "orch: could not read the comments of issue #27: its comments did not parse"
 assert_eq "and leaves the file that was already there byte-identical" \
   "$(od -c "$issue_json")" "$(printf 'old contents\n' | od -c)"
 rm -f "$issue_json"
@@ -1074,6 +1074,12 @@ printf 'known content\n' >"$issue_comments"
 assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_json "$GH_502" 1 \
   "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
   "$ORCH" issue comments 24 "$issue_comments"
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
+
+out="$(adapter_stood_in 'adapter_issue_json() { printf "not json\n"; }' "$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
+assert_status "a comment object that does not parse fails the comments fetch" "$st" 1
+assert_eq "naming the issue and its cause" "$out" "orch: could not read the comments of issue #24: its comments did not parse"
 assert_eq "and leaves the file that was already there byte-identical" \
   "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
 

@@ -1275,7 +1275,7 @@ assert_gh_dies "comments that fail silently exit 2 too" adapter_pr_comments '' 2
 
 err="$(adapter_stood_in 'adapter_pr_comments() { printf "not json\n"; }' prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
 assert_status "a comment object that does not parse exits 2" "$st" 2
-assert_contains "naming the PR" "$err" "orch: could not read the comments of PR #57"
+assert_eq "naming the PR and its cause" "$err" "orch: could not read the comments of PR #57: its comments did not parse"
 assert_eq "leaving the file that was already there unchanged too" "$(cat "$pr_comments")" "known content"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 

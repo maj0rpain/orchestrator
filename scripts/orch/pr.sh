@@ -497,10 +497,8 @@ cmd_pr_comments() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comments <file>"
   local file="$1" pr
   pr="$(current_open_pr)" || return $?
-  local text raw
-  gh_or_die --out raw --exit 2 "read the comments of PR #$pr" adapter_pr_comments "$pr"
-  text="$(comments_render_trusted "$pr" <<<"$raw")" \
-    || die2 "could not read the comments of PR #$pr"
+  local text
+  comments_rendered --exit 2 adapter_pr_comments "read the comments of PR #$pr" "$pr" text
   file_write_atomic "$file" "${text:+$text$'\n'}" || die2 "could not write $file"
 }
 
