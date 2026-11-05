@@ -240,7 +240,7 @@ autopilot_sync_fail() {
 
 # autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
 # marker stripped, and every comment after it to <file>, each later one after a
-# `---` line. Exits 1, writing nothing, when no comment follows the question, or
+# `---` line. Exits 1, writing nothing, when no reply follows the question, or
 # the phase was re-entered automatically (a re-entry comment newer than its
 # newest question, or one and no question) - the caller re-asks, or carries on
 # - and 2 on any other failure, so a failed read is never taken for no reply.
@@ -295,8 +295,8 @@ autopilot_sync() {
 }
 
 # autopilot_reply <issue> <file>: posts <file> as a comment on the issue, then
-# removes needs-human - refused unless the label is still on and no comment
-# follows the issue's newest question comment.
+# removes needs-human - refused unless the label is still on and no reply - any
+# comment but a re-entry comment - follows the issue's newest question comment.
 autopilot_reply() {
   local issue="$1" file="$2"
   is_positive_int "$issue" || die "not an issue number: $issue"
@@ -305,7 +305,7 @@ autopilot_reply() {
   standing_human_guard "$issue"
   timeline_read_or_die "$issue"
   timeline_question || die "issue #$issue has no question comment to reply to"
-  ! timeline_replied || die "a comment already follows the newest question on issue #$issue"
+  ! timeline_replied || die "a reply already follows the newest question on issue #$issue"
   gh_or_die "post the reply on issue #$issue" adapter_issue_comment "$issue" "$file"
   standing_resume "$issue" || die "the reply comment landed on issue #$issue, but $STANDING_HUMAN_LABEL could not be removed: $STANDING_REASON"
 }

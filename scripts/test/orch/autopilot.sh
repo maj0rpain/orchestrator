@@ -322,8 +322,9 @@ fake_comment 80 o 2026-01-01T00:00:00Z "$(marker_of question review)
 q"
 fake_comment 80 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
 r"
-"$ORCH" autopilot answer review "$ans" >/dev/null 2>&1; st=$?
+out="$("$ORCH" autopilot answer review "$ans" 2>&1)"; st=$?
 assert_status "answer after a re-entry newer than the question exits 1" "$st" 1
+assert_contains "saying it re-entered automatically, with no reply" "$out" "re-entered automatically"
 assert_eq "writing nothing" "$(cat "$ans")" keep
 re_issue 81
 fake_comment 81 o 2026-01-02T00:00:00Z "$(marker_of reentry review)
