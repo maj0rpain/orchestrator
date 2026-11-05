@@ -9,7 +9,9 @@
 # TIMELINE_HANDOFF_INDEX), return 0 when they find it and 1 when they do not,
 # and clear their results first, so a miss leaves them empty. Call them
 # directly, never inside $(...), whose assignments do not reach the caller.
-# timeline_replied answers by its return code alone. Of the printing queries,
+# timeline_replied answers by its return code alone. A re-entry comment (kind
+# reentry) is never a reply: timeline_replied and timeline_answers skip it.
+# Of the printing queries,
 # one that finds nothing prints nothing and returns 1, bar four:
 # timeline_limit_count and timeline_reentry_count always print a number and
 # return 0, timeline_answers
@@ -114,21 +116,31 @@ timeline_question() {
   return 1
 }
 
-# timeline_replied [<phase>]: succeeds when a comment follows the newest
-# question comment timeline_question finds; fails when none does or there is
-# no question.
+# timeline_replied [<phase>]: succeeds when a comment other than a re-entry
+# comment follows the newest question comment timeline_question finds; fails
+# when none does or there is no question. Re-entry comments are skipped.
 timeline_replied() {
+  local i
   timeline_question "$@" || return 1
-  [ "$TIMELINE_Q_INDEX" -lt $((${#TIMELINE_KIND[@]} - 1)) ]
+  for ((i = TIMELINE_Q_INDEX + 1; i < ${#TIMELINE_KIND[@]}; i++)); do
+    [ "${TIMELINE_KIND[i]}" = reentry ] || return 0
+  done
+  return 1
 }
 
 # timeline_answers [<phase>]: the bodies of the comments after the newest
-# question comment, each after a `---` line, exactly, trailing newlines kept
-# (read it with a sentinel). Prints nothing when none follows; returns 1 only
-# when there is no question.
+# question comment, re-entry comments skipped, each after a `---` line, exactly,
+# trailing newlines kept (read it with a sentinel). Prints nothing when none
+# follows; returns 1 only when there is no question.
 timeline_answers() {
+  local i skip=()
   timeline_question "$@" || return 1
-  jq -j --argjson i "$TIMELINE_Q_INDEX" '.[$i + 1:] | map("\n---\n" + (.body // "")) | join("")' <<<"$TIMELINE_JSON"
+  for ((i = TIMELINE_Q_INDEX + 1; i < ${#TIMELINE_KIND[@]}; i++)); do
+    [ "${TIMELINE_KIND[i]}" != reentry ] || skip+=("$i")
+  done
+  jq -j --argjson i "$TIMELINE_Q_INDEX" --argjson skip "$(printf '%s\n' "${skip[@]}" | jq -sc 'map(select(. != null))')" \
+    '. as $all | [range($i + 1; length) | select(. as $k | $skip | index($k) | not) | $all[.]]
+     | map("\n---\n" + (.body // "")) | join("")' <<<"$TIMELINE_JSON"
 }
 
 # timeline_stop: the latest stop - the newest refusal or failure comment:
