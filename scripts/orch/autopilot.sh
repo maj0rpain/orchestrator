@@ -787,6 +787,32 @@ autopilot_sync_detect() {
   done <<<"$out"
 }
 
+# autopilot_close_missed: the merged-PR backstop (#2478), run every tick
+# whatever the auto-sync setting. When an open orch:done issue exists, reads the
+# PRs merged into the default branch once, and closes - through pr_close_missed
+# - each such issue not carrying orch:running whose newest merged PR from
+# `orch/<issue>-` should have closed it. orch:sync and needs-human do not stop
+# it. A failed read or close warns and skips, never stopping the tick.
+autopilot_close_missed() {
+  local out prs gh_err issue done_label default
+  done_label="$(standing_phase_label "done")"
+  capture out gh_err adapter_issues_labelled "$done_label" || {
+    warn "could not list the issues labelled $done_label: $(gh_reason "$gh_err") - no merged-PR close this tick"
+    return 0
+  }
+  [ -n "$out" ] || return 0
+  pr_merged_closing_read default prs "no merged-PR close this tick" || return 0
+  while IFS= read -r issue; do
+    [ -n "$issue" ] || continue
+    standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - the merged-PR close skips it"; continue; }
+    [ "$STANDING_STATE" = OPEN ] || continue
+    standing_is_done || continue
+    [ "$STANDING_RUNNING" = 0 ] || continue
+    pr_close_newest "$issue" "$default" \
+      "$(printf '%s\n' "$prs" | awk -F'\t' -v p="$(branch_name_flow "$issue" "")" 'index($2, p) == 1')" || true
+  done <<<"$out"
+}
+
 # autopilot_rank <phase word>: the pickup rank of a session's phase word, lowest
 # first: a sync request 0, then the phases in reverse order of the phase table
 # (review 1, implement 2, spec 3), the phase furthest along first. done is no
@@ -805,15 +831,17 @@ autopilot_rank() {
   printf '%s' "$((n + 1))"
 }
 
-# autopilot_tick: one pass - labels, stale claims, the limit-pause check,
+# autopilot_tick: one pass - labels, stale claims, the merged-PR close (which
+# needs no session, so a limit pause never holds it), the limit-pause check,
 # sync detection (when auto-sync is true), then pickup (see the spec's One
-# tick). Every candidate is read before the first claim, the unpickable ones
-# dropped, and the rest taken by rank - sync requests, then the phases furthest
-# along first, oldest issue first within a rank. A phase is claimed while the
-# claim count is below the cap, a sync request while it is below the cap plus
-# the sync slots (half the cap, rounded down); the first phase candidate not
-# claimed for the cap ends the tick. A claim create that fails for a reason
-# other than a lost race stops the tick, naming it.
+# tick). Every candidate is read before the first claim,
+# the unpickable ones dropped, and the rest taken by rank - sync requests,
+# then the phases furthest along first, oldest issue first within a rank. A
+# phase is claimed while the claim count is below the cap, a sync request
+# while it is below the cap plus the sync slots (half the cap, rounded down);
+# the first phase candidate not claimed for the cap ends the tick. A claim
+# create that fails for a reason other than a lost race stops the tick, naming
+# it.
 autopilot_tick() {
   local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
   local ranked="" slots limit limited
@@ -823,6 +851,7 @@ autopilot_tick() {
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale
+  autopilot_close_missed
   if autopilot_pause_until "$main_root"; then return 0; fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect; fi
   standing_claims_read

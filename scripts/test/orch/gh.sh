@@ -635,6 +635,10 @@ gh_reply 0 $'58\torch/9-x\tCONFLICTING\ttrue\n57\torch/8-y\tUNKNOWN\tfalse\n' ''
 out="$(contract adapter_prs_open_mergeability 2>&1)"; st=$?
 assert_status "open PRs with mergeability: lists them" "$st" 0
 assert_eq "newest first, each with head, mergeability and fork flag, unfiltered" "$out" "$(printf '58\torch/9-x\tCONFLICTING\ttrue\n57\torch/8-y\tUNKNOWN\tfalse')"
+gh_reply 0 $'58\torch/9-x\t2026-09-02T11:30:00Z\t9,10\ttrue\n57\torch/8-y\t2026-09-01T10:00:00Z\t\tfalse\n' '' pr list --base main --state merged --limit 1000 --json number,headRefName,mergedAt,closingIssuesReferences,isCrossRepository --jq '.[] | "\(.number)\t\(.headRefName)\t\(.mergedAt)\t\([.closingIssuesReferences[].number] | map(tostring) | join(","))\t\(.isCrossRepository)"'
+out="$(contract adapter_prs_merged_closing main 2>&1)"; st=$?
+assert_status "merged PRs with closing issues: lists them" "$st" 0
+assert_eq "newest first, each with head, merge time, closing issues and fork flag, unfiltered" "$out" "$(printf '58\torch/9-x\t2026-09-02T11:30:00Z\t9,10\ttrue\n57\torch/8-y\t2026-09-01T10:00:00Z\t\tfalse')"
 gh_reply 0 $'diff --git a/w b/w\n+widget\n' '' pr diff 57
 out="$(contract adapter_pr_diff 57 2>&1)"; st=$?
 assert_status "pr diff: reads the diff" "$st" 0

@@ -1304,3 +1304,99 @@ assert_status "prune fails on an unreadable flag" "$st" 1
 assert_contains "with the could-not-read verdict" "$out" "could not check $bf: could not read GitHub"
 assert_eq "the side checkout stays" "$(on_disk "$bf")" "present"
 assert_eq "with its branch" "$(sp_branch quick/43-bf)" "kept"
+
+# --- side-checkout prune: the merged-PR close backstop (#2477) ----------------
+# A finished checkout whose merged PR GitHub left its open issue behind gets the
+# issue closed before the checkout goes: a flow at done through its recorded
+# issue and PR, a flow-less quick branch through its newest merged PR.
+echo
+echo "side-checkout prune merged-PR close"
+sc_clone
+fake_github
+top="$(git rev-parse --show-toplevel)"
+fake_offline
+
+# bf_flow <name> <issue> <pr>: a finished flow side checkout.
+bf_flow() {
+  local p
+  p="$(sc_add "$1")"
+  (cd "$p" && orch_gh_failing init "$1-flow" >/dev/null \
+    && state_fixture phase "done" && state_fixture branch "orch/$1-flow" \
+    && state_fixture pr "$3" && state_fixture issue "$2")
+  sp_branch_off "$p" "orch/$1-flow"
+  fake_pr "$3" merged "orch/$1-flow" main
+  fake_pr_head "$3" "$(git rev-parse "orch/$1-flow")"
+  fake_issue "$2" open orch:done
+}
+# bf_quick <name> <issue> <pr>: a finished flow-less quick side checkout.
+bf_quick() {
+  local p
+  p="$(sc_add "$1")"
+  sp_branch_off "$p" "quick/$2-$1"
+  fake_pr "$3" merged "quick/$2-$1" main
+  fake_pr_head "$3" "$(git rev-parse "quick/$2-$1")"
+  fake_issue "$2" open
+}
+
+bf_flow ff 601 701; fake_pr_merged 701 3600 601
+bf_quick fq 602 702; fake_pr_merged 702 3600 602
+bf_quick fg 603 703; fake_pr_merged 703 60 603
+bf_flow fb 604 704; fake_pr_merged 704 3600 604
+fake_issue 604 closed orch:done
+bf_quick fn 609 709; fake_pr_merged 709 3600 99
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune succeeds over the missed closes" "$st" 0
+assert_eq "a finished flow's open issue is closed" "$(fake_state_of 601)" "CLOSED"
+assert_contains "with a comment naming the recorded PR" "$(fake_comments_of 601)" 'PR #701 merged into `main` with `Closes #601`'
+assert_eq "the flow's checkout is still removed" "$(on_disk "$(dirname "$top")/ff")" "absent"
+assert_eq "a flow-less quick branch's open issue is closed" "$(fake_state_of 602)" "CLOSED"
+assert_contains "with a comment naming its newest merged PR" "$(fake_comments_of 602)" "PR #702 merged"
+assert_eq "an issue whose PR merged a minute ago stays open" "$(fake_state_of 603)" "OPEN"
+assert_contains "with a warning naming the issue and the PR" "$out" "issue #603 is still open: PR #703 merged less than 5 minutes ago"
+assert_eq "the checkout inside the grace period is still removed" "$(sp_branch quick/603-fg)" "gone"
+assert_eq "an already-closed issue gets no close comment" "$(fake_comments_of 604)" ""
+assert_eq "closing references lacking the issue leave it open" "$(fake_state_of 609)" "OPEN"
+
+# A flow-less checkout on a branch that is not quick/<issue>- is skipped.
+fake_offline
+ot="$(sc_add ot)"
+sp_branch_off "$ot" feature/ot
+fake_pr 705 merged feature/ot main
+fake_pr_head 705 "$(git rev-parse feature/ot)"
+fake_pr_merged 705 3600 605
+fake_issue 605 open
+fake_online
+orch_gh_failing side-checkout prune >/dev/null 2>&1
+assert_eq "a flow-less checkout on another branch closes nothing" "$(fake_state_of 605)" "OPEN"
+
+# The main checkout's finished flow, archived in place, gets the backstop.
+orch_gh_failing init bm-flow >/dev/null
+state_fixture phase "done"; state_fixture branch orch/bm-flow; state_fixture pr 706; state_fixture issue 606
+fake_pr 706 merged orch/bm-flow main
+fake_pr_merged 706 3600 606
+fake_issue 606 open orch:done
+orch_gh_failing side-checkout prune >/dev/null 2>&1
+assert_eq "the main checkout's finished flow closes its issue" "$(fake_state_of 606)" "CLOSED"
+
+# A failed close warns and never blocks the removal.
+fake_offline
+bf_quick fc 607 707; fake_pr_merged 707 3600 607
+fake_online
+fake_fail adapter_issue_close "HTTP 500"
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "a failed close does not fail prune" "$st" 0
+assert_eq "the checkout is still removed" "$(sp_branch quick/607-fc)" "gone"
+fake_unfail
+
+# A failed read of the merged PRs warns and never blocks the removal.
+fake_offline
+bf_quick fr 608 708; fake_pr_merged 708 3600 608
+fake_online
+fake_fail adapter_prs_merged_closing "HTTP 502"
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "a failed merged-PR read does not fail prune" "$st" 0
+assert_contains "it warns with gh's reason" "$out" "could not read the merged PRs: HTTP 502"
+assert_eq "the issue stays open" "$(fake_state_of 608)" "OPEN"
+assert_eq "the checkout is still removed" "$(sp_branch quick/608-fr)" "gone"
+fake_unfail

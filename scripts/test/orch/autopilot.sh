@@ -2188,6 +2188,74 @@ out="$("$ORCH" autopilot show 2>&1)"
 assert_contains "a set auto-sync shows with its source" "$out" "orchestrator.autopilot.auto-sync false (local)"
 restore_suite_env
 
+# --- autopilot tick: the merged-PR close backstop (#2478) ---------------------
+# A tick closes an open orch:done issue whose PR merged into the default branch
+# with `Closes #<issue>` at least 5 minutes ago and that GitHub left open.
+echo
+echo "autopilot tick merged-PR close"
+tick_fixture
+git config orchestrator.autopilot.auto-sync false
+fake_merged() { # <issue> <age> [base] [closing-issue]: issue #n at orch:done, its merged PR #(100+n)
+  fake_issue "$1" open orch:done
+  fake_pr "$((100 + $1))" merged "orch/$1-widget" "${3:-main}"
+  fake_pr_merged "$((100 + $1))" "$2" "${4:-$1}"
+}
+fake_merged 50 3600
+fake_merged 51 60
+fake_merged 52 3600 release
+fake_merged 53 3600 main 99
+fake_merged 54 3600; fake_issue 54 closed orch:done
+fake_merged 55 3600; fake_issue_relabel 55 orch:review
+fake_merged 56 3600; fake_issue_relabel 56 orch:done orch:running
+fake_merged 57 3600; fake_issue_relabel 57 orch:done orch:sync needs-human
+fake_merged 58 3600; fake_pr_cross 158
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick over merged PRs succeeds, with auto-sync off" "$st" 0
+assert_eq "an issue whose PR merged an hour ago is closed" "$(fake_state_of 50)" "CLOSED"
+assert_eq "as completed" "$(fake_reason_of 50)" "completed"
+assert_contains "with a comment naming the PR and the default branch" "$(fake_comments_of 50)" 'Closed by the orchestrator: PR #150 merged into `main` with `Closes #50`, but GitHub did not close this issue.'
+assert_eq "its labels are untouched" "$(fake_labels_of 50)" "orch:done "
+assert_eq "a merge under 5 minutes ago is left open" "$(fake_state_of 51)" "OPEN"
+assert_eq "a PR merged into another base is left open" "$(fake_state_of 52)" "OPEN"
+assert_eq "closing references lacking the issue leave it open" "$(fake_state_of 53)" "OPEN"
+assert_eq "an issue not at orch:done is left open" "$(fake_state_of 55)" "OPEN"
+assert_eq "an issue carrying orch:running is left open" "$(fake_state_of 56)" "OPEN"
+assert_eq "orch:sync and needs-human do not stop the close" "$(fake_state_of 57)" "CLOSED"
+assert_eq "a fork PR is not the issue's PR" "$(fake_state_of 58)" "OPEN"
+assert_eq "an already closed issue gets no comment" "$(fake_comments_of 54)" ""
+
+# a failed read warns and does not stop the tick
+fake_merged 50 3600
+fake_fail adapter_prs_merged_closing "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing merged-PR read does not stop the tick" "$st" 0
+assert_contains "it warns with gh's reason" "$out" "could not read the merged PRs: HTTP 502"
+assert_eq "and closes nothing" "$(fake_state_of 50)" "OPEN"
+fake_unfail
+
+# a failed close warns and does not stop the tick
+fake_fail adapter_issue_close "HTTP 500"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing close does not stop the tick" "$st" 0
+assert_contains "it warns, naming the issue and the PR" "$out" "could not close issue #50 after PR #150 merged: HTTP 500"
+fake_unfail
+
+# a usage-limit pause stops pickup, never the close
+limit="$(git rev-parse --show-toplevel)/.orchestrator/autopilot/limit"
+mkdir -p "${limit%/*}"; printf '2999-01-01T00:00:00Z\n' >"$limit"
+fake_merged 59 3600
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick under a usage limit still closes the issue" "$(fake_state_of 59)" "CLOSED"
+rm -f "$limit"
+
+# no open orch:done issue: no merged PRs are read
+fake_issue_drop 50 51 52 53 54 55 56 57 58 59
+fake_fail adapter_prs_merged_closing "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"
+assert_not_contains "with no done issue the merged PRs are not read" "$out" "could not read the merged PRs"
+fake_unfail
+restore_suite_env
+
 # --- autopilot sync-finish, sync-dropped and sync-fail -----------------------
 # The three ends of a sync session, each reading the issue from flow state.
 echo

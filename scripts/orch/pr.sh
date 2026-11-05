@@ -4,6 +4,68 @@
 # Its tests: scripts/test/orch/pr.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
+# The grace period, in seconds, after a merge before the backstop closes an
+# issue GitHub left open: GitHub's own close lands within it, so the backstop
+# never races it.
+PR_CLOSE_GRACE=300
+
+# pr_close_missed <issue> <pr> <merged-at> <closing> <default>: the backstop
+# for GitHub's auto-close (#2477). <issue> is open and its work finished - the
+# caller checked both - and PR <pr> merged into <default>, the default branch,
+# at <merged-at> (a UTC timestamp). Closes the issue as completed, with a
+# comment naming the PR and the default branch, when the merge is at least
+# PR_CLOSE_GRACE seconds old and <closing> - its closingIssuesReferences,
+# comma-separated numbers - lists <issue>. Labels are left as they are.
+# Returns 0 when it closed the issue, 1 on a silent skip, 2 when the close
+# failed, after a warning that skips this issue only, 3 when every other
+# condition held but the merge is inside the grace period (the caller may warn).
+pr_close_missed() {
+  local issue="$1" pr="$2" merged_at="$3" closing="$4" default="$5"
+  local merged_epoch gh_err
+  case ",$closing," in *",$issue,"*) ;; *) return 1 ;; esac
+  merged_epoch="$(autopilot_iso_epoch "$merged_at")" || return 1
+  [ $(( $(date -u +%s) - merged_epoch )) -ge "$PR_CLOSE_GRACE" ] || return 3
+  capture_err gh_err adapter_issue_close "$issue" --reason completed \
+    --comment "Closed by the orchestrator: PR #$pr merged into \`$default\` with \`Closes #$issue\`, but GitHub did not close this issue." || {
+    warn "could not close issue #$issue after PR #$pr merged: $(gh_reason "$gh_err")"
+    return 2
+  }
+}
+
+# pr_merged_closing_read <default-var> <prs-var> <skip>: the backstop's one read
+# - the default branch, then the PRs merged into it, fork PRs dropped
+# (trust_filter_prs) - written into the two caller-named variables, the PRs as
+# adapter_prs_merged_closing's lines. Returns 1 after a warning ending in
+# <skip>, the caller's words for what it gives up, when any read fails.
+pr_merged_closing_read() {
+  local _default _raw _prs _err
+  _default="$(default_branch)" || { warn "could not find the default branch - $3"; return 1; }
+  capture _raw _err adapter_prs_merged_closing "$_default" || {
+    warn "could not read the merged PRs: $(gh_reason "$_err") - $3"
+    return 1
+  }
+  _prs="$(printf '%s\n' "$_raw" | trust_filter_prs "the merged PRs")" || {
+    warn "the merged PRs could not be read: a malformed line - $3"
+    return 1
+  }
+  printf -v "$1" '%s' "$_default"
+  printf -v "$2" '%s' "$_prs"
+}
+
+# pr_close_newest <issue> <default> <lines> [<pr-var>]: runs pr_close_missed on
+# the newest merge among <lines> - the caller's pick of pr_merged_closing_read's
+# PRs, the ones that may close <issue> - and returns its status, writing the
+# PR's number into the caller-named <pr-var> when one is given. Returns 1 when
+# <lines> is empty.
+pr_close_newest() {
+  local _line _pr _merged_at _closing
+  _line="$(printf '%s\n' "$3" | awk -F'\t' 'NF && $3 > best { best = $3; line = $0 } END { if (line != "") print line }')"
+  [ -n "$_line" ] || return 1
+  IFS=$'\t' read -r _pr _ _merged_at _closing <<<"$_line"
+  [ -z "${4:-}" ] || printf -v "$4" '%s' "$_pr"
+  pr_close_missed "$1" "$_pr" "$_merged_at" "$_closing" "$2"
+}
+
 # pr_push_and_body <branch> <base> <issue> <body-file> <tmp-var> <outcome>:
 # the one place the push-then-issue-line rule lives, for open_pr and
 # update_pr. Pushes <branch>, then writes <body-file> behind its issue line -
