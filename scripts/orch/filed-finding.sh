@@ -2,8 +2,9 @@
 # filed-finding.sh - the Filed finding module: a concept module with no orch.sh
 # noun of its own, holding what a filed finding is - its severities, each
 # severity's label colour and description, its label rules, and its issue
-# body, rendered from its parts and parsed back - that review file, finding
-# triage and issue triage read. Its tests:
+# body, rendered from its parts and parsed back - the finding categories, and
+# the input checks review file and audit file share, that review file, audit
+# file, finding triage and issue triage read. Its tests:
 # scripts/test/orch/filed-finding.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -30,6 +31,37 @@ readonly FILED_AXIS_TABLE="spec:bug standards:enhancement suite-cost:enhancement
 # loops over them.
 FILED_AXES="$(for entry in $FILED_AXIS_TABLE; do printf '%s ' "${entry%%:*}"; done)"
 readonly FILED_AXES="${FILED_AXES% }"
+
+# The category table: each category a finding is filed under, paired with its
+# label's colour, as <name>:<colour>, in order. A category's description is in
+# filed_category_description. Adding a category is one entry here and one
+# description there.
+readonly FILED_CATEGORY_TABLE="bug:d73a4a enhancement:a2eeef documentation:0075ca"
+
+# The category names alone, in the table's order, for usage lines, messages and
+# loops over them.
+FILED_CATEGORIES="$(for entry in $FILED_CATEGORY_TABLE; do printf '%s ' "${entry%%:*}"; done)"
+readonly FILED_CATEGORIES="${FILED_CATEGORIES% }"
+
+# filed_category_description <category>: the category label's description,
+# GitHub's own default for it. Prints nothing and fails for a category with no
+# entry.
+filed_category_description() {
+  case "$1" in
+    bug)           printf '%s\n' "Something isn't working" ;;
+    enhancement)   printf '%s\n' "New feature or request" ;;
+    documentation) printf '%s\n' "Improvements or additions to documentation" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Whether <category> is in the category table: the one membership check, over
+# FILED_CATEGORIES.
+is_filed_category() {
+  local c
+  for c in $FILED_CATEGORIES; do [ "$1" != "$c" ] || return 0; done
+  return 1
+}
 
 # filed_severity_label <sev> <colour_var> <desc_var>: writes the review:<sev>
 # label's colour, from the severity table, and description into the named
@@ -122,16 +154,19 @@ category_other() {
   esac
 }
 
-# The category label - bug, enhancement or documentation - is the repo's too,
-# like the triage label: created only where missing, never overwritten, with
+# The category label - one per category in the table - is the repo's too, like
+# the triage label: created only where missing, never overwritten, with
 # GitHub's own default colour and description, and a failed create ignored for
-# the same reason.
+# the same reason. Returns 1, creating nothing, for a category not in the table.
 category_label_ensure() {
-  case "$1" in
-    bug)         adapter_label_create bug d73a4a "Something isn't working" 2>/dev/null || true ;;
-    enhancement) adapter_label_create enhancement a2eeef "New feature or request" 2>/dev/null || true ;;
-    documentation) adapter_label_create documentation 0075ca "Improvements or additions to documentation" 2>/dev/null || true ;;
-  esac
+  local entry desc
+  for entry in $FILED_CATEGORY_TABLE; do
+    [ "$1" = "${entry%%:*}" ] || continue
+    desc="$(filed_category_description "$1")" || return 1
+    adapter_label_create "$1" "${entry#*:}" "$desc" 2>/dev/null || true
+    return 0
+  done
+  return 1
 }
 
 # finding_flags_parse <usage> <allowed> [<flag> <value>]...: reads a finding
