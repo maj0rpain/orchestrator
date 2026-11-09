@@ -133,6 +133,26 @@ category_label_ensure() {
   esac
 }
 
+# finding_input_check <title> <finding-file>: dies unless the title is not
+# empty and the finding file exists and holds more than whitespace - the
+# checks a finding's filer makes before it renders anything.
+finding_input_check() {
+  [ -n "$1" ] || die "the title is empty"
+  [ -f "$2" ] || die "finding file not found: $2"
+  [ -n "$(tr -d '[:space:]' <"$2")" ] || die "finding file is empty: $2"
+}
+
+# finding_body_file_new <var>: creates the temp file a finding's issue body is
+# rendered into, names it in the caller's <var>, and sets an EXIT trap that
+# removes it, so a refusal or a gh failure that dies leaves none behind.
+finding_body_file_new() {
+  local f
+  f="$(mktemp)" || die "could not create a temp file for the issue body"
+  # shellcheck disable=SC2064 # expanded now: $f is local, gone by exit
+  trap "rm -f $(printf '%q' "$f")" EXIT
+  printf -v "$1" '%s' "$f"
+}
+
 # finding_body_render <finding-file> <axis> <severity> <reason> <file> <line>
 # <sha> <pr-url> <why> [<question>]: prints a filed finding's issue body - the
 # finding text, its trailing newlines stripped, a blank line, then each

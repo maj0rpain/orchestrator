@@ -73,9 +73,7 @@ audit_file() {
   [ -n "$finding" ] && [ "${#locations[@]}" -gt 0 ] || die "$usage"
 
   local loc file line sha body_file n err existing existing_n existing_title triage
-  [ -n "$title" ] || die "the title is empty"
-  [ -f "$finding" ] || die "finding file not found: $finding"
-  [ -n "$(tr -d '[:space:]' <"$finding")" ] || die "finding file is empty: $finding"
+  finding_input_check "$title" "$finding"
   for loc in "${locations[@]}"; do
     file="${loc%:*}" line="${loc##*:}"
     [[ $loc == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
@@ -84,9 +82,7 @@ audit_file() {
   sha="$(git rev-parse --verify HEAD 2>/dev/null)" || die "cannot read the HEAD commit"
   [[ $sha =~ ^[0-9a-fA-F]+$ ]] || die "not a sha: $sha (want a hex commit SHA)"
 
-  body_file="$(mktemp)" || die "could not create a temp file for the issue body"
-  # shellcheck disable=SC2064 # expanded now: $body_file is local, gone by exit
-  trap "rm -f $(printf '%q' "$body_file")" EXIT
+  finding_body_file_new body_file
   audit_body_render "$finding" "$sha" "${locations[@]}" >"$body_file"
   local got_locs got_shas want_locs
   audit_body_parse "$(cat "$body_file")" got_locs got_shas

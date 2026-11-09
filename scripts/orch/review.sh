@@ -416,9 +416,7 @@ review_file() {
   # The category follows the axis; finding triage confirms or flips it later.
   category="$(category_for_axis "$axis")" \
     || die "not a review axis: $axis (want ${FILED_AXES// / or })"
-  [ -n "$title" ] || die "the title is empty"
-  [ -f "$finding" ] || die "finding file not found: $finding"
-  [ -n "$(tr -d '[:space:]' <"$finding")" ] || die "finding file is empty: $finding"
+  finding_input_check "$title" "$finding"
   # Split at the last colon: the line is the part after it, N or N-M. The
   # literal suite - a suite-cost finding's - names the suite, with no line.
   if [ "$location" = "$SUITE_LOCATION" ]; then
@@ -438,9 +436,7 @@ review_file() {
 
   # The round trip. The temp file is removed on every exit - a refusal or a
   # gh failure dies, so a trap, not a closing rm, is what removes it.
-  body_file="$(mktemp)" || die "could not create a temp file for the issue body"
-  # shellcheck disable=SC2064 # expanded now: $body_file is local, gone by exit
-  trap "rm -f $(printf '%q' "$body_file")" EXIT
+  finding_body_file_new body_file
   finding_body_render "$finding" "$axis" "$severity" "$reason" "$file" "$line" \
     "$sha" "$pr" "$why" "$question" >"$body_file"
   local -A got

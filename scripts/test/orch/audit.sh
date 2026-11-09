@@ -126,10 +126,10 @@ refuse "a missing finding file" "orch: finding file not found: /nonexistent/f" \
 printf '  \n\n' >"$blank"
 refuse "an empty finding file" "orch: finding file is empty: $blank" \
   "T" --finding-file "$blank" --location a.md:1
-for bad in a.md a.md: a.md:x a.md:1- :4 a.md:1-2-3; do
-  refuse "the location '$bad'" \
-    "orch: not a location: $bad (want <file>:<line> or <file>:<start>-<end>)" \
-    "T" --finding-file "$finding" --location "$bad"
+for not_loc in a.md a.md: a.md:x a.md:1- :4 a.md:1-2-3; do
+  refuse "the location '$not_loc'" \
+    "orch: not a location: $not_loc (want <file>:<line> or <file>:<start>-<end>)" \
+    "T" --finding-file "$finding" --location "$not_loc"
 done
 refuse "a location with a backtick in its file" \
   "orch: the rendered body does not parse back: locations (given 'a\`b.md:1', parsed '')" \
