@@ -1456,6 +1456,7 @@ required_headings='agents/orch-fixer.md|## Checking the PR body
 agents/orch-fixer.md|## The record
 agents/orch-implementer.md|## Root-cause fixes
 agents/orch-reviewer-standards.md|## Root-cause check
+agents/orch-reviewer-standards.md|## Doc-agreement check
 skills/orch-interview/SKILL.md|## Closing
 skills/orch-quick-implement/SKILL.md|## 1. Require a linked issue
 skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review

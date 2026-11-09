@@ -86,7 +86,8 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 
    A bug spec's **Root cause** subsection lists the cause and every site it
    acts at: each listed site is a requirement, and one the diff leaves
-   unfixed is **missing**.
+   unfixed is **missing**. So is each entry of the spec's **Docs to update**
+   subsection: a listed doc the diff leaves stale is **missing**.
 
    Before reporting a hunk as scope creep, check whether the repo's coding
    standards require it: the entries of your prompt's `Standards:` line,

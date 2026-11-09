@@ -227,6 +227,10 @@ defect's cause, and every site it acts at - each copy of the logic, each
 caller, each input it mishandles. The fix removes the cause at all of them,
 and the Spec axis holds the change to that list.
 
+Add a **Docs to update** subsection (`### Docs to update`): each doc the plan
+makes stale, named by document and section (for example "the README's Install
+section"), never by path. The Spec axis holds the change to that list.
+
 ## Testing Decisions
 
 The testing decisions made. Include:

@@ -429,7 +429,8 @@ rule, and you record it as a host fallback.
 Two plugin agents under the plugin root's `agents/`, one per axis:
 
 - **`orch-reviewer-standards`** - the Standards axis: the repo's documented
-  coding standards, plus the plugin's own smell baseline.
+  coding standards, the plugin's own smell baseline, and a doc-agreement check
+  that no doc is left disagreeing with the code.
 - **`orch-reviewer-spec`** - the Spec axis: whether the change implements what
   the spec issue asked for.
 
@@ -551,7 +552,8 @@ may fix without asking anyone:
   iteration; one the fixer could not fix stays **open blocking**, is never
   filed, and holds the loop out of **Ready**.
 - **major** - the change works but carries real cost: a documented standard
-  breached, a smell with teeth, scope nobody asked for. Fixed, unless the fix
+  breached, a smell with teeth, scope nobody asked for, a doc the change left
+  disagreeing with the code. Fixed, unless the fix
   needs a choice between alternatives the plan, spec, and deviations did not
   settle. Those are filed, the options in the body. A fix that changes
   behaviour the spec settles makes the finding blocking; one whose behaviour
@@ -559,7 +561,9 @@ may fix without asking anyone:
   iteration**). A PR is marked ready with filed majors open against it - the
   issue carries the reasoning, and triage decides against the whole codebase
   whether it is worth fixing at all - unless one is a spec question this loop
-  filed: that holds the PR out of **Ready** until a human rules on it. See
+  filed: that holds the PR out of **Ready** until a human rules on it. A
+  finding that the change contradicts an ADR is one: it takes the `spec
+  question` rule, and the ADR is never edited. See
   `docs/adr/0042-a-spec-question-the-review-loop-files-holds-the-pr-in-draft.md`.
 - **nit** - taste and judgement. Fixed only when **mechanical**: exactly one
   correct fix, confined to the lines it names, no behaviour change, no wording
