@@ -50,7 +50,7 @@ assert_eq "no real gh subprocess was spawned" "$(gh_calls)" "0"
 
 # A documentation label the repo has already is left as it is, and a failed
 # create of it is ignored.
-audit_repo
+fake_github
 fake_label documentation ffffff "The repo's own"
 out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
 assert_status "files with documentation already present" "$st" 0
@@ -59,7 +59,7 @@ assert_contains "leaving the repo's documentation label as the repo has it" "$(f
 assert_contains "and creating the repo's missing needs-triage" "$(fake_labels)" \
   "needs-triage${tab}e4e669${tab}Not yet triaged"
 
-audit_repo
+fake_github
 fake_fail adapter_label_create "$GH_502"
 out="$("$ORCH" audit file "Title" "${parts[@]}" 2>/dev/null)"; st=$?
 assert_status "a failed create of the documentation label is ignored" "$st" 0
@@ -68,7 +68,7 @@ fake_unfail
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
 # labels from.
-audit_repo
+fake_github
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
@@ -100,7 +100,7 @@ out="$("$ORCH" audit file "Closed twin" "${parts[@]}" 2>&1)"; st=$?
 assert_eq "a closed issue with the title does not count" "$out" "8"
 
 # The listing is not cut at the list limit, so a twin past it is still seen.
-audit_repo
+fake_github
 fake_issue 1 open
 fake_issue_title 1 "Unrelated one"
 fake_issue 2 open
@@ -112,7 +112,7 @@ assert_status "a twin past the list limit exits 0" "$st" 0
 assert_eq "printing its number, filing nothing" "$out" "3"
 
 # A title with a quote in it is compared as it is.
-audit_repo
+fake_github
 fake_issue 1 open
 fake_issue_title 1 'Flag "--x" is gone'
 out="$("$ORCH" audit file 'Flag "--x" is gone' "${parts[@]}" 2>/dev/null)"; st=$?
