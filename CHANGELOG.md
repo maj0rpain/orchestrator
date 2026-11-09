@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.50.1
+
+The Filed finding module now owns the finding category table: `audit file` checks `--category` and builds its usage line from it, and `category_label_ensure` reads its colours and descriptions from it, returning 1 for an unknown category. The dead hex-SHA guard on HEAD is gone from `audit file`, and the module's description names the filer checks it shares.
+
 ## 4.50.0
 
 New `/orchestrator:audit-code [<direction>]` command and `orch-audit-code` skill: a read-only audit that checks a repo's source code, or a named area of it, for latent bugs, inefficiencies and architecture worth deepening. Fresh read-only `orch-code-auditor` subagents do the hunting, at most 4 at once. The ranked findings go into a self-contained HTML report, and the findings the user picks go to the planning interview, are filed as issues, or both.
