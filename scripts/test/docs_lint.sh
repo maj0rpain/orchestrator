@@ -2762,6 +2762,22 @@ Report
 Hand off'
 # scan_audit_docs <plugin root>: scan_skill_steps for orch-audit-docs.
 scan_audit_docs() { scan_skill_steps "$1" audit-docs "$audit_docs_skill" "$audit_docs_steps"; }
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-audit-docs" "$fixture/commands"
+printf '# A\n\n## 1. Scope\n\n## 3. Hunt\n\n## 2. Partition\n\n## 4. Rank\n\n## 5. Report\n' \
+  >"$fixture/$audit_docs_skill"
+out="$(scan_audit_docs "$fixture")"
+flags "a missing audit-docs command file is flagged" \
+  "$out" "commands/audit-docs.md: missing"
+flags "an audit-docs step heading out of order is flagged" \
+  "$out" "$audit_docs_skill: required heading out of order: ## 3. Hunt"
+flags "a missing audit-docs step heading is flagged" \
+  "$out" "$audit_docs_skill: missing required heading: ## 6. Hand off"
+printf 'Call the Skill tool with `orchestrator:orch-interview` and follow it.\n' \
+  >"$fixture/commands/audit-docs.md"
+flags "an audit-docs command routing elsewhere is flagged" \
+  "$(scan_audit_docs "$fixture")" \
+  "commands/audit-docs.md: does not route to orch-audit-docs"
 check "orch-audit-docs has its command and its six step headings in order" \
   "$(scan_audit_docs "$PLUGIN_ROOT")"
 

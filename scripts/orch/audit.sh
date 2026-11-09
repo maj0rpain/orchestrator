@@ -51,24 +51,16 @@ audit_body_parse() {
 audit_file() {
   local usage="usage: orch.sh audit file <title> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
   [ $# -ge 1 ] || die "$usage"
-  local title="$1" finding="" locations=() flag value
+  local title="$1" finding="" locations=() i
   shift
-  while [ $# -gt 0 ]; do
-    flag="$1"
-    case "$flag" in
-      --finding-file|--location) ;;
-      *) die "$usage" ;;
-    esac
-    [ $# -ge 2 ] || die "$usage"
-    value="$(trim "$2")"
-    [ -n "$value" ] || die "$usage"
-    case "$flag" in
+  finding_flags_parse "$usage" "--finding-file --location" "$@"
+  for i in "${!FINDING_FLAGS[@]}"; do
+    case "${FINDING_FLAGS[i]}" in
       --finding-file)
         [ -z "$finding" ] || die "$usage"
-        finding="$value" ;;
-      --location) locations+=("$value") ;;
+        finding="${FINDING_VALUES[i]}" ;;
+      --location) locations+=("${FINDING_VALUES[i]}") ;;
     esac
-    shift 2
   done
   [ -n "$finding" ] && [ "${#locations[@]}" -gt 0 ] || die "$usage"
 

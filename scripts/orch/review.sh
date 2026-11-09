@@ -384,17 +384,12 @@ review_file() {
   local axis="" finding="" reason="" location="" why="" question=""
   local seen=" "
   shift 2
-  while [ $# -gt 0 ]; do
-    flag="$1"
-    case "$flag" in
-      --axis|--finding-file|--severity-reason|--location|--why|--spec-question) ;;
-      *) die "$usage" ;;
-    esac
-    [ $# -ge 2 ] || die "$usage"
+  finding_flags_parse "$usage" "--axis --finding-file --severity-reason --location --why --spec-question" "$@"
+  local i
+  for i in "${!FINDING_FLAGS[@]}"; do
+    flag="${FINDING_FLAGS[i]}" value="${FINDING_VALUES[i]}"
     ! word_listed "$seen" "$flag" || die "$usage"
     seen+="$flag "
-    value="$(trim "$2")"
-    [ -n "$value" ] || die "$usage"
     case "$flag" in
       --axis)            axis="${value,,}" ;;
       --finding-file)    finding="$value" ;;

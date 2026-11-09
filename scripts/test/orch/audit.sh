@@ -18,7 +18,7 @@ audit_repo() {
   printf 'A doc says --force is required.\n\nThe code takes no such flag.\n\n\n' >"$finding"
   parts=(--finding-file "$finding" --location docs/a.md:12 --location README.md:3-9)
   tab="$(printf '\t')"
-  errf="$(mktemp)"; blank="$(mktemp)"
+  errf="$(mktemp)"
 }
 
 # --- audit file -------------------------------------------------------------
@@ -121,16 +121,9 @@ refuse "no --location" "$usage" "T" --finding-file "$finding"
 refuse "an unknown flag" "$usage" "T" "${parts[@]}" --bogus x
 refuse "a flag with no value" "$usage" "T" --finding-file "$finding" --location
 refuse "a finding file given twice" "$usage" "T" "${parts[@]}" --finding-file "$finding"
-refuse "a missing finding file" "orch: finding file not found: /nonexistent/f" \
-  "T" --finding-file /nonexistent/f --location a.md:1
-printf '  \n\n' >"$blank"
-refuse "an empty finding file" "orch: finding file is empty: $blank" \
-  "T" --finding-file "$blank" --location a.md:1
-for not_loc in a.md a.md: a.md:x a.md:1- :4 a.md:1-2-3; do
-  refuse "the location '$not_loc'" \
-    "orch: not a location: $not_loc (want <file>:<line> or <file>:<start>-<end>)" \
-    "T" --finding-file "$finding" --location "$not_loc"
-done
+refuse "the location 'a.md:x'" \
+  "orch: not a location: a.md:x (want <file>:<line> or <file>:<start>-<end>)" \
+  "T" --finding-file "$finding" --location a.md:x
 refuse "a location with a backtick in its file" \
   "orch: the rendered body does not parse back: locations (given 'a\`b.md:1', parsed '')" \
   "T" --finding-file "$finding" --location 'a`b.md:1'

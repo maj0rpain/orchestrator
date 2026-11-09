@@ -133,6 +133,25 @@ category_label_ensure() {
   esac
 }
 
+# finding_flags_parse <usage> <allowed> [<flag> <value>]...: reads a finding
+# filer's flag/value pairs into FINDING_FLAGS and FINDING_VALUES, parallel
+# arrays in the order given, each value trimmed. <allowed> is the flags
+# accepted, space-separated. Dies with <usage> on a flag not allowed, a flag
+# with no value, or an empty value.
+finding_flags_parse() {
+  local usage="$1" allowed=" $2 " value
+  shift 2
+  FINDING_FLAGS=() FINDING_VALUES=()
+  while [ $# -gt 0 ]; do
+    [[ $allowed == *" $1 "* ]] || die "$usage"
+    [ $# -ge 2 ] || die "$usage"
+    value="$(trim "$2")"
+    [ -n "$value" ] || die "$usage"
+    FINDING_FLAGS+=("$1") FINDING_VALUES+=("$value")
+    shift 2
+  done
+}
+
 # finding_input_check <title> <finding-file>: dies unless the title is not
 # empty and the finding file exists and holds more than whitespace - the
 # checks a finding's filer makes before it renders anything.
