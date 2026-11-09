@@ -177,6 +177,7 @@ that left them.
 | `/orchestrator:questions` | Gather the repo's pending autopilot questions (open `needs-human` issues whose newest question comment no reply follows - a re-entry comment is no reply): a fresh subagent per issue forms its own recommendation, shown beside the session's; one batch per issue, oldest first, answered `1: A`, `recommended`, `session`, free text, `all: recommended`, `all: session` or `skip`; each reply is shown in full, confirmed, posted spelling out every choice, and `needs-human` removed. Then offers to retry refusal and failure stops and to lift the label on issues already replied to. Needs no flow. |
 | `/orchestrator:improve-tests [<direction>]` | Evaluate the repo's test suite, read-only: scope it by git hot spots or a direction you name, time each test file or section once and sequentially, hunt quality-preserving candidates in a fresh subagent, rank them by measured cost saved, show them in an HTML report (a Markdown summary in chat where the host cannot open it), and hand the one you pick to the planning interview. |
 | `/orchestrator:audit-docs [<direction>]` | Audit the repo's documentation (prose docs, comments and docstrings, agent and skill instruction files) against its code, read-only: scope the whole repo or a path or direction you name, partition it into areas (confirming above 8), hunt each in a read-only `orch-doc-auditor` subagent (at most 4 at once), rank the disagreements, show them in an HTML report (a Markdown summary in chat where the host cannot open it), and hand the ones you pick to the planning interview, to `orch.sh audit file`, or both. |
+| `/orchestrator:audit-code [<direction>]` | Audit the repo's source code for latent bugs, inefficiencies and architecture deepenings, read-only: scope git hot spots over the last 90 days or a direction you name (which may narrow the kinds), partition it into areas (confirming above 8), hunt each in a read-only `orch-code-auditor` subagent (at most 4 at once), rank the candidates, show them in an HTML report (a Markdown summary in chat where the host cannot open it), and hand the ones you pick to the planning interview, to `orch.sh audit file` (`bug` for a latent bug, `enhancement` otherwise), or both. |
 | `/orchestrator:spec-review <issue> [--rounds <n>]` | Review any spec issue on demand, outside a flow: a standalone spec review, of 1 round unless `--rounds` gives another count. |
 | `/orchestrator:review-pass <issue> [--smells]` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, and leaves out the Standards reviewer's smell-baseline findings unless `--smells` is given, reporting only how many it left out. Fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
 | `/orchestrator:sync` | Run a **base sync** on demand, on any plugin-made branch, inside or outside a flow - a done flow's included: merge `origin`'s tip of its base branch in with `orch.sh branch sync`, never rebasing. A conflict is resolved by a fresh `orch-resolver`, the PR body corrected against the merged diff, and its **Merge resolutions** and the body corrections posted as one PR comment; then, unless an active flow holds the branch, it asks whether to run a review pass against the branch's issue (from its name, or asked for when the name carries none). |
@@ -213,8 +214,8 @@ PR's title and summary, and `orch.sh pr release` writes the `Closes` lines.
 
 Every agent the plugin starts runs on the model and reasoning effort of the
 session that starts it, unless you choose an **agent setting** for its role:
-`implementer` (the ticket subagent), `lens`, `reviewer`, `fixer`, `closer`
-or `resolver`. A role's model and effort are set on their own:
+`implementer` (the ticket subagent), `lens`, `reviewer`, `fixer`, `closer`,
+`resolver` or `auditor`. A role's model and effort are set on their own:
 
 | Command | What it does |
 | --- | --- |
@@ -234,7 +235,8 @@ and `orchestrator.junie.effort.<role>`, are set with `--host junie` on `set`,
 effort of `low`, `medium` or `high`. Junie reads the setting from generated,
 git-excluded copies of the plugin's agents in the checkout's `.junie/agents/`,
 which `orch.sh agent sync` writes, refreshes and deletes; `set` and `clear`
-with `--host junie` run it, and on Junie every skill runs it once per run.
+with `--host junie` run it, and on Junie every skill but the read-only audits
+runs it once per run.
 
 ## Autopilot
 
@@ -316,10 +318,11 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
 - **Models:** `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's
   model and effort (`orchestrator.autopilot.model` / `.effort`).
   `ORCH_MODEL_<ROLE>` and `ORCH_EFFORT_<ROLE>`, with the role upper-case
-  (`IMPLEMENTER`, `LENS`, `REVIEWER`, `FIXER`, `CLOSER`, `RESOLVER`), set that
-  role's agent setting, written with `orch.sh agent set <role> --model|--effort
-  <v> --global`. A role left unset inherits the model and effort of the session
-  that starts it, so `ORCH_MODEL` alone moves every role whose model is unset,
+  (`IMPLEMENTER`, `LENS`, `REVIEWER`, `FIXER`, `CLOSER`, `RESOLVER`,
+  `AUDITOR`), set that role's agent setting, written with `orch.sh agent set
+  <role> --model|--effort <v> --global`. A role left unset inherits the model
+  and effort of the session that starts it, so `ORCH_MODEL` alone moves every
+  role whose model is unset,
   `ORCH_EFFORT` likewise, and a role variable overrides it.
 - **Unset clears:** `docker/.env` is the one source of truth. `ORCH_CAP`,
   `ORCH_HANDLE`, `ORCH_ROUNDS`, `ORCH_BUDGET`, `ORCH_MODEL`, `ORCH_EFFORT` and

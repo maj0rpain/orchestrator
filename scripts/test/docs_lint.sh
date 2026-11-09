@@ -113,6 +113,14 @@
 #     report and a Markdown-summary fallback
 #   scan_audit_docs  orch-audit-docs has its command file and its six step
 #     headings in order
+#   scan_audit_docs_category  orch-audit-docs hands off with --category
+#     documentation
+#   scan_audit_hunt  each audit skill's Hunt step names agent get auditor and it
+#     runs no agent sync
+#   scan_audit_code  orch-audit-code has its command file and its six step
+#     headings in order
+#   scan_audit_code_category  orch-audit-code hands off with --category bug and
+#     enhancement
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
@@ -1238,14 +1246,6 @@ echo "start sites read the agent setting (#1359)"
 # implementer, **A driver's base sync** and **A driver's ticket resolution**
 # the resolver. A skill's scoped name, such as `orchestrator:orch-flow`, is
 # not a start, and a **Start a fresh subagent** pointer is not a read.
-# agent_role <agent name>: the role an orch- agent's setting is read under.
-agent_role() {
-  case "$1" in
-    orch-lens-*) echo lens ;;
-    orch-reviewer-*) echo reviewer ;;
-    orch-*) echo "${1#orch-}" ;;
-  esac
-}
 # agent_start_files <plugin root>: every skill file, agent file and docs/
 # file a start site can live in, one path per line.
 agent_start_files() {
@@ -1269,7 +1269,9 @@ scan_agent_settings() {
     echo "scripts/orch/agent.sh: no AGENT_ROLES read"
     return 0
   fi
-  pattern="orch-(${known_roles// /|})(-[a-z]+)?"
+  # shellcheck source=/dev/null
+  source "$PLUGIN_ROOT/scripts/orch/agent.sh" || return 0
+  pattern="(orch-(${known_roles// /|})(-[a-z]+)?|orch-[a-z]+-auditor)"
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
     text="$(flat_text "$f")"
@@ -1280,7 +1282,8 @@ scan_agent_settings() {
       # read, not an agent to start.
       while IFS= read -r name; do
         case "$name" in /* | *.md | '') continue ;; esac
-        roles+=" $(agent_role "$name")"
+        role="$(agent_role_of "$name")"
+        roles+=" ${role:-${name#orch-}}"
       done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
     fi
     grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
@@ -1338,6 +1341,14 @@ flags "a pointer at a driver's base sync starts the resolver" \
 spares "a skill's scoped name is not a start" "$out" 'skills/c/SKILL.md: starts an agent of the (implementer|lens|reviewer|fixer|closer) '
 flags "a pointer at Dispatching a subagent starts the implementer" \
   "$out" "agents/orch-x.md: starts an agent of the implementer role but does not name agent get implementer"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/a"
+printf 'Start `orch-code-auditor` under the `orchestrator:` plugin scope.\n' >"$fixture/skills/a/SKILL.md"
+out="$(scan_agent_settings "$fixture")"
+flags "a start of orch-code-auditor with no pointer is flagged" \
+  "$out" "skills/a/SKILL.md: starts a plugin agent but does not point at **Agent settings**"
+flags "a start of orch-code-auditor is read under the auditor role" \
+  "$out" "skills/a/SKILL.md: starts an agent of the auditor role but does not name agent get auditor"
 # A start site generated from AGENT_ROLES, read as the rule reads it, so a role
 # added there is covered with no edit here.
 roles_read="$(agent_roles_read)"
@@ -1599,6 +1610,9 @@ scan_agent_frontmatter() {
     case "$n" in
       orch-fixer|orch-closer)
         [ "$t" = "$impl" ] || echo "agents/$n.md: tools: is not the implementer's" ;;
+      orch-code-auditor)
+        [ "$t" = 'tools: [Read, Grep, Glob, Write]' ] ||
+          echo "agents/$n.md: tools: is not exactly Read, Grep, Glob, Write" ;;
     esac
   done
   return 0
@@ -1611,6 +1625,7 @@ printf -- '---\nname: orch-closer\ntools: [Read]\n---\n' >"$fixture/agents/orch-
 printf -- '---\nname: orch-other\ntools: Read, Bash\n---\n' >"$fixture/agents/orch-a.md"
 printf -- '---\nname: orch-b\n---\n' >"$fixture/agents/orch-b.md"
 printf -- '---\nname: orch-c\ntools: [Read, Skill]\n---\n' >"$fixture/agents/orch-c.md"
+printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob, Write, Bash]\n---\n' >"$fixture/agents/orch-code-auditor.md"
 out="$(scan_agent_frontmatter "$fixture")"
 flags "an agent whose name: is not its file is flagged" \
   "$out" "agents/orch-a.md: name: is 'orch-other', not its file"
@@ -1620,6 +1635,11 @@ flags "an agent with no tools: is flagged" "$out" "agents/orch-b.md: declares no
 flags "an agent listing Skill is flagged" "$out" "agents/orch-c.md: lists Skill"
 flags "a closer whose allowlist is not the implementer's is flagged" \
   "$out" "agents/orch-closer.md: tools: is not the implementer's"
+flags "an orch-code-auditor with an extra tool is flagged" \
+  "$out" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
+printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob]\n---\n' >"$fixture/agents/orch-code-auditor.md"
+flags "an orch-code-auditor missing Write is flagged" \
+  "$(scan_agent_frontmatter "$fixture")" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
 spares "agents named for their files with a matching list are not flagged" \
   "$out" 'orch-(implementer|fixer)\.md'
 check "every agent is named for its file and declares a safe tools: list" \
@@ -2754,14 +2774,14 @@ echo "audit docs (#2485)"
 # orch-audit-docs is defined by its six steps, so each step heading stays
 # present and in order, and its command routes to it.
 audit_docs_skill='skills/orch-audit-docs/SKILL.md'
-audit_docs_steps='Scope
+audit_steps='Scope
 Partition
 Hunt
 Rank
 Report
 Hand off'
 # scan_audit_docs <plugin root>: scan_skill_steps for orch-audit-docs.
-scan_audit_docs() { scan_skill_steps "$1" audit-docs "$audit_docs_skill" "$audit_docs_steps"; }
+scan_audit_docs() { scan_skill_steps "$1" audit-docs "$audit_docs_skill" "$audit_steps"; }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-audit-docs" "$fixture/commands"
 printf '# A\n\n## 1. Scope\n\n## 3. Hunt\n\n## 2. Partition\n\n## 4. Rank\n\n## 5. Report\n' \
@@ -2780,6 +2800,102 @@ flags "an audit-docs command routing elsewhere is flagged" \
   "commands/audit-docs.md: does not route to orch-audit-docs"
 check "orch-audit-docs has its command and its six step headings in order" \
   "$(scan_audit_docs "$PLUGIN_ROOT")"
+# scan_audit_docs_category <plugin root>: one line when the audit-docs skill's
+# audit file command does not pass --category documentation.
+scan_audit_docs_category() {
+  local r="$1" hand
+  hand="$(md_section "$r/$audit_docs_skill" "## 6. Hand off" 2>/dev/null | flat_text)"
+  grep -qF 'audit file "<title>" --category documentation ' <<<"$hand" \
+    || echo "$audit_docs_skill: the Hand off step does not pass --category documentation"
+  return 0
+}
+printf '# A\n\n## 6. Hand off\n\nrun `bash "$ORCH" audit file "<title>" --finding-file <f>`\n' >"$fixture/$audit_docs_skill"
+flags "an audit-docs hand off without --category documentation is flagged" \
+  "$(scan_audit_docs_category "$fixture")" \
+  "$audit_docs_skill: the Hand off step does not pass --category documentation"
+check "orch-audit-docs hands off with --category documentation" \
+  "$(scan_audit_docs_category "$PLUGIN_ROOT")"
+
+# scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs and
+# orch-audit-code) whose Hunt step does not name agent get
+# auditor, and one per skill that runs an agent sync command - a sentence saying
+# it runs none is allowed.
+scan_audit_hunt() {
+  local r="$1" name skill hunt
+  for name in audit-docs audit-code; do
+    skill="skills/orch-$name/SKILL.md"
+    if [ ! -f "$r/$skill" ]; then
+      echo "$skill: missing"
+      continue
+    fi
+    if ! hunt="$(md_section "$r/$skill" "## 3. Hunt" 2>/dev/null)" ||
+      ! grep -qF 'agent get auditor' <<<"$(flat_text <<<"$hunt")"; then
+      echo "$skill: the Hunt step does not name agent get auditor"
+    fi
+    if grep -qF '"$ORCH" agent sync' <<<"$(flat_text "$r/$skill")"; then
+      echo "$skill: runs an agent sync command"
+    fi
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-audit-docs" "$fixture/skills/orch-audit-code"
+printf '# A\n\n## 3. Hunt\n\nStart the hunters.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
+printf '# A\n\n## 3. Hunt\n\nRead `agent get auditor`. Run `bash "$ORCH" agent sync` first.\n\n## 4. Rank\n' \
+  >"$fixture/skills/orch-audit-code/SKILL.md"
+out="$(scan_audit_hunt "$fixture")"
+flags "an audit Hunt step that reads no agent get auditor is flagged" \
+  "$out" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name agent get auditor"
+flags "an audit skill running an agent sync command is flagged" \
+  "$out" "skills/orch-audit-code/SKILL.md: runs an agent sync command"
+spares "an audit Hunt step reading agent get auditor is accepted" "$out" 'audit-code/SKILL.md: the Hunt'
+printf '# A\n\n## 3. Hunt\n\nRead `agent get auditor`; this skill runs no agent sync.\n\n## 4. Rank\n' \
+  >"$fixture/skills/orch-audit-code/SKILL.md"
+assert_empty "a sentence saying the skill runs no agent sync is allowed" \
+  "$(scan_audit_hunt "$fixture" | grep audit-code)"
+check "each audit skill's Hunt step reads agent get auditor and runs no agent sync" \
+  "$(scan_audit_hunt "$PLUGIN_ROOT")"
+
+# orch-audit-code is defined by the same six steps; its command routes to it.
+audit_code_skill='skills/orch-audit-code/SKILL.md'
+# scan_audit_code <plugin root>: scan_skill_steps for orch-audit-code.
+scan_audit_code() { scan_skill_steps "$1" audit-code "$audit_code_skill" "$audit_steps"; }
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-audit-code" "$fixture/commands"
+printf '# A\n\n## 1. Scope\n\n## 3. Hunt\n\n## 2. Partition\n\n## 4. Rank\n\n## 5. Report\n' \
+  >"$fixture/$audit_code_skill"
+out="$(scan_audit_code "$fixture")"
+flags "a missing audit-code command file is flagged" \
+  "$out" "commands/audit-code.md: missing"
+flags "an audit-code step heading out of order is flagged" \
+  "$out" "$audit_code_skill: required heading out of order: ## 3. Hunt"
+flags "a missing audit-code step heading is flagged" \
+  "$out" "$audit_code_skill: missing required heading: ## 6. Hand off"
+check "orch-audit-code has its command and its six step headings in order" \
+  "$(scan_audit_code "$PLUGIN_ROOT")"
+
+# scan_audit_code_category <plugin root>: one line when the audit-code skill's
+# Hand off step does not name --category with both bug and enhancement.
+scan_audit_code_category() {
+  local r="$1" hand
+  hand="$(md_section "$r/$audit_code_skill" "## 6. Hand off" 2>/dev/null | flat_text)"
+  grep -qF -- '--category bug' <<<"$hand" && grep -qF -- '--category enhancement' <<<"$hand" ||
+    echo "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
+  return 0
+}
+printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --category bug`.\n' >"$fixture/$audit_code_skill"
+flags "an audit-code hand off without --category enhancement is flagged" \
+  "$(scan_audit_code_category "$fixture")" \
+  "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
+printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --finding-file f`.\n' >"$fixture/$audit_code_skill"
+flags "an audit-code hand off without --category is flagged" \
+  "$(scan_audit_code_category "$fixture")" \
+  "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
+printf '# A\n\n## 6. Hand off\n\nRun `--category bug` or `--category enhancement`.\n' >"$fixture/$audit_code_skill"
+assert_empty "an audit-code hand off with both categories is accepted" \
+  "$(scan_audit_code_category "$fixture")"
+check "orch-audit-code hands off with --category bug and enhancement" \
+  "$(scan_audit_code_category "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo

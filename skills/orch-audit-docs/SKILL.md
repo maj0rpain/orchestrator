@@ -67,8 +67,10 @@ start nothing until they answer. A narrowed scope returns to this step.
 
 ## 3. Hunt
 
-`orch-doc-auditor` has no role, so it has no agent setting: this skill reads
-no `agent get` and runs no `agent sync`. Start one fresh subagent per area
+Read `bash "$ORCH" agent get auditor` once, before the first hunter, and pass
+the `model` and `effort` it prints on each start, per **Agent settings** in
+`docs/host-capabilities.md`. This skill runs no `agent sync`, which would write
+`.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per area
 (see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
 fork, each an `orch-doc-auditor`, at most 4 at once; start the next as one
 finishes. Each prompt names its area (the docs to read and the code they
@@ -134,7 +136,8 @@ With both lists, filing runs first, then the interview.
 - **File.** For each finding picked for `file`, one at a time in number
   order, write its text (kind of text, passage, the code it disagrees with,
   confidence, proposed fix) to a finding file in the temp directory and run
-  `bash "$ORCH" audit file "<title>" --finding-file <file> --location
+  `bash "$ORCH" audit file "<title>" --category documentation
+  --finding-file <file> --location
   <location>...`, one `--location` per site. It prints the issue number; when
   an open issue already has that title it files nothing and says so on
   stderr. Report the issue numbers, naming any that was already open rather
