@@ -145,6 +145,10 @@ habits on every round:
   check whether the code agrees, and surface a contradiction: "The code
   cancels whole Orders, but you just said partial cancellation is possible.
   Which is right?"
+- **Name the docs the plan will make stale.** When the plan changes or
+  removes something a doc describes, name each such doc by document and
+  section (the README's Install section), so the spec lists it under
+  **Docs to update**.
 - **Offer an ADR sparingly.** Only when all three hold: the decision is
   **hard to reverse** (changing your mind later costs something real), it is
   **surprising without context** (a future reader would ask why), and it is

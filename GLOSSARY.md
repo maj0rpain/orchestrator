@@ -762,6 +762,15 @@ review's session marks the item proposing its edit material or minor, a human
 accepts or declines that edit, or an unattended spec review applies it as
 recommended, and it is never filed.
 
+**Doc-agreement check**:
+The Standards reviewer's check that a change leaves no documentation saying
+something the code no longer does. It covers prose docs, comments and
+docstrings, and agent and skill instruction files, and it reads the comments and
+docstrings in the changed files and, elsewhere, only the passages that mention a
+name the change alters or removes. A contradicted ADR is never edited: it is a
+decision for a human, to amend it with a new ADR or change the code. _Avoid_:
+doc lint, docs drift check.
+
 **Pattern finding**:
 A finding whose claim holds at more than one place - one cause or one breached
 rule recurring across sites. It lists every site, and its fix reaches or defers

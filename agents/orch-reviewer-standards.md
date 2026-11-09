@@ -1,6 +1,6 @@
 ---
 name: orch-reviewer-standards
-description: The Standards axis of one orchestrator review - an iteration of a review loop, or a review pass - checks the whole change since a base SHA against the repo's documented coding standards and a fixed smell baseline, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, a report path, the path of orch.sh, a known-items file, and the standards documents' list.
+description: The Standards axis of one orchestrator review - an iteration of a review loop, or a review pass - checks the whole change since a base SHA against the repo's documented coding standards, a fixed smell baseline and a doc-agreement check, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, a report path, the path of orch.sh, a known-items file, and the standards documents' list.
 tools: [Read, Grep, Glob, Bash]
 ---
 
@@ -92,10 +92,12 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 3. **Review the diff** against every standard you found, against the
    **smell baseline** below, against the **test-cost smells** for every test
    hunk, and, for a hunk that fixes a defect, with the **root-cause check**
-   after it. Read the surrounding file wherever a hunk alone cannot tell you
+   after it. Then run the **doc-agreement check** once over the whole diff,
+   not per hunk. Read the surrounding file wherever a hunk alone cannot tell you
    whether a rule is met. When a finding names a pattern, grep for every site
    of it - see **Pattern findings**. Done when every hunk has been checked
-   against every rule.
+   against every rule, and every name the diff alters or removes has been
+   grepped for and its passages read.
    Line width is the docs linter's job, never a finding, at any length.
 4. **Write the report** to the report path - see **The report**. Open the
    known-items file now, and hold back what it already carries (see **Known
@@ -155,6 +157,29 @@ the hunk may be a **symptom fix** rather than a **root-cause fix**. Report
 each such site as a finding with the source `root-cause check | possible
 symptom fix (judgement call)`, naming the site and the hunk whose cause it
 shares. The driver ranks it with its severity rubric, as a major.
+
+## Doc-agreement check
+
+Kept apart from the smell baseline, which is a pinned upstream copy
+(ADR-0018). A change must leave no documentation saying something the code no
+longer does. It is a judgement call, never a lint (ADR-0027).
+
+- **Method.** Take the names the diff changes or removes: functions, commands,
+  flags, config keys, glossary terms. Grep the repo at HEAD for each one and
+  read the passages that mention it, plus the comments and docstrings inside
+  the changed files. Docs that mention none of those names are out of scope.
+- **Texts covered.** Prose docs (README, `docs/`, CONTRIBUTING, the glossary,
+  ADRs), comments and docstrings, and agent and skill instruction files.
+- **Report** each passage that now disagrees with the code as a finding with
+  the source `doc-agreement check | possible stale doc (judgement call)`,
+  naming the passage and the hunk it disagrees with. The driver ranks it with
+  its severity rubric, as a major.
+- **ADRs.** Never edit an ADR, and never propose editing one. A passage of an
+  ADR the change contradicts is a **spec question**: whether to amend the ADR
+  with a new ADR or change the code is a decision about what the change does.
+  Say so in the finding. Raise no finding when the spec already carries the
+  amending ADR's wording (ADR-0022): the Spec reviewer checks that wording
+  landed.
 
 ## Test-cost smells
 

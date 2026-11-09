@@ -138,6 +138,9 @@ a skipped check is reported.
    `check` printed with it too, so a base run's setup failure reads as one. When
    the caller has no verification command, skip the check, and say so where the
    caller says. It is not a smell-baseline finding, so no pass leaves it out.
+   Nor is a doc-agreement finding: a standalone pass keeps it. One that says
+   the change contradicts an ADR is a spec question (step 7), never fixed or
+   declined, since an ADR is never edited.
 6. **Declines.** Record each finding you decline, one line each:
    `` `file:line` - <claim> - <reason> `` - its `file:line`, or `-` when the
    report gave `-` for its location; the finding's claim, in a few words;
@@ -246,7 +249,8 @@ the only Standards look the change gets before its PR (ADR-0021).
    Source reads `possible <smell> (judgement call)`, with `<smell>` one of
    the twelve in `agents/orch-reviewer-standards.md`'s **Smell baseline**.
    A Source beginning `root-cause check` or `test-cost check`, or naming no
-   baseline smell, is never one; nor is any Spec-report finding. A smell that
+   baseline smell, is never one; nor is any Spec-report finding. A Source
+   beginning `doc-agreement check` is never one either. A smell that
    matched an earlier decline is already under **Previously declined** and is
    not counted. A `grew` verdict from **Review pass** step 5's suite-cost check
    is in neither report and is never one: it is kept, whatever `--smells` says.
