@@ -10,14 +10,14 @@
 # ORCH_PERMISSION_MODE, ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET,
 # ORCH_MODEL, ORCH_EFFORT, ORCH_MODEL_<ROLE>, ORCH_EFFORT_<ROLE> (roles from
 # `orch.sh agent roles`, upper-case: IMPLEMENTER, LENS, REVIEWER, FIXER, CLOSER,
-# RESOLVER) and ORCH_CLONE_DIR (default /home/orch/repo) are optional; ORCH_SH
-# names the installed plugin's orch.sh. A variable set to the empty string
-# counts as unset. ORCH_MODEL and ORCH_EFFORT are the phase session's model and
-# effort (orchestrator.autopilot.model/effort); a role variable is that role's
-# agent setting, written with `agent set --global`, and a role left unset
-# inherits the phase session's model and effort. Unset clears: an unset
-# ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET, ORCH_MODEL, ORCH_EFFORT or
-# role variable clears its global key, so .env is the one source of truth;
+# RESOLVER, AUDITOR) and ORCH_CLONE_DIR (default /home/orch/repo) are optional;
+# ORCH_SH names the installed plugin's orch.sh. A variable set to the empty
+# string counts as unset. ORCH_MODEL and ORCH_EFFORT are the phase session's
+# model and effort (orchestrator.autopilot.model/effort); a role variable is
+# that role's agent setting, written with `agent set --global`, and a role
+# left unset inherits the phase session's model and effort. Unset clears: an
+# unset ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET, ORCH_MODEL, ORCH_EFFORT
+# or role variable clears its global key, so .env is the one source of truth;
 # ORCH_PERMISSION_MODE defaults to bypassPermissions instead. Local keys in the
 # clone would override .env, so each start removes the clone's local
 # orchestrator.autopilot.* keys, agent-setting keys and user.name/user.email,

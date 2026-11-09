@@ -318,10 +318,11 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
 - **Models:** `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's
   model and effort (`orchestrator.autopilot.model` / `.effort`).
   `ORCH_MODEL_<ROLE>` and `ORCH_EFFORT_<ROLE>`, with the role upper-case
-  (`IMPLEMENTER`, `LENS`, `REVIEWER`, `FIXER`, `CLOSER`, `RESOLVER`), set that
-  role's agent setting, written with `orch.sh agent set <role> --model|--effort
-  <v> --global`. A role left unset inherits the model and effort of the session
-  that starts it, so `ORCH_MODEL` alone moves every role whose model is unset,
+  (`IMPLEMENTER`, `LENS`, `REVIEWER`, `FIXER`, `CLOSER`, `RESOLVER`,
+  `AUDITOR`), set that role's agent setting, written with `orch.sh agent set
+  <role> --model|--effort <v> --global`. A role left unset inherits the model
+  and effort of the session that starts it, so `ORCH_MODEL` alone moves every
+  role whose model is unset,
   `ORCH_EFFORT` likewise, and a role variable overrides it.
 - **Unset clears:** `docker/.env` is the one source of truth. `ORCH_CAP`,
   `ORCH_HANDLE`, `ORCH_ROUNDS`, `ORCH_BUDGET`, `ORCH_MODEL`, `ORCH_EFFORT` and

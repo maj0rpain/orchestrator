@@ -1247,15 +1247,6 @@ echo "start sites read the agent setting (#1359)"
 # implementer, **A driver's base sync** and **A driver's ticket resolution**
 # the resolver. A skill's scoped name, such as `orchestrator:orch-flow`, is
 # not a start, and a **Start a fresh subagent** pointer is not a read.
-# agent_role <agent name>: the role an orch- agent's setting is read under.
-agent_role() {
-  case "$1" in
-    orch-lens-*) echo lens ;;
-    orch-reviewer-*) echo reviewer ;;
-    orch-*-auditor) echo auditor ;;
-    orch-*) echo "${1#orch-}" ;;
-  esac
-}
 # agent_start_files <plugin root>: every skill file, agent file and docs/
 # file a start site can live in, one path per line.
 agent_start_files() {
@@ -1279,6 +1270,8 @@ scan_agent_settings() {
     echo "scripts/orch/agent.sh: no AGENT_ROLES read"
     return 0
   fi
+  # shellcheck source=/dev/null
+  source "$PLUGIN_ROOT/scripts/orch/agent.sh" || return 0
   pattern="(orch-(${known_roles// /|})(-[a-z]+)?|orch-[a-z]+-auditor)"
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
@@ -1290,7 +1283,8 @@ scan_agent_settings() {
       # read, not an agent to start.
       while IFS= read -r name; do
         case "$name" in /* | *.md | '') continue ;; esac
-        roles+=" $(agent_role "$name")"
+        role="$(agent_role_of "$name")"
+        roles+=" ${role:-${name#orch-}}"
       done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
     fi
     grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
