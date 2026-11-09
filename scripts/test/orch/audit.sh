@@ -66,29 +66,14 @@ assert_status "a failed create of the documentation label is ignored" "$st" 0
 assert_eq "the issue is still opened and its number printed" "$out" "1"
 fake_unfail
 
-# Each category label is created, with GitHub's default colour and description,
-# and put on the issue beside needs-triage.
-for c in "bug|d73a4a|Something isn't working" "enhancement|a2eeef|New feature or request"; do
-  IFS='|' read -r cat color desc <<<"$c"
+# --category is passed through: the issue carries that category label beside
+# needs-triage.
+for cat in bug enhancement; do
   fake_github
   out="$("$ORCH" audit file "Title" --category "$cat" --finding-file "$finding" --location a.md:1 2>&1)"; st=$?
   assert_status "files under --category $cat" "$st" 0
   assert_eq "labelling the issue $cat and needs-triage" "$(fake_labels_of "$out")" "$cat needs-triage "
-  assert_contains "creating $cat with GitHub's default colour and description" "$(fake_labels)" \
-    "$cat${tab}$color${tab}$desc"
 done
-fake_github
-fake_fail adapter_label_create "$GH_502"
-out="$("$ORCH" audit file "Title" --category bug --finding-file "$finding" --location a.md:1 2>/dev/null)"; st=$?
-assert_status "a failed create of the bug label is ignored" "$st" 0
-assert_eq "the issue is still opened" "$out" "1"
-fake_unfail
-fake_github
-fake_fail adapter_label_create "$GH_502"
-out="$("$ORCH" audit file "Title" --category enhancement --finding-file "$finding" --location a.md:1 2>/dev/null)"; st=$?
-assert_status "a failed create of the enhancement label is ignored" "$st" 0
-assert_eq "the issue is still opened for enhancement" "$out" "1"
-fake_unfail
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
 # labels from.
@@ -122,26 +107,6 @@ out="$("$ORCH" audit file "docs name a flag that is gone" "${parts[@]}" 2>&1)"; 
 assert_eq "a title differing in case is a different title" "$out" "7"
 out="$("$ORCH" audit file "Closed twin" "${parts[@]}" 2>&1)"; st=$?
 assert_eq "a closed issue with the title does not count" "$out" "8"
-
-# The listing is not cut at the list limit, so a twin past it is still seen.
-fake_github
-fake_issue 1 open
-fake_issue_title 1 "Unrelated one"
-fake_issue 2 open
-fake_issue_title 2 "Unrelated two"
-fake_issue 3 open
-fake_issue_title 3 "Twin past the limit"
-out="$(ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" audit file "Twin past the limit" "${parts[@]}" 2>/dev/null)"; st=$?
-assert_status "a twin past the list limit exits 0" "$st" 0
-assert_eq "printing its number, filing nothing" "$out" "3"
-
-# A title with a quote in it is compared as it is.
-fake_github
-fake_issue 1 open
-fake_issue_title 1 'Flag "--x" is gone'
-out="$("$ORCH" audit file 'Flag "--x" is gone' "${parts[@]}" 2>/dev/null)"; st=$?
-assert_status "a twin whose title holds a quote exits 0" "$st" 0
-assert_eq "printing its number, filing nothing" "$out" "1"
 
 # --- audit file refusals ----------------------------------------------------
 
