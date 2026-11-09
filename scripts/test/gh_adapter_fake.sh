@@ -457,6 +457,19 @@ adapter_issues_labelled() {
   done | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
 }
 
+# adapter_issues_open_titles: the open issues in the store, one per line as
+# <number><TAB><title>, in number order - the first ISSUE_LIST_LIMIT of them.
+adapter_issues_open_titles() {
+  local d n
+  ! fake_failing adapter_issues_open_titles || return 1
+  for d in "$(fake_store)"/issues/*/; do
+    [ -d "$d" ] || continue
+    n="$(basename "$d")"
+    [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
+    printf '%s\t%s\n' "$n" "$(cat "$d/title" 2>/dev/null)"
+  done | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+}
+
 # fake_next_number: one past the highest issue or PR number the store holds,
 # the two sharing GitHub's numbering - where a new issue or PR is numbered
 # when no next number was set.

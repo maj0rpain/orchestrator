@@ -108,6 +108,7 @@ readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 # it serves (agent.sh's check_agent_settings) (scripts/test/orch/doctor.sh holds
 # this).
 source "$ORCH_SCRIPTS/orch/agent.sh"
+source "$ORCH_SCRIPTS/orch/audit.sh"
 source "$ORCH_SCRIPTS/orch/autopilot.sh"
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"
@@ -161,6 +162,7 @@ main() {
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     agent)         cmd_agent "$@" ;;
+    audit)         cmd_audit "$@" ;;
     autopilot)     cmd_autopilot "$@" ;;
     parallel)      cmd_parallel "$@" ;;
     suite-cost)    cmd_suite_cost "$@" ;;

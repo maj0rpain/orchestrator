@@ -689,6 +689,18 @@ orch.sh - deterministic operations for the orchestrator flow
                               as left alone. Removes nothing, exiting 1, when
                               GitHub cannot be read; exits 1 after a failed
                               step, which leaves that checkout as it stands
+  audit file <title> --finding-file <f> --location <<file>:<line>>...
+                              file one docs-audit finding as a GitHub issue
+                              labelled the repo's needs-triage and
+                              documentation, creating either if missing;
+                              prints the number. The body is the finding file,
+                              then one **Location:** line per --location (each
+                              <file>:<line> or <file>:<start>-<end>) and an
+                              **Audited at:** line with HEAD's SHA, refused
+                              before any write unless it parses back to them.
+                              An open issue with exactly this title files
+                              nothing: its number is printed, with an
+                              already-open line on stderr, exiting 0
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
