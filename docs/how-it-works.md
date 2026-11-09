@@ -1,3 +1,4 @@
+| `/orchestrator:audit-docs [<direction>]` | Audit the repo's documentation (prose docs, comments and docstrings, agent and skill instruction files) against its code, read-only: scope the whole repo or a path or direction you name, partition it into areas (confirming above 8), hunt each in a read-only `orch-doc-auditor` subagent (at most 4 at once), rank the disagreements, show them in an HTML report (a Markdown summary in chat where the host cannot open it), and hand the ones you pick to the planning interview, to `orch.sh audit file`, or both. |
 # How it works
 
 The detail behind [README.md](../README.md): what each phase does, every

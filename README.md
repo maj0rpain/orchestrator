@@ -1,3 +1,4 @@
+| `/orchestrator:audit-docs [<direction>]` | Audit the repo's documentation against its code and report where they disagree; picked findings go to the planning interview or are filed as issues. |
 # orchestrator
 
 A Claude Code plugin that takes a change from plan to pull request: a planning
