@@ -69,7 +69,7 @@ assert_eq "and creates no label" "$(fake_snapshot)" "$before"
 # shellcheck disable=SC2016 # expanded by the inner bash
 assert_eq "the audit usage line's categories equal FILED_CATEGORIES, in order" \
   "$(sourced_orch_script 'u="$(audit_file_usage)"; u="${u#*--category <}"; printf "%s" "${u%%>*}"')" \
-  "bug|enhancement|documentation"
+  "$(sourced_orch_script 'printf "%s" "${FILED_CATEGORIES// /|}"')"
 
 # --- axis table -------------------------------------------------------------
 # Every review axis has a category a finding filed on it starts in.

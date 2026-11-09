@@ -2,11 +2,20 @@
 # filed-finding.sh - the Filed finding module: a concept module with no orch.sh
 # noun of its own, holding what a filed finding is - its severities, each
 # severity's label colour and description, its label rules, and its issue
-# body, rendered from its parts and parsed back - the finding categories, and
-# the input checks review file and audit file share, that review file, audit
-# file, finding triage and issue triage read. Its tests:
+# body, rendered from its parts and parsed back - with the finding categories
+# and the input checks review file and audit file share. Review file, audit
+# file, finding triage and issue triage read it. Its tests:
 # scripts/test/orch/filed-finding.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
+
+# filed_table_keys <table>: the keys of a space-separated table of
+# <key>:<value> entries, in order, space-joined - the one derivation of each
+# table's names-alone list below.
+filed_table_keys() {
+  local entry out=""
+  for entry in $1; do out+="${entry%%:*} "; done
+  printf '%s' "${out% }"
+}
 
 # The severity table: each severity a filed finding carries as
 # review:<severity> - the ones `review file` files - paired with its label's
@@ -15,10 +24,9 @@
 readonly FILED_SEVERITY_TABLE="major:d93f0b nit:c5def5"
 
 # The filed severities alone, in the table's order, for usage lines, messages
-# and loops over them. The loop runs in the substitution's subshell, so its
-# variable never reaches the caller.
-FILED_SEVERITIES="$(for entry in $FILED_SEVERITY_TABLE; do printf '%s ' "${entry%%:*}"; done)"
-readonly FILED_SEVERITIES="${FILED_SEVERITIES% }"
+# and loops over them.
+FILED_SEVERITIES="$(filed_table_keys "$FILED_SEVERITY_TABLE")"
+readonly FILED_SEVERITIES
 
 # The axis table: each review axis a finding is filed on, paired with the
 # category a finding filed on it starts in, as <axis>:<category>, in order. A
@@ -29,8 +37,9 @@ readonly FILED_AXIS_TABLE="spec:bug standards:enhancement suite-cost:enhancement
 
 # The review axes alone, in the table's order, for usage lines, messages and
 # loops over them.
-FILED_AXES="$(for entry in $FILED_AXIS_TABLE; do printf '%s ' "${entry%%:*}"; done)"
-readonly FILED_AXES="${FILED_AXES% }"
+FILED_AXES="$(filed_table_keys "$FILED_AXIS_TABLE")"
+# shellcheck disable=SC2034 # read by review.sh
+readonly FILED_AXES
 
 # The category table: each category a finding is filed under, paired with its
 # label's colour, as <name>:<colour>, in order. A category's description is in
@@ -40,8 +49,8 @@ readonly FILED_CATEGORY_TABLE="bug:d73a4a enhancement:a2eeef documentation:0075c
 
 # The category names alone, in the table's order, for usage lines, messages and
 # loops over them.
-FILED_CATEGORIES="$(for entry in $FILED_CATEGORY_TABLE; do printf '%s ' "${entry%%:*}"; done)"
-readonly FILED_CATEGORIES="${FILED_CATEGORIES% }"
+FILED_CATEGORIES="$(filed_table_keys "$FILED_CATEGORY_TABLE")"
+readonly FILED_CATEGORIES
 
 # filed_category_description <category>: the category label's description,
 # GitHub's own default for it. Prints nothing and fails for a category with no
@@ -58,9 +67,7 @@ filed_category_description() {
 # Whether <category> is in the category table: the one membership check, over
 # FILED_CATEGORIES.
 is_filed_category() {
-  local c
-  for c in $FILED_CATEGORIES; do [ "$1" != "$c" ] || return 0; done
-  return 1
+  word_listed "$FILED_CATEGORIES" "$1"
 }
 
 # filed_severity_label <sev> <colour_var> <desc_var>: writes the review:<sev>
@@ -80,9 +87,7 @@ filed_severity_label() {
 # Whether <sev> is a filed severity: the one membership check, over
 # FILED_SEVERITIES as derived from the severity table.
 is_filed_severity() {
-  local s
-  for s in $FILED_SEVERITIES; do [ "$1" != "$s" ] || return 0; done
-  return 1
+  word_listed "$FILED_SEVERITIES" "$1"
 }
 
 # review_labels <labels>: each label in the newline-separated list that marks
