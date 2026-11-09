@@ -133,6 +133,54 @@ category_label_ensure() {
   esac
 }
 
+# finding_flags_parse <usage> <allowed> [<flag> <value>]...: reads a finding
+# filer's flag/value pairs into FINDING_FLAGS and FINDING_VALUES, parallel
+# arrays in the order given, each value trimmed. <allowed> is the flags
+# accepted, space-separated. Dies with <usage> on a flag not allowed, a flag
+# with no value, or an empty value.
+finding_flags_parse() {
+  local usage="$1" allowed=" $2 " value
+  shift 2
+  FINDING_FLAGS=() FINDING_VALUES=()
+  while [ $# -gt 0 ]; do
+    [[ $allowed == *" $1 "* ]] || die "$usage"
+    [ $# -ge 2 ] || die "$usage"
+    value="$(trim "$2")"
+    [ -n "$value" ] || die "$usage"
+    FINDING_FLAGS+=("$1") FINDING_VALUES+=("$value")
+    shift 2
+  done
+}
+
+# finding_input_check <title> <finding-file>: dies unless the title is not
+# empty and the finding file exists and holds more than whitespace - the
+# checks a finding's filer makes before it renders anything.
+finding_input_check() {
+  [ -n "$1" ] || die "the title is empty"
+  [ -f "$2" ] || die "finding file not found: $2"
+  [ -n "$(tr -d '[:space:]' <"$2")" ] || die "finding file is empty: $2"
+}
+
+# finding_location_check <location> <want>: dies unless the location is
+# <file>:<line> or <file>:<start>-<end>, split at the last colon; <want> words
+# the accepted shapes in the refusal.
+finding_location_check() {
+  local file="${1%:*}" line="${1##*:}"
+  [[ $1 == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
+    || die "not a location: $1 (want $2)"
+}
+
+# finding_body_file_new <var>: creates the temp file a finding's issue body is
+# rendered into, names it in the caller's <var>, and sets an EXIT trap that
+# removes it, so a refusal or a gh failure that dies leaves none behind.
+finding_body_file_new() {
+  local f
+  f="$(mktemp)" || die "could not create a temp file for the issue body"
+  # shellcheck disable=SC2064 # expanded now: $f is local, gone by exit
+  trap "rm -f $(printf '%q' "$f")" EXIT
+  printf -v "$1" '%s' "$f"
+}
+
 # finding_body_render <finding-file> <axis> <severity> <reason> <file> <line>
 # <sha> <pr-url> <why> [<question>]: prints a filed finding's issue body - the
 # finding text, its trailing newlines stripped, a blank line, then each

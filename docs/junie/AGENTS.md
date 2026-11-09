@@ -73,4 +73,7 @@ The orch-spec-review skill depends on the orch-lens-fidelity,
 orch-lens-consistency, orch-lens-testability, and orch-lens-implementability
 custom agents. Whenever the orch-spec-review skill is used, those four custom
 agents are required too.
+
+The orch-audit-docs skill depends on the orch-doc-auditor custom agent.
+Whenever the orch-audit-docs skill is used, that custom agent is required too.
 <!-- orchestrator:end -->

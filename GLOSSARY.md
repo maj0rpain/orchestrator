@@ -751,7 +751,8 @@ commit counts. A change with no checks at all is not thereby failing.
 
 **Finding**:
 One problem a review reports - about the change, from the review phase or a
-review pass, or about the spec, from a spec review.
+review pass, or about the spec, from a spec review - or one disagreement a
+**docs audit** reports between a repo's documentation and its code.
 Only a finding about the change from the review phase carries a **severity**,
 which the review phase assigns; the reviewer itself reports findings unranked.
 A finding from a review pass carries none: the session that ran the pass
@@ -760,7 +761,9 @@ unless a standalone review pass left it out as a
 smell-baseline finding. A finding about the spec carries no severity: the spec
 review's session marks the item proposing its edit material or minor, a human
 accepts or declines that edit, or an unattended spec review applies it as
-recommended, and it is never filed.
+recommended, and it is never filed. A docs-audit finding carries no severity and
+is never a **filed finding**: the human picks it for an interview or files it
+with `orch.sh audit file`.
 
 **Doc-agreement check**:
 The Standards reviewer's check that a change leaves no documentation saying
@@ -770,6 +773,14 @@ docstrings in the changed files and, elsewhere, only the passages that mention a
 name the change alters or removes. A contradicted ADR is never edited: it is a
 decision for a human, to amend it with a new ADR or change the code. _Avoid_:
 doc lint, docs drift check.
+
+**Docs audit**:
+An on-demand, read-only read of a whole repo, or a named area of it, for
+documentation that says something the code does not do - the repo-wide
+counterpart of the **doc-agreement check**, which sees only what one change
+touches. It covers the same texts and follows the same ADR rule. Each finding
+the human picks from it goes to a planning interview or is filed as an issue; it
+edits nothing in the repo. _Avoid_: docs drift scan.
 
 **Pattern finding**:
 A finding whose claim holds at more than one place - one cause or one breached

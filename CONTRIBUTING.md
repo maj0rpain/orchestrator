@@ -277,8 +277,8 @@ directory to `measure` beside the new ones for a reference row.
 ## Layout
 
 ```
-commands/                     start, next, flow-status, health, redo, abort, finish, release, spec-review, review-pass, sync, interview, quick-implement, to-spec, to-tickets, finding-triage, improve-tests, questions
-agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, the implementer, and the resolver of a merge conflict
+commands/                     start, next, flow-status, health, redo, abort, finish, release, spec-review, review-pass, sync, interview, quick-implement, to-spec, to-tickets, finding-triage, improve-tests, audit-docs, questions
+agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, the implementer, the resolver of a merge conflict, and the docs audit's doc auditor
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question applied by `orch.sh spec-review apply`, plus a ticket question when an existing breakdown is touched; the spec-phase entry with its flow-only steps (`spec-phase.md`), the unattended mode and the ticket step sit in reference files beside SKILL.md
 skills/orch-review/           the review loop only: rubric, authority rules, terminal states
@@ -293,6 +293,7 @@ skills/orch-release/          the release PR: model writes title and summary, pr
 skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply; --bundle groups them into bundles
 skills/orch-questions/        gathers the pending autopilot questions, a fresh subagent recommending per issue, one batch per issue, replies via `orch.sh autopilot reply`, then offers `resume` on stops and replied issues
 skills/orch-improve-tests/    evaluates a test suite read-only: scope, measure sequentially, hunt in a fresh subagent, rank by cost saved, HTML report, hand off to orch-interview
+skills/orch-audit-docs/      audits a repo's documentation against its code read-only: scope, partition into areas, hunt in read-only orch-doc-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main
 scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout

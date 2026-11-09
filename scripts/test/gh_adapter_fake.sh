@@ -439,22 +439,43 @@ adapter_issue_state() {
   cat "$(fake_issue_dir "$1")/state"
 }
 
+# fake_open_issues: the numbers of the open issues in the store, one per line
+# in number order. A caller cuts the list to ISSUE_LIST_LIMIT, as gh's --limit
+# does, with awk, which reads all of sort's output, so sort never takes SIGPIPE
+# under pipefail as it would from head (#1019).
+fake_open_issues() {
+  local d
+  for d in "$(fake_store)"/issues/*/; do
+    [ -d "$d" ] || continue
+    [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
+    basename "$d"
+  done | sort -n
+}
+
 # adapter_issues_labelled <label>...: the open issues in the store carrying
 # every label named, in number order - the first ISSUE_LIST_LIMIT of them, as
 # gh's --limit cuts the list, with awk, which reads all of sort's output, so
 # sort never takes SIGPIPE under pipefail as it would from head (#1019).
 adapter_issues_labelled() {
-  local d n l keep
+  local n l keep
   ! fake_failing adapter_issues_labelled || return 1
-  for d in "$(fake_store)"/issues/*/; do
-    [ -d "$d" ] || continue
-    n="$(basename "$d")"
-    [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
+  fake_open_issues | while read -r n; do
     keep=1
-    for l in "$@"; do grep -qxiF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
+    for l in "$@"; do grep -qxiF -- "$l" "$(fake_issue_dir "$n")/labels" 2>/dev/null || keep=0; done
     [ "$keep" = 1 ] || continue
-    printf '%s\n' "$n"
-  done | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+    printf "%s\n" "$n"
+  done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+}
+
+# adapter_issues_open_titles: every open issue in the store, one per line as
+# <number><TAB><title>, in number order - not cut at ISSUE_LIST_LIMIT.
+adapter_issues_open_titles() {
+  local n t
+  ! fake_failing adapter_issues_open_titles || return 1
+  fake_open_issues | while read -r n; do
+    t="$(cat "$(fake_issue_dir "$n")/title" 2>/dev/null)"
+    printf "%s\t%s\n" "$n" "$t"
+  done
 }
 
 # fake_next_number: one past the highest issue or PR number the store holds,

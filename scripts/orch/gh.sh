@@ -407,6 +407,15 @@ adapter_issues_labelled() {
   gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
 }
 
+# adapter_issues_open_titles: every open issue, one per line as
+# <number><TAB><title>, pull requests left out. The listing is paginated, not
+# searched or cut at ISSUE_LIST_LIMIT, so the caller's exact comparison sees
+# them all. Nothing at all where none is open.
+adapter_issues_open_titles() {
+  gh api --paginate "repos/{owner}/{repo}/issues?state=open&per_page=100" \
+    --jq '.[] | select(has("pull_request") | not) | "\(.number)\t\(.title)"'
+}
+
 # adapter_issue_create <title> <body-file> [label...]: files the issue under
 # every label named and prints its number alone. Fails, printing nothing, where
 # gh succeeded but printed no issue URL.

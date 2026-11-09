@@ -384,17 +384,12 @@ review_file() {
   local axis="" finding="" reason="" location="" why="" question=""
   local seen=" "
   shift 2
-  while [ $# -gt 0 ]; do
-    flag="$1"
-    case "$flag" in
-      --axis|--finding-file|--severity-reason|--location|--why|--spec-question) ;;
-      *) die "$usage" ;;
-    esac
-    [ $# -ge 2 ] || die "$usage"
+  finding_flags_parse "$usage" "--axis --finding-file --severity-reason --location --why --spec-question" "$@"
+  local i
+  for i in "${!FINDING_FLAGS[@]}"; do
+    flag="${FINDING_FLAGS[i]}" value="${FINDING_VALUES[i]}"
     ! word_listed "$seen" "$flag" || die "$usage"
     seen+="$flag "
-    value="$(trim "$2")"
-    [ -n "$value" ] || die "$usage"
     case "$flag" in
       --axis)            axis="${value,,}" ;;
       --finding-file)    finding="$value" ;;
@@ -403,7 +398,6 @@ review_file() {
       --why)             why="$value" ;;
       --spec-question)   question="$value" ;;
     esac
-    shift 2
   done
   for flag in --axis --finding-file --severity-reason --location --why; do
     word_listed "$seen" "$flag" || die "$usage"
@@ -416,17 +410,14 @@ review_file() {
   # The category follows the axis; finding triage confirms or flips it later.
   category="$(category_for_axis "$axis")" \
     || die "not a review axis: $axis (want ${FILED_AXES// / or })"
-  [ -n "$title" ] || die "the title is empty"
-  [ -f "$finding" ] || die "finding file not found: $finding"
-  [ -n "$(tr -d '[:space:]' <"$finding")" ] || die "finding file is empty: $finding"
+  finding_input_check "$title" "$finding"
   # Split at the last colon: the line is the part after it, N or N-M. The
   # literal suite - a suite-cost finding's - names the suite, with no line.
   if [ "$location" = "$SUITE_LOCATION" ]; then
     file="$SUITE_LOCATION" line=""
   else
+    finding_location_check "$location" "<file>:<line>, <file>:<start>-<end> or suite"
     file="${location%:*}" line="${location##*:}"
-    [[ $location == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
-      || die "not a location: $location (want <file>:<line>, <file>:<start>-<end> or suite)"
   fi
   # The PR's URL and remote head come from GitHub for the flow's recorded PR,
   # before any write: the URL is right on any host, and the remote head is
@@ -438,9 +429,7 @@ review_file() {
 
   # The round trip. The temp file is removed on every exit - a refusal or a
   # gh failure dies, so a trap, not a closing rm, is what removes it.
-  body_file="$(mktemp)" || die "could not create a temp file for the issue body"
-  # shellcheck disable=SC2064 # expanded now: $body_file is local, gone by exit
-  trap "rm -f $(printf '%q' "$body_file")" EXIT
+  finding_body_file_new body_file
   finding_body_render "$finding" "$axis" "$severity" "$reason" "$file" "$line" \
     "$sha" "$pr" "$why" "$question" >"$body_file"
   local -A got
