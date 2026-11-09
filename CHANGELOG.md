@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.50.0
+
+New `/orchestrator:audit-code [<direction>]` command and `orch-audit-code` skill: a read-only audit that checks a repo's source code, or a named area of it, for latent bugs, inefficiencies and architecture worth deepening. Fresh read-only `orch-code-auditor` subagents do the hunting, at most 4 at once. The ranked findings go into a self-contained HTML report, and the findings the user picks go to the planning interview, are filed as issues, or both.
+
+`orch.sh audit file` now requires `--category bug|enhancement|documentation` and labels the issue with it, creating the label when it is missing. A new `auditor` agent-settings role covers both audits' hunters, and the audits run no `agent sync`, so they stay read-only on Junie (ADR-0060).
+
 ## 4.49.0
 
 New `/orchestrator:audit-docs [<direction>]` command and `orch-audit-docs` skill: a read-only docs audit that checks a whole repo, or a named area of it, for documentation, comments and agent or skill instruction files that no longer match the code. Fresh `orch-doc-auditor` subagents do the hunting. The ranked findings go into a self-contained HTML report, and the findings the user picks go to the planning interview or are filed as issues. The new `orch.sh audit file` command files a finding as a `needs-triage` and `documentation` issue, or prints the number of an open issue that already has the same title.
