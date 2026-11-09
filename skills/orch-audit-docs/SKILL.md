@@ -67,14 +67,15 @@ start nothing until they answer. A narrowed scope returns to this step.
 
 ## 3. Hunt
 
-Run `bash "$ORCH" agent sync` once, before the first subagent (see the
-*Start a fresh subagent* row of `docs/host-capabilities.md`). Then start one
-fresh subagent per area, never a fork, each an `orch-doc-auditor`, at most 4
-at once; start the next as one finishes. Each prompt names its area (the docs
-to read and the code they describe), the repo root, and its own findings file
-in the temp directory. The auditor has no Edit or Bash tool; its brief holds
-the method (doc-claim driven), the finding fields and the ADR rule. A reply is
-the file's path and a finding count; read each file.
+`orch-doc-auditor` has no role, so it has no agent setting: this skill reads
+no `agent get` and runs no `agent sync`. Start one fresh subagent per area
+(see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
+fork, each an `orch-doc-auditor`, at most 4 at once; start the next as one
+finishes. Each prompt names its area (the docs to read and the code they
+describe), the repo root, and its own findings file in the temp directory. The
+auditor has no Edit or Bash tool; its brief holds the method (doc-claim
+driven), the finding fields and the ADR rule. A reply is the file's path and a
+finding count; read each file.
 
 A finding has its kind of text, its location (file and line), the doc passage,
 the code it disagrees with, its confidence (**certain** or **likely**) and a
