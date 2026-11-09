@@ -102,8 +102,9 @@ note, capture and the like) and calls nothing a noun module defines; its test
 section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
 calls it. The concept modules with no noun, `checkout.sh` (the Checkout module:
 the walk over every checkout), `filed-finding.sh` (the Filed finding module:
-a filed finding's severities and labels, and rendering and parsing its issue
-body), `issue-timeline.sh` (the Issue timeline module: one issue's
+a filed finding's severities and labels, rendering and parsing its issue body,
+the finding categories, and the input checks `review file` and `audit file`
+share), `issue-timeline.sh` (the Issue timeline module: one issue's
 comment history, read once and asked in domain terms), `known-items.sh` (the
 Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
@@ -298,7 +299,7 @@ skills/orch-audit-code/      audits a repo's source code for latent bugs, ineffi
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main
 scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
-scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body
+scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file` and `audit file` share
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a claim on this host is alive - the run records, the start-time reader, the watch pidfile, the session log names

@@ -42,7 +42,13 @@ audit_body_parse() {
   printf -v "$3" '%s' "$__abp_shas"
 }
 
-AUDIT_FILE_USAGE="usage: orch.sh audit file <title> --category <bug|enhancement|documentation> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
+# audit_file_usage: the usage line, its categories read from the Filed finding
+# module's list. A function, not a variable: orch.sh sources audit.sh before
+# filed-finding.sh, so a string built at source time could not read the list.
+audit_file_usage() {
+  local cats="${FILED_CATEGORIES// /|}"
+  printf 'usage: orch.sh audit file <title> --category <%s> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]\n' "$cats"
+}
 
 # audit_file <title> --category <c> --finding-file <f> --location <loc>...:
 # files one finding as a GitHub issue and prints its number. Every check - the
@@ -51,34 +57,30 @@ AUDIT_FILE_USAGE="usage: orch.sh audit file <title> --category <bug|enhancement|
 # open issue with exactly the title files nothing: its number is printed, with
 # the already-open line on stderr, and the exit is 0.
 audit_file() {
-  [ $# -ge 1 ] || die "$AUDIT_FILE_USAGE"
+  [ $# -ge 1 ] || die "$(audit_file_usage)"
   local title="$1" finding="" category="" locations=() i
   shift
-  finding_flags_parse "$AUDIT_FILE_USAGE" "--category --finding-file --location" "$@"
+  finding_flags_parse "$(audit_file_usage)" "--category --finding-file --location" "$@"
   for i in "${!FINDING_FLAGS[@]}"; do
     case "${FINDING_FLAGS[i]}" in
       --category)
-        [ -z "$category" ] || die "$AUDIT_FILE_USAGE"
+        [ -z "$category" ] || die "$(audit_file_usage)"
         category="${FINDING_VALUES[i]}" ;;
       --finding-file)
-        [ -z "$finding" ] || die "$AUDIT_FILE_USAGE"
+        [ -z "$finding" ] || die "$(audit_file_usage)"
         finding="${FINDING_VALUES[i]}" ;;
       --location) locations+=("${FINDING_VALUES[i]}") ;;
     esac
   done
-  [ -n "$finding" ] && [ -n "$category" ] && [ "${#locations[@]}" -gt 0 ] || die "$AUDIT_FILE_USAGE"
+  [ -n "$finding" ] && [ -n "$category" ] && [ "${#locations[@]}" -gt 0 ] || die "$(audit_file_usage)"
 
-  case "$category" in
-    bug|enhancement|documentation) ;;
-    *) die "$AUDIT_FILE_USAGE" ;;
-  esac
+  is_filed_category "$category" || die "$(audit_file_usage)"
   local loc sha body_file n err existing existing_n existing_title triage
   finding_input_check "$title" "$finding"
   for loc in "${locations[@]}"; do
     finding_location_check "$loc" "<file>:<line> or <file>:<start>-<end>"
   done
   sha="$(git rev-parse --verify HEAD 2>/dev/null)" || die "cannot read the HEAD commit"
-  [[ $sha =~ ^[0-9a-fA-F]+$ ]] || die "not a sha: $sha (want a hex commit SHA)"
 
   finding_body_file_new body_file
   audit_body_render "$finding" "$sha" "${locations[@]}" >"$body_file"
@@ -115,6 +117,6 @@ cmd_audit() {
   shift || true
   case "$op" in
     file) audit_file "$@" ;;
-    *) die "$AUDIT_FILE_USAGE" ;;
+    *) die "$(audit_file_usage)" ;;
   esac
 }

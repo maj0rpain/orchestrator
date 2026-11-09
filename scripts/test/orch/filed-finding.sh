@@ -39,6 +39,38 @@ assert_eq "FILED_SEVERITIES lists the table's severities in its order" \
 sourced_orch filed_severity_label blocking colour desc
 assert_status "a severity with no entry returns 1" "$?" 1
 
+# --- category table --------------------------------------------------------
+# The categories a finding is filed under: the audit filer's check and usage
+# line and the category label all derive from the one table.
+
+echo
+echo "category table"
+new_repo >/dev/null
+fake_github
+# shellcheck disable=SC2016 # expanded by the inner bash
+assert_eq "FILED_CATEGORIES lists the table's categories in its order" \
+  "$(sourced_orch_script 'printf "%s" "$FILED_CATEGORIES"')" "bug enhancement documentation"
+for cat in bug enhancement documentation; do
+  sourced_orch is_filed_category "$cat"; assert_status "is_filed_category accepts $cat" "$?" 0
+done
+sourced_orch is_filed_category question; assert_status "is_filed_category refuses an unknown category" "$?" 1
+# shellcheck disable=SC2016 # expanded by the inner bash
+missing="$(sourced_orch_script '
+  for cat in $FILED_CATEGORIES; do
+    [ -n "$(filed_category_description "$cat")" ] || printf "%s\n" "$cat"
+  done' 2>&1)"
+assert_eq "every member of FILED_CATEGORIES has a description" "$missing" ""
+sourced_orch filed_category_description question >/dev/null
+assert_status "a category with no description returns 1" "$?" 1
+before="$(fake_snapshot)"
+sourced_orch category_label_ensure question
+assert_status "category_label_ensure returns 1 for an unknown category" "$?" 1
+assert_eq "and creates no label" "$(fake_snapshot)" "$before"
+# shellcheck disable=SC2016 # expanded by the inner bash
+assert_eq "the audit usage line's categories equal FILED_CATEGORIES, in order" \
+  "$(sourced_orch_script 'u="$(audit_file_usage)"; u="${u#*--category <}"; printf "%s" "${u%%>*}"')" \
+  "$(sourced_orch_script 'printf "%s" "${FILED_CATEGORIES// /|}"')"
+
 # --- axis table -------------------------------------------------------------
 # Every review axis has a category a finding filed on it starts in.
 
