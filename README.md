@@ -129,6 +129,9 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:questions` | Gather the pending autopilot questions, put them to you with a second recommendation, and post your replies. |
 | `/orchestrator:improve-tests [<direction>]` | Evaluate the test suite and propose refactors that cut its cost without testing less. |
 
+The agents under `agents/` include `orch-doc-auditor`, the read-only hunter of a
+docs audit: it checks one area's documentation against the code.
+
 Every command in full:
 [docs/how-it-works.md](docs/how-it-works.md#commands-in-detail).
 
