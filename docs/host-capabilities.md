@@ -73,7 +73,7 @@ agent names the roles it starts and points here, and states none of this itself.
 - On Junie, the setting travels in agent copies instead (see **Host
   fallback**): before a skill starts any plugin agent, it runs `bash "$ORCH"
   agent sync` once per run - except the read-only audit skills,
-  `orch-audit-docs` and orch-audit-code, which never sync (ADR-0060): their
+  `orch-audit-docs` and `orch-audit-code`, which never sync (ADR-0060): their
   hunters carry the `auditor` setting only from copies the user wrote with
   `orch.sh agent sync`. A failed sync stops the run, relaying its
   message. The skill reads no `agent get` and passes nothing to the start:

@@ -122,7 +122,6 @@
 #   scan_audit_code_category  orch-audit-code hands off with --category bug and
 #     enhancement
 #   scan_audit_code_tools  orch-code-auditor's tools are Read, Grep, Glob, Write
-#     runs no agent sync
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
@@ -2773,14 +2772,14 @@ echo "audit docs (#2485)"
 # orch-audit-docs is defined by its six steps, so each step heading stays
 # present and in order, and its command routes to it.
 audit_docs_skill='skills/orch-audit-docs/SKILL.md'
-audit_docs_steps='Scope
+audit_steps='Scope
 Partition
 Hunt
 Rank
 Report
 Hand off'
 # scan_audit_docs <plugin root>: scan_skill_steps for orch-audit-docs.
-scan_audit_docs() { scan_skill_steps "$1" audit-docs "$audit_docs_skill" "$audit_docs_steps"; }
+scan_audit_docs() { scan_skill_steps "$1" audit-docs "$audit_docs_skill" "$audit_steps"; }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-audit-docs" "$fixture/commands"
 printf '# A\n\n## 1. Scope\n\n## 3. Hunt\n\n## 2. Partition\n\n## 4. Rank\n\n## 5. Report\n' \
@@ -2802,28 +2801,31 @@ check "orch-audit-docs has its command and its six step headings in order" \
 # scan_audit_docs_category <plugin root>: one line when the audit-docs skill's
 # audit file command does not pass --category documentation.
 scan_audit_docs_category() {
-  local r="$1" flat
-  flat="$(flat_text "$r/$audit_docs_skill" 2>/dev/null)"
-  grep -qF 'audit file "<title>" --category documentation ' <<<"$flat" \
-    || echo "$audit_docs_skill: the audit file command does not pass --category documentation"
+  local r="$1" hand
+  hand="$(md_section "$r/$audit_docs_skill" "## 6. Hand off" 2>/dev/null | flat_text)"
+  grep -qF 'audit file "<title>" --category documentation ' <<<"$hand" \
+    || echo "$audit_docs_skill: the Hand off step does not pass --category documentation"
   return 0
 }
-printf 'run `bash "$ORCH" audit file "<title>" --finding-file <f>`\n' >"$fixture/$audit_docs_skill"
+printf '# A\n\n## 6. Hand off\n\nrun `bash "$ORCH" audit file "<title>" --finding-file <f>`\n' >"$fixture/$audit_docs_skill"
 flags "an audit-docs hand off without --category documentation is flagged" \
   "$(scan_audit_docs_category "$fixture")" \
-  "$audit_docs_skill: the audit file command does not pass --category documentation"
+  "$audit_docs_skill: the Hand off step does not pass --category documentation"
 check "orch-audit-docs hands off with --category documentation" \
   "$(scan_audit_docs_category "$PLUGIN_ROOT")"
 
-# scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs, and
-# orch-audit-code once it exists) whose Hunt step does not name agent get
+# scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs and
+# orch-audit-code) whose Hunt step does not name agent get
 # auditor, and one per skill that runs an agent sync command - a sentence saying
 # it runs none is allowed.
 scan_audit_hunt() {
   local r="$1" name skill hunt
   for name in audit-docs audit-code; do
     skill="skills/orch-$name/SKILL.md"
-    [ -f "$r/$skill" ] || continue
+    if [ ! -f "$r/$skill" ]; then
+      echo "$skill: missing"
+      continue
+    fi
     if ! hunt="$(md_section "$r/$skill" "## 3. Hunt" 2>/dev/null)" ||
       ! grep -qF 'agent get auditor' <<<"$(flat_text <<<"$hunt")"; then
       echo "$skill: the Hunt step does not name agent get auditor"
@@ -2855,7 +2857,7 @@ check "each audit skill's Hunt step reads agent get auditor and runs no agent sy
 # orch-audit-code is defined by the same six steps; its command routes to it.
 audit_code_skill='skills/orch-audit-code/SKILL.md'
 # scan_audit_code <plugin root>: scan_skill_steps for orch-audit-code.
-scan_audit_code() { scan_skill_steps "$1" audit-code "$audit_code_skill" "$audit_docs_steps"; }
+scan_audit_code() { scan_skill_steps "$1" audit-code "$audit_code_skill" "$audit_steps"; }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-audit-code" "$fixture/commands"
 printf '# A\n\n## 1. Scope\n\n## 3. Hunt\n\n## 2. Partition\n\n## 4. Rank\n\n## 5. Report\n' \

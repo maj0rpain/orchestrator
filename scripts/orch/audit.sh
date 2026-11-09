@@ -68,11 +68,8 @@ audit_file() {
   done
   [ -n "$finding" ] && [ -n "$category" ] && [ "${#locations[@]}" -gt 0 ] || die "$AUDIT_FILE_USAGE"
 
-  local color description
   case "$category" in
-    bug) color=d73a4a description="Something isn't working" ;;
-    enhancement) color=a2eeef description="New feature or request" ;;
-    documentation) color=0075ca description="Improvements or additions to documentation" ;;
+    bug|enhancement|documentation) ;;
     *) die "$AUDIT_FILE_USAGE" ;;
   esac
   local loc sha body_file n err existing existing_n existing_title triage
@@ -107,7 +104,7 @@ audit_file() {
 
   triage="$(triage_label_for needs-triage)"
   triage_label_ensure "$triage"
-  adapter_label_create "$category" "$color" "$description" 2>/dev/null || true
+  category_label_ensure "$category"
   gh_or_die --out n "create the issue" \
     adapter_issue_create "$title" "$body_file" "$triage" "$category"
   note "$n"

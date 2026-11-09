@@ -122,14 +122,15 @@ category_other() {
   esac
 }
 
-# The category label - bug or enhancement - is the repo's too, like the triage
-# label: created only where missing, never overwritten, with GitHub's own
-# default colour and description, and a failed create ignored for the same
-# reason.
+# The category label - bug, enhancement or documentation - is the repo's too,
+# like the triage label: created only where missing, never overwritten, with
+# GitHub's own default colour and description, and a failed create ignored for
+# the same reason.
 category_label_ensure() {
   case "$1" in
     bug)         adapter_label_create bug d73a4a "Something isn't working" 2>/dev/null || true ;;
     enhancement) adapter_label_create enhancement a2eeef "New feature or request" 2>/dev/null || true ;;
+    documentation) adapter_label_create documentation 0075ca "Improvements or additions to documentation" 2>/dev/null || true ;;
   esac
 }
 

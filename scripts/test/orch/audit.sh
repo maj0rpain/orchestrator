@@ -83,6 +83,12 @@ out="$("$ORCH" audit file "Title" --category bug --finding-file "$finding" --loc
 assert_status "a failed create of the bug label is ignored" "$st" 0
 assert_eq "the issue is still opened" "$out" "1"
 fake_unfail
+fake_github
+fake_fail adapter_label_create "$GH_502"
+out="$("$ORCH" audit file "Title" --category enhancement --finding-file "$finding" --location a.md:1 2>/dev/null)"; st=$?
+assert_status "a failed create of the enhancement label is ignored" "$st" 0
+assert_eq "the issue is still opened for enhancement" "$out" "1"
+fake_unfail
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
 # labels from.

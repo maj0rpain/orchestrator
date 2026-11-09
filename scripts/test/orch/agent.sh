@@ -378,15 +378,14 @@ assert_eq "show lists the auditor role" "$("$ORCH" agent show | grep "^auditor")
   "auditor model opus (local) effort high (local)"
 "$ORCH" agent clear auditor >/dev/null
 assert_eq "clear auditor unsets its model" "$(key local orchestrator.model.auditor)" "<unset>"
-"$ORCH" agent set auditor --host junie --model gpt-5 >/dev/null
+"$ORCH" agent set auditor --host junie --model gpt-5 --effort low >/dev/null
 assert_contains "set auditor --host junie writes a copy of orch-doc-auditor" \
   "$(cat .junie/agents/orch-doc-auditor.md)" "gpt-5"
-"$ORCH" agent clear auditor --host junie >/dev/null
-assert_eq "clear auditor --host junie removes the copy" "$(on_disk .junie/agents/orch-doc-auditor.md)" "absent"
-"$ORCH" agent set auditor --host junie --model gpt-5 --effort low >/dev/null
 assert_contains "set auditor --host junie writes a copy of orch-code-auditor with the setting" \
   "$(cat .junie/agents/orch-code-auditor.md)" "reasoningLevel: low"
 "$ORCH" agent clear auditor --host junie >/dev/null
+assert_eq "clear auditor --host junie removes the doc auditor copy" "$(on_disk .junie/agents/orch-doc-auditor.md)" "absent"
+assert_eq "clear auditor --host junie removes the code auditor copy" "$(on_disk .junie/agents/orch-code-auditor.md)" "absent"
 unset -f jkey
 unset -f key untouched
 restore_suite_env
