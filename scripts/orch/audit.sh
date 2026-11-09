@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# audit.sh - orch.sh's audit command: audit file, which files one docs-audit
+# audit.sh - orch.sh's audit command: audit file, which files one audit
 # finding as a GitHub issue, its body rendered from the finding file, its
 # locations and the HEAD it was audited at, and parsed back before any write.
 # Its tests: scripts/test/orch/audit.sh.
