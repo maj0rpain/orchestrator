@@ -42,29 +42,39 @@ audit_body_parse() {
   printf -v "$3" '%s' "$__abp_shas"
 }
 
-AUDIT_FILE_USAGE="usage: orch.sh audit file <title> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
+AUDIT_FILE_USAGE="usage: orch.sh audit file <title> --category <bug|enhancement|documentation> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
 
-# audit_file <title> --finding-file <f> --location <loc>...: files one finding
-# as a GitHub issue and prints its number. Every check - the title, the
-# finding file, the locations, HEAD's SHA and the round trip of the rendered
-# body - comes before any GitHub read or write. An open issue with exactly the
+# audit_file <title> --category <c> --finding-file <f> --location <loc>...:
+# files one finding as a GitHub issue and prints its number. Every check - the
+# title, the finding file, the category, the locations, HEAD's SHA and the
+# round trip of the rendered body - comes before any GitHub read or write. An
 # title files nothing: its number is printed, with the already-open line on
 # stderr, and the exit is 0.
 audit_file() {
   [ $# -ge 1 ] || die "$AUDIT_FILE_USAGE"
-  local title="$1" finding="" locations=() i
+  local title="$1" finding="" category="" locations=() i
   shift
-  finding_flags_parse "$AUDIT_FILE_USAGE" "--finding-file --location" "$@"
+  finding_flags_parse "$AUDIT_FILE_USAGE" "--category --finding-file --location" "$@"
   for i in "${!FINDING_FLAGS[@]}"; do
     case "${FINDING_FLAGS[i]}" in
+      --category)
+        [ -z "$category" ] || die "$AUDIT_FILE_USAGE"
+        category="${FINDING_VALUES[i]}" ;;
       --finding-file)
         [ -z "$finding" ] || die "$AUDIT_FILE_USAGE"
         finding="${FINDING_VALUES[i]}" ;;
       --location) locations+=("${FINDING_VALUES[i]}") ;;
     esac
   done
-  [ -n "$finding" ] && [ "${#locations[@]}" -gt 0 ] || die "$AUDIT_FILE_USAGE"
+  [ -n "$finding" ] && [ -n "$category" ] && [ "${#locations[@]}" -gt 0 ] || die "$AUDIT_FILE_USAGE"
 
+  local color description
+  case "$category" in
+    bug) color=d73a4a description="Something isn't working" ;;
+    enhancement) color=a2eeef description="New feature or request" ;;
+    documentation) color=0075ca description="Improvements or additions to documentation" ;;
+    *) die "$AUDIT_FILE_USAGE" ;;
+  esac
   local loc sha body_file n err existing existing_n existing_title triage
   finding_input_check "$title" "$finding"
   for loc in "${locations[@]}"; do
@@ -97,9 +107,9 @@ audit_file() {
 
   triage="$(triage_label_for needs-triage)"
   triage_label_ensure "$triage"
-  adapter_label_create documentation 0075ca "Improvements or additions to documentation" 2>/dev/null || true
+  adapter_label_create "$category" "$color" "$description" 2>/dev/null || true
   gh_or_die --out n "create the issue" \
-    adapter_issue_create "$title" "$body_file" "$triage" documentation
+    adapter_issue_create "$title" "$body_file" "$triage" "$category"
   note "$n"
 }
 

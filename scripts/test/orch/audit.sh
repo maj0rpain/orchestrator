@@ -16,7 +16,7 @@ audit_repo() {
   fake_github
   finding="$(mktemp)"
   printf 'A doc says --force is required.\n\nThe code takes no such flag.\n\n\n' >"$finding"
-  parts=(--finding-file "$finding" --location docs/a.md:12 --location README.md:3-9)
+  parts=(--category documentation --finding-file "$finding" --location docs/a.md:12 --location README.md:3-9)
   tab="$(printf '\t')"
   errf="$(mktemp)"
 }
@@ -64,6 +64,24 @@ fake_fail adapter_label_create "$GH_502"
 out="$("$ORCH" audit file "Title" "${parts[@]}" 2>/dev/null)"; st=$?
 assert_status "a failed create of the documentation label is ignored" "$st" 0
 assert_eq "the issue is still opened and its number printed" "$out" "1"
+fake_unfail
+
+# Each category label is created, with GitHub's default colour and description,
+# and put on the issue beside needs-triage.
+for c in "bug|d73a4a|Something isn't working" "enhancement|a2eeef|New feature or request"; do
+  IFS='|' read -r cat color desc <<<"$c"
+  fake_github
+  out="$("$ORCH" audit file "Title" --category "$cat" --finding-file "$finding" --location a.md:1 2>&1)"; st=$?
+  assert_status "files under --category $cat" "$st" 0
+  assert_eq "labelling the issue $cat and needs-triage" "$(fake_labels_of "$out")" "$cat needs-triage "
+  assert_contains "creating $cat with GitHub's default colour and description" "$(fake_labels)" \
+    "$cat${tab}$color${tab}$desc"
+done
+fake_github
+fake_fail adapter_label_create "$GH_502"
+out="$("$ORCH" audit file "Title" --category bug --finding-file "$finding" --location a.md:1 2>/dev/null)"; st=$?
+assert_status "a failed create of the bug label is ignored" "$st" 0
+assert_eq "the issue is still opened" "$out" "1"
 fake_unfail
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
@@ -133,38 +151,41 @@ refuse() { # label message args...
   assert_eq "saying why" "$out" "$msg"
   assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
 }
-usage="orch: usage: orch.sh audit file <title> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
+usage="orch: usage: orch.sh audit file <title> --category <bug|enhancement|documentation> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
 refuse "an empty title" "orch: the title is empty" "" "${parts[@]}"
 refuse "no title" "$usage"
-refuse "a missing --finding-file" "$usage" "T" --location a.md:1
-refuse "no --location" "$usage" "T" --finding-file "$finding"
+refuse "a missing --finding-file" "$usage" "T" --category bug --location a.md:1
+refuse "no --location" "$usage" "T" --category bug --finding-file "$finding"
 refuse "an unknown flag" "$usage" "T" "${parts[@]}" --bogus x
-refuse "a flag with no value" "$usage" "T" --finding-file "$finding" --location
+refuse "a flag with no value" "$usage" "T" --category bug --finding-file "$finding" --location
 refuse "a finding file given twice" "$usage" "T" "${parts[@]}" --finding-file "$finding"
+refuse "no --category" "$usage" "T" --finding-file "$finding" --location a.md:1
+refuse "a repeated --category" "$usage" "T" "${parts[@]}" --category bug
+refuse "an unknown --category" "$usage" "T" --category question --finding-file "$finding" --location a.md:1
 refuse "a finding file that does not exist" \
   "orch: finding file not found: /nonexistent/finding.md" \
-  "T" --finding-file /nonexistent/finding.md --location a.md:1
+  "T" --category bug --finding-file /nonexistent/finding.md --location a.md:1
 blank="$(mktemp)"
 printf '  \n\n' >"$blank"
 refuse "a whitespace-only finding file" \
   "orch: finding file is empty: $blank" \
-  "T" --finding-file "$blank" --location a.md:1
+  "T" --category bug --finding-file "$blank" --location a.md:1
 refuse "the location 'a.md:x'" \
   "orch: not a location: a.md:x (want <file>:<line> or <file>:<start>-<end>)" \
-  "T" --finding-file "$finding" --location a.md:x
+  "T" --category bug --finding-file "$finding" --location a.md:x
 refuse "a location with a backtick in its file" \
   "orch: the rendered body does not parse back: locations (given 'a\`b.md:1', parsed '')" \
-  "T" --finding-file "$finding" --location 'a`b.md:1'
+  "T" --category bug --finding-file "$finding" --location 'a`b.md:1'
 
 # A finding file already holding a labelled line shadows the rendered one.
 quoting="$(mktemp)"
 printf 'It reads the line\n**Location:** `x.md:1`\nas a site.\n' >"$quoting"
-out="$("$ORCH" audit file "T" --finding-file "$quoting" --location a.md:1 2>&1)"; st=$?
+out="$("$ORCH" audit file "T" --category bug --finding-file "$quoting" --location a.md:1 2>&1)"; st=$?
 assert_status "a finding file holding a Location line is refused" "$st" 1
 assert_contains "as a body that does not parse back" "$out" "the rendered body does not parse back: locations"
 assert_eq "writing nothing" "$(fake_snapshot)" "$before"
 printf 'It reads the line\n**Audited at:** abc123\nas a SHA.\n' >"$quoting"
-out="$("$ORCH" audit file "T" --finding-file "$quoting" --location a.md:1 2>&1)"; st=$?
+out="$("$ORCH" audit file "T" --category bug --finding-file "$quoting" --location a.md:1 2>&1)"; st=$?
 assert_status "a finding file holding an Audited at line is refused" "$st" 1
 assert_contains "as a body that does not parse back" "$out" "the rendered body does not parse back: audited at"
 assert_eq "writing nothing" "$(fake_snapshot)" "$before"

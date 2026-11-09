@@ -113,6 +113,8 @@
 #     report and a Markdown-summary fallback
 #   scan_audit_docs  orch-audit-docs has its command file and its six step
 #     headings in order
+#   scan_audit_docs_category  orch-audit-docs hands off with --category
+#     documentation
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
@@ -2780,6 +2782,21 @@ flags "an audit-docs command routing elsewhere is flagged" \
   "commands/audit-docs.md: does not route to orch-audit-docs"
 check "orch-audit-docs has its command and its six step headings in order" \
   "$(scan_audit_docs "$PLUGIN_ROOT")"
+# scan_audit_docs_category <plugin root>: one line when the audit-docs skill's
+# audit file command does not pass --category documentation.
+scan_audit_docs_category() {
+  local r="$1" flat
+  flat="$(flat_text "$r/$audit_docs_skill" 2>/dev/null)"
+  grep -qF 'audit file "<title>" --category documentation ' <<<"$flat" \
+    || echo "$audit_docs_skill: the audit file command does not pass --category documentation"
+  return 0
+}
+printf 'run `bash "$ORCH" audit file "<title>" --finding-file <f>`\n' >"$fixture/$audit_docs_skill"
+flags "an audit-docs hand off without --category documentation is flagged" \
+  "$(scan_audit_docs_category "$fixture")" \
+  "$audit_docs_skill: the audit file command does not pass --category documentation"
+check "orch-audit-docs hands off with --category documentation" \
+  "$(scan_audit_docs_category "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo

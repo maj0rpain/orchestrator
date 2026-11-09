@@ -689,10 +689,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               as left alone. Removes nothing, exiting 1, when
                               GitHub cannot be read; exits 1 after a failed
                               step, which leaves that checkout as it stands
-  audit file <title> --finding-file <f> --location <<file>:<line>>...
-                              file one docs-audit finding as a GitHub issue
-                              labelled the repo's needs-triage and
-                              documentation, creating either if missing;
+  audit file <title> --category <c> --finding-file <f> --location <<file>:<line>>...
+                              file one audit finding as a GitHub issue
+                              labelled the repo's needs-triage and the
+                              --category label, creating either if missing;
                               prints the number. The body is the finding file,
                               then one **Location:** line per --location (each
                               <file>:<line> or <file>:<start>-<end>) and an
