@@ -467,16 +467,15 @@ adapter_issues_labelled() {
   done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
 }
 
-# adapter_issues_open_titles <title>: the open issues in the store whose title
-# contains <title>, one per line as <number><TAB><title>, in number order - the
-# first ISSUE_LIST_LIMIT of those.
+# adapter_issues_open_titles: every open issue in the store, one per line as
+# <number><TAB><title>, in number order - not cut at ISSUE_LIST_LIMIT.
 adapter_issues_open_titles() {
   local n t
   ! fake_failing adapter_issues_open_titles || return 1
   fake_open_issues | while read -r n; do
     t="$(cat "$(fake_store)/issues/$n/title" 2>/dev/null)"
-    case "$t" in *"$1"*) printf "%s\t%s\n" "$n" "$t" ;; esac
-  done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+    printf "%s\t%s\n" "$n" "$t"
+  done
 }
 
 # fake_next_number: one past the highest issue or PR number the store holds,

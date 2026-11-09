@@ -83,7 +83,7 @@ audit_file() {
     || die "the rendered body does not parse back: audited at (given '$sha', parsed '${got_shas%$'\n'}')"
 
   # An open issue with this exact title is the finding already filed.
-  capture existing err adapter_issues_open_titles "$title" \
+  capture existing err adapter_issues_open_titles \
     || gh_die "list the open issues" "$err"
   while IFS=$'\t' read -r existing_n existing_title; do
     [ -n "$existing_n" ] || continue

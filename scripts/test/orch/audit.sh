@@ -99,7 +99,7 @@ assert_eq "a title differing in case is a different title" "$out" "7"
 out="$("$ORCH" audit file "Closed twin" "${parts[@]}" 2>&1)"; st=$?
 assert_eq "a closed issue with the title does not count" "$out" "8"
 
-# The match is searched by title, so a twin past the list limit is still seen.
+# The listing is not cut at the list limit, so a twin past it is still seen.
 audit_repo
 fake_issue 1 open
 fake_issue_title 1 "Unrelated one"
@@ -110,6 +110,14 @@ fake_issue_title 3 "Twin past the limit"
 out="$(ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" audit file "Twin past the limit" "${parts[@]}" 2>/dev/null)"; st=$?
 assert_status "a twin past the list limit exits 0" "$st" 0
 assert_eq "printing its number, filing nothing" "$out" "3"
+
+# A title with a quote in it is compared as it is.
+audit_repo
+fake_issue 1 open
+fake_issue_title 1 'Flag "--x" is gone'
+out="$("$ORCH" audit file 'Flag "--x" is gone' "${parts[@]}" 2>/dev/null)"; st=$?
+assert_status "a twin whose title holds a quote exits 0" "$st" 0
+assert_eq "printing its number, filing nothing" "$out" "1"
 
 # --- audit file refusals ----------------------------------------------------
 
