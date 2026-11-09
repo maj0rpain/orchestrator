@@ -16,7 +16,9 @@ number, the **iteration**, the **report path**, **orch.sh**, the path of the
 plugin's `orch.sh`, **known items**, the path of the known-items file - see
 **Known items** - and **standards**, the `Standards:` line listing the
 repo's standards documents, or `Standards: none` - see step 2. The spec issue is
-the Spec reviewer's material; you need it only to tell scope from standards, and
+the Spec reviewer's material; you need it to tell scope from standards, and
+before raising a doc-agreement finding against an ADR, to see whether the spec
+carries the amending ADR's wording (see **Doc-agreement check**). Otherwise
 reading it is optional. When you do, fetch its body as plain text with
 `bash "<orch.sh>" issue fetch <spec issue> <file>`, and its comments with
 `bash "<orch.sh>" issue comments <spec issue> <file>`, each into its own
@@ -235,9 +237,10 @@ finding. The first site is the finding's location wherever one is read. The
 file and line are at HEAD; the claim says what is
 wrong in one or two sentences and, where the remedy is not obvious, what the
 fix would be. The source is the documented rule it breaches, quoted briefly,
-the baseline smell it resembles, or the root-cause check's or the test-cost
-check's own source - a documented-standard breach can be hard, a smell, a
-test-cost smell or a possible symptom fix is always a judgement call. A
+the baseline smell it resembles, or the root-cause check's, the test-cost
+check's or the doc-agreement check's own source - a documented-standard breach
+can be hard, a smell, a test-cost smell, a possible symptom fix or a possible
+stale doc is always a judgement call. A
 re-raised known item ends with its marker (see **Known items**). `Known items
 held back` counts the findings held back, `0` when none were.
 
