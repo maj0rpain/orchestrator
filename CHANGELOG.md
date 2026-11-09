@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.49.0
+
+New `/orchestrator:audit-docs [<direction>]` command and `orch-audit-docs` skill: a read-only docs audit that checks a whole repo, or a named area of it, for documentation, comments and agent or skill instruction files that no longer match the code. Fresh `orch-doc-auditor` subagents do the hunting. The ranked findings go into a self-contained HTML report, and the findings the user picks go to the planning interview or are filed as issues. The new `orch.sh audit file` command files a finding as a `needs-triage` and `documentation` issue, or prints the number of an open issue that already has the same title.
+
+The Standards reviewer gains a doc-agreement check: each review loop iteration and review pass reports any doc a change leaves disagreeing with the code, and a contradicted ADR is raised as a spec question. The planning interview names the docs a plan will make stale, and the spec template lists them under Docs to update.
+
 ## 4.48.3
 
 A re-entry comment is no longer taken for a reply: `autopilot questions` lists a question that only a re-entry comment follows as pending, and `autopilot reply` posts the human's reply to it.
