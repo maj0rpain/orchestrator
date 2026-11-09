@@ -2787,12 +2787,18 @@ Hunt
 Rank
 Report
 Hand off'
+# numbered_heading <file> <name>: the first "## <n>. <name>" heading in the
+# file, so a scan finds a step by its name whatever number it sits at.
+numbered_heading() {
+  grep -m1 -E "^## [0-9]+\. $2[[:space:]]*\$" "$1" 2>/dev/null | sed 's/[[:space:]]*$//'
+  return 0
+}
 # scan_hand_off_category <plugin root> <skill file> <category>...: one line when
 # the skill's Hand off step does not pass --category for each category named.
 scan_hand_off_category() {
   local r="$1" skill="$2" hand c missing="" list
   shift 2
-  hand="$(md_section "$r/$skill" "## 6. Hand off" 2>/dev/null | flat_text)"
+  hand="$(md_section "$r/$skill" "$(numbered_heading "$r/$skill" "Hand off")" 2>/dev/null | flat_text)"
   for c in "$@"; do
     grep -qF -- "--category $c" <<<"$hand" || missing=1
   done
@@ -2822,6 +2828,12 @@ assert_empty "a hand off with every category is accepted" \
 printf '# A\n\n## 6. Hand off\n\nPass --category documentation.\n' >"$fixture/$audit_docs_skill"
 assert_empty "a category with no audit file text around it is accepted" \
   "$(scan_hand_off_category "$fixture" "$audit_docs_skill" documentation)"
+printf '# A\n\n## 7. Hand off\n\nRun `--category bug`.\n' >"$fixture/$audit_docs_skill"
+assert_empty "a hand off at step 7 passing its category is accepted" \
+  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug)"
+flags "a hand off at step 7 missing its category is flagged" \
+  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" enhancement)" \
+  "$audit_docs_skill: the Hand off step does not pass --category enhancement"
 check "orch-audit-docs has its command and its six step headings in order" \
   "$(scan_skill_steps "$PLUGIN_ROOT" audit-docs "$audit_docs_skill" "$audit_steps")"
 check "orch-audit-docs hands off with --category documentation" \
@@ -2839,7 +2851,7 @@ scan_audit_hunt() {
       echo "$skill: missing"
       continue
     fi
-    if ! hunt="$(md_section "$r/$skill" "## 3. Hunt" 2>/dev/null)" ||
+    if ! hunt="$(md_section "$r/$skill" "$(numbered_heading "$r/$skill" "Hunt")" 2>/dev/null)" ||
       ! grep -qF 'agent get auditor' <<<"$(flat_text <<<"$hunt")"; then
       echo "$skill: the Hunt step does not name agent get auditor"
     fi
@@ -2864,6 +2876,12 @@ printf '# A\n\n## 3. Hunt\n\nRead `agent get auditor`; this skill runs no agent 
   >"$fixture/skills/orch-audit-code/SKILL.md"
 assert_empty "a sentence saying the skill runs no agent sync is allowed" \
   "$(scan_audit_hunt "$fixture" | grep audit-code)"
+printf '# A\n\n## 4. Hunt\n\nStart the hunters.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
+flags "an audit Hunt step at step 4 that reads no agent get auditor is flagged" \
+  "$(scan_audit_hunt "$fixture")" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name agent get auditor"
+printf '# A\n\n## 4. Hunt\n\nRead `agent get auditor`.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
+assert_empty "an audit Hunt step at step 4 reading agent get auditor is accepted" \
+  "$(scan_audit_hunt "$fixture" | grep audit-docs)"
 check "each audit skill's Hunt step reads agent get auditor and runs no agent sync" \
   "$(scan_audit_hunt "$PLUGIN_ROOT")"
 
