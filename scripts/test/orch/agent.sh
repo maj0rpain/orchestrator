@@ -383,6 +383,10 @@ assert_contains "set auditor --host junie writes a copy of orch-doc-auditor" \
   "$(cat .junie/agents/orch-doc-auditor.md)" "gpt-5"
 "$ORCH" agent clear auditor --host junie >/dev/null
 assert_eq "clear auditor --host junie removes the copy" "$(on_disk .junie/agents/orch-doc-auditor.md)" "absent"
+"$ORCH" agent set auditor --host junie --model gpt-5 --effort low >/dev/null
+assert_contains "set auditor --host junie writes a copy of orch-code-auditor with the setting" \
+  "$(cat .junie/agents/orch-code-auditor.md)" "reasoningLevel: low"
+"$ORCH" agent clear auditor --host junie >/dev/null
 unset -f jkey
 unset -f key untouched
 restore_suite_env

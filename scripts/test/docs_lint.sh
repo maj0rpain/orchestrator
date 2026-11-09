@@ -117,6 +117,12 @@
 #     documentation
 #   scan_audit_hunt  each audit skill's Hunt step names agent get auditor and it
 #     runs no agent sync
+#   scan_audit_code  orch-audit-code has its command file and its six step
+#     headings in order
+#   scan_audit_code_category  orch-audit-code hands off with --category bug and
+#     enhancement
+#   scan_audit_code_tools  orch-code-auditor's tools are Read, Grep, Glob, Write
+#     runs no agent sync
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
@@ -2845,6 +2851,66 @@ assert_empty "a sentence saying the skill runs no agent sync is allowed" \
   "$(scan_audit_hunt "$fixture" | grep audit-code)"
 check "each audit skill's Hunt step reads agent get auditor and runs no agent sync" \
   "$(scan_audit_hunt "$PLUGIN_ROOT")"
+
+# orch-audit-code is defined by the same six steps; its command routes to it.
+audit_code_skill='skills/orch-audit-code/SKILL.md'
+# scan_audit_code <plugin root>: scan_skill_steps for orch-audit-code.
+scan_audit_code() { scan_skill_steps "$1" audit-code "$audit_code_skill" "$audit_docs_steps"; }
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-audit-code" "$fixture/commands"
+printf '# A\n\n## 1. Scope\n\n## 3. Hunt\n\n## 2. Partition\n\n## 4. Rank\n\n## 5. Report\n' \
+  >"$fixture/$audit_code_skill"
+out="$(scan_audit_code "$fixture")"
+flags "a missing audit-code command file is flagged" \
+  "$out" "commands/audit-code.md: missing"
+flags "an audit-code step heading out of order is flagged" \
+  "$out" "$audit_code_skill: required heading out of order: ## 3. Hunt"
+flags "a missing audit-code step heading is flagged" \
+  "$out" "$audit_code_skill: missing required heading: ## 6. Hand off"
+check "orch-audit-code has its command and its six step headings in order" \
+  "$(scan_audit_code "$PLUGIN_ROOT")"
+
+# scan_audit_code_category <plugin root>: one line when the audit-code skill's
+# Hand off step does not name --category with both bug and enhancement.
+scan_audit_code_category() {
+  local r="$1" hand
+  hand="$(md_section "$r/$audit_code_skill" "## 6. Hand off" 2>/dev/null | flat_text)"
+  grep -qF -- '--category bug' <<<"$hand" && grep -qF -- '--category enhancement' <<<"$hand" ||
+    echo "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
+  return 0
+}
+printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --category bug`.\n' >"$fixture/$audit_code_skill"
+flags "an audit-code hand off without --category enhancement is flagged" \
+  "$(scan_audit_code_category "$fixture")" \
+  "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
+printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --finding-file f`.\n' >"$fixture/$audit_code_skill"
+flags "an audit-code hand off without --category is flagged" \
+  "$(scan_audit_code_category "$fixture")" \
+  "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
+printf '# A\n\n## 6. Hand off\n\nRun `--category bug` or `--category enhancement`.\n' >"$fixture/$audit_code_skill"
+assert_empty "an audit-code hand off with both categories is accepted" \
+  "$(scan_audit_code_category "$fixture")"
+check "orch-audit-code hands off with --category bug and enhancement" \
+  "$(scan_audit_code_category "$PLUGIN_ROOT")"
+
+# scan_audit_code_tools <plugin root>: one line when orch-code-auditor's tools:
+# line is not exactly Read, Grep, Glob and Write.
+scan_audit_code_tools() {
+  local t
+  t="$(grep -m1 '^tools:' "$1/agents/orch-code-auditor.md" 2>/dev/null | tr -d '[] ' | sed 's/^tools://')"
+  [ "$t" = "Read,Grep,Glob,Write" ] ||
+    echo "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
+  return 0
+}
+mkdir -p "$fixture/agents"
+printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob, Write, Bash]\n---\n' >"$fixture/agents/orch-code-auditor.md"
+flags "an orch-code-auditor with an extra tool is flagged" \
+  "$(scan_audit_code_tools "$fixture")" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
+printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob]\n---\n' >"$fixture/agents/orch-code-auditor.md"
+flags "an orch-code-auditor missing Write is flagged" \
+  "$(scan_audit_code_tools "$fixture")" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
+check "orch-code-auditor's tools are exactly Read, Grep, Glob and Write" \
+  "$(scan_audit_code_tools "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo
