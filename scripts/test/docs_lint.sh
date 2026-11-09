@@ -105,6 +105,8 @@
 #     sections carry one identical Cheapest sufficient test paragraph
 #   scan_test_cost_smells  the Standards reviewer carries the four test-cost
 #     smells outside the smell baseline
+#   scan_skill_steps  a command file routes to its skill, whose numbered step
+#     headings stay present and in order
 #   scan_improve_tests  orch-improve-tests has its command file and its six step
 #     headings in order
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the
@@ -2670,21 +2672,25 @@ Rank
 Report
 Hand off'
 open_report_capability='Open a report in the browser'
-# scan_improve_tests <plugin root>: one line when the command file is missing
-# or routes elsewhere, and one per step heading (## <n>. <step>) missing from
-# the skill or out of order.
-scan_improve_tests() {
-  local r="$1" cmd="commands/improve-tests.md" step n=0 pairs="" flat
+# scan_skill_steps <plugin root> <command> <skill file> <steps>: one line when
+# commands/<command>.md is missing or routes elsewhere than orch-<command>, and
+# one per step heading (## <n>. <step>, one step per line of <steps>) missing
+# from the skill or out of order.
+scan_skill_steps() {
+  local r="$1" name="$2" skill="$3" stepl="$4" cmd step n=0 pairs="" flat
+  cmd="commands/$name.md"
   if [ ! -f "$r/$cmd" ]; then echo "$cmd: missing"
-  elif flat="$(flat_text "$r/$cmd")"; ! grep -qF '`orchestrator:orch-improve-tests` and follow it' <<<"$flat"; then
-    echo "$cmd: does not route to orch-improve-tests"
+  elif flat="$(flat_text "$r/$cmd")"; ! grep -qF "\`orchestrator:orch-$name\` and follow it" <<<"$flat"; then
+    echo "$cmd: does not route to orch-$name"
   fi
   while IFS= read -r step; do
     n=$((n + 1))
-    pairs+="$improve_tests_skill|## $n. $step"$'\n'
-  done <<<"$improve_tests_steps"
+    pairs+="$skill|## $n. $step"$'\n'
+  done <<<"$stepl"
   scan_required_headings "$r" "$pairs"
 }
+# scan_improve_tests <plugin root>: scan_skill_steps for orch-improve-tests.
+scan_improve_tests() { scan_skill_steps "$1" improve-tests "$improve_tests_skill" "$improve_tests_steps"; }
 # scan_report_capability <plugin root>: one line when docs/host-capabilities.md
 # has no row for opening the report, and one when its Fallbacks have no
 # subsection for it naming a Markdown summary.
@@ -2754,41 +2760,8 @@ Hunt
 Rank
 Report
 Hand off'
-# scan_audit_docs <plugin root>: one line when the command file is missing or
-# routes elsewhere, and one per step heading (## <n>. <step>) missing from the
-# skill or out of order.
-scan_audit_docs() {
-  local r="$1" cmd="commands/audit-docs.md" step n=0 pairs="" flat
-  if [ ! -f "$r/$cmd" ]; then echo "$cmd: missing"
-  elif flat="$(flat_text "$r/$cmd")"; ! grep -qF '`orchestrator:orch-audit-docs` and follow it' <<<"$flat"; then
-    echo "$cmd: does not route to orch-audit-docs"
-  fi
-  while IFS= read -r step; do
-    n=$((n + 1))
-    pairs+="$audit_docs_skill|## $n. $step"$'\n'
-  done <<<"$audit_docs_steps"
-  scan_required_headings "$r" "$pairs"
-}
-fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-audit-docs" "$fixture/commands"
-printf '# A\n\n## 1. Scope\n\n## 2. Partition\n\n## 4. Rank\n\n## 3. Hunt\n\n## 5. Report\n' \
-  >"$fixture/$audit_docs_skill"
-out="$(scan_audit_docs "$fixture")"
-flags "a missing audit-docs command file is flagged" "$out" "commands/audit-docs.md: missing"
-flags "an audit-docs step heading out of order is flagged" \
-  "$out" "$audit_docs_skill: required heading out of order: ## 4. Rank"
-flags "a missing audit-docs step heading is flagged" \
-  "$out" "$audit_docs_skill: missing required heading: ## 6. Hand off"
-printf 'Call the Skill tool with `orchestrator:orch-interview` and follow it.\n' \
-  >"$fixture/commands/audit-docs.md"
-flags "an audit-docs command file routing elsewhere is flagged" \
-  "$(scan_audit_docs "$fixture")" "commands/audit-docs.md: does not route to orch-audit-docs"
-printf 'Call the Skill tool with\n`orchestrator:orch-audit-docs` and follow it.\n' \
-  >"$fixture/commands/audit-docs.md"
-printf '# A\n\n## 1. Scope\n\n## 2. Partition\n\n## 3. Hunt\n\n## 4. Rank\n\n## 5. Report\n\n## 6. Hand off\n' \
-  >"$fixture/$audit_docs_skill"
-assert_empty "the audit-docs step headings in order and a wrapped route are not flagged" \
-  "$(scan_audit_docs "$fixture")"
+# scan_audit_docs <plugin root>: scan_skill_steps for orch-audit-docs.
+scan_audit_docs() { scan_skill_steps "$1" audit-docs "$audit_docs_skill" "$audit_docs_steps"; }
 check "orch-audit-docs has its command and its six step headings in order" \
   "$(scan_audit_docs "$PLUGIN_ROOT")"
 

@@ -422,9 +422,8 @@ review_file() {
   if [ "$location" = "$SUITE_LOCATION" ]; then
     file="$SUITE_LOCATION" line=""
   else
+    finding_location_check "$location" "<file>:<line>, <file>:<start>-<end> or suite"
     file="${location%:*}" line="${location##*:}"
-    [[ $location == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
-      || die "not a location: $location (want <file>:<line>, <file>:<start>-<end> or suite)"
   fi
   # The PR's URL and remote head come from GitHub for the flow's recorded PR,
   # before any write: the URL is right on any host, and the remote head is

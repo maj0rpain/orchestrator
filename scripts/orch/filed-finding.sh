@@ -142,6 +142,15 @@ finding_input_check() {
   [ -n "$(tr -d '[:space:]' <"$2")" ] || die "finding file is empty: $2"
 }
 
+# finding_location_check <location> <want>: dies unless the location is
+# <file>:<line> or <file>:<start>-<end>, split at the last colon; <want> words
+# the accepted shapes in the refusal.
+finding_location_check() {
+  local file="${1%:*}" line="${1##*:}"
+  [[ $1 == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
+    || die "not a location: $1 (want $2)"
+}
+
 # finding_body_file_new <var>: creates the temp file a finding's issue body is
 # rendered into, names it in the caller's <var>, and sets an EXIT trap that
 # removes it, so a refusal or a gh failure that dies leaves none behind.

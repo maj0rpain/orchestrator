@@ -72,12 +72,10 @@ audit_file() {
   done
   [ -n "$finding" ] && [ "${#locations[@]}" -gt 0 ] || die "$usage"
 
-  local loc file line sha body_file n err existing existing_n existing_title triage
+  local loc sha body_file n err existing existing_n existing_title triage
   finding_input_check "$title" "$finding"
   for loc in "${locations[@]}"; do
-    file="${loc%:*}" line="${loc##*:}"
-    [[ $loc == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
-      || die "not a location: $loc (want <file>:<line> or <file>:<start>-<end>)"
+    finding_location_check "$loc" "<file>:<line> or <file>:<start>-<end>"
   done
   sha="$(git rev-parse --verify HEAD 2>/dev/null)" || die "cannot read the HEAD commit"
   [[ $sha =~ ^[0-9a-fA-F]+$ ]] || die "not a sha: $sha (want a hex commit SHA)"
