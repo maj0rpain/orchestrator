@@ -107,8 +107,9 @@
 #     smells outside the smell baseline
 #   scan_skill_steps  a command file routes to its skill, whose numbered step
 #     headings stay present and in order
-#   scan_improve_tests  orch-improve-tests has its command file and its six step
-#     headings in order
+#   scan_audit_tests  orch-audit-tests has its command file and its seven step
+#     headings in order, and nothing outside CHANGELOG.md, changelog.d/ and this
+#     lint names improve-tests
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the
 #     report and a Markdown-summary fallback
 #   scan_hand_off_category  an audit skill's Hand off step passes --category for
@@ -2112,7 +2113,7 @@ agents/orch-resolver.md
 skills/orch-review-pass/SKILL.md
 docs/driver-loop.md
 skills/orch-review/SKILL.md
-skills/orch-improve-tests/SKILL.md
+skills/orch-audit-tests/SKILL.md
 skills/orch-spec-review/SKILL.md'
 check "each long-command site names Run a long command" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$long_sites" 'Run a long command')"
@@ -2684,16 +2685,17 @@ assert_empty "a triage and a review pass that run suite-cost check, wrapped acro
 check "the review loop's triage and the review pass run suite-cost check" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$suite_cost_checks" 'suite-cost check --')"
 
-# --- improve tests (#1309) ----------------------------------------------------
+# --- audit tests (#1309, #2499) -----------------------------------------------
 echo
-echo "improve tests (#1309)"
-# orch-improve-tests is defined by its six steps, so each step heading stays
+echo "audit tests (#1309, #2499)"
+# orch-audit-tests is defined by its seven steps, so each step heading stays
 # present and in order, and its command routes to it. Opening its report is a
 # host capability: a row in docs/host-capabilities.md, with a fallback
 # subsection that gives the Markdown summary in its place.
-improve_tests_skill='skills/orch-improve-tests/SKILL.md'
-improve_tests_steps='Scope
+audit_tests_skill='skills/orch-audit-tests/SKILL.md'
+audit_tests_steps='Scope
 Measure
+Partition
 Hunt
 Rank
 Report
@@ -2716,8 +2718,21 @@ scan_skill_steps() {
   done <<<"$step_list"
   scan_required_headings "$r" "$pairs"
 }
-# scan_improve_tests <plugin root>: scan_skill_steps for orch-improve-tests.
-scan_improve_tests() { scan_skill_steps "$1" improve-tests "$improve_tests_skill" "$improve_tests_steps"; }
+# scan_audit_tests <plugin root>: scan_skill_steps for orch-audit-tests, plus
+# one line when the old command file or skill directory still exists and one per
+# file outside CHANGELOG.md, changelog.d/ and this lint that still names the old
+# command, improve-tests.
+scan_audit_tests() {
+  local r="$1" f
+  scan_skill_steps "$r" audit-tests "$audit_tests_skill" "$audit_tests_steps"
+  [ ! -e "$r/commands/improve-tests.md" ] || echo "commands/improve-tests.md: still exists"
+  [ ! -e "$r/skills/orch-improve-tests" ] || echo "skills/orch-improve-tests: still exists"
+  while IFS= read -r f; do
+    [ -n "$f" ] && echo "${f#"$r"/}: names improve-tests"
+  done < <(grep -rIl --exclude-dir=.git --exclude-dir=changelog.d --exclude=CHANGELOG.md \
+    --exclude=docs_lint.sh -e 'improve-tests' "$r" 2>/dev/null | sort)
+  return 0
+}
 # scan_report_capability <plugin root>: one line when docs/host-capabilities.md
 # has no row for opening the report, and one when its Fallbacks have no
 # subsection for it naming a Markdown summary.
@@ -2733,27 +2748,38 @@ scan_report_capability() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-improve-tests" "$fixture/commands" "$fixture/docs"
-printf '# I\n\n## 1. Scope\n\n## 2. Measure\n\n## 4. Rank\n\n## 3. Hunt\n\n## 5. Report\n' \
-  >"$fixture/$improve_tests_skill"
-out="$(scan_improve_tests "$fixture")"
-flags "a missing improve-tests command file is flagged" "$out" "commands/improve-tests.md: missing"
+mkdir -p "$fixture/skills/orch-audit-tests" "$fixture/commands" "$fixture/docs"
+printf '# I\n\n## 1. Scope\n\n## 2. Measure\n\n## 3. Partition\n\n## 5. Rank\n\n## 4. Hunt\n\n## 6. Report\n' \
+  >"$fixture/$audit_tests_skill"
+out="$(scan_audit_tests "$fixture")"
+flags "a missing audit-tests command file is flagged" "$out" "commands/audit-tests.md: missing"
 flags "a step heading out of order is flagged" \
-  "$out" "$improve_tests_skill: required heading out of order: ## 4. Rank"
+  "$out" "$audit_tests_skill: required heading out of order: ## 5. Rank"
 flags "a missing step heading is flagged" \
-  "$out" "$improve_tests_skill: missing required heading: ## 6. Hand off"
+  "$out" "$audit_tests_skill: missing required heading: ## 7. Hand off"
 printf 'Call the Skill tool with `orchestrator:orch-interview` and follow it.\n' \
-  >"$fixture/commands/improve-tests.md"
+  >"$fixture/commands/audit-tests.md"
 flags "a command file routing elsewhere is flagged" \
-  "$(scan_improve_tests "$fixture")" "commands/improve-tests.md: does not route to orch-improve-tests"
-printf 'Call the Skill tool with\n`orchestrator:orch-improve-tests` and follow it.\n' \
-  >"$fixture/commands/improve-tests.md"
-printf '# I\n\n## 1. Scope\n\n## 2. Measure\n\n## 3. Hunt\n\n## 4. Rank\n\n## 5. Report\n\n## 6. Hand off\n' \
-  >"$fixture/$improve_tests_skill"
-assert_empty "the six step headings in order and a wrapped route are not flagged" \
-  "$(scan_improve_tests "$fixture")"
-check "orch-improve-tests has its command and its six step headings in order" \
-  "$(scan_improve_tests "$PLUGIN_ROOT")"
+  "$(scan_audit_tests "$fixture")" "commands/audit-tests.md: does not route to orch-audit-tests"
+printf 'Call the Skill tool with\n`orchestrator:orch-audit-tests` and follow it.\n' \
+  >"$fixture/commands/audit-tests.md"
+printf '# I\n\n## 1. Scope\n\n## 2. Measure\n\n## 3. Partition\n\n## 4. Hunt\n\n## 5. Rank\n\n## 6. Report\n\n## 7. Hand off\n' \
+  >"$fixture/$audit_tests_skill"
+assert_empty "the seven step headings in order and a wrapped route are not flagged" \
+  "$(scan_audit_tests "$fixture")"
+check "orch-audit-tests has its command and its seven step headings in order" \
+  "$(scan_audit_tests "$PLUGIN_ROOT")"
+mkdir -p "$fixture/skills/orch-improve-tests" "$fixture/changelog.d"
+printf 'x\n' >"$fixture/commands/improve-tests.md"
+printf 'Run /orchestrator:improve-tests.\n' >"$fixture/docs/guide.md"
+printf 'Run /orchestrator:improve-tests.\n' >"$fixture/CHANGELOG.md"
+printf 'Run /orchestrator:improve-tests.\n' >"$fixture/changelog.d/1.md"
+out="$(scan_audit_tests "$fixture")"
+flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: still exists"
+flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests: still exists"
+flags "a doc naming improve-tests is flagged" "$out" "docs/guide.md: names improve-tests"
+spares "CHANGELOG.md and changelog.d naming improve-tests are not flagged" "$out" 'CHANGELOG|changelog\.d'
+rm -rf "$fixture/skills/orch-improve-tests" "$fixture/commands/improve-tests.md" "$fixture/docs/guide.md"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Ask | `AskUserQuestion`. | `ask_user`. |' '' '## Fallbacks' '' \
   "### $open_report_capability" '' 'Say where the file is.' >"$fixture/docs/host-capabilities.md"
@@ -2839,13 +2865,13 @@ check "orch-audit-docs has its command and its six step headings in order" \
 check "orch-audit-docs hands off with --category documentation" \
   "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_docs_skill" documentation)"
 
-# scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs and
-# orch-audit-code) whose Hunt step does not name agent get
+# scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs,
+# orch-audit-code and orch-audit-tests) whose Hunt step does not name agent get
 # auditor, and one per skill that runs an agent sync command - a sentence saying
 # it runs none is allowed.
 scan_audit_hunt() {
   local r="$1" name skill hunt
-  for name in audit-docs audit-code; do
+  for name in audit-docs audit-code audit-tests; do
     skill="skills/orch-$name/SKILL.md"
     if [ ! -f "$r/$skill" ]; then
       echo "$skill: missing"
@@ -2882,6 +2908,11 @@ flags "an audit Hunt step at step 4 that reads no agent get auditor is flagged" 
 printf '# A\n\n## 4. Hunt\n\nRead `agent get auditor`.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
 assert_empty "an audit Hunt step at step 4 reading agent get auditor is accepted" \
   "$(scan_audit_hunt "$fixture" | grep audit-docs)"
+mkdir -p "$fixture/skills/orch-audit-tests"
+printf '# A\n\n## 4. Hunt\n\nRead `agent get auditor`; run `bash "$ORCH" agent sync`.\n\n## 5. Rank\n' \
+  >"$fixture/skills/orch-audit-tests/SKILL.md"
+flags "an audit-tests Hunt step at step 4 that runs agent sync is flagged" \
+  "$(scan_audit_hunt "$fixture")" "skills/orch-audit-tests/SKILL.md: runs an agent sync command"
 check "each audit skill's Hunt step reads agent get auditor and runs no agent sync" \
   "$(scan_audit_hunt "$PLUGIN_ROOT")"
 
@@ -2891,6 +2922,12 @@ check "orch-audit-code has its command and its six step headings in order" \
   "$(scan_skill_steps "$PLUGIN_ROOT" audit-code "$audit_code_skill" "$audit_steps")"
 check "orch-audit-code hands off with --category bug and enhancement" \
   "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_code_skill" bug enhancement)"
+check "orch-audit-tests hands off with --category enhancement" \
+  "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_tests_skill" enhancement)"
+printf '# A\n\n## 7. Hand off\n\nRun `audit file "<t>" --finding-file f`.\n' >"$fixture/$audit_tests_skill"
+flags "an audit-tests Hand off step with no --category enhancement is flagged" \
+  "$(scan_hand_off_category "$fixture" "$audit_tests_skill" enhancement)" \
+  "$audit_tests_skill: the Hand off step does not pass --category enhancement"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo
@@ -3641,7 +3678,7 @@ turn_final_sites='skills/orch-finding-triage/SKILL.md|## 3. Propose one batch pe
 skills/orch-finding-triage/SKILL.md|### B3. Propose one batch
 skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
 skills/orch-to-tickets/SKILL.md|## Unattended breakdown
-skills/orch-improve-tests/SKILL.md|## 6. Hand off
+skills/orch-audit-tests/SKILL.md|
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/tickets-follow-the-spec.md|## The ticket question
 docs/host-capabilities.md|### Guard the batch question

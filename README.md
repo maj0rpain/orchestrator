@@ -127,9 +127,9 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:release` | Open the release PR from the base branch into the default branch. |
 | `/orchestrator:finding-triage [--all] [<issue> \| --pr <n>] \| --bundle` | Triage the review loop's filed findings, or bundle them. |
 | `/orchestrator:questions` | Gather the pending autopilot questions, put them to you with a second recommendation, and post your replies. |
-| `/orchestrator:improve-tests [<direction>]` | Evaluate the test suite and propose refactors that cut its cost without testing less. |
 | `/orchestrator:audit-docs [<direction>]` | Audit the repo's documentation against its code and report where they disagree; picked findings go to the planning interview or are filed as issues. |
 | `/orchestrator:audit-code [<direction>]` | Audit the repo's source code for latent bugs, inefficiencies and architecture worth deepening; picked findings go to the planning interview or are filed as issues. |
+| `/orchestrator:audit-tests [<direction>]` | Audit the repo's test suite for refactors that cut its cost without testing less; picked candidates go to the planning interview or are filed as issues. |
 
 The agents under `agents/` include `orch-doc-auditor`, `orch-code-auditor` and
 `orch-test-auditor`, the read-only hunters of a docs audit, a code audit and a
