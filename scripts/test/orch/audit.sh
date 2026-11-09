@@ -99,6 +99,18 @@ assert_eq "a title differing in case is a different title" "$out" "7"
 out="$("$ORCH" audit file "Closed twin" "${parts[@]}" 2>&1)"; st=$?
 assert_eq "a closed issue with the title does not count" "$out" "8"
 
+# The match is searched by title, so a twin past the list limit is still seen.
+audit_repo
+fake_issue 1 open
+fake_issue_title 1 "Unrelated one"
+fake_issue 2 open
+fake_issue_title 2 "Unrelated two"
+fake_issue 3 open
+fake_issue_title 3 "Twin past the limit"
+out="$(ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" audit file "Twin past the limit" "${parts[@]}" 2>/dev/null)"; st=$?
+assert_status "a twin past the list limit exits 0" "$st" 0
+assert_eq "printing its number, filing nothing" "$out" "3"
+
 # --- audit file refusals ----------------------------------------------------
 
 echo
@@ -121,6 +133,14 @@ refuse "no --location" "$usage" "T" --finding-file "$finding"
 refuse "an unknown flag" "$usage" "T" "${parts[@]}" --bogus x
 refuse "a flag with no value" "$usage" "T" --finding-file "$finding" --location
 refuse "a finding file given twice" "$usage" "T" "${parts[@]}" --finding-file "$finding"
+refuse "a finding file that does not exist" \
+  "orch: finding file not found: /nonexistent/finding.md" \
+  "T" --finding-file /nonexistent/finding.md --location a.md:1
+blank="$(mktemp)"
+printf '  \n\n' >"$blank"
+refuse "a whitespace-only finding file" \
+  "orch: finding file is empty: $blank" \
+  "T" --finding-file "$blank" --location a.md:1
 refuse "the location 'a.md:x'" \
   "orch: not a location: a.md:x (want <file>:<line> or <file>:<start>-<end>)" \
   "T" --finding-file "$finding" --location a.md:x

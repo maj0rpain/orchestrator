@@ -407,11 +407,12 @@ adapter_issues_labelled() {
   gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
 }
 
-# adapter_issues_open_titles: every open issue's number and title, one issue
-# per line as <number><TAB><title> - the first ISSUE_LIST_LIMIT of them.
-# Nothing at all where none is open.
+# adapter_issues_open_titles <title>: the open issues whose title contains
+# <title> - gh narrows the list server-side, so the limit cuts only the
+# matches - one issue per line as <number><TAB><title>. The caller compares the
+# title exactly. Nothing at all where none matches.
 adapter_issues_open_titles() {
-  gh issue list --state open --limit "$ISSUE_LIST_LIMIT" --json number,title --jq '.[] | "\(.number)\t\(.title)"'
+  gh issue list --state open --search "\"$1\" in:title" --limit "$ISSUE_LIST_LIMIT" --json number,title --jq '.[] | "\(.number)\t\(.title)"'
 }
 
 # adapter_issue_create <title> <body-file> [label...]: files the issue under

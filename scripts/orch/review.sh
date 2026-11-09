@@ -398,7 +398,6 @@ review_file() {
       --why)             why="$value" ;;
       --spec-question)   question="$value" ;;
     esac
-    shift 2
   done
   for flag in --axis --finding-file --severity-reason --location --why; do
     word_listed "$seen" "$flag" || die "$usage"

@@ -688,8 +688,8 @@ assert_status "issues labelled: lists the open issues carrying every label" "$st
 assert_eq "one number per line" "$out" "$(writeln 3 9)"
 
 gh_reply 0 $'3\tFirst title\n9\tA\ttabbed title\n' '' \
-  issue list --state open --limit 1000 --json number,title --jq '.[] | "\(.number)\t\(.title)"'
-out="$(contract adapter_issues_open_titles 2>&1)"; st=$?
+  issue list --state open --search '"First" in:title' --limit 1000 --json number,title --jq '.[] | "\(.number)\t\(.title)"'
+out="$(contract adapter_issues_open_titles First 2>&1)"; st=$?
 assert_status "open issues' titles: lists the open issues" "$st" 0
 assert_eq "one number and title per line, tab-separated" "$out" "$(printf '3\tFirst title\n9\tA\ttabbed title')"
 
