@@ -121,7 +121,6 @@
 #     headings in order
 #   scan_audit_code_category  orch-audit-code hands off with --category bug and
 #     enhancement
-#   scan_audit_code_tools  orch-code-auditor's tools are Read, Grep, Glob, Write
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
@@ -1611,6 +1610,9 @@ scan_agent_frontmatter() {
     case "$n" in
       orch-fixer|orch-closer)
         [ "$t" = "$impl" ] || echo "agents/$n.md: tools: is not the implementer's" ;;
+      orch-code-auditor)
+        [ "$t" = 'tools: [Read, Grep, Glob, Write]' ] ||
+          echo "agents/$n.md: tools: is not exactly Read, Grep, Glob, Write" ;;
     esac
   done
   return 0
@@ -1623,6 +1625,7 @@ printf -- '---\nname: orch-closer\ntools: [Read]\n---\n' >"$fixture/agents/orch-
 printf -- '---\nname: orch-other\ntools: Read, Bash\n---\n' >"$fixture/agents/orch-a.md"
 printf -- '---\nname: orch-b\n---\n' >"$fixture/agents/orch-b.md"
 printf -- '---\nname: orch-c\ntools: [Read, Skill]\n---\n' >"$fixture/agents/orch-c.md"
+printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob, Write, Bash]\n---\n' >"$fixture/agents/orch-code-auditor.md"
 out="$(scan_agent_frontmatter "$fixture")"
 flags "an agent whose name: is not its file is flagged" \
   "$out" "agents/orch-a.md: name: is 'orch-other', not its file"
@@ -1632,6 +1635,11 @@ flags "an agent with no tools: is flagged" "$out" "agents/orch-b.md: declares no
 flags "an agent listing Skill is flagged" "$out" "agents/orch-c.md: lists Skill"
 flags "a closer whose allowlist is not the implementer's is flagged" \
   "$out" "agents/orch-closer.md: tools: is not the implementer's"
+flags "an orch-code-auditor with an extra tool is flagged" \
+  "$out" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
+printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob]\n---\n' >"$fixture/agents/orch-code-auditor.md"
+flags "an orch-code-auditor missing Write is flagged" \
+  "$(scan_agent_frontmatter "$fixture")" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
 spares "agents named for their files with a matching list are not flagged" \
   "$out" 'orch-(implementer|fixer)\.md'
 check "every agent is named for its file and declares a safe tools: list" \
@@ -2888,25 +2896,6 @@ assert_empty "an audit-code hand off with both categories is accepted" \
   "$(scan_audit_code_category "$fixture")"
 check "orch-audit-code hands off with --category bug and enhancement" \
   "$(scan_audit_code_category "$PLUGIN_ROOT")"
-
-# scan_audit_code_tools <plugin root>: one line when orch-code-auditor's tools:
-# line is not exactly Read, Grep, Glob and Write.
-scan_audit_code_tools() {
-  local t
-  t="$(grep -m1 '^tools:' "$1/agents/orch-code-auditor.md" 2>/dev/null | tr -d '[] ' | sed 's/^tools://')"
-  [ "$t" = "Read,Grep,Glob,Write" ] ||
-    echo "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
-  return 0
-}
-mkdir -p "$fixture/agents"
-printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob, Write, Bash]\n---\n' >"$fixture/agents/orch-code-auditor.md"
-flags "an orch-code-auditor with an extra tool is flagged" \
-  "$(scan_audit_code_tools "$fixture")" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
-printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob]\n---\n' >"$fixture/agents/orch-code-auditor.md"
-flags "an orch-code-auditor missing Write is flagged" \
-  "$(scan_audit_code_tools "$fixture")" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
-check "orch-code-auditor's tools are exactly Read, Grep, Glob and Write" \
-  "$(scan_audit_code_tools "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo
