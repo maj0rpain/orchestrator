@@ -1253,25 +1253,23 @@ agent_start_files() {
   find "$1/agents" "$1/docs" -name '*.md' -type f 2>/dev/null | sort
   return 0
 }
-# agent_roles_read: orch.sh's AGENT_ROLES, which live in its agent module
-# alone, read from the real plugin root: a scanned fixture carries no agent
-# module. Prints nothing when the module yields no roles.
-agent_roles_read() {
-  (source "$PLUGIN_ROOT/scripts/orch/agent.sh" && echo "$AGENT_ROLES") 2>/dev/null
-}
 # scan_agent_settings <plugin root>: one line per role a start site starts
-# without reading its setting.
+# without reading its setting. The agent name shapes come from orch.sh's agent
+# module, read from the real plugin root (a scanned fixture carries no agent
+# module) and sourced once.
 scan_agent_settings() {
-  local r="$1" f text name known_roles roles role pattern
+  local r="$1" f text name roles role pattern shape
   local -a files
-  known_roles="$(agent_roles_read)"
-  if [ -z "$known_roles" ]; then
-    echo "scripts/orch/agent.sh: no AGENT_ROLES read"
+  # shellcheck source=/dev/null
+  if ! source "$PLUGIN_ROOT/scripts/orch/agent.sh" 2>/dev/null || [ -z "${AGENT_NAME_SHAPES:-}" ]; then
+    echo "scripts/orch/agent.sh: no AGENT_NAME_SHAPES read"
     return 0
   fi
-  # shellcheck source=/dev/null
-  source "$PLUGIN_ROOT/scripts/orch/agent.sh" || return 0
-  pattern="(orch-(${known_roles// /|})(-[a-z]+)?|orch-[a-z]+-auditor)"
+  pattern=""
+  for shape in $AGENT_NAME_SHAPES; do
+    pattern+="${pattern:+|}$(agent_shape_ere "${shape#*:}")"
+  done
+  pattern="($pattern)"
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
     text="$(flat_text "$f")"
@@ -1283,7 +1281,7 @@ scan_agent_settings() {
       while IFS= read -r name; do
         case "$name" in /* | *.md | '') continue ;; esac
         role="$(agent_role_of "$name")"
-        roles+=" ${role:-${name#orch-}}"
+        [ -n "$role" ] && roles+=" $role"
       done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
     fi
     grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
@@ -1349,23 +1347,34 @@ flags "a start of orch-code-auditor with no pointer is flagged" \
   "$out" "skills/a/SKILL.md: starts a plugin agent but does not point at **Agent settings**"
 flags "a start of orch-code-auditor is read under the auditor role" \
   "$out" "skills/a/SKILL.md: starts an agent of the auditor role but does not name agent get auditor"
-# A start site generated from AGENT_ROLES, read as the rule reads it, so a role
-# added there is covered with no edit here.
-roles_read="$(agent_roles_read)"
+# A start site generated from AGENT_NAME_SHAPES, one name per shape with each *
+# as x, so a role or shape added there is covered with no edit here.
+shapes_read="$(source "$PLUGIN_ROOT/scripts/orch/agent.sh" && echo "$AGENT_NAME_SHAPES")"
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/a"
 {
   printf 'Start under the `orchestrator:` plugin scope:'
-  for role in $roles_read; do printf ' `orch-%s`' "$role"; done
-  printf ' and `orch-lens-x`.\n'
+  for shape in $shapes_read; do printf ' `%s`' "${shape#*:}" | sed 's/\*/x/g'; done
+  printf '.\n'
 } >"$fixture/skills/a/SKILL.md"
 out="$(scan_agent_settings "$fixture")"
-for role in $roles_read; do
-  flags "a start site naming orch-$role without agent get $role is flagged" \
+for shape in $shapes_read; do
+  role="${shape%%:*}"
+  flags "a start site naming ${shape#*:} without agent get $role is flagged" \
     "$out" "skills/a/SKILL.md: starts an agent of the $role role but does not name agent get $role"
 done
-flags "an agent module that yields no roles is flagged" \
-  "$( (PLUGIN_ROOT="$(new_fixture)"; scan_agent_settings "$fixture") )" "scripts/orch/agent.sh: no AGENT_ROLES read"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/a"
+printf 'Start `orch-auditor` under the `orchestrator:` plugin scope.\n' >"$fixture/skills/a/SKILL.md"
+spares "an orch- name matching no shape has no role" \
+  "$(scan_agent_settings "$fixture")" 'starts an agent of the'
+flags "a plugin root with no agent module is flagged" \
+  "$( (PLUGIN_ROOT="$(new_fixture)"; scan_agent_settings "$fixture") )" "scripts/orch/agent.sh: no AGENT_NAME_SHAPES read"
+noshapes="$(new_fixture)"
+mkdir -p "$noshapes/scripts/orch"
+printf 'AGENT_ROLES="x"\n' >"$noshapes/scripts/orch/agent.sh"
+flags "an agent module that sets no shapes is flagged" \
+  "$( (PLUGIN_ROOT="$noshapes"; scan_agent_settings "$fixture") )" "scripts/orch/agent.sh: no AGENT_NAME_SHAPES read"
 check "every start site points at Agent settings and reads each role it starts" \
   "$(scan_agent_settings "$PLUGIN_ROOT")"
 
