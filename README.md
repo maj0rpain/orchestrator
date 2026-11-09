@@ -131,9 +131,10 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:audit-docs [<direction>]` | Audit the repo's documentation against its code and report where they disagree; picked findings go to the planning interview or are filed as issues. |
 | `/orchestrator:audit-code [<direction>]` | Audit the repo's source code for latent bugs, inefficiencies and architecture worth deepening; picked findings go to the planning interview or are filed as issues. |
 
-The agents under `agents/` include `orch-doc-auditor` and `orch-code-auditor`,
-the read-only hunters of a docs audit and a code audit: each checks one area,
-the documentation against the code or the source for bugs and waste.
+The agents under `agents/` include `orch-doc-auditor`, `orch-code-auditor` and
+`orch-test-auditor`, the read-only hunters of a docs audit, a code audit and a
+test audit: each checks one area, the documentation against the code, the
+source for bugs and waste, or the tests for cost.
 
 Every command in full:
 [docs/how-it-works.md](docs/how-it-works.md#commands-in-detail).

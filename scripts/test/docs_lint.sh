@@ -1613,7 +1613,7 @@ scan_agent_frontmatter() {
     case "$n" in
       orch-fixer|orch-closer)
         [ "$t" = "$impl" ] || echo "agents/$n.md: tools: is not the implementer's" ;;
-      orch-code-auditor)
+      orch-code-auditor|orch-test-auditor)
         [ "$t" = 'tools: [Read, Grep, Glob, Write]' ] ||
           echo "agents/$n.md: tools: is not exactly Read, Grep, Glob, Write" ;;
     esac
@@ -1641,6 +1641,10 @@ flags "a closer whose allowlist is not the implementer's is flagged" \
 flags "an orch-code-auditor with an extra tool is flagged" \
   "$out" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
 printf -- '---\nname: orch-code-auditor\ntools: [Read, Grep, Glob]\n---\n' >"$fixture/agents/orch-code-auditor.md"
+printf -- '---\nname: orch-test-auditor\ntools: [Read, Grep, Glob, Write, Edit]\n---\n' >"$fixture/agents/orch-test-auditor.md"
+flags "an orch-test-auditor with an extra tool is flagged" \
+  "$(scan_agent_frontmatter "$fixture")" "agents/orch-test-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
+rm "$fixture/agents/orch-test-auditor.md"
 flags "an orch-code-auditor missing Write is flagged" \
   "$(scan_agent_frontmatter "$fixture")" "agents/orch-code-auditor.md: tools: is not exactly Read, Grep, Glob, Write"
 spares "agents named for their files with a matching list are not flagged" \
