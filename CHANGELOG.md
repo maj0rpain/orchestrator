@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.50.2
+
+The agent module now lists every agent name shape once, in `AGENT_NAME_SHAPES`, read by both `agent_role_of` and the docs lint's agent-settings check. The lint reads the agent module once and reports a failed read instead of passing silently.
+
 ## 4.50.1
 
 The Filed finding module now owns the finding category table: `audit file` checks `--category` and builds its usage line from it, and `category_label_ensure` reads its colours and descriptions from it, returning 1 for an unknown category. The dead hex-SHA guard on HEAD is gone from `audit file`, and the module's description names the filer checks it shares.
