@@ -57,8 +57,8 @@ This is the one definition of how a skill starts one of the plugin's agents
 on its role's **agent setting**: the model and reasoning effort the user
 chose for that role with `orch.sh agent set` (see `docs/how-it-works.md`'s
 **Agent settings**). A role is one of `implementer`, `lens`, `reviewer`,
-`fixer`, `closer` and `resolver`. Each skill or doc that starts an agent
-names the roles it starts and points here, and states none of this itself.
+`fixer`, `closer`, `resolver` and `auditor`. Each skill or doc that starts an
+agent names the roles it starts and points here, and states none of this itself.
 
 - Run `bash "$ORCH" agent get <role>` once, at the start of the skill's run,
   before its first agent starts. It prints `model <alias|inherit>` and
@@ -72,7 +72,10 @@ names the roles it starts and points here, and states none of this itself.
 - If `agent get` refuses, stop the run and relay its message.
 - On Junie, the setting travels in agent copies instead (see **Host
   fallback**): before a skill starts any plugin agent, it runs `bash "$ORCH"
-  agent sync` once per run. A failed sync stops the run, relaying its
+  agent sync` once per run - except the read-only audit skills,
+  `orch-audit-docs` and orch-audit-code, which never sync (ADR-0060): their
+  hunters carry the `auditor` setting only from copies the user wrote with
+  `orch.sh agent sync`. A failed sync stops the run, relaying its
   message. The skill reads no `agent get` and passes nothing to the start:
   the copy carries the setting.
 - If the Agent tool refuses a valid value (the account has no access to

@@ -46,8 +46,10 @@ That stores `orchestrator.junie.model.reviewer` and
 `orchestrator.junie.effort.reviewer` in git config and runs `orch.sh agent
 sync`, which writes generated copies of the role's agents into the checkout's
 `.junie/agents/` (git-excluded, never committed). Junie runs a project copy in
-place of the plugin's agent of the same name. On Junie every skill runs
-`agent sync` once per run, before its first plugin agent.
+place of the plugin's agent of the same name. On Junie every skill but the
+read-only audits (`audit-docs`, `audit-code`) runs `agent sync` once per run,
+before its first plugin agent; run `orch.sh agent sync` yourself before an audit
+for its hunters to carry the `auditor` setting.
 
 A model is a Junie LLM name or `custom:<profile-id>`, never an alias: Junie's
 aliases resolve unpredictably (`opus` runs an old Opus). LLM names come from

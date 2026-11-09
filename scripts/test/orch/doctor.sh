@@ -1797,7 +1797,7 @@ assert_contains "doctor --env lists a role's local effort and inherited model" "
 assert_contains "doctor --env lists a role's global model" "$out" \
   "ok    agent reviewer: model haiku (global), effort inherit (inherit)"
 assert_contains "doctor --env lists every role, the last among them" "$out" \
-  "ok    agent resolver: model inherit (inherit), effort inherit (inherit)"
+  "ok    agent auditor: model inherit (inherit), effort inherit (inherit)"
 
 git config --local orchestrator.model.fixer gpt
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
@@ -1939,7 +1939,7 @@ assert_contains "lists a role's local Junie effort and inherited model" "$out" \
 assert_contains "lists a role's global Junie model" "$out" \
   "ok    agent junie reviewer: model gpt-5 (global), effort inherit (inherit)"
 assert_contains "lists every role, the last among them" "$out" \
-  "ok    agent junie resolver: model inherit (inherit), effort inherit (inherit)"
+  "ok    agent junie auditor: model inherit (inherit), effort inherit (inherit)"
 assert_contains "warns of the missing copies" "$out" "warn  Junie agent copies in"
 assert_contains "naming a missing copy" "$out" "missing orch-implementer.md"
 assert_contains "with agent sync as its remedy" "$out" "$(printf '\n      orch.sh agent sync\n')"

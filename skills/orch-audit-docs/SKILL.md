@@ -67,8 +67,10 @@ start nothing until they answer. A narrowed scope returns to this step.
 
 ## 3. Hunt
 
-`orch-doc-auditor` has no role, so it has no agent setting: this skill reads
-no `agent get` and runs no `agent sync`. Start one fresh subagent per area
+Read `bash "$ORCH" agent get auditor` once, before the first hunter, and pass
+the `model` and `effort` it prints on each start, per **Agent settings** in
+`docs/host-capabilities.md`. This skill runs no `agent sync`, which would write
+`.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per area
 (see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
 fork, each an `orch-doc-auditor`, at most 4 at once; start the next as one
 finishes. Each prompt names its area (the docs to read and the code they

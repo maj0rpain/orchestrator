@@ -70,7 +70,7 @@ untouched() {
 out="$("$ORCH" agent set implementor --model opus 2>&1)"; st=$?
 assert_status "set refuses an unknown role" "$st" 1
 assert_contains "with an orch: message naming the roles" "$out" \
-  "orch: unknown role implementor (want implementer|lens|reviewer|fixer|closer|resolver)"
+  "orch: unknown role implementor (want implementer|lens|reviewer|fixer|closer|resolver|auditor)"
 untouched "an unknown role"
 out="$("$ORCH" agent set lens --model gpt 2>&1)"; st=$?
 assert_status "set refuses a disallowed model" "$st" 1
@@ -90,7 +90,7 @@ untouched "an effort made of several allowed lines"
 out="$("$ORCH" agent set "lens reviewer" --model opus 2>&1)"; st=$?
 assert_status "set refuses a role made of several roles" "$st" 1
 assert_eq "with only an orch: message naming the roles" "$out" \
-  "orch: unknown role lens reviewer (want implementer|lens|reviewer|fixer|closer|resolver)"
+  "orch: unknown role lens reviewer (want implementer|lens|reviewer|fixer|closer|resolver|auditor)"
 untouched "a role made of several roles"
 out="$("$ORCH" agent set lens 2>&1)"; st=$?
 assert_status "set refuses a call with neither --model nor --effort" "$st" 1
@@ -163,7 +163,7 @@ assert_status "get refuses a role made of several roles" "$st" 1
 assert_contains "naming the roles" "$out" "orch: unknown role lens reviewer (want"
 out="$("$ORCH" agent get implementor 2>&1)"; st=$?
 assert_status "get refuses an unknown role" "$st" 1
-assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver)"
+assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver|auditor)"
 
 # clear: both keys, or only the one named, at the scope named.
 out="$("$ORCH" agent clear resolver 2>&1)"; st=$?
@@ -197,19 +197,20 @@ assert_status "a failed clear exits 1" "$st" 1
 assert_contains "naming the key it could not clear" "$out" "orch: cannot clear orchestrator.model.closer"
 out="$("$ORCH" agent clear implementor 2>&1)"; st=$?
 assert_status "clear refuses an unknown role" "$st" 1
-assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver)"
+assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver|auditor)"
 
 out="$("$ORCH" agent 2>&1)"; st=$?
 assert_status "refuses a missing verb" "$st" 1
 assert_contains "naming the verbs" "$out" "want set|show|clear|get|sync"
 out="$("$ORCH" agent roles 2>&1)"; st=$?
 assert_status "roles succeeds" "$st" 0
-assert_eq "roles prints the six roles one per line, in order" "$out" "implementer
+assert_eq "roles prints the seven roles one per line, in order" "$out" "implementer
 lens
 reviewer
 fixer
 closer
-resolver"
+resolver
+auditor"
 out="$("$ORCH" agent roles extra 2>&1)"; st=$?
 assert_status "roles refuses an argument" "$st" 1
 out="$("$ORCH" agent show extra 2>&1)"; st=$?
@@ -307,14 +308,15 @@ git config --local orchestrator.junie.effort.fixer extreme
 git config --global orchestrator.junie.model.closer "bad model"
 out="$("$ORCH" agent show 2>&1)"; st=$?
 assert_status "show succeeds with invalid Junie values" "$st" 0
-assert_eq "show prints twelve lines" "$(wc -l <<<"$out" | tr -d ' ')" "12"
-assert_eq "show's Junie lines follow the six Claude Code lines, invalid values marked" "$(tail -n 6 <<<"$out")" \
+assert_eq "show prints fourteen lines" "$(wc -l <<<"$out" | tr -d ' ')" "14"
+assert_eq "show's Junie lines follow the seven Claude Code lines, invalid values marked" "$(tail -n 7 <<<"$out")" \
   "junie implementer model custom:my/profile.1 (local) effort inherit (inherit)
 junie lens model gpt-5 (local) effort medium (local)
 junie reviewer model gpt-5 (global) effort low (local)
 junie fixer model inherit (inherit) effort extreme (local, invalid)
 junie closer model bad model (global, invalid) effort inherit (inherit)
-junie resolver model inherit (inherit) effort inherit (inherit)"
+junie resolver model inherit (inherit) effort inherit (inherit)
+junie auditor model inherit (inherit) effort inherit (inherit)"
 out="$("$ORCH" agent get fixer --host junie 2>&1)"; st=$?
 assert_status "get --host junie refuses an invalid stored value" "$st" 1
 assert_contains "naming the clear that removes it" "$out" "orch.sh agent clear fixer --host junie --effort"
@@ -368,6 +370,19 @@ assert_contains "a second set leaves the copy carrying the new model" \
 assert_eq "and not the old one" "$(grep -c gpt-5 .junie/agents/orch-resolver.md)" "0"
 "$ORCH" agent clear resolver --host junie >/dev/null
 assert_eq "clear --host junie removes the copy" "$(on_disk .junie/agents/orch-resolver.md)" "absent"
+# The auditor role covers the orch-*-auditor agents.
+"$ORCH" agent set auditor --model opus --effort high >/dev/null
+assert_eq "set auditor is read back by get auditor" "$("$ORCH" agent get auditor)" "model opus
+effort high"
+assert_eq "show lists the auditor role" "$("$ORCH" agent show | grep "^auditor")" \
+  "auditor model opus (local) effort high (local)"
+"$ORCH" agent clear auditor >/dev/null
+assert_eq "clear auditor unsets its model" "$(key local orchestrator.model.auditor)" "<unset>"
+"$ORCH" agent set auditor --host junie --model gpt-5 >/dev/null
+assert_contains "set auditor --host junie writes a copy of orch-doc-auditor" \
+  "$(cat .junie/agents/orch-doc-auditor.md)" "gpt-5"
+"$ORCH" agent clear auditor --host junie >/dev/null
+assert_eq "clear auditor --host junie removes the copy" "$(on_disk .junie/agents/orch-doc-auditor.md)" "absent"
 unset -f jkey
 unset -f key untouched
 restore_suite_env

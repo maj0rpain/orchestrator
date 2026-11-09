@@ -359,8 +359,8 @@ will not start while the working tree has changes outside it (ADR-0013).
 The model and reasoning effort a role's agents run with: each chosen per role
 and per host by the user, or else inherited from the session that starts them.
 Each host has its own setting, since hosts name models and efforts differently.
-A role is one of six groups of the plugin's agents that share a setting:
-implementer, lens, reviewer, fixer, closer and resolver.
+A role is one of seven groups of the plugin's agents that share a setting:
+implementer, lens, reviewer, fixer, closer, resolver and auditor.
 
 **Agent copy**:
 A project-scope copy of one of the plugin's agents that `orch.sh agent sync`

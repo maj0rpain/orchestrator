@@ -5,7 +5,7 @@
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # The roles, in the order show prints them. The list lives here alone.
-AGENT_ROLES="implementer lens reviewer fixer closer resolver"
+AGENT_ROLES="implementer lens reviewer fixer closer resolver auditor"
 
 # The host table: every site reads these arrays, so a host or an allowed list
 # is a table entry and no site switches on a host or a kind. Keyed by host
@@ -318,6 +318,7 @@ agent_role_of() {
     orch-fixer) echo fixer ;;
     orch-closer) echo closer ;;
     orch-resolver) echo resolver ;;
+    orch-*-auditor) echo auditor ;;
   esac
 }
 

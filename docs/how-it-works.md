@@ -213,8 +213,8 @@ PR's title and summary, and `orch.sh pr release` writes the `Closes` lines.
 
 Every agent the plugin starts runs on the model and reasoning effort of the
 session that starts it, unless you choose an **agent setting** for its role:
-`implementer` (the ticket subagent), `lens`, `reviewer`, `fixer`, `closer`
-or `resolver`. A role's model and effort are set on their own:
+`implementer` (the ticket subagent), `lens`, `reviewer`, `fixer`, `closer`,
+`resolver` or `auditor`. A role's model and effort are set on their own:
 
 | Command | What it does |
 | --- | --- |
@@ -234,7 +234,8 @@ and `orchestrator.junie.effort.<role>`, are set with `--host junie` on `set`,
 effort of `low`, `medium` or `high`. Junie reads the setting from generated,
 git-excluded copies of the plugin's agents in the checkout's `.junie/agents/`,
 which `orch.sh agent sync` writes, refreshes and deletes; `set` and `clear`
-with `--host junie` run it, and on Junie every skill runs it once per run.
+with `--host junie` run it, and on Junie every skill but the read-only audits
+runs it once per run.
 
 ## Autopilot
 
