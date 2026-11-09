@@ -905,13 +905,13 @@ The PR whose review loop filed a finding, named on the filed finding's
 `**PR:**` line.
 
 **Category**:
-A filed finding's or a bundle's `bug` or `enhancement` label. The closer sets it
-from the finding's axis - `bug` for Spec, `enhancement` for Standards and
-Suite-cost - and finding triage keeps or flips it: a Standards finding that is
-a real defect becomes `bug`, a Spec finding that is a nice-to-have becomes
-`enhancement`. An audit finding filed with `orch.sh audit file` carries one
-too, set by its audit: `bug` or `enhancement` for a code audit, `documentation`
-for a docs audit. A bundle's is `bug` whenever any member's is.
+A filed finding's or a bundle's `bug` or `enhancement` label. An audit finding
+filed with `orch.sh audit file` carries one too, set by its audit: `bug` or
+`enhancement` for a code audit, `documentation` for a docs audit. The closer
+sets it from the finding's axis - `bug` for Spec, `enhancement` for Standards
+and Suite-cost - and finding triage keeps or flips it: a Standards finding that
+is a real defect becomes `bug`, a Spec finding that is a nice-to-have becomes
+`enhancement`. A bundle's is `bug` whenever any member's is.
 
 **Root-cause fix**:
 A fix that removes a defect's cause everywhere that cause acts - every copy of
