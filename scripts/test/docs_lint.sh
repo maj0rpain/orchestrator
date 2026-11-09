@@ -111,16 +111,10 @@
 #     headings in order
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the
 #     report and a Markdown-summary fallback
-#   scan_audit_docs  orch-audit-docs has its command file and its six step
-#     headings in order
-#   scan_audit_docs_category  orch-audit-docs hands off with --category
-#     documentation
+#   scan_hand_off_category  an audit skill's Hand off step passes --category for
+#     each named category
 #   scan_audit_hunt  each audit skill's Hunt step names agent get auditor and it
 #     runs no agent sync
-#   scan_audit_code  orch-audit-code has its command file and its six step
-#     headings in order
-#   scan_audit_code_category  orch-audit-code hands off with --category bug and
-#     enhancement
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
@@ -2780,41 +2774,45 @@ Hunt
 Rank
 Report
 Hand off'
-# scan_audit_docs <plugin root>: scan_skill_steps for orch-audit-docs.
-scan_audit_docs() { scan_skill_steps "$1" audit-docs "$audit_docs_skill" "$audit_steps"; }
-fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-audit-docs" "$fixture/commands"
-printf '# A\n\n## 1. Scope\n\n## 3. Hunt\n\n## 2. Partition\n\n## 4. Rank\n\n## 5. Report\n' \
-  >"$fixture/$audit_docs_skill"
-out="$(scan_audit_docs "$fixture")"
-flags "a missing audit-docs command file is flagged" \
-  "$out" "commands/audit-docs.md: missing"
-flags "an audit-docs step heading out of order is flagged" \
-  "$out" "$audit_docs_skill: required heading out of order: ## 3. Hunt"
-flags "a missing audit-docs step heading is flagged" \
-  "$out" "$audit_docs_skill: missing required heading: ## 6. Hand off"
-printf 'Call the Skill tool with `orchestrator:orch-interview` and follow it.\n' \
-  >"$fixture/commands/audit-docs.md"
-flags "an audit-docs command routing elsewhere is flagged" \
-  "$(scan_audit_docs "$fixture")" \
-  "commands/audit-docs.md: does not route to orch-audit-docs"
-check "orch-audit-docs has its command and its six step headings in order" \
-  "$(scan_audit_docs "$PLUGIN_ROOT")"
-# scan_audit_docs_category <plugin root>: one line when the audit-docs skill's
-# audit file command does not pass --category documentation.
-scan_audit_docs_category() {
-  local r="$1" hand
-  hand="$(md_section "$r/$audit_docs_skill" "## 6. Hand off" 2>/dev/null | flat_text)"
-  grep -qF 'audit file "<title>" --category documentation ' <<<"$hand" \
-    || echo "$audit_docs_skill: the Hand off step does not pass --category documentation"
+# scan_hand_off_category <plugin root> <skill file> <category>...: one line when
+# the skill's Hand off step does not pass --category for each category named.
+scan_hand_off_category() {
+  local r="$1" skill="$2" hand c missing="" list
+  shift 2
+  hand="$(md_section "$r/$skill" "## 6. Hand off" 2>/dev/null | flat_text)"
+  for c in "$@"; do
+    grep -qF -- "--category $c" <<<"$hand" || missing=1
+  done
+  [ -z "$missing" ] && return 0
+  list="$1"
+  shift
+  for c in "$@"; do list="$list and $c"; done
+  echo "$skill: the Hand off step does not pass --category $list"
   return 0
 }
-printf '# A\n\n## 6. Hand off\n\nrun `bash "$ORCH" audit file "<title>" --finding-file <f>`\n' >"$fixture/$audit_docs_skill"
-flags "an audit-docs hand off without --category documentation is flagged" \
-  "$(scan_audit_docs_category "$fixture")" \
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-audit-docs"
+printf '# A\n\n## 6. Hand off\n\nRun `--category bug`.\n' >"$fixture/$audit_docs_skill"
+flags "a hand off missing one of two categories is flagged" \
+  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug enhancement)" \
+  "$audit_docs_skill: the Hand off step does not pass --category bug and enhancement"
+printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --finding-file f`.\n' >"$fixture/$audit_docs_skill"
+flags "a hand off without --category is flagged" \
+  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug enhancement)" \
+  "$audit_docs_skill: the Hand off step does not pass --category bug and enhancement"
+flags "a hand off missing its one category is flagged" \
+  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" documentation)" \
   "$audit_docs_skill: the Hand off step does not pass --category documentation"
+printf '# A\n\n## 6. Hand off\n\nRun `--category bug` or `--category enhancement`.\n' >"$fixture/$audit_docs_skill"
+assert_empty "a hand off with every category is accepted" \
+  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug enhancement)"
+printf '# A\n\n## 6. Hand off\n\nPass --category documentation.\n' >"$fixture/$audit_docs_skill"
+assert_empty "a category with no audit file text around it is accepted" \
+  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" documentation)"
+check "orch-audit-docs has its command and its six step headings in order" \
+  "$(scan_skill_steps "$PLUGIN_ROOT" audit-docs "$audit_docs_skill" "$audit_steps")"
 check "orch-audit-docs hands off with --category documentation" \
-  "$(scan_audit_docs_category "$PLUGIN_ROOT")"
+  "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_docs_skill" documentation)"
 
 # scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs and
 # orch-audit-code) whose Hunt step does not name agent get
@@ -2858,44 +2856,10 @@ check "each audit skill's Hunt step reads agent get auditor and runs no agent sy
 
 # orch-audit-code is defined by the same six steps; its command routes to it.
 audit_code_skill='skills/orch-audit-code/SKILL.md'
-# scan_audit_code <plugin root>: scan_skill_steps for orch-audit-code.
-scan_audit_code() { scan_skill_steps "$1" audit-code "$audit_code_skill" "$audit_steps"; }
-fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-audit-code" "$fixture/commands"
-printf '# A\n\n## 1. Scope\n\n## 3. Hunt\n\n## 2. Partition\n\n## 4. Rank\n\n## 5. Report\n' \
-  >"$fixture/$audit_code_skill"
-out="$(scan_audit_code "$fixture")"
-flags "a missing audit-code command file is flagged" \
-  "$out" "commands/audit-code.md: missing"
-flags "an audit-code step heading out of order is flagged" \
-  "$out" "$audit_code_skill: required heading out of order: ## 3. Hunt"
-flags "a missing audit-code step heading is flagged" \
-  "$out" "$audit_code_skill: missing required heading: ## 6. Hand off"
 check "orch-audit-code has its command and its six step headings in order" \
-  "$(scan_audit_code "$PLUGIN_ROOT")"
-
-# scan_audit_code_category <plugin root>: one line when the audit-code skill's
-# Hand off step does not name --category with both bug and enhancement.
-scan_audit_code_category() {
-  local r="$1" hand
-  hand="$(md_section "$r/$audit_code_skill" "## 6. Hand off" 2>/dev/null | flat_text)"
-  grep -qF -- '--category bug' <<<"$hand" && grep -qF -- '--category enhancement' <<<"$hand" ||
-    echo "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
-  return 0
-}
-printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --category bug`.\n' >"$fixture/$audit_code_skill"
-flags "an audit-code hand off without --category enhancement is flagged" \
-  "$(scan_audit_code_category "$fixture")" \
-  "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
-printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --finding-file f`.\n' >"$fixture/$audit_code_skill"
-flags "an audit-code hand off without --category is flagged" \
-  "$(scan_audit_code_category "$fixture")" \
-  "$audit_code_skill: the Hand off step does not pass --category bug and enhancement"
-printf '# A\n\n## 6. Hand off\n\nRun `--category bug` or `--category enhancement`.\n' >"$fixture/$audit_code_skill"
-assert_empty "an audit-code hand off with both categories is accepted" \
-  "$(scan_audit_code_category "$fixture")"
+  "$(scan_skill_steps "$PLUGIN_ROOT" audit-code "$audit_code_skill" "$audit_steps")"
 check "orch-audit-code hands off with --category bug and enhancement" \
-  "$(scan_audit_code_category "$PLUGIN_ROOT")"
+  "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_code_skill" bug enhancement)"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo
