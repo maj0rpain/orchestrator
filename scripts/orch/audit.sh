@@ -48,8 +48,8 @@ AUDIT_FILE_USAGE="usage: orch.sh audit file <title> --category <bug|enhancement|
 # files one finding as a GitHub issue and prints its number. Every check - the
 # title, the finding file, the category, the locations, HEAD's SHA and the
 # round trip of the rendered body - comes before any GitHub read or write. An
-# title files nothing: its number is printed, with the already-open line on
-# stderr, and the exit is 0.
+# open issue with exactly the title files nothing: its number is printed, with
+# the already-open line on stderr, and the exit is 0.
 audit_file() {
   [ $# -ge 1 ] || die "$AUDIT_FILE_USAGE"
   local title="$1" finding="" category="" locations=() i
