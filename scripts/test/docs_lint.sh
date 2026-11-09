@@ -1266,9 +1266,9 @@ scan_agent_settings() {
     return 0
   fi
   pattern=""
-  for shape in $AGENT_NAME_SHAPES; do
+  while IFS= read -r shape; do
     pattern+="${pattern:+|}$(agent_shape_ere "${shape#*:}")"
-  done
+  done < <(agent_name_shapes)
   pattern="($pattern)"
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
@@ -1349,16 +1349,16 @@ flags "a start of orch-code-auditor is read under the auditor role" \
   "$out" "skills/a/SKILL.md: starts an agent of the auditor role but does not name agent get auditor"
 # A start site generated from AGENT_NAME_SHAPES, one name per shape with each *
 # as x, so a role or shape added there is covered with no edit here.
-shapes_read="$(source "$PLUGIN_ROOT/scripts/orch/agent.sh" && echo "$AGENT_NAME_SHAPES")"
+mapfile -t shapes_read < <(source "$PLUGIN_ROOT/scripts/orch/agent.sh" && agent_name_shapes)
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/a"
 {
   printf 'Start under the `orchestrator:` plugin scope:'
-  for shape in $shapes_read; do printf ' `%s`' "${shape#*:}" | sed 's/\*/x/g'; done
+  for shape in "${shapes_read[@]}"; do printf ' `%s`' "${shape#*:}" | sed 's/\*/x/g'; done
   printf '.\n'
 } >"$fixture/skills/a/SKILL.md"
 out="$(scan_agent_settings "$fixture")"
-for shape in $shapes_read; do
+for shape in "${shapes_read[@]}"; do
   role="${shape%%:*}"
   flags "a start site naming ${shape#*:} without agent get $role is flagged" \
     "$out" "skills/a/SKILL.md: starts an agent of the $role role but does not name agent get $role"

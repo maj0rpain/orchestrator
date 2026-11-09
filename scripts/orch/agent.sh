@@ -319,16 +319,24 @@ agent_shape_ere() {
   printf '%s\n' "${1//\*/[a-z]+}"
 }
 
+# agent_name_shapes: AGENT_NAME_SHAPES one role:glob pair per line, split with
+# no pathname expansion, so a file in the cwd never replaces a shape's glob.
+agent_name_shapes() {
+  local -a shapes
+  read -ra shapes <<<"$AGENT_NAME_SHAPES"
+  [ "${#shapes[@]}" -eq 0 ] || printf '%s\n' "${shapes[@]}"
+}
+
 # agent_role_of <agent>: the role a plugin agent's name belongs to, empty for
 # an agent no role covers.
 agent_role_of() {
   local shape
-  for shape in $AGENT_NAME_SHAPES; do
+  while IFS= read -r shape; do
     if [[ "$1" =~ ^$(agent_shape_ere "${shape#*:}")$ ]]; then
       echo "${shape%%:*}"
       return 0
     fi
-  done
+  done < <(agent_name_shapes)
   return 0
 }
 
