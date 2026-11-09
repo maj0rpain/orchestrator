@@ -461,7 +461,7 @@ adapter_issues_labelled() {
   ! fake_failing adapter_issues_labelled || return 1
   fake_open_issues | while read -r n; do
     keep=1
-    for l in "$@"; do grep -qxiF -- "$l" "$(fake_store)/issues/$n/labels" 2>/dev/null || keep=0; done
+    for l in "$@"; do grep -qxiF -- "$l" "$(fake_issue_dir "$n")/labels" 2>/dev/null || keep=0; done
     [ "$keep" = 1 ] || continue
     printf "%s\n" "$n"
   done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
@@ -473,7 +473,7 @@ adapter_issues_open_titles() {
   local n t
   ! fake_failing adapter_issues_open_titles || return 1
   fake_open_issues | while read -r n; do
-    t="$(cat "$(fake_store)/issues/$n/title" 2>/dev/null)"
+    t="$(cat "$(fake_issue_dir "$n")/title" 2>/dev/null)"
     printf "%s\t%s\n" "$n" "$t"
   done
 }

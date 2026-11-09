@@ -42,6 +42,8 @@ audit_body_parse() {
   printf -v "$3" '%s' "$__abp_shas"
 }
 
+AUDIT_FILE_USAGE="usage: orch.sh audit file <title> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
+
 # audit_file <title> --finding-file <f> --location <loc>...: files one finding
 # as a GitHub issue and prints its number. Every check - the title, the
 # finding file, the locations, HEAD's SHA and the round trip of the rendered
@@ -49,20 +51,19 @@ audit_body_parse() {
 # title files nothing: its number is printed, with the already-open line on
 # stderr, and the exit is 0.
 audit_file() {
-  local usage="usage: orch.sh audit file <title> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
-  [ $# -ge 1 ] || die "$usage"
+  [ $# -ge 1 ] || die "$AUDIT_FILE_USAGE"
   local title="$1" finding="" locations=() i
   shift
-  finding_flags_parse "$usage" "--finding-file --location" "$@"
+  finding_flags_parse "$AUDIT_FILE_USAGE" "--finding-file --location" "$@"
   for i in "${!FINDING_FLAGS[@]}"; do
     case "${FINDING_FLAGS[i]}" in
       --finding-file)
-        [ -z "$finding" ] || die "$usage"
+        [ -z "$finding" ] || die "$AUDIT_FILE_USAGE"
         finding="${FINDING_VALUES[i]}" ;;
       --location) locations+=("${FINDING_VALUES[i]}") ;;
     esac
   done
-  [ -n "$finding" ] && [ "${#locations[@]}" -gt 0 ] || die "$usage"
+  [ -n "$finding" ] && [ "${#locations[@]}" -gt 0 ] || die "$AUDIT_FILE_USAGE"
 
   local loc sha body_file n err existing existing_n existing_title triage
   finding_input_check "$title" "$finding"
@@ -107,6 +108,6 @@ cmd_audit() {
   shift || true
   case "$op" in
     file) audit_file "$@" ;;
-    *) die "usage: orch.sh audit file <title> --finding-file <f> --location <loc>..." ;;
+    *) die "$AUDIT_FILE_USAGE" ;;
   esac
 }

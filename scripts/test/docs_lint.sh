@@ -2677,7 +2677,7 @@ open_report_capability='Open a report in the browser'
 # one per step heading (## <n>. <step>, one step per line of <steps>) missing
 # from the skill or out of order.
 scan_skill_steps() {
-  local r="$1" name="$2" skill="$3" stepl="$4" cmd step n=0 pairs="" flat
+  local r="$1" name="$2" skill="$3" step_list="$4" cmd step n=0 pairs="" flat
   cmd="commands/$name.md"
   if [ ! -f "$r/$cmd" ]; then echo "$cmd: missing"
   elif flat="$(flat_text "$r/$cmd")"; ! grep -qF "\`orchestrator:orch-$name\` and follow it" <<<"$flat"; then
@@ -2686,7 +2686,7 @@ scan_skill_steps() {
   while IFS= read -r step; do
     n=$((n + 1))
     pairs+="$skill|## $n. $step"$'\n'
-  done <<<"$stepl"
+  done <<<"$step_list"
   scan_required_headings "$r" "$pairs"
 }
 # scan_improve_tests <plugin root>: scan_skill_steps for orch-improve-tests.
