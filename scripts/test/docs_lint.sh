@@ -2720,17 +2720,19 @@ scan_skill_steps() {
 }
 # scan_audit_tests <plugin root>: scan_skill_steps for orch-audit-tests, plus
 # one line when the old command file or skill directory still exists and one per
-# file outside CHANGELOG.md, changelog.d/ and this lint that still names the old
-# command, improve-tests.
+# tracked file outside CHANGELOG.md, changelog.d/ and this lint that still names
+# the old command, improve-tests. Untracked files, a flow's own state among
+# them, are never read.
 scan_audit_tests() {
   local r="$1" f
   scan_skill_steps "$r" audit-tests "$audit_tests_skill" "$audit_tests_steps"
   [ ! -e "$r/commands/improve-tests.md" ] || echo "commands/improve-tests.md: still exists"
   [ ! -e "$r/skills/orch-improve-tests" ] || echo "skills/orch-improve-tests: still exists"
   while IFS= read -r f; do
-    [ -n "$f" ] && echo "${f#"$r"/}: names improve-tests"
-  done < <(grep -rIl --exclude-dir=.git --exclude-dir=changelog.d --exclude=CHANGELOG.md \
-    --exclude=docs_lint.sh -e 'improve-tests' "$r" 2>/dev/null | sort)
+    [ -n "$f" ] && echo "$f: names improve-tests"
+  done < <(git -C "$r" ls-files -z -- ':(exclude)CHANGELOG.md' ':(exclude)changelog.d' \
+    ':(exclude)scripts/test/docs_lint.sh' \
+    | (cd "$r" && xargs -0 grep -Il -e 'improve-tests' 2>/dev/null) | sort)
   return 0
 }
 # scan_report_capability <plugin root>: one line when docs/host-capabilities.md
@@ -2774,12 +2776,18 @@ printf 'x\n' >"$fixture/commands/improve-tests.md"
 printf 'Run /orchestrator:improve-tests.\n' >"$fixture/docs/guide.md"
 printf 'Run /orchestrator:improve-tests.\n' >"$fixture/CHANGELOG.md"
 printf 'Run /orchestrator:improve-tests.\n' >"$fixture/changelog.d/1.md"
+fixture_git "$fixture" init -q
+fixture_git "$fixture" add -A
+mkdir -p "$fixture/.orchestrator"
+printf 'Run /orchestrator:improve-tests.\n' >"$fixture/.orchestrator/notes.md"
 out="$(scan_audit_tests "$fixture")"
 flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: still exists"
 flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests: still exists"
 flags "a doc naming improve-tests is flagged" "$out" "docs/guide.md: names improve-tests"
 spares "CHANGELOG.md and changelog.d naming improve-tests are not flagged" "$out" 'CHANGELOG|changelog\.d'
-rm -rf "$fixture/skills/orch-improve-tests" "$fixture/commands/improve-tests.md" "$fixture/docs/guide.md"
+spares "an untracked file naming improve-tests is not flagged" "$out" '\.orchestrator'
+rm -rf "$fixture/skills/orch-improve-tests" "$fixture/commands/improve-tests.md" "$fixture/docs/guide.md" \
+  "$fixture/.orchestrator" "$fixture/.git"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Ask | `AskUserQuestion`. | `ask_user`. |' '' '## Fallbacks' '' \
   "### $open_report_capability" '' 'Say where the file is.' >"$fixture/docs/host-capabilities.md"
