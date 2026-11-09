@@ -386,6 +386,18 @@ assert_contains "set auditor --host junie writes a copy of orch-code-auditor wit
 "$ORCH" agent clear auditor --host junie >/dev/null
 assert_eq "clear auditor --host junie removes the doc auditor copy" "$(on_disk .junie/agents/orch-doc-auditor.md)" "absent"
 assert_eq "clear auditor --host junie removes the code auditor copy" "$(on_disk .junie/agents/orch-code-auditor.md)" "absent"
+# The name shapes cover exactly the roles: no role without a shape, no shape
+# of an unknown role.
+assert_eq "the name shapes' roles are exactly AGENT_ROLES" \
+  "$(sourced_orch agent_name_shapes | cut -d: -f1 | sort -u)" \
+  "$(sourced_orch eval 'printf "%s\n" $AGENT_ROLES' | sort -u)"
+# A file in the cwd named like a shape never replaces that shape's glob.
+touch 'lens:orch-lens-x' 'auditor:orch-code-auditor'
+assert_eq "a file named like a shape leaves the lens role read" \
+  "$(sourced_orch agent_role_of orch-lens-consistency)" "lens"
+assert_eq "a file named like a shape leaves the auditor role read" \
+  "$(sourced_orch agent_role_of orch-doc-auditor)" "auditor"
+rm -f 'lens:orch-lens-x' 'auditor:orch-code-auditor'
 unset -f jkey
 unset -f key untouched
 restore_suite_env

@@ -7,6 +7,11 @@
 # The roles, in the order show prints them. The list lives here alone.
 AGENT_ROLES="implementer lens reviewer fixer closer resolver auditor"
 
+# The plugin agents' name shapes, as ordered role:glob pairs: the first glob a
+# name matches gives its role. Each * reads as [a-z]+ (agent_shape_ere). The
+# list lives here alone: agent_role_of and the docs lint both read it.
+AGENT_NAME_SHAPES="implementer:orch-implementer lens:orch-lens-* reviewer:orch-reviewer-* fixer:orch-fixer closer:orch-closer resolver:orch-resolver auditor:orch-*-auditor"
+
 # The host table: every site reads these arrays, so a host or an allowed list
 # is a table entry and no site switches on a host or a kind. Keyed by host
 # (claude, junie) or by <host>.<kind> (kind model or effort).
@@ -308,18 +313,31 @@ AGENT_COPY_EXCLUDE=".junie/agents/orch-*.md"
 AGENT_JUNIE_RUN_NAME='orch-[A-Za-z0-9-]*'
 AGENT_JUNIE_RUN_TAIL='_[0-9]* with parameters'
 
+# agent_shape_ere <glob>: the ERE a name shape's glob stands for, each * as
+# [a-z]+. The one reading of a shape; it is not anchored.
+agent_shape_ere() {
+  printf '%s\n' "${1//\*/[a-z]+}"
+}
+
+# agent_name_shapes: AGENT_NAME_SHAPES one role:glob pair per line, split with
+# no pathname expansion, so a file in the cwd never replaces a shape's glob.
+agent_name_shapes() {
+  local -a shapes
+  read -ra shapes <<<"$AGENT_NAME_SHAPES"
+  [ "${#shapes[@]}" -eq 0 ] || printf '%s\n' "${shapes[@]}"
+}
+
 # agent_role_of <agent>: the role a plugin agent's name belongs to, empty for
 # an agent no role covers.
 agent_role_of() {
-  case "$1" in
-    orch-implementer) echo implementer ;;
-    orch-lens-*) echo lens ;;
-    orch-reviewer-*) echo reviewer ;;
-    orch-fixer) echo fixer ;;
-    orch-closer) echo closer ;;
-    orch-resolver) echo resolver ;;
-    orch-*-auditor) echo auditor ;;
-  esac
+  local shape
+  while IFS= read -r shape; do
+    if [[ "$1" =~ ^$(agent_shape_ere "${shape#*:}")$ ]]; then
+      echo "${shape%%:*}"
+      return 0
+    fi
+  done < <(agent_name_shapes)
+  return 0
 }
 
 # agent_copy_marked <file>: whether <file> carries the marker - on the line
