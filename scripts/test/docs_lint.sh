@@ -2820,15 +2820,21 @@ Hand off'
 # numbered_heading <file> <name>: the first "## <n>. <name>" heading in the
 # file, so a scan finds a step by its name whatever number it sits at.
 numbered_heading() {
-  grep -m1 -E "^## [0-9]+\. $2[[:space:]]*\$" "$1" 2>/dev/null | sed 's/[[:space:]]*$//'
-  return 0
+  local h
+  h="$(grep -m1 -E "^## [0-9]+\. $2[[:space:]]*\$" "$1" 2>/dev/null | sed 's/[[:space:]]*$//')"
+  [ -n "$h" ] || return 1
+  printf '%s\n' "$h"
 }
 # scan_hand_off_category <plugin root> <skill file> <category>...: one line when
 # the skill's Hand off step does not pass --category for each category named.
 scan_hand_off_category() {
-  local r="$1" skill="$2" hand c missing="" list
+  local r="$1" skill="$2" hand c missing="" list heading
   shift 2
-  hand="$(md_section "$r/$skill" "$(numbered_heading "$r/$skill" "Hand off")" 2>/dev/null | flat_text)"
+  if heading="$(numbered_heading "$r/$skill" "Hand off")"; then
+    hand="$(md_section "$r/$skill" "$heading" 2>/dev/null | flat_text)"
+  else
+    hand="" missing=1
+  fi
   for c in "$@"; do
     grep -qF -- "--category $c" <<<"$hand" || missing=1
   done
@@ -2864,6 +2870,10 @@ assert_empty "a hand off at step 7 passing its category is accepted" \
 flags "a hand off at step 7 missing its category is flagged" \
   "$(scan_hand_off_category "$fixture" "$audit_docs_skill" enhancement)" \
   "$audit_docs_skill: the Hand off step does not pass --category enhancement"
+printf '# A\n\nRun `--category bug`.\n\n## 7. Handoff\n\nNothing.\n' >"$fixture/$audit_docs_skill"
+flags "a missing Hand off heading is flagged even when the phrase appears elsewhere" \
+  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug)" \
+  "$audit_docs_skill: the Hand off step does not pass --category bug"
 check "orch-audit-docs has its command and its six step headings in order" \
   "$(scan_skill_steps "$PLUGIN_ROOT" audit-docs "$audit_docs_skill" "$audit_steps")"
 check "orch-audit-docs hands off with --category documentation" \
@@ -2874,14 +2884,15 @@ check "orch-audit-docs hands off with --category documentation" \
 # auditor, and one per skill that runs an agent sync command - a sentence saying
 # it runs none is allowed.
 scan_audit_hunt() {
-  local r="$1" name skill hunt
+  local r="$1" name skill hunt heading
   for name in audit-docs audit-code audit-tests; do
     skill="skills/orch-$name/SKILL.md"
     if [ ! -f "$r/$skill" ]; then
       echo "$skill: missing"
       continue
     fi
-    if ! hunt="$(md_section "$r/$skill" "$(numbered_heading "$r/$skill" "Hunt")" 2>/dev/null)" ||
+    if ! heading="$(numbered_heading "$r/$skill" "Hunt")" ||
+      ! hunt="$(md_section "$r/$skill" "$heading" 2>/dev/null)" ||
       ! grep -qF 'agent get auditor' <<<"$(flat_text <<<"$hunt")"; then
       echo "$skill: the Hunt step does not name agent get auditor"
     fi
@@ -2912,6 +2923,9 @@ flags "an audit Hunt step at step 4 that reads no agent get auditor is flagged" 
 printf '# A\n\n## 4. Hunt\n\nRead `agent get auditor`.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
 assert_empty "an audit Hunt step at step 4 reading agent get auditor is accepted" \
   "$(scan_audit_hunt "$fixture" | grep audit-docs)"
+printf '# A\n\nRead `agent get auditor`.\n\n## 4. Huntt\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
+flags "an audit skill with no Hunt heading is flagged even when the phrase appears elsewhere" \
+  "$(scan_audit_hunt "$fixture")" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name agent get auditor"
 mkdir -p "$fixture/skills/orch-audit-tests"
 printf '# A\n\n## 4. Hunt\n\nRead `agent get auditor`; run `bash "$ORCH" agent sync`.\n\n## 5. Rank\n' \
   >"$fixture/skills/orch-audit-tests/SKILL.md"
