@@ -506,9 +506,9 @@ flags "an old plan command file is flagged" "$out" "commands/plan.md: old comman
 flags "an old orch-plan skill directory is flagged" "$out" "skills/orch-plan/: old skill directory"
 flags "an old review command file is flagged" "$out" "commands/review.md: old command file"
 flags "an old status command file is flagged" "$out" "commands/status.md: old command file"
+flags "an old doctor command file is flagged" "$out" "commands/doctor.md: old command file"
 flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: old command file"
 flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests/: old skill directory"
-flags "an old doctor command file is flagged" "$out" "commands/doctor.md: old command file"
 check "no old orchestrator skill or command name outside history" "$(scan_old_names "$PLUGIN_ROOT")"
 
 # A plugin command must not share its bare name with a host built-in command
