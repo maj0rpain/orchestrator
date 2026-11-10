@@ -125,13 +125,10 @@ finishes. Each prompt names its area (the test files), the repo root, the
 measured cost of each part in the area, the trend, and its own findings file in
 the temp directory. The hunter has no Edit or Bash tool, so it times nothing;
 its brief holds the quality rule, the six kinds, the fields each
-candidate states and the findings-file format (`@@ finding <k>` blocks, `@@
-none` when empty). A reply is the file's path and a candidate count; read each
-file.
-
-Its brief defines the six kinds of candidate and the fields each states, among
-them the replacement, why it tests as well, and the expected saving, measured
-or estimated.
+candidate states (among them the replacement, why it tests as well, and the
+expected saving, measured or estimated) and the findings-file format (`@@
+finding <k>` blocks, `@@ none` when empty). A reply is the file's path and a
+candidate count; read each file.
 
 Read every candidate against the quality rule yourself and drop each one
 that names no replacement, or no reason it tests as well, or whose reason
