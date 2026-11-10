@@ -440,9 +440,7 @@ adapter_issue_state() {
 }
 
 # fake_open_issues: the numbers of the open issues in the store, one per line
-# in number order. A caller cuts the list to ISSUE_LIST_LIMIT, as gh's --limit
-# does, with awk, which reads all of sort's output, so sort never takes SIGPIPE
-# under pipefail as it would from head (#1019).
+# in number order.
 fake_open_issues() {
   local d
   for d in "$(fake_store)"/issues/*/; do
@@ -454,8 +452,9 @@ fake_open_issues() {
 
 # adapter_issues_labelled <label>...: the open issues in the store carrying
 # every label named, in number order - the first ISSUE_LIST_LIMIT of them, as
-# gh's --limit cuts the list, with awk, which reads all of sort's output, so
-# sort never takes SIGPIPE under pipefail as it would from head (#1019).
+# gh's --limit cuts the list, with awk, which reads all of the while loop's
+# output, so the loop never takes SIGPIPE under pipefail as it would from head
+# (#1019).
 adapter_issues_labelled() {
   local n l keep
   ! fake_failing adapter_issues_labelled || return 1
