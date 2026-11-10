@@ -497,6 +497,8 @@ mkdir -p "$fixture/skills/orch-plan"
 : >"$fixture/commands/review.md"
 : >"$fixture/commands/status.md"
 : >"$fixture/commands/doctor.md"
+mkdir -p "$fixture/skills/orch-improve-tests"
+: >"$fixture/commands/improve-tests.md"
 out="$(scan_old_names "$fixture")"
 flags "an old review-spec command file is flagged" "$out" "commands/review-spec.md: old command file"
 flags "an old orch-review-spec skill directory is flagged" "$out" "skills/orch-review-spec/: old skill directory"
@@ -504,6 +506,8 @@ flags "an old plan command file is flagged" "$out" "commands/plan.md: old comman
 flags "an old orch-plan skill directory is flagged" "$out" "skills/orch-plan/: old skill directory"
 flags "an old review command file is flagged" "$out" "commands/review.md: old command file"
 flags "an old status command file is flagged" "$out" "commands/status.md: old command file"
+flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: old command file"
+flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests/: old skill directory"
 flags "an old doctor command file is flagged" "$out" "commands/doctor.md: old command file"
 check "no old orchestrator skill or command name outside history" "$(scan_old_names "$PLUGIN_ROOT")"
 
@@ -2767,8 +2771,7 @@ assert_empty "the seven step headings in order and a wrapped route are not flagg
   "$(scan_audit_tests "$fixture")"
 check "orch-audit-tests has its command and its seven step headings in order" \
   "$(scan_audit_tests "$PLUGIN_ROOT")"
-mkdir -p "$fixture/skills/orch-improve-tests" "$fixture/changelog.d"
-printf 'x\n' >"$fixture/commands/improve-tests.md"
+mkdir -p "$fixture/changelog.d"
 printf 'Run /orchestrator:improve-tests.\n' >"$fixture/docs/guide.md"
 printf 'Run /orchestrator:improve-tests.\n' >"$fixture/CHANGELOG.md"
 printf 'Run /orchestrator:improve-tests.\n' >"$fixture/changelog.d/1.md"
@@ -2776,14 +2779,11 @@ fixture_git "$fixture" init -q
 fixture_git "$fixture" add -A
 mkdir -p "$fixture/.orchestrator"
 printf 'Run /orchestrator:improve-tests.\n' >"$fixture/.orchestrator/notes.md"
-out="$(scan_audit_tests "$fixture"; scan_old_names "$fixture")"
-flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: old command file"
-flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests/: old skill directory"
+out="$(scan_audit_tests "$fixture")"
 flags "a doc naming improve-tests is flagged" "$out" "docs/guide.md:1: names improve-tests"
 spares "CHANGELOG.md and changelog.d naming improve-tests are not flagged" "$out" 'CHANGELOG|changelog\.d'
 spares "an untracked file naming improve-tests is not flagged" "$out" '\.orchestrator'
-rm -rf "$fixture/skills/orch-improve-tests" "$fixture/commands/improve-tests.md" "$fixture/docs/guide.md" \
-  "$fixture/.orchestrator" "$fixture/.git"
+rm -rf "$fixture/docs/guide.md" "$fixture/.orchestrator" "$fixture/.git"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Ask | `AskUserQuestion`. | `ask_user`. |' '' '## Fallbacks' '' \
   "### $open_report_capability" '' 'Say where the file is.' >"$fixture/docs/host-capabilities.md"
