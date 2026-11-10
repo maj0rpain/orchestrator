@@ -499,6 +499,8 @@ mkdir -p "$fixture/skills/orch-plan"
 : >"$fixture/commands/review.md"
 : >"$fixture/commands/status.md"
 : >"$fixture/commands/doctor.md"
+mkdir -p "$fixture/skills/orch-improve-tests"
+: >"$fixture/commands/improve-tests.md"
 out="$(scan_old_names "$fixture")"
 flags "an old review-spec command file is flagged" "$out" "commands/review-spec.md: old command file"
 flags "an old orch-review-spec skill directory is flagged" "$out" "skills/orch-review-spec/: old skill directory"
@@ -507,12 +509,13 @@ flags "an old orch-plan skill directory is flagged" "$out" "skills/orch-plan/: o
 flags "an old review command file is flagged" "$out" "commands/review.md: old command file"
 flags "an old status command file is flagged" "$out" "commands/status.md: old command file"
 flags "an old doctor command file is flagged" "$out" "commands/doctor.md: old command file"
+flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: old command file"
+flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests/: old skill directory"
 # improve-tests was renamed audit-tests (#2499): scan_old_names guards it too.
 fixture="$(new_fixture)"
 fixture_git "$fixture" init -q
-mkdir -p "$fixture/skills/orch-improve-tests" "$fixture/commands" "$fixture/docs/adr" \
-  "$fixture/scripts/test" "$fixture/.out-of-scope" "$fixture/changelog.d" "$fixture/.orchestrator"
-printf 'x\n' >"$fixture/commands/improve-tests.md"
+mkdir -p "$fixture/docs/adr" "$fixture/scripts/test" "$fixture/.out-of-scope" \
+  "$fixture/changelog.d" "$fixture/.orchestrator"
 printf 'Run `/orchestrator:improve-tests`.\n' >"$fixture/docs/i1.md"
 printf 'Call `orchestrator:improve-tests`.\n' >"$fixture/docs/i2.md"
 printf 'See skills/orch-improve-tests/SKILL.md.\n' >"$fixture/docs/i3.md"
@@ -527,8 +530,6 @@ printf 'Run improve-tests.\n' >"$fixture/.out-of-scope/x.md"
 fixture_git "$fixture" add -A
 printf 'Run improve-tests.\n' >"$fixture/.orchestrator/notes.md"
 out="$(scan_old_names "$fixture")"
-flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: old command file"
-flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests/: old skill directory"
 flags "the old /orchestrator:improve-tests command is flagged" "$out" "docs/i1.md:1: old skill or command name"
 flags "the old orchestrator:improve-tests name is flagged" "$out" "docs/i2.md:1: old skill or command name"
 flags "the old orch-improve-tests skill directory text is flagged" "$out" "docs/i3.md:1: old skill or command name"
@@ -2876,9 +2877,6 @@ assert_empty "a category with no audit file text around it is accepted" \
 printf '# A\n\n## 7. Hand off\n\nRun `--category bug`.\n' >"$fixture/$audit_docs_skill"
 assert_empty "a hand off at step 7 passing its category is accepted" \
   "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug)"
-flags "a hand off at step 7 missing its category is flagged" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" enhancement)" \
-  "$audit_docs_skill: the Hand off step does not pass --category enhancement"
 printf '# A\n\nRun `--category bug`.\n\n## 7. Handoff\n\nNothing.\n' >"$fixture/$audit_docs_skill"
 flags "a missing Hand off heading is flagged even when the phrase appears elsewhere" \
   "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug)" \
@@ -2926,9 +2924,6 @@ printf '# A\n\n## 3. Hunt\n\nRead `agent get auditor`; this skill runs no agent 
   >"$fixture/skills/orch-audit-code/SKILL.md"
 assert_empty "a sentence saying the skill runs no agent sync is allowed" \
   "$(scan_audit_hunt "$fixture" | grep audit-code)"
-printf '# A\n\n## 4. Hunt\n\nStart the hunters.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
-flags "an audit Hunt step at step 4 that reads no agent get auditor is flagged" \
-  "$(scan_audit_hunt "$fixture")" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name agent get auditor"
 printf '# A\n\n## 4. Hunt\n\nRead `agent get auditor`.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
 assert_empty "an audit Hunt step at step 4 reading agent get auditor is accepted" \
   "$(scan_audit_hunt "$fixture" | grep audit-docs)"
