@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.2
+
+The test audit's quality rule now lives only in the `orch-test-auditor` brief; the `orch-audit-tests` skill points at it, and a docs lint check keeps both ends in place.
+
 ## 5.0.1
 
 Remove a repeated description of the test auditor's brief from the audit-tests skill's Hunt step.
