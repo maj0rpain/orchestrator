@@ -108,8 +108,7 @@
 #   scan_skill_steps  a command file routes to its skill, whose numbered step
 #     headings stay present and in order
 #   scan_audit_tests  orch-audit-tests has its command file and its seven step
-#     headings in order, and nothing outside CHANGELOG.md, changelog.d/ and this
-#     lint names improve-tests
+#     headings in order
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the
 #     report and a Markdown-summary fallback
 #   scan_hand_off_category  an audit skill's Hand off step passes --category for
@@ -381,9 +380,11 @@ check "the rule index lists every scan_* function in file order" \
 # commands review, status and doctor were renamed review-pass, flow-status and
 # health in 4.0.0 (#374), so orchestrator:review, orchestrator:status and
 # orchestrator:doctor are old names too, each matched as a whole token.
+# The test audit's command was renamed audit-tests in 5.0.0 (#2499), so
+# improve-tests, under any prefix, is an old name too.
 echo
 echo "skill names (ADR-0014)"
-old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec|review|status|doctor)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)'
+old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec|review|status|doctor)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)|improve-tests'
 # tracked_pattern_lines <root> <label> <pattern> [pathspec...]: each line of a
 # tracked file matching the extended regex <pattern>, as
 # "<file>:<line>: <label>: <text>", where <label> is plain words with no "/",
@@ -402,7 +403,7 @@ tracked_pattern_lines() {
 scan_old_names() {
   local r="$1"
   tracked_pattern_lines "$r" "old skill or command name" "$old_names" \
-    ':(exclude)CHANGELOG.md' ':(exclude)docs/adr' \
+    ':(exclude)CHANGELOG.md' ':(exclude)changelog.d' ':(exclude)docs/adr' \
     ':(exclude)scripts/test' ':(exclude).out-of-scope'
   local p
   for p in commands/review-spec.md commands/plan.md commands/review.md \
@@ -505,6 +506,37 @@ flags "an old orch-plan skill directory is flagged" "$out" "skills/orch-plan/: o
 flags "an old review command file is flagged" "$out" "commands/review.md: old command file"
 flags "an old status command file is flagged" "$out" "commands/status.md: old command file"
 flags "an old doctor command file is flagged" "$out" "commands/doctor.md: old command file"
+# improve-tests was renamed audit-tests (#2499): scan_old_names guards it too.
+fixture="$(new_fixture)"
+fixture_git "$fixture" init -q
+mkdir -p "$fixture/skills/orch-improve-tests" "$fixture/commands" "$fixture/docs/adr" \
+  "$fixture/scripts/test" "$fixture/.out-of-scope" "$fixture/changelog.d" "$fixture/.orchestrator"
+printf 'x\n' >"$fixture/commands/improve-tests.md"
+printf 'Run `/orchestrator:improve-tests`.\n' >"$fixture/docs/i1.md"
+printf 'Call `orchestrator:improve-tests`.\n' >"$fixture/docs/i2.md"
+printf 'See skills/orch-improve-tests/SKILL.md.\n' >"$fixture/docs/i3.md"
+printf 'See commands/improve-tests.md.\n' >"$fixture/docs/i4.md"
+printf 'Run improve-tests.\n' >"$fixture/docs/i5.md"
+printf 'Run improve-tests.\n' >"$fixture/CHANGELOG.md"
+printf 'Run improve-tests.\n' >"$fixture/changelog.d/1.md"
+printf 'Call `orchestrator:review-spec`.\n' >"$fixture/changelog.d/2.md"
+printf 'Run improve-tests.\n' >"$fixture/docs/adr/0001-x.md"
+printf 'Run improve-tests.\n' >"$fixture/scripts/test/x_test.sh"
+printf 'Run improve-tests.\n' >"$fixture/.out-of-scope/x.md"
+fixture_git "$fixture" add -A
+printf 'Run improve-tests.\n' >"$fixture/.orchestrator/notes.md"
+out="$(scan_old_names "$fixture")"
+flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: old command file"
+flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests/: old skill directory"
+flags "the old /orchestrator:improve-tests command is flagged" "$out" "docs/i1.md:1: old skill or command name"
+flags "the old orchestrator:improve-tests name is flagged" "$out" "docs/i2.md:1: old skill or command name"
+flags "the old orch-improve-tests skill directory text is flagged" "$out" "docs/i3.md:1: old skill or command name"
+flags "the old improve-tests command file text is flagged" "$out" "docs/i4.md:1: old skill or command name"
+flags "a bare improve-tests mention is flagged" "$out" "docs/i5.md:1: old skill or command name"
+spares "CHANGELOG.md and changelog.d naming old names are not flagged" "$out" 'CHANGELOG|changelog\.d'
+spares "history, tests and out-of-scope notes naming improve-tests are not flagged" \
+  "$out" '^(docs/adr/|scripts/test/|\.out-of-scope/)'
+spares "an untracked file naming improve-tests is not flagged" "$out" '\.orchestrator'
 check "no old orchestrator skill or command name outside history" "$(scan_old_names "$PLUGIN_ROOT")"
 
 # A plugin command must not share its bare name with a host built-in command
@@ -2718,17 +2750,10 @@ scan_skill_steps() {
   done <<<"$step_list"
   scan_required_headings "$r" "$pairs"
 }
-# scan_audit_tests <plugin root>: scan_skill_steps for orch-audit-tests, plus
-# one line per line of a tracked file outside CHANGELOG.md, changelog.d/ and
-# this lint that still names the old command, improve-tests. Untracked files, a
-# flow's own state among them, are never read. The old command file and skill
-# directory are scan_old_names's.
+# scan_audit_tests <plugin root>: scan_skill_steps for orch-audit-tests.
 scan_audit_tests() {
   local r="$1"
   scan_skill_steps "$r" audit-tests "$audit_tests_skill" "$audit_tests_steps"
-  tracked_pattern_lines "$r" "names improve-tests" 'improve-tests' \
-    ':(exclude)CHANGELOG.md' ':(exclude)changelog.d' \
-    ':(exclude)scripts/test/docs_lint.sh'
   return 0
 }
 # scan_report_capability <plugin root>: one line when docs/host-capabilities.md
@@ -2767,23 +2792,6 @@ assert_empty "the seven step headings in order and a wrapped route are not flagg
   "$(scan_audit_tests "$fixture")"
 check "orch-audit-tests has its command and its seven step headings in order" \
   "$(scan_audit_tests "$PLUGIN_ROOT")"
-mkdir -p "$fixture/skills/orch-improve-tests" "$fixture/changelog.d"
-printf 'x\n' >"$fixture/commands/improve-tests.md"
-printf 'Run /orchestrator:improve-tests.\n' >"$fixture/docs/guide.md"
-printf 'Run /orchestrator:improve-tests.\n' >"$fixture/CHANGELOG.md"
-printf 'Run /orchestrator:improve-tests.\n' >"$fixture/changelog.d/1.md"
-fixture_git "$fixture" init -q
-fixture_git "$fixture" add -A
-mkdir -p "$fixture/.orchestrator"
-printf 'Run /orchestrator:improve-tests.\n' >"$fixture/.orchestrator/notes.md"
-out="$(scan_audit_tests "$fixture"; scan_old_names "$fixture")"
-flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: old command file"
-flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests/: old skill directory"
-flags "a doc naming improve-tests is flagged" "$out" "docs/guide.md:1: names improve-tests"
-spares "CHANGELOG.md and changelog.d naming improve-tests are not flagged" "$out" 'CHANGELOG|changelog\.d'
-spares "an untracked file naming improve-tests is not flagged" "$out" '\.orchestrator'
-rm -rf "$fixture/skills/orch-improve-tests" "$fixture/commands/improve-tests.md" "$fixture/docs/guide.md" \
-  "$fixture/.orchestrator" "$fixture/.git"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Ask | `AskUserQuestion`. | `ask_user`. |' '' '## Fallbacks' '' \
   "### $open_report_capability" '' 'Say where the file is.' >"$fixture/docs/host-capabilities.md"
