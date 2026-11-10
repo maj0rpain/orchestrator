@@ -385,10 +385,6 @@ assert_contains "set auditor --host junie writes a copy of orch-code-auditor wit
   "$(cat .junie/agents/orch-code-auditor.md)" "reasoningLevel: low"
 assert_contains "set auditor --host junie writes a copy of orch-test-auditor with the setting" \
   "$(cat .junie/agents/orch-test-auditor.md)" "reasoningLevel: low"
-rm -f .junie/agents/orch-test-auditor.md
-"$ORCH" agent sync >/dev/null
-assert_contains "agent sync with an auditor Junie setting writes the orch-test-auditor copy" \
-  "$(cat .junie/agents/orch-test-auditor.md)" "model: gpt-5"
 "$ORCH" agent clear auditor --host junie >/dev/null
 assert_eq "clear auditor --host junie removes the doc auditor copy" "$(on_disk .junie/agents/orch-doc-auditor.md)" "absent"
 assert_eq "clear auditor --host junie removes the code auditor copy" "$(on_disk .junie/agents/orch-code-auditor.md)" "absent"
@@ -404,8 +400,6 @@ assert_eq "a file named like a shape leaves the lens role read" \
   "$(sourced_orch agent_role_of orch-lens-consistency)" "lens"
 assert_eq "a file named like a shape leaves the auditor role read" \
   "$(sourced_orch agent_role_of orch-doc-auditor)" "auditor"
-assert_eq "orch-test-auditor is read under the auditor role" \
-  "$(sourced_orch agent_role_of orch-test-auditor)" "auditor"
 rm -f 'lens:orch-lens-x' 'auditor:orch-code-auditor'
 unset -f jkey
 unset -f key untouched

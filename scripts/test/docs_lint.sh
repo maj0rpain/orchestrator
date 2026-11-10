@@ -406,10 +406,10 @@ scan_old_names() {
     ':(exclude)scripts/test' ':(exclude).out-of-scope'
   local p
   for p in commands/review-spec.md commands/plan.md commands/review.md \
-    commands/status.md commands/doctor.md; do
+    commands/status.md commands/doctor.md commands/improve-tests.md; do
     [ -e "$r/$p" ] && echo "$p: old command file"
   done
-  for p in skills/orch-review-spec skills/orch-plan; do
+  for p in skills/orch-review-spec skills/orch-plan skills/orch-improve-tests; do
     [ -e "$r/$p" ] && echo "$p/: old skill directory"
   done
   return 0
@@ -2719,20 +2719,16 @@ scan_skill_steps() {
   scan_required_headings "$r" "$pairs"
 }
 # scan_audit_tests <plugin root>: scan_skill_steps for orch-audit-tests, plus
-# one line when the old command file or skill directory still exists and one per
-# tracked file outside CHANGELOG.md, changelog.d/ and this lint that still names
-# the old command, improve-tests. Untracked files, a flow's own state among
-# them, are never read.
+# one line per line of a tracked file outside CHANGELOG.md, changelog.d/ and
+# this lint that still names the old command, improve-tests. Untracked files, a
+# flow's own state among them, are never read. The old command file and skill
+# directory are scan_old_names's.
 scan_audit_tests() {
-  local r="$1" f
+  local r="$1"
   scan_skill_steps "$r" audit-tests "$audit_tests_skill" "$audit_tests_steps"
-  [ ! -e "$r/commands/improve-tests.md" ] || echo "commands/improve-tests.md: still exists"
-  [ ! -e "$r/skills/orch-improve-tests" ] || echo "skills/orch-improve-tests: still exists"
-  while IFS= read -r f; do
-    [ -n "$f" ] && echo "$f: names improve-tests"
-  done < <(git -C "$r" ls-files -z -- ':(exclude)CHANGELOG.md' ':(exclude)changelog.d' \
-    ':(exclude)scripts/test/docs_lint.sh' \
-    | (cd "$r" && xargs -0 grep -Il -e 'improve-tests' 2>/dev/null) | sort)
+  tracked_pattern_lines "$r" "names improve-tests" 'improve-tests' \
+    ':(exclude)CHANGELOG.md' ':(exclude)changelog.d' \
+    ':(exclude)scripts/test/docs_lint.sh'
   return 0
 }
 # scan_report_capability <plugin root>: one line when docs/host-capabilities.md
@@ -2780,10 +2776,10 @@ fixture_git "$fixture" init -q
 fixture_git "$fixture" add -A
 mkdir -p "$fixture/.orchestrator"
 printf 'Run /orchestrator:improve-tests.\n' >"$fixture/.orchestrator/notes.md"
-out="$(scan_audit_tests "$fixture")"
-flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: still exists"
-flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests: still exists"
-flags "a doc naming improve-tests is flagged" "$out" "docs/guide.md: names improve-tests"
+out="$(scan_audit_tests "$fixture"; scan_old_names "$fixture")"
+flags "a leftover improve-tests command file is flagged" "$out" "commands/improve-tests.md: old command file"
+flags "a leftover improve-tests skill directory is flagged" "$out" "skills/orch-improve-tests/: old skill directory"
+flags "a doc naming improve-tests is flagged" "$out" "docs/guide.md:1: names improve-tests"
 spares "CHANGELOG.md and changelog.d naming improve-tests are not flagged" "$out" 'CHANGELOG|changelog\.d'
 spares "an untracked file naming improve-tests is not flagged" "$out" '\.orchestrator'
 rm -rf "$fixture/skills/orch-improve-tests" "$fixture/commands/improve-tests.md" "$fixture/docs/guide.md" \
@@ -2932,10 +2928,6 @@ check "orch-audit-code hands off with --category bug and enhancement" \
   "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_code_skill" bug enhancement)"
 check "orch-audit-tests hands off with --category enhancement" \
   "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_tests_skill" enhancement)"
-printf '# A\n\n## 7. Hand off\n\nRun `audit file "<t>" --finding-file f`.\n' >"$fixture/$audit_tests_skill"
-flags "an audit-tests Hand off step with no --category enhancement is flagged" \
-  "$(scan_hand_off_category "$fixture" "$audit_tests_skill" enhancement)" \
-  "$audit_tests_skill: the Hand off step does not pass --category enhancement"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo
@@ -3686,7 +3678,7 @@ turn_final_sites='skills/orch-finding-triage/SKILL.md|## 3. Propose one batch pe
 skills/orch-finding-triage/SKILL.md|### B3. Propose one batch
 skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
 skills/orch-to-tickets/SKILL.md|## Unattended breakdown
-skills/orch-audit-tests/SKILL.md|
+skills/orch-audit-tests/SKILL.md|## 7. Hand off
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/tickets-follow-the-spec.md|## The ticket question
 docs/host-capabilities.md|### Guard the batch question

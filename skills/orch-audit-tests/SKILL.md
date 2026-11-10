@@ -124,29 +124,14 @@ fork, each an `orch-test-auditor`, at most 4 at once; start the next as one
 finishes. Each prompt names its area (the test files), the repo root, the
 measured cost of each part in the area, the trend, and its own findings file in
 the temp directory. The hunter has no Edit or Bash tool, so it times nothing;
-its brief holds the quality rule, the six kinds below, the fields each
+its brief holds the quality rule, the six kinds, the fields each
 candidate states and the findings-file format (`@@ finding <k>` blocks, `@@
 none` when empty). A reply is the file's path and a candidate count; read each
 file.
 
-The six kinds of candidate:
-
-- **Duplicated coverage**: a test re-asserts a behaviour an existing test
-  already covers.
-- **Expensive seam**: a test observes a behaviour at a costlier seam when a
-  cheaper seam gives the same confidence through a public interface.
-- **Per-test setup**: setup rebuilt for each test that a shared fixture could
-  provide.
-- **Waiting**: a sleep, wait or poll in a test.
-- **Dead or implementation-coupled tests**: a test that can no longer fail,
-  or one that breaks on a refactor that changes no behaviour.
-- **Measured outliers**: a part whose measured cost is far above the others'
-  for what it covers.
-
-Each candidate has: its kind; its location(s), each site as
-`<file>:<start>-<end>`; its measured cost; its replacement; why the
-replacement tests as well; and the cost it expects to save, in CPU seconds,
-with how that figure was reached and whether it is measured or estimated.
+Its brief defines the six kinds of candidate and the fields each states, among
+them the replacement, why it tests as well, and the expected saving, measured
+or estimated.
 
 Read every candidate against the quality rule yourself and drop each one
 that names no replacement, or no reason it tests as well, or whose reason
@@ -183,9 +168,11 @@ everything else inline. It carries:
 
 Open it in the browser - `xdg-open <file>` on Linux, `open <file>` on macOS -
 and tell the user its path. On a host that cannot open it, write a Markdown
-summary in chat instead: the scope, the area count, the trend, the top
+summary in chat instead: the scope, the area count, whether parts were timed
+per section, per file, or only as one whole run, the trend, the top
 recommendation, and one line per candidate with its rank, kind, location,
-strength, cost saved, and replacement.
+strength, cost saved (marked estimated where it is, as for a saving inside a
+file timed as a whole), and replacement.
 
 ## 7. Hand off
 
