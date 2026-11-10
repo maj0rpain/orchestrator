@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.1
+
+Remove a repeated description of the test auditor's brief from the audit-tests skill's Hunt step.
+
 ## 5.0.0
 
 `/orchestrator:improve-tests` is now `/orchestrator:audit-tests` (skill `orch-audit-tests`). There is no alias, so the old command is gone. The test audit is now the third audit, next to `audit-docs` and `audit-code`. Its hunter is a new read-only plugin agent, `orch-test-auditor`, in the `auditor` role, so `orch.sh agent set auditor` sets its model and effort, and on Junie too. The scope is split into areas of about 10 test files, hunted by up to 4 hunters at once, and you are asked to confirm a scope of more than 8 areas. A scope of more than about 40 sections is timed per file. The hand-off uses audit-code's grammar: `interview <numbers>`, `file <numbers>`, both, or `none`. Filed candidates are triaged `enhancement` issues.
