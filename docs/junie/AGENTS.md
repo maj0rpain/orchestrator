@@ -79,4 +79,7 @@ Whenever the orch-audit-docs skill is used, that custom agent is required too.
 
 The orch-audit-code skill depends on the orch-code-auditor custom agent.
 Whenever the orch-audit-code skill is used, that custom agent is required too.
+
+The orch-audit-tests skill depends on the orch-test-auditor custom agent.
+Whenever the orch-audit-tests skill is used, that custom agent is required too.
 <!-- orchestrator:end -->

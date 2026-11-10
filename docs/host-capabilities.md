@@ -73,7 +73,8 @@ agent names the roles it starts and points here, and states none of this itself.
 - On Junie, the setting travels in agent copies instead (see **Host
   fallback**): before a skill starts any plugin agent, it runs `bash "$ORCH"
   agent sync` once per run - except the read-only audit skills,
-  `orch-audit-docs` and `orch-audit-code`, which never sync (ADR-0060): their
+  `orch-audit-docs`, `orch-audit-code` and `orch-audit-tests`, which never sync
+  (ADR-0060): their
   hunters carry the `auditor` setting only from copies the user wrote with
   `orch.sh agent sync`. A failed sync stops the run, relaying its
   message. The skill reads no `agent get` and passes nothing to the start:
@@ -234,7 +235,7 @@ keeps its brief's read-only tools, so every path behaves alike.
 ### Open a report in the browser
 
 Write a Markdown summary in chat instead of opening the HTML report: the
-skill that wrote the report (`orch-improve-tests`) says what the summary
+skill that wrote the report (`orch-audit-tests`) says what the summary
 holds. Still name the HTML file's path, so a human on a machine with a
 browser can open it by hand.
 

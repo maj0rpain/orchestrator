@@ -753,7 +753,7 @@ commit counts. A change with no checks at all is not thereby failing.
 One problem a review reports - about the change, from the review phase or a
 review pass, or about the spec, from a spec review - or one disagreement a
 **docs audit** reports between a repo's documentation and its code, or one
-candidate a **code audit** reports.
+candidate a **code audit** or a **test audit** reports.
 Only a finding about the change from the review phase carries a **severity**,
 which the review phase assigns; the reviewer itself reports findings unranked.
 A finding from a review pass carries none: the session that ran the pass
@@ -762,8 +762,8 @@ unless a standalone review pass left it out as a
 smell-baseline finding. A finding about the spec carries no severity: the spec
 review's session marks the item proposing its edit material or minor, a human
 accepts or declines that edit, or an unattended spec review applies it as
-recommended, and it is never filed. A docs-audit or code-audit finding carries
-no severity and
+recommended, and it is never filed. A docs-audit, code-audit or test-audit
+finding carries no severity and
 is never a **filed finding**: the human picks it for an interview or files it
 with `orch.sh audit file`.
 
@@ -792,6 +792,14 @@ evidence. A latent bug reaches the report only with a failure scenario
 confirmed against the code. Each finding the human picks from it goes to a
 planning interview or is filed as an issue; it edits nothing in the repo.
 _Avoid_: code scan, codebase review.
+
+**Test audit**:
+An on-demand, read-only read of a repo's test suite - its git hot spots, or a
+named area - for refactors that cut its **suite cost** without testing less.
+Every candidate names the replacement that takes its place and why it tests
+the behaviour as well; one that cannot is dropped, and cost only ranks the
+rest. Each candidate the human picks goes to a planning interview or is filed
+as an issue; it edits nothing in the repo. _Avoid_: test scan, suite review.
 
 **Pattern finding**:
 A finding whose claim holds at more than one place - one cause or one breached
@@ -907,7 +915,8 @@ The PR whose review loop filed a finding, named on the filed finding's
 **Category**:
 A filed finding's or a bundle's `bug` or `enhancement` label. An audit finding
 filed with `orch.sh audit file` carries one too, set by its audit: `bug` or
-`enhancement` for a code audit, `documentation` for a docs audit. The closer
+`enhancement` for a code audit, `enhancement` for a test audit, `documentation`
+for a docs audit. The closer
 sets it from the finding's axis - `bug` for Spec, `enhancement` for Standards
 and Suite-cost - and finding triage keeps or flips it: a Standards finding that
 is a real defect becomes `bug`, a Spec finding that is a nice-to-have becomes

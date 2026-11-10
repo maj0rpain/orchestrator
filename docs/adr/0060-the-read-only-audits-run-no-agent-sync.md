@@ -2,8 +2,9 @@
 
 ADR-0052 (on Junie the agent setting travels in generated agent copies) has
 every skill run `agent sync` on Junie once per run, before its first plugin
-agent. The audit skills, `orch-audit-docs` and `orch-audit-code`, are the
-exception: they change no file in the checkout, and `agent sync` writes
+agent. The audit skills, `orch-audit-docs`, `orch-audit-code` and
+`orch-audit-tests`, are the exception: they change no file in the checkout, and
+`agent sync` writes
 `.junie/agents/`. On Junie their hunters carry the `auditor` setting only from
 copies the user wrote by running `orch.sh agent sync` themselves, and otherwise
 start with no setting. We chose this over syncing anyway, which would break the

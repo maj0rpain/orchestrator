@@ -54,7 +54,7 @@ the fallback it documents and tell the user which.
   code keeps changing.
 
 Test files are never candidates, so this audit does not overlap
-`orch-improve-tests`; a hunter may still read them as evidence. Say the scope
+`orch-audit-tests`; a hunter may still read them as evidence. Say the scope
 and the kinds in one line.
 
 ## 2. Partition
