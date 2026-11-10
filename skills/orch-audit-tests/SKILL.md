@@ -22,14 +22,9 @@ candidates the user picks for filing. The promise covers the audit itself: once
 it hands picked candidates to `orch-interview`, what that interview and the
 flow, quick implementation or blueprint it closes on write is theirs.
 
-**The quality rule.** Every candidate names its replacement - the cheaper
-test, fixture or seam that takes its place, or the existing test that already
-covers it - and says why that replacement tests the behaviour just as well:
-through the public interface, with the same confidence. A replacement that
-checks less, mocks what the repo controls, or reaches past the public
-interface fails the rule. A candidate that fails it is dropped, by the hunter
-and again at step 4, and never reaches the report. Cost only ranks candidates
-that pass; it never justifies testing less.
+Every candidate must pass **the quality rule** in the Brief of
+`agents/orch-test-auditor.md` (under the plugin root). Cost only ranks the
+candidates that pass; it never justifies testing less.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -130,9 +125,10 @@ expected saving, measured or estimated) and the findings-file format (`@@
 finding <k>` blocks, `@@ none` when empty). A reply is the file's path and a
 candidate count; read each file.
 
-Read every candidate against the quality rule yourself and drop each one
-that names no replacement, or no reason it tests as well, or whose reason
-does not hold.
+Check every candidate again against the quality rule, per **The quality rule**
+in `agents/orch-test-auditor.md` (under the plugin root), and drop each one
+that fails it: it names no replacement, or no reason it tests as well, or its
+reason does not hold.
 
 ## 5. Rank
 
