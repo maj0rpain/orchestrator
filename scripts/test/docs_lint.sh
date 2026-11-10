@@ -367,10 +367,11 @@ check "the rule index lists every scan_* function in file order" \
 # --- skill names (ADR-0014) --------------------------------------------------
 # Every orchestrator skill carries the orch- prefix. An old unprefixed name
 # left in a skill, command, hook, or doc points a model at a skill that no
-# longer exists. CHANGELOG, ADRs, and .out-of-scope/ record history and may
-# name the old ones; scripts/test/ feeds old names in deliberately as negative
-# cases. The spec review's command and skill were renamed spec-review in 2.0.0
-# (#235), so the review-spec names, command included, are old names too.
+# longer exists. CHANGELOG, changelog.d/ fragments (CHANGELOG prose not yet
+# merged), ADRs, and .out-of-scope/ record history and may name the old ones;
+# scripts/test/ feeds old names in deliberately as negative cases. The spec
+# review's command and skill were renamed spec-review in 2.0.0 (#235), so the
+# review-spec names, command included, are old names too.
 # The old review skill's directory and name line remain old names. The planning
 # entry point was renamed interview in 3.0.0 (#373), so orch-plan, under any
 # prefix, and the command orchestrator:plan are old names too, each matched as a
