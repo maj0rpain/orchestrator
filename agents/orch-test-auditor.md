@@ -27,8 +27,8 @@ test, fixture or seam that takes its place, or the existing test that already
 covers it - and says why that replacement tests the behaviour just as well:
 through the public interface, with the same confidence. A replacement that
 checks less, mocks what the repo controls, or reaches past the public
-interface fails the rule. A candidate that fails it is dropped, by you and
-again by the session, and never reaches the report. Cost only ranks candidates
+interface fails the rule. A candidate that fails it is dropped and never
+reaches your findings file. Cost only ranks candidates
 that pass; it never justifies testing less.
 
 The six kinds of candidate:

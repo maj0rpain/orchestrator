@@ -116,6 +116,8 @@
 #     each named category
 #   scan_audit_hunt  each audit skill's Hunt step names agent get auditor and it
 #     runs no agent sync
+#   scan_quality_rule_home  orch-audit-tests' opening names the test auditor's
+#     brief and that brief's Brief section holds the quality rule
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
@@ -2933,6 +2935,50 @@ flags "an audit-tests Hunt step at step 4 that runs agent sync is flagged" \
   "$(scan_audit_hunt "$fixture")" "skills/orch-audit-tests/SKILL.md: runs an agent sync command"
 check "each audit skill's Hunt step reads agent get auditor and runs no agent sync" \
   "$(scan_audit_hunt "$PLUGIN_ROOT")"
+
+# scan_quality_rule_home <plugin root>: one line when orch-audit-tests' opening
+# (its text before the first numbered step heading) does not name
+# agents/orch-test-auditor.md, and one when that agent's Brief section lacks the
+# bolded label **The quality rule.** (#2528). Structure only, never the rule's
+# wording (ADR-0027).
+scan_quality_rule_home() {
+  local r="$1" skill="skills/orch-audit-tests/SKILL.md" agent="agents/orch-test-auditor.md" opening brief
+  if [ ! -f "$r/$skill" ]; then
+    echo "$skill: missing"
+  else
+    opening="$(awk '/^## [0-9]+\. /{exit} {print}' "$r/$skill" | flat_text)"
+    grep -qF "$agent" <<<"$opening" ||
+      echo "$skill: the opening does not name $agent"
+  fi
+  if [ ! -f "$r/$agent" ]; then
+    echo "$agent: missing"
+  else
+    brief="$(md_section "$r/$agent" "## Brief" 2>/dev/null | flat_text)"
+    grep -qF '**The quality rule.**' <<<"$brief" ||
+      echo "$agent: the Brief section lacks **The quality rule.**"
+  fi
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-audit-tests" "$fixture/agents"
+printf '# A\n\nEvery candidate passes the rule.\n\n## 1. Scope\n\nSee agents/orch-test-auditor.md.\n' \
+  >"$fixture/skills/orch-audit-tests/SKILL.md"
+printf '# B\n\n## Brief\n\n**The quality rule.** Text.\n\n## Reporting rules\n' >"$fixture/agents/orch-test-auditor.md"
+flags "an audit-tests opening not naming the brief is flagged, even when a step names it" \
+  "$(scan_quality_rule_home "$fixture")" "the opening does not name agents/orch-test-auditor.md"
+printf '# A\n\nThe rule is in the brief at\n`agents/orch-test-auditor.md` (under\nthe plugin root).\n\n## 1. Scope\n' \
+  >"$fixture/skills/orch-audit-tests/SKILL.md"
+assert_empty "an audit-tests opening naming the brief wrapped across a line is accepted" \
+  "$(scan_quality_rule_home "$fixture")"
+printf '# B\n\n## Brief\n\nRead the tests.\n\n## Reporting rules\n\n**The quality rule.**\n' \
+  >"$fixture/agents/orch-test-auditor.md"
+flags "a brief whose Brief section lacks the quality rule is flagged" \
+  "$(scan_quality_rule_home "$fixture")" "agents/orch-test-auditor.md: the Brief section lacks **The quality rule.**"
+printf '# B\n\n## Brief\n\n**The quality\nrule.** Text.\n\n## Reporting rules\n' >"$fixture/agents/orch-test-auditor.md"
+assert_empty "a brief whose Brief section holds the quality rule is accepted" \
+  "$(scan_quality_rule_home "$fixture")"
+check "orch-audit-tests names the brief that holds the quality rule" \
+  "$(scan_quality_rule_home "$PLUGIN_ROOT")"
 
 # orch-audit-code is defined by the same six steps; its command routes to it.
 audit_code_skill='skills/orch-audit-code/SKILL.md'
