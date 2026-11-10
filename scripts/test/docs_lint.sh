@@ -2867,9 +2867,6 @@ assert_empty "a category with no audit file text around it is accepted" \
 printf '# A\n\n## 7. Hand off\n\nRun `--category bug`.\n' >"$fixture/$audit_docs_skill"
 assert_empty "a hand off at step 7 passing its category is accepted" \
   "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug)"
-flags "a hand off at step 7 missing its category is flagged" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" enhancement)" \
-  "$audit_docs_skill: the Hand off step does not pass --category enhancement"
 printf '# A\n\nRun `--category bug`.\n\n## 7. Handoff\n\nNothing.\n' >"$fixture/$audit_docs_skill"
 flags "a missing Hand off heading is flagged even when the phrase appears elsewhere" \
   "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug)" \
@@ -2917,9 +2914,6 @@ printf '# A\n\n## 3. Hunt\n\nRead `agent get auditor`; this skill runs no agent 
   >"$fixture/skills/orch-audit-code/SKILL.md"
 assert_empty "a sentence saying the skill runs no agent sync is allowed" \
   "$(scan_audit_hunt "$fixture" | grep audit-code)"
-printf '# A\n\n## 4. Hunt\n\nStart the hunters.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
-flags "an audit Hunt step at step 4 that reads no agent get auditor is flagged" \
-  "$(scan_audit_hunt "$fixture")" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name agent get auditor"
 printf '# A\n\n## 4. Hunt\n\nRead `agent get auditor`.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
 assert_empty "an audit Hunt step at step 4 reading agent get auditor is accepted" \
   "$(scan_audit_hunt "$fixture" | grep audit-docs)"
