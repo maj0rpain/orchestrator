@@ -227,6 +227,33 @@ assert_eq "leaving the phase at spec" "$("$ORCH" state get phase)" spec
 assert_eq "leaving the label" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_eq "and the claim held" "$(fake_claim_held 7)" held
 
+# a failed comments read is a read failure, never a missing handoff (#2538)
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
+fake_fail adapter_issue_comments_json "HTTP 503 read"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+fake_unfail
+assert_status "phase advance with a failed comments read dies" "$st" 1
+assert_contains "showing gh's reason" "$out" "HTTP 503 read"
+assert_not_contains "and not the missing-handoff message" "$out" "handoff comment"
+assert_eq "leaving the phase at spec" "$("$ORCH" state get phase)" spec
+assert_eq "leaving the label" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
+assert_eq "and the claim held" "$(fake_claim_held 7)" held
+fake_lag adapter_issue_comments_json 1 'not json'
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+fake_unfail
+assert_status "phase advance with unparseable comments dies" "$st" 1
+assert_eq "with the parse-failure wording" "$out" "orch: could not read issue #7's comments"
+assert_eq "leaving the phase at spec" "$("$ORCH" state get phase)" spec
+assert_eq "leaving the label" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
+assert_eq "and the claim held" "$(fake_claim_held 7)" held
+scratch="$(dirname "$(ORCH_AUTOPILOT=1 "$ORCH" handoff path spec 2>/dev/null)")"
+chmod a-w "$scratch"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+chmod u+w "$scratch"
+assert_status "phase advance with an unwritable scratch copy dies" "$st" 1
+assert_contains "saying it could not write" "$out" "could not write"
+assert_not_contains "and not the missing-handoff message" "$out" "handoff comment"
+
 ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
 out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance in autopilot succeeds on the posted handoff" "$st" 0

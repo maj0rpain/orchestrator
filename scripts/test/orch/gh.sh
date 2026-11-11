@@ -627,10 +627,19 @@ gh_reply 1 '' 'HTTP 502: Bad Gateway' issue view 404 --json comments --jq "$comm
 out="$(contract adapter_issue_comments_json 404 2>&1)"; st=$?
 assert_status "issue comments json: a gh failure fails it" "$st" 1
 
-gh_reply 0 $'58\ttrue\n57\tfalse\n' '' pr list --state open --limit 1000 --json number,isCrossRepository --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
-out="$(contract adapter_prs_open_all 2>&1)"; st=$?
-assert_status "open PRs: lists every open PR" "$st" 0
-assert_eq "newest first, each with its fork flag, unfiltered" "$out" "$(printf '58\ttrue\n57\tfalse')"
+bodies_jq='.[] | "\(.number)\t\(.body | @json)\t\(.isCrossRepository)"'
+bodies_line="$(printf '58\t"Closes #9\\n\\tTab \\\\ \\"q\\""\ttrue\n57\t""\tfalse')"
+gh_reply 0 "$bodies_line"$'\n' '' pr list --state open --limit 1000 --json number,body,isCrossRepository --jq "$bodies_jq"
+out="$(contract adapter_prs_open_bodies 2>&1)"; st=$?
+assert_status "open PRs with bodies: lists every open PR" "$st" 0
+assert_eq "newest first, each with its JSON-encoded body and fork flag, unfiltered" "$out" "$bodies_line"
+assert_eq "the jq puts a multi-line body holding a tab, a backslash and quotes on one line" \
+  "$(printf '%s' '[{"number":58,"body":"Closes #9\n\tTab \\ \"q\"","isCrossRepository":true}]' | jq -r "$bodies_jq")" \
+  "$(printf '58\t"Closes #9\\n\\tTab \\\\ \\"q\\""\ttrue')"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --state open --limit 1000 --json number,body,isCrossRepository --jq "$bodies_jq"
+out="$(contract adapter_prs_open_bodies 2>&1)"; st=$?
+assert_status "open PRs with bodies: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 gh_reply 0 $'58\torch/9-x\tCONFLICTING\ttrue\n57\torch/8-y\tUNKNOWN\tfalse\n' '' pr list --state open --limit 1000 --json number,headRefName,mergeable,isCrossRepository --jq '.[] | "\(.number)\t\(.headRefName)\t\(.mergeable)\t\(.isCrossRepository)"'
 out="$(contract adapter_prs_open_mergeability 2>&1)"; st=$?
 assert_status "open PRs with mergeability: lists them" "$st" 0
