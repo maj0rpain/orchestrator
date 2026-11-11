@@ -18,19 +18,35 @@
 # with none falls through to the local pointer rather than dying: the answer
 # has always been best-effort, and init and base show ask it before anything
 # needs GitHub.
-default_branch() {
+#
+# default_branch_resolve: sets DEFAULT_BRANCH (the name) and
+# DEFAULT_BRANCH_SOURCE in the current shell: github (GitHub's answer),
+# origin-head (origin/HEAD, read in full) or fallback (the literal guess main).
+# Asks afresh each time; no memo.
+default_branch_resolve() {
   local b="" head_ref
+  DEFAULT_BRANCH_SOURCE=github
   if repo_resolve; then
     b="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)" || b=""
   fi
   if ! is_branch_name "$b"; then
+    DEFAULT_BRANCH_SOURCE=origin-head
     # Read in full, never --short: a local branch named origin/<b> makes the
     # short name remotes/origin/<b>.
     head_ref="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)" || head_ref=""
     b="${head_ref#refs/remotes/origin/}"
   fi
-  is_branch_name "$b" || b="main"
-  printf '%s\n' "$b"
+  if ! is_branch_name "$b"; then
+    DEFAULT_BRANCH_SOURCE=fallback
+    b="main"
+  fi
+  DEFAULT_BRANCH="$b"
+}
+
+# default_branch: prints the default branch's name, one line.
+default_branch() {
+  default_branch_resolve
+  printf '%s\n' "$DEFAULT_BRANCH"
 }
 
 # Whether $1 is a valid branch name (git check-ref-format --branch rejects an
@@ -129,9 +145,12 @@ cmd_base() {
       if [ "$flow" -eq 1 ]; then base_set_flow "$b"; return; fi
       require_state_readable
       require_on_origin "$b"
-      # The default branch's own name is no setting at all: storing it would
-      # pin today's default and outlive a rename of it.
-      if [ "$b" = "$(default_branch)" ]; then
+      # The default branch's own name is no setting at all - storing it would
+      # pin today's default and outlive a rename of it - but only when GitHub
+      # or origin/HEAD named that default. A name matching only the main
+      # fallback is a guess, never the default's name, so it is stored.
+      default_branch_resolve
+      if [ "$b" = "$DEFAULT_BRANCH" ] && [ "$DEFAULT_BRANCH_SOURCE" != fallback ]; then
         git config --unset orchestrator.base 2>/dev/null || true
       else
         git config orchestrator.base "$b"

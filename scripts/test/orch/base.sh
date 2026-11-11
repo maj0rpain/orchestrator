@@ -60,6 +60,30 @@ assert_status "set accepts the default branch's own name" "$st" 0
 assert_eq "setting the default branch acts as clearing" "$(base_setting)" "<unset>"
 assert_eq "show then reports the default source" "$(orch_gh_failing base show)" "main (default)"
 
+# A guessed default is no default: with gh failing and origin/HEAD gone, the
+# only `main` is the fallback literal, so setting it is stored, not cleared.
+git symbolic-ref -d refs/remotes/origin/HEAD
+out="$(orch_gh_failing base set main 2>&1)"; st=$?
+assert_status "set accepts main when the default is only guessed" "$st" 0
+assert_eq "a guessed main is stored as a setting" "$(base_setting)" "main"
+assert_contains "set reports the guessed main as set" "$out" "main (set)"
+assert_eq "show reports the stored main as set" "$(orch_gh_failing base show)" "main (set)"
+assert_eq "a stored main survives GitHub later answering develop" \
+  "$(GH_REPO=o/r adapter_stood_in 'adapter_repo_default_branch() { echo develop; }' "$ORCH" base show)" "main (set)"
+git config --unset orchestrator.base
+
+out="$(GH_REPO=o/r adapter_stood_in 'adapter_repo_default_branch() { echo main; }' "$ORCH" base set main 2>&1)"; st=$?
+assert_status "set accepts main when GitHub names it" "$st" 0
+assert_eq "GitHub's main clears the setting" "$(base_setting)" "<unset>"
+assert_contains "set reports GitHub's main as the default" "$out" "main (default)"
+
+out="$(GH_REPO=o/r adapter_stood_in 'adapter_repo_default_branch() { echo "not a branch"; }' "$ORCH" base set main 2>&1)"; st=$?
+assert_status "set accepts main when GitHub answers an invalid name" "$st" 0
+assert_eq "an invalid GitHub answer leaves main only guessed, so stored" "$(base_setting)" "main"
+assert_contains "set reports it as set" "$out" "main (set)"
+git config --unset orchestrator.base
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+
 orch_gh_failing base set uat >/dev/null
 out="$(orch_gh_failing base clear 2>&1)"; st=$?
 assert_status "clear succeeds when a setting exists" "$st" 0

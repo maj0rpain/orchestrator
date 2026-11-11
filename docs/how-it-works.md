@@ -195,7 +195,7 @@ branch that gathers a multi-ticket project:
 
 | Command | What it does |
 | --- | --- |
-| `orch.sh base set <branch>` | Set the base branch. Refuses a branch `origin` does not have. Stored in the clone's local git config (`orchestrator.base`): shared by every worktree, never committed, kept through `abort` and archiving. Setting the default branch's name clears it. |
+| `orch.sh base set <branch>` | Set the base branch. Refuses a branch `origin` does not have. Stored in the clone's local git config (`orchestrator.base`): shared by every worktree, never committed, kept through `abort` and archiving. Setting the default branch's name clears it, when GitHub or origin's HEAD named that default; a name that only matches the `main` fallback is stored. |
 | `orch.sh base set <branch> --flow` | Correct the active flow's own base branch instead, leaving the checkout setting alone. Only while the flow has no branch: before `branch create`, or after a redo retires it. Stores the name as given. Refuses an invalid branch name or one `origin` does not have. |
 | `orch.sh base show` | Print the base branch in effect and its source: `set`, or `default`. |
 | `orch.sh base clear` | Go back to the default branch. Succeeds when nothing was set. |
