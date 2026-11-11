@@ -418,7 +418,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               to push
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on
                               origin and deleting the old remote ref, without
-                              force-pushing over anything
+                              force-pushing over anything. A rerun after
+                              the rename resumes the remote steps only
+                              while origin still has <old>; a rerun of a
+                              completed retire changes nothing and prints
+                              <new>; an unreachable origin on a rerun
+                              exits 1 with nothing changed
   issue publish <title> <body-file>
                               create a GitHub issue under ready-for-agent
                               and verify its title and label by reading them
