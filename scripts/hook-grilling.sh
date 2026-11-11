@@ -92,7 +92,6 @@ if [ "$plan_confirmed" = 1 ]; then
   [ -n "$marker" ] && [ -e "$marker" ] || exit 0
 elif [ -n "$marker" ]; then
   if [ -e "$marker" ]; then exit 0; fi
-  : >"$marker"
 fi
 
 root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
@@ -217,4 +216,7 @@ ${session_facts}
 If this session runs under a wayfinder skill, \"approved\" means the
 whole map is done, not that one ticket resolved. Do not start the flow after a single ticket."
 
+# The marker means the message was delivered: written only now, so a load that
+# exits early leaves none and arms no guard (#2544).
+[ -z "$marker" ] || : >"$marker"
 hook_emit_context "$event" "$context"

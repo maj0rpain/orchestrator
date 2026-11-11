@@ -543,7 +543,10 @@ every skill runs `scripts/orch.sh`.
 
 A `PostToolUse` hook on `Skill(orch-interview)`, and on the
 `mattpocock-skills` entry points named above when they are installed, starts
-a planning session. It fires once per session and tells the model that once a
+a planning session. It delivers its message once per session, at the first
+planning load that delivers it: one whose working directory is inside a git
+repository. A load that sends nothing writes no marker, so on Claude Code it
+does not arm the edit guard (on Junie the guard never arms, ADR-0025). It tells the model that once a
 shared understanding is reached, the next step is a human's call, not the
 model's: call `AskUserQuestion` with exactly four options (three on Junie),
 start the flow (`orchestrator:orch-flow`), a quick implementation
