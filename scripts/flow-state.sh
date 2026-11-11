@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # flow-state.sh - the Flow state module: the one owner of the state format of
 # a checkout's flow, .orchestrator/state.json - its keys, their defaults,
-# reading, the coercing write and the active-flow check - sourced by orch.sh
+# reading, its writers and the active-flow check - sourced by orch.sh
 # and by hook-common.sh.
 #
 # It needs nothing from orch.sh, so the hooks can source it alone, as they do
@@ -18,10 +18,11 @@
 #   nothing.
 # - flow_state_get on a file jq cannot parse: jq's own error and status pass
 #   through unchanged.
-# - Writers (flow_state_write, flow_state_write_string, flow_state_create):
-#   non-zero, the state file untouched and no temp file left, when the write
-#   fails. flow_state_write and flow_state_write_string change an existing
-#   state file: an absent one is a failed write, and nothing is created.
+# - Writers (flow_state_write, flow_state_write_string, flow_state_write_many,
+#   flow_state_create): non-zero, the state file untouched and no temp file
+#   left, when the write fails. flow_state_write, flow_state_write_string and
+#   flow_state_write_many change an existing state file: an absent one is a
+#   failed write, and nothing is created.
 #   flow_state_create is the one writer that creates the file, or replaces it
 #   whole.
 # - flow_state_seed: 2 for an arg row it has no value for, a programming
