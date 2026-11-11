@@ -54,20 +54,37 @@ _hook_bash_heredoc_word() {
   done
   [ "$j" -gt 0 ] || return 1
   HOOK_BASH_HEREDOC_WORD="$word"
+  return 0
+}
+
+# Calls hook_bash_walk's test with the part, its unquoted text and its head,
+# then clears the part, its unquoted text and the head. Reads
+# hook_bash_walk's locals (dynamic scope).
+hook_bash_walk_call() {
+  local hd="$part"
+  [ "$head_set" = 1 ] && hd="$head"
+  local rc=0
+  head=""; head_set=0
+  "$test_fn" "$part" "$unq" "$hd" || rc=$?
+  part=""; unq=""
+  return "$rc"
 }
 
 # The command walker (#2085): splits command $1 into parts - on `;`, `&&`, `||`
 # and newlines, outside single and double quotes and outside heredoc bodies; an
 # unquoted `#` at a word start ends its line - and
-# calls the test "$2" with each part and its unquoted text (the part with every
-# quoted span, quotes included, replaced by a space). The first part whose test
+# calls the test "$2" with each part, its unquoted text (the part with every
+# quoted span, quotes included, replaced by a space) and its head: the part's
+# text before its first unquoted single `|` (a `|&` counts as that `|`; the head
+# holds neither), or the whole part when it holds none, also across a
+# trailing-`|` line continuation. The first part whose test
 # succeeds ends the walk, with the test's output; the walk always succeeds. A
 # command over 8 KB is not scanned (a false negative), to stay fast. A
 # heredoc delimiter follows bash's word rule (the whole shell word after `<<`
 # or `<<-`, quotes removed), and a `<<` inside arithmetic - while the part's
 # unquoted text holds more `((` than `))` - is a shift and opens no heredoc.
 hook_bash_walk() {
-  local cmd="$1" test_fn="$2" line part="" unq="" quote="" heredoc_end="" in_heredoc=0 heredoc_strip_tabs=0 continued=0 i c n rest re
+  local cmd="$1" test_fn="$2" line part="" unq="" head="" head_set=0 quote="" heredoc_end="" in_heredoc=0 heredoc_strip_tabs=0 continued=0 i c n rest re
   [ "${#cmd}" -le 8192 ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$in_heredoc" = 1 ]; then
@@ -98,12 +115,13 @@ hook_bash_walk() {
           '#')
             if [ -z "$part" ] || [[ "${part: -1}" == [[:space:]] ]]; then break; fi
             part+="$c"; unq+="$c" ;;
-          ';') "$test_fn" "$part" "$unq" && return 0; part=""; unq="" ;;
+          ';') hook_bash_walk_call && return 0 ;;
           '&'|'|')
             if [ "${line:i+1:1}" = "$c" ]; then
-              "$test_fn" "$part" "$unq" && return 0
-              part=""; unq=""; i=$((i + 2)); continue
+              hook_bash_walk_call && return 0
+              i=$((i + 2)); continue
             fi
+            if [ "$c" = "|" ] && [ "$head_set" = 0 ]; then head="$part"; head_set=1; fi
             part+="$c"; unq+="$c" ;;
           '<')
             if [ "${line:i:3}" = '<<<' ]; then part+="<<<"; unq+="<<<"; i=$((i + 3)); continue; fi
@@ -123,12 +141,11 @@ hook_bash_walk() {
     elif [ -z "$quote" ] && [[ "$part" =~ \|[[:space:]]*$ ]]; then
       :  # a trailing lone | continues the pipeline on the next line
     elif [ -z "$quote" ]; then
-      "$test_fn" "$part" "$unq" && return 0
-      part=""; unq=""
+      hook_bash_walk_call && return 0
     else
       part+=$'\n'
     fi
   done <<<"$cmd"
-  "$test_fn" "$part" "$unq"
+  hook_bash_walk_call
   return 0
 }

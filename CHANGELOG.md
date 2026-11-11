@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.16
+
+The stdin guard now denies a plain stdin reader at the head of a pipeline (`cat | grep x`, `python3 | tee log`), which nothing feeds; readers fed by a pipe from their left or by a `<` still pass.
+
 ## 5.0.15
 
 `pr open`, restarted on a PR the flow already records, now writes its `Closes` or `Refs` issue line from the base that PR actually targets, and warns when that differs from the flow's base.
