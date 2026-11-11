@@ -134,7 +134,8 @@ breakdown_publish_in() {
       done <<<"$list"
     fi
     if [ -n "$rec" ]; then
-      # Created but not linked: link it, never create another.
+      # Created but not linked: link it, never create another, adding only the
+      # blocking edges it lacks.
       (
         subs="$(ticket_sub_issues "$parent")" || exit 1
         ticket_listing_has "$subs" "$n" || gh_or_die "link ticket #$n as a sub-issue of #$parent" \
