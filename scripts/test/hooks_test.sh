@@ -217,6 +217,35 @@ rm -f "$TMPDIR/orchestrator-grilling-p1"
 assert_empty "ignores the removed Skill(orchestrator:orch-plan)" \
   "$(skill_event "orchestrator:orch-plan" p2 | "$GRILL")"
 
+# The marker means "the planning message was delivered" (#2544): a load that
+# sends nothing, here one whose cwd is in no git repository, writes none, so the
+# guard stays unarmed and a later load from inside a repo still delivers.
+NOGIT="$(mktemp -d)"
+nogit_skill_event() { skill_event "$1" "$2" | jq --arg cwd "$NOGIT" '.cwd=$cwd'; }
+assert_empty "a grilling load outside any git repo sends nothing" \
+  "$(nogit_skill_event grilling ng1 | "$GRILL")"
+assert_marker_absent "a grilling load outside any git repo leaves no marker" grilling ng1
+assert_empty "a source edit after a non-git grilling load is allowed" \
+  "$(edit_event "$REPO/src/main.ts" ng1 | "$GUARD")"
+assert_contains "a later grilling load from inside the repo delivers the message" \
+  "$(skill_event grilling ng1 | "$GRILL")" "Do NOT offer to implement"
+assert_marker_present "the delivering load writes the grilling marker" grilling ng1
+assert_eq "the same edit is denied once the message is delivered" \
+  "$(bash_hook_decision "$(edit_event "$REPO/src/main.ts" ng1 | "$GUARD")")" "deny"
+assert_empty "a third grilling load in the session sends nothing" \
+  "$(skill_event grilling ng1 | "$GRILL")"
+rm -f "$TMPDIR/orchestrator-grilling-ng1"
+if [ "$(id -u)" -eq 0 ]; then
+  ok "an unwritable temp directory sends no planning message (skipped as root)"
+else
+  RO_GRILL_TMP="$(mktemp -d)"
+  chmod 500 "$RO_GRILL_TMP"
+  out="$(skill_event grilling ro2 | TMPDIR="$RO_GRILL_TMP" "$GRILL" 2>/dev/null)" || :
+  chmod 700 "$RO_GRILL_TMP"
+  rmdir "$RO_GRILL_TMP"
+  assert_not_contains "an unwritable temp directory sends no planning message" "$out" "Do NOT offer to implement"
+fi
+
 # No setup step: a repo with no issue-tracker.md gets no precondition warning.
 out="$(skill_event "grilling" s5 | "$GRILL")"
 assert_contains "still fires without issue-tracker.md" "$out" "Do NOT offer to implement"
@@ -365,6 +394,21 @@ assert_empty "stays silent on plan confirmation in a session that never grilled"
   "$(prompt_event "$confirm" jc2 | "$GRILL")"
 assert_empty "stays silent on a prompt that only mentions the confirmation" \
   "$(prompt_event "$confirm now" jc1 | "$GRILL")"
+
+# The planning marker is written only on delivery (#2544): a prompt whose
+# project_path is in no git repository sends nothing and leaves no marker, so
+# a later prompt from the repo still delivers and a confirmation stays silent.
+junie_nogit_event() { prompt_event "$1" "$2" | jq --arg pp "$NOGIT" '.project_path=$pp'; }
+assert_empty "a Junie planning prompt outside any git repo sends nothing" \
+  "$(junie_nogit_event '$grilling' jg1 | "$GRILL")"
+assert_marker_absent "a Junie planning prompt outside any git repo leaves no marker" planning jg1
+assert_empty "plan confirmation after a non-git planning prompt sends nothing" \
+  "$(prompt_event "$confirm" jg1 | "$GRILL")"
+assert_contains "a later Junie planning prompt from the repo delivers the message" \
+  "$(prompt_event '$grilling' jg1 | "$GRILL")" "Do NOT offer to implement"
+assert_marker_present "the delivering Junie prompt writes the planning marker" planning jg1
+assert_empty "a third Junie planning prompt in the session sends nothing" \
+  "$(prompt_event '$grilling' jg1 | "$GRILL")"
 
 assert_not_contains "no precondition warning on Junie without issue-tracker.md" \
   "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION"
