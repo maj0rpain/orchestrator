@@ -14,9 +14,10 @@
 # Covered: every *.md under skills/, agents/, commands/ and docs/, the root
 # README.md, CONTRIBUTING.md, GLOSSARY.md and CLAUDE.md, and the whole-line
 # comments of every *.sh under scripts/ outside heredoc bodies. Frontmatter,
-# fenced code, table rows, lines with a URL, "# shellcheck" directives and
-# one-token lines are exempt. Columns count characters, so a multi-byte
-# character is one column.
+# fenced code (a fence closes only on a bare run of its opener's character at
+# least as long as the opener), table rows, lines with a URL, "# shellcheck"
+# directives and one-token lines are exempt. Columns count characters, so a
+# multi-byte character is one column.
 #
 # A repo-development tool, not an orch.sh noun: it does not ship to users.
 # It exits 0 with or without findings; a bad argument exits 2.
@@ -56,9 +57,13 @@ scan_file() {
     is_shell && stripped ~ /^#[[:space:]]*shellcheck/ { next }
     !is_shell && FNR == 1 && $0 == "---" { in_frontmatter = 1; next }
     in_frontmatter { if ($0 == "---") in_frontmatter = 0; next }
-    !is_shell && match(stripped, /^(```|~~~)/) {
-      marker = substr(stripped, 1, 3)
-      if (fence == "") fence = marker; else if (marker == fence) fence = ""
+    !is_shell && fence != "" {
+      closer = stripped; sub(/[[:space:]]+$/, "", closer)
+      if (closer ~ ("^" fchar "+$") && length(closer) >= flen) fence = ""
+      next
+    }
+    !is_shell && match(stripped, /^(```+|~~~+)/) {
+      fence = "open"; fchar = substr(stripped, 1, 1); flen = RLENGTH
       next
     }
     fence != "" || stripped ~ /^\|/ || /https?:\/\// { next }
