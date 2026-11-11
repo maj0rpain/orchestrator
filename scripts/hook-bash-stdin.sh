@@ -89,8 +89,9 @@ hook_bash_stdin_script_is_stdin() {
   return 0
 }
 
-# Succeeds when the pipeline head $1 is a plain stdin read (#2002). $1 is the head
-# hook_bash_walk hands its callback: a part's text before its first unquoted `|`,
+# Succeeds when the pipeline head $1 is a plain stdin read (#2002). $1 is the
+# head hook_bash_walk hands its callback: a part's text before its first
+# unquoted `|`,
 # or the whole part. A head is a plain read when its first word, after
 # leading VAR=value words, is `cat` with no file argument (only options other
 # than its info options, or `-`), `read`, `python`, `python3` or `node` with

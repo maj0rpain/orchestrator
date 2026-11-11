@@ -13,8 +13,9 @@ HOOK_BASH_SCOPE='
       and (startswith("orchestrator:orch-") or startswith("orch-"))))
   | '
 
-# Calls hook_bash_walk's test with the part, its unquoted text and its head, then
-# starts the next part's head. Reads hook_bash_walk's locals (dynamic scope).
+# Calls hook_bash_walk's test with the part, its unquoted text and its head,
+# then starts the next part's head. Reads hook_bash_walk's locals (dynamic
+# scope).
 hook_bash_walk_call() {
   local hd="$part"
   [ "$head_set" = 1 ] && hd="$head"
@@ -28,8 +29,8 @@ hook_bash_walk_call() {
 # calls the test "$2" with each part, its unquoted text (the part with every
 # quoted span, quotes included, replaced by a space) and its head: the part's
 # text before its first unquoted single `|` (a `|&` counts as that `|`; the head
-# holds neither), or the whole part when it holds none, also across a trailing-`|`
-# line continuation. The first part whose test
+# holds neither), or the whole part when it holds none, also across a
+# trailing-`|` line continuation. The first part whose test
 # succeeds ends the walk, with the test's output; the walk always succeeds. A
 # command over 8 KB is not scanned (a false negative), to stay fast.
 hook_bash_walk() {
