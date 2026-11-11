@@ -3,13 +3,15 @@
 # Its tests: scripts/test/orch/repo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# REPO_SOURCE is read by repo show and repo_pinned_host, below, and so by
+# REPO_ORIGIN_SSH is 1 when the Repo came from an origin in an SSH form, else
+# empty. REPO_SOURCE is read by repo show and repo_pinned_host, below, and so by
 # every gh call's pin and by doctor.sh.
 # shellcheck disable=SC2034
 repo_resolve() {
   local url
   REPO_NAME=""
   REPO_SOURCE=""
+  REPO_ORIGIN_SSH=""
   if [ -n "${GH_REPO:-}" ]; then
     REPO_NAME="$GH_REPO"
     REPO_SOURCE=GH_REPO
@@ -18,6 +20,7 @@ repo_resolve() {
   url="$(git remote get-url origin 2>/dev/null)" || return 1
   REPO_NAME="$(repo_from_url "$url")" || { REPO_NAME=""; return 1; }
   REPO_SOURCE=origin
+  if [ "$(repo_url_form "$url")" = ssh ]; then REPO_ORIGIN_SSH=1; fi
 }
 
 # The one parser of a [HOST/]OWNER/REPO repo name, as repo_resolve sets
@@ -50,14 +53,51 @@ repo_pin() {
   repo_pin_host
 }
 
-# repo_from_url <url>: [HOST/]OWNER/REPO from a clone URL in any of its three
-# forms - https://host/o/r, git@host:o/r, ssh://[user@]host[:port]/o/r - with
-# or without .git. github.com is left implicit, as gh -R expects; any other
-# host is kept. A URL with no host or not exactly owner/name fails.
-repo_from_url() {
-  local url="$1" host path
+# repo_url_form <url>: the form of a clone URL, printed - "ssh" for the two SSH
+# forms (ssh://... and git's scp-like [user@]host:path, which has no "://" and
+# no "/" before its first ":"), "plain" for https://, http:// and git://, and
+# nothing for any other string.
+repo_url_form() {
+  local url="$1"
   case "$url" in
-    https://*|http://*|ssh://*|git://*)
+    ssh://*) echo ssh ;;
+    https://*|http://*|git://*) echo plain ;;
+    *://*) ;;
+    *:*)
+      case "${url%%:*}" in
+        */*) ;;
+        *) echo ssh ;;
+      esac
+      ;;
+  esac
+}
+
+# repo_ssh_host <host>: the hostname `ssh -G` resolves <host> to, or <host>
+# as written when ssh is missing, fails or prints no hostname line.
+repo_ssh_host() {
+  local out line
+  out="$(ssh -G -- "$1" </dev/null 2>/dev/null)" || { printf '%s\n' "$1"; return; }
+  line="$(printf '%s\n' "$out" | sed -n 's/^hostname //p;/^hostname /q')"
+  printf '%s\n' "${line:-$1}"
+}
+
+# repo_from_url <url>: [HOST/]OWNER/REPO from a clone URL in any of its forms -
+# https://host/o/r, [user@]host:o/r (git's scp-like form, the user optional),
+# ssh://[user@]host[:port]/o/r - with or without .git. For the two SSH forms
+# the host is first translated through `ssh -G` (an ssh config alias becomes
+# its real hostname; left as written when ssh gives none). Every host is then
+# normalised as gh does: lowercased, and *.github.com becomes github.com,
+# which is left implicit, as gh -R expects; any other host is kept. A URL with
+# no host, a host starting with "-", or not exactly owner/name fails.
+repo_from_url() {
+  local url="$1" host path form
+  form="$(repo_url_form "$url")"
+  case "$form" in
+    ssh|plain) ;;
+    *) return 1 ;;
+  esac
+  case "$url" in
+    *://*)
       url="${url#*://}"
       host="${url%%/*}"
       path="${url#*/}"
@@ -65,12 +105,11 @@ repo_from_url() {
       host="${host##*@}"
       host="${host%%:*}"
       ;;
-    *@*:*)
+    *)
       host="${url%%:*}"
       host="${host##*@}"
       path="${url#*:}"
       ;;
-    *) return 1 ;;
   esac
   path="${path%/}"
   path="${path%.git}"
@@ -79,7 +118,10 @@ repo_from_url() {
     */*) ;;
     *) return 1 ;;
   esac
-  [ -n "$host" ] || return 1
+  case "$host" in ""|-*) return 1 ;; esac
+  if [ "$form" = ssh ]; then host="$(repo_ssh_host "$host")"; fi
+  host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+  case "$host" in *.github.com) host=github.com ;; esac
   if [ "$host" = github.com ]; then
     printf '%s\n' "$path"
   else

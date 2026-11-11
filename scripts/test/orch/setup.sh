@@ -52,6 +52,17 @@ echo "orch_test.sh: a section called the real gh: gh \$*" >&2
 exit 1
 GH
 chmod +x "$GH_GUARD_DIR/bin/gh" || exit 1
+
+# The suite-wide identity ssh stub, beside the guard: for `ssh -G -- <host>` it
+# answers `hostname <host>`, reading the host as its last argument, so no
+# section reads the machine's ssh config. A section needing an alias, a failure
+# or a hostname-less answer puts its own stub ahead of it.
+cat >"$GH_GUARD_DIR/bin/ssh" <<'SSH' || exit 1
+#!/usr/bin/env bash
+for h in "$@"; do :; done
+echo "hostname $h"
+SSH
+chmod +x "$GH_GUARD_DIR/bin/ssh" || exit 1
 PATH="$GH_GUARD_DIR/bin:$PATH"
 
 # The environment every section starts from. healthy_repo exports HOME and
