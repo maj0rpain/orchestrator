@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.7
+
+`pr read` now finds an issue's PR in two `gh` calls however many PRs are open: one listing that carries every open PR's body, then the winner's diff, instead of one body read per open PR plus a repeat read of the winner.
+
 ## 5.0.6
 
 `autopilot-up.sh --force` now passes `--force-recreate` to `compose up` when it reports `forced: killed ...`, so a busy container with an unchanged image is really recreated and the killed session stops.
