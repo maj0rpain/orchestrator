@@ -2179,3 +2179,50 @@ out="$("$ORCH" doctor --flow 2>&1)"
 assert_not_contains "doctor --flow prints no jq parse error for it" "$out" "parse error"
 assert_not_contains "and skips it in the other-checkouts check" "$out" "issue #7 is labelled"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
+# --- doctor --env: ssh alias hint beside the gh auth check (#2585) ------------
+# An origin host that ssh translation could not resolve may be an SSH Host
+# alias; doctor says so and gives the GH_REPO remedy.
+echo
+echo "doctor: ssh alias hint"
+healthy_repo
+doctor_github
+write_ssh_stub 'exit 1' 1
+alias_doctor() { PATH="$ssh_stub_dir:$PATH" "$ORCH" doctor --env 2>&1; }
+hint="came from origin's SSH URL and may be an SSH Host alias"
+
+fake_noauth
+git config remote.origin.url git@github-work:acme/widgets.git
+out="$(alias_doctor)"
+assert_contains "an alias scp origin names the host as possibly an SSH Host alias" "$out" "$hint"
+assert_contains "and gives the GH_REPO remedy" "$out" "export GH_REPO=acme/widgets"
+assert_contains "the not-authenticated FAIL stays" "$out" "gh auth login --hostname github-work"
+git config remote.origin.url ssh://git@github-work/acme/widgets.git
+assert_contains "an ssh:// alias origin gets the hint" "$(alias_doctor)" "$hint"
+
+fake_offline
+out="$(alias_doctor)"; st=$?
+assert_contains "offline keeps the skip line" "$out" "checks skipped: GitHub is not reachable"
+assert_contains "offline gives the hint beside it" "$out" "$hint"
+assert_not_contains "offline is never a FAIL" "$out" "FAIL  "
+assert_status "offline doctor --env exits 0" "$st" 0
+
+fake_online
+fake_noauth
+git config remote.origin.url https://ghe.example.com/acme/widgets.git
+assert_not_contains "an https origin gets no hint" "$(alias_doctor)" "$hint"
+git config remote.origin.url ssh://git@github-work/acme/widgets.git
+out="$(GH_REPO=acme/widgets alias_doctor)"
+assert_not_contains "GH_REPO set gets no hint" "$out" "$hint"
+write_ssh_stub 'echo hostname github.com' 0
+git config remote.origin.url git@github-work:acme/widgets.git
+out="$(alias_doctor)"
+assert_contains "a translated alias FAIL names github.com" "$out" "gh auth login --hostname github.com"
+assert_not_contains "and never github-work" "$out" "hostname github-work"
+assert_not_contains "nor in the FAIL line" "$out" "authenticated to github-work"
+assert_not_contains "and gives no hint" "$out" "$hint"
+write_ssh_stub 'exit 1' 1
+
+fake_online
+git config remote.origin.url git@ghe.example.com:acme/widgets.git
+assert_not_contains "a passing probe gives no hint" "$(alias_doctor)" "$hint"

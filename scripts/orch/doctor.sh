@@ -202,14 +202,31 @@ check_origin() {
   d_remedy "git remote add origin https://github.com/<owner>/<repo>.git"
 }
 
+# The gh auth check. When the probe failed (not authenticated, or GitHub not
+# reachable) for a Repo whose host came from origin's SSH URL and is not
+# github.com, the host may be an SSH Host alias the ssh translation could not
+# resolve: the alias hint adds one warn and the GH_REPO remedy beside the
+# result. The offline arm stays a skip, never a FAIL.
 check_gh_auth() {
   case "$D_GH" in
     ok) d_ok "gh authenticated" ;;
     "not authenticated")
       d_fail "gh is not authenticated to $D_GH_HOST."
-      d_remedy "gh auth login --hostname $D_GH_HOST" ;;
-    *) d_gate "$D_GH" D_GH_SKIPPED || true ;;
+      d_remedy "gh auth login --hostname $D_GH_HOST"
+      d_ssh_alias_hint ;;
+    *)
+      d_gate "$D_GH" D_GH_SKIPPED || true
+      if [ "$D_GH" = "GitHub is not reachable" ]; then d_ssh_alias_hint; fi ;;
   esac
+}
+
+# d_ssh_alias_hint: the alias hint of check_gh_auth, printed only for a Repo
+# resolved from an SSH-form origin on a host other than github.com.
+d_ssh_alias_hint() {
+  if [ "$REPO_SOURCE" != origin ] || [ -z "$REPO_ORIGIN_SSH" ]; then return 0; fi
+  if [ "$D_GH_HOST" = github.com ]; then return 0; fi
+  d_warn "the host $D_GH_HOST came from origin's SSH URL and may be an SSH Host alias."
+  d_remedy "export GH_REPO=$(repo_owner_name "$REPO_NAME")"
 }
 
 # The repo the orchestrator works on (#520), resolved locally through
