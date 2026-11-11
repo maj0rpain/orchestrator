@@ -28,6 +28,10 @@ The snippet sits between `<!-- orchestrator:begin -->` and
 `<!-- orchestrator:end -->` markers, so it can be replaced cleanly; its
 custom-agents section goes once JUNIE-5493 is fixed.
 
+When a plugin upgrade changes the snippet, replace the block between the
+`<!-- orchestrator:begin -->` and `<!-- orchestrator:end -->` markers in
+`~/.junie/AGENTS.md` with the new snippet.
+
 As a fallback, naming the agent in your own prompt keeps it visible, for
 example "For step 4, start the custom agent orch-implementer by name." Naming
 it in a skill does not.

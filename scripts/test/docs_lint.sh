@@ -127,6 +127,12 @@
 #     and points at orch-review-pass
 #   scan_junie_review_pass  Junie's custom-agent block names orch-review-pass's
 #     dependency on both reviewers
+#   scan_lens_description_starters  each lens description names the skills that
+#     run the spec review
+#   scan_junie_interview_agents  Junie's snippet names every orch-flow agent
+#     for orch-interview
+#   scan_junie_spec_review_runners  Junie's snippet says which skills run the
+#     spec review's lenses
 #   scan_closer_filing  the closer's Filing section names each labelled body
 #     line
 #   scan_cli_nouns  each routed orch.sh noun and its verbs are in the CLI
@@ -3263,6 +3269,147 @@ assert_empty "an orch-review-pass sentence wrapped across lines is not flagged" 
   "$(scan_junie_review_pass "$fixture")"
 check "Junie's custom-agent block names orch-review-pass's reviewers" \
   "$(scan_junie_review_pass "$PLUGIN_ROOT")"
+
+# scan_lens_description_starters <plugin root>: one line per lens agent file
+# missing, and per skill its frontmatter description does not name: orch-flow
+# for every lens, orch-quick-implement for every lens but Fidelity. Junie's
+# capability filter sees the description, so it must name the skill that runs
+# the spec review.
+scan_lens_description_starters() {
+  local r="$1" lens f desc skill
+  for lens in fidelity consistency testability implementability; do
+    f="agents/orch-lens-$lens.md"
+    if [ ! -f "$r/$f" ]; then echo "$f: missing"; continue; fi
+    desc="$(skill_description "$r/$f")"
+    for skill in orch-flow orch-quick-implement; do
+      [ "$skill" = orch-quick-implement ] && [ "$lens" = fidelity ] && continue
+      grep -qF "$skill" <<<"$desc" || echo "$f: description does not name $skill"
+    done
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents"
+flags "a missing lens file is flagged" \
+  "$(scan_lens_description_starters "$fixture")" "agents/orch-lens-fidelity.md: missing"
+for lens in fidelity consistency testability implementability; do
+  printf '%s\n' '---' "name: orch-lens-$lens" \
+    'description: A lens. Started only by the orch-spec-review skill.' '---' \
+    >"$fixture/agents/orch-lens-$lens.md"
+done
+flags "a lens description naming neither skill is flagged" \
+  "$(scan_lens_description_starters "$fixture")" "agents/orch-lens-fidelity.md: description does not name orch-flow"
+flags "a non-Fidelity description without orch-quick-implement is flagged" \
+  "$(scan_lens_description_starters "$fixture")" "agents/orch-lens-testability.md: description does not name orch-quick-implement"
+printf '%s\n' '---' 'name: orch-lens-testability' \
+  'description: A lens. Started by the orch-flow skill.' '---' \
+  >"$fixture/agents/orch-lens-testability.md"
+flags "a non-Fidelity description naming only orch-flow is flagged" \
+  "$(scan_lens_description_starters "$fixture")" "agents/orch-lens-testability.md: description does not name orch-quick-implement"
+for lens in fidelity consistency testability implementability; do
+  printf '%s\n' '---' "name: orch-lens-$lens" \
+    'description: A lens. Started by the orch-spec-review skill, run by orch-flow and orch-quick-implement.' '---' \
+    >"$fixture/agents/orch-lens-$lens.md"
+done
+assert_empty "descriptions with the new wording are not flagged" \
+  "$(scan_lens_description_starters "$fixture")"
+printf '%s\n' '---' 'name: orch-lens-fidelity' \
+  'description: A lens. Started by the orch-flow skill.' '---' \
+  >"$fixture/agents/orch-lens-fidelity.md"
+assert_empty "a Fidelity description naming only orch-flow is not flagged" \
+  "$(scan_lens_description_starters "$fixture")"
+check "each lens description names the skills that run the spec review" \
+  "$(scan_lens_description_starters "$PLUGIN_ROOT")"
+
+# junie_agents_sentence <plugin root> <opening>: the sentence of the snippet's
+# custom-agents section that starts at <opening>, up to its first full stop,
+# read across wrapped lines. Empty when there is none.
+junie_agents_sentence() {
+  md_section "$1/docs/junie/AGENTS.md" "## orchestrator plugin: custom agents" 2>/dev/null \
+    | flat_text | grep -oE "(^| )$2[^.]*"
+  return 0
+}
+
+# scan_junie_interview_agents <plugin root>: one line when the snippet's
+# orch-interview dependency sentence is missing, or lacks an agent the
+# orch-flow dependency sentence names.
+scan_junie_interview_agents() {
+  local r="$1" doc="docs/junie/AGENTS.md" flow interview agent
+  flow="$(junie_agents_sentence "$r" 'The orch-flow skill depends on')"
+  interview="$(junie_agents_sentence "$r" 'The orch-interview skill depends on')"
+  if [ -z "$interview" ]; then
+    echo "$doc: no orch-interview dependency sentence"
+    return 0
+  fi
+  for agent in $(grep -oE 'orch-[a-z-]+' <<<"${flow#*depends on}" | sort -u); do
+    grep -qF "$agent" <<<"$interview" \
+      || echo "$doc: orch-interview dependency sentence does not name $agent"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs/junie"
+flow_s='The orch-flow skill depends on the orch-a, orch-b, and orch-c custom agents.'
+printf '%s\n' '## orchestrator plugin: custom agents' '' "$flow_s" \
+  >"$fixture/docs/junie/AGENTS.md"
+flags "no orch-interview dependency sentence is flagged" \
+  "$(scan_junie_interview_agents "$fixture")" "docs/junie/AGENTS.md: no orch-interview dependency sentence"
+printf '%s\n' '## orchestrator plugin: custom agents' '' "$flow_s" '' \
+  'The orch-interview skill depends on the orch-a and orch-b custom agents.' \
+  >"$fixture/docs/junie/AGENTS.md"
+flags "an orch-interview sentence missing an agent is flagged" \
+  "$(scan_junie_interview_agents "$fixture")" "orch-interview dependency sentence does not name orch-c"
+printf '%s\n' '## orchestrator plugin: custom agents' '' "$flow_s" '' \
+  'The orch-interview skill depends on the orch-a, orch-b,' \
+  'orch-c custom agents.' >"$fixture/docs/junie/AGENTS.md"
+assert_empty "an orch-interview sentence wrapped across lines and complete is not flagged" \
+  "$(scan_junie_interview_agents "$fixture")"
+printf '%s\n' '## orchestrator plugin: custom agents' '' "$flow_s" '' \
+  '## Elsewhere' '' \
+  'The orch-interview skill depends on the orch-a, orch-b, and orch-c custom agents.' \
+  >"$fixture/docs/junie/AGENTS.md"
+flags "an orch-interview sentence outside the custom-agents section is flagged as missing" \
+  "$(scan_junie_interview_agents "$fixture")" "docs/junie/AGENTS.md: no orch-interview dependency sentence"
+check "Junie's snippet names every orch-flow agent for orch-interview" \
+  "$(scan_junie_interview_agents "$PLUGIN_ROOT")"
+
+# scan_junie_spec_review_runners <plugin root>: one line per name the snippet's
+# "The orch-flow skill runs the orch-spec-review skill" sentence lacks:
+# orch-quick-implement and the four lens agents, or the sentence itself.
+scan_junie_spec_review_runners() {
+  local r="$1" doc="docs/junie/AGENTS.md" sentence name
+  sentence="$(junie_agents_sentence "$r" 'The orch-flow skill runs the orch-spec-review skill')"
+  if [ -z "$sentence" ]; then
+    echo "$doc: no sentence saying the orch-flow skill runs the orch-spec-review skill"
+    return 0
+  fi
+  for name in orch-quick-implement orch-lens-fidelity orch-lens-consistency \
+    orch-lens-testability orch-lens-implementability; do
+    grep -qF "$name" <<<"$sentence" \
+      || echo "$doc: the orch-spec-review runners sentence does not name $name"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs/junie"
+printf '%s\n' '## orchestrator plugin: custom agents' '' >"$fixture/docs/junie/AGENTS.md"
+flags "no spec-review runners sentence is flagged" \
+  "$(scan_junie_spec_review_runners "$fixture")" "docs/junie/AGENTS.md: no sentence saying the orch-flow skill runs"
+printf '%s\n' '## orchestrator plugin: custom agents' '' \
+  'The orch-flow skill runs the orch-spec-review skill with the orch-lens-fidelity,' \
+  'orch-lens-consistency, orch-lens-testability, and orch-lens-implementability' \
+  'custom agents.' >"$fixture/docs/junie/AGENTS.md"
+flags "a runners sentence without orch-quick-implement is flagged" \
+  "$(scan_junie_spec_review_runners "$fixture")" "runners sentence does not name orch-quick-implement"
+printf '%s\n' '## orchestrator plugin: custom agents' '' \
+  'The orch-flow skill runs the orch-spec-review skill with the orch-lens-fidelity,' \
+  'orch-lens-consistency, orch-lens-testability, and orch-lens-implementability' \
+  'custom agents, and the orch-quick-implement skill runs it with the' \
+  'same agents.' >"$fixture/docs/junie/AGENTS.md"
+assert_empty "a complete runners sentence wrapped across lines is not flagged" \
+  "$(scan_junie_spec_review_runners "$fixture")"
+check "Junie's snippet says which skills run the spec review's lenses" \
+  "$(scan_junie_spec_review_runners "$PLUGIN_ROOT")"
 
 # --- closer's filed body lines -----------------------------------------------
 # The six labels - **Spec question:** only on a spec question - are the field
