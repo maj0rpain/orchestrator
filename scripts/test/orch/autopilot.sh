@@ -619,11 +619,11 @@ assert_eq "a first word over 40 characters is cut at 40" "$(side_of 23)" "aaaaaa
 assert_eq "an all-punctuation title is untitled" "$(side_of 24)" "untitled untitled"
 assert_eq "a clash with another issue's side checkout appends the issue" "$(pickup_titled 25 'Fix the widget')" "fix-the-widget-25 fix-the-widget-25"
 # a taken issue-numbered fallback moves on to -2, -3 ...
-(cd "$top" && "$ORCH" side-checkout add fix-gadget --issue 90 >/dev/null 2>&1 && "$ORCH" side-checkout add fix-gadget-31 --issue 91 >/dev/null 2>&1)
+mkdir -p "$top/.orchestrator/checkouts/fix-gadget" "$top/.orchestrator/checkouts/fix-gadget-31"
 assert_eq "a taken slug and issue-numbered name make <slug>-<issue>-2" "$(pickup_titled 31 'Fix gadget')" "fix-gadget-31-2 fix-gadget-31-2"
-(cd "$top" && "$ORCH" side-checkout add fix-gizmo --issue 92 >/dev/null 2>&1 && "$ORCH" side-checkout add fix-gizmo-32 --issue 93 >/dev/null 2>&1 && "$ORCH" side-checkout add fix-gizmo-32-2 --issue 94 >/dev/null 2>&1)
+mkdir -p "$top/.orchestrator/checkouts/fix-gizmo" "$top/.orchestrator/checkouts/fix-gizmo-32" "$top/.orchestrator/checkouts/fix-gizmo-32-2"
 assert_eq "with -2 also taken pickup makes <slug>-<issue>-3" "$(pickup_titled 32 'Fix gizmo')" "fix-gizmo-32-3 fix-gizmo-32-3"
-(cd "$top" && "$ORCH" side-checkout add fix-sprocket --issue 95 >/dev/null 2>&1) && : >"$top/.orchestrator/checkouts/fix-sprocket-33"
+mkdir -p "$top/.orchestrator/checkouts/fix-sprocket" && : >"$top/.orchestrator/checkouts/fix-sprocket-33"
 assert_eq "a plain file at <slug>-<issue> counts as a clash" "$(pickup_titled 33 'Fix sprocket')" "fix-sprocket-33-2 fix-sprocket-33-2"
 # a re-pickup reuses a legacy-named side checkout and its slug
 (cd "$top" && "$ORCH" side-checkout add 26-legacy-title --issue 26 >/dev/null 2>&1)
