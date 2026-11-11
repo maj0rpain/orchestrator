@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.8
+
+A failed comments read during the dying handoff read (`phase advance`, `review known-items`) now dies with gh's reason, or `could not read issue #N's comments`, instead of reporting the handoff as missing and telling the agent to post a duplicate.
+
 ## 5.0.7
 
 `pr read` now finds an issue's PR in two `gh` calls however many PRs are open: one listing that carries every open PR's body, then the winner's diff, instead of one body read per open PR plus a repeat read of the winner.
