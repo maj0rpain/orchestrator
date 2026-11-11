@@ -171,7 +171,8 @@ current_branch_or_die() {
 #   branch  the current branch records a base (branch.<b>.orchestrator-base,
 #           as branch off and branch create write) but no PR
 #           (branch.<b>.orchestrator-pr); a detached HEAD never does, nor
-#           does a branch a redo retired (its -redo-<n> name)
+#           does a branch a redo retired
+#           (branch.<b>.orchestrator-retired, as branch retire records)
 #   tree    changes outside the planning allowlist, as dirty_outside_allowlist
 #           defines them
 # The tree is read only when no earlier signal holds; a tree that cannot be
@@ -189,7 +190,7 @@ checkout_busy() {
     fi
   elif word_listed "$signals" branch && b="$(checkout_branch)" \
     && branch_records_base "$b" \
-    && ! branch_redo_count_of "$b" >/dev/null \
+    && ! branch_is_retired "$b" \
     && ! branch_pr_get "$b" >/dev/null; then
     busy_line="busy: branch $b has no PR yet"
     busy_remedy="Open its PR, or switch off it."

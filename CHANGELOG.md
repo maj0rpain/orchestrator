@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.0.18
+
+`orch.sh base set <branch>` no longer discards an explicit `main` when GitHub cannot answer and origin/HEAD is unset: only a default named by GitHub or origin/HEAD clears the setting, a guessed `main` is stored.
+
+## 5.0.17
+
+The busy check no longer reads a flow branch whose slug ends in `-redo-<n>` as retired: `branch retire` now records the retirement in git config, and only a branch carrying that record is skipped (#2550).
+
 ## 5.0.16
 
 The stdin guard now denies a plain stdin reader at the head of a pipeline (`cat | grep x`, `python3 | tee log`), which nothing feeds; readers fed by a pipe from their left or by a `<` still pass.
