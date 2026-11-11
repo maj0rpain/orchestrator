@@ -315,7 +315,6 @@ for closed in closed merged; do
   state_fixture pr 51
   out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
   assert_status "restart: a $closed recorded PR fails pr open" "$st" 1
-  assert_contains "restart: naming the PR" "$out" "PR #51"
   assert_contains "restart: the refusal message is unchanged" "$out" \
     "PR #51, recorded in state, is $(printf '%s' "$closed" | tr a-z A-Z), not open - no PR was opened or updated"
   assert_not_contains "restart: a refused PR prints no base warning" "$out" "targets"
