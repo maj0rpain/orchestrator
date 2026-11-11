@@ -40,11 +40,13 @@ done
 
 # The busy probe, run by plain sh inside the container so that it works against
 # an image built before this script existed: one "<issue> <phase>" line per
-# live issue. An issue is judged as the Liveness module judges it: by its run
-# record when it has one, alive or not, else by its tick record (the record a
-# pickup holds between the claim and the run record). A record is alive when
-# it is a pid and start time matching field 22 of the pid's /proc stat, or a
-# bare pid that kill -0 accepts. A run's phase comes from the newest log beside
+# live issue. An issue's record is chosen as the Liveness module chooses
+# it: its run record when it has one, alive or not, else its tick record
+# (the record a pickup holds between the claim and the run record). The
+# alive test is the probe's own, not the Liveness module's: a record is
+# alive when it is a pid and start time matching field 22 of the pid's
+# /proc stat, or a bare pid that kill -0 accepts (kept for run records
+# from older images). A run's phase comes from the newest log beside
 # run/, or ?; a live tick record prints "pickup", since a pickup has no log yet.
 probe='d="${ORCH_CLONE_DIR:-/home/orch/repo}/.orchestrator/autopilot"
 alive() {
