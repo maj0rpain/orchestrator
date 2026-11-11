@@ -416,16 +416,16 @@ handoff_file_retire() {
 # Comment adapter.
 
 # handoff_comment_locate <file>: prints the scratch path the comment is
-# fetched to; non-zero when no issue is recorded, the comments cannot be read
-# (the gh reason on stderr) or there is no live comment (status 1); 2 when the
-# copy cannot be written.
+# fetched to; non-zero when no issue is recorded or there is no live comment
+# (status 1); 2 when the copy cannot be written. A failed comments read dies
+# with gh's reason (or the parse-failure wording), never returning a status.
 handoff_comment_locate() {
   local file="$1" issue dir="$HANDOFF_SCRATCH_DIR"
   printf '%s/%s\n' "$dir" "$file"
   issue="$(state_get issue 2>/dev/null)" || issue=""
   [ -n "$issue" ] || return 1
   rm -f "$dir/$file"
-  (handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file") || return $?
+  handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file" || return $?
   [ -f "$dir/$file" ]
 }
 
