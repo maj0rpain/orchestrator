@@ -1416,6 +1416,7 @@ check "every start site points at Agent settings and reads each role it starts" 
   "$(scan_agent_settings "$PLUGIN_ROOT")"
 
 fixture="$(new_fixture)"
+mkdir -p "$fixture/docs"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Start a fresh subagent | The Agent tool. | Ignored ([settings](#agent-settings)). |' \
   '' '## Fallbacks' '' '## Agent settings' >"$fixture/docs/host-capabilities.md"
@@ -2041,6 +2042,7 @@ scan_capability_table() {
   return 0
 }
 fixture="$(new_fixture)"
+mkdir -p "$fixture/docs"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Ask | `AskUserQuestion`. | Plain text. |' '| Guard | A hook. |  |' \
   '| Start | The Agent tool. | One | two. |' >"$fixture/docs/host-capabilities.md"
@@ -2067,6 +2069,7 @@ scan_row_unverified() {
   return 0
 }
 fixture="$(new_fixture)"
+mkdir -p "$fixture/docs"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Good | Works. | **Unverified**. |' '| Bare | Works. | Works. |' \
   '| Swapped | **Unverified**. | Works. |' \
