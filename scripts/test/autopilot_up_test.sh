@@ -158,11 +158,23 @@ mkdir -p "$clone/.orchestrator/autopilot/run"
 echo "$live_pid $live_start" >"$clone/.orchestrator/autopilot/run/11.pid"
 echo "$live_pid 1" >"$clone/.orchestrator/autopilot/run/12.pid"
 echo "$live_pid" >"$clone/.orchestrator/autopilot/run/13.pid"
+r="$clone/.orchestrator/autopilot/run"
+echo "$live_pid $live_start" >"$r/21.tick"
+echo "$live_pid 1" >"$r/22.tick"
+echo "$live_pid 1" >"$r/23.pid"
+echo "$live_pid $live_start" >"$r/23.tick"
+echo "$live_pid $live_start" >"$r/24.pid"
+echo "$live_pid $live_start" >"$r/24.tick"
 probed="$(ORCH_CLONE_DIR="$clone" sh -c "$probe_text")"
 kill "$live_pid" 2>/dev/null
 assert_contains "probe: lists a matching start time" "$probed" "11 ?"
 assert_lacks "probe: leaves out a different start time" "$probed" "12 "
 assert_contains "probe: lists a live bare-pid run" "$probed" "13 ?"
+assert_contains "probe: lists a live tick record with no run record as a pickup" "$probed" "21 pickup"
+assert_lacks "probe: leaves out a tick record with a different start time" "$probed" "22 "
+assert_lacks "probe: a dead run record beside a live tick record leaves the issue out" "$probed" "23 "
+assert_eq "probe: a live run beside a live tick lists the issue once" "$(printf '%s\n' "$probed" | grep -c '^24 ')" "1"
+assert_contains "probe: the run's phase wins over pickup" "$probed" "24 ?"
 
 # --- contract: the probe reads what the Liveness module writes
 contract="$root/contract-clone"
@@ -179,6 +191,20 @@ probed="$(ORCH_CLONE_DIR="$contract" sh -c "$probe_text")"
 kill "$contract_pid" 2>/dev/null
 assert_contains "probe contract: lists the run liveness_run_begin recorded, with its phase" "$probed" "41 review"
 
+# The module's tick record, from a live process.
+tickc="$root/contract-tick-clone"
+mkdir "$tickc" && git -C "$tickc" init -q
+mkfifo "$root/tick.fifo"
+(cd "$tickc" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_tick_begin 51 && liveness_tick_begin 52 && liveness_run_begin 52 && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/tick.fifo") >"$root/tick.out" 2>&1 &
+tick_pid=$!
+tick_line="$(fifo_read_line 60 "tick read ($root/tick.fifo)" "$root/tick.fifo")"
+assert_eq "probe contract: the tick setup reached ready" "$tick_line" "ready"
+probed="$(ORCH_CLONE_DIR="$tickc" sh -c "$probe_text")"
+kill "$tick_pid" 2>/dev/null
+assert_contains "probe contract: lists the tick liveness_tick_begin recorded as a pickup" "$probed" "51 pickup"
+assert_eq "probe contract: a tick then a run lists the issue once, by its run record" "$(printf '%s\n' "$probed" | grep -c '^52 ')" "1"
+assert_contains "probe contract: the run record's phase, not pickup" "$probed" "52 ?"
+
 # --- busy
 new_case ".env.side"
 echo cid >"$FAKE_DIR/psa.side"; echo cid >"$FAKE_DIR/ps.side"
@@ -191,6 +217,13 @@ assert_contains "busy: probed with exec -T in the container" "$log" "-p side exe
 run_up --force
 assert_contains "force: rebuilt with the killed line" "$out" "(side)  rebuilt  orchestrator 9.8.7 @ $commit forced: killed #1590 implement"
 assert_contains "force: recreated" "$log" "-p side up -d --build"
+
+echo "1601 pickup" >"$FAKE_DIR/probe.side"
+run_up
+assert_contains "busy: a pickup is skipped as busy" "$out" "(side)  skipped  busy: #1601 pickup"
+assert_lacks "busy: a pickup is not recreated" "$log" "up -d"
+run_up --force
+assert_contains "force: a pickup is in the killed list" "$out" "forced: killed #1601 pickup"
 
 # --- probe failure
 new_case ".env"
