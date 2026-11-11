@@ -233,10 +233,10 @@ spec_review_block_line() {
 }
 
 # spec_review_at_line <line> <kw-var> <args-var>: an `@@` line of the batch
-# or tickets file split, its trailing CR stripped, into its keyword and the
-# rest of the line after one space - empty when there is none.
+# or tickets file split into its keyword and the rest of the line after one
+# space - empty when there is none.
 spec_review_at_line() {
-  local __sral_rest="${1%$'\r'}" __sral_args=""
+  local __sral_rest="$1" __sral_args=""
   __sral_rest="${__sral_rest#@@}"; __sral_rest="${__sral_rest# }"
   [ "${__sral_rest%% *}" = "$__sral_rest" ] || __sral_args="${__sral_rest#* }"
   printf -v "$2" '%s' "${__sral_rest%% *}"
@@ -260,8 +260,9 @@ spec_review_batch_parse() {
   SR_OP_SUMMARY=(); SR_OP_ANCHOR=(); SR_OP_ANCHOR_LINE=(); SR_OP_REPLACE=()
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
+    line="${line%$'\r'}"
     case "$line" in
-      '@@ '*|'@@'|$'@@\r') ;;
+      '@@ '*|'@@') ;;
       *)
         case "$mode" in
           anchor|replace|quote)
@@ -274,7 +275,6 @@ spec_review_batch_parse() {
           || continue
         spec_review_batch_die "$lineno" "text outside an @@ anchor, @@ replace or @@ quote block" ;;
     esac
-    line="${line%$'\r'}"
     spec_review_at_line "$line" kw args
     case "$mode" in
       anchor)
@@ -1295,8 +1295,9 @@ spec_review_tickets_parse() {
   ST_SUMMARY=(); ST_ANCHOR=(); ST_ANCHOR_LINE=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=(); ST_CL_LINE=()
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
+    line="${line%$'\r'}"
     case "$line" in
-      '@@ '*|'@@'|$'@@\r') ;;
+      '@@ '*|'@@') ;;
       *)
         if [ "$mode" = anchor ] || [ "$mode" = replace ]; then
           spec_review_block_line "$line" content
@@ -1307,7 +1308,6 @@ spec_review_tickets_parse() {
         [ -n "$(trim "$line")" ] || continue
         spec_review_tickets_die "$lineno" "text outside an @@ anchor or @@ replace block" ;;
     esac
-    line="${line%$'\r'}"
     spec_review_at_line "$line" kw args
     case "$mode" in
       anchor)
