@@ -1,5 +1,17 @@
 # Changelog
 
+## 5.0.13
+
+orch.sh now resolves an `origin` given as an SSH Host alias (e.g. `git@github-work:acme/w.git`) to the real GitHub host by translating it through `ssh -G`, and accepts git's user-less scp-like form (`github.com:acme/w.git`). Hosts are normalised as gh does them: lowercased, with any `*.github.com` host read as github.com. When an alias cannot be translated, doctor's gh auth check says the host may be an SSH Host alias and suggests `export GH_REPO=<owner>/<repo>`.
+
+## 5.0.12
+
+`scripts/dev/width.sh` now closes a fenced block only on a bare run of the opener's character at least as long as the opener, so a four-backtick block holding three-backtick lines stays exempt from the line-width check.
+
+## 5.0.11
+
+The planning hook writes its once-per-session marker only when it delivers the planning message, so a planning load outside a git repository no longer uses up the session's delivery or arms the edit guard.
+
 ## 5.0.10
 
 `ticket reset` now also removes the parent's own saved report, so `redo review` on a collapsed breakdown no longer leaves the one ticket looking already landed.
