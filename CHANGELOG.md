@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.6
+
+`autopilot-up.sh --force` now passes `--force-recreate` to `compose up` when it reports `forced: killed ...`, so a busy container with an unchanged image is really recreated and the killed session stops.
+
 ## 5.0.5
 
 `autopilot-up.sh` now treats a watcher that is part-way through a pickup as busy, so a rebuild no longer kills the pickup and leaves a failure stop on the issue. Its busy probe reads tick records as well as run records, with the Liveness module's record precedence (the run record decides when it exists, else the tick record), and reports `busy: #<issue> pickup`.
