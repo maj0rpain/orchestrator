@@ -130,23 +130,27 @@ open_pr() {
 # open's restart path (#1609), for a flow whose state already names its PR: the
 # PR must be open on <branch>, else it dies naming it and creates none. It
 # pushes, then writes the title, the body (issue line included, as on
-# creation) and each requested label the PR lacks, removing none. A failed
+# creation, from the PR's own base, warning when that is not the flow's) and
+# each requested label the PR lacks, removing none. A failed
 # push dies before any PR write; a failed write dies naming it and each write
 # already landed. A rerun repeats every write.
 update_pr() {
-  # shellcheck disable=SC2034 # pr_refs_read fills all four; only head is read
-  local pr="$1" branch="$2" base="$3" issue="$4" title="$5" body_file="$6" st draft err refs_oid head refs_base commits
+  # shellcheck disable=SC2034 # pr_refs_read fills all four; the head SHA and commits go unread
+  local pr="$1" branch="$2" base="$3" issue="$4" title="$5" body_file="$6" st draft err refs_oid head pr_base commits line_base
   shift 6
   # shellcheck disable=SC2034 # ignored takes the writes' output, read by no one
   local tmp have ignored label landed=""
   pr_state_draft_read "$pr" st draft err \
     || gh_die "read the state of PR #$pr, recorded in state" "$err"
   [ "$st" = OPEN ] || die "PR #$pr, recorded in state, is $st, not open - no PR was opened or updated"
-  pr_refs_read "$pr" refs_oid head refs_base commits err \
+  pr_refs_read "$pr" refs_oid head pr_base commits err \
     || gh_die "read the branch of PR #$pr, recorded in state" "$err"
   [ "$head" = "$branch" ] \
     || die "PR #$pr, recorded in state, is on branch $head, not the flow's branch $branch - no PR was opened or updated"
-  pr_push_and_body "$branch" "$base" "$issue" "$body_file" tmp "PR #$pr was not updated"
+  line_base="${pr_base:-$base}"
+  [ "$line_base" = "$base" ] \
+    || warn "PR #$pr targets $line_base, not the flow's base $base - its issue line follows the PR's base"
+  pr_push_and_body "$branch" "$line_base" "$issue" "$body_file" tmp "PR #$pr was not updated"
   if ! capture ignored err adapter_pr_title_edit "$pr" "$title"; then
     rm -f "$tmp"
     gh_die "write the title of PR #$pr" "$err"
