@@ -2167,6 +2167,8 @@ sc_case "a variable delimiter ends at its terminator" 1001 'cat <<$X' 'body' '$X
 sc_case "a subshell after a blank opens no arithmetic" 10011 '( (cat <<EOF' 'body' 'EOF' ') )' 'f() { :; }'
 sc_case "let x=1<<n is a heredoc" 1001 'let x=1<<n' 'body' 'n' 'f() { :; }'
 sc_case "a here-string opens no heredoc" 11 'cat <<<word' 'f() { :; }'
+sc_case "an empty single-quoted delimiter opens a heredoc ending at an empty line" 1001 'cat <<'"''" 'body' '' 'f() { :; }'
+sc_case "an empty double-quoted delimiter opens a heredoc ending at an empty line" 1001 'cat <<""' 'body' '' 'f() { :; }'
 
 # the words view of a body line holding $(x): q when quoted, code when not
 for sc_form in "'END-NOTES'|END-NOTES|q" 'END-NOTES|END-NOTES|$(x)' 'E"N"D|END|q' '\EOF|EOF|q'; do

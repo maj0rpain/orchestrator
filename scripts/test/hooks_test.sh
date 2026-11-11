@@ -1888,7 +1888,7 @@ for bp_cmd in $'cat >n <<\'END-NOTES\'\nx\nEND-NOTES\npgrep -f x' $'cat <<END-NO
   assert_eq "bash poll hook: denies '${bp_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bp_out")" deny
 done
 for bp_cmd in $'cat <<END-NOTES\npgrep x\nEND-NOTES' $'x=$((1)); cat <<END-NOTES\npgrep x\nEND-NOTES' \
-  $'cat <<-END.TXT\n\tpgrep x\n\tEND.TXT' $'let x=1<<n\npgrep x\nn' $'( (cat <<EOF\npgrep x\nEOF\n) )'; do
+  $'cat <<-END.TXT\n\tpgrep x\n\tEND.TXT' $'let x=1<<n\npgrep x\nn' $'cat <<\'\'\npgrep x\n' $'cat <<""\npgrep x\n' $'( (cat <<EOF\npgrep x\nEOF\n) )'; do
   bp_out="$(bash_hook_scan "$BPOLL" default "$bp_cmd")"
   assert_empty "bash poll hook: passes '${bp_cmd//$'\n'/\\n}'" "$bp_out"
 done

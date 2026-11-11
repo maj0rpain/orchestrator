@@ -16,16 +16,17 @@ HOOK_BASH_SCOPE='
 # True while unquoted text $1 holds more `((` than `))`: a `<<` there is an
 # arithmetic shift, not a heredoc.
 _hook_bash_in_arith() {
-  local t="$1" o c
-  o="${t//((/}"; c="${t//))/}"
-  [ "$(( ${#t} - ${#o} ))" -gt "$(( ${#t} - ${#c} ))" ]
+  local t="$1" no_open no_close
+  no_open="${t//((/}"; no_close="${t//))/}"
+  [ "$(( ${#t} - ${#no_open} ))" -gt "$(( ${#t} - ${#no_close} ))" ]
 }
 
 # Reads the heredoc delimiter at the start of $1 (the text after `<<`) as
 # bash's whole shell word: after `-` and blanks, unquoted characters other
 # than blanks and `;&|<>()`, single- and double-quoted spans and backslash
 # escapes, with quotes removed. Sets HOOK_BASH_HEREDOC_WORD and
-# HOOK_BASH_HEREDOC_STRIP (1 for `<<-`); fails when there is no word.
+# HOOK_BASH_HEREDOC_STRIP (1 for `<<-`); fails when no character forms a word
+# (an empty quoted word is a word).
 _hook_bash_heredoc_word() {
   local w="$1" word="" j=0 ch q tail
   HOOK_BASH_HEREDOC_STRIP=0
@@ -51,7 +52,7 @@ _hook_bash_heredoc_word() {
       *) word+="$ch"; j=$((j + 1)) ;;
     esac
   done
-  [ -n "$word" ] || return 1
+  [ "$j" -gt 0 ] || return 1
   HOOK_BASH_HEREDOC_WORD="$word"
 }
 
@@ -66,12 +67,12 @@ _hook_bash_heredoc_word() {
 # or `<<-`, quotes removed), and a `<<` inside arithmetic - while the part's
 # unquoted text holds more `((` than `))` - is a shift and opens no heredoc.
 hook_bash_walk() {
-  local cmd="$1" test_fn="$2" line part="" unq="" quote="" heredoc_end="" heredoc_strip_tabs=0 continued=0 i c n rest re
+  local cmd="$1" test_fn="$2" line part="" unq="" quote="" heredoc_end="" in_heredoc=0 heredoc_strip_tabs=0 continued=0 i c n rest re
   [ "${#cmd}" -le 8192 ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ -n "$heredoc_end" ]; then
+    if [ "$in_heredoc" = 1 ]; then
       [ "$heredoc_strip_tabs" = 1 ] && line="${line#"${line%%[!$'\t']*}"}"
-      [ "$line" = "$heredoc_end" ] && heredoc_end=""
+      [ "$line" = "$heredoc_end" ] && in_heredoc=0
       continue
     fi
     n=${#line}; i=0; continued=0
@@ -109,7 +110,7 @@ hook_bash_walk() {
             if [ "${line:i:2}" != '<<' ]; then part+="$c"; unq+="$c"; i=$((i + 1)); continue; fi
             if _hook_bash_in_arith "$unq"; then part+="<<"; unq+="<<"; i=$((i + 2)); continue; fi
             if _hook_bash_heredoc_word "${rest:2}"; then
-              heredoc_end="$HOOK_BASH_HEREDOC_WORD"; heredoc_strip_tabs="$HOOK_BASH_HEREDOC_STRIP"
+              in_heredoc=1; heredoc_end="$HOOK_BASH_HEREDOC_WORD"; heredoc_strip_tabs="$HOOK_BASH_HEREDOC_STRIP"
             fi
             part+="<<"; unq+="<<"; i=$((i + 2)); continue ;;
           *) part+="$c"; unq+="$c" ;;
