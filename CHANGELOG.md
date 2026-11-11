@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.11
+
+The planning hook writes its once-per-session marker only when it delivers the planning message, so a planning load outside a git repository no longer uses up the session's delivery or arms the edit guard.
+
 ## 5.0.10
 
 `ticket reset` now also removes the parent's own saved report, so `redo review` on a collapsed breakdown no longer leaves the one ticket looking already landed.
