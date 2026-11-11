@@ -154,17 +154,17 @@ sleep 30 &
 live_pid=$!
 live_start="$(sed 's/^.*) //' "/proc/$live_pid/stat" | cut -d' ' -f20)"
 clone="$root/probe-clone"
-mkdir -p "$clone/.orchestrator/autopilot/run"
-echo "$live_pid $live_start" >"$clone/.orchestrator/autopilot/run/11.pid"
-echo "$live_pid 1" >"$clone/.orchestrator/autopilot/run/12.pid"
-echo "$live_pid" >"$clone/.orchestrator/autopilot/run/13.pid"
-r="$clone/.orchestrator/autopilot/run"
-echo "$live_pid $live_start" >"$r/21.tick"
-echo "$live_pid 1" >"$r/22.tick"
-echo "$live_pid 1" >"$r/23.pid"
-echo "$live_pid $live_start" >"$r/23.tick"
-echo "$live_pid $live_start" >"$r/24.pid"
-echo "$live_pid $live_start" >"$r/24.tick"
+probe_run="$clone/.orchestrator/autopilot/run"
+mkdir -p "$probe_run"
+echo "$live_pid $live_start" >"$probe_run/11.pid"
+echo "$live_pid 1" >"$probe_run/12.pid"
+echo "$live_pid" >"$probe_run/13.pid"
+echo "$live_pid $live_start" >"$probe_run/21.tick"
+echo "$live_pid 1" >"$probe_run/22.tick"
+echo "$live_pid 1" >"$probe_run/23.pid"
+echo "$live_pid $live_start" >"$probe_run/23.tick"
+echo "$live_pid $live_start" >"$probe_run/24.pid"
+echo "$live_pid $live_start" >"$probe_run/24.tick"
 probed="$(ORCH_CLONE_DIR="$clone" sh -c "$probe_text")"
 kill "$live_pid" 2>/dev/null
 assert_contains "probe: lists a matching start time" "$probed" "11 ?"
@@ -182,7 +182,7 @@ mkdir "$contract" && git -C "$contract" init -q
 mkfifo "$root/contract.fifo"
 # The background shell opens the fifo's write end first, so its early death
 # is EOF.
-(cd "$contract" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_run_begin 41 && : >"$(liveness_log_path 41 review)" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/contract.fifo") >"$root/contract.out" 2>&1 &
+(cd "$contract" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_run_begin 41 && liveness_tick_begin 51 && liveness_tick_begin 52 && liveness_run_begin 52 && : >"$(liveness_log_path 41 review)" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/contract.fifo") >"$root/contract.out" 2>&1 &
 contract_pid=$!
 contract_line=""
 contract_line="$(fifo_read_line 60 "contract read ($root/contract.fifo)" "$root/contract.fifo")"
@@ -190,20 +190,10 @@ assert_eq "probe contract: the setup reached ready" "$contract_line" "ready"
 probed="$(ORCH_CLONE_DIR="$contract" sh -c "$probe_text")"
 kill "$contract_pid" 2>/dev/null
 assert_contains "probe contract: lists the run liveness_run_begin recorded, with its phase" "$probed" "41 review"
-
-# The module's tick record, from a live process.
-tickc="$root/contract-tick-clone"
-mkdir "$tickc" && git -C "$tickc" init -q
-mkfifo "$root/tick.fifo"
-(cd "$tickc" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_tick_begin 51 && liveness_tick_begin 52 && liveness_run_begin 52 && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/tick.fifo") >"$root/tick.out" 2>&1 &
-tick_pid=$!
-tick_line="$(fifo_read_line 60 "tick read ($root/tick.fifo)" "$root/tick.fifo")"
-assert_eq "probe contract: the tick setup reached ready" "$tick_line" "ready"
-probed="$(ORCH_CLONE_DIR="$tickc" sh -c "$probe_text")"
-kill "$tick_pid" 2>/dev/null
 assert_contains "probe contract: lists the tick liveness_tick_begin recorded as a pickup" "$probed" "51 pickup"
 assert_eq "probe contract: a tick then a run lists the issue once, by its run record" "$(printf '%s\n' "$probed" | grep -c '^52 ')" "1"
 assert_contains "probe contract: the run record's phase, not pickup" "$probed" "52 ?"
+
 
 # --- busy
 new_case ".env.side"
