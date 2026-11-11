@@ -280,6 +280,42 @@ assert_status "restart: labels carried in another casing pass" "$st" 0
 assert_eq "restart: re-adding no label carried in another casing" \
   "$(fake_pr_labels_of 50)" "$(writeln keep-me ci)"
 
+# The restart's issue line follows the base the recorded PR targets, not the
+# flow's recorded base (#2548); a differing base warns once and carries on.
+assert_not_contains "restart: a PR on the flow's base prints no base warning" "$(cat "$errf")" "targets"
+fake_pr 50 open orch/16-propen uat
+state_fixture pr 50
+out="$("$ORCH" pr open "New title" "$body" 2>"$errf")"; st=$?
+assert_status "restart: a PR retargeted to uat succeeds" "$st" 0
+assert_first_line "restart: a PR on uat gets Refs" "$(fake_pr_body_of 50)" "Refs #16"
+assert_eq "restart: warning names the PR and both bases" "$(cat "$errf")" \
+  "orch: PR #50 targets uat, not the flow's base main - its issue line follows the PR's base"
+fake_pr 50 open orch/16-propen ''
+state_fixture pr 50
+out="$("$ORCH" pr open "New title" "$body" 2>"$errf")"; st=$?
+assert_status "restart: an empty PR base succeeds" "$st" 0
+assert_first_line "restart: an empty PR base follows the flow's base" "$(fake_pr_body_of 50)" "Closes #16"
+assert_eq "restart: an empty PR base prints no warning" "$(cat "$errf")" ""
+fake_pr 51 closed orch/16-propen uat
+state_fixture pr 51
+fake_pr_body 50 "untouched"
+out="$("$ORCH" pr open "Title" "$body" 2>"$errf")"; st=$?
+assert_status "restart: a closed PR on uat is refused" "$st" 1
+assert_not_contains "restart: a refused PR prints no base warning" "$(cat "$errf")" "targets"
+assert_eq "restart: a refused PR writes nothing" "$(fake_pr_body_of 50)" "untouched"
+rm -rf "$ORCH_GH_FAKE_STORE/prs/51"
+fake_pr 50 open orch/16-propen main
+state_fixture pr 50
+state_fixture base uat
+out="$("$ORCH" pr open "New title" "$body" 2>"$errf")"; st=$?
+assert_status "restart: a PR on main under a uat flow succeeds" "$st" 0
+assert_first_line "restart: a PR on main gets Closes" "$(fake_pr_body_of 50)" "Closes #16"
+assert_eq "restart: the converse warning" "$(cat "$errf")" \
+  "orch: PR #50 targets main, not the flow's base uat - its issue line follows the PR's base"
+state_fixture base main
+printf 'keep-me\nci\n' >"$ORCH_GH_FAKE_STORE/prs/50/labels"
+fake_pr_body 50 "old body"
+
 for closed in closed merged; do
   fake_pr 51 "$closed" orch/16-propen main
   state_fixture pr 51
