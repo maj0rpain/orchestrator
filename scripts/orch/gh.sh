@@ -148,7 +148,7 @@ gh_or_die() {
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
 #   adapter_pr_comments, adapter_pr_refs, adapter_pr_url_head,
 #   adapter_pr_ready, adapter_pr_draft,
-#   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_all,
+#   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_bodies,
 #   adapter_prs_open_mergeability,
 #   adapter_pr_diff, adapter_prs_merged,
 #   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
@@ -609,12 +609,14 @@ adapter_prs_open() {
     --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 }
 
-# adapter_prs_open_all: every open PR, newest first, one per line as
-# `<number>\t<isCrossRepository>` (`true` or `false`), unfiltered: the Trust
-# module's trust_filter_prs drops the fork PRs.
-adapter_prs_open_all() {
-  gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number,isCrossRepository \
-    --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
+# adapter_prs_open_bodies: every open PR, newest first, one per line as
+# `<number>\t<body>\t<isCrossRepository>` - the body a JSON string (gh's
+# @json), so a multi-line body stays on one line and the caller decodes it
+# with jq; the flag `true` or `false`, last - unfiltered: the Trust module's
+# trust_filter_prs drops the fork PRs.
+adapter_prs_open_bodies() {
+  gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number,body,isCrossRepository \
+    --jq '.[] | "\(.number)\t\(.body | @json)\t\(.isCrossRepository)"'
 }
 
 # adapter_prs_open_mergeability: every open PR, newest first, one per line as
