@@ -205,8 +205,8 @@ assert_contains "fresh force: failed build reports failed" "$out" "(side)  faile
 assert_lacks "fresh force: failed build makes no kill claim" "$out" "killed"
 rm "$FAKE_DIR/build-fail.side"
 run_up --fresh --force
-assert_contains "fresh force: builds first" "$log" "build --pull --no-cache"
-assert_contains "fresh force: then recreates" "$log" "up -d --build --force-recreate"
+order="$(printf '%s\n' "$log" | grep -oE 'build --pull --no-cache|up -d --build --force-recreate')"
+assert_eq "fresh force: builds, then recreates" "$order" "$(printf '%s\n%s' 'build --pull --no-cache' 'up -d --build --force-recreate')"
 
 # --- probe failure
 new_case ".env"
