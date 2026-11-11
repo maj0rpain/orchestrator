@@ -52,6 +52,17 @@ echo "orch_test.sh: a section called the real gh: gh \$*" >&2
 exit 1
 GH
 chmod +x "$GH_GUARD_DIR/bin/gh" || exit 1
+
+# The suite-wide identity ssh stub, beside the guard: for `ssh -G -- <host>` it
+# answers `hostname <host>`, reading the host as its last argument, so no
+# section reads the machine's ssh config. A section needing an alias, a failure
+# or a hostname-less answer puts its own stub ahead of it.
+cat >"$GH_GUARD_DIR/bin/ssh" <<'SSH' || exit 1
+#!/usr/bin/env bash
+for h in "$@"; do :; done
+echo "hostname $h"
+SSH
+chmod +x "$GH_GUARD_DIR/bin/ssh" || exit 1
 PATH="$GH_GUARD_DIR/bin:$PATH"
 
 # The environment every section starts from. healthy_repo exports HOME and
@@ -223,6 +234,25 @@ branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
+# write_ssh_stub <command run for github-work> <exit status otherwise>: an ssh
+# at "$ssh_stub_dir", for a PATH ahead of the suite-wide identity one, that
+# runs <command> when its last argument is github-work, else exits with the
+# status, and records every call in "$ssh_calls". The dir is made on first
+# use, so each section, a process of its own, gets a dir of its own.
+write_ssh_stub() {
+  if [ -z "${ssh_stub_dir:-}" ]; then
+    ssh_stub_dir="$(mktemp -d)"
+    ssh_calls="$ssh_stub_dir/calls"; : >"$ssh_calls"
+  fi
+  cat >"$ssh_stub_dir/ssh" <<SSH
+#!/usr/bin/env bash
+echo "\$*" >>"$ssh_calls"
+for h in "\$@"; do :; done
+if [ "\$h" = github-work ]; then $1; fi
+exit $2
+SSH
+  chmod +x "$ssh_stub_dir/ssh"
+}
 # fails_bin <command> <pattern>: a new directory holding a <command> that fails
 # when its arguments, space-joined and padded with a space either side, match
 # the glob <pattern>, and passes every other call through to the real one;
