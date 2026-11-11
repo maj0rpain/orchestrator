@@ -7,8 +7,8 @@
 # `docker` first on PATH. The fake appends each call's argv, cwd and
 # ORCH_ENV_FILE to $FAKE_DIR/log and answers from canned files in $FAKE_DIR,
 # keyed by project (`default` without -p): info, config.<k>, psa.<k> (ps -a -q),
-# ps.<k> (ps -q), probe.<k>, probe-fail.<k> and up-fail.<k>. Assertions are on
-# the log, the summary lines and the exit status.
+# ps.<k> (ps -q), probe.<k>, probe-fail.<k>, up-fail.<k> and build-fail.<k>.
+# Assertions are on the log, the summary lines and the exit status.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=git_env.sh
@@ -154,15 +154,27 @@ sleep 30 &
 live_pid=$!
 live_start="$(sed 's/^.*) //' "/proc/$live_pid/stat" | cut -d' ' -f20)"
 clone="$root/probe-clone"
-mkdir -p "$clone/.orchestrator/autopilot/run"
-echo "$live_pid $live_start" >"$clone/.orchestrator/autopilot/run/11.pid"
-echo "$live_pid 1" >"$clone/.orchestrator/autopilot/run/12.pid"
-echo "$live_pid" >"$clone/.orchestrator/autopilot/run/13.pid"
+probe_run="$clone/.orchestrator/autopilot/run"
+mkdir -p "$probe_run"
+echo "$live_pid $live_start" >"$probe_run/11.pid"
+echo "$live_pid 1" >"$probe_run/12.pid"
+echo "$live_pid" >"$probe_run/13.pid"
+echo "$live_pid $live_start" >"$probe_run/21.tick"
+echo "$live_pid 1" >"$probe_run/22.tick"
+echo "$live_pid 1" >"$probe_run/23.pid"
+echo "$live_pid $live_start" >"$probe_run/23.tick"
+echo "$live_pid $live_start" >"$probe_run/24.pid"
+echo "$live_pid $live_start" >"$probe_run/24.tick"
 probed="$(ORCH_CLONE_DIR="$clone" sh -c "$probe_text")"
 kill "$live_pid" 2>/dev/null
 assert_contains "probe: lists a matching start time" "$probed" "11 ?"
 assert_lacks "probe: leaves out a different start time" "$probed" "12 "
 assert_contains "probe: lists a live bare-pid run" "$probed" "13 ?"
+assert_contains "probe: lists a live tick record with no run record as a pickup" "$probed" "21 pickup"
+assert_lacks "probe: leaves out a tick record with a different start time" "$probed" "22 "
+assert_lacks "probe: a dead run record beside a live tick record leaves the issue out" "$probed" "23 "
+assert_eq "probe: a live run beside a live tick lists the issue once" "$(printf '%s\n' "$probed" | grep -c '^24 ')" "1"
+assert_contains "probe: the run's phase wins over pickup" "$probed" "24 ?"
 
 # --- contract: the probe reads what the Liveness module writes
 contract="$root/contract-clone"
@@ -170,7 +182,7 @@ mkdir "$contract" && git -C "$contract" init -q
 mkfifo "$root/contract.fifo"
 # The background shell opens the fifo's write end first, so its early death
 # is EOF.
-(cd "$contract" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_run_begin 41 && : >"$(liveness_log_path 41 review)" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/contract.fifo") >"$root/contract.out" 2>&1 &
+(cd "$contract" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_run_begin 41 && liveness_tick_begin 51 && liveness_tick_begin 52 && liveness_run_begin 52 && : >"$(liveness_log_path 41 review)" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/contract.fifo") >"$root/contract.out" 2>&1 &
 contract_pid=$!
 contract_line=""
 contract_line="$(fifo_read_line 60 "contract read ($root/contract.fifo)" "$root/contract.fifo")"
@@ -178,6 +190,10 @@ assert_eq "probe contract: the setup reached ready" "$contract_line" "ready"
 probed="$(ORCH_CLONE_DIR="$contract" sh -c "$probe_text")"
 kill "$contract_pid" 2>/dev/null
 assert_contains "probe contract: lists the run liveness_run_begin recorded, with its phase" "$probed" "41 review"
+assert_contains "probe contract: lists the tick liveness_tick_begin recorded as a pickup" "$probed" "51 pickup"
+assert_eq "probe contract: a tick then a run lists the issue once, by its run record" "$(printf '%s\n' "$probed" | grep -c '^52 ')" "1"
+assert_contains "probe contract: the run record's phase, not pickup" "$probed" "52 ?"
+
 
 # --- busy
 new_case ".env.side"
@@ -186,11 +202,34 @@ echo "1590 implement" >"$FAKE_DIR/probe.side"
 run_up
 assert_contains "busy: skipped with the session" "$out" "(side)  skipped  busy: #1590 implement"
 assert_lacks "busy: not recreated" "$log" "up -d"
+assert_lacks "busy: no --force-recreate" "$log" "--force-recreate"
 assert_status "busy: a skip is not a failure" "$status" 0
 assert_contains "busy: probed with exec -T in the container" "$log" "-p side exec -T autopilot sh -c"
 run_up --force
 assert_contains "force: rebuilt with the killed line" "$out" "(side)  rebuilt  orchestrator 9.8.7 @ $commit forced: killed #1590 implement"
-assert_contains "force: recreated" "$log" "-p side up -d --build"
+assert_contains "force: recreated" "$log" "-p side up -d --build --force-recreate"
+: >"$FAKE_DIR/up-fail.side"
+run_up --force
+assert_status "force: failed up exits non-zero" "$status" 1
+assert_contains "force: failed up reports failed" "$out" "(side)  failed"
+assert_lacks "force: failed up makes no kill claim" "$out" "killed"
+rm "$FAKE_DIR/up-fail.side"
+: >"$FAKE_DIR/build-fail.side"
+run_up --fresh --force
+assert_status "fresh force: failed build exits non-zero" "$status" 1
+assert_contains "fresh force: failed build reports failed" "$out" "(side)  failed"
+assert_lacks "fresh force: failed build makes no kill claim" "$out" "killed"
+rm "$FAKE_DIR/build-fail.side"
+run_up --fresh --force
+order="$(printf '%s\n' "$log" | grep -oE 'build --pull --no-cache|up -d --build --force-recreate')"
+assert_eq "fresh force: builds, then recreates" "$order" "$(printf '%s\n%s' 'build --pull --no-cache' 'up -d --build --force-recreate')"
+
+echo "1601 pickup" >"$FAKE_DIR/probe.side"
+run_up
+assert_contains "busy: a pickup is skipped as busy" "$out" "(side)  skipped  busy: #1601 pickup"
+assert_lacks "busy: a pickup is not recreated" "$log" "up -d"
+run_up --force
+assert_contains "force: a pickup is in the killed list" "$out" "forced: killed #1601 pickup"
 
 # --- probe failure
 new_case ".env"
@@ -200,7 +239,7 @@ run_up
 assert_contains "probe failure: skipped" "$out" "skipped  busy: unknown (probe failed)"
 assert_lacks "probe failure: not recreated" "$log" "up -d"
 run_up --force
-assert_contains "probe failure: --force recreates" "$log" "up -d --build"
+assert_contains "probe failure: --force recreates" "$log" "up -d --build --force-recreate"
 
 # --- not running: not probed
 new_case ".env"
@@ -208,6 +247,9 @@ echo cid >"$FAKE_DIR/psa.default"
 run_up
 assert_lacks "not running: not probed" "$log" " exec "
 assert_contains "not running: rebuilt" "$out" "rebuilt"
+assert_lacks "not running: no --force-recreate" "$log" "--force-recreate"
+run_up --force
+assert_lacks "not running, --force: no --force-recreate" "$log" "--force-recreate"
 
 # --- idle container
 new_case ".env"
@@ -216,6 +258,10 @@ run_up
 assert_contains "idle: probed" "$log" " exec "
 assert_contains "idle: rebuilt, nothing killed" "$out" "rebuilt  orchestrator 9.8.7 @ $commit"
 assert_lacks "idle: no killed line" "$out" "killed"
+assert_lacks "idle: no --force-recreate" "$log" "--force-recreate"
+run_up --force
+assert_contains "idle, --force: still up -d --build" "$log" "up -d --build"
+assert_lacks "idle, --force: no --force-recreate" "$log" "--force-recreate"
 
 # --- failures
 new_case ".env .env.work"
