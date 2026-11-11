@@ -2149,18 +2149,20 @@ sc_case() {
   printf '%s\n' "$@" >"$shell_code_dir/case.sh"
   assert_eq "$name" "$(sc_tops "$shell_code_dir/case.sh")" "$want"
 }
-T="$(printf '\t')"
+sc_tab="$(printf '\t')"
 sc_case "a shift in \$(( )) opens no heredoc" 11 'x=$((1<<n))' 'f() { :; }'
 sc_case "a shift in a double-quoted \$(( )) opens no heredoc" 11 'echo "$((1<<n))"' 'f() { :; }'
 sc_case "a shift in a \$(( )) on a heredoc body line opens no heredoc" 1001 'cat <<EOF' '$((1<<n))' 'EOF' 'f() { :; }'
 sc_case "a shift in a (( )) command opens no heredoc" 11 '(( y = 1<<n ))' 'f() { :; }'
 sc_case "a heredoc after a closed \$(( )) is read" 1001 'x=$((1)); cat <<EOF' 'body' 'EOF' 'f() { :; }'
 sc_case "an unquoted hyphenated delimiter ends at its terminator" 1001 'cat <<END-NOTES' 'body' 'END-NOTES' 'f() { :; }'
-sc_case "an unquoted dotted <<- delimiter ends at its tabbed terminator" 1001 'cat <<-END.TXT' "${T}body" "${T}END.TXT" 'f() { :; }'
+sc_case "an unquoted dotted <<- delimiter ends at its tabbed terminator" 1001 'cat <<-END.TXT' "${sc_tab}body" "${sc_tab}END.TXT" 'f() { :; }'
 sc_case "a single-quoted hyphenated delimiter ends at its terminator" 1001 "cat <<'END-NOTES'" 'body' 'END-NOTES' 'f() { :; }'
 sc_case "a partly quoted delimiter ends at END" 1001 'cat <<E"N"D' 'body' 'END' 'f() { :; }'
 sc_case "a backslash-quoted delimiter ends at EOF" 1001 'cat <<\EOF' 'body' 'EOF' 'f() { :; }'
 sc_case "a quoted delimiter with a space ends at its terminator" 1001 'cat <<"a b"' 'body' 'a b' 'f() { :; }'
+sc_case "a double-quoted delimiter with an escaped quote ends at a\"b" 1001 'cat <<"a\"b"' 'body' 'a"b' 'f() { :; }'
+sc_case "a double-quoted delimiter with an escaped backslash ends at a\\b" 1001 'cat <<"a\\b"' 'body' 'a\b' 'f() { :; }'
 sc_case "a variable delimiter ends at its terminator" 1001 'cat <<$X' 'body' '$X' 'f() { :; }'
 sc_case "a subshell after a blank opens no arithmetic" 10011 '( (cat <<EOF' 'body' 'EOF' ') )' 'f() { :; }'
 sc_case "let x=1<<n is a heredoc" 1001 'let x=1<<n' 'body' 'n' 'f() { :; }'

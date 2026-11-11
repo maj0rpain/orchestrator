@@ -27,7 +27,7 @@ _hook_bash_in_arith() {
 # escapes, with quotes removed. Sets HOOK_BASH_HEREDOC_WORD and
 # HOOK_BASH_HEREDOC_STRIP (1 for `<<-`); fails when there is no word.
 _hook_bash_heredoc_word() {
-  local w="$1" word="" j=0 ch q
+  local w="$1" word="" j=0 ch q tail
   HOOK_BASH_HEREDOC_STRIP=0
   if [ "${w::1}" = "-" ]; then HOOK_BASH_HEREDOC_STRIP=1; w="${w:1}"; fi
   w="${w#"${w%%[![:blank:]]*}"}"
@@ -36,8 +36,8 @@ _hook_bash_heredoc_word() {
     case "$ch" in
       [[:blank:]]|';'|'&'|'|'|'<'|'>'|'('|')') break ;;
       "'")
-        q="${w:j+1}"
-        if [[ "$q" == *"'"* ]]; then q="${q%%"'"*}"; j=$((j + ${#q} + 2)); else j=${#w}; fi
+        tail="${w:j+1}"
+        if [[ "$tail" == *"'"* ]]; then q="${tail%%"'"*}"; j=$((j + ${#q} + 2)); else q="$tail"; j=${#w}; fi
         word+="$q" ;;
       '"')
         j=$((j + 1))

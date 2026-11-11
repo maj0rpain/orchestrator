@@ -1883,7 +1883,7 @@ done
 for bp_cmd in $'cat >n <<\'END-NOTES\'\nx\nEND-NOTES\npgrep -f x' $'cat <<END-NOTES\nx\nEND-NOTES\npgrep x' \
   $'cat <<END.TXT\nx\nEND.TXT\npgrep x' $'cat <<"a b"\nx\na b\npgrep x' $'cat <<E"N"D\nx\nEND\npgrep x' \
   $'x=$((1<<n))\necho\npgrep x' $'(( y = 1<<n ))\npgrep x' $'cat <<\\EOF\nx\nEOF\npgrep x' $'cat <<$X\nx\n$X\npgrep x' \
-  $'cat <<<word\npgrep x'; do
+  $'cat <<<word\npgrep x' $'cat <<"a\\"b"\nx\na"b\npgrep x' $'cat <<"a\\\\b"\nx\na\\b\npgrep x'; do
   bp_out="$(bash_hook_scan "$BPOLL" default "$bp_cmd")"
   assert_eq "bash poll hook: denies '${bp_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bp_out")" deny
 done

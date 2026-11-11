@@ -23,12 +23,18 @@
 # x=1<<n is still a heredoc. Every global and function it defines starts with
 # sc_ or shell_code.
   function sc_push(m) { sc_sp++; sc_st[sc_sp] = m; sc_depth[sc_sp] = 0 }
+  # sc_open_subst(line, i): opens the $(( or $( at column i, adds it to sc_out,
+  # and returns the column of its last character.
+  function sc_open_subst(line, i) {
+    if (substr(line, i, 3) == "$((") { sc_push("A"); sc_out = sc_out "$(("; return i + 2 }
+    sc_push("C"); sc_out = sc_out "$("; return i + 1
+  }
   # sc_scan(line): walks line from the state on sc_st[1..sc_sp], over the
   # code sc_st[0], building its words view in sc_out, and returns the column
   # its comment starts at, 0 for none. A heredoc opened on it is queued in
   # sc_hword[1..sc_nh]; a continuation backslash in code sets sc_cont and
   # leaves the character before it in sc_prev.
-  function sc_scan(line,   i, n, c, c2, m, prev, w, j, k, q) {
+  function sc_scan(line,   i, n, c, c2, m, prev, w, j, k, q, dc) {
     n = length(line); prev = sc_prev; sc_prev = ""; sc_out = ""
     for (i = 1; i <= n; i++) {
       c = substr(line, i, 1); c2 = substr(line, i, 2); m = sc_st[sc_sp]
@@ -37,8 +43,7 @@
       else if (m == "D" || m == "H" || m == "P") {
         if (c == "\\") i++
         else if (c2 == "$(") {
-          if (substr(line, i, 3) == "$((") { sc_push("A"); sc_out = sc_out "$(("; i += 2 }
-          else { sc_push("C"); sc_out = sc_out "$("; i++ }
+          i = sc_open_subst(line, i)
         }
         else if (c2 == "${") { sc_push("P"); i++ }
         else if (c == "`") { sc_push("B"); sc_out = sc_out "`" }
@@ -59,10 +64,9 @@
         else if (c == "\047") sc_push("S")
         else if (c == "\"") sc_push("D")
         else if (c2 == "$(") {
-          if (substr(line, i, 3) == "$((") { sc_push("A"); sc_out = sc_out "$(("; i += 2 }
-          else { sc_push("C"); sc_out = sc_out "$("; i++ }
+          i = sc_open_subst(line, i)
         }
-        else if (c2 == "((" && m != "A") { sc_push("A"); sc_out = sc_out "(("; i++ }
+        else if (c2 == "(("&& m != "A") { sc_push("A"); sc_out = sc_out "(("; i++ }
         else if (c2 == "${") { sc_push("P"); i++ }
         else if (c == "`") { if (m == "B") { sc_sp--; sc_out = sc_out " " } else { sc_push("B"); sc_out = sc_out "`" } }
         else if (m == "A" && c == "(") { sc_depth[sc_sp]++; sc_out = sc_out c }
@@ -81,17 +85,23 @@
           while (substr(line, j, 1) == " " || substr(line, j, 1) == "\t") j++
           w = ""; q = 0; k = j
           while (k <= n) {
-            c = substr(line, k, 1)
-            if (c == "\047") { q = 1; k++; while (k <= n && substr(line, k, 1) != "\047") w = w substr(line, k++, 1) }
-            else if (c == "\"") { q = 1; k++; while (k <= n && substr(line, k, 1) != "\"") w = w substr(line, k++, 1) }
-            else if (c == "\\") { q = 1; k++; w = w substr(line, k, 1) }
-            else if (index(" \t;&|<>()", c)) break
-            else w = w c
+            dc = substr(line, k, 1)
+            if (dc == "\047") { q = 1; k++; while (k <= n && substr(line, k, 1) != "\047") w = w substr(line, k++, 1) }
+            else if (dc == "\"") {
+              q = 1; k++
+              while (k <= n && substr(line, k, 1) != "\"") {
+                if (substr(line, k, 1) == "\\" && index("\\$`\"", substr(line, k + 1, 1))) k++
+                w = w substr(line, k++, 1)
+              }
+            }
+            else if (dc == "\\") { q = 1; k++; w = w substr(line, k, 1) }
+            else if (index(" \t;&|<>()", dc)) break
+            else w = w dc
             k++
           }
           if (k > j) {
             sc_nh++; sc_hword[sc_nh] = w; sc_hquoted[sc_nh] = q
-            i = k - 1; c = substr(line, i, 1)
+            i = k - 1
           } else i++
           sc_out = sc_out "q"
         }
