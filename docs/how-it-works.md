@@ -394,7 +394,8 @@ exists, so it is also how a new project starts. Name projects to limit it
 (`scripts/autopilot-up.sh work`; `default` means `.env`). `--fresh` builds
 with `--pull --no-cache`, refreshing the base image and Claude Code too;
 without it the build cache is used and only the plugin changes. A project whose
-container is running a phase session is skipped and reported as busy;
+container is running a phase session, or a pickup in progress, is skipped and
+reported as busy;
 `--force` recreates it anyway and says what it killed. It prints an `engine:`
 line, then one line per project with the outcome and the plugin version and
 commit baked in, keeps going past a failed project, and exits non-zero when
