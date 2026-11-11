@@ -130,7 +130,8 @@ open_pr() {
 # open's restart path (#1609), for a flow whose state already names its PR: the
 # PR must be open on <branch>, else it dies naming it and creates none. It
 # pushes, then writes the title, the body (issue line included, as on
-# creation, from the PR's own base, warning when that is not the flow's) and each requested label the PR lacks, removing none. A failed
+# creation, from the PR's own base, warning when that is not the flow's) and
+# each requested label the PR lacks, removing none. A failed
 # push dies before any PR write; a failed write dies naming it and each write
 # already landed. A rerun repeats every write.
 update_pr() {
