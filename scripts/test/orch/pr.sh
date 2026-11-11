@@ -1304,14 +1304,18 @@ fake_pr_body 57 $'Refs #12\n\nAdds the widget.\n'
 printf 'diff --git a/w b/w\n+widget\n' >"$ORCH_GH_FAKE_STORE/prs/57/diff"
 fake_pr 58 open orch/120-bar main
 fake_pr_body 58 $'Closes #120\n'
+out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
+assert_status "pr read finds the PR whose issue line names the issue" "$st" 0
+assert_eq "writing its body, a rule, then its diff" "$(cat "$out_file")" \
+  "$(printf 'Refs #12\n\nAdds the widget.\n\n---\ndiff --git a/w b/w\n+widget')"
 # One listing carries every body: no single-body read is needed, and a second
 # listing is never made.
 fake_fail adapter_pr_body "HTTP 500"
 fake_fail_after adapter_prs_open_bodies 1
 out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
 fake_unfail
-assert_status "pr read finds the PR whose issue line names the issue, reading no single body and listing once" "$st" 0
-assert_eq "writing its body, a rule, then its diff" "$(cat "$out_file")" \
+assert_status "pr read with no single-body read and one listing still succeeds" "$st" 0
+assert_eq "writing the same body, rule and diff" "$(cat "$out_file")" \
   "$(printf 'Refs #12\n\nAdds the widget.\n\n---\ndiff --git a/w b/w\n+widget')"
 out="$("$ORCH" pr read 12 2>&1)"; st=$?
 assert_status "pr read without a file fails" "$st" 1
