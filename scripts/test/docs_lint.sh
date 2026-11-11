@@ -1416,7 +1416,6 @@ check "every start site points at Agent settings and reads each role it starts" 
   "$(scan_agent_settings "$PLUGIN_ROOT")"
 
 fixture="$(new_fixture)"
-mkdir -p "$fixture/docs"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Start a fresh subagent | The Agent tool. | Ignored ([settings](#agent-settings)). |' \
   '' '## Fallbacks' '' '## Agent settings' >"$fixture/docs/host-capabilities.md"
@@ -2042,7 +2041,6 @@ scan_capability_table() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/docs"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Ask | `AskUserQuestion`. | Plain text. |' '| Guard | A hook. |  |' \
   '| Start | The Agent tool. | One | two. |' >"$fixture/docs/host-capabilities.md"
@@ -2069,7 +2067,6 @@ scan_row_unverified() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/docs"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Good | Works. | **Unverified**. |' '| Bare | Works. | Works. |' \
   '| Swapped | **Unverified**. | Works. |' \
@@ -4334,6 +4331,58 @@ flags "an over-long line after a mid-document --- is flagged" \
 spares "a # shellcheck directive is not flagged" "$out" '^scripts/orch/exempt\.sh:[23]:'
 spares "an unbreakable token after a shell # is not flagged" \
   "$out" '^scripts/orch/exempt\.sh:4:'
+# fence_case <name> <line>...: docs/<name>.md holding the given lines, one per
+# argument; L and P stand for an over-long code line and an over-long prose
+# line, and I for an over-long code line indented five spaces.
+fence_case() {
+  local name="$1" l; shift
+  for l in "$@"; do
+    case "$l" in
+      L) wide_line 'some code ' 90 ;;
+      I) wide_line '     some code ' 90 ;;
+      P) wide_line 'Some prose ' 81 ;;
+      *) printf '%b\n' "$l" ;;
+    esac
+  done >"$fixture/docs/$name.md"
+}
+mkdir -p "$fixture/docs"
+fence_case nest4 '````' '```' L '```' '````' P
+fence_case nest4odd '````' '```' L '````' P
+fence_case info3 '```' '```bash' L '```' P
+fence_case tilde4 '~~~~' '~~~' L '~~~~' P
+fence_case trail4 '````' '```' L '````   ' P
+fence_case crclose '```' L '```\r' P
+fence_case longclose '```' L '````' P
+fence_case deep '     ```' I '     ````' P
+out="$(scan_line_width "$fixture")"
+spares "a four-backtick block holding three-backtick lines stays exempt" \
+  "$out" '^docs/nest4\.md:3:'
+flags "prose after a four-backtick block is flagged" \
+  "$out" "docs/nest4.md:6: 81 columns, past 80"
+spares "a four-backtick block with an odd number of inner fences stays exempt" \
+  "$out" '^docs/nest4odd\.md:3:'
+flags "prose after an odd-inner-fence block is flagged, no phantom fence" \
+  "$out" "docs/nest4odd.md:5: 81 columns, past 80"
+spares "a fence stays open across a run followed by an info string" \
+  "$out" '^docs/info3\.md:3:'
+flags "prose after a fence holding an info-string run is flagged" \
+  "$out" "docs/info3.md:5: 81 columns, past 80"
+spares "a four-tilde fence holding a three-tilde line stays exempt" \
+  "$out" '^docs/tilde4\.md:3:'
+flags "prose after a four-tilde fence is flagged" \
+  "$out" "docs/tilde4.md:5: 81 columns, past 80"
+flags "a closer with trailing spaces closes the fence" \
+  "$out" "docs/trail4.md:5: 81 columns, past 80"
+flags "a closer ending in a CR closes the fence" \
+  "$out" "docs/crclose.md:4: 81 columns, past 80"
+spares "a fence closed by a longer run keeps its code exempt" \
+  "$out" '^docs/longclose\.md:2:'
+flags "prose after a longer-run closer is flagged" \
+  "$out" "docs/longclose.md:4: 81 columns, past 80"
+spares "a fence opened five spaces deep keeps its code exempt" \
+  "$out" '^docs/deep\.md:2:'
+flags "prose after a deep fence closed by a longer run is flagged" \
+  "$out" "docs/deep.md:4: 81 columns, past 80"
 mkdir -p "$fixture/commands" "$fixture/changelog.d" "$fixture/docs/adr" \
   "$fixture/.out-of-scope"
 for f in README.md commands/c.md docs/adr/0001-a.md CHANGELOG.md changelog.d/12.md \
