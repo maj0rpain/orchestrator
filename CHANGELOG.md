@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.10
+
+`ticket reset` now also removes the parent's own saved report, so `redo review` on a collapsed breakdown no longer leaves the one ticket looking already landed.
+
 ## 5.0.9
 
 `orch.sh review-pass begin` keeps numbering review passes past 99: it prints one past the highest pass number at any width, so the hundredth pass's reports are no longer overwritten.
