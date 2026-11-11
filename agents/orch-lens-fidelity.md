@@ -1,6 +1,6 @@
 ---
 name: orch-lens-fidelity
-description: The Fidelity lens of an orchestrator spec review - reads a spec issue's body and comments for its fidelity to the plan, and writes its findings to one file. Started only by the orch-spec-review skill, with the paths it reads.
+description: The Fidelity lens of an orchestrator spec review - reads a spec issue's body and comments for its fidelity to the plan, and writes its findings to one file. Started by the orch-spec-review skill in the orch-flow skill's spec phase, with the paths it reads.
 tools: [Read, Grep, Glob, Write]
 ---
 

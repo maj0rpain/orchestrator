@@ -74,6 +74,19 @@ orch-lens-consistency, orch-lens-testability, and orch-lens-implementability
 custom agents. Whenever the orch-spec-review skill is used, those four custom
 agents are required too.
 
+The orch-flow skill runs the orch-spec-review skill with the
+orch-lens-fidelity, orch-lens-consistency, orch-lens-testability, and
+orch-lens-implementability custom agents, and the orch-quick-implement skill
+runs it with the orch-lens-consistency, orch-lens-testability, and
+orch-lens-implementability custom agents.
+
+The orch-interview skill depends on the orch-implementer, orch-lens-fidelity,
+orch-lens-consistency, orch-lens-testability, orch-lens-implementability,
+orch-reviewer-spec, orch-reviewer-standards, orch-fixer, orch-closer, and
+orch-resolver custom agents, since its closing can run a flow, a quick
+implementation or a blueprint in the same session. Whenever the orch-interview
+skill is used, those ten custom agents are required too.
+
 The orch-audit-docs skill depends on the orch-doc-auditor custom agent.
 Whenever the orch-audit-docs skill is used, that custom agent is required too.
 
