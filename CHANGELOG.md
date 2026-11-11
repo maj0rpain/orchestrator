@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.15
+
+`pr open`, restarted on a PR the flow already records, now writes its `Closes` or `Refs` issue line from the base that PR actually targets, and warns when that differs from the flow's base.
+
 ## 5.0.14
 
 A resumed `breakdown publish` of a half-published ticket now adds only the blocking edges the ticket lacks, instead of re-posting every edge, so a rerun after a mid-ticket death finishes the breakdown.
