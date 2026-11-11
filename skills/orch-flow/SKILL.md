@@ -399,7 +399,9 @@ re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
    flow's base branch. `pr open` itself writes the issue line ahead of the
    body - `Closes #<issue>` when the base branch is the default branch, `Refs
    #<issue>` otherwise - so the body file carries no closing keyword of its
-   own.
+   own. On a restart that updates the PR the flow already records, the line
+   follows the base that PR actually targets, and `pr open` warns when that
+   differs from the flow's base.
    Write the body file, a temporary file outside the repo, by the body
    layout in `docs/pr-writing.md` (under the plugin root), which owns its
    headings and style. Its **Summary**, **Evidence** and **Merge Danger**

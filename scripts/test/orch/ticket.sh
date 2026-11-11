@@ -21,6 +21,17 @@ ticket_fixture() {
 # Shared by this file's merge, same-named tag and reclaim sections.
 commit_file() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
 
+# fake_fail_times_after <operation> <k> <n> [stderr]: fake_fail_times, but only
+# once k calls of the operation have succeeded - a transient failure after the
+# reads ahead of it answered. Used by the verify-then-die section.
+fake_fail_times_after() {
+  local op="$1" k="$2"
+  shift 2
+  fake_fail_times "$op" "$@"
+  printf '%s\n' "$k" >"$ORCH_GH_FAKE_STORE/fail/$op.after"
+}
+
+
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
 # sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`
@@ -157,19 +168,19 @@ assert_eq "the link it wrote stays, for a human to see" "$(fake_sub_issues_of 50
 
 fake_next_issue 300
 blocker="$("$ORCH" ticket publish 50 "Blocker" "$body")"
-fake_lag adapter_blockers 2
+fake_lag adapter_blockers 3   # the pre-add read, then both read-backs
 out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a blocking edge that never shows up dies rather than falling back" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #301"
 assert_contains "not a silent fallback" "$out" "did not verify"
 
-fake_fail_times adapter_blockers 1
+fake_fail_times_after adapter_blockers 1 1   # the pre-add read succeeds
 out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a transient blocked-by read failure is retried, not died on" "$st" 0
 assert_eq "printing only the child's number, no stray stderr" "$out" "302"
 assert_eq "its edge is in place" "$(fake_blockers_of 302)" "$blocker"
 
-fake_fail adapter_blockers
+fake_fail_after adapter_blockers 1   # the pre-add read succeeds
 out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a blocked-by read that fails twice dies" "$st" 1
 assert_contains "with the links message" "$out" "gh could not read ticket #303's links: fake gh: adapter_blockers failed"
@@ -186,7 +197,7 @@ assert_not_contains "and only its first line" "$out" "second line"
 assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
 fake_unfail
 
-fake_fail_after adapter_blockers 0 "$GH_502"
+fake_fail_after adapter_blockers 1 "$GH_502"
 out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a blockers read-back that fails twice dies" "$st" 1
 assert_contains "with gh's first line" "$out" "gh could not read ticket #305's links: HTTP 502: Bad Gateway"
