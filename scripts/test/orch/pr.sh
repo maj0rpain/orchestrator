@@ -1311,6 +1311,32 @@ assert_eq "writing its body, a rule, then its diff" "$(cat "$out_file")" \
 out="$("$ORCH" pr read 12 2>&1)"; st=$?
 assert_status "pr read without a file fails" "$st" 1
 assert_contains "with its usage" "$out" "usage: orch.sh pr read <issue> <file>"
+# One listing carries every body: no single-body read is needed, and a second
+# listing is never made.
+fake_fail adapter_pr_body "HTTP 500"
+fake_fail_after adapter_prs_open_bodies 1
+out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
+assert_status "pr read reads no single PR body, and lists once" "$st" 0
+assert_eq "writing the same body, rule and diff" "$(cat "$out_file")" \
+  "$(printf 'Refs #12\n\nAdds the widget.\n\n---\ndiff --git a/w b/w\n+widget')"
+fake_unfail
+fake_fail adapter_prs_open_bodies "HTTP 502"
+out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
+assert_status "a failed listing fails" "$st" 1
+assert_contains "naming the step" "$out" "gh could not list the open PRs"
+case "$out" in *"no open PR"*) bad "never as no PR" "" ;; *) ok "never as no PR" ;; esac
+fake_unfail
+# A first line ending in a carriage return still matches; of two same-repo
+# PRs naming the issue the newer is written; a hard body is byte for byte.
+fake_pr 70 open orch/13-a main
+fake_pr_body 70 $'Closes #13\r\n\r\nOlder.\n'
+fake_pr 71 open orch/13-b main
+fake_pr_body 71 $'Closes #13\r\n\tTab \\ "q" caf\xc3\xa9 \xe2\x9c\x93\n'
+printf 'diff --git a/n b/n\n+newer\n' >"$ORCH_GH_FAKE_STORE/prs/71/diff"
+out="$("$ORCH" pr read 13 "$out_file" 2>&1)"; st=$?
+assert_status "pr read matches a CRLF first line" "$st" 0
+assert_eq "writing the newer PR's body byte for byte, then its diff" "$(cat "$out_file")" \
+  "$(printf 'Closes #13\r\n\tTab \\ "q" caf\xc3\xa9 \xe2\x9c\x93\n\n---\ndiff --git a/n b/n\n+newer')"
 fake_fail adapter_pr_diff "HTTP 502"
 out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
 assert_status "a failed diff read fails" "$st" 1
