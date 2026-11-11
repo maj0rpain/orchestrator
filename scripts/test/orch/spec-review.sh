@@ -2011,13 +2011,14 @@ check_refused src "a bare CRLF @@" "$d" "orch: batch.md line 44: unknown line '@
 src_quote_dir() {
   local d
   d="$(src_dir)"
-  sed -i '7c\@@ comment @alice 2026-01-02T00:00:00Z\n@@ quote\nAlpha should say\nalpha prime.' "$d/batch.md"
-  sed -i 's/^@@ item 1 fidelity apply minor$/@@ item 1 consolidation apply material/; s/^Alpha prime line\.$/&\n@@ end\n@@ why Alpha folds in the comment/' "$d/batch.md"
+  sed -i '7a\@@ comment @alice 2026-01-02T00:00:00Z\n@@ quote\nAlpha should say\nalpha prime.' "$d/batch.md"
+  sed -i 's/^@@ item 1 fidelity apply minor$/@@ item 1 consolidation apply material/; /^Alpha prime line\.$/{n;s/$/\n@@ why Alpha folds in the comment/}' "$d/batch.md"
   printf '%s\n' "$d"
 }
 d="$(src_quote_dir)"
 src "$d" --full 1
 src_lf_out="$out"; src_lf_st="$st"
+assert_status "the LF @@ quote batch passes" "$src_lf_st" 0
 sed -i 's/$/\r/' "$d/batch.md"
 src "$d" --full 1
 assert_status "a CRLF @@ quote batch passes as its LF twin does" "$st" "$src_lf_st"
