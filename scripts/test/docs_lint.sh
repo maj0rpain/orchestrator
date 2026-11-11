@@ -3239,13 +3239,20 @@ spares "an orch-review with no frontmatter whose body names orch-review-pass kee
 check "orch-review holds the loop only and points to orch-review-pass" \
   "$(scan_review_loop_sheds_pass "$PLUGIN_ROOT")"
 
+# junie_agents_sentence <plugin root> <opening>: the sentence of the snippet's
+# custom-agents section that starts at <opening>, up to its first full stop,
+# read across wrapped lines. Empty when there is none.
+junie_agents_sentence() {
+  md_section "$1/docs/junie/AGENTS.md" "## orchestrator plugin: custom agents" 2>/dev/null \
+    | flat_text | grep -oE "(^| )$2[^.]*"
+  return 0
+}
+
 # scan_junie_review_pass <plugin root>: one line when Junie's custom-agent
 # block has no orch-review-pass dependency sentence naming both reviewers.
 scan_junie_review_pass() {
   local r="$1" doc="docs/junie/AGENTS.md" sentence
-  # The sentence runs to its first full stop, across a wrapped line.
-  sentence="$(md_section "$r/$doc" "## orchestrator plugin: custom agents" 2>/dev/null \
-    | flat_text | grep -oE '(^| )The orch-review-pass skill depends on[^.]*')"
+  sentence="$(junie_agents_sentence "$r" 'The orch-review-pass skill depends on')"
   { grep -qF 'orch-reviewer-spec' <<<"$sentence" && grep -qF 'orch-reviewer-standards' <<<"$sentence"; } \
     || echo "$doc: no orch-review-pass dependency sentence naming both reviewers"
   return 0
@@ -3277,7 +3284,7 @@ check "Junie's custom-agent block names orch-review-pass's reviewers" \
 # the spec review.
 scan_lens_description_starters() {
   local r="$1" lens f desc skill
-  for lens in fidelity consistency testability implementability; do
+  for lens in $lenses; do
     f="agents/orch-lens-$lens.md"
     if [ ! -f "$r/$f" ]; then echo "$f: missing"; continue; fi
     desc="$(skill_description "$r/$f")"
@@ -3292,21 +3299,19 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/agents"
 flags "a missing lens file is flagged" \
   "$(scan_lens_description_starters "$fixture")" "agents/orch-lens-fidelity.md: missing"
-for lens in fidelity consistency testability implementability; do
+for lens in $lenses; do
   printf '%s\n' '---' "name: orch-lens-$lens" \
     'description: A lens. Started only by the orch-spec-review skill.' '---' \
     >"$fixture/agents/orch-lens-$lens.md"
 done
 flags "a lens description naming neither skill is flagged" \
   "$(scan_lens_description_starters "$fixture")" "agents/orch-lens-fidelity.md: description does not name orch-flow"
-flags "a non-Fidelity description without orch-quick-implement is flagged" \
-  "$(scan_lens_description_starters "$fixture")" "agents/orch-lens-testability.md: description does not name orch-quick-implement"
 printf '%s\n' '---' 'name: orch-lens-testability' \
   'description: A lens. Started by the orch-flow skill.' '---' \
   >"$fixture/agents/orch-lens-testability.md"
 flags "a non-Fidelity description naming only orch-flow is flagged" \
   "$(scan_lens_description_starters "$fixture")" "agents/orch-lens-testability.md: description does not name orch-quick-implement"
-for lens in fidelity consistency testability implementability; do
+for lens in $lenses; do
   printf '%s\n' '---' "name: orch-lens-$lens" \
     'description: A lens. Started by the orch-spec-review skill, run by orch-flow and orch-quick-implement.' '---' \
     >"$fixture/agents/orch-lens-$lens.md"
@@ -3320,15 +3325,6 @@ assert_empty "a Fidelity description naming only orch-flow is not flagged" \
   "$(scan_lens_description_starters "$fixture")"
 check "each lens description names the skills that run the spec review" \
   "$(scan_lens_description_starters "$PLUGIN_ROOT")"
-
-# junie_agents_sentence <plugin root> <opening>: the sentence of the snippet's
-# custom-agents section that starts at <opening>, up to its first full stop,
-# read across wrapped lines. Empty when there is none.
-junie_agents_sentence() {
-  md_section "$1/docs/junie/AGENTS.md" "## orchestrator plugin: custom agents" 2>/dev/null \
-    | flat_text | grep -oE "(^| )$2[^.]*"
-  return 0
-}
 
 # scan_junie_interview_agents <plugin root>: one line when the snippet's
 # orch-interview dependency sentence is missing, or lacks an agent the
