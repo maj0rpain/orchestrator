@@ -78,6 +78,49 @@ assert_status "a resume of an already-linked ticket succeeds without linking aga
 fake_unfail
 restore_suite_env
 
+# A resume adds only the blocking edges a ticket lacks: ticket 3's first edge
+# landed before the first run died, so the rerun, allowed one blocker add,
+# adds just the missing one.
+breakdown_fixture
+fake_fail_after adapter_blocker_add 2
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed edge add dies" "$st" 1
+assert_contains "naming the draft position" "$out" "ticket 3 of the draft"
+assert_eq "ticket 3 is recorded created" "$(tail -n1 .orchestrator/breakdown/50/numbers)" "3 102 created"
+fake_unfail
+fake_fail_after adapter_blocker_add 1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a resume with part of the edges present adds only the missing one" "$st" 0
+fake_unfail
+assert_eq "ticket 3 ends with its full blocker set" "$(fake_blockers_of 102)" "100 101"
+assert_eq "marker written" "$(on_disk .orchestrator/breakdown/50/published)" "present"
+restore_suite_env
+
+# A ticket whose link and every edge landed but whose linked record did not:
+# the resume writes no edge (the fake's blocker add is made to fail).
+breakdown_fixture
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+sed -i '$d' .orchestrator/breakdown/50/numbers
+rm -f .orchestrator/breakdown/50/published
+fake_fail adapter_blocker_add
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a resume with every edge present writes no edge" "$st" 0
+fake_unfail
+assert_eq "ticket 3 is recorded linked" "$(tail -n1 .orchestrator/breakdown/50/numbers)" "3 102 linked"
+restore_suite_env
+
+# A failed blocker read dies before any add, naming the ticket.
+breakdown_fixture
+fake_fail_after adapter_blockers 1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed blocker read dies" "$st" 1
+assert_contains "naming the draft position" "$out" "ticket 2 of the draft"
+assert_contains "naming the read" "$out" "read ticket #101's blockers"
+fake_unfail
+assert_eq "no edge for ticket 2" "$(fake_blockers_of 101)" ""
+assert_eq "ticket 2 is recorded created" "$(tail -n1 .orchestrator/breakdown/50/numbers)" "2 101 created"
+restore_suite_env
+
 breakdown_fixture
 fake_fail adapter_issue_create
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
