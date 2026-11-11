@@ -982,6 +982,79 @@ for rd_mode in file comment; do
   redo_review_scenario "$rd_mode"
 done
 
+# --- redo ends in one closing state write -------------------------------------
+# Each redo moves its phase and clears its attempt keys in one write, taken
+# last: a death at that write leaves the flow at its old phase with the keys its
+# guards need (the redo's own state writes all fail under state_write_fails_bin,
+# so these flows are ones whose earlier steps write no state).
+echo
+echo "redo ends in one closing state write"
+no_temp_left() { local n=0 f; for f in .orchestrator/state.json.*; do if [ -e "$f" ]; then n=$((n + 1)); fi; done; echo "$n"; }
+
+# redo spec --new-issue: the old issue closed, then the closing write dies.
+fresh_flow redoclose1
+fake_github
+fake_issue 70 open
+state_fixture phase implement
+"$ORCH" state set issue 70
+writeln '# spec' >.orchestrator/handoff/02-spec.md
+out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "redo spec --new-issue whose closing write fails exits 1" "$st" 1
+assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
+assert_eq "the old issue is closed" "$(fake_state_of 70)" "CLOSED"
+assert_eq "state.issue is still recorded" "$("$ORCH" state get issue)" "70"
+assert_eq "and the phase is still implement" "$("$ORCH" state get phase)" "implement"
+assert_eq "with no temp file left beside state.json" "$(no_temp_left)" "0"
+out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "the rerun without the failure exits 0" "$st" 0
+assert_eq "stepping back to spec" "$("$ORCH" state get phase)" "spec"
+assert_eq "with no issue recorded" "$("$ORCH" state get issue)" ""
+assert_eq "and the old issue carrying one redo comment" \
+  "$(fake_comments_of 70 | grep -c 'closed by an orchestrator redo')" "1"
+
+# A resumed default redo spec: its branch already retired and recorded.
+fresh_flow redoclose3
+fake_github
+fake_issue 71 open
+slug_="$("$ORCH" state get slug)"
+state_fixture phase implement
+"$ORCH" state set issue 71
+state_fixture branch "orch/71-$slug_-redo-1"
+state_fixture redo_count 1
+state_fixture pr 90
+state_fixture base_sha deadbeefcafe
+before="$(redo_state_snapshot)$("$ORCH" state get issue)$("$ORCH" state get base_sha)"
+out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a default redo spec whose closing write fails exits 1" "$st" 1
+assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
+assert_eq "leaving issue, branch, pr, base_sha and phase as they were" \
+  "$(redo_state_snapshot)$("$ORCH" state get issue)$("$ORCH" state get base_sha)" "$before"
+assert_eq "with no temp file left beside state.json" "$(no_temp_left)" "0"
+
+# A resumed redo review: its branch already retired and recorded.
+fresh_flow redoclose2
+fake_github
+fake_issue 72 open
+fake_pr 91 open "orch/72-redoclose2-redo-1" main
+state_fixture phase review
+"$ORCH" state set issue 72
+state_fixture branch "orch/72-redoclose2-redo-1"
+state_fixture redo_count 1
+state_fixture pr 91
+state_fixture base_sha deadbeefcafe
+state_fixture iteration 5
+"$ORCH" state set budget 5
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+before="$(redo_state_snapshot)$("$ORCH" state get issue)$("$ORCH" state get base_sha)$("$ORCH" state get iteration)"
+out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a resumed redo review whose closing write fails exits 1" "$st" 1
+assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
+assert_eq "leaving branch, pr, base_sha, iteration and phase as they were" \
+  "$(redo_state_snapshot)$("$ORCH" state get issue)$("$ORCH" state get base_sha)$("$ORCH" state get iteration)" "$before"
+assert_eq "with no temp file left beside state.json" "$(no_temp_left)" "0"
+restore_suite_env
+
 # --- redo help names handoffs by role (#1066) -------------------------------
 # The help names each handoff by its role and points at handoff path for the
 # file, so renaming a handoff file never leaves the help stale.

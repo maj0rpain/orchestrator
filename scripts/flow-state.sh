@@ -210,11 +210,37 @@ flow_state_create() {
 # Every other value is stored as a string. Keys are not checked against the
 # table: only lookups are.
 flow_state_write() {
-  case "$3" in
-    null|true|false) flow_state_put "$1" "$2" "$3" ;;
-    *[!0-9]*|"") flow_state_write_string "$1" "$2" "$3" ;;
-    *) flow_state_put "$1" "$2" "$(jq -n --arg v "$3" '$v | tonumber')" ;;
+  flow_state_put "$1" "$2" "$(flow_state_json "$3")"
+}
+
+# flow_state_json <value>: prints <value> as flow_state_write stores it: null,
+# true and false literally, an all-digit value as a number, anything else as a
+# JSON string.
+flow_state_json() {
+  case "$1" in
+    null|true|false) printf '%s\n' "$1" ;;
+    *[!0-9]*|"") jq -n --arg v "$1" '$v' ;;
+    *) jq -n --arg v "$1" '$v | tonumber' ;;
   esac
+}
+
+# flow_state_write_many <file> <key> <value> [<key> <value>]...: sets every
+# key in one replace, each value coerced as flow_state_write does, stamping
+# updated as flow_state_put does. A failure - an odd argument count, a value
+# that will not convert, or a failed replace - leaves <file> untouched and no
+# temp file.
+flow_state_write_many() {
+  local file="$1" obj='{}' k v
+  shift
+  [ -f "$file" ] && [ $(( $# % 2 )) -eq 0 ] || return 1
+  while [ $# -gt 0 ]; do
+    k="$1"
+    v="$(flow_state_json "$2")" || return
+    obj="$(jq -n --argjson o "$obj" --arg k "$k" --argjson v "$v" '$o + {($k): $v}')" || return
+    shift 2
+  done
+  flow_state_replace "$file" --argjson o "$obj" --arg now "$(now)" \
+    '.updated = $now | . + $o' "$file"
 }
 
 # flow_state_write_string <file> <key> <value>: stores <value> as a JSON

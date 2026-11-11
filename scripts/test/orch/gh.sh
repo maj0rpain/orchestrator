@@ -484,6 +484,17 @@ fake_pr 73 open topic main
 assert_eq "pr close: an unreadable origin still closes the PR" "$(cat "$ORCH_GH_FAKE_STORE/prs/73/state")" "CLOSED"
 assert_eq "and appends its comment" "$(fake_pr_comments_of 73)" "Redone."
 cd "$close_saved" || exit 1
+# adapter_issue_close models GitHub too: an issue already CLOSED stays as it is:
+# no comment, and its reason and duplicate target unchanged.
+fake_github
+fake_issue 74 open
+faked adapter_issue_close 74 --reason "not planned"
+faked adapter_issue_close 74 --comment "Again." --reason completed --duplicate-of 30; st=$?
+assert_status "issue close: an already CLOSED issue closes again, exit 0" "$st" 0
+assert_eq "leaving its comments as they were" "$(fake_comments_of 74)" ""
+assert_eq "its state CLOSED" "$(cat "$ORCH_GH_FAKE_STORE/issues/74/state")" "CLOSED"
+assert_eq "its reason unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/74/reason")" "not planned"
+assert_eq "and no duplicate target" "$(ls "$ORCH_GH_FAKE_STORE/issues/74/duplicate_of" 2>/dev/null)" ""
 # One head rule for every read of a PR's head: absent is forty zeros, present is
 # as stored, so an empty head stands for GitHub's null headRefOid. A sentinel
 # keeps the trailing empty line a command substitution would strip.
