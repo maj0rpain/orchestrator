@@ -533,6 +533,9 @@ cmd_pr_read() {
   gh_or_die --out raw "list the open PRs" adapter_prs_open_bodies
   while IFS=$'\t' read -r pr enc flag; do
     [ -n "$pr" ] || continue
+    # Every listed line must read, whichever issue its body names.
+    [ "$flag" = true ] || [ "$flag" = false ] ||
+      die "the open PRs for issue #$issue could not be read"
     body="$(jq -r . <<<"$enc")" ||
       die "the open PRs for issue #$issue could not be read"
     line="$(printf '%s\n' "$body" | sed -n '1{s/\r$//;p;}')"
