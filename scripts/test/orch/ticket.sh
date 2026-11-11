@@ -381,7 +381,8 @@ restore_suite_env
 # --- ticket reset ------------------------------------------------------------
 # Reopens every sub-issue of <parent> that is currently closed, and only
 # those - what redo review needs before handing back to a fresh implement
-# phase, whose frontier query would otherwise find nothing.
+# phase, whose frontier query would otherwise find nothing. It also drops the
+# parent's own saved report, which a collapsed breakdown's one ticket leaves.
 echo
 echo "ticket reset"
 ticket_fixture
@@ -470,6 +471,13 @@ fake_fail adapter_sub_issue_unlink
 fake_unfail
 "$ORCH" ticket report show "$t3" >/dev/null 2>&1; st=$?
 assert_status "retire removes a report before the unlink that can fail" "$st" 1
+# a collapsed breakdown's report is saved under the spec issue's own number
+fake_issue 96 open
+"$ORCH" ticket report save 96 "$rep"
+"$ORCH" ticket reset 96; st=$?
+assert_status "reset on a collapsed parent exits 0" "$st" 0
+"$ORCH" ticket report show 96 >/dev/null 2>&1; st=$?
+assert_status "reset removes the collapsed parent's own saved report" "$st" 1
 restore_suite_env
 
 # --- ticket parent -----------------------------------------------------------
