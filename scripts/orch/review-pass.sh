@@ -50,10 +50,11 @@ review_pass_begin() {
   exclude_orch_dirs
   local dir="$ORCH/review-pass/$branch" f n max=0
   mkdir -p "$dir"
-  for f in "$dir"/iteration-[0-9][0-9]-*; do
+  for f in "$dir"/iteration-[0-9]*-*; do
     [ -e "$f" ] || continue
     n="${f##*/iteration-}"
     n="${n%%-*}"
+    case "$n" in '' | *[!0-9]*) continue ;; esac
     [ "$((10#$n))" -le "$max" ] || max="$((10#$n))"
   done
   printf '%s/iteration-%02d\n' "$dir" "$((max + 1))"
