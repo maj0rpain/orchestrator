@@ -10,7 +10,8 @@
 #   name     only these projects; `default` means docker/.env
 #   --fresh  build with --pull --no-cache, refreshing the base image and
 #            Claude Code
-#   --force  recreate a project whose container is running a phase session
+#   --force  recreate a project whose container is running a phase session or
+#            a pickup in progress
 #
 # Prints an `engine:` line, then one summary line per project: env file,
 # project name, outcome (created, rebuilt, skipped, failed) and the plugin
@@ -39,20 +40,29 @@ done
 
 # The busy probe, run by plain sh inside the container so that it works against
 # an image built before this script existed: one "<issue> <phase>" line per
-# live run pidfile (a pid, or a pid and start time matching field 22 of its
-# /proc stat), the phase from the newest log beside run/, or ?.
+# live issue. An issue's record is chosen as the Liveness module chooses
+# it: its run record when it has one, alive or not, else its tick record
+# (the record a pickup holds between the claim and the run record). The
+# alive test is the probe's own, not the Liveness module's: a record is
+# alive when it is a pid and start time matching field 22 of the pid's
+# /proc stat, or a bare pid that kill -0 accepts (kept for run records
+# from older images). A run's phase comes from the newest log beside
+# run/, or ?; a live tick record prints "pickup", since a pickup has no log yet.
 probe='d="${ORCH_CLONE_DIR:-/home/orch/repo}/.orchestrator/autopilot"
-for f in "$d"/run/*.pid; do
-  [ -e "$f" ] || continue
-  read -r p st x <"$f"
+alive() {
+  read -r p st x <"$1"
   if [ -n "$st" ]; then
-    s=$(cat "/proc/$p/stat" 2>/dev/null) || continue
+    s=$(cat "/proc/$p/stat" 2>/dev/null) || return 1
     s=${s##*) }
     set -- $s
-    [ "${20}" = "$st" ] || continue
+    [ "${20}" = "$st" ] || return 1
   else
-    kill -0 "$p" 2>/dev/null || continue
+    kill -0 "$p" 2>/dev/null || return 1
   fi
+}
+for f in "$d"/run/*.pid; do
+  [ -e "$f" ] || continue
+  alive "$f" || continue
   i=$(basename "$f" .pid)
   l=$(ls -t "$d"/logs/"$i"-*.log 2>/dev/null | sed -n 1p)
   ph="?"
@@ -62,6 +72,13 @@ for f in "$d"/run/*.pid; do
     ph=${ph%%-*}
   fi
   echo "$i $ph"
+done
+for f in "$d"/run/*.tick; do
+  [ -e "$f" ] || continue
+  i=$(basename "$f" .tick)
+  [ -e "$d/run/$i.pid" ] && continue
+  alive "$f" || continue
+  echo "$i pickup"
 done'
 
 engine="$(docker info --format '{{.Name}}')" || die "docker info failed; is Docker running?"
@@ -120,12 +137,12 @@ for name in "${names[@]}"; do
   if [ -n "$running" ]; then
     if live="$(compose exec -T autopilot sh -c "$probe")"; then
       if [ -n "$live" ]; then
-        sessions="$(printf '%s\n' "$live" | awk 'NF { printf "%s#%s %s", (n++ ? ", " : ""), $1, $2 }')"
+        busy="$(printf '%s\n' "$live" | awk 'NF { printf "%s#%s %s", (n++ ? ", " : ""), $1, $2 }')"
         if [ "$force" -eq 0 ]; then
-          summary_line skipped "busy: $sessions"
+          summary_line skipped "busy: $busy"
           continue
         fi
-        killed="forced: killed $sessions"
+        killed="forced: killed $busy"
       fi
     elif [ "$force" -eq 0 ]; then
       summary_line skipped "busy: unknown (probe failed)"
