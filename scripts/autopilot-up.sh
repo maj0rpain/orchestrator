@@ -137,12 +137,12 @@ for name in "${names[@]}"; do
   if [ -n "$running" ]; then
     if live="$(compose exec -T autopilot sh -c "$probe")"; then
       if [ -n "$live" ]; then
-        sessions="$(printf '%s\n' "$live" | awk 'NF { printf "%s#%s %s", (n++ ? ", " : ""), $1, $2 }')"
+        busy="$(printf '%s\n' "$live" | awk 'NF { printf "%s#%s %s", (n++ ? ", " : ""), $1, $2 }')"
         if [ "$force" -eq 0 ]; then
-          summary_line skipped "busy: $sessions"
+          summary_line skipped "busy: $busy"
           continue
         fi
-        killed="forced: killed $sessions"
+        killed="forced: killed $busy"
       fi
     elif [ "$force" -eq 0 ]; then
       summary_line skipped "busy: unknown (probe failed)"
