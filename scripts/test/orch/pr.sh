@@ -296,14 +296,6 @@ out="$("$ORCH" pr open "New title" "$body" 2>"$errf")"; st=$?
 assert_status "restart: an empty PR base succeeds" "$st" 0
 assert_first_line "restart: an empty PR base follows the flow's base" "$(fake_pr_body_of 50)" "Closes #16"
 assert_eq "restart: an empty PR base prints no warning" "$(cat "$errf")" ""
-fake_pr 51 closed orch/16-propen uat
-state_fixture pr 51
-fake_pr_body 50 "untouched"
-out="$("$ORCH" pr open "Title" "$body" 2>"$errf")"; st=$?
-assert_status "restart: a closed PR on uat is refused" "$st" 1
-assert_not_contains "restart: a refused PR prints no base warning" "$(cat "$errf")" "targets"
-assert_eq "restart: a refused PR writes nothing" "$(fake_pr_body_of 50)" "untouched"
-rm -rf "$ORCH_GH_FAKE_STORE/prs/51"
 fake_pr 50 open orch/16-propen main
 state_fixture pr 50
 state_fixture base uat
@@ -317,11 +309,18 @@ printf 'keep-me\nci\n' >"$ORCH_GH_FAKE_STORE/prs/50/labels"
 fake_pr_body 50 "old body"
 
 for closed in closed merged; do
-  fake_pr 51 "$closed" orch/16-propen main
+  fake_pr 51 "$closed" orch/16-propen uat
+  fake_pr_body 51 "untouched"
+  printf 'untouched title\n' >"$ORCH_GH_FAKE_STORE/prs/51/title"
   state_fixture pr 51
   out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
   assert_status "restart: a $closed recorded PR fails pr open" "$st" 1
   assert_contains "restart: naming the PR" "$out" "PR #51"
+  assert_contains "restart: the refusal message is unchanged" "$out" \
+    "PR #51, recorded in state, is $(printf '%s' "$closed" | tr a-z A-Z), not open - no PR was opened or updated"
+  assert_not_contains "restart: a refused PR prints no base warning" "$out" "targets"
+  assert_eq "restart: a $closed PR's body is unwritten" "$(fake_pr_body_of 51)" "untouched"
+  assert_eq "restart: a $closed PR's title is unwritten" "$(fake_pr_title_of 51)" "untouched title"
   assert_eq "restart: creating none" "$(fake_prs)" "${prs_before}51 "
   rm -rf "$ORCH_GH_FAKE_STORE/prs/51"
 done
