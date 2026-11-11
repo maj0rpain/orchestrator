@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.4
+
+A spec review's `batch.md` or `tickets.md` saved with CRLF line endings now reads exactly as its LF twin: each parser strips one trailing CR from every line as it is read, so anchors match, quotes render without a CR and no CR reaches the published body.
+
 ## 5.0.3
 
 The spec-review lens agents now name the orch-flow and orch-quick-implement skills in their descriptions, and the Junie AGENTS.md snippet says which skills run the spec review and what the orch-interview skill depends on, so Junie's capability filter keeps the lenses visible.
