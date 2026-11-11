@@ -1,5 +1,41 @@
 # Changelog
 
+## 5.0.12
+
+`scripts/dev/width.sh` now closes a fenced block only on a bare run of the opener's character at least as long as the opener, so a four-backtick block holding three-backtick lines stays exempt from the line-width check.
+
+## 5.0.11
+
+The planning hook writes its once-per-session marker only when it delivers the planning message, so a planning load outside a git repository no longer uses up the session's delivery or arms the edit guard.
+
+## 5.0.10
+
+`ticket reset` now also removes the parent's own saved report, so `redo review` on a collapsed breakdown no longer leaves the one ticket looking already landed.
+
+## 5.0.9
+
+`orch.sh review-pass begin` keeps numbering review passes past 99: it prints one past the highest pass number at any width, so the hundredth pass's reports are no longer overwritten.
+
+## 5.0.8
+
+A failed comments read during the dying handoff read (`phase advance`, `review known-items`) now dies with gh's reason, or `could not read issue #N's comments`, instead of reporting the handoff as missing and telling the agent to post a duplicate.
+
+## 5.0.7
+
+`pr read` now finds an issue's PR in two `gh` calls however many PRs are open: one listing that carries every open PR's body, then the winner's diff, instead of one body read per open PR plus a repeat read of the winner.
+
+## 5.0.6
+
+`autopilot-up.sh --force` now passes `--force-recreate` to `compose up` when it reports `forced: killed ...`, so a busy container with an unchanged image is really recreated and the killed session stops.
+
+## 5.0.5
+
+`autopilot-up.sh` now treats a watcher that is part-way through a pickup as busy, so a rebuild no longer kills the pickup and leaves a failure stop on the issue. Its busy probe reads tick records as well as run records, with the Liveness module's record precedence (the run record decides when it exists, else the tick record), and reports `busy: #<issue> pickup`.
+
+## 5.0.4
+
+A spec review's `batch.md` or `tickets.md` saved with CRLF line endings now reads exactly as its LF twin: each parser strips one trailing CR from every line as it is read, so anchors match, quotes render without a CR and no CR reaches the published body.
+
 ## 5.0.3
 
 The spec-review lens agents now name the orch-flow and orch-quick-implement skills in their descriptions, and the Junie AGENTS.md snippet says which skills run the spec review and what the orch-interview skill depends on, so Junie's capability filter keeps the lenses visible.

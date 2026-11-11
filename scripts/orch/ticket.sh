@@ -253,6 +253,9 @@ cmd_ticket_close() {
 # Reopens every sub-issue of <parent> that is currently closed, and only
 # those - the fix `redo review` needs before handing back to a fresh
 # implement phase, whose frontier query would otherwise find nothing.
+# It also drops the saved report of each ticket it reopens and <parent>'s own
+# saved report: a collapsed breakdown's one ticket saves its report under the
+# parent's number, and a left-over one would read as landed to `ticket reclaim`.
 cmd_ticket_reset() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reset <parent>"
   local subs line n state
@@ -265,6 +268,7 @@ cmd_ticket_reset() {
     ticket_report_remove "$n"
     gh_or_die "reopen ticket #$n" adapter_issue_reopen "$n"
   done <<<"$subs"
+  ticket_report_remove "$1"
 }
 
 # The directory the driver's saved ticket reports live in.

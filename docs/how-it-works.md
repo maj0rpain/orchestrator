@@ -394,7 +394,8 @@ exists, so it is also how a new project starts. Name projects to limit it
 (`scripts/autopilot-up.sh work`; `default` means `.env`). `--fresh` builds
 with `--pull --no-cache`, refreshing the base image and Claude Code too;
 without it the build cache is used and only the plugin changes. A project whose
-container is running a phase session is skipped and reported as busy;
+container is running a phase session, or a pickup in progress, is skipped and
+reported as busy;
 `--force` recreates it anyway and says what it killed. It prints an `engine:`
 line, then one line per project with the outcome and the plugin version and
 commit baked in, keeps going past a failed project, and exits non-zero when
@@ -543,7 +544,11 @@ every skill runs `scripts/orch.sh`.
 
 A `PostToolUse` hook on `Skill(orch-interview)`, and on the
 `mattpocock-skills` entry points named above when they are installed, starts
-a planning session. It fires once per session and tells the model that once a
+a planning session. It delivers its message once per session, at the first
+planning load that delivers it: one whose working directory is inside a git
+repository. A load that sends nothing writes no marker, so on Claude Code it
+does not arm the edit guard (on Junie the guard never arms, ADR-0025). It
+tells the model that once a
 shared understanding is reached, the next step is a human's call, not the
 model's: call `AskUserQuestion` with exactly four options (three on Junie),
 start the flow (`orchestrator:orch-flow`), a quick implementation

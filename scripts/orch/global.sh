@@ -558,7 +558,9 @@ orch.sh - deterministic operations for the orchestrator flow
   ticket report show <n>     print ticket <n>'s saved report; exits 1 when
                               none is saved
   ticket reset <parent>      reopen every sub-issue of <parent> that is
-                              currently closed, and only those
+                              currently closed, and only those; also drops the
+                              saved reports of the tickets it reopens and
+                              <parent>'s own saved report
   ticket parent <n>          print <n>'s parent issue number, or nothing
                               when <n> is not a sub-issue
   ticket exists <parent>      whether <parent> already has a ticket
