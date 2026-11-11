@@ -48,6 +48,49 @@ assert_eq "repo show --host reads the host from origin too" \
 git remote set-url origin https://github.com/acme/widgets.git
 assert_contains "help lists --host under repo show" "$("$ORCH" help)" "repo show [--name|--host]"
 
+# User-less scp-like origins, ssh alias translation and gh-style host
+# normalisation. A section stub ssh, ahead of the suite-wide identity one,
+# answers for github-work as write_ssh_stub (setup.sh) says, recording calls.
+write_ssh_stub 'exit 1' 0
+show_name() { PATH="$ssh_stub_dir:$PATH" "$ORCH" repo show --name 2>/dev/null; }
+for url in github.com:acme/widgets.git github.com:acme/widgets; do
+  git config remote.origin.url "$url"
+  assert_eq "user-less origin $url resolves to acme/widgets" "$("$ORCH" repo show --name)" "acme/widgets"
+done
+git config remote.origin.url ghe.example.com:acme/widgets
+assert_eq "a user-less origin keeps its non-github host" "$("$ORCH" repo show --name)" "ghe.example.com/acme/widgets"
+write_ssh_stub 'echo hostname github.com' 0
+for url in git@github-work:acme/widgets.git ssh://git@github-work/acme/widgets.git; do
+  git config remote.origin.url "$url"
+  assert_eq "alias origin $url resolves to acme/widgets" "$(show_name)" "acme/widgets"
+  assert_eq "alias origin $url has host github.com" \
+    "$(PATH="$ssh_stub_dir:$PATH" "$ORCH" repo show --host)" "github.com"
+done
+write_ssh_stub 'echo hostname ghe.example.com' 0
+git config remote.origin.url git@github-work:acme/widgets.git
+assert_eq "an alias mapped to a ghe host keeps that host" "$(show_name)" "ghe.example.com/acme/widgets"
+for ans in ssh.github.com GitHub.com; do
+  write_ssh_stub "echo hostname $ans" 0
+  assert_eq "a stub answering $ans gives acme/widgets" "$(show_name)" "acme/widgets"
+done
+write_ssh_stub 'exit 1' 0
+assert_eq "a failing ssh keeps the alias host" "$(show_name)" "github-work/acme/widgets"
+write_ssh_stub 'echo nothing' 0
+assert_eq "an ssh with no hostname line keeps the alias host" "$(show_name)" "github-work/acme/widgets"
+write_ssh_stub 'echo hostname github.com' 0
+: >"$ssh_calls"
+git config remote.origin.url https://github-work/acme/widgets
+assert_eq "an https origin is never translated" "$(show_name)" "github-work/acme/widgets"
+git config remote.origin.url https://GitHub.com/acme/widgets
+assert_eq "an https origin host is lowercased" "$(show_name)" "acme/widgets"
+for url in ../mirror:old/repo -oProxyCommand=x:acme/widgets ssh://git@-oProxyCommand=x/acme/widgets; do
+  git config remote.origin.url "$url"
+  PATH="$ssh_stub_dir:$PATH" "$ORCH" repo show >/dev/null 2>&1; st=$?
+  assert_status "origin $url does not resolve" "$st" 1
+done
+assert_eq "https and unsafe origins never call ssh" "$(cat "$ssh_calls")" ""
+git config remote.origin.url https://github.com/acme/widgets.git
+
 # No GH_REPO and no usable origin: local commands still work, repo show fails.
 git remote remove origin
 "$ORCH" init norepo >/dev/null 2>&1
