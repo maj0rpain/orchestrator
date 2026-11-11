@@ -21,6 +21,17 @@ ticket_fixture() {
 # Shared by this file's merge, same-named tag and reclaim sections.
 commit_file() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
 
+# fake_fail_times_after <operation> <k> <n> [stderr]: fake_fail_times, but only
+# once k calls of the operation have succeeded - a transient failure after the
+# reads ahead of it answered. Used by the verify-then-die section.
+fake_fail_times_after() {
+  local op="$1" k="$2"
+  shift 2
+  fake_fail_times "$op" "$@"
+  printf '%s\n' "$k" >"$ORCH_GH_FAKE_STORE/fail/$op.after"
+}
+
+
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
 # sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`
@@ -163,8 +174,7 @@ assert_status "a blocking edge that never shows up dies rather than falling back
 assert_contains "naming the ticket" "$out" "ticket #301"
 assert_contains "not a silent fallback" "$out" "did not verify"
 
-fake_fail_times adapter_blockers 1
-printf "%s\n" 1 >"$ORCH_GH_FAKE_STORE/fail/adapter_blockers.after"   # the pre-add read succeeds
+fake_fail_times_after adapter_blockers 1 1   # the pre-add read succeeds
 out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a transient blocked-by read failure is retried, not died on" "$st" 0
 assert_eq "printing only the child's number, no stray stderr" "$out" "302"
