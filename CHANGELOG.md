@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.12
+
+`scripts/dev/width.sh` now closes a fenced block only on a bare run of the opener's character at least as long as the opener, so a four-backtick block holding three-backtick lines stays exempt from the line-width check.
+
 ## 5.0.11
 
 The planning hook writes its once-per-session marker only when it delivers the planning message, so a planning load outside a git repository no longer uses up the session's delivery or arms the edit guard.
