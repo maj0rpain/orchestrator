@@ -14,13 +14,16 @@ HOOK_BASH_SCOPE='
   | '
 
 # Calls hook_bash_walk's test with the part, its unquoted text and its head,
-# then starts the next part's head. Reads hook_bash_walk's locals (dynamic
-# scope).
+# then clears the part, its unquoted text and the head. Reads
+# hook_bash_walk's locals (dynamic scope).
 hook_bash_walk_call() {
   local hd="$part"
   [ "$head_set" = 1 ] && hd="$head"
+  local rc=0
   head=""; head_set=0
-  "$test_fn" "$part" "$unq" "$hd"
+  "$test_fn" "$part" "$unq" "$hd" || rc=$?
+  part=""; unq=""
+  return "$rc"
 }
 
 # The command walker (#2085): splits command $1 into parts - on `;`, `&&`, `||`
@@ -65,11 +68,11 @@ hook_bash_walk() {
           '#')
             if [ -z "$part" ] || [[ "${part: -1}" == [[:space:]] ]]; then break; fi
             part+="$c"; unq+="$c" ;;
-          ';') hook_bash_walk_call && return 0; part=""; unq="" ;;
+          ';') hook_bash_walk_call && return 0 ;;
           '&'|'|')
             if [ "${line:i+1:1}" = "$c" ]; then
               hook_bash_walk_call && return 0
-              part=""; unq=""; i=$((i + 2)); continue
+              i=$((i + 2)); continue
             fi
             if [ "$c" = "|" ] && [ "$head_set" = 0 ]; then head="$part"; head_set=1; fi
             part+="$c"; unq+="$c" ;;
@@ -90,7 +93,6 @@ hook_bash_walk() {
       :  # a trailing lone | continues the pipeline on the next line
     elif [ -z "$quote" ]; then
       hook_bash_walk_call && return 0
-      part=""; unq=""
     else
       part+=$'\n'
     fi

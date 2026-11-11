@@ -104,7 +104,7 @@ hook_bash_stdin_is_reader() {
   local x skip=0
   case "$1" in *'<'*) return 1 ;; esac
   read -ra raw <<<"$1"
-  # An empty part has nothing to read; "${raw[@]}" of an empty array is an
+  # An empty head has nothing to read; "${raw[@]}" of an empty array is an
   # unbound variable under set -u on bash before 4.4.
   [ "${#raw[@]}" -gt 0 ] || return 1
   # Drop output redirections (>f, 2>&1, &>f, >> f, a lone > and its target):
