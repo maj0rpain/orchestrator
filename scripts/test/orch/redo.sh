@@ -13,10 +13,12 @@ fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
 # the redo note, the comment redo posts on the PR it closes.
 redo_note_count() { fake_pr_comments_of "$1" | grep -c 'closed by an orchestrator redo'; }
 
-# redo_state_snapshot: the state a refused redo must leave as it was.
+# redo_state_snapshot: the state a refused or failed redo must leave as it was.
 redo_state_snapshot() {
   printf '%s|' "$("$ORCH" state get branch)" "$("$ORCH" state get pr)" \
-    "$("$ORCH" state get redo_count)" "$("$ORCH" state get phase)"
+    "$("$ORCH" state get redo_count)" "$("$ORCH" state get phase)" \
+    "$("$ORCH" state get issue)" "$("$ORCH" state get base_sha)" \
+    "$("$ORCH" state get iteration)"
 }
 
 # --- redo review ----------------------------------------------------------
@@ -126,7 +128,7 @@ assert_status "redo review refuses while a ticket worktree is left" "$st" 1
 assert_contains "naming the worktree's path" "$out" ".orchestrator/worktrees/t4"
 assert_contains "and its remove hint" "$out" "orch.sh ticket-worktree remove 4"
 assert_contains "giving the redo reason" "$out" "a redo would strand their unmerged ticket work"
-assert_eq "leaving branch, PR, redo_count and phase" "$(redo_state_snapshot)" "$snap_state"
+assert_eq "leaving the state as it was" "$(redo_state_snapshot)" "$snap_state"
 assert_eq "the handoffs" "$(ls .orchestrator/handoff)" "$snap_handoffs"
 assert_eq "and the checked-out branch" "$(git branch --show-current)" "$snap_branch"
 "$ORCH" ticket-worktree remove 4 >/dev/null 2>&1
@@ -1023,12 +1025,12 @@ state_fixture branch "orch/71-$slug_-redo-1"
 state_fixture redo_count 1
 state_fixture pr 90
 state_fixture base_sha deadbeefcafe
-before="$(redo_state_snapshot)$("$ORCH" state get issue)$("$ORCH" state get base_sha)"
+before="$(redo_state_snapshot)"
 out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a default redo spec whose closing write fails exits 1" "$st" 1
 assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
 assert_eq "leaving issue, branch, pr, base_sha and phase as they were" \
-  "$(redo_state_snapshot)$("$ORCH" state get issue)$("$ORCH" state get base_sha)" "$before"
+  "$(redo_state_snapshot)" "$before"
 assert_eq "with no temp file left beside state.json" "$(no_temp_left)" "0"
 
 # A resumed redo review: its branch already retired and recorded.
@@ -1046,12 +1048,12 @@ state_fixture iteration 5
 "$ORCH" state set budget 5
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
-before="$(redo_state_snapshot)$("$ORCH" state get issue)$("$ORCH" state get base_sha)$("$ORCH" state get iteration)"
+before="$(redo_state_snapshot)"
 out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a resumed redo review whose closing write fails exits 1" "$st" 1
 assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
 assert_eq "leaving branch, pr, base_sha, iteration and phase as they were" \
-  "$(redo_state_snapshot)$("$ORCH" state get issue)$("$ORCH" state get base_sha)$("$ORCH" state get iteration)" "$before"
+  "$(redo_state_snapshot)" "$before"
 assert_eq "with no temp file left beside state.json" "$(no_temp_left)" "0"
 restore_suite_env
 
