@@ -88,6 +88,28 @@ for args in "" "abc" "12x" "../12" "12 13"; do
 done
 out="$("$ORCH" review-pass begin 2>&1)"
 assert_contains "a missing number gets the usage" "$out" "usage: orch.sh review-pass begin <issue>"
+
+# Numbering keeps rising past 99, and a zero-padded number is read in base 10.
+git checkout -q -b quick/13-bar trunk
+rp3="$top/.orchestrator/review-pass/quick/13-bar"
+mkdir -p "$rp3"
+echo x >"$rp3/iteration-08-spec.md"
+echo x >"$rp3/iteration-09-spec.md"
+out="$("$ORCH" review-pass begin 13 2>&1)"
+assert_eq "08 and 09 are read in base 10: next is iteration-10" "$out" "$rp3/iteration-10"
+echo x >"$rp3/iteration-99-spec.md"
+echo x >"$rp3/iteration-100-spec.md"
+out="$("$ORCH" review-pass begin 13 2>&1)"
+assert_eq "one past 100 once passes 99 and 100 exist" "$out" "$rp3/iteration-101"
+echo x >"$rp3/iteration-101-known.md"
+out="$("$ORCH" review-pass begin 13 2>&1)"
+assert_eq "numbering keeps rising: iteration-102" "$out" "$rp3/iteration-102"
+echo x >"$rp3/iteration-1x-notes.md"
+echo x >"$rp3/iteration--notes.md"
+out="$("$ORCH" review-pass begin 13 2>"$top/.orchestrator/rp-err.txt")"; st=$?
+assert_status "digit-less strays do not fail begin" "$st" 0
+assert_eq "strays are ignored: iteration-102" "$out" "$rp3/iteration-102"
+assert_eq "strays write nothing to stderr" "$(cat "$top/.orchestrator/rp-err.txt")" ""
 out="$("$ORCH" review-pass begin abc 2>&1)"
 assert_contains "a non-numeric issue is named" "$out" "issue must be a plain issue number"
 out="$("$ORCH" review-pass wipe 12 2>&1)"; st=$?

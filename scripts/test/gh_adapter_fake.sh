@@ -744,15 +744,18 @@ adapter_prs_open() {
   done | sort -rn
 }
 
-# adapter_prs_open_all: every open PR in the store, newest first, each as
-# `<number>\t<flag>`, the flag as adapter_prs_open prints it.
-adapter_prs_open_all() {
+# adapter_prs_open_bodies: every open PR in the store, newest first, each as
+# `<number>\t<body>\t<flag>`, the body its stored body JSON-encoded (an empty
+# string where unset), the flag as adapter_prs_open prints it.
+adapter_prs_open_bodies() {
   local d
-  ! fake_failing adapter_prs_open_all || return 1
+  ! fake_failing adapter_prs_open_bodies || return 1
   for d in "$(fake_store)"/prs/*/; do
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = OPEN ] || continue
-    printf '%s\t%s\n' "$(basename "$d")" "$(fake_pr_cross_of "$d")"
+    printf '%s\t%s\t%s\n' "$(basename "$d")" \
+      "$(if [ -f "$d/body" ]; then jq -Rs . <"$d/body"; else echo '""'; fi)" \
+      "$(fake_pr_cross_of "$d")"
   done | sort -rn
 }
 

@@ -526,22 +526,29 @@ cmd_pr_update() {
 # with one stderr line, as the Trust module's PR filter words it.
 cmd_pr_read() {
   [ $# -eq 2 ] || die "usage: orch.sh pr read <issue> <file>"
-  local issue="$1" file="$2" raw pr flag body line named="" kept found diff
+  local issue="$1" file="$2" raw pr enc flag body line named="" kept found diff
+  local bodies=()
   is_positive_int "$issue" || die "not an issue number: $issue"
-  gh_or_die --out raw "list the open PRs" adapter_prs_open_all
-  while IFS=$'\t' read -r pr flag; do
+  # One listing carries every body; only the winner's diff is read apart.
+  gh_or_die --out raw "list the open PRs" adapter_prs_open_bodies
+  while IFS=$'\t' read -r pr enc flag; do
     [ -n "$pr" ] || continue
-    gh_or_die --out body "read the body of PR #$pr" adapter_pr_body "$pr"
+    # Every listed line must read, whichever issue its body names.
+    [ "$flag" = true ] || [ "$flag" = false ] ||
+      die "the open PRs for issue #$issue could not be read"
+    body="$(jq -r . <<<"$enc")" ||
+      die "the open PRs for issue #$issue could not be read"
     line="$(printf '%s\n' "$body" | sed -n '1{s/\r$//;p;}')"
     if [ "$line" = "Closes #$issue" ] || [ "$line" = "Refs #$issue" ]; then
       named+="$pr"$'\t'"$flag"$'\n'
+      bodies[pr]="$body"
     fi
   done <<<"$raw"
   kept="$(trust_filter_prs "#$issue" <<<"$named")" ||
     die "the open PRs for issue #$issue could not be read"
   found="${kept%%$'\n'*}"
   [ -n "$found" ] || die "no open PR closes or refers to issue #$issue"
-  gh_or_die --out body "read the body of PR #$found" adapter_pr_body "$found"
+  body="${bodies[found]}"
   gh_or_die --out diff "read the diff of PR #$found" adapter_pr_diff "$found"
   file_write_atomic "$file" "$(printf '%s\n\n---\n%s\n' "$body" "$diff")"$'\n' \
     || die "could not write $file"
