@@ -187,26 +187,31 @@ assert_status "a lone suffix argument exits 1" "$st" 1
 assert_eq "and is taken as the suffix" "$out" "orch: not on a branch (detached HEAD) - x"
 
 # --- checkout busy, redo-retired branch (#1981) -------------------------------
-# The branch signal ignores a current branch a redo retired (-redo-<n>), which
-# still records a base and no PR; a live orch/ branch with no PR stays busy.
+# The branch signal ignores a current branch a redo retired - one carrying
+# branch.<b>.orchestrator-retired, as branch retire records - which still
+# records a base and no PR. A live orch/ branch with no PR stays busy, whatever
+# its slug ends in (#2550).
 echo
 echo "checkout busy redo"
+busy_remedy="Open its PR, or switch off it."
 new_repo_with_origin
-git checkout -q -b orch/7-feature-redo-1
-git config branch.orch/7-feature-redo-1.orchestrator-base main
-out="$(orch_gh_failing branch busy 2>&1)"; st=$?
-assert_status "a -redo-<n> branch with a base and no PR is free" "$st" 0
-assert_eq "and prints nothing" "$out" ""
-
 git checkout -q -b orch/7-feature
 git config branch.orch/7-feature.orchestrator-base main
+orch_gh_failing branch retire orch/7-feature orch/7-feature-redo-1 >/dev/null
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a branch branch retire made, with a base and no PR, is free" "$st" 0
+assert_eq "and prints nothing" "$out" ""
 
-# The busy check through init and branch create, the spec's seam (exit 3).
+# The busy check through init, branch create and branch off (exit 3).
+out="$(orch_gh_failing branch off quick/9-beside 2>&1)"; st=$?
+assert_status "branch off on a retired branch is not refused as busy" "$st" 0
 git checkout -q orch/7-feature-redo-1
 out="$(orch_gh_failing init beside-redo 2>&1)"; st=$?
-assert_status "init on a -redo-<n> branch with a base and no PR is not refused as busy" "$st" 0
-git checkout -q orch/7-feature
-rm -rf .orchestrator
+assert_status "init on a retired branch is not refused as busy" "$st" 0
+
+new_repo_with_origin
+git checkout -q -b orch/7-feature
+git config branch.orch/7-feature.orchestrator-base main
 out="$(orch_gh_failing init beside-live 2>&1)"; st=$?
 assert_status "init on a live orch/ branch with a base and no PR exits 3" "$st" 3
 assert_contains "naming the branch (init)" "$out" "orch/7-feature"
@@ -215,10 +220,11 @@ new_repo_with_origin
 orch_gh_failing init own >/dev/null
 orch_gh_failing state set issue 12
 default="$(git branch --show-current)"
-git checkout -q -b orch/6-earlier-redo-2
-git config branch.orch/6-earlier-redo-2.orchestrator-base "$default"
+git checkout -q -b orch/6-earlier
+git config branch.orch/6-earlier.orchestrator-base "$default"
+orch_gh_failing branch retire orch/6-earlier orch/6-earlier-redo-2 >/dev/null
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
-assert_status "branch create on a -redo-<n> branch with a base and no PR is not refused as busy" "$st" 0
+assert_status "branch create on a retired branch is not refused as busy" "$st" 0
 new_repo_with_origin
 orch_gh_failing init own2 >/dev/null
 orch_gh_failing state set issue 13
@@ -228,3 +234,29 @@ git config branch.orch/6-earlier.orchestrator-base "$default"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on a live orch/ branch with no PR exits 3" "$st" 3
 assert_contains "naming the branch (branch create)" "$out" "orch/6-earlier"
+
+# A live flow branch whose slug ends in -redo-<n> is not retired (#2550).
+new_repo_with_origin
+git checkout -q -b orch/42-cap-redo-3
+git config branch.orch/42-cap-redo-3.orchestrator-base main
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "branch busy on a live -redo-<n>-slug flow branch exits 3" "$st" 3
+assert_contains "with the busy line" "$out" "busy: branch orch/42-cap-redo-3 has no PR yet"
+out="$(orch_gh_failing branch off quick/9-x 2>&1)"; st=$?
+assert_status "branch off on it exits 3" "$st" 3
+assert_contains "with the busy line (branch off)" "$out" "busy: branch orch/42-cap-redo-3 has no PR yet"
+assert_contains "and the remedy (branch off)" "$out" "$busy_remedy"
+out="$(orch_gh_failing init cap 2>&1)"; st=$?
+assert_status "init on it exits 3" "$st" 3
+assert_contains "with the busy line (init)" "$out" "busy: branch orch/42-cap-redo-3 has no PR yet"
+assert_contains "and the remedy (init)" "$out" "$busy_remedy"
+new_repo_with_origin
+orch_gh_failing init own3 >/dev/null
+orch_gh_failing state set issue 14
+default="$(git branch --show-current)"
+git checkout -q -b orch/42-cap-redo-3
+git config branch.orch/42-cap-redo-3.orchestrator-base "$default"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on it exits 3" "$st" 3
+assert_contains "with the busy line (branch create)" "$out" "busy: branch orch/42-cap-redo-3 has no PR yet"
+assert_contains "and the remedy (branch create)" "$out" "$busy_remedy"

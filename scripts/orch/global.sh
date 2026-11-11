@@ -385,7 +385,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               mid-pipeline (a state.json that cannot be read
                               counts as one), a branch the plugin made with no
                               PR yet (no branch.<name>.orchestrator-pr) and
-                              not retired by a redo (-redo-<n>), or
+                              not retired by a redo
+                              (branch.<name>.orchestrator-retired, as branch
+                              retire records), or
                               changes outside the planning allowlist, checked
                               in that order. Exit 0 printing nothing when
                               free; exit 3 printing the first that holds; exit
@@ -418,7 +420,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               to push
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on
                               origin and deleting the old remote ref, without
-                              force-pushing over anything
+                              force-pushing over anything; records the
+                              retirement on <new>
+                              (branch.<new>.orchestrator-retired) once the
+                              rename and its remote steps are done
   issue publish <title> <body-file>
                               create a GitHub issue under ready-for-agent
                               and verify its title and label by reading them
