@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.9
+
+`orch.sh review-pass begin` keeps numbering review passes past 99: it prints one past the highest pass number at any width, so the hundredth pass's reports are no longer overwritten.
+
 ## 5.0.8
 
 A failed comments read during the dying handoff read (`phase advance`, `review known-items`) now dies with gh's reason, or `could not read issue #N's comments`, instead of reporting the handoff as missing and telling the agent to post a duplicate.
