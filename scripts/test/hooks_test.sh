@@ -1766,6 +1766,13 @@ for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'ca
   bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
   assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
+# Heredoc delimiters read as bash's whole word, and `<<` in arithmetic is a shift (#2575).
+for bs_cmd in $'x=$((1<<n))\ncat' $'cat <<\'END-NOTES\'\nx\nEND-NOTES\ncat'; do
+  bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
+  assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bs_out")" deny
+done
+bs_out="$(bash_hook_scan "$BSTDIN" default $'cat <<END-NOTES\ncat\nEND-NOTES')"
+assert_empty "bash stdin hook: default passes a hyphenated heredoc body" "$bs_out"
 bs_out="$(bash_hook_event default "" cat | bash_hook_run "$BSTDIN" 1)"
 assert_eq "bash stdin hook: autopilot 'cat' under default is denied" \
   "$(bash_hook_decision "$bs_out")" deny
@@ -1827,6 +1834,19 @@ for bp_cmd in 'grep "pgrep -f" file' $'cat <<EOF\npgrep x\nEOF' 'ls -l' 'killall
   bp_out="$(bash_hook_scan "$BPOLL" default "$bp_cmd")"; bp_rc=$?
   assert_empty "bash poll hook: passes '${bp_cmd//$'\n'/\\n}'" "$bp_out"
   assert_eq "bash poll hook: '${bp_cmd//$'\n'/\\n}' exits 0" "$bp_rc" 0
+done
+# Heredoc delimiters read as bash's whole word, and `<<` in arithmetic is a shift (#2575).
+for bp_cmd in $'cat >n <<\'END-NOTES\'\nx\nEND-NOTES\npgrep -f x' $'cat <<END-NOTES\nx\nEND-NOTES\npgrep x' \
+  $'cat <<END.TXT\nx\nEND.TXT\npgrep x' $'cat <<"a b"\nx\na b\npgrep x' $'cat <<E"N"D\nx\nEND\npgrep x' \
+  $'x=$((1<<n))\necho\npgrep x' $'(( y = 1<<n ))\npgrep x' $'cat <<\\EOF\nx\nEOF\npgrep x' $'cat <<$X\nx\n$X\npgrep x' \
+  $'cat <<<word\npgrep x'; do
+  bp_out="$(bash_hook_scan "$BPOLL" default "$bp_cmd")"
+  assert_eq "bash poll hook: denies '${bp_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bp_out")" deny
+done
+for bp_cmd in $'cat <<END-NOTES\npgrep x\nEND-NOTES' $'x=$((1)); cat <<END-NOTES\npgrep x\nEND-NOTES' \
+  $'cat <<-END.TXT\n\tpgrep x\n\tEND.TXT' $'let x=1<<n\npgrep x\nn' $'( (cat <<EOF\npgrep x\nEOF\n) )'; do
+  bp_out="$(bash_hook_scan "$BPOLL" default "$bp_cmd")"
+  assert_empty "bash poll hook: passes '${bp_cmd//$'\n'/\\n}'" "$bp_out"
 done
 bp_out="$(bash_hook_scan "$BPOLL" default "$(printf 'echo %9000s; pgrep x' '')")"; bp_rc=$?
 assert_empty "bash poll hook: a command over 8 KB is not scanned" "$bp_out"
