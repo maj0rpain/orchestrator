@@ -1744,7 +1744,10 @@ done
 for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node -' 'bash -s' 'sh -s' \
   'python3 - x' 'node - --flag' 'python3 -u' 'node --input-type=module' 'python3 -v' 'cat -n' 'FOO=1 cat' 'echo a; cat' 'true && cat' 'false || read x' $'echo a\ncat' \
   'cat >out' 'cat > f' 'cat 2>/dev/null' 'python3 >log' 'cat &>o' 'cat >> f' '>o cat' 'cat >& out' 'cat 2>& f' \
-  $'\ncat' $'cd x &&\ncat' $'echo a;\n\ncat' 'cat;' '>o; cat'; do
+  $'\ncat' $'cd x &&\ncat' $'echo a;\n\ncat' 'cat;' '>o; cat' \
+  'cat | grep x' 'python3 | tee log' 'node | tee log' 'bash -s | tee log' 'cat 2>&1 | grep x' 'cat |& grep x' \
+  $'cat |\n  grep x' "cat | grep '<'" 'cat | grep x < f' 'read x | true' 'true && cat | grep x' \
+  'false || cat | grep x' 'echo a; cat | grep x' $'echo a\ncat | grep x'; do
   bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
   assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" \
     "$(bash_hook_decision "$bs_out")" deny
@@ -1757,7 +1760,13 @@ assert_contains "bash stdin hook: the deny reason names the matched part" \
   "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bs_out")" "'cat -'"
 assert_contains "bash stdin hook: the deny reason says how to supply input" \
   "$(jq -r '.reason' <<<"$bs_out")" 'heredoc, <<<, a pipe or </dev/null'
-for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'cat < f' 'cat file' \
+bs_out="$(bash_hook_scan "$BSTDIN" default 'cat | grep x')"
+assert_contains "bash stdin hook: the deny reason names the whole pipeline" \
+  "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$bs_out")" "'cat | grep x'"
+bs_out="$(bash_hook_scan "$BSTDIN" bypassPermissions 'cat | grep x')"
+assert_eq "bash stdin hook: bypass allows 'cat | grep x' with the rewrite" \
+  "$(bash_hook_decision "$bs_out")|$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$bs_out")" "allow|${BS_PREFIX}cat | grep x"
+for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat < f | grep x' 'echo "a|b" | cat' $'cat <<EOF | grep x\nbody\nEOF' 'cat <<< x | grep x' 'cat < f' 'cat file' \
   'python3 script.py' $'cat <<EOF\ncat\nread x\nEOF' $'echo "a\ncat\nb"' 'echo "a; cat"' \
   "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'cat file -n' $'echo a \\\n  cat' \
   $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file' $'cat <<\\EOF\ncat\nEOF' 'cat --help' 'cat --version' 'cat -n --help' \

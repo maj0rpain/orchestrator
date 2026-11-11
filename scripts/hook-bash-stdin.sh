@@ -6,8 +6,9 @@
 # A stray stdin read such as `cat; echo done` hangs a Bash call that nothing
 # will ever feed. Under bypassPermissions the hook rewrites the command to
 # `exec </dev/null`, a newline, then the original, so the read gets
-# end-of-file at once; heredocs, here-strings and pipes inside the command
-# still feed their readers, as they redirect after the exec.
+# end-of-file at once; heredocs and here-strings inside the command still feed
+# their readers, as they redirect after the exec, and a pipe feeds only the
+# commands after it, never the head of its pipeline.
 #
 # Under any other permission mode an in-scope call whose command holds a
 # plain stdin read (hook_bash_stdin_is_reader) is denied with a reason
@@ -44,10 +45,11 @@ hook_bash_stdin_rewrite() {
       }}' 2>/dev/null
 }
 
-# Prints the part $1 with leading whitespace trimmed and succeeds when it is a
-# plain stdin read; else fails printing nothing.
+# Prints the part $1 with leading whitespace trimmed and succeeds when its head
+# $3 is a plain stdin read; else fails printing nothing. A hook_bash_walk
+# callback; $2, the unquoted text, is unused.
 hook_bash_stdin_print_if_reader() {
-  hook_bash_stdin_is_reader "$1" || return 1
+  hook_bash_stdin_is_reader "$3" || return 1
   printf '%s' "${1#"${1%%[![:space:]]*}"}"
 }
 
@@ -87,17 +89,19 @@ hook_bash_stdin_script_is_stdin() {
   return 0
 }
 
-# Succeeds when the one part $1 is a plain stdin read (#2002). $1 is a part
-# from hook_bash_walk. A part is a plain read when its first word, after
+# Succeeds when the pipeline head $1 is a plain stdin read (#2002). $1 is the head
+# hook_bash_walk hands its callback: a part's text before its first unquoted `|`,
+# or the whole part. A head is a plain read when its first word, after
 # leading VAR=value words, is `cat` with no file argument (only options other
 # than its info options, or `-`), `read`, `python`, `python3` or `node` with
 # options only or `-` as its script, unless an info option is present, or
-# `bash`/`sh` with `-s` first - and the part holds no `<` and no `|`, which
-# would feed it. First-word matching only.
+# `bash`/`sh` with `-s` first - and the head holds no `<`, which would feed it.
+# A `|` feeds only the commands after it, so only the head is judged.
+# First-word matching only.
 hook_bash_stdin_is_reader() {
   local -a raw words=()
   local x skip=0
-  case "$1" in *'<'*|*'|'*) return 1 ;; esac
+  case "$1" in *'<'*) return 1 ;; esac
   read -ra raw <<<"$1"
   # An empty part has nothing to read; "${raw[@]}" of an empty array is an
   # unbound variable under set -u on bash before 4.4.
