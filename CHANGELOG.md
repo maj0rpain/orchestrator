@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.5
+
+`autopilot-up.sh` now treats a watcher that is part-way through a pickup as busy, so a rebuild no longer kills the pickup and leaves a failure stop on the issue. Its busy probe reads tick records as well as run records, with the Liveness module's record precedence (the run record decides when it exists, else the tick record), and reports `busy: #<issue> pickup`.
+
 ## 5.0.4
 
 A spec review's `batch.md` or `tickets.md` saved with CRLF line endings now reads exactly as its LF twin: each parser strips one trailing CR from every line as it is read, so anchors match, quotes render without a CR and no CR reaches the published body.
