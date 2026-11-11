@@ -1766,7 +1766,7 @@ for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat | grep x' 'ca
   bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
   assert_empty "bash stdin hook: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
-# Heredoc delimiters read as bash's whole word, and `<<` in arithmetic is a shift (#2575).
+# Heredoc delimiters are bash's whole word; << in arithmetic shifts (#2575).
 for bs_cmd in $'x=$((1<<n))\ncat' $'cat <<\'END-NOTES\'\nx\nEND-NOTES\ncat'; do
   bs_out="$(bash_hook_scan "$BSTDIN" default "$bs_cmd")"
   assert_eq "bash stdin hook: default denies '${bs_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bs_out")" deny
@@ -1835,7 +1835,7 @@ for bp_cmd in 'grep "pgrep -f" file' $'cat <<EOF\npgrep x\nEOF' 'ls -l' 'killall
   assert_empty "bash poll hook: passes '${bp_cmd//$'\n'/\\n}'" "$bp_out"
   assert_eq "bash poll hook: '${bp_cmd//$'\n'/\\n}' exits 0" "$bp_rc" 0
 done
-# Heredoc delimiters read as bash's whole word, and `<<` in arithmetic is a shift (#2575).
+# Heredoc delimiters are bash's whole word; << in arithmetic shifts (#2575).
 for bp_cmd in $'cat >n <<\'END-NOTES\'\nx\nEND-NOTES\npgrep -f x' $'cat <<END-NOTES\nx\nEND-NOTES\npgrep x' \
   $'cat <<END.TXT\nx\nEND.TXT\npgrep x' $'cat <<"a b"\nx\na b\npgrep x' $'cat <<E"N"D\nx\nEND\npgrep x' \
   $'x=$((1<<n))\necho\npgrep x' $'(( y = 1<<n ))\npgrep x' $'cat <<\\EOF\nx\nEOF\npgrep x' $'cat <<$X\nx\n$X\npgrep x' \
