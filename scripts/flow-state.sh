@@ -159,13 +159,20 @@ flow_state_replace() {
     || { rc=$?; rm -f "$tmp"; return "$rc"; }
 }
 
-# flow_state_put <file> <key> <json>: the one write of a key, private to the
-# writers below. It stamps updated before it sets the key, so a write of
-# updated itself sticks.
-flow_state_put() {
+# flow_state_merge <file> <json-object>: the one write of keys, private to the
+# writers below. It stamps updated before it sets the object's keys, so a write
+# of updated itself sticks. An absent <file> is a failure.
+flow_state_merge() {
   [ -f "$1" ] || return 1
-  flow_state_replace "$1" --arg k "$2" --argjson v "$3" --arg now "$(now)" \
-    '.updated = $now | .[$k] = $v' "$1"
+  flow_state_replace "$1" --argjson o "$2" --arg now "$(now)" \
+    '.updated = $now | . + $o' "$1"
+}
+
+# flow_state_put <file> <key> <json>: sets one key through flow_state_merge.
+flow_state_put() {
+  local obj
+  obj="$(jq -nc --arg k "$2" --argjson v "$3" '{($k): $v}')" || return
+  flow_state_merge "$1" "$obj"
 }
 
 # flow_state_seed <slug> <issue> <base>: prints the JSON init seeds a new
@@ -226,21 +233,20 @@ flow_state_json() {
 
 # flow_state_write_many <file> <key> <value> [<key> <value>]...: sets every
 # key in one replace, each value coerced as flow_state_write does, stamping
-# updated as flow_state_put does. A failure - an odd argument count, a value
+# updated as flow_state_merge does. A failure - an odd argument count, a value
 # that will not convert, or a failed replace - leaves <file> untouched and no
 # temp file.
 flow_state_write_many() {
   local file="$1" obj='{}' k v
   shift
-  [ -f "$file" ] && [ $(( $# % 2 )) -eq 0 ] || return 1
+  [ $(( $# % 2 )) -eq 0 ] || return 1
   while [ $# -gt 0 ]; do
     k="$1"
     v="$(flow_state_json "$2")" || return
     obj="$(jq -n --argjson o "$obj" --arg k "$k" --argjson v "$v" '$o + {($k): $v}')" || return
     shift 2
   done
-  flow_state_replace "$file" --argjson o "$obj" --arg now "$(now)" \
-    '.updated = $now | . + $o' "$file"
+  flow_state_merge "$file" "$obj"
 }
 
 # flow_state_write_string <file> <key> <value>: stores <value> as a JSON
