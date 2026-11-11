@@ -194,6 +194,7 @@ assert_eq "and is taken as the suffix" "$out" "orch: not on a branch (detached H
 echo
 echo "checkout busy redo"
 busy_remedy="Open its PR, or switch off it."
+busy_line="busy: branch orch/42-cap-redo-3 has no PR yet"
 new_repo_with_origin
 git checkout -q -b orch/7-feature
 git config branch.orch/7-feature.orchestrator-base main
@@ -241,14 +242,14 @@ git checkout -q -b orch/42-cap-redo-3
 git config branch.orch/42-cap-redo-3.orchestrator-base main
 out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "branch busy on a live -redo-<n>-slug flow branch exits 3" "$st" 3
-assert_contains "with the busy line" "$out" "busy: branch orch/42-cap-redo-3 has no PR yet"
+assert_contains "with the busy line" "$out" "$busy_line"
 out="$(orch_gh_failing branch off quick/9-x 2>&1)"; st=$?
 assert_status "branch off on it exits 3" "$st" 3
-assert_contains "with the busy line (branch off)" "$out" "busy: branch orch/42-cap-redo-3 has no PR yet"
+assert_contains "with the busy line (branch off)" "$out" "$busy_line"
 assert_contains "and the remedy (branch off)" "$out" "$busy_remedy"
 out="$(orch_gh_failing init cap 2>&1)"; st=$?
 assert_status "init on it exits 3" "$st" 3
-assert_contains "with the busy line (init)" "$out" "busy: branch orch/42-cap-redo-3 has no PR yet"
+assert_contains "with the busy line (init)" "$out" "$busy_line"
 assert_contains "and the remedy (init)" "$out" "$busy_remedy"
 new_repo_with_origin
 orch_gh_failing init own3 >/dev/null
@@ -258,5 +259,5 @@ git checkout -q -b orch/42-cap-redo-3
 git config branch.orch/42-cap-redo-3.orchestrator-base "$default"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on it exits 3" "$st" 3
-assert_contains "with the busy line (branch create)" "$out" "busy: branch orch/42-cap-redo-3 has no PR yet"
+assert_contains "with the busy line (branch create)" "$out" "$busy_line"
 assert_contains "and the remedy (branch create)" "$out" "$busy_remedy"

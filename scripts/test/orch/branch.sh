@@ -444,6 +444,13 @@ assert_eq "with git's reason" "$out" \
 assert_eq "a failed delete leaves the new name unmarked" \
   "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" ""
 
+# Once the block clears, the rerun takes the resume path and records it.
+git -C "$bare4" symbolic-ref HEAD refs/heads/unrelated
+out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+assert_status "the rerun after the block clears succeeds" "$st" 0
+assert_eq "and the resumed retire marks the new name" \
+  "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" "true"
+
 out="$(orch_gh_failing branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
