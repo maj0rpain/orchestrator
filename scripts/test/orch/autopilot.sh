@@ -782,7 +782,7 @@ mv "$state7.keep" "$state7"
 # a failed side-checkout add is a failure, the claim released
 fake_issue 8 open ready-for-agent orch:spec
 fake_issue_title 8 "Blocked add"
-# the add fails for a reason unrelated to the name: the base branch cannot be fetched
+# the add fails for a reason unrelated to the name: no base branch fetch
 orig_url="$(git -C "$top" config remote.origin.url)"
 git -C "$top" config remote.origin.url /nonexistent/origin.git
 tick_err="$("$ORCH" autopilot tick 2>&1 >/dev/null)"; st=$?
@@ -790,8 +790,8 @@ git -C "$top" config remote.origin.url "$orig_url"
 assert_status "a failed side-checkout add does not stop the tick" "$st" 0
 assert_eq "the issue is needs-human" "$(fake_labels_of 8)" "needs-human orch:spec ready-for-agent "
 assert_contains "naming the step and keeping its detail" "$(fake_comments_of 8)" "step side-checkout add failed: "
-assert_not_contains "the diagnostic is not the comment's reason" "$(fake_comments_of 8)" "could not fetch base branch"
-assert_contains "the tick's stderr carries the helper's diagnostics" "$tick_err" "could not fetch base branch"
+assert_not_contains "the diagnostic is not the comment's reason" "$(fake_comments_of 8)" "no finished side checkouts"
+assert_contains "the tick's stderr carries the helper's diagnostics" "$tick_err" "no finished side checkouts"
 assert_eq "and the claim is released" "$(fake_claim_held 8)" free
 
 # a failed plan-comment post is a failure, the claim released
