@@ -46,7 +46,8 @@ SHELL_CODE_AWK="$(<"$ROOT/scripts/test/shell_code.awk")" || SHELL_CODE_AWK=""
 # only at column 0 of a line that starts at top level, and a comment line
 # counts toward a description block only when it starts at top level too:
 # shell_code_line, from SHELL_CODE_AWK, says whether a line starts outside any
-# open quote, substitution or heredoc, so the scan keeps no state of its own.
+# open quote, substitution, arithmetic or heredoc, so the scan keeps no state
+# of its own.
 index() {
   awk -v header="$2" "$SHELL_CODE_AWK"'
     BEGIN { print "# " header }
