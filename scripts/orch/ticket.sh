@@ -175,14 +175,18 @@ cmd_ticket_publish() {
 }
 
 # ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
-# every number in <want>, and verifies every link by reading it back, with one
+# every number in <want> the child lacks - its blockers are read once, and only
+# when <want> is non-empty, so a resume never writes an edge already present -
+# and verifies every link by reading it back, with one
 # retry - either status gets it, and the second attempt decides the death: a
 # failed read dies with gh's reason, a mismatch as unverified.
 ticket_edges_and_verify() {
-  local parent="$1" child="$2" want="$3" b gh_err="" st=0
+  local parent="$1" child="$2" want="$3" b have gh_err="" st=0
 
   if [ -n "$want" ]; then
+    have="$(ticket_blockers "$child")" || exit 1
     while IFS= read -r b; do
+      ! list_has "$have" "$b" || continue
       gh_or_die "add a blocking edge from ticket #$child on #$b" \
         adapter_blocker_add "$child" "$b"
     done <<<"$want"

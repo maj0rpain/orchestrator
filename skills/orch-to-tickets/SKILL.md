@@ -161,7 +161,8 @@ blocking edge, applies the `ready-for-agent` triage role's label, and reads all
 of it back before it reports success. It prints the published numbers in
 publishing order. If it fails it names the ticket's draft position and the
 failed write, and a rerun on the same parent finishes from the saved draft,
-linking a ticket created but never linked rather than creating another. Never
+linking a ticket created but never linked rather than creating another,
+and adding only the blocking edges such a ticket lacks. Never
 publish with an ad hoc `gh` call.
 
 When a published ticket's blocking edges are wrong - any number missing or
