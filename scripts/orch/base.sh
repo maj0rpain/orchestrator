@@ -5,6 +5,11 @@
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
+# default_branch_resolve: sets DEFAULT_BRANCH (the name) and
+# DEFAULT_BRANCH_SOURCE in the current shell: github (GitHub's answer),
+# origin-head (origin/HEAD, read in full) or fallback (the literal guess main).
+# Asks afresh each time; no memo.
+#
 # Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen
 # at clone time - in a clone taken while a feature branch was checked out it
 # names that branch, which would silently base every feature branch off the
@@ -18,11 +23,6 @@
 # with none falls through to the local pointer rather than dying: the answer
 # has always been best-effort, and init and base show ask it before anything
 # needs GitHub.
-#
-# default_branch_resolve: sets DEFAULT_BRANCH (the name) and
-# DEFAULT_BRANCH_SOURCE in the current shell: github (GitHub's answer),
-# origin-head (origin/HEAD, read in full) or fallback (the literal guess main).
-# Asks afresh each time; no memo.
 default_branch_resolve() {
   local b="" head_ref
   DEFAULT_BRANCH_SOURCE=github
