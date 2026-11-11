@@ -7,8 +7,8 @@
 # `docker` first on PATH. The fake appends each call's argv, cwd and
 # ORCH_ENV_FILE to $FAKE_DIR/log and answers from canned files in $FAKE_DIR,
 # keyed by project (`default` without -p): info, config.<k>, psa.<k> (ps -a -q),
-# ps.<k> (ps -q), probe.<k>, probe-fail.<k> and up-fail.<k>. Assertions are on
-# the log, the summary lines and the exit status.
+# ps.<k> (ps -q), probe.<k>, probe-fail.<k>, up-fail.<k> and build-fail.<k>.
+# Assertions are on the log, the summary lines and the exit status.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=git_env.sh
