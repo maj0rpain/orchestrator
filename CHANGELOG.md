@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.3
+
+The spec-review lens agents now name the orch-flow and orch-quick-implement skills in their descriptions, and the Junie AGENTS.md snippet says which skills run the spec review and what the orch-interview skill depends on, so Junie's capability filter keeps the lenses visible.
+
 ## 5.0.2
 
 The test audit's quality rule now lives only in the `orch-test-auditor` brief; the `orch-audit-tests` skill points at it, and a docs lint check keeps both ends in place.
