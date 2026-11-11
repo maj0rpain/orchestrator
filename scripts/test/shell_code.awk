@@ -7,8 +7,8 @@
 # and quoted heredoc body line collapsed to a q and a closing backtick to a
 # space, the code inside $(...) within double quotes and unquoted heredocs
 # still read, and a line continuing one that ends in \ prefixed with "q " -
-# and sc_top, 1 when the line starts outside any open quote, substitution or
-# heredoc. It tracks the quoting stack across lines (single quotes, $'...',
+# and sc_top, 1 when the line starts outside any open quote, substitution,
+# arithmetic or heredoc. It tracks the quoting stack across lines (single quotes, $'...',
 # double quotes, ${...}, $(...), backticks), line continuation and heredocs
 # (quoted or not, <<-, several on one line), arithmetic, and resets at each
 # file's first line. A heredoc's delimiter is read as bash reads it: one shell
