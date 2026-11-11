@@ -2187,15 +2187,8 @@ echo
 echo "doctor: ssh alias hint"
 healthy_repo
 doctor_github
-alias_stub_dir="$(mktemp -d)"
-cat >"$alias_stub_dir/ssh" <<'SSH'
-#!/usr/bin/env bash
-for h in "$@"; do :; done
-if [ "$h" = github-work ] && [ -n "$ALIAS_MAPS_TO" ]; then echo "hostname $ALIAS_MAPS_TO"; exit 0; fi
-exit 1
-SSH
-chmod +x "$alias_stub_dir/ssh"
-alias_doctor() { PATH="$alias_stub_dir:$PATH" ALIAS_MAPS_TO="${ALIAS_MAPS_TO:-}" "$ORCH" doctor --env 2>&1; }
+write_ssh_stub 'exit 1' 1
+alias_doctor() { PATH="$ssh_stub_dir:$PATH" "$ORCH" doctor --env 2>&1; }
 hint="came from origin's SSH URL and may be an SSH Host alias"
 
 fake_noauth
@@ -2221,14 +2214,14 @@ assert_not_contains "an https origin gets no hint" "$(alias_doctor)" "$hint"
 git config remote.origin.url ssh://git@github-work/acme/widgets.git
 out="$(GH_REPO=acme/widgets alias_doctor)"
 assert_not_contains "GH_REPO set gets no hint" "$out" "$hint"
-ALIAS_MAPS_TO=github.com
+write_ssh_stub 'echo hostname github.com' 0
 git config remote.origin.url git@github-work:acme/widgets.git
 out="$(alias_doctor)"
 assert_contains "a translated alias FAIL names github.com" "$out" "gh auth login --hostname github.com"
 assert_not_contains "and never github-work" "$out" "hostname github-work"
 assert_not_contains "nor in the FAIL line" "$out" "authenticated to github-work"
 assert_not_contains "and gives no hint" "$out" "$hint"
-unset ALIAS_MAPS_TO
+write_ssh_stub 'exit 1' 1
 
 fake_online
 git config remote.origin.url git@ghe.example.com:acme/widgets.git

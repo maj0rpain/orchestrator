@@ -50,19 +50,8 @@ assert_contains "help lists --host under repo show" "$("$ORCH" help)" "repo show
 
 # User-less scp-like origins, ssh alias translation and gh-style host
 # normalisation. A section stub ssh, ahead of the suite-wide identity one,
-# answers for github-work as write_ssh_stub says and records every call.
-ssh_stub_dir="$(mktemp -d)"
-ssh_calls="$ssh_stub_dir/calls"; : >"$ssh_calls"
-write_ssh_stub() { # <command run for github-work> <exit status otherwise>
-  cat >"$ssh_stub_dir/ssh" <<SSH
-#!/usr/bin/env bash
-echo "\$*" >>"$ssh_calls"
-for h in "\$@"; do :; done
-if [ "\$h" = github-work ]; then $1; fi
-exit $2
-SSH
-  chmod +x "$ssh_stub_dir/ssh"
-}
+# answers for github-work as write_ssh_stub (setup.sh) says, recording calls.
+write_ssh_stub 'exit 1' 0
 set_origin() { git config remote.origin.url "$1"; }
 show_name() { PATH="$ssh_stub_dir:$PATH" "$ORCH" repo show --name 2>/dev/null; }
 for url in github.com:acme/widgets.git github.com:acme/widgets; do
