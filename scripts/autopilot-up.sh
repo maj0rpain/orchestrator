@@ -157,7 +157,9 @@ for name in "${names[@]}"; do
     failed=1
     continue
   fi
-  if compose up -d --build >&2; then
+  recreate=()
+  [ -n "$killed" ] && recreate=(--force-recreate)
+  if compose up -d --build "${recreate[@]}" >&2; then
     if [ -n "$existing" ]; then outcome=rebuilt; else outcome=created; fi
     summary_line "$outcome" "$baked${killed:+ $killed}"
   else

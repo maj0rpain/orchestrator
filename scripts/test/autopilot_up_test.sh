@@ -7,8 +7,8 @@
 # `docker` first on PATH. The fake appends each call's argv, cwd and
 # ORCH_ENV_FILE to $FAKE_DIR/log and answers from canned files in $FAKE_DIR,
 # keyed by project (`default` without -p): info, config.<k>, psa.<k> (ps -a -q),
-# ps.<k> (ps -q), probe.<k>, probe-fail.<k> and up-fail.<k>. Assertions are on
-# the log, the summary lines and the exit status.
+# ps.<k> (ps -q), probe.<k>, probe-fail.<k>, up-fail.<k> and build-fail.<k>.
+# Assertions are on the log, the summary lines and the exit status.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=git_env.sh
@@ -202,11 +202,27 @@ echo "1590 implement" >"$FAKE_DIR/probe.side"
 run_up
 assert_contains "busy: skipped with the session" "$out" "(side)  skipped  busy: #1590 implement"
 assert_lacks "busy: not recreated" "$log" "up -d"
+assert_lacks "busy: no --force-recreate" "$log" "--force-recreate"
 assert_status "busy: a skip is not a failure" "$status" 0
 assert_contains "busy: probed with exec -T in the container" "$log" "-p side exec -T autopilot sh -c"
 run_up --force
 assert_contains "force: rebuilt with the killed line" "$out" "(side)  rebuilt  orchestrator 9.8.7 @ $commit forced: killed #1590 implement"
-assert_contains "force: recreated" "$log" "-p side up -d --build"
+assert_contains "force: recreated" "$log" "-p side up -d --build --force-recreate"
+: >"$FAKE_DIR/up-fail.side"
+run_up --force
+assert_status "force: failed up exits non-zero" "$status" 1
+assert_contains "force: failed up reports failed" "$out" "(side)  failed"
+assert_lacks "force: failed up makes no kill claim" "$out" "killed"
+rm "$FAKE_DIR/up-fail.side"
+: >"$FAKE_DIR/build-fail.side"
+run_up --fresh --force
+assert_status "fresh force: failed build exits non-zero" "$status" 1
+assert_contains "fresh force: failed build reports failed" "$out" "(side)  failed"
+assert_lacks "fresh force: failed build makes no kill claim" "$out" "killed"
+rm "$FAKE_DIR/build-fail.side"
+run_up --fresh --force
+order="$(printf '%s\n' "$log" | grep -oE 'build --pull --no-cache|up -d --build --force-recreate')"
+assert_eq "fresh force: builds, then recreates" "$order" "$(printf '%s\n%s' 'build --pull --no-cache' 'up -d --build --force-recreate')"
 
 echo "1601 pickup" >"$FAKE_DIR/probe.side"
 run_up
@@ -223,7 +239,7 @@ run_up
 assert_contains "probe failure: skipped" "$out" "skipped  busy: unknown (probe failed)"
 assert_lacks "probe failure: not recreated" "$log" "up -d"
 run_up --force
-assert_contains "probe failure: --force recreates" "$log" "up -d --build"
+assert_contains "probe failure: --force recreates" "$log" "up -d --build --force-recreate"
 
 # --- not running: not probed
 new_case ".env"
@@ -231,6 +247,9 @@ echo cid >"$FAKE_DIR/psa.default"
 run_up
 assert_lacks "not running: not probed" "$log" " exec "
 assert_contains "not running: rebuilt" "$out" "rebuilt"
+assert_lacks "not running: no --force-recreate" "$log" "--force-recreate"
+run_up --force
+assert_lacks "not running, --force: no --force-recreate" "$log" "--force-recreate"
 
 # --- idle container
 new_case ".env"
@@ -239,6 +258,10 @@ run_up
 assert_contains "idle: probed" "$log" " exec "
 assert_contains "idle: rebuilt, nothing killed" "$out" "rebuilt  orchestrator 9.8.7 @ $commit"
 assert_lacks "idle: no killed line" "$out" "killed"
+assert_lacks "idle: no --force-recreate" "$log" "--force-recreate"
+run_up --force
+assert_contains "idle, --force: still up -d --build" "$log" "up -d --build"
+assert_lacks "idle, --force: no --force-recreate" "$log" "--force-recreate"
 
 # --- failures
 new_case ".env .env.work"
