@@ -1085,11 +1085,13 @@ autopilot_rank() {
 }
 
 # autopilot_tick: one pass - the GitHub-limit pause check (while it holds the
-# tick ends there, making no GitHub call, not even closing merged PRs), labels,
+# tick ends there, making no GitHub call, not even closing merged PRs), the
+# early-pause quota read (autopilot_github_early), labels,
 # stale claims, one read of the done issues (autopilot_done_read), the
 # merged-PR close (which needs no session, so the usage-limit and early pauses
-# never hold it), the limit-pause check, sync
-# detection (when auto-sync is true), then pickup (see the spec's One tick).
+# never hold it), the three limit-pause checks (usage, core, graphql), sync
+# detection (when auto-sync is true), then pickup (see the spec's One tick),
+# the tick ending after any pickup that leaves a GitHub pause holding.
 # The one done read feeds both passes: sync detection gets the done table
 # minus the issues the close closed. Every candidate is read before the first
 # claim, the unpickable ones dropped, and the rest taken by rank - sync

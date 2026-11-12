@@ -1637,12 +1637,11 @@ assert_contains "only a pool at 0 remaining sets the reset" "$out" "resets at 20
 
 # No exhausted pool, or an unreadable one: 15 minutes from now.
 within_15() {
-  local at now
+  local at now_epoch ep
   at="$(sed -n 's/.*resets at \([0-9TZ:-]*\)\..*/\1/p' <<<"$1")"
-  now="$(date +%s)"
-  local ep
+  now_epoch="$(date +%s)"
   ep="$(sourced_orch autopilot_iso_epoch "$at")"
-  [ -n "$at" ] && [ "$ep" -ge $((now + 840)) ] && [ "$ep" -le $((now + 900)) ]
+  [ -n "$at" ] && [ "$ep" -ge $((now_epoch + 840)) ] && [ "$ep" -le $((now_epoch + 900)) ]
 }
 gh_reply 0 $'core\t3\t5000\t2000000000\ngraphql\t4\t5000\t2100000000\n' '' api rate_limit --jq "$rl_jq"
 out="$(contract adapter_issue_body 5 2>&1)"
