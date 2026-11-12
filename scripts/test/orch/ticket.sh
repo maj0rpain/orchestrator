@@ -763,6 +763,54 @@ fake_lag_after adapter_blockers 1 2 999999
 out="$("$ORCH" ticket block "$bg" --by "$ba" 2>&1)"; st=$?
 assert_status "a readback that is wrong twice dies" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #$bg's blocking edges did not verify"
+
+# A failed read-back is retried like a mismatch (ADR-0011, verify_twice); a
+# death leaves the written edges and the body's section alone.
+vlo="$("$ORCH" ticket publish 96 "VLo" "$body")"
+vhi="$("$ORCH" ticket publish 96 "VHi" "$body")"
+vt="$("$ORCH" ticket publish 96 "VT" "$body")"
+"$ORCH" ticket block "$vt" --by "$vhi" >/dev/null 2>&1
+out="$("$ORCH" ticket block "$vt" --by "$vlo" 2>&1)"; st=$?
+assert_status "adding a lower-numbered blocker to a higher-numbered one verifies" "$st" 0
+assert_eq "both edges in place" "$(fake_blockers_of "$vt")" "$vlo $vhi"
+vb="$("$ORCH" ticket publish 96 "VB" "$body")"
+fake_fail_times adapter_blockers 1 "$GH_502"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_blockers.after"
+out="$("$ORCH" ticket block "$vb" --by "$vlo" 2>&1)"; st=$?
+assert_status "a read-back that fails once is retried and the command succeeds" "$st" 0
+assert_eq "with its edge in place" "$(fake_blockers_of "$vb")" "$vlo"
+fake_unfail
+vc="$("$ORCH" ticket publish 96 "VC" "$body")"
+vbody="$(fake_body_of "$vc")"
+fake_fail_after adapter_blockers 1 "$GH_502"
+out="$("$ORCH" ticket block "$vc" --by "$vlo" 2>&1)"; st=$?
+assert_status "a read-back that fails on every call dies" "$st" 1
+assert_eq "with gh's reason, never a mismatch" "$out" \
+  "orch: gh could not read ticket #$vc's blockers: HTTP 502: Bad Gateway"
+assert_eq "the written edge stays" "$(fake_blockers_of "$vc")" "$vlo"
+assert_eq "the body is not rewritten" "$(fake_body_of "$vc")" "$vbody"
+fake_unfail
+vd="$("$ORCH" ticket publish 96 "VD" "$body")"
+vbody="$(fake_body_of "$vd")"
+fake_fail_times adapter_blockers 1 "$GH_502"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_blockers.after"
+fake_lag_after adapter_blockers 1 1 999999
+out="$("$ORCH" ticket block "$vd" --by "$vlo" 2>&1)"; st=$?
+assert_status "a read-back that fails once then mismatches dies" "$st" 1
+assert_eq "with the did-not-verify line" "$out" \
+  "orch: ticket #$vd's blocking edges did not verify - checked twice, both failed"
+assert_eq "the written edge stays" "$(fake_blockers_of "$vd")" "$vlo"
+assert_eq "the body is not rewritten" "$(fake_body_of "$vd")" "$vbody"
+fake_unfail; rm -rf "$ORCH_GH_FAKE_STORE/lag"
+ve="$("$ORCH" ticket publish 96 "VE" "$body")"
+vbody="$(fake_body_of "$ve")"
+fake_fail_after adapter_blockers 2 "$GH_502"
+fake_lag_after adapter_blockers 1 1 999999
+out="$("$ORCH" ticket block "$ve" --by "$vlo" 2>&1)"; st=$?
+assert_status "a read-back that mismatches then fails dies" "$st" 1
+assert_eq "with gh's reason" "$out" \
+  "orch: gh could not read ticket #$ve's blockers: HTTP 502: Bad Gateway"
+assert_eq "the written edge stays" "$(fake_blockers_of "$ve")" "$vlo"
+assert_eq "the body is not rewritten" "$(fake_body_of "$ve")" "$vbody"
+fake_unfail; rm -rf "$ORCH_GH_FAKE_STORE/lag"
 fake_fail adapter_blockers "$GH_502"
 out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the blockers fails the command" "$st" 1
@@ -1013,6 +1061,26 @@ fake_lag_after adapter_blockers 1 2 999999
 out="$("$ORCH" ticket unblock "$uf" --by "$ua" 2>&1)"; st=$?
 assert_status "a readback that is wrong twice dies" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #$uf's blocking edges did not verify"
+
+# A failed read-back is retried; a death keeps the removal and the body.
+uh="$("$ORCH" ticket publish 96 "H" "$body")"
+"$ORCH" ticket block "$uh" --by "$ua,$ub" >/dev/null 2>&1
+fake_fail_times adapter_blockers 1 "$GH_502"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_blockers.after"
+out="$("$ORCH" ticket unblock "$uh" --by "$ub" 2>&1)"; st=$?
+assert_status "a read-back that fails once is retried and succeeds" "$st" 0
+assert_eq "with the edge removed" "$(fake_blockers_of "$uh")" "$ua"
+fake_unfail
+ui="$("$ORCH" ticket publish 96 "I" "$body")"
+"$ORCH" ticket block "$ui" --by "$ua,$ub" >/dev/null 2>&1
+ubody="$(fake_body_of "$ui")"
+fake_fail_after adapter_blockers 1 "$GH_502"
+out="$("$ORCH" ticket unblock "$ui" --by "$ub" 2>&1)"; st=$?
+assert_status "a read-back that fails on every call dies" "$st" 1
+assert_eq "with gh's reason" "$out" \
+  "orch: gh could not read ticket #$ui's blockers: HTTP 502: Bad Gateway"
+assert_eq "the edge stays removed" "$(fake_blockers_of "$ui")" "$ua"
+assert_eq "the body is not rewritten" "$(fake_body_of "$ui")" "$ubody"
+fake_unfail
 
 ug="$("$ORCH" ticket publish 96 "G" "$body")"
 "$ORCH" ticket block "$ug" --by "$ua,$ub" >/dev/null 2>&1
