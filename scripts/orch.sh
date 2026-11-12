@@ -99,8 +99,8 @@ readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 # The noun modules, after the ROOT block, whose constants they read, with the
 # concept modules that have no noun of their own, checkout.sh,
 # filed-finding.sh, issue-timeline.sh, known-items.sh, liveness.sh,
-# marked-comment.sh, standing.sh and trust.sh, all sourced in alphabetical
-# order.
+# marked-comment.sh, session-log.sh, standing.sh and trust.sh, all sourced in
+# alphabetical order.
 # doctor.sh is one of the noun modules, with one rule more: the dependency runs
 # one way, doctor.sh calling into this file and the other modules, which call
 # nothing doctor.sh defines but cmd_doctor, from main(), and the reporters d_ok,
@@ -134,6 +134,7 @@ source "$ORCH_SCRIPTS/orch/redo.sh"
 source "$ORCH_SCRIPTS/orch/repo.sh"
 source "$ORCH_SCRIPTS/orch/review.sh"
 source "$ORCH_SCRIPTS/orch/review-pass.sh"
+source "$ORCH_SCRIPTS/orch/session-log.sh"
 source "$ORCH_SCRIPTS/orch/side-checkout.sh"
 source "$ORCH_SCRIPTS/orch/spec.sh"
 source "$ORCH_SCRIPTS/orch/spec-review.sh"
