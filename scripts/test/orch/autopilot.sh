@@ -2633,7 +2633,6 @@ assert_eq "github-reserve 0 ignores an early pause already recorded" "$(tick_cal
 rm -f "$top/.orchestrator/autopilot/github-early-graphql"
 git config --unset-all orchestrator.autopilot.github-reserve
 # a failed read pauses nothing
-rm -f "$top/.orchestrator/autopilot/github-early-graphql"
 fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Reserve 8"
 printf '8\n' >"$launcher_dir/release"
 fake_fail adapter_rate_limit "HTTP 502"

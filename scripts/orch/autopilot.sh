@@ -1232,7 +1232,8 @@ autopilot_github_pause_wait() {
   sleep "${ORCH_GH_LIMIT_WAIT:-$wait}"
 }
 
-AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after 3 attempts - "
+AUTOPILOT_STOP_ATTEMPTS=3
+AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after $AUTOPILOT_STOP_ATTEMPTS attempts - "
 
 # autopilot_stop_attempts <log> <rc> <command>...: the wrapper's stop chain, run
 # up to three times, each attempt in a subshell so a death ends the attempt; the
@@ -1249,7 +1250,7 @@ autopilot_stop_attempts() {
   local log="$1" rc="$2" state attempt line kind first
   shift 2
   state="$(mktemp)" || die "could not create a temp file for the stop chain's state"
-  for attempt in 1 2 3; do
+  for ((attempt = 1; attempt <= AUTOPILOT_STOP_ATTEMPTS; attempt++)); do
     if [ "$attempt" -gt 1 ]; then
       autopilot_github_pause_wait $(( attempt == 2 ? 60 : 300 ))
     fi
