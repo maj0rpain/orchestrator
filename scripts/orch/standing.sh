@@ -279,13 +279,13 @@ standing_state_put() {
 # standing_state_get <key>: prints the value of the newest <key> line; fails
 # when there is none.
 standing_state_get() {
-  local key value found=1 out=""
+  local key value rc=1 out=""
   [ -s "${STANDING_STATE_FILE:-}" ] || return 1
   while IFS=$'\t' read -r key value; do
-    [ "$key" != "$1" ] || { out="$value"; found=0; }
+    [ "$key" != "$1" ] || { out="$value"; rc=0; }
   done <"$STANDING_STATE_FILE"
-  [ "$found" -ne 0 ] || printf '%s\n' "$out"
-  return "$found"
+  [ "$rc" -ne 0 ] || printf '%s\n' "$out"
+  return "$rc"
 }
 
 # standing_chain_start: resets STANDING_LANDED at the start of a chain

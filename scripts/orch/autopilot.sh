@@ -31,10 +31,10 @@ autopilot_lookup() {
 # autopilot_setting <name>: the effective, validated value of
 # orchestrator.autopilot.<name> into AUTOPILOT_VALUE, its source into
 # AUTOPILOT_SOURCE (local, global, default or unset). The permission mode and
-# the handle fall back to nothing and the repo's owner; the three integers to
-# their defaults; the model and effort stay unset, checked against the agent
-# setting's Claude Code lists. Dies naming key and value when a value is out of
-# range.
+# the handle fall back to nothing and the repo's owner; the four integers
+# (github-reserve ranges 0-99) to their defaults; the model and effort stay
+# unset, checked against the agent setting's Claude Code lists. Dies naming key
+# and value when a value is out of range.
 # The handle's owner is resolved only when the handle is needed.
 autopilot_setting() {
   local name="$1" key="orchestrator.autopilot.$1" def="" owner_name
@@ -670,6 +670,13 @@ autopilot_pickup_steps() {
   }
 }
 
+# autopilot_github_paused: succeeds when a GitHub pause holds; says nothing.
+autopilot_github_paused() {
+  local main_root
+  main_root="$(main_checkout_or_die 2>/dev/null)" &&
+    autopilot_pause_until "$main_root" github >/dev/null 2>&1
+}
+
 # autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
 # claimed issue. A refusal or a failed step ends in one standing_stop and
 # returns 0: the claim is released, the tick goes on. A step that failed on a
@@ -677,9 +684,8 @@ autopilot_pickup_steps() {
 # the claim ref (a git push: no stop, no label, nothing counted); if that push
 # fails the claim stays held for stale cleanup. The pause ends the tick.
 autopilot_pickup() {
-  local main_root
   autopilot_pickup_steps "$1" "$2" "${3:-}" || {
-    if main_root="$(main_checkout_or_die 2>/dev/null)" && autopilot_pause_until "$main_root" github >/dev/null 2>&1; then
+    if autopilot_github_paused; then
       adapter_claim_delete "$1" >/dev/null 2>&1 ||
         warn "could not delete the claim ref on issue #$1; it stays held for stale cleanup"
       return 0
@@ -705,7 +711,7 @@ autopilot_cleanup_stale() {
     detail="the session's process (pid ${gone_pid:-unknown}) is gone and the claim was never released - no exit code is known"
     log="$(liveness_latest_log "$issue" "$phase")" || true
     backstop=""
-    [ -z "$log" ] || backstop="$(grep -F "$AUTOPILOT_BACKSTOP_PREFIX" "$log" 2>/dev/null | tail -1)" || true
+    [ -z "$log" ] || backstop="$(P="$AUTOPILOT_BACKSTOP_PREFIX" awk 'index($0, ENVIRON["P"]) == 1' "$log" 2>/dev/null | tail -1)" || true
     if [ -n "$backstop" ]; then detail="${detail%% - no exit code is known} - the session log says: \"${backstop#autopilot run: }\""; fi
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
     standing_stop "$issue" failure "$phase" "$detail"
@@ -1221,7 +1227,8 @@ autopilot_stop_attempts() {
   for attempt in 1 2 3; do
     wait=""
     if [ "$attempt" -gt 1 ]; then
-      if main_root="$(main_checkout_or_die 2>/dev/null)" && autopilot_pause_until "$main_root" github >/dev/null 2>&1; then
+      if autopilot_github_paused; then
+        main_root="$(main_checkout_or_die)"
         wait="$(( $(autopilot_pause_epoch "$(autopilot_github_pause_file "$main_root")") - $(date +%s) ))"
       else
         wait=$(( attempt == 2 ? 60 : 300 ))

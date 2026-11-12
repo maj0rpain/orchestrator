@@ -1593,9 +1593,10 @@ restore_suite_env
 
 # --- gh rate limits (#2577) ---------------------------------------------------
 # The guard recognises a primary or secondary limit on a failed call, retries a
-# secondary one once, reads the reset from the rate_limit endpoint, and dies
-# with one distinct message; any other failure passes through untouched. Run
-# against the fixture gh, then the store-backed fake's own limit failures.
+# secondary one once, reads the reset from the rate_limit endpoint, and fails
+# the call with one distinct message; any other failure passes through
+# untouched. Run against the fixture gh, then the store-backed fake's own
+# limit failures.
 echo
 echo "gh rate limits (#2577)"
 new_repo >/dev/null

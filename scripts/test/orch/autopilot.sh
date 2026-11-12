@@ -886,6 +886,13 @@ printf '%s\n' "autopilot run: the stop chain failed after 3 attempts - limit sto
 assert_contains "stale cleanup quotes the backstop line" "$(fake_comments_of 13)" "the session log says: \"the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit; the session exited with code 7\""
 assert_not_contains "and no longer says no exit code is known" "$(fake_comments_of 13)" "no exit code is known"
 
+# the backstop text inside a JSON line, not at a line start, is no backstop line
+fake_issue 91 open ready-for-agent orch:spec orch:running
+fake_claim_seed 91 "$(hostname)" "$(dead_pid)"
+printf '%s\n' '{"type":"user","text":"autopilot run: the stop chain failed after 3 attempts - limit stop: x; the session exited with code 7"}' >"$top/.orchestrator/autopilot/logs/91-spec-20250101T000000.log"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "a backstop text mid-line is not quoted by stale cleanup" "$(fake_comments_of 91)" "no exit code is known"
+
 # the claim identity: with ORCH_HOST_ID set, only claims of that id are this
 # host's
 fake_issue 14 open ready-for-agent orch:spec orch:running
