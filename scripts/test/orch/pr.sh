@@ -981,7 +981,10 @@ fake_pr_body 64 $'resolves #9\nAlso Refs #5, and Closes #8.\nIt prefixes #4 with
 fake_pr 65 merged topic uat
 fake_pr_body 65 'A quick fix #12, closed #13. Refs #62, an open PR.'
 fake_next_pr 71
+# No per-reference state read happens: every state read failing changes nothing.
+fake_fail adapter_issue_state "$GH_502"
 out="$(release "Release uat" "$body" 2>&1)"; st=$?
+fake_unfail
 assert_status "opens the release PR" "$st" 0
 assert_eq "prints its number" "$out" "71"
 assert_eq "one Closes line per still-open issue, deduplicated, above the caller's body" \
@@ -1010,17 +1013,6 @@ assert_gh_dies "--force: a failed open-issue list still exits 1" adapter_issues_
   release --force "Release" "$body"
 assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 "
 
-# No per-reference state read: every state read failing changes nothing.
-fake_fail adapter_issue_state "$GH_502"
-fake_next_pr 73
-out="$(release "Release" "$body" 2>&1)"; st=$?
-fake_unfail
-assert_status "a release needs no per-issue state read" "$st" 0
-assert_eq "and writes the same Closes lines" "$(fake_pr_body_of 73)" \
-  "$(writeln 'Closes #5' 'Closes #6' 'Closes #7' 'Closes #9' '' '## Summary' '' 'Ships the uat project.' '' 'Some detail.')"
-fake_pr 73 closed uat main
-fake_pr 71 closed uat main
-
 # The PR-writing standard (#1387): a release PR needs ## Summary and nothing
 # more, and --force, which only overrides "nothing to close", still checks it.
 fake_pr 71 closed uat main
@@ -1032,7 +1024,7 @@ assert_eq "naming it" "$out" "$PR_BODY_REFUSED no ## Summary heading"
 out="$(release --force "Release" "$summaryless" 2>&1)"; st=$?
 assert_status "--force: a body without ## Summary is still refused" "$st" 1
 assert_eq "--force: naming it" "$out" "$PR_BODY_REFUSED no ## Summary heading"
-assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 73 "
+assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 "
 summary_only="$(mktemp)"
 writeln '## Summary' '' 'Ships the uat project.' >"$summary_only"
 fake_next_pr 72

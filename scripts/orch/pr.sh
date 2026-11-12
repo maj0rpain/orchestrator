@@ -350,7 +350,7 @@ cmd_pr_release() {
   # Refs line never links at all. Refs, Closes, Fixes and Resolves count, in
   # any case and anywhere in the body - not every closing form GitHub knows,
   # so prose such as "a quick fix #12" is never mistaken for a reference.
-  local bodies refs n open issues="" tmp pr err
+  local bodies refs n open_listing open_issues issues="" tmp pr err
   gh_or_die --out bodies "list the PRs merged into $base" \
     adapter_prs_merged_bodies "$base"
   refs="$(printf '%s\n' "$bodies" |
@@ -360,10 +360,10 @@ cmd_pr_release() {
   # PR, a closed issue or an unknown number gets no Closes line. It is read
   # only when something is referenced, and even under --force.
   if [ -n "$refs" ]; then
-    gh_or_die --out open "list the open issues" adapter_issues_open_titles
-    open="$(printf '%s\n' "$open" | cut -f1 | tr '\n' ' ')"
+    gh_or_die --out open_listing "list the open issues" adapter_issues_open_titles
+    open_issues="$(printf '%s\n' "$open_listing" | cut -f1 | tr '\n' ' ')"
     for n in $refs; do
-      case " $open " in *" $n "*) issues="$issues $n" ;; esac
+      case " $open_issues " in *" $n "*) issues="$issues $n" ;; esac
     done
   fi
   [ -n "$issues" ] || [ "$force" = true ] ||
