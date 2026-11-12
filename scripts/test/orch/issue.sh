@@ -144,7 +144,7 @@ assert_eq "applying the canonical ready-for-agent name" "$(fake_labels_of "$out"
 labels_doc docs/agents/triage-labels.md
 
 fake_next_issue 9
-fake_lag adapter_issue_title_labels 1 ""
+fake_lag adapter_issue_title_labels 1
 out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "a readback that is stale once, then right, succeeds" "$st" 0
 assert_eq "printing the issue number" "$out" "9"

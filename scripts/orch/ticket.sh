@@ -477,10 +477,11 @@ ticket_blockers() {
 }
 
 # ticket_edges_verified <err_var> <n> <want>: the 0/1/2 verifier verify_twice
-# runs for ticket <n>'s blocking edges (the verify-then-die policy ADR-0011
-# records). 0 when its blocked-by listing, read fresh, is the same set of
-# numbers as <want>, both sides sorted and de-duplicated; 1 on a mismatch; 2
-# when the read fails, gh's stderr written into <err_var>, so a failed read is
+# runs for ticket <n>'s blocking edges (the one-retry policy ADR-0011
+# records for `ticket publish`). 0 when its blocked-by listing, read fresh,
+# is the same set of numbers as <want>, both sides sorted and de-duplicated;
+# 1 on a mismatch; 2 when the read fails, gh's stderr written into <err_var>,
+# so a failed read is
 # never reported as a mismatch. It never dies on a failed read. Locals
 # prefixed so no caller's variable name is shadowed.
 ticket_edges_verified() {
@@ -559,9 +560,10 @@ blockers_difference() {
 # second --by would otherwise replace the first - and the --by list sorted
 # and de-duplicated, as `ticket publish --blocked-by` does. Then the
 # preconditions, the current edges, one adapter write per edge that needs
-# it, verify_twice (the ADR-0011 policy) of ticket_edges_verified against the
-# wanted set, and the `## Blocked by` rewrite through issue_body_rewrite. The
-# write is not read back - ADR-0011 governs the edges, not the body. Only
+# it, verify_twice (the one-retry policy ADR-0011 records for `ticket
+# publish`) of ticket_edges_verified against the wanted set, and the
+# `## Blocked by` rewrite through issue_body_rewrite. The write is not read
+# back - ADR-0011 governs the edges, not the body. Only
 # the verb varies, and the one `case` up front binds all of it: block skips
 # edges already present, adds the rest and wants the union; unblock skips
 # edges already absent, removes the rest and wants the difference. Either

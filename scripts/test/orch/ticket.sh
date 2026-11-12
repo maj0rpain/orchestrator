@@ -774,7 +774,7 @@ out="$("$ORCH" ticket block "$vt" --by "$vlo" 2>&1)"; st=$?
 assert_status "adding a lower-numbered blocker to a higher-numbered one verifies" "$st" 0
 assert_eq "both edges in place" "$(fake_blockers_of "$vt")" "$vlo $vhi"
 vb="$("$ORCH" ticket publish 96 "VB" "$body")"
-fake_fail_times adapter_blockers 1 "$GH_502"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_blockers.after"
+fake_fail_times_after adapter_blockers 1 1 "$GH_502"
 out="$("$ORCH" ticket block "$vb" --by "$vlo" 2>&1)"; st=$?
 assert_status "a read-back that fails once is retried and the command succeeds" "$st" 0
 assert_eq "with its edge in place" "$(fake_blockers_of "$vb")" "$vlo"
@@ -791,7 +791,7 @@ assert_eq "the body is not rewritten" "$(fake_body_of "$vc")" "$vbody"
 fake_unfail
 vd="$("$ORCH" ticket publish 96 "VD" "$body")"
 vbody="$(fake_body_of "$vd")"
-fake_fail_times adapter_blockers 1 "$GH_502"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_blockers.after"
+fake_fail_times_after adapter_blockers 1 1 "$GH_502"
 fake_lag_after adapter_blockers 1 1 999999
 out="$("$ORCH" ticket block "$vd" --by "$vlo" 2>&1)"; st=$?
 assert_status "a read-back that fails once then mismatches dies" "$st" 1
@@ -1065,7 +1065,7 @@ assert_contains "naming the ticket" "$out" "ticket #$uf's blocking edges did not
 # A failed read-back is retried; a death keeps the removal and the body.
 uh="$("$ORCH" ticket publish 96 "H" "$body")"
 "$ORCH" ticket block "$uh" --by "$ua,$ub" >/dev/null 2>&1
-fake_fail_times adapter_blockers 1 "$GH_502"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_blockers.after"
+fake_fail_times_after adapter_blockers 1 1 "$GH_502"
 out="$("$ORCH" ticket unblock "$uh" --by "$ub" 2>&1)"; st=$?
 assert_status "a read-back that fails once is retried and succeeds" "$st" 0
 assert_eq "with the edge removed" "$(fake_blockers_of "$uh")" "$ua"
