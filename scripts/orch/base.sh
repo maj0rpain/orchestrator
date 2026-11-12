@@ -129,13 +129,11 @@ require_on_origin() {
 # written unless all pass. The name is stored literally, the default branch's
 # own included: a flow's base is pinned, unlike the checkout setting.
 base_set_flow() {
-  local b="$1" branch slug
+  local b="$1" branch slug phase
   flow_active || die "no active flow - nothing was set"
-  require_state_readable
-  branch="$(state_get branch)"
+  state_get_many_in "$STATE" branch=branch slug=slug phase=phase || die "$STATE_UNREADABLE_MSG"
   if [ -n "$branch" ]; then
-    slug="$(state_get slug)"
-    if [ "$(state_get phase)" = review ]; then
+    if [ "$phase" = review ]; then
       die "flow $slug already has branch $branch - its base can change again once $(flow_cmd redo) retires it"
     fi
     die "flow $slug already has branch $branch - its base can no longer change; abort to start again on another base"

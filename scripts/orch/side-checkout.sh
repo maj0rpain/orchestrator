@@ -46,17 +46,15 @@ is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 # `merged_prs`: the merged PR's number, a tab, its head SHA - the one line
 # side_checkout_finished judges the branch tip against.
 finished_flow() {
-  local state="$1" phase pr base pr_state _is_draft shown_state merged_head _head_ref merged_base _commits err
-  flow_state_readable "$state" || { verdict="could not read $state"; return 2; }
-  phase="$(state_get_in "$state" phase)"
+  local state="$1" phase slug pr base_raw base pr_state _is_draft shown_state merged_head _head_ref merged_base _commits err
+  state_get_many_in "$state" phase=phase slug=slug branch=branch pr=pr base_raw=base \
+    || { verdict="could not read $state"; return 2; }
   if [ "$phase" != "done" ]; then
-    verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
+    verdict="flow $slug is at $phase, not done"; return 1
   fi
-  branch="$(state_get_in "$state" branch)"
   [ -n "$branch" ] || { verdict="no branch"; return 1; }
-  pr="$(state_get_in "$state" pr)"
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
-  base="$(flow_base_in "$state")" \
+  base="$(flow_base_fallback "$base_raw")" \
     || { verdict="could not read the base branch from $state"; return 2; }
   pr_state_draft_read "$pr" pr_state _is_draft err \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
@@ -408,8 +406,7 @@ side_checkout_close_missed() {
   local path="$1" br="$2" state issue pr="" closed_pr default prs rc=0
   if checkout_has_flow "$path"; then
     state="$(flow_state_file "$path")"
-    issue="$(state_get_in "$state" issue 2>/dev/null)" || return 0
-    pr="$(state_get_in "$state" pr 2>/dev/null)" || return 0
+    state_get_many_in "$state" issue=issue pr=pr 2>/dev/null || return 0
     [ -n "$issue" ] && [ -n "$pr" ] || return 0
   else
     case "$br" in quick/*) ;; *) return 0 ;; esac
