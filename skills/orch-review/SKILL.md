@@ -97,14 +97,13 @@ exactly when applying it edits the spec body; step 5's floor reads that.
 When a ruling on a spec question brings back, in whole or in part, an entry in
 the plan handoff's **Rejected alternatives**, amend that entry too, per the
 handoff skill's **Amending Rejected alternatives** section. Check the ruling
-against the plan comment's entries yourself: `bash "$ORCH" handoff fetch 01-plan
-<file>` into a `mktemp` file outside the repo, since nothing before step 1 has
-fetched the handoffs. Take the citation for the note from the previous loop's
-final iteration record, whose `## Terminal state` names each spec question of
-the stop (`#<n>: <file>:<line> <title>`, or `<file>:<line> <title> (not
-filed)`), tying each ruling to the question it answers. Edit the fetched copy,
-then re-post it with `bash "$ORCH" handoff post 01-plan <file>`, before
-step 1, so step 3 reads the amended entry. A ruling that reverses no
+against the plan comment's entries yourself; nothing before step 1 has fetched
+the handoffs, so that section's fetch-where-nothing-fetched case applies. Take
+the citation for the note from the previous loop's final iteration record,
+whose `## Terminal state` names each spec question of the stop (`#<n>:
+<file>:<line> <title>`, or `<file>:<line> <title> (not filed)`), tying each
+ruling to the question it answers. Re-post the amendment before step 1, so
+step 3 reads the amended entry. A ruling that reverses no
 entry amends and re-posts nothing. A failed fetch or post stops the loop with
 its `orch:` reason before `review begin`, as a failed reply fetch does.
 
