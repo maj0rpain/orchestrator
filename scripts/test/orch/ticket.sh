@@ -768,11 +768,11 @@ assert_contains "naming the ticket" "$out" "ticket #$bg's blocking edges did not
 # death leaves the written edges and the body's section alone.
 vlo="$("$ORCH" ticket publish 96 "VLo" "$body")"
 vhi="$("$ORCH" ticket publish 96 "VHi" "$body")"
-vt="$("$ORCH" ticket publish 96 "VT" "$body")"
-"$ORCH" ticket block "$vt" --by "$vhi" >/dev/null 2>&1
-out="$("$ORCH" ticket block "$vt" --by "$vlo" 2>&1)"; st=$?
+vtgt="$("$ORCH" ticket publish 96 "VT" "$body")"
+"$ORCH" ticket block "$vtgt" --by "$vhi" >/dev/null 2>&1
+out="$("$ORCH" ticket block "$vtgt" --by "$vlo" 2>&1)"; st=$?
 assert_status "adding a lower-numbered blocker to a higher-numbered one verifies" "$st" 0
-assert_eq "both edges in place" "$(fake_blockers_of "$vt")" "$vlo $vhi"
+assert_eq "both edges in place" "$(fake_blockers_of "$vtgt")" "$vlo $vhi"
 vb="$("$ORCH" ticket publish 96 "VB" "$body")"
 fake_fail_times_after adapter_blockers 1 1 "$GH_502"
 out="$("$ORCH" ticket block "$vb" --by "$vlo" 2>&1)"; st=$?
