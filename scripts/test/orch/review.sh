@@ -1562,7 +1562,7 @@ done
 
 : >.orchestrator/review/iteration-01.md
 out="$("$ORCH" review retire 1 2>&1)"; st=$?
-assert_status "dies rather than collide with an existing pre-redo-N" "$st" 1
+assert_status "dies rather than overwrite a record already in pre-redo-N" "$st" 1
 assert_contains "naming the directory" "$out" "pre-redo-1"
 
 # An existing pre-redo-N (a previous run of the same redo made it) takes the
