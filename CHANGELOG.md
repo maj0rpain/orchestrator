@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.34
+
+`ticket block` and `ticket unblock` now retry a blocked-by read-back that fails once, instead of dying at the first transient GitHub error. A read-back that fails twice dies naming the ticket and gh's reason. The one-retry verify-then-die policy now lives in a single `verify_twice` helper that `ticket publish`, `issue publish`, `issue triage` and the blocking-edge check all call, each keeping its existing death messages.
+
 ## 5.0.33
 
 One Bash hook, `hook-bash.sh`, replaces the stdin and poll hooks: it reads the payload once, walks the command once and emits one decision (deny a pgrep or pkill word under every mode, else deny a plain stdin read outside bypassPermissions, else the bypassPermissions rewrite), so a poll's deny no longer rests on the host ranking two hooks.
