@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.2
+
+Drop a redundant test case: the unparseable-comments case under `phase advance` repeated coverage the HTTP 503 case and the handoff noun's checks already pin. Behaviour is unchanged.
+
 ## 5.2.1
 
 `pr read` now checks every listed open-PR line in full before using it: the PR number must be a positive integer, the fork flag `true` or `false`, and the body must decode. A malformed number no longer reaches an arithmetic subscript, and a malformed line naming another issue now fails the read.
