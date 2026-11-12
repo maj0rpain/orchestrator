@@ -27,8 +27,8 @@ side_checkout_marker() {
 }
 
 # is_side_checkout <path>: whether the checkout holding <path> is a side
-# checkout, as checkout_classify classifies it (see checkout_kind) - a ticket worktree
-# carrying a copied marker is none. False when git worktree list fails.
+# checkout, as checkout_classify classifies it (see checkout_kind) - a ticket
+# worktree carrying a copied marker is none. False when git worktree list fails.
 is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 
 # --- the finished sweep ---

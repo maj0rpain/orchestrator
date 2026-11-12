@@ -111,7 +111,8 @@ assert_status "branch_checkout dies on a failed walk" "$st" 1
 assert_contains "branch_checkout names the walk failure" "$out" \
   "orch: could not read the checkouts - git worktree list failed"
 
-# checkout_kind <path>: the kind checkout_classify gives the checkout holding <path> (#1110).
+# checkout_kind <path>: the kind checkout_classify gives the checkout holding
+# <path> (#1110).
 assert_eq "checkout_kind: a ticket worktree carrying a copied marker is ticket" \
   "$(sourced_orch checkout_kind "$top/.orchestrator/worktrees/t9")" "ticket"
 assert_eq "checkout_kind: a side checkout is side" "$(sourced_orch checkout_kind "$side")" "side"
@@ -236,7 +237,6 @@ assert_status "branch off on a retired branch is not refused as busy" "$st" 0
 git checkout -q orch/7-feature-redo-1
 out="$(orch_gh_failing init beside-redo 2>&1)"; st=$?
 assert_status "init on a retired branch is not refused as busy" "$st" 0
-
 
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
