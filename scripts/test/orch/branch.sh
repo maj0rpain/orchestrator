@@ -325,12 +325,14 @@ git push -q origin HEAD:refs/heads/main
 out="$(orch_gh_failing branch retire nosuchbranch new 2>&1)"; st=$?
 assert_status "refuses a branch that does not exist" "$st" 1
 assert_contains "naming it" "$out" "nosuchbranch does not exist"
+assert_eq "a refused retire marks no branch (missing old)" "$(git config --get-regexp "orchestrator-retired" || true)" ""
 
 git branch old-attempt
 git branch taken
 out="$(orch_gh_failing branch retire old-attempt taken 2>&1)"; st=$?
 assert_status "refuses a destination name already in use" "$st" 1
 assert_contains "naming it" "$out" "taken already exists"
+assert_eq "a refused retire marks neither branch (taken new)" "$(git config --get-regexp "orchestrator-retired" || true)" ""
 git branch -d taken
 
 out="$(orch_gh_failing branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
@@ -340,6 +342,8 @@ assert_eq "the old name is gone locally" \
   "$(branch_presence old-attempt)" "gone"
 assert_eq "the new name exists" \
   "$(branch_presence old-attempt-redo-1)" "present"
+assert_eq "a no-upstream retire records the retirement on the new name" \
+  "$(git config --get branch.old-attempt-redo-1.orchestrator-retired)" "true"
 
 git checkout -q -b to-retire
 git push -q -u origin to-retire
@@ -352,6 +356,8 @@ assert_eq "pushes the new name to origin" \
 # next implement attempt's branch create/pr open would collide with.
 assert_eq "and deletes the old remote ref" \
   "$(origin_branch_state "$bare" to-retire)" "missing"
+assert_eq "and records the retirement on the new name" \
+  "$(git config --get branch.to-retire-redo-1.orchestrator-retired)" "true"
 
 # A local branch named origin/<old> makes the upstream's short name ambiguous
 # (#1331): retire must still see the upstream and republish. Made only after
@@ -384,6 +390,8 @@ assert_eq "rolls the local rename back so the old name still exists" \
   "$(branch_presence to-fail)" "present"
 assert_eq "and the new name is not left dangling in its place" \
   "$(branch_presence to-fail-redo-1)" "gone"
+assert_eq "and the live old name carries no retirement key" \
+  "$(git config --get branch.to-fail.orchestrator-retired || true)" ""
 
 # Retrying with the same old/new names must succeed once whatever blocked
 # the push clears - issue #63 acceptance criterion 1.
@@ -397,6 +405,8 @@ assert_eq "renames locally" \
   "$(branch_presence to-fail-redo-1)" "present"
 assert_eq "and publishes it" \
   "$(origin_branch_state "$bare2" to-fail-redo-1)" "pushed"
+assert_eq "and records the retirement on the new name" \
+  "$(git config --get branch.to-fail-redo-1.orchestrator-retired)" "true"
 
 # Idempotent resume: a previous call whose local rename and remote push both
 # already succeeded, but whose remote delete of the old ref did not - the
@@ -414,6 +424,8 @@ git push -q -u origin to-resume-redo-1
 out="$(orch_gh_failing branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
 assert_status "resumes rather than failing on the already-gone old name" "$st" 0
 assert_eq "prints the new name" "$out" "to-resume-redo-1"
+assert_eq "the resumed retire records the retirement" \
+  "$(git config --get branch.to-resume-redo-1.orchestrator-retired)" "true"
 assert_eq "and finishes the delete the earlier attempt left undone" \
   "$(origin_branch_state "$bare3" to-resume)" "missing"
 
@@ -430,6 +442,15 @@ out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
 assert_status "dies when the old ref genuinely cannot be deleted" "$st" 1
 assert_eq "with git's reason" "$out" \
   "orch: could not delete origin/to-protect: ! [remote rejected] to-protect (deletion of the current branch prohibited)"
+assert_eq "a failed delete leaves the new name unmarked" \
+  "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" ""
+
+# Once the block clears, the rerun takes the resume path and records it.
+git -C "$bare4" symbolic-ref HEAD refs/heads/unrelated
+out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+assert_status "the rerun after the block clears succeeds" "$st" 0
+assert_eq "and the resumed retire marks the new name" \
+  "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" "true"
 
 # Resume arm (#2553): <old> gone locally and <new> present is also the state a
 # completed retire leaves, so origin's own answer for <old> decides whether any
@@ -1234,7 +1255,7 @@ assert_eq "making no flow branch" "$(git branch --list orch/5-fresh)" ""
 # records (a redo died between its rename and its clear)
 foreign_flow redo
 orch_gh_failing branch create >/dev/null
-git branch -q -m orch/5-redo orch/5-redo-redo-1
+orch_gh_failing branch retire orch/5-redo orch/5-redo-redo-1 >/dev/null
 state_fixture branch orch/5-redo-redo-1
 dirty_tree
 before="$(refusal_facts)"

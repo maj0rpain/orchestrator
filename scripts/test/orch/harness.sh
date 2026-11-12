@@ -2138,6 +2138,45 @@ assert_eq "a file ending inside an open quote leaves the next file's code alone"
 assert_eq "a file ending inside a heredoc leaves the next file's code alone" \
   "$(shell_code "$shell_code_dir/open-heredoc.sh" "$shell_code_dir/next.sh")" \
   "$(printf '%s\n' 'cat <<EOF' '# inside' '' 'y=1 ')"
+
+# sc_tops <file>: each line's top-level flag, 1 or 0, on one line.
+sc_tops() {
+  awk "$SHELL_CODE_AWK"'{ shell_code_line($0); printf "%s", sc_top } END { print "" }' "$1"
+}
+# sc_case <name> <expected tops> <line>...: plants the lines, checks the flags.
+sc_case() {
+  local name="$1" want="$2"; shift 2
+  printf '%s\n' "$@" >"$shell_code_dir/case.sh"
+  assert_eq "$name" "$(sc_tops "$shell_code_dir/case.sh")" "$want"
+}
+sc_tab="$(printf '\t')"
+sc_case "a shift in \$(( )) opens no heredoc" 11 'x=$((1<<n))' 'f() { :; }'
+sc_case "a shift in a double-quoted \$(( )) opens no heredoc" 11 'echo "$((1<<n))"' 'f() { :; }'
+sc_case "a shift in a \$(( )) on a heredoc body line opens no heredoc" 1001 'cat <<EOF' '$((1<<n))' 'EOF' 'f() { :; }'
+sc_case "a shift in a (( )) command opens no heredoc" 11 '(( y = 1<<n ))' 'f() { :; }'
+sc_case "a heredoc after a closed \$(( )) is read" 1001 'x=$((1)); cat <<EOF' 'body' 'EOF' 'f() { :; }'
+sc_case "an unquoted hyphenated delimiter ends at its terminator" 1001 'cat <<END-NOTES' 'body' 'END-NOTES' 'f() { :; }'
+sc_case "an unquoted dotted <<- delimiter ends at its tabbed terminator" 1001 'cat <<-END.TXT' "${sc_tab}body" "${sc_tab}END.TXT" 'f() { :; }'
+sc_case "a single-quoted hyphenated delimiter ends at its terminator" 1001 "cat <<'END-NOTES'" 'body' 'END-NOTES' 'f() { :; }'
+sc_case "a partly quoted delimiter ends at END" 1001 'cat <<E"N"D' 'body' 'END' 'f() { :; }'
+sc_case "a backslash-quoted delimiter ends at EOF" 1001 'cat <<\EOF' 'body' 'EOF' 'f() { :; }'
+sc_case "a quoted delimiter with a space ends at its terminator" 1001 'cat <<"a b"' 'body' 'a b' 'f() { :; }'
+sc_case "a double-quoted delimiter with an escaped quote ends at a\"b" 1001 'cat <<"a\"b"' 'body' 'a"b' 'f() { :; }'
+sc_case "a double-quoted delimiter with an escaped backslash ends at a\\b" 1001 'cat <<"a\\b"' 'body' 'a\b' 'f() { :; }'
+sc_case "a variable delimiter ends at its terminator" 1001 'cat <<$X' 'body' '$X' 'f() { :; }'
+sc_case "a subshell after a blank opens no arithmetic" 10011 '( (cat <<EOF' 'body' 'EOF' ') )' 'f() { :; }'
+sc_case "let x=1<<n is a heredoc" 1001 'let x=1<<n' 'body' 'n' 'f() { :; }'
+sc_case "a here-string opens no heredoc" 11 'cat <<<word' 'f() { :; }'
+sc_case "an empty single-quoted delimiter opens a heredoc ending at an empty line" 1001 'cat <<'"''" 'body' '' 'f() { :; }'
+sc_case "an empty double-quoted delimiter opens a heredoc ending at an empty line" 1001 'cat <<""' 'body' '' 'f() { :; }'
+
+# the words view of a body line holding $(x): q when quoted, code when not
+for sc_form in "'END-NOTES'|END-NOTES|q" 'END-NOTES|END-NOTES|$(x)' 'E"N"D|END|q' '\EOF|EOF|q'; do
+  IFS='|' read -r sc_delim sc_term sc_want <<<"$sc_form"
+  printf '%s\n' "cat <<$sc_delim" '$(x)' "$sc_term" >"$shell_code_dir/words-case.sh"
+  assert_eq "the words view of a <<$sc_delim body line holding \$(x)" \
+    "$(awk "$SHELL_CODE_AWK"'{ shell_code_line($0) } NR == 2 { print sc_words }' "$shell_code_dir/words-case.sh")" "$sc_want"
+done
 rm -rf "$shell_code_dir"
 
 # --- test-helper placement (#1006) --------------------------------------------

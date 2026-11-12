@@ -275,7 +275,7 @@ fixture_git() {
 # SHELL_CODE_AWK, the one rule of what counts as code in a shell file, loaded
 # from its own library, scripts/test/shell_code.awk, which the orch.sh suite's
 # setup loads too: a line is a comment only when it starts outside any open
-# quote, substitution or heredoc.
+# quote, substitution, arithmetic or heredoc.
 SHELL_CODE_AWK="$(<"$PLUGIN_ROOT/scripts/test/shell_code.awk")"
 [ -n "$SHELL_CODE_AWK" ] || {
   echo "docs_lint.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }

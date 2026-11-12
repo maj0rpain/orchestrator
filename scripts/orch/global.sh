@@ -103,7 +103,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               flows and quick implementations fork from and
                               open PRs against; refuses a branch origin does
                               not have. Shared by every worktree, never
-                              committed; the default branch's name clears it.
+                              committed; the default branch's name clears it,
+                              when GitHub or origin's HEAD named that default.
                               An active flow keeps the base it started with
   base set <branch> --flow    correct the active flow's own base branch
                               instead, leaving the checkout setting alone;
@@ -385,7 +386,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               mid-pipeline (a state.json that cannot be read
                               counts as one), a branch the plugin made with no
                               PR yet (no branch.<name>.orchestrator-pr) and
-                              not retired by a redo (-redo-<n>), or
+                              not retired by a redo
+                              (branch.<name>.orchestrator-retired, as branch
+                              retire records), or
                               changes outside the planning allowlist, checked
                               in that order. Exit 0 printing nothing when
                               free; exit 3 printing the first that holds; exit
@@ -418,8 +421,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               to push
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on
                               origin and deleting the old remote ref, without
-                              force-pushing over anything. A rerun after
-                              the rename resumes the remote steps only
+                              force-pushing over anything; records the
+                              retirement on <new>
+                              (branch.<new>.orchestrator-retired) once the
+                              rename and its remote steps are done. A rerun
+                              after the rename resumes the remote steps only
                               while origin still has <old>; a rerun of a
                               completed retire changes nothing and prints
                               <new>; an unreachable origin on a rerun

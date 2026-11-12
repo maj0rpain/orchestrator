@@ -86,6 +86,9 @@ branch_upstream() {
 branch_base_key() { printf 'branch.%s.orchestrator-base\n' "$1"; }
 branch_base_sha_key() { printf 'branch.%s.orchestrator-base-sha\n' "$1"; }
 branch_pr_key() { printf 'branch.%s.orchestrator-pr\n' "$1"; }
+# branch_retired_key <branch>: the key branch retire records on a branch a redo
+# retired, so no name says it (#2550).
+branch_retired_key() { printf 'branch.%s.orchestrator-retired\n' "$1"; }
 # forked_from_key <branch>: the git config key that records the branch ticket
 # branch <branch> was forked from.
 forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
@@ -96,6 +99,9 @@ branch_base_sha_get() { git config --get "$(branch_base_sha_key "$1")" 2>/dev/nu
 branch_base_sha_set() { git config "$(branch_base_sha_key "$1")" "$2"; }
 branch_pr_get() { git config --get "$(branch_pr_key "$1")" 2>/dev/null; }
 branch_pr_set() { git config "$(branch_pr_key "$1")" "$2"; }
+branch_retired_set() { git config "$(branch_retired_key "$1")" true; }
+# branch_is_retired <branch>: succeeds when a redo retired <branch>.
+branch_is_retired() { [ "$(git config --get "$(branch_retired_key "$1")" 2>/dev/null)" = true ]; }
 
 # forked_from_branch <branch>: prints the forked-from branch recorded on
 # ticket branch <branch> (its ticket parent), or prints nothing and returns
@@ -127,18 +133,6 @@ branch_issue_of() {
   case "$issue" in ''|*[!0-9]*) return 1 ;; esac
   [ -n "$slug" ] || return 1
   printf '%s\n' "$issue"
-}
-
-# branch_redo_count_of <name>: prints the redo count of a flow branch name in
-# its -redo-<n> form, and fails for any other name.
-branch_redo_count_of() {
-  local n
-  case "$1" in orch/*) ;; *) return 1 ;; esac
-  branch_issue_of "$1" >/dev/null || return 1
-  n="${1##*-redo-}"
-  [ "$n" != "$1" ] || return 1
-  case "$n" in ''|*[!0-9]*) return 1 ;; esac
-  printf '%s\n' "$n"
 }
 
 # branch_kind <branch>: prints what kind of branch <branch> is, reading git
@@ -459,6 +453,8 @@ cmd_branch() {
             && die "could not delete origin/$old: $why"
         fi
       fi
+      branch_retired_set "$new" \
+        || die "could not record $(branch_retired_key "$new") - $new is retired; rerun orch.sh branch retire $old $new to record it"
       note "$new"
       ;;
     *) die "unknown branch op: ${op:-<none>} (want create|off|busy|base-sha|sync|retire)" ;;
