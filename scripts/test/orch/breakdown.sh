@@ -28,6 +28,15 @@ Body three.
 DRAFT
 }
 
+# crs_in_tickets <number>...: the count of lines with a CR in those published
+# tickets' titles and bodies.
+crs_in_tickets() {
+  local n
+  for n in "$@"; do
+    printf '%s%s' "$(fake_title_of "$n")" "$(fake_body_of "$n")"
+  done | grep -c $'\r'
+}
+
 # --- breakdown publish -------------------------------------------------------
 echo
 echo "breakdown publish"
@@ -180,6 +189,44 @@ assert_status "@@ ticket in an unfinished block dies" "$st" 1
 assert_contains "naming the line" "$out" "line 5"
 assert_contains "with the escape hint" "$out" ' - a body line starting with @@ is written \@@'
 assert_eq "publishing nothing" "$(fake_issues)" "50 "
+restore_suite_env
+
+# CRLF drafts (#2579): the parser strips a trailing CR from every line, so a
+# CRLF draft publishes as its LF form does, with no CR in a title or body.
+breakdown_fixture
+printf '@@ ticket 1 Alpha\r\nBody line.\r\n\\@@ end\r\n@@ end\r\n\r\n@@ ticket 2 Beta\r\n@@ blocked-by 1\r\nBeta body.\r\n@@ end\r\n' >"$draft"
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a CRLF draft publishes" "$st" 0
+assert_eq "printing the numbers in publishing order" "$out" $'100\n101'
+assert_eq "maps the CRLF blocker to its published number" "$(fake_blockers_of 101)" "100"
+assert_eq "no CR in any title or body" "$(crs_in_tickets 100 101)" "0"
+assert_eq "the CRLF title is clean" "$(fake_title_of 100)" "Alpha"
+assert_contains "the escaped line is published unescaped" "$(fake_body_of 100)" $'Body line.\n@@ end'
+restore_suite_env
+
+breakdown_fixture
+printf '@@ ticket 1 A\nok\n@@ foo\n@@ end\n' >"$draft"
+lf_out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+printf '@@ ticket 1 A\r\nok\r\n@@ foo\r\n@@ end\r\n' >"$draft"
+crlf_out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; crlf_st=$?
+assert_status "a stray @@ line in an LF draft dies" "$st" 1
+assert_status "a stray @@ line in a CRLF draft dies" "$crlf_st" 1
+assert_contains "naming the stray line" "$crlf_out" "stray grammar line inside ticket"
+assert_eq "the LF and CRLF messages are identical" "$crlf_out" "$lf_out"
+assert_eq "the CRLF message has no CR" "$(printf '%s' "$crlf_out" | grep -c $'\r')" "0"
+restore_suite_env
+
+breakdown_fixture
+printf '@@ ticket 1 First\r\nOne.\r\n@@ end\r\n@@ ticket 2 Second\r\n@@ blocked-by 1\r\nTwo.\r\n@@ end\r\n' >"$draft"
+fake_fail_after adapter_sub_issue_link 1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a CRLF draft's first publish dies partway" "$st" 1
+assert_eq "the saved draft keeps its CRs byte for byte" "$(cmp .orchestrator/breakdown/50/draft.md "$draft" && echo same)" "same"
+fake_unfail
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "the rerun on the saved CRLF draft finishes" "$st" 0
+assert_eq "both tickets linked" "$(fake_sub_issues_of 50)" "100 101"
+assert_eq "no CR in any title or body after the resume" "$(crs_in_tickets 100 101)" "0"
 restore_suite_env
 
 # --- breakdown state ---------------------------------------------------------
