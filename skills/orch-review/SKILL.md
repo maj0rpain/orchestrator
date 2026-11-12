@@ -104,7 +104,7 @@ final iteration record, whose `## Terminal state` names each spec question of
 the stop (`#<n>: <file>:<line> <title>`, or `<file>:<line> <title> (not
 filed)`), tying each ruling to the question it answers. Edit the fetched copy,
 then re-post it with `bash "$ORCH" handoff post 01-plan <file>`, before
-`review begin`, so step 3 reads the amended entry. A ruling that reverses no
+step 1, so step 3 reads the amended entry. A ruling that reverses no
 entry amends and re-posts nothing. A failed fetch or post stops the loop with
 its `orch:` reason before `review begin`, as a failed reply fetch does.
 
