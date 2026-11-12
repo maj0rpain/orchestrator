@@ -226,12 +226,9 @@ flow_active() { flow_state_active "$STATE"; }
 flow_holding_phase() {
   local branch="$1" issue="${2:-}" phase held_branch held_issue
   flow_active || return 1
-  flow_state_readable "$STATE" || return 2
-  phase="$(state_get phase)" || return 2
-  held_branch="$(state_get branch)" || return 2
+  state_get_many_in "$STATE" phase=phase held_branch=branch held_issue=issue || return 2
   if [ "$held_branch" != "$branch" ]; then
     [ -n "$issue" ] || return 1
-    held_issue="$(state_get issue)" || return 2
     [ "$held_issue" = "$issue" ] || return 1
   fi
   printf '%s\n' "$phase"

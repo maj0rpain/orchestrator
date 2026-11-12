@@ -120,17 +120,17 @@ checkout_has_flow() { [ -f "$(flow_state_file "$1")" ]; }
 # What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
 # else its checked-out branch (branch <name>), else (no branch).
 checkout_holding() {
-  local state issue issue_label branch rc=0
+  local state issue slug phase issue_label branch rc=0
   state="$(flow_state_file "$1")"
   if [ -f "$state" ]; then
-    issue="$(state_get_in "$state" issue)" || rc=$?
+    state_get_many_in "$state" issue=issue slug=slug phase=phase || rc=$?
     if [ "$rc" -eq 2 ]; then
       note "flow (state.json cannot be read)"
       return 0
     fi
     [ "$rc" -eq 0 ] || return "$rc"
     if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
-    note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"
+    note "flow $slug $phase $issue_label"
   elif branch="$(checkout_branch "$1")"; then
     note "branch $branch"
   else
@@ -179,10 +179,10 @@ current_branch_or_die() {
 # read exits 1, never read as free or busy. Called as a bare statement, so
 # that exit stops the caller.
 checkout_busy() {
-  local line_var="$1" remedy_var="$2" signals="${*:3}" b dirty busy_line="" busy_remedy=""
+  local line_var="$1" remedy_var="$2" signals="${*:3}" fslug fphase b dirty busy_line="" busy_remedy=""
   if word_listed "$signals" flow && flow_active; then
-    if flow_state_readable "$STATE"; then
-      busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
+    if state_get_many_in "$STATE" fslug=slug fphase=phase; then
+      busy_line="busy: a flow is mid-pipeline (slug: $fslug, phase: $fphase)"
       busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
     else
       busy_line="busy: a flow's state.json cannot be read"
