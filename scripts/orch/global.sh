@@ -773,7 +773,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               pointer to the finish command on stderr
   review terminal             classify the last iteration: none, pending,
                               interrupted, malformed, ready, or stop; exits
-                              non-zero on the first four
+                              non-zero on the first four. A half-finished
+                              redo review's retired record counts
   review resume               resume a review loop whose session died
                               mid-iteration, spending no budget: discard the
                               flow branch's stray work first (refused in an
@@ -782,7 +783,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               reviewer reports, next, or terminate. Exits 1
                               when review terminal says anything but pending
                               or interrupted
-  review retire <n>           move every iteration-*.md into pre-redo-<n>/
+  review retire <n>           move every iteration-*.md into pre-redo-<n>/,
+                              resuming into an existing one; refuses (moving
+                              nothing) a name already in it
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
   spec comment <file>         post <file> as a comment on the spec issue
