@@ -437,7 +437,7 @@ cmd_branch() {
       # next implement attempt's branch create/pr open will reuse, and their
       # plain push is not a force-push - so the old ref's delete is not
       # optional, and both failures die rather than leaving origin out of
-      # sync with what this rename just did locally.
+      # sync with the local rename, this call's or a previous one's.
       if [ -n "$upstream" ]; then
         # The fresh arm's rename is local-only and free to undo - if the push
         # never lands, undoing it is what keeps `$old` a real, retryable

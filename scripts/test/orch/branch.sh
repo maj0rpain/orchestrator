@@ -188,7 +188,6 @@ assert_contains "naming the base branch" "$out" \
   "base branch gone does not exist on origin - push it, or start again on another base branch"
 assert_not_contains "never pointing at a flow's correction" "$out" "--flow"
 assert_eq "and records nothing for the branch it did not make" "$(base_key quick/8-gone)" "<unset>"
-git checkout -q main
 orch_gh_failing base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
@@ -445,6 +444,16 @@ assert_eq "with git's reason" "$out" \
 assert_eq "a failed delete leaves the new name unmarked" \
   "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" ""
 
+# A resume whose delete is refused is not rolled back either: the rename was
+# not that call's.
+out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+assert_status "a resume whose delete is refused dies" "$st" 1
+assert_contains "naming the delete" "$out" "could not delete origin/to-protect:"
+assert_eq "origin has the new name" \
+  "$(origin_branch_state "$bare4" to-protect-redo-1)" "pushed"
+assert_eq "the new name stays local" "$(branch_presence to-protect-redo-1)" "present"
+assert_eq "and is not renamed back" "$(branch_presence to-protect)" "gone"
+
 # Once the block clears, the rerun takes the resume path and records it.
 git -C "$bare4" symbolic-ref HEAD refs/heads/unrelated
 out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
@@ -500,6 +509,8 @@ assert_eq "and prints the new name" "$out" "rr-up-redo-1"
 assert_eq "origin keeps the new name at the same tip" \
   "$(git -C "$bare6" rev-parse refs/heads/rr-up-redo-1)" "$tip6"
 assert_eq "and has no old name" "$(origin_branch_state "$bare6" rr-up)" "missing"
+assert_eq "and nothing is renamed locally" \
+  "$(branch_presence rr-up-redo-1)/$(branch_presence rr-up)" "present/gone"
 assert_eq "and the rerun records the new name as retired" \
   "$(git config --get branch.rr-up-redo-1.orchestrator-retired || true)" "true"
 
@@ -510,30 +521,12 @@ bare_origin "$bare7"
 git checkout -q -b rr-push
 git push -q -u origin rr-push
 git branch -m rr-push rr-push-redo-1
-printf '#!/bin/sh\necho no >&2\nexit 1\n' >"$bare7/hooks/pre-receive"
-chmod +x "$bare7/hooks/pre-receive"
+origin_rejects "$bare7"
 out="$(orch_gh_failing branch retire rr-push rr-push-redo-1 2>&1)"; st=$?
 assert_status "a resume whose push is rejected dies" "$st" 1
 assert_contains "naming the push" "$out" "could not push rr-push-redo-1 to origin:"
 assert_eq "keeping the new name" "$(branch_presence rr-push-redo-1)" "present"
 assert_eq "and not renaming it back" "$(branch_presence rr-push)" "gone"
-
-# A resume whose delete fails is not rolled back either.
-bare8="$(mktemp -d)/origin.git"
-git init -q --bare "$bare8"
-git -C "$bare8" symbolic-ref HEAD refs/heads/rr-del
-git -C "$bare8" config receive.denyDeleteCurrentBranch refuse
-bare_origin "$bare8"
-git checkout -q -b rr-del
-git push -q -u origin rr-del
-git branch -m rr-del rr-del-redo-1
-out="$(orch_gh_failing branch retire rr-del rr-del-redo-1 2>&1)"; st=$?
-assert_status "a resume whose delete is refused dies" "$st" 1
-assert_contains "naming the delete" "$out" "could not delete origin/rr-del:"
-assert_eq "origin has the new name" \
-  "$(origin_branch_state "$bare8" rr-del-redo-1)" "pushed"
-assert_eq "the new name stays local" "$(branch_presence rr-del-redo-1)" "present"
-assert_eq "and is not renamed back" "$(branch_presence rr-del)" "gone"
 
 out="$(orch_gh_failing branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
