@@ -56,14 +56,10 @@ nothing back, and its line says the label was moved.
    through to its end, with glossary and ADR wording the interview decided
    carried into the body verbatim (ADR-0022). That section is the one
    definition of the mode; restate none of it.
-5. **Plan** (`plan`). Write the `orch-handoff` skill's `01-plan.md` template
-   (read `skills/orch-handoff/SKILL.md`) to a file named `01-plan.md` in a fresh
-   `mktemp -d` directory outside the repo, with every interview question and
-   the answer taken under `## Decisions`, and an `## Autopilot` block: Rounds 1
-   for a one-site spec, 2 by default, 3 for a large or cross-cutting one; Budget
-   3 for one site and one ticket, 5 for a few files and 2-3 tickets, 8 for many
-   modules, 4+ tickets, or the review loop's or flow state's own machinery, risk
-   weighing above size. Validate it with `bash "$ORCH" handoff validate <file>`.
+5. **Plan** (`plan`). Write the plan, its file, Rounds and Budget as the
+   Autopilot route of `skills/orch-interview/SKILL.md` sets them, with every
+   interview question and the answer taken under `## Decisions`. Validate it
+   with `bash "$ORCH" handoff validate <file>`.
 6. **Start** (`start`). `bash "$ORCH" autopilot start <n> <plan-file>`.
 
 ## Report

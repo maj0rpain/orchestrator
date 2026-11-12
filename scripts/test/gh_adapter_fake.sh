@@ -467,6 +467,13 @@ adapter_issues_labelled() {
   done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
 }
 
+# adapter_issues_open_oldest: the open issues in the store, oldest first and
+# cut at ISSUE_LIST_LIMIT, so the newest are the ones dropped.
+adapter_issues_open_oldest() {
+  ! fake_failing adapter_issues_open_oldest || return 1
+  fake_open_issues | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+}
+
 # adapter_issues_labelled_bodies <label>...: the open issues in the store
 # carrying every label named, in number order and cut at ISSUE_LIST_LIMIT as
 # adapter_issues_labelled is, each as the count-marked record the gh adapter

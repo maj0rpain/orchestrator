@@ -97,8 +97,8 @@ turns out missing, take the fallback it documents and tell your caller which.
 ## Rewrite the issue
 
 Rewrite mode's publish step, on issue `<n>`. Every step runs in the Blueprint
-route, the flow's spec phase and standalone alike, and in a quick
-implementation's **Unattended rewrite**, with the differences that section
+route, the flow's spec phase and standalone alike, and in the
+**Unattended rewrite**, with the differences that section
 names.
 
 1. **Check for a breakdown, before the body is replaced:**

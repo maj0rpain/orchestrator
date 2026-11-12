@@ -2428,12 +2428,9 @@ fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/2/comments" alice 2026-01-01T00:00
 ac_snapshot() { local n s=""; for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do s="$s$(fake_labels_of "$n")|$(fake_comments_of "$n" 2>/dev/null)#"; done; printf '%s' "$s"; }
 ac_before="$(ac_snapshot)"
 
-out="$("$ORCH" autopilot candidates 1 2 3 2>&1)"; st=$?
+out="$("$ORCH" autopilot candidates 3 99 1 14 11 12 13 2>&1)"; st=$?
 assert_status "named issues succeed" "$st" 0
-assert_eq "none, move and override by the triage label" "$out" "1 eligible none
-2 eligible move
-3 eligible override"
-assert_eq "verdicts and the order named" "$("$ORCH" autopilot candidates 3 99 1 14 11 12 13 2>&1)" "3 eligible override
+assert_eq "verdicts and the order named" "$out" "3 eligible override
 99 skip missing
 1 eligible none
 14 eligible move
@@ -2461,17 +2458,21 @@ unset ORCH_FAKE_NEWEST_FIRST
 ac_err="$(mktemp)"
 ORCH_ISSUE_LIST_LIMIT=13 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
 assert_contains "--all warns when the listing reaches the issue-list limit" "$(cat "$ac_err")" \
-  "orch: the open issues reached the issue-list limit of 13 - any past it are missing from this list"
+  "orch: the open issues reached the issue-list limit of 13 - the newest past it are missing from this list"
 ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
 assert_not_contains "--all gives no warning below the limit" "$(cat "$ac_err")" "issue-list limit"
 rm -f "$ac_err"
+assert_eq "past the issue-list limit the newest issues are the ones dropped" \
+  "$(ORCH_ISSUE_LIST_LIMIT=12 "$ORCH" autopilot candidates --all 2>/dev/null | cut -d' ' -f1 | paste -sd' ' -)" \
+  "1 2 3 4 5 6 7 8 9 10 12 13"
 
 for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
   # shellcheck disable=SC2086 # the words are the arguments
   out="$("$ORCH" autopilot candidates $args 2>&1)"; st=$?
   assert_status "usage error refused: '$args'" "$st" 1
+  [ -n "$args" ] || ac_usage="$out"
 done
-assert_contains "the usage line names the forms" "$("$ORCH" autopilot candidates 2>&1)" "usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
+assert_contains "the usage line names the forms" "$ac_usage" "usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
 
 fake_fail adapter_issue_state_labels "HTTP 502 read"
 out="$("$ORCH" autopilot candidates 1 2 2>&1)"; st=$?
@@ -2483,11 +2484,11 @@ out="$("$ORCH" autopilot candidates 1 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed trust read dies" "$st" 1
 assert_contains "naming the reason" "$out" "HTTP 502 trust"
-fake_fail adapter_issues_labelled "HTTP 502 list"
+fake_fail adapter_issues_open_oldest "HTTP 502 list"
 out="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed listing dies" "$st" 1
-assert_contains "with an orch: message" "$out" "orch: could not list the open issues: HTTP 502 list"
+assert_contains "with an orch: message" "$out" "gh could not list the open issues: HTTP 502 list"
 fake_fail adapter_issue_parent "HTTP 502 parent"
 out="$("$ORCH" autopilot candidates 2 2>&1)"; st=$?
 fake_unfail

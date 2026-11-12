@@ -776,8 +776,7 @@ autopilot_verdict() {
     label="$(triage_label_for "$role")"
     if label_listed "$labels" "$label"; then printf -v "$3" 'skip %s' "$role"; return 0; fi
   done
-  capture parent err adapter_issue_parent "$issue" ||
-    die "could not read the parent of issue #$issue: $(gh_reason "$err")"
+  gh_or_die --out parent "read issue #$issue's parent" adapter_issue_parent "$issue"
   if [ -n "$parent" ]; then printf -v "$3" 'skip ticket #%s' "$parent"; return 0; fi
   ready="$(triage_label_for ready-for-agent)"
   human="$(triage_label_for ready-for-human)"
@@ -817,11 +816,10 @@ autopilot_candidates_run() {
   if [ "$mode" = named ]; then
     named=true
   else
-    capture out err adapter_issues_labelled ||
-      die "could not list the open issues: $(gh_reason "$err")"
+    gh_or_die --out out "list the open issues" adapter_issues_open_oldest
     while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done < <(printf '%s\n' "$out" | sort -n)
     if [ "${#issues[@]}" -ge "$ISSUE_LIST_LIMIT" ]; then
-      warn "the open issues reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this list"
+      warn "the open issues reached the issue-list limit of $ISSUE_LIST_LIMIT - the newest past it are missing from this list"
     fi
   fi
   for n in ${issues[@]+"${issues[@]}"}; do

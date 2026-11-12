@@ -163,7 +163,8 @@ verify_twice() {
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
-#   adapter_issues_labelled, adapter_issues_labelled_bodies,
+#   adapter_issues_labelled, adapter_issues_open_oldest,
+#   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
@@ -434,6 +435,12 @@ adapter_issues_labelled() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
   gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+}
+
+# adapter_issues_open_oldest: every open issue, one number per line, oldest
+# first, so ISSUE_LIST_LIMIT cuts the newest.
+adapter_issues_open_oldest() {
+  gh issue list --state open --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues carrying every
