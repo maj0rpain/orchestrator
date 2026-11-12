@@ -3,6 +3,21 @@
 # Its tests: scripts/test/orch/redo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
+# redo_midway <issue> <slug>: succeeds while a redo review is half-finished,
+# printing its redo_count. True between a redo's branch retire and its closing
+# write, which clears state.branch: redo_count is above 0 and state.branch is
+# exactly the -redo-<redo_count> name of the issue and slug (the exact name, so
+# a slug that merely ends that way does not match: #2550). The one test both
+# the retire plan below and the review loop's terminal-state classification
+# make, so they never disagree on whether a redo is resuming.
+redo_midway() {
+  local branch redo_count
+  branch="$(state_get branch)"
+  redo_count="$(state_get redo_count)"
+  [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$1" "$2" "$redo_count")" ] || return 1
+  printf '%s\n' "$redo_count"
+}
+
 # The first retire step, shared by both redos: prints the pair the retire
 # plans, two lines, "<n>" then "<resumed>": the number the attempt's retire
 # carries and whether its rename is already done.
@@ -13,13 +28,11 @@
 # before the rename, so a rerun that finds it done skips the close outright
 # rather than retiring an already-retired branch a second time (issue #63).
 redo_retire_plan() {
-  local issue="$1" slug="$2" branch redo_count
-  branch="$(state_get branch)"
-  redo_count="$(state_get redo_count)"
-  if [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$issue" "$slug" "$redo_count")" ]; then
+  local issue="$1" slug="$2" redo_count
+  if redo_count="$(redo_midway "$issue" "$slug")"; then
     printf '%s\n1\n' "$redo_count"
   else
-    printf '%s\n0\n' $(( redo_count + 1 ))
+    printf '%s\n0\n' $(( $(state_get redo_count) + 1 ))
   fi
 }
 
@@ -94,7 +107,7 @@ cmd_redo_review() {
     interrupted)
       die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with $(flow_cmd next); redo only runs once a loop actually ends." ;;
     malformed)
-      die "the review loop's last iteration ($i) has a malformed terminal state - rewrite the first line of $(cmd_review path "$i") in the shape below; redo only runs once a loop actually ends.
+      die "the review loop's last iteration ($i) has a malformed terminal state - rewrite the first line of $(review_terminal_record "$i") in the shape below; redo only runs once a loop actually ends.
 $detail" ;;
     unreadable)
       die "cannot read the review loop's terminal state: $detail" ;;
@@ -129,9 +142,8 @@ $detail" ;;
   cmd_review retire "$new_n" >/dev/null
 
   # The one closing write: a death before it leaves phase review with the
-  # branch, PR and iteration its guards need. (A rerun after review retire has
-  # moved the loop's records aside is refused by the terminal-state guard - a
-  # separate defect.)
+  # branch, PR and iteration its guards need, and a rerun finds
+  # the stopped loop's last record under pre-redo-<n>/.
   redo_step_back implement iteration 0 branch null pr null base_sha null
   note "$new_n"
 }
