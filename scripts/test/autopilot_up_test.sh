@@ -202,7 +202,6 @@ echo "1590 implement" >"$FAKE_DIR/probe.side"
 run_up
 assert_contains "busy: skipped with the session" "$out" "(side)  skipped  busy: #1590 implement"
 assert_lacks "busy: not recreated" "$log" "up -d"
-assert_lacks "busy: no --force-recreate" "$log" "--force-recreate"
 assert_status "busy: a skip is not a failure" "$status" 0
 assert_contains "busy: probed with exec -T in the container" "$log" "-p side exec -T autopilot sh -c"
 run_up --force

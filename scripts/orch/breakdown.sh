@@ -24,6 +24,7 @@ breakdown_parse() {
   local err
   err="$(AT_LINE_ESCAPE_HINT="$AT_LINE_ESCAPE_HINT" awk -v dir="$2" '
     function fail(m) { print "line " NR ": " m > "/dev/stderr"; bad = 1; exit 1 }
+    { sub(/\r$/, "") }
     inb && /^\\+@@/ { line = $0; sub(/^\\/, "", line); first = 0; print line > body; next }
     /^@@ ticket / {
       if (inb) fail("@@ ticket inside an unfinished block" ENVIRON["AT_LINE_ESCAPE_HINT"])
@@ -46,7 +47,7 @@ breakdown_parse() {
       first = 0; next
     }
     /^@@ end[ \t]*$/ && inb { close(body); inb = 0; next }
-    inb && /^@@( |\r?$)/ { fail("stray grammar line inside ticket " k ": " $0 ENVIRON["AT_LINE_ESCAPE_HINT"]) }
+    inb && /^@@( |$)/ { fail("stray grammar line inside ticket " k ": " $0 ENVIRON["AT_LINE_ESCAPE_HINT"]) }
     inb { first = 0; print > body; next }
     $0 !~ /^[ \t]*$/ { fail("text outside a ticket block") }
     END { if (!bad && inb) { print "ticket " k " has no @@ end" > "/dev/stderr"; exit 1 } }

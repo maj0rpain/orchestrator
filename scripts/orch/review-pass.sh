@@ -54,7 +54,7 @@ review_pass_begin() {
     [ -e "$f" ] || continue
     n="${f##*/iteration-}"
     n="${n%%-*}"
-    case "$n" in '' | *[!0-9]*) continue ;; esac
+    case "$n" in *[!0-9]*) continue ;; esac
     [ "$((10#$n))" -le "$max" ] || max="$((10#$n))"
   done
   printf '%s/iteration-%02d\n' "$dir" "$((max + 1))"
