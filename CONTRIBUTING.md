@@ -312,7 +312,7 @@ scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapt
 scripts/orch/suite-cost.sh    the suite-cost noun's module, with the ORCH_SUITE_COST_TIMER hook: a test knob like ORCH_GH_ADAPTER, naming a file (the tests' scripts/test/suite_cost_timer_fake.sh) that overrides only the step timing a command
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
-scripts/host.sh               the one host detector, host_detect, sourced by orch.sh and hook-common.sh
+scripts/host.sh               the one host detector: host_detect (environment) and host_from_project_path (hook payload), sourced by orch.sh and hook-common.sh
 scripts/flow-state.sh         the Flow state module: state.json's keys, defaults, reading and writing, sourced by orch.sh and hook-common.sh
 scripts/hook-*.sh             the seven hooks; hook-bash.sh makes the one decision on plugin subagents' and autopilot Bash calls, in order: deny an unquoted pgrep or pkill word under every mode, else deny a plain stdin read under any mode but bypassPermissions, else rewrite the command to close stdin under bypassPermissions; hook-grilling.sh sends only the session's state and points to orch-interview's Closing section, and also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only, hook-paste-stop-guard.sh its Stop half
 scripts/paste-guard.sh        the transcript scan and paste check the two paste guards share, sourced by hook-paste-guard.sh and hook-paste-stop-guard.sh

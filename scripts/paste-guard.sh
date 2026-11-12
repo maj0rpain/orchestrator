@@ -51,16 +51,12 @@ PASTE_GUARD_WAIT=3
 # arm the guard. Keep the two in step with spec_review_nudge's words.
 PASTE_GUARD_NEEDLE='; it is saved in '
 
-# paste_guard_payload: reads the hook payload on stdin (hook_read_payload, so
-# `input` holds it) and sets `transcript` to its transcript_path, or empty when
-# it names none; fails - the guard allows - when the payload is not a JSON
-# object.
+# paste_guard_payload: reads the hook payload on stdin (hook_read_payload, which
+# sets `transcript` to its transcript_path, empty when it names none or when
+# the payload is not a JSON object). An empty transcript allows, so the guards
+# fail open on it. `tool` and `stop_active` are set the same way.
 paste_guard_payload() {
   hook_read_payload 2>/dev/null
-  # shellcheck disable=SC2154 # input is set by hook_read_payload, in hook-common.sh
-  printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || return 1
-  # shellcheck disable=SC2034 # transcript is read by the hook that sourced this file
-  transcript="$(printf '%s' "$input" | jq -r '.transcript_path // ""')"
 }
 
 # paste_guard_scan <transcript>: prints the armed view.md's path on its first

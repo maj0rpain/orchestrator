@@ -216,22 +216,31 @@ out="$(scan 2>&1)"
 assert_eq "without --all, only the findings in needs-triage" \
   "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 23 "
 assert_eq "each with its state too" "$(field_of 23 6 "$out")" "needs-triage,ready-for-agent"
+base_list="$out"
+base_all="$(scan --all 2>&1)"
+base_pr="$(scan --pr 21 2>&1)"
 # Each finding is read once, body and labels together: neither the body-only
 # nor the state-and-labels read is called.
 fake_fail adapter_issue_body "body read alone"
 fake_fail adapter_issue_state_labels "state and labels read alone"
-out="$(scan --all 2>&1)"; st=$?
-assert_status "reads each finding through one call for body and labels" "$st" 0
-assert_eq "listing them all" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 8 20 21 22 23 "
 out="$(scan --all 8 2>&1)"; st=$?
 assert_status "an explicit finding is read through that one call too" "$st" 0
 fake_unfail
 fake_fail adapter_issue_state_labels_body "$GH_502"
+fake_fail adapter_issue_body "$GH_502"
+fake_fail adapter_issue_state_labels "$GH_502"
+list_out="$(scan 2>&1)"; st=$?
+assert_status "a listed scan makes no per-finding read" "$st" 0
+assert_eq "printing every finding in needs-triage, byte for byte" \
+  "$list_out" "$base_list"
 out="$(scan --all 2>&1)"; st=$?
-assert_status "a listed finding gh cannot read dies" "$st" 1
-assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #1: HTTP 502: Bad Gateway"
+assert_status "a listed --all scan makes no per-finding read" "$st" 0
+assert_eq "printing every open filed finding, byte for byte (--all)" "$out" "$base_all"
+out="$(scan --pr 21 2>&1)"; st=$?
+assert_status "a listed --pr scan makes no per-finding read" "$st" 0
+assert_eq "printing that PR's findings, byte for byte" "$out" "$base_pr"
 fake_unfail
-fake_fail adapter_issues_labelled "$GH_502"
+fake_fail adapter_issues_labelled_bodies "$GH_502"
 out="$(scan 2>&1)"; st=$?
 assert_status "a findings list gh cannot read dies" "$st" 1
 assert_contains "naming the list, with gh's line" "$out" \
@@ -242,6 +251,53 @@ assert_status "a findings list gh cannot read dies under --all too" "$st" 1
 assert_eq "with the same message (--all)" "$out" \
   "orch: gh could not list the review:major findings: HTTP 502: Bad Gateway"
 fake_unfail
+
+# A listing whose answer does not parse dies naming that listing.
+for listing in $'x\n0\n1\nb' $'5\nx\n1\nb' $'5\n0\nx\nb' $'5\n0\n3\nonly\n6\n0\n1\nx'; do
+  out="$(adapter_stood_in "$(printf 'adapter_issues_labelled_bodies() { printf "%%s\\n" %q; }\n' "$listing")" scan 2>&1)"; st=$?
+  assert_status "an unparseable listing dies" "$st" 1
+  assert_eq "naming the listing" "$out" \
+    "orch: gh could not list the review:major findings: gh answered a listing that does not parse"
+done
+out="$(adapter_stood_in 'adapter_issues_labelled_bodies() { :; }' scan 2>&1)"; st=$?
+assert_status "an empty listing scans cleanly" "$st" 0
+assert_eq "printing nothing" "$out" ""
+
+# Record alignment: bodies of every shape listed next to one another each scan
+# to their own line, whichever sits last in the listing.
+good_body="$(writeln '## Finding' '' 'one' 'two' '' '**Axis:** Standards' '' '**Severity:** nit - r.' '' \
+  "**Location:** \`src/other.sh:2\` at $head_sha" '' '**PR:** https://github.com/acme/widgets/pull/7')"
+align_check() {
+  local what="$1" want_unknown="$2" k
+  out="$(scan 2>&1)"; st=$?
+  assert_status "$what: scans" "$st" 0
+  for k in 40 41 42; do
+    assert_eq "$what: finding $k to its own line" "$(line_of $k "$out")" \
+      "$(printf '%s\t7\tsrc/other.sh:2\tunchanged\t-\tneeds-triage' $k)"
+  done
+  assert_eq "$what: the body that does not parse" "$(line_of "$want_unknown" "$out" | cut -f4)" "unknown"
+}
+fake_issue 40 open review:major needs-triage; fake_issue_body 40 "$good_body"
+fake_issue 41 open review:major needs-triage; fake_issue_body 41 "$good_body"$'\n'
+fake_issue 42 open review:major needs-triage; fake_issue_body 42 "$(printf '%s\n' "$good_body" | sed 's/$/\r/')"
+fake_issue 43 open review:major needs-triage; fake_issue_body 43 ""
+# 40, 41 (trailing newline) and 42 (CRLF) with the empty body last.
+align_check "empty body last" 43
+fake_issue 43 open review:major needs-triage; fake_issue_body 43 "$good_body"$'\n'
+fake_issue 41 open review:major needs-triage; fake_issue_body 41 ""
+# The empty body now sits mid-listing and the trailing-newline body last.
+out="$(scan 2>&1)"
+assert_eq "trailing-newline body last: its own line" "$(line_of 43 "$out")" \
+  "$(printf '43\t7\tsrc/other.sh:2\tunchanged\t-\tneeds-triage')"
+assert_eq "the empty body mid-listing: unknown" "$(line_of 41 "$out" | cut -f4)" "unknown"
+assert_eq "the multi-line body beside it" "$(line_of 40 "$out" | cut -f4)" "unchanged"
+assert_eq "the CRLF body beside it" "$(line_of 42 "$out" | cut -f4)" "unchanged"
+# A finding carrying two filed severities is listed once.
+fake_issue 44 open review:major review:nit needs-triage; fake_issue_body 44 "$good_body"
+out="$(scan 2>&1)"
+assert_eq "a finding with two severity labels is scanned once" "$(printf '%s\n' "$out" | cut -f1 | grep -cx 44)" "1"
+assert_eq "in ascending order" "$(printf '%s\n' "$out" | cut -f1 | sort -n | tr '\n' ' ')" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')"
+for k in 40 41 42 43 44; do fake_issue "$k" closed; done
 
 out="$(scan --all --pr 21 2>&1)"; st=$?
 assert_status "--all narrows to one source PR" "$st" 0

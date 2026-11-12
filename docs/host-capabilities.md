@@ -19,8 +19,10 @@ A cell marked **Unverified** means nobody has confirmed whether that host has
 the capability. Try it; if it is missing, take the fallback and record it the
 same way.
 
-Adding a host means adding a column here, teaching `scripts/host.sh`'s
-`host_detect` to detect it, and teaching `doctor.sh` to name its install
+Adding a host means adding a column here, teaching `scripts/host.sh` to detect
+it (`host_detect` for a host told apart by its environment,
+`host_from_project_path` for one told apart by its hook payload), and teaching
+`doctor.sh` to name its install
 methods (#132). Fill a cell only with a verified fact,
 and write "unverified" for anything not yet confirmed. The Junie CLI column
 comes from the documentation bundled with Junie CLI 3419.7 and from tool calls
