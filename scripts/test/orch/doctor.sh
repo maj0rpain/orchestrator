@@ -83,14 +83,18 @@ echo "host detection (host.sh, #281)"
 # it is shown to need nothing from orch.sh. host_on runs host_detect there,
 # after the given VAR=value assignments.
 HOST_SH="$(dirname "$ORCH")/host.sh"
+# host_clean_env is the clean shell both helpers run host.sh in: the env options
+# that unset every host signal. env unsets before it applies VAR=value
+# assignments, so a case's own assignment still reaches the shell.
+host_clean_env=(-u ORCHESTRATOR_HOST -u CLAUDECODE -u JUNIE_EXTENSION_ROOT
+  -u JUNIE_SHIM_PATH -u CLAUDE_PLUGIN_ROOT)
 host_on() {
-  env -u ORCHESTRATOR_HOST -u CLAUDECODE -u JUNIE_EXTENSION_ROOT -u JUNIE_SHIM_PATH \
-    -u CLAUDE_PLUGIN_ROOT "$@" \
+  env "${host_clean_env[@]}" "$@" \
     bash -c 'source "$1" && host_detect' host_on "$HOST_SH"
 }
 # host_from_project_path <project_path>, in the same clean shell.
 host_from() {
-  env -u CLAUDECODE -u JUNIE_EXTENSION_ROOT -u JUNIE_SHIM_PATH -u CLAUDE_PLUGIN_ROOT "${@:2}" \
+  env "${host_clean_env[@]}" "${@:2}" \
     bash -c 'source "$1" && host_from_project_path "$2"' host_from "$HOST_SH" "$1"
 }
 assert_eq "host_from_project_path ignores ORCHESTRATOR_HOST=claude" \
