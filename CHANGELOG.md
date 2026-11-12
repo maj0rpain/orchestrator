@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.8
+
+Reword the code comments that cited ADR-0011 for read-backs other than `ticket publish`'s links, so each cites it only as the one-retry policy it records for `ticket publish`.
+
 ## 5.2.7
 
 The Bash hook's command walker now carries an open arithmetic expression across newlines, `;`, `&&` and `||`, so a `<<` inside a multi-line `$((` or `((` is read as a shift and no longer hides later commands from the poll and stdin guards.
