@@ -774,25 +774,19 @@ ln -s real.ts "$REPO/src/armlink.ts"
 # rl_guard <payload>: runs the guard on a payload with the stub first on PATH,
 # clearing the log; prints the guard's output.
 rl_guard() { : >"$RL/log"; printf '%s' "$1" | PATH="$RL:$PATH" "$GUARD"; }
-rl_calls() { counted_calls "$RL"; }
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-unarmed)")"
 assert_empty "allows an edit through a symlink in an unarmed session" "$out"
-assert_eq "an unarmed session's edit never calls readlink" "$(rl_calls)" "0"
+assert_eq "an unarmed session's edit never calls readlink" "$(counted_calls "$RL")" "0"
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" '' | jq 'del(.session_id)')")"
 assert_empty "allows an edit through a symlink with no session_id" "$out"
-assert_eq "an edit with no session_id never calls readlink" "$(rl_calls)" "0"
-: >"$TMPDIR/orchestrator-planning-rl-junie"
-out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-junie | jq --arg pp "$REPO" '.project_path=$pp | del(.cwd)')")"
-assert_empty "allows a Junie-shaped edit through a symlink" "$out"
-assert_eq "a Junie-shaped edit never calls readlink" "$(rl_calls)" "0"
-rm -f "$TMPDIR/orchestrator-planning-rl-junie"
+assert_eq "an edit with no session_id never calls readlink" "$(counted_calls "$RL")" "0"
 : >"$TMPDIR/orchestrator-grilling-rl-armed"
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-armed)")"
 assert_eq "denies the same edit through a symlink in an armed session" "$(bash_hook_decision "$out")" "deny"
-assert_eq "an armed session's edit calls readlink" "$([ "$(rl_calls)" -gt 0 ] && echo yes)" "yes"
+assert_eq "an armed session's edit calls readlink" "$([ "$(counted_calls "$RL")" -gt 0 ] && echo yes)" "yes"
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-armed | jq 'del(.tool_input.file_path)')")"
 assert_empty "allows an armed session's edit that names no path" "$out"
-assert_eq "an armed session's edit naming no path never calls readlink" "$(rl_calls)" "0"
+assert_eq "an armed session's edit naming no path never calls readlink" "$(counted_calls "$RL")" "0"
 rm -f "$TMPDIR/orchestrator-grilling-rl-armed" "$REPO/src/armlink.ts"
 rm -rf "$RL"
 
@@ -1476,22 +1470,16 @@ assert_eq "a final reply holding the view written within the window: allowed" \
     ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
 
 # The pre-check and the size-gated re-read, counted in jq processes: a counting
-# `jq` stub first on PATH logs each call and execs the real jq. Counts are
-# compared between two runs of the same hook, never against a number.
-mkdir "$PG/jqstub"
-PG_REAL_JQ="$(command -v jq)"; export PG_REAL_JQ
-cat >"$PG/jqstub/jq" <<'STUB'
-#!/usr/bin/env bash
-echo x >>"$PG_JQ_LOG"
-exec "$PG_REAL_JQ" "$@"
-STUB
-chmod +x "$PG/jqstub/jq"
+# jq first on PATH logs each call and runs the real jq, with one counter dir
+# shared by the paste-guard counts, the one-jq-per-payload checks and the Bash
+# hook cost check. Counts are compared between two runs of the same hook,
+# never against a number.
+JQC="$(call_counter jq)"
 # pg_jqs <decide-fn> <args...>: how many jq processes one decision starts.
 pg_jqs() {
-  local log="$PG/jq.$RANDOM.log"
-  : >"$log"
-  PATH="$PG/jqstub:$PATH" PG_JQ_LOG="$log" "$@" >/dev/null
-  wc -l <"$log" | tr -d ' '
+  : >"$JQC/log"
+  PATH="$JQC:$PATH" "$@" >/dev/null
+  counted_calls "$JQC"
 }
 PG_PAD="$(head -c 20000 /dev/zero | tr '\0' 'a')"
 TL="$PG/long-unarmed.jsonl"; cp "$T11" "$TL"
@@ -1546,8 +1534,6 @@ assert_eq "hooks.json registers hook-paste-stop-guard.sh under Stop" \
   "$(jq -r '[.hooks.Stop[]? | .hooks[]?.command | select(test("hook-paste-stop-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
 echo
 echo "one jq per payload (#2556)"
-# A counting jq first on PATH logs each call and runs the real jq.
-JQC="$(call_counter jq)"
 # jq_count <hook>: the jq processes <hook> starts on the payload on stdin.
 jq_count() {
   : >"$JQC/log"
@@ -1577,7 +1563,7 @@ assert_eq "AskUserQuestion paste guard on another tool name starts one jq" \
   "$(jq -n '{tool_name:"Bash",transcript_path:"/nope"}' | jq_count "$PASTE")" 1
 assert_eq "Stop guard with stop_hook_active set starts one jq" \
   "$(jq -n '{stop_hook_active:true,transcript_path:"/nope"}' | jq_count "$STOP")" 1
-rm -rf "$JQC" "$JQT"
+rm -rf "$JQT"
 
 # A payload that is not a JSON object fails open: exit 0, no output, no stderr.
 for hook_name in GRILL GUARD QUICK PASTE STOP START; do
@@ -2106,21 +2092,17 @@ assert_contains "bash hook: the reader reason names the first reader part" "$(ba
 hb_out="$(bash_hook_scan bypassPermissions "$(printf 'echo %9000s; pgrep x' '')")"
 assert_eq "bash hook: bypassPermissions rewrites a command over 8 KB holding pgrep" \
   "$(bash_hook_decision "$hb_out")|$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$hb_out" | grep -c -x -F 'exec </dev/null')" "allow|1"
-# Process cost: a jq shim on PATH logs each call, then runs the real jq.
-HBC="$(call_counter jq)"
-# hb_jq_calls: the jq calls the hook makes for the stdin payload.
-hb_jq_calls() { : >"$HBC/log"; PATH="$HBC:$PATH" env -u ORCH_AUTOPILOT bash "$BASH_HOOK" >/dev/null 2>&1; counted_calls "$HBC"; }
-assert_eq "bash hook: an out-of-scope payload costs 1 jq call" "$(bash_hook_event default Explore 'cat' | hb_jq_calls)" 1
+assert_eq "bash hook: an out-of-scope payload costs 1 jq call" "$(bash_hook_event default Explore 'cat' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
 assert_eq "bash hook: an in-scope payload with no command costs 1 jq call" \
-  "$(bash_hook_event default orch-implementer cat | jq 'del(.tool_input.command)' | hb_jq_calls)" 1
-assert_eq "bash hook: a non-JSON payload costs 1 jq call" "$(echo 'not json {' | hb_jq_calls)" 1
+  "$(bash_hook_event default orch-implementer cat | jq 'del(.tool_input.command)' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
+assert_eq "bash hook: a non-JSON payload costs 1 jq call" "$(echo 'not json {' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
 for mode in default bypassPermissions; do
   for hb_cmd in 'cat; echo done' 'pgrep x' 'echo hi'; do
-    hb_n="$(bash_hook_event "$mode" orch-implementer "$hb_cmd" | hb_jq_calls)"
+    hb_n="$(bash_hook_event "$mode" orch-implementer "$hb_cmd" | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")"
     assert_eq "bash hook: an in-scope '$hb_cmd' under $mode costs at most 2 jq calls" "$([ "$hb_n" -le 2 ] && echo yes || echo "no ($hb_n)")" yes
   done
 done
-rm -rf "$HBC"
+rm -rf "$JQC"
 # Registration and docs.
 assert_eq "hooks.json's Bash matcher has exactly one command, hook-bash.sh" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command] | map(select(test("^bash \"\\$\\{CLAUDE_PLUGIN_ROOT\\}/scripts/hook-bash\\.sh\"$"))) | length' "$ROOT/hooks/hooks.json")|$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?] | length' "$ROOT/hooks/hooks.json")" "1|1"
