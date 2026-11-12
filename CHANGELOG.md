@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.6
+
+The spec-review module no longer has a one-line block reset wrapper: both parsers call the block reader's open function directly. Behaviour is unchanged.
+
 ## 5.2.5
 
 Rename the autopilot pickup side-checkout step's `base` local to `stem`, so it is not mistaken for the base branch. No behaviour change.
