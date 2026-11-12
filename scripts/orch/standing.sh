@@ -66,7 +66,7 @@ standing_label_entries() {
   done
   printf '%s|fbca04|Autopilot session running\n' "$STANDING_RUNNING_LABEL"
   printf '%s|d93f0b|Waiting on the human\n' "$STANDING_HUMAN_LABEL"
-  printf '%s|c5def5|Autopilot session stopped on a usage limit; retried after the reset\n' "$STANDING_LIMITED_LABEL"
+  printf '%s|c5def5|Autopilot session stopped on a usage or GitHub API rate limit; retried after the reset\n' "$STANDING_LIMITED_LABEL"
   printf '%s|0075ca|Autopilot: base sync requested on a done flow\n' "$STANDING_SYNC_LABEL"
 }
 
@@ -236,11 +236,14 @@ standing_resume() {
 # the others are chains. A chain of writes a session makes under its claim
 # ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
-# fails partway leaves the claim held, and dies naming the writes that landed,
-# so the next tick cleans it up as a failure. STANDING_LANDED accumulates those
-# writes; each chain transition (start, finish, pause, ask, stop, reenter,
-# sync finish, sync dropped and limit-stop) resets it at its start, and begin,
-# sync request and resume neither reset nor add to it.
+# fails partway leaves the claim held, and dies naming the writes that landed;
+# the session wrapper retries a stop chain (see the resumable chain below), and
+# a claim still held after that is cleaned up by a later tick as a failure.
+# STANDING_LANDED accumulates those writes; each chain transition (start,
+# finish, pause, ask, stop, reenter, sync finish, sync dropped and limit-stop)
+# resets it at its start, then takes up earlier attempts' landed writes from
+# STANDING_STATE_FILE, and begin, sync request and resume neither reset nor
+# add to it.
 
 STANDING_LANDED=""
 

@@ -478,7 +478,7 @@ assert_contains "and the adoption decision" "$(fake_comments_of 7)" "adopted to 
 assert_eq "the labels exist with their colour and description" "$(fake_labels)" "needs-human	d93f0b	Waiting on the human
 orch:done	c2e0c6	Autopilot flow: done
 orch:implement	0e8a16	Autopilot flow: implement phase next
-orch:limited	c5def5	Autopilot session stopped on a usage limit; retried after the reset
+orch:limited	c5def5	Autopilot session stopped on a usage or GitHub API rate limit; retried after the reset
 orch:review	5319e7	Autopilot flow: review phase next
 orch:running	fbca04	Autopilot session running
 orch:spec	1d76db	Autopilot flow: spec phase next
@@ -2579,7 +2579,7 @@ assert_eq "no stop comment is left" "$(fake_comments_of 7 | grep -c 'orch:')" "0
 assert_not_contains "and no needs-human label" "$(fake_labels_of 7)" "needs-human"
 assert_eq "the tick ends after that pickup: the next issue is not claimed" "$(fake_claim_held 8)" free
 assert_eq "and no session starts" "$(tick_calls)" "0"
-assert_eq "the GitHub pause is held" "$([ -f "$top/.orchestrator/autopilot/github-limit" ] && echo held || echo absent)" held
+assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
 rm -f "$top/.orchestrator/autopilot/github-limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_contains "the issue is picked up again after the pause" "$(picked)" "limit-pickup-7"

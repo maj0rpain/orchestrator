@@ -1605,7 +1605,6 @@ export ORCH_GH_LIMIT_WAIT=0
 view=(issue view 5 --json body --jq .body)
 rl_jq='.resources | {core, graphql} | to_entries[] | [.key, .value.remaining, .value.limit, .value.reset] | @tsv'
 view_calls() { grep -c ' issue view 5 ' "$GH_FIXTURE/env.log"; }
-iso_epoch() { date -u -d "$1" +%s; }
 
 # A primary limit: no retry, the latest reset among the exhausted pools.
 gh_reply 1 '' 'gh: API rate limit exceeded for user ID 1. (HTTP 403)' "${view[@]}"
@@ -1628,7 +1627,9 @@ within_15() {
   local at now
   at="$(sed -n 's/.*resets at \([0-9TZ:-]*\)\..*/\1/p' <<<"$1")"
   now="$(date +%s)"
-  [ -n "$at" ] && [ "$(iso_epoch "$at")" -ge $((now + 840)) ] && [ "$(iso_epoch "$at")" -le $((now + 900)) ]
+  local ep
+  ep="$(sourced_orch autopilot_iso_epoch "$at")"
+  [ -n "$at" ] && [ "$ep" -ge $((now + 840)) ] && [ "$ep" -le $((now + 900)) ]
 }
 gh_reply 0 $'core\t3\t5000\t2000000000\ngraphql\t4\t5000\t2100000000\n' '' api rate_limit --jq "$rl_jq"
 out="$(contract adapter_issue_body 5 2>&1)"

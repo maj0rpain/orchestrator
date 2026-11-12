@@ -65,9 +65,10 @@ autopilot_setting() {
     github-reserve)
       if [ "$AUTOPILOT_SOURCE" = unset ]; then AUTOPILOT_VALUE="$AUTOPILOT_GITHUB_RESERVE_DEFAULT"; AUTOPILOT_SOURCE=default; fi
       case "$AUTOPILOT_VALUE" in
-        ''|*[!0-9]*) die "$key is $AUTOPILOT_VALUE - it must be an integer from 0 to 99 (git config $key <n>)" ;;
+        ""|*[!0-9]*) def=bad ;;
+        *) [ "$((10#$AUTOPILOT_VALUE))" -le 99 ] || def=bad ;;
       esac
-      [ "$((10#$AUTOPILOT_VALUE))" -le 99 ] ||
+      [ "$def" != bad ] ||
         die "$key is $AUTOPILOT_VALUE - it must be an integer from 0 to 99 (git config $key <n>)"
       AUTOPILOT_VALUE="$((10#$AUTOPILOT_VALUE))" ;;
     cap|rounds|budget)
@@ -365,7 +366,8 @@ autopilot_questions() {
 # write under a claim ends in the Standing module's release.
 
 # autopilot_dir <main-root>: where a clone's autopilot files live - the run
-# records, the session logs and the limit file - under its main checkout.
+# records, the session logs, the limit files (limit, github-limit,
+# github-early-<pool>) and the per-issue hit marks - under its main checkout.
 autopilot_dir() { printf '%s/%s/autopilot\n' "$1" "$ORCH_DIR_NAME"; }
 
 # autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
