@@ -26,7 +26,7 @@ fake_unlag() { rm -rf "$ORCH_GH_FAKE_STORE/lag"; }
 
 # fake_fail_times_after <operation> <k> <n> [stderr]: fake_fail_times, but only
 # once k calls of the operation have succeeded - a transient failure after the
-# reads ahead of it answered. Used by the verify-then-die section.
+# reads ahead of it answered.
 fake_fail_times_after() {
   local op="$1" k="$2"
   shift 2

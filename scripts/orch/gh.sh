@@ -135,9 +135,9 @@ gh_or_die() {
 # shell, never a subshell, so the verifier can write gh's stderr into the named
 # variable: 0 verified, 1 a mismatch, 2 a failed read. A non-zero status gets
 # one more attempt, and that attempt decides: 0 returns, 2 dies through gh_die
-# with gh's reason, anything else dies with <unverified-msg>. Always status 1,
-# and it takes no options. Locals prefixed so no verifier's out-variable is
-# shadowed.
+# with gh's reason, anything else dies with <unverified-msg>. Either death
+# exits with status 1, and it takes no options. Locals prefixed so no
+# verifier's out-variable is shadowed.
 verify_twice() {
   local _verify_twice_what="$1" _verify_twice_msg="$2" _verify_twice_err="" _verify_twice_st=0
   local _verify_twice_verifier="$3"
