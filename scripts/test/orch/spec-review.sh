@@ -1543,7 +1543,7 @@ sed -i 's/$/\r/' "$d/tickets.md"
 sra "$d" recommended --tickets recommended
 assert_status "apply --tickets from an all-CRLF tickets.md succeeds" "$st" 0
 assert_contains "and publishes the ticket edit" "$(fake_body_of 20)" "Build alpha prime."
-assert_eq "with no CR in the ticket body" "$(fake_body_of 20 | tr -cd '\r' | wc -c | tr -d ' ')" "0"
+assert_not_contains "with no CR in the ticket body" "$(fake_body_of 20)" $'\r'
 
 # A collapsed breakdown: its ## Ticket edit anchored on the body the batch
 # items left, and published with the body.
@@ -1739,7 +1739,7 @@ assert_eq "with the LF view" "$out" "$sre_lf_out"
 sra "$d" recommended
 assert_status "and apply succeeds" "$st" 0
 assert_contains "publishing the unescaped replacement" "$(fake_body_of 14)" $'\n@@ remark <text>\n'
-assert_eq "with no CR in the published body" "$(fake_body_of 14 | tr -cd '\r' | wc -c | tr -d ' ')" "0"
+assert_not_contains "with no CR in the published body" "$(fake_body_of 14)" $'\r'
 d="$(sre_dir "$sre_item_empty")"
 sra "$d" recommended
 assert_status "an escaped anchor with an empty replacement: apply succeeds" "$st" 0
@@ -2008,14 +2008,9 @@ check_refused src "a bare CRLF @@" "$d" "orch: batch.md line 44: unknown line '@
 # CR on every line (#2547): a quote renders as in its LF twin, an anchor that
 # matches nothing is refused with the LF twin's message, and apply publishes
 # no CR - keeping a mid-line CR.
-src_quote_dir() {
-  local d
-  d="$(src_dir)"
-  sed -i '7a\@@ comment @alice 2026-01-02T00:00:00Z\n@@ quote\nAlpha should say\nalpha prime.' "$d/batch.md"
-  sed -i 's/^@@ item 1 fidelity apply minor$/@@ item 1 consolidation apply material/; /^Alpha prime line\.$/{n;s/$/\n@@ why Alpha folds in the comment/}' "$d/batch.md"
-  printf '%s\n' "$d"
-}
-d="$(src_quote_dir)"
+d="$(src_dir)"
+sed -i '7a\@@ comment @alice 2026-01-02T00:00:00Z\n@@ quote\nAlpha should say\nalpha prime.' "$d/batch.md"
+sed -i 's/^@@ item 1 fidelity apply minor$/@@ item 1 consolidation apply material/; /^Alpha prime line\.$/{n;s/$/\n@@ why Alpha folds in the comment/}' "$d/batch.md"
 src "$d" --full 1
 src_lf_out="$out"; src_lf_st="$st"
 assert_status "the LF @@ quote batch passes" "$src_lf_st" 0
@@ -2033,12 +2028,6 @@ sed -i 's/^Beta line\.$/Nowhere./; s/$/\r/' "$d/batch.md"
 src "$d"
 assert_status "an all-CRLF batch with an anchor matching nothing: refused" "$st" 1
 assert_eq "with the LF twin's message byte for byte" "$err" "${src_lf_err//"$src_lf_dir"/"$d"}"
-d="$(src_dir)"
-sed -i 's/$/\r/' "$d/batch.md"
-sra "$d" recommended
-assert_status "apply from an all-CRLF batch succeeds" "$st" 0
-assert_contains "and publishes the edit" "$(fake_body_of 14)" "Alpha prime line."
-assert_eq "with no CR in the published body" "$(fake_body_of 14 | tr -cd '\r' | wc -c | tr -d ' ')" "0"
 d="$(src_dir)"
 sed -i 's/^Alpha prime line\.$/Alpha\rprime line./; s/$/\r/' "$d/batch.md"
 sra "$d" recommended
@@ -3306,8 +3295,8 @@ out="$("$ORCH" spec-review check "$d" 2>&1)"; st=$?
 assert_status "check passes a two-line anchor on a body fetched from CRLF" "$st" 0
 sra "$d" recommended
 assert_status "apply on that batch succeeds" "$st" 0
-assert_contains "and publishes the edit" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/body")" "Alpha and Beta line."
-assert_eq "with no CR in the published body" "$(tr -cd '\r' <"$ORCH_GH_FAKE_STORE/issues/14/body" | wc -c | tr -d ' ')" "0"
+assert_contains "and publishes the edit" "$(fake_body_of 14)" "Alpha and Beta line."
+assert_not_contains "with no CR in the published body" "$(fake_body_of 14)" $'\r'
 rm -rf "$d"
 unset d
 
