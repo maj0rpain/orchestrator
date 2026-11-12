@@ -1400,3 +1400,15 @@ assert_contains "it warns with gh's reason" "$out" "could not read the merged PR
 assert_eq "the issue stays open" "$(fake_state_of 608)" "OPEN"
 assert_eq "the checkout is still removed" "$(sp_branch quick/608-fr)" "gone"
 fake_unfail
+
+# A side checkout whose state.json is truncated is skipped: the backstop
+# returns 0, prints nothing and reads nothing from GitHub.
+fake_offline
+bf_flow ft 610 710; fake_pr_merged 710 3600 610
+ft="$(git worktree list --porcelain | sed -n "s/^worktree //p" | grep "/ft\$")"
+(cd "$ft" && state_truncate 10)
+fake_online
+out="$(bash -c 'source "$1"; shift; side_checkout_close_missed "$@"' _ "$ORCH" "$ft" orch/ft-flow 2>&1)"; st=$?
+assert_status "the close backstop on a truncated state.json returns 0" "$st" 0
+assert_eq "it prints nothing" "$out" ""
+assert_eq "it reads no issue from GitHub, so the open issue is left alone" "$(fake_state_of 610)" "OPEN"
