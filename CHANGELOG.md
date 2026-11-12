@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.35
+
+The spec review's batch and ticket parsers share one `@@` block reader for the anchor, replace, end and quote blocks, so a fix to the block machine lands in both; no message or accepted file changes.
+
 ## 5.0.34
 
 `ticket block` and `ticket unblock` now retry a blocked-by read-back that fails once, instead of dying at the first transient GitHub error. A read-back that fails twice dies naming the ticket and gh's reason. The one-retry verify-then-die policy now lives in a single `verify_twice` helper that `ticket publish`, `issue publish`, `issue triage` and the blocking-edge check all call, each keeping its existing death messages.
