@@ -2401,3 +2401,95 @@ case "$first" in
   *) bad "and passes the transition's message through" "first line: $first" ;;
 esac
 fake_unfail
+
+# --- autopilot candidates -----------------------------------------------------
+# The quick autopilot's selection verb: one line per issue, eligible with its
+# label move or skipped with the first reason that holds; it writes nothing.
+echo
+echo "autopilot candidates"
+fake_flow autopilot-candidates
+fake_issue 1 open ready-for-agent
+fake_issue 2 open needs-triage
+fake_issue 3 open ready-for-human
+fake_issue 4 open ready-for-agent orch:review
+fake_issue 5 open wontfix
+fake_issue 6 open needs-info
+fake_issue 7 open ready-for-agent
+mkdir -p "$ORCH_GH_FAKE_STORE/subs"; printf '7\n' >"$ORCH_GH_FAKE_STORE/subs/1"
+fake_issue 8 open review:high needs-triage
+fake_issue 9 open review:high
+fake_issue 10 open review:high ready-for-human
+fake_issue 11 closed ready-for-agent
+fake_issue 12 open ready-for-agent
+fake_issue_authorship 12 stranger NONE
+fake_issue 13 open wontfix orch:spec
+fake_issue 14 open
+fake_comment_seed 2 "a comment" >/dev/null 2>&1 || true
+ac_snapshot() { local n s=""; for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do s="$s$(fake_labels_of "$n")|$(fake_comments_of "$n" 2>/dev/null)#"; done; printf '%s' "$s"; }
+ac_before="$(ac_snapshot)"
+
+out="$("$ORCH" autopilot candidates 1 2 3 2>&1)"; st=$?
+assert_status "named issues succeed" "$st" 0
+assert_eq "none, move and override by the triage label" "$out" "1 eligible none
+2 eligible move
+3 eligible override"
+assert_eq "a plain unlabelled issue is a move" "$("$ORCH" autopilot candidates 14 2>&1)" "14 eligible move"
+assert_eq "a phase label names its phase" "$("$ORCH" autopilot candidates 4 2>&1)" "4 skip phase review"
+assert_eq "wontfix is skipped" "$("$ORCH" autopilot candidates 5 2>&1)" "5 skip wontfix"
+assert_eq "needs-info is skipped" "$("$ORCH" autopilot candidates 6 2>&1)" "6 skip needs-info"
+assert_eq "a ticket names its parent" "$("$ORCH" autopilot candidates 7 2>&1)" "7 skip ticket #1"
+assert_eq "a filed finding on needs-triage is skipped" "$("$ORCH" autopilot candidates 8 2>&1)" "8 skip untriaged-finding"
+assert_eq "a filed finding with no triage label is skipped" "$("$ORCH" autopilot candidates 9 2>&1)" "9 skip untriaged-finding"
+assert_eq "a triaged filed finding is eligible" "$("$ORCH" autopilot candidates 10 2>&1)" "10 eligible override"
+assert_eq "a closed issue is skipped" "$("$ORCH" autopilot candidates 11 2>&1)" "11 skip closed"
+assert_eq "an untrusted issue names its writer" "$("$ORCH" autopilot candidates 12 2>&1)" "12 skip untrusted stranger"
+assert_eq "the first reason holds when several do" "$("$ORCH" autopilot candidates 13 2>&1)" "13 skip phase spec"
+assert_eq "an unknown named issue is missing" "$("$ORCH" autopilot candidates 99 2>&1)" "99 skip missing"
+assert_eq "named issues keep the order named" "$("$ORCH" autopilot candidates 3 99 1 2>&1)" "3 eligible override
+99 skip missing
+1 eligible none"
+
+all="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
+assert_status "--all succeeds" "$st" 0
+assert_eq "--all walks the open issues oldest first" "$(printf '%s\n' "$all" | cut -d' ' -f1 | paste -sd' ' -)" "1 2 3 4 5 6 7 8 9 10 12 13 14"
+assert_eq "--limit keeps the first k eligible lines, skips not counted" "$("$ORCH" autopilot candidates --limit 4 2>&1)" "1 eligible none
+2 eligible move
+3 eligible override
+4 skip phase review
+5 skip wontfix
+6 skip needs-info
+7 skip ticket #1
+8 skip untriaged-finding
+9 skip untriaged-finding
+10 eligible override"
+assert_eq "--limit 1 stops after the first eligible" "$("$ORCH" autopilot candidates --limit 1 2>&1)" "1 eligible none"
+
+for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
+  # shellcheck disable=SC2086 # the words are the arguments
+  out="$("$ORCH" autopilot candidates $args 2>&1)"; st=$?
+  assert_status "usage error refused: '$args'" "$st" 1
+done
+assert_contains "the usage line names the forms" "$("$ORCH" autopilot candidates 2>&1)" "usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
+
+fake_fail adapter_issue_state_labels "HTTP 502 read"
+out="$("$ORCH" autopilot candidates 1 2 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed read dies" "$st" 1
+assert_eq "with an orch: message and no partial list" "$out" "orch: could not read issue #1: HTTP 502 read"
+fake_fail adapter_issue_authorship "HTTP 502 trust"
+out="$("$ORCH" autopilot candidates 1 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed trust read dies" "$st" 1
+assert_contains "naming the reason" "$out" "HTTP 502 trust"
+fake_fail adapter_issues_labelled "HTTP 502 list"
+out="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed listing dies" "$st" 1
+assert_contains "with an orch: message" "$out" "orch: could not list the open issues: HTTP 502 list"
+fake_fail adapter_issue_parent "HTTP 502 parent"
+out="$("$ORCH" autopilot candidates 2 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed parent read dies" "$st" 1
+assert_contains "naming the reason" "$out" "HTTP 502 parent"
+
+assert_eq "no form wrote a label or a comment" "$(ac_snapshot)" "$ac_before"

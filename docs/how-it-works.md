@@ -515,6 +515,7 @@ old claims. It also warns about this host's claims whose process is gone;
 | --- | --- |
 | `orch.sh autopilot show` | Print the settings, each with its source. |
 | `orch.sh autopilot start <issue> <plan-file>` | Post the plan comment and add `orch:spec`. |
+| `orch.sh autopilot candidates [<n>... \| --all \| --limit <k>]` | List, one line per issue, whether a quick autopilot may send it (`eligible none`, `move` or `override`) or why not (`skip <reason>`); writes nothing. |
 | `orch.sh autopilot watch [--every <seconds>]` | Run the watcher, a tick every `<seconds>`. |
 | `orch.sh autopilot tick` | Run the watcher once. |
 | `orch.sh autopilot questions` | List the repo's open `needs-human` autopilot issues: issue, kind (`question`, `replied` or `stop`), phase and comment URL. |

@@ -138,6 +138,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               validate the plan (## Autopilot block included),
                               post it as the plan handoff comment, then add
                               orch:spec
+  autopilot candidates [<n>... | --all | --limit <k>]
+                              one line per issue, `<n> eligible none|move|
+                              override` or `<n> skip <reason>`: whether a
+                              quick autopilot may send it; writes nothing
   autopilot sync <issue>      add orch:sync to an orch:done issue, asking the
                               next tick to merge the base branch into its PR
   autopilot sync-finish       close a sync: remove orch:sync, release the claim
