@@ -714,6 +714,9 @@ autopilot_cleanup_stale() {
 # The pause store: the limit file is reached only through autopilot_pause_extend
 # and autopilot_pause_until, so no other function builds or reads its path.
 
+# autopilot_usage_pause_file <main>: the usage limit file under <main>.
+autopilot_usage_pause_file() { printf '%s/limit\n' "$(autopilot_dir "$1")"; }
+
 # autopilot_pause_epoch <file>: the reset recorded in the limit file <file> as
 # epoch seconds; 0 when the file is missing or its text does not parse.
 autopilot_pause_epoch() {
@@ -725,6 +728,27 @@ autopilot_pause_epoch() {
 # autopilot_github_pause_file <main>: the GitHub limit file under <main>, the
 # pause a GitHub API rate limit writes (#2577).
 autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1")"; }
+
+# gh_limit_record <reset>: in an autopilot process - a tick or the session
+# wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) - writes
+# the GitHub pause, extended only to the later of two resets; in a session,
+# which has the wrapper's hit file path, writes the reset there too. An
+# interactive call writes nothing. Never fails: a write that fails is a warning.
+gh_limit_record() {
+  local main_root
+  [ "${ORCH_AUTOPILOT:-}" = 1 ] || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
+  if main_root="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main_root" ]; then
+    autopilot_pause_put "$(autopilot_github_pause_file "$main_root")" "$1" ||
+      warn "could not write the GitHub limit pause under $main_root"
+  else
+    warn "could not write the GitHub limit pause: the main checkout is unreadable"
+  fi
+  if [ "${ORCH_AUTOPILOT:-}" = 1 ] && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
+    autopilot_pause_put "$ORCH_AUTOPILOT_HIT_FILE" "$1" ||
+      warn "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
+  fi
+  return 0
+}
 
 # autopilot_github_early_file <main> <pool>: the early GitHub pause's file for
 # <pool> (core or graphql) under <main>: pickup paused, before any limit is hit,
@@ -795,7 +819,7 @@ autopilot_pause_until() {
       file="$(autopilot_github_early_file "$1" "$2")"
       what="GitHub $2 pool is below the github-reserve: no issue is picked up until" ;;
     *)
-      file="$(autopilot_dir "$1")/limit" ;;
+      file="$(autopilot_usage_pause_file "$1")" ;;
   esac
   [ -f "$file" ] || return 1
   epoch="$(autopilot_pause_epoch "$file")"
@@ -820,14 +844,14 @@ autopilot_pause_put() {
   { mkdir -p "$(dirname "$file")" && autopilot_epoch_iso "$new_epoch" >"$file"; } 2>/dev/null
 }
 
-# autopilot_pause_extend <main> <epoch> <log>: records <epoch> as the usage
-# limit file's reset under <main>, by autopilot_pause_put's rule. A failed write
-# is noted in <log> and on stderr, and is no failure of the caller.
+# autopilot_pause_extend <file> <epoch> <log> [<what>]: records <epoch> as the
+# reset of the limit file <file>, by autopilot_pause_put's rule; <what>
+# ("GitHub") prefixes "limit file" in a failure's note. A failed write is noted
+# in <log> and on stderr, and is no failure of the caller.
 autopilot_pause_extend() {
-  local file log="$3" msg
-  file="$(autopilot_dir "$1")/limit"
+  local file="$1" log="$3" msg
   if ! autopilot_pause_put "$file" "$2"; then
-    msg="autopilot run: could not write the limit file $file"
+    msg="autopilot run: could not write the ${4:+$4 }limit file $file"
     warn "$msg"
     printf '%s\n' "$msg" >>"$log"
   fi
@@ -1045,9 +1069,10 @@ autopilot_rank() {
 }
 
 # autopilot_tick: one pass - the GitHub-limit pause check (while it holds the
-# tick ends there, making no GitHub call), labels, stale claims, one read of
-# the done issues (autopilot_done_read), the merged-PR close (which needs no
-# session, so a limit pause never holds it), the limit-pause check, sync
+# tick ends there, making no GitHub call, not even closing merged PRs), labels,
+# stale claims, one read of the done issues (autopilot_done_read), the
+# merged-PR close (which needs no session, so the usage-limit and early pauses
+# never hold it), the limit-pause check, sync
 # detection (when auto-sync is true), then pickup (see the spec's One tick).
 # The one done read feeds both passes: sync detection gets the done table
 # minus the issues the close closed. Every candidate is read before the first
@@ -1131,7 +1156,7 @@ autopilot_tick() {
 # claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
-  local outcome=failure limit="" pause released_note hit hit_epoch=0 gh_msg
+  local outcome=failure limit="" pause released_note hit hit_epoch=0
   main_root="$(main_checkout_or_die)" || exit $?
   standing_claims_read
   if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
@@ -1149,11 +1174,9 @@ autopilot_session_end() {
   # One write: the later of the two pauses.
   pause="$SESSION_LOG_EARLY"
   if [ -n "$limit" ] && { [ -z "$pause" ] || [ "$limit" -gt "$pause" ]; }; then pause="$limit"; fi
-  if [ -n "$pause" ]; then autopilot_pause_extend "$main_root" "$pause" "$log"; fi
-  if [ "$outcome" = github ] && ! autopilot_pause_put "$(autopilot_github_pause_file "$main_root")" "$hit_epoch"; then
-    gh_msg="autopilot run: could not write the GitHub limit file $(autopilot_github_pause_file "$main_root")"
-    warn "$gh_msg"
-    printf '%s\n' "$gh_msg" >>"$log"
+  if [ -n "$pause" ]; then autopilot_pause_extend "$(autopilot_usage_pause_file "$main_root")" "$pause" "$log"; fi
+  if [ "$outcome" = github ]; then
+    autopilot_pause_extend "$(autopilot_github_pause_file "$main_root")" "$hit_epoch" "$log" GitHub
   fi
   case "$outcome" in
     released)
@@ -1174,6 +1197,8 @@ autopilot_session_end() {
   autopilot_stop_attempts "$log" "$rc" standing_stop "$issue" failure "$phase" "${detail}log: $log"
 }
 
+AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after 3 attempts - "
+
 # autopilot_stop_attempts <log> <rc> <command>...: the wrapper's stop chain, run
 # up to three times, each attempt in a subshell so a death ends the attempt; the
 # claim and the run record are kept throughout. The attempts share one state
@@ -1184,7 +1209,6 @@ autopilot_session_end() {
 # attempt fails it writes one backstop line to <log> - the stop's kind, its
 # first line and the session's exit code - for stale cleanup to quote, and
 # returns 1.
-AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after 3 attempts - "
 autopilot_stop_attempts() {
   local log="$1" rc="$2" state attempt main_root wait line kind first
   shift 2

@@ -1724,12 +1724,12 @@ assert_eq "but no hit file" "$(on_disk "$hit_file")" absent
 rm -f "$pause_file"
 ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
 assert_eq "the wrapper writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
-printf '2040-01-01T00:00:00Z\n' >"$pause_file"
-ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
-assert_eq "a later pause is kept" "$(cat "$pause_file")" "2040-01-01T00:00:00Z"
-printf '2020-01-01T00:00:00Z\n' >"$pause_file"
-ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
-assert_eq "an earlier pause is extended" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
+rm -f "$pause_file"; mkdir -p "$hit_file"
+out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a failed hit file write still fails the call" "$st" 1
+assert_contains "with the distinct message" "$out" "orch: GitHub API rate limit reached"
+assert_contains "and a line on the write" "$out" "could not write the GitHub limit hit file $hit_file"
+rmdir "$hit_file"
 rm -f "$pause_file"; mkdir "$pause_file"
 out="$(ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 2>&1)"; st=$?
 assert_status "a failed pause write still fails the call" "$st" 1

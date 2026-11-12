@@ -323,11 +323,9 @@ assert_eq "the second limit stop in a row is still limited" "$(tr_standing 69)|$
 assert_contains "and is retry 2 of 2" "$(fake_comments_of 69)" "retry 2 of 2"
 tr_seed 70 orch:spec orch:running
 fake_fail adapter_issue_comments_json "HTTP 500 comments"
-sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
+assert_contains "unreadable comments fail the attempt: it dies, naming the read" "$(sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' 2>&1)" "could not read issue #70's comments to count the stops in a row"
 fake_unfail
-assert_eq "unreadable comments take the failure path: needs-human, not limited, claim released" "$(tr_standing 70)|$(fake_claim_held 70)" "spec|0|1|0|free"
-assert_contains "and the failure comment says the comments could not be read" "$(fake_comments_of 70)" "could not be read to count the stops in a row"
-assert_contains "and says the session gave no reset time" "$(fake_comments_of 70)" "(the session gave no reset time)"
+assert_eq "and leave the labels, comments and claim as they were" "$(fake_comments_of 70)|$(tr_standing 70)|$(fake_claim_held 70)" "|spec|1|0|0|held"
 tr_seed 68 orch:spec orch:running
 out="$(sourced_rc 'standing_limit_stop 68 "" "" "" 1 log')"
 assert_contains "a limit stop of an empty phase dies" "$out" "rc=1"

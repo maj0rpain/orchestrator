@@ -1634,7 +1634,7 @@ printf '%s\n' "the session ended" >"$se_log"
 gh_se_fresh; se_end 1
 assert_eq "a GitHub-limited session end adds no label and removes running" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
 assert_first_line "and posts a limit stop with its github cause" "$(fake_comments_of 7)" "$(marker_of limited spec github)"
-assert_contains "naming the GitHub API rate limit and its reset" "$(fake_last_comment_of 7)" "GitHub API rate limit in the spec phase, which reset $i2"
+assert_contains "naming the GitHub API rate limit and its reset" "$(fake_last_comment_of 7)" "GitHub API rate limit in the spec phase, which resets $i2"
 assert_eq "and releases the claim" "$(fake_claim_held 7)" free
 assert_eq "and extends the GitHub pause to the reset, the usage limit untouched" "$(cat "$gh_pause" 2>/dev/null)|$(se_limit)" "$i2|absent"
 assert_eq "the hit file is gone afterwards" "$(on_disk "$hit")" absent
@@ -1702,7 +1702,7 @@ adapter_issue_comment() {
 se_lose_comment() { printf '%s; return 1; fi; return $rc; }' "$LOSE_COMMENT$1"; }
 
 se_fresh
-fake_fail adapter_issue_comment "HTTP 500 comment"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comment.times"
+fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
 se_end_with ':' 1
 assert_eq "a failed comment is retried: one limit comment, the issue limited, the claim released" "$(se_marker_count limited spec)|$(se_kind)|$(fake_claim_held 7)|$se_st" "1|limited|free|0"
 fake_unfail
@@ -1720,9 +1720,15 @@ assert_contains "with the session's exit code" "$(tail -1 "$se_log")" "the sessi
 fake_unfail
 
 se_fresh
-fake_fail adapter_issue_comments_json "API rate limit exceeded"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json.times"
+fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded"
 se_end_with ':' 1
 assert_eq "a timeline read that fails on a limit ends in a limit stop on a later attempt, not a failure stop" "$(se_kind)|$(se_marker_count limited spec)" "limited|1"
+fake_unfail
+
+se_fresh
+fake_fail_times adapter_issue_comments_json 1 "HTTP 500 comments"
+se_end_with ':' 1
+assert_eq "a timeline read that fails for another reason fails the attempt, and a later attempt's read ends in a limit stop, not a failure stop" "$(se_kind)|$(se_marker_count limited spec)" "limited|1"
 fake_unfail
 
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
@@ -1931,10 +1937,12 @@ restore_suite_env
 echo
 echo "autopilot label check"
 tick_fixture
+# seed_autopilot_labels [<skip>]: every autopilot label, as orch:sync seeds
+# them, except <skip> when given.
 seed_autopilot_labels() {
   local n c d
   fake_label_names
-  while IFS='|' read -r n c d; do fake_label "$n" "$c" "$d"; done <<<"$(sourced_orch standing_label_entries)"
+  while IFS='|' read -r n c d; do [ "$n" = "${1:-}" ] || fake_label "$n" "$c" "$d"; done <<<"$(sourced_orch standing_label_entries)"
 }
 seed_autopilot_labels
 fake_fail adapter_label_upsert "HTTP 500 a label write"
@@ -1961,10 +1969,7 @@ assert_eq "a drifted colour is updated" "$(fake_labels | awk -F '\t' '$1=="orch:
 assert_eq "a drifted description is updated" "$(fake_labels | awk -F '\t' '$1=="orch:running"{print $3}')" "Autopilot session running"
 
 # a missing label is created
-fake_label_names
-seed_autopilot_labels
-fake_label_names
-while IFS='|' read -r n c d; do [ "$n" = orch:sync ] || fake_label "$n" "$c" "$d"; done <<<"$(sourced_orch standing_label_entries)"
+seed_autopilot_labels orch:sync
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a missing label is created" "$(fake_labels | awk -F '\t' '$1=="orch:sync"{print $2}')" "0075ca"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND

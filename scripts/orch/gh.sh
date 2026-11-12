@@ -60,15 +60,13 @@ gh_limit_kind() {
   fi
 }
 
-# gh_limit_reset <kind>: the epoch second a limit is waited out until: for a
-# primary limit, the latest reset among the core and graphql pools at 0
-# remaining; otherwise, and for a failed read of the pools, 15 minutes from now.
+# gh_limit_reset: the epoch second a limit is waited out until: the latest
+# reset among the core and graphql pools at 0 remaining; with none, or a failed
+# read of the pools, 15 minutes from now.
 gh_limit_reset() {
-  local pools="" reset=""
-  if [ "$1" = primary ]; then
-    pools="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || pools=""
-    reset="$(awk -F '\t' '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
-  fi
+  local pools reset
+  pools="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || pools=""
+  reset="$(awk -F '\t' '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
   printf '%s\n' "${reset:-$(($(date +%s) + 900))}"
 }
 
@@ -88,31 +86,10 @@ gh_limit_handle() {
     sleep "${ORCH_GH_LIMIT_WAIT:-60}"
     return 2
   fi
-  reset="$(gh_limit_reset primary)"
-  warn "GitHub API rate limit reached - it resets at $(date -u -d "@$reset" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$reset" +%Y-%m-%dT%H:%M:%SZ). An autopilot session ends its turn now and does not retry; the watcher picks the work up after the reset."
+  reset="$(gh_limit_reset)"
+  warn "GitHub API rate limit reached - it resets at $(autopilot_epoch_iso "$reset"). An autopilot session ends its turn now and does not retry; the watcher picks the work up after the reset."
   gh_limit_record "$reset"
   return 1
-}
-
-# gh_limit_record <reset>: in an autopilot process - a tick or the session
-# wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) - writes
-# the GitHub pause, extended only to the later of two resets; in a session,
-# which has the wrapper's hit file path, writes the reset there too. An
-# interactive call writes nothing. Never fails: a write that fails is a warning.
-gh_limit_record() {
-  local main
-  [ "${ORCH_AUTOPILOT:-}" = 1 ] || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
-  if main="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main" ]; then
-    autopilot_pause_put "$(autopilot_github_pause_file "$main")" "$1" ||
-      warn "could not write the GitHub limit pause under $main"
-  else
-    warn "could not write the GitHub limit pause: the main checkout is unreadable"
-  fi
-  if [ "${ORCH_AUTOPILOT:-}" = 1 ] && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
-    autopilot_pause_put "$ORCH_AUTOPILOT_HIT_FILE" "$1" ||
-      warn "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
-  fi
-  return 0
 }
 
 # label_listed <labels> <label>: whether <label> is one of the newline-separated

@@ -43,8 +43,9 @@ MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
 
 # marked_comment_jq: prints the jq definitions every reader shares. Expand it
 # at call time. marked_comment_list is the comment array of the input, in
-# either shape; marked_comment_info is, for a comment, {kind, arg, retired}
-# (kind and arg null for an unmarked comment, retired a boolean);
+# either shape; marked_comment_info is, for a comment,
+# {kind, arg, retired, cause} (kind and arg null for an unmarked comment,
+# retired a boolean, cause a string);
 # marked_comment_entries is, for the input, {key, c, info} of each comment: its
 # index, the comment and its marked_comment_info; marked_comment_of($k; $a) is
 # the entries of kind $k (and of arg $a, unless it is empty).

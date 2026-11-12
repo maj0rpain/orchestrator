@@ -496,10 +496,11 @@ standing_comment_post() {
   standing_landed_add "$4"
 }
 
+STANDING_CHECK_ERR=""
+
 # standing_comment_present <issue> <text>: 0 when a trusted comment of the issue
 # is <text>, trailing whitespace aside; 1 when none is; 2, with the reason in
 # STANDING_CHECK_ERR, when the comments cannot be read.
-STANDING_CHECK_ERR=""
 standing_comment_present() {
   local json gh_err
   STANDING_CHECK_ERR=""
@@ -607,10 +608,10 @@ standing_sync_dropped() {
 # it, whatever their causes, a usage-limit stop adds orch:limited, comments,
 # then releases the claim; a GitHub limit stop adds no label (it is written
 # only once its reset has passed): it comments, removes orch:running, then
-# releases the claim. The third in a row, and a stop whose comments cannot be
-# read, take the failure path, naming the cause. The reset is empty when the
-# session named none; the pause is the time written to the limit file: the
-# reset, else the one-hour fallback.
+# releases the claim. The third in a row takes the failure path, naming the
+# cause; a stop whose comments cannot be read fails the attempt, so the wrapper
+# retries it. The reset is empty when the session named none; the pause is the
+# time written to the limit file: the reset, else the one-hour fallback.
 standing_limit_stop() {
   local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" cause="${7:-}"
   local count plan text when=" (the session gave no reset time)" at stopped marker what="a usage limit"
@@ -619,24 +620,18 @@ standing_limit_stop() {
   [ -z "$cause" ] || what="the GitHub API rate limit"
   stopped="the session stopped on $what$when and exited with code $rc"
   # The first read that succeeds fixes the stop's kind and count for every
-  # later attempt. A read that failed on a GitHub limit fixes nothing and never
-  # makes a failure stop: the attempt fails.
+  # later attempt. A read that fails, on a GitHub limit or for any other
+  # reason, fixes nothing: the attempt fails, and a later one reads again.
   plan="$(standing_state_get plan)" || {
-    if timeline_read "$issue"; then
-      count="$(timeline_limit_count "$phase")"
-      if [ "$count" -ge 2 ]; then plan=third; else plan="count:$count"; fi
-    elif [[ "$TIMELINE_REASON" == *"GitHub API rate limit reached"* ]]; then
+    timeline_read "$issue" || {
       standing_stop_note "limit stop" "$stopped"
       standing_landed_die "could not read issue #$issue's comments to count the stops in a row: $TIMELINE_REASON"
-    else
-      plan=unread
-    fi
+    }
+    count="$(timeline_limit_count "$phase")"
+    if [ "$count" -ge 2 ]; then plan=third; else plan="count:$count"; fi
     standing_state_put plan "$plan"
   }
   case "$plan" in
-    unread)
-      standing_stop "$issue" failure "$phase" "$stopped, and the issue's comments could not be read to count the stops in a row; log: $log"
-      return 0 ;;
     third)
       standing_stop "$issue" failure "$phase" "$stopped, the third in a row in $(standing_phase_text "$phase"); log: $log"
       return 0 ;;
@@ -644,7 +639,7 @@ standing_limit_stop() {
   count="${plan#count:}"
   marker="$(marked_comment_write limited "$phase" $cause)" || exit 1
   if [ -n "$cause" ]; then
-    printf -v text '%s\nThe session stopped on the GitHub API rate limit in %s, which reset %s.\n\nRetry %s of 2: the issue is picked up again by the next tick, no label is added.\n\nLog: %s\n' \
+    printf -v text '%s\nThe session stopped on the GitHub API rate limit in %s, which resets %s.\n\nRetry %s of 2: the issue is picked up again by the next tick, no label is added.\n\nLog: %s\n' \
       "$marker" "$(standing_phase_text "$phase")" "${reset:-$pause}" "$((count + 1))" "$log"
     standing_post_release "$issue" "$text" "post the limit stop comment" "posted the limit stop comment"
     return
