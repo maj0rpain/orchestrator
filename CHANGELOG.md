@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.26
+
+An autopilot tick now lists the `orch:done` issues once and reads each one once, sharing the read between the merged-PR close and sync request detection, instead of doing both twice.
+
 ## 5.0.25
 
 The planning edit guard now checks that the session is armed before it resolves the file path, so unguarded sessions skip the path work.
