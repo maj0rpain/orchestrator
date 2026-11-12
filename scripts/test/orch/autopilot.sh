@@ -2671,14 +2671,32 @@ rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 9999999999; fake_qu
 ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
 usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "the session log says how much core and graphql usage changed" "$(cat "$usage_log")" "GitHub API usage this session: core 10, graphql 50"
-# a failed read writes no line: the usage helper prints nothing and fails
-usage_before="$(printf 'core\t5000\t5000\t9999999999\ngraphql\t4950\t5000\t9999999999\n')"
+# a failed rate_limit read writes no line, at the session's start or at its end
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
 fake_fail adapter_rate_limit "HTTP 502"
-usage_out="$(sourced_orch_script 'rc=0; autopilot_github_usage "$1" || rc=$?; echo "rc=$rc"' "$usage_before" 2>&1)"
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
 fake_unfail
-assert_eq "a failed read at the session's end writes no usage line" "$usage_out" "rc=1"
-usage_out="$(sourced_orch_script 'rc=0; autopilot_github_usage "" || rc=$?; echo "rc=$rc"' 2>&1)"
-assert_eq "a failed read at the session's start writes no usage line" "$usage_out" "rc=1"
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_not_contains "a failed read at the session's start writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+usage_end_launcher="$(mktemp)"
+cat >"$usage_end_launcher" <<USAGE
+#!/bin/sh
+rm -f "$ORCH_GH_FAKE_STORE/claims/7"
+mkdir -p "$ORCH_GH_FAKE_STORE/fail"
+echo "HTTP 502" >"$ORCH_GH_FAKE_STORE/fail/adapter_rate_limit"
+exit 0
+USAGE
+chmod +x "$usage_end_launcher"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 9999999999; fake_quota graphql 4950 5000 9999999999
+ORCH_AUTOPILOT_LAUNCHER="$usage_end_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_not_contains "a failed read at the session's end writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot candidates -----------------------------------------------------
