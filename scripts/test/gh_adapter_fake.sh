@@ -466,6 +466,25 @@ adapter_issues_labelled() {
   done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
 }
 
+# adapter_issues_labelled_bodies <label>...: the open issues in the store
+# carrying every label named, in number order and cut at ISSUE_LIST_LIMIT as
+# adapter_issues_labelled is, each as the count-marked record the gh adapter
+# prints: number, label count, labels, the body's line count (its newlines
+# plus one), then the body byte for byte and a newline.
+adapter_issues_labelled_bodies() {
+  local n d labels
+  ! fake_failing adapter_issues_labelled_bodies || return 1
+  for n in $(adapter_issues_labelled "$@"); do
+    d="$(fake_issue_dir "$n")"
+    labels="$(fake_issue_labels "$n")"
+    printf '%s\n' "$n" "$(printf '%s' "$labels" | grep -c .)"
+    [ -z "$labels" ] || printf '%s\n' "$labels"
+    printf '%s\n' "$(( $(tr -cd '\n' <"$d/body" 2>/dev/null | wc -c) + 1 ))"
+    cat "$d/body" 2>/dev/null
+    printf '\n'
+  done
+}
+
 # adapter_issues_open_titles: every open issue in the store, one per line as
 # <number><TAB><title>, in number order - not cut at ISSUE_LIST_LIMIT.
 adapter_issues_open_titles() {
