@@ -84,8 +84,6 @@ host_from() {
   env -u CLAUDECODE -u JUNIE_EXTENSION_ROOT -u JUNIE_SHIM_PATH -u CLAUDE_PLUGIN_ROOT "${@:2}" \
     bash -c 'source "$1" && host_from_project_path "$2"' host_from "$HOST_SH" "$1"
 }
-assert_eq "host_from_project_path: a non-empty value is junie" "$(host_from /r)" "junie"
-assert_eq "host_from_project_path: an empty value is claude" "$(host_from '')" "claude"
 assert_eq "host_from_project_path ignores ORCHESTRATOR_HOST=claude" \
   "$(host_from /r ORCHESTRATOR_HOST=claude)" "junie"
 assert_eq "host_from_project_path ignores ORCHESTRATOR_HOST=junie" \

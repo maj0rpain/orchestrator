@@ -168,6 +168,9 @@ assert_eq "reads the tool path with a tab, newline and backslash byte for byte" 
 hook_read_payload < <(printf '%s' '{"prompt":"a\u0000b","session_id":"s9","source":"clear"}')
 assert_eq "drops a NUL from a prompt" "$prompt" "ab"
 assert_eq "keeps the fields after a NUL-holding prompt in place" "$session|$start_source" "s9|clear"
+hook_read_payload < <(printf '%s' '{"session_id":"s\u00009","cwd":"/c\u0000d","prompt":"p","source":"clear"}')
+assert_eq "drops a NUL from session_id and cwd" "$session|$cwd" "s9|/cd"
+assert_eq "keeps the fields after NUL-holding earlier fields in place" "$prompt|$start_source" "p|clear"
 
 # cwd: project_path, else cwd, else the process working directory.
 hook_read_payload < <(jq -n '{project_path:"/proj", cwd:"/c"}')
