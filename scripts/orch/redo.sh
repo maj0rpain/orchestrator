@@ -37,8 +37,8 @@ redo_refuse_ticket_worktrees() {
 # and gh's later close-with-comment would then post nothing (issue #1932). A
 # rerun after a death between the two closes again, which gh treats as a no-op.
 # With no branch recorded it closes nothing, renames nothing and leaves
-# redo_count alone. The caller clears branch, pr and base_sha itself, last, so
-# a rerun finds the retired branch.
+# redo_count alone. The caller clears branch, pr and base_sha in its one closing
+# write (redo_step_back), so a rerun finds the retired branch.
 redo_retire_attempt() {
   local issue="$1" slug="$2" n="$3" resumed="$4" branch pr new_branch msg
   branch="$(state_get branch)"
@@ -57,12 +57,17 @@ redo_retire_attempt() {
   state_write redo_count "$n"
 }
 
-# Clears the attempt's branch, pr and base_sha from state. The callers of
-# redo_retire_attempt run it last, so a rerun finds the retired branch.
-redo_clear_attempt() {
-  state_write branch null
-  state_write pr null
-  state_write base_sha null
+# redo_step_back <phase> <key> <value>...: each redo's one closing state write,
+# taken after every other step: moves phase to <phase> and sets the keys given
+# (the attempt's branch, pr and base_sha cleared, and whatever else the redo
+# resets) together or not at all. The phase is checked as phase_write does, and
+# a failed write dies with its wording.
+redo_step_back() {
+  local phase="$1"
+  shift
+  word_listed "$PHASES" "$phase" || die "not a flow phase: $phase (want one of: $PHASES)"
+  flow_state_write_many "$STATE" phase "$phase" "$@" ||
+    die "could not record phase in $STATE - the flow is unchanged"
 }
 
 # The full `review -> implement` transition: retire the old branch and PR,
@@ -123,9 +128,11 @@ $detail" ;;
 
   cmd_review retire "$new_n" >/dev/null
 
-  redo_clear_attempt
-  state_write iteration 0
-  phase_write implement
+  # The one closing write: a death before it leaves phase review with the
+  # branch, PR and iteration its guards need. (A rerun after review retire has
+  # moved the loop's records aside is refused by the terminal-state guard - a
+  # separate defect.)
+  redo_step_back implement iteration 0 branch null pr null base_sha null
   note "$new_n"
 }
 
@@ -138,7 +145,11 @@ $detail" ;;
 # the latter dies with the phase still `implement`, the handoffs already in
 # their pre-redo-spec-* folder and the markers in place, so a re-run resumes.
 # Only `--new-issue` closes the old one and clears state.issue, so orch-to-spec
-# runs again from scratch; its tickets are left as they are.
+# runs again from scratch; its tickets are left as they are. Every state change
+# but the attempt retire's own branch/redo_count record is one closing write
+# (redo_step_back), taken last - state.issue cleared in it, not at the close -
+# so a death anywhere earlier leaves phase implement with the issue and the keys
+# the entry guards need, and a re-run resumes.
 cmd_redo_spec() {
   require_state
   local phase new_issue=0
@@ -170,7 +181,6 @@ cmd_redo_spec() {
     local msg
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
     gh_or_die "close issue #$issue" adapter_issue_close "$issue" --comment "$msg"
-    state_write issue null
   else
     cmd_ticket_retire "$issue"
   fi
@@ -183,8 +193,11 @@ cmd_redo_spec() {
   # The round directories stay in place, since round 1's `spec round-dir 1/<n>`
   # clears them.
   move_files_aside "$HANDOFF_DIR" "$HANDOFF_DIR/$label" "a retired handoff" "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
-  redo_clear_attempt
-  phase_write spec
+  if [ "$new_issue" -eq 1 ]; then
+    redo_step_back spec branch null pr null base_sha null issue null
+  else
+    redo_step_back spec branch null pr null base_sha null
+  fi
 }
 
 cmd_redo() {

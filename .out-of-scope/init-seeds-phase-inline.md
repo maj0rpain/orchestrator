@@ -6,13 +6,13 @@ even though that costs a second state write and a second `updated` stamp.
 
 ## Why this is out of scope
 
-`phase_write` is the one internal writer of `state.phase`. The #279 spec
-says so directly: "`advance`, `review ready`, `redo review`, `redo spec`,
-and `init`'s seed all route through it". Every way the phase gets set
-therefore goes through one membership check against `PHASES`. If the seed
-wrote the phase inline, a second writer would exist that skips that check,
-and anyone adding a phase or renaming one would have to remember the seed
-object as well.
+`phase_write` is the internal writer of `state.phase` for `advance`,
+`review ready`, and `init`'s seed. `redo_step_back`, each redo's single
+closing write, also writes the phase and repeats the same `PHASES`
+membership check. Every way the phase gets set therefore goes through that
+membership check against `PHASES`. If the seed wrote the phase inline, a
+further writer would exist that skips that check, and anyone adding a phase
+or renaming one would have to remember the seed object as well.
 
 The extra write is cheap. The moment where `phase` is null exists only
 inside one `init` call, and `init` holds no lock that another reader could

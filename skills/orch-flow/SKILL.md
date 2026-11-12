@@ -536,8 +536,10 @@ collapsed `## Ticket` section cut from the body - then changes `state.phase`
 to `spec`, so the spec phase's step 5 breaks the redone spec down again; the
 spec phase's step 0 does the rest: the `pre-redo-spec-*` folder below makes
 it skip the rewrite decision and go straight to the spec review.
-If GitHub fails while retiring, it dies with the phase still `implement`, and
-a re-run resumes. Either way the
+If GitHub fails while retiring, or anything else dies before the step back
+(including after `--new-issue` has closed the old issue), it dies with the
+phase still `implement` and `state.issue` still recorded, and a re-run
+resumes: the step back is one closing state write, taken last. Either way the
 stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
 `.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`, so `phase advance`
 cannot leave the redone spec phase on them, and the `spec-paused` marker and
