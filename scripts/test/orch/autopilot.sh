@@ -2489,14 +2489,12 @@ fake_unfail
 assert_status "a failed listing dies" "$st" 1
 assert_contains "with an orch: message" "$out" "gh could not list the open issues: HTTP 502 list"
 fake_fail adapter_issue_parent "HTTP 502 parent"
-out="$("$ORCH" autopilot candidates 2 2>&1)"; st=$?
+ac_err="$(mktemp)"
+out="$("$ORCH" autopilot candidates 5 2 2>"$ac_err")"; st=$?
 fake_unfail
-assert_status "a failed parent read dies" "$st" 1
-assert_contains "naming the reason" "$out" "HTTP 502 parent"
-fake_fail adapter_issue_parent "HTTP 502 parent"
-out="$("$ORCH" autopilot candidates 5 2 2>/dev/null)"; st=$?
-fake_unfail
-assert_status "a read failing after an earlier verdict dies" "$st" 1
+assert_status "a parent read failing after an earlier verdict dies" "$st" 1
 assert_eq "and prints no partial list" "$out" ""
+assert_contains "naming the reason" "$(cat "$ac_err")" "HTTP 502 parent"
+rm -f "$ac_err"
 
 assert_eq "no form wrote a label or a comment" "$(ac_snapshot)" "$ac_before"

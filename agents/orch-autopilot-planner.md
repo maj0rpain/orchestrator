@@ -57,7 +57,9 @@ nothing back, and its line says the label was moved.
    carried into the body verbatim (ADR-0022). That section is the one
    definition of the mode; restate none of it.
 5. **Plan** (`plan`). Write the plan, its file, Rounds and Budget as the
-   Autopilot route of `skills/orch-interview/SKILL.md` sets them, with every
+   Autopilot route of `skills/orch-interview/SKILL.md` sets them, from the
+   `01-plan.md` template in `skills/orch-handoff/SKILL.md` (read that file; you
+   have no Skill tool), with every
    interview question and the answer taken under `## Decisions`. Validate it
    with `bash "$ORCH" handoff validate <file>`.
 6. **Start** (`start`). `bash "$ORCH" autopilot start <n> <plan-file>`.
