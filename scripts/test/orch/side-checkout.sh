@@ -825,6 +825,25 @@ assert_eq "with its branch" "$(sp_branch orch/lk-flow)" "kept"
 assert_eq "the sweep moves on to the next" "$(on_disk "$q2")" "absent"
 git worktree unlock "$lk"
 
+# The whole sweep asks GitHub for the default branch once, however many side
+# checkouts it walks and closes: counted at the adapter's stand-in.
+fake_offline
+c1="$(sc_add c1)"
+sp_branch_off "$c1" quick/11-c1
+fake_pr 49 merged quick/11-c1 main
+fake_pr_head 49 "$(git rev-parse quick/11-c1)"
+c2="$(sc_add c2)"
+sp_branch_off "$c2" quick/12-c2
+fake_pr 50 merged quick/12-c2 main
+fake_pr_head 50 "$(git rev-parse quick/12-c2)"
+fake_online
+pr_reads="$(mktemp)"
+out="$(counted_adapter_run "$pr_reads" 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo main; }' \
+  orch_gh_failing side-checkout prune 2>&1)"
+assert_eq "prune reaches the default-branch read exactly once" "$(log_count "$pr_reads")" "1"
+assert_contains "and still removes the first finished side checkout" "$out" "removed side checkout $c1"
+assert_contains "and the second" "$out" "removed side checkout $c2"
+
 # #974: a finished side checkout holding a flow with a ticket worktree under
 # it cannot have its flow archived: it is reported and kept with its branch.
 fake_offline

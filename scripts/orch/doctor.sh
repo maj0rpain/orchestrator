@@ -568,7 +568,10 @@ check_base_branch() {
 # on: warn on each, with the command that removes it, and say nothing for one
 # still in use. The finished test is the sweep's own, side_checkout_finished.
 # With no side checkout there is nothing to ask GitHub, so the gate - and a
-# skip with GitHub unreachable - only counts once one exists.
+# skip with GitHub unreachable - only counts once one exists. The finished test
+# reads the default branch for each side checkout, so the memo is seeded before
+# the walk from the probe's answer, else default_branch_local: doctor asks
+# GitHub for it only in its probe, never through default_branch_resolve.
 check_side_checkouts_finished() {
   local list kind _flow _branch path found=() verdict branch rc
   if ! list="$(checkouts)"; then
@@ -580,6 +583,14 @@ check_side_checkouts_finished() {
   done <<<"$list"
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
+  # shellcheck disable=SC2034 # the memo default_branch (base.sh) reads
+  if [ -n "$D_REPO_BRANCH" ]; then
+    DEFAULT_BRANCH="$D_REPO_BRANCH"; DEFAULT_BRANCH_SOURCE=github
+  elif DEFAULT_BRANCH="$(default_branch_local)"; then
+    DEFAULT_BRANCH_SOURCE=origin-head
+  else
+    DEFAULT_BRANCH_SOURCE=fallback
+  fi
   for path in "${found[@]}"; do
     rc=0; verdict=""; branch=""
     side_checkout_finished "$path" </dev/null || rc=$?

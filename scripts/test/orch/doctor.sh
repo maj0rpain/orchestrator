@@ -1418,6 +1418,17 @@ assert_not_contains "says nothing for a tip past its merged PR's head" "$out" "s
 assert_contains "and prints no FAIL" "$(printf '%s\n' "$out" | tail -1)" " 0 FAIL"
 out_in="$(cd "$dopen" && "$ORCH" doctor --env 2>&1)"
 assert_contains "warns the same from inside a side checkout" "$out_in" "orch.sh side-checkout remove dfin"
+# The finished test reads the default branch per side checkout, yet doctor asks
+# GitHub for it only in its probe - whether that read answered or failed.
+sc_reads="$(mktemp)"
+sc_counted_defs="$(counting_defs adapter_repo_default_branch branch)"
+out="$(counted_adapter_run "$sc_reads" "$sc_counted_defs" "$ORCH" doctor --env 2>&1)"
+assert_eq "with side checkouts, doctor's only default-branch read is its probe's" "$(log_count "$sc_reads")" "1"
+assert_contains "and the walk still warns on the finished one" "$out" "warn  side checkout dfin is finished"
+fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
+out="$(counted_adapter_run "$sc_reads" "$sc_counted_defs" "$ORCH" doctor --env 2>&1)"
+assert_eq "with the probe's read failed, the walk asks nothing more" "$(log_count "$sc_reads")" "1"
+fake_unfail
 out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "doctor --env fails when the checkouts cannot be read (#1333)" "$st" 1
 assert_contains "reporting it as a FAIL" "$out" "FAIL  could not read the checkouts"
