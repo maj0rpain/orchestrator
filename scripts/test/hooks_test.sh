@@ -1536,13 +1536,15 @@ pg_needle="$( (source "$DIR/paste-guard.sh"; printf '%s' "$PASTE_GUARD_NEEDLE") 
 assert_contains "the pass line spec_review_nudge prints holds the paste guard's needle" \
   "$(pg_pass_line batch "$PG/batch/view.md")" "$pg_needle"
 assert_eq "and a transcript holding that pass line as a tool result arms the guard" "$(sg_decide "$T")" block
-# The scan reads the needle constant: one copy. pg_scan_arms <needle> <pass line
-# tail> prints the view.md path paste_guard_scan finds, with the constant set to <needle>.
+# The scan reads the needle constant: one copy. pg_scan_arms <needle> <tail>
+# prints the view.md path the scan finds on a pass line ending in <tail>, with
+# the constant set to <needle>.
 pg_scan_arms() {
   local f="$PG/scan-needle.jsonl"
   jq -nc --arg t "batch.md passes: 2 items$2/tmp/x/view.md" \
     '{type:"user", message:{content:[{type:"tool_result", content:$t}]}}' >"$f"
-  (source "$DIR/paste-guard.sh"; PASTE_GUARD_NEEDLE="$1"; paste_guard_scan "$f" | head -n 1)
+  local out; out="$(source "$DIR/paste-guard.sh"; PASTE_GUARD_NEEDLE="$1"; paste_guard_scan "$f")"
+  printf '%s' "${out%%$'\n'*}"
 }
 assert_eq "the scan arms on a pass line ending in the needle constant's reassigned tail" \
   "$(pg_scan_arms '; saved at ' '; saved at ')" /tmp/x/view.md
