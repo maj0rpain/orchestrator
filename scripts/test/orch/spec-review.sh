@@ -2515,7 +2515,7 @@ d="$(sre_dir "$(sre_quote_item '@@ note <text>')")"
 printf '@@ none\n' >"$d/lens-fidelity.md"
 src "$d"
 assert_status "an unescaped @@ note in a quote: refused" "$st" 1
-assert_contains "with the existing message" "$err" "the quote is empty"
+assert_contains "with the existing message" "$err" "batch.md line 8: the quote is empty"
 assert_not_contains "and no escape hint" "$err" '\@@'
 # An unescaped @@ note <text> content line in a block names its line and
 # carries the escape hint.
@@ -2549,8 +2549,6 @@ src "$d" --full 1
 assert_contains "and the view shows it" "$out" '> Quoted words.'
 d="$(sre_dir "$sre_item$sre_quote_tail"$'\n  ')"
 check_refused src "a blank quote running to end of file" "$d" "orch: batch.md line 15: the quote is empty"
-d="$(sre_dir "$(sre_quote_item '   ')")"
-check_refused src "a blank quote ended by the next @@ line" "$d" "orch: batch.md line 8: the quote is empty"
 
 # Discoverability.
 out="$("$ORCH" spec-review wipe 2>&1)"

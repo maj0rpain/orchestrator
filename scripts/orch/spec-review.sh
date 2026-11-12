@@ -263,13 +263,13 @@ SR_BLOCK_OUTCOME=""
 SR_BLOCK_ANCHOR=""; SR_BLOCK_ANCHOR_LINE=0; SR_BLOCK_REPLACE=""; SR_BLOCK_QUOTE=""
 SR_BLOCK_BAD_LINE=0; SR_BLOCK_BAD_MSG=""
 
-# spec_review_block_open <anchor|quote> <line>: opens a block at <line>.
+# spec_review_block_open <anchor|replace|quote> <line>: opens a block at <line>.
 spec_review_block_open() {
   SR_BLOCK_MODE="$1"; SR_BLOCK_BUF=""; SR_BLOCK_BUFN=0; SR_BLOCK_LINE="$2"
 }
 
 # spec_review_block_reset: no block open - a parser's first call.
-spec_review_block_reset() { SR_BLOCK_MODE=""; SR_BLOCK_BUF=""; SR_BLOCK_BUFN=0; }
+spec_review_block_reset() { spec_review_block_open "" 0; }
 
 # spec_review_block_malformed <line> <message>: the outcome malformed.
 spec_review_block_malformed() {
@@ -310,7 +310,7 @@ spec_review_block_feed() {
         spec_review_block_malformed "$SR_BLOCK_LINE" "the anchor is empty"
       else
         SR_BLOCK_ANCHOR="$SR_BLOCK_BUF"; SR_BLOCK_ANCHOR_LINE="$SR_BLOCK_LINE"
-        SR_BLOCK_MODE=replace; SR_BLOCK_BUF=""; SR_BLOCK_BUFN=0; SR_BLOCK_LINE="$lineno"
+        spec_review_block_open replace "$lineno"
         SR_BLOCK_OUTCOME=consumed
       fi ;;
     replace)
