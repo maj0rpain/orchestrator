@@ -1700,30 +1700,11 @@ echo
 echo "autopilot session end: the stop chain's attempts"
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 se_marker_count() { grep -c -x -F "$(marker_of "$@")" <<<"$(fake_comments_of 7)" || true; }
-# a comment call that lands but reports a failure, once; $1 runs just after it
-LOSE_COMMENT='eval "orig_$(declare -f adapter_issue_comment)"
-adapter_issue_comment() {
-  local rc=0
-  orig_adapter_issue_comment "$@" || rc=$?
-  if [ ! -e "$ORCH_GH_FAKE_STORE/lost" ]; then : >"$ORCH_GH_FAKE_STORE/lost"; '
-se_lose_comment() { printf '%s; return 1; fi; return $rc; }' "$LOSE_COMMENT$1"; }
 
 se_fresh
 fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
 se_end_with ':' 1
 assert_eq "a failed comment is retried: one limit comment, the issue limited, the claim released" "$(se_marker_count limited spec)|$(se_kind)|$(fake_claim_held 7)|$se_st" "1|limited|free|0"
-fake_unfail
-
-rm -f "$ORCH_GH_FAKE_STORE/lost"; se_fresh
-se_end_with "$(se_lose_comment ':')" 1
-assert_eq "a stop whose comment landed but whose call failed posts no second comment" "$(se_marker_count limited spec)|$(se_kind)|$(fake_claim_held 7)" "1|limited|free"
-assert_contains "and keeps its count on the next attempt" "$(fake_last_comment_of 7)" "retry 1 of 2"
-
-rm -f "$ORCH_GH_FAKE_STORE/lost"; se_fresh
-se_end_with "$(se_lose_comment 'mkdir -p "$ORCH_GH_FAKE_STORE/fail"; printf "HTTP 500 read\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json"')" 1
-assert_eq "a failed duplicate-comment check posts no comment, and every attempt fails" "$(se_marker_count limited spec)|$(fake_claim_held 7)|$se_st" "1|held|1"
-assert_contains "the backstop line is written to the session log" "$(tail -1 "$se_log")" "the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit"
-assert_contains "with the session's exit code" "$(tail -1 "$se_log")" "the session exited with code 1"
 fake_unfail
 
 se_fresh
@@ -1744,7 +1725,6 @@ se_end_with ':' 1
 assert_eq "a stop whose every attempt fails leaves the claim held and fails" "$(fake_claim_held 7)|$se_st" "held|1"
 assert_contains "and writes one backstop line, with the stop kind, first line and exit code" "$(grep -c 'the stop chain failed after 3 attempts' "$se_log") $(tail -1 "$se_log")" "1 autopilot run: the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit"
 fake_unfail
-rm -f "$ORCH_GH_FAKE_STORE/lost"
 rm -rf "$se_dir"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
@@ -2662,23 +2642,14 @@ printf 'core\t5000\t5000\t9999999999\ngraphql\t4950\t5000\t9999999999\n' >"$ORCH
 ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
 usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "the session log says how much core and graphql usage changed" "$(cat "$usage_log")" "GitHub API usage this session: core 10, graphql 50"
-# a failed read at the end writes no line
-rm -f "$usage_log"
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_claim_seed 7 "$(hostname)" "$$"
-printf '#!/bin/sh\nrm -f "%s/claims/7"\nmkdir -p "%s/fail"; echo x >"%s/fail/adapter_rate_limit"\nexit 0\n' "$ORCH_GH_FAKE_STORE" "$ORCH_GH_FAKE_STORE" "$ORCH_GH_FAKE_STORE" >"$usage_launcher"
-ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
-fake_unfail
-assert_not_contains "a failed read at the session's end writes no usage line" "$(cat "$top/.orchestrator/autopilot/logs"/7-spec-*.log)" "GitHub API usage"
-# a failed read at the start writes no line
-rm -f "$top/.orchestrator/autopilot/logs"/7-spec-*.log
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_claim_seed 7 "$(hostname)" "$$"
+# a failed read writes no line: the usage helper prints nothing and fails
+usage_before="$(printf 'core\t5000\t5000\t9999999999\ngraphql\t4950\t5000\t9999999999\n')"
 fake_fail adapter_rate_limit "HTTP 502"
-printf '#!/bin/sh\nrm -f "%s/claims/7"\nrm -f "%s/fail/adapter_rate_limit"\nexit 0\n' "$ORCH_GH_FAKE_STORE" "$ORCH_GH_FAKE_STORE" >"$usage_launcher"
-ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+usage_out="$(sourced_orch_script 'rc=0; autopilot_github_usage "$1" || rc=$?; echo "rc=$rc"' "$usage_before" 2>&1)"
 fake_unfail
-assert_not_contains "a failed read at the session's start writes no usage line" "$(cat "$top/.orchestrator/autopilot/logs"/7-spec-*.log)" "GitHub API usage"
+assert_eq "a failed read at the session's end writes no usage line" "$usage_out" "rc=1"
+usage_out="$(sourced_orch_script 'rc=0; autopilot_github_usage "" || rc=$?; echo "rc=$rc"' 2>&1)"
+assert_eq "a failed read at the session's start writes no usage line" "$usage_out" "rc=1"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot candidates -----------------------------------------------------

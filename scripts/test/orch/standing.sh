@@ -326,6 +326,34 @@ fake_fail adapter_issue_comments_json "HTTP 500 comments"
 assert_contains "unreadable comments fail the attempt: it dies, naming the read" "$(sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' 2>&1)" "could not read issue #70's comments to count the stops in a row"
 fake_unfail
 assert_eq "and leave the labels, comments and claim as they were" "$(fake_comments_of 70)|$(tr_standing 70)|$(fake_claim_held 70)" "|spec|1|0|0|held"
+# a resumed stop (#2695): the first attempt's comment call lands but reports a
+# failure; the second runs with the same state file, after <between>
+LOSE_ONCE='eval "orig_$(declare -f adapter_issue_comment)"
+adapter_issue_comment() {
+  local rc=0
+  orig_adapter_issue_comment "$@" || rc=$?
+  if [ ! -e "$ORCH_GH_FAKE_STORE/lost" ]; then : >"$ORCH_GH_FAKE_STORE/lost"; return 1; fi
+  return $rc
+}'
+resumed_stop() { # <issue> <between the attempts>
+  rm -f "$ORCH_GH_FAKE_STORE/lost"
+  sourced_rc "$LOSE_ONCE"'
+STANDING_STATE_FILE="$(mktemp)"
+(standing_limit_stop '"$1"' spec "" 2026-01-01T01:00:00Z 1 log) || true
+'"$2"'
+standing_limit_stop '"$1"' spec "" 2026-01-01T01:00:00Z 1 log'
+}
+stop_comments() { grep -c -x -F "$(marker_of limited spec)" <<<"$(fake_comments_of "$1")" || true; }
+tr_seed 71 orch:spec orch:running
+resumed_stop 71 ':' >/dev/null
+assert_eq "a stop whose comment landed but whose call failed posts no second comment, and releases the claim" "$(stop_comments 71)|$(fake_claim_held 71)" "1|free"
+assert_contains "and keeps its count on the next attempt" "$(fake_comments_of 71)" "retry 1 of 2"
+tr_seed 72 orch:spec orch:running
+out="$(resumed_stop 72 'mkdir -p "$ORCH_GH_FAKE_STORE/fail"; printf "HTTP 500 read\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json"')"
+assert_contains "a failed duplicate-comment check fails the attempt" "$out" "could not check issue #72's comments for this stop's comment"
+assert_eq "and posts no second comment" "$(stop_comments 72)|$(fake_claim_held 72)" "1|held"
+fake_unfail
+rm -f "$ORCH_GH_FAKE_STORE/lost"
 tr_seed 68 orch:spec orch:running
 out="$(sourced_rc 'standing_limit_stop 68 "" "" "" 1 log')"
 assert_contains "a limit stop of an empty phase dies" "$out" "rc=1"
