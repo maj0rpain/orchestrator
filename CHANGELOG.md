@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.1.3
+
+An autopilot review loop now amends the plan handoff's Rejected alternatives, and re-posts the plan comment, when a human's spec-question ruling brings one back. The mechanics live in the handoff skill, and ADR-0004 gains a Note.
+
 ## 5.1.2
 
 A `redo review` that died after moving the review records now completes when rerun: the stopped loop reads as stopped from `pre-redo-<n>/`, `review resume` and doctor no longer send the human back to `next`, and `review retire` resumes into the folder its first run made.
