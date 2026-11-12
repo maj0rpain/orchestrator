@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.25
+
+The planning edit guard now checks that the session is armed before it resolves the file path, so unguarded sessions skip the path work.
+
 ## 5.0.24
 
 `branch retire` on a rerun after the local rename now asks origin whether `<old>` is still there before any remote step. A rerun of a completed retire, local-only or with an upstream, changes nothing on origin or in local branches, records the retirement on `<new>`, and prints `<new>`; an unreachable origin dies with nothing changed; and the resume never renames `<new>` back to `<old>`.
