@@ -422,7 +422,8 @@ cmd_branch() {
         # leaves, local-only or not, so it does not say a remote step remains:
         # origin's own answer for $old does. Still there - the previous call
         # died before its remote steps finished, so resume them. Answered no -
-        # nothing remote is left and this call changes nothing. Not answered
+        # nothing remote is left, so no remote step or rename happens and the
+        # retirement key is still recorded on $new. Not answered
         # - guess neither way and die, so a rerun can ask again. This call
         # made no rename, so it never rolls one back.
         resumed=1
