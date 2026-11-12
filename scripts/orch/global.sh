@@ -125,7 +125,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               (no default), .cap (3), .handle (the repo's
                               owner), .rounds (2), .budget (3), .model and
                               .effort (no default; the agent setting's Claude
-                              Code values or inherit) and .auto-sync (true).
+                              Code values or inherit), .auto-sync (true) and
+                              .github-reserve (20).
                               Dies naming the key and value when one is out
                               of range
   autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),

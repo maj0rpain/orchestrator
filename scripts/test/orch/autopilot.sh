@@ -478,7 +478,7 @@ assert_contains "and the adoption decision" "$(fake_comments_of 7)" "adopted to 
 assert_eq "the labels exist with their colour and description" "$(fake_labels)" "needs-human	d93f0b	Waiting on the human
 orch:done	c2e0c6	Autopilot flow: done
 orch:implement	0e8a16	Autopilot flow: implement phase next
-orch:limited	c5def5	Autopilot session stopped on a usage limit or a GitHub API rate limit; retried after the reset
+orch:limited	c5def5	Autopilot session stopped on a usage limit; retried after the reset
 orch:review	5319e7	Autopilot flow: review phase next
 orch:running	fbca04	Autopilot session running
 orch:spec	1d76db	Autopilot flow: spec phase next
@@ -1444,6 +1444,11 @@ se_fresh() {
 se_end() {
   se_out="$(sourced_orch_script 'autopilot_session_end 7 spec "$1" "$2" "$3"' "$se_log" "$1" "${2-}" 2>&1)"; se_st=$?
 }
+# se_end_with <prelude> <rc>: Session end over $se_log with <prelude> run after
+# orch.sh is sourced; the stop-chain waits are 0.
+se_end_with() {
+  se_out="$(ORCH_GH_LIMIT_WAIT=0 sourced_orch_script "$1"$'\n''autopilot_session_end 7 spec "$1" "$2" ""' "$se_log" "$2" 2>&1)"; se_st=$?
+}
 # se_kind: what the issue was left with: limited, failure (needs-human) or
 # released (neither).
 se_kind() {
@@ -1660,8 +1665,8 @@ se_end 1
 assert_contains "a usage-limit-free github stop after a github stop is retry 2 of 2" "$(fake_last_comment_of 7)" "Retry 2 of 2"
 rm -f "$gh_pause"
 
-# the limit stop's failure fallbacks: Session end still writes the limit file
-# on either (the fallbacks themselves are the Standing section's)
+# a limit stop whose attempt fails (a third stop in a row is a fallback, an
+# unreadable timeline fails the attempt): Session end writes the limit file
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 LIM_SPEC="$(marker_of limited spec)
 stopped"
@@ -1670,7 +1675,7 @@ fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
 fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
 se_end 1
 assert_eq "the third limit stop in a row still writes the limit file" "$(se_limit)" "$i2"
-se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; fake_unfail
+se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end_with ':' 1; fake_unfail
 assert_eq "unreadable comments still write the limit file" "$(se_limit)" "$i2"
 
 # claims or the checkout that cannot be read: nothing is touched
@@ -1688,11 +1693,6 @@ echo
 echo "autopilot session end: the stop chain's attempts"
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 se_marker_count() { grep -c -x -F "$(marker_of "$@")" <<<"$(fake_comments_of 7)" || true; }
-# se_end_with <prelude> <rc>: Session end over $se_log with <prelude> run after
-# orch.sh is sourced; the stop-chain waits are 0.
-se_end_with() {
-  se_out="$(ORCH_GH_LIMIT_WAIT=0 sourced_orch_script "$1"$'\n''autopilot_session_end 7 spec "$1" "$2" ""' "$se_log" "$2" 2>&1)"; se_st=$?
-}
 # a comment call that lands but reports a failure, once; $1 runs just after it
 LOSE_COMMENT='eval "orig_$(declare -f adapter_issue_comment)"
 adapter_issue_comment() {

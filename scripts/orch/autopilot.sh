@@ -711,8 +711,11 @@ autopilot_cleanup_stale() {
   done
 }
 
-# The pause store: the limit file is reached only through autopilot_pause_extend
-# and autopilot_pause_until, so no other function builds or reads its path.
+# The pause stores: the usage limit file (autopilot_usage_pause_file), the
+# GitHub limit file (autopilot_github_pause_file) and one early GitHub file per
+# pool (autopilot_github_early_file). Each path is built by its helper; a file
+# is written through autopilot_pause_put (autopilot_pause_extend for the usage
+# file) and read through autopilot_pause_epoch or autopilot_pause_until.
 
 # autopilot_usage_pause_file <main>: the usage limit file under <main>.
 autopilot_usage_pause_file() { printf '%s/limit\n' "$(autopilot_dir "$1")"; }
@@ -1150,10 +1153,10 @@ autopilot_tick() {
 # extends the GitHub pause to the hit file's reset.
 # The limit pause is the reset the session named, or one hour on; the early
 # pause is the five-hour window's resetsAt when its utilization is 0.9 or more,
-# whatever the outcome; all are epoch seconds. The pause store is extended
-# once, with the later of the two. Then it gives the released note, the limit
-# stop or the failure stop. It dies, before any write, when the checkout or the
-# claims cannot be read.
+# whatever the outcome; all are epoch seconds. The usage pause store is
+# extended once, with the later of the two. Then it gives the released note,
+# the limit stop or the failure stop. It dies, before any write, when the
+# checkout or the claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
   local outcome=failure limit="" pause released_note hit hit_epoch=0

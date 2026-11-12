@@ -1724,6 +1724,13 @@ assert_eq "but no hit file" "$(on_disk "$hit_file")" absent
 rm -f "$pause_file"
 ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
 assert_eq "the wrapper writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
+fake_quota core 0 5000 1900000000
+ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "an earlier reset leaves the later pause in place" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
+fake_quota core 0 5000 2100000000
+ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "a later reset extends it" "$(cat "$pause_file")" "2036-07-18T13:20:00Z"
+fake_quota core 0 5000 2000000000
 rm -f "$pause_file"; mkdir -p "$hit_file"
 out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 2>&1)"; st=$?
 assert_status "a failed hit file write still fails the call" "$st" 1

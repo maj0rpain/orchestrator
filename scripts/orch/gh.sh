@@ -18,8 +18,10 @@
 # gh's own default repo, which in a fork is the upstream. With no repo it dies
 # naming GH_REPO. Inside a command substitution `die` would end only that
 # subshell, and its message could land in a 2>/dev/null, so there it signals
-# the main shell, whose USR1 trap dies with the remedy instead. Its last line is
-# the only call to the real gh binary in orch.sh and its modules.
+# the main shell, whose USR1 trap dies with the remedy instead. A failed
+# call goes through gh_limit_handle, which retries a first secondary limit once;
+# the call in its loop is the only one to the real gh binary in orch.sh
+# and its modules.
 gh() {
   if ! repo_pin; then
     if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi

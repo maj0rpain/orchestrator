@@ -66,7 +66,7 @@ standing_label_entries() {
   done
   printf '%s|fbca04|Autopilot session running\n' "$STANDING_RUNNING_LABEL"
   printf '%s|d93f0b|Waiting on the human\n' "$STANDING_HUMAN_LABEL"
-  printf '%s|c5def5|Autopilot session stopped on a usage limit or a GitHub API rate limit; retried after the reset\n' "$STANDING_LIMITED_LABEL"
+  printf '%s|c5def5|Autopilot session stopped on a usage limit; retried after the reset\n' "$STANDING_LIMITED_LABEL"
   printf '%s|0075ca|Autopilot: base sync requested on a done flow\n' "$STANDING_SYNC_LABEL"
 }
 
@@ -459,9 +459,7 @@ standing_ask() {
 # (<post-what> names it in a failure, "post the ... comment"; <landed-what>
 # once landed, "posted the ... comment"), then releases the claim, last.
 standing_post_release() {
-  local issue="$1" text="$2" post_what="$3" landed_what="$4" kind present_rc
-  kind="${landed_what#posted the }"
-  standing_stop_note "${kind% comment}" "$text"
+  local issue="$1" text="$2" post_what="$3" landed_what="$4" present_rc
   if ! standing_landed_has "$landed_what"; then
     present_rc=1
     # An earlier attempt's call failed and may have landed: look first, and post
@@ -530,6 +528,7 @@ standing_reenter() {
   fi
   printf -v body '%s\n\nThe watcher starts another %s loop.\n' "$text" "$phase"
   body="$(marked_comment_write reentry "$phase")"$'\n'"$body"
+  standing_stop_note "re-entry" "$body"
   standing_post_release "$issue" "$body" \
     "post the re-entry comment" "posted the $phase re-entry comment"
 }
@@ -641,6 +640,7 @@ standing_limit_stop() {
   if [ -n "$cause" ]; then
     printf -v text '%s\nThe session stopped on the GitHub API rate limit in %s, which resets %s.\n\nRetry %s of 2: the issue is picked up again by the next tick, no label is added.\n\nLog: %s\n' \
       "$marker" "$(standing_phase_text "$phase")" "${reset:-$pause}" "$((count + 1))" "$log"
+    standing_stop_note "limit stop" "$text"
     standing_post_release "$issue" "$text" "post the limit stop comment" "posted the limit stop comment"
     return
   fi
