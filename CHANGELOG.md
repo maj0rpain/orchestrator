@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.22
+
+`orch.sh doctor --flow` now reads the flow's issue and the flow's PR from GitHub once per run instead of twice, with output and exit status unchanged.
+
 ## 5.0.21
 
 Autopilot pickup now keeps trying side checkout names (`<slug>`, `<slug>-<issue>`, `<slug>-<issue>-2`, ...) until it finds one free, instead of stopping on a naming clash.
