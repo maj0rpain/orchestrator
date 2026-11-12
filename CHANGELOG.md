@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.15
+
+Tidy the test ssh stub comment, drop a repeated repo test assertion, and give doctor's offline gh auth outcome its own case arm. No behaviour change.
+
+## 5.2.14
+
+The Bash hook's walker local `hd` is renamed `part_head`, and the hooks suite's duplicated Bash hook cases are trimmed. Behaviour does not change.
+
 ## 5.2.13
 
 The line-width checker holds its open-fence state in the fence character alone, dropping a redundant flag and an unreachable fence test; its output is unchanged.

@@ -53,16 +53,17 @@ _hook_bash_heredoc_word() {
   return 0
 }
 
-# Calls hook_bash_walk's test with the part, its unquoted text and its head,
+# Calls hook_bash_walk's test with the part, its unquoted text and part_head
+# (the walker's captured head when one was set, else the whole part),
 # then clears the part, its unquoted text and the head, and carries the part's
 # arithmetic count into the depth `arith`, stopped at 0. Reads
 # hook_bash_walk's locals (dynamic scope).
 hook_bash_walk_call() {
-  local hd="$part"
-  [ "$head_set" = 1 ] && hd="$head"
+  local part_head="$part"
+  [ "$head_set" = 1 ] && part_head="$head"
   local rc=0
   head=""; head_set=0
-  "$test_fn" "$part" "$unq" "$hd" || rc=$?
+  "$test_fn" "$part" "$unq" "$part_head" || rc=$?
   arith=$(( arith + $(_hook_bash_arith_count "$unq") )); [ "$arith" -ge 0 ] || arith=0
   part=""; unq=""
   return "$rc"
