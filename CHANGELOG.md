@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.1.4
+
+The agent role lookup, the suite-cost check and the claim list no longer leave a process substitution before its end, so none of them can write a broken-pipe error to stderr where SIGPIPE is ignored.
+
 ## 5.1.3
 
 An autopilot review loop now amends the plan handoff's Rejected alternatives, and re-posts the plan comment, when a human's spec-question ruling brings one back. The mechanics live in the handoff skill, and ADR-0004 gains a Note.
