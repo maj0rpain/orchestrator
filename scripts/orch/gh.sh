@@ -25,7 +25,71 @@ gh() {
     if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
     die "$REPO_REMEDY"
   fi
-  command gh "$@"
+  local errf out_st err rc retried=0
+  errf="$(mktemp)" || die "could not create a temp file for gh's stderr"
+  while :; do
+    out_st=0
+    command gh "$@" 2>"$errf" || out_st=$?
+    err="$(cat "$errf")"
+    if [ "$out_st" -eq 0 ] || [ -n "${GH_LIMIT_READING:-}" ]; then break; fi
+    rc=0
+    gh_limit_handle "$err" "$retried" || rc=$?
+    if [ "$rc" -eq 2 ]; then retried=1; continue; fi
+    if [ "$rc" -eq 1 ]; then rm -f "$errf"; return "$out_st"; fi
+    break
+  done
+  [ -z "$err" ] || printf '%s\n' "$err" >&2
+  rm -f "$errf"
+  return "$out_st"
+}
+
+# --- GitHub API rate limits (#2577) -------------------------------------------
+#
+# gh_limit_handle is the one limit handler: the guard calls it on a failed
+# call, and the test fake's failing operations call it too. It never dies: the
+# failed call returns its own status, with the distinct message on stderr.
+
+# gh_limit_kind <stderr>: secondary for GitHub's secondary-limit wording,
+# "submitted too quickly" or an HTTP 429; primary for its primary-limit
+# wording; nothing for any other failure.
+gh_limit_kind() {
+  if grep -qiE 'secondary rate limit|submitted too quickly|HTTP 429' <<<"$1"; then
+    echo secondary
+  elif grep -qiE 'API rate limit (already )?exceeded' <<<"$1"; then
+    echo primary
+  fi
+}
+
+# gh_limit_reset <kind>: the epoch second a limit is waited out until: for a
+# primary limit, the latest reset among the core and graphql pools at 0
+# remaining; otherwise, and for a failed read of the pools, 15 minutes from now.
+gh_limit_reset() {
+  local pools="" reset=""
+  if [ "$1" = primary ]; then
+    pools="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || pools=""
+    reset="$(awk -F '\t' '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
+  fi
+  printf '%s\n' "${reset:-$(($(date +%s) + 900))}"
+}
+
+# gh_limit_handle <stderr> <retried>: what a failed call's <stderr> means.
+# Status 0: no limit - the caller passes its failure through untouched.
+# Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
+# default 60) - the caller retries once and calls this again with <retried> 1.
+# Status 1: a limit to give up on - a primary one, or a secondary one met again
+# after the retry, handled as a primary one. The distinct message, naming the
+# reset, is on stderr. Nothing is recorded.
+gh_limit_handle() {
+  local kind reset
+  kind="$(gh_limit_kind "$1")"
+  [ -n "$kind" ] || return 0
+  if [ "$kind" = secondary ] && [ "$2" = 0 ]; then
+    sleep "${ORCH_GH_LIMIT_WAIT:-60}"
+    return 2
+  fi
+  reset="$(gh_limit_reset primary)"
+  warn "GitHub API rate limit reached - it resets at $(date -u -d "@$reset" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$reset" +%Y-%m-%dT%H:%M:%SZ). An autopilot session ends its turn now and does not retry; the watcher picks the work up after the reset."
+  return 1
 }
 
 # label_listed <labels> <label>: whether <label> is one of the newline-separated
@@ -138,6 +202,7 @@ gh_or_die() {
 #
 # The operations, in the order they are defined below:
 # - label: adapter_label_upsert, adapter_label_create, adapter_labels
+# - rate limit: adapter_rate_limit
 # - issue: adapter_issue_body, adapter_issue_comments,
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
@@ -228,6 +293,13 @@ adapter_label_upsert() {
 # Prints nothing.
 adapter_label_create() {
   gh label create "$1" --color "$2" --description "$3" >/dev/null
+}
+
+# adapter_rate_limit: GitHub's rate-limit pools, the core (REST) and graphql
+# ones, one per line as "<pool><TAB><remaining><TAB><limit><TAB><reset>", the
+# reset in epoch seconds. The read does not count against the primary limit.
+adapter_rate_limit() {
+  gh api rate_limit --jq '.resources | {core, graphql} | to_entries[] | [.key, .value.remaining, .value.limit, .value.reset] | @tsv'
 }
 
 # adapter_labels <limit>: the names of the repo's labels, at most <limit> of

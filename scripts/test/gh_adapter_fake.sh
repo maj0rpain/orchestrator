@@ -112,6 +112,12 @@
 #                     none is set
 #   no_sub_issues     present, the sub-issues endpoint refuses every issue
 #   offline           present, every operation fails with a connection error
+#   ratelimit         present, every operation but the rate_limit read fails
+#                     as a GitHub API rate limit, with the file's contents as
+#                     gh's stderr
+#   quota             the rate_limit read's answer, one
+#                     "<pool><TAB><remaining><TAB><limit><TAB><reset>" line
+#                     per pool; absent, full pools
 #   noauth            present, gh is not authenticated: the auth status fails
 #                     saying so, every other operation as unauthorised
 
@@ -129,11 +135,34 @@ fake_countdown() {
   printf '%s\n' "$((n - 1))" >"$1"
 }
 
-# fake_failing <operation>: true when fake_fail named the operation, with its
-# stderr written. An operation calls `! fake_failing <op> || return 1` once it
-# has parsed its own arguments, so a bad call exits 2 even with a failure
-# seeded.
+# fake_failing <operation>: fake_failing_raw, with a failure that is a GitHub
+# API rate limit going through the production limit handler, as the guard's
+# own failed calls do: a secondary limit is waited out and retried once, and a
+# limit given up on leaves the handler's distinct message on stderr in place of
+# gh's own. Any other failure is written as it is.
 fake_failing() {
+  local err rc=0 hrc retried=0
+  err="$(fake_failing_raw "$1" 2>&1)" || rc=$?
+  [ "$rc" -eq 0 ] || return 1
+  while [ -z "${GH_LIMIT_READING:-}" ] && declare -F gh_limit_handle >/dev/null; do
+    hrc=0
+    gh_limit_handle "$err" "$retried" || hrc=$?
+    case "$hrc" in
+      2) retried=1
+         err="$(fake_failing_raw "$1" 2>&1)" || return 1
+         continue ;;
+      1) return 0 ;;
+    esac
+    break
+  done
+  [ -z "$err" ] || printf '%s\n' "$err" >&2
+}
+
+# fake_failing_raw <operation>: true when fake_fail named the operation, with
+# its stderr written. An operation calls `! fake_failing <op> || return 1`
+# once it has parsed its own arguments, so a bad call exits 2 even with a
+# failure seeded.
+fake_failing_raw() {
   local f n s
   s="$(fake_store)" || return 1
   # a fifo at hold/<operation> parks the call: it writes the calling orch.sh's
@@ -141,6 +170,10 @@ fake_failing() {
   if [ -p "$s/hold/$1" ]; then
     printf '%s\n' "$$" >"$s/held"
     read -r _ <"$s/hold/$1" || true
+  fi
+  if [ -f "$s/ratelimit" ] && [ "$1" != adapter_rate_limit ]; then
+    cat "$s/ratelimit" >&2
+    return 0
   fi
   if [ -f "$s/offline" ]; then
     echo "dial tcp: lookup api.github.com: no such host" >&2
@@ -248,6 +281,16 @@ adapter_labels() {
   f="$(fake_store)/labels"
   [ -f "$f" ] || return 0
   cut -f1 "$f" | awk -v n="$1" 'NR<=n'
+}
+
+# adapter_rate_limit: the stored quota, one "<pool><TAB><remaining><TAB><limit>
+# <TAB><reset>" line per pool; absent, both pools full with a reset an hour on.
+adapter_rate_limit() {
+  local f
+  ! fake_failing adapter_rate_limit || return 1
+  f="$(fake_store)/quota"
+  if [ -f "$f" ]; then cat "$f"; return 0; fi
+  printf '%s\t5000\t5000\t%s\n' core "$(($(date +%s) + 3600))" graphql "$(($(date +%s) + 3600))"
 }
 
 # --- issue operations, on the store -------------------------------------------

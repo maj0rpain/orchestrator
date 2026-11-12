@@ -971,7 +971,7 @@ fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; 
 # unreachable. fake_online undoes it, and doctor.sh's fake_noauth too.
 fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
 # fake_online: GitHub reachable and authenticated again.
-fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth"; }
+fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth" "$ORCH_GH_FAKE_STORE/ratelimit"; }
 
 # --- the fixture gh (adapter contract tests, #280) ----------------------------
 #
