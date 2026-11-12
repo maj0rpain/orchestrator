@@ -1290,7 +1290,17 @@ autopilot_run() {
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
   recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || autopilot_read_die phase "$side" $?
   # a sync request is told by orch:sync on a done issue; its phase word is sync
-  standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
+  if ! standing_read "$issue"; then
+    # A read that met a GitHub limit (a pause holds once it has failed) runs no
+    # session and makes no stop: only the claim is released, through the retry
+    # chain. Any other failure dies as before.
+    if autopilot_github_paused; then
+      log="$(liveness_log_path "$issue" "$recorded")" || exit $?
+      autopilot_stop_attempts "$log" 0 standing_claim_release "$issue" || true
+      return 0
+    fi
+    gh_die "read issue #$issue" "$STANDING_REASON"
+  fi
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   phase="$recorded"
   if [ "$recorded" = "done" ] && standing_is_sync; then

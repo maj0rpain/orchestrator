@@ -1644,10 +1644,7 @@ hit="$top/.orchestrator/autopilot/run/7.hit"
 gh_se_fresh() { se_fresh; rm -f "$gh_pause"; mkdir -p "$(dirname "$hit")"; printf '%s\n' "$i2" >"$hit"; }
 printf '%s\n' "the session ended" >"$se_log"
 gh_se_fresh; se_end 1
-assert_eq "a GitHub-limited session end adds no label and removes running" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
 assert_first_line "and posts a limit stop with its github cause" "$(fake_comments_of 7)" "$(marker_of limited spec github)"
-assert_contains "naming the GitHub API rate limit and its reset" "$(fake_last_comment_of 7)" "GitHub API rate limit in the spec phase, which resets $i2"
-assert_eq "and releases the claim" "$(fake_claim_held 7)" free
 assert_eq "and extends the GitHub pause to the reset, the usage limit untouched" "$(cat "$gh_pause" 2>/dev/null)|$(se_limit)" "$i2|absent"
 assert_eq "the hit file is gone afterwards" "$(on_disk "$hit")" absent
 gh_se_fresh; printf '%s\n' "not a time" >"$hit"; se_end 1
@@ -1659,17 +1656,6 @@ ndjson_with "Claude AI usage limit reached|$r1" >"$se_log"
 gh_se_fresh; se_end 1
 assert_eq "a usage limit outranks the hit file: limited, no GitHub pause" "$(se_kind)|$(on_disk "$gh_pause")|$(on_disk "$hit")" "limited|absent|absent"
 printf '%s\n' "the session ended" >"$se_log"
-# mixed causes share one counter: usage, then github, then github is the third
-gh_se_fresh
-fake_comment 7 o 2026-01-01T00:00:00Z "$(marker_of limited spec)"
-fake_comment 7 o 2026-01-01T00:00:01Z "$(marker_of limited spec github)"
-se_end 1
-assert_eq "the third limit stop in a row, whatever its causes, is a needs-human failure stop" "$(se_kind)|$(fake_claim_held 7)" "failure|free"
-assert_contains "naming the GitHub cause" "$(fake_last_comment_of 7)" "stopped on the GitHub API rate limit (resets $i2) and exited with code 1, the third in a row"
-gh_se_fresh
-fake_comment 7 o 2026-01-01T00:00:00Z "$(marker_of limited spec github)"
-se_end 1
-assert_contains "a usage-limit-free github stop after a github stop is retry 2 of 2" "$(fake_last_comment_of 7)" "Retry 2 of 2"
 rm -f "$gh_pause"
 
 # a limit stop whose attempt fails (a third stop in a row is a fallback, an
@@ -2542,12 +2528,11 @@ gh_reset="$(( $(date +%s) + 7200 ))"
 mkdir -p "$top/.orchestrator/autopilot"
 printf '%s\n' "$(iso_of "$gh_reset")" >"$top/.orchestrator/autopilot/github-limit"
 before="$(fake_labels_of 7)"
-out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+out="$("$ORCH" autopilot tick 2>&1 >/dev/null)"; st=$?
 assert_status "a tick under a GitHub pause succeeds" "$st" 0
-assert_contains "its note names the reset" "$out" "GitHub API rate limit: the tick does nothing until $(iso_of "$gh_reset")"
+assert_contains "its note names the reset, on stderr, which the watcher keeps" "$out" "GitHub API rate limit: the tick does nothing until $(iso_of "$gh_reset")"
 assert_eq "it picks nothing up" "$(tick_calls)" "0"
 assert_eq "and touches no label" "$(fake_labels_of 7)" "$before"
-assert_contains "the note is on stderr, which the watcher keeps" "$("$ORCH" autopilot tick 2>&1 >/dev/null)" "GitHub API rate limit: the tick does nothing until"
 printf '2020-01-01T00:00:00Z\n' >"$top/.orchestrator/autopilot/github-limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a passed GitHub pause is removed" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent
@@ -2582,6 +2567,37 @@ fake_fail adapter_claim_delete "HTTP 500 push"
 assert_eq "a failed claim-ref delete leaves the claim held" "$(fake_claim_held 9)" held
 fake_unfail
 
+# --- autopilot run: a start-up read that meets a GitHub limit (#2577) ---------
+echo
+echo "autopilot run start-up read github limit"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Start-up read 7"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+rm -f "$top/.orchestrator/autopilot/github-limit"
+: >"$launcher_dir/calls"
+fake_issue 7 open orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+comments_before="$(fake_comments_of 7)"
+fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
+ORCH_AUTOPILOT_TICK=1 "$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+assert_eq "a start-up read that meets a GitHub limit removes orch:running, adds no label" "$(fake_labels_of 7)" "orch:spec "
+assert_eq "releases the claim" "$(fake_claim_held 7)" free
+assert_eq "posts no comment" "$(fake_comments_of 7)" "$comments_before"
+assert_eq "and starts no session" "$(tick_calls)" "0"
+assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+# a start-up read that fails for another reason dies, as before
+fake_issue 7 open orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+rm -f "$top/.orchestrator/autopilot/github-limit"
+fake_fail_times adapter_issue_state_labels 1 "HTTP 500"
+ORCH_AUTOPILOT_TICK=1 "$ORCH" autopilot run 7 >/dev/null 2>&1; st=$?
+fake_unfail
+assert_status "a start-up read that fails for another reason dies" "$st" 1
+assert_eq "and leaves the claim held" "$(fake_claim_held 7)" held
+
 # --- autopilot tick: the early GitHub pause (#2577) ---------------------------
 echo
 echo "autopilot tick github reserve"
@@ -2590,7 +2606,7 @@ top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Reserve 7"
 printf '7\n' >"$launcher_dir/release"
 quota_reset="$(( $(date +%s) + 7200 ))"
-printf 'core\t5000\t5000\t%s\ngraphql\t400\t5000\t%s\n' "$((quota_reset - 100))" "$quota_reset" >"$ORCH_GH_FAKE_STORE/quota"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 "$((quota_reset - 100))"; fake_quota graphql 400 5000 "$quota_reset"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick with a pool under the reserve succeeds" "$st" 0
 assert_contains "its note names the pool and its reset" "$out" "GitHub graphql pool is below the github-reserve: no issue is picked up until $(iso_of "$quota_reset")"
@@ -2639,7 +2655,7 @@ printf 'core\t4990\t5000\t9999999999\ngraphql\t4900\t5000\t9999999999\n' >"$ORCH
 exit 0
 USAGE
 chmod +x "$usage_launcher"
-printf 'core\t5000\t5000\t9999999999\ngraphql\t4950\t5000\t9999999999\n' >"$ORCH_GH_FAKE_STORE/quota"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 9999999999; fake_quota graphql 4950 5000 9999999999
 ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
 usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "the session log says how much core and graphql usage changed" "$(cat "$usage_log")" "GitHub API usage this session: core 10, graphql 50"

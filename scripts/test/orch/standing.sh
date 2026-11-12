@@ -326,6 +326,22 @@ fake_fail adapter_issue_comments_json "HTTP 500 comments"
 assert_contains "unreadable comments fail the attempt: it dies, naming the read" "$(sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' 2>&1)" "could not read issue #70's comments to count the stops in a row"
 fake_unfail
 assert_eq "and leave the labels, comments and claim as they were" "$(fake_comments_of 70)|$(tr_standing 70)|$(fake_claim_held 70)" "|spec|1|0|0|held"
+# limit-stop with the GitHub cause: no label added, orch:running removed
+tr_seed 95 orch:spec orch:running
+sourced_rc 'standing_limit_stop 95 spec 2026-01-01T01:00:00Z 2026-01-01T01:00:00Z 1 log github' >/dev/null
+assert_eq "a GitHub limit stop adds no label, drops running and releases the claim" "$(tr_standing 95)|$(fake_claim_held 95)" "spec|0|0|0|free"
+assert_first_line "and posts the limited comment with its github cause" "$(fake_comments_of 95)" "$(marker_of limited spec github)"
+assert_contains "naming the GitHub API rate limit and its reset" "$(fake_comments_of 95)" "GitHub API rate limit in the spec phase, which resets 2026-01-01T01:00:00Z"
+tr_seed 96 orch:spec orch:running
+fake_comment 96 o 2026-01-01T00:00:00Z "$(marker_of limited spec github)"
+sourced_rc 'standing_limit_stop 96 spec 2026-01-01T01:00:00Z 2026-01-01T01:00:00Z 1 log github' >/dev/null
+assert_contains "a GitHub stop after a GitHub stop is retry 2 of 2" "$(fake_comments_of 96)" "Retry 2 of 2"
+tr_seed 97 orch:spec orch:running
+fake_comment 97 o 2026-01-01T00:00:00Z "$(marker_of limited spec)"
+fake_comment 97 o 2026-01-01T00:00:01Z "$(marker_of limited spec github)"
+sourced_rc 'standing_limit_stop 97 spec 2026-01-01T01:00:00Z 2026-01-01T01:00:00Z 1 log github' >/dev/null
+assert_eq "the third limit stop in a row, whatever its causes, is a needs-human failure stop" "$(tr_standing 97)|$(fake_claim_held 97)" "spec|0|1|0|free"
+assert_contains "naming the GitHub cause" "$(fake_comments_of 97)" "stopped on the GitHub API rate limit (resets 2026-01-01T01:00:00Z) and exited with code 1, the third in a row"
 # a resumed stop (#2695): the first attempt's comment call lands but reports a
 # failure; the second runs with the same state file, after <between>
 LOSE_ONCE='eval "orig_$(declare -f adapter_issue_comment)"

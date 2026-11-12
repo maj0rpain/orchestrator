@@ -27,9 +27,6 @@ contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH"
 # GitHub API rate limit, with the stderr given - a primary limit's wording by
 # default. fake_online lifts it.
 fake_ratelimit() { printf '%s\n' "${1-API rate limit exceeded for user ID 1.}" >"$ORCH_GH_FAKE_STORE/ratelimit"; }
-# fake_quota <pool> <remaining> <limit> <reset-epoch>: the pool's line in the
-# rate_limit read's answer; the other pool, if unset, is no line at all.
-fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 
 # --- every gh call pinned to the repo (#520) ----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,

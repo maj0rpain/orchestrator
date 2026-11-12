@@ -990,6 +990,9 @@ fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; 
 fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
 # fake_online: GitHub reachable and authenticated again.
 fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth" "$ORCH_GH_FAKE_STORE/ratelimit"; }
+# fake_quota <pool> <remaining> <limit> <reset-epoch>: the pool's line in the
+# rate_limit read's answer; the other pool, if unset, is no line at all.
+fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 
 # --- the fixture gh (adapter contract tests, #280) ----------------------------
 #

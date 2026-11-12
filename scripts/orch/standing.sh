@@ -348,6 +348,14 @@ standing_release() {
     standing_chain_die "$issue" "delete the claim ref" "$gh_err"
 }
 
+# standing_claim_release <issue>: a chain transition that only releases the
+# claim - orch:running removed, then the claim ref deleted - with no comment, no
+# other label and nothing counted.
+standing_claim_release() {
+  standing_chain_start
+  standing_release "$1"
+}
+
 # standing_move_label <issue> <phase>: <issue>'s phase label made the one for
 # <phase> - the other phase labels removed - in one edit.
 standing_move_label() {
