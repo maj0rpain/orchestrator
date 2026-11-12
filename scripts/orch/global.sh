@@ -125,7 +125,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               (no default), .cap (3), .handle (the repo's
                               owner), .rounds (2), .budget (3), .model and
                               .effort (no default; the agent setting's Claude
-                              Code values or inherit) and .auto-sync (true).
+                              Code values or inherit), .auto-sync (true) and
+                              .github-reserve (20).
                               Dies naming the key and value when one is out
                               of range
   autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),
@@ -167,8 +168,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               on stderr and the loop carried on
   autopilot run <issue>       the session wrapper a tick starts: runs claude -p
                               in the issue's side checkout, logging under
-                              .orchestrator/autopilot/logs/, and fails the
-                              issue when the claim is still held at its exit
+                              .orchestrator/autopilot/logs/; stops the issue as
+                              limited on a usage or GitHub limit, else fails it
+                              when the claim is still held at its exit (a
+                              GitHub-limited start-up read only releases it)
   autopilot ask <phase> <file>
                               post <file> as the phase's question comment
                               (@mentioning the handle), add needs-human, then

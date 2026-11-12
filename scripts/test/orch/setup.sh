@@ -72,6 +72,8 @@ PATH="$GH_GUARD_DIR/bin:$PATH"
 # gh_fixture's GH_FIXTURE included. A section that exported more names passes
 # them to restore_suite_env to unset them too.
 SUITE_PATH="$PATH"
+# No test waits out the real GitHub rate-limit backoff (60 and 300 seconds).
+export ORCH_GH_LIMIT_WAIT=0
 restore_suite_env() {
   unset CLAUDE_PLUGIN_ROOT GH_REPO GH_FIXTURE ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE "$@"
   HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
@@ -987,7 +989,10 @@ fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; 
 # unreachable. fake_online undoes it, and doctor.sh's fake_noauth too.
 fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
 # fake_online: GitHub reachable and authenticated again.
-fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth"; }
+fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth" "$ORCH_GH_FAKE_STORE/ratelimit"; }
+# fake_quota <pool> <remaining> <limit> <reset-epoch>: the pool's line in the
+# rate_limit read's answer; the other pool, if unset, is no line at all.
+fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 
 # --- the fixture gh (adapter contract tests, #280) ----------------------------
 #

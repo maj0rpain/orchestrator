@@ -11,6 +11,7 @@ AUTOPILOT_MODES="default acceptEdits plan dontAsk bypassPermissions"
 AUTOPILOT_CAP_DEFAULT=3
 AUTOPILOT_ROUNDS_DEFAULT=2
 AUTOPILOT_BUDGET_DEFAULT=3
+AUTOPILOT_GITHUB_RESERVE_DEFAULT=20
 
 # autopilot_lookup <name> <value-var> <source-var>: the key
 # orchestrator.autopilot.<name> - local config, then global config - into
@@ -30,10 +31,10 @@ autopilot_lookup() {
 # autopilot_setting <name>: the effective, validated value of
 # orchestrator.autopilot.<name> into AUTOPILOT_VALUE, its source into
 # AUTOPILOT_SOURCE (local, global, default or unset). The permission mode and
-# the handle fall back to nothing and the repo's owner; the three integers to
-# their defaults; the model and effort stay unset, checked against the agent
-# setting's Claude Code lists. Dies naming key and value when a value is out of
-# range.
+# the handle fall back to nothing and the repo's owner; the four integers
+# (github-reserve ranges 0-99) to their defaults; the model and effort stay
+# unset, checked against the agent setting's Claude Code lists. Dies naming key
+# and value when a value is out of range.
 # The handle's owner is resolved only when the handle is needed.
 autopilot_setting() {
   local name="$1" key="orchestrator.autopilot.$1" def="" owner_name
@@ -61,6 +62,15 @@ autopilot_setting() {
         true|false) ;;
         *) die "$key is $AUTOPILOT_VALUE - it must be true or false (git config $key true|false)" ;;
       esac ;;
+    github-reserve)
+      if [ "$AUTOPILOT_SOURCE" = unset ]; then AUTOPILOT_VALUE="$AUTOPILOT_GITHUB_RESERVE_DEFAULT"; AUTOPILOT_SOURCE=default; fi
+      case "$AUTOPILOT_VALUE" in
+        ""|*[!0-9]*) def=bad ;;
+        *) [ "$((10#$AUTOPILOT_VALUE))" -le 99 ] || def=bad ;;
+      esac
+      [ "$def" != bad ] ||
+        die "$key is $AUTOPILOT_VALUE - it must be an integer from 0 to 99 (git config $key <n>)"
+      AUTOPILOT_VALUE="$((10#$AUTOPILOT_VALUE))" ;;
     cap|rounds|budget)
       case "$name" in
         cap) def="$AUTOPILOT_CAP_DEFAULT" ;;
@@ -79,7 +89,7 @@ autopilot_setting() {
 # range, naming key and value.
 autopilot_show() {
   local name
-  for name in permission-mode cap handle rounds budget model effort auto-sync; do
+  for name in permission-mode cap handle rounds budget model effort auto-sync github-reserve; do
     autopilot_setting "$name"
     printf 'orchestrator.autopilot.%s %s (%s)\n' "$name" "${AUTOPILOT_VALUE:-(none)}" "$AUTOPILOT_SOURCE"
   done
@@ -356,7 +366,8 @@ autopilot_questions() {
 # write under a claim ends in the Standing module's release.
 
 # autopilot_dir <main-root>: where a clone's autopilot files live - the run
-# records, the session logs and the limit file - under its main checkout.
+# records, the session logs, the limit files (limit, github-limit,
+# github-early-<pool>) and the per-issue hit marks - under its main checkout.
 autopilot_dir() { printf '%s/%s/autopilot\n' "$1" "$ORCH_DIR_NAME"; }
 
 # autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
@@ -377,10 +388,18 @@ autopilot_orch_in() {
 }
 
 # autopilot_labels_ensure: the labels exist with their colour and
-# description. A failed upsert dies naming the label, stopping the tick.
+# description. Reads the repo's labels once and upserts only those missing or
+# drifted in colour or description (names compared case-insensitively); with
+# nothing drifted it writes nothing. A failed read or upsert dies, stopping
+# the tick.
 autopilot_labels_ensure() {
-  local name colour description gh_err
+  local name colour description gh_err have _read_err
+  capture have _read_err adapter_labels_detail 1000 ||
+    die "could not read the repo's labels: $(gh_reason "$_read_err") - the tick stops"
   while IFS='|' read -r name colour description; do
+    ! awk -F '\t' -v n="$name" -v c="$colour" -v d="$description" '
+      tolower($1) == tolower(n) && tolower($2) == tolower(c) && $3 == d { found = 1 }
+      END { exit !found }' <<<"$have" || continue
     capture_err gh_err adapter_label_upsert "$name" "$colour" "$description" ||
       die "could not upsert the label $name: $(gh_reason "$gh_err") - the tick stops"
   done <<<"$(standing_label_entries)"
@@ -651,11 +670,26 @@ autopilot_pickup_steps() {
   }
 }
 
+# autopilot_github_paused: succeeds when a GitHub pause holds; says nothing.
+autopilot_github_paused() {
+  local main_root
+  main_root="$(main_checkout_or_die 2>/dev/null)" &&
+    autopilot_pause_until "$main_root" github >/dev/null 2>&1
+}
+
 # autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
 # claimed issue. A refusal or a failed step ends in one standing_stop and
-# returns 0: the claim is released, the tick goes on.
+# returns 0: the claim is released, the tick goes on. A step that failed on a
+# GitHub API rate limit - a GitHub pause holds once it has failed - deletes only
+# the claim ref (a git push: no stop, no label, nothing counted); if that push
+# fails the claim stays held for stale cleanup. The pause ends the tick.
 autopilot_pickup() {
   autopilot_pickup_steps "$1" "$2" "${3:-}" || {
+    if autopilot_github_paused; then
+      standing_claim_drop "$1" >/dev/null 2>&1 ||
+        warn "could not delete the claim ref on issue #$1; it stays held for stale cleanup"
+      return 0
+    fi
     standing_stop "$1" "$PICKUP_KIND" "$2" "$PICKUP_TEXT"
     return 0
   }
@@ -667,7 +701,7 @@ autopilot_pickup() {
 # Liveness module's to name, and both of the issue's records go with the claim.
 # Other hosts' claims are never touched.
 autopilot_cleanup_stale() {
-  local issue phase log detail me gone_pid
+  local issue phase log detail me gone_pid backstop
   me="$(standing_host_id)"
   standing_claims_read
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
@@ -676,14 +710,23 @@ autopilot_cleanup_stale() {
     gone_pid="$(liveness_issue_alive "$issue")" && continue
     detail="the session's process (pid ${gone_pid:-unknown}) is gone and the claim was never released - no exit code is known"
     log="$(liveness_latest_log "$issue" "$phase")" || true
+    backstop=""
+    [ -z "$log" ] || backstop="$(P="$AUTOPILOT_BACKSTOP_PREFIX" awk 'index($0, ENVIRON["P"]) == 1' "$log" 2>/dev/null | tail -1)" || true
+    if [ -n "$backstop" ]; then detail="${detail%% - no exit code is known} - the session log says: \"${backstop#autopilot run: }\""; fi
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
     standing_stop "$issue" failure "$phase" "$detail"
     liveness_issue_forget "$issue"
   done
 }
 
-# The pause store: the limit file is reached only through autopilot_pause_extend
-# and autopilot_pause_until, so no other function builds or reads its path.
+# The pause stores: the usage limit file (autopilot_usage_pause_file), the
+# GitHub limit file (autopilot_github_pause_file) and one early GitHub file per
+# pool (autopilot_github_early_file). Each path is built by its helper; a file
+# is written through autopilot_pause_put (autopilot_pause_extend for the usage
+# file) and read through autopilot_pause_epoch or autopilot_pause_until.
+
+# autopilot_usage_pause_file <main>: the usage limit file under <main>.
+autopilot_usage_pause_file() { printf '%s/limit\n' "$(autopilot_dir "$1")"; }
 
 # autopilot_pause_epoch <file>: the reset recorded in the limit file <file> as
 # epoch seconds; 0 when the file is missing or its text does not parse.
@@ -693,36 +736,139 @@ autopilot_pause_epoch() {
   autopilot_iso_epoch "$text" || echo 0
 }
 
-# autopilot_pause_until <main>: whether a usage limit pauses pickup. While the
-# limit file's reset time is in the future it prints one line naming it and
-# returns 0; once it has passed, the file is removed and it returns 1.
+# autopilot_github_pause_file <main>: the GitHub limit file under <main>, the
+# pause a GitHub API rate limit writes (#2577).
+autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1")"; }
+
+# gh_limit_record <reset>: in an autopilot process - a tick or the session
+# wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) - writes
+# the GitHub pause, extended only to the later of two resets; in a session,
+# which has the wrapper's hit file path, writes the reset there too. An
+# interactive call writes nothing. Never fails: a write that fails is a warning.
+gh_limit_record() {
+  local main_root
+  [ "${ORCH_AUTOPILOT:-}" = 1 ] || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
+  if main_root="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main_root" ]; then
+    autopilot_pause_put "$(autopilot_github_pause_file "$main_root")" "$1" ||
+      warn "could not write the GitHub limit pause under $main_root"
+  else
+    warn "could not write the GitHub limit pause: the main checkout is unreadable"
+  fi
+  if [ "${ORCH_AUTOPILOT:-}" = 1 ] && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
+    autopilot_pause_put "$ORCH_AUTOPILOT_HIT_FILE" "$1" ||
+      warn "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
+  fi
+  return 0
+}
+
+# autopilot_github_early_file <main> <pool>: the early GitHub pause's file for
+# <pool> (core or graphql) under <main>: pickup paused, before any limit is hit,
+# while the pool is below the github-reserve (#2577).
+autopilot_github_early_file() { printf '%s/github-early-%s\n' "$(autopilot_dir "$1")" "$2"; }
+
+# autopilot_github_quota: GitHub's core and graphql pools, one per line as
+# "<pool> <remaining> <limit> <reset>", the reset in epoch seconds; fails,
+# printing nothing, when the read fails. The read is not itself guarded by the
+# limit handler and costs no quota.
+autopilot_github_quota() {
+  local out
+  out="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || return 1
+  [ -n "$out" ] || return 1
+  tr '\t' ' ' <<<"$out"
+}
+
+# autopilot_github_early <main>: the early GitHub pause. Reads the pools and,
+# for each with less than github-reserve percent of its limit left, records its
+# reset in the pool's early file (kept if later). A reserve of 0 reads nothing,
+# and the tick then ignores a recorded early pause; a failed read pauses
+# nothing.
+autopilot_github_early() {
+  local quota pool remaining limit reset
+  autopilot_setting github-reserve
+  [ "$AUTOPILOT_VALUE" -gt 0 ] || return 0
+  quota="$(autopilot_github_quota)" || return 0
+  while read -r pool remaining limit reset; do
+    case "$pool" in core|graphql) ;; *) continue ;; esac
+    case "$remaining$limit$reset" in *[!0-9]*|'') continue ;; esac
+    [ "$limit" -gt 0 ] && [ "$((remaining * 100))" -lt "$((AUTOPILOT_VALUE * limit))" ] || continue
+    [ "$reset" -gt "$(date +%s)" ] || continue
+    autopilot_pause_put "$(autopilot_github_early_file "$1" "$pool")" "$reset" ||
+      warn "could not write the early GitHub pause under $1"
+  done <<<"$quota"
+}
+
+# autopilot_github_usage <before>: the change in core and graphql usage since
+# <before> (autopilot_github_quota's output at session start) as one line, "core
+# <n>, graphql <m>"; fails, printing nothing, when either read failed. A pool
+# that reset meanwhile counts as no usage.
+autopilot_github_usage() {
+  local after pool n line="" b_used a_used
+  [ -n "$1" ] || return 1
+  after="$(autopilot_github_quota)" || return 1
+  for pool in core graphql; do
+    b_used="$(awk -v p="$pool" '$1 == p { print $3 - $2 }' <<<"$1")"
+    a_used="$(awk -v p="$pool" '$1 == p { print $3 - $2 }' <<<"$after")"
+    case "$b_used$a_used" in ''|*[!0-9-]*) return 1 ;; esac
+    [ -n "$b_used" ] && [ -n "$a_used" ] || return 1
+    n=$((a_used - b_used)); [ "$n" -ge 0 ] || n=0
+    line="${line:+$line, }$pool $n"
+  done
+  printf '%s\n' "$line"
+}
+
+# autopilot_pause_until <main> [github|core|graphql]: whether a limit pauses
+# pickup: the usage limit, with "github" the GitHub API rate limit, or with a
+# pool its early GitHub pause. While the limit
+# file's reset time is in the future it prints one line naming it and returns
+# 0; once it has passed, the file is removed and it returns 1.
 autopilot_pause_until() {
-  local file epoch
-  file="$(autopilot_dir "$1")/limit"
+  local file epoch what="usage limit: no issue is picked up until"
+  case "${2:-}" in
+    github)
+      file="$(autopilot_github_pause_file "$1")"
+      what="GitHub API rate limit: the tick does nothing until" ;;
+    core|graphql)
+      file="$(autopilot_github_early_file "$1" "$2")"
+      what="GitHub $2 pool is below the github-reserve: no issue is picked up until" ;;
+    *)
+      file="$(autopilot_usage_pause_file "$1")" ;;
+  esac
   [ -f "$file" ] || return 1
   epoch="$(autopilot_pause_epoch "$file")"
   if [ "$epoch" -gt "$(date +%s)" ]; then
-    note "usage limit: no issue is picked up until $(cat "$file")"
+    # The GitHub pauses go to stderr: the watcher discards each tick's stdout
+    # but keeps its stderr, so the container log says why the watcher is idle.
+    case "${2:-}" in
+      github|core|graphql) warn "$what $(cat "$file")" ;;
+      *) note "$what $(cat "$file")" ;;
+    esac
     return 0
   fi
   rm -f "$file"
   return 1
 }
 
-# autopilot_pause_extend <main> <epoch> <log>: records <epoch> (epoch seconds)
-# as the limit file's reset under <main>, rendered as the file's one UTC ISO
-# timestamp, keeping a reset already there that is later and replacing one that
-# is earlier or does not parse. A failed write is noted in <log> and on stderr,
-# and is no failure of the caller.
-autopilot_pause_extend() {
-  local file log="$3" old_epoch new_epoch="$2" msg
-  file="$(autopilot_dir "$1")/limit"
+# autopilot_pause_put <file> <epoch>: records <epoch> (epoch seconds) in <file>
+# as one UTC ISO timestamp, keeping a reset already there that is later and
+# replacing one that is earlier or does not parse. Fails, silently, when the
+# file cannot be written.
+autopilot_pause_put() {
+  local file="$1" new_epoch="$2" old_epoch
   if [ -f "$file" ]; then
     old_epoch="$(autopilot_pause_epoch "$file")"
     [ "$old_epoch" -lt "$new_epoch" ] || return 0
   fi
-  if ! { autopilot_epoch_iso "$new_epoch" >"$file"; } 2>/dev/null; then
-    msg="autopilot run: could not write the limit file $file"
+  { mkdir -p "$(dirname "$file")" && autopilot_epoch_iso "$new_epoch" >"$file"; } 2>/dev/null
+}
+
+# autopilot_pause_extend <file> <epoch> <log> [<what>]: records <epoch> as the
+# reset of the limit file <file>, by autopilot_pause_put's rule; <what>
+# ("GitHub") prefixes "limit file" in a failure's note. A failed write is noted
+# in <log> and on stderr, and is no failure of the caller.
+autopilot_pause_extend() {
+  local file="$1" log="$3" msg
+  if ! autopilot_pause_put "$file" "$2"; then
+    msg="autopilot run: could not write the ${4:+$4 }limit file $file"
     warn "$msg"
     printf '%s\n' "$msg" >>"$log"
   fi
@@ -939,13 +1085,18 @@ autopilot_rank() {
   printf '%s' "$((n + 1))"
 }
 
-# autopilot_tick: one pass - labels, stale claims, one read of the done
-# issues (autopilot_done_read), the merged-PR close (which needs no session, so
-# a limit pause never holds it), the limit-pause check, sync detection (when
-# auto-sync is true), then pickup (see the spec's One tick). The one done read
-# feeds both passes: sync detection gets the done table minus the issues the
-# close closed. Every flow issue is read before the first claim,
-# the unpickable ones dropped, and the rest taken by rank - sync requests,
+# autopilot_tick: one pass - the GitHub-limit pause check (while it holds the
+# tick ends there, making no GitHub call, not even closing merged PRs), the
+# early-pause quota read (autopilot_github_early), labels,
+# stale claims, one read of the done issues (autopilot_done_read), the
+# merged-PR close (which needs no session, so the usage-limit and early pauses
+# never hold it), the three limit-pause checks (usage, core, graphql), sync
+# detection (when auto-sync is true), then pickup (see the spec's One tick),
+# the tick ending after any pickup that leaves a GitHub pause holding.
+# The one done read feeds both passes: sync detection gets the done table
+# minus the issues the close closed. Every candidate is read before the first
+# claim, the unpickable ones dropped, and the rest taken by rank - sync
+# requests,
 # then the phases furthest along first, oldest issue first within a rank. A
 # phase is claimed while the claim count is below the cap, a sync request
 # while it is below the cap plus the sync slots (half the cap, rounded down);
@@ -959,11 +1110,19 @@ autopilot_tick() {
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
+  if autopilot_pause_until "$main_root" github; then return 0; fi
+  autopilot_github_early "$main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale
   autopilot_done_read done_table
   autopilot_close_missed "$done_table" done_table
   if autopilot_pause_until "$main_root"; then return 0; fi
+  # A reserve of 0 turns the early pause off, a recorded one included.
+  autopilot_setting github-reserve
+  if [ "$AUTOPILOT_VALUE" -gt 0 ]; then
+    if autopilot_pause_until "$main_root" core; then return 0; fi
+    if autopilot_pause_until "$main_root" graphql; then return 0; fi
+  fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect "$done_table"; fi
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
@@ -997,6 +1156,7 @@ autopilot_tick() {
     limited_arg=""
     if [ "$limited" = 1 ]; then limited_arg=limited; fi
     autopilot_pickup "$issue" "$phase" "$limited_arg"
+    if autopilot_pause_until "$main_root" github; then return 0; fi
   done <<<"$ranked"
 }
 
@@ -1007,30 +1167,42 @@ autopilot_tick() {
 # claim's fields equal <mine>, else released (the claim was released, or the
 # next phase's took its place). It reads the log once, with session_log_read.
 # The outcome is released (not held, whatever the log holds), else limited
-# (session_log_read says the session stopped on a usage limit), else failure.
+# (session_log_read says the session stopped on a usage limit), else
+# GitHub-limited (the issue's hit file names a reset), else failure. The hit
+# file is removed once read, whatever the outcome. A GitHub-limited outcome
+# extends the GitHub pause to the hit file's reset.
 # The limit pause is the reset the session named, or one hour on; the early
 # pause is the five-hour window's resetsAt when its utilization is 0.9 or more,
-# whatever the outcome; all are epoch seconds. The pause store is extended
-# once, with the later of the two. Then it gives the released note, the limit
-# stop or the failure stop. It dies, before any write, when the checkout or the
-# claims cannot be read.
+# whatever the outcome; all are epoch seconds. The usage pause store is
+# extended once, with the later of the two. Then every stop goes through
+# autopilot_stop_attempts: the released note, the limit stop or the failure
+# stop, retried up to AUTOPILOT_STOP_ATTEMPTS times, with a backstop line in the
+# log; it returns 1, the claim held, when the chain gives up. It dies, before
+# any write, when the checkout or the claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
-  local outcome=failure limit="" pause released_note
+  local outcome=failure limit="" pause released_note hit hit_epoch=0
   main_root="$(main_checkout_or_die)" || exit $?
   standing_claims_read
   if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
   session_log_read "$log"
+  hit="$(liveness_hit_path "$issue")" || exit $?
+  if [ -f "$hit" ]; then hit_epoch="$(autopilot_pause_epoch "$hit")"; rm -f "$hit"; fi
   if [ "$held" = 0 ]; then
     outcome=released
   elif [ "$SESSION_LOG_LIMITED" = 1 ]; then
     outcome=limited
     limit="${SESSION_LOG_RESET:-$(( $(date +%s) + 3600 ))}"
+  elif [ "$hit_epoch" -gt 0 ]; then
+    outcome=github
   fi
   # One write: the later of the two pauses.
   pause="$SESSION_LOG_EARLY"
   if [ -n "$limit" ] && { [ -z "$pause" ] || [ "$limit" -gt "$pause" ]; }; then pause="$limit"; fi
-  if [ -n "$pause" ]; then autopilot_pause_extend "$main_root" "$pause" "$log"; fi
+  if [ -n "$pause" ]; then autopilot_pause_extend "$(autopilot_usage_pause_file "$main_root")" "$pause" "$log"; fi
+  if [ "$outcome" = github ]; then
+    autopilot_pause_extend "$(autopilot_github_pause_file "$main_root")" "$hit_epoch" "$log" GitHub
+  fi
   case "$outcome" in
     released)
       released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
@@ -1038,13 +1210,67 @@ autopilot_session_end() {
       printf '%s\n' "$released_note" >>"$log"
       return 0 ;;
     limited)
-      standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
-      return 0 ;;
+      autopilot_stop_attempts "$log" "$rc" standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
+      return ;;
+    github)
+      autopilot_stop_attempts "$log" "$rc" standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
+      return ;;
   esac
   reply="$SESSION_LOG_REPLY"
   detail="the session exited with code $rc; "
   [ -z "$reply" ] || detail+="it ended on: *$reply*; "
-  standing_stop "$issue" failure "$phase" "${detail}log: $log"
+  autopilot_stop_attempts "$log" "$rc" standing_stop "$issue" failure "$phase" "${detail}log: $log"
+}
+
+# autopilot_github_pause_wait [<seconds>]: sleeps until a GitHub pause that
+# holds has passed, else <seconds> (none by default); ORCH_GH_LIMIT_WAIT, the
+# guard's test knob, replaces the wait either way.
+autopilot_github_pause_wait() {
+  local wait="${1:-0}" main_root
+  if autopilot_github_paused; then
+    main_root="$(main_checkout_or_die)"
+    wait="$(( $(autopilot_pause_epoch "$(autopilot_github_pause_file "$main_root")") - $(date +%s) ))"
+  fi
+  sleep "${ORCH_GH_LIMIT_WAIT:-$wait}"
+}
+
+AUTOPILOT_STOP_ATTEMPTS=3
+AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after $AUTOPILOT_STOP_ATTEMPTS attempts - "
+
+# autopilot_stop_attempts <log> <rc> <command>...: the wrapper's stop chain, run
+# up to three times, each attempt in a subshell so a death ends the attempt; the
+# claim and the run record are kept throughout. The attempts share one state
+# file (standing.sh's resumable chain), so each resumes from the first write
+# that did not land. Before the second and third it waits for a GitHub pause
+# when one holds, else 60, then 300 seconds; ORCH_GH_LIMIT_WAIT, the guard's
+# test knob, shortens every wait, the pause wait included. When the last
+# attempt fails it writes one backstop line to <log> - the stop's kind, its
+# first line and the session's exit code - for stale cleanup to quote, and
+# returns 1. An empty <rc> means no session ran (the claim release after a
+# GitHub-limited start-up read): the line says so instead.
+autopilot_stop_attempts() {
+  local log="$1" rc="$2" state attempt line kind first
+  shift 2
+  state="$(mktemp)" || die "could not create a temp file for the stop chain's state"
+  for ((attempt = 1; attempt <= AUTOPILOT_STOP_ATTEMPTS; attempt++)); do
+    if [ "$attempt" -gt 1 ]; then
+      autopilot_github_pause_wait $(( attempt == 2 ? 60 : 300 ))
+    fi
+    if ( STANDING_STATE_FILE="$state"; "$@" ); then rm -f "$state"; return 0; fi
+  done
+  # shellcheck disable=SC2034 # standing_state_get reads it
+  line="$(STANDING_STATE_FILE="$state"; standing_state_get stop)" || line="stop"$'\t'"no stop text was built"
+  rm -f "$state"
+  kind="${line%%$'\t'*}" first="${line#*$'\t'}"
+  if [ -z "$rc" ]; then
+    # no session ran: the chain was the claim release after a limited read
+    printf '%sclaim release: could not release the claim after a %s\n' \
+      "$AUTOPILOT_BACKSTOP_PREFIX" \
+      "GitHub-limited start-up read; no session ran" >>"$log"
+    return 1
+  fi
+  printf '%s%s: %s; the session exited with code %s\n' "$AUTOPILOT_BACKSTOP_PREFIX" "$kind" "$first" "$rc" >>"$log"
+  return 1
 }
 
 # The tools a headless phase session gets: those the plugin's skills and agents
@@ -1052,7 +1278,7 @@ autopilot_session_end() {
 AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage"
 # Its system prompt addition: it is told it is headless, as print mode turns
 # AskUserQuestion off and a question asked in chat is never answered.
-AUTOPILOT_SYSTEM_PROMPT='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop.'
+AUTOPILOT_SYSTEM_PROMPT='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop. When an `orch:` message says the GitHub API rate limit was reached, end your turn at once: do not retry or wait, the watcher picks the work up after the reset.'
 # Its settings: no bundled skills, and no plugin-authoring, a built-in plugin
 # that disableBundledSkills leaves listed.
 AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-authoring@builtin":false}}'
@@ -1078,20 +1304,43 @@ autopilot_review_budget_record() {
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration flags=()
+  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration hit usage_before usage flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
   recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || autopilot_read_die phase "$side" $?
+  # Marked before the start-up read: a GitHub limit it meets writes the pause.
+  export ORCH_AUTOPILOT_RUN=1
   # a sync request is told by orch:sync on a done issue; its phase word is sync
-  standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
+  if ! standing_read "$issue"; then
+    # A read that met a GitHub limit (a pause holds once it has failed) runs no
+    # session and makes no stop: only the claim is released, through the retry
+    # chain. Any other failure dies as before.
+    if autopilot_github_paused; then
+      # The run record is made first, so stale cleanup sees a live session for
+      # the whole wait; the log is named by the claim's own phase, which is
+      # what stale cleanup looks it up by (the read that failed gave no other).
+      liveness_run_begin "$issue" || exit 1
+      # shellcheck disable=SC2064
+      trap "liveness_run_end '$issue'" EXIT
+      standing_claims_read --quiet || true
+      phase="${STANDING_CLAIM_PHASE[$issue]:-$recorded}"
+      log="$(liveness_log_path "$issue" "$phase")" || exit $?
+      # No session ran: wait out the GitHub pause before the first attempt.
+      autopilot_github_pause_wait
+      autopilot_stop_attempts "$log" "" standing_claim_release "$issue" || true
+      return 0
+    fi
+    gh_die "read issue #$issue" "$STANDING_REASON"
+  fi
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   phase="$recorded"
   if [ "$recorded" = "done" ] && standing_is_sync; then
     phase="$(standing_session_phase)"
     prompt="Run the orchestrator:orch-sync skill's autopilot branch in this checkout: sync the branch with its base, and stop when the sync is finished."
   fi
+  hit="$(liveness_hit_path "$issue")" || exit $?
   liveness_run_begin "$issue" || exit 1
   # A later run of the same issue may have replaced the record by the time this
   # one exits: liveness_run_end removes it only while it still names this run.
@@ -1116,12 +1365,14 @@ autopilot_run() {
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
   done
   log="$(liveness_log_path "$issue" "$phase")" || exit $?
+  usage_before="$(autopilot_github_quota)" || usage_before=""
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
-  ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
+  ( cd "$side" && ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit" CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
       --append-system-prompt "$AUTOPILOT_SYSTEM_PROMPT" \
       --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
+  if usage="$(autopilot_github_usage "$usage_before")"; then printf 'autopilot run: GitHub API usage this session: %s\n' "$usage" >>"$log"; fi
   autopilot_session_end "$issue" "$phase" "$log" "$rc" "$mine"
 }
 
@@ -1186,6 +1437,7 @@ cmd_autopilot() {
     tick)
       [ $# -eq 0 ] || die "usage: orch.sh autopilot tick"
       autopilot_gate
+      export ORCH_AUTOPILOT_TICK=1
       autopilot_tick
       ;;
     watch)

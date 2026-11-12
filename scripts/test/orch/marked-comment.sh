@@ -154,15 +154,15 @@ assert_eq "drop on unreadable comments fails, printing nothing" "$([ "$mc_rc" !=
 mc_newest "$(mc_array "$q" "$(marker_of reentry review)"$'\nrecorded')" reentry review
 assert_eq "a re-entry comment is found by its kind and phase" "$mc_rc:$mc_out" "0:1"
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$(mc_array "$(marker_of reentry review)")")"
-assert_eq "the prelude reads a re-entry comment's kind and phase" "$got" '[{"kind":"reentry","arg":"review","retired":false}]'
+assert_eq "the prelude reads a re-entry comment's kind and phase" "$got" '[{"kind":"reentry","arg":"review","retired":false,"cause":""}]'
 
-# The exported prelude, through jq: each comment's {kind, arg, retired}.
+# The exported prelude, through jq: each comment's {kind, arg, retired, cause}.
 arr="$(mc_array "$q" "$ret" "$(marker_of limited build)"$'\r\n' "Autopilot refused to run the plan phase: x" \
   "$(marker_of failure plan)" $'## Spec review\t' "Spec ruling: z" "plain" "<!-- orch:handoff x" \
   "Autopilot failed in the implement phase: boom" "$live" "$q"$'\r\ntext')"
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$arr")"
 assert_eq "the prelude gives every comment its kind, arg and retired" "$got" \
-  '[{"kind":"question","arg":"plan","retired":false},{"kind":"handoff","arg":"01-plan","retired":true},{"kind":"limited","arg":"build","retired":false},{"kind":"refusal","arg":"plan","retired":false},{"kind":"failure","arg":"plan","retired":false},{"kind":"spec-review","arg":null,"retired":false},{"kind":"spec-ruling","arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":"failure","arg":"implement","retired":false},{"kind":"handoff","arg":"01-plan","retired":false},{"kind":"question","arg":"plan","retired":false}]'
+  '[{"kind":"question","arg":"plan","retired":false,"cause":""},{"kind":"handoff","arg":"01-plan","retired":true,"cause":""},{"kind":"limited","arg":"build","retired":false,"cause":""},{"kind":"refusal","arg":"plan","retired":false,"cause":""},{"kind":"failure","arg":"plan","retired":false,"cause":""},{"kind":"spec-review","arg":null,"retired":false,"cause":""},{"kind":"spec-ruling","arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":"failure","arg":"implement","retired":false,"cause":""},{"kind":"handoff","arg":"01-plan","retired":false,"cause":""},{"kind":"question","arg":"plan","retired":false,"cause":""}]'
 # The same prelude over the edge cases: a marker on the second line, a retired
 # tag on a non-handoff marker, a marker with an extra argument, a CRLF spec
 # ruling, a spec ruling whose first line is blank, a question marker without
@@ -171,7 +171,18 @@ arr="$(mc_array $'intro\n<!-- orch:question plan -->' "<!-- orch:question plan r
   $'Spec ruling: a\r\n- b\r\n' $'\nSpec ruling: a' "<!-- orch:question -->")"
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$arr")"
 assert_eq "the prelude reads the edge cases as unmarked, but for the CRLF spec ruling" "$got" \
-  '[{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":"spec-ruling","arg":null,"retired":false},{"kind":null,"arg":null,"retired":false},{"kind":null,"arg":null,"retired":false}]'
+  '[{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":"spec-ruling","arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""}]'
+# A limit stop's optional cause token: written after the phase, read into a
+# cause field (empty when absent), and refused on any other kind.
+assert_eq "the writer prints a limit stop's github cause" "$(marker_of limited build github)" "<!-- orch:limited build github -->"
+out="$(eval "sourced_orch marked_comment_write limited build bogus" 2>/dev/null)"; rc=$?
+assert_eq "the writer refuses an unknown cause, printing nothing" "$rc:$out" "1:"
+out="$(eval "sourced_orch marked_comment_write failure build github" 2>/dev/null)"; rc=$?
+assert_eq "the writer refuses a cause on any kind but limited" "$rc:$out" "1:"
+arr="$(mc_array "$(marker_of limited build github)" "$(marker_of limited build)" "<!-- orch:failure build github -->" "<!-- orch:limited build bogus -->")"
+got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$arr")"
+assert_eq "the prelude reads a limit stop with and without its cause, and refuses a cause elsewhere" "$got" \
+  '[{"kind":"limited","arg":"build","retired":false,"cause":"github"},{"kind":"limited","arg":"build","retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""}]'
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"[]")"
 assert_eq "the prelude reads an empty array as no comments" "$got" "[]"
 got="$(mc_jq 'marked_comment_list | length' <<<"$(mc_object a b)")"

@@ -23,6 +23,11 @@ gh_reply() {
 # sourced with ORCH_GH_ADAPTER unset, against whatever gh is on PATH.
 contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 
+# fake_ratelimit [stderr]: every operation but the rate_limit read fails as a
+# GitHub API rate limit, with the stderr given - a primary limit's wording by
+# default. fake_online lifts it.
+fake_ratelimit() { printf '%s\n' "${1-API rate limit exceeded for user ID 1.}" >"$ORCH_GH_FAKE_STORE/ratelimit"; }
+
 # --- every gh call pinned to the repo (#520) ----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture
@@ -608,6 +613,12 @@ gh_reply 1 '' 'label with name "bug" already exists; use `--force` to update its
 out="$(contract adapter_label_create bug d73a4a "Something isn't working" 2>&1)"; st=$?
 assert_status "label create: a label that exists fails it" "$st" 1
 assert_contains "passing gh's stderr through" "$out" 'label with name "bug" already exists'
+
+gh_reply 0 $'bug\td73a4a\tSomething isn\'t working\nwontfix\tffffff\t' \
+  '' label list --limit 1000 --json name,color,description --jq '.[] | [.name, .color, (.description // "")] | @tsv'
+out="$(contract adapter_labels_detail 1000 2>&1)"; st=$?
+assert_status "labels detail: lists the repo's labels" "$st" 0
+assert_eq "as name, colour and description, tab-separated" "$out" $'bug\td73a4a\tSomething isn\'t working\nwontfix\tffffff\t'
 
 : >"$GH_FIXTURE/env.log"
 export GH_REPO=ghe.example.com/acme/widgets
@@ -1430,6 +1441,17 @@ out="$(contract adapter_labels 7 2>&1)"; st=$?
 assert_status "labels: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
+rl_jq='.resources | {core, graphql} | to_entries[] | [.key, .value.remaining, .value.limit, .value.reset] | @tsv'
+gh_reply 0 $'core\t4999\t5000\t1700000000\ngraphql\t0\t5000\t1700003600\n' '' api rate_limit --jq "$rl_jq"
+out="$(contract adapter_rate_limit 2>&1)"; st=$?
+assert_status "rate limit: reads the rate_limit endpoint's core and graphql pools" "$st" 0
+assert_eq "one pool per line: remaining, limit and reset after its name" "$out" \
+  "$(printf 'core\t4999\t5000\t1700000000\ngraphql\t0\t5000\t1700003600')"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api rate_limit --jq "$rl_jq"
+out="$(contract adapter_rate_limit 2>&1)"; st=$?
+assert_status "rate limit: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
 probe_list=(issue list --state all --limit 1 --json number --jq '.[0].number // empty')
 gh_reply 0 $'7\n' '' "${probe_list[@]}"
 gh_reply 0 '[]' '' api "repos/{owner}/{repo}/issues/7/sub_issues"
@@ -1577,4 +1599,157 @@ assert_eq "an issue create stores the repo's casing" "$(fake_labels_of "$n")" "N
 body="$(mktemp)"
 pn="$(sourced_orch adapter_pr_create main feat t "$body" --label needs-human --label Other)"
 assert_eq "the PR-create drop knob matches case-insensitively" "$(sourced_orch adapter_pr_labels "$pn")" "Other"
+restore_suite_env
+
+# --- gh rate limits (#2577) ---------------------------------------------------
+# The guard recognises a primary or secondary limit on a failed call, retries a
+# secondary one once, reads the reset from the rate_limit endpoint, and fails
+# the call with one distinct message; any other failure passes through
+# untouched. Run against the fixture gh, then the store-backed fake's own
+# limit failures.
+echo
+echo "gh rate limits (#2577)"
+new_repo >/dev/null
+git remote set-url origin https://github.com/fork/widgets.git
+gh_fixture
+view=(issue view 5 --json body --jq .body)
+rl_jq='.resources | {core, graphql} | to_entries[] | [.key, .value.remaining, .value.limit, .value.reset] | @tsv'
+view_calls() { grep -c ' issue view 5 ' "$GH_FIXTURE/env.log"; }
+
+# A primary limit: no retry, the latest reset among the exhausted pools.
+gh_reply 1 '' 'gh: API rate limit exceeded for user ID 1. (HTTP 403)' "${view[@]}"
+gh_reply 0 $'core\t0\t5000\t2000000000\ngraphql\t0\t5000\t2100000000\n' '' api rate_limit --jq "$rl_jq"
+out="$(contract adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a primary limit fails the call" "$st" 1
+assert_contains "naming the GitHub API rate limit and the latest exhausted reset" "$out" \
+  "orch: GitHub API rate limit reached - it resets at 2036-07-18T13:20:00Z."
+assert_contains "and telling an autopilot session to end its turn" "$out" "An autopilot session ends its turn"
+assert_not_contains "without gh's own wording" "$out" "HTTP 403"
+assert_eq "a primary limit is not retried" "$(view_calls)" "1"
+
+# A pool with quota left does not count.
+gh_reply 0 $'core\t0\t5000\t2000000000\ngraphql\t12\t5000\t2100000000\n' '' api rate_limit --jq "$rl_jq"
+out="$(contract adapter_issue_body 5 2>&1)"
+assert_contains "only a pool at 0 remaining sets the reset" "$out" "resets at 2033-05-18T03:33:20Z"
+
+# No exhausted pool, or an unreadable one: 15 minutes from now.
+within_15() {
+  local at now_epoch ep
+  at="$(sed -n 's/.*resets at \([0-9TZ:-]*\)\..*/\1/p' <<<"$1")"
+  now_epoch="$(date +%s)"
+  ep="$(sourced_orch autopilot_iso_epoch "$at")"
+  [ -n "$at" ] && [ "$ep" -ge $((now_epoch + 840)) ] && [ "$ep" -le $((now_epoch + 900)) ]
+}
+gh_reply 0 $'core\t3\t5000\t2000000000\ngraphql\t4\t5000\t2100000000\n' '' api rate_limit --jq "$rl_jq"
+out="$(contract adapter_issue_body 5 2>&1)"
+within_15 "$out"; assert_status "no exhausted pool: the reset is 15 minutes on" "$?" 0
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api rate_limit --jq "$rl_jq"
+out="$(contract adapter_issue_body 5 2>&1)"
+within_15 "$out"; assert_status "a failed rate_limit read: the reset is 15 minutes on" "$?" 0
+assert_contains "and the message is still printed" "$out" "orch: GitHub API rate limit reached"
+
+# Secondary wording and HTTP 429: retried once, then handled like a primary one.
+for wording in 'You have exceeded a secondary rate limit. Please wait a few minutes' \
+  'was submitted too quickly' 'HTTP 429: Too Many Requests'; do
+  : >"$GH_FIXTURE/env.log"
+  gh_reply 1 '' "$wording" "${view[@]}"
+  gh_reply 0 $'core\t0\t5000\t2000000000\ngraphql\t5\t5000\t2100000000\n' '' api rate_limit --jq "$rl_jq"
+  out="$(contract adapter_issue_body 5 2>&1)"; st=$?
+  assert_status "$wording: fails the call" "$st" 1
+  assert_eq "$wording: retried once" "$(view_calls)" "2"
+  assert_contains "$wording: a second limit is handled like a primary one" "$out" "resets at 2033-05-18T03:33:20Z"
+done
+
+# A secondary limit that clears on the retry is absorbed.
+mkdir "$GH_FIXTURE/once"
+cat >"$GH_FIXTURE/once/gh" <<'ONCE'
+#!/usr/bin/env bash
+d="$(cd "$(dirname "$0")" && pwd)"
+printf 'call\n' >>"$d/calls"
+if [ "$(wc -l <"$d/calls")" -eq 1 ]; then echo 'You have exceeded a secondary rate limit.' >&2; exit 1; fi
+echo 'Body.'
+ONCE
+chmod +x "$GH_FIXTURE/once/gh"
+out="$(PATH="$GH_FIXTURE/once:$PATH" contract adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a secondary limit the retry clears succeeds" "$st" 0
+assert_eq "with the retry's answer and nothing else" "$out" "Body."
+
+# Other failures pass through untouched, with no retry and no rate_limit read.
+: >"$GH_FIXTURE/env.log"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' "${view[@]}"
+out="$(contract adapter_issue_body 5 2>&1)"; st=$?
+assert_status "another failure keeps its status" "$st" 1
+assert_eq "and its stderr exactly" "$out" "HTTP 502: Bad Gateway"
+assert_eq "one call, no rate_limit read" "$(wc -l <"$GH_FIXTURE/env.log" | tr -d ' ')" "1"
+restore_suite_env GH_FIXTURE GH_HOST
+
+# The store-backed fake's failing operations go through the same handler.
+fake_github
+fake_issue 5 open
+fake_quota core 0 5000 2000000000
+fake_quota graphql 7 5000 2100000000
+fake_ratelimit
+out="$(sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+assert_status "the fake under a rate-limit flag fails an operation" "$st" 1
+assert_contains "with the handler's message and the settable quota's reset" "$out" \
+  "orch: GitHub API rate limit reached - it resets at 2033-05-18T03:33:20Z."
+out="$(sourced_orch adapter_rate_limit 2>&1)"; st=$?
+assert_status "the rate_limit read itself still answers under the flag" "$st" 0
+assert_eq "with the settable quota" "$out" "$(printf 'core\t0\t5000\t2000000000\ngraphql\t7\t5000\t2100000000')"
+fake_online
+fake_ratelimit 'was submitted too quickly'
+fake_fail_times adapter_rate_limit 1 'HTTP 502: Bad Gateway'
+out="$(sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+within_15 "$out"; assert_status "a failing rate_limit read through fail/<operation>.times: 15 minutes on" "$?" 0
+fake_online; fake_unfail
+fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
+out="$(sourced_orch adapter_issue_body 5 2>&1)"
+assert_eq "the fake passes another failure through untouched" "$out" "HTTP 502: Bad Gateway"
+restore_suite_env
+
+# --- gh rate limits: the GitHub pause and the hit file (#2577) ----------------
+# An autopilot process records the reset: a tick and the wrapper by a flag of
+# their own, a session by ORCH_AUTOPILOT=1; an interactive call writes nothing.
+echo
+echo "gh rate limits pause"
+new_repo >/dev/null
+top="$(git rev-parse --show-toplevel)"
+pause_file="$top/.orchestrator/autopilot/github-limit"
+hit_file="$top/.orchestrator/autopilot/run/5.hit"
+fake_github
+fake_issue 5 open
+fake_quota core 0 5000 2000000000
+fake_ratelimit
+sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "an interactive call writes no pause" "$(on_disk "$pause_file")" absent
+ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "a session writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
+assert_eq "and the hit file" "$(cat "$hit_file")" "2033-05-18T03:33:20Z"
+rm -f "$pause_file" "$hit_file"
+ORCH_AUTOPILOT_TICK=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "a tick writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
+assert_eq "but no hit file" "$(on_disk "$hit_file")" absent
+rm -f "$pause_file"
+ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "the wrapper writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
+fake_quota core 0 5000 1900000000
+ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "an earlier reset leaves the later pause in place" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
+fake_quota core 0 5000 2100000000
+ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "a later reset extends it" "$(cat "$pause_file")" "2036-07-18T13:20:00Z"
+fake_quota core 0 5000 2000000000
+rm -f "$pause_file"; mkdir -p "$hit_file"
+out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a failed hit file write still fails the call" "$st" 1
+assert_contains "with the distinct message" "$out" "orch: GitHub API rate limit reached"
+assert_contains "and a line on the write" "$out" "could not write the GitHub limit hit file $hit_file"
+rmdir "$hit_file"
+rm -f "$pause_file"; mkdir "$pause_file"
+out="$(ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a failed pause write still fails the call" "$st" 1
+assert_contains "with the distinct message" "$out" "orch: GitHub API rate limit reached"
+assert_contains "and a line on the write" "$out" "could not write the GitHub limit pause"
+rmdir "$pause_file"
+rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 restore_suite_env

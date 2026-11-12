@@ -33,7 +33,7 @@
 # The queries: timeline_question, timeline_reply_indexes, timeline_replied,
 # timeline_answers,
 # timeline_stop, timeline_limit_count, timeline_reentry_count,
-# timeline_reentered, timeline_handoff and timeline_body.
+# timeline_reentered, timeline_handoff, timeline_has_body and timeline_body.
 
 # The last read: the comments JSON, why the read failed (gh's reason, or empty
 # when gh succeeded but its output could not be parsed), and per comment, by
@@ -228,6 +228,12 @@ timeline_handoff() {
     return 0
   done
   return 1
+}
+
+# timeline_has_body <text>: succeeds when a trusted comment's body is <text>,
+# trailing whitespace aside; fails when none is. Prints nothing.
+timeline_has_body() {
+  jq -e --arg t "$1" 'any(.[]; ((.body // "") | sub("\\s+$"; "")) == ($t | sub("\\s+$"; "")))' <<<"$TIMELINE_JSON" >/dev/null 2>&1
 }
 
 # timeline_body <index>: the body of comment <index> with its first line

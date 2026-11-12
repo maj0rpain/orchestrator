@@ -462,7 +462,7 @@ assert_contains "asking in words for orch-flow's Next phase" "$calls" "orchestra
 assert_contains "with ORCH_AUTOPILOT=1" "$calls" "autopilot:1"
 assert_contains "with the Explore and Plan agents disabled" "$calls" "explore-plan:1"
 assert_contains "with a 2-hour background wait, whatever the caller sets" "$calls" "bg-wait:7200000"
-headless_prompt='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop.'
+headless_prompt='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop. When an `orch:` message says the GitHub API rate limit was reached, end your turn at once: do not retry or wait, the watcher picks the work up after the reset.'
 # Every argument but the second, the prompt, which the line above matches.
 assert_eq "the session runs claude -p with the permission mode and the lean flags" "$(grep '^arg:' "$launcher_dir/calls" | sed -n '1p;3,$p' | tr '\n' '|')" \
   "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|arg:--append-system-prompt|arg:${headless_prompt}|arg:--output-format|arg:stream-json|arg:--verbose|"
@@ -478,7 +478,7 @@ assert_contains "and the adoption decision" "$(fake_comments_of 7)" "adopted to 
 assert_eq "the labels exist with their colour and description" "$(fake_labels)" "needs-human	d93f0b	Waiting on the human
 orch:done	c2e0c6	Autopilot flow: done
 orch:implement	0e8a16	Autopilot flow: implement phase next
-orch:limited	c5def5	Autopilot session stopped on a usage limit; retried after the reset
+orch:limited	c5def5	Autopilot session stopped on a usage or GitHub API rate limit; retried after the reset
 orch:review	5319e7	Autopilot flow: review phase next
 orch:running	fbca04	Autopilot session running
 orch:spec	1d76db	Autopilot flow: spec phase next
@@ -651,6 +651,7 @@ assert_contains "naming the issue" "$out" "could not claim issue #7"
 assert_contains "and the reason" "$out" "HTTP 500 pushing the ref"
 fake_unfail
 # a failed label upsert stops the tick, naming the label
+fake_label_names
 fake_fail adapter_label_upsert "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a failed label upsert stops the tick non-zero" "$st" 1
@@ -875,6 +876,22 @@ mkdir -p "$top/.orchestrator/autopilot/logs"
 assert_eq "a dead run record makes it stale" "$(fake_claim_held 12)" free
 assert_contains "the stale comment names the session log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
 assert_contains "and says no exit code is known" "$(fake_comments_of 12)" "no exit code"
+
+# a log that ends in the wrapper's backstop line: stale cleanup quotes it in
+# place of "no exit code is known"
+fake_issue 13 open ready-for-agent orch:spec orch:running
+fake_claim_seed 13 "$(hostname)" "$(dead_pid)"
+printf '%s\n' "autopilot run: the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit; the session exited with code 7" >"$top/.orchestrator/autopilot/logs/13-spec-20250101T000000.log"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "stale cleanup quotes the backstop line" "$(fake_comments_of 13)" "the session log says: \"the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit; the session exited with code 7\""
+assert_not_contains "and no longer says no exit code is known" "$(fake_comments_of 13)" "no exit code is known"
+
+# the backstop text inside a JSON line, not at a line start, is no backstop line
+fake_issue 91 open ready-for-agent orch:spec orch:running
+fake_claim_seed 91 "$(hostname)" "$(dead_pid)"
+printf '%s\n' '{"type":"user","text":"autopilot run: the stop chain failed after 3 attempts - limit stop: x; the session exited with code 7"}' >"$top/.orchestrator/autopilot/logs/91-spec-20250101T000000.log"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "a backstop text mid-line is not quoted by stale cleanup" "$(fake_comments_of 91)" "no exit code is known"
 
 # the claim identity: with ORCH_HOST_ID set, only claims of that id are this
 # host's
@@ -1434,6 +1451,11 @@ se_fresh() {
 se_end() {
   se_out="$(sourced_orch_script 'autopilot_session_end 7 spec "$1" "$2" "$3"' "$se_log" "$1" "${2-}" 2>&1)"; se_st=$?
 }
+# se_end_with <prelude> <rc>: Session end over $se_log with <prelude> run after
+# orch.sh is sourced; the stop-chain waits are 0.
+se_end_with() {
+  se_out="$(sourced_orch_script "$1"$'\n''autopilot_session_end 7 spec "$1" "$2" ""' "$se_log" "$2" 2>&1)"; se_st=$?
+}
 # se_kind: what the issue was left with: limited, failure (needs-human) or
 # released (neither).
 se_kind() {
@@ -1616,8 +1638,28 @@ assert_contains "no reset, early pause later: the comment names the one-hour fal
 assert_not_contains "and not the early-pause reset" "$(fake_last_comment_of 7)" "$(iso_of "$far_epoch")"
 assert_eq "while the limit file holds the early-pause reset" "$(se_limit)" "$(iso_of "$far_epoch")"
 
-# the limit stop's failure fallbacks: Session end still writes the limit file
-# on either (the fallbacks themselves are the Standing section's)
+# a GitHub-limited session end: the issue's hit file names a reset
+gh_pause="$top/.orchestrator/autopilot/github-limit"
+hit="$top/.orchestrator/autopilot/run/7.hit"
+gh_se_fresh() { se_fresh; rm -f "$gh_pause"; mkdir -p "$(dirname "$hit")"; printf '%s\n' "$i2" >"$hit"; }
+printf '%s\n' "the session ended" >"$se_log"
+gh_se_fresh; se_end 1
+assert_first_line "and posts a limit stop with its github cause" "$(fake_comments_of 7)" "$(marker_of limited spec github)"
+assert_eq "and extends the GitHub pause to the reset, the usage limit untouched" "$(cat "$gh_pause" 2>/dev/null)|$(se_limit)" "$i2|absent"
+assert_eq "the hit file is gone afterwards" "$(on_disk "$hit")" absent
+gh_se_fresh; printf '%s\n' "not a time" >"$hit"; se_end 1
+assert_eq "a hit file naming no reset is a plain failure" "$(se_kind)" failure
+assert_eq "and is removed too" "$(on_disk "$hit")" absent
+gh_se_fresh; fake_claim_release 7; se_end 1 "$se_claim_fields"
+assert_eq "a released session leaves no GitHub pause" "$(on_disk "$gh_pause")|$(on_disk "$hit")" "absent|absent"
+ndjson_with "Claude AI usage limit reached|$r1" >"$se_log"
+gh_se_fresh; se_end 1
+assert_eq "a usage limit outranks the hit file: limited, no GitHub pause" "$(se_kind)|$(on_disk "$gh_pause")|$(on_disk "$hit")" "limited|absent|absent"
+printf '%s\n' "the session ended" >"$se_log"
+rm -f "$gh_pause"
+
+# a limit stop whose attempt fails (a third stop in a row is a fallback, an
+# unreadable timeline fails the attempt): Session end writes the limit file
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 LIM_SPEC="$(marker_of limited spec)
 stopped"
@@ -1626,7 +1668,7 @@ fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
 fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
 se_end 1
 assert_eq "the third limit stop in a row still writes the limit file" "$(se_limit)" "$i2"
-se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; fake_unfail
+se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end_with ':' 1; fake_unfail
 assert_eq "unreadable comments still write the limit file" "$(se_limit)" "$i2"
 
 # claims or the checkout that cannot be read: nothing is touched
@@ -1636,6 +1678,39 @@ assert_status "unreadable claims die" "$se_st" 1
 assert_contains "naming the claims" "$se_out" "could not list the claims on origin"
 assert_eq "leaving labels, comments and claim untouched" "$(fake_snapshot)" "$before"
 assert_eq "and no limit file" "$(se_limit)" absent
+
+# the stop chain's attempts (#2695): a failed write fails the attempt, and the
+# wrapper tries again, resuming from the first write that did not land. The
+# guard's test knob shortens the waits between attempts.
+echo
+echo "autopilot session end: the stop chain's attempts"
+ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
+se_marker_count() { grep -c -x -F "$(marker_of "$@")" <<<"$(fake_comments_of 7)" || true; }
+
+se_fresh
+fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
+se_end_with ':' 1
+assert_eq "a failed comment is retried: one limit comment, the issue limited, the claim released" "$(se_marker_count limited spec)|$(se_kind)|$(fake_claim_held 7)|$se_st" "1|limited|free|0"
+fake_unfail
+
+se_fresh
+fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded"
+se_end_with ':' 1
+assert_eq "a timeline read that fails on a limit ends in a limit stop on a later attempt, not a failure stop" "$(se_kind)|$(se_marker_count limited spec)" "limited|1"
+fake_unfail
+
+se_fresh
+fake_fail_times adapter_issue_comments_json 1 "HTTP 500 comments"
+se_end_with ':' 1
+assert_eq "a timeline read that fails for another reason fails the attempt, and a later attempt's read ends in a limit stop, not a failure stop" "$(se_kind)|$(se_marker_count limited spec)" "limited|1"
+fake_unfail
+
+ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
+se_fresh; fake_fail adapter_issue_relabel "HTTP 500 relabel"
+se_end_with ':' 1
+assert_eq "a stop whose every attempt fails leaves the claim held and fails" "$(fake_claim_held 7)|$se_st" "held|1"
+assert_contains "and writes one backstop line, with the stop kind, first line and exit code" "$(grep -c 'the stop chain failed after 3 attempts' "$se_log") $(tail -1 "$se_log")" "1 autopilot run: the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit"
+fake_unfail
 rm -rf "$se_dir"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
@@ -1830,6 +1905,47 @@ fake_issue 7 open Ready-For-Agent
 out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
 assert_status "start accepts an issue carrying Ready-For-Agent" "$st" 0
 restore_suite_env
+
+# --- autopilot tick: the label check writes only drift (#2691) ----------------
+echo
+echo "autopilot label check"
+tick_fixture
+# seed_autopilot_labels [<skip>]: every autopilot label, as orch:sync seeds
+# them, except <skip> when given.
+seed_autopilot_labels() {
+  local n c d
+  fake_label_names
+  while IFS='|' read -r n c d; do [ "$n" = "${1:-}" ] || fake_label "$n" "$c" "$d"; done <<<"$(sourced_orch standing_label_entries)"
+}
+seed_autopilot_labels
+fake_fail adapter_label_upsert "HTTP 500 a label write"
+"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "a tick with every autopilot label present and matching makes no label write" "$st" 0
+
+# a label differing only in name casing is left alone
+fake_unfail
+fake_label_names
+seed_autopilot_labels
+sed -i 's/^orch:spec/ORCH:SPEC/' "$ORCH_GH_FAKE_STORE/labels"
+fake_fail adapter_label_upsert "HTTP 500 a label write"
+"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "a label differing only in name casing is left alone" "$st" 0
+fake_unfail
+
+# a drifted colour or description is updated
+fake_label_names
+seed_autopilot_labels
+sourced_orch adapter_label_upsert orch:review 000000 "Autopilot flow: review phase next"
+sourced_orch adapter_label_upsert orch:running fbca04 "stale words"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a drifted colour is updated" "$(fake_labels | awk -F '\t' '$1=="orch:review"{print $2}')" "5319e7"
+assert_eq "a drifted description is updated" "$(fake_labels | awk -F '\t' '$1=="orch:running"{print $3}')" "Autopilot session running"
+
+# a missing label is created
+seed_autopilot_labels orch:sync
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a missing label is created" "$(fake_labels | awk -F '\t' '$1=="orch:sync"{print $2}')" "0075ca"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick and run: sync requests -----------------------------------
 # A sync request - orch:sync on an open orch:done issue - is picked up under the
@@ -2401,6 +2517,195 @@ case "$first" in
   *) bad "and passes the transition's message through" "first line: $first" ;;
 esac
 fake_unfail
+
+# --- autopilot tick: the GitHub limit pause (#2577) ---------------------------
+echo
+echo "autopilot tick github limit"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Github limit 7"
+gh_reset="$(( $(date +%s) + 7200 ))"
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of "$gh_reset")" >"$top/.orchestrator/autopilot/github-limit"
+before="$(fake_labels_of 7)"
+out="$("$ORCH" autopilot tick 2>&1 >/dev/null)"; st=$?
+assert_status "a tick under a GitHub pause succeeds" "$st" 0
+assert_contains "its note names the reset, on stderr, which the watcher keeps" "$out" "GitHub API rate limit: the tick does nothing until $(iso_of "$gh_reset")"
+assert_eq "it picks nothing up" "$(tick_calls)" "0"
+assert_eq "and touches no label" "$(fake_labels_of 7)" "$before"
+printf '2020-01-01T00:00:00Z\n' >"$top/.orchestrator/autopilot/github-limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a passed GitHub pause is removed" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent
+
+# --- autopilot tick: a pickup that meets a GitHub limit (#2577) ---------------
+echo
+echo "autopilot tick pickup github limit"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Limit pickup 7"
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Limit pickup 8"
+fake_fail_times adapter_issue_comment 1 "API rate limit exceeded for user ID 1."
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick whose pickup meets a GitHub limit succeeds" "$st" 0
+assert_eq "the claim ref is gone" "$(fake_claim_held 7)" free
+assert_eq "no stop comment is left" "$(fake_comments_of 7 | grep -c 'orch:')" "0"
+assert_not_contains "and no needs-human label" "$(fake_labels_of 7)" "needs-human"
+assert_eq "the tick ends after that pickup: the next issue is not claimed" "$(fake_claim_held 8)" free
+assert_eq "and no session starts" "$(tick_calls)" "0"
+assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+rm -f "$top/.orchestrator/autopilot/github-limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "the issue is picked up again after the pause" "$(picked)" "limit-pickup-7"
+
+# a claim delete that fails leaves the claim held
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Limit pickup 9"
+fake_fail_times adapter_issue_comment 1 "API rate limit exceeded for user ID 1."
+fake_fail adapter_claim_delete "HTTP 500 push"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a failed claim-ref delete leaves the claim held" "$(fake_claim_held 9)" held
+fake_unfail
+
+# --- autopilot run: a start-up read that meets a GitHub limit (#2577) ---------
+echo
+echo "autopilot run start-up read github limit"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Start-up read 7"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+rm -f "$top/.orchestrator/autopilot/github-limit"
+: >"$launcher_dir/calls"
+fake_issue 7 open orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+comments_before="$(fake_comments_of 7)"
+fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+assert_eq "a start-up read that meets a GitHub limit removes orch:running, adds no label" "$(fake_labels_of 7)" "orch:spec "
+assert_eq "releases the claim" "$(fake_claim_held 7)" free
+assert_eq "posts no comment" "$(fake_comments_of 7)" "$comments_before"
+assert_eq "and starts no session" "$(tick_calls)" "0"
+assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+# a claim list that cannot be read on this path still releases the claim
+fake_issue 7 open orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+rm -f "$top/.orchestrator/autopilot/github-limit"
+fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
+fake_fail adapter_claim_list "HTTP 500 list"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+assert_eq "a failing claim-list read on a GitHub-limited start-up still releases the claim" "$(fake_claim_held 7)" free
+# a start-up read that fails for another reason dies, as before
+fake_issue 7 open orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+rm -f "$top/.orchestrator/autopilot/github-limit"
+fake_fail_times adapter_issue_state_labels 1 "HTTP 500"
+"$ORCH" autopilot run 7 >/dev/null 2>&1; st=$?
+fake_unfail
+assert_status "a start-up read that fails for another reason dies" "$st" 1
+assert_eq "and leaves the claim held" "$(fake_claim_held 7)" held
+# a claim release that fails every attempt keeps the claim, writes a backstop
+# line that says no session ran, and names its log by the claim's own phase
+# (which stale cleanup looks it up by)
+fake_issue 7 open orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$" "" sync
+rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log
+fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
+fake_fail adapter_issue_relabel "HTTP 500 relabel"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+su_logs=("$top"/.orchestrator/autopilot/logs/7-sync-*.log)
+assert_eq "a failed start-up claim release leaves the claim held" "$(fake_claim_held 7)" held
+assert_eq "and names its log by the claim's phase" "$([ -e "${su_logs[0]}" ] && echo named || echo missing)" named
+assert_contains "and its backstop line says no session ran" "$(tail -1 "${su_logs[0]}")" "the stop chain failed after 3 attempts - claim release: could not release the claim after a GitHub-limited start-up read; no session ran"
+
+# --- autopilot tick: the early GitHub pause (#2577) ---------------------------
+echo
+echo "autopilot tick github reserve"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Reserve 7"
+printf '7\n' >"$launcher_dir/release"
+quota_reset="$(( $(date +%s) + 7200 ))"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 "$((quota_reset - 100))"; fake_quota graphql 400 5000 "$quota_reset"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with a pool under the reserve succeeds" "$st" 0
+assert_contains "its note names the pool and its reset" "$out" "GitHub graphql pool is below the github-reserve: no issue is picked up until $(iso_of "$quota_reset")"
+assert_not_contains "and names no usage limit" "$out" "usage limit"
+assert_eq "it picks nothing up" "$(tick_calls)" "0"
+assert_eq "the pause is its own file, not the usage limit's" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
+git config orchestrator.autopilot.github-reserve 0
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "github-reserve 0 ignores an early pause already recorded" "$(tick_calls)" "1"
+rm -f "$top/.orchestrator/autopilot/github-early-graphql"
+git config --unset-all orchestrator.autopilot.github-reserve
+# a failed read pauses nothing
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Reserve 8"
+printf '8\n' >"$launcher_dir/release"
+fake_fail adapter_rate_limit "HTTP 502"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a failed rate_limit read pauses nothing" "$(tick_calls)" "2"
+fake_unfail
+# the setting's range
+git config orchestrator.autopilot.github-reserve 100
+out="$("$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "show dies on an out-of-range github-reserve" "$st" 1
+assert_contains "naming key and value" "$out" "orchestrator.autopilot.github-reserve is 100"
+git config --unset-all orchestrator.autopilot.github-reserve
+out="$("$ORCH" autopilot show 2>&1)"
+assert_contains "show lists github-reserve with its default" "$out" "orchestrator.autopilot.github-reserve 20 (default)"
+
+# --- autopilot run: the session log's GitHub usage line (#2577) ---------------
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Usage 7"
+printf '7\n' >"$launcher_dir/release"
+rm -f "$ORCH_GH_FAKE_STORE/quota"
+"$ORCH" autopilot tick >/dev/null 2>&1
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+usage_launcher="$(mktemp)"
+cat >"$usage_launcher" <<USAGE
+#!/bin/sh
+rm -f "$ORCH_GH_FAKE_STORE/claims/7"
+printf 'core\t4990\t5000\t9999999999\ngraphql\t4900\t5000\t9999999999\n' >"$ORCH_GH_FAKE_STORE/quota"
+exit 0
+USAGE
+chmod +x "$usage_launcher"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 9999999999; fake_quota graphql 4950 5000 9999999999
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_contains "the session log says how much core and graphql usage changed" "$(cat "$usage_log")" "GitHub API usage this session: core 10, graphql 50"
+# a failed rate_limit read writes no line, at the session's start or at its end
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+fake_fail adapter_rate_limit "HTTP 502"
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_not_contains "a failed read at the session's start writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+usage_end_launcher="$(mktemp)"
+cat >"$usage_end_launcher" <<USAGE
+#!/bin/sh
+rm -f "$ORCH_GH_FAKE_STORE/claims/7"
+mkdir -p "$ORCH_GH_FAKE_STORE/fail"
+echo "HTTP 502" >"$ORCH_GH_FAKE_STORE/fail/adapter_rate_limit"
+exit 0
+USAGE
+chmod +x "$usage_end_launcher"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 9999999999; fake_quota graphql 4950 5000 9999999999
+ORCH_AUTOPILOT_LAUNCHER="$usage_end_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_not_contains "a failed read at the session's end writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot candidates -----------------------------------------------------
 # The quick autopilot's selection verb: one line per issue, eligible with its

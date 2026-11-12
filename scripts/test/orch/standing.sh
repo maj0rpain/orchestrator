@@ -323,11 +323,53 @@ assert_eq "the second limit stop in a row is still limited" "$(tr_standing 69)|$
 assert_contains "and is retry 2 of 2" "$(fake_comments_of 69)" "retry 2 of 2"
 tr_seed 70 orch:spec orch:running
 fake_fail adapter_issue_comments_json "HTTP 500 comments"
-sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
+assert_contains "unreadable comments fail the attempt: it dies, naming the read" "$(sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' 2>&1)" "could not read issue #70's comments to count the stops in a row"
 fake_unfail
-assert_eq "unreadable comments take the failure path: needs-human, not limited, claim released" "$(tr_standing 70)|$(fake_claim_held 70)" "spec|0|1|0|free"
-assert_contains "and the failure comment says the comments could not be read" "$(fake_comments_of 70)" "could not be read to count the stops in a row"
-assert_contains "and says the session gave no reset time" "$(fake_comments_of 70)" "(the session gave no reset time)"
+assert_eq "and leave the labels, comments and claim as they were" "$(fake_comments_of 70)|$(tr_standing 70)|$(fake_claim_held 70)" "|spec|1|0|0|held"
+# limit-stop with the GitHub cause: no label added, orch:running removed
+tr_seed 95 orch:spec orch:running
+sourced_rc 'standing_limit_stop 95 spec 2026-01-01T01:00:00Z 2026-01-01T01:00:00Z 1 log github' >/dev/null
+assert_eq "a GitHub limit stop adds no label, drops running and releases the claim" "$(tr_standing 95)|$(fake_claim_held 95)" "spec|0|0|0|free"
+assert_first_line "and posts the limited comment with its github cause" "$(fake_comments_of 95)" "$(marker_of limited spec github)"
+assert_contains "naming the GitHub API rate limit and its reset" "$(fake_comments_of 95)" "GitHub API rate limit in the spec phase, which resets 2026-01-01T01:00:00Z"
+tr_seed 96 orch:spec orch:running
+fake_comment 96 o 2026-01-01T00:00:00Z "$(marker_of limited spec github)"
+sourced_rc 'standing_limit_stop 96 spec 2026-01-01T01:00:00Z 2026-01-01T01:00:00Z 1 log github' >/dev/null
+assert_contains "a GitHub stop after a GitHub stop is retry 2 of 2" "$(fake_comments_of 96)" "Retry 2 of 2"
+tr_seed 97 orch:spec orch:running
+fake_comment 97 o 2026-01-01T00:00:00Z "$(marker_of limited spec)"
+fake_comment 97 o 2026-01-01T00:00:01Z "$(marker_of limited spec github)"
+sourced_rc 'standing_limit_stop 97 spec 2026-01-01T01:00:00Z 2026-01-01T01:00:00Z 1 log github' >/dev/null
+assert_eq "the third limit stop in a row, whatever its causes, is a needs-human failure stop" "$(tr_standing 97)|$(fake_claim_held 97)" "spec|0|1|0|free"
+assert_contains "naming the GitHub cause" "$(fake_comments_of 97)" "stopped on the GitHub API rate limit (resets 2026-01-01T01:00:00Z) and exited with code 1, the third in a row"
+# a resumed stop (#2695): the first attempt's comment call lands but reports a
+# failure; the second runs with the same state file, after <between>
+LOSE_ONCE='eval "orig_$(declare -f adapter_issue_comment)"
+adapter_issue_comment() {
+  local rc=0
+  orig_adapter_issue_comment "$@" || rc=$?
+  if [ ! -e "$ORCH_GH_FAKE_STORE/lost" ]; then : >"$ORCH_GH_FAKE_STORE/lost"; return 1; fi
+  return $rc
+}'
+resumed_stop() { # <issue> <between the attempts>
+  rm -f "$ORCH_GH_FAKE_STORE/lost"
+  sourced_rc "$LOSE_ONCE"'
+STANDING_STATE_FILE="$(mktemp)"
+(standing_limit_stop '"$1"' spec "" 2026-01-01T01:00:00Z 1 log) || true
+'"$2"'
+standing_limit_stop '"$1"' spec "" 2026-01-01T01:00:00Z 1 log'
+}
+stop_comments() { grep -c -x -F "$(marker_of limited spec)" <<<"$(fake_comments_of "$1")" || true; }
+tr_seed 71 orch:spec orch:running
+resumed_stop 71 ':' >/dev/null
+assert_eq "a stop whose comment landed but whose call failed posts no second comment, and releases the claim" "$(stop_comments 71)|$(fake_claim_held 71)" "1|free"
+assert_contains "and keeps its count on the next attempt" "$(fake_comments_of 71)" "retry 1 of 2"
+tr_seed 72 orch:spec orch:running
+out="$(resumed_stop 72 'mkdir -p "$ORCH_GH_FAKE_STORE/fail"; printf "HTTP 500 read\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json"')"
+assert_contains "a failed duplicate-comment check fails the attempt" "$out" "could not check issue #72's comments for this stop's comment"
+assert_eq "and posts no second comment" "$(stop_comments 72)|$(fake_claim_held 72)" "1|held"
+fake_unfail
+rm -f "$ORCH_GH_FAKE_STORE/lost"
 tr_seed 68 orch:spec orch:running
 out="$(sourced_rc 'standing_limit_stop 68 "" "" "" 1 log')"
 assert_contains "a limit stop of an empty phase dies" "$out" "rc=1"
