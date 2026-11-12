@@ -162,7 +162,7 @@ flow_state_get() {
 # included - returns the jq's status. On any failure nothing is assigned.
 flow_state_get_many() {
   local __fsgm_file="$1" __fsgm_arg __fsgm_var __fsgm_key __fsgm_def __fsgm_kd="" \
-    __fsgm_tmp __fsgm_i __fsgm_n=0 __fsgm_rows __fsgm_k __fsgm_d __fsgm_found
+    __fsgm_tmp __fsgm_rc __fsgm_i __fsgm_n=0 __fsgm_rows __fsgm_k __fsgm_d __fsgm_found
   local __fsgm_vars=() __fsgm_vals=()
   shift
   __fsgm_rows="$(state_rows)" || return
@@ -189,7 +189,7 @@ flow_state_get_many() {
       ($kd | split("\n")[] | split("|") as $p
         | ($o[$p[0]] | if . == null then $p[1] else . end | tostring
           | split("\u0000") | join("")), "\u0000") end' \
-    "$__fsgm_file" >"$__fsgm_tmp" || { __fsgm_i=$?; rm -f "$__fsgm_tmp"; return "$__fsgm_i"; }
+    "$__fsgm_file" >"$__fsgm_tmp" || { __fsgm_rc=$?; rm -f "$__fsgm_tmp"; return "$__fsgm_rc"; }
   for ((__fsgm_i = 0; __fsgm_i < __fsgm_n; __fsgm_i++)); do
     IFS= read -r -d '' "__fsgm_vals[$__fsgm_i]" || { rm -f "$__fsgm_tmp"; return 1; }
   done <"$__fsgm_tmp"
