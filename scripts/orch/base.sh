@@ -5,10 +5,30 @@
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
+# default_branch_local: prints origin/HEAD's branch (read in full, never
+# --short: a local branch named origin/<b> makes the short name
+# remotes/origin/<b>; valid branch names only), else the literal guess main.
+# Returns 0 when origin/HEAD named the branch, 1 when it fell back to main.
+# Never asks GitHub and sets no memo variable: the one home of the local
+# fallback rule, used by default_branch_resolve and by doctor.
+default_branch_local() {
+  local head_ref b
+  head_ref="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)" || head_ref=""
+  b="${head_ref#refs/remotes/origin/}"
+  if is_branch_name "$b"; then printf '%s\n' "$b"; return 0; fi
+  printf '%s\n' main
+  return 1
+}
+
 # default_branch_resolve: sets DEFAULT_BRANCH (the name) and
 # DEFAULT_BRANCH_SOURCE in the current shell: github (GitHub's answer),
-# origin-head (origin/HEAD, read in full) or fallback (the literal guess main).
-# Asks afresh each time; no memo.
+# origin-head (origin/HEAD, via default_branch_local) or fallback (the literal
+# guess main, also via default_branch_local).
+# Memoised per process: it returns at once, asking nothing, when
+# DEFAULT_BRANCH_SOURCE is already set in the current shell. A $(...) subshell
+# never hands its variables back, so a command that reads the default more
+# than once runs this once in its own shell before its first read; every later
+# $(default_branch) subshell inherits the memo.
 #
 # Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen
 # at clone time - in a clone taken while a feature branch was checked out it
@@ -24,21 +44,17 @@
 # has always been best-effort, and init and base show ask it before anything
 # needs GitHub.
 default_branch_resolve() {
-  local b="" head_ref
-  DEFAULT_BRANCH_SOURCE=github
+  local b=""
+  [ -z "${DEFAULT_BRANCH_SOURCE:-}" ] || return 0
   if repo_resolve; then
     b="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)" || b=""
   fi
-  if ! is_branch_name "$b"; then
+  if is_branch_name "$b"; then
+    DEFAULT_BRANCH_SOURCE=github
+  elif b="$(default_branch_local)"; then
     DEFAULT_BRANCH_SOURCE=origin-head
-    # Read in full, never --short: a local branch named origin/<b> makes the
-    # short name remotes/origin/<b>.
-    head_ref="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)" || head_ref=""
-    b="${head_ref#refs/remotes/origin/}"
-  fi
-  if ! is_branch_name "$b"; then
+  else
     DEFAULT_BRANCH_SOURCE=fallback
-    b="main"
   fi
   DEFAULT_BRANCH="$b"
 }

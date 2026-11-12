@@ -24,7 +24,7 @@
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
 # defined; the gh adapter operations it calls, issue_state_labels_read among
 # them, live in gh.sh. The helpers it calls from noun modules
-# (default_branch, base_setting and origin_has_branch from base.sh,
+# (default_branch_local, base_setting and origin_has_branch from base.sh,
 # require_state from state.sh), and check_agent_settings, agent.sh's check
 # its env check list names, are defined by the time cmd_doctor runs,
 # because every module is sourced before main dispatches. cmd_doctor is then
@@ -296,6 +296,7 @@ check_gh_repo() {
 }
 
 # Worth its own line because getting it wrong is silent: default_branch falls
+# (default_branch_local, no second ask after the probe)
 # back to a local pointer and then to the literal "main", and a feature branch
 # forked from the wrong place looks fine until review.
 check_default_branch() {
@@ -304,7 +305,7 @@ check_default_branch() {
   # so, and a second line derived from the first buries it.
   [ -n "$D_REPO_SEEN" ] || return 0
   if [ -n "$D_REPO_BRANCH" ]; then d_ok "default branch: $D_REPO_BRANCH (from GitHub)"; return 0; fi
-  d_warn "default branch not resolved from GitHub - falling back to $(default_branch)."
+  d_warn "default branch not resolved from GitHub - falling back to ${D_REPO_BRANCH:-$(default_branch_local)}."
   d_remedy "git remote set-head origin --auto"
 }
 
@@ -531,13 +532,14 @@ check_git_exclude() {
 # target. A setting whose branch has since gone from origin is the one stale
 # answer that would send the next fork at nothing, so it FAILs; origin being
 # unreachable only means it could not be checked. The default case reuses the
-# default branch GitHub already answered in d_probe - the same answer
-# base_branch would ask for again - and needs no origin check at all.
+# default branch GitHub already answered in d_probe, else default_branch_local -
+# the answer base_branch would give, with no second ask - and needs no origin
+# check at all.
 check_base_branch() {
   local b st=0
   b="$(base_setting)"
   if [ -z "$b" ]; then
-    d_ok "base branch: ${D_REPO_BRANCH:-$(default_branch)} (default)"
+    d_ok "base branch: ${D_REPO_BRANCH:-$(default_branch_local)} (default)"
     return 0
   fi
   origin_has_branch "$b" || st=$?

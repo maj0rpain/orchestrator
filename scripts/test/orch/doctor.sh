@@ -336,6 +336,54 @@ assert_contains "warns the default branch was not resolved from GitHub" \
 assert_not_contains "and never reports the banner as the branch" "$out" "mise"
 fake_default_branch main
 
+# Doctor asks GitHub for the default branch only in its probe: its fallback
+# warning and its base-branch line fall back locally (origin/HEAD, else main)
+# without a second ask. The adapter's read is counted at its stand-in.
+doc_reads="$(mktemp)"
+doc_counted_defs="$(writeln \
+        'eval "fake_default_branch_read() $(declare -f adapter_repo_default_branch | tail -n +2)"' \
+        'adapter_repo_default_branch() { echo x >>"$DOC_READS"; fake_default_branch_read "$@"; }')"
+doc_counted() { : >"$doc_reads"; DOC_READS="$doc_reads" adapter_stood_in "$doc_counted_defs" "$ORCH" doctor --env 2>&1; }
+doc_read_count() { wc -l <"$doc_reads" | tr -d ' '; }
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
+fake_offline
+out="$(doc_counted)"
+assert_eq "offline, doctor never reads the default branch from GitHub" "$(doc_read_count)" "0"
+assert_contains "offline, the base branch is origin/HEAD's branch" "$out" "base branch: develop (default)"
+git symbolic-ref -d refs/remotes/origin/HEAD
+out="$(doc_counted)"
+assert_eq "offline with no origin/HEAD, doctor still asks nothing" "$(doc_read_count)" "0"
+assert_contains "offline with no origin/HEAD, the base branch is main" "$out" "base branch: main (default)"
+fake_online
+fake_noauth
+out="$(doc_counted)"
+assert_eq "unauthenticated, doctor never reads the default branch" "$(doc_read_count)" "0"
+fake_online
+origin_url="$(git remote get-url origin)"
+git remote set-url origin /nonexistent/not-github.git
+out="$(doc_counted)"
+assert_eq "with the repo unresolved, doctor never reads the default branch" "$(doc_read_count)" "0"
+assert_not_contains "with the repo unresolved, no base branch line names a stray branch" "$out" "base branch: develop"
+git remote set-url origin "$origin_url"
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
+fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
+out="$(doc_counted)"
+assert_eq "a failing read is reached exactly once" "$(doc_read_count)" "1"
+fake_unfail
+fake_default_branch ''
+out="$(doc_counted)"
+assert_eq "an empty answer is read exactly once" "$(doc_read_count)" "1"
+assert_contains "and the warning names origin/HEAD's branch" "$out" "falling back to develop."
+assert_contains "and the base branch line names it too" "$out" "base branch: develop (default)"
+fake_default_branch "$(printf 'a banner\n')"
+out="$(doc_counted)"
+assert_eq "a banner answer is read exactly once" "$(doc_read_count)" "1"
+assert_contains "and the warning names the same fallback" "$out" "falling back to develop."
+git symbolic-ref -d refs/remotes/origin/HEAD
+out="$(doc_counted)"
+assert_contains "with no origin/HEAD the warning falls back to main" "$out" "falling back to main."
+fake_default_branch main
+
 # doctor reports the repo the orchestrator works on (#520): resolved locally,
 # with its source, and never gh's own default, which in a fork is the upstream.
 out="$("$ORCH" doctor --env 2>&1)"
