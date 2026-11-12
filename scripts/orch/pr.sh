@@ -551,9 +551,8 @@ cmd_pr_read() {
   while IFS=$'\t' read -r pr enc flag; do
     [ -n "$pr" ] || continue
     # Every listed line must read, whichever issue its body names.
-    [ "$flag" = true ] || [ "$flag" = false ] ||
-      die "the open PRs for issue #$issue could not be read"
-    body="$(jq -r . <<<"$enc")" ||
+    { is_positive_int "$pr" && { [ "$flag" = true ] || [ "$flag" = false ]; } \
+      && body="$(jq -r . <<<"$enc")"; } ||
       die "the open PRs for issue #$issue could not be read"
     line="$(printf '%s\n' "$body" | sed -n '1{s/\r$//;p;}')"
     if [ "$line" = "Closes #$issue" ] || [ "$line" = "Refs #$issue" ]; then
