@@ -253,11 +253,11 @@ a failure; never run the command in the background and sleep, poll or kill it.
 Only Claude Code sets `CLAUDE_PLUGIN_ROOT` in a skill's shell. Junie CLI's agent
 shell does not set `JUNIE_EXTENSION_ROOT` either - only `JUNIE_DATA`,
 `JUNIE_SHIM_PATH`, and `JUNIE_TMPDIR` - and Junie does not tell the model a
-skill's own directory (#201). So every skill that runs `orch.sh` looks for the
-Junie CLI install with a literal
+skill's own directory (#201). So every skill that runs `orch.sh`, other than a
+Claude-Code-only one, looks for the Junie CLI install with a literal
 `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` before falling
 back to the path relative to the skill; CONTRIBUTING.md, "Resolving orch.sh",
-gives the order.
+gives the order and the Claude-Code-only form.
 
 ## Execute bit
 

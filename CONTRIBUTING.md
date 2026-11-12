@@ -377,9 +377,10 @@ cannot drift between sessions.
 Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Other hosts expand it
 only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is).
 Junie CLI's agent shell has no `JUNIE_EXTENSION_ROOT` either, and Junie does not
-tell the model a skill's own directory. So every skill that runs `orch.sh`
-states the path one way, in this order: the `ORCH=` line, then the Junie CLI
-install, then the relative fallback:
+tell the model a skill's own directory. So every skill that runs `orch.sh`,
+other than a Claude-Code-only one (see below), states the path one way, in this
+order: the `ORCH=` line, then the Junie CLI install, then the relative
+fallback:
 
 ````
 ```

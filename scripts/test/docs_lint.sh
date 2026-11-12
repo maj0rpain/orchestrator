@@ -981,8 +981,8 @@ assert_empty "the scan accepts any wording between the anchors, copied word for 
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-cc"
 printf '%s\n' "$stop" >"$fixture/skills/orch-flow/SKILL.md"
-cc_skill 'Does a thing. Claude Code only.' 'If `orch.sh` is not there, stop: Claude Code only.'
-assert_empty "a marked skill with no stop text is skipped" "$(scan_stop_text "$fixture")"
+cc_skill 'Does a thing. Claude Code only.' '```' "$orch_line" '```' "$cc_stop"
+assert_empty "a marked skill with the ORCH= line and the Claude-Code-only stop is skipped" "$(scan_stop_text "$fixture")"
 cc_skill 'Does a thing. Claude Code only.' "$stop"
 flags "a marked skill carrying orch-flow's stop text is flagged" "$(scan_stop_text "$fixture")" \
   "skills/orch-cc/SKILL.md: Claude Code only skill carries skills-only stop text"
