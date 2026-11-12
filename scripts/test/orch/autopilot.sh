@@ -2441,9 +2441,9 @@ assert_eq "verdicts and the order named" "$out" "3 eligible override
 # The fake lists newest first, as gh does, except its oldest-first read: the
 # verb must walk that read in order.
 
-all="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
+all="$(ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all 2>&1)"; st=$?
 assert_status "--all succeeds" "$st" 0
-assert_eq "--all walks the open issues oldest first" "$(printf '%s\n' "$all" | cut -d' ' -f1 | paste -sd' ' -)" "1 2 3 4 5 6 7 8 9 10 12 13 14"
+assert_eq "--all walks the open issues oldest first, with no limit warning below the limit" "$(printf '%s\n' "$all" | cut -d' ' -f1 | paste -sd' ' -)" "1 2 3 4 5 6 7 8 9 10 12 13 14"
 assert_eq "--limit keeps the first k eligible lines, skips not counted" "$("$ORCH" autopilot candidates --limit 4 2>&1)" "1 eligible none
 2 eligible move
 3 eligible override
@@ -2460,8 +2460,6 @@ assert_eq "past the issue-list limit the newest issues are the ones dropped" \
   "1 2 3 4 5 6 7 8 9 10 12 13"
 assert_contains "--all warns when the listing reaches the issue-list limit" "$(cat "$ac_err")" \
   "orch: the open issues reached the issue-list limit of 12 - the newest past it are missing from this list"
-ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
-assert_not_contains "--all gives no warning below the limit" "$(cat "$ac_err")" "issue-list limit"
 rm -f "$ac_err"
 
 for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
