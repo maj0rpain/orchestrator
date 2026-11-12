@@ -182,6 +182,7 @@ that left them.
 | `/orchestrator:review-pass <issue> [--smells]` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, and leaves out the Standards reviewer's smell-baseline findings unless `--smells` is given, reporting only how many it left out. Fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
 | `/orchestrator:sync` | Run a **base sync** on demand, on any plugin-made branch, inside or outside a flow - a done flow's included: merge `origin`'s tip of its base branch in with `orch.sh branch sync`, never rebasing. A conflict is resolved by a fresh `orch-resolver`, the PR body corrected against the merged diff, and its **Merge resolutions** and the body corrections posted as one PR comment; then, unless an active flow holds the branch, it asks whether to run a review pass against the branch's issue (from its name, or asked for when the name carries none). |
 | `/orchestrator:interview` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
+| `/orchestrator:quick-autopilot <n>... \| --all \| --limit <k>` | Send issues to autopilot taking every recommended option - a quick autopilot. `orch.sh autopilot candidates` selects the issues; one confirmation shows each with its label move (`none`, `move`, `override`) and the skipped ones with reasons; then one `orch-autopilot-planner` subagent per issue, at most 4 at once, runs an unattended interview, the label move, an unattended rewrite, a plan and `autopilot start`. Ends with a started, skipped and failed summary. Claude Code only. |
 | `/orchestrator:quick-implement [<issue>] [--side]` | Start a quick implementation, the route with no flow: with an issue number, that issue is its linked issue; with none, it finds or publishes one. `--side` asks for a side checkout up front; one is also made, without asking, when this checkout is a busy checkout. |
 | `/orchestrator:to-spec [<issue>]` | Turn the current conversation into a spec, outside any flow: publish it as a new issue, or, given an issue number, rewrite that issue's body as the spec (rewrite mode). |
 | `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
@@ -242,6 +243,12 @@ runs it once per run.
 
 The autopilot flow runs a flow's phases unattended. See GLOSSARY.md's
 **Autopilot flow** entry. It is Claude Code only.
+
+A flow reaches autopilot two ways: the planning close's Autopilot route, with
+a human in the interview, or `/orchestrator:quick-autopilot`, which plans each
+issue unattended - every question takes its recommended answer, recorded in the
+plan's Decisions - after one confirmation, and ends in the same `autopilot
+start` (ADR-0061). The watcher picks either up the same way.
 
 ### Lifecycle
 

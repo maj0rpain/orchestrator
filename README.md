@@ -119,6 +119,7 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:finish` | Clean up finished side checkouts and flows. |
 | `/orchestrator:quick-implement [<issue>] [--side]` | Start a quick implementation. |
+| `/orchestrator:quick-autopilot <n>... \| --all \| --limit <k>` | Send issues to autopilot taking every recommended option, after one confirmation. Claude Code only. |
 | `/orchestrator:to-spec [<issue>]` | Turn the conversation into a spec issue, outside a flow. |
 | `/orchestrator:to-tickets <issue>` | Break an issue into tickets, outside a flow. |
 | `/orchestrator:spec-review <issue> [--rounds <n>]` | Review a spec issue on demand. |
