@@ -163,7 +163,8 @@ verify_twice() {
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
-#   adapter_issues_labelled, adapter_issues_labelled_bodies,
+#   adapter_issues_labelled, adapter_issues_open_oldest,
+#   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
@@ -351,6 +352,14 @@ issue_state_labels_read() {
   gh_lines_read adapter_issue_state_labels "$1" "$4" "$2" "$3"
 }
 
+# gh_issue_not_found <stderr>: whether a failed issue read's captured stderr
+# says no issue or pull request has that number - GitHub's own not-found
+# answer, as against any other failed read. The one place its wording is
+# matched.
+gh_issue_not_found() {
+  [[ "$1" == *"Could not resolve to an issue or pull request with the number of"* ]]
+}
+
 # adapter_issue_state_labels_body <n>: OPEN or CLOSED on the first line, the
 # label count on the second, then one label per line, then the body as GitHub
 # holds it and a newline - the count marks where the labels end and the body
@@ -426,6 +435,12 @@ adapter_issues_labelled() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
   gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+}
+
+# adapter_issues_open_oldest: every open issue, one number per line, oldest
+# first, so ISSUE_LIST_LIMIT cuts the newest.
+adapter_issues_open_oldest() {
+  gh issue list --state open --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues carrying every

@@ -118,6 +118,22 @@ adapter_stood_in() {
   return "$st"
 }
 
+# counted_adapter_run <log> <definitions> <cmd>...: empties <log>, then runs
+# <cmd> through adapter_stood_in with COUNT_LOG set to <log>, so <definitions>
+# can append a line per adapter read to "$COUNT_LOG". Returns <cmd>'s status.
+counted_adapter_run() {
+  local log="$1" defs="$2"
+  shift 2
+  : >"$log"
+  COUNT_LOG="$log" adapter_stood_in "$defs" "$@"
+}
+
+# log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
+# when a tag is given.
+log_count() {
+  if [ -n "${2:-}" ]; then grep -c "^$2 " "$1" || true; else wc -l <"$1" | tr -d ' '; fi
+}
+
 # A fresh repo with one commit, an empty docs/agents/ for a labels doc and an
 # origin of https://github.com/o/r.git (so it resolves to the repo o/r), cwd
 # inside it. No setup is required of it (ADR-0028).

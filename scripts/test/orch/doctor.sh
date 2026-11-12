@@ -5,6 +5,15 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# counting_defs <adapter-fn> <tag>: definitions that wrap the fake's
+# <adapter-fn> so each call appends "<tag> <first-arg>" to "$COUNT_LOG" before
+# the fake answers. Join several with writeln for counted_adapter_run.
+counting_defs() {
+  writeln \
+    "eval \"fake_$1_read() \$(declare -f $1 | tail -n +2)\"" \
+    "$1() { printf '%s %s\\n' '$2' \"\$1\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
+}
+
 # Git Bash / MSYS2 (and Cygwin) both set OSTYPE this way; used to skip fixtures
 # that are known not to work in that environment rather than report a false
 # FAIL.
@@ -312,20 +321,62 @@ assert_contains "a user-set OWNER/REPO GH_REPO asks the user's GH_HOST" "$out" "
 assert_contains "and its remedy names that host" "$out" "gh auth login --hostname ghe.example.com"
 fake_online
 
+# Doctor asks GitHub for the default branch only in its probe: its fallback
+# warning and its base-branch line fall back locally (origin/HEAD, else main)
+# without a second ask. The adapter's read is counted at its stand-in.
+doc_reads="$(mktemp)"
+doc_counted_defs="$(counting_defs adapter_repo_default_branch branch)"
+doc_counted() { counted_adapter_run "$doc_reads" "$doc_counted_defs" "$ORCH" doctor --env 2>&1; }
+doc_read_count() { log_count "$doc_reads"; }
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
+fake_offline
+out="$(doc_counted)"
+assert_eq "offline, doctor never reads the default branch from GitHub" "$(doc_read_count)" "0"
+assert_contains "offline, the base branch is origin/HEAD's branch" "$out" "base branch: develop (default)"
+git symbolic-ref -d refs/remotes/origin/HEAD
+out="$(doc_counted)"
+assert_eq "offline with no origin/HEAD, doctor still asks nothing" "$(doc_read_count)" "0"
+assert_contains "offline with no origin/HEAD, the base branch is main" "$out" "base branch: main (default)"
+fake_online
+fake_noauth
+out="$(doc_counted)"
+assert_eq "unauthenticated, doctor never reads the default branch" "$(doc_read_count)" "0"
+assert_contains "unauthenticated, the base branch line names the same fallback" "$out" "base branch: main (default)"
+fake_online
+origin_url="$(git remote get-url origin)"
+git remote set-url origin /nonexistent/not-github.git
+out="$(doc_counted)"
+assert_eq "with the repo unresolved, doctor never reads the default branch" "$(doc_read_count)" "0"
+assert_contains "with the repo unresolved, the base branch line names the same fallback" "$out" "base branch: main (default)"
+git remote set-url origin "$origin_url"
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
+fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
+out="$(doc_counted)"
+assert_eq "a failing read is reached exactly once" "$(doc_read_count)" "1"
+assert_contains "and the base branch line still names the same fallback" "$out" "base branch: develop (default)"
+fake_unfail
 fake_default_branch ''
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
+out="$(doc_counted)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
-assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
-
+assert_contains "warns the default branch was not resolved from GitHub" \
+  "$out" "warn  default branch not resolved from GitHub"
+assert_not_contains "and never reports a banner as the branch" "$out" "mise"
+assert_eq "an empty answer is read exactly once" "$(doc_read_count)" "1"
+assert_contains "and the warning names origin/HEAD's branch" "$out" "falling back to develop."
+assert_contains "and the base branch line names it too" "$out" "base branch: develop (default)"
 # GitHub's answer is validated as default_branch validates it (#485): a tool
-# manager's banner around the name is no branch name, so doctor falls back as
-# default_branch does rather than reporting the banner as the branch.
+# manager's banner around the name is no branch name, so doctor falls back.
 fake_default_branch "$(printf 'mise ~/.config/mise/config.toml tools: gh@2.102.0\nmain\n')"
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
+out="$(doc_counted)"; st=$?
 assert_status "a polluted default branch does not block the flow" "$st" 0
 assert_contains "warns the default branch was not resolved from GitHub" \
   "$out" "warn  default branch not resolved from GitHub"
 assert_not_contains "and never reports the banner as the branch" "$out" "mise"
+assert_eq "a banner answer is read exactly once" "$(doc_read_count)" "1"
+assert_contains "and the warning names the same fallback" "$out" "falling back to develop."
+git symbolic-ref -d refs/remotes/origin/HEAD
+out="$(doc_counted)"
+assert_contains "with no origin/HEAD the warning falls back to main" "$out" "falling back to main."
 fake_default_branch main
 
 # doctor reports the repo the orchestrator works on (#520): resolved locally,
@@ -1367,6 +1418,17 @@ assert_not_contains "says nothing for a tip past its merged PR's head" "$out" "s
 assert_contains "and prints no FAIL" "$(printf '%s\n' "$out" | tail -1)" " 0 FAIL"
 out_in="$(cd "$dopen" && "$ORCH" doctor --env 2>&1)"
 assert_contains "warns the same from inside a side checkout" "$out_in" "orch.sh side-checkout remove dfin"
+# The finished test reads the default branch per side checkout, yet doctor asks
+# GitHub for it only in its probe - whether that read answered or failed.
+sc_reads="$(mktemp)"
+sc_counted_defs="$(counting_defs adapter_repo_default_branch branch)"
+out="$(counted_adapter_run "$sc_reads" "$sc_counted_defs" "$ORCH" doctor --env 2>&1)"
+assert_eq "with side checkouts, doctor's only default-branch read is its probe's" "$(log_count "$sc_reads")" "1"
+assert_contains "and the walk still warns on the finished one" "$out" "warn  side checkout dfin is finished"
+fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
+out="$(counted_adapter_run "$sc_reads" "$sc_counted_defs" "$ORCH" doctor --env 2>&1)"
+assert_eq "with the probe's read failed, the walk asks nothing more" "$(log_count "$sc_reads")" "1"
+fake_unfail
 out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "doctor --env fails when the checkouts cannot be read (#1333)" "$st" 1
 assert_contains "reporting it as a FAIL" "$out" "FAIL  could not read the checkouts"
@@ -2227,18 +2289,13 @@ assert_not_contains "a passing probe gives no hint" "$(alias_doctor)" "$hint"
 echo
 echo "doctor: one issue read and one PR read per run (#2554)"
 reads_log="$(mktemp)"
-reads_defs="$(writeln \
-        'eval "fake_issue_read() $(declare -f adapter_issue_state_labels | tail -n +2)"' \
-        'eval "fake_pr_read() $(declare -f adapter_pr_state_draft | tail -n +2)"' \
-        'adapter_issue_state_labels() { printf "issue %s\n" "$1" >>"$READS_LOG"; fake_issue_read "$@"; }' \
-        'adapter_pr_state_draft() { printf "pr %s\n" "$1" >>"$READS_LOG"; fake_pr_read "$@"; }')"
+reads_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_pr_state_draft pr)")"
 # counted_doctor <doctor-arg>: doctor's output (2>&1) in out, status in st, the
 # reads it made in reads_log.
 counted_doctor() {
-  : >"$reads_log"
-  out="$(READS_LOG="$reads_log" adapter_stood_in "$reads_defs" "$ORCH" doctor "$@" 2>&1)"; st=$?
+  out="$(counted_adapter_run "$reads_log" "$reads_defs" "$ORCH" doctor "$@" 2>&1)"; st=$?
 }
-reads_of() { grep -c "^$1 " "$reads_log" || true; }
+reads_of() { log_count "$reads_log" "$1"; }
 
 review_flow onereads
 doctor_github
@@ -2271,8 +2328,7 @@ state_fixture phase review
 fake_issue 7 open ready-for-agent
 fake_pr 40 open orch/onereads main
 fake_pr_draft 40
-: >"$reads_log"
-out="$(READS_LOG="$reads_log" ORCH_AUTOPILOT=1 adapter_stood_in "$reads_defs" "$ORCH" doctor --flow 2>&1)"; st=$?
+out="$(ORCH_AUTOPILOT=1 counted_adapter_run "$reads_log" "$reads_defs" "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an autopilot flow with no phase label still fails" "$st" 1
 assert_contains "naming the missing phase label" "$out" "issue #7 carries no phase label"
 assert_eq "and its issue is read once" "$(reads_of issue)" 1

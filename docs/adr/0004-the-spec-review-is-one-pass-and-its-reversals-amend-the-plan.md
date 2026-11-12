@@ -105,3 +105,21 @@ the human has already decided. The one-pass decision is unchanged. The review
 may now also write the issue's tickets - their bodies, or retiring the breakdown
 and, in a standalone review, breaking the issue down again - and only to follow
 edits the human has already accepted.
+
+## Note: a spec-question ruling amends the plan too (2026-11-11)
+
+In an autopilot flow the review loop applies the human's reply to a spec
+question to the spec body. When that ruling brings back, in whole or in part,
+something the plan handoff's **Rejected alternatives** ruled out, the loop
+amends that entry as well, saying it was reversed by the ruling on spec
+question #<n> and what now holds (#2705). The authority is of the same kind as
+above: a human decision, made with the change in view. The ruling need not have
+named the rejected alternative; the loop reads what the ruling brings back
+against the entry. This is the one other case where a later phase edits an
+earlier phase's handoff, and it is visible in the re-posted plan comment, whose
+amended entry names the spec question (by its number, or by its `<file>:<line>`
+when the closer could not file it), and in the human's reply on the flow's
+issue, where the ruling was given. Without the amendment the review loop would
+demote reviewers for proposing what the human just ruled for. The amendment
+stays confined to that one section and to a human's ruling; a session editing
+it for its own reasons is still the failure mode above.

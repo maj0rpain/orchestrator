@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.1.3
+
+An autopilot review loop now amends the plan handoff's Rejected alternatives, and re-posts the plan comment, when a human's spec-question ruling brings one back. The mechanics live in the handoff skill, and ADR-0004 gains a Note.
+
+## 5.1.2
+
+A `redo review` that died after moving the review records now completes when rerun: the stopped loop reads as stopped from `pre-redo-<n>/`, `review resume` and doctor no longer send the human back to `next`, and `review retire` resumes into the folder its first run made.
+
+## 5.1.1
+
+The default branch is now asked of GitHub at most once per orch.sh run: `base set` and `side-checkout prune` resolve it once, and `doctor` asks only in its probe, falling back to origin/HEAD or `main` locally for its checks, including its finished side checkout walk.
+
+## 5.1.0
+
+New `/orchestrator:quick-autopilot <n>... | --all | --limit <k>` sends one or more issues to autopilot taking every recommended option: after one confirmation listing each selected issue's triage-label move and the issues skipped with why, each issue gets an unattended interview, its label moved to `ready-for-agent` (overriding `ready-for-human`), an unattended rewrite of its body as a spec, a plan with the recommended Rounds and Budget, and `autopilot start`, in a fresh `orch-autopilot-planner` subagent, at most 4 at once. Its selection is the new `orch.sh autopilot candidates` verb (ADR-0061). Claude Code only.
+
 ## 5.0.35
 
 The spec review's batch and ticket parsers share one `@@` block reader for the anchor, replace, end and quote blocks, so a fix to the block machine lands in both; no message or accepted file changes.

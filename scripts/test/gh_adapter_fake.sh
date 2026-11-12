@@ -439,22 +439,22 @@ adapter_issue_state() {
   cat "$(fake_issue_dir "$1")/state"
 }
 
-# fake_open_issues: the numbers of the open issues in the store, one per line
-# in number order.
+# fake_open_issues: the numbers of the open issues in the store, newest first,
+# as real gh lists them.
 fake_open_issues() {
   local d
   for d in "$(fake_store)"/issues/*/; do
     [ -d "$d" ] || continue
     [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
     basename "$d"
-  done | sort -n
+  done | sort -nr
 }
 
 # adapter_issues_labelled <label>...: the open issues in the store carrying
-# every label named, in number order - the first ISSUE_LIST_LIMIT of them, as
-# gh's --limit cuts the list, with awk, which reads all of the while loop's
-# output, so the loop never takes SIGPIPE under pipefail as it would from head
-# (#1019).
+# every label named, newest first as gh lists them - the first ISSUE_LIST_LIMIT
+# of them, as gh's --limit cuts the list, with awk, which reads all of the
+# while loop's output, so the loop never takes SIGPIPE under pipefail as it
+# would from head (#1019).
 adapter_issues_labelled() {
   local n l keep
   ! fake_failing adapter_issues_labelled || return 1
@@ -464,6 +464,13 @@ adapter_issues_labelled() {
     [ "$keep" = 1 ] || continue
     printf "%s\n" "$n"
   done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+}
+
+# adapter_issues_open_oldest: the open issues in the store, oldest first and
+# cut at ISSUE_LIST_LIMIT, so the newest are the ones dropped.
+adapter_issues_open_oldest() {
+  ! fake_failing adapter_issues_open_oldest || return 1
+  fake_open_issues | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues in the store

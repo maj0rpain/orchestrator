@@ -951,7 +951,7 @@ assert_eq "and no worktree is left" "$(git worktree list | wc -l | tr -d ' ')" 1
 # printed again, nothing run, while the clean HEAD, base commit, command and
 # knobs are unchanged. A command that appends to a counter file counts runs.
 cnt="$(mktemp)"
-runs() { wc -l <"$cnt" | tr -d ' '; }
+runs() { log_count "$cnt"; }
 grown_reset() {
   confirm_reset
   fake_cpu "$head" 90.00
