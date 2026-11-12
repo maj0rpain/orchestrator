@@ -31,8 +31,8 @@ ndjson_with "Claude AI usage limit reached|$sl_b" >"$sl_dir/epoch"
 assert_eq "text-only limit message with an epoch" "$(sl_read "$sl_dir/epoch")" "1|$sl_b||"
 
 { echo '{"type":"result","result":"5-hour limit reached ∙ resets 3pm"}'; echo "Claude AI usage limit reached|$sl_a"; } >"$sl_dir/order"
-out="$(sl_read "$sl_dir/order")"; out="${out#1|}"; out="${out%%|*}"
-assert_eq "a result text is read after the plain lines, so its resets time wins" "$([ -n "$out" ] && [ "$out" != "$sl_a" ] && [ "$out" -gt "$sl_now" ] && echo yes)" yes
+IFS='|' read -r _ order_reset _ <<<"$(sl_read "$sl_dir/order")"
+assert_eq "a result text is read after the plain lines, so its resets time wins" "$([ -n "$order_reset" ] && [ "$order_reset" != "$sl_a" ] && [ "$order_reset" -gt "$sl_now" ] && echo yes)" yes
 
 rl_event allowed 0.95 "$sl_a" allowed 0.2 "$sl_b" >"$sl_dir/early"
 assert_eq "an allowed event at 0.95 gives the early pause only" "$(sl_read "$sl_dir/early")" "0||$sl_a|"
