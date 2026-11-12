@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.17
+
+The paste guards and the session-start hook call the shared hook payload reader bare, without the dead stderr redirect and `|| exit 0`, and the paste guard no longer wraps it. The paste guard's transcript scan builds its capture pattern from the needle constant, escaped as a regex, so the needle has one copy.
+
 ## 5.2.16
 
 Test-only: the hook test suite builds every counting stub with `call_counter` and reads every count with `counted_calls`, shares one jq counter dir, and drops the `rl_calls` wrapper and a duplicated Junie-shaped readlink case.
