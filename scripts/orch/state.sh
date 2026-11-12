@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # state.sh - orch.sh's state command (state get and state set), with the state
 # helpers every module calls (state_get, state_write, require_state,
-# require_pr, require_issue, flow_active). Two readers: state_get, the
-# unguarded own-checkout reader, and state_get_in, the guarded shared one.
+# require_pr, require_issue, flow_active). Two readers, each with a many-key
+# form: state_get and state_get_many, the unguarded own-checkout readers, and
+# state_get_in and state_get_many_in, the guarded shared ones.
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -56,6 +57,45 @@ state_read() {
   rc=$?
   flow_state_key_field "$2" default >/dev/null || die "unknown state key: $2"
   return "$rc"
+}
+
+# state_get_many <var>=<key>...: the own-checkout reader of several keys in one
+# jq, unguarded as state_get is: it assigns each <key>'s value to the caller's
+# <var> (flow_state_get_many). It declares no unprefixed local, so a caller may
+# name an out-variable anything. A failed read rechecks the arguments, which
+# die "unknown state key: <key>" or "malformed state read: <arg>"; any other
+# status is a failed read and is returned, jq's text through.
+state_get_many() {
+  local __sgm_rc
+  flow_state_get_many "$STATE" "$@" && return
+  __sgm_rc=$?
+  state_many_recheck "$@"
+  return "$__sgm_rc"
+}
+
+# state_get_many_in <file> <var>=<key>...: state_get_many on the state file
+# <file> of any checkout, guarded as state_get_in is: a file that cannot be
+# read returns 2 and prints nothing, with no separate flow_state_readable run.
+# A failed read rechecks the arguments as state_get_many does; any other
+# status is a failed read, 2.
+state_get_many_in() {
+  flow_state_get_many "$@" 2>/dev/null && return
+  shift
+  state_many_recheck "$@"
+  return 2
+}
+
+# state_many_recheck <var>=<key>...: after a failed many-key read, dies with
+# the message for the argument that was at fault, and returns 0 when none was.
+# It runs only after a failure, when nothing was assigned, so its locals
+# cannot shadow a caller's out-variable.
+state_many_recheck() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in *=*) ;; *) die "malformed state read: $arg" ;; esac
+    [ -n "${arg%%=*}" ] || die "malformed state read: $arg"
+    flow_state_key_field "${arg#*=}" default >/dev/null || die "unknown state key: ${arg#*=}"
+  done
 }
 
 # The unrestricted writer behind every internal state change, over
@@ -158,11 +198,17 @@ flow_base() { flow_base_in "$STATE"; }
 
 # flow_base against another checkout's state file <file>. A state file that
 # cannot be read returns the read's failure: the default branch stands in
-# only for a readable state that records no base.
+# only for a readable state that records no base (flow_base_fallback).
 flow_base_in() {
   local b
   b="$(state_get_in "$1" base)" || return
-  if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
+  flow_base_fallback "$b"
+}
+
+# flow_base_fallback <raw>: prints the base read from state, or the default
+# branch when <raw> is empty - a flow started before base was recorded.
+flow_base_fallback() {
+  if [ -n "$1" ]; then printf '%s\n' "$1"; else default_branch; fi
 }
 
 # Whether a flow is active: state.json exists and its phase is not done.
@@ -179,12 +225,9 @@ flow_active() { flow_state_active "$STATE"; }
 flow_holding_phase() {
   local branch="$1" issue="${2:-}" phase held_branch held_issue
   flow_active || return 1
-  flow_state_readable "$STATE" || return 2
-  phase="$(state_get phase)" || return 2
-  held_branch="$(state_get branch)" || return 2
+  state_get_many_in "$STATE" phase=phase held_branch=branch held_issue=issue || return 2
   if [ "$held_branch" != "$branch" ]; then
     [ -n "$issue" ] || return 1
-    held_issue="$(state_get issue)" || return 2
     [ "$held_issue" = "$issue" ] || return 1
   fi
   printf '%s\n' "$phase"
