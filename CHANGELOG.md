@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.30
+
+`pr release` now reads the repo's open issues once, instead of one state read per referenced issue, so a release no longer slows as the base branch ages; a reference to an unknown number is dropped rather than aborting the release.
+
 ## 5.0.29
 
 The main-checkout lookup now costs one git process and the checkout-kind lookup classifies only the matching checkout, so autopilot ticks and Liveness reads no longer grow with the number of side checkouts.
