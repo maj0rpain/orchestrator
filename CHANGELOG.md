@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.10
+
+Tidy the spec-review CRLF test sections: drop a duplicate all-CRLF apply case and use assert_not_contains for zero-CR checks.
+
 ## 5.2.9
 
 The orch-flow skill's autopilot spec phase now names the plan handoff's **Rejected alternatives** entry as what a declined `contradicts the plan` item amends after `apply`, and keeps the plan comment's re-post.
