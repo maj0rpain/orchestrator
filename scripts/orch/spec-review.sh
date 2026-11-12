@@ -1393,7 +1393,7 @@ spec_review_tickets_parse() {
       consumed) continue ;;
       malformed) spec_review_tickets_die "$SR_BLOCK_BAD_LINE" "$SR_BLOCK_BAD_MSG" ;;
       edit)
-        ST_ANCHOR[cur]="$SR_BLOCK_ANCHOR"; ST_REPLACE[cur]="$SR_BLOCK_REPLACE"
+        ST_ANCHOR[cur]="$SR_BLOCK_ANCHOR"; ST_ANCHOR_LINE[cur]="$SR_BLOCK_ANCHOR_LINE"; ST_REPLACE[cur]="$SR_BLOCK_REPLACE"
         continue ;;
     esac
     case "$line" in
@@ -1461,7 +1461,6 @@ spec_review_tickets_parse() {
         else
           [ -z "$args" ] || spec_review_tickets_die "$lineno" "@@ anchor takes nothing after it; the anchor is the lines below it"
           [ -z "${ST_ANCHOR[$cur]+x}" ] || spec_review_tickets_die "$lineno" "a second @@ anchor for this item"
-          ST_ANCHOR_LINE[cur]="$lineno"
           spec_review_block_open anchor "$lineno"
         fi ;;
       closed)
