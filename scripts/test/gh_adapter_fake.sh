@@ -582,7 +582,9 @@ adapter_issue_relabel() {
 # the stored issue CLOSED, its reason (completed where none is given, as
 # GitHub defaults; duplicate with --duplicate-of) in reason, the target of a
 # duplicate close in duplicate_of, and the comment, where given, appended by
-# fake-gh.
+# fake-gh - except as GitHub behaves: closing an issue already CLOSED succeeds
+# and leaves it as it is, with no comment and its reason and duplicate target
+# unchanged.
 adapter_issue_close() {
   local n="$1" reason=completed comment="" duplicate_of="" d options="--reason --comment --duplicate-of"
   shift
@@ -597,6 +599,7 @@ adapter_issue_close() {
   ! fake_failing adapter_issue_close || return 1
   fake_issue_known "$n" || return 1
   d="$(fake_issue_dir "$n")"
+  [ "$(cat "$d/state" 2>/dev/null)" != CLOSED ] || return 0
   [ -z "$comment" ] || fake_close_comment "$d/comments" "$comment"
   printf 'CLOSED\n' >"$d/state"
   if [ -n "$duplicate_of" ]; then

@@ -103,7 +103,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               flows and quick implementations fork from and
                               open PRs against; refuses a branch origin does
                               not have. Shared by every worktree, never
-                              committed; the default branch's name clears it.
+                              committed; the default branch's name clears it,
+                              when GitHub or origin's HEAD named that default.
                               An active flow keeps the base it started with
   base set <branch> --flow    correct the active flow's own base branch
                               instead, leaving the checkout setting alone;

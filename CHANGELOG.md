@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.0.21
+
+Autopilot pickup now keeps trying side checkout names (`<slug>`, `<slug>-<issue>`, `<slug>-<issue>-2`, ...) until it finds one free, instead of stopping on a naming clash.
+
+## 5.0.20
+
+A redo now makes its step back in one closing state write, so `redo spec --new-issue` that dies after closing the old issue keeps `state.issue` and resumes on a rerun, and a failed `redo review` no longer forgets its branch and PR. The gh fake treats closing an already-closed issue as a no-op.
+
+## 5.0.19
+
+The Bash guards' command walker and the shell-code scanner now read a heredoc delimiter as bash does, as a whole word such as `END-NOTES`, `END.TXT` or `E"N"D`, and read `<<` inside `$(( ))` or `(( ))` as a shift, not a heredoc. Before, a delimiter with punctuation or a shift like `$((1<<n))` made them swallow the rest of the command, which silently turned off the poll and stdin guards.
+
+## 5.0.18
+
+`orch.sh base set <branch>` no longer discards an explicit `main` when GitHub cannot answer and origin/HEAD is unset: only a default named by GitHub or origin/HEAD clears the setting, a guessed `main` is stored.
+
 ## 5.0.17
 
 The busy check no longer reads a flow branch whose slug ends in `-redo-<n>` as retired: `branch retire` now records the retirement in git config, and only a branch carrying that record is skipped (#2550).

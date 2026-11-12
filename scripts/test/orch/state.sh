@@ -321,6 +321,21 @@ assert_ne "flow_state_create returns non-zero on a failed write" \
   "$(fs_run 'flow_state_create object.json "not json" 2>/dev/null' | tail -n 1)" "status 0"
 assert_eq "and leaves the target untouched" "$(jq -c . "$fs_dir/object.json")" '{"slug":"r"}'
 assert_eq "with no temp file beside it" "$(ls -A "$fs_dir")" "$before_ls"
+printf '{"slug":"m","budget":1}' >"$fs_dir/many.json"
+assert_eq "flow_state_write_many sets several keys, coerced, and stamps updated" \
+  "$(fs_run 'flow_state_write_many many.json budget 5 pr null phase review flake_rerun_used true && jq -c ".updated |= type" many.json')" \
+  '{"slug":"m","budget":5,"updated":"string","pr":null,"phase":"review","flake_rerun_used":true}
+status 0'
+cp "$fs_dir/many.json" "$fs_dir/many.before"
+before_ls="$(ls -A "$fs_dir")"
+assert_ne "flow_state_write_many refuses an odd argument count" \
+  "$(fs_run 'flow_state_write_many many.json budget 1 pr 2>/dev/null' | tail -n 1)" "status 0"
+assert_eq "and leaves the file untouched" "$(cat "$fs_dir/many.json")" "$(cat "$fs_dir/many.before")"
+assert_eq "with nothing new in its directory" "$(ls -A "$fs_dir")" "$before_ls"
+assert_ne "flow_state_write_many returns non-zero on a failed replace after the temp file" \
+  "$(fs_run 'flow_state_write_many invalid.json budget 1 2>/dev/null' | tail -n 1)" "status 0"
+assert_eq "and leaves that file untouched" "$(cat "$fs_dir/invalid.json")" "not json"
+assert_eq "with no temp file beside it" "$(ls -A "$fs_dir")" "$before_ls"
 restore_suite_env
 
 # --- commands on a truncated state.json (#1929) -----------------------------
