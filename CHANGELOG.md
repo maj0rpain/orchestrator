@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.4
+
+Remove the unreachable empty-prefix arm from the review pass's iteration scan and retitle its test, with no behaviour change.
+
 ## 5.2.3
 
 The breakdown draft parser now strips a trailing CR from every line, so a draft saved with CRLF line endings publishes like its LF form: its `@@ end` lines close their blocks, and no title, blocker list or body carries a CR.
