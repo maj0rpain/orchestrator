@@ -45,19 +45,11 @@
 # shorten it.
 PASTE_GUARD_WAIT=3
 
-# The tail every arming pass line ends with, before the view.md path: the fixed
-# string paste_guard_check searches for before it parses, and the one the
-# capture pattern in paste_guard_scan names. A transcript without it cannot
-# arm the guard. Keep the two in step with spec_review_nudge's words.
+# The tail every arming pass line ends with, before the view.md path: the one
+# copy of it. paste_guard_check's fixed-string pre-check and paste_guard_scan's
+# capture pattern both read it, and a transcript without it cannot arm the
+# guard. It must match spec_review_nudge's words.
 PASTE_GUARD_NEEDLE='; it is saved in '
-
-# paste_guard_payload: reads the hook payload on stdin (hook_read_payload, which
-# sets `transcript` to its transcript_path, empty when it names none or when
-# the payload is not a JSON object). An empty transcript allows, so the guards
-# fail open on it. `tool` and `stop_active` are set the same way.
-paste_guard_payload() {
-  hook_read_payload 2>/dev/null
-}
 
 # paste_guard_scan <transcript>: prints the armed view.md's path on its first
 # line, then one JSON array of the assistant text blocks written after its pass
@@ -65,7 +57,8 @@ paste_guard_payload() {
 # apply or human message after it. One pass over the transcript, a line at a
 # time.
 paste_guard_scan() {
-  jq -nrR '
+  jq -nrR --arg needle "$PASTE_GUARD_NEEDLE" '
+    def rx_escape: gsub("(?<c>[\\\\.^$|?*+()\\[\\]{}])"; "\\\(.c)");
     def text: if type == "string" then . elif type == "array"
       then map(select(type == "object" and .type == "text") | .text // "") | join("\n")
       else "" end;
@@ -81,7 +74,7 @@ paste_guard_scan() {
         | reduce ($e.message.content[] | select(type == "object" and .type == "tool_result")
                 | select(((.tool_use_id // null) as $id | $id != null and ($st.applied | index($id) != null)) | not)
                 | .content | text | split("\n")[]
-                | capture("\\.md passes: .*; it is saved in (?<p>/.*/view\\.md)$")?
+                | capture("\\.md passes: .*" + ($needle | rx_escape) + "(?<p>/.*/view\\.md)$")?
                 | .p) as $p (.; .view = $p | .texts = [])
       elif $e.type == "assistant" and ($e.message.content | type) == "array" then
         reduce ($e.message.content[] | select(type == "object")) as $b (.;

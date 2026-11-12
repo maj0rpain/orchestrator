@@ -63,8 +63,6 @@ write_ssh_stub 'echo hostname github.com' 0
 for url in git@github-work:acme/widgets.git ssh://git@github-work/acme/widgets.git; do
   git config remote.origin.url "$url"
   assert_eq "alias origin $url resolves to acme/widgets" "$(show_name)" "acme/widgets"
-  assert_eq "alias origin $url has host github.com" \
-    "$(PATH="$ssh_stub_dir:$PATH" "$ORCH" repo show --host)" "github.com"
 done
 write_ssh_stub 'echo hostname ghe.example.com' 0
 git config remote.origin.url git@github-work:acme/widgets.git

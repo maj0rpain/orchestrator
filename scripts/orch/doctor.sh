@@ -260,9 +260,10 @@ check_gh_auth() {
       d_fail "gh is not authenticated to $D_GH_HOST."
       d_remedy "gh auth login --hostname $D_GH_HOST"
       d_ssh_alias_hint ;;
-    *)
+    "GitHub is not reachable")
       d_gate "$D_GH" D_GH_SKIPPED || true
-      if [ "$D_GH" = "GitHub is not reachable" ]; then d_ssh_alias_hint; fi ;;
+      d_ssh_alias_hint ;;
+    *) d_gate "$D_GH" D_GH_SKIPPED || true ;;
   esac
 }
 

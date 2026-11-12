@@ -1,5 +1,25 @@
 # Changelog
 
+## 5.2.18
+
+Drop two duplicated busy-checkout test cases and a repeated main_checkout assertion, and reword stale "the walk" comments on checkout_kind, branch_checkout, is_side_checkout and archive_root to name checkout_parse, checkout_classify and git worktree list.
+
+## 5.2.17
+
+The paste guards and the session-start hook call the shared hook payload reader bare, without the dead stderr redirect and `|| exit 0`, and the paste guard no longer wraps it. The paste guard's transcript scan builds its capture pattern from the needle constant, escaped as a regex, so the needle has one copy.
+
+## 5.2.16
+
+Test-only: the hook test suite builds every counting stub with `call_counter` and reads every count with `counted_calls`, shares one jq counter dir, and drops the `rl_calls` wrapper and a duplicated Junie-shaped readlink case.
+
+## 5.2.15
+
+Tidy the test ssh stub comment, drop a repeated repo test assertion, and give doctor's offline gh auth outcome its own case arm. No behaviour change.
+
+## 5.2.14
+
+The Bash hook's walker local `hd` is renamed `part_head`, and the hooks suite's duplicated Bash hook cases are trimmed. Behaviour does not change.
+
 ## 5.2.13
 
 The line-width checker holds its open-fence state in the fence character alone, dropping a redundant flag and an unreachable fence test; its output is unchanged.
