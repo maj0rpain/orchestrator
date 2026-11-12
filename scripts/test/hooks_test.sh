@@ -2040,7 +2040,7 @@ done
 hb_bin="$TMPDIR/hb-bin"; hb_log="$TMPDIR/hb-jq.log"; mkdir -p "$hb_bin"
 hb_real_jq="$(command -v jq)"
 printf '#!/bin/sh\necho x >>"%s"\nexec "%s" "$@"\n' "$hb_log" "$hb_real_jq" >"$hb_bin/jq"; chmod +x "$hb_bin/jq"
-# hb_jq_calls: the jq calls the hook makes for the payload on stdin (autopilot unset).
+# hb_jq_calls: the jq calls the hook makes for the stdin payload.
 hb_jq_calls() { : >"$hb_log"; PATH="$hb_bin:$PATH" env -u ORCH_AUTOPILOT bash "$HB" >/dev/null 2>&1; wc -l <"$hb_log" | tr -d ' '; }
 assert_eq "bash hook: an out-of-scope payload costs 1 jq call" "$(bash_hook_event default Explore 'cat' | hb_jq_calls)" 1
 assert_eq "bash hook: an in-scope payload with no command costs 1 jq call" \

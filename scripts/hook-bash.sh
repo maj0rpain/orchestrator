@@ -149,9 +149,9 @@ hook_bash_scan_part() {
   return 1
 }
 
-# Writes the PreToolUse allow that closes a Bash call's stdin: hookSpecificOutput
-# with updatedInput - the whole tool_input, only command prefixed with
-# `exec </dev/null` and a newline, unless it already is - and
+# Writes the PreToolUse allow that closes a Bash call's stdin:
+# hookSpecificOutput with updatedInput - the whole tool_input, only command
+# prefixed with `exec </dev/null` and a newline, unless it already is - and
 # permissionDecision "allow". $1 is the raw payload.
 hook_bash_stdin_rewrite() {
   printf '%s' "$1" | jq '
