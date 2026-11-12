@@ -46,15 +46,15 @@ is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 # `merged_prs`: the merged PR's number, a tab, its head SHA - the one line
 # side_checkout_finished judges the branch tip against.
 finished_flow() {
-  local state="$1" phase slug pr base pr_state _is_draft shown_state merged_head _head_ref merged_base _commits err
-  state_get_many_in "$state" phase=phase slug=slug branch=branch pr=pr base=base \
+  local state="$1" phase slug pr base_raw base pr_state _is_draft shown_state merged_head _head_ref merged_base _commits err
+  state_get_many_in "$state" phase=phase slug=slug branch=branch pr=pr base_raw=base \
     || { verdict="could not read $state"; return 2; }
   if [ "$phase" != "done" ]; then
     verdict="flow $slug is at $phase, not done"; return 1
   fi
   [ -n "$branch" ] || { verdict="no branch"; return 1; }
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
-  base="$(flow_base_fallback "$base")" \
+  base="$(flow_base_fallback "$base_raw")" \
     || { verdict="could not read the base branch from $state"; return 2; }
   pr_state_draft_read "$pr" pr_state _is_draft err \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
