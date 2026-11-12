@@ -1417,7 +1417,7 @@ marker="$(mktemp -d)/injected"
 err="$(adapter_stood_in "adapter_prs_open_bodies() { printf 'a[\$(touch $marker)]\t\"Refs #12\"\tfalse\n'; }" "$ORCH" pr read 12 "$out_file" 2>&1 >/dev/null)"; st=$?
 assert_status "a non-numeric PR number naming the issue fails" "$st" 1
 assert_contains "naming the issue" "$err" "orch: the open PRs for issue #12 could not be read"
-if [ ! -e "$marker" ]; then ok "the number is never evaluated"; else bad "the number is never evaluated" "$marker exists"; fi
+assert_eq "the number is never evaluated" "$(on_disk "$marker")" "absent"
 err="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "x\t\"Closes #99\"\tfalse\n57\t\"Refs #12\"\tfalse\n"; }' "$ORCH" pr read 12 "$out_file" 2>&1 >/dev/null)"; st=$?
 assert_status "a non-numeric PR number naming another issue fails" "$st" 1
 assert_contains "naming the issue as well" "$err" "orch: the open PRs for issue #12 could not be read"
