@@ -26,13 +26,15 @@ ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 # Prints <n> <path> for every ticket worktree under the checkout at <root>;
 # dies when the checkouts cannot be read, never reading that as none.
 ticket_worktrees_under() {
-  local list _kind _flow _branch path name
-  list="$(checkouts_or_die)" || exit $?
-  while read -r _kind _flow _branch path; do
+  local path name paths=()
+  # shellcheck disable=SC2034 # checkout_parse fills it
+  local branches=()
+  checkout_parse || checkouts_unreadable
+  for path in "${paths[@]}"; do
     checkout_ticket_path "$path" "$1" || continue
     name="${path##*/}"
     note "${name#t} $path"
-  done <<<"$list"
+  done
 }
 
 # refuse_ticket_worktrees <root> <reason>: dies, naming every ticket worktree
