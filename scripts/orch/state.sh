@@ -140,8 +140,10 @@ require_branch() { require_field "$1" branch "no branch recorded in state"; }
 # The writers of state.phase: phase_write, which dies on a failed write, and
 # phase_write_try, which returns the writer's status for a caller that words
 # its own failure. They know only which phases exist: every caller - advance,
-# review ready, both redos, and init's seed - keeps its own guard on which
-# transition it may make, so a step back needs no handoff check here.
+# review ready, and init's seed - keeps its own guard on which transition it
+# may make, so a step back needs no handoff check here. The redos write
+# state.phase through redo_step_back (redo.sh), in the redo's one closing
+# write, after the same PHASES membership check.
 phase_write() {
   phase_write_try "$1" || die "could not record phase in $STATE - the flow is unchanged"
 }
