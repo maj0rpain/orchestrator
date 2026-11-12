@@ -1226,7 +1226,8 @@ AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after 3 attempts
 # test knob, shortens every wait, the pause wait included. When the last
 # attempt fails it writes one backstop line to <log> - the stop's kind, its
 # first line and the session's exit code - for stale cleanup to quote, and
-# returns 1.
+# returns 1. An empty <rc> means no session ran (the claim release after a
+# GitHub-limited start-up read): the line says so instead.
 autopilot_stop_attempts() {
   local log="$1" rc="$2" state attempt main_root wait line kind first
   shift 2
@@ -1248,6 +1249,13 @@ autopilot_stop_attempts() {
   line="$(STANDING_STATE_FILE="$state"; standing_state_get stop)" || line="stop"$'\t'"no stop text was built"
   rm -f "$state"
   kind="${line%%$'\t'*}" first="${line#*$'\t'}"
+  if [ -z "$rc" ]; then
+    # no session ran: the chain was the claim release after a limited read
+    printf '%sclaim release: could not release the claim after a %s\n' \
+      "$AUTOPILOT_BACKSTOP_PREFIX" \
+      "GitHub-limited start-up read; no session ran" >>"$log"
+    return 1
+  fi
   printf '%s%s: %s; the session exited with code %s\n' "$AUTOPILOT_BACKSTOP_PREFIX" "$kind" "$first" "$rc" >>"$log"
   return 1
 }
@@ -1289,6 +1297,8 @@ autopilot_run() {
   main_root="$(main_checkout_or_die)" || exit $?
   side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
   recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || autopilot_read_die phase "$side" $?
+  # Marked before the start-up read: a GitHub limit it meets writes the pause.
+  export ORCH_AUTOPILOT_RUN=1
   # a sync request is told by orch:sync on a done issue; its phase word is sync
   if ! standing_read "$issue"; then
     # A read that met a GitHub limit (a pause holds once it has failed) runs no
@@ -1296,7 +1306,7 @@ autopilot_run() {
     # chain. Any other failure dies as before.
     if autopilot_github_paused; then
       log="$(liveness_log_path "$issue" "$recorded")" || exit $?
-      autopilot_stop_attempts "$log" 0 standing_claim_release "$issue" || true
+      autopilot_stop_attempts "$log" "" standing_claim_release "$issue" || true
       return 0
     fi
     gh_die "read issue #$issue" "$STANDING_REASON"
@@ -1307,7 +1317,6 @@ autopilot_run() {
     phase="$(standing_session_phase)"
     prompt="Run the orchestrator:orch-sync skill's autopilot branch in this checkout: sync the branch with its base, and stop when the sync is finished."
   fi
-  export ORCH_AUTOPILOT_RUN=1
   hit="$(liveness_hit_path "$issue")" || exit $?
   liveness_run_begin "$issue" || exit 1
   # A later run of the same issue may have replaced the record by the time this

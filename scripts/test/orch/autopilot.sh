@@ -2581,7 +2581,7 @@ fake_issue 7 open orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
 comments_before="$(fake_comments_of 7)"
 fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
-ORCH_AUTOPILOT_TICK=1 "$ORCH" autopilot run 7 >/dev/null 2>&1
+"$ORCH" autopilot run 7 >/dev/null 2>&1
 fake_unfail
 assert_eq "a start-up read that meets a GitHub limit removes orch:running, adds no label" "$(fake_labels_of 7)" "orch:spec "
 assert_eq "releases the claim" "$(fake_claim_held 7)" free
@@ -2593,10 +2593,22 @@ fake_issue 7 open orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
 rm -f "$top/.orchestrator/autopilot/github-limit"
 fake_fail_times adapter_issue_state_labels 1 "HTTP 500"
-ORCH_AUTOPILOT_TICK=1 "$ORCH" autopilot run 7 >/dev/null 2>&1; st=$?
+"$ORCH" autopilot run 7 >/dev/null 2>&1; st=$?
 fake_unfail
 assert_status "a start-up read that fails for another reason dies" "$st" 1
 assert_eq "and leaves the claim held" "$(fake_claim_held 7)" held
+# a claim release that fails every attempt writes a backstop line that says no
+# session ran
+fake_issue 7 open orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+rm -f "$top/.orchestrator/autopilot/github-limit"
+fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
+fake_fail adapter_issue_relabel "HTTP 500 relabel"
+ORCH_GH_LIMIT_WAIT=0 "$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+su_log="$(ls "$top"/.orchestrator/autopilot/logs/7-*.log | tail -1)"
+assert_eq "a failed start-up claim release leaves the claim held" "$(fake_claim_held 7)" held
+assert_contains "and its backstop line says no session ran" "$(tail -1 "$su_log")" "the stop chain failed after 3 attempts - claim release: could not release the claim after a GitHub-limited start-up read; no session ran"
 
 # --- autopilot tick: the early GitHub pause (#2577) ---------------------------
 echo
