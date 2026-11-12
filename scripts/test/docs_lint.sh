@@ -670,7 +670,8 @@ skill_part() {
 skill_description() { skill_part "$1" frontmatter | grep '^description:'; }
 # claude_code_only_skill <file>: succeeds when the file is a SKILL.md whose
 # frontmatter description ends in "Claude Code only." (the frontmatter marker,
-# ADR-0027). Read from the frontmatter alone; a command never carries it.
+# ADR-0027). Read from the frontmatter alone; a command is never marked, so one
+# whose description ends so is still held to the cross-host form.
 claude_code_only_skill() {
   [ "$(basename "$1")" = SKILL.md ] || return 1
   [[ "$(skill_description "$1")" == *"Claude Code only." ]]
@@ -679,8 +680,9 @@ claude_code_only_skill() {
 # --- orch.sh resolution (#123) ------------------------------------------------
 # Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
 # other hosts, so skill and command text must pair it with the
-# relative fallback. The one documented form (CONTRIBUTING.md, "Resolving
-# orch.sh") is the ORCH= line, the Junie step, and the fallback sentence; any
+# relative fallback. The documented form (CONTRIBUTING.md, "Resolving
+# orch.sh") is the ORCH= line, the Junie step, and the fallback sentence, or,
+# for a skill marked "Claude Code only.", the ORCH= line and one stop; any
 # other mention of the variable, or a file that runs orch.sh without them, is a
 # regression. hooks/hooks.json is deliberately out of scope: both hosts expand
 # it there.
@@ -708,33 +710,29 @@ orch_lookup="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_ma
 orch_steps="$orch_lookup $orch_fallback"
 # scan_orch_resolution <plugin root>: print one line per offending file.
 scan_orch_resolution() {
-  local r="$1" f flat rest root_sentence
+  local r="$1" f flat rest root_sentence marked=0
   for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
     [ -f "$f" ] || continue
-    if claude_code_only_skill "$f"; then
-      flat="$(flat_text "$f")"
-      rest="${flat//"$orch_line"/}"
-      [[ "$rest" != *CLAUDE_PLUGIN_ROOT* ]] ||
-        echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
-      [[ "$flat" != *"$orch_junie"* ]] ||
-        echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
-      if grep -qE 'orch\.sh|\$ORCH' "$f"; then
-        grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
-      fi
-      continue
-    fi
     # Checked on the flat text: a sentence wrapped at 80 columns still counts.
     flat="$(flat_text "$f")"
     rest="${flat//"$orch_line"/}"
-    rest="${rest//"$orch_junie"/}"
-    if [[ "$flat" == *"$root_fallback"* ]]; then
-      rest="${rest//"$root_fallback"/}"
-      rest="${rest//'"${CLAUDE_PLUGIN_ROOT}/'/}"
+    marked=0
+    ! claude_code_only_skill "$f" || marked=1
+    if [ "$marked" = 0 ]; then
+      rest="${rest//"$orch_junie"/}"
+      if [[ "$flat" == *"$root_fallback"* ]]; then
+        rest="${rest//"$root_fallback"/}"
+        rest="${rest//'"${CLAUDE_PLUGIN_ROOT}/'/}"
+      fi
     fi
     if [[ "$rest" == *CLAUDE_PLUGIN_ROOT* ]]; then
-      echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
+      if [ "$marked" = 1 ]; then
+        echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
+      else
+        echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
+      fi
     fi
-    if [[ "$flat" == *"$root_fallback"* ]]; then
+    if [ "$marked" = 0 ] && [[ "$flat" == *"$root_fallback"* ]]; then
       # The sentence runs to the first full stop followed by a space;
       # orch.sh's own dot is followed by a backtick, so it does not end it.
       root_sentence="${flat#*"$root_fallback"}"
@@ -742,8 +740,13 @@ scan_orch_resolution() {
       [[ "$root_sentence" == *"$root_junie"* ]] ||
         echo "${f#"$r"/}: names the plugin root without the Junie step"
     fi
+    if [ "$marked" = 1 ]; then
+      [[ "$flat" != *"$orch_junie"* ]] ||
+        echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
+    fi
     if grep -qE 'orch\.sh|\$ORCH' "$f"; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
+      [ "$marked" = 1 ] && continue
       [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
       [[ "$flat" == *"$orch_junie_one"* ]] || echo "${f#"$r"/}: uses orch.sh without the one-install step"
       [[ "$flat" == *"$orch_junie_many"* ]] || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
@@ -855,7 +858,7 @@ printf '%s\n' '---' "description: $cc_desc" '---' '' '```' "$orch_line" '```' \
   'Run `bash "$ORCH" status`.' >"$fixture/commands/orch.md"
 flags "a command whose description ends in Claude Code only. is held to the cross-host form" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the Junie step"
-check "every skill and command resolves orch.sh the one documented way" \
+check "every skill and command resolves orch.sh the documented way for its form" \
   "$(scan_orch_resolution "$PLUGIN_ROOT")"
 
 # Some hosts drop the execute bit on install or update, so orch.sh is always
@@ -920,7 +923,8 @@ check "no skill or command carries a <plugin root> placeholder" "$(scan_plugin_r
 # --- skills-only stop text (#128, #121) ---------------------------------------
 # With no full install at all, doctor has no orch.sh to run from, so the skill
 # is the one that has to explain the failure (#128). One stop text, copied
-# into each skill, checked only as a copy-match against orch-flow's (ADR-0027):
+# into each skill but a Claude-Code-only one (#2718), checked only as a
+# copy-match against orch-flow's (ADR-0027):
 # once the Junie install is verified (#121), every copy must change together,
 # so they may not drift apart.
 echo
@@ -977,21 +981,18 @@ assert_empty "the scan accepts any wording between the anchors, copied word for 
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-cc"
 printf '%s\n' "$stop" >"$fixture/skills/orch-flow/SKILL.md"
-cc_stop_skill() {
-  printf '%s\n' '---' 'name: orch-cc' "description: $1" '---' '' "${@:2}" >"$fixture/skills/orch-cc/SKILL.md"
-}
-cc_stop_skill 'Does a thing. Claude Code only.' 'If `orch.sh` is not there, stop: Claude Code only.'
+cc_skill 'Does a thing. Claude Code only.' 'If `orch.sh` is not there, stop: Claude Code only.'
 assert_empty "a marked skill with no stop text is skipped" "$(scan_stop_text "$fixture")"
-cc_stop_skill 'Does a thing. Claude Code only.' "$stop"
+cc_skill 'Does a thing. Claude Code only.' "$stop"
 flags "a marked skill carrying orch-flow's stop text is flagged" "$(scan_stop_text "$fixture")" \
   "skills/orch-cc/SKILL.md: Claude Code only skill carries skills-only stop text"
-cc_stop_skill 'Does a thing. Claude Code only.' 'If `orch.sh` is at none of these paths, reinstall (which is unverified).'
+cc_skill 'Does a thing. Claude Code only.' 'If `orch.sh` is at none of these paths, reinstall (which is unverified).'
 flags "a marked skill carrying drifted stop text is flagged too" "$(scan_stop_text "$fixture")" \
   "skills/orch-cc/SKILL.md: Claude Code only skill carries skills-only stop text"
-cc_stop_skill 'Claude Code only. Does a thing.' 'No stop text.'
+cc_skill 'Claude Code only. Does a thing.' 'No stop text.'
 flags "a skill naming Claude Code only not at its end is still held to orch-flow's stop text" \
   "$(scan_stop_text "$fixture")" "skills/orch-cc/SKILL.md: skills-only stop text differs"
-check "every skill carries orch-flow's skills-only stop text word for word" "$(scan_stop_text "$PLUGIN_ROOT")"
+check "every skill but a Claude-Code-only one carries orch-flow's skills-only stop text word for word" "$(scan_stop_text "$PLUGIN_ROOT")"
 
 # --- Junie snippet names every agent (#264) -----------------------------------
 # JUNIE-5493's workaround: docs/junie/AGENTS.md names every agent so Junie's

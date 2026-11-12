@@ -416,8 +416,9 @@ path through a `<plugin root>/` placeholder.
 
 A skill that is Claude Code only, like the quick autopilot, takes a second form
 instead. It is marked by its frontmatter `description:` ending in "Claude Code
-only." (read from the frontmatter only, never the body; a command never carries
-the marker). Its form is the `ORCH=` line, then one stop for when `orch.sh` is
+only." (read from the frontmatter only, never the body; a command is never
+marked, so one whose description ends so stays cross-host). Its form is the
+`ORCH=` line, then one stop for when `orch.sh` is
 not at that path, saying the skill is Claude Code only and needs the full
 plugin. The stop names `ORCH` or `orch.sh`, never `CLAUDE_PLUGIN_ROOT`. It
 leaves out the Junie lookup, the "If it prints" steps, the relative fallback,
