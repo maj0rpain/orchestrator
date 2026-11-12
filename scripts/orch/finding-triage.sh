@@ -212,7 +212,8 @@ finding_scan_one() {
 # <pr> <file>:<line> <result> <detail> <triage state>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
-  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_err
+  local all=false issue="" pr_filter="" triage sev n listed labels body default ref gh_err
+  local -A found_labels=() found_bodies=()
   local args=() triage_filter=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -229,38 +230,36 @@ cmd_finding_triage_scan() {
   esac
   case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
   triage="$(triage_label_for needs-triage)"
-  # Each finding is read once, state, labels and body together: an explicit
-  # one here, where it is checked, a listed one in the loop below.
+  # A listed finding is read by its listing, labels and body together; an
+  # explicit one by its single read, where it is checked. Both fill the same
+  # two arrays, which the loop below walks without another GitHub call.
   if [ -n "$issue" ]; then
     open_issue_read "$issue" "issue #$issue is not open - finding triage takes open filed findings only" labels body
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
     $all || label_listed "$labels" "$triage" \
       || die "issue #$issue is not in triage - it carries no '$triage' label"
-    nums="$issue"
+    found_labels[$issue]="$labels"
+    found_bodies[$issue]="$body"
   else
     # The labels besides each severity's: the triage label, unless --all.
     triage_filter=("$triage")
     ! $all || triage_filter=()
     for sev in $FILED_SEVERITIES; do
-      gh_or_die --out out "list the review:$sev findings" \
-        adapter_issues_labelled "review:$sev" ${triage_filter[@]+"${triage_filter[@]}"}
-      if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
+      issues_labelled_bodies_read found_labels found_bodies listed gh_err \
+        "review:$sev" ${triage_filter[@]+"${triage_filter[@]}"} \
+        || gh_die "list the review:$sev findings" "$gh_err"
+      if [ "$listed" -ge "$ISSUE_LIST_LIMIT" ]; then
         warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
       fi
-      nums="$nums $out"
     done
   fi
   default="$(default_branch)"
   ref="refs/remotes/origin/$default"
   git fetch -q origin "+refs/heads/$default:$ref" >/dev/null 2>&1 \
     || die "could not fetch origin/$default"
-  for n in $(printf '%s\n' $nums | sort -nu); do
-    if [ -z "$issue" ]; then
-      issue_state_labels_body_read "$n" state labels body gh_err \
-        || gh_die "read issue #$n" "$gh_err"
-    fi
-    finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")" "$pr_filter"
+  for n in $(printf '%s\n' ${found_labels[@]+"${!found_labels[@]}"} | sort -n); do
+    finding_scan_one "$n" "${found_bodies[$n]}" "$ref" "$(triage_state "${found_labels[$n]}")" "$pr_filter"
   done
 }
 
