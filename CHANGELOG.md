@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.1.2
+
+A `redo review` that died after moving the review records now completes when rerun: the stopped loop reads as stopped from `pre-redo-<n>/`, `review resume` and doctor no longer send the human back to `next`, and `review retire` resumes into the folder its first run made.
+
 ## 5.1.1
 
 The default branch is now asked of GitHub at most once per orch.sh run: `base set` and `side-checkout prune` resolve it once, and `doctor` asks only in its probe, falling back to origin/HEAD or `main` locally for its checks, including its finished side checkout walk.
