@@ -53,13 +53,12 @@ entry_pattern() {
   printf '(^|[[:space:]])[/$](%s)([[:space:]]|$)' "$alt"
 }
 
-hook_read_skill_and_session
+hook_read_payload
 
-event="$(printf '%s' "$input" | jq -r '.hook_event_name // "PostToolUse"')"
+event="${event:-PostToolUse}"
 plan_confirmed=0
 if [ "$event" = "UserPromptSubmit" ]; then
   [ "$host" = junie ] || exit 0
-  prompt="$(printf '%s' "$input" | jq -r '.prompt // ""')"
   # Junie's router sends grilling to its plan agent, which ends on its own
   # plan screen without asking the closing question. Confirming that
   # screen submits this fixed prompt to the main agent, which asks it instead.

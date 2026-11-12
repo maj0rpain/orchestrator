@@ -261,9 +261,7 @@ finding_body_render() {
 # assigned by eval on the name the guard validated, its value passed by
 # reference, never interpolated - printf -v into an array element needs 4.1.
 finding_body_parse() {
-  [[ $2 =~ ^[A-Za-z_][A-Za-z0-9_]*$ && $2 != __fbp_* \
-    && $(declare -p "$2" 2>/dev/null) =~ ^declare\ -[A-Za-z]*A ]] \
-    || die "finding_body_parse: $2 is not a declared associative array"
+  assoc_array_require finding_body_parse "$2" __fbp_
   local __fbp_line __fbp_rest __fbp_v __fbp_loc_file __fbp_loc_line
   local __fbp_axis="" __fbp_severity="" __fbp_reason="" __fbp_file="" __fbp_lineno="" \
     __fbp_sha="" __fbp_pr="" __fbp_pr_number="" __fbp_why="" __fbp_question=""
