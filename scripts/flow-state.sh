@@ -151,7 +151,8 @@ flow_state_get() {
 }
 
 # flow_state_get_many <file> <var>=<key>...: reads every <key> in one jq,
-# applies each key's table default as flow_state_get does, and assigns the
+# applies each key's table default as flow_state_get does (the defaults come
+# from one pass over the key table, not a subshell per key), and assigns the
 # values to the caller's variables <var> through printf -v. Its locals carry
 # the __fsgm_ prefix, so a caller may name an out-variable anything. Values
 # travel NUL-separated and are read back with read -r -d '', byte for byte; a
@@ -161,15 +162,22 @@ flow_state_get() {
 # included - returns the jq's status. On any failure nothing is assigned.
 flow_state_get_many() {
   local __fsgm_file="$1" __fsgm_arg __fsgm_var __fsgm_key __fsgm_def __fsgm_kd="" \
-    __fsgm_tmp __fsgm_i __fsgm_n=0
+    __fsgm_tmp __fsgm_i __fsgm_n=0 __fsgm_rows __fsgm_k __fsgm_d __fsgm_found
   local __fsgm_vars=() __fsgm_vals=()
   shift
+  __fsgm_rows="$(state_rows)" || return
   for __fsgm_arg in "$@"; do
     case "$__fsgm_arg" in *=*) ;; *) return 2 ;; esac
     __fsgm_var="${__fsgm_arg%%=*}"
     __fsgm_key="${__fsgm_arg#*=}"
     [ -n "$__fsgm_var" ] || return 2
-    __fsgm_def="$(flow_state_key_field "$__fsgm_key" default)" || return
+    __fsgm_found=""
+    while IFS='|' read -r __fsgm_k __fsgm_d _ _; do
+      [ "$__fsgm_k" = "$__fsgm_key" ] || continue
+      __fsgm_def="$__fsgm_d" __fsgm_found=1
+      break
+    done <<<"$__fsgm_rows"
+    [ -n "$__fsgm_found" ] || return 1
     __fsgm_kd="${__fsgm_kd:+$__fsgm_kd$'\n'}$__fsgm_key|$__fsgm_def"
     __fsgm_vars[__fsgm_n]="$__fsgm_var"
     __fsgm_n=$((__fsgm_n + 1))

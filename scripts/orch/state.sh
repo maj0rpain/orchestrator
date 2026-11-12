@@ -2,9 +2,8 @@
 # state.sh - orch.sh's state command (state get and state set), with the state
 # helpers every module calls (state_get, state_write, require_state,
 # require_pr, require_issue, flow_active). Two readers, each with a many-key
-# form: state_get and
-# state_get_many, the unguarded own-checkout readers, and state_get_in and
-# state_get_many_in, the guarded shared ones.
+# form: state_get and state_get_many, the unguarded own-checkout readers, and
+# state_get_in and state_get_many_in, the guarded shared ones.
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
