@@ -5,6 +5,19 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# jq_counting_bin: a new directory holding a jq that logs one line per start to
+# jq.log, then runs the real jq.
+jq_counting_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$dir" "$(command -v jq)" >"$dir/jq"
+  chmod +x "$dir/jq"
+  : >"$dir/jq.log"
+  printf '%s\n' "$dir"
+}
+# jq_starts <dir>: how many times the jq in <dir> has started.
+jq_starts() { wc -l <"$1/jq.log" | tr -d ' '; }
+
 # --- state ------------------------------------------------------------------
 echo
 echo "state"
@@ -284,13 +297,9 @@ for f in absent invalid array null; do
     "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; [ \$? -ne 0 ] && echo \"failed \$a\"")" "failed keep
 status 0"
 done
-fs_jqbin="$(mktemp -d)"
-fs_real_jq="$(command -v jq)"
-printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$fs_jqbin" "$fs_real_jq" >"$fs_jqbin/jq"
-chmod +x "$fs_jqbin/jq"
-: >"$fs_jqbin/jq.log"
+fs_jqbin="$(jq_counting_bin)"
 fs_run "PATH=$fs_jqbin:\$PATH; flow_state_get_many many.json a=slug b=issue c=phase d=pr e=budget" >/dev/null
-assert_eq "a five-key read starts exactly one jq" "$(wc -l <"$fs_jqbin/jq.log" | tr -d ' ')" "1"
+assert_eq "a five-key read starts exactly one jq" "$(jq_starts "$fs_jqbin")" "1"
 assert_eq "flow_state_key_field returns 2 for an unknown column, printing nothing" \
   "$(fs_run 'flow_state_key_field slug bogus')" "status 2"
 assert_eq "flow_state_key_field returns 1 for an unknown key, printing nothing" \
@@ -420,14 +429,12 @@ out="$(sourced_orch_script 'state_get_many_in "$1" key=slug file=phase; echo "$k
 assert_eq "state_get_many_in reads a readable file's keys" "$out" "readers spec"
 out="$(sourced_orch_script 'state_get_many key=slug file=phase rc=issue val=pr; echo "$key $file $rc $val"' 2>&1)"
 assert_eq "state_get_many assigns out-variables named like common locals" "$out" "readers spec  "
-rd_jq="$(mktemp -d)"
-printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$rd_jq" "$(command -v jq)" >"$rd_jq/jq"
-chmod +x "$rd_jq/jq"; : >"$rd_jq/jq.log"
+rd_jq="$(jq_counting_bin)"
 PATH="$rd_jq:$PATH" sourced_orch state_get_many_in "$rd_file" a=slug b=phase c=issue d=pr e=budget >/dev/null
-assert_eq "state_get_many_in reading five keys starts exactly one jq" "$(wc -l <"$rd_jq/jq.log" | tr -d ' ')" "1"
+assert_eq "state_get_many_in reading five keys starts exactly one jq" "$(jq_starts "$rd_jq")" "1"
 : >"$rd_jq/jq.log"
 PATH="$rd_jq:$PATH" sourced_orch status_flow >/dev/null 2>&1
-assert_eq "status_flow on a flow that records its base starts exactly one jq" "$(wc -l <"$rd_jq/jq.log" | tr -d ' ')" "1"
+assert_eq "status_flow on a flow that records its base starts exactly one jq" "$(jq_starts "$rd_jq")" "1"
 state_truncate
 out="$(sourced_orch state_get_in "$rd_file" phase 2>&1)"; st=$?
 assert_status "state_get_in on a truncated file returns 2" "$st" 2
