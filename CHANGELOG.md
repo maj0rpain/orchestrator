@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.12
+
+The quick-autopilot skill no longer offers a Junie lookup or a Junie extension install: it finds `orch.sh` the Claude Code way and otherwise stops, saying it is Claude Code only. The docs lint holds a skill whose frontmatter description ends in "Claude Code only." to that form.
+
 ## 5.2.11
 
 The hooks suite drops three duplicated grilling-hook asserts and defines its no-git scratch directory once.
