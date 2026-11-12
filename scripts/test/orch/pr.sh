@@ -1001,11 +1001,25 @@ assert_contains "naming both branches" "$out" "from uat into main"
 assert_gh_dies "a failed release-PR open exits 1" adapter_pr_create "$GH_502" 1 \
   "orch: gh could not open the release PR from uat into main: HTTP 502: Bad Gateway" \
   release "Release" "$body"
-# The state read for each issue on a Closes line: #5 is the first referenced.
-assert_gh_dies "a failed Closes-line state read exits 1" adapter_issue_state "$GH_502" 1 \
-  "orch: gh could not read the state of issue #5: HTTP 502: Bad Gateway" \
+# The one listing of the open issues, read before any PR opens, even by --force.
+assert_gh_dies "a failed open-issue list exits 1" adapter_issues_open_titles "$GH_502" 1 \
+  "orch: gh could not list the open issues: HTTP 502: Bad Gateway" \
   release "Release" "$body"
+assert_gh_dies "--force: a failed open-issue list still exits 1" adapter_issues_open_titles "$GH_502" 1 \
+  "orch: gh could not list the open issues: HTTP 502: Bad Gateway" \
+  release --force "Release" "$body"
 assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 "
+
+# No per-reference state read: every state read failing changes nothing.
+fake_fail adapter_issue_state "$GH_502"
+fake_next_pr 73
+out="$(release "Release" "$body" 2>&1)"; st=$?
+fake_unfail
+assert_status "a release needs no per-issue state read" "$st" 0
+assert_eq "and writes the same Closes lines" "$(fake_pr_body_of 73)" \
+  "$(writeln 'Closes #5' 'Closes #6' 'Closes #7' 'Closes #9' '' '## Summary' '' 'Ships the uat project.' '' 'Some detail.')"
+fake_pr 73 closed uat main
+fake_pr 71 closed uat main
 
 # The PR-writing standard (#1387): a release PR needs ## Summary and nothing
 # more, and --force, which only overrides "nothing to close", still checks it.
@@ -1018,13 +1032,40 @@ assert_eq "naming it" "$out" "$PR_BODY_REFUSED no ## Summary heading"
 out="$(release --force "Release" "$summaryless" 2>&1)"; st=$?
 assert_status "--force: a body without ## Summary is still refused" "$st" 1
 assert_eq "--force: naming it" "$out" "$PR_BODY_REFUSED no ## Summary heading"
-assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 "
+assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 73 "
 summary_only="$(mktemp)"
 writeln '## Summary' '' 'Ships the uat project.' >"$summary_only"
 fake_next_pr 72
 out="$(release "Release" "$summary_only" 2>&1)"; st=$?
 assert_status "a body with only ## Summary opens the release PR" "$st" 0
 assert_eq "printing its number" "$out" "72"
+
+# A number the store holds nothing for is no open issue: dropped, never fatal.
+rm -rf "$ORCH_GH_FAKE_STORE/prs"
+fake_pr 80 merged topic uat
+fake_pr_body 80 $'Refs #99\nCloses #5'
+fake_next_pr 74
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "a reference to an unknown number does not abort the release" "$st" 0
+assert_eq "and gets no Closes line for it" "$(fake_pr_body_of 74 | grep -c "#99")" "0"
+assert_eq "and only #5 does" "$(fake_pr_body_of 74 | grep -c '^Closes')" "1"
+fake_pr 74 closed uat main
+fake_pr_body 80 'Refs #99'
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "an unknown number alone leaves nothing to close" "$st" 1
+assert_contains "saying so" "$out" "nothing to close"
+
+# No reference at all: the open issues are never listed.
+fake_pr_body 80 'No references here.'
+fake_fail adapter_issues_open_titles "$GH_502"
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "with no reference, a failing list is never reached" "$st" 1
+assert_contains "so it is nothing to close" "$out" "nothing to close"
+fake_next_pr 75
+out="$(release --force "Release" "$body" 2>&1)"; st=$?
+fake_unfail
+assert_status "--force opens it without listing" "$st" 0
+rm -rf "$ORCH_GH_FAKE_STORE/prs"
 
 out="$(release "Release" 2>&1)"; st=$?
 assert_status "refuses a missing body file argument" "$st" 1
