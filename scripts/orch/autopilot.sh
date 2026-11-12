@@ -754,31 +754,52 @@ autopilot_candidates() {
   printf '%s' "$all" | grep -v '^$' | sort -nu || true
 }
 
-# autopilot_sync_detect: the sync request auto-detection. Reads the repo's open
-# PRs once, then files a sync request, through the Standing transition, on
-# every open orch:done issue carrying none of orch:sync, needs-human and
-# orch:running whose one open same-repository PR (head branch `orch/<issue>-`)
-# is CONFLICTING. An issue with no such PR is skipped silently, one with
-# several warned about; a failed read or write warns and skips that issue only.
-autopilot_sync_detect() {
-  local out raw="" prs="" gh_err issue pr_lines head_prefix count done_label reason=""
-  done_label="$(standing_phase_label "done")"
-  capture out gh_err adapter_issues_labelled "$done_label" || {
-    warn "could not list the issues labelled $done_label: $(gh_reason "$gh_err") - no sync detection this tick"
+# autopilot_done_read <table-var>: the tick's one read of the open orch:done
+# issues. Lists the issues labelled orch:done once, reads each once, and writes
+# into the caller-named <table-var> the done table: one line per issue that
+# reads OPEN and still at orch:done, `<issue> <running> <sync> <human>`, each
+# flag 0 or 1. A failed listing warns once and leaves the table empty; a failed
+# read warns once and leaves that issue out. Neither stops the tick.
+autopilot_done_read() {
+  local _out _err _issue _table="" _label
+  _label="$(standing_phase_label "done")"
+  printf -v "$1" '%s' ""
+  capture _out _err adapter_issues_labelled "$_label" || {
+    warn "could not list the issues labelled $_label: $(gh_reason "$_err") - no merged-PR close or sync detection this tick"
     return 0
   }
-  [ -n "$out" ] || return 0
+  while IFS= read -r _issue; do
+    [ -n "$_issue" ] || continue
+    standing_read "$_issue" || {
+      warn "could not read issue #$_issue: $STANDING_REASON - the merged-PR close and sync detection skip it"
+      continue
+    }
+    [ "$STANDING_STATE" = OPEN ] || continue
+    standing_is_done || continue
+    _table="$_table$_issue $STANDING_RUNNING $STANDING_SYNC $STANDING_HUMAN"$'\n'
+  done <<<"$_out"
+  printf -v "$1" '%s' "$_table"
+}
+
+# autopilot_sync_detect <table>: the sync request auto-detection, from the
+# done table autopilot_done_read took (it reads no issue itself). When the table
+# is not empty, reads the repo's open PRs once, then files a sync request,
+# through the Standing transition, on every issue in it carrying none of
+# orch:sync, needs-human and orch:running whose one open same-repository PR
+# (head branch `orch/<issue>-`) is CONFLICTING. An issue with no such PR is
+# skipped silently, one with several warned about; a failed read or write warns
+# and skips that issue only.
+autopilot_sync_detect() {
+  local raw="" prs="" gh_err issue running sync human pr_lines head_prefix count reason=""
+  [ -n "$1" ] || return 0
   if capture raw gh_err adapter_prs_open_mergeability; then
     prs="$(printf '%s\n' "$raw" | trust_filter_prs "the open PRs")" || reason="the open PRs could not be read: a malformed line"
   else
     reason="$(gh_reason "$gh_err")"
   fi
-  while IFS= read -r issue; do
+  while read -r issue running sync human; do
     [ -n "$issue" ] || continue
-    standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - sync detection skips it"; continue; }
-    [ "$STANDING_STATE" = OPEN ] || continue
-    standing_is_done || continue
-    [ "$STANDING_SYNC" = 0 ] && [ "$STANDING_HUMAN" = 0 ] && [ "$STANDING_RUNNING" = 0 ] || continue
+    [ "$sync" = 0 ] && [ "$human" = 0 ] && [ "$running" = 0 ] || continue
     if [ -n "$reason" ]; then
       warn "could not read the PR of issue #$issue: $reason - sync detection skips it"
       continue
@@ -794,33 +815,33 @@ autopilot_sync_detect() {
     [ "$(printf '%s' "$pr_lines" | cut -f3)" = CONFLICTING ] || continue
     standing_sync_request "$issue" ||
       warn "could not add $STANDING_SYNC_LABEL to issue #$issue: $STANDING_REASON - sync detection skips it"
-  done <<<"$out"
+  done <<<"$1"
 }
 
-# autopilot_close_missed: the merged-PR backstop (#2478), run every tick
-# whatever the auto-sync setting. When an open orch:done issue exists, reads the
-# PRs merged into the default branch once, and closes - through pr_close_missed
-# - each such issue not carrying orch:running whose newest merged PR from
-# `orch/<issue>-` should have closed it. orch:sync and needs-human do not stop
-# it. A failed read or close warns and skips, never stopping the tick.
+# autopilot_close_missed <table> <table-var>: the merged-PR backstop (#2478),
+# run every tick whatever the auto-sync setting, from the done table
+# autopilot_done_read took (it reads no issue itself). When the table is not
+# empty, reads the PRs merged into the default branch once, and closes - through
+# pr_close_missed - each issue in it not carrying orch:running whose newest
+# merged PR from `orch/<issue>-` should have closed it. orch:sync and
+# needs-human do not stop it. A failed read or close warns and skips, never
+# stopping the tick. Writes into the caller-named <table-var> the table minus
+# every issue it closed: the whole table when the merged-PR read fails.
 autopilot_close_missed() {
-  local out prs gh_err issue done_label default
-  done_label="$(standing_phase_label "done")"
-  capture out gh_err adapter_issues_labelled "$done_label" || {
-    warn "could not list the issues labelled $done_label: $(gh_reason "$gh_err") - no merged-PR close this tick"
-    return 0
-  }
-  [ -n "$out" ] || return 0
+  local prs issue running sync human default kept=""
+  printf -v "$2" '%s' "$1"
+  [ -n "$1" ] || return 0
   pr_merged_closing_read default prs "no merged-PR close this tick" || return 0
-  while IFS= read -r issue; do
+  while read -r issue running sync human; do
     [ -n "$issue" ] || continue
-    standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - the merged-PR close skips it"; continue; }
-    [ "$STANDING_STATE" = OPEN ] || continue
-    standing_is_done || continue
-    [ "$STANDING_RUNNING" = 0 ] || continue
-    pr_close_newest "$issue" "$default" \
-      "$(printf '%s\n' "$prs" | awk -F'\t' -v p="$(branch_name_flow "$issue" "")" 'index($2, p) == 1')" || true
-  done <<<"$out"
+    if [ "$running" = 0 ] &&
+      pr_close_newest "$issue" "$default" \
+        "$(printf '%s\n' "$prs" | awk -F'\t' -v p="$(branch_name_flow "$issue" "")" 'index($2, p) == 1')"; then
+      continue
+    fi
+    kept="$kept$issue $running $sync $human"$'\n'
+  done <<<"$1"
+  printf -v "$2" '%s' "$kept"
 }
 
 # autopilot_rank <phase word>: the pickup rank of a session's phase word, lowest
@@ -841,10 +862,12 @@ autopilot_rank() {
   printf '%s' "$((n + 1))"
 }
 
-# autopilot_tick: one pass - labels, stale claims, the merged-PR close (which
-# needs no session, so a limit pause never holds it), the limit-pause check,
-# sync detection (when auto-sync is true), then pickup (see the spec's One
-# tick). Every candidate is read before the first claim,
+# autopilot_tick: one pass - labels, stale claims, one read of the done
+# issues (autopilot_done_read), the merged-PR close (which needs no session, so
+# a limit pause never holds it), the limit-pause check, sync detection (when
+# auto-sync is true), then pickup (see the spec's One tick). The one done read
+# feeds both passes: sync detection gets the done table minus the issues the
+# close closed. Every candidate is read before the first claim,
 # the unpickable ones dropped, and the rest taken by rank - sync requests,
 # then the phases furthest along first, oldest issue first within a rank. A
 # phase is claimed while the claim count is below the cap, a sync request
@@ -854,16 +877,17 @@ autopilot_rank() {
 # it.
 autopilot_tick() {
   local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
-  local ranked="" slots limit limited
+  local ranked="" slots limit limited done_table
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale
-  autopilot_close_missed
+  autopilot_done_read done_table
+  autopilot_close_missed "$done_table" done_table
   if autopilot_pause_until "$main_root"; then return 0; fi
-  if [ "$auto_sync" = true ]; then autopilot_sync_detect; fi
+  if [ "$auto_sync" = true ]; then autopilot_sync_detect "$done_table"; fi
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
   slots=$((cap / 2))
