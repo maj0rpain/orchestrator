@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.5
+
+Rename the autopilot pickup side-checkout step's `base` local to `stem`, so it is not mistaken for the base branch. No behaviour change.
+
 ## 5.2.4
 
 Remove the unreachable empty-prefix arm from the review pass's iteration scan and retitle its test, with no behaviour change.
