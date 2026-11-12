@@ -446,6 +446,9 @@ cmd_side_checkout_prune() {
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"
+  # The verdicts and the merged-PR closes each read the default branch: ask
+  # GitHub once here, in this shell, so every $(default_branch) inherits it.
+  default_branch_resolve
   for line in "${walk[@]}"; do
     read -r kind flow _branch path <<<"$line"
     rc=0; verdict=""; branch=""
