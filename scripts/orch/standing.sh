@@ -66,7 +66,7 @@ standing_label_entries() {
   done
   printf '%s|fbca04|Autopilot session running\n' "$STANDING_RUNNING_LABEL"
   printf '%s|d93f0b|Waiting on the human\n' "$STANDING_HUMAN_LABEL"
-  printf '%s|c5def5|Autopilot session stopped on a usage limit; retried after the reset\n' "$STANDING_LIMITED_LABEL"
+  printf '%s|c5def5|Autopilot session stopped on a usage limit or a GitHub API rate limit; retried after the reset\n' "$STANDING_LIMITED_LABEL"
   printf '%s|0075ca|Autopilot: base sync requested on a done flow\n' "$STANDING_SYNC_LABEL"
 }
 
@@ -491,17 +491,23 @@ standing_sync_dropped() {
   standing_stop_write "$issue" failure "$text" "$STANDING_HUMAN_LABEL" "$STANDING_SYNC_LABEL"
 }
 
-# standing_limit_stop <issue> <phase> <reset> <pause> <rc> <log>: ends a
-# phase whose session stopped on a usage limit. With fewer than two such stops
-# of the phase before it, adds orch:limited, comments, then releases the claim;
-# the third in a row, and a stop whose comments cannot be read, take the
-# failure path. The reset is empty when the session named none; the pause is
-# the time written to the limit file: the reset, else the one-hour fallback.
+# standing_limit_stop <issue> <phase> <reset> <pause> <rc> <log> [github]: ends
+# a phase whose session stopped on a limit - a usage limit, or with "github" a
+# GitHub API rate limit. With fewer than two limit stops of the phase before
+# it, whatever their causes, a usage-limit stop adds orch:limited, comments,
+# then releases the claim; a GitHub limit stop adds no label (it is written
+# only once its reset has passed): it comments, removes orch:running, then
+# releases the claim. The third in a row, and a stop whose comments cannot be
+# read, take the failure path, naming the cause. The reset is empty when the
+# session named none; the pause is the time written to the limit file: the
+# reset, else the one-hour fallback.
 standing_limit_stop() {
-  local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" count text when=" (the session gave no reset time)" at stopped marker
+  local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" cause="${7:-}"
+  local count text when=" (the session gave no reset time)" at stopped marker what="a usage limit"
   STANDING_LANDED=""
   [ -z "$reset" ] || when=" (resets $reset)"
-  stopped="the session stopped on a usage limit$when and exited with code $rc"
+  [ -z "$cause" ] || what="the GitHub API rate limit"
+  stopped="the session stopped on $what$when and exited with code $rc"
   { timeline_read "$issue" && count="$(timeline_limit_count "$phase")"; } || {
     standing_stop "$issue" failure "$phase" "$stopped, and the issue's comments could not be read to count the stops in a row; log: $log"
     return 0
@@ -510,7 +516,13 @@ standing_limit_stop() {
     standing_stop "$issue" failure "$phase" "$stopped, the third in a row in $(standing_phase_text "$phase"); log: $log"
     return 0
   fi
-  marker="$(marked_comment_write limited "$phase")" || exit 1
+  marker="$(marked_comment_write limited "$phase" $cause)" || exit 1
+  if [ -n "$cause" ]; then
+    printf -v text '%s\nThe session stopped on the GitHub API rate limit in %s, which reset %s.\n\nRetry %s of 2: the issue is picked up again by the next tick, no label is added.\n\nLog: %s\n' \
+      "$marker" "$(standing_phase_text "$phase")" "${reset:-$pause}" "$((count + 1))" "$log"
+    standing_post_release "$issue" "$text" "post the limit stop comment" "posted the limit stop comment"
+    return
+  fi
   at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
   [ -z "$reset" ] || at=", which resets $reset"
   printf -v text '%s\nThe session stopped on a usage limit in %s%s.\n\nThe issue is labelled %s; retry %s of 2, started once the limit pause has passed.\n\nLog: %s\n' \

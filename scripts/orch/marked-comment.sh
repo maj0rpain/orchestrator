@@ -10,7 +10,8 @@
 # one other module that calls marked_comment_jq, expands it at call time, inside
 # a function, never into a constant.
 #
-# The kinds: question, limited (a limit stop), reentry (an automatic re-entry;
+# The kinds: question, limited (a limit stop; argument: a phase, optionally
+# followed by a cause token, github), reentry (an automatic re-entry;
 # argument: a phase), handoff (argument: its name,
 # optionally tagged retired), refusal and failure (arguments: a phase; a stop
 # comment posted before the hidden marker existed is read by its prose
@@ -34,6 +35,9 @@ MARKED_COMMENT_LEGACY_FAILURE='Autopilot failed in the '
 # from these.
 MARKED_COMMENT_KINDS='question limited reentry handoff refusal failure'
 MARKED_COMMENT_RETIRABLE='handoff'
+# The one kind that takes a cause token after its argument, and the causes.
+MARKED_COMMENT_CAUSED='limited'
+MARKED_COMMENT_CAUSES='github'
 MARKED_COMMENT_SPEC_REVIEW_OPENING='## Spec review'
 MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
 
@@ -45,23 +49,23 @@ MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
 # index, the comment and its marked_comment_info; marked_comment_of($k; $a) is
 # the entries of kind $k (and of arg $a, unless it is empty).
 marked_comment_jq() {
-  local kinds="${MARKED_COMMENT_KINDS// /|}"
+  local kinds="${MARKED_COMMENT_KINDS// /|}" causes="${MARKED_COMMENT_CAUSES// /|}"
   cat <<EOJQ
 def marked_comment_list: if type == "object" then .comments else . end;
 def marked_comment_info:
   ((.body // "") | split("\n")[0] // "" | rtrimstr("\r")) as \$l
-  | ([\$l | capture("^<!-- orch:(?<kind>$kinds) (?<arg>[^ ]+)(?<retired> retired)? -->\$")?] | .[0]) as \$m
+  | ([\$l | capture("^<!-- orch:(?<kind>$kinds) (?<arg>[^ ]+)(?: (?<cause>$causes))?(?<retired> retired)? -->\$")?] | .[0]) as \$m
   | ([\$l | capture("^$MARKED_COMMENT_LEGACY_REFUSAL(?<p>[^ ]+) phase")?] | .[0]) as \$lr
   | ([\$l | capture("^$MARKED_COMMENT_LEGACY_FAILURE(?<p>[^ ]+) phase")?] | .[0]) as \$lf
-  | if \$m != null and ((\$m.retired // "") == "" or \$m.kind == "$MARKED_COMMENT_RETIRABLE") then
-      {kind: \$m.kind, arg: \$m.arg, retired: ((\$m.retired // "") != "")}
-    elif (\$l | test("^${MARKED_COMMENT_SPEC_REVIEW_OPENING}[ \t]*\$")) then {kind: "spec-review", arg: null, retired: false}
-    elif (\$l | startswith("$MARKED_COMMENT_SPEC_RULING_OPENING")) then {kind: "spec-ruling", arg: null, retired: false}
+  | if \$m != null and ((\$m.retired // "") == "" or \$m.kind == "$MARKED_COMMENT_RETIRABLE") and ((\$m.cause // "") == "" or \$m.kind == "$MARKED_COMMENT_CAUSED") then
+      {kind: \$m.kind, arg: \$m.arg, retired: ((\$m.retired // "") != ""), cause: (\$m.cause // "")}
+    elif (\$l | test("^${MARKED_COMMENT_SPEC_REVIEW_OPENING}[ \t]*\$")) then {kind: "spec-review", arg: null, retired: false, cause: ""}
+    elif (\$l | startswith("$MARKED_COMMENT_SPEC_RULING_OPENING")) then {kind: "spec-ruling", arg: null, retired: false, cause: ""}
     elif \$lr != null then
-      {kind: "refusal", arg: \$lr.p, retired: false}
+      {kind: "refusal", arg: \$lr.p, retired: false, cause: ""}
     elif \$lf != null then
-      {kind: "failure", arg: \$lf.p, retired: false}
-    else {kind: null, arg: null, retired: false} end;
+      {kind: "failure", arg: \$lf.p, retired: false, cause: ""}
+    else {kind: null, arg: null, retired: false, cause: ""} end;
 def marked_comment_entries:
   marked_comment_list | to_entries | map({key, c: .value, info: (.value | marked_comment_info)});
 def marked_comment_of(\$k; \$a):
@@ -69,10 +73,11 @@ def marked_comment_of(\$k; \$a):
 EOJQ
 }
 
-# marked_comment_write <kind> [<arg>] [retired]: prints the first line of a
-# <kind> comment, newline-terminated. Dies, printing nothing, on an unknown
-# kind, a missing (or blank, or spaced) argument for a kind that takes one, an
-# argument to spec-review or spec-ruling, or retired on any kind but handoff.
+# marked_comment_write <kind> [<arg>] [retired|<cause>]: prints the first line
+# of a <kind> comment, newline-terminated. Dies, printing nothing, on an
+# unknown kind, a missing (or blank, or spaced) argument for a kind that takes
+# one, an argument to spec-review or spec-ruling, retired on any kind but
+# handoff, or a cause on any kind but limited.
 marked_comment_write() {
   local kind="${1:-}" arg="${2-}" tag="${3-}"
   case "$kind" in
@@ -96,7 +101,12 @@ marked_comment_write() {
     retired)
       [ "$kind" = "$MARKED_COMMENT_RETIRABLE" ] || die "marked comment: only a handoff can be retired"
       printf '<!-- orch:%s %s retired -->\n' "$kind" "$arg" ;;
-    *) die "marked comment: unknown tag: $tag" ;;
+    *) case " $MARKED_COMMENT_CAUSES " in
+         *" $tag "*)
+           [ "$kind" = "$MARKED_COMMENT_CAUSED" ] || die "marked comment: only a $MARKED_COMMENT_CAUSED comment takes a cause"
+           printf '<!-- orch:%s %s %s -->\n' "$kind" "$arg" "$tag" ;;
+         *) die "marked comment: unknown tag: $tag" ;;
+       esac ;;
   esac
 }
 

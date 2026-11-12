@@ -1031,7 +1031,10 @@ autopilot_tick() {
 # claim's fields equal <mine>, else released (the claim was released, or the
 # next phase's took its place). It reads the log once, with session_log_read.
 # The outcome is released (not held, whatever the log holds), else limited
-# (session_log_read says the session stopped on a usage limit), else failure.
+# (session_log_read says the session stopped on a usage limit), else
+# GitHub-limited (the issue's hit file names a reset), else failure. The hit
+# file is removed once read, whatever the outcome. A GitHub-limited outcome
+# extends the GitHub pause to the hit file's reset.
 # The limit pause is the reset the session named, or one hour on; the early
 # pause is the five-hour window's resetsAt when its utilization is 0.9 or more,
 # whatever the outcome; all are epoch seconds. The pause store is extended
@@ -1040,21 +1043,30 @@ autopilot_tick() {
 # claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
-  local outcome=failure limit="" pause released_note
+  local outcome=failure limit="" pause released_note hit hit_epoch=0 gh_msg
   main_root="$(main_checkout_or_die)" || exit $?
   standing_claims_read
   if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
   session_log_read "$log"
+  hit="$(liveness_hit_path "$issue")" || exit $?
+  if [ -f "$hit" ]; then hit_epoch="$(autopilot_pause_epoch "$hit")"; rm -f "$hit"; fi
   if [ "$held" = 0 ]; then
     outcome=released
   elif [ "$SESSION_LOG_LIMITED" = 1 ]; then
     outcome=limited
     limit="${SESSION_LOG_RESET:-$(( $(date +%s) + 3600 ))}"
+  elif [ "$hit_epoch" -gt 0 ]; then
+    outcome=github
   fi
   # One write: the later of the two pauses.
   pause="$SESSION_LOG_EARLY"
   if [ -n "$limit" ] && { [ -z "$pause" ] || [ "$limit" -gt "$pause" ]; }; then pause="$limit"; fi
   if [ -n "$pause" ]; then autopilot_pause_extend "$main_root" "$pause" "$log"; fi
+  if [ "$outcome" = github ] && ! autopilot_pause_put "$(autopilot_github_pause_file "$main_root")" "$hit_epoch"; then
+    gh_msg="autopilot run: could not write the GitHub limit file $(autopilot_github_pause_file "$main_root")"
+    warn "$gh_msg"
+    printf '%s\n' "$gh_msg" >>"$log"
+  fi
   case "$outcome" in
     released)
       released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
@@ -1063,6 +1075,9 @@ autopilot_session_end() {
       return 0 ;;
     limited)
       standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
+      return 0 ;;
+    github)
+      standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
       return 0 ;;
   esac
   reply="$SESSION_LOG_REPLY"
@@ -1076,7 +1091,7 @@ autopilot_session_end() {
 AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage"
 # Its system prompt addition: it is told it is headless, as print mode turns
 # AskUserQuestion off and a question asked in chat is never answered.
-AUTOPILOT_SYSTEM_PROMPT='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop.'
+AUTOPILOT_SYSTEM_PROMPT='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop. When an `orch:` message says the GitHub API rate limit was reached, end your turn at once: do not retry or wait, the watcher picks the work up after the reset.'
 # Its settings: no bundled skills, and no plugin-authoring, a built-in plugin
 # that disableBundledSkills leaves listed.
 AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-authoring@builtin":false}}'

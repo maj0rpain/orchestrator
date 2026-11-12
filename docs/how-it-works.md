@@ -478,8 +478,10 @@ reply to.
 Stops that only report (no reply format applies; fix what the comment names,
 or accept it, then remove `needs-human`):
 
-- a failed session, which is never retried except a usage-limit stop labelled
-  `orch:limited`; removing the label starts the phase again;
+- a failed session, which is never retried except a limit stop: a usage-limit
+  stop labelled `orch:limited` (removing the label starts the phase again),
+  and a GitHub API rate limit stop, which adds no label and is picked up
+  again by the next tick after the reset;
 - a sync refusal; removing the label lets the refused phase be picked up
   again;
 - a sync session's own failure, which keeps `orch:sync`; removing the label

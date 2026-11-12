@@ -145,9 +145,9 @@ questions reach the human as issue comments. It stops for the human only on a
 fundamental item, a bounded stop that is not an automatic re-entry (a spec
 question the review loop meets among them), a refusal (an untrusted issue
 among them), a failure, or an intent a
-sync request's resolver dropped; a session cut off by a usage limit is waited
-out instead, as a limited issue, short of the third such stop in a row of one
-phase, or of one issue's sync requests.
+sync request's resolver dropped; a session cut off by a usage limit or a GitHub
+API rate limit is waited out instead, as a limited issue, short of the third
+such stop in a row of one phase, or of one issue's sync requests.
 _Avoid_: auto flow, headless flow.
 
 **Watcher**:
@@ -170,9 +170,9 @@ _Avoid_: resync label.
 
 **Standing**:
 Where an autopilot flow's issue stands: its phase label, whether a session is
-running on it, whether it waits on the human or on a usage limit, whether a
-sync is requested, and the claim held on it, if any. Every change to it is one
-of a fixed set of transitions.
+running on it, whether it waits on the human, on a usage limit or on a GitHub
+API rate limit, whether a sync is requested, and the claim held on it, if any.
+Every change to it is one of a fixed set of transitions.
 _Avoid_: protocol state, issue status.
 
 **Fundamental item**:
@@ -205,7 +205,8 @@ flow's plan handoff.
 
 **Marked comment**:
 An issue comment whose first line names its kind to orch.sh: a hidden
-`<!-- orch:<kind> <arg> -->` marker (question, limit stop, re-entry, handoff,
+`<!-- orch:<kind> <arg> -->` marker, a limit stop's taking an optional cause
+after its argument (question, limit stop, re-entry, handoff,
 refusal, failure), or a visible opening the human reads too (the spec review's
 `## Spec review` heading, a `Spec ruling:` line). Question comment, Plan comment
 and the rest are kinds of marked comment. Only a trusted comment can be one. A
@@ -255,22 +256,30 @@ phase furthest along first - and oldest issue first within a rank.
 A watcher taking one claimed issue to a running session: its issue-trust
 check, its side checkout, its flow, its plan comment, a redo when the label
 stepped back one phase, then `orch:running` and the session. A failed or refused
-step stops the issue and releases the claim. A sync request's pickup is its
+step stops the issue and releases the claim; a step that meets a GitHub API rate
+limit only deletes the claim. A sync request's pickup is its
 issue-trust check, its side checkout's recorded phase, then `orch:running` and
 the session: no new side checkout, flow, plan comment or redo.
 
 **Limited issue**:
 An autopilot flow's issue whose last session stopped on a Claude Code usage
-limit, labelled `orch:limited` in place of `needs-human`. A tick once the limit
-pause has passed picks its phase, or its sync request, up again; a third such
-stop in a row of one phase, or of one issue's sync requests, waits on the
-human. _Avoid_: rate-limited issue.
+limit or a GitHub API rate limit, waiting out the reset instead of the
+human. A usage-limit stop labels it `orch:limited` in place of
+`needs-human`; a GitHub limit stop, posted only once its reset has passed,
+adds no label. A tick once the limit pause has passed picks its phase, or
+its sync request, up again; a third limit stop in a row of one phase, or of
+one issue's sync requests, whatever their causes, waits on the human.
+_Avoid_: rate-limited issue.
 
 **Limit pause**:
 The stretch in which a clone's watcher picks up no issue: from a session
-stopping on a usage limit, or ending with its five-hour usage at 90% or more,
-until the latest usage reset any of them named - or, for a stop that named
-none, an hour after it. Running sessions are left alone.
+stopping on a usage limit, or ending with its five-hour usage at 90% or
+more, until the latest usage reset any of them named - or, for a stop that
+named none, an hour after it; and from an autopilot call meeting a GitHub
+API rate limit, or a tick finding a GitHub quota below its reserve, until
+that quota's reset - or, for a limit that named none, fifteen minutes after
+it. A GitHub API rate limit's pause also stops the tick's own GitHub calls.
+Running sessions are left alone.
 
 **Cap**:
 The most autopilot sessions a repo runs at once, sync slots aside, counted as

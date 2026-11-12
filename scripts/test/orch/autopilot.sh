@@ -462,7 +462,7 @@ assert_contains "asking in words for orch-flow's Next phase" "$calls" "orchestra
 assert_contains "with ORCH_AUTOPILOT=1" "$calls" "autopilot:1"
 assert_contains "with the Explore and Plan agents disabled" "$calls" "explore-plan:1"
 assert_contains "with a 2-hour background wait, whatever the caller sets" "$calls" "bg-wait:7200000"
-headless_prompt='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop.'
+headless_prompt='You are a headless orchestrator autopilot session: no human reads this conversation, and no tool asks one. Never end your turn on a question. Where a skill offers an autopilot branch (`orch.sh autopilot active` exits 0, which it does in this session), take that branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask <phase> <file>` and stop. When an `orch:` message says the GitHub API rate limit was reached, end your turn at once: do not retry or wait, the watcher picks the work up after the reset.'
 # Every argument but the second, the prompt, which the line above matches.
 assert_eq "the session runs claude -p with the permission mode and the lean flags" "$(grep '^arg:' "$launcher_dir/calls" | sed -n '1p;3,$p' | tr '\n' '|')" \
   "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|arg:--append-system-prompt|arg:${headless_prompt}|arg:--output-format|arg:stream-json|arg:--verbose|"
@@ -478,7 +478,7 @@ assert_contains "and the adoption decision" "$(fake_comments_of 7)" "adopted to 
 assert_eq "the labels exist with their colour and description" "$(fake_labels)" "needs-human	d93f0b	Waiting on the human
 orch:done	c2e0c6	Autopilot flow: done
 orch:implement	0e8a16	Autopilot flow: implement phase next
-orch:limited	c5def5	Autopilot session stopped on a usage limit; retried after the reset
+orch:limited	c5def5	Autopilot session stopped on a usage limit or a GitHub API rate limit; retried after the reset
 orch:review	5319e7	Autopilot flow: review phase next
 orch:running	fbca04	Autopilot session running
 orch:spec	1d76db	Autopilot flow: spec phase next
@@ -1616,6 +1616,40 @@ se_fresh; se_end 1
 assert_contains "no reset, early pause later: the comment names the one-hour fallback" "$(fake_last_comment_of 7)" "falls back to a one-hour limit pause, until "
 assert_not_contains "and not the early-pause reset" "$(fake_last_comment_of 7)" "$(iso_of "$far_epoch")"
 assert_eq "while the limit file holds the early-pause reset" "$(se_limit)" "$(iso_of "$far_epoch")"
+
+# a GitHub-limited session end: the issue's hit file names a reset
+gh_pause="$top/.orchestrator/autopilot/github-limit"
+hit="$top/.orchestrator/autopilot/run/7.hit"
+gh_se_fresh() { se_fresh; rm -f "$gh_pause"; mkdir -p "$(dirname "$hit")"; printf '%s\n' "$i2" >"$hit"; }
+printf '%s\n' "the session ended" >"$se_log"
+gh_se_fresh; se_end 1
+assert_eq "a GitHub-limited session end adds no label and removes running" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
+assert_first_line "and posts a limit stop with its github cause" "$(fake_comments_of 7)" "$(marker_of limited spec github)"
+assert_contains "naming the GitHub API rate limit and its reset" "$(fake_last_comment_of 7)" "GitHub API rate limit in the spec phase, which reset $i2"
+assert_eq "and releases the claim" "$(fake_claim_held 7)" free
+assert_eq "and extends the GitHub pause to the reset, the usage limit untouched" "$(cat "$gh_pause" 2>/dev/null)|$(se_limit)" "$i2|absent"
+assert_eq "the hit file is gone afterwards" "$(on_disk "$hit")" absent
+gh_se_fresh; printf '%s\n' "not a time" >"$hit"; se_end 1
+assert_eq "a hit file naming no reset is a plain failure" "$(se_kind)" failure
+assert_eq "and is removed too" "$(on_disk "$hit")" absent
+gh_se_fresh; fake_claim_release 7; se_end 1 "$se_claim_fields"
+assert_eq "a released session leaves no GitHub pause" "$(on_disk "$gh_pause")|$(on_disk "$hit")" "absent|absent"
+ndjson_with "Claude AI usage limit reached|$r1" >"$se_log"
+gh_se_fresh; se_end 1
+assert_eq "a usage limit outranks the hit file: limited, no GitHub pause" "$(se_kind)|$(on_disk "$gh_pause")|$(on_disk "$hit")" "limited|absent|absent"
+printf '%s\n' "the session ended" >"$se_log"
+# mixed causes share one counter: usage, then github, then github is the third
+gh_se_fresh
+fake_comment 7 o 2026-01-01T00:00:00Z "$(marker_of limited spec)"
+fake_comment 7 o 2026-01-01T00:00:01Z "$(marker_of limited spec github)"
+se_end 1
+assert_eq "the third limit stop in a row, whatever its causes, is a needs-human failure stop" "$(se_kind)|$(fake_claim_held 7)" "failure|free"
+assert_contains "naming the GitHub cause" "$(fake_last_comment_of 7)" "stopped on the GitHub API rate limit (resets $i2) and exited with code 1, the third in a row"
+gh_se_fresh
+fake_comment 7 o 2026-01-01T00:00:00Z "$(marker_of limited spec github)"
+se_end 1
+assert_contains "a usage-limit-free github stop after a github stop is retry 2 of 2" "$(fake_last_comment_of 7)" "Retry 2 of 2"
+rm -f "$gh_pause"
 
 # the limit stop's failure fallbacks: Session end still writes the limit file
 # on either (the fallbacks themselves are the Standing section's)
