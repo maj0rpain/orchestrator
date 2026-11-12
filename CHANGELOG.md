@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.0.35
+
+The spec review's batch and ticket parsers share one `@@` block reader for the anchor, replace, end and quote blocks, so a fix to the block machine lands in both; no message or accepted file changes.
+
+## 5.0.34
+
+`ticket block` and `ticket unblock` now retry a blocked-by read-back that fails once, instead of dying at the first transient GitHub error. A read-back that fails twice dies naming the ticket and gh's reason. The one-retry verify-then-die policy now lives in a single `verify_twice` helper that `ticket publish`, `issue publish`, `issue triage` and the blocking-edge check all call, each keeping its existing death messages.
+
+## 5.0.33
+
+One Bash hook, `hook-bash.sh`, replaces the stdin and poll hooks: it reads the payload once, walks the command once and emits one decision (deny a pgrep or pkill word under every mode, else deny a plain stdin read outside bypassPermissions, else the bypassPermissions rewrite), so a poll's deny no longer rests on the host ranking two hooks.
+
+## 5.0.32
+
+Autopilot reads a phase session's log for usage limits in one pass, through a new Session log module, and carries limit times as epoch seconds; behaviour is unchanged.
+
 ## 5.0.31
 
 Flow state is now read many keys per `jq`: a new multi-key reader in the Flow state module (with own-checkout and guarded wrappers) serves `orch.sh status`, `doctor --flow`, the finished sweep, the other-checkouts list, the busy and holding checks, `base set --flow` and the merged-PR close backstop, each reading its keys in one `jq` instead of one or two per key. Output, verdicts and exit codes are unchanged.

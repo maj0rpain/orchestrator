@@ -316,6 +316,18 @@ sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 # sourced_orch_script <script> [<arg>...]: runs <script> in a child bash that
 # has sourced orch.sh, with <arg>... as its positional parameters $1...
 sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
+# rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
+# <7d reset>: a rate_limit_event line.
+rl_event() {
+  printf '{"type":"rate_limit_event","rate_limit_info":{"status":"%s","resetsAt":%s,"rateLimitType":"seven_day","utilization":%s,"unifiedWindows":{"five_hour":{"utilization":%s,"resetsAt":%s,"status":"%s"},"seven_day":{"utilization":%s,"resetsAt":%s,"status":"%s"}}}}\n' \
+    "$4" "$6" "$5" "$2" "$3" "$1" "$5" "$6" "$4"
+}
+# ndjson_with <line>: a session log of NDJSON lines with <line> as a plain text
+# line among them, and a rate_limit_event that rejects nothing.
+ndjson_with() {
+  printf '%s\n' '{"type":"system","subtype":"init"}' "$(rl_event allowed 0.1 4102444800 allowed 0.1 4102444800)" \
+    "$1" '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'
+}
 # live_orch <function> [args...]: calls the function in a background shell that
 # sourced orch.sh, from the current directory, and keeps that shell alive, so a
 # record the function writes names a running process. Sets LIVE_PID; live_stop

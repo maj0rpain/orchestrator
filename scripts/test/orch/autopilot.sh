@@ -7,18 +7,6 @@
 
 # iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
 iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
-# rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
-# <7d reset>: a rate_limit_event line.
-rl_event() {
-  printf '{"type":"rate_limit_event","rate_limit_info":{"status":"%s","resetsAt":%s,"rateLimitType":"seven_day","utilization":%s,"unifiedWindows":{"five_hour":{"utilization":%s,"resetsAt":%s,"status":"%s"},"seven_day":{"utilization":%s,"resetsAt":%s,"status":"%s"}}}}\n' \
-    "$4" "$6" "$5" "$2" "$3" "$1" "$5" "$6" "$4"
-}
-# ndjson_with <line>: a session log of NDJSON lines with <line> as a plain text
-# line among them, and a rate_limit_event that rejects nothing.
-ndjson_with() {
-  printf '%s\n' '{"type":"system","subtype":"init"}' "$(rl_event allowed 0.1 4102444800 allowed 0.1 4102444800)" \
-    "$1" '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'
-}
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
 # picked: the side checkouts the launcher started sessions in, in order, one

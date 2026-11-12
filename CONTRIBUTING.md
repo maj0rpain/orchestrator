@@ -47,7 +47,8 @@ is, beside the per-noun files: `checkout.sh` for `scripts/orch/checkout.sh`,
 `issue-timeline.sh` for `scripts/orch/issue-timeline.sh`, `known-items.sh` for
 `scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,
 `marked-comment.sh` for
-`scripts/orch/marked-comment.sh`, `standing.sh` for
+`scripts/orch/marked-comment.sh`, `session-log.sh` for
+`scripts/orch/session-log.sh`, `standing.sh` for
 `scripts/orch/standing.sh`, `trust.sh` for `scripts/orch/trust.sh`. A
 ticket's tests go in the file for the noun it touches; a new
 noun gets a new file, which the runner picks up with no edit. A noun file holds
@@ -111,7 +112,9 @@ into entries, appending them as tagged bullets, and writing a known-items
 file), `liveness.sh` (the Liveness module: whether the process behind a claim
 on this host is still running - the run records, their format and the session
 log naming), `marked-comment.sh` (the Marked comment module: writing and reading
-the issue comments whose first line names their kind) and `standing.sh` (the
+the issue comments whose first line names their kind), `session-log.sh` (the
+Session log module: what a phase session's log says about usage limits, read
+in one pass) and `standing.sh` (the
 Standing module: an issue's label set, its read and its claims) and `trust.sh`
 (the Trust module: which comments and which PRs orch.sh reads and which issues
 autopilot runs on), live among the modules too.
@@ -304,6 +307,7 @@ scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with 
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a claim on this host is alive - the run records, the start-time reader, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
+scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
 scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments and which PRs orch.sh reads and which issues autopilot runs on - the one filter dropping a comment whose author is not an owner, member or collaborator, the one filter dropping a fork PR, and the issue trust check
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
@@ -314,9 +318,9 @@ scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functio
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
 scripts/host.sh               the one host detector: host_detect (environment) and host_from_project_path (hook payload), sourced by orch.sh and hook-common.sh
 scripts/flow-state.sh         the Flow state module: state.json's keys, defaults, reading and writing, sourced by orch.sh and hook-common.sh
-scripts/hook-*.sh             the eight hooks; hook-bash-stdin.sh closes stdin for plugin subagents' and autopilot Bash calls (rewrite under bypassPermissions, deny of plain stdin reads otherwise); hook-bash-poll.sh denies those calls an unquoted pgrep or pkill word under every mode; hook-grilling.sh sends only the session's state and points to orch-interview's Closing section, and also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only, hook-paste-stop-guard.sh its Stop half
+scripts/hook-*.sh             the seven hooks; hook-bash.sh makes the one decision on plugin subagents' and autopilot Bash calls, in order: deny an unquoted pgrep or pkill word under every mode, else deny a plain stdin read under any mode but bypassPermissions, else rewrite the command to close stdin under bypassPermissions; hook-grilling.sh sends only the session's state and points to orch-interview's Closing section, and also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only, hook-paste-stop-guard.sh its Stop half
 scripts/paste-guard.sh        the transcript scan and paste check the two paste guards share, sourced by hook-paste-guard.sh and hook-paste-stop-guard.sh
-scripts/bash-walk.sh          the command walker and in-scope filter the two Bash hooks share, sourced by hook-bash-stdin.sh and hook-bash-poll.sh
+scripts/bash-walk.sh          the command walker the Bash hook sources, sourced by hook-bash.sh
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/autopilot-container.sh the autopilot container's entrypoint: checks the env file, configures git and the permission mode, clones the repo, writes and validates the other autopilot and role settings in it, then execs the watcher; `scripts/test/autopilot_container_test.sh` tests it
@@ -346,6 +350,7 @@ scripts/test/orch/issue-timeline.sh the Issue timeline module's sections, named 
 scripts/test/orch/known-items.sh the Known items module's sections, named as the module is
 scripts/test/orch/liveness.sh      the Liveness module's sections, named as the module is
 scripts/test/orch/marked-comment.sh the Marked comment module's sections, named as the module is
+scripts/test/orch/session-log.sh    the Session log module's sections, named as the module is
 scripts/test/orch/standing.sh       the Standing module's sections, named as the module is
 scripts/test/orch/trust.sh          the Trust module's sections, named as the module is
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
