@@ -812,12 +812,12 @@ autopilot_candidates_run() {
     esac
   done
   [ -n "$mode" ] || die "$usage"
-  local out err n verdict report="" eligible=0 named=false
+  local out n verdict report="" eligible=0 named=false
   if [ "$mode" = named ]; then
     named=true
   else
     gh_or_die --out out "list the open issues" adapter_issues_open_oldest
-    while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done < <(printf '%s\n' "$out" | sort -n)
+    while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done <<<"$out"
     if [ "${#issues[@]}" -ge "$ISSUE_LIST_LIMIT" ]; then
       warn "the open issues reached the issue-list limit of $ISSUE_LIST_LIMIT - the newest past it are missing from this list"
     fi

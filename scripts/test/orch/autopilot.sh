@@ -2438,8 +2438,8 @@ assert_eq "verdicts and the order named" "$out" "3 eligible override
 12 skip untrusted stranger
 13 skip phase spec"
 
-# gh lists newest first: the verb must sort the listing itself.
-export ORCH_FAKE_NEWEST_FIRST=1
+# The fake lists newest first, as gh does, except its oldest-first read: the
+# verb must walk that read in order.
 
 all="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
 assert_status "--all succeeds" "$st" 0
@@ -2454,7 +2454,6 @@ assert_eq "--limit keeps the first k eligible lines, skips not counted" "$("$ORC
 8 skip untriaged-finding
 9 skip untriaged-finding
 10 eligible override"
-unset ORCH_FAKE_NEWEST_FIRST
 ac_err="$(mktemp)"
 ORCH_ISSUE_LIST_LIMIT=13 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
 assert_contains "--all warns when the listing reaches the issue-list limit" "$(cat "$ac_err")" \

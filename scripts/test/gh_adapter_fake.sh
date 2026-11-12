@@ -439,23 +439,22 @@ adapter_issue_state() {
   cat "$(fake_issue_dir "$1")/state"
 }
 
-# fake_open_issues: the numbers of the open issues in the store, one per line
-# in number order - newest first, as real gh lists them, while
-# ORCH_FAKE_NEWEST_FIRST is set.
+# fake_open_issues: the numbers of the open issues in the store, newest first,
+# as real gh lists them.
 fake_open_issues() {
   local d
   for d in "$(fake_store)"/issues/*/; do
     [ -d "$d" ] || continue
     [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
     basename "$d"
-  done | sort -n${ORCH_FAKE_NEWEST_FIRST:+r}
+  done | sort -nr
 }
 
 # adapter_issues_labelled <label>...: the open issues in the store carrying
-# every label named, in number order - the first ISSUE_LIST_LIMIT of them, as
-# gh's --limit cuts the list, with awk, which reads all of the while loop's
-# output, so the loop never takes SIGPIPE under pipefail as it would from head
-# (#1019).
+# every label named, newest first as gh lists them - the first ISSUE_LIST_LIMIT
+# of them, as gh's --limit cuts the list, with awk, which reads all of the
+# while loop's output, so the loop never takes SIGPIPE under pipefail as it
+# would from head (#1019).
 adapter_issues_labelled() {
   local n l keep
   ! fake_failing adapter_issues_labelled || return 1
