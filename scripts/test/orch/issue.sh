@@ -201,6 +201,26 @@ assert_status "a readback that fails silently twice dies" "$st" 1
 assert_contains "saying gh gave no reason" "$out" \
   "orch: gh could not read issue #16: gh gave no reason"
 fake_unfail
+
+# A failed read then a stale one dies as unverified; a stale read then a failed
+# one dies with gh's reason - the second attempt decides.
+fake_next_issue 17
+fake_fail_times adapter_issue_title_labels 1 "$GH_502"
+fake_lag adapter_issue_title_labels 1 ""
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a failed read then a mismatch dies" "$st" 1
+assert_contains "with the issue's verify message" "$out" \
+  "orch: issue #17's title and 'ready-for-agent' label did not verify - checked twice, both failed"
+fake_unfail
+
+fake_next_issue 18
+fake_lag adapter_issue_title_labels 1 ""
+fake_fail_after adapter_issue_title_labels 1 "$GH_502"
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a mismatch then a failed read dies" "$st" 1
+assert_eq "with gh's reason, never the verify message" "$out" \
+  "orch: gh could not read issue #18: HTTP 502: Bad Gateway"
+fake_unfail
 restore_suite_env
 
 # --- issue triage -------------------------------------------------------------
@@ -411,6 +431,29 @@ assert_contains "saying gh gave no reason" "$out" \
   "orch: gh could not read issue #58: gh gave no reason"
 assert_eq "the issue keeping ready-for-agent" "$(fake_labels_of 58)" "ready-for-agent "
 assert_eq "posting no comment" "$(comment_count 58)" "0"
+fake_unfail
+
+# A failed re-read then a stale one dies as unverified; a stale re-read then a
+# failed one dies with gh's reason. The relabel stands and no comment is posted.
+fake_issue 59 open needs-triage
+fake_fail_after adapter_issue_state_labels 1 "$GH_502"
+fake_fail_times adapter_issue_state_labels 1 "$GH_502"
+fake_lag_after adapter_issue_state_labels 1 1 "$(writeln OPEN needs-triage)"
+out="$(triage 59 2>&1)"; st=$?
+assert_status "a failed re-read then a mismatch dies" "$st" 1
+assert_eq "with the issue's verify message" "$out" \
+  "orch: issue #59's 'ready-for-agent' label did not verify - checked twice, both failed"
+assert_eq "posting no comment" "$(comment_count 59)" "0"
+fake_unfail
+
+fake_issue 60 open needs-triage
+fake_lag_after adapter_issue_state_labels 1 1 "$(writeln OPEN needs-triage)"
+fake_fail_after adapter_issue_state_labels 2 "$GH_502"
+out="$(triage 60 2>&1)"; st=$?
+assert_status "a mismatch then a failed re-read dies" "$st" 1
+assert_eq "with gh's reason, never the verify message" "$out" \
+  "orch: gh could not read issue #60: HTTP 502: Bad Gateway"
+assert_eq "posting no comment" "$(comment_count 60)" "0"
 fake_unfail
 
 fake_issue 51 open needs-triage
