@@ -2463,3 +2463,33 @@ assert_eq "and touches no label" "$(fake_labels_of 7)" "$before"
 printf '2020-01-01T00:00:00Z\n' >"$top/.orchestrator/autopilot/github-limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a passed GitHub pause is removed" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent
+
+# --- autopilot tick: a pickup that meets a GitHub limit (#2577) ---------------
+echo
+echo "autopilot tick pickup github limit"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Limit pickup 7"
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Limit pickup 8"
+fake_fail_times adapter_issue_comment 1 "API rate limit exceeded for user ID 1."
+out="$(ORCH_GH_LIMIT_WAIT=0 "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick whose pickup meets a GitHub limit succeeds" "$st" 0
+assert_eq "the claim ref is gone" "$(fake_claim_held 7)" free
+assert_eq "no stop comment is left" "$(fake_comments_of 7 | grep -c 'orch:')" "0"
+assert_not_contains "and no needs-human label" "$(fake_labels_of 7)" "needs-human"
+assert_eq "the tick ends after that pickup: the next issue is not claimed" "$(fake_claim_held 8)" free
+assert_eq "and no session starts" "$(tick_calls)" "0"
+assert_eq "the GitHub pause is held" "$([ -f "$top/.orchestrator/autopilot/github-limit" ] && echo held || echo absent)" held
+rm -f "$top/.orchestrator/autopilot/github-limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "the issue is picked up again after the pause" "$(picked)" "limit-pickup-7"
+
+# a claim delete that fails leaves the claim held
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Limit pickup 9"
+fake_fail_times adapter_issue_comment 1 "API rate limit exceeded for user ID 1."
+fake_fail adapter_claim_delete "HTTP 500 push"
+ORCH_GH_LIMIT_WAIT=0 "$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a failed claim-ref delete leaves the claim held" "$(fake_claim_held 9)" held
+fake_unfail

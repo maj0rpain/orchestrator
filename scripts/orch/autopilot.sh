@@ -661,9 +661,18 @@ autopilot_pickup_steps() {
 
 # autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
 # claimed issue. A refusal or a failed step ends in one standing_stop and
-# returns 0: the claim is released, the tick goes on.
+# returns 0: the claim is released, the tick goes on. A step that failed on a
+# GitHub API rate limit - a GitHub pause holds once it has failed - deletes only
+# the claim ref (a git push: no stop, no label, nothing counted); if that push
+# fails the claim stays held for stale cleanup. The pause ends the tick.
 autopilot_pickup() {
+  local main_root
   autopilot_pickup_steps "$1" "$2" "${3:-}" || {
+    if main_root="$(main_checkout_or_die 2>/dev/null)" && autopilot_pause_until "$main_root" github >/dev/null 2>&1; then
+      adapter_claim_delete "$1" >/dev/null 2>&1 ||
+        warn "could not delete the claim ref on issue #$1; it stays held for stale cleanup"
+      return 0
+    fi
     standing_stop "$1" "$PICKUP_KIND" "$2" "$PICKUP_TEXT"
     return 0
   }
@@ -940,6 +949,7 @@ autopilot_tick() {
     limited_arg=""
     if [ "$limited" = 1 ]; then limited_arg=limited; fi
     autopilot_pickup "$issue" "$phase" "$limited_arg"
+    if autopilot_pause_until "$main_root" github; then return 0; fi
   done <<<"$ranked"
 }
 
