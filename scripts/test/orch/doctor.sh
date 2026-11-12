@@ -75,11 +75,8 @@ echo "host detection (host.sh, #281)"
 # after the given VAR=value assignments.
 HOST_SH="$(dirname "$ORCH")/host.sh"
 host_on() {
-  local assigns=()
-  while [ $# -gt 0 ] && [[ "$1" == *=* ]]; do assigns+=("$1"); shift; done
-  [ "${1:-}" = -- ] && shift
   env -u ORCHESTRATOR_HOST -u CLAUDECODE -u JUNIE_EXTENSION_ROOT -u JUNIE_SHIM_PATH \
-    -u CLAUDE_PLUGIN_ROOT "${assigns[@]}" \
+    -u CLAUDE_PLUGIN_ROOT "$@" \
     bash -c 'source "$1" && host_detect' host_on "$HOST_SH"
 }
 # host_from_project_path <project_path>, in the same clean shell.
@@ -93,13 +90,13 @@ assert_eq "host_from_project_path ignores ORCHESTRATOR_HOST=claude" \
   "$(host_from /r ORCHESTRATOR_HOST=claude)" "junie"
 assert_eq "host_from_project_path ignores ORCHESTRATOR_HOST=junie" \
   "$(host_from '' ORCHESTRATOR_HOST=junie)" "claude"
-assert_eq "environment mode: no signal prints nothing" "$(host_on)" ""
-assert_eq "environment mode: ORCHESTRATOR_HOST names the host" \
+assert_eq "host_detect: no signal prints nothing" "$(host_on)" ""
+assert_eq "host_detect: ORCHESTRATOR_HOST names the host" \
   "$(host_on ORCHESTRATOR_HOST=junie)" "junie"
-assert_eq "environment mode: JUNIE_SHIM_PATH is junie" \
+assert_eq "host_detect: JUNIE_SHIM_PATH is junie" \
   "$(host_on JUNIE_SHIM_PATH=/x)" "junie"
-assert_eq "environment mode: CLAUDECODE=1 is claude" "$(host_on CLAUDECODE=1)" "claude"
-assert_eq "environment mode: JUNIE_SHIM_PATH outranks CLAUDECODE=1" \
+assert_eq "host_detect: CLAUDECODE=1 is claude" "$(host_on CLAUDECODE=1)" "claude"
+assert_eq "host_detect: JUNIE_SHIM_PATH outranks CLAUDECODE=1" \
   "$(host_on JUNIE_SHIM_PATH=/x CLAUDECODE=1)" "junie"
 assert_eq "doctor.sh no longer defines host_detect" \
   "$(grep -c '^host_detect()' "$(dirname "$ORCH")/orch/doctor.sh")" "0"
