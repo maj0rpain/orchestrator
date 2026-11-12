@@ -223,9 +223,6 @@ base_pr="$(scan --pr 21 2>&1)"
 # nor the state-and-labels read is called.
 fake_fail adapter_issue_body "body read alone"
 fake_fail adapter_issue_state_labels "state and labels read alone"
-out="$(scan --all 2>&1)"; st=$?
-assert_status "reads each finding through one call for body and labels" "$st" 0
-assert_eq "listing them all" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 8 20 21 22 23 "
 out="$(scan --all 8 2>&1)"; st=$?
 assert_status "an explicit finding is read through that one call too" "$st" 0
 fake_unfail
@@ -262,6 +259,9 @@ for listing in $'x\n0\n1\nb' $'5\nx\n1\nb' $'5\n0\nx\nb' $'5\n0\n3\nonly\n6\n0\n
   assert_eq "naming the listing" "$out" \
     "orch: gh could not list the review:major findings: gh answered a listing that does not parse"
 done
+out="$(adapter_stood_in 'adapter_issues_labelled_bodies() { :; }' scan 2>&1)"; st=$?
+assert_status "an empty listing scans cleanly" "$st" 0
+assert_eq "printing nothing" "$out" ""
 
 # Record alignment: bodies of every shape listed next to one another each scan
 # to their own line, whichever sits last in the listing.

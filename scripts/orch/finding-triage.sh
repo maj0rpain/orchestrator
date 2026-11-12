@@ -258,7 +258,7 @@ cmd_finding_triage_scan() {
   ref="refs/remotes/origin/$default"
   git fetch -q origin "+refs/heads/$default:$ref" >/dev/null 2>&1 \
     || die "could not fetch origin/$default"
-  for n in $(printf '%s\n' "${!found_labels[@]}" | sort -n); do
+  for n in $(printf '%s\n' ${found_labels[@]+"${!found_labels[@]}"} | sort -n); do
     finding_scan_one "$n" "${found_bodies[$n]}" "$ref" "$(triage_state "${found_labels[$n]}")" "$pr_filter"
   done
 }

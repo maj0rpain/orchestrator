@@ -477,7 +477,7 @@ issues_labelled_bodies_read() {
     __ilbr_labs+=("$__ilbr_l")
     __ilbr_bods+=("$__ilbr_body")
   done
-  for __ilbr_r in "${!__ilbr_nums[@]}"; do
+  for __ilbr_r in ${__ilbr_nums[@]+"${!__ilbr_nums[@]}"}; do
     eval "$1"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_labs[__ilbr_r]}'
     eval "$2"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_bods[__ilbr_r]}'
   done
