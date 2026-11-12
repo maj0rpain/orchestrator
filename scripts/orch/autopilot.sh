@@ -1174,9 +1174,11 @@ autopilot_tick() {
 # The limit pause is the reset the session named, or one hour on; the early
 # pause is the five-hour window's resetsAt when its utilization is 0.9 or more,
 # whatever the outcome; all are epoch seconds. The usage pause store is
-# extended once, with the later of the two. Then it gives the released note,
-# the limit stop or the failure stop. It dies, before any write, when the
-# checkout or the claims cannot be read.
+# extended once, with the later of the two. Then every stop goes through
+# autopilot_stop_attempts: the released note, the limit stop or the failure
+# stop, retried up to AUTOPILOT_STOP_ATTEMPTS times, with a backstop line in the
+# log; it returns 1, the claim held, when the chain gives up. It dies, before
+# any write, when the checkout or the claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
   local outcome=failure limit="" pause released_note hit hit_epoch=0
@@ -1322,7 +1324,7 @@ autopilot_run() {
       liveness_run_begin "$issue" || exit 1
       # shellcheck disable=SC2064
       trap "liveness_run_end '$issue'" EXIT
-      standing_claims_read || true
+      standing_claims_read --quiet || true
       phase="${STANDING_CLAIM_PHASE[$issue]:-$recorded}"
       log="$(liveness_log_path "$issue" "$phase")" || exit $?
       # No session ran: wait out the GitHub pause before the first attempt.

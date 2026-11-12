@@ -2588,6 +2588,15 @@ assert_eq "releases the claim" "$(fake_claim_held 7)" free
 assert_eq "posts no comment" "$(fake_comments_of 7)" "$comments_before"
 assert_eq "and starts no session" "$(tick_calls)" "0"
 assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+# a claim list that cannot be read on this path still releases the claim
+fake_issue 7 open orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+rm -f "$top/.orchestrator/autopilot/github-limit"
+fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
+fake_fail adapter_claim_list "HTTP 500 list"
+"$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+assert_eq "a failing claim-list read on a GitHub-limited start-up still releases the claim" "$(fake_claim_held 7)" free
 # a start-up read that fails for another reason dies, as before
 fake_issue 7 open orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
