@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.23
+
+The paste guards (Stop and AskUserQuestion) no longer parse the whole session transcript at every turn end: a fixed-string pre-check skips the parse when the transcript holds no arming pass line, and the re-read window re-parses only when the transcript changed size.
+
 ## 5.0.22
 
 `orch.sh doctor --flow` now reads the flow's issue and the flow's PR from GitHub once per run instead of twice, with output and exit status unchanged.
