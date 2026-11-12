@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # base.sh - orch.sh's base command: the checkout's base branch setting and a
 # flow's own base, with the branch helpers every module calls (default_branch,
-# origin_has_branch, require_on_origin).
+# origin_has_branch, require_on_origin). default_branch resolves once per
+# process and keeps the answer in a memo (DEFAULT_BRANCH_SOURCE);
+# default_branch_local is the memo-free local fallback doctor calls.
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 

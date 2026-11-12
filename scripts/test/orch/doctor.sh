@@ -2331,8 +2331,7 @@ state_fixture phase review
 fake_issue 7 open ready-for-agent
 fake_pr 40 open orch/onereads main
 fake_pr_draft 40
-: >"$reads_log"
-out="$(COUNT_LOG="$reads_log" ORCH_AUTOPILOT=1 adapter_stood_in "$reads_defs" "$ORCH" doctor --flow 2>&1)"; st=$?
+out="$(ORCH_AUTOPILOT=1 counted_adapter_run "$reads_log" "$reads_defs" "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an autopilot flow with no phase label still fails" "$st" 1
 assert_contains "naming the missing phase label" "$out" "issue #7 carries no phase label"
 assert_eq "and its issue is read once" "$(reads_of issue)" 1
