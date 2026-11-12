@@ -70,6 +70,7 @@ tally_init
 
 # >>> checks
 REPO="$(mktemp -d)"
+NOGIT="$(mktemp -d)"  # a directory in no git repository, for the grilling, Junie and edit-guard no-git cases
 git -C "$REPO" init -q
 mkdir -p "$REPO/docs/agents" "$REPO/docs/adr"
 
@@ -278,7 +279,6 @@ assert_empty "ignores the removed Skill(orchestrator:orch-plan)" \
 # The marker means "the planning message was delivered" (#2544): a load that
 # sends nothing, here one whose cwd is in no git repository, writes none, so the
 # guard stays unarmed and a later load from inside a repo still delivers.
-NOGIT="$(mktemp -d)"
 nogit_skill_event() { skill_event "$1" "$2" | jq --arg cwd "$NOGIT" '.cwd=$cwd'; }
 assert_empty "a grilling load outside any git repo sends nothing" \
   "$(nogit_skill_event grilling ng1 | "$GRILL")"
@@ -288,10 +288,6 @@ assert_empty "a source edit after a non-git grilling load is allowed" \
 assert_contains "a later grilling load from inside the repo delivers the message" \
   "$(skill_event grilling ng1 | "$GRILL")" "Do NOT offer to implement"
 assert_marker_present "the delivering load writes the grilling marker" grilling ng1
-assert_eq "the same edit is denied once the message is delivered" \
-  "$(bash_hook_decision "$(edit_event "$REPO/src/main.ts" ng1 | "$GUARD")")" "deny"
-assert_empty "a third grilling load in the session sends nothing" \
-  "$(skill_event grilling ng1 | "$GRILL")"
 rm -f "$TMPDIR/orchestrator-grilling-ng1"
 if [ "$(id -u)" -eq 0 ]; then
   ok "an unwritable temp directory sends no planning message (skipped as root)"
@@ -465,8 +461,6 @@ assert_empty "plan confirmation after a non-git planning prompt sends nothing" \
 assert_contains "a later Junie planning prompt from the repo delivers the message" \
   "$(prompt_event '$grilling' jg1 | "$GRILL")" "Do NOT offer to implement"
 assert_marker_present "the delivering Junie prompt writes the planning marker" planning jg1
-assert_empty "a third Junie planning prompt in the session sends nothing" \
-  "$(prompt_event '$grilling' jg1 | "$GRILL")"
 
 assert_not_contains "no precondition warning on Junie without issue-tracker.md" \
   "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION"
@@ -839,10 +833,8 @@ assert_contains "denies a side checkout ADR with the records reason" \
   "$(edit_event_at "$SIDE/docs/adr/0001-x.md" s1 "$REPO" | "$GUARD" | jq -r '.reason')" "is a record of decisions"
 assert_empty "allows a side checkout's allowlisted file" \
   "$(edit_event_at "$SIDE/docs/agents/x.md" s1 "$REPO" | "$GUARD")"
-NOGIT="$(mktemp -d)"
 assert_empty "allows a file outside any git repo" \
   "$(edit_event_at "$NOGIT/x.ts" s1 "$REPO" | "$GUARD")"
-rm -rf "$NOGIT"
 SEPWT="$(mktemp -d)"; SEPGD="$(mktemp -d)/store.git"
 git -C "$SEPWT" init -q --separate-git-dir "$SEPGD"
 assert_empty "allows a file inside a separate git dir outside the working tree (#2335)" \

@@ -48,7 +48,7 @@ scan_file() {
   F="$2" LC_ALL=C awk "$SHELL_CODE_AWK"'
     FNR == 1 {
       is_shell = ENVIRON["F"] ~ /\.sh$/
-      in_frontmatter = 0; fence = ""
+      in_frontmatter = 0; fchar = ""
     }
     { stripped = $0; sub(/^[[:space:]]+/, "", stripped) }
     is_shell { shell_code_line($0) }
@@ -57,16 +57,16 @@ scan_file() {
     is_shell && stripped ~ /^#[[:space:]]*shellcheck/ { next }
     !is_shell && FNR == 1 && $0 == "---" { in_frontmatter = 1; next }
     in_frontmatter { if ($0 == "---") in_frontmatter = 0; next }
-    !is_shell && fence != "" {
+    !is_shell && fchar != "" {
       closer = stripped; sub(/[[:space:]]+$/, "", closer)
-      if (closer ~ ("^" fchar "+$") && length(closer) >= flen) fence = ""
+      if (closer ~ ("^" fchar "+$") && length(closer) >= flen) fchar = ""
       next
     }
     !is_shell && match(stripped, /^(```+|~~~+)/) {
-      fence = "open"; fchar = substr(stripped, 1, 1); flen = RLENGTH
+      fchar = substr(stripped, 1, 1); flen = RLENGTH
       next
     }
-    fence != "" || stripped ~ /^\|/ || /https?:\/\// { next }
+    stripped ~ /^\|/ || /https?:\/\// { next }
     {
       bare = stripped; sub(/^#+[[:space:]]*/, "", bare)
       sub(/[[:space:]]+$/, "", bare)
