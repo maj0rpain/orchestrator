@@ -15,7 +15,7 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 
-hook_read_payload 2>/dev/null || exit 0
+hook_read_payload
 # The source check also stands guard for a host that ignores the matcher.
 [ -n "$session" ] || exit 0
 [ "$start_source" = clear ] || exit 0

@@ -27,7 +27,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/paste-guard.sh"
 
-paste_guard_payload || exit 0
+hook_read_payload
 [ "$tool" = "AskUserQuestion" ] || exit 0
 paste_guard_check "$transcript" && exit 0
 
