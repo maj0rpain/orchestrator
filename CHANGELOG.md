@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.27
+
+Each hook now reads its payload with one jq instead of one per field: the shared payload reader extracts every field the hooks read in a single NUL-framed call, and the host comes from the `project_path` it already read (`host_from_project_path`). A payload that is not a JSON object now makes the grilling hook, the edit guard and the quick-implement hook exit 0 silently, as the paste guards and the session-start hook already did.
+
 ## 5.0.26
 
 An autopilot tick now lists the `orch:done` issues once and reads each one once, sharing the read between the merged-PR close and sync request detection, instead of doing both twice.
