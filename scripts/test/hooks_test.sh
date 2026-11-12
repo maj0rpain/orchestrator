@@ -2131,7 +2131,7 @@ assert_eq "bash hook: bypassPermissions still rewrites 'cat; echo done'" \
   "$(bash_hook_decision "$hb_out")|$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$hb_out")" "allow|${BS_PREFIX}cat; echo done"
 hb_out="$(bash_hook_scan "$BASH_HOOK" bypassPermissions "$(printf 'echo %9000s; pgrep x' '')")"
 assert_eq "bash hook: bypassPermissions rewrites a command over 8 KB holding pgrep" \
-  "$(bash_hook_decision "$hb_out")" allow
+  "$(bash_hook_decision "$hb_out")|$(jq -r '.hookSpecificOutput.updatedInput.command' <<<"$hb_out" | grep -c -x -F 'exec </dev/null')" "allow|1"
 for mode in default bypassPermissions; do
   hb_out="$(bash_hook_event "$mode" Explore 'pgrep x; cat' | bash_hook_run "$BASH_HOOK" "")"; hb_rc=$?
   assert_empty "bash hook: out of scope under $mode with pgrep prints nothing" "$hb_out"
