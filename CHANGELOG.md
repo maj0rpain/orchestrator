@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.1.0
+
+New `/orchestrator:quick-autopilot <n>... | --all | --limit <k>` sends one or more issues to autopilot taking every recommended option: after one confirmation listing each selected issue's triage-label move and the issues skipped with why, each issue gets an unattended interview, its label moved to `ready-for-agent` (overriding `ready-for-human`), an unattended rewrite of its body as a spec, a plan with the recommended Rounds and Budget, and `autopilot start`, in a fresh `orch-autopilot-planner` subagent, at most 4 at once. Its selection is the new `orch.sh autopilot candidates` verb (ADR-0061). Claude Code only.
+
 ## 5.0.35
 
 The spec review's batch and ticket parsers share one `@@` block reader for the anchor, replace, end and quote blocks, so a fix to the block machine lands in both; no message or accepted file changes.
