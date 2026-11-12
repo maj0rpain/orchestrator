@@ -131,6 +131,34 @@ out="$(sourced_orch_script 'cd "$1" && checkout_kind "$1"' "$outside" 2>/dev/nul
 assert_ne "checkout_kind outside a repo fails" "$st" 0
 assert_eq "and checkout_kind prints nothing" "$out" ""
 
+# Cost: git's own trace counts the processes a lookup spawns. GIT_TRACE is
+# exported only after orch.sh is sourced, whose own rev-parse is not counted.
+trace_file="$(mktemp)"
+# trace_lookup <dir> <function> [<arg>]: runs the function from <dir>, traced
+# into $trace_file, which it prints through.
+trace_lookup() {
+  : >"$trace_file"
+  (cd "$1" && sourced_orch_script 'export GIT_TRACE="$1"; shift; "$@"' "$trace_file" "${@:2}")
+}
+trace_git() { grep -c "trace: built-in: git $1" "$trace_file"; }
+out="$(trace_lookup "$side" main_checkout)"
+assert_eq "main_checkout from a side checkout prints the main checkout" "$out" "$top"
+assert_eq "main_checkout spawns one git process" "$(trace_git '')" "1"
+trace_lookup "$top" checkout_kind "$side" >/dev/null
+assert_eq "checkout_kind on a side checkout reads one git dir" "$(trace_git 'rev-parse --absolute-git-dir')" "1"
+assert_eq "checkout_kind on a side checkout spawns three git processes" "$(trace_git '')" "3"
+for dir in "$top" "$top/.orchestrator/worktrees/t9"; do
+  trace_lookup "$dir" checkout_kind "$dir" >/dev/null
+  assert_eq "checkout_kind on ${dir##*/} reads no git dir" "$(trace_git 'rev-parse --absolute-git-dir')" "0"
+  assert_eq "checkout_kind on ${dir##*/} spawns two git processes" "$(trace_git '')" "2"
+done
+out="$(PATH="$nowalk:$PATH" sourced_orch main_checkout 2>/dev/null)"; st=$?
+assert_status "main_checkout fails on a failed walk" "$st" 1
+assert_eq "and main_checkout prints nothing" "$out" ""
+out="$(PATH="$nowalk:$PATH" sourced_orch checkout_kind "$side" 2>/dev/null)"; st=$?
+assert_status "checkout_kind fails on a failed walk" "$st" 1
+assert_eq "and checkout_kind prints nothing" "$out" ""
+
 # checkout_holding shows a checkout whose state.json cannot be parsed plainly,
 # with no jq text.
 (cd "$flowed" && state_truncate 1)

@@ -5,7 +5,9 @@
 # module reads. Its tests: scripts/test/orch/checkout.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# checkouts: the one walk over git worktree list. Prints one line per
+# checkouts: the one walk over git worktree list, the composition of
+# checkout_parse (the one place the porcelain is read) and checkout_classify
+# (the one place the kind rule is spelled). Prints one line per
 # checkout, the main checkout first:
 #
 #   <kind> <flow> <branch> <path>
@@ -21,7 +23,21 @@
 # survives `read -r kind flow branch path`. Fails, printing nothing, when git
 # worktree list fails.
 checkouts() {
-  local list line i kind flow paths=() branches=()
+  local i flow paths=() branches=()
+  checkout_parse || return
+  for i in "${!paths[@]}"; do
+    if checkout_has_flow "${paths[i]}"; then flow=1; else flow=0; fi
+    printf '%s %s %s %s\n' "$(checkout_classify "$i")" "$flow" "${branches[i]}" "${paths[i]}"
+  done
+}
+
+# checkout_parse: one `git worktree list --porcelain` (run from the current
+# directory), read into the caller's `paths` list and
+# matching `branches` list (git's own branch record, or - on a detached HEAD),
+# which bash scopes dynamically. The one place the porcelain format is read.
+# Fails when git worktree list fails.
+checkout_parse() {
+  local list line
   list="$(git worktree list --porcelain)" || return
   while IFS= read -r line; do
     case "$line" in
@@ -29,19 +45,22 @@ checkouts() {
       "branch refs/heads/"*) branches[${#branches[@]} - 1]="${line#branch refs/heads/}" ;;
     esac
   done <<<"$list"
-  for i in "${!paths[@]}"; do
-    if [ "$i" -eq 0 ]; then
-      kind=main
-    elif checkout_ticket_path "${paths[i]}" "${paths[@]}"; then
-      kind=ticket
-    elif side_checkout_marker "${paths[i]}" >/dev/null; then
-      kind=side
-    else
-      kind=hand-made
-    fi
-    if checkout_has_flow "${paths[i]}"; then flow=1; else flow=0; fi
-    printf '%s %s %s %s\n' "$kind" "$flow" "${branches[i]}" "${paths[i]}"
-  done
+}
+
+# checkout_classify <index>: prints the kind of entry <index> of the caller's
+# `paths` list (see checkout_parse): main for index 0, else ticket, side or
+# hand-made, checked in that order. The one place the kind rule is spelled;
+# only a side-or-hand-made entry costs a git process.
+checkout_classify() {
+  if [ "$1" -eq 0 ]; then
+    echo main
+  elif checkout_ticket_path "${paths[$1]}" "${paths[@]}"; then
+    echo ticket
+  elif side_checkout_marker "${paths[$1]}" >/dev/null; then
+    echo side
+  else
+    echo hand-made
+  fi
 }
 
 # checkout_ticket_path <path> <checkout>...: whether <path> is a ticket
@@ -61,15 +80,22 @@ checkout_ticket_path() {
 # checkout_kind <path>: prints the walk's kind (main, ticket, side or
 # hand-made) for the checkout holding <path> - a folder inside a checkout
 # included - the one classification every site that asks a checkout's kind
-# reads. Fails, printing nothing, when <path> is in no checkout, the walk
-# fails, or no line of it matches.
+# reads. Classifies only the matching entry: one parse, and at most one
+# marker read. Fails, printing nothing, when <path> is in no checkout, the
+# list fails, or no entry matches.
 checkout_kind() {
-  local top list kind _flow _branch path
+  local top i st paths=() branches=()
   top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
-  list="$(cd "$top" && checkouts)" || return 1
-  while read -r kind _flow _branch path; do
-    [ "$path" = "$top" ] && { printf '%s\n' "$kind"; return 0; }
-  done <<<"$list"
+  if pushd "$top" >/dev/null; then
+    checkout_parse; st=$?
+    popd >/dev/null || return 1
+  else
+    return 1
+  fi
+  [ "$st" -eq 0 ] || return 1
+  for i in "${!paths[@]}"; do
+    [ "${paths[i]}" = "$top" ] && { checkout_classify "$i"; return 0; }
+  done
   return 1
 }
 
@@ -82,12 +108,14 @@ checkouts_main() {
   printf '%s\n' "$path"
 }
 
-# The main checkout: the first checkout the walk prints. Fails, printing
-# nothing, when the walk fails or prints nothing.
+# The main checkout: the first entry git worktree list prints, unclassified -
+# one git process, no marker read, no flow state. Fails, printing nothing,
+# when the list fails or is empty.
 main_checkout() {
-  local list
-  list="$(checkouts)" || return 1
-  checkouts_main "$list"
+  local paths=() branches=()
+  checkout_parse || return 1
+  [ "${#paths[@]}" -gt 0 ] || return 1
+  printf '%s\n' "${paths[0]}"
 }
 
 # checkouts_or_die / main_checkout_or_die: what checkouts / main_checkout
@@ -107,11 +135,11 @@ main_checkout_or_die() {
 # Dies when the checkouts cannot be read; called in a substitution, so its
 # caller carries that status out.
 branch_checkout() {
-  local list _kind _flow branch path
-  list="$(checkouts_or_die)" || exit $?
-  while read -r _kind _flow branch path; do
-    if [ "$branch" = "$1" ]; then note "$path"; return 0; fi
-  done <<<"$list"
+  local i paths=() branches=()
+  checkout_parse || checkouts_unreadable
+  for i in "${!paths[@]}"; do
+    if [ "${branches[i]}" = "$1" ]; then note "${paths[i]}"; return 0; fi
+  done
 }
 
 # Whether the checkout at <path> holds a flow.
@@ -120,17 +148,17 @@ checkout_has_flow() { [ -f "$(flow_state_file "$1")" ]; }
 # What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
 # else its checked-out branch (branch <name>), else (no branch).
 checkout_holding() {
-  local state issue issue_label branch rc=0
+  local state issue slug phase issue_label branch rc=0
   state="$(flow_state_file "$1")"
   if [ -f "$state" ]; then
-    issue="$(state_get_in "$state" issue)" || rc=$?
+    state_get_many_in "$state" issue=issue slug=slug phase=phase || rc=$?
     if [ "$rc" -eq 2 ]; then
       note "flow (state.json cannot be read)"
       return 0
     fi
     [ "$rc" -eq 0 ] || return "$rc"
     if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
-    note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"
+    note "flow $slug $phase $issue_label"
   elif branch="$(checkout_branch "$1")"; then
     note "branch $branch"
   else
@@ -179,10 +207,10 @@ current_branch_or_die() {
 # read exits 1, never read as free or busy. Called as a bare statement, so
 # that exit stops the caller.
 checkout_busy() {
-  local line_var="$1" remedy_var="$2" signals="${*:3}" b dirty busy_line="" busy_remedy=""
+  local line_var="$1" remedy_var="$2" signals="${*:3}" fslug fphase b dirty busy_line="" busy_remedy=""
   if word_listed "$signals" flow && flow_active; then
-    if flow_state_readable "$STATE"; then
-      busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
+    if state_get_many_in "$STATE" fslug=slug fphase=phase; then
+      busy_line="busy: a flow is mid-pipeline (slug: $fslug, phase: $fphase)"
       busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
     else
       busy_line="busy: a flow's state.json cannot be read"
