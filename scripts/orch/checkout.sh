@@ -80,7 +80,7 @@ checkout_ticket_path() {
 # checkout_kind <path>: prints the kind checkout_classify gives (main, ticket,
 # side or hand-made) for the checkout holding <path> - a folder inside a
 # checkout included - the one classification every site that asks a checkout's
-# reads. Classifies only the matching entry: one parse, and at most one
+# kind reads. Classifies only the matching entry: one parse, and at most one
 # marker read. Fails, printing nothing, when <path> is in no checkout, the
 # list fails, or no entry matches.
 checkout_kind() {
