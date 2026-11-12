@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # flow-state.sh - the Flow state module: the one owner of the state format of
 # a checkout's flow, .orchestrator/state.json - its keys, their defaults,
-# reading, its writers and the active-flow check - sourced by orch.sh
-# and by hook-common.sh.
+# reading (one key per jq, or several in one), its writers and the active-flow
+# check - sourced by orch.sh and by hook-common.sh.
 #
 # It needs nothing from orch.sh, so the hooks can source it alone, as they do
 # host.sh: every function takes the state file's path as an argument, none
@@ -18,6 +18,10 @@
 #   nothing.
 # - flow_state_get on a file jq cannot parse: jq's own error and status pass
 #   through unchanged.
+# - flow_state_get_many: 1 for a key outside the table and 2 for a malformed
+#   <var>=<key>, both before any jq, assigning and printing nothing; an
+#   absent, unparseable or non-object file fails inside its one jq. On any
+#   failure nothing is assigned.
 # - Writers (flow_state_write, flow_state_write_string, flow_state_write_many,
 #   flow_state_create): non-zero, the state file untouched and no temp file
 #   left, when the write fails. flow_state_write, flow_state_write_string and
@@ -144,6 +148,55 @@ flow_state_get() {
   local default
   default="$(flow_state_key_field "$2" default)" || return
   jq -r --arg k "$2" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$1"
+}
+
+# flow_state_get_many <file> <var>=<key>...: reads every <key> in one jq,
+# applies each key's table default as flow_state_get does (the defaults come
+# from one pass over the key table, not a subshell per key), and assigns the
+# values to the caller's variables <var> through printf -v. Its locals carry
+# the __fsgm_ prefix, so a caller may name an out-variable anything. Values
+# travel NUL-separated and are read back with read -r -d '', byte for byte; a
+# NUL inside a value is dropped by the jq. A key outside the table returns 1
+# and a malformed <var>=<key> (no =, or an empty <var>) returns 2, both before
+# any jq; a failed read - an absent, unparseable or non-object file, null
+# included - returns the jq's status. On any failure nothing is assigned.
+flow_state_get_many() {
+  local __fsgm_file="$1" __fsgm_arg __fsgm_var __fsgm_key __fsgm_def __fsgm_kd="" \
+    __fsgm_tmp __fsgm_rc __fsgm_i __fsgm_n=0 __fsgm_rows __fsgm_k __fsgm_d __fsgm_found
+  local __fsgm_vars=() __fsgm_vals=()
+  shift
+  __fsgm_rows="$(state_rows)" || return
+  for __fsgm_arg in "$@"; do
+    case "$__fsgm_arg" in *=*) ;; *) return 2 ;; esac
+    __fsgm_var="${__fsgm_arg%%=*}"
+    __fsgm_key="${__fsgm_arg#*=}"
+    [ -n "$__fsgm_var" ] || return 2
+    __fsgm_found=""
+    while IFS='|' read -r __fsgm_k __fsgm_d _ _; do
+      [ "$__fsgm_k" = "$__fsgm_key" ] || continue
+      __fsgm_def="$__fsgm_d" __fsgm_found=1
+      break
+    done <<<"$__fsgm_rows"
+    [ -n "$__fsgm_found" ] || return 1
+    __fsgm_kd="${__fsgm_kd:+$__fsgm_kd$'\n'}$__fsgm_key|$__fsgm_def"
+    __fsgm_vars[__fsgm_n]="$__fsgm_var"
+    __fsgm_n=$((__fsgm_n + 1))
+  done
+  [ "$__fsgm_n" -gt 0 ] || return 0
+  __fsgm_tmp="$(mktemp)" || return
+  jq -j --arg kd "$__fsgm_kd" '. as $o
+    | if ($o | type) != "object" then error("not an object") else
+      ($kd | split("\n")[] | split("|") as $p
+        | ($o[$p[0]] | if . == null then $p[1] else . end | tostring
+          | split("\u0000") | join("")), "\u0000") end' \
+    "$__fsgm_file" >"$__fsgm_tmp" || { __fsgm_rc=$?; rm -f "$__fsgm_tmp"; return "$__fsgm_rc"; }
+  for ((__fsgm_i = 0; __fsgm_i < __fsgm_n; __fsgm_i++)); do
+    IFS= read -r -d '' "__fsgm_vals[$__fsgm_i]" || { rm -f "$__fsgm_tmp"; return 1; }
+  done <"$__fsgm_tmp"
+  rm -f "$__fsgm_tmp"
+  for ((__fsgm_i = 0; __fsgm_i < __fsgm_n; __fsgm_i++)); do
+    printf -v "${__fsgm_vars[$__fsgm_i]}" '%s' "${__fsgm_vals[$__fsgm_i]}"
+  done
 }
 
 # flow_state_replace <file> <jq-arg>...: replaces <file> whole with what jq

@@ -20,12 +20,19 @@ ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 # the key existed, or a value nothing can count.
 readonly DEFAULT_BUDGET=5
 
-# review_budget: prints the flow's review budget from state, or DEFAULT_BUDGET
-# where none is set or the value is not a number. Returns the read's status
-# when state.json cannot be read, never a default in its place.
+# review_budget: prints the flow's review budget from state, through
+# review_budget_fallback. Returns the read's status when state.json cannot be
+# read, never a default in its place.
 review_budget() {
   local b
   b="$(state_get budget)" || return
+  review_budget_fallback "$b"
+}
+
+# review_budget_fallback <raw>: prints the budget read from state, or
+# DEFAULT_BUDGET where <raw> is empty or not a number.
+review_budget_fallback() {
+  local b="$1"
   case "$b" in ''|*[!0-9]*) b="$DEFAULT_BUDGET" ;; esac
   printf '%s\n' "$b"
 }
