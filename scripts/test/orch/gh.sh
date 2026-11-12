@@ -748,6 +748,13 @@ out="$(contract adapter_issues_labelled review:nit "triage me" 2>&1)"; st=$?
 assert_status "issues labelled: lists the open issues carrying every label" "$st" 0
 assert_eq "one number per line" "$out" "$(writeln 3 9)"
 
+gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \
+  issue list --state open --label review:nit --label "triage me" --limit 1000 --json number,labels,body \
+  --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
+out="$(contract adapter_issues_labelled_bodies review:nit "triage me" 2>&1)"; st=$?
+assert_status "issues labelled with bodies: lists the open issues carrying every label" "$st" 0
+assert_eq "one count-marked record per issue" "$out" "$(writeln 3 1 review:nit 2 'line one' 'line two')"
+
 gh_reply 0 $'3\tFirst title\n9\tA\ttabbed title\n' '' \
   api --paginate "repos/{owner}/{repo}/issues?state=open&per_page=100" \
   --jq '.[] | select(has("pull_request") | not) | "\(.number)\t\(.title)"'
