@@ -120,6 +120,14 @@ finding 8 "review:nit,ready-for-agent" "\`src/other.sh:2\` at $head_sha"
 finding 9 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha" 7 CLOSED
 finding 10 "needs-triage" "\`src/other.sh:2\` at $head_sha"
 scan() { orch_gh_failing finding-triage scan "$@"; }
+# A listed scan reads each finding from its listing, body and labels together,
+# so any per-finding read dies with the 502: the listed scans armed with this
+# prove they make none.
+arm_per_finding_reads() {
+  fake_fail adapter_issue_state_labels_body "$GH_502"
+  fake_fail adapter_issue_body "$GH_502"
+  fake_fail adapter_issue_state_labels "$GH_502"
+}
 # line_of <n> <out>: the scan's line for issue n.
 line_of() { printf '%s\n' "$2" | awk -F'\t' -v n="$1" '$1 == n'; }
 field_of() { line_of "$1" "$3" | cut -f"$2"; }
@@ -198,8 +206,11 @@ finding 20 "review:nit" "\`src/other.sh:2\` at $head_sha"
 finding 21 "review:major,ready-for-human,bug,needs-info" "\`src/other.sh:2\` at $head_sha" 21
 finding 22 "review:nit,wontfix" "\`src/gone.sh:1\` at $head_sha"
 finding 23 "review:nit,ready-for-agent,needs-triage" "\`src/other.sh:2\` at $head_sha" 21
+# Armed to fail: a listed scan reads each finding from its listing, body and
+# labels together, so any per-finding read dies with the 502.
+arm_per_finding_reads
 out="$(scan --all 2>&1)"; st=$?
-assert_status "scans every open filed finding" "$st" 0
+assert_status "scans every open filed finding, a listed scan making no per-finding read" "$st" 0
 assert_eq "whatever its triage label, closed ones and non-findings still left out" \
   "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 8 20 21 22 23 "
 assert_eq "one tab-separated line of six fields per finding (--all)" \
@@ -212,33 +223,18 @@ assert_eq "several are comma-joined in role order, not label order" \
 assert_eq "needs-triage leads the roles" "$(field_of 23 6 "$out")" "needs-triage,ready-for-agent"
 assert_eq "an open wontfix finding is listed, its state wontfix" \
   "$(line_of 22 "$out")" "$(printf '22\t7\tsrc/gone.sh:1\tgone\t-\twontfix')"
-out="$(scan 2>&1)"
+out="$(scan 2>&1)"; st=$?
+assert_status "a listed scan makes no per-finding read" "$st" 0
 assert_eq "without --all, only the findings in needs-triage" \
   "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 23 "
 assert_eq "each with its state too" "$(field_of 23 6 "$out")" "needs-triage,ready-for-agent"
-base_list="$out"
-base_all="$(scan --all 2>&1)"
-base_pr="$(scan --pr 21 2>&1)"
+fake_unfail
 # Each finding is read once, body and labels together: neither the body-only
 # nor the state-and-labels read is called.
 fake_fail adapter_issue_body "body read alone"
 fake_fail adapter_issue_state_labels "state and labels read alone"
 out="$(scan --all 8 2>&1)"; st=$?
 assert_status "an explicit finding is read through that one call too" "$st" 0
-fake_unfail
-fake_fail adapter_issue_state_labels_body "$GH_502"
-fake_fail adapter_issue_body "$GH_502"
-fake_fail adapter_issue_state_labels "$GH_502"
-list_out="$(scan 2>&1)"; st=$?
-assert_status "a listed scan makes no per-finding read" "$st" 0
-assert_eq "printing every finding in needs-triage, byte for byte" \
-  "$list_out" "$base_list"
-out="$(scan --all 2>&1)"; st=$?
-assert_status "a listed --all scan makes no per-finding read" "$st" 0
-assert_eq "printing every open filed finding, byte for byte (--all)" "$out" "$base_all"
-out="$(scan --pr 21 2>&1)"; st=$?
-assert_status "a listed --pr scan makes no per-finding read" "$st" 0
-assert_eq "printing that PR's findings, byte for byte" "$out" "$base_pr"
 fake_unfail
 fake_fail adapter_issues_labelled_bodies "$GH_502"
 out="$(scan 2>&1)"; st=$?
@@ -299,11 +295,15 @@ assert_eq "a finding with two severity labels is scanned once" "$(printf '%s\n' 
 assert_eq "in ascending order" "$(printf '%s\n' "$out" | cut -f1 | sort -n | tr '\n' ' ')" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')"
 for k in 40 41 42 43 44; do fake_issue "$k" closed; done
 
+# Armed again for the same reason: a listed scan makes no per-finding read.
+arm_per_finding_reads
 out="$(scan --all --pr 21 2>&1)"; st=$?
-assert_status "--all narrows to one source PR" "$st" 0
+assert_status "--all narrows to one source PR, a listed scan making no per-finding read" "$st" 0
 assert_eq "listing that PR's findings whatever their label" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "21 23 "
-out="$(scan --pr 21 2>&1)"
+out="$(scan --pr 21 2>&1)"; st=$?
+assert_status "a listed --pr scan makes no per-finding read" "$st" 0
 assert_eq "while without --all only its findings in needs-triage" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "23 "
+fake_unfail
 out="$(scan --all 8 2>&1)"; st=$?
 assert_status "--all accepts an explicit finding already triaged" "$st" 0
 assert_eq "scanning only it" "$(line_of 8 "$out")" "$(printf '8\t7\tsrc/other.sh:2\tunchanged\t-\tready-for-agent')"
