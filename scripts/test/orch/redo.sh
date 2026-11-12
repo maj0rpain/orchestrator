@@ -316,7 +316,6 @@ restore_suite_env
 # under review/pre-redo-1/, so a rerun completes it.
 echo
 echo "redo review rerun after review retire"
-term_word() { local t; t="$("$ORCH" review terminal)"; printf "%s" "${t%%$'\n'*}"; }
 midway_fixture() {
   healthy_repo
   bare="$(mktemp -d)/origin.git"
@@ -341,8 +340,8 @@ midway_fixture() {
 }
 midway_fixture
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/pre-redo-1/iteration-01.md
-assert_eq "review terminal reads the retired stop" \
-  "$(term_word)" "stop"
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "review terminal reads the retired stop" "$out" "stop"
 out="$("$ORCH" review resume 2>&1)"; st=$?
 assert_status "review resume refuses" "$st" 1
 assert_contains "saying there is nothing to resume" "$out" "nothing to resume"
@@ -374,12 +373,12 @@ echo
 echo "review terminal mid-redo without or with a malformed retired record"
 midway_fixture
 rm -rf .orchestrator/review/pre-redo-1
-assert_eq "no record anywhere answers interrupted as today" \
-  "$(term_word)" "interrupted"
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "no record anywhere answers interrupted as today" "$out" "interrupted"
 mkdir -p .orchestrator/review/pre-redo-1
 writeln '## Terminal state' 'stopped here' >.orchestrator/review/pre-redo-1/iteration-01.md
-assert_eq "a malformed retired record answers malformed" \
-  "$(term_word)" "malformed"
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "a malformed retired record answers malformed" "$out" "malformed"
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "redo review refuses" "$st" 1
 assert_contains "naming the retired record" "$out" ".orchestrator/review/pre-redo-1/iteration-01.md"
@@ -392,8 +391,8 @@ echo "review terminal after a completed redo is unchanged"
 midway_fixture
 state_fixture branch orch/21-redomid
 writeln '## Terminal state' 'stop' 'old.' >.orchestrator/review/pre-redo-1/iteration-01.md
-assert_eq "interrupted: the plain flow branch is not mid-redo" \
-  "$(term_word)" "interrupted"
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "interrupted: the plain flow branch is not mid-redo" "$out" "interrupted"
 assert_contains "review resume reruns the iteration" "$("$ORCH" review resume 2>&1)" "rerun 1"
 restore_suite_env
 
