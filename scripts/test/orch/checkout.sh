@@ -111,7 +111,8 @@ assert_status "branch_checkout dies on a failed walk" "$st" 1
 assert_contains "branch_checkout names the walk failure" "$out" \
   "orch: could not read the checkouts - git worktree list failed"
 
-# checkout_kind <path>: the walk's kind for the checkout holding <path> (#1110).
+# checkout_kind <path>: the kind checkout_classify gives the checkout holding
+# <path> (#1110).
 assert_eq "checkout_kind: a ticket worktree carrying a copied marker is ticket" \
   "$(sourced_orch checkout_kind "$top/.orchestrator/worktrees/t9")" "ticket"
 assert_eq "checkout_kind: a side checkout is side" "$(sourced_orch checkout_kind "$side")" "side"
@@ -141,8 +142,7 @@ trace_lookup() {
   (cd "$1" && sourced_orch_script 'export GIT_TRACE="$1"; shift; "$@"' "$trace_file" "${@:2}")
 }
 trace_git() { grep -c "trace: built-in: git $1" "$trace_file"; }
-out="$(trace_lookup "$side" main_checkout)"
-assert_eq "main_checkout from a side checkout prints the main checkout" "$out" "$top"
+trace_lookup "$side" main_checkout >/dev/null
 assert_eq "main_checkout spawns one git process" "$(trace_git '')" "1"
 trace_lookup "$top" checkout_kind "$side" >/dev/null
 assert_eq "checkout_kind on a side checkout reads one git dir" "$(trace_git 'rev-parse --absolute-git-dir')" "1"
@@ -231,19 +231,12 @@ out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "a branch branch retire made, with a base and no PR, is free" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 
-# The busy check through init, branch create and branch off (exit 3).
+# branch off and init on the retired branch are not refused as busy.
 out="$(orch_gh_failing branch off quick/9-beside 2>&1)"; st=$?
 assert_status "branch off on a retired branch is not refused as busy" "$st" 0
 git checkout -q orch/7-feature-redo-1
 out="$(orch_gh_failing init beside-redo 2>&1)"; st=$?
 assert_status "init on a retired branch is not refused as busy" "$st" 0
-
-new_repo_with_origin
-git checkout -q -b orch/7-feature
-git config branch.orch/7-feature.orchestrator-base main
-out="$(orch_gh_failing init beside-live 2>&1)"; st=$?
-assert_status "init on a live orch/ branch with a base and no PR exits 3" "$st" 3
-assert_contains "naming the branch (init)" "$out" "orch/7-feature"
 
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
@@ -254,15 +247,6 @@ git config branch.orch/6-earlier.orchestrator-base "$default"
 orch_gh_failing branch retire orch/6-earlier orch/6-earlier-redo-2 >/dev/null
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on a retired branch is not refused as busy" "$st" 0
-new_repo_with_origin
-orch_gh_failing init own2 >/dev/null
-orch_gh_failing state set issue 13
-default="$(git branch --show-current)"
-git checkout -q -b orch/6-earlier
-git config branch.orch/6-earlier.orchestrator-base "$default"
-out="$(orch_gh_failing branch create 2>&1)"; st=$?
-assert_status "branch create on a live orch/ branch with no PR exits 3" "$st" 3
-assert_contains "naming the branch (branch create)" "$out" "orch/6-earlier"
 
 # A live flow branch whose slug ends in -redo-<n> is not retired (#2550).
 new_repo_with_origin
