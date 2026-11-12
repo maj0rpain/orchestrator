@@ -549,16 +549,16 @@ autopilot_pickup_side_title() {
 # <slug>-<issue>-2, <slug>-<issue>-3 and so on, and takes the first with no
 # entry of that name in the side checkouts directory.
 autopilot_pickup_side_add() {
-  local issue="$1" slug err st=0 dir base n=1
+  local issue="$1" slug err st=0 dir stem n=1
   slug="$(autopilot_short_slug "$2")"
   dir="$(side_checkouts_dir "$(main_checkout)")"
   # a clash with any entry of the directory moves on to the next name
   if [ -e "$dir/$slug" ]; then
     slug="$slug-$issue"
-    base="$slug"
+    stem="$slug"
     while [ -e "$dir/$slug" ]; do
       n=$((n + 1))
-      slug="$base-$n"
+      slug="$stem-$n"
     done
   fi
   capture side err cmd_side_checkout_add "$slug" --issue "$issue" || st=$?
