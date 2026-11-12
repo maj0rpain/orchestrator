@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.21
+
+Autopilot pickup now keeps trying side checkout names (`<slug>`, `<slug>-<issue>`, `<slug>-<issue>-2`, ...) until it finds one free, instead of stopping on a naming clash.
+
 ## 5.0.20
 
 A redo now makes its step back in one closing state write, so `redo spec --new-issue` that dies after closing the old issue keeps `state.issue` and resumes on a rerun, and a failed `redo review` no longer forgets its branch and PR. The gh fake treats closing an already-closed issue as a no-op.
