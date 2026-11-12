@@ -10,9 +10,9 @@ _hook_bash_arith_count() {
   echo "$(( (${#no_close} - ${#no_open}) / 2 ))"
 }
 
-# True while the arithmetic depth carried across parts ($2) plus the count so far
-# in unquoted text $1 is above 0: a `<<` there is an arithmetic shift, not a
-# heredoc.
+# True while the arithmetic depth carried across parts ($2) plus the count so
+# far in unquoted text $1 is above 0: a `<<` there is an arithmetic shift, not
+# a heredoc.
 _hook_bash_in_arith() {
   [ "$(( $2 + $(_hook_bash_arith_count "$1") ))" -gt 0 ]
 }
@@ -80,7 +80,7 @@ hook_bash_walk_call() {
 # command over 8 KB is not scanned (a false negative), to stay fast. A
 # heredoc delimiter follows bash's word rule (the whole shell word after `<<`
 # or `<<-`, quotes removed), and a `<<` inside arithmetic - while the depth
-# carried across parts (each part's `((` minus `))`, stopped at 0 at every split)
+# carried across parts (each one's `((` minus `))`, stopped at 0 at a split)
 # plus the current part's count is above 0 - is a shift and opens no heredoc.
 hook_bash_walk() {
   local cmd="$1" test_fn="$2" line part="" unq="" arith=0 head="" head_set=0 quote="" heredoc_end="" in_heredoc=0 heredoc_strip_tabs=0 continued=0 i c n rest re
