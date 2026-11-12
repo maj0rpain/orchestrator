@@ -13,19 +13,6 @@ fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
 # the redo note, the comment redo posts on the PR it closes.
 redo_note_count() { fake_pr_comments_of "$1" | grep -c 'closed by an orchestrator redo'; }
 
-# state_write_fails_after_first_bin: a state_write_fails_bin variant that lets
-# the first state.json.* temp file through and fails every later one, so a
-# command's first state write lands and the rest fail.
-state_write_fails_after_first_bin() {
-  local dir
-  dir="$(mktemp -d)"
-  writeln '#!/bin/sh' 'case " $* " in' '  *state.json.*)' \
-    "    if [ -e '$dir/seen' ]; then exit 1; fi; : >'$dir/seen' ;;" 'esac' \
-    "exec $(command -v mktemp) \"\$@\"" >"$dir/mktemp"
-  chmod +x "$dir/mktemp"
-  printf '%s\n' "$dir"
-}
-
 # redo_state_snapshot: the state a refused or failed redo must leave as it was.
 redo_state_snapshot() {
   printf '%s|' "$("$ORCH" state get branch)" "$("$ORCH" state get pr)" \
