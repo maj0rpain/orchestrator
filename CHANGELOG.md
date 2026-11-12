@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.14
+
+The Bash hook's walker local `hd` is renamed `part_head`, and the hooks suite's duplicated Bash hook cases are trimmed. Behaviour does not change.
+
 ## 5.2.13
 
 The line-width checker holds its open-fence state in the fence character alone, dropping a redundant flag and an unreachable fence test; its output is unchanged.
