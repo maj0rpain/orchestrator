@@ -329,22 +329,6 @@ assert_contains "a user-set OWNER/REPO GH_REPO asks the user's GH_HOST" "$out" "
 assert_contains "and its remedy names that host" "$out" "gh auth login --hostname ghe.example.com"
 fake_online
 
-fake_default_branch ''
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "an unresolved default branch does not block the flow" "$st" 0
-assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
-
-# GitHub's answer is validated as default_branch validates it (#485): a tool
-# manager's banner around the name is no branch name, so doctor falls back as
-# default_branch does rather than reporting the banner as the branch.
-fake_default_branch "$(printf 'mise ~/.config/mise/config.toml tools: gh@2.102.0\nmain\n')"
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "a polluted default branch does not block the flow" "$st" 0
-assert_contains "warns the default branch was not resolved from GitHub" \
-  "$out" "warn  default branch not resolved from GitHub"
-assert_not_contains "and never reports the banner as the branch" "$out" "mise"
-fake_default_branch main
-
 # Doctor asks GitHub for the default branch only in its probe: its fallback
 # warning and its base-branch line fall back locally (origin/HEAD, else main)
 # without a second ask. The adapter's read is counted at its stand-in.
@@ -371,7 +355,7 @@ origin_url="$(git remote get-url origin)"
 git remote set-url origin /nonexistent/not-github.git
 out="$(doc_counted)"
 assert_eq "with the repo unresolved, doctor never reads the default branch" "$(doc_read_count)" "0"
-assert_not_contains "with the repo unresolved, no base branch line names a stray branch" "$out" "base branch: develop"
+assert_contains "with the repo unresolved, the base branch line names the same fallback" "$out" "base branch: main (default)"
 git remote set-url origin "$origin_url"
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
 fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
@@ -380,12 +364,22 @@ assert_eq "a failing read is reached exactly once" "$(doc_read_count)" "1"
 assert_contains "and the base branch line still names the same fallback" "$out" "base branch: develop (default)"
 fake_unfail
 fake_default_branch ''
-out="$(doc_counted)"
+out="$(doc_counted)"; st=$?
+assert_status "an unresolved default branch does not block the flow" "$st" 0
+assert_contains "warns the default branch was not resolved from GitHub" \
+  "$out" "warn  default branch not resolved from GitHub"
+assert_not_contains "and never reports a banner as the branch" "$out" "mise"
 assert_eq "an empty answer is read exactly once" "$(doc_read_count)" "1"
 assert_contains "and the warning names origin/HEAD's branch" "$out" "falling back to develop."
 assert_contains "and the base branch line names it too" "$out" "base branch: develop (default)"
-fake_default_branch "$(printf 'a banner\n')"
-out="$(doc_counted)"
+# GitHub's answer is validated as default_branch validates it (#485): a tool
+# manager's banner around the name is no branch name, so doctor falls back.
+fake_default_branch "$(printf 'mise ~/.config/mise/config.toml tools: gh@2.102.0\nmain\n')"
+out="$(doc_counted)"; st=$?
+assert_status "a polluted default branch does not block the flow" "$st" 0
+assert_contains "warns the default branch was not resolved from GitHub" \
+  "$out" "warn  default branch not resolved from GitHub"
+assert_not_contains "and never reports the banner as the branch" "$out" "mise"
 assert_eq "a banner answer is read exactly once" "$(doc_read_count)" "1"
 assert_contains "and the warning names the same fallback" "$out" "falling back to develop."
 git symbolic-ref -d refs/remotes/origin/HEAD
