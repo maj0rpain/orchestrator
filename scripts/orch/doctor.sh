@@ -295,17 +295,17 @@ check_gh_repo() {
   d_remedy "git remote set-url origin https://github.com/<owner>/<repo>.git"
 }
 
-# Worth its own line because getting it wrong is silent: default_branch falls
-# (default_branch_local, no second ask after the probe)
-# back to a local pointer and then to the literal "main", and a feature branch
-# forked from the wrong place looks fine until review.
+# Worth its own line because getting it wrong is silent: with GitHub's answer
+# missing, default_branch_local (no second ask after the probe) falls back to a
+# local pointer and then to the literal "main", and a feature branch forked from
+# the wrong place looks fine until review.
 check_default_branch() {
   d_gh_gate || return 0
   # Silent when the repo itself did not resolve: check_gh_repo has already said
   # so, and a second line derived from the first buries it.
   [ -n "$D_REPO_SEEN" ] || return 0
   if [ -n "$D_REPO_BRANCH" ]; then d_ok "default branch: $D_REPO_BRANCH (from GitHub)"; return 0; fi
-  d_warn "default branch not resolved from GitHub - falling back to ${D_REPO_BRANCH:-$(default_branch_local)}."
+  d_warn "default branch not resolved from GitHub - falling back to $(default_branch_local)."
   d_remedy "git remote set-head origin --auto"
 }
 

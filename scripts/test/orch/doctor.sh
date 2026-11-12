@@ -5,6 +5,15 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# counting_defs <adapter-fn> <tag>: definitions that wrap the fake's
+# <adapter-fn> so each call appends "<tag> <first-arg>" to "$COUNT_LOG" before
+# the fake answers. Join several with writeln for counted_adapter_run.
+counting_defs() {
+  writeln \
+    "eval \"fake_$1_read() \$(declare -f $1 | tail -n +2)\"" \
+    "$1() { printf '%s %s\\n' '$2' \"\$1\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
+}
+
 # Git Bash / MSYS2 (and Cygwin) both set OSTYPE this way; used to skip fixtures
 # that are known not to work in that environment rather than report a false
 # FAIL.
@@ -340,11 +349,9 @@ fake_default_branch main
 # warning and its base-branch line fall back locally (origin/HEAD, else main)
 # without a second ask. The adapter's read is counted at its stand-in.
 doc_reads="$(mktemp)"
-doc_counted_defs="$(writeln \
-        'eval "fake_default_branch_read() $(declare -f adapter_repo_default_branch | tail -n +2)"' \
-        'adapter_repo_default_branch() { echo x >>"$DOC_READS"; fake_default_branch_read "$@"; }')"
-doc_counted() { : >"$doc_reads"; DOC_READS="$doc_reads" adapter_stood_in "$doc_counted_defs" "$ORCH" doctor --env 2>&1; }
-doc_read_count() { wc -l <"$doc_reads" | tr -d ' '; }
+doc_counted_defs="$(counting_defs adapter_repo_default_branch branch)"
+doc_counted() { counted_adapter_run "$doc_reads" "$doc_counted_defs" "$ORCH" doctor --env 2>&1; }
+doc_read_count() { log_count "$doc_reads"; }
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
 fake_offline
 out="$(doc_counted)"
@@ -358,6 +365,7 @@ fake_online
 fake_noauth
 out="$(doc_counted)"
 assert_eq "unauthenticated, doctor never reads the default branch" "$(doc_read_count)" "0"
+assert_contains "unauthenticated, the base branch line names the same fallback" "$out" "base branch: main (default)"
 fake_online
 origin_url="$(git remote get-url origin)"
 git remote set-url origin /nonexistent/not-github.git
@@ -369,6 +377,7 @@ git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
 fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
 out="$(doc_counted)"
 assert_eq "a failing read is reached exactly once" "$(doc_read_count)" "1"
+assert_contains "and the base branch line still names the same fallback" "$out" "base branch: develop (default)"
 fake_unfail
 fake_default_branch ''
 out="$(doc_counted)"
@@ -2283,18 +2292,13 @@ assert_not_contains "a passing probe gives no hint" "$(alias_doctor)" "$hint"
 echo
 echo "doctor: one issue read and one PR read per run (#2554)"
 reads_log="$(mktemp)"
-reads_defs="$(writeln \
-        'eval "fake_issue_read() $(declare -f adapter_issue_state_labels | tail -n +2)"' \
-        'eval "fake_pr_read() $(declare -f adapter_pr_state_draft | tail -n +2)"' \
-        'adapter_issue_state_labels() { printf "issue %s\n" "$1" >>"$READS_LOG"; fake_issue_read "$@"; }' \
-        'adapter_pr_state_draft() { printf "pr %s\n" "$1" >>"$READS_LOG"; fake_pr_read "$@"; }')"
+reads_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_pr_state_draft pr)")"
 # counted_doctor <doctor-arg>: doctor's output (2>&1) in out, status in st, the
 # reads it made in reads_log.
 counted_doctor() {
-  : >"$reads_log"
-  out="$(READS_LOG="$reads_log" adapter_stood_in "$reads_defs" "$ORCH" doctor "$@" 2>&1)"; st=$?
+  out="$(counted_adapter_run "$reads_log" "$reads_defs" "$ORCH" doctor "$@" 2>&1)"; st=$?
 }
-reads_of() { grep -c "^$1 " "$reads_log" || true; }
+reads_of() { log_count "$reads_log" "$1"; }
 
 review_flow onereads
 doctor_github
@@ -2328,7 +2332,7 @@ fake_issue 7 open ready-for-agent
 fake_pr 40 open orch/onereads main
 fake_pr_draft 40
 : >"$reads_log"
-out="$(READS_LOG="$reads_log" ORCH_AUTOPILOT=1 adapter_stood_in "$reads_defs" "$ORCH" doctor --flow 2>&1)"; st=$?
+out="$(COUNT_LOG="$reads_log" ORCH_AUTOPILOT=1 adapter_stood_in "$reads_defs" "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an autopilot flow with no phase label still fails" "$st" 1
 assert_contains "naming the missing phase label" "$out" "issue #7 carries no phase label"
 assert_eq "and its issue is read once" "$(reads_of issue)" 1

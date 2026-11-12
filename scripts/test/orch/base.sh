@@ -101,21 +101,18 @@ assert_status "set refuses with no branch" "$st" 1
 # is counted at its stand-in; a flow whose state records no base makes the
 # note read the default too.
 reads="$(mktemp)"
-counted_read() {
-  : >"$reads"
-  READS="$reads" GH_REPO=o/r adapter_stood_in "$1" "$ORCH" "${@:2}"
-}
-read_count() { wc -l <"$reads" | tr -d ' '; }
+counted_read() { (export GH_REPO=o/r; counted_adapter_run "$reads" "$1" "$ORCH" "${@:2}"); }
+read_count() { log_count "$reads"; }
 orch_gh_failing init counted >/dev/null
 jq 'del(.base)' .orchestrator/state.json >.orchestrator/state.tmp && mv .orchestrator/state.tmp .orchestrator/state.json
-out="$(counted_read 'adapter_repo_default_branch() { echo x >>"$READS"; echo main; }' base set main 2>&1)"; st=$?
+out="$(counted_read 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo main; }' base set main 2>&1)"; st=$?
 assert_status "set of the default's own name beside a base-less flow succeeds" "$st" 0
 assert_eq "it asks GitHub for the default branch once" "$(read_count)" "1"
 assert_eq "it still clears the setting" "$(base_setting)" "<unset>"
 assert_eq "and prints the same line" "$out" "main (default)"
 for head in present deleted; do
   [ "$head" = present ] || git symbolic-ref -d refs/remotes/origin/HEAD
-  out="$(counted_read 'adapter_repo_default_branch() { echo x >>"$READS"; return 1; }' base set main 2>&1)"; st=$?
+  out="$(counted_read 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; return 1; }' base set main 2>&1)"; st=$?
   assert_status "set with the read failing and origin/HEAD $head succeeds" "$st" 0
   assert_eq "it asks the failing read once with origin/HEAD $head" "$(read_count)" "1"
   if [ "$head" = present ]; then
@@ -130,10 +127,10 @@ rm -rf .orchestrator
 
 # The memo never outlives one process: a rename between two runs is seen.
 assert_eq "default-branch names the default branch" \
-  "$(counted_read 'adapter_repo_default_branch() { echo x >>"$READS"; echo main; }' default-branch)" "main"
+  "$(counted_read 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo main; }' default-branch)" "main"
 assert_eq "its run reached the read" "$(read_count)" "1"
 assert_eq "the next run, after a rename, names the new default" \
-  "$(counted_read 'adapter_repo_default_branch() { echo x >>"$READS"; echo trunk; }' default-branch)" "trunk"
+  "$(counted_read 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo trunk; }' default-branch)" "trunk"
 assert_eq "and reached the read again" "$(read_count)" "1"
 rm -rf "$(dirname "$bare")"
 
