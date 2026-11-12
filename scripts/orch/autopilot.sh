@@ -693,35 +693,52 @@ autopilot_pause_epoch() {
   autopilot_iso_epoch "$text" || echo 0
 }
 
-# autopilot_pause_until <main>: whether a usage limit pauses pickup. While the
-# limit file's reset time is in the future it prints one line naming it and
-# returns 0; once it has passed, the file is removed and it returns 1.
+# autopilot_github_pause_file <main>: the GitHub limit file under <main>, the
+# pause a GitHub API rate limit writes (#2577).
+autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1")"; }
+
+# autopilot_pause_until <main> [github]: whether a limit pauses pickup: the
+# usage limit, or with "github" the GitHub API rate limit. While the limit
+# file's reset time is in the future it prints one line naming it and returns
+# 0; once it has passed, the file is removed and it returns 1.
 autopilot_pause_until() {
-  local file epoch
-  file="$(autopilot_dir "$1")/limit"
+  local file epoch what="usage limit: no issue is picked up until"
+  if [ "${2:-}" = github ]; then
+    file="$(autopilot_github_pause_file "$1")"
+    what="GitHub API rate limit: the tick does nothing until"
+  else
+    file="$(autopilot_dir "$1")/limit"
+  fi
   [ -f "$file" ] || return 1
   epoch="$(autopilot_pause_epoch "$file")"
   if [ "$epoch" -gt "$(date +%s)" ]; then
-    note "usage limit: no issue is picked up until $(cat "$file")"
+    note "$what $(cat "$file")"
     return 0
   fi
   rm -f "$file"
   return 1
 }
 
-# autopilot_pause_extend <main> <epoch> <log>: records <epoch> (epoch seconds)
-# as the limit file's reset under <main>, rendered as the file's one UTC ISO
-# timestamp, keeping a reset already there that is later and replacing one that
-# is earlier or does not parse. A failed write is noted in <log> and on stderr,
-# and is no failure of the caller.
-autopilot_pause_extend() {
-  local file log="$3" old_epoch new_epoch="$2" msg
-  file="$(autopilot_dir "$1")/limit"
+# autopilot_pause_put <file> <epoch>: records <epoch> (epoch seconds) in <file>
+# as one UTC ISO timestamp, keeping a reset already there that is later and
+# replacing one that is earlier or does not parse. Fails, silently, when the
+# file cannot be written.
+autopilot_pause_put() {
+  local file="$1" new_epoch="$2" old_epoch
   if [ -f "$file" ]; then
     old_epoch="$(autopilot_pause_epoch "$file")"
     [ "$old_epoch" -lt "$new_epoch" ] || return 0
   fi
-  if ! { autopilot_epoch_iso "$new_epoch" >"$file"; } 2>/dev/null; then
+  { mkdir -p "$(dirname "$file")" && autopilot_epoch_iso "$new_epoch" >"$file"; } 2>/dev/null
+}
+
+# autopilot_pause_extend <main> <epoch> <log>: records <epoch> as the usage
+# limit file's reset under <main>, by autopilot_pause_put's rule. A failed write
+# is noted in <log> and on stderr, and is no failure of the caller.
+autopilot_pause_extend() {
+  local file log="$3" msg
+  file="$(autopilot_dir "$1")/limit"
+  if ! autopilot_pause_put "$file" "$2"; then
     msg="autopilot run: could not write the limit file $file"
     warn "$msg"
     printf '%s\n' "$msg" >>"$log"
@@ -854,13 +871,15 @@ autopilot_rank() {
   printf '%s' "$((n + 1))"
 }
 
-# autopilot_tick: one pass - labels, stale claims, one read of the done
-# issues (autopilot_done_read), the merged-PR close (which needs no session, so
-# a limit pause never holds it), the limit-pause check, sync detection (when
-# auto-sync is true), then pickup (see the spec's One tick). The one done read
-# feeds both passes: sync detection gets the done table minus the issues the
-# close closed. Every candidate is read before the first claim,
-# the unpickable ones dropped, and the rest taken by rank - sync requests,
+# autopilot_tick: one pass - the GitHub-limit pause check (while it holds the
+# tick ends there, making no GitHub call), labels, stale claims, one read of
+# the done issues (autopilot_done_read), the merged-PR close (which needs no
+# session, so a limit pause never holds it), the limit-pause check, sync
+# detection (when auto-sync is true), then pickup (see the spec's One tick).
+# The one done read feeds both passes: sync detection gets the done table
+# minus the issues the close closed. Every candidate is read before the first
+# claim, the unpickable ones dropped, and the rest taken by rank - sync
+# requests,
 # then the phases furthest along first, oldest issue first within a rank. A
 # phase is claimed while the claim count is below the cap, a sync request
 # while it is below the cap plus the sync slots (half the cap, rounded down);
@@ -874,6 +893,7 @@ autopilot_tick() {
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
+  if autopilot_pause_until "$main_root" github; then return 0; fi
   autopilot_labels_ensure
   autopilot_cleanup_stale
   autopilot_done_read done_table
@@ -993,7 +1013,7 @@ autopilot_review_budget_record() {
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration flags=()
+  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration hit flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -1007,6 +1027,8 @@ autopilot_run() {
     phase="$(standing_session_phase)"
     prompt="Run the orchestrator:orch-sync skill's autopilot branch in this checkout: sync the branch with its base, and stop when the sync is finished."
   fi
+  export ORCH_AUTOPILOT_RUN=1
+  hit="$(liveness_hit_path "$issue")" || exit $?
   liveness_run_begin "$issue" || exit 1
   # A later run of the same issue may have replaced the record by the time this
   # one exits: liveness_run_end removes it only while it still names this run.
@@ -1032,7 +1054,7 @@ autopilot_run() {
   done
   log="$(liveness_log_path "$issue" "$phase")" || exit $?
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
-  ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
+  ( cd "$side" && ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit" CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
       --append-system-prompt "$AUTOPILOT_SYSTEM_PROMPT" \
@@ -1100,6 +1122,7 @@ cmd_autopilot() {
     tick)
       [ $# -eq 0 ] || die "usage: orch.sh autopilot tick"
       autopilot_gate
+      export ORCH_AUTOPILOT_TICK=1
       autopilot_tick
       ;;
     watch)

@@ -2401,3 +2401,22 @@ case "$first" in
   *) bad "and passes the transition's message through" "first line: $first" ;;
 esac
 fake_unfail
+
+# --- autopilot tick: the GitHub limit pause (#2577) ---------------------------
+echo
+echo "autopilot tick github limit"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Github limit 7"
+gh_reset="$(( $(date +%s) + 7200 ))"
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of "$gh_reset")" >"$top/.orchestrator/autopilot/github-limit"
+before="$(fake_labels_of 7)"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick under a GitHub pause succeeds" "$st" 0
+assert_contains "its note names the reset" "$out" "GitHub API rate limit: the tick does nothing until $(iso_of "$gh_reset")"
+assert_eq "it picks nothing up" "$(tick_calls)" "0"
+assert_eq "and touches no label" "$(fake_labels_of 7)" "$before"
+printf '2020-01-01T00:00:00Z\n' >"$top/.orchestrator/autopilot/github-limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a passed GitHub pause is removed" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent

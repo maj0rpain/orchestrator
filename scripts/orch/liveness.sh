@@ -59,6 +59,15 @@ liveness_subdir() {
   printf '%s/%s\n' "$(autopilot_dir "$root")" "$1"
 }
 
+# liveness_hit_path <issue>: the issue's hit file, beside its run record: where
+# a session writes the reset of a GitHub API rate limit it hit (#2577). Called
+# in a substitution, so the caller carries the status.
+liveness_hit_path() {
+  local dir
+  dir="$(liveness_subdir run)" || exit $?
+  printf '%s/%s.hit\n' "$dir" "$1"
+}
+
 # liveness_tick_begin <issue>: right after a tick takes a claim, writes the
 # calling process's record as the issue's tick record, overwriting an older
 # one. A failed write warns and carries on: with no record, the claim's
@@ -79,7 +88,7 @@ liveness_run_begin() {
   dir="$(liveness_subdir run)" || return $?
   mkdir -p "$dir" || die "could not create $dir"
   liveness_record_write "$$" "$dir/$1.pid" || return 1
-  rm -f "$dir/$1.tick"
+  rm -f "$dir/$1.tick" "$dir/$1.hit"
 }
 
 # liveness_run_end <issue>: removes the issue's run record only while it still

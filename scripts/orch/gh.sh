@@ -78,7 +78,8 @@ gh_limit_reset() {
 # default 60) - the caller retries once and calls this again with <retried> 1.
 # Status 1: a limit to give up on - a primary one, or a secondary one met again
 # after the retry, handled as a primary one. The distinct message, naming the
-# reset, is on stderr. Nothing is recorded.
+# reset, is on stderr; in an autopilot process the reset is also recorded
+# (gh_limit_record), a failed write being one more line on stderr.
 gh_limit_handle() {
   local kind reset
   kind="$(gh_limit_kind "$1")"
@@ -89,7 +90,29 @@ gh_limit_handle() {
   fi
   reset="$(gh_limit_reset primary)"
   warn "GitHub API rate limit reached - it resets at $(date -u -d "@$reset" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$reset" +%Y-%m-%dT%H:%M:%SZ). An autopilot session ends its turn now and does not retry; the watcher picks the work up after the reset."
+  gh_limit_record "$reset"
   return 1
+}
+
+# gh_limit_record <reset>: in an autopilot process - a tick or the session
+# wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) - writes
+# the GitHub pause, extended only to the later of two resets; in a session,
+# which has the wrapper's hit file path, writes the reset there too. An
+# interactive call writes nothing. Never fails: a write that fails is a warning.
+gh_limit_record() {
+  local main
+  [ "${ORCH_AUTOPILOT:-}" = 1 ] || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
+  if main="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main" ]; then
+    autopilot_pause_put "$(autopilot_github_pause_file "$main")" "$1" ||
+      warn "could not write the GitHub limit pause under $main"
+  else
+    warn "could not write the GitHub limit pause: the main checkout is unreadable"
+  fi
+  if [ "${ORCH_AUTOPILOT:-}" = 1 ] && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
+    autopilot_pause_put "$ORCH_AUTOPILOT_HIT_FILE" "$1" ||
+      warn "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
+  fi
+  return 0
 }
 
 # label_listed <labels> <label>: whether <label> is one of the newline-separated
