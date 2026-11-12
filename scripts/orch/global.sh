@@ -44,12 +44,11 @@ status_others() {
 # Full detail on the current checkout's flow.
 status_flow() {
   local slug phase issue branch pr iteration redo_count base budget
-  slug="$(state_get slug)";       phase="$(state_get phase)"
-  issue="$(state_get issue)";     branch="$(state_get branch)"
-  pr="$(state_get pr)";           iteration="$(state_get iteration)"
-  redo_count="$(state_get redo_count)"
-  base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
-  budget="$(review_budget)" || die "cannot read the flow's review budget from $STATE"
+  state_get_many slug=slug phase=phase issue=issue branch=branch pr=pr \
+    iteration=iteration redo_count=redo_count base=base budget=budget ||
+    die "cannot read the flow's state from $STATE"
+  base="$(flow_base_fallback "$base")" || die "cannot read the flow's base branch from $STATE"
+  budget="$(review_budget_fallback "$budget")"
   issue="${issue:--}";            branch="${branch:--}";  pr="${pr:--}"
   note "flow:      $slug"
   note "phase:     $phase"

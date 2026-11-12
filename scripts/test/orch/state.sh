@@ -250,6 +250,47 @@ status 0"
 done
 assert_eq "flow_state_get returns 1 for a key outside the table, printing nothing" \
   "$(fs_run 'flow_state_get read.json bogus')" "status 1"
+# flow_state_get_many: one jq reads every named key.
+printf '{"slug":"s","iteration":null,"budget":null,"host_fallbacks":false,"issue":7}' >"$fs_dir/many.json"
+assert_eq "flow_state_get_many reads several keys at once" \
+  "$(fs_run 'flow_state_get_many many.json a=slug b=issue; echo "$a $b"')" "s 7
+status 0"
+assert_eq "null and missing keys read as defaults and a stored false stays false" \
+  "$(fs_run 'flow_state_get_many many.json a=iteration b=redo_count c=host_fallbacks d=budget; echo "$a|$b|$c|$d"')" "0|0|false|
+status 0"
+assert_eq "out-variables named key, file, rc and val each get their own value" \
+  "$(fs_run 'flow_state_get_many many.json key=slug file=issue rc=iteration val=host_fallbacks; echo "$key $file $rc $val"')" "s 7 0 false
+status 0"
+printf '{"slug":"a\\tb\\nc\\\\d"}' >"$fs_dir/bytes.json"
+assert_eq "tab, newline and backslash round-trip byte for byte" \
+  "$(fs_run 'flow_state_get_many bytes.json v=slug; printf "%s" "$v" | od -An -c | tr -s " "')" " a \t b \n c \\ d
+status 0"
+printf '{"slug":"x\\u0000y","issue":"z"}' >"$fs_dir/nul.json"
+assert_eq "a NUL is dropped and later keys keep their values" \
+  "$(fs_run 'flow_state_get_many nul.json a=slug b=issue; echo "$a $b"')" "xy z
+status 0"
+assert_eq "an unknown key returns 1, printing nothing and leaving a pre-set variable" \
+  "$(fs_run 'a=keep; flow_state_get_many many.json a=bogus; echo "rc=$? $a"')" "rc=1 keep
+status 0"
+assert_eq "an argument with no = returns 2, assigning nothing" \
+  "$(fs_run 'a=keep; flow_state_get_many many.json a=slug slug; echo "rc=$? $a"')" "rc=2 keep
+status 0"
+assert_eq "an empty variable name returns 2, assigning nothing" \
+  "$(fs_run 'a=keep; flow_state_get_many many.json a=slug =slug; echo "rc=$? $a"')" "rc=2 keep
+status 0"
+printf 'null' >"$fs_dir/null.json"
+for f in absent invalid array null; do
+  assert_eq "flow_state_get_many on a $f file fails, assigning nothing" \
+    "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; [ \$? -ne 0 ] && echo \"failed \$a\"")" "failed keep
+status 0"
+done
+fs_jqbin="$(mktemp -d)"
+fs_real_jq="$(command -v jq)"
+printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$fs_jqbin" "$fs_real_jq" >"$fs_jqbin/jq"
+chmod +x "$fs_jqbin/jq"
+: >"$fs_jqbin/jq.log"
+fs_run "PATH=$fs_jqbin:\$PATH; flow_state_get_many many.json a=slug b=issue c=phase d=pr e=budget" >/dev/null
+assert_eq "a five-key read starts exactly one jq" "$(wc -l <"$fs_jqbin/jq.log" | tr -d ' ')" "1"
 assert_eq "flow_state_key_field returns 2 for an unknown column, printing nothing" \
   "$(fs_run 'flow_state_key_field slug bogus')" "status 2"
 assert_eq "flow_state_key_field returns 1 for an unknown key, printing nothing" \
@@ -365,6 +406,26 @@ rd_file="$PWD/.orchestrator/state.json"
 out="$(sourced_orch state_get_in "$rd_file" nonsense 2>&1)"; st=$?
 assert_status "state_get_in of an unknown key on a readable file dies" "$st" 1
 assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
+out="$(sourced_orch state_get_many_in "$rd_file" a=nonsense 2>&1)"; st=$?
+assert_status "state_get_many_in of an unknown key dies" "$st" 1
+assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
+out="$(sourced_orch state_get_many_in "$rd_file" nokey 2>&1)"; st=$?
+assert_status "state_get_many_in of a malformed argument dies" "$st" 1
+assert_eq "as a malformed state read" "$out" "orch: malformed state read: nokey"
+out="$(sourced_orch state_get_many a=nonsense 2>&1)"
+assert_eq "state_get_many dies as an unknown state key" "$out" "orch: unknown state key: nonsense"
+out="$(sourced_orch state_get_many =phase 2>&1)"
+assert_eq "state_get_many dies as a malformed state read" "$out" "orch: malformed state read: =phase"
+out="$(sourced_orch_script 'state_get_many_in "$1" key=slug file=phase; echo "$key $file"' "$rd_file" 2>&1)"
+assert_eq "state_get_many_in reads a readable file's keys" "$out" "readers spec"
+rd_jq="$(mktemp -d)"
+printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$rd_jq" "$(command -v jq)" >"$rd_jq/jq"
+chmod +x "$rd_jq/jq"; : >"$rd_jq/jq.log"
+PATH="$rd_jq:$PATH" sourced_orch state_get_many_in "$rd_file" a=slug b=phase c=issue d=pr e=budget >/dev/null
+assert_eq "state_get_many_in reading five keys starts exactly one jq" "$(wc -l <"$rd_jq/jq.log" | tr -d ' ')" "1"
+: >"$rd_jq/jq.log"
+PATH="$rd_jq:$PATH" sourced_orch status_flow >/dev/null 2>&1
+assert_eq "status_flow on a flow that records its base starts exactly one jq" "$(wc -l <"$rd_jq/jq.log" | tr -d ' ')" "1"
 state_truncate
 out="$(sourced_orch state_get_in "$rd_file" phase 2>&1)"; st=$?
 assert_status "state_get_in on a truncated file returns 2" "$st" 2
