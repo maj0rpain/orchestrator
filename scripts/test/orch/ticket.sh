@@ -21,6 +21,9 @@ ticket_fixture() {
 # Shared by this file's merge, same-named tag and reclaim sections.
 commit_file() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
 
+# fake_unlag: every readback fake_lag_after named is current again.
+fake_unlag() { rm -rf "$ORCH_GH_FAKE_STORE/lag"; }
+
 # fake_fail_times_after <operation> <k> <n> [stderr]: fake_fail_times, but only
 # once k calls of the operation have succeeded - a transient failure after the
 # reads ahead of it answered. Used by the verify-then-die section.
@@ -799,7 +802,7 @@ assert_eq "with the did-not-verify line" "$out" \
   "orch: ticket #$vd's blocking edges did not verify - checked twice, both failed"
 assert_eq "the written edge stays" "$(fake_blockers_of "$vd")" "$vlo"
 assert_eq "the body is not rewritten" "$(fake_body_of "$vd")" "$vbody"
-fake_unfail; rm -rf "$ORCH_GH_FAKE_STORE/lag"
+fake_unfail; fake_unlag
 ve="$("$ORCH" ticket publish 96 "VE" "$body")"
 vbody="$(fake_body_of "$ve")"
 fake_fail_after adapter_blockers 2 "$GH_502"
@@ -810,7 +813,7 @@ assert_eq "with gh's reason" "$out" \
   "orch: gh could not read ticket #$ve's blockers: HTTP 502: Bad Gateway"
 assert_eq "the written edge stays" "$(fake_blockers_of "$ve")" "$vlo"
 assert_eq "the body is not rewritten" "$(fake_body_of "$ve")" "$vbody"
-fake_unfail; rm -rf "$ORCH_GH_FAKE_STORE/lag"
+fake_unfail; fake_unlag
 fake_fail adapter_blockers "$GH_502"
 out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the blockers fails the command" "$st" 1
