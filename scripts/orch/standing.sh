@@ -232,15 +232,16 @@ standing_resume() {
 #
 # Every write to Standing goes through one transition: begin, sync request,
 # start, finish, pause, ask, stop, reenter, sync finish, sync dropped,
-# limit-stop and resume. Begin, sync request and resume are single writes;
-# the others are chains. A chain of writes a session makes under its claim
-# ends in the release - deletes orch:running and
+# limit-stop, claim release and resume. Begin, sync request and resume are
+# single writes; the others are chains. A chain of writes a session makes
+# under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
 # fails partway leaves the claim held, and dies naming the writes that landed;
 # the session wrapper retries a stop chain (see the resumable chain below), and
 # a claim still held after that is cleaned up by a later tick as a failure.
 # STANDING_LANDED accumulates those writes; each chain transition (start,
-# finish, pause, ask, stop, reenter, sync finish, sync dropped and limit-stop)
+# finish, pause, ask, stop, reenter, sync finish, sync dropped, limit-stop
+# and claim release)
 # resets it at its start, then takes up earlier attempts' landed writes from
 # STANDING_STATE_FILE, and begin, sync request and resume neither reset nor
 # add to it.

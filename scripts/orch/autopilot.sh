@@ -1215,6 +1215,18 @@ autopilot_session_end() {
   autopilot_stop_attempts "$log" "$rc" standing_stop "$issue" failure "$phase" "${detail}log: $log"
 }
 
+# autopilot_github_pause_wait [<seconds>]: sleeps until a GitHub pause that
+# holds has passed, else <seconds> (none by default); ORCH_GH_LIMIT_WAIT, the
+# guard's test knob, replaces the wait either way.
+autopilot_github_pause_wait() {
+  local wait="${1:-0}" main_root
+  if autopilot_github_paused; then
+    main_root="$(main_checkout_or_die)"
+    wait="$(( $(autopilot_pause_epoch "$(autopilot_github_pause_file "$main_root")") - $(date +%s) ))"
+  fi
+  sleep "${ORCH_GH_LIMIT_WAIT:-$wait}"
+}
+
 AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after 3 attempts - "
 
 # autopilot_stop_attempts <log> <rc> <command>...: the wrapper's stop chain, run
@@ -1229,19 +1241,12 @@ AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after 3 attempts
 # returns 1. An empty <rc> means no session ran (the claim release after a
 # GitHub-limited start-up read): the line says so instead.
 autopilot_stop_attempts() {
-  local log="$1" rc="$2" state attempt main_root wait line kind first
+  local log="$1" rc="$2" state attempt line kind first
   shift 2
   state="$(mktemp)" || die "could not create a temp file for the stop chain's state"
   for attempt in 1 2 3; do
-    wait=""
     if [ "$attempt" -gt 1 ]; then
-      if autopilot_github_paused; then
-        main_root="$(main_checkout_or_die)"
-        wait="$(( $(autopilot_pause_epoch "$(autopilot_github_pause_file "$main_root")") - $(date +%s) ))"
-      else
-        wait=$(( attempt == 2 ? 60 : 300 ))
-      fi
-      sleep "${ORCH_GH_LIMIT_WAIT:-$wait}"
+      autopilot_github_pause_wait $(( attempt == 2 ? 60 : 300 ))
     fi
     if ( STANDING_STATE_FILE="$state"; "$@" ); then rm -f "$state"; return 0; fi
   done
@@ -1305,7 +1310,17 @@ autopilot_run() {
     # session and makes no stop: only the claim is released, through the retry
     # chain. Any other failure dies as before.
     if autopilot_github_paused; then
-      log="$(liveness_log_path "$issue" "$recorded")" || exit $?
+      # The run record is made first, so stale cleanup sees a live session for
+      # the whole wait; the log is named by the claim's own phase, which is
+      # what stale cleanup looks it up by (the read that failed gave no other).
+      liveness_run_begin "$issue" || exit 1
+      # shellcheck disable=SC2064
+      trap "liveness_run_end '$issue'" EXIT
+      standing_claims_read || true
+      phase="${STANDING_CLAIM_PHASE[$issue]:-$recorded}"
+      log="$(liveness_log_path "$issue" "$phase")" || exit $?
+      # No session ran: wait out the GitHub pause before the first attempt.
+      autopilot_github_pause_wait
       autopilot_stop_attempts "$log" "" standing_claim_release "$issue" || true
       return 0
     fi
