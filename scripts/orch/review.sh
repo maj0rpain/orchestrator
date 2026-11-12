@@ -925,21 +925,17 @@ cmd_review() {
       require_state
       [ $# -eq 1 ] || die "usage: orch.sh review retire <n>"
       local n="$1" dest f
+      local -a names=()
       case "$n" in ''|*[!0-9]*) die "not a redo number: $n" ;; esac
       dest="$REVIEW_DIR/pre-redo-$n"
       # An existing dest is the one a previous run of this same redo made
       # before dying: resume into it, but never overwrite a record already
-      # there - every flat name is checked before the first move.
+      # there - move_files_aside checks every name before the first move.
       mkdir -p "$REVIEW_DIR"
       for f in "$REVIEW_DIR"/iteration-*.md; do
-        [ -e "$f" ] || continue
-        [ ! -e "$dest/${f##*/}" ] || die "$dest already holds ${f##*/} - redo_count should only increase"
+        [ -e "$f" ] && names+=("${f##*/}")
       done
-      for f in "$REVIEW_DIR"/iteration-*.md; do
-        [ -e "$f" ] || continue
-        mkdir -p "$dest"
-        mv "$f" "$dest/"
-      done
+      move_files_aside "$REVIEW_DIR" "$dest" "a review record - redo_count should only increase" ${names[@]+"${names[@]}"}
       note "$dest"
       ;;
     *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|standards|ci|ci-log|rerun|ready|terminal|resume|retire)" ;;
