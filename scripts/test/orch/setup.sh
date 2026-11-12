@@ -252,11 +252,15 @@ branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
-# write_ssh_stub <command run for github-work> <exit status otherwise>: an ssh
-# at "$ssh_stub_dir", for a PATH ahead of the suite-wide identity one, that
-# runs <command> when its last argument is github-work, else exits with the
-# status, and records every call in "$ssh_calls". The dir is made on first
-# use, so each section, a process of its own, gets a dir of its own.
+# write_ssh_stub <command run for github-work> <exit status>: an ssh at
+# "$ssh_stub_dir", for a PATH ahead of the suite-wide identity one, that runs
+# <command> when its last argument is github-work, then exits with <exit status>
+# on every call unless <command> exits first, and records every call in
+# "$ssh_calls". The dir is made once per shell. In a parallel run each section,
+# a process of its own, gets its own dir. In a serial run (ORCH_TEST_JOBS=1)
+# every section runs in one shell and they share it, which is safe because each
+# write_ssh_stub call overwrites the stub and a section that counts calls
+# clears the calls file first.
 write_ssh_stub() {
   if [ -z "${ssh_stub_dir:-}" ]; then
     ssh_stub_dir="$(mktemp -d)"
