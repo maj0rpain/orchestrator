@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.1
+
+`pr read` now checks every listed open-PR line in full before using it: the PR number must be a positive integer, the fork flag `true` or `false`, and the body must decode. A malformed number no longer reaches an arithmetic subscript, and a malformed line naming another issue now fails the read.
+
 ## 5.2.0
 
 Autopilot waits out a GitHub API rate limit instead of failing: `orch.sh` recognises primary and secondary limits on every autopilot `gh` call, retries a secondary limit once, and otherwise records a pause until GitHub's reset. A session stopped by a GitHub limit becomes a limited issue sharing the usage-limit retry counter, its comment naming the cause; the third limit stop in a row is a failure stop. The session wrapper retries a stop whose own GitHub writes fail, resuming from the first write that did not land, and leaves its reason in the session log as a last resort. The watcher pauses pickup early when a pool's remaining quota drops below a configurable reserve, and the per-tick label check reads once and writes only missing or drifted labels.
