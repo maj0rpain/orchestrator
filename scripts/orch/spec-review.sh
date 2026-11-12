@@ -223,6 +223,7 @@ spec_review_mark_check() {
 
 # spec_review_block_line <line> <var>: a block line into <var>, with one
 # leading backslash removed when the line is backslashes then `@@` (#1945).
+# The block reader's buffer append (spec_review_block_feed) is its one caller.
 spec_review_block_line() {
   local __srbl_line="$1" __srbl_bs=""
   __srbl_bs="${__srbl_line%%[!\\]*}"
@@ -230,6 +231,107 @@ spec_review_block_line() {
     @@*) [ -z "$__srbl_bs" ] || __srbl_line="${__srbl_line#\\}" ;;
   esac
   printf -v "$2" '%s' "$__srbl_line"
+}
+
+# --- the @@ block reader (#2568) ----------------------------------------------
+#
+# The anchor -> replace -> end machine and the quote block, written once for
+# the batch parser and the ticket parser. A parser opens a block with
+# spec_review_block_open, feeds the reader every line of its file with
+# spec_review_block_feed, and calls spec_review_block_finish at end of file.
+# The reader takes lines with no CR: each parser strips one trailing CR before
+# it feeds a line (#2547), and the reader does no CR handling of its own.
+#
+# The reader never dies. Each call leaves one outcome in SR_BLOCK_OUTCOME:
+#   consumed   - the line is inside a block (a block line, or the @@ replace
+#                that ended an anchor); the parser reads the next line.
+#   outside    - not in a block; the parser dispatches the line as its own.
+#   edit       - an @@ end finished an edit; the anchor is in SR_BLOCK_ANCHOR,
+#                its @@ anchor line in SR_BLOCK_ANCHOR_LINE, the replacement in
+#                SR_BLOCK_REPLACE. The parser reads the next line.
+#   quote      - a quote finished, left in SR_BLOCK_QUOTE. A line that ended it
+#                is an @@ line the parser still dispatches; at end of file
+#                there is none.
+#   malformed  - the block is refused: SR_BLOCK_BAD_LINE is the line to name
+#                and SR_BLOCK_BAD_MSG the message, without the file prefix; the
+#                parser dies with its own die function.
+SR_BLOCK_MODE=""        # "", anchor, replace or quote: the open block
+SR_BLOCK_BUF=""         # the open block's lines, joined by newlines
+SR_BLOCK_BUFN=0         # how many lines SR_BLOCK_BUF holds
+SR_BLOCK_LINE=0         # the line the open block, or its replacement, began on
+SR_BLOCK_OUTCOME=""
+SR_BLOCK_ANCHOR=""; SR_BLOCK_ANCHOR_LINE=0; SR_BLOCK_REPLACE=""; SR_BLOCK_QUOTE=""
+SR_BLOCK_BAD_LINE=0; SR_BLOCK_BAD_MSG=""
+
+# spec_review_block_open <anchor|quote> <line>: opens a block at <line>.
+spec_review_block_open() {
+  SR_BLOCK_MODE="$1"; SR_BLOCK_BUF=""; SR_BLOCK_BUFN=0; SR_BLOCK_LINE="$2"
+}
+
+# spec_review_block_reset: no block open - a parser's first call.
+spec_review_block_reset() { SR_BLOCK_MODE=""; SR_BLOCK_BUF=""; SR_BLOCK_BUFN=0; }
+
+# spec_review_block_malformed <line> <message>: the outcome malformed.
+spec_review_block_malformed() {
+  SR_BLOCK_BAD_LINE="$1"; SR_BLOCK_BAD_MSG="$2"; SR_BLOCK_OUTCOME=malformed
+}
+
+# spec_review_block_quote_end: the open quote ends - the outcome quote, or
+# malformed when the quote is empty.
+spec_review_block_quote_end() {
+  if [ -z "$(trim "$SR_BLOCK_BUF")" ]; then
+    spec_review_block_malformed "$SR_BLOCK_LINE" "the quote is empty"
+    return 0
+  fi
+  SR_BLOCK_QUOTE="$SR_BLOCK_BUF"; SR_BLOCK_MODE=""; SR_BLOCK_OUTCOME=quote
+}
+
+# spec_review_block_feed <line> <lineno>: the next line of the file, with no
+# CR, read against the open block; the outcome is in SR_BLOCK_OUTCOME.
+spec_review_block_feed() {
+  local line="$1" lineno="$2" content kw args
+  SR_BLOCK_OUTCOME=outside
+  [ -n "$SR_BLOCK_MODE" ] || return 0
+  case "$line" in
+    '@@ '*|'@@') ;;
+    *)
+      spec_review_block_line "$line" content
+      if [ "$SR_BLOCK_BUFN" -eq 0 ]; then SR_BLOCK_BUF="$content"; else SR_BLOCK_BUF="$SR_BLOCK_BUF"$'\n'"$content"; fi
+      SR_BLOCK_BUFN=$((SR_BLOCK_BUFN + 1))
+      SR_BLOCK_OUTCOME=consumed
+      return 0 ;;
+  esac
+  spec_review_at_line "$line" kw args
+  case "$SR_BLOCK_MODE" in
+    anchor)
+      if [ "$kw" != replace ] || [ -n "$args" ]; then
+        spec_review_block_malformed "$lineno" "expected @@ replace to end the anchor begun on line $SR_BLOCK_LINE, got '$line'$AT_LINE_ESCAPE_HINT"
+      elif [ -z "$(trim "$SR_BLOCK_BUF")" ]; then
+        spec_review_block_malformed "$SR_BLOCK_LINE" "the anchor is empty"
+      else
+        SR_BLOCK_ANCHOR="$SR_BLOCK_BUF"; SR_BLOCK_ANCHOR_LINE="$SR_BLOCK_LINE"
+        SR_BLOCK_MODE=replace; SR_BLOCK_BUF=""; SR_BLOCK_BUFN=0; SR_BLOCK_LINE="$lineno"
+        SR_BLOCK_OUTCOME=consumed
+      fi ;;
+    replace)
+      if [ "$kw" != end ] || [ -n "$args" ]; then
+        spec_review_block_malformed "$lineno" "expected @@ end to end the replacement begun on line $SR_BLOCK_LINE, got '$line'$AT_LINE_ESCAPE_HINT"
+      else
+        SR_BLOCK_REPLACE="$SR_BLOCK_BUF"; SR_BLOCK_MODE=""; SR_BLOCK_OUTCOME=edit
+      fi ;;
+    quote) spec_review_block_quote_end ;;
+  esac
+}
+
+# spec_review_block_finish: end of file, read against the open block: outside
+# when none is open, quote for a quote ending here, malformed for an empty
+# quote or an anchor or replacement never ended.
+spec_review_block_finish() {
+  case "$SR_BLOCK_MODE" in
+    anchor|replace) spec_review_block_malformed "$SR_BLOCK_LINE" "the @@ $SR_BLOCK_MODE block is never ended" ;;
+    quote) spec_review_block_quote_end ;;
+    *) SR_BLOCK_OUTCOME=outside ;;
+  esac
 }
 
 # spec_review_at_line <line> <kw-var> <args-var>: an `@@` line of the batch
@@ -246,10 +348,13 @@ spec_review_at_line() {
 # spec_review_batch_parse <file>: reads the batch file into the SR_ arrays -
 # the `@@ lens` lines, then one entry per item, its findings, comments and
 # options - dying on the first malformed line, named by its number. The
-# citations' ranges are checked later, against the lens files.
+# citations' ranges are checked later, against the lens files. Each
+# line goes to the shared @@ block reader first; the parser keeps its keyword
+# dispatch, the checks made as a block opens, and where a finished block, an
+# option's or an item's, is stored.
 spec_review_batch_parse() {
-  local file="$1" line content lineno=0 mode=top kw args cur=-1 opt=-1
-  local buf="" bufn=0 block_line=0 quote_wanted="" n group rec rec_tail arg lens state reason
+  local file="$1" line lineno=0 kw args cur=-1 opt=-1
+  local quote_wanted="" n group rec rec_tail arg lens state reason
   local fd_lens fd_k login created letter label extra lens_slot fd_slot cm_slot target mark fundamental
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
   SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=(); SR_IT_FUNDAMENTAL=()
@@ -258,47 +363,31 @@ spec_review_batch_parse() {
   SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
   SR_OP_ITEM=(); SR_OP_LETTER=(); SR_OP_LABEL=(); SR_OP_LINE=()
   SR_OP_SUMMARY=(); SR_OP_ANCHOR=(); SR_OP_ANCHOR_LINE=(); SR_OP_REPLACE=()
+  spec_review_block_reset
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     line="${line%$'\r'}"
+    spec_review_block_feed "$line" "$lineno"
+    case "$SR_BLOCK_OUTCOME" in
+      consumed) continue ;;
+      malformed) spec_review_batch_die "$SR_BLOCK_BAD_LINE" "$SR_BLOCK_BAD_MSG" ;;
+      edit)
+        if [ "$opt" -ge 0 ]; then
+          SR_OP_ANCHOR[opt]="$SR_BLOCK_ANCHOR"; SR_OP_ANCHOR_LINE[opt]="$SR_BLOCK_ANCHOR_LINE"; SR_OP_REPLACE[opt]="$SR_BLOCK_REPLACE"
+        else
+          SR_IT_ANCHOR[cur]="$SR_BLOCK_ANCHOR"; SR_IT_ANCHOR_LINE[cur]="$SR_BLOCK_ANCHOR_LINE"; SR_IT_REPLACE[cur]="$SR_BLOCK_REPLACE"
+        fi
+        continue ;;
+      quote) SR_CM_QUOTE+=("$SR_BLOCK_QUOTE") ;;
+    esac
     case "$line" in
       '@@ '*|'@@') ;;
       *)
-        case "$mode" in
-          anchor|replace|quote)
-            spec_review_block_line "$line" content
-            if [ "$bufn" -eq 0 ]; then buf="$content"; else buf="$buf"$'\n'"$content"; fi
-            bufn=$((bufn + 1))
-            continue ;;
-        esac
         [ -n "$(trim "$line")" ] \
           || continue
         spec_review_batch_die "$lineno" "text outside an @@ anchor, @@ replace or @@ quote block" ;;
     esac
     spec_review_at_line "$line" kw args
-    case "$mode" in
-      anchor)
-        [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'$AT_LINE_ESCAPE_HINT"
-        [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
-        if [ "$opt" -ge 0 ]; then
-          SR_OP_ANCHOR[opt]="$buf"; SR_OP_ANCHOR_LINE[opt]="$block_line"
-        else
-          SR_IT_ANCHOR[cur]="$buf"; SR_IT_ANCHOR_LINE[cur]="$block_line"
-        fi
-        mode=replace; buf=""; bufn=0; block_line="$lineno"
-        continue ;;
-      replace)
-        [ "$kw" = end ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'$AT_LINE_ESCAPE_HINT"
-        if [ "$opt" -ge 0 ]; then SR_OP_REPLACE[opt]="$buf"; else SR_IT_REPLACE[cur]="$buf"; fi
-        mode=item; buf=""; bufn=0
-        continue ;;
-      quote)
-        [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the quote is empty"
-        SR_CM_QUOTE+=("$buf")
-        mode=item; buf=""; bufn=0 ;;
-    esac
     [ -z "$quote_wanted" ] || [ "$kw" = quote ] \
       || spec_review_batch_die "$lineno" "@@ comment must be followed by @@ quote"
     [ "$kw" = lens ] || [ "$kw" = item ] || [ "$cur" -ge 0 ] \
@@ -363,8 +452,7 @@ spec_review_batch_parse() {
         cur="${#SR_IT_N[@]}"; opt=-1
         SR_IT_N[cur]="$n"; SR_IT_GROUP[cur]="$group"; SR_IT_REC[cur]="$rec"
         SR_IT_ARG[cur]="$arg"; SR_IT_MARK[cur]="$mark"; SR_IT_LINE[cur]="$lineno"
-        [ -z "$fundamental" ] || SR_IT_FUNDAMENTAL[cur]=1
-        mode=item ;;
+        [ -z "$fundamental" ] || SR_IT_FUNDAMENTAL[cur]=1 ;;
       summary)
         [ -n "$args" ] || spec_review_batch_die "$lineno" "@@ summary needs its line"
         [ "${SR_IT_REC[$cur]}" != resolved ] || spec_review_batch_die "$lineno" "a resolved item carries no @@ summary"
@@ -401,7 +489,7 @@ spec_review_batch_parse() {
       quote)
         [ -n "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ quote must follow @@ comment"
         [ -z "$args" ] || spec_review_batch_die "$lineno" "@@ quote takes nothing after it; the quote is the lines below it"
-        quote_wanted=""; mode=quote; buf=""; bufn=0; block_line="$lineno" ;;
+        quote_wanted=""; spec_review_block_open quote "$lineno" ;;
       resolved-by)
         [ "${SR_IT_REC[$cur]}" = resolved ] || spec_review_batch_die "$lineno" "@@ resolved-by belongs to a resolved item"
         [ -z "${SR_IT_RESOLVED[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ resolved-by"
@@ -427,7 +515,7 @@ spec_review_batch_parse() {
             [ -z "${SR_OP_ANCHOR[$opt]+x}" ] || spec_review_batch_die "$lineno" "a second @@ anchor for this option" ;;
           *) [ -z "${SR_IT_ANCHOR[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ anchor for this item" ;;
         esac
-        mode=anchor; buf=""; bufn=0; block_line="$lineno" ;;
+        spec_review_block_open anchor "$lineno" ;;
       replace|end)
         [ "${SR_IT_REC[$cur]}" != resolved ] \
           || spec_review_batch_die "$lineno" "a resolved item takes no @@ anchor, @@ replace or @@ end"
@@ -435,11 +523,10 @@ spec_review_batch_parse() {
       *) spec_review_batch_die "$lineno" "unknown line '@@ $kw'" ;;
     esac
   done <"$file"
-  case "$mode" in
-    anchor|replace) spec_review_batch_die "$block_line" "the @@ $mode block is never ended" ;;
-    quote)
-      [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the quote is empty"
-      SR_CM_QUOTE+=("$buf") ;;
+  spec_review_block_finish
+  case "$SR_BLOCK_OUTCOME" in
+    malformed) spec_review_batch_die "$SR_BLOCK_BAD_LINE" "$SR_BLOCK_BAD_MSG" ;;
+    quote) SR_CM_QUOTE+=("$SR_BLOCK_QUOTE") ;;
   esac
   [ -z "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ comment must be followed by @@ quote"
   [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
@@ -1288,44 +1375,34 @@ spec_review_ticket_item_check() {
 # its `@@ recommend` line, then one entry per item and per `@@ closed` line,
 # or the lone `@@ none-affected` - dying on the first malformed line, named
 # by its number. ST_LINE holds each item's header line, ST_ANCHOR_LINE a text
-# item's `@@ anchor` line.
+# item's `@@ anchor` line. Each line goes to the shared
+# @@ block reader first; the parser keeps its keyword dispatch, the edge-item
+# check as a block opens, and its ST_ANCHOR and ST_REPLACE storage.
 spec_review_tickets_parse() {
-  local file="$1" line content lineno=0 mode=top kw args cur=-1 seen=""
-  local buf="" bufn=0 block_line=0 n kind tail t by b rec arg what
+  local file="$1" line lineno=0 kw args cur=-1 seen=""
+  local n kind tail t by b rec arg what
   ST_RECOMMEND=""; ST_NONE=""
   ST_N=(); ST_KIND=(); ST_T=(); ST_B=(); ST_REC=(); ST_ARG=(); ST_LINE=()
   ST_SUMMARY=(); ST_ANCHOR=(); ST_ANCHOR_LINE=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=(); ST_CL_LINE=()
+  spec_review_block_reset
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     line="${line%$'\r'}"
+    spec_review_block_feed "$line" "$lineno"
+    case "$SR_BLOCK_OUTCOME" in
+      consumed) continue ;;
+      malformed) spec_review_tickets_die "$SR_BLOCK_BAD_LINE" "$SR_BLOCK_BAD_MSG" ;;
+      edit)
+        ST_ANCHOR[cur]="$SR_BLOCK_ANCHOR"; ST_REPLACE[cur]="$SR_BLOCK_REPLACE"
+        continue ;;
+    esac
     case "$line" in
       '@@ '*|'@@') ;;
       *)
-        if [ "$mode" = anchor ] || [ "$mode" = replace ]; then
-          spec_review_block_line "$line" content
-          if [ "$bufn" -eq 0 ]; then buf="$content"; else buf="$buf"$'\n'"$content"; fi
-          bufn=$((bufn + 1))
-          continue
-        fi
         [ -n "$(trim "$line")" ] || continue
         spec_review_tickets_die "$lineno" "text outside an @@ anchor or @@ replace block" ;;
     esac
     spec_review_at_line "$line" kw args
-    case "$mode" in
-      anchor)
-        [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_tickets_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'$AT_LINE_ESCAPE_HINT"
-        [ -n "$(trim "$buf")" ] || spec_review_tickets_die "$block_line" "the anchor is empty"
-        ST_ANCHOR[cur]="$buf"
-        mode=replace; buf=""; bufn=0; block_line="$lineno"
-        continue ;;
-      replace)
-        [ "$kw" = end ] && [ -z "$args" ] \
-          || spec_review_tickets_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'$AT_LINE_ESCAPE_HINT"
-        ST_REPLACE[cur]="$buf"
-        mode=top; buf=""; bufn=0
-        continue ;;
-    esac
     [ -z "$ST_NONE" ] || spec_review_tickets_die "$lineno" "@@ none-affected stands alone in its file"
     case "$kw" in
       recommend|none-affected)
@@ -1385,7 +1462,7 @@ spec_review_tickets_parse() {
           [ -z "$args" ] || spec_review_tickets_die "$lineno" "@@ anchor takes nothing after it; the anchor is the lines below it"
           [ -z "${ST_ANCHOR[$cur]+x}" ] || spec_review_tickets_die "$lineno" "a second @@ anchor for this item"
           ST_ANCHOR_LINE[cur]="$lineno"
-          mode=anchor; buf=""; bufn=0; block_line="$lineno"
+          spec_review_block_open anchor "$lineno"
         fi ;;
       closed)
         [ "$cur" -lt 0 ] || spec_review_ticket_item_check "$cur"
@@ -1398,9 +1475,8 @@ spec_review_tickets_parse() {
       *) spec_review_tickets_die "$lineno" "unknown line '@@ $kw'" ;;
     esac
   done <"$file"
-  case "$mode" in
-    anchor|replace) spec_review_tickets_die "$block_line" "the @@ $mode block is never ended" ;;
-  esac
+  spec_review_block_finish
+  [ "$SR_BLOCK_OUTCOME" != malformed ] || spec_review_tickets_die "$SR_BLOCK_BAD_LINE" "$SR_BLOCK_BAD_MSG"
   [ "$cur" -lt 0 ] || spec_review_ticket_item_check "$cur"
   [ -n "$seen" ] || die "tickets.md is empty - it holds @@ recommend and the ticket items, or @@ none-affected"
 }
