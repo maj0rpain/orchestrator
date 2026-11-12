@@ -3,7 +3,7 @@
 Amends ADR-0052 (an autopilot flow's phase lives on its issue, claimed
 through a git ref).
 
-Amended by ADR-0061: a GitHub rate limit is waited out like a usage limit.
+Amended by ADR-0062: a GitHub rate limit is waited out like a usage limit.
 
 #1451's plan rejected automatic retry, and an autopilot failure comment says
 nothing is retried automatically: a failed session waits on the human.
