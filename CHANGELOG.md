@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.7
+
+The Bash hook's command walker now carries an open arithmetic expression across newlines, `;`, `&&` and `||`, so a `<<` inside a multi-line `$((` or `((` is read as a shift and no longer hides later commands from the poll and stdin guards.
+
 ## 5.2.6
 
 The spec-review module no longer has a one-line block reset wrapper: both parsers call the block reader's open function directly. Behaviour is unchanged.
