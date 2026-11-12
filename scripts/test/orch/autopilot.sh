@@ -2784,7 +2784,7 @@ fake_fail adapter_issue_authorship "HTTP 502 trust"
 out="$("$ORCH" autopilot candidates 1 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed trust read dies" "$st" 1
-assert_contains "naming the reason" "$out" "HTTP 502 trust"
+assert_contains "with the verb's own trust-check wording" "$out" "could not check the trust of issue #1"
 fake_fail adapter_issues_open_oldest "HTTP 502 list"
 out="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
 fake_unfail
