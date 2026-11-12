@@ -77,7 +77,7 @@ checkout_ticket_path() {
   return 1
 }
 
-# checkout_kind <path>: prints the walk's kind (main, ticket, side or
+# checkout_kind <path>: prints the kind checkout_classify gives (main, ticket, side or
 # hand-made) for the checkout holding <path> - a folder inside a checkout
 # included - the one classification every site that asks a checkout's kind
 # reads. Classifies only the matching entry: one parse, and at most one
@@ -131,7 +131,7 @@ main_checkout_or_die() {
 }
 
 # The checkout that has <branch> checked out, or nothing: the first checkout
-# the walk lists on <branch>, a worktree whose directory is gone included.
+# git worktree list prints on <branch>, read through checkout_parse, a worktree whose directory is gone included.
 # Dies when the checkouts cannot be read; called in a substitution, so its
 # caller carries that status out.
 branch_checkout() {

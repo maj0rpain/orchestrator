@@ -27,8 +27,8 @@ side_checkout_marker() {
 }
 
 # is_side_checkout <path>: whether the checkout holding <path> is a side
-# checkout, as the walk classifies it (see checkout_kind) - a ticket worktree
-# carrying a copied marker is none. False when the walk fails.
+# checkout, as checkout_classify classifies it (see checkout_kind) - a ticket worktree
+# carrying a copied marker is none. False when git worktree list fails.
 is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 
 # --- the finished sweep ---
@@ -137,7 +137,8 @@ side_checkout_finished() {
 # receives the flow in the checkout at <root> - the one computation of the
 # rule. A side checkout's flow goes to the main checkout's archive; any other
 # checkout, a ticket or hand-made worktree included, archives in place. Reads
-# the walk's kind itself, so it fails, printing nothing, when the walk fails or
+# the kind checkout_classify gives, through checkout_kind, itself, so it fails,
+# printing nothing, when git worktree list fails or
 # when <root> is a side checkout and the main checkout cannot be read - never
 # archiving a side checkout's flow in place.
 archive_root() {
