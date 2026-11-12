@@ -813,7 +813,7 @@ autopilot_candidates_run() {
     esac
   done
   [ -n "$mode" ] || die "$usage"
-  local out err n verdict lines="" eligible=0 named=false
+  local out err n verdict report="" eligible=0 named=false
   if [ "$mode" = named ]; then
     named=true
   else
@@ -825,9 +825,9 @@ autopilot_candidates_run() {
     if [ "$mode" = limit ] && [ "$eligible" -ge "$limit" ]; then break; fi
     autopilot_verdict "$n" "$named" verdict
     case "$verdict" in eligible*) eligible=$((eligible + 1)) ;; esac
-    lines="$lines$n $verdict"$'\n'
+    report="$report$n $verdict"$'\n'
   done
-  printf '%s' "$lines"
+  printf '%s' "$report"
 }
 
 # autopilot_done_read <table-var>: the tick's one read of the open orch:done
