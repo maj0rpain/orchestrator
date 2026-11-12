@@ -293,6 +293,16 @@ adapter_rate_limit() {
   printf '%s\t5000\t5000\t%s\n' core "$(($(date +%s) + 3600))" graphql "$(($(date +%s) + 3600))"
 }
 
+# adapter_labels_detail <limit>: the stored labels as name, colour and
+# description, tab-separated, the first <limit> of them.
+adapter_labels_detail() {
+  local f
+  ! fake_failing adapter_labels_detail || return 1
+  f="$(fake_store)/labels"
+  [ -f "$f" ] || return 0
+  awk -F '\t' -v OFS='\t' -v n="$1" 'NR<=n { print $1, $2, $3 }' "$f"
+}
+
 # --- issue operations, on the store -------------------------------------------
 
 fake_issue_dir() { printf '%s/issues/%s\n' "$(fake_store)" "$1"; }

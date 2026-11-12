@@ -570,6 +570,12 @@ out="$(contract adapter_label_create bug d73a4a "Something isn't working" 2>&1)"
 assert_status "label create: a label that exists fails it" "$st" 1
 assert_contains "passing gh's stderr through" "$out" 'label with name "bug" already exists'
 
+gh_reply 0 $'bug\td73a4a\tSomething isn\'t working\nwontfix\tffffff\t' \
+  '' label list --limit 1000 --json name,color,description --jq '.[] | [.name, .color, (.description // "")] | @tsv'
+out="$(contract adapter_labels_detail 1000 2>&1)"; st=$?
+assert_status "labels detail: lists the repo's labels" "$st" 0
+assert_eq "as name, colour and description, tab-separated" "$out" $'bug\td73a4a\tSomething isn\'t working\nwontfix\tffffff\t'
+
 : >"$GH_FIXTURE/env.log"
 export GH_REPO=ghe.example.com/acme/widgets
 gh_reply 0 '' '' label create enhancement --color a2eeef --description "New feature or request"

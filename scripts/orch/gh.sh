@@ -224,7 +224,8 @@ gh_or_die() {
 # through one. History: begun with labels (#91), issues (#92); all since #280.
 #
 # The operations, in the order they are defined below:
-# - label: adapter_label_upsert, adapter_label_create, adapter_labels
+# - label: adapter_label_upsert, adapter_label_create, adapter_labels,
+#   adapter_labels_detail
 # - rate limit: adapter_rate_limit
 # - issue: adapter_issue_body, adapter_issue_comments,
 #   adapter_issue_comments_json,
@@ -329,6 +330,14 @@ adapter_rate_limit() {
 # them, one per line. Nothing at all for a repo with none.
 adapter_labels() {
   gh label list --limit "$1" --json name --jq '.[].name'
+}
+
+# adapter_labels_detail <limit>: the repo's labels, at most <limit> of them, one
+# per line as `name<TAB>colour<TAB>description` (colour without a leading #,
+# description possibly empty). Nothing at all for a repo with none.
+adapter_labels_detail() {
+  gh label list --limit "$1" --json name,color,description \
+    --jq '.[] | [.name, .color, (.description // "")] | @tsv'
 }
 
 # --- issue operations ---

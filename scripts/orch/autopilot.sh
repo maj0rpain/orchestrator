@@ -377,10 +377,18 @@ autopilot_orch_in() {
 }
 
 # autopilot_labels_ensure: the labels exist with their colour and
-# description. A failed upsert dies naming the label, stopping the tick.
+# description. Reads the repo's labels once and upserts only those missing or
+# drifted in colour or description (names compared case-insensitively); with
+# nothing drifted it writes nothing. A failed read or upsert dies, stopping
+# the tick.
 autopilot_labels_ensure() {
-  local name colour description gh_err
+  local name colour description gh_err have _read_err
+  capture have _read_err adapter_labels_detail 1000 ||
+    die "could not read the repo's labels: $(gh_reason "$_read_err") - the tick stops"
   while IFS='|' read -r name colour description; do
+    ! awk -F '\t' -v n="$name" -v c="$colour" -v d="$description" '
+      tolower($1) == tolower(n) && tolower($2) == tolower(c) && $3 == d { found = 1 }
+      END { exit !found }' <<<"$have" || continue
     capture_err gh_err adapter_label_upsert "$name" "$colour" "$description" ||
       die "could not upsert the label $name: $(gh_reason "$gh_err") - the tick stops"
   done <<<"$(standing_label_entries)"

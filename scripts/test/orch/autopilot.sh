@@ -651,6 +651,7 @@ assert_contains "naming the issue" "$out" "could not claim issue #7"
 assert_contains "and the reason" "$out" "HTTP 500 pushing the ref"
 fake_unfail
 # a failed label upsert stops the tick, naming the label
+fake_label_names
 fake_fail adapter_label_upsert "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a failed label upsert stops the tick non-zero" "$st" 1
@@ -1830,6 +1831,48 @@ fake_issue 7 open Ready-For-Agent
 out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
 assert_status "start accepts an issue carrying Ready-For-Agent" "$st" 0
 restore_suite_env
+
+# --- autopilot tick: the label check writes only drift (#2691) ----------------
+echo
+echo "autopilot label check"
+tick_fixture
+seed_autopilot_labels() {
+  local n c d
+  fake_label_names
+  while IFS='|' read -r n c d; do fake_label "$n" "$c" "$d"; done <<<"$(sourced_orch standing_label_entries)"
+}
+seed_autopilot_labels
+fake_fail adapter_label_upsert "HTTP 500 a label write"
+"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "a tick with every autopilot label present and matching makes no label write" "$st" 0
+
+# a label differing only in name casing is left alone
+fake_unfail
+fake_label_names
+seed_autopilot_labels
+sed -i 's/^orch:spec/ORCH:SPEC/' "$ORCH_GH_FAKE_STORE/labels"
+fake_fail adapter_label_upsert "HTTP 500 a label write"
+"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "a label differing only in name casing is left alone" "$st" 0
+fake_unfail
+
+# a drifted colour or description is updated
+fake_label_names
+seed_autopilot_labels
+sourced_orch adapter_label_upsert orch:review 000000 "Autopilot flow: review phase next"
+sourced_orch adapter_label_upsert orch:running fbca04 "stale words"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a drifted colour is updated" "$(fake_labels | awk -F '\t' '$1=="orch:review"{print $2}')" "5319e7"
+assert_eq "a drifted description is updated" "$(fake_labels | awk -F '\t' '$1=="orch:running"{print $3}')" "Autopilot session running"
+
+# a missing label is created
+fake_label_names
+seed_autopilot_labels
+fake_label_names
+while IFS='|' read -r n c d; do [ "$n" = orch:sync ] || fake_label "$n" "$c" "$d"; done <<<"$(sourced_orch standing_label_entries)"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a missing label is created" "$(fake_labels | awk -F '\t' '$1=="orch:sync"{print $2}')" "0075ca"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick and run: sync requests -----------------------------------
 # A sync request - orch:sync on an open orch:done issue - is picked up under the
