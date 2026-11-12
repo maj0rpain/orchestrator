@@ -3,13 +3,13 @@
 # Its tests: scripts/test/orch/redo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# redo_midway <issue> <slug>: succeeds while a redo review is half-finished,
-# printing its redo_count. True between a redo's branch retire and its closing
-# write, which clears state.branch: redo_count is above 0 and state.branch is
-# exactly the -redo-<redo_count> name of the issue and slug (the exact name, so
-# a slug that merely ends that way does not match: #2550). The one test both
-# the retire plan below and the review loop's terminal-state classification
-# make, so they never disagree on whether a redo is resuming.
+# redo_midway <issue> <slug>: succeeds while a redo (review or spec) is
+# half-finished, printing its redo_count. True between a redo's branch retire
+# and its closing write, which clears state.branch: redo_count is above 0 and
+# state.branch is exactly the -redo-<redo_count> name of the issue and slug (the
+# exact name, so a slug that merely ends that way does not match: #2550). The
+# one test both the retire plan below and the review loop's terminal-state
+# classification make, so they never disagree on whether a redo is resuming.
 redo_midway() {
   local branch redo_count
   branch="$(state_get branch)"
@@ -23,10 +23,12 @@ redo_midway() {
 # carries and whether its rename is already done.
 # A previous call at this same redo can have already retired the branch and
 # recorded it in state before dying: branch and redo_count are set together
-# right after a real retire, so if the recorded branch already matches what this
-# redo_count's retire would have produced, the rename is done. The PR close ran
-# before the rename, so a rerun that finds it done skips the close outright
-# rather than retiring an already-retired branch a second time (issue #63).
+# right after a real retire, so redo_midway (the predicate the review loop's
+# terminal-state classification shares) says whether the recorded branch is
+# what this redo_count's retire would have produced; if so, the rename is done.
+# The PR close ran before the rename, so a rerun that finds it done skips the
+# close outright rather than retiring an already-retired branch a second time
+# (issue #63).
 redo_retire_plan() {
   local issue="$1" slug="$2" redo_count
   if redo_count="$(redo_midway "$issue" "$slug")"; then

@@ -1586,6 +1586,10 @@ assert_status "refuses when a later flat record clashes" "$st" 1
 assert_contains "naming the folder" "$out" "pre-redo-1"
 assert_eq "the record that did not clash stays flat" \
   "$(on_disk .orchestrator/review/iteration-01.md)" "present"
+assert_eq "the clashing record stays flat too" \
+  "$(on_disk .orchestrator/review/iteration-02.md)" "present"
+assert_eq "and pre-redo-1 gained nothing" \
+  "$(ls .orchestrator/review/pre-redo-1 | tr '\n' ' ')" "iteration-02.md "
 rm -f .orchestrator/review/iteration-*.md
 
 out="$("$ORCH" review retire nope 2>&1)"; st=$?
