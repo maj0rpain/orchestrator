@@ -435,14 +435,10 @@ adapter_issues_labelled_bodies() {
 # name is not a declared associative array. Bash 4.0: elements are assigned by
 # eval on a validated name, the value by reference, as finding_body_parse does.
 issues_labelled_bodies_read() {
-  local __ilbr_a
-  for __ilbr_a in "$1" "$2"; do
-    [[ $__ilbr_a =~ ^[A-Za-z_][A-Za-z0-9_]*$ && $__ilbr_a != __ilbr_* \
-      && $(declare -p "$__ilbr_a" 2>/dev/null) =~ ^declare\ -[A-Za-z]*A ]] \
-      || die "issues_labelled_bodies_read: $__ilbr_a is not a declared associative array"
-  done
+  assoc_array_require issues_labelled_bodies_read "$1" __ilbr_
+  assoc_array_require issues_labelled_bodies_read "$2" __ilbr_
   local __ilbr_out __ilbr_err __ilbr_lines=() __ilbr_nums=() __ilbr_labs=() __ilbr_bods=()
-  local __ilbr_i=0 __ilbr_total __ilbr_n __ilbr_c __ilbr_b __ilbr_j __ilbr_l __ilbr_body __ilbr_k
+  local __ilbr_i=0 __ilbr_total __ilbr_n __ilbr_c __ilbr_b __ilbr_j __ilbr_l __ilbr_body __ilbr_k __ilbr_r
   local __ilbr_bad="gh answered a listing that does not parse"
   local __ilbr_whole='^[0-9]+$'
   if ! capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
@@ -481,9 +477,9 @@ issues_labelled_bodies_read() {
     __ilbr_labs+=("$__ilbr_l")
     __ilbr_bods+=("$__ilbr_body")
   done
-  for __ilbr_j in "${!__ilbr_nums[@]}"; do
-    eval "$1"'[${__ilbr_nums[__ilbr_j]}]=${__ilbr_labs[__ilbr_j]}'
-    eval "$2"'[${__ilbr_nums[__ilbr_j]}]=${__ilbr_bods[__ilbr_j]}'
+  for __ilbr_r in "${!__ilbr_nums[@]}"; do
+    eval "$1"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_labs[__ilbr_r]}'
+    eval "$2"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_bods[__ilbr_r]}'
   done
   printf -v "$3" '%s' "${#__ilbr_nums[@]}"
 }

@@ -156,6 +156,15 @@ capture_err() {
   printf -v "$1" '%s' "$_capture_err_text"
   return "$_capture_err_st"
 }
+# assoc_array_require <caller> <name> <own-prefix>: dies, naming <caller>,
+# unless <name> is a declared associative array and not one of the caller's own
+# <own-prefix>* locals, which an eval of its writes would clobber. A caller's
+# programming error, guarded before the caller writes through the name.
+assoc_array_require() {
+  [[ $2 =~ ^[A-Za-z_][A-Za-z0-9_]*$ && $2 != "$3"* \
+    && $(declare -p "$2" 2>/dev/null) =~ ^declare\ -[A-Za-z]*A ]] \
+    || die "$1: $2 is not a declared associative array"
+}
 # capture <out-var> <err-var> <command...>: capture_err with the stdout taken
 # too - sets <out-var> to the command's stdout (read back by command
 # substitution, so trailing newlines go), <err-var> to its stderr byte for

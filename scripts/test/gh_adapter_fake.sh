@@ -472,9 +472,10 @@ adapter_issues_labelled() {
 # prints: number, label count, labels, the body's line count (its newlines
 # plus one), then the body byte for byte and a newline.
 adapter_issues_labelled_bodies() {
-  local n d labels
+  local n d labels nums
   ! fake_failing adapter_issues_labelled_bodies || return 1
-  for n in $(adapter_issues_labelled "$@"); do
+  nums="$(adapter_issues_labelled "$@")" || return 1
+  for n in $nums; do
     d="$(fake_issue_dir "$n")"
     labels="$(fake_issue_labels "$n")"
     printf '%s\n' "$n" "$(printf '%s' "$labels" | grep -c .)"

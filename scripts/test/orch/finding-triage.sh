@@ -216,6 +216,9 @@ out="$(scan 2>&1)"
 assert_eq "without --all, only the findings in needs-triage" \
   "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 23 "
 assert_eq "each with its state too" "$(field_of 23 6 "$out")" "needs-triage,ready-for-agent"
+base_list="$out"
+base_all="$(scan --all 2>&1)"
+base_pr="$(scan --pr 21 2>&1)"
 # Each finding is read once, body and labels together: neither the body-only
 # nor the state-and-labels read is called.
 fake_fail adapter_issue_body "body read alone"
@@ -231,14 +234,14 @@ fake_fail adapter_issue_body "$GH_502"
 fake_fail adapter_issue_state_labels "$GH_502"
 list_out="$(scan 2>&1)"; st=$?
 assert_status "a listed scan makes no per-finding read" "$st" 0
-assert_eq "printing every finding in needs-triage" \
-  "$(printf '%s\n' "$list_out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 23 "
+assert_eq "printing every finding in needs-triage, byte for byte" \
+  "$list_out" "$base_list"
 out="$(scan --all 2>&1)"; st=$?
 assert_status "a listed --all scan makes no per-finding read" "$st" 0
-assert_eq "printing every open filed finding (--all)" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 8 20 21 22 23 "
+assert_eq "printing every open filed finding, byte for byte (--all)" "$out" "$base_all"
 out="$(scan --pr 21 2>&1)"; st=$?
 assert_status "a listed --pr scan makes no per-finding read" "$st" 0
-assert_eq "printing that PR's findings" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "23 "
+assert_eq "printing that PR's findings, byte for byte" "$out" "$base_pr"
 fake_unfail
 fake_fail adapter_issues_labelled_bodies "$GH_502"
 out="$(scan 2>&1)"; st=$?
@@ -253,8 +256,8 @@ assert_eq "with the same message (--all)" "$out" \
 fake_unfail
 
 # A listing whose answer does not parse dies naming that listing.
-for bad in $'x\n0\n1\nb' $'5\nx\n1\nb' $'5\n0\nx\nb' $'5\n0\n3\nonly\n6\n0\n1\nx'; do
-  out="$(adapter_stood_in "$(printf 'adapter_issues_labelled_bodies() { printf "%%s\\n" %q; }\n' "$bad")" scan 2>&1)"; st=$?
+for listing in $'x\n0\n1\nb' $'5\nx\n1\nb' $'5\n0\nx\nb' $'5\n0\n3\nonly\n6\n0\n1\nx'; do
+  out="$(adapter_stood_in "$(printf 'adapter_issues_labelled_bodies() { printf "%%s\\n" %q; }\n' "$listing")" scan 2>&1)"; st=$?
   assert_status "an unparseable listing dies" "$st" 1
   assert_eq "naming the listing" "$out" \
     "orch: gh could not list the review:major findings: gh answered a listing that does not parse"
