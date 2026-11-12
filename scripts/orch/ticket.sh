@@ -562,8 +562,8 @@ blockers_difference() {
 # preconditions, the current edges, one adapter write per edge that needs
 # it, verify_twice (the one-retry policy ADR-0011 records for `ticket
 # publish`) of ticket_edges_verified against the wanted set, and the
-# `## Blocked by` rewrite through issue_body_rewrite. The write is not read
-# back - ADR-0011 governs the edges, not the body. Only
+# `## Blocked by` rewrite through issue_body_rewrite. The body write is not
+# read back: only the edges are verified. Only
 # the verb varies, and the one `case` up front binds all of it: block skips
 # edges already present, adds the rest and wants the union; unblock skips
 # edges already absent, removes the rest and wants the difference. Either

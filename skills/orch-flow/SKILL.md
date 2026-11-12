@@ -321,9 +321,10 @@ removes `fundamental.md` - and go on to the round's pause, or, after round n,
 to step 5.
 Rounds run through the `orch-spec-review` skill, which runs unattended in
 autopilot; step 5's breakdown runs `orch-to-tickets`' **Unattended breakdown**.
-A plan amendment after `apply` (a declined `contradicts the plan` item) is
-amended and re-posted as the handoff skill's **Amending Rejected
-alternatives** section says.
+After `apply`, the plan handoff's **Rejected alternatives** entry that a
+declined `contradicts the plan` item matches is amended, and the plan comment
+re-posted, as the handoff skill's **Amending Rejected alternatives** section
+says.
 
 ### Phase: implement
 
