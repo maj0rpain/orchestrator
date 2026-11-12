@@ -2493,3 +2493,83 @@ fake_fail adapter_claim_delete "HTTP 500 push"
 ORCH_GH_LIMIT_WAIT=0 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a failed claim-ref delete leaves the claim held" "$(fake_claim_held 9)" held
 fake_unfail
+
+# --- autopilot tick: the early GitHub pause (#2577) ---------------------------
+echo
+echo "autopilot tick github reserve"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Reserve 7"
+printf '7\n' >"$launcher_dir/release"
+quota_reset="$(( $(date +%s) + 7200 ))"
+printf 'core\t5000\t5000\t%s\ngraphql\t400\t5000\t%s\n' "$((quota_reset - 100))" "$quota_reset" >"$ORCH_GH_FAKE_STORE/quota"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with a pool under the reserve succeeds" "$st" 0
+assert_contains "its note names the pool and its reset" "$out" "GitHub graphql pool is below the github-reserve: no issue is picked up until $(iso_of "$quota_reset")"
+assert_not_contains "and names no usage limit" "$out" "usage limit"
+assert_eq "it picks nothing up" "$(tick_calls)" "0"
+assert_eq "the pause is its own file, not the usage limit's" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
+git config orchestrator.autopilot.github-reserve 0
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "github-reserve 0 turns the early pause off for a pool with no pause" "$(tick_calls)" "0"
+rm -f "$top/.orchestrator/autopilot/github-early-graphql"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with github-reserve 0 the tick picks up" "$(tick_calls)" "1"
+git config --unset-all orchestrator.autopilot.github-reserve
+# a failed read pauses nothing
+rm -f "$top/.orchestrator/autopilot/github-early-graphql"
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Reserve 8"
+printf '8\n' >"$launcher_dir/release"
+fake_fail adapter_rate_limit "HTTP 502"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a failed rate_limit read pauses nothing" "$(tick_calls)" "2"
+fake_unfail
+# the setting's range
+git config orchestrator.autopilot.github-reserve 100
+out="$("$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "show dies on an out-of-range github-reserve" "$st" 1
+assert_contains "naming key and value" "$out" "orchestrator.autopilot.github-reserve is 100"
+git config --unset-all orchestrator.autopilot.github-reserve
+out="$("$ORCH" autopilot show 2>&1)"
+assert_contains "show lists github-reserve with its default" "$out" "orchestrator.autopilot.github-reserve 20 (default)"
+
+# --- autopilot run: the session log's GitHub usage line (#2577) ---------------
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Usage 7"
+printf '7\n' >"$launcher_dir/release"
+rm -f "$ORCH_GH_FAKE_STORE/quota"
+"$ORCH" autopilot tick >/dev/null 2>&1
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+usage_launcher="$(mktemp)"
+cat >"$usage_launcher" <<USAGE
+#!/bin/sh
+rm -f "$ORCH_GH_FAKE_STORE/claims/7"
+printf 'core\t4990\t5000\t9999999999\ngraphql\t4900\t5000\t9999999999\n' >"$ORCH_GH_FAKE_STORE/quota"
+exit 0
+USAGE
+chmod +x "$usage_launcher"
+printf 'core\t5000\t5000\t9999999999\ngraphql\t4950\t5000\t9999999999\n' >"$ORCH_GH_FAKE_STORE/quota"
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_contains "the session log says how much core and graphql usage changed" "$(cat "$usage_log")" "GitHub API usage this session: core 10, graphql 50"
+# a failed read at the end writes no line
+rm -f "$usage_log"
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+printf '#!/bin/sh\nrm -f "%s/claims/7"\nmkdir -p "%s/fail"; echo x >"%s/fail/adapter_rate_limit"\nexit 0\n' "$ORCH_GH_FAKE_STORE" "$ORCH_GH_FAKE_STORE" "$ORCH_GH_FAKE_STORE" >"$usage_launcher"
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+assert_not_contains "a failed read at the session's end writes no usage line" "$(cat "$top/.orchestrator/autopilot/logs"/7-spec-*.log)" "GitHub API usage"
+# a failed read at the start writes no line
+rm -f "$top/.orchestrator/autopilot/logs"/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+fake_fail adapter_rate_limit "HTTP 502"
+printf '#!/bin/sh\nrm -f "%s/claims/7"\nrm -f "%s/fail/adapter_rate_limit"\nexit 0\n' "$ORCH_GH_FAKE_STORE" "$ORCH_GH_FAKE_STORE" >"$usage_launcher"
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+fake_unfail
+assert_not_contains "a failed read at the session's start writes no usage line" "$(cat "$top/.orchestrator/autopilot/logs"/7-spec-*.log)" "GitHub API usage"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND

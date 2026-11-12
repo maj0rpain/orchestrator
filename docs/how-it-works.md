@@ -276,6 +276,7 @@ global git config. `orch.sh autopilot` has no `set` verb, so set one with
 | `budget` | 3 | Review loop iterations. |
 | `model` | unset: the session's own default; else one of Claude Code's allowed models, `sonnet`, `opus`, `haiku` or `fable`, or `inherit` | The `--model` the headless phase session runs on. |
 | `auto-sync` | `true`: one of `true`, `false` | Turns the tick's sync-request detection on or off. |
+| `github-reserve` | 20: an integer from 0 to 99 | Percent of GitHub's `core` or `graphql` API limit that must be left for the tick to pick anything up; below it, pickup is paused until that pool's reset. 0 turns the early pause off. |
 | `effort` | unset: the session's own default; else one of Claude Code's allowed efforts, `low`, `medium`, `high`, `xhigh` or `max`, or `inherit` | The `--effort` the headless phase session runs on. |
 
 `rounds` and `budget` are only the defaults a hand-labelled issue's minimal
@@ -494,7 +495,13 @@ or accept it, then remove `needs-human`):
 
 - Relabel the issue one phase back to redo that phase.
 - A session that stops on Claude Code's usage limit pauses new pickups until
-  the reset time.
+  the reset time. A GitHub API rate limit, hit by a tick or a session, pauses
+  the whole tick (it does nothing, not even closing merged PRs) until the
+  limit's reset. The early GitHub pause acts before any limit is hit: a tick
+  that finds `core` or `graphql` with less than `github-reserve` percent of
+  its limit left pauses pickup until that pool's reset, its note naming the
+  pool. A failed read of the limits pauses nothing. The session log records
+  how much `core` and `graphql` usage the session changed.
 
 ### Hand-labelled issue
 

@@ -11,6 +11,7 @@ AUTOPILOT_MODES="default acceptEdits plan dontAsk bypassPermissions"
 AUTOPILOT_CAP_DEFAULT=3
 AUTOPILOT_ROUNDS_DEFAULT=2
 AUTOPILOT_BUDGET_DEFAULT=3
+AUTOPILOT_GITHUB_RESERVE_DEFAULT=20
 
 # autopilot_lookup <name> <value-var> <source-var>: the key
 # orchestrator.autopilot.<name> - local config, then global config - into
@@ -61,6 +62,14 @@ autopilot_setting() {
         true|false) ;;
         *) die "$key is $AUTOPILOT_VALUE - it must be true or false (git config $key true|false)" ;;
       esac ;;
+    github-reserve)
+      if [ "$AUTOPILOT_SOURCE" = unset ]; then AUTOPILOT_VALUE="$AUTOPILOT_GITHUB_RESERVE_DEFAULT"; AUTOPILOT_SOURCE=default; fi
+      case "$AUTOPILOT_VALUE" in
+        ''|*[!0-9]*) die "$key is $AUTOPILOT_VALUE - it must be an integer from 0 to 99 (git config $key <n>)" ;;
+      esac
+      [ "$((10#$AUTOPILOT_VALUE))" -le 99 ] ||
+        die "$key is $AUTOPILOT_VALUE - it must be an integer from 0 to 99 (git config $key <n>)"
+      AUTOPILOT_VALUE="$((10#$AUTOPILOT_VALUE))" ;;
     cap|rounds|budget)
       case "$name" in
         cap) def="$AUTOPILOT_CAP_DEFAULT" ;;
@@ -79,7 +88,7 @@ autopilot_setting() {
 # range, naming key and value.
 autopilot_show() {
   local name
-  for name in permission-mode cap handle rounds budget model effort auto-sync; do
+  for name in permission-mode cap handle rounds budget model effort auto-sync github-reserve; do
     autopilot_setting "$name"
     printf 'orchestrator.autopilot.%s %s (%s)\n' "$name" "${AUTOPILOT_VALUE:-(none)}" "$AUTOPILOT_SOURCE"
   done
@@ -714,18 +723,77 @@ autopilot_pause_epoch() {
 # pause a GitHub API rate limit writes (#2577).
 autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1")"; }
 
-# autopilot_pause_until <main> [github]: whether a limit pauses pickup: the
-# usage limit, or with "github" the GitHub API rate limit. While the limit
+# autopilot_github_early_file <main> <pool>: the early GitHub pause's file for
+# <pool> (core or graphql) under <main>: pickup paused, before any limit is hit,
+# while the pool is below the github-reserve (#2577).
+autopilot_github_early_file() { printf '%s/github-early-%s\n' "$(autopilot_dir "$1")" "$2"; }
+
+# autopilot_github_quota: GitHub's core and graphql pools, one per line as
+# "<pool> <remaining> <limit> <reset>", the reset in epoch seconds; fails,
+# printing nothing, when the read fails. The read is not itself guarded by the
+# limit handler and costs no quota.
+autopilot_github_quota() {
+  local out
+  out="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || return 1
+  [ -n "$out" ] || return 1
+  tr '\t' ' ' <<<"$out"
+}
+
+# autopilot_github_early <main>: the early GitHub pause. Reads the pools and,
+# for each with less than github-reserve percent of its limit left, records its
+# reset in the pool's early file (kept if later). A reserve of 0 reads nothing;
+# a failed read pauses nothing.
+autopilot_github_early() {
+  local quota pool remaining limit reset
+  autopilot_setting github-reserve
+  [ "$AUTOPILOT_VALUE" -gt 0 ] || return 0
+  quota="$(autopilot_github_quota)" || return 0
+  while read -r pool remaining limit reset; do
+    case "$pool" in core|graphql) ;; *) continue ;; esac
+    case "$remaining$limit$reset" in *[!0-9]*|'') continue ;; esac
+    [ "$limit" -gt 0 ] && [ "$((remaining * 100))" -lt "$((AUTOPILOT_VALUE * limit))" ] || continue
+    [ "$reset" -gt "$(date +%s)" ] || continue
+    autopilot_pause_put "$(autopilot_github_early_file "$1" "$pool")" "$reset" ||
+      warn "could not write the early GitHub pause under $1"
+  done <<<"$quota"
+}
+
+# autopilot_github_usage <before>: the change in core and graphql usage since
+# <before> (autopilot_github_quota's output at session start) as one line, "core
+# <n>, graphql <m>"; fails, printing nothing, when either read failed. A pool
+# that reset meanwhile counts as no usage.
+autopilot_github_usage() {
+  local after pool n line="" b_used a_used
+  [ -n "$1" ] || return 1
+  after="$(autopilot_github_quota)" || return 1
+  for pool in core graphql; do
+    b_used="$(awk -v p="$pool" '$1 == p { print $3 - $2 }' <<<"$1")"
+    a_used="$(awk -v p="$pool" '$1 == p { print $3 - $2 }' <<<"$after")"
+    case "$b_used$a_used" in ''|*[!0-9-]*) return 1 ;; esac
+    [ -n "$b_used" ] && [ -n "$a_used" ] || return 1
+    n=$((a_used - b_used)); [ "$n" -ge 0 ] || n=0
+    line="${line:+$line, }$pool $n"
+  done
+  printf '%s\n' "$line"
+}
+
+# autopilot_pause_until <main> [github|core|graphql]: whether a limit pauses
+# pickup: the usage limit, with "github" the GitHub API rate limit, or with a
+# pool its early GitHub pause. While the limit
 # file's reset time is in the future it prints one line naming it and returns
 # 0; once it has passed, the file is removed and it returns 1.
 autopilot_pause_until() {
   local file epoch what="usage limit: no issue is picked up until"
-  if [ "${2:-}" = github ]; then
-    file="$(autopilot_github_pause_file "$1")"
-    what="GitHub API rate limit: the tick does nothing until"
-  else
-    file="$(autopilot_dir "$1")/limit"
-  fi
+  case "${2:-}" in
+    github)
+      file="$(autopilot_github_pause_file "$1")"
+      what="GitHub API rate limit: the tick does nothing until" ;;
+    core|graphql)
+      file="$(autopilot_github_early_file "$1" "$2")"
+      what="GitHub $2 pool is below the github-reserve: no issue is picked up until" ;;
+    *)
+      file="$(autopilot_dir "$1")/limit" ;;
+  esac
   [ -f "$file" ] || return 1
   epoch="$(autopilot_pause_epoch "$file")"
   if [ "$epoch" -gt "$(date +%s)" ]; then
@@ -911,11 +979,14 @@ autopilot_tick() {
   main_root="$(main_checkout_or_die)" || exit $?
   cd "$main_root" || die "could not enter the main checkout $main_root"
   if autopilot_pause_until "$main_root" github; then return 0; fi
+  autopilot_github_early "$main_root"
   autopilot_labels_ensure
   autopilot_cleanup_stale
   autopilot_done_read done_table
   autopilot_close_missed "$done_table" done_table
   if autopilot_pause_until "$main_root"; then return 0; fi
+  if autopilot_pause_until "$main_root" core; then return 0; fi
+  if autopilot_pause_until "$main_root" graphql; then return 0; fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect "$done_table"; fi
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
@@ -1031,7 +1102,7 @@ autopilot_review_budget_record() {
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
-  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration hit flags=()
+  local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration hit usage_before usage flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -1071,12 +1142,14 @@ autopilot_run() {
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
   done
   log="$(liveness_log_path "$issue" "$phase")" || exit $?
+  usage_before="$(autopilot_github_quota)" || usage_before=""
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   ( cd "$side" && ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit" CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
       --append-system-prompt "$AUTOPILOT_SYSTEM_PROMPT" \
       --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
+  if usage="$(autopilot_github_usage "$usage_before")"; then printf 'autopilot run: GitHub API usage this session: %s\n' "$usage" >>"$log"; fi
   autopilot_session_end "$issue" "$phase" "$log" "$rc" "$mine"
 }
 
