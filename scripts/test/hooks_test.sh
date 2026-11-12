@@ -129,13 +129,66 @@ run_tolerant() {
   rm -f "$errf"
 }
 
-hook_read_skill_and_session < <(skill_event "mattpocock-skills:grilling" abc123)
+# The one reader, hook_read_payload, sets every field any hook reads.
+hook_read_payload < <(skill_event "mattpocock-skills:grilling" abc123)
 assert_eq "extracts skill from tool_input.skill" "$skill" "mattpocock-skills:grilling"
 assert_eq "extracts session_id" "$session" "abc123"
+assert_eq "extracts hook_event_name" "$event" "PostToolUse"
+assert_eq "extracts tool_name" "$tool" "Skill"
 
-hook_read_skill_and_session < <(printf '{}')
+hook_read_payload < <(printf '{}')
 assert_eq "defaults skill to empty string when absent" "$skill" ""
 assert_eq "defaults session_id to empty when absent" "$session" ""
+assert_eq "reads every other absent field as empty" \
+  "$project|$event|$tool|$tool_path|$transcript|$stop_active|$start_source|$prompt" "|||||||"
+
+hook_read_payload < <(jq -n '{session_id:null, tool_input:{skill:null}, prompt:null, transcript_path:null}')
+assert_eq "reads null fields as empty" "$session|$skill|$prompt|$transcript" "|||"
+
+hook_read_payload < <(jq -n '{project_path:"/p", source:"clear", stop_hook_active:true,
+  tool_input:{file_path:"/f", notebook_path:"/n", path:"/q"}, transcript_path:"/t.jsonl"}')
+assert_eq "extracts project_path, source, stop_hook_active, tool path, transcript_path" \
+  "$project|$start_source|$stop_active|$tool_path|$transcript" "/p|clear|true|/f|/t.jsonl"
+hook_read_payload < <(jq -n '{tool_input:{notebook_path:"/n", path:"/q"}}')
+assert_eq "the tool path falls back to notebook_path" "$tool_path" "/n"
+hook_read_payload < <(jq -n '{tool_input:{path:"/q"}}')
+assert_eq "the tool path falls back to path" "$tool_path" "/q"
+hook_read_payload < <(jq -n '{stop_hook_active:"true"}')
+assert_eq "stop_active is empty unless stop_hook_active is JSON true" "$stop_active" ""
+
+# Values holding a tab, a newline and a backslash come back byte for byte.
+odd=$'a\tb\nc\\d\\n'
+hook_read_payload < <(jq -n --arg v "$odd" '{prompt:$v, cwd:$v, transcript_path:$v, tool_input:{file_path:$v}}')
+assert_eq "reads a prompt with a tab, newline and backslash byte for byte" "$prompt" "$odd"
+assert_eq "reads cwd with a tab, newline and backslash byte for byte" "$cwd" "$odd"
+assert_eq "reads transcript_path with a tab, newline and backslash byte for byte" "$transcript" "$odd"
+assert_eq "reads the tool path with a tab, newline and backslash byte for byte" "$tool_path" "$odd"
+
+# A NUL in a JSON string is dropped, and no later field shifts.
+hook_read_payload < <(printf '%s' '{"prompt":"a\u0000b","session_id":"s9","source":"clear"}')
+assert_eq "drops a NUL from a prompt" "$prompt" "ab"
+assert_eq "keeps the fields after a NUL-holding prompt in place" "$session|$start_source" "s9|clear"
+
+# cwd: project_path, else cwd, else the process working directory.
+hook_read_payload < <(jq -n '{project_path:"/proj", cwd:"/c"}')
+assert_eq "cwd is project_path when both are set" "$cwd" "/proj"
+hook_read_payload < <(jq -n '{cwd:"/c"}')
+assert_eq "cwd is cwd when only it is set" "$cwd" "/c"
+hook_read_payload < <(printf '{}')
+assert_eq "cwd is the working directory when neither is set" "$cwd" "$PWD"
+
+# host: junie for a non-empty project_path, else claude.
+hook_read_payload < <(jq -n '{project_path:"/p"}')
+assert_eq "host is junie for a non-empty project_path" "$host" "junie"
+for p in '{}' '{"project_path":""}' '{"project_path":null}' '' 'not json' '[1]'; do
+  hook_read_payload < <(printf '%s' "$p")
+  assert_eq "host is claude for payload '$p'" "$host" "claude"
+done
+hook_read_payload < <(printf 'not json'); rc=$?
+assert_eq "the reader succeeds on a payload that is not JSON" "$rc" "0"
+hook_read_payload < <(printf '[{"session_id":"x"}]')
+assert_eq "a JSON array leaves every field empty" "$session|$cwd" "|$PWD"
+
 
 echo
 echo "grilling hook"
@@ -1389,6 +1442,59 @@ rm -rf "$PG"
 
 assert_eq "hooks.json registers hook-paste-stop-guard.sh under Stop" \
   "$(jq -r '[.hooks.Stop[]? | .hooks[]?.command | select(test("hook-paste-stop-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
+echo
+echo "one jq per payload (#2556)"
+# A counting jq first on PATH logs each call and runs the real jq.
+JQC="$(mktemp -d)"
+REAL_JQ="$(command -v jq)"
+cat >"$JQC/jq" <<STUB
+#!/usr/bin/env bash
+echo jq >>"\$JQ_COUNT_LOG"
+exec "$REAL_JQ" "\$@"
+STUB
+chmod +x "$JQC/jq"
+# jq_count <hook>: the jq processes <hook> starts on the payload on stdin.
+jq_count() {
+  local log="$JQC/log"
+  : >"$log"
+  PATH="$JQC:$PATH" JQ_COUNT_LOG="$log" "$1" >/dev/null 2>&1 || :
+  wc -l <"$log" | tr -d ' '
+}
+JQT="$(mktemp -d)"
+jqpayload() { jq -n "$@"; }
+assert_eq "grilling hook on a Claude Code UserPromptSubmit starts one jq" \
+  "$(jqpayload --arg c "$REPO" '{hook_event_name:"UserPromptSubmit",session_id:"jq1",cwd:$c,prompt:"hi"}' | jq_count "$GRILL")" 1
+assert_eq "grilling hook on an unrelated skill starts one jq" \
+  "$(skill_event "mattpocock-skills:tdd" jq2 | jq_count "$GRILL")" 1
+assert_eq "grilling hook on a Junie prompt naming no entry point starts one jq" \
+  "$(jqpayload --arg c "$REPO" '{hook_event_name:"UserPromptSubmit",session_id:"jq3",project_path:$c,prompt:"hello"}' | jq_count "$GRILL")" 1
+assert_eq "edit guard in an unarmed session starts one jq" \
+  "$(edit_event "$REPO/src/x.ts" jq4 | jq_count "$GUARD")" 1
+: >"$TMPDIR/orchestrator-grilling-jq5"
+assert_eq "edit guard in an armed session on a file in no git repo starts one jq" \
+  "$(edit_event "$JQT/x.ts" jq5 | jq_count "$GUARD")" 1
+rm -f "$TMPDIR/orchestrator-grilling-jq5"
+assert_eq "quick-implement hook on an unrelated skill starts one jq" \
+  "$(skill_event "mattpocock-skills:tdd" jq6 | jq_count "$QUICK")" 1
+assert_eq "session-start hook on a source other than clear starts one jq" \
+  "$(jqpayload '{session_id:"jq7",source:"startup"}' | jq_count "$START")" 1
+make_markers jq8
+assert_eq "session-start hook on clear starts one jq" \
+  "$(jqpayload '{session_id:"jq8",source:"clear"}' | jq_count "$START")" 1
+assert_marker_absent "session-start hook on clear removes the marker" grilling jq8
+assert_eq "AskUserQuestion paste guard on another tool name starts one jq" \
+  "$(jqpayload '{tool_name:"Bash",transcript_path:"/nope"}' | jq_count "$PASTE")" 1
+assert_eq "Stop guard with stop_hook_active set starts one jq" \
+  "$(jqpayload '{stop_hook_active:true,transcript_path:"/nope"}' | jq_count "$STOP")" 1
+rm -rf "$JQC" "$JQT"
+
+# A payload that is not a JSON object fails open: exit 0, no output, no stderr.
+for hook_name in GRILL GUARD QUICK PASTE STOP START; do
+  for bad_payload in 'not json' '[1,2]'; do
+    run_tolerant "$hook_name on '$bad_payload'" "${!hook_name}" < <(printf '%s' "$bad_payload")
+    assert_empty "$hook_name on '$bad_payload' prints nothing" "$hook_out"
+  done
+done
 
 echo
 echo "execute bit (docs/host-capabilities.md, \"Execute bit\")"

@@ -17,7 +17,7 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 
-hook_read_skill_and_session
+hook_read_payload
 
 case "$skill" in
   orch-quick-implement|*:orch-quick-implement) ;;
