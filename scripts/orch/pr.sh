@@ -277,6 +277,9 @@ cmd_pr_open() {
   [ -f "$body_file" ] || die "body file not found: $body_file"
   require_issue issue
   require_branch branch
+  # Resolved here, in pr open's own shell, so the base read and the issue
+  # line's default-branch check ask GitHub once between them.
+  default_branch_resolve
   base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
   require_no_open_tickets "$issue" "pr open"
@@ -317,6 +320,9 @@ cmd_pr_publish() {
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   current_branch_or_die
+  # Resolved here, in pr publish's own shell, so the base read and the issue
+  # line's default-branch check ask GitHub once between them.
+  default_branch_resolve
   base="$(recorded_base "$branch")"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
   require_no_open_tickets "$issue" "pr publish"
@@ -335,6 +341,9 @@ cmd_pr_release() {
   local title="$1" body_file="$2" base default
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
+  # Resolved here, in pr release's own shell, so the base and default reads
+  # ask GitHub once between them.
+  default_branch_resolve
   base="$(base_branch)"
   default="$(default_branch)"
   [ "$base" != "$default" ] ||
