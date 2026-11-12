@@ -501,7 +501,7 @@ agent_junie_session() {
   [ -n "$lines" ] || { agent_junie_session_cannot_tell "the log holds no agent runs"; return 0; }
   local -a agents_ran
   mapfile -t agents_ran < <(printf '%s\n' "$lines" | sed -n "s/.*custom_agent_\\($AGENT_JUNIE_RUN_NAME\\)$AGENT_JUNIE_RUN_TAIL.*/\\1/p" | awk '!seen[$0]++')
-  for agent in "${agents_ran[@]}"; do
+  for agent in ${agents_ran[@]+"${agents_ran[@]}"}; do
     line="$(printf '%s\n' "$lines" | grep -a "custom_agent_$agent$AGENT_JUNIE_RUN_TAIL" | tail -1)"
     model="$(agent_junie_field "$line" model)"
     [ -n "$model" ] || { agent_junie_session_cannot_tell "the log does not parse"; return 0; }

@@ -1052,7 +1052,7 @@ adapter_claim_list() {
     return 1
   }
   mapfile -t refs < <(git for-each-ref --format='%(refname)' refs/orch/claims/ | sort -t/ -k4,4n)
-  for ref in "${refs[@]}"; do
+  for ref in ${refs[@]+"${refs[@]}"}; do
     issue="${ref##*/}"
     msg="$(git show -s --format=%B "$ref")" || return 1
     host="$(sed -n 's/^host: //p' <<<"$msg")"

@@ -299,7 +299,7 @@ suite_cost_newest() {
   local -a lines
   [ -e "$rec" ] || return 1
   mapfile -t lines < <(awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }' "$rec")
-  for line in "${lines[@]}"; do
+  for line in ${lines[@]+"${lines[@]}"}; do
     IFS=$'\t' read -r sha _ _ _ cmd <<<"$line"
     [ "$cmd" = "$want" ] || continue
     if "$pred" "$sha"; then printf '%s\n' "$sha"; return 0; fi
