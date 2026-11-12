@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.19
+
+The Bash guards' command walker and the shell-code scanner now read a heredoc delimiter as bash does, as a whole word such as `END-NOTES`, `END.TXT` or `E"N"D`, and read `<<` inside `$(( ))` or `(( ))` as a shift, not a heredoc. Before, a delimiter with punctuation or a shift like `$((1<<n))` made them swallow the rest of the command, which silently turned off the poll and stdin guards.
+
 ## 5.0.18
 
 `orch.sh base set <branch>` no longer discards an explicit `main` when GitHub cannot answer and origin/HEAD is unset: only a default named by GitHub or origin/HEAD clears the setting, a guessed `main` is stored.
