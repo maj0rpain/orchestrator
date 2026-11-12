@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.11
+
+The hooks suite drops three duplicated grilling-hook asserts and defines its no-git scratch directory once.
+
 ## 5.2.10
 
 Tidy the spec-review CRLF test sections: drop a duplicate all-CRLF apply case and use assert_not_contains for zero-CR checks.
