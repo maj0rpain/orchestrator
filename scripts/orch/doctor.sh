@@ -24,7 +24,8 @@
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
 # defined; the gh adapter operations it calls, issue_state_labels_read among
 # them, live in gh.sh. The helpers it calls from noun modules
-# (default_branch_local, base_setting and origin_has_branch from base.sh,
+# (default_branch_local, default_branch_seed, base_setting and
+# origin_has_branch from base.sh,
 # require_state from state.sh), and check_agent_settings, agent.sh's check
 # its env check list names, are defined by the time cmd_doctor runs,
 # because every module is sourced before main dispatches. cmd_doctor is then
