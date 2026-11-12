@@ -675,7 +675,8 @@ restore_suite_env
 
 # --- ticket block ------------------------------------------------------------
 # Adds native blocking edges to a published, open ticket, verifies them by
-# reading the target's blocked-by list back (ADR-0011's verify-then-die), and
+# reading the target's blocked-by list back through verify_twice (the one-retry
+# policy ADR-0011 records for `ticket publish`), and
 # rewrites the body's `## Blocked by` section to match. Idempotent, so a run
 # that died part-way is finished by running it again.
 echo
@@ -767,7 +768,8 @@ out="$("$ORCH" ticket block "$bg" --by "$ba" 2>&1)"; st=$?
 assert_status "a readback that is wrong twice dies" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #$bg's blocking edges did not verify"
 
-# A failed read-back is retried like a mismatch (ADR-0011, verify_twice); a
+# A failed read-back is retried like a mismatch (verify_twice, the one-retry
+# policy ADR-0011 records for `ticket publish`); a
 # death leaves the written edges and the body's section alone.
 vlo="$("$ORCH" ticket publish 96 "VLo" "$body")"
 vhi="$("$ORCH" ticket publish 96 "VHi" "$body")"
@@ -971,7 +973,8 @@ restore_suite_env
 
 # --- ticket unblock ----------------------------------------------------------
 # Removes native blocking edges from a published, open ticket, verifies the
-# rest by reading them back (ADR-0011), and rewrites the body's `## Blocked
+# rest by reading them back through verify_twice (the one-retry policy ADR-0011
+# records for `ticket publish`), and rewrites the body's `## Blocked
 # by` section to match. Idempotent, so a run that died part-way is finished
 # by running it again.
 echo

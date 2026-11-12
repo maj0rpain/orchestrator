@@ -371,7 +371,8 @@ issue_triage_verified() {
 # ready-for-agent label, so init --issue can adopt it - the planning close's
 # one write to GitHub (#571). One relabel adds ready-for-agent and removes
 # whichever other triage-role labels the issue carries, then the labels are
-# read back (ADR-0011), and one comment names the label it now carries.
+# read back through verify_twice (the one-retry policy ADR-0011 records for
+# ticket publish), and one comment names the label it now carries.
 # With --check it writes nothing: the same read and role walk, then one line
 # on stdout - ready, the held label, or movable - for the planning hook's
 # interviewed-issue step to ask its question from (#989).
