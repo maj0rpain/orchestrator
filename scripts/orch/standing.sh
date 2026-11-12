@@ -256,15 +256,82 @@ standing_chain_die() {
   standing_landed_die "could not $2 on issue #$1: $(gh_reason "$3")"
 }
 
+# The resumable chain (#2695). The session wrapper runs a stop chain up to three
+# times, each attempt in a subshell of its own, so a death ends the attempt and
+# not the wrapper. STANDING_STATE_FILE, set only inside an attempt, is the
+# wrapper's record of what the attempts did, one TSV line each: `landed <write>`
+# for a write whose call succeeded, `tried <write>` before a comment's call (it
+# may have landed though the call failed), `plan <value>` for what the first
+# successful timeline read fixed, and `stop <kind> <first line>` for the
+# wrapper's backstop line. A chain transition starts from the writes that landed
+# (STANDING_DONE) and skips them; with no state file nothing is recorded.
+STANDING_STATE_FILE=""
+STANDING_DONE=()
+
+# standing_state_put <key> <value>: records the line; nothing without a file.
+standing_state_put() {
+  [ -z "$STANDING_STATE_FILE" ] || printf '%s\t%s\n' "$1" "$2" >>"$STANDING_STATE_FILE"
+}
+
+# standing_state_get <key>: prints the value of the newest <key> line; fails
+# when there is none.
+standing_state_get() {
+  local key value found=1 out=""
+  [ -s "${STANDING_STATE_FILE:-}" ] || return 1
+  while IFS=$'\t' read -r key value; do
+    [ "$key" != "$1" ] || { out="$value"; found=0; }
+  done <"$STANDING_STATE_FILE"
+  [ "$found" -ne 0 ] || printf '%s\n' "$out"
+  return "$found"
+}
+
+# standing_chain_start: resets STANDING_LANDED at the start of a chain
+# transition, then takes up the writes earlier attempts landed.
+standing_chain_start() {
+  local key value
+  STANDING_LANDED="" STANDING_DONE=()
+  [ -s "${STANDING_STATE_FILE:-}" ] || return 0
+  while IFS=$'\t' read -r key value; do
+    [ "$key" = landed ] || continue
+    STANDING_DONE+=("$value")
+    STANDING_LANDED="${STANDING_LANDED:+$STANDING_LANDED, }$value"
+  done <"$STANDING_STATE_FILE"
+}
+
+# standing_landed_has <write>: whether an earlier attempt landed <write>.
+standing_landed_has() {
+  local done_write
+  for done_write in ${STANDING_DONE[@]+"${STANDING_DONE[@]}"}; do
+    [ "$done_write" != "$1" ] || return 0
+  done
+  return 1
+}
+
 # standing_landed_add <write>: notes a write that landed.
-standing_landed_add() { STANDING_LANDED="${STANDING_LANDED:+$STANDING_LANDED, }$1"; }
+standing_landed_add() {
+  STANDING_LANDED="${STANDING_LANDED:+$STANDING_LANDED, }$1"
+  STANDING_DONE+=("$1")
+  standing_state_put landed "$1"
+}
+
+# standing_stop_note <kind> <text>: records the stop's kind and the first line
+# of <text> that is not its hidden marker, for the wrapper's backstop line.
+standing_stop_note() {
+  local line first=""
+  while IFS= read -r line; do
+    case "$line" in ''|'<!--'*) continue ;; esac
+    first="$line"; break
+  done <<<"$2"
+  standing_state_put stop "$1"$'\t'"$first"
+}
 
 # standing_chain_relabel <issue> <flag> <label>: one label write of a chain -
 # <flag> (--add or --remove) <label> - dying as a chain does when it fails, and
-# noting the write that landed.
+# noting the write that landed. A write an earlier attempt landed is skipped.
 standing_chain_relabel() {
   local gh_err verb=add past=added
   [ "$2" != --remove ] || { verb=remove; past=removed; }
+  ! standing_landed_has "$past $3" || return 0
   capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" ||
     standing_chain_die "$1" "$verb $3" "$gh_err"
   standing_landed_add "$past $3"
@@ -302,7 +369,7 @@ standing_move_label() {
 # unlabelled issue posts a newer plan comment, which supersedes the earlier.
 standing_start() {
   local issue="$1" file="$2" ready gh_err first
-  STANDING_LANDED=""
+  standing_chain_start
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   [ -f "$file" ] || die "plan file not found: $file"
   ready="$(triage_label_for ready-for-agent)"
@@ -373,7 +440,7 @@ standing_pause() {
 # releases the claim.
 standing_ask() {
   local phase="$1" text="$2" issue body gh_err
-  STANDING_LANDED=""
+  standing_chain_start
   require_state
   require_issue issue
   autopilot_setting handle
@@ -392,16 +459,56 @@ standing_ask() {
 # (<post-what> names it in a failure, "post the ... comment"; <landed-what>
 # once landed, "posted the ... comment"), then releases the claim, last.
 standing_post_release() {
-  local issue="$1" text="$2" post_what="$3" landed_what="$4" body gh_err
-  body="$(mktemp)" || die "could not create a temp file to $post_what"
-  printf '%s' "$text" >"$body"
-  capture_err gh_err adapter_issue_comment "$issue" "$body" || {
+  local issue="$1" text="$2" post_what="$3" landed_what="$4" kind present_rc
+  kind="${landed_what#posted the }"
+  standing_stop_note "${kind% comment}" "$text"
+  if ! standing_landed_has "$landed_what"; then
+    present_rc=1
+    # An earlier attempt's call failed and may have landed: look first, and post
+    # nothing when the look fails.
+    if [ -s "${STANDING_STATE_FILE:-}" ] && grep -qxF "tried"$'\t'"$landed_what" "$STANDING_STATE_FILE"; then
+      present_rc=0; standing_comment_present "$issue" "$text" || present_rc=$?
+      [ "$present_rc" -le 1 ] ||
+        standing_landed_die "could not check issue #$issue's comments for this stop's comment: ${STANDING_CHECK_ERR:-the comments could not be read}"
+    fi
+    if [ "$present_rc" -eq 0 ]; then
+      standing_landed_add "$landed_what"
+    else
+      standing_comment_post "$issue" "$text" "$post_what" "$landed_what"
+    fi
+  fi
+  standing_release "$issue"
+}
+
+# standing_comment_post <issue> <text> <post-what> <landed-what>: posts <text>
+# as a comment and notes it landed. The try is recorded first: a failed call
+# may have landed.
+standing_comment_post() {
+  local body gh_err
+  body="$(mktemp)" || die "could not create a temp file to $3"
+  printf '%s' "$2" >"$body"
+  standing_state_put tried "$4"
+  capture_err gh_err adapter_issue_comment "$1" "$body" || {
     rm -f "$body"
-    standing_chain_die "$issue" "$post_what" "$gh_err"
+    standing_chain_die "$1" "$3" "$gh_err"
   }
   rm -f "$body"
-  standing_landed_add "$landed_what"
-  standing_release "$issue"
+  standing_landed_add "$4"
+}
+
+# standing_comment_present <issue> <text>: 0 when a trusted comment of the issue
+# is <text>, trailing whitespace aside; 1 when none is; 2, with the reason in
+# STANDING_CHECK_ERR, when the comments cannot be read.
+STANDING_CHECK_ERR=""
+standing_comment_present() {
+  local json gh_err
+  STANDING_CHECK_ERR=""
+  capture json gh_err adapter_issue_comments_json "$1" || { STANDING_CHECK_ERR="$(gh_reason "$gh_err")"; return 2; }
+  json="$(trust_filter_comments "$1" <<<"$json")" || return 2
+  jq -e --arg t "$2" 'any(.[]; (.body | sub("\\s+$"; "")) == ($t | sub("\\s+$"; "")))' <<<"$json" >/dev/null 2>&1 || {
+    [ "$?" -eq 1 ] || return 2
+    return 1
+  }
 }
 
 # standing_reenter <issue> <phase> <text>: the automatic re-entry transition,
@@ -411,7 +518,7 @@ standing_post_release() {
 # timeline that cannot be read takes the failure stop.
 standing_reenter() {
   local issue="$1" phase="$2" text="$3" count body
-  STANDING_LANDED=""
+  standing_chain_start
   { timeline_read "$issue" && count="$(timeline_reentry_count "$phase")"; } || {
     standing_stop "$issue" failure "$phase" "the issue's comments could not be read to count the automatic re-entries in a row"
     return 0
@@ -437,9 +544,12 @@ standing_stop_write() {
   if [ -n "$remove" ]; then
     relabel+=(--remove "$remove")
   fi
-  capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
-    standing_chain_die "$issue" "add $label${remove:+, remove $remove}" "$gh_err"
-  standing_landed_add "added $label${remove:+, removed $remove}"
+  standing_stop_note "$kind" "$text"
+  if ! standing_landed_has "added $label${remove:+, removed $remove}"; then
+    capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
+      standing_chain_die "$issue" "add $label${remove:+, remove $remove}" "$gh_err"
+    standing_landed_add "added $label${remove:+, removed $remove}"
+  fi
   standing_post_release "$issue" "$text" "post the $kind comment" "posted the $kind comment"
 }
 
@@ -450,7 +560,7 @@ standing_stop_write() {
 # writer dies before any label, comment or claim is touched.
 standing_stop() {
   local issue="$1" kind="$2" phase="$3" detail="$4" text marker what
-  STANDING_LANDED=""
+  standing_chain_start
   marker="$(marked_comment_write "$kind" "$phase")" || exit 1
   what="$(standing_phase_text "$phase")"
   case "$kind" in
@@ -466,7 +576,7 @@ standing_stop() {
 # orch:sync removed, then the claim released. orch:done stays and no phase is
 # recorded: the issue is a plain done flow again.
 standing_sync_finish() {
-  STANDING_LANDED=""
+  standing_chain_start
   standing_chain_relabel "$1" --remove "$STANDING_SYNC_LABEL"
   standing_release "$1"
 }
@@ -479,7 +589,7 @@ standing_sync_finish() {
 # The caller reads the setting and passes it in.
 standing_sync_dropped() {
   local issue="$1" intents="$2" auto_sync="$3" marker text next
-  STANDING_LANDED=""
+  standing_chain_start
   marker="$(marked_comment_write failure "$STANDING_SYNC_PHASE")" || exit 1
   if [ "$auto_sync" = true ]; then
     next="Once the label is gone, the watcher files a new sync request by itself whenever the PR conflicts with its base; or run \`orch.sh autopilot sync $issue\` to sync now."
@@ -503,19 +613,35 @@ standing_sync_dropped() {
 # reset, else the one-hour fallback.
 standing_limit_stop() {
   local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" cause="${7:-}"
-  local count text when=" (the session gave no reset time)" at stopped marker what="a usage limit"
-  STANDING_LANDED=""
+  local count plan text when=" (the session gave no reset time)" at stopped marker what="a usage limit"
+  standing_chain_start
   [ -z "$reset" ] || when=" (resets $reset)"
   [ -z "$cause" ] || what="the GitHub API rate limit"
   stopped="the session stopped on $what$when and exited with code $rc"
-  { timeline_read "$issue" && count="$(timeline_limit_count "$phase")"; } || {
-    standing_stop "$issue" failure "$phase" "$stopped, and the issue's comments could not be read to count the stops in a row; log: $log"
-    return 0
+  # The first read that succeeds fixes the stop's kind and count for every
+  # later attempt. A read that failed on a GitHub limit fixes nothing and never
+  # makes a failure stop: the attempt fails.
+  plan="$(standing_state_get plan)" || {
+    if timeline_read "$issue"; then
+      count="$(timeline_limit_count "$phase")"
+      if [ "$count" -ge 2 ]; then plan=third; else plan="count:$count"; fi
+    elif [[ "$TIMELINE_REASON" == *"GitHub API rate limit reached"* ]]; then
+      standing_stop_note "limit stop" "$stopped"
+      standing_landed_die "could not read issue #$issue's comments to count the stops in a row: $TIMELINE_REASON"
+    else
+      plan=unread
+    fi
+    standing_state_put plan "$plan"
   }
-  if [ "$count" -ge 2 ]; then
-    standing_stop "$issue" failure "$phase" "$stopped, the third in a row in $(standing_phase_text "$phase"); log: $log"
-    return 0
-  fi
+  case "$plan" in
+    unread)
+      standing_stop "$issue" failure "$phase" "$stopped, and the issue's comments could not be read to count the stops in a row; log: $log"
+      return 0 ;;
+    third)
+      standing_stop "$issue" failure "$phase" "$stopped, the third in a row in $(standing_phase_text "$phase"); log: $log"
+      return 0 ;;
+  esac
+  count="${plan#count:}"
   marker="$(marked_comment_write limited "$phase" $cause)" || exit 1
   if [ -n "$cause" ]; then
     printf -v text '%s\nThe session stopped on the GitHub API rate limit in %s, which reset %s.\n\nRetry %s of 2: the issue is picked up again by the next tick, no label is added.\n\nLog: %s\n' \

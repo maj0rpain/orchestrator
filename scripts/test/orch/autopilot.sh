@@ -877,6 +877,15 @@ assert_eq "a dead run record makes it stale" "$(fake_claim_held 12)" free
 assert_contains "the stale comment names the session log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
 assert_contains "and says no exit code is known" "$(fake_comments_of 12)" "no exit code"
 
+# a log that ends in the wrapper's backstop line: stale cleanup quotes it in
+# place of "no exit code is known"
+fake_issue 13 open ready-for-agent orch:spec orch:running
+fake_claim_seed 13 "$(hostname)" "$(dead_pid)"
+printf '%s\n' "autopilot run: the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit; the session exited with code 7" >"$top/.orchestrator/autopilot/logs/13-spec-20250101T000000.log"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_contains "stale cleanup quotes the backstop line" "$(fake_comments_of 13)" "the session log says: \"the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit; the session exited with code 7\""
+assert_not_contains "and no longer says no exit code is known" "$(fake_comments_of 13)" "no exit code is known"
+
 # the claim identity: with ORCH_HOST_ID set, only claims of that id are this
 # host's
 fake_issue 14 open ready-for-agent orch:spec orch:running
@@ -1068,7 +1077,7 @@ assert_eq "and writes the limit file" "$(cat "$limit_file")" "$lim_iso"
 for op in adapter_issue_relabel adapter_issue_comment; do
   lim_fresh
   fake_fail "$op" "HTTP 500"
-  out="$(limit_run 7)"; st=$?
+  out="$(ORCH_GH_LIMIT_WAIT=0 limit_run 7)"; st=$?
   fake_unfail
   assert_status "a limit stop whose $op fails dies" "$st" 1
   assert_eq "$op: the claim is still held" "$(fake_claim_held 7)" held
@@ -1671,6 +1680,58 @@ assert_status "unreadable claims die" "$se_st" 1
 assert_contains "naming the claims" "$se_out" "could not list the claims on origin"
 assert_eq "leaving labels, comments and claim untouched" "$(fake_snapshot)" "$before"
 assert_eq "and no limit file" "$(se_limit)" absent
+
+# the stop chain's attempts (#2695): a failed write fails the attempt, and the
+# wrapper tries again, resuming from the first write that did not land. The
+# guard's test knob shortens the waits between attempts.
+echo
+echo "autopilot session end: the stop chain's attempts"
+ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
+se_marker_count() { grep -c -x -F "$(marker_of "$@")" <<<"$(fake_comments_of 7)" || true; }
+# se_end_with <prelude> <rc>: Session end over $se_log with <prelude> run after
+# orch.sh is sourced; the stop-chain waits are 0.
+se_end_with() {
+  se_out="$(ORCH_GH_LIMIT_WAIT=0 sourced_orch_script "$1"$'\n''autopilot_session_end 7 spec "$1" "$2" ""' "$se_log" "$2" 2>&1)"; se_st=$?
+}
+# a comment call that lands but reports a failure, once; $1 runs just after it
+LOSE_COMMENT='eval "orig_$(declare -f adapter_issue_comment)"
+adapter_issue_comment() {
+  local rc=0
+  orig_adapter_issue_comment "$@" || rc=$?
+  if [ ! -e "$ORCH_GH_FAKE_STORE/lost" ]; then : >"$ORCH_GH_FAKE_STORE/lost"; '
+se_lose_comment() { printf '%s; return 1; fi; return $rc; }' "$LOSE_COMMENT$1"; }
+
+se_fresh
+fake_fail adapter_issue_comment "HTTP 500 comment"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comment.times"
+se_end_with ':' 1
+assert_eq "a failed comment is retried: one limit comment, the issue limited, the claim released" "$(se_marker_count limited spec)|$(se_kind)|$(fake_claim_held 7)|$se_st" "1|limited|free|0"
+fake_unfail
+
+rm -f "$ORCH_GH_FAKE_STORE/lost"; se_fresh
+se_end_with "$(se_lose_comment ':')" 1
+assert_eq "a stop whose comment landed but whose call failed posts no second comment" "$(se_marker_count limited spec)|$(se_kind)|$(fake_claim_held 7)" "1|limited|free"
+assert_contains "and keeps its count on the next attempt" "$(fake_last_comment_of 7)" "retry 1 of 2"
+
+rm -f "$ORCH_GH_FAKE_STORE/lost"; se_fresh
+se_end_with "$(se_lose_comment 'mkdir -p "$ORCH_GH_FAKE_STORE/fail"; printf "HTTP 500 read\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json"')" 1
+assert_eq "a failed duplicate-comment check posts no comment, and every attempt fails" "$(se_marker_count limited spec)|$(fake_claim_held 7)|$se_st" "1|held|1"
+assert_contains "the backstop line is written to the session log" "$(tail -1 "$se_log")" "the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit"
+assert_contains "with the session's exit code" "$(tail -1 "$se_log")" "the session exited with code 1"
+fake_unfail
+
+se_fresh
+fake_fail adapter_issue_comments_json "API rate limit exceeded"; printf '1\n' >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json.times"
+se_end_with ':' 1
+assert_eq "a timeline read that fails on a limit ends in a limit stop on a later attempt, not a failure stop" "$(se_kind)|$(se_marker_count limited spec)" "limited|1"
+fake_unfail
+
+ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
+se_fresh; fake_fail adapter_issue_relabel "HTTP 500 relabel"
+se_end_with ':' 1
+assert_eq "a stop whose every attempt fails leaves the claim held and fails" "$(fake_claim_held 7)|$se_st" "held|1"
+assert_contains "and writes one backstop line, with the stop kind, first line and exit code" "$(grep -c 'the stop chain failed after 3 attempts' "$se_log") $(tail -1 "$se_log")" "1 autopilot run: the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit"
+fake_unfail
+rm -f "$ORCH_GH_FAKE_STORE/lost"
 rm -rf "$se_dir"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 

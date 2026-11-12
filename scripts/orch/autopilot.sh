@@ -693,7 +693,7 @@ autopilot_pickup() {
 # Liveness module's to name, and both of the issue's records go with the claim.
 # Other hosts' claims are never touched.
 autopilot_cleanup_stale() {
-  local issue phase log detail me gone_pid
+  local issue phase log detail me gone_pid backstop
   me="$(standing_host_id)"
   standing_claims_read
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
@@ -702,6 +702,9 @@ autopilot_cleanup_stale() {
     gone_pid="$(liveness_issue_alive "$issue")" && continue
     detail="the session's process (pid ${gone_pid:-unknown}) is gone and the claim was never released - no exit code is known"
     log="$(liveness_latest_log "$issue" "$phase")" || true
+    backstop=""
+    [ -z "$log" ] || backstop="$(grep -F "$AUTOPILOT_BACKSTOP_PREFIX" "$log" 2>/dev/null | tail -1)" || true
+    if [ -n "$backstop" ]; then detail="${detail%% - no exit code is known} - the session log says: \"${backstop#autopilot run: }\""; fi
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
     standing_stop "$issue" failure "$phase" "$detail"
     liveness_issue_forget "$issue"
@@ -1074,16 +1077,51 @@ autopilot_session_end() {
       printf '%s\n' "$released_note" >>"$log"
       return 0 ;;
     limited)
-      standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
-      return 0 ;;
+      autopilot_stop_attempts "$log" "$rc" standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
+      return ;;
     github)
-      standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
-      return 0 ;;
+      autopilot_stop_attempts "$log" "$rc" standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
+      return ;;
   esac
   reply="$SESSION_LOG_REPLY"
   detail="the session exited with code $rc; "
   [ -z "$reply" ] || detail+="it ended on: *$reply*; "
-  standing_stop "$issue" failure "$phase" "${detail}log: $log"
+  autopilot_stop_attempts "$log" "$rc" standing_stop "$issue" failure "$phase" "${detail}log: $log"
+}
+
+# autopilot_stop_attempts <log> <rc> <command>...: the wrapper's stop chain, run
+# up to three times, each attempt in a subshell so a death ends the attempt; the
+# claim and the run record are kept throughout. The attempts share one state
+# file (standing.sh's resumable chain), so each resumes from the first write
+# that did not land. Before the second and third it waits for a GitHub pause
+# when one holds, else 60, then 300 seconds; ORCH_GH_LIMIT_WAIT, the guard's
+# test knob, shortens every wait, the pause wait included. When the last
+# attempt fails it writes one backstop line to <log> - the stop's kind, its
+# first line and the session's exit code - for stale cleanup to quote, and
+# returns 1.
+AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after 3 attempts - "
+autopilot_stop_attempts() {
+  local log="$1" rc="$2" state attempt main_root wait line kind first
+  shift 2
+  state="$(mktemp)" || die "could not create a temp file for the stop chain's state"
+  for attempt in 1 2 3; do
+    wait=""
+    if [ "$attempt" -gt 1 ]; then
+      if main_root="$(main_checkout_or_die 2>/dev/null)" && autopilot_pause_until "$main_root" github >/dev/null 2>&1; then
+        wait="$(( $(autopilot_pause_epoch "$(autopilot_github_pause_file "$main_root")") - $(date +%s) ))"
+      else
+        wait=$(( attempt == 2 ? 60 : 300 ))
+      fi
+      sleep "${ORCH_GH_LIMIT_WAIT:-$wait}"
+    fi
+    if ( STANDING_STATE_FILE="$state"; "$@" ); then rm -f "$state"; return 0; fi
+  done
+  # shellcheck disable=SC2034 # standing_state_get reads it
+  line="$(STANDING_STATE_FILE="$state"; standing_state_get stop)" || line="stop"$'\t'"no stop text was built"
+  rm -f "$state"
+  kind="${line%%$'\t'*}" first="${line#*$'\t'}"
+  printf '%s%s: %s; the session exited with code %s\n' "$AUTOPILOT_BACKSTOP_PREFIX" "$kind" "$first" "$rc" >>"$log"
+  return 1
 }
 
 # The tools a headless phase session gets: those the plugin's skills and agents
