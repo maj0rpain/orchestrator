@@ -1470,11 +1470,10 @@ assert_eq "a final reply holding the view written within the window: allowed" \
     ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
 
 # The pre-check and the size-gated re-read, counted in jq processes: a counting
-# `jq` stub first on PATH logs each call and execs the real jq. Counts are
-# compared between two runs of the same hook, never against a number.
-# A counting jq first on PATH logs each call and runs the real jq: one counter
-# dir for the paste-guard counts, the one-jq-per-payload checks and the Bash
-# hook cost check.
+# jq first on PATH logs each call and runs the real jq, with one counter dir
+# shared by the paste-guard counts, the one-jq-per-payload checks and the Bash
+# hook cost check. Counts are compared between two runs of the same hook,
+# never against a number.
 JQC="$(call_counter jq)"
 # pg_jqs <decide-fn> <args...>: how many jq processes one decision starts.
 pg_jqs() {
