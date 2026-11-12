@@ -18,7 +18,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 hook_read_payload 2>/dev/null || exit 0
 # The source check also stands guard for a host that ignores the matcher.
 [ -n "$session" ] || exit 0
-[ "$(printf '%s' "$input" | jq -r '.source // ""' 2>/dev/null)" = clear ] || exit 0
+[ "$start_source" = clear ] || exit 0
 
 rm -f "$(hook_marker_path grilling)" "$(hook_marker_path planning)" 2>/dev/null
 exit 0

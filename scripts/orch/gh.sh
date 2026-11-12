@@ -142,7 +142,7 @@ gh_or_die() {
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
-#   adapter_issues_labelled,
+#   adapter_issues_labelled, adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
@@ -405,6 +405,83 @@ adapter_issues_labelled() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
   gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+}
+
+# adapter_issues_labelled_bodies <label>...: the open issues carrying every
+# label named, cut at ISSUE_LIST_LIMIT as adapter_issues_labelled is, each as
+# one count-marked record: its number, its label count, one label per line,
+# its body's line count (one more than the newlines the body holds, counted
+# with `indices`, never `split`, whose answer on an empty string differs
+# between jq implementations), then the body's lines.
+adapter_issues_labelled_bodies() {
+  local args=() l
+  for l in "$@"; do args+=(--label "$l"); done
+  gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number,labels,body \
+    --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
+}
+
+# issues_labelled_bodies_read <labels_array> <bodies_array> <count_var>
+# <err_var> <label>...: reads the listing once through
+# adapter_issues_labelled_bodies and adds each record to two caller-declared
+# associative arrays keyed by issue number: its labels (one per line, possibly
+# none) and its body, CRs kept and trailing newlines dropped as capture drops
+# them from a single read. It adds to the arrays, never clearing them, so
+# several listings accumulate and an issue listed twice is held once; the
+# number of records in this listing goes into <count_var>. capture strips the
+# answer's trailing newlines, so the last record's body lines missing at the
+# end are empty lines. Non-zero, writing no element, on a failed read (gh's
+# stderr into <err_var>, as gh_lines_read) or an answer that does not parse
+# (<err_var> "gh answered a listing that does not parse"). Dies when an array
+# name is not a declared associative array. Bash 4.0: elements are assigned by
+# eval on a validated name, the value by reference, as finding_body_parse does.
+issues_labelled_bodies_read() {
+  assoc_array_require issues_labelled_bodies_read "$1" __ilbr_
+  assoc_array_require issues_labelled_bodies_read "$2" __ilbr_
+  local __ilbr_out __ilbr_err __ilbr_lines=() __ilbr_nums=() __ilbr_labs=() __ilbr_bods=()
+  local __ilbr_i=0 __ilbr_total __ilbr_n __ilbr_c __ilbr_b __ilbr_j __ilbr_l __ilbr_body __ilbr_k __ilbr_r
+  local __ilbr_bad="gh answered a listing that does not parse"
+  local __ilbr_whole='^[0-9]+$'
+  if ! capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
+    printf -v "$4" '%s' "$__ilbr_err"
+    return 1
+  fi
+  [ -z "$__ilbr_out" ] || mapfile -t __ilbr_lines <<<"$__ilbr_out"
+  __ilbr_total="${#__ilbr_lines[@]}"
+  while [ "$__ilbr_i" -lt "$__ilbr_total" ]; do
+    __ilbr_n="${__ilbr_lines[__ilbr_i]}"
+    __ilbr_c="${__ilbr_lines[__ilbr_i+1]-}"
+    [[ $__ilbr_n =~ $__ilbr_whole && $__ilbr_c =~ $__ilbr_whole ]] \
+      || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
+    __ilbr_i=$(( __ilbr_i + 2 ))
+    __ilbr_l=""
+    for (( __ilbr_j = 0; __ilbr_j < 10#$__ilbr_c; __ilbr_j++ )); do
+      [ "$__ilbr_i" -lt "$__ilbr_total" ] || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
+      [ "$__ilbr_j" -eq 0 ] || __ilbr_l="$__ilbr_l"$'\n'
+      __ilbr_l="$__ilbr_l${__ilbr_lines[__ilbr_i]}"
+      __ilbr_i=$(( __ilbr_i + 1 ))
+    done
+    __ilbr_b="${__ilbr_lines[__ilbr_i]-}"
+    [ "$__ilbr_i" -lt "$__ilbr_total" ] && [[ $__ilbr_b =~ $__ilbr_whole ]] \
+      || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
+    __ilbr_i=$(( __ilbr_i + 1 ))
+    __ilbr_body=""
+    for (( __ilbr_k = 0; __ilbr_k < 10#$__ilbr_b; __ilbr_k++ )); do
+      # Lines missing at the end of the answer belong to the last record's
+      # body, which capture trimmed.
+      [ "$__ilbr_k" -eq 0 ] || __ilbr_body="$__ilbr_body"$'\n'
+      if [ "$__ilbr_i" -lt "$__ilbr_total" ]; then __ilbr_body="$__ilbr_body${__ilbr_lines[__ilbr_i]}"; fi
+      __ilbr_i=$(( __ilbr_i + 1 ))
+    done
+    newlines_strip __ilbr_body
+    __ilbr_nums+=("$(( 10#$__ilbr_n ))")
+    __ilbr_labs+=("$__ilbr_l")
+    __ilbr_bods+=("$__ilbr_body")
+  done
+  for __ilbr_r in ${__ilbr_nums[@]+"${!__ilbr_nums[@]}"}; do
+    eval "$1"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_labs[__ilbr_r]}'
+    eval "$2"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_bods[__ilbr_r]}'
+  done
+  printf -v "$3" '%s' "${#__ilbr_nums[@]}"
 }
 
 # adapter_issues_open_titles: every open issue, one per line as

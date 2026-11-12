@@ -14,33 +14,54 @@ source "$(dirname "${BASH_SOURCE[0]}")/host.sh"
 # hooks read state.json and decide whether a flow is active through it alone.
 source "$(dirname "${BASH_SOURCE[0]}")/flow-state.sh"
 
-# Reads the raw hook JSON from stdin and sets `input`, `session`, `cwd`, and
-# `host` in the caller's shell. A missing session_id leaves `session` empty,
-# which means "not guarded": no planning marker can be keyed to it. `cwd`
-# prefers Junie's project_path, because Junie's own cwd is ~/.junie, not the
-# repo (#202); this also moves where hook_tool_path resolves a relative path
-# on Junie. A payload with neither falls back to the process working directory.
-# `host` comes from host.sh's host_detect in payload mode: junie when the
-# payload carries a non-empty project_path, which Claude Code's never does,
-# else claude. `input` is left set so a caller can extract further
-# fields without reading stdin a second time.
+# Reads the raw hook JSON from stdin with one jq and sets, in the caller's
+# shell, every payload field any hook reads: `session` (session_id), `project`
+# (project_path), `cwd`, `event` (hook_event_name), `tool` (tool_name), `skill`
+# (tool_input.skill), `tool_path` (tool_input.file_path, else notebook_path,
+# else path, as the payload gives it), `transcript` (transcript_path),
+# `stop_active` ("true" when stop_hook_active is JSON true, else empty),
+# `start_source` (source) and `prompt`; plus `host`. A missing or null field
+# reads empty, and so does every field of a payload that is not a JSON object:
+# jq's stderr is dropped and the reader still succeeds. A missing session_id
+# leaves `session` empty, which means "not guarded": no planning marker can be
+# keyed to it. `cwd` prefers Junie's project_path, because Junie's own cwd is
+# ~/.junie, not the repo (#202); this also moves where hook_tool_path resolves
+# a relative path on Junie. A payload with neither falls back to the process
+# working directory. `host` comes from host.sh's host_from_project_path.
+#
+# The fields travel NUL-separated, so a tab, newline or backslash in a value
+# comes back byte for byte. The filter drops any NUL a value holds, so none
+# can carry the separator and shift a later field. A new field is added here,
+# to the filter and the read, never as another jq in a hook.
+# shellcheck disable=SC2034 # the fields and host are read by the hooks that sourced this file
 hook_read_payload() {
-  input="$(cat)"
-  session="$(printf '%s' "$input" | jq -r '.session_id // ""')"
-  local project
-  project="$(printf '%s' "$input" | jq -r '.project_path // ""')"
-  cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
-  # shellcheck disable=SC2034 # host is read by the hook that sourced this file
-  host="$(host_detect "$input")"
+  session="" project="" cwd="" event="" tool="" skill="" tool_path=""
+  transcript="" stop_active="" start_source="" prompt=""
+  {
+    IFS= read -r -d '' session || :
+    IFS= read -r -d '' project || :
+    IFS= read -r -d '' cwd || :
+    IFS= read -r -d '' event || :
+    IFS= read -r -d '' tool || :
+    IFS= read -r -d '' skill || :
+    IFS= read -r -d '' tool_path || :
+    IFS= read -r -d '' transcript || :
+    IFS= read -r -d '' stop_active || :
+    IFS= read -r -d '' start_source || :
+    IFS= read -r -d '' prompt || :
+  } < <(jq -j '
+    def s: (. // "") | tostring | explode | map(select(. != 0)) | implode;
+    (if type == "object" then . else {} end)
+    | [ .session_id, .project_path, .cwd, .hook_event_name, .tool_name,
+        .tool_input.skill,
+        (.tool_input.file_path // .tool_input.notebook_path // .tool_input.path),
+        .transcript_path,
+        (if .stop_hook_active == true then "true" else "" end),
+        .source, .prompt ]
+    | .[] | s + "\u0000"' 2>/dev/null)
+  host="$(host_from_project_path "$project")"
   [ -z "$project" ] || cwd="$project"
   [ -n "$cwd" ] || cwd="$PWD"
-}
-
-# hook_read_payload, plus `skill`: the skill name out of a Skill tool call.
-hook_read_skill_and_session() {
-  hook_read_payload
-  # shellcheck disable=SC2034 # skill is read by the hook that sourced this file
-  skill="$(printf '%s' "$input" | jq -r '.tool_input.skill // ""')"
 }
 
 # Prints the physical path a tool call names - every symlink followed, the
@@ -51,8 +72,7 @@ hook_read_skill_and_session() {
 # against `cwd`. Always prints a path when one is named: an empty result would
 # make the edit guard allow it.
 hook_tool_path() {
-  local file
-  file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // .tool_input.path // ""')"
+  local file="$tool_path"
   [ -n "$file" ] || return 0
   case "$file" in /*) ;; *) file="$cwd/$file" ;; esac
   hook_physical_path "$(hook_normalize_path "$file")"
