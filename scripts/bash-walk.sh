@@ -3,12 +3,18 @@
 # because its concept is the walker. Sourced by hook-bash.sh, not executed on
 # its own.
 
-# True while unquoted text $1 holds more `((` than `))`: a `<<` there is an
-# arithmetic shift, not a heredoc.
-_hook_bash_in_arith() {
+# Prints the count of `((` minus `))` in unquoted text $1.
+_hook_bash_arith_count() {
   local t="$1" no_open no_close
   no_open="${t//((/}"; no_close="${t//))/}"
-  [ "$(( ${#t} - ${#no_open} ))" -gt "$(( ${#t} - ${#no_close} ))" ]
+  echo "$(( (${#no_close} - ${#no_open}) / 2 ))"
+}
+
+# True while the arithmetic depth carried across parts ($2) plus the count so far
+# in unquoted text $1 is above 0: a `<<` there is an arithmetic shift, not a
+# heredoc.
+_hook_bash_in_arith() {
+  [ "$(( $2 + $(_hook_bash_arith_count "$1") ))" -gt 0 ]
 }
 
 # Reads the heredoc delimiter at the start of $1 (the text after `<<`) as
@@ -48,7 +54,8 @@ _hook_bash_heredoc_word() {
 }
 
 # Calls hook_bash_walk's test with the part, its unquoted text and its head,
-# then clears the part, its unquoted text and the head. Reads
+# then clears the part, its unquoted text and the head, and carries the part's
+# arithmetic count into the depth `arith`, stopped at 0. Reads
 # hook_bash_walk's locals (dynamic scope).
 hook_bash_walk_call() {
   local hd="$part"
@@ -56,6 +63,7 @@ hook_bash_walk_call() {
   local rc=0
   head=""; head_set=0
   "$test_fn" "$part" "$unq" "$hd" || rc=$?
+  arith=$(( arith + $(_hook_bash_arith_count "$unq") )); [ "$arith" -ge 0 ] || arith=0
   part=""; unq=""
   return "$rc"
 }
@@ -71,10 +79,11 @@ hook_bash_walk_call() {
 # succeeds ends the walk, with the test's output; the walk always succeeds. A
 # command over 8 KB is not scanned (a false negative), to stay fast. A
 # heredoc delimiter follows bash's word rule (the whole shell word after `<<`
-# or `<<-`, quotes removed), and a `<<` inside arithmetic - while the part's
-# unquoted text holds more `((` than `))` - is a shift and opens no heredoc.
+# or `<<-`, quotes removed), and a `<<` inside arithmetic - while the depth
+# carried across parts (each part's `((` minus `))`, stopped at 0 at every split)
+# plus the current part's count is above 0 - is a shift and opens no heredoc.
 hook_bash_walk() {
-  local cmd="$1" test_fn="$2" line part="" unq="" head="" head_set=0 quote="" heredoc_end="" in_heredoc=0 heredoc_strip_tabs=0 continued=0 i c n rest re
+  local cmd="$1" test_fn="$2" line part="" unq="" arith=0 head="" head_set=0 quote="" heredoc_end="" in_heredoc=0 heredoc_strip_tabs=0 continued=0 i c n rest re
   [ "${#cmd}" -le 8192 ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$in_heredoc" = 1 ]; then
@@ -116,7 +125,7 @@ hook_bash_walk() {
           '<')
             if [ "${line:i:3}" = '<<<' ]; then part+="<<<"; unq+="<<<"; i=$((i + 3)); continue; fi
             if [ "${line:i:2}" != '<<' ]; then part+="$c"; unq+="$c"; i=$((i + 1)); continue; fi
-            if _hook_bash_in_arith "$unq"; then part+="<<"; unq+="<<"; i=$((i + 2)); continue; fi
+            if _hook_bash_in_arith "$unq" "$arith"; then part+="<<"; unq+="<<"; i=$((i + 2)); continue; fi
             if _hook_bash_heredoc_word "${rest:2}"; then
               in_heredoc=1; heredoc_end="$HOOK_BASH_HEREDOC_WORD"; heredoc_strip_tabs="$HOOK_BASH_HEREDOC_STRIP"
             fi
