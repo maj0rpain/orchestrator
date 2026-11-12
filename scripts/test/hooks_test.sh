@@ -698,6 +698,43 @@ assert_contains "redirects a NotebookEdit of GLOSSARY.md via the link to the rec
   "$(nb_event_at "$LINK/GLOSSARY.md" s1 "$LINK" | "$GUARD" | jq -r '.reason')" "'GLOSSARY.md' is a record of decisions"
 rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out" "$REPO/src/loop" "$REPO/docs/agents/toSrc.ts" "$REPO/docs/agents/dangling.ts"
 
+# The guard checks the session is armed before it resolves the file path, so an
+# unguarded session pays for no path work (#2557). A readlink stub on PATH logs
+# each call: the resolution follows a symlink hop through it.
+RL="$(mktemp -d)"
+RL_REAL="$(command -v readlink)"
+cat >"$RL/readlink" <<STUB
+#!/usr/bin/env bash
+echo "\$*" >>"$RL/log"
+exec "$RL_REAL" "\$@"
+STUB
+chmod +x "$RL/readlink"
+ln -s real.ts "$REPO/src/armlink.ts"
+# rl_guard <payload>: runs the guard on a payload with the stub first on PATH,
+# clearing the log; prints the guard's output.
+rl_guard() { : >"$RL/log"; printf '%s' "$1" | PATH="$RL:$PATH" "$GUARD"; }
+rl_calls() { wc -l <"$RL/log" | tr -d ' '; }
+out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-unarmed)")"
+assert_empty "allows an edit through a symlink in an unarmed session" "$out"
+assert_eq "an unarmed session's edit never calls readlink" "$(rl_calls)" "0"
+out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" '')")"
+assert_empty "allows an edit through a symlink with no session_id" "$out"
+assert_eq "an edit with no session_id never calls readlink" "$(rl_calls)" "0"
+: >"$TMPDIR/orchestrator-planning-rl-junie"
+out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-junie | jq --arg pp "$REPO" '.project_path=$pp | del(.cwd)')")"
+assert_empty "allows a Junie-shaped edit through a symlink" "$out"
+assert_eq "a Junie-shaped edit never calls readlink" "$(rl_calls)" "0"
+rm -f "$TMPDIR/orchestrator-planning-rl-junie"
+: >"$TMPDIR/orchestrator-grilling-rl-armed"
+out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-armed)")"
+assert_eq "denies the same edit through a symlink in an armed session" "$(bash_hook_decision "$out")" "deny"
+assert_eq "an armed session's edit calls readlink" "$([ "$(rl_calls)" -gt 0 ] && echo yes)" "yes"
+out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-armed | jq 'del(.tool_input.file_path)')")"
+assert_empty "allows an armed session's edit that names no path" "$out"
+assert_eq "an armed session's edit naming no path never calls readlink" "$(rl_calls)" "0"
+rm -f "$TMPDIR/orchestrator-grilling-rl-armed" "$REPO/src/armlink.ts"
+rm -rf "$RL"
+
 # The guard polices the file's own working tree, whatever the cwd (#1933).
 NEST="$REPO/vendor/lib"
 mkdir -p "$NEST" "$REPO/.orchestrator/checkouts" "$REPO/.orchestrator/worktrees"
