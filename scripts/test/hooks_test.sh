@@ -1423,7 +1423,7 @@ for pg_fn in pg_decide sg_decide; do
   if [ -s "$PG/sleep-unchanged.log" ]; then ok "and the window was waited out ($pg_fn)"
   else bad "and the window was waited out ($pg_fn)" "sleep never called"; fi
 done
-# Truncation: the stub replaces the transcript with a shorter one holding the paste.
+# Truncation: the stub swaps in a shorter transcript holding the paste.
 mkdir "$PG/stub-trunc"
 cat >"$PG/stub-trunc/sleep" <<'STUB'
 #!/usr/bin/env bash
