@@ -618,6 +618,13 @@ assert_eq "a short title is used whole" "$(side_of 22)" "fix-the-widget fix-the-
 assert_eq "a first word over 40 characters is cut at 40" "$(side_of 23)" "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
 assert_eq "an all-punctuation title is untitled" "$(side_of 24)" "untitled untitled"
 assert_eq "a clash with another issue's side checkout appends the issue" "$(pickup_titled 25 'Fix the widget')" "fix-the-widget-25 fix-the-widget-25"
+# a taken issue-numbered fallback moves on to -2, -3 ...
+mkdir -p "$top/.orchestrator/checkouts/fix-gadget" "$top/.orchestrator/checkouts/fix-gadget-31"
+assert_eq "a taken slug and issue-numbered name make <slug>-<issue>-2" "$(pickup_titled 31 'Fix gadget')" "fix-gadget-31-2 fix-gadget-31-2"
+mkdir -p "$top/.orchestrator/checkouts/fix-gizmo" "$top/.orchestrator/checkouts/fix-gizmo-32" "$top/.orchestrator/checkouts/fix-gizmo-32-2"
+assert_eq "with -2 also taken pickup makes <slug>-<issue>-3" "$(pickup_titled 32 'Fix gizmo')" "fix-gizmo-32-3 fix-gizmo-32-3"
+mkdir -p "$top/.orchestrator/checkouts/fix-sprocket" && : >"$top/.orchestrator/checkouts/fix-sprocket-33"
+assert_eq "a plain file at <slug>-<issue> counts as a clash" "$(pickup_titled 33 'Fix sprocket')" "fix-sprocket-33-2 fix-sprocket-33-2"
 # a re-pickup reuses a legacy-named side checkout and its slug
 (cd "$top" && "$ORCH" side-checkout add 26-legacy-title --issue 26 >/dev/null 2>&1)
 assert_eq "a re-pickup reuses a legacy-named side checkout" "$(pickup_titled 26 'Legacy title')" "none"
@@ -775,8 +782,11 @@ mv "$state7.keep" "$state7"
 # a failed side-checkout add is a failure, the claim released
 fake_issue 8 open ready-for-agent orch:spec
 fake_issue_title 8 "Blocked add"
-mkdir -p "$top/.orchestrator/checkouts/blocked-add" "$top/.orchestrator/checkouts/blocked-add-8"
+# the add fails for a reason unrelated to the name: no base branch fetch
+orig_url="$(git -C "$top" config remote.origin.url)"
+git -C "$top" config remote.origin.url /nonexistent/origin.git
 tick_err="$("$ORCH" autopilot tick 2>&1 >/dev/null)"; st=$?
+git -C "$top" config remote.origin.url "$orig_url"
 assert_status "a failed side-checkout add does not stop the tick" "$st" 0
 assert_eq "the issue is needs-human" "$(fake_labels_of 8)" "needs-human orch:spec ready-for-agent "
 assert_contains "naming the step and keeping its detail" "$(fake_comments_of 8)" "step side-checkout add failed: "
