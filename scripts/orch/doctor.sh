@@ -24,7 +24,7 @@
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
 # defined; the gh adapter operations it calls, issue_state_labels_read among
 # them, live in gh.sh. The helpers it calls from noun modules
-# (default_branch, base_setting and origin_has_branch from base.sh,
+# (default_branch_local, base_setting and origin_has_branch from base.sh,
 # require_state from state.sh), and check_agent_settings, agent.sh's check
 # its env check list names, are defined by the time cmd_doctor runs,
 # because every module is sourced before main dispatches. cmd_doctor is then
@@ -307,16 +307,17 @@ check_gh_repo() {
   d_remedy "git remote set-url origin https://github.com/<owner>/<repo>.git"
 }
 
-# Worth its own line because getting it wrong is silent: default_branch falls
-# back to a local pointer and then to the literal "main", and a feature branch
-# forked from the wrong place looks fine until review.
+# Worth its own line because getting it wrong is silent: with GitHub's answer
+# missing, default_branch_local (no second ask after the probe) falls back to a
+# local pointer and then to the literal "main", and a feature branch forked from
+# the wrong place looks fine until review.
 check_default_branch() {
   d_gh_gate || return 0
   # Silent when the repo itself did not resolve: check_gh_repo has already said
   # so, and a second line derived from the first buries it.
   [ -n "$D_REPO_SEEN" ] || return 0
   if [ -n "$D_REPO_BRANCH" ]; then d_ok "default branch: $D_REPO_BRANCH (from GitHub)"; return 0; fi
-  d_warn "default branch not resolved from GitHub - falling back to $(default_branch)."
+  d_warn "default branch not resolved from GitHub - falling back to $(default_branch_local)."
   d_remedy "git remote set-head origin --auto"
 }
 
@@ -543,13 +544,14 @@ check_git_exclude() {
 # target. A setting whose branch has since gone from origin is the one stale
 # answer that would send the next fork at nothing, so it FAILs; origin being
 # unreachable only means it could not be checked. The default case reuses the
-# default branch GitHub already answered in d_probe - the same answer
-# base_branch would ask for again - and needs no origin check at all.
+# default branch GitHub already answered in d_probe, else default_branch_local -
+# the answer base_branch would give, with no second ask - and needs no origin
+# check at all.
 check_base_branch() {
   local b st=0
   b="$(base_setting)"
   if [ -z "$b" ]; then
-    d_ok "base branch: ${D_REPO_BRANCH:-$(default_branch)} (default)"
+    d_ok "base branch: ${D_REPO_BRANCH:-$(default_branch_local)} (default)"
     return 0
   fi
   origin_has_branch "$b" || st=$?
@@ -566,7 +568,10 @@ check_base_branch() {
 # on: warn on each, with the command that removes it, and say nothing for one
 # still in use. The finished test is the sweep's own, side_checkout_finished.
 # With no side checkout there is nothing to ask GitHub, so the gate - and a
-# skip with GitHub unreachable - only counts once one exists.
+# skip with GitHub unreachable - only counts once one exists. The finished test
+# reads the default branch for each side checkout, so the memo is seeded before
+# the walk from the probe's answer, else default_branch_local: doctor asks
+# GitHub for it only in its probe, never through default_branch_resolve.
 check_side_checkouts_finished() {
   local list kind _flow _branch path found=() verdict branch rc
   if ! list="$(checkouts)"; then
@@ -578,6 +583,14 @@ check_side_checkouts_finished() {
   done <<<"$list"
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
+  # shellcheck disable=SC2034 # the memo default_branch (base.sh) reads
+  if [ -n "$D_REPO_BRANCH" ]; then
+    DEFAULT_BRANCH="$D_REPO_BRANCH"; DEFAULT_BRANCH_SOURCE=github
+  elif DEFAULT_BRANCH="$(default_branch_local)"; then
+    DEFAULT_BRANCH_SOURCE=origin-head
+  else
+    DEFAULT_BRANCH_SOURCE=fallback
+  fi
   for path in "${found[@]}"; do
     rc=0; verdict=""; branch=""
     side_checkout_finished "$path" </dev/null || rc=$?
@@ -833,7 +846,7 @@ check_flow_review_terminal() {
     # /orchestrator:next will not rewrite it - only a human editing it will.
     malformed)
       d_fail "review loop's last iteration ($i) has a malformed terminal state - $detail"
-      d_remedy "rewrite the first line of $(cmd_review path "$i") in the expected shape above" ;;
+      d_remedy "rewrite the first line of $(review_terminal_record "$i") in the expected shape above" ;;
     unreadable)
       d_fail "review loop's terminal state cannot be read: $detail" ;;
   esac

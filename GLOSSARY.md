@@ -79,7 +79,8 @@ spec review round but the last stops after its changelog; and the last round,
 the ticket breakdown and the handoff run in one more, all still in the spec
 phase. In an autopilot flow each phase still runs in its own session, started by
 the watcher instead of the human. An autopilot flow's spec is written in the
-planning session, or for a hand-labelled issue is its body as it stands, so its
+planning session, by a quick autopilot's unattended rewrite, or for a
+hand-labelled issue is its body as it stands, so its
 spec phase starts at the spec review.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
@@ -177,7 +178,8 @@ _Avoid_: protocol state, issue status.
 
 **Fundamental item**:
 A material spec review item whose edit would change what the human decided in
-planning - reversing or changing a decision the plan recorded, reviving a
+planning - for a quick autopilot, what its unattended interview decided on the
+human's behalf - reversing or changing a decision the plan recorded, reviving a
 rejected alternative, or adding or dropping scope beyond the plan. In an
 autopilot flow's spec review it is the only kind of item that reaches the human.
 
@@ -416,7 +418,22 @@ spec.
 
 **Unattended rewrite**:
 `orch-to-spec`'s rewrite mode asking the human nothing, taken only by a quick
-implementation.
+implementation or a quick autopilot.
+
+**Quick autopilot**:
+Sending one or more issues to autopilot with no human in the planning: each gets
+an unattended interview, an unattended rewrite, its triage label moved to
+`ready-for-agent` (overriding `ready-for-human`, never `wontfix`), recommended
+Rounds and Budget, and `autopilot start`. Run by
+`/orchestrator:quick-autopilot`, after one confirmation of the issues selected.
+Claude Code only.
+_Avoid_: batch autopilot, auto-plan.
+
+**Unattended interview**:
+A planning interview that asks the human nothing: every question takes its
+recommended answer, and each question with the answer taken is recorded in the
+plan's Decisions. Taken only by a quick autopilot. An issue it finds already
+done is skipped, never closed.
 
 **Blocking edge**:
 A native GitHub dependency recording that one ticket of a breakdown cannot
@@ -584,7 +601,8 @@ the only one: the implement phase tests at the seams the spec gives and does not
 re-ask. A seam the code turns out not to allow is a deviation, recorded like
 any other. In an autopilot flow they are agreed in the planning session, which
 writes the spec; a hand-labelled issue's are the ones its body states, accepted
-by the human who labelled it.
+by the human who labelled it. A quick autopilot's are the ones its unattended
+rewrite sketches, accepted by the human who ran it.
 
 ### Review loop
 
@@ -629,7 +647,8 @@ size of the change; for a further loop, from what the loop before it left. A
 loop runs its whole budget: finding nothing does not end it early, because
 every iteration is an independent look at the same change, and the value of
 the loop is in the number of looks. An autopilot flow's first loop runs the
-budget chosen at the planning close; each loop after a bounded stop, an
+budget chosen at the planning close, or for a quick autopilot the recommended
+one; each loop after a bounded stop, an
 automatic re-entry among them, runs one
 the driver chooses from what the loop before it left, never more than that
 first budget, unless the human's reply names one.
@@ -885,7 +904,9 @@ each: closed as completed when the code it names has since been fixed,
 otherwise to `ready-for-agent`, `ready-for-human`, or `wontfix`, with its
 category kept or flipped - or, in a re-check, a finding already triaged left
 as labelled. A finding whose fix needs a decision goes to a human, never to an
-agent. The findings are checked at the default SHA and put to the human one
+agent - unless the human sends it to a quick autopilot, whose unattended
+interview takes that decision on their behalf. The findings are checked at the
+default SHA and put to the human one
 batch per source PR. It takes the findings still in `needs-triage`, or, as a
 **re-check**, the open filed findings whatever their triage label. Not the
 driver's triage, which ranks one iteration's findings inside a review loop. With

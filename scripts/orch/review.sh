@@ -143,6 +143,21 @@ review_record_terminal() {
   [ -n "${text//[[:space:]]/}" ]
 }
 
+# review_terminal_record <i>: prints the path of the record iteration <i>'s
+# terminal state is read from - the flat iteration-NN.md, or, when that is gone
+# while a redo review is half-finished (redo_midway), the same record under
+# review/pre-redo-<redo_count>/ if it is there. The classification and its
+# callers' malformed messages both take the path from here.
+review_terminal_record() {
+  local flat retired n
+  flat="$(cmd_review path "$1")" || return 1
+  if [ ! -e "$flat" ] && n="$(redo_midway "$(state_get issue)" "$(state_get slug)")"; then
+    retired="$REVIEW_DIR/pre-redo-$n/${flat##*/}"
+    if [ -e "$retired" ]; then printf '%s\n' "$retired"; return 0; fi
+  fi
+  printf '%s\n' "$flat"
+}
+
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
@@ -160,7 +175,10 @@ review_record_terminal() {
 # the same line after a separator (-, –, —, :). Anything else in a non-empty
 # section is malformed, never silently interrupted - interrupted means the
 # record or its section is missing or empty once the budget is spent; short
-# of it, the same absence is pending.
+# of it, the same absence is pending. While a redo review is half-finished
+# (redo_midway) and the flat record is gone, the record is read from
+# pre-redo-<redo_count>/ (review_terminal_record), so the stopped loop's end
+# stays readable until the redo's closing write.
 review_terminal_state() {
   require_state
   local i b path err sec="" line started="" body="" first_raw first rest after s sep
@@ -172,7 +190,7 @@ review_terminal_state() {
     || { note unreadable; note "cannot read budget from $STATE"; return 1; }
   if [ "$i" -eq 0 ]; then note none; return 1; fi
   # The detail is cmd_review path's own last orch: line.
-  capture path err cmd_review path "$i" \
+  capture path err review_terminal_record "$i" \
     || { note unreadable; note "${err##*orch: }"; return 1; }
   # A loop can stop short of its budget (a failed base sync goes straight to
   # Termination), so a recorded terminal state is read whatever the
@@ -907,15 +925,17 @@ cmd_review() {
       require_state
       [ $# -eq 1 ] || die "usage: orch.sh review retire <n>"
       local n="$1" dest f
+      local -a names=()
       case "$n" in ''|*[!0-9]*) die "not a redo number: $n" ;; esac
       dest="$REVIEW_DIR/pre-redo-$n"
-      [ ! -e "$dest" ] || die "$dest already exists - redo_count should only increase"
+      # An existing dest is the one a previous run of this same redo made
+      # before dying: resume into it, but never overwrite a record already
+      # there - move_files_aside checks every name before the first move.
       mkdir -p "$REVIEW_DIR"
       for f in "$REVIEW_DIR"/iteration-*.md; do
-        [ -e "$f" ] || continue
-        mkdir -p "$dest"
-        mv "$f" "$dest/"
+        [ -e "$f" ] && names+=("${f##*/}")
       done
+      move_files_aside "$REVIEW_DIR" "$dest" "a review record - redo_count should only increase" ${names[@]+"${names[@]}"}
       note "$dest"
       ;;
     *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|standards|ci|ci-log|rerun|ready|terminal|resume|retire)" ;;

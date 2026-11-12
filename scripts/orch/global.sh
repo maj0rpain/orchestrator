@@ -138,6 +138,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               validate the plan (## Autopilot block included),
                               post it as the plan handoff comment, then add
                               orch:spec
+  autopilot candidates [<n>... | --all | --limit <k>]
+                              one line per issue, `<n> eligible none|move|
+                              override` or `<n> skip <reason>`: whether a
+                              quick autopilot may send it; writes nothing
   autopilot sync <issue>      add orch:sync to an orch:done issue, asking the
                               next tick to merge the base branch into its PR
   autopilot sync-finish       close a sync: remove orch:sync, release the claim
@@ -769,7 +773,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               pointer to the finish command on stderr
   review terminal             classify the last iteration: none, pending,
                               interrupted, malformed, ready, or stop; exits
-                              non-zero on the first four
+                              non-zero on the first four. A half-finished
+                              redo review's retired record counts
   review resume               resume a review loop whose session died
                               mid-iteration, spending no budget: discard the
                               flow branch's stray work first (refused in an
@@ -778,7 +783,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               reviewer reports, next, or terminate. Exits 1
                               when review terminal says anything but pending
                               or interrupted
-  review retire <n>           move every iteration-*.md into pre-redo-<n>/
+  review retire <n>           move every iteration-*.md into pre-redo-<n>/,
+                              resuming into an existing one; refuses (moving
+                              nothing) a name already in it
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
   spec comment <file>         post <file> as a comment on the spec issue

@@ -834,9 +834,9 @@ autopilot_pause_extend() {
   return 0
 }
 
-# autopilot_candidates: the open issues carrying a phase label other than
+# autopilot_flow_issues: the open issues carrying a phase label other than
 # orch:done, or orch:sync, deduplicated and oldest first, one number per line.
-autopilot_candidates() {
+autopilot_flow_issues() {
   local label out gh_err all="" labels=() phase
   for phase in $PHASES; do
     [ "$phase" != "done" ] || continue
@@ -849,6 +849,91 @@ autopilot_candidates() {
     all="$all$out"$'\n'
   done
   printf '%s' "$all" | grep -v '^$' | sort -nu || true
+}
+
+# autopilot_verdict <issue> <named> <var>: the quick autopilot's verdict on one
+# issue, into <var>: `eligible <none|move|override>` or `skip <reason>`, the
+# first exclusion in the fixed order (closed, missing, untrusted, phase,
+# wontfix, needs-info, ticket, untriaged-finding). <named> is true for an issue
+# the caller named, the only kind that can be `missing`: gh's not-found reason
+# for a listed one, like any other failed read, dies. Writes nothing.
+autopilot_verdict() {
+  local issue="$1" named="$2" state labels err parent phase label role st=0 ready human
+  if ! issue_state_labels_read "$issue" state labels err; then
+    if [ "$named" = true ] && gh_issue_not_found "$err"; then
+      printf -v "$3" '%s' "skip missing"
+      return 0
+    fi
+    die "could not read issue #$issue: $(gh_reason "$err")"
+  fi
+  if [ "$state" != OPEN ]; then printf -v "$3" '%s' "skip closed"; return 0; fi
+  trust_issue_check "$issue" || st=$?
+  case "$st" in
+    0) ;;
+    1) printf -v "$3" 'skip untrusted %s' "$TRUST_WRITER"; return 0 ;;
+    *) die "could not check the trust of issue #$issue: $TRUST_REASON" ;;
+  esac
+  for phase in $(standing_phase_labels_in "$labels"); do
+    printf -v "$3" 'skip phase %s' "$phase"
+    return 0
+  done
+  for role in wontfix needs-info; do
+    label="$(triage_label_for "$role")"
+    if label_listed "$labels" "$label"; then printf -v "$3" 'skip %s' "$role"; return 0; fi
+  done
+  gh_or_die --out parent "read issue #$issue's parent" adapter_issue_parent "$issue"
+  if [ -n "$parent" ]; then printf -v "$3" 'skip ticket #%s' "$parent"; return 0; fi
+  ready="$(triage_label_for ready-for-agent)"
+  human="$(triage_label_for ready-for-human)"
+  # A filed finding finding triage has not yet triaged: the issue triage gate.
+  if finding_untriaged "$labels"; then
+    printf -v "$3" '%s' "skip untriaged-finding"
+    return 0
+  fi
+  if label_listed "$labels" "$ready"; then printf -v "$3" '%s' "eligible none"
+  elif label_listed "$labels" "$human"; then printf -v "$3" '%s' "eligible override"
+  else printf -v "$3" '%s' "eligible move"; fi
+}
+
+# autopilot_candidates_run <arg>...: orch.sh autopilot candidates. One line per
+# issue, `<n> eligible <none|move|override>` or `<n> skip <reason>`: the named
+# issues in the order named, or with --all / --limit <k> every open issue
+# oldest first (--limit keeping the first k eligible lines). Every read comes
+# before the first line is printed, so a failed read leaves no partial list.
+autopilot_candidates_run() {
+  local usage="usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
+  local mode="" limit="" issues=() arg
+  while [ $# -gt 0 ]; do
+    arg="$1"; shift
+    case "$arg" in
+      --all) [ -z "$mode" ] || die "$usage"; mode=all ;;
+      --limit)
+        [ -z "$mode" ] || die "$usage"
+        [ $# -gt 0 ] || die "$usage"
+        is_positive_int "$1" || die "--limit must be a positive whole number, got: $1"
+        mode=limit; limit="$((10#$1))"; shift ;;
+      ''|*[!0-9]*) die "$usage" ;;
+      *) [ -z "$mode" ] || [ "$mode" = named ] || die "$usage"; mode=named; issues+=("$((10#$arg))") ;;
+    esac
+  done
+  [ -n "$mode" ] || die "$usage"
+  local out n verdict report="" eligible=0 named=false
+  if [ "$mode" = named ]; then
+    named=true
+  else
+    gh_or_die --out out "list the open issues" adapter_issues_open_oldest
+    while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done <<<"$out"
+    if [ "${#issues[@]}" -ge "$ISSUE_LIST_LIMIT" ]; then
+      warn "the open issues reached the issue-list limit of $ISSUE_LIST_LIMIT - the newest past it are missing from this list"
+    fi
+  fi
+  for n in ${issues[@]+"${issues[@]}"}; do
+    if [ "$mode" = limit ] && [ "$eligible" -ge "$limit" ]; then break; fi
+    autopilot_verdict "$n" "$named" verdict
+    case "$verdict" in eligible*) eligible=$((eligible + 1)) ;; esac
+    report="$report$n $verdict"$'\n'
+  done
+  printf '%s' "$report"
 }
 
 # autopilot_done_read <table-var>: the tick's one read of the open orch:done
@@ -943,8 +1028,8 @@ autopilot_close_missed() {
 
 # autopilot_rank <phase word>: the pickup rank of a session's phase word, lowest
 # first: a sync request 0, then the phases in reverse order of the phase table
-# (review 1, implement 2, spec 3), the phase furthest along first. done is no
-# candidate and has no rank.
+# (review 1, implement 2, spec 3), the phase furthest along first. done is not
+# picked up and has no rank.
 autopilot_rank() {
   local phase i=0 n=0
   [ "$1" != "$STANDING_SYNC_PHASE" ] || { printf '0'; return; }
@@ -971,11 +1056,11 @@ autopilot_rank() {
 # then the phases furthest along first, oldest issue first within a rank. A
 # phase is claimed while the claim count is below the cap, a sync request
 # while it is below the cap plus the sync slots (half the cap, rounded down);
-# the first phase candidate not claimed for the cap ends the tick. A claim
+# the first phase issue not claimed for the cap ends the tick. A claim
 # create that fails for a reason other than a lost race stops the tick, naming
 # it.
 autopilot_tick() {
-  local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
+  local main_root cap count issue gh_err phase rc flow_issues limited_arg auto_sync
   local ranked="" slots limit limited done_table
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
@@ -994,7 +1079,7 @@ autopilot_tick() {
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
   slots=$((cap / 2))
-  candidates="$(autopilot_candidates)"
+  flow_issues="$(autopilot_flow_issues)"
   while IFS= read -r issue; do
     [ -n "$issue" ] || continue
     standing_read "$issue" ||
@@ -1002,7 +1087,7 @@ autopilot_tick() {
     standing_pickable || continue
     phase="$(standing_session_phase)"
     ranked="$ranked$(autopilot_rank "$phase") $issue $phase $STANDING_LIMITED"$'\n'
-  done <<<"$candidates"
+  done <<<"$flow_issues"
   ranked="$(printf '%s' "$ranked" | sort -k1,1n -k2,2n)"
   while read -r _ issue phase limited; do
     [ -n "$issue" ] || continue
@@ -1263,6 +1348,7 @@ cmd_autopilot() {
       [ $# -eq 2 ] || die "usage: orch.sh autopilot start <issue> <plan-file>"
       standing_start "$1" "$2"
       ;;
+    candidates) autopilot_candidates_run "$@" ;;
     tick)
       [ $# -eq 0 ] || die "usage: orch.sh autopilot tick"
       autopilot_gate
@@ -1324,6 +1410,6 @@ cmd_autopilot() {
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
   esac
 }

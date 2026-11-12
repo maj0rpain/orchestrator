@@ -43,6 +43,13 @@ PR_BODY_PIECES="$(printf '%s\t%s\n' \
   '**Door:** two-way' 'no **Door:** line under ## Merge Danger' \
   '**Blast Radius:** the widget module' 'no **Blast Radius:** line under ## Merge Danger')"
 
+# default_reads_run <log> <cmd>...: runs <cmd> with the adapter's
+# default-branch read answering main and appending a line to <log> per call,
+# so log_count <log> is how many times <cmd> asked GitHub for it.
+default_reads_run() {
+  counted_adapter_run "$1" 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo main; }' "${@:2}"
+}
+
 # PR_BODY_REFUSED: the opening of every PR-body refusal, before its file.
 PR_BODY_REFUSED="orch: the PR body does not meet the PR-writing standard - no PR was opened:"
 
@@ -104,8 +111,13 @@ assert_eq "writes no PR marker" "$(pr_marker_of orch/16-propen)" ""
 assert_eq "and records no PR in state" \
   "$(cmp -s "$state_before" .orchestrator/state.json && echo same || echo changed)" "same"
 : >"$GH_FIXTURE/env.log"
-out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+# A flow whose state records no base: its base read and the issue line's
+# default-branch check share one ask of GitHub.
+jq 'del(.base)' .orchestrator/state.json >.orchestrator/state.tmp && mv .orchestrator/state.tmp .orchestrator/state.json
+reads="$(mktemp)"
+out="$(default_reads_run "$reads" "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
+assert_eq "asking GitHub for the default branch once, with no base recorded" "$(log_count "$reads")" "1"
 assert_eq "prints the PR number GitHub gave it" "$out" "23"
 assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
 assert_eq "and on the branch, so a busy check stays local (#1200)" \
@@ -418,8 +430,12 @@ pr_body_complete "$body"
 fake_github
 for n in 16 17 18 19 20 21 22 24 25; do fake_issue "$n" open; done
 fake_next_pr 23
-out="$("$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
+# No base recorded for the branch and none set: its base read and the issue
+# line's default-branch check share one ask of GitHub.
+reads="$(mktemp)"
+out="$(default_reads_run "$reads" "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
+assert_eq "asking GitHub for the default branch once, with no base set" "$(log_count "$reads")" "1"
 assert_eq "prints the PR number GitHub gave it" "$out" "23"
 assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "opens against the default branch" "$(fake_pr_base_of 23)" "main"
@@ -909,9 +925,12 @@ fake_issue 3 closed
 fake_issue 8 closed
 fake_pull 62
 
-out="$(release "Release" "$body" 2>&1)"; st=$?
+reads="$(mktemp)"
+out="$(default_reads_run "$reads" release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when the base branch is the default branch" "$st" 1
-assert_contains "naming it" "$out" "main"
+assert_eq "asking GitHub for the default branch once, with no base set" "$(log_count "$reads")" "1"
+assert_eq "naming it" "$out" \
+  "orch: the base branch is the default branch (main) - there is nothing to release; set another with base set"
 assert_eq "and opens no PR" "$(fake_prs)" ""
 summaryless="$(mktemp)"
 writeln 'Ships the uat project.' >"$summaryless"

@@ -310,6 +310,92 @@ assert_eq "never retiring into a suffixed pre-redo-1-2" \
   "$(on_disk .orchestrator/handoff/pre-redo-1-2)" "absent"
 restore_suite_env
 
+# --- redo review rerun after review retire (#2569) ---------------------------
+# A redo that died after moving the loop's records is half-finished: redo_count
+# 1 and state.branch the -redo-1 name. The stopped loop's end stays readable
+# under review/pre-redo-1/, so a rerun completes it.
+echo
+echo "redo review rerun after review retire"
+midway_fixture() {
+  healthy_repo
+  bare="$(mktemp -d)/origin.git"
+  git init -q --bare "$bare"
+  bare_origin "$bare"
+  git push -q origin HEAD:refs/heads/main
+  "$ORCH" init redomid >/dev/null
+  state_fixture phase review
+  "$ORCH" state set issue 21
+  git checkout -q -b orch/21-redomid
+  git push -q -u origin orch/21-redomid
+  git branch -q orch/21-redomid-redo-1
+  state_fixture branch orch/21-redomid-redo-1
+  state_fixture pr 35
+  state_fixture iteration 1
+  "$ORCH" state set budget 1
+  state_fixture redo_count 1
+  mkdir -p .orchestrator/review/pre-redo-1
+  fake_github
+  fake_issue 21 open
+  fake_pr 35 closed orch/21-redomid main
+}
+midway_fixture
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/pre-redo-1/iteration-01.md
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "review terminal reads the retired stop" "$out" "stop"
+out="$("$ORCH" review resume 2>&1)"; st=$?
+assert_status "review resume refuses" "$st" 1
+assert_contains "saying there is nothing to resume" "$out" "nothing to resume"
+out="$("$ORCH" doctor --flow 2>&1)" || true
+assert_not_contains "doctor does not call the loop interrupted" "$out" "looks interrupted"
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "a clean rerun completes the redo" "$st" 0
+assert_eq "at phase implement, iteration 0, branch and PR cleared" \
+  "$("$ORCH" state get phase) $("$ORCH" state get iteration) $("$ORCH" state get branch) $("$ORCH" state get pr)" \
+  "implement 0  "
+assert_eq "iteration-01 only under pre-redo-1" \
+  "$(on_disk .orchestrator/review/pre-redo-1/iteration-01.md) $(on_disk .orchestrator/review/iteration-01.md)" "present absent"
+restore_suite_env
+
+echo
+echo "redo review rerun part-way through the record move"
+midway_fixture
+writeln '## Terminal state' 'stop' 'older.' >.orchestrator/review/pre-redo-1/iteration-01.md
+state_fixture iteration 2
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-02.md
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "the rerun completes" "$st" 0
+assert_eq "both records are under pre-redo-1" \
+  "$(on_disk .orchestrator/review/pre-redo-1/iteration-01.md) $(on_disk .orchestrator/review/pre-redo-1/iteration-02.md) $(on_disk .orchestrator/review/iteration-02.md)" \
+  "present present absent"
+restore_suite_env
+
+echo
+echo "review terminal mid-redo without or with a malformed retired record"
+midway_fixture
+rm -rf .orchestrator/review/pre-redo-1
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "no record anywhere answers interrupted as today" "$out" "interrupted"
+mkdir -p .orchestrator/review/pre-redo-1
+writeln '## Terminal state' 'stopped here' >.orchestrator/review/pre-redo-1/iteration-01.md
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "a malformed retired record answers malformed" "$out" "malformed"
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "redo review refuses" "$st" 1
+assert_contains "naming the retired record" "$out" ".orchestrator/review/pre-redo-1/iteration-01.md"
+out="$("$ORCH" doctor --flow 2>&1)" || true
+assert_contains "doctor's remedy names the retired record" "$out" ".orchestrator/review/pre-redo-1/iteration-01.md"
+restore_suite_env
+
+echo
+echo "review terminal after a completed redo is unchanged"
+midway_fixture
+state_fixture branch orch/21-redomid
+writeln '## Terminal state' 'stop' 'old.' >.orchestrator/review/pre-redo-1/iteration-01.md
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "interrupted: the plain flow branch is not mid-redo" "$out" "interrupted"
+assert_contains "review resume reruns the iteration" "$("$ORCH" review resume 2>&1)" "rerun 1"
+restore_suite_env
+
 # --- redo review reopens tickets -------------------------------------------
 # Acceptance criterion from issue #88: a prior implement phase closes every
 # ticket of the flow's spec issue as it works the frontier, so a redo back to

@@ -103,6 +103,18 @@ has_review_label() {
   [ -n "$(review_labels "$1")" ]
 }
 
+# finding_untriaged <labels>: whether the issue is a filed finding finding
+# triage has not yet triaged - it carries a review label and none of
+# ready-for-agent, ready-for-human or wontfix. The one gate issue triage and
+# the quick autopilot's candidates share; each keeps its own reaction.
+finding_untriaged() {
+  local role
+  has_review_label "$1" || return 1
+  for role in ready-for-agent ready-for-human wontfix; do
+    ! label_listed "$1" "$(triage_label_for "$role")" || return 1
+  done
+}
+
 # has_filed_severity_label <labels>: whether some review label carries a
 # filed severity.
 has_filed_severity_label() {

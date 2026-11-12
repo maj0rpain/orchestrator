@@ -2528,6 +2528,30 @@ src "$d"
 assert_status "an unescaped @@ note inside a replacement: refused" "$st" 1
 assert_contains "naming its line and the hint" "$err" "batch.md line 12: expected @@ end to end the replacement begun on line 11, got '@@ note <text>' - a body line starting with @@ is written \\@@"
 
+# The shared @@ block reader (#2568): the block refusals no other test pins,
+# characterized before the reader was extracted.
+d="$(src_dir)"
+sed -i '10s/.*/  /' "$d/batch.md"
+check_refused src "an empty anchor" "$d" "orch: batch.md line 9: the anchor is empty"
+d="$(sre_dir "$sre_item"$'\n@@ anchor\nAlpha line.')"
+check_refused src "an anchor never ended" "$d" "orch: batch.md line 9: the @@ anchor block is never ended"
+d="$(sre_dir "$sre_item"$'\n@@ anchor\nAlpha line.\n@@ replace\nNew.')"
+check_refused src "a replacement never ended" "$d" "orch: batch.md line 11: the @@ replace block is never ended"
+d="$(sre_dir "$sre_item"$'\n@@ replace')"
+check_refused src "an @@ replace with no anchor open" "$d" "orch: batch.md line 9: @@ replace with no @@ anchor open"
+d="$(sre_dir "$sre_item"$'\n@@ end')"
+check_refused src "an @@ end with no anchor open" "$d" "orch: batch.md line 9: @@ end with no @@ anchor open"
+sre_quote_tail=$'\n@@ anchor\nAlpha line.\n@@ replace\nNew.\n@@ end\n@@ comment @bob 2026-01-01T00:00:00Z\n@@ quote'
+d="$(sre_dir "$sre_item$sre_quote_tail"$'\nQuoted words.')"
+src "$d"
+assert_status "a quote running to end of file: check passes" "$st" 0
+src "$d" --full 1
+assert_contains "and the view shows it" "$out" '> Quoted words.'
+d="$(sre_dir "$sre_item$sre_quote_tail"$'\n  ')"
+check_refused src "a blank quote running to end of file" "$d" "orch: batch.md line 15: the quote is empty"
+d="$(sre_dir "$(sre_quote_item '   ')")"
+check_refused src "a blank quote ended by the next @@ line" "$d" "orch: batch.md line 8: the quote is empty"
+
 # Discoverability.
 out="$("$ORCH" spec-review wipe 2>&1)"
 assert_contains "the unknown-op message lists check" "$out" "want begin|check|apply"
@@ -2968,6 +2992,23 @@ d="$(srct_escaped_dir $'@@ anchor\nAlpha.\n@@ replace\n@@ note <text>\n@@ end')"
 srct "$d"
 assert_status "an unescaped @@ note inside a tickets.md replacement: refused" "$st" 1
 assert_contains "naming its line and the hint" "$err" "tickets.md line 7: expected @@ end to end the replacement begun on line 6, got '@@ note <text>' - a body line starting with @@ is written \\@@"
+
+# The shared @@ block reader (#2568): the block refusals no other test pins,
+# characterized before the reader was extracted.
+d="$(srct_dir)"
+sed -i '5s/.*/  /' "$d/tickets.md"
+check_refused srct "an empty anchor" "$d" "orch: tickets.md line 4: the anchor is empty"
+d="$(srct_dir)"
+printf '@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ summary x\n@@ anchor\nBuild alpha.\n' >"$d/tickets.md"
+check_refused srct "an anchor never ended" "$d" "orch: tickets.md line 4: the @@ anchor block is never ended"
+printf '@@ replace\nNew.\n' >>"$d/tickets.md"
+check_refused srct "a replacement never ended" "$d" "orch: tickets.md line 6: the @@ replace block is never ended"
+d="$(srct_dir)"
+printf '@@ replace\n' >>"$d/tickets.md"
+check_refused srct "an @@ replace with no anchor open" "$d" "orch: tickets.md line 20: @@ replace with no @@ anchor open"
+d="$(srct_dir)"
+printf '@@ end\n' >>"$d/tickets.md"
+check_refused srct "an @@ end with no anchor open" "$d" "orch: tickets.md line 20: @@ end with no @@ anchor open"
 
 # --- spec-review wait (#1183) -------------------------------------------------
 # The session running a spec review starts its lenses and waits for all of them

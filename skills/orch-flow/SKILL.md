@@ -322,8 +322,8 @@ to step 5.
 Rounds run through the `orch-spec-review` skill, which runs unattended in
 autopilot; step 5's breakdown runs `orch-to-tickets`' **Unattended breakdown**.
 A plan amendment after `apply` (a declined `contradicts the plan` item) is
-re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as
-`orch-spec-review`'s `spec-phase.md` says.
+amended and re-posted as the handoff skill's **Amending Rejected
+alternatives** section says.
 
 ### Phase: implement
 
@@ -520,6 +520,11 @@ the stale `03-implement.md` handoff moves into
 to 0, `state.redo_count` increments, `flake_rerun_used` is left untouched
 (`docs/adr/0007-redo-resets-the-review-loops-iteration-and-budget.md`), and
 `state.phase` becomes `implement`.
+
+A re-run after a death resumes the redo: while it is half-finished, the stopped
+loop's last record is read from `pre-redo-N/` once it has moved, and
+`review retire` moves whatever records are still flat into the folder its
+first run made.
 
 Abort differs on purpose: it ends the flow with no successor phase, so a
 mistaken call loses the live flow's state, whereas redo always leaves a live

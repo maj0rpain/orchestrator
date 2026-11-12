@@ -1,6 +1,6 @@
 ---
 name: orch-handoff
-description: Write an orchestrator handoff file into .orchestrator/handoff/ so the next phase can start with fresh context. Use only from the orch-flow skill, at a phase boundary.
+description: Write an orchestrator handoff file into .orchestrator/handoff/ so the next phase can start with fresh context, and amend the plan handoff's Rejected alternatives after a human reverses one. Used by the orch-flow skill at a phase boundary, and for the amendment by the orch-review skill's reply handling and the orch-spec-review skill's spec phase.
 ---
 
 # Orchestrator handoff
@@ -56,6 +56,32 @@ Budget: <n>
 
 Both lines are whole numbers of 1 or more: the spec review's round count and
 the review loop's iteration budget.
+
+## Amending Rejected alternatives
+
+A human's decision can bring back, in whole or in part, an entry in the plan
+handoff's **Rejected alternatives**. The entry then stops being authority: the
+review loop demotes findings that propose a rejected alternative, and would
+demote a reviewer for proposing what the human just ruled for. Amend it.
+
+- **Shape.** Keep the entry, never delete it. Append a note: reversed by the
+  ruling on spec question #<n> (or, in the spec review, reversed in the spec
+  review), then what now holds and why. A spec question that was not filed is
+  cited by its `<file>:<line>` instead of a number. When only part of the entry
+  is reversed, the note names only that part, so the rest of the rejection
+  keeps its authority.
+- **Interactive flow.** Edit the plan handoff file in place.
+- **Autopilot flow.** The plan handoff is the `01-plan` comment, and the edit
+  is made on a fetched copy: the scratch file `handoff path` fetched, or, where
+  nothing has fetched it, `bash "$ORCH" handoff fetch 01-plan <file>` into a
+  `mktemp` file outside the repo. Re-post the edited copy with `bash "$ORCH"
+  handoff post 01-plan <file>`, or the edit is lost on the next fetch.
+- **Idempotent.** An entry that already carries the note for that spec question
+  is left as is, and nothing is re-posted when nothing changed, so a re-run
+  after a crash finishes the amendment once.
+- **Only on a human's decision.** Amend only because a human ruled, with the
+  change in view. A session never edits **Rejected alternatives** for its own
+  reasons.
 
 ## What belongs in one
 

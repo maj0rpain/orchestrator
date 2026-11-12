@@ -1562,8 +1562,35 @@ done
 
 : >.orchestrator/review/iteration-01.md
 out="$("$ORCH" review retire 1 2>&1)"; st=$?
-assert_status "dies rather than collide with an existing pre-redo-N" "$st" 1
+assert_status "dies rather than overwrite a record already in pre-redo-N" "$st" 1
 assert_contains "naming the directory" "$out" "pre-redo-1"
+
+# An existing pre-redo-N (a previous run of the same redo made it) takes the
+# flat records it does not already hold; one clash moves nothing.
+rm -f .orchestrator/review/iteration-*.md
+rm -rf .orchestrator/review/pre-redo-1
+mkdir -p .orchestrator/review/pre-redo-1
+: >.orchestrator/review/pre-redo-1/iteration-01.md
+: >.orchestrator/review/iteration-02.md
+out="$("$ORCH" review retire 1 2>&1)"; st=$?
+assert_status "resumes into an existing pre-redo-N without a clash" "$st" 0
+assert_eq "the flat record moved in" \
+  "$(on_disk .orchestrator/review/pre-redo-1/iteration-02.md)" "present"
+assert_eq "and left the flat trail" \
+  "$(on_disk .orchestrator/review/iteration-02.md)" "absent"
+rm -f .orchestrator/review/pre-redo-1/iteration-01.md
+: >.orchestrator/review/iteration-01.md
+: >.orchestrator/review/iteration-02.md
+out="$("$ORCH" review retire 1 2>&1)"; st=$?
+assert_status "refuses when a later flat record clashes" "$st" 1
+assert_contains "naming the folder" "$out" "pre-redo-1"
+assert_eq "the record that did not clash stays flat" \
+  "$(on_disk .orchestrator/review/iteration-01.md)" "present"
+assert_eq "the clashing record stays flat too" \
+  "$(on_disk .orchestrator/review/iteration-02.md)" "present"
+assert_eq "and pre-redo-1 gained nothing" \
+  "$(ls .orchestrator/review/pre-redo-1 | tr '\n' ' ')" "iteration-02.md "
+rm -f .orchestrator/review/iteration-*.md
 
 out="$("$ORCH" review retire nope 2>&1)"; st=$?
 assert_status "refuses a non-numeric redo count" "$st" 1

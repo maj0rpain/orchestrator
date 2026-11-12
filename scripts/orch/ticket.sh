@@ -100,25 +100,21 @@ ticket_listing_has() { [ -n "$(ticket_listing_state "$1" "$2")" ]; }
 # ticket_links_verified <err_var> <parent> <child> <want>: 0 only once both
 # links read back exactly as published: the parent's sub-issue listing
 # contains the child, and the child's blocked-by listing is the same set of
-# numbers requested, in any order, both sides de-duplicated. 1 on a mismatch;
-# 2 when either read fails, gh's stderr written into <err_var>, so a failed
-# read is never reported as a mismatch (#843). Read fresh every call, never
-# cached - the caller retries this once on either status, and a cached answer
-# would just repeat the same verdict. Locals prefixed so no caller's variable
-# name is shadowed.
+# numbers requested, in any order, both sides de-duplicated - the blocked-by
+# half is ticket_edges_verified, so the set comparison exists once. 1 on a
+# mismatch; 2 when either read fails, gh's stderr written into <err_var>, so a
+# failed read is never reported as a mismatch (#843). Read fresh every call,
+# never cached - verify_twice retries this once on either status, and a cached
+# answer would just repeat the same verdict. Locals prefixed so no caller's
+# variable name is shadowed.
 ticket_links_verified() {
-  local __tlv_out __tlv_blockers __tlv_err
+  local __tlv_out __tlv_err
   if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
     printf -v "$1" '%s' "$__tlv_err"
     return 2
   fi
   ticket_listing_has "$__tlv_out" "$3" || return 1
-  if ! capture __tlv_blockers __tlv_err adapter_blockers "$3"; then
-    printf -v "$1" '%s' "$__tlv_err"
-    return 2
-  fi
-  if [ -n "$__tlv_blockers" ]; then __tlv_blockers="$(printf '%s\n' "$__tlv_blockers" | sort -un)"; fi
-  [ "$__tlv_blockers" = "$(printf '%s\n' "$4" | sort -un)" ]
+  ticket_edges_verified "$1" "$3" "$4"
 }
 
 # Publishes a child issue, links it to <parent> as a native sub-issue, adds a
@@ -177,11 +173,11 @@ cmd_ticket_publish() {
 # ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
 # every number in <want> the child lacks - its blockers are read once, and only
 # when <want> is non-empty, so a resume never writes an edge already present -
-# and verifies every link by reading it back, with one
-# retry - either status gets it, and the second attempt decides the death: a
-# failed read dies with gh's reason, a mismatch as unverified.
+# and verifies every link by reading it back through verify_twice: one retry,
+# either status gets it, and the second attempt decides the death - a failed
+# read dies with gh's reason, a mismatch as unverified.
 ticket_edges_and_verify() {
-  local parent="$1" child="$2" want="$3" b have gh_err="" st=0
+  local parent="$1" child="$2" want="$3" b have
 
   if [ -n "$want" ]; then
     have="$(ticket_blockers "$child")" || exit 1
@@ -192,12 +188,9 @@ ticket_edges_and_verify() {
     done <<<"$want"
   fi
 
-  ticket_links_verified gh_err "$parent" "$child" "$want" \
-    || ticket_links_verified gh_err "$parent" "$child" "$want" \
-    || st=$?
-  [ "$st" -ne 2 ] || gh_die "read ticket #$child's links" "$gh_err"
-  [ "$st" -eq 0 ] \
-    || die "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed"
+  verify_twice "read ticket #$child's links" \
+    "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed" \
+    ticket_links_verified "$parent" "$child" "$want"
 }
 
 # The parent's open sub-issues with zero open blockers, in the order GitHub
@@ -483,16 +476,22 @@ ticket_blockers() {
   if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
 }
 
-# Verify-then-die (ADR-0011): ticket <n>'s blocked-by listing, read back
-# fresh, must be exactly the set <want>. A mismatch is re-read once; a second
-# mismatch dies naming the ticket. Never falls back to body text.
-ticket_edges_verify() {
-  local n="$1" want="$2" have
-  have="$(ticket_blockers "$n")" || exit 1
-  [ "$have" = "$want" ] && return 0
-  have="$(ticket_blockers "$n")" || exit 1
-  [ "$have" = "$want" ] \
-    || die "ticket #$n's blocking edges did not verify - checked twice, both failed"
+# ticket_edges_verified <err_var> <n> <want>: the 0/1/2 verifier verify_twice
+# runs for ticket <n>'s blocking edges (the one-retry policy ADR-0011
+# records for `ticket publish`). 0 when its blocked-by listing, read fresh,
+# is the same set of numbers as <want>, both sides sorted and de-duplicated;
+# 1 on a mismatch; 2 when the read fails, gh's stderr written into <err_var>,
+# so a failed read is
+# never reported as a mismatch. It never dies on a failed read. Locals
+# prefixed so no caller's variable name is shadowed.
+ticket_edges_verified() {
+  local __tev_have __tev_err
+  if ! capture __tev_have __tev_err adapter_blockers "$2"; then
+    printf -v "$1" '%s' "$__tev_err"
+    return 2
+  fi
+  if [ -n "$__tev_have" ]; then __tev_have="$(printf '%s\n' "$__tev_have" | sort -un)"; fi
+  [ "$__tev_have" = "$(printf '%s\n' "$3" | sed '/^$/d' | sort -un)" ]
 }
 
 # The heading of a ticket body's section listing its blockers - kept in line
@@ -561,12 +560,14 @@ blockers_difference() {
 # second --by would otherwise replace the first - and the --by list sorted
 # and de-duplicated, as `ticket publish --blocked-by` does. Then the
 # preconditions, the current edges, one adapter write per edge that needs
-# it, verify-then-die (ADR-0011) against the wanted set, and the `## Blocked
-# by` rewrite through issue_body_rewrite. The write is not read back -
-# ADR-0011 governs the edges, not the body. Only the verb varies, and the one
-# `case` up front binds all of it: block skips edges already present, adds
-# the rest and wants the union; unblock skips edges already absent, removes
-# the rest and wants the difference. Either re-run is idempotent.
+# it, verify_twice (the one-retry policy ADR-0011 records for `ticket
+# publish`) of ticket_edges_verified against the wanted set, and the
+# `## Blocked by` rewrite through issue_body_rewrite. The write is not read
+# back - ADR-0011 governs the edges, not the body. Only
+# the verb varies, and the one `case` up front binds all of it: block skips
+# edges already present, adds the rest and wants the union; unblock skips
+# edges already absent, removes the rest and wants the difference. Either
+# re-run is idempotent.
 ticket_edges_change() {
   local verb="$1" usage n="" by="" have_by="" before want b present
   local skip_present edge_op edge_word want_fn
@@ -603,7 +604,9 @@ ticket_edges_change() {
       "$edge_op" "$n" "$b"
   done <<<"$by"
   want="$("$want_fn" "$before" "$by")"
-  ticket_edges_verify "$n" "$want"
+  verify_twice "read ticket #$n's blockers" \
+    "ticket #$n's blocking edges did not verify - checked twice, both failed" \
+    ticket_edges_verified "$n" "$want"
   issue_body_rewrite "$n" "read ticket #$n's body" \
     "rewrite ticket #$n's ## Blocked by section" \
     rewrite_blocked_by_section "$want"
