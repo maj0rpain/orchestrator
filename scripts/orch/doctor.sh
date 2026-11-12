@@ -69,6 +69,14 @@ D_GH_HOST=""       # the GitHub host the probe asked about
 D_REPO_SEEN=""     # "ok" when GitHub answered for the repo, or empty
 D_REPO_REASON=""   # gh's stderr when that read failed, or empty
 D_REPO_BRANCH=""   # the default branch, as GitHub reports it, when valid
+D_FLOW_ISSUE_READ=""    # the flow-issue memo: "ok" or "failed" once read, else empty
+D_FLOW_ISSUE_STATE=""   # the flow issue's state, as that one read left it
+D_FLOW_ISSUE_LABELS=""  # the flow issue's labels, as that one read left them
+D_FLOW_ISSUE_ERR=""     # gh's error text when that read failed
+D_FLOW_PR_READ=""       # the flow-PR memo: "ok" or "failed" once read, else empty
+D_FLOW_PR_STATE=""      # the flow PR's state, empty when that one read failed
+D_FLOW_PR_DRAFT=""      # the flow PR's draft flag, as that one read left it
+D_FLOW_PR_ERR=""        # gh's error text when that read failed
 D_JQ=""            # "ok", or empty when jq is missing
 D_STATE=""         # "ok" when state.json is a JSON object, or empty
 D_GH_SKIPPED=0
@@ -86,6 +94,32 @@ d_gate() {
 }
 
 d_gh_gate() { d_probe_gh; d_gate "$D_GH" D_GH_SKIPPED; }
+
+# The flow-issue and flow-PR memos: one doctor run reads the flow's issue (state
+# and labels) and its PR (state and draft flag) from GitHub at most once, and
+# every check that needs either takes that one answer. Doctor never writes to
+# GitHub, so a memo cannot go stale within its process. They keep doctor-owned
+# copies, never the Standing module's STANDING_* globals: bare doctor's
+# side-flow label check runs that module's read for other issues. Call only
+# after d_gh_gate has opened; the answers come back in plain globals (bash 3.2:
+# no namerefs).
+d_flow_issue_read() {
+  [ -z "$D_FLOW_ISSUE_READ" ] || return 0
+  D_FLOW_ISSUE_READ=failed
+  if issue_state_labels_read "$(state_get issue)" D_FLOW_ISSUE_STATE D_FLOW_ISSUE_LABELS D_FLOW_ISSUE_ERR; then
+    D_FLOW_ISSUE_READ=ok
+  fi
+}
+
+d_flow_pr_read() {
+  [ -z "$D_FLOW_PR_READ" ] || return 0
+  D_FLOW_PR_READ=failed
+  if pr_state_draft_read "$(state_get pr)" D_FLOW_PR_STATE D_FLOW_PR_DRAFT D_FLOW_PR_ERR; then
+    D_FLOW_PR_READ=ok
+  else
+    D_FLOW_PR_STATE=""
+  fi
+}
 
 d_skip_line() {
   local n="$1" noun="$2" cause="$3" word="checks"
@@ -573,6 +607,8 @@ doctor_phase_label_verdict() {
 # flagged. An interactive flow carries no phase label and is left alone - except
 # under ORCH_AUTOPILOT=1, where a flow with none is refused: autopilot behaviour
 # must never leak into an interactive flow.
+# The issue's labels come from the shared flow-issue memo (d_flow_issue_read),
+# the issue check's read too; a failed read is the issue check's to report.
 check_flow_autopilot_label() {
   local issue phase
   issue="$(state_get issue)"
@@ -585,8 +621,9 @@ check_flow_autopilot_label() {
     return 0
   fi
   d_gh_gate || return 0
-  standing_read "$issue" || return 0
-  if ! doctor_phase_label_verdict "$issue" "$phase" "$STANDING_LABELS" "this checkout" "phase label"; then
+  d_flow_issue_read
+  [ "$D_FLOW_ISSUE_READ" = ok ] || return 0
+  if ! doctor_phase_label_verdict "$issue" "$phase" "$D_FLOW_ISSUE_LABELS" "this checkout" "phase label"; then
     if autopilot_active; then
       d_fail "issue #$issue carries no phase label - an autopilot session needs the flow's phase recorded on its issue."
       d_remedy "gh issue edit $issue --add-label $(standing_phase_label "$phase")"
@@ -710,16 +747,16 @@ check_flow_upstream() {
 # against one. The ready-for-agent label is deliberately not re-checked; it is
 # a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).
 check_flow_issue() {
-  # issue_labels is the read's throwaway half: only the state is checked here.
-  # shellcheck disable=SC2034
-  local issue issue_state="" issue_labels gh_err="" phase
+  local issue issue_state gh_err phase
   issue="$(state_get issue)"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
   # Only the state line is wanted, yet not from adapter_issue_state: that one
   # answers PULL for a pull request's number, an answer doctor must not accept
   # as the flow's issue state - this case knows OPEN and CLOSED only.
-  issue_state_labels_read "$issue" issue_state issue_labels gh_err || true
+  # Read through the shared flow-issue memo, as the phase-label check does.
+  d_flow_issue_read
+  issue_state="$D_FLOW_ISSUE_STATE" gh_err="$D_FLOW_ISSUE_ERR"
   phase="$(state_get phase)"
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
@@ -738,11 +775,13 @@ check_flow_issue() {
 }
 
 check_flow_pr() {
-  local pr pr_state="" _is_draft err=""
+  local pr pr_state err
   pr="$(state_get pr)"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
   d_gh_gate || return 0
-  pr_state_draft_read "$pr" pr_state _is_draft err || pr_state=""
+  # Read through the shared flow-PR memo, which the review draft check uses too.
+  d_flow_pr_read
+  pr_state="$D_FLOW_PR_STATE" err="$D_FLOW_PR_ERR"
   case "$pr_state" in
     OPEN)   d_ok "PR #$pr open" ;;
     MERGED) d_ok "PR #$pr merged" ;;
@@ -839,12 +878,13 @@ check_flow_review_ci() {
 # so isDraft and phase disagreeing on GitHub's own PR is evidence that
 # operation only half landed, not a state a healthy flow reaches on its own.
 check_flow_review_draft() {
-  local phase pr err="" pr_state="" is_draft=""
+  local phase pr err pr_state is_draft
   phase="$(state_get phase)"
   pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
-  pr_state_draft_read "$pr" pr_state is_draft err || pr_state=""
+  d_flow_pr_read
+  pr_state="$D_FLOW_PR_STATE" is_draft="$D_FLOW_PR_DRAFT" err="$D_FLOW_PR_ERR"
   if [ -z "$pr_state" ]; then
     d_warn "PR #$pr draft state could not be read from GitHub: $(gh_reason "$err")"
     return 0
