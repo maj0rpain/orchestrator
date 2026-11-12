@@ -414,6 +414,19 @@ any other way, runs `orch.sh` without these steps in order or without `bash`,
 names the plugin root without the Junie step in that same sentence, or names a
 path through a `<plugin root>/` placeholder.
 
+A skill that is Claude Code only, like the quick autopilot, takes a second form
+instead. It is marked by its frontmatter `description:` ending in "Claude Code
+only." (read from the frontmatter only, never the body; a command never carries
+the marker). Its form is the `ORCH=` line, then one stop for when `orch.sh` is
+not at that path, saying the skill is Claude Code only and needs the full
+plugin. The stop names `ORCH` or `orch.sh`, never `CLAUDE_PLUGIN_ROOT`. It
+leaves out the Junie lookup, the "If it prints" steps, the relative fallback,
+the plugin-root fallback sentence and orch-flow's skills-only stop text.
+`docs_lint.sh` still requires the `ORCH=` line and still flags
+`CLAUDE_PLUGIN_ROOT` outside it, and flags a marked skill that carries the
+Junie lookup or any skills-only stop text. Every other skill and every command
+stays on the cross-host form above.
+
 ## Naming host capabilities
 
 Skills and the agent briefs under `agents/` describe capabilities ("invoke a
