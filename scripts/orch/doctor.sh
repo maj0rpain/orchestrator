@@ -172,7 +172,7 @@ d_probe_gh() {
 }
 
 d_probe() {
-  local scope="$1" view err
+  local scope="$1" view err budget_raw
   if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
   # A state file that is not a JSON object - unparseable, or valid JSON of
   # another type - invalidates every flow check at once. Judged by the Flow
@@ -183,9 +183,10 @@ d_probe() {
   # parsed once and a non-object earns no D_STATE.
   if [ "$scope" != env ] && [ "$D_JQ" = ok ] && flow_state_get_many "$STATE" \
     D_FLOW_PHASE=phase D_FLOW_ISSUE=issue D_FLOW_BRANCH=branch D_FLOW_PR=pr \
-    D_FLOW_ITERATION=iteration D_FLOW_BUDGET=budget 2>/dev/null; then
+    D_FLOW_ITERATION=iteration budget_raw=budget 2>/dev/null; then
     D_STATE=ok
-    D_FLOW_BUDGET="$(review_budget_fallback "$D_FLOW_BUDGET")"
+    # shellcheck disable=SC2154 # budget_raw is set by flow_state_get_many above
+    D_FLOW_BUDGET="$(review_budget_fallback "$budget_raw")"
   fi
   # The flow scope runs on every /orchestrator:next and every status, and a flow
   # with no PR recorded has nothing to ask GitHub. It reaches gh through

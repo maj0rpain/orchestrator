@@ -418,6 +418,8 @@ out="$(sourced_orch state_get_many =phase 2>&1)"
 assert_eq "state_get_many dies as a malformed state read" "$out" "orch: malformed state read: =phase"
 out="$(sourced_orch_script 'state_get_many_in "$1" key=slug file=phase; echo "$key $file"' "$rd_file" 2>&1)"
 assert_eq "state_get_many_in reads a readable file's keys" "$out" "readers spec"
+out="$(sourced_orch_script 'state_get_many key=slug file=phase rc=issue val=pr; echo "$key $file $rc $val"' 2>&1)"
+assert_eq "state_get_many assigns out-variables named like common locals" "$out" "readers spec  "
 rd_jq="$(mktemp -d)"
 printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$rd_jq" "$(command -v jq)" >"$rd_jq/jq"
 chmod +x "$rd_jq/jq"; : >"$rd_jq/jq.log"
@@ -429,6 +431,9 @@ assert_eq "status_flow on a flow that records its base starts exactly one jq" "$
 state_truncate
 out="$(sourced_orch state_get_in "$rd_file" phase 2>&1)"; st=$?
 assert_status "state_get_in on a truncated file returns 2" "$st" 2
+assert_eq "and prints nothing" "$out" ""
+out="$(sourced_orch state_get_many_in "$rd_file" a=phase 2>&1)"; st=$?
+assert_status "state_get_many_in on a truncated file returns 2" "$st" 2
 assert_eq "and prints nothing" "$out" ""
 restore_suite_env
 
