@@ -1,9 +1,11 @@
 # shellcheck shell=bash
 # base.sh - orch.sh's base command: the checkout's base branch setting and a
 # flow's own base, with the branch helpers every module calls (default_branch,
-# origin_has_branch, require_on_origin). default_branch resolves once per
-# process and keeps the answer in a memo (DEFAULT_BRANCH_SOURCE);
-# default_branch_local is the memo-free local fallback doctor calls.
+# origin_has_branch, require_on_origin). default_branch_resolve memoises its
+# answer (DEFAULT_BRANCH, DEFAULT_BRANCH_SOURCE) in the shell that runs it, and
+# later $(default_branch) subshells of that shell inherit it;
+# default_branch_seed is the memo's one writer; default_branch_local is the
+# memo-free local fallback doctor calls.
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -12,7 +14,7 @@
 # remotes/origin/<b>; valid branch names only), else the literal guess main.
 # Returns 0 when origin/HEAD named the branch, 1 when it fell back to main.
 # Never asks GitHub and sets no memo variable: the one home of the local
-# fallback rule, used by default_branch_resolve and by doctor.
+# fallback rule, used by default_branch_seed and by doctor.
 default_branch_local() {
   local head_ref b
   head_ref="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)" || head_ref=""
@@ -22,11 +24,27 @@ default_branch_local() {
   return 1
 }
 
-# default_branch_resolve: sets DEFAULT_BRANCH (the name) and
-# DEFAULT_BRANCH_SOURCE in the current shell: github (GitHub's answer),
-# origin-head (origin/HEAD, via default_branch_local) or fallback (the literal
-# guess main, also via default_branch_local).
-# Memoised per process: it returns at once, asking nothing, when
+# default_branch_seed [<github-answer>]: the one writer of the default-branch
+# memo. Sets DEFAULT_BRANCH (the name) and DEFAULT_BRANCH_SOURCE in the current
+# shell: github (the answer, when it is a valid branch name), else origin-head
+# (origin/HEAD, via default_branch_local) or fallback (the literal guess main,
+# also via default_branch_local). Asks GitHub nothing and ignores any existing
+# memo.
+default_branch_seed() {
+  local b="${1:-}"
+  if is_branch_name "$b"; then
+    DEFAULT_BRANCH_SOURCE=github
+  elif b="$(default_branch_local)"; then
+    DEFAULT_BRANCH_SOURCE=origin-head
+  else
+    DEFAULT_BRANCH_SOURCE=fallback
+  fi
+  DEFAULT_BRANCH="$b"
+}
+
+# default_branch_resolve: seeds the memo through default_branch_seed, with
+# GitHub's answer when it can get one.
+# Memoised in the shell that runs it: it returns at once, asking nothing, when
 # DEFAULT_BRANCH_SOURCE is already set in the current shell. A $(...) subshell
 # never hands its variables back, so a command that reads the default more
 # than once runs this once in its own shell before its first read; every later
@@ -51,14 +69,7 @@ default_branch_resolve() {
   if repo_resolve; then
     b="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)" || b=""
   fi
-  if is_branch_name "$b"; then
-    DEFAULT_BRANCH_SOURCE=github
-  elif b="$(default_branch_local)"; then
-    DEFAULT_BRANCH_SOURCE=origin-head
-  else
-    DEFAULT_BRANCH_SOURCE=fallback
-  fi
-  DEFAULT_BRANCH="$b"
+  default_branch_seed "$b"
 }
 
 # default_branch: prints the default branch's name, one line.
