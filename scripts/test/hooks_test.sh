@@ -2024,7 +2024,7 @@ for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat < f | grep x'
   assert_empty "bash hook stdin guard: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
 # Heredoc delimiters are bash's whole word; << in arithmetic shifts (#2575).
-for bs_cmd in $'x=$((1<<n))\ncat' $'cat <<\'END-NOTES\'\nx\nEND-NOTES\ncat'; do
+for bs_cmd in $'x=$((1<<n))\ncat' $'x=$((1 +\n1<<n))\ncat' $'cat <<\'END-NOTES\'\nx\nEND-NOTES\ncat'; do
   bs_out="$(bash_hook_scan "$BASH_HOOK" default "$bs_cmd")"
   assert_eq "bash hook stdin guard: default denies '${bs_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bs_out")" deny
 done
@@ -2093,12 +2093,15 @@ done
 for bp_cmd in $'cat >n <<\'END-NOTES\'\nx\nEND-NOTES\npgrep -f x' $'cat <<END-NOTES\nx\nEND-NOTES\npgrep x' \
   $'cat <<END.TXT\nx\nEND.TXT\npgrep x' $'cat <<"a b"\nx\na b\npgrep x' $'cat <<E"N"D\nx\nEND\npgrep x' \
   $'x=$((1<<n))\necho\npgrep x' $'(( y = 1<<n ))\npgrep x' $'cat <<\\EOF\nx\nEOF\npgrep x' $'cat <<$X\nx\n$X\npgrep x' \
+  $'x=$((1 +\n1<<n))\npgrep x' $'((y = 1 +\n1<<n))\npgrep x' $'for ((i=0; i<<2; i++)); do :; done\npgrep x' \
+  $'(( a && 1<<n ))\npgrep x' $'(( a || 1<<n ))\npgrep x' $'(cd a && (ls))\nx=$((1<<n))\npgrep x' \
   $'cat <<<word\npgrep x' $'cat <<"a\\"b"\nx\na"b\npgrep x' $'cat <<"a\\\\b"\nx\na\\b\npgrep x'; do
   bp_out="$(bash_hook_scan "$BASH_HOOK" default "$bp_cmd")"
   assert_eq "bash hook poll guard: denies '${bp_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bp_out")" deny
 done
 for bp_cmd in $'cat <<END-NOTES\npgrep x\nEND-NOTES' $'x=$((1)); cat <<END-NOTES\npgrep x\nEND-NOTES' \
-  $'cat <<-END.TXT\n\tpgrep x\n\tEND.TXT' $'let x=1<<n\npgrep x\nn' $'cat <<\'\'\npgrep x\n' $'cat <<""\npgrep x\n' $'( (cat <<EOF\npgrep x\nEOF\n) )'; do
+  $'cat <<-END.TXT\n\tpgrep x\n\tEND.TXT' $'let x=1<<n\npgrep x\nn' $'cat <<\'\'\npgrep x\n' $'cat <<""\npgrep x\n' $'( (cat <<EOF\npgrep x\nEOF\n) )' \
+  $'echo $((1+\n2)); cat <<EOF\npgrep x\nEOF'; do
   bp_out="$(bash_hook_scan "$BASH_HOOK" default "$bp_cmd")"
   assert_empty "bash hook poll guard: passes '${bp_cmd//$'\n'/\\n}'" "$bp_out"
 done
