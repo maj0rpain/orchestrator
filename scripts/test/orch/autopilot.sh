@@ -1084,7 +1084,7 @@ assert_eq "and writes the limit file" "$(cat "$limit_file")" "$lim_iso"
 for op in adapter_issue_relabel adapter_issue_comment; do
   lim_fresh
   fake_fail "$op" "HTTP 500"
-  out="$(ORCH_GH_LIMIT_WAIT=0 limit_run 7)"; st=$?
+  out="$(limit_run 7)"; st=$?
   fake_unfail
   assert_status "a limit stop whose $op fails dies" "$st" 1
   assert_eq "$op: the claim is still held" "$(fake_claim_held 7)" held
@@ -1454,7 +1454,7 @@ se_end() {
 # se_end_with <prelude> <rc>: Session end over $se_log with <prelude> run after
 # orch.sh is sourced; the stop-chain waits are 0.
 se_end_with() {
-  se_out="$(ORCH_GH_LIMIT_WAIT=0 sourced_orch_script "$1"$'\n''autopilot_session_end 7 spec "$1" "$2" ""' "$se_log" "$2" 2>&1)"; se_st=$?
+  se_out="$(sourced_orch_script "$1"$'\n''autopilot_session_end 7 spec "$1" "$2" ""' "$se_log" "$2" 2>&1)"; se_st=$?
 }
 # se_kind: what the issue was left with: limited, failure (needs-human) or
 # released (neither).
@@ -2547,6 +2547,7 @@ assert_status "a tick under a GitHub pause succeeds" "$st" 0
 assert_contains "its note names the reset" "$out" "GitHub API rate limit: the tick does nothing until $(iso_of "$gh_reset")"
 assert_eq "it picks nothing up" "$(tick_calls)" "0"
 assert_eq "and touches no label" "$(fake_labels_of 7)" "$before"
+assert_contains "the note is on stderr, which the watcher keeps" "$("$ORCH" autopilot tick 2>&1 >/dev/null)" "GitHub API rate limit: the tick does nothing until"
 printf '2020-01-01T00:00:00Z\n' >"$top/.orchestrator/autopilot/github-limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a passed GitHub pause is removed" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent
@@ -2559,7 +2560,7 @@ top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Limit pickup 7"
 fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Limit pickup 8"
 fake_fail_times adapter_issue_comment 1 "API rate limit exceeded for user ID 1."
-out="$(ORCH_GH_LIMIT_WAIT=0 "$ORCH" autopilot tick 2>&1)"; st=$?
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick whose pickup meets a GitHub limit succeeds" "$st" 0
 assert_eq "the claim ref is gone" "$(fake_claim_held 7)" free
 assert_eq "no stop comment is left" "$(fake_comments_of 7 | grep -c 'orch:')" "0"
@@ -2577,7 +2578,7 @@ top="$(git rev-parse --show-toplevel)"
 fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Limit pickup 9"
 fake_fail_times adapter_issue_comment 1 "API rate limit exceeded for user ID 1."
 fake_fail adapter_claim_delete "HTTP 500 push"
-ORCH_GH_LIMIT_WAIT=0 "$ORCH" autopilot tick >/dev/null 2>&1
+"$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a failed claim-ref delete leaves the claim held" "$(fake_claim_held 9)" held
 fake_unfail
 

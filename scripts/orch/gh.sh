@@ -320,13 +320,6 @@ adapter_label_create() {
   gh label create "$1" --color "$2" --description "$3" >/dev/null
 }
 
-# adapter_rate_limit: GitHub's rate-limit pools, the core (REST) and graphql
-# ones, one per line as "<pool><TAB><remaining><TAB><limit><TAB><reset>", the
-# reset in epoch seconds. The read does not count against the primary limit.
-adapter_rate_limit() {
-  gh api rate_limit --jq '.resources | {core, graphql} | to_entries[] | [.key, .value.remaining, .value.limit, .value.reset] | @tsv'
-}
-
 # adapter_labels <limit>: the names of the repo's labels, at most <limit> of
 # them, one per line. Nothing at all for a repo with none.
 adapter_labels() {
@@ -339,6 +332,13 @@ adapter_labels() {
 adapter_labels_detail() {
   gh label list --limit "$1" --json name,color,description \
     --jq '.[] | [.name, .color, (.description // "")] | @tsv'
+}
+
+# adapter_rate_limit: GitHub's rate-limit pools, the core (REST) and graphql
+# ones, one per line as "<pool><TAB><remaining><TAB><limit><TAB><reset>", the
+# reset in epoch seconds. The read does not count against the primary limit.
+adapter_rate_limit() {
+  gh api rate_limit --jq '.resources | {core, graphql} | to_entries[] | [.key, .value.remaining, .value.limit, .value.reset] | @tsv'
 }
 
 # --- issue operations ---

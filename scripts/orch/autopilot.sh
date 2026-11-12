@@ -835,7 +835,12 @@ autopilot_pause_until() {
   [ -f "$file" ] || return 1
   epoch="$(autopilot_pause_epoch "$file")"
   if [ "$epoch" -gt "$(date +%s)" ]; then
-    note "$what $(cat "$file")"
+    # The GitHub pauses go to stderr: the watcher discards each tick's stdout
+    # but keeps its stderr, so the container log says why the watcher is idle.
+    case "${2:-}" in
+      github|core|graphql) warn "$what $(cat "$file")" ;;
+      *) note "$what $(cat "$file")" ;;
+    esac
     return 0
   fi
   rm -f "$file"

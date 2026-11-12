@@ -1602,7 +1602,6 @@ echo "gh rate limits (#2577)"
 new_repo >/dev/null
 git remote set-url origin https://github.com/fork/widgets.git
 gh_fixture
-export ORCH_GH_LIMIT_WAIT=0
 view=(issue view 5 --json body --jq .body)
 rl_jq='.resources | {core, graphql} | to_entries[] | [.key, .value.remaining, .value.limit, .value.reset] | @tsv'
 view_calls() { grep -c ' issue view 5 ' "$GH_FIXTURE/env.log"; }
@@ -1673,11 +1672,10 @@ out="$(contract adapter_issue_body 5 2>&1)"; st=$?
 assert_status "another failure keeps its status" "$st" 1
 assert_eq "and its stderr exactly" "$out" "HTTP 502: Bad Gateway"
 assert_eq "one call, no rate_limit read" "$(wc -l <"$GH_FIXTURE/env.log" | tr -d ' ')" "1"
-restore_suite_env GH_FIXTURE GH_HOST ORCH_GH_LIMIT_WAIT
+restore_suite_env GH_FIXTURE GH_HOST
 
 # The store-backed fake's failing operations go through the same handler.
 fake_github
-export ORCH_GH_LIMIT_WAIT=0
 fake_issue 5 open
 fake_quota core 0 5000 2000000000
 fake_quota graphql 7 5000 2100000000
@@ -1698,7 +1696,7 @@ fake_online; fake_unfail
 fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
 out="$(sourced_orch adapter_issue_body 5 2>&1)"
 assert_eq "the fake passes another failure through untouched" "$out" "HTTP 502: Bad Gateway"
-restore_suite_env ORCH_GH_LIMIT_WAIT
+restore_suite_env
 
 # --- gh rate limits: the GitHub pause and the hit file (#2577) ----------------
 # An autopilot process records the reset: a tick and the wrapper by a flag of
@@ -1710,7 +1708,6 @@ top="$(git rev-parse --show-toplevel)"
 pause_file="$top/.orchestrator/autopilot/github-limit"
 hit_file="$top/.orchestrator/autopilot/run/5.hit"
 fake_github
-export ORCH_GH_LIMIT_WAIT=0
 fake_issue 5 open
 fake_quota core 0 5000 2000000000
 fake_ratelimit
@@ -1746,4 +1743,4 @@ assert_contains "with the distinct message" "$out" "orch: GitHub API rate limit 
 assert_contains "and a line on the write" "$out" "could not write the GitHub limit pause"
 rmdir "$pause_file"
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
-restore_suite_env ORCH_GH_LIMIT_WAIT
+restore_suite_env

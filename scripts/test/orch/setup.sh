@@ -72,6 +72,8 @@ PATH="$GH_GUARD_DIR/bin:$PATH"
 # gh_fixture's GH_FIXTURE included. A section that exported more names passes
 # them to restore_suite_env to unset them too.
 SUITE_PATH="$PATH"
+# No test waits out the real GitHub rate-limit backoff (60 and 300 seconds).
+export ORCH_GH_LIMIT_WAIT=0
 restore_suite_env() {
   unset CLAUDE_PLUGIN_ROOT GH_REPO GH_FIXTURE ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE "$@"
   HOME="$SUITE_HOME"; PATH="$SUITE_PATH"

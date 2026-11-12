@@ -283,16 +283,6 @@ adapter_labels() {
   cut -f1 "$f" | awk -v n="$1" 'NR<=n'
 }
 
-# adapter_rate_limit: the stored quota, one "<pool><TAB><remaining><TAB><limit>
-# <TAB><reset>" line per pool; absent, both pools full with a reset an hour on.
-adapter_rate_limit() {
-  local f
-  ! fake_failing adapter_rate_limit || return 1
-  f="$(fake_store)/quota"
-  if [ -f "$f" ]; then cat "$f"; return 0; fi
-  printf '%s\t5000\t5000\t%s\n' core "$(($(date +%s) + 3600))" graphql "$(($(date +%s) + 3600))"
-}
-
 # adapter_labels_detail <limit>: the stored labels as name, colour and
 # description, tab-separated, the first <limit> of them.
 adapter_labels_detail() {
@@ -301,6 +291,16 @@ adapter_labels_detail() {
   f="$(fake_store)/labels"
   [ -f "$f" ] || return 0
   awk -F '\t' -v OFS='\t' -v n="$1" 'NR<=n { print $1, $2, $3 }' "$f"
+}
+
+# adapter_rate_limit: the stored quota, one "<pool><TAB><remaining><TAB><limit>
+# <TAB><reset>" line per pool; absent, both pools full with a reset an hour on.
+adapter_rate_limit() {
+  local f
+  ! fake_failing adapter_rate_limit || return 1
+  f="$(fake_store)/quota"
+  if [ -f "$f" ]; then cat "$f"; return 0; fi
+  printf '%s\t5000\t5000\t%s\n' core "$(($(date +%s) + 3600))" graphql "$(($(date +%s) + 3600))"
 }
 
 # --- issue operations, on the store -------------------------------------------
