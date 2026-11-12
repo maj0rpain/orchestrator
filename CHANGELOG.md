@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.9
+
+The orch-flow skill's autopilot spec phase now names the plan handoff's **Rejected alternatives** entry as what a declined `contradicts the plan` item amends after `apply`, and keeps the plan comment's re-post.
+
 ## 5.2.8
 
 Reword the code comments that cited ADR-0011 for read-backs other than `ticket publish`'s links, so each cites it only as the one-retry policy it records for `ticket publish`.
