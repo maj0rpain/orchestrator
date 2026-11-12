@@ -331,12 +331,14 @@ agent_name_shapes() {
 # an agent no role covers.
 agent_role_of() {
   local shape
-  while IFS= read -r shape; do
+  local -a shapes
+  read -ra shapes <<<"$AGENT_NAME_SHAPES"
+  for shape in "${shapes[@]}"; do
     if [[ "$1" =~ ^$(agent_shape_ere "${shape#*:}")$ ]]; then
       echo "${shape%%:*}"
       return 0
     fi
-  done < <(agent_name_shapes)
+  done
   return 0
 }
 
@@ -497,7 +499,9 @@ agent_junie_session() {
   [ -n "$log" ] || { agent_junie_session_cannot_tell "no log names session $sid"; return 0; }
   lines="$(grep -a "Executing agent custom_agent_$AGENT_JUNIE_RUN_NAME$AGENT_JUNIE_RUN_TAIL" "$log" 2>/dev/null)" || true
   [ -n "$lines" ] || { agent_junie_session_cannot_tell "the log holds no agent runs"; return 0; }
-  while IFS= read -r agent; do
+  local -a agents_ran
+  mapfile -t agents_ran < <(printf '%s\n' "$lines" | sed -n "s/.*custom_agent_\\($AGENT_JUNIE_RUN_NAME\\)$AGENT_JUNIE_RUN_TAIL.*/\\1/p" | awk '!seen[$0]++')
+  for agent in ${agents_ran[@]+"${agents_ran[@]}"}; do
     line="$(printf '%s\n' "$lines" | grep -a "custom_agent_$agent$AGENT_JUNIE_RUN_TAIL" | tail -1)"
     model="$(agent_junie_field "$line" model)"
     [ -n "$model" ] || { agent_junie_session_cannot_tell "the log does not parse"; return 0; }
@@ -512,7 +516,7 @@ agent_junie_session() {
     else
       report="$report"$'\n'"warn|$ran_line $set_part"
     fi
-  done < <(printf '%s\n' "$lines" | sed -n "s/.*custom_agent_\\($AGENT_JUNIE_RUN_NAME\\)$AGENT_JUNIE_RUN_TAIL.*/\\1/p" | awk '!seen[$0]++')
+  done
   while IFS='|' read -r verdict report_line; do
     [ -n "$verdict" ] || continue
     if [ "$verdict" = ok ]; then d_ok "$report_line"; else d_warn "$report_line"; fi

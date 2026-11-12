@@ -1165,11 +1165,13 @@ adapter_claim_delete() {
 # stderr, where origin cannot be read.
 adapter_claim_list() {
   local err ref issue msg host pid phase started
+  local -a refs
   capture_err err git fetch --quiet --prune origin '+refs/orch/claims/*:refs/orch/claims/*' || {
     printf '%s\n' "${err:-git gave no reason}" >&2
     return 1
   }
-  while IFS= read -r ref; do
+  mapfile -t refs < <(git for-each-ref --format='%(refname)' refs/orch/claims/ | sort -t/ -k4,4n)
+  for ref in ${refs[@]+"${refs[@]}"}; do
     issue="${ref##*/}"
     msg="$(git show -s --format=%B "$ref")" || return 1
     host="$(sed -n 's/^host: //p' <<<"$msg")"
@@ -1177,7 +1179,7 @@ adapter_claim_list() {
     phase="$(sed -n 's/^phase: //p' <<<"$msg")"
     started="$(sed -n 's/^started: //p' <<<"$msg")"
     printf '%s\t%s\t%s\t%s\t%s\n' "$issue" "$host" "$pid" "$phase" "$started"
-  done < <(git for-each-ref --format='%(refname)' refs/orch/claims/ | sort -t/ -k4,4n)
+  done
 }
 
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
