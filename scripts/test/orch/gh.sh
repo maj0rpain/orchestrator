@@ -1519,6 +1519,19 @@ assert_eq "and touches no branch of origin" "$(git -C "$claim_origin" for-each-r
 assert_eq "and leaves the checkout's HEAD where it was" "$(git rev-parse HEAD)" "$claim_head"
 out="$(claim_op adapter_claim_create 60 spec 1 autopilot-abc123 2>&1; claim_op adapter_claim_list | awk -F"\t" '$1 == 60 { print $2 }')"
 assert_eq "a claim records the host it is given" "$out" "autopilot-abc123"
+errf="$(mktemp)"
+# shellcheck disable=SC2218 # claim_op is the redefinition above
+claim_op adapter_claim_create 123 spec 1 "$(hostname)" >/dev/null 2>&1
+claim_lines="$(claim_op adapter_claim_list)"
+assert_eq "the unpiped claim list is in issue order" "$(printf '%s\n' "$claim_lines" | cut -f1 | tr '\n' ' ')" "7 41 60 123 "
+for _ in 1 2 3 4 5; do
+  out="$( (trap '' PIPE; claim_op adapter_claim_list 2>"$errf") | cat)"
+  assert_eq "the claim list prints the same claim lines with SIGPIPE ignored" "$out" "$claim_lines"
+  assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
+done
+# shellcheck disable=SC2218 # claim_op is the redefinition above
+claim_op adapter_claim_delete 123 >/dev/null 2>&1
+rm -f "$errf"
 git remote set-url origin "$claim_origin/nowhere"
 out="$(claim_op adapter_claim_create 50 spec 1 "$(hostname)" 2>&1)"; st=$?
 assert_status "a push that fails for another reason fails with status 1, not 2" "$st" 1

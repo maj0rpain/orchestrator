@@ -407,6 +407,23 @@ assert_eq "a file named like a shape leaves the auditor role read" \
 assert_eq "orch-test-auditor is read under the auditor role" \
   "$(sourced_orch agent_role_of orch-test-auditor)" "auditor"
 rm -f 'lens:orch-lens-x' 'auditor:orch-code-auditor'
+# With SIGPIPE ignored, as on some CI runners, a role read never leaves a write
+# error on stderr, over enough calls in one shell to catch the race.
+errf="$(mktemp)"
+out="$(sourced_orch_script '
+  trap "" PIPE
+  for i in $(seq 125); do
+    for n in orch-implementer orch-lens-x orch-reviewer-x orch-fixer orch-closer orch-resolver orch-doc-auditor orch-nothing-covers-this; do
+      printf "%s=%s\n" "$n" "$(agent_role_of "$n")"
+    done
+  done | sort | uniq -c' 2>"$errf")"
+assert_eq "agent_role_of reads every shape's role, and none for an uncovered name, 1000 times" \
+  "$out" "$(printf '%s\n' \
+    '    125 orch-closer=closer' '    125 orch-doc-auditor=auditor' '    125 orch-fixer=fixer' \
+    '    125 orch-implementer=implementer' '    125 orch-lens-x=lens' '    125 orch-nothing-covers-this=' \
+    '    125 orch-resolver=resolver' '    125 orch-reviewer-x=reviewer')"
+assert_eq "agent_role_of writes nothing to stderr with SIGPIPE ignored" "$(cat "$errf")" ""
+rm -f "$errf"
 unset -f jkey
 unset -f key untouched
 restore_suite_env

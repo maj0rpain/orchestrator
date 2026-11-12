@@ -295,12 +295,15 @@ suite_cost_base_commit() {
 # record line of <cmd-string> whose commit passes <pred> (a function given the
 # commit), or fails printing nothing.
 suite_cost_newest() {
-  local rec="$1" want="$2" pred="$3" sha cmd
+  local rec="$1" want="$2" pred="$3" sha cmd line
+  local -a lines
   [ -e "$rec" ] || return 1
-  while IFS=$'\t' read -r sha _ _ _ cmd; do
+  mapfile -t lines < <(awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }' "$rec")
+  for line in ${lines[@]+"${lines[@]}"}; do
+    IFS=$'\t' read -r sha _ _ _ cmd <<<"$line"
     [ "$cmd" = "$want" ] || continue
     if "$pred" "$sha"; then printf '%s\n' "$sha"; return 0; fi
-  done < <(awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }' "$rec")
+  done
   return 1
 }
 

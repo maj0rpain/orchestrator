@@ -492,6 +492,24 @@ assert_eq "the baseline is the base commit's own newest record of the same comma
 assert_eq "with no base run" "$(on_disk "$marker")" absent
 rm -f "$marker"
 
+# A record file over a pipe's capacity, the head record newest: the verdict is
+# the same and nothing reaches stderr when SIGPIPE is ignored, whatever of the
+# record file is left unread.
+: >"$rec"
+seed_run "$base" 100.00
+filler="$(printf 'x%.0s' $(seq 80))"
+for _ in $(seq 1000); do seed_run "$root" 1.00 "$filler"; done
+seed_run "$head" 105.00
+assert_eq "the record file is over a pipe's capacity" \
+  "$([ "$(wc -c <"$rec")" -gt 65536 ] && echo over)" "over"
+errf="$(mktemp)"
+for _ in 1 2 3 4 5; do
+  out="$( (trap '' PIPE; "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf") )"
+  assert_eq "a large record file gives the same verdict with SIGPIPE ignored" "$out" "ok"
+  assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
+done
+rm -f "$errf" "$marker"
+
 # Lowest samples: of several records on the newest head record's commit, or
 # on the newest baseline record's, the lowest decides, not the newest.
 : >"$rec"

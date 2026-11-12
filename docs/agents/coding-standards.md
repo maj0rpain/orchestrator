@@ -34,3 +34,11 @@ none.
 
 A variable holds one meaning over its whole lifetime. When a function needs a
 second value, give it a second name rather than reusing the first.
+
+## 5. Read a process substitution to EOF
+
+Never leave a `while read … done < <(…)` loop early with `return`, `break` or
+`exit`: the producer may still be writing, and where `SIGPIPE` is ignored it
+prints a write error on stderr. Load the output with `mapfile -t` first and loop
+over the array, or iterate a variable's words directly when there is no producer
+to run.
