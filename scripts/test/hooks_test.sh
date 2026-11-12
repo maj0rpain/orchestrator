@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for the six hook scripts.
+# Tests for the seven hook scripts.
 #
 # The failure modes worth catching: the grilling hook firing on skills that
 # aren't planning, firing twice in one session, or staying silent when it should
@@ -2138,11 +2138,9 @@ for mode in default bypassPermissions; do
   assert_eq "bash hook: out of scope under $mode with pgrep exits 0" "$hb_rc" 0
 done
 # Process cost: a jq shim on PATH logs each call, then runs the real jq.
-hb_bin="$TMPDIR/hb-bin"; hb_log="$TMPDIR/hb-jq.log"; mkdir -p "$hb_bin"
-hb_real_jq="$(command -v jq)"
-printf '#!/bin/sh\necho x >>"%s"\nexec "%s" "$@"\n' "$hb_log" "$hb_real_jq" >"$hb_bin/jq"; chmod +x "$hb_bin/jq"
+HBC="$(call_counter jq)"
 # hb_jq_calls: the jq calls the hook makes for the stdin payload.
-hb_jq_calls() { : >"$hb_log"; PATH="$hb_bin:$PATH" env -u ORCH_AUTOPILOT bash "$BASH_HOOK" >/dev/null 2>&1; wc -l <"$hb_log" | tr -d ' '; }
+hb_jq_calls() { : >"$HBC/log"; PATH="$HBC:$PATH" env -u ORCH_AUTOPILOT bash "$BASH_HOOK" >/dev/null 2>&1; counted_calls "$HBC"; }
 assert_eq "bash hook: an out-of-scope payload costs 1 jq call" "$(bash_hook_event default Explore 'cat' | hb_jq_calls)" 1
 assert_eq "bash hook: an in-scope payload with no command costs 1 jq call" \
   "$(bash_hook_event default orch-implementer cat | jq 'del(.tool_input.command)' | hb_jq_calls)" 1
@@ -2153,6 +2151,7 @@ for mode in default bypassPermissions; do
     assert_eq "bash hook: an in-scope '$hb_cmd' under $mode costs at most 2 jq calls" "$([ "$hb_n" -le 2 ] && echo yes || echo "no ($hb_n)")" yes
   done
 done
+rm -rf "$HBC"
 # Registration and docs.
 assert_eq "hooks.json's Bash matcher has exactly one command, hook-bash.sh" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?.command] | map(select(test("^bash \"\\$\\{CLAUDE_PLUGIN_ROOT\\}/scripts/hook-bash\\.sh\"$"))) | length' "$ROOT/hooks/hooks.json")|$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]?] | length' "$ROOT/hooks/hooks.json")" "1|1"
