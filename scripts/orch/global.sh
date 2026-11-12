@@ -423,7 +423,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               force-pushing over anything; records the
                               retirement on <new>
                               (branch.<new>.orchestrator-retired) once the
-                              rename and its remote steps are done
+                              rename and its remote steps are done. A rerun
+                              after the rename resumes the remote steps only
+                              while origin still has <old>; a rerun of a
+                              completed retire changes nothing on origin or
+                              in local branches, records the retirement on
+                              <new>, and prints <new>; an unreachable origin on a rerun
+                              exits 1 with nothing changed
   issue publish <title> <body-file>
                               create a GitHub issue under ready-for-agent
                               and verify its title and label by reading them

@@ -17,15 +17,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 
 hook_read_payload
-# The file being written, absolute and physical - see hook_tool_path.
-file="$(hook_tool_path)"
-
 # Only guard sessions the grilling hook has marked as planning. A payload
 # with no session_id is never guarded. On Junie the grilling hook writes a
 # marker under another name, which this hook never reads, so the guard does
 # not arm there - ADR-0025.
 [ -n "$session" ] || exit 0
 [ -e "$(hook_marker_path grilling)" ] || exit 0
+# The file being written, absolute and physical - see hook_tool_path. Resolved
+# only once the session is armed: an unguarded session pays for no path work.
+file="$(hook_tool_path)"
 [ -n "$file" ] || exit 0
 
 # The repo policed is the file's own: the git toplevel of its nearest existing

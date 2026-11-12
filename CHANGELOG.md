@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.0.26
+
+An autopilot tick now lists the `orch:done` issues once and reads each one once, sharing the read between the merged-PR close and sync request detection, instead of doing both twice.
+
+## 5.0.25
+
+The planning edit guard now checks that the session is armed before it resolves the file path, so unguarded sessions skip the path work.
+
+## 5.0.24
+
+`branch retire` on a rerun after the local rename now asks origin whether `<old>` is still there before any remote step. A rerun of a completed retire, local-only or with an upstream, changes nothing on origin or in local branches, records the retirement on `<new>`, and prints `<new>`; an unreachable origin dies with nothing changed; and the resume never renames `<new>` back to `<old>`.
+
+## 5.0.23
+
+The paste guards (Stop and AskUserQuestion) no longer parse the whole session transcript at every turn end: a fixed-string pre-check skips the parse when the transcript holds no arming pass line, and the re-read window re-parses only when the transcript changed size.
+
 ## 5.0.22
 
 `orch.sh doctor --flow` now reads the flow's issue and the flow's PR from GitHub once per run instead of twice, with output and exit status unchanged.
