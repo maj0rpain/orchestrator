@@ -416,10 +416,9 @@ cmd_issue_triage() {
   # review:<severity> label marks a finding, not only the severities filed
   # today.
   local finding
-  if has_review_label "$labels"; then
+  if finding_untriaged "$labels"; then
     finding="$(review_labels "$labels" | sed -n 1p)"
-    [ "$is_ready" = true ] || [ -n "$held" ] \
-      || die "issue #$issue is a filed finding ($finding) not yet triaged - triage it with $(finding_triage_cmd)"
+    die "issue #$issue is a filed finding ($finding) not yet triaged - triage it with $(finding_triage_cmd)"
   fi
   # --check stops here, before any write, saying what the write would do.
   if [ "$check" = true ]; then

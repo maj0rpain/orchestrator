@@ -2401,3 +2401,97 @@ case "$first" in
   *) bad "and passes the transition's message through" "first line: $first" ;;
 esac
 fake_unfail
+
+# --- autopilot candidates -----------------------------------------------------
+# The quick autopilot's selection verb: one line per issue, eligible with its
+# label move or skipped with the first reason that holds; it writes nothing.
+echo
+echo "autopilot candidates"
+fake_flow autopilot-candidates
+fake_issue 1 open ready-for-agent
+fake_issue 2 open needs-triage
+fake_issue 3 open ready-for-human
+fake_issue 4 open ready-for-agent orch:review
+fake_issue 5 open wontfix
+fake_issue 6 open needs-info
+fake_issue 7 open ready-for-agent
+mkdir -p "$ORCH_GH_FAKE_STORE/subs"; printf '7\n' >"$ORCH_GH_FAKE_STORE/subs/1"
+fake_issue 8 open review:high needs-triage
+fake_issue 9 open review:high
+fake_issue 10 open review:high ready-for-human
+fake_issue 11 closed ready-for-agent
+fake_issue 12 open ready-for-agent
+fake_issue_authorship 12 stranger NONE
+fake_issue 13 open wontfix orch:spec
+fake_issue 14 open
+fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/2/comments" alice 2026-01-01T00:00:00Z "a comment"
+ac_snapshot() { local n s=""; for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do s="$s$(fake_labels_of "$n")|$(fake_comments_of "$n" 2>/dev/null)#"; done; printf '%s' "$s"; }
+ac_before="$(ac_snapshot)"
+
+out="$("$ORCH" autopilot candidates 3 99 1 14 11 12 13 2>&1)"; st=$?
+assert_status "named issues succeed" "$st" 0
+assert_eq "verdicts and the order named" "$out" "3 eligible override
+99 skip missing
+1 eligible none
+14 eligible move
+11 skip closed
+12 skip untrusted stranger
+13 skip phase spec"
+
+# The fake lists newest first, as gh does, except its oldest-first read: the
+# verb must walk that read in order.
+
+all="$(ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all 2>&1)"; st=$?
+assert_status "--all succeeds" "$st" 0
+assert_eq "--all walks the open issues oldest first, with no limit warning below the limit" "$(printf '%s\n' "$all" | cut -d' ' -f1 | paste -sd' ' -)" "1 2 3 4 5 6 7 8 9 10 12 13 14"
+assert_eq "--limit keeps the first k eligible lines, skips not counted" "$("$ORCH" autopilot candidates --limit 4 2>&1)" "1 eligible none
+2 eligible move
+3 eligible override
+4 skip phase review
+5 skip wontfix
+6 skip needs-info
+7 skip ticket #1
+8 skip untriaged-finding
+9 skip untriaged-finding
+10 eligible override"
+ac_err="$(mktemp)"
+assert_eq "past the issue-list limit the newest issues are the ones dropped" \
+  "$(ORCH_ISSUE_LIST_LIMIT=12 "$ORCH" autopilot candidates --all 2>"$ac_err" | cut -d' ' -f1 | paste -sd' ' -)" \
+  "1 2 3 4 5 6 7 8 9 10 12 13"
+assert_contains "--all warns when the listing reaches the issue-list limit" "$(cat "$ac_err")" \
+  "orch: the open issues reached the issue-list limit of 12 - the newest past it are missing from this list"
+rm -f "$ac_err"
+
+for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
+  # shellcheck disable=SC2086 # the words are the arguments
+  out="$("$ORCH" autopilot candidates $args 2>&1)"; st=$?
+  assert_status "usage error refused: '$args'" "$st" 1
+  [ -n "$args" ] || ac_usage="$out"
+done
+assert_contains "the usage line names the forms" "$ac_usage" "usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
+
+fake_fail adapter_issue_state_labels "HTTP 502 read"
+out="$("$ORCH" autopilot candidates 1 2 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed read dies" "$st" 1
+assert_eq "with an orch: message and no partial list" "$out" "orch: could not read issue #1: HTTP 502 read"
+fake_fail adapter_issue_authorship "HTTP 502 trust"
+out="$("$ORCH" autopilot candidates 1 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed trust read dies" "$st" 1
+assert_contains "naming the reason" "$out" "HTTP 502 trust"
+fake_fail adapter_issues_open_oldest "HTTP 502 list"
+out="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed listing dies" "$st" 1
+assert_contains "with an orch: message" "$out" "gh could not list the open issues: HTTP 502 list"
+fake_fail adapter_issue_parent "HTTP 502 parent"
+ac_err="$(mktemp)"
+out="$("$ORCH" autopilot candidates 5 2 2>"$ac_err")"; st=$?
+fake_unfail
+assert_status "a parent read failing after an earlier verdict dies" "$st" 1
+assert_eq "and prints no partial list" "$out" ""
+assert_contains "naming the reason" "$(cat "$ac_err")" "HTTP 502 parent"
+rm -f "$ac_err"
+
+assert_eq "no form wrote a label or a comment" "$(ac_snapshot)" "$ac_before"

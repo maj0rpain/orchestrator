@@ -56,6 +56,9 @@ orch-lens-testability, orch-lens-implementability, and orch-resolver custom
 agents. Whenever the orch-quick-implement skill is used, those seven custom
 agents are required too.
 
+The orch-autopilot-planner custom agent is Claude Code only: no Junie skill
+uses it, and the orch-quick-autopilot skill, which starts it, has no Junie path.
+
 The orch-review skill depends on the orch-reviewer-spec,
 orch-reviewer-standards, orch-fixer, orch-closer, and orch-resolver custom
 agents. Whenever the orch-review skill is used, those five custom agents are

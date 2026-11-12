@@ -281,8 +281,8 @@ directory to `measure` beside the new ones for a reference row.
 ## Layout
 
 ```
-commands/                     start, next, flow-status, health, redo, abort, finish, release, spec-review, review-pass, sync, interview, quick-implement, to-spec, to-tickets, finding-triage, audit-docs, audit-code, audit-tests, questions
-agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, the implementer, the resolver of a merge conflict, the docs audit's doc auditor, and the code audit's code auditor
+commands/                     start, next, flow-status, health, redo, abort, finish, release, spec-review, review-pass, sync, interview, quick-implement, quick-autopilot, to-spec, to-tickets, finding-triage, audit-docs, audit-code, audit-tests, questions
+agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, the implementer, the resolver of a merge conflict, the docs audit's doc auditor, the code audit's code auditor, and the quick autopilot's planner (orch-autopilot-planner, Claude Code only)
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question applied by `orch.sh spec-review apply`, plus a ticket question when an existing breakdown is touched; the spec-phase entry with its flow-only steps (`spec-phase.md`), the unattended mode and the ticket step sit in reference files beside SKILL.md
 skills/orch-review/           the review loop only: rubric, authority rules, terminal states
@@ -291,7 +291,8 @@ skills/orch-sync/             a base sync on demand: branch sync, a resolver on 
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue (possibly rewritten from the plan by orch-to-spec's Unattended rewrite), unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
 skills/orch-interview/        the planning interview, and its `## Closing` section: the closing rules hook-grilling.sh's message points to
-skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body - attended, or in the Unattended rewrite form a quick implementation takes
+skills/orch-quick-autopilot/  the quick autopilot: selects with `autopilot candidates`, one confirmation, one orch-autopilot-planner per issue, a summary - Claude Code only
+skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body - attended, or in the Unattended rewrite form a quick implementation or a quick autopilot takes
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply; --bundle groups them into bundles
