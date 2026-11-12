@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.3
+
+The breakdown draft parser now strips a trailing CR from every line, so a draft saved with CRLF line endings publishes like its LF form: its `@@ end` lines close their blocks, and no title, blocker list or body carries a CR.
+
 ## 5.2.2
 
 Drop a redundant test case: the unparseable-comments case under `phase advance` repeated coverage the HTTP 503 case and the handoff noun's checks already pin. Behaviour is unchanged.
