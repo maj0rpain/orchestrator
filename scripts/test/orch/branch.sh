@@ -444,12 +444,89 @@ assert_eq "with git's reason" "$out" \
 assert_eq "a failed delete leaves the new name unmarked" \
   "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" ""
 
+# A resume whose delete is refused is not rolled back either: the rename was
+# not that call's.
+out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+assert_status "a resume whose delete is refused dies" "$st" 1
+assert_contains "naming the delete" "$out" "could not delete origin/to-protect:"
+assert_eq "origin has the new name" \
+  "$(origin_branch_state "$bare4" to-protect-redo-1)" "pushed"
+assert_eq "the new name stays local" "$(branch_presence to-protect-redo-1)" "present"
+assert_eq "and is not renamed back" "$(branch_presence to-protect)" "gone"
+
 # Once the block clears, the rerun takes the resume path and records it.
 git -C "$bare4" symbolic-ref HEAD refs/heads/unrelated
 out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
 assert_status "the rerun after the block clears succeeds" "$st" 0
 assert_eq "and the resumed retire marks the new name" \
   "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" "true"
+
+# Resume arm (#2553): <old> gone locally and <new> present is also the state a
+# completed retire leaves, so origin's own answer for <old> decides whether any
+# remote step remains.
+# A rerun of a completed local-only retire publishes nothing.
+bare5="$(mktemp -d)/origin.git"
+git init -q --bare "$bare5"
+bare_origin "$bare5"
+git checkout -q -b rr-local
+out="$(orch_gh_failing branch retire rr-local rr-local-redo-1 2>&1)"; st=$?
+assert_status "retires a never-pushed branch before the rerun" "$st" 0
+# Cleared, as a retire made before #2550 leaves it, so the rerun's write shows.
+git config --unset branch.rr-local-redo-1.orchestrator-retired
+out="$(orch_gh_failing branch retire rr-local rr-local-redo-1 2>&1)"; st=$?
+assert_status "a rerun of a completed local-only retire succeeds" "$st" 0
+assert_eq "and prints the new name" "$out" "rr-local-redo-1"
+assert_eq "without publishing the new name" \
+  "$(origin_branch_state "$bare5" rr-local-redo-1)" "missing"
+assert_eq "nor the old one" "$(origin_branch_state "$bare5" rr-local)" "missing"
+assert_eq "the new name stays local with no upstream" \
+  "$(branch_presence rr-local-redo-1)/$(upstream_of rr-local-redo-1)" "present/none"
+assert_eq "and the old name stays gone" "$(branch_presence rr-local)" "gone"
+assert_eq "and the rerun records the new name as retired" \
+  "$(git config --get branch.rr-local-redo-1.orchestrator-retired || true)" "true"
+
+# A resume with origin unreachable dies and changes nothing.
+rm -rf "$bare5"
+out="$(orch_gh_failing branch retire rr-local rr-local-redo-1 2>&1)"; st=$?
+assert_status "a resume with origin unreachable dies" "$st" 1
+assert_contains "saying it could not check origin" "$out" \
+  "could not reach origin to check whether rr-local is still there - nothing was changed; rerun orch.sh branch retire rr-local rr-local-redo-1"
+assert_eq "leaving the new name in place" "$(branch_presence rr-local-redo-1)" "present"
+assert_eq "and not renaming it back" "$(branch_presence rr-local)" "gone"
+
+# A rerun of a completed retire that had an upstream does no network write.
+bare6="$(mktemp -d)/origin.git"
+git init -q --bare "$bare6"
+bare_origin "$bare6"
+git checkout -q -b rr-up
+git push -q -u origin rr-up
+orch_gh_failing branch retire rr-up rr-up-redo-1 >/dev/null 2>&1
+tip6="$(git -C "$bare6" rev-parse refs/heads/rr-up-redo-1)"
+git config --unset branch.rr-up-redo-1.orchestrator-retired
+out="$(orch_gh_failing branch retire rr-up rr-up-redo-1 2>&1)"; st=$?
+assert_status "a rerun of a completed retire with an upstream succeeds" "$st" 0
+assert_eq "and prints the new name" "$out" "rr-up-redo-1"
+assert_eq "origin keeps the new name at the same tip" \
+  "$(git -C "$bare6" rev-parse refs/heads/rr-up-redo-1)" "$tip6"
+assert_eq "and has no old name" "$(origin_branch_state "$bare6" rr-up)" "missing"
+assert_eq "and nothing is renamed locally" \
+  "$(branch_presence rr-up-redo-1)/$(branch_presence rr-up)" "present/gone"
+assert_eq "and the rerun records the new name as retired" \
+  "$(git config --get branch.rr-up-redo-1.orchestrator-retired || true)" "true"
+
+# A resume whose push fails is not rolled back: the rename was not this call's.
+bare7="$(mktemp -d)/origin.git"
+git init -q --bare "$bare7"
+bare_origin "$bare7"
+git checkout -q -b rr-push
+git push -q -u origin rr-push
+git branch -m rr-push rr-push-redo-1
+origin_rejects "$bare7"
+out="$(orch_gh_failing branch retire rr-push rr-push-redo-1 2>&1)"; st=$?
+assert_status "a resume whose push is rejected dies" "$st" 1
+assert_contains "naming the push" "$out" "could not push rr-push-redo-1 to origin:"
+assert_eq "keeping the new name" "$(branch_presence rr-push-redo-1)" "present"
+assert_eq "and not renaming it back" "$(branch_presence rr-push)" "gone"
 
 out="$(orch_gh_failing branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1

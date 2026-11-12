@@ -406,7 +406,7 @@ cmd_branch() {
     sync)   cmd_branch_sync "$@" ;;
     retire)
       [ $# -eq 2 ] || die "usage: orch.sh branch retire <old> <new>"
-      local old="$1" new="$2" upstream="" old_ok=1 new_ok=1 why
+      local old="$1" new="$2" upstream="" old_ok=1 new_ok=1 why resumed=0 st=0
       git rev-parse --verify --quiet "refs/heads/$old" >/dev/null 2>&1 || old_ok=0
       git rev-parse --verify --quiet "refs/heads/$new" >/dev/null 2>&1 || new_ok=0
       if [ "$old_ok" = 1 ] && [ "$new_ok" = 1 ]; then
@@ -417,27 +417,35 @@ cmd_branch() {
         upstream="$(branch_upstream "$old")" || upstream=""
         git branch -m "$old" "$new"
       else
-        # $old is already gone and $new already exists: a previous call's
-        # local rename succeeded and it died on the remote push or delete
-        # below - resume from there instead of failing on "$old does not
-        # exist", the unretryable state issue #63 named. Reaching this state
-        # is possible by way of the upstream branch below, or by way of the
-        # marker write that ends every retire, which can die too - so the
-        # remote steps still needing doing is assumed here. Resuming a
-        # local-only retire cleanly is #2553's.
-        upstream=origin
+        # $old is already gone and $new already exists: a previous call renamed
+        # locally (issue #63). That state is also what a completed retire
+        # leaves, local-only or not, so it does not say a remote step remains:
+        # origin's own answer for $old does. Still there - the previous call
+        # died before its remote steps finished, so resume them. Answered no -
+        # nothing remote is left, so no remote step or rename happens and the
+        # retirement key is still recorded on $new. Not answered
+        # - guess neither way and die, so a rerun can ask again. This call
+        # made no rename, so it never rolls one back.
+        resumed=1
+        origin_has_branch "$old" || st=$?
+        case "$st" in
+          0) upstream=origin ;;
+          2) ;;
+          *) die "could not reach origin to check whether $old is still there - nothing was changed; rerun orch.sh branch retire $old $new" ;;
+        esac
       fi
       # A leftover remote ref under the un-suffixed name is exactly what the
       # next implement attempt's branch create/pr open will reuse, and their
       # plain push is not a force-push - so the old ref's delete is not
       # optional, and both failures die rather than leaving origin out of
-      # sync with what this rename just did locally.
+      # sync with the local rename, this call's or a previous one's.
       if [ -n "$upstream" ]; then
-        # The rename above is local-only and free to undo - if the push
+        # The fresh arm's rename is local-only and free to undo - if the push
         # never lands, undoing it is what keeps `$old` a real, retryable
-        # branch instead of a name a retry can no longer find.
+        # branch instead of a name a retry can no longer find. The resume arm
+        # made no rename in this call, so it leaves it be.
         git_push why -q -u origin "refs/heads/$new:refs/heads/$new" \
-          || { git branch -m "$new" "$old"; die "could not push $new to origin: $why"; }
+          || { [ "$resumed" = 1 ] || git branch -m "$new" "$old"; die "could not push $new to origin: $why"; }
         if ! git_push why -q origin --delete "refs/heads/$old"; then
           # Already gone - a previous call's delete already succeeded before
           # something else failed - is not an error to retry into; only a

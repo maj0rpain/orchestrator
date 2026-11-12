@@ -2223,3 +2223,115 @@ write_ssh_stub 'exit 1' 1
 fake_online
 git config remote.origin.url git@ghe.example.com:acme/widgets.git
 assert_not_contains "a passing probe gives no hint" "$(alias_doctor)" "$hint"
+
+# --- doctor: one issue read and one PR read per run (#2554) -------------------
+# Every flow check that needs the flow issue's state or labels, or the flow PR's
+# state or draft flag, shares one read of it. The two adapter reads are counted
+# at the gh boundary: each call appends a line to a file before the fake
+# answers.
+echo
+echo "doctor: one issue read and one PR read per run (#2554)"
+reads_log="$(mktemp)"
+reads_defs="$(writeln \
+        'eval "fake_issue_read() $(declare -f adapter_issue_state_labels | tail -n +2)"' \
+        'eval "fake_pr_read() $(declare -f adapter_pr_state_draft | tail -n +2)"' \
+        'adapter_issue_state_labels() { printf "issue %s\n" "$1" >>"$READS_LOG"; fake_issue_read "$@"; }' \
+        'adapter_pr_state_draft() { printf "pr %s\n" "$1" >>"$READS_LOG"; fake_pr_read "$@"; }')"
+# counted_doctor <doctor-arg>: doctor's output (2>&1) in out, status in st, the
+# reads it made in reads_log.
+counted_doctor() {
+  : >"$reads_log"
+  out="$(READS_LOG="$reads_log" adapter_stood_in "$reads_defs" "$ORCH" doctor "$@" 2>&1)"; st=$?
+}
+reads_of() { grep -c "^$1 " "$reads_log" || true; }
+
+review_flow onereads
+doctor_github
+state_fixture issue 7
+state_fixture pr 40
+fake_issue 7 open ready-for-agent orch:review
+fake_pr 40 open orch/onereads main
+fake_pr_draft 40
+counted_doctor --flow
+assert_eq "review: the issue is read once" "$(reads_of issue)" 1
+assert_eq "review: the PR is read once" "$(reads_of pr)" 1
+assert_contains "review: the issue is reported open" "$out" "issue #7 open"
+assert_contains "review: the PR is reported open" "$out" "PR #40 open"
+assert_contains "review: the draft state matches" "$out" "PR #40 draft state matches phase (review)"
+assert_contains "review: the phase label is ok" "$out" "phase label: orch:review"
+
+state_fixture phase implement
+fake_issue 7 open ready-for-agent orch:implement
+counted_doctor --flow
+assert_eq "an earlier phase with a PR: the PR is read once" "$(reads_of pr)" 1
+
+state_fixture phase "done"
+fake_issue 7 closed ready-for-agent orch:done
+fake_pr 40 merged orch/onereads main
+counted_doctor --flow
+assert_eq "done: the PR is read once" "$(reads_of pr)" 1
+assert_eq "done: the issue is read once" "$(reads_of issue)" 1
+
+state_fixture phase review
+fake_issue 7 open ready-for-agent
+fake_pr 40 open orch/onereads main
+fake_pr_draft 40
+: >"$reads_log"
+out="$(READS_LOG="$reads_log" ORCH_AUTOPILOT=1 adapter_stood_in "$reads_defs" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "an autopilot flow with no phase label still fails" "$st" 1
+assert_contains "naming the missing phase label" "$out" "issue #7 carries no phase label"
+assert_eq "and its issue is read once" "$(reads_of issue)" 1
+
+fake_issue 7 open ready-for-agent orch:review
+fake_fail adapter_issue_state_labels "$GH_502"
+counted_doctor --flow
+assert_eq "a failing issue read is reached once" "$(reads_of issue)" 1
+assert_contains "the issue check's FAIL names gh's reason" "$out" \
+  "issue #7 could not be read from GitHub: HTTP 502: Bad Gateway"
+assert_not_contains "and the phase label is not mentioned" "$out" "phase label"
+fake_unfail
+
+fake_fail adapter_pr_state_draft "$GH_502"
+counted_doctor --flow
+assert_eq "a failing PR read is reached once" "$(reads_of pr)" 1
+assert_contains "the PR check's FAIL names gh's reason" "$out" \
+  "PR #40 could not be read from GitHub: HTTP 502: Bad Gateway"
+assert_contains "the draft check's warn names gh's reason" "$out" \
+  "PR #40 draft state could not be read from GitHub: HTTP 502: Bad Gateway"
+fake_unfail
+
+fake_offline
+counted_doctor --flow
+assert_eq "GitHub unreachable: no issue read" "$(reads_of issue)" 0
+assert_eq "GitHub unreachable: no PR read" "$(reads_of pr)" 0
+assert_contains "and the skipped checks collapse to one line" "$out" "checks skipped: GitHub is not reachable"
+assert_eq "emitting one skip line" "$(printf '%s\n' "$out" | grep -c 'skipped:')" 1
+fake_online
+
+state_fixture pr ""
+counted_doctor --flow
+assert_eq "no PR recorded: no PR read" "$(reads_of pr)" 0
+assert_eq "but the issue is still read once" "$(reads_of issue)" 1
+state_fixture issue ""
+counted_doctor --flow
+assert_eq "no issue recorded: no issue read" "$(reads_of issue)" 0
+rm -f "$reads_log"
+
+# Bare doctor in a main checkout holding an autopilot flow, beside a side
+# checkout whose issue's labels differ: this flow's lines judge its own issue.
+tick_fixture
+fake_issue 7 open ready-for-agent orch:spec
+fake_issue_title 7 "Main flow"
+fake_issue 8 open ready-for-agent orch:spec
+fake_issue_title 8 "Side flow"
+side8="$("$ORCH" side-checkout add 8-side-flow --issue 8 2>/dev/null)"
+(cd "$side8" && "$ORCH" init 8-side-flow --issue 8 >/dev/null 2>&1)
+"$ORCH" init main-flow --issue 7 >/dev/null 2>&1
+fake_issue 8 open ready-for-agent orch:implement
+counted_doctor
+assert_contains "bare doctor: this flow's issue line judges this flow's issue" "$out" "issue #7 open"
+assert_contains "bare doctor: this flow's phase label line judges this flow's issue" "$out" "phase label: orch:spec"
+assert_contains "bare doctor: the side flow's own label is judged apart" "$out" "issue #8 is labelled orch:implement, but its side checkout"
+assert_eq "bare doctor: this flow's issue is read once" "$(grep -c '^issue 7$' "$reads_log" || true)" 1
+rm -f "$reads_log"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND

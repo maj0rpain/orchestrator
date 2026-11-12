@@ -1434,6 +1434,68 @@ assert_eq "a final reply holding the view written within the window: allowed" \
   "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-stop.log" PG_SLEEP_PASTE="$PG/stop-paste.jsonl" PG_SLEEP_INTO="$S6" \
     ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
 
+# The pre-check and the size-gated re-read, counted in jq processes: a counting
+# `jq` stub first on PATH logs each call and execs the real jq. Counts are
+# compared between two runs of the same hook, never against a number.
+mkdir "$PG/jqstub"
+PG_REAL_JQ="$(command -v jq)"; export PG_REAL_JQ
+cat >"$PG/jqstub/jq" <<'STUB'
+#!/usr/bin/env bash
+echo x >>"$PG_JQ_LOG"
+exec "$PG_REAL_JQ" "$@"
+STUB
+chmod +x "$PG/jqstub/jq"
+# pg_jqs <decide-fn> <args...>: how many jq processes one decision starts.
+pg_jqs() {
+  local log="$PG/jq.$RANDOM.log"
+  : >"$log"
+  PATH="$PG/jqstub:$PATH" PG_JQ_LOG="$log" "$@" >/dev/null
+  wc -l <"$log" | tr -d ' '
+}
+PG_PAD="$(head -c 20000 /dev/zero | tr '\0' 'a')"
+TL="$PG/long-unarmed.jsonl"; cp "$T11" "$TL"
+pg_text "$TL" "$PG_PAD"; pg_text "$TL" "$PG_PAD"
+assert_eq "a long transcript without the tail starts no more jq than no transcript_path (ask)" \
+  "$(pg_jqs pg_decide "$TL")" "$(pg_jqs pg_decide "")"
+assert_eq "and the Stop guard too" "$(pg_jqs sg_decide "$TL")" "$(pg_jqs sg_decide "")"
+TQ="$PG/quoted-tail.jsonl"; cp "$T11" "$TQ"
+pg_text "$TQ" "spec_review_nudge ends a pass line with '; it is saved in <path>/view.md'"
+assert_eq "a transcript quoting the tail outside a pass line allows (ask)" "$(pg_decide "$TQ")" allow
+assert_eq "and the Stop guard too" "$(sg_decide "$TQ")" allow
+if [ "$(pg_jqs pg_decide "$TQ")" -gt "$(pg_jqs pg_decide "")" ]; then ok "the quoted tail falls back to a full scan (ask)"
+else bad "the quoted tail falls back to a full scan (ask)" "no extra jq"; fi
+if [ "$(pg_jqs sg_decide "$TQ")" -gt "$(pg_jqs sg_decide "")" ]; then ok "the quoted tail falls back to a full scan (Stop)"
+else bad "the quoted tail falls back to a full scan (Stop)" "no extra jq"; fi
+# An armed refusal over the full window on an unchanged transcript parses once.
+pg_full_window_refusal() { ORCH_PASTE_GUARD_WAIT='' PG_SLEEP_LOG="$PG/sleep-unchanged.log" PATH="$PG/stub:$PATH" "$@"; }
+for pg_fn in pg_decide sg_decide; do
+  : >"$PG/sleep-unchanged.log"
+  pg_win="$(pg_jqs pg_full_window_refusal "$pg_fn" "$T")"
+  assert_eq "an unchanged armed transcript over the full window parses as often as with no window ($pg_fn)" \
+    "$pg_win" "$(pg_jqs "$pg_fn" "$T")"
+  if [ -s "$PG/sleep-unchanged.log" ]; then ok "and the window was waited out ($pg_fn)"
+  else bad "and the window was waited out ($pg_fn)" "sleep never called"; fi
+done
+# Truncation: the stub swaps in a shorter transcript holding the paste.
+mkdir "$PG/stub-trunc"
+cat >"$PG/stub-trunc/sleep" <<'STUB'
+#!/usr/bin/env bash
+cp "$PG_SLEEP_REPLACEMENT" "$PG_SLEEP_INTO"
+STUB
+chmod +x "$PG/stub-trunc/sleep"
+cp "$T" "$PG/trunc-new.jsonl"; cat "$PG/paste.jsonl" >>"$PG/trunc-new.jsonl"
+for pg_fn in pg_decide sg_decide; do
+  TT="$PG/trunc-$pg_fn.jsonl"; cp "$T" "$TT"; pg_text "$TT" "$PG_PAD"
+  assert_eq "a transcript replaced by a shorter one holding the paste is re-scanned and allowed ($pg_fn)" \
+    "$(PATH="$PG/stub-trunc:$PATH" PG_SLEEP_REPLACEMENT="$PG/trunc-new.jsonl" PG_SLEEP_INTO="$TT" \
+      ORCH_PASTE_GUARD_WAIT='' "$pg_fn" "$TT")" allow
+done
+# The needle and the real pass line.
+pg_needle="$( (source "$DIR/paste-guard.sh"; printf '%s' "$PASTE_GUARD_NEEDLE") )"
+assert_contains "the pass line spec_review_nudge prints holds the paste guard's needle" \
+  "$(pg_pass_line batch "$PG/batch/view.md")" "$pg_needle"
+assert_eq "and a transcript holding that pass line as a tool result arms the guard" "$(sg_decide "$T")" block
+
 # Fail open.
 assert_eq "a payload that is not JSON allows" "$(printf 'not json' | "$STOP" 2>/dev/null; echo "exit $?")" "exit 0"
 assert_eq "a transcript with no arming pass line allows" "$(sg_decide "$T11")" allow
