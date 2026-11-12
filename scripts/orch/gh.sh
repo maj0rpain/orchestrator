@@ -472,7 +472,7 @@ issues_labelled_bodies_read() {
       if [ "$__ilbr_i" -lt "$__ilbr_total" ]; then __ilbr_body="$__ilbr_body${__ilbr_lines[__ilbr_i]}"; fi
       __ilbr_i=$(( __ilbr_i + 1 ))
     done
-    while [ "${__ilbr_body%$'\n'}" != "$__ilbr_body" ]; do __ilbr_body="${__ilbr_body%$'\n'}"; done
+    newlines_strip __ilbr_body
     __ilbr_nums+=("$(( 10#$__ilbr_n ))")
     __ilbr_labs+=("$__ilbr_l")
     __ilbr_bods+=("$__ilbr_body")
