@@ -5,19 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# jq_counting_bin: a new directory holding a jq that logs one line per start to
-# jq.log, then runs the real jq.
-jq_counting_bin() {
-  local dir
-  dir="$(mktemp -d)"
-  printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$dir" "$(command -v jq)" >"$dir/jq"
-  chmod +x "$dir/jq"
-  : >"$dir/jq.log"
-  printf '%s\n' "$dir"
-}
-# jq_starts <dir>: how many times the jq in <dir> has started.
-jq_starts() { wc -l <"$1/jq.log" | tr -d ' '; }
-
 # --- state ------------------------------------------------------------------
 echo
 echo "state"
@@ -273,6 +260,9 @@ assert_eq "null and missing keys read as defaults and a stored false stays false
 status 0"
 assert_eq "out-variables named key, file, rc and val each get their own value" \
   "$(fs_run 'flow_state_get_many many.json key=slug file=issue rc=iteration val=host_fallbacks; echo "$key $file $rc $val"')" "s 7 0 false
+status 0"
+assert_eq "out-variables named like the check's and the reader's own each get their own value" \
+  "$(fs_run 'flow_state_get_many many.json __fsma_var=slug __fsma_key=issue __fsma_def=iteration __fsma_k=host_fallbacks __fsma_d=redo_count; echo "$__fsma_var $__fsma_key $__fsma_def $__fsma_k $__fsma_d"')" "s 7 0 false 0
 status 0"
 printf '{"slug":"a\\tb\\nc\\\\d"}' >"$fs_dir/bytes.json"
 assert_eq "tab, newline and backslash round-trip byte for byte" \

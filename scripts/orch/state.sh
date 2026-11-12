@@ -90,11 +90,13 @@ state_get_many_in() {
 # It runs only after a failure, when nothing was assigned, so its locals
 # cannot shadow a caller's out-variable.
 state_many_recheck() {
-  local arg
-  for arg in "$@"; do
-    case "$arg" in *=*) ;; *) die "malformed state read: $arg" ;; esac
-    [ -n "${arg%%=*}" ] || die "malformed state read: $arg"
-    flow_state_key_field "${arg#*=}" default >/dev/null || die "unknown state key: ${arg#*=}"
+  local __smr_arg __smr_rows __smr_rc __smr_var __smr_key __smr_def
+  __smr_rows="$(state_rows)" || return
+  for __smr_arg in "$@"; do
+    flow_state_many_arg "$__smr_arg" "$__smr_rows" __smr_ && continue
+    __smr_rc=$?
+    [ "$__smr_rc" = 2 ] && die "malformed state read: $__smr_arg"
+    die "unknown state key: ${__smr_arg#*=}"
   done
 }
 

@@ -136,6 +136,19 @@ log_count() {
   if [ -n "${2:-}" ]; then grep -c "^$2 " "$1" || true; else wc -l <"$1" | tr -d ' '; fi
 }
 
+# jq_counting_bin: a new directory holding a jq that logs one line per start to
+# jq.log, then runs the real jq.
+jq_counting_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$dir" "$(command -v jq)" >"$dir/jq"
+  chmod +x "$dir/jq"
+  : >"$dir/jq.log"
+  printf '%s\n' "$dir"
+}
+# jq_starts <dir>: how many times the jq in <dir> has started.
+jq_starts() { wc -l <"$1/jq.log" | tr -d ' '; }
+
 # A fresh repo with one commit, an empty docs/agents/ for a labels doc and an
 # origin of https://github.com/o/r.git (so it resolves to the repo o/r), cwd
 # inside it. No setup is required of it (ADR-0028).
