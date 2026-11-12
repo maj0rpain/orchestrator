@@ -120,6 +120,14 @@ finding 8 "review:nit,ready-for-agent" "\`src/other.sh:2\` at $head_sha"
 finding 9 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha" 7 CLOSED
 finding 10 "needs-triage" "\`src/other.sh:2\` at $head_sha"
 scan() { orch_gh_failing finding-triage scan "$@"; }
+# A listed scan reads each finding from its listing, body and labels together,
+# so any per-finding read dies with the 502: the listed scans armed with this
+# prove they make none.
+arm_per_finding_reads() {
+  fake_fail adapter_issue_state_labels_body "$GH_502"
+  fake_fail adapter_issue_body "$GH_502"
+  fake_fail adapter_issue_state_labels "$GH_502"
+}
 # line_of <n> <out>: the scan's line for issue n.
 line_of() { printf '%s\n' "$2" | awk -F'\t' -v n="$1" '$1 == n'; }
 field_of() { line_of "$1" "$3" | cut -f"$2"; }
@@ -198,12 +206,7 @@ finding 20 "review:nit" "\`src/other.sh:2\` at $head_sha"
 finding 21 "review:major,ready-for-human,bug,needs-info" "\`src/other.sh:2\` at $head_sha" 21
 finding 22 "review:nit,wontfix" "\`src/gone.sh:1\` at $head_sha"
 finding 23 "review:nit,ready-for-agent,needs-triage" "\`src/other.sh:2\` at $head_sha" 21
-# A listed scan reads each finding from its listing, body and labels together,
-# so any per-finding read dies with the 502: the listed scans below prove they
-# make none.
-fake_fail adapter_issue_state_labels_body "$GH_502"
-fake_fail adapter_issue_body "$GH_502"
-fake_fail adapter_issue_state_labels "$GH_502"
+arm_per_finding_reads
 out="$(scan --all 2>&1)"; st=$?
 assert_status "scans every open filed finding, a listed scan making no per-finding read" "$st" 0
 assert_eq "whatever its triage label, closed ones and non-findings still left out" \
@@ -291,9 +294,7 @@ assert_eq "in ascending order" "$(printf '%s\n' "$out" | cut -f1 | sort -n | tr 
 for k in 40 41 42 43 44; do fake_issue "$k" closed; done
 
 # Armed again for the same reason: a listed scan makes no per-finding read.
-fake_fail adapter_issue_state_labels_body "$GH_502"
-fake_fail adapter_issue_body "$GH_502"
-fake_fail adapter_issue_state_labels "$GH_502"
+arm_per_finding_reads
 out="$(scan --all --pr 21 2>&1)"; st=$?
 assert_status "--all narrows to one source PR, a listed scan making no per-finding read" "$st" 0
 assert_eq "listing that PR's findings whatever their label" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "21 23 "
