@@ -263,13 +263,11 @@ SR_BLOCK_OUTCOME=""
 SR_BLOCK_ANCHOR=""; SR_BLOCK_ANCHOR_LINE=0; SR_BLOCK_REPLACE=""; SR_BLOCK_QUOTE=""
 SR_BLOCK_BAD_LINE=0; SR_BLOCK_BAD_MSG=""
 
-# spec_review_block_open <anchor|replace|quote> <line>: opens a block at <line>.
+# spec_review_block_open <""|anchor|replace|quote> <line>: opens a block at
+# <line>. The empty mode means no block open, a parser's first call.
 spec_review_block_open() {
   SR_BLOCK_MODE="$1"; SR_BLOCK_BUF=""; SR_BLOCK_BUFN=0; SR_BLOCK_LINE="$2"
 }
-
-# spec_review_block_reset: no block open - a parser's first call.
-spec_review_block_reset() { spec_review_block_open "" 0; }
 
 # spec_review_block_malformed <line> <message>: the outcome malformed.
 spec_review_block_malformed() {
@@ -363,7 +361,7 @@ spec_review_batch_parse() {
   SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
   SR_OP_ITEM=(); SR_OP_LETTER=(); SR_OP_LABEL=(); SR_OP_LINE=()
   SR_OP_SUMMARY=(); SR_OP_ANCHOR=(); SR_OP_ANCHOR_LINE=(); SR_OP_REPLACE=()
-  spec_review_block_reset
+  spec_review_block_open "" 0
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     line="${line%$'\r'}"
@@ -1384,7 +1382,7 @@ spec_review_tickets_parse() {
   ST_RECOMMEND=""; ST_NONE=""
   ST_N=(); ST_KIND=(); ST_T=(); ST_B=(); ST_REC=(); ST_ARG=(); ST_LINE=()
   ST_SUMMARY=(); ST_ANCHOR=(); ST_ANCHOR_LINE=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=(); ST_CL_LINE=()
-  spec_review_block_reset
+  spec_review_block_open "" 0
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     line="${line%$'\r'}"
