@@ -2424,7 +2424,7 @@ fake_issue 12 open ready-for-agent
 fake_issue_authorship 12 stranger NONE
 fake_issue 13 open wontfix orch:spec
 fake_issue 14 open
-fake_comment_seed 2 "a comment" >/dev/null 2>&1 || true
+fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/2/comments" alice 2026-01-01T00:00:00Z "a comment"
 ac_snapshot() { local n s=""; for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do s="$s$(fake_labels_of "$n")|$(fake_comments_of "$n" 2>/dev/null)#"; done; printf '%s' "$s"; }
 ac_before="$(ac_snapshot)"
 
@@ -2434,13 +2434,6 @@ assert_eq "none, move and override by the triage label" "$out" "1 eligible none
 2 eligible move
 3 eligible override"
 assert_eq "a plain unlabelled issue is a move" "$("$ORCH" autopilot candidates 14 2>&1)" "14 eligible move"
-assert_eq "a phase label names its phase" "$("$ORCH" autopilot candidates 4 2>&1)" "4 skip phase review"
-assert_eq "wontfix is skipped" "$("$ORCH" autopilot candidates 5 2>&1)" "5 skip wontfix"
-assert_eq "needs-info is skipped" "$("$ORCH" autopilot candidates 6 2>&1)" "6 skip needs-info"
-assert_eq "a ticket names its parent" "$("$ORCH" autopilot candidates 7 2>&1)" "7 skip ticket #1"
-assert_eq "a filed finding on needs-triage is skipped" "$("$ORCH" autopilot candidates 8 2>&1)" "8 skip untriaged-finding"
-assert_eq "a filed finding with no triage label is skipped" "$("$ORCH" autopilot candidates 9 2>&1)" "9 skip untriaged-finding"
-assert_eq "a triaged filed finding is eligible" "$("$ORCH" autopilot candidates 10 2>&1)" "10 eligible override"
 assert_eq "a closed issue is skipped" "$("$ORCH" autopilot candidates 11 2>&1)" "11 skip closed"
 assert_eq "an untrusted issue names its writer" "$("$ORCH" autopilot candidates 12 2>&1)" "12 skip untrusted stranger"
 assert_eq "the first reason holds when several do" "$("$ORCH" autopilot candidates 13 2>&1)" "13 skip phase spec"
@@ -2463,6 +2456,13 @@ assert_eq "--limit keeps the first k eligible lines, skips not counted" "$("$ORC
 9 skip untriaged-finding
 10 eligible override"
 assert_eq "--limit 1 stops after the first eligible" "$("$ORCH" autopilot candidates --limit 1 2>&1)" "1 eligible none"
+ac_err="$(mktemp)"
+ORCH_ISSUE_LIST_LIMIT=13 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
+assert_contains "--all warns when the listing reaches the issue-list limit" "$(cat "$ac_err")" \
+  "orch: the open issues reached the issue-list limit of 13 - any past it are missing from this list"
+ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
+assert_not_contains "--all gives no warning below the limit" "$(cat "$ac_err")" "issue-list limit"
+rm -f "$ac_err"
 
 for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
   # shellcheck disable=SC2086 # the words are the arguments

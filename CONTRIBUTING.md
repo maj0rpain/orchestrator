@@ -292,7 +292,7 @@ skills/orch-handoff/          handoff templates, model-invocable unlike the upst
 skills/orch-quick-implement/  the other route: issue (possibly rewritten from the plan by orch-to-spec's Unattended rewrite), unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
 skills/orch-interview/        the planning interview, and its `## Closing` section: the closing rules hook-grilling.sh's message points to
 skills/orch-quick-autopilot/  the quick autopilot: selects with `autopilot candidates`, one confirmation, one orch-autopilot-planner per issue, a summary - Claude Code only
-skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body - attended, or in the Unattended rewrite form a quick implementation takes
+skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body - attended, or in the Unattended rewrite form a quick implementation or a quick autopilot takes
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply; --bundle groups them into bundles

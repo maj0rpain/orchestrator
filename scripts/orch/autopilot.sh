@@ -755,7 +755,7 @@ autopilot_flow_issues() {
 autopilot_verdict() {
   local issue="$1" named="$2" state labels err parent phase label role st=0 ready human
   if ! issue_state_labels_read "$issue" state labels err; then
-    if [ "$named" = true ] && [[ "$(gh_reason "$err")" == *"Could not resolve to an issue or pull request with the number of"* ]]; then
+    if [ "$named" = true ] && gh_issue_not_found "$err"; then
       printf -v "$3" '%s' "skip missing"
       return 0
     fi
@@ -782,7 +782,7 @@ autopilot_verdict() {
   ready="$(triage_label_for ready-for-agent)"
   human="$(triage_label_for ready-for-human)"
   # A filed finding finding triage has not yet triaged: the issue triage gate.
-  if has_review_label "$labels" && ! label_listed "$labels" "$ready" && ! label_listed "$labels" "$human"; then
+  if finding_untriaged "$labels"; then
     printf -v "$3" '%s' "skip untriaged-finding"
     return 0
   fi
@@ -820,6 +820,9 @@ autopilot_candidates_run() {
     capture out err adapter_issues_labelled ||
       die "could not list the open issues: $(gh_reason "$err")"
     while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done < <(printf '%s\n' "$out" | sort -n)
+    if [ "${#issues[@]}" -ge "$ISSUE_LIST_LIMIT" ]; then
+      warn "the open issues reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this list"
+    fi
   fi
   for n in ${issues[@]+"${issues[@]}"}; do
     if [ "$mode" = limit ] && [ "$eligible" -ge "$limit" ]; then break; fi

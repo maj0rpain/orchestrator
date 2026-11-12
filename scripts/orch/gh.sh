@@ -351,6 +351,14 @@ issue_state_labels_read() {
   gh_lines_read adapter_issue_state_labels "$1" "$4" "$2" "$3"
 }
 
+# gh_issue_not_found <stderr>: whether a failed issue read's captured stderr
+# says no issue or pull request has that number - GitHub's own not-found
+# answer, as against any other failed read. The one place its wording is
+# matched.
+gh_issue_not_found() {
+  [[ "$1" == *"Could not resolve to an issue or pull request with the number of"* ]]
+}
+
 # adapter_issue_state_labels_body <n>: OPEN or CLOSED on the first line, the
 # label count on the second, then one label per line, then the body as GitHub
 # holds it and a newline - the count marks where the labels end and the body

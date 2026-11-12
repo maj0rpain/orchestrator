@@ -1,11 +1,6 @@
 ---
 name: orch-interview
-description: Plan a change with the user before any code is written - an
-interview in rounds that settles every decision and sharpens the project's
-domain language, ending in a plan the orchestrator can carry to a flow, a quick
-implementation, or a blueprint. Use when the user asks to plan a feature or
-change with the orchestrator ("plan this", "let's plan"), or runs
-/orchestrator:interview. Not for stress-testing an idea for its own sake.
+description: Plan a change with the user before any code is written - an interview in rounds that settles every decision and sharpens the project's domain language, ending in a plan the orchestrator can carry to a flow, a quick implementation, or a blueprint. Use when the user asks to plan a feature or change with the orchestrator ("plan this", "let's plan"), or runs /orchestrator:interview. Not for stress-testing an idea for its own sake.
 ---
 
 # Orchestrator plan
@@ -65,9 +60,7 @@ Two rules hold for every question in a round:
 Format a round like so:
 
 ```
-**Q1 - <question title>**: <question body, possibly several paragraphs, possibly
-with choices; a term the user has not yet met appears as <term> (<one-line
-definition>)>
+**Q1 - <question title>**: <question body, possibly several paragraphs, possibly with choices; a term the user has not yet met appears as <term> (<one-line definition>)>
 
 Recommended: <your recommended answer>, because <reason>
 
@@ -81,20 +74,15 @@ Recommended: <your recommended answer>, because <reason>
 A worked example round:
 
 ```
-**Q1 - Timestamp zone**: Should the export write its timestamps in UTC or in the
-user's local zone?
+**Q1 - Timestamp zone**: Should the export write its timestamps in UTC or in the user's local zone?
 
-Recommended: UTC, because exports are compared across machines in different
-zones.
+Recommended: UTC, because exports are compared across machines in different zones.
 
 ---
 
-**Q2 - Timestamp format key**: Where should `HWM_FORMAT` (the config key that
-sets how the last exported row's timestamp is written) live: in the export's
-config file, or as a flag on each run?
+**Q2 - Timestamp format key**: Where should `HWM_FORMAT` (the config key that sets how the last exported row's timestamp is written) live: in the export's config file, or as a flag on each run?
 
-Recommended: In the config file, because every run of one export must read that
-timestamp the same way.
+Recommended: In the config file, because every run of one export must read that timestamp the same way.
 ```
 
 Each round's answers reshape the tree: settled decisions push the frontier

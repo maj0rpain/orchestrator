@@ -1,14 +1,6 @@
 ---
 name: orch-to-spec
-description: Turn the current conversation into a spec - no interview, just
-synthesis of what has already been discussed, after one check of the test seams
-with the user - and either publish it as a new GitHub issue labelled for an
-agent, or, given a leading issue number (rewrite mode), rewrite that issue's
-body as the spec. A quick implementation or a quick autopilot reaches rewrite
-mode in its Unattended rewrite form, which asks nothing. Use from orch-flow's
-spec phase, from a planning session's Blueprint route, from quick
-implementation's step 1, or standalone when a user asks to write up or publish a
-spec, or runs /orchestrator:to-spec or /orchestrator:to-spec <n>.
+description: Turn the current conversation into a spec - no interview, just synthesis of what has already been discussed, after one check of the test seams with the user - and either publish it as a new GitHub issue labelled for an agent, or, given a leading issue number (rewrite mode), rewrite that issue's body as the spec. A quick implementation or a quick autopilot reaches rewrite mode in its Unattended rewrite form, which asks nothing. Use from orch-flow's spec phase, from a planning session's Blueprint route, from quick implementation's step 1, or standalone when a user asks to write up or publish a spec, or runs /orchestrator:to-spec or /orchestrator:to-spec <n>.
 ---
 
 # Orchestrator to-spec
@@ -38,8 +30,7 @@ plan, and `/orchestrator:to-spec <n>` reaches rewrite mode standalone. All
 three take it attended, as written. A planning session's Autopilot route
 (Claude Code only) reaches either mode the same way, then goes on to write the
 plan and run `autopilot start`. A quick implementation or a quick autopilot
-reaches
-rewrite mode in its **Unattended rewrite** form below.
+reaches rewrite mode in its **Unattended rewrite** form below.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -189,7 +180,7 @@ mode runs as written, stop-on-failure included, with these differences only:
 - **On failure**: a failed `issue update` - of a ticket or of the issue -
   `ticket block` or `ticket unblock` stops the rewrite, as a failed write
   stops rewrite mode, and the quick implementation stops at its step 1 with
-it, and a quick autopilot stops the issue's subagent with a `failed` line. A
+  it, and a quick autopilot stops the issue's subagent with a `failed` line. A
   failure before the body update leaves the body unrewritten: ticket
   edits already applied stay, and a rerun judges the rewrite again against
   the tickets as they then stand. For a quick implementation the stop message
