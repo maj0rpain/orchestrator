@@ -717,7 +717,7 @@ rl_calls() { wc -l <"$RL/log" | tr -d ' '; }
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-unarmed)")"
 assert_empty "allows an edit through a symlink in an unarmed session" "$out"
 assert_eq "an unarmed session's edit never calls readlink" "$(rl_calls)" "0"
-out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" '')")"
+out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" '' | jq 'del(.session_id)')")"
 assert_empty "allows an edit through a symlink with no session_id" "$out"
 assert_eq "an edit with no session_id never calls readlink" "$(rl_calls)" "0"
 : >"$TMPDIR/orchestrator-planning-rl-junie"
