@@ -31,8 +31,9 @@ default_branch_local() {
 # also via default_branch_local). Asks GitHub nothing and ignores any existing
 # memo.
 default_branch_seed() {
-  local b="${1:-}"
-  if is_branch_name "$b"; then
+  local answer="${1:-}" b
+  if is_branch_name "$answer"; then
+    b="$answer"
     DEFAULT_BRANCH_SOURCE=github
   elif b="$(default_branch_local)"; then
     DEFAULT_BRANCH_SOURCE=origin-head
