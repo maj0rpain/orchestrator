@@ -317,8 +317,8 @@ cmd_issue_ready() {
 # created issue reads back with the title it was given and the
 # ready-for-agent role's label among its labels; 1 on a mismatch; 2 when the
 # read fails, gh's stderr written into <err_var>, so a failed read is never
-# reported as a mismatch. Read fresh every call, never cached - the caller
-# retries this once on either status, as ticket_links_verified's caller does.
+# reported as a mismatch. Read fresh every call, never cached -
+# verify_twice retries this once on either status.
 # Locals prefixed so no caller's variable name is shadowed.
 issue_publish_verified() {
   local __ipv_err __ipv_title __ipv_labels
@@ -342,29 +342,24 @@ issue_publish_verified() {
 # next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" ready n gh_err="" st=0
+  local title="$1" body_file="$2" ready n
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   ready="$(triage_label_for ready-for-agent)"
   gh_or_die --out n "create the issue" \
     adapter_issue_create "$title" "$body_file" "$ready"
-  # The second attempt's status decides the death: 2 a failed read, 1 a
-  # mismatch.
-  issue_publish_verified gh_err "$n" "$title" "$ready" \
-    || issue_publish_verified gh_err "$n" "$title" "$ready" \
-    || st=$?
-  [ "$st" -ne 2 ] || gh_die "read issue #$n" "$gh_err"
-  [ "$st" -eq 0 ] \
-    || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
+  verify_twice "read issue #$n" \
+    "issue #$n's title and '$ready' label did not verify - checked twice, both failed" \
+    issue_publish_verified "$n" "$title" "$ready"
   note "$n"
 }
 
 # issue_triage_verified <err_var> <n> <ready> [removed-label...]: 0 only
 # once the issue reads back carrying <ready> and none of the removed labels;
 # 1 on a mismatch; 2 when the read fails, gh's stderr written into
-# <err_var>. Read fresh every call, never cached - the caller re-reads once
-# on either status, as issue publish's does. Locals prefixed so no caller's
-# variable name is shadowed.
+# <err_var>. Read fresh every call, never cached - verify_twice
+# re-reads once on either status. Locals prefixed so no caller's variable name
+# is shadowed.
 issue_triage_verified() {
   local __itv_err="$1" __itv_n="$2" __itv_ready="$3" __itv_state __itv_labels
   shift 3
@@ -382,7 +377,7 @@ issue_triage_verified() {
 # interviewed-issue step to ask its question from (#989).
 cmd_issue_triage() {
   local usage="usage: orch.sh issue triage <n> [--override | --check]"
-  local issue="" override=false check=false ready labels gh_err role label removed=() remove_opts=()
+  local issue="" override=false check=false ready labels role label removed=() remove_opts=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --override) override=true ;;
@@ -444,17 +439,13 @@ cmd_issue_triage() {
   fi
   for label in ${removed[@]+"${removed[@]}"}; do remove_opts+=(--remove "$label"); done
 
-  local st=0 err
+  local err
   gh_or_die "relabel issue #$issue" \
     adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"}
-  # The second attempt's status decides the death: 2 a failed read, 1 a
-  # mismatch. Either way the relabel stands and no comment is posted.
-  issue_triage_verified gh_err "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
-    || issue_triage_verified gh_err "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
-    || st=$?
-  [ "$st" -ne 2 ] || gh_die "read issue #$issue" "$gh_err"
-  [ "$st" -eq 0 ] \
-    || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
+  # Either death leaves the relabel standing and posts no comment.
+  verify_twice "read issue #$issue" \
+    "issue #$issue's '$ready' label did not verify - checked twice, both failed" \
+    issue_triage_verified "$issue" "$ready" ${removed[@]+"${removed[@]}"}
 
   local tmp
   tmp="$(mktemp)" || die "could not create a temp file for the triage comment on issue #$issue"
