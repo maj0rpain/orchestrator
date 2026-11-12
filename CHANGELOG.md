@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.1.1
+
+The default branch is now asked of GitHub at most once per orch.sh run: `base set` and `side-checkout prune` resolve it once, and `doctor` asks only in its probe, falling back to origin/HEAD or `main` locally for its checks, including its finished side checkout walk.
+
 ## 5.1.0
 
 New `/orchestrator:quick-autopilot <n>... | --all | --limit <k>` sends one or more issues to autopilot taking every recommended option: after one confirmation listing each selected issue's triage-label move and the issues skipped with why, each issue gets an unattended interview, its label moved to `ready-for-agent` (overriding `ready-for-human`), an unattended rewrite of its body as a spec, a plan with the recommended Rounds and Budget, and `autopilot start`, in a fresh `orch-autopilot-planner` subagent, at most 4 at once. Its selection is the new `orch.sh autopilot candidates` verb (ADR-0061). Claude Code only.
