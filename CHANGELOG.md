@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.32
+
+Autopilot reads a phase session's log for usage limits in one pass, through a new Session log module, and carries limit times as epoch seconds; behaviour is unchanged.
+
 ## 5.0.31
 
 Flow state is now read many keys per `jq`: a new multi-key reader in the Flow state module (with own-checkout and guarded wrappers) serves `orch.sh status`, `doctor --flow`, the finished sweep, the other-checkouts list, the busy and holding checks, `base set --flow` and the merged-PR close backstop, each reading its keys in one `jq` instead of one or two per key. Output, verdicts and exit codes are unchanged.
