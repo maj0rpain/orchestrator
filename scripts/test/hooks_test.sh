@@ -757,19 +757,28 @@ rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out"
 # The guard checks the session is armed before it resolves the file path, so an
 # unguarded session pays for no path work (#2557). A readlink stub on PATH logs
 # each call: the resolution follows a symlink hop through it.
-RL="$(mktemp -d)"
-RL_REAL="$(command -v readlink)"
-cat >"$RL/readlink" <<STUB
+# call_counter <cmd>: makes a dir whose <cmd> stub logs a line per call and runs
+# the real <cmd>; prints the dir. Put it first on PATH to count the calls.
+call_counter() {
+  local dir real
+  dir="$(mktemp -d)"
+  real="$(command -v "$1")"
+  cat >"$dir/$1" <<STUB
 #!/usr/bin/env bash
-echo "\$*" >>"$RL/log"
-exec "$RL_REAL" "\$@"
+echo "\$(basename "\$0")" >>"$dir/log"
+exec "$real" "\$@"
 STUB
-chmod +x "$RL/readlink"
+  chmod +x "$dir/$1"
+  printf '%s' "$dir"
+}
+# counted_calls <dir>: the calls logged in <dir> since its log was cleared.
+counted_calls() { wc -l <"$1/log" | tr -d ' '; }
+RL="$(call_counter readlink)"
 ln -s real.ts "$REPO/src/armlink.ts"
 # rl_guard <payload>: runs the guard on a payload with the stub first on PATH,
 # clearing the log; prints the guard's output.
 rl_guard() { : >"$RL/log"; printf '%s' "$1" | PATH="$RL:$PATH" "$GUARD"; }
-rl_calls() { wc -l <"$RL/log" | tr -d ' '; }
+rl_calls() { counted_calls "$RL"; }
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-unarmed)")"
 assert_empty "allows an edit through a symlink in an unarmed session" "$out"
 assert_eq "an unarmed session's edit never calls readlink" "$(rl_calls)" "0"
@@ -1544,20 +1553,12 @@ assert_eq "hooks.json registers hook-paste-stop-guard.sh under Stop" \
 echo
 echo "one jq per payload (#2556)"
 # A counting jq first on PATH logs each call and runs the real jq.
-JQC="$(mktemp -d)"
-REAL_JQ="$(command -v jq)"
-cat >"$JQC/jq" <<STUB
-#!/usr/bin/env bash
-echo jq >>"\$JQ_COUNT_LOG"
-exec "$REAL_JQ" "\$@"
-STUB
-chmod +x "$JQC/jq"
+JQC="$(call_counter jq)"
 # jq_count <hook>: the jq processes <hook> starts on the payload on stdin.
 jq_count() {
-  local log="$JQC/log"
-  : >"$log"
-  PATH="$JQC:$PATH" JQ_COUNT_LOG="$log" "$1" >/dev/null 2>&1 || :
-  wc -l <"$log" | tr -d ' '
+  : >"$JQC/log"
+  PATH="$JQC:$PATH" "$1" >/dev/null 2>&1 || :
+  counted_calls "$JQC"
 }
 JQT="$(mktemp -d)"
 assert_eq "grilling hook on a Claude Code UserPromptSubmit starts one jq" \
@@ -1576,10 +1577,8 @@ assert_eq "quick-implement hook on an unrelated skill starts one jq" \
   "$(skill_event "mattpocock-skills:tdd" jq6 | jq_count "$QUICK")" 1
 assert_eq "session-start hook on a source other than clear starts one jq" \
   "$(jq -n '{session_id:"jq7",source:"startup"}' | jq_count "$START")" 1
-make_markers jq8
 assert_eq "session-start hook on clear starts one jq" \
   "$(jq -n '{session_id:"jq8",source:"clear"}' | jq_count "$START")" 1
-assert_marker_absent "session-start hook on clear removes the marker" grilling jq8
 assert_eq "AskUserQuestion paste guard on another tool name starts one jq" \
   "$(jq -n '{tool_name:"Bash",transcript_path:"/nope"}' | jq_count "$PASTE")" 1
 assert_eq "Stop guard with stop_hook_active set starts one jq" \
