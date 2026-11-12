@@ -377,9 +377,10 @@ cannot drift between sessions.
 Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Other hosts expand it
 only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is).
 Junie CLI's agent shell has no `JUNIE_EXTENSION_ROOT` either, and Junie does not
-tell the model a skill's own directory. So every skill that runs `orch.sh`
-states the path one way, in this order: the `ORCH=` line, then the Junie CLI
-install, then the relative fallback:
+tell the model a skill's own directory. So every skill that runs `orch.sh`,
+other than a Claude-Code-only one (see below), states the path one way, in this
+order: the `ORCH=` line, then the Junie CLI install, then the relative
+fallback:
 
 ````
 ```
@@ -413,6 +414,20 @@ fails when a skill or command mentions `CLAUDE_PLUGIN_ROOT`
 any other way, runs `orch.sh` without these steps in order or without `bash`,
 names the plugin root without the Junie step in that same sentence, or names a
 path through a `<plugin root>/` placeholder.
+
+A skill that is Claude Code only, like the quick autopilot, takes a second form
+instead. It is marked by its frontmatter `description:` ending in "Claude Code
+only." (read from the frontmatter only, never the body; a command is never
+marked, so one whose description ends so stays cross-host). Its form is the
+`ORCH=` line, then one stop for when `orch.sh` is
+not at that path, saying the skill is Claude Code only and needs the full
+plugin. The stop names `ORCH` or `orch.sh`, never `CLAUDE_PLUGIN_ROOT`. It
+leaves out the Junie lookup, the "If it prints" steps, the relative fallback,
+the plugin-root fallback sentence and orch-flow's skills-only stop text.
+`docs_lint.sh` still requires the `ORCH=` line and still flags
+`CLAUDE_PLUGIN_ROOT` outside it, and flags a marked skill that carries the
+Junie lookup or any skills-only stop text. Every other skill and every command
+stays on the cross-host form above.
 
 ## Naming host capabilities
 
