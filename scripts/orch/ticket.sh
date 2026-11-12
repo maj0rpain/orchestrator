@@ -103,9 +103,9 @@ ticket_listing_has() { [ -n "$(ticket_listing_state "$1" "$2")" ]; }
 # numbers requested, in any order, both sides de-duplicated. 1 on a mismatch;
 # 2 when either read fails, gh's stderr written into <err_var>, so a failed
 # read is never reported as a mismatch (#843). Read fresh every call, never
-# cached - the caller retries this once on either status, and a cached answer
-# would just repeat the same verdict. Locals prefixed so no caller's variable
-# name is shadowed.
+# cached - verify_twice retries this once on either status, and a
+# cached answer would just repeat the same verdict. Locals
+# prefixed so no caller's variable name is shadowed.
 ticket_links_verified() {
   local __tlv_out __tlv_blockers __tlv_err
   if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
@@ -177,11 +177,11 @@ cmd_ticket_publish() {
 # ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
 # every number in <want> the child lacks - its blockers are read once, and only
 # when <want> is non-empty, so a resume never writes an edge already present -
-# and verifies every link by reading it back, with one
-# retry - either status gets it, and the second attempt decides the death: a
-# failed read dies with gh's reason, a mismatch as unverified.
+# and verifies every link by reading it back through verify_twice: one retry,
+# either status gets it, and the second attempt decides the death - a failed
+# read dies with gh's reason, a mismatch as unverified.
 ticket_edges_and_verify() {
-  local parent="$1" child="$2" want="$3" b have gh_err="" st=0
+  local parent="$1" child="$2" want="$3" b have
 
   if [ -n "$want" ]; then
     have="$(ticket_blockers "$child")" || exit 1
@@ -192,12 +192,9 @@ ticket_edges_and_verify() {
     done <<<"$want"
   fi
 
-  ticket_links_verified gh_err "$parent" "$child" "$want" \
-    || ticket_links_verified gh_err "$parent" "$child" "$want" \
-    || st=$?
-  [ "$st" -ne 2 ] || gh_die "read ticket #$child's links" "$gh_err"
-  [ "$st" -eq 0 ] \
-    || die "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed"
+  verify_twice "read ticket #$child's links" \
+    "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed" \
+    ticket_links_verified "$parent" "$child" "$want"
 }
 
 # The parent's open sub-issues with zero open blockers, in the order GitHub

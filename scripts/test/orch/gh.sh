@@ -245,6 +245,47 @@ assert_eq "gh_die accepts --hint \"\"" "$out" "orch: gh could not read issue #5:
 rm -rf "$vdir"
 unset vdir
 
+# verify_twice (#2658): the one retry-then-die policy, sourced with a stub
+# verifier that returns one scripted status per attempt and writes a scripted
+# stderr into its err-var. $1 is the statuses, $2 the stderr a 2 leaves. The
+# stub counts its calls in a shell variable, so a verifier run in a subshell
+# would print "0 call(s)".
+vt() {
+  sourced_orch_script '
+    calls=0
+    verifier() {
+      local st
+      read -r -a _s <<<"$SCRIPT"; st="${_s[$calls]}"; calls=$((calls + 1))
+      [ "$st" -ne 2 ] || printf -v "$1" "%s" "$STDERR"
+      return "$st"
+    }
+    SCRIPT="$1"; STDERR="${2-}"
+    verify_twice "read the thing" "the thing did not verify" verifier
+    echo "returned after $calls call(s)"' "$@" 2>&1
+}
+out="$(vt "0")"
+assert_eq "verify_twice: 0 first returns after one call, in the caller's shell" "$out" "returned after 1 call(s)"
+out="$(vt "1 0")"
+assert_eq "verify_twice: 1 then 0 returns" "$out" "returned after 2 call(s)"
+out="$(vt "2 0" "boom")"
+assert_eq "verify_twice: 2 then 0 returns" "$out" "returned after 2 call(s)"
+out="$(vt "1 1")"
+assert_eq "verify_twice: 1 then 1 dies unverified" "$out" "orch: the thing did not verify"
+sourced_orch_script 'v() { return 1; }; verify_twice r u v' >/dev/null 2>&1; st=$?
+assert_status "verify_twice: an unverified death has status 1" "$st" 1
+out="$(vt "2 2" $'HTTP 502: Bad Gateway\nsecond')"
+assert_eq "verify_twice: 2 then 2 dies with gh's first line" "$out" \
+  "orch: gh could not read the thing: HTTP 502: Bad Gateway"
+out="$(vt "2 2" "")"
+assert_eq "verify_twice: 2 then 2 with an empty stderr gives no reason" "$out" \
+  "orch: gh could not read the thing: gh gave no reason"
+out="$(vt "2 1" "boom")"
+assert_eq "verify_twice: 2 then 1 dies unverified" "$out" "orch: the thing did not verify"
+out="$(vt "1 2" "boom")"
+assert_eq "verify_twice: 1 then 2 dies with gh's reason" "$out" "orch: gh could not read the thing: boom"
+out="$(sourced_orch_script 'v() { printf "%s|%s\n" "$2" "$3"; return 0; }; verify_twice r u v a b' 2>&1)"
+assert_eq "verify_twice: hands the verifier its own arguments after the err-var" "$out" "a|b"
+
 # The readers: every output written on success, none on a failure, which fills
 # the error variable and prints nothing to stderr. The caller's variables are
 # named as an unprefixed reader's locals would be.
