@@ -1089,8 +1089,8 @@ spec_review_pass_tail() {
 # view word for word and the question, with no tool call (ADR-0051), and the
 # view.md it was saved to, by absolute path. The paste guards
 # (scripts/paste-guard.sh) arm on a pass line ending "; it is saved in
-# <path>/view.md": keep that tail, which their fixed-string pre-check
-# (PASTE_GUARD_NEEDLE) searches for before any parse. They never arm on a
+# <path>/view.md": keep that tail, which is PASTE_GUARD_NEEDLE, the one copy
+# their pre-check and their scan both read. They never arm on a
 # pass line in the result of a Bash call that also ran `spec-review apply`,
 # nor on an --unattended pass line, which ends in
 # spec_review_unattended_tail instead.

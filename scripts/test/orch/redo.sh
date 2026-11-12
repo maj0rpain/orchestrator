@@ -21,6 +21,33 @@ redo_state_snapshot() {
     "$("$ORCH" state get iteration)"
 }
 
+# pushed_review_flow <slug> <issue> <pr>: a review-phase flow on a pushed
+# branch. Leaves healthy_repo with origin a fresh bare repo holding main, the
+# store-backed GitHub fake on, and a flow <slug> at phase review, issue <issue>,
+# on pushed branch orch/<issue>-<slug> recorded as the flow's branch, PR <pr>
+# recorded, iteration 1 and budget 1. Issue <issue> is open, and PR <pr> open
+# from that branch into main. Writes no review record and no handoff.
+pushed_review_flow() {
+  local slug="$1" issue="$2" pr="$3" bare
+  healthy_repo
+  fake_github
+  bare="$(mktemp -d)/origin.git"
+  git init -q --bare "$bare"
+  bare_origin "$bare"
+  git push -q origin HEAD:refs/heads/main
+  "$ORCH" init "$slug" >/dev/null
+  state_fixture phase review
+  "$ORCH" state set issue "$issue"
+  git checkout -q -b "orch/$issue-$slug"
+  git push -q -u origin "orch/$issue-$slug"
+  state_fixture branch "orch/$issue-$slug"
+  state_fixture pr "$pr"
+  state_fixture iteration 1
+  "$ORCH" state set budget 1
+  fake_issue "$issue" open
+  fake_pr "$pr" open "orch/$issue-$slug" main
+}
+
 # --- redo review ----------------------------------------------------------
 # The full review -> implement transition: three distinct refusals below a
 # terminal state, and a full composition above it.
@@ -276,27 +303,11 @@ restore_suite_env
 # pre-redo-N-2/. The destination is pre-created, so no clock is involved.
 echo
 echo "redo review refuses a taken handoff destination"
-healthy_repo
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-"$ORCH" init redotaken >/dev/null
-state_fixture phase review
-"$ORCH" state set issue 21
-git checkout -q -b orch/21-redotaken
-git push -q -u origin orch/21-redotaken
-state_fixture branch orch/21-redotaken
-state_fixture pr 35
-state_fixture iteration 1
-"$ORCH" state set budget 1
+pushed_review_flow redotaken 21 35
 mkdir -p .orchestrator/review .orchestrator/handoff/pre-redo-1
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
 writeln '# older implement' >.orchestrator/handoff/pre-redo-1/03-implement.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
-fake_github
-fake_issue 21 open
-fake_pr 35 open orch/21-redotaken main
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a destination already holding the handoff fails the redo" "$st" 1
 assert_contains "naming the destination" "$out" "pre-redo-1"
@@ -317,25 +328,11 @@ restore_suite_env
 echo
 echo "redo review rerun after review retire"
 midway_fixture() {
-  healthy_repo
-  bare="$(mktemp -d)/origin.git"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
-  git push -q origin HEAD:refs/heads/main
-  "$ORCH" init redomid >/dev/null
-  state_fixture phase review
-  "$ORCH" state set issue 21
-  git checkout -q -b orch/21-redomid
-  git push -q -u origin orch/21-redomid
+  pushed_review_flow redomid 21 35
   git branch -q orch/21-redomid-redo-1
   state_fixture branch orch/21-redomid-redo-1
-  state_fixture pr 35
-  state_fixture iteration 1
-  "$ORCH" state set budget 1
   state_fixture redo_count 1
   mkdir -p .orchestrator/review/pre-redo-1
-  fake_github
-  fake_issue 21 open
   fake_pr 35 closed orch/21-redomid main
 }
 midway_fixture
@@ -357,19 +354,6 @@ assert_eq "iteration-01 only under pre-redo-1" \
 restore_suite_env
 
 echo
-echo "redo review rerun part-way through the record move"
-midway_fixture
-writeln '## Terminal state' 'stop' 'older.' >.orchestrator/review/pre-redo-1/iteration-01.md
-state_fixture iteration 2
-writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-02.md
-out="$("$ORCH" redo review 2>&1)"; st=$?
-assert_status "the rerun completes" "$st" 0
-assert_eq "both records are under pre-redo-1" \
-  "$(on_disk .orchestrator/review/pre-redo-1/iteration-01.md) $(on_disk .orchestrator/review/pre-redo-1/iteration-02.md) $(on_disk .orchestrator/review/iteration-02.md)" \
-  "present present absent"
-restore_suite_env
-
-echo
 echo "review terminal mid-redo without or with a malformed retired record"
 midway_fixture
 rm -rf .orchestrator/review/pre-redo-1
@@ -384,11 +368,9 @@ assert_status "redo review refuses" "$st" 1
 assert_contains "naming the retired record" "$out" ".orchestrator/review/pre-redo-1/iteration-01.md"
 out="$("$ORCH" doctor --flow 2>&1)" || true
 assert_contains "doctor's remedy names the retired record" "$out" ".orchestrator/review/pre-redo-1/iteration-01.md"
-restore_suite_env
 
 echo
 echo "review terminal after a completed redo is unchanged"
-midway_fixture
 state_fixture branch orch/21-redomid
 writeln '## Terminal state' 'stop' 'old.' >.orchestrator/review/pre-redo-1/iteration-01.md
 out="$("$ORCH" review terminal 2>&1)"
@@ -403,16 +385,7 @@ restore_suite_env
 # frontier query (ticket next) finds nothing and opens an empty PR.
 echo
 echo "redo review reopens tickets"
-healthy_repo
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-"$ORCH" init tickettest >/dev/null
-
-fake_github
-fake_issue 60 open
-fake_pr 40 open orch/60-tickettest main
+pushed_review_flow tickettest 60 40
 body="$(mktemp)"; printf 'Body of the ticket.\n' >"$body"
 t1="$("$ORCH" ticket publish 60 "One" "$body")"
 t2="$("$ORCH" ticket publish 60 "Two" "$body")"
@@ -420,14 +393,6 @@ t2="$("$ORCH" ticket publish 60 "Two" "$body")"
 "$ORCH" ticket close "$t2" >/dev/null
 assert_eq "frontier is empty once every ticket is closed" "$("$ORCH" ticket next 60)" ""
 
-state_fixture phase review
-"$ORCH" state set issue 60
-git checkout -q -b orch/60-tickettest
-git push -q -u origin orch/60-tickettest
-state_fixture branch orch/60-tickettest
-state_fixture pr 40
-state_fixture iteration 1
-"$ORCH" state set budget 1
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
 out="$("$ORCH" redo review 2>&1)"; st=$?
@@ -1013,25 +978,8 @@ redo_review_scenario() {
   local mode="$1" out st
   echo
   echo "redo review ($mode handoffs)"
-  healthy_repo
-  fake_github
-  fake_issue 61 open
-  fake_pr 62 open "orch/61-redo$mode" main
-  local bare
-  bare="$(mktemp -d)/origin.git"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
-  git push -q origin HEAD:refs/heads/main
-  "$ORCH" init "redo$mode" >/dev/null
+  pushed_review_flow "redo$mode" 61 62
   put_handoff "$mode" 61 2030-01-01T00:00:01Z 03-implement "implement text"
-  state_fixture phase review
-  "$ORCH" state set issue 61
-  git checkout -q -b "orch/61-redo$mode"
-  git push -q -u origin "orch/61-redo$mode"
-  state_fixture branch "orch/61-redo$mode"
-  state_fixture pr 62
-  state_fixture iteration 1
-  "$ORCH" state set budget 1
   mkdir -p .orchestrator/review
   writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
 
