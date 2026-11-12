@@ -41,4 +41,6 @@ turn-final reply.
 
 A block printed only so a human watching can see it, with no question after it,
 is not a turn-final reply. A reply with no tool call ends the turn, so never end
-the turn on it: go on in the same turn.
+the turn on it: go on in the same turn. It covers the unattended interview's
+printed rounds too: each round is printed this way, and the interview goes on in
+the same turn.

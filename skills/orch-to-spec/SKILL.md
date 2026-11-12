@@ -1,6 +1,14 @@
 ---
 name: orch-to-spec
-description: Turn the current conversation into a spec - no interview, just synthesis of what has already been discussed, after one check of the test seams with the user - and either publish it as a new GitHub issue labelled for an agent, or, given a leading issue number (rewrite mode), rewrite that issue's body as the spec. A quick implementation reaches rewrite mode in its Unattended rewrite form, which asks nothing. Use from orch-flow's spec phase, from a planning session's Blueprint route, from quick implementation's step 1, or standalone when a user asks to write up or publish a spec, or runs /orchestrator:to-spec or /orchestrator:to-spec <n>.
+description: Turn the current conversation into a spec - no interview, just
+synthesis of what has already been discussed, after one check of the test seams
+with the user - and either publish it as a new GitHub issue labelled for an
+agent, or, given a leading issue number (rewrite mode), rewrite that issue's
+body as the spec. A quick implementation or a quick autopilot reaches rewrite
+mode in its Unattended rewrite form, which asks nothing. Use from orch-flow's
+spec phase, from a planning session's Blueprint route, from quick
+implementation's step 1, or standalone when a user asks to write up or publish a
+spec, or runs /orchestrator:to-spec or /orchestrator:to-spec <n>.
 ---
 
 # Orchestrator to-spec
@@ -29,8 +37,9 @@ spec phase hands over an adopted issue it decided to rewrite from the
 plan, and `/orchestrator:to-spec <n>` reaches rewrite mode standalone. All
 three take it attended, as written. A planning session's Autopilot route
 (Claude Code only) reaches either mode the same way, then goes on to write the
-plan and run `autopilot start`. A quick implementation reaches rewrite mode
-in its **Unattended rewrite** form below.
+plan and run `autopilot start`. A quick implementation or a quick autopilot
+reaches
+rewrite mode in its **Unattended rewrite** form below.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -138,7 +147,7 @@ names.
 
 ## Unattended rewrite
 
-The mode a quick implementation takes, and only a quick implementation:
+The mode a quick implementation or a quick autopilot takes, and only those two:
 rewrite mode asking the human nothing (ADR-0034). It is the one definition of
 the mode - quick implementation's own steps never restate its rules. Rewrite
 mode runs as written, stop-on-failure included, with these differences only:
@@ -180,10 +189,14 @@ mode runs as written, stop-on-failure included, with these differences only:
 - **On failure**: a failed `issue update` - of a ticket or of the issue -
   `ticket block` or `ticket unblock` stops the rewrite, as a failed write
   stops rewrite mode, and the quick implementation stops at its step 1 with
-  it. A failure before the body update leaves the body unrewritten: ticket
+it, and a quick autopilot stops the issue's subagent with a `failed` line. A
+  failure before the body update leaves the body unrewritten: ticket
   edits already applied stay, and a rerun judges the rewrite again against
-  the tickets as they then stand. The stop message says that only a rerun in
-  this same conversation, which holds the interview, can rewrite the issue.
+  the tickets as they then stand. For a quick implementation the stop message
+  says that only a rerun in this same conversation, which holds the interview,
+  can rewrite the issue; for a quick autopilot it says a later
+  quick-autopilot command run plans the issue again from its unattended
+  interview, not a rerun in the same conversation.
   A failed `ticket retire` at step 3 leaves the body rewritten with its
   breakdown in place: the stop message names `bash "$ORCH" ticket retire <n>`
   as the repair before rerunning.

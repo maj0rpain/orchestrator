@@ -2,6 +2,8 @@
 
 Amended by ADR-0052: an autopilot flow's spec review is unattended too.
 
+Amended by ADR-0061: a quick autopilot takes the Unattended rewrite too.
+
 Superseded in part by ADR-0050: the flow's spec phase decides an adopted issue's
 rewrite without asking.
 

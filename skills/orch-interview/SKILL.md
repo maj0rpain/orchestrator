@@ -1,6 +1,11 @@
 ---
 name: orch-interview
-description: Plan a change with the user before any code is written - an interview in rounds that settles every decision and sharpens the project's domain language, ending in a plan the orchestrator can carry to a flow, a quick implementation, or a blueprint. Use when the user asks to plan a feature or change with the orchestrator ("plan this", "let's plan"), or runs /orchestrator:interview. Not for stress-testing an idea for its own sake.
+description: Plan a change with the user before any code is written - an
+interview in rounds that settles every decision and sharpens the project's
+domain language, ending in a plan the orchestrator can carry to a flow, a quick
+implementation, or a blueprint. Use when the user asks to plan a feature or
+change with the orchestrator ("plan this", "let's plan"), or runs
+/orchestrator:interview. Not for stress-testing an idea for its own sake.
 ---
 
 # Orchestrator plan
@@ -60,7 +65,9 @@ Two rules hold for every question in a round:
 Format a round like so:
 
 ```
-**Q1 - <question title>**: <question body, possibly several paragraphs, possibly with choices; a term the user has not yet met appears as <term> (<one-line definition>)>
+**Q1 - <question title>**: <question body, possibly several paragraphs, possibly
+with choices; a term the user has not yet met appears as <term> (<one-line
+definition>)>
 
 Recommended: <your recommended answer>, because <reason>
 
@@ -74,15 +81,20 @@ Recommended: <your recommended answer>, because <reason>
 A worked example round:
 
 ```
-**Q1 - Timestamp zone**: Should the export write its timestamps in UTC or in the user's local zone?
+**Q1 - Timestamp zone**: Should the export write its timestamps in UTC or in the
+user's local zone?
 
-Recommended: UTC, because exports are compared across machines in different zones.
+Recommended: UTC, because exports are compared across machines in different
+zones.
 
 ---
 
-**Q2 - Timestamp format key**: Where should `HWM_FORMAT` (the config key that sets how the last exported row's timestamp is written) live: in the export's config file, or as a flag on each run?
+**Q2 - Timestamp format key**: Where should `HWM_FORMAT` (the config key that
+sets how the last exported row's timestamp is written) live: in the export's
+config file, or as a flag on each run?
 
-Recommended: In the config file, because every run of one export must read that timestamp the same way.
+Recommended: In the config file, because every run of one export must read that
+timestamp the same way.
 ```
 
 Each round's answers reshape the tree: settled decisions push the frontier
@@ -154,6 +166,33 @@ habits on every round:
   **surprising without context** (a future reader would ask why), and it is
   **the result of a real trade-off** (there were genuine alternatives, and one
   was picked for specific reasons). Missing any one, skip the ADR.
+
+## Unattended interview
+
+The interview with no human in it, taken only by a quick autopilot's
+planner subagent, which reads this section and **The interview** and **Domain
+language** above from this file, never loading the
+skill through the Skill tool, and never starts the **Closing**: no route
+question, no interviewed-issue question, no done-close. The attended interview
+is unchanged. Everything in **The interview** and **Domain language** holds -
+the design tree, rounds, fact-finding, the domain-language habits, the root
+cause of a bug - with these differences only:
+
+- **Every question takes its recommended answer.** Ask the human nothing and
+  wait for no answer: each round is put as written, then every question in it
+  takes its **Recommended** answer, and the next round's frontier is computed
+  from those answers.
+- **Each round is printed** as an unattended printout, with its questions and
+  the answers taken: see **Unattended printout** in `docs/turn-final-reply.md`
+  under the plugin root. It is not a turn-final reply, and the interview goes on
+  in the same turn.
+- **Each question and the answer taken is recorded**, to go under the plan's
+  `## Decisions`.
+- **An issue found already done is reported as skipped**, naming the commit, PR
+  or issue that did the work, and the interview stops there: it closes nothing,
+  moves no label and writes nothing.
+- **There is no planning close.** The interview is done when the frontier is
+  empty; there is no confirmation of a shared understanding to wait for.
 
 ## Glossary and ADR wording goes into the plan
 
