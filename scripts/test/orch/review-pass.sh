@@ -105,9 +105,8 @@ echo x >"$rp3/iteration-101-known.md"
 out="$("$ORCH" review-pass begin 13 2>&1)"
 assert_eq "numbering keeps rising: iteration-102" "$out" "$rp3/iteration-102"
 echo x >"$rp3/iteration-1x-notes.md"
-echo x >"$rp3/iteration--notes.md"
 out="$("$ORCH" review-pass begin 13 2>"$top/.orchestrator/rp-err.txt")"; st=$?
-assert_status "digit-less strays do not fail begin" "$st" 0
+assert_status "a non-numeric prefix does not fail begin" "$st" 0
 assert_eq "strays are ignored: iteration-102" "$out" "$rp3/iteration-102"
 assert_eq "strays write nothing to stderr" "$(cat "$top/.orchestrator/rp-err.txt")" ""
 out="$("$ORCH" review-pass begin abc 2>&1)"

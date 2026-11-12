@@ -1413,6 +1413,18 @@ err="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "57\tnot json\tfalse
 assert_status "an undecodable body fails" "$st" 1
 assert_contains "naming the issue too" "$err" "orch: the open PRs for issue #12 could not be read"
 assert_contains "leaving the existing file untouched" "$(cat "$out_file")" "Adds the widget."
+marker="$(mktemp -d)/injected"
+err="$(adapter_stood_in "adapter_prs_open_bodies() { printf 'a[\$(touch $marker)]\t\"Refs #12\"\tfalse\n'; }" "$ORCH" pr read 12 "$out_file" 2>&1 >/dev/null)"; st=$?
+assert_status "a non-numeric PR number naming the issue fails" "$st" 1
+assert_contains "naming the issue" "$err" "orch: the open PRs for issue #12 could not be read"
+assert_eq "the number is never evaluated" "$(on_disk "$marker")" "absent"
+err="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "x\t\"Closes #99\"\tfalse\n57\t\"Refs #12\"\tfalse\n"; }' "$ORCH" pr read 12 "$out_file" 2>&1 >/dev/null)"; st=$?
+assert_status "a non-numeric PR number naming another issue fails" "$st" 1
+assert_contains "naming the issue as well" "$err" "orch: the open PRs for issue #12 could not be read"
+err="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "0\t\"Refs #12\"\tfalse\n"; }' "$ORCH" pr read 12 "$out_file" 2>&1 >/dev/null)"; st=$?
+assert_status "PR number 0 fails" "$st" 1
+assert_contains "naming the issue once more" "$err" "orch: the open PRs for issue #12 could not be read"
+assert_contains "leaving the file untouched after bad numbers" "$(cat "$out_file")" "Adds the widget."
 fake_fail adapter_prs_open_bodies "HTTP 502"
 out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
 assert_status "a failed listing fails" "$st" 1
