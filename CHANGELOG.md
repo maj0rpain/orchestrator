@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.29
+
+The main-checkout lookup now costs one git process and the checkout-kind lookup classifies only the matching checkout, so autopilot ticks and Liveness reads no longer grow with the number of side checkouts.
+
 ## 5.0.28
 
 `finding-triage scan` now lists each filed severity once with every finding's labels and body, instead of re-reading each listed finding with its own GitHub call. Its output is unchanged.
