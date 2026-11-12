@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.24
+
+`branch retire` on a rerun after the local rename now asks origin whether `<old>` is still there before any remote step. A rerun of a completed retire, local-only or with an upstream, changes nothing on origin or in local branches, records the retirement on `<new>`, and prints `<new>`; an unreachable origin dies with nothing changed; and the resume never renames `<new>` back to `<old>`.
+
 ## 5.0.23
 
 The paste guards (Stop and AskUserQuestion) no longer parse the whole session transcript at every turn end: a fixed-string pre-check skips the parse when the transcript holds no arming pass line, and the re-read window re-parses only when the transcript changed size.
