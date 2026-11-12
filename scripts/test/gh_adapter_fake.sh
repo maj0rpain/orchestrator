@@ -440,14 +440,15 @@ adapter_issue_state() {
 }
 
 # fake_open_issues: the numbers of the open issues in the store, one per line
-# in number order.
+# in number order - newest first, as real gh lists them, while
+# ORCH_FAKE_NEWEST_FIRST is set.
 fake_open_issues() {
   local d
   for d in "$(fake_store)"/issues/*/; do
     [ -d "$d" ] || continue
     [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
     basename "$d"
-  done | sort -n
+  done | sort -n${ORCH_FAKE_NEWEST_FIRST:+r}
 }
 
 # adapter_issues_labelled <label>...: the open issues in the store carrying

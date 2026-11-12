@@ -2433,14 +2433,16 @@ assert_status "named issues succeed" "$st" 0
 assert_eq "none, move and override by the triage label" "$out" "1 eligible none
 2 eligible move
 3 eligible override"
-assert_eq "a plain unlabelled issue is a move" "$("$ORCH" autopilot candidates 14 2>&1)" "14 eligible move"
-assert_eq "a closed issue is skipped" "$("$ORCH" autopilot candidates 11 2>&1)" "11 skip closed"
-assert_eq "an untrusted issue names its writer" "$("$ORCH" autopilot candidates 12 2>&1)" "12 skip untrusted stranger"
-assert_eq "the first reason holds when several do" "$("$ORCH" autopilot candidates 13 2>&1)" "13 skip phase spec"
-assert_eq "an unknown named issue is missing" "$("$ORCH" autopilot candidates 99 2>&1)" "99 skip missing"
-assert_eq "named issues keep the order named" "$("$ORCH" autopilot candidates 3 99 1 2>&1)" "3 eligible override
+assert_eq "verdicts and the order named" "$("$ORCH" autopilot candidates 3 99 1 14 11 12 13 2>&1)" "3 eligible override
 99 skip missing
-1 eligible none"
+1 eligible none
+14 eligible move
+11 skip closed
+12 skip untrusted stranger
+13 skip phase spec"
+
+# gh lists newest first: the verb must sort the listing itself.
+export ORCH_FAKE_NEWEST_FIRST=1
 
 all="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
 assert_status "--all succeeds" "$st" 0
@@ -2455,7 +2457,7 @@ assert_eq "--limit keeps the first k eligible lines, skips not counted" "$("$ORC
 8 skip untriaged-finding
 9 skip untriaged-finding
 10 eligible override"
-assert_eq "--limit 1 stops after the first eligible" "$("$ORCH" autopilot candidates --limit 1 2>&1)" "1 eligible none"
+unset ORCH_FAKE_NEWEST_FIRST
 ac_err="$(mktemp)"
 ORCH_ISSUE_LIST_LIMIT=13 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
 assert_contains "--all warns when the listing reaches the issue-list limit" "$(cat "$ac_err")" \

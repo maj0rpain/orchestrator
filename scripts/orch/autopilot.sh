@@ -925,8 +925,8 @@ autopilot_close_missed() {
 
 # autopilot_rank <phase word>: the pickup rank of a session's phase word, lowest
 # first: a sync request 0, then the phases in reverse order of the phase table
-# (review 1, implement 2, spec 3), the phase furthest along first. done is no
-# candidate and has no rank.
+# (review 1, implement 2, spec 3), the phase furthest along first. done is not
+# picked up and has no rank.
 autopilot_rank() {
   local phase i=0 n=0
   [ "$1" != "$STANDING_SYNC_PHASE" ] || { printf '0'; return; }
@@ -946,16 +946,16 @@ autopilot_rank() {
 # a limit pause never holds it), the limit-pause check, sync detection (when
 # auto-sync is true), then pickup (see the spec's One tick). The one done read
 # feeds both passes: sync detection gets the done table minus the issues the
-# close closed. Every candidate is read before the first claim,
+# close closed. Every flow issue is read before the first claim,
 # the unpickable ones dropped, and the rest taken by rank - sync requests,
 # then the phases furthest along first, oldest issue first within a rank. A
 # phase is claimed while the claim count is below the cap, a sync request
 # while it is below the cap plus the sync slots (half the cap, rounded down);
-# the first phase candidate not claimed for the cap ends the tick. A claim
+# the first phase issue not claimed for the cap ends the tick. A claim
 # create that fails for a reason other than a lost race stops the tick, naming
 # it.
 autopilot_tick() {
-  local main_root cap count issue gh_err phase rc candidates limited_arg auto_sync
+  local main_root cap count issue gh_err phase rc flow_issues limited_arg auto_sync
   local ranked="" slots limit limited done_table
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
@@ -970,7 +970,7 @@ autopilot_tick() {
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
   slots=$((cap / 2))
-  candidates="$(autopilot_flow_issues)"
+  flow_issues="$(autopilot_flow_issues)"
   while IFS= read -r issue; do
     [ -n "$issue" ] || continue
     standing_read "$issue" ||
@@ -978,7 +978,7 @@ autopilot_tick() {
     standing_pickable || continue
     phase="$(standing_session_phase)"
     ranked="$ranked$(autopilot_rank "$phase") $issue $phase $STANDING_LIMITED"$'\n'
-  done <<<"$candidates"
+  done <<<"$flow_issues"
   ranked="$(printf '%s' "$ranked" | sort -k1,1n -k2,2n)"
   while read -r _ issue phase limited; do
     [ -n "$issue" ] || continue
