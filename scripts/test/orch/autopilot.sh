@@ -2597,28 +2597,20 @@ fake_fail_times adapter_issue_state_labels 1 "HTTP 500"
 fake_unfail
 assert_status "a start-up read that fails for another reason dies" "$st" 1
 assert_eq "and leaves the claim held" "$(fake_claim_held 7)" held
-# a claim release that fails every attempt writes a backstop line that says no
-# session ran
-fake_issue 7 open orch:spec orch:running
-fake_claim_seed 7 "$(hostname)" "$$"
-rm -f "$top/.orchestrator/autopilot/github-limit"
-fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
-fake_fail adapter_issue_relabel "HTTP 500 relabel"
-ORCH_GH_LIMIT_WAIT=0 "$ORCH" autopilot run 7 >/dev/null 2>&1
-fake_unfail
-su_log="$(ls "$top"/.orchestrator/autopilot/logs/7-*.log | tail -1)"
-assert_eq "a failed start-up claim release leaves the claim held" "$(fake_claim_held 7)" held
-assert_contains "and its backstop line says no session ran" "$(tail -1 "$su_log")" "the stop chain failed after 3 attempts - claim release: could not release the claim after a GitHub-limited start-up read; no session ran"
-# the log is named by the claim's own phase, which stale cleanup looks it up by
+# a claim release that fails every attempt keeps the claim, writes a backstop
+# line that says no session ran, and names its log by the claim's own phase
+# (which stale cleanup looks it up by)
 fake_issue 7 open orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$" "" sync
 rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log
 fake_fail_times adapter_issue_state_labels 1 "API rate limit exceeded for user ID 1."
 fake_fail adapter_issue_relabel "HTTP 500 relabel"
-ORCH_GH_LIMIT_WAIT=0 "$ORCH" autopilot run 7 >/dev/null 2>&1
+"$ORCH" autopilot run 7 >/dev/null 2>&1
 fake_unfail
 su_logs=("$top"/.orchestrator/autopilot/logs/7-sync-*.log)
-assert_eq "a failed start-up claim release names its log by the claim's phase" "$([ -e "${su_logs[0]}" ] && echo named || echo missing)" named
+assert_eq "a failed start-up claim release leaves the claim held" "$(fake_claim_held 7)" held
+assert_eq "and names its log by the claim's phase" "$([ -e "${su_logs[0]}" ] && echo named || echo missing)" named
+assert_contains "and its backstop line says no session ran" "$(tail -1 "${su_logs[0]}")" "the stop chain failed after 3 attempts - claim release: could not release the claim after a GitHub-limited start-up read; no session ran"
 
 # --- autopilot tick: the early GitHub pause (#2577) ---------------------------
 echo

@@ -267,9 +267,8 @@ the session: no new side checkout, flow, plan comment or redo.
 An autopilot flow's issue whose last session stopped on a Claude Code usage
 limit or a GitHub API rate limit, waiting out the reset instead of the
 human. A usage-limit stop labels it `orch:limited` in place of
-`needs-human`; a GitHub limit stop, posted by the wrapper and retried after
-the reset when its writes fail, adds no label. A tick once the limit pause
-has passed picks its phase, or
+`needs-human`; a GitHub limit stop, posted only once its reset has passed,
+adds no label. A tick once the limit pause has passed picks its phase, or
 its sync request, up again; a third limit stop in a row of one phase, or of
 one issue's sync requests, whatever their causes, waits on the human.
 _Avoid_: rate-limited issue.

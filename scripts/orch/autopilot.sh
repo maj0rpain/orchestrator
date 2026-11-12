@@ -686,7 +686,7 @@ autopilot_github_paused() {
 autopilot_pickup() {
   autopilot_pickup_steps "$1" "$2" "${3:-}" || {
     if autopilot_github_paused; then
-      adapter_claim_delete "$1" >/dev/null 2>&1 ||
+      standing_claim_drop "$1" >/dev/null 2>&1 ||
         warn "could not delete the claim ref on issue #$1; it stays held for stale cleanup"
       return 0
     fi

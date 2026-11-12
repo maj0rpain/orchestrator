@@ -232,9 +232,9 @@ standing_resume() {
 #
 # Every write to Standing goes through one transition: begin, sync request,
 # start, finish, pause, ask, stop, reenter, sync finish, sync dropped,
-# limit-stop, claim release and resume. Begin, sync request and resume are
-# single writes; the others are chains. A chain of writes a session makes
-# under its claim ends in the release - deletes orch:running and
+# limit-stop, claim release, claim drop and resume. Begin, sync request, claim
+# drop and resume are single writes; the others are chains. A chain of writes a
+# session makes under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
 # fails partway leaves the claim held, and dies naming the writes that landed;
 # the session wrapper retries a stop chain (see the resumable chain below), and
@@ -243,8 +243,8 @@ standing_resume() {
 # finish, pause, ask, stop, reenter, sync finish, sync dropped, limit-stop
 # and claim release)
 # resets it at its start, then takes up earlier attempts' landed writes from
-# STANDING_STATE_FILE, and begin, sync request and resume neither reset nor
-# add to it.
+# STANDING_STATE_FILE, and begin, sync request, claim drop and resume neither
+# reset nor add to it.
 
 STANDING_LANDED=""
 
@@ -355,6 +355,13 @@ standing_release() {
 standing_claim_release() {
   standing_chain_start
   standing_release "$1"
+}
+
+# standing_claim_drop <issue>: a single write that only deletes the claim ref,
+# for a pickup that has not added orch:running: no label, no comment, nothing
+# counted. A failed push leaves the claim held.
+standing_claim_drop() {
+  adapter_claim_delete "$1"
 }
 
 # standing_move_label <issue> <phase>: <issue>'s phase label made the one for
