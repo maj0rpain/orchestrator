@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.16
+
+Test-only: the hook test suite builds every counting stub with `call_counter` and reads every count with `counted_calls`, shares one jq counter dir, and drops the `rl_calls` wrapper and a duplicated Junie-shaped readlink case.
+
 ## 5.2.15
 
 Tidy the test ssh stub comment, drop a repeated repo test assertion, and give doctor's offline gh auth outcome its own case arm. No behaviour change.
