@@ -79,6 +79,12 @@ D_FLOW_PR_DRAFT=""      # the flow PR's draft flag, as that one read left it
 D_FLOW_PR_ERR=""        # gh's error text when that read failed
 D_JQ=""            # "ok", or empty when jq is missing
 D_STATE=""         # "ok" when state.json is a JSON object, or empty
+D_FLOW_PHASE=""    # the flow's phase, as d_probe's one state read left it
+D_FLOW_ISSUE=""    # the flow's issue, likewise
+D_FLOW_BRANCH=""   # the flow's branch, likewise
+D_FLOW_PR=""       # the flow's PR, likewise
+D_FLOW_ITERATION="" # the review loop's iteration, likewise
+D_FLOW_BUDGET=""   # the review budget, after the shared budget fallback
 D_GH_SKIPPED=0
 D_JQ_SKIPPED=0
 
@@ -106,7 +112,7 @@ d_gh_gate() { d_probe_gh; d_gate "$D_GH" D_GH_SKIPPED; }
 d_flow_issue_read() {
   [ -z "$D_FLOW_ISSUE_READ" ] || return 0
   D_FLOW_ISSUE_READ=failed
-  if issue_state_labels_read "$(state_get issue)" D_FLOW_ISSUE_STATE D_FLOW_ISSUE_LABELS D_FLOW_ISSUE_ERR; then
+  if issue_state_labels_read "$D_FLOW_ISSUE" D_FLOW_ISSUE_STATE D_FLOW_ISSUE_LABELS D_FLOW_ISSUE_ERR; then
     D_FLOW_ISSUE_READ=ok
   fi
 }
@@ -114,7 +120,7 @@ d_flow_issue_read() {
 d_flow_pr_read() {
   [ -z "$D_FLOW_PR_READ" ] || return 0
   D_FLOW_PR_READ=failed
-  if pr_state_draft_read "$(state_get pr)" D_FLOW_PR_STATE D_FLOW_PR_DRAFT D_FLOW_PR_ERR; then
+  if pr_state_draft_read "$D_FLOW_PR" D_FLOW_PR_STATE D_FLOW_PR_DRAFT D_FLOW_PR_ERR; then
     D_FLOW_PR_READ=ok
   else
     D_FLOW_PR_STATE=""
@@ -166,15 +172,21 @@ d_probe_gh() {
 }
 
 d_probe() {
-  local scope="$1" view err
+  local scope="$1" view err budget_raw
   if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
   # A state file that is not a JSON object - unparseable, or valid JSON of
   # another type - invalidates every flow check at once. Judged by the Flow
   # state module's own predicate, so doctor and the hooks agree on it.
   # Settled here so that d_run_flow can report it once, ahead of the list, and
   # the checks that would each have run jq at the same broken file never run.
-  if [ "$scope" != env ] && [ "$D_JQ" = ok ] && flow_state_readable "$STATE"; then
+  # The same one read takes the values the flow checks use, so the file is
+  # parsed once and a non-object earns no D_STATE.
+  if [ "$scope" != env ] && [ "$D_JQ" = ok ] && flow_state_get_many "$STATE" \
+    D_FLOW_PHASE=phase D_FLOW_ISSUE=issue D_FLOW_BRANCH=branch D_FLOW_PR=pr \
+    D_FLOW_ITERATION=iteration budget_raw=budget 2>/dev/null; then
     D_STATE=ok
+    # shellcheck disable=SC2154 # budget_raw is set by flow_state_get_many above
+    D_FLOW_BUDGET="$(review_budget_fallback "$budget_raw")"
   fi
   # The flow scope runs on every /orchestrator:next and every status, and a flow
   # with no PR recorded has nothing to ask GitHub. It reaches gh through
@@ -611,8 +623,8 @@ doctor_phase_label_verdict() {
 # the issue check's read too; a failed read is the issue check's to report.
 check_flow_autopilot_label() {
   local issue phase
-  issue="$(state_get issue)"
-  phase="$(state_get phase)"
+  issue="$D_FLOW_ISSUE"
+  phase="$D_FLOW_PHASE"
   if [ -z "$issue" ]; then
     if autopilot_active; then
       d_fail "autopilot session, but no issue is recorded - the flow's phase has no label to live on."
@@ -684,7 +696,9 @@ h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude 
 "
 # flow state -----------------------------------------------------------------
 
-# Every check below reads state.json through jq, so a missing jq and a file that
+# The checks below read the values d_probe read from state.json in one jq
+# (D_FLOW_PHASE, D_FLOW_ISSUE, D_FLOW_BRANCH, D_FLOW_PR, D_FLOW_ITERATION and
+# D_FLOW_BUDGET), never state.json itself, so a missing jq and a file that
 # will not parse each settle all of them at once. Both are decided in
 # d_run_flow, before any of them runs, rather than in a preamble each check has
 # to remember: a check that forgot would run jq at a broken file and report a
@@ -694,7 +708,7 @@ h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude 
 
 check_state_phase() {
   local phase
-  phase="$(state_get phase)"
+  phase="$D_FLOW_PHASE"
   if word_listed "$PHASES" "$phase"; then
     d_ok "phase: $phase"
   else
@@ -705,13 +719,13 @@ check_state_phase() {
 
 check_flow_branch() {
   local branch
-  branch="$(state_get branch)"
+  branch="$D_FLOW_BRANCH"
   if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
   if git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then d_ok "branch: $branch"; return 0; fi
   # A done flow stays put until the next init archives it (ADR-0009), and its
   # branch being deleted after the merge is the routine end of a flow, not a
   # broken one - the same reading check_flow_issue gives its closed issue.
-  if [ "$(state_get phase)" = "done" ]; then
+  if [ "$D_FLOW_PHASE" = "done" ]; then
     d_ok "branch: $branch gone - expected after merge"; return 0
   fi
   d_fail "branch $branch no longer exists - the flow has nothing left to build on."
@@ -723,8 +737,8 @@ check_flow_branch() {
 # how people learn to skim past the word.
 check_flow_upstream() {
   local phase branch
-  phase="$(state_get phase)"
-  branch="$(state_get branch)"
+  phase="$D_FLOW_PHASE"
+  branch="$D_FLOW_BRANCH"
   [ -n "$branch" ] || return 0
   # origin/<branch> specifically, not just any upstream: a branch made before
   # branch create passed --no-track (#1152) may still track its base until its
@@ -748,7 +762,7 @@ check_flow_upstream() {
 # a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).
 check_flow_issue() {
   local issue issue_state gh_err phase
-  issue="$(state_get issue)"
+  issue="$D_FLOW_ISSUE"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
   # Only the state line is wanted, yet not from adapter_issue_state: that one
@@ -757,7 +771,7 @@ check_flow_issue() {
   # Read through the shared flow-issue memo, as the phase-label check does.
   d_flow_issue_read
   issue_state="$D_FLOW_ISSUE_STATE" gh_err="$D_FLOW_ISSUE_ERR"
-  phase="$(state_get phase)"
+  phase="$D_FLOW_PHASE"
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
     CLOSED)
@@ -776,7 +790,7 @@ check_flow_issue() {
 
 check_flow_pr() {
   local pr pr_state err
-  pr="$(state_get pr)"
+  pr="$D_FLOW_PR"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
   d_gh_gate || return 0
   # Read through the shared flow-PR memo, which the review draft check uses too.
@@ -797,8 +811,8 @@ check_flow_pr() {
 # outside review, there is no loop to classify and nothing to say about one.
 check_flow_review_terminal() {
   local i b terminal word detail
-  i="$(state_get iteration)"
-  b="$(review_budget)"
+  i="$D_FLOW_ITERATION"
+  b="$D_FLOW_BUDGET"
   terminal="$(review_terminal_state)" || true
   lines_split "$terminal" word detail
   case "$word" in
@@ -830,8 +844,8 @@ check_flow_review_terminal() {
 # running, it is state.json in a shape nothing produced on a healthy run.
 check_flow_review_budget() {
   local i b
-  i="$(state_get iteration)"
-  b="$(review_budget)"
+  i="$D_FLOW_ITERATION"
+  b="$D_FLOW_BUDGET"
   if [ "$i" -gt "$b" ]; then
     d_fail "review loop iteration ($i) is past its budget ($b) - the loop's stop enforcement did not hold."
     d_remedy "$(flow_cmd abort)"
@@ -849,7 +863,7 @@ check_flow_review_budget() {
 # the loop itself waits on once one is named.
 check_flow_review_ci() {
   local pr res verdict detail reason
-  pr="$(state_get pr)"
+  pr="$D_FLOW_PR"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
   res="$(ci_probe "$pr" required)"
@@ -879,8 +893,8 @@ check_flow_review_ci() {
 # operation only half landed, not a state a healthy flow reaches on its own.
 check_flow_review_draft() {
   local phase pr err pr_state is_draft
-  phase="$(state_get phase)"
-  pr="$(state_get pr)"
+  phase="$D_FLOW_PHASE"
+  pr="$D_FLOW_PR"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
   d_flow_pr_read
@@ -894,7 +908,7 @@ check_flow_review_draft() {
   [ "$pr_state" = OPEN ] || return 0
   if [ "$phase" = "done" ] && [ "$is_draft" = true ]; then
     d_fail "PR #$pr is still a draft but the flow phase is done - review ready did not take."
-    d_remedy "orch.sh pr ready    # on $(state_get branch)"
+    d_remedy "orch.sh pr ready    # on $D_FLOW_BRANCH"
   elif [ "$phase" = review ] && [ "$is_draft" = false ]; then
     d_fail "PR #$pr was marked ready on GitHub but the flow phase is still review - state.json fell out of sync."
     d_remedy "gh pr view $pr"
@@ -941,7 +955,7 @@ check_flow_worktree_clean() {
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
   local phase files f path problems line ready_finding ready_rc reason fetch_rc
-  phase="$(state_get phase)"
+  phase="$D_FLOW_PHASE"
   # A phase the table does not hold is due nothing, so the check skips it.
   files="$(handoffs_due "$phase")"
   if [ -n "$files" ]; then
@@ -956,13 +970,13 @@ check_flow_handoffs() {
     fetch_rc=0
     handoff_fetch_due "$phase" || fetch_rc=$?
     if [ "$fetch_rc" -eq 2 ]; then
-      d_fail "could not write the copies of issue #$(state_get issue)'s handoff comments to $HANDOFF_SCRATCH_DIR"
+      d_fail "could not write the copies of issue #$D_FLOW_ISSUE's handoff comments to $HANDOFF_SCRATCH_DIR"
       return 0
     fi
     if [ "$fetch_rc" -ne 0 ]; then
       reason="$TIMELINE_REASON"
       [ -n "$reason" ] || reason="gh's output is not a comment list"
-      d_fail "could not read issue #$(state_get issue)'s handoff comments: $reason"
+      d_fail "could not read issue #$D_FLOW_ISSUE's handoff comments: $reason"
       return 0
     fi
   fi
@@ -1055,7 +1069,7 @@ d_phase_list() {
 d_run_flow() {
   if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
     local entries
-    entries="$(d_entries_at "$FLOW_CHECKS" "$(state_get phase)")" || exit 1
+    entries="$(d_entries_at "$FLOW_CHECKS" "$D_FLOW_PHASE")" || exit 1
     d_run "$entries"
     # Outside the registry: it reads git alone and prints nothing when clean,
     # so a flow with a clean working tree reports exactly what it did before.
