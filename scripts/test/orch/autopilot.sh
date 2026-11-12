@@ -2629,10 +2629,8 @@ assert_eq "it picks nothing up" "$(tick_calls)" "0"
 assert_eq "the pause is its own file, not the usage limit's" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
 git config orchestrator.autopilot.github-reserve 0
 "$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "github-reserve 0 still honours an early pause already recorded" "$(tick_calls)" "0"
+assert_eq "github-reserve 0 ignores an early pause already recorded" "$(tick_calls)" "1"
 rm -f "$top/.orchestrator/autopilot/github-early-graphql"
-"$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "with github-reserve 0 the tick picks up" "$(tick_calls)" "1"
 git config --unset-all orchestrator.autopilot.github-reserve
 # a failed read pauses nothing
 rm -f "$top/.orchestrator/autopilot/github-early-graphql"

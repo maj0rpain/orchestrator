@@ -779,8 +779,9 @@ autopilot_github_quota() {
 
 # autopilot_github_early <main>: the early GitHub pause. Reads the pools and,
 # for each with less than github-reserve percent of its limit left, records its
-# reset in the pool's early file (kept if later). A reserve of 0 reads nothing;
-# a failed read pauses nothing.
+# reset in the pool's early file (kept if later). A reserve of 0 reads nothing,
+# and the tick then ignores a recorded early pause; a failed read pauses
+# nothing.
 autopilot_github_early() {
   local quota pool remaining limit reset
   autopilot_setting github-reserve
@@ -1116,8 +1117,12 @@ autopilot_tick() {
   autopilot_done_read done_table
   autopilot_close_missed "$done_table" done_table
   if autopilot_pause_until "$main_root"; then return 0; fi
-  if autopilot_pause_until "$main_root" core; then return 0; fi
-  if autopilot_pause_until "$main_root" graphql; then return 0; fi
+  # A reserve of 0 turns the early pause off, a recorded one included.
+  autopilot_setting github-reserve
+  if [ "$AUTOPILOT_VALUE" -gt 0 ]; then
+    if autopilot_pause_until "$main_root" core; then return 0; fi
+    if autopilot_pause_until "$main_root" graphql; then return 0; fi
+  fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect "$done_table"; fi
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
