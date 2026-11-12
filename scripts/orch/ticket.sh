@@ -563,8 +563,8 @@ blockers_difference() {
 # wanted set, and the `## Blocked by` rewrite through issue_body_rewrite. The
 # write is not read back - ADR-0011 governs the edges, not the body. Only
 # the verb varies, and the one `case` up front binds all of it: block skips
-# edges already present, adds the rest and wants the union; unblock skips edges already absent, removes
-# the rest and wants the difference. Either re-run is idempotent.
+# edges already present, adds the rest and wants the union; unblock skips
+# edges already absent, removes the rest and wants the difference. Either re-run is idempotent.
 ticket_edges_change() {
   local verb="$1" usage n="" by="" have_by="" before want b present
   local skip_present edge_op edge_word want_fn
