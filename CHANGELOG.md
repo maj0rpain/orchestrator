@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.33
+
+One Bash hook, `hook-bash.sh`, replaces the stdin and poll hooks: it reads the payload once, walks the command once and emits one decision (deny a pgrep or pkill word under every mode, else deny a plain stdin read outside bypassPermissions, else the bypassPermissions rewrite), so a poll's deny no longer rests on the host ranking two hooks.
+
 ## 5.0.32
 
 Autopilot reads a phase session's log for usage limits in one pass, through a new Session log module, and carries limit times as epoch seconds; behaviour is unchanged.
