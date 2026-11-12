@@ -72,7 +72,7 @@ REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
 # where orch.sh has always fixed it, since the module assigns it plainly.
 source "$ORCH_SCRIPTS/triage-labels.sh"
 readonly LABELS_DOC
-# The one host detector, host_detect, shared with the hooks (#281).
+# The host module the hooks share: host_detect, host_from_project_path (#281).
 source "$ORCH_SCRIPTS/host.sh"
 # The primitives no concept owns, die among them, ahead of the ROOT block,
 # which dies through die outside a git repository.

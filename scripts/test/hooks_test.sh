@@ -1276,8 +1276,6 @@ assert_eq "a tool other than AskUserQuestion is allowed" "$(pg_decide "$T" toolu
 # Fail open.
 assert_eq "a missing transcript allows" "$(pg_decide "$PG/none.jsonl")" allow
 assert_eq "no transcript_path allows" "$(pg_decide "")" allow
-assert_eq "a payload that is not JSON allows" "$(printf 'not json' | "$PASTE" 2>/dev/null; echo "exit $?")" "exit 0"
-assert_eq "a JSON payload that is not an object allows" "$(printf '[1]' | "$PASTE" 2>/dev/null; echo "exit $?")" "exit 0"
 if [ "$(id -u)" -eq 0 ]; then
   ok "an unreadable transcript allows (skipped as root)"
 else
@@ -1534,7 +1532,6 @@ assert_contains "the pass line spec_review_nudge prints holds the paste guard's 
 assert_eq "and a transcript holding that pass line as a tool result arms the guard" "$(sg_decide "$T")" block
 
 # Fail open.
-assert_eq "a payload that is not JSON allows" "$(printf 'not json' | "$STOP" 2>/dev/null; echo "exit $?")" "exit 0"
 assert_eq "a transcript with no arming pass line allows" "$(sg_decide "$T11")" allow
 unset ORCH_PASTE_GUARD_WAIT
 rm -rf "$PG"
@@ -1560,13 +1557,12 @@ jq_count() {
   wc -l <"$log" | tr -d ' '
 }
 JQT="$(mktemp -d)"
-jqpayload() { jq -n "$@"; }
 assert_eq "grilling hook on a Claude Code UserPromptSubmit starts one jq" \
-  "$(jqpayload --arg c "$REPO" '{hook_event_name:"UserPromptSubmit",session_id:"jq1",cwd:$c,prompt:"hi"}' | jq_count "$GRILL")" 1
+  "$(jq -n --arg c "$REPO" '{hook_event_name:"UserPromptSubmit",session_id:"jq1",cwd:$c,prompt:"hi"}' | jq_count "$GRILL")" 1
 assert_eq "grilling hook on an unrelated skill starts one jq" \
   "$(skill_event "mattpocock-skills:tdd" jq2 | jq_count "$GRILL")" 1
 assert_eq "grilling hook on a Junie prompt naming no entry point starts one jq" \
-  "$(jqpayload --arg c "$REPO" '{hook_event_name:"UserPromptSubmit",session_id:"jq3",project_path:$c,prompt:"hello"}' | jq_count "$GRILL")" 1
+  "$(jq -n --arg c "$REPO" '{hook_event_name:"UserPromptSubmit",session_id:"jq3",project_path:$c,prompt:"hello"}' | jq_count "$GRILL")" 1
 assert_eq "edit guard in an unarmed session starts one jq" \
   "$(edit_event "$REPO/src/x.ts" jq4 | jq_count "$GUARD")" 1
 : >"$TMPDIR/orchestrator-grilling-jq5"
@@ -1576,15 +1572,15 @@ rm -f "$TMPDIR/orchestrator-grilling-jq5"
 assert_eq "quick-implement hook on an unrelated skill starts one jq" \
   "$(skill_event "mattpocock-skills:tdd" jq6 | jq_count "$QUICK")" 1
 assert_eq "session-start hook on a source other than clear starts one jq" \
-  "$(jqpayload '{session_id:"jq7",source:"startup"}' | jq_count "$START")" 1
+  "$(jq -n '{session_id:"jq7",source:"startup"}' | jq_count "$START")" 1
 make_markers jq8
 assert_eq "session-start hook on clear starts one jq" \
-  "$(jqpayload '{session_id:"jq8",source:"clear"}' | jq_count "$START")" 1
+  "$(jq -n '{session_id:"jq8",source:"clear"}' | jq_count "$START")" 1
 assert_marker_absent "session-start hook on clear removes the marker" grilling jq8
 assert_eq "AskUserQuestion paste guard on another tool name starts one jq" \
-  "$(jqpayload '{tool_name:"Bash",transcript_path:"/nope"}' | jq_count "$PASTE")" 1
+  "$(jq -n '{tool_name:"Bash",transcript_path:"/nope"}' | jq_count "$PASTE")" 1
 assert_eq "Stop guard with stop_hook_active set starts one jq" \
-  "$(jqpayload '{stop_hook_active:true,transcript_path:"/nope"}' | jq_count "$STOP")" 1
+  "$(jq -n '{stop_hook_active:true,transcript_path:"/nope"}' | jq_count "$STOP")" 1
 rm -rf "$JQC" "$JQT"
 
 # A payload that is not a JSON object fails open: exit 0, no output, no stderr.
@@ -1616,10 +1612,10 @@ find "$PLUGIN_644/scripts" -name '*.sh' -exec chmod 644 {} +
 while IFS= read -r cmd; do
   name="${cmd##*/}"; name="${name%\"}"
   case "$name" in
-    hook-guard.sh) event="$(edit_event "$REPO/src/x.ts" exec644)" ;;
-    *)             event="$(skill_event "mattpocock-skills:tdd" exec644)" ;;
+    hook-guard.sh) exec_payload="$(edit_event "$REPO/src/x.ts" exec644)" ;;
+    *)             exec_payload="$(skill_event "mattpocock-skills:tdd" exec644)" ;;
   esac
-  printf '%s' "$event" | CLAUDE_PLUGIN_ROOT="$PLUGIN_644" sh -c "$cmd" >/dev/null 2>&1
+  printf '%s' "$exec_payload" | CLAUDE_PLUGIN_ROOT="$PLUGIN_644" sh -c "$cmd" >/dev/null 2>&1
   rc=$?
   if [ "$rc" -eq 0 ]; then
     ok "$name runs with its script at mode 644"
