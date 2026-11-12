@@ -2455,15 +2455,14 @@ assert_eq "--limit keeps the first k eligible lines, skips not counted" "$("$ORC
 9 skip untriaged-finding
 10 eligible override"
 ac_err="$(mktemp)"
-ORCH_ISSUE_LIST_LIMIT=13 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
+assert_eq "past the issue-list limit the newest issues are the ones dropped" \
+  "$(ORCH_ISSUE_LIST_LIMIT=12 "$ORCH" autopilot candidates --all 2>"$ac_err" | cut -d' ' -f1 | paste -sd' ' -)" \
+  "1 2 3 4 5 6 7 8 9 10 12 13"
 assert_contains "--all warns when the listing reaches the issue-list limit" "$(cat "$ac_err")" \
-  "orch: the open issues reached the issue-list limit of 13 - the newest past it are missing from this list"
+  "orch: the open issues reached the issue-list limit of 12 - the newest past it are missing from this list"
 ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all >/dev/null 2>"$ac_err"
 assert_not_contains "--all gives no warning below the limit" "$(cat "$ac_err")" "issue-list limit"
 rm -f "$ac_err"
-assert_eq "past the issue-list limit the newest issues are the ones dropped" \
-  "$(ORCH_ISSUE_LIST_LIMIT=12 "$ORCH" autopilot candidates --all 2>/dev/null | cut -d' ' -f1 | paste -sd' ' -)" \
-  "1 2 3 4 5 6 7 8 9 10 12 13"
 
 for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
   # shellcheck disable=SC2086 # the words are the arguments
