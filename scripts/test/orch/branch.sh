@@ -462,6 +462,8 @@ bare_origin "$bare5"
 git checkout -q -b rr-local
 out="$(orch_gh_failing branch retire rr-local rr-local-redo-1 2>&1)"; st=$?
 assert_status "retires a never-pushed branch before the rerun" "$st" 0
+# Cleared, as a retire made before #2550 leaves it, so the rerun's write shows.
+git config --unset branch.rr-local-redo-1.orchestrator-retired
 out="$(orch_gh_failing branch retire rr-local rr-local-redo-1 2>&1)"; st=$?
 assert_status "a rerun of a completed local-only retire succeeds" "$st" 0
 assert_eq "and prints the new name" "$out" "rr-local-redo-1"
@@ -471,6 +473,8 @@ assert_eq "nor the old one" "$(origin_branch_state "$bare5" rr-local)" "missing"
 assert_eq "the new name stays local with no upstream" \
   "$(branch_presence rr-local-redo-1)/$(upstream_of rr-local-redo-1)" "present/none"
 assert_eq "and the old name stays gone" "$(branch_presence rr-local)" "gone"
+assert_eq "and the rerun records the new name as retired" \
+  "$(git config --get branch.rr-local-redo-1.orchestrator-retired || true)" "true"
 
 # A resume with origin unreachable dies and changes nothing.
 rm -rf "$bare5"
@@ -489,12 +493,15 @@ git checkout -q -b rr-up
 git push -q -u origin rr-up
 orch_gh_failing branch retire rr-up rr-up-redo-1 >/dev/null 2>&1
 tip6="$(git -C "$bare6" rev-parse refs/heads/rr-up-redo-1)"
+git config --unset branch.rr-up-redo-1.orchestrator-retired
 out="$(orch_gh_failing branch retire rr-up rr-up-redo-1 2>&1)"; st=$?
 assert_status "a rerun of a completed retire with an upstream succeeds" "$st" 0
 assert_eq "and prints the new name" "$out" "rr-up-redo-1"
 assert_eq "origin keeps the new name at the same tip" \
   "$(git -C "$bare6" rev-parse refs/heads/rr-up-redo-1)" "$tip6"
 assert_eq "and has no old name" "$(origin_branch_state "$bare6" rr-up)" "missing"
+assert_eq "and the rerun records the new name as retired" \
+  "$(git config --get branch.rr-up-redo-1.orchestrator-retired || true)" "true"
 
 # A resume whose push fails is not rolled back: the rename was not this call's.
 bare7="$(mktemp -d)/origin.git"
