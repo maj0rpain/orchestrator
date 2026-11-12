@@ -70,7 +70,7 @@ tally_init
 
 # >>> checks
 REPO="$(mktemp -d)"
-NOGIT="$(mktemp -d)"  # a directory in no git repository, shared by every section
+NOGIT="$(mktemp -d)"  # a directory in no git repository, for the grilling, Junie and edit-guard no-git cases
 git -C "$REPO" init -q
 mkdir -p "$REPO/docs/agents" "$REPO/docs/adr"
 
