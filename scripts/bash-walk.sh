@@ -1,17 +1,7 @@
 # shellcheck shell=bash
-# bash-walk.sh - the command walker and in-scope filter the two Bash hooks
-# share. Sourced by hook-bash-stdin.sh and hook-bash-poll.sh, not executed on
+# bash-walk.sh - the command walker the Bash hook sources, a module of its own
+# because its concept is the walker. Sourced by hook-bash.sh, not executed on
 # its own.
-
-# The jq prefix the Bash hooks' filters share: binds $c to the command string
-# and keeps only an in-scope payload ($auto is the ORCH_AUTOPILOT value).
-# shellcheck disable=SC2034 # read by the hooks that source this file
-HOOK_BASH_SCOPE='
-  (.tool_input.command? // null) as $c
-  | select(($c | type) == "string")
-  | select($auto == "1" or ((.agent_type? // "") | type == "string"
-      and (startswith("orchestrator:orch-") or startswith("orch-"))))
-  | '
 
 # True while unquoted text $1 holds more `((` than `))`: a `<<` there is an
 # arithmetic shift, not a heredoc.
