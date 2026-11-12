@@ -2286,6 +2286,63 @@ assert_not_contains "with no done issue the merged PRs are not read" "$out" "cou
 fake_unfail
 restore_suite_env
 
+# --- autopilot tick: one read of the done issues (#2559) ----------------------
+# A tick lists the orch:done issues once and reads each once; the merged-PR
+# close and sync detection share that read.
+echo
+echo "autopilot tick done read"
+tick_fixture
+fake_done_merged() { # <issue> <age>: issue #n at orch:done, its merged PR #(100+n)
+  fake_issue "$1" open orch:done
+  fake_pr "$((100 + $1))" merged "orch/$1-widget" main
+  fake_pr_merged "$((100 + $1))" "$2" "$1"
+}
+fake_done_conflict() { # <issue> <pr>: an open CONFLICTING PR from orch/<issue>-
+  fake_pr "$2" open "orch/$1-open" main
+  fake_pr_mergeable "$2" CONFLICTING
+}
+
+fake_issue 60 open orch:done; fake_done_conflict 60 160
+fake_fail_times adapter_issues_labelled 1 "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failed done listing does not stop the tick" "$st" 0
+assert_eq "it warns once, naming both passes" "$(printf '%s\n' "$out" | grep -c 'could not list the issues labelled orch:done: HTTP 502 - no merged-PR close or sync detection this tick')" "1"
+assert_not_contains "sync detection adds no orch:sync" "$(fake_labels_of 60)" "orch:sync"
+fake_unfail
+fake_issue_drop 60
+
+fake_done_merged 61 3600; fake_done_conflict 61 161
+fake_fail_times adapter_issue_state_labels 1 "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failed issue read does not stop the tick" "$st" 0
+assert_eq "it warns once, naming both passes" "$(printf '%s\n' "$out" | grep -c 'could not read issue #61: HTTP 502 - the merged-PR close and sync detection skip it')" "1"
+assert_eq "the issue is not closed" "$(fake_state_of 61)" "OPEN"
+assert_not_contains "and gets no orch:sync" "$(fake_labels_of 61)" "orch:sync"
+fake_unfail
+fake_issue_drop 61
+
+fake_done_merged 62 3600; fake_done_conflict 62 262
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an issue the close closed is closed" "$(fake_state_of 62)" "CLOSED"
+assert_not_contains "and gets no orch:sync in the same tick" "$(fake_labels_of 62)" "orch:sync"
+fake_issue_drop 62
+
+fake_done_merged 63 3600; fake_done_conflict 63 263
+fake_fail_times adapter_prs_merged_closing 1 "HTTP 502"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "with the merged-PR read failing the issue stays open" "$(fake_state_of 63)" "OPEN"
+assert_contains "and still gets orch:sync" "$(fake_labels_of 63)" "orch:sync"
+fake_unfail
+fake_issue_drop 63
+
+fake_fail_times adapter_prs_merged_closing 1 "HTTP 502"
+fake_fail_times adapter_prs_open_mergeability 1 "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with no done issue succeeds" "$st" 0
+assert_not_contains "and reads no PR" "$out" "could not read"
+fake_unfail
+restore_suite_env
+
 # --- autopilot sync-finish, sync-dropped and sync-fail -----------------------
 # The three ends of a sync session, each reading the issue from flow state.
 echo
