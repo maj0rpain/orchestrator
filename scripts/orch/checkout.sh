@@ -135,11 +135,11 @@ main_checkout_or_die() {
 # Dies when the checkouts cannot be read; called in a substitution, so its
 # caller carries that status out.
 branch_checkout() {
-  local list _kind _flow branch path
-  list="$(checkouts_or_die)" || exit $?
-  while read -r _kind _flow branch path; do
-    if [ "$branch" = "$1" ]; then note "$path"; return 0; fi
-  done <<<"$list"
+  local i paths=() branches=()
+  checkout_parse || checkouts_unreadable
+  for i in "${!paths[@]}"; do
+    if [ "${branches[i]}" = "$1" ]; then note "${paths[i]}"; return 0; fi
+  done
 }
 
 # Whether the checkout at <path> holds a flow.
