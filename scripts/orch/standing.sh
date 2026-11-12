@@ -484,9 +484,9 @@ standing_post_release() {
     # An earlier attempt's call failed and may have landed: look first, and post
     # nothing when the look fails.
     if [ -s "${STANDING_STATE_FILE:-}" ] && grep -qxF "tried"$'\t'"$landed_what" "$STANDING_STATE_FILE"; then
-      present_rc=0; standing_comment_present "$issue" "$text" || present_rc=$?
-      [ "$present_rc" -le 1 ] ||
-        standing_landed_die "could not check issue #$issue's comments for this stop's comment: ${STANDING_CHECK_ERR:-the comments could not be read}"
+      timeline_read "$issue" ||
+        standing_landed_die "could not check issue #$issue's comments for this stop's comment: ${TIMELINE_REASON:-the comments could not be read}"
+      ! timeline_has_body "$text" || present_rc=0
     fi
     if [ "$present_rc" -eq 0 ]; then
       standing_landed_add "$landed_what"
@@ -511,22 +511,6 @@ standing_comment_post() {
   }
   rm -f "$body"
   standing_landed_add "$4"
-}
-
-STANDING_CHECK_ERR=""
-
-# standing_comment_present <issue> <text>: 0 when a trusted comment of the issue
-# is <text>, trailing whitespace aside; 1 when none is; 2, with the reason in
-# STANDING_CHECK_ERR, when the comments cannot be read.
-standing_comment_present() {
-  local json gh_err
-  STANDING_CHECK_ERR=""
-  capture json gh_err adapter_issue_comments_json "$1" || { STANDING_CHECK_ERR="$(gh_reason "$gh_err")"; return 2; }
-  json="$(trust_filter_comments "$1" <<<"$json")" || return 2
-  jq -e --arg t "$2" 'any(.[]; (.body | sub("\\s+$"; "")) == ($t | sub("\\s+$"; "")))' <<<"$json" >/dev/null 2>&1 || {
-    [ "$?" -eq 1 ] || return 2
-    return 1
-  }
 }
 
 # standing_reenter <issue> <phase> <text>: the automatic re-entry transition,
