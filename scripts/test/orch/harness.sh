@@ -763,7 +763,7 @@ assert_status "the clock starts at the child's start, not its wait for a slot" "
 assert_eq "so a queued section reports no timeout" "$(printf '%s\n' "$out" | grep -c 'timed out')" "0"
 rm -rf "$dl_dir"
 
-# --- the parallel runner's start order (#2857) ---------------------------------
+# --- the parallel runner's start order (#2857) ------------------------------
 # A copy of the scripts tree with planted sections, each logging its name to
 # $ord_log as it starts, over a planted durations file beside the runner. With
 # two jobs, isolation and the unlisted section start first, and the unlisted
