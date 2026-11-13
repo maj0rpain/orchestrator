@@ -682,8 +682,10 @@ claude_code_only_skill() {
 # other hosts, so skill and command text must pair it with the
 # relative fallback. The documented form (CONTRIBUTING.md, "Resolving
 # orch.sh") is the ORCH= line, the Junie step, and the fallback sentence, or,
-# for a skill marked "Claude Code only.", the ORCH= line and one stop; any
-# other mention of the variable, or a file that runs orch.sh without them, is a
+# for a skill marked "Claude Code only.", the ORCH= line and one stop. The lint
+# checks the ORCH= line wherever orch.sh is used, CLAUDE_PLUGIN_ROOT nowhere
+# else, and no Junie lookup in a marked skill; any other mention of the
+# variable, or a file that runs orch.sh without the ORCH= line, is a
 # regression. hooks/hooks.json is deliberately out of scope: both hosts expand
 # it there.
 echo
@@ -740,8 +742,9 @@ scan_orch_resolution() {
       rest="${rest//"$root_fallback"/}"
       rest="${rest//'"${CLAUDE_PLUGIN_ROOT}/'/}"
     fi
-    [[ "$rest" != *CLAUDE_PLUGIN_ROOT* ]] ||
+    if [[ "$rest" == *CLAUDE_PLUGIN_ROOT* ]]; then
       echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
+    fi
     if [[ "$flat" == *"$root_fallback"* ]]; then
       # The sentence runs to the first full stop followed by a space;
       # orch.sh's own dot is followed by a backtick, so it does not end it.
@@ -827,7 +830,7 @@ flags "the scan flags a Junie step outside the plugin-root sentence" \
 assert_empty "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$fixture")"
 # The Claude-Code-only form (#2718): a skill marked by its frontmatter
-# description is held to the ORCH= line and one stop, and off the Junie lookup.
+# description is held to the ORCH= line, with CLAUDE_PLUGIN_ROOT nowhere else and no Junie lookup.
 # cc_skill <description> <body line>...: write the marked-skill fixture.
 cc_skill() {
   local d="$1"; shift
