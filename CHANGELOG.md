@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.44
+
+Test-only: all.sh and scripts/dev/section-durations.sh run shellcheck through one shared pooled step, `shellcheck_start` and `shellcheck_join`, so section-durations.sh now draws its shellcheck processes from the job pool and times the same step all.sh runs. orch_test.sh builds its durations input through one helper, all.sh decides once whether its shard group runs the other suites and shellcheck, and two stale runner comments are corrected. No run's outcome changes.
+
 ## 5.2.43
 
 Reword test titles, comments and a helper name that misstated what their tests cover.
