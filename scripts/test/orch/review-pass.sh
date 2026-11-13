@@ -107,8 +107,8 @@ assert_eq "numbering keeps rising: iteration-102" "$out" "$rp3/iteration-102"
 echo x >"$rp3/iteration-1x-notes.md"
 out="$("$ORCH" review-pass begin 13 2>"$top/.orchestrator/rp-err.txt")"; st=$?
 assert_status "a non-numeric prefix does not fail begin" "$st" 0
-assert_eq "strays are ignored: iteration-102" "$out" "$rp3/iteration-102"
-assert_eq "strays write nothing to stderr" "$(cat "$top/.orchestrator/rp-err.txt")" ""
+assert_eq "a non-numeric prefix is ignored: iteration-102" "$out" "$rp3/iteration-102"
+assert_eq "a non-numeric prefix writes nothing to stderr" "$(cat "$top/.orchestrator/rp-err.txt")" ""
 out="$("$ORCH" review-pass begin abc 2>&1)"
 assert_contains "a non-numeric issue is named" "$out" "issue must be a plain issue number"
 out="$("$ORCH" review-pass wipe 12 2>&1)"; st=$?

@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.43
+
+Reword test titles, comments and a helper name that misstated what their tests cover.
+
 ## 5.2.42
 
 The loader bundle's standards findings are fixed: the top-level-variable rule lists every keyword the check counts, and the loader and its tests lose a shadowed name, a one-caller helper and three redundant scripts-tree copies.
