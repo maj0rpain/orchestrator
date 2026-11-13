@@ -379,11 +379,8 @@ assert_contains "flow_state_seed stamps created with a UTC timestamp" \
 assert_eq "flow_state_seed returns 2 for an arg row it has no value for, printing nothing" \
   "$(fs_run 'STATE_KEYS="$STATE_KEYS
 bogus||arg|-"; flow_state_seed s "" main')" "status 2"
-seed2_bin="$(mktemp -d)"
-writeln '#!/bin/sh' 'echo "jq: usage error" >&2; exit 2' >"$seed2_bin/jq"
-chmod +x "$seed2_bin/jq"
 assert_eq "flow_state_seed returns 1, printing nothing, when jq exits 2" \
-  "$(fs_run "PATH='$seed2_bin':\$PATH; flow_state_seed s 7 main 2>&1")" "status 1"
+  "$(fs_run "PATH='$(fails_bin jq '*' 2 'jq: usage error')':\$PATH; flow_state_seed s 7 main 2>&1")" "status 1"
 before_ls="$(ls -A "$fs_dir")"
 assert_eq "flow_state_create creates an absent file" \
   "$(fs_run 'flow_state_create created.json "{\"slug\":\"c\"}" && jq -c . created.json')" \
