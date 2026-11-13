@@ -964,9 +964,7 @@ autopilot_candidates_run() {
   else
     gh_or_die --out out "list the open issues" adapter_issues_open_oldest
     while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done <<<"$out"
-    if [ "${#issues[@]}" -ge "$ISSUE_LIST_LIMIT" ]; then
-      warn "the open issues reached the issue-list limit of $ISSUE_LIST_LIMIT - the newest past it are missing from this list"
-    fi
+    issue_list_limit_warn "${#issues[@]}" "the open issues"
   fi
   for n in ${issues[@]+"${issues[@]}"}; do
     if [ "$mode" = limit ] && [ "$eligible" -ge "$limit" ]; then break; fi

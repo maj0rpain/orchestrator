@@ -249,9 +249,6 @@ cmd_finding_triage_scan() {
       issues_labelled_bodies_read found_labels found_bodies listed gh_err \
         "review:$sev" ${triage_filter[@]+"${triage_filter[@]}"} \
         || gh_die "list the review:$sev findings" "$gh_err"
-      if [ "$listed" -ge "$ISSUE_LIST_LIMIT" ]; then
-        warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
-      fi
     done
   fi
   default="$(default_branch)"

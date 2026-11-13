@@ -760,17 +760,27 @@ assert_status "issue state: reads the state" "$st" 0
 assert_eq "PULL for a pull request's number" "$out" "PULL"
 
 gh_reply 0 $'3\n9\n' '' \
-  issue list --state open --label review:nit --label "triage me" --limit 1000 --json number --jq '.[].number'
+  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number --jq '.[].number'
 out="$(contract adapter_issues_labelled review:nit "triage me" 2>&1)"; st=$?
 assert_status "issues labelled: lists the open issues carrying every label" "$st" 0
 assert_eq "one number per line" "$out" "$(writeln 3 9)"
 
 gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \
-  issue list --state open --label review:nit --label "triage me" --limit 1000 --json number,labels,body \
+  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,labels,body \
   --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
 out="$(contract adapter_issues_labelled_bodies review:nit "triage me" 2>&1)"; st=$?
 assert_status "issues labelled with bodies: lists the open issues carrying every label" "$st" 0
 assert_eq "one count-marked record per issue" "$out" "$(writeln 3 1 review:nit 2 'line one' 'line two')"
+
+# The warning helper's effective limit is the lesser of ISSUE_LIST_LIMIT and
+# GitHub's 1000-row search cap, so a raised override cannot silence a cut.
+out="$(ORCH_ISSUE_LIST_LIMIT=1500 contract issue_list_limit_warn 1000 "the open issues labelled x" 2>&1)"; st=$?
+assert_status "issue list limit warning: never fails at the limit" "$st" 0
+assert_eq "at 1000 rows with the limit raised to 1500, it names 1000" "$out" \
+  "orch: the open issues labelled x reached the issue-list limit of 1000 - the newest past it are missing from this list"
+out="$(ORCH_ISSUE_LIST_LIMIT=1500 contract issue_list_limit_warn 999 "the open issues labelled x" 2>&1)"; st=$?
+assert_status "issue list limit warning: never fails below the limit" "$st" 0
+assert_eq "at 999 rows it says nothing" "$out" ""
 
 gh_reply 0 $'3\tFirst title\n9\tA\ttabbed title\n' '' \
   api --paginate "repos/{owner}/{repo}/issues?state=open&per_page=100" \
