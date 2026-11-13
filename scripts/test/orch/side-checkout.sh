@@ -1476,28 +1476,26 @@ assert_eq "bare PATH, a main worktree" "${mk[5]}" "$mtop/.git/orchestrator-side-
 assert_eq "bare PATH, a linked worktree" "${mk[6]}" "$mgd/orchestrator-side-checkout"
 
 # An unreadable pointer asks git, seen through a counting wrapper.
-mlog="$(mktemp)"
-mwrap="$(mktemp -d)"
-writeln '#!/bin/sh' "echo x >>'$mlog'" "exec $(command -v git) \"\$@\"" >"$mwrap/git"
-chmod +x "$mwrap/git"
+mwrap="$(counting_bin git)"
+mlog="$mwrap/git.log"
 mark_counted() { bash -c 'source "$1"; PATH="$2:$PATH"; side_checkout_marker "$3"' _ "$ORCH" "$mwrap" "$1" >/dev/null; }
 mptr="$(<"$mlink/.git")"
 rm "$mlink/.git"; mkdir "$mlink/.git"
 : >"$mlog"
 mark_counted "$mlink"
-assert_ne "a pointer that is a HEAD-less directory asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+assert_ne "a pointer that is a HEAD-less directory asks git" "$(counting_starts "$mwrap" git)" "0"
 rmdir "$mlink/.git"
 printf 'not a pointer\n' >"$mlink/.git"
 : >"$mlog"
 mark_counted "$mlink"
-assert_ne "a pointer file with no gitdir line asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+assert_ne "a pointer file with no gitdir line asks git" "$(counting_starts "$mwrap" git)" "0"
 chmod 000 "$mlink/.git"
 : >"$mlog"
 if [ -r "$mlink/.git" ]; then
   skip "a pointer file that cannot be read asks git" "permissions do not bite here, e.g. root"
 else
   mark_counted "$mlink"
-  assert_ne "a pointer file that cannot be read asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+  assert_ne "a pointer file that cannot be read asks git" "$(counting_starts "$mwrap" git)" "0"
 fi
 chmod 644 "$mlink/.git"
 printf '%s\n' "$mptr" >"$mlink/.git"
