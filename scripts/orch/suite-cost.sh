@@ -223,7 +223,7 @@ suite_cost_head_commit() {
 suite_cost_measure() {
   local tf real user sys TIMEFORMAT='%2R %2U %2S'
   SUITE_COST_STATUS=0
-  tf="$(mktemp)" || die "could not make a temp file to time the command"
+  temp_file_make tf || die "could not make a temp file to time the command"
   { time { command "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>"$tf"
   read -r real user sys < <(tail -n 1 "$tf") || true
   rm -f "$tf"

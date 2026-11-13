@@ -273,7 +273,7 @@ cmd_finding_triage_scan() {
 # _triage_comment_post_-prefixed locals.
 triage_comment_post() {
   local _triage_comment_post_tmp _triage_comment_post_st=0
-  _triage_comment_post_tmp="$(mktemp)" \
+  temp_file_make _triage_comment_post_tmp \
     || die "could not create a temp file for the triage comment on issue #$2 - nothing was posted"
   { printf '%s\n\n' "$TRIAGE_COMMENT_DISCLAIMER" && cat "$3"; } >"$_triage_comment_post_tmp" || {
     rm -f "$_triage_comment_post_tmp"
@@ -521,7 +521,7 @@ bundle_members_close() {
   shift
   [ $# -gt 0 ] || return 0 # every member was already closed into B
   local members=("$@")
-  comment_file="$(mktemp)" || die "could not create a temp file for the bundle comments"
+  temp_file_make comment_file || die "could not create a temp file for the bundle comments"
   printf 'Bundled into #%s\n' "$b" >"$comment_file"
   for m in "${members[@]}"; do
     why=""

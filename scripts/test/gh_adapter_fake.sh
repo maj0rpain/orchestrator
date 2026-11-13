@@ -1128,12 +1128,6 @@ fake_blockers_count() {
   return 0
 }
 
-# fake_open_blockers <n>: how many of #n's stored blockers are still open.
-fake_open_blockers() {
-  fake_blockers_count "$1" || return 1
-  printf '%s\n' "$fake_open_count"
-}
-
 # fake_lines_drop <file> <line>: the file without that line, where it exists.
 fake_lines_drop() {
   [ -f "$1" ] || return 0

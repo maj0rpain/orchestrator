@@ -39,7 +39,7 @@ gh() {
 # handler is never called and nothing is retried.
 gh_limit_retry() {
   local errf out_st err rc retried=0
-  errf="$(mktemp)" || die "could not create a temp file for the command's stderr"
+  temp_file_make errf || die "could not create a temp file for the command's stderr"
   while :; do
     out_st=0
     "$@" 2>"$errf" || out_st=$?
