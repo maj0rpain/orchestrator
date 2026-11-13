@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.38
+
+The docs lint holds a Claude-Code-only skill to its form through one branch of the orch.sh resolution scan, the quick autopilot skill defines the plugin root through `ORCH`, and CONTRIBUTING says how such a skill names the plugin root.
+
 ## 5.2.37
 
 `orch.sh pr read` now reads a listed PR number or an issue argument with leading zeros (`09`, `010`, `012`) as the same number without them, instead of aborting with a raw bash octal error or missing the PR.

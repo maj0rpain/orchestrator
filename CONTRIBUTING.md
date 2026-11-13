@@ -502,7 +502,9 @@ the plugin-root fallback sentence and orch-flow's skills-only stop text.
 `docs_lint.sh` still requires the `ORCH=` line and still flags
 `CLAUDE_PLUGIN_ROOT` outside it, and flags a marked skill that carries the
 Junie lookup or any skills-only stop text. Every other skill and every command
-stays on the cross-host form above.
+stays on the cross-host form above. A marked skill that names a file under the
+plugin root defines the plugin root there as two directories above `ORCH`, since
+it has no fallback sentence to define it.
 
 ## Naming host capabilities
 
