@@ -34,8 +34,8 @@ phase_list() {
 # The flow's phases, space-separated in flow order: read inside functions only
 # (the state writer, doctor's state-phase check). Set when this module is
 # sourced, from the phase table above.
-# shellcheck disable=SC2034 # read by other modules, which are sourced together
 PHASES="$(phase_list)"
+# shellcheck disable=SC2034 # read by other modules, which are sourced together
 readonly PHASES
 
 # phase_cell <column> <phase>: <phase>'s cell in <column> of the table, the
