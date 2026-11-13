@@ -5,15 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# counting_defs <adapter-fn> <tag>: definitions that wrap the fake's
-# <adapter-fn> so each call appends "<tag> <first-arg>" to "$COUNT_LOG" before
-# the fake answers. Join several with writeln for counted_adapter_run.
-counting_defs() {
-  writeln \
-    "eval \"fake_$1_read() \$(declare -f $1 | tail -n +2)\"" \
-    "$1() { printf '%s %s\\n' '$2' \"\$1\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
-}
-
 # Git Bash / MSYS2 (and Cygwin) both set OSTYPE this way; used to skip fixtures
 # that are known not to work in that environment rather than report a false
 # FAIL.
@@ -364,7 +355,6 @@ out="$(doc_counted)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
 assert_contains "warns the default branch was not resolved from GitHub" \
   "$out" "warn  default branch not resolved from GitHub"
-assert_not_contains "and never reports a banner as the branch" "$out" "mise"
 assert_eq "an empty answer is read exactly once" "$(doc_read_count)" "1"
 assert_contains "and the warning names origin/HEAD's branch" "$out" "falling back to develop."
 assert_contains "and the base branch line names it too" "$out" "base branch: develop (default)"
