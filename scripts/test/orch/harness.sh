@@ -913,14 +913,14 @@ assert_eq "so a queued section reports no timeout" "$(printf '%s\n' "$out" | gre
 rm -rf "$dl_dir"
 
 # --- the parallel runner's start order (#2857) ------------------------------
-# A copy of the scripts tree with planted sections, each logging its process id
+# A minimal test tree with planted sections, each logging its process id
 # and name to $ord_log as it starts, over a planted durations file beside the
 # runner. The runner starts its children one after another, so their ids rise in
 # start order whatever order they boot and log in: the start order is the log
 # sorted by id.
 echo
 echo "the parallel runner's start order (#2857)"
-ord_dir="$(planted_copy <<'PLANTED'
+ord_dir="$(planted_minimal_tree <<'PLANTED'
   # --- ord a
   echo "$$ ord a" >>"$ORD_LOG"; echo; echo "ord a"; ok "a ran"
   # --- ord b
