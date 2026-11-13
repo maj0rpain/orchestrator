@@ -1839,8 +1839,9 @@ assert_contains "with a reason naming the Budget and the plan reader's own cause
 assert_eq "and the claim released" "$(fake_claim_held 7)" free
 assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
 # a budget read that meets a GitHub limit only releases the claim (#2739)
-bud_limit() { rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log; }
-bud_limit
+# bud_reset: clear the GitHub pause file and issue 7's session logs before each case.
+bud_reset() { rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log; }
+bud_reset
 comments_before="$(fake_comments_of 7)"
 fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded for user ID 1."
 fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
@@ -1852,7 +1853,7 @@ assert_not_contains "adds no needs-human" "$(fake_labels_of 7)" "needs-human"
 assert_eq "starts no session" "$(tick_calls)" "0"
 assert_eq "and the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
 # the same, the release failing every attempt: the claim stays, a backstop line
-bud_limit
+bud_reset
 fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded for user ID 1."
 fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
 fake_fail adapter_issue_relabel "HTTP 500 relabel"
@@ -1864,7 +1865,7 @@ assert_eq "and autopilot run still exits 0" "$bud_rc" "0"
 assert_contains "and its backstop line says no session ran" "$(tail -1 "${bud_logs[0]}")" \
   "claim release: could not release the claim; no session ran: the first-loop review's budget record met a GitHub limit"
 # an unreadable Budget whose stop writes fail every attempt: backstop line
-bud_limit
+bud_reset
 fake_fail adapter_issue_relabel "HTTP 500 relabel"
 bud_run review 0 4
 fake_unfail
@@ -1874,7 +1875,7 @@ assert_contains "and its backstop line names the stop and no session ran" "$(tai
   "could not record the plan's Budget as the review budget"
 assert_contains "and ends on no session ran" "$(tail -1 "${bud_logs[0]}")" "; no session ran"
 # an unreadable Budget whose stop write fails once still stops, frees the claim
-bud_limit
+bud_reset
 # the earlier cases' stop comments are dropped: the retry reads the comments
 # and posts nothing when the same text is already there
 grep -l "could not record the plan's Budget" "$ORCH_GH_FAKE_STORE"/issues/7/comments/*/body | xargs -n1 dirname | xargs rm -rf

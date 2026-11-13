@@ -405,8 +405,8 @@ assert_eq "and removes no worktree" "$(git worktree list | wc -l | tr -d ' ')" "
 git worktree remove "$marked"
 git branch -q -D main--t42
 
-# A walk that fails archives nothing: archive and init die, the flow left in
-# place (#1110). A git on PATH that fails `worktree list` alone fails the walk.
+# When git worktree list fails, nothing is archived: archive and init die, the flow left in
+# place (#1110). A git on PATH that fails `worktree list` alone is enough.
 nowalk="$(nowalk_bin)"
 (cd "$hand" && orch_gh_failing init walk-flow >/dev/null && state_fixture phase "done")
 out="$(cd "$hand" && PATH="$nowalk:$PATH" orch_gh_failing archive 2>&1)"; st=$?
@@ -418,7 +418,7 @@ assert_status "init over a done flow dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "could not read the checkouts - nothing was archived or written"
 assert_eq "archiving nothing" "$(archived_count "$hand" walk-flow)" "0"
 assert_eq "the flow stays" "$(cd "$hand" && orch_gh_failing state get slug)" "walk-flow"
-# Every other reader of the walk stops on it too, rather than reading it as no
+# Every other command that reads git worktree list stops when it fails, rather than reading it as no
 # checkouts (#1333).
 out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout list 2>&1)"; st=$?
 assert_status "side-checkout list dies when the walk fails" "$st" 1
