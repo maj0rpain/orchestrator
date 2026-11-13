@@ -322,12 +322,15 @@ lines_split() {
 }
 
 # file_read <var> <file>: <file>'s bytes into <var>, exactly - its trailing
-# newlines kept - read by the shell itself, starting no external command.
-# Fails, <var> untouched, when the file cannot be read.
+# newlines kept, a NUL byte dropped as $(cat) drops it - read by the shell
+# itself, starting no external command. Fails, <var> untouched, when the file
+# cannot be read.
 file_read() {
-  local _file_read_s
+  local _file_read_s="" _file_read_c=""
   if [[ -r $2 && ! -d $2 ]]; then
-    IFS= read -r -d '' _file_read_s <"$2" || :
+    # read -d '' stops at each NUL: take every chunk, the last one unterminated.
+    while IFS= read -r -d '' _file_read_c; do _file_read_s+=$_file_read_c; done <"$2"
+    _file_read_s+=$_file_read_c
     printf -v "$1" '%s' "$_file_read_s"
     return 0
   fi

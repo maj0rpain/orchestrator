@@ -126,7 +126,6 @@ gh_limit_handle() {
 # under a function-local LC_ALL=C, so a Turkish locale's I never folds to a
 # dotless i and a non-ASCII letter stays as it is.
 label_listed() {
-  [[ $2 != *$'\n'* ]] || return 1
   local LC_ALL=C
   local _ll_list="${1,,}" _ll_item="${2,,}"
   list_has "$_ll_list" "$_ll_item"

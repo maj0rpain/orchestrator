@@ -161,13 +161,13 @@ unset cefile
 echo
 echo "label_listed"
 new_repo >/dev/null
-ll_verdicts=""
-for ll_item in bug BUG 'Needs Triage' -n 'a*' 'b?g' bu 'é' 'É' '' $'bug\nx'; do
-  if sourced_orch label_listed $'Bug\nneeds triage\n-N\na*\nb?g\né' "$ll_item"; then ll_verdicts="$ll_verdicts y"
-  else ll_verdicts="$ll_verdicts n"; fi
-done
 assert_eq "label_listed folds ASCII case, matches literally, and never folds a non-ASCII letter or spans lines" \
-  "$ll_verdicts" " y y y y y y n y n n n"
+  "$(sourced_orch_script '
+    for item in bug BUG "Needs Triage" -n "a*" "b?g" bu "é" "É" "" $'"'"'bug\nx'"'"' \
+      "[AB]" "[a" "A\\B" "a\\" "X.*" ".*" xy; do
+      if label_listed "$1" "$item"; then printf " y"; else printf " n"; fi
+    done' $'Bug\nneeds triage\n-N\na*\nb?g\né\n[ab]\na\\b\nx.*')" \
+  " y y y y y y n y n n n y n y n y n n"
 sourced_orch label_listed "" bug && ll_v=y || ll_v=n
 assert_eq "label_listed finds nothing in an empty list" "$ll_v" "n"
 sourced_orch label_listed "" "" && ll_v=y || ll_v=n

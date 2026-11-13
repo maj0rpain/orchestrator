@@ -132,21 +132,16 @@ echo
 echo "list_has"
 new_repo >/dev/null
 lh_list=$'-n\nbug\na.c\nneeds triage'
-lh_verdicts=""
-for lh_item in -n bug a.c 'needs triage' bu abc needs '-' $'bug\na.c'; do
-  if sourced_orch list_has "$lh_list" "$lh_item"; then lh_verdicts="$lh_verdicts y"
-  else lh_verdicts="$lh_verdicts n"; fi
-done
 assert_eq "list_has matches whole lines literally, an item beginning with - included, one spanning lines never" \
-  "$lh_verdicts" " y y y y n n n n n"
-
-lh_verdicts=""
-for lh_item in '' 'a*' 'a?' '[ab]' 'a\b' 'x.*' '.*'; do
-  if sourced_orch list_has $'a*\na?\n[ab]\na\\b\nx.*\n\nq' "$lh_item"; then lh_verdicts="$lh_verdicts y"
-  else lh_verdicts="$lh_verdicts n"; fi
-done
+  "$(sourced_orch_script '
+    for item in -n bug a.c "needs triage" bu abc needs "-" $'"'"'bug\na.c'"'"'; do
+      if list_has "$1" "$item"; then printf " y"; else printf " n"; fi
+    done' "$lh_list")" " y y y y n n n n n"
 assert_eq "list_has matches glob and regex characters and an empty item literally" \
-  "$lh_verdicts" " y y y y y y n"
+  "$(sourced_orch_script '
+    for item in "" "a*" "a?" "[ab]" "a\\b" "x.*" ".*"; do
+      if list_has "$1" "$item"; then printf " y"; else printf " n"; fi
+    done' $'a*\na?\n[ab]\na\\b\nx.*\n\nq')" " y y y y y y n"
 sourced_orch list_has "" bug && lh_v=y || lh_v=n
 assert_eq "list_has finds nothing in an empty list" "$lh_v" "n"
 assert_eq "list_has and path_last_into answer with an empty PATH" \
@@ -155,12 +150,12 @@ assert_eq "list_has and path_last_into answer with an empty PATH" \
     list_has $'"'"'a\nb'"'"' b && printf y; list_has a b || printf n
     path_last_into r /d/e/f.md .md; printf " %s" "$r"')" "yn f"
 # path_last_into: a path's last component, a suffix stripped, as basename gives.
-plt=""
-for plt_args in "/a/b/c.md" "/a/b/c.md .md" "c.md" "c.md .md" ".md .md" "/a/b/ " "/ "; do
-  plt="$plt|$(sourced_orch_script 'path_last_into r "$1" "${2:-}"; printf "%s" "$r"' $plt_args)"
-done
 assert_eq "path_last_into gives a path's last component, with and without the suffix, directories or none" \
-  "$plt" "|c.md|c|c.md|c|.md|b|/"
+  "$(sourced_orch_script '
+    for args in "/a/b/c.md" "/a/b/c.md .md" "c.md" "c.md .md" ".md .md" "/a/b/ " "/ "; do
+      set -- $args
+      path_last_into r "$1" "${2:-}"; printf "|%s" "$r"
+    done')" "|c.md|c|c.md|c|.md|b|/"
 
 # --- list_join ----------------------------------------------------------------
 # The one newline-list join: non-empty lines, joined by ", ".
@@ -326,6 +321,10 @@ if [ ! -r "$cap_tmp/unreadable" ]; then
     "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/unreadable")" "1 [old]"
 fi
 # a bare PATH: no external command is needed
+printf 'a\0b\n' >"$cap_tmp/nul"
+assert_eq "file_read drops a NUL byte and keeps the bytes after it, as cat in a substitution did" \
+  "$(sourced_orch_script 'file_read v "$1"; printf %s "[$v]"' "$cap_tmp/nul")" "[ab
+]"
 assert_eq "file_read runs with an empty PATH" \
   "$(sourced_orch_script 'PATH=""; file_read v "$1"; printf %s "[$v]"' "$cap_tmp/nl")" "[a
 
