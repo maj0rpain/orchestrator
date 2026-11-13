@@ -392,6 +392,7 @@ refuse_selection() {
   exit 1
 }
 
+orch_durations_file="$TEST_DIR/section-durations.tsv"
 if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   split_branches "$ORCH_TEST_ONLY"
   if [ "${#orch_branches[@]}" -gt 1 ]; then
@@ -419,7 +420,7 @@ else
       [ "$orch_suite" = orch_test.sh ] || orch_others+="$orch_suite"$'\n'
     done
     orch_dealt="$(
-      { [ -r "$TEST_DIR/section-durations.tsv" ] && cat "$TEST_DIR/section-durations.tsv"
+      { [ -r "$orch_durations_file" ] && cat "$orch_durations_file"
         printf '\001\n'
         printf '%s\n' "$orch_titles" | awk 'NR > 1 { printf "%d\t%s\n", NR, $0 }'
         printf '\001\n%s' "$orch_others"; } |
@@ -432,7 +433,7 @@ else
           stage == 1 { count++; pos[count] = $1; title[$1] = $2; next }
           $0 != "" && ($0 in cpu) { total[1] += cpu[$0] }
           END {
-            unlisted = 1; top = -1
+            unlisted = 10; top = -1
             for (k = 1; k <= count; k++) if (title[pos[k]] in cpu && cpu[title[pos[k]]] > top) top = cpu[title[pos[k]]]
             if (top >= 0) unlisted = top
             for (g = 1; g <= n; g++) total[g] += 0
@@ -505,7 +506,6 @@ orch_total=${#orch_sections[@]}
 # order, then the rest by wall seconds, longest first, ties in walk order. A
 # line that does not parse and a name matching no section are ignored; a
 # missing or unreadable file gives walk order.
-orch_durations_file="$TEST_DIR/section-durations.tsv"
 orch_titles_kept=""
 for ((orch_i = 0; orch_i < orch_total; orch_i++)); do
   orch_titles_kept+="$(printf '%s\n' "$orch_titles" | sed -n "${orch_sections[$orch_i]}p")"$'\n'

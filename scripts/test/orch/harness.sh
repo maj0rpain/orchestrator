@@ -764,24 +764,24 @@ assert_eq "so a queued section reports no timeout" "$(printf '%s\n' "$out" | gre
 rm -rf "$dl_dir"
 
 # --- the parallel runner's start order (#2857) ------------------------------
-# A copy of the scripts tree with planted sections, each logging its name to
-# $ord_log as it starts, over a planted durations file beside the runner. With
-# two jobs, isolation and the unlisted section start first, and the unlisted
-# one holds its slot, so every later start waits for the one before it to end:
-# the log is the start order.
+# A copy of the scripts tree with planted sections, each logging its process id
+# and name to $ord_log as it starts, over a planted durations file beside the
+# runner. The runner starts its children one after another, so their ids rise in
+# start order whatever order they boot and log in: the start order is the log
+# sorted by id.
 echo
 echo "the parallel runner's start order (#2857)"
 ord_dir="$(planted_copy <<'PLANTED'
   # --- ord a
-  echo "ord a" >>"$ORD_LOG"; echo; echo "ord a"; ok "a ran"
+  echo "$$ ord a" >>"$ORD_LOG"; echo; echo "ord a"; ok "a ran"
   # --- ord b
-  echo "ord b" >>"$ORD_LOG"; echo; echo "ord b"; ok "b ran"
+  echo "$$ ord b" >>"$ORD_LOG"; echo; echo "ord b"; ok "b ran"
   # --- ord c
-  echo "ord c" >>"$ORD_LOG"; echo; echo "ord c"; ok "c ran"
+  echo "$$ ord c" >>"$ORD_LOG"; echo; echo "ord c"; ok "c ran"
   # --- ord d
-  echo "ord d" >>"$ORD_LOG"; echo; echo "ord d"; ok "d ran"
+  echo "$$ ord d" >>"$ORD_LOG"; echo; echo "ord d"; ok "d ran"
   # --- ord unlisted
-  echo "ord unlisted" >>"$ORD_LOG"; sleep 1; echo; echo "ord unlisted"; ok "u ran"
+  echo "$$ ord unlisted" >>"$ORD_LOG"; echo; echo "ord unlisted"; ok "u ran"
 PLANTED
 )"
 ord_suite="$ord_dir/scripts/test/orch_test.sh"
@@ -793,7 +793,7 @@ ord_run() {
   : >"$ord_log"
   ord_out="$(ORD_LOG="$ord_log" ORCH_TEST_QUIET='' ORCH_TEST_JOBS="$1" ORCH_TEST_ONLY="$2" \
     bash "$ord_suite" 2>&1)"; ord_st=$?
-  ord_started="$(tr '\n' ',' <"$ord_log")"
+  ord_started="$(sort -n <"$ord_log" | cut -d' ' -f2- | tr '\n' ',')"
   ord_printed="$(printf '%s\n' "$ord_out" | grep -xE 'ord [a-z]+' | tr '\n' ',')"
 }
 printf '%s\n' \
@@ -823,9 +823,9 @@ rm -rf "$ord_dir"
 # section and five planted sections - over planted durations: CPU tenths 50,
 # 40, 30 and 20 for s1 to s4, s5 unlisted (so it weighs 50), 70 for
 # hooks_test.sh and 10 for shellcheck, which group 1 starts with. Two groups
-# deal s2 and s4 to group 1, s1, s5 and s3 to group 2. With SH_HOLD set s5
-# sleeps that many seconds, so with two jobs the log of starts is the start
-# order.
+# deal s2 and s4 to group 1, s1, s5 and s3 to group 2. Each planted section logs
+# its process id and name as it starts; the runner starts its children one
+# after another, so the log sorted by id is the start order.
 echo
 echo "the shard setting (#2859)"
 sh_dir="$(mktemp -d)"
@@ -841,7 +841,7 @@ printf '%s\n' '# --- isolation ---' 'echo; echo isolation; ok "isolation ran"' >
 {
   for sh_n in 1 2 3 4 5; do
     echo "# --- shard s$sh_n"
-    echo "echo \"shard s$sh_n\" >>\"\$SH_LOG\"; $([ "$sh_n" = 5 ] && echo 'sleep "${SH_HOLD:-0}";') echo; echo 'shard s$sh_n'; ok 's$sh_n ran'; echo \"\${ORCH_TEST_SHARD-unset}\" >>\"\$SH_SEEN\""
+    echo "echo \"\$\$ shard s$sh_n\" >>\"\$SH_LOG\"; echo; echo 'shard s$sh_n'; ok 's$sh_n ran'; echo \"\${ORCH_TEST_SHARD-unset}\" >>\"\$SH_SEEN\""
   done
 } >"$sh_t/orch/zz-shard.sh"
 printf '%s\n' "10	50	shard s1" "30	40	shard s2" "20	30	shard s3" "5	20	shard s4" \
@@ -854,21 +854,28 @@ sh_seen="$sh_dir/seen"
 # shard-section names it ran (start order, then printed order), its status.
 sh_run() {
   : >"$sh_log"; : >"$sh_seen"
-  sh_out="$(SH_LOG="$sh_log" SH_SEEN="$sh_seen" ORCH_TEST_QUIET='' ORCH_TEST_ONLY='' ORCH_TEST_JOBS="${2:-2}" SH_HOLD="${3:-0}" \
+  sh_out="$(SH_LOG="$sh_log" SH_SEEN="$sh_seen" ORCH_TEST_QUIET='' ORCH_TEST_ONLY='' ORCH_TEST_JOBS="${2:-2}" \
     ORCH_TEST_SHARD="$1" bash "$sh_t/orch_test.sh" 2>&1)"; sh_st=$?
-  sh_started="$(tr '\n' ',' <"$sh_log" | sed 's/shard //g')"
+  sh_started="$(sort -n <"$sh_log" | cut -d' ' -f2- | tr '\n' ',' | sed 's/shard //g')"
   sh_printed="$(printf '%s\n' "$sh_out" | grep -xE 'shard s[0-9]|isolation' | sed 's/shard //' | tr '\n' ',')"
 }
-sh_run 1/2 2 1
+sh_run 1/2
 assert_status "group 1 of 2 passes" "$sh_st" 0
 assert_eq "group 1 runs isolation and the sections the dealing gives it" "$sh_printed" "isolation,s2,s4,"
 assert_eq "and starts them longest-first" "$sh_started" "s2,s4,"
-sh_run 2/2 2 1
+sh_run 2/2
+sh_first_22="$sh_printed"
 assert_eq "group 2 gets the rest, the unlisted section weighing as the heaviest listed one" \
   "$sh_printed" "isolation,s1,s3,s5,"
 assert_eq "its sections start with the unlisted one, then longest-first" "$sh_started" "s5,s3,s1,"
-sh_run 2/2
-assert_eq "a second call groups the same" "$sh_printed" "isolation,s1,s3,s5,"
+# A file that lists no planted section: each weighs 1 CPU second (10 tenths), so
+# the 30 tenths of the shellcheck line put s4 in group 1, the rest in group 2.
+cp "$sh_t/section-durations.tsv" "$sh_dir/durations.keep"
+printf '%s\n' "9	30	shellcheck" >"$sh_t/section-durations.tsv"
+sh_run 1/2
+assert_eq "with no section listed, each weighs one CPU second" "$sh_printed" "isolation,s4,"
+cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
+declare -A sh_saved_printed sh_saved_st sh_saved_seen
 for sh_n in 1 2 3 5 6 9; do
   sh_union=""
   for ((sh_i = 1; sh_i <= sh_n; sh_i++)); do
@@ -876,18 +883,18 @@ for sh_n in 1 2 3 5 6 9; do
     [ "$sh_st" -eq 0 ] || bad "group $sh_i of $sh_n passes" "$sh_out"
     [ "$(printf '%s' "$sh_printed" | grep -o isolation | wc -l)" -eq 1 ] ||
       bad "group $sh_i of $sh_n runs isolation once" "$sh_printed"
+    sh_saved_printed["$sh_i/$sh_n"]="$sh_printed"; sh_saved_st["$sh_i/$sh_n"]="$sh_st"
+    sh_saved_seen["$sh_i/$sh_n"]="$(sort -u "$sh_seen" | tr '\n' ',')"
     sh_union+="$(printf '%s' "$sh_printed" | sed 's/isolation,//')"
   done
   assert_eq "$sh_n groups run every planted section exactly once" \
     "$(printf '%s' "$sh_union" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
 done
-sh_run 9/9
-assert_eq "a group left with isolation alone runs it alone" "$sh_printed" "isolation,"
-assert_eq "and passes" "$sh_st" 0
-sh_run 1/1
-assert_eq "1/1 runs every section" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
-assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" \
-  "$(sort -u "$sh_seen" | tr '\n' ',')" "unset,"
+assert_eq "a second call groups the same" "${sh_saved_printed[2/2]}" "$sh_first_22"
+assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[9/9]}" "isolation,"
+assert_eq "and passes" "${sh_saved_st[9/9]}" 0
+assert_eq "1/1 runs every section" "${sh_saved_printed[1/1]}" "isolation,s1,s2,s3,s4,s5,"
+assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" "${sh_saved_seen[1/1]}" "unset,"
 sh_run ""
 assert_eq "an empty value runs as unset" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
 sh_run 1/2 1

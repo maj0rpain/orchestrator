@@ -29,6 +29,8 @@ target="$dir/section-durations.tsv"
 source "$dir/test_jobs.sh"
 # shellcheck source=../test/test_tree.sh
 source "$dir/test_tree.sh"
+# shellcheck source=../test/report.sh
+source "$dir/report.sh"
 
 unset ORCH_TEST_ONLY ORCH_TEST_SHARD
 jobs="$(test_jobs_count section-durations.sh)" || exit 1
@@ -65,10 +67,10 @@ ORCH_TEST_DURATIONS="$tmp/sections" bash "$dir/orch_test.sh" || failed+=("orch_t
 
 for suite in "${SUITES[@]}"; do
   [ "$suite" = orch_test.sh ] && continue
-  if ! TMPDIR="$tmp" measure "$suite" bash "$dir/$suite" ||
-    grep -q '^  FAIL ' "$tmp/out"; then
+  TMPDIR="$tmp" measure "$suite" bash "$dir/$suite"; suite_st=$?
+  if ! report_suite "$suite" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
     failed+=("$suite")
-    cat "$tmp/out" >&2
+    cat "$tmp/report" "$tmp/out" >&2
   fi
 done
 
