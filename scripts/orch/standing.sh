@@ -194,11 +194,13 @@ standing_redo_rule() {
   printf 'a step back %s\n' "$rule"
 }
 
-# standing_human_issues: the open or closed issues carrying needs-human, one
-# number per line; dies, naming the failure, where they cannot be listed.
+# standing_human_issues: the open issues carrying needs-human, one number per
+# line, oldest first; warns at the issue-list limit and dies, naming the
+# failure, where they cannot be listed.
 standing_human_issues() {
-  local list
-  gh_or_die --out list "list the $STANDING_HUMAN_LABEL issues" adapter_issues_labelled "$STANDING_HUMAN_LABEL"
+  local list err
+  issues_labelled_read list err "$STANDING_HUMAN_LABEL" ||
+    gh_die "list the $STANDING_HUMAN_LABEL issues" "$err"
   printf '%s\n' "$list"
 }
 
@@ -362,6 +364,7 @@ standing_release() {
 # other label and nothing counted.
 standing_claim_release() {
   standing_chain_start
+  standing_stop_note "claim release" "could not release the claim"
   standing_release "$1"
 }
 
