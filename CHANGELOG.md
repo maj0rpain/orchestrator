@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.24
+
+The redo attempt retire, branch create and review begin now record their keys in one state write each, so a death between two writes can no longer leave a half state that makes a rerun retire a branch again, skip recording the base SHA, or keep a spent flake rerun. Every write of `state.phase`, the redos' closing write included, now goes through the one phase writer.
+
 ## 5.2.23
 
 Internal test cleanup: the `verify_twice` test section's helper `vt` is now `verify_twice_run`, and its unverified-death status is asserted on the 1-then-1 run instead of a second one. No change in behaviour.
