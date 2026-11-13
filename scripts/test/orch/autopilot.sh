@@ -44,6 +44,10 @@ re_issue() {
 # the file's text, as the autopilot; prints its output.
 re_run() { ORCH_AUTOPILOT=1 "$ORCH" autopilot reenter "${2:-review}" "$1" 2>&1; }
 
+# NTH_MAKE_FAKE: shell source, for sourced_orch_script, that makes
+# temp_file_make fail on its PK_NTH-th call, counted in the file PK_COUNT, and
+# work otherwise.
+NTH_MAKE_FAKE='real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; '
 
 # --- autopilot ---------------------------------------------------------------
 # The clone-scoped autopilot settings and the autopilot-session check.
@@ -851,7 +855,7 @@ rm -f "$ran_marker"
 # the plan step's own temp-file failure keeps its own reason, not the wrapper's
 # (capture_err makes the first temp file, so the fake fails the second)
 pm_count="$(mktemp -u)"
-out="$(PK_COUNT="$pm_count" sourced_orch_script 'set +e; real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne 2 ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"')"
+out="$(PK_COUNT="$pm_count" PK_NTH=2 sourced_orch_script 'set +e; '"$NTH_MAKE_FAKE"'autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"')"
 assert_eq "the plan step failing to make its own temp file keeps its reason" "$out" "rc=1 reason=could not create a temp file"
 # the side-checkout add step, stopped by each of capture's two temp files: the
 # first (nth=1) is for the command's stdout, the second for its stderr
@@ -859,7 +863,7 @@ for pk_nth in 1 2; do
   pk_want=stdout; [ "$pk_nth" = 2 ] && pk_want=stderr
   fake_issue 76 open orch:spec orch:running; fake_claim_seed 76
   pk_count="$(mktemp -u)"
-  PK_COUNT="$pk_count" PK_NTH="$pk_nth" sourced_orch_script 'set +e; autopilot_pickup_trust() { :; }; autopilot_pickup_side_find() { side=""; }; autopilot_pickup_side_title() { title=T; }; cmd_side_checkout_add() { :; }; real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; autopilot_pickup 76 spec' >/dev/null 2>&1
+  PK_COUNT="$pk_count" PK_NTH="$pk_nth" sourced_orch_script 'set +e; autopilot_pickup_trust() { :; }; autopilot_pickup_side_find() { side=""; }; autopilot_pickup_side_title() { title=T; }; cmd_side_checkout_add() { :; }; '"$NTH_MAKE_FAKE"'autopilot_pickup 76 spec' >/dev/null 2>&1
   assert_contains "the side-checkout add failing its $pk_want temp file stops worded as one" "$(fake_comments_of 76)" "step side-checkout add failed: could not create a temp file for the command's $pk_want"
   rm -f "$pk_count"
 done

@@ -180,7 +180,8 @@ temp_file_make() {
 # `capture_err err adapter_issue_body "$n" >"$body"` keeps its trailing
 # newlines, which capture's strip would remove. The stderr goes through one
 # temp file capture_err makes with temp_file_make and reads back with
-# file_read; only the final rm is an external command. Call it in the current
+# file_read; only the final rm, and the cat of a failed file_read, start an
+# external command. Call it in the current
 # shell, never inside $(...): it sets the caller's variable with printf -v. Its
 # locals carry a _capture_err_ prefix, so they shadow no caller's variable. The
 # command runs in a subshell: the gh guard's no-repo death then signals the

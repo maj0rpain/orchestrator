@@ -169,15 +169,12 @@ assert_eq "checkout_holding: an unreadable state.json is shown plainly" "$out" "
 # called on its own path and on a subdirectory of it.
 new_repo
 mkdir sub && echo s >sub/f && git add sub && git commit -qm sub
-git branch -q rb-base
-git checkout -q -b rb-topic
-echo topic >clash.txt && git add clash.txt && git commit -qm topic
-git checkout -q rb-base
-echo base >clash.txt && git add clash.txt && git commit -qm base
+rb_base="$(git symbolic-ref --short HEAD)"
+clash_commits rb-topic
 rbw="$(fresh_dir)/rbw"
 git worktree add -q "$rbw" rb-topic
 rbgd="$(git -C "$rbw" rev-parse --absolute-git-dir)"
-git -C "$rbw" rebase rb-base >/dev/null 2>&1
+git -C "$rbw" rebase "$rb_base" >/dev/null 2>&1
 out="$(sourced_orch rebase_in_progress "$rbw")"; st=$?
 assert_status "rebase_in_progress answers yes on a linked worktree mid-rebase" "$st" 0
 out="$(sourced_orch rebase_in_progress "$rbw/sub")"; st=$?
