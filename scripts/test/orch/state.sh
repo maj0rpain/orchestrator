@@ -165,8 +165,23 @@ assert_status "phase_write refuses a phase outside the table, with pairs" "$st" 
 assert_eq "writing neither phase nor keys" "$(cat .orchestrator/state.json)" "$before"
 out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write 'done' budget 1 2>&1)"; st=$?
 assert_status "phase_write with pairs dies on a failed write" "$st" 1
-assert_contains "with its wording" "$out" "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
+assert_contains "with its wording" "$out" "orch: could not record phase, budget in $PWD/.orchestrator/state.json - the flow is unchanged"
 assert_eq "writing neither phase nor keys on it" "$(cat .orchestrator/state.json)" "$before"
+out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write 'done' budget 1 --string branch b budget 2 2>&1)"; st=$?
+assert_contains "phase_write names each key once, in order, never --string" "$out" "orch: could not record phase, budget, branch in $PWD/.orchestrator/state.json - the flow is unchanged"
+out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write 'done' 2>&1)"; st=$?
+assert_contains "phase_write with no pairs names phase alone" "$out" "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
+out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write_try 'done' budget 1 2>&1)"; st=$?
+assert_eq "phase_write_try returns non-zero on a failed write" "$([ "$st" != 0 ] && echo nz)" nz
+assert_eq "without dying" "$out" ""
+out="$(sourced_orch phase_write_try plan 2>&1)"; st=$?
+assert_eq "phase_write_try refuses a phase outside the table" "$out" "orch: not a flow phase: plan (want one of: spec implement review done)"
+out="$(sourced_orch phase_write 'done' budget 2>&1)"; st=$?
+assert_status "phase_write with a key and no value exits 1" "$st" 1
+assert_eq "naming the malformed write" "$out" "orch: malformed state write: phase done budget"
+out="$(sourced_orch phase_write 'done' --string 2>&1)"; st=$?
+assert_eq "phase_write with a dangling --string is malformed" "$out" "orch: malformed state write: phase done --string"
+assert_eq "a malformed write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
 restore_suite_env
 
 # --- state.json schema ------------------------------------------------------
@@ -359,6 +374,11 @@ assert_contains "flow_state_seed stamps created with a UTC timestamp" \
 assert_eq "flow_state_seed returns 2 for an arg row it has no value for, printing nothing" \
   "$(fs_run 'STATE_KEYS="$STATE_KEYS
 bogus||arg|-"; flow_state_seed s "" main')" "status 2"
+seed2_bin="$(mktemp -d)"
+writeln '#!/bin/sh' 'echo "jq: usage error" >&2; exit 2' >"$seed2_bin/jq"
+chmod +x "$seed2_bin/jq"
+assert_eq "flow_state_seed returns 1, printing nothing, when jq exits 2" \
+  "$(fs_run "PATH='$seed2_bin':\$PATH; flow_state_seed s 7 main 2>&1")" "status 1"
 before_ls="$(ls -A "$fs_dir")"
 assert_eq "flow_state_create creates an absent file" \
   "$(fs_run 'flow_state_create created.json "{\"slug\":\"c\"}" && jq -c . created.json')" \

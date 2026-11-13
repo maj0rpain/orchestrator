@@ -133,12 +133,15 @@ state_write_many() {
   obj="$(flow_state_pairs_json "$@")" || {
     rc=$?
     [ "$rc" = 2 ] && die "malformed state write: $*"
-    die "could not record the state write in $STATE - the flow is unchanged"
+    obj=
   }
-  flow_state_merge "$STATE" "$obj" && return 0
-  keys="$(jq -r 'keys_unsorted | join(", ")' <<<"$obj")" ||
-    die "could not record the state write in $STATE - the flow is unchanged"
-  die "could not record $keys in $STATE - the flow is unchanged"
+  if [ -n "$obj" ]; then
+    flow_state_merge "$STATE" "$obj" && return 0
+    if keys="$(jq -r 'keys_unsorted | join(", ")' <<<"$obj")"; then
+      die "could not record $keys in $STATE - the flow is unchanged"
+    fi
+  fi
+  die "could not record the state write in $STATE - the flow is unchanged"
 }
 
 # require_state [die2]: dies unless an active flow's state file exists and
@@ -210,17 +213,23 @@ require_branch() { require_field "$1" branch "no branch recorded in state"; }
 # They know only which phases exist: every caller - advance, review ready, and
 # init's seed - keeps its own guard on which transition it may make, so a step
 # back needs no handoff check here. Optional trailing <key> <value> pairs are
-# written with the phase in one flow_state_write_many call, after the PHASES
-# check: the phase and the keys are recorded together or not at all.
+# written with the phase in one write, after the PHASES check: the phase and
+# the keys are recorded together or not at all. phase_write dies as
+# state_write_many does (a malformed pair list "malformed state write: <args>",
+# a failed write naming phase and each key once); phase_write_try returns
+# flow_state_write_many's status.
 phase_write() {
-  phase_write_try "$@" || die "could not record phase in $STATE - the flow is unchanged"
+  phase_check "$1"
+  state_write_many phase "$@"
 }
 phase_write_try() {
+  phase_check "$1"
+  flow_state_write_many "$STATE" phase "$@"
+}
+# The PHASES check both writers share: dies unless <phase> is a flow phase.
+phase_check() {
   orch_load handoff
-  local phase="$1"
-  word_listed "$PHASES" "$phase" || die "not a flow phase: $phase (want one of: $PHASES)"
-  shift
-  flow_state_write_many "$STATE" phase "$phase" "$@"
+  word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
 }
 
 # The active flow's own base branch, recorded by init. A flow started before

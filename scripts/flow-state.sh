@@ -40,7 +40,7 @@
 #   flow_state_create is the one writer that creates the file, or replaces it
 #   whole.
 # - flow_state_seed: 2 for an arg row it has no value for, a programming
-#   error, and non-zero when jq cannot build the seed. Either way it prints
+#   error, and 1 when jq cannot build the seed. Either way it prints
 #   nothing.
 #
 # Every function carries the flow_state_ prefix but state_rows and now, so
@@ -284,7 +284,7 @@ flow_state_seed() {
 $(state_rows)
 EOT
   seed="$(jq -n --arg slug "$1" --arg issue "$2" --arg base "$3" --arg now "$(now)" \
-    "{$fields}" 2>/dev/null)" || return
+    "{$fields}" 2>/dev/null)" || return 1
   printf '%s\n' "$seed"
 }
 
