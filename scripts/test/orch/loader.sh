@@ -78,7 +78,6 @@ rm -f "$trace"
 echo
 echo "on-demand loading"
 new_repo >/dev/null
-loader_dir="$PLUGIN_ROOT/scripts/orch"
 trace="$(mktemp)"
 # run_traced <args>: orch.sh as a command with the load trace on.
 run_traced() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash "$ORCH" "$@" >/dev/null 2>&1 || true; }
@@ -233,19 +232,19 @@ fi
 rm -f "$cache_dir"/*
 cache_cmd "$cache_scripts"
 cf="$(cache_file)"
-sed -i.bak 's/^spec_review_lens_known() { orch_stub spec-review /spec_review_lens_known() { orch_stub issue /' "$cf"; rm -f "$cf.bak"
-assert_contains "the planted table names the wrong module" "$(cat "$cf")" "spec_review_lens_known() { orch_stub issue "
+sed -i.bak 's/^cmd_state() { orch_stub state /cmd_state() { orch_stub issue /' "$cf"; rm -f "$cf.bak"
+assert_contains "the planted table names the wrong module" "$(cat "$cf")" "cmd_state() { orch_stub issue "
 touch -d '+10 minutes' "$cf"
-out="$(HOME="$cache_home" bash -c 'unset ORCH_SOURCE_LAZY; ORCH_SOURCE_LAZY=1; source "$1/orch.sh"; spec_review_lens_known consistency; echo "st=$?"' _ "$cache_scripts" 2>&1)"
-assert_eq "a planted wrong table is rebuilt and the call succeeds" "$out" "st=0"
-assert_contains "and the cache holds the rebuilt table" "$(cat "$cf")" "spec_review_lens_known() { orch_stub spec-review "
+out="$(HOME="$cache_home" bash "$cache_scripts/orch.sh" state get phase 2>&1)" && status=0 || status=$?
+assert_eq "a planted wrong table is rebuilt and the call goes on" "$out" "$(bash "$ORCH" state get phase 2>&1)"
+assert_contains "and the cache holds the rebuilt table" "$(cat "$cf")" "cmd_state() { orch_stub state "
 
-printf '%s\n' 'zz_ghost() { orch_stub issue zz_ghost "$@"; }' >>"$cf"
+sed -i.bak 's/^cmd_state() {/cmd_state_gone() {/' "$cache_scripts/orch/state.sh"; rm -f "$cache_scripts/orch/state.sh.bak"
 touch -d '+11 minutes' "$cf"
-out="$(HOME="$cache_home" bash -c 'ORCH_SOURCE_LAZY=1; source "$1/orch.sh"; zz_ghost' _ "$cache_scripts" 2>&1)" && status=0 || status=$?
+out="$(HOME="$cache_home" bash "$cache_scripts/orch.sh" state get phase 2>&1)" && status=0 || status=$?
 assert_status "a table naming a function no module defines stops with exit 1" "$status" 1
-assert_eq "naming the cache file" "$out" "orch: zz_ghost is in the stub table but no module defines it - remove $cf and run again"
-assert_eq "with the cache already rebuilt" "$(grep -c zz_ghost "$cf")" "0"
+assert_eq "naming the cache file" "$out" "orch: cmd_state is in the stub table but no module defines it - remove $cf and run again"
+assert_eq "with the cache already rebuilt" "$(grep -c '^cmd_state()' "$cf")" "0"
 
 # Two plugin copies use two files.
 cache_scripts2="$(tree_copy scripts)"

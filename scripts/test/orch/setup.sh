@@ -356,7 +356,8 @@ flat_text() { tr -s ' \t\n' '   '; }
 # source line, so the modules load on demand, as orch.sh does as a command and
 # the suite's shells cost less to start; the eval form, `sourced_orch eval
 # <code>`, loads every module, since code evaluated there may name or replace
-# any function. The one place a test sets that variable.
+# any function. Outside the loader's section file, the one place a test sets
+# that variable.
 sourced_orch() {
   local lazy=1
   [ "${1:-}" != eval ] || lazy=''

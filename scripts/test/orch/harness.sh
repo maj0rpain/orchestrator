@@ -115,6 +115,33 @@ files_marks() {
 # The test-helper placement rule, as helper_placement's message states it.
 HELPER_PLACEMENT_RULE="The test-helper placement rule: a test helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
 
+# FN_TRACK_AWK: an awk fragment, appended after SHELL_CODE_AWK, that tracks the
+# function a line is in, as helper_placement and orch_load_reads read it.
+# track(words) takes a line's words view (sc_words), after shell_code_line has
+# run on it, and sets fn to the function the line is in ("" at top level; a
+# definition line is already inside its function) and fn_new to 1 on the line
+# that opens a definition, else 0; it resets at each file's first line.
+# after_track(words) closes the function once its braces balance, and is called
+# last on the line.
+FN_TRACK_AWK='
+  function count(s, re,   t) { t = s; return gsub(re, "", t) }
+  function track(s,   name) {
+    if (FNR == 1) { fn = ""; fdepth = 0; opened = 0 }
+    fn_new = 0
+    if (sc_top && fdepth == 0 && fn == "" && match(s, /^[ \t]*(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
+      name = substr(s, 1, RLENGTH); sub(/^[ \t]*(function[ \t]+)?/, "", name); sub(/[ \t]*\(\)$/, "", name)
+      fn = name; opened = 0; fdepth = 0; fn_new = 1
+    }
+    return fn
+  }
+  function after_track(s) {
+    if (fn != "") {
+      fdepth += count(s, "{") - count(s, "}")
+      if (count(s, "{")) opened = 1
+      if (opened && fdepth <= 0) { fn = ""; fdepth = 0 }
+    }
+  }'
+
 # helper_placement <dir>: checks where every helper of the suite's files in
 # <dir> (scripts/test/orch/) is defined against the files that call it, and
 # prints one line per misplaced helper, sorted, naming it, its file, its
@@ -133,21 +160,17 @@ HELPER_PLACEMENT_RULE="The test-helper placement rule: a test helper used by mor
 # calls it.
 helper_placement() {
   local out
-  out="$(awk -v rule="$HELPER_PLACEMENT_RULE" "$SHELL_CODE_AWK"'
-    function count(s, re,   t) { t = s; return gsub(re, "", t) }
+  out="$(awk -v rule="$HELPER_PLACEMENT_RULE" "$SHELL_CODE_AWK$FN_TRACK_AWK"'
     FNR == 1 {
       file = FILENAME; sub(/.*\//, "", file)
-      files[file] = 1; insec = 0; fn = ""; fdepth = 0
+      files[file] = 1; insec = 0
     }
     {
       # the words view: comments dropped, strings and quoted heredocs a q
-      shell_code_line($0); s = sc_words; top = sc_top && fdepth == 0
+      shell_code_line($0); s = sc_words
       if (sc_top && file != setup && $0 ~ /^# --- /) insec = 1
-      if (top && fn == "" && match(s, /^[ \t]*(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
-        name = substr(s, 1, RLENGTH); sub(/^[ \t]*(function[ \t]+)?/, "", name); sub(/[ \t]*\(\)$/, "", name)
-        fn = name; opened = 0; fdepth = 0
-        if (file == setup || !insec) defined[name] = file
-      }
+      track(s)
+      if (fn_new && (file == setup || !insec)) defined[fn] = file
       # a case-arm pattern opening the line is no call; the command after it is
       t = s; if (match(t, /^[ \t]*[A-Za-z0-9_.*|-]+\)/)) t = substr(t, RLENGTH + 1)
       gsub(/[;&|({!`]/, "\n", t); nseg = split(t, seg, "\n")
@@ -160,11 +183,7 @@ helper_placement() {
           if ((rest == "" || rest ~ /^[ \t)}<>]/) && name != fn) calls[name, file] = 1
         }
       }
-      if (fn != "") {
-        fdepth += count(s, "{") - count(s, "}")
-        if (count(s, "{")) opened = 1
-        if (opened && fdepth <= 0) { fn = ""; fdepth = 0 }
-      }
+      after_track(s)
     }
     END {
       for (name in defined) {
@@ -271,21 +290,29 @@ marked_comment_jq_placement() {
 # lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)
 # for the on-demand sourcing variable's name, which only the shared setup's
 # sourced_orch, the loader's section file and this file's section on the
-# variable (and this function) may use; setup.sh
-# is checked with sourced_orch's function and its comment lines left out. Prints
-# each other file, as scripts/<path>, and returns 1 when it printed any.
+# variable (and this function) may use. In setup.sh and harness.sh a use
+# counts anywhere but inside that function and the comment lines directly
+# above it, and (harness.sh) inside that section; any other line, a comment
+# included, is a use. Prints each file that uses it, as scripts/<path>, and
+# returns 1 when it printed any.
 lazy_sourcing_names() {
-  local dir="$1" f rel out=''
+  local dir="$1" f rel out='' fn
+  local count_awk='
+    $0 ~ "^" fn "\\(\\) \\{" { skip = 1; pend = 0; next }
+    /^# --- / { sec = /^# --- on-demand sourcing variable/ }
+    /^[ \t]*#/ { if (!skip && !sec && /ORCH_SOURCE_LAZY/) pend++; next }
+    { n += pend; pend = 0; if (!skip && !sec && /ORCH_SOURCE_LAZY/) n++ }
+    /^\}/ { skip = 0 }
+    END { print n + pend + 0 }'
   for f in "$dir"/test/*.sh "$dir"/test/orch/*.sh; do
     rel="${f#"$dir"/}"
     case "$rel" in
       test/orch/loader.sh) continue ;;
-      test/orch/harness.sh)
-        [ -n "$(awk '/^lazy_sourcing_names\(\) \{/ { skip = 1 } /^# --- / { sec = /^# --- on-demand sourcing variable/ } !skip && !sec && !/^[ \t]*#/ && /ORCH_SOURCE_LAZY/ { print } /^\}/ { skip = 0 }' "$f")" ] || continue ;;
-      test/orch/setup.sh)
-        [ -n "$(awk '/^sourced_orch\(\) \{/ { skip = 1 } !skip && !/^[ \t]*#/ && /ORCH_SOURCE_LAZY/ { print } /^\}/ { skip = 0 }' "$f")" ] || continue ;;
-      *) grep -q 'ORCH_SOURCE_LAZY' "$f" || continue ;;
+      test/orch/harness.sh) fn=lazy_sourcing_names ;;
+      test/orch/setup.sh) fn=sourced_orch ;;
+      *) grep -q 'ORCH_SOURCE_LAZY' "$f" || continue; fn='' ;;
     esac
+    [ -z "$fn" ] || [ "$(awk -v fn="$fn" "$count_awk" "$f")" != 0 ] || continue
     out+="scripts/$rel"$'\n'
   done
   printf '%s' "$out"
@@ -316,25 +343,7 @@ orch_load_reads() {
   for f in "$dir"/orch/*.sh; do
     case "${f##*/}" in common.sh|loader.sh) ;; *) mods+=("$f") ;; esac
   done
-  local top_awk="$SHELL_CODE_AWK"'
-    function count(s, re,   t) { t = s; return gsub(re, "", t) }
-    # track(words): the function the line is in, "" at top level, a definition
-    # line already inside its function; after_track(words) closes it.
-    function track(s) {
-      if (FNR == 1) { fn = ""; fdepth = 0; opened = 0 }
-      if (sc_top && fdepth == 0 && fn == "" && match(s, /^[ \t]*(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
-        name = substr(s, 1, RLENGTH); sub(/^[ \t]*(function[ \t]+)?/, "", name); sub(/[ \t]*\(\)$/, "", name)
-        fn = name; opened = 0; fdepth = 0
-      }
-      return fn
-    }
-    function after_track(s) {
-      if (fn != "") {
-        fdepth += count(s, "{") - count(s, "}")
-        if (count(s, "{")) opened = 1
-        if (opened && fdepth <= 0) { fn = ""; fdepth = 0 }
-      }
-    }'
+  local top_awk="$SHELL_CODE_AWK$FN_TRACK_AWK"
   # pass 1: every top-level variable, as "<name> <file>" lines, "-" for the
   # always-loaded files
   owned="$(awk -v always="${always_files[*]}" "$top_awk"'
@@ -2657,6 +2666,18 @@ printf '%s\n' 'other_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/
 out="$(lazy_sourcing_names "$load_dir")"; st=$?
 assert_status "a use of the variable in another harness section fails the check" "$st" 1
 assert_eq "naming harness.sh" "$out" "scripts/test/orch/harness.sh"
+rm -rf "${load_dir%/scripts}"
+load_dir="$(tree_copy scripts)"
+printf '%s\n' '# a comment naming ORCH_SOURCE_LAZY outside sourced_orch' >>"$load_dir/test/orch/setup.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a comment naming the variable in setup.sh fails the check" "$st" 1
+assert_eq "naming setup.sh for the comment" "$out" "scripts/test/orch/setup.sh"
+rm -rf "${load_dir%/scripts}"
+load_dir="$(tree_copy scripts)"
+printf '%s\n' '# a comment naming ORCH_SOURCE_LAZY in another section' >>"$load_dir/test/orch/harness.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a comment naming the variable in another harness section fails the check" "$st" 1
+assert_eq "naming harness.sh for the comment" "$out" "scripts/test/orch/harness.sh"
 rm -rf "${load_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------

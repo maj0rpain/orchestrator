@@ -236,8 +236,9 @@ section checks it against what bash itself defines.
 demand, as the command does and so a test's shell starts cheaply, except in its
 `eval` form (`sourced_orch eval <code>`); `sourced_orch_script` loads every
 module, as the code it runs may replace or name any function. Only
-`sourced_orch` sets the variable: harness.sh's on-demand loading section
-fails on any other test file naming it, bar the loader's section file.
+`sourced_orch` sets the variable outside the loader's own section file: the
+harness section on the on-demand sourcing variable (#2820) fails on any other
+test file naming it.
 
 The fixtures to reach for first:
 
