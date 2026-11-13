@@ -1416,6 +1416,42 @@ err="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "0\t\"Refs #12\"\tfa
 assert_status "PR number 0 fails" "$st" 1
 assert_contains "naming the issue once more" "$err" "orch: the open PRs for issue #12 could not be read"
 assert_contains "leaving the file untouched after bad numbers" "$(cat "$out_file")" "Adds the widget."
+# A listed number with leading zeros is the same number without them: never
+# read as octal, and a 010 never lands on PR 8's slot.
+fake_pr 8 open orch/8-lz main
+printf 'diff --git a/e b/e\n+eight\n' >"$ORCH_GH_FAKE_STORE/prs/8/diff"
+fake_pr 9 open orch/9-lz main
+printf 'diff --git a/i b/i\n+nine\n' >"$ORCH_GH_FAKE_STORE/prs/9/diff"
+fake_pr 10 open orch/10-lz main
+printf 'diff --git a/t b/t\n+ten\n' >"$ORCH_GH_FAKE_STORE/prs/10/diff"
+lz_file="$(mktemp -d)/lz.md"
+errf="$(mktemp)"
+out="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "09\t\"Refs #14\"\tfalse\n"; }' "$ORCH" pr read 14 "$lz_file" 2>"$errf")"; st=$?
+assert_status "a listed PR numbered 09 succeeds" "$st" 0
+assert_eq "with empty stderr" "$(cat "$errf")" ""
+assert_eq "writing PR 9's body and diff" "$(cat "$lz_file")" \
+  "$(printf 'Refs #14\n\n---\ndiff --git a/i b/i\n+nine')"
+out="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "08\t\"Refs #14\"\tfalse\n"; }' "$ORCH" pr read 14 "$lz_file" 2>"$errf")"; st=$?
+assert_status "a listed PR numbered 08 succeeds" "$st" 0
+assert_eq "with empty stderr as well" "$(cat "$errf")" ""
+assert_eq "writing PR 8's body and diff" "$(cat "$lz_file")" \
+  "$(printf 'Refs #14\n\n---\ndiff --git a/e b/e\n+eight')"
+out="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "%s\t%s\tfalse\n" 010 "\"Refs #14\\n\\nTen.\"" 8 "\"Refs #14\\n\\nEight.\""; }' "$ORCH" pr read 14 "$lz_file" 2>"$errf")"; st=$?
+assert_status "a listed 010 beside 8 succeeds" "$st" 0
+assert_eq "writing PR 10's body and diff, not PR 8's" "$(cat "$lz_file")" \
+  "$(printf 'Refs #14\n\nTen.\n\n---\ndiff --git a/t b/t\n+ten')"
+fake_pr 60 open orch/12-z main
+fake_pr_body 60 $'Closes #12\n\nTwelve.\n'
+printf 'diff --git a/z b/z\n+twelve\n' >"$ORCH_GH_FAKE_STORE/prs/60/diff"
+out="$("$ORCH" pr read 012 "$lz_file" 2>&1)"; st=$?
+assert_status "pr read 012 finds the PR opening Closes #12" "$st" 0
+assert_contains "writing its body" "$(cat "$lz_file")" "Twelve."
+err="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "56\t\"Closes #99\"\tfalse\n"; }' "$ORCH" pr read 012 "$lz_file" 2>&1 >/dev/null)"; st=$?
+assert_status "pr read 012 with no PR naming issue 12 fails" "$st" 1
+assert_eq "naming issue 12" "$err" "orch: no open PR closes or refers to issue #12"
+err="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "x\t\"Refs #12\"\tfalse\n"; }' "$ORCH" pr read 012 "$lz_file" 2>&1 >/dev/null)"; st=$?
+assert_status "pr read 012 with a non-numeric listed number fails" "$st" 1
+assert_eq "naming issue 12 as well" "$err" "orch: the open PRs for issue #12 could not be read"
 fake_fail adapter_prs_open_bodies "HTTP 502"
 out="$("$ORCH" pr read 12 "$out_file" 2>&1)"; st=$?
 assert_status "a failed listing fails" "$st" 1
