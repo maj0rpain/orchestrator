@@ -398,22 +398,17 @@ assert_eq "flow_state_write_many refuses a dangling --string" \
   "$(fs_run 'flow_state_write_many str.json budget 2 --string')" "status 2"
 assert_eq "and leaves the file untouched for it" "$(cat "$fs_dir/str.json")" "$(cat "$fs_dir/str.before")"
 before_ls="$(ls -A "$fs_dir")"
-tn_bin="$(fails_bin jq '*tonumber*')"
-out="$(fs_run "PATH='$tn_bin':\$PATH; flow_state_write_many str.json budget 5")"
-assert_eq "flow_state_write_many fails with a status other than 0 and 2 on a value that will not convert" \
-  "$(case "${out##*status }" in 0|2) echo "$out" ;; *) echo ok ;; esac)" "ok"
-assert_eq "printing nothing else" "${out%status *}" ""
-assert_eq "and leaves the file untouched for that" "$(cat "$fs_dir/str.json")" "$(cat "$fs_dir/str.before")"
-assert_eq "with no temp file beside it for that" "$(ls -A "$fs_dir")" "$before_ls"
-tn2_bin="$(mktemp -d)"
-writeln '#!/bin/sh' 'case " $* " in *tonumber*) echo "jq: usage error" >&2; exit 2 ;; esac' "exec $(command -v jq) \"\$@\"" >"$tn2_bin/jq"
-chmod +x "$tn2_bin/jq"
-out="$(fs_run "PATH='$tn2_bin':\$PATH; flow_state_write_many str.json budget 5 2>&1")"
-assert_eq "flow_state_write_many maps a jq status 2 on a value that will not convert to a status other than 2" \
-  "$(case "${out##*status }" in 0|2) echo "$out" ;; *) echo ok ;; esac)" "ok"
-assert_eq "and prints nothing, jq's own error included" "${out%status *}" ""
-assert_eq "and leaves the file untouched for that" "$(cat "$fs_dir/str.json")" "$(cat "$fs_dir/str.before")"
-assert_eq "with no temp file beside it for that" "$(ls -A "$fs_dir")" "$before_ls"
+tonumber_fails_bin="$(fails_bin jq '*tonumber*')"
+tonumber_usage_error_bin="$(fails_bin jq '*tonumber*' 2 'jq: usage error')"
+for jq_status in 1 2; do
+  case "$jq_status" in 1) jq_bin="$tonumber_fails_bin" ;; *) jq_bin="$tonumber_usage_error_bin" ;; esac
+  out="$(fs_run "PATH='$jq_bin':\$PATH; flow_state_write_many str.json budget 5")"
+  assert_eq "flow_state_write_many fails with a status other than 0 and 2 on a value that will not convert, jq exiting $jq_status" \
+    "$(case "${out##*status }" in 0|2) echo "$out" ;; *) echo ok ;; esac)" "ok"
+  assert_eq "printing nothing else, jq's own error included, jq exiting $jq_status" "${out%status *}" ""
+  assert_eq "and leaves the file untouched for that, jq exiting $jq_status" "$(cat "$fs_dir/str.json")" "$(cat "$fs_dir/str.before")"
+  assert_eq "with no temp file beside it for that, jq exiting $jq_status" "$(ls -A "$fs_dir")" "$before_ls"
+done
 restore_suite_env
 
 # --- commands on a truncated state.json (#1929) -----------------------------
