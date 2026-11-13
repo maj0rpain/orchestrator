@@ -145,6 +145,19 @@ log_count() {
   if [ -n "${2:-}" ]; then grep -c "^$2 " "$1" || true; else wc -l <"$1" | tr -d ' '; fi
 }
 
+# jq_counting_bin: a new directory holding a jq that logs one line per start to
+# jq.log, then runs the real jq.
+jq_counting_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$dir" "$(command -v jq)" >"$dir/jq"
+  chmod +x "$dir/jq"
+  : >"$dir/jq.log"
+  printf '%s\n' "$dir"
+}
+# jq_starts <dir>: how many times the jq in <dir> has started.
+jq_starts() { log_count "$1/jq.log"; }
+
 # A fresh repo with one commit, an empty docs/agents/ for a labels doc and an
 # origin of https://github.com/o/r.git (so it resolves to the repo o/r), cwd
 # inside it. No setup is required of it (ADR-0028).
@@ -301,6 +314,19 @@ git_fails_bin() { fails_bin git "$1"; }
 # template - the temp file every state write makes - and nothing else. Unlike
 # chmod a-w, it also fails as root.
 state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
+# state_write_fails_after_first_bin: a state_write_fails_bin variant that lets
+# the first state.json.* temp file through and fails every later one, so a
+# command's first state write lands and the rest fail.
+state_write_fails_after_first_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  writeln '#!/bin/sh' 'case " $* " in' '  *state.json.*)' \
+    "    if [ -e '$dir/seen' ]; then exit 1; fi; : >'$dir/seen' ;;" 'esac' \
+    "exec $(command -v mktemp) \"\$@\"" >"$dir/mktemp"
+  chmod +x "$dir/mktemp"
+  printf '%s\n' "$dir"
+}
+
 # nowalk_bin: a git_fails_bin that fails `worktree list` alone, so it fails the
 # checkouts walk and nothing else.
 nowalk_bin() { git_fails_bin '" worktree list "*'; }

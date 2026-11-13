@@ -503,11 +503,9 @@ seed_run "$head" 105.00
 assert_eq "the record file is over a pipe's capacity" \
   "$([ "$(wc -c <"$rec")" -gt 65536 ] && echo over)" "over"
 errf="$(mktemp)"
-for _ in 1 2 3 4 5; do
-  out="$( (trap '' PIPE; "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf") )"
-  assert_eq "a large record file gives the same verdict with SIGPIPE ignored" "$out" "ok"
-  assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
-done
+out="$( (trap '' PIPE; "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf") )"
+assert_eq "a large record file gives the same verdict with SIGPIPE ignored" "$out" "ok"
+assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
 rm -f "$errf" "$marker"
 
 # Lowest samples: of several records on the newest head record's commit, or

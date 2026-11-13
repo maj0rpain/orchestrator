@@ -63,6 +63,17 @@ assert_eq "records the flow's base in the branch's git config" \
 assert_eq "and the fork point as its base SHA there" \
   "$(git config --get branch.orch/11-bcreate.orchestrator-base-sha)" "$before_sha"
 
+# Branch and base_sha land in one write, so a death between writes never leaves
+# a branch recorded with no base SHA.
+new_repo_with_origin
+orch_gh_failing init bcreate1w >/dev/null
+orch_gh_failing state set issue 12
+before_sha="$(git rev-parse HEAD)"
+PATH="$(state_write_fails_after_first_bin):$PATH" "$ORCH" branch create >/dev/null 2>&1
+assert_eq "a death after the first state write leaves branch recorded" \
+  "$("$ORCH" state get branch)" "orch/12-bcreate1w"
+assert_eq "and base_sha recorded with it" "$("$ORCH" state get base_sha)" "$before_sha"
+
 # A stray local branch named origin/main must not stand in for origin's tip.
 sc_clone
 git branch origin/main HEAD

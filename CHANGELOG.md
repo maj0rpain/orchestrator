@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.2.25
+
+Tidy the multi-key Flow state reader: its temp file now records why it stays (bash 3.2), the `<var>=<key>` rule lives in one shared check, `spec-review begin` reads the held flow with one jq, and `status` keeps raw and fallback-applied values in separate variables.
+
+## 5.2.24
+
+The redo attempt retire, branch create and review begin now record their keys in one state write each, so a death between two writes can no longer leave a half state that makes a rerun retire a branch again, skip recording the base SHA, or keep a spent flake rerun. Every write of `state.phase`, the redos' closing write included, now goes through the one phase writer.
+
+## 5.2.23
+
+Internal test cleanup: the `verify_twice` test section's helper `vt` is now `verify_twice_run`, and its unverified-death status is asserted on the 1-then-1 run instead of a second one. No change in behaviour.
+
+## 5.2.22
+
+The claim-list and large-record-file SIGPIPE test cases each run their check once instead of five times: neither is a race, so the extra passes asserted nothing new.
+
 ## 5.2.21
 
 Test-only: the `pr` tests drop a dead PR body restore and a duplicate open-issue-list failure case.

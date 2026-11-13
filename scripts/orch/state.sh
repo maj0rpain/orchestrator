@@ -62,9 +62,11 @@ state_read() {
 # state_get_many <var>=<key>...: the own-checkout reader of several keys in one
 # jq, unguarded as state_get is: it assigns each <key>'s value to the caller's
 # <var> (flow_state_get_many). It declares no unprefixed local, so a caller may
-# name an out-variable anything. A failed read rechecks the arguments, which
-# die "unknown state key: <key>" or "malformed state read: <arg>"; any other
-# status is a failed read and is returned, jq's text through.
+# name an out-variable anything but __sgm_rc or one of the reader's
+# __fsgm_ locals, which take the value instead of the caller. A failed read
+# rechecks the arguments, which die "unknown state key: <key>" or "malformed
+# state read: <arg>"; any other status is a failed read and is returned, jq's
+# text through.
 state_get_many() {
   local __sgm_rc
   flow_state_get_many "$STATE" "$@" && return
@@ -86,15 +88,18 @@ state_get_many_in() {
 }
 
 # state_many_recheck <var>=<key>...: after a failed many-key read, dies with
-# the message for the argument that was at fault, and returns 0 when none was.
-# It runs only after a failure, when nothing was assigned, so its locals
-# cannot shadow a caller's out-variable.
+# the message for the argument that was at fault, returns state_rows's own
+# non-zero status when the rows cannot be read, and returns 0 when no
+# argument was at fault. It runs only after a failure, when nothing was
+# assigned, so its locals cannot shadow a caller's out-variable.
 state_many_recheck() {
-  local arg
-  for arg in "$@"; do
-    case "$arg" in *=*) ;; *) die "malformed state read: $arg" ;; esac
-    [ -n "${arg%%=*}" ] || die "malformed state read: $arg"
-    flow_state_key_field "${arg#*=}" default >/dev/null || die "unknown state key: ${arg#*=}"
+  local __smr_arg __smr_rows __smr_rc __smr_var __smr_key __smr_def
+  __smr_rows="$(state_rows)" || return
+  for __smr_arg in "$@"; do
+    flow_state_many_arg "$__smr_arg" "$__smr_rows" __smr_ && continue
+    __smr_rc=$?
+    [ "$__smr_rc" = 2 ] && die "malformed state read: $__smr_arg"
+    die "unknown state key: ${__smr_arg#*=}"
   done
 }
 
@@ -113,6 +118,21 @@ state_write() {
 state_write_string() {
   flow_state_write_string "$STATE" "$1" "$2" ||
     die "could not record $1 in $STATE - the flow is unchanged"
+}
+
+# state_write_many [--string] <key> <value> [[--string] <key> <value>]...: the
+# many-key form of state_write, over flow_state_write_many on $STATE: every key
+# is set in one write, and --string before a pair stores its value as a JSON
+# string. A failed write dies, naming each key given (never a --string marker),
+# as state_write's does.
+state_write_many() {
+  local a keys="" want=1
+  for a in "$@"; do
+    if [ "$a" = --string ] && [ "$want" = 1 ]; then continue; fi
+    if [ "$want" = 1 ]; then keys="${keys:+$keys, }$a"; want=0; else want=1; fi
+  done
+  flow_state_write_many "$STATE" "$@" ||
+    die "could not record $keys in $STATE - the flow is unchanged"
 }
 
 # require_state [die2]: dies unless an active flow's state file exists and
@@ -179,17 +199,21 @@ require_branch() { require_field "$1" branch "no branch recorded in state"; }
 
 # The writers of state.phase: phase_write, which dies on a failed write, and
 # phase_write_try, which returns the writer's status for a caller that words
-# its own failure. They know only which phases exist: every caller - advance,
-# review ready, and init's seed - keeps its own guard on which transition it
-# may make, so a step back needs no handoff check here. The redos write
-# state.phase through redo_step_back (redo.sh), in the redo's one closing
-# write, after the same PHASES membership check.
+# its own failure. Every write of state.phase goes through one of them, the
+# redos' closing write included (redo_step_back, redo.sh, calls phase_write).
+# They know only which phases exist: every caller - advance, review ready, and
+# init's seed - keeps its own guard on which transition it may make, so a step
+# back needs no handoff check here. Optional trailing <key> <value> pairs are
+# written with the phase in one flow_state_write_many call, after the PHASES
+# check: the phase and the keys are recorded together or not at all.
 phase_write() {
-  phase_write_try "$1" || die "could not record phase in $STATE - the flow is unchanged"
+  phase_write_try "$@" || die "could not record phase in $STATE - the flow is unchanged"
 }
 phase_write_try() {
-  word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
-  flow_state_write "$STATE" phase "$1"
+  local phase="$1"
+  word_listed "$PHASES" "$phase" || die "not a flow phase: $phase (want one of: $PHASES)"
+  shift
+  flow_state_write_many "$STATE" phase "$phase" "$@"
 }
 
 # The active flow's own base branch, recorded by init. A flow started before

@@ -176,6 +176,15 @@ writeln '## Terminal state' 'stop - CI failing.' >.orchestrator/review/iteration
 "$ORCH" review begin >/dev/null
 assert_eq "a flake rerun spent in one loop is unspent in the next loop's first iteration" \
   "$("$ORCH" state get flake_rerun_used)" "false"
+# The iteration and the renewed flake rerun land in one write.
+fresh_flow flakeonewrite
+state_fixture budget 5
+state_fixture flake_rerun_used true
+PATH="$(state_write_fails_after_first_bin):$PATH" "$ORCH" review begin >/dev/null 2>&1
+assert_eq "a death after the first state write leaves the iteration recorded" \
+  "$("$ORCH" state get iteration)" "1"
+assert_eq "and the flake rerun renewed with it" \
+  "$("$ORCH" state get flake_rerun_used)" "false"
 restore_suite_env
 
 # --- review path ------------------------------------------------------------
