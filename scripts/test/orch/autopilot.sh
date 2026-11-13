@@ -403,13 +403,17 @@ b"
 }
 re_ends 80 "a trusted reply ends the re-entry count" OWNER "a reply" "<!-- orch:reentry review -->"
 re_ends 85 "an untrusted author's reply does not end the re-entry count" NONE "a reply" "<!-- orch:question review -->"
-# a failed timeline read is a failure stop
+# a failed comments read dies with the claim held and no write
 re_issue 75
 fake_fail adapter_issue_comments_json "HTTP 500"
-re_run "$re_file" >/dev/null
+out="$(re_run "$re_file" 2>&1)"; st=$?
 fake_unfail
-assert_eq "a failed timeline read takes the failure stop" "$(fake_labels_of 75)|$(fake_claim_held 75)" "needs-human orch:review |free"
-assert_contains "naming the phase" "$(fake_last_comment_of 75)" "<!-- orch:failure review -->"
+assert_status "a failed comments read dies" "$st" 1
+assert_contains "naming the read and its reason" "$out" "could not read issue #75's comments to count the automatic re-entries in a row: HTTP 500"
+assert_contains "and the writes that landed" "$out" "writes that landed: none"
+assert_contains "and that the claim stays held" "$out" "the claim stays held"
+assert_eq "the claim stays held, the labels are unchanged" "$(fake_labels_of 75)|$(fake_claim_held 75)" "orch:review orch:running |held"
+assert_eq "and no comment is posted" "$(fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/75/comments")" ""
 # failed writes die naming the landed ones, the claim held
 re_issue 77
 fake_fail adapter_claim_delete "HTTP 500"

@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.27
+
+The automatic re-entry transition now dies with the claim held and no write when it cannot read the issue's comments, so the session wrapper sorts a GitHub API rate limit as a limit stop that is waited out. Also removes a dead stop note and fixes stale Standing comments.
+
 ## 5.2.26
 
 Test-suite cleanups: the Session end tests drop an unused helper, the stop chain's attempts drop a duplicate case, and an assertion title names every field it checks.
