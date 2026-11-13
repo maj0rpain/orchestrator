@@ -1472,36 +1472,36 @@ assert_eq "a final reply holding the view written within the window: allowed" \
 # The pre-check and the size-gated re-read, counted in jq processes: a counting
 # jq first on PATH logs each call and runs the real jq, with one counter dir
 # shared by the paste-guard counts, the one-jq-per-payload checks and the Bash
-# hook cost check. Counts are compared between two runs of the same hook,
-# never against a number.
+# hook cost check. The paste-guard counts are compared between two runs of the
+# same hook, never against a number.
 JQC="$(call_counter jq)"
-# pg_jqs <decide-fn> <args...>: how many jq processes one decision starts.
-pg_jqs() {
+# jq_count <cmd> [args...]: how many jq processes <cmd> starts, run with JQC first on PATH (on the payload on stdin, if any) and its output dropped.
+jq_count() {
   : >"$JQC/log"
-  PATH="$JQC:$PATH" "$@" >/dev/null
+  PATH="$JQC:$PATH" "$@" >/dev/null 2>&1
   counted_calls "$JQC"
 }
 PG_PAD="$(head -c 20000 /dev/zero | tr '\0' 'a')"
 TL="$PG/long-unarmed.jsonl"; cp "$T11" "$TL"
 pg_text "$TL" "$PG_PAD"; pg_text "$TL" "$PG_PAD"
 assert_eq "a long transcript without the tail starts no more jq than no transcript_path (ask)" \
-  "$(pg_jqs pg_decide "$TL")" "$(pg_jqs pg_decide "")"
-assert_eq "and the Stop guard too" "$(pg_jqs sg_decide "$TL")" "$(pg_jqs sg_decide "")"
+  "$(jq_count pg_decide "$TL")" "$(jq_count pg_decide "")"
+assert_eq "and the Stop guard too" "$(jq_count sg_decide "$TL")" "$(jq_count sg_decide "")"
 TQ="$PG/quoted-tail.jsonl"; cp "$T11" "$TQ"
 pg_text "$TQ" "spec_review_nudge ends a pass line with '; it is saved in <path>/view.md'"
 assert_eq "a transcript quoting the tail outside a pass line allows (ask)" "$(pg_decide "$TQ")" allow
 assert_eq "and the Stop guard too" "$(sg_decide "$TQ")" allow
-if [ "$(pg_jqs pg_decide "$TQ")" -gt "$(pg_jqs pg_decide "")" ]; then ok "the quoted tail falls back to a full scan (ask)"
+if [ "$(jq_count pg_decide "$TQ")" -gt "$(jq_count pg_decide "")" ]; then ok "the quoted tail falls back to a full scan (ask)"
 else bad "the quoted tail falls back to a full scan (ask)" "no extra jq"; fi
-if [ "$(pg_jqs sg_decide "$TQ")" -gt "$(pg_jqs sg_decide "")" ]; then ok "the quoted tail falls back to a full scan (Stop)"
+if [ "$(jq_count sg_decide "$TQ")" -gt "$(jq_count sg_decide "")" ]; then ok "the quoted tail falls back to a full scan (Stop)"
 else bad "the quoted tail falls back to a full scan (Stop)" "no extra jq"; fi
 # An armed refusal over the full window on an unchanged transcript parses once.
 pg_full_window_refusal() { ORCH_PASTE_GUARD_WAIT='' PG_SLEEP_LOG="$PG/sleep-unchanged.log" PATH="$PG/stub:$PATH" "$@"; }
 for pg_fn in pg_decide sg_decide; do
   : >"$PG/sleep-unchanged.log"
-  pg_win="$(pg_jqs pg_full_window_refusal "$pg_fn" "$T")"
+  pg_win="$(jq_count pg_full_window_refusal "$pg_fn" "$T")"
   assert_eq "an unchanged armed transcript over the full window parses as often as with no window ($pg_fn)" \
-    "$pg_win" "$(pg_jqs "$pg_fn" "$T")"
+    "$pg_win" "$(jq_count "$pg_fn" "$T")"
   if [ -s "$PG/sleep-unchanged.log" ]; then ok "and the window was waited out ($pg_fn)"
   else bad "and the window was waited out ($pg_fn)" "sleep never called"; fi
 done
@@ -1554,12 +1554,6 @@ assert_eq "hooks.json registers hook-paste-stop-guard.sh under Stop" \
   "$(jq -r '[.hooks.Stop[]? | .hooks[]?.command | select(test("hook-paste-stop-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
 echo
 echo "one jq per payload (#2556)"
-# jq_count <hook>: the jq processes <hook> starts on the payload on stdin.
-jq_count() {
-  : >"$JQC/log"
-  PATH="$JQC:$PATH" "$1" >/dev/null 2>&1 || :
-  counted_calls "$JQC"
-}
 JQT="$(mktemp -d)"
 assert_eq "grilling hook on a Claude Code UserPromptSubmit starts one jq" \
   "$(jq -n --arg c "$REPO" '{hook_event_name:"UserPromptSubmit",session_id:"jq1",cwd:$c,prompt:"hi"}' | jq_count "$GRILL")" 1
