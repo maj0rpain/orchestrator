@@ -204,8 +204,8 @@ finding 20 "review:nit" "\`src/other.sh:2\` at $head_sha"
 finding 21 "review:major,ready-for-human,bug,needs-info" "\`src/other.sh:2\` at $head_sha" 21
 finding 22 "review:nit,wontfix" "\`src/gone.sh:1\` at $head_sha"
 finding 23 "review:nit,ready-for-agent,needs-triage" "\`src/other.sh:2\` at $head_sha" 21
-# Armed to fail: a listed scan reads each finding from its listing, body and
-# labels together, so any per-finding read dies with the 502.
+# Armed to fail: a listed scan makes no per-finding read (see
+# arm_per_finding_reads).
 arm_per_finding_reads
 out="$(scan --all 2>&1)"; st=$?
 assert_status "scans every open filed finding, a listed scan making no per-finding read" "$st" 0
