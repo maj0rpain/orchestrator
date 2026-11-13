@@ -101,8 +101,8 @@ shellcheck_files() {
 # section-durations.sh all run it, so the three cannot drift.
 #
 # The functions shellcheck_start and shellcheck_join (below): all.sh and
-# section-durations.sh's
-# pooled shellcheck step; the caller sources test_jobs.sh and inits the pool.
+# section-durations.sh's pooled shellcheck step; the caller sources
+# test_jobs.sh and inits the pool.
 # shellcheck disable=SC2034 # read by the sourcing runners
 TENTHS_AWK='function tenths(s) { sub(/\./, "", s); return s + 0 }'
 # shellcheck disable=SC2034 # read by the sourcing runners
@@ -114,7 +114,7 @@ DURATIONS_AWK='function durations_read() {
 # shellcheck disable=SC2034 # read by the sourcing runners
 SHELLCHECK_CMD=(shellcheck -S warning -f gcc)
 
-# shellcheck_start <root> <outdir> <jobs>: runs SHELLCHECK_CMD on each file of
+# The function shellcheck_start <root> <outdir> <jobs> runs SHELLCHECK_CMD on each file of
 # SHELLCHECK_FILES from <root>, one process per file, each holding a job-pool
 # slot, at most <jobs> at once. Process <n>'s output goes to
 # <outdir>/shellcheck.<n>. Sets SHELLCHECK_PIDS, and SHELLCHECK_EXITS at the
@@ -138,7 +138,7 @@ shellcheck_start() {
   done
 }
 
-# shellcheck_join <outdir>: waits for each process whose exit SHELLCHECK_EXITS
+# The function shellcheck_join <outdir> waits for each process whose exit SHELLCHECK_EXITS
 # lacks; sets SHELLCHECK_STATUS to the highest exit and SHELLCHECK_OUT to the
 # non-empty outputs joined in start order.
 shellcheck_join() {
