@@ -923,13 +923,13 @@ autopilot_verdict() {
     return 0
   done
   for role in wontfix needs-info; do
-    label="$(triage_label_for "$role")"
+    triage_label_into label "$role"
     if label_listed "$labels" "$label"; then printf -v "$3" 'skip %s' "$role"; return 0; fi
   done
   gh_or_die --out parent "read issue #$issue's parent" adapter_issue_parent "$issue"
   if [ -n "$parent" ]; then printf -v "$3" 'skip ticket #%s' "$parent"; return 0; fi
-  ready="$(triage_label_for ready-for-agent)"
-  human="$(triage_label_for ready-for-human)"
+  triage_label_into ready ready-for-agent
+  triage_label_into human ready-for-human
   # A filed finding finding triage has not yet triaged: the issue triage gate.
   if finding_untriaged "$labels"; then
     printf -v "$3" '%s' "skip untriaged-finding"

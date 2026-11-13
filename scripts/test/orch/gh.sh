@@ -157,6 +157,36 @@ assert_eq "a command that succeeds silently returns 0 and leaves the variable em
 rm -f "$cefile"
 unset cefile
 
+# --- label_listed ---------------------------------------------------------
+echo
+echo "label_listed"
+new_repo >/dev/null
+ll_out="$(sourced_orch_script '
+    for item in bug BUG "Needs Triage" -n "a*" "b?g" bu "é" "É" "" $'"'"'bug\nx'"'"' \
+      "[AB]" "[a" "A\\B" "a\\" "X.*" ".*" xy; do
+      if label_listed "$1" "$item"; then printf " y"; else printf " n"; fi
+    done
+    if label_listed "" bug; then printf " y"; else printf " n"; fi
+    if label_listed "" ""; then printf " y"; else printf " n"; fi' $'Bug\nneeds triage\n-N\na*\nb?g\né\n[ab]\na\\b\nx.*')"
+assert_eq "label_listed folds ASCII case, matches literally, and never folds a non-ASCII letter or spans lines" \
+  "${ll_out% ? ?}" \
+  " y y y y y y n y n n n y n y n y n n"
+ll_tail="${ll_out#${ll_out% ? ?}}"
+assert_eq "label_listed finds nothing in an empty list" "${ll_tail:0:2}" " n"
+assert_eq "label_listed matches an empty item against an empty line" "${ll_tail:2:2}" " y"
+assert_eq "label_listed answers with an empty PATH" \
+  "$(sourced_orch_script 'PATH=; label_listed $'\''Bug\nx'\'' BUG && printf y; label_listed Bug x || printf n')" "yn"
+ll_locales="$(locale -a 2>/dev/null)"
+case "${ll_locales,,}" in
+  *tr_tr.utf8*|*tr_tr.utf-8*) ll_tr=1 ;; *) ll_tr="" ;;
+esac
+if [ -n "$ll_tr" ]; then
+  LC_ALL=tr_TR.UTF-8 sourced_orch label_listed $'i' I && ll_v=y || ll_v=n
+  assert_eq "label_listed under a Turkish locale still matches I with i" "$ll_v" "y"
+else
+  skip "label_listed under a Turkish locale still matches I with i" "tr_TR.UTF-8 is not installed"
+fi
+
 # --- gh failure verb and readers (#1022) --------------------------------------
 # gh_die builds the one "gh could not <what>: <reason>" death, gh_or_die runs an
 # operation and dies through it, and the readers split a multi-field answer into

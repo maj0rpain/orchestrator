@@ -39,8 +39,9 @@ retire <old> <new>`. See `docs/agents/cli-conventions.md`.
 
 ### Coding standards
 
-Judgement calls on reuse, `orch: ` messages, local names, variable meaning and
-reading a process substitution to EOF.
+Judgement calls on reuse, `orch: ` messages, local names, variable meaning,
+reading a process substitution to EOF and per-item helpers that start no
+external command.
 See `docs/agents/coding-standards.md`.
 
 ## Testing

@@ -108,10 +108,11 @@ has_review_label() {
 # ready-for-agent, ready-for-human or wontfix. The one gate issue triage and
 # the quick autopilot's candidates share; each keeps its own reaction.
 finding_untriaged() {
-  local role
+  local role label
   has_review_label "$1" || return 1
   for role in ready-for-agent ready-for-human wontfix; do
-    ! label_listed "$1" "$(triage_label_for "$role")" || return 1
+    triage_label_into label "$role"
+    ! label_listed "$1" "$label" || return 1
   done
 }
 

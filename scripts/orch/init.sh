@@ -49,13 +49,13 @@ $outside_block
 
 # `init --issue N`'s one-time gate: the issue must exist, be open, and carry
 # this repo's local name for the ready-for-agent role - resolved through
-# triage_label_for, never the literal string, so a repo that renamed its
+# triage_label_into, never the literal string, so a repo that renamed its
 # labels still gets a correct check. Checked once, here, and never again: a
 # maintainer's later triage housekeeping must not stop a flow already running
 # against the issue (docs/adr/0005).
 validate_adopted_issue() {
   local issue="$1" label labels
-  label="$(triage_label_for ready-for-agent)"
+  triage_label_into label ready-for-agent
   open_issue_read --hint "check it exists and gh is authenticated" "$issue" \
     "issue #$issue is not open - adoption requires an open issue." labels
   label_listed "$labels" "$label" \

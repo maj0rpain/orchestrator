@@ -377,7 +377,7 @@ agent_sync_plan() {
   AGENT_PLAN_WANT="" AGENT_PLAN_REFUSED="" AGENT_PLAN_WRITES="" AGENT_PLAN_DELETES=""
   for file in "$ORCH_PLUGIN"/agents/orch-*.md; do
     [ -e "$file" ] || continue
-    name="$(basename "$file" .md)"
+    path_last_into name "$file" .md
     role="$(agent_role_of "$name")"
     [ -n "$role" ] || continue
     agent_junie_setting "$role" m e
@@ -398,7 +398,7 @@ agent_sync_plan() {
   done
   for copy in "$AGENT_PLAN_DIR"/orch-*.md; do
     [ -e "$copy" ] || continue
-    name="$(basename "$copy" .md)"
+    path_last_into name "$copy" .md
     agent_copy_marked "$copy" || continue
     list_has "$AGENT_PLAN_WANT" "$name" && continue
     AGENT_PLAN_DELETES="$AGENT_PLAN_DELETES$name"$'\n'

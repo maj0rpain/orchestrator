@@ -467,7 +467,7 @@ review_file() {
   done
 
   severity_label_ensure "review:$severity" "$colour" "$desc"
-  triage="$(triage_label_for needs-triage)"
+  triage_label_into triage needs-triage
   triage_label_ensure "$triage"
   category_label_ensure "$category"
   # The title carries no severity prefix: the label holds it, where triage
