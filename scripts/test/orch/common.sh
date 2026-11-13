@@ -304,15 +304,15 @@ if perl -MSocket -e 'socket(my $s, AF_UNIX, SOCK_STREAM, 0) or exit 1; bind($s, 
   fr_sock=1
 fi
 printf 'a\0b\n' >"$cap_tmp/nul"
-fr_script='p() { printf "%q\n" "$1"; }; st=0
-v=old; file_read v "$1"; p "$? [$v]"
-v=old; st=0; file_read v "$2" 2>/dev/null || st=$?; p "$st [$v]"
-p "$(file_read v "$2" 2>&1)"
-p "$(file_read v "$3" 2>&1)"
-v=old; st=0; file_read v "$4" 2>/dev/null || st=$?; p "$st [$v]"
-v=old; st=0; file_read v "$5" 2>/dev/null || st=$?; p "$st [$v]"
-file_read v "$6"; p "[$v]"
-PATH=""; file_read v "$7"; p "[$v]"'
+fr_script='quoted_line() { printf "%q\n" "$1"; }
+v=old; file_read v "$1"; quoted_line "$? [$v]"
+v=old; st=0; file_read v "$2" 2>/dev/null || st=$?; quoted_line "$st [$v]"
+quoted_line "$(file_read v "$2" 2>&1)"
+quoted_line "$(file_read v "$3" 2>&1)"
+v=old; st=0; file_read v "$4" 2>/dev/null || st=$?; quoted_line "$st [$v]"
+v=old; st=0; file_read v "$5" 2>/dev/null || st=$?; quoted_line "$st [$v]"
+file_read v "$6"; quoted_line "[$v]"
+PATH=""; file_read v "$7"; quoted_line "[$v]"'
 mapfile -t fr_out < <(sourced_orch_script "$fr_script" "$cap_tmp/empty" "$cap_tmp/missing" "$cap_tmp" "$cap_tmp/unreadable" "$cap_tmp/sock" "$cap_tmp/nul" "$cap_tmp/nl")
 assert_eq "file_read of an empty file sets an empty variable" "${fr_out[0]}" "$(printf %q "0 []")"
 assert_eq "file_read of a missing file fails with the variable untouched" "${fr_out[1]}" "$(printf %q "1 [old]")"

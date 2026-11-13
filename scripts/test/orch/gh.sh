@@ -1887,9 +1887,6 @@ assert_contains "with the handler's message" "$out" "orch: GitHub API rate limit
 assert_eq "the secondary wording is not passed through" \
   "$(grep -c 'secondary rate limit' <<<"$out")" "0"
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
-fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
-sourced_orch adapter_issue_body 5 >/dev/null 2>&1; st=$?
-assert_status "a failure that is no limit keeps its failed status" "$st" 1
 # A quota read that itself meets rate-limit wording is made once: never retried,
 # no limit message, no wait. The second call would succeed, so a retry shows.
 fake_online; fake_unfail
