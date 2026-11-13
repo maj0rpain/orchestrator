@@ -88,7 +88,7 @@ pr_push_and_body() {
   # Errexit is off in that $(...) too (#1327), so the temp body's creation and
   # write are checked here: a failed write would otherwise open the PR with a
   # truncated body.
-  _pr_pb_tmp="$(mktemp)" || die "could not create a temp file for the PR body - $6"
+  temp_file_make _pr_pb_tmp || die "could not create a temp file for the PR body - $6"
   { printf '%s #%s\n\n' "$_pr_pb_keyword" "$3" && cat "$4"; } >"$_pr_pb_tmp" || {
     rm -f "$_pr_pb_tmp"
     die "could not write the PR body from $4 - $6"
@@ -379,7 +379,7 @@ cmd_pr_release() {
     die "nothing to close: no PR merged into $base refers to a still-open issue - pass --force to release anyway"
   # Only Summary: a release PR carries PRs already reviewed (#1387).
   pr_body_check "$body_file" Summary
-  tmp="$(mktemp)" || die "could not create a temp file for the release PR body"
+  temp_file_make tmp || die "could not create a temp file for the release PR body"
   {
     for n in $issues; do printf 'Closes #%s\n' "$n"; done
     [ -z "$issues" ] || printf '\n'

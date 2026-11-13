@@ -849,7 +849,9 @@ assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not cr
 assert_eq "and runs nothing" "$(on_disk "$ran_marker")" absent
 rm -f "$ran_marker"
 # the plan step's own temp-file failure keeps its own reason, not the wrapper's
-out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"')"
+# (capture_err makes the first temp file, so the fake fails the second)
+pm_count="$(mktemp -u)"
+out="$(PK_COUNT="$pm_count" sourced_orch_script 'set +e; real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne 2 ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"')"
 assert_eq "the plan step failing to make its own temp file keeps its reason" "$out" "rc=1 reason=could not create a temp file"
 # the side-checkout add step, stopped by each of capture's two temp files: the
 # first (nth=1) is for the command's stdout, the second for its stderr

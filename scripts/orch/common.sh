@@ -325,7 +325,8 @@ lines_split() {
 # file_read <var> <file>: <file>'s bytes into <var>, exactly - its trailing
 # newlines kept, a NUL byte dropped as $(cat) drops it - read by the shell
 # itself, starting no external command. Fails, <var> untouched, when the file
-# cannot be read.
+# cannot be read: that failure starts one cat, which prints cat's own
+# diagnostic on stderr.
 file_read() {
   local _file_read_s="" _file_read_c=""
   if [[ -r $2 && ! -d $2 ]]; then
@@ -489,7 +490,7 @@ dirty_outside_allowlist() {
   # failure set -e never sees: a git status that cannot run must refuse, not
   # read as a clean tree. A file, not a variable, because the output is
   # NUL-separated. git's own error is kept so the refusal can name it.
-  status="$(mktemp)" || die "could not create a temp file for git status"
+  temp_file_make status || die "could not create a temp file for git status"
   if ! err="$(git -C "$ROOT" status --porcelain=v1 -z -uall 2>&1 >"$status")"; then
     rm -f "$status"
     die "git status failed - cannot check the working tree: ${err%%$'\n'*}"

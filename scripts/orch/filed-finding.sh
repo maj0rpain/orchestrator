@@ -229,7 +229,7 @@ finding_location_check() {
 # removes it, so a refusal or a gh failure that dies leaves none behind.
 finding_body_file_new() {
   local f
-  f="$(mktemp)" || die "could not create a temp file for the issue body"
+  temp_file_make f || die "could not create a temp file for the issue body"
   # shellcheck disable=SC2064 # expanded now: $f is local, gone by exit
   trap "rm -f $(printf '%q' "$f")" EXIT
   printf -v "$1" '%s' "$f"
