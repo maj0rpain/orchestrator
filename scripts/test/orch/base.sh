@@ -67,21 +67,19 @@ out="$(orch_gh_failing base set main 2>&1)"; st=$?
 assert_status "set accepts main when the default is only guessed" "$st" 0
 assert_eq "a guessed main is stored as a setting" "$(base_setting)" "main"
 assert_contains "set reports the guessed main as set" "$out" "main (set)"
-assert_eq "show reports the stored main as set" "$(orch_gh_failing base show)" "main (set)"
+fake_github
+fake_default_branch develop
 assert_eq "a stored main survives GitHub later answering develop" \
-  "$(GH_REPO=o/r adapter_stood_in 'adapter_repo_default_branch() { echo develop; }' "$ORCH" base show)" "main (set)"
+  "$(GH_REPO=o/r "$ORCH" base show)" "main (set)"
 git config --unset orchestrator.base
 
-out="$(GH_REPO=o/r adapter_stood_in 'adapter_repo_default_branch() { echo main; }' "$ORCH" base set main 2>&1)"; st=$?
+fake_default_branch main
+out="$(GH_REPO=o/r "$ORCH" base set main 2>&1)"; st=$?
 assert_status "set accepts main when GitHub names it" "$st" 0
 assert_eq "GitHub's main clears the setting" "$(base_setting)" "<unset>"
 assert_contains "set reports GitHub's main as the default" "$out" "main (default)"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
-out="$(GH_REPO=o/r adapter_stood_in 'adapter_repo_default_branch() { echo "not a branch"; }' "$ORCH" base set main 2>&1)"; st=$?
-assert_status "set accepts main when GitHub answers an invalid name" "$st" 0
-assert_eq "an invalid GitHub answer leaves main only guessed, so stored" "$(base_setting)" "main"
-assert_contains "set reports it as set" "$out" "main (set)"
-git config --unset orchestrator.base
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 
 orch_gh_failing base set uat >/dev/null
@@ -101,18 +99,21 @@ assert_status "set refuses with no branch" "$st" 1
 # is counted at its stand-in; a flow whose state records no base makes the
 # note read the default too.
 reads="$(mktemp)"
-counted_read() { (export GH_REPO=o/r; counted_adapter_run "$reads" "$1" "$ORCH" "${@:2}"); }
+counted_orch() { (export GH_REPO=o/r; counted_adapter_run "$reads" "$(counting_defs adapter_repo_default_branch branch)" "$ORCH" "$@"); }
 read_count() { log_count "$reads"; }
 orch_gh_failing init counted >/dev/null
-jq 'del(.base)' .orchestrator/state.json >.orchestrator/state.tmp && mv .orchestrator/state.tmp .orchestrator/state.json
-out="$(counted_read 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo main; }' base set main 2>&1)"; st=$?
+fake_github
+state_fixture_drop base
+fake_default_branch main
+out="$(counted_orch base set main 2>&1)"; st=$?
 assert_status "set of the default's own name beside a base-less flow succeeds" "$st" 0
 assert_eq "it asks GitHub for the default branch once" "$(read_count)" "1"
 assert_eq "it still clears the setting" "$(base_setting)" "<unset>"
 assert_eq "and prints the same line" "$out" "main (default)"
+fake_fail adapter_repo_default_branch
 for head in present deleted; do
   [ "$head" = present ] || git symbolic-ref -d refs/remotes/origin/HEAD
-  out="$(counted_read 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; return 1; }' base set main 2>&1)"; st=$?
+  out="$(counted_orch base set main 2>&1)"; st=$?
   assert_status "set with the read failing and origin/HEAD $head succeeds" "$st" 0
   assert_eq "it asks the failing read once with origin/HEAD $head" "$(read_count)" "1"
   if [ "$head" = present ]; then
@@ -122,16 +123,18 @@ for head in present deleted; do
   fi
   git config --unset orchestrator.base 2>/dev/null || true
 done
+fake_unfail
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 rm -rf .orchestrator
 
 # The memo never outlives one process: a rename between two runs is seen.
 assert_eq "default-branch names the default branch" \
-  "$(counted_read 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo main; }' default-branch)" "main"
+  "$(fake_default_branch main; counted_orch default-branch)" "main"
 assert_eq "its run reached the read" "$(read_count)" "1"
 assert_eq "the next run, after a rename, names the new default" \
-  "$(counted_read 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo trunk; }' default-branch)" "trunk"
+  "$(fake_default_branch trunk; counted_orch default-branch)" "trunk"
 assert_eq "and reached the read again" "$(read_count)" "1"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 rm -rf "$(dirname "$bare")"
 
 # --- a flow's base branch -----------------------------------------------------

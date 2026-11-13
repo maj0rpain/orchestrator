@@ -838,7 +838,8 @@ fake_pr 50 merged quick/12-c2 main
 fake_pr_head 50 "$(git rev-parse quick/12-c2)"
 fake_online
 pr_reads="$(mktemp)"
-out="$(counted_adapter_run "$pr_reads" 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo main; }' \
+fake_default_branch main
+out="$(counted_adapter_run "$pr_reads" "$(counting_defs adapter_repo_default_branch branch)" \
   orch_gh_failing side-checkout prune 2>&1)"
 assert_eq "prune reaches the default-branch read exactly once" "$(log_count "$pr_reads")" "1"
 assert_contains "and still removes the first finished side checkout" "$out" "removed side checkout $c1"
