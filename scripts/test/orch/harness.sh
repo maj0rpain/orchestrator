@@ -1275,8 +1275,9 @@ cp "$dur_file" "$dur_dir/good.tsv"
 
 # TERM to the dev script (#2957), last in the section: a slow child records its
 # pid and sleeps 30 s. After TERM the script must return at once with 130, the
-# child gone and the durations file as it was. INT runs the same trap; the
-# harness cannot send it, as a background script inherits SIGINT ignored.
+# child gone and the durations file as it was. INT runs the same trap and is not
+# sent here: a plain background start inherits SIGINT ignored, and the `set -m`
+# launch the isolation-root section uses is not repeated for it.
 
 # dur_term <pid file> [<env assignment>...]: starts the script as in dur_script,
 # through term_run, which TERMs it once the pid file has content, and
