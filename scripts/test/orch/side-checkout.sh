@@ -1456,18 +1456,24 @@ mplain="$(mktemp -d)/plain"
 git worktree add -q "$mplain" -b mk-plain
 mnone="$(mktemp -d)"
 
-assert_eq "a main worktree's marker" "$(sourced_orch side_checkout_marker "$mtop")" "$mtop/.git/orchestrator-side-checkout"
-assert_eq "a linked worktree, pointer absolute" "$(sourced_orch side_checkout_marker "$mlink")" "$mgd/orchestrator-side-checkout"
-assert_eq "a linked worktree, pointer relative" "$(sourced_orch side_checkout_marker "$mrel")" "$mrgd/orchestrator-side-checkout"
-sourced_orch side_checkout_marker "$mplain" >/dev/null; st=$?
-assert_status "a worktree with no marker" "$st" 1
-sourced_orch side_checkout_marker "$mnone" >/dev/null; st=$?
-assert_ne "a path that is no worktree" "$st" 0
-
 nogit="$(mktemp -d)"  # an empty PATH directory: no git, no cat, nothing
-marker_bare_path() { bash -c 'source "$1"; PATH="$2"; shift 2; side_checkout_marker "$@"' _ "$ORCH" "$nogit" "$@"; }
-assert_eq "bare PATH, a main worktree" "$(marker_bare_path "$mtop")" "$mtop/.git/orchestrator-side-checkout"
-assert_eq "bare PATH, a linked worktree" "$(marker_bare_path "$mlink")" "$mgd/orchestrator-side-checkout"
+# One source of orch.sh prints seven lines: the marker of the main, linked
+# absolute and linked relative worktrees, the status of the unmarked and the
+# non-worktree path, then (PATH emptied) the marker of the main and linked ones.
+mapfile -t mk < <(sourced_orch_script '
+  printf "%s\n" "$(side_checkout_marker "$1")" "$(side_checkout_marker "$2")" "$(side_checkout_marker "$3")"
+  st=0; side_checkout_marker "$4" >/dev/null || st=$?; printf "%s\n" "$st"
+  st=0; side_checkout_marker "$5" >/dev/null || st=$?; printf "%s\n" "$st"
+  PATH="$6"
+  printf "%s\n" "$(side_checkout_marker "$1")" "$(side_checkout_marker "$2")"' \
+  "$mtop" "$mlink" "$mrel" "$mplain" "$mnone" "$nogit")
+assert_eq "a main worktree's marker" "${mk[0]}" "$mtop/.git/orchestrator-side-checkout"
+assert_eq "a linked worktree, pointer absolute" "${mk[1]}" "$mgd/orchestrator-side-checkout"
+assert_eq "a linked worktree, pointer relative" "${mk[2]}" "$mrgd/orchestrator-side-checkout"
+assert_status "a worktree with no marker" "${mk[3]}" 1
+assert_ne "a path that is no worktree" "${mk[4]}" 0
+assert_eq "bare PATH, a main worktree" "${mk[5]}" "$mtop/.git/orchestrator-side-checkout"
+assert_eq "bare PATH, a linked worktree" "${mk[6]}" "$mgd/orchestrator-side-checkout"
 
 # An unreadable pointer asks git, seen through a counting wrapper.
 mlog="$(mktemp)"
