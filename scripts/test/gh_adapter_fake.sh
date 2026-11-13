@@ -136,27 +136,19 @@ fake_countdown() {
 }
 
 # fake_failing <operation>: fake_failing_raw, with a failure that is a GitHub
-# API rate limit going through the production limit handler, as the guard's
-# own failed calls do: a secondary limit is waited out and retried once, and a
+# API rate limit going through the production gh_limit_retry, as the guard's
+# own failed calls do (sourced alone, without gh.sh, it is fake_failing_raw's
+# own answer): a secondary limit is waited out and retried once, and a
 # limit given up on leaves the handler's distinct message on stderr in place of
 # gh's own. Any other failure is written as it is.
 fake_failing() {
-  local err rc=0 hrc retried=0
-  err="$(fake_failing_raw "$1" 2>&1)" || rc=$?
-  [ "$rc" -eq 0 ] || return 1
-  while [ -z "${GH_LIMIT_READING:-}" ] && declare -F gh_limit_handle >/dev/null; do
-    hrc=0
-    gh_limit_handle "$err" "$retried" || hrc=$?
-    case "$hrc" in
-      2) retried=1
-         err="$(fake_failing_raw "$1" 2>&1)" || return 1
-         continue ;;
-      1) return 0 ;;
-    esac
-    break
-  done
-  [ -z "$err" ] || printf '%s\n' "$err" >&2
+  declare -F gh_limit_retry >/dev/null || { fake_failing_raw "$1"; return; }
+  ! gh_limit_retry fake_failing_inverted "$1"
 }
+
+# fake_failing_inverted <operation>: fake_failing_raw with its status inverted,
+# so a seeded failure is a failed call to gh_limit_retry.
+fake_failing_inverted() { ! fake_failing_raw "$1"; }
 
 # fake_failing_raw <operation>: true when fake_fail named the operation, with
 # its stderr written. An operation calls `! fake_failing <op> || return 1`

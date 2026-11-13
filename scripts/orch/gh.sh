@@ -19,19 +19,30 @@
 # naming GH_REPO. Inside a command substitution `die` would end only that
 # subshell, and its message could land in a 2>/dev/null, so there it signals
 # the main shell, whose USR1 trap dies with the remedy instead. A failed
-# call goes through gh_limit_handle, and is retried once on a first secondary
-# limit; the call in its loop is the only one to the real gh binary in orch.sh
+# call goes through gh_limit_retry, and is retried once on a first secondary
+# limit; the call it makes is the only one to the real gh binary in orch.sh
 # and its modules.
 gh() {
   if ! repo_pin; then
     if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
     die "$REPO_REMEDY"
   fi
+  gh_limit_retry command gh "$@"
+}
+
+# gh_limit_retry <command>...: runs <command>, its stderr held, through the
+# limit retry protocol (#2724) - the one copy of it: a failed call goes through
+# gh_limit_handle, a first secondary limit (status 2) is retried once, a limit
+# given up on (status 1) fails the call with the handler's message in place of
+# the command's stderr, and any other failure keeps its stderr as it is. The
+# command's status and stdout pass through. While GH_LIMIT_READING is set the
+# handler is never called and nothing is retried.
+gh_limit_retry() {
   local errf out_st err rc retried=0
-  errf="$(mktemp)" || die "could not create a temp file for gh's stderr"
+  errf="$(mktemp)" || die "could not create a temp file for the command's stderr"
   while :; do
     out_st=0
-    command gh "$@" 2>"$errf" || out_st=$?
+    "$@" 2>"$errf" || out_st=$?
     err="$(cat "$errf")"
     if [ "$out_st" -eq 0 ] || [ -n "${GH_LIMIT_READING:-}" ]; then break; fi
     rc=0
@@ -62,13 +73,25 @@ gh_limit_kind() {
   fi
 }
 
+# gh_limit_pools: GitHub's core and graphql pools, one per line as
+# "<pool> <remaining> <limit> <reset>", the reset in epoch seconds; fails,
+# printing nothing, when the read fails or is empty. The one quiet read of the
+# pools: it runs with GH_LIMIT_READING set, so the guard neither retries it nor
+# calls the limit handler, its stderr is discarded, and it costs no quota.
+gh_limit_pools() {
+  local out
+  out="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || return 1
+  [ -n "$out" ] || return 1
+  tr '\t' ' ' <<<"$out"
+}
+
 # gh_limit_reset: the epoch second a limit is waited out until: the latest
 # reset among the core and graphql pools at 0 remaining; with none, or a failed
 # read of the pools, 15 minutes from now.
 gh_limit_reset() {
   local pools reset
-  pools="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || pools=""
-  reset="$(awk -F '\t' '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
+  pools="$(gh_limit_pools)" || pools=""
+  reset="$(awk '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
   printf '%s\n' "${reset:-$(($(date +%s) + 900))}"
 }
 
@@ -79,7 +102,7 @@ gh_limit_reset() {
 # Status 1: a limit to give up on - a primary one, or a secondary one met again
 # after the retry, handled as a primary one. The distinct message, naming the
 # reset, is on stderr; in an autopilot process the reset is also recorded
-# (gh_limit_record), a failed write being one more line on stderr.
+# (autopilot_github_limit_record), a failed write being one more line on stderr.
 gh_limit_handle() {
   local kind reset
   kind="$(gh_limit_kind "$1")"
@@ -90,7 +113,7 @@ gh_limit_handle() {
   fi
   reset="$(gh_limit_reset)"
   warn "GitHub API rate limit reached - it resets at $(autopilot_epoch_iso "$reset"). An autopilot session ends its turn now and does not retry; the watcher picks the work up after the reset."
-  gh_limit_record "$reset"
+  autopilot_github_limit_record "$reset"
   return 1
 }
 
