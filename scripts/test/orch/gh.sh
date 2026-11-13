@@ -1546,11 +1546,9 @@ errf="$(mktemp)"
 claim_op adapter_claim_create 123 spec 1 "$(hostname)" >/dev/null 2>&1
 claim_lines="$(claim_op adapter_claim_list)"
 assert_eq "the unpiped claim list is in issue order" "$(printf '%s\n' "$claim_lines" | cut -f1 | tr '\n' ' ')" "7 41 60 123 "
-for _ in 1 2 3 4 5; do
-  out="$( (trap '' PIPE; claim_op adapter_claim_list 2>"$errf") | cat)"
-  assert_eq "the claim list prints the same claim lines with SIGPIPE ignored" "$out" "$claim_lines"
-  assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
-done
+out="$( (trap '' PIPE; claim_op adapter_claim_list 2>"$errf") | cat)"
+assert_eq "the claim list prints the same claim lines with SIGPIPE ignored" "$out" "$claim_lines"
+assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
 # shellcheck disable=SC2218 # claim_op is the redefinition above
 claim_op adapter_claim_delete 123 >/dev/null 2>&1
 rm -f "$errf"

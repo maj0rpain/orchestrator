@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.22
+
+The claim-list and large-record-file SIGPIPE test cases each run their check once instead of five times: neither is a race, so the extra passes asserted nothing new.
+
+## 5.2.21
+
+Test-only: the `pr` tests drop a dead PR body restore and a duplicate open-issue-list failure case.
+
 ## 5.2.20
 
 Tidy the gh module's labelled-bodies parser and the GitHub fake: the parser's locals are named for what they hold, the fake prints a label block through one helper, and two listing comments state their newest-first order. No behaviour changes.
