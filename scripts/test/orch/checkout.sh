@@ -94,19 +94,19 @@ assert_eq "checkouts_main prints nothing on an empty walk" "$out" ""
 
 # checkouts_or_die / main_checkout_or_die: what the plain queries print, or the
 # message for when git worktree list fails.
-nowalk="$(nowalk_bin)"
+worktree_list_fails="$(worktree_list_fails_bin)"
 assert_eq "checkouts_or_die prints the walk" "$(sourced_orch checkouts_or_die)" "$walk_held"
 assert_eq "main_checkout_or_die prints the main checkout" \
   "$(cd "$side" && sourced_orch main_checkout_or_die)" "$top"
-out="$(PATH="$nowalk:$PATH" sourced_orch checkouts_or_die 2>&1)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" sourced_orch checkouts_or_die 2>&1)"; st=$?
 assert_status "checkouts_or_die dies on a failed walk" "$st" 1
 assert_contains "checkouts_or_die names the walk failure" "$out" \
   "orch: could not read the checkouts - git worktree list failed"
-out="$(PATH="$nowalk:$PATH" sourced_orch main_checkout_or_die 2>&1)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" sourced_orch main_checkout_or_die 2>&1)"; st=$?
 assert_status "main_checkout_or_die dies on a failed walk" "$st" 1
 assert_contains "main_checkout_or_die names the walk failure" "$out" \
   "orch: could not read the checkouts - git worktree list failed"
-out="$(PATH="$nowalk:$PATH" sourced_orch branch_checkout gone 2>&1)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" sourced_orch branch_checkout gone 2>&1)"; st=$?
 assert_status "branch_checkout dies on a failed walk" "$st" 1
 assert_contains "branch_checkout names the walk failure" "$out" \
   "orch: could not read the checkouts - git worktree list failed"
@@ -152,10 +152,10 @@ for dir in "$top" "$top/.orchestrator/worktrees/t9"; do
   assert_eq "checkout_kind on ${dir##*/} reads no git dir" "$(trace_git 'rev-parse --absolute-git-dir')" "0"
   assert_eq "checkout_kind on ${dir##*/} spawns two git processes" "$(trace_git '')" "2"
 done
-out="$(PATH="$nowalk:$PATH" sourced_orch main_checkout 2>/dev/null)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" sourced_orch main_checkout 2>/dev/null)"; st=$?
 assert_status "main_checkout fails on a failed walk" "$st" 1
 assert_eq "and main_checkout prints nothing" "$out" ""
-out="$(PATH="$nowalk:$PATH" sourced_orch checkout_kind "$side" 2>/dev/null)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" sourced_orch checkout_kind "$side" 2>/dev/null)"; st=$?
 assert_status "checkout_kind fails on a failed walk" "$st" 1
 assert_eq "and checkout_kind prints nothing" "$out" ""
 

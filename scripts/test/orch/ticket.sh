@@ -1239,7 +1239,7 @@ tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
 commit_file "$wt" ticket.txt one
 flow_tip="$(git rev-parse orch/5-feature)"
-out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" ticket merge 7 2>&1)"; st=$?
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge dies when the checkouts cannot be read" "$st" 1
 assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"
 assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
