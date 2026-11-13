@@ -325,12 +325,15 @@ lines_split() {
 # newlines kept - read by the shell itself, starting no external command.
 # Fails, <var> untouched, when the file cannot be read.
 file_read() {
-  local _file_read_s _file_read_fd
-  [[ ! -d $2 ]] || return 1
-  exec {_file_read_fd}<"$2" || return 1
-  IFS= read -r -d '' _file_read_s <&"$_file_read_fd" || :
-  exec {_file_read_fd}<&-
-  printf -v "$1" '%s' "$_file_read_s"
+  local _file_read_s
+  if [[ -r $2 && ! -d $2 ]]; then
+    IFS= read -r -d '' _file_read_s <"$2" || :
+    printf -v "$1" '%s' "$_file_read_s"
+    return 0
+  fi
+  # Only the failure path starts a command: cat gives its own diagnostic.
+  cat "$2" >/dev/null || :
+  return 1
 }
 
 # file_write_atomic <file> <text>: <text> written to <file>, exactly, through a

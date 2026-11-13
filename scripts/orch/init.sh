@@ -49,7 +49,7 @@ $outside_block
 
 # `init --issue N`'s one-time gate: the issue must exist, be open, and carry
 # this repo's local name for the ready-for-agent role - resolved through
-# triage_label_for, never the literal string, so a repo that renamed its
+# triage_label_into, never the literal string, so a repo that renamed its
 # labels still gets a correct check. Checked once, here, and never again: a
 # maintainer's later triage housekeeping must not stop a flow already running
 # against the issue (docs/adr/0005).

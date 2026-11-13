@@ -157,7 +157,7 @@ assert_eq "a command that succeeds silently returns 0 and leaves the variable em
 rm -f "$cefile"
 unset cefile
 
-# --- label_listed ---------------------------------------------------------------
+# --- label_listed ---------------------------------------------------------
 echo
 echo "label_listed"
 new_repo >/dev/null
@@ -172,7 +172,13 @@ sourced_orch label_listed "" bug && ll_v=y || ll_v=n
 assert_eq "label_listed finds nothing in an empty list" "$ll_v" "n"
 sourced_orch label_listed "" "" && ll_v=y || ll_v=n
 assert_eq "label_listed matches an empty item against an empty line" "$ll_v" "y"
-if locale -a 2>/dev/null | grep -qix 'tr_TR\.utf-\?8'; then
+assert_eq "label_listed answers with an empty PATH" \
+  "$(sourced_orch_script 'PATH=; label_listed $'\''Bug\nx'\'' BUG && printf y; label_listed Bug x || printf n')" "yn"
+ll_locales="$(locale -a 2>/dev/null)"
+case "${ll_locales,,}" in
+  *tr_tr.utf8*|*tr_tr.utf-8*) ll_tr=1 ;; *) ll_tr="" ;;
+esac
+if [ -n "$ll_tr" ]; then
   LC_ALL=tr_TR.UTF-8 sourced_orch label_listed $'i' I && ll_v=y || ll_v=n
   assert_eq "label_listed under a Turkish locale still matches I with i" "$ll_v" "y"
 else

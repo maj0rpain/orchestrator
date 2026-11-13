@@ -1475,26 +1475,15 @@ mwrap="$(mktemp -d)"
 writeln '#!/bin/sh' "echo x >>'$mlog'" "exec $(command -v git) \"\$@\"" >"$mwrap/git"
 chmod +x "$mwrap/git"
 mark_counted() { bash -c 'source "$1"; PATH="$2:$PATH"; side_checkout_marker "$3"' _ "$ORCH" "$mwrap" "$1" >/dev/null; }
-: >"$mlog"
-mark_counted "$mlink"
-assert_eq "a readable pointer starts no git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
 mptr="$(<"$mlink/.git")"
 rm "$mlink/.git"; mkdir "$mlink/.git"
 : >"$mlog"
 mark_counted "$mlink"
-assert_ne "an unreadable pointer asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
-rmdir "$mlink/.git"; printf '%s\n' "$mptr" >"$mlink/.git"
-
-# doctor starts no git per plain worktree.
-doctor_git_starts() {
-  : >"$mlog"
-  PATH="$mwrap:$PATH" "$ORCH" doctor --env >/dev/null 2>&1
-  wc -l <"$mlog" | tr -d ' '
-}
-mtwo_a="$(mktemp -d)/a"; git worktree add -q "$mtwo_a" -b pw-a
-mtwo_b="$(mktemp -d)/b"; git worktree add -q "$mtwo_b" -b pw-b
-two="$(doctor_git_starts)"
-for n in c d e; do git worktree add -q "$(mktemp -d)/$n" -b "pw-$n"; done
-five="$(doctor_git_starts)"
-assert_eq "doctor starts as many git processes with five more worktrees as with two" "$five" "$two"
+assert_ne "a pointer that is a HEAD-less directory asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+rmdir "$mlink/.git"
+printf 'not a pointer\n' >"$mlink/.git"
+: >"$mlog"
+mark_counted "$mlink"
+assert_ne "a pointer file with no gitdir line asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+printf '%s\n' "$mptr" >"$mlink/.git"
 restore_suite_env

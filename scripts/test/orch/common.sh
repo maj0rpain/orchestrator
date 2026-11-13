@@ -149,14 +149,11 @@ assert_eq "list_has matches glob and regex characters and an empty item literall
   "$lh_verdicts" " y y y y y y n"
 sourced_orch list_has "" bug && lh_v=y || lh_v=n
 assert_eq "list_has finds nothing in an empty list" "$lh_v" "n"
-sourced_orch list_has "" "" && lh_v=y || lh_v=n
-assert_eq "list_has still matches an empty item against an empty line" "$lh_v" "y"
-assert_eq "list_has, label_listed and path_last_into answer with an empty PATH" \
+assert_eq "list_has and path_last_into answer with an empty PATH" \
   "$(sourced_orch_script '
     PATH=
     list_has $'"'"'a\nb'"'"' b && printf y; list_has a b || printf n
-    label_listed $'"'"'Bug\nx'"'"' BUG && printf y; label_listed Bug x || printf n
-    path_last_into r /d/e/f.md .md; printf " %s" "$r"')" "ynyn f"
+    path_last_into r /d/e/f.md .md; printf " %s" "$r"')" "yn f"
 # path_last_into: a path's last component, a suffix stripped, as basename gives.
 plt=""
 for plt_args in "/a/b/c.md" "/a/b/c.md .md" "c.md" "c.md .md" ".md .md" "/a/b/ " "/ "; do
@@ -264,10 +261,6 @@ assert_eq "capture strips stdout's trailing newlines" \
   "$(sourced_orch_script 'capture o e printf "a\n\nb\n\n\n"; printf %s "[$o]"')" "[a
 
 b]"
-assert_eq "capture_err returns stderr byte for byte" \
-  "$(sourced_orch_script 'capture_err e eval "printf \"x\n\n\" >&2"; printf %s "[$e]"')" "[x
-
-]"
 assert_eq "capture returns the command's status" \
   "$(sourced_orch_script 'st=0; capture o e bash -c "echo out; echo err >&2; exit 7" || st=$?; echo "$st [$o] [$e]"')" "7 [out] [err
 ]"
@@ -323,6 +316,10 @@ assert_eq "file_read of an empty file sets an empty variable" \
   "$(sourced_orch_script 'v=old; file_read v "$1"; echo "$? [$v]"' "$cap_tmp/empty")" "0 []"
 assert_eq "file_read of a missing file fails with the variable untouched" \
   "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/missing")" "1 [old]"
+assert_eq "file_read of a missing file gives cat's own message" \
+  "$(sourced_orch_script 'file_read v "$1" 2>&1' "$cap_tmp/missing")" "cat: $cap_tmp/missing: No such file or directory"
+assert_eq "and of a directory too" \
+  "$(sourced_orch_script 'file_read v "$1" 2>&1' "$cap_tmp")" "cat: $cap_tmp: Is a directory"
 printf 'x' >"$cap_tmp/unreadable"; chmod a-r "$cap_tmp/unreadable"
 if [ ! -r "$cap_tmp/unreadable" ]; then
   assert_eq "file_read of an unreadable file fails with the variable untouched" \

@@ -26,11 +26,12 @@ side_checkout_marked() { [ -f "$1/$SIDE_CHECKOUT_MARKER" ]; }
 # resolved. Fails, <var> untouched, when the pointer is missing, unreadable or
 # names no folder holding a HEAD - the caller then asks git.
 side_checkout_gitdir_into() {
-  local _sg_base="$2" _sg_dir _sg_line=""
+  local _sg_base="$2" _sg_ptr _sg_dir _sg_line=""
   case "$_sg_base" in /*) ;; *) _sg_base="$PWD/$_sg_base" ;; esac
-  _sg_dir="$_sg_base/.git"
-  if [ -f "$_sg_dir" ]; then
-    { IFS= read -r _sg_line || [ -n "$_sg_line" ]; } 2>/dev/null <"$_sg_dir" || return 1
+  _sg_ptr="$_sg_base/.git"
+  _sg_dir="$_sg_ptr"
+  if [ -f "$_sg_ptr" ]; then
+    { IFS= read -r _sg_line || [ -n "$_sg_line" ]; } 2>/dev/null <"$_sg_ptr" || return 1
     case "$_sg_line" in "gitdir: "?*) _sg_dir="${_sg_line#gitdir: }" ;; *) return 1 ;; esac
     case "$_sg_dir" in /*) ;; *) _sg_dir="$_sg_base/$_sg_dir" ;; esac
     case "$_sg_dir" in

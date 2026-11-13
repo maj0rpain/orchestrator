@@ -2405,3 +2405,26 @@ assert_eq "triage_label_into sets what triage_label_for prints" "$out" "same"
 out="$(bash -c "$tli_script" _ "$tli_root/none" "$(dirname "$ORCH")/triage-labels.sh" 2>&1)"
 assert_eq "a missing doc answers the role name itself" "$out" "same"
 rm -rf "$tli_root"
+
+# --- doctor --env: git processes per worktree ---------------------------------
+# A plain worktree costs doctor no git process: the ownership marker is found
+# from the worktree's own git pointer, seen through a counting wrapper on PATH.
+echo
+echo "doctor --env git processes per worktree"
+healthy_repo
+dg_log="$(mktemp)"
+dg_wrap="$(mktemp -d)"
+writeln '#!/bin/sh' "echo x >>'$dg_log'" "exec $(command -v git) \"\$@\"" >"$dg_wrap/git"
+chmod +x "$dg_wrap/git"
+doctor_git_starts() {
+  : >"$dg_log"
+  PATH="$dg_wrap:$PATH" "$ORCH" doctor --env >/dev/null 2>&1
+  wc -l <"$dg_log" | tr -d ' '
+}
+git worktree add -q "$(mktemp -d)/a" -b pw-a
+git worktree add -q "$(mktemp -d)/b" -b pw-b
+dg_two="$(doctor_git_starts)"
+for dg_n in c d e; do git worktree add -q "$(mktemp -d)/$dg_n" -b "pw-$dg_n"; done
+dg_five="$(doctor_git_starts)"
+assert_eq "doctor starts as many git processes with five more worktrees as with two" "$dg_five" "$dg_two"
+restore_suite_env

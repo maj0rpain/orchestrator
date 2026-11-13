@@ -129,7 +129,7 @@ label_listed() {
   [[ $2 != *$'\n'* ]] || return 1
   local LC_ALL=C
   local _ll_list="${1,,}" _ll_item="${2,,}"
-  [[ $'\n'"$_ll_list"$'\n' == *$'\n'"$_ll_item"$'\n'* ]]
+  list_has "$_ll_list" "$_ll_item"
 }
 
 # --- gh failure contract (#1022) ----------------------------------------------

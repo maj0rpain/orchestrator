@@ -860,10 +860,8 @@ assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not cr
 assert_eq "and runs nothing" "$(on_disk "$ran_marker")" absent
 rm -f "$ran_marker"
 # the plan step's own temp-file failure keeps its own reason, not the wrapper's
-step_marker="$(mktemp -u)"
-out="$(sourced_orch_script 'set +e; m="$1"; mktemp() { return 1; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"' "$step_marker")"
+out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"')"
 assert_eq "the plan step failing to make its own temp file keeps its reason" "$out" "rc=1 reason=could not create a temp file"
-rm -f "$step_marker"
 # the side-checkout add step, stopped by each of capture's two temp files: the
 # first (nth=1) is for the command's stdout, the second for its stderr
 for pk_nth in 1 2; do
