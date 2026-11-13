@@ -173,9 +173,10 @@ every module at once, in C-locale name order, so a function replaced after the
 `source` line stays replaced; only a plain, unexported `ORCH_SOURCE_LAZY=1` set
 before the `source` line loads on demand, and a sourced start always unsets it.
 Reading another module's top-level variable: a top-level variable is one a
-module assigns outside any function, plainly or through `readonly` or
-`declare`. A function, or a module's own top-level code, that reads another
-module's top-level variable names `orch_load <that module>` earlier in its own
+module assigns outside any function, plainly or through `readonly`,
+`declare`, `export` or `typeset`. A function, or a module's own top-level
+code, that reads another module's top-level variable names
+`orch_load <that module>` earlier in its own
 text than the first such read, so on-demand loading never reads an unset
 variable. The variables of the always-loaded files (`orch.sh`, `common.sh`,
 `loader.sh` and the files `orch.sh` sources from `scripts/` itself) are exempt.
