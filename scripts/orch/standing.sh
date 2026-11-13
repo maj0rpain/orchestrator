@@ -635,8 +635,10 @@ standing_limit_stop() {
   # later attempt. A read that fails, on a GitHub limit or for any other
   # reason, fixes nothing: the attempt fails, and a later one reads again.
   plan="$(standing_state_get plan)" || {
-    standing_stop_note "limit stop" "$stopped"
-    standing_timeline_read "$issue" "count the stops in a row"
+    timeline_read "$issue" || {
+      standing_stop_note "limit stop" "$stopped"
+      standing_landed_die "could not read issue #$issue's comments to count the stops in a row: ${TIMELINE_REASON:-the comments could not be read}"
+    }
     count="$(timeline_limit_count "$phase")"
     if [ "$count" -ge 2 ]; then plan=third; else plan="count:$count"; fi
     standing_state_put plan "$plan"

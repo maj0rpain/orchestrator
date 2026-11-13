@@ -326,6 +326,11 @@ fake_fail adapter_issue_comments_json "HTTP 500 comments"
 assert_contains "unreadable comments fail the attempt: it dies, naming the read" "$(sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' 2>&1)" "could not read issue #70's comments to count the stops in a row"
 fake_unfail
 assert_eq "and leave the labels, comments and claim as they were" "$(fake_comments_of 70)|$(tr_standing 70)|$(fake_claim_held 70)" "|spec|1|0|0|held"
+tr_seed 73 orch:spec orch:running
+out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"
+standing_limit_stop 73 spec "" 2026-01-01T01:00:00Z 1 log
+echo "stop-lines=$(grep -c "^stop	" "$STANDING_STATE_FILE")"')"
+assert_contains "a limit stop whose read succeeds notes its stop once, not before the read" "$out" "stop-lines=1"
 # limit-stop with the GitHub cause: no label added, orch:running removed
 tr_seed 95 orch:spec orch:running
 sourced_rc 'standing_limit_stop 95 spec 2026-01-01T01:00:00Z 2026-01-01T01:00:00Z 1 log github' >/dev/null
