@@ -3128,7 +3128,7 @@ index_default="$out"
 
 out="$(cd / && "$HELPERS" --tests)"; st=$?
 assert_status "the --tests listing succeeds" "$st" 0
-assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup, the gh fake and the tally" \
+assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup, the gh fake, the tally, the FIFO wait and the counting fixture" \
   "$(index_names "$out")" "$(index_expected "${index_tests[@]}")"
 assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
   "$(printf '# %s\n' "${index_tests[@]}")"
