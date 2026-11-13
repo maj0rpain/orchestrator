@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
-# Sourced by orch_test.sh, all.sh and affected.sh, and by harness.sh through
-# orch_test.sh, so the runners read the test tree one way: all.sh's suite list
-# and a section file's titles, and the files shellcheck checks. Runs nothing.
+# Sourced by orch_test.sh, all.sh, affected.sh and
+# scripts/dev/section-durations.sh, and by harness.sh through orch_test.sh, so
+# the runners read the test tree one way: all.sh's suite list, a section
+# file's titles, the files shellcheck checks, the shellcheck command, the
+# tenths conversion and the durations-file grammar. Runs nothing.
 #
 # SECTION_TITLE_AWK: the awk function title(s) as text, for a program to start
 # with. It drops a header's leading `# --- `, then its trailing spaces and

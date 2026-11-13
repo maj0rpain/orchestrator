@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Sourced by orch_test.sh, all.sh and affected.sh, so the runners never
+# Sourced by orch_test.sh, all.sh, affected.sh and
+# scripts/dev/section-durations.sh, so the runners never
 # disagree on how much of the machine a test run may use, or on how they stop
 # their children when signalled; and by the suites that own a temp root
 # (hooks_test.sh, version_bump_test.sh, lens_bench_test.sh), for that stop

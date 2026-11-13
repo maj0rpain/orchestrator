@@ -973,6 +973,12 @@ dur_run() {
   env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD ORCH_TEST_QUIET='' ORCH_TEST_JOBS="$1" ORCH_TEST_DURATIONS="${2-$dur_out}" \
     bash "$dur_dir/scripts/test/orch_test.sh" 2>&1
 }
+# dur_plant_failing: one planted section that fails, in zzz-failing.sh.
+dur_plant_failing() {
+  printf '%s\n' '  # --- dur fails' \
+    '  echo; echo "dur fails"; bad "dur fails" "planted"' |
+    plant_file "$dur_orch" zzz-failing.sh
+}
 printf 'stale line\n' >"$dur_out"
 out="$(dur_run 2)"; st=$?
 assert_status "a parallel run with a durations file passes" "$st" 0
@@ -983,8 +989,7 @@ assert_eq "each line holds wall and CPU in tenths, then the title" \
 assert_eq "the wall of a 0.3 second section is at least 3 tenths" \
   "$(awk -F'\t' '$3 == "dur b" && $1 >= 3 { print "yes" }' "$dur_out")" "yes"
 assert_contains "a section never sees the setting" "$out" "dur=unset"
-printf '%s\n' '  # --- dur fails' '  echo; echo "dur fails"; bad "dur fails" "planted"' |
-  plant_file "$dur_orch" zzz-failing.sh
+dur_plant_failing
 out="$(dur_run 2)"; st=$?
 assert_status "a failing section fails the run" "$st" 1
 assert_eq "and still writes its line" \
@@ -1005,9 +1010,13 @@ mkdir -p "$dur_tool"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$dur_tool/shellcheck"
 chmod +x "$dur_tool/shellcheck"
 dur_test="$dur_dir/scripts/test"
+# dur_stub_passing <name>: a stub suite in the test dir that passes.
+dur_stub_passing() {
+  printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dur_test/$1"
+}
 sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
-printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dur_test/stub_a.sh"
-printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dur_test/stub_b.sh"
+dur_stub_passing stub_a.sh
+dur_stub_passing stub_b.sh
 dur_file="$dur_test/section-durations.tsv"
 # dur_script [<env assignment>...]: the dev script with a stub shellcheck on
 # PATH, stdout and stderr together.
@@ -1026,8 +1035,7 @@ out="$(dur_script ORCH_TEST_JOBS=1)"; st=$?
 assert_status "the script refuses ORCH_TEST_JOBS=1" "$st" 1
 assert_contains "naming the setting" "$out" "ORCH_TEST_JOBS=1"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
-printf '%s\n' '  # --- dur fails' '  echo; echo "dur fails"; bad "dur fails" "planted"' |
-  plant_file "$dur_orch" zzz-failing.sh
+dur_plant_failing
 out="$(dur_script)"; st=$?
 assert_status "a failing section fails the script" "$st" 1
 assert_contains "naming what failed" "$out" "orch_test.sh"
@@ -1038,7 +1046,7 @@ out="$(dur_script)"; st=$?
 assert_status "a failing other suite fails the script" "$st" 1
 assert_contains "naming it" "$out" "stub_b.sh"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
-printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dur_test/stub_b.sh"
+dur_stub_passing stub_b.sh
 printf '#!/usr/bin/env bash\necho "a.sh:1:1: warning: planted"; exit 1\n' >"$dur_tool/shellcheck"
 out="$(dur_script)"; st=$?
 assert_status "a failing shellcheck step fails the script" "$st" 1
