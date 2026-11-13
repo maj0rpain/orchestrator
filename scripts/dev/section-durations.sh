@@ -38,11 +38,14 @@ if [ "$jobs" -eq 1 ]; then
   echo "section-durations.sh: ORCH_TEST_JOBS=1 runs sections one at a time and records no durations; unset it or set more than 1" >&2
   exit 1
 fi
+test_jobs_pool_init section-durations.sh || exit 1
 suites_read "$dir/all.sh" "$dir" || {
   echo "section-durations.sh: $SUITES_ERR" >&2; exit 1; }
 
 tmp="$(mktemp -d)" || exit 1
+SHELLCHECK_PIDS=()
 trap 'rm -rf "$tmp"' EXIT
+trap 'test_jobs_stop_children ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
 export ORCH_TEST_QUIET=1
 failed=()
 
@@ -79,9 +82,10 @@ if ! command -v shellcheck >/dev/null 2>&1; then
 else
   shellcheck_files "$root"
   shellcheck_run() {
-    cd "$root" || return 1
-    printf '%s\0' "${SHELLCHECK_FILES[@]#"$root/"}" |
-      LC_ALL=C LANG=C xargs -0 -n1 -P "$jobs" "${SHELLCHECK_CMD[@]}"
+    shellcheck_start "$root" "$tmp" "$jobs"
+    shellcheck_join "$tmp"
+    printf '%s\n' "$SHELLCHECK_OUT"
+    return "$SHELLCHECK_STATUS"
   }
   measure shellcheck shellcheck_run || {
     failed+=("shellcheck")

@@ -1008,6 +1008,15 @@ sh_run 1/2
 assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s1,s5,"
 sh_run 2/2
 assert_eq "and starts its sections longest-first" "$sh_started" "s2,s3,s4,"
+rm -f "$sh_t/section-durations.tsv"
+sh_union=""
+for sh_i in 1 2; do
+  sh_run "$sh_i/2"
+  assert_status "group $sh_i of 2 passes with no durations file" "$sh_st" 0
+  sh_union+="$(printf '%s' "$sh_printed" | sed 's/isolation,//')"
+done
+assert_eq "and together they run every section once with no durations file" \
+  "$(printf '%s' "$sh_union" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
 cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
 # Why 5: the weights are s2 30, s5 (unlisted, so the heaviest listed) 30, s3 20,
@@ -1164,9 +1173,9 @@ dur_stub_passing stub_a.sh
 dur_stub_passing stub_b.sh
 dur_file="$dur_test/section-durations.tsv"
 # dur_script [<env assignment>...]: the dev script with a stub shellcheck on
-# PATH, stdout and stderr together.
+# PATH, stdout and stderr together. dur_unset=CI runs it with CI unset.
 dur_script() {
-  env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
+  env ${dur_unset:+-u "$dur_unset"} PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
 }
 printf 'old\n' >"$dur_file"
 out="$(dur_script ORCH_TEST_ONLY='^dur a$' ORCH_TEST_SHARD=2/2)"; st=$?
@@ -1180,6 +1189,28 @@ out="$(dur_script ORCH_TEST_JOBS=1)"; st=$?
 assert_status "the script refuses ORCH_TEST_JOBS=1" "$st" 1
 assert_contains "naming the setting" "$out" "ORCH_TEST_JOBS=1"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+out="$(dur_unset=CI dur_script ORCH_TEST_POOL_PERCENT=abc)"; st=$?
+assert_status "the script refuses a bad ORCH_TEST_POOL_PERCENT" "$st" 1
+assert_contains "naming the setting" "$out" "ORCH_TEST_POOL_PERCENT"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+if command -v flock >/dev/null 2>&1; then
+  # A stub shellcheck probing the pool's one slot: each file gets its own
+  # process, each inside a slot.
+  dur_pool="$dur_dir/pool"
+  dur_log="$dur_dir/probe.log"
+  pool_cpu_file "$dur_dir/cpu1" 1
+  printf '#!/usr/bin/env bash\nif flock -n "%s/slot.1" true; then echo free >>"%s"; else echo busy >>"%s"; fi\n' \
+    "$dur_pool" "$dur_log" "$dur_log" >"$dur_tool/shellcheck"
+  chmod +x "$dur_tool/shellcheck"
+  : >"$dur_log"
+  out="$(dur_unset=CI dur_script ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_POOL_DIR="$dur_pool" \
+    ORCH_TEST_CPU_MAX_FILE="$dur_dir/cpu1")"; st=$?
+  assert_status "the script passes on a 1-slot pool" "$st" 0
+  shellcheck_files "$dur_dir"
+  assert_eq "each shellcheck process ran once per file, inside a pool slot" \
+    "$(sort "$dur_log" | uniq -c | tr -s ' ')" " ${#SHELLCHECK_FILES[@]} busy"
+  cp "$dur_dir/good.tsv" "$dur_file"
+fi
 dur_plant_failing
 out="$(dur_script)"; st=$?
 assert_status "a failing section fails the script" "$st" 1
@@ -2251,17 +2282,20 @@ rm -rf "$jp_dir"
 echo
 echo "the slot fd contract (#2300)"
 fd_tests="$(dirname "$SUITE_SCRIPT")"
-for fd_file in all.sh affected.sh orch_test.sh report.sh; do
+for fd_file in all.sh affected.sh orch_test.sh report.sh test_tree.sh; do
   assert_eq "$fd_file holds no raw slot fd" \
     "$(grep -cE '8>&-|exec 8' "$fd_tests/$fd_file")" "0"
 done
 for fd_file in all.sh affected.sh orch_test.sh; do
+  fd_start="$fd_file"
+  # all.sh starts its shellcheck jobs through the shared shellcheck_start.
+  [ "$fd_file" = all.sh ] && fd_start=test_tree.sh
   assert_eq "$fd_file starts its jobs through test_jobs_job" \
-    "$(grep -c 'test_jobs_job ' "$fd_tests/$fd_file" | awk '{print ($1 > 0)}')" "1"
+    "$(grep -c 'test_jobs_job ' "$fd_tests/$fd_start" | awk '{print ($1 > 0)}')" "1"
   assert_eq "$fd_file never writes REPORT_FAILED" \
     "$(grep -c 'REPORT_FAILED' "$fd_tests/$fd_file")" "0"
 done
-unset fd_file fd_tests
+unset fd_file fd_start fd_tests
 
 # --- the test runners' CPU load (#1586) ---------------------------------------
 # The default job count, test_jobs.sh's test_jobs_default, with getconf faked

@@ -104,20 +104,22 @@ unset ORCH_TEST_ONLY
 all_shard="${ORCH_TEST_SHARD:-}"
 unset ORCH_TEST_SHARD
 test_jobs_shard all.sh "$all_shard" || exit 1
+all_runs_rest=0
+if [ "$TEST_SHARD_I" -eq 1 ]; then all_runs_rest=1; fi
 export ORCH_TEST_QUIET=1
 tmp="$(mktemp -d)" || exit 1
 pids=()
-sc_pids=()
+SHELLCHECK_PIDS=()
 # On INT or TERM, TERM every suite and shellcheck started, wait for each, and
 # exit 130; the EXIT trap removes the temp directory only after that.
-trap 'test_jobs_stop_children "${pids[@]}" "${sc_pids[@]}"' INT TERM
+trap 'test_jobs_stop_children "${pids[@]}" "${SHELLCHECK_PIDS[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
 suites_tmp="$tmp/suites-tmp"
 mkdir "$suites_tmp" || exit 1
 
 suites=(orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh autopilot_container_test.sh autopilot_up_test.sh lens_bench_test.sh)
 # A group other than the first runs orch_test.sh alone.
-if [ "$TEST_SHARD_I" -gt 1 ]; then suites=(orch_test.sh); fi
+if [ "$all_runs_rest" -eq 0 ]; then suites=(orch_test.sh); fi
 for suite in "${suites[@]}"; do
   if [ "$suite" = orch_test.sh ]; then
     TMPDIR="$suites_tmp" ORCH_TEST_SHARD="$all_shard" bash "$dir/$suite" >"$tmp/$suite" &
@@ -127,28 +129,11 @@ for suite in "${suites[@]}"; do
   pids+=("$!")
 done
 have_sc=0
-if [ "$TEST_SHARD_I" -eq 1 ] && command -v shellcheck >/dev/null 2>&1; then
+if [ "$all_runs_rest" -eq 1 ] && command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
   root="$dir/../.."
   shellcheck_files "$root"
-  sc_files=("${SHELLCHECK_FILES[@]}")
-  # At most sc_jobs run at once: past that, wait for the oldest still running
-  # (in start order, so its status is kept for the join below).
-  sc_exits=()
-  sc_next=0
-  for sc_file in "${sc_files[@]}"; do
-    while [ "$((${#sc_pids[@]} - sc_next))" -ge "$sc_jobs" ]; do
-      wait "${sc_pids[$sc_next]}"
-      sc_exits[sc_next]=$?
-      sc_next=$((sc_next + 1))
-    done
-    sc_rel="${sc_file#"$root/"}"
-    test_jobs_slot_wait
-    (cd "$root" && test_jobs_job "${SHELLCHECK_CMD[@]}" "$sc_rel") \
-      >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
-    sc_pids+=("$!")
-    test_jobs_slot_release "$!"
-  done
+  shellcheck_start "$root" "$tmp" "$sc_jobs"
 fi
 
 suite_exits=()
@@ -158,19 +143,7 @@ for suite_pid in "${pids[@]}"; do
   suite_exits+=("$suite_exit")
 done
 if [ "$have_sc" -eq 1 ]; then
-  sc_status=0
-  sc_out=""
-  for sc_n in "${!sc_pids[@]}"; do
-    if [ -n "${sc_exits[$sc_n]:-}" ]; then
-      sc_exit="${sc_exits[$sc_n]}"
-    else
-      wait "${sc_pids[$sc_n]}"
-      sc_exit=$?
-    fi
-    [ "$sc_exit" -gt "$sc_status" ] && sc_status=$sc_exit
-    sc_part="$(<"$tmp/shellcheck.$sc_n")"
-    [ -n "$sc_part" ] && sc_out+="${sc_out:+$'\n'}$sc_part"
-  done
+  shellcheck_join "$tmp"
 fi
 
 for suite_n in "${!suites[@]}"; do
@@ -187,12 +160,12 @@ for leftover in "${leftovers[@]}"; do
   fi
 done
 
-if [ "$TEST_SHARD_I" -gt 1 ]; then
-  :
-elif [ "$have_sc" -eq 0 ]; then
-  report_shellcheck_missing
-else
-  report_shellcheck "$sc_status" "$sc_out"
+if [ "$all_runs_rest" -eq 1 ]; then
+  if [ "$have_sc" -eq 0 ]; then
+    report_shellcheck_missing
+  else
+    report_shellcheck "$SHELLCHECK_STATUS" "$SHELLCHECK_OUT"
+  fi
 fi
 report_verdict all.sh
 exit $?

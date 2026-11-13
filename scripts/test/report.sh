@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Sourced by all.sh, affected.sh and scripts/dev/section-durations.sh, so the
-# two runners print a suite's report and the shellcheck summary the same way.
+# three runners print a suite's report the same way, and all.sh and affected.sh
+# the shellcheck summary too.
 # Runs nothing.
 #
 # report_suite <suite> <status> <output>: prints the suite's FAIL lines with
