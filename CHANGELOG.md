@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.34
+
+Rename Standing's dying comments read to `standing_timeline_read_or_die`, and move the failed re-entry read test case from the `autopilot reenter` section into the Standing transitions section as a sourced `standing_reenter` call. No behaviour change.
+
 ## 5.2.33
 
 The test suite makes a fresh bare-repo origin through one shared helper, and the `branch retire` rerun cases reuse the section's own origin. No behaviour change.
