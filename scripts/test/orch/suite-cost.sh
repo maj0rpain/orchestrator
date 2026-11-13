@@ -200,7 +200,7 @@ assert_status "a passing command's exit 0 passes through" "$st" 0
 assert_eq "its stdout passes through, with nothing added" "$out" "to-out"
 assert_eq "its stderr passes through, with nothing added" "$(cat "$errf")" "to-err"
 assert_eq "the missing record directory is created" "$(on_disk "$rec")" present
-assert_eq "a passing run appends exactly one line" "$(wc -l <"$rec" | tr -d ' ')" 1
+assert_eq "a passing run appends exactly one line" "$(log_count "$rec")" 1
 line="$(tail -n 1 "$rec")"
 assert_record_line "the line has the documented shape, in exactly five fields" "$line"
 assert_eq "its first field is HEAD's full SHA" "$(cut -f1 <<<"$line")" "$(git rev-parse HEAD)"
@@ -218,7 +218,7 @@ git worktree add -q "$PWD/wt" other
 (cd wt && "$ORCH" suite-cost run -- true >/dev/null 2>&1)
 assert_eq "a run in a second worktree lands in the same record" \
   "$(tail -n 1 "$rec" | cut -f5)" "true"
-assert_eq "beside the main checkout's run" "$(wc -l <"$rec" | tr -d ' ')" 2
+assert_eq "beside the main checkout's run" "$(log_count "$rec")" 2
 
 for args in "" "true" "-- " "true --"; do
   # shellcheck disable=SC2086 # the words are the case
@@ -226,7 +226,7 @@ for args in "" "true" "-- " "true --"; do
   assert_status "run with '${args}' is a usage error" "$st" 1
   assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost run -- <cmd> [args...]"
 done
-assert_eq "a usage error records nothing" "$(wc -l <"$rec" | tr -d ' ')" 2
+assert_eq "a usage error records nothing" "$(log_count "$rec")" 2
 
 # An append that fails: the record's path is a directory, so no user, root
 # included, can write it.
@@ -964,7 +964,7 @@ grown_repo
 first="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_contains "a confirmed growth grew" "$first" "grew 80 - "
 assert_eq "its two confirming runs ran" "$(runs)" 2
-assert_eq "one verdict line is written" "$(wc -l <"$vf" | tr -d ' ')" 1
+assert_eq "one verdict line is written" "$(log_count "$vf")" 1
 assert_eq "in the documented format: head, base, floor, growth, time, command, verdict" \
   "$(awk -F'\t' -v h="$head" -v b="$base" -v v="$first" \
     '$1 == h && $2 == b && $3 == "0.01" && $4 == 15 && $5 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T/ && $6 == "sh run.sh" && $7 == v { print "ok" }' "$vf")" "ok"
@@ -978,7 +978,7 @@ printf 'x\n' >untracked
 before_runs="$(runs)"
 "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
 assert_eq "a dirty tree does not reuse the verdict" "$(runs)" "$((before_runs + 2))"
-assert_eq "and writes no line" "$(wc -l <"$vf" | tr -d ' ')" 1
+assert_eq "and writes no line" "$(log_count "$vf")" 1
 rm -f untracked
 
 bs_cmd=(sh run.sh 'a\.b')

@@ -814,7 +814,7 @@ fake_issue_body 23 "$large_body"
 assert_status "fetch of a body over 2000 characters succeeds" "$st" 0
 assert_eq "the body really is over 2000 characters" \
   "$([ "$(wc -c <"$issue_body")" -gt 2000 ] && echo yes || echo no)" "yes"
-assert_eq "written on its own 60 lines" "$(wc -l <"$issue_body" | tr -d ' ')" "60"
+assert_eq "written on its own 60 lines" "$(log_count "$issue_body")" "60"
 assert_eq "verbatim, with no JSON escaping" "$(cat "$issue_body")" "$large_body"
 assert_eq "its 42nd line kept whole" "$(sed -n 42p "$issue_body")" \
   '- Line 42 of the spec: a `$HOME` quote, a \ backslash and "quotes".'
@@ -1014,7 +1014,7 @@ assert_eq "each comment in order, opened by its author-and-date marker, one blan
     '## Agent brief' '' 'Do the `$HOME` thing in #6.' '' \
     '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
 assert_eq "as multi-line text, one file line per comment line, nothing escaped onto one line" \
-  "$(wc -l <"$issue_comments" | tr -d ' ')" "8"
+  "$(log_count "$issue_comments")" "8"
 assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 

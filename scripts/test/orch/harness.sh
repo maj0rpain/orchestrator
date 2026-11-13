@@ -1265,7 +1265,7 @@ all_n="${#SUITES[@]}"
 all_sc_stub 0
 out="$(all_run ORCH_TEST_ONLY='^isolation$' CHANGELOG_BASE=abc123 NO_VERSION_BUMP=1 2>&1)"; st=$?
 assert_status "exits non-zero when a suite failed" "$st" 1
-assert_eq "runs every suite after the first one fails" "$(wc -l <"$all_dir/log" | tr -d ' ')" "$all_n"
+assert_eq "runs every suite after the first one fails" "$(log_count "$all_dir/log")" "$all_n"
 assert_eq "prints the suites' summaries in order, shellcheck's last" \
   "$(all_print_order "$out")" "$all_order"
 assert_eq "unsets ORCH_TEST_ONLY for every suite" "$(grep -c 'only=unset' "$all_dir/log")" "$all_n"
@@ -1293,7 +1293,7 @@ mkdir "$all_dir/orch/no_shell"
 echo 'not a shell file' >"$all_dir/orch/no_shell/notes.txt"
 all_run >/dev/null 2>&1
 assert_eq "a planted directory with no shell file adds no argument" \
-  "$(wc -l <"$all_root/sc_args" | tr -d ' ')" "${#all_written[@]}"
+  "$(log_count "$all_root/sc_args")" "${#all_written[@]}"
 assert_eq "no argument shellcheck receives holds a *" \
   "$(grep -cF '*' "$all_root/sc_args")" "0"
 rm -rf "$all_dir/orch/no_shell"
