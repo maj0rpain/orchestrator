@@ -18,6 +18,39 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
+# term_run <stdout file> <stderr file> <pid file>... -- <command>...: starts
+# <command> in the background, its output to the two files (one shared open
+# file, stderr merged into stdout, when both are the same path), polls (up to 20
+# seconds) until every pid file has content, sends TERM to it, and waits. The
+# command's own pid is the one TERMed, so a caller wanting a directory or an
+# unset variable passes `env -u` or `bash -c 'cd ...; exec ...'` as the
+# command. Sets term_st (its exit status) and term_secs (the seconds it took
+# to return after the TERM).
+term_run() {
+  local out="$1" err="$2" pid pid_file tries=0 t0 ready
+  local -a pid_files=()
+  shift 2
+  while [ "$1" != -- ]; do pid_files+=("$1"); shift; done
+  shift
+  if [ "$out" = "$err" ]; then
+    "$@" >"$out" 2>&1 &
+  else
+    "$@" >"$out" 2>"$err" &
+  fi
+  pid=$!
+  while [ "$tries" -le 200 ]; do
+    ready=1
+    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || ready=0; done
+    [ "$ready" = 1 ] && break
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+  t0=$SECONDS
+  kill -TERM "$pid"
+  wait "$pid"; term_st=$?
+  term_secs=$((SECONDS - t0))
+}
+
 # slot_hold <pool> <slot>: creates <pool> and holds <slot>'s lock in a
 # background process, its pid in SLOT_HOLDER. The holder opens the fifo's write
 # end on fd 8, then opens and locks the slot file on fd 9, and writes the ready
@@ -1008,23 +1041,21 @@ sh_run 1/2
 assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s1,s5,"
 sh_run 2/2
 assert_eq "and starts its sections longest-first" "$sh_started" "s2,s3,s4,"
-rm -f "$sh_t/section-durations.tsv"
-sh_union=""
-for sh_i in 1 2; do
-  sh_run "$sh_i/2"
-  assert_status "group $sh_i of 2 passes with no durations file" "$sh_st" 0
-  sh_union+="$(printf '%s' "$sh_printed" | sed 's/isolation,//')"
-done
-assert_eq "and together they run every section once with no durations file" \
-  "$(printf '%s' "$sh_union" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
-cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
 # Why 5: the weights are s2 30, s5 (unlisted, so the heaviest listed) 30, s3 20,
 # s1 10 and s4 5 wall tenths, dealt in that order; group 1 starts at 18, the
 # rest at 0. With 5 groups s2, s5, s3 and s1 fill groups 2-5 and s4 goes to
 # group 5 (10 < 18), leaving 1/5 with isolation alone. With 4 groups s1 lands
 # in group 1 (18 < 20), so none is left with isolation alone.
-for sh_n in 1 5; do
+# The 2-group pass runs with no durations file; the others with it.
+for sh_n in 2 1 5; do
+  sh_label="$sh_n groups run every planted section exactly once"
+  if [ "$sh_n" -eq 2 ]; then
+    rm -f "$sh_t/section-durations.tsv"
+    sh_label="$sh_n groups run every planted section exactly once with no durations file"
+  else
+    cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
+  fi
   sh_union=""
   for ((sh_i = 1; sh_i <= sh_n; sh_i++)); do
     sh_run "$sh_i/$sh_n"
@@ -1035,7 +1066,7 @@ for sh_n in 1 5; do
     sh_saved_seen["$sh_i/$sh_n"]="$(sort -u "$sh_seen" | tr '\n' ',')"
     sh_union+="$(printf '%s' "$sh_printed" | sed 's/isolation,//')"
   done
-  assert_eq "$sh_n groups run every planted section exactly once" \
+  assert_eq "$sh_label" \
     "$(printf '%s' "$sh_union" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
 done
 sh_run 2/2
@@ -1173,9 +1204,9 @@ dur_stub_passing stub_a.sh
 dur_stub_passing stub_b.sh
 dur_file="$dur_test/section-durations.tsv"
 # dur_script [<env assignment>...]: the dev script with a stub shellcheck on
-# PATH, stdout and stderr together. dur_unset=CI runs it with CI unset.
+# PATH, stdout and stderr together.
 dur_script() {
-  env ${dur_unset:+-u "$dur_unset"} PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
+  env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
 }
 printf 'old\n' >"$dur_file"
 out="$(dur_script ORCH_TEST_ONLY='^dur a$' ORCH_TEST_SHARD=2/2)"; st=$?
@@ -1189,7 +1220,7 @@ out="$(dur_script ORCH_TEST_JOBS=1)"; st=$?
 assert_status "the script refuses ORCH_TEST_JOBS=1" "$st" 1
 assert_contains "naming the setting" "$out" "ORCH_TEST_JOBS=1"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
-out="$(dur_unset=CI dur_script ORCH_TEST_POOL_PERCENT=abc)"; st=$?
+out="$(unset CI; dur_script ORCH_TEST_POOL_PERCENT=abc)"; st=$?
 assert_status "the script refuses a bad ORCH_TEST_POOL_PERCENT" "$st" 1
 assert_contains "naming the setting" "$out" "ORCH_TEST_POOL_PERCENT"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
@@ -1203,7 +1234,7 @@ if command -v flock >/dev/null 2>&1; then
     "$dur_pool" "$dur_log" "$dur_log" >"$dur_tool/shellcheck"
   chmod +x "$dur_tool/shellcheck"
   : >"$dur_log"
-  out="$(dur_unset=CI dur_script ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_POOL_DIR="$dur_pool" \
+  out="$(unset CI; dur_script ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_POOL_DIR="$dur_pool" \
     ORCH_TEST_CPU_MAX_FILE="$dur_dir/cpu1")"; st=$?
   assert_status "the script passes on a 1-slot pool" "$st" 0
   shellcheck_files "$dur_dir"
@@ -1228,6 +1259,65 @@ out="$(dur_script)"; st=$?
 assert_status "a failing shellcheck step fails the script" "$st" 1
 assert_contains "naming it" "$out" "shellcheck"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+# A busy-loop stub suite: its line shows its CPU, so a `time` that missed the
+# child's CPU would read near zero. The stub spins until bash's own `times`
+# reports half a second of user CPU (no fork in the loop).
+printf '#!/usr/bin/env bash\nwhile :; do\n  times >"$0.times"; read -r u _ <"$0.times"; u="${u#*m}"; u="${u%%s}"\n  [ "$((10#${u/./}))" -ge 500 ] && break\ndone\necho; echo "1 passed, 0 failed"\n' >"$dur_test/stub_cpu.sh"
+sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh stub_cpu.sh)/' "$dur_test/all.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$dur_tool/shellcheck"
+out="$(dur_script)"; st=$?
+assert_status "the script passes with a busy-loop stub suite" "$st" 0
+assert_eq "the busy-loop stub's line shows at least 4 tenths of CPU" \
+  "$(awk -F'\t' '$3 == "stub_cpu.sh" { print ($2 >= 4 ? "yes" : "no " $2) }' "$dur_file")" "yes"
+rm -f "$dur_test/stub_cpu.sh" "$dur_test/stub_cpu.sh.times"
+sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
+cp "$dur_file" "$dur_dir/good.tsv"
+
+# TERM to the dev script (#2957), last in the section: a slow child records its
+# pid and sleeps 30 s. After TERM the script must return at once with 130, the
+# child gone and the durations file as it was. INT runs the same trap and is not
+# sent here: a plain background start inherits SIGINT ignored, and the `set -m`
+# launch the isolation-root section uses is not repeated for it.
+
+# dur_term <pid file> [<env assignment>...]: starts the script as in dur_script,
+# through term_run, which TERMs it once the pid file has content, and
+# sets dur_term_st and dur_term_secs (the seconds the script took to return).
+dur_term() {
+  local pid_file="$1"
+  shift
+  : >"$pid_file"
+  term_run "$dur_dir/term.out" "$dur_dir/term.out" "$pid_file" -- \
+    env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" \
+    bash "$dur_dir/scripts/dev/section-durations.sh"
+  dur_term_st=$term_st
+  dur_term_secs=$term_secs
+}
+dur_slow_pid="$dur_dir/slow.pid"
+printf '%s\n' '  # --- dur slow' \
+  '  echo; echo "dur slow"; echo "$BASHPID" >"$DUR_PID"; exec sleep 30' |
+  plant_file "$dur_orch" zzz-slow.sh
+dur_term "$dur_slow_pid" DUR_PID="$dur_slow_pid"
+rm -f "$dur_orch/zzz-slow.sh"
+assert_status "TERM during the orch_test.sh run makes the script exit 130" "$dur_term_st" 130
+assert_eq "within 10 seconds, though the section sleeps 30" "$((dur_term_secs < 10))" "1"
+assert_eq "the section's process is gone" \
+  "$(kill -0 "$(cat "$dur_slow_pid")" 2>/dev/null && echo alive || echo gone)" "gone"
+assert_eq "and the durations file is unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+# A slow stub suite: its TERM trap waits 0.3 s, then notes whether its TMPDIR
+# (the script's temp directory) still exists.
+dur_stub_pid="$dur_dir/stub.pid"
+dur_stub_tmp="$dur_dir/stub.tmp"
+: >"$dur_stub_tmp"
+printf '%s\n' '#!/usr/bin/env bash' \
+  "trap 'kill \$sp; sleep 0.3; [ -d \"\$TMPDIR\" ] && echo yes >\"$dur_stub_tmp\"; exit 0' TERM" \
+  "echo \$\$ >'$dur_stub_pid'" 'sleep 30 & sp=$!; wait' >"$dur_test/stub_a.sh"
+dur_term "$dur_stub_pid"
+assert_status "TERM during a slow stub suite makes the script exit 130" "$dur_term_st" 130
+assert_eq "within 10 seconds, though the stub sleeps 30" "$((dur_term_secs < 10))" "1"
+assert_eq "the stub is gone" \
+  "$(kill -0 "$(cat "$dur_stub_pid")" 2>/dev/null && echo alive || echo gone)" "gone"
+assert_eq "the script's temp directory still existed when the stub stopped" "$(<"$dur_stub_tmp")" "yes"
+assert_eq "and the durations file is unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
 rm -rf "$dur_dir"
 
 # --- assertions in a subshell (#1904) ----------------------------------------
@@ -1939,19 +2029,11 @@ all_swap orch_test.sh \
   "trap 'kill \$sp; sleep 0.3; [ -d \"\$TMPDIR\" ] && echo yes >\"$all_kill/suite.tmp\"; exit 0' TERM" \
   "echo \$\$ >'$all_kill/suite.pid'" \
   'sleep 30 & sp=$!; wait'
-# all_run's environment, with exec so $! is all.sh's own pid.
-(
-  unset CI CHANGELOG_BASE NO_VERSION_BUMP ORCH_TEST_JOBS
-  exec env TMPDIR="$all_kill/tmp" PATH="$all_bin" "$all_bash" "$all_dir/all.sh"
-) >"$all_kill/stdout" 2>&1 &
-all_pid=$!
-all_tries=0
-until [ -s "$all_kill/suite.pid" ] && [ -s "$all_kill/sc.pid" ] || [ "$all_tries" -gt 100 ]; do
-  all_tries=$((all_tries + 1))
-  sleep 0.1
-done
-kill -TERM "$all_pid"
-wait "$all_pid"; st=$?
+# all_run's environment.
+term_run "$all_kill/stdout" "$all_kill/stdout" "$all_kill/suite.pid" "$all_kill/sc.pid" -- \
+  env -u CI -u CHANGELOG_BASE -u NO_VERSION_BUMP -u ORCH_TEST_JOBS \
+  TMPDIR="$all_kill/tmp" PATH="$all_bin" "$all_bash" "$all_dir/all.sh"
+st=$term_st
 all_restore orch_test.sh
 all_alive=0
 for all_stub_pid in $(cat "$all_kill/suite.pid" "$all_kill/sc.pid"); do
@@ -2282,14 +2364,15 @@ rm -rf "$jp_dir"
 echo
 echo "the slot fd contract (#2300)"
 fd_tests="$(dirname "$SUITE_SCRIPT")"
-for fd_file in all.sh affected.sh orch_test.sh report.sh test_tree.sh; do
+for fd_file in all.sh affected.sh orch_test.sh report.sh test_tree.sh ../dev/section-durations.sh; do
   assert_eq "$fd_file holds no raw slot fd" \
     "$(grep -cE '8>&-|exec 8' "$fd_tests/$fd_file")" "0"
 done
-for fd_file in all.sh affected.sh orch_test.sh; do
+for fd_file in all.sh affected.sh orch_test.sh ../dev/section-durations.sh; do
   fd_start="$fd_file"
-  # all.sh starts its shellcheck jobs through the shared shellcheck_start.
-  [ "$fd_file" = all.sh ] && fd_start=test_tree.sh
+  # all.sh and section-durations.sh start their shellcheck jobs through the
+  # shared shellcheck_start.
+  case "$fd_file" in all.sh | ../dev/section-durations.sh) fd_start=test_tree.sh ;; esac
   assert_eq "$fd_file starts its jobs through test_jobs_job" \
     "$(grep -c 'test_jobs_job ' "$fd_tests/$fd_start" | awk '{print ($1 > 0)}')" "1"
   assert_eq "$fd_file never writes REPORT_FAILED" \
@@ -3739,12 +3822,10 @@ assert_eq "a usage error prints no verdict on stdout" "$af_out" ""
 # A TERM stop prints no verdict.
 printf '%s\n' '#!/usr/bin/env bash' "echo \$\$ >'$af.pid'" 'sleep 30' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'echo ok'
-(cd "$af" && exec env -u CI PATH="$af_bin" bash scripts/test/affected.sh HEAD) >"$af.stdout" 2>/dev/null &
-af_pid=$!
-af_tries=0
-until [ -s "$af.pid" ] || [ "$af_tries" -gt 100 ]; do af_tries=$((af_tries + 1)); sleep 0.1; done
-kill -TERM "$af_pid"
-wait "$af_pid"; st=$?
+term_run "$af.stdout" /dev/null "$af.pid" -- \
+  bash -c 'cd "$1" && shift && exec "$@"' _ "$af" \
+  env -u CI PATH="$af_bin" bash scripts/test/affected.sh HEAD
+st=$term_st
 kill "$(cat "$af.pid")" 2>/dev/null
 assert_status "TERM to affected.sh exits 130" "$st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"

@@ -4,7 +4,9 @@
 # scripts/dev/section-durations.sh, and by harness.sh through orch_test.sh, so
 # the runners read the test tree one way: all.sh's suite list, a section
 # file's titles, the files shellcheck checks, the shellcheck command, the
-# tenths conversion and the durations-file grammar. Runs nothing.
+# pooled shellcheck step (`shellcheck_start` / `shellcheck_join`), the tenths
+# conversion and the durations-file grammar. A runner that calls the step first
+# sources test_jobs.sh and inits the job pool. Runs nothing.
 #
 # SECTION_TITLE_AWK: the awk function title(s) as text, for a program to start
 # with. It drops a header's leading `# --- `, then its trailing spaces and
