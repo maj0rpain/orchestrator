@@ -682,12 +682,18 @@ claude_code_only_skill() {
 # other hosts, so skill and command text must pair it with the
 # relative fallback. The documented form (CONTRIBUTING.md, "Resolving
 # orch.sh") is the ORCH= line, the Junie step, and the fallback sentence, or,
-# for a skill marked "Claude Code only.", the ORCH= line and one stop. The lint
-# checks the ORCH= line wherever orch.sh is used, CLAUDE_PLUGIN_ROOT nowhere
-# else, and no Junie lookup in a marked skill; any other mention of the
-# variable, or a file that runs orch.sh without the ORCH= line, is a
-# regression. hooks/hooks.json is deliberately out of scope: both hosts expand
-# it there.
+# for a skill marked "Claude Code only.", the ORCH= line and one stop. A
+# cross-host file (a skill or command not marked "Claude Code only.") that uses
+# orch.sh is held to every step: the ORCH= line, as a line of its own, and the
+# Junie step, the one-install step, the several-installs stop and the relative
+# fallback, these four in the documented order. In it CLAUDE_PLUGIN_ROOT is
+# allowed only on the ORCH= line, in the Junie sentence, and in the plugin-root
+# fallback sentence and its plugin-root paths; a file that names the plugin
+# root carries the Junie step in that sentence. A marked skill is held to the
+# ORCH= line, with CLAUDE_PLUGIN_ROOT nowhere else and no Junie lookup. Any
+# other mention of the variable, any missing step, or a file that runs orch.sh
+# without the ORCH= line, is a regression. hooks/hooks.json is deliberately
+# out of scope: both hosts expand it there.
 echo
 echo "orch.sh resolution (#123)"
 orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
