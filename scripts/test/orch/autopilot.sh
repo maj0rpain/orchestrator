@@ -586,21 +586,6 @@ assert_contains "and gh's reason" "$out" ": HTTP 502"
 fake_unfail
 fake_issue_drop 10
 
-# --- autopilot questions at the issue-list limit ------------------------------
-echo
-echo "autopilot questions at the limit"
-tick_fixture
-for n in 31 32 33; do fake_issue "$n" open needs-human orch:spec; done
-q_err="$(mktemp)"
-out="$(ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" autopilot questions 2>"$q_err")"; st=$?
-assert_status "questions at the limit succeeds" "$st" 0
-assert_contains "warning, labelled" "$(cat "$q_err")" "orch: the open issues labelled needs-human reached the issue-list limit of 2 - the newest past it are missing from this list"
-assert_contains "listing the oldest" "$out" "31"
-assert_not_contains "and not the newest" "$out" "33"
-ORCH_ISSUE_LIST_LIMIT=4 "$ORCH" autopilot questions >/dev/null 2>"$q_err"
-assert_not_contains "one below the limit, no warning" "$(cat "$q_err")" "issue-list limit"
-rm -f "$q_err"
-
 # --- autopilot tick: the cap, lost claims and the order ---------------------
 echo
 echo "autopilot tick pickup"
@@ -1268,6 +1253,17 @@ assert_eq "a marked failure comment is a stop, in its own phase" "$(grep "^26$ta
 assert_eq "an issue with no phase label, orch:done, closed or not needs-human is left out" \
   "$(cut -f1 <<<"$out" | tr "\n" " ")" "11 12 13 14 15 16 17 26 "
 for n in 11 12 13 14 15 16 17 18 19 20 21 26; do fake_issue_drop "$n"; done
+for n in 31 32 33; do fake_issue "$n" open needs-human orch:spec; done
+q_err="$(mktemp)"
+out="$(ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" autopilot questions 2>"$q_err")"; st=$?
+assert_status "questions at the limit succeeds" "$st" 0
+assert_contains "warning, labelled" "$(cat "$q_err")" "orch: the open issues labelled needs-human reached the issue-list limit of 2 - the newest past it are missing from this list"
+assert_contains "listing the oldest" "$out" "31"
+assert_not_contains "and not the newest" "$out" "33"
+ORCH_ISSUE_LIST_LIMIT=4 "$ORCH" autopilot questions >/dev/null 2>"$q_err"
+assert_not_contains "one below the limit, no warning" "$(cat "$q_err")" "issue-list limit"
+rm -f "$q_err"
+for n in 31 32 33; do fake_issue_drop "$n"; done
 fake_issue 11 open needs-human orch:spec
 fake_issue 12 open needs-human orch:spec
 fake_fail adapter_issue_comments_json "$GH_502"
@@ -2794,8 +2790,9 @@ assert_eq "verdicts and the order named" "$out" "3 eligible override
 12 skip untrusted stranger
 13 skip phase spec"
 
-# The fake lists newest first, as gh does, except its oldest-first read: the
-# verb must walk that read in order.
+# The fake's plain open-issue listing is newest first;
+# adapter_issues_open_oldest is the oldest-first read the verb walks, and it
+# must walk it in order.
 
 all="$(ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all 2>&1)"; st=$?
 assert_status "--all succeeds" "$st" 0
