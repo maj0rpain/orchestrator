@@ -239,11 +239,12 @@ standing_resume() {
 # fails partway leaves the claim held, and dies naming the writes that landed;
 # the session wrapper retries a stop chain (see the resumable chain below), and
 # a claim still held after that is cleaned up by a later tick as a failure.
-# STANDING_LANDED accumulates those writes; each chain transition (start,
-# finish, pause, ask, stop, reenter, sync finish, sync dropped, limit-stop
-# and claim release)
-# resets it at its start, then takes up earlier attempts' landed writes from
-# STANDING_STATE_FILE, and begin, sync request, claim drop and resume neither
+# STANDING_LANDED accumulates those writes. The transitions that start a chain
+# (start, ask, stop, reenter, sync finish, sync dropped, limit-stop and claim
+# release) reset it at their start and then, when STANDING_STATE_FILE is set
+# (only inside the session wrapper's stop attempts), take up earlier attempts'
+# landed writes from it. Finish and pause reset it by seeding it from their
+# reason and take up nothing. Begin, sync request, claim drop and resume neither
 # reset nor add to it.
 
 STANDING_LANDED=""
@@ -258,6 +259,13 @@ standing_landed_die() {
 # that failed, naming the reason and the writes that landed before it.
 standing_chain_die() {
   standing_landed_die "could not $2 on issue #$1: $(gh_reason "$3")"
+}
+
+# standing_timeline_read <issue> <purpose>: reads the issue's comments, else
+# dies with the landed writes, naming what the read was for and why it failed.
+standing_timeline_read() {
+  timeline_read "$1" ||
+    standing_landed_die "could not read issue #$1's comments to $2: ${TIMELINE_REASON:-the comments could not be read}"
 }
 
 # The resumable chain (#2695). The session wrapper runs a stop chain up to three
@@ -476,7 +484,11 @@ standing_ask() {
 # standing_post_release <issue> <text> <post-what> <landed-what>: the tail of a
 # write chain that ends in a comment - posts <text> as an issue comment
 # (<post-what> names it in a failure, "post the ... comment"; <landed-what>
-# once landed, "posted the ... comment"), then releases the claim, last.
+# once landed, "posted the ... comment"), then releases the claim, last. A
+# comment an earlier attempt landed is skipped; for one an earlier attempt only
+# tried, the issue's comments are checked first and a found comment counts as
+# landed without a post; a failed check dies with no post and no release. See
+# the resumable chain comment for the state file.
 standing_post_release() {
   local issue="$1" text="$2" post_what="$3" landed_what="$4" present_rc
   if ! standing_landed_has "$landed_what"; then
@@ -484,8 +496,7 @@ standing_post_release() {
     # An earlier attempt's call failed and may have landed: look first, and post
     # nothing when the look fails.
     if [ -s "${STANDING_STATE_FILE:-}" ] && grep -qxF "tried"$'\t'"$landed_what" "$STANDING_STATE_FILE"; then
-      timeline_read "$issue" ||
-        standing_landed_die "could not check issue #$issue's comments for this stop's comment: ${TIMELINE_REASON:-the comments could not be read}"
+      standing_timeline_read "$issue" "check for this stop's comment"
       ! timeline_has_body "$text" || present_rc=0
     fi
     if [ "$present_rc" -eq 0 ]; then
@@ -517,21 +528,19 @@ standing_comment_post() {
 # under the claim. With fewer than two re-entry comments of <phase> in a row
 # it posts <text> as a re-entry comment - no @mention, no label change - then
 # releases the claim; with two or more it asks instead, noting that. A
-# timeline that cannot be read takes the failure stop.
+# timeline that cannot be read dies with the claim held and no write, for the
+# session wrapper to sort.
 standing_reenter() {
   local issue="$1" phase="$2" text="$3" count body
   standing_chain_start
-  { timeline_read "$issue" && count="$(timeline_reentry_count "$phase")"; } || {
-    standing_stop "$issue" failure "$phase" "the issue's comments could not be read to count the automatic re-entries in a row"
-    return 0
-  }
+  standing_timeline_read "$issue" "count the automatic re-entries in a row"
+  count="$(timeline_reentry_count "$phase")"
   if [ "$count" -ge 2 ]; then
     standing_ask "$phase" "$text"$'\n\nThis follows two automatic re-entries of the '"$phase"$' loop, so it asks instead of starting another.\n'
     return 0
   fi
   printf -v body '%s\n\nThe watcher starts another %s loop.\n' "$text" "$phase"
   body="$(marked_comment_write reentry "$phase")"$'\n'"$body"
-  standing_stop_note "re-entry" "$body"
   standing_post_release "$issue" "$body" \
     "post the re-entry comment" "posted the $phase re-entry comment"
 }
@@ -542,16 +551,17 @@ standing_reenter() {
 # write is worded "add <label>[, remove <remove-label>]" in a failure and
 # "added ...[, removed ...]" once landed, whenever a removal label is given.
 standing_stop_write() {
-  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" gh_err relabel=()
+  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" gh_err relabel=() landed
+  landed="added $label${remove:+, removed $remove}"
   relabel=(--add "$label")
   if [ -n "$remove" ]; then
     relabel+=(--remove "$remove")
   fi
   standing_stop_note "$kind" "$text"
-  if ! standing_landed_has "added $label${remove:+, removed $remove}"; then
+  if ! standing_landed_has "$landed"; then
     capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
       standing_chain_die "$issue" "add $label${remove:+, remove $remove}" "$gh_err"
-    standing_landed_add "added $label${remove:+, removed $remove}"
+    standing_landed_add "$landed"
   fi
   standing_post_release "$issue" "$text" "post the $kind comment" "posted the $kind comment"
 }
@@ -627,7 +637,7 @@ standing_limit_stop() {
   plan="$(standing_state_get plan)" || {
     timeline_read "$issue" || {
       standing_stop_note "limit stop" "$stopped"
-      standing_landed_die "could not read issue #$issue's comments to count the stops in a row: $TIMELINE_REASON"
+      standing_landed_die "could not read issue #$issue's comments to count the stops in a row: ${TIMELINE_REASON:-the comments could not be read}"
     }
     count="$(timeline_limit_count "$phase")"
     if [ "$count" -ge 2 ]; then plan=third; else plan="count:$count"; fi
