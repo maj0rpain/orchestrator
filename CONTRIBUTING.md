@@ -55,6 +55,17 @@ noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
+A parallel `orch_test.sh` run starts its kept sections longest-first, read from
+`scripts/test/section-durations.tsv`: one line per section, tab-separated, of
+wall seconds, CPU seconds (both in tenths of a second) and the section's title.
+Sections the file does not list start first, in walk order; the rest follow by
+wall seconds, longest first, ties in walk order, so a run ends when its work
+does. Output stays in walk order, and a filtered run orders the sections it kept
+the same way; `ORCH_TEST_JOBS=1` runs in walk order in one shell. A line that
+does not parse and a title that matches no section are ignored, and a missing
+file gives walk order: the file costs speed only, and nothing checks it for
+freshness.
+
 A case lives once, in the section of the module it exercises. The Standing
 sections own what a transition does on its own: its writes, its write chain
 (the "writes that landed: ..." wording) and the claim staying held when a write

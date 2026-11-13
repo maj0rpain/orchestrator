@@ -763,6 +763,61 @@ assert_status "the clock starts at the child's start, not its wait for a slot" "
 assert_eq "so a queued section reports no timeout" "$(printf '%s\n' "$out" | grep -c 'timed out')" "0"
 rm -rf "$dl_dir"
 
+# --- the parallel runner's start order (#2857) ---------------------------------
+# A copy of the scripts tree with planted sections, each logging its name to
+# $ord_log as it starts, over a planted durations file beside the runner. With
+# two jobs, isolation and the unlisted section start first, and the unlisted
+# one holds its slot, so every later start waits for the one before it to end:
+# the log is the start order.
+echo
+echo "the parallel runner's start order (#2857)"
+ord_dir="$(planted_copy <<'PLANTED'
+  # --- ord a
+  echo "ord a" >>"$ORD_LOG"; echo; echo "ord a"; ok "a ran"
+  # --- ord b
+  echo "ord b" >>"$ORD_LOG"; echo; echo "ord b"; ok "b ran"
+  # --- ord c
+  echo "ord c" >>"$ORD_LOG"; echo; echo "ord c"; ok "c ran"
+  # --- ord d
+  echo "ord d" >>"$ORD_LOG"; echo; echo "ord d"; ok "d ran"
+  # --- ord unlisted
+  echo "ord unlisted" >>"$ORD_LOG"; sleep 1; echo; echo "ord unlisted"; ok "u ran"
+PLANTED
+)"
+ord_suite="$ord_dir/scripts/test/orch_test.sh"
+ord_file="$ord_dir/scripts/test/section-durations.tsv"
+ord_log="$ord_dir/start.log"
+# ord_run <jobs> <filter>: run the planted sections; the start order, then the
+# header order of the output, one comma-separated line each.
+ord_run() {
+  : >"$ord_log"
+  ord_out="$(ORD_LOG="$ord_log" ORCH_TEST_QUIET='' ORCH_TEST_JOBS="$1" ORCH_TEST_ONLY="$2" \
+    bash "$ord_suite" 2>&1)"; ord_st=$?
+  ord_started="$(tr '\n' ',' <"$ord_log")"
+  ord_printed="$(printf '%s\n' "$ord_out" | grep -xE 'ord [a-z]+' | tr '\n' ',')"
+}
+printf '%s\n' \
+  "10	11	ord a" "30	31	ord b" "20	21	ord c" "20	22	ord d" \
+  "99	99	a section that no longer exists" "not a line" "x	1	ord a" "5	ord a" "1	2" \
+  >"$ord_file"
+ord_run 2 '^ord '
+assert_status "a longest-first run passes" "$ord_st" 0
+assert_eq "starts the unlisted section first, then by wall seconds, ties in walk order" \
+  "$ord_started" "ord unlisted,ord b,ord c,ord d,ord a,"
+assert_eq "prints the sections in walk order whatever the start order" \
+  "$ord_printed" "ord a,ord b,ord c,ord d,ord unlisted,"
+ord_run 2 '^ord (a|b)$'
+assert_eq "starts the sections a filter kept longest-first" "$ord_started" "ord b,ord a,"
+assert_eq "and prints them in walk order" "$ord_printed" "ord a,ord b,"
+ord_run 1 '^ord '
+assert_eq "ORCH_TEST_JOBS=1 starts in walk order" "$ord_started" "ord a,ord b,ord c,ord d,ord unlisted,"
+rm -f "$ord_file"
+ord_run 2 '^ord '
+assert_status "a run with no durations file passes" "$ord_st" 0
+assert_eq "starts in walk order without the file" "$ord_started" "ord a,ord b,ord c,ord d,ord unlisted,"
+assert_eq "and prints in walk order" "$ord_printed" "ord a,ord b,ord c,ord d,ord unlisted,"
+rm -rf "$ord_dir"
+
 # --- assertions in a subshell (#1904) ----------------------------------------
 # A cut-down orch suite with one failing assertion inside ( ... ) and one
 # passing outside: the tally file counts both, whatever the job count.
