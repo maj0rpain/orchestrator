@@ -508,12 +508,12 @@ assert_eq "and the resumed retire marks the new name" \
   "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" "true"
 
 # A resume whose push fails is not rolled back: the rename was not this call's.
-fresh_bare_origin bare5
+fresh_bare_origin bare7
 git checkout -q -b rr-push
 git push -q -u origin rr-push
 git branch -m rr-push rr-push-redo-1
 # shellcheck disable=SC2154 # assigned by fresh_bare_origin
-origin_rejects "$bare5"
+origin_rejects "$bare7"
 out="$(orch_gh_failing branch retire rr-push rr-push-redo-1 2>&1)"; st=$?
 assert_status "a resume whose push is rejected dies" "$st" 1
 assert_contains "naming the push" "$out" "could not push rr-push-redo-1 to origin:"
