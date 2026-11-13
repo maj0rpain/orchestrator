@@ -1,5 +1,17 @@
 # Changelog
 
+## 5.2.30
+
+Labelled issue listings run oldest first, so a listing cut at the issue-list limit drops the newest issues and the autopilot tick keeps its oldest-first Pickup order. Every cut listing - the tick's flow-issue and done reads, `autopilot questions`, `autopilot candidates` and finding triage's scan - warns on stderr in one shared wording when it reaches the limit.
+
+## 5.2.29
+
+Rename the names inside `session_log_read` so each says what it holds; no behaviour change.
+
+## 5.2.28
+
+The autopilot session wrapper no longer stops a first-loop review with `needs-human` when recording the plan's Budget meets a GitHub API rate limit: it waits out the GitHub pause and releases only the claim, as the GitHub-limited start-up read does, so the issue is picked up again after the reset. The budget step's ordinary failure stop now retries through the stop chain, every backstop line in the session log names the stop's kind, first line and a closing clause from its caller, the run record is made once before the start-up read, and the Liveness module owns the hit file and describes it in its header.
+
 ## 5.2.27
 
 The automatic re-entry transition now dies with the claim held and no write when it cannot read the issue's comments, so the session wrapper sorts a GitHub API rate limit as a limit stop that is waited out. Also removes a dead stop note and fixes stale Standing comments.

@@ -2,12 +2,14 @@
 # liveness.sh - the Liveness module, a concept module with no noun: whether
 # the process behind an autopilot flow's claim on this host is still running.
 # It owns the autopilot directory's run/ layout (run/<issue>.pid, the run
-# record, and run/<issue>.tick, the tick's record), the `<pid> <start-time>`
-# record format, the start-time reader (/proc/<pid>/stat field 22 under
-# $ORCH_PROC_DIR, else `ps -o lstart=`), the record-alive rule, the watch
-# pidfile and the session log naming (logs/<issue>-<phase>-<stamp>.log). Of
-# orch.sh's files only this one touches /proc, ps and run/. Its tests:
-# scripts/test/orch/liveness.sh.
+# record, run/<issue>.tick, the tick's record, and run/<issue>.hit, the hit
+# file: the reset of a GitHub API rate limit a session hit), the
+# `<pid> <start-time>` record format, the start-time reader
+# (/proc/<pid>/stat field 22 under $ORCH_PROC_DIR, else `ps -o lstart=`), the
+# record-alive rule, the watch pidfile and the session log naming
+# (logs/<issue>-<phase>-<stamp>.log). Of orch.sh's files only this one touches
+# /proc and ps and names paths under run/; a session writes the hit file only
+# at the path the wrapper hands it. Its tests: scripts/test/orch/liveness.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # liveness_proc_start <pid>: the process's start time as one whitespace-free
@@ -66,6 +68,18 @@ liveness_hit_path() {
   local dir
   dir="$(liveness_subdir run)" || exit $?
   printf '%s/%s.hit\n' "$dir" "$1"
+}
+
+# liveness_hit_take <issue>: prints the text of the issue's hit file and
+# removes the file; prints nothing when there is none. A failed removal is
+# ignored.
+liveness_hit_take() {
+  local hit
+  hit="$(liveness_hit_path "$1")" || exit $?
+  [ -f "$hit" ] || return 0
+  cat "$hit" 2>/dev/null
+  rm -f "$hit" 2>/dev/null
+  return 0
 }
 
 # liveness_tick_begin <issue>: right after a tick takes a claim, writes the

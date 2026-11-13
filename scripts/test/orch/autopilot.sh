@@ -560,6 +560,32 @@ clean_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "the failure comment names the log" "$(fake_comments_of 7 | tail -4)" "log: $clean_log"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
+# --- autopilot tick: the flow-issue read at the issue-list limit ------------
+echo
+echo "autopilot tick flow issues at the limit"
+tick_fixture
+for n in 7 8 9; do fake_issue "$n" open ready-for-agent orch:spec; fake_issue_title "$n" "Issue $n"; done
+fake_issue 10 open ready-for-agent orch:spec; fake_issue_title 10 "Issue 10"
+git config orchestrator.autopilot.cap 3
+: >"$launcher_dir/calls"; printf '7 8 9 10\n' >"$launcher_dir/release"
+tl_err="$(mktemp)"
+ORCH_ISSUE_LIST_LIMIT=3 "$ORCH" autopilot tick >/dev/null 2>"$tl_err"; st=$?
+assert_status "a tick with more flow issues than the limit succeeds" "$st" 0
+assert_eq "it picks up the oldest three" "$(picked)" "issue-7 issue-8 issue-9 "
+assert_contains "and warns at the limit, labelled" "$(cat "$tl_err")" \
+  "orch: the open issues labelled orch:spec reached the issue-list limit of 3 - the newest past it are missing from this list"
+: >"$launcher_dir/calls"; printf '7 8 9 10\n' >"$launcher_dir/release"
+ORCH_ISSUE_LIST_LIMIT=5 "$ORCH" autopilot tick >/dev/null 2>"$tl_err"
+assert_not_contains "one below the limit, no limit warning" "$(cat "$tl_err")" "issue-list limit"
+rm -f "$tl_err"
+fake_fail adapter_issues_labelled "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick whose flow-issue listing fails exits 1" "$st" 1
+assert_contains "naming the label and the reason" "$out" "orch: could not list the issues labelled orch:"
+assert_contains "and gh's reason" "$out" ": HTTP 502"
+fake_unfail
+fake_issue_drop 10
+
 # --- autopilot tick: the cap, lost claims and the order ---------------------
 echo
 echo "autopilot tick pickup"
@@ -1227,6 +1253,17 @@ assert_eq "a marked failure comment is a stop, in its own phase" "$(grep "^26$ta
 assert_eq "an issue with no phase label, orch:done, closed or not needs-human is left out" \
   "$(cut -f1 <<<"$out" | tr "\n" " ")" "11 12 13 14 15 16 17 26 "
 for n in 11 12 13 14 15 16 17 18 19 20 21 26; do fake_issue_drop "$n"; done
+for n in 31 32 33; do fake_issue "$n" open needs-human orch:spec; done
+q_err="$(mktemp)"
+out="$(ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" autopilot questions 2>"$q_err")"; st=$?
+assert_status "questions at the limit succeeds" "$st" 0
+assert_contains "warning, labelled" "$(cat "$q_err")" "orch: the open issues labelled needs-human reached the issue-list limit of 2 - the newest past it are missing from this list"
+assert_contains "listing the oldest" "$out" "31"
+assert_not_contains "and not the newest" "$out" "33"
+ORCH_ISSUE_LIST_LIMIT=4 "$ORCH" autopilot questions >/dev/null 2>"$q_err"
+assert_not_contains "one below the limit, no warning" "$(cat "$q_err")" "issue-list limit"
+rm -f "$q_err"
+for n in 31 32 33; do fake_issue_drop "$n"; done
 fake_issue 11 open needs-human orch:spec
 fake_issue 12 open needs-human orch:spec
 fake_fail adapter_issue_comments_json "$GH_502"
@@ -1240,9 +1277,10 @@ fake_issue 11 open needs-human orch:spec
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #11's comments"
-fake_fail adapter_issues_labelled "$GH_502"
-"$ORCH" autopilot questions >/dev/null 2>&1; st=$?
+fake_fail adapter_issues_labelled "HTTP 502"
+out="$("$ORCH" autopilot questions 2>&1 >/dev/null)"; st=$?
 assert_status "a failed listing dies" "$st" 1
+assert_eq "naming the needs-human listing and the reason" "$out" "orch: gh could not list the needs-human issues: HTTP 502"
 fake_unfail
 
 # usage
@@ -1788,7 +1826,8 @@ bud_run() {
   rm -f "$launcher_dir/calls"; : >"$launcher_dir/out"; printf '0\n' >"$launcher_dir/exit"
   fake_issue_relabel 7 orch:spec ready-for-agent orch:running
   fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
-  "$ORCH" autopilot run 7 >/dev/null 2>&1
+  bud_rc=0
+  "$ORCH" autopilot run 7 >/dev/null 2>&1 || bud_rc=$?
 }
 bud_budget() { (cd "$side7" && "$ORCH" state get budget 2>/dev/null) || echo none; }
 
@@ -1809,6 +1848,53 @@ assert_contains "with a reason naming the Budget and the plan reader's own cause
   "could not record the plan's Budget as the review budget: orch: issue #7's plan comment has no valid ## Autopilot Budget line"
 assert_eq "and the claim released" "$(fake_claim_held 7)" free
 assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
+# a budget read that meets a GitHub limit only releases the claim (#2739)
+bud_limit() { rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log; }
+bud_limit
+comments_before="$(fake_comments_of 7)"
+fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded for user ID 1."
+fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
+bud_run review 0 4
+fake_unfail
+assert_eq "a budget read that meets a GitHub limit releases the claim" "$(fake_claim_held 7)" free
+assert_eq "posts no comment" "$(fake_comments_of 7)" "$comments_before"
+assert_not_contains "adds no needs-human" "$(fake_labels_of 7)" "needs-human"
+assert_eq "starts no session" "$(tick_calls)" "0"
+assert_eq "and the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+# the same, the release failing every attempt: the claim stays, a backstop line
+bud_limit
+fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded for user ID 1."
+fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
+fake_fail adapter_issue_relabel "HTTP 500 relabel"
+bud_run review 0 4
+fake_unfail
+bud_logs=("$top"/.orchestrator/autopilot/logs/7-*.log)
+assert_eq "a budget limit with a failing release leaves the claim held" "$(fake_claim_held 7)" held
+assert_eq "and autopilot run still exits 0" "$bud_rc" "0"
+assert_contains "and its backstop line says no session ran" "$(tail -1 "${bud_logs[0]}")" \
+  "claim release: could not release the claim; no session ran: the first-loop review's budget record met a GitHub limit"
+# an unreadable Budget whose stop writes fail every attempt: backstop line
+bud_limit
+fake_fail adapter_issue_relabel "HTTP 500 relabel"
+bud_run review 0 4
+fake_unfail
+bud_logs=("$top"/.orchestrator/autopilot/logs/7-*.log)
+assert_eq "an unreadable Budget with failing stop writes leaves the claim held" "$(fake_claim_held 7)" held
+assert_contains "and its backstop line names the stop and no session ran" "$(tail -1 "${bud_logs[0]}")" \
+  "could not record the plan's Budget as the review budget"
+assert_contains "and ends on no session ran" "$(tail -1 "${bud_logs[0]}")" "; no session ran"
+# an unreadable Budget whose stop write fails once still stops, frees the claim
+bud_limit
+# the earlier cases' stop comments are dropped: the retry reads the comments
+# and posts nothing when the same text is already there
+grep -l "could not record the plan's Budget" "$ORCH_GH_FAKE_STORE"/issues/7/comments/*/body | xargs -n1 dirname | xargs rm -rf
+assert_not_contains "the earlier stop comments are gone" "$(fake_comments_of 7)" "could not record the plan's Budget"
+fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
+bud_run review 0 4
+fake_unfail
+assert_contains "an unreadable Budget whose stop write fails once still comments" "$(fake_last_comment_of 7)" "could not record the plan's Budget"
+assert_contains "and still adds needs-human" "$(fake_labels_of 7)" "needs-human"
+assert_eq "and frees the claim" "$(fake_claim_held 7)" free
 
 # The final reply, end to end: a fake launcher writes a long, multi-line result
 # event, and the failure comment quotes it collapsed and cut (the "autopilot
@@ -2432,6 +2518,22 @@ assert_contains "and still gets orch:sync" "$(fake_labels_of 63)" "orch:sync"
 fake_unfail
 fake_issue_drop 63
 
+# the done read at the issue-list limit acts on the oldest issues, warns, and
+# carries on
+fake_done_merged 70 3600; fake_done_merged 71 3600; fake_done_merged 72 3600
+dl_err="$(mktemp)"
+ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" autopilot tick >/dev/null 2>"$dl_err"; st=$?
+assert_status "a tick whose done listing is at the limit succeeds" "$st" 0
+assert_contains "it warns, labelled" "$(cat "$dl_err")" "orch: the open issues labelled orch:done reached the issue-list limit of 2 - the newest past it are missing from this list"
+assert_eq "it closes the oldest" "$(fake_state_of 70)" "CLOSED"
+assert_eq "and leaves the newest past the limit" "$(fake_state_of 72)" "OPEN"
+fake_issue_drop 70; fake_issue_drop 71; fake_issue_drop 72
+fake_done_merged 70 3600; fake_done_merged 71 3600
+ORCH_ISSUE_LIST_LIMIT=3 "$ORCH" autopilot tick >/dev/null 2>"$dl_err"
+assert_not_contains "one below the limit, the done read gives no limit warning" "$(cat "$dl_err")" "issue-list limit"
+rm -f "$dl_err"
+fake_issue_drop 70; fake_issue_drop 71
+
 fake_fail_times adapter_prs_merged_closing 1 "HTTP 502"
 fake_fail_times adapter_prs_open_mergeability 1 "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
@@ -2546,6 +2648,7 @@ assert_not_contains "and no needs-human label" "$(fake_labels_of 7)" "needs-huma
 assert_eq "the tick ends after that pickup: the next issue is not claimed" "$(fake_claim_held 8)" free
 assert_eq "and no session starts" "$(tick_calls)" "0"
 assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+assert_eq "and its run record is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
 rm -f "$top/.orchestrator/autopilot/github-limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_contains "the issue is picked up again after the pause" "$(picked)" "limit-pickup-7"
@@ -2581,6 +2684,7 @@ assert_eq "releases the claim" "$(fake_claim_held 7)" free
 assert_eq "posts no comment" "$(fake_comments_of 7)" "$comments_before"
 assert_eq "and starts no session" "$(tick_calls)" "0"
 assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+assert_eq "and its run record is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
 # a claim list that cannot be read on this path still releases the claim
 fake_issue 7 open orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
@@ -2599,6 +2703,7 @@ fake_fail_times adapter_issue_state_labels 1 "HTTP 500"
 fake_unfail
 assert_status "a start-up read that fails for another reason dies" "$st" 1
 assert_eq "and leaves the claim held" "$(fake_claim_held 7)" held
+assert_eq "and its run record is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
 # a claim release that fails every attempt keeps the claim, writes a backstop
 # line that says no session ran, and names its log by the claim's own phase
 # (which stale cleanup looks it up by)
@@ -2612,7 +2717,7 @@ fake_unfail
 su_logs=("$top"/.orchestrator/autopilot/logs/7-sync-*.log)
 assert_eq "a failed start-up claim release leaves the claim held" "$(fake_claim_held 7)" held
 assert_eq "and names its log by the claim's phase" "$([ -e "${su_logs[0]}" ] && echo named || echo missing)" named
-assert_contains "and its backstop line says no session ran" "$(tail -1 "${su_logs[0]}")" "the stop chain failed after 3 attempts - claim release: could not release the claim after a GitHub-limited start-up read; no session ran"
+assert_contains "and its backstop line says no session ran" "$(tail -1 "${su_logs[0]}")" "the stop chain failed after 3 attempts - claim release: could not release the claim; no session ran: the start-up read met a GitHub limit"
 
 # --- autopilot tick: the early GitHub pause (#2577) ---------------------------
 echo
@@ -2736,8 +2841,9 @@ assert_eq "verdicts and the order named" "$out" "3 eligible override
 12 skip untrusted stranger
 13 skip phase spec"
 
-# The fake lists newest first, as gh does, except its oldest-first read: the
-# verb must walk that read in order.
+# The fake's plain open-issue listing is newest first;
+# adapter_issues_open_oldest is the oldest-first read the verb walks, and it
+# must walk it in order.
 
 all="$(ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all 2>&1)"; st=$?
 assert_status "--all succeeds" "$st" 0
