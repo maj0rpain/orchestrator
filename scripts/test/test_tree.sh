@@ -114,9 +114,9 @@ DURATIONS_AWK='function durations_read() {
 # shellcheck disable=SC2034 # read by the sourcing runners
 SHELLCHECK_CMD=(shellcheck -S warning -f gcc)
 
-# The function shellcheck_start <root> <outdir> <jobs> runs SHELLCHECK_CMD on each file of
-# SHELLCHECK_FILES from <root>, one process per file, each holding a job-pool
-# slot, at most <jobs> at once. Process <n>'s output goes to
+# The function shellcheck_start <root> <outdir> <jobs> runs SHELLCHECK_CMD on
+# each file of SHELLCHECK_FILES from <root>, one process per file, each holding
+# a job-pool slot, at most <jobs> at once. Process <n>'s output goes to
 # <outdir>/shellcheck.<n>. Sets SHELLCHECK_PIDS, and SHELLCHECK_EXITS at the
 # same index for each process already waited for to keep <jobs> running.
 shellcheck_start() {
@@ -138,9 +138,9 @@ shellcheck_start() {
   done
 }
 
-# The function shellcheck_join <outdir> waits for each process whose exit SHELLCHECK_EXITS
-# lacks; sets SHELLCHECK_STATUS to the highest exit and SHELLCHECK_OUT to the
-# non-empty outputs joined in start order.
+# The function shellcheck_join <outdir> waits for each process whose exit
+# SHELLCHECK_EXITS lacks; sets SHELLCHECK_STATUS to the highest exit and
+# SHELLCHECK_OUT to the non-empty outputs joined in start order.
 shellcheck_join() {
   local outdir="$1" n exit_code part
   SHELLCHECK_STATUS=0
