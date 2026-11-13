@@ -8,7 +8,7 @@
 # ALL_RUNNER_FILES: the files, by name in scripts/test/, that make up all.sh's
 # runnable copy. Every fixture that copies all.sh derives its copy, its written
 # list and its shellcheck counts from it.
-ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh)
+ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 
 # count_lines [<grep flag>...] <pattern> <text>: prints how many lines of
 # <text> match <pattern>. Every argument before the last two goes to grep
@@ -100,6 +100,23 @@ planted_copy() {
   dir="$(mktemp -d)" || return 1
   cp -R "$PLUGIN_ROOT/scripts" "$dir/" || return 1
   plant_file "$dir/scripts/test/orch" zz-planted.sh || return 1
+  printf '%s\n' "$dir"
+}
+
+# planted_minimal_tree: like planted_copy, but a minimal tree - the runners,
+# setup.sh, the dev script section-durations.sh and an isolation-only harness.sh
+# in a fresh temp directory - with the section lines read from stdin planted as
+# scripts/test/orch/zz-planted.sh. Prints the directory; the caller removes it.
+planted_minimal_tree() {
+  local dir t
+  dir="$(mktemp -d)" || return 1
+  t="$dir/scripts/test"
+  mkdir -p "$t/orch" "$dir/scripts/dev" || return 1
+  (cd "$PLUGIN_ROOT/scripts/test" && cp "${ALL_RUNNER_FILES[@]}" orch_test.sh tally.sh \
+    fifo.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$t/" && cp orch/setup.sh "$t/orch/" &&
+    cp ../flow-state.sh "$dir/scripts/" && cp ../dev/section-durations.sh "$dir/scripts/dev/") || return 1
+  printf '%s\n' '# --- isolation ---' 'echo; echo isolation; ok "isolation ran"' >"$t/orch/harness.sh" || return 1
+  plant_file "$t/orch" zz-planted.sh || return 1
   printf '%s\n' "$dir"
 }
 
@@ -894,6 +911,305 @@ out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_SECTION_TIMEOUT=4 \
 assert_status "the clock starts at the child's start, not its wait for a slot" "$st" 0
 assert_eq "so a queued section reports no timeout" "$(printf '%s\n' "$out" | grep -c 'timed out')" "0"
 rm -rf "$dl_dir"
+
+# --- the parallel runner's start order (#2857) ------------------------------
+# A minimal test tree with planted sections, each logging its process id
+# and name to $ord_log as it starts, over a planted durations file beside the
+# runner. The runner starts its children one after another, so their ids rise in
+# start order whatever order they boot and log in: the start order is the log
+# sorted by id.
+echo
+echo "the parallel runner's start order (#2857)"
+ord_dir="$(planted_minimal_tree <<'PLANTED'
+  # --- ord a
+  echo "$$ ord a" >>"$ORD_LOG"; echo; echo "ord a"; ok "a ran"
+  # --- ord b
+  echo "$$ ord b" >>"$ORD_LOG"; echo; echo "ord b"; ok "b ran"
+  # --- ord c
+  echo "$$ ord c" >>"$ORD_LOG"; echo; echo "ord c"; ok "c ran"
+  # --- ord d
+  echo "$$ ord d" >>"$ORD_LOG"; echo; echo "ord d"; ok "d ran"
+  # --- ord unlisted
+  echo "$$ ord unlisted" >>"$ORD_LOG"; echo; echo "ord unlisted"; ok "u ran"
+PLANTED
+)"
+ord_suite="$ord_dir/scripts/test/orch_test.sh"
+ord_file="$ord_dir/scripts/test/section-durations.tsv"
+ord_log="$ord_dir/start.log"
+# ord_run <jobs> <filter>: run the planted sections; the start order, then the
+# header order of the output, one comma-separated line each.
+ord_run() {
+  : >"$ord_log"
+  ord_out="$(ORD_LOG="$ord_log" ORCH_TEST_QUIET='' ORCH_TEST_JOBS="$1" ORCH_TEST_ONLY="$2" \
+    bash "$ord_suite" 2>&1)"; ord_st=$?
+  ord_started="$(sort -n <"$ord_log" | cut -d' ' -f2- | tr '\n' ',')"
+  ord_printed="$(printf '%s\n' "$ord_out" | grep -xE 'ord [a-z]+' | tr '\n' ',')"
+}
+printf '%s\n' \
+  "10	11	ord a" "30	31	ord b" "20	21	ord c" "20	22	ord d" \
+  "99	99	a section that no longer exists" "not a line" "x	1	ord a" "5	ord a" "1	2" \
+  >"$ord_file"
+ord_run 2 '^ord '
+assert_status "a longest-first run passes" "$ord_st" 0
+assert_eq "starts the unlisted section first, then by wall seconds, ties in walk order" \
+  "$ord_started" "ord unlisted,ord b,ord c,ord d,ord a,"
+assert_eq "prints the sections in walk order whatever the start order" \
+  "$ord_printed" "ord a,ord b,ord c,ord d,ord unlisted,"
+ord_run 2 '^ord (a|b)$'
+assert_eq "starts the sections a filter kept longest-first" "$ord_started" "ord b,ord a,"
+assert_eq "and prints them in walk order" "$ord_printed" "ord a,ord b,"
+ord_run 1 '^ord '
+assert_eq "ORCH_TEST_JOBS=1 starts in walk order" "$ord_started" "ord a,ord b,ord c,ord d,ord unlisted,"
+rm -f "$ord_file"
+ord_run 2 '^ord '
+assert_status "a run with no durations file passes" "$ord_st" 0
+assert_eq "starts in walk order without the file" "$ord_started" "ord a,ord b,ord c,ord d,ord unlisted,"
+assert_eq "and prints in walk order" "$ord_printed" "ord a,ord b,ord c,ord d,ord unlisted,"
+rm -rf "$ord_dir"
+
+# --- the shard setting (#2859) ------------------------------------------------
+# A minimal test tree - the runners, setup.sh, a harness with an isolation
+# section and five planted sections - over planted durations: wall tenths 10,
+# 30, 20 and 5 for s1 to s4, s5 unlisted (so it weighs 30), 9 for hooks_test.sh
+# and 9 for shellcheck, which group 1 starts with (18). The CPU tenths differ
+# on purpose: a dealing by CPU gives other groups. Two groups deal s1 and s5 to
+# group 1, s2, s3 and s4 to group 2. Each planted section logs
+# its process id and name as it starts; the runner starts its children one
+# after another, so the log sorted by id is the start order.
+echo
+echo "the shard setting (#2859)"
+sh_dir="$(
+  for sh_n in 1 2 3 4 5; do
+    echo "  # --- shard s$sh_n"
+    echo "  echo \"\$\$ shard s$sh_n\" >>\"\$SH_LOG\"; echo; echo 'shard s$sh_n'; ok 's$sh_n ran'; echo \"\${ORCH_TEST_SHARD-unset}\" >>\"\$SH_SEEN\""
+  done | planted_minimal_tree
+)"
+sh_t="$sh_dir/scripts/test"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for sh_s in "${SUITES[@]}"; do
+  [ -e "$sh_t/$sh_s" ] || echo 'echo; echo "1 passed, 0 failed"' >"$sh_t/$sh_s"
+done
+printf '%s\n' "10	50	shard s1" "30	40	shard s2" "20	30	shard s3" "5	20	shard s4" \
+  "9	70	hooks_test.sh" "9	10	shellcheck" "1	99	a section that no longer exists" \
+  >"$sh_t/section-durations.tsv"
+sh_log="$sh_dir/log"
+sh_seen="$sh_dir/seen"
+# sh_run <shard> [jobs] [hold]: orch_test.sh in the tree under that setting, s5
+# holding for <hold> seconds (default 0); the
+# shard-section names it ran (start order, then printed order), its status.
+sh_run() {
+  : >"$sh_log"; : >"$sh_seen"
+  sh_out="$(SH_LOG="$sh_log" SH_SEEN="$sh_seen" ORCH_TEST_QUIET='' ORCH_TEST_ONLY='' ORCH_TEST_JOBS="${2:-2}" \
+    ORCH_TEST_SHARD="$1" bash "$sh_t/orch_test.sh" 2>&1)"; sh_st=$?
+  sh_started="$(sort -n <"$sh_log" | cut -d' ' -f2- | tr '\n' ',' | sed 's/shard //g')"
+  sh_printed="$(printf '%s\n' "$sh_out" | grep -xE 'shard s[0-9]|isolation' | sed 's/shard //' | tr '\n' ',')"
+}
+sh_run 1/2
+assert_status "group 1 of 2 passes" "$sh_st" 0
+assert_eq "group 1 runs isolation and the sections the dealing gives it" "$sh_printed" "isolation,s1,s5,"
+assert_eq "and starts the unlisted one first" "$sh_started" "s5,s1,"
+sh_run 2/2
+sh_first_22="$sh_printed"
+assert_eq "group 2 gets the rest, the unlisted section weighing as the heaviest listed one" \
+  "$sh_printed" "isolation,s2,s3,s4,"
+assert_eq "its sections start longest-first" "$sh_started" "s2,s3,s4,"
+# A file that lists no planted section: each weighs 1 wall second (10 tenths),
+# so the 30 tenths of the shellcheck line put s4 in group 1, the rest in 2.
+cp "$sh_t/section-durations.tsv" "$sh_dir/durations.keep"
+printf '%s\n' "30	9	shellcheck" >"$sh_t/section-durations.tsv"
+sh_run 1/2
+assert_eq "with no section listed, each weighs one wall second" "$sh_printed" "isolation,s4,"
+cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
+printf '%s' "$(<"$sh_dir/durations.keep")" >"$sh_t/section-durations.tsv"
+sh_run 1/2
+assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s1,s5,"
+sh_run 2/2
+assert_eq "and starts its sections longest-first" "$sh_started" "s2,s3,s4,"
+cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
+declare -A sh_saved_printed sh_saved_st sh_saved_seen
+for sh_n in 1 9; do
+  sh_union=""
+  for ((sh_i = 1; sh_i <= sh_n; sh_i++)); do
+    sh_run "$sh_i/$sh_n"
+    [ "$sh_st" -eq 0 ] || bad "group $sh_i of $sh_n passes" "$sh_out"
+    [ "$(printf '%s' "$sh_printed" | grep -o isolation | wc -l)" -eq 1 ] ||
+      bad "group $sh_i of $sh_n runs isolation once" "$sh_printed"
+    sh_saved_printed["$sh_i/$sh_n"]="$sh_printed"; sh_saved_st["$sh_i/$sh_n"]="$sh_st"
+    sh_saved_seen["$sh_i/$sh_n"]="$(sort -u "$sh_seen" | tr '\n' ',')"
+    sh_union+="$(printf '%s' "$sh_printed" | sed 's/isolation,//')"
+  done
+  assert_eq "$sh_n groups run every planted section exactly once" \
+    "$(printf '%s' "$sh_union" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
+done
+sh_run 2/2
+assert_eq "a second call groups the same" "$sh_printed" "$sh_first_22"
+assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[9/9]}" "isolation,"
+assert_eq "and passes" "${sh_saved_st[9/9]}" 0
+assert_eq "1/1 runs every section" "${sh_saved_printed[1/1]}" "isolation,s1,s2,s3,s4,s5,"
+assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" "${sh_saved_seen[1/1]}" "unset,"
+sh_run ""
+assert_eq "an empty value runs as unset" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
+sh_run 1/2 1
+assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s1,s5,"
+# test_jobs_shard parses the value; one runner-level case shows the refusal
+# comes before any section starts.
+for sh_bad in x 0/2 3/2 1/ /2 1/2/3 a/b -1/2 " 1/2"; do
+  sh_out="$(unset CI; source "$(dirname "$SUITE_SCRIPT")/test_jobs.sh"
+    test_jobs_shard orch_test.sh "$sh_bad" 2>&1)"; sh_st=$?
+  assert_status "ORCH_TEST_SHARD='$sh_bad' is refused" "$sh_st" 1
+  assert_eq "with the message" "$sh_out" \
+    "orch_test.sh: ORCH_TEST_SHARD='$sh_bad' is not <i>/<n> with 1 <= i <= n"
+done
+sh_run 3/2
+assert_status "the runner refuses ORCH_TEST_SHARD=3/2" "$sh_st" 1
+assert_eq "before any section starts" "$sh_out
+$(cat "$sh_log")" "orch_test.sh: ORCH_TEST_SHARD='3/2' is not <i>/<n> with 1 <= i <= n
+"
+for sh_v in 1/1 1/2; do
+  sh_out="$(SH_LOG="$sh_log" ORCH_TEST_SHARD="$sh_v" ORCH_TEST_ONLY='^shard s1$' bash "$sh_t/orch_test.sh" 2>&1)"; sh_st=$?
+  assert_status "ORCH_TEST_SHARD=$sh_v with ORCH_TEST_ONLY exits 1" "$sh_st" 1
+  assert_eq "and says they cannot both be set" "$sh_out" \
+    "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set"
+done
+sh_out="$(SH_LOG="$sh_log" SH_SEEN="$sh_seen" ORCH_TEST_SHARD="" ORCH_TEST_ONLY='^shard s1$' bash "$sh_t/orch_test.sh" 2>&1)"; sh_st=$?
+assert_status "an empty ORCH_TEST_SHARD with ORCH_TEST_ONLY runs the filter" "$sh_st" 0
+# all.sh: group 1 runs the other suites and shellcheck, a later group only
+# orch_test.sh, and the setting reaches orch_test.sh alone.
+sh_all_dir="$(mktemp -d)"
+stub_all_tree "$sh_all_dir" "$sh_all_dir/sc.log"
+for sh_s in "${SUITES[@]}"; do
+  printf '#!/usr/bin/env bash\necho "%s shard=${ORCH_TEST_SHARD:-unset}" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
+    "$sh_s" >"$sh_all_dir/scripts/test/$sh_s"
+done
+sh_all() {
+  : >"$sh_all_dir/scripts/test/log"; : >"$sh_all_dir/sc.log"
+  sh_out="$(cd "$sh_all_dir" && env -u CI PATH="$sh_all_dir/bin" ORCH_TEST_SHARD="$1" \
+    bash scripts/test/all.sh 2>&1)"; sh_st=$?
+}
+sh_all 1/2
+assert_status "all.sh in group 1 passes" "$sh_st" 0
+assert_eq "group 1 runs every suite" "$(grep -c . "$sh_all_dir/scripts/test/log")" "${#SUITES[@]}"
+assert_contains "orch_test.sh gets the setting" "$(cat "$sh_all_dir/scripts/test/log")" "orch_test.sh shard=1/2"
+assert_contains "no other suite does" "$(cat "$sh_all_dir/scripts/test/log")" "hooks_test.sh shard=unset"
+assert_eq "group 1 runs shellcheck" "$([ -s "$sh_all_dir/sc.log" ] && echo yes || echo no)" "yes"
+assert_eq "and its verdict counts every part" "$(printf '%s\n' "$sh_out" | tail -n 1)" \
+  "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+sh_all 2/2
+assert_status "all.sh in group 2 passes" "$sh_st" 0
+assert_eq "group 2 runs orch_test.sh alone" "$(cat "$sh_all_dir/scripts/test/log")" "orch_test.sh shard=2/2"
+assert_eq "and no shellcheck" "$([ -s "$sh_all_dir/sc.log" ] && echo yes || echo no)" "no"
+assert_eq "its verdict counts only orch_test.sh" "$(printf '%s\n' "$sh_out" | tail -n 1)" \
+  "all.sh: PASS (1 parts)"
+sh_all 3/2
+assert_status "all.sh refuses a malformed setting" "$sh_st" 1
+assert_eq "with the runner's message and nothing run" "$sh_out
+$(cat "$sh_all_dir/scripts/test/log")" "all.sh: ORCH_TEST_SHARD='3/2' is not <i>/<n> with 1 <= i <= n
+"
+sh_all ""
+assert_eq "all.sh runs an empty setting as unset" "$(cat "$sh_all_dir/scripts/test/log" | grep -c 'shard=unset')" "${#SUITES[@]}"
+rm -rf "$sh_all_dir" "$sh_dir"
+
+# --- section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858) -----
+# A copy of the scripts tree cut down to planted sections and stub suites, run
+# at its command line: orch_test.sh with ORCH_TEST_DURATIONS, then the dev
+# script over the same tree with a stub shellcheck first on PATH.
+echo
+echo "section durations (#2858)"
+dur_dir="$(planted_minimal_tree <<'PLANTED'
+  # --- dur a
+  echo; echo "dur a"; echo "dur=${ORCH_TEST_DURATIONS-unset}"; ok "a ran"
+  # --- dur b
+  echo; echo "dur b"; sleep 0.3; ok "b ran"
+PLANTED
+)"
+dur_orch="$dur_dir/scripts/test/orch"
+dur_out="$dur_dir/out.tsv"
+# dur_run <jobs> [<file>]: orch_test.sh over the planted tree, parallel by
+# default, writing durations to <file> (default $dur_out).
+dur_run() {
+  env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD ORCH_TEST_QUIET='' ORCH_TEST_JOBS="$1" ORCH_TEST_DURATIONS="${2-$dur_out}" \
+    bash "$dur_dir/scripts/test/orch_test.sh" 2>&1
+}
+# dur_plant_failing: one planted section that fails, in zzz-failing.sh.
+dur_plant_failing() {
+  printf '%s\n' '  # --- dur fails' \
+    '  echo; echo "dur fails"; bad "dur fails" "planted"' |
+    plant_file "$dur_orch" zzz-failing.sh
+}
+printf 'stale line\n' >"$dur_out"
+out="$(dur_run 2)"; st=$?
+assert_status "a parallel run with a durations file passes" "$st" 0
+assert_eq "it writes one line per section, in walk order, after emptying the file" \
+  "$(cut -f3 "$dur_out" | tr '\n' ',')" "isolation,dur a,dur b,"
+assert_eq "each line holds wall and CPU in tenths, then the title" \
+  "$(grep -cE '^[0-9]+	[0-9]+	.' "$dur_out")" "3"
+assert_eq "the wall of a 0.3 second section is at least 3 tenths" \
+  "$(awk -F'\t' '$3 == "dur b" && $1 >= 3 { print "yes" }' "$dur_out")" "yes"
+assert_contains "a section never sees the setting" "$out" "dur=unset"
+dur_plant_failing
+out="$(dur_run 2)"; st=$?
+assert_status "a failing section fails the run" "$st" 1
+assert_eq "and still writes its line" \
+  "$(cut -f3 "$dur_out" | tr '\n' ',')" "isolation,dur a,dur b,dur fails,"
+rm -f "$dur_orch/zzz-failing.sh"
+printf 'stale\n' >"$dur_out"
+out="$(dur_run 1)"; st=$?
+assert_status "a sequential run passes" "$st" 0
+assert_eq "and ignores the setting, leaving the file alone" "$(<"$dur_out")" "stale"
+out="$(dur_run 2 "$dur_dir/no-such-dir/x.tsv")"; st=$?
+assert_status "an unwritable durations file is refused" "$st" 1
+assert_eq "naming the file" "$out" \
+  "orch_test.sh: ORCH_TEST_DURATIONS='$dur_dir/no-such-dir/x.tsv' is not writable"
+
+# The dev script, over the same tree: stub suites and a stub shellcheck.
+dur_tool="$dur_dir/bin"
+mkdir -p "$dur_tool"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$dur_tool/shellcheck"
+chmod +x "$dur_tool/shellcheck"
+dur_test="$dur_dir/scripts/test"
+# dur_stub_passing <name>: a stub suite in the test dir that passes.
+dur_stub_passing() {
+  printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dur_test/$1"
+}
+sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
+dur_stub_passing stub_a.sh
+dur_stub_passing stub_b.sh
+dur_file="$dur_test/section-durations.tsv"
+# dur_script [<env assignment>...]: the dev script with a stub shellcheck on
+# PATH, stdout and stderr together.
+dur_script() {
+  env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
+}
+printf 'old\n' >"$dur_file"
+out="$(dur_script ORCH_TEST_ONLY='^dur a$' ORCH_TEST_SHARD=2/2)"; st=$?
+assert_status "the script passes on a passing tree, ORCH_TEST_ONLY and ORCH_TEST_SHARD set" "$st" 0
+assert_eq "it writes the sections in walk order, then the suites, then shellcheck" \
+  "$(cut -f3 "$dur_file" | tr '\n' ',')" "isolation,dur a,dur b,stub_a.sh,stub_b.sh,shellcheck,"
+assert_eq "every line is two numbers in tenths and a name" \
+  "$(grep -cE '^[0-9]+	[0-9]+	.' "$dur_file")" "6"
+cp "$dur_file" "$dur_dir/good.tsv"
+out="$(dur_script ORCH_TEST_JOBS=1)"; st=$?
+assert_status "the script refuses ORCH_TEST_JOBS=1" "$st" 1
+assert_contains "naming the setting" "$out" "ORCH_TEST_JOBS=1"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+dur_plant_failing
+out="$(dur_script)"; st=$?
+assert_status "a failing section fails the script" "$st" 1
+assert_contains "naming what failed" "$out" "orch_test.sh"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+rm -f "$dur_orch/zzz-failing.sh"
+printf '#!/usr/bin/env bash\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
+out="$(dur_script)"; st=$?
+assert_status "a failing other suite fails the script" "$st" 1
+assert_contains "naming it" "$out" "stub_b.sh"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+dur_stub_passing stub_b.sh
+printf '#!/usr/bin/env bash\necho "a.sh:1:1: warning: planted"; exit 1\n' >"$dur_tool/shellcheck"
+out="$(dur_script)"; st=$?
+assert_status "a failing shellcheck step fails the script" "$st" 1
+assert_contains "naming it" "$out" "shellcheck"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+rm -rf "$dur_dir"
 
 # --- assertions in a subshell (#1904) ----------------------------------------
 # A cut-down orch suite with one failing assertion inside ( ... ) and one
@@ -3051,7 +3367,7 @@ af_put() {
 }
 af_git init -q -b main
 mkdir -p "$af/scripts/test/orch"
-(cd "$af_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh test_tree.sh "$af/scripts/test/")
+(cd "$af_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$af/scripts/test/")
 suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for af_s in "${SUITES[@]}"; do
   [ -e "$af/scripts/test/$af_s" ] || af_put "scripts/test/$af_s"
@@ -3416,6 +3732,23 @@ wait "$af_pid"; st=$?
 kill "$(cat "$af.pid")" 2>/dev/null
 assert_status "TERM to affected.sh exits 130" "$st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
+# A set ORCH_TEST_SHARD never narrows a ticket verification: the suites see it
+# unset on the mapped path and on the full-suite fallback.
+printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
+printf '%s\n' '#!/usr/bin/env bash' "echo \"shard=\${ORCH_TEST_SHARD:-unset}\" >>'$af.log'" \
+  'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/orch_test.sh"
+: >"$af.log"
+af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
+assert_eq "affected.sh's mapped path runs orch_test.sh with the shard setting unset" \
+  "$(grep "^shard=" "$af.log" | sort -u)" "shard=unset"
+af_put scripts/orch.sh 'echo changed'
+: >"$af.log"
+af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
+assert_eq "and its fallback to all.sh runs the whole suite, the setting unset" \
+  "$(grep "^shard=" "$af.log" | sort -u)" "shard=unset"
+assert_eq "ending on all.sh's verdict counting every part" "$(printf '%s\n' "$af_out" | tail -n 1)" \
+  "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+af_reset
 rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row

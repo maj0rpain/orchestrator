@@ -1,0 +1,323 @@
+0	1	isolation
+28	23	isolation under a git hook (#1905)
+14	17	the section filter (ORCH_TEST_ONLY, #612)
+5	6	quiet mode (ORCH_TEST_QUIET, #614)
+227	49	the parallel runner (ORCH_TEST_JOBS, #780)
+13	14	the parallel runner's start order (#2857)
+81	32	the shard setting (#2859)
+34	14	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)
+4	5	assertions in a subshell (#1904)
+0	1	the standalone suites' tally (#1904)
+11	12	the section files (#932)
+354	32	the suite's temp root (#807)
+1	2	the real-gh guard (#779)
+34	18	all.sh, the single entry point (#615)
+0	1	all.sh's suite list holds every runner (#1941)
+200	51	the job pool (#2022)
+0	1	the slot fd contract (#2300)
+56	13	the test runners' CPU load (#1586)
+0	1	shell code (#1411)
+50	51	test-helper placement (#1006)
+29	30	gh op placement (#1037)
+4	5	marked comment prelude placement (#1853)
+12	12	orch_load before cross-module reads (#2868)
+3	4	on-demand sourcing variable (#2820)
+0	1	declaration substitutions (#1327)
+9	13	the helper index (#1144)
+0	1	stand-in adapter (#2465)
+0	1	git env clear (#1905)
+2	2	runner git isolation (#1905)
+24	27	affected.sh, the ticket verification (#2023)
+69	75	agent
+21	23	agent sync
+5	6	audit file
+2	3	audit file duplicates
+4	6	audit file refusals
+2	2	audit file failures
+8	9	autopilot
+16	18	autopilot rounds, budget and start
+42	44	autopilot ask and answer
+38	40	autopilot reenter
+45	50	autopilot tick and run
+40	44	autopilot tick: the flow-issue read at the issue-list limit
+162	173	autopilot tick: the cap, lost claims and the order
+111	121	autopilot tick: side checkouts, refusals and failed steps
+18	7	autopilot watch
+31	34	autopilot tick: the usage limit
+85	92	autopilot tick: limited issues
+63	67	autopilot questions, reply and resume
+0	1	autopilot_phase_arg refuses two adjacent phases (#1546)
+1	2	autopilot pause store
+96	101	autopilot session end
+27	30	autopilot tick: the trust check
+81	85	autopilot run: the budget and the final reply (#2004)
+3	3	autopilot answer on a truncated state.json (#1929)
+22	25	autopilot: labels in the repo's casing (#1943)
+7	9	autopilot tick: the label check writes only drift (#2691)
+112	120	autopilot tick and run: sync requests
+137	146	autopilot tick: pickup rank and sync slots
+36	41	autopilot tick: sync request auto-detection (#2325)
+22	25	autopilot tick: the merged-PR close backstop (#2478)
+17	21	autopilot tick: one read of the done issues (#2559)
+14	15	autopilot sync-finish, sync-dropped and sync-fail
+11	13	autopilot tick: the GitHub limit pause (#2577)
+33	36	autopilot tick: a pickup that meets a GitHub limit (#2577)
+19	21	autopilot run: a start-up read that meets a GitHub limit (#2577)
+35	38	autopilot tick: the early GitHub pause (#2577)
+20	22	autopilot run: the session log's GitHub usage line (#2577)
+26	28	autopilot candidates
+12	14	base
+47	48	a flow's base branch
+3	4	base set on a truncated state.json (#1929)
+26	21	branch create
+22	17	branch off
+6	7	a quick implementation's base branch
+4	5	a quick implementation's base SHA (#243)
+16	10	plugin-made branches have no upstream (#1152)
+7	8	branch retire
+1	2	branch_records_base (#1713)
+53	56	branch sync (#792)
+21	19	branch busy (#1201)
+27	17	branch off and branch create refuse a busy checkout (#1202)
+44	42	branch create on a restart (ADR-0054)
+72	55	branch create off the flow's branch (#1911)
+12	12	the fork start point is decided where origin is asked (#1930)
+0	1	branch: unknown op
+2	3	branch retire beside a same-named tag (#2337)
+14	9	branch create and branch off beside a same-named tag (#2337)
+34	37	breakdown publish
+2	3	breakdown state
+10	12	checkout (#1078)
+3	4	checkout current branch (#1079)
+22	16	checkout busy, redo-retired branch (#1981)
+8	10	common.sh is the bottom layer
+1	2	orch_dirs_unexcluded
+2	3	exclude_line
+1	2	list_has
+1	2	list_join
+1	2	word_listed
+1	2	is_positive_int
+1	1	err_line (#1718)
+1	1	git_push (#1300)
+1	2	capture_err and capture without a temp file (#1780)
+9	10	capture, capture_err and file_read
+1	2	die_hinted and die_opt_check
+0	1	host detection (host.sh, #281)
+4	5	doctor.sh is a one-way dependency (#281)
+136	147	doctor
+35	39	doctor: host (#128)
+107	115	doctor --flow
+39	43	doctor --env: finished side checkouts (#727)
+15	17	doctor at the review phase
+9	10	doctor: upstream beside an ambiguous origin/<branch> (#1331)
+47	50	doctor: review terminal check
+17	18	doctor: review budget check
+32	34	doctor: review ci check
+31	34	doctor: review draft check
+24	26	doctor: phase-listed flow checks
+8	10	doctor: base branch check
+9	10	doctor: agent settings check (#1358)
+27	31	doctor: Junie session and log (#1449)
+20	22	doctor: Junie agent settings check (#1448)
+31	33	doctor: autopilot phase label and claims (#1457)
+14	15	doctor: autopilot side-checkout flows
+40	43	doctor --flow: autopilot handoff comments (#1457)
+5	6	doctor: phase label in the repo's casing (#1943)
+6	7	doctor --flow: a deleted flow branch beside a same-named tag (#2337)
+4	5	doctor --flow: a side checkout with a truncated state.json
+13	15	doctor --env: ssh alias hint beside the gh auth check (#2585)
+52	55	doctor: one issue read and one PR read per run (#2554)
+0	1	triage_label_into: parse once, later lookups start no command
+9	7	doctor --env: git processes per worktree
+1	2	is_filed_severity
+1	2	severity table
+3	4	category table
+2	3	axis table
+10	11	finding body
+48	55	finding-triage scan
+78	92	finding-triage apply
+96	123	finding-triage bundle
+9	11	every gh call pinned to the repo (#520)
+1	2	gh_reason and capture_err (#846)
+1	1	label_listed
+17	19	gh failure verb and readers (#1022)
+3	4	verify_twice (#2658)
+7	8	gh fake (#280)
+106	114	gh adapter contract (#280)
+15	16	claim adapter operations (#1454)
+2	3	label casing (#1943)
+21	13	gh rate limits (#2577)
+4	5	gh rate limits: the GitHub pause and the hit file (#2577)
+1	2	slug
+11	12	archive
+0	1	mp-skill
+1	2	glossary terms
+2	3	glossary show
+3	4	glossary match
+1	2	glossary shapes
+1	2	glossary unreadable
+1	1	glossary help
+3	4	handoff path
+16	17	phase table
+14	16	handoff validate
+7	8	handoff section
+7	8	spec handoff
+3	4	handoff templates
+9	10	handoff verification
+33	35	handoff comments (autopilot)
+93	96	handoff store contract (#1820)
+20	22	handoff comment retire's timeline read
+4	5	init
+9	10	init git-excludes the plugin's directories once
+6	7	init refuses a dirty working tree
+9	6	init refuses a busy checkout (#1202)
+16	18	init --issue
+44	46	init archives a done flow
+14	16	init seeds the review loop
+5	6	init --issue trust warning
+162	167	issue-timeline module
+2	3	issue publish
+7	8	issue publish verify-then-die
+21	24	issue triage
+13	16	issue triage --check
+3	4	issue ready
+4	5	issue close
+91	103	issue fetch/update
+0	1	outside a checkout (#931)
+5	7	issue fetch trust warning
+4	5	issue fetch writes LF lines (#1916)
+3	4	known-items module
+16	18	Liveness module
+8	10	orch_load
+10	12	on-demand loading
+9	11	stub table cache
+49	50	marked-comment module
+2	3	parallel show
+76	78	phase advance / phase boundary
+1	1	phase advance help names handoffs by role (#1066)
+35	37	phase advance in an autopilot flow (#1457)
+8	9	phase advance with a failed phase write (#1931)
+112	116	pr open
+20	23	pr publish
+9	10	pr draft (#967)
+16	17	pr ready (#967)
+1	1	pr: unknown op
+17	20	pr release
+5	6	pr comment (#343)
+10	12	pr fetch / pr update (#444)
+11	14	pr comments (#418)
+12	13	pr read (#1573)
+14	16	pr: fork PRs (#1977)
+108	110	redo review
+13	14	redo review refuses a taken handoff destination
+54	56	redo review rerun after review retire (#2569)
+18	19	redo review reopens tickets
+34	36	redo spec
+68	73	redo spec retires the ticket breakdown (#334)
+113	117	redo spec retires the implement attempt (#1910)
+93	96	redo spec and redo review, per handoff mode (#1820)
+64	66	redo ends in one closing state write
+1	1	redo help names handoffs by role (#1066)
+9	11	repo show
+7	8	default-branch
+11	12	review-pass begin (#342)
+50	63	review-pass known-items
+17	18	review ready's pointer to /orchestrator:finish (#727)
+17	18	review begin
+4	5	review path
+5	6	the multi-loop machinery is gone
+51	55	review file
+16	17	review ready
+39	24	review ci
+15	14	the grace counts from the push (issue #475)
+52	44	the grace is skipped on no evidence of CI (issue #476)
+10	12	review rerun
+6	7	review ci-log
+56	57	review terminal
+60	62	review resume
+5	6	review retire
+12	13	review known-items
+12	14	review ready in an autopilot flow (#1457)
+11	13	review known-items in an autopilot flow (#1457)
+12	15	review standards (#1532)
+10	11	review ready with a failed phase write (#1931)
+7	8	Session log module
+47	50	side-checkout (#722)
+23	24	status lists every checkout (#725)
+72	76	side-checkout archive and remove (#724)
+66	69	side-checkout prune (#726)
+80	84	side-checkout prune: edge cases (#726)
+23	25	archive keeps flow-less directories (#1247)
+24	26	side-checkout prune: a covered branch tip (#1906)
+7	8	side-checkout prune: fork PRs are not proof (#1979)
+48	51	side-checkout prune: the merged-PR close backstop (#2477)
+3	4	side_checkout_marker reads the worktree's git pointer
+8	9	spec-review begin (#224)
+8	9	spec-review begin --carry (#1141, #1185)
+1	1	quick implementation runs an unattended spec review (#237)
+356	382	spec-review apply (#1117)
+51	57	spec-review check (#1137)
+1	2	spec-review check literal item numbers (#1339)
+15	17	spec-review check --tickets (#1226)
+27	5	spec-review wait (#1183)
+4	5	spec-review prompt (#1521)
+1	2	spec_review_lens_known matches one whole lens (#1546)
+1	2	spec-review check requires every finding cited (#1914)
+3	4	spec-review check on a CRLF body (#1916)
+3	4	spec-review begin on a truncated state.json (#1929)
+41	44	spec
+16	17	spec pause
+25	26	spec round-dir
+43	45	spec round
+16	17	spec pause --round
+7	8	spec pause --round in an autopilot flow (#1457)
+3	3	spec fetch on a truncated state.json (#1929)
+19	20	Standing module
+71	75	Standing transitions
+19	21	state
+27	27	a flow from before the budget shipped
+10	11	state get reads every key with its default
+8	9	the state writer accepts exactly the table's phases
+8	9	state.json schema
+4	5	state set on a corrupt state.json
+27	28	the Flow state module, sourced alone
+4	5	commands on a truncated state.json (#1929)
+6	7	the shared and own-checkout readers on a truncated state.json
+9	10	state_write_many and the phase writers' trailing pairs
+3	4	state set with a failed write (#1931)
+8	11	suite-cost run
+1	2	suite-cost history
+21	23	suite-cost check
+16	18	suite-cost check base run
+31	34	suite-cost check confirmation
+7	9	suite-cost check pre-check
+61	2	suite-cost barrier
+21	23	ticket-worktree (#619)
+1	2	a ticket branch has no upstream (#1152)
+3	3	the merged check beside a same-named tag (#2337)
+8	9	ticket publish
+9	11	ticket publish verify-then-die
+4	5	ticket next
+3	4	ticket list
+7	8	ticket close
+5	6	ticket reset
+9	10	ticket report
+2	3	ticket parent
+9	11	ticket exists
+43	48	ticket block
+30	33	ticket unblock
+1	2	ticket publish --record
+2	2	ticket retire: breakdown save point
+6	8	ticket retire: untrusted comments
+0	1	ticket: unknown op
+11	13	ticket merge (#621)
+3	4	ticket merge beside a same-named tag (#2337)
+112	117	ticket reclaim (ADR-0054)
+15	17	trust module
+506	599	hooks_test.sh
+112	133	docs_lint.sh
+5	6	version_bump_test.sh
+51	54	autopilot_container_test.sh
+8	8	autopilot_up_test.sh
+48	49	lens_bench_test.sh
+221	1242	shellcheck

@@ -1,66 +1,52 @@
 name: test
 
+# A PR runs the whole suite once, in the autopilot container, as 4 jobs of
+# ORCH_TEST_SHARD groups plus one gate job; a push to main runs it unsplit on
+# the runner. The changelog fragment rule lives in fragment.yml. The grouping
+# and the suite list live in the scripts: this file is wiring only.
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
+# A newer run for the same PR cancels this workflow's older in-progress run; a
+# push to main has a group of its own per commit and is never cancelled.
+concurrency:
+  group: test-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
+  # A push to main: the whole suite on the runner's own tools, unsplit, so
+  # drift on that side is seen within one merge. The container suite does not
+  # run on a push.
+  runner:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    # contents: read for the checkout; pull-requests: read for the PR's
-    # labels, which "Read main's commit" reads live; issues: read for
-    # docs_lint.sh's fragment rule, which looks up the fragment's issue's parent.
     permissions:
       contents: read
-      issues: read
-      pull-requests: read
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history, so docs_lint.sh's fragment rule finds the merge-base
-          # with main.
           fetch-depth: 0
-      # Sets CHANGELOG_BASE, main's commit, for docs_lint.sh's changelog
-      # fragment rule on every PR to main, and NO_VERSION_BUMP=1 when the PR
-      # carries the no-version-bump label, which waives only its one-fragment
-      # part. The labels are the PR's as they stand now, read with gh, not the
-      # event payload's snapshot: gh pr create --label adds them in a mutation
-      # after the PR opens, so the opened run's payload can lack a label the
-      # PR has (#1299). A failed fetch or read fails the job rather than
-      # leaving it unset.
-      - name: Read main's commit
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.base.ref == 'main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          base="$(git rev-parse --verify origin/main)"
-          echo "CHANGELOG_BASE=$base" >>"$GITHUB_ENV"
-          labels="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')"
-          if grep -qxiF no-version-bump <<<"$labels"; then
-            echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
-          fi
-      # GH_TOKEN for docs_lint.sh's fragment rule, whose gh api call reads the
-      # fragment's issue to check it is no sub-issue.
       - name: Verify
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: scripts/test/all.sh
 
-  # The whole suite on the autopilot image's own tools (jq 1.6, bookworm's
-  # mawk, git 2.39, its shellcheck), so tool-version drift and environment
-  # leaks are caught on the PR rather than in an autopilot run. It runs the
-  # runner's checkout, not the image's baked-in copy, which has no .git.
+  # A PR: the whole suite on the autopilot image's own tools (jq 1.6,
+  # bookworm's mawk, git 2.39, its shellcheck), so tool-version drift and
+  # environment leaks are caught on the PR rather than in an autopilot run, as
+  # 4 jobs, each one ORCH_TEST_SHARD group. It runs the runner's checkout, not
+  # the image's baked-in copy, which has no .git.
   container:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     # Every build below reads this one value, so the extra builds reuse the
     # first build's cached apt layer.
     env:
@@ -74,22 +60,26 @@ jobs:
           docker build -f docker/Dockerfile
           --build-arg "EXTRA_APT_PACKAGES=$APT_PACKAGES"
           -t orchestrator-autopilot .
-      # The EXTRA_BUILD_COMMAND hook: a root-installed artifact in a system path
-      # is usable by orch, and a failure anywhere in the command fails the build
-      # on the step's own failure line. The apt layer is cached from above.
+      # The EXTRA_BUILD_COMMAND hook checks run in group 1 only: a root-installed
+      # artifact in a system path is usable by orch, and a failure anywhere in
+      # the command fails the build on the step's own failure line. The apt
+      # layer is cached from above.
       - name: Build with EXTRA_BUILD_COMMAND
+        if: matrix.shard == 1
         run: >-
           docker build -f docker/Dockerfile
           --build-arg "EXTRA_APT_PACKAGES=$APT_PACKAGES"
           --build-arg "EXTRA_BUILD_COMMAND=printf ok > /usr/local/share/orch-extra-build"
           -t orchestrator-autopilot-extra .
       - name: EXTRA_BUILD_COMMAND output is usable by orch
+        if: matrix.shard == 1
         run: |
           set -euo pipefail
           out="$(docker run --rm --entrypoint sh orchestrator-autopilot-extra \
             -c 'id -un; cat /usr/local/share/orch-extra-build')"
           test "$out" = "$(printf 'orch\nok')"
       - name: A failing EXTRA_BUILD_COMMAND fails the build
+        if: matrix.shard == 1
         run: |
           set -uo pipefail
           for cmd in 'false | true' 'false; true'; do
@@ -102,9 +92,11 @@ jobs:
             grep -q 'build failed: EXTRA_BUILD_COMMAND' <<<"$out" \
               || { echo "no step failure line for '$cmd'" >&2; echo "$out" >&2; exit 1; }
           done
-      # CHANGELOG_BASE stays unset: the host job enforces the changelog
+      # CHANGELOG_BASE stays unset: fragment.yml enforces the changelog
       # fragment rule. ORCH_SH is already set by the image.
       - name: Verify in the container
+        env:
+          ORCH_TEST_SHARD: ${{ matrix.shard }}/4
         run: |
           set -euo pipefail
           tmp_home="$(mktemp -d)"
@@ -117,4 +109,17 @@ jobs:
             -e ORCH_MODEL=opus \
             -e ORCH_MODEL_IMPLEMENTER=sonnet \
             -e ORCH_EFFORT=high \
+            -e ORCH_TEST_SHARD \
             orchestrator-autopilot scripts/test/all.sh
+
+  # The one result for a PR's suite: passes only when all four groups did, and
+  # runs whether or not they passed, but not when the run was cancelled.
+  suite:
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    needs: container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every group passed
+        env:
+          RESULT: ${{ needs.container.result }}
+        run: test "$RESULT" = success

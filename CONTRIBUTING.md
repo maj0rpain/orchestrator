@@ -56,6 +56,47 @@ noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
+A parallel `orch_test.sh` run starts its kept sections longest-first, read from
+`scripts/test/section-durations.tsv`: one line per section, tab-separated, of
+wall seconds, CPU seconds (both in tenths of a second) and the section's title.
+Sections the file does not list start first, in walk order; the rest follow by
+wall seconds, longest first, ties in walk order, so a run ends when its work
+does. Output stays in walk order, and a filtered run orders the sections it kept
+the same way; `ORCH_TEST_JOBS=1` runs in walk order in one shell. A line that
+does not parse and a title that matches no section are ignored, and a missing
+file gives walk order: the file costs speed only, and nothing checks it for
+freshness.
+
+`ORCH_TEST_SHARD=<i>/<n>` makes `orch_test.sh` and `all.sh` run group `i` of `n`
+balanced groups of the sections, so CI can run a full verification as several
+jobs. The grouping depends only on the section titles, the durations file,
+`all.sh`'s suite list and `n`: sections are dealt heaviest first, by wall
+seconds, to the group with the lowest total, group 1 starting with the wall
+seconds of the other suites and shellcheck, and a section the file does not
+list weighs as much as the heaviest listed one. The isolation section runs in
+every group. `all.sh` runs the other suites and shellcheck in group 1 only. A
+malformed value, or any value with `ORCH_TEST_ONLY`, is refused; an empty value
+counts as unset; `affected.sh` unsets it, and no runner a section starts
+inherits it.
+
+`scripts/dev/section-durations.sh` rewrites that file: it runs `orch_test.sh`
+once, unfiltered, with `ORCH_TEST_DURATIONS=<temporary file>`, which makes a
+parallel run write one line per section it ran, then times each other suite of
+all.sh's list and the shellcheck step. Run it, on a tree whose suite passes,
+when sections are added or removed or change much in cost, and commit the
+result. It unsets `ORCH_TEST_ONLY` and `ORCH_TEST_SHARD`, refuses
+`ORCH_TEST_JOBS=1`, and leaves the file unchanged, naming what failed, when
+anything it measured fails.
+
+CI (`.github/workflows/test.yml`): a PR runs the whole suite once, in the
+autopilot container, as 4 jobs, each `all.sh` with its `ORCH_TEST_SHARD=<i>/4`
+(the image's `EXTRA_BUILD_COMMAND` checks in group 1 only), plus a final job
+that passes only when all four did; a push to `main` runs `all.sh` unsplit on
+the runner, and the container suite does not run there. The suite runs on a
+PR's `opened`, `synchronize` and `reopened`; a newer run for the same PR
+cancels the older one, and a push to `main` is never cancelled. The changelog
+fragment check has its own workflow (see the fragment paragraph below).
+
 A case lives once, in the section of the module it exercises. The Standing
 sections own what a transition does on its own: its writes, its write chain
 (the "writes that landed: ..." wording) and the claim staying held when a write
@@ -206,7 +247,9 @@ from a scratch copy of the checkout to see how a fragment renders: it edits the
 files in place and does not commit. `scripts/test/version_bump_test.sh` tests
 it.
 
-CI (`docs_lint.sh`) enforces the rule: a PR to `main` adds exactly one
+CI enforces the rule through its own workflow, `.github/workflows/fragment.yml`,
+which runs `docs_lint.sh` alone and reruns on a PR's body and label edits: a PR
+to `main` adds exactly one
 well-formed fragment, and never changes `version`, adds a `## ` heading to
 `CHANGELOG.md`, or modifies or deletes an existing fragment or `.gitkeep`;
 the fragment's issue is no sub-issue, its parent looked up with `gh api` and
@@ -267,7 +310,7 @@ namerefs, no `mapfile`, no `declare -A`), because they run under macOS's
 `/bin/bash`.
 The code and tests also run on the autopilot image's tools - jq 1.6, bookworm's
 mawk (no regex interval expressions) and git 2.39 - as their floor, and the
-container CI job enforces it.
+container CI jobs enforce it.
 
 ### Measuring a lens
 
@@ -360,15 +403,16 @@ docker/                       the autopilot container: `Dockerfile`, `compose.ya
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
+scripts/dev/section-durations.sh rewrites scripts/test/section-durations.tsv: measures every orch_test.sh section, the other suites and shellcheck (Develop)
 scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
 scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
-scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh and affected.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10
-scripts/test/report.sh       the report helpers all.sh and affected.sh both source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
-scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh and affected.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, and suites_read, the reader of all.sh's suite list
+scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10
+scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
+scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, shellcheck_files, SHELLCHECK_CMD, TENTHS_AWK and DURATIONS_AWK
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

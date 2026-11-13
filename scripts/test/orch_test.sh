@@ -105,7 +105,8 @@ trap test_jobs_stop_descendants INT TERM
 # the tally file.
 # A value that is not a positive integer exits 1 before any section runs.
 # Above 1, each section chosen (every one, or the isolation section plus those
-# ORCH_TEST_ONLY matches) runs as its own child: this script re-invoked with
+# ORCH_TEST_ONLY matches, or plus the sections ORCH_TEST_SHARD deals the group)
+# runs as its own child: this script re-invoked with
 # ORCH_TEST_JOBS=1 and an internal variable naming the section's position, so
 # the child runs the shared setup, its file's preamble, that one section and
 # the summary - and isolation runs once, in its own child. A child prints
@@ -122,6 +123,46 @@ trap test_jobs_stop_descendants INT TERM
 # section. Exits 1 when any child failed. Buffers live in one temp directory
 # under the temp root; an interrupt also kills the running children and waits
 # for them to exit.
+#
+# The parallel run starts its kept sections longest-first, read from the
+# committed tab-separated file section-durations.tsv beside this runner: one
+# line per section, "<wall tenths>", "<cpu tenths>" and the section's title,
+# tab-separated. Sections the file does not list start first, in walk order;
+# the rest follow by wall seconds, longest first, ties in walk order. Output
+# stays in walk order. A line that does not parse and a name matching no
+# section are ignored, and a missing file gives walk order, so the file costs
+# speed only. A filtered run orders the sections it kept the same way;
+# ORCH_TEST_JOBS=1 stays in walk order.
+#
+# The shard setting. ORCH_TEST_SHARD=<i>/<n> (positive integers, i at most n)
+# runs group i of n balanced groups of the sections, so CI can run a full
+# verification as several jobs; unset, empty or 1/1 runs them all. Any other
+# value exits 1 before anything starts, printing "orch_test.sh:
+# ORCH_TEST_SHARD='<value>' is not <i>/<n> with 1 <= i <= n"; a non-empty
+# value together with a non-empty ORCH_TEST_ONLY (1/1 included) does the same
+# with "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set".
+# The grouping is a pure function of the section titles in walk order,
+# section-durations.tsv, all.sh's suite list (read with suites_read) and n:
+# a section weighs its wall seconds, one the file does not list as much as the
+# heaviest that it lists (1 when none), group 1 starts with the summed wall
+# seconds of the file's other suites and shellcheck, the others at 0, and
+# sections are dealt heaviest first, ties in walk order, each to the group with
+# the lowest total, the lowest-numbered on a tie. The isolation section runs in
+# every group and takes no part in the dealing, so a group left with it alone
+# runs it alone and passes or fails on it. A group's sections start in the
+# order above, and its output and summary are a filtered run's. The setting is
+# unset once read, so no runner a section starts inherits it.
+#
+# ORCH_TEST_DURATIONS=<file> makes a parallel run write one line per section
+# it ran to that file, in the durations file's format, in walk order: the wall
+# and CPU tenths of a second the section's child measured of itself (wall under
+# bash's `time` keyword, CPU from `times`: its own and its waited children's
+# user plus system time), then the title. The run empties the file before any
+# section starts; a file it cannot write prints "orch_test.sh:
+# ORCH_TEST_DURATIONS='<file>' is not writable" on stderr and exits 1 before
+# anything starts. A failed section writes its line; one the section deadline
+# kills writes none. A sequential run ignores the setting, and a runner a
+# section starts never inherits it. scripts/dev/section-durations.sh sets it.
 #
 # Each section of a parallel run has a deadline, ORCH_TEST_SECTION_TIMEOUT whole
 # seconds (default 600), counted from the child's own start, not from when it
@@ -294,17 +335,45 @@ read_counts() {
 # its counts, held in a plain, unexported variable so a suite a section starts
 # holds none.
 orch_counts_file=""
+orch_shard="${ORCH_TEST_SHARD:-}"
+unset ORCH_TEST_SHARD
+# The durations file, held in a plain variable and never exported, so no runner
+# a section starts inherits it.
+orch_durations_out="${ORCH_TEST_DURATIONS:-}"
+unset ORCH_TEST_DURATIONS
 if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   orch_child_section="$ORCH_TEST_CHILD_SECTION"
   # shellcheck disable=SC2034 # read by the summary, eval'd from setup.sh
   orch_counts_file="$ORCH_TEST_CHILD_COUNTS"
-  unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS
+  orch_child_times="${ORCH_TEST_CHILD_TIMES:-}"
+  unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS ORCH_TEST_CHILD_TIMES
   tally_init
+  if [ -n "$orch_child_times" ]; then
+    # Timed by the child itself: the section's wall time under `time`, its
+    # stderr kept apart from time's report, then its CPU time from `times`.
+    orch_child_text="$(section_text ",$orch_child_section,")"
+    TIMEFORMAT=%1R
+    LC_NUMERIC=C
+    { time { eval "$orch_child_text"; } 2>&3; } 3>&2 2>"$orch_child_times.wall"
+    orch_child_status=$?
+    times >"$orch_child_times.cpu"
+    # One line of tenths of a second, wall then CPU.
+    awk -v wall="$(<"$orch_child_times.wall")" "$TENTHS_AWK"'
+      { for (i = 1; i <= NF; i++) { split($i, t, /[ms]/); cpu += t[1] * 600 + t[2] * 10 } }
+      END { printf "%d\t%d\n", tenths(wall), cpu + 0.5 }
+    ' "$orch_child_times.cpu" >"$orch_child_times"
+    exit "$orch_child_status"
+  fi
   eval "$(section_text ",$orch_child_section,")"
   exit $?
 fi
 
 orch_jobs="$(test_jobs_count orch_test.sh)" || exit 1
+test_jobs_shard orch_test.sh "$orch_shard" || exit 1
+if [ -n "$orch_shard" ] && [ -n "${ORCH_TEST_ONLY:-}" ]; then
+  echo "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set" >&2
+  exit 1
+fi
 
 # Every run, sequential or parallel, filtered or not, evals the text the walk
 # extracts for its kept set: no section runs from this file itself.
@@ -323,6 +392,7 @@ refuse_selection() {
   exit 1
 }
 
+orch_durations_file="$TEST_DIR/section-durations.tsv"
 if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   split_branches "$ORCH_TEST_ONLY"
   if [ "${#orch_branches[@]}" -gt 1 ]; then
@@ -341,6 +411,56 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   fi
 else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
+  if [ "$TEST_SHARD_N" -gt 1 ]; then
+    # Deal the sections but isolation by wall-second weight; keep group i's.
+    suites_read "$TEST_DIR/all.sh" "$TEST_DIR" || {
+      echo "orch_test.sh: $SUITES_ERR" >&2; exit 1; }
+    orch_others=""
+    for orch_suite in "${SUITES[@]}" shellcheck; do
+      [ "$orch_suite" = orch_test.sh ] || orch_others+="$orch_suite"$'\n'
+    done
+    orch_dealt="$(
+      { [ -r "$orch_durations_file" ] && awk 1 "$orch_durations_file"
+        printf '\001\n'
+        printf '%s\n' "$orch_titles" | awk 'NR > 1 { printf "%d\t%s\n", NR, $0 }'
+        printf '\001\n%s' "$orch_others"; } |
+        awk -F'\t' -v n="$TEST_SHARD_N" -v want="$TEST_SHARD_I" \
+          "$DURATIONS_AWK"'
+          function weight(p) { return (title[p] in wall) ? wall[title[p]] : unlisted }
+          BEGIN { stage = 0 }
+          $0 == "\001" { stage++; next }
+          stage == 0 { durations_read(); next }
+          stage == 1 { count++; pos[count] = $1; title[$1] = $2; next }
+          $0 != "" && ($0 in wall) { total[1] += wall[$0] }
+          END {
+            unlisted = 10; top = -1
+            for (k = 1; k <= count; k++) if (title[pos[k]] in wall && wall[title[pos[k]]] > top) top = wall[title[pos[k]]]
+            if (top >= 0) unlisted = top
+            for (g = 1; g <= n; g++) total[g] += 0
+            for (k = 1; k <= count; k++) order[k] = pos[k]
+            for (a = 2; a <= count; a++) {
+              v = order[a]; b = a - 1
+              while (b >= 1 && weight(order[b]) < weight(v)) { order[b + 1] = order[b]; b-- }
+              order[b + 1] = v
+            }
+            for (k = 1; k <= count; k++) {
+              best = 1
+              for (g = 2; g <= n; g++) if (total[g] < total[best]) best = g
+              total[best] += weight(order[k])
+              if (best == want) print order[k]
+            }
+          }
+        ' | LC_ALL=C sort -n
+    )"
+    orch_kept="$orch_kept_isolation$(printf '%s\n' "$orch_dealt" | grep . | tr '\n' ',')"
+  fi
+fi
+if [ -n "$orch_durations_out" ] && [ "$orch_jobs" -gt 1 ]; then
+  { : >"$orch_durations_out"; } 2>/dev/null || {
+    echo "orch_test.sh: ORCH_TEST_DURATIONS='$orch_durations_out' is not writable" >&2
+    exit 1; }
+else
+  orch_durations_out=""
 fi
 test_jobs_pool_init orch_test.sh || exit 1
 echo "orch.sh tests"
@@ -375,12 +495,36 @@ orch_timeout=$((10#$orch_timeout))
 orch_pids=()
 orch_starts=()
 orch_timed_out=()
+orch_began=()
 orch_sections=()
 # Kill the children, then wait for each to exit, so the root is removed
 # only once no child can still write into it.
 trap 'test_jobs_stop_children "${orch_pids[@]}"' INT TERM
 IFS=, read -r -a orch_sections <<<"${orch_kept#,}"
 orch_total=${#orch_sections[@]}
+# The start order: sections the durations file does not list first, in walk
+# order, then the rest by wall seconds, longest first, ties in walk order. A
+# line that does not parse and a name matching no section are ignored; a
+# missing or unreadable file gives walk order.
+mapfile -t orch_title_at <<<"$orch_titles"
+orch_titles_kept=""
+for ((orch_i = 0; orch_i < orch_total; orch_i++)); do
+  orch_titles_kept+="${orch_title_at[orch_sections[orch_i] - 1]}"$'\n'
+done
+orch_order=()
+mapfile -t orch_order < <(
+  { [ -r "$orch_durations_file" ] && awk 1 "$orch_durations_file"; printf '\001\n%s' "$orch_titles_kept"; } |
+    awk -F'\t' "$DURATIONS_AWK"'
+      !seen && $0 == "\001" { seen = 1; next }
+      !seen { durations_read(); next }
+      { idx++
+        if ($0 in wall) printf "1\t%d\t%d\n", -wall[$0], idx; else printf "0\t0\t%d\n", idx }
+    ' | LC_ALL=C sort -n -k1,1 -k2,2 -k3,3 | cut -f3
+)
+if [ "${#orch_order[@]}" -ne "$orch_total" ]; then
+  orch_order=()
+  for ((orch_i = 1; orch_i <= orch_total; orch_i++)); do orch_order+=("$orch_i"); done
+fi
 orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_any_failed=0
 # orch_section_fail <reason> <detail>: print the section's FAIL and count it.
 orch_section_fail() {
@@ -391,30 +535,32 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
   # Start children while a slot is free: a slot is held by every child
   # started and still alive.
   orch_running=0
-  orch_i=$orch_flushed
-  while [ "$orch_i" -lt "$orch_started" ]; do
+  for ((orch_i = orch_flushed; orch_i < orch_total; orch_i++)); do
+    [ -n "${orch_began[$orch_i]:-}" ] || continue
     kill -0 "${orch_pids[$orch_i]}" 2>/dev/null && orch_running=$((orch_running + 1))
-    orch_i=$((orch_i + 1))
   done
   while [ "$orch_started" -lt "$orch_total" ] && [ "$orch_running" -lt "$orch_jobs" ]; do
     test_jobs_slot_take || { test_jobs_slot_note; break; }
-    orch_pos="${orch_sections[$orch_started]}"
+    orch_k=$((orch_order[orch_started] - 1))
+    orch_pos="${orch_sections[$orch_k]}"
     # A child of a slot marks its pool; an unpooled run passes its marker on.
     orch_held="$TEST_JOBS_POOL"
     [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
     ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
-      ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
+      ORCH_TEST_CHILD_TIMES="${orch_durations_out:+$orch_buf/$orch_pos.times}" ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
       test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err" &
-    orch_pids[orch_started]=$!
-    orch_starts[orch_started]=$SECONDS
-    test_jobs_slot_release "${orch_pids[orch_started]}"
+    orch_pids[orch_k]=$!
+    orch_starts[orch_k]=$SECONDS
+    orch_began[orch_k]=1
+    test_jobs_slot_release "${orch_pids[orch_k]}"
     orch_started=$((orch_started + 1))
     orch_running=$((orch_running + 1))
   done
   # Stop the tree of any child past its deadline, counted from its start. The
   # clock counts whole seconds, so only a difference above the deadline proves
   # the full deadline has passed.
-  for ((orch_i = orch_flushed; orch_i < orch_started; orch_i++)); do
+  for ((orch_i = orch_flushed; orch_i < orch_total; orch_i++)); do
+    [ -n "${orch_began[$orch_i]:-}" ] || continue
     if kill -0 "${orch_pids[$orch_i]}" 2>/dev/null &&
       [ $((SECONDS - orch_starts[orch_i])) -gt "$orch_timeout" ]; then
       orch_timed_out[orch_i]=1
@@ -423,11 +569,11 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
   done
   # Print every finished child next in file order.
   orch_progress=0
-  while [ "$orch_flushed" -lt "$orch_started" ] &&
+  while [ "$orch_flushed" -lt "$orch_total" ] && [ -n "${orch_began[$orch_flushed]:-}" ] &&
     ! kill -0 "${orch_pids[$orch_flushed]}" 2>/dev/null; do
     wait "${orch_pids[$orch_flushed]}"; orch_status=$?
     orch_pos="${orch_sections[$orch_flushed]}"
-    orch_title="$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")"
+    orch_title="${orch_title_at[orch_pos - 1]}"
     cat "$orch_buf/$orch_pos.out"
     if [ -n "${orch_timed_out[$orch_flushed]:-}" ]; then
       orch_section_fail "timed out" \
@@ -438,6 +584,10 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
       [ "$orch_c_fail" -eq 0 ] || orch_any_failed=1
     else
       orch_fail=$((orch_fail + 1)); orch_any_failed=1
+    fi
+    if [ -n "$orch_durations_out" ] && [ -z "${orch_timed_out[$orch_flushed]:-}" ] &&
+      [ -s "$orch_buf/$orch_pos.times" ]; then
+      printf '%s\t%s\n' "$(<"$orch_buf/$orch_pos.times")" "$orch_title" >>"$orch_durations_out"
     fi
     if [ -s "$orch_buf/$orch_pos.err" ]; then
       orch_section_fail "wrote to stderr" "$(<"$orch_buf/$orch_pos.err")"

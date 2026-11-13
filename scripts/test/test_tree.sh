@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
-# Sourced by orch_test.sh and affected.sh, and by harness.sh through
-# orch_test.sh, so the runners read the test tree one way: all.sh's suite list
-# and a section file's titles. Runs nothing.
+# Sourced by orch_test.sh, all.sh, affected.sh and
+# scripts/dev/section-durations.sh, and by harness.sh through orch_test.sh, so
+# the runners read the test tree one way: all.sh's suite list, a section
+# file's titles, the files shellcheck checks, the shellcheck command, the
+# tenths conversion and the durations-file grammar. Runs nothing.
 #
 # SECTION_TITLE_AWK: the awk function title(s) as text, for a program to start
 # with. It drops a header's leading `# --- `, then its trailing spaces and
@@ -66,3 +68,44 @@ suites_unlisted() {
   done
   return 0
 }
+
+# The function shellcheck_files <root> fills the array SHELLCHECK_FILES with
+# the shell files shellcheck checks, the one recursive glob
+# <root>/scripts/**/*.sh in glob order; a glob that matches nothing leaves it
+# empty. all.sh and section-durations.sh both call it, so the two cannot drift.
+shellcheck_files() {
+  local had_globstar=0 had_nullglob=0
+  shopt -q globstar && had_globstar=1
+  shopt -q nullglob && had_nullglob=1
+  shopt -s globstar nullglob
+  SHELLCHECK_FILES=("$1"/scripts/**/*.sh)
+  [ "$had_globstar" -eq 1 ] || shopt -u globstar
+  [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
+}
+
+# TENTHS_AWK: the awk function tenths(s) as text, for a program to start with.
+# It reads seconds with one decimal place, as bash's `time` prints them under
+# LC_NUMERIC=C, and returns tenths of a second; a caller sets LC_NUMERIC=C
+# before `time`. orch_test.sh's timed child and section-durations.sh use it.
+#
+# DURATIONS_AWK: awk text for a program run with -F'\t', defining the function
+# durations_read(), which reads the current record of section-durations.tsv
+# into the arrays wall and cpu, in tenths of a second, keyed by name. A line
+# is "<wall>", "<cpu>" and a non-empty name, tab-separated, the two numbers
+# digits; any other line is ignored, and the first line per name wins. The
+# shard dealing and the start order both start with it, so they read the file
+# one way.
+#
+# SHELLCHECK_CMD: the array holding the one shellcheck invocation, a file name
+# appended, run from the repo root. all.sh and section-durations.sh both run
+# it, so the two cannot drift.
+# shellcheck disable=SC2034 # read by the sourcing runners
+TENTHS_AWK='function tenths(s) { sub(/\./, "", s); return s + 0 }'
+# shellcheck disable=SC2034 # read by the sourcing runners
+DURATIONS_AWK='function durations_read() {
+  if (NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in wall)) {
+    wall[$3] = $1 + 0; cpu[$3] = $2 + 0
+  }
+}'
+# shellcheck disable=SC2034 # read by the sourcing runners
+SHELLCHECK_CMD=(shellcheck -S warning -f gcc)
