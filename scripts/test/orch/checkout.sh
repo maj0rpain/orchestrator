@@ -165,6 +165,33 @@ assert_eq "and checkout_kind prints nothing" "$out" ""
 out="$(sourced_orch checkout_holding "$flowed" 2>&1)"
 assert_eq "checkout_holding: an unreadable state.json is shown plainly" "$out" "flow (state.json cannot be read)"
 
+# checkout_gitdir_into and the rebase checks on a linked worktree mid-rebase,
+# called on its own path and on a subdirectory of it.
+new_repo
+mkdir sub && echo s >sub/f && git add sub && git commit -qm sub
+git branch -q rb-base
+git checkout -q -b rb-topic
+echo topic >clash.txt && git add clash.txt && git commit -qm topic
+git checkout -q rb-base
+echo base >clash.txt && git add clash.txt && git commit -qm base
+rbw="$(fresh_dir)/rbw"
+git worktree add -q "$rbw" rb-topic
+rbgd="$(git -C "$rbw" rev-parse --absolute-git-dir)"
+git -C "$rbw" rebase rb-base >/dev/null 2>&1
+out="$(sourced_orch rebase_in_progress "$rbw")"; st=$?
+assert_status "rebase_in_progress answers yes on a linked worktree mid-rebase" "$st" 0
+out="$(sourced_orch rebase_in_progress "$rbw/sub")"; st=$?
+assert_status "rebase_in_progress answers yes on a subdirectory of it" "$st" 0
+out="$(cd "$rbw/sub" && sourced_orch checkout_branch_or_rebasing)"
+assert_eq "checkout_branch_or_rebasing from the subdirectory prints the branch being rebased" "$out" "rb-topic"
+out="$(sourced_orch_script 'v=earlier; checkout_gitdir_into v "$1"; printf %s "$v"' "$rbw" 2>&1)"
+assert_eq "checkout_gitdir_into sets its variable to the linked worktree's git folder" "$out" "$rbgd"
+nogit="$(fresh_dir)"
+errf="$(mktemp)"
+out="$(sourced_orch_script 'v=earlier; st=0; checkout_gitdir_into v "$1" 2>"$2" || st=$?; printf "st=%s %s" "$st" "$v"' "$nogit" "$errf")"
+assert_eq "checkout_gitdir_into on no checkout prints nothing on stderr" "$(<"$errf")" ""
+assert_eq "checkout_gitdir_into on no checkout fails and keeps the variable" "$out" "st=1 earlier"
+
 # --- checkout current branch (#1079) ------------------------------------------
 # The Checkout module's one current-branch read: checkout_branch prints the
 # branch checked out, and current_branch_or_die assigns it to the caller's
