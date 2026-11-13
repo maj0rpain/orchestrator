@@ -294,43 +294,45 @@ rc=1 [could not create a temp file for the command's stdout]"
 assert_eq "and the command did not run" "$(on_disk "$ran_marker")" absent
 assert_eq "a captured command leaving a background process returns without waiting" \
   "$(timeout 20 bash -c 'source "$1"; capture o e bash -c "sleep 30 & echo started"; echo "[$o]"' _ "$ORCH" 2>&1)" "[started]"
-# file_read
+# file_read: one sourcing runs every case, one %q-quoted line each; the
+# empty-PATH case is last so the message cases keep cat
 printf 'a\n\n' >"$cap_tmp/nl"; : >"$cap_tmp/empty"
-assert_eq "file_read keeps trailing newlines" \
-  "$(sourced_orch_script 'file_read v "$1"; printf %s "[$v]"' "$cap_tmp/nl")" "[a
-
-]"
-assert_eq "file_read of an empty file sets an empty variable" \
-  "$(sourced_orch_script 'v=old; file_read v "$1"; echo "$? [$v]"' "$cap_tmp/empty")" "0 []"
-assert_eq "file_read of a missing file fails with the variable untouched" \
-  "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/missing")" "1 [old]"
-assert_eq "file_read of a missing file gives cat's own message" \
-  "$(sourced_orch_script 'file_read v "$1" 2>&1' "$cap_tmp/missing")" "cat: $cap_tmp/missing: No such file or directory"
-assert_eq "and of a directory too" \
-  "$(sourced_orch_script 'file_read v "$1" 2>&1' "$cap_tmp")" "cat: $cap_tmp: Is a directory"
 printf 'x' >"$cap_tmp/unreadable"; chmod a-r "$cap_tmp/unreadable"
+# a socket passes the readable check but cannot be opened
+fr_sock=""
+if perl -MSocket -e 'socket(my $s, AF_UNIX, SOCK_STREAM, 0) or exit 1; bind($s, sockaddr_un($ARGV[0])) or exit 1' "$cap_tmp/sock" 2>/dev/null; then
+  fr_sock=1
+fi
+printf 'a\0b\n' >"$cap_tmp/nul"
+fr_script='p() { printf "%q\n" "$1"; }; st=0
+v=old; file_read v "$1"; p "$? [$v]"
+v=old; st=0; file_read v "$2" 2>/dev/null || st=$?; p "$st [$v]"
+p "$(file_read v "$2" 2>&1)"
+p "$(file_read v "$3" 2>&1)"
+v=old; st=0; file_read v "$4" 2>/dev/null || st=$?; p "$st [$v]"
+v=old; st=0; file_read v "$5" 2>/dev/null || st=$?; p "$st [$v]"
+file_read v "$6"; p "[$v]"
+PATH=""; file_read v "$7"; p "[$v]"'
+mapfile -t fr_out < <(sourced_orch_script "$fr_script" "$cap_tmp/empty" "$cap_tmp/missing" "$cap_tmp" "$cap_tmp/unreadable" "$cap_tmp/sock" "$cap_tmp/nul" "$cap_tmp/nl")
+assert_eq "file_read of an empty file sets an empty variable" "${fr_out[0]}" "$(printf %q "0 []")"
+assert_eq "file_read of a missing file fails with the variable untouched" "${fr_out[1]}" "$(printf %q "1 [old]")"
+assert_eq "file_read of a missing file gives cat's own message" "${fr_out[2]}" "$(printf %q "cat: $cap_tmp/missing: No such file or directory")"
+assert_eq "and of a directory too" "${fr_out[3]}" "$(printf %q "cat: $cap_tmp: Is a directory")"
 if [ ! -r "$cap_tmp/unreadable" ]; then
-  assert_eq "file_read of an unreadable file fails with the variable untouched" \
-    "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/unreadable")" "1 [old]"
+  assert_eq "file_read of an unreadable file fails with the variable untouched" "${fr_out[4]}" "$(printf %q "1 [old]")"
 else
   skip "file_read of an unreadable file fails with the variable untouched" "permissions do not bite here, e.g. root"
 fi
-# a socket passes the readable check but cannot be opened
-if perl -MSocket -e 'socket(my $s, AF_UNIX, SOCK_STREAM, 0) or exit 1; bind($s, sockaddr_un($ARGV[0])) or exit 1' "$cap_tmp/sock" 2>/dev/null; then
-  assert_eq "file_read of a file that cannot be opened fails with the variable untouched" \
-    "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/sock")" "1 [old]"
+if [ -n "$fr_sock" ]; then
+  assert_eq "file_read of a file that cannot be opened fails with the variable untouched" "${fr_out[5]}" "$(printf %q "1 [old]")"
 else
   skip "file_read of a file that cannot be opened fails with the variable untouched" "no perl or no Unix socket here"
 fi
-# a bare PATH: no external command is needed
-printf 'a\0b\n' >"$cap_tmp/nul"
-assert_eq "file_read drops a NUL byte and keeps the bytes after it, as cat in a substitution did" \
-  "$(sourced_orch_script 'file_read v "$1"; printf %s "[$v]"' "$cap_tmp/nul")" "[ab
-]"
-assert_eq "file_read runs with an empty PATH" \
-  "$(sourced_orch_script 'PATH=""; file_read v "$1"; printf %s "[$v]"' "$cap_tmp/nl")" "[a
+assert_eq "file_read drops a NUL byte and keeps the bytes after it, as cat in a substitution did" "${fr_out[6]}" "$(printf %q "[ab
+]")"
+assert_eq "file_read keeps trailing newlines and runs with an empty PATH" "${fr_out[7]}" "$(printf %q "[a
 
-]"
+]")"
 cap_bin="$(mktemp -d)"; ln -s "$(command -v rm)" "$cap_bin/rm"
 assert_eq "capture and capture_err run with a PATH holding only rm" \
   "$(TMPDIR="$cap_tmp" sourced_orch_script 'PATH="'"$cap_bin"'"; capture o e eval "echo out; echo err >&2"; capture_err e2 eval "echo e2 >&2"; echo "[$o] [$e] [$e2]"')" "[out] [err

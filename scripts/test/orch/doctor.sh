@@ -2415,14 +2415,12 @@ rm -rf "$tli_root"
 echo
 echo "doctor --env git processes per worktree"
 healthy_repo
-dg_log="$(mktemp)"
-dg_wrap="$(mktemp -d)"
-writeln '#!/bin/sh' "echo x >>'$dg_log'" "exec $(command -v git) \"\$@\"" >"$dg_wrap/git"
-chmod +x "$dg_wrap/git"
+dg_wrap="$(counting_bin git)"
+dg_log="$dg_wrap/git.log"
 doctor_git_starts() {
   : >"$dg_log"
   PATH="$dg_wrap:$PATH" "$ORCH" doctor --env >/dev/null 2>&1
-  wc -l <"$dg_log" | tr -d ' '
+  counting_starts "$dg_wrap" git
 }
 git worktree add -q "$(mktemp -d)/a" -b pw-a
 git worktree add -q "$(mktemp -d)/b" -b pw-b

@@ -299,9 +299,9 @@ for f in absent invalid array null; do
     "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; [ \$? -ne 0 ] && echo \"failed \$a\"")" "failed keep
 status 0"
 done
-fs_jqbin="$(jq_counting_bin)"
+fs_jqbin="$(counting_bin jq)"
 fs_run "PATH=$fs_jqbin:\$PATH; flow_state_get_many many.json a=slug b=issue c=phase d=pr e=budget" >/dev/null
-assert_eq "a five-key read starts exactly one jq" "$(jq_starts "$fs_jqbin")" "1"
+assert_eq "a five-key read starts exactly one jq" "$(counting_starts "$fs_jqbin" jq)" "1"
 assert_eq "flow_state_key_field returns 2 for an unknown column, printing nothing" \
   "$(fs_run 'flow_state_key_field slug bogus')" "status 2"
 assert_eq "flow_state_key_field returns 1 for an unknown key, printing nothing" \
@@ -457,12 +457,12 @@ out="$(sourced_orch_script 'state_get_many_in "$1" key=slug file=phase; echo "$k
 assert_eq "state_get_many_in reads a readable file's keys" "$out" "readers spec"
 out="$(sourced_orch_script 'state_get_many key=slug file=phase rc=issue val=pr; echo "$key $file $rc $val"' 2>&1)"
 assert_eq "state_get_many assigns out-variables named like common locals" "$out" "readers spec  "
-rd_jq="$(jq_counting_bin)"
+rd_jq="$(counting_bin jq)"
 PATH="$rd_jq:$PATH" sourced_orch state_get_many_in "$rd_file" a=slug b=phase c=issue d=pr e=budget >/dev/null
-assert_eq "state_get_many_in reading five keys starts exactly one jq" "$(jq_starts "$rd_jq")" "1"
+assert_eq "state_get_many_in reading five keys starts exactly one jq" "$(counting_starts "$rd_jq" jq)" "1"
 : >"$rd_jq/jq.log"
 PATH="$rd_jq:$PATH" sourced_orch status_flow >/dev/null 2>&1
-assert_eq "status_flow on a flow that records its base starts exactly one jq" "$(jq_starts "$rd_jq")" "1"
+assert_eq "status_flow on a flow that records its base starts exactly one jq" "$(counting_starts "$rd_jq" jq)" "1"
 state_truncate
 out="$(sourced_orch state_get_in "$rd_file" phase 2>&1)"; st=$?
 assert_status "state_get_in on a truncated file returns 2" "$st" 2
