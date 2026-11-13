@@ -19,7 +19,8 @@ count_lines() {
 }
 
 # term_run <stdout file> <stderr file> <pid file>... -- <command>...: starts
-# <command> in the background, its output to the two files, polls (up to 20
+# <command> in the background, its output to the two files (one shared open
+# file, stderr merged into stdout, when both are the same path), polls (up to 20
 # seconds) until every pid file has content, sends TERM to it, and waits. The
 # command's own pid is the one TERMed, so a caller wanting a directory or an
 # unset variable passes `env -u` or `bash -c 'cd ...; exec ...'` as the
@@ -31,7 +32,11 @@ term_run() {
   shift 2
   while [ "$1" != -- ]; do pid_files+=("$1"); shift; done
   shift
-  "$@" >"$out" 2>"$err" &
+  if [ "$out" = "$err" ]; then
+    "$@" >"$out" 2>&1 &
+  else
+    "$@" >"$out" 2>"$err" &
+  fi
   pid=$!
   while [ "$tries" -le 200 ]; do
     ready=1
@@ -1272,6 +1277,7 @@ cp "$dur_file" "$dur_dir/good.tsv"
 # pid and sleeps 30 s. After TERM the script must return at once with 130, the
 # child gone and the durations file as it was. INT runs the same trap; the
 # harness cannot send it, as a background script inherits SIGINT ignored.
+
 # dur_term <pid file> [<env assignment>...]: starts the script as in dur_script,
 # through term_run, which TERMs it once the pid file has content, and
 # sets dur_term_st and dur_term_secs (the seconds the script took to return).
