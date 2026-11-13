@@ -1019,13 +1019,14 @@ for rd_mode in file comment; do
 done
 
 # --- redo ends in one closing state write -------------------------------------
-# Each redo moves its phase and clears its attempt keys in one write, taken
-# last: a death at that write leaves the flow at its old phase with the keys its
-# guards need (the redo's own state writes all fail under state_write_fails_bin,
-# so these flows are ones whose earlier steps write no state).
+# Each redo moves its phase and clears its attempt keys (redo_step_back's
+# branch, pr and base_sha trio) in one write, taken last: a death at that write
+# leaves the flow at its old phase with the keys its guards need (state writes
+# fail under state_write_fails_bin, so these flows are ones whose earlier steps
+# write no state). The attempt retire's branch and redo_count are one write
+# too, so a death there leaves both recorded or both unrecorded.
 echo
 echo "redo ends in one closing state write"
-no_temp_left() { local n=0 f; for f in .orchestrator/state.json.*; do if [ -e "$f" ]; then n=$((n + 1)); fi; done; echo "$n"; }
 
 # redo spec --new-issue: the old issue closed, then the closing write dies.
 fresh_flow redoclose1
@@ -1040,7 +1041,6 @@ assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
 assert_eq "the old issue is closed" "$(fake_state_of 70)" "CLOSED"
 assert_eq "state.issue is still recorded" "$("$ORCH" state get issue)" "70"
 assert_eq "and the phase is still implement" "$("$ORCH" state get phase)" "implement"
-assert_eq "with no temp file left beside state.json" "$(no_temp_left)" "0"
 out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "the rerun without the failure exits 0" "$st" 0
 assert_eq "stepping back to spec" "$("$ORCH" state get phase)" "spec"
@@ -1065,7 +1065,24 @@ assert_status "a default redo spec whose closing write fails exits 1" "$st" 1
 assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
 assert_eq "leaving issue, branch, pr, base_sha and phase as they were" \
   "$(redo_state_snapshot)" "$before"
-assert_eq "with no temp file left beside state.json" "$(no_temp_left)" "0"
+
+# The attempt retire's record is one write: the first state write passes and
+# every later one fails, so the retire's record lands whole or not at all.
+fresh_flow redoclose4
+fake_github
+fake_issue 73 open
+state_fixture phase implement
+"$ORCH" state set issue 73
+git branch -q orch/73-redoclose4
+state_fixture branch orch/73-redoclose4
+out="$(PATH="$(state_write_fails_after_first_bin):$PATH" "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a redo spec whose closing write fails after the retire exits 1" "$st" 1
+assert_eq "the retired branch is recorded" "$("$ORCH" state get branch)" "orch/73-redoclose4-redo-1"
+assert_eq "with its redo_count recorded alongside" "$("$ORCH" state get redo_count)" "1"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "the rerun exits 0" "$st" 0
+assert_eq "without retiring the branch a second time" "$("$ORCH" state get redo_count)" "1"
+assert_eq "no -redo-2 branch exists" "$(branch_presence orch/73-redoclose4-redo-2)" "gone"
 
 # A resumed redo review: its branch already retired and recorded.
 fresh_flow redoclose2
@@ -1088,7 +1105,6 @@ assert_status "a resumed redo review whose closing write fails exits 1" "$st" 1
 assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
 assert_eq "leaving branch, pr, base_sha, iteration and phase as they were" \
   "$(redo_state_snapshot)" "$before"
-assert_eq "with no temp file left beside state.json" "$(no_temp_left)" "0"
 restore_suite_env
 
 # --- redo help names handoffs by role (#1066) -------------------------------

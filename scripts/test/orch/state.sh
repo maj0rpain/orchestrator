@@ -135,8 +135,9 @@ done
 restore_suite_env
 
 # --- the state writer accepts exactly the table's phases --------------------
-# phase_write, the one writer of state.phase, accepts the phase table's phases
-# and refuses any other, leaving the recorded phase as it was.
+# phase_write and phase_write_try, the writers of state.phase, accept the phase
+# table's phases and refuse any other, leaving the recorded phase as it was.
+# Optional trailing key/value pairs are written with the phase, or not at all.
 echo
 echo "state phase writer"
 fake_flow phase-writer
@@ -376,6 +377,15 @@ assert_ne "flow_state_write_many returns non-zero on a failed replace after the 
   "$(fs_run 'flow_state_write_many invalid.json budget 1 2>/dev/null' | tail -n 1)" "status 0"
 assert_eq "and leaves that file untouched" "$(cat "$fs_dir/invalid.json")" "not json"
 assert_eq "with no temp file beside it" "$(ls -A "$fs_dir")" "$before_ls"
+printf '{"slug":"s","budget":1}' >"$fs_dir/str.json"
+assert_eq "flow_state_write_many --string stores digits and true as strings beside coerced values" \
+  "$(fs_run 'flow_state_write_many str.json --string base_sha 12345 --string pr true budget 7 flake_rerun_used true && jq -c "del(.updated)" str.json')" \
+  '{"slug":"s","budget":7,"base_sha":"12345","pr":"true","flake_rerun_used":true}
+status 0'
+cp "$fs_dir/str.json" "$fs_dir/str.before"
+assert_ne "flow_state_write_many refuses a dangling --string" \
+  "$(fs_run 'flow_state_write_many str.json budget 2 --string 2>/dev/null' | tail -n 1)" "status 0"
+assert_eq "and leaves the file untouched for it" "$(cat "$fs_dir/str.json")" "$(cat "$fs_dir/str.before")"
 restore_suite_env
 
 # --- commands on a truncated state.json (#1929) -----------------------------
@@ -432,6 +442,42 @@ assert_eq "and prints nothing" "$out" ""
 out="$(sourced_orch state_get_many_in "$rd_file" a=phase 2>&1)"; st=$?
 assert_status "state_get_many_in on a truncated file returns 2" "$st" 2
 assert_eq "and prints nothing" "$out" ""
+restore_suite_env
+
+# --- state_write_many and the phase writers' trailing pairs -------------------
+# state_write_many sets its keys in one write and names each of them in a
+# failure; phase_write and phase_write_try write trailing key/value pairs with
+# the phase, or write nothing.
+echo
+echo "state write many"
+fake_flow writemany
+out="$(sourced_orch state_write_many --string base_sha 123 budget 4 2>&1)"; st=$?
+assert_status "state_write_many sets its keys" "$st" 0
+assert_eq "as strings or coerced" "$(jq -c '[.base_sha, .budget]' .orchestrator/state.json)" '["123",4]'
+before="$(cat .orchestrator/state.json)"
+out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch state_write_many --string branch b budget 5 2>&1)"; st=$?
+assert_status "a failed state_write_many exits 1" "$st" 1
+assert_eq "naming every key, with no --string" "$out" \
+  "orch: could not record branch, budget in $PWD/.orchestrator/state.json - the flow is unchanged"
+assert_eq "leaving state.json byte for byte" "$(cat .orchestrator/state.json)" "$before"
+out="$(sourced_orch phase_write review budget 9 --string base_sha 77 2>&1)"; st=$?
+assert_status "phase_write with pairs succeeds" "$st" 0
+assert_eq "writing the phase and the keys" "$(jq -c '[.phase, .budget, .base_sha]' .orchestrator/state.json)" '["review",9,"77"]'
+before="$(cat .orchestrator/state.json)"
+out="$(sourced_orch phase_write plan budget 1 2>&1)"; st=$?
+assert_status "phase_write refuses a phase outside the table, with pairs" "$st" 1
+assert_eq "with today's message" "$out" "orch: not a flow phase: plan (want one of: spec implement review done)"
+assert_eq "writing neither phase nor keys" "$(cat .orchestrator/state.json)" "$before"
+sourced_orch phase_write_try plan budget 1 >/dev/null 2>&1; st=$?
+assert_ne "phase_write_try with pairs returns non-zero on a refused phase" "$st" 0
+assert_eq "writing neither phase nor keys there" "$(cat .orchestrator/state.json)" "$before"
+out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write 'done' budget 1 2>&1)"; st=$?
+assert_status "phase_write with pairs dies on a failed write" "$st" 1
+assert_contains "with its wording" "$out" "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
+assert_eq "writing neither phase nor keys on it" "$(cat .orchestrator/state.json)" "$before"
+PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write_try 'done' budget 1 >/dev/null 2>&1; st=$?
+assert_ne "phase_write_try with pairs returns non-zero on a failed write" "$st" 0
+assert_eq "writing neither phase nor keys on that" "$(cat .orchestrator/state.json)" "$before"
 restore_suite_env
 
 # --- state set with a failed write (#1931) ------------------------------------

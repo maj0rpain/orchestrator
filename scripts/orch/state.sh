@@ -120,6 +120,21 @@ state_write_string() {
     die "could not record $1 in $STATE - the flow is unchanged"
 }
 
+# state_write_many [--string] <key> <value> [[--string] <key> <value>]...: the
+# many-key form of state_write, over flow_state_write_many on $STATE: every key
+# is set in one write, and --string before a pair stores its value as a JSON
+# string. A failed write dies, naming each key given (never a --string marker),
+# as state_write's does.
+state_write_many() {
+  local a keys="" want=1
+  for a in "$@"; do
+    if [ "$a" = --string ] && [ "$want" = 1 ]; then continue; fi
+    if [ "$want" = 1 ]; then keys="${keys:+$keys, }$a"; want=0; else want=1; fi
+  done
+  flow_state_write_many "$STATE" "$@" ||
+    die "could not record $keys in $STATE - the flow is unchanged"
+}
+
 # require_state [die2]: dies unless an active flow's state file exists and
 # parses (require_state_exists, then require_state_readable) - with die2 for a
 # command that reserves exit 1 for a meaningful "no".
@@ -184,17 +199,21 @@ require_branch() { require_field "$1" branch "no branch recorded in state"; }
 
 # The writers of state.phase: phase_write, which dies on a failed write, and
 # phase_write_try, which returns the writer's status for a caller that words
-# its own failure. They know only which phases exist: every caller - advance,
-# review ready, and init's seed - keeps its own guard on which transition it
-# may make, so a step back needs no handoff check here. The redos write
-# state.phase through redo_step_back (redo.sh), in the redo's one closing
-# write, after the same PHASES membership check.
+# its own failure. Every write of state.phase goes through one of them, the
+# redos' closing write included (redo_step_back, redo.sh, calls phase_write).
+# They know only which phases exist: every caller - advance, review ready, and
+# init's seed - keeps its own guard on which transition it may make, so a step
+# back needs no handoff check here. Optional trailing <key> <value> pairs are
+# written with the phase in one flow_state_write_many call, after the PHASES
+# check: the phase and the keys are recorded together or not at all.
 phase_write() {
-  phase_write_try "$1" || die "could not record phase in $STATE - the flow is unchanged"
+  phase_write_try "$@" || die "could not record phase in $STATE - the flow is unchanged"
 }
 phase_write_try() {
-  word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
-  flow_state_write "$STATE" phase "$1"
+  local phase="$1"
+  word_listed "$PHASES" "$phase" || die "not a flow phase: $phase (want one of: $PHASES)"
+  shift
+  flow_state_write_many "$STATE" phase "$phase" "$@"
 }
 
 # The active flow's own base branch, recorded by init. A flow started before

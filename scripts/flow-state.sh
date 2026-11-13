@@ -28,7 +28,9 @@
 #   flow_state_create): non-zero, the state file untouched and no temp file
 #   left, when the write fails. flow_state_write, flow_state_write_string and
 #   flow_state_write_many change an existing state file: an absent one is a
-#   failed write, and nothing is created.
+#   failed write, and nothing is created. flow_state_write_many takes
+#   --string before a pair to store that pair's value as a JSON string, as
+#   flow_state_write_string does; a dangling --string is a failed write.
 #   flow_state_create is the one writer that creates the file, or replaces it
 #   whole.
 # - flow_state_seed: 2 for an arg row it has no value for, a programming
@@ -309,18 +311,26 @@ flow_state_json() {
   esac
 }
 
-# flow_state_write_many <file> <key> <value> [<key> <value>]...: sets every
-# key in one replace, each value coerced as flow_state_write does, stamping
-# updated as flow_state_merge does. A failure - an odd argument count, a value
-# that will not convert, or a failed replace - leaves <file> untouched and no
-# temp file.
+# flow_state_write_many <file> [--string] <key> <value> [[--string] <key>
+# <value>]...: sets every key in one replace, each value coerced as
+# flow_state_write does, stamping updated as flow_state_merge does. A
+# --string before a pair stores that pair's value as a JSON string, always, as
+# flow_state_write_string does. A failure - a dangling --string, a missing
+# value, a value that will not convert, or a failed replace - leaves <file>
+# untouched and no temp file.
 flow_state_write_many() {
-  local file="$1" obj='{}' k v
+  local file="$1" obj='{}' k v str
   shift
-  [ $(( $# % 2 )) -eq 0 ] || return 1
   while [ $# -gt 0 ]; do
+    str=""
+    if [ "$1" = --string ]; then str=1; shift; fi
+    [ $# -ge 2 ] || return 1
     k="$1"
-    v="$(flow_state_json "$2")" || return
+    if [ -n "$str" ]; then
+      v="$(jq -n --arg v "$2" '$v')" || return
+    else
+      v="$(flow_state_json "$2")" || return
+    fi
     obj="$(jq -n --argjson o "$obj" --arg k "$k" --argjson v "$v" '$o + {($k): $v}')" || return
     shift 2
   done
