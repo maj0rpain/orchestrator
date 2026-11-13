@@ -265,9 +265,10 @@ standing_chain_die() {
   standing_landed_die "could not $2 on issue #$1: $(gh_reason "$3")"
 }
 
-# standing_timeline_read <issue> <purpose>: reads the issue's comments, else
-# dies with the landed writes, naming what the read was for and why it failed.
-standing_timeline_read() {
+# standing_timeline_read_or_die <issue> <purpose>: reads the issue's comments,
+# else dies with the landed writes, naming what the read was for and why it
+# failed.
+standing_timeline_read_or_die() {
   orch_load issue-timeline
   timeline_read "$1" ||
     standing_landed_die "could not read issue #$1's comments to $2: ${TIMELINE_REASON:-the comments could not be read}"
@@ -503,7 +504,7 @@ standing_post_release() {
     # An earlier attempt's call failed and may have landed: look first, and post
     # nothing when the look fails.
     if [ -s "${STANDING_STATE_FILE:-}" ] && grep -qxF "tried"$'\t'"$landed_what" "$STANDING_STATE_FILE"; then
-      standing_timeline_read "$issue" "check for this stop's comment"
+      standing_timeline_read_or_die "$issue" "check for this stop's comment"
       ! timeline_has_body "$text" || present_rc=0
     fi
     if [ "$present_rc" -eq 0 ]; then
@@ -540,7 +541,7 @@ standing_comment_post() {
 standing_reenter() {
   local issue="$1" phase="$2" text="$3" count body
   standing_chain_start
-  standing_timeline_read "$issue" "count the automatic re-entries in a row"
+  standing_timeline_read_or_die "$issue" "count the automatic re-entries in a row"
   count="$(timeline_reentry_count "$phase")"
   if [ "$count" -ge 2 ]; then
     standing_ask "$phase" "$text"$'\n\nThis follows two automatic re-entries of the '"$phase"$' loop, so it asks instead of starting another.\n'

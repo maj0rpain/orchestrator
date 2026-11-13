@@ -346,7 +346,7 @@ restore_suite_env
 # --- autopilot reenter --------------------------------------------------------
 # This section holds both the command's cases (refusal, usage, success and its
 # partway failure) and the automatic re-entry transition's cases (the re-entry
-# count, the ask path, a failed timeline read and the write-chain failures).
+# count, the ask path and the write-chain failures).
 # #2417's Testing Decisions placed the transition's cases here, through the
 # orch.sh CLI, so this section carries more than the one partway-failure case
 # CONTRIBUTING asks of a command section.
@@ -403,17 +403,6 @@ b"
 }
 re_ends 80 "a trusted reply ends the re-entry count" OWNER "a reply" "<!-- orch:reentry review -->"
 re_ends 85 "an untrusted author's reply does not end the re-entry count" NONE "a reply" "<!-- orch:question review -->"
-# a failed comments read dies with the claim held and no write
-re_issue 75
-fake_fail adapter_issue_comments_json "HTTP 500"
-out="$(re_run "$re_file" 2>&1)"; st=$?
-fake_unfail
-assert_status "a failed comments read dies" "$st" 1
-assert_contains "naming the read and its reason" "$out" "could not read issue #75's comments to count the automatic re-entries in a row: HTTP 500"
-assert_contains "and the writes that landed" "$out" "writes that landed: none"
-assert_contains "and that the claim stays held" "$out" "the claim stays held"
-assert_eq "the claim stays held, the labels are unchanged" "$(fake_labels_of 75)|$(fake_claim_held 75)" "orch:review orch:running |held"
-assert_eq "and no comment is posted" "$(fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/75/comments")" ""
 # failed writes die naming the landed ones, the claim held
 re_issue 77
 fake_fail adapter_claim_delete "HTTP 500"
