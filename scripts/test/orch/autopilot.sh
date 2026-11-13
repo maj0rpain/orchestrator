@@ -2553,6 +2553,7 @@ assert_not_contains "and no needs-human label" "$(fake_labels_of 7)" "needs-huma
 assert_eq "the tick ends after that pickup: the next issue is not claimed" "$(fake_claim_held 8)" free
 assert_eq "and no session starts" "$(tick_calls)" "0"
 assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+assert_eq "and its run record is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
 rm -f "$top/.orchestrator/autopilot/github-limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_contains "the issue is picked up again after the pause" "$(picked)" "limit-pickup-7"
@@ -2606,6 +2607,7 @@ fake_fail_times adapter_issue_state_labels 1 "HTTP 500"
 fake_unfail
 assert_status "a start-up read that fails for another reason dies" "$st" 1
 assert_eq "and leaves the claim held" "$(fake_claim_held 7)" held
+assert_eq "and its run record is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
 # a claim release that fails every attempt keeps the claim, writes a backstop
 # line that says no session ran, and names its log by the claim's own phase
 # (which stale cleanup looks it up by)
@@ -2619,7 +2621,7 @@ fake_unfail
 su_logs=("$top"/.orchestrator/autopilot/logs/7-sync-*.log)
 assert_eq "a failed start-up claim release leaves the claim held" "$(fake_claim_held 7)" held
 assert_eq "and names its log by the claim's phase" "$([ -e "${su_logs[0]}" ] && echo named || echo missing)" named
-assert_contains "and its backstop line says no session ran" "$(tail -1 "${su_logs[0]}")" "the stop chain failed after 3 attempts - claim release: could not release the claim after a GitHub-limited start-up read; no session ran"
+assert_contains "and its backstop line says no session ran" "$(tail -1 "${su_logs[0]}")" "the stop chain failed after 3 attempts - claim release: could not release the claim; no session ran: the start-up read met a GitHub limit"
 
 # --- autopilot tick: the early GitHub pause (#2577) ---------------------------
 echo
