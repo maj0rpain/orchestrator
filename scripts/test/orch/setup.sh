@@ -316,10 +316,10 @@ SSH
 # <pattern>, and passes every other call through to the real one; first on
 # PATH, it fails those calls and nothing else.
 fails_bin() {
-  local dir fail="exit ${3:-1}" line q="'\\''"
+  local dir fail="exit ${3:-1}" escaped_line escaped_quote="'\\''"
   if [ "$#" -ge 4 ]; then
-    line="${4//\'/$q}"
-    fail="printf '%s\\n' '$line' >&2; $fail"
+    escaped_line="${4//\'/$escaped_quote}"
+    fail="printf '%s\\n' '$escaped_line' >&2; $fail"
   fi
   dir="$(mktemp -d)"
   writeln '#!/bin/sh' 'case " $* " in '"$2"') '"$fail"' ;; esac' "exec $(command -v "$1") \"\$@\"" >"$dir/$1"
