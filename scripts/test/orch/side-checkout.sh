@@ -1432,3 +1432,67 @@ out="$(bash -c 'source "$1"; shift; side_checkout_close_missed "$@"' _ "$ORCH" "
 assert_status "the close backstop on a truncated state.json returns 0" "$st" 0
 assert_eq "it prints nothing" "$out" ""
 assert_eq "it reads no issue from GitHub, so the open issue is left alone" "$(fake_state_of 610)" "OPEN"
+
+# --- side_checkout_marker reads the worktree's git pointer --------------------
+# The marker lookup reads <path>/.git instead of starting git: a main
+# worktree's git folder, or the folder a linked worktree's pointer names,
+# absolute or relative. A pointer it cannot read asks git.
+echo
+echo "side_checkout_marker"
+healthy_repo
+mtop="$PWD"
+mlink="$(mktemp -d)/link"
+git worktree add -q "$mlink" -b mk-link
+mrel="$(mktemp -d)/rel"
+git worktree add -q "$mrel" -b mk-rel
+mgd="$(git -C "$mlink" rev-parse --absolute-git-dir)"
+mrgd="$(git -C "$mrel" rev-parse --absolute-git-dir)"
+: >"$mgd/orchestrator-side-checkout"
+: >"$mrgd/orchestrator-side-checkout"
+: >"$mtop/.git/orchestrator-side-checkout"
+mrel_ptr="$(realpath --relative-to="$mrel" "$mrgd")"
+printf 'gitdir: %s\n' "$mrel_ptr" >"$mrel/.git"
+mplain="$(mktemp -d)/plain"
+git worktree add -q "$mplain" -b mk-plain
+mnone="$(mktemp -d)"
+
+assert_eq "a main worktree's marker" "$(sourced_orch side_checkout_marker "$mtop")" "$mtop/.git/orchestrator-side-checkout"
+assert_eq "a linked worktree, pointer absolute" "$(sourced_orch side_checkout_marker "$mlink")" "$mgd/orchestrator-side-checkout"
+assert_eq "a linked worktree, pointer relative" "$(sourced_orch side_checkout_marker "$mrel")" "$mrgd/orchestrator-side-checkout"
+sourced_orch side_checkout_marker "$mplain" >/dev/null; st=$?
+assert_status "a worktree with no marker" "$st" 1
+sourced_orch side_checkout_marker "$mnone" >/dev/null; st=$?
+assert_ne "a path that is no worktree" "$st" 0
+
+nogit="$(mktemp -d)"  # an empty PATH directory: no git, no cat, nothing
+marker_bare_path() { bash -c 'source "$1"; PATH="$2"; shift 2; side_checkout_marker "$@"' _ "$ORCH" "$nogit" "$@"; }
+assert_eq "bare PATH, a main worktree" "$(marker_bare_path "$mtop")" "$mtop/.git/orchestrator-side-checkout"
+assert_eq "bare PATH, a linked worktree" "$(marker_bare_path "$mlink")" "$mgd/orchestrator-side-checkout"
+
+# An unreadable pointer asks git, seen through a counting wrapper.
+mlog="$(mktemp)"
+mwrap="$(mktemp -d)"
+writeln '#!/bin/sh' "echo x >>'$mlog'" "exec $(command -v git) \"\$@\"" >"$mwrap/git"
+chmod +x "$mwrap/git"
+mark_counted() { bash -c 'source "$1"; PATH="$2:$PATH"; side_checkout_marker "$3"' _ "$ORCH" "$mwrap" "$1" >/dev/null; }
+mptr="$(<"$mlink/.git")"
+rm "$mlink/.git"; mkdir "$mlink/.git"
+: >"$mlog"
+mark_counted "$mlink"
+assert_ne "a pointer that is a HEAD-less directory asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+rmdir "$mlink/.git"
+printf 'not a pointer\n' >"$mlink/.git"
+: >"$mlog"
+mark_counted "$mlink"
+assert_ne "a pointer file with no gitdir line asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+chmod 000 "$mlink/.git"
+: >"$mlog"
+if [ -r "$mlink/.git" ]; then
+  skip "a pointer file that cannot be read asks git" "permissions do not bite here, e.g. root"
+else
+  mark_counted "$mlink"
+  assert_ne "a pointer file that cannot be read asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+fi
+chmod 644 "$mlink/.git"
+printf '%s\n' "$mptr" >"$mlink/.git"
+restore_suite_env

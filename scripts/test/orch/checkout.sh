@@ -145,8 +145,8 @@ trace_git() { grep -c "trace: built-in: git $1" "$trace_file"; }
 trace_lookup "$side" main_checkout >/dev/null
 assert_eq "main_checkout spawns one git process" "$(trace_git '')" "1"
 trace_lookup "$top" checkout_kind "$side" >/dev/null
-assert_eq "checkout_kind on a side checkout reads one git dir" "$(trace_git 'rev-parse --absolute-git-dir')" "1"
-assert_eq "checkout_kind on a side checkout spawns three git processes" "$(trace_git '')" "3"
+assert_eq "checkout_kind on a side checkout reads its git dir from the pointer, starting no git for it" "$(trace_git 'rev-parse --absolute-git-dir')" "0"
+assert_eq "checkout_kind on a side checkout spawns two git processes" "$(trace_git '')" "2"
 for dir in "$top" "$top/.orchestrator/worktrees/t9"; do
   trace_lookup "$dir" checkout_kind "$dir" >/dev/null
   assert_eq "checkout_kind on ${dir##*/} reads no git dir" "$(trace_git 'rev-parse --absolute-git-dir')" "0"

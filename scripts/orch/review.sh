@@ -403,6 +403,7 @@ review_ci_log() {
 # finding never reaches GitHub rather than surfacing weeks later as "body
 # does not parse" in triage.
 review_file() {
+  orch_load filed-finding
   local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
   local severity="$1" title="$2" flag value
@@ -466,7 +467,7 @@ review_file() {
   done
 
   severity_label_ensure "review:$severity" "$colour" "$desc"
-  triage="$(triage_label_for needs-triage)"
+  triage_label_into triage needs-triage
   triage_label_ensure "$triage"
   category_label_ensure "$category"
   # The title carries no severity prefix: the label holds it, where triage

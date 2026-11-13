@@ -9,12 +9,28 @@
 # through die when run outside a git repository, and ahead of every noun module.
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
-# <list>, matched whole-line and literally. The one newline-list membership test
-# (word_listed matches its space-separated lists without a fork):
-# `--` keeps an item beginning with `-` an item, never a grep option, and an
-# item spanning lines is no line at all, never several of grep's patterns.
+# <list>, matched whole-line, literally and case-sensitively. The one
+# newline-list membership test (word_listed matches its space-separated lists).
+# It matches in bash, starting no command: <list> is framed in newlines and the
+# quoted <item>, framed the same, is looked for in it, so an item beginning
+# with `-` or holding glob or regex characters is an item, never an option or a
+# pattern, and an item spanning lines is no line at all.
 list_has() {
-  [[ $2 != *$'\n'* ]] && grep -qxF -- "$2" <<<"$1"
+  [[ $2 != *$'\n'* ]] && [[ $'\n'"$1"$'\n' == *$'\n'"$2"$'\n'* ]]
+}
+
+# path_last_into <var> <path> [<suffix>]: sets <var> to <path>'s last
+# component, <suffix> stripped when that component ends in it and is not all of
+# it, as basename gives it, without starting basename. Sets the variable in the
+# caller's shell with printf -v.
+path_last_into() {
+  local _pl_p="$2"
+  while [[ $_pl_p == ?*/ ]]; do _pl_p="${_pl_p%/}"; done
+  if [[ $_pl_p != / ]]; then
+    _pl_p="${_pl_p##*/}"
+    if [[ -n ${3:-} && $_pl_p == ?*"$3" ]]; then _pl_p="${_pl_p%"$3"}"; fi
+  fi
+  printf -v "$1" '%s' "$_pl_p"
 }
 
 # list_join <list>: the newline-separated <list>'s non-empty lines joined with
@@ -132,20 +148,47 @@ require_poll_knobs() {
     '') die "$interval must be greater than zero: $v" ;;
   esac
 }
+# temp_file_name <var>: sets <var> to a fresh, unpredictable path under the temp
+# directory, built from $RANDOM. temp_file_make takes every name from it, so a
+# test replaces it to force a collision.
+temp_file_name() {
+  printf -v "$1" '%s/orch.%s%s%s' "${TMPDIR:-/tmp}" "$RANDOM" "$RANDOM" "$RANDOM"
+}
+# temp_file_make <var>: creates an empty temp file, owner-only, and sets <var>
+# to its path, starting no external command. The name comes from
+# temp_file_name; one at which anything already exists, of any type, is skipped
+# untouched. The create is exclusive (noclobber) and runs in a subshell under
+# umask 077, so the caller's mask and options are never changed; afterwards the
+# name must be a regular file and no link, or it too counts as a collision and
+# is left as it is. After 10 tries it fails, saying nothing: each caller words
+# its own message. The caller removes the file.
+temp_file_make() {
+  local _tfm_path _tfm_try
+  for _tfm_try in 1 2 3 4 5 6 7 8 9 10; do
+    temp_file_name _tfm_path
+    [[ -e $_tfm_path || -L $_tfm_path ]] && continue
+    (umask 077; set -o noclobber; : >"$_tfm_path") 2>/dev/null || continue
+    [[ -f $_tfm_path && ! -L $_tfm_path ]] || continue
+    printf -v "$1" '%s' "$_tfm_path"
+    return 0
+  done
+  return 1
+}
 # capture_err <err-var> <command...>: runs the command, sets <err-var> to its
 # stderr byte for byte, and returns its status. It leaves stdout alone, to the
 # caller's own redirect: a body streamed to a file through
 # `capture_err err adapter_issue_body "$n" >"$body"` keeps its trailing
-# newlines, which capture's command substitution would strip. The stderr goes
-# through one temp file capture_err owns. Call it in the current shell, never
-# inside $(...): it sets the caller's variable with printf -v. Its locals carry
-# a _capture_err_ prefix, so they shadow no caller's variable. The command runs
-# in a subshell: the gh guard's no-repo death then signals the main shell,
-# whose USR1 trap dies with the remedy on the real stderr, rather than dying
-# here with its message redirected into the capture.
+# newlines, which capture's strip would remove. The stderr goes through one
+# temp file capture_err makes with temp_file_make and reads back with
+# file_read; only the final rm is an external command. Call it in the current
+# shell, never inside $(...): it sets the caller's variable with printf -v. Its
+# locals carry a _capture_err_ prefix, so they shadow no caller's variable. The
+# command runs in a subshell: the gh guard's no-repo death then signals the
+# main shell, whose USR1 trap dies with the remedy on the real stderr, rather
+# than dying here with its message redirected into the capture.
 capture_err() {
   local _capture_err_file _capture_err_text _capture_err_st=0
-  _capture_err_file="$(mktemp)" || {
+  temp_file_make _capture_err_file || {
     echo "could not create a temp file for the command's stderr" >&2
     printf -v "$1" '%s' "could not create a temp file for the command's stderr"
     return 1
@@ -166,20 +209,24 @@ assoc_array_require() {
     || die "$1: $2 is not a declared associative array"
 }
 # capture <out-var> <err-var> <command...>: capture_err with the stdout taken
-# too - sets <out-var> to the command's stdout (read back by command
-# substitution, so trailing newlines go), <err-var> to its stderr byte for
-# byte, and returns its status. Same rules as capture_err: current shell only,
-# and _capture_-prefixed locals, nested calls included.
+# too - sets <out-var> to the command's stdout (read back with file_read, its
+# trailing newlines stripped), <err-var> to its stderr byte for byte, and
+# returns its status. The stdout goes through a temp file, never a command
+# substitution, so a background process the command leaves holding it cannot
+# block the return. Same rules as capture_err: current shell only, and
+# _capture_-prefixed locals, nested calls included.
 capture() {
-  local _capture_file _capture_st=0
-  _capture_file="$(mktemp)" || {
+  local _capture_file _capture_text _capture_st=0
+  temp_file_make _capture_file || {
     echo "could not create a temp file for the command's stdout" >&2
     printf -v "$2" '%s' "could not create a temp file for the command's stdout"
     return 1
   }
   capture_err "$2" "${@:3}" >"$_capture_file" || _capture_st=$?
-  printf -v "$1" '%s' "$(cat "$_capture_file")"
+  file_read _capture_text "$_capture_file" || _capture_text=""
   rm -f "$_capture_file"
+  newlines_strip _capture_text
+  printf -v "$1" '%s' "$_capture_text"
   return "$_capture_st"
 }
 # git_config_unset <scope> <key>: removes every value of <key> at local or
@@ -276,12 +323,24 @@ lines_split() {
 }
 
 # file_read <var> <file>: <file>'s bytes into <var>, exactly - its trailing
-# newlines kept, which $(cat) alone drops. Fails, <var> untouched, when the
-# file cannot be read.
+# newlines kept, a NUL byte dropped as $(cat) drops it - read by the shell
+# itself, starting no external command. Fails, <var> untouched, when the file
+# cannot be read.
 file_read() {
-  local _file_read_s
-  _file_read_s="$(cat "$2" && printf x)" || return 1
-  printf -v "$1" '%s' "${_file_read_s%x}"
+  local _file_read_s="" _file_read_c=""
+  if [[ -r $2 && ! -d $2 ]]; then
+    # read -d '' stops at each NUL: take every chunk, the last one unterminated.
+    # A failed open (a socket, a file gone since the check) leaves the loop
+    # status 1, which takes the failure path; its own error is silenced.
+    if while IFS= read -r -d '' _file_read_c; do _file_read_s+=$_file_read_c; done 2>/dev/null <"$2"; then
+      _file_read_s+=$_file_read_c
+      printf -v "$1" '%s' "$_file_read_s"
+      return 0
+    fi
+  fi
+  # Only the failure path starts a command: cat gives its own diagnostic.
+  cat "$2" >/dev/null || :
+  return 1
 }
 
 # file_write_atomic <file> <text>: <text> written to <file>, exactly, through a

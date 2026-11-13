@@ -154,7 +154,7 @@ cmd_ticket_publish() {
     want="$(issue_number_list --blocked-by "$blocked_by")" || exit 1
   fi
 
-  ready="$(triage_label_for ready-for-agent)"
+  triage_label_into ready ready-for-agent
   gh_or_die --out child "create the ticket" \
     adapter_issue_create "$title" "$body_file" "$ready"
 

@@ -164,6 +164,13 @@ assert_contains "opens with a bare group header" "$out" "tools"
 assert_contains "summarises severities on the last line" \
   "$(printf '%s\n' "$out" | tail -1)" "0 FAIL"
 
+out="$(ORCH_DOCTOR_BASH_VERSION=4.2 sourced_orch check_bash 2>&1)"
+assert_contains "bash 4.2 is ok" "$out" "ok    bash"
+out="$(ORCH_DOCTOR_BASH_VERSION=5.0 sourced_orch check_bash 2>&1)"
+assert_contains "bash 5.0 is ok" "$out" "ok    bash"
+out="$(ORCH_DOCTOR_BASH_VERSION=4.1 sourced_orch check_bash 2>&1)"
+assert_contains "bash 4.1 warns, naming 4.2 and up" "$out" "written for 4.2 and up"
+
 # jq gone is the awkward case: every other part of orch.sh needs it, so the one
 # message the user needs most is the one that cannot be printed the usual way.
 if on_windows_bash; then
@@ -1486,9 +1493,7 @@ review_flow ambiguousupstream
 doctor_github
 amb_branch="$(git branch --show-current)"
 state_fixture branch "$amb_branch"
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q -u origin "$amb_branch"
 git branch -q "origin/$amb_branch"
 out="$("$ORCH" doctor --flow 2>&1)"
@@ -1804,10 +1809,8 @@ assert_status "a default base branch passes" "$st" 0
 assert_contains "reports the default branch as the base branch" "$out" "ok    base branch: main (default)"
 assert_contains "keeps the default-branch check" "$out" "ok    default branch: main (from GitHub)"
 
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
+fresh_bare_origin bare
 git push -q "$bare" HEAD:refs/heads/main HEAD:refs/heads/uat
-bare_origin "$bare"
 git config orchestrator.base uat
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a set base branch origin has passes" "$st" 0
@@ -2380,3 +2383,51 @@ assert_contains "bare doctor: the side flow's own label is judged apart" "$out" 
 assert_eq "bare doctor: this flow's issue is read once" "$(grep -c '^issue 7$' "$reads_log" || true)" 1
 rm -f "$reads_log"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
+# --- triage_label_into: parse once, later lookups start no command ------------
+echo
+echo "triage_label_into"
+tli_root="$(mktemp -d)"
+mkdir -p "$tli_root/docs/agents"
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `triage-me`          | Evaluate it |' \
+        '| `ready-for-agent`          | `afk`                | AFK-ready   |' >"$tli_root/docs/agents/triage-labels.md"
+tli_script='ROOT="$1"; source "$2"
+triage_label_into first needs-triage
+PATH=""
+triage_label_into second ready-for-agent
+triage_label_into third wontfix
+printf "%s %s %s\n" "$first" "$second" "$third"'
+out="$(bash -c "$tli_script" _ "$tli_root" "$(dirname "$ORCH")/triage-labels.sh" 2>&1)"
+assert_eq "a lookup after the first answers with an empty PATH" "$out" "triage-me afk wontfix"
+tli_script='ROOT="$1"; source "$2"; triage_label_into got ready-for-agent; [ "$got" = "$(triage_label_for ready-for-agent)" ] && echo same'
+out="$(bash -c "$tli_script" _ "$tli_root" "$(dirname "$ORCH")/triage-labels.sh" 2>&1)"
+assert_eq "triage_label_into sets what triage_label_for prints" "$out" "same"
+out="$(bash -c "$tli_script" _ "$tli_root/none" "$(dirname "$ORCH")/triage-labels.sh" 2>&1)"
+assert_eq "a missing doc answers the role name itself" "$out" "same"
+rm -rf "$tli_root"
+
+# --- doctor --env: git processes per worktree ---------------------------------
+# A plain worktree costs doctor no git process: the ownership marker is found
+# from the worktree's own git pointer, seen through a counting wrapper on PATH.
+echo
+echo "doctor --env git processes per worktree"
+healthy_repo
+dg_log="$(mktemp)"
+dg_wrap="$(mktemp -d)"
+writeln '#!/bin/sh' "echo x >>'$dg_log'" "exec $(command -v git) \"\$@\"" >"$dg_wrap/git"
+chmod +x "$dg_wrap/git"
+doctor_git_starts() {
+  : >"$dg_log"
+  PATH="$dg_wrap:$PATH" "$ORCH" doctor --env >/dev/null 2>&1
+  wc -l <"$dg_log" | tr -d ' '
+}
+git worktree add -q "$(mktemp -d)/a" -b pw-a
+git worktree add -q "$(mktemp -d)/b" -b pw-b
+dg_two="$(doctor_git_starts)"
+for dg_n in c d e; do git worktree add -q "$(mktemp -d)/$dg_n" -b "pw-$dg_n"; done
+dg_five="$(doctor_git_starts)"
+assert_eq "doctor starts as many git processes with five more worktrees as with two" "$dg_five" "$dg_two"
+restore_suite_env

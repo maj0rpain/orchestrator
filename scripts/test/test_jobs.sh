@@ -88,7 +88,8 @@
 # test_jobs_slot_take, also inside a subshell that changes directory first. It
 # never returns, so call it only in such a subshell, never in a runner's
 # foreground. The fd number lives in one constant, TEST_JOBS_FD, read through
-# eval (bash 4.0 has no {var} redirection); no runner writes the number. <cmd>
+# eval, so the redirection is built from the constant in one place; no runner
+# writes the number. <cmd>
 # is an external command.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to

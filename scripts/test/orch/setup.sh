@@ -182,6 +182,19 @@ new_repo() {
 # GH_REPO in env.log. restore_suite_env unsets it again.
 bare_origin() { git remote set-url origin "$1"; export GH_REPO=acme/widgets; }
 
+# fresh_bare_origin <var>: make a fresh bare repo, point origin at it through
+# bare_origin and store its path in <var>. Pushes nothing; each caller pushes
+# the refs it needs. It prints nothing and is called in the current shell, never
+# inside $(...): a command substitution would drop both the <var> assignment and
+# bare_origin's GH_REPO export.
+fresh_bare_origin() {
+  local fbo_dir
+  fbo_dir="$(mktemp -d)/origin.git"
+  git init -q --bare "$fbo_dir"
+  bare_origin "$fbo_dir"
+  printf -v "$1" '%s' "$fbo_dir"
+}
+
 # upstream_of <branch>: none when <branch> has no upstream - no
 # branch.<branch>.merge, no branch.<branch>.remote, and no <branch>@{upstream} -
 # else what it has, so a failing assertion names it.
@@ -233,9 +246,7 @@ new_repo_with_origin() {
 tw_repo() {
   local bare
   new_repo >/dev/null
-  bare="$(mktemp -d)/origin.git"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
+  fresh_bare_origin bare
   git push -q origin HEAD 2>/dev/null
   git checkout -q -b orch/5-feature
   echo work >feature.txt && git add feature.txt && git commit -qm feature
@@ -352,10 +363,21 @@ branch_and_config() { git branch --show-current; git config --local --list; }
 # space.
 flat_text() { tr -s ' \t\n' '   '; }
 # sourced_orch <function> [args...]: the function's output, called in a shell
-# that sourced orch.sh, with its status.
-sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+# that sourced orch.sh, with its status. It sets ORCH_SOURCE_LAZY=1 before the
+# source line, so the modules load on demand, as orch.sh does as a command and
+# the suite's shells cost less to start; the eval form, `sourced_orch eval
+# <code>`, loads every module, since code evaluated there may name or replace
+# any function. Outside the loader's section file, the one place a test sets
+# that variable.
+sourced_orch() {
+  local lazy=1
+  [ "${1:-}" != eval ] || lazy=''
+  bash -c '[ -z "$2" ] || ORCH_SOURCE_LAZY=1; source "$1"; shift 2; "$@"' _ "$ORCH" "$lazy" "$@"
+}
 # sourced_orch_script <script> [<arg>...]: runs <script> in a child bash that
-# has sourced orch.sh, with <arg>... as its positional parameters $1...
+# has sourced orch.sh with every module loaded, never on demand, as the script
+# may redefine or name any function; <arg>... are its positional parameters
+# $1....
 sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
 # rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
 # <7d reset>: a rate_limit_event line.
@@ -522,6 +544,21 @@ layer_calls() {
     | while IFS= read -r name; do
         if grep -qw -- "$name" <<<"$code"; then printf '%s\n' "$name"; fi
       done
+}
+
+# layer_upcalls <scripts-dir> <file> <skipped>...: the module functions an
+# always-loaded file calls. <file> is a name under <scripts-dir>/orch/
+# (common.sh or loader.sh); the defs are every file there but the skipped base
+# names (e.g. gh.sh), and the output is layer_calls' for <file> alone.
+layer_upcalls() {
+  local dir="$1" file="$2" f base skip defs=()
+  shift 2
+  for f in "$dir"/orch/*.sh; do
+    base="${f##*/}"
+    for skip in "$@"; do [ "$base" = "$skip" ] && continue 2; done
+    defs+=("$f")
+  done
+  layer_calls "${defs[@]}" -- "$dir/orch/$file"
 }
 
 # dictionary_locale: prints the first of en_US.UTF-8 and en_US.utf8 whose sort
@@ -1135,6 +1172,16 @@ origin_branch_state() {
 repo_missing="no GitHub repo to work on"
 repo_cause="$repo_missing: origin is missing or not a GitHub owner/name"
 repo_remedy="$repo_cause - set GH_REPO=<owner>/<repo>"
+
+# tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
+# under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
+# the copy's path, which ends in the subtree's last component.
+tree_copy() {
+  local dir
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
+  printf '%s\n' "$dir/${1##*/}"
+}
 
 # >>> summary
 # Each call the real-gh guard logged is one FAIL naming it.

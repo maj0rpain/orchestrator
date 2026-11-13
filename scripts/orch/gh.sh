@@ -121,9 +121,14 @@ gh_limit_handle() {
 # <labels>, matched whole-line, literally and case-insensitively: GitHub's label
 # names are case-insensitive, and it attaches a label in the repo's existing
 # casing. The one label-membership test; list_has is its case-sensitive sibling
-# for what is not a label. Folds ASCII case, as grep -i does.
+# for what is not a label. It matches in bash, starting no command, and folds
+# ASCII case only, whatever the caller's locale: both sides are lower-cased
+# under a function-local LC_ALL=C, so a Turkish locale's I never folds to a
+# dotless i and a non-ASCII letter stays as it is.
 label_listed() {
-  [[ $2 != *$'\n'* ]] && grep -qxiF -- "$2" <<<"$1"
+  local LC_ALL=C
+  local _ll_list="${1,,}" _ll_item="${2,,}"
+  list_has "$_ll_list" "$_ll_item"
 }
 
 # --- gh failure contract (#1022) ----------------------------------------------
@@ -375,7 +380,7 @@ adapter_rate_limit() {
 # turns an array of comments into the joined text, login reading each comment's
 # author, so every comments read - issue comments' filtered one among them
 # (#1116) - renders through the same definition.
-# shellcheck disable=SC2034 # read by the issue module's comments_render_trusted and ISSUE_COMMENTS_KEPT_JQ
+# shellcheck disable=SC2034 # read by the issue module's comments_render_trusted and cmd_issue_comments
 COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
 
 # comments_split <file> <dir>: splits <file>, comments in its rendered shape,

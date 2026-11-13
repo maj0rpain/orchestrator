@@ -50,7 +50,8 @@ checkout_parse() {
 # checkout_classify <index>: prints the kind of entry <index> of the caller's
 # `paths` list (see checkout_parse): main for index 0, else ticket, side or
 # hand-made, checked in that order. The one place the kind rule is spelled;
-# only a side-or-hand-made entry costs a git process.
+# a side-or-hand-made entry reads its worktree's git pointer, and costs a git
+# process only when that pointer cannot be read.
 checkout_classify() {
   if [ "$1" -eq 0 ]; then
     echo main

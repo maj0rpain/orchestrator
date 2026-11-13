@@ -141,6 +141,7 @@ require_on_origin() {
 # written unless all pass. The name is stored literally, the default branch's
 # own included: a flow's base is pinned, unlike the checkout setting.
 base_set_flow() {
+  orch_load state
   local b="$1" branch slug phase
   flow_active || die "no active flow - nothing was set"
   state_get_many_in "$STATE" branch=branch slug=slug phase=phase || die "$STATE_UNREADABLE_MSG"

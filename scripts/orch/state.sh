@@ -210,6 +210,7 @@ phase_write() {
   phase_write_try "$@" || die "could not record phase in $STATE - the flow is unchanged"
 }
 phase_write_try() {
+  orch_load handoff
   local phase="$1"
   word_listed "$PHASES" "$phase" || die "not a flow phase: $phase (want one of: $PHASES)"
   shift

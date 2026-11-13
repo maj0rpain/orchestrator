@@ -173,9 +173,7 @@ restore_suite_env
 # without fetching - the remote-tracking tip the last fetch set.
 new_repo >/dev/null
 git checkout -q -B main
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin main
 git fetch -q origin
 fake_github

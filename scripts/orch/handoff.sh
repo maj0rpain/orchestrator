@@ -21,8 +21,8 @@ implement|02-spec.md|spec|Spec issue
 review|03-implement.md|implement|PR;Spec issue;Base SHA;Deviations;Verification
 done|||'
 
-# The table's phases, space-separated, in flow order - what orch.sh sets
-# PHASES from.
+# The table's phases, space-separated, in flow order - what PHASES, below, is
+# set from.
 phase_list() {
   local phase list=""
   while IFS='|' read -r phase _; do
@@ -30,6 +30,13 @@ phase_list() {
   done <<<"$PHASE_TABLE"
   printf '%s\n' "$list"
 }
+
+# The flow's phases, space-separated in flow order: read inside functions only
+# (the state writer, doctor's state-phase check). Set when this module is
+# sourced, from the phase table above.
+PHASES="$(phase_list)"
+# shellcheck disable=SC2034 # read by other modules, each calling orch_load handoff first
+readonly PHASES
 
 # phase_cell <column> <phase>: <phase>'s cell in <column> of the table, the
 # column named handoff, writer or sections. Nothing, and non-zero, when the
@@ -342,6 +349,7 @@ handoff_ready() { "handoff_$(handoff_store)_ready" "$@"; }
 # tagged retired; 2, <file> untouched, after one `orch: could not write <file>`
 # line on stderr, when the write fails. Never dies.
 handoff_comment_write() {
+  orch_load issue-timeline
   local name="$1" file="$2" raw
   timeline_handoff "$name" || return 1
   raw="$(timeline_body "$TIMELINE_HANDOFF_INDEX")"

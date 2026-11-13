@@ -132,15 +132,32 @@ files_marks() {
 # The test-helper placement rule, as helper_placement's message states it.
 HELPER_PLACEMENT_RULE="The test-helper placement rule: a test helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
 
-# tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
-# under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
-# the copy's path, which ends in the subtree's last component.
-tree_copy() {
-  local dir
-  dir="$(mktemp -d)" || return 1
-  cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
-  printf '%s\n' "$dir/${1##*/}"
-}
+# FN_TRACK_AWK: an awk fragment, appended after SHELL_CODE_AWK, that tracks the
+# function a line is in, as helper_placement and orch_load_reads read it.
+# track(words) takes a line's words view (sc_words), after shell_code_line has
+# run on it, and sets fn to the function the line is in ("" at top level; a
+# definition line is already inside its function) and fn_new to 1 on the line
+# that opens a definition, else 0; it resets at each file's first line.
+# after_track(words) closes the function once its braces balance, and is called
+# last on the line.
+FN_TRACK_AWK='
+  function count(s, re,   t) { t = s; return gsub(re, "", t) }
+  function track(s,   name) {
+    if (FNR == 1) { fn = ""; fdepth = 0; opened = 0 }
+    fn_new = 0
+    if (sc_top && fdepth == 0 && fn == "" && match(s, /^[ \t]*(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
+      name = substr(s, 1, RLENGTH); sub(/^[ \t]*(function[ \t]+)?/, "", name); sub(/[ \t]*\(\)$/, "", name)
+      fn = name; opened = 0; fdepth = 0; fn_new = 1
+    }
+    return fn
+  }
+  function after_track(s) {
+    if (fn != "") {
+      fdepth += count(s, "{") - count(s, "}")
+      if (count(s, "{")) opened = 1
+      if (opened && fdepth <= 0) { fn = ""; fdepth = 0 }
+    }
+  }'
 
 # helper_placement <dir>: checks where every helper of the suite's files in
 # <dir> (scripts/test/orch/) is defined against the files that call it, and
@@ -160,21 +177,17 @@ tree_copy() {
 # calls it.
 helper_placement() {
   local out
-  out="$(awk -v rule="$HELPER_PLACEMENT_RULE" "$SHELL_CODE_AWK"'
-    function count(s, re,   t) { t = s; return gsub(re, "", t) }
+  out="$(awk -v rule="$HELPER_PLACEMENT_RULE" "$SHELL_CODE_AWK$FN_TRACK_AWK"'
     FNR == 1 {
       file = FILENAME; sub(/.*\//, "", file)
-      files[file] = 1; insec = 0; fn = ""; fdepth = 0
+      files[file] = 1; insec = 0
     }
     {
       # the words view: comments dropped, strings and quoted heredocs a q
-      shell_code_line($0); s = sc_words; top = sc_top && fdepth == 0
+      shell_code_line($0); s = sc_words
       if (sc_top && file != setup && $0 ~ /^# --- /) insec = 1
-      if (top && fn == "" && match(s, /^[ \t]*(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
-        name = substr(s, 1, RLENGTH); sub(/^[ \t]*(function[ \t]+)?/, "", name); sub(/[ \t]*\(\)$/, "", name)
-        fn = name; opened = 0; fdepth = 0
-        if (file == setup || !insec) defined[name] = file
-      }
+      track(s)
+      if (fn_new && (file == setup || !insec)) defined[fn] = file
       # a case-arm pattern opening the line is no call; the command after it is
       t = s; if (match(t, /^[ \t]*[A-Za-z0-9_.*|-]+\)/)) t = substr(t, RLENGTH + 1)
       gsub(/[;&|({!`]/, "\n", t); nseg = split(t, seg, "\n")
@@ -187,11 +200,7 @@ helper_placement() {
           if ((rest == "" || rest ~ /^[ \t)}<>]/) && name != fn) calls[name, file] = 1
         }
       }
-      if (fn != "") {
-        fdepth += count(s, "{") - count(s, "}")
-        if (count(s, "{")) opened = 1
-        if (opened && fdepth <= 0) { fn = ""; fdepth = 0 }
-      }
+      after_track(s)
     }
     END {
       for (name in defined) {
@@ -293,6 +302,129 @@ MARKED_COMMENT_JQ_PLACEMENT_RULE="The rule: only the Marked comment module, scri
 # marked_comment_jq. <rule>".
 marked_comment_jq_placement() {
   name_placement "$1" "$MARKED_COMMENT_JQ_PLACEMENT_RULE" calls marked_comment_jq ./orch/marked-comment.sh ./orch/issue-timeline.sh
+}
+
+# lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)
+# for the on-demand sourcing variable's name, which only the shared setup's
+# sourced_orch, the loader's section file and this file's section on the
+# variable (and this function) may use. In setup.sh and harness.sh a use
+# counts anywhere but inside that function and the comment lines directly
+# above it, and (harness.sh) inside that section; any other line, a comment
+# included, is a use. Prints each file that uses it, as scripts/<path>, and
+# returns 1 when it printed any.
+lazy_sourcing_names() {
+  local dir="$1" f rel out='' fn
+  local count_awk='
+    $0 ~ "^" fn "\\(\\) \\{" { skip = 1; pend = 0; next }
+    /^# --- / { sec = /^# --- on-demand sourcing variable/ }
+    /^[ \t]*#/ { if (!skip && !sec && /ORCH_SOURCE_LAZY/) pend++; next }
+    { n += pend; pend = 0; if (!skip && !sec && /ORCH_SOURCE_LAZY/) n++ }
+    /^\}/ { skip = 0 }
+    END { print n + pend + 0 }'
+  for f in "$dir"/test/*.sh "$dir"/test/orch/*.sh; do
+    rel="${f#"$dir"/}"
+    case "$rel" in
+      test/orch/loader.sh) continue ;;
+      test/orch/harness.sh) fn=lazy_sourcing_names ;;
+      test/orch/setup.sh) fn=sourced_orch ;;
+      *) grep -q 'ORCH_SOURCE_LAZY' "$f" || continue; fn='' ;;
+    esac
+    [ -z "$fn" ] || [ "$(awk -v fn="$fn" "$count_awk" "$f")" != 0 ] || continue
+    out+="scripts/$rel"$'\n'
+  done
+  printf '%s' "$out"
+  [ -z "$out" ]
+}
+
+# The on-demand loading rule, as orch_load_reads' message states it.
+ORCH_LOAD_RULE="The rule: a function, or a module's own top-level code, that reads another module's top-level variable names orch_load <that module> earlier in its own text than the first such read; the variables of the always-loaded files (orch.sh, common.sh, loader.sh and the files orch.sh sources from scripts/) are exempt."
+
+# orch_load_reads <dir>: checks every module of <dir> (a scripts/ tree) -
+# scripts/orch/*.sh but common.sh and loader.sh - for a read of a top-level
+# variable another module owns, and prints one line per file, site and
+# variable, sorted, naming the file (as scripts/<path>), the function or `top
+# level`, the variable, its owning module and the rule; returns 1 when it
+# printed any. A top-level variable is one a module assigns outside any
+# function, plainly or through readonly, declare or export; one an always-loaded
+# file (orch.sh, common.sh, loader.sh, and the scripts/*.sh files orch.sh
+# sources) also assigns is exempt. A read is $NAME, ${NAME...}, ${#NAME} or
+# ${!NAME} in code; a site is a function or the file's top-level code, and a
+# read is covered by an `orch_load <module>` earlier in the same site's text (a
+# function's own, or the file's top-level code's own).
+orch_load_reads() {
+  local dir="$1" owned out f sourced
+  local -a always_files=("$dir/orch.sh" "$dir/orch/common.sh" "$dir/orch/loader.sh") mods=()
+  while IFS= read -r sourced; do
+    [ -f "$dir/$sourced.sh" ] && always_files+=("$dir/$sourced.sh")
+  done < <(sed -n 's/^source "\$ORCH_SCRIPTS\/\([A-Za-z0-9_-]*\)\.sh".*/\1/p' "$dir/orch.sh")
+  for f in "$dir"/orch/*.sh; do
+    case "${f##*/}" in common.sh|loader.sh) ;; *) mods+=("$f") ;; esac
+  done
+  local top_awk="$SHELL_CODE_AWK$FN_TRACK_AWK"
+  # pass 1: every top-level variable, as "<name> <file>" lines, "-" for the
+  # always-loaded files
+  owned="$(awk -v always="${always_files[*]}" "$top_awk"'
+    BEGIN { n = split(always, af, " "); for (i = 1; i <= n; i++) isalways[af[i]] = 1 }
+    {
+      shell_code_line($0); s = sc_words
+      here = track(s)
+      if (here == "" && sc_top) {
+        t = s; sub(/^[ \t]+/, "", t)
+        if (match(t, /^(readonly|declare|export|typeset)[ \t]+/)) {
+          t = substr(t, RLENGTH + 1)
+          while (match(t, /^-[A-Za-z]+[ \t]+/)) t = substr(t, RLENGTH + 1)
+          while (match(t, /^[A-Za-z_][A-Za-z0-9_]*/)) {
+            print substr(t, 1, RLENGTH), (FILENAME in isalways ? "-" : FILENAME)
+            t = substr(t, RLENGTH + 1)
+            if (!match(t, /^[ \t]+/)) break
+            t = substr(t, RLENGTH + 1)
+          }
+        } else if (match(t, /^[A-Za-z_][A-Za-z0-9_]*\+?=/)) {
+          nm = substr(t, 1, RLENGTH - 1); sub(/\+$/, "", nm)
+          print nm, (FILENAME in isalways ? "-" : FILENAME)
+        }
+      }
+      after_track(s)
+    }
+  ' "${always_files[@]}" "${mods[@]}")" || return 2
+  out="$(awk -v rule="$ORCH_LOAD_RULE" -v owned="$owned" "$top_awk"'
+    BEGIN {
+      n = split(owned, row, "\n")
+      for (i = 1; i <= n; i++) {
+        split(row[i], kv, " ")
+        if (kv[2] == "-") { exempt[kv[1]] = 1; continue }
+        m = kv[2]; sub(/.*\//, "", m); sub(/\.sh$/, "", m)
+        if (!((kv[1], m) in owner)) { owner[kv[1], m] = 1; cur = (kv[1] in mods) ? mods[kv[1]] " " : ""; mods[kv[1]] = cur m }
+      }
+    }
+    FNR == 1 { file = FILENAME; sub(/^.*\/orch\//, "scripts/orch/", file); self = file; sub(/^scripts\/orch\//, "", self); sub(/\.sh$/, "", self); delete ltop; lastfn = "" }
+    {
+      shell_code_line($0); here = track(sc_words)
+      if (here != lastfn) { delete lfn; lastfn = here }
+      site = here == "" ? "top level" : here
+      # orch_load <module> calls first, then reads: a call on a line covers its
+      # reads, which sit after it in a one-line site
+      t = sc_code
+      while (match(t, /orch_load[ \t]+"?[A-Za-z0-9_-]+/)) {
+        w = substr(t, RSTART, RLENGTH); sub(/^orch_load[ \t]+"?/, "", w)
+        if (here == "") ltop[w] = 1; else lfn[w] = 1
+        t = substr(t, RSTART + RLENGTH)
+      }
+      t = sc_code
+      while (match(t, /\$\{?[#!]?[A-Za-z_][A-Za-z0-9_]*/)) {
+        w = substr(t, RSTART, RLENGTH); sub(/^\$\{?[#!]?/, "", w)
+        t = substr(t, RSTART + RLENGTH)
+        if ((w in exempt) || !(w in mods) || (w, self) in owner) continue
+        nm = split(mods[w], ml, " "); ok = 0
+        for (k = 1; k <= nm; k++) if (here == "" ? ml[k] in ltop : ml[k] in lfn) ok = 1
+        if (!ok) printf "%s %s reads %s, a top-level variable of the %s module, with no orch_load before it. %s\n", file, site, w, mods[w], rule
+      }
+      after_track(sc_words)
+    }
+  ' "${mods[@]}")" || return 2
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out" | LC_ALL=C sort -u
+  return 1
 }
 
 # The declaration substitution rule, as decl_substitutions' message states it.
@@ -2750,6 +2882,112 @@ assert_status "a call in another module fails, while comments, longer names and 
 assert_eq "naming only the calling file and the rule" "$out" \
   "scripts/orch/zz-prelude.sh calls marked_comment_jq. $MARKED_COMMENT_JQ_PLACEMENT_RULE"
 rm -rf "${mcjq_dir%/scripts}"
+
+# --- orch_load before cross-module reads (#2868) ---------------------
+# orch_load_reads over the real scripts/, then over copies of it, each with a
+# planted owner module and reader: a read in a function and one in a module's
+# top-level code that break the rule, and reads that keep it.
+echo
+echo "orch_load before cross-module reads (#2868)"
+out="$(orch_load_reads "$PLUGIN_ROOT/scripts")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "no module of the real tree reads another module's top-level variable before its orch_load"
+else
+  bad "no module of the real tree reads another module's top-level variable before its orch_load" "$out"
+fi
+
+load_dir="$(tree_copy scripts)"
+plant_file "$load_dir/orch" zz-owner.sh <<'PLANTED'
+  ZZ_PLAIN=1
+  readonly ZZ_RO="x"
+  declare -g ZZ_DECL=2
+  zz_owner_fn() { local ZZ_LOCAL=3; }
+PLANTED
+plant_file "$load_dir/orch" zz-reader.sh <<'PLANTED'
+  zz_bad_fn() {
+    echo "$ZZ_RO"
+  }
+  zz_bad_decl() {
+    echo "${ZZ_DECL}"
+  }
+  echo "$ZZ_PLAIN"
+PLANTED
+out="$(orch_load_reads "$load_dir")"; st=$?
+assert_status "a read in a function and one in top-level code, with no orch_load, fail" "$st" 1
+assert_eq "naming the file, the site, the variable and the rule" "$out" \
+  "scripts/orch/zz-reader.sh top level reads ZZ_PLAIN, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE
+scripts/orch/zz-reader.sh zz_bad_decl reads ZZ_DECL, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE
+scripts/orch/zz-reader.sh zz_bad_fn reads ZZ_RO, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE"
+rm -rf "${load_dir%/scripts}"
+
+load_dir="$(tree_copy scripts)"
+plant_file "$load_dir/orch" zz-owner.sh <<'PLANTED'
+  ZZ_PLAIN=1
+  readonly ZZ_RO="x"
+PLANTED
+plant_file "$load_dir/orch" zz-reader.sh <<'PLANTED'
+  orch_load zz-owner
+  echo "$ZZ_PLAIN"
+  zz_good_fn() {
+    orch_load zz-owner
+    echo "$ZZ_RO"
+  }
+  zz_exempt_fn() {
+    echo "$ORCH_DIR_NAME $ROOT $ORCH_MODULE_DIR"
+    # $ZZ_RO named in a comment
+    local ZZ_RO=1; echo "ZZ_RO is not read"
+  }
+PLANTED
+out="$(orch_load_reads "$load_dir")"; st=$?
+assert_status "reads after an orch_load, and of always-loaded variables, pass" "$st" 0
+assert_eq "and print nothing" "$out" ""
+rm -rf "${load_dir%/scripts}"
+
+# --- on-demand sourcing variable (#2820) --------------------------------------
+# lazy_sourcing_names over the real scripts/, then over copies of it, each with
+# a planted use of the variable; this section is the one place harness.sh may
+# name it.
+echo
+echo "on-demand sourcing variable (#2820)"
+out="$(lazy_sourcing_names "$PLUGIN_ROOT/scripts")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "no test file but setup.sh, the loader's section file and this section names the on-demand sourcing variable"
+else
+  bad "no test file but setup.sh, the loader's section file and this section names the on-demand sourcing variable" "$out"
+fi
+load_dir="$(tree_copy scripts)"
+# lazy_reset: restores the two files a case appends to, drops the planted one.
+lazy_reset() {
+  cp "$PLUGIN_ROOT/scripts/test/orch/setup.sh" "$load_dir/test/orch/setup.sh"
+  cp "$PLUGIN_ROOT/scripts/test/orch/harness.sh" "$load_dir/test/orch/harness.sh"
+  rm -f "$load_dir/test/orch/zz-planted.sh"
+}
+printf '%s\n' '# sets ORCH_SOURCE_LAZY=1 itself' >"$load_dir/test/orch/zz-planted.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a planted test file naming the variable fails the check" "$st" 1
+assert_eq "naming the file" "$out" "scripts/test/orch/zz-planted.sh"
+lazy_reset
+printf '%s\n' 'second_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/setup.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a second use of the variable in setup.sh fails the check" "$st" 1
+assert_eq "naming setup.sh" "$out" "scripts/test/orch/setup.sh"
+lazy_reset
+printf '%s\n' '# another section naming ORCH_SOURCE_LAZY' >>"$load_dir/test/orch/harness.sh"
+printf '%s\n' 'other_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/harness.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a use of the variable in another harness section fails the check" "$st" 1
+assert_eq "naming harness.sh" "$out" "scripts/test/orch/harness.sh"
+lazy_reset
+printf '%s\n' '# a comment naming ORCH_SOURCE_LAZY outside sourced_orch' >>"$load_dir/test/orch/setup.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a comment naming the variable in setup.sh fails the check" "$st" 1
+assert_eq "naming setup.sh for the comment" "$out" "scripts/test/orch/setup.sh"
+lazy_reset
+printf '%s\n' '# a comment naming ORCH_SOURCE_LAZY in another section' >>"$load_dir/test/orch/harness.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a comment naming the variable in another harness section fails the check" "$st" 1
+assert_eq "naming harness.sh for the comment" "$out" "scripts/test/orch/harness.sh"
+rm -rf "${load_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------
 # decl_substitutions over the real scripts/, then over copies of it, each with

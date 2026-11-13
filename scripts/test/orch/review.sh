@@ -8,10 +8,9 @@
 # pushed_head <branch> [<seconds ago>]: pushes HEAD to <branch> on a bare
 # origin and prints its SHA; given an age, backdates the push's reflog entry.
 pushed_head() {
+  # shellcheck disable=SC2034 # assigned by fresh_bare_origin
   local bare sha
-  bare="$(mktemp -d)"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
+  fresh_bare_origin bare
   git update-ref -d "refs/remotes/origin/$1" 2>/dev/null || true
   git push -q origin "HEAD:refs/heads/$1" 2>/dev/null
   sha="$(git rev-parse HEAD)"

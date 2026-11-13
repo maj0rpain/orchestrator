@@ -9,16 +9,25 @@
 #
 # This file is the one entry point, and a thin one: path resolution, the
 # constants more than one module reads, the top-level statements whose order
-# matters, the source list and main's dispatch. Each noun's code lives in its
+# matters, the module load and main's dispatch. Each noun's code lives in its
 # own module, scripts/orch/<noun>.sh, named as its tests in
 # scripts/test/orch/<noun>.sh are; each helper lives in the module of the
 # concept it serves, and scripts/orch/common.sh holds only the primitives no
-# concept owns. Every module is sourced eagerly, from the explicit
-# list below, so a missing one fails at startup naming the file. A new noun
-# gets its own module, a case in main and a line in that list.
+# concept owns. scripts/orch/loader.sh, loaded beside common.sh, sources the
+# modules through orch_load, so this file names none. Run as a command, orch.sh
+# loads a module only when one of its functions is first called, through the
+# stubs orch_stubs defines. Sourced, it loads every module at once, so a
+# function replaced after the source line stays replaced; the one exception is
+# a plain, unexported ORCH_SOURCE_LAZY=1 set before the source line, which loads
+# on demand as a command does. A sourced start always unsets the variable. A
+# new noun gets its own module and a case in main. PHASES, the flow phase list,
+# is the Handoff module's: read it after orch_load handoff.
 #
 # Usage: orch.sh <command> [args]   (run `orch.sh help` for the list)
 
+# The modules load through orch_load, which shellcheck cannot follow, so the
+# constants set here for them to read look unused to it.
+# shellcheck disable=SC2034
 set -euo pipefail
 
 # A tool manager's shim (mise) can print a status line on stdout ahead of the
@@ -74,6 +83,10 @@ readonly ISSUE_SEARCH_CAP=1000
 REPO_MISSING="no GitHub repo to work on"
 REPO_CAUSE="$REPO_MISSING: origin is missing or not a GitHub owner/name"
 REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
+# A gh call failing for want of a repo in a subshell signals this shell (gh.sh):
+# the trap dies with the remedy. Set here, not in repo.sh, which is loaded on
+# demand and may not be loaded yet when the signal arrives.
+trap 'die "$REPO_REMEDY"' USR1
 # The triage-label parser and LABELS_DOC, its one home; marked readonly here,
 # where orch.sh has always fixed it, since the module assigns it plainly.
 source "$ORCH_SCRIPTS/triage-labels.sh"
@@ -83,6 +96,8 @@ source "$ORCH_SCRIPTS/host.sh"
 # The primitives no concept owns, die among them, ahead of the ROOT block,
 # which dies through die outside a git repository.
 source "$ORCH_SCRIPTS/orch/common.sh"
+# The module loader: orch_load, the load trace.
+source "$ORCH_SCRIPTS/orch/loader.sh"
 
 # Outside a checkout, the remedy names the one the caller came from: an agent
 # whose cwd drifted into a mktemp directory still has OLDPWD (#1523).
@@ -102,59 +117,30 @@ readonly REVIEW_DIR="$ORCH/review"
 # Where an autopilot flow fetches a handoff comment to read it as a file.
 readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 
-# The noun modules, after the ROOT block, whose constants they read, with the
-# concept modules that have no noun of their own, checkout.sh,
-# filed-finding.sh, issue-timeline.sh, known-items.sh, liveness.sh,
-# marked-comment.sh, session-log.sh, standing.sh and trust.sh, all sourced in
-# alphabetical order.
+# The modules, after the ROOT block, whose constants they read: every file
+# beside common.sh but common.sh and loader.sh - the noun modules and the
+# concept modules with no noun of their own - loaded through orch_load: run as
+# a command, each on first call of one of its functions; sourced plainly, all
+# of them in the C-locale order of their names without .sh. No module is named
+# here.
 # doctor.sh is one of the noun modules, with one rule more: the dependency runs
 # one way, doctor.sh calling into this file and the other modules, which call
 # nothing doctor.sh defines but cmd_doctor, from main(), and the reporters d_ok,
 # d_warn, d_fail and d_remedy, from a check living in the module of the concept
 # it serves (agent.sh's check_agent_settings) (scripts/test/orch/doctor.sh holds
 # this).
-source "$ORCH_SCRIPTS/orch/agent.sh"
-source "$ORCH_SCRIPTS/orch/audit.sh"
-source "$ORCH_SCRIPTS/orch/autopilot.sh"
-source "$ORCH_SCRIPTS/orch/base.sh"
-source "$ORCH_SCRIPTS/orch/branch.sh"
-source "$ORCH_SCRIPTS/orch/breakdown.sh"
-source "$ORCH_SCRIPTS/orch/checkout.sh"
-source "$ORCH_SCRIPTS/orch/doctor.sh"
-source "$ORCH_SCRIPTS/orch/filed-finding.sh"
-source "$ORCH_SCRIPTS/orch/finding-triage.sh"
-source "$ORCH_SCRIPTS/orch/gh.sh"
-source "$ORCH_SCRIPTS/orch/global.sh"
-source "$ORCH_SCRIPTS/orch/glossary.sh"
-source "$ORCH_SCRIPTS/orch/handoff.sh"
-source "$ORCH_SCRIPTS/orch/init.sh"
-source "$ORCH_SCRIPTS/orch/issue.sh"
-source "$ORCH_SCRIPTS/orch/issue-timeline.sh"
-source "$ORCH_SCRIPTS/orch/known-items.sh"
-source "$ORCH_SCRIPTS/orch/liveness.sh"
-source "$ORCH_SCRIPTS/orch/marked-comment.sh"
-source "$ORCH_SCRIPTS/orch/parallel.sh"
-source "$ORCH_SCRIPTS/orch/phase.sh"
-source "$ORCH_SCRIPTS/orch/pr.sh"
-source "$ORCH_SCRIPTS/orch/redo.sh"
-source "$ORCH_SCRIPTS/orch/repo.sh"
-source "$ORCH_SCRIPTS/orch/review.sh"
-source "$ORCH_SCRIPTS/orch/review-pass.sh"
-source "$ORCH_SCRIPTS/orch/session-log.sh"
-source "$ORCH_SCRIPTS/orch/side-checkout.sh"
-source "$ORCH_SCRIPTS/orch/spec.sh"
-source "$ORCH_SCRIPTS/orch/spec-review.sh"
-source "$ORCH_SCRIPTS/orch/standing.sh"
-source "$ORCH_SCRIPTS/orch/state.sh"
-source "$ORCH_SCRIPTS/orch/suite-cost.sh"
-source "$ORCH_SCRIPTS/orch/ticket.sh"
-source "$ORCH_SCRIPTS/orch/ticket-worktree.sh"
-source "$ORCH_SCRIPTS/orch/trust.sh"
-# The flow's phases, space-separated in flow order: read inside functions only
-# (the state writer, doctor's state-phase check), never while a module is
-# sourced, so it is set here, from the Handoff module's phase table.
-PHASES="$(phase_list)"
-readonly PHASES
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  orch_stubs
+else
+  # Sourced: every module, unless ORCH_SOURCE_LAZY is a plain, unexported 1.
+  read -r _ lazy_flags _ < <(declare -p ORCH_SOURCE_LAZY 2>/dev/null || echo "declare -- x") || true
+  if [ "${ORCH_SOURCE_LAZY:-}" = 1 ] && [[ "$lazy_flags" != *x* ]]; then
+    orch_stubs
+  else
+    orch_load_all
+  fi
+  unset ORCH_SOURCE_LAZY lazy_flags
+fi
 
 # The one definition of the planning allowlist and the planning records,
 # shared with hook-guard.sh so the flow-start check and the edit guard can

@@ -115,6 +115,7 @@ comments_trust_filter() {
 # COMMENTS_RENDER_JQ with each author's login - nothing for none, no
 # placeholder for a dropped comment.
 comments_render() {
+  orch_load gh
   jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)'
 }
 
@@ -173,14 +174,9 @@ comments_read() {
   printf -v "$4" '%s' "$__cr_out"
 }
 
-# The comments `issue comments` writes (#1116), from the issue's comments,
-# filtered or not as the caller chooses (the spec review's own changelogs, the
-# marked comments of kind spec-review, are dropped by default and kept with
-# --with-spec-review): rendered through COMMENTS_RENDER_JQ, as every comments
-# read renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
-# object, whose author is already the login.
-ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
-
+# The comments `issue comments` writes (#1116), rendered through
+# COMMENTS_RENDER_JQ (kept_jq, built here so this module's top level reads
+# nothing of gh), as every comments read renders them.
 # Every comment on the issue but the untrusted authors', and by default but the
 # spec review's own changelogs, in the rendered shape - so the spec review reads
 # the comments beside the body without its earlier rounds. Filtered here rather
@@ -189,12 +185,14 @@ ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.autho
 # file is written only once the read has succeeded. With --with-spec-review
 # (#1921; orch-questions passes it) the changelogs are kept, the one difference.
 cmd_issue_comments() {
-  local issue="$1" file="$2" keep_reviews="${3:-}" json text
+  local issue="$1" file="$2" keep_reviews="${3:-}" json text kept_jq
+  orch_load gh
+  kept_jq="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
   issue_json_trusted "read the comments of issue #$issue" "$issue" json
   if [ -n "$keep_reviews" ]; then
-    text="$(jq -r "$ISSUE_COMMENTS_KEPT_JQ" <<<"$json")"
+    text="$(jq -r "$kept_jq" <<<"$json")"
   else
-    text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ")"
+    text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$kept_jq")"
   fi \
     || die "could not read the comments of issue #$issue"
   # $(...) drops the trailing newline jq -r printed; put it back unless empty.
@@ -307,7 +305,7 @@ cmd_issue_ready() {
   # shellcheck disable=SC2034
   local issue="$1" ready state labels gh_err
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
-  ready="$(triage_label_for ready-for-agent)"
+  triage_label_into ready ready-for-agent
   issue_state_labels_read "$issue" state labels gh_err \
     || gh_die --exit 2 "read issue #$issue" "$gh_err"
   label_listed "$labels" "$ready"
@@ -345,7 +343,7 @@ cmd_issue_publish() {
   local title="$1" body_file="$2" ready n
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  ready="$(triage_label_for ready-for-agent)"
+  triage_label_into ready ready-for-agent
   gh_or_die --out n "create the issue" \
     adapter_issue_create "$title" "$body_file" "$ready"
   verify_twice "read issue #$n" \
@@ -390,7 +388,7 @@ cmd_issue_triage() {
   done
   case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
   [ "$check" = false ] || [ "$override" = false ] || die "$usage"
-  ready="$(triage_label_for ready-for-agent)"
+  triage_label_into ready ready-for-agent
 
   open_issue_read "$issue" "issue #$issue is not open - only an open issue is triaged to '$ready'" labels
   # One walk over the triage roles the issue carries: whether ready-for-agent
@@ -398,7 +396,7 @@ cmd_issue_triage() {
   # not their order in TRIAGE_ROLES - and every other one, to remove.
   local is_ready=false wontfix_label="" human_label="" held
   for role in $TRIAGE_ROLES; do
-    label="$(triage_label_for "$role")"
+    triage_label_into label "$role"
     label_listed "$labels" "$label" || continue
     case "$role" in
       ready-for-agent) is_ready=true; continue ;;
