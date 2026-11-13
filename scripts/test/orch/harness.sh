@@ -89,21 +89,7 @@ plant_file() {
   sed 's/^  //' >"$1/$2"
 }
 
-# planted_copy: copies the scripts tree into a fresh temp directory, writes the
-# section lines read from stdin, indented as plant_file reads them, as a new
-# noun file, scripts/test/orch/zz-planted.sh, in the copy, and prints the
-# directory. The name sorts after every noun file under LC_ALL=C, so the
-# planted sections come last in the walk. The caller runs
-# <dir>/scripts/test/orch_test.sh and removes <dir> when done.
-planted_copy() {
-  local dir
-  dir="$(mktemp -d)" || return 1
-  cp -R "$PLUGIN_ROOT/scripts" "$dir/" || return 1
-  plant_file "$dir/scripts/test/orch" zz-planted.sh || return 1
-  printf '%s\n' "$dir"
-}
-
-# planted_minimal_tree: like planted_copy, but a minimal tree - the runners,
+# planted_minimal_tree: a minimal test tree - the runners,
 # setup.sh, the dev script section-durations.sh and an isolation-only harness.sh
 # in a fresh temp directory - with the section lines read from stdin planted as
 # scripts/test/orch/zz-planted.sh. Prints the directory; the caller removes it.
@@ -548,10 +534,10 @@ assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
   "ok   the suite starts outside any git work tree"
 assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
 
-# One copy of the scripts tree with three planted sections whose headers end in
+# One minimal test tree with three planted sections whose headers end in
 # trailing dashes like the real ones, shared by every filter case below;
 # matching ignores case, so the first pattern selects two of them.
-filter_dir="$(planted_copy <<'PLANTED'
+filter_dir="$(planted_minimal_tree <<'PLANTED'
   # --- Planted Alpha ------------------------------------------------------
   echo; echo "planted alpha"; ok "alpha ran"
   # --- planted beta -------------------------------------------------------
@@ -612,11 +598,8 @@ assert_status "an all-live alternation passes" "$st" 0
 assert_contains "an all-live alternation runs its second branch" "$out" "ok   beta ran"
 rm -f "$filter_err"
 
-# An empty branch matches every title, so the whole suite would run: the copy
-# is trimmed to the isolation section and the planted ones first.
-find "$filter_dir/scripts/test/orch" -name '*.sh' ! -name harness.sh ! -name setup.sh ! -name zz-planted.sh -delete
-filter_cut="$(grep -n '^# --- isolation under a git hook' "$filter_dir/scripts/test/orch/harness.sh" | cut -d: -f1)"
-sed -i "${filter_cut},\$d" "$filter_dir/scripts/test/orch/harness.sh"
+# An empty branch matches every title, so the whole suite would run: the tree
+# holds only the isolation section and the planted ones.
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted alpha||^planted beta' \
   bash "$filter_suite" 2>&1)"; st=$?
 assert_status "an alternation with an empty branch is not refused" "$st" 0
@@ -647,7 +630,8 @@ echo
 echo "quiet mode (ORCH_TEST_QUIET, #614)"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 # The reference run: isolation alone, not quiet. Its ok lines give the
-# isolation section's pass count, which the quiet runs' summaries must match.
+# isolation section's pass count, which the quiet, filtered run over the real
+# suite must match.
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
 quiet_n="$(count_lines '^  ok ' "$out")"
 assert_status "the non-quiet reference run passes" "$st" 0
@@ -661,10 +645,10 @@ assert_eq "prints no ok line" "$(count_lines '^  ok ' "$out")" "0"
 assert_eq "still prints the section header" "$(count_lines -x 'isolation' "$out")" "1"
 assert_eq "still counts every pass in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
   "$quiet_n passed, 0 failed"
-# A copy of the scripts tree with a planted section holding a failing and a
+# A minimal test tree with a planted section holding a failing and a
 # skipped check, run alongside isolation, so the FAIL and skip lines are seen
 # kept under quiet mode.
-quiet_dir="$(planted_copy <<'PLANTED'
+quiet_dir="$(planted_minimal_tree <<'PLANTED'
   # --- planted quiet failure
   echo; echo "planted quiet failure"
   bad "a planted failure" "its detail line"
@@ -679,7 +663,7 @@ assert_contains "keeps a FAIL line with its detail line" "$out" \
 assert_contains "keeps a skip line with its reason line" "$out" \
   "$(printf '  skip a planted skip\n     its reason line')"
 assert_eq "summarises the hidden passes, the failure and the skip" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "$quiet_n passed, 1 failed, 1 skipped"
+  "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed, 1 skipped"
 assert_eq "still prints no ok line beside a failure" "$(count_lines '^  ok ' "$out")" "0"
 rm -rf "$quiet_dir"
 # Each of the other suites cut down to its own helpers, one planted check
@@ -712,14 +696,14 @@ done
 rm -rf "$cut_root"
 
 # --- the parallel runner (ORCH_TEST_JOBS, #780) -------------------------------
-# A copy of the scripts tree with planted sections. Two passing ones run with
+# A minimal test tree with planted sections. Two passing ones run with
 # ORCH_TEST_JOBS=2, compared with the same filter run sequentially; then the
 # others - one slow, one writing to stderr, one exiting mid-way, one failing -
-# run in parallel, asserted on their combined output. The copy also holds
+# run in parallel, asserted on their combined output. The tree also holds
 # `seq early exit`, which only the sequential path runs (see below).
 echo
 echo "the parallel runner (ORCH_TEST_JOBS, #780)"
-par_dir="$(planted_copy <<'PLANTED'
+par_dir="$(planted_minimal_tree <<'PLANTED'
   # --- paired alpha ---------------------------------------------------------
   echo; echo "paired alpha"; ok "alpha ran"; ok "alpha ran again"
   # --- paired beta ----------------------------------------------------------
@@ -788,7 +772,7 @@ assert_contains "reports a section that exits mid-way as a FAIL naming it" "$out
 assert_contains "keeps a planted FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "sums both failures into the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "14 passed, 3 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "3 passed, 3 failed"
 # Each failing path alone, so neither passes on the strength of the other.
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted exit$' \
   bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
@@ -796,42 +780,42 @@ assert_status "a parallel run whose only failing section exits mid-way exits 1" 
 assert_contains "reports that section alone as a FAIL naming it" "$out" \
   "  FAIL section 'planted exit' reported no counts"
 assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "12 passed, 1 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted failure$' \
   bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
 assert_status "a parallel run whose only failing section has a failing check exits 1" "$st" 1
 assert_contains "keeps that check's FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "12 passed, 1 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "1 passed, 1 failed"
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted stderr$' \
   bash "$par_dir/scripts/test/orch_test.sh" 2>"$par_dir/stderr")"; st=$?
 assert_status "a parallel run whose only failing section wrote to stderr exits 1" "$st" 1
 assert_contains "prints that section's stderr lines on stdout" "$out" \
   "$(printf "  FAIL section 'planted stderr' wrote to stderr\n     a planted stderr line\n     a second planted stderr line")"
 assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "13 passed, 1 failed"
+  "$(printf '%s\n' "$out" | tail -n 1)" "2 passed, 1 failed"
 assert_eq "leaves the section's stderr off the real stderr" \
   "$(grep -c 'a planted stderr line' "$par_dir/stderr")" "0"
-# The sequential path, reusing the parallel copy above (its `seq early exit`
+# The sequential path, reusing the parallel tree above (its `seq early exit`
 # section runs only here): a section that exits before the summary is a failure.
 seq_run() { ORCH_TEST_QUIET="${2:-}" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY="$1" bash "$par_suite" 2>&1; }
 out="$(seq_run '^(seq early exit|planted failure)$')"; st=$?
 assert_status "a sequential run whose section exits 0 early exits 1" "$st" 1
 assert_contains "reports it as no counts, with the exit status" "$out" \
   "$(printf '  FAIL the run reported no counts\n     it exited 0 before its summary')"
-assert_eq "counts the miss in the summary" "$(printf '%s\n' "$out" | tail -n 1)" "13 passed, 1 failed"
+assert_eq "counts the miss in the summary" "$(printf '%s\n' "$out" | tail -n 1)" "2 passed, 1 failed"
 assert_eq "prints the header once" "$(printf '%s\n' "$out" | grep -cx 'orch.sh tests')" "1"
 out="$(seq_run '^seq early exit$' 1)"; st=$?
 assert_status "the quiet early-exit run exits 1" "$st" 1
 assert_contains "still prints the FAIL line" "$out" "  FAIL the run reported no counts"
-assert_eq "and the summary" "$(printf '%s\n' "$out" | tail -n 1)" "13 passed, 1 failed"
+assert_eq "and the summary" "$(printf '%s\n' "$out" | tail -n 1)" "2 passed, 1 failed"
 rm -rf "$par_dir"
 
 # The section deadline (ORCH_TEST_SECTION_TIMEOUT). Planted sections hang on a
 # nested child that carries a unique marker in its command line.
 dl_mark="orchdeadline$$x$RANDOM"
-dl_dir="$(planted_copy <<PLANTED
+dl_dir="$(planted_minimal_tree <<PLANTED
   # --- planted hang
   echo; echo "planted hang"; echo "output before the hang"
   bash -c 'sleep 600; : ${dl_mark}hang' &
@@ -994,8 +978,7 @@ printf '%s\n' "10	50	shard s1" "30	40	shard s2" "20	30	shard s3" "5	20	shard s4"
   >"$sh_t/section-durations.tsv"
 sh_log="$sh_dir/log"
 sh_seen="$sh_dir/seen"
-# sh_run <shard> [jobs] [hold]: orch_test.sh in the tree under that setting, s5
-# holding for <hold> seconds (default 0); the
+# sh_run <shard> [jobs]: orch_test.sh in the tree under that setting; the
 # shard-section names it ran (start order, then printed order), its status.
 sh_run() {
   : >"$sh_log"; : >"$sh_seen"
@@ -1019,7 +1002,6 @@ cp "$sh_t/section-durations.tsv" "$sh_dir/durations.keep"
 printf '%s\n' "30	9	shellcheck" >"$sh_t/section-durations.tsv"
 sh_run 1/2
 assert_eq "with no section listed, each weighs one wall second" "$sh_printed" "isolation,s4,"
-cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 printf '%s' "$(<"$sh_dir/durations.keep")" >"$sh_t/section-durations.tsv"
 sh_run 1/2
 assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s1,s5,"
@@ -1036,7 +1018,12 @@ assert_eq "and together they run every section once with no durations file" \
   "$(printf '%s' "$sh_union" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
 cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-for sh_n in 1 9; do
+# Why 5: the weights are s2 30, s5 (unlisted, so the heaviest listed) 30, s3 20,
+# s1 10 and s4 5 wall tenths, dealt in that order; group 1 starts at 18, the
+# rest at 0. With 5 groups s2, s5, s3 and s1 fill groups 2-5 and s4 goes to
+# group 5 (10 < 18), leaving 1/5 with isolation alone. With 4 groups s1 lands
+# in group 1 (18 < 20), so none is left with isolation alone.
+for sh_n in 1 5; do
   sh_union=""
   for ((sh_i = 1; sh_i <= sh_n; sh_i++)); do
     sh_run "$sh_i/$sh_n"
@@ -1052,8 +1039,8 @@ for sh_n in 1 9; do
 done
 sh_run 2/2
 assert_eq "a second call groups the same" "$sh_printed" "$sh_first_22"
-assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[9/9]}" "isolation,"
-assert_eq "and passes" "${sh_saved_st[9/9]}" 0
+assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[1/5]}" "isolation,"
+assert_eq "and passes" "${sh_saved_st[1/5]}" 0
 assert_eq "1/1 runs every section" "${sh_saved_printed[1/1]}" "isolation,s1,s2,s3,s4,s5,"
 assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" "${sh_saved_seen[1/1]}" "unset,"
 sh_run ""
@@ -1247,7 +1234,7 @@ rm -rf "$dur_dir"
 # passing outside: the tally file counts both, whatever the job count.
 echo
 echo "assertions in a subshell (#1904)"
-sub_dir="$(planted_copy <<'PLANTED'
+sub_dir="$(planted_minimal_tree <<'PLANTED'
   # --- planted subshell
   echo; echo "planted subshell"
   ( bad "a failure in a subshell" "its detail line" )
@@ -1337,24 +1324,20 @@ for tally_suite in "${SUITES[@]}"; do
 done
 
 # --- the section files (#932) -------------------------------------------------
-# A copy of the scripts tree cut down to isolation - harness.sh keeps only its
-# first section, and no other noun file is left - then given new noun files:
+# A minimal test tree given new noun files:
 # zz-planted.sh, _planted.sh, a-planted.sh, two files with a preamble and one
 # with nothing but a preamble. Each preamble prints a line, so the output shows
 # when and how often it is eval'd. _planted.sh sorts before a-planted.sh under
 # LC_ALL=C but after it under a dictionary collation, which ignores the `_`.
 echo
 echo "the section files (#932)"
-files_dir="$(planted_copy <<'PLANTED'
+files_dir="$(planted_minimal_tree <<'PLANTED'
   # --- planted new file
   echo; echo "planted new file"; ok "the new file ran"
 PLANTED
 )"
 files_orch="$files_dir/scripts/test/orch"
 files_suite="$files_dir/scripts/test/orch_test.sh"
-awk '/^# --- / { n++ } n <= 1' "$files_orch/harness.sh" >"$files_dir/harness.sh"
-find "$files_orch" -name '*.sh' ! -name setup.sh ! -name zz-planted.sh -exec rm -f {} +
-mv "$files_dir/harness.sh" "$files_orch/harness.sh"
 plant_file "$files_orch" _planted.sh <<'PLANTED'
   # --- planted underscore
   echo; echo "planted underscore"; ok "the underscore file ran"
@@ -1435,7 +1418,7 @@ assert_eq "no title appears twice across the walk" \
 echo
 echo "the suite's temp root (#807)"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
-root_dir="$(planted_copy <<'PLANTED'
+root_dir="$(planted_minimal_tree <<'PLANTED'
   # --- planted repo
   echo; echo "planted repo"; new_repo >/dev/null; ok "made a repo"
   # --- planted failure
@@ -1592,12 +1575,12 @@ assert_contains "all.sh says the suites left temp files behind" "$out" \
 rm -rf "$root_dir"
 
 # --- the real-gh guard (#779) -------------------------------------------------
-# A copy of the scripts tree with a planted section that calls gh, run filtered
+# A minimal test tree with a planted section that calls gh, run filtered
 # to that section: the shared setup's stub gh answers it, logs it, and the
 # summary turns the logged call into one FAIL naming it.
 echo
 echo "the real-gh guard (#779)"
-guard_dir="$(planted_copy <<'PLANTED'
+guard_dir="$(planted_minimal_tree <<'PLANTED'
   # --- a planted gh call
   echo; echo "a planted gh call"
   gh repo view o/r --json defaultBranchRef >/dev/null 2>&1
@@ -1610,7 +1593,7 @@ assert_eq "reports exactly one FAIL" "$(printf '%s\n' "$out" | grep -c '^  FAIL 
 assert_contains "whose detail names the call" "$out" \
   "$(printf '  FAIL a section called the real gh\n     gh repo view o/r --json defaultBranchRef')"
 assert_eq "counts it in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
-  "12 passed, 1 failed"
+  "1 passed, 1 failed"
 rm -rf "$guard_dir"
 
 # --- all.sh, the single entry point (#615) ----------------------------------
@@ -2073,7 +2056,7 @@ assert_eq "the real test directory has no unlisted runner" "$ul_out" ""
 # The runners' shared job pool, test-only ORCH_TEST_POOL_DIR naming the pool
 # directory and ORCH_TEST_CPU_MAX_FILE sizing it (a quota of 200000 per slot:
 # 50% of the usable CPUs are the slots, set with ORCH_TEST_POOL_PERCENT=50). A
-# copy of the scripts tree with planted
+# minimal test tree with planted
 # sections that log their start and end, run by orch_test.sh; then all.sh over
 # a stub shellcheck that logs the same way.
 echo
@@ -2081,7 +2064,7 @@ echo "the job pool (#2022)"
 jp_dir="$(mktemp -d)"
 jp_tests="$(dirname "$SUITE_SCRIPT")"
 jp_log="$jp_dir/log"
-jp_copy="$(planted_copy <<'PLANTED'
+jp_tree="$(planted_minimal_tree <<'PLANTED'
   # With JP_BARRIER set, a pool section waits, up to 10s, until that many
   # sections have started, so a peak needs no luck in start-up timing.
   pool_barrier() {
@@ -2111,7 +2094,7 @@ jp_copy="$(planted_copy <<'PLANTED'
   echo "nested=$?" >>"$JP_LOG"; ok "nested"
 PLANTED
 )"
-jp_suite="$jp_copy/scripts/test/orch_test.sh"
+jp_suite="$jp_tree/scripts/test/orch_test.sh"
 pool_cpu_file "$jp_dir/cpu2" 2
 pool_cpu_file "$jp_dir/cpu1" 1
 pool_cpu_file "$jp_dir/cpu4" 4
@@ -2260,7 +2243,7 @@ assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
 else
   skip "the job pool cases on a shared pool" "flock is not installed"
 fi
-rm -rf "$jp_copy"
+rm -rf "$jp_tree"
 
 # all.sh's shellcheck processes take slots: two concurrent all.sh runs on a
 # 1-slot pool never have more than one shellcheck at a time, and the notice
