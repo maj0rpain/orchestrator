@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.51
+
+Test-only: rename the two locals of the shared test setup's `fails_bin` helper, `q` to `escaped_quote` and `line` to `escaped_line`, so each name says what it holds. No behaviour change.
+
 ## 5.2.50
 
 The Flow state writers report what their contracts name: `phase_write` dies "malformed state write" for a malformed pair list and names every key it did not record on a failed write, `flow_state_seed` returns 1 when jq cannot build the seed, and `state_write_many` spells its no-key failure message once.
