@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Sourced by orch_test.sh (the orch.sh suite's runner) and hooks_test.sh: the
-# counting fixture, a stub first on PATH that logs one line each time a command
-# starts and then runs the real command. Sourcing it only defines functions.
+# counting fixture, a stub (in a directory its caller puts first on PATH) that
+# logs one line each time a command starts and then runs the real command.
+# Sourcing it only defines functions.
 # Bash 4.2+, as the rest of the suite.
 
 # counting_bin <cmd>: a new directory holding a #!/bin/sh <cmd> that appends one
