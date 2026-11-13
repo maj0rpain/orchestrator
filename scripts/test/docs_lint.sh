@@ -3992,8 +3992,8 @@ check "the glossary defines Turn-final reply" \
 # never bumps the version by hand: the version-bump Action does, on merge. The
 # CHANGELOG rule always runs; the fragment rule runs against the real root only
 # when CHANGELOG_BASE holds main's commit, and waives its one-fragment part when
-# NO_VERSION_BUMP is set; .github/workflows/test.yml's "Read main's commit"
-# step sets both, and its Verify step carries the GH_TOKEN the fragment rule's
+# NO_VERSION_BUMP is set; .github/workflows/fragment.yml's "Read main's commit"
+# step sets both, and its check step carries the GH_TOKEN the fragment rule's
 # parent lookup reads issues with.
 echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"

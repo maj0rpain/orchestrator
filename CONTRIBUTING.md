@@ -86,6 +86,15 @@ result. It unsets `ORCH_TEST_ONLY` and `ORCH_TEST_SHARD`, refuses
 `ORCH_TEST_JOBS=1`, and leaves the file unchanged, naming what failed, when
 anything it measured fails.
 
+CI (`.github/workflows/test.yml`): a PR runs the whole suite once, in the
+autopilot container, as 4 jobs, each `all.sh` with its `ORCH_TEST_SHARD=<i>/4`
+(the image's `EXTRA_BUILD_COMMAND` checks in group 1 only), plus a final job
+that passes only when all four did; a push to `main` runs `all.sh` unsplit on
+the runner, and the container suite does not run there. The suite runs on a
+PR's `opened`, `synchronize` and `reopened`; a newer run for the same PR
+cancels the older one, and a push to `main` is never cancelled. The changelog
+fragment check has its own workflow (see the fragment paragraph below).
+
 A case lives once, in the section of the module it exercises. The Standing
 sections own what a transition does on its own: its writes, its write chain
 (the "writes that landed: ..." wording) and the claim staying held when a write
@@ -216,7 +225,9 @@ from a scratch copy of the checkout to see how a fragment renders: it edits the
 files in place and does not commit. `scripts/test/version_bump_test.sh` tests
 it.
 
-CI (`docs_lint.sh`) enforces the rule: a PR to `main` adds exactly one
+CI enforces the rule through its own workflow, `.github/workflows/fragment.yml`,
+which runs `docs_lint.sh` alone and reruns on a PR's body and label edits: a PR
+to `main` adds exactly one
 well-formed fragment, and never changes `version`, adds a `## ` heading to
 `CHANGELOG.md`, or modifies or deletes an existing fragment or `.gitkeep`;
 the fragment's issue is no sub-issue, its parent looked up with `gh api` and
@@ -269,7 +280,7 @@ namerefs, no `mapfile`, no `declare -A`), because they run under macOS's
 `/bin/bash`.
 The code and tests also run on the autopilot image's tools - jq 1.6, bookworm's
 mawk (no regex interval expressions) and git 2.39 - as their floor, and the
-container CI job enforces it.
+container CI jobs enforce it.
 
 ### Measuring a lens
 

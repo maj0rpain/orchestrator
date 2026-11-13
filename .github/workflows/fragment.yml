@@ -1,0 +1,59 @@
+name: fragment
+
+# The changelog fragment rule (docs_lint.sh) alone, on every PR event that can
+# change its answer: a push, a reopen, and an edit to the PR's body or labels.
+# The suite workflow does not rerun for those edits.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+# A newer run for the same PR cancels this workflow's older in-progress run.
+concurrency:
+  group: fragment-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fragment:
+    runs-on: ubuntu-latest
+    # contents: read for the checkout; pull-requests: read for the PR's
+    # labels, which "Read main's commit" reads live; issues: read for
+    # docs_lint.sh's fragment rule, which looks up the fragment's issue's parent.
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so docs_lint.sh's fragment rule finds the merge-base
+          # with main.
+          fetch-depth: 0
+      # Sets CHANGELOG_BASE, main's commit, for docs_lint.sh's changelog
+      # fragment rule on every PR to main, and NO_VERSION_BUMP=1 when the PR
+      # carries the no-version-bump label, which waives only its one-fragment
+      # part. The labels are the PR's as they stand now, read with gh, not the
+      # event payload's snapshot: gh pr create --label adds them in a mutation
+      # after the PR opens, so the opened run's payload can lack a label the
+      # PR has (#1299). A failed fetch or read fails the job rather than
+      # leaving it unset.
+      - name: Read main's commit
+        if: github.event.pull_request.base.ref == 'main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          base="$(git rev-parse --verify origin/main)"
+          echo "CHANGELOG_BASE=$base" >>"$GITHUB_ENV"
+          labels="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')"
+          if grep -qxiF no-version-bump <<<"$labels"; then
+            echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
+          fi
+      # GH_TOKEN for docs_lint.sh's fragment rule, whose gh api call reads the
+      # fragment's issue to check it is no sub-issue.
+      - name: Check the changelog fragment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/test/docs_lint.sh
