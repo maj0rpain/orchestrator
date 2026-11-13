@@ -9,12 +9,28 @@
 # through die when run outside a git repository, and ahead of every noun module.
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
-# <list>, matched whole-line and literally. The one newline-list membership test
-# (word_listed matches its space-separated lists without a fork):
-# `--` keeps an item beginning with `-` an item, never a grep option, and an
-# item spanning lines is no line at all, never several of grep's patterns.
+# <list>, matched whole-line, literally and case-sensitively. The one
+# newline-list membership test (word_listed matches its space-separated lists).
+# It matches in bash, starting no command: <list> is framed in newlines and the
+# quoted <item>, framed the same, is looked for in it, so an item beginning
+# with `-` or holding glob or regex characters is an item, never an option or a
+# pattern, and an item spanning lines is no line at all.
 list_has() {
-  [[ $2 != *$'\n'* ]] && grep -qxF -- "$2" <<<"$1"
+  [[ $2 != *$'\n'* ]] && [[ $'\n'"$1"$'\n' == *$'\n'"$2"$'\n'* ]]
+}
+
+# path_last_into <var> <path> [<suffix>]: sets <var> to <path>'s last
+# component, <suffix> stripped when that component ends in it and is not all of
+# it, as basename gives it, without starting basename. Sets the variable in the
+# caller's shell with printf -v.
+path_last_into() {
+  local _pl_p="$2"
+  while [[ $_pl_p == ?*/ ]]; do _pl_p="${_pl_p%/}"; done
+  if [[ $_pl_p != / ]]; then
+    _pl_p="${_pl_p##*/}"
+    if [[ -n ${3:-} && $_pl_p == ?*"$3" ]]; then _pl_p="${_pl_p%"$3"}"; fi
+  fi
+  printf -v "$1" '%s' "$_pl_p"
 }
 
 # list_join <list>: the newline-separated <list>'s non-empty lines joined with

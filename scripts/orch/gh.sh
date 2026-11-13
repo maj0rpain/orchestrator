@@ -98,9 +98,15 @@ gh_limit_handle() {
 # <labels>, matched whole-line, literally and case-insensitively: GitHub's label
 # names are case-insensitive, and it attaches a label in the repo's existing
 # casing. The one label-membership test; list_has is its case-sensitive sibling
-# for what is not a label. Folds ASCII case, as grep -i does.
+# for what is not a label. It matches in bash, starting no command, and folds
+# ASCII case only, whatever the caller's locale: both sides are lower-cased
+# under a function-local LC_ALL=C, so a Turkish locale's I never folds to a
+# dotless i and a non-ASCII letter stays as it is.
 label_listed() {
-  [[ $2 != *$'\n'* ]] && grep -qxiF -- "$2" <<<"$1"
+  [[ $2 != *$'\n'* ]] || return 1
+  local LC_ALL=C
+  local _ll_list="${1,,}" _ll_item="${2,,}"
+  [[ $'\n'"$_ll_list"$'\n' == *$'\n'"$_ll_item"$'\n'* ]]
 }
 
 # --- gh failure contract (#1022) ----------------------------------------------

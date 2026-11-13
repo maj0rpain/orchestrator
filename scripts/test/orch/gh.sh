@@ -157,6 +157,28 @@ assert_eq "a command that succeeds silently returns 0 and leaves the variable em
 rm -f "$cefile"
 unset cefile
 
+# --- label_listed ---------------------------------------------------------------
+echo
+echo "label_listed"
+new_repo >/dev/null
+ll_verdicts=""
+for ll_item in bug BUG 'Needs Triage' -n 'a*' 'b?g' bu 'é' 'É' '' $'bug\nx'; do
+  if sourced_orch label_listed $'Bug\nneeds triage\n-N\na*\nb?g\né' "$ll_item"; then ll_verdicts="$ll_verdicts y"
+  else ll_verdicts="$ll_verdicts n"; fi
+done
+assert_eq "label_listed folds ASCII case, matches literally, and never folds a non-ASCII letter or spans lines" \
+  "$ll_verdicts" " y y y y y y n y n n n"
+sourced_orch label_listed "" bug && ll_v=y || ll_v=n
+assert_eq "label_listed finds nothing in an empty list" "$ll_v" "n"
+sourced_orch label_listed "" "" && ll_v=y || ll_v=n
+assert_eq "label_listed matches an empty item against an empty line" "$ll_v" "y"
+if locale -a 2>/dev/null | grep -qix 'tr_TR\.utf-\?8'; then
+  LC_ALL=tr_TR.UTF-8 sourced_orch label_listed $'i' I && ll_v=y || ll_v=n
+  assert_eq "label_listed under a Turkish locale still matches I with i" "$ll_v" "y"
+else
+  skip "label_listed under a Turkish locale still matches I with i" "tr_TR.UTF-8 is not installed"
+fi
+
 # --- gh failure verb and readers (#1022) --------------------------------------
 # gh_die builds the one "gh could not <what>: <reason>" death, gh_or_die runs an
 # operation and dies through it, and the readers split a multi-field answer into

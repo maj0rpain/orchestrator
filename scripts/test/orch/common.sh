@@ -140,6 +140,31 @@ done
 assert_eq "list_has matches whole lines literally, an item beginning with - included, one spanning lines never" \
   "$lh_verdicts" " y y y y n n n n n"
 
+lh_verdicts=""
+for lh_item in '' 'a*' 'a?' '[ab]' 'a\b' 'x.*' '.*'; do
+  if sourced_orch list_has $'a*\na?\n[ab]\na\\b\nx.*\n\nq' "$lh_item"; then lh_verdicts="$lh_verdicts y"
+  else lh_verdicts="$lh_verdicts n"; fi
+done
+assert_eq "list_has matches glob and regex characters and an empty item literally" \
+  "$lh_verdicts" " y y y y y y n"
+sourced_orch list_has "" bug && lh_v=y || lh_v=n
+assert_eq "list_has finds nothing in an empty list" "$lh_v" "n"
+sourced_orch list_has "" "" && lh_v=y || lh_v=n
+assert_eq "list_has still matches an empty item against an empty line" "$lh_v" "y"
+assert_eq "list_has, label_listed and path_last_into answer with an empty PATH" \
+  "$(sourced_orch_script '
+    PATH=
+    list_has $'"'"'a\nb'"'"' b && printf y; list_has a b || printf n
+    label_listed $'"'"'Bug\nx'"'"' BUG && printf y; label_listed Bug x || printf n
+    path_last_into r /d/e/f.md .md; printf " %s" "$r"')" "ynyn f"
+# path_last_into: a path's last component, a suffix stripped, as basename gives.
+plt=""
+for plt_args in "/a/b/c.md" "/a/b/c.md .md" "c.md" "c.md .md" ".md .md" "/a/b/ " "/ "; do
+  plt="$plt|$(sourced_orch_script 'path_last_into r "$1" "${2:-}"; printf "%s" "$r"' $plt_args)"
+done
+assert_eq "path_last_into gives a path's last component, with and without the suffix, directories or none" \
+  "$plt" "|c.md|c|c.md|c|.md|b|/"
+
 # --- list_join ----------------------------------------------------------------
 # The one newline-list join: non-empty lines, joined by ", ".
 echo
