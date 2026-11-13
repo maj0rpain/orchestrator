@@ -513,11 +513,51 @@ adapter_issue_state() {
 }
 
 # adapter_issues_labelled <label>...: the open issues carrying every label
-# named, one number per line - gh filters on whole labels, not on a prefix.
+# named, one number per line, oldest first, so ISSUE_LIST_LIMIT cuts the
+# newest - gh filters on whole labels, not on a prefix.
 adapter_issues_labelled() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+}
+
+# issue_list_limit_warn <count> <what>: warns on stderr when a listing of
+# <what> (e.g. "the open issues labelled needs-human") returned <count> rows,
+# reaching its effective limit - the lesser of ISSUE_LIST_LIMIT and 1000,
+# GitHub's search cap - and names that limit. Always succeeds.
+issue_list_limit_warn() {
+  local limit="$ISSUE_LIST_LIMIT"
+  [ "$limit" -le "$ISSUE_SEARCH_CAP" ] || limit="$ISSUE_SEARCH_CAP"
+  if [ "$1" -ge "$limit" ]; then
+    warn "$2 reached the issue-list limit of $limit - the newest past it are missing from this list"
+  fi
+  return 0
+}
+
+# issues_labelled_limit_warn <count> <label>...: issue_list_limit_warn for a
+# listing of the open issues carrying every label named. Always succeeds.
+issues_labelled_limit_warn() {
+  local __illw_n="$1" __illw_what="the open issues labelled $2" __illw_l
+  for __illw_l in "${@:3}"; do __illw_what="$__illw_what and $__illw_l"; done
+  issue_list_limit_warn "$__illw_n" "$__illw_what"
+}
+
+# issues_labelled_read <out_var> <err_var> <label>...: reads the open issues
+# carrying every label named once through adapter_issues_labelled, the listing
+# (one number per line, oldest first, trailing newlines gone) into the caller's
+# <out_var> and gh's stderr into <err_var>, as capture does, then warns through
+# issue_list_limit_warn when the listing reached the limit. Non-zero on a
+# failed read, warning nothing: the caller words the failure from <err_var>.
+issues_labelled_read() {
+  local __ilr_out __ilr_err __ilr_n=0
+  if ! capture __ilr_out __ilr_err adapter_issues_labelled "${@:3}"; then
+    printf -v "$2" '%s' "$__ilr_err"
+    return 1
+  fi
+  [ -z "$__ilr_out" ] || __ilr_n="$(printf '%s\n' "$__ilr_out" | grep -c .)"
+  issues_labelled_limit_warn "$__ilr_n" "${@:3}"
+  printf -v "$1" '%s' "$__ilr_out"
+  printf -v "$2" '%s' "$__ilr_err"
 }
 
 # adapter_issues_open_oldest: every open issue, one number per line, oldest
@@ -527,15 +567,16 @@ adapter_issues_open_oldest() {
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues carrying every
-# label named, cut at ISSUE_LIST_LIMIT as adapter_issues_labelled is, each as
-# one count-marked record: its number, its label count, one label per line,
+# label named, oldest first and cut at ISSUE_LIST_LIMIT as
+# adapter_issues_labelled is, each as one count-marked record: its number,
+# its label count, one label per line,
 # its body's line count (one more than the newlines the body holds, counted
 # with `indices`, never `split`, whose answer on an empty string differs
 # between jq implementations), then the body's lines.
 adapter_issues_labelled_bodies() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number,labels,body \
+  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,labels,body \
     --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
 }
 
@@ -550,7 +591,9 @@ adapter_issues_labelled_bodies() {
 # answer's trailing newlines, so the last record's body lines missing at the
 # end are empty lines. Non-zero, writing no element, on a failed read (gh's
 # stderr into <err_var>, as gh_lines_read) or an answer that does not parse
-# (<err_var> "gh answered a listing that does not parse"). Dies when an array
+# (<err_var> "gh answered a listing that does not parse"). Warns on stderr
+# through issues_labelled_limit_warn when the listing reaches the issue-list
+# limit, as issues_labelled_read does. Dies when an array
 # name is not a declared associative array. Bash 4.0: elements are assigned by
 # eval on a validated name, the value by reference, as finding_body_parse does.
 issues_labelled_bodies_read() {
@@ -602,6 +645,7 @@ issues_labelled_bodies_read() {
     eval "$2"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_bods[__ilbr_r]}'
   done
   printf -v "$3" '%s' "${#__ilbr_nums[@]}"
+  issues_labelled_limit_warn "${#__ilbr_nums[@]}" "${@:5}"
 }
 
 # adapter_issues_open_titles: every open issue, one per line as

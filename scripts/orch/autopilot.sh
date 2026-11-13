@@ -885,7 +885,7 @@ autopilot_flow_issues() {
   done
   labels+=("$STANDING_SYNC_LABEL")
   for label in "${labels[@]}"; do
-    capture out gh_err adapter_issues_labelled "$label" ||
+    issues_labelled_read out gh_err "$label" ||
       die "could not list the issues labelled $label: $(gh_reason "$gh_err")"
     all="$all$out"$'\n'
   done
@@ -964,9 +964,7 @@ autopilot_candidates_run() {
   else
     gh_or_die --out out "list the open issues" adapter_issues_open_oldest
     while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done <<<"$out"
-    if [ "${#issues[@]}" -ge "$ISSUE_LIST_LIMIT" ]; then
-      warn "the open issues reached the issue-list limit of $ISSUE_LIST_LIMIT - the newest past it are missing from this list"
-    fi
+    issue_list_limit_warn "${#issues[@]}" "the open issues"
   fi
   for n in ${issues[@]+"${issues[@]}"}; do
     if [ "$mode" = limit ] && [ "$eligible" -ge "$limit" ]; then break; fi
@@ -987,7 +985,7 @@ autopilot_done_read() {
   local _out _err _issue _table="" _label
   _label="$(standing_phase_label "done")"
   printf -v "$1" '%s' ""
-  capture _out _err adapter_issues_labelled "$_label" || {
+  issues_labelled_read _out _err "$_label" || {
     warn "could not list the issues labelled $_label: $(gh_reason "$_err") - no merged-PR close or sync detection this tick"
     return 0
   }
