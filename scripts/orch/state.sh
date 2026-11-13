@@ -131,17 +131,14 @@ state_write_string() {
 # phase_write dies the same way; both no-key failure paths share the one
 # fall-through die.
 state_write_many() {
-  local obj rc keys
-  obj="$(flow_state_pairs_json "$@")" || {
-    rc=$?
-    [ "$rc" = 2 ] && die "malformed state write: $*"
-    obj=
-  }
-  if [ -n "$obj" ]; then
+  local obj keys
+  if obj="$(flow_state_pairs_json "$@")"; then
     flow_state_merge "$STATE" "$obj" && return 0
     if keys="$(jq -r 'keys_unsorted | join(", ")' <<<"$obj")"; then
       die "could not record $keys in $STATE - the flow is unchanged"
     fi
+  elif [ $? = 2 ]; then
+    die "malformed state write: $*"
   fi
   die "could not record the state write in $STATE - the flow is unchanged"
 }
