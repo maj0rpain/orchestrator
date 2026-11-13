@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.26
+
+Test-suite cleanups: the Session end tests drop an unused helper, the stop chain's attempts drop a duplicate case, and an assertion title names every field it checks.
+
 ## 5.2.25
 
 Tidy the multi-key Flow state reader: its temp file now records why it stays (bash 3.2), the `<var>=<key>` rule lives in one shared check, `spec-review begin` reads the held flow with one jq, and `status` keeps raw and fallback-applied values in separate variables.
