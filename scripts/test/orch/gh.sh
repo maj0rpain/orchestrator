@@ -360,7 +360,7 @@ fake_github
 # stderr into its err-var. $1 is the statuses, $2 the stderr a 2 leaves. The
 # stub counts its calls in a shell variable, so a verifier run in a subshell
 # would print "0 call(s)".
-vt() {
+verify_twice_run() {
   sourced_orch_script '
     calls=0
     verifier() {
@@ -373,25 +373,24 @@ vt() {
     verify_twice "read the thing" "the thing did not verify" verifier
     echo "returned after $calls call(s)"' "$@" 2>&1
 }
-out="$(vt "0")"
+out="$(verify_twice_run "0")"
 assert_eq "verify_twice: 0 first returns after one call, in the caller's shell" "$out" "returned after 1 call(s)"
-out="$(vt "1 0")"
+out="$(verify_twice_run "1 0")"
 assert_eq "verify_twice: 1 then 0 returns" "$out" "returned after 2 call(s)"
-out="$(vt "2 0" "boom")"
+out="$(verify_twice_run "2 0" "boom")"
 assert_eq "verify_twice: 2 then 0 returns" "$out" "returned after 2 call(s)"
-out="$(vt "1 1")"
+out="$(verify_twice_run "1 1")"; st=$?
 assert_eq "verify_twice: 1 then 1 dies unverified" "$out" "orch: the thing did not verify"
-sourced_orch_script 'v() { return 1; }; verify_twice r u v' >/dev/null 2>&1; st=$?
 assert_status "verify_twice: an unverified death has status 1" "$st" 1
-out="$(vt "2 2" $'HTTP 502: Bad Gateway\nsecond')"
+out="$(verify_twice_run "2 2" $'HTTP 502: Bad Gateway\nsecond')"
 assert_eq "verify_twice: 2 then 2 dies with gh's first line" "$out" \
   "orch: gh could not read the thing: HTTP 502: Bad Gateway"
-out="$(vt "2 2" "")"
+out="$(verify_twice_run "2 2" "")"
 assert_eq "verify_twice: 2 then 2 with an empty stderr gives no reason" "$out" \
   "orch: gh could not read the thing: gh gave no reason"
-out="$(vt "2 1" "boom")"
+out="$(verify_twice_run "2 1" "boom")"
 assert_eq "verify_twice: 2 then 1 dies unverified" "$out" "orch: the thing did not verify"
-out="$(vt "1 2" "boom")"
+out="$(verify_twice_run "1 2" "boom")"
 assert_eq "verify_twice: 1 then 2 dies with gh's reason" "$out" "orch: gh could not read the thing: boom"
 out="$(sourced_orch_script 'v() { printf "%s|%s\n" "$2" "$3"; return 0; }; verify_twice r u v a b' 2>&1)"
 assert_eq "verify_twice: hands the verifier its own arguments after the err-var" "$out" "a|b"
