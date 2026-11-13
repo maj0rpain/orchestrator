@@ -88,9 +88,10 @@ state_get_many_in() {
 }
 
 # state_many_recheck <var>=<key>...: after a failed many-key read, dies with
-# the message for the argument that was at fault, and returns 0 when none was.
-# It runs only after a failure, when nothing was assigned, so its locals
-# cannot shadow a caller's out-variable.
+# the message for the argument that was at fault, returns state_rows's own
+# non-zero status when the rows cannot be read, and returns 0 when no
+# argument was at fault. It runs only after a failure, when nothing was
+# assigned, so its locals cannot shadow a caller's out-variable.
 state_many_recheck() {
   local __smr_arg __smr_rows __smr_rc __smr_var __smr_key __smr_def
   __smr_rows="$(state_rows)" || return
