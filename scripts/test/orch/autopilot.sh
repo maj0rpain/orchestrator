@@ -2626,6 +2626,7 @@ assert_eq "releases the claim" "$(fake_claim_held 7)" free
 assert_eq "posts no comment" "$(fake_comments_of 7)" "$comments_before"
 assert_eq "and starts no session" "$(tick_calls)" "0"
 assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+assert_eq "and its run record is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
 # a claim list that cannot be read on this path still releases the claim
 fake_issue 7 open orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
