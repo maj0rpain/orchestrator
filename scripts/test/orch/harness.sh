@@ -1188,7 +1188,7 @@ out="$(dur_script ORCH_TEST_JOBS=1)"; st=$?
 assert_status "the script refuses ORCH_TEST_JOBS=1" "$st" 1
 assert_contains "naming the setting" "$out" "ORCH_TEST_JOBS=1"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
-out="$(dur_script ORCH_TEST_POOL_PERCENT=abc)"; st=$?
+out="$(dur_unset=CI dur_script ORCH_TEST_POOL_PERCENT=abc)"; st=$?
 assert_status "the script refuses a bad ORCH_TEST_POOL_PERCENT" "$st" 1
 assert_contains "naming the setting" "$out" "ORCH_TEST_POOL_PERCENT"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"

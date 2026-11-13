@@ -102,7 +102,8 @@ shellcheck_files() {
 #
 # The functions shellcheck_start and shellcheck_join (below): all.sh and
 # section-durations.sh's pooled shellcheck step; the caller sources
-# test_jobs.sh and inits the pool.
+# test_jobs.sh and inits the pool, and stops SHELLCHECK_PIDS with
+# test_jobs_stop_children on INT and TERM.
 # shellcheck disable=SC2034 # read by the sourcing runners
 TENTHS_AWK='function tenths(s) { sub(/\./, "", s); return s + 0 }'
 # shellcheck disable=SC2034 # read by the sourcing runners

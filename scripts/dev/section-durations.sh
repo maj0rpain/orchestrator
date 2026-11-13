@@ -43,7 +43,9 @@ suites_read "$dir/all.sh" "$dir" || {
   echo "section-durations.sh: $SUITES_ERR" >&2; exit 1; }
 
 tmp="$(mktemp -d)" || exit 1
+SHELLCHECK_PIDS=()
 trap 'rm -rf "$tmp"' EXIT
+trap 'test_jobs_stop_children "${SHELLCHECK_PIDS[@]}"' INT TERM
 export ORCH_TEST_QUIET=1
 failed=()
 
