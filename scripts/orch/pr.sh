@@ -547,6 +547,7 @@ cmd_pr_read() {
   local issue="$1" file="$2" raw pr enc flag body line named="" kept found diff
   local bodies=()
   is_positive_int "$issue" || die "not an issue number: $issue"
+  issue=$((10#$issue))
   # One listing carries every body; only the winner's diff is read apart.
   gh_or_die --out raw "list the open PRs" adapter_prs_open_bodies
   while IFS=$'\t' read -r pr enc flag; do
@@ -555,6 +556,8 @@ cmd_pr_read() {
     { is_positive_int "$pr" && { [ "$flag" = true ] || [ "$flag" = false ]; } \
       && body="$(jq -r . <<<"$enc")"; } ||
       die "the open PRs for issue #$issue could not be read"
+    # The guard allows leading zeros: 08 is PR 8, never octal.
+    pr=$((10#$pr))
     line="$(printf '%s\n' "$body" | sed -n '1{s/\r$//;p;}')"
     if [ "$line" = "Closes #$issue" ] || [ "$line" = "Refs #$issue" ]; then
       named+="$pr"$'\t'"$flag"$'\n'
