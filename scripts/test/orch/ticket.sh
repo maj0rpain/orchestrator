@@ -1233,8 +1233,8 @@ assert_eq "and left clean" "$(git status --porcelain)" ""
 out="$("$ORCH" ticket-worktree remove 7)"; st=$?
 assert_status "a merged ticket's worktree then removes without --unmerged" "$st" 0
 
-# A failed git worktree list stops merge before anything moves (#1333), rather than
-# reading the forked-from branch as checked out nowhere.
+# A failed git worktree list stops merge before anything moves (#1333), rather
+# than reading the forked-from branch as checked out nowhere.
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
 commit_file "$wt" ticket.txt one

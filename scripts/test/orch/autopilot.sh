@@ -1839,7 +1839,7 @@ assert_contains "with a reason naming the Budget and the plan reader's own cause
 assert_eq "and the claim released" "$(fake_claim_held 7)" free
 assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
 # a budget read that meets a GitHub limit only releases the claim (#2739)
-# bud_reset: clear the GitHub pause file and issue 7's session logs before each case.
+# bud_reset: clear the GitHub pause file and issue 7's session logs.
 bud_reset() { rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log; }
 bud_reset
 comments_before="$(fake_comments_of 7)"
