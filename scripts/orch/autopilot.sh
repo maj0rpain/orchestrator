@@ -724,8 +724,9 @@ autopilot_cleanup_stale() {
 # pool (autopilot_github_early_file). Each path is built by its helper; a file
 # is written through autopilot_pause_extend (the session end's writer for the
 # usage limit file and the GitHub limit file) or autopilot_pause_put (the writer
-# everywhere else: the GitHub limit record's write of the GitHub limit file,
-# and the early GitHub pause's core and graphql files) and read through
+# everywhere else: the GitHub limit record's writes of the GitHub limit file and
+# the session's hit file, and the early GitHub pause's core and graphql files)
+# and read through
 # autopilot_pause_epoch or autopilot_pause_until.
 
 # autopilot_usage_pause_file <main>: the usage limit file under <main>.
