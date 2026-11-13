@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.37
+
+`orch.sh pr read` now reads a listed PR number or an issue argument with leading zeros (`09`, `010`, `012`) as the same number without them, instead of aborting with a raw bash octal error or missing the PR.
+
+## 5.2.36
+
+Test-only: the hook test suite counts jq processes through one helper, `jq_count`, and the shared counter comment scopes "never against a number" to the paste-guard counts.
+
 ## 5.2.35
 
 Internal test cleanup in the `breakdown publish` CRLF cases: two redundant assertions are dropped and the zero-CR checks use `assert_not_contains`, so a failure shows the offending text. No change in behaviour.
