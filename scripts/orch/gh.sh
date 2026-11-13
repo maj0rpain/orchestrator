@@ -557,7 +557,8 @@ issues_labelled_bodies_read() {
   assoc_array_require issues_labelled_bodies_read "$1" __ilbr_
   assoc_array_require issues_labelled_bodies_read "$2" __ilbr_
   local __ilbr_out __ilbr_err __ilbr_lines=() __ilbr_nums=() __ilbr_labs=() __ilbr_bods=()
-  local __ilbr_i=0 __ilbr_total __ilbr_n __ilbr_c __ilbr_b __ilbr_j __ilbr_l __ilbr_body __ilbr_k __ilbr_r
+  local __ilbr_i=0 __ilbr_total __ilbr_n __ilbr_label_count __ilbr_body_line_count
+  local __ilbr_j __ilbr_record_labels __ilbr_body __ilbr_k __ilbr_r
   local __ilbr_bad="gh answered a listing that does not parse"
   local __ilbr_whole='^[0-9]+$'
   if ! capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
@@ -568,23 +569,23 @@ issues_labelled_bodies_read() {
   __ilbr_total="${#__ilbr_lines[@]}"
   while [ "$__ilbr_i" -lt "$__ilbr_total" ]; do
     __ilbr_n="${__ilbr_lines[__ilbr_i]}"
-    __ilbr_c="${__ilbr_lines[__ilbr_i+1]-}"
-    [[ $__ilbr_n =~ $__ilbr_whole && $__ilbr_c =~ $__ilbr_whole ]] \
+    __ilbr_label_count="${__ilbr_lines[__ilbr_i+1]-}"
+    [[ $__ilbr_n =~ $__ilbr_whole && $__ilbr_label_count =~ $__ilbr_whole ]] \
       || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
     __ilbr_i=$(( __ilbr_i + 2 ))
-    __ilbr_l=""
-    for (( __ilbr_j = 0; __ilbr_j < 10#$__ilbr_c; __ilbr_j++ )); do
+    __ilbr_record_labels=""
+    for (( __ilbr_j = 0; __ilbr_j < 10#$__ilbr_label_count; __ilbr_j++ )); do
       [ "$__ilbr_i" -lt "$__ilbr_total" ] || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
-      [ "$__ilbr_j" -eq 0 ] || __ilbr_l="$__ilbr_l"$'\n'
-      __ilbr_l="$__ilbr_l${__ilbr_lines[__ilbr_i]}"
+      [ "$__ilbr_j" -eq 0 ] || __ilbr_record_labels="$__ilbr_record_labels"$'\n'
+      __ilbr_record_labels="$__ilbr_record_labels${__ilbr_lines[__ilbr_i]}"
       __ilbr_i=$(( __ilbr_i + 1 ))
     done
-    __ilbr_b="${__ilbr_lines[__ilbr_i]-}"
-    [ "$__ilbr_i" -lt "$__ilbr_total" ] && [[ $__ilbr_b =~ $__ilbr_whole ]] \
+    __ilbr_body_line_count="${__ilbr_lines[__ilbr_i]-}"
+    [ "$__ilbr_i" -lt "$__ilbr_total" ] && [[ $__ilbr_body_line_count =~ $__ilbr_whole ]] \
       || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
     __ilbr_i=$(( __ilbr_i + 1 ))
     __ilbr_body=""
-    for (( __ilbr_k = 0; __ilbr_k < 10#$__ilbr_b; __ilbr_k++ )); do
+    for (( __ilbr_k = 0; __ilbr_k < 10#$__ilbr_body_line_count; __ilbr_k++ )); do
       # Lines missing at the end of the answer belong to the last record's
       # body, which capture trimmed.
       [ "$__ilbr_k" -eq 0 ] || __ilbr_body="$__ilbr_body"$'\n'
@@ -593,7 +594,7 @@ issues_labelled_bodies_read() {
     done
     newlines_strip __ilbr_body
     __ilbr_nums+=("$(( 10#$__ilbr_n ))")
-    __ilbr_labs+=("$__ilbr_l")
+    __ilbr_labs+=("$__ilbr_record_labels")
     __ilbr_bods+=("$__ilbr_body")
   done
   for __ilbr_r in ${__ilbr_nums[@]+"${!__ilbr_nums[@]}"}; do

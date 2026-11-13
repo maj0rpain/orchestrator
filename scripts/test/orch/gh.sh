@@ -1679,7 +1679,7 @@ gh_reply 1 '' 'HTTP 502: Bad Gateway' "${view[@]}"
 out="$(contract adapter_issue_body 5 2>&1)"; st=$?
 assert_status "another failure keeps its status" "$st" 1
 assert_eq "and its stderr exactly" "$out" "HTTP 502: Bad Gateway"
-assert_eq "one call, no rate_limit read" "$(wc -l <"$GH_FIXTURE/env.log" | tr -d ' ')" "1"
+assert_eq "one call, no rate_limit read" "$(log_count "$GH_FIXTURE/env.log")" "1"
 restore_suite_env GH_FIXTURE GH_HOST
 
 # The store-backed fake's failing operations go through the same handler.

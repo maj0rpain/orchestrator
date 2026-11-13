@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.20
+
+Tidy the gh module's labelled-bodies parser and the GitHub fake: the parser's locals are named for what they hold, the fake prints a label block through one helper, and two listing comments state their newest-first order. No behaviour changes.
+
+## 5.2.19
+
+The default-branch memo now has one writer, `default_branch_seed`, which `default_branch_resolve` and doctor's side-checkout check both use, and the default-branch tests count and seed the read through shared fixtures.
+
 ## 5.2.18
 
 Drop two duplicated busy-checkout test cases and a repeated main_checkout assertion, and reword stale "the walk" comments on checkout_kind, branch_checkout, is_side_checkout and archive_root to name checkout_parse, checkout_classify and git worktree list.

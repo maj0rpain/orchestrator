@@ -317,6 +317,15 @@ fake_issue_known() {
 
 fake_issue_labels() { cat "$(fake_issue_dir "$1")/labels" 2>/dev/null || true; }
 
+# fake_issue_labels_counted <n>: issue #n's label count on one line, then its
+# labels one per line when there are any.
+fake_issue_labels_counted() {
+  local labels
+  labels="$(fake_issue_labels "$1")"
+  printf '%s\n' "$(printf '%s' "$labels" | grep -c .)"
+  [ -z "$labels" ] || printf '%s\n' "$labels"
+}
+
 # fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
 # one comment appended to an issue's or PR's comments directory, numbered in
 # order, its authorAssociation OWNER unless given.
@@ -443,12 +452,10 @@ adapter_issue_state_labels() {
 adapter_issue_state_labels_body() {
   ! fake_failing adapter_issue_state_labels_body || return 1
   fake_issue_known "$1" || return 1
-  local d labels
+  local d
   d="$(fake_issue_dir "$1")"
-  labels="$(fake_issue_labels "$1")"
   cat "$d/state"
-  printf '%s\n' "$(printf '%s' "$labels" | grep -c .)"
-  [ -z "$labels" ] || printf '%s\n' "$labels"
+  fake_issue_labels_counted "$1"
   cat "$d/body" 2>/dev/null
   printf '\n'
 }
@@ -527,19 +534,18 @@ adapter_issues_open_oldest() {
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues in the store
-# carrying every label named, in number order and cut at ISSUE_LIST_LIMIT as
-# adapter_issues_labelled is, each as the count-marked record the gh adapter
-# prints: number, label count, labels, the body's line count (its newlines
-# plus one), then the body byte for byte and a newline.
+# carrying every label named, newest first, as gh lists them and cut at
+# ISSUE_LIST_LIMIT as adapter_issues_labelled is, each as the count-marked
+# record the gh adapter prints: number, label count, labels, the body's line
+# count (its newlines plus one), then the body byte for byte and a newline.
 adapter_issues_labelled_bodies() {
-  local n d labels nums
+  local n d nums
   ! fake_failing adapter_issues_labelled_bodies || return 1
   nums="$(adapter_issues_labelled "$@")" || return 1
   for n in $nums; do
     d="$(fake_issue_dir "$n")"
-    labels="$(fake_issue_labels "$n")"
-    printf '%s\n' "$n" "$(printf '%s' "$labels" | grep -c .)"
-    [ -z "$labels" ] || printf '%s\n' "$labels"
+    printf '%s\n' "$n"
+    fake_issue_labels_counted "$n"
     printf '%s\n' "$(( $(tr -cd '\n' <"$d/body" 2>/dev/null | wc -c) + 1 ))"
     cat "$d/body" 2>/dev/null
     printf '\n'
@@ -547,7 +553,8 @@ adapter_issues_labelled_bodies() {
 }
 
 # adapter_issues_open_titles: every open issue in the store, one per line as
-# <number><TAB><title>, in number order - not cut at ISSUE_LIST_LIMIT.
+# <number><TAB><title>, newest first, as gh lists them - not cut at
+# ISSUE_LIST_LIMIT.
 adapter_issues_open_titles() {
   local n t
   ! fake_failing adapter_issues_open_titles || return 1
