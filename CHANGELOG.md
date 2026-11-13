@@ -1,5 +1,17 @@
 # Changelog
 
+## 5.2.41
+
+The Flow state module walks the multi-key pair grammar once, in `flow_state_pairs_json`, and `state_write_many` reads its failure message from the built object. `flow_state_many_arg` is now `flow_state_resolve_many_arg`, and the writer tests sit beside their siblings.
+
+## 5.2.40
+
+Reword the `ISSUE_LIST_LIMIT` comment to describe the listings it bounds by kind, and drop two redundant below-limit `autopilot tick` re-runs from the autopilot tests.
+
+## 5.2.39
+
+`orch.sh`'s modules make every plain temp file through `temp_file_make`, keeping each site's own failure reaction; mktemp's own diagnostic, which some sites let through to stderr, is no longer printed at the moved sites. `file_read`'s header now says that a file it cannot read starts one `cat`, which prints cat's diagnostic on stderr. The helper that finds a checkout's git folder moves from the side-checkout module to the Checkout module as `checkout_gitdir_into`, its git fallback still silent on stderr when the path is no checkout.
+
 ## 5.2.38
 
 The docs lint holds a Claude-Code-only skill to its form through one branch of the orch.sh resolution scan, the quick autopilot skill defines the plugin root through `ORCH`, and CONTRIBUTING says how such a skill names the plugin root.

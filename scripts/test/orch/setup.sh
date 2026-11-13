@@ -145,18 +145,19 @@ log_count() {
   if [ -n "${2:-}" ]; then grep -c "^$2 " "$1" || true; else wc -l <"$1" | tr -d ' '; fi
 }
 
-# jq_counting_bin: a new directory holding a jq that logs one line per start to
-# jq.log, then runs the real jq.
-jq_counting_bin() {
+# counting_bin <cmd>: a new directory holding a #!/bin/sh <cmd> that appends one
+# line per start to <dir>/<cmd>.log (created empty; callers truncate it), then
+# execs the real <cmd> found now.
+counting_bin() {
   local dir
   dir="$(mktemp -d)"
-  printf '#!/bin/bash\necho x >>"%s/jq.log"\nexec "%s" "$@"\n' "$dir" "$(command -v jq)" >"$dir/jq"
-  chmod +x "$dir/jq"
-  : >"$dir/jq.log"
+  printf '#!/bin/sh\necho x >>"%s/%s.log"\nexec "%s" "$@"\n' "$dir" "$1" "$(command -v "$1")" >"$dir/$1"
+  chmod +x "$dir/$1"
+  : >"$dir/$1.log"
   printf '%s\n' "$dir"
 }
-# jq_starts <dir>: how many times the jq in <dir> has started.
-jq_starts() { log_count "$1/jq.log"; }
+# counting_starts <dir> <cmd>: how many times the <cmd> in <dir> has started.
+counting_starts() { log_count "$1/$2.log"; }
 
 # A fresh repo with one commit, an empty docs/agents/ for a labels doc and an
 # origin of https://github.com/o/r.git (so it resolves to the repo o/r), cwd
@@ -274,6 +275,19 @@ sc_clone() {
 # col0_names <file>: the names of the functions defined at column 0 of <file>.
 col0_names() {
   grep -oE '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)' "$1" | sed 's/[[:space:]]*()$//'
+}
+
+# clash_commits <clash-branch>: from the current branch (or detached HEAD),
+# creates <clash-branch> with clash.txt holding its name, and commits
+# clash.txt holding "<clash-branch> base" on the starting point, leaving the
+# checkout there.
+clash_commits() {
+  local base
+  base="$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)"
+  git checkout -q -b "$1"
+  echo "$1" >clash.txt && git add clash.txt && git commit -qm "$1"
+  git checkout -q "$base"
+  echo "$1 base" >clash.txt && git add clash.txt && git commit -qm "$1 base"
 }
 
 # on_disk <path>: present or absent, whether anything is at <path>.

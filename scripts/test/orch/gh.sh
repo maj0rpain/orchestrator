@@ -639,12 +639,9 @@ assert_eq "fake_issue_labels reads the labels file with an empty PATH" \
 assert_eq "and none for a missing file" "$(barely empty fake_issue_labels 26)" ""
 mkdir -p "$S/blocked_by"
 printf '21\n\n99\n23\n22\n' >"$S/blocked_by/30"
-assert_eq "fake_open_blockers counts open ones only: not a closed, a missing or an empty line" \
-  "$(barely empty fake_open_blockers 30)" "2"
-assert_eq "and none for an issue with no blockers file" "$(barely empty fake_open_blockers 21)" "0"
 mkdir -p "$S/subs"
 printf '30\n\n23\n' >"$S/subs/21"
-assert_eq "adapter_sub_issues gives each sub-issue's state and blocker count" \
+assert_eq "adapter_sub_issues gives each sub-issue's state and its open blockers only (not a closed, a missing or an empty line), none with no blockers file" \
   "$(barely empty adapter_sub_issues 21)" "$(printf '30\tOPEN\t2\n23\tCLOSED\t0')"
 assert_eq "and none for an issue with no sub-issue file" "$(barely empty adapter_sub_issues 22)" ""
 barely empty fake_failing adapter_issue_view; assert_status "fake_failing with nothing seeded answers false on an empty PATH" "$?" 1
@@ -1844,7 +1841,7 @@ gh_reply 1 '' 'HTTP 502: Bad Gateway' "${view[@]}"
 out="$(contract adapter_issue_body 5 2>&1)"; st=$?
 assert_status "another failure keeps its status" "$st" 1
 assert_eq "and its stderr exactly" "$out" "HTTP 502: Bad Gateway"
-assert_eq "one call, no rate_limit read" "$(log_count "$GH_FIXTURE/env.log")" "1"
+assert_eq "one call, no rate_limit read" "$(gh_calls)" "1"
 restore_suite_env GH_FIXTURE GH_HOST
 
 # The store-backed fake's failing operations go through the same handler.
@@ -1867,10 +1864,11 @@ out="$(sourced_orch adapter_issue_body 5 2>&1)"; st=$?
 within_15 "$out"; assert_status "a failing rate_limit read through fail/<operation>.times: 15 minutes on" "$?" 0
 fake_online; fake_unfail
 fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
-out="$(sourced_orch adapter_issue_body 5 2>&1)"
-assert_eq "the fake passes another failure through untouched" "$out" "HTTP 502: Bad Gateway"
-out="$(sourced_orch adapter_issue_body 5 2>&1 >/dev/null)"; st=$?
-assert_eq "a failure that is no limit keeps its own stderr" "$out" "HTTP 502: Bad Gateway"
+errf="$(mktemp)"
+out="$(sourced_orch adapter_issue_body 5 2>"$errf")"; st=$?
+assert_status "the fake passes another failure through with its status" "$st" 1
+assert_eq "with nothing on stdout" "$out" ""
+assert_eq "and its own stderr untouched" "$(cat "$errf")" "HTTP 502: Bad Gateway"; rm -f "$errf"
 fake_unfail; printf "%s" "Body." >"$ORCH_GH_FAKE_STORE/issues/5/body"
 fake_fail_times adapter_issue_body 1 'You have exceeded a secondary rate limit.'
 out="$(sourced_orch adapter_issue_body 5 2>&1)"; st=$?
