@@ -1854,6 +1854,10 @@ assert_contains "and its backstop line names the stop and no session ran" "$(tai
 assert_contains "and ends on no session ran" "$(tail -1 "${bud_logs[0]}")" "; no session ran"
 # an unreadable Budget whose stop write fails once still stops, frees the claim
 bud_limit
+# the earlier cases' stop comments are dropped: the retry reads the comments
+# and posts nothing when the same text is already there
+grep -l "could not record the plan's Budget" "$ORCH_GH_FAKE_STORE"/issues/7/comments/*/body | xargs -n1 dirname | xargs rm -rf
+assert_not_contains "the earlier stop comments are gone" "$(fake_comments_of 7)" "could not record the plan's Budget"
 fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
 bud_run review 0 4
 fake_unfail
