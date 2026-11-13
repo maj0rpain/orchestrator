@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.41
+
+The Flow state module walks the multi-key pair grammar once, in `flow_state_pairs_json`, and `state_write_many` reads its failure message from the built object. `flow_state_many_arg` is now `flow_state_resolve_many_arg`, and the writer tests sit beside their siblings.
+
 ## 5.2.40
 
 Reword the `ISSUE_LIST_LIMIT` comment to describe the listings it bounds by kind, and drop two redundant below-limit `autopilot tick` re-runs from the autopilot tests.
