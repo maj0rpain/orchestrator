@@ -988,13 +988,15 @@ rm -rf "$ord_dir"
 
 # --- the shard setting (#2859) ------------------------------------------------
 # A minimal test tree - the runners, setup.sh, a harness with an isolation
-# section and five planted sections - over planted durations: wall tenths 10,
-# 30, 20 and 5 for s1 to s4, s5 unlisted (so it weighs 30), 9 for hooks_test.sh
-# and 9 for shellcheck, which group 1 starts with (18). The CPU tenths differ
-# on purpose: a dealing by CPU gives other groups. Two groups deal s1 and s5 to
-# group 1, s2, s3 and s4 to group 2. Each planted section logs
-# its process id and name as it starts; the runner starts its children one
-# after another, so the log sorted by id is the start order.
+# section and five planted sections - over planted durations: CPU tenths 50,
+# 40, 30 and 20 for s1 to s4, s5 unlisted (so it weighs 50), 70 for
+# hooks_test.sh and 10 for shellcheck, which group 1 starts with (80). The wall
+# tenths differ on purpose (10, 30, 20, 5, 9, 9): a dealing by wall gives other
+# groups. Two groups deal, heaviest first, s1 to group 2 (0 < 80), s5 to group
+# 2 (50 < 80), s2 to group 1 (80 < 100), s3 to group 2 (100 < 120) and s4 to
+# group 1 (120 < 130): s2 and s4 in group 1, s1, s3 and s5 in group 2. Each
+# planted section logs its process id and name as it starts; the runner starts
+# its children one after another, so the log sorted by id is the start order.
 echo
 echo "the shard setting (#2859)"
 sh_dir="$(
@@ -1024,30 +1026,56 @@ sh_run() {
 }
 sh_run 1/2
 assert_status "group 1 of 2 passes" "$sh_st" 0
-assert_eq "group 1 runs isolation and the sections the dealing gives it" "$sh_printed" "isolation,s1,s5,"
-assert_eq "and starts the unlisted one first" "$sh_started" "s5,s1,"
+assert_eq "group 1 runs isolation and the sections the dealing by CPU gives it" "$sh_printed" "isolation,s2,s4,"
+assert_eq "and starts them longest-first by wall" "$sh_started" "s2,s4,"
 sh_run 2/2
 sh_first_22="$sh_printed"
-assert_eq "group 2 gets the rest, the unlisted section weighing as the heaviest listed one" \
-  "$sh_printed" "isolation,s2,s3,s4,"
-assert_eq "its sections start longest-first" "$sh_started" "s2,s3,s4,"
-# A file that lists no planted section: each weighs 1 wall second (10 tenths),
-# so the 30 tenths of the shellcheck line put s4 in group 1, the rest in 2.
+assert_eq "group 2 gets the rest, the unlisted section weighing as the heaviest listed one by CPU" \
+  "$sh_printed" "isolation,s1,s3,s5,"
+assert_eq "its sections start unlisted first, then by wall though the CPU order differs" "$sh_started" "s5,s3,s1,"
+# A file that lists no planted section: each weighs 1 second (10 tenths), so
+# the 30 CPU tenths of the shellcheck line (its 9 wall tenths are not read) put
+# s4 in group 1, the rest in 2.
 cp "$sh_t/section-durations.tsv" "$sh_dir/durations.keep"
-printf '%s\n' "30	9	shellcheck" >"$sh_t/section-durations.tsv"
+printf '%s\n' "9	30	shellcheck" >"$sh_t/section-durations.tsv"
 sh_run 1/2
-assert_eq "with no section listed, each weighs one wall second" "$sh_printed" "isolation,s4,"
+assert_eq "with no section listed, each weighs one second" "$sh_printed" "isolation,s4,"
 printf '%s' "$(<"$sh_dir/durations.keep")" >"$sh_t/section-durations.tsv"
 sh_run 1/2
-assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s1,s5,"
+assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s2,s4,"
 sh_run 2/2
-assert_eq "and starts its sections longest-first" "$sh_started" "s2,s3,s4,"
+assert_eq "and starts its sections longest-first" "$sh_started" "s5,s3,s1,"
+# sh_case <label> <group 1> <group 2> <durations line>...: the printed sections
+# of the two groups of 2 under a planted durations file.
+sh_case() {
+  sh_label="$1"; sh_g1="$2"; sh_g2="$3"; shift 3
+  printf '%s\n' "$@" >"$sh_t/section-durations.tsv"
+  sh_run 1/2
+  assert_eq "$sh_label: group 1" "$sh_printed" "$sh_g1"
+  sh_run 2/2
+  assert_eq "$sh_label: group 2" "$sh_printed" "$sh_g2"
+}
+# Zero CPU weighs 0: s2 to s5 weigh 10, s1 0 (listed, so not the unlisted 10),
+# dealt last to group 1 on the 20-20 tie. Weighing s1 as 10 gives s1, s3, s5.
+sh_case "a section with 0 CPU weighs 0" "isolation,s1,s2,s4," "isolation,s3,s5," \
+  "99	0	shard s1" "1	10	shard s2" "1	10	shard s3" "1	10	shard s4" "1	10	shard s5"
+# Zero suite and shellcheck lines add 0, not a weight: group 1 starts at 0 and
+# takes s1 first, then s3 and s5 on ties. Weighing each line as 10 gives s1 to
+# group 2.
+sh_case "a suite and a shellcheck line with 0 CPU weigh 0" "isolation,s1,s3,s5," "isolation,s2,s4," \
+  "9	10	shard s1" "9	10	shard s2" "9	10	shard s3" "9	10	shard s4" "9	10	shard s5" \
+  "99	0	hooks_test.sh" "99	0	shellcheck"
+# Ties: s1 and s2 weigh 20, s3 and s4 10, s5 0. Of s1 and s2 the earlier is
+# dealt first, to group 1, so s3 lands there on the 20-20 tie, s4 in group 2,
+# and s5 in group 1 on the 30-30 tie. The reverse walk order gives group 1 s2,
+# s3 and s5.
+sh_case "ties go to the earlier section and the lowest group" "isolation,s1,s3,s5," "isolation,s2,s4," \
+  "1	20	shard s1" "1	20	shard s2" "1	10	shard s3" "1	10	shard s4" "1	0	shard s5"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-# Why 5: the weights are s2 30, s5 (unlisted, so the heaviest listed) 30, s3 20,
-# s1 10 and s4 5 wall tenths, dealt in that order; group 1 starts at 18, the
-# rest at 0. With 5 groups s2, s5, s3 and s1 fill groups 2-5 and s4 goes to
-# group 5 (10 < 18), leaving 1/5 with isolation alone. With 4 groups s1 lands
-# in group 1 (18 < 20), so none is left with isolation alone.
+# Why 5: the weights are s1 50, s5 (unlisted, so the heaviest listed) 50, s2 40,
+# s3 30 and s4 20 CPU tenths, dealt in that order; group 1 starts at 80, the
+# rest at 0. With 5 groups s1, s5, s2 and s3 fill groups 2-5 and s4 goes to
+# group 5 (30 < 50), leaving 1/5 with isolation alone.
 # The 2-group pass runs with no durations file; the others with it.
 for sh_n in 2 1 5; do
   sh_label="$sh_n groups run every planted section exactly once"
@@ -1079,7 +1107,7 @@ assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" "${sh_saved_se
 sh_run ""
 assert_eq "an empty value runs as unset" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
 sh_run 1/2 1
-assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s1,s5,"
+assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s2,s4,"
 # test_jobs_shard parses the value; one runner-level case shows the refusal
 # comes before any section starts.
 for sh_bad in x 0/2 3/2 1/ /2 1/2/3 a/b -1/2 " 1/2"; do
