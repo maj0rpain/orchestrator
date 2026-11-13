@@ -1702,6 +1702,17 @@ fake_online; fake_unfail
 fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
 out="$(sourced_orch adapter_issue_body 5 2>&1)"
 assert_eq "the fake passes another failure through untouched" "$out" "HTTP 502: Bad Gateway"
+out="$(sourced_orch adapter_issue_body 5 2>&1 >/dev/null)"; st=$?
+assert_eq "a failure that is no limit keeps its own stderr" "$out" "HTTP 502: Bad Gateway"
+fake_unfail; printf "%s" "Body." >"$ORCH_GH_FAKE_STORE/issues/5/body"
+fake_fail_times adapter_issue_body 1 'You have exceeded a secondary rate limit.'
+out="$(sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a secondary limit the retry clears answers with status 0" "$st" 0
+assert_eq "with the operation's own answer and nothing else" "$out" "Body."
+fake_unfail
+fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
+sourced_orch adapter_issue_body 5 >/dev/null 2>&1; st=$?
+assert_status "a failure that is no limit keeps its failed status" "$st" 1
 restore_suite_env
 
 # --- gh rate limits: the GitHub pause and the hit file (#2577) ----------------

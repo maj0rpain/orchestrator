@@ -19,19 +19,30 @@
 # naming GH_REPO. Inside a command substitution `die` would end only that
 # subshell, and its message could land in a 2>/dev/null, so there it signals
 # the main shell, whose USR1 trap dies with the remedy instead. A failed
-# call goes through gh_limit_handle, and is retried once on a first secondary
-# limit; the call in its loop is the only one to the real gh binary in orch.sh
+# call goes through gh_limit_retry, and is retried once on a first secondary
+# limit; the call it makes is the only one to the real gh binary in orch.sh
 # and its modules.
 gh() {
   if ! repo_pin; then
     if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
     die "$REPO_REMEDY"
   fi
+  gh_limit_retry command gh "$@"
+}
+
+# gh_limit_retry <command>...: runs <command>, its stderr held, through the
+# limit retry protocol (#2724) - the one copy of it: a failed call goes through
+# gh_limit_handle, a first secondary limit (status 2) is retried once, a limit
+# given up on (status 1) fails the call with the handler's message in place of
+# the command's stderr, and any other failure keeps its stderr as it is. The
+# command's status and stdout pass through. While GH_LIMIT_READING is set the
+# handler is never called and nothing is retried.
+gh_limit_retry() {
   local errf out_st err rc retried=0
-  errf="$(mktemp)" || die "could not create a temp file for gh's stderr"
+  errf="$(mktemp)" || die "could not create a temp file for the command's stderr"
   while :; do
     out_st=0
-    command gh "$@" 2>"$errf" || out_st=$?
+    "$@" 2>"$errf" || out_st=$?
     err="$(cat "$errf")"
     if [ "$out_st" -eq 0 ] || [ -n "${GH_LIMIT_READING:-}" ]; then break; fi
     rc=0
