@@ -115,7 +115,7 @@ assert_contains "and returns a failing status" "$out" "st=1"
 
 # A stub whose module no longer defines the function: one the function moved
 # to loads and the call goes on; with none, the command stops.
-lazy_dir="$(mktemp -d)/scripts"; mkdir -p "${lazy_dir%/scripts}"; cp -R "$PLUGIN_ROOT/scripts" "${lazy_dir%/scripts}/"
+lazy_dir="$(tree_copy scripts)"
 printf '%s\n' 'zz_fn() { echo from-old; }' >"$lazy_dir/orch/zz-old.sh"
 printf '%s\n' 'zz_other() { :; }' >"$lazy_dir/orch/zz-new.sh"
 out="$(bash -c 'ORCH_SOURCE_LAZY=1; source "$1"; printf "%s\n" "zz_other() { :; }" >"$2"; printf "%s\n" "zz_fn() { echo from-new; }" >"$3"; zz_fn' _ "$lazy_dir/orch.sh" "$lazy_dir/orch/zz-old.sh" "$lazy_dir/orch/zz-new.sh" 2>&1)"
@@ -132,6 +132,10 @@ rm -rf "${lazy_dir%/scripts}"
 src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
 src_run 'source "$1"'
 assert_eq "sourced plainly, every module loads" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
+src_home="$(mktemp -d)"
+HOME="$src_home" src_run 'source "$1"'
+assert_eq "sourced plainly, no cache file is written" "$(ls -A "$src_home/.cache/orchestrator" 2>/dev/null | wc -l | tr -d ' ')" "0"
+rm -rf "$src_home"
 out="$(src_run 'source "$1"; cmd_state() { echo replaced; }; cmd_state')"
 assert_eq "a function replaced after source stays replaced" "$out" "replaced"
 out="$(src_run 'source "$1"; declare -f cmd_state | grep -c orch_stub')"
@@ -164,9 +168,7 @@ echo
 echo "stub table cache"
 new_repo >/dev/null
 cache_root="$(mktemp -d)"
-cache_scripts="$cache_root/copy/scripts"
-mkdir -p "$cache_root/copy"
-cp -R "$PLUGIN_ROOT/scripts" "$cache_root/copy/"
+cache_scripts="$(tree_copy scripts)"
 cache_home="$cache_root/home"
 cache_dir="$cache_home/.cache/orchestrator"
 mkdir -p "$cache_home"
@@ -246,9 +248,8 @@ assert_eq "naming the cache file" "$out" "orch: zz_ghost is in the stub table bu
 assert_eq "with the cache already rebuilt" "$(grep -c zz_ghost "$cf")" "0"
 
 # Two plugin copies use two files.
-cache_root2="$(mktemp -d)"
-cp -R "$PLUGIN_ROOT/scripts" "$cache_root2/"
-cache_cmd "$cache_root2/scripts"
+cache_scripts2="$(tree_copy scripts)"
+cache_cmd "$cache_scripts2"
 assert_eq "two plugin copies use two cache files" "$(cache_count)" "2"
 
 # A failed move leaves no temporary file and the command runs.
@@ -258,4 +259,4 @@ rm -f "$cache_dir"/*
 out="$(HOME="$cache_home" PATH="$fake_mv:$PATH" bash "$cache_scripts/orch.sh" help 2>&1)" && status=0 || status=$?
 assert_status "a failed move still runs the command" "$status" 0
 assert_eq "and leaves no file in the cache directory" "$(cache_count)" "0"
-rm -rf "$cache_root" "$cache_root2" "$fake_mv"
+rm -rf "$cache_root" "${cache_scripts%/scripts}" "${cache_scripts2%/scripts}" "$fake_mv"

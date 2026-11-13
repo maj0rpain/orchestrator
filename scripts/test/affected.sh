@@ -26,8 +26,8 @@
 #                                     their own test file
 #   skills, agents, docs, markdown, changelog fragments
 #                                     nothing beyond the always-run checks
-#   anything else, orch.sh, orch/common.sh, the shared test setup, the
-#   runners, the gh fake, test_jobs.sh, report.sh, test_tree.sh
+#   anything else, orch.sh, orch/common.sh, orch/loader.sh, the shared test
+#   setup, the runners, the gh fake, test_jobs.sh, report.sh, test_tree.sh
 #                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
@@ -136,7 +136,7 @@ classify() {
   local f="$1" state="$2" file_name
   file_name="$(basename "$f")"
   case "$f" in
-    scripts/orch.sh | scripts/orch/common.sh | scripts/test/orch/common.sh | \
+    scripts/orch.sh | scripts/orch/common.sh | scripts/orch/loader.sh | scripts/test/orch/common.sh | \
       scripts/test/orch/setup.sh | scripts/test/all.sh | scripts/test/orch_test.sh | \
       scripts/test/affected.sh | scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/gh_adapter_fake.sh)
       full_suite ;;

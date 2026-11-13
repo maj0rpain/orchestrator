@@ -18,12 +18,13 @@
 # checks read lives in triage-labels.sh.
 #
 # Sourced into orch.sh, from its orch/ directory, after its shared mechanism
-# (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, PHASES, HANDOFF_DIR), common.sh
+# (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, HANDOFF_DIR), common.sh
 # (die, note, now, capture, list_has, and the like), triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
 # defined; the gh adapter operations it calls, issue_state_labels_read among
-# them, live in gh.sh. The helpers it calls from noun modules
+# them, live in gh.sh; PHASES comes from handoff.sh, which check_state_phase
+# loads through orch_load. The helpers it calls from noun modules
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
 # require_state from state.sh), and check_agent_settings, agent.sh's check

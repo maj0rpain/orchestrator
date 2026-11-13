@@ -119,8 +119,10 @@ readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 
 # The modules, after the ROOT block, whose constants they read: every file
 # beside common.sh but common.sh and loader.sh - the noun modules and the
-# concept modules with no noun of their own - loaded through orch_load in the
-# C-locale order of their names without .sh. No module is named here.
+# concept modules with no noun of their own - loaded through orch_load: run as
+# a command, each on first call of one of its functions; sourced plainly, all
+# of them in the C-locale order of their names without .sh. No module is named
+# here.
 # doctor.sh is one of the noun modules, with one rule more: the dependency runs
 # one way, doctor.sh calling into this file and the other modules, which call
 # nothing doctor.sh defines but cmd_doctor, from main(), and the reporters d_ok,

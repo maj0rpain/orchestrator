@@ -1146,6 +1146,16 @@ repo_missing="no GitHub repo to work on"
 repo_cause="$repo_missing: origin is missing or not a GitHub owner/name"
 repo_remedy="$repo_cause - set GH_REPO=<owner>/<repo>"
 
+# tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
+# under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
+# the copy's path, which ends in the subtree's last component.
+tree_copy() {
+  local dir
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
+  printf '%s\n' "$dir/${1##*/}"
+}
+
 # >>> summary
 # Each call the real-gh guard logged is one FAIL naming it.
 while IFS= read -r gh_guard_call; do

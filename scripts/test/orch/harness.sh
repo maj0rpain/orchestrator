@@ -115,16 +115,6 @@ files_marks() {
 # The test-helper placement rule, as helper_placement's message states it.
 HELPER_PLACEMENT_RULE="The test-helper placement rule: a test helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
 
-# tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
-# under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
-# the copy's path, which ends in the subtree's last component.
-tree_copy() {
-  local dir
-  dir="$(mktemp -d)" || return 1
-  cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
-  printf '%s\n' "$dir/${1##*/}"
-}
-
 # helper_placement <dir>: checks where every helper of the suite's files in
 # <dir> (scripts/test/orch/) is defined against the files that call it, and
 # prints one line per misplaced helper, sorted, naming it, its file, its
@@ -280,7 +270,8 @@ marked_comment_jq_placement() {
 
 # lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)
 # for the on-demand sourcing variable's name, which only the shared setup's
-# sourced_orch, the loader's section file and this file may use; setup.sh
+# sourced_orch, the loader's section file and this file's section on the
+# variable (and this function) may use; setup.sh
 # is checked with sourced_orch's function and its comment lines left out. Prints
 # each other file, as scripts/<path>, and returns 1 when it printed any.
 lazy_sourcing_names() {
@@ -288,7 +279,9 @@ lazy_sourcing_names() {
   for f in "$dir"/test/*.sh "$dir"/test/orch/*.sh; do
     rel="${f#"$dir"/}"
     case "$rel" in
-      test/orch/loader.sh | test/orch/harness.sh) continue ;;
+      test/orch/loader.sh) continue ;;
+      test/orch/harness.sh)
+        [ -n "$(awk '/^lazy_sourcing_names\(\) \{/ { skip = 1 } /^# --- / { sec = /^# --- on-demand sourcing variable/ } !skip && !sec && !/^[ \t]*#/ && /ORCH_SOURCE_LAZY/ { print } /^\}/ { skip = 0 }' "$f")" ] || continue ;;
       test/orch/setup.sh)
         [ -n "$(awk '/^sourced_orch\(\) \{/ { skip = 1 } !skip && !/^[ \t]*#/ && /ORCH_SOURCE_LAZY/ { print } /^\}/ { skip = 0 }' "$f")" ] || continue ;;
       *) grep -q 'ORCH_SOURCE_LAZY' "$f" || continue ;;
@@ -2634,11 +2627,17 @@ assert_status "reads after an orch_load, and of always-loaded variables, pass" "
 assert_eq "and print nothing" "$out" ""
 rm -rf "${load_dir%/scripts}"
 
+# --- on-demand sourcing variable (#2820) --------------------------------------
+# lazy_sourcing_names over the real scripts/, then over copies of it, each with
+# a planted use of the variable; this section is the one place harness.sh may
+# name it.
+echo
+echo "on-demand sourcing variable (#2820)"
 out="$(lazy_sourcing_names "$PLUGIN_ROOT/scripts")"; st=$?
 if [ "$st" -eq 0 ] && [ -z "$out" ]; then
-  ok "no test file but setup.sh, the loader's section file and harness.sh names the on-demand sourcing variable"
+  ok "no test file but setup.sh, the loader's section file and this section names the on-demand sourcing variable"
 else
-  bad "no test file but setup.sh, the loader's section file and harness.sh names the on-demand sourcing variable" "$out"
+  bad "no test file but setup.sh, the loader's section file and this section names the on-demand sourcing variable" "$out"
 fi
 load_dir="$(tree_copy scripts)"
 printf '%s\n' '# sets ORCH_SOURCE_LAZY=1 itself' >"$load_dir/test/orch/zz-planted.sh"
@@ -2651,6 +2650,13 @@ printf '%s\n' 'second_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch
 out="$(lazy_sourcing_names "$load_dir")"; st=$?
 assert_status "a second use of the variable in setup.sh fails the check" "$st" 1
 assert_eq "naming setup.sh" "$out" "scripts/test/orch/setup.sh"
+rm -rf "${load_dir%/scripts}"
+load_dir="$(tree_copy scripts)"
+printf '%s\n' '# another section naming ORCH_SOURCE_LAZY' >>"$load_dir/test/orch/harness.sh"
+printf '%s\n' 'other_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/harness.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a use of the variable in another harness section fails the check" "$st" 1
+assert_eq "naming harness.sh" "$out" "scripts/test/orch/harness.sh"
 rm -rf "${load_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------

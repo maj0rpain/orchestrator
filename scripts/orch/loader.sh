@@ -91,13 +91,13 @@ declare -gA ORCH_STUB_OWNER=()
 # two modules define belongs to the later one in orch_modules' order, as
 # loading every module would leave it.
 orch_stub_scan() {
-  local name mod defs=''
+  local name mod path def defs=''
   local -a files=()
   ORCH_STUB_OWNER=()
   while IFS= read -r mod; do files+=("$ORCH_MODULE_DIR/$mod.sh"); done < <(orch_modules)
-  while IFS=: read -r mod name; do
-    mod="${mod##*/}"
-    ORCH_STUB_OWNER[${name%%(*}]="${mod%.sh}"
+  while IFS=: read -r path def; do
+    path="${path##*/}"
+    ORCH_STUB_OWNER[${def%%(*}]="${path%.sh}"
   done < <(grep -HoE '^[A-Za-z_][A-Za-z0-9_]*\(\) [{(]' "${files[@]}")
   for name in "${!ORCH_STUB_OWNER[@]}"; do
     defs+="$name() { orch_stub ${ORCH_STUB_OWNER[$name]} $name \"\$@\"; }"$'\n'

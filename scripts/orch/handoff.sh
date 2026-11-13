@@ -21,8 +21,8 @@ implement|02-spec.md|spec|Spec issue
 review|03-implement.md|implement|PR;Spec issue;Base SHA;Deviations;Verification
 done|||'
 
-# The table's phases, space-separated, in flow order - what orch.sh sets
-# PHASES from.
+# The table's phases, space-separated, in flow order - what PHASES, below, is
+# set from.
 phase_list() {
   local phase list=""
   while IFS='|' read -r phase _; do
