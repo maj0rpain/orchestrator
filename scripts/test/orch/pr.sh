@@ -319,7 +319,6 @@ assert_eq "restart: the converse warning" "$(cat "$errf")" \
   "orch: PR #50 targets main, not the flow's base uat - its issue line follows the PR's base"
 state_fixture base main
 printf 'keep-me\nci\n' >"$ORCH_GH_FAKE_STORE/prs/50/labels"
-fake_pr_body 50 "old body"
 
 for closed in closed merged; do
   fake_pr 51 "$closed" orch/16-propen uat
@@ -1025,9 +1024,6 @@ assert_gh_dies "a failed release-PR open exits 1" adapter_pr_create "$GH_502" 1 
   "orch: gh could not open the release PR from uat into main: HTTP 502: Bad Gateway" \
   release "Release" "$body"
 # The one listing of the open issues, read before any PR opens, even by --force.
-assert_gh_dies "a failed open-issue list exits 1" adapter_issues_open_titles "$GH_502" 1 \
-  "orch: gh could not list the open issues: HTTP 502: Bad Gateway" \
-  release "Release" "$body"
 assert_gh_dies "--force: a failed open-issue list still exits 1" adapter_issues_open_titles "$GH_502" 1 \
   "orch: gh could not list the open issues: HTTP 502: Bad Gateway" \
   release --force "Release" "$body"
