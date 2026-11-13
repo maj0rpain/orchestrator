@@ -118,8 +118,11 @@ in one pass) and `standing.sh` (the
 Standing module: an issue's label set, its read and its claims) and `trust.sh`
 (the Trust module: which comments and which PRs orch.sh reads and which issues
 autopilot runs on), live among the modules too.
-orch.sh sources every module eagerly from an explicit list, so a new noun gets
-its own module, a case in `main` and a line in that list.
+`scripts/orch/loader.sh` (beside `common.sh`, always loaded) holds `orch_load`,
+which sources a module once per shell, and the load trace
+(`ORCH_LOAD_TRACE=<file>` appends `<module> <depth>` per load). orch.sh names no
+module: it loads each through `orch_load`, so a new noun gets its own module and
+a case in `main`.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
@@ -313,6 +316,7 @@ scripts/orch/standing.sh      the Standing module, a concept module with no noun
 scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments and which PRs orch.sh reads and which issues autopilot runs on - the one filter dropping a comment whose author is not an owner, member or collaborator, the one filter dropping a fork PR, and the issue trust check
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
+scripts/orch/loader.sh        the module loader, always loaded beside common.sh: orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
 scripts/orch/suite-cost.sh    the suite-cost noun's module, with the ORCH_SUITE_COST_TIMER hook: a test knob like ORCH_GH_ADAPTER, naming a file (the tests' scripts/test/suite_cost_timer_fake.sh) that overrides only the step timing a command
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module

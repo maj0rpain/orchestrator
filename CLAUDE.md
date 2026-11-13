@@ -10,7 +10,8 @@ Standards: `CONTRIBUTING.md#Develop`, `docs/agents/cli-conventions.md`,
 
 `orch.sh` is a thin entry point: each noun's code lives in
 `scripts/orch/<noun>.sh`, each helper in the module of the concept it serves,
-and only the primitives no concept owns in `scripts/orch/common.sh`. See
+and only the primitives no concept owns in `scripts/orch/common.sh`; `common.sh`
+and the module loader `loader.sh` are the two files every start loads. See
 CONTRIBUTING.md's Layout for the full map. There is no top-level `tests/`, and
 `hooks/` holds only `hooks.json`.
 
