@@ -1181,13 +1181,13 @@ autopilot_tick() {
 # any write, when the checkout or the claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
-  local outcome=failure limit="" pause released_note hit hit_epoch=0
+  local outcome=failure limit="" pause released_note hit_text hit_epoch=0 closing
   main_root="$(main_checkout_or_die)" || exit $?
   standing_claims_read
   if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
   session_log_read "$log"
-  hit="$(liveness_hit_path "$issue")" || exit $?
-  if [ -f "$hit" ]; then hit_epoch="$(autopilot_pause_epoch "$hit")"; rm -f "$hit"; fi
+  hit_text="$(liveness_hit_take "$issue")" || exit $?
+  [ -z "$hit_text" ] || hit_epoch="$(autopilot_iso_epoch "$hit_text")" || hit_epoch=0
   if [ "$held" = 0 ]; then
     outcome=released
   elif [ "$SESSION_LOG_LIMITED" = 1 ]; then
@@ -1203,6 +1203,7 @@ autopilot_session_end() {
   if [ "$outcome" = github ]; then
     autopilot_pause_extend "$(autopilot_github_pause_file "$main_root")" "$hit_epoch" "$log" GitHub
   fi
+  closing="the session exited with code $rc"
   case "$outcome" in
     released)
       released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
@@ -1210,16 +1211,16 @@ autopilot_session_end() {
       printf '%s\n' "$released_note" >>"$log"
       return 0 ;;
     limited)
-      autopilot_stop_attempts "$log" "$rc" standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
+      autopilot_stop_attempts "$log" "$closing" standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
       return ;;
     github)
-      autopilot_stop_attempts "$log" "$rc" standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
+      autopilot_stop_attempts "$log" "$closing" standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
       return ;;
   esac
   reply="$SESSION_LOG_REPLY"
-  detail="the session exited with code $rc; "
+  detail="$closing; "
   [ -z "$reply" ] || detail+="it ended on: *$reply*; "
-  autopilot_stop_attempts "$log" "$rc" standing_stop "$issue" failure "$phase" "${detail}log: $log"
+  autopilot_stop_attempts "$log" "$closing" standing_stop "$issue" failure "$phase" "${detail}log: $log"
 }
 
 # autopilot_github_pause_wait [<seconds>]: sleeps until a GitHub pause that
@@ -1237,7 +1238,8 @@ autopilot_github_pause_wait() {
 AUTOPILOT_STOP_ATTEMPTS=3
 AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after $AUTOPILOT_STOP_ATTEMPTS attempts - "
 
-# autopilot_stop_attempts <log> <rc> <command>...: the wrapper's stop chain, run
+# autopilot_stop_attempts <log> <closing> <command>...: the wrapper's stop
+# chain, run
 # up to three times, each attempt in a subshell so a death ends the attempt; the
 # claim and the run record are kept throughout. The attempts share one state
 # file (standing.sh's resumable chain), so each resumes from the first write
@@ -1245,11 +1247,10 @@ AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after $AUTOPILOT
 # when one holds, else 60, then 300 seconds; ORCH_GH_LIMIT_WAIT, the guard's
 # test knob, shortens every wait, the pause wait included. When the last
 # attempt fails it writes one backstop line to <log> - the stop's kind, its
-# first line and the session's exit code - for stale cleanup to quote, and
-# returns 1. An empty <rc> means no session ran (the claim release after a
-# GitHub-limited start-up read): the line says so instead.
+# first line and <closing>, the clause that ends it - for stale cleanup to
+# quote, and returns 1.
 autopilot_stop_attempts() {
-  local log="$1" rc="$2" state attempt line kind first
+  local log="$1" closing="$2" state attempt line kind first
   shift 2
   state="$(mktemp)" || die "could not create a temp file for the stop chain's state"
   for ((attempt = 1; attempt <= AUTOPILOT_STOP_ATTEMPTS; attempt++)); do
@@ -1262,14 +1263,7 @@ autopilot_stop_attempts() {
   line="$(STANDING_STATE_FILE="$state"; standing_state_get stop)" || line="stop"$'\t'"no stop text was built"
   rm -f "$state"
   kind="${line%%$'\t'*}" first="${line#*$'\t'}"
-  if [ -z "$rc" ]; then
-    # no session ran: the chain was the claim release after a limited read
-    printf '%sclaim release: could not release the claim after a %s\n' \
-      "$AUTOPILOT_BACKSTOP_PREFIX" \
-      "GitHub-limited start-up read; no session ran" >>"$log"
-    return 1
-  fi
-  printf '%s%s: %s; the session exited with code %s\n' "$AUTOPILOT_BACKSTOP_PREFIX" "$kind" "$first" "$rc" >>"$log"
+  printf '%s%s: %s; %s\n' "$AUTOPILOT_BACKSTOP_PREFIX" "$kind" "$first" "$closing" >>"$log"
   return 1
 }
 
@@ -1300,6 +1294,20 @@ autopilot_review_budget_record() {
   autopilot_orch_in "$1" state set budget "$budget"
 }
 
+# autopilot_claim_release_only <issue> <fallback phase> <closing>: the claim
+# release after a read that met a GitHub limit, no session having run. The log
+# is named by the claim's own phase, else <fallback phase>. It waits out the
+# GitHub pause, then runs standing_claim_release through autopilot_stop_attempts
+# with <closing> ending its backstop line; the chain's failure is ignored.
+autopilot_claim_release_only() {
+  local issue="$1" phase log
+  standing_claims_read --quiet || true
+  phase="${STANDING_CLAIM_PHASE[$issue]:-$2}"
+  log="$(liveness_log_path "$issue" "$phase")" || exit $?
+  autopilot_github_pause_wait
+  autopilot_stop_attempts "$log" "$3" standing_claim_release "$issue" || true
+}
+
 # autopilot_run <issue>: the session wrapper a tick starts: runs the headless
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
@@ -1312,24 +1320,20 @@ autopilot_run() {
   recorded="$(state_get_in "$(flow_state_file "$side")" phase)" || autopilot_read_die phase "$side" $?
   # Marked before the start-up read: a GitHub limit it meets writes the pause.
   export ORCH_AUTOPILOT_RUN=1
+  # The run record is made once, before the start-up read, so stale cleanup sees
+  # a live session throughout. A later run of the same issue may have replaced
+  # it by the time this one exits: liveness_run_end removes it only while it
+  # still names this run.
+  liveness_run_begin "$issue" || exit 1
+  # shellcheck disable=SC2064
+  trap "liveness_run_end '$issue'" EXIT
   # a sync request is told by orch:sync on a done issue; its phase word is sync
   if ! standing_read "$issue"; then
     # A read that met a GitHub limit (a pause holds once it has failed) runs no
     # session and makes no stop: only the claim is released, through the retry
     # chain. Any other failure dies as before.
     if autopilot_github_paused; then
-      # The run record is made first, so stale cleanup sees a live session for
-      # the whole wait; the log is named by the claim's own phase, which is
-      # what stale cleanup looks it up by (the read that failed gave no other).
-      liveness_run_begin "$issue" || exit 1
-      # shellcheck disable=SC2064
-      trap "liveness_run_end '$issue'" EXIT
-      standing_claims_read --quiet || true
-      phase="${STANDING_CLAIM_PHASE[$issue]:-$recorded}"
-      log="$(liveness_log_path "$issue" "$phase")" || exit $?
-      # No session ran: wait out the GitHub pause before the first attempt.
-      autopilot_github_pause_wait
-      autopilot_stop_attempts "$log" "" standing_claim_release "$issue" || true
+      autopilot_claim_release_only "$issue" "$recorded" "no session ran: the start-up read met a GitHub limit"
       return 0
     fi
     gh_die "read issue #$issue" "$STANDING_REASON"
@@ -1341,30 +1345,32 @@ autopilot_run() {
     prompt="Run the orchestrator:orch-sync skill's autopilot branch in this checkout: sync the branch with its base, and stop when the sync is finished."
   fi
   hit="$(liveness_hit_path "$issue")" || exit $?
-  liveness_run_begin "$issue" || exit 1
-  # A later run of the same issue may have replaced the record by the time this
-  # one exits: liveness_run_end removes it only while it still names this run.
-  # shellcheck disable=SC2064
-  trap "liveness_run_end '$issue'" EXIT
   # The claim this run was started for: a session that releases it may exit
   # after the next phase's claim is made, and that one is not this run's to
   # fail.
   standing_claims_read
   mine="$(standing_claim_fields "$issue")" || mine=""
+  log="$(liveness_log_path "$issue" "$phase")" || exit $?
   if [ "$phase" = review ]; then
     iteration="$(state_get_in "$(flow_state_file "$side")" iteration)" || autopilot_read_die iteration "$side" $?
     if [ "$iteration" = 0 ]; then
       # A first-loop review session is not asked its budget: the plan's is
       # recorded, over any left by a loop before a redo.
-      autopilot_pickup_contained autopilot_review_budget_record "$side" ||
-        { standing_stop "$issue" failure review "could not record the plan's Budget as the review budget: $PICKUP_REASON"; return 0; }
+      autopilot_pickup_contained autopilot_review_budget_record "$side" || {
+        # A record that met a GitHub limit only releases the claim.
+        if autopilot_github_paused; then
+          autopilot_claim_release_only "$issue" "$phase" "no session ran: the first-loop review's budget record met a GitHub limit"
+          return 0
+        fi
+        autopilot_stop_attempts "$log" "no session ran" standing_stop "$issue" failure review "could not record the plan's Budget as the review budget: $PICKUP_REASON" || true
+        return 0
+      }
     fi
   fi
   for name in model effort; do
     autopilot_setting "$name"
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
   done
-  log="$(liveness_log_path "$issue" "$phase")" || exit $?
   usage_before="$(autopilot_github_quota)" || usage_before=""
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   ( cd "$side" && ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit" CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \

@@ -362,6 +362,7 @@ standing_release() {
 # other label and nothing counted.
 standing_claim_release() {
   standing_chain_start
+  standing_stop_note "claim release" "could not release the claim"
   standing_release "$1"
 }
 
