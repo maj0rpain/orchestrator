@@ -1419,13 +1419,10 @@ assert_contains "leaving the file untouched after bad numbers" "$(cat "$out_file
 # A listed number with leading zeros is the same number without them: never
 # read as octal, and a 010 never lands on PR 8's slot.
 fake_pr 8 open orch/8-lz main
-fake_pr_body 8 $'Refs #14\n\nEight.\n'
 printf 'diff --git a/e b/e\n+eight\n' >"$ORCH_GH_FAKE_STORE/prs/8/diff"
 fake_pr 9 open orch/9-lz main
-fake_pr_body 9 $'Refs #14\n\nNine.\n'
 printf 'diff --git a/i b/i\n+nine\n' >"$ORCH_GH_FAKE_STORE/prs/9/diff"
 fake_pr 10 open orch/10-lz main
-fake_pr_body 10 $'Refs #14\n\nTen.\n'
 printf 'diff --git a/t b/t\n+ten\n' >"$ORCH_GH_FAKE_STORE/prs/10/diff"
 lz_file="$(mktemp -d)/lz.md"
 errf="$(mktemp)"
@@ -1439,10 +1436,10 @@ assert_status "a listed PR numbered 08 succeeds" "$st" 0
 assert_eq "with empty stderr as well" "$(cat "$errf")" ""
 assert_eq "writing PR 8's body and diff" "$(cat "$lz_file")" \
   "$(printf 'Refs #14\n\n---\ndiff --git a/e b/e\n+eight')"
-out="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "010\t\"Refs #14\"\tfalse\n8\t\"Refs #14\"\tfalse\n"; }' "$ORCH" pr read 14 "$lz_file" 2>"$errf")"; st=$?
+out="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "%s\t%s\tfalse\n" 010 "\"Refs #14\\n\\nTen.\"" 8 "\"Refs #14\\n\\nEight.\""; }' "$ORCH" pr read 14 "$lz_file" 2>"$errf")"; st=$?
 assert_status "a listed 010 beside 8 succeeds" "$st" 0
 assert_eq "writing PR 10's body and diff, not PR 8's" "$(cat "$lz_file")" \
-  "$(printf 'Refs #14\n\n---\ndiff --git a/t b/t\n+ten')"
+  "$(printf 'Refs #14\n\nTen.\n\n---\ndiff --git a/t b/t\n+ten')"
 fake_pr 60 open orch/12-z main
 fake_pr_body 60 $'Closes #12\n\nTwelve.\n'
 printf 'diff --git a/z b/z\n+twelve\n' >"$ORCH_GH_FAKE_STORE/prs/60/diff"
