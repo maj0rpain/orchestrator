@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.2.32
+
+`orch.sh` now loads a module the first time one of its functions is called, rather than parsing all of them on every start. Running a command parses the always-loaded primitives, a cached table of one-line stubs (kept per plugin copy under `~/.cache/orchestrator/`, owner-only, rebuilt when a module changes) and only the modules that command calls into. `ORCH_LOAD_TRACE=<file>` lists the modules a command loaded. Sourcing `orch.sh` still loads every module unless `ORCH_SOURCE_LAZY=1` is set. `orch.sh` and its modules now need bash 4.2 or later, and `doctor`'s bash check warns below 4.2. No command's behaviour, output or exit status changes.
+
+`orch.sh` starts fewer processes: `capture`, `capture_err` and `file_read` no longer start `mktemp` or `cat`, `list_has` and `label_listed` match in bash, triage-label lookups parse the doc once, and `doctor` reads each worktree's git pointer instead of running `git` per worktree. No command's output, exit status or message changes.
+
 ## 5.2.31
 
 The `autopilot tick` help now says that a GitHub API rate-limit pause makes the tick do nothing, and lists the tick's steps in the order they run. Internally, the GitHub rate-limit retry, the quiet read of GitHub's quota pools and the `github-reserve` zero rule each live in one place, and the test fake now goes through the same retry as the real `gh` guard. Limit handling is otherwise unchanged.
