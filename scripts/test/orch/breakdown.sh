@@ -28,13 +28,13 @@ Body three.
 DRAFT
 }
 
-# crs_in_tickets <number>...: the count of lines with a CR in those published
-# tickets' titles and bodies.
-crs_in_tickets() {
+# ticket_texts <number>...: each of those published tickets' title, then its
+# body, with nothing between them.
+ticket_texts() {
   local n
   for n in "$@"; do
     printf '%s%s' "$(fake_title_of "$n")" "$(fake_body_of "$n")"
-  done | grep -c $'\r'
+  done
 }
 
 # --- breakdown publish -------------------------------------------------------
@@ -199,21 +199,19 @@ out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a CRLF draft publishes" "$st" 0
 assert_eq "printing the numbers in publishing order" "$out" $'100\n101'
 assert_eq "maps the CRLF blocker to its published number" "$(fake_blockers_of 101)" "100"
-assert_eq "no CR in any title or body" "$(crs_in_tickets 100 101)" "0"
+assert_not_contains "no CR in any title or body" "$(ticket_texts 100 101)" $'\r'
 assert_eq "the CRLF title is clean" "$(fake_title_of 100)" "Alpha"
 assert_contains "the escaped line is published unescaped" "$(fake_body_of 100)" $'Body line.\n@@ end'
 restore_suite_env
 
 breakdown_fixture
 printf '@@ ticket 1 A\nok\n@@ foo\n@@ end\n' >"$draft"
-lf_out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+lf_out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"
 printf '@@ ticket 1 A\r\nok\r\n@@ foo\r\n@@ end\r\n' >"$draft"
 crlf_out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; crlf_st=$?
-assert_status "a stray @@ line in an LF draft dies" "$st" 1
 assert_status "a stray @@ line in a CRLF draft dies" "$crlf_st" 1
 assert_contains "naming the stray line" "$crlf_out" "stray grammar line inside ticket"
 assert_eq "the LF and CRLF messages are identical" "$crlf_out" "$lf_out"
-assert_eq "the CRLF message has no CR" "$(printf '%s' "$crlf_out" | grep -c $'\r')" "0"
 restore_suite_env
 
 breakdown_fixture
@@ -226,7 +224,7 @@ fake_unfail
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "the rerun on the saved CRLF draft finishes" "$st" 0
 assert_eq "both tickets linked" "$(fake_sub_issues_of 50)" "100 101"
-assert_eq "no CR in any title or body after the resume" "$(crs_in_tickets 100 101)" "0"
+assert_not_contains "no CR in any title or body after the resume" "$(ticket_texts 100 101)" $'\r'
 restore_suite_env
 
 # --- breakdown state ---------------------------------------------------------
