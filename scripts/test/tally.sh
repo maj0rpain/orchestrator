@@ -9,7 +9,7 @@
 # which tally_init creates under the suite's own temp root. Its path lives in a
 # plain, unexported variable, so a suite this run starts in turn keeps a tally
 # of its own, and a subshell, which inherits the variable, writes to this one.
-# Bash 4.0+, as the rest of the suite.
+# Bash 4.2+, as the rest of the suite.
 
 # tally_init: create this run's tally file. Call it once, before the first
 # assertion; exits 1 when the file cannot be made.

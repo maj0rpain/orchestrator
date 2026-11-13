@@ -16,14 +16,7 @@ echo "common.sh is the bottom layer"
 # name found in <scripts-dir>/orch/common.sh. A definition is a column-0
 # `name()` line. host.sh, triage-labels.sh and planning-allowlist.sh sit
 # outside orch/, so common.sh's calls into them are outside the check.
-common_upcalls() {
-  local defs=() f
-  for f in "$1"/orch/*.sh; do
-    case "$(basename "$f")" in common.sh|gh.sh) continue ;; esac
-    defs+=("$f")
-  done
-  layer_calls "${defs[@]}" -- "$1/orch/common.sh"
-}
+common_upcalls() { layer_upcalls "$1" common.sh common.sh gh.sh; }
 layer_dir="$(mktemp -d)"
 mkdir "$layer_dir/orch"
 printf '%s\n' 'noun_fn() {' '  :' '}' >"$layer_dir/orch/noun.sh"

@@ -163,7 +163,8 @@ repo_pin_host() {
   host="$(repo_pinned_host)"
   if [ -n "$host" ]; then export GH_HOST="$host"; fi
 }
-trap 'die "$REPO_REMEDY"' USR1
+# The USR1 trap that dies with REPO_REMEDY is set by orch.sh itself, so a module
+# loaded on demand is not what a signalled main shell waits on.
 
 # default-branch [--sha]: the default branch's name, or with --sha the default
 # SHA - the full SHA of refs/remotes/origin/<default> as it stands. --sha never

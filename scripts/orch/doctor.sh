@@ -18,17 +18,19 @@
 # checks read lives in triage-labels.sh.
 #
 # Sourced into orch.sh, from its orch/ directory, after its shared mechanism
-# (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, PHASES, HANDOFF_DIR), common.sh
+# (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, HANDOFF_DIR), common.sh
 # (die, note, now, capture, list_has, and the like), triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
 # defined; the gh adapter operations it calls, issue_state_labels_read among
-# them, live in gh.sh. The helpers it calls from noun modules
+# them, live in gh.sh; PHASES comes from handoff.sh, which check_state_phase
+# loads through orch_load. The helpers it calls from noun modules
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
 # require_state from state.sh), and check_agent_settings, agent.sh's check
-# its env check list names, are defined by the time cmd_doctor runs,
-# because every module is sourced before main dispatches. cmd_doctor is then
+# its env check list names, are defined by the time cmd_doctor runs:
+# run as a command they are stubs that load their module on first call
+# (loader.sh's orch_stubs). cmd_doctor is then
 # dispatched from main() exactly like any other command.
 
 # The most labels the labels-exist check asks gh to list.
@@ -231,9 +233,15 @@ check_jq() {
 
 # A warn, not a FAIL: macOS still ships 3.2 as /bin/bash, and the flow works
 # there.
+# ORCH_DOCTOR_BASH_VERSION ("<major>.<minor>") fakes the running bash, because
+# BASH_VERSINFO is readonly: the one seam a test has for the below-4.2 side.
 check_bash() {
-  if [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]; then d_ok "bash ${BASH_VERSION%%(*}"; return 0; fi
-  d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.0 and up."
+  local ver="${ORCH_DOCTOR_BASH_VERSION:-${BASH_VERSINFO[0]:-0}.${BASH_VERSINFO[1]:-0}}"
+  local major="${ver%%.*}" minor="${ver#*.}"
+  if [ "$major" -gt 4 ] || { [ "$major" -eq 4 ] && [ "$minor" -ge 2 ]; }; then
+    d_ok "bash ${BASH_VERSION%%(*}"; return 0
+  fi
+  d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.2 and up."
   d_remedy "brew install bash"
 }
 
@@ -676,6 +684,7 @@ check_autopilot_side_flows() {
 # Silent where origin cannot be read, and for this host's claims where the main
 # checkout cannot be resolved.
 check_autopilot_claims() {
+  orch_load standing
   local issue host started now_epoch started_epoch me main_known=0 pid
   standing_claims_read --quiet || return 0
   now_epoch="$(date -u +%s)"; me="$(standing_host_id)"
@@ -715,6 +724,7 @@ h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude 
 # preconditions held.
 
 check_state_phase() {
+  orch_load handoff
   local phase
   phase="$D_FLOW_PHASE"
   if word_listed "$PHASES" "$phase"; then
@@ -962,6 +972,7 @@ check_flow_worktree_clean() {
 # Which handoffs are due is the phase table's handoffs_due - phase names what
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
+  orch_load issue-timeline
   local phase files f path problems line ready_finding ready_rc reason fetch_rc
   phase="$D_FLOW_PHASE"
   # A phase the table does not hold is due nothing, so the check skips it.

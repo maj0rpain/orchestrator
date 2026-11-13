@@ -25,6 +25,7 @@ cmd_review_pass() {
 }
 
 review_pass_begin() {
+  orch_load state
   [ $# -eq 1 ] || die "usage: orch.sh review-pass begin <issue>"
   local issue="$1" branch
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac

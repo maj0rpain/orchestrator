@@ -21,13 +21,13 @@ AGENT_HOSTS="claude junie"
 AGENT_KINDS="model effort"
 # The git config key prefix: <prefix>.<kind>.<role>. Junie's keys live beside
 # the Claude Code ones.
-declare -A AGENT_HOST_KEY=([claude]=orchestrator [junie]=orchestrator.junie)
+declare -gA AGENT_HOST_KEY=([claude]=orchestrator [junie]=orchestrator.junie)
 # What prefixes a role's line in agent show and the doctor.
-declare -A AGENT_HOST_LINE=([claude]="" [junie]="junie ")
+declare -gA AGENT_HOST_LINE=([claude]="" [junie]="junie ")
 # What a clear naming this host's key needs before --model|--effort.
-declare -A AGENT_HOST_CLEAR=([claude]="" [junie]=" --host junie")
+declare -gA AGENT_HOST_CLEAR=([claude]="" [junie]=" --host junie")
 # The hosts that keep copies agent sync writes.
-declare -A AGENT_HOST_SYNCS=([junie]=1)
+declare -gA AGENT_HOST_SYNCS=([junie]=1)
 # The hosts a --host flag names.
 AGENT_FLAG_HOSTS="junie"
 # The host a site means when no --host flag names one.
@@ -35,7 +35,7 @@ AGENT_DEFAULT_HOST=claude
 # The values each key allows: exactly the aliases the Agent tool's model
 # parameter accepts and the levels its effort parameter takes, in this Claude
 # Code version. inherit is allowed for every key and means no setting at all.
-declare -A AGENT_ALLOWED=(
+declare -gA AGENT_ALLOWED=(
   [claude.model]="sonnet opus haiku fable inherit"
   [claude.effort]="low medium high xhigh max inherit"
   [junie.effort]="low medium high inherit"
@@ -44,8 +44,8 @@ declare -A AGENT_ALLOWED=(
 # matches the pattern as a whole (a Junie LLM name or custom:<profile-id>). The
 # pattern cannot tell an alias from an LLM name, so the note, a printf format
 # taking the pattern, warns against aliases.
-declare -A AGENT_PATTERN=([junie.model]='[A-Za-z0-9._:/-]+')
-declare -A AGENT_NOTE=([junie.model]="inherit or a name matching %s - use the names Junie's /model picker and --model flag take; aliases resolve unpredictably")
+declare -gA AGENT_PATTERN=([junie.model]='[A-Za-z0-9._:/-]+')
+declare -gA AGENT_NOTE=([junie.model]="inherit or a name matching %s - use the names Junie's /model picker and --model flag take; aliases resolve unpredictably")
 
 # agent_pipe_list <list>: the space-separated list as a|b|c, for an orch:
 # message's allowed values.
@@ -98,7 +98,7 @@ agent_key() { printf -v "$1" '%s.%s.%s' "${AGENT_HOST_KEY[$2]}" "$3" "$4"; }
 
 # The agent settings' git config, read once per scope per process: one
 # associative array per scope, filled lazily and dropped by every write.
-declare -A AGENT_CACHE_LOCAL=() AGENT_CACHE_GLOBAL=()
+declare -gA AGENT_CACHE_LOCAL=() AGENT_CACHE_GLOBAL=()
 AGENT_CACHE_LOADED=""
 
 # agent_cache_drop: forgets the cache, so the next lookup reloads it.

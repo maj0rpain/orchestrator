@@ -279,6 +279,7 @@ suite_cost_knob() {
 # flow, else what branch base-sha prints - or fails, its reason on stderr. An
 # unreadable state.json fails with the shared warning, never the fallback.
 suite_cost_base_commit() {
+  orch_load state
   local sha=""
   if flow_active; then
     flow_state_readable "$STATE" || { warn "$STATE_UNREADABLE_MSG"; return 1; }

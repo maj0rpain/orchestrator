@@ -3,7 +3,7 @@
 # Sourced by orch_test.sh and autopilot_up_test.sh: the bounded wait the suite's
 # FIFO handshakes use, so a partner that never arrives fails the test in
 # seconds instead of hanging the run. Sourcing it only defines functions.
-# Needs coreutils timeout. Bash 4.0+, as the rest of the suite.
+# Needs coreutils timeout. Bash 4.2+, as the rest of the suite.
 
 # fifo_bounded <seconds> <side> <command...>: runs the command under timeout
 # <seconds>. Only timeout's expiry status, 124, counts as expiry: then it prints

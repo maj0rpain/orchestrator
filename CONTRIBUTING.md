@@ -40,9 +40,10 @@ orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
 (`branch.sh`, `ticket.sh`, `review-pass.sh`, ...), `harness.sh` the harness's
 own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
-check on `scripts/orch/common.sh`, and `setup.sh` the shared setup and the
-summary. A concept module with no noun gets a section file named as the module
-is, beside the per-noun files: `checkout.sh` for `scripts/orch/checkout.sh`,
+check on `scripts/orch/common.sh`, `loader.sh` the loader's sections, and
+`setup.sh` the shared setup and the summary. A concept module with no noun gets
+a section file named as the module is, beside the per-noun files: `checkout.sh`
+for `scripts/orch/checkout.sh`,
 `filed-finding.sh` for `scripts/orch/filed-finding.sh`,
 `issue-timeline.sh` for `scripts/orch/issue-timeline.sh`, `known-items.sh` for
 `scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,
@@ -118,8 +119,28 @@ in one pass) and `standing.sh` (the
 Standing module: an issue's label set, its read and its claims) and `trust.sh`
 (the Trust module: which comments and which PRs orch.sh reads and which issues
 autopilot runs on), live among the modules too.
-orch.sh sources every module eagerly from an explicit list, so a new noun gets
-its own module, a case in `main` and a line in that list.
+`scripts/orch/loader.sh` (beside `common.sh`, always loaded) holds the loader:
+the stub table, its per-copy cache under `~/.cache/orchestrator/`, the stub
+dispatch (`orch_stubs`, `orch_stub`), `orch_load`, which sources a module once
+per shell, and the load trace (`ORCH_LOAD_TRACE=<file>` appends `<module>
+<depth>` per load). orch.sh names no module: it loads each through
+`orch_load`, so a new noun gets its own module and a case in `main`.
+Run as a command, `orch.sh` loads a module only when one of its functions is
+first called: at start the loader defines a stub for each function a module
+defines at column 0, and the first call loads that module. Sourced, it loads
+every module at once, in C-locale name order, so a function replaced after the
+`source` line stays replaced; only a plain, unexported `ORCH_SOURCE_LAZY=1` set
+before the `source` line loads on demand, and a sourced start always unsets it.
+Reading another module's top-level variable: a top-level variable is one a
+module assigns outside any function, plainly or through `readonly` or
+`declare`. A function, or a module's own top-level code, that reads another
+module's top-level variable names `orch_load <that module>` earlier in its own
+text than the first such read, so on-demand loading never reads an unset
+variable. The variables of the always-loaded files (`orch.sh`, `common.sh`,
+`loader.sh` and the files `orch.sh` sources from `scripts/` itself) are exempt.
+harness.sh's `orch_load before cross-module reads` section enforces it
+over the real tree; its failure names the file, the function or `top level`,
+and the variable.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
@@ -213,6 +234,14 @@ instead - their fixtures, fakes and assertions. A
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
 section checks it against what bash itself defines.
 
+`sourced_orch` sets `ORCH_SOURCE_LAZY=1`, so it loads orch.sh's modules on
+demand, as the command does and so a test's shell starts cheaply, except in its
+`eval` form (`sourced_orch eval <code>`); `sourced_orch_script` loads every
+module, as the code it runs may replace or name any function. Only
+`sourced_orch` sets the variable outside the loader's own section file: the
+harness section on the on-demand sourcing variable (#2820) fails on any other
+test file naming it.
+
 The fixtures to reach for first:
 
 - `fake_flow <slug>`: a section's usual starting point - a fresh repo, the
@@ -230,7 +259,7 @@ child bash that does not inherit `-x`, so run it sequentially:
 `ORCH_TEST_ONLY='^<section>$' ORCH_TEST_JOBS=1 bash -x
 scripts/test/orch_test.sh`.
 
-`orch.sh`, its modules and the test suite target bash 4.0+: `mapfile`, `declare
+`orch.sh`, its modules and the test suite target bash 4.2+: `mapfile`, `declare
 -A` and `printf -v` are fine. The `hook-*.sh` scripts and every module a hook
 sources (`flow-state.sh`, `host.sh`, `bash-walk.sh`, `paste-guard.sh`,
 `planning-allowlist.sh`, `triage-labels.sh`) stay bash 3.2-compatible (no
@@ -313,6 +342,7 @@ scripts/orch/standing.sh      the Standing module, a concept module with no noun
 scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments and which PRs orch.sh reads and which issues autopilot runs on - the one filter dropping a comment whose author is not an owner, member or collaborator, the one filter dropping a fork PR, and the issue trust check
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
+scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
 scripts/orch/suite-cost.sh    the suite-cost noun's module, with the ORCH_SUITE_COST_TIMER hook: a test knob like ORCH_GH_ADAPTER, naming a file (the tests' scripts/test/suite_cost_timer_fake.sh) that overrides only the step timing a command
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
@@ -344,6 +374,7 @@ scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what 
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
 scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
+scripts/test/orch/loader.sh   the loader's sections: orch_load, on-demand loading, the stub table cache
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 scripts/test/orch/checkout.sh the Checkout module's sections, named as the module is
 scripts/test/orch/filed-finding.sh the Filed finding module's sections, named as the module is
