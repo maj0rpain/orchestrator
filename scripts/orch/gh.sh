@@ -19,19 +19,30 @@
 # naming GH_REPO. Inside a command substitution `die` would end only that
 # subshell, and its message could land in a 2>/dev/null, so there it signals
 # the main shell, whose USR1 trap dies with the remedy instead. A failed
-# call goes through gh_limit_handle, and is retried once on a first secondary
-# limit; the call in its loop is the only one to the real gh binary in orch.sh
+# call goes through gh_limit_retry, and is retried once on a first secondary
+# limit; the call it makes is the only one to the real gh binary in orch.sh
 # and its modules.
 gh() {
   if ! repo_pin; then
     if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
     die "$REPO_REMEDY"
   fi
+  gh_limit_retry command gh "$@"
+}
+
+# gh_limit_retry <command>...: runs <command>, its stderr held, through the
+# limit retry protocol (#2724) - the one copy of it: a failed call goes through
+# gh_limit_handle, a first secondary limit (status 2) is retried once, a limit
+# given up on (status 1) fails the call with the handler's message in place of
+# the command's stderr, and any other failure keeps its stderr as it is. The
+# command's status and stdout pass through. While GH_LIMIT_READING is set the
+# handler is never called and nothing is retried.
+gh_limit_retry() {
   local errf out_st err rc retried=0
-  errf="$(mktemp)" || die "could not create a temp file for gh's stderr"
+  errf="$(mktemp)" || die "could not create a temp file for the command's stderr"
   while :; do
     out_st=0
-    command gh "$@" 2>"$errf" || out_st=$?
+    "$@" 2>"$errf" || out_st=$?
     err="$(cat "$errf")"
     if [ "$out_st" -eq 0 ] || [ -n "${GH_LIMIT_READING:-}" ]; then break; fi
     rc=0
@@ -62,13 +73,25 @@ gh_limit_kind() {
   fi
 }
 
+# gh_limit_pools: GitHub's core and graphql pools, one per line as
+# "<pool> <remaining> <limit> <reset>", the reset in epoch seconds; fails,
+# printing nothing, when the read fails or is empty. The one quiet read of the
+# pools: it runs with GH_LIMIT_READING set, so the guard neither retries it nor
+# calls the limit handler, its stderr is discarded, and it costs no quota.
+gh_limit_pools() {
+  local out
+  out="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || return 1
+  [ -n "$out" ] || return 1
+  tr '\t' ' ' <<<"$out"
+}
+
 # gh_limit_reset: the epoch second a limit is waited out until: the latest
 # reset among the core and graphql pools at 0 remaining; with none, or a failed
 # read of the pools, 15 minutes from now.
 gh_limit_reset() {
   local pools reset
-  pools="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || pools=""
-  reset="$(awk -F '\t' '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
+  pools="$(gh_limit_pools)" || pools=""
+  reset="$(awk '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
   printf '%s\n' "${reset:-$(($(date +%s) + 900))}"
 }
 
@@ -79,7 +102,7 @@ gh_limit_reset() {
 # Status 1: a limit to give up on - a primary one, or a secondary one met again
 # after the retry, handled as a primary one. The distinct message, naming the
 # reset, is on stderr; in an autopilot process the reset is also recorded
-# (gh_limit_record), a failed write being one more line on stderr.
+# (autopilot_github_limit_record), a failed write being one more line on stderr.
 gh_limit_handle() {
   local kind reset
   kind="$(gh_limit_kind "$1")"
@@ -90,7 +113,7 @@ gh_limit_handle() {
   fi
   reset="$(gh_limit_reset)"
   warn "GitHub API rate limit reached - it resets at $(autopilot_epoch_iso "$reset"). An autopilot session ends its turn now and does not retry; the watcher picks the work up after the reset."
-  gh_limit_record "$reset"
+  autopilot_github_limit_record "$reset"
   return 1
 }
 
@@ -513,11 +536,51 @@ adapter_issue_state() {
 }
 
 # adapter_issues_labelled <label>...: the open issues carrying every label
-# named, one number per line - gh filters on whole labels, not on a prefix.
+# named, one number per line, oldest first, so ISSUE_LIST_LIMIT cuts the
+# newest - gh filters on whole labels, not on a prefix.
 adapter_issues_labelled() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+}
+
+# issue_list_limit_warn <count> <what>: warns on stderr when a listing of
+# <what> (e.g. "the open issues labelled needs-human") returned <count> rows,
+# reaching its effective limit - the lesser of ISSUE_LIST_LIMIT and 1000,
+# GitHub's search cap - and names that limit. Always succeeds.
+issue_list_limit_warn() {
+  local limit="$ISSUE_LIST_LIMIT"
+  [ "$limit" -le "$ISSUE_SEARCH_CAP" ] || limit="$ISSUE_SEARCH_CAP"
+  if [ "$1" -ge "$limit" ]; then
+    warn "$2 reached the issue-list limit of $limit - the newest past it are missing from this list"
+  fi
+  return 0
+}
+
+# issues_labelled_limit_warn <count> <label>...: issue_list_limit_warn for a
+# listing of the open issues carrying every label named. Always succeeds.
+issues_labelled_limit_warn() {
+  local __illw_n="$1" __illw_what="the open issues labelled $2" __illw_l
+  for __illw_l in "${@:3}"; do __illw_what="$__illw_what and $__illw_l"; done
+  issue_list_limit_warn "$__illw_n" "$__illw_what"
+}
+
+# issues_labelled_read <out_var> <err_var> <label>...: reads the open issues
+# carrying every label named once through adapter_issues_labelled, the listing
+# (one number per line, oldest first, trailing newlines gone) into the caller's
+# <out_var> and gh's stderr into <err_var>, as capture does, then warns through
+# issue_list_limit_warn when the listing reached the limit. Non-zero on a
+# failed read, warning nothing: the caller words the failure from <err_var>.
+issues_labelled_read() {
+  local __ilr_out __ilr_err __ilr_n=0
+  if ! capture __ilr_out __ilr_err adapter_issues_labelled "${@:3}"; then
+    printf -v "$2" '%s' "$__ilr_err"
+    return 1
+  fi
+  [ -z "$__ilr_out" ] || __ilr_n="$(printf '%s\n' "$__ilr_out" | grep -c .)"
+  issues_labelled_limit_warn "$__ilr_n" "${@:3}"
+  printf -v "$1" '%s' "$__ilr_out"
+  printf -v "$2" '%s' "$__ilr_err"
 }
 
 # adapter_issues_open_oldest: every open issue, one number per line, oldest
@@ -527,15 +590,16 @@ adapter_issues_open_oldest() {
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues carrying every
-# label named, cut at ISSUE_LIST_LIMIT as adapter_issues_labelled is, each as
-# one count-marked record: its number, its label count, one label per line,
+# label named, oldest first and cut at ISSUE_LIST_LIMIT as
+# adapter_issues_labelled is, each as one count-marked record: its number,
+# its label count, one label per line,
 # its body's line count (one more than the newlines the body holds, counted
 # with `indices`, never `split`, whose answer on an empty string differs
 # between jq implementations), then the body's lines.
 adapter_issues_labelled_bodies() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number,labels,body \
+  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,labels,body \
     --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
 }
 
@@ -550,7 +614,9 @@ adapter_issues_labelled_bodies() {
 # answer's trailing newlines, so the last record's body lines missing at the
 # end are empty lines. Non-zero, writing no element, on a failed read (gh's
 # stderr into <err_var>, as gh_lines_read) or an answer that does not parse
-# (<err_var> "gh answered a listing that does not parse"). Dies when an array
+# (<err_var> "gh answered a listing that does not parse"). Warns on stderr
+# through issues_labelled_limit_warn when the listing reaches the issue-list
+# limit, as issues_labelled_read does. Dies when an array
 # name is not a declared associative array. Bash 4.0: elements are assigned by
 # eval on a validated name, the value by reference, as finding_body_parse does.
 issues_labelled_bodies_read() {
@@ -602,6 +668,7 @@ issues_labelled_bodies_read() {
     eval "$2"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_bods[__ilbr_r]}'
   done
   printf -v "$3" '%s' "${#__ilbr_nums[@]}"
+  issues_labelled_limit_warn "${#__ilbr_nums[@]}" "${@:5}"
 }
 
 # adapter_issues_open_titles: every open issue, one per line as

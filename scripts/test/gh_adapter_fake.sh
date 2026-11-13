@@ -136,27 +136,19 @@ fake_countdown() {
 }
 
 # fake_failing <operation>: fake_failing_raw, with a failure that is a GitHub
-# API rate limit going through the production limit handler, as the guard's
-# own failed calls do: a secondary limit is waited out and retried once, and a
+# API rate limit going through the production gh_limit_retry, as the guard's
+# own failed calls do (sourced alone, without gh.sh, it is fake_failing_raw's
+# own answer): a secondary limit is waited out and retried once, and a
 # limit given up on leaves the handler's distinct message on stderr in place of
 # gh's own. Any other failure is written as it is.
 fake_failing() {
-  local err rc=0 hrc retried=0
-  err="$(fake_failing_raw "$1" 2>&1)" || rc=$?
-  [ "$rc" -eq 0 ] || return 1
-  while [ -z "${GH_LIMIT_READING:-}" ] && declare -F gh_limit_handle >/dev/null; do
-    hrc=0
-    gh_limit_handle "$err" "$retried" || hrc=$?
-    case "$hrc" in
-      2) retried=1
-         err="$(fake_failing_raw "$1" 2>&1)" || return 1
-         continue ;;
-      1) return 0 ;;
-    esac
-    break
-  done
-  [ -z "$err" ] || printf '%s\n' "$err" >&2
+  declare -F gh_limit_retry >/dev/null || { fake_failing_raw "$1"; return; }
+  ! gh_limit_retry fake_failing_inverted "$1"
 }
+
+# fake_failing_inverted <operation>: fake_failing_raw with its status inverted,
+# so a seeded failure is a failed call to gh_limit_retry.
+fake_failing_inverted() { ! fake_failing_raw "$1"; }
 
 # fake_failing_raw <operation>: true when fake_fail named the operation, with
 # its stderr written. An operation calls `! fake_failing <op> || return 1`
@@ -511,10 +503,10 @@ fake_open_issues() {
 }
 
 # adapter_issues_labelled <label>...: the open issues in the store carrying
-# every label named, newest first as gh lists them - the first ISSUE_LIST_LIMIT
-# of them, as gh's --limit cuts the list, with awk, which reads all of the
-# while loop's output, so the loop never takes SIGPIPE under pipefail as it
-# would from head (#1019).
+# every label named, oldest first - the first lesser of ISSUE_LIST_LIMIT and
+# 1000 of them, as the search-backed real listing is cut, with awk, which reads
+# all of the while loop's output, so the loop never takes SIGPIPE under
+# pipefail as it would from head (#1019).
 adapter_issues_labelled() {
   local n l keep
   ! fake_failing adapter_issues_labelled || return 1
@@ -523,19 +515,25 @@ adapter_issues_labelled() {
     for l in "$@"; do grep -qxiF -- "$l" "$(fake_issue_dir "$n")/labels" 2>/dev/null || keep=0; done
     [ "$keep" = 1 ] || continue
     printf "%s\n" "$n"
-  done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+  done | sort -n | fake_search_cut
+}
+
+# fake_search_cut: the first lesser of ISSUE_LIST_LIMIT and ISSUE_SEARCH_CAP
+# lines of stdin, as a search-backed real listing is cut.
+fake_search_cut() {
+  awk -v n="$ISSUE_LIST_LIMIT" -v cap="$ISSUE_SEARCH_CAP" 'BEGIN{if(n>cap)n=cap} NR<=n'
 }
 
 # adapter_issues_open_oldest: the open issues in the store, oldest first and
-# cut at ISSUE_LIST_LIMIT, so the newest are the ones dropped.
+# cut as adapter_issues_labelled is, so the newest are the ones dropped.
 adapter_issues_open_oldest() {
   ! fake_failing adapter_issues_open_oldest || return 1
-  fake_open_issues | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+  fake_open_issues | sort -n | fake_search_cut
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues in the store
-# carrying every label named, newest first, as gh lists them and cut at
-# ISSUE_LIST_LIMIT as adapter_issues_labelled is, each as the count-marked
+# carrying every label named, oldest first and cut as
+# adapter_issues_labelled is, each as the count-marked
 # record the gh adapter prints: number, label count, labels, the body's line
 # count (its newlines plus one), then the body byte for byte and a newline.
 adapter_issues_labelled_bodies() {
