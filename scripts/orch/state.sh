@@ -127,7 +127,9 @@ state_write_string() {
 # malformed pair list dies "malformed state write: <args>". A failed write
 # dies naming each key given once, in order (never a --string marker), as
 # state_write's does, or naming no key when a value will not convert or the
-# object's keys cannot be read.
+# object's keys cannot be read. phase_write reports through it, so a failed
+# phase_write dies the same way; both no-key failure paths share the one
+# fall-through die.
 state_write_many() {
   local obj rc keys
   obj="$(flow_state_pairs_json "$@")" || {
