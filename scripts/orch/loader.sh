@@ -5,6 +5,13 @@
 # order orch.sh has always sourced them. Neither common.sh nor this file names
 # a function a module defines.
 #
+# orch_stubs, which orch.sh calls when run as a command, makes loading lazy: it
+# scans the module files for functions defined at column 0 (`name() {` or
+# `name() (`) and defines a one-line stub for each, calling orch_stub for its
+# module. The first call loads the module, whose definitions replace its stubs,
+# and runs the real function. A stub called in a subshell loads in that subshell
+# only. The table is built in memory on every start.
+#
 # ORCH_LOAD_TRACE=<file> makes every module load append "<module> <depth>" to
 # that file, depth being BASH_SUBSHELL (0 for the main shell). Unset, nothing
 # is written; a failed append is ignored.
@@ -61,4 +68,55 @@ orch_modules() {
 orch_load_all() {
   local m
   while IFS= read -r m; do orch_load "$m"; done < <(orch_modules)
+}
+
+# orch_stubs: defines a stub for every function the module files define at
+# column 0, in one eval. A function two modules define belongs to the later
+# one in the file order, as loading every module would leave it.
+orch_stubs() {
+  local name mod defs=''
+  local -A owner=()
+  while IFS=: read -r mod name; do
+    mod="${mod##*/}"
+    owner[${name%%(*}]="${mod%.sh}"
+  done < <(grep -HoE '^[A-Za-z_][A-Za-z0-9_]*\(\) [{(]' "$ORCH_MODULE_DIR"/*.sh)
+  for name in "${!owner[@]}"; do
+    mod="${owner[$name]}"
+    case "$mod" in common|loader) continue ;; esac
+    defs+="$name() { orch_stub $mod $name \"\$@\"; }"$'\n'
+  done
+  eval "$defs"
+}
+
+# orch_stub_owner <function>: prints the module that now defines the function
+# at column 0, and fails when none does.
+orch_stub_owner() {
+  local f owner=''
+  for f in "$ORCH_MODULE_DIR"/*.sh; do
+    case "${f##*/}" in common.sh|loader.sh) continue ;; esac
+    if grep -qE "^$1\\(\\) [{(]" "$f"; then owner="${f##*/}"; fi
+  done
+  [ -n "$owner" ] || return 1
+  printf '%s\n' "${owner%.sh}"
+}
+
+# orch_stub <module> <function> [args...]: what a stub runs. Loads the module,
+# then calls the real function with the arguments, returning its status. When
+# the module did not define the function, rescans once: another module that
+# does is loaded and the call goes on, else the command stops.
+orch_stub() {
+  local mod="$1" fn="$2" other
+  shift 2
+  orch_load "$mod"
+  if [[ "$(declare -f "$fn")" == *"orch_stub "* ]]; then
+    other="$(orch_stub_owner "$fn")" || other=''
+    if [ -z "$other" ] || [ "$other" = "$mod" ]; then
+      die "$fn is in the stub table but no module defines it"
+    fi
+    orch_load "$other"
+    if [[ "$(declare -f "$fn")" == *"orch_stub "* ]]; then
+      die "$fn is in the stub table but no module defines it"
+    fi
+  fi
+  "$fn" "$@"
 }

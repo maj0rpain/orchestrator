@@ -14,8 +14,14 @@
 # scripts/test/orch/<noun>.sh are; each helper lives in the module of the
 # concept it serves, and scripts/orch/common.sh holds only the primitives no
 # concept owns. scripts/orch/loader.sh, loaded beside common.sh, sources the
-# modules through orch_load, so this file names none; every start still loads
-# them all. A new noun gets its own module and a case in main.
+# modules through orch_load, so this file names none. Run as a command, orch.sh
+# loads a module only when one of its functions is first called, through the
+# stubs orch_stubs defines. Sourced, it loads every module at once, so a
+# function replaced after the source line stays replaced; the one exception is
+# a plain, unexported ORCH_SOURCE_LAZY=1 set before the source line, which loads
+# on demand as a command does. A sourced start always unsets the variable. A
+# new noun gets its own module and a case in main. PHASES, the flow phase list,
+# is the Handoff module's: read it after orch_load handoff.
 #
 # Usage: orch.sh <command> [args]   (run `orch.sh help` for the list)
 
@@ -117,7 +123,18 @@ readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 # d_warn, d_fail and d_remedy, from a check living in the module of the concept
 # it serves (agent.sh's check_agent_settings) (scripts/test/orch/doctor.sh holds
 # this).
-orch_load_all
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  orch_stubs
+else
+  # Sourced: every module, unless ORCH_SOURCE_LAZY is a plain, unexported 1.
+  read -r _ lazy_flags _ < <(declare -p ORCH_SOURCE_LAZY 2>/dev/null || echo "declare -- x") || true
+  if [ "${ORCH_SOURCE_LAZY:-}" = 1 ] && [[ "$lazy_flags" != *x* ]]; then
+    orch_stubs
+  else
+    orch_load_all
+  fi
+  unset ORCH_SOURCE_LAZY lazy_flags
+fi
 
 # The one definition of the planning allowlist and the planning records,
 # shared with hook-guard.sh so the flow-start check and the edit guard can

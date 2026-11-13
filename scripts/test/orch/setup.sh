@@ -352,10 +352,20 @@ branch_and_config() { git branch --show-current; git config --local --list; }
 # space.
 flat_text() { tr -s ' \t\n' '   '; }
 # sourced_orch <function> [args...]: the function's output, called in a shell
-# that sourced orch.sh, with its status.
-sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+# that sourced orch.sh, with its status. It sets ORCH_SOURCE_LAZY=1 before the
+# source line, so the modules load on demand, as orch.sh does as a command and
+# the suite's shells cost less to start; the eval form, `sourced_orch eval
+# <code>`, loads every module, since code evaluated there may name or replace
+# any function. The one place a test sets that variable.
+sourced_orch() {
+  local lazy=1
+  [ "${1:-}" != eval ] || lazy=''
+  bash -c '[ -z "$2" ] || ORCH_SOURCE_LAZY=1; source "$1"; shift 2; "$@"' _ "$ORCH" "$lazy" "$@"
+}
 # sourced_orch_script <script> [<arg>...]: runs <script> in a child bash that
-# has sourced orch.sh, with <arg>... as its positional parameters $1...
+# has sourced orch.sh with every module loaded, never on demand, as the script
+# may redefine or name any function; <arg>... are its positional parameters
+# $1....
 sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
 # rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
 # <7d reset>: a rate_limit_event line.

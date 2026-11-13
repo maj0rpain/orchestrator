@@ -278,6 +278,20 @@ marked_comment_jq_placement() {
   name_placement "$1" "$MARKED_COMMENT_JQ_PLACEMENT_RULE" calls marked_comment_jq ./orch/marked-comment.sh ./orch/issue-timeline.sh
 }
 
+# lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)
+# for the on-demand sourcing variable's name, which only setup.sh's
+# sourced_orch, the loader's section file and this file may use; prints each
+# other file, as scripts/<path>, and returns 1 when it printed any.
+lazy_sourcing_names() {
+  local dir="$1" f out=''
+  for f in "$dir"/test/*.sh "$dir"/test/orch/*.sh; do
+    case "${f##*/}" in setup.sh|loader.sh|harness.sh) continue ;; esac
+    ! grep -q 'ORCH_SOURCE_LAZY' "$f" || out+="scripts/${f#"$dir"/}"$'\n'
+  done
+  printf '%s' "$out"
+  [ -z "$out" ]
+}
+
 # The on-demand loading rule, as orch_load_reads' message states it.
 ORCH_LOAD_RULE="The rule: a function, or a module's own top-level code, that reads another module's top-level variable names orch_load <that module> earlier in its own text than the first such read; the variables of the always-loaded files (orch.sh, common.sh, loader.sh and the files orch.sh sources from scripts/) are exempt."
 
@@ -2611,6 +2625,19 @@ PLANTED
 out="$(orch_load_reads "$load_dir")"; st=$?
 assert_status "reads after an orch_load, and of always-loaded variables, pass" "$st" 0
 assert_eq "and print nothing" "$out" ""
+rm -rf "${load_dir%/scripts}"
+
+out="$(lazy_sourcing_names "$PLUGIN_ROOT/scripts")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "no test file but setup.sh, the loader's section file and harness.sh names the on-demand sourcing variable"
+else
+  bad "no test file but setup.sh, the loader's section file and harness.sh names the on-demand sourcing variable" "$out"
+fi
+load_dir="$(tree_copy scripts)"
+printf '%s\n' '# sets ORCH_SOURCE_LAZY=1 itself' >"$load_dir/test/orch/zz-planted.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a planted test file naming the variable fails the check" "$st" 1
+assert_eq "naming the file" "$out" "scripts/test/orch/zz-planted.sh"
 rm -rf "${load_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------

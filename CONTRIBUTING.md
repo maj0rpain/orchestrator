@@ -133,6 +133,12 @@ which sources a module once per shell, and the load trace
 (`ORCH_LOAD_TRACE=<file>` appends `<module> <depth>` per load). orch.sh names no
 module: it loads each through `orch_load`, so a new noun gets its own module and
 a case in `main`.
+Run as a command, `orch.sh` loads a module only when one of its functions is
+first called: at start the loader defines a stub for each function a module
+defines at column 0, and the first call loads that module. Sourced, it loads
+every module at once, in C-locale name order, so a function replaced after the
+`source` line stays replaced; only a plain, unexported `ORCH_SOURCE_LAZY=1` set
+before the `source` line loads on demand, and a sourced start always unsets it.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
@@ -225,6 +231,13 @@ instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
 section checks it against what bash itself defines.
+
+`sourced_orch` sets `ORCH_SOURCE_LAZY=1`, so it loads orch.sh's modules on
+demand, as the command does and so a test's shell starts cheaply, except in its
+`eval` form (`sourced_orch eval <code>`); `sourced_orch_script` loads every
+module, as the code it runs may replace or name any function. Only `sourced_orch`
+sets the variable: harness.sh's on-demand loading section fails on any other
+test file naming it, bar the loader's section file.
 
 The fixtures to reach for first:
 
