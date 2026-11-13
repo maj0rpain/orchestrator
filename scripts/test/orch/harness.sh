@@ -1025,6 +1025,15 @@ sh_run 1/2
 assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s1,s5,"
 sh_run 2/2
 assert_eq "and starts its sections longest-first" "$sh_started" "s2,s3,s4,"
+rm -f "$sh_t/section-durations.tsv"
+sh_union=""
+for sh_i in 1 2; do
+  sh_run "$sh_i/2"
+  assert_status "group $sh_i of 2 passes with no durations file" "$sh_st" 0
+  sh_union+="$(printf '%s' "$sh_printed" | sed 's/isolation,//')"
+done
+assert_eq "and together they run every section once with no durations file" \
+  "$(printf '%s' "$sh_union" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
 cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
 for sh_n in 1 9; do

@@ -393,6 +393,12 @@ refuse_selection() {
 }
 
 orch_durations_file="$TEST_DIR/section-durations.tsv"
+# orch_durations_feed: the first stage of an awk input - the durations file when
+# readable (awk 1 supplies a missing final newline), then the \001 separator.
+orch_durations_feed() {
+  if [ -r "$orch_durations_file" ]; then awk 1 "$orch_durations_file"; fi
+  printf '\001\n'
+}
 if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   split_branches "$ORCH_TEST_ONLY"
   if [ "${#orch_branches[@]}" -gt 1 ]; then
@@ -420,8 +426,7 @@ else
       [ "$orch_suite" = orch_test.sh ] || orch_others+="$orch_suite"$'\n'
     done
     orch_dealt="$(
-      { [ -r "$orch_durations_file" ] && awk 1 "$orch_durations_file"
-        printf '\001\n'
+      { orch_durations_feed
         printf '%s\n' "$orch_titles" | awk 'NR > 1 { printf "%d\t%s\n", NR, $0 }'
         printf '\001\n%s' "$orch_others"; } |
         awk -F'\t' -v n="$TEST_SHARD_N" -v want="$TEST_SHARD_I" \
@@ -513,7 +518,7 @@ for ((orch_i = 0; orch_i < orch_total; orch_i++)); do
 done
 orch_order=()
 mapfile -t orch_order < <(
-  { [ -r "$orch_durations_file" ] && awk 1 "$orch_durations_file"; printf '\001\n%s' "$orch_titles_kept"; } |
+  { orch_durations_feed; printf '%s' "$orch_titles_kept"; } |
     awk -F'\t' "$DURATIONS_AWK"'
       !seen && $0 == "\001" { seen = 1; next }
       !seen { durations_read(); next }
