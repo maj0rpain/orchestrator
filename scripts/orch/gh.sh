@@ -527,11 +527,19 @@ adapter_issues_labelled() {
 # GitHub's search cap - and names that limit. Always succeeds.
 issue_list_limit_warn() {
   local limit="$ISSUE_LIST_LIMIT"
-  [ "$limit" -le 1000 ] || limit=1000
+  [ "$limit" -le "$ISSUE_SEARCH_CAP" ] || limit="$ISSUE_SEARCH_CAP"
   if [ "$1" -ge "$limit" ]; then
     warn "$2 reached the issue-list limit of $limit - the newest past it are missing from this list"
   fi
   return 0
+}
+
+# issues_labelled_limit_warn <count> <label>...: issue_list_limit_warn for a
+# listing of the open issues carrying every label named. Always succeeds.
+issues_labelled_limit_warn() {
+  local __illw_n="$1" __illw_what="the open issues labelled $2" __illw_l
+  for __illw_l in "${@:3}"; do __illw_what="$__illw_what and $__illw_l"; done
+  issue_list_limit_warn "$__illw_n" "$__illw_what"
 }
 
 # issues_labelled_read <out_var> <err_var> <label>...: reads the open issues
@@ -541,14 +549,13 @@ issue_list_limit_warn() {
 # issue_list_limit_warn when the listing reached the limit. Non-zero on a
 # failed read, warning nothing: the caller words the failure from <err_var>.
 issues_labelled_read() {
-  local __ilr_what="the open issues labelled $3" __ilr_out __ilr_err __ilr_l __ilr_n=0
-  for __ilr_l in "${@:4}"; do __ilr_what="$__ilr_what and $__ilr_l"; done
+  local __ilr_out __ilr_err __ilr_n=0
   if ! capture __ilr_out __ilr_err adapter_issues_labelled "${@:3}"; then
     printf -v "$2" '%s' "$__ilr_err"
     return 1
   fi
   [ -z "$__ilr_out" ] || __ilr_n="$(printf '%s\n' "$__ilr_out" | grep -c .)"
-  issue_list_limit_warn "$__ilr_n" "$__ilr_what"
+  issues_labelled_limit_warn "$__ilr_n" "${@:3}"
   printf -v "$1" '%s' "$__ilr_out"
   printf -v "$2" '%s' "$__ilr_err"
 }
@@ -636,9 +643,7 @@ issues_labelled_bodies_read() {
     eval "$2"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_bods[__ilbr_r]}'
   done
   printf -v "$3" '%s' "${#__ilbr_nums[@]}"
-  local __ilbr_what="the open issues labelled $5"
-  for __ilbr_r in "${@:6}"; do __ilbr_what="$__ilbr_what and $__ilbr_r"; done
-  issue_list_limit_warn "${#__ilbr_nums[@]}" "$__ilbr_what"
+  issues_labelled_limit_warn "${#__ilbr_nums[@]}" "${@:5}"
 }
 
 # adapter_issues_open_titles: every open issue, one per line as

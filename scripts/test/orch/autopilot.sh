@@ -1197,11 +1197,6 @@ fake_fail adapter_issue_state_labels "HTTP 502"
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_eq "questions failing on a label read dies in one line naming gh and the reason" "$(printf "%s\n" "$out" | grep -c .)|${out#orch: gh could not read the labels of issue #*: }" "1|HTTP 502"
 fake_unfail
-fake_fail adapter_issues_labelled "HTTP 502"
-out="$("$ORCH" autopilot questions 2>&1)"; st=$?
-assert_status "questions failing on the needs-human listing exits 1" "$st" 1
-assert_eq "naming the listing and the reason" "$out" "orch: gh could not list the needs-human issues: HTTP 502"
-fake_unfail
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot questions, reply and resume ------------------------------------
@@ -1282,9 +1277,10 @@ fake_issue 11 open needs-human orch:spec
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #11's comments"
-fake_fail adapter_issues_labelled "$GH_502"
-"$ORCH" autopilot questions >/dev/null 2>&1; st=$?
+fake_fail adapter_issues_labelled "HTTP 502"
+out="$("$ORCH" autopilot questions 2>&1 >/dev/null)"; st=$?
 assert_status "a failed listing dies" "$st" 1
+assert_eq "naming the needs-human listing and the reason" "$out" "orch: gh could not list the needs-human issues: HTTP 502"
 fake_unfail
 
 # usage

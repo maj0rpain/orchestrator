@@ -51,12 +51,17 @@ readonly ORCH_DIR_NAME
 # exclude_orch_dirs and doctor's exclude check read.
 readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # The most issues or PRs one list call asks gh for, where gh needs a bare
-# --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
-# bodies pr release reads. A list that reaches it may be missing entries past
-# it (the newest, the labelled listings running oldest first). Overridable
-# through the environment, like review.sh's ORCH_CI_* knobs,
-# so a test can turn it down; it stays out of the documented command surface.
+# --limit: the search-backed issue listings (finding-triage scan's labelled
+# list, the tick's flow and done reads, `autopilot questions` and `autopilot
+# candidates`), which warn when they reach it, and the merged-PR bodies pr
+# release reads. A list that reaches it may be missing entries past it (the
+# newest, the search-backed listings running oldest first). Overridable
+# through the environment, like review.sh's ORCH_CI_* knobs, so a test can turn
+# it down; a raised override stops counting at ISSUE_SEARCH_CAP. It stays out
+# of the documented command surface.
 readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
+# The most rows GitHub's search returns, whatever --limit asks for.
+readonly ISSUE_SEARCH_CAP=1000
 
 # The repo orch.sh works on (#520): GH_REPO when the caller set it, else the
 # owner/name parsed from the checkout's origin remote - never gh's own default

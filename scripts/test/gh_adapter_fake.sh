@@ -523,14 +523,20 @@ adapter_issues_labelled() {
     for l in "$@"; do grep -qxiF -- "$l" "$(fake_issue_dir "$n")/labels" 2>/dev/null || keep=0; done
     [ "$keep" = 1 ] || continue
     printf "%s\n" "$n"
-  done | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'BEGIN{if(n>1000)n=1000} NR<=n'
+  done | sort -n | fake_search_cut
+}
+
+# fake_search_cut: the first lesser of ISSUE_LIST_LIMIT and ISSUE_SEARCH_CAP
+# lines of stdin, as a search-backed real listing is cut.
+fake_search_cut() {
+  awk -v n="$ISSUE_LIST_LIMIT" -v cap="$ISSUE_SEARCH_CAP" 'BEGIN{if(n>cap)n=cap} NR<=n'
 }
 
 # adapter_issues_open_oldest: the open issues in the store, oldest first and
-# cut at ISSUE_LIST_LIMIT, so the newest are the ones dropped.
+# cut as adapter_issues_labelled is, so the newest are the ones dropped.
 adapter_issues_open_oldest() {
   ! fake_failing adapter_issues_open_oldest || return 1
-  fake_open_issues | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
+  fake_open_issues | sort -n | fake_search_cut
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues in the store
