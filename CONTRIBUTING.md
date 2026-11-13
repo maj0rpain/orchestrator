@@ -272,7 +272,8 @@ setup (`scripts/test/orch/setup.sh`), the gh adapter fake
 (`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
 `( ... )` subshell, and `tally_summary`, the ending each standalone suite
 calls) and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`,
-`fifo_read_line` for a read)
+`fifo_read_line` for a read) and the counting fixture
+(`scripts/test/counting.sh`: `counting_bin`, `counting_starts`)
 instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
@@ -411,6 +412,7 @@ scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per l
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
+scripts/test/counting.sh      the counting fixture the orch.sh suite's runner and hooks_test.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10
 scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
 scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK

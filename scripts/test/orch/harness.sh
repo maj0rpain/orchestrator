@@ -132,7 +132,7 @@ planted_minimal_tree() {
   t="$dir/scripts/test"
   mkdir -p "$t/orch" "$dir/scripts/dev" || return 1
   (cd "$PLUGIN_ROOT/scripts/test" && cp "${ALL_RUNNER_FILES[@]}" orch_test.sh tally.sh \
-    fifo.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$t/" && cp orch/setup.sh "$t/orch/" &&
+    fifo.sh counting.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$t/" && cp orch/setup.sh "$t/orch/" &&
     cp ../flow-state.sh "$dir/scripts/" && cp ../dev/section-durations.sh "$dir/scripts/dev/") || return 1
   printf '%s\n' '# --- isolation ---' 'echo; echo isolation; ok "isolation ran"' >"$t/orch/harness.sh" || return 1
   plant_file "$t/orch" zz-planted.sh || return 1
@@ -705,10 +705,11 @@ rm -rf "$quiet_dir"
 # a tally_init, for a suite that makes its tally file inside its checks), then
 # its lines from its `# >>> summary` line on.
 # The copies sit in scripts/test/ of a fresh root, beside the git_env.sh every
-# runner sources first, and the tally.sh they all source.
+# runner sources first, the tally.sh they all source, the counting.sh the
+# hooks suite sources and the fifo.sh the autopilot_up suite sources.
 cut_root="$(mktemp -d)"
 cut_dir="$cut_root/scripts/test"
-mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$(dirname "$SUITE_SCRIPT")/tally.sh" "$(dirname "$SUITE_SCRIPT")/fifo.sh" "$cut_dir/"
+mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$(dirname "$SUITE_SCRIPT")/tally.sh" "$(dirname "$SUITE_SCRIPT")/fifo.sh" "$(dirname "$SUITE_SCRIPT")/counting.sh" "$cut_dir/"
 for quiet_suite in "${SUITES[@]}"; do
   [ "$quiet_suite" = orch_test.sh ] && continue
   awk '
@@ -3189,10 +3190,11 @@ index_expected() {
 
 index_modules=()
 for f in "$PLUGIN_ROOT"/scripts/orch/*.sh; do index_modules+=("scripts/orch/${f##*/}"); done
-index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh)
+shared_tests=(scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh scripts/test/counting.sh)
+index_tests=(scripts/test/orch/setup.sh "${shared_tests[@]}")
 
 grep_disagrees=""
-for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh; do
+for rel in "${index_modules[@]}" "${shared_tests[@]}"; do
   [ "$(col0_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" = \
     "$(sourced_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" ] || grep_disagrees+=" $rel"
 done
@@ -3209,7 +3211,7 @@ index_default="$out"
 
 out="$(cd / && "$HELPERS" --tests)"; st=$?
 assert_status "the --tests listing succeeds" "$st" 0
-assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup, the gh fake and the tally" \
+assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup, the gh fake, the tally, the FIFO wait and the counting fixture" \
   "$(index_names "$out")" "$(index_expected "${index_tests[@]}")"
 assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
   "$(printf '# %s\n' "${index_tests[@]}")"

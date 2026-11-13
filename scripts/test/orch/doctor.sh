@@ -417,7 +417,7 @@ assert_eq "gives the GH_REPO instruction exactly once" \
 assert_eq "counts the later GitHub checks on the skip line, naming the bare cause" \
   "$(printf '%s\n' "$out" | grep -cx "warn  [0-9]* GitHub checks\\{0,1\\} skipped: $repo_missing")" "1"
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
-assert_eq "makes no gh call without a repo to pin it to" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null | wc -l | tr -d ' ')" "0"
+assert_eq "makes no gh call without a repo to pin it to" "$(gh_calls)" "0"
 unset GH_FIXTURE
 
 # The plugin depends on no other plugin (ADR-0028): doctor says nothing of

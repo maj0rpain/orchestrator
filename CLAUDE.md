@@ -63,7 +63,8 @@ Test-helper placement is checked by harness.sh's test-helper placement
 section; its failure message states the rule. Before writing or reusing a
 helper, run
 `scripts/dev/helpers.sh` (orch.sh's modules), `scripts/dev/helpers.sh --tests`
-(the shared test setup and the gh fake), or `scripts/dev/helpers.sh <file>` (any
+(the shared test setup, the gh fake, the tally, the FIFO wait and the
+counting fixture), or `scripts/dev/helpers.sh <file>` (any
 one bash file, e.g. `scripts/test/docs_lint.sh`) instead of grepping, and read
 CONTRIBUTING's Test helpers subsection: the fixtures to reach for first, running
 one section under `bash -x`, and the bash-version rule.
