@@ -43,19 +43,18 @@ status_others() {
 
 # Full detail on the current checkout's flow.
 status_flow() {
-  local slug phase issue branch pr iteration redo_count base budget
+  local slug phase issue branch pr iteration redo_count base base_raw budget budget_raw
   state_get_many slug=slug phase=phase issue=issue branch=branch pr=pr \
-    iteration=iteration redo_count=redo_count base=base budget=budget ||
+    iteration=iteration redo_count=redo_count base_raw=base budget_raw=budget ||
     die "cannot read the flow's state from $STATE"
-  base="$(flow_base_fallback "$base")"
-  budget="$(review_budget_fallback "$budget")"
-  issue="${issue:--}";            branch="${branch:--}";  pr="${pr:--}"
+  base="$(flow_base_fallback "$base_raw")"
+  budget="$(review_budget_fallback "$budget_raw")"
   note "flow:      $slug"
   note "phase:     $phase"
-  note "issue:     $issue"
+  note "issue:     ${issue:--}"
   note "base:      $base"
-  note "branch:    $branch"
-  note "PR:        $pr"
+  note "branch:    ${branch:--}"
+  note "PR:        ${pr:--}"
   # Against the budget, not alone: "iteration 3" does not say how far along
   # the loop is, and the budget is the one number a human chose.
   note "review:    iteration $iteration of $budget"
