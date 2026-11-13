@@ -2660,6 +2660,24 @@ git config orchestrator.autopilot.github-reserve 100
 out="$("$ORCH" autopilot show 2>&1)"; st=$?
 assert_status "show dies on an out-of-range github-reserve" "$st" 1
 assert_contains "naming key and value" "$out" "orchestrator.autopilot.github-reserve is 100"
+git config orchestrator.autopilot.github-reserve abc
+out="$("$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "show dies on a non-numeric github-reserve" "$st" 1
+assert_contains "naming the key and the value" "$out" "orchestrator.autopilot.github-reserve is abc"
+# the tick reads github-reserve after the GitHub pause check
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick dies on an invalid github-reserve when no GitHub pause holds" "$st" 1
+assert_contains "naming the key and the value on the tick" "$out" "orchestrator.autopilot.github-reserve is abc"
+printf '%s\n' "$(iso_of "$((quota_reset + 100))")" >"$top/.orchestrator/autopilot/github-limit"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick under a GitHub pause exits 0 despite an invalid github-reserve" "$st" 0
+assert_not_contains "and does not name github-reserve as invalid" "$out" "github-reserve is abc"
+rm -f "$top/.orchestrator/autopilot/github-limit"
+# the tick's help entry
+tick_help="$("$ORCH" help 2>&1 | tr -s ' \n' '  ')"
+assert_contains "the tick help says a GitHub rate-limit pause makes the tick do nothing" "$tick_help" "autopilot tick one watcher pass: while a GitHub API rate-limit pause holds, the tick does nothing."
+assert_contains "and names the quota read, labels, stale cleanup and merged-PR close in order" "$tick_help" "reads the GitHub quota for the early pause, ensures the eight labels, cleans up this host's stale claims and closes the issues of merged PRs"
+assert_contains "and puts sync detection and pickup behind the pauses" "$tick_help" "unless a usage limit pause or an early GitHub pause"
 git config --unset-all orchestrator.autopilot.github-reserve
 out="$("$ORCH" autopilot show 2>&1)"
 assert_contains "show lists github-reserve with its default" "$out" "orchestrator.autopilot.github-reserve 20 (default)"

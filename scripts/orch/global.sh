@@ -151,14 +151,19 @@ orch.sh - deterministic operations for the orchestrator flow
                               in <file>: needs-human, not orch:sync
   autopilot sync-fail <reason>
                               stop a failed sync, keeping orch:sync
-  autopilot tick              one watcher pass: ensure the eight labels,
-                              clean up this host's stale claims, then (unless
-                              a limit pause holds the tick, or auto-sync is
-                              false) detect done issues whose PR needs a sync
-                              and label them orch:sync, then claim each open
+  autopilot tick              one watcher pass: while a GitHub API rate-limit
+                              pause holds, the tick does nothing. Otherwise it
+                              reads the GitHub quota for the early pause,
+                              ensures the eight labels, cleans up this host's
+                              stale claims and closes the issues of merged
+                              PRs. Then, unless a usage limit pause or an
+                              early GitHub pause holds the tick, it detects
+                              done issues whose PR needs a sync (when
+                              auto-sync is on) and labels them orch:sync, then
+                              claims each open
                               phase-labelled or orch:sync issue (oldest first,
-                              below the cap), make or reuse its side checkout
-                              (a phase issue only) and start `autopilot run`
+                              below the cap), makes or reuses its side checkout
+                              (a phase issue only) and starts `autopilot run`
                               detached. Claude Code only;
                               needs orchestrator.autopilot.permission-mode
   autopilot watch [--every <seconds>]
