@@ -420,7 +420,7 @@ else
       [ "$orch_suite" = orch_test.sh ] || orch_others+="$orch_suite"$'\n'
     done
     orch_dealt="$(
-      { [ -r "$orch_durations_file" ] && cat "$orch_durations_file"
+      { [ -r "$orch_durations_file" ] && awk 1 "$orch_durations_file"
         printf '\001\n'
         printf '%s\n' "$orch_titles" | awk 'NR > 1 { printf "%d\t%s\n", NR, $0 }'
         printf '\001\n%s' "$orch_others"; } |
@@ -512,7 +512,7 @@ for ((orch_i = 0; orch_i < orch_total; orch_i++)); do
 done
 orch_order=()
 mapfile -t orch_order < <(
-  { [ -r "$orch_durations_file" ] && cat "$orch_durations_file"; printf '\001\n%s' "$orch_titles_kept"; } |
+  { [ -r "$orch_durations_file" ] && awk 1 "$orch_durations_file"; printf '\001\n%s' "$orch_titles_kept"; } |
     awk -F'\t' "$DURATIONS_AWK"'
       !seen && $0 == "\001" { seen = 1; next }
       !seen { durations_read(); next }

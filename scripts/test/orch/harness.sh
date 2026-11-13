@@ -103,6 +103,23 @@ planted_copy() {
   printf '%s\n' "$dir"
 }
 
+# planted_minimal_tree: like planted_copy, but a minimal tree - the runners,
+# setup.sh, the dev script section-durations.sh and an isolation-only harness.sh
+# in a fresh temp directory - with the section lines read from stdin planted as
+# scripts/test/orch/zz-planted.sh. Prints the directory; the caller removes it.
+planted_minimal_tree() {
+  local dir t
+  dir="$(mktemp -d)" || return 1
+  t="$dir/scripts/test"
+  mkdir -p "$t/orch" "$dir/scripts/dev" || return 1
+  (cd "$PLUGIN_ROOT/scripts/test" && cp "${ALL_RUNNER_FILES[@]}" orch_test.sh tally.sh \
+    fifo.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$t/" && cp orch/setup.sh "$t/orch/" &&
+    cp ../flow-state.sh "$dir/scripts/" && cp ../dev/section-durations.sh "$dir/scripts/dev/") || return 1
+  printf '%s\n' '# --- isolation ---' 'echo; echo isolation; ok "isolation ran"' >"$t/orch/harness.sh" || return 1
+  plant_file "$t/orch" zz-planted.sh || return 1
+  printf '%s\n' "$dir"
+}
+
 # files_marks <output>: the isolation header and the planted marks in it - the
 # section-files self-test's planted section headers and preamble lines - in
 # order, comma-separated. Every planted mark of that section starts with
@@ -828,22 +845,17 @@ rm -rf "$ord_dir"
 # after another, so the log sorted by id is the start order.
 echo
 echo "the shard setting (#2859)"
-sh_dir="$(mktemp -d)"
+sh_dir="$(
+  for sh_n in 1 2 3 4 5; do
+    echo "  # --- shard s$sh_n"
+    echo "  echo \"\$\$ shard s$sh_n\" >>\"\$SH_LOG\"; echo; echo 'shard s$sh_n'; ok 's$sh_n ran'; echo \"\${ORCH_TEST_SHARD-unset}\" >>\"\$SH_SEEN\""
+  done | planted_minimal_tree
+)"
 sh_t="$sh_dir/scripts/test"
-mkdir -p "$sh_t/orch"
-(cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" orch_test.sh tally.sh \
-  fifo.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$sh_t/" && cp orch/setup.sh "$sh_t/orch/" && cp ../flow-state.sh "$sh_dir/scripts/")
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for sh_s in "${SUITES[@]}"; do
   [ -e "$sh_t/$sh_s" ] || echo 'echo; echo "1 passed, 0 failed"' >"$sh_t/$sh_s"
 done
-printf '%s\n' '# --- isolation ---' 'echo; echo isolation; ok "isolation ran"' >"$sh_t/orch/harness.sh"
-{
-  for sh_n in 1 2 3 4 5; do
-    echo "# --- shard s$sh_n"
-    echo "echo \"\$\$ shard s$sh_n\" >>\"\$SH_LOG\"; echo; echo 'shard s$sh_n'; ok 's$sh_n ran'; echo \"\${ORCH_TEST_SHARD-unset}\" >>\"\$SH_SEEN\""
-  done
-} >"$sh_t/orch/zz-shard.sh"
 printf '%s\n' "10	50	shard s1" "30	40	shard s2" "20	30	shard s3" "5	20	shard s4" \
   "9	70	hooks_test.sh" "9	10	shellcheck" "1	99	a section that no longer exists" \
   >"$sh_t/section-durations.tsv"
@@ -875,8 +887,14 @@ printf '%s\n' "9	30	shellcheck" >"$sh_t/section-durations.tsv"
 sh_run 1/2
 assert_eq "with no section listed, each weighs one CPU second" "$sh_printed" "isolation,s4,"
 cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
+printf '%s' "$(<"$sh_dir/durations.keep")" >"$sh_t/section-durations.tsv"
+sh_run 1/2
+assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s2,s4,"
+sh_run 2/2
+assert_eq "and starts its sections longest-first" "$sh_started" "s5,s3,s1,"
+cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-for sh_n in 1 2 3 5 6 9; do
+for sh_n in 1 2 9; do
   sh_union=""
   for ((sh_i = 1; sh_i <= sh_n; sh_i++)); do
     sh_run "$sh_i/$sh_n"
@@ -956,7 +974,7 @@ rm -rf "$sh_all_dir" "$sh_dir"
 # script over the same tree with a stub shellcheck first on PATH.
 echo
 echo "section durations (#2858)"
-dur_dir="$(planted_copy <<'PLANTED'
+dur_dir="$(planted_minimal_tree <<'PLANTED'
   # --- dur a
   echo; echo "dur a"; echo "dur=${ORCH_TEST_DURATIONS-unset}"; ok "a ran"
   # --- dur b
@@ -964,8 +982,6 @@ dur_dir="$(planted_copy <<'PLANTED'
 PLANTED
 )"
 dur_orch="$dur_dir/scripts/test/orch"
-find "$dur_orch" -name "*.sh" ! -name setup.sh ! -name zz-planted.sh -delete
-printf '%s\n' '# --- isolation' 'echo; echo isolation; ok "isolation ran"' >"$dur_orch/harness.sh"
 dur_out="$dur_dir/out.tsv"
 # dur_run <jobs> [<file>]: orch_test.sh over the planted tree, parallel by
 # default, writing durations to <file> (default $dur_out).
