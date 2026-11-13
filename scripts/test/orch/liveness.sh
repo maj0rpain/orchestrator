@@ -77,6 +77,16 @@ else
 fi
 rm -f "$rundir/9.pid"
 
+# hit_take: the hit file's text, and the file removed
+printf '2030-01-01T00:00:00Z\n' >"$rundir/30.hit"
+assert_eq "hit_take prints the hit file's text" "$(sourced_orch liveness_hit_take 30)" "2030-01-01T00:00:00Z"
+assert_eq "and removes the hit file" "$(on_disk "$rundir/30.hit")" absent
+assert_eq "hit_take prints nothing when there is no hit file" "$(sourced_orch liveness_hit_take 30)" ""
+printf 'x\n' >"$rundir/31.hit"
+sourced_orch liveness_run_begin 31
+assert_eq "run_begin still clears the hit file" "$(on_disk "$rundir/31.hit")" absent
+rm -f "$rundir/31.pid"
+
 # run_begin: success, failure
 printf 'old\n' >"$rundir/10.tick"
 sourced_orch liveness_run_begin 10

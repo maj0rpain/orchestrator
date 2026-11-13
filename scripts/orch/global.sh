@@ -170,7 +170,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               .orchestrator/autopilot/logs/; stops the issue as
                               limited on a usage or GitHub limit, else fails it
                               when the claim is still held at its exit (a
-                              GitHub-limited start-up read only releases it)
+                              GitHub limit met before the session starts only releases it)
   autopilot ask <phase> <file>
                               post <file> as the phase's question comment
                               (@mentioning the handle), add needs-human, then
