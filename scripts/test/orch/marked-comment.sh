@@ -161,7 +161,7 @@ arr="$(mc_array "$q" "$ret" "$(marker_of limited build)"$'\r\n' "Autopilot refus
   "$(marker_of failure plan)" $'## Spec review\t' "Spec ruling: z" "plain" "<!-- orch:handoff x" \
   "Autopilot failed in the implement phase: boom" "$live" "$q"$'\r\ntext')"
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$arr")"
-assert_eq "the prelude gives every comment its kind, arg and retired" "$got" \
+assert_eq "the prelude gives every comment its kind, arg, retired and cause" "$got" \
   '[{"kind":"question","arg":"plan","retired":false,"cause":""},{"kind":"handoff","arg":"01-plan","retired":true,"cause":""},{"kind":"limited","arg":"build","retired":false,"cause":""},{"kind":"refusal","arg":"plan","retired":false,"cause":""},{"kind":"failure","arg":"plan","retired":false,"cause":""},{"kind":"spec-review","arg":null,"retired":false,"cause":""},{"kind":"spec-ruling","arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":"failure","arg":"implement","retired":false,"cause":""},{"kind":"handoff","arg":"01-plan","retired":false,"cause":""},{"kind":"question","arg":"plan","retired":false,"cause":""}]'
 # The same prelude over the edge cases: a marker on the second line, a retired
 # tag on a non-handoff marker, a marker with an extra argument, a CRLF spec
