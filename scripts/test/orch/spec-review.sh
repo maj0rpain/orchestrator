@@ -214,9 +214,9 @@ assert_eq "state.json unchanged by a pass" "$(cksum <"$sr_state")" "$before"
 # The one-jq read of phase and issue: flow_active, require_state_readable and
 # the multi-key read each start jq once.
 sr_flow implement 15; sr_seed
-sr_jq="$(jq_counting_bin)"
+sr_jq="$(counting_bin jq)"
 PATH="$sr_jq:$PATH" "$ORCH" spec-review begin 14 >/dev/null 2>&1
-assert_eq "begin beside an active flow starts jq three times in all" "$(jq_starts "$sr_jq")" "3"
+assert_eq "begin beside an active flow starts jq three times in all" "$(counting_starts "$sr_jq" jq)" "3"
 
 sr_flow "done" 14; sr_seed
 before="$(cksum <"$sr_state")"
