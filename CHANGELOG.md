@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.49
+
+The section-durations dev script now stops every run it started on INT or TERM and exits 130 at once, instead of holding the signal until the running suite ends. Test-tooling fixes: the test-tree header names the pooled shellcheck step, the harness drops its `dur_unset` hook, the shard section asserts the every-section-once union in one loop, and the slot fd contract also checks the section-durations script.
+
 ## 5.2.48
 
 Rename the shared test helper `nowalk_bin` to `worktree_list_fails_bin`, and its callers' `nowalk` variables to `worktree_list_fails`, so the names say that `git worktree list` fails. The helper's comment now says it fails every `checkout_parse` reader.
