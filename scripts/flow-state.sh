@@ -331,11 +331,11 @@ flow_state_pairs_json() {
     [ $# -ge 2 ] || return 2
     k="$1"
     if [ -n "$str" ]; then
-      v="$(jq -n --arg v "$2" '$v')" || return
+      v="$(jq -n --arg v "$2" '$v' 2>/dev/null)" || return 1
     else
-      v="$(flow_state_json "$2")" || return
+      v="$(flow_state_json "$2" 2>/dev/null)" || return 1
     fi
-    obj="$(jq -n --argjson o "$obj" --arg k "$k" --argjson v "$v" '$o + {($k): $v}')" || return
+    obj="$(jq -n --argjson o "$obj" --arg k "$k" --argjson v "$v" '$o + {($k): $v}' 2>/dev/null)" || return 1
     shift 2
   done
   printf '%s\n' "$obj"

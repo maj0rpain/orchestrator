@@ -126,7 +126,8 @@ state_write_string() {
 # flow_state_pairs_json and merged into $STATE by flow_state_merge. A
 # malformed pair list dies "malformed state write: <args>". A failed write
 # dies naming each key given once, in order (never a --string marker), as
-# state_write's does, or naming no key when the object's keys cannot be read.
+# state_write's does, or naming no key when a value will not convert or the
+# object's keys cannot be read.
 state_write_many() {
   local obj rc keys
   obj="$(flow_state_pairs_json "$@")" || {

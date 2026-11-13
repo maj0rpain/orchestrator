@@ -405,6 +405,13 @@ assert_eq "flow_state_write_many fails with a status other than 0 and 2 on a val
 assert_eq "printing nothing else" "${out%status *}" ""
 assert_eq "and leaves the file untouched for that" "$(cat "$fs_dir/str.json")" "$(cat "$fs_dir/str.before")"
 assert_eq "with no temp file beside it for that" "$(ls -A "$fs_dir")" "$before_ls"
+tn2_bin="$(mktemp -d)"
+writeln '#!/bin/sh' 'case " $* " in *tonumber*) echo "jq: usage error" >&2; exit 2 ;; esac' "exec $(command -v jq) \"\$@\"" >"$tn2_bin/jq"
+chmod +x "$tn2_bin/jq"
+out="$(fs_run "PATH='$tn2_bin':\$PATH; flow_state_pairs_json budget 5 2>&1")"
+assert_eq "flow_state_pairs_json maps a jq status 2 on a value that will not convert to a status other than 2" \
+  "$(case "${out##*status }" in 0|2) echo "$out" ;; *) echo ok ;; esac)" "ok"
+assert_eq "and prints nothing, jq's own error included" "${out%status *}" ""
 restore_suite_env
 
 # --- commands on a truncated state.json (#1929) -----------------------------
