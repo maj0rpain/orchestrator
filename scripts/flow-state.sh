@@ -22,15 +22,20 @@
 #   <var>=<key>, both before any jq, assigning and printing nothing; an
 #   absent, unparseable or non-object file fails inside its one jq. On any
 #   failure nothing is assigned.
-# - flow_state_many_arg: 1 for a key outside the table and 2 for a malformed
-#   <var>=<key>, which is caller input, not a programming error.
+# - flow_state_resolve_many_arg: 1 for a key outside the table and 2 for a
+#   malformed <var>=<key>, which is caller input, not a programming error.
+# - flow_state_pairs_json: 2 for a dangling --string or a key with no value,
+#   caller input; any other non-zero status for a value that will not convert,
+#   whichever its one walk meets first. Either way it prints nothing.
+# - flow_state_merge: non-zero, the file untouched and no temp file left, for
+#   an absent file or a failed replace.
 # - Writers (flow_state_write, flow_state_write_string, flow_state_write_many,
 #   flow_state_create): non-zero, the state file untouched and no temp file
 #   left, when the write fails. flow_state_write, flow_state_write_string and
 #   flow_state_write_many change an existing state file: an absent one is a
 #   failed write, and nothing is created. flow_state_write_many takes
 #   --string before a pair to store that pair's value as a JSON string, as
-#   flow_state_write_string does; a dangling --string is a failed write.
+#   flow_state_write_string does; a malformed pair list is a failed write.
 #   flow_state_create is the one writer that creates the file, or replaces it
 #   whole.
 # - flow_state_seed: 2 for an arg row it has no value for, a programming
@@ -154,24 +159,24 @@ flow_state_get() {
   jq -r --arg k "$2" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$1"
 }
 
-# flow_state_many_arg <var>=<key> <rows> <prefix>: the one check of a
+# flow_state_resolve_many_arg <var>=<key> <rows> <prefix>: the one check of a
 # multi-key read's argument, die-free and silent. <rows> is state_rows's output.
 # Returns 2 for a malformed argument (no =, or an empty <var>) and 1 for a key
 # outside the table. On success it sets <prefix>var, <prefix>key and
 # <prefix>def - the var, the key and the key's table default - through
 # printf -v, so the caller names the variables and none of the caller's own is
-# shadowed. Its locals carry the __fsma_ prefix. No nameref: bash 3.2.
-flow_state_many_arg() {
-  local __fsma_var __fsma_key __fsma_k __fsma_d
+# shadowed. Its locals carry the __fsrma_ prefix. No nameref: bash 3.2.
+flow_state_resolve_many_arg() {
+  local __fsrma_var __fsrma_key __fsrma_k __fsrma_d
   case "$1" in *=*) ;; *) return 2 ;; esac
-  __fsma_var="${1%%=*}"
-  __fsma_key="${1#*=}"
-  [ -n "$__fsma_var" ] || return 2
-  while IFS='|' read -r __fsma_k __fsma_d _ _; do
-    [ "$__fsma_k" = "$__fsma_key" ] || continue
-    printf -v "${3}var" '%s' "$__fsma_var"
-    printf -v "${3}key" '%s' "$__fsma_key"
-    printf -v "${3}def" '%s' "$__fsma_d"
+  __fsrma_var="${1%%=*}"
+  __fsrma_key="${1#*=}"
+  [ -n "$__fsrma_var" ] || return 2
+  while IFS='|' read -r __fsrma_k __fsrma_d _ _; do
+    [ "$__fsrma_k" = "$__fsrma_key" ] || continue
+    printf -v "${3}var" '%s' "$__fsrma_var"
+    printf -v "${3}key" '%s' "$__fsrma_key"
+    printf -v "${3}def" '%s' "$__fsrma_d"
     return 0
   done <<<"$2"
   return 1
@@ -187,9 +192,9 @@ flow_state_many_arg() {
 # travel NUL-separated and are read back with read -r -d '', byte for byte; a
 # NUL inside a value is dropped by the jq. A key outside the table returns 1
 # and a malformed <var>=<key> (no =, or an empty <var>) returns 2, both before
-# any jq, by flow_state_many_arg; a failed read - an absent, unparseable or
-# non-object file, null included - returns the jq's status. On any failure
-# nothing is assigned.
+# any jq, by flow_state_resolve_many_arg; a failed read - an absent,
+# unparseable or non-object file, null included - returns the jq's status. On
+# any failure nothing is assigned.
 #
 # jq's output goes through a temp file on purpose; do not read it directly.
 # This module is sourced by the hooks and stays bash 3.2-compatible. On bash
@@ -203,7 +208,7 @@ flow_state_get_many() {
   shift
   __fsgm_rows="$(state_rows)" || return
   for __fsgm_arg in "$@"; do
-    flow_state_many_arg "$__fsgm_arg" "$__fsgm_rows" __fsgm_a_ || return
+    flow_state_resolve_many_arg "$__fsgm_arg" "$__fsgm_rows" __fsgm_a_ || return
     __fsgm_kd="${__fsgm_kd:+$__fsgm_kd$'\n'}$__fsgm_a_key|$__fsgm_a_def"
     __fsgm_vars[__fsgm_n]="$__fsgm_a_var"
     __fsgm_n=$((__fsgm_n + 1))
@@ -239,9 +244,9 @@ flow_state_replace() {
     || { rc=$?; rm -f "$tmp"; return "$rc"; }
 }
 
-# flow_state_merge <file> <json-object>: the one write of keys, private to the
-# writers below. It stamps updated before it sets the object's keys, so a write
-# of updated itself sticks. An absent <file> is a failure.
+# flow_state_merge <file> <json-object>: the one write of keys. It stamps
+# updated before it sets the object's keys, so a write of updated itself
+# sticks. An absent <file> is a failure.
 flow_state_merge() {
   [ -f "$1" ] || return 1
   flow_state_replace "$1" --argjson o "$2" --arg now "$(now)" \
@@ -311,20 +316,19 @@ flow_state_json() {
   esac
 }
 
-# flow_state_write_many <file> [--string] <key> <value> [[--string] <key>
-# <value>]...: sets every key in one replace, each value coerced as
-# flow_state_write does, stamping updated as flow_state_merge does. A
-# --string before a pair stores that pair's value as a JSON string, always, as
-# flow_state_write_string does. A failure - a dangling --string, a missing
-# value, a value that will not convert, or a failed replace - leaves <file>
-# untouched and no temp file.
-flow_state_write_many() {
-  local file="$1" obj='{}' k v str
-  shift
+# flow_state_pairs_json [--string] <key> <value> [[--string] <key> <value>]...:
+# the one walk of the multi-key pair grammar, die-free and silent. Prints the
+# pairs as one JSON object: each value coerced as flow_state_json does, or a
+# JSON string after --string, as flow_state_write_string stores it. Returns 2
+# for a dangling --string or a key with no value, and any other non-zero
+# status for a value that will not convert, whichever the walk meets first;
+# it prints nothing then.
+flow_state_pairs_json() {
+  local obj='{}' k v str
   while [ $# -gt 0 ]; do
     str=""
     if [ "$1" = --string ]; then str=1; shift; fi
-    [ $# -ge 2 ] || return 1
+    [ $# -ge 2 ] || return 2
     k="$1"
     if [ -n "$str" ]; then
       v="$(jq -n --arg v "$2" '$v')" || return
@@ -334,6 +338,18 @@ flow_state_write_many() {
     obj="$(jq -n --argjson o "$obj" --arg k "$k" --argjson v "$v" '$o + {($k): $v}')" || return
     shift 2
   done
+  printf '%s\n' "$obj"
+}
+
+# flow_state_write_many <file> [--string] <key> <value> [[--string] <key>
+# <value>]...: sets every key in one replace, the pairs read by
+# flow_state_pairs_json and merged by flow_state_merge, which stamps updated.
+# A failure - a malformed pair list, a value that will not convert, or a
+# failed replace - leaves <file> untouched and no temp file.
+flow_state_write_many() {
+  local file="$1" obj
+  shift
+  obj="$(flow_state_pairs_json "$@")" || return
   flow_state_merge "$file" "$obj"
 }
 

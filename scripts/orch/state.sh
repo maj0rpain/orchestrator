@@ -96,7 +96,7 @@ state_many_recheck() {
   local __smr_arg __smr_rows __smr_rc __smr_var __smr_key __smr_def
   __smr_rows="$(state_rows)" || return
   for __smr_arg in "$@"; do
-    flow_state_many_arg "$__smr_arg" "$__smr_rows" __smr_ && continue
+    flow_state_resolve_many_arg "$__smr_arg" "$__smr_rows" __smr_ && continue
     __smr_rc=$?
     [ "$__smr_rc" = 2 ] && die "malformed state read: $__smr_arg"
     die "unknown state key: ${__smr_arg#*=}"
@@ -121,18 +121,23 @@ state_write_string() {
 }
 
 # state_write_many [--string] <key> <value> [[--string] <key> <value>]...: the
-# many-key form of state_write, over flow_state_write_many on $STATE: every key
-# is set in one write, and --string before a pair stores its value as a JSON
-# string. A failed write dies, naming each key given (never a --string marker),
-# as state_write's does.
+# many-key form of state_write: every key is set in one write, and --string
+# before a pair stores its value as a JSON string. The pairs are built by
+# flow_state_pairs_json and merged into $STATE by flow_state_merge. A
+# malformed pair list dies "malformed state write: <args>". A failed write
+# dies naming each key given once, in order (never a --string marker), as
+# state_write's does, or naming no key when the object's keys cannot be read.
 state_write_many() {
-  local a keys="" want=1
-  for a in "$@"; do
-    if [ "$a" = --string ] && [ "$want" = 1 ]; then continue; fi
-    if [ "$want" = 1 ]; then keys="${keys:+$keys, }$a"; want=0; else want=1; fi
-  done
-  flow_state_write_many "$STATE" "$@" ||
-    die "could not record $keys in $STATE - the flow is unchanged"
+  local obj rc keys
+  obj="$(flow_state_pairs_json "$@")" || {
+    rc=$?
+    [ "$rc" = 2 ] && die "malformed state write: $*"
+    die "could not record the state write in $STATE - the flow is unchanged"
+  }
+  flow_state_merge "$STATE" "$obj" && return 0
+  keys="$(jq -r 'keys_unsorted | join(", ")' <<<"$obj")" ||
+    die "could not record the state write in $STATE - the flow is unchanged"
+  die "could not record $keys in $STATE - the flow is unchanged"
 }
 
 # require_state [die2]: dies unless an active flow's state file exists and
