@@ -1097,7 +1097,7 @@ assert_eq "all.sh runs an empty setting as unset" "$(cat "$sh_all_dir/scripts/te
 rm -rf "$sh_all_dir" "$sh_dir"
 
 # --- section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858) -----
-# A minimal test tree with planted sections and stub suites, run
+# A copy of the scripts tree cut down to planted sections and stub suites, run
 # at its command line: orch_test.sh with ORCH_TEST_DURATIONS, then the dev
 # script over the same tree with a stub shellcheck first on PATH.
 echo
