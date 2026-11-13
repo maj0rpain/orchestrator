@@ -53,7 +53,8 @@ readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # The most issues or PRs one list call asks gh for, where gh needs a bare
 # --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
 # bodies pr release reads. A list that reaches it may be missing entries past
-# it (the newest, as the labelled listings run oldest first). Overridable through the environment, like review.sh's ORCH_CI_* knobs,
+# it (the newest, the labelled listings running oldest first). Overridable
+# through the environment, like review.sh's ORCH_CI_* knobs,
 # so a test can turn it down; it stays out of the documented command surface.
 readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
 

@@ -542,7 +542,8 @@ adapter_issues_open_oldest() {
 
 # adapter_issues_labelled_bodies <label>...: the open issues carrying every
 # label named, oldest first and cut at ISSUE_LIST_LIMIT as
-# adapter_issues_labelled is, each as one count-marked record: its number, its label count, one label per line,
+# adapter_issues_labelled is, each as one count-marked record: its number,
+# its label count, one label per line,
 # its body's line count (one more than the newlines the body holds, counted
 # with `indices`, never `split`, whose answer on an empty string differs
 # between jq implementations), then the body's lines.

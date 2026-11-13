@@ -511,10 +511,10 @@ fake_open_issues() {
 }
 
 # adapter_issues_labelled <label>...: the open issues in the store carrying
-# every label named, oldest first - the first lesser-of-ISSUE_LIST_LIMIT-and-1000
-# of them, as the search-backed real listing is cut, with awk, which reads all of the
-# while loop's output, so the loop never takes SIGPIPE under pipefail as it
-# would from head (#1019).
+# every label named, oldest first - the first lesser of ISSUE_LIST_LIMIT and
+# 1000 of them, as the search-backed real listing is cut, with awk, which reads
+# all of the while loop's output, so the loop never takes SIGPIPE under
+# pipefail as it would from head (#1019).
 adapter_issues_labelled() {
   local n l keep
   ! fake_failing adapter_issues_labelled || return 1

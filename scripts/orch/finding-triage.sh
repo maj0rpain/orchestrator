@@ -212,6 +212,7 @@ finding_scan_one() {
 # <pr> <file>:<line> <result> <detail> <triage state>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
+  # shellcheck disable=SC2034 # listed is issues_labelled_bodies_read's count out-param, unused here
   local all=false issue="" pr_filter="" triage sev n listed labels body default ref gh_err
   local -A found_labels=() found_bodies=()
   local args=() triage_filter=()
