@@ -301,6 +301,19 @@ git_fails_bin() { fails_bin git "$1"; }
 # template - the temp file every state write makes - and nothing else. Unlike
 # chmod a-w, it also fails as root.
 state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
+# state_write_fails_after_first_bin: a state_write_fails_bin variant that lets
+# the first state.json.* temp file through and fails every later one, so a
+# command's first state write lands and the rest fail.
+state_write_fails_after_first_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  writeln '#!/bin/sh' 'case " $* " in' '  *state.json.*)' \
+    "    if [ -e '$dir/seen' ]; then exit 1; fi; : >'$dir/seen' ;;" 'esac' \
+    "exec $(command -v mktemp) \"\$@\"" >"$dir/mktemp"
+  chmod +x "$dir/mktemp"
+  printf '%s\n' "$dir"
+}
+
 # nowalk_bin: a git_fails_bin that fails `worktree list` alone, so it fails the
 # checkouts walk and nothing else.
 nowalk_bin() { git_fails_bin '" worktree list "*'; }

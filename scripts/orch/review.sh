@@ -778,12 +778,14 @@ cmd_review() {
       budget="$(review_budget)"
       [ "$n" -le "$budget" ] || \
         die "budget of $budget iterations spent - stop the loop and report, do not start another"
-      state_write iteration "$n"
       # A loop's first iteration - iteration 0, or the one after a record with a
-      # Terminal state - renews the loop's flake rerun; resume never gets here.
+      # Terminal state - renews the loop's flake rerun, in the write that
+      # records the iteration; resume never gets here.
       if [ "$prior" -eq 0 ] ||
         { prior_path="$(cmd_review path "$prior")" && review_record_terminal "$prior_path" sec; }; then
-        state_write flake_rerun_used false
+        state_write_many iteration "$n" flake_rerun_used false
+      else
+        state_write iteration "$n"
       fi
       note "$n"
       ;;

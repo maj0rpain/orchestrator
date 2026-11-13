@@ -251,8 +251,7 @@ cmd_branch_create() {
   discard_create_work "$name"
   fork_new_branch "$name" "$start"
   sha="$(git rev-parse HEAD)"
-  state_write_string branch "$name"
-  state_write_string base_sha "$sha"
+  state_write_many --string branch "$name" --string base_sha "$sha"
   record_branch_base "$name" "$base" "$sha"
   note "$name"
 }
