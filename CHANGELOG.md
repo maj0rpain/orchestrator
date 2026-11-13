@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.40
+
+Reword the `ISSUE_LIST_LIMIT` comment to describe the listings it bounds by kind, and drop two redundant below-limit `autopilot tick` re-runs from the autopilot tests.
+
 ## 5.2.39
 
 `orch.sh`'s modules make every plain temp file through `temp_file_make`, keeping each site's own failure reaction; mktemp's own diagnostic, which some sites let through to stderr, is no longer printed at the moved sites. `file_read`'s header now says that a file it cannot read starts one `cat`, which prints cat's diagnostic on stderr. The helper that finds a checkout's git folder moves from the side-checkout module to the Checkout module as `checkout_gitdir_into`, its git fallback still silent on stderr when the path is no checkout.
