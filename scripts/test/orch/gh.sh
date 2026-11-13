@@ -1847,6 +1847,18 @@ out="$(sourced_orch adapter_issue_body 5 2>&1)"; st=$?
 assert_status "a secondary limit the retry clears answers with status 0" "$st" 0
 assert_eq "with the operation's own answer and nothing else" "$out" "Body."
 fake_unfail
+# A rate-limit marker with secondary wording: the first failure is waited out
+# (ORCH_GH_LIMIT_WAIT) and retried once; the marker persists, so the retry meets
+# it again and the limit is given up on with the handler's message.
+fake_ratelimit 'You have exceeded a secondary rate limit.'
+SECONDS=0
+out="$(ORCH_GH_LIMIT_WAIT=1 sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a secondary limit marker waits once before the retry" "$((SECONDS >= 1 ? 0 : 1))" 0
+assert_status "and the retry meeting it again fails the call" "$st" 1
+assert_contains "with the handler's message" "$out" "orch: GitHub API rate limit reached"
+assert_eq "the secondary wording is not passed through" \
+  "$(grep -c 'secondary rate limit' <<<"$out")" "0"
+rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
 sourced_orch adapter_issue_body 5 >/dev/null 2>&1; st=$?
 assert_status "a failure that is no limit keeps its failed status" "$st" 1
