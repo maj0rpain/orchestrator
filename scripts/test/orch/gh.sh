@@ -602,6 +602,133 @@ fake_pr 82 open topic3 main
 fake_pr_head 82 abc123
 assert_eq "a non-empty head with no seeded commits is its own single commit" \
   "$(faked adapter_pr_refs 82)" "$(writeln abc123 topic3 main abc123)"
+# The fake's busiest functions answer from the store in bash (#2861): a bare
+# PATH holds only the commands each may keep.
+fake_github
+FB="$(command -v bash)"
+bare_dir="$(mktemp -d)"
+mkdir "$bare_dir/empty" "$bare_dir/sort" "$bare_dir/sortawk" "$bare_dir/mkcat"
+ln -s "$(command -v sort)" "$bare_dir/sort/sort"
+for c in sort awk; do ln -s "$(command -v $c)" "$bare_dir/sortawk/$c"; done
+for c in mkdir cat; do ln -s "$(command -v $c)" "$bare_dir/mkcat/$c"; done
+# barely <dir> <function> [args]: the function run with PATH holding only <dir>.
+barely() { local p="$1"; shift; PATH="$bare_dir/$p" "$FB" -c 'source "$1"; shift; "$@"' _ "$GH_ADAPTER_FAKE" "$@"; }
+S="$ORCH_GH_FAKE_STORE"
+export ISSUE_LIST_LIMIT=100
+export ISSUE_SEARCH_CAP=1000
+fake_issue 21 open Alpha beta
+fake_issue 22 open alpha
+fake_issue 23 closed alpha
+fake_issue 30 open alpha beta-two
+fake_pr 24 open topic main
+mkdir -p "$S/issues/25"
+fake_issue 26 open
+rm "$S/issues/26/labels"
+assert_eq "fake_open_issues lists open issues newest first, leaving out PRs, closed issues and a stateless one" \
+  "$(barely sort fake_open_issues | tr '\n' ' ')" "30 26 22 21 "
+assert_eq "adapter_issues_labelled matches whole-line, case-insensitively" \
+  "$(barely sortawk adapter_issues_labelled ALPHA | tr '\n' ' ')" "21 22 30 "
+assert_eq "several labels are all required, a substring of a label does not match" \
+  "$(barely sortawk adapter_issues_labelled alpha beta | tr '\n' ' ')" "21 "
+assert_eq "an issue with no labels file matches no label" \
+  "$(barely sortawk adapter_issues_labelled zzz | tr '\n' ' ')" ""
+assert_eq "adapter_issues_labelled cuts the list at ISSUE_LIST_LIMIT" \
+  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_labelled alpha | tr '\n' ' ')" "21 22 "
+assert_eq "fake_issue_labels reads the labels file with an empty PATH" \
+  "$(barely empty fake_issue_labels 21 | tr '\n' ',')" "Alpha,beta,"
+assert_eq "and none for a missing file" "$(barely empty fake_issue_labels 26)" ""
+mkdir -p "$S/blocked_by"
+printf '21\n\n99\n23\n22\n' >"$S/blocked_by/30"
+assert_eq "fake_open_blockers counts open ones only: not a closed, a missing or an empty line" \
+  "$(barely empty fake_open_blockers 30)" "2"
+assert_eq "and none for an issue with no blockers file" "$(barely empty fake_open_blockers 21)" "0"
+mkdir -p "$S/subs"
+printf '30\n\n23\n' >"$S/subs/21"
+assert_eq "adapter_sub_issues gives each sub-issue's state and blocker count" \
+  "$(barely empty adapter_sub_issues 21)" "$(printf '30\tOPEN\t2\n23\tCLOSED\t0')"
+assert_eq "and none for an issue with no sub-issue file" "$(barely empty adapter_sub_issues 22)" ""
+barely empty fake_failing adapter_issue_view; assert_status "fake_failing with nothing seeded answers false on an empty PATH" "$?" 1
+fake_fail adapter_issue_view "boom"
+assert_eq "a seeded failure takes effect" "$(faked fake_failing adapter_issue_view 2>&1; echo "rc=$?")" "$(printf 'boom\nrc=0')"
+fake_unfail
+fake_fail_times adapter_issue_view 1 "once"
+faked fake_failing adapter_issue_view >/dev/null 2>&1; assert_status "a failure with a count fires" "$?" 0
+faked fake_failing adapter_issue_view >/dev/null 2>&1; assert_status "and is spent after its count" "$?" 1
+fake_offline
+assert_contains "offline takes effect" "$(faked fake_failing adapter_issue_view 2>&1)" "no such host"
+fake_online
+printf 'x\n' >"$S/noauth"
+assert_contains "no-auth takes effect" "$(faked fake_failing adapter_issue_view 2>&1)" "HTTP 401"
+rm -f "$S/noauth"
+printf 'API rate limit exceeded\n' >"$S/ratelimit"
+faked fake_failing adapter_issue_view >/dev/null 2>&1; assert_status "a rate limit takes effect" "$?" 0
+rm -f "$S/ratelimit"
+mkdir -p "$S/hold"; mkfifo "$S/hold/adapter_issue_view"
+( faked fake_failing adapter_issue_view >/dev/null 2>&1 & echo $! >"$S/holdpid" )
+for _ in $(seq 1 100); do [ -f "$S/held" ] && break; sleep 0.05; done
+assert_status "a held operation parks, naming its pid" "$([ -f "$S/held" ] && echo 0 || echo 1)" 0
+printf go >"$S/hold/adapter_issue_view"
+rm -rf "$S/hold" "$S/held"
+cdir="$bare_dir/comments"
+cat_body="$bare_dir/body"; printf 'hi' >"$cat_body"
+barely mkcat fake_comment_append "$cdir" a t "$cat_body"
+mkdir "$bare_dir/c2"; barely mkcat fake_comment_append "$bare_dir/c2" a t "$cat_body"
+mkdir -p "$bare_dir/c3/1" "$bare_dir/c3/2"; barely mkcat fake_comment_append "$bare_dir/c3" a t "$cat_body"
+assert_eq "fake_comment_append numbers from a missing, an empty and a populated directory" \
+  "$(cat "$cdir/1/body") $(cat "$bare_dir/c2/1/body") $(cat "$bare_dir/c3/3/body")" "hi hi hi"
+err="$(ORCH_GH_FAKE_STORE="" "$FB" -c 'source "$1"; fake_open_issues' _ "$GH_ADAPTER_FAKE" 2>&1 >/dev/null)"; st=$?
+assert_status "an operation with no store fails" "$st" 1
+assert_contains "saying to call fake_github" "$err" "the gh fake has no store - call fake_github"
+# The second group answers from the store in bash too (#2862): each bare PATH
+# holds only what the function may keep - nothing for a plain read, jq for the
+# comments' JSON, sort and awk for a listing (and grep, which the unconverted
+# fake_issue_labels_counted runs), cat and date for the quota.
+mkdir "$bare_dir/jq" "$bare_dir/catdate" "$bare_dir/sortawkcat"
+ln -s "$(command -v jq)" "$bare_dir/jq/jq"
+for c in cat date; do ln -s "$(command -v $c)" "$bare_dir/catdate/$c"; done
+for c in sort awk tr grep; do ln -s "$(command -v $c)" "$bare_dir/sortawkcat/$c"; done
+fake_issue 40 open Lbl
+printf 'the body\nsecond\n' >"$S/issues/40/body"
+assert_eq "adapter_issue_state_labels gives the state then the labels on an empty PATH" \
+  "$(barely empty adapter_issue_state_labels 40 | tr '\n' ' ')" "OPEN Lbl "
+assert_eq "adapter_issues_labelled_bodies gives the count-marked record with sort, awk and the unconverted helper's grep" \
+  "$(barely sortawkcat adapter_issues_labelled_bodies Lbl | tr '\n' '|')" "40|1|Lbl|3|the body|second||"
+printf 'someone\n' >"$S/issues/40/author"; printf 'MEMBER\n' >"$S/issues/40/association"
+printf 'ed\n' >"$S/issues/40/editor"
+assert_eq "adapter_issue_authorship gives author, association, editor and an empty renamer on an empty PATH" \
+  "$(barely empty adapter_issue_authorship 40 | tr '\n' '|')" "someone|MEMBER|ed||"
+fake_issue 41 open
+assert_eq "an issue seeded without them is fake-gh as OWNER" \
+  "$(barely empty adapter_issue_authorship 41 | tr '\n' '|')" "fake-gh|OWNER|||"
+printf '40\n' >"$S/subs/28"
+assert_eq "adapter_issue_parent names the file holding the whole line on an empty PATH" \
+  "$(barely empty adapter_issue_parent 40)" "28"
+assert_eq "and nothing for a number only part of a line" "$(barely empty adapter_issue_parent 4 2>/dev/null)" ""
+mkdir -p "$S/claims"
+printf '12\th\t1\tp\tt\n' >"$S/claims/12"; printf '9\th\t2\tp\tt\n' >"$S/claims/9"
+assert_eq "adapter_claim_list gives the claims by issue number, numerically, on an empty PATH" \
+  "$(barely empty adapter_claim_list | cut -f1 | tr '\n' ' ')" "9 12 "
+rm -rf "$S/claims"
+assert_eq "and none with no claims directory" "$(barely empty adapter_claim_list)" ""
+jc="$bare_dir/jc"; mkdir -p "$jc"
+for k in 1 2 10; do
+  mkdir "$jc/$k"; printf 'au%s\n' "$k" >"$jc/$k/author"; printf 'c%s\n' "$k" >"$jc/$k/created"; printf 'b%s' "$k" >"$jc/$k/body"
+done
+printf 'MEMBER\n' >"$jc/2/association"
+assert_eq "fake_comments_json lists the comments in numeric order with jq alone on the PATH" \
+  "$(barely jq fake_comments_json "$jc" 7 | jq -r '[.[] | "\(.author)/\(.authorAssociation)/\(.createdAt)/\(.body)"] | join(" ")')" \
+  "au1/OWNER/c1/b1 au2/MEMBER/c2/b2 au10/OWNER/c10/b10"
+assert_eq "and [] for a missing directory" "$(barely jq fake_comments_json "$bare_dir/none" 7)" "[]"
+assert_eq "adapter_rate_limit gives a stored quota with cat on the PATH" \
+  "$(printf 'core\t1\t2\t3\n' >"$S/quota"; barely catdate adapter_rate_limit)" "$(printf 'core\t1\t2\t3')"
+rm -f "$S/quota"
+assert_eq "and full pools sharing one reset an hour on, with date and cat" \
+  "$(barely catdate adapter_rate_limit | cut -f2,3 | tr '\n' ' ') $(barely catdate adapter_rate_limit | cut -f4 | uniq | wc -l | tr -d ' ')" \
+  "$(printf '5000\t5000 5000\t5000  1')"
+unset jc
+rm -rf "$bare_dir"
+unset ISSUE_LIST_LIMIT FB bare_dir S cdir cat_body err st
+
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
@@ -1750,6 +1877,18 @@ out="$(sourced_orch adapter_issue_body 5 2>&1)"; st=$?
 assert_status "a secondary limit the retry clears answers with status 0" "$st" 0
 assert_eq "with the operation's own answer and nothing else" "$out" "Body."
 fake_unfail
+# A rate-limit marker with secondary wording: the first failure is waited out
+# (ORCH_GH_LIMIT_WAIT) and retried once; the marker persists, so the retry meets
+# it again and the limit is given up on with the handler's message.
+fake_ratelimit 'You have exceeded a secondary rate limit.'
+SECONDS=0
+out="$(ORCH_GH_LIMIT_WAIT=1 sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a secondary limit marker waits once before the retry" "$((SECONDS >= 1 ? 0 : 1))" 0
+assert_status "and the retry meeting it again fails the call" "$st" 1
+assert_contains "with the handler's message" "$out" "orch: GitHub API rate limit reached"
+assert_eq "the secondary wording is not passed through" \
+  "$(grep -c 'secondary rate limit' <<<"$out")" "0"
+rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
 sourced_orch adapter_issue_body 5 >/dev/null 2>&1; st=$?
 assert_status "a failure that is no limit keeps its failed status" "$st" 1
