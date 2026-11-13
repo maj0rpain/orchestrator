@@ -1713,6 +1713,17 @@ fake_unfail
 fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
 sourced_orch adapter_issue_body 5 >/dev/null 2>&1; st=$?
 assert_status "a failure that is no limit keeps its failed status" "$st" 1
+# A quota read that itself meets rate-limit wording is made once: never retried,
+# no limit message, no wait. The second call would succeed, so a retry shows.
+fake_online; fake_unfail
+fake_quota core 5 5000 2000000000
+fake_fail_times adapter_rate_limit 1 'You have exceeded a secondary rate limit.'
+SECONDS=0
+out="$(ORCH_GH_LIMIT_WAIT=30 sourced_orch gh_limit_pools 2>&1)"; st=$?
+assert_status "a quota read that meets a rate limit fails" "$st" 1
+assert_eq "once, printing nothing: no retry, no limit message" "$out" ""
+assert_status "and waits no ORCH_GH_LIMIT_WAIT of its own" "$((SECONDS < 20 ? 0 : 1))" 0
+fake_unfail
 restore_suite_env
 
 # --- gh rate limits: the GitHub pause and the hit file (#2577) ----------------

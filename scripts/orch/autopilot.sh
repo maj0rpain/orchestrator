@@ -740,12 +740,12 @@ autopilot_pause_epoch() {
 # pause a GitHub API rate limit writes (#2577).
 autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1")"; }
 
-# gh_limit_record <reset>: in an autopilot process - a tick or the session
-# wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) - writes
-# the GitHub pause, extended only to the later of two resets; in a session,
-# which has the wrapper's hit file path, writes the reset there too. An
+# autopilot_github_limit_record <reset>: in an autopilot process - a tick or the
+# session wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) -
+# writes the GitHub pause, extended only to the later of two resets; in a
+# session, which has the wrapper's hit file path, writes the reset there too. An
 # interactive call writes nothing. Never fails: a write that fails is a warning.
-gh_limit_record() {
+autopilot_github_limit_record() {
   local main_root
   [ "${ORCH_AUTOPILOT:-}" = 1 ] || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
   if main_root="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main_root" ]; then
@@ -766,17 +766,6 @@ gh_limit_record() {
 # while the pool is below the github-reserve (#2577).
 autopilot_github_early_file() { printf '%s/github-early-%s\n' "$(autopilot_dir "$1")" "$2"; }
 
-# autopilot_github_quota: GitHub's core and graphql pools, one per line as
-# "<pool> <remaining> <limit> <reset>", the reset in epoch seconds; fails,
-# printing nothing, when the read fails. The read is not itself guarded by the
-# limit handler and costs no quota.
-autopilot_github_quota() {
-  local out
-  out="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || return 1
-  [ -n "$out" ] || return 1
-  tr '\t' ' ' <<<"$out"
-}
-
 # autopilot_github_early <main>: the early GitHub pause. Reads the pools and,
 # for each with less than github-reserve percent of its limit left, records its
 # reset in the pool's early file (kept if later). A reserve of 0 reads nothing,
@@ -786,7 +775,7 @@ autopilot_github_early() {
   local quota pool remaining limit reset
   autopilot_setting github-reserve
   [ "$AUTOPILOT_VALUE" -gt 0 ] || return 0
-  quota="$(autopilot_github_quota)" || return 0
+  quota="$(gh_limit_pools)" || return 0
   while read -r pool remaining limit reset; do
     case "$pool" in core|graphql) ;; *) continue ;; esac
     case "$remaining$limit$reset" in *[!0-9]*|'') continue ;; esac
@@ -798,13 +787,13 @@ autopilot_github_early() {
 }
 
 # autopilot_github_usage <before>: the change in core and graphql usage since
-# <before> (autopilot_github_quota's output at session start) as one line, "core
+# <before> (gh_limit_pools's output at session start) as one line, "core
 # <n>, graphql <m>"; fails, printing nothing, when either read failed. A pool
 # that reset meanwhile counts as no usage.
 autopilot_github_usage() {
   local after pool n line="" b_used a_used
   [ -n "$1" ] || return 1
-  after="$(autopilot_github_quota)" || return 1
+  after="$(gh_limit_pools)" || return 1
   for pool in core graphql; do
     b_used="$(awk -v p="$pool" '$1 == p { print $3 - $2 }' <<<"$1")"
     a_used="$(awk -v p="$pool" '$1 == p { print $3 - $2 }' <<<"$after")"
@@ -1365,7 +1354,7 @@ autopilot_run() {
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
   done
   log="$(liveness_log_path "$issue" "$phase")" || exit $?
-  usage_before="$(autopilot_github_quota)" || usage_before=""
+  usage_before="$(gh_limit_pools)" || usage_before=""
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   ( cd "$side" && ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit" CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \
       --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \

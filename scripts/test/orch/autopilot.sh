@@ -2648,6 +2648,13 @@ fake_fail adapter_rate_limit "HTTP 502"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a failed rate_limit read pauses nothing" "$(tick_calls)" "2"
 fake_unfail
+# an empty read is a failed read too
+: >"$ORCH_GH_FAKE_STORE/quota"
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Reserve 9"
+printf '9\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an empty rate_limit read pauses nothing" "$(tick_calls)" "3"
+rm -f "$ORCH_GH_FAKE_STORE/quota"
 # the setting's range
 git config orchestrator.autopilot.github-reserve 100
 out="$("$ORCH" autopilot show 2>&1)"; st=$?
@@ -2688,6 +2695,21 @@ ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&
 fake_unfail
 usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_not_contains "a failed read at the session's start writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+# an empty read is a failed read too
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+: >"$ORCH_GH_FAKE_STORE/quota"
+cat >"$usage_launcher" <<USAGE
+#!/bin/sh
+rm -f "$ORCH_GH_FAKE_STORE/claims/7"
+: >"$ORCH_GH_FAKE_STORE/quota"
+exit 0
+USAGE
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_not_contains "an empty read writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+rm -f "$ORCH_GH_FAKE_STORE/quota"
 rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
