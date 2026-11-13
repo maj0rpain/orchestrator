@@ -1441,11 +1441,12 @@ assert_status "a listed 010 beside 8 succeeds" "$st" 0
 assert_eq "writing PR 10's body and diff, not PR 8's" "$(cat "$lz_file")" \
   "$(printf 'Refs #14\n\nTen.\n\n---\ndiff --git a/t b/t\n+ten')"
 fake_pr 60 open orch/12-z main
-fake_pr_body 60 $'Closes #12\n\nTwelve.\n'
 printf 'diff --git a/z b/z\n+twelve\n' >"$ORCH_GH_FAKE_STORE/prs/60/diff"
-out="$("$ORCH" pr read 012 "$lz_file" 2>&1)"; st=$?
+out="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "%s\t%s\tfalse\n" 60 "\"Closes #12\\n\\nTwelve.\""; }' "$ORCH" pr read 012 "$lz_file" 2>"$errf")"; st=$?
 assert_status "pr read 012 finds the PR opening Closes #12" "$st" 0
-assert_contains "writing its body" "$(cat "$lz_file")" "Twelve."
+assert_eq "with empty stderr too" "$(cat "$errf")" ""
+assert_eq "writing its body and diff" "$(cat "$lz_file")" \
+  "$(printf 'Closes #12\n\nTwelve.\n\n---\ndiff --git a/z b/z\n+twelve')"
 err="$(adapter_stood_in 'adapter_prs_open_bodies() { printf "56\t\"Closes #99\"\tfalse\n"; }' "$ORCH" pr read 012 "$lz_file" 2>&1 >/dev/null)"; st=$?
 assert_status "pr read 012 with no PR naming issue 12 fails" "$st" 1
 assert_eq "naming issue 12" "$err" "orch: no open PR closes or refers to issue #12"

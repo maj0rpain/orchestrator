@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.47
+
+Test-only: the `pr read 012` success case now gets its open-PR listing through `adapter_stood_in`, as its sibling leading-zero cases do.
+
+## 5.2.46
+
+Test-only: the duplicate 502 status run in the gh rate-limit tests is dropped, and no run's outcome changes.
+
 ## 5.2.45
 
 Rename the file_read test printer from `p` to `quoted_line` and drop its dead `st=0`; test-only, no behaviour change.
