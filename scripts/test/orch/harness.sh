@@ -830,7 +830,7 @@ echo "the shard setting (#2859)"
 sh_dir="$(mktemp -d)"
 sh_t="$sh_dir/scripts/test"
 mkdir -p "$sh_t/orch"
-(cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" orch_test.sh test_tree.sh tally.sh \
+(cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" orch_test.sh tally.sh \
   fifo.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$sh_t/" && cp orch/setup.sh "$sh_t/orch/" && cp ../flow-state.sh "$sh_dir/scripts/")
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for sh_s in "${SUITES[@]}"; do
