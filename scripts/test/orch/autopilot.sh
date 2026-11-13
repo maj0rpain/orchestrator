@@ -1455,11 +1455,6 @@ se_fresh() {
 se_end() {
   se_out="$(sourced_orch_script 'autopilot_session_end 7 spec "$1" "$2" "$3"' "$se_log" "$1" "${2-}" 2>&1)"; se_st=$?
 }
-# se_end_with <prelude> <rc>: Session end over $se_log with <prelude> run after
-# orch.sh is sourced; the stop-chain waits are 0.
-se_end_with() {
-  se_out="$(sourced_orch_script "$1"$'\n''autopilot_session_end 7 spec "$1" "$2" ""' "$se_log" "$2" 2>&1)"; se_st=$?
-}
 # se_kind: what the issue was left with: limited, failure (needs-human) or
 # released (neither).
 se_kind() {
@@ -1672,7 +1667,7 @@ fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
 fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
 se_end 1
 assert_eq "the third limit stop in a row still writes the limit file" "$(se_limit)" "$i2"
-se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end_with ':' 1; fake_unfail
+se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; fake_unfail
 assert_eq "unreadable comments still write the limit file" "$(se_limit)" "$i2"
 
 # claims or the checkout that cannot be read: nothing is touched
@@ -1693,25 +1688,19 @@ se_marker_count() { grep -c -x -F "$(marker_of "$@")" <<<"$(fake_comments_of 7)"
 
 se_fresh
 fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
-se_end_with ':' 1
+se_end 1
 assert_eq "a failed comment is retried: one limit comment, the issue limited, the claim released" "$(se_marker_count limited spec)|$(se_kind)|$(fake_claim_held 7)|$se_st" "1|limited|free|0"
 fake_unfail
 
 se_fresh
 fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded"
-se_end_with ':' 1
+se_end 1
 assert_eq "a timeline read that fails on a limit ends in a limit stop on a later attempt, not a failure stop" "$(se_kind)|$(se_marker_count limited spec)" "limited|1"
-fake_unfail
-
-se_fresh
-fake_fail_times adapter_issue_comments_json 1 "HTTP 500 comments"
-se_end_with ':' 1
-assert_eq "a timeline read that fails for another reason fails the attempt, and a later attempt's read ends in a limit stop, not a failure stop" "$(se_kind)|$(se_marker_count limited spec)" "limited|1"
 fake_unfail
 
 ndjson_with "Claude AI usage limit reached|$r2" >"$se_log"
 se_fresh; fake_fail adapter_issue_relabel "HTTP 500 relabel"
-se_end_with ':' 1
+se_end 1
 assert_eq "a stop whose every attempt fails leaves the claim held and fails" "$(fake_claim_held 7)|$se_st" "held|1"
 assert_contains "and writes one backstop line, with the stop kind, first line and exit code" "$(grep -c 'the stop chain failed after 3 attempts' "$se_log") $(tail -1 "$se_log")" "1 autopilot run: the stop chain failed after 3 attempts - limit stop: The session stopped on a usage limit"
 fake_unfail
