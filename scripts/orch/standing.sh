@@ -400,7 +400,7 @@ standing_start() {
   standing_chain_start
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   [ -f "$file" ] || die "plan file not found: $file"
-  ready="$(triage_label_for ready-for-agent)"
+  triage_label_into ready ready-for-agent
   standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
   label_listed "$STANDING_LABELS" "$ready" ||
     die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"

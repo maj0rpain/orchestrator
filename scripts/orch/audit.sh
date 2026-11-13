@@ -104,7 +104,7 @@ audit_file() {
     fi
   done <<<"$existing"
 
-  triage="$(triage_label_for needs-triage)"
+  triage_label_into triage needs-triage
   triage_label_ensure "$triage"
   category_label_ensure "$category"
   gh_or_die --out n "create the issue" \

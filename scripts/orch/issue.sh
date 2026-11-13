@@ -307,7 +307,7 @@ cmd_issue_ready() {
   # shellcheck disable=SC2034
   local issue="$1" ready state labels gh_err
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
-  ready="$(triage_label_for ready-for-agent)"
+  triage_label_into ready ready-for-agent
   issue_state_labels_read "$issue" state labels gh_err \
     || gh_die --exit 2 "read issue #$issue" "$gh_err"
   label_listed "$labels" "$ready"
@@ -345,7 +345,7 @@ cmd_issue_publish() {
   local title="$1" body_file="$2" ready n
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  ready="$(triage_label_for ready-for-agent)"
+  triage_label_into ready ready-for-agent
   gh_or_die --out n "create the issue" \
     adapter_issue_create "$title" "$body_file" "$ready"
   verify_twice "read issue #$n" \
@@ -390,7 +390,7 @@ cmd_issue_triage() {
   done
   case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
   [ "$check" = false ] || [ "$override" = false ] || die "$usage"
-  ready="$(triage_label_for ready-for-agent)"
+  triage_label_into ready ready-for-agent
 
   open_issue_read "$issue" "issue #$issue is not open - only an open issue is triaged to '$ready'" labels
   # One walk over the triage roles the issue carries: whether ready-for-agent
@@ -398,7 +398,7 @@ cmd_issue_triage() {
   # not their order in TRIAGE_ROLES - and every other one, to remove.
   local is_ready=false wontfix_label="" human_label="" held
   for role in $TRIAGE_ROLES; do
-    label="$(triage_label_for "$role")"
+    triage_label_into label "$role"
     label_listed "$labels" "$label" || continue
     case "$role" in
       ready-for-agent) is_ready=true; continue ;;

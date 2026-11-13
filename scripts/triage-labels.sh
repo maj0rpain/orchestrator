@@ -91,10 +91,38 @@ triage_labels() {
 # over triage_table_rows, so it shares triage_labels' table-boundary and
 # column-count guard rather than risking a second table elsewhere in the doc.
 triage_label_for() {
-  local role="$1" name=""
-  name="$(triage_table_rows | awk -F'\t' -v role="$role" '
-    $1 == role && $2 != "" { print $2; exit }')"
-  printf '%s\n' "${name:-$role}"
+  local name=""
+  triage_label_into name "$1"
+  printf '%s\n' "$name"
+}
+
+# The table triage_table_rows emits, parsed once per process and kept, with the
+# doc path it was parsed from: a lookup after the first starts no command (the
+# awk runs once). A lookup under a different doc path parses afresh.
+TRIAGE_TABLE_KEY=""
+TRIAGE_TABLE=""
+
+# triage_label_into <var> <role> sets <var>, in the caller's own shell, to what
+# triage_label_for prints for <role>: no subshell and, after the first lookup,
+# no external command. The role name itself is the answer where the doc is
+# missing or does not list it. Filters the kept table in bash, so it shares
+# triage_labels' table-boundary and column-count guard.
+triage_label_into() {
+  local __tli_role="$2" __tli_rest __tli_line __tli_name=""
+  if [ "$TRIAGE_TABLE_KEY" != "$ROOT/$LABELS_DOC" ]; then
+    TRIAGE_TABLE="$(triage_table_rows)"
+    TRIAGE_TABLE_KEY="$ROOT/$LABELS_DOC"
+  fi
+  __tli_rest="$TRIAGE_TABLE"
+  while [ -n "$__tli_rest" ]; do
+    __tli_line="${__tli_rest%%$'\n'*}"
+    if [ "$__tli_line" = "$__tli_rest" ]; then __tli_rest=""; else __tli_rest="${__tli_rest#*$'\n'}"; fi
+    [ "${__tli_line%%$'\t'*}" = "$__tli_role" ] || continue
+    __tli_name="${__tli_line#*$'\t'}"
+    [ -n "$__tli_name" ] || continue
+    break
+  done
+  printf -v "$1" '%s' "${__tli_name:-$__tli_role}"
 }
 
 # The five canonical triage roles, each also the label name a repo with no

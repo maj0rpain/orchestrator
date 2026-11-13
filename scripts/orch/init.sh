@@ -55,7 +55,7 @@ $outside_block
 # against the issue (docs/adr/0005).
 validate_adopted_issue() {
   local issue="$1" label labels
-  label="$(triage_label_for ready-for-agent)"
+  triage_label_into label ready-for-agent
   open_issue_read --hint "check it exists and gh is authenticated" "$issue" \
     "issue #$issue is not open - adoption requires an open issue." labels
   label_listed "$labels" "$label" \

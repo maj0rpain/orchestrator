@@ -121,7 +121,7 @@ scan_line() {
 triage_state() {
   local role label out=""
   for role in $TRIAGE_ROLES; do
-    label="$(triage_label_for "$role")"
+    triage_label_into label "$role"
     label_listed "$1" "$label" && out="${out:+$out,}$label"
   done
   printf '%s\n' "${out:--}"
@@ -229,7 +229,7 @@ cmd_finding_triage_scan() {
     *) die "$usage" ;;
   esac
   case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
-  triage="$(triage_label_for needs-triage)"
+  triage_label_into triage needs-triage
   # A listed finding is read by its listing, labels and body together; an
   # explicit one by its single read, where it is checked. Both fill the same
   # two arrays, which the loop below walks without another GitHub call.
@@ -352,7 +352,7 @@ cmd_finding_triage_apply() {
   # repo does not have at all.
   for role in $TRIAGE_ROLES; do
     [ "$role" != "$outcome" ] || continue
-    label="$(triage_label_for "$role")"
+    triage_label_into label "$role"
     if label_listed "$labels" "$label"; then remove_opts+=(--remove "$label"); fi
   done
 
@@ -366,15 +366,17 @@ cmd_finding_triage_apply() {
         adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"}
       gh_or_die "close issue #$issue" adapter_issue_close "$issue" --reason completed ;;
     wontfix)
+      triage_label_into label wontfix
       gh_or_die "relabel issue #$issue" \
-        adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" \
+        adapter_issue_relabel "$issue" --add "$label" \
         ${remove_opts[@]+"${remove_opts[@]}"}
       gh_or_die "close issue #$issue" adapter_issue_close "$issue" --reason "not planned" ;;
     *)
+      triage_label_into label "$outcome"
       category_label_ensure "$category"
       if label_listed "$labels" "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
       gh_or_die "relabel issue #$issue" \
-        adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
+        adapter_issue_relabel "$issue" --add "$label" --add "$category" \
         ${remove_opts[@]+"${remove_opts[@]}"} ;;
   esac
 }
@@ -390,19 +392,23 @@ bundle_member_check() {
   has_filed_severity_label "$__bmc_labels" \
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
   for __bmc_role in needs-triage needs-info wontfix; do
-    __bmc_label="$(triage_label_for "$__bmc_role")"
+    triage_label_into __bmc_label "$__bmc_role"
     ! label_listed "$__bmc_labels" "$__bmc_label" \
       || die "issue #$1 carries '$__bmc_label' - a bundle takes findings already triaged to ready-for-agent or ready-for-human only"
   done
   for __bmc_role in ready-for-agent ready-for-human; do
-    __bmc_label="$(triage_label_for "$__bmc_role")"
+    triage_label_into __bmc_label "$__bmc_role"
     label_listed "$__bmc_labels" "$__bmc_label" || continue
     [ -z "$__bmc_ready" ] \
       || die "issue #$1 carries both '$__bmc_ready' and '$__bmc_label' - a member carries exactly one"
     __bmc_ready="$__bmc_label"
   done
-  [ -n "$__bmc_ready" ] \
-    || die "issue #$1 carries neither '$(triage_label_for ready-for-agent)' nor '$(triage_label_for ready-for-human)' - triage it with $(finding_triage_cmd) first"
+  if [ -z "$__bmc_ready" ]; then
+    local __bmc_agent __bmc_human
+    triage_label_into __bmc_agent ready-for-agent
+    triage_label_into __bmc_human ready-for-human
+    die "issue #$1 carries neither '$__bmc_agent' nor '$__bmc_human' - triage it with $(finding_triage_cmd) first"
+  fi
 }
 
 # finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent|
@@ -423,7 +429,7 @@ bundle_member_check() {
 cmd_finding_triage_bundle() {
   local usage="usage: orch.sh finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent|ready-for-human> --category <bug|enhancement> <member>...
        orch.sh finding-triage bundle --into <B> <member>..."
-  local title="" file="" state="" category="" into="" have_title=false m labels human_label b
+  local title="" file="" state="" category="" into="" have_title=false m labels human_label b state_label
   local members=() seen=" " mstate err
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -452,7 +458,7 @@ cmd_finding_triage_bundle() {
     category_other "$category" >/dev/null || die "unknown --category '$category' - expected bug or enhancement"
     [ -f "$file" ] || die "body file not found: $file"
     [ ${#members[@]} -ge 2 ] || die "a new bundle needs at least 2 members - got #${members[0]} alone"
-    human_label="$(triage_label_for ready-for-human)"
+    triage_label_into human_label ready-for-human
   fi
 
   local pending=()
@@ -484,9 +490,10 @@ cmd_finding_triage_bundle() {
   # as the triage labels are: a failed create is forgiven, and a truly missing
   # label then fails the issue create.
   adapter_label_create "$BUNDLE_LABEL" c5def5 "Several filed findings worked as one" 2>/dev/null || true
+  triage_label_into state_label "$state"
   category_label_ensure "$category"
   gh_or_die --hint "no member was touched" --out b "create the bundle issue" \
-    adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category"
+    adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$state_label" "$category"
   printf '%s\n' "$b"
   bundle_members_close "$b" "${members[@]}"
 }
