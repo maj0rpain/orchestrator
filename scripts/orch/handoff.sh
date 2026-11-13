@@ -31,6 +31,13 @@ phase_list() {
   printf '%s\n' "$list"
 }
 
+# The flow's phases, space-separated in flow order: read inside functions only
+# (the state writer, doctor's state-phase check). Set when this module is
+# sourced, from the phase table above.
+# shellcheck disable=SC2034 # read by other modules, which are sourced together
+PHASES="$(phase_list)"
+readonly PHASES
+
 # phase_cell <column> <phase>: <phase>'s cell in <column> of the table, the
 # column named handoff, writer or sections. Nothing, and non-zero, when the
 # cell is empty or the table does not hold <phase>; an unknown column dies.

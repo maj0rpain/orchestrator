@@ -231,9 +231,15 @@ check_jq() {
 
 # A warn, not a FAIL: macOS still ships 3.2 as /bin/bash, and the flow works
 # there.
+# ORCH_DOCTOR_BASH_VERSION ("<major>.<minor>") fakes the running bash, because
+# BASH_VERSINFO is readonly: the one seam a test has for the below-4.2 side.
 check_bash() {
-  if [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]; then d_ok "bash ${BASH_VERSION%%(*}"; return 0; fi
-  d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.0 and up."
+  local ver="${ORCH_DOCTOR_BASH_VERSION:-${BASH_VERSINFO[0]:-0}.${BASH_VERSINFO[1]:-0}}"
+  local major="${ver%%.*}" minor="${ver#*.}"
+  if [ "$major" -gt 4 ] || { [ "$major" -eq 4 ] && [ "$minor" -ge 2 ]; }; then
+    d_ok "bash ${BASH_VERSION%%(*}"; return 0
+  fi
+  d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.2 and up."
   d_remedy "brew install bash"
 }
 

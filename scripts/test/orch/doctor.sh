@@ -164,6 +164,13 @@ assert_contains "opens with a bare group header" "$out" "tools"
 assert_contains "summarises severities on the last line" \
   "$(printf '%s\n' "$out" | tail -1)" "0 FAIL"
 
+out="$(ORCH_DOCTOR_BASH_VERSION=4.2 "$ORCH" doctor --env 2>&1)"
+assert_contains "bash 4.2 is ok" "$out" "ok    bash"
+out="$(ORCH_DOCTOR_BASH_VERSION=5.0 "$ORCH" doctor --env 2>&1)"
+assert_contains "bash 5.0 is ok" "$out" "ok    bash"
+out="$(ORCH_DOCTOR_BASH_VERSION=4.1 "$ORCH" doctor --env 2>&1)"
+assert_contains "bash 4.1 warns, naming 4.2 and up" "$out" "written for 4.2 and up"
+
 # jq gone is the awkward case: every other part of orch.sh needs it, so the one
 # message the user needs most is the one that cannot be printed the usual way.
 if on_windows_bash; then

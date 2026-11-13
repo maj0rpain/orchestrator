@@ -672,7 +672,7 @@ standing_limit_stop() {
 # The claims on origin, read by standing_claims_read: STANDING_CLAIM_ISSUES
 # lists the issue numbers in the adapter's order; the others are keyed by issue.
 STANDING_CLAIM_ISSUES=()
-declare -A STANDING_CLAIM_HOST=() STANDING_CLAIM_PID=() STANDING_CLAIM_PHASE=() STANDING_CLAIM_STARTED=()
+declare -gA STANDING_CLAIM_HOST=() STANDING_CLAIM_PID=() STANDING_CLAIM_PHASE=() STANDING_CLAIM_STARTED=()
 
 # standing_claims_read [--quiet]: reads the claims on origin once into the
 # arrays above, replacing the last read. Where origin cannot be read it dies

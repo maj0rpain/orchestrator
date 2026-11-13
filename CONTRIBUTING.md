@@ -230,7 +230,7 @@ child bash that does not inherit `-x`, so run it sequentially:
 `ORCH_TEST_ONLY='^<section>$' ORCH_TEST_JOBS=1 bash -x
 scripts/test/orch_test.sh`.
 
-`orch.sh`, its modules and the test suite target bash 4.0+: `mapfile`, `declare
+`orch.sh`, its modules and the test suite target bash 4.2+: `mapfile`, `declare
 -A` and `printf -v` are fine. The `hook-*.sh` scripts and every module a hook
 sources (`flow-state.sh`, `host.sh`, `bash-walk.sh`, `paste-guard.sh`,
 `planning-allowlist.sh`, `triage-labels.sh`) stay bash 3.2-compatible (no
