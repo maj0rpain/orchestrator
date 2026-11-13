@@ -7,8 +7,9 @@
 # It needs nothing from orch.sh, so the hooks can source it alone, as they do
 # host.sh: every function takes the state file's path as an argument, none
 # reads $ROOT or $STATE, none calls die, and none prints a diagnostic of its
-# own - only a reader's value and flow_state_file's path reach stdout. Every
-# outcome is a status:
+# own - only a reader's value, a builder's JSON (flow_state_json,
+# flow_state_pairs_json, flow_state_seed) and flow_state_file's path reach
+# stdout. Every outcome is a status:
 #
 # - Key lookups (flow_state_key_field, and flow_state_get before it reads):
 #   1 for a key outside the table, 2 for a programming error such as an
