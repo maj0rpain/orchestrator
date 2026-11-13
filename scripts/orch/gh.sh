@@ -591,7 +591,9 @@ adapter_issues_labelled_bodies() {
 # answer's trailing newlines, so the last record's body lines missing at the
 # end are empty lines. Non-zero, writing no element, on a failed read (gh's
 # stderr into <err_var>, as gh_lines_read) or an answer that does not parse
-# (<err_var> "gh answered a listing that does not parse"). Dies when an array
+# (<err_var> "gh answered a listing that does not parse"). Warns on stderr
+# through issues_labelled_limit_warn when the listing reaches the issue-list
+# limit, as issues_labelled_read does. Dies when an array
 # name is not a declared associative array. Bash 4.0: elements are assigned by
 # eval on a validated name, the value by reference, as finding_body_parse does.
 issues_labelled_bodies_read() {
