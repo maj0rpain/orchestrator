@@ -69,31 +69,31 @@ session_log_resets_epoch() {
 # missing or unreadable log, or a jq failure, leaves it not limited and the
 # rest empty.
 session_log_read() {
-  local out rejected="" text hit
+  local out rejecting_reset="" text hit
   SESSION_LOG_LIMITED=0; SESSION_LOG_RESET=""; SESSION_LOG_EARLY=""; SESSION_LOG_REPLY=""
   out="$(jq -nrR '
-    reduce inputs as $line ({rl: null, res: null, text: []};
-      (try {j: ($line | fromjson)} catch {t: $line}) as $p
-      | if $p | has("t") then .text += [$p.t]
-        elif ($p.j | type) == "object" and $p.j.type == "rate_limit_event" then .rl = $p.j
-        elif ($p.j | type) == "object" and $p.j.type == "result" then .res = $p.j
+    reduce inputs as $line ({last_rate_limit: null, last_result: null, plain_lines: []};
+      (try {json: ($line | fromjson)} catch {plain: $line}) as $entry
+      | if $entry | has("plain") then .plain_lines += [$entry.plain]
+        elif ($entry.json | type) == "object" and $entry.json.type == "rate_limit_event" then .last_rate_limit = $entry.json
+        elif ($entry.json | type) == "object" and $entry.json.type == "result" then .last_result = $entry.json
         else . end)
-    | ((.rl // {}) | try (.rate_limit_info // {} | [., (.unifiedWindows // {} | .[])]
+    | ((.last_rate_limit // {}) | try (.rate_limit_info // {} | [., (.unifiedWindows // {} | .[])]
         | map(select(type == "object" and ((.status // "allowed") | IN("allowed", "allowed_warning") | not)))
-        | if length == 0 then "none" else ([.[].resetsAt | numbers | floor] | max // "") end) catch "none") as $rejecting
-    | (((.rl // {}) | try (.rate_limit_info // {}
+        | if length == 0 then "none" else ([.[].resetsAt | numbers | floor] | max // "") end) catch "none") as $rejecting_reset
+    | (((.last_rate_limit // {}) | try (.rate_limit_info // {}
         | (if .rateLimitType == "five_hour" then . else .unifiedWindows.five_hour end) // {}
         | select((.utilization | numbers) >= 0.9) | .resetsAt | numbers | floor) catch empty) // "" | tostring) as $early
-    | ((.res // {} | try (.result | strings) catch empty) // "") as $result
-    | ($rejecting | tostring), $early,
+    | ((.last_result // {} | try (.result | strings) catch empty) // "") as $result
+    | ($rejecting_reset | tostring), $early,
       ($result | gsub("\\s+"; " ") | gsub("^ | $"; "")
         | if length > 500 then .[:500] + "…" else . end),
-      (.text[]), $result' "$1" 2>/dev/null)" || return 0
+      (.plain_lines[]), $result' "$1" 2>/dev/null)" || return 0
   # read fails at end of input when `$(...)` trimmed trailing empty lines
-  { IFS= read -r rejected || true; IFS= read -r SESSION_LOG_EARLY || true; IFS= read -r SESSION_LOG_REPLY || true; text="$(cat)"; } <<<"$out"
-  if [ "$rejected" != none ]; then
+  { IFS= read -r rejecting_reset || true; IFS= read -r SESSION_LOG_EARLY || true; IFS= read -r SESSION_LOG_REPLY || true; text="$(cat)"; } <<<"$out"
+  if [ "$rejecting_reset" != none ]; then
     SESSION_LOG_LIMITED=1
-    SESSION_LOG_RESET="$rejected"
+    SESSION_LOG_RESET="$rejecting_reset"
     return 0
   fi
   hit="$(grep -Eio "$SESSION_LOG_LIMIT_PATTERN" <<<"$text" | tail -n 1)" || true
