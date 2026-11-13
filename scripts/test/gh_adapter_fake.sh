@@ -125,6 +125,15 @@ fake_store() {
   printf '%s\n' "${ORCH_GH_FAKE_STORE:?the gh fake has no store - call fake_github}"
 }
 
+# fake_need_store: true with the store's path in ORCH_GH_FAKE_STORE; else the
+# no-store message on stderr and false. The listed functions use that path
+# directly, where fake_store would cost them a command substitution.
+fake_need_store() {
+  [ -n "${ORCH_GH_FAKE_STORE:-}" ] && return 0
+  echo "ORCH_GH_FAKE_STORE: the gh fake has no store - call fake_github" >&2
+  return 1
+}
+
 # fake_countdown <file>: true while the count the file holds is above zero,
 # counting it down by one; false where the file is absent or at zero.
 fake_countdown() {
@@ -135,13 +144,21 @@ fake_countdown() {
   printf '%s\n' "$((n - 1))" >"$1"
 }
 
-# fake_failing <operation>: fake_failing_raw, with a failure that is a GitHub
+# fake_failing <operation>: false at once, without a subshell, when nothing is
+# seeded for the operation (no hold, rate limit, offline or no-auth marker, no
+# failure file); else fake_failing_raw, with a failure that is a GitHub
 # API rate limit going through the production limit handler, as the guard's
 # own failed calls do: a secondary limit is waited out and retried once, and a
 # limit given up on leaves the handler's distinct message on stderr in place of
 # gh's own. Any other failure is written as it is.
 fake_failing() {
-  local err rc=0 hrc retried=0
+  local err rc=0 hrc retried=0 fs
+  fake_need_store || return 1
+  fs="$ORCH_GH_FAKE_STORE"
+  if [ ! -p "$fs/hold/$1" ] && [ ! -f "$fs/ratelimit" ] && [ ! -f "$fs/offline" ] \
+    && [ ! -f "$fs/noauth" ] && [ ! -f "$fs/fail/$1" ]; then
+    return 1
+  fi
   err="$(fake_failing_raw "$1" 2>&1)" || rc=$?
   [ "$rc" -eq 0 ] || return 1
   while [ -z "${GH_LIMIT_READING:-}" ] && declare -F gh_limit_handle >/dev/null; do
@@ -315,7 +332,16 @@ fake_issue_known() {
   return 1
 }
 
-fake_issue_labels() { cat "$(fake_issue_dir "$1")/labels" 2>/dev/null || true; }
+# fake_issue_labels <n>: issue #n's stored labels, one per line, read in bash
+# from the store's path; none where the file is missing.
+fake_issue_labels() {
+  local l
+  fake_need_store || return 1
+  [ -r "$ORCH_GH_FAKE_STORE/issues/$1/labels" ] || return 0
+  while IFS= read -r l || [ -n "$l" ]; do
+    printf '%s\n' "$l"
+  done <"$ORCH_GH_FAKE_STORE/issues/$1/labels"
+}
 
 # fake_issue_labels_counted <n>: issue #n's label count on one line, then its
 # labels one per line when there are any.
@@ -328,12 +354,12 @@ fake_issue_labels_counted() {
 
 # fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
 # one comment appended to an issue's or PR's comments directory, numbered in
-# order, its authorAssociation OWNER unless given.
+# order, its authorAssociation OWNER unless given. The existing comments are
+# counted with a glob, and the comment's directory made in one mkdir.
 fake_comment_append() {
-  local d="$1" k
-  mkdir -p "$d"
-  k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
-  mkdir "$d/$k"
+  local d="$1" k=1 e
+  for e in "$d"/*; do [ -e "$e" ] && k=$((k + 1)); done
+  mkdir -p "$d/$k"
   printf '%s\n' "$2" >"$d/$k/author"
   printf '%s\n' "$3" >"$d/$k/created"
   printf '%s\n' "${5:-OWNER}" >"$d/$k/association"
@@ -500,13 +526,19 @@ adapter_issue_state() {
 }
 
 # fake_open_issues: the numbers of the open issues in the store, newest first,
-# as real gh lists them.
+# as real gh lists them. Each state is read, and each number taken from its
+# directory's path, in bash; only sort runs.
 fake_open_issues() {
-  local d
-  for d in "$(fake_store)"/issues/*/; do
+  local d st
+  fake_need_store || return 1
+  for d in "$ORCH_GH_FAKE_STORE"/issues/*/; do
     [ -d "$d" ] || continue
-    [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
-    basename "$d"
+    d="${d%/}"
+    [ ! -f "$d/pull" ] || continue
+    st=""
+    { IFS= read -r st <"$d/state" || [ -n "$st" ]; } 2>/dev/null || continue
+    [ "$st" = OPEN ] || continue
+    printf '%s\n' "${d##*/}"
   done | sort -nr
 }
 
@@ -514,13 +546,24 @@ fake_open_issues() {
 # every label named, newest first as gh lists them - the first ISSUE_LIST_LIMIT
 # of them, as gh's --limit cuts the list, with awk, which reads all of the
 # while loop's output, so the loop never takes SIGPIPE under pipefail as it
-# would from head (#1019).
+# would from head (#1019). Each issue's labels file is read once in bash, and
+# a label matches a whole line, literally and in any case.
 adapter_issues_labelled() {
-  local n l keep
+  local n l keep line h found
+  local -a have
   ! fake_failing adapter_issues_labelled || return 1
+  fake_need_store || return 1
   fake_open_issues | while read -r n; do
+    have=()
+    if [ -r "$ORCH_GH_FAKE_STORE/issues/$n/labels" ]; then
+      while IFS= read -r line || [ -n "$line" ]; do have+=("${line,,}"); done <"$ORCH_GH_FAKE_STORE/issues/$n/labels"
+    fi
     keep=1
-    for l in "$@"; do grep -qxiF -- "$l" "$(fake_issue_dir "$n")/labels" 2>/dev/null || keep=0; done
+    for l in "$@"; do
+      found=0
+      for h in ${have[@]+"${have[@]}"}; do [ "$h" = "${l,,}" ] && found=1 && break; done
+      [ "$found" = 1 ] || keep=0
+    done
     [ "$keep" = 1 ] || continue
     printf "%s\n" "$n"
   done | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
@@ -986,14 +1029,27 @@ adapter_pr_label_add() {
 
 # --- sub-issue and dependency operations, on the store ------------------------
 
+# fake_blockers_count <n>: how many of #n's stored blockers are still open, in
+# the variable fake_open_count, read in bash from the store's path. A blocker
+# whose state cannot be read does not count.
+fake_blockers_count() {
+  local b st
+  fake_open_count=0
+  fake_need_store || return 1
+  [ -r "$ORCH_GH_FAKE_STORE/blocked_by/$1" ] || return 0
+  while IFS= read -r b || [ -n "$b" ]; do
+    [ -n "$b" ] || continue
+    st=""
+    { IFS= read -r st <"$ORCH_GH_FAKE_STORE/issues/$b/state" || [ -n "$st" ]; } 2>/dev/null || continue
+    [ "$st" = OPEN ] && fake_open_count=$((fake_open_count + 1))
+  done <"$ORCH_GH_FAKE_STORE/blocked_by/$1"
+  return 0
+}
+
 # fake_open_blockers <n>: how many of #n's stored blockers are still open.
 fake_open_blockers() {
-  local b c=0
-  while IFS= read -r b; do
-    [ -n "$b" ] || continue
-    [ "$(cat "$(fake_issue_dir "$b")/state" 2>/dev/null)" = OPEN ] && c=$((c + 1))
-  done < <(cat "$(fake_store)/blocked_by/$1" 2>/dev/null)
-  printf '%s\n' "$c"
+  fake_blockers_count "$1" || return 1
+  printf '%s\n' "$fake_open_count"
 }
 
 # fake_lines_drop <file> <line>: the file without that line, where it exists.
@@ -1007,17 +1063,22 @@ fake_lines_drop() {
 # its stored state and its count of open blockers. Lagging (fake_lag), it
 # answers the stale answer fake_lag was given, or none.
 adapter_sub_issues() {
-  local n
+  local n st
   ! fake_failing adapter_sub_issues || return 1
+  fake_need_store || return 1
   if fake_lagging adapter_sub_issues; then
     fake_stale adapter_sub_issues
     return 0
   fi
   fake_issue_known "$1" || return 1
-  while IFS= read -r n; do
+  [ -r "$ORCH_GH_FAKE_STORE/subs/$1" ] || return 0
+  while IFS= read -r n || [ -n "$n" ]; do
     [ -n "$n" ] || continue
-    printf '%s\t%s\t%s\n' "$n" "$(cat "$(fake_issue_dir "$n")/state")" "$(fake_open_blockers "$n")"
-  done < <(cat "$(fake_store)/subs/$1" 2>/dev/null)
+    st=""
+    { IFS= read -r st <"$ORCH_GH_FAKE_STORE/issues/$n/state" || [ -n "$st" ]; } 2>/dev/null || st=""
+    fake_blockers_count "$n"
+    printf '%s\t%s\t%s\n' "$n" "$st" "$fake_open_count"
+  done <"$ORCH_GH_FAKE_STORE/subs/$1"
 }
 
 # adapter_sub_issue_link <parent> <child>: the child appended to the parent's
