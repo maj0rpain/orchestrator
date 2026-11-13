@@ -1493,9 +1493,7 @@ review_flow ambiguousupstream
 doctor_github
 amb_branch="$(git branch --show-current)"
 state_fixture branch "$amb_branch"
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q -u origin "$amb_branch"
 git branch -q "origin/$amb_branch"
 out="$("$ORCH" doctor --flow 2>&1)"
@@ -1811,10 +1809,8 @@ assert_status "a default base branch passes" "$st" 0
 assert_contains "reports the default branch as the base branch" "$out" "ok    base branch: main (default)"
 assert_contains "keeps the default-branch check" "$out" "ok    default branch: main (from GitHub)"
 
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
+fresh_bare_origin bare
 git push -q "$bare" HEAD:refs/heads/main HEAD:refs/heads/uat
-bare_origin "$bare"
 git config orchestrator.base uat
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a set base branch origin has passes" "$st" 0

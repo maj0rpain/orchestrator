@@ -211,11 +211,10 @@ assert_eq "err_line leaves an error with no prefix as its first line" \
 echo
 echo "git_push"
 new_repo >/dev/null
-gp_bare="$(mktemp -d)/origin.git"
-git init -q --bare "$gp_bare"
-bare_origin "$gp_bare"
+fresh_bare_origin gp_bare
 git push -q origin HEAD:refs/heads/main
 git commit -q --allow-empty -m "more"
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 origin_rejects "$gp_bare"
 assert_eq "a rejected push of two refs returns 1 with both ' ! ' lines, joined by '; '" \
   "$(sourced_orch eval 'git_push why origin HEAD:refs/heads/a HEAD:refs/heads/b || echo "$?: $why"')" \

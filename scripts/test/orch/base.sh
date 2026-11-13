@@ -12,9 +12,7 @@
 echo
 echo "base"
 new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -144,9 +142,7 @@ rm -rf "$(dirname "$bare")"
 echo
 echo "a flow's base branch"
 new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b uat
 git commit -q --allow-empty -m "uat only"

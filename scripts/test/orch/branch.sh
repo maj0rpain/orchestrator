@@ -142,9 +142,7 @@ assert_eq "which checks the branch out as before" "$(git branch --show-current)"
 echo
 echo "a quick implementation's base branch"
 new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b uat
 git commit -q --allow-empty -m "uat only"
@@ -210,9 +208,7 @@ rm -rf "$(dirname "$bare")"
 echo
 echo "a quick implementation's base SHA (#243)"
 new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -304,9 +300,7 @@ assert_eq "and leaves no upstream under autoSetupMerge=always" "$(upstream_of qu
 # retire reads the upstream to decide whether to push: a never-pushed branch
 # made by branch off has none, so it is renamed locally only.
 new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -327,9 +321,7 @@ rm -rf "$(dirname "$bare")"
 echo
 echo "branch retire"
 new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 
 out="$(orch_gh_failing branch retire nosuchbranch new 2>&1)"; st=$?
@@ -355,6 +347,28 @@ assert_eq "the new name exists" \
 assert_eq "a no-upstream retire records the retirement on the new name" \
   "$(git config --get branch.old-attempt-redo-1.orchestrator-retired)" "true"
 
+# Resume arm (#2553): <old> gone locally and <new> present is also the state a
+# completed retire leaves, so origin's own answer for <old> decides whether any
+# remote step remains.
+# A rerun of a completed local-only retire publishes nothing. The retired branch
+# is checked out for the rerun, as a retire's caller has it, then left again.
+prev_branch="$(git branch --show-current)"
+git checkout -q old-attempt-redo-1
+# Cleared, as a retire made before #2550 leaves it, so the rerun's write shows.
+git config --unset branch.old-attempt-redo-1.orchestrator-retired
+out="$(orch_gh_failing branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
+assert_status "a rerun of a completed local-only retire succeeds" "$st" 0
+assert_eq "and prints the new name" "$out" "old-attempt-redo-1"
+assert_eq "without publishing the new name" \
+  "$(origin_branch_state "$bare" old-attempt-redo-1)" "missing"
+assert_eq "nor the old one" "$(origin_branch_state "$bare" old-attempt)" "missing"
+assert_eq "the new name stays local with no upstream" \
+  "$(branch_presence old-attempt-redo-1)/$(upstream_of old-attempt-redo-1)" "present/none"
+assert_eq "and the old name stays gone" "$(branch_presence old-attempt)" "gone"
+assert_eq "and the rerun records the new name as retired" \
+  "$(git config --get branch.old-attempt-redo-1.orchestrator-retired || true)" "true"
+git checkout -q "$prev_branch"
+
 git checkout -q -b to-retire
 git push -q -u origin to-retire
 out="$(orch_gh_failing branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
@@ -368,6 +382,20 @@ assert_eq "and deletes the old remote ref" \
   "$(origin_branch_state "$bare" to-retire)" "missing"
 assert_eq "and records the retirement on the new name" \
   "$(git config --get branch.to-retire-redo-1.orchestrator-retired)" "true"
+
+# A rerun of a completed retire that had an upstream does no network write.
+tip_up="$(git -C "$bare" rev-parse refs/heads/to-retire-redo-1)"
+git config --unset branch.to-retire-redo-1.orchestrator-retired
+out="$(orch_gh_failing branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
+assert_status "a rerun of a completed retire with an upstream succeeds" "$st" 0
+assert_eq "and prints the new name" "$out" "to-retire-redo-1"
+assert_eq "origin keeps the new name at the same tip" \
+  "$(git -C "$bare" rev-parse refs/heads/to-retire-redo-1)" "$tip_up"
+assert_eq "and has no old name" "$(origin_branch_state "$bare" to-retire)" "missing"
+assert_eq "and nothing is renamed locally" \
+  "$(branch_presence to-retire-redo-1)/$(branch_presence to-retire)" "present/gone"
+assert_eq "and the rerun records the new name as retired" \
+  "$(git config --get branch.to-retire-redo-1.orchestrator-retired || true)" "true"
 
 # A local branch named origin/<old> makes the upstream's short name ambiguous
 # (#1331): retire must still see the upstream and republish. Made only after
@@ -389,6 +417,16 @@ git branch -q -D origin/to-retire-amb
 git checkout -q -b to-fail
 git push -q -u origin to-fail
 rm -rf "$bare"
+# A resume with origin unreachable dies and changes nothing.
+prev_branch="$(git branch --show-current)"
+git checkout -q old-attempt-redo-1
+out="$(orch_gh_failing branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
+assert_status "a resume with origin unreachable dies" "$st" 1
+assert_contains "saying it could not check origin" "$out" \
+  "could not reach origin to check whether old-attempt is still there - nothing was changed; rerun orch.sh branch retire old-attempt old-attempt-redo-1"
+assert_eq "leaving the new name in place" "$(branch_presence old-attempt-redo-1)" "present"
+assert_eq "and not renaming it back" "$(branch_presence old-attempt)" "gone"
+git checkout -q "$prev_branch"
 out="$(orch_gh_failing branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "dies when the push to origin fails" "$st" 1
 assert_eq "relaying git's fatal: line as the reason (#1300)" "$out" \
@@ -405,14 +443,13 @@ assert_eq "and the live old name carries no retirement key" \
 
 # Retrying with the same old/new names must succeed once whatever blocked
 # the push clears - issue #63 acceptance criterion 1.
-bare2="$(mktemp -d)/origin.git"
-git init -q --bare "$bare2"
-bare_origin "$bare2"
+fresh_bare_origin bare2
 out="$(orch_gh_failing branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
 assert_eq "prints the new name" "$out" "to-fail-redo-1"
 assert_eq "renames locally" \
   "$(branch_presence to-fail-redo-1)" "present"
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 assert_eq "and publishes it" \
   "$(origin_branch_state "$bare2" to-fail-redo-1)" "pushed"
 assert_eq "and records the retirement on the new name" \
@@ -422,9 +459,7 @@ assert_eq "and records the retirement on the new name" \
 # already succeeded, but whose remote delete of the old ref did not - the
 # "Key interfaces" note in issue #63, that retire must resume rather than
 # fail on "$old does not exist" when $old really is gone locally already.
-bare3="$(mktemp -d)/origin.git"
-git init -q --bare "$bare3"
-bare_origin "$bare3"
+fresh_bare_origin bare3
 git checkout -q -b to-resume
 git push -q -u origin to-resume
 git branch -m to-resume to-resume-redo-1
@@ -436,16 +471,16 @@ assert_status "resumes rather than failing on the already-gone old name" "$st" 0
 assert_eq "prints the new name" "$out" "to-resume-redo-1"
 assert_eq "the resumed retire records the retirement" \
   "$(git config --get branch.to-resume-redo-1.orchestrator-retired)" "true"
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 assert_eq "and finishes the delete the earlier attempt left undone" \
   "$(origin_branch_state "$bare3" to-resume)" "missing"
 
 # A genuine remote failure on that same delete step still has to die, not
 # get swallowed by the resume path's tolerance for an already-gone ref.
-bare4="$(mktemp -d)/origin.git"
-git init -q --bare "$bare4"
+fresh_bare_origin bare4
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 git -C "$bare4" symbolic-ref HEAD refs/heads/to-protect
 git -C "$bare4" config receive.denyDeleteCurrentBranch refuse
-bare_origin "$bare4"
 git checkout -q -b to-protect
 git push -q -u origin to-protect
 out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
@@ -472,66 +507,12 @@ assert_status "the rerun after the block clears succeeds" "$st" 0
 assert_eq "and the resumed retire marks the new name" \
   "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" "true"
 
-# Resume arm (#2553): <old> gone locally and <new> present is also the state a
-# completed retire leaves, so origin's own answer for <old> decides whether any
-# remote step remains.
-# A rerun of a completed local-only retire publishes nothing.
-bare5="$(mktemp -d)/origin.git"
-git init -q --bare "$bare5"
-bare_origin "$bare5"
-git checkout -q -b rr-local
-out="$(orch_gh_failing branch retire rr-local rr-local-redo-1 2>&1)"; st=$?
-assert_status "retires a never-pushed branch before the rerun" "$st" 0
-# Cleared, as a retire made before #2550 leaves it, so the rerun's write shows.
-git config --unset branch.rr-local-redo-1.orchestrator-retired
-out="$(orch_gh_failing branch retire rr-local rr-local-redo-1 2>&1)"; st=$?
-assert_status "a rerun of a completed local-only retire succeeds" "$st" 0
-assert_eq "and prints the new name" "$out" "rr-local-redo-1"
-assert_eq "without publishing the new name" \
-  "$(origin_branch_state "$bare5" rr-local-redo-1)" "missing"
-assert_eq "nor the old one" "$(origin_branch_state "$bare5" rr-local)" "missing"
-assert_eq "the new name stays local with no upstream" \
-  "$(branch_presence rr-local-redo-1)/$(upstream_of rr-local-redo-1)" "present/none"
-assert_eq "and the old name stays gone" "$(branch_presence rr-local)" "gone"
-assert_eq "and the rerun records the new name as retired" \
-  "$(git config --get branch.rr-local-redo-1.orchestrator-retired || true)" "true"
-
-# A resume with origin unreachable dies and changes nothing.
-rm -rf "$bare5"
-out="$(orch_gh_failing branch retire rr-local rr-local-redo-1 2>&1)"; st=$?
-assert_status "a resume with origin unreachable dies" "$st" 1
-assert_contains "saying it could not check origin" "$out" \
-  "could not reach origin to check whether rr-local is still there - nothing was changed; rerun orch.sh branch retire rr-local rr-local-redo-1"
-assert_eq "leaving the new name in place" "$(branch_presence rr-local-redo-1)" "present"
-assert_eq "and not renaming it back" "$(branch_presence rr-local)" "gone"
-
-# A rerun of a completed retire that had an upstream does no network write.
-bare6="$(mktemp -d)/origin.git"
-git init -q --bare "$bare6"
-bare_origin "$bare6"
-git checkout -q -b rr-up
-git push -q -u origin rr-up
-orch_gh_failing branch retire rr-up rr-up-redo-1 >/dev/null 2>&1
-tip6="$(git -C "$bare6" rev-parse refs/heads/rr-up-redo-1)"
-git config --unset branch.rr-up-redo-1.orchestrator-retired
-out="$(orch_gh_failing branch retire rr-up rr-up-redo-1 2>&1)"; st=$?
-assert_status "a rerun of a completed retire with an upstream succeeds" "$st" 0
-assert_eq "and prints the new name" "$out" "rr-up-redo-1"
-assert_eq "origin keeps the new name at the same tip" \
-  "$(git -C "$bare6" rev-parse refs/heads/rr-up-redo-1)" "$tip6"
-assert_eq "and has no old name" "$(origin_branch_state "$bare6" rr-up)" "missing"
-assert_eq "and nothing is renamed locally" \
-  "$(branch_presence rr-up-redo-1)/$(branch_presence rr-up)" "present/gone"
-assert_eq "and the rerun records the new name as retired" \
-  "$(git config --get branch.rr-up-redo-1.orchestrator-retired || true)" "true"
-
 # A resume whose push fails is not rolled back: the rename was not this call's.
-bare7="$(mktemp -d)/origin.git"
-git init -q --bare "$bare7"
-bare_origin "$bare7"
+fresh_bare_origin bare7
 git checkout -q -b rr-push
 git push -q -u origin rr-push
 git branch -m rr-push rr-push-redo-1
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 origin_rejects "$bare7"
 out="$(orch_gh_failing branch retire rr-push rr-push-redo-1 2>&1)"; st=$?
 assert_status "a resume whose push is rejected dies" "$st" 1
@@ -1333,9 +1314,7 @@ stale_fork_repo() {
   new_repo >/dev/null
   main="$(git branch --show-current)"
   echo one >docs/agents/notes.md && git add -A && git commit -qm notes
-  bare="$(mktemp -d)/origin.git"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
+  fresh_bare_origin bare
   git push -q origin "HEAD:refs/heads/$main"
   git fetch -q origin
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$main"
@@ -1409,9 +1388,7 @@ assert_contains "naming all six" "$out" "create|off|busy|base-sha|sync|retire"
 echo
 echo "branch retire beside a same-named tag"
 new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 git commit -q --allow-empty -m "later"
 old_commit="$(git rev-parse HEAD~1)"
