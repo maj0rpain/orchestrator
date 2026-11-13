@@ -313,7 +313,7 @@ triage_comment_posted() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_err
+  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label outcome_label stale_category gh_err
   # The relabel's --remove options, possibly none: close-fixed, where they are
   # the whole relabel, then makes no edit at all.
   local remove_opts=()
@@ -354,6 +354,7 @@ cmd_finding_triage_apply() {
     if label_listed "$labels" "$label"; then remove_opts+=(--remove "$label"); fi
   done
 
+  triage_label_into outcome_label "$outcome"
   triage_comment_posted "$issue" "$file" || {
     triage_comment_post gh_err "$issue" "$file" || gh_die "comment on issue #$issue" "$gh_err"
   }
@@ -364,17 +365,15 @@ cmd_finding_triage_apply() {
         adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"}
       gh_or_die "close issue #$issue" adapter_issue_close "$issue" --reason completed ;;
     wontfix)
-      triage_label_into label wontfix
       gh_or_die "relabel issue #$issue" \
-        adapter_issue_relabel "$issue" --add "$label" \
+        adapter_issue_relabel "$issue" --add "$outcome_label" \
         ${remove_opts[@]+"${remove_opts[@]}"}
       gh_or_die "close issue #$issue" adapter_issue_close "$issue" --reason "not planned" ;;
     *)
-      triage_label_into label "$outcome"
       category_label_ensure "$category"
       if label_listed "$labels" "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
       gh_or_die "relabel issue #$issue" \
-        adapter_issue_relabel "$issue" --add "$label" --add "$category" \
+        adapter_issue_relabel "$issue" --add "$outcome_label" --add "$category" \
         ${remove_opts[@]+"${remove_opts[@]}"} ;;
   esac
 }

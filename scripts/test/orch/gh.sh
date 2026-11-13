@@ -161,17 +161,19 @@ unset cefile
 echo
 echo "label_listed"
 new_repo >/dev/null
-assert_eq "label_listed folds ASCII case, matches literally, and never folds a non-ASCII letter or spans lines" \
-  "$(sourced_orch_script '
+ll_out="$(sourced_orch_script '
     for item in bug BUG "Needs Triage" -n "a*" "b?g" bu "é" "É" "" $'"'"'bug\nx'"'"' \
       "[AB]" "[a" "A\\B" "a\\" "X.*" ".*" xy; do
       if label_listed "$1" "$item"; then printf " y"; else printf " n"; fi
-    done' $'Bug\nneeds triage\n-N\na*\nb?g\né\n[ab]\na\\b\nx.*')" \
+    done
+    if label_listed "" bug; then printf " y"; else printf " n"; fi
+    if label_listed "" ""; then printf " y"; else printf " n"; fi' $'Bug\nneeds triage\n-N\na*\nb?g\né\n[ab]\na\\b\nx.*')"
+assert_eq "label_listed folds ASCII case, matches literally, and never folds a non-ASCII letter or spans lines" \
+  "${ll_out% ? ?}" \
   " y y y y y y n y n n n y n y n y n n"
-sourced_orch label_listed "" bug && ll_v=y || ll_v=n
-assert_eq "label_listed finds nothing in an empty list" "$ll_v" "n"
-sourced_orch label_listed "" "" && ll_v=y || ll_v=n
-assert_eq "label_listed matches an empty item against an empty line" "$ll_v" "y"
+ll_tail="${ll_out#${ll_out% ? ?}}"
+assert_eq "label_listed finds nothing in an empty list" "${ll_tail:0:2}" " n"
+assert_eq "label_listed matches an empty item against an empty line" "${ll_tail:2:2}" " y"
 assert_eq "label_listed answers with an empty PATH" \
   "$(sourced_orch_script 'PATH=; label_listed $'\''Bug\nx'\'' BUG && printf y; label_listed Bug x || printf n')" "yn"
 ll_locales="$(locale -a 2>/dev/null)"

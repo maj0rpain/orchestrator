@@ -132,18 +132,19 @@ echo
 echo "list_has"
 new_repo >/dev/null
 lh_list=$'-n\nbug\na.c\nneeds triage'
-assert_eq "list_has matches whole lines literally, an item beginning with - included, one spanning lines never" \
-  "$(sourced_orch_script '
+lh_out="$(sourced_orch_script '
     for item in -n bug a.c "needs triage" bu abc needs "-" $'"'"'bug\na.c'"'"'; do
       if list_has "$1" "$item"; then printf " y"; else printf " n"; fi
-    done' "$lh_list")" " y y y y n n n n n"
+    done
+    if list_has "" bug; then printf " y"; else printf " n"; fi' "$lh_list")"
+assert_eq "list_has matches whole lines literally, an item beginning with - included, one spanning lines never" \
+  "${lh_out% ?}" " y y y y n n n n n"
+assert_eq "list_has finds nothing in an empty list" "${lh_out##* }" "n"
 assert_eq "list_has matches glob and regex characters and an empty item literally" \
   "$(sourced_orch_script '
     for item in "" "a*" "a?" "[ab]" "a\\b" "x.*" ".*"; do
       if list_has "$1" "$item"; then printf " y"; else printf " n"; fi
     done' $'a*\na?\n[ab]\na\\b\nx.*\n\nq')" " y y y y y y n"
-sourced_orch list_has "" bug && lh_v=y || lh_v=n
-assert_eq "list_has finds nothing in an empty list" "$lh_v" "n"
 assert_eq "list_has and path_last_into answer with an empty PATH" \
   "$(sourced_orch_script '
     PATH=
