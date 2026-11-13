@@ -2019,8 +2019,9 @@ for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat < f | grep x'
   assert_empty "bash hook stdin guard: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
 # Heredoc delimiters are bash's whole word; << in arithmetic shifts (#2575).
-# The multi-line case is kept apart from the poll guard's on purpose: each
-# guard's own decision is tested at the hook's seam (#2902).
+# The case whose arithmetic spans two lines ($'x=$((1 +\n1<<n))\ncat') is kept
+# apart from the poll guard's on purpose: each guard's own decision is tested
+# at the hook's seam (#2902).
 for bs_cmd in $'x=$((1<<n))\ncat' $'x=$((1 +\n1<<n))\ncat' $'cat <<\'END-NOTES\'\nx\nEND-NOTES\ncat'; do
   bs_out="$(bash_hook_scan default "$bs_cmd")"
   assert_eq "bash hook stdin guard: default denies '${bs_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bs_out")" deny
