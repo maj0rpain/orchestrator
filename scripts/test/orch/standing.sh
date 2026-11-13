@@ -366,7 +366,7 @@ assert_eq "a stop whose comment landed but whose call failed posts no second com
 assert_contains "and keeps its count on the next attempt" "$(fake_comments_of 71)" "retry 1 of 2"
 tr_seed 72 orch:spec orch:running
 out="$(resumed_stop 72 'mkdir -p "$ORCH_GH_FAKE_STORE/fail"; printf "HTTP 500 read\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json"')"
-assert_contains "a failed duplicate-comment check fails the attempt" "$out" "could not check issue #72's comments for this stop's comment"
+assert_contains "a failed duplicate-comment check fails the attempt" "$out" "could not read issue #72's comments to check for this stop's comment"
 assert_eq "and posts no second comment" "$(stop_comments 72)|$(fake_claim_held 72)" "1|held"
 fake_unfail
 rm -f "$ORCH_GH_FAKE_STORE/lost"
