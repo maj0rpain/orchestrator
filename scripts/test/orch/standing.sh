@@ -326,6 +326,17 @@ fake_fail adapter_issue_comments_json "HTTP 500 comments"
 assert_contains "unreadable comments fail the attempt: it dies, naming the read" "$(sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' 2>&1)" "could not read issue #70's comments to count the stops in a row"
 fake_unfail
 assert_eq "and leave the labels, comments and claim as they were" "$(fake_comments_of 70)|$(tr_standing 70)|$(fake_claim_held 70)" "|spec|1|0|0|held"
+# a failed re-entry comments read dies with the claim held and no write
+tr_seed 75 orch:review orch:running
+fake_fail adapter_issue_comments_json "HTTP 500"
+out="$(sourced_rc 'standing_reenter 75 review "the text"')"
+fake_unfail
+assert_contains "a failed re-entry comments read dies" "$out" "rc=1"
+assert_contains "naming the read and its reason" "$out" "could not read issue #75's comments to count the automatic re-entries in a row: HTTP 500"
+assert_contains "and the writes that landed" "$out" "writes that landed: none"
+assert_contains "and that the claim stays held" "$out" "the claim stays held"
+assert_eq "the claim stays held, the labels are unchanged" "$(fake_labels_of 75)|$(fake_claim_held 75)" "orch:review orch:running |held"
+assert_eq "and no comment is posted" "$(fake_comments_of 75)" ""
 tr_seed 73 orch:spec orch:running
 out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"
 standing_limit_stop 73 spec "" 2026-01-01T01:00:00Z 1 log
