@@ -17,7 +17,10 @@
 # the setting and exits 1 before measuring: a sequential run records nothing.
 # If anything it measures fails it names each failure on stderr, exits 1 and
 # leaves the committed file as it was; the file is replaced only when
-# everything passed.
+# everything passed. On INT or TERM while it measures, it stops every run it
+# started, exits 130 and leaves the durations file unchanged. A TERM during the
+# final copy into the durations file is held until the copy ends, so the file is
+# then whole and new, never partial.
 #
 # A repo-development tool, not an orch.sh noun: it does not ship to users.
 set -uo pipefail
@@ -44,8 +47,9 @@ suites_read "$dir/all.sh" "$dir" || {
 
 tmp="$(mktemp -d)" || exit 1
 SHELLCHECK_PIDS=()
+pids=()
 trap 'rm -rf "$tmp"' EXIT
-trap 'test_jobs_stop_children ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
+trap 'test_jobs_stop_children ${pids[@]+"${pids[@]}"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
 export ORCH_TEST_QUIET=1
 failed=()
 
@@ -64,13 +68,25 @@ measure() {
   return "$st"
 }
 
+# run_child <cmd>...: runs the command in the background, with its pid in pids
+# while it runs, and waits for it, so the INT/TERM trap can stop it at once. The
+# status is the command's.
+run_child() {
+  local st
+  "$@" &
+  pids+=("$!")
+  wait "$!"; st=$?
+  pids=()
+  return "$st"
+}
+
 : >"$tmp/sections"
 : >"$tmp/rest"
-ORCH_TEST_DURATIONS="$tmp/sections" bash "$dir/orch_test.sh" || failed+=("orch_test.sh")
+ORCH_TEST_DURATIONS="$tmp/sections" run_child bash "$dir/orch_test.sh" || failed+=("orch_test.sh")
 
 for suite in "${SUITES[@]}"; do
   [ "$suite" = orch_test.sh ] && continue
-  TMPDIR="$tmp" measure "$suite" bash "$dir/$suite"; suite_st=$?
+  TMPDIR="$tmp" measure "$suite" run_child bash "$dir/$suite"; suite_st=$?
   if ! report_suite "$suite" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
     failed+=("$suite")
     cat "$tmp/report" "$tmp/out" >&2
