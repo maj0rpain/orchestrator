@@ -143,8 +143,8 @@ trap test_jobs_stop_descendants INT TERM
 # with "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set".
 # The grouping is a pure function of the section titles in walk order,
 # section-durations.tsv, all.sh's suite list (read with suites_read) and n:
-# a section weighs its CPU seconds, one the file does not list as much as the
-# heaviest that it lists (1 when none), group 1 starts with the summed CPU
+# a section weighs its wall seconds, one the file does not list as much as the
+# heaviest that it lists (1 when none), group 1 starts with the summed wall
 # seconds of the file's other suites and shellcheck, the others at 0, and
 # sections are dealt heaviest first, ties in walk order, each to the group with
 # the lowest total, the lowest-numbered on a tie. The isolation section runs in
@@ -412,7 +412,7 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
 else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
   if [ "$TEST_SHARD_N" -gt 1 ]; then
-    # Deal the sections but isolation by CPU weight; keep group i's.
+    # Deal the sections but isolation by wall-second weight; keep group i's.
     suites_read "$TEST_DIR/all.sh" "$TEST_DIR" || {
       echo "orch_test.sh: $SUITES_ERR" >&2; exit 1; }
     orch_others=""
@@ -426,15 +426,15 @@ else
         printf '\001\n%s' "$orch_others"; } |
         awk -F'\t' -v n="$TEST_SHARD_N" -v want="$TEST_SHARD_I" \
           "$DURATIONS_AWK"'
-          function weight(p) { return (title[p] in cpu) ? cpu[title[p]] : unlisted }
+          function weight(p) { return (title[p] in wall) ? wall[title[p]] : unlisted }
           BEGIN { stage = 0 }
           $0 == "\001" { stage++; next }
           stage == 0 { durations_read(); next }
           stage == 1 { count++; pos[count] = $1; title[$1] = $2; next }
-          $0 != "" && ($0 in cpu) { total[1] += cpu[$0] }
+          $0 != "" && ($0 in wall) { total[1] += wall[$0] }
           END {
             unlisted = 10; top = -1
-            for (k = 1; k <= count; k++) if (title[pos[k]] in cpu && cpu[title[pos[k]]] > top) top = cpu[title[pos[k]]]
+            for (k = 1; k <= count; k++) if (title[pos[k]] in wall && wall[title[pos[k]]] > top) top = wall[title[pos[k]]]
             if (top >= 0) unlisted = top
             for (g = 1; g <= n; g++) total[g] += 0
             for (k = 1; k <= count; k++) order[k] = pos[k]
@@ -506,9 +506,10 @@ orch_total=${#orch_sections[@]}
 # order, then the rest by wall seconds, longest first, ties in walk order. A
 # line that does not parse and a name matching no section are ignored; a
 # missing or unreadable file gives walk order.
+mapfile -t orch_title_at <<<"$orch_titles"
 orch_titles_kept=""
 for ((orch_i = 0; orch_i < orch_total; orch_i++)); do
-  orch_titles_kept+="$(printf '%s\n' "$orch_titles" | sed -n "${orch_sections[$orch_i]}p")"$'\n'
+  orch_titles_kept+="${orch_title_at[orch_sections[orch_i] - 1]}"$'\n'
 done
 orch_order=()
 mapfile -t orch_order < <(
@@ -572,7 +573,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     ! kill -0 "${orch_pids[$orch_flushed]}" 2>/dev/null; do
     wait "${orch_pids[$orch_flushed]}"; orch_status=$?
     orch_pos="${orch_sections[$orch_flushed]}"
-    orch_title="$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")"
+    orch_title="${orch_title_at[orch_pos - 1]}"
     cat "$orch_buf/$orch_pos.out"
     if [ -n "${orch_timed_out[$orch_flushed]:-}" ]; then
       orch_section_fail "timed out" \

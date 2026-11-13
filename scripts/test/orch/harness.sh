@@ -969,10 +969,11 @@ rm -rf "$ord_dir"
 
 # --- the shard setting (#2859) ------------------------------------------------
 # A minimal test tree - the runners, setup.sh, a harness with an isolation
-# section and five planted sections - over planted durations: CPU tenths 50,
-# 40, 30 and 20 for s1 to s4, s5 unlisted (so it weighs 50), 70 for
-# hooks_test.sh and 10 for shellcheck, which group 1 starts with. Two groups
-# deal s2 and s4 to group 1, s1, s5 and s3 to group 2. Each planted section logs
+# section and five planted sections - over planted durations: wall tenths 10,
+# 30, 20 and 5 for s1 to s4, s5 unlisted (so it weighs 30), 9 for hooks_test.sh
+# and 9 for shellcheck, which group 1 starts with (18). The CPU tenths differ
+# on purpose: a dealing by CPU gives other groups. Two groups deal s1 and s5 to
+# group 1, s2, s3 and s4 to group 2. Each planted section logs
 # its process id and name as it starts; the runner starts its children one
 # after another, so the log sorted by id is the start order.
 echo
@@ -1005,25 +1006,25 @@ sh_run() {
 }
 sh_run 1/2
 assert_status "group 1 of 2 passes" "$sh_st" 0
-assert_eq "group 1 runs isolation and the sections the dealing gives it" "$sh_printed" "isolation,s2,s4,"
-assert_eq "and starts them longest-first" "$sh_started" "s2,s4,"
+assert_eq "group 1 runs isolation and the sections the dealing gives it" "$sh_printed" "isolation,s1,s5,"
+assert_eq "and starts the unlisted one first" "$sh_started" "s5,s1,"
 sh_run 2/2
 sh_first_22="$sh_printed"
 assert_eq "group 2 gets the rest, the unlisted section weighing as the heaviest listed one" \
-  "$sh_printed" "isolation,s1,s3,s5,"
-assert_eq "its sections start with the unlisted one, then longest-first" "$sh_started" "s5,s3,s1,"
-# A file that lists no planted section: each weighs 1 CPU second (10 tenths), so
-# the 30 tenths of the shellcheck line put s4 in group 1, the rest in group 2.
+  "$sh_printed" "isolation,s2,s3,s4,"
+assert_eq "its sections start longest-first" "$sh_started" "s2,s3,s4,"
+# A file that lists no planted section: each weighs 1 wall second (10 tenths),
+# so the 30 tenths of the shellcheck line put s4 in group 1, the rest in 2.
 cp "$sh_t/section-durations.tsv" "$sh_dir/durations.keep"
-printf '%s\n' "9	30	shellcheck" >"$sh_t/section-durations.tsv"
+printf '%s\n' "30	9	shellcheck" >"$sh_t/section-durations.tsv"
 sh_run 1/2
-assert_eq "with no section listed, each weighs one CPU second" "$sh_printed" "isolation,s4,"
+assert_eq "with no section listed, each weighs one wall second" "$sh_printed" "isolation,s4,"
 cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 printf '%s' "$(<"$sh_dir/durations.keep")" >"$sh_t/section-durations.tsv"
 sh_run 1/2
-assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s2,s4,"
+assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s1,s5,"
 sh_run 2/2
-assert_eq "and starts its sections longest-first" "$sh_started" "s5,s3,s1,"
+assert_eq "and starts its sections longest-first" "$sh_started" "s2,s3,s4,"
 cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
 for sh_n in 1 2 9; do
@@ -1048,14 +1049,21 @@ assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" "${sh_saved_se
 sh_run ""
 assert_eq "an empty value runs as unset" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
 sh_run 1/2 1
-assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s2,s4,"
+assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s1,s5,"
+# test_jobs_shard parses the value; one runner-level case shows the refusal
+# comes before any section starts.
 for sh_bad in x 0/2 3/2 1/ /2 1/2/3 a/b -1/2 " 1/2"; do
-  sh_run "$sh_bad"
-  assert_status "ORCH_TEST_SHARD='$sh_bad' exits 1" "$sh_st" 1
-  assert_eq "and says so before any section starts" "$sh_out
-$(cat "$sh_log")" "orch_test.sh: ORCH_TEST_SHARD='$sh_bad' is not <i>/<n> with 1 <= i <= n
-"
+  sh_out="$(unset CI; source "$(dirname "$SUITE_SCRIPT")/test_jobs.sh"
+    test_jobs_shard orch_test.sh "$sh_bad" 2>&1)"; sh_st=$?
+  assert_status "ORCH_TEST_SHARD='$sh_bad' is refused" "$sh_st" 1
+  assert_eq "with the message" "$sh_out" \
+    "orch_test.sh: ORCH_TEST_SHARD='$sh_bad' is not <i>/<n> with 1 <= i <= n"
 done
+sh_run 3/2
+assert_status "the runner refuses ORCH_TEST_SHARD=3/2" "$sh_st" 1
+assert_eq "before any section starts" "$sh_out
+$(cat "$sh_log")" "orch_test.sh: ORCH_TEST_SHARD='3/2' is not <i>/<n> with 1 <= i <= n
+"
 for sh_v in 1/1 1/2; do
   sh_out="$(SH_LOG="$sh_log" ORCH_TEST_SHARD="$sh_v" ORCH_TEST_ONLY='^shard s1$' bash "$sh_t/orch_test.sh" 2>&1)"; sh_st=$?
   assert_status "ORCH_TEST_SHARD=$sh_v with ORCH_TEST_ONLY exits 1" "$sh_st" 1
