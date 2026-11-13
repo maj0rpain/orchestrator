@@ -113,9 +113,9 @@ jobs:
             orchestrator-autopilot scripts/test/all.sh
 
   # The one result for a PR's suite: passes only when all four groups did, and
-  # runs whether or not they passed.
+  # runs whether or not they passed, but not when the run was cancelled.
   suite:
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs: container
     runs-on: ubuntu-latest
     steps:

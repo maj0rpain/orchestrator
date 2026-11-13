@@ -48,13 +48,12 @@ failed=()
 # appends "<wall>\t<cpu>\t<name>" to $tmp/rest, tenths of a second. The status
 # is the command's.
 measure() {
-  local name="$1" st
+  local name="$1" st LC_NUMERIC=C
   shift
   # shellcheck disable=SC2034 # read by the time keyword
   TIMEFORMAT='%1R %1U %1S'
   { time "$@" >"$tmp/out" 2>&1; st=$?; } 2>"$tmp/time"
-  awk -v name="$name" '
-    function tenths(s) { sub(/\./, "", s); return s + 0 }
+  awk -v name="$name" "$TENTHS_AWK"'
     { printf "%d\t%d\t%s\n", tenths($1), tenths($2) + tenths($3), name }
   ' "$tmp/time" >>"$tmp/rest"
   return "$st"
@@ -80,7 +79,7 @@ else
   shellcheck_run() {
     cd "$root" || return 1
     printf '%s\0' "${SHELLCHECK_FILES[@]#"$root/"}" |
-      LC_ALL=C LANG=C xargs -0 -n1 -P "$jobs" shellcheck -S warning -f gcc
+      LC_ALL=C LANG=C xargs -0 -n1 -P "$jobs" "${SHELLCHECK_CMD[@]}"
   }
   measure shellcheck shellcheck_run || {
     failed+=("shellcheck")

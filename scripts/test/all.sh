@@ -53,7 +53,8 @@
 # printed.
 # Shellcheck fails with findings, with no finding line, or missing under CI. The
 # paths that end before the report - an invalid ORCH_TEST_JOBS or
-# ORCH_TEST_POOL_PERCENT, an INT or TERM stop - print no verdict.
+# ORCH_TEST_POOL_PERCENT, a malformed ORCH_TEST_SHARD, an INT or TERM stop -
+# print no verdict.
 #
 # Exits 1 when any suite failed or printed a FAIL line, a suite left temp files
 # behind, or shellcheck did not pass.
@@ -143,7 +144,7 @@ if [ "$TEST_SHARD_I" -eq 1 ] && command -v shellcheck >/dev/null 2>&1; then
     done
     sc_rel="${sc_file#"$root/"}"
     test_jobs_slot_wait
-    (cd "$root" && test_jobs_job shellcheck -S warning -f gcc "$sc_rel") \
+    (cd "$root" && test_jobs_job "${SHELLCHECK_CMD[@]}" "$sc_rel") \
       >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
     sc_pids+=("$!")
     test_jobs_slot_release "$!"

@@ -80,3 +80,30 @@ shellcheck_files() {
   [ "$had_globstar" -eq 1 ] || shopt -u globstar
   [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
 }
+
+# TENTHS_AWK: the awk function tenths(s) as text, for a program to start with.
+# It reads seconds with one decimal place, as bash's `time` prints them under
+# LC_NUMERIC=C, and returns tenths of a second; a caller sets LC_NUMERIC=C
+# before `time`. orch_test.sh's timed child and section-durations.sh use it.
+#
+# DURATIONS_AWK: awk text for a program run with -F'\t', defining the function
+# durations_read(), which reads the current record of section-durations.tsv
+# into the arrays wall and cpu, in tenths of a second, keyed by name. A line
+# is "<wall>", "<cpu>" and a non-empty name, tab-separated, the two numbers
+# digits; any other line is ignored, and the first line per name wins. The
+# shard dealing and the start order both start with it, so they read the file
+# one way.
+#
+# SHELLCHECK_CMD: the array holding the one shellcheck invocation, a file name
+# appended, run from the repo root. all.sh and section-durations.sh both run
+# it, so the two cannot drift.
+# shellcheck disable=SC2034 # read by the sourcing runners
+TENTHS_AWK='function tenths(s) { sub(/\./, "", s); return s + 0 }'
+# shellcheck disable=SC2034 # read by the sourcing runners
+DURATIONS_AWK='function durations_read() {
+  if (NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in wall)) {
+    wall[$3] = $1 + 0; cpu[$3] = $2 + 0
+  }
+}'
+# shellcheck disable=SC2034 # read by the sourcing runners
+SHELLCHECK_CMD=(shellcheck -S warning -f gcc)

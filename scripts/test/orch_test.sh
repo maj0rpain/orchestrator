@@ -105,7 +105,8 @@ trap test_jobs_stop_descendants INT TERM
 # the tally file.
 # A value that is not a positive integer exits 1 before any section runs.
 # Above 1, each section chosen (every one, or the isolation section plus those
-# ORCH_TEST_ONLY matches) runs as its own child: this script re-invoked with
+# ORCH_TEST_ONLY matches, or plus the sections ORCH_TEST_SHARD deals the group)
+# runs as its own child: this script re-invoked with
 # ORCH_TEST_JOBS=1 and an internal variable naming the section's position, so
 # the child runs the shared setup, its file's preamble, that one section and
 # the summary - and isolation runs once, in its own child. A child prints
@@ -357,9 +358,9 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
     orch_child_status=$?
     times >"$orch_child_times.cpu"
     # One line of tenths of a second, wall then CPU.
-    awk -v wall="$(<"$orch_child_times.wall")" '
+    awk -v wall="$(<"$orch_child_times.wall")" "$TENTHS_AWK"'
       { for (i = 1; i <= NF; i++) { split($i, t, /[ms]/); cpu += t[1] * 600 + t[2] * 10 } }
-      END { w = wall; sub(/\./, "", w); printf "%d\t%d\n", w + 0, cpu + 0.5 }
+      END { printf "%d\t%d\n", tenths(wall), cpu + 0.5 }
     ' "$orch_child_times.cpu" >"$orch_child_times"
     exit "$orch_child_status"
   fi
@@ -422,11 +423,12 @@ else
         printf '\001\n'
         printf '%s\n' "$orch_titles" | awk 'NR > 1 { printf "%d\t%s\n", NR, $0 }'
         printf '\001\n%s' "$orch_others"; } |
-        awk -F'\t' -v n="$TEST_SHARD_N" -v want="$TEST_SHARD_I" '
+        awk -F'\t' -v n="$TEST_SHARD_N" -v want="$TEST_SHARD_I" \
+          "$DURATIONS_AWK"'
           function weight(p) { return (title[p] in cpu) ? cpu[title[p]] : unlisted }
           BEGIN { stage = 0 }
           $0 == "\001" { stage++; next }
-          stage == 0 { if (NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in cpu)) cpu[$3] = $2 + 0; next }
+          stage == 0 { durations_read(); next }
           stage == 1 { count++; pos[count] = $1; title[$1] = $2; next }
           $0 != "" && ($0 in cpu) { total[1] += cpu[$0] }
           END {
@@ -511,9 +513,9 @@ done
 orch_order=()
 mapfile -t orch_order < <(
   { [ -r "$orch_durations_file" ] && cat "$orch_durations_file"; printf '\001\n%s' "$orch_titles_kept"; } |
-    awk -F'\t' '
+    awk -F'\t' "$DURATIONS_AWK"'
       !seen && $0 == "\001" { seen = 1; next }
-      !seen { if (NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in wall)) wall[$3] = $1 + 0; next }
+      !seen { durations_read(); next }
       { idx++
         if ($0 in wall) printf "1\t%d\t%d\n", -wall[$0], idx; else printf "0\t0\t%d\n", idx }
     ' | LC_ALL=C sort -n -k1,1 -k2,2 -k3,3 | cut -f3
