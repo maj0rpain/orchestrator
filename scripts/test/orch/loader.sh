@@ -94,25 +94,23 @@ printf "%s\n" 'zz_other() { :; }' >"$lazy_dir/orch/zz-new.sh"
 out="$(bash -c 'ORCH_SOURCE_LAZY=1; source "$1"; printf "%s\n" "zz_other() { :; }" >"$2"; zz_fn' _ "$lazy_dir/orch.sh" "$lazy_dir/orch/zz-old.sh" 2>&1)"; status=$?
 assert_status "a stub whose function no module defines stops with exit 1" "$status" 1
 assert_eq "and says so" "$out" "orch: zz_fn is in the stub table but no module defines it"
-rm -rf "${lazy_dir%/scripts}"
+rm -f "$lazy_dir/orch/zz-old.sh" "$lazy_dir/orch/zz-new.sh"
 
 # A function defined with a run of spaces before its brace gets a stub too.
-lazy_dir="$(tree_copy scripts)"
 printf '%s\n' 'zz_wide()   { echo from-wide; }' >"$lazy_dir/orch/zz-wide.sh"
 : >"$trace"
 out="$(HOME="$lazy_dir" ORCH_LOAD_TRACE="$trace" bash -c 'ORCH_SOURCE_LAZY=1; source "$1"; zz_wide' _ "$lazy_dir/orch.sh" 2>&1)"
 assert_eq "a function defined as name()   { runs through its stub" "$out" "from-wide"
 assert_contains "and loads its module on demand" "$(cat "$trace")" "zz-wide 0"
-rm -rf "${lazy_dir%/scripts}"
 
 # A relative path to orch.sh and a cd before the first on-demand load: the
-# module directory is absolute from the start.
-rel_dir="$(tree_copy scripts)"
-git init -q "${rel_dir%/scripts}"
-printf '%s\n' 'zz_wide() { echo from-wide; }' >"$rel_dir/orch/zz-wide.sh"
-out="$(cd "${rel_dir%/scripts}" && HOME="$rel_dir" bash -c 'ORCH_SOURCE_LAZY=1; source scripts/orch.sh; cd /; zz_wide' 2>&1)"
+# module directory is absolute from the start. It has its own HOME, so it
+# scans the modules instead of reading the cache the case above wrote.
+git init -q "${lazy_dir%/scripts}"
+rel_home="$(mktemp -d "${lazy_dir%/scripts}/home.XXXXXX")"
+out="$(cd "${lazy_dir%/scripts}" && HOME="$rel_home" bash -c 'ORCH_SOURCE_LAZY=1; source scripts/orch.sh; cd /; zz_wide' 2>&1)"
 assert_eq "an on-demand load after a cd works with orch.sh sourced by a relative path" "$out" "from-wide"
-rm -rf "${rel_dir%/scripts}"
+rm -rf "${lazy_dir%/scripts}"
 
 # A plugin path containing a colon still maps every function to its module.
 colon_root="$(mktemp -d)/c:olon"

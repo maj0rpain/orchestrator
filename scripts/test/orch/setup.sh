@@ -564,11 +564,11 @@ layer_calls() {
 # (common.sh or loader.sh); the defs are every file there but the skipped base
 # names (e.g. gh.sh), and the output is layer_calls' for <file> alone.
 layer_upcalls() {
-  local dir="$1" file="$2" f base skip defs=()
+  local dir="$1" file="$2" f base skipped defs=()
   shift 2
   for f in "$dir"/orch/*.sh; do
     base="${f##*/}"
-    for skip in "$@"; do [ "$base" = "$skip" ] && continue 2; done
+    for skipped in "$@"; do [ "$base" = "$skipped" ] && continue 2; done
     defs+=("$f")
   done
   layer_calls "${defs[@]}" -- "$dir/orch/$file"

@@ -96,7 +96,7 @@ declare -gA ORCH_STUB_OWNER=()
 # two modules define belongs to the later one in orch_modules' order, as
 # loading every module would leave it.
 orch_stub_scan() {
-  local name mod line def defs=''
+  local name mod line rel def defs=''
   local -a mods=() files=()
   ORCH_STUB_OWNER=()
   mapfile -t mods < <(orch_modules)
@@ -104,9 +104,9 @@ orch_stub_scan() {
   # Each line is <dir>/<module>.sh:<match>; the directory prefix is removed
   # whole rather than split on ":", which a path may contain.
   while IFS= read -r line; do
-    line="${line#"$ORCH_MODULE_DIR"/}"
-    mod="${line%%.sh:*}"
-    def="${line#*.sh:}"
+    rel="${line#"$ORCH_MODULE_DIR"/}"
+    mod="${rel%%.sh:*}"
+    def="${rel#*.sh:}"
     ORCH_STUB_OWNER[${def%%(*}]="$mod"
   done < <(grep -HoE '^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*[{(]' "${files[@]}")
   for name in "${!ORCH_STUB_OWNER[@]}"; do
@@ -177,13 +177,6 @@ orch_stubs() {
   eval "$defs"
 }
 
-# orch_stub_owner <function>: prints the module the last orch_stub_scan found
-# defining the function at column 0, and fails when none does.
-orch_stub_owner() {
-  [ -n "${ORCH_STUB_OWNER[$1]:-}" ] || return 1
-  printf '%s\n' "${ORCH_STUB_OWNER[$1]}"
-}
-
 # orch_stub_die <function>: stops with the stub table's message, ending with
 # the cache file to remove when the table was read from it.
 orch_stub_die() {
@@ -209,7 +202,7 @@ orch_stub() {
       orch_stub_scan
       orch_stub_cache_write || true
     fi
-    other="$(orch_stub_owner "$fn")" || other=''
+    other="${ORCH_STUB_OWNER[$fn]:-}"
     if [ -z "$other" ] || [ "$other" = "$mod" ]; then
       orch_stub_die "$fn"
     fi
