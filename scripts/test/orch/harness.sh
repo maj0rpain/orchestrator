@@ -18,6 +18,34 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
+# term_run <stdout file> <stderr file> <pid file>... -- <command>...: starts
+# <command> in the background, its output to the two files, polls (up to 20
+# seconds) until every pid file has content, sends TERM to it, and waits. The
+# command's own pid is the one TERMed, so a caller wanting a directory or an
+# unset variable passes `env -u` or `bash -c 'cd ...; exec ...'` as the
+# command. Sets term_st (its exit status) and term_secs (the seconds it took
+# to return after the TERM).
+term_run() {
+  local out="$1" err="$2" pid pid_file tries=0 t0 ready
+  local -a pid_files=()
+  shift 2
+  while [ "$1" != -- ]; do pid_files+=("$1"); shift; done
+  shift
+  "$@" >"$out" 2>"$err" &
+  pid=$!
+  while [ "$tries" -le 200 ]; do
+    ready=1
+    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || ready=0; done
+    [ "$ready" = 1 ] && break
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+  t0=$SECONDS
+  kill -TERM "$pid"
+  wait "$pid"; term_st=$?
+  term_secs=$((SECONDS - t0))
+}
+
 # slot_hold <pool> <slot>: creates <pool> and holds <slot>'s lock in a
 # background process, its pid in SLOT_HOLDER. The holder opens the fifo's write
 # end on fd 8, then opens and locks the slot file on fd 9, and writes the ready
@@ -1245,23 +1273,17 @@ cp "$dur_file" "$dur_dir/good.tsv"
 # child gone and the durations file as it was. INT runs the same trap; the
 # harness cannot send it, as a background script inherits SIGINT ignored.
 # dur_term <pid file> [<env assignment>...]: starts the script as in dur_script,
-# with exec so $! is its own pid, TERMs it once the pid file has content, and
+# through term_run, which TERMs it once the pid file has content, and
 # sets dur_term_st and dur_term_secs (the seconds the script took to return).
 dur_term() {
-  local pid_file="$1" tries=0 pid t0
+  local pid_file="$1"
   shift
   : >"$pid_file"
-  (exec env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" \
-    bash "$dur_dir/scripts/dev/section-durations.sh") >"$dur_dir/term.out" 2>&1 &
-  pid=$!
-  until [ -s "$pid_file" ] || [ "$tries" -gt 200 ]; do
-    tries=$((tries + 1))
-    sleep 0.1
-  done
-  t0=$SECONDS
-  kill -TERM "$pid"
-  wait "$pid"; dur_term_st=$?
-  dur_term_secs=$((SECONDS - t0))
+  term_run "$dur_dir/term.out" "$dur_dir/term.out" "$pid_file" -- \
+    env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" \
+    bash "$dur_dir/scripts/dev/section-durations.sh"
+  dur_term_st=$term_st
+  dur_term_secs=$term_secs
 }
 dur_slow_pid="$dur_dir/slow.pid"
 printf '%s\n' '  # --- dur slow' \
@@ -2000,19 +2022,11 @@ all_swap orch_test.sh \
   "trap 'kill \$sp; sleep 0.3; [ -d \"\$TMPDIR\" ] && echo yes >\"$all_kill/suite.tmp\"; exit 0' TERM" \
   "echo \$\$ >'$all_kill/suite.pid'" \
   'sleep 30 & sp=$!; wait'
-# all_run's environment, with exec so $! is all.sh's own pid.
-(
-  unset CI CHANGELOG_BASE NO_VERSION_BUMP ORCH_TEST_JOBS
-  exec env TMPDIR="$all_kill/tmp" PATH="$all_bin" "$all_bash" "$all_dir/all.sh"
-) >"$all_kill/stdout" 2>&1 &
-all_pid=$!
-all_tries=0
-until [ -s "$all_kill/suite.pid" ] && [ -s "$all_kill/sc.pid" ] || [ "$all_tries" -gt 100 ]; do
-  all_tries=$((all_tries + 1))
-  sleep 0.1
-done
-kill -TERM "$all_pid"
-wait "$all_pid"; st=$?
+# all_run's environment.
+term_run "$all_kill/stdout" "$all_kill/stdout" "$all_kill/suite.pid" "$all_kill/sc.pid" -- \
+  env -u CI -u CHANGELOG_BASE -u NO_VERSION_BUMP -u ORCH_TEST_JOBS \
+  TMPDIR="$all_kill/tmp" PATH="$all_bin" "$all_bash" "$all_dir/all.sh"
+st=$term_st
 all_restore orch_test.sh
 all_alive=0
 for all_stub_pid in $(cat "$all_kill/suite.pid" "$all_kill/sc.pid"); do
@@ -3801,12 +3815,10 @@ assert_eq "a usage error prints no verdict on stdout" "$af_out" ""
 # A TERM stop prints no verdict.
 printf '%s\n' '#!/usr/bin/env bash' "echo \$\$ >'$af.pid'" 'sleep 30' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'echo ok'
-(cd "$af" && exec env -u CI PATH="$af_bin" bash scripts/test/affected.sh HEAD) >"$af.stdout" 2>/dev/null &
-af_pid=$!
-af_tries=0
-until [ -s "$af.pid" ] || [ "$af_tries" -gt 100 ]; do af_tries=$((af_tries + 1)); sleep 0.1; done
-kill -TERM "$af_pid"
-wait "$af_pid"; st=$?
+term_run "$af.stdout" /dev/null "$af.pid" -- \
+  bash -c 'cd "$1" && shift && exec "$@"' _ "$af" \
+  env -u CI PATH="$af_bin" bash scripts/test/affected.sh HEAD
+st=$term_st
 kill "$(cat "$af.pid")" 2>/dev/null
 assert_status "TERM to affected.sh exits 130" "$st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
