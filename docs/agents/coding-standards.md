@@ -43,7 +43,7 @@ prints a write error on stderr. Load the output with `mapfile -t` first and loop
 over the array, or iterate a variable's words directly when there is no producer
 to run.
 
-## 6. A helper called once per item starts no external command for work bash can do
+## 6. A per-item helper starts no external command for work bash can do
 
 A helper called once per item (per file, per label, per issue, per worktree)
 starts no external command for work bash can do itself, such as reading a small
