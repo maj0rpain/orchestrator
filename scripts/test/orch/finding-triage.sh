@@ -499,9 +499,14 @@ err="$(mktemp)"
 out="$(ORCH_ISSUE_LIST_LIMIT=5 scan 2>"$err")"; st=$?
 assert_status "a list at the issue-list limit does not stop the scan" "$st" 0
 assert_contains "warns that the nit list reached the limit, naming the label and the limit" "$(cat "$err")" \
-  "orch: review:nit findings reached the issue-list limit of 5 - any past it are missing from this scan"
+  "orch: the open issues labelled review:nit and needs-triage reached the issue-list limit of 5 - the newest past it are missing from this list"
 assert_not_contains "but not the major list, below it" "$(cat "$err")" "review:major"
 assert_eq "and still prints its lines" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
+out="$(ORCH_ISSUE_LIST_LIMIT=4 scan 2>"$err")"; st=$?
+assert_status "a list cut below its length does not stop the scan" "$st" 0
+assert_eq "a cut drops the newest findings and keeps the oldest" \
+  "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 "
+assert_contains "and warns at the limit it cut to" "$(cat "$err")" "reached the issue-list limit of 4"
 out="$(ORCH_ISSUE_LIST_LIMIT=6 scan 2>"$err")"; st=$?
 assert_status "scans with every list one below the limit" "$st" 0
 assert_not_contains "and gives no warning" "$(cat "$err")" "issue-list limit"
