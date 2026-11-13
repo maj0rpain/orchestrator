@@ -1187,7 +1187,7 @@ dur_file="$dur_test/section-durations.tsv"
 # dur_script [<env assignment>...]: the dev script with a stub shellcheck on
 # PATH, stdout and stderr together.
 dur_script() {
-  env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
+  env -u CI PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
 }
 printf 'old\n' >"$dur_file"
 out="$(dur_script ORCH_TEST_ONLY='^dur a$' ORCH_TEST_SHARD=2/2)"; st=$?
@@ -1201,6 +1201,28 @@ out="$(dur_script ORCH_TEST_JOBS=1)"; st=$?
 assert_status "the script refuses ORCH_TEST_JOBS=1" "$st" 1
 assert_contains "naming the setting" "$out" "ORCH_TEST_JOBS=1"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+out="$(dur_script ORCH_TEST_POOL_PERCENT=abc)"; st=$?
+assert_status "the script refuses a bad ORCH_TEST_POOL_PERCENT" "$st" 1
+assert_contains "naming the setting" "$out" "ORCH_TEST_POOL_PERCENT"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+if command -v flock >/dev/null 2>&1; then
+  # A stub shellcheck probing the pool's one slot: each file gets its own
+  # process, each inside a slot.
+  dur_pool="$dur_dir/pool"
+  dur_log="$dur_dir/probe.log"
+  pool_cpu_file "$dur_dir/cpu1" 1
+  printf '#!/usr/bin/env bash\nif flock -n "%s/slot.1" true; then echo free >>"%s"; else echo busy >>"%s"; fi\n' \
+    "$dur_pool" "$dur_log" "$dur_log" >"$dur_tool/shellcheck"
+  chmod +x "$dur_tool/shellcheck"
+  : >"$dur_log"
+  out="$(dur_script ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_POOL_DIR="$dur_pool" \
+    ORCH_TEST_CPU_MAX_FILE="$dur_dir/cpu1")"; st=$?
+  assert_status "the script passes on a 1-slot pool" "$st" 0
+  shellcheck_files "$dur_dir"
+  assert_eq "each shellcheck process ran once per file, inside a pool slot" \
+    "$(sort "$dur_log" | uniq -c | tr -s ' ')" " ${#SHELLCHECK_FILES[@]} busy"
+  cp "$dur_dir/good.tsv" "$dur_file"
+fi
 dur_plant_failing
 out="$(dur_script)"; st=$?
 assert_status "a failing section fails the script" "$st" 1

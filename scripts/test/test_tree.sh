@@ -96,9 +96,12 @@ shellcheck_files() {
 # shard dealing and the start order both start with it, so they read the file
 # one way.
 #
-# SHELLCHECK_CMD: the array holding the one shellcheck invocation, a file name
-# appended, run from the repo root. all.sh and section-durations.sh both run
-# it, so the two cannot drift.
+# SHELLCHECK_CMD: the array holding the one shellcheck invocation, run from the
+# repo root with the files to check appended. all.sh, affected.sh and
+# section-durations.sh all run it, so the three cannot drift.
+#
+# shellcheck_start and shellcheck_join (below): all.sh and section-durations.sh's
+# pooled shellcheck step; the caller sources test_jobs.sh and inits the pool.
 # shellcheck disable=SC2034 # read by the sourcing runners
 TENTHS_AWK='function tenths(s) { sub(/\./, "", s); return s + 0 }'
 # shellcheck disable=SC2034 # read by the sourcing runners
@@ -109,3 +112,48 @@ DURATIONS_AWK='function durations_read() {
 }'
 # shellcheck disable=SC2034 # read by the sourcing runners
 SHELLCHECK_CMD=(shellcheck -S warning -f gcc)
+
+# shellcheck_start <root> <outdir> <jobs>: runs SHELLCHECK_CMD on each file of
+# SHELLCHECK_FILES from <root>, one process per file, each holding a job-pool
+# slot, at most <jobs> at once. Process <n>'s output goes to
+# <outdir>/shellcheck.<n>. Sets SHELLCHECK_PIDS, and SHELLCHECK_EXITS at the
+# same index for each process already waited for to keep <jobs> running.
+shellcheck_start() {
+  local root="$1" outdir="$2" jobs="$3" file rel next=0
+  SHELLCHECK_PIDS=()
+  SHELLCHECK_EXITS=()
+  for file in "${SHELLCHECK_FILES[@]}"; do
+    while [ "$((${#SHELLCHECK_PIDS[@]} - next))" -ge "$jobs" ]; do
+      wait "${SHELLCHECK_PIDS[$next]}"
+      SHELLCHECK_EXITS[next]=$?
+      next=$((next + 1))
+    done
+    rel="${file#"$root/"}"
+    test_jobs_slot_wait
+    (cd "$root" && test_jobs_job "${SHELLCHECK_CMD[@]}" "$rel") \
+      >"$outdir/shellcheck.${#SHELLCHECK_PIDS[@]}" 2>&1 &
+    SHELLCHECK_PIDS+=("$!")
+    test_jobs_slot_release "$!"
+  done
+}
+
+# shellcheck_join <outdir>: waits for each process whose exit SHELLCHECK_EXITS
+# lacks; sets SHELLCHECK_STATUS to the highest exit and SHELLCHECK_OUT to the
+# non-empty outputs joined in start order.
+shellcheck_join() {
+  local outdir="$1" n exit_code part
+  SHELLCHECK_STATUS=0
+  SHELLCHECK_OUT=""
+  for n in "${!SHELLCHECK_PIDS[@]}"; do
+    if [ -n "${SHELLCHECK_EXITS[$n]:-}" ]; then
+      exit_code="${SHELLCHECK_EXITS[$n]}"
+    else
+      wait "${SHELLCHECK_PIDS[$n]}"
+      exit_code=$?
+    fi
+    [ "$exit_code" -gt "$SHELLCHECK_STATUS" ] && SHELLCHECK_STATUS=$exit_code
+    part="$(<"$outdir/shellcheck.$n")"
+    [ -n "$part" ] && SHELLCHECK_OUT+="${SHELLCHECK_OUT:+$'\n'}$part"
+  done
+  return 0
+}
