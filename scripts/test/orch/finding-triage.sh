@@ -744,11 +744,12 @@ traced_defs="$(writeln \
         'eval "fake_relabel_applied() $(declare -f adapter_issue_relabel | tail -n +2)"' \
         'adapter_issue_relabel() {' \
         '  local a prev=""' \
-        '  for a in "$@"; do [ "$prev" != --remove ] || printf "%s\n" "$a" >>"$COUNT_LOG"; prev="$a"; done' \
+        '  for a in "$@"; do [ "$prev" != --remove ] || printf "%s\n" "$a" >>"$RELABEL_LOG"; prev="$a"; done' \
         '  fake_relabel_applied "$@"' \
         '}')"
 traced_apply() {
-  counted_adapter_run "$relabel_log" "$traced_defs" orch_gh_failing finding-triage apply "$@"
+  : >"$relabel_log"
+  RELABEL_LOG="$relabel_log" adapter_stood_in "$traced_defs" orch_gh_failing finding-triage apply "$@"
 }
 removed_labels() { sort "$relabel_log" | tr '\n' ' '; }
 for outcome in close-fixed wontfix ready-for-agent ready-for-human; do
