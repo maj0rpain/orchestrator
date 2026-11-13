@@ -2877,9 +2877,10 @@ assert_eq "naming only the calling file and the rule" "$out" \
 rm -rf "${mcjq_dir%/scripts}"
 
 # --- orch_load before cross-module reads (#2868) ---------------------
-# orch_load_reads over the real scripts/, then over copies of it, each with a
-# planted owner module and reader: a read in a function and one in a module's
-# top-level code that break the rule, and reads that keep it.
+# orch_load_reads over the real scripts/, then over one copy of it, planted
+# first with an owner module and reader whose reads break the rule (a read in
+# a function and one in a module's top-level code), then re-planted with reads
+# that keep it.
 echo
 echo "orch_load before cross-module reads (#2868)"
 out="$(orch_load_reads "$PLUGIN_ROOT/scripts")"; st=$?
@@ -2934,9 +2935,9 @@ assert_eq "and print nothing" "$out" ""
 rm -rf "${load_dir%/scripts}"
 
 # --- on-demand sourcing variable (#2820) --------------------------------------
-# lazy_sourcing_names over the real scripts/, then over copies of it, each with
-# a planted use of the variable; this section is the one place harness.sh may
-# name it.
+# lazy_sourcing_names over the real scripts/, then over one copy of it, reused
+# with each planted use of the variable in turn; this section is the one place
+# harness.sh may name it.
 echo
 echo "on-demand sourcing variable (#2820)"
 out="$(lazy_sourcing_names "$PLUGIN_ROOT/scripts")"; st=$?
