@@ -1010,7 +1010,7 @@ assert_eq "and starts its sections longest-first" "$sh_started" "s2,s3,s4,"
 cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
 # Why 5: the weights are s2 30, s5 (unlisted, so the heaviest listed) 30, s3 20,
-# s1 10 and s4 5 wall seconds, dealt in that order; group 1 starts at 18, the
+# s1 10 and s4 5 wall tenths, dealt in that order; group 1 starts at 18, the
 # rest at 0. With 5 groups s2, s5, s3 and s1 fill groups 2-5 and s4 goes to
 # group 5 (10 < 18), leaving 1/5 with isolation alone. With 4 groups s1 lands
 # in group 1 (18 < 20), so none is left with isolation alone.
@@ -1097,7 +1097,7 @@ assert_eq "all.sh runs an empty setting as unset" "$(cat "$sh_all_dir/scripts/te
 rm -rf "$sh_all_dir" "$sh_dir"
 
 # --- section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858) -----
-# A copy of the scripts tree cut down to planted sections and stub suites, run
+# A minimal test tree with planted sections and stub suites, run
 # at its command line: orch_test.sh with ORCH_TEST_DURATIONS, then the dev
 # script over the same tree with a stub shellcheck first on PATH.
 echo
@@ -2033,7 +2033,7 @@ echo "the job pool (#2022)"
 jp_dir="$(mktemp -d)"
 jp_tests="$(dirname "$SUITE_SCRIPT")"
 jp_log="$jp_dir/log"
-jp_copy="$(planted_minimal_tree <<'PLANTED'
+jp_tree="$(planted_minimal_tree <<'PLANTED'
   # With JP_BARRIER set, a pool section waits, up to 10s, until that many
   # sections have started, so a peak needs no luck in start-up timing.
   pool_barrier() {
@@ -2063,7 +2063,7 @@ jp_copy="$(planted_minimal_tree <<'PLANTED'
   echo "nested=$?" >>"$JP_LOG"; ok "nested"
 PLANTED
 )"
-jp_suite="$jp_copy/scripts/test/orch_test.sh"
+jp_suite="$jp_tree/scripts/test/orch_test.sh"
 pool_cpu_file "$jp_dir/cpu2" 2
 pool_cpu_file "$jp_dir/cpu1" 1
 pool_cpu_file "$jp_dir/cpu4" 4
@@ -2212,7 +2212,7 @@ assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
 else
   skip "the job pool cases on a shared pool" "flock is not installed"
 fi
-rm -rf "$jp_copy"
+rm -rf "$jp_tree"
 
 # all.sh's shellcheck processes take slots: two concurrent all.sh runs on a
 # 1-slot pool never have more than one shellcheck at a time, and the notice
