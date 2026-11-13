@@ -43,8 +43,8 @@ audit_body_parse() {
 }
 
 # audit_file_usage: the usage line, its categories read from the Filed finding
-# module's list. A function, not a variable: orch.sh sources audit.sh before
-# filed-finding.sh, so a string built at source time could not read the list.
+# module's list. A function, not a variable: filed-finding.sh may not be loaded
+# when audit.sh is, so a string built at source time could not read the list.
 audit_file_usage() {
   orch_load filed-finding
   local cats="${FILED_CATEGORIES// /|}"

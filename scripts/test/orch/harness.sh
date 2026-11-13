@@ -279,14 +279,21 @@ marked_comment_jq_placement() {
 }
 
 # lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)
-# for the on-demand sourcing variable's name, which only setup.sh's
-# sourced_orch, the loader's section file and this file may use; prints each
-# other file, as scripts/<path>, and returns 1 when it printed any.
+# for the on-demand sourcing variable's name, which only the shared setup's
+# sourced_orch, the loader's section file and this file may use; setup.sh
+# is checked with sourced_orch's function and its comment lines left out. Prints
+# each other file, as scripts/<path>, and returns 1 when it printed any.
 lazy_sourcing_names() {
-  local dir="$1" f out=''
+  local dir="$1" f rel out=''
   for f in "$dir"/test/*.sh "$dir"/test/orch/*.sh; do
-    case "${f##*/}" in setup.sh|loader.sh|harness.sh) continue ;; esac
-    ! grep -q 'ORCH_SOURCE_LAZY' "$f" || out+="scripts/${f#"$dir"/}"$'\n'
+    rel="${f#"$dir"/}"
+    case "$rel" in
+      test/orch/loader.sh | test/orch/harness.sh) continue ;;
+      test/orch/setup.sh)
+        [ -n "$(awk '/^sourced_orch\(\) \{/ { skip = 1 } !skip && !/^[ \t]*#/ && /ORCH_SOURCE_LAZY/ { print } /^\}/ { skip = 0 }' "$f")" ] || continue ;;
+      *) grep -q 'ORCH_SOURCE_LAZY' "$f" || continue ;;
+    esac
+    out+="scripts/$rel"$'\n'
   done
   printf '%s' "$out"
   [ -z "$out" ]
@@ -2638,6 +2645,12 @@ printf '%s\n' '# sets ORCH_SOURCE_LAZY=1 itself' >"$load_dir/test/orch/zz-plante
 out="$(lazy_sourcing_names "$load_dir")"; st=$?
 assert_status "a planted test file naming the variable fails the check" "$st" 1
 assert_eq "naming the file" "$out" "scripts/test/orch/zz-planted.sh"
+rm -rf "${load_dir%/scripts}"
+load_dir="$(tree_copy scripts)"
+printf '%s\n' 'second_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/setup.sh"
+out="$(lazy_sourcing_names "$load_dir")"; st=$?
+assert_status "a second use of the variable in setup.sh fails the check" "$st" 1
+assert_eq "naming setup.sh" "$out" "scripts/test/orch/setup.sh"
 rm -rf "${load_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------

@@ -30,15 +30,20 @@ declare -gA ORCH_LOADED=()
 # The directory the modules sit in: this file's own.
 ORCH_MODULE_DIR="${BASH_SOURCE[0]%/*}"
 
+# orch_is_module <name>: succeeds when the name, without .sh, is one a module
+# may have: the one place that decides which files of this directory are not
+# modules (common.sh and loader.sh, the two files every start loads).
+orch_is_module() {
+  case "$1" in ''|common|loader|*/*) return 1 ;; esac
+}
+
 # orch_load <module>: sources scripts/orch/<module>.sh unless this shell has
 # already, tracing the load when ORCH_LOAD_TRACE names a file. An unknown name
 # stops with exit 1.
 orch_load() {
   local name="$1"
   [ -z "${ORCH_LOADED[$name]:-}" ] || return 0
-  case "$name" in
-    ''|common|loader|*/*) die "orch_load: no module $name" ;;
-  esac
+  orch_is_module "$name" || die "orch_load: no module $name"
   [ -f "$ORCH_MODULE_DIR/$name.sh" ] || die "orch_load: no module $name"
   ORCH_LOADED[$name]=1
   if [ -n "${ORCH_LOAD_TRACE:-}" ]; then
@@ -57,7 +62,7 @@ orch_modules() {
   for f in "$ORCH_MODULE_DIR"/*.sh; do
     name="${f##*/}"
     name="${name%.sh}"
-    case "$name" in common|loader) continue ;; esac
+    orch_is_module "$name" || continue
     names+=("$name")
   done
   for ((i = 1; i < ${#names[@]}; i++)); do
@@ -77,21 +82,25 @@ orch_load_all() {
   while IFS= read -r m; do orch_load "$m"; done < <(orch_modules)
 }
 
-# orch_stub_scan: sets ORCH_STUB_DEFS to the stub table: one stub definition
-# per function the module files define at column 0. A function two modules
-# define belongs to the later one in the file order, as loading every module
-# would leave it.
+# The module that defines each function at column 0, by function name, as the
+# last orch_stub_scan found it.
+declare -gA ORCH_STUB_OWNER=()
+
+# orch_stub_scan: sets ORCH_STUB_OWNER and ORCH_STUB_DEFS, the stub table: one
+# stub definition per function the module files define at column 0. A function
+# two modules define belongs to the later one in orch_modules' order, as
+# loading every module would leave it.
 orch_stub_scan() {
   local name mod defs=''
-  local -A owner=()
+  local -a files=()
+  ORCH_STUB_OWNER=()
+  while IFS= read -r mod; do files+=("$ORCH_MODULE_DIR/$mod.sh"); done < <(orch_modules)
   while IFS=: read -r mod name; do
     mod="${mod##*/}"
-    owner[${name%%(*}]="${mod%.sh}"
-  done < <(grep -HoE '^[A-Za-z_][A-Za-z0-9_]*\(\) [{(]' "$ORCH_MODULE_DIR"/*.sh)
-  for name in "${!owner[@]}"; do
-    mod="${owner[$name]}"
-    case "$mod" in common|loader) continue ;; esac
-    defs+="$name() { orch_stub $mod $name \"\$@\"; }"$'\n'
+    ORCH_STUB_OWNER[${name%%(*}]="${mod%.sh}"
+  done < <(grep -HoE '^[A-Za-z_][A-Za-z0-9_]*\(\) [{(]' "${files[@]}")
+  for name in "${!ORCH_STUB_OWNER[@]}"; do
+    defs+="$name() { orch_stub ${ORCH_STUB_OWNER[$name]} $name \"\$@\"; }"$'\n'
   done
   ORCH_STUB_DEFS="$defs"
 }
@@ -158,16 +167,11 @@ orch_stubs() {
   eval "$defs"
 }
 
-# orch_stub_owner <function>: prints the module that now defines the function
-# at column 0, and fails when none does.
+# orch_stub_owner <function>: prints the module the last orch_stub_scan found
+# defining the function at column 0, and fails when none does.
 orch_stub_owner() {
-  local f found=''
-  for f in "$ORCH_MODULE_DIR"/*.sh; do
-    case "${f##*/}" in common.sh|loader.sh) continue ;; esac
-    if grep -qE "^$1\\(\\) [{(]" "$f"; then found="${f##*/}"; fi
-  done
-  [ -n "$found" ] || return 1
-  printf '%s\n' "${found%.sh}"
+  [ -n "${ORCH_STUB_OWNER[$1]:-}" ] || return 1
+  printf '%s\n' "${ORCH_STUB_OWNER[$1]}"
 }
 
 # orch_stub_die <function>: stops with the stub table's message, ending with

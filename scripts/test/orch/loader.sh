@@ -5,6 +5,16 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# orch_modules_list: every module of scripts/orch, one name per line, in
+# C-locale order: what orch_load_all and a sourced orch.sh load.
+orch_modules_list() {
+  local f n
+  for f in "$PLUGIN_ROOT/scripts/orch"/*.sh; do
+    n="${f##*/}"; n="${n%.sh}"
+    case "$n" in common|loader) ;; *) echo "$n" ;; esac
+  done | LC_ALL=C sort
+}
+
 # --- orch_load ----------------------------------------------------------------
 echo
 echo "orch_load"
@@ -43,9 +53,8 @@ assert_status "nor the exit status" "$status" 0
 
 : >"$trace"
 ORCH_LOAD_TRACE="$trace" loader_run 'orch_load_all'
-expected="$(for f in "$loader_dir"/*.sh; do n="${f##*/}"; n="${n%.sh}"; case "$n" in common|loader) ;; *) echo "$n" ;; esac; done | LC_ALL=C sort)"
 assert_eq "orch_load_all loads every module in C-locale name order" \
-  "$(awk '{print $1}' "$trace")" "$expected"
+  "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
 assert_eq "issue loads before issue-timeline" \
   "$(awk '$1 ~ /^issue/ {print $1}' "$trace" | sed -n 1,2p | tr '\n' ' ')" "issue issue-timeline "
 
@@ -82,10 +91,16 @@ assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
 run_traced nonesuch-command
 assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
+run_traced status
+assert_eq "a load from a subshell records a depth above 0" \
+  "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "checkout"
+out="$(bash "$ORCH" status 2>&1)"; status=$?
+out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace bash "$ORCH" status 2>&1)"; status2=$?
+assert_eq "an unwritable ORCH_LOAD_TRACE leaves the command's output as it is" "$out2" "$out"
+assert_status "and its exit status" "$status2" "$status"
 
 # lazy_run <script>: orch.sh sourced on demand, then <script>, traced.
 lazy_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c 'ORCH_SOURCE_LAZY=1; source "$1"; shift; '"$1" _ "$ORCH" 2>&1; }
-orch_modules_list() { for f in "$loader_dir"/*.sh; do n="${f##*/}"; n="${n%.sh}"; case "$n" in common|loader) ;; *) echo "$n" ;; esac; done | LC_ALL=C sort; }
 
 lazy_run '(spec_review_lens_known consistency consistency); true'
 assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "spec-review 1"

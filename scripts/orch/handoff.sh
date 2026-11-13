@@ -35,7 +35,7 @@ phase_list() {
 # (the state writer, doctor's state-phase check). Set when this module is
 # sourced, from the phase table above.
 PHASES="$(phase_list)"
-# shellcheck disable=SC2034 # read by other modules, which are sourced together
+# shellcheck disable=SC2034 # read by other modules, each calling orch_load handoff first
 readonly PHASES
 
 # phase_cell <column> <phase>: <phase>'s cell in <column> of the table, the

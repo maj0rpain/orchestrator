@@ -27,8 +27,9 @@
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
 # require_state from state.sh), and check_agent_settings, agent.sh's check
-# its env check list names, are defined by the time cmd_doctor runs,
-# because every module is sourced before main dispatches. cmd_doctor is then
+# its env check list names, are defined by the time cmd_doctor runs:
+# run as a command they are stubs that load their module on first call
+# (loader.sh's orch_stubs). cmd_doctor is then
 # dispatched from main() exactly like any other command.
 
 # The most labels the labels-exist check asks gh to list.

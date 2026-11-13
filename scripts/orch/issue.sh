@@ -174,12 +174,9 @@ comments_read() {
   printf -v "$4" '%s' "$__cr_out"
 }
 
-# The comments `issue comments` writes (#1116), from the issue's comments,
-# filtered or not as the caller chooses (the spec review's own changelogs, the
-# marked comments of kind spec-review, are dropped by default and kept with
-# --with-spec-review): rendered through COMMENTS_RENDER_JQ, as every comments
-# read renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
-# object, whose author is already the login.
+# The comments `issue comments` writes (#1116), rendered through
+# COMMENTS_RENDER_JQ (kept_jq, built here so this module's top level reads
+# nothing of gh), as every comments read renders them.
 # Every comment on the issue but the untrusted authors', and by default but the
 # spec review's own changelogs, in the rendered shape - so the spec review reads
 # the comments beside the body without its earlier rounds. Filtered here rather
