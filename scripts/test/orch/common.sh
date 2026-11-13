@@ -319,6 +319,15 @@ printf 'x' >"$cap_tmp/unreadable"; chmod a-r "$cap_tmp/unreadable"
 if [ ! -r "$cap_tmp/unreadable" ]; then
   assert_eq "file_read of an unreadable file fails with the variable untouched" \
     "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/unreadable")" "1 [old]"
+else
+  skip "file_read of an unreadable file fails with the variable untouched" "permissions do not bite here, e.g. root"
+fi
+# a socket passes the readable check but cannot be opened
+if perl -MSocket -e 'socket(my $s, AF_UNIX, SOCK_STREAM, 0) or exit 1; bind($s, sockaddr_un($ARGV[0])) or exit 1' "$cap_tmp/sock" 2>/dev/null; then
+  assert_eq "file_read of a file that cannot be opened fails with the variable untouched" \
+    "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/sock")" "1 [old]"
+else
+  skip "file_read of a file that cannot be opened fails with the variable untouched" "no perl or no Unix socket here"
 fi
 # a bare PATH: no external command is needed
 printf 'a\0b\n' >"$cap_tmp/nul"

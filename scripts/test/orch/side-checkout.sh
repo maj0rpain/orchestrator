@@ -1488,7 +1488,7 @@ assert_ne "a pointer file with no gitdir line asks git" "$(wc -l <"$mlog" | tr -
 chmod 000 "$mlink/.git"
 : >"$mlog"
 if [ -r "$mlink/.git" ]; then
-  echo "  skipped: an unreadable pointer (permissions do not bite here, e.g. root)"
+  skip "a pointer file that cannot be read asks git" "permissions do not bite here, e.g. root"
 else
   mark_counted "$mlink"
   assert_ne "a pointer file that cannot be read asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"

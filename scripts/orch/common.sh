@@ -330,10 +330,13 @@ file_read() {
   local _file_read_s="" _file_read_c=""
   if [[ -r $2 && ! -d $2 ]]; then
     # read -d '' stops at each NUL: take every chunk, the last one unterminated.
-    while IFS= read -r -d '' _file_read_c; do _file_read_s+=$_file_read_c; done <"$2"
-    _file_read_s+=$_file_read_c
-    printf -v "$1" '%s' "$_file_read_s"
-    return 0
+    # A failed open (a socket, a file gone since the check) leaves the loop
+    # status 1, which takes the failure path; its own error is silenced.
+    if while IFS= read -r -d '' _file_read_c; do _file_read_s+=$_file_read_c; done 2>/dev/null <"$2"; then
+      _file_read_s+=$_file_read_c
+      printf -v "$1" '%s' "$_file_read_s"
+      return 0
+    fi
   fi
   # Only the failure path starts a command: cat gives its own diagnostic.
   cat "$2" >/dev/null || :
