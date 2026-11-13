@@ -578,7 +578,7 @@ fake_github
 FB="$(command -v bash)"
 bare_dir="$(mktemp -d)"
 mkdir "$bare_dir/empty" "$bare_dir/sort" "$bare_dir/sortawk" "$bare_dir/mkcat"
-for c in sort; do ln -s "$(command -v $c)" "$bare_dir/sort/$c"; done
+ln -s "$(command -v sort)" "$bare_dir/sort/sort"
 for c in sort awk; do ln -s "$(command -v $c)" "$bare_dir/sortawk/$c"; done
 for c in mkdir cat; do ln -s "$(command -v $c)" "$bare_dir/mkcat/$c"; done
 # barely <dir> <function> [args]: the function run with PATH holding only <dir>.
@@ -645,7 +645,7 @@ mkdir "$bare_dir/c2"; barely mkcat fake_comment_append "$bare_dir/c2" a t "$cat_
 mkdir -p "$bare_dir/c3/1" "$bare_dir/c3/2"; barely mkcat fake_comment_append "$bare_dir/c3" a t "$cat_body"
 assert_eq "fake_comment_append numbers from a missing, an empty and a populated directory" \
   "$(cat "$cdir/1/body") $(cat "$bare_dir/c2/1/body") $(cat "$bare_dir/c3/3/body")" "hi hi hi"
-err="$(ORCH_GH_FAKE_STORE= "$FB" -c 'source "$1"; fake_open_issues' _ "$GH_ADAPTER_FAKE" 2>&1 >/dev/null)"; st=$?
+err="$(ORCH_GH_FAKE_STORE="" "$FB" -c 'source "$1"; fake_open_issues' _ "$GH_ADAPTER_FAKE" 2>&1 >/dev/null)"; st=$?
 assert_status "an operation with no store fails" "$st" 1
 assert_contains "saying to call fake_github" "$err" "the gh fake has no store - call fake_github"
 rm -rf "$bare_dir"
