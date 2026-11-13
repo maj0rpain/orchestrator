@@ -60,9 +60,7 @@ seq_lines other 4 >src/other.sh
 seq_lines gone 3 >src/gone.sh
 git add -A && git commit -qm "the reviewed code"
 head_sha="$(git rev-parse HEAD)"
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin main
 git -C "$bare" symbolic-ref HEAD refs/heads/main
 git fetch -q origin
@@ -887,10 +885,9 @@ echo
 echo "finding-triage bundle"
 new_repo >/dev/null
 git checkout -q -B main
-bundle_bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bundle_bare"
-bare_origin "$bundle_bare"
+fresh_bare_origin bundle_bare
 git push -q origin main
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 git -C "$bundle_bare" symbolic-ref HEAD refs/heads/main
 fake_github
 tab="$(printf '\t')"

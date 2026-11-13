@@ -182,6 +182,18 @@ new_repo() {
 # GH_REPO in env.log. restore_suite_env unsets it again.
 bare_origin() { git remote set-url origin "$1"; export GH_REPO=acme/widgets; }
 
+# fresh_bare_origin <var>: make a fresh bare repo, point origin at it through
+# bare_origin and store its path in <var>. Pushes nothing; each caller pushes
+# the refs it needs. Call it in the current shell, never in $(...), so
+# bare_origin's GH_REPO export stays.
+fresh_bare_origin() {
+  local fbo_dir
+  fbo_dir="$(mktemp -d)/origin.git"
+  git init -q --bare "$fbo_dir"
+  bare_origin "$fbo_dir"
+  printf -v "$1" '%s' "$fbo_dir"
+}
+
 # upstream_of <branch>: none when <branch> has no upstream - no
 # branch.<branch>.merge, no branch.<branch>.remote, and no <branch>@{upstream} -
 # else what it has, so a failing assertion names it.
@@ -233,9 +245,7 @@ new_repo_with_origin() {
 tw_repo() {
   local bare
   new_repo >/dev/null
-  bare="$(mktemp -d)/origin.git"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
+  fresh_bare_origin bare
   git push -q origin HEAD 2>/dev/null
   git checkout -q -b orch/5-feature
   echo work >feature.txt && git add feature.txt && git commit -qm feature

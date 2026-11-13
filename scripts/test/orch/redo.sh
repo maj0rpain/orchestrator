@@ -31,9 +31,7 @@ pushed_review_flow() {
   local slug="$1" issue="$2" pr="$3" bare
   healthy_repo
   fake_github
-  bare="$(mktemp -d)/origin.git"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
+  fresh_bare_origin bare
   git push -q origin HEAD:refs/heads/main
   "$ORCH" init "$slug" >/dev/null
   state_fixture phase review
@@ -62,9 +60,7 @@ healthy_repo
 fake_github
 fake_issue 21 open
 for n in 30 31 32 33 34; do fake_pr "$n" open orch/21-redotest main; done
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init redotest >/dev/null
 
@@ -759,11 +755,10 @@ pr_body_complete "$attempt_body"
 # attempt_flow <slug>: a fresh flow whose origin is a bare repo holding main,
 # with the gh fake on.
 attempt_flow() {
+  # shellcheck disable=SC2034 # assigned by fresh_bare_origin
   local bare_dir
   fresh_flow "$1"
-  bare_dir="$(mktemp -d)/origin.git"
-  git init -q --bare "$bare_dir"
-  bare_origin "$bare_dir"
+  fresh_bare_origin bare_dir
   git push -q origin HEAD:refs/heads/main
   fake_github
 }

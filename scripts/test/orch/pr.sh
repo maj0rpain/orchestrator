@@ -66,9 +66,7 @@ PR_BODY_REFUSED="orch: the PR body does not meet the PR-writing standard - no PR
 echo
 echo "pr open"
 healthy_repo
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init propen >/dev/null
 git checkout -q -b orch/16-propen
@@ -419,9 +417,7 @@ echo "pr publish"
 new_repo >/dev/null
 git remote set-url origin https://github.com/acme/widgets.git
 gh_fixture
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b quick/16-widgets
 body="$(mktemp)"
@@ -908,9 +904,7 @@ assert_contains "naming both" "$out" "open|publish"
 echo
 echo "pr release"
 new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -1560,9 +1554,7 @@ out="$("$ORCH" pr read 12 "$rd_file" 2>&1)"; st=$?
 assert_not_contains "a fork PR naming another issue: no ignored line" "$out" "ignored"
 
 # pr release: a fork's release PR does not block, a same-repo one does.
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
+fresh_bare_origin bare
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
