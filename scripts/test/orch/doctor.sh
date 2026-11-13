@@ -1430,7 +1430,7 @@ fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
 out="$(counted_adapter_run "$sc_reads" "$sc_counted_defs" "$ORCH" doctor --env 2>&1)"
 assert_eq "with the probe's read failed, the walk asks nothing more" "$(log_count "$sc_reads")" "1"
 fake_unfail
-out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "doctor --env fails when the checkouts cannot be read (#1333)" "$st" 1
 assert_contains "reporting it as a FAIL" "$out" "FAIL  could not read the checkouts"
 
@@ -2088,7 +2088,7 @@ live_stop
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "a since-exited run record's pid is named" "$out" "issue #9 is claimed by this host (phase spec), but its process is gone (pid $LIVE_PID)."
 sourced_orch liveness_issue_forget 9
-out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" doctor --env 2>&1)"
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" doctor --env 2>&1)"
 assert_not_contains "with the checkouts unreadable, this host's claim adds no warning" "$out" "issue #9 is claimed"
 fake_claim_seed 6 autopilot-abc123 5 2020-01-01T00:00:00Z
 out="$(ORCH_HOST_ID=autopilot-abc123 "$ORCH" doctor --env 2>&1)"
