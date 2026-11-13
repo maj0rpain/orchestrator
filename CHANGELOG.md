@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.42
+
+The loader bundle's standards findings are fixed: the top-level-variable rule lists every keyword the check counts, and the loader and its tests lose a shadowed name, a one-caller helper and three redundant scripts-tree copies.
+
 ## 5.2.41
 
 The Flow state module walks the multi-key pair grammar once, in `flow_state_pairs_json`, and `state_write_many` reads its failure message from the built object. `flow_state_many_arg` is now `flow_state_resolve_many_arg`, and the writer tests sit beside their siblings.

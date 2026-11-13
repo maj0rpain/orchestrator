@@ -331,10 +331,11 @@ ORCH_LOAD_RULE="The rule: a function, or a module's own top-level code, that rea
 # variable, sorted, naming the file (as scripts/<path>), the function or `top
 # level`, the variable, its owning module and the rule; returns 1 when it
 # printed any. A top-level variable is one a module assigns outside any
-# function, plainly or through readonly, declare or export; one an always-loaded
-# file (orch.sh, common.sh, loader.sh, and the scripts/*.sh files orch.sh
-# sources) also assigns is exempt. A read is $NAME, ${NAME...}, ${#NAME} or
-# ${!NAME} in code; a site is a function or the file's top-level code, and a
+# function, plainly or through readonly, declare, export or typeset; one an
+# always-loaded file (orch.sh, common.sh, loader.sh, and the scripts/*.sh
+# files orch.sh sources) also assigns is exempt. A read is $NAME, ${NAME...},
+# ${#NAME} or ${!NAME} in code; a site is a function or the file's top-level
+# code, and a
 # read is covered by an `orch_load <module>` earlier in the same site's text (a
 # function's own, or the file's top-level code's own).
 orch_load_reads() {
@@ -2876,9 +2877,10 @@ assert_eq "naming only the calling file and the rule" "$out" \
 rm -rf "${mcjq_dir%/scripts}"
 
 # --- orch_load before cross-module reads (#2868) ---------------------
-# orch_load_reads over the real scripts/, then over copies of it, each with a
-# planted owner module and reader: a read in a function and one in a module's
-# top-level code that break the rule, and reads that keep it.
+# orch_load_reads over the real scripts/, then over one copy of it, planted
+# first with an owner module and reader whose reads break the rule (a read in
+# a function and one in a module's top-level code), then re-planted with reads
+# that keep it.
 echo
 echo "orch_load before cross-module reads (#2868)"
 out="$(orch_load_reads "$PLUGIN_ROOT/scripts")"; st=$?
@@ -2910,9 +2912,6 @@ assert_eq "naming the file, the site, the variable and the rule" "$out" \
   "scripts/orch/zz-reader.sh top level reads ZZ_PLAIN, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE
 scripts/orch/zz-reader.sh zz_bad_decl reads ZZ_DECL, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE
 scripts/orch/zz-reader.sh zz_bad_fn reads ZZ_RO, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE"
-rm -rf "${load_dir%/scripts}"
-
-load_dir="$(tree_copy scripts)"
 plant_file "$load_dir/orch" zz-owner.sh <<'PLANTED'
   ZZ_PLAIN=1
   readonly ZZ_RO="x"
@@ -2936,9 +2935,9 @@ assert_eq "and print nothing" "$out" ""
 rm -rf "${load_dir%/scripts}"
 
 # --- on-demand sourcing variable (#2820) --------------------------------------
-# lazy_sourcing_names over the real scripts/, then over copies of it, each with
-# a planted use of the variable; this section is the one place harness.sh may
-# name it.
+# lazy_sourcing_names over the real scripts/, then over one copy of it, reused
+# with each planted use of the variable in turn; this section is the one place
+# harness.sh may name it.
 echo
 echo "on-demand sourcing variable (#2820)"
 out="$(lazy_sourcing_names "$PLUGIN_ROOT/scripts")"; st=$?
