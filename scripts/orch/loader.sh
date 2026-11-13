@@ -91,13 +91,13 @@ orch_stubs() {
 # orch_stub_owner <function>: prints the module that now defines the function
 # at column 0, and fails when none does.
 orch_stub_owner() {
-  local f owner=''
+  local f found=''
   for f in "$ORCH_MODULE_DIR"/*.sh; do
     case "${f##*/}" in common.sh|loader.sh) continue ;; esac
-    if grep -qE "^$1\\(\\) [{(]" "$f"; then owner="${f##*/}"; fi
+    if grep -qE "^$1\\(\\) [{(]" "$f"; then found="${f##*/}"; fi
   done
-  [ -n "$owner" ] || return 1
-  printf '%s\n' "${owner%.sh}"
+  [ -n "$found" ] || return 1
+  printf '%s\n' "${found%.sh}"
 }
 
 # orch_stub <module> <function> [args...]: what a stub runs. Loads the module,

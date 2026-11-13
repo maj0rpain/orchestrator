@@ -83,6 +83,10 @@ readonly ISSUE_SEARCH_CAP=1000
 REPO_MISSING="no GitHub repo to work on"
 REPO_CAUSE="$REPO_MISSING: origin is missing or not a GitHub owner/name"
 REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
+# A gh call failing for want of a repo in a subshell signals this shell (gh.sh):
+# the trap dies with the remedy. Set here, not in repo.sh, which is loaded on
+# demand and may not be loaded yet when the signal arrives.
+trap 'die "$REPO_REMEDY"' USR1
 # The triage-label parser and LABELS_DOC, its one home; marked readonly here,
 # where orch.sh has always fixed it, since the module assigns it plainly.
 source "$ORCH_SCRIPTS/triage-labels.sh"

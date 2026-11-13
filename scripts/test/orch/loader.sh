@@ -65,7 +65,7 @@ assert_eq "common.sh and loader.sh name no function a module defines" \
   "$(loader_upcalls "$PLUGIN_ROOT/scripts")" ""
 rm -f "$trace"
 
-# --- on-demand loading ----------------------------------------------------------
+# --- on-demand loading --------------------------------------------------------
 echo
 echo "on-demand loading"
 new_repo >/dev/null
