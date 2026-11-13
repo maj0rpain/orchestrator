@@ -1185,9 +1185,9 @@ dur_stub_passing stub_a.sh
 dur_stub_passing stub_b.sh
 dur_file="$dur_test/section-durations.tsv"
 # dur_script [<env assignment>...]: the dev script with a stub shellcheck on
-# PATH, stdout and stderr together.
+# PATH, stdout and stderr together. dur_unset=CI runs it with CI unset.
 dur_script() {
-  env -u CI PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
+  env ${dur_unset:+-u "$dur_unset"} PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
 }
 printf 'old\n' >"$dur_file"
 out="$(dur_script ORCH_TEST_ONLY='^dur a$' ORCH_TEST_SHARD=2/2)"; st=$?
@@ -1215,7 +1215,7 @@ if command -v flock >/dev/null 2>&1; then
     "$dur_pool" "$dur_log" "$dur_log" >"$dur_tool/shellcheck"
   chmod +x "$dur_tool/shellcheck"
   : >"$dur_log"
-  out="$(dur_script ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_POOL_DIR="$dur_pool" \
+  out="$(dur_unset=CI dur_script ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_POOL_DIR="$dur_pool" \
     ORCH_TEST_CPU_MAX_FILE="$dur_dir/cpu1")"; st=$?
   assert_status "the script passes on a 1-slot pool" "$st" 0
   shellcheck_files "$dur_dir"
@@ -2298,7 +2298,7 @@ rm -rf "$jp_dir"
 echo
 echo "the slot fd contract (#2300)"
 fd_tests="$(dirname "$SUITE_SCRIPT")"
-for fd_file in all.sh affected.sh orch_test.sh report.sh; do
+for fd_file in all.sh affected.sh orch_test.sh report.sh test_tree.sh; do
   assert_eq "$fd_file holds no raw slot fd" \
     "$(grep -cE '8>&-|exec 8' "$fd_tests/$fd_file")" "0"
 done
