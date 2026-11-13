@@ -2303,12 +2303,15 @@ for fd_file in all.sh affected.sh orch_test.sh report.sh; do
     "$(grep -cE '8>&-|exec 8' "$fd_tests/$fd_file")" "0"
 done
 for fd_file in all.sh affected.sh orch_test.sh; do
+  fd_start="$fd_file"
+  # all.sh starts its shellcheck jobs through the shared shellcheck_start.
+  [ "$fd_file" = all.sh ] && fd_start=test_tree.sh
   assert_eq "$fd_file starts its jobs through test_jobs_job" \
-    "$(grep -c 'test_jobs_job ' "$fd_tests/$fd_file" | awk '{print ($1 > 0)}')" "1"
+    "$(grep -c 'test_jobs_job ' "$fd_tests/$fd_start" | awk '{print ($1 > 0)}')" "1"
   assert_eq "$fd_file never writes REPORT_FAILED" \
     "$(grep -c 'REPORT_FAILED' "$fd_tests/$fd_file")" "0"
 done
-unset fd_file fd_tests
+unset fd_file fd_start fd_tests
 
 # --- the test runners' CPU load (#1586) ---------------------------------------
 # The default job count, test_jobs.sh's test_jobs_default, with getconf faked
