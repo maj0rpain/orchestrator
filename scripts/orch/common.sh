@@ -225,7 +225,8 @@ capture() {
   capture_err "$2" "${@:3}" >"$_capture_file" || _capture_st=$?
   file_read _capture_text "$_capture_file" || _capture_text=""
   rm -f "$_capture_file"
-  printf -v "$1" '%s' "${_capture_text%"${_capture_text##*[!$'\n']}"}"
+  newlines_strip _capture_text
+  printf -v "$1" '%s' "$_capture_text"
   return "$_capture_st"
 }
 # git_config_unset <scope> <key>: removes every value of <key> at local or

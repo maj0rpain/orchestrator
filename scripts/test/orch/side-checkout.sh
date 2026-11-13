@@ -1485,5 +1485,14 @@ printf 'not a pointer\n' >"$mlink/.git"
 : >"$mlog"
 mark_counted "$mlink"
 assert_ne "a pointer file with no gitdir line asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+chmod 000 "$mlink/.git"
+: >"$mlog"
+if [ -r "$mlink/.git" ]; then
+  echo "  skipped: an unreadable pointer (permissions do not bite here, e.g. root)"
+else
+  mark_counted "$mlink"
+  assert_ne "a pointer file that cannot be read asks git" "$(wc -l <"$mlog" | tr -d ' ')" "0"
+fi
+chmod 644 "$mlink/.git"
 printf '%s\n' "$mptr" >"$mlink/.git"
 restore_suite_env
