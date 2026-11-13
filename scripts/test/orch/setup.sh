@@ -322,16 +322,17 @@ exit $2
 SSH
   chmod +x "$ssh_stub_dir/ssh"
 }
-# fails_bin <command> <pattern> [<status> [<stderr line>]]: a new directory
-# holding a <command> that fails, with exit status <status> (default 1) after
+# fails_bin <command> <pattern> [<status> [<stderr line>]]:
+# a new directory, <status> and <stderr line> optional, holding a <command>
+# that fails, with exit status <status> (default 1) after
 # printing <stderr line> verbatim to stderr when one is given, when its
 # arguments, space-joined and padded with a space either side, match the glob
 # <pattern>, and passes every other call through to the real one; first on
 # PATH, it fails those calls and nothing else.
 fails_bin() {
-  local dir fail="exit ${3:-1}" line
+  local dir fail="exit ${3:-1}" line q="'\\''"
   if [ "$#" -ge 4 ]; then
-    line="${4//\'/\'\\\'\'}"
+    line="${4//\'/$q}"
     fail="printf '%s\\n' '$line' >&2; $fail"
   fi
   dir="$(mktemp -d)"
