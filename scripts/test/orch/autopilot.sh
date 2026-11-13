@@ -1795,7 +1795,8 @@ bud_run() {
   rm -f "$launcher_dir/calls"; : >"$launcher_dir/out"; printf '0\n' >"$launcher_dir/exit"
   fake_issue_relabel 7 orch:spec ready-for-agent orch:running
   fake_claim_seed 7 "$(hostname)" "$(dead_pid)"
-  "$ORCH" autopilot run 7 >/dev/null 2>&1
+  bud_rc=0
+  "$ORCH" autopilot run 7 >/dev/null 2>&1 || bud_rc=$?
 }
 bud_budget() { (cd "$side7" && "$ORCH" state get budget 2>/dev/null) || echo none; }
 
@@ -1838,6 +1839,7 @@ bud_run review 0 4
 fake_unfail
 bud_logs=("$top"/.orchestrator/autopilot/logs/7-*.log)
 assert_eq "a budget limit with a failing release leaves the claim held" "$(fake_claim_held 7)" held
+assert_eq "and autopilot run still exits 0" "$bud_rc" "0"
 assert_contains "and its backstop line says no session ran" "$(tail -1 "${bud_logs[0]}")" \
   "claim release: could not release the claim; no session ran: the first-loop review's budget record met a GitHub limit"
 # an unreadable Budget whose stop writes fail every attempt: backstop line
@@ -1856,6 +1858,7 @@ fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
 bud_run review 0 4
 fake_unfail
 assert_contains "an unreadable Budget whose stop write fails once still comments" "$(fake_last_comment_of 7)" "could not record the plan's Budget"
+assert_contains "and still adds needs-human" "$(fake_labels_of 7)" "needs-human"
 assert_eq "and frees the claim" "$(fake_claim_held 7)" free
 
 # The final reply, end to end: a fake launcher writes a long, multi-line result

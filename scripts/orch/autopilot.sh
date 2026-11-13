@@ -1181,7 +1181,7 @@ autopilot_tick() {
 # any write, when the checkout or the claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
-  local outcome=failure limit="" pause released_note hit_text hit_epoch=0
+  local outcome=failure limit="" pause released_note hit_text hit_epoch=0 closing
   main_root="$(main_checkout_or_die)" || exit $?
   standing_claims_read
   if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
@@ -1203,6 +1203,7 @@ autopilot_session_end() {
   if [ "$outcome" = github ]; then
     autopilot_pause_extend "$(autopilot_github_pause_file "$main_root")" "$hit_epoch" "$log" GitHub
   fi
+  closing="the session exited with code $rc"
   case "$outcome" in
     released)
       released_note="autopilot run: issue #$issue's session exited $rc with its claim released"
@@ -1210,16 +1211,16 @@ autopilot_session_end() {
       printf '%s\n' "$released_note" >>"$log"
       return 0 ;;
     limited)
-      autopilot_stop_attempts "$log" "the session exited with code $rc" standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
+      autopilot_stop_attempts "$log" "$closing" standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
       return ;;
     github)
-      autopilot_stop_attempts "$log" "the session exited with code $rc" standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
+      autopilot_stop_attempts "$log" "$closing" standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
       return ;;
   esac
   reply="$SESSION_LOG_REPLY"
-  detail="the session exited with code $rc; "
+  detail="$closing; "
   [ -z "$reply" ] || detail+="it ended on: *$reply*; "
-  autopilot_stop_attempts "$log" "the session exited with code $rc" standing_stop "$issue" failure "$phase" "${detail}log: $log"
+  autopilot_stop_attempts "$log" "$closing" standing_stop "$issue" failure "$phase" "${detail}log: $log"
 }
 
 # autopilot_github_pause_wait [<seconds>]: sleeps until a GitHub pause that
