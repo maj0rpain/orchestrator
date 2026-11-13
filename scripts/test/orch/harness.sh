@@ -335,10 +335,10 @@ ORCH_LOAD_RULE="The rule: a function, or a module's own top-level code, that rea
 # read is covered by an `orch_load <module>` earlier in the same site's text (a
 # function's own, or the file's top-level code's own).
 orch_load_reads() {
-  local dir="$1" owned out f src
+  local dir="$1" owned out f sourced
   local -a always_files=("$dir/orch.sh" "$dir/orch/common.sh" "$dir/orch/loader.sh") mods=()
-  while IFS= read -r src; do
-    [ -f "$dir/$src.sh" ] && always_files+=("$dir/$src.sh")
+  while IFS= read -r sourced; do
+    [ -f "$dir/$sourced.sh" ] && always_files+=("$dir/$sourced.sh")
   done < <(sed -n 's/^source "\$ORCH_SCRIPTS\/\([A-Za-z0-9_-]*\)\.sh".*/\1/p' "$dir/orch.sh")
   for f in "$dir"/orch/*.sh; do
     case "${f##*/}" in common.sh|loader.sh) ;; *) mods+=("$f") ;; esac

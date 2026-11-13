@@ -28,8 +28,10 @@
 # global (-g) because orch_load runs this file's callers' sourcing inside a
 # function, where a plain declare would make a module's array local.
 declare -gA ORCH_LOADED=()
-# The directory the modules sit in: this file's own.
+# The directory the modules sit in: this file's own, made absolute here so a
+# later cd (a command's own) never breaks an on-demand load or the cache key.
 ORCH_MODULE_DIR="${BASH_SOURCE[0]%/*}"
+case "$ORCH_MODULE_DIR" in /*) ;; *) ORCH_MODULE_DIR="$PWD/$ORCH_MODULE_DIR" ;; esac
 
 # orch_is_module <name>: succeeds when the name, without .sh, is one a module
 # may have: the one place that decides which files of this directory are not
@@ -80,7 +82,9 @@ orch_modules() {
 # orch_load_all: loads every module, in orch_modules' order.
 orch_load_all() {
   local m
-  while IFS= read -r m; do orch_load "$m"; done < <(orch_modules)
+  local -a mods=()
+  mapfile -t mods < <(orch_modules)
+  for m in "${mods[@]}"; do orch_load "$m"; done
 }
 
 # The module that defines each function at column 0, by function name, as the
@@ -92,13 +96,18 @@ declare -gA ORCH_STUB_OWNER=()
 # two modules define belongs to the later one in orch_modules' order, as
 # loading every module would leave it.
 orch_stub_scan() {
-  local name mod path def defs=''
-  local -a files=()
+  local name mod line def defs=''
+  local -a mods=() files=()
   ORCH_STUB_OWNER=()
-  while IFS= read -r mod; do files+=("$ORCH_MODULE_DIR/$mod.sh"); done < <(orch_modules)
-  while IFS=: read -r path def; do
-    path="${path##*/}"
-    ORCH_STUB_OWNER[${def%%(*}]="${path%.sh}"
+  mapfile -t mods < <(orch_modules)
+  for mod in "${mods[@]}"; do files+=("$ORCH_MODULE_DIR/$mod.sh"); done
+  # Each line is <dir>/<module>.sh:<match>; the directory prefix is removed
+  # whole rather than split on ":", which a path may contain.
+  while IFS= read -r line; do
+    line="${line#"$ORCH_MODULE_DIR"/}"
+    mod="${line%%.sh:*}"
+    def="${line#*.sh:}"
+    ORCH_STUB_OWNER[${def%%(*}]="$mod"
   done < <(grep -HoE '^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*[{(]' "${files[@]}")
   for name in "${!ORCH_STUB_OWNER[@]}"; do
     defs+="$name() { orch_stub ${ORCH_STUB_OWNER[$name]} $name \"\$@\"; }"$'\n'

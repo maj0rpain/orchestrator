@@ -40,9 +40,10 @@ orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
 (`branch.sh`, `ticket.sh`, `review-pass.sh`, ...), `harness.sh` the harness's
 own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
-check on `scripts/orch/common.sh`, and `setup.sh` the shared setup and the
-summary. A concept module with no noun gets a section file named as the module
-is, beside the per-noun files: `checkout.sh` for `scripts/orch/checkout.sh`,
+check on `scripts/orch/common.sh`, `loader.sh` the loader's sections, and
+`setup.sh` the shared setup and the summary. A concept module with no noun gets
+a section file named as the module is, beside the per-noun files: `checkout.sh`
+for `scripts/orch/checkout.sh`,
 `filed-finding.sh` for `scripts/orch/filed-finding.sh`,
 `issue-timeline.sh` for `scripts/orch/issue-timeline.sh`, `known-items.sh` for
 `scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,
@@ -372,6 +373,7 @@ scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what 
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
 scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
+scripts/test/orch/loader.sh   the loader's sections: orch_load, on-demand loading, the stub table cache
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 scripts/test/orch/checkout.sh the Checkout module's sections, named as the module is
 scripts/test/orch/filed-finding.sh the Filed finding module's sections, named as the module is
