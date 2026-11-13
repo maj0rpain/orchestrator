@@ -184,8 +184,9 @@ bare_origin() { git remote set-url origin "$1"; export GH_REPO=acme/widgets; }
 
 # fresh_bare_origin <var>: make a fresh bare repo, point origin at it through
 # bare_origin and store its path in <var>. Pushes nothing; each caller pushes
-# the refs it needs. Call it in the current shell when the caller needs
-# bare_origin's GH_REPO export, which a $(...) would drop.
+# the refs it needs. It prints nothing and is called in the current shell, never
+# inside $(...): a command substitution would drop both the <var> assignment and
+# bare_origin's GH_REPO export.
 fresh_bare_origin() {
   local fbo_dir
   fbo_dir="$(mktemp -d)/origin.git"
