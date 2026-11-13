@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.30
+
+Labelled issue listings run oldest first, so a listing cut at the issue-list limit drops the newest issues and the autopilot tick keeps its oldest-first Pickup order. Every cut listing - the tick's flow-issue and done reads, `autopilot questions`, `autopilot candidates` and finding triage's scan - warns on stderr in one shared wording when it reaches the limit.
+
 ## 5.2.29
 
 Rename the names inside `session_log_read` so each says what it holds; no behaviour change.
