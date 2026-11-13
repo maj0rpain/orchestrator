@@ -829,13 +829,13 @@ rc=0"
 out="$(sourced_orch_script 'set +e; autopilot_pickup_contained false; echo "rc=$? reason=$PICKUP_REASON"')"
 assert_eq "a silent failure reads the step gave no reason" "$out" "rc=1 reason=the step gave no reason"
 ran_marker="$(mktemp -u)"
-out="$(sourced_orch_script 'set +e; mktemp() { return 1; }; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker" 2>/dev/null)"
+out="$(sourced_orch_script 'set +e; TMPDIR=/nonexistent-dir; autopilot_pickup_contained touch "$1"; echo "rc=$? reason=$PICKUP_REASON"' "$ran_marker" 2>/dev/null)"
 assert_eq "a failed temp-file creation says so" "$out" "rc=1 reason=could not create a temp file for the command's stderr"
 assert_eq "and runs nothing" "$(on_disk "$ran_marker")" absent
 rm -f "$ran_marker"
 # the plan step's own temp-file failure keeps its own reason, not the wrapper's
 step_marker="$(mktemp -u)"
-out="$(sourced_orch_script 'set +e; m="$1"; mktemp() { [ ! -e "$m" ] || return 1; : >"$m"; command mktemp; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"' "$step_marker")"
+out="$(sourced_orch_script 'set +e; m="$1"; mktemp() { return 1; }; autopilot_pickup_contained autopilot_post_minimal_plan 5 2>/dev/null; echo "rc=$? reason=$PICKUP_REASON"' "$step_marker")"
 assert_eq "the plan step failing to make its own temp file keeps its reason" "$out" "rc=1 reason=could not create a temp file"
 rm -f "$step_marker"
 # the side-checkout add step, stopped by each of capture's two temp files: the
@@ -844,7 +844,7 @@ for pk_nth in 1 2; do
   pk_want=stdout; [ "$pk_nth" = 2 ] && pk_want=stderr
   fake_issue 76 open orch:spec orch:running; fake_claim_seed 76
   pk_count="$(mktemp -u)"
-  PK_COUNT="$pk_count" PK_NTH="$pk_nth" sourced_orch_script 'set +e; autopilot_pickup_trust() { :; }; autopilot_pickup_side_find() { side=""; }; autopilot_pickup_side_title() { title=T; }; cmd_side_checkout_add() { :; }; mktemp() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; command mktemp "$@"; }; autopilot_pickup 76 spec' >/dev/null 2>&1
+  PK_COUNT="$pk_count" PK_NTH="$pk_nth" sourced_orch_script 'set +e; autopilot_pickup_trust() { :; }; autopilot_pickup_side_find() { side=""; }; autopilot_pickup_side_title() { title=T; }; cmd_side_checkout_add() { :; }; real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; autopilot_pickup 76 spec' >/dev/null 2>&1
   assert_contains "the side-checkout add failing its $pk_want temp file stops worded as one" "$(fake_comments_of 76)" "step side-checkout add failed: could not create a temp file for the command's $pk_want"
   rm -f "$pk_count"
 done

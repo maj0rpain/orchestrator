@@ -255,6 +255,92 @@ out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; d="$(dirty_outside_allowlist)
 assert_contains "a git-status check under || names the temp file, not git" "$out" "could not create a temp file for git status"
 restore_suite_env
 
+# --- capture, capture_err and file_read ---------------------------------------
+echo
+echo "capture, capture_err and file_read"
+new_repo >/dev/null
+cap_tmp="$(mktemp -d)"
+assert_eq "capture strips stdout's trailing newlines" \
+  "$(sourced_orch_script 'capture o e printf "a\n\nb\n\n\n"; printf %s "[$o]"')" "[a
+
+b]"
+assert_eq "capture_err returns stderr byte for byte" \
+  "$(sourced_orch_script 'capture_err e eval "printf \"x\n\n\" >&2"; printf %s "[$e]"')" "[x
+
+]"
+assert_eq "capture returns the command's status" \
+  "$(sourced_orch_script 'st=0; capture o e bash -c "echo out; echo err >&2; exit 7" || st=$?; echo "$st [$o] [$e]"')" "7 [out] [err
+]"
+assert_eq "a capture nested in a captured command keeps both results" \
+  "$(sourced_orch_script 'inner() { capture i ie echo in; echo "got $i"; }; capture o e inner; echo "[$o]"')" "[got in]"
+assert_eq "no temp file is left in the temp directory afterwards" \
+  "$(TMPDIR="$cap_tmp" sourced_orch_script 'capture o e echo hi; capture_err e echo hi >/dev/null; ls -A "$TMPDIR"')" ""
+assert_eq "the temp file is owner-only, read from inside the command" \
+  "$(TMPDIR="$cap_tmp" sourced_orch_script 'umask 022; capture o e bash -c "stat -L -c %a /proc/\$\$/fd/1; stat -L -c %a /proc/\$\$/fd/2 >&2"; echo "$o $e"' | tr -d '\n')" "600 600"
+assert_eq "a file the command makes, and one the caller makes after, get the caller's mask" \
+  "$(TMPDIR="$cap_tmp" sourced_orch_script 'umask 022; capture o e bash -c "touch \"$TMPDIR/by-cmd\""; touch "$TMPDIR/by-caller"; stat -c %a "$TMPDIR/by-cmd" "$TMPDIR/by-caller"; umask')" "644
+644
+0022"
+# with the name function replaced: each thing planted at the first name is left
+# untouched and the next name used
+cap_script='n=0; temp_file_name() { n=$((n+1)); printf -v "$1" "%s/name%s" "$TMPDIR" "$n"; }; '
+cap_script+='capture o e echo ok; echo "rc=$? [$o]"; ls -A "$TMPDIR" | tr "\n" " "'
+for cap_kind in file link dangling fifo; do
+  rm -rf "$cap_tmp"; mkdir "$cap_tmp"
+  case "$cap_kind" in
+    file) printf 'planted' >"$cap_tmp/name1" ;;
+    link) printf 'target' >"$cap_tmp/real"; ln -s "$cap_tmp/real" "$cap_tmp/name1" ;;
+    dangling) ln -s "$cap_tmp/nowhere" "$cap_tmp/name1" ;;
+    fifo) mkfifo "$cap_tmp/name1" ;;
+  esac
+  assert_eq "a $cap_kind at the first name is skipped and the next name used" \
+    "$(TMPDIR="$cap_tmp" timeout 10 bash -c 'source "$1"; '"$cap_script" _ "$ORCH" 2>&1)" \
+    "rc=0 [ok]
+$(ls -A "$cap_tmp" | tr '\n' ' ')"
+  case "$cap_kind" in
+    file) assert_eq "the planted file is not written through" "$(<"$cap_tmp/name1")" "planted" ;;
+    link) assert_eq "the link's target is not written through" "$(<"$cap_tmp/real")" "target" ;;
+    dangling) assert_eq "the dangling link's target is not created" "$(on_disk "$cap_tmp/nowhere")" absent ;;
+    fifo) assert_eq "the fifo is still a fifo" "$([ -p "$cap_tmp/name1" ] && echo fifo)" fifo ;;
+  esac
+done
+rm -rf "$cap_tmp"; mkdir "$cap_tmp"
+ran_marker="$cap_tmp/ran"
+assert_eq "a name taken on every try ends in the could-not-create message, the command not run" \
+  "$(TMPDIR="$cap_tmp" sourced_orch_script 'temp_file_name() { printf -v "$1" "%s" "$TMPDIR"; }; st=0; capture o e touch "'"$ran_marker"'" 2>&1 || st=$?; echo "rc=$st [$e]"')" \
+  "could not create a temp file for the command's stdout
+rc=1 [could not create a temp file for the command's stdout]"
+assert_eq "and the command did not run" "$(on_disk "$ran_marker")" absent
+assert_eq "a captured command leaving a background process returns without waiting" \
+  "$(timeout 20 bash -c 'source "$1"; capture o e bash -c "sleep 30 & echo started"; echo "[$o]"' _ "$ORCH" 2>&1)" "[started]"
+# file_read
+printf 'a\n\n' >"$cap_tmp/nl"; : >"$cap_tmp/empty"
+assert_eq "file_read keeps trailing newlines" \
+  "$(sourced_orch_script 'file_read v "$1"; printf %s "[$v]"' "$cap_tmp/nl")" "[a
+
+]"
+assert_eq "file_read of an empty file sets an empty variable" \
+  "$(sourced_orch_script 'v=old; file_read v "$1"; echo "$? [$v]"' "$cap_tmp/empty")" "0 []"
+assert_eq "file_read of a missing file fails with the variable untouched" \
+  "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/missing")" "1 [old]"
+printf 'x' >"$cap_tmp/unreadable"; chmod a-r "$cap_tmp/unreadable"
+if [ ! -r "$cap_tmp/unreadable" ]; then
+  assert_eq "file_read of an unreadable file fails with the variable untouched" \
+    "$(sourced_orch_script 'v=old; st=0; file_read v "$1" 2>/dev/null || st=$?; echo "$st [$v]"' "$cap_tmp/unreadable")" "1 [old]"
+fi
+# a bare PATH: no external command is needed
+assert_eq "file_read runs with an empty PATH" \
+  "$(sourced_orch_script 'PATH=""; file_read v "$1"; printf %s "[$v]"' "$cap_tmp/nl")" "[a
+
+]"
+cap_bin="$(mktemp -d)"; ln -s "$(command -v rm)" "$cap_bin/rm"
+assert_eq "capture and capture_err run with a PATH holding only rm" \
+  "$(TMPDIR="$cap_tmp" sourced_orch_script 'PATH="'"$cap_bin"'"; capture o e eval "echo out; echo err >&2"; capture_err e2 eval "echo e2 >&2"; echo "[$o] [$e] [$e2]"')" "[out] [err
+] [e2
+]"
+rm -rf "$cap_tmp" "$cap_bin"
+restore_suite_env
+
 # --- die_hinted and die_opt_check ---------------------------------------------
 echo
 echo "die_hinted and die_opt_check"

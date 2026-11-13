@@ -42,3 +42,11 @@ Never leave a `while read … done < <(…)` loop early with `return`, `break` o
 prints a write error on stderr. Load the output with `mapfile -t` first and loop
 over the array, or iterate a variable's words directly when there is no producer
 to run.
+
+## 6. A helper called once per item starts no external command for work bash can do
+
+A helper called once per item (per file, per label, per issue, per worktree)
+starts no external command for work bash can do itself, such as reading a small
+file, taking a path's last component or testing membership in a list. Reach for
+the primitives: `temp_file_make` for a private temp file, `file_read` to read a
+file back.
