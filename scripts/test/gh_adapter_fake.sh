@@ -134,6 +134,45 @@ fake_need_store() {
   return 1
 }
 
+# fake_slurp <file>: the file's contents, less trailing newlines as "$(cat)"
+# leaves them, in the variable fake_slurped, read in bash; false, with it empty,
+# where the file is unreadable.
+fake_slurp() {
+  fake_slurped=""
+  [ -r "$1" ] || return 1
+  IFS= read -r -d '' fake_slurped <"$1" || true
+  while [[ "$fake_slurped" == *$'\n' ]]; do fake_slurped="${fake_slurped%$'\n'}"; done
+  return 0
+}
+
+# fake_has_line <file> <line>: true where the file holds that whole line,
+# matched literally; read in bash.
+fake_has_line() {
+  local l
+  [ -r "$1" ] || return 1
+  while IFS= read -r l || [ -n "$l" ]; do
+    [ "$l" = "$2" ] && return 0
+  done <"$1"
+  return 1
+}
+
+# fake_entries_sorted <dir>: the names of the directory's entries, in the
+# array fake_entries, in numeric order (as sort -n puts them); a glob lists
+# them and an insertion sort orders them, so no command runs. Names are numbers.
+fake_entries_sorted() {
+  local e i t
+  fake_entries=()
+  for e in "$1"/*; do
+    [ -e "$e" ] || continue
+    i=${#fake_entries[@]}
+    fake_entries[i]="${e##*/}"
+    while [ "$i" -gt 0 ] && [ "$((10#${fake_entries[i-1]}))" -gt "$((10#${fake_entries[i]}))" ]; do
+      t="${fake_entries[i-1]}"; fake_entries[i-1]="${fake_entries[i]}"; fake_entries[i]="$t"
+      i=$((i - 1))
+    done
+  done
+}
+
 # fake_countdown <file>: true while the count the file holds is above zero,
 # counting it down by one; false where the file is absent or at zero.
 fake_countdown() {
@@ -311,13 +350,16 @@ adapter_labels_detail() {
 }
 
 # adapter_rate_limit: the stored quota, one "<pool><TAB><remaining><TAB><limit>
-# <TAB><reset>" line per pool; absent, both pools full with a reset an hour on.
+# <TAB><reset>" line per pool; absent, both pools full with a reset an hour on,
+# the clock read once. The store's path is used directly.
 adapter_rate_limit() {
-  local f
+  local f reset
   ! fake_failing adapter_rate_limit || return 1
-  f="$(fake_store)/quota"
+  fake_need_store || return 1
+  f="$ORCH_GH_FAKE_STORE/quota"
   if [ -f "$f" ]; then cat "$f"; return 0; fi
-  printf '%s\t5000\t5000\t%s\n' core "$(($(date +%s) + 3600))" graphql "$(($(date +%s) + 3600))"
+  reset="$(($(date +%s) + 3600))"
+  printf '%s\t5000\t5000\t%s\n' core "$reset" graphql "$reset"
 }
 
 # --- issue operations, on the store -------------------------------------------
@@ -388,14 +430,19 @@ fake_close_comment() {
 # ordered, as one compact JSON array of author, authorAssociation (OWNER for a
 # comment stored without one), createdAt, body and url, the url
 # being https://github.com/o/r/issues/<n>#issuecomment-<k> for the k-th
-# comment; [] for a missing or empty directory.
+# comment; [] for a missing or empty directory. The entries are listed and the
+# fields read in bash; only jq runs, once per comment.
 fake_comments_json() {
-  local d="$1" k comments="[]"
+  local d="$1" k comments="[]" au as cr
   if [ -d "$d" ]; then
-    for k in $(ls "$d" | sort -n); do
-      comments="$(jq -c --arg a "$(cat "$d/$k/author")" \
-        --arg s "$(cat "$d/$k/association" 2>/dev/null || echo OWNER)" \
-        --arg c "$(cat "$d/$k/created")" --rawfile b "$d/$k/body" \
+    fake_entries_sorted "$d"
+    for k in ${fake_entries[@]+"${fake_entries[@]}"}; do
+      fake_slurp "$d/$k/author" || true; au="$fake_slurped"
+      fake_slurp "$d/$k/association" || fake_slurped=OWNER; as="$fake_slurped"
+      fake_slurp "$d/$k/created" || true; cr="$fake_slurped"
+      comments="$(jq -c --arg a "$au" \
+        --arg s "$as" \
+        --arg c "$cr" --rawfile b "$d/$k/body" \
         --arg u "https://github.com/o/r/issues/$2#issuecomment-$k" \
         '. + [{author: $a, authorAssociation: $s, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
     done
@@ -461,15 +508,21 @@ adapter_issue_comments_json() {
 }
 
 # adapter_issue_state_labels <n>: the stored state, then its labels. Lagging
-# (fake_lag), it answers the stale answer fake_lag was given, or nothing.
+# (fake_lag), it answers the stale answer fake_lag was given, or nothing. The
+# state is read in bash from the store's path.
 adapter_issue_state_labels() {
   ! fake_failing adapter_issue_state_labels || return 1
+  fake_need_store || return 1
   if fake_lagging adapter_issue_state_labels; then
     fake_stale adapter_issue_state_labels
     return 0
   fi
   fake_issue_known "$1" || return 1
-  cat "$(fake_issue_dir "$1")/state"
+  if fake_slurp "$ORCH_GH_FAKE_STORE/issues/$1/state"; then
+    printf '%s\n' "$fake_slurped"
+  else
+    echo "cat: $ORCH_GH_FAKE_STORE/issues/$1/state: No such file or directory" >&2
+  fi
   fake_issue_labels "$1"
 }
 
@@ -502,16 +555,21 @@ adapter_issue_title_labels() {
 
 # adapter_issue_authorship <n>: the stored author login, its association, the
 # body's last editor and the title's latest renamer, one per line; fake-gh as
-# OWNER, never edited or renamed, for an issue seeded without them.
+# OWNER, never edited or renamed, for an issue seeded without them. Each is
+# read in bash from the store's path.
 adapter_issue_authorship() {
   ! fake_failing adapter_issue_authorship || return 1
+  fake_need_store || return 1
   fake_issue_known "$1" || return 1
   local d f
-  d="$(fake_issue_dir "$1")"
-  printf '%s\n' "$(cat "$d/author" 2>/dev/null || echo "$FAKE_COMMENT_AUTHOR")"
-  printf '%s\n' "$(cat "$d/association" 2>/dev/null || echo OWNER)"
+  d="$ORCH_GH_FAKE_STORE/issues/$1"
+  fake_slurp "$d/author" || fake_slurped="$FAKE_COMMENT_AUTHOR"
+  printf '%s\n' "$fake_slurped"
+  fake_slurp "$d/association" || fake_slurped=OWNER
+  printf '%s\n' "$fake_slurped"
   for f in editor renamer; do
-    printf '%s\n' "$(cat "$d/$f" 2>/dev/null || true)"
+    fake_slurp "$d/$f" || true
+    printf '%s\n' "$fake_slurped"
   done
 }
 
@@ -580,18 +638,23 @@ adapter_issues_open_oldest() {
 # carrying every label named, newest first, as gh lists them and cut at
 # ISSUE_LIST_LIMIT as adapter_issues_labelled is, each as the count-marked
 # record the gh adapter prints: number, label count, labels, the body's line
-# count (its newlines plus one), then the body byte for byte and a newline.
+# count (its newlines plus one), then the body byte for byte and a newline. The
+# body is read once in bash from the store's path, its newlines counted there.
 adapter_issues_labelled_bodies() {
-  local n d nums
+  local n nums body nl
   ! fake_failing adapter_issues_labelled_bodies || return 1
+  fake_need_store || return 1
   nums="$(adapter_issues_labelled "$@")" || return 1
   for n in $nums; do
-    d="$(fake_issue_dir "$n")"
+    body=""
+    if [ -r "$ORCH_GH_FAKE_STORE/issues/$n/body" ]; then
+      IFS= read -r -d '' body <"$ORCH_GH_FAKE_STORE/issues/$n/body" || true
+    fi
+    nl="${body//[!$'\n']/}"
     printf '%s\n' "$n"
     fake_issue_labels_counted "$n"
-    printf '%s\n' "$(( $(tr -cd '\n' <"$d/body" 2>/dev/null | wc -c) + 1 ))"
-    cat "$d/body" 2>/dev/null
-    printf '\n'
+    printf '%s\n' "$(( ${#nl} + 1 ))"
+    printf '%s\n' "$body"
   done
 }
 
@@ -1101,14 +1164,16 @@ adapter_sub_issue_unlink() {
 }
 
 # adapter_issue_parent <n>: the parent whose stored sub-issues hold #n, or
-# nothing.
+# nothing. The store's path is used directly, each file's lines read and its
+# name taken from its path in bash.
 adapter_issue_parent() {
   local f
   ! fake_failing adapter_issue_parent || return 1
+  fake_need_store || return 1
   fake_issue_known "$1" || return 1
-  for f in "$(fake_store)"/subs/*; do
+  for f in "$ORCH_GH_FAKE_STORE"/subs/*; do
     [ -f "$f" ] || continue
-    if grep -qxF -- "$1" "$f"; then basename "$f"; return 0; fi
+    if fake_has_line "$f" "$1"; then printf '%s\n' "${f##*/}"; return 0; fi
   done
 }
 
@@ -1308,11 +1373,16 @@ adapter_claim_delete() {
   rm -f "$(fake_store)/claims/$1"
 }
 
-# adapter_claim_list: every stored claim's line, by issue number.
+# adapter_claim_list: every stored claim's line, by issue number. The claims
+# are listed and ordered, and each read, in bash from the store's path.
 adapter_claim_list() {
   ! fake_failing adapter_claim_list || return 1
-  local f
-  for f in $(ls "$(fake_store)/claims" 2>/dev/null | sort -n); do
-    cat "$(fake_store)/claims/$f"
+  fake_need_store || return 1
+  local f l
+  fake_entries_sorted "$ORCH_GH_FAKE_STORE/claims"
+  for f in ${fake_entries[@]+"${fake_entries[@]}"}; do
+    while IFS= read -r l || [ -n "$l" ]; do
+      printf '%s\n' "$l"
+    done <"$ORCH_GH_FAKE_STORE/claims/$f"
   done
 }

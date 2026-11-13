@@ -648,6 +648,53 @@ assert_eq "fake_comment_append numbers from a missing, an empty and a populated 
 err="$(ORCH_GH_FAKE_STORE="" "$FB" -c 'source "$1"; fake_open_issues' _ "$GH_ADAPTER_FAKE" 2>&1 >/dev/null)"; st=$?
 assert_status "an operation with no store fails" "$st" 1
 assert_contains "saying to call fake_github" "$err" "the gh fake has no store - call fake_github"
+# The second group answers from the store in bash too (#2862): each bare PATH
+# holds only what the function may keep - nothing for a plain read, jq for the
+# comments' JSON, sort and awk for a listing (and grep, which the unconverted
+# fake_issue_labels_counted runs), cat and date for the quota.
+mkdir "$bare_dir/jq" "$bare_dir/catdate" "$bare_dir/sortawkcat"
+ln -s "$(command -v jq)" "$bare_dir/jq/jq"
+for c in cat date; do ln -s "$(command -v $c)" "$bare_dir/catdate/$c"; done
+for c in sort awk tr grep; do ln -s "$(command -v $c)" "$bare_dir/sortawkcat/$c"; done
+fake_issue 40 open Lbl
+printf 'the body\nsecond\n' >"$S/issues/40/body"
+assert_eq "adapter_issue_state_labels gives the state then the labels on an empty PATH" \
+  "$(barely empty adapter_issue_state_labels 40 | tr '\n' ' ')" "OPEN Lbl "
+assert_eq "adapter_issues_labelled_bodies gives the count-marked record with sort, awk and the unconverted helper's grep" \
+  "$(barely sortawkcat adapter_issues_labelled_bodies Lbl | tr '\n' '|')" "40|1|Lbl|3|the body|second||"
+printf 'someone\n' >"$S/issues/40/author"; printf 'MEMBER\n' >"$S/issues/40/association"
+printf 'ed\n' >"$S/issues/40/editor"
+assert_eq "adapter_issue_authorship gives author, association, editor and an empty renamer on an empty PATH" \
+  "$(barely empty adapter_issue_authorship 40 | tr '\n' '|')" "someone|MEMBER|ed||"
+fake_issue 41 open
+assert_eq "an issue seeded without them is fake-gh as OWNER" \
+  "$(barely empty adapter_issue_authorship 41 | tr '\n' '|')" "fake-gh|OWNER|||"
+printf '40\n' >"$S/subs/28"
+assert_eq "adapter_issue_parent names the file holding the whole line on an empty PATH" \
+  "$(barely empty adapter_issue_parent 40)" "28"
+assert_eq "and nothing for a number only part of a line" "$(barely empty adapter_issue_parent 4 2>/dev/null)" ""
+mkdir -p "$S/claims"
+printf '12\th\t1\tp\tt\n' >"$S/claims/12"; printf '9\th\t2\tp\tt\n' >"$S/claims/9"
+assert_eq "adapter_claim_list gives the claims by issue number, numerically, on an empty PATH" \
+  "$(barely empty adapter_claim_list | cut -f1 | tr '\n' ' ')" "9 12 "
+rm -rf "$S/claims"
+assert_eq "and none with no claims directory" "$(barely empty adapter_claim_list)" ""
+jc="$bare_dir/jc"; mkdir -p "$jc"
+for k in 1 2 10; do
+  mkdir "$jc/$k"; printf 'au%s\n' "$k" >"$jc/$k/author"; printf 'c%s\n' "$k" >"$jc/$k/created"; printf 'b%s' "$k" >"$jc/$k/body"
+done
+printf 'MEMBER\n' >"$jc/2/association"
+assert_eq "fake_comments_json lists the comments in numeric order with jq alone on the PATH" \
+  "$(barely jq fake_comments_json "$jc" 7 | jq -r '[.[] | "\(.author)/\(.authorAssociation)/\(.createdAt)/\(.body)"] | join(" ")')" \
+  "au1/OWNER/c1/b1 au2/MEMBER/c2/b2 au10/OWNER/c10/b10"
+assert_eq "and [] for a missing directory" "$(barely jq fake_comments_json "$bare_dir/none" 7)" "[]"
+assert_eq "adapter_rate_limit gives a stored quota with cat on the PATH" \
+  "$(printf 'core\t1\t2\t3\n' >"$S/quota"; barely catdate adapter_rate_limit)" "$(printf 'core\t1\t2\t3')"
+rm -f "$S/quota"
+assert_eq "and full pools sharing one reset an hour on, with date and cat" \
+  "$(barely catdate adapter_rate_limit | cut -f2,3 | tr '\n' ' ') $(barely catdate adapter_rate_limit | cut -f4 | uniq | wc -l | tr -d ' ')" \
+  "$(printf '5000\t5000 5000\t5000  1')"
+unset jc
 rm -rf "$bare_dir"
 unset ISSUE_LIST_LIMIT FB bare_dir S cdir cat_body err st
 
