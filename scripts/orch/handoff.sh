@@ -243,7 +243,7 @@ handoff_name_check() {
 # <reason>` on stderr, when the post fails; each caller chooses its reaction.
 handoff_comment_post() {
   local issue="$1" name="$2" file="$3" body gh_err
-  body="$(mktemp)" || die "could not create a temp file for the handoff comment"
+  temp_file_make body || die "could not create a temp file for the handoff comment"
   { marked_comment_write handoff "$name"; cat "$file"; } >"$body"
   if ! capture_err gh_err adapter_issue_comment "$issue" "$body"; then
     rm -f "$body"
@@ -496,7 +496,7 @@ handoff_comment_retire() {
   for file in "$@"; do
     name="${file%.md}"
     timeline_handoff "$name" || continue
-    body="$(mktemp)" || die "could not create a temp file for the retired comment"
+    temp_file_make body || die "could not create a temp file for the retired comment"
     { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
     capture_err gh_err adapter_issue_comment "$issue" "$body" || {
       rm -f "$body"

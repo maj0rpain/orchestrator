@@ -158,7 +158,7 @@ autopilot_block_report() {
 autopilot_plan_value() {
   local issue file value st
   require_issue issue
-  file="$(mktemp)" || die "could not create a temp file for the plan comment"
+  temp_file_make file || die "could not create a temp file for the plan comment"
   st=0
   handoff_comment_fetch "$issue" 01-plan "$file" || st=$?
   [ "$st" -eq 0 ] || rm -f "$file"
@@ -437,7 +437,7 @@ autopilot_minimal_plan() {
 # write of its copy or the post fails; a failed write posts no plan.
 autopilot_post_minimal_plan() {
   local issue="$1" file st=0
-  file="$(mktemp)" || { echo "could not create a temp file" >&2; return 1; }
+  temp_file_make file || { echo "could not create a temp file" >&2; return 1; }
   handoff_comment_fetch "$issue" 01-plan "$file" || st=$?
   if [ "$st" -eq 0 ]; then rm -f "$file"; return 0; fi
   if [ "$st" -ne 1 ]; then rm -f "$file"; return "$st"; fi
@@ -1259,7 +1259,7 @@ AUTOPILOT_BACKSTOP_PREFIX="autopilot run: the stop chain failed after $AUTOPILOT
 autopilot_stop_attempts() {
   local log="$1" closing="$2" state attempt line kind first
   shift 2
-  state="$(mktemp)" || die "could not create a temp file for the stop chain's state"
+  temp_file_make state || die "could not create a temp file for the stop chain's state"
   for ((attempt = 1; attempt <= AUTOPILOT_STOP_ATTEMPTS; attempt++)); do
     if [ "$attempt" -gt 1 ]; then
       autopilot_github_pause_wait $(( attempt == 2 ? 60 : 300 ))

@@ -479,7 +479,7 @@ standing_ask() {
   require_state
   require_issue issue
   autopilot_setting handle
-  body="$(mktemp)" || die "could not create a temp file for the question comment"
+  temp_file_make body || die "could not create a temp file for the question comment"
   { marked_comment_write question "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; printf '%s' "$text"
     printf '\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n'; } >"$body"
   capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
@@ -521,7 +521,7 @@ standing_post_release() {
 # may have landed.
 standing_comment_post() {
   local body gh_err
-  body="$(mktemp)" || die "could not create a temp file to $3"
+  temp_file_make body || die "could not create a temp file to $3"
   printf '%s' "$2" >"$body"
   standing_state_put tried "$4"
   capture_err gh_err adapter_issue_comment "$1" "$body" || {
