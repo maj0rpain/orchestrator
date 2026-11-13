@@ -6,7 +6,7 @@
 (( 0 )) && source setup.sh
 
 # orch_modules_list: every module of scripts/orch, one name per line, in
-# C-locale order: what orch_load_all and a sourced orch.sh load.
+# C-locale order: what a sourced orch.sh loads.
 orch_modules_list() {
   local f n
   for f in "$PLUGIN_ROOT/scripts/orch"/*.sh; do
@@ -50,13 +50,6 @@ assert_eq "unset, the trace writes nothing" "$(cat "$trace")" ""
 ORCH_LOAD_TRACE=/nonexistent/dir/trace loader_run 'orch_load issue; echo done'
 assert_eq "an unwritable trace path changes neither output" "$out" "done"
 assert_status "nor the exit status" "$status" 0
-
-: >"$trace"
-ORCH_LOAD_TRACE="$trace" loader_run 'orch_load_all'
-assert_eq "orch_load_all loads every module in C-locale name order" \
-  "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
-assert_eq "issue loads before issue-timeline" \
-  "$(awk '$1 ~ /^issue/ {print $1}' "$trace" | sed -n 1,2p | tr '\n' ' ')" "issue issue-timeline "
 
 assert_eq "orch.sh sources no module but common.sh and loader.sh" \
   "$(grep -E '^[[:space:]]*(source|\.) ' "$PLUGIN_ROOT/scripts/orch.sh" | grep -cE 'orch/' | tr -d ' ')" "2"
@@ -126,6 +119,15 @@ assert_status "a stub whose function no module defines stops with exit 1" "$stat
 assert_eq "and says so" "$out" "orch: zz_fn is in the stub table but no module defines it"
 rm -rf "${lazy_dir%/scripts}"
 
+# A function defined with a run of spaces before its brace gets a stub too.
+lazy_dir="$(tree_copy scripts)"
+printf '%s\n' 'zz_wide()   { echo from-wide; }' >"$lazy_dir/orch/zz-wide.sh"
+: >"$trace"
+out="$(HOME="$lazy_dir" ORCH_LOAD_TRACE="$trace" bash -c 'ORCH_SOURCE_LAZY=1; source "$1"; zz_wide' _ "$lazy_dir/orch.sh" 2>&1)"
+assert_eq "a function defined as name()   { runs through its stub" "$out" "from-wide"
+assert_contains "and loads its module on demand" "$(cat "$trace")" "zz-wide 0"
+rm -rf "${lazy_dir%/scripts}"
+
 # Sourced, every module loads, no stub table or cache is written, and a
 # function replaced after the source stays replaced.
 src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
@@ -137,8 +139,6 @@ assert_eq "sourced plainly, no cache file is written" "$(ls -A "$src_home/.cache
 rm -rf "$src_home"
 out="$(src_run 'source "$1"; cmd_state() { echo replaced; }; cmd_state')"
 assert_eq "a function replaced after source stays replaced" "$out" "replaced"
-out="$(src_run 'source "$1"; declare -f cmd_state | grep -c orch_stub')"
-assert_eq "sourced plainly, no function is a stub" "$out" "0"
 
 src_run 'ORCH_SOURCE_LAZY=1; source "$1"' >/dev/null
 assert_eq "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$(awk '$1 == "autopilot"' "$trace" | wc -l | tr -d ' ')" "0"

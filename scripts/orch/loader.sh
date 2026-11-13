@@ -7,10 +7,11 @@
 #
 # orch_stubs, which orch.sh calls when run as a command, makes loading lazy: it
 # scans the module files for functions defined at column 0 (`name() {` or
-# `name() (`) and defines a one-line stub for each, calling orch_stub for its
-# module. The first call loads the module, whose definitions replace its stubs,
-# and runs the real function. A stub called in a subshell loads in that subshell
-# only. The table is cached in one file per plugin copy under
+# `name() (`, with any run of spaces or tabs before the brace) and defines a
+# one-line stub for each, calling orch_stub for its module. The first call loads
+# the module, whose definitions replace its stubs, and runs the real function. A
+# stub called in a subshell loads in that subshell only. The table is cached in
+# one file per plugin copy under
 # ~/.cache/orchestrator/, named from the absolute path of this directory, and
 # used only when strictly newer than every module file and the directory itself
 # (so an edit, an added module and a removed one each rebuild it). A rebuild is
@@ -98,7 +99,7 @@ orch_stub_scan() {
   while IFS=: read -r path def; do
     path="${path##*/}"
     ORCH_STUB_OWNER[${def%%(*}]="${path%.sh}"
-  done < <(grep -HoE '^[A-Za-z_][A-Za-z0-9_]*\(\) [{(]' "${files[@]}")
+  done < <(grep -HoE '^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*[{(]' "${files[@]}")
   for name in "${!ORCH_STUB_OWNER[@]}"; do
     defs+="$name() { orch_stub ${ORCH_STUB_OWNER[$name]} $name \"\$@\"; }"$'\n'
   done

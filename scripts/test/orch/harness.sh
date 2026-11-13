@@ -2649,31 +2649,33 @@ else
   bad "no test file but setup.sh, the loader's section file and this section names the on-demand sourcing variable" "$out"
 fi
 load_dir="$(tree_copy scripts)"
+# lazy_reset: restores the two files a case appends to, drops the planted one.
+lazy_reset() {
+  cp "$PLUGIN_ROOT/scripts/test/orch/setup.sh" "$load_dir/test/orch/setup.sh"
+  cp "$PLUGIN_ROOT/scripts/test/orch/harness.sh" "$load_dir/test/orch/harness.sh"
+  rm -f "$load_dir/test/orch/zz-planted.sh"
+}
 printf '%s\n' '# sets ORCH_SOURCE_LAZY=1 itself' >"$load_dir/test/orch/zz-planted.sh"
 out="$(lazy_sourcing_names "$load_dir")"; st=$?
 assert_status "a planted test file naming the variable fails the check" "$st" 1
 assert_eq "naming the file" "$out" "scripts/test/orch/zz-planted.sh"
-rm -rf "${load_dir%/scripts}"
-load_dir="$(tree_copy scripts)"
+lazy_reset
 printf '%s\n' 'second_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/setup.sh"
 out="$(lazy_sourcing_names "$load_dir")"; st=$?
 assert_status "a second use of the variable in setup.sh fails the check" "$st" 1
 assert_eq "naming setup.sh" "$out" "scripts/test/orch/setup.sh"
-rm -rf "${load_dir%/scripts}"
-load_dir="$(tree_copy scripts)"
+lazy_reset
 printf '%s\n' '# another section naming ORCH_SOURCE_LAZY' >>"$load_dir/test/orch/harness.sh"
 printf '%s\n' 'other_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/harness.sh"
 out="$(lazy_sourcing_names "$load_dir")"; st=$?
 assert_status "a use of the variable in another harness section fails the check" "$st" 1
 assert_eq "naming harness.sh" "$out" "scripts/test/orch/harness.sh"
-rm -rf "${load_dir%/scripts}"
-load_dir="$(tree_copy scripts)"
+lazy_reset
 printf '%s\n' '# a comment naming ORCH_SOURCE_LAZY outside sourced_orch' >>"$load_dir/test/orch/setup.sh"
 out="$(lazy_sourcing_names "$load_dir")"; st=$?
 assert_status "a comment naming the variable in setup.sh fails the check" "$st" 1
 assert_eq "naming setup.sh for the comment" "$out" "scripts/test/orch/setup.sh"
-rm -rf "${load_dir%/scripts}"
-load_dir="$(tree_copy scripts)"
+lazy_reset
 printf '%s\n' '# a comment naming ORCH_SOURCE_LAZY in another section' >>"$load_dir/test/orch/harness.sh"
 out="$(lazy_sourcing_names "$load_dir")"; st=$?
 assert_status "a comment naming the variable in another harness section fails the check" "$st" 1
