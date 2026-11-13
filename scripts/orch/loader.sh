@@ -10,7 +10,14 @@
 # `name() (`) and defines a one-line stub for each, calling orch_stub for its
 # module. The first call loads the module, whose definitions replace its stubs,
 # and runs the real function. A stub called in a subshell loads in that subshell
-# only. The table is built in memory on every start.
+# only. The table is cached in one file per plugin copy under
+# ~/.cache/orchestrator/, named from the absolute path of this directory, and
+# used only when strictly newer than every module file and the directory itself
+# (so an edit, an added module and a removed one each rebuild it). A rebuild is
+# written to a temporary file beside the cache and moved into place; any failure
+# of the cache (HOME unset, a directory or file not creatable, readable or
+# writable) leaves the start going on with the table built in memory, silently.
+# The cache file is readable and writable by its owner only.
 #
 # ORCH_LOAD_TRACE=<file> makes every module load append "<module> <depth>" to
 # that file, depth being BASH_SUBSHELL (0 for the main shell). Unset, nothing
@@ -70,10 +77,11 @@ orch_load_all() {
   while IFS= read -r m; do orch_load "$m"; done < <(orch_modules)
 }
 
-# orch_stubs: defines a stub for every function the module files define at
-# column 0, in one eval. A function two modules define belongs to the later
-# one in the file order, as loading every module would leave it.
-orch_stubs() {
+# orch_stub_scan: sets ORCH_STUB_DEFS to the stub table: one stub definition
+# per function the module files define at column 0. A function two modules
+# define belongs to the later one in the file order, as loading every module
+# would leave it.
+orch_stub_scan() {
   local name mod defs=''
   local -A owner=()
   while IFS=: read -r mod name; do
@@ -85,6 +93,68 @@ orch_stubs() {
     case "$mod" in common|loader) continue ;; esac
     defs+="$name() { orch_stub $mod $name \"\$@\"; }"$'\n'
   done
+  ORCH_STUB_DEFS="$defs"
+}
+
+# orch_stub_cache_file: sets ORCH_STUB_CACHE to this plugin copy's cache file,
+# named from the absolute path of its modules' directory, and fails with it
+# empty when HOME is unset or empty. The path's % and / are escaped, so no two
+# copies share a name.
+orch_stub_cache_file() {
+  local dir name
+  ORCH_STUB_CACHE=''
+  [ -n "${HOME:-}" ] || return 1
+  dir="$(CDPATH='' cd -- "$ORCH_MODULE_DIR" 2>/dev/null && pwd -P)" || return 1
+  name="${dir//%/%25}"
+  name="${name//\//%2F}"
+  ORCH_STUB_CACHE="$HOME/.cache/orchestrator/$name.stubs"
+}
+
+# orch_stub_cache_fresh: succeeds when the cache file is strictly newer than
+# every module file and the modules' directory.
+orch_stub_cache_fresh() {
+  local f
+  [ -f "$ORCH_STUB_CACHE" ] || return 1
+  [ "$ORCH_STUB_CACHE" -nt "$ORCH_MODULE_DIR" ] || return 1
+  for f in "$ORCH_MODULE_DIR"/*.sh; do
+    [ "$ORCH_STUB_CACHE" -nt "$f" ] || return 1
+  done
+}
+
+# orch_stub_cache_write: writes ORCH_STUB_DEFS to the cache file through a
+# temporary file unique to this start, moved into place in one step. Any failure
+# removes the temporary file, prints nothing and returns 1.
+orch_stub_cache_write() {
+  local tmp
+  [ -n "${ORCH_STUB_CACHE:-}" ] || return 1
+  [ ! -d "$ORCH_STUB_CACHE" ] || return 1
+  (umask 077; mkdir -p "${ORCH_STUB_CACHE%/*}") 2>/dev/null || return 1
+  tmp="$(umask 077; mktemp "$ORCH_STUB_CACHE.XXXXXX" 2>/dev/null)" || return 1
+  if { printf '%s' "$ORCH_STUB_DEFS" >"$tmp"; } 2>/dev/null \
+    && chmod 600 "$tmp" 2>/dev/null \
+    && mv -f -- "$tmp" "$ORCH_STUB_CACHE" 2>/dev/null; then
+    return 0
+  fi
+  rm -f -- "$tmp" 2>/dev/null || true
+  return 1
+}
+
+# orch_stubs: defines a stub for every function the module files define at
+# column 0, in one eval, from the cache when it is fresh and else from a scan,
+# which is then written to the cache. ORCH_STUB_FROM_CACHE is 1 when the table
+# was read from the cache file.
+orch_stubs() {
+  local defs=''
+  ORCH_STUB_FROM_CACHE=''
+  ORCH_STUB_REBUILT=''
+  if orch_stub_cache_file && orch_stub_cache_fresh \
+    && { defs="$(<"$ORCH_STUB_CACHE")"; } 2>/dev/null && [ -n "$defs" ]; then
+    ORCH_STUB_FROM_CACHE=1
+  else
+    orch_stub_scan
+    defs="$ORCH_STUB_DEFS"
+    orch_stub_cache_write || true
+  fi
   eval "$defs"
 }
 
@@ -100,22 +170,38 @@ orch_stub_owner() {
   printf '%s\n' "${found%.sh}"
 }
 
+# orch_stub_die <function>: stops with the stub table's message, ending with
+# the cache file to remove when the table was read from it.
+orch_stub_die() {
+  local tail=''
+  if [ -n "${ORCH_STUB_FROM_CACHE:-}" ] && [ -n "${ORCH_STUB_CACHE:-}" ]; then
+    tail=" - remove $ORCH_STUB_CACHE and run again"
+  fi
+  die "$1 is in the stub table but no module defines it$tail"
+}
+
 # orch_stub <module> <function> [args...]: what a stub runs. Loads the module,
 # then calls the real function with the arguments, returning its status. When
-# the module did not define the function, rescans once: another module that
-# does is loaded and the call goes on, else the command stops.
+# the module did not define the function, the table was wrong: it is rebuilt
+# once and written to the cache, then another module that defines the function
+# is loaded and the call goes on, else the command stops.
 orch_stub() {
   local mod="$1" fn="$2" other
   shift 2
   orch_load "$mod"
   if [[ "$(declare -f "$fn")" == *"orch_stub "* ]]; then
+    if [ -z "${ORCH_STUB_REBUILT:-}" ]; then
+      ORCH_STUB_REBUILT=1
+      orch_stub_scan
+      orch_stub_cache_write || true
+    fi
     other="$(orch_stub_owner "$fn")" || other=''
     if [ -z "$other" ] || [ "$other" = "$mod" ]; then
-      die "$fn is in the stub table but no module defines it"
+      orch_stub_die "$fn"
     fi
     orch_load "$other"
     if [[ "$(declare -f "$fn")" == *"orch_stub "* ]]; then
-      die "$fn is in the stub table but no module defines it"
+      orch_stub_die "$fn"
     fi
   fi
   "$fn" "$@"
