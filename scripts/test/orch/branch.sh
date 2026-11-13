@@ -9,19 +9,6 @@
 # orchestrator-base git config key), or <unset>.
 base_key() { git config --get "branch.$1.orchestrator-base" || echo "<unset>"; }
 
-# clash_commits <clash-branch>: from the current branch (or detached HEAD),
-# creates <clash-branch> with clash.txt holding its name, and commits
-# clash.txt holding "<clash-branch> base" on the starting point, leaving the
-# checkout there.
-clash_commits() {
-  local base
-  base="$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)"
-  git checkout -q -b "$1"
-  echo "$1" >clash.txt && git add clash.txt && git commit -qm "$1"
-  git checkout -q "$base"
-  echo "$1 base" >clash.txt && git add clash.txt && git commit -qm "$1 base"
-}
-
 # leave_merge_in_progress <clash-branch>: leaves a merge in progress on the
 # current branch (or detached HEAD), as a dead base sync does - <clash-branch>
 # and the current commit each add clash.txt differently, and the merge stops.

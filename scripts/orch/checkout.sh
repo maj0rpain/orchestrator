@@ -257,10 +257,51 @@ merge_in_progress() {
   git -C "$1" rev-parse --quiet --verify MERGE_HEAD >/dev/null 2>&1
 }
 
+# checkout_gitdir_into <var> <path>: sets <var> to the absolute git folder of
+# the checkout at <path>, read from its own git pointer without starting git
+# for a readable pointer: <path>/.git is the git folder itself in a main
+# worktree, and in a linked worktree a file whose "gitdir: <dir>" line names
+# it, <dir> relative to <path> when it is not absolute, its . and .. parts
+# resolved. When that read fails (the pointer is missing, unreadable or names
+# no folder holding a HEAD, or <path> is no checkout's root) it asks git -C
+# <path> rev-parse --absolute-git-dir, git's stderr silenced, so a failed
+# resolve prints nothing. Fails, <var> untouched, only when git fails too.
+checkout_gitdir_into() {
+  local _cg_base="$2" _cg_ptr _cg_dir _cg_line=""
+  case "$_cg_base" in /*) ;; *) _cg_base="$PWD/$_cg_base" ;; esac
+  _cg_ptr="$_cg_base/.git"
+  _cg_dir="$_cg_ptr"
+  while :; do
+    if [ -f "$_cg_ptr" ]; then
+      { IFS= read -r _cg_line || [ -n "$_cg_line" ]; } 2>/dev/null <"$_cg_ptr" || break
+      case "$_cg_line" in "gitdir: "?*) _cg_dir="${_cg_line#gitdir: }" ;; *) break ;; esac
+      case "$_cg_dir" in /*) ;; *) _cg_dir="$_cg_base/$_cg_dir" ;; esac
+      case "$_cg_dir" in
+        */../*|*/./*|*/..|*/.)
+          local _cg_out="" _cg_part _cg_parts
+          IFS=/ read -ra _cg_parts <<<"$_cg_dir"
+          for _cg_part in "${_cg_parts[@]}"; do
+            case "$_cg_part" in
+              ''|.) ;;
+              ..) _cg_out="${_cg_out%/*}" ;;
+              *) _cg_out="$_cg_out/$_cg_part" ;;
+            esac
+          done
+          _cg_dir="$_cg_out" ;;
+      esac
+    fi
+    [ -f "$_cg_dir/HEAD" ] || break
+    printf -v "$1" '%s' "$_cg_dir"
+    return 0
+  done
+  _cg_dir="$(git -C "$2" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  printf -v "$1" '%s' "$_cg_dir"
+}
+
 # Whether a rebase is in progress in the checkout at <path>.
 rebase_in_progress() {
   local gitdir
-  gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  checkout_gitdir_into gitdir "$1" || return 1
   [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
 }
 
@@ -271,7 +312,7 @@ rebase_in_progress() {
 checkout_branch_or_rebasing() {
   local gitdir file ref
   checkout_branch "$@" && return 0
-  gitdir="$(git -C "${1:-.}" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  checkout_gitdir_into gitdir "${1:-.}" || return 1
   for file in "$gitdir/rebase-merge/head-name" "$gitdir/rebase-apply/head-name"; do
     [ -f "$file" ] || continue
     ref="$(<"$file")"

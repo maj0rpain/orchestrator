@@ -277,6 +277,19 @@ col0_names() {
   grep -oE '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)' "$1" | sed 's/[[:space:]]*()$//'
 }
 
+# clash_commits <clash-branch>: from the current branch (or detached HEAD),
+# creates <clash-branch> with clash.txt holding its name, and commits
+# clash.txt holding "<clash-branch> base" on the starting point, leaving the
+# checkout there.
+clash_commits() {
+  local base
+  base="$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)"
+  git checkout -q -b "$1"
+  echo "$1" >clash.txt && git add clash.txt && git commit -qm "$1"
+  git checkout -q "$base"
+  echo "$1 base" >clash.txt && git add clash.txt && git commit -qm "$1 base"
+}
+
 # on_disk <path>: present or absent, whether anything is at <path>.
 on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
 # branch_presence <ref>: present or gone, whether the branch <ref> exists.

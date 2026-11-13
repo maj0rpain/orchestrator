@@ -446,7 +446,7 @@ cmd_issue_triage() {
     issue_triage_verified "$issue" "$ready" ${removed[@]+"${removed[@]}"}
 
   local tmp
-  tmp="$(mktemp)" || die "could not create a temp file for the triage comment on issue #$issue"
+  temp_file_make tmp || die "could not create a temp file for the triage comment on issue #$issue"
   printf 'An orchestrator planning session triaged this issue to `%s`.\n' "$ready" >"$tmp"
   capture_err err adapter_issue_comment "$issue" "$tmp" \
     || warn "warning: issue #$issue is labelled $ready, but gh could not post the triage comment on it: $(gh_reason "$err")"
