@@ -1475,7 +1475,8 @@ assert_eq "a final reply holding the view written within the window: allowed" \
 # hook cost check. The paste-guard counts are compared between two runs of the
 # same hook, never against a number.
 JQC="$(call_counter jq)"
-# jq_count <cmd> [args...]: how many jq processes <cmd> starts, run with JQC first on PATH (on the payload on stdin, if any) and its output dropped.
+# jq_count <cmd> [args...]: how many jq processes <cmd> starts, run with JQC
+# first on PATH (on the payload on stdin, if any) and its output dropped.
 jq_count() {
   : >"$JQC/log"
   PATH="$JQC:$PATH" "$@" >/dev/null 2>&1
