@@ -93,7 +93,7 @@ assert_status "checkouts_main fails on an empty walk" "$st" 1
 assert_eq "checkouts_main prints nothing on an empty walk" "$out" ""
 
 # checkouts_or_die / main_checkout_or_die: what the plain queries print, or the
-# message for a failed git worktree list.
+# message for when git worktree list fails.
 nowalk="$(nowalk_bin)"
 assert_eq "checkouts_or_die prints the walk" "$(sourced_orch checkouts_or_die)" "$walk_held"
 assert_eq "main_checkout_or_die prints the main checkout" \

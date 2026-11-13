@@ -419,7 +419,7 @@ assert_status "init over a done flow dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "could not read the checkouts - nothing was archived or written"
 assert_eq "archiving nothing" "$(archived_count "$hand" walk-flow)" "0"
 assert_eq "the flow stays" "$(cd "$hand" && orch_gh_failing state get slug)" "walk-flow"
-# Every other command that reads git worktree list stops when it fails, rather
+# When git worktree list fails, every other command that reads it stops, rather
 # than reading it as no checkouts (#1333).
 out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout list 2>&1)"; st=$?
 assert_status "side-checkout list dies when the walk fails" "$st" 1
