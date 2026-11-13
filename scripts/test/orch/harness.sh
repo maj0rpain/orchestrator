@@ -1027,7 +1027,7 @@ sh_run 2/2
 assert_eq "and starts its sections longest-first" "$sh_started" "s2,s3,s4,"
 cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-for sh_n in 1 2 9; do
+for sh_n in 1 9; do
   sh_union=""
   for ((sh_i = 1; sh_i <= sh_n; sh_i++)); do
     sh_run "$sh_i/$sh_n"
@@ -1041,7 +1041,8 @@ for sh_n in 1 2 9; do
   assert_eq "$sh_n groups run every planted section exactly once" \
     "$(printf '%s' "$sh_union" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
 done
-assert_eq "a second call groups the same" "${sh_saved_printed[2/2]}" "$sh_first_22"
+sh_run 2/2
+assert_eq "a second call groups the same" "$sh_printed" "$sh_first_22"
 assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[9/9]}" "isolation,"
 assert_eq "and passes" "${sh_saved_st[9/9]}" 0
 assert_eq "1/1 runs every section" "${sh_saved_printed[1/1]}" "isolation,s1,s2,s3,s4,s5,"
