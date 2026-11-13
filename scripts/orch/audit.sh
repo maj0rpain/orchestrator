@@ -46,6 +46,7 @@ audit_body_parse() {
 # module's list. A function, not a variable: orch.sh sources audit.sh before
 # filed-finding.sh, so a string built at source time could not read the list.
 audit_file_usage() {
+  orch_load filed-finding
   local cats="${FILED_CATEGORIES// /|}"
   printf 'usage: orch.sh audit file <title> --category <%s> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]\n' "$cats"
 }

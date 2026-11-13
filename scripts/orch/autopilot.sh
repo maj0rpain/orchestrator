@@ -180,6 +180,7 @@ autopilot_iso_epoch() {
 # unless <phase> is a phase a question can be asked in - a flow phase other
 # than done.
 autopilot_phase_arg() {
+  orch_load handoff
   local die_fn="${2:-die}"
   word_listed "$PHASES" "$1" || "$die_fn" "not a flow phase: $1 (want ${PHASES// /|})"
   [ "$1" != "done" ] || "$die_fn" "a done flow asks no question"
@@ -241,6 +242,7 @@ autopilot_sync_dropped() {
 
 # autopilot_sync_fail <reason>: the failure stop, orch:sync kept.
 autopilot_sync_fail() {
+  orch_load standing
   local issue
   [ -n "$1" ] || die "a sync failure needs a reason"
   require_state
@@ -255,6 +257,7 @@ autopilot_sync_fail() {
 # newest question, or one and no question) - the caller re-asks, or carries on
 # - and 2 on any other failure, so a failed read is never taken for no reply.
 autopilot_answer() {
+  orch_load issue-timeline
   local phase="$1" file="$2" issue out first rest
   autopilot_phase_arg "$phase" die2
   require_state die2
@@ -283,6 +286,7 @@ autopilot_answer() {
 # autopilot_resume <issue>: removes needs-human from the issue, and nothing
 # else.
 autopilot_resume() {
+  orch_load standing
   local issue="$1"
   is_positive_int "$issue" || die "not an issue number: $issue"
   standing_human_guard "$issue"
@@ -294,6 +298,7 @@ autopilot_resume() {
 # message, for an issue that is closed, not at orch:done or already carrying
 # orch:sync.
 autopilot_sync() {
+  orch_load standing
   local issue="$1"
   is_positive_int "$issue" || die "not an issue number: $issue"
   standing_read "$issue" || gh_die "read issue #$issue" "$STANDING_REASON"
@@ -308,6 +313,7 @@ autopilot_sync() {
 # removes needs-human - refused unless the label is still on and no reply - any
 # comment but a re-entry comment - follows the issue's newest question comment.
 autopilot_reply() {
+  orch_load standing
   local issue="$1" file="$2"
   is_positive_int "$issue" || die "not an issue number: $issue"
   [ -f "$file" ] || die "reply file not found: $file"
@@ -328,6 +334,8 @@ autopilot_reply() {
 # kind. Prints one line saying so when nothing is listed; dies, printing
 # nothing, when any read fails.
 autopilot_questions() {
+  orch_load standing
+  orch_load issue-timeline
   local list n phase row kind lines="" q_phase stop_phase
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
@@ -577,6 +585,7 @@ autopilot_pickup_init() {
 # whether they last wrote the title or the body; a failed read is a failure
 # naming the read (it fails closed).
 autopilot_pickup_trust() {
+  orch_load trust
   local st=0
   trust_issue_check "$1" || st=$?
   case "$st" in
@@ -628,6 +637,7 @@ autopilot_pickup_redo() {
 # to the session's start. The first that fails leaves PICKUP_KIND and
 # PICKUP_TEXT and returns 1.
 autopilot_pickup_steps() {
+  orch_load standing
   local issue="$1" phase="$2" limited="$3" side="" title="" recorded redo sync=0
   [ "$phase" != "$STANDING_SYNC_PHASE" ] || sync=1
   autopilot_pickup_trust "$issue" || return 1
@@ -701,6 +711,7 @@ autopilot_pickup() {
 # Liveness module's to name, and both of the issue's records go with the claim.
 # Other hosts' claims are never touched.
 autopilot_cleanup_stale() {
+  orch_load standing
   local issue phase log detail me gone_pid backstop
   me="$(standing_host_id)"
   standing_claims_read
@@ -868,6 +879,8 @@ autopilot_pause_extend() {
 # autopilot_flow_issues: the open issues carrying a phase label other than
 # orch:done, or orch:sync, deduplicated and oldest first, one number per line.
 autopilot_flow_issues() {
+  orch_load standing
+  orch_load handoff
   local label out gh_err all="" labels=() phase
   for phase in $PHASES; do
     [ "$phase" != "done" ] || continue
@@ -889,6 +902,7 @@ autopilot_flow_issues() {
 # the caller named, the only kind that can be `missing`: gh's not-found reason
 # for a listed one, like any other failed read, dies. Writes nothing.
 autopilot_verdict() {
+  orch_load trust
   local issue="$1" named="$2" state labels err parent phase label role st=0 ready human
   if ! issue_state_labels_read "$issue" state labels err; then
     if [ "$named" = true ] && gh_issue_not_found "$err"; then
@@ -972,6 +986,7 @@ autopilot_candidates_run() {
 # flag 0 or 1. A failed listing warns once and leaves the table empty; a failed
 # read warns once and leaves that issue out. Neither stops the tick.
 autopilot_done_read() {
+  orch_load standing
   local _out _err _issue _table="" _label
   _label="$(standing_phase_label "done")"
   printf -v "$1" '%s' ""
@@ -1001,6 +1016,7 @@ autopilot_done_read() {
 # skipped silently, one with several warned about; a failed read or write warns
 # and skips that issue only.
 autopilot_sync_detect() {
+  orch_load standing
   local raw="" prs="" gh_err issue running sync human pr_lines head_prefix count reason=""
   [ -n "$1" ] || return 0
   if capture raw gh_err adapter_prs_open_mergeability; then
@@ -1060,6 +1076,8 @@ autopilot_close_missed() {
 # (review 1, implement 2, spec 3), the phase furthest along first. done is not
 # picked up and has no rank.
 autopilot_rank() {
+  orch_load standing
+  orch_load handoff
   local phase i=0 n=0
   [ "$1" != "$STANDING_SYNC_PHASE" ] || { printf '0'; return; }
   for phase in $PHASES; do
@@ -1092,6 +1110,7 @@ autopilot_rank() {
 # create that fails for a reason other than a lost race stops the tick, naming
 # it.
 autopilot_tick() {
+  orch_load standing
   local main_root cap count issue gh_err phase rc flow_issues limited_arg auto_sync
   local ranked="" slots limit limited done_table reserve
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
@@ -1300,6 +1319,7 @@ autopilot_claim_release_only() {
 # session in the issue's side checkout, its output in the session log, and
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
+  orch_load standing
   local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration hit usage_before usage flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"

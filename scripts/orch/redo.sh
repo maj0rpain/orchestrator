@@ -165,6 +165,7 @@ $detail" ;;
 # so a death anywhere earlier leaves phase implement with the issue and the keys
 # the entry guards need, and a re-run resumes.
 cmd_redo_spec() {
+  orch_load spec
   require_state
   local phase new_issue=0 clear_issue=()
   phase="$(state_get phase)"

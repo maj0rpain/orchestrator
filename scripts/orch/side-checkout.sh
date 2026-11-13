@@ -404,6 +404,7 @@ cmd_side_checkout_remove() {
 # gets a warning, since no later sweep will see it. A failed read or close warns
 # and never fails the sweep: always returns 0.
 side_checkout_close_missed() {
+  orch_load standing
   local path="$1" br="$2" state issue pr="" closed_pr default prs rc=0
   if checkout_has_flow "$path"; then
     state="$(flow_state_file "$path")"

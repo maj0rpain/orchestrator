@@ -451,6 +451,7 @@ cmd_pr_ready() {
 # (true or false), one per line. Returns 1, printing nothing, when the branch
 # has no open PR, as current_open_pr does.
 open_pr_draft_flag() {
+  orch_load state
   local branch phase pr _pr_state is_draft err rc=0
   current_branch_or_die die2
   phase="$(flow_holding_phase "$branch")" || rc=$?

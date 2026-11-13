@@ -278,6 +278,115 @@ marked_comment_jq_placement() {
   name_placement "$1" "$MARKED_COMMENT_JQ_PLACEMENT_RULE" calls marked_comment_jq ./orch/marked-comment.sh ./orch/issue-timeline.sh
 }
 
+# The on-demand loading rule, as orch_load_reads' message states it.
+ORCH_LOAD_RULE="The rule: a function, or a module's own top-level code, that reads another module's top-level variable names orch_load <that module> earlier in its own text than the first such read; the variables of the always-loaded files (orch.sh, common.sh, loader.sh and the files orch.sh sources from scripts/) are exempt."
+
+# orch_load_reads <dir>: checks every module of <dir> (a scripts/ tree) -
+# scripts/orch/*.sh but common.sh and loader.sh - for a read of a top-level
+# variable another module owns, and prints one line per file, site and
+# variable, sorted, naming the file (as scripts/<path>), the function or `top
+# level`, the variable, its owning module and the rule; returns 1 when it
+# printed any. A top-level variable is one a module assigns outside any
+# function, plainly or through readonly, declare or export; one an always-loaded
+# file (orch.sh, common.sh, loader.sh, and the scripts/*.sh files orch.sh
+# sources) also assigns is exempt. A read is $NAME, ${NAME...}, ${#NAME} or
+# ${!NAME} in code; a site is a function or the file's top-level code, and a
+# read is covered by an `orch_load <module>` earlier in the same site's text (a
+# function's own, or the file's top-level code's own).
+orch_load_reads() {
+  local dir="$1" owned out f src
+  local -a always_files=("$dir/orch.sh" "$dir/orch/common.sh" "$dir/orch/loader.sh") mods=()
+  while IFS= read -r src; do
+    [ -f "$dir/$src.sh" ] && always_files+=("$dir/$src.sh")
+  done < <(sed -n 's/^source "\$ORCH_SCRIPTS\/\([A-Za-z0-9_-]*\)\.sh".*/\1/p' "$dir/orch.sh")
+  for f in "$dir"/orch/*.sh; do
+    case "${f##*/}" in common.sh|loader.sh) ;; *) mods+=("$f") ;; esac
+  done
+  local top_awk="$SHELL_CODE_AWK"'
+    function count(s, re,   t) { t = s; return gsub(re, "", t) }
+    # track(words): the function the line is in, "" at top level, a definition
+    # line already inside its function; after_track(words) closes it.
+    function track(s) {
+      if (FNR == 1) { fn = ""; fdepth = 0; opened = 0 }
+      if (sc_top && fdepth == 0 && fn == "" && match(s, /^[ \t]*(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
+        name = substr(s, 1, RLENGTH); sub(/^[ \t]*(function[ \t]+)?/, "", name); sub(/[ \t]*\(\)$/, "", name)
+        fn = name; opened = 0; fdepth = 0
+      }
+      return fn
+    }
+    function after_track(s) {
+      if (fn != "") {
+        fdepth += count(s, "{") - count(s, "}")
+        if (count(s, "{")) opened = 1
+        if (opened && fdepth <= 0) { fn = ""; fdepth = 0 }
+      }
+    }'
+  # pass 1: every top-level variable, as "<name> <file>" lines, "-" for the
+  # always-loaded files
+  owned="$(awk -v always="${always_files[*]}" "$top_awk"'
+    BEGIN { n = split(always, af, " "); for (i = 1; i <= n; i++) isalways[af[i]] = 1 }
+    {
+      shell_code_line($0); s = sc_words
+      here = track(s)
+      if (here == "" && sc_top) {
+        t = s; sub(/^[ \t]+/, "", t)
+        if (match(t, /^(readonly|declare|export|typeset)[ \t]+/)) {
+          t = substr(t, RLENGTH + 1)
+          while (match(t, /^-[A-Za-z]+[ \t]+/)) t = substr(t, RLENGTH + 1)
+          while (match(t, /^[A-Za-z_][A-Za-z0-9_]*/)) {
+            print substr(t, 1, RLENGTH), (FILENAME in isalways ? "-" : FILENAME)
+            t = substr(t, RLENGTH + 1)
+            if (!match(t, /^[ \t]+/)) break
+            t = substr(t, RLENGTH + 1)
+          }
+        } else if (match(t, /^[A-Za-z_][A-Za-z0-9_]*\+?=/)) {
+          nm = substr(t, 1, RLENGTH - 1); sub(/\+$/, "", nm)
+          print nm, (FILENAME in isalways ? "-" : FILENAME)
+        }
+      }
+      after_track(s)
+    }
+  ' "${always_files[@]}" "${mods[@]}")" || return 2
+  out="$(awk -v rule="$ORCH_LOAD_RULE" -v owned="$owned" "$top_awk"'
+    BEGIN {
+      n = split(owned, row, "\n")
+      for (i = 1; i <= n; i++) {
+        split(row[i], kv, " ")
+        if (kv[2] == "-") { exempt[kv[1]] = 1; continue }
+        m = kv[2]; sub(/.*\//, "", m); sub(/\.sh$/, "", m)
+        if (!((kv[1], m) in owner)) { owner[kv[1], m] = 1; cur = (kv[1] in mods) ? mods[kv[1]] " " : ""; mods[kv[1]] = cur m }
+      }
+    }
+    FNR == 1 { file = FILENAME; sub(/^.*\/orch\//, "scripts/orch/", file); self = file; sub(/^scripts\/orch\//, "", self); sub(/\.sh$/, "", self); delete ltop; lastfn = "" }
+    {
+      shell_code_line($0); here = track(sc_words)
+      if (here != lastfn) { delete lfn; lastfn = here }
+      site = here == "" ? "top level" : here
+      # orch_load <module> calls first, then reads: a call on a line covers its
+      # reads, which sit after it in a one-line site
+      t = sc_code
+      while (match(t, /orch_load[ \t]+"?[A-Za-z0-9_-]+/)) {
+        w = substr(t, RSTART, RLENGTH); sub(/^orch_load[ \t]+"?/, "", w)
+        if (here == "") ltop[w] = 1; else lfn[w] = 1
+        t = substr(t, RSTART + RLENGTH)
+      }
+      t = sc_code
+      while (match(t, /\$\{?[#!]?[A-Za-z_][A-Za-z0-9_]*/)) {
+        w = substr(t, RSTART, RLENGTH); sub(/^\$\{?[#!]?/, "", w)
+        t = substr(t, RSTART + RLENGTH)
+        if ((w in exempt) || !(w in mods) || (w, self) in owner) continue
+        nm = split(mods[w], ml, " "); ok = 0
+        for (k = 1; k <= nm; k++) if (here == "" ? ml[k] in ltop : ml[k] in lfn) ok = 1
+        if (!ok) printf "%s %s reads %s, a top-level variable of the %s module, with no orch_load before it. %s\n", file, site, w, mods[w], rule
+      }
+      after_track(sc_words)
+    }
+  ' "${mods[@]}")" || return 2
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out" | LC_ALL=C sort -u
+  return 1
+}
+
 # The declaration substitution rule, as decl_substitutions' message states it.
 DECL_SUBSTITUTION_RULE="The rule: split the declaration from the assignment - local x; x=\"\$(...)\" - so the substitution's status reaches errexit; local, export, declare and readonly return their own status, 0, in its place."
 
@@ -2443,6 +2552,66 @@ assert_status "a call in another module fails, while comments, longer names and 
 assert_eq "naming only the calling file and the rule" "$out" \
   "scripts/orch/zz-prelude.sh calls marked_comment_jq. $MARKED_COMMENT_JQ_PLACEMENT_RULE"
 rm -rf "${mcjq_dir%/scripts}"
+
+# --- on-demand loading (#2868) ------------------------------------------------
+# orch_load_reads over the real scripts/, then over copies of it, each with a
+# planted owner module and reader: a read in a function and one in a module's
+# top-level code that break the rule, and reads that keep it.
+echo
+echo "on-demand loading (#2868)"
+out="$(orch_load_reads "$PLUGIN_ROOT/scripts")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "no module of the real tree reads another module's top-level variable before its orch_load"
+else
+  bad "no module of the real tree reads another module's top-level variable before its orch_load" "$out"
+fi
+
+load_dir="$(tree_copy scripts)"
+plant_file "$load_dir/orch" zz-owner.sh <<'PLANTED'
+  ZZ_PLAIN=1
+  readonly ZZ_RO="x"
+  declare -g ZZ_DECL=2
+  zz_owner_fn() { local ZZ_LOCAL=3; }
+PLANTED
+plant_file "$load_dir/orch" zz-reader.sh <<'PLANTED'
+  zz_bad_fn() {
+    echo "$ZZ_RO"
+  }
+  zz_bad_decl() {
+    echo "${ZZ_DECL}"
+  }
+  echo "$ZZ_PLAIN"
+PLANTED
+out="$(orch_load_reads "$load_dir")"; st=$?
+assert_status "a read in a function and one in top-level code, with no orch_load, fail" "$st" 1
+assert_eq "naming the file, the site, the variable and the rule" "$out" \
+  "scripts/orch/zz-reader.sh top level reads ZZ_PLAIN, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE
+scripts/orch/zz-reader.sh zz_bad_decl reads ZZ_DECL, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE
+scripts/orch/zz-reader.sh zz_bad_fn reads ZZ_RO, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE"
+rm -rf "${load_dir%/scripts}"
+
+load_dir="$(tree_copy scripts)"
+plant_file "$load_dir/orch" zz-owner.sh <<'PLANTED'
+  ZZ_PLAIN=1
+  readonly ZZ_RO="x"
+PLANTED
+plant_file "$load_dir/orch" zz-reader.sh <<'PLANTED'
+  orch_load zz-owner
+  echo "$ZZ_PLAIN"
+  zz_good_fn() {
+    orch_load zz-owner
+    echo "$ZZ_RO"
+  }
+  zz_exempt_fn() {
+    echo "$ORCH_DIR_NAME $ROOT $ORCH_MODULE_DIR"
+    # $ZZ_RO named in a comment
+    local ZZ_RO=1; echo "ZZ_RO is not read"
+  }
+PLANTED
+out="$(orch_load_reads "$load_dir")"; st=$?
+assert_status "reads after an orch_load, and of always-loaded variables, pass" "$st" 0
+assert_eq "and print nothing" "$out" ""
+rm -rf "${load_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------
 # decl_substitutions over the real scripts/, then over copies of it, each with

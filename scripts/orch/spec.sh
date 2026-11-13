@@ -162,6 +162,7 @@ cmd_spec_pause_round() {
 # exists - a copy, not a carry in place, since every round keeps its own
 # directory for the final session to read its changelog from. Idempotent.
 cmd_spec_round_dir() {
+  orch_load spec-review
   local usage="usage: orch.sh spec round-dir <k>/<n>"
   [ $# -eq 1 ] || die "$usage"
   local k n issue

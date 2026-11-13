@@ -682,6 +682,7 @@ check_autopilot_side_flows() {
 # Silent where origin cannot be read, and for this host's claims where the main
 # checkout cannot be resolved.
 check_autopilot_claims() {
+  orch_load standing
   local issue host started now_epoch started_epoch me main_known=0 pid
   standing_claims_read --quiet || return 0
   now_epoch="$(date -u +%s)"; me="$(standing_host_id)"
@@ -721,6 +722,7 @@ h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude 
 # preconditions held.
 
 check_state_phase() {
+  orch_load handoff
   local phase
   phase="$D_FLOW_PHASE"
   if word_listed "$PHASES" "$phase"; then
@@ -968,6 +970,7 @@ check_flow_worktree_clean() {
 # Which handoffs are due is the phase table's handoffs_due - phase names what
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
+  orch_load issue-timeline
   local phase files f path problems line ready_finding ready_rc reason fetch_rc
   phase="$D_FLOW_PHASE"
   # A phase the table does not hold is due nothing, so the check skips it.

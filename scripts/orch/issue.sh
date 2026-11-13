@@ -115,6 +115,7 @@ comments_trust_filter() {
 # COMMENTS_RENDER_JQ with each author's login - nothing for none, no
 # placeholder for a dropped comment.
 comments_render() {
+  orch_load gh
   jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)'
 }
 
@@ -179,8 +180,6 @@ comments_read() {
 # --with-spec-review): rendered through COMMENTS_RENDER_JQ, as every comments
 # read renders them; nothing at all when none is left. It reads ISSUE_JSON_JQ's
 # object, whose author is already the login.
-ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
-
 # Every comment on the issue but the untrusted authors', and by default but the
 # spec review's own changelogs, in the rendered shape - so the spec review reads
 # the comments beside the body without its earlier rounds. Filtered here rather
@@ -189,12 +188,14 @@ ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.autho
 # file is written only once the read has succeeded. With --with-spec-review
 # (#1921; orch-questions passes it) the changelogs are kept, the one difference.
 cmd_issue_comments() {
-  local issue="$1" file="$2" keep_reviews="${3:-}" json text
+  local issue="$1" file="$2" keep_reviews="${3:-}" json text kept_jq
+  orch_load gh
+  kept_jq="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
   issue_json_trusted "read the comments of issue #$issue" "$issue" json
   if [ -n "$keep_reviews" ]; then
-    text="$(jq -r "$ISSUE_COMMENTS_KEPT_JQ" <<<"$json")"
+    text="$(jq -r "$kept_jq" <<<"$json")"
   else
-    text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$ISSUE_COMMENTS_KEPT_JQ")"
+    text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$kept_jq")"
   fi \
     || die "could not read the comments of issue #$issue"
   # $(...) drops the trailing newline jq -r printed; put it back unless empty.

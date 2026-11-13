@@ -932,6 +932,7 @@ spec_review_prompt_line() {
 # only in a flow round directory - one under SPEC_ROUNDS_DIR - and its plan
 # handoff is what `handoff path spec` prints, the op dying when it fails.
 spec_review_prompt() {
+  orch_load spec
   [ $# -eq 2 ] || die "usage: orch.sh spec-review prompt <dir> <lens>"
   local dir="${1%/}" lens="$2" plan plan_err
   spec_review_lens_known "$lens" || die "unknown lens '$lens' (want one of: $SPEC_REVIEW_LENSES)"
@@ -1794,6 +1795,7 @@ spec_review_local_write() {
 # into <dir> first and saved as the copies, so a resume never reads a file the
 # dead session left elsewhere.
 spec_review_save_answer() {
+  orch_load spec
   local dir="$1" a file_opt="" copy saved=()
   shift
   for a in "$@"; do
@@ -1817,6 +1819,7 @@ spec_review_save_answer() {
 # spec_review_clear_answer <dir>: the saved answer and its file copies removed,
 # at the end of the run that no resume continues.
 spec_review_clear_answer() {
+  orch_load spec
   rm -f "$1/$SPEC_ROUND_APPLY_ANSWER" "$1"/apply-*.copy 2>/dev/null \
     || die "could not remove $1/$SPEC_ROUND_APPLY_ANSWER - every GitHub write landed: $(spec_review_landed "$1")"
 }
@@ -1825,6 +1828,7 @@ spec_review_clear_answer() {
 # comment landed: <log> appended to settled.md, fundamental.md removed in a
 # resumed autopilot run, round-complete written, the saved answer removed.
 spec_review_finish() {
+  orch_load spec
   local dir="$1" log="$2"
   # The settled file, last: a pause or a failed write before this point
   # appends nothing, so a rerun never appends a changelog twice.
@@ -1849,6 +1853,7 @@ spec_review_finish() {
 # batch grammar behind the batch's `@@ lens` lines: the round's save point,
 # which spec round reports as waiting and the resumed apply reads as its cue.
 spec_review_hold() {
+  orch_load spec
   local dir="$1" held=" " i
   for i in ${SR_IT_FUNDAMENTAL[@]+"${!SR_IT_FUNDAMENTAL[@]}"}; do held="$held${SR_IT_N[$i]} "; done
   { {
@@ -1886,6 +1891,7 @@ spec_review_ticket_numbers() {
 # records are skipped, and with the changelog comment landed only the local
 # tail runs.
 spec_review_apply() {
+  orch_load spec
   local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended] [--host-fallbacks <file>] | orch.sh spec-review apply <dir> --resume --round <k>/<n>"
   local dir="" answer="" have_answer="" round="" reasons="" issue="" unattended=false hosts_file="" hosts=""
   local ticket_answer="" ticket_reasons="" opt_like resume="" a

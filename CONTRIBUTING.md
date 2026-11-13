@@ -55,6 +55,16 @@ noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
+Reading another module's top-level variable: a top-level variable is one a
+module assigns outside any function, plainly or through `readonly` or
+`declare`. A function, or a module's own top-level code, that reads another
+module's top-level variable names `orch_load <that module>` earlier in its own
+text than the first such read, so on-demand loading never reads an unset
+variable. The variables of the always-loaded files (`orch.sh`, `common.sh`,
+`loader.sh` and the files `orch.sh` sources from `scripts/` itself) are exempt.
+harness.sh's on-demand loading section enforces it over the real tree; its
+failure names the file, the function or `top level`, and the variable.
+
 A case lives once, in the section of the module it exercises. The Standing
 sections own what a transition does on its own: its writes, its write chain
 (the "writes that landed: ..." wording) and the claim staying held when a write

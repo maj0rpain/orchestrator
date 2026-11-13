@@ -22,6 +22,7 @@ standing_phase_label() { printf 'orch:%s\n' "$1"; }
 # standing_phase_labels_in <labels>: the phases, one per line in table order,
 # whose labels are among <labels>.
 standing_phase_labels_in() {
+  orch_load handoff
   local p
   for p in $PHASES; do
     ! label_listed "$1" "$(standing_phase_label "$p")" || printf '%s\n' "$p"
@@ -53,6 +54,7 @@ standing_live_phase() {
 # `name|colour|description` each: a label per phase of the table, then the
 # running, human, limited and sync labels.
 standing_label_entries() {
+  orch_load handoff
   local p colour what
   for p in $PHASES; do
     what="$p phase next"
@@ -266,6 +268,7 @@ standing_chain_die() {
 # standing_timeline_read <issue> <purpose>: reads the issue's comments, else
 # dies with the landed writes, naming what the read was for and why it failed.
 standing_timeline_read() {
+  orch_load issue-timeline
   timeline_read "$1" ||
     standing_landed_die "could not read issue #$1's comments to $2: ${TIMELINE_REASON:-the comments could not be read}"
 }
@@ -398,6 +401,7 @@ standing_move_label() {
 # comment leaves the issue unlabelled, never picked up. A re-run on an
 # unlabelled issue posts a newer plan comment, which supersedes the earlier.
 standing_start() {
+  orch_load handoff
   local issue="$1" file="$2" ready gh_err first
   standing_chain_start
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
@@ -628,6 +632,7 @@ standing_sync_dropped() {
 # retries it. The reset is empty when the session named none; the pause is the
 # time written to the limit file: the reset, else the one-hour fallback.
 standing_limit_stop() {
+  orch_load issue-timeline
   local issue="$1" phase="$2" reset="$3" pause="$4" rc="$5" log="$6" cause="${7:-}"
   local count plan text when=" (the session gave no reset time)" at stopped marker what="a usage limit"
   standing_chain_start

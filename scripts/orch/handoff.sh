@@ -349,6 +349,7 @@ handoff_ready() { "handoff_$(handoff_store)_ready" "$@"; }
 # tagged retired; 2, <file> untouched, after one `orch: could not write <file>`
 # line on stderr, when the write fails. Never dies.
 handoff_comment_write() {
+  orch_load issue-timeline
   local name="$1" file="$2" raw
   timeline_handoff "$name" || return 1
   raw="$(timeline_body "$TIMELINE_HANDOFF_INDEX")"

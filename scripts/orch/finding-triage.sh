@@ -131,6 +131,7 @@ triage_state() {
 # the scan's one line for one finding - none when <pr filter> is given and the
 # body names another PR.
 finding_scan_one() {
+  orch_load filed-finding
   local n="$1" body="$2" ref="$3" roles="$4" pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out deleted
   local -A finding
   finding_body_parse "$body" finding
@@ -211,6 +212,7 @@ finding_scan_one() {
 # label - against origin/<default>, one tab-separated line apiece: <issue>
 # <pr> <file>:<line> <result> <detail> <triage state>.
 cmd_finding_triage_scan() {
+  orch_load filed-finding
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
   # shellcheck disable=SC2034 # listed is issues_labelled_bodies_read's count out-param, unused here
   local all=false issue="" pr_filter="" triage sev n listed labels body default ref gh_err
@@ -384,6 +386,7 @@ cmd_finding_triage_apply() {
 # of its needs-triage, needs-info and wontfix - naming the issue and why.
 # Makes no read: the caller's one state read decided the issue is open.
 bundle_member_check() {
+  orch_load filed-finding
   local __bmc_labels="$2" __bmc_role __bmc_label __bmc_ready=""
   has_filed_severity_label "$__bmc_labels" \
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
