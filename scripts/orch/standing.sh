@@ -265,8 +265,9 @@ standing_chain_die() {
   standing_landed_die "could not $2 on issue #$1: $(gh_reason "$3")"
 }
 
-# standing_timeline_read_or_die <issue> <purpose>: reads the issue's comments, else
-# dies with the landed writes, naming what the read was for and why it failed.
+# standing_timeline_read_or_die <issue> <purpose>: reads the issue's comments,
+# else dies with the landed writes, naming what the read was for and why it
+# failed.
 standing_timeline_read_or_die() {
   orch_load issue-timeline
   timeline_read "$1" ||
