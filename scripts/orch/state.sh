@@ -62,9 +62,11 @@ state_read() {
 # state_get_many <var>=<key>...: the own-checkout reader of several keys in one
 # jq, unguarded as state_get is: it assigns each <key>'s value to the caller's
 # <var> (flow_state_get_many). It declares no unprefixed local, so a caller may
-# name an out-variable anything. A failed read rechecks the arguments, which
-# die "unknown state key: <key>" or "malformed state read: <arg>"; any other
-# status is a failed read and is returned, jq's text through.
+# name an out-variable anything but __sgm_rc or one of the reader's
+# __fsgm_ locals, which take the value instead of the caller. A failed read
+# rechecks the arguments, which die "unknown state key: <key>" or "malformed
+# state read: <arg>"; any other status is a failed read and is returned, jq's
+# text through.
 state_get_many() {
   local __sgm_rc
   flow_state_get_many "$STATE" "$@" && return

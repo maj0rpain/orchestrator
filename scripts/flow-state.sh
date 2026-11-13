@@ -22,6 +22,8 @@
 #   <var>=<key>, both before any jq, assigning and printing nothing; an
 #   absent, unparseable or non-object file fails inside its one jq. On any
 #   failure nothing is assigned.
+# - flow_state_many_arg: 1 for a key outside the table and 2 for a malformed
+#   <var>=<key>, which is caller input, not a programming error.
 # - Writers (flow_state_write, flow_state_write_string, flow_state_write_many,
 #   flow_state_create): non-zero, the state file untouched and no temp file
 #   left, when the write fails. flow_state_write, flow_state_write_string and
@@ -177,7 +179,9 @@ flow_state_many_arg() {
 # applies each key's table default as flow_state_get does (the defaults come
 # from one pass over the key table, not a subshell per key), and assigns the
 # values to the caller's variables <var> through printf -v. Its locals carry
-# the __fsgm_ prefix, so a caller may name an out-variable anything. Values
+# the __fsgm_ prefix, so a caller may name an out-variable anything but one of
+# those: a <var> named like a local (__fsgm_a_var, __fsgm_rc...) assigns the
+# local, and the value never reaches the caller. Values
 # travel NUL-separated and are read back with read -r -d '', byte for byte; a
 # NUL inside a value is dropped by the jq. A key outside the table returns 1
 # and a malformed <var>=<key> (no =, or an empty <var>) returns 2, both before

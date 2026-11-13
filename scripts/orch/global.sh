@@ -49,13 +49,12 @@ status_flow() {
     die "cannot read the flow's state from $STATE"
   base="$(flow_base_fallback "$base_raw")"
   budget="$(review_budget_fallback "$budget_raw")"
-  issue="${issue:--}";            branch="${branch:--}";  pr="${pr:--}"
   note "flow:      $slug"
   note "phase:     $phase"
-  note "issue:     $issue"
+  note "issue:     ${issue:--}"
   note "base:      $base"
-  note "branch:    $branch"
-  note "PR:        $pr"
+  note "branch:    ${branch:--}"
+  note "PR:        ${pr:--}"
   # Against the budget, not alone: "iteration 3" does not say how far along
   # the loop is, and the budget is the one number a human chose.
   note "review:    iteration $iteration of $budget"
