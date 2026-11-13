@@ -22,6 +22,8 @@
 #   <var>=<key>, both before any jq, assigning and printing nothing; an
 #   absent, unparseable or non-object file fails inside its one jq. On any
 #   failure nothing is assigned.
+# - flow_state_many_arg: 1 for a key outside the table and 2 for a malformed
+#   <var>=<key>, which is caller input, not a programming error.
 # - Writers (flow_state_write, flow_state_write_string, flow_state_write_many,
 #   flow_state_create): non-zero, the state file untouched and no temp file
 #   left, when the write fails. flow_state_write, flow_state_write_string and
@@ -152,36 +154,58 @@ flow_state_get() {
   jq -r --arg k "$2" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$1"
 }
 
+# flow_state_many_arg <var>=<key> <rows> <prefix>: the one check of a
+# multi-key read's argument, die-free and silent. <rows> is state_rows's output.
+# Returns 2 for a malformed argument (no =, or an empty <var>) and 1 for a key
+# outside the table. On success it sets <prefix>var, <prefix>key and
+# <prefix>def - the var, the key and the key's table default - through
+# printf -v, so the caller names the variables and none of the caller's own is
+# shadowed. Its locals carry the __fsma_ prefix. No nameref: bash 3.2.
+flow_state_many_arg() {
+  local __fsma_var __fsma_key __fsma_k __fsma_d
+  case "$1" in *=*) ;; *) return 2 ;; esac
+  __fsma_var="${1%%=*}"
+  __fsma_key="${1#*=}"
+  [ -n "$__fsma_var" ] || return 2
+  while IFS='|' read -r __fsma_k __fsma_d _ _; do
+    [ "$__fsma_k" = "$__fsma_key" ] || continue
+    printf -v "${3}var" '%s' "$__fsma_var"
+    printf -v "${3}key" '%s' "$__fsma_key"
+    printf -v "${3}def" '%s' "$__fsma_d"
+    return 0
+  done <<<"$2"
+  return 1
+}
+
 # flow_state_get_many <file> <var>=<key>...: reads every <key> in one jq,
 # applies each key's table default as flow_state_get does (the defaults come
 # from one pass over the key table, not a subshell per key), and assigns the
 # values to the caller's variables <var> through printf -v. Its locals carry
-# the __fsgm_ prefix, so a caller may name an out-variable anything. Values
+# the __fsgm_ prefix, so a caller may name an out-variable anything but one of
+# those: a <var> named like a local (__fsgm_a_var, __fsgm_rc...) assigns the
+# local, and the value never reaches the caller. Values
 # travel NUL-separated and are read back with read -r -d '', byte for byte; a
 # NUL inside a value is dropped by the jq. A key outside the table returns 1
 # and a malformed <var>=<key> (no =, or an empty <var>) returns 2, both before
-# any jq; a failed read - an absent, unparseable or non-object file, null
-# included - returns the jq's status. On any failure nothing is assigned.
+# any jq, by flow_state_many_arg; a failed read - an absent, unparseable or
+# non-object file, null included - returns the jq's status. On any failure
+# nothing is assigned.
+#
+# jq's output goes through a temp file on purpose; do not read it directly.
+# This module is sourced by the hooks and stays bash 3.2-compatible. On bash
+# 3.2 a process substitution's exit status cannot be read (wait on one needs
+# bash 4.4) and a $(...) capture cannot hold the NUL separators, so a direct
+# read would lose the jq status this function returns on a failed read.
 flow_state_get_many() {
-  local __fsgm_file="$1" __fsgm_arg __fsgm_var __fsgm_key __fsgm_def __fsgm_kd="" \
-    __fsgm_tmp __fsgm_rc __fsgm_i __fsgm_n=0 __fsgm_rows __fsgm_k __fsgm_d __fsgm_found
+  local __fsgm_file="$1" __fsgm_arg __fsgm_kd="" __fsgm_a_var __fsgm_a_key __fsgm_a_def \
+    __fsgm_tmp __fsgm_rc __fsgm_i __fsgm_n=0 __fsgm_rows
   local __fsgm_vars=() __fsgm_vals=()
   shift
   __fsgm_rows="$(state_rows)" || return
   for __fsgm_arg in "$@"; do
-    case "$__fsgm_arg" in *=*) ;; *) return 2 ;; esac
-    __fsgm_var="${__fsgm_arg%%=*}"
-    __fsgm_key="${__fsgm_arg#*=}"
-    [ -n "$__fsgm_var" ] || return 2
-    __fsgm_found=""
-    while IFS='|' read -r __fsgm_k __fsgm_d _ _; do
-      [ "$__fsgm_k" = "$__fsgm_key" ] || continue
-      __fsgm_def="$__fsgm_d" __fsgm_found=1
-      break
-    done <<<"$__fsgm_rows"
-    [ -n "$__fsgm_found" ] || return 1
-    __fsgm_kd="${__fsgm_kd:+$__fsgm_kd$'\n'}$__fsgm_key|$__fsgm_def"
-    __fsgm_vars[__fsgm_n]="$__fsgm_var"
+    flow_state_many_arg "$__fsgm_arg" "$__fsgm_rows" __fsgm_a_ || return
+    __fsgm_kd="${__fsgm_kd:+$__fsgm_kd$'\n'}$__fsgm_a_key|$__fsgm_a_def"
+    __fsgm_vars[__fsgm_n]="$__fsgm_a_var"
     __fsgm_n=$((__fsgm_n + 1))
   done
   [ "$__fsgm_n" -gt 0 ] || return 0

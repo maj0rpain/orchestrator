@@ -62,9 +62,11 @@ state_read() {
 # state_get_many <var>=<key>...: the own-checkout reader of several keys in one
 # jq, unguarded as state_get is: it assigns each <key>'s value to the caller's
 # <var> (flow_state_get_many). It declares no unprefixed local, so a caller may
-# name an out-variable anything. A failed read rechecks the arguments, which
-# die "unknown state key: <key>" or "malformed state read: <arg>"; any other
-# status is a failed read and is returned, jq's text through.
+# name an out-variable anything but __sgm_rc or one of the reader's
+# __fsgm_ locals, which take the value instead of the caller. A failed read
+# rechecks the arguments, which die "unknown state key: <key>" or "malformed
+# state read: <arg>"; any other status is a failed read and is returned, jq's
+# text through.
 state_get_many() {
   local __sgm_rc
   flow_state_get_many "$STATE" "$@" && return
@@ -86,15 +88,18 @@ state_get_many_in() {
 }
 
 # state_many_recheck <var>=<key>...: after a failed many-key read, dies with
-# the message for the argument that was at fault, and returns 0 when none was.
-# It runs only after a failure, when nothing was assigned, so its locals
-# cannot shadow a caller's out-variable.
+# the message for the argument that was at fault, returns state_rows's own
+# non-zero status when the rows cannot be read, and returns 0 when no
+# argument was at fault. It runs only after a failure, when nothing was
+# assigned, so its locals cannot shadow a caller's out-variable.
 state_many_recheck() {
-  local arg
-  for arg in "$@"; do
-    case "$arg" in *=*) ;; *) die "malformed state read: $arg" ;; esac
-    [ -n "${arg%%=*}" ] || die "malformed state read: $arg"
-    flow_state_key_field "${arg#*=}" default >/dev/null || die "unknown state key: ${arg#*=}"
+  local __smr_arg __smr_rows __smr_rc __smr_var __smr_key __smr_def
+  __smr_rows="$(state_rows)" || return
+  for __smr_arg in "$@"; do
+    flow_state_many_arg "$__smr_arg" "$__smr_rows" __smr_ && continue
+    __smr_rc=$?
+    [ "$__smr_rc" = 2 ] && die "malformed state read: $__smr_arg"
+    die "unknown state key: ${__smr_arg#*=}"
   done
 }
 
