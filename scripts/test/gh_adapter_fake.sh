@@ -145,6 +145,33 @@ fake_slurp() {
   return 0
 }
 
+# fake_read_state <file>: the file's first line, in the variable fake_state,
+# read in bash; false, with it empty, where the file is missing or empty.
+fake_read_state() {
+  fake_state=""
+  { IFS= read -r fake_state <"$1" || [ -n "$fake_state" ]; } 2>/dev/null
+}
+
+# fake_read_lines <file>: the file's lines, in the array fake_lines, read in
+# bash; false, with it empty, where the file is unreadable.
+fake_read_lines() {
+  local l
+  fake_lines=()
+  [ -r "$1" ] || return 1
+  while IFS= read -r l || [ -n "$l" ]; do
+    fake_lines+=("$l")
+  done <"$1"
+  return 0
+}
+
+# fake_print_lines <file>: the file's lines on stdout, read in bash; none where
+# it is unreadable.
+fake_print_lines() {
+  local l
+  fake_read_lines "$1" || return 0
+  for l in ${fake_lines[@]+"${fake_lines[@]}"}; do printf '%s\n' "$l"; done
+}
+
 # fake_has_line <file> <line>: true where the file holds that whole line,
 # matched literally; read in bash.
 fake_has_line() {
@@ -370,12 +397,8 @@ fake_issue_known() {
 # fake_issue_labels <n>: issue #n's stored labels, one per line, read in bash
 # from the store's path; none where the file is missing.
 fake_issue_labels() {
-  local l
   fake_need_store || return 1
-  [ -r "$ORCH_GH_FAKE_STORE/issues/$1/labels" ] || return 0
-  while IFS= read -r l || [ -n "$l" ]; do
-    printf '%s\n' "$l"
-  done <"$ORCH_GH_FAKE_STORE/issues/$1/labels"
+  fake_print_lines "$ORCH_GH_FAKE_STORE/issues/$1/labels"
 }
 
 # fake_issue_labels_counted <n>: issue #n's label count on one line, then its
@@ -580,15 +603,14 @@ adapter_issue_state() {
 # as real gh lists them. Each state is read, and each number taken from its
 # directory's path, in bash; only sort runs.
 fake_open_issues() {
-  local d st
+  local d
   fake_need_store || return 1
   for d in "$ORCH_GH_FAKE_STORE"/issues/*/; do
     [ -d "$d" ] || continue
     d="${d%/}"
     [ ! -f "$d/pull" ] || continue
-    st=""
-    { IFS= read -r st <"$d/state" || [ -n "$st" ]; } 2>/dev/null || continue
-    [ "$st" = OPEN ] || continue
+    fake_read_state "$d/state" || continue
+    [ "$fake_state" = OPEN ] || continue
     printf '%s\n' "${d##*/}"
   done | sort -nr
 }
@@ -606,9 +628,8 @@ adapter_issues_labelled() {
   fake_need_store || return 1
   fake_open_issues | while read -r n; do
     have=()
-    if [ -r "$ORCH_GH_FAKE_STORE/issues/$n/labels" ]; then
-      while IFS= read -r line || [ -n "$line" ]; do have+=("${line,,}"); done <"$ORCH_GH_FAKE_STORE/issues/$n/labels"
-    fi
+    fake_read_lines "$ORCH_GH_FAKE_STORE/issues/$n/labels" || true
+    for line in ${fake_lines[@]+"${fake_lines[@]}"}; do have+=("${line,,}"); done
     keep=1
     for l in "$@"; do
       found=0
@@ -1095,15 +1116,14 @@ adapter_pr_label_add() {
 # the variable fake_open_count, read in bash from the store's path. A blocker
 # whose state cannot be read does not count.
 fake_blockers_count() {
-  local b st
+  local b
   fake_open_count=0
   fake_need_store || return 1
   [ -r "$ORCH_GH_FAKE_STORE/blocked_by/$1" ] || return 0
   while IFS= read -r b || [ -n "$b" ]; do
     [ -n "$b" ] || continue
-    st=""
-    { IFS= read -r st <"$ORCH_GH_FAKE_STORE/issues/$b/state" || [ -n "$st" ]; } 2>/dev/null || continue
-    [ "$st" = OPEN ] && fake_open_count=$((fake_open_count + 1))
+    fake_read_state "$ORCH_GH_FAKE_STORE/issues/$b/state" || continue
+    [ "$fake_state" = OPEN ] && fake_open_count=$((fake_open_count + 1))
   done <"$ORCH_GH_FAKE_STORE/blocked_by/$1"
   return 0
 }
@@ -1136,8 +1156,8 @@ adapter_sub_issues() {
   [ -r "$ORCH_GH_FAKE_STORE/subs/$1" ] || return 0
   while IFS= read -r n || [ -n "$n" ]; do
     [ -n "$n" ] || continue
-    st=""
-    { IFS= read -r st <"$ORCH_GH_FAKE_STORE/issues/$n/state" || [ -n "$st" ]; } 2>/dev/null || st=""
+    fake_read_state "$ORCH_GH_FAKE_STORE/issues/$n/state" || fake_state=""
+    st="$fake_state"
     fake_blockers_count "$n"
     printf '%s\t%s\t%s\n' "$n" "$st" "$fake_open_count"
   done <"$ORCH_GH_FAKE_STORE/subs/$1"
@@ -1377,11 +1397,9 @@ adapter_claim_delete() {
 adapter_claim_list() {
   ! fake_failing adapter_claim_list || return 1
   fake_need_store || return 1
-  local f l
+  local f
   fake_entries_sorted "$ORCH_GH_FAKE_STORE/claims"
   for f in ${fake_entries[@]+"${fake_entries[@]}"}; do
-    while IFS= read -r l || [ -n "$l" ]; do
-      printf '%s\n' "$l"
-    done <"$ORCH_GH_FAKE_STORE/claims/$f"
+    fake_print_lines "$ORCH_GH_FAKE_STORE/claims/$f"
   done
 }
