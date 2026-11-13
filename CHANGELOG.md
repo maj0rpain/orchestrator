@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.35
+
+Internal test cleanup in the `breakdown publish` CRLF cases: two redundant assertions are dropped and the zero-CR checks use `assert_not_contains`, so a failure shows the offending text. No change in behaviour.
+
+## 5.2.34
+
+Rename Standing's dying comments read to `standing_timeline_read_or_die`, and move the failed re-entry read test case from the `autopilot reenter` section into the Standing transitions section as a sourced `standing_reenter` call. No behaviour change.
+
 ## 5.2.33
 
 The test suite makes a fresh bare-repo origin through one shared helper, and the `branch retire` rerun cases reuse the section's own origin. No behaviour change.
