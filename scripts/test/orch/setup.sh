@@ -359,10 +359,9 @@ state_write_fails_after_first_bin() {
   printf '%s\n' "$dir"
 }
 
-# nowalk_bin: a git_fails_bin where git worktree list fails and nothing else
-# does, so it fails the checkouts walk and also every main-checkout,
-# checkout-kind and branch-checkout lookup.
-nowalk_bin() { git_fails_bin '" worktree list "*'; }
+# worktree_list_fails_bin: a git_fails_bin where git worktree list fails and
+# nothing else does, so it fails every checkout_parse reader.
+worktree_list_fails_bin() { git_fails_bin '" worktree list "*'; }
 # break_index / restore_index [<checkout>]: make a checkout's working tree
 # (default: the current directory) unreadable - git status fails on a garbage
 # index - and put the index back. They return non-zero, touching no file, when

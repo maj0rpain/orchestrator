@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.48
+
+Rename the shared test helper `nowalk_bin` to `worktree_list_fails_bin`, and its callers' `nowalk` variables to `worktree_list_fails`, so the names say that `git worktree list` fails. The helper's comment now says it fails every `checkout_parse` reader.
+
 ## 5.2.47
 
 Test-only: the `pr read 012` success case now gets its open-PR listing through `adapter_stood_in`, as its sibling leading-zero cases do.

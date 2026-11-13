@@ -408,32 +408,32 @@ git branch -q -D main--t42
 # When git worktree list fails, nothing is archived: archive and init die, the
 # flow left in place (#1110). A git on PATH that fails `worktree list` alone is
 # enough.
-nowalk="$(nowalk_bin)"
+worktree_list_fails="$(worktree_list_fails_bin)"
 (cd "$hand" && orch_gh_failing init walk-flow >/dev/null && state_fixture phase "done")
-out="$(cd "$hand" && PATH="$nowalk:$PATH" orch_gh_failing archive 2>&1)"; st=$?
+out="$(cd "$hand" && PATH="$worktree_list_fails:$PATH" orch_gh_failing archive 2>&1)"; st=$?
 assert_status "archive dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "could not read the checkouts - nothing was archived"
 assert_eq "archiving nothing" "$(archived_count "$hand" walk-flow)" "0"
-out="$(cd "$hand" && PATH="$nowalk:$PATH" orch_gh_failing init next-walk-flow 2>&1)"; st=$?
+out="$(cd "$hand" && PATH="$worktree_list_fails:$PATH" orch_gh_failing init next-walk-flow 2>&1)"; st=$?
 assert_status "init over a done flow dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "could not read the checkouts - nothing was archived or written"
 assert_eq "archiving nothing" "$(archived_count "$hand" walk-flow)" "0"
 assert_eq "the flow stays" "$(cd "$hand" && orch_gh_failing state get slug)" "walk-flow"
 # When git worktree list fails, every other command that reads it stops, rather
 # than reading it as no checkouts (#1333).
-out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout list 2>&1)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" orch_gh_failing side-checkout list 2>&1)"; st=$?
 assert_status "side-checkout list dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"
-out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout prune 2>&1)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "side-checkout prune dies when the walk fails" "$st" 1
 assert_contains "saying nothing was removed" "$out" "orch: could not read the checkouts - nothing was removed"
-out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout add walk-add 2>&1)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" orch_gh_failing side-checkout add walk-add 2>&1)"; st=$?
 assert_status "side-checkout add dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts - git worktree list failed"
-out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout remove walk-rm 2>&1)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" orch_gh_failing side-checkout remove walk-rm 2>&1)"; st=$?
 assert_status "side-checkout remove dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts - git worktree list failed"
-out="$(PATH="$nowalk:$PATH" orch_gh_failing status 2>&1)"; st=$?
+out="$(PATH="$worktree_list_fails:$PATH" orch_gh_failing status 2>&1)"; st=$?
 assert_status "status dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"
 
