@@ -6,9 +6,10 @@ even though that costs a second state write and a second `updated` stamp.
 
 ## Why this is out of scope
 
-`phase_write` is the internal writer of `state.phase` for `advance`,
-`review ready`, `init`'s seed and the redos' closing write
-(`redo_step_back` goes through `phase_write`). Every way the phase gets set
+`phase_write` and `phase_write_try` are the internal writers of `state.phase`:
+`phase_write` for `advance`, `review ready`, `init`'s seed and the redos'
+closing write (`redo_step_back` goes through `phase_write`), and
+`phase_write_try` for `standing_finish`. Every way the phase gets set
 therefore goes through the membership check against `PHASES`. If the seed wrote the phase inline, a
 further writer would exist that skips that check, and anyone adding a phase
 or renaming one would have to remember the seed object as well.
