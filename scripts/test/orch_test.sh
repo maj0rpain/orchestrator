@@ -152,6 +152,17 @@ trap test_jobs_stop_descendants INT TERM
 # order above, and its output and summary are a filtered run's. The setting is
 # unset once read, so no runner a section starts inherits it.
 #
+# ORCH_TEST_DURATIONS=<file> makes a parallel run write one line per section
+# it ran to that file, in the durations file's format, in walk order: the wall
+# and CPU tenths of a second the section's child measured of itself (wall under
+# bash's `time` keyword, CPU from `times`: its own and its waited children's
+# user plus system time), then the title. The run empties the file before any
+# section starts; a file it cannot write prints "orch_test.sh:
+# ORCH_TEST_DURATIONS='<file>' is not writable" on stderr and exits 1 before
+# anything starts. A failed section writes its line; one the section deadline
+# kills writes none. A sequential run ignores the setting, and a runner a
+# section starts never inherits it. scripts/dev/section-durations.sh sets it.
+#
 # Each section of a parallel run has a deadline, ORCH_TEST_SECTION_TIMEOUT whole
 # seconds (default 600), counted from the child's own start, not from when it
 # queued for a slot. Past it the runner stops the section's whole process tree
@@ -325,12 +336,33 @@ read_counts() {
 orch_counts_file=""
 orch_shard="${ORCH_TEST_SHARD:-}"
 unset ORCH_TEST_SHARD
+# The durations file, held in a plain variable and never exported, so no runner
+# a section starts inherits it.
+orch_durations_out="${ORCH_TEST_DURATIONS:-}"
+unset ORCH_TEST_DURATIONS
 if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   orch_child_section="$ORCH_TEST_CHILD_SECTION"
   # shellcheck disable=SC2034 # read by the summary, eval'd from setup.sh
   orch_counts_file="$ORCH_TEST_CHILD_COUNTS"
-  unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS
+  orch_child_times="${ORCH_TEST_CHILD_TIMES:-}"
+  unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS ORCH_TEST_CHILD_TIMES
   tally_init
+  if [ -n "$orch_child_times" ]; then
+    # Timed by the child itself: the section's wall time under `time`, its
+    # stderr kept apart from time's report, then its CPU time from `times`.
+    orch_child_text="$(section_text ",$orch_child_section,")"
+    TIMEFORMAT=%1R
+    LC_NUMERIC=C
+    { time { eval "$orch_child_text"; } 2>&3; } 3>&2 2>"$orch_child_times.wall"
+    orch_child_status=$?
+    times >"$orch_child_times.cpu"
+    # One line of tenths of a second, wall then CPU.
+    awk -v wall="$(<"$orch_child_times.wall")" '
+      { for (i = 1; i <= NF; i++) { split($i, t, /[ms]/); cpu += t[1] * 600 + t[2] * 10 } }
+      END { w = wall; sub(/\./, "", w); printf "%d\t%d\n", w + 0, cpu + 0.5 }
+    ' "$orch_child_times.cpu" >"$orch_child_times"
+    exit "$orch_child_status"
+  fi
   eval "$(section_text ",$orch_child_section,")"
   exit $?
 fi
@@ -420,6 +452,13 @@ else
     orch_kept="$orch_kept_isolation$(printf '%s\n' "$orch_dealt" | grep . | tr '\n' ',')"
   fi
 fi
+if [ -n "$orch_durations_out" ] && [ "$orch_jobs" -gt 1 ]; then
+  { : >"$orch_durations_out"; } 2>/dev/null || {
+    echo "orch_test.sh: ORCH_TEST_DURATIONS='$orch_durations_out' is not writable" >&2
+    exit 1; }
+else
+  orch_durations_out=""
+fi
 test_jobs_pool_init orch_test.sh || exit 1
 echo "orch.sh tests"
 if [ "$orch_jobs" -eq 1 ]; then
@@ -505,7 +544,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     orch_held="$TEST_JOBS_POOL"
     [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
     ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
-      ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
+      ORCH_TEST_CHILD_TIMES="${orch_durations_out:+$orch_buf/$orch_pos.times}" ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
       test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err" &
     orch_pids[orch_k]=$!
     orch_starts[orch_k]=$SECONDS
@@ -542,6 +581,10 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
       [ "$orch_c_fail" -eq 0 ] || orch_any_failed=1
     else
       orch_fail=$((orch_fail + 1)); orch_any_failed=1
+    fi
+    if [ -n "$orch_durations_out" ] && [ -z "${orch_timed_out[$orch_flushed]:-}" ] &&
+      [ -s "$orch_buf/$orch_pos.times" ]; then
+      printf '%s\t%s\n' "$(<"$orch_buf/$orch_pos.times")" "$orch_title" >>"$orch_durations_out"
     fi
     if [ -s "$orch_buf/$orch_pos.err" ]; then
       orch_section_fail "wrote to stderr" "$(<"$orch_buf/$orch_pos.err")"

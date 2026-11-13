@@ -18,7 +18,8 @@
 #
 # Then shellcheck, from the repo root two levels up, at warning severity, one
 # process per shell file matched by the one recursive glob scripts/**/*.sh,
-# with .shellcheckrc's source settings. A glob that matches nothing is dropped,
+# with .shellcheckrc's source settings, the files being those test_tree.sh's
+# function shellcheck_files lists. A glob that matches nothing is dropped,
 # never passed to shellcheck as the literal pattern. The processes start
 # alongside the suites, at most as many at a time as the job count
 # (ORCH_TEST_JOBS when set, else test_jobs.sh's default: 75% of the usable CPUs,
@@ -93,6 +94,8 @@ dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$dir/test_jobs.sh"
 # shellcheck source=report.sh
 source "$dir/report.sh"
+# shellcheck source=test_tree.sh
+source "$dir/test_tree.sh"
 sc_jobs="$(test_jobs_count all.sh)" || exit 1
 test_jobs_lower_priority
 test_jobs_pool_init all.sh || exit 1
@@ -126,9 +129,8 @@ have_sc=0
 if [ "$TEST_SHARD_I" -eq 1 ] && command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
   root="$dir/../.."
-  shopt -s globstar nullglob
-  sc_files=("$root"/scripts/**/*.sh)
-  shopt -u globstar nullglob
+  shellcheck_files "$root"
+  sc_files=("${SHELLCHECK_FILES[@]}")
   # At most sc_jobs run at once: past that, wait for the oldest still running
   # (in start order, so its status is kept for the join below).
   sc_exits=()

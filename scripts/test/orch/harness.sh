@@ -8,7 +8,7 @@
 # ALL_RUNNER_FILES: the files, by name in scripts/test/, that make up all.sh's
 # runnable copy. Every fixture that copies all.sh derives its copy, its written
 # list and its shellcheck counts from it.
-ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh)
+ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 
 # count_lines [<grep flag>...] <pattern> <text>: prints how many lines of
 # <text> match <pattern>. Every argument before the last two goes to grep
@@ -940,6 +940,102 @@ $(cat "$sh_all_dir/scripts/test/log")" "all.sh: ORCH_TEST_SHARD='3/2' is not <i>
 sh_all ""
 assert_eq "all.sh runs an empty setting as unset" "$(cat "$sh_all_dir/scripts/test/log" | grep -c 'shard=unset')" "${#SUITES[@]}"
 rm -rf "$sh_all_dir" "$sh_dir"
+
+# --- section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858) -----
+# A copy of the scripts tree cut down to planted sections and stub suites, run
+# at its command line: orch_test.sh with ORCH_TEST_DURATIONS, then the dev
+# script over the same tree with a stub shellcheck first on PATH.
+echo
+echo "section durations (#2858)"
+dur_dir="$(planted_copy <<'PLANTED'
+  # --- dur a
+  echo; echo "dur a"; echo "dur=${ORCH_TEST_DURATIONS-unset}"; ok "a ran"
+  # --- dur b
+  echo; echo "dur b"; sleep 0.3; ok "b ran"
+PLANTED
+)"
+dur_orch="$dur_dir/scripts/test/orch"
+find "$dur_orch" -name "*.sh" ! -name setup.sh ! -name zz-planted.sh -delete
+printf '%s\n' '# --- isolation' 'echo; echo isolation; ok "isolation ran"' >"$dur_orch/harness.sh"
+dur_out="$dur_dir/out.tsv"
+# dur_run <jobs> [<file>]: orch_test.sh over the planted tree, parallel by
+# default, writing durations to <file> (default $dur_out).
+dur_run() {
+  env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD ORCH_TEST_QUIET='' ORCH_TEST_JOBS="$1" ORCH_TEST_DURATIONS="${2-$dur_out}" \
+    bash "$dur_dir/scripts/test/orch_test.sh" 2>&1
+}
+printf 'stale line\n' >"$dur_out"
+out="$(dur_run 2)"; st=$?
+assert_status "a parallel run with a durations file passes" "$st" 0
+assert_eq "it writes one line per section, in walk order, after emptying the file" \
+  "$(cut -f3 "$dur_out" | tr '\n' ',')" "isolation,dur a,dur b,"
+assert_eq "each line holds wall and CPU in tenths, then the title" \
+  "$(grep -cE '^[0-9]+	[0-9]+	.' "$dur_out")" "3"
+assert_eq "the wall of a 0.3 second section is at least 3 tenths" \
+  "$(awk -F'\t' '$3 == "dur b" && $1 >= 3 { print "yes" }' "$dur_out")" "yes"
+assert_contains "a section never sees the setting" "$out" "dur=unset"
+printf '%s\n' '  # --- dur fails' '  echo; echo "dur fails"; bad "dur fails" "planted"' |
+  plant_file "$dur_orch" zzz-failing.sh
+out="$(dur_run 2)"; st=$?
+assert_status "a failing section fails the run" "$st" 1
+assert_eq "and still writes its line" \
+  "$(cut -f3 "$dur_out" | tr '\n' ',')" "isolation,dur a,dur b,dur fails,"
+rm -f "$dur_orch/zzz-failing.sh"
+printf 'stale\n' >"$dur_out"
+out="$(dur_run 1)"; st=$?
+assert_status "a sequential run passes" "$st" 0
+assert_eq "and ignores the setting, leaving the file alone" "$(<"$dur_out")" "stale"
+out="$(dur_run 2 "$dur_dir/no-such-dir/x.tsv")"; st=$?
+assert_status "an unwritable durations file is refused" "$st" 1
+assert_eq "naming the file" "$out" \
+  "orch_test.sh: ORCH_TEST_DURATIONS='$dur_dir/no-such-dir/x.tsv' is not writable"
+
+# The dev script, over the same tree: stub suites and a stub shellcheck.
+dur_tool="$dur_dir/bin"
+mkdir -p "$dur_tool"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$dur_tool/shellcheck"
+chmod +x "$dur_tool/shellcheck"
+dur_test="$dur_dir/scripts/test"
+sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
+printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dur_test/stub_a.sh"
+printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dur_test/stub_b.sh"
+dur_file="$dur_test/section-durations.tsv"
+# dur_script [<env assignment>...]: the dev script with a stub shellcheck on
+# PATH, stdout and stderr together.
+dur_script() {
+  env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
+}
+printf 'old\n' >"$dur_file"
+out="$(dur_script ORCH_TEST_ONLY='^dur a$' ORCH_TEST_SHARD=2/2)"; st=$?
+assert_status "the script passes on a passing tree, ORCH_TEST_ONLY and ORCH_TEST_SHARD set" "$st" 0
+assert_eq "it writes the sections in walk order, then the suites, then shellcheck" \
+  "$(cut -f3 "$dur_file" | tr '\n' ',')" "isolation,dur a,dur b,stub_a.sh,stub_b.sh,shellcheck,"
+assert_eq "every line is two numbers in tenths and a name" \
+  "$(grep -cE '^[0-9]+	[0-9]+	.' "$dur_file")" "6"
+cp "$dur_file" "$dur_dir/good.tsv"
+out="$(dur_script ORCH_TEST_JOBS=1)"; st=$?
+assert_status "the script refuses ORCH_TEST_JOBS=1" "$st" 1
+assert_contains "naming the setting" "$out" "ORCH_TEST_JOBS=1"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+printf '%s\n' '  # --- dur fails' '  echo; echo "dur fails"; bad "dur fails" "planted"' |
+  plant_file "$dur_orch" zzz-failing.sh
+out="$(dur_script)"; st=$?
+assert_status "a failing section fails the script" "$st" 1
+assert_contains "naming what failed" "$out" "orch_test.sh"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+rm -f "$dur_orch/zzz-failing.sh"
+printf '#!/usr/bin/env bash\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
+out="$(dur_script)"; st=$?
+assert_status "a failing other suite fails the script" "$st" 1
+assert_contains "naming it" "$out" "stub_b.sh"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dur_test/stub_b.sh"
+printf '#!/usr/bin/env bash\necho "a.sh:1:1: warning: planted"; exit 1\n' >"$dur_tool/shellcheck"
+out="$(dur_script)"; st=$?
+assert_status "a failing shellcheck step fails the script" "$st" 1
+assert_contains "naming it" "$out" "shellcheck"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+rm -rf "$dur_dir"
 
 # --- assertions in a subshell (#1904) ----------------------------------------
 # A cut-down orch suite with one failing assertion inside ( ... ) and one
@@ -2991,7 +3087,7 @@ af_put() {
 }
 af_git init -q -b main
 mkdir -p "$af/scripts/test/orch"
-(cd "$af_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh test_tree.sh "$af/scripts/test/")
+(cd "$af_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$af/scripts/test/")
 suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for af_s in "${SUITES[@]}"; do
   [ -e "$af/scripts/test/$af_s" ] || af_put "scripts/test/$af_s"

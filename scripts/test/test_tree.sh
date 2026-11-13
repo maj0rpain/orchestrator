@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Sourced by orch_test.sh and affected.sh, and by harness.sh through
+# Sourced by orch_test.sh, all.sh and affected.sh, and by harness.sh through
 # orch_test.sh, so the runners read the test tree one way: all.sh's suite list
-# and a section file's titles. Runs nothing.
+# and a section file's titles, and the files shellcheck checks. Runs nothing.
 #
 # SECTION_TITLE_AWK: the awk function title(s) as text, for a program to start
 # with. It drops a header's leading `# --- `, then its trailing spaces and
@@ -65,4 +65,18 @@ suites_unlisted() {
       echo "orch: scripts/test/$name sources tally.sh but is not in all.sh's suites list"
   done
   return 0
+}
+
+# The function shellcheck_files <root> fills the array SHELLCHECK_FILES with
+# the shell files shellcheck checks, the one recursive glob
+# <root>/scripts/**/*.sh in glob order; a glob that matches nothing leaves it
+# empty. all.sh and section-durations.sh both call it, so the two cannot drift.
+shellcheck_files() {
+  local had_globstar=0 had_nullglob=0
+  shopt -q globstar && had_globstar=1
+  shopt -q nullglob && had_nullglob=1
+  shopt -s globstar nullglob
+  SHELLCHECK_FILES=("$1"/scripts/**/*.sh)
+  [ "$had_globstar" -eq 1 ] || shopt -u globstar
+  [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
 }

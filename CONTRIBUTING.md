@@ -77,6 +77,15 @@ the other suites and shellcheck in group 1 only. A malformed value, or any
 value with `ORCH_TEST_ONLY`, is refused; an empty value counts as unset;
 `affected.sh` unsets it, and no runner a section starts inherits it.
 
+`scripts/dev/section-durations.sh` rewrites that file: it runs `orch_test.sh`
+once, unfiltered, with `ORCH_TEST_DURATIONS=<temporary file>`, which makes a
+parallel run write one line per section it ran, then times each other suite of
+all.sh's list and the shellcheck step. Run it, on a tree whose suite passes,
+when sections are added or removed or change much in cost, and commit the
+result. It unsets `ORCH_TEST_ONLY` and `ORCH_TEST_SHARD`, refuses
+`ORCH_TEST_JOBS=1`, and leaves the file unchanged, naming what failed, when
+anything it measured fails.
+
 A case lives once, in the section of the module it exercises. The Standing
 sections own what a transition does on its own: its writes, its write chain
 (the "writes that landed: ..." wording) and the claim staying held when a write
@@ -352,6 +361,7 @@ docker/                       the autopilot container: `Dockerfile`, `compose.ya
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
+scripts/dev/section-durations.sh rewrites scripts/test/section-durations.tsv: measures every orch_test.sh section, the other suites and shellcheck (Develop)
 scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
 scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
