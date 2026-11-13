@@ -682,8 +682,10 @@ claude_code_only_skill() {
 # other hosts, so skill and command text must pair it with the
 # relative fallback. The documented form (CONTRIBUTING.md, "Resolving
 # orch.sh") is the ORCH= line, the Junie step, and the fallback sentence, or,
-# for a skill marked "Claude Code only.", the ORCH= line and one stop; any
-# other mention of the variable, or a file that runs orch.sh without them, is a
+# for a skill marked "Claude Code only.", the ORCH= line and one stop. The lint
+# checks the ORCH= line wherever orch.sh is used, CLAUDE_PLUGIN_ROOT nowhere
+# else, and no Junie lookup in a marked skill; any other mention of the
+# variable, or a file that runs orch.sh without the ORCH= line, is a
 # regression. hooks/hooks.json is deliberately out of scope: both hosts expand
 # it there.
 echo
@@ -708,31 +710,42 @@ root_junie='two directories above the `orch.sh` that `ls` printed'
 # this much of it too (#416).
 orch_lookup="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many"
 orch_steps="$orch_lookup $orch_fallback"
+# cc_orch_resolution <plugin root> <file> <flat text>: the Claude-Code-only
+# form's checks (#2718), one line per offence. The form names CLAUDE_PLUGIN_ROOT
+# on its ORCH= line alone, carries no Junie lookup, and needs the ORCH= line
+# whenever it uses orch.sh.
+cc_orch_resolution() {
+  local r="$1" f="$2" flat="$3" rest
+  rest="${flat//"$orch_line"/}"
+  [[ "$rest" != *CLAUDE_PLUGIN_ROOT* ]] ||
+    echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
+  [[ "$flat" != *"$orch_junie"* ]] ||
+    echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
+  if [[ "$flat" == *orch.sh* || "$flat" == *'$ORCH'* ]]; then
+    grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
+  fi
+}
 # scan_orch_resolution <plugin root>: print one line per offending file.
 scan_orch_resolution() {
-  local r="$1" f flat rest root_sentence marked=0
+  local r="$1" f flat rest root_sentence
   for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     # Checked on the flat text: a sentence wrapped at 80 columns still counts.
     flat="$(flat_text "$f")"
+    if claude_code_only_skill "$f"; then
+      cc_orch_resolution "$r" "$f" "$flat"
+      continue
+    fi
     rest="${flat//"$orch_line"/}"
-    marked=0
-    ! claude_code_only_skill "$f" || marked=1
-    if [ "$marked" = 0 ]; then
-      rest="${rest//"$orch_junie"/}"
-      if [[ "$flat" == *"$root_fallback"* ]]; then
-        rest="${rest//"$root_fallback"/}"
-        rest="${rest//'"${CLAUDE_PLUGIN_ROOT}/'/}"
-      fi
+    rest="${rest//"$orch_junie"/}"
+    if [[ "$flat" == *"$root_fallback"* ]]; then
+      rest="${rest//"$root_fallback"/}"
+      rest="${rest//'"${CLAUDE_PLUGIN_ROOT}/'/}"
     fi
     if [[ "$rest" == *CLAUDE_PLUGIN_ROOT* ]]; then
-      if [ "$marked" = 1 ]; then
-        echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
-      else
-        echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
-      fi
+      echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
     fi
-    if [ "$marked" = 0 ] && [[ "$flat" == *"$root_fallback"* ]]; then
+    if [[ "$flat" == *"$root_fallback"* ]]; then
       # The sentence runs to the first full stop followed by a space;
       # orch.sh's own dot is followed by a backtick, so it does not end it.
       root_sentence="${flat#*"$root_fallback"}"
@@ -740,13 +753,8 @@ scan_orch_resolution() {
       [[ "$root_sentence" == *"$root_junie"* ]] ||
         echo "${f#"$r"/}: names the plugin root without the Junie step"
     fi
-    if [ "$marked" = 1 ]; then
-      [[ "$flat" != *"$orch_junie"* ]] ||
-        echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
-    fi
     if grep -qE 'orch\.sh|\$ORCH' "$f"; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
-      [ "$marked" = 1 ] && continue
       [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
       [[ "$flat" == *"$orch_junie_one"* ]] || echo "${f#"$r"/}: uses orch.sh without the one-install step"
       [[ "$flat" == *"$orch_junie_many"* ]] || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
@@ -759,7 +767,7 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/commands"
 printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/commands/orch.md"
 flags "the scan covers commands/ and flags a bare CLAUDE_PLUGIN_ROOT" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
 printf '%s\n' '```' "$orch_line" '```' \
   'If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh` two directories above this skill.' \
   >"$fixture/commands/orch.md"
@@ -802,7 +810,7 @@ plugin_root_fence() {
 }
 plugin_root_fence >"$fixture/commands/orch.md"
 flags "the scan flags a plugin-root path with no unset fallback" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
 { plugin_root_fence
   printf '%s\n' "$root_fallback two directories above this skill's own directory."
 } >"$fixture/commands/orch.md"
@@ -822,7 +830,7 @@ flags "the scan flags a Junie step outside the plugin-root sentence" \
 assert_empty "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$fixture")"
 # The Claude-Code-only form (#2718): a skill marked by its frontmatter
-# description is held to the ORCH= line and one stop, and off the Junie lookup.
+# description is held to the ORCH= line, with CLAUDE_PLUGIN_ROOT nowhere else and no Junie lookup.
 # cc_skill <description> <body line>...: write the marked-skill fixture.
 cc_skill() {
   local d="$1"; shift
@@ -835,18 +843,21 @@ mkdir -p "$fixture/skills/orch-cc" "$fixture/commands"
 cc_skill "$cc_desc" '```' "$orch_line" '```' "$cc_stop" 'Run `bash "$ORCH" status`.'
 assert_empty "a marked skill with the ORCH= line and the one stop passes the resolution scan" \
   "$(scan_orch_resolution "$fixture")"
-cc_skill "$cc_desc" '```' "$orch_line" '```' "$orch_junie (the Junie CLI install)." 'Run `bash "$ORCH" status`.'
-flags "a marked skill carrying the Junie lookup is flagged" \
-  "$(scan_orch_resolution "$fixture")" "skills/orch-cc/SKILL.md: Claude Code only skill carries the Junie lookup"
+cc_skill "$cc_desc" "$orch_junie (the Junie CLI install)." 'Run `bash "$ORCH" status`.'
+assert_eq "a marked skill carrying the Junie lookup is flagged" "$(scan_orch_resolution "$fixture")" \
+  "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line
+skills/orch-cc/SKILL.md: Claude Code only skill carries the Junie lookup
+skills/orch-cc/SKILL.md: uses orch.sh without the ORCH= line"
 cc_skill "$cc_desc" 'Run `bash "$ORCH" status`.'
 flags "a marked skill without the ORCH= line is flagged" \
   "$(scan_orch_resolution "$fixture")" "skills/orch-cc/SKILL.md: uses orch.sh without the ORCH= line"
-cc_skill "$cc_desc" '```' "$orch_line" '```' 'Read `${CLAUDE_PLUGIN_ROOT}/x`.'
-flags "a marked skill using CLAUDE_PLUGIN_ROOT outside the ORCH= line is flagged" \
-  "$(scan_orch_resolution "$fixture")" "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside"
-cc_skill "$cc_desc" '```' "$orch_line" '```' "$root_fallback two directories above this skill."
-flags "a marked skill carrying the plugin-root fallback sentence is flagged" \
-  "$(scan_orch_resolution "$fixture")" "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside"
+cc_skill "$cc_desc" 'Read `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh`.'
+assert_eq "a marked skill using CLAUDE_PLUGIN_ROOT outside the ORCH= line is flagged" "$(scan_orch_resolution "$fixture")" \
+  "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line
+skills/orch-cc/SKILL.md: uses orch.sh without the ORCH= line"
+cc_skill "$cc_desc" "$root_fallback two directories above this skill."
+assert_eq "a marked skill carrying the plugin-root fallback sentence is flagged" "$(scan_orch_resolution "$fixture")" \
+  "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
 cc_skill 'Claude Code only. Does a thing.' '```' "$orch_line" '```' 'Run `bash "$ORCH" status`.'
 flags "a description naming Claude Code only not at its end is not marked" \
   "$(scan_orch_resolution "$fixture")" "skills/orch-cc/SKILL.md: uses orch.sh without the Junie step"
@@ -981,17 +992,14 @@ assert_empty "the scan accepts any wording between the anchors, copied word for 
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-cc"
 printf '%s\n' "$stop" >"$fixture/skills/orch-flow/SKILL.md"
-cc_skill 'Does a thing. Claude Code only.' '```' "$orch_line" '```' "$cc_stop"
+cc_skill "$cc_desc" '```' "$orch_line" '```' "$cc_stop"
 assert_empty "a marked skill with the ORCH= line and the Claude-Code-only stop is skipped" "$(scan_stop_text "$fixture")"
-cc_skill 'Does a thing. Claude Code only.' "$stop"
+cc_skill "$cc_desc" "$stop"
 flags "a marked skill carrying orch-flow's stop text is flagged" "$(scan_stop_text "$fixture")" \
   "skills/orch-cc/SKILL.md: Claude Code only skill carries skills-only stop text"
-cc_skill 'Does a thing. Claude Code only.' 'If `orch.sh` is at none of these paths, reinstall (which is unverified).'
+cc_skill "$cc_desc" 'If `orch.sh` is at none of these paths, reinstall (which is unverified).'
 flags "a marked skill carrying drifted stop text is flagged too" "$(scan_stop_text "$fixture")" \
   "skills/orch-cc/SKILL.md: Claude Code only skill carries skills-only stop text"
-cc_skill 'Claude Code only. Does a thing.' 'No stop text.'
-flags "a skill naming Claude Code only not at its end is still held to orch-flow's stop text" \
-  "$(scan_stop_text "$fixture")" "skills/orch-cc/SKILL.md: skills-only stop text differs"
 check "every skill but a Claude-Code-only one carries orch-flow's skills-only stop text word for word" "$(scan_stop_text "$PLUGIN_ROOT")"
 
 # --- Junie snippet names every agent (#264) -----------------------------------

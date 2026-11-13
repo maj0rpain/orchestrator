@@ -21,7 +21,7 @@ Claude Code only and needs the full orchestrator plugin
 
 Steps here name capabilities (start a fresh subagent, start a background
 subagent, ask the user a question). `docs/host-capabilities.md` under the plugin
-root maps each one to your host.
+root (two directories above `ORCH`) maps each one to your host.
 
 ## 1. Select
 
