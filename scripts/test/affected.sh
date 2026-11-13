@@ -31,6 +31,9 @@
 #                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
+# ORCH_TEST_SHARD is unset at start: a ticket verification is never split, its
+# fallback to the full verification (all.sh) included.
+#
 # Always run: docs_lint.sh, orch_test.sh's placement sections (test-helper
 # placement, gh op placement, marked comment prelude placement), and
 # the shellcheck run, at warning severity, on the changed scripts/**/*.sh
@@ -57,6 +60,8 @@ dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=git_env.sh
 source "$dir/git_env.sh"
 test_git_env_clear || exit 1
+# A ticket verification is never split, its full-suite fallback included.
+unset ORCH_TEST_SHARD
 root="$(cd "$dir/../.." && pwd)"
 
 plan=0

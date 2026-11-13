@@ -66,6 +66,17 @@ does not parse and a title that matches no section are ignored, and a missing
 file gives walk order: the file costs speed only, and nothing checks it for
 freshness.
 
+`ORCH_TEST_SHARD=<i>/<n>` makes `orch_test.sh` and `all.sh` run group `i` of `n`
+balanced groups of the sections, so CI can run a full verification as several
+jobs. The grouping depends only on the section titles, the durations file,
+`all.sh`'s suite list and `n`: sections are dealt heaviest CPU first to the
+group with the lowest total, group 1 starting with the CPU of the other suites
+and shellcheck, and a section the file does not list weighs as much as the
+heaviest listed one. The isolation section runs in every group. `all.sh` runs
+the other suites and shellcheck in group 1 only. A malformed value, or any
+value with `ORCH_TEST_ONLY`, is refused; an empty value counts as unset;
+`affected.sh` unsets it, and no runner a section starts inherits it.
+
 A case lives once, in the section of the module it exercises. The Standing
 sections own what a transition does on its own: its writes, its write chain
 (the "writes that landed: ..." wording) and the claim staying held when a write

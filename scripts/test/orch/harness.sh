@@ -818,6 +818,129 @@ assert_eq "starts in walk order without the file" "$ord_started" "ord a,ord b,or
 assert_eq "and prints in walk order" "$ord_printed" "ord a,ord b,ord c,ord d,ord unlisted,"
 rm -rf "$ord_dir"
 
+# --- the shard setting (#2859) ------------------------------------------------
+# A minimal test tree - the runners, setup.sh, a harness with an isolation
+# section and five planted sections - over planted durations: CPU tenths 50,
+# 40, 30 and 20 for s1 to s4, s5 unlisted (so it weighs 50), 70 for
+# hooks_test.sh and 10 for shellcheck, which group 1 starts with. Two groups
+# deal s2 and s4 to group 1, s1, s5 and s3 to group 2. s5 sleeps, so with two
+# jobs the log of starts is the start order.
+echo
+echo "the shard setting (#2859)"
+sh_dir="$(mktemp -d)"
+sh_t="$sh_dir/scripts/test"
+mkdir -p "$sh_t/orch"
+(cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" orch_test.sh test_tree.sh tally.sh \
+  fifo.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$sh_t/" && cp orch/setup.sh "$sh_t/orch/" && cp ../flow-state.sh "$sh_dir/scripts/")
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for sh_s in "${SUITES[@]}"; do
+  [ -e "$sh_t/$sh_s" ] || echo 'echo; echo "1 passed, 0 failed"' >"$sh_t/$sh_s"
+done
+printf '%s\n' '# --- isolation ---' 'echo; echo isolation; ok "isolation ran"' >"$sh_t/orch/harness.sh"
+{
+  for sh_n in 1 2 3 4 5; do
+    echo "# --- shard s$sh_n"
+    echo "echo \"shard s$sh_n\" >>\"\$SH_LOG\"; $([ "$sh_n" = 5 ] && echo 'sleep 1;') echo; echo 'shard s$sh_n'; ok 's$sh_n ran'; echo \"\${ORCH_TEST_SHARD-unset}\" >>\"\$SH_SEEN\""
+  done
+} >"$sh_t/orch/zz-shard.sh"
+printf '%s\n' "10	50	shard s1" "30	40	shard s2" "20	30	shard s3" "5	20	shard s4" \
+  "9	70	hooks_test.sh" "9	10	shellcheck" "1	99	a section that no longer exists" \
+  >"$sh_t/section-durations.tsv"
+sh_log="$sh_dir/log"
+sh_seen="$sh_dir/seen"
+# sh_run <shard> [jobs]: orch_test.sh in the tree under that setting; the
+# shard-section names it ran (start order, then printed order), its status.
+sh_run() {
+  : >"$sh_log"; : >"$sh_seen"
+  sh_out="$(SH_LOG="$sh_log" SH_SEEN="$sh_seen" ORCH_TEST_QUIET='' ORCH_TEST_ONLY='' ORCH_TEST_JOBS="${2:-2}" \
+    ORCH_TEST_SHARD="$1" bash "$sh_t/orch_test.sh" 2>&1)"; sh_st=$?
+  sh_started="$(tr '\n' ',' <"$sh_log" | sed 's/shard //g')"
+  sh_printed="$(printf '%s\n' "$sh_out" | grep -xE 'shard s[0-9]|isolation' | sed 's/shard //' | tr '\n' ',')"
+}
+sh_run 1/2
+assert_status "group 1 of 2 passes" "$sh_st" 0
+assert_eq "group 1 runs isolation and the sections the dealing gives it" "$sh_printed" "isolation,s2,s4,"
+assert_eq "and starts them longest-first" "$sh_started" "s2,s4,"
+sh_run 2/2
+assert_eq "group 2 gets the rest, the unlisted section weighing as the heaviest listed one" \
+  "$sh_printed" "isolation,s1,s3,s5,"
+assert_eq "its sections start with the unlisted one, then longest-first" "$sh_started" "s5,s3,s1,"
+sh_run 2/2
+assert_eq "a second call groups the same" "$sh_printed" "isolation,s1,s3,s5,"
+for sh_n in 1 2 3 5 6 9; do
+  sh_all=""
+  for ((sh_i = 1; sh_i <= sh_n; sh_i++)); do
+    sh_run "$sh_i/$sh_n"
+    [ "$sh_st" -eq 0 ] || bad "group $sh_i of $sh_n passes" "$sh_out"
+    [ "$(printf '%s' "$sh_printed" | grep -o isolation | wc -l)" -eq 1 ] ||
+      bad "group $sh_i of $sh_n runs isolation once" "$sh_printed"
+    sh_all+="$(printf '%s' "$sh_printed" | sed 's/isolation,//')"
+  done
+  assert_eq "$sh_n groups run every planted section exactly once" \
+    "$(printf '%s' "$sh_all" | tr ',' '\n' | grep . | sort | tr '\n' ',')" "s1,s2,s3,s4,s5,"
+done
+sh_run 9/9
+assert_eq "a group left with isolation alone runs it alone" "$sh_printed" "isolation,"
+assert_eq "and passes" "$sh_st" 0
+sh_run 1/1
+assert_eq "1/1 runs every section" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
+assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" \
+  "$(sort -u "$sh_seen" | tr '\n' ',')" "unset,"
+sh_run ""
+assert_eq "an empty value runs as unset" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
+sh_run 1/2 1
+assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s2,s4,"
+for sh_bad in x 0/2 3/2 1/ /2 1/2/3 a/b -1/2 " 1/2"; do
+  sh_run "$sh_bad"
+  assert_status "ORCH_TEST_SHARD='$sh_bad' exits 1" "$sh_st" 1
+  assert_eq "and says so before any section starts" "$sh_out
+$(cat "$sh_log")" "orch_test.sh: ORCH_TEST_SHARD='$sh_bad' is not <i>/<n> with 1 <= i <= n
+"
+done
+for sh_v in 1/1 1/2; do
+  sh_out="$(SH_LOG="$sh_log" ORCH_TEST_SHARD="$sh_v" ORCH_TEST_ONLY='^shard s1$' bash "$sh_t/orch_test.sh" 2>&1)"; sh_st=$?
+  assert_status "ORCH_TEST_SHARD=$sh_v with ORCH_TEST_ONLY exits 1" "$sh_st" 1
+  assert_eq "and says they cannot both be set" "$sh_out" \
+    "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set"
+done
+sh_out="$(SH_LOG="$sh_log" SH_SEEN="$sh_seen" ORCH_TEST_SHARD="" ORCH_TEST_ONLY='^shard s1$' bash "$sh_t/orch_test.sh" 2>&1)"; sh_st=$?
+assert_status "an empty ORCH_TEST_SHARD with ORCH_TEST_ONLY runs the filter" "$sh_st" 0
+# all.sh: group 1 runs the other suites and shellcheck, a later group only
+# orch_test.sh, and the setting reaches orch_test.sh alone.
+sh_all_dir="$(mktemp -d)"
+stub_all_tree "$sh_all_dir" "$sh_all_dir/sc.log"
+for sh_s in "${SUITES[@]}"; do
+  printf '#!/usr/bin/env bash\necho "%s shard=${ORCH_TEST_SHARD:-unset}" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
+    "$sh_s" >"$sh_all_dir/scripts/test/$sh_s"
+done
+sh_all() {
+  : >"$sh_all_dir/scripts/test/log"; : >"$sh_all_dir/sc.log"
+  sh_out="$(cd "$sh_all_dir" && env -u CI PATH="$sh_all_dir/bin" ORCH_TEST_SHARD="$1" \
+    bash scripts/test/all.sh 2>&1)"; sh_st=$?
+}
+sh_all 1/2
+assert_status "all.sh in group 1 passes" "$sh_st" 0
+assert_eq "group 1 runs every suite" "$(grep -c . "$sh_all_dir/scripts/test/log")" "${#SUITES[@]}"
+assert_contains "orch_test.sh gets the setting" "$(cat "$sh_all_dir/scripts/test/log")" "orch_test.sh shard=1/2"
+assert_contains "no other suite does" "$(cat "$sh_all_dir/scripts/test/log")" "hooks_test.sh shard=unset"
+assert_eq "group 1 runs shellcheck" "$([ -s "$sh_all_dir/sc.log" ] && echo yes || echo no)" "yes"
+assert_eq "and its verdict counts every part" "$(printf '%s\n' "$sh_out" | tail -n 1)" \
+  "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+sh_all 2/2
+assert_status "all.sh in group 2 passes" "$sh_st" 0
+assert_eq "group 2 runs orch_test.sh alone" "$(cat "$sh_all_dir/scripts/test/log")" "orch_test.sh shard=2/2"
+assert_eq "and no shellcheck" "$([ -s "$sh_all_dir/sc.log" ] && echo yes || echo no)" "no"
+assert_eq "its verdict counts only orch_test.sh" "$(printf '%s\n' "$sh_out" | tail -n 1)" \
+  "all.sh: PASS (1 parts)"
+sh_all 3/2
+assert_status "all.sh refuses a malformed setting" "$sh_st" 1
+assert_eq "with the runner's message and nothing run" "$sh_out
+$(cat "$sh_all_dir/scripts/test/log")" "all.sh: ORCH_TEST_SHARD='3/2' is not <i>/<n> with 1 <= i <= n
+"
+sh_all ""
+assert_eq "all.sh runs an empty setting as unset" "$(cat "$sh_all_dir/scripts/test/log" | grep -c 'shard=unset')" "${#SUITES[@]}"
+rm -rf "$sh_all_dir" "$sh_dir"
+
 # --- assertions in a subshell (#1904) ----------------------------------------
 # A cut-down orch suite with one failing assertion inside ( ... ) and one
 # passing outside: the tally file counts both, whatever the job count.
@@ -3233,6 +3356,23 @@ wait "$af_pid"; st=$?
 kill "$(cat "$af.pid")" 2>/dev/null
 assert_status "TERM to affected.sh exits 130" "$st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
+# A set ORCH_TEST_SHARD never narrows a ticket verification: the suites see it
+# unset on the mapped path and on the full-suite fallback.
+printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
+printf '%s\n' '#!/usr/bin/env bash' "echo \"shard=\${ORCH_TEST_SHARD:-unset}\" >>'$af.log'" \
+  'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/orch_test.sh"
+: >"$af.log"
+af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
+assert_eq "affected.sh's mapped path runs orch_test.sh with the shard setting unset" \
+  "$(grep "^shard=" "$af.log" | sort -u)" "shard=unset"
+af_put scripts/orch.sh 'echo changed'
+: >"$af.log"
+af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
+assert_eq "and its fallback to all.sh runs the whole suite, the setting unset" \
+  "$(grep "^shard=" "$af.log" | sort -u)" "shard=unset"
+assert_eq "ending on all.sh's verdict counting every part" "$(printf '%s\n' "$af_out" | tail -n 1)" \
+  "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+af_reset
 rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row

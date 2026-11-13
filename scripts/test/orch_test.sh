@@ -133,6 +133,25 @@ trap test_jobs_stop_descendants INT TERM
 # speed only. A filtered run orders the sections it kept the same way;
 # ORCH_TEST_JOBS=1 stays in walk order.
 #
+# The shard setting. ORCH_TEST_SHARD=<i>/<n> (positive integers, i at most n)
+# runs group i of n balanced groups of the sections, so CI can run a full
+# verification as several jobs; unset, empty or 1/1 runs them all. Any other
+# value exits 1 before anything starts, printing "orch_test.sh:
+# ORCH_TEST_SHARD='<value>' is not <i>/<n> with 1 <= i <= n"; a non-empty
+# value together with a non-empty ORCH_TEST_ONLY (1/1 included) does the same
+# with "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set".
+# The grouping is a pure function of the section titles in walk order,
+# section-durations.tsv, all.sh's suite list (read with suites_read) and n:
+# a section weighs its CPU seconds, one the file does not list as much as the
+# heaviest that it lists (1 when none), group 1 starts with the summed CPU
+# seconds of the file's other suites and shellcheck, the others at 0, and
+# sections are dealt heaviest first, ties in walk order, each to the group with
+# the lowest total, the lowest-numbered on a tie. The isolation section runs in
+# every group and takes no part in the dealing, so a group left with it alone
+# runs it alone and passes or fails on it. A group's sections start in the
+# order above, and its output and summary are a filtered run's. The setting is
+# unset once read, so no runner a section starts inherits it.
+#
 # Each section of a parallel run has a deadline, ORCH_TEST_SECTION_TIMEOUT whole
 # seconds (default 600), counted from the child's own start, not from when it
 # queued for a slot. Past it the runner stops the section's whole process tree
@@ -304,6 +323,8 @@ read_counts() {
 # its counts, held in a plain, unexported variable so a suite a section starts
 # holds none.
 orch_counts_file=""
+orch_shard="${ORCH_TEST_SHARD:-}"
+unset ORCH_TEST_SHARD
 if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   orch_child_section="$ORCH_TEST_CHILD_SECTION"
   # shellcheck disable=SC2034 # read by the summary, eval'd from setup.sh
@@ -315,6 +336,11 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
 fi
 
 orch_jobs="$(test_jobs_count orch_test.sh)" || exit 1
+test_jobs_shard orch_test.sh "$orch_shard" || exit 1
+if [ -n "$orch_shard" ] && [ -n "${ORCH_TEST_ONLY:-}" ]; then
+  echo "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set" >&2
+  exit 1
+fi
 
 # Every run, sequential or parallel, filtered or not, evals the text the walk
 # extracts for its kept set: no section runs from this file itself.
@@ -351,6 +377,48 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
   fi
 else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
+  if [ "$TEST_SHARD_N" -gt 1 ]; then
+    # Deal the sections but isolation by CPU weight; keep group i's.
+    suites_read "$TEST_DIR/all.sh" "$TEST_DIR" || {
+      echo "orch_test.sh: $SUITES_ERR" >&2; exit 1; }
+    orch_others=""
+    for orch_suite in "${SUITES[@]}" shellcheck; do
+      [ "$orch_suite" = orch_test.sh ] || orch_others+="$orch_suite"$'\n'
+    done
+    orch_dealt="$(
+      { [ -r "$TEST_DIR/section-durations.tsv" ] && cat "$TEST_DIR/section-durations.tsv"
+        printf '\001\n'
+        printf '%s\n' "$orch_titles" | awk 'NR > 1 { printf "%d\t%s\n", NR, $0 }'
+        printf '\001\n%s' "$orch_others"; } |
+        awk -F'\t' -v n="$TEST_SHARD_N" -v want="$TEST_SHARD_I" '
+          function weight(p) { return (title[p] in cpu) ? cpu[title[p]] : unlisted }
+          BEGIN { stage = 0 }
+          $0 == "\001" { stage++; next }
+          stage == 0 { if (NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in cpu)) cpu[$3] = $2 + 0; next }
+          stage == 1 { count++; pos[count] = $1; title[$1] = $2; next }
+          $0 != "" && ($0 in cpu) { total[1] += cpu[$0] }
+          END {
+            unlisted = 1; top = -1
+            for (k = 1; k <= count; k++) if (title[pos[k]] in cpu && cpu[title[pos[k]]] > top) top = cpu[title[pos[k]]]
+            if (top >= 0) unlisted = top
+            for (g = 1; g <= n; g++) total[g] += 0
+            for (k = 1; k <= count; k++) order[k] = pos[k]
+            for (a = 2; a <= count; a++) {
+              v = order[a]; b = a - 1
+              while (b >= 1 && weight(order[b]) < weight(v)) { order[b + 1] = order[b]; b-- }
+              order[b + 1] = v
+            }
+            for (k = 1; k <= count; k++) {
+              best = 1
+              for (g = 2; g <= n; g++) if (total[g] < total[best]) best = g
+              total[best] += weight(order[k])
+              if (best == want) print order[k]
+            }
+          }
+        ' | LC_ALL=C sort -n
+    )"
+    orch_kept="$orch_kept_isolation$(printf '%s\n' "$orch_dealt" | grep . | tr '\n' ',')"
+  fi
 fi
 test_jobs_pool_init orch_test.sh || exit 1
 echo "orch.sh tests"

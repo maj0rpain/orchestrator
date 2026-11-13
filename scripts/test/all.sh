@@ -58,6 +58,14 @@
 # behind, or shellcheck did not pass.
 #
 # ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs.
+#
+# ORCH_TEST_SHARD=<i>/<n> passes to orch_test.sh alone (never to the other
+# suites), which runs group i of n of its sections; all.sh runs the other suites
+# and shellcheck only when i is 1, and in any other group runs orch_test.sh
+# alone, its verdict line counting the parts it ran. An empty value is unset; a
+# malformed one makes all.sh print "all.sh: ORCH_TEST_SHARD='<value>' is not
+# <i>/<n> with 1 <= i <= n" on stderr and exit 1 before anything starts.
+#
 # CHANGELOG_BASE and NO_VERSION_BUMP pass through untouched - set, empty or
 # unset - for docs_lint.sh's changelog fragment rule, which CI's "Read main's
 # commit" step feeds. ORCH_TEST_JOBS
@@ -89,6 +97,9 @@ sc_jobs="$(test_jobs_count all.sh)" || exit 1
 test_jobs_lower_priority
 test_jobs_pool_init all.sh || exit 1
 unset ORCH_TEST_ONLY
+all_shard="${ORCH_TEST_SHARD:-}"
+unset ORCH_TEST_SHARD
+test_jobs_shard all.sh "$all_shard" || exit 1
 export ORCH_TEST_QUIET=1
 tmp="$(mktemp -d)" || exit 1
 pids=()
@@ -101,12 +112,18 @@ suites_tmp="$tmp/suites-tmp"
 mkdir "$suites_tmp" || exit 1
 
 suites=(orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh autopilot_container_test.sh autopilot_up_test.sh lens_bench_test.sh)
+# A group other than the first runs orch_test.sh alone.
+if [ "$TEST_SHARD_I" -gt 1 ]; then suites=(orch_test.sh); fi
 for suite in "${suites[@]}"; do
-  TMPDIR="$suites_tmp" bash "$dir/$suite" >"$tmp/$suite" &
+  if [ "$suite" = orch_test.sh ]; then
+    TMPDIR="$suites_tmp" ORCH_TEST_SHARD="$all_shard" bash "$dir/$suite" >"$tmp/$suite" &
+  else
+    TMPDIR="$suites_tmp" bash "$dir/$suite" >"$tmp/$suite" &
+  fi
   pids+=("$!")
 done
 have_sc=0
-if command -v shellcheck >/dev/null 2>&1; then
+if [ "$TEST_SHARD_I" -eq 1 ] && command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
   root="$dir/../.."
   shopt -s globstar nullglob
@@ -167,7 +184,9 @@ for leftover in "${leftovers[@]}"; do
   fi
 done
 
-if [ "$have_sc" -eq 0 ]; then
+if [ "$TEST_SHARD_I" -gt 1 ]; then
+  :
+elif [ "$have_sc" -eq 0 ]; then
   report_shellcheck_missing
 else
   report_shellcheck "$sc_status" "$sc_out"

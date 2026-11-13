@@ -14,6 +14,13 @@
 # positive integer; else prints "<runner>: <name>='<value>' is not a positive
 # integer" on stderr and returns 1.
 #
+# test_jobs_shard <runner> <value>: reads ORCH_TEST_SHARD's value. An empty
+# value is unset: TEST_SHARD_I and TEST_SHARD_N are both 1, and it returns 0.
+# "<i>/<n>" with positive integers and i at most n sets them (normalized to
+# base 10) and returns 0; any other value prints "<runner>:
+# ORCH_TEST_SHARD='<value>' is not <i>/<n> with 1 <= i <= n" on stderr and
+# returns 1.
+#
 # test_jobs_default <runner>: prints the default job count. The usable CPUs are
 # the online cores (getconf _NPROCESSORS_ONLN, 4 when that fails), lowered to
 # the cgroup v2 quota when one is set and lower: the file holds "<quota>
@@ -117,6 +124,21 @@ is_positive_integer() {
 test_jobs_require_positive() {
   is_positive_integer "$3" && return 0
   echo "$1: $2='$3' is not a positive integer" >&2
+  return 1
+}
+
+# shellcheck disable=SC2034 # read by the sourcing runners
+test_jobs_shard() {
+  local value="$2" i n
+  TEST_SHARD_I=1 TEST_SHARD_N=1
+  [ -n "$value" ] || return 0
+  i="${value%%/*}" n="${value#*/}"
+  if [ "$i/$n" = "$value" ] && is_positive_integer "$i" && is_positive_integer "$n" &&
+    [ "$((10#$i))" -le "$((10#$n))" ]; then
+    TEST_SHARD_I=$((10#$i)) TEST_SHARD_N=$((10#$n))
+    return 0
+  fi
+  echo "$1: ORCH_TEST_SHARD='$value' is not <i>/<n> with 1 <= i <= n" >&2
   return 1
 }
 
