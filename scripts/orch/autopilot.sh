@@ -1349,20 +1349,27 @@ autopilot_run() {
   # fail.
   standing_claims_read
   mine="$(standing_claim_fields "$issue")" || mine=""
+  log="$(liveness_log_path "$issue" "$phase")" || exit $?
   if [ "$phase" = review ]; then
     iteration="$(state_get_in "$(flow_state_file "$side")" iteration)" || autopilot_read_die iteration "$side" $?
     if [ "$iteration" = 0 ]; then
       # A first-loop review session is not asked its budget: the plan's is
       # recorded, over any left by a loop before a redo.
-      autopilot_pickup_contained autopilot_review_budget_record "$side" ||
-        { standing_stop "$issue" failure review "could not record the plan's Budget as the review budget: $PICKUP_REASON"; return 0; }
+      autopilot_pickup_contained autopilot_review_budget_record "$side" || {
+        # A record that met a GitHub limit only releases the claim.
+        if autopilot_github_paused; then
+          autopilot_claim_release_only "$issue" "$phase" "no session ran: the first-loop review's budget record met a GitHub limit"
+          return 0
+        fi
+        autopilot_stop_attempts "$log" "no session ran" standing_stop "$issue" failure review "could not record the plan's Budget as the review budget: $PICKUP_REASON" || true
+        return 0
+      }
     fi
   fi
   for name in model effort; do
     autopilot_setting "$name"
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
   done
-  log="$(liveness_log_path "$issue" "$phase")" || exit $?
   usage_before="$(autopilot_github_quota)" || usage_before=""
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   ( cd "$side" && ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit" CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \

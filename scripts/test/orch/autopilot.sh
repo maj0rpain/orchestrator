@@ -1816,6 +1816,47 @@ assert_contains "with a reason naming the Budget and the plan reader's own cause
   "could not record the plan's Budget as the review budget: orch: issue #7's plan comment has no valid ## Autopilot Budget line"
 assert_eq "and the claim released" "$(fake_claim_held 7)" free
 assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
+# a budget read that meets a GitHub limit only releases the claim (#2739)
+bud_limit() { rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log; }
+bud_limit
+comments_before="$(fake_comments_of 7)"
+fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded for user ID 1."
+fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
+bud_run review 0 4
+fake_unfail
+assert_eq "a budget read that meets a GitHub limit releases the claim" "$(fake_claim_held 7)" free
+assert_eq "posts no comment" "$(fake_comments_of 7)" "$comments_before"
+assert_not_contains "adds no needs-human" "$(fake_labels_of 7)" "needs-human"
+assert_eq "starts no session" "$(tick_calls)" "0"
+assert_eq "and the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+# the same, the release failing every attempt: the claim stays, a backstop line
+bud_limit
+fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded for user ID 1."
+fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
+fake_fail adapter_issue_relabel "HTTP 500 relabel"
+bud_run review 0 4
+fake_unfail
+bud_logs=("$top"/.orchestrator/autopilot/logs/7-*.log)
+assert_eq "a budget limit with a failing release leaves the claim held" "$(fake_claim_held 7)" held
+assert_contains "and its backstop line says no session ran" "$(tail -1 "${bud_logs[0]}")" \
+  "claim release: could not release the claim; no session ran: the first-loop review's budget record met a GitHub limit"
+# an unreadable Budget whose stop writes fail every attempt: backstop line
+bud_limit
+fake_fail adapter_issue_relabel "HTTP 500 relabel"
+bud_run review 0 4
+fake_unfail
+bud_logs=("$top"/.orchestrator/autopilot/logs/7-*.log)
+assert_eq "an unreadable Budget with failing stop writes leaves the claim held" "$(fake_claim_held 7)" held
+assert_contains "and its backstop line names the stop and no session ran" "$(tail -1 "${bud_logs[0]}")" \
+  "could not record the plan's Budget as the review budget"
+assert_contains "and ends on no session ran" "$(tail -1 "${bud_logs[0]}")" "; no session ran"
+# an unreadable Budget whose stop write fails once still stops, frees the claim
+bud_limit
+fake_fail_times adapter_issue_comment 1 "HTTP 500 comment"
+bud_run review 0 4
+fake_unfail
+assert_contains "an unreadable Budget whose stop write fails once still comments" "$(fake_last_comment_of 7)" "could not record the plan's Budget"
+assert_eq "and frees the claim" "$(fake_claim_held 7)" free
 
 # The final reply, end to end: a fake launcher writes a long, multi-line result
 # event, and the failure comment quotes it collapsed and cut (the "autopilot
