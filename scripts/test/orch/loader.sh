@@ -69,18 +69,17 @@ out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace bash "$ORCH" status 2>&1)"; statu
 assert_eq "an unwritable ORCH_LOAD_TRACE leaves the command's output as it is" "$out2" "$out"
 assert_status "and its exit status" "$status2" "$status"
 
-# lazy_run <script>: orch.sh sourced on demand, then <script>, traced.
-lazy_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c 'ORCH_SOURCE_LAZY=1; source "$1"; shift; '"$1" _ "$ORCH" 2>&1; }
+# src_run <script>: <script> run with $1 = orch.sh, the trace emptied first.
+src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
+lazy_pre='ORCH_SOURCE_LAZY=1; source "$1"; shift; '
 
-lazy_run '(spec_review_lens_known consistency consistency); true'
+src_run "$lazy_pre"'(spec_review_lens_known consistency consistency); true'
 assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "spec-review 1"
 
 # A stub passes its arguments and returns the real function's status.
-out="$(lazy_run 'st=0; spec_review_lens_known consistency || st=$?; echo "st=$st"')"
-out2="$(bash -c 'source "$1"; shift; st=0; spec_review_lens_known consistency || st=$?; echo "st=$st"' _ "$ORCH" 2>&1)"
-assert_eq "a stub passes its arguments and returns the real function's status" "$out" "$out2"
-assert_contains "for a known lens" "$out" "st=0"
-out="$(lazy_run 'st=0; spec_review_lens_known nonesuch || st=$?; echo "st=$st"')"
+out="$(src_run "$lazy_pre"'st=0; spec_review_lens_known consistency || st=$?; echo "st=$st"')"
+assert_eq "a stub passes its arguments and returns the real function's status for a known lens" "$out" "st=0"
+out="$(src_run "$lazy_pre"'st=0; spec_review_lens_known nonesuch || st=$?; echo "st=$st"')"
 assert_contains "and returns a failing status" "$out" "st=1"
 
 # A stub whose module no longer defines the function: one the function moved
@@ -127,7 +126,6 @@ rm -rf "${colon_root%/c:olon}"
 
 # Sourced, every module loads, no stub table or cache is written, and a
 # function replaced after the source stays replaced.
-src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
 src_run 'source "$1"'
 assert_eq "sourced plainly, every module loads" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
 src_home="$(mktemp -d)"
