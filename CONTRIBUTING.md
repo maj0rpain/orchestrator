@@ -138,8 +138,9 @@ module's top-level variable names `orch_load <that module>` earlier in its own
 text than the first such read, so on-demand loading never reads an unset
 variable. The variables of the always-loaded files (`orch.sh`, `common.sh`,
 `loader.sh` and the files `orch.sh` sources from `scripts/` itself) are exempt.
-harness.sh's on-demand loading section enforces it over the real tree; its
-failure names the file, the function or `top level`, and the variable.
+harness.sh's `orch_load before cross-module reads` section enforces it
+over the real tree; its failure names the file, the function or `top level`,
+and the variable.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs

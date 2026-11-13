@@ -2576,12 +2576,12 @@ assert_eq "naming only the calling file and the rule" "$out" \
   "scripts/orch/zz-prelude.sh calls marked_comment_jq. $MARKED_COMMENT_JQ_PLACEMENT_RULE"
 rm -rf "${mcjq_dir%/scripts}"
 
-# --- on-demand loading (#2868) ------------------------------------------------
+# --- orch_load before cross-module reads (#2868) ---------------------
 # orch_load_reads over the real scripts/, then over copies of it, each with a
 # planted owner module and reader: a read in a function and one in a module's
 # top-level code that break the rule, and reads that keep it.
 echo
-echo "on-demand loading (#2868)"
+echo "orch_load before cross-module reads (#2868)"
 out="$(orch_load_reads "$PLUGIN_ROOT/scripts")"; st=$?
 if [ "$st" -eq 0 ] && [ -z "$out" ]; then
   ok "no module of the real tree reads another module's top-level variable before its orch_load"
