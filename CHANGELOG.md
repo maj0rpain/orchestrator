@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.50
+
+The Flow state writers report what their contracts name: `phase_write` dies "malformed state write" for a malformed pair list and names every key it did not record on a failed write, `flow_state_seed` returns 1 when jq cannot build the seed, and `state_write_many` spells its no-key failure message once.
+
 ## 5.2.49
 
 The section-durations dev script now stops every run it started on INT or TERM and exits 130 at once, instead of holding the signal until the running suite ends. Test-tooling fixes: the test-tree header names the pooled shellcheck step, the harness drops its `dur_unset` hook, the shard section asserts the every-section-once union in one loop, and the slot fd contract also checks the section-durations script.
