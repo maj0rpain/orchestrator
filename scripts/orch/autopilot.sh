@@ -885,7 +885,7 @@ autopilot_flow_issues() {
   done
   labels+=("$STANDING_SYNC_LABEL")
   for label in "${labels[@]}"; do
-    capture out gh_err adapter_issues_labelled "$label" ||
+    issues_labelled_read out gh_err "$label" ||
       die "could not list the issues labelled $label: $(gh_reason "$gh_err")"
     all="$all$out"$'\n'
   done
@@ -985,7 +985,7 @@ autopilot_done_read() {
   local _out _err _issue _table="" _label
   _label="$(standing_phase_label "done")"
   printf -v "$1" '%s' ""
-  capture _out _err adapter_issues_labelled "$_label" || {
+  issues_labelled_read _out _err "$_label" || {
     warn "could not list the issues labelled $_label: $(gh_reason "$_err") - no merged-PR close or sync detection this tick"
     return 0
   }

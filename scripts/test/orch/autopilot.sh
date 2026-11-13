@@ -556,6 +556,47 @@ clean_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "the failure comment names the log" "$(fake_comments_of 7 | tail -4)" "log: $clean_log"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
+# --- autopilot tick: the flow-issue read at the issue-list limit ------------
+echo
+echo "autopilot tick flow issues at the limit"
+tick_fixture
+for n in 7 8 9; do fake_issue "$n" open ready-for-agent orch:spec; fake_issue_title "$n" "Issue $n"; done
+fake_issue 10 open ready-for-agent orch:spec; fake_issue_title 10 "Issue 10"
+git config orchestrator.autopilot.cap 3
+: >"$launcher_dir/calls"; printf '7 8 9 10\n' >"$launcher_dir/release"
+tl_err="$(mktemp)"
+ORCH_ISSUE_LIST_LIMIT=3 "$ORCH" autopilot tick >/dev/null 2>"$tl_err"; st=$?
+assert_status "a tick with more flow issues than the limit succeeds" "$st" 0
+assert_eq "it picks up the oldest three" "$(picked)" "issue-7 issue-8 issue-9 "
+assert_contains "and warns at the limit, labelled" "$(cat "$tl_err")" \
+  "orch: the open issues labelled orch:spec reached the issue-list limit of 3 - the newest past it are missing from this list"
+: >"$launcher_dir/calls"; printf '7 8 9 10\n' >"$launcher_dir/release"
+ORCH_ISSUE_LIST_LIMIT=5 "$ORCH" autopilot tick >/dev/null 2>"$tl_err"
+assert_not_contains "one below the limit, no limit warning" "$(cat "$tl_err")" "issue-list limit"
+rm -f "$tl_err"
+fake_fail adapter_issues_labelled "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick whose flow-issue listing fails exits 1" "$st" 1
+assert_contains "naming the label and the reason" "$out" "orch: could not list the issues labelled orch:"
+assert_contains "and gh's reason" "$out" ": HTTP 502"
+fake_unfail
+fake_issue_drop 10
+
+# --- autopilot questions at the issue-list limit ------------------------------
+echo
+echo "autopilot questions at the limit"
+tick_fixture
+for n in 31 32 33; do fake_issue "$n" open needs-human orch:spec; done
+q_err="$(mktemp)"
+out="$(ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" autopilot questions 2>"$q_err")"; st=$?
+assert_status "questions at the limit succeeds" "$st" 0
+assert_contains "warning, labelled" "$(cat "$q_err")" "orch: the open issues labelled needs-human reached the issue-list limit of 2 - the newest past it are missing from this list"
+assert_contains "listing the oldest" "$out" "31"
+assert_not_contains "and not the newest" "$out" "33"
+ORCH_ISSUE_LIST_LIMIT=4 "$ORCH" autopilot questions >/dev/null 2>"$q_err"
+assert_not_contains "one below the limit, no warning" "$(cat "$q_err")" "issue-list limit"
+rm -f "$q_err"
+
 # --- autopilot tick: the cap, lost claims and the order ---------------------
 echo
 echo "autopilot tick pickup"
@@ -1155,6 +1196,11 @@ fake_issue 31 open needs-human orch:spec
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_eq "questions failing on a label read dies in one line naming gh and the reason" "$(printf "%s\n" "$out" | grep -c .)|${out#orch: gh could not read the labels of issue #*: }" "1|HTTP 502"
+fake_unfail
+fake_fail adapter_issues_labelled "HTTP 502"
+out="$("$ORCH" autopilot questions 2>&1)"; st=$?
+assert_status "questions failing on the needs-human listing exits 1" "$st" 1
+assert_eq "naming the listing and the reason" "$out" "orch: gh could not list the needs-human issues: HTTP 502"
 fake_unfail
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
@@ -2438,6 +2484,22 @@ assert_eq "with the merged-PR read failing the issue stays open" "$(fake_state_o
 assert_contains "and still gets orch:sync" "$(fake_labels_of 63)" "orch:sync"
 fake_unfail
 fake_issue_drop 63
+
+# the done read at the issue-list limit acts on the oldest issues, warns, and
+# carries on
+fake_done_merged 70 3600; fake_done_merged 71 3600; fake_done_merged 72 3600
+dl_err="$(mktemp)"
+ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" autopilot tick >/dev/null 2>"$dl_err"; st=$?
+assert_status "a tick whose done listing is at the limit succeeds" "$st" 0
+assert_contains "it warns, labelled" "$(cat "$dl_err")" "orch: the open issues labelled orch:done reached the issue-list limit of 2 - the newest past it are missing from this list"
+assert_eq "it closes the oldest" "$(fake_state_of 70)" "CLOSED"
+assert_eq "and leaves the newest past the limit" "$(fake_state_of 72)" "OPEN"
+fake_issue_drop 70; fake_issue_drop 71; fake_issue_drop 72
+fake_done_merged 70 3600; fake_done_merged 71 3600
+ORCH_ISSUE_LIST_LIMIT=3 "$ORCH" autopilot tick >/dev/null 2>"$dl_err"
+assert_not_contains "one below the limit, the done read gives no limit warning" "$(cat "$dl_err")" "issue-list limit"
+rm -f "$dl_err"
+fake_issue_drop 70; fake_issue_drop 71
 
 fake_fail_times adapter_prs_merged_closing 1 "HTTP 502"
 fake_fail_times adapter_prs_open_mergeability 1 "HTTP 502"

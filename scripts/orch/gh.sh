@@ -534,6 +534,25 @@ issue_list_limit_warn() {
   return 0
 }
 
+# issues_labelled_read <out_var> <err_var> <label>...: reads the open issues
+# carrying every label named once through adapter_issues_labelled, the listing
+# (one number per line, oldest first, trailing newlines gone) into the caller's
+# <out_var> and gh's stderr into <err_var>, as capture does, then warns through
+# issue_list_limit_warn when the listing reached the limit. Non-zero on a
+# failed read, warning nothing: the caller words the failure from <err_var>.
+issues_labelled_read() {
+  local __ilr_what="the open issues labelled $3" __ilr_out __ilr_err __ilr_l __ilr_n=0
+  for __ilr_l in "${@:4}"; do __ilr_what="$__ilr_what and $__ilr_l"; done
+  if ! capture __ilr_out __ilr_err adapter_issues_labelled "${@:3}"; then
+    printf -v "$2" '%s' "$__ilr_err"
+    return 1
+  fi
+  [ -z "$__ilr_out" ] || __ilr_n="$(printf '%s\n' "$__ilr_out" | grep -c .)"
+  issue_list_limit_warn "$__ilr_n" "$__ilr_what"
+  printf -v "$1" '%s' "$__ilr_out"
+  printf -v "$2" '%s' "$__ilr_err"
+}
+
 # adapter_issues_open_oldest: every open issue, one number per line, oldest
 # first, so ISSUE_LIST_LIMIT cuts the newest.
 adapter_issues_open_oldest() {
