@@ -2512,6 +2512,7 @@ assert_contains "it warns, labelled" "$(cat "$dl_err")" "orch: the open issues l
 assert_eq "it closes the oldest" "$(fake_state_of 70)" "CLOSED"
 assert_eq "and leaves the newest past the limit" "$(fake_state_of 72)" "OPEN"
 fake_issue_drop 70; fake_issue_drop 71; fake_issue_drop 72
+rm -f "$dl_err"
 
 fake_fail_times adapter_prs_merged_closing 1 "HTTP 502"
 fake_fail_times adapter_prs_open_mergeability 1 "HTTP 502"
