@@ -2964,9 +2964,10 @@ assert_eq "naming the file and the op" "$out" \
 rm -rf "${gh_op_dir%/scripts}"
 
 # --- marked comment prelude placement (#1853) ---------------------------------
-# marked_comment_jq_placement over the real scripts/, then over copies of it,
-# each with a planted file: one calling the prelude, which breaks the rule, and
-# one that only mentions it, which keeps it.
+# marked_comment_jq_placement over the real scripts/, then over one copy of it,
+# planted with a file calling the prelude, which breaks the rule, one that only
+# mentions it, which keeps it, and a call in the Issue timeline module, which
+# keeps it.
 echo
 echo "marked comment prelude placement (#1853)"
 out="$(marked_comment_jq_placement "$PLUGIN_ROOT/scripts")"; st=$?
