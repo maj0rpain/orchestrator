@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.23
+
+Internal test cleanup: the `verify_twice` test section's helper `vt` is now `verify_twice_run`, and its unverified-death status is asserted on the 1-then-1 run instead of a second one. No change in behaviour.
+
 ## 5.2.22
 
 The claim-list and large-record-file SIGPIPE test cases each run their check once instead of five times: neither is a race, so the extra passes asserted nothing new.
