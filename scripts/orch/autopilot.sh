@@ -1181,13 +1181,13 @@ autopilot_tick() {
 # any write, when the checkout or the claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
-  local outcome=failure limit="" pause released_note hit hit_epoch=0
+  local outcome=failure limit="" pause released_note hit_text hit_epoch=0
   main_root="$(main_checkout_or_die)" || exit $?
   standing_claims_read
   if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
   session_log_read "$log"
-  hit="$(liveness_hit_path "$issue")" || exit $?
-  if [ -f "$hit" ]; then hit_epoch="$(autopilot_pause_epoch "$hit")"; rm -f "$hit"; fi
+  hit_text="$(liveness_hit_take "$issue")" || exit $?
+  [ -z "$hit_text" ] || hit_epoch="$(autopilot_iso_epoch "$hit_text")" || hit_epoch=0
   if [ "$held" = 0 ]; then
     outcome=released
   elif [ "$SESSION_LOG_LIMITED" = 1 ]; then
