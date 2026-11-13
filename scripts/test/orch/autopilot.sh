@@ -2746,11 +2746,36 @@ fake_fail adapter_rate_limit "HTTP 502"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a failed rate_limit read pauses nothing" "$(tick_calls)" "2"
 fake_unfail
+# an empty read is a failed read too
+: >"$ORCH_GH_FAKE_STORE/quota"
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Reserve 9"
+printf '9\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an empty rate_limit read pauses nothing" "$(tick_calls)" "3"
+rm -f "$ORCH_GH_FAKE_STORE/quota"
 # the setting's range
 git config orchestrator.autopilot.github-reserve 100
 out="$("$ORCH" autopilot show 2>&1)"; st=$?
 assert_status "show dies on an out-of-range github-reserve" "$st" 1
 assert_contains "naming key and value" "$out" "orchestrator.autopilot.github-reserve is 100"
+git config orchestrator.autopilot.github-reserve abc
+out="$("$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "show dies on a non-numeric github-reserve" "$st" 1
+assert_contains "naming the key and the value" "$out" "orchestrator.autopilot.github-reserve is abc"
+# the tick reads github-reserve after the GitHub pause check
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick dies on an invalid github-reserve when no GitHub pause holds" "$st" 1
+assert_contains "naming the key and the value on the tick" "$out" "orchestrator.autopilot.github-reserve is abc"
+printf '%s\n' "$(iso_of "$((quota_reset + 100))")" >"$top/.orchestrator/autopilot/github-limit"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick under a GitHub pause exits 0 despite an invalid github-reserve" "$st" 0
+assert_not_contains "and does not name github-reserve as invalid" "$out" "github-reserve is abc"
+rm -f "$top/.orchestrator/autopilot/github-limit"
+# the tick's help entry
+tick_help="$("$ORCH" help 2>&1 | tr -s ' \n' '  ')"
+assert_contains "the tick help says a GitHub rate-limit pause makes the tick do nothing" "$tick_help" "autopilot tick one watcher pass: while a GitHub API rate-limit pause holds, the tick does nothing."
+assert_contains "and names the quota read, labels, stale cleanup and merged-PR close in order" "$tick_help" "reads the GitHub quota for the early pause, ensures the eight labels, cleans up this host's stale claims and closes the issues of merged PRs"
+assert_contains "and puts sync detection and pickup behind the pauses" "$tick_help" "unless a usage limit pause or an early GitHub pause"
 git config --unset-all orchestrator.autopilot.github-reserve
 out="$("$ORCH" autopilot show 2>&1)"
 assert_contains "show lists github-reserve with its default" "$out" "orchestrator.autopilot.github-reserve 20 (default)"
@@ -2786,6 +2811,21 @@ ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&
 fake_unfail
 usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_not_contains "a failed read at the session's start writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+# an empty read is a failed read too
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+: >"$ORCH_GH_FAKE_STORE/quota"
+cat >"$usage_launcher" <<USAGE
+#!/bin/sh
+rm -f "$ORCH_GH_FAKE_STORE/claims/7"
+: >"$ORCH_GH_FAKE_STORE/quota"
+exit 0
+USAGE
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_not_contains "an empty read writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+rm -f "$ORCH_GH_FAKE_STORE/quota"
 rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"

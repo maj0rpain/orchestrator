@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.31
+
+The `autopilot tick` help now says that a GitHub API rate-limit pause makes the tick do nothing, and lists the tick's steps in the order they run. Internally, the GitHub rate-limit retry, the quiet read of GitHub's quota pools and the `github-reserve` zero rule each live in one place, and the test fake now goes through the same retry as the real `gh` guard. Limit handling is otherwise unchanged.
+
 ## 5.2.30
 
 Labelled issue listings run oldest first, so a listing cut at the issue-list limit drops the newest issues and the autopilot tick keeps its oldest-first Pickup order. Every cut listing - the tick's flow-issue and done reads, `autopilot questions`, `autopilot candidates` and finding triage's scan - warns on stderr in one shared wording when it reaches the limit.
