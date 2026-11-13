@@ -585,6 +585,7 @@ for c in mkdir cat; do ln -s "$(command -v $c)" "$bare_dir/mkcat/$c"; done
 barely() { local p="$1"; shift; PATH="$bare_dir/$p" "$FB" -c 'source "$1"; shift; "$@"' _ "$GH_ADAPTER_FAKE" "$@"; }
 S="$ORCH_GH_FAKE_STORE"
 export ISSUE_LIST_LIMIT=100
+export ISSUE_SEARCH_CAP=1000
 fake_issue 21 open Alpha beta
 fake_issue 22 open alpha
 fake_issue 23 closed alpha
@@ -596,13 +597,13 @@ rm "$S/issues/26/labels"
 assert_eq "fake_open_issues lists open issues newest first, leaving out PRs, closed issues and a stateless one" \
   "$(barely sort fake_open_issues | tr '\n' ' ')" "30 26 22 21 "
 assert_eq "adapter_issues_labelled matches whole-line, case-insensitively" \
-  "$(barely sortawk adapter_issues_labelled ALPHA | tr '\n' ' ')" "30 22 21 "
+  "$(barely sortawk adapter_issues_labelled ALPHA | tr '\n' ' ')" "21 22 30 "
 assert_eq "several labels are all required, a substring of a label does not match" \
   "$(barely sortawk adapter_issues_labelled alpha beta | tr '\n' ' ')" "21 "
 assert_eq "an issue with no labels file matches no label" \
   "$(barely sortawk adapter_issues_labelled zzz | tr '\n' ' ')" ""
 assert_eq "adapter_issues_labelled cuts the list at ISSUE_LIST_LIMIT" \
-  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_labelled alpha | tr '\n' ' ')" "30 22 "
+  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_labelled alpha | tr '\n' ' ')" "21 22 "
 assert_eq "fake_issue_labels reads the labels file with an empty PATH" \
   "$(barely empty fake_issue_labels 21 | tr '\n' ',')" "Alpha,beta,"
 assert_eq "and none for a missing file" "$(barely empty fake_issue_labels 26)" ""
@@ -885,17 +886,27 @@ assert_status "issue state: reads the state" "$st" 0
 assert_eq "PULL for a pull request's number" "$out" "PULL"
 
 gh_reply 0 $'3\n9\n' '' \
-  issue list --state open --label review:nit --label "triage me" --limit 1000 --json number --jq '.[].number'
+  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number --jq '.[].number'
 out="$(contract adapter_issues_labelled review:nit "triage me" 2>&1)"; st=$?
 assert_status "issues labelled: lists the open issues carrying every label" "$st" 0
 assert_eq "one number per line" "$out" "$(writeln 3 9)"
 
 gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \
-  issue list --state open --label review:nit --label "triage me" --limit 1000 --json number,labels,body \
+  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,labels,body \
   --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
 out="$(contract adapter_issues_labelled_bodies review:nit "triage me" 2>&1)"; st=$?
 assert_status "issues labelled with bodies: lists the open issues carrying every label" "$st" 0
 assert_eq "one count-marked record per issue" "$out" "$(writeln 3 1 review:nit 2 'line one' 'line two')"
+
+# The warning helper's effective limit is the lesser of ISSUE_LIST_LIMIT and
+# GitHub's 1000-row search cap, so a raised override cannot silence a cut.
+out="$(ORCH_ISSUE_LIST_LIMIT=1500 contract issue_list_limit_warn 1000 "the open issues labelled x" 2>&1)"; st=$?
+assert_status "issue list limit warning: never fails at the limit" "$st" 0
+assert_eq "at 1000 rows with the limit raised to 1500, it names 1000" "$out" \
+  "orch: the open issues labelled x reached the issue-list limit of 1000 - the newest past it are missing from this list"
+out="$(ORCH_ISSUE_LIST_LIMIT=1500 contract issue_list_limit_warn 999 "the open issues labelled x" 2>&1)"; st=$?
+assert_status "issue list limit warning: never fails below the limit" "$st" 0
+assert_eq "at 999 rows it says nothing" "$out" ""
 
 gh_reply 0 $'3\tFirst title\n9\tA\ttabbed title\n' '' \
   api --paginate "repos/{owner}/{repo}/issues?state=open&per_page=100" \
@@ -1828,6 +1839,28 @@ fake_online; fake_unfail
 fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
 out="$(sourced_orch adapter_issue_body 5 2>&1)"
 assert_eq "the fake passes another failure through untouched" "$out" "HTTP 502: Bad Gateway"
+out="$(sourced_orch adapter_issue_body 5 2>&1 >/dev/null)"; st=$?
+assert_eq "a failure that is no limit keeps its own stderr" "$out" "HTTP 502: Bad Gateway"
+fake_unfail; printf "%s" "Body." >"$ORCH_GH_FAKE_STORE/issues/5/body"
+fake_fail_times adapter_issue_body 1 'You have exceeded a secondary rate limit.'
+out="$(sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+assert_status "a secondary limit the retry clears answers with status 0" "$st" 0
+assert_eq "with the operation's own answer and nothing else" "$out" "Body."
+fake_unfail
+fake_fail adapter_issue_body 'HTTP 502: Bad Gateway'
+sourced_orch adapter_issue_body 5 >/dev/null 2>&1; st=$?
+assert_status "a failure that is no limit keeps its failed status" "$st" 1
+# A quota read that itself meets rate-limit wording is made once: never retried,
+# no limit message, no wait. The second call would succeed, so a retry shows.
+fake_online; fake_unfail
+fake_quota core 5 5000 2000000000
+fake_fail_times adapter_rate_limit 1 'You have exceeded a secondary rate limit.'
+SECONDS=0
+out="$(ORCH_GH_LIMIT_WAIT=30 sourced_orch gh_limit_pools 2>&1)"; st=$?
+assert_status "a quota read that meets a rate limit fails" "$st" 1
+assert_eq "once, printing nothing: no retry, no limit message" "$out" ""
+assert_status "and waits no ORCH_GH_LIMIT_WAIT of its own" "$((SECONDS < 20 ? 0 : 1))" 0
+fake_unfail
 restore_suite_env
 
 # --- gh rate limits: the GitHub pause and the hit file (#2577) ----------------

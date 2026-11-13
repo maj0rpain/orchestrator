@@ -560,6 +560,32 @@ clean_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "the failure comment names the log" "$(fake_comments_of 7 | tail -4)" "log: $clean_log"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
+# --- autopilot tick: the flow-issue read at the issue-list limit ------------
+echo
+echo "autopilot tick flow issues at the limit"
+tick_fixture
+for n in 7 8 9; do fake_issue "$n" open ready-for-agent orch:spec; fake_issue_title "$n" "Issue $n"; done
+fake_issue 10 open ready-for-agent orch:spec; fake_issue_title 10 "Issue 10"
+git config orchestrator.autopilot.cap 3
+: >"$launcher_dir/calls"; printf '7 8 9 10\n' >"$launcher_dir/release"
+tl_err="$(mktemp)"
+ORCH_ISSUE_LIST_LIMIT=3 "$ORCH" autopilot tick >/dev/null 2>"$tl_err"; st=$?
+assert_status "a tick with more flow issues than the limit succeeds" "$st" 0
+assert_eq "it picks up the oldest three" "$(picked)" "issue-7 issue-8 issue-9 "
+assert_contains "and warns at the limit, labelled" "$(cat "$tl_err")" \
+  "orch: the open issues labelled orch:spec reached the issue-list limit of 3 - the newest past it are missing from this list"
+: >"$launcher_dir/calls"; printf '7 8 9 10\n' >"$launcher_dir/release"
+ORCH_ISSUE_LIST_LIMIT=5 "$ORCH" autopilot tick >/dev/null 2>"$tl_err"
+assert_not_contains "one below the limit, no limit warning" "$(cat "$tl_err")" "issue-list limit"
+rm -f "$tl_err"
+fake_fail adapter_issues_labelled "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick whose flow-issue listing fails exits 1" "$st" 1
+assert_contains "naming the label and the reason" "$out" "orch: could not list the issues labelled orch:"
+assert_contains "and gh's reason" "$out" ": HTTP 502"
+fake_unfail
+fake_issue_drop 10
+
 # --- autopilot tick: the cap, lost claims and the order ---------------------
 echo
 echo "autopilot tick pickup"
@@ -1227,6 +1253,17 @@ assert_eq "a marked failure comment is a stop, in its own phase" "$(grep "^26$ta
 assert_eq "an issue with no phase label, orch:done, closed or not needs-human is left out" \
   "$(cut -f1 <<<"$out" | tr "\n" " ")" "11 12 13 14 15 16 17 26 "
 for n in 11 12 13 14 15 16 17 18 19 20 21 26; do fake_issue_drop "$n"; done
+for n in 31 32 33; do fake_issue "$n" open needs-human orch:spec; done
+q_err="$(mktemp)"
+out="$(ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" autopilot questions 2>"$q_err")"; st=$?
+assert_status "questions at the limit succeeds" "$st" 0
+assert_contains "warning, labelled" "$(cat "$q_err")" "orch: the open issues labelled needs-human reached the issue-list limit of 2 - the newest past it are missing from this list"
+assert_contains "listing the oldest" "$out" "31"
+assert_not_contains "and not the newest" "$out" "33"
+ORCH_ISSUE_LIST_LIMIT=4 "$ORCH" autopilot questions >/dev/null 2>"$q_err"
+assert_not_contains "one below the limit, no warning" "$(cat "$q_err")" "issue-list limit"
+rm -f "$q_err"
+for n in 31 32 33; do fake_issue_drop "$n"; done
 fake_issue 11 open needs-human orch:spec
 fake_issue 12 open needs-human orch:spec
 fake_fail adapter_issue_comments_json "$GH_502"
@@ -1240,9 +1277,10 @@ fake_issue 11 open needs-human orch:spec
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #11's comments"
-fake_fail adapter_issues_labelled "$GH_502"
-"$ORCH" autopilot questions >/dev/null 2>&1; st=$?
+fake_fail adapter_issues_labelled "HTTP 502"
+out="$("$ORCH" autopilot questions 2>&1 >/dev/null)"; st=$?
 assert_status "a failed listing dies" "$st" 1
+assert_eq "naming the needs-human listing and the reason" "$out" "orch: gh could not list the needs-human issues: HTTP 502"
 fake_unfail
 
 # usage
@@ -2480,6 +2518,22 @@ assert_contains "and still gets orch:sync" "$(fake_labels_of 63)" "orch:sync"
 fake_unfail
 fake_issue_drop 63
 
+# the done read at the issue-list limit acts on the oldest issues, warns, and
+# carries on
+fake_done_merged 70 3600; fake_done_merged 71 3600; fake_done_merged 72 3600
+dl_err="$(mktemp)"
+ORCH_ISSUE_LIST_LIMIT=2 "$ORCH" autopilot tick >/dev/null 2>"$dl_err"; st=$?
+assert_status "a tick whose done listing is at the limit succeeds" "$st" 0
+assert_contains "it warns, labelled" "$(cat "$dl_err")" "orch: the open issues labelled orch:done reached the issue-list limit of 2 - the newest past it are missing from this list"
+assert_eq "it closes the oldest" "$(fake_state_of 70)" "CLOSED"
+assert_eq "and leaves the newest past the limit" "$(fake_state_of 72)" "OPEN"
+fake_issue_drop 70; fake_issue_drop 71; fake_issue_drop 72
+fake_done_merged 70 3600; fake_done_merged 71 3600
+ORCH_ISSUE_LIST_LIMIT=3 "$ORCH" autopilot tick >/dev/null 2>"$dl_err"
+assert_not_contains "one below the limit, the done read gives no limit warning" "$(cat "$dl_err")" "issue-list limit"
+rm -f "$dl_err"
+fake_issue_drop 70; fake_issue_drop 71
+
 fake_fail_times adapter_prs_merged_closing 1 "HTTP 502"
 fake_fail_times adapter_prs_open_mergeability 1 "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
@@ -2692,11 +2746,36 @@ fake_fail adapter_rate_limit "HTTP 502"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a failed rate_limit read pauses nothing" "$(tick_calls)" "2"
 fake_unfail
+# an empty read is a failed read too
+: >"$ORCH_GH_FAKE_STORE/quota"
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Reserve 9"
+printf '9\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an empty rate_limit read pauses nothing" "$(tick_calls)" "3"
+rm -f "$ORCH_GH_FAKE_STORE/quota"
 # the setting's range
 git config orchestrator.autopilot.github-reserve 100
 out="$("$ORCH" autopilot show 2>&1)"; st=$?
 assert_status "show dies on an out-of-range github-reserve" "$st" 1
 assert_contains "naming key and value" "$out" "orchestrator.autopilot.github-reserve is 100"
+git config orchestrator.autopilot.github-reserve abc
+out="$("$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "show dies on a non-numeric github-reserve" "$st" 1
+assert_contains "naming the key and the value" "$out" "orchestrator.autopilot.github-reserve is abc"
+# the tick reads github-reserve after the GitHub pause check
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick dies on an invalid github-reserve when no GitHub pause holds" "$st" 1
+assert_contains "naming the key and the value on the tick" "$out" "orchestrator.autopilot.github-reserve is abc"
+printf '%s\n' "$(iso_of "$((quota_reset + 100))")" >"$top/.orchestrator/autopilot/github-limit"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick under a GitHub pause exits 0 despite an invalid github-reserve" "$st" 0
+assert_not_contains "and does not name github-reserve as invalid" "$out" "github-reserve is abc"
+rm -f "$top/.orchestrator/autopilot/github-limit"
+# the tick's help entry
+tick_help="$("$ORCH" help 2>&1 | tr -s ' \n' '  ')"
+assert_contains "the tick help says a GitHub rate-limit pause makes the tick do nothing" "$tick_help" "autopilot tick one watcher pass: while a GitHub API rate-limit pause holds, the tick does nothing."
+assert_contains "and names the quota read, labels, stale cleanup and merged-PR close in order" "$tick_help" "reads the GitHub quota for the early pause, ensures the eight labels, cleans up this host's stale claims and closes the issues of merged PRs"
+assert_contains "and puts sync detection and pickup behind the pauses" "$tick_help" "unless a usage limit pause or an early GitHub pause"
 git config --unset-all orchestrator.autopilot.github-reserve
 out="$("$ORCH" autopilot show 2>&1)"
 assert_contains "show lists github-reserve with its default" "$out" "orchestrator.autopilot.github-reserve 20 (default)"
@@ -2732,6 +2811,21 @@ ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&
 fake_unfail
 usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_not_contains "a failed read at the session's start writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+# an empty read is a failed read too
+rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" "$$"
+: >"$ORCH_GH_FAKE_STORE/quota"
+cat >"$usage_launcher" <<USAGE
+#!/bin/sh
+rm -f "$ORCH_GH_FAKE_STORE/claims/7"
+: >"$ORCH_GH_FAKE_STORE/quota"
+exit 0
+USAGE
+ORCH_AUTOPILOT_LAUNCHER="$usage_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+usage_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_not_contains "an empty read writes no usage line" "$(cat "$usage_log")" "GitHub API usage"
+rm -f "$ORCH_GH_FAKE_STORE/quota"
 rm -f "$top"/.orchestrator/autopilot/logs/7-spec-*.log
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
@@ -2787,8 +2881,9 @@ assert_eq "verdicts and the order named" "$out" "3 eligible override
 12 skip untrusted stranger
 13 skip phase spec"
 
-# The fake lists newest first, as gh does, except its oldest-first read: the
-# verb must walk that read in order.
+# The fake's plain open-issue listing is newest first;
+# adapter_issues_open_oldest is the oldest-first read the verb walks, and it
+# must walk it in order.
 
 all="$(ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all 2>&1)"; st=$?
 assert_status "--all succeeds" "$st" 0
