@@ -283,7 +283,6 @@
 27	28	the Flow state module, sourced alone
 4	5	commands on a truncated state.json (#1929)
 6	7	the shared and own-checkout readers on a truncated state.json
-9	10	state_write_many and the phase writers' trailing pairs
 3	4	state set with a failed write (#1931)
 8	11	suite-cost run
 1	2	suite-cost history
