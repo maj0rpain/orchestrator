@@ -43,8 +43,7 @@ spec_review_begin() {
   if flow_active; then
     require_state_readable
     local phase held
-    phase="$(state_get phase)"
-    held="$(state_get issue)"
+    state_get_many phase=phase held=issue
     if [ "$held" = "$issue" ]; then
       case "$phase" in
         spec)
