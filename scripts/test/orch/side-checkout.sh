@@ -1465,9 +1465,9 @@ sourced_orch side_checkout_marker "$mnone" >/dev/null; st=$?
 assert_ne "a path that is no worktree" "$st" 0
 
 nogit="$(mktemp -d)"  # an empty PATH directory: no git, no cat, nothing
-bare() { bash -c 'source "$1"; PATH="$2"; shift 2; side_checkout_marker "$@"' _ "$ORCH" "$nogit" "$@"; }
-assert_eq "bare PATH, a main worktree" "$(bare "$mtop")" "$mtop/.git/orchestrator-side-checkout"
-assert_eq "bare PATH, a linked worktree" "$(bare "$mlink")" "$mgd/orchestrator-side-checkout"
+marker_bare_path() { bash -c 'source "$1"; PATH="$2"; shift 2; side_checkout_marker "$@"' _ "$ORCH" "$nogit" "$@"; }
+assert_eq "bare PATH, a main worktree" "$(marker_bare_path "$mtop")" "$mtop/.git/orchestrator-side-checkout"
+assert_eq "bare PATH, a linked worktree" "$(marker_bare_path "$mlink")" "$mgd/orchestrator-side-checkout"
 
 # An unreadable pointer asks git, seen through a counting wrapper.
 mlog="$(mktemp)"
