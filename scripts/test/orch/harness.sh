@@ -672,7 +672,8 @@ rm -rf "$quiet_dir"
 # a tally_init, for a suite that makes its tally file inside its checks), then
 # its lines from its `# >>> summary` line on.
 # The copies sit in scripts/test/ of a fresh root, beside the git_env.sh every
-# runner sources first, and the tally.sh they all source.
+# runner sources first, the tally.sh they all source, the counting.sh the
+# hooks suite sources and the fifo.sh the autopilot_up suite sources.
 cut_root="$(mktemp -d)"
 cut_dir="$cut_root/scripts/test"
 mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$(dirname "$SUITE_SCRIPT")/tally.sh" "$(dirname "$SUITE_SCRIPT")/fifo.sh" "$(dirname "$SUITE_SCRIPT")/counting.sh" "$cut_dir/"
@@ -3106,10 +3107,11 @@ index_expected() {
 
 index_modules=()
 for f in "$PLUGIN_ROOT"/scripts/orch/*.sh; do index_modules+=("scripts/orch/${f##*/}"); done
-index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh scripts/test/counting.sh)
+shared_tests=(scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh scripts/test/counting.sh)
+index_tests=(scripts/test/orch/setup.sh "${shared_tests[@]}")
 
 grep_disagrees=""
-for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh scripts/test/counting.sh; do
+for rel in "${index_modules[@]}" "${shared_tests[@]}"; do
   [ "$(col0_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" = \
     "$(sourced_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" ] || grep_disagrees+=" $rel"
 done
