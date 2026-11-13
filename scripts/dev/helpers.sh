@@ -92,7 +92,7 @@ if [ -n "$file" ]; then
 fi
 
 if [ "$tests" -eq 1 ]; then
-  files=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh)
+  files=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh scripts/test/counting.sh)
 else
   files=()
   for f in "$ROOT"/scripts/orch/*.sh; do files+=("scripts/orch/${f##*/}"); done

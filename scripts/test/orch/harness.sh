@@ -99,7 +99,7 @@ planted_minimal_tree() {
   t="$dir/scripts/test"
   mkdir -p "$t/orch" "$dir/scripts/dev" || return 1
   (cd "$PLUGIN_ROOT/scripts/test" && cp "${ALL_RUNNER_FILES[@]}" orch_test.sh tally.sh \
-    fifo.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$t/" && cp orch/setup.sh "$t/orch/" &&
+    fifo.sh counting.sh git_env.sh gh_adapter_fake.sh shell_code.awk "$t/" && cp orch/setup.sh "$t/orch/" &&
     cp ../flow-state.sh "$dir/scripts/" && cp ../dev/section-durations.sh "$dir/scripts/dev/") || return 1
   printf '%s\n' '# --- isolation ---' 'echo; echo isolation; ok "isolation ran"' >"$t/orch/harness.sh" || return 1
   plant_file "$t/orch" zz-planted.sh || return 1
@@ -675,7 +675,7 @@ rm -rf "$quiet_dir"
 # runner sources first, and the tally.sh they all source.
 cut_root="$(mktemp -d)"
 cut_dir="$cut_root/scripts/test"
-mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$(dirname "$SUITE_SCRIPT")/tally.sh" "$(dirname "$SUITE_SCRIPT")/fifo.sh" "$cut_dir/"
+mkdir -p "$cut_dir" && cp "$(dirname "$SUITE_SCRIPT")/git_env.sh" "$(dirname "$SUITE_SCRIPT")/tally.sh" "$(dirname "$SUITE_SCRIPT")/fifo.sh" "$(dirname "$SUITE_SCRIPT")/counting.sh" "$cut_dir/"
 for quiet_suite in "${SUITES[@]}"; do
   [ "$quiet_suite" = orch_test.sh ] && continue
   awk '
@@ -3106,10 +3106,10 @@ index_expected() {
 
 index_modules=()
 for f in "$PLUGIN_ROOT"/scripts/orch/*.sh; do index_modules+=("scripts/orch/${f##*/}"); done
-index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh)
+index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh scripts/test/counting.sh)
 
 grep_disagrees=""
-for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh; do
+for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh scripts/test/counting.sh; do
   [ "$(col0_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" = \
     "$(sourced_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" ] || grep_disagrees+=" $rel"
 done

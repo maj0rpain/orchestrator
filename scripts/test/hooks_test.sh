@@ -16,6 +16,8 @@ source "$DIR/test/git_env.sh"
 test_git_env_clear || exit 1
 # shellcheck source=tally.sh
 source "$DIR/test/tally.sh"
+# shellcheck source=counting.sh
+source "$DIR/test/counting.sh"
 # shellcheck source=test_jobs.sh
 source "$DIR/test/test_jobs.sh"
 GRILL="$DIR/hook-grilling.sh"
@@ -753,40 +755,24 @@ rm -rf "$SL" "$OUTSIDE" "$REPO/src/deep" "$REPO/docs/agents/sub" "$REPO/src/out"
 # The guard checks the session is armed before it resolves the file path, so an
 # unguarded session pays for no path work (#2557). A readlink stub on PATH logs
 # each call: the resolution follows a symlink hop through it.
-# call_counter <cmd>: makes a dir whose <cmd> stub logs a line per call and runs
-# the real <cmd>; prints the dir. Put it first on PATH to count the calls.
-call_counter() {
-  local dir real
-  dir="$(mktemp -d)"
-  real="$(command -v "$1")"
-  cat >"$dir/$1" <<STUB
-#!/usr/bin/env bash
-echo "\$(basename "\$0")" >>"$dir/log"
-exec "$real" "\$@"
-STUB
-  chmod +x "$dir/$1"
-  printf '%s' "$dir"
-}
-# counted_calls <dir>: the calls logged in <dir> since its log was cleared.
-counted_calls() { wc -l <"$1/log" | tr -d ' '; }
-RL="$(call_counter readlink)"
+RL="$(counting_bin readlink)"
 ln -s real.ts "$REPO/src/armlink.ts"
 # rl_guard <payload>: runs the guard on a payload with the stub first on PATH,
 # clearing the log; prints the guard's output.
-rl_guard() { : >"$RL/log"; printf '%s' "$1" | PATH="$RL:$PATH" "$GUARD"; }
+rl_guard() { : >"$RL/readlink.log"; printf '%s' "$1" | PATH="$RL:$PATH" "$GUARD"; }
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-unarmed)")"
 assert_empty "allows an edit through a symlink in an unarmed session" "$out"
-assert_eq "an unarmed session's edit never calls readlink" "$(counted_calls "$RL")" "0"
+assert_eq "an unarmed session's edit never calls readlink" "$(counting_starts "$RL" readlink)" "0"
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" '' | jq 'del(.session_id)')")"
 assert_empty "allows an edit through a symlink with no session_id" "$out"
-assert_eq "an edit with no session_id never calls readlink" "$(counted_calls "$RL")" "0"
+assert_eq "an edit with no session_id never calls readlink" "$(counting_starts "$RL" readlink)" "0"
 : >"$TMPDIR/orchestrator-grilling-rl-armed"
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-armed)")"
 assert_eq "denies the same edit through a symlink in an armed session" "$(bash_hook_decision "$out")" "deny"
-assert_eq "an armed session's edit calls readlink" "$([ "$(counted_calls "$RL")" -gt 0 ] && echo yes)" "yes"
+assert_eq "an armed session's edit calls readlink" "$([ "$(counting_starts "$RL" readlink)" -gt 0 ] && echo yes)" "yes"
 out="$(rl_guard "$(edit_event "$REPO/src/armlink.ts" rl-armed | jq 'del(.tool_input.file_path)')")"
 assert_empty "allows an armed session's edit that names no path" "$out"
-assert_eq "an armed session's edit naming no path never calls readlink" "$(counted_calls "$RL")" "0"
+assert_eq "an armed session's edit naming no path never calls readlink" "$(counting_starts "$RL" readlink)" "0"
 rm -f "$TMPDIR/orchestrator-grilling-rl-armed" "$REPO/src/armlink.ts"
 rm -rf "$RL"
 
@@ -1470,17 +1456,17 @@ assert_eq "a final reply holding the view written within the window: allowed" \
     ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
 
 # The pre-check and the size-gated re-read, counted in jq processes: a counting
-# jq first on PATH logs each call and runs the real jq. It gives one counter
-# dir shared by the paste-guard counts, the one-jq-per-payload checks and the
-# Bash hook cost check. The paste-guard counts are compared between two runs of
-# the same hook, never against a number.
-JQC="$(call_counter jq)"
+# jq, made by counting_bin, first on PATH logs each start and runs the real jq.
+# One counter dir is shared by the paste-guard counts, the one-jq-per-payload
+# checks and the Bash hook cost check. The paste-guard counts are compared
+# between two runs of the same hook, never against a number.
+JQC="$(counting_bin jq)"
 # jq_count <cmd> [args...]: how many jq processes <cmd> starts, run with JQC
 # first on PATH (on the payload on stdin, if any) and its output dropped.
 jq_count() {
-  : >"$JQC/log"
+  : >"$JQC/jq.log"
   PATH="$JQC:$PATH" "$@" >/dev/null 2>&1
-  counted_calls "$JQC"
+  counting_starts "$JQC" jq
 }
 PG_PAD="$(head -c 20000 /dev/zero | tr '\0' 'a')"
 TL="$PG/long-unarmed.jsonl"; cp "$T11" "$TL"

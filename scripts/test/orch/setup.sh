@@ -145,20 +145,6 @@ log_count() {
   if [ -n "${2:-}" ]; then grep -c "^$2 " "$1" || true; else wc -l <"$1" | tr -d ' '; fi
 }
 
-# counting_bin <cmd>: a new directory holding a #!/bin/sh <cmd> that appends one
-# line per start to <dir>/<cmd>.log (created empty; callers truncate it), then
-# execs the real <cmd> found now.
-counting_bin() {
-  local dir
-  dir="$(mktemp -d)"
-  printf '#!/bin/sh\necho x >>"%s/%s.log"\nexec "%s" "$@"\n' "$dir" "$1" "$(command -v "$1")" >"$dir/$1"
-  chmod +x "$dir/$1"
-  : >"$dir/$1.log"
-  printf '%s\n' "$dir"
-}
-# counting_starts <dir> <cmd>: how many times the <cmd> in <dir> has started.
-counting_starts() { log_count "$1/$2.log"; }
-
 # A fresh repo with one commit, an empty docs/agents/ for a labels doc and an
 # origin of https://github.com/o/r.git (so it resolves to the repo o/r), cwd
 # inside it. No setup is required of it (ADR-0028).
