@@ -16,7 +16,7 @@ jq_counting_bin() {
   printf '%s\n' "$dir"
 }
 # jq_starts <dir>: how many times the jq in <dir> has started.
-jq_starts() { wc -l <"$1/jq.log" | tr -d ' '; }
+jq_starts() { log_count "$1/jq.log"; }
 
 # --- state ------------------------------------------------------------------
 echo
