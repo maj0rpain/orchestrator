@@ -47,7 +47,8 @@ PR_BODY_PIECES="$(printf '%s\t%s\n' \
 # default-branch read answering main and appending a line to <log> per call,
 # so log_count <log> is how many times <cmd> asked GitHub for it.
 default_reads_run() {
-  counted_adapter_run "$1" 'adapter_repo_default_branch() { echo x >>"$COUNT_LOG"; echo main; }' "${@:2}"
+  fake_default_branch main
+  counted_adapter_run "$1" "$(counting_defs adapter_repo_default_branch branch)" "${@:2}"
 }
 
 # PR_BODY_REFUSED: the opening of every PR-body refusal, before its file.
@@ -113,7 +114,7 @@ assert_eq "and records no PR in state" \
 : >"$GH_FIXTURE/env.log"
 # A flow whose state records no base: its base read and the issue line's
 # default-branch check share one ask of GitHub.
-jq 'del(.base)' .orchestrator/state.json >.orchestrator/state.tmp && mv .orchestrator/state.tmp .orchestrator/state.json
+state_fixture_drop base
 reads="$(mktemp)"
 out="$(default_reads_run "$reads" "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
