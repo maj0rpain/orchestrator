@@ -18,12 +18,49 @@ readonly SIDE_CHECKOUT_MARKER="orchestrator-side-checkout"
 # ownership marker - the one place the marker's presence is tested.
 side_checkout_marked() { [ -f "$1/$SIDE_CHECKOUT_MARKER" ]; }
 
+# side_checkout_gitdir_into <var> <path>: sets <var> to the absolute git
+# folder of the worktree at <path>, read from the worktree's own git pointer
+# without starting git: <path>/.git is the git folder itself in a main
+# worktree, and in a linked worktree a file whose "gitdir: <dir>" line names
+# it, <dir> relative to <path> when it is not absolute, its . and .. parts
+# resolved. Fails, <var> untouched, when the pointer is missing, unreadable or
+# names no folder holding a HEAD - the caller then asks git.
+side_checkout_gitdir_into() {
+  local _sg_base="$2" _sg_dir _sg_line=""
+  case "$_sg_base" in /*) ;; *) _sg_base="$PWD/$_sg_base" ;; esac
+  _sg_dir="$_sg_base/.git"
+  if [ -f "$_sg_dir" ]; then
+    { IFS= read -r _sg_line || [ -n "$_sg_line" ]; } 2>/dev/null <"$_sg_dir" || return 1
+    case "$_sg_line" in "gitdir: "?*) _sg_dir="${_sg_line#gitdir: }" ;; *) return 1 ;; esac
+    case "$_sg_dir" in /*) ;; *) _sg_dir="$_sg_base/$_sg_dir" ;; esac
+    case "$_sg_dir" in
+      */../*|*/./*|*/..|*/.)
+        local _sg_out="" _sg_part _sg_parts
+        IFS=/ read -ra _sg_parts <<<"$_sg_dir"
+        for _sg_part in "${_sg_parts[@]}"; do
+          case "$_sg_part" in
+            ''|.) ;;
+            ..) _sg_out="${_sg_out%/*}" ;;
+            *) _sg_out="$_sg_out/$_sg_part" ;;
+          esac
+        done
+        _sg_dir="$_sg_out" ;;
+    esac
+  fi
+  [ -f "$_sg_dir/HEAD" ] || return 1
+  printf -v "$1" '%s' "$_sg_dir"
+}
+
 # side_checkout_marker <path>: prints the ownership marker's path for the
-# worktree at <path>; returns 1 when it carries none.
+# worktree at <path>; returns 1 when it carries none. The git folder comes from
+# the worktree's own git pointer (side_checkout_gitdir_into), so a worktree
+# costs no git process; only a pointer that cannot be read that way - or a path
+# that is no worktree's root - asks git.
 side_checkout_marker() {
   local gd
-  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" \
-    && side_checkout_marked "$gd" && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
+  side_checkout_gitdir_into gd "$1" \
+    || gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  side_checkout_marked "$gd" && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
 }
 
 # is_side_checkout <path>: whether the checkout holding <path> is a side
