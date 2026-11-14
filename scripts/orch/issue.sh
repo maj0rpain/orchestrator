@@ -97,7 +97,8 @@ issue_json_trusted() {
   gh_or_die --out __ijt_raw "$1" adapter_issue_json "$2"
   __ijt_kept="$(comments_trust_filter "$2" <<<"$__ijt_raw")" \
     || die "could not read the comments of issue #$2: its comments did not parse"
-  __ijt_out="$(jq -c --argjson c "$__ijt_kept" '.comments = ($c | map(del(.authorAssociation)))' <<<"$__ijt_raw")" \
+  __ijt_out="$(printf '%s\n%s\n' "$__ijt_raw" "$__ijt_kept" \
+    | jq -cs '. as [$o, $c] | $o | .comments = ($c | map(del(.authorAssociation)))')" \
     || die "could not read the comments of issue #$2"
   printf -v "$3" '%s' "$__ijt_out"
 }
