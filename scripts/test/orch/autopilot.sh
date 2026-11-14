@@ -1018,8 +1018,7 @@ rm -f "$ORCH_GH_FAKE_STORE/held"
 term_run /dev/null /dev/null "$ORCH_GH_FAKE_STORE/held" -- "$ORCH" autopilot watch --every 1
 tick_pid="$(cat "$ORCH_GH_FAKE_STORE/held" 2>/dev/null)"
 assert_eq "the held tick's pid is known" "$([[ "$tick_pid" =~ ^[0-9]+$ ]] && echo yes)" yes
-st=$term_st
-assert_status "a watch termed mid-tick exits 0" "$st" 0
+assert_status "a watch termed mid-tick exits 0" "$term_st" 0
 assert_eq "and removes its pidfile" "$(on_disk "$pidfile")" absent
 kill -0 "${tick_pid:-none}" 2>/dev/null; st=$?
 assert_status "and the tick it was running is gone" "$st" 1
