@@ -503,7 +503,7 @@ git -C "$bare8" symbolic-ref HEAD refs/heads/to-unasked
 git -C "$bare8" config receive.denyDeleteCurrentBranch refuse
 git checkout -q -b to-unasked
 git push -q -u origin to-unasked
-out="$(PATH="$(fails_bin git '*" ls-remote "*' 128):$GH_FAILING:$PATH" "$ORCH" branch retire to-unasked to-unasked-redo-1 2>&1)"; st=$?
+out="$(PATH="$(fails_bin git '*" ls-remote "*' 128):$PATH" orch_gh_failing branch retire to-unasked to-unasked-redo-1 2>&1)"; st=$?
 assert_status "a failed delete with origin unanswered dies" "$st" 1
 assert_contains "naming the old ref" "$out" "orch: could not confirm origin/to-unasked is gone"
 assert_contains "saying origin could not be asked" "$out" "could not ask origin whether it is still there"
@@ -533,7 +533,7 @@ git checkout -q -b to-gone
 git push -q -u origin to-gone
 # shellcheck disable=SC2154 # assigned by fresh_bare_origin
 git -C "$bare9" update-ref -d refs/heads/to-gone
-out="$(orch_gh_failing branch retire to-gone to-gone-redo-1 2>&1)"; st=$?
+out="$(PATH="$(git_fails_bin '*" --delete "*'):$PATH" orch_gh_failing branch retire to-gone to-gone-redo-1 2>&1)"; st=$?
 assert_status "a failed delete of an already-gone ref succeeds" "$st" 0
 assert_eq "recording the retirement on the new name" \
   "$(git config --get branch.to-gone-redo-1.orchestrator-retired || true)" "true"
