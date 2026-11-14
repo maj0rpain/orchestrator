@@ -1870,6 +1870,8 @@ assert_eq "and leaves no temp file" "$(ls -A "$rt_tmp")" ""
 out="$(retry_script 'gh_limit_handle() { echo "handler" >&2; return 1; }; f() { echo kept; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
 assert_status "a limit given up on fails the call" "$st" 1
 assert_eq "with the deciding attempt's stdout" "$out" "kept"
+assert_contains "and the handler's message" "$(<"$rt_tmp.e")" "handler"
+assert_not_contains "without gh's own wording" "$(<"$rt_tmp.e")" "secondary rate limit"
 assert_eq "and leaves no temp file" "$(ls -A "$rt_tmp")" ""
 out="$(GH_LIMIT_READING=1 retry_script 'gh_limit_handle() { echo handled >&2; return 2; }; f() { echo q; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>&1)"; st=$?
 assert_eq "the quota read is neither retried nor handled" "$out" "$(printf 'q\nsecondary rate limit')"

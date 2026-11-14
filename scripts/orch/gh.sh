@@ -32,8 +32,9 @@
 # write a rerun would duplicate or trip over before a later request of the
 # same call is limited (a close that posts its comment first, a PR created
 # before its labels are added). A harmlessly repeated write, such as
-# relabelling, does not declare, and keeps the retry. A failed compound write
-# is given up on at once, as a secondary limit met again after the retry.
+# relabelling, does not declare, and keeps the retry. A compound write that
+# meets a first secondary limit is given up on at once, as a limit met again
+# after the retry; any other failure passes through untouched.
 gh() {
   if ! repo_pin; then
     if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
