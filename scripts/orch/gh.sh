@@ -48,8 +48,9 @@ gh() {
 # <command...>: capture and capture_err for a GitHub operation - an adapter_*
 # operation or gh itself. Each runs the memoising resolver (repo_resolve) in the
 # caller's shell first, ignoring its status, so the Repo is resolved once for
-# the command rather than once per subshell the call runs in; a failed
-# resolution is left to the guard, which dies with the remedy as it always did.
+# the shell that calls it, rather than once per subshell the call runs in; a
+# failed resolution is left to the guard, which dies with the remedy as it
+# always did.
 # Defined ahead of the ORCH_GH_ADAPTER seam. A command that is not a GitHub
 # operation goes through capture or capture_err.
 gh_capture() {
@@ -120,7 +121,6 @@ gh_limit_kind() {
 # calls the limit handler, its stderr is discarded, and it costs no quota.
 gh_limit_pools() {
   local out
-  repo_resolve || :
   out="$(GH_LIMIT_READING=1 adapter_rate_limit 2>/dev/null)" || return 1
   [ -n "$out" ] || return 1
   tr '\t' ' ' <<<"$out"

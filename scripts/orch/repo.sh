@@ -5,8 +5,8 @@
 
 # repo_resolve: resolves the Repo once per shell and memoises the whole answer
 # in plain (never exported) shell variables, repo_resolve their one writer:
-# REPO_NAME and REPO_SOURCE (GH_REPO or origin; read by repo show,
-# repo_pinned_host and doctor.sh), REPO_ORIGIN_SSH (1 when the Repo came from an
+# REPO_NAME and REPO_SOURCE (GH_REPO or origin; read by repo show
+# and doctor.sh), REPO_ORIGIN_SSH (1 when the Repo came from an
 # origin in an SSH form, else empty), REPO_MEMO_STATUS (the outcome, 0 or 1, a
 # failed resolution too; empty until the first resolve) and REPO_MEMO_HOST (the
 # host the repo pins). The memo lives in the shell that resolves: a later
@@ -178,9 +178,8 @@ repo_pinned_host() {
 # user's GH_HOST as it is, set or unset. It reads the memo
 # repo_resolve memoised.
 repo_pin_host() {
-  local host
-  host="$(repo_pinned_host)"
-  if [ -n "$host" ]; then export GH_HOST="$host"; fi
+  repo_resolve || return 0
+  if [ -n "$REPO_MEMO_HOST" ]; then export GH_HOST="$REPO_MEMO_HOST"; fi
 }
 # The USR1 trap that dies with REPO_REMEDY is set by orch.sh itself, so a module
 # loaded on demand is not what a signalled main shell waits on.

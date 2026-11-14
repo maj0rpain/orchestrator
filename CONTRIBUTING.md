@@ -20,12 +20,6 @@ scripts/test/affected.sh                      # the suites a change maps to; run
 scripts/test/all.sh                           # every suite; run once before opening a PR
 ```
 
-A GitHub operation - an adapter_* operation or gh itself - is captured through
-the pair `gh_capture` and `gh_capture_err`, never through bare `capture` or
-`capture_err`: the pair resolves the Repo in the caller's shell first, so the
-command resolves it once. Bare `capture` and `capture_err` stay for commands
-that are not GitHub operations.
-
 While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
 `<section>` is an extended regex matched, ignoring case, against the `# ---`
@@ -151,7 +145,12 @@ module of the concept it serves, whichever modules call it.
 `scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
 note, capture and the like) and calls nothing a noun module defines; its test
 section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
-calls it. The concept modules with no noun, `checkout.sh` (the Checkout module:
+calls it. A GitHub operation is captured through the gh module's pair
+`gh_capture` and `gh_capture_err`, never through bare `capture` or
+`capture_err`: the pair resolves the Repo in the caller's shell first, so that
+shell resolves it once (a subshell that resolves first does so for itself and
+cannot hand the memo back). The concept modules with no noun, `checkout.sh`
+(the Checkout module:
 the walk over every checkout), `filed-finding.sh` (the Filed finding module:
 a filed finding's severities and labels, rendering and parsing its issue body,
 the finding categories, and the input checks `review file` and `audit file`

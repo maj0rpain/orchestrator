@@ -285,7 +285,6 @@ no_ci_evidence() {
   repo_resolve || :
   out="$(adapter_branch_required_checks "$base" 2>/dev/null)" || return 1
   [ -z "$out" ] || return 1
-  repo_resolve || :
   out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
   if list_has "$out" required_status_checks; then return 1; fi
   # 4, then 3: the base tip is one ref, the PR's earlier commits may be many.
@@ -299,7 +298,6 @@ no_ci_evidence() {
 # Succeeds when one ref has neither a check-run nor a commit status, and the
 # two reads both answered.
 ci_ref_unchecked() {
-  repo_resolve || :
   [ "$(adapter_commit_has_check_runs "$1" 2>/dev/null)" = no ] || return 1
   [ "$(adapter_commit_has_statuses "$1" 2>/dev/null)" = no ]
 }
