@@ -75,12 +75,10 @@ hook_bash_stdin_cat_has_info_option() {
 #     -p or --print (node reads its script from stdin under them), nor the
 #     joined short forms -e<code> and -p<code> (node rejects them).
 hook_bash_stdin_is_no_read_option() {
-  case "$1:$2" in
+  case "${1%3}:$2" in
     python:-h|python:-V|python:-VV|'python:-?'|python:--help|python:--version) return 0 ;;
     python:--help-all|python:--help-env|python:--help-xoptions) return 0 ;;
-    python3:-h|python3:-V|python3:-VV|'python3:-?'|python3:--help|python3:--version) return 0 ;;
-    python3:--help-all|python3:--help-env|python3:--help-xoptions) return 0 ;;
-    python:-*|python3:-*) [[ "$2" =~ ^-[bBdEIOPqRsSuvx]*[cm] ]] && return 0 ;;
+    python:-*) [[ "$2" =~ ^-[bBdEIOPqRsSuvx]*[cm] ]] && return 0 ;;
     node:-h|node:-v|node:--help|node:--version|node:--v8-options|node:--completion-bash) return 0 ;;
     node:--test|node:--eval=*|node:--run=*) return 0 ;;
   esac
