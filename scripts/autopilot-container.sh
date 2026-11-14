@@ -9,8 +9,10 @@
 # ANTHROPIC_API_KEY are required. ORCH_GIT_NAME, ORCH_GIT_EMAIL,
 # ORCH_PERMISSION_MODE, one ORCH_<NAME> for each other setting `orch.sh
 # autopilot settings` lists (the name upper-case, each `-` as `_`),
-# ORCH_MODEL_<ROLE>, ORCH_EFFORT_<ROLE> (roles from `orch.sh agent roles`,
-# upper-case) and ORCH_CLONE_DIR (default /home/orch/repo) are optional;
+# ORCH_MODEL_<ROLE> and ORCH_EFFORT_<ROLE> (roles from `orch.sh agent roles`,
+# upper-case) are optional. ORCH_CLONE_DIR (default /home/orch/repo) is
+# not an env-file setting: compose sets it to the repo volume's mount target
+# and the tests use it to place the clone.
 # ORCH_SH names the installed plugin's orch.sh. A variable set to the empty
 # string counts as unset. A setting variable is written to its global
 # orchestrator.autopilot.<name> key; a role variable is that role's agent

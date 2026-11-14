@@ -94,8 +94,8 @@ D_JQ_SKIPPED=0
 # A check that needed an answer it could not get counts itself as skipped and
 # says nothing of its own, so the group collapses to one line. $1 is the gate's
 # answer - "ok" opens it - and $2 names the counter the shut gate collects into.
-# Indirect assignment rather than a nameref: bash 3.2 has none, and the bash
-# check below promises this file still runs there.
+# Indirect assignment rather than a nameref: namerefs need bash 4.3, and this
+# file runs on 4.2.
 d_gate() {
   if [ "$1" = ok ]; then return 0; fi
   printf -v "$2" '%d' "$(( ${!2} + 1 ))"
@@ -110,8 +110,8 @@ d_gh_gate() { d_probe_gh; d_gate "$D_GH" D_GH_SKIPPED; }
 # GitHub, so a memo cannot go stale within its process. They keep doctor-owned
 # copies, never the Standing module's STANDING_* globals: bare doctor's
 # side-flow label check runs that module's read for other issues. Call only
-# after d_gh_gate has opened; the answers come back in plain globals (bash 3.2:
-# no namerefs).
+# after d_gh_gate has opened; the answers come back in plain globals (namerefs
+# need bash 4.3, and this file runs on 4.2).
 d_flow_issue_read() {
   [ -z "$D_FLOW_ISSUE_READ" ] || return 0
   D_FLOW_ISSUE_READ=failed
@@ -231,18 +231,10 @@ check_jq() {
   d_remedy "brew install jq    # or your platform's package manager"
 }
 
-# A warn, not a FAIL: macOS still ships 3.2 as /bin/bash, and the flow works
-# there.
-# ORCH_DOCTOR_BASH_VERSION ("<major>.<minor>") fakes the running bash, because
-# BASH_VERSINFO is readonly: the one seam a test has for the below-4.2 side.
+# The running bash, as an ok line only: orch.sh's version guard stops every
+# command below bash 4.2 before doctor can run.
 check_bash() {
-  local ver="${ORCH_DOCTOR_BASH_VERSION:-${BASH_VERSINFO[0]:-0}.${BASH_VERSINFO[1]:-0}}"
-  local major="${ver%%.*}" minor="${ver#*.}"
-  if [ "$major" -gt 4 ] || { [ "$major" -eq 4 ] && [ "$minor" -ge 2 ]; }; then
-    d_ok "bash ${BASH_VERSION%%(*}"; return 0
-  fi
-  d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.2 and up."
-  d_remedy "brew install bash"
+  d_ok "bash ${BASH_VERSION%%(*}"
 }
 
 # auth & remotes -------------------------------------------------------------
