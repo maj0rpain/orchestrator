@@ -2771,6 +2771,8 @@ assert_contains "the warning carries the kind and the reason" "$out" "could not 
 assert_eq "the claim stays held" "$(fake_claim_held 7)" held
 assert_contains "the next ranked issue is picked up" "$(picked)" "contained-refusal-8"
 fake_unfail
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a later tick's stale cleanup releases the held refusal claim" "$(fake_claim_held 7)" free
 
 # a pickup whose stop meets a GitHub limit ends the tick
 tick_fixture
