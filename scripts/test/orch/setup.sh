@@ -396,6 +396,10 @@ sourced_orch() {
 # may redefine or name any function; <arg>... are its positional parameters
 # $1....
 sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
+# NTH_MAKE_FAKE: shell source, for sourced_orch_script, that makes
+# temp_file_make fail on its PK_NTH-th call, counted in the file PK_COUNT, and
+# work otherwise.
+NTH_MAKE_FAKE='real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; '
 # rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
 # <7d reset>: a rate_limit_event line.
 rl_event() {
