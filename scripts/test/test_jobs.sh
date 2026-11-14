@@ -296,6 +296,7 @@ TEST_JOBS_SLOT_FD=""
 TEST_JOBS_IN_USE=0
 TEST_JOBS_NOTED=0
 TEST_JOBS_RUNNER=""
+TEST_JOBS_CHILD=""
 
 test_jobs_pool_init() {
   local dir slots
