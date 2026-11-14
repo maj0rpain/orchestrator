@@ -2058,7 +2058,7 @@ spec_review_apply() {
     # breakdown it decided on; the rerun keeps that decision.
     kind=""
   else
-    capture kind err cmd_ticket_exists "$issue" || st=$?
+    gh_capture kind err cmd_ticket_exists "$issue" || st=$?
     case "$st" in
       0) ;;
       1) tickets="$TICKETS_NO_BREAKDOWN" ;;

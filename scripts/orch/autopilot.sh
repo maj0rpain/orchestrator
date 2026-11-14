@@ -346,6 +346,7 @@ autopilot_questions() {
   orch_load marked-comment
   orch_load trust
   local list n phase row kind lines="" q_phase stop_phase
+  repo_resolve || :
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do
     standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
