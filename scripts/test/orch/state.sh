@@ -320,9 +320,10 @@ for f in absent invalid array null; do
     "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; echo \"rc=\$? \$a\"")" "rc=1 keep
 status 0"
 done
+fs_jq_usage_error_bin="$(fails_bin jq '*' 2 'jq: usage error')"
 fs_tmpdir="$(mktemp -d)"
 assert_eq "flow_state_get_many returns 1 when jq exits 2, passing its text through and leaving TMPDIR empty" \
-  "$(fs_run "PATH='$(fails_bin jq '*' 2 'jq: usage error')':\$PATH; a=keep; TMPDIR='$fs_tmpdir' flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"; ls -A '$fs_tmpdir'")" "jq: usage error
+  "$(fs_run "PATH='$fs_jq_usage_error_bin':\$PATH; a=keep; TMPDIR='$fs_tmpdir' flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"; ls -A '$fs_tmpdir'")" "jq: usage error
 rc=1 keep
 status 0"
 assert_eq "flow_state_get_many returns 1 when mktemp exits 3, assigning nothing" \
@@ -390,7 +391,7 @@ assert_eq "flow_state_seed returns 2 for an arg row it has no value for, printin
   "$(fs_run 'STATE_KEYS="$STATE_KEYS
 bogus||arg|-"; flow_state_seed s "" main')" "status 2"
 assert_eq "flow_state_seed returns 1, printing nothing, when jq exits 2" \
-  "$(fs_run "PATH='$(fails_bin jq '*' 2 'jq: usage error')':\$PATH; flow_state_seed s 7 main 2>&1")" "status 1"
+  "$(fs_run "PATH='$fs_jq_usage_error_bin':\$PATH; flow_state_seed s 7 main 2>&1")" "status 1"
 before_ls="$(ls -A "$fs_dir")"
 assert_eq "flow_state_create creates an absent file" \
   "$(fs_run 'flow_state_create created.json "{\"slug\":\"c\"}" && jq -c . created.json')" \
