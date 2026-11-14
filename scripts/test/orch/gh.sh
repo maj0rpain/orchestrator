@@ -69,9 +69,8 @@ assert_eq "command gh appears in orch.sh and its modules only inside the guard" 
   "$(cat "$ORCH" "$(dirname "$ORCH")"/orch/*.sh | grep -c '\bcommand gh\b')" "1"
 assert_contains "and that one is the gh guard's own" \
   "$(sed -n '/^gh() {$/,/^}$/p' "$(dirname "$ORCH")/orch/gh.sh")" 'command gh "$@"'
-# A GitHub operation is captured through gh_capture or gh_capture_err, which
-# resolve the Repo in the caller's shell first (#3148): on no code line does bare
-# capture or capture_err run an adapter operation or gh.
+# resolve the Repo in the caller's shell first (#3148): on no code line does
+# bare capture or capture_err run an adapter operation or gh.
 assert_eq "no bare capture or capture_err runs an adapter operation or gh" \
   "$(grep -hEv '^[[:space:]]*#' "$(dirname "$ORCH")"/orch/*.sh | grep -cE '(^|[^_[:alnum:]])capture(_err)? .*[[:space:]](adapter_[a-z_]+|gh)([[:space:]]|$)')" "0"
 

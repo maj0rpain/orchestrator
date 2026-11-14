@@ -179,8 +179,8 @@ temp_file_make() {
 # caller's own redirect: a body streamed to a file through
 # `capture_err err cat "$file" >"$copy"` keeps its trailing
 # newlines, which capture's strip would remove. A GitHub operation goes through
-# gh_capture_err instead, which resolves the Repo first. The stderr goes through one
-# temp file capture_err makes with temp_file_make and reads back with
+# gh_capture_err instead, which resolves the Repo first. The stderr goes through
+# one temp file capture_err makes with temp_file_make and reads back with
 # file_read; only the final rm, and the cat of a failed file_read, start an
 # external command. Call it in the current
 # shell, never inside $(...): it sets the caller's variable with printf -v. Its
