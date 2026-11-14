@@ -1052,11 +1052,7 @@ printf '%s' "$(<"$sh_dir/durations.keep")" >"$sh_t/section-durations.tsv"
 sh_run 1/2
 assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s2,s4,"
 sh_run 2/2
-assert_eq "and starts its sections longest-first" "$sh_started" "s5,s3,s1,"
-# Zero CPU weighs 0: s2 to s5 weigh 10, s1 0 (listed, so not the unlisted 10),
-# dealt last to group 1 on the 20-20 tie. Weighing s1 as 10 gives s1, s3, s5.
-sh_case "a section with 0 CPU weighs 0" "isolation,s1,s2,s4," \
-  "99	0	shard s1" "1	10	shard s2" "1	10	shard s3" "1	10	shard s4" "1	10	shard s5"
+assert_eq "and its sections start unlisted first, then by wall" "$sh_started" "s5,s3,s1,"
 # Zero suite and shellcheck lines add 0, not a weight: group 1 starts at 0 and
 # takes s1 first, then s3 and s5 on ties. Weighing each line as 10 gives s1 to
 # group 2.
@@ -1066,16 +1062,22 @@ sh_case "a suite and a shellcheck line with 0 CPU weigh 0" "isolation,s1,s3,s5,"
 # Ties: s1 and s2 weigh 20, s3 and s4 10, s5 0. Of s1 and s2 the earlier is
 # dealt first, to group 1, so s3 lands there on the 20-20 tie, s4 in group 2,
 # and s5 in group 1 on the 30-30 tie. The reverse walk order flips both ties
-# and gives group 1 s2, s4 and s5.
+# and gives group 1 s2, s4 and s5. It also proves a listed 0-CPU section weighs
+# 0: s5 is listed at 0, and weighed as the unlisted 20 (the heaviest listed) it
+# would be dealt s1, s2, s5, s3, s4 and group 1 would get s1 and s5 only. That
+# holds because this case lists no suite or shellcheck line, so group 1 starts
+# at 0.
 sh_case "ties go to the earlier section and the lowest group" "isolation,s1,s3,s5," \
   "1	20	shard s1" "1	20	shard s2" "1	10	shard s3" "1	10	shard s4" "1	0	shard s5"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-# Why 5 groups: the weights are s1 50, s5 (unlisted, so the heaviest listed) 50,
+# Why 4 groups: the weights are s1 50, s5 (unlisted, so the heaviest listed) 50,
 # s2 40, s3 30 and s4 20 CPU tenths, dealt in that order; group 1 starts at 80,
-# the rest at 0. With 5 groups s1, s5, s2 and s3 fill groups 2-5 and s4 goes to
-# group 5 (30 < 40, the next-lowest total), leaving 1/5 with isolation alone.
+# the rest at 0. With 4 groups s1, s5 and s2 fill groups 2-4, s3 goes to group 4
+# (40, the lowest total) and s4 to group 2 (50, the lowest-numbered on the 50-50
+# tie), leaving 1/4 with isolation alone. With 3 groups s4 would land in group 1
+# on the 80-80 tie, so 4 is the smallest count that leaves it alone.
 # The 2-group pass runs with no durations file; the others with it.
-for sh_n in 2 1 5; do
+for sh_n in 2 1 4; do
   sh_label="$sh_n groups run every planted section exactly once"
   if [ "$sh_n" -eq 2 ]; then
     rm -f "$sh_t/section-durations.tsv"
@@ -1098,8 +1100,8 @@ for sh_n in 2 1 5; do
 done
 sh_run 2/2
 assert_eq "a second call groups the same" "$sh_printed" "$sh_first_22"
-assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[1/5]}" "isolation,"
-assert_eq "and passes" "${sh_saved_st[1/5]}" 0
+assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[1/4]}" "isolation,"
+assert_eq "and passes" "${sh_saved_st[1/4]}" 0
 assert_eq "1/1 runs every section" "${sh_saved_printed[1/1]}" "isolation,s1,s2,s3,s4,s5,"
 assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" "${sh_saved_seen[1/1]}" "unset,"
 sh_run ""
