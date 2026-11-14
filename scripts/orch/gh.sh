@@ -1197,7 +1197,11 @@ adapter_job_failed_log() {
 #
 # A claim is a ref on origin, refs/orch/claims/<issue>: the one origin write
 # autopilot adds. These run git against origin, not gh, but are adapter
-# operations all the same, so the suite fakes them with the rest.
+# operations all the same, so the suite fakes them with the rest (create, delete
+# and list; adapter_claim_ref is a pure name builder the fake shares).
+
+# adapter_claim_ref <issue>: prints the claim's ref, refs/orch/claims/<issue>.
+adapter_claim_ref() { printf 'refs/orch/claims/%s\n' "$1"; }
 
 # adapter_claim_create <issue> <phase> <pid> <host>: takes the claim on <issue>
 # for <phase>, recording <host>, <pid> and the start time. It pushes a throwaway
@@ -1208,7 +1212,8 @@ adapter_job_failed_log() {
 # loss, the only status a caller reads as "skip this issue"; exit 1, git's
 # reason on stderr, for any other failure.
 adapter_claim_create() {
-  local ref="refs/orch/claims/$1" commit reason
+  local ref commit reason
+  ref="$(adapter_claim_ref "$1")"
   commit="$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "orch claim $1" \
     -m "$(printf 'host: %s\npid: %s\nphase: %s\nstarted: %s' \
       "$4" "$3" "$2" "$(now)")")" || return 1
@@ -1225,7 +1230,7 @@ adapter_claim_create() {
 # where the push fails.
 adapter_claim_delete() {
   local reason
-  git_push reason origin ":refs/orch/claims/$1" && return 0
+  git_push reason origin ":$(adapter_claim_ref "$1")" && return 0
   case "$reason" in
     *'does not exist'*) return 0 ;;
   esac

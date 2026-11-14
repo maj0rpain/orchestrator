@@ -947,14 +947,16 @@ assert_eq "a claim of ORCH_HOST_ID is cleaned" "$(fake_claim_held 14)" free
 assert_eq "the hostname's claim is then another identity's, left alone" "$(fake_claim_held 15)" held
 fake_claim_release 15
 
-# a stop that dies partway dies with the claim ref's reason; Standing owns the
+# a stop that dies partway names the claim ref's reason; Standing owns the
 # writes that landed and the held claim
 fake_issue 13 open ready-for-agent orch:spec orch:running
 fake_claim_seed 13 "$(hostname)" "$(dead_pid)"
 fake_fail adapter_claim_delete "HTTP 500"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
-assert_status "stale-claim cleanup with a failed claim delete dies" "$st" 1
-assert_contains "naming the claim ref" "$out" "delete the claim ref"
+assert_status "stale-claim cleanup with a failed claim delete does not fail the tick" "$st" 0
+assert_contains "the stop's own failure line names the claim ref" "$out" "could not delete the claim ref on issue #13"
+assert_contains "and the warning follows it" "${out#*could not delete the claim ref on issue #13}" "could not stop issue #13 - its claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 13)" held
 fake_unfail
 fake_claim_seed 13 otherhost
 # a session that released its claim exits after the next phase's claim is made:
@@ -2668,6 +2670,145 @@ fake_fail adapter_claim_delete "HTTP 500 push"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a failed claim-ref delete leaves the claim held" "$(fake_claim_held 9)" held
 fake_unfail
+
+# --- autopilot tick: stops that cannot land are contained (#3052) -------------
+echo
+echo "autopilot tick contained stops"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+# a stale claim on an issue the store no longer holds, a second stale claim
+# and a pickable issue
+fake_issue 5 open orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+fake_issue 6 open ready-for-agent orch:spec orch:running
+fake_claim_seed 6 "$(hostname)" "$(dead_pid)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Contained pickup 7"
+fake_issue_drop 5
+printf '7\n' >"$launcher_dir/release"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a stale claim whose stop cannot land does not fail the tick" "$st" 0
+assert_contains "stderr carries the warning naming the issue" "$out" "could not stop issue #5 - its claim stays held; the next tick tries again"
+assert_contains "and the claim ref to delete by hand" "$out" "git push origin :refs/orch/claims/5"
+assert_contains "the stop's own failure line comes first" "${out%%could not stop issue #5*}" "orch: could not "
+assert_eq "the claim stays held" "$(fake_claim_held 5)" held
+assert_eq "the second stale claim is stopped as a failure" "$(fake_labels_of 6)" "needs-human orch:spec ready-for-agent "
+assert_eq "and its claim released" "$(fake_claim_held 6)" free
+assert_contains "the pickable issue is picked up" "$(picked)" "contained-pickup-7"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a second tick exits 0" "$st" 0
+assert_contains "and warns about the same claim again" "$out" "could not stop issue #5 - its claim stays held"
+
+# a stale claim whose stop fails once keeps its liveness records
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 10 open ready-for-agent orch:spec orch:running
+gone="$(dead_pid)"
+fake_claim_seed 10 "$(hostname)" "$gone"
+mkdir -p "$top/.orchestrator/autopilot/logs" "$top/.orchestrator/autopilot/run"
+printf '%s\n' "$gone" >"$top/.orchestrator/autopilot/run/10.pid"
+: >"$top/.orchestrator/autopilot/logs/10-spec-20250101T000000.log"
+fake_fail_times adapter_issue_relabel 1 "HTTP 500 relabel"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a failed stop leaves the claim held" "$(fake_claim_held 10)" held
+assert_eq "and its run record" "$(on_disk "$top/.orchestrator/autopilot/run/10.pid")" present
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the next tick stops it" "$(fake_claim_held 10)" free
+assert_contains "its comment names the session log of the first tick" "$(fake_comments_of 10)" "logs/10-spec-20250101T000000.log"
+assert_contains "and the gone process of the first tick's record" "$(fake_comments_of 10)" "pid $gone) is gone"
+
+# a stale claim whose stop meets a GitHub limit ends the tick with exit 0
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 5 open ready-for-agent orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+fake_issue 6 open ready-for-agent orch:spec orch:running
+fake_claim_seed 6 "$(hostname)" "$(dead_pid)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Limited stale 7"
+fake_fail_times adapter_issue_relabel 1 "API rate limit exceeded for user ID 1."
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a stop that meets a GitHub limit ends the tick with exit 0" "$st" 0
+assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+assert_contains "the first claim is warned about" "$out" "could not stop issue #5 - its claim stays held"
+assert_not_contains "the second is not" "$out" "issue #6"
+assert_eq "the second claim stays held" "$(fake_claim_held 6)" held
+assert_eq "with its labels unchanged" "$(fake_labels_of 6)" "orch:running orch:spec ready-for-agent "
+assert_eq "the pickable issue stays unclaimed" "$(fake_claim_held 7)" free
+fake_unfail
+
+# a pickup whose failed step's stop cannot land: the next ranked issue is
+# still picked up
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open orch:spec; fake_issue_title 7 "Contained step 7"
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Contained step 8"
+printf '8\n' >"$launcher_dir/release"
+fake_fail_times adapter_issue_relabel 1 "HTTP 500 relabel"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a pickup whose stop cannot land does not fail the tick" "$st" 0
+assert_contains "the warning opens with the issue" "$out" "could not stop issue #7 - its claim stays held; failure: step init failed"
+assert_contains "and the stop's failure line precedes it" "${out%%could not stop issue #7*}" "orch: could not "
+assert_eq "the claim stays held" "$(fake_claim_held 7)" held
+assert_contains "the next ranked issue is picked up" "$(picked)" "contained-step-8"
+fake_unfail
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a later tick's stale cleanup stops the held issue" "$(fake_labels_of 7)" "needs-human orch:spec "
+assert_eq "releasing its claim" "$(fake_claim_held 7)" free
+
+# the same for a refusal
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Contained refusal 7"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+fake_issue 7 open ready-for-agent orch:review
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Contained refusal 8"
+printf '8\n' >"$launcher_dir/release"
+fake_fail_times adapter_issue_relabel 1 "HTTP 500 relabel"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a refusal whose stop cannot land exits 0" "$st" 0
+assert_contains "the stop's failure line precedes the warning" "${out%%could not stop issue #7*}" "orch: could not "
+assert_contains "the warning carries the kind and the reason" "$out" "could not stop issue #7 - its claim stays held; refusal: the issue is labelled orch:review"
+assert_eq "the claim stays held" "$(fake_claim_held 7)" held
+assert_contains "the next ranked issue is picked up" "$(picked)" "contained-refusal-8"
+fake_unfail
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a later tick's stale cleanup releases the held refusal claim" "$(fake_claim_held 7)" free
+
+# a pickup whose stop meets a GitHub limit ends the tick
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open orch:spec; fake_issue_title 7 "Limited stop 7"
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Limited stop 8"
+fake_fail_times adapter_issue_relabel 1 "API rate limit exceeded for user ID 1."
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a pickup whose stop meets a GitHub limit exits 0" "$st" 0
+assert_eq "the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+assert_contains "the warning names the issue" "$out" "could not stop issue #7 - its claim stays held"
+assert_eq "its claim stays held" "$(fake_claim_held 7)" held
+assert_eq "the next issue is not picked up" "$(fake_claim_held 8)" free
+fake_unfail
+
+# the cap: a claim held after a failed stop still counts, at each site
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+git config orchestrator.autopilot.cap 1
+fake_issue 5 open orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+fake_issue_drop 5
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Cap stale 7"
+"$ORCH" autopilot tick >/dev/null 2>&1
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a claim held after a failed stale stop keeps both ticks from picking up" "$(fake_claim_held 7)" free
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+git config orchestrator.autopilot.cap 1
+fake_issue 7 open orch:spec; fake_issue_title 7 "Cap pickup 7"
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Cap pickup 8"
+fake_fail adapter_issue_relabel "HTTP 500 relabel"
+"$ORCH" autopilot tick >/dev/null 2>&1
+"$ORCH" autopilot tick >/dev/null 2>&1
+fake_unfail
+assert_eq "a claim held after a failed pickup stop keeps both ticks from picking up" "$(fake_claim_held 8)" free
 
 # --- autopilot run: a start-up read that meets a GitHub limit (#2577) ---------
 echo

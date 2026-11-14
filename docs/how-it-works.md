@@ -528,7 +528,13 @@ stands.
 `orch.sh doctor` flags a phase label that disagrees with the phase this
 checkout's (or a side checkout's) flow state last moved to, and other hosts'
 old claims. It also warns about this host's claims whose process is gone;
-`orch.sh autopilot tick` clears them.
+`orch.sh autopilot tick` clears them. A claim whose stop cannot land - say its
+issue was deleted or transferred while its session ran - costs the tick only
+that issue: the tick warns, naming the issue, leaves the claim held and goes
+on, and the next tick tries it again. For an issue gone for good the warning
+names the claim ref on origin, `refs/orch/claims/<n>`, to delete by hand; until
+then the claim holds one cap slot. A stop that meets a GitHub API rate limit
+ends the tick there with exit 0.
 
 ### Autopilot commands
 
