@@ -91,6 +91,8 @@
 #     every build arg the former interpolates is named in the latter
 #   scan_cpu_limit  the autopilot service limits CPU from ORCH_CPUS and
 #     docker/.env.example mentions it
+#   scan_clone_dir  the autopilot service pins ORCH_CLONE_DIR to the repo
+#     volume's mount target, the entrypoint's default and the image's directory
 #   scan_review_pass  the review pass is defined once in orch-review-pass and
 #     quick implementation's step 6 runs it
 #   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the
@@ -2408,6 +2410,63 @@ flags "an .env.example without ORCH_CPUS is flagged" \
   "$(scan_cpu_limit "$fixture")" "does not mention ORCH_CPUS"
 check "docker/compose.yaml limits CPU from ORCH_CPUS and .env.example documents it" \
   "$(scan_cpu_limit "$PLUGIN_ROOT")"
+
+# The clone is always on the repo volume: the autopilot service pins
+# ORCH_CLONE_DIR in its environment to the volume's mount target, and the
+# entrypoint's default and the directory the image creates are that path
+# (#3046). scan_clone_dir <plugin root>: one line per break of that rule.
+scan_clone_dir() {
+  local r="$1" pin mount def img
+  pin="$(sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}' "$r/docker/compose.yaml")"
+  mount="$(sed -n '/^ *- *repo:/{s/^[^:]*:\([^: ]*\).*$/\1/p;q}' "$r/docker/compose.yaml")"
+  def="$(sed -n '/ORCH_CLONE_DIR:-/{s/.*ORCH_CLONE_DIR:-\([^}]*\)}.*/\1/p;q}' "$r/scripts/autopilot-container.sh")"
+  img="$(sed -n '/mkdir -p \/home/{s/.*mkdir -p \([^ ]*\).*/\1/p;q}' "$r/docker/Dockerfile")"
+  [ -n "$pin" ] || echo "docker/compose.yaml: autopilot does not pin ORCH_CLONE_DIR in its environment"
+  [ -n "$mount" ] || echo "docker/compose.yaml: autopilot does not mount the repo volume"
+  case "$pin" in *'${'*) echo "docker/compose.yaml: the ORCH_CLONE_DIR pin is not a literal path" ;; esac
+  case "$mount" in *'${'*) echo "docker/compose.yaml: the repo volume's mount target is not a literal path" ;; esac
+  [ -z "$pin" ] || [ -z "$mount" ] || [ "$pin" = "$mount" ] ||
+    echo "docker/compose.yaml: ORCH_CLONE_DIR ($pin) is not the repo volume's mount target ($mount)"
+  [ -z "$pin" ] || [ "$def" = "$pin" ] ||
+    echo "scripts/autopilot-container.sh: the ORCH_CLONE_DIR default (${def:-none}) is not the pinned $pin"
+  [ -z "$pin" ] || [ "$img" = "$pin" ] ||
+    echo "docker/Dockerfile: the directory the image creates (${img:-none}) is not the pinned $pin"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docker" "$fixture/scripts"
+# write_clone_dir_fixture <environment> <mount> <entrypoint default> <image dir>
+write_clone_dir_fixture() {
+  printf 'services:\n  a:\n    env_file: .env\n%s    volumes:\n      - repo:%s\n' \
+    "$1" "$2" >"$fixture/docker/compose.yaml"
+  printf 'clone_dir="${ORCH_CLONE_DIR:-%s}"\n' "$3" >"$fixture/scripts/autopilot-container.sh"
+  printf 'RUN useradd x \\\n && mkdir -p %s \\\n && chown -R orch:orch /home/orch\n' "$4" \
+    >"$fixture/docker/Dockerfile"
+}
+pin_env=$'    environment:\n      ORCH_CLONE_DIR: /home/r\n'
+write_clone_dir_fixture "$pin_env" /home/r /home/r /home/r
+assert_empty "a clone directory that is one path everywhere is not flagged" "$(scan_clone_dir "$fixture")"
+write_clone_dir_fixture "" /home/r /home/r /home/r
+flags "a compose file with no ORCH_CLONE_DIR pin is flagged" \
+  "$(scan_clone_dir "$fixture")" "does not pin ORCH_CLONE_DIR"
+# shellcheck disable=SC2016
+write_clone_dir_fixture $'    environment:\n      ORCH_CLONE_DIR: ${D:-/home/r}\n' /home/r /home/r /home/r
+flags "an interpolated pin is flagged" "$(scan_clone_dir "$fixture")" "pin is not a literal path"
+# shellcheck disable=SC2016
+write_clone_dir_fixture "$pin_env" '${D:-/home/r}' /home/r /home/r
+flags "an interpolated mount target is flagged" \
+  "$(scan_clone_dir "$fixture")" "mount target is not a literal path"
+write_clone_dir_fixture "$pin_env" /home/other /home/r /home/r
+flags "a pin that is not the mount target is flagged" \
+  "$(scan_clone_dir "$fixture")" "is not the repo volume's mount target"
+write_clone_dir_fixture "$pin_env" /home/r /home/other /home/r
+flags "an entrypoint default that is not the pin is flagged" \
+  "$(scan_clone_dir "$fixture")" "default (/home/other) is not the pinned"
+write_clone_dir_fixture "$pin_env" /home/r /home/r /home/other
+flags "an image directory that is not the pin is flagged" \
+  "$(scan_clone_dir "$fixture")" "image creates (/home/other) is not the pinned"
+check "the pinned clone directory, the volume's mount target, the entrypoint's default and the image's directory are one path" \
+  "$(scan_clone_dir "$PLUGIN_ROOT")"
 
 # --- review pass (#342) -------------------------------------------------------
 echo
