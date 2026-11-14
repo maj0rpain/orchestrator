@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.55
+
+The shard setting's tests start two planted runners fewer, and their labels and comments now match what they assert.
+
+The seeded-start harness section names its planted tree `seed_tree` and runs the unseeded tree through `seeded_start_run`, so that run's `HOME` is now checked for no stub cache and removed; no run's outcome changes.
+
+The side-checkout test section reads the add load trace from an add it already runs, instead of making and removing a side checkout only to trace one.
+
 ## 5.2.54
 
 State in the docs lint comments and CONTRIBUTING that a Claude Code only skill needs the ORCH= line only when it uses orch.sh or `$ORCH`, and pin that with a fixture assertion.
