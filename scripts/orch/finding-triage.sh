@@ -46,11 +46,78 @@ deleted_ranges() {
     }'
 }
 
-# range_lines <ranges>: each line number the newline-separated "<from>,<to>"
-# ranges cover, one per line.
-range_lines() {
-  local range
-  for range in $1; do seq "${range%,*}" "${range#*,}"; done
+# range_differs <old sha> <new ref> <file> <start> <end>: prints 1 when lines
+# <start>-<end> of <file> at <old sha> differ from <new ref> - a hunk of the
+# zero-context diff removes or replaces one of them, or inserts lines between
+# two of them - and nothing otherwise. Lines inserted before the first line
+# or after the last do not make the range differ.
+range_differs() {
+  { git -C "$ROOT" diff -U0 "$1" "$2" -- "$3" 2>/dev/null || true; } | awk -v S="$4" -v E="$5" '
+    /^@@ / {
+      split($2, o, ",")
+      a = substr(o[1], 2) + 0; b = (2 in o) ? o[2] + 0 : 1
+      if (a > E) exit
+      if ((b > 0 && a + b - 1 >= S) || (b == 0 && a >= S && a < E)) { print 1; exit }
+    }'
+}
+
+# range_segments <start> <end> <ranges>: the runs of lines <start>-<end> the
+# newline-separated "<from>,<to>" <ranges> leave out, one "<from>,<to>" per
+# run, or nothing.
+range_segments() {
+  local l range hit open=false st last
+  for ((l = $1; l <= $2; l++)); do
+    hit=false
+    for range in $3; do
+      if [ "$l" -ge "${range%,*}" ] && [ "$l" -le "${range#*,}" ]; then hit=true; break; fi
+    done
+    if ! $hit; then
+      $open || { st="$l"; open=true; }
+      last="$l"
+    elif $open; then
+      printf '%s,%s\n' "$st" "$last"; open=false
+    fi
+  done
+  if $open; then printf '%s,%s\n' "$st" "$last"; fi
+}
+
+# held_lines <old sha> <commit> <file> <ranges>: succeeds when <commit> holds
+# some line of the newline-separated <ranges>, lines of <file> at <old sha>:
+# the zero-context diff from <old sha> to <commit> does not delete it outright.
+held_lines() {
+  local start end deleted range
+  start="${4%%$'\n'*}"; start="${start%%,*}"
+  end="${4##*$'\n'}"; end="${end#*,}"
+  deleted="$(deleted_ranges "$1" "$2" "$3" "$start" "$end")"
+  for range in $4; do
+    [ -z "$(range_segments "${range%,*}" "${range#*,}" "$deleted")" ] || return 0
+  done
+  return 1
+}
+
+# merge_base_holds <old sha> <ref> <file> <ranges>: succeeds when the merge
+# base of <old sha> and <ref> holds some line of the <ranges>, lines of <file>
+# at <old sha>.
+merge_base_holds() {
+  local base
+  base="$(git -C "$ROOT" merge-base "$1" "$2" 2>/dev/null)" && held_lines "$1" "$base" "$3" "$4"
+}
+
+# ever_held <old sha> <ref> <file> <ranges>: succeeds when some line of the
+# <ranges>, lines of <file> at <old sha>, a commit off <ref>, was held by the
+# merge base of the two or by a commit on <ref> since it - fails for lines
+# that never reached <ref>. A lookup that fails (no merge base, a log that
+# cannot run) succeeds too: it proves nothing about the lines, so the caller
+# keeps its stand-in.
+ever_held() {
+  local old="$1" ref="$2" file="$3" ranges="$4" base commits commit
+  base="$(git -C "$ROOT" merge-base "$old" "$ref" 2>/dev/null)" || return 0
+  held_lines "$old" "$base" "$file" "$ranges" && return 0
+  commits="$(git -C "$ROOT" log --format=%H "$ref" "^$old" -- "$file" 2>/dev/null)" || return 0
+  for commit in $commits; do
+    held_lines "$old" "$commit" "$file" "$ranges" && return 0
+  done
+  return 1
 }
 
 # squash_deleting_commit <old sha> <ref> <file> <ranges>: the commit on
@@ -60,18 +127,15 @@ range_lines() {
 # deleting commit is the newest one since which every line stays deleted:
 # walking back, the one after the first commit that still holds one of them.
 squash_deleting_commit() {
-  local old="$1" ref="$2" file="$3" ranges="$4" commits commit start end held after=""
-  # The first range's start, read without a pipe: head would leave
-  # range_lines' seq to SIGPIPE under pipefail on a large deletion (#1019).
-  start="${ranges%%$'\n'*}"; start="${start%%,*}"
-  end="$(range_lines "$ranges" | tail -n 1)"
+  local old="$1" ref="$2" file="$3" ranges="$4" commits commit after=""
   commits="$(git -C "$ROOT" log --first-parent --format=%H "$ref" "^$old" -- "$file" 2>/dev/null)" || return 0
   for commit in $commits; do
-    held="$(comm -23 <(range_lines "$ranges" | sort) \
-      <(range_lines "$(deleted_ranges "$old" "$commit" "$file" "$start" "$end")" | sort))"
-    if [ -n "$held" ]; then printf '%s\n' "$after"; return 0; fi
+    if held_lines "$old" "$commit" "$file" "$ranges"; then printf '%s\n' "$after"; return 0; fi
     after="$commit"
   done
+  # No commit since the merge base holds any of them: the merge base held them
+  # when the oldest commit touching the file deleted them.
+  if merge_base_holds "$old" "$ref" "$file" "$ranges"; then printf '%s\n' "$after"; fi
 }
 
 # deleting_commit <old sha> <ref> <file> <ranges>: the commit that deleted
@@ -115,6 +179,19 @@ scan_line() {
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "${pr:--}" "$1" "$2" "${3:--}" "$roles"
 }
 
+# scan_never_reached: the scan's `unknown` line for filed lines that differ
+# only by commits that never reached the default branch. Reads file, lines and
+# sha from finding_scan_one's locals, as scan_line does.
+scan_never_reached() {
+  scan_line "$file:$lines" unknown "no commit on the default branch since $sha touched $file:$lines - the difference is commits that never reached it"
+}
+
+# scan_changed_or_never <commit>: `changed`, naming <commit> - or, with none,
+# the never-reached `unknown`. Reads finding_scan_one's locals.
+scan_changed_or_never() {
+  if [ -n "$1" ]; then scan_line "$file:$lines" changed "$1"; else scan_never_reached; fi
+}
+
 # triage_state <labels>: the triage-role labels among the newline-separated
 # <labels>, each by the repo's label for its role, comma-joined in
 # TRIAGE_ROLES order - or - for none.
@@ -132,7 +209,8 @@ triage_state() {
 # body names another PR.
 finding_scan_one() {
   orch_load filed-finding
-  local n="$1" body="$2" ref="$3" roles="$4" pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out deleted
+  local n="$1" body="$2" ref="$3" roles="$4" pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out deleted off_default=false seg
+  local -a largs=()
   local -A finding
   finding_body_parse "$body" finding
   pr="${finding[pr_number]}" file="${finding[file]}" lines="${finding[line]}" sha="${finding[sha]}"
@@ -167,36 +245,58 @@ finding_scan_one() {
     return
   fi
   start="${lines%%-*}"; end="${lines#*-}"
-  new_start="$(map_line "$resolved_sha" "$ref" "$file" "$start")"
-  new_end="$(map_line "$resolved_sha" "$ref" "$file" "$end")"
-  [ "$new_end" -ge "$new_start" ] || new_end="$new_start"
-  # The newest commit since the filing that touched the file. None at all: the
-  # difference is the PR's own commits, never on the default branch, and any
-  # older commit would predate the filing.
+  # The newest commit since the filing that touched the file: the stand-in
+  # when the exact lookup fails.
   file_commit="$(git -C "$ROOT" log -1 --format=%H "$ref" "^$resolved_sha" -- "$file" 2>/dev/null)" || true
-  if [ -z "$file_commit" ]; then
-    scan_line "$file:$lines" unknown "no commit on the default branch since $sha touched $file - the difference is commits that never reached it"
-    return
-  fi
+  # Off the default branch, a difference no default-branch commit made is the
+  # PR's own commits, never on it: the finding's lines decide, not its file.
+  git merge-base --is-ancestor "$resolved_sha" "$ref" 2>/dev/null || off_default=true
   # Filed lines deleted outright are changed, whatever the lines around them
   # say: named by the commit that deleted them, or, when that lookup fails,
-  # by the newest commit touching the file.
+  # by the newest commit touching the file - unless an off-default SHA's
+  # deleted lines no default-branch commit ever held: then the rest of the
+  # lines are followed, and a lookup finding no commit is the never-reached
+  # `unknown`.
   deleted="$(deleted_ranges "$resolved_sha" "$ref" "$file" "$start" "$end")"
   if [ -n "$deleted" ]; then
-    detail="$(deleting_commit "$resolved_sha" "$ref" "$file" "$deleted")"
-    scan_line "$file:$lines" changed "${detail:-$file_commit}"
-    return
+    if $off_default && ! ever_held "$resolved_sha" "$ref" "$file" "$deleted"; then
+      # No default-branch commit ever held the deleted lines: follow the rest.
+      for seg in $(range_segments "$start" "$end" "$deleted"); do
+        new_start="$(map_line "$resolved_sha" "$ref" "$file" "${seg%,*}")"
+        new_end="$(map_line "$resolved_sha" "$ref" "$file" "${seg#*,}")"
+        [ "$new_end" -ge "$new_start" ] || new_end="$new_start"
+        largs+=(-L "$new_start,$new_end:$file")
+      done
+      if [ "${#largs[@]}" -eq 0 ]; then
+        scan_never_reached
+        return
+      fi
+    else
+      detail="$(deleting_commit "$resolved_sha" "$ref" "$file" "$deleted")"
+      scan_changed_or_never "${detail:-$file_commit}"
+      return
+    fi
+  else
+    new_start="$(map_line "$resolved_sha" "$ref" "$file" "$start")"
+    new_end="$(map_line "$resolved_sha" "$ref" "$file" "$end")"
+    [ "$new_end" -ge "$new_start" ] || new_end="$new_start"
+    largs=(-L "$new_start,$new_end:$file")
   fi
   # The newest commit since the filing that touched the finding's lines. The
   # output is captured whole before filtering and given to grep -m1 as a
   # herestring: piping it into grep -m1 or head could SIGPIPE the writer and
   # pass for a failure under pipefail.
-  if log_out="$(git -C "$ROOT" log -1 --format=%H -L "$new_start,$new_end:$file" "$ref" "^$resolved_sha" 2>/dev/null)"; then
+  if log_out="$(git -C "$ROOT" log -1 --format=%H "${largs[@]}" "$ref" "^$resolved_sha" 2>/dev/null)"; then
     detail="$(grep -m1 -Ex '[0-9a-f]{40}' <<<"$log_out")" || true
     # The lines were followed and nothing since the filing touched them: the
-    # file changed only elsewhere.
+    # file changed only elsewhere - unless the lines themselves differ, by
+    # commits that never reached the default branch.
     if [ -z "$detail" ]; then
-      scan_line "$file:$lines" unchanged ""
+      if $off_default && [ -n "$(range_differs "$resolved_sha" "$ref" "$file" "$start" "$end")" ]; then
+        scan_never_reached
+      else
+        scan_line "$file:$lines" unchanged ""
+      fi
       return
     fi
   else
@@ -204,7 +304,7 @@ finding_scan_one() {
     # commit touching the file stands in.
     detail="$file_commit"
   fi
-  scan_line "$file:$lines" changed "$detail"
+  scan_changed_or_never "$detail"
 }
 
 # finding-triage scan [--all] [<issue> | --pr <n>]: read-only. Sorts each open
