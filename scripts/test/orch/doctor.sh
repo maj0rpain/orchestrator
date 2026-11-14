@@ -616,10 +616,10 @@ writeln '# Triage Labels' '' \
         '| `a\|b`                     | `needs-triage`        | do it       |' >docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
-assert_contains "an escaped pipe in the mattpocock-name column does not shift the label column" \
-  "$out" 'gh label create "needs-triage"'
-assert_eq "does not invent a label out of the shifted fragment" \
+assert_eq "a row whose left cell names no role yields no label, the shifted fragment included" \
   "$(printf '%s\n' "$out" | grep -c 'gh label create "b"')" "0"
+assert_eq "and its right cell is not read as a label either" \
+  "$(printf '%s\n' "$out" | grep -c 'gh label create "needs-triage"')" "0"
 
 # The Meaning column sits after the one doctor reads, so an escape there is
 # the least likely to leak - which is exactly why it earns a test locking
@@ -687,6 +687,116 @@ assert_contains "resolves the role against the real table's label, not the one b
 fake_issue 7 open ready-for-agent
 out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "adopts once the issue carries the real table's label" "$st" 0
+
+# The adoption above left a flow active; the lookups below need none.
+healthy_repo
+doctor_github
+
+# Only the role table is read: the first table of three or more columns that
+# holds a row whose left cell is a canonical role, and nothing after it.
+role_rows=(
+  '# Triage Labels' ''
+  '| Label in mattpocock/skills | Label in our tracker | Meaning     |'
+  '| -------------------------- | -------------------- | ----------- |'
+  '| `needs-triage`             | `needs-triage`       | Evaluate it |'
+  '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |'
+)
+rota=(
+  '| Step  | Owner | Notes |'
+  '| ----- | ----- | ----- |'
+  '| build | alice | none  |'
+  '| ship  | bob   | none  |'
+)
+
+# A wide table after the role table (the reported case).
+writeln "${role_rows[@]}" '' '## Rota' '' "${rota[@]}" >docs/agents/triage-labels.md
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "a wide table after the role table: the count is the role table's" "$out" "2 triage labels"
+assert_eq "and no cell of it is demanded of the repo" \
+  "$(printf '%s\n' "$out" | grep -c -e 'alice' -e 'bob')" "0"
+
+# A wide table before the role table whose left column names no role.
+writeln '# Rota' '' "${rota[@]}" '' "${role_rows[@]}" >docs/agents/triage-labels.md
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "a wide table before the role table: the count is the role table's" "$out" "2 triage labels"
+assert_eq "and none of its cells is demanded" \
+  "$(printf '%s\n' "$out" | grep -c -e 'alice' -e 'bob')" "0"
+fake_issue 7 open needs-triage
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_contains "the lookup resolves from the role table" "$out" "ready-for-agent"
+assert_not_contains "and not from the rota" "$out" "alice"
+
+# A later wide table keyed by role never answers a lookup: the role table does
+# not list the role ...
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '' '## Owners' '' \
+        '| Role            | Owner | Notes |' \
+        '| --------------- | ----- | ----- |' \
+        '| ready-for-agent | carol | none  |' >docs/agents/triage-labels.md
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "a later role-keyed table is not counted" "$out" "1 triage labels"
+assert_eq "its cell is not demanded of the repo" \
+  "$(printf '%s\n' "$out" | grep -c 'carol')" "0"
+fake_issue 7 open needs-triage
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_contains "the lookup of an unlisted role answers the canonical name" "$out" "ready-for-agent"
+assert_not_contains "not the later table's cell" "$out" "carol"
+
+# ... and the role table lists it with a blank label.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '| `ready-for-agent`          |                      | AFK-ready   |' \
+        '' '## Owners' '' \
+        '| Role            | Owner | Notes |' \
+        '| --------------- | ----- | ----- |' \
+        '| ready-for-agent | carol | none  |' >docs/agents/triage-labels.md
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "a blank label in the role table is still skipped" "$out" "1 triage labels"
+assert_eq "and the later table's cell is not demanded" \
+  "$(printf '%s\n' "$out" | grep -c 'carol')" "0"
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_contains "the lookup of a blank label answers the canonical name" "$out" "ready-for-agent"
+assert_not_contains "not the later table's cell" "$out" "carol"
+
+# A row of the role table whose left cell names no canonical role, a case
+# variant included, contributes no label and never answers its lookup.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' \
+        '| `Needs-Triage`             | `variant-label`      | Evaluate it |' \
+        '| `stray`                    | `stray-label`        | none        |' >docs/agents/triage-labels.md
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "non-role rows are not counted" "$out" "1 triage labels"
+assert_eq "and their labels are not demanded" \
+  "$(printf '%s\n' "$out" | grep -c -e 'variant-label' -e 'stray-label')" "0"
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' \
+        '| `Needs-Triage`             | `variant-label`      | Evaluate it |' >docs/agents/triage-labels.md
+fake_issue 7 open ready-for-agent
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_not_contains "the needs-triage lookup is not answered from a case variant" "$out" "variant-label"
+
+# A doc whose only wide table holds no role row parses to nothing.
+writeln '# Triage Labels' '' "${rota[@]}" >docs/agents/triage-labels.md
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a doc whose only wide table holds no role row FAILs" "$st" 1
+assert_contains "with the no-labels advice" "$out" "delete it to use the canonical names"
+assert_eq "and reads no cell of the rota" \
+  "$(printf '%s\n' "$out" | grep -c -e 'alice' -e 'bob')" "0"
 
 # Reset again: the successful adopt above just left a flow active, and the
 # sub-issues checks right after this expect the plain flow-free healthy repo.
