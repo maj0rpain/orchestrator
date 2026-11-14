@@ -215,7 +215,9 @@ fake_countdown() {
 # failure file); else fake_failing_raw, with a failure that is a GitHub
 # API rate limit going through the production gh_limit_retry, as the guard's
 # own failed calls do (sourced alone, without gh.sh, it is fake_failing_raw's
-# own answer): a secondary limit is waited out and retried once, and a
+# own answer): a secondary limit is waited out and retried once, except in a
+# call made under GH_LIMIT_COMPOUND (a compound write), which gives up at
+# once; and a
 # limit given up on leaves the handler's distinct message on stderr in place of
 # gh's own. Any other failure is written as it is.
 fake_failing() {

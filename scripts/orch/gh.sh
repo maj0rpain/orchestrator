@@ -53,7 +53,7 @@ gh() {
 # called and nothing is retried; while GH_LIMIT_COMPOUND is set (the guard's
 # compound-write marker) a first secondary limit is given up on, not retried.
 gh_limit_retry() {
-  local errf outf out_st err rc retried=0
+  local errf outf out_st err rc retried=0 spent given_up=0
   temp_file_make errf || die "could not create a temp file for the command's stderr"
   temp_file_make outf || { rm -f "$errf"; die "could not create a temp file for the command's stdout"; }
   while :; do
@@ -62,14 +62,15 @@ gh_limit_retry() {
     err="$(cat "$errf")"
     if [ "$out_st" -eq 0 ] || [ -n "${GH_LIMIT_READING:-}" ]; then break; fi
     rc=0
-    [ -z "${GH_LIMIT_COMPOUND:-}" ] || retried=1
-    gh_limit_handle "$err" "$retried" || rc=$?
+    spent="$retried"
+    [ -z "${GH_LIMIT_COMPOUND:-}" ] || spent=1
+    gh_limit_handle "$err" "$spent" || rc=$?
     if [ "$rc" -eq 2 ]; then retried=1; continue; fi
-    if [ "$rc" -eq 1 ]; then err=""; break; fi
+    if [ "$rc" -eq 1 ]; then given_up=1; break; fi
     break
   done
   cat "$outf"
-  [ -z "$err" ] || printf '%s\n' "$err" >&2
+  [ "$given_up" -eq 1 ] || [ -z "$err" ] || printf '%s\n' "$err" >&2
   rm -f "$errf" "$outf"
   return "$out_st"
 }

@@ -1821,16 +1821,23 @@ for wording in 'You have exceeded a secondary rate limit. Please wait a few minu
   assert_contains "$wording: a second limit is handled like a primary one" "$out" "resets at 2033-05-18T03:33:20Z"
 done
 
+# limit_once_gh <dir> <first stdout> <answer> [<failing calls>]: a gh at
+# <dir>/gh whose first <failing calls> (default 1) calls print <first stdout>
+# and fail on a secondary limit, and whose later calls print <answer>; every
+# call's argv is a line of <dir>/calls.
+limit_once_gh() {
+  mkdir -p "$1"
+  rm -f "$1/calls"
+  {
+    printf '%s\n' '#!/usr/bin/env bash' 'd="$(cd "$(dirname "$0")" && pwd)"' 'printf "%s\n" "$*" >>"$d/calls"'
+    printf 'if [ "$(wc -l <"$d/calls")" -le %s ]; then printf %%s %q; echo %q >&2; exit 1; fi\n' "${4:-1}" "$2" 'You have exceeded a secondary rate limit.'
+    printf 'printf %%s %q\n' "$3"
+  } >"$1/gh"
+  chmod +x "$1/gh"
+}
+
 # A secondary limit that clears on the retry is absorbed.
-mkdir "$GH_FIXTURE/once"
-cat >"$GH_FIXTURE/once/gh" <<'ONCE'
-#!/usr/bin/env bash
-d="$(cd "$(dirname "$0")" && pwd)"
-printf 'call\n' >>"$d/calls"
-if [ "$(wc -l <"$d/calls")" -eq 1 ]; then echo 'You have exceeded a secondary rate limit.' >&2; exit 1; fi
-echo 'Body.'
-ONCE
-chmod +x "$GH_FIXTURE/once/gh"
+limit_once_gh "$GH_FIXTURE/once" '' 'Body.'
 out="$(PATH="$GH_FIXTURE/once:$PATH" contract adapter_issue_body 5 2>&1)"; st=$?
 assert_status "a secondary limit the retry clears succeeds" "$st" 0
 assert_eq "with the retry's answer and nothing else" "$out" "Body."
@@ -1838,17 +1845,7 @@ assert_eq "with the retry's answer and nothing else" "$out" "Body."
 # The deciding attempt's stdout alone reaches the caller (#3128): a paginated
 # listing whose first attempt prints rows then fails on a secondary limit gives
 # the retry's rows, each once.
-mkdir "$GH_FIXTURE/rows"
-cat >"$GH_FIXTURE/rows/gh" <<'ROWS'
-#!/usr/bin/env bash
-d="$(cd "$(dirname "$0")" && pwd)"
-printf 'call\n' >>"$d/calls"
-if [ "$(wc -l <"$d/calls")" -eq 1 ]; then
-  printf '1\tone\n2\ttwo\n'; echo 'You have exceeded a secondary rate limit.' >&2; exit 1
-fi
-printf '1\tone\n2\ttwo\n3\tthree\n'
-ROWS
-chmod +x "$GH_FIXTURE/rows/gh"
+limit_once_gh "$GH_FIXTURE/rows" $'1\tone\n2\ttwo\n' $'1\tone\n2\ttwo\n3\tthree\n'
 out="$(ORCH_GH_LIMIT_WAIT=0 PATH="$GH_FIXTURE/rows:$PATH" contract adapter_issues_open_titles 2>&1)"; st=$?
 assert_status "a paginated listing whose first attempt fails on a secondary limit succeeds" "$st" 0
 assert_eq "and gives the retry's rows alone, each once" "$out" "$(printf '1\tone\n2\ttwo\n3\tthree')"
@@ -1856,34 +1853,31 @@ assert_eq "and gives the retry's rows alone, each once" "$out" "$(printf '1\tone
 # gh_limit_retry passes stdout byte for byte, leaves no temp file, and keeps
 # the failure contract.
 rt_tmp="$(mktemp -d)"
-rt() { TMPDIR="$rt_tmp" ORCH_GH_LIMIT_WAIT=0 sourced_orch_script "$@"; }
-rt 'gh_limit_retry printf "a\n\n\n"' >"$rt_tmp.o"
+retry_script() { TMPDIR="$rt_tmp" ORCH_GH_LIMIT_WAIT=0 sourced_orch_script "$@"; }
+retry_script 'gh_limit_retry printf "a\n\n\n"' >"$rt_tmp.o"
 assert_eq "stdout ending in blank lines passes through byte for byte" "$(od -An -c <"$rt_tmp.o" | tr -s ' ')" " a \\n \\n \\n"
-rt 'gh_limit_retry printf "no newline"' >"$rt_tmp.o"
+retry_script 'gh_limit_retry printf "no newline"' >"$rt_tmp.o"
 assert_eq "stdout with no final newline passes through byte for byte" "$(<"$rt_tmp.o")|$(wc -c <"$rt_tmp.o" | tr -d ' ')" "no newline|10"
 assert_eq "no temp file is left after a success" "$(ls -A "$rt_tmp")" ""
-out="$(rt 'f() { echo partial; echo "HTTP 502: Bad Gateway" >&2; return 3; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
+out="$(retry_script 'f() { echo partial; echo "HTTP 502: Bad Gateway" >&2; return 3; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
 assert_status "a failure that is no limit keeps its status" "$st" 3
 assert_eq "its stdout" "$out" "partial"
 assert_eq "its stderr" "$(<"$rt_tmp.e")" "HTTP 502: Bad Gateway"
 assert_eq "and leaves no temp file" "$(ls -A "$rt_tmp")" ""
-out="$(rt 'gh_limit_handle() { echo "handler" >&2; return 1; }; f() { echo kept; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
+out="$(retry_script 'gh_limit_handle() { echo "handler" >&2; return 1; }; f() { echo kept; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
 assert_status "a limit given up on fails the call" "$st" 1
 assert_eq "with the deciding attempt's stdout" "$out" "kept"
 assert_eq "and the handler's message in place of gh's stderr" "$(<"$rt_tmp.e")" "handler"
 assert_eq "and leaves no temp file" "$(ls -A "$rt_tmp")" ""
-out="$(rt 'f() { echo first; echo "secondary rate limit" >&2; return 1; }; gh_limit_handle() { [ "$2" = 0 ] && return 2; return 1; }; gh_limit_retry f' 2>/dev/null)"
+out="$(retry_script 'f() { echo first; echo "secondary rate limit" >&2; return 1; }; gh_limit_handle() { [ "$2" = 0 ] && return 2; return 1; }; gh_limit_retry f' 2>/dev/null)"
 assert_eq "a retried attempt's stdout is dropped, the deciding one's kept" "$out" "first"
 assert_eq "a retry leaves no temp file" "$(ls -A "$rt_tmp")" ""
-out="$(GH_LIMIT_READING=1 rt 'gh_limit_handle() { echo handled >&2; return 2; }; f() { echo q; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>&1)"; st=$?
+out="$(GH_LIMIT_READING=1 retry_script 'gh_limit_handle() { echo handled >&2; return 2; }; f() { echo q; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>&1)"; st=$?
 assert_eq "the quota read is neither retried nor handled" "$out" "$(printf 'q\nsecondary rate limit')"
-# nth_make_fake: source making temp_file_make fail on its PK_NTH-th call,
-# counted in the file PK_COUNT (the autopilot tests' fake).
-nth_make_fake='real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; '
 # A temp file that cannot be made ends the run and leaves the directory empty.
 for rt_nth in 1 2; do
   : >"$rt_tmp.c"
-  out="$(PK_COUNT="$rt_tmp.c" PK_NTH="$rt_nth" rt "$nth_make_fake"'gh_limit_retry true' 2>&1)"; st=$?
+  out="$(PK_COUNT="$rt_tmp.c" PK_NTH="$rt_nth" retry_script "$NTH_MAKE_FAKE"'gh_limit_retry true' 2>&1)"; st=$?
   assert_status "temp file $rt_nth failing ends the run" "$((st != 0 ? 0 : 1))" 0
   assert_contains "with the guard's die message" "$out" "could not create a temp file for the command's std"
   assert_eq "and leaves the temp directory empty" "$(ls -A "$rt_tmp")" ""
@@ -1920,22 +1914,11 @@ compound_case() {
   assert_contains "$name fails with the guard's rate-limit message" "$out" "orch: GitHub API rate limit reached"
   assert_status "$name takes no wait" "$((SECONDS < 20 ? 0 : 1))" 0
 }
+# bare_case <name> <operation> <args...>
 bare_case() {
   local name="$1"; shift
-  local argv=() op=()
-  while [ "$1" != -- ]; do argv+=("$1"); shift; done
-  shift; op=("$@")
-  mkdir -p "$GH_FIXTURE/once2"
-  rm -f "$GH_FIXTURE/once2/calls"
-  cat >"$GH_FIXTURE/once2/gh" <<'ONCE'
-#!/usr/bin/env bash
-d="$(cd "$(dirname "$0")" && pwd)"
-printf '%s\n' "$*" >>"$d/calls"
-if [ "$(wc -l <"$d/calls")" -eq 1 ]; then echo 'You have exceeded a secondary rate limit.' >&2; exit 1; fi
-echo 'https://github.com/fork/widgets/pull/9'
-ONCE
-  chmod +x "$GH_FIXTURE/once2/gh"
-  PATH="$GH_FIXTURE/once2:$PATH" contract "${op[@]}" >/dev/null 2>&1; st=$?
+  : >"$GH_FIXTURE/once2/calls"
+  PATH="$GH_FIXTURE/once2:$PATH" contract "$@" >/dev/null 2>&1; st=$?
   assert_status "$name meeting a secondary limit the retry clears succeeds" "$st" 0
   assert_eq "$name calls gh twice" "$(wc -l <"$GH_FIXTURE/once2/calls" | tr -d ' ')" "2"
 }
@@ -1944,13 +1927,17 @@ compound_case "an issue close with a comment" issue close 5 --reason completed -
 compound_case "a PR close" pr close 7 --comment bye -- adapter_pr_close 7 bye
 compound_case "a PR create with a label" pr create --label ready --base main --head feat --title T --body-file "$GH_FIXTURE/body.md" -- \
   adapter_pr_create main feat T "$GH_FIXTURE/body.md" --label ready
-bare_case "an issue close with no comment" -- adapter_issue_close 5 --reason completed
-bare_case "a PR create with no label" -- adapter_pr_create main feat T "$GH_FIXTURE/body.md"
-bare_case "an unmarked write (a comment)" -- adapter_pr_comment 7 "$GH_FIXTURE/body.md"
-# no later call inherits the marker: it is gone once the compound write ends
-mkdir -p "$GH_FIXTURE/once2"; rm -f "$GH_FIXTURE/once2/calls"
-out="$(PATH="$GH_FIXTURE/once2:$PATH" env -u ORCH_GH_ADAPTER bash -c 'source "$1"; adapter_pr_close 7 bye || true; echo "[${GH_LIMIT_COMPOUND-}]"' _ "$ORCH" "$GH_FIXTURE/body.md" 2>&1)"
-assert_contains "the marker is gone after the compound write" "$out" "[]"
+limit_once_gh "$GH_FIXTURE/once2" '' 'https://github.com/fork/widgets/pull/9'
+bare_case "an issue close with no comment" adapter_issue_close 5 --reason completed
+bare_case "a PR create with no label" adapter_pr_create main feat T "$GH_FIXTURE/body.md"
+bare_case "an unmarked write (a comment)" adapter_pr_comment 7 "$GH_FIXTURE/body.md"
+# no later call inherits the marker (#3129): after a compound write gives up,
+# an unmarked call in the same shell that meets a secondary limit is retried
+# (gh calls: the close, its quota read, the comment, the comment's retry)
+limit_once_gh "$GH_FIXTURE/once2" '' 'ok' 3
+out="$(ORCH_GH_LIMIT_WAIT=0 PATH="$GH_FIXTURE/once2:$PATH" env -u ORCH_GH_ADAPTER bash -c 'source "$1"; adapter_pr_close 7 bye || true; adapter_pr_comment 7 "$2"; echo "status $?"' _ "$ORCH" "$GH_FIXTURE/body.md" 2>&1)"
+assert_contains "a call made after a compound write is retried and succeeds" "$out" "status 0"
+assert_eq "and gh is called for the later call twice" "$(wc -l <"$GH_FIXTURE/once2/calls" | tr -d ' ')" "4"
 # a compound write failing on no limit passes stderr and status through
 gh_reply 1 '' 'HTTP 502: Bad Gateway' pr close 7 --comment bye
 out="$(contract adapter_pr_close 7 bye 2>&1)"; st=$?
