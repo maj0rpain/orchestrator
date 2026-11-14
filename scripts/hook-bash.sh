@@ -49,29 +49,55 @@ hook_bash_stdin_only_options() {
   for a in "$@"; do [[ "$a" == -* ]] || return 1; done
 }
 
-# Succeeds when any ARG ($2...) is an info option of the command word $1: an
-# option that makes the program print and exit without reading stdin.
-hook_bash_stdin_has_info_option() {
-  local cmd="$1" a
-  shift
+# Succeeds when any ARG ($1...) is an info option of cat: an option that makes
+# it print and exit without reading stdin, wherever it stands (`cat - --help`
+# prints help).
+hook_bash_stdin_cat_has_info_option() {
+  local a
   for a in "$@"; do
-    case "$cmd:$a" in
-      cat:--help|cat:--version) return 0 ;;
-      python:-h|python:-V|python:--help|python:--version) return 0 ;;
-      python3:-h|python3:-V|python3:--help|python3:--version) return 0 ;;
-      node:-h|node:-v|node:--help|node:--version) return 0 ;;
-    esac
+    case "$a" in --help|--version) return 0 ;; esac
   done
   return 1
 }
 
-# Succeeds when an interpreter's arguments name no script: none at all, options
-# only, or `-` as the script (the first argument that is not an option, a lone
-# - counting as the script). A word after an option that takes a value
-# (-c code, -m mod) counts as naming a script (a false negative, accepted).
+# Succeeds when the option word $2 is a no-read option of the interpreter $1
+# (python, python3 or node): an option under which the program reads no script
+# from stdin, because it gives the program its code, its module or its mode,
+# or makes it print and exit. Only bash pattern matching, no process.
+#   python, python3: -h -V -VV -? --help --version --help-all --help-env
+#     --help-xoptions; and a single-dash word in which c or m follows zero or
+#     more of the no-argument flag letters b B d E I O P q R s S u v x, with
+#     or without text after it (-c, -m, -c<code>, -m<mod>, -Ic1, -Bmpytest).
+#     `i` is left out (python then reads stdin after the code); W and X are
+#     left out (they take the rest of the word as their value).
+#   node: -h -v --help --version --v8-options --completion-bash, --test (whole
+#     word only), and a word starting --eval= or --run=. Not --print=*, bare
+#     -p or --print (node reads its script from stdin under them), nor the
+#     joined short forms -e<code> and -p<code> (node rejects them).
+hook_bash_stdin_is_no_read_option() {
+  case "$1:$2" in
+    python:-h|python:-V|python:-VV|'python:-?'|python:--help|python:--version) return 0 ;;
+    python:--help-all|python:--help-env|python:--help-xoptions) return 0 ;;
+    python3:-h|python3:-V|python3:-VV|'python3:-?'|python3:--help|python3:--version) return 0 ;;
+    python3:--help-all|python3:--help-env|python3:--help-xoptions) return 0 ;;
+    python:-*|python3:-*) [[ "$2" =~ ^-[bBdEIOPqRsSuvx]*[cm] ]] && return 0 ;;
+    node:-h|node:-v|node:--help|node:--version|node:--v8-options|node:--completion-bash) return 0 ;;
+    node:--test|node:--eval=*|node:--run=*) return 0 ;;
+  esac
+  return 1
+}
+
+# Succeeds when an interpreter ($1: python, python3 or node) reads its script
+# from stdin. The argument words ($2...) are read left to right and the first
+# decisive word decides: a no-read option, no (fails); a lone -, yes; a word
+# that is not an option, no (it names a script, or is an option's value); no
+# decisive word, or no arguments, yes. Words after a lone - belong to the
+# script, so they never excuse the read.
 hook_bash_stdin_script_is_stdin() {
-  local a
+  local cmd="$1" a
+  shift
   for a in "$@"; do
+    hook_bash_stdin_is_no_read_option "$cmd" "$a" && return 1
     [ "$a" = - ] && return 0
     [[ "$a" == -* ]] || return 1
   done
@@ -83,8 +109,9 @@ hook_bash_stdin_script_is_stdin() {
 # unquoted `|`,
 # or the whole part. A head is a plain read when its first word, after
 # leading VAR=value words, is `cat` with no file argument (only options other
-# than its info options, or `-`), `read`, `python`, `python3` or `node` with
-# options only or `-` as its script, unless an info option is present, or
+# than its info options, or `-`), `read`, `python`, `python3` or `node` whose
+# script is stdin (hook_bash_stdin_script_is_stdin: no option gives it its code,
+# module or mode or makes it print and exit, and no script is named), or
 # `bash`/`sh` with `-s` first - and the head holds no `<`, which would feed it.
 # A `|` feeds only the commands after it, so only the head is judged.
 # First-word matching only.
@@ -110,8 +137,8 @@ hook_bash_stdin_is_reader() {
   [ "${#words[@]}" -gt "$((k + 1))" ] && rest=("${words[@]:k+1}")
   local cmd_word="${words[k]:-}"
   case "$cmd_word" in
-    cat) hook_bash_stdin_only_options ${rest[@]+"${rest[@]}"} && ! hook_bash_stdin_has_info_option cat ${rest[@]+"${rest[@]}"} ;;
-    python|python3|node) hook_bash_stdin_script_is_stdin ${rest[@]+"${rest[@]}"} && ! hook_bash_stdin_has_info_option "$cmd_word" ${rest[@]+"${rest[@]}"} ;;
+    cat) hook_bash_stdin_only_options ${rest[@]+"${rest[@]}"} && ! hook_bash_stdin_cat_has_info_option ${rest[@]+"${rest[@]}"} ;;
+    python|python3|node) hook_bash_stdin_script_is_stdin "$cmd_word" ${rest[@]+"${rest[@]}"} ;;
     read) return 0 ;;
     bash|sh) [ "${rest[0]:-}" = -s ] ;;
     *) return 1 ;;

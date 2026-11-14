@@ -1974,11 +1974,17 @@ for bs_cmd in 'cat' 'cat -' 'read x' 'python' 'python3' 'python3 -' 'node' 'node
   $'\ncat' $'cd x &&\ncat' $'echo a;\n\ncat' 'cat;' '>o; cat' \
   'cat | grep x' 'python3 | tee log' 'bash -s | tee log' 'cat 2>&1 | grep x' 'cat |& grep x' \
   $'cat |\n  grep x' "cat | grep '<'" 'cat | grep x < f' 'read x | true' 'true && cat | grep x' \
-  'echo a; cat | grep x' $'echo a\ncat | grep x'; do
+  'echo a; cat | grep x' $'echo a\ncat | grep x' \
+  'node --test-only' 'node --print=1+1' 'node -p' 'node --print' 'node -e1' 'node -p1' 'node -pe1' \
+  'python3 -ic1' 'python3 -Wc1' 'python3 -Xc1' 'python3 - -c1' 'python3 - --help' 'node - --test'; do
   bs_out="$(bash_hook_scan default "$bs_cmd")"
   assert_eq "bash hook stdin guard: default denies '${bs_cmd//$'\n'/\\n}'" \
     "$(bash_hook_decision "$bs_out")" deny
 done
+bs_out="$(bash_hook_event acceptEdits orch-fixer 'node --test' | bash_hook_run "")"
+assert_empty "bash hook stdin guard: acceptEdits passes 'node --test' for orch-fixer" "$bs_out"
+bs_out="$(bash_hook_event default "" 'node --test' | bash_hook_run 1)"
+assert_empty "bash hook stdin guard: autopilot passes 'node --test'" "$bs_out"
 bs_out="$(bash_hook_scan acceptEdits cat)"
 assert_eq "bash hook stdin guard: acceptEdits denies 'cat'" \
   "$(bash_hook_decision "$bs_out")" deny
@@ -1995,7 +2001,11 @@ for bs_cmd in $'cat <<EOF\nx\nEOF' 'cat <<< x' 'echo x | cat' 'cat < f | grep x'
   "git commit -m 'x && read'" 'git status' 'read x </dev/null' 'echo a # ; cat' 'cat file -n' $'echo a \\\n  cat' \
   $'echo x |\n  cat' $'git log |\n  read x' 'cat >out file' $'cat <<\\EOF\ncat\nEOF' 'cat --help' 'cat --version' 'cat -n --help' \
   'python3 -h' 'python3 -V' 'python3 --help' 'python3 --version' 'node -h' 'node -v' 'node --help' 'node --version' \
-  "python3 -c 'print(1)'" 'python3 -m json.tool f'; do
+  "python3 -c 'print(1)'" 'python3 -m json.tool f' \
+  'node --test' 'node --test --test-reporter=dot' 'node --eval=1' 'node --run=x' 'node --v8-options' 'node --completion-bash' \
+  'python3 -c1' "python3 -c'print(1)'" 'python3 -mpytest' 'python3 -Ic1' 'python3 -Bmpytest' 'python3 -c -1' 'python3 -c1 -' \
+  'python3 -VV' 'python3 -?' 'python3 --help-all' 'python3 --help-env' 'python3 --help-xoptions' 'python3 -c' 'python3 -m' \
+  'python3 -OOc1' 'python3 -mjson.tool' "python -c'print(1)'"; do
   bs_out="$(bash_hook_scan default "$bs_cmd")"
   assert_empty "bash hook stdin guard: default passes '${bs_cmd//$'\n'/\\n}'" "$bs_out"
 done
@@ -2101,7 +2111,7 @@ assert_eq "bash hook: an in-scope payload with no command costs 1 jq call" \
   "$(bash_hook_event default orch-implementer cat | jq 'del(.tool_input.command)' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
 assert_eq "bash hook: a non-JSON payload costs 1 jq call" "$(echo 'not json {' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
 for mode in default bypassPermissions; do
-  for hb_cmd in 'cat; echo done' 'pgrep x' 'echo hi'; do
+  for hb_cmd in 'cat; echo done' 'pgrep x' 'echo hi' 'python3 -Bmpytest'; do
     hb_n="$(bash_hook_event "$mode" orch-implementer "$hb_cmd" | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")"
     assert_eq "bash hook: an in-scope '$hb_cmd' under $mode costs at most 2 jq calls" "$([ "$hb_n" -le 2 ] && echo yes || echo "no ($hb_n)")" yes
   done
