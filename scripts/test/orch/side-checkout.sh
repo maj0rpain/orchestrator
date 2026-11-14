@@ -148,8 +148,6 @@ git worktree remove "$top/.orchestrator/checkouts/epsilon"
 # Each checkout is walked in a subshell, yet every module loads once.
 assert_trace_loads_once "list with four side checkouts" "$lload"
 rm -f "$lload"
-assert_loads_once "add" orch_gh_failing side-checkout add zeta
-git worktree remove "$top/.orchestrator/checkouts/zeta"
 orch_gh_failing ticket-worktree remove 4 --unmerged
 assert_eq "git status in the main checkout still shows nothing new" "$(git status --porcelain)" ""
 
@@ -173,8 +171,11 @@ assert_eq "each side checkout stays where git recorded it" \
 assert_eq "and side-checkout list is unchanged" "$(orch_gh_failing side-checkout list | wc -l | tr -d ' ')" "4"
 
 # A side checkout made for a quick implementation records its issue (#874).
-qi="$(orch_gh_failing side-checkout add quick-one --issue 123 2>/dev/null)"; st=$?
+qload="$(mktemp)"
+qi="$(ORCH_LOAD_TRACE="$qload" orch_gh_failing side-checkout add quick-one --issue 123 2>/dev/null)"; st=$?
 assert_status "add --issue succeeds" "$st" 0
+assert_trace_loads_once "add with four side checkouts" "$qload"
+rm -f "$qload"
 assert_eq "add --issue prints the side checkout's path" "$qi" "$top/.orchestrator/checkouts/quick-one"
 out="$(cd "$qi" && orch_gh_failing side-checkout issue)"; st=$?
 assert_status "side-checkout issue succeeds in a side checkout made with --issue" "$st" 0
