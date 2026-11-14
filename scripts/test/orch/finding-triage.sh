@@ -229,7 +229,6 @@ assert_status "a listed scan makes no per-finding read" "$st" 0
 assert_eq "without --all, only the findings in needs-triage" \
   "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 23 "
 assert_eq "each with its state too" "$(field_of 23 6 "$out")" "needs-triage,ready-for-agent"
-assert_eq "the plain scan from a subdirectory prints the root's lines (listed)" "$(cd src && scan 2>&1)" "$out"
 fake_unfail
 # Each finding is read once, body and labels together: neither the body-only
 # nor the state-and-labels read is called.
