@@ -28,16 +28,23 @@ del_commit() {
   git -C "$work" rev-parse HEAD
 }
 
+# pr_head <branch> <pr> <base sha> <file> <sed script>: a PR head off <base sha>
+# that edits src/<file>, pushed as PR <pr> and never merged; prints its SHA,
+# leaving main checked out.
+pr_head() {
+  git -C "$work" checkout -q -b "$1" "$3"
+  sed -i "$5" "$work/src/$4"
+  git -C "$work" commit -qam "the PR's own edit"
+  git -C "$work" rev-parse HEAD
+  git -C "$work" push -q origin "HEAD:refs/pull/$2/head"
+  git -C "$work" checkout -q main
+}
+
 # squash_pr_head <pr> <file> <line>: a PR head off $filed_sha, pushed as PR
 # <pr>, that inserts <line> on top of src/<file>, then the squash commit that
 # lands the same edit on main; prints the PR head's SHA, left on main.
 squash_pr_head() {
-  git -C "$work" checkout -q -b "pr$1" "$filed_sha"
-  sed -i "1i $3" "$work/src/$2"
-  git -C "$work" commit -qam "the PR's own edit"
-  git -C "$work" rev-parse HEAD
-  git -C "$work" push -q origin "HEAD:refs/pull/$1/head"
-  git -C "$work" checkout -q main
+  pr_head "pr$1" "$1" "$filed_sha" "$2" "1i $3"
   del_commit "$2" "1i $3" "the PR, squash-merged" >/dev/null
 }
 
@@ -346,7 +353,7 @@ finding 11 "review:nit,needs-triage" "\`src/other.sh:2\` at $unmerged_sha" 11
 out="$(scan 11 2>&1)"; st=$?
 assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
 assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
-assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
+assert_contains "saying no commit since the filing touched its lines" "$(field_of 11 5 "$out")" "no commit"
 assert_eq "its exact line" "$(line_of 11 "$out")" \
   "$(printf '11\t11\tsrc/other.sh:2\tunknown\tno commit on the default branch since %s touched src/other.sh:2 - the difference is commits that never reached it\tneeds-triage' "$unmerged_sha")"
 assert_eq "the never-reached scan from a subdirectory prints the root's line" "$(cd src && scan 11 2>&1)" "$out"
@@ -510,14 +517,7 @@ git -C "$work" push -q origin main
 # unm_pr <pr> <file> <sed script>: a PR head off $unm_base that edits
 # src/<file>, pushed as PR <pr> and never merged; prints its SHA, leaving main
 # checked out.
-unm_pr() {
-  git -C "$work" checkout -q -b "unm$1" "$unm_base"
-  sed -i "$3" "$work/src/$2"
-  git -C "$work" commit -qam "the unmerged PR $1's edit"
-  git -C "$work" rev-parse HEAD
-  git -C "$work" push -q origin "HEAD:refs/pull/$1/head"
-  git -C "$work" checkout -q main
-}
+unm_pr() { pr_head "unm$1" "$1" "$unm_base" "$2" "$3"; }
 # never_line <n> <file> <lines> <sha>: the scan's never-reached unknown line.
 never_line() {
   printf '%s\t%s\t%s:%s\tunknown\tno commit on the default branch since %s touched %s:%s - the difference is commits that never reached it\tneeds-triage' \
@@ -553,21 +553,20 @@ assert_eq "lines the PR never touched, in a file only the PR changed, are unchan
   "$(line_of 55 "$out")" "$(printf '55\t55\tsrc/um5.sh:9-10\tunchanged\t-\tneeds-triage')"
 assert_eq "the unchanged scan from a subdirectory prints the root's line" "$(cd src && scan 55 2>&1)" "$out"
 # The default branch, after the PRs: unrelated edits and the cases' own.
-um_edit() { del_commit "$1" "$2" "$3"; }
-um1_sha="$(um_edit um1.sh 's/^um1 line 15$/um1 line 15, reworded/' "an unrelated edit to um1")"
-um_edit um2.sh 's/^um2 line 15$/um2 line 15, reworded/' "an unrelated edit to um2" >/dev/null
-um_edit um3.sh 's/^um3 line 15$/um3 line 15, reworded/' "an unrelated edit to um3" >/dev/null
-um4_del_sha="$(um_edit um4.sh '8,9d' "delete um4's lines")"
-um_edit um4.sh 's/^um4 line 15$/um4 line 15, reworded/' "an unrelated edit to um4" >/dev/null
-um_edit um5.sh 's/^um5 line 15$/um5 line 15, reworded/' "an unrelated edit to um5" >/dev/null
-um6_sha="$(um_edit um6.sh 's/^um6 line 5$/um6 line 5, reworded/' "reword um6's line")"
-um7_sha="$(um_edit um7.sh 's/^um7 line 8$/um7 line 8, reworded/' "reword um7's line")"
-um8_sha="$(um_edit um8.sh 's/^um8 line 6$/um8 line 6, reworded/' "reword um8's line")"
-um9_del_sha="$(um_edit um9.sh '6d' "delete um9's line")"
-um_edit um9.sh 's/^um9 line 15$/um9 line 15, reworded/' "an unrelated edit to um9" >/dev/null
-um_edit um10.sh 's/^um10 line 15$/um10 line 15, reworded/' "an earlier edit to um10" >/dev/null
-um10_del_sha="$(um_edit um10.sh '8,9d' "delete um10's lines")"
-um12_sha="$(um_edit um12.sh 's/^um12 line 15$/um12 line 15, reworded/' "an edit to um12")"
+del_commit um1.sh 's/^um1 line 15$/um1 line 15, reworded/' "an unrelated edit to um1" >/dev/null
+del_commit um2.sh 's/^um2 line 15$/um2 line 15, reworded/' "an unrelated edit to um2" >/dev/null
+del_commit um3.sh 's/^um3 line 15$/um3 line 15, reworded/' "an unrelated edit to um3" >/dev/null
+um4_del_sha="$(del_commit um4.sh '8,9d' "delete um4's lines")"
+del_commit um4.sh 's/^um4 line 15$/um4 line 15, reworded/' "an unrelated edit to um4" >/dev/null
+del_commit um5.sh 's/^um5 line 15$/um5 line 15, reworded/' "an unrelated edit to um5" >/dev/null
+um6_sha="$(del_commit um6.sh 's/^um6 line 5$/um6 line 5, reworded/' "reword um6's line")"
+um7_sha="$(del_commit um7.sh 's/^um7 line 8$/um7 line 8, reworded/' "reword um7's line")"
+um8_sha="$(del_commit um8.sh 's/^um8 line 6$/um8 line 6, reworded/' "reword um8's line")"
+um9_del_sha="$(del_commit um9.sh '6d' "delete um9's line")"
+del_commit um9.sh 's/^um9 line 15$/um9 line 15, reworded/' "an unrelated edit to um9" >/dev/null
+del_commit um10.sh 's/^um10 line 15$/um10 line 15, reworded/' "an earlier edit to um10" >/dev/null
+um10_del_sha="$(del_commit um10.sh '8,9d' "delete um10's lines")"
+um12_sha="$(del_commit um12.sh 's/^um12 line 15$/um12 line 15, reworded/' "an edit to um12")"
 git -C "$work" push -q origin main
 out="$(scan --all 2>&1)"; st=$?
 assert_status "scans the findings filed at PR heads that never merged" "$st" 0
@@ -597,7 +596,6 @@ assert_eq "a range past the file's end, in a file the default branch changed, na
   "$(line_of 62 "$out")" "$(printf '62\t62\tsrc/um12.sh:25\tchanged\t%s\tneeds-triage' "$um12_sha")"
 assert_eq "the same scan from a subdirectory prints the root's lines" "$(cd src && scan --all 2>&1)" "$out"
 assert_eq "case 1 under a plain scan is the same line" "$(line_of 51 "$(scan 51 2>&1)")" "$(never_line 51 um1.sh 5 "$sha51")"
-: "$um1_sha"
 for n in 51 52 53 54 55 56 57 58 59 60 61 62; do fake_issue "$n" closed; done
 
 # Each severity's list is cut off at the issue-list limit; a list that
