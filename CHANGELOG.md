@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.82
+
+`suite-cost check` started from a subdirectory now measures its base run and confirming runs in the matching directory of their temporary worktree, and reports a commit with no such directory as unmeasured.
+
 ## 5.2.81
 
 `finding-triage scan` now decides whether filed lines never reached the default branch by the finding's lines, not its file, so an unrelated commit to another line of the file no longer turns `unknown` into `unchanged` or a wrong `changed`.

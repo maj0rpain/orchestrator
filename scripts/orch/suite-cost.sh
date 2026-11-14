@@ -59,7 +59,8 @@ SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
 # finding. Set per clone with git config orchestrator.suiteCost.floor and
 # orchestrator.suiteCost.growth. A third per-clone key,
 # orchestrator.suiteCost.setup, has no default: the install command (npm ci,
-# uv sync) a base run or confirming run runs first in its worktree, read by
+# uv sync) a base run or confirming run runs first at the top of its worktree
+# (the measured command then runs in the matching directory), read by
 # suite_cost_tree_run.
 SUITE_COST_FLOOR_DEFAULT=60
 SUITE_COST_GROWTH_DEFAULT=15
@@ -554,9 +555,14 @@ suite_cost_min() {
 # worktree whatever happened. <role> is base, for the base run check makes
 # when the base commit has no clean record, or confirm, for a confirming run;
 # it picks the warnings' wording, a confirming run's naming the growth as
-# unconfirmed. The worktree holds only tracked files, so git config
-# orchestrator.suiteCost.setup, when set and non-empty, runs there first with
-# bash -c, untimed and its output on stderr; a failing setup measures nothing.
+# unconfirmed. The measured command runs in the matching directory: the path
+# below the worktree's top that the caller's directory has below its
+# checkout's top (the top itself when check was started there). A commit with
+# no directory at that path starts no setup and no command, records nothing,
+# warns naming the commit and directory, and fails. The worktree holds only
+# tracked files, so git config orchestrator.suiteCost.setup, when set and
+# non-empty, runs first at the worktree's top with bash -c, untimed and its
+# output on stderr; a failing setup measures nothing.
 # The run is registered as active from its setup to its end, and a passing run
 # another suite-cost run overlapped, or that could not register, is not
 # recorded and fails, warning which. With no setup, a base run exiting 127
@@ -564,8 +570,10 @@ suite_cost_min() {
 # and the worktree is gone; a failed removal after a pass keeps the record and
 # names the left-over worktree.
 suite_cost_tree_run() {
-  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 ran=0 run_label msg_tail msg_no_worktree
+  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 cd_failed=0 ran=0 run_label msg_tail msg_no_worktree subdir
   shift 2
+  subdir="$(git rev-parse --show-prefix 2>/dev/null || true)"
+  subdir="${subdir%/}"
   if [ "$role" = base ]; then
     run_label="the base run" msg_tail="the suite cost is unmeasured"
     msg_no_worktree="could not add a worktree at base commit $sha - $msg_tail"
@@ -586,11 +594,18 @@ suite_cost_tree_run() {
   fi
   suite_cost_interrupt_arm "$tmp"
   SUITE_COST_TREE_WT="$wt" SUITE_COST_TREE_HERE="$here" SUITE_COST_TREE_LABEL="$run_label"
+  if [ -n "$subdir" ] && [ ! -d "$wt/$subdir" ]; then
+    warn "commit $sha has no directory $subdir for $run_label - $msg_tail"
+    status=1
+  fi
   setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
-  if cd "$wt"; then
+  if [ "$status" -ne 0 ]; then
+    :
+  elif cd "$wt"; then
     suite_cost_register
     [ -z "$setup" ] || bash -c "$setup" >&2 || setup_status=$?
-    [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
+    [ "$setup_status" -ne 0 ] || cd "$wt/$subdir" || cd_failed=1
+    [ "$setup_status" -ne 0 ] || [ "$cd_failed" -ne 0 ] || suite_cost_measure "$@" >&2
     suite_cost_unregister
     cd "$here" || die "could not return to $here"
     ran=1
@@ -602,7 +617,7 @@ suite_cost_tree_run() {
   suite_cost_tree_remove "$run_label" "$wt" "$tmp" || status=1
   suite_cost_interrupt_disarm
   if [ "$ran" -eq 1 ]; then
-    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
+    if [ "$setup_status" -eq 0 ] && [ "$cd_failed" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
       if suite_cost_require_solo "$run_label at $sha" "$msg_tail"; then
         suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
       else
@@ -612,6 +627,8 @@ suite_cost_tree_run() {
       status=1
       if [ "$setup_status" -ne 0 ]; then
         warn "$run_label's setup ($setup) at $sha exited $setup_status - $msg_tail"
+      elif [ "$cd_failed" -ne 0 ]; then
+        warn "could not enter directory $subdir at $sha for $run_label - $msg_tail"
       elif [ "$role" = base ] && [ "$SUITE_COST_STATUS" -eq 127 ] && [ -z "$setup" ]; then
         warn "$run_label at $sha exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
       else
