@@ -1067,15 +1067,15 @@ sh_case "a suite and a shellcheck line with 0 CPU weigh 0" "isolation,s1,s3,s5,"
   "99	0	hooks_test.sh" "99	0	shellcheck"
 # Ties: s1 and s2 weigh 20, s3 and s4 10, s5 0. Of s1 and s2 the earlier is
 # dealt first, to group 1, so s3 lands there on the 20-20 tie, s4 in group 2,
-# and s5 in group 1 on the 30-30 tie. The reverse walk order gives group 1 s2,
-# s3 and s5.
+# and s5 in group 1 on the 30-30 tie. The reverse walk order flips both ties
+# and gives group 1 s2, s4 and s5.
 sh_case "ties go to the earlier section and the lowest group" "isolation,s1,s3,s5," "isolation,s2,s4," \
   "1	20	shard s1" "1	20	shard s2" "1	10	shard s3" "1	10	shard s4" "1	0	shard s5"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-# Why 5: the weights are s1 50, s5 (unlisted, so the heaviest listed) 50, s2 40,
-# s3 30 and s4 20 CPU tenths, dealt in that order; group 1 starts at 80, the
-# rest at 0. With 5 groups s1, s5, s2 and s3 fill groups 2-5 and s4 goes to
-# group 5 (30 < 50), leaving 1/5 with isolation alone.
+# Why 5 groups: the weights are s1 50, s5 (unlisted, so the heaviest listed) 50,
+# s2 40, s3 30 and s4 20 CPU tenths, dealt in that order; group 1 starts at 80,
+# the rest at 0. With 5 groups s1, s5, s2 and s3 fill groups 2-5 and s4 goes to
+# group 5 (30 < 40, the next-lowest total), leaving 1/5 with isolation alone.
 # The 2-group pass runs with no durations file; the others with it.
 for sh_n in 2 1 5; do
   sh_label="$sh_n groups run every planted section exactly once"
