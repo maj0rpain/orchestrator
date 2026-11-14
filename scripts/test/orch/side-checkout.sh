@@ -132,7 +132,8 @@ git worktree add -q -b hand "$hand"
 (cd "$hand" && orch_gh_failing init hand-flow >/dev/null)
 orch_gh_failing ticket-worktree add 4 >/dev/null
 # git lists linked worktrees in no fixed order, so the lines are sorted.
-out="$(orch_gh_failing side-checkout list | sort)"
+lload="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$lload" orch_gh_failing side-checkout list | sort)"
 assert_eq "list prints each side checkout's flow, branch, or (no branch)" "$out" \
   "$(writeln "alpha $top/.orchestrator/checkouts/alpha (no branch)" \
              "beta $top/.orchestrator/checkouts/beta branch quick/3-beta" \
@@ -145,7 +146,8 @@ assert_eq "add from a side checkout still nests under the main checkout" \
   "$(cd "$beta" && orch_gh_failing side-checkout add epsilon 2>/dev/null)" "$top/.orchestrator/checkouts/epsilon"
 git worktree remove "$top/.orchestrator/checkouts/epsilon"
 # Each checkout is walked in a subshell, yet every module loads once.
-assert_loads_once "list with four side checkouts" orch_gh_failing side-checkout list
+assert_trace_loads_once "list with four side checkouts" "$lload"
+rm -f "$lload"
 assert_loads_once "add" orch_gh_failing side-checkout add zeta
 git worktree remove "$top/.orchestrator/checkouts/zeta"
 orch_gh_failing ticket-worktree remove 4 --unmerged
@@ -289,7 +291,8 @@ git worktree add -q -b hand "$hand"
 bare_hand="$(mktemp -d)/bare-hand"
 git worktree add -q -b bare-hand "$bare_hand"
 
-out="$(orch_gh_failing status)"; st=$?
+sload="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$sload" orch_gh_failing status)"; st=$?
 assert_status "status in the main checkout succeeds" "$st" 0
 assert_eq "it keeps its full detail on this checkout's flow" \
   "$(printf '%s\n' "$out" | sed '/^other checkouts:$/,$d')" "$alone"
@@ -302,7 +305,8 @@ assert_eq "it lists each side checkout and each hand-made worktree holding a flo
 assert_not_contains "never a hand-made worktree without a flow" "$out" "$bare_hand"
 assert_not_contains "never a ticket worktree" "$out" "worktrees/t4"
 # Each checkout is classified in a subshell, yet every module loads once.
-assert_loads_once "status with three side checkouts" orch_gh_failing status
+assert_trace_loads_once "status with three side checkouts" "$sload"
+rm -f "$sload"
 
 out="$(cd "$gamma" && orch_gh_failing status)"
 assert_contains "status in a side checkout shows its own flow in full" "$out" "flow:      gamma-flow"

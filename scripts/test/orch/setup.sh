@@ -1172,9 +1172,14 @@ assert_loads_once() {
   shift
   load_trace="$(mktemp)"
   ORCH_LOAD_TRACE="$load_trace" "$@" >/dev/null 2>&1 || true
-  assert_eq "$label: the load trace names no module twice" \
-    "$(awk '{print $1}' "$load_trace" | sort | uniq -d | tr '\n' ' ')" ""
+  assert_trace_loads_once "$label" "$load_trace"
   rm -f "$load_trace"
+}
+# assert_trace_loads_once <label> <trace file>: asserts a load trace, written by
+# a run that had ORCH_LOAD_TRACE=<file> on, names no module twice.
+assert_trace_loads_once() {
+  assert_eq "$1: the load trace names no module twice" \
+    "$(awk '{print $1}' "$2" | sort | uniq -d | tr '\n' ' ')" ""
 }
 
 # sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the

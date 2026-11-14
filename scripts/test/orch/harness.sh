@@ -1221,10 +1221,10 @@ assert_contains "filtered: a section starts seeded" "$seed_out" "seeded start a"
 assert_eq "filtered: one seed build" "$seed_runs" "1"
 seeded_start_run "shard 1/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=1/2
 assert_contains "shard 1/2: a section starts seeded" "$seed_out" "seeded start"
-seed_shard_runs="$seed_runs"
+assert_eq "shard 1/2: one seed build" "$seed_runs" "1"
 seeded_start_run "shard 2/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=2/2
 assert_contains "shard 2/2: a section starts seeded" "$seed_out" "seeded start"
-assert_eq "each shard builds its own seed" "$((seed_shard_runs + seed_runs))" "2"
+assert_eq "shard 2/2: one seed build" "$seed_runs" "1"
 rm -rf "$seed_dir" "$(dirname "$seed_log")"
 
 # A tree whose orch.sh cannot be built: the run goes on unseeded and silent.
