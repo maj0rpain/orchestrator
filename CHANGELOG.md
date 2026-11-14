@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.65
+
+Record the autopilot watch loop's own background-child start (its tick start and sleep start) as outside the background-child-start reuse rule, in `.out-of-scope/watch-loop-background-child-helper.md`.
+
 ## 5.2.64
 
 The lens benchmark and the section-durations rewriter now start their background child through one shared helper, `test_jobs_run_child`; a refactor of repo-development tooling with no change in behaviour.
