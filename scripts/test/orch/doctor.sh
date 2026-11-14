@@ -2386,6 +2386,46 @@ fake_online
 git config remote.origin.url git@ghe.example.com:acme/widgets.git
 assert_not_contains "a passing probe gives no hint" "$(alias_doctor)" "$hint"
 
+# --- doctor: the repo memo (#3147) --------------------------------------------
+# The resolver's answer, a failed one too, is memoised in the shell that runs
+# it: one doctor run reads origin once in check_origin and once in the resolver,
+# and calls ssh once for an SSH-alias origin.
+echo
+echo "doctor: the repo memo (#3147)"
+healthy_repo
+doctor_github
+git_log_dir="$(mktemp -d)"
+git_real="$(command -v git)"
+cat >"$git_log_dir/git" <<GIT
+#!/usr/bin/env bash
+if [ "\$*" = "remote get-url origin" ]; then echo x >>"$git_log_dir/origin_reads"; fi
+exec "$git_real" "\$@"
+GIT
+chmod +x "$git_log_dir/git"
+savepath="$PATH"; gh_fixture; PATH="$savepath"
+: >"$git_log_dir/origin_reads"
+out="$(PATH="$git_log_dir:$PATH" orch_no_repo doctor --env 2>&1)"
+assert_eq "a failed resolution is memoised: origin is read twice in a doctor run" \
+  "$(wc -l <"$git_log_dir/origin_reads" | tr -d ' ')" "2"
+assert_contains "and its repo check still fails" "$out" "FAIL  $repo_cause"
+assert_eq "and its later GitHub checks are still counted as skipped" \
+  "$(printf '%s\n' "$out" | grep -cx "warn  [0-9]* GitHub checks\\{0,1\\} skipped: $repo_missing")" "1"
+unset GH_FIXTURE
+
+write_ssh_stub 'echo hostname ghe.example.com' 0
+alias_doctor() { PATH="$ssh_stub_dir:$PATH" "$ORCH" doctor --env 2>&1; }
+hint="came from origin's SSH URL and may be an SSH Host alias"
+git config remote.origin.url git@github-work:acme/widgets.git
+fake_noauth
+: >"$ssh_calls"
+out="$(alias_doctor)"
+assert_eq "an SSH-alias origin calls ssh once in a doctor run" \
+  "$(wc -l <"$ssh_calls" | tr -d ' ')" "1"
+assert_contains "and the repo line names origin as the source" "$out" "(origin)"
+assert_contains "and the alias hint still prints for a host other than github.com" "$out" "$hint"
+write_ssh_stub 'exit 1' 1
+
+
 # --- doctor: one issue read and one PR read per run (#2554) -------------------
 # Every flow check that needs the flow issue's state or labels, or the flow PR's
 # state or draft flag, shares one read of it. The two adapter reads are counted

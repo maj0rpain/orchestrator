@@ -123,6 +123,8 @@ assert_contains "gh api was among the calls" "$(cat "$GH_FIXTURE/env.log")" \
   "GH_HOST=ghe.example.com api "
 assert_eq "every gh call carried the host-qualified repo and its host" \
   "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+assert_eq "no gh call inherited a REPO_ variable: the repo memo is never exported" \
+  "$(cat "$GH_FIXTURE/repo_vars.log" 2>/dev/null)" ""
 restore_suite_env GH_HOST GH_FIXTURE
 
 # --- gh_reason and capture_err (#846) -----------------------------------------
@@ -377,6 +379,8 @@ out="$(env -u ORCH_GH_ADAPTER bash -c 'source "$1"; gh_or_die --out v "read issu
 assert_status "gh_or_die dies with no repo" "$st" 1
 assert_contains "naming GH_REPO as the remedy" "$out" "GH_REPO=<owner>/<repo>"
 assert_eq "and nothing reached gh" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null)" ""
+assert_eq "no gh call inherited a REPO_ variable: the repo memo is never exported" \
+  "$(cat "$GH_FIXTURE/repo_vars.log" 2>/dev/null)" ""
 restore_suite_env GH_HOST GH_FIXTURE
 
 # --- verify_twice (#2658) -----------------------------------------------------
