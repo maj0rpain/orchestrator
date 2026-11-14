@@ -690,11 +690,11 @@ claude_code_only_skill() {
 # CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the Junie
 # sentence, and in the plugin-root fallback sentence and its plugin-root
 # paths; a file that names the plugin root carries the Junie step in that
-# sentence. A marked skill is held to the
-# ORCH= line, with CLAUDE_PLUGIN_ROOT nowhere else and no Junie lookup. Any
-# other mention of the variable, any missing step, or a file that runs orch.sh
-# without the ORCH= line, is a regression. hooks/hooks.json is deliberately
-# out of scope: both hosts expand it there.
+# sentence. A marked skill that uses orch.sh or `$ORCH` is held to the ORCH=
+# line; any marked skill has CLAUDE_PLUGIN_ROOT nowhere else and no Junie
+# lookup. Any other mention of the variable, any missing step, or a file that
+# runs orch.sh without the ORCH= line, is a regression. hooks/hooks.json is
+# deliberately out of scope: both hosts expand it there.
 echo
 echo "orch.sh resolution (#123)"
 orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
@@ -837,7 +837,8 @@ flags "the scan flags a Junie step outside the plugin-root sentence" \
 assert_empty "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$fixture")"
 # The Claude-Code-only form (#2718): a skill marked by its frontmatter
-# description is held to the ORCH= line, with CLAUDE_PLUGIN_ROOT nowhere else and no Junie lookup.
+# description that uses orch.sh or `$ORCH` is held to the ORCH= line; any marked
+# skill has CLAUDE_PLUGIN_ROOT nowhere else and no Junie lookup.
 # cc_skill <description> <body line>...: write the marked-skill fixture.
 cc_skill() {
   local d="$1"; shift
@@ -858,6 +859,9 @@ skills/orch-cc/SKILL.md: uses orch.sh without the ORCH= line"
 cc_skill "$cc_desc" 'Run `bash "$ORCH" status`.'
 flags "a marked skill without the ORCH= line is flagged" \
   "$(scan_orch_resolution "$fixture")" "skills/orch-cc/SKILL.md: uses orch.sh without the ORCH= line"
+cc_skill "$cc_desc" 'Does nothing that needs the plugin.'
+assert_empty "a marked skill that never uses orch.sh needs no ORCH= line" \
+  "$(scan_orch_resolution "$fixture")"
 cc_skill "$cc_desc" 'Read `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh`.'
 assert_eq "a marked skill using CLAUDE_PLUGIN_ROOT outside the ORCH= line is flagged" "$(scan_orch_resolution "$fixture")" \
   "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line
