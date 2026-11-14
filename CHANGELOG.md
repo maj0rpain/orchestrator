@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.82
+
+`suite-cost check` started from a subdirectory now measures its base run and confirming runs in the matching directory of their temporary worktree, and reports a commit with no such directory as unmeasured.
+
+## 5.2.81
+
+`finding-triage scan` now decides whether filed lines never reached the default branch by the finding's lines, not its file, so an unrelated commit to another line of the file no longer turns `unknown` into `unchanged` or a wrong `changed`.
+
 ## 5.2.80
 
 A `gh` call that meets a first secondary rate limit no longer repeats what its failed attempt already did: the gh guard now holds stdout as it holds stderr and passes on only the deciding attempt's, so a paginated listing limited mid-way no longer hands its caller rows twice; and closing an issue with a comment, closing a PR, and creating a PR with labels give up on the limit at once instead of retrying, so a closing comment is never posted twice and a labelled PR that opened is never reported as already existing.
