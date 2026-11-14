@@ -851,6 +851,26 @@ fake_issue_title 28 "No comments"
 assert_eq "an issue with no comments fetches --json with an empty comments array" \
   "$(jq -c .comments "$issue_json" 2>&1)" "[]"
 
+# A comment set past 131072 bytes (#3041): each comment under GitHub's 65536
+# cap, one line of one repeated character, so the set is one a real issue holds.
+fake_issue 29 open bug
+fake_issue_title 29 "Many handoffs"
+for c in a b c; do
+  fake_comment 29 pat 2026-09-02T11:30:00Z "$(head -c 50000 /dev/zero | tr '\0' "$c")"
+done
+out="$("$ORCH" issue fetch 29 "$issue_json" --json 2>&1)"; st=$?
+assert_status "fetch --json of an issue with over 131072 bytes of comments succeeds" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_eq "keeping every comment with its body length unchanged" \
+  "$(jq -c '[.comments[].body | length]' "$issue_json" 2>&1)" "[50000,50000,50000]"
+issue_comments="$(mktemp)"
+out="$("$ORCH" issue comments 29 "$issue_comments" 2>&1)"; st=$?
+assert_status "comments of the same issue succeeds" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_eq "keeping every comment with its body length unchanged" \
+  "$(grep -A1 '^<!-- comment' "$issue_comments" | grep -v '^<!--' | grep -v '^--$' | awk '{print length($0)}' | paste -sd, -)" "50000,50000,50000"
+rm -f "$issue_comments"
+
 out="$("$ORCH" issue fetch 27 "$issue_body" 2>&1)"; st=$?
 assert_status "without --json, fetch still succeeds" "$st" 0
 assert_eq "writing the body alone, as before" "$(cat "$issue_body")" \
