@@ -47,9 +47,8 @@ suites_read "$dir/all.sh" "$dir" || {
 
 tmp="$(mktemp -d)" || exit 1
 SHELLCHECK_PIDS=()
-pids=()
 trap 'rm -rf "$tmp"' EXIT
-trap 'test_jobs_stop_children ${pids[@]+"${pids[@]}"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
+trap 'test_jobs_stop_children ${TEST_JOBS_CHILD:+"$TEST_JOBS_CHILD"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
 export ORCH_TEST_QUIET=1
 failed=()
 
@@ -68,25 +67,13 @@ measure() {
   return "$st"
 }
 
-# run_child <cmd>...: runs the command in the background, with its pid in pids
-# while it runs, and waits for it, so the INT/TERM trap can stop it at once. The
-# status is the command's.
-run_child() {
-  local st
-  "$@" &
-  pids+=("$!")
-  wait "$!"; st=$?
-  pids=()
-  return "$st"
-}
-
 : >"$tmp/sections"
 : >"$tmp/rest"
-ORCH_TEST_DURATIONS="$tmp/sections" run_child bash "$dir/orch_test.sh" || failed+=("orch_test.sh")
+ORCH_TEST_DURATIONS="$tmp/sections" test_jobs_run_child bash "$dir/orch_test.sh" || failed+=("orch_test.sh")
 
 for suite in "${SUITES[@]}"; do
   [ "$suite" = orch_test.sh ] && continue
-  TMPDIR="$tmp" measure "$suite" run_child bash "$dir/$suite"; suite_st=$?
+  TMPDIR="$tmp" measure "$suite" test_jobs_run_child bash "$dir/$suite"; suite_st=$?
   if ! report_suite "$suite" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
     failed+=("$suite")
     cat "$tmp/report" "$tmp/out" >&2

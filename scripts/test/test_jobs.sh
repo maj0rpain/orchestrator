@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
 # Sourced by orch_test.sh, all.sh, affected.sh and
-# scripts/dev/section-durations.sh, so the runners never
+# scripts/dev/section-durations.sh (which also starts its children through
+# test_jobs_run_child), so the runners never
 # disagree on how much of the machine a test run may use, or on how they stop
-# their children when signalled; by scripts/dev/lens-bench.sh, for that stop
-# alone (a signal stops its running `claude -p`); and by the suites that own a
-# temp root (hooks_test.sh, version_bump_test.sh, lens_bench_test.sh), for that
-# stop alone. Runs nothing; the job pool below keeps its
+# their children when signalled; by scripts/dev/lens-bench.sh, for the child
+# start and its stop (a signal stops its running `claude -p`); and by the
+# suites that own a temp root (hooks_test.sh, version_bump_test.sh,
+# lens_bench_test.sh), for that stop alone. Runs nothing; the job pool below
+# keeps its
 # state in TEST_JOBS_* variables of the sourcing shell.
 #
 # is_positive_integer <value>: true when it is digits only and above zero, so
@@ -97,6 +99,14 @@
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
 # removes its temp directory only once no child can still write into it. A
 # child that ignores TERM keeps the runner waiting on it.
+#
+# test_jobs_run_child <cmd>...: runs the command (an external command or a
+# function of the sourcing shell, in its own subshell) in the background, with
+# its pid in TEST_JOBS_CHILD while it waits for it, so a runner's INT/TERM trap
+# can stop it at once by passing ${TEST_JOBS_CHILD:+"$TEST_JOBS_CHILD"} to
+# test_jobs_stop_children. TEST_JOBS_CHILD is empty when no child runs. It
+# clears TEST_JOBS_CHILD and returns the command's status, under errexit too.
+# One child at a time; redirect its stdout on the call.
 #
 # test_jobs_descendants [<root pid>]: prints the live (non-zombie) processes
 # below <root pid> - this shell when none is given - one pid a line, leaving
@@ -197,6 +207,15 @@ test_jobs_stop_children() {
   kill "$@" 2>/dev/null
   for pid in "$@"; do wait "$pid"; done
   exit 130
+}
+
+test_jobs_run_child() {
+  local st=0
+  "$@" &
+  TEST_JOBS_CHILD=$!
+  wait "$TEST_JOBS_CHILD" || st=$?
+  TEST_JOBS_CHILD=""
+  return "$st"
 }
 
 test_jobs_process_table() {

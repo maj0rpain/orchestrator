@@ -3521,6 +3521,24 @@ assert_status "a runner that carries on when the call fails fails" "$st" 1
 rm -rf "$rgi_dir"
 unset -f runner_git_isolation
 
+# --- the background child start (#3025) --------------------------------------
+# test_jobs_run_child, sourced in a subshell as the test_jobs_shard checks do.
+bc_helpers="$(dirname "$SUITE_SCRIPT")/test_jobs.sh"
+( source "$bc_helpers"; test_jobs_run_child true ); bc_st=$?
+assert_status "test_jobs_run_child returns 0 for a succeeding command" "$bc_st" 0
+( source "$bc_helpers"; test_jobs_run_child bash -c 'exit 7' ); bc_st=$?
+assert_status "and a failing command's status" "$bc_st" 7
+bc_out="$(source "$bc_helpers"; test_jobs_run_child sleep 0; echo "child=[$TEST_JOBS_CHILD]")"
+assert_eq "TEST_JOBS_CHILD is empty after it returns" "$bc_out" "child=[]"
+bc_out="$(source "$bc_helpers"; bc_fn() { echo "from a function"; }; test_jobs_run_child bc_fn)"
+assert_eq "it runs a function of the sourcing shell" "$bc_out" "from a function"
+bc_out="$(source "$bc_helpers"; test_jobs_run_child echo hello >"${TMPDIR:-/tmp}/bc.$$"; cat "${TMPDIR:-/tmp}/bc.$$"; rm -f "${TMPDIR:-/tmp}/bc.$$")"
+assert_eq "a stdout redirect on the call reaches the child" "$bc_out" "hello"
+bc_out="$(set -e; source "$bc_helpers"; trap 'echo "child=[$TEST_JOBS_CHILD]"' EXIT; test_jobs_run_child false)"; bc_st=$?
+assert_status "a bare call under set -e exits 1" "$bc_st" 1
+assert_eq "with TEST_JOBS_CHILD already cleared" "$bc_out" "child=[]"
+unset bc_helpers bc_out bc_st
+
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
 # layout: the real affected.sh, ALL_RUNNER_FILES, git_env.sh and
