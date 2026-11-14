@@ -25,6 +25,14 @@ message and exit; `warn` prints it and returns, for a non-fatal message.
 The one exception is the bash version guard at the top of `orch.sh`, which runs
 before `die` can be sourced and prints its own `orch: ` line.
 
+A command that reserves exit 1 for a meaningful "no" exits 1 only for that "no"
+and exits 2 on every other failure: each death that is not the "no" itself goes
+through `die2`, or through a helper's `--exit 2`, while a helper misused by its
+own caller may keep its option check's status 1. The gh guard's death for want
+of a Repo exits 1 whatever the command reserved, so such a command that reaches
+GitHub resolves the Repo itself before its first GitHub read
+(`repo_pin || die2 "$REPO_REMEDY"`).
+
 ## 3. No variable named after a file-level helper
 
 A variable - a function's local or a test section's top-level one - never takes
