@@ -736,18 +736,23 @@ autopilot_stop_contained() {
   return 1
 }
 
-# autopilot_cleanup_stale: every claim of this host whose process is gone is a
-# failure: needs-human, a comment, then the claim released. The process is the
-# Liveness module's to name, and both of the issue's records go with the claim.
+# autopilot_cleanup_stale <released-var>: every claim of this host whose
+# process is gone is a failure: needs-human, a comment, then the claim
+# released. The process is the Liveness module's to name, and both of the
+# issue's records go with the claim.
 # A stop that cannot land is contained (autopilot_stop_contained warns): the
 # claim and the records stay held for a later tick, and a GitHub pause holding
 # after it ends the cleanup early. Other hosts' claims are never touched.
+# It makes no claims read: it works from the Standing module's last one, which
+# its caller has just taken, and writes into the caller-named <released-var> the
+# number of claims it released, one per stale claim whose stop landed (a stop
+# that landed has deleted the claim ref).
 autopilot_cleanup_stale() {
   orch_load standing
   orch_load gh
-  local issue phase log detail me gone_pid backstop
+  local issue phase log detail me gone_pid backstop _released=0
   me="$(standing_host_id)"
-  standing_claims_read
+  printf -v "$1" '%s' 0
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
     [ "${STANDING_CLAIM_HOST[$issue]}" = "$me" ] || continue
     phase="${STANDING_CLAIM_PHASE[$issue]}"
@@ -761,6 +766,8 @@ autopilot_cleanup_stale() {
     if autopilot_stop_contained "$issue" "the next tick tries again; if the issue is gone for good, delete the claim ref by hand: git push origin :$(adapter_claim_ref "$issue")" \
       failure "$phase" "$detail"; then
       liveness_issue_forget "$issue"
+      _released=$((_released + 1))
+      printf -v "$1" '%s' "$_released"
     elif autopilot_github_paused; then
       return 0
     fi
@@ -1134,7 +1141,10 @@ autopilot_rank() {
 # autopilot_tick: one pass - the GitHub-limit pause check (while it holds the
 # tick ends there, making no GitHub call, not even closing merged PRs), the
 # early-pause quota read (autopilot_github_early), labels,
-# stale claims, one read of the done issues (autopilot_done_read), the
+# the one read of the claims on origin (standing_claims_read), stale claims
+# (autopilot_cleanup_stale, which works from that read and reports the number
+# it released; the claim count is the read's claims less that number, taken
+# straight after), one read of the done issues (autopilot_done_read), the
 # merged-PR close (which needs no session, so the usage-limit and early pauses
 # never hold it), the three limit-pause checks (usage, core, graphql), sync
 # detection (when auto-sync is true), then pickup (see the spec's One tick),
@@ -1154,7 +1164,7 @@ autopilot_tick() {
   orch_load standing
   orch_load gh
   orch_load handoff
-  local main_root cap count issue gh_err phase rc flow_issues limited_arg auto_sync
+  local main_root cap count released issue gh_err phase rc flow_issues limited_arg auto_sync
   local ranked="" slots limit limited done_table reserve
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
@@ -1164,7 +1174,9 @@ autopilot_tick() {
   autopilot_setting github-reserve; reserve="$AUTOPILOT_VALUE"
   autopilot_github_early "$main_root" "$reserve"
   autopilot_labels_ensure
-  autopilot_cleanup_stale
+  standing_claims_read
+  autopilot_cleanup_stale released
+  count=$((${#STANDING_CLAIM_ISSUES[@]} - released))
   if autopilot_pause_until "$main_root" github; then return 0; fi
   autopilot_done_read done_table
   autopilot_close_missed "$done_table" done_table
@@ -1175,8 +1187,6 @@ autopilot_tick() {
     if autopilot_pause_until "$main_root" graphql; then return 0; fi
   fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect "$done_table"; fi
-  standing_claims_read
-  count="${#STANDING_CLAIM_ISSUES[@]}"
   slots=$((cap / 2))
   flow_issues="$(autopilot_flow_issues)"
   while IFS= read -r issue; do
