@@ -123,6 +123,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
+  autopilot settings          print the nine autopilot setting names, one per
+                              line, in the order autopilot show lists them;
+                              reads no config and validates nothing
   autopilot show              print the autopilot settings, each with its
                               source: orchestrator.autopilot.permission-mode
                               (no default), .cap (3), .handle (the repo's

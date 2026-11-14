@@ -533,6 +533,7 @@ old claims. It also warns about this host's claims whose process is gone;
 | Command | What it does |
 | --- | --- |
 | `orch.sh autopilot show` | Print the settings, each with its source. |
+| `orch.sh autopilot settings` | Print the nine setting names, one per line, in the order `show` lists them; reads no config and validates nothing. |
 | `orch.sh autopilot start <issue> <plan-file>` | Post the plan comment and add `orch:spec`. |
 | `orch.sh autopilot candidates [<n>... \| --all \| --limit <k>]` | List, one line per issue, whether a quick autopilot may send it (`eligible none`, `move` or `override`) or why not (`skip <reason>`); writes nothing. |
 | `orch.sh autopilot watch [--every <seconds>]` | Run the watcher, a tick every `<seconds>`. |

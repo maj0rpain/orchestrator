@@ -7,6 +7,9 @@
 # The permission modes a headless session may run with, and the numeric
 # settings' defaults. Each lives here alone, so set and show validate against
 # one list.
+# The autopilot setting names, in the order show prints them; settings prints
+# the same list, so the two never disagree.
+AUTOPILOT_SETTING_NAMES=(permission-mode cap handle rounds budget model effort auto-sync github-reserve)
 AUTOPILOT_MODES="default acceptEdits plan dontAsk bypassPermissions"
 AUTOPILOT_CAP_DEFAULT=3
 AUTOPILOT_ROUNDS_DEFAULT=2
@@ -89,7 +92,7 @@ autopilot_setting() {
 # range, naming key and value.
 autopilot_show() {
   local name
-  for name in permission-mode cap handle rounds budget model effort auto-sync github-reserve; do
+  for name in "${AUTOPILOT_SETTING_NAMES[@]}"; do
     autopilot_setting "$name"
     printf 'orchestrator.autopilot.%s %s (%s)\n' "$name" "${AUTOPILOT_VALUE:-(none)}" "$AUTOPILOT_SOURCE"
   done
@@ -1442,6 +1445,10 @@ cmd_autopilot() {
   local op="${1:-}"
   shift || true
   case "$op" in
+    settings)
+      [ $# -eq 0 ] || die "usage: orch.sh autopilot settings"
+      printf '%s\n' "${AUTOPILOT_SETTING_NAMES[@]}"
+      ;;
     show)
       [ $# -eq 0 ] || die "usage: orch.sh autopilot show"
       autopilot_show
@@ -1520,6 +1527,6 @@ cmd_autopilot() {
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|settings|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
   esac
 }
