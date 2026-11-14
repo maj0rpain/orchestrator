@@ -146,15 +146,16 @@ trap test_jobs_stop_descendants INT TERM
 # The grouping is a pure function of the section titles in walk order,
 # section-durations.tsv, all.sh's suite list (read with suites_read) and n:
 # a section weighs its CPU seconds, one the file does not list the median CPU
-# of the listed sections of the tree (the lower middle on an even count, 1
-# second when none is listed), group 1 starts with the summed CPU
-# seconds of the file's other suites and shellcheck, the others at 0, and
-# sections are dealt heaviest first, ties in walk order, each to the group with
-# the lowest total, the lowest-numbered on a tie. The isolation section runs in
-# every group and takes no part in the dealing, so a group left with it alone
-# runs it alone and passes or fails on it. A group's sections start in the
-# order above, and its output and summary are a filtered run's. The setting is
-# unset once read, so no runner a section starts inherits it.
+# of the listed sections the deal deals, all but the isolation section (the
+# lower middle on an even count, 1 second when none is listed), group 1
+# starts with the summed CPU seconds of the file's other suites and of
+# the shellcheck run, the others at 0, and sections are dealt heaviest first,
+# ties in walk order, each to the group with the lowest total, the
+# lowest-numbered on a tie. The isolation section runs in every group and
+# takes no part in the dealing, so a group left with it alone runs it alone
+# and passes or fails on it. A group's sections start in the order above,
+# and its output and summary are a filtered run's. The setting is unset
+# once read, so no runner a section starts inherits it.
 #
 # ORCH_TEST_DURATIONS=<file> makes a parallel run write one line per section
 # it ran to that file, in the durations file's format, in walk order: the wall
@@ -444,8 +445,9 @@ else
           stage == 1 { count++; pos[count] = $1; title[$1] = $2; next }
           $0 != "" && ($0 in cpu) { total[1] += cpu[$0] }
           END {
-            # An unlisted section weighs the median CPU of the listed sections of
-            # the tree (the lower middle on an even count), 10 with none listed.
+            # An unlisted section weighs the median CPU of the listed sections
+            # the deal deals, all but the isolation section (the lower middle on
+            # an even count), 10 with none listed.
             m = 0
             for (k = 1; k <= count; k++) if (title[pos[k]] in cpu) {
               c = cpu[title[pos[k]]]; m++; b = m - 1
