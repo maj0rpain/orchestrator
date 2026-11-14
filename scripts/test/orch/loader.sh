@@ -181,11 +181,10 @@ seeded_cache_checks() {
 seeded_cache_checks "a section's HOME" "$HOME/.cache/orchestrator/$seed_file_name"
 
 # A HOME the shared helper makes starts the same way, with a copy of its own.
-suite_home="$HOME"
 seeded_home
-assert_ne "a seeded_home is a HOME of its own" "$HOME" "$suite_home"
+assert_ne "a seeded_home is a HOME of its own" "$HOME" "$SUITE_HOME"
 seeded_cache_checks "a seeded_home" "$HOME/.cache/orchestrator/$seed_file_name"
-rm -rf "$HOME"; HOME="$suite_home"; export HOME
+rm -rf "$HOME"; restore_suite_env
 
 new_repo >/dev/null
 cache_root="$(mktemp -d)"

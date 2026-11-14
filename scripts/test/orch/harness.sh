@@ -1175,12 +1175,12 @@ echo "the seeded start (stub cache)"
 seed_dir="$(planted_minimal_tree <<'PLANTED'
   # --- planted seeded a
   echo; echo "planted seeded a"
-  if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "seeded start a"; else bad "unseeded start a" "no cache in $HOME"; fi
+  if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present a"; else bad "cache missing a" "no cache in $HOME"; fi
   seeded_home >sh.out 2>&1; seeded_home_st=$?; seeded_home_out="$(cat sh.out)"
   if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ -f "$HOME/.cache/orchestrator/planted.stubs" ] && [ ! -L "$HOME/.cache/orchestrator/planted.stubs" ] && [ "$(stat -c %a "$HOME/.cache/orchestrator/planted.stubs")" = 600 ]; then ok "seeded_home start"; else bad "seeded_home start" "no private cache copy"; fi
   # --- planted seeded b
   echo; echo "planted seeded b"
-  if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "seeded start b"; else bad "unseeded start b" "no cache in $HOME"; fi
+  if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present b"; else bad "cache missing b" "no cache in $HOME"; fi
 PLANTED
 )"
 cat >"$seed_dir/scripts/orch.sh" <<'PLANTED_ORCH'
@@ -1210,20 +1210,20 @@ seeded_start_run() {
   rm -rf "$home"
 }
 seeded_start_run "parallel" ORCH_TEST_JOBS=2
-assert_contains "parallel: a section starts seeded" "$seed_out" "seeded start a"
-assert_contains "parallel: the other section starts seeded" "$seed_out" "seeded start b"
+assert_contains "parallel: a section starts seeded" "$seed_out" "cache present a"
+assert_contains "parallel: the other section starts seeded" "$seed_out" "cache present b"
 assert_eq "parallel: one seed build, none from the children" "$seed_runs" "1"
 seeded_start_run "sequential" ORCH_TEST_JOBS=1
-assert_contains "sequential: a section starts seeded" "$seed_out" "seeded start a"
+assert_contains "sequential: a section starts seeded" "$seed_out" "cache present a"
 assert_eq "sequential: one seed build" "$seed_runs" "1"
 seeded_start_run "filtered" ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted seeded a$'
-assert_contains "filtered: a section starts seeded" "$seed_out" "seeded start a"
+assert_contains "filtered: a section starts seeded" "$seed_out" "cache present a"
 assert_eq "filtered: one seed build" "$seed_runs" "1"
 seeded_start_run "shard 1/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=1/2
-assert_contains "shard 1/2: a section starts seeded" "$seed_out" "seeded start"
+assert_contains "shard 1/2: a section starts seeded" "$seed_out" "cache present"
 assert_eq "shard 1/2: one seed build" "$seed_runs" "1"
 seeded_start_run "shard 2/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=2/2
-assert_contains "shard 2/2: a section starts seeded" "$seed_out" "seeded start"
+assert_contains "shard 2/2: a section starts seeded" "$seed_out" "cache present"
 assert_eq "shard 2/2: one seed build" "$seed_runs" "1"
 rm -rf "$seed_dir" "$(dirname "$seed_log")"
 
@@ -1231,9 +1231,9 @@ rm -rf "$seed_dir" "$(dirname "$seed_log")"
 seed_dir="$(planted_minimal_tree <<'PLANTED'
   # --- planted unseeded
   echo; echo "planted unseeded"
-  if [ -e "$HOME/.cache" ]; then bad "an unseeded start has a cache" "found one"; else ok "unseeded start"; fi
+  if [ -e "$HOME/.cache" ]; then bad "cache found at start" "found one"; else ok "unseeded start"; fi
   seeded_home >sh.out 2>&1; seeded_home_st=$?; seeded_home_out="$(cat sh.out)"
-  if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ ! -e "$HOME/.cache" ] && [ -d "$HOME" ]; then ok "unseeded start via the helper"; else bad "unseeded start via the helper" "st $seeded_home_st out $seeded_home_out"; fi
+  if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ ! -e "$HOME/.cache" ] && [ -d "$HOME" ]; then ok "unseeded start via the helper"; else bad "helper start not clean" "st $seeded_home_st out $seeded_home_out"; fi
 PLANTED
 )"
 out="$(env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD HOME="$(mktemp -d)" ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 bash "$seed_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
