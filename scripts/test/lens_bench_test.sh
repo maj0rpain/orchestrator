@@ -504,7 +504,7 @@ if [ "$pid_st" -ne 0 ] || [ -z "$claude_pid" ]; then
   kill "$term_pid" 2>/dev/null
 fi
 kill -TERM "$term_pid" 2>/dev/null
-fifo_bounded 20 "bench exit" tail --pid="$term_pid" -f /dev/null; bound_st=$?
+fifo_bounded 20 "bench exit" tail -s 0.1 --pid="$term_pid" -f /dev/null; bound_st=$?
 if [ "$bound_st" -eq 0 ]; then ok "a TERM stops it promptly"; else
   bad "a TERM stops it promptly" "still running after 20s"
   kill "$claude_pid" "$term_pid" 2>/dev/null
