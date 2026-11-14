@@ -489,7 +489,7 @@ suite_cost_min() {
 # and the worktree is gone; a failed removal after a pass keeps the record and
 # names the left-over worktree.
 suite_cost_tree_run() {
-  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 run_label msg_tail msg_no_worktree subdir
+  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 cd_failed=0 run_label msg_tail msg_no_worktree subdir
   shift 2
   subdir="$(git rev-parse --show-prefix 2>/dev/null || true)"
   subdir="${subdir%/}"
@@ -513,18 +513,19 @@ suite_cost_tree_run() {
   fi
   if [ -n "$subdir" ] && [ ! -d "$wt/$subdir" ]; then
     warn "commit $sha has no directory $subdir for $run_label - $msg_tail"
-    git worktree remove --force "$wt" >/dev/null 2>&1 && rmdir "$tmp" 2>/dev/null || true
-    return 1
+    status=1
   fi
   setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
-  if cd "$wt"; then
+  if [ "$status" -ne 0 ]; then
+    :
+  elif cd "$wt"; then
     suite_cost_register
     [ -z "$setup" ] || bash -c "$setup" >&2 || setup_status=$?
-    [ "$setup_status" -ne 0 ] || cd "$wt/$subdir" || setup_status=1
-    [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
+    [ "$setup_status" -ne 0 ] || cd "$wt/$subdir" || cd_failed=1
+    [ "$setup_status" -ne 0 ] || [ "$cd_failed" -ne 0 ] || suite_cost_measure "$@" >&2
     suite_cost_unregister
     cd "$here" || die "could not return to $here"
-    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
+    if [ "$setup_status" -eq 0 ] && [ "$cd_failed" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
       if suite_cost_require_solo "$run_label at $sha" "$msg_tail"; then
         suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
       else
@@ -534,6 +535,8 @@ suite_cost_tree_run() {
       status=1
       if [ "$setup_status" -ne 0 ]; then
         warn "$run_label's setup ($setup) at $sha exited $setup_status - $msg_tail"
+      elif [ "$cd_failed" -ne 0 ]; then
+        warn "could not enter directory $subdir at $sha for $run_label - $msg_tail"
       elif [ "$role" = base ] && [ "$SUITE_COST_STATUS" -eq 127 ] && [ -z "$setup" ]; then
         warn "$run_label at $sha exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
       else
