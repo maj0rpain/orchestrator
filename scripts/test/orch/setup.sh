@@ -1257,14 +1257,13 @@ term_run() {
   pid=$!
   while [ "$tries" -le 200 ]; do
     all_written=1
-    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || all_written=0; done
+    empty=""
+    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || { all_written=0; empty+=" $pid_file"; }; done
     [ "$all_written" = 1 ] && break
     tries=$((tries + 1))
     sleep 0.1
   done
   if [ "$all_written" != 1 ]; then
-    empty=""
-    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || empty+=" $pid_file"; done
     bad "term_run: a pid file stayed empty for the 20-second bound" "still empty:$empty"
   fi
   t0=$SECONDS
