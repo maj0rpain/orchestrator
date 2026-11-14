@@ -61,7 +61,7 @@ assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
 run_traced nonesuch-command
 assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
-run_traced status
+run_traced side-checkout issue
 assert_eq "a load from a subshell records a depth above 0" \
   "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "checkout"
 out="$(bash "$ORCH" status 2>&1)"; status=$?
@@ -158,6 +158,34 @@ rm -f "$trace"
 # --- stub table cache ---------------------------------------------------------
 echo
 echo "stub table cache"
+# The section's own HOME starts with the stub cache of the tree under test,
+# seeded by the runner; other trees' files under it are not counted. Its name
+# is whatever a run of orch.sh writes into an empty HOME.
+name_home="$(mktemp -d)"
+(cd "$PLUGIN_ROOT" && HOME="$name_home" "$ORCH" help >/dev/null 2>&1)
+seed_file_name="$(basename "$(printf "%s\n" "$name_home"/.cache/orchestrator/*.stubs)")"
+rm -rf "$name_home"
+# seeded_cache_checks <label prefix> <file>: the file is a regular file of mode
+# 600 and a run of orch.sh reuses it.
+seeded_cache_checks() {
+  local prefix="$1" file="$2"
+  assert_eq "$prefix starts with the stub cache" "$([ -f "$file" ] && echo yes || echo no)" "yes"
+  assert_eq "$prefix cache is a regular file, not a link" "$([ -L "$file" ] && echo link || echo file)" "file"
+  assert_eq "$prefix cache is of mode 600" "$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")" "600"
+  echo "# seeded marker" >>"$file"
+  touch -d '+1 minute' "$file"
+  "$ORCH" help >/dev/null 2>&1
+  assert_contains "and a run reuses the $prefix cache" "$(cat "$file")" "# seeded marker"
+  sed -i.bak '/^# seeded marker$/d' "$file"; rm -f "$file.bak"
+}
+seeded_cache_checks "a section's HOME" "$HOME/.cache/orchestrator/$seed_file_name"
+
+# A HOME the shared helper makes starts the same way, with a copy of its own.
+seeded_home
+assert_ne "a seeded_home is a HOME of its own" "$HOME" "$SUITE_HOME"
+seeded_cache_checks "a seeded_home" "$HOME/.cache/orchestrator/$seed_file_name"
+rm -rf "$HOME"; restore_suite_env
+
 new_repo >/dev/null
 cache_root="$(mktemp -d)"
 cache_scripts="$(tree_copy scripts)"

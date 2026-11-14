@@ -30,6 +30,16 @@ SUITE_CWD="$(mktemp -d)" && cd "$SUITE_CWD" || {
 SUITE_HOME="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create a temp HOME" >&2; exit 1; }
 export HOME="$SUITE_HOME"
+# The suite HOME starts with the stub cache of the tree under test: a copy of
+# the runner's seed (orch_test.sh), a file of its own, mode 600. No seed, or a
+# copy that fails, leaves HOME without it.
+# shellcheck disable=SC2154 # orch_seed_dir is set by orch_test.sh, the runner
+if [ -n "${orch_seed_dir:-}" ]; then
+  mkdir -p "$HOME/.cache/orchestrator" 2>/dev/null &&
+    cp "$orch_seed_dir"/* "$HOME/.cache/orchestrator/" 2>/dev/null &&
+    chmod 600 "$HOME/.cache/orchestrator"/* 2>/dev/null ||
+    rm -rf "$HOME/.cache"
+fi
 # GH_REPO and GH_HOST go too: they are the gh variables orch.sh reads to resolve
 # the Repo and its GitHub host, so a caller's value would change what orch.sh
 # resolves in every section.
@@ -598,6 +608,23 @@ labels_doc() {
           '' 'Edit the right-hand column to match whatever vocabulary you use.' >"$1"
 }
 
+# seeded_home: gives the calling shell a throwaway HOME (exported) that starts
+# with its own copy of the run's seed, the stub cache of the tree under test, so
+# isolating a test costs no cache rebuild. Prints nothing and succeeds; a run
+# with no seed, or a copy that fails, leaves the HOME without a cache file.
+seeded_home() {
+  HOME="$(mktemp -d)" || return 1
+  export HOME
+  # shellcheck disable=SC2154 # orch_seed_dir is set by orch_test.sh, the runner
+  if [ -n "${orch_seed_dir:-}" ]; then
+    mkdir -p "$HOME/.cache/orchestrator" 2>/dev/null &&
+      cp "$orch_seed_dir"/* "$HOME/.cache/orchestrator/" 2>/dev/null &&
+      chmod 600 "$HOME/.cache/orchestrator"/* 2>/dev/null ||
+      rm -rf "$HOME/.cache"
+  fi
+  return 0
+}
+
 # A repo where every --env check passes, so a test can break exactly one thing
 # and attribute the result to it.
 healthy_repo() {
@@ -609,8 +636,7 @@ healthy_repo() {
   export CLAUDE_PLUGIN_ROOT="$PWD"
   # A throwaway HOME, so no skill store on the machine running the tests
   # reaches doctor's checks.
-  HOME="$(mktemp -d)"
-  export HOME
+  seeded_home
 }
 
 
@@ -1137,6 +1163,24 @@ GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
 # orch_gh_failing <args>...: runs orch.sh with the failing fixture gh first
 # on PATH.
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
+
+# assert_loads_once <label> <cmd> [args...]: runs <cmd> with the load trace on
+# and asserts the trace names no module twice, in the main shell or a subshell.
+# The command's own status and output are not judged.
+assert_loads_once() {
+  local label="$1" load_trace
+  shift
+  load_trace="$(mktemp)"
+  ORCH_LOAD_TRACE="$load_trace" "$@" >/dev/null 2>&1 || true
+  assert_trace_loads_once "$label" "$load_trace"
+  rm -f "$load_trace"
+}
+# assert_trace_loads_once <label> <trace file>: asserts a load trace, written by
+# a run that had ORCH_LOAD_TRACE=<file> on, names no module twice.
+assert_trace_loads_once() {
+  assert_eq "$1: the load trace names no module twice" \
+    "$(awk '{print $1}' "$2" | sort | uniq -d | tr '\n' ' ')" ""
+}
 
 # sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
 # finished sweep first and reports it on stderr, so that stderr is held back:

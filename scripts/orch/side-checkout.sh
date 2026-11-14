@@ -322,6 +322,10 @@ cmd_side_checkout_add() {
       *) die "unknown side-checkout add flag: $1 (want --issue)" ;;
     esac
   done
+  # The sweep and the reads below run in subshells: load what they call here,
+  # once, rather than once per subshell.
+  local mod
+  for mod in base branch checkout gh repo; do orch_load "$mod"; done
   slug="$(normalize_slug "$slug")"
   main_root="$(main_checkout_or_die)" || exit $?
   # The sweep first, its report on stderr so stdout stays the path alone. A
@@ -352,6 +356,10 @@ cmd_side_checkout_add() {
 cmd_side_checkout_list() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout list"
   local list kind _flow _branch path issue quick
+  # The walk reads each checkout in command substitutions: load what they
+  # call here, once, rather than once per subshell.
+  orch_load checkout
+  orch_load state
   list="$(checkouts_or_die)" || exit $?
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] || continue
@@ -443,6 +451,13 @@ cmd_side_checkout_prune() {
   # a side checkout's is cleared by side_checkout_archive_and_remove.
   local archive_out branch_err
   local list kind flow _branch walk=() finished=()
+  # The walk runs in command substitutions and subshells: load what it calls
+  # here, once, rather than once per subshell.
+  orch_load branch
+  orch_load checkout
+  orch_load gh
+  orch_load trust
+  orch_load ticket-worktree
   here="$(pwd -P)"
   # The walk lists the main checkout first.
   list="$(checkouts)" && main_root="$(checkouts_main "$list")" \

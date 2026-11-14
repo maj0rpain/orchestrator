@@ -13,8 +13,7 @@
 echo
 echo "agent"
 new_repo >/dev/null
-HOME="$(mktemp -d)"
-export HOME
+seeded_home
 # key <scope> <key>: the key's value at that scope, or <unset>.
 key() { git config "--$1" --get "$2" 2>/dev/null || echo "<unset>"; }
 
@@ -435,8 +434,7 @@ restore_suite_env
 echo
 echo "agent sync"
 new_repo >/dev/null
-HOME="$(mktemp -d)"
-export HOME
+seeded_home
 as_dir=".junie/agents"
 as_marker="# written by orch.sh agent sync"
 as_plugin="$PLUGIN_ROOT/agents"

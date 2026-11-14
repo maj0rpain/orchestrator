@@ -183,6 +183,11 @@ variable. The variables of the always-loaded files (`orch.sh`, `common.sh`,
 harness.sh's `orch_load before cross-module reads` section enforces it
 over the real tree; its failure names the file, the function or `top level`,
 and the variable.
+When a command's load trace shows a module more than once, it was loaded in
+subshells (a command substitution, a pipeline): load it with `orch_load` in
+the main shell before the subshell that needs it, at the command's entry or
+before the shared loop, as `status` and `doctor` do. The shared test assertion
+`assert_loads_once <label> <cmd>...` checks a command's trace for it.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
@@ -278,6 +283,18 @@ instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
 section checks it against what bash itself defines.
+
+A section's `HOME` starts with the stub cache of the tree under test: the runner
+builds it once per run, the seed, and `setup.sh` copies it into each fresh
+`HOME` (mode 600, a file of its own). The cache tests and any test that runs
+`orch.sh` from a copied or planted tree still rebuild, as the file is named from
+its tree. A seed that cannot be built or copied leaves the run unseeded,
+silently.
+
+A test that needs a `HOME` of its own calls `seeded_home`, which exports a
+throwaway `HOME` that starts with its own copy of the same seed, so isolating a
+test costs no rebuild; `healthy_repo` uses it. It prints nothing and
+succeeds, and in an unseeded run the `HOME` holds no cache file.
 
 `sourced_orch` sets `ORCH_SOURCE_LAZY=1`, so it loads orch.sh's modules on
 demand, as the command does and so a test's shell starts cheaply, except in its

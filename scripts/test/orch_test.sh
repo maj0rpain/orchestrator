@@ -348,7 +348,10 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   # shellcheck disable=SC2034 # read by the summary, eval'd from setup.sh
   orch_counts_file="$ORCH_TEST_CHILD_COUNTS"
   orch_child_times="${ORCH_TEST_CHILD_TIMES:-}"
-  unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS ORCH_TEST_CHILD_TIMES
+  # The runner's seed, which this child builds none of; setup.sh reads it.
+  # shellcheck disable=SC2034 # read by setup.sh, eval'd below
+  orch_seed_dir="${ORCH_TEST_CHILD_SEED:-}"
+  unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS ORCH_TEST_CHILD_TIMES ORCH_TEST_CHILD_SEED
   tally_init
   if [ -n "$orch_child_times" ]; then
     # Timed by the child itself: the section's wall time under `time`, its
@@ -470,6 +473,19 @@ else
   orch_durations_out=""
 fi
 test_jobs_pool_init orch_test.sh || exit 1
+# The seed: the stub cache of the tree under test, built once by running
+# orch.sh in a HOME of the root's own and kept in orch_seed_dir, which
+# setup.sh copies into every section's fresh HOME. A build or a copy that fails
+# leaves the run unseeded, silently. A plain variable, never exported, so no
+# runner a section starts inherits it; the parallel runner hands it to its
+# children through ORCH_TEST_CHILD_SEED.
+orch_seed_dir=""
+if mkdir "$orch_root/seed-home" 2>/dev/null &&
+  HOME="$orch_root/seed-home" bash "$ORCH" help </dev/null >/dev/null 2>&1 &&
+  [ -n "$(ls -A "$orch_root/seed-home/.cache/orchestrator" 2>/dev/null)" ]; then
+  # shellcheck disable=SC2034 # read by setup.sh, eval'd below
+  orch_seed_dir="$orch_root/seed-home/.cache/orchestrator"
+fi
 echo "orch.sh tests"
 if [ "$orch_jobs" -eq 1 ]; then
   # One shell, one slot for the whole run; the runners its sections start
@@ -553,7 +569,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     # A child of a slot marks its pool; an unpooled run passes its marker on.
     orch_held="$TEST_JOBS_POOL"
     [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
-    ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
+    ORCH_TEST_CHILD_SEED="$orch_seed_dir" ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
       ORCH_TEST_CHILD_TIMES="${orch_durations_out:+$orch_buf/$orch_pos.times}" ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
       test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err" &
     orch_pids[orch_k]=$!

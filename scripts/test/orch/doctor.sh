@@ -1378,7 +1378,7 @@ mkdir -p docs/agents
 labels_doc docs/agents/triage-labels.md
 gh_fixture
 export CLAUDE_PLUGIN_ROOT="$PWD"
-HOME="$(mktemp -d)"; export HOME
+seeded_home
 fake_offline
 dfin="$(sc_add dfin)"
 git -C "$dfin" checkout -q -b quick/20-dfin
@@ -1406,7 +1406,8 @@ dnd="$(sc_add dnd)"
 fake_online
 git remote set-url origin https://github.com/acme/widgets.git
 
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
+dload="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$dload" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "doctor --env passes with finished side checkouts standing" "$st" 0
 assert_contains "warns on a finished quick side checkout" "$out" "warn  side checkout dfin is finished"
 assert_contains "naming the exact remove command" "$out" \
@@ -1419,6 +1420,11 @@ assert_not_contains "says nothing for a tip past its merged PR's head" "$out" "s
 assert_contains "and prints no FAIL" "$(printf '%s\n' "$out" | tail -1)" " 0 FAIL"
 out_in="$(cd "$dopen" && "$ORCH" doctor --env 2>&1)"
 assert_contains "warns the same from inside a side checkout" "$out_in" "orch.sh side-checkout remove dfin"
+# The walk classifies each checkout in a subshell; each module loads once.
+assert_loads_once "doctor with side checkouts" "$ORCH" doctor
+assert_trace_loads_once "doctor --env with side checkouts" "$dload"
+rm -f "$dload"
+assert_loads_once "doctor --flow with side checkouts" bash -c 'cd "$1" && "$2" doctor --flow' _ "$dflow" "$ORCH"
 # The finished test reads the default branch per side checkout, yet doctor asks
 # GitHub for it only in its probe - whether that read answered or failed.
 sc_reads="$(mktemp)"

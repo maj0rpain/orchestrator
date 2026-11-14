@@ -29,6 +29,10 @@ cmd_status() {
 # no marker, so they never appear; with nothing to list, nothing is printed.
 status_others() {
   local list kind flow _branch path lines=""
+  # The walk below runs in command substitutions: load what it calls here,
+  # once, rather than once per subshell.
+  orch_load checkout
+  orch_load side-checkout
   list="$(checkouts_or_die)" || exit $?
   while read -r kind flow _branch path; do
     [ "$path" != "$ROOT" ] || continue

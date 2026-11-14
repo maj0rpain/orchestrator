@@ -1164,6 +1164,84 @@ sh_all ""
 assert_eq "all.sh runs an empty setting as unset" "$(cat "$sh_all_dir/scripts/test/log" | grep -c 'shard=unset')" "${#SUITES[@]}"
 rm -rf "$sh_all_dir" "$sh_dir"
 
+# --- the seeded start (stub cache) --------------------------------------------
+# The runner builds the tree under test's stub cache once, and every section's
+# fresh HOME starts with a copy. The planted orch.sh logs each run to a file
+# outside the tree and writes a cache file into its HOME, as the loader does;
+# the planted sections run no orch.sh and report whether their HOME starts with
+# that file.
+echo
+echo "the seeded start (stub cache)"
+seed_dir="$(planted_minimal_tree <<'PLANTED'
+  # --- planted seeded a
+  echo; echo "planted seeded a"
+  if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present a"; else bad "cache missing a" "no cache in $HOME"; fi
+  seeded_home >sh.out 2>&1; seeded_home_st=$?; seeded_home_out="$(cat sh.out)"
+  if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ -f "$HOME/.cache/orchestrator/planted.stubs" ] && [ ! -L "$HOME/.cache/orchestrator/planted.stubs" ] && [ "$(stat -c %a "$HOME/.cache/orchestrator/planted.stubs")" = 600 ]; then ok "seeded_home start"; else bad "seeded_home start" "no private cache copy"; fi
+  # --- planted seeded b
+  echo; echo "planted seeded b"
+  if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present b"; else bad "cache missing b" "no cache in $HOME"; fi
+PLANTED
+)"
+cat >"$seed_dir/scripts/orch.sh" <<'PLANTED_ORCH'
+#!/usr/bin/env bash
+echo "build" >>"$PLANTED_SEED_LOG"
+mkdir -p "$HOME/.cache/orchestrator" && echo stubs >"$HOME/.cache/orchestrator/planted.stubs"
+PLANTED_ORCH
+seed_log="$(mktemp -d)/runs.log"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for seed_s in "${SUITES[@]}"; do
+  [ -e "$seed_dir/scripts/test/$seed_s" ] || echo 'echo; echo "1 passed, 0 failed"' >"$seed_dir/scripts/test/$seed_s"
+done
+# seeded_start_run <label> <env assignment>...: the runner on the planted tree
+# with a HOME of the harness's own; sets seed_out, seed_st and seed_runs, and
+# asserts the run and its HOME.
+seeded_start_run() {
+  local label="$1" home
+  shift
+  : >"$seed_log"
+  home="$(mktemp -d)"
+  seed_out="$(env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD HOME="$home" PLANTED_SEED_LOG="$seed_log" ORCH_TEST_QUIET='' "$@" \
+    bash "$seed_dir/scripts/test/orch_test.sh" 2>&1)"; seed_st=$?
+  seed_runs="$(grep -c build "$seed_log")"
+  assert_status "$label: the run passes" "$seed_st" 0
+  assert_eq "$label: the caller's HOME holds no stub cache afterwards" \
+    "$(find "$home" -name '*.stubs' | wc -l | tr -d ' ')" "0"
+  rm -rf "$home"
+}
+seeded_start_run "parallel" ORCH_TEST_JOBS=2
+assert_contains "parallel: a section starts seeded" "$seed_out" "cache present a"
+assert_contains "parallel: the other section starts seeded" "$seed_out" "cache present b"
+assert_eq "parallel: one seed build, none from the children" "$seed_runs" "1"
+seeded_start_run "sequential" ORCH_TEST_JOBS=1
+assert_contains "sequential: a section starts seeded" "$seed_out" "cache present a"
+assert_eq "sequential: one seed build" "$seed_runs" "1"
+seeded_start_run "filtered" ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted seeded a$'
+assert_contains "filtered: a section starts seeded" "$seed_out" "cache present a"
+assert_eq "filtered: one seed build" "$seed_runs" "1"
+seeded_start_run "shard 1/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=1/2
+assert_contains "shard 1/2: a section starts seeded" "$seed_out" "cache present"
+assert_eq "shard 1/2: one seed build" "$seed_runs" "1"
+seeded_start_run "shard 2/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=2/2
+assert_contains "shard 2/2: a section starts seeded" "$seed_out" "cache present"
+assert_eq "shard 2/2: one seed build" "$seed_runs" "1"
+rm -rf "$seed_dir" "$(dirname "$seed_log")"
+
+# A tree whose orch.sh cannot be built: the run goes on unseeded and silent.
+seed_dir="$(planted_minimal_tree <<'PLANTED'
+  # --- planted unseeded
+  echo; echo "planted unseeded"
+  if [ -e "$HOME/.cache" ]; then bad "cache found at start" "found one"; else ok "unseeded start"; fi
+  seeded_home >sh.out 2>&1; seeded_home_st=$?; seeded_home_out="$(cat sh.out)"
+  if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ ! -e "$HOME/.cache" ] && [ -d "$HOME" ]; then ok "unseeded start via the helper"; else bad "helper start not clean" "st $seeded_home_st out $seeded_home_out"; fi
+PLANTED
+)"
+out="$(env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD HOME="$(mktemp -d)" ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 bash "$seed_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a run whose seed cannot be built passes" "$st" 0
+assert_contains "starting unseeded" "$out" "unseeded start"
+assert_eq "and prints nothing about the seed" "$(printf '%s\n' "$out" | grep -v 'planted unseeded\|unseeded start' | grep -ci 'seed')" "0"
+rm -rf "$seed_dir"
+
 # --- section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858) -----
 # A copy of the scripts tree cut down to planted sections and stub suites, run
 # at its command line: orch_test.sh with ORCH_TEST_DURATIONS, then the dev

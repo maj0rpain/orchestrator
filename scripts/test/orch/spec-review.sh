@@ -1306,12 +1306,18 @@ assert_status "the --tickets rerun succeeds" "$st" 0
 assert_eq "posting one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
 unset ORCH_AUTOPILOT
 
-# The pause, then the --tickets rerun.
+# The pause, then the --tickets rerun. Each run loads a module once, however
+# many tickets it follows.
 d="$(srt_dir)"
-sra "$d" recommended
+sra_load="$(mktemp)"
+ORCH_LOAD_TRACE="$sra_load" sra "$d" recommended
 assert_status "the first run pauses for the ticket question" "$st" 3
+assert_trace_loads_once "spec-review apply pausing for the tickets" "$sra_load"
 srt_fetch "$d"
-sra "$d" recommended --tickets recommended
+: >"$sra_load"
+ORCH_LOAD_TRACE="$sra_load" sra "$d" recommended --tickets recommended
+assert_trace_loads_once "spec-review apply following three tickets" "$sra_load"
+rm -f "$sra_load"
 assert_status "the --tickets rerun applies" "$st" 0
 assert_eq "ticket-20.fetched.md is taken on the rerun" "$(cat "$d/ticket-20.fetched.md")" "$(printf '%s' "$srt_t20")"
 assert_eq "ticket-20.md carries its text edit" "$(cat "$d/ticket-20.md")" '## What to build
