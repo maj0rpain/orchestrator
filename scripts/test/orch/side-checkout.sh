@@ -297,6 +297,8 @@ assert_eq "it lists each side checkout and each hand-made worktree holding a flo
              "  $hand flow hand-flow spec (no issue)" | sort)"
 assert_not_contains "never a hand-made worktree without a flow" "$out" "$bare_hand"
 assert_not_contains "never a ticket worktree" "$out" "worktrees/t4"
+# Each checkout is classified in a subshell, yet every module loads once.
+assert_loads_once "status with three side checkouts" orch_gh_failing status
 
 out="$(cd "$gamma" && orch_gh_failing status)"
 assert_contains "status in a side checkout shows its own flow in full" "$out" "flow:      gamma-flow"

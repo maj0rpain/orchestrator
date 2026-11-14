@@ -1134,6 +1134,14 @@ cmd_doctor() {
     *)      die "unknown doctor flag: $1 (want --env or --flow)" ;;
   esac
 
+  # The checks call these in command substitutions and subshells, which would
+  # each load a module again: load each once, here in the main shell.
+  local mod
+  for mod in gh $([ "$scope" = flow ] || echo branch checkout side-checkout trust) \
+    $([ "$scope" = env ] || echo handoff autopilot branch ticket-worktree checkout); do
+    orch_load "$mod"
+  done
+
   d_probe "$scope"
   if [ "$scope" != flow ]; then d_run "$ENV_CHECKS"; fi
   if [ "$scope" != env ]; then

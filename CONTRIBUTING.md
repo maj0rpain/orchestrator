@@ -183,6 +183,11 @@ variable. The variables of the always-loaded files (`orch.sh`, `common.sh`,
 harness.sh's `orch_load before cross-module reads` section enforces it
 over the real tree; its failure names the file, the function or `top level`,
 and the variable.
+When a command's load trace shows a module more than once, it was loaded in
+subshells (a command substitution, a pipeline): load it with `orch_load` in
+the main shell before the subshell that needs it, at the command's entry or
+before the shared loop, as `status` and `doctor` do. The shared test assertion
+`assert_loads_once <label> <cmd>...` checks a command's trace for it.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs

@@ -1148,6 +1148,19 @@ GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
 # on PATH.
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 
+# assert_loads_once <label> <cmd> [args...]: runs <cmd> with the load trace on
+# and asserts the trace names no module twice, in the main shell or a subshell.
+# The command's own status and output are not judged.
+assert_loads_once() {
+  local label="$1" load_trace
+  shift
+  load_trace="$(mktemp)"
+  ORCH_LOAD_TRACE="$load_trace" "$@" >/dev/null 2>&1 || true
+  assert_eq "$label: the load trace names no module twice" \
+    "$(awk '{print $1}' "$load_trace" | sort | uniq -d | tr '\n' ' ')" ""
+  rm -f "$load_trace"
+}
+
 # sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
 # finished sweep first and reports it on stderr, so that stderr is held back:
 # discarded when add succeeds, printed when it fails. The new path passes

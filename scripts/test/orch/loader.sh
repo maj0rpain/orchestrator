@@ -61,7 +61,7 @@ assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
 run_traced nonesuch-command
 assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
-run_traced status
+run_traced side-checkout list
 assert_eq "a load from a subshell records a depth above 0" \
   "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "checkout"
 out="$(bash "$ORCH" status 2>&1)"; status=$?
