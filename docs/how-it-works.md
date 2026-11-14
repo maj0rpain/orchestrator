@@ -320,9 +320,10 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
   or both Claude credentials are missing.
 - **Optional:** `ORCH_GIT_NAME` and `ORCH_GIT_EMAIL` (commits default to the
   token owner's login and GitHub noreply address); `ORCH_PERMISSION_MODE`
-  (default `bypassPermissions`); one `ORCH_<NAME>` for each other setting
-  `orch.sh autopilot settings` lists, the name upper-case with each `-` as
-  `_`, written to the matching `orchestrator.autopilot.<name>` key;
+  (default `bypassPermissions`); `ORCH_<NAME>` for every other setting in the
+  Setup table above, the name upper-case with each `-` as `_` (`orch.sh
+  autopilot settings` lists them), written to the matching
+  `orchestrator.autopilot.<name>` key;
   `ORCH_CLONE_DIR` (default `/home/orch/repo`).
 - **Models:** `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's
   model and effort (`orchestrator.autopilot.model` / `.effort`).
@@ -333,9 +334,10 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
   and effort of the session that starts it, so `ORCH_MODEL` alone moves every
   role whose model is unset,
   `ORCH_EFFORT` likewise, and a role variable overrides it.
-- **Unset clears:** `docker/.env` is the one source of truth. Every
-  `ORCH_<NAME>` setting variable and every role variable, unset or empty,
-  clears its global key at each start,
+- **Unset clears:** `docker/.env` is the one source of truth. Every setting in
+  the Setup table has an `ORCH_<NAME>` variable; that variable and every role
+  variable, unset or empty, clears its global key at each start (the
+  permission mode defaults to `bypassPermissions` instead),
   so a line deleted from `.env` takes effect after `docker restart`. Local
   `orchestrator.autopilot.*`, agent-setting and `user.name`/`user.email` keys in
   the clone are removed at each start, so they cannot override `.env`.
@@ -534,7 +536,7 @@ old claims. It also warns about this host's claims whose process is gone;
 | Command | What it does |
 | --- | --- |
 | `orch.sh autopilot show` | Print the settings, each with its source. |
-| `orch.sh autopilot settings` | Print the nine setting names, one per line, in the order `show` lists them; reads no config and validates nothing. |
+| `orch.sh autopilot settings` | Print the setting names, one per line, in the order `show` lists them; reads no config and validates nothing. |
 | `orch.sh autopilot start <issue> <plan-file>` | Post the plan comment and add `orch:spec`. |
 | `orch.sh autopilot candidates [<n>... \| --all \| --limit <k>]` | List, one line per issue, whether a quick autopilot may send it (`eligible none`, `move` or `override`) or why not (`skip <reason>`); writes nothing. |
 | `orch.sh autopilot watch [--every <seconds>]` | Run the watcher, a tick every `<seconds>`. |

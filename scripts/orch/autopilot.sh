@@ -7,14 +7,15 @@
 # The permission modes a headless session may run with, and the numeric
 # settings' defaults. Each lives here alone, so set and show validate against
 # one list.
-# The autopilot setting names, in the order show prints them; settings prints
-# the same list, so the two never disagree.
-AUTOPILOT_SETTING_NAMES=(permission-mode cap handle rounds budget model effort auto-sync github-reserve)
 AUTOPILOT_MODES="default acceptEdits plan dontAsk bypassPermissions"
 AUTOPILOT_CAP_DEFAULT=3
 AUTOPILOT_ROUNDS_DEFAULT=2
 AUTOPILOT_BUDGET_DEFAULT=3
 AUTOPILOT_GITHUB_RESERVE_DEFAULT=20
+
+# The autopilot setting names, in the order show prints them; settings prints
+# the same list, so the two never disagree.
+AUTOPILOT_SETTING_NAMES=(permission-mode cap handle rounds budget model effort auto-sync github-reserve)
 
 # autopilot_lookup <name> <value-var> <source-var>: the key
 # orchestrator.autopilot.<name> - local config, then global config - into

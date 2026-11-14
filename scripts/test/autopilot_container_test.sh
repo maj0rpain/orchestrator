@@ -69,8 +69,11 @@ cat >"$root/orch.sh" <<'FAKE'
 #!/usr/bin/env bash
 # The fake orch.sh: logs pid, directory and arguments; prints a role list for
 # `agent roles` and a marker for
-# `autopilot show`; and refuses, with an `orch:` line, any call whose arguments
-# contain $FAKE_ORCH_FAIL.
+# `autopilot show`; passes `repo show` and `autopilot settings` through to the
+# real orch.sh (with FAKE_LOCK_GLOBAL, `autopilot settings` first creates
+# $HOME/.gitconfig.lock, so the entrypoint's next in-loop write fails); and
+# refuses, with an `orch:` line, any call whose arguments contain
+# $FAKE_ORCH_FAIL.
 printf 'pid=%s pwd=%s host=%s args=%s\n' "$$" "$PWD" "${ORCH_HOST_ID:-}" "$*" >>"$ORCH_LOG"
 # `repo show` goes to the real orch.sh, so its origin parser is the one tested.
 [ "$1 $2" = "repo show" ] && exec bash "$REAL_ORCH_SH" "$@"
@@ -90,7 +93,9 @@ esac
 if [ -n "${FAKE_ORCH_FAIL:-}" ]; then
   case "$*" in *"$FAKE_ORCH_FAIL"*) echo "orch: refused $*" >&2; exit 1 ;; esac
 fi
-# `autopilot settings` goes to the real orch.sh, so the names are the real ones.
+# `autopilot settings` goes to the real orch.sh, so the names are the real ones;
+# FAKE_LOCK_GLOBAL makes it create $HOME/.gitconfig.lock first, so the next
+# global git config write fails.
 [ "$1 $2" != "autopilot settings" ] || { [ -z "${FAKE_LOCK_GLOBAL:-}" ] || mkdir "$HOME/.gitconfig.lock"; exec bash "$REAL_ORCH_SH" "$@"; }
 [ "$*" = "agent roles" ] && printf '%s\n' implementer lens reviewer fixer closer resolver
 [ "$*" = "autopilot show" ] && echo autopilot-show-marker
@@ -224,20 +229,30 @@ assert_eq "permission-mode defaults to bypassPermissions" "$(cfg orchestrator.au
 run_entry ORCH_PERMISSION_MODE=
 assert_eq "an empty permission mode defaults too" "$(cfg orchestrator.autopilot.permission-mode)" bypassPermissions
 settings_names="$(bash "$DIR/orch.sh" autopilot settings)"
+setting_keys=() setting_vars=()
 for key in $settings_names; do
   [ "$key" != permission-mode ] || continue
-  upper="ORCH_$(printf '%s' "$key" | tr '[:lower:]-' '[:upper:]_')"
+  setting_keys+=("$key")
+  setting_vars+=("ORCH_$(printf '%s' "$key" | tr '[:lower:]-' '[:upper:]_')")
   assert_eq "an unset variable leaves $key unset on a first start" "$(cfg_state "orchestrator.autopilot.$key" "$default_home")" unset
-  # A start that wrote the key, then one with the variable empty.
-  run_entry "$upper=1"
+done
+# Start 1 sets every variable; start 2, in that home and clone, empties them;
+# starts 3 and 4 repeat with the variables unset instead of empty.
+for clearing in empty unset; do
+  set_args=() clear_args=()
+  for var in "${setting_vars[@]}"; do
+    set_args+=("$var=1")
+    if [ "$clearing" = empty ]; then clear_args+=("$var="); else clear_args+=("-$var"); fi
+  done
+  run_entry "${set_args[@]}"
   prior_home="$home" prior_clone="$clone"
-  assert_eq "$upper writes $key" "$(cfg "orchestrator.autopilot.$key")" 1
-  run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone" "$upper="
-  assert_eq "an empty $upper clears $key" "$(cfg_state "orchestrator.autopilot.$key")" unset
-  run_entry "$upper=1"
-  prior_home="$home" prior_clone="$clone"
-  run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone"
-  assert_eq "an unset $upper clears $key" "$(cfg_state "orchestrator.autopilot.$key")" unset
+  for n in "${!setting_keys[@]}"; do
+    assert_eq "${setting_vars[$n]} writes ${setting_keys[$n]}" "$(cfg "orchestrator.autopilot.${setting_keys[$n]}")" 1
+  done
+  run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone" "${clear_args[@]}"
+  for n in "${!setting_keys[@]}"; do
+    assert_eq "an $clearing ${setting_vars[$n]} clears ${setting_keys[$n]}" "$(cfg_state "orchestrator.autopilot.${setting_keys[$n]}")" unset
+  done
 done
 
 # Settings the old hand-written list lacked reach their keys, asserted by name.
@@ -246,7 +261,7 @@ assert_eq "ORCH_AUTO_SYNC=false reaches auto-sync" "$(cfg orchestrator.autopilot
 assert_eq "ORCH_GITHUB_RESERVE=0 reaches github-reserve" "$(cfg orchestrator.autopilot.github-reserve)" 0
 assert_contains "the names came from autopilot settings" "$(<"$orch_log")" "args=autopilot settings"
 
-# Settings the old hand-written list lacked reach their keys, by name.
+# A refused autopilot settings keeps the mode and never starts the watcher.
 FAKE_ORCH_FAIL="autopilot settings" run_entry ORCH_PERMISSION_MODE=plan
 assert_eq "a refused autopilot settings exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
 assert_contains "a refused autopilot settings shows its orch line" "$err" "orch: refused autopilot settings"
@@ -254,7 +269,7 @@ assert_contains "a refused autopilot settings names its step" "$err" "orch: auto
 assert_eq "a refused autopilot settings keeps the permission mode" "$(cfg orchestrator.autopilot.permission-mode)" plan
 assert_eq "a refused autopilot settings never runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 0
 
-# A refused autopilot settings keeps the mode and never starts the watcher.
+# A setting write that fails inside the loop stops the start before the watcher.
 FAKE_LOCK_GLOBAL=1 run_entry ORCH_CAP=2
 assert_eq "a failed setting write exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
 assert_contains "a failed setting write shows its orch line" "$err" "orch: autopilot settings: cannot write orchestrator.autopilot.cap"
