@@ -250,8 +250,9 @@ cmd_issue() {
 # issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>:
 # the planning close's done-close (#985) - closes issue <n> as completed, or
 # as a duplicate of <m>, the file's contents its closing comment. One gh call,
-# the comment riding on the close, so a failed close never leaves a comment on
-# a still-open issue, as redo's close does. Bad input dies before any gh call.
+# the comment riding on the close: gh posts the comment first and closes
+# second, so a failed close can leave the comment on a still-open issue, as
+# redo's close can. Bad input dies before any gh call.
 # Like ticket close it reads nothing back, and like issue comment it posts the
 # comment as given and leaves the labels alone.
 cmd_issue_close() {

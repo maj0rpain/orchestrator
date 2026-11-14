@@ -24,6 +24,17 @@
 # call goes through gh_limit_retry, and is retried once on a first secondary
 # limit; the call it makes is the only one to the real gh binary in orch.sh
 # and its modules.
+#
+# A compound write declares itself, as the quota read does, by a marker the
+# guard reads - never by gh's argv (ADR-0033): the operation's own gh call is
+# prefixed GH_LIMIT_COMPOUND=1, which covers that call alone, and no later
+# call inherits it. A call must declare itself compound when it can land a
+# write a rerun would duplicate or trip over before a later request of the
+# same call is limited (a close that posts its comment first, a PR created
+# before its labels are added). A harmlessly repeated write, such as
+# relabelling, does not declare, and keeps the retry. A compound write that
+# meets a first secondary limit is given up on at once, as a limit met again
+# after the retry; any other failure passes through untouched.
 gh() {
   if ! repo_pin; then
     if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
@@ -32,29 +43,38 @@ gh() {
   gh_limit_retry command gh "$@"
 }
 
-# gh_limit_retry <command>...: runs <command>, its stderr held, through the
-# limit retry protocol (#2724) - the one copy of it: a failed call goes through
-# gh_limit_handle, a first secondary limit (status 2) is retried once, a limit
-# given up on (status 1) fails the call with the handler's message in place of
-# the command's stderr, and any other failure keeps its stderr as it is. The
-# command's status and stdout pass through. While GH_LIMIT_READING is set the
-# handler is never called and nothing is retried.
+# gh_limit_retry <command>...: runs <command>, its stdout and stderr held in
+# temp files, through the limit retry protocol (#2724) - the one copy of it: a
+# failed call goes through gh_limit_handle, a first secondary limit (status 2)
+# is retried once, a limit given up on (status 1) fails the call with the
+# handler's message in place of the command's stderr, and any other failure
+# keeps its stderr as it is. The command's status passes through, and so does
+# the stdout of the deciding attempt alone - the one whose outcome the call
+# returns - byte for byte from its file, never through a shell variable; an
+# attempt that is retried leaves nothing with the caller. Both files are
+# removed on every way out. While GH_LIMIT_READING is set the handler is never
+# called and nothing is retried; while GH_LIMIT_COMPOUND is set (the guard's
+# compound-write marker) a first secondary limit is given up on, not retried.
 gh_limit_retry() {
-  local errf out_st err rc retried=0
+  local errf outf out_st err rc retried=0 spent given_up=0
   temp_file_make errf || die "could not create a temp file for the command's stderr"
+  temp_file_make outf || { rm -f "$errf"; die "could not create a temp file for the command's stdout"; }
   while :; do
     out_st=0
-    "$@" 2>"$errf" || out_st=$?
+    "$@" >"$outf" 2>"$errf" || out_st=$?
     err="$(cat "$errf")"
     if [ "$out_st" -eq 0 ] || [ -n "${GH_LIMIT_READING:-}" ]; then break; fi
     rc=0
-    gh_limit_handle "$err" "$retried" || rc=$?
+    spent="$retried"
+    [ -z "${GH_LIMIT_COMPOUND:-}" ] || spent=1
+    gh_limit_handle "$err" "$spent" || rc=$?
     if [ "$rc" -eq 2 ]; then retried=1; continue; fi
-    if [ "$rc" -eq 1 ]; then rm -f "$errf"; return "$out_st"; fi
+    if [ "$rc" -eq 1 ]; then given_up=1; break; fi
     break
   done
-  [ -z "$err" ] || printf '%s\n' "$err" >&2
-  rm -f "$errf"
+  cat "$outf"
+  [ "$given_up" -eq 1 ] || [ -z "$err" ] || printf '%s\n' "$err" >&2
+  rm -f "$errf" "$outf"
   return "$out_st"
 }
 
@@ -97,12 +117,15 @@ gh_limit_reset() {
   printf '%s\n' "${reset:-$(($(date +%s) + 900))}"
 }
 
-# gh_limit_handle <stderr> <retried>: what a failed call's <stderr> means.
+# gh_limit_handle <stderr> <retry spent>: what a failed call's <stderr> means.
 # Status 0: no limit - the caller passes its failure through untouched.
 # Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
-# default 60) - the caller retries once and calls this again with <retried> 1.
-# Status 1: a limit to give up on - a primary one, or a secondary one met again
-# after the retry, handled as a primary one. The distinct message, naming the
+# default 60) - the caller retries once and calls this again with
+# <retry spent> 1.
+# Status 1: a limit to give up on - a primary one, a secondary one met again
+# after the retry, or a first secondary one on a compound write (never
+# retried, so called with <retry spent> 1), handled as a primary one. The
+# distinct message, naming the
 # reset, is on stderr; in an autopilot process the reset is also recorded
 # (autopilot_github_limit_record), a failed write being one more line on stderr.
 gh_limit_handle() {
@@ -737,9 +760,11 @@ adapter_issue_relabel() {
 # closes the issue, reason "completed" or "not planned" (absent, gh's
 # default), or as a duplicate of issue <B> - never given with --reason, and
 # needing gh 2.102 or newer - posting the comment on it where one is given.
-# Prints nothing.
+# Prints nothing. Given a comment it declares its gh call a compound write:
+# gh posts the comment first and closes second, so a failed close can leave the
+# comment, and a rerun would post it twice.
 adapter_issue_close() {
-  local n="$1" reason="" comment="" duplicate_of="" args=() options="--reason --comment --duplicate-of"
+  local n="$1" reason="" comment="" duplicate_of="" compound="" args=() options="--reason --comment --duplicate-of"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -750,9 +775,9 @@ adapter_issue_close() {
     esac
   done
   [ -z "$reason" ] || args+=(--reason "$reason")
-  [ -z "$comment" ] || args+=(--comment "$comment")
+  [ -z "$comment" ] || { args+=(--comment "$comment"); compound=1; }
   [ -z "$duplicate_of" ] || args+=(--duplicate-of "$duplicate_of")
-  gh issue close "$n" ${args[@]+"${args[@]}"} >/dev/null
+  GH_LIMIT_COMPOUND=$compound gh issue close "$n" ${args[@]+"${args[@]}"} >/dev/null
 }
 
 # adapter_issue_reopen <n>: reopens the issue. Prints nothing.
@@ -766,19 +791,21 @@ adapter_issue_reopen() {
 # [--label <name>]...: opens the PR from head into base - a draft under
 # --draft, carrying each label named (#1299), passed to gh pr create's --label
 # in the order given - and prints its number alone. gh adds the labels in a
-# mutation after the create, so the PR can open before they land.
+# mutation after the create, so the PR can open before they land: given a
+# label it declares its gh call a compound write, as a rerun after the PR has
+# opened fails with "already exists" for a PR that was in fact opened.
 # Fails, printing nothing, where gh succeeded but printed no PR URL.
 adapter_pr_create() {
-  local base="$1" head="$2" title="$3" body="$4" args=() out n options="--draft --label"
+  local base="$1" head="$2" title="$3" body="$4" args=() out n compound="" options="--draft --label"
   shift 4
   while [ $# -gt 0 ]; do
     case "$1" in
       --draft) args+=(--draft); shift ;;
-      --label) option_value adapter_pr_create "$options" "$@" || return; args+=(--label "$2"); shift 2 ;;
+      --label) option_value adapter_pr_create "$options" "$@" || return; args+=(--label "$2"); compound=1; shift 2 ;;
       *) unknown_option adapter_pr_create "$1"; return ;;
     esac
   done
-  out="$(gh pr create ${args[@]+"${args[@]}"} --base "$base" --head "$head" --title "$title" --body-file "$body")" || return
+  out="$(GH_LIMIT_COMPOUND=$compound gh pr create ${args[@]+"${args[@]}"} --base "$base" --head "$head" --title "$title" --body-file "$body")" || return
   if ! n="$(url_number pull "$out")"; then
     printf 'gh pr create printed no PR URL: %s\n' "$out" >&2
     return 1
@@ -937,9 +964,11 @@ adapter_prs_merged_bodies() {
 }
 
 # adapter_pr_close <n> <comment>: closes the PR, posting the comment on it.
-# Prints nothing.
+# Prints nothing. It declares its gh call a compound write: gh posts the
+# comment first and closes second, so a failed close can leave the comment, and
+# a rerun would post it twice.
 adapter_pr_close() {
-  gh pr close "$1" --comment "$2" >/dev/null
+  GH_LIMIT_COMPOUND=1 gh pr close "$1" --comment "$2" >/dev/null
 }
 
 # adapter_pr_comment <n> <file>: posts the file's contents as a comment on the

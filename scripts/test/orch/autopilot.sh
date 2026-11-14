@@ -44,11 +44,6 @@ re_issue() {
 # the file's text, as the autopilot; prints its output.
 re_run() { ORCH_AUTOPILOT=1 "$ORCH" autopilot reenter "${2:-review}" "$1" 2>&1; }
 
-# NTH_MAKE_FAKE: shell source, for sourced_orch_script, that makes
-# temp_file_make fail on its PK_NTH-th call, counted in the file PK_COUNT, and
-# work otherwise.
-NTH_MAKE_FAKE='real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; '
-
 # --- autopilot ---------------------------------------------------------------
 # The clone-scoped autopilot settings and the autopilot-session check.
 echo
