@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.73
+
+The autopilot container now holds `orchestrator.autopilot.auto-sync` and `.github-reserve` from `.env` (`ORCH_AUTO_SYNC`, `ORCH_GITHUB_RESERVE`): its entrypoint writes one key for each setting the new `orch.sh autopilot settings` lists, the list `autopilot show` also reads, and the docs lint checks `docker/.env.example` names every setting's variable.
+
 ## 5.2.72
 
 The Bash hook no longer denies `node --test`, `python3 -c1`, `python3 -mpytest` and other interpreter commands whose options give the program its code, module or mode, or make it print and exit, as stdin reads; a real stdin read, including an option after a lone `-` script, is still denied.
