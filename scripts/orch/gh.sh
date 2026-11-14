@@ -18,7 +18,8 @@
 # gh's own default repo, which in a fork is the upstream. With no repo it dies
 # naming GH_REPO; that death exits 1 whatever the command reserved, so a command
 # that reserves exit 1 for a "no" resolves the repo itself first (repo_pin, then
-# die2 with REPO_REMEDY). Inside a command substitution `die` would end only that
+# die2 with REPO_REMEDY). Inside a command substitution `die` would end only
+# that
 # subshell, and its message could land in a 2>/dev/null, so there it signals
 # the main shell, whose USR1 trap dies with the remedy instead. A failed
 # call goes through gh_limit_retry, and is retried once on a first secondary
