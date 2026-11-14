@@ -711,21 +711,22 @@ autopilot_pickup() {
       return 0
     fi
     autopilot_stop_contained "$1" "$PICKUP_KIND: $PICKUP_TEXT; a later tick's stale cleanup stops it" \
-      standing_stop "$1" "$PICKUP_KIND" "$2" "$PICKUP_TEXT" || true
+      "$PICKUP_KIND" "$2" "$PICKUP_TEXT" || true
     return 0
   }
   autopilot_spawn_run "$1"
 }
 
-# autopilot_stop_contained <issue> <tail> <command>...: the tick's one way to
-# run a stop: a single attempt in a subshell, so a death inside it ends the
+# autopilot_stop_contained <issue> <tail> <kind> <phase> <detail>: the tick's
+# one way to run a stop (standing_stop <issue> <kind> <phase> <detail>): a
+# single attempt in a subshell, so a death inside it ends the
 # stop and not the tick (the next tick is the retry). The stop's own failure
 # line reaches stderr; when it fails, warns "could not stop issue #<issue> - its
 # claim stays held; <tail>" and returns 1.
 autopilot_stop_contained() {
   local issue="$1" tail="$2"
   shift 2
-  ( "$@" ) && return 0
+  ( standing_stop "$issue" "$@" ) && return 0
   warn "could not stop issue #$issue - its claim stays held; $tail"
   return 1
 }
@@ -753,7 +754,7 @@ autopilot_cleanup_stale() {
     if [ -n "$backstop" ]; then detail="${detail%% - no exit code is known} - the session log says: \"${backstop#autopilot run: }\""; fi
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
     if autopilot_stop_contained "$issue" "the next tick tries again; if the issue is gone for good, delete the claim ref by hand: git push origin :$(adapter_claim_ref "$issue")" \
-      standing_stop "$issue" failure "$phase" "$detail"; then
+      failure "$phase" "$detail"; then
       liveness_issue_forget "$issue"
     elif autopilot_github_paused; then
       return 0
