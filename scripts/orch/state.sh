@@ -171,9 +171,9 @@ require_state_readable() {
 
 # Fetches a required state field through state_get, dies with $3 if it comes
 # back empty, and otherwise writes it into the variable named by $1 - a
-# caller-named out-param via `printf -v` rather than a nameref: bash 3.2 has
-# neither `local -n` nor `declare -n`, and this file promises to still run there
-# (the same idiom `d_gate` uses in doctor.sh).
+# caller-named out-param via `printf -v` rather than a nameref: namerefs need
+# bash 4.3, and this file runs on 4.2 (the same idiom `d_gate` uses in
+# doctor.sh).
 #
 # Call it as a bare statement on its own line - `local pr; require_pr pr` -
 # never folded into `$(...)`. A caller-named out-param has no result to
