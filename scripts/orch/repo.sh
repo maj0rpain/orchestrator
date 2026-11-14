@@ -45,7 +45,10 @@ repo_owner_name() {
 # repo_pin: pin every later gh call to the repo - resolve it, export it as
 # GH_REPO when that is unset, then pin its host (repo_pin_host). Returns 1,
 # exporting nothing, when nothing resolves, and never dies: each caller picks
-# its own exit, the gh guard's subshell signal or die, review rerun's die2.
+# its own exit: the gh guard's subshell signal or die, or review ci-log's die
+# (exit 1), or die2 in a command that reserves exit 1 and so resolves the repo
+# itself (review rerun, issue ready, ticket exists, the open-PR reader,
+# autopilot answer).
 repo_pin() {
   local preset="${GH_REPO:-}"
   repo_resolve || return 1

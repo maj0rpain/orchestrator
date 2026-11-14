@@ -306,6 +306,7 @@ cmd_issue_ready() {
   # shellcheck disable=SC2034
   local issue="$1" ready state labels gh_err
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
+  repo_pin || die2 "$REPO_REMEDY"
   triage_label_into ready ready-for-agent
   issue_state_labels_read "$issue" state labels gh_err \
     || gh_die --exit 2 "read issue #$issue" "$gh_err"

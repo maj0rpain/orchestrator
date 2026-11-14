@@ -1278,3 +1278,18 @@ fake_issue_body 23 $'Alpha line.\r\nBeta line.'
 assert_contains "fetch --json keeps every CR" "$(jq -r .body "$lf_dir/body.json" | od -c)" '\r  \n'
 rm -rf "$lf_dir"
 unset lf_dir
+
+# --- issue ready: no repo (#3050) ---------------------------------------------
+# Exit 1 is the "no" - the label is missing - so a repo that cannot be found
+# exits 2 with the remedy alone, never reading as "not ready".
+echo
+echo "issue ready: no repo"
+healthy_repo
+assert_no_repo_exit2 "issue ready" issue ready 70
+out="$(orch_no_repo issue ready abc 2>&1)"; st=$?
+assert_status "a bad issue number is refused first" "$st" 2
+assert_contains "with its usage line" "$out" "issue must be a plain issue number"
+out="$(orch_no_repo issue ready 2>&1)"; st=$?
+assert_status "a usage error is refused first" "$st" 2
+assert_contains "with its usage line" "$out" "usage: orch.sh issue ready <n>"
+restore_suite_env
