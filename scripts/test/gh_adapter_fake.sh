@@ -215,7 +215,9 @@ fake_countdown() {
 # failure file); else fake_failing_raw, with a failure that is a GitHub
 # API rate limit going through the production gh_limit_retry, as the guard's
 # own failed calls do (sourced alone, without gh.sh, it is fake_failing_raw's
-# own answer): a secondary limit is waited out and retried once, and a
+# own answer): a secondary limit is waited out and retried once, except in a
+# call made under GH_LIMIT_COMPOUND (a compound write), which gives up at
+# once; and a
 # limit given up on leaves the handler's distinct message on stderr in place of
 # gh's own. Any other failure is written as it is.
 fake_failing() {
@@ -809,7 +811,8 @@ adapter_issue_close() {
       *) fake_unknown_option adapter_issue_close "$1"; return ;;
     esac
   done
-  ! fake_failing adapter_issue_close || return 1
+  # compound, as the real operation is, when a comment is given
+  ! GH_LIMIT_COMPOUND=${comment:+1} fake_failing adapter_issue_close || return 1
   fake_issue_known "$n" || return 1
   d="$(fake_issue_dir "$n")"
   [ "$(cat "$d/state" 2>/dev/null)" != CLOSED ] || return 0
@@ -858,7 +861,8 @@ adapter_pr_create() {
       *) fake_unknown_option adapter_pr_create "$1"; return ;;
     esac
   done
-  ! fake_failing adapter_pr_create || return 1
+  # compound, as the real operation is, when a label is given
+  ! GH_LIMIT_COMPOUND=${labels[*]:+1} fake_failing adapter_pr_create || return 1
   n="$(fake_take_number next_pr)" || return 1
   d="$(fake_pr_dir "$n")"
   mkdir -p "$d"
@@ -1061,7 +1065,7 @@ adapter_prs_merged_bodies() {
 # such ref) counts as gone, any other failure closes with the comment.
 adapter_pr_close() {
   local d head st
-  ! fake_failing adapter_pr_close || return 1
+  ! GH_LIMIT_COMPOUND=1 fake_failing adapter_pr_close || return 1
   fake_pr_known "$1" || return 1
   d="$(fake_pr_dir "$1")"
   st="$(cat "$d/state" 2>/dev/null)"
