@@ -1137,8 +1137,8 @@ cmd_doctor() {
   # The checks call these in command substitutions and subshells, which would
   # each load a module again: load each once, here in the main shell.
   local mod
-  for mod in gh $([ "$scope" = flow ] || echo branch checkout side-checkout trust) \
-    $([ "$scope" = env ] || echo handoff autopilot branch ticket-worktree checkout); do
+  for mod in gh branch checkout $([ "$scope" = flow ] || echo side-checkout trust) \
+    $([ "$scope" = env ] || echo handoff autopilot ticket-worktree); do
     orch_load "$mod"
   done
 

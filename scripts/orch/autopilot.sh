@@ -338,6 +338,8 @@ autopilot_questions() {
   orch_load gh
   orch_load handoff
   orch_load issue-timeline
+  orch_load marked-comment
+  orch_load trust
   local list n phase row kind lines="" q_phase stop_phase
   list="$(standing_human_issues)" || exit $?
   for n in $(printf '%s\n' "$list" | sort -n); do

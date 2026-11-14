@@ -552,10 +552,11 @@ assert_eq "its claim is released" "$(fake_claim_held 7)" free
 clean_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "the failure comment names the log" "$(fake_comments_of 7 | tail -4)" "log: $clean_log"
 # Each command loads a module once, however many issues it reads.
-for n in 31 32 33; do fake_issue "$n" open needs-triage; done
+for n in 31 32 33; do fake_issue "$n" open needs-human orch:spec; done
 assert_loads_once "autopilot tick over three issues, none picked up" "$ORCH" autopilot tick
 assert_loads_once "autopilot questions over three issues" "$ORCH" autopilot questions
 assert_loads_once "autopilot candidates over three issues" "$ORCH" autopilot candidates 31 32 33
+for n in 31 32 33; do fake_issue_drop "$n"; done
 printf '7\n' >"$launcher_dir/release"; printf '0\n' >"$launcher_dir/exit"
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"

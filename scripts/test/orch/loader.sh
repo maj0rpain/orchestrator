@@ -159,31 +159,32 @@ rm -f "$trace"
 echo
 echo "stub table cache"
 # The section's own HOME starts with the stub cache of the tree under test,
-# seeded by the runner; other trees' files under it are not counted.
-seed_dir="$(cd "$PLUGIN_ROOT/scripts/orch" && pwd -P)"
-seed_name="${seed_dir//%/%25}"
-seed_file="$HOME/.cache/orchestrator/${seed_name//\//%2F}.stubs"
-assert_eq "a section's HOME starts with the stub cache" "$([ -f "$seed_file" ] && echo yes || echo no)" "yes"
-assert_eq "which is a regular file, not a link" "$([ -L "$seed_file" ] && echo link || echo file)" "file"
-assert_eq "of mode 600" "$(stat -c %a "$seed_file" 2>/dev/null || stat -f %Lp "$seed_file")" "600"
-echo "# seeded marker" >>"$seed_file"
-touch -d '+1 minute' "$seed_file"
-"$ORCH" help >/dev/null 2>&1
-assert_contains "and a run reuses it" "$(cat "$seed_file")" "# seeded marker"
-sed -i.bak '/^# seeded marker$/d' "$seed_file"; rm -f "$seed_file.bak"
+# seeded by the runner; other trees' files under it are not counted. Its name
+# is whatever a run of orch.sh writes into an empty HOME.
+name_home="$(mktemp -d)"
+(cd "$PLUGIN_ROOT" && HOME="$name_home" "$ORCH" help >/dev/null 2>&1)
+seed_file_name="$(basename "$(printf "%s\n" "$name_home"/.cache/orchestrator/*.stubs)")"
+rm -rf "$name_home"
+# seeded_cache_checks <label prefix> <file>: the file is a regular file of mode
+# 600 and a run of orch.sh reuses it.
+seeded_cache_checks() {
+  local prefix="$1" file="$2"
+  assert_eq "$prefix starts with the stub cache" "$([ -f "$file" ] && echo yes || echo no)" "yes"
+  assert_eq "$prefix cache is a regular file, not a link" "$([ -L "$file" ] && echo link || echo file)" "file"
+  assert_eq "$prefix cache is of mode 600" "$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")" "600"
+  echo "# seeded marker" >>"$file"
+  touch -d '+1 minute' "$file"
+  "$ORCH" help >/dev/null 2>&1
+  assert_contains "and a run reuses the $prefix cache" "$(cat "$file")" "# seeded marker"
+  sed -i.bak '/^# seeded marker$/d' "$file"; rm -f "$file.bak"
+}
+seeded_cache_checks "a section's HOME" "$HOME/.cache/orchestrator/$seed_file_name"
 
 # A HOME the shared helper makes starts the same way, with a copy of its own.
 suite_home="$HOME"
 seeded_home
 assert_ne "a seeded_home is a HOME of its own" "$HOME" "$suite_home"
-home_file="$HOME/.cache/orchestrator/${seed_name//\//%2F}.stubs"
-assert_eq "a seeded_home starts with the stub cache" "$([ -f "$home_file" ] && echo yes || echo no)" "yes"
-assert_eq "a seeded_home cache is a regular file, not a link" "$([ -L "$home_file" ] && echo link || echo file)" "file"
-assert_eq "a seeded_home cache is of mode 600" "$(stat -c %a "$home_file" 2>/dev/null || stat -f %Lp "$home_file")" "600"
-echo "# seeded marker" >>"$home_file"
-touch -d '+1 minute' "$home_file"
-"$ORCH" help >/dev/null 2>&1
-assert_contains "and a run reuses a seeded_home cache" "$(cat "$home_file")" "# seeded marker"
+seeded_cache_checks "a seeded_home" "$HOME/.cache/orchestrator/$seed_file_name"
 rm -rf "$HOME"; HOME="$suite_home"; export HOME
 
 new_repo >/dev/null
