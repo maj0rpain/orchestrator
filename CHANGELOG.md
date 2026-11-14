@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.79
+
+`orch.sh review standards` now prints the declared Standards line however long the root file is; it exited 141 with no output when the declaration was followed by more than a pipe holds.
+
 ## 5.2.78
 
 The autopilot started by a relative path to `orch.sh` now runs its child starts (pickup's init and redo, the session wrapper, the review-budget record) with the running `orch.sh` by an absolute path fixed at start, so a pickup no longer stops the issue or runs a side checkout's copy.
