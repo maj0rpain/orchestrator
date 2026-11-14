@@ -964,8 +964,8 @@ rm -rf "$ord_dir"
 # --- the shard setting (#2859) ------------------------------------------------
 # A minimal test tree - the runners, setup.sh, a harness with an isolation
 # section and five planted sections - over planted durations: CPU tenths 50,
-# 40, 30 and 20 for s1 to s4, s5 unlisted (so it weighs the median of the listed sections, 30: the lower
-# of the middle 30 and 40), 70 for
+# 40, 30 and 20 for s1 to s4, s5 unlisted (so it weighs the median of the
+# listed sections, 30: the lower of the middle 30 and 40), 70 for
 # hooks_test.sh and 10 for shellcheck, which group 1 starts with (80). The wall
 # tenths differ on purpose (10, 30, 20, 5, 9, 9): a dealing by wall gives other
 # groups. The line of 99 for a section that no longer exists is not counted in
@@ -1072,11 +1072,11 @@ sh_case "a section listed at 0 weighs 0, not the unlisted weight" "isolation,s1,
 sh_case "a section listed at 0 counts as 0 toward the median" "isolation,s1,s5," \
   "1	40	shard s1" "1	30	shard s2" "1	10	shard s3" "1	0	shard s4"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-# Why 4 groups: the weights are s1 50, s2 40, s3 30, s5 (unlisted, so the median
-# listed) 30 and s4 20 CPU tenths, dealt in that order; group 1 starts at 80, the
-# rest at 0. With 4 groups s1, s2 and s3 fill groups 2-4, s5 goes to group 4 (30,
-# the lowest total) and s4 to group 3 (40, the lowest), leaving 1/4 with
-# isolation alone.
+# Why 4 groups: the weights are s1 50, s2 40, s3 30, s5 (unlisted, so the
+# median listed) 30 and s4 20 CPU tenths, dealt in that order; group 1 starts
+# at 80, the rest at 0. With 4 groups s1, s2 and s3 fill groups 2-4, s5 goes to
+# group 4 (30, the lowest total) and s4 to group 3 (40, the lowest), leaving
+# 1/4 with isolation alone.
 # The 2-group pass runs with no durations file; the others with it.
 for sh_n in 2 1 4; do
   sh_label="$sh_n groups run every planted section exactly once"
