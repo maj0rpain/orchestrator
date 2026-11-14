@@ -7,17 +7,16 @@
 #
 # Environment: REPO (owner/name), GH_TOKEN, and CLAUDE_CODE_OAUTH_TOKEN or
 # ANTHROPIC_API_KEY are required. ORCH_GIT_NAME, ORCH_GIT_EMAIL,
-# ORCH_PERMISSION_MODE, ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET,
-# ORCH_MODEL, ORCH_EFFORT, ORCH_MODEL_<ROLE>, ORCH_EFFORT_<ROLE> (roles from
-# `orch.sh agent roles`, upper-case: IMPLEMENTER, LENS, REVIEWER, FIXER, CLOSER,
-# RESOLVER, AUDITOR) and ORCH_CLONE_DIR (default /home/orch/repo) are optional;
+# ORCH_PERMISSION_MODE, one ORCH_<NAME> for each other setting `orch.sh
+# autopilot settings` lists (the name upper-case, each `-` as `_`),
+# ORCH_MODEL_<ROLE>, ORCH_EFFORT_<ROLE> (roles from `orch.sh agent roles`,
+# upper-case) and ORCH_CLONE_DIR (default /home/orch/repo) are optional;
 # ORCH_SH names the installed plugin's orch.sh. A variable set to the empty
-# string counts as unset. ORCH_MODEL and ORCH_EFFORT are the phase session's
-# model and effort (orchestrator.autopilot.model/effort); a role variable is
-# that role's agent setting, written with `agent set --global`, and a role
-# left unset inherits the phase session's model and effort. Unset clears: an
-# unset ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET, ORCH_MODEL, ORCH_EFFORT
-# or role variable clears its global key, so .env is the one source of truth;
+# string counts as unset. A setting variable is written to its global
+# orchestrator.autopilot.<name> key; a role variable is that role's agent
+# setting, written with `agent set --global`, and a role left unset inherits
+# the phase session's model and effort. Unset clears: an unset setting or role
+# variable clears its global key, so .env is the one source of truth;
 # ORCH_PERMISSION_MODE defaults to bypassPermissions instead. Local keys in the
 # clone would override .env, so each start removes the clone's local
 # orchestrator.autopilot.* keys, agent-setting keys and user.name/user.email,
@@ -115,12 +114,12 @@ autopilot_set() {
   else git config --global "orchestrator.autopilot.$1" "$2" ||
     die "autopilot settings: cannot write orchestrator.autopilot.$1"; fi
 }
-autopilot_set cap "${ORCH_CAP:-}"
-autopilot_set handle "${ORCH_HANDLE:-}"
-autopilot_set rounds "${ORCH_ROUNDS:-}"
-autopilot_set budget "${ORCH_BUDGET:-}"
-autopilot_set model "${ORCH_MODEL:-}"
-autopilot_set effort "${ORCH_EFFORT:-}"
+settings="$(bash "$ORCH_SH" autopilot settings)" || die "autopilot settings: autopilot settings failed"
+for setting in $settings; do
+  [ "$setting" != permission-mode ] || continue
+  var="ORCH_$(printf '%s' "$setting" | tr '[:lower:]-' '[:upper:]_')"
+  autopilot_set "$setting" "${!var:-}"
+done
 
 roles="$(bash "$ORCH_SH" agent roles)" || die "autopilot settings: agent roles failed"
 for role in $roles; do

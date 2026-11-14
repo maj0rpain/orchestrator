@@ -90,6 +90,8 @@ esac
 if [ -n "${FAKE_ORCH_FAIL:-}" ]; then
   case "$*" in *"$FAKE_ORCH_FAIL"*) echo "orch: refused $*" >&2; exit 1 ;; esac
 fi
+# `autopilot settings` goes to the real orch.sh, so the names are the real ones.
+[ "$1 $2" != "autopilot settings" ] || { [ -z "${FAKE_LOCK_GLOBAL:-}" ] || mkdir "$HOME/.gitconfig.lock"; exec bash "$REAL_ORCH_SH" "$@"; }
 [ "$*" = "agent roles" ] && printf '%s\n' implementer lens reviewer fixer closer resolver
 [ "$*" = "autopilot show" ] && echo autopilot-show-marker
 exit 0
@@ -118,6 +120,7 @@ entry_env() {
     "ORCH_SH=$root/orch.sh" "REAL_ORCH_SH=$DIR/orch.sh" "ORCH_CLONE_DIR=$clone"
     "FAKE_GH_FAIL=${FAKE_GH_FAIL:-}" "FAKE_ORCH_FAIL=${FAKE_ORCH_FAIL:-}"
     "FAKE_SHADOW_KEYS=${shadow_list:-}"
+    "FAKE_LOCK_GLOBAL=${FAKE_LOCK_GLOBAL:-}"
     "REPO=owner/name" "GH_TOKEN=tok" "CLAUDE_CODE_OAUTH_TOKEN=oauth"
   )
   local arg entry
@@ -220,8 +223,10 @@ assert_eq "budget is written" "$(cfg orchestrator.autopilot.budget)" 12
 assert_eq "permission-mode defaults to bypassPermissions" "$(cfg orchestrator.autopilot.permission-mode "$default_home")" bypassPermissions
 run_entry ORCH_PERMISSION_MODE=
 assert_eq "an empty permission mode defaults too" "$(cfg orchestrator.autopilot.permission-mode)" bypassPermissions
-for key in cap handle rounds budget model effort; do
-  upper="ORCH_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
+settings_names="$(bash "$DIR/orch.sh" autopilot settings)"
+for key in $settings_names; do
+  [ "$key" != permission-mode ] || continue
+  upper="ORCH_$(printf '%s' "$key" | tr '[:lower:]-' '[:upper:]_')"
   assert_eq "an unset variable leaves $key unset on a first start" "$(cfg_state "orchestrator.autopilot.$key" "$default_home")" unset
   # A start that wrote the key, then one with the variable empty.
   run_entry "$upper=1"
@@ -229,7 +234,31 @@ for key in cap handle rounds budget model effort; do
   assert_eq "$upper writes $key" "$(cfg "orchestrator.autopilot.$key")" 1
   run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone" "$upper="
   assert_eq "an empty $upper clears $key" "$(cfg_state "orchestrator.autopilot.$key")" unset
+  run_entry "$upper=1"
+  prior_home="$home" prior_clone="$clone"
+  run_entry -HOME "HOME=$prior_home" -ORCH_CLONE_DIR "ORCH_CLONE_DIR=$prior_clone"
+  assert_eq "an unset $upper clears $key" "$(cfg_state "orchestrator.autopilot.$key")" unset
 done
+
+# Settings the old hand-written list lacked reach their keys, asserted by name.
+run_entry ORCH_AUTO_SYNC=false ORCH_GITHUB_RESERVE=0
+assert_eq "ORCH_AUTO_SYNC=false reaches auto-sync" "$(cfg orchestrator.autopilot.auto-sync)" false
+assert_eq "ORCH_GITHUB_RESERVE=0 reaches github-reserve" "$(cfg orchestrator.autopilot.github-reserve)" 0
+assert_contains "the names came from autopilot settings" "$(<"$orch_log")" "args=autopilot settings"
+
+# A refused autopilot settings keeps the permission mode and never starts the watcher.
+FAKE_ORCH_FAIL="autopilot settings" run_entry ORCH_PERMISSION_MODE=plan
+assert_eq "a refused autopilot settings exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
+assert_contains "a refused autopilot settings shows its orch line" "$err" "orch: refused autopilot settings"
+assert_contains "a refused autopilot settings names its step" "$err" "orch: autopilot settings:"
+assert_eq "a refused autopilot settings keeps the permission mode" "$(cfg orchestrator.autopilot.permission-mode)" plan
+assert_eq "a refused autopilot settings never runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 0
+
+# A write failing inside the loop: global config unwritable once the mode is written.
+FAKE_LOCK_GLOBAL=1 run_entry ORCH_CAP=2
+assert_eq "a failed setting write exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
+assert_contains "a failed setting write shows its orch line" "$err" "orch: autopilot settings: cannot write orchestrator.autopilot.cap"
+assert_eq "a failed setting write never runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 0
 
 # Model and effort reach their global keys.
 run_entry ORCH_MODEL=opus ORCH_EFFORT=high

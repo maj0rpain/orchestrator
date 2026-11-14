@@ -320,8 +320,9 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
   or both Claude credentials are missing.
 - **Optional:** `ORCH_GIT_NAME` and `ORCH_GIT_EMAIL` (commits default to the
   token owner's login and GitHub noreply address); `ORCH_PERMISSION_MODE`
-  (default `bypassPermissions`), `ORCH_CAP`, `ORCH_HANDLE`, `ORCH_ROUNDS` and
-  `ORCH_BUDGET`, written to the matching `orchestrator.autopilot.*` keys;
+  (default `bypassPermissions`); one `ORCH_<NAME>` for each other setting
+  `orch.sh autopilot settings` lists, the name upper-case with each `-` as
+  `_`, written to the matching `orchestrator.autopilot.<name>` key;
   `ORCH_CLONE_DIR` (default `/home/orch/repo`).
 - **Models:** `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's
   model and effort (`orchestrator.autopilot.model` / `.effort`).
@@ -332,9 +333,9 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
   and effort of the session that starts it, so `ORCH_MODEL` alone moves every
   role whose model is unset,
   `ORCH_EFFORT` likewise, and a role variable overrides it.
-- **Unset clears:** `docker/.env` is the one source of truth. `ORCH_CAP`,
-  `ORCH_HANDLE`, `ORCH_ROUNDS`, `ORCH_BUDGET`, `ORCH_MODEL`, `ORCH_EFFORT` and
-  every role variable, unset or empty, clears its global key at each start,
+- **Unset clears:** `docker/.env` is the one source of truth. Every
+  `ORCH_<NAME>` setting variable and every role variable, unset or empty,
+  clears its global key at each start,
   so a line deleted from `.env` takes effect after `docker restart`. Local
   `orchestrator.autopilot.*`, agent-setting and `user.name`/`user.email` keys in
   the clone are removed at each start, so they cannot override `.env`.
