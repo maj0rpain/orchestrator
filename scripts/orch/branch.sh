@@ -446,11 +446,19 @@ cmd_branch() {
         git_push why -q -u origin "refs/heads/$new:refs/heads/$new" \
           || { [ "$resumed" = 1 ] || git branch -m "$new" "$old"; die "could not push $new to origin: $why"; }
         if ! git_push why -q origin --delete "refs/heads/$old"; then
-          # Already gone - a previous call's delete already succeeded before
-          # something else failed - is not an error to retry into; only a
-          # ref that is still there and won't go is.
-          git ls-remote --exit-code origin "refs/heads/$old" >/dev/null 2>&1 \
-            && die "could not delete origin/$old: $why"
+          # Origin's answer for $old has three values. Answered no - a
+          # previous call's delete already succeeded before something else
+          # failed - is not an error to retry into: carry on. Still there and
+          # won't go - die. Not answered - guess neither way: the new name is
+          # pushed, so die without recording the retirement, and a rerun
+          # takes the resume arm and asks again.
+          st=0
+          origin_has_branch "$old" || st=$?
+          case "$st" in
+            2) ;;
+            0) die "could not delete origin/$old: $why" ;;
+            *) die "could not confirm origin/$old is gone: could not ask origin whether it is still there after its delete failed ($why); $new is pushed but its retirement is not recorded; rerun orch.sh branch retire $old $new" ;;
+          esac
         fi
       fi
       branch_retired_set "$new" \
