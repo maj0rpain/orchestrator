@@ -265,3 +265,13 @@ assert_contains "and glossary show" "$out" "glossary show <term>..."
 assert_contains "and glossary match" "$out" "glossary match <file>..."
 assert_contains "describing the bulleted entry grammar" "$out" "optionally after a - or * bullet"
 assert_contains "and the error on a glossary with no entries" "$out" "no entries is an error"
+
+# --- glossary show: unusable temp directory (#3050) ---------------------------
+# Exit 1 is "no entry for a term", so a temp file that cannot be made exits 2.
+echo
+echo "glossary show: temp file"
+new_repo >/dev/null
+glossary_fixture
+out="$(TMPDIR=/nonexistent-dir "$ORCH" glossary show Flow 2>&1)"; st=$?
+assert_status "a failed temp file exits 2" "$st" 2
+assert_contains "with its message" "$out" "could not create a temp file for the missing terms"

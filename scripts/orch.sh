@@ -99,6 +99,8 @@ REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
 # A gh call failing for want of a repo in a subshell signals this shell (gh.sh):
 # the trap dies with the remedy. Set here, not in repo.sh, which is loaded on
 # demand and may not be loaded yet when the signal arrives.
+# Its exit 1 suits commands that reserve nothing; one that reserves exit 1 for a
+# "no" resolves the repo itself and dies through die2 before this can fire.
 trap 'die "$REPO_REMEDY"' USR1
 # The triage-label parser and LABELS_DOC, its one home; marked readonly here,
 # where orch.sh has always fixed it, since the module assigns it plainly.
