@@ -30,6 +30,20 @@
 # shellcheck disable=SC2034
 set -euo pipefail
 
+# The bash version guard: the first statement after the options, ahead of every
+# source line, because everything sourced below needs bash 4.2 and an older bash
+# would die on a raw `declare` error instead. It depends on no other file, so it
+# prints its own line - the one hand-written `orch: ` message (Coding Standards,
+# section 2) - and stays bash 3.2-compatible: no [[ -v ]], declare -g or ${x,,}.
+# ORCH_BASH_VERSION ("<major>.<minor>") fakes the running bash, because
+# BASH_VERSINFO is readonly; unset or empty, the real version is read. `exit`
+# stops a sourcing shell as well, as every other stop of this file does.
+if ORCH_BASH_V="${ORCH_BASH_VERSION:-${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}}"; [ "${ORCH_BASH_V%%.*}" -lt 4 ] || { [ "${ORCH_BASH_V%%.*}" -eq 4 ] && [ "${ORCH_BASH_V#*.}" -lt 2 ]; }; then
+  printf 'orch: bash %s is too old - orch.sh needs bash 4.2 or newer: brew install bash\n' "$ORCH_BASH_V" >&2
+  exit 1
+fi
+unset ORCH_BASH_V
+
 # A tool manager's shim (mise) can print a status line on stdout ahead of the
 # tool's own output, which then lands in every `$(gh ...)` capture (#465).
 # Silence it for every command this script runs, doctor.sh's checks included.

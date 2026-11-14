@@ -1,5 +1,20 @@
 # Changelog
 
+## 5.2.71
+
+`ORCH_CLONE_DIR` is no longer read from the autopilot container's env file:
+compose pins it to the repo volume's mount target, so the clone always lives on
+the volume. A line setting it can be deleted; a project which had set it starts
+from a fresh clone on the volume at its next rebuild.
+
+## 5.2.70
+
+`orch.sh` now stops on a bash below 4.2 with one line naming the bash it found and the remedy, `brew install bash`, instead of a raw `declare` error.
+
+## 5.2.69
+
+`ticket-worktree remove <n>` and `ticket reclaim` now clear a ticket worktree whose directory was deleted outside git: they remove git's record of it, then delete the ticket branch under the usual merged rule. Something that is not a worktree at the recorded path is refused, naming the path.
+
 ## 5.2.68
 
 `finding-triage scan` prints the same lines wherever in the checkout it is started: each git command it gives a finding's repo-root-relative file path now runs against the checkout's root, so a subdirectory no longer reads every changed or deleted finding as `unchanged`.

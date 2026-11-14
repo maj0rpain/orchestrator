@@ -22,6 +22,8 @@ is part of the change, not scope beyond it.
 
 Never write a hand-rolled `printf 'orch: ...' >&2`. `die` and `die2` print the
 message and exit; `warn` prints it and returns, for a non-fatal message.
+The one exception is the bash version guard at the top of `orch.sh`, which runs
+before `die` can be sourced and prints its own `orch: ` line.
 
 ## 3. No variable named after a file-level helper
 
