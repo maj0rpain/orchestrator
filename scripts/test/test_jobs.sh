@@ -3,9 +3,10 @@
 # Sourced by orch_test.sh, all.sh, affected.sh and
 # scripts/dev/section-durations.sh, so the runners never
 # disagree on how much of the machine a test run may use, or on how they stop
-# their children when signalled; and by the suites that own a temp root
-# (hooks_test.sh, version_bump_test.sh, lens_bench_test.sh), for that stop
-# alone. Runs nothing; the job pool below keeps its
+# their children when signalled; by scripts/dev/lens-bench.sh, for that stop
+# alone (a signal stops its running `claude -p`); and by the suites that own a
+# temp root (hooks_test.sh, version_bump_test.sh, lens_bench_test.sh), for that
+# stop alone. Runs nothing; the job pool below keeps its
 # state in TEST_JOBS_* variables of the sourcing shell.
 #
 # is_positive_integer <value>: true when it is digits only and above zero, so
