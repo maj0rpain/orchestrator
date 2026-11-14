@@ -1627,7 +1627,6 @@ echo
 echo "pr: no repo"
 healthy_repo
 git checkout -q -b quick/12-foo
-fake_github
 nr_err="$(mktemp)"
 nr_file="$(mktemp -d)/f.md"
 printf 'seeded\n' >"$nr_file"

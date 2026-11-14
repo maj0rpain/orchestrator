@@ -1285,7 +1285,6 @@ unset lf_dir
 echo
 echo "issue ready: no repo"
 healthy_repo
-fake_github
 assert_no_repo_exit2 "issue ready" issue ready 70
 out="$(orch_no_repo issue ready abc 2>&1)"; st=$?
 assert_status "a bad issue number is refused first" "$st" 2
