@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.58
+
+The TERM-and-wait test helper term_run now lives in the shared test setup, serves autopilot's TERM mid-tick case too, and fails the section when its pid-file handshake times out; the section-durations TERM cases state the dev script's start once.
+
 ## 5.2.57
 
 Stop the running `claude -p` when `lens-bench.sh run` gets an INT or TERM, instead of holding the signal until the run returns.
