@@ -144,6 +144,10 @@ assert_eq "from a side checkout, list prints the same" "$(cd "$beta" && orch_gh_
 assert_eq "add from a side checkout still nests under the main checkout" \
   "$(cd "$beta" && orch_gh_failing side-checkout add epsilon 2>/dev/null)" "$top/.orchestrator/checkouts/epsilon"
 git worktree remove "$top/.orchestrator/checkouts/epsilon"
+# Each checkout is walked in a subshell, yet every module loads once.
+assert_loads_once "list with four side checkouts" orch_gh_failing side-checkout list
+assert_loads_once "add" orch_gh_failing side-checkout add zeta
+git worktree remove "$top/.orchestrator/checkouts/zeta"
 orch_gh_failing ticket-worktree remove 4 --unmerged
 assert_eq "git status in the main checkout still shows nothing new" "$(git status --porcelain)" ""
 
@@ -753,6 +757,10 @@ git worktree add -q -b orch/hand-flow "$hand" main
   && state_fixture phase "done" && state_fixture branch orch/hand-flow && state_fixture pr 46)
 fake_pr 46 merged orch/hand-flow main
 fake_pr_head 46 "$(git rev-parse orch/hand-flow)"
+
+# Each side checkout is judged in a subshell, yet every module loads once.
+# GitHub is offline, so the run removes nothing.
+assert_loads_once "prune with many side checkouts" orch_gh_failing side-checkout prune
 
 fake_online
 
