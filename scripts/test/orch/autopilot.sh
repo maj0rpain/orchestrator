@@ -127,15 +127,15 @@ assert_status "autopilot bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown autopilot op"
 assert_contains "the unknown-op message lists settings" "$out" "|settings|"
 
-names9=$'permission-mode\ncap\nhandle\nrounds\nbudget\nmodel\neffort\nauto-sync\ngithub-reserve'
+setting_names=$'permission-mode\ncap\nhandle\nrounds\nbudget\nmodel\neffort\nauto-sync\ngithub-reserve'
 out="$("$ORCH" autopilot settings 2>&1)"; st=$?
 assert_status "autopilot settings succeeds with nothing set" "$st" 0
-assert_eq "autopilot settings prints the nine names in order" "$out" "$names9"
+assert_eq "autopilot settings prints the setting names in order" "$out" "$setting_names"
 out="$("$ORCH" autopilot settings extra 2>&1)"; st=$?
 assert_status "autopilot settings refuses an argument" "$st" 1
 assert_contains "autopilot settings argument refusal shows its usage line" "$out" "usage: orch.sh autopilot settings"
 shown="$("$ORCH" autopilot show 2>&1 | cut -d' ' -f1 | sed 's/^orchestrator\.autopilot\.//')"
-assert_eq "autopilot show prints one line per setting, in order" "$shown" "$names9"
+assert_eq "autopilot show prints one line per setting, in order" "$shown" "$setting_names"
 
 ORCH_AUTOPILOT=1 "$ORCH" autopilot active; st=$?
 assert_status "autopilot active exits 0 under ORCH_AUTOPILOT=1" "$st" 0

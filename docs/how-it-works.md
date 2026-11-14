@@ -323,9 +323,7 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
   (default `bypassPermissions`); `ORCH_<NAME>` for every other setting in the
   Setup table above, the name upper-case with each `-` as `_` (`orch.sh
   autopilot settings` lists them), written to the matching
-  `orchestrator.autopilot.<name>` key. `ORCH_CLONE_DIR` is not an env-file
-  setting: compose pins it to the repo volume's mount target
-  (`/home/orch/repo`).
+  `orchestrator.autopilot.<name>` key.
 - **Models:** `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's
   model and effort (`orchestrator.autopilot.model` / `.effort`).
   `ORCH_MODEL_<ROLE>` and `ORCH_EFFORT_<ROLE>`, with the role upper-case
