@@ -1022,6 +1022,7 @@ done
 # too, so a death there leaves both recorded or both unrecorded.
 echo
 echo "redo ends in one closing state write"
+redo_write_fails_bin="$(state_write_fails_bin)"
 
 # redo spec --new-issue: the old issue closed, then the closing write dies.
 fresh_flow redoclose1
@@ -1030,7 +1031,7 @@ fake_issue 70 open
 state_fixture phase implement
 "$ORCH" state set issue 70
 writeln '# spec' >.orchestrator/handoff/02-spec.md
-out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+out="$(PATH="$redo_write_fails_bin:$PATH" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "redo spec --new-issue whose closing write fails exits 1" "$st" 1
 assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
 assert_eq "the old issue is closed" "$(fake_state_of 70)" "CLOSED"
@@ -1055,7 +1056,7 @@ state_fixture redo_count 1
 state_fixture pr 90
 state_fixture base_sha deadbeefcafe
 before="$(redo_state_snapshot)"
-out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" redo spec 2>&1)"; st=$?
+out="$(PATH="$redo_write_fails_bin:$PATH" "$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a default redo spec whose closing write fails exits 1" "$st" 1
 assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
 assert_eq "leaving issue, branch, pr, base_sha and phase as they were" \
@@ -1095,7 +1096,7 @@ state_fixture iteration 5
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 before="$(redo_state_snapshot)"
-out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" redo review 2>&1)"; st=$?
+out="$(PATH="$redo_write_fails_bin:$PATH" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a resumed redo review whose closing write fails exits 1" "$st" 1
 assert_contains "saying the flow is unchanged" "$out" "the flow is unchanged"
 assert_eq "leaving branch, pr, base_sha, iteration and phase as they were" \
