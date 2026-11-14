@@ -456,6 +456,8 @@ cmd_side_checkout_prune() {
   orch_load branch
   orch_load checkout
   orch_load gh
+  orch_load trust
+  orch_load ticket-worktree
   here="$(pwd -P)"
   # The walk lists the main checkout first.
   list="$(checkouts)" && main_root="$(checkouts_main "$list")" \

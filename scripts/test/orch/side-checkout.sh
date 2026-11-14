@@ -762,18 +762,17 @@ git worktree add -q -b orch/hand-flow "$hand" main
 fake_pr 46 merged orch/hand-flow main
 fake_pr_head 46 "$(git rev-parse orch/hand-flow)"
 
-# Each side checkout is judged in a subshell, yet every module loads once.
-# GitHub is offline, so the run removes nothing.
-assert_loads_once "prune with many side checkouts" orch_gh_failing side-checkout prune
-
 fake_online
 
 # A tag named as the main checkout's branch makes git's short branch name
 # ambiguous; the report still names the branch as git branch --show-current
 # does.
 git tag orch/main-flow
-out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+# Each side checkout is judged in a subshell, yet every module loads once.
+pload="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$pload" orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds" "$st" 0
+assert_trace_loads_once "prune with many side checkouts" "$pload"
 assert_eq "the finished flow side checkout is gone" "$(on_disk "$fl")" "absent"
 assert_not_contains "and from git's list" "$(git worktree list)" "$fl"
 assert_eq "its flow archived into the main checkout" "$(archived_count "$top" fl-flow)" "1"
