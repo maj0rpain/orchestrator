@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.74
+
+The triage-label parser reads only the role table: the first table of three or more columns whose left column holds a canonical triage role. A second table elsewhere in the triage-labels doc no longer makes doctor demand its cells as labels or answer a label lookup.
+
 ## 5.2.73
 
 The autopilot container now holds `orchestrator.autopilot.auto-sync` and `.github-reserve` from `.env` (`ORCH_AUTO_SYNC`, `ORCH_GITHUB_RESERVE`): its entrypoint writes one key for each setting the new `orch.sh autopilot settings` lists, the list `autopilot show` also reads, and the docs lint checks `docker/.env.example` names every setting's variable.
