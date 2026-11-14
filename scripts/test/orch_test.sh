@@ -145,8 +145,9 @@ trap test_jobs_stop_descendants INT TERM
 # with "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set".
 # The grouping is a pure function of the section titles in walk order,
 # section-durations.tsv, all.sh's suite list (read with suites_read) and n:
-# a section weighs its CPU seconds, one the file does not list as much as the
-# heaviest that it lists (1 when none), group 1 starts with the summed CPU
+# a section weighs its CPU seconds, one the file does not list the median CPU
+# of the listed sections of the tree (the lower middle on an even count, 1
+# second when none is listed), group 1 starts with the summed CPU
 # seconds of the file's other suites and shellcheck, the others at 0, and
 # sections are dealt heaviest first, ties in walk order, each to the group with
 # the lowest total, the lowest-numbered on a tie. The isolation section runs in
@@ -447,9 +448,9 @@ else
             # the tree (the lower middle on an even count), 10 with none listed.
             m = 0
             for (k = 1; k <= count; k++) if (title[pos[k]] in cpu) {
-              v = cpu[title[pos[k]]]; m++; b = m - 1
-              while (b >= 1 && vals[b] > v) { vals[b + 1] = vals[b]; b-- }
-              vals[b + 1] = v
+              c = cpu[title[pos[k]]]; m++; b = m - 1
+              while (b >= 1 && vals[b] > c) { vals[b + 1] = vals[b]; b-- }
+              vals[b + 1] = c
             }
             unlisted = m ? vals[int((m + 1) / 2)] : 10
             for (g = 1; g <= n; g++) total[g] += 0
