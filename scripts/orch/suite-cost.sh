@@ -118,8 +118,11 @@ suite_cost_register() {
   # written under a first name the sweep never takes for a marker, then moved
   # into place, so a marker appears complete
   SUITE_COST_FIRST="$dir/.$$.new"
-  liveness_record_write "$$" "$dir/.$$.new" || { rm -f -- "$dir/.$$.new" 2>/dev/null || true; SUITE_COST_FIRST=""; return 0; }
-  mv -f -- "$dir/.$$.new" "$me" 2>/dev/null || { rm -f -- "$dir/.$$.new" 2>/dev/null || true; SUITE_COST_FIRST=""; return 0; }
+  liveness_record_write "$$" "$SUITE_COST_FIRST" && mv -f -- "$SUITE_COST_FIRST" "$me" 2>/dev/null || {
+    rm -f -- "$SUITE_COST_FIRST" 2>/dev/null || true
+    SUITE_COST_FIRST=""
+    return 0
+  }
   SUITE_COST_FIRST=""
   SUITE_COST_MARK="$me"
   while IFS= read -r p; do
@@ -180,10 +183,12 @@ suite_cost_unregister() {
 }
 
 # suite_cost_run <cmd> [args...]: runs the command in the current directory,
-# its stdout, stderr and exit code passed through, and on exit 0 appends its
+# its stdout and stderr passed through, and on exit 0 appends its
 # record line, its commit <sha>-dirty when the tree had changes as it started -
 # unless another suite-cost run overlapped it, or it could not register as
-# active, either of which it warns of. Exits with the command's own status.
+# active, either of which it warns of. Exits with the command's own status,
+# except an interrupted run (INT, TERM or HUP sent to orch.sh), which exits 128
+# plus the signal's number and records nothing.
 suite_cost_run() {
   local commit_field
   commit_field="$(suite_cost_head_commit)"
@@ -241,7 +246,7 @@ suite_cost_interrupted() {
     if git worktree remove --force "$SUITE_COST_TREE_WT" >/dev/null 2>&1; then
       rmdir "$SUITE_COST_TREE_TMP" 2>/dev/null || true
     else
-      warn "could not remove the interrupted run's worktree $SUITE_COST_TREE_WT - remove it with: git worktree remove --force $SUITE_COST_TREE_WT"
+      warn "could not remove $run_label's worktree $SUITE_COST_TREE_WT - remove it with: git worktree remove --force $SUITE_COST_TREE_WT"
     fi
   fi
   exit "$status"
@@ -575,6 +580,9 @@ suite_cost_tree_run() {
     [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
     suite_cost_unregister
     cd "$here" || die "could not return to $here"
+    # the run is over: a signal now must not warn of an unrecorded run, nor
+    # remove the worktree twice
+    trap '' HUP INT TERM
     if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
       if suite_cost_require_solo "$run_label at $sha" "$msg_tail"; then
         suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"

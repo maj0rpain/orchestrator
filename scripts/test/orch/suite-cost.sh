@@ -396,8 +396,10 @@ rm -rf "$fake_proc"
 
 # A file under a marker's first name is neither removed nor counted.
 : >"$active/.$dead.new"
+before_first="$(log_count "$rec")"
 err="$("$ORCH" suite-cost run -- true 2>&1)"
 assert_eq "a file under a marker's first name is no contention" "$err" ""
+assert_eq "and the run is recorded" "$(( $(log_count "$rec") - before_first ))" 1
 assert_eq "and is left alone" "$(on_disk "$active/.$dead.new")" present
 rm -f -- "$active/.$dead.new"
 
@@ -410,9 +412,9 @@ bounded_run_replayed "$hs/err-listing" 60 "record partner ($hs/one, $hs/two)" \
   "$hs/one" "$hs/two" "$active" "$hs/listing"
 wait "$pid_a"
 replay_on_expiry "$?" "$hs/err-first"
-bad="$(grep -vcE '^[0-9]+ [^ ]+$' "$hs/listing")"
+unrecorded="$(grep -vcE '^[0-9]+ [^ ]+$' "$hs/listing")"
 assert_eq "each marker read while two runs overlap holds its record" \
-  "$bad:$(wc -l <"$hs/listing" | tr -d ' ')" "0:2"
+  "$unrecorded:$(wc -l <"$hs/listing" | tr -d ' ')" "0:2"
 rm -rf "$hs"
 
 # A start time unreadable at registration: no registration, the record
@@ -424,10 +426,10 @@ fake_bin="$(mktemp -d)"
 printf '#!/bin/sh\nexit 1\n' >"$fake_bin/ps"
 chmod +x "$fake_bin/ps"
 errf="$(mktemp)"
-out="$(PATH="$fake_bin:$PATH" ORCH_PROC_DIR="$fake_proc" "$ORCH" suite-cost run -- sh -c 'echo ran; exit 3' 2>"$errf")"; st=$?
+out="$(PATH="$fake_bin:$PATH" ORCH_PROC_DIR="$fake_proc" "$ORCH" suite-cost run -- sh -c 'echo $PPID; exit 3' 2>"$errf")"; st=$?
 assert_status "a run whose start time is unreadable passes its exit code through" "$st" 3
 assert_eq "and records nothing" "$("$ORCH" suite-cost history)" ""
-assert_contains "stderr names the orch.sh pid first" "$(sed -n 1p "$errf")" "orch: could not read the start time of pid "
+assert_eq "stderr names the orch.sh pid first" "$(sed -n 1p "$errf")" "orch: could not read the start time of pid $out"
 assert_contains "then the could-not-register line" "$(sed -n 2p "$errf")" \
   "orch: this run could not register as active - its suite cost is not recorded"
 rm -rf "$fake_proc" "$fake_bin" "$errf"
@@ -1304,8 +1306,11 @@ done
 new_repo >/dev/null
 rec_path
 tdir="$(mktemp -d)"; errf="$(mktemp)"
-TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c 'kill -TERM $PPID; test -e "$0/$PPID"' "$rec.active" >/dev/null 2>"$errf"; st=$?
+proof="$(mktemp -u)"
+TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c 'kill -TERM $PPID; test -e "$0/$PPID" && : >"$1"' "$rec.active" "$proof" >/dev/null 2>"$errf"; st=$?
 assert_clean_interrupt "a command finding its marker after TERM" "$errf" "$st" TERM "$tdir"
+assert_eq "the marker stayed until the command returned" "$(on_disk "$proof")" present
+rm -f -- "$proof"
 
 # A base run's setup command that signals its parent.
 check_repo

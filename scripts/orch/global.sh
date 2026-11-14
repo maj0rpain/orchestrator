@@ -238,8 +238,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               unmarked orch-*.md in the way, changing nothing
   suite-cost run -- <cmd> [args...]
                               run <cmd> in the current directory, its stdout,
-                              stderr and exit code passed through and nothing
-                              added on stdout; on exit 0 alone, append its
+                              stderr and exit code passed through (an
+                              interrupt exits 128 plus the signal's number
+                              and records nothing) and nothing added on
+                              stdout; on exit 0 alone, append its
                               suite cost to the clone-wide record under the
                               git common directory (orchestrator/suite-cost),
                               one line of five tab-separated fields: HEAD's
