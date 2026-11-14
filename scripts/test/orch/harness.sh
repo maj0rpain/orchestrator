@@ -2114,13 +2114,12 @@ all_swap orch_test.sh \
 term_run "$all_kill/stdout" "$all_kill/stdout" "$all_kill/suite.pid" "$all_kill/sc.pid" -- \
   env -u CI -u CHANGELOG_BASE -u NO_VERSION_BUMP -u ORCH_TEST_JOBS \
   TMPDIR="$all_kill/tmp" PATH="$all_bin" "$all_bash" "$all_dir/all.sh"
-st=$term_st
 all_restore orch_test.sh
 all_alive=0
 for all_stub_pid in $(cat "$all_kill/suite.pid" "$all_kill/sc.pid"); do
   kill -0 "$all_stub_pid" 2>/dev/null && all_alive=$((all_alive + 1))
 done
-assert_status "TERM to all.sh makes it exit 130" "$st" 130
+assert_status "TERM to all.sh makes it exit 130" "$term_st" 130
 assert_eq "TERM to all.sh prints no verdict" "$(grep -c '^all.sh: \(PASS\|FAIL\)' "$all_kill/stdout")" "0"
 assert_eq "TERM to all.sh stops the suite and every shellcheck before it returns" "$all_alive" "0"
 assert_eq "the suite's TMPDIR still existed when it stopped" "$(cat "$all_kill/suite.tmp" 2>/dev/null)" "yes"
@@ -3908,9 +3907,8 @@ af_put scripts/hook-guard.sh 'echo ok'
 term_run "$af.stdout" /dev/null "$af.pid" -- \
   bash -c 'cd "$1" && shift && exec "$@"' _ "$af" \
   env -u CI PATH="$af_bin" bash scripts/test/affected.sh HEAD
-st=$term_st
 kill "$(cat "$af.pid")" 2>/dev/null
-assert_status "TERM to affected.sh exits 130" "$st" 130
+assert_status "TERM to affected.sh exits 130" "$term_st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
 # A set ORCH_TEST_SHARD never narrows a ticket verification: the suites see it
 # unset on the mapped path and on the full-suite fallback.

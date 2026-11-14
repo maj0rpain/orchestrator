@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.2.62
+
+The lens-bench test suite's TERM section now polls for the bench's exit every 0.1 s instead of tail's default 1 s, so the suite no longer idles up to a second waiting.
+
+## 5.2.61
+
+The harness tests' killed-all.sh and TERM-to-affected.sh cases read `term_run`'s result straight from `term_st`, as the other TERM cases do, instead of copying it into a second name.
+
+## 5.2.60
+
+The state set and redo test sections build the stateless failed-write stub once per section instead of once per case.
+
+## 5.2.59
+
+CONTRIBUTING.md's Resolving orch.sh section now states exactly when the docs lint requires a Claude-Code-only skill's `ORCH=` line: when it uses `orch.sh`, or the `ORCH` variable written without braces.
+
 ## 5.2.58
 
 The TERM-and-wait test helper term_run now lives in the shared test setup, serves autopilot's TERM mid-tick case too, and fails the section when its pid-file handshake times out; the section-durations TERM cases state the dev script's start once.

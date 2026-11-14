@@ -506,8 +506,9 @@ restore_suite_env
 # flow as it was.
 echo
 echo "state set with a failed write"
+set_write_fails_bin="$(state_write_fails_bin)"
 fresh_flow failedwrite
-out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" state set budget 3 2>&1)"; st=$?
+out="$(PATH="$set_write_fails_bin:$PATH" "$ORCH" state set budget 3 2>&1)"; st=$?
 assert_status "state set with a failed write exits 1" "$st" 1
 assert_contains "naming the key and the state file" "$out" \
   "orch: could not record budget in $PWD/.orchestrator/state.json - the flow is unchanged"
@@ -516,7 +517,7 @@ out="$(sourced_orch state_write_many --string base_sha 123 budget 4 2>&1)"; st=$
 assert_status "state_write_many sets its keys" "$st" 0
 assert_eq "as strings or coerced" "$(jq -c '[.base_sha, .budget]' .orchestrator/state.json)" '["123",4]'
 before="$(cat .orchestrator/state.json)"
-out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch state_write_many budget 5 --string branch b budget 6 2>&1)"; st=$?
+out="$(PATH="$set_write_fails_bin:$PATH" sourced_orch state_write_many budget 5 --string branch b budget 6 2>&1)"; st=$?
 assert_status "a failed state_write_many exits 1" "$st" 1
 assert_eq "naming every key once, in order, with no --string" "$out" \
   "orch: could not record budget, branch in $PWD/.orchestrator/state.json - the flow is unchanged"
@@ -530,7 +531,7 @@ assert_status "state_write_many on a value that will not convert exits 1" "$st" 
 assert_eq "with the no-key message" "$out" \
   "orch: could not record the state write in $PWD/.orchestrator/state.json - the flow is unchanged"
 assert_eq "leaving state.json byte for byte for that" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$(state_write_fails_bin):$(fails_bin jq '*keys_unsorted*'):$PATH" sourced_orch state_write_many budget 5 2>&1)"; st=$?
+out="$(PATH="$set_write_fails_bin:$(fails_bin jq '*keys_unsorted*'):$PATH" sourced_orch state_write_many budget 5 2>&1)"; st=$?
 assert_status "state_write_many whose key read fails exits 1" "$st" 1
 assert_eq "with the no-key message for it" "$out" \
   "orch: could not record the state write in $PWD/.orchestrator/state.json - the flow is unchanged"
