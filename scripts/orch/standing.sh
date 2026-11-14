@@ -83,21 +83,15 @@ standing_host_id() {
 
 STANDING_REASON=""
 
-# standing_read <issue>: reads the issue's state and labels once into
-# STANDING_STATE (OPEN or CLOSED), STANDING_LABELS (every label, one per line),
-# STANDING_PHASE (the live phase: the first phase other than done whose label is
-# present, in table order; empty when none), STANDING_PHASE_LABELS (the text of
-# every phase label, in table order) and STANDING_RUNNING, STANDING_HUMAN,
-# STANDING_LIMITED and STANDING_SYNC, each 0 or 1. Non-zero when the read fails:
-# the reason only in STANDING_REASON, printing nothing, for a caller that words
-# its own death.
-# Call it in the current shell, never inside capture_err or $(...).
-standing_read() {
-  local gh_err
-  if ! issue_state_labels_read "$1" STANDING_STATE STANDING_LABELS gh_err; then
-    STANDING_REASON="$(gh_reason "$gh_err")"
-    return 1
-  fi
+# standing_set <state> <labels>: fills the label half of Standing from a state
+# and labels, with no GitHub call: STANDING_STATE (OPEN or CLOSED),
+# STANDING_LABELS (every label, one per line), STANDING_PHASE (the live phase:
+# the first phase other than done whose label is present, in table order; empty
+# when none), STANDING_PHASE_LABELS (the text of every phase label, in table
+# order) and STANDING_RUNNING, STANDING_HUMAN, STANDING_LIMITED and
+# STANDING_SYNC, each 0 or 1. Call it in the current shell.
+standing_set() {
+  STANDING_STATE="$1" STANDING_LABELS="$2"
   STANDING_PHASE="$(standing_live_phase "$STANDING_LABELS")"
   STANDING_PHASE_LABELS="$(standing_phase_labels_text "$STANDING_LABELS")"
   STANDING_RUNNING=0 STANDING_HUMAN=0 STANDING_LIMITED=0 STANDING_SYNC=0
@@ -109,6 +103,20 @@ standing_read() {
   # the variables are the module's read, used by its callers
   # shellcheck disable=SC2034
   ! label_listed "$STANDING_LABELS" "$STANDING_LIMITED_LABEL" || STANDING_LIMITED=1
+}
+
+# standing_read <issue>: reads the issue's state and labels once and fills
+# Standing's label half from them through standing_set. Non-zero when the read
+# fails: the reason only in STANDING_REASON, printing nothing, for a caller that
+# words its own death.
+# Call it in the current shell, never inside capture_err or $(...).
+standing_read() {
+  local gh_err state labels
+  if ! issue_state_labels_read "$1" state labels gh_err; then
+    STANDING_REASON="$(gh_reason "$gh_err")"
+    return 1
+  fi
+  standing_set "$state" "$labels"
 }
 
 # The phase word of a sync request: where a transition takes a phase argument
@@ -194,16 +202,6 @@ standing_redo_rule() {
     rule="${rule:+$rule or }from $recorded to $labelled"
   done
   printf 'a step back %s\n' "$rule"
-}
-
-# standing_human_issues: the open issues carrying needs-human, one number per
-# line, oldest first; warns at the issue-list limit and dies, naming the
-# failure, where they cannot be listed.
-standing_human_issues() {
-  local list err
-  issues_labelled_read list err "$STANDING_HUMAN_LABEL" ||
-    gh_die "list the $STANDING_HUMAN_LABEL issues" "$err"
-  printf '%s\n' "$list"
 }
 
 # standing_human_guard <issue>: reads the issue and dies unless it is open and

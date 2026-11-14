@@ -284,7 +284,8 @@ verify_twice() {
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
-#   adapter_issues_labelled, adapter_issues_open_oldest,
+#   adapter_issues_labelled, adapter_issues_labelled_rows,
+#   adapter_issues_open_oldest,
 #   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
@@ -611,6 +612,69 @@ issues_labelled_read() {
   issues_labelled_limit_warn "$__ilr_n" "${@:3}"
   printf -v "$1" '%s' "$__ilr_out"
   printf -v "$2" '%s' "$__ilr_err"
+}
+
+# adapter_issues_labelled_rows <label>...: the open issues carrying every label
+# named, oldest first and cut at ISSUE_LIST_LIMIT as adapter_issues_labelled is,
+# each as one count-marked record: its number, its state as GitHub answered it,
+# its label count, then one label per line. The state is never assumed from the
+# listing's own open-only filter.
+adapter_issues_labelled_rows() {
+  local args=() l
+  for l in "$@"; do args+=(--label "$l"); done
+  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
+    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+}
+
+# issues_labelled_rows_read <nums_var> <states_array> <labels_array> <err_var>
+# <label>...: reads the listing once through adapter_issues_labelled_rows and
+# writes the issue numbers, oldest first one per line, into <nums_var>, and adds
+# each record's state and labels (one per line, possibly none) to two
+# caller-declared associative arrays keyed by issue number. It adds to the
+# arrays, never clearing them. Non-zero, writing nothing, on a failed read (gh's
+# stderr into <err_var>, as gh_lines_read) or an answer that does not parse
+# (<err_var> "gh answered a listing that does not parse"). Warns through
+# issues_labelled_limit_warn when the listing reaches the issue-list limit. Dies
+# when an array name is not a declared associative array. Elements are assigned
+# by eval on a validated name, the value by reference, as
+# issues_labelled_bodies_read does.
+issues_labelled_rows_read() {
+  assoc_array_require issues_labelled_rows_read "$2" __ilrr_
+  assoc_array_require issues_labelled_rows_read "$3" __ilrr_
+  local __ilrr_out __ilrr_err __ilrr_lines=() __ilrr_nums=() __ilrr_sts=() __ilrr_labs=()
+  local __ilrr_i=0 __ilrr_total __ilrr_n __ilrr_state __ilrr_count __ilrr_j __ilrr_rl __ilrr_r
+  local __ilrr_bad="gh answered a listing that does not parse"
+  local __ilrr_whole='^[0-9]+$'
+  if ! capture __ilrr_out __ilrr_err adapter_issues_labelled_rows "${@:5}"; then
+    printf -v "$4" '%s' "$__ilrr_err"
+    return 1
+  fi
+  [ -z "$__ilrr_out" ] || mapfile -t __ilrr_lines <<<"$__ilrr_out"
+  __ilrr_total="${#__ilrr_lines[@]}"
+  while [ "$__ilrr_i" -lt "$__ilrr_total" ]; do
+    __ilrr_n="${__ilrr_lines[__ilrr_i]}"
+    __ilrr_state="${__ilrr_lines[__ilrr_i+1]-}"
+    __ilrr_count="${__ilrr_lines[__ilrr_i+2]-}"
+    [[ $__ilrr_n =~ $__ilrr_whole && -n $__ilrr_state && $__ilrr_count =~ $__ilrr_whole ]] \
+      || { printf -v "$4" '%s' "$__ilrr_bad"; return 1; }
+    __ilrr_i=$(( __ilrr_i + 3 ))
+    __ilrr_rl=""
+    for (( __ilrr_j = 0; __ilrr_j < 10#$__ilrr_count; __ilrr_j++ )); do
+      [ "$__ilrr_i" -lt "$__ilrr_total" ] || { printf -v "$4" '%s' "$__ilrr_bad"; return 1; }
+      [ "$__ilrr_j" -eq 0 ] || __ilrr_rl="$__ilrr_rl"$'\n'
+      __ilrr_rl="$__ilrr_rl${__ilrr_lines[__ilrr_i]}"
+      __ilrr_i=$(( __ilrr_i + 1 ))
+    done
+    __ilrr_nums+=("$(( 10#$__ilrr_n ))")
+    __ilrr_sts+=("$__ilrr_state")
+    __ilrr_labs+=("$__ilrr_rl")
+  done
+  for __ilrr_r in ${__ilrr_nums[@]+"${!__ilrr_nums[@]}"}; do
+    eval "$2"'[${__ilrr_nums[__ilrr_r]}]=${__ilrr_sts[__ilrr_r]}'
+    eval "$3"'[${__ilrr_nums[__ilrr_r]}]=${__ilrr_labs[__ilrr_r]}'
+  done
+  printf -v "$1" '%s' "$(printf '%s\n' ${__ilrr_nums[@]+"${__ilrr_nums[@]}"} | grep . || true)"
+  issues_labelled_limit_warn "${#__ilrr_nums[@]}" "${@:5}"
 }
 
 # adapter_issues_open_oldest: every open issue, one number per line, oldest

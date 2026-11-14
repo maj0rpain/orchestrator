@@ -345,10 +345,12 @@ autopilot_questions() {
   orch_load issue-timeline
   orch_load marked-comment
   orch_load trust
-  local list n phase row kind lines="" q_phase stop_phase
-  list="$(standing_human_issues)" || exit $?
+  local list n phase row kind lines="" q_phase stop_phase list_err
+  local -A listed_states=() listed_labels=()
+  issues_labelled_rows_read list listed_states listed_labels list_err "$STANDING_HUMAN_LABEL" ||
+    gh_die "list the $STANDING_HUMAN_LABEL issues" "$list_err"
   for n in $(printf '%s\n' "$list" | sort -n); do
-    standing_read "$n" || gh_die "read the labels of issue #$n" "$STANDING_REASON"
+    standing_set "${listed_states[$n]}" "${listed_labels[$n]}"
     phase="$STANDING_PHASE"
     timeline_read_or_die "$n"
     timeline_question || true
@@ -1020,30 +1022,28 @@ autopilot_candidates_run() {
 }
 
 # autopilot_done_read <table-var>: the tick's one read of the open orch:done
-# issues. Lists the issues labelled orch:done once, reads each once, and writes
-# into the caller-named <table-var> the done table: one line per issue that
-# reads OPEN and still at orch:done, `<issue> <running> <sync> <human>`, each
-# flag 0 or 1. A failed listing warns once and leaves the table empty; a failed
-# read warns once and leaves that issue out. Neither stops the tick.
+# issues. Lists the issues labelled orch:done once and writes into the
+# caller-named <table-var> the done table from the listed rows, with no
+# per-issue read: one line per issue whose row reads OPEN and still at
+# orch:done, `<issue> <running> <sync> <human>`, each flag 0 or 1. A failed
+# listing warns once and leaves the table empty; it does not stop the tick.
 autopilot_done_read() {
   orch_load standing
-  local _out _err _issue _table="" _label
+  local _nums _err _issue _table="" _label
+  local -A _states=() _labels=()
   _label="$(standing_phase_label "done")"
   printf -v "$1" '%s' ""
-  issues_labelled_read _out _err "$_label" || {
+  issues_labelled_rows_read _nums _states _labels _err "$_label" || {
     warn "could not list the issues labelled $_label: $(gh_reason "$_err") - no merged-PR close or sync detection this tick"
     return 0
   }
   while IFS= read -r _issue; do
     [ -n "$_issue" ] || continue
-    standing_read "$_issue" || {
-      warn "could not read issue #$_issue: $STANDING_REASON - the merged-PR close and sync detection skip it"
-      continue
-    }
+    standing_set "${_states[$_issue]}" "${_labels[$_issue]}"
     [ "$STANDING_STATE" = OPEN ] || continue
     standing_is_done || continue
     _table="$_table$_issue $STANDING_RUNNING $STANDING_SYNC $STANDING_HUMAN"$'\n'
-  done <<<"$_out"
+  done <<<"$_nums"
   printf -v "$1" '%s' "$_table"
 }
 

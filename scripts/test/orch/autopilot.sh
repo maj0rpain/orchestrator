@@ -1210,10 +1210,14 @@ rm -rf "$other_clone"
 fake_issue 30 open ready-for-agent orch:spec orch:limited
 assert_not_contains "autopilot questions lists no limited issue" "$("$ORCH" autopilot questions 2>&1)" "30"
 fake_issue 31 open needs-human orch:spec
-fake_fail adapter_issue_state_labels "HTTP 502"
-out="$("$ORCH" autopilot questions 2>&1)"; st=$?
-assert_eq "questions failing on a label read dies in one line naming gh and the reason" "$(printf "%s\n" "$out" | grep -c .)|${out#orch: gh could not read the labels of issue #*: }" "1|HTTP 502"
-fake_unfail
+qr_log="$(mktemp)"
+qr_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_labelled_rows rows)")"
+plain="$("$ORCH" autopilot questions 2>&1)"
+counted_adapter_run "$qr_log" "$qr_defs" "$ORCH" autopilot questions >"$qr_log.out" 2>&1
+assert_eq "questions makes one listing" "$(log_count "$qr_log" rows)" "1"
+assert_eq "and no per-issue labels read" "$(log_count "$qr_log" issue)" "0"
+assert_eq "and prints the same lines" "$(cat "$qr_log.out")" "$plain"
+rm -f "$qr_log" "$qr_log.out"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot questions, reply and resume ------------------------------------
@@ -1305,7 +1309,7 @@ fake_issue 11 open needs-human orch:spec
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #11's comments"
-fake_fail adapter_issues_labelled "HTTP 502"
+fake_fail adapter_issues_labelled_rows "HTTP 502"
 out="$("$ORCH" autopilot questions 2>&1 >/dev/null)"; st=$?
 assert_status "a failed listing dies" "$st" 1
 assert_eq "naming the needs-human listing and the reason" "$out" "orch: gh could not list the needs-human issues: HTTP 502"
@@ -2515,7 +2519,7 @@ fake_done_conflict() { # <issue> <pr>: an open CONFLICTING PR from orch/<issue>-
 }
 
 fake_issue 60 open orch:done; fake_done_conflict 60 160
-fake_fail_times adapter_issues_labelled 1 "HTTP 502"
+fake_fail_times adapter_issues_labelled_rows 1 "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a failed done listing does not stop the tick" "$st" 0
 assert_eq "it warns once, naming both passes" "$(printf '%s\n' "$out" | grep -c 'could not list the issues labelled orch:done: HTTP 502 - no merged-PR close or sync detection this tick')" "1"
@@ -2523,15 +2527,17 @@ assert_not_contains "sync detection adds no orch:sync" "$(fake_labels_of 60)" "o
 fake_unfail
 fake_issue_drop 60
 
-fake_done_merged 61 3600; fake_done_conflict 61 161
-fake_fail_times adapter_issue_state_labels 1 "HTTP 502"
-out="$("$ORCH" autopilot tick 2>&1)"; st=$?
-assert_status "a failed issue read does not stop the tick" "$st" 0
-assert_eq "it warns once, naming both passes" "$(printf '%s\n' "$out" | grep -c 'could not read issue #61: HTTP 502 - the merged-PR close and sync detection skip it')" "1"
-assert_eq "the issue is not closed" "$(fake_state_of 61)" "OPEN"
-assert_not_contains "and gets no orch:sync" "$(fake_labels_of 61)" "orch:sync"
-fake_unfail
-fake_issue_drop 61
+# an idle tick over several done issues makes one done listing and no per-issue
+# state-and-labels read, counted at the gh boundary
+dr_log="$(mktemp)"
+dr_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_labelled_rows rows)")"
+fake_issue 61 open orch:done; fake_issue 64 open orch:done; fake_issue 65 open orch:done needs-human
+counted_adapter_run "$dr_log" "$dr_defs" "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "an idle tick over done issues succeeds" "$st" 0
+assert_eq "it makes no per-issue state-and-labels read" "$(log_count "$dr_log" issue)" "0"
+assert_eq "and one done listing" "$(log_count "$dr_log" rows)" "1"
+rm -f "$dr_log"
+fake_issue_drop 61; fake_issue_drop 64; fake_issue_drop 65
 
 fake_done_merged 62 3600; fake_done_conflict 62 262
 "$ORCH" autopilot tick >/dev/null 2>&1

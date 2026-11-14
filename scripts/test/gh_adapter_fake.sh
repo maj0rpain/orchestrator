@@ -406,10 +406,12 @@ fake_issue_labels() {
 # fake_issue_labels_counted <n>: issue #n's label count on one line, then its
 # labels one per line when there are any.
 fake_issue_labels_counted() {
-  local labels
-  labels="$(fake_issue_labels "$1")"
-  printf '%s\n' "$(printf '%s' "$labels" | grep -c .)"
-  [ -z "$labels" ] || printf '%s\n' "$labels"
+  local l n=0
+  fake_need_store || return 1
+  fake_read_lines "$ORCH_GH_FAKE_STORE/issues/$1/labels" || true
+  for l in ${fake_lines[@]+"${fake_lines[@]}"}; do [ -z "$l" ] || n=$((n + 1)); done
+  printf '%s\n' "$n"
+  for l in ${fake_lines[@]+"${fake_lines[@]}"}; do [ -z "$l" ] || printf '%s\n' "$l"; done
 }
 
 # fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
@@ -617,16 +619,16 @@ fake_open_issues() {
   done | sort -nr
 }
 
-# adapter_issues_labelled <label>...: the open issues in the store carrying
+# fake_labelled_numbers <label>...: the open issues in the store carrying
 # every label named, oldest first - the first lesser of ISSUE_LIST_LIMIT and
 # 1000 of them, as the search-backed real listing is cut, with awk, which reads
 # all of the while loop's output, so the loop never takes SIGPIPE under
 # pipefail as it would from head (#1019). Each issue's labels file is read once
-# in bash, and a label matches a whole line, literally and in any case.
-adapter_issues_labelled() {
+# in bash, and a label matches a whole line, literally and in any case. The
+# part the labelled listings share; it checks no seeded failure.
+fake_labelled_numbers() {
   local n l keep line h found
   local -a have
-  ! fake_failing adapter_issues_labelled || return 1
   fake_need_store || return 1
   fake_open_issues | while read -r n; do
     have=()
@@ -641,6 +643,33 @@ adapter_issues_labelled() {
     [ "$keep" = 1 ] || continue
     printf "%s\n" "$n"
   done | sort -n | fake_search_cut
+}
+
+# adapter_issues_labelled <label>...: the numbers fake_labelled_numbers lists.
+adapter_issues_labelled() {
+  ! fake_failing adapter_issues_labelled || return 1
+  fake_labelled_numbers "$@"
+}
+
+# adapter_issues_labelled_rows <label>...: the issues fake_labelled_numbers
+# lists, each as the count-marked record the gh adapter prints: number, stored
+# state, label count, labels. Lagging (fake_lag), it answers the stale answer
+# fake_lag was given, or nothing - a listing served late.
+adapter_issues_labelled_rows() {
+  local n nums
+  ! fake_failing adapter_issues_labelled_rows || return 1
+  fake_need_store || return 1
+  if fake_lagging adapter_issues_labelled_rows; then
+    fake_stale adapter_issues_labelled_rows
+    return 0
+  fi
+  nums="$(fake_labelled_numbers "$@")" || return 1
+  for n in $nums; do
+    printf '%s\n' "$n"
+    fake_read_state "$ORCH_GH_FAKE_STORE/issues/$n/state" || true
+    printf '%s\n' "$fake_state"
+    fake_issue_labels_counted "$n"
+  done
 }
 
 # fake_search_cut: the first lesser of ISSUE_LIST_LIMIT and ISSUE_SEARCH_CAP
@@ -666,7 +695,7 @@ adapter_issues_labelled_bodies() {
   local n nums body nl
   ! fake_failing adapter_issues_labelled_bodies || return 1
   fake_need_store || return 1
-  nums="$(adapter_issues_labelled "$@")" || return 1
+  nums="$(fake_labelled_numbers "$@")" || return 1
   for n in $nums; do
     body=""
     if [ -r "$ORCH_GH_FAKE_STORE/issues/$n/body" ]; then
