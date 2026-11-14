@@ -393,8 +393,12 @@ autopilot_epoch_iso() {
   date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
 }
 
-# autopilot_self: the absolute path of this orch.sh.
-autopilot_self() { printf '%s/orch.sh\n' "$(cd "$ORCH_SCRIPTS" && pwd)"; }
+# autopilot_self: the absolute path of this orch.sh, fixed once at load, before
+# any change of directory. It derives from the loader's module directory, which
+# the loader makes absolute at start; orch.sh sits in the directory above it.
+# It may keep a `.` or `..` part: it is only ever started as a command.
+AUTOPILOT_SELF="${ORCH_MODULE_DIR%/*}/orch.sh"
+autopilot_self() { printf '%s\n' "$AUTOPILOT_SELF"; }
 
 # autopilot_orch_in <dir> <orch.sh args>...: runs orch.sh itself in <dir>,
 # stdout dropped and stderr left for the caller's capture.
@@ -698,7 +702,9 @@ autopilot_github_paused() {
 
 # autopilot_pickup <issue> <phase> [limited]: steps 2 to 5 of a tick for a
 # claimed issue. A refusal or a failed step ends in one standing_stop and
-# returns 0: the claim is released, the tick goes on. A step that failed on a
+# returns 0: the claim is released, the tick goes on; a stop that cannot land
+# is contained (autopilot_stop_contained warns) and the claim stays held for a
+# later tick's stale cleanup. A step that failed on a
 # GitHub API rate limit - a GitHub pause holds once it has failed - deletes only
 # the claim ref (a git push: no stop, no label, nothing counted); if that push
 # fails the claim stays held for stale cleanup. The pause ends the tick.
@@ -709,18 +715,36 @@ autopilot_pickup() {
         warn "could not delete the claim ref on issue #$1; it stays held for stale cleanup"
       return 0
     fi
-    standing_stop "$1" "$PICKUP_KIND" "$2" "$PICKUP_TEXT"
+    autopilot_stop_contained "$1" "$PICKUP_KIND: $PICKUP_TEXT; a later tick's stale cleanup stops it" \
+      "$PICKUP_KIND" "$2" "$PICKUP_TEXT" || true
     return 0
   }
   autopilot_spawn_run "$1"
 }
 
+# autopilot_stop_contained <issue> <tail> <kind> <phase> <detail>: the tick's
+# one way to run a stop (standing_stop <issue> <kind> <phase> <detail>): a
+# single attempt in a subshell, so a death inside it ends the
+# stop and not the tick (the next tick is the retry). The stop's own failure
+# line reaches stderr; when it fails, warns "could not stop issue #<issue> - its
+# claim stays held; <tail>" and returns 1.
+autopilot_stop_contained() {
+  local issue="$1" tail="$2"
+  shift 2
+  ( standing_stop "$issue" "$@" ) && return 0
+  warn "could not stop issue #$issue - its claim stays held; $tail"
+  return 1
+}
+
 # autopilot_cleanup_stale: every claim of this host whose process is gone is a
 # failure: needs-human, a comment, then the claim released. The process is the
 # Liveness module's to name, and both of the issue's records go with the claim.
-# Other hosts' claims are never touched.
+# A stop that cannot land is contained (autopilot_stop_contained warns): the
+# claim and the records stay held for a later tick, and a GitHub pause holding
+# after it ends the cleanup early. Other hosts' claims are never touched.
 autopilot_cleanup_stale() {
   orch_load standing
+  orch_load gh
   local issue phase log detail me gone_pid backstop
   me="$(standing_host_id)"
   standing_claims_read
@@ -734,8 +758,12 @@ autopilot_cleanup_stale() {
     [ -z "$log" ] || backstop="$(P="$AUTOPILOT_BACKSTOP_PREFIX" awk 'index($0, ENVIRON["P"]) == 1' "$log" 2>/dev/null | tail -1)" || true
     if [ -n "$backstop" ]; then detail="${detail%% - no exit code is known} - the session log says: \"${backstop#autopilot run: }\""; fi
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
-    standing_stop "$issue" failure "$phase" "$detail"
-    liveness_issue_forget "$issue"
+    if autopilot_stop_contained "$issue" "the next tick tries again; if the issue is gone for good, delete the claim ref by hand: git push origin :$(adapter_claim_ref "$issue")" \
+      failure "$phase" "$detail"; then
+      liveness_issue_forget "$issue"
+    elif autopilot_github_paused; then
+      return 0
+    fi
   done
 }
 
@@ -1110,7 +1138,8 @@ autopilot_rank() {
 # merged-PR close (which needs no session, so the usage-limit and early pauses
 # never hold it), the three limit-pause checks (usage, core, graphql), sync
 # detection (when auto-sync is true), then pickup (see the spec's One tick),
-# the tick ending after any pickup that leaves a GitHub pause holding.
+# the tick ending after any pickup, and after stale cleanup, that leaves a
+# GitHub pause holding.
 # The one done read feeds both passes: sync detection gets the done table
 # minus the issues the close closed. Every candidate is read before the first
 # claim, the unpickable ones dropped, and the rest taken by rank - sync
@@ -1136,6 +1165,7 @@ autopilot_tick() {
   autopilot_github_early "$main_root" "$reserve"
   autopilot_labels_ensure
   autopilot_cleanup_stale
+  if autopilot_pause_until "$main_root" github; then return 0; fi
   autopilot_done_read done_table
   autopilot_close_missed "$done_table" done_table
   if autopilot_pause_until "$main_root"; then return 0; fi

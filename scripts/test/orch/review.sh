@@ -1841,6 +1841,18 @@ writeln '# claude' 'See `docs/agents/p.md`.' '' 'Standards: `docs/agents/q.md`, 
   'wrapped with `docs/agents/c.md`.' '' 'Standards: `docs/agents/p.md`' >CLAUDE.md
 assert_eq "a declaration replaces the crawl: declared order, wrapped whole, first paragraph only, no root file" \
   "$(standards_out)" "Standards: docs/agents/q.md, docs/agents/c.md"
+# More after the declaration than a pipe holds: read to the end (#3056).
+{
+  printf 'Standards: `docs/agents/q.md`\n\n'
+  for _ in $(seq 1 3000); do
+    printf 'A filler paragraph of about seventy bytes of prose, no more.\n\n'
+  done
+  printf 'Standards: `docs/agents/p.md`\n'
+} >CLAUDE.md
+out="$("$ORCH" review standards 2>"$out_dir/err")"; st=$?
+assert_status "a declaration followed by about 200 KiB of paragraphs exits 0" "$st" 0
+assert_eq "and prints the first declaration's line alone" "$out" "Standards: docs/agents/q.md"
+assert_eq "with nothing on stderr" "$(cat "$out_dir/err")" ""
 writeln '# claude' 'Nothing.' >CLAUDE.md
 writeln 'Standards: `docs/agents/p.md`' >AGENTS.md
 assert_eq "AGENTS.md's declaration is used when CLAUDE.md declares nothing" \
