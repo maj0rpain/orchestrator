@@ -10,7 +10,7 @@
 # writer only, never a state phase), and that handoff's required sections,
 # split by `;`. done consumes nothing, so its cells are stored empty, and every
 # lookup by handoff file skips a row whose handoff is empty. A plain string,
-# read line by line: no associative or parallel arrays, so bash 3.2 runs it.
+# read line by line: no associative or parallel arrays, so bash 4.2 runs it.
 # The phase is the row key, always the first column, which is all phase_list
 # reads; the other columns are stated only in phase_cell's read, and every
 # other helper reads the table through those two. Every phase sequence derives
