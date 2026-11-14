@@ -14,10 +14,9 @@ discards it) are the caller's own, as with section-durations. The move is
 declined for the home the helper would need, not because the shape differs.
 
 - `test_jobs_run_child` lives in the test tooling (`scripts/test/test_jobs.sh`),
-  which the runners and dev scripts source. orch.sh's modules load only
-  `common.sh`, `loader.sh` and their own module files, so a shipped
-  `scripts/orch/` module sourcing the test tooling would cross the
-  plugin/test-tooling boundary.
+  which the runners and dev scripts source. No `scripts/orch/` module sources
+  the test tooling for its own code, so a shipped module sourcing it would
+  cross the plugin/test-tooling boundary.
 - A home both layers source would be a new cross-layer file for a five-line
   function. Here it would serve two sites in one function, which costs more
   than the duplication it removes.
