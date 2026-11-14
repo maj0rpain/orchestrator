@@ -197,7 +197,7 @@ suite_cost_unregister() {
 suite_cost_run() {
   local commit_field
   commit_field="$(suite_cost_head_commit)"
-  suite_cost_interrupt_arm ""
+  suite_cost_interrupt_arm
   suite_cost_register
   suite_cost_measure "$@"
   suite_cost_unregister
@@ -212,15 +212,17 @@ suite_cost_run() {
   exit "$SUITE_COST_STATUS"
 }
 
-# suite_cost_interrupt_arm <tmp-dir>: starts handling INT, TERM and HUP for a
-# measured run and clears the state the handler cleans up. <tmp-dir> is the
-# tree run's temporary directory, "" for suite-cost run; the tree run then sets
-# SUITE_COST_TREE_WT, SUITE_COST_TREE_HERE and SUITE_COST_TREE_LABEL (the run's
-# name in the removal warning). The
-# handler runs once the foreground command has returned (bash's own rule).
+# suite_cost_interrupt_arm [<tmp-dir> <worktree> <start-dir> <label>]: starts
+# handling INT, TERM and HUP for a measured run and clears the state the
+# handler cleans up. The tree run passes its temporary directory, the worktree
+# it is about to add, its starting directory and its name in the removal
+# warning, before the add, so a signal as the worktree appears is covered
+# (the handler skips a worktree that does not exist); suite-cost run passes
+# nothing. The handler runs once the foreground command has returned (bash's
+# own rule).
 suite_cost_interrupt_arm() {
   SUITE_COST_MARK="" SUITE_COST_FIRST="" SUITE_COST_TIMEFILE=""
-  SUITE_COST_TREE_TMP="$1" SUITE_COST_TREE_WT="" SUITE_COST_TREE_HERE="" SUITE_COST_TREE_LABEL=""
+  SUITE_COST_TREE_TMP="${1:-}" SUITE_COST_TREE_WT="${2:-}" SUITE_COST_TREE_HERE="${3:-}" SUITE_COST_TREE_LABEL="${4:-}"
   trap 'suite_cost_interrupted 129' HUP
   trap 'suite_cost_interrupted 130' INT
   trap 'suite_cost_interrupted 143' TERM
@@ -591,13 +593,13 @@ suite_cost_tree_run() {
   fi
   tmp="$(mktemp -d)" || { warn "could not make a temp directory for $run_label"; return 1; }
   wt="$tmp/$role"
+  suite_cost_interrupt_arm "$tmp" "$wt" "$here" "$run_label"
   if ! git worktree add -q --detach "$wt" "$sha" >/dev/null 2>&1; then
+    suite_cost_interrupt_disarm
     warn "$msg_no_worktree"
     rm -rf "$tmp"
     return 1
   fi
-  suite_cost_interrupt_arm "$tmp"
-  SUITE_COST_TREE_WT="$wt" SUITE_COST_TREE_HERE="$here" SUITE_COST_TREE_LABEL="$run_label"
   if [ -n "$subdir" ] && [ ! -d "$wt/$subdir" ]; then
     warn "commit $sha has no directory $subdir for $run_label - $msg_tail"
     status=1
