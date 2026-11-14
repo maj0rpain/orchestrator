@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.54
+
+State in the docs lint comments and CONTRIBUTING that a Claude Code only skill needs the ORCH= line only when it uses orch.sh or `$ORCH`, and pin that with a fixture assertion.
+
 ## 5.2.53
 
 Test-only: the orch.sh suite harness keeps its shared sourced test helper files in one array that its planted tree, quiet-mode copy and helper index check all read.
