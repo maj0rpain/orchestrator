@@ -750,7 +750,7 @@ autopilot_stop_contained() {
 autopilot_cleanup_stale() {
   orch_load standing
   orch_load gh
-  local issue phase log detail me gone_pid backstop _n=0
+  local issue phase log detail me gone_pid backstop _released=0
   me="$(standing_host_id)"
   printf -v "$1" '%s' 0
   for issue in ${STANDING_CLAIM_ISSUES[@]+"${STANDING_CLAIM_ISSUES[@]}"}; do
@@ -766,8 +766,8 @@ autopilot_cleanup_stale() {
     if autopilot_stop_contained "$issue" "the next tick tries again; if the issue is gone for good, delete the claim ref by hand: git push origin :$(adapter_claim_ref "$issue")" \
       failure "$phase" "$detail"; then
       liveness_issue_forget "$issue"
-      _n=$((_n + 1))
-      printf -v "$1" '%s' "$_n"
+      _released=$((_released + 1))
+      printf -v "$1" '%s' "$_released"
     elif autopilot_github_paused; then
       return 0
     fi

@@ -2833,11 +2833,7 @@ echo "autopilot tick one claims read"
 tick_fixture
 top="$(git rev-parse --show-toplevel)"
 tk_reads="$(mktemp)"
-# adapter_claim_list takes no argument, so counting_defs (which logs $1)
-# does not fit.
-tk_defs="$(writeln \
-  "eval \"fake_claim_list_read() \$(declare -f adapter_claim_list | tail -n +2)\"" \
-  "adapter_claim_list() { echo \"claims call\" >>\"\$COUNT_LOG\"; fake_claim_list_read \"\$@\"; }")"
+tk_defs="$(counting_defs adapter_claim_list claims)"
 tk_tick() { counted_adapter_run "$tk_reads" "$tk_defs" "$ORCH" autopilot tick 2>&1; }
 fake_issue 5 open ready-for-agent orch:spec orch:running
 fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
@@ -2883,6 +2879,8 @@ quota_reset="$(( $(date +%s) + 7200 ))"
 rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 "$((quota_reset - 100))"; fake_quota graphql 400 5000 "$quota_reset"
 out="$(tk_tick)"; st=$?
 assert_status "a tick held by an early GitHub pause succeeds" "$st" 0
+assert_contains "it is held by the early pause" "$out" "GitHub graphql pool is below the github-reserve"
+assert_eq "and records the early pause" "$(on_disk "$top/.orchestrator/autopilot/github-early-graphql")" present
 assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
 assert_eq "releases it" "$(fake_claim_held 5)" free
 assert_eq "from one claims read" "$(log_count "$tk_reads" claims)" "1"
