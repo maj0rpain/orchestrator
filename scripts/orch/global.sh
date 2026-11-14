@@ -671,7 +671,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               forked-from branch, before removing anything;
                               --unmerged first aborts a rebase in progress
                               there, then deletes a clean worktree's
-                              unmerged branch
+                              unmerged branch. A worktree whose directory
+                              was deleted outside git is cleared the same
+                              way: git's record of it is removed (never a
+                              prune) and the branch deleted under the same
+                              merged rule; something else at its path is
+                              refused, naming the path
   side-checkout add <slug> [--issue N]
                               run side-checkout prune first (its report on
                               stderr; a failed sweep is reported and add
