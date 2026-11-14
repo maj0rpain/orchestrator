@@ -31,6 +31,9 @@ rec_path() {
   [[ "${1:-}" != made ]] || mkdir -p "${rec%/*}"
 }
 
+# sub_check: the check from pkg/ with cmd, stderr to errf.
+sub_check() { (cd pkg && "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf"); }
+
 # no_worktree: none when the repo has only its own worktree, else left.
 no_worktree() { [ "$(git worktree list | wc -l | tr -d ' ')" -eq 1 ] && echo none || echo left; }
 
@@ -55,7 +58,10 @@ branch_off_base() {
 check_repo() {
   new_repo >/dev/null
   root="$(git rev-parse HEAD)"
-  branch_off_base
+  git commit -q --allow-empty -m base
+  base="$(git rev-parse HEAD)"
+  git checkout -q -b feat
+  git config branch.feat.orchestrator-base-sha "$base"
   git commit -q --allow-empty -m one
   parent="$(git rev-parse HEAD)"
   git commit -q --allow-empty -m two
@@ -161,7 +167,11 @@ fake_cpu() { printf '%s %s\n' "$1" "$2" >>"$ORCH_SUITE_COST_FAKE_CPU"; }
 confirm_repo() {
   new_repo >/dev/null
   printf '%s\n' "$1" >run.sh
-  branch_off_base
+  git add run.sh
+  git commit -q -m base
+  base="$(git rev-parse HEAD)"
+  git checkout -q -b feat
+  git config branch.feat.orchestrator-base-sha "$base"
   printf '%s\n' "$2" >run.sh
   git add run.sh
   git commit -q --allow-empty -m head
@@ -669,7 +679,7 @@ line="$(tail -n 1 "$rec")"
 assert_record_line "its record line has the documented shape" "$line"
 assert_eq "recorded at the base commit" "$(cut -f1 <<<"$line")" "$base"
 assert_eq "for the command" "$(cut -f5 <<<"$line")" "${noisy[*]}"
-assert_eq "and the worktree is gone" "$(no_worktree)" none
+assert_eq "and the worktree is gone" "$(git worktree list | wc -l | tr -d ' ')" 1
 rm -f "$marker"
 "$ORCH" suite-cost check -- "${noisy[@]}" >/dev/null 2>&1
 assert_eq "the next check uses that record, running nothing" "$(on_disk "$marker")" absent
@@ -695,7 +705,7 @@ assert_eq "and is unmeasured" "$out" "unmeasured"
 assert_contains "warning with its exit code" "$(cat "$errf")" \
   "orch: the base run at $base exited 1 - the suite cost is unmeasured"
 assert_eq "recording nothing" "$(cat "$rec")" "$before"
-assert_eq "and leaving no worktree" "$(no_worktree)" none
+assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
 
 if [ "$(id -u)" -ne 0 ]; then
   check_repo
@@ -705,7 +715,7 @@ if [ "$(id -u)" -ne 0 ]; then
   assert_status "a base run whose append fails exits 0" "$st" 0
   assert_eq "with a verdict from the fresh measurement" "$out" "off"
   assert_contains "warning on stderr, naming the record" "$(cat "$errf")" "orch: could not append to the suite-cost record $rec"
-  assert_eq "and leaving no worktree" "$(no_worktree)" none
+  assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
   chmod 644 "$rec"
 fi
 
@@ -726,7 +736,7 @@ assert_eq "without the setup's CPU time" \
   "$(LC_ALL=C awk -v c="$(cut -f2 <<<"$line")" 'BEGIN { print (c < 0.25) ? "uncounted" : "counted " c }')" uncounted
 assert_contains "the setup's stdout reaches stderr" "$(cat "$errf")" "setup-out"
 assert_contains "and its stderr too" "$(cat "$errf")" "setup-err"
-assert_eq "and the worktree is gone" "$(no_worktree)" none
+assert_eq "and the worktree is gone" "$(git worktree list | wc -l | tr -d ' ')" 1
 
 check_repo
 seed_run "$head" 70.00
@@ -739,7 +749,7 @@ assert_contains "warning with its command, the base and its exit code" "$(cat "$
   "orch: the base run's setup (exit 3) at $base exited 3 - the suite cost is unmeasured"
 assert_eq "running no measurement" "$(on_disk "$marker")" absent
 assert_eq "recording nothing" "$(cat "$rec")" "$before"
-assert_eq "and leaving no worktree" "$(no_worktree)" none
+assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
 
 # A base run exiting 127 with no setup names the setup key.
 hint="orch: the base run at %s exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
@@ -778,7 +788,7 @@ assert_eq "and is unmeasured" "$out" "unmeasured"
 assert_contains "warning the base run overlapped another" "$(cat "$hs/err")" \
   "orch: the base run at $base overlapped another suite-cost run - the suite cost is unmeasured"
 assert_eq "recording neither run" "$(cat "$rec")" "$before"
-assert_eq "and leaving no worktree" "$(no_worktree)" none
+assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
 rm -rf "$hs"
 
 # A base run that cannot register as active: a plain file where the
@@ -817,7 +827,7 @@ sub_head
 cmd=(./test.sh "$marker")
 seed_run "$head" 70.00 "${cmd[*]}"
 errf="$(mktemp)"
-out="$(cd pkg && "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
+out="$(sub_check)"; st=$?
 assert_status "a base run from a subdirectory exits 0" "$st" 0
 assert_eq "its command, which exists only there, ran" "$(on_disk "$marker")" present
 assert_eq "recorded at the base commit" "$(tail -n 1 "$rec" | cut -f1)" "$base"
@@ -849,7 +859,7 @@ for variant in absent file; do
   before="$(cat "$rec")"
   setup_mark="$(mktemp -d)/setup"
   git config orchestrator.suiteCost.setup "touch '$setup_mark'"
-  out="$(cd pkg && "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
+  out="$(sub_check)"; st=$?
   assert_status "a base commit with $variant at the path exits 0" "$st" 0
   assert_eq "and is unmeasured" "$out" "unmeasured"
   assert_contains "warning the base-run wording" "$(cat "$errf")" \
@@ -880,7 +890,7 @@ put_script pkg/test.sh 'exit 0'
 sub_head
 cmd=(./test.sh)
 seed_run "$head" 70.00 "${cmd[*]}"
-out="$(cd pkg && "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
+out="$(sub_check)"; st=$?
 assert_status "a base run exiting 127 from a subdirectory exits 0" "$st" 0
 assert_contains "with the hint naming the setup key" "$(cat "$errf")" \
   "$base exited 127 (command not found)"
@@ -912,7 +922,7 @@ assert_status "a confirmed check exits 0" "$st" 0
 assert_eq "a seeded growth the confirming runs, at 50 each, do not bear out is ok" "$out" "ok"
 assert_eq "both passing solo confirming runs are recorded, head then base" \
   "$(awk -F'\t' 'NR > 2 { print $1 }' "$rec" | tr '\n' ' ')" "$head $base "
-assert_eq "and their worktrees are gone" "$(no_worktree)" none
+assert_eq "and their worktrees are gone" "$(git worktree list | wc -l | tr -d ' ')" 1
 
 confirm_reset
 fake_cpu "$head" 90.00
@@ -1038,7 +1048,7 @@ assert_contains "warning of the contention at the base" "$(cat "$hs/err")" \
   "orch: the confirming run at $base $overlap_tail"
 assert_eq "the solo head confirming run before it is recorded" "$(grep -c "^$head" "$rec")" 2
 assert_eq "the overlapped base run is not" "$(grep -c "^$base" "$rec")" 1
-assert_eq "and no worktree is left" "$(no_worktree)" none
+assert_eq "and no worktree is left" "$(git worktree list | wc -l | tr -d ' ')" 1
 # Verdict reuse: a verdict check confirmed is stored in suite-cost.verdicts and
 # printed again, nothing run, while the clean HEAD, base commit, command and
 # knobs are unchanged. A command that appends to a counter file counts runs.
@@ -1154,7 +1164,6 @@ sub_confirm_repo() {
   cmd_str="sh run.sh"
   confirm_reset
 }
-sub_check() { (cd pkg && "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf"); }
 rec_shas() { awk -F'\t' 'NR > 2 { print $1 }' "$rec" | tr '\n' ' '; }
 
 sub_confirm_repo yes yes
@@ -1232,7 +1241,7 @@ assert_contains "warning naming the live pid" "$(cat "$errf")" \
 assert_eq "recording nothing" "$(cat "$rec")" "$before"
 assert_eq "marking the live run not contended" "$(on_disk "$active/$$.contended")" absent
 assert_eq "leaving only the live marker" "$(ls "$active")" "$$"
-assert_eq "and adding no worktree" "$(no_worktree)" none
+assert_eq "and adding no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
 
 # (b) a grew comparison with a live marker: no confirming run.
 confirm_reset
