@@ -17,6 +17,8 @@ source "$DIR/test/git_env.sh"
 test_git_env_clear || exit 1
 # shellcheck source=tally.sh
 source "$DIR/test/tally.sh"
+# shellcheck source=fifo.sh
+source "$DIR/test/fifo.sh"
 # shellcheck source=test_jobs.sh
 source "$DIR/test/test_jobs.sh"
 BENCH="$DIR/dev/lens-bench.sh"
@@ -308,6 +310,8 @@ bench_repo="$bench_root/repo"
 bench_git() { git -C "$bench_repo" -c user.name=t -c user.email=t@t "$@"; }
 mkdir -p "$bench_repo/scripts/dev/lens-bench/implementability" "$bench_repo/agents"
 cp "$BENCH" "$bench_repo/scripts/dev/lens-bench.sh"
+mkdir -p "$bench_repo/scripts/test"
+cp "$DIR/test/test_jobs.sh" "$bench_repo/scripts/test/test_jobs.sh"
 git init -q "$bench_repo"
 echo snapshot >"$bench_repo/README"
 bench_git add README
@@ -382,7 +386,8 @@ assert_eq "an existing output directory: is left empty" "$(ls -A "$bench_root/ou
 # a map to the prompt's map path, leaves a lens-new transcript under
 # $HOME/.claude/projects/ and prints its session id. Its Nth call, counted in
 # $bench_root/claude.calls, fails when FAKE_CLAUDE_FAIL is N, and leaves no
-# transcript when FAKE_CLAUDE_NO_TRANSCRIPT is N.
+# transcript when FAKE_CLAUDE_NO_TRANSCRIPT is N; when FAKE_CLAUDE_HANG is N it
+# writes its pid to the claude.hang.fifo FIFO, then execs a long sleep.
 mkdir -p "$bench_root/bin" "$bench_root/home"
 cat >"$bench_root/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
@@ -392,6 +397,10 @@ echo "$PWD" >"$BENCH_ROOT/claude.cwd.$calls"
 git rev-parse HEAD >"$BENCH_ROOT/claude.head.$calls"
 jq -n '$ARGS.positional' --args -- "$@" >"$BENCH_ROOT/claude.args.$calls"
 [ "${FAKE_CLAUDE_FAIL:-}" != "$calls" ] || exit 3
+if [ "${FAKE_CLAUDE_HANG:-}" = "$calls" ]; then
+  echo "$$" >"$BENCH_ROOT/claude.hang.fifo"
+  exec sleep 300
+fi
 prompt="$2"
 printf 'a.sh:1-3 found\n' >"$(sed -n 5p <<<"$prompt")"
 if [ "${FAKE_CLAUDE_NO_TRANSCRIPT:-}" != "$calls" ]; then
@@ -405,11 +414,16 @@ printf '{"session_id":"session-%s"}\n' "$calls"
 FAKE
 chmod +x "$bench_root/bin/claude"
 
-# fake_run <args...>: run_copy run, with the fake claude, its call count reset.
-fake_run() {
+# fake_reset: clears what the fake claude recorded, its call count included.
+fake_reset() {
   rm -rf "$bench_root"/claude.calls "$bench_root"/claude.cwd.* "$bench_root"/claude.head.* \
     "$bench_root"/claude.args.* \
     "$bench_root/home/.claude"
+}
+
+# fake_run <args...>: run_copy run, with the fake claude, its call count reset.
+fake_run() {
+  fake_reset
   PATH="$bench_root/bin:$PATH" HOME="$bench_root/home" BENCH_ROOT="$bench_root" \
     run_copy run "$@"
 }
@@ -473,6 +487,36 @@ assert_contains "a missing transcript names the run" "$err" "run-2"
 assert_eq "a missing transcript keeps the finished runs and removes its own" \
   "$(cd "$bench_root/runs-lost" && ls -d run-*)" run-1
 assert_eq "a missing transcript removes the worktree" "$(worktrees)" 1
+
+echo
+echo "run: a TERM while a run is in progress (fake claude)"
+hang_fifo="$bench_root/claude.hang.fifo"
+mkfifo "$hang_fifo"
+fake_reset
+FAKE_CLAUDE_HANG=2 PATH="$bench_root/bin:$PATH" HOME="$bench_root/home" BENCH_ROOT="$bench_root" \
+  bash "$BENCH_COPY" run implementability --definition "$definition" \
+  --out "$bench_root/runs-term" -n 3 >/dev/null 2>&1 &
+term_pid=$!
+claude_pid="$(fifo_read_line 20 "claude pid ($hang_fifo)" "$hang_fifo")"; pid_st=$?
+if [ "$pid_st" -ne 0 ] || [ -z "$claude_pid" ]; then
+  bad "the fake claude reports its pid before the TERM" "no pid within 20s (status $pid_st)"
+  claude_pid=""
+  kill "$term_pid" 2>/dev/null
+fi
+kill -TERM "$term_pid" 2>/dev/null
+fifo_bounded 20 "bench exit" tail --pid="$term_pid" -f /dev/null; bound_st=$?
+if [ "$bound_st" -eq 0 ]; then ok "a TERM stops it promptly"; else
+  bad "a TERM stops it promptly" "still running after 20s"
+  kill "$claude_pid" "$term_pid" 2>/dev/null
+fi
+wait "$term_pid"; term_st=$?
+assert_status "a TERM exits 130" "$term_st" 130
+if [ -z "$claude_pid" ]; then bad "a TERM stops the running claude -p" "no claude pid to check"
+elif kill -0 "$claude_pid" 2>/dev/null; then bad "a TERM stops the running claude -p" "pid $claude_pid alive"; kill "$claude_pid"; else ok "a TERM stops the running claude -p"; fi
+assert_eq "a TERM keeps the finished runs and removes the interrupted one" \
+  "$(cd "$bench_root/runs-term" && ls -d run-*)" run-1
+assert_eq "a TERM removes the worktree" "$(worktrees)" 1
+assert_eq "a TERM removes its temporary directory" "$(leftovers)" 0
 
 # >>> summary
 tally_summary

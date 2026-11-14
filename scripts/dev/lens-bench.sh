@@ -18,7 +18,8 @@
 # round 1 has no map or settled file, so those two do not exist. `claude -p`
 # runs from the worktree, defining the definition as the agent `lens-new` and
 # asking the session to start it with the six paths. The worktree is removed
-# when the runs end or fail.
+# when the runs end or fail; an INT or TERM stops the running `claude -p`,
+# removes the worktree and exits 130, keeping the runs already finished.
 #
 # A directory holds `lens`, `revision` (the full SHA) and `model`, one line
 # each; `spec.md`, the fixture's spec body; `map.md`, the fixture's baseline
@@ -79,11 +80,14 @@ fail() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../test/test_jobs.sh
+source "$SCRIPT_DIR/../test/test_jobs.sh"
 
 # The temporary directory `run` holds its worktree of the repo run_repo and
 # its run directories in, and the output run subdirectory `run` is writing,
-# both removed on exit.
-run_tmp="" run_partial="" run_repo=""
+# both removed on exit; and the pid of the running `claude -p`, empty between
+# runs, which the INT and TERM trap stops.
+run_tmp="" run_partial="" run_repo="" run_pid=""
 run_cleanup() {
   local status=$?
   if [ -n "$run_tmp" ]; then
@@ -99,7 +103,9 @@ run_cleanup() {
 # <snapshot> out of run_repo in a detached worktree at $run_tmp/repo.
 snapshot_worktree() {
   trap run_cleanup EXIT
-  trap 'exit 130' INT TERM
+  # errexit is off in the trap: the helper's kill with no pid and its wait on
+  # the stopped claude both return non-zero, and the run must exit 130.
+  trap 'set +e; test_jobs_stop_children ${run_pid:+"$run_pid"}' INT TERM
   run_tmp="$(mktemp -d "${TMPDIR:-/tmp}/lens-bench.XXXXXX")"
   git -C "$run_repo" worktree add --quiet --detach "$run_tmp/repo" "$1" >/dev/null 2>&1 ||
     fail "$1: cannot check out the snapshot in a worktree"
@@ -229,9 +235,13 @@ cmd_run() {
     prompt+=$'\n'"$dir/map-$lens.md"$'\n'"$dir/settled.md"$'\n'"$dir/lens-$lens.md"
     printf 'run-%s of %s...\n' "$i" "$n" >&2
     run_partial="$out/run-$i"
-    reply="$(cd "$worktree" && claude -p "$prompt" --model "$model" --agents "$agents" \
-      --permission-mode acceptEdits --add-dir "$dir" --output-format json)" ||
-      fail "run-$i: claude -p failed"
+    (cd "$worktree" && exec claude -p "$prompt" --model "$model" --agents "$agents" \
+      --permission-mode acceptEdits --add-dir "$dir" --output-format json) \
+      >"$dir/reply.json" &
+    run_pid=$!
+    wait "$run_pid" || { run_pid=""; fail "run-$i: claude -p failed"; }
+    run_pid=""
+    reply="$(<"$dir/reply.json")"
     session="$(jq -r '.session_id // empty' <<<"$reply" 2>/dev/null)" || session=""
     [ -n "$session" ] || fail "run-$i: claude -p printed no session id"
     transcript="$(lens_transcript "$session")"

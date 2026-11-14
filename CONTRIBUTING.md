@@ -356,7 +356,9 @@ runs end or fail; your checkout is never touched), and starts N `claude -p`
 runs from it, 5 by default, on model M, `claude-opus-5-5` by default. Each
 run's lens transcript and map land in `<dir>/run-1` .. `run-N`, beside
 `lens`, `revision`, `model`, `spec.md` and the baseline `map.md`. A failed run
-stops it, keeping the runs before it; the output directory must not exist.
+stops it, keeping the runs before it; an INT or TERM stops the running
+`claude -p` at once, keeps the runs before it and removes the worktree; the
+output directory must not exist.
 
 Anyone, an agent included, measures directories: `scripts/dev/lens-bench.sh
 measure <dir>...` prints a Markdown report on stdout, with no `claude`.
