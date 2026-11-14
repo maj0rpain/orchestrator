@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.64
+
+The lens benchmark and the section-durations rewriter now start their background child through one shared helper, `test_jobs_run_child`; a refactor of repo-development tooling with no change in behaviour.
+
 ## 5.2.63
 
 Rename `term_run`'s local `empty` to `unwritten` in the shared test setup, so the list of still-empty pid files reads as the list behind `all_written`.
