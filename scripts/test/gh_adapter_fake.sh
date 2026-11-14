@@ -1040,7 +1040,8 @@ adapter_issue_created_at() {
 }
 
 # adapter_prs_merged_closing <base> <since>: the merged PRs in the store into
-# the base merged at or after <since>, newest first, each as `<number>\t<head>\t<mergedAt>\t<closing>\t<flag>` -
+# the base merged at or after <since>, newest first, each as
+# `<number>\t<head>\t<mergedAt>\t<closing>\t<flag>` -
 # the stored merged_at (the epoch where unset), the stored closing numbers
 # comma-joined, the flag as adapter_prs_open prints it.
 adapter_prs_merged_closing() {

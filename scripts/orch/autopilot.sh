@@ -1090,7 +1090,7 @@ autopilot_sync_detect() {
 # autopilot_done_read took (it reads no issue itself). When the table is not
 # empty, reads the PRs merged into the default branch since the oldest issue in
 # it not carrying orch:running was created - once, and not at all when every
-# issue carries it - and closes - through
+# issue carries it - and closes, through
 # pr_close_missed - each issue in it not carrying orch:running whose newest
 # merged PR from `orch/<issue>-` should have closed it. orch:sync and
 # needs-human do not stop it. A failed read or close warns and skips, never
