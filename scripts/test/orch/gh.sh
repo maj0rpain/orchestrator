@@ -1835,6 +1835,61 @@ out="$(PATH="$GH_FIXTURE/once:$PATH" contract adapter_issue_body 5 2>&1)"; st=$?
 assert_status "a secondary limit the retry clears succeeds" "$st" 0
 assert_eq "with the retry's answer and nothing else" "$out" "Body."
 
+# The deciding attempt's stdout alone reaches the caller (#3128): a paginated
+# listing whose first attempt prints rows then fails on a secondary limit gives
+# the retry's rows, each once.
+mkdir "$GH_FIXTURE/rows"
+cat >"$GH_FIXTURE/rows/gh" <<'ROWS'
+#!/usr/bin/env bash
+d="$(cd "$(dirname "$0")" && pwd)"
+printf 'call\n' >>"$d/calls"
+if [ "$(wc -l <"$d/calls")" -eq 1 ]; then
+  printf '1\tone\n2\ttwo\n'; echo 'You have exceeded a secondary rate limit.' >&2; exit 1
+fi
+printf '1\tone\n2\ttwo\n3\tthree\n'
+ROWS
+chmod +x "$GH_FIXTURE/rows/gh"
+out="$(ORCH_GH_LIMIT_WAIT=0 PATH="$GH_FIXTURE/rows:$PATH" contract adapter_issues_open_titles 2>&1)"; st=$?
+assert_status "a paginated listing whose first attempt fails on a secondary limit succeeds" "$st" 0
+assert_eq "and gives the retry's rows alone, each once" "$out" "$(printf '1\tone\n2\ttwo\n3\tthree')"
+
+# gh_limit_retry passes stdout byte for byte, leaves no temp file, and keeps
+# the failure contract.
+rt_tmp="$(mktemp -d)"
+rt() { TMPDIR="$rt_tmp" ORCH_GH_LIMIT_WAIT=0 sourced_orch_script "$@"; }
+rt 'gh_limit_retry printf "a\n\n\n"' >"$rt_tmp.o"
+assert_eq "stdout ending in blank lines passes through byte for byte" "$(od -An -c <"$rt_tmp.o" | tr -s ' ')" " a \\n \\n \\n"
+rt 'gh_limit_retry printf "no newline"' >"$rt_tmp.o"
+assert_eq "stdout with no final newline passes through byte for byte" "$(<"$rt_tmp.o")|$(wc -c <"$rt_tmp.o" | tr -d ' ')" "no newline|10"
+assert_eq "no temp file is left after a success" "$(ls -A "$rt_tmp")" ""
+out="$(rt 'f() { echo partial; echo "HTTP 502: Bad Gateway" >&2; return 3; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
+assert_status "a failure that is no limit keeps its status" "$st" 3
+assert_eq "its stdout" "$out" "partial"
+assert_eq "its stderr" "$(<"$rt_tmp.e")" "HTTP 502: Bad Gateway"
+assert_eq "and leaves no temp file" "$(ls -A "$rt_tmp")" ""
+out="$(rt 'gh_limit_handle() { echo "handler" >&2; return 1; }; f() { echo kept; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
+assert_status "a limit given up on fails the call" "$st" 1
+assert_eq "with the deciding attempt's stdout" "$out" "kept"
+assert_eq "and the handler's message in place of gh's stderr" "$(<"$rt_tmp.e")" "handler"
+assert_eq "and leaves no temp file" "$(ls -A "$rt_tmp")" ""
+out="$(rt 'f() { echo first; echo "secondary rate limit" >&2; return 1; }; gh_limit_handle() { [ "$2" = 0 ] && return 2; return 1; }; gh_limit_retry f' 2>/dev/null)"
+assert_eq "a retried attempt's stdout is dropped, the deciding one's kept" "$out" "first"
+assert_eq "a retry leaves no temp file" "$(ls -A "$rt_tmp")" ""
+out="$(GH_LIMIT_READING=1 rt 'gh_limit_handle() { echo handled >&2; return 2; }; f() { echo q; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>&1)"; st=$?
+assert_eq "the quota read is neither retried nor handled" "$out" "$(printf 'q\nsecondary rate limit')"
+# nth_make_fake: source making temp_file_make fail on its PK_NTH-th call,
+# counted in the file PK_COUNT (the autopilot tests' fake).
+nth_make_fake='real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; '
+# A temp file that cannot be made ends the run and leaves the directory empty.
+for rt_nth in 1 2; do
+  : >"$rt_tmp.c"
+  out="$(PK_COUNT="$rt_tmp.c" PK_NTH="$rt_nth" rt "$nth_make_fake"'gh_limit_retry true' 2>&1)"; st=$?
+  assert_status "temp file $rt_nth failing ends the run" "$((st != 0 ? 0 : 1))" 0
+  assert_contains "with the guard's die message" "$out" "could not create a temp file for the command's std"
+  assert_eq "and leaves the temp directory empty" "$(ls -A "$rt_tmp")" ""
+done
+rm -rf "$rt_tmp" "$rt_tmp".o "$rt_tmp".e "$rt_tmp".c
+
 # Other failures pass through untouched, with no retry and no rate_limit read.
 : >"$GH_FIXTURE/env.log"
 gh_reply 1 '' 'HTTP 502: Bad Gateway' "${view[@]}"

@@ -30,29 +30,35 @@ gh() {
   gh_limit_retry command gh "$@"
 }
 
-# gh_limit_retry <command>...: runs <command>, its stderr held, through the
-# limit retry protocol (#2724) - the one copy of it: a failed call goes through
-# gh_limit_handle, a first secondary limit (status 2) is retried once, a limit
-# given up on (status 1) fails the call with the handler's message in place of
-# the command's stderr, and any other failure keeps its stderr as it is. The
-# command's status and stdout pass through. While GH_LIMIT_READING is set the
-# handler is never called and nothing is retried.
+# gh_limit_retry <command>...: runs <command>, its stdout and stderr held in
+# temp files, through the limit retry protocol (#2724) - the one copy of it: a
+# failed call goes through gh_limit_handle, a first secondary limit (status 2)
+# is retried once, a limit given up on (status 1) fails the call with the
+# handler's message in place of the command's stderr, and any other failure
+# keeps its stderr as it is. The command's status passes through, and so does
+# the stdout of the deciding attempt alone - the one whose outcome the call
+# returns - byte for byte from its file, never through a shell variable; an
+# attempt that is retried leaves nothing with the caller. Both files are
+# removed on every way out. While GH_LIMIT_READING is set the handler is never
+# called and nothing is retried.
 gh_limit_retry() {
-  local errf out_st err rc retried=0
+  local errf outf out_st err rc retried=0
   temp_file_make errf || die "could not create a temp file for the command's stderr"
+  temp_file_make outf || { rm -f "$errf"; die "could not create a temp file for the command's stdout"; }
   while :; do
     out_st=0
-    "$@" 2>"$errf" || out_st=$?
+    "$@" >"$outf" 2>"$errf" || out_st=$?
     err="$(cat "$errf")"
     if [ "$out_st" -eq 0 ] || [ -n "${GH_LIMIT_READING:-}" ]; then break; fi
     rc=0
     gh_limit_handle "$err" "$retried" || rc=$?
     if [ "$rc" -eq 2 ]; then retried=1; continue; fi
-    if [ "$rc" -eq 1 ]; then rm -f "$errf"; return "$out_st"; fi
+    if [ "$rc" -eq 1 ]; then err=""; break; fi
     break
   done
+  cat "$outf"
   [ -z "$err" ] || printf '%s\n' "$err" >&2
-  rm -f "$errf"
+  rm -f "$errf" "$outf"
   return "$out_st"
 }
 
