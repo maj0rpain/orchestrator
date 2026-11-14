@@ -469,12 +469,15 @@ open_pr_draft_flag() {
 # The current branch's open PR number, for pr comment, pr comments, pr fetch
 # and pr update.
 # Returns 1, printing nothing, when the branch has no open PR; every other
-# failure - a detached HEAD, a GitHub that cannot be read - goes through die2,
+# failure - a detached HEAD, no repo (resolved here, after the detached-HEAD
+# check, since the gh guard's death exits 1), a GitHub that cannot be read -
+# goes through die2,
 # so a caller in a subshell can tell "no PR" apart from an error and map each
 # to its own exit code.
 current_open_pr() {
   local branch raw open
   current_branch_or_die die2
+  repo_pin || die2 "$REPO_REMEDY"
   gh_or_die --exit 2 --out raw "list the open PRs from $branch" \
     adapter_prs_open "$branch"
   open="$(trust_filter_prs "$branch" <<<"$raw")" ||

@@ -262,6 +262,7 @@ autopilot_answer() {
   autopilot_phase_arg "$phase" die2
   require_state die2
   require_issue issue die2
+  repo_pin || die2 "$REPO_REMEDY"
   if ! timeline_read "$issue"; then
     [ -n "$TIMELINE_REASON" ] || die2 "could not read issue #$issue's comments"
     gh_die --exit 2 "read the comments of issue #$issue" "$TIMELINE_REASON"
