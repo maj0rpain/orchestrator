@@ -335,6 +335,8 @@ autopilot_reply() {
 # nothing, when any read fails.
 autopilot_questions() {
   orch_load standing
+  orch_load gh
+  orch_load handoff
   orch_load issue-timeline
   local list n phase row kind lines="" q_phase stop_phase
   list="$(standing_human_issues)" || exit $?
@@ -946,6 +948,9 @@ autopilot_verdict() {
 # oldest first (--limit keeping the first k eligible lines). Every read comes
 # before the first line is printed, so a failed read leaves no partial list.
 autopilot_candidates_run() {
+  # autopilot_verdict runs in a command substitution: load its modules once.
+  orch_load standing
+  orch_load handoff
   local usage="usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
   local mode="" limit="" issues=() arg
   while [ $# -gt 0 ]; do
@@ -1111,6 +1116,8 @@ autopilot_rank() {
 # it.
 autopilot_tick() {
   orch_load standing
+  orch_load gh
+  orch_load handoff
   local main_root cap count issue gh_err phase rc flow_issues limited_arg auto_sync
   local ranked="" slots limit limited done_table reserve
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
@@ -1320,6 +1327,8 @@ autopilot_claim_release_only() {
 # hands over to autopilot_session_end once it exits.
 autopilot_run() {
   orch_load standing
+  orch_load checkout
+  orch_load handoff
   local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration hit usage_before usage flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
