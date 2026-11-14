@@ -345,13 +345,92 @@ assert_eq "and that .contended file is gone" "$(on_disk "$active/$$.contended")"
 # A live run already marked contended - the test shell's own pid, its marker
 # and .contended file seeded - is contention, and only its marker is marked:
 # its .contended file is never taken for a marker of its own.
-: >"$active/$$"
+sourced_orch liveness_record_write "$$" "$active/$$"
 : >"$active/$$.contended"
 err="$("$ORCH" suite-cost run -- true 2>&1)"
 assert_contains "a live run already marked contended is contention" "$err" "orch: $overlap"
 assert_eq "and its .contended file gets no .contended file of its own" \
   "$(on_disk "$active/$$.contended.contended")" absent
 rm -f -- "$active/$$" "$active/$$.contended"
+
+# A marker is the Liveness module's record, judged by its record-alive rule: a
+# live pid with another start time is stale, its true start time is contention.
+new_repo >/dev/null
+rec_path
+active="$rec.active"
+mkdir -p "$active"
+printf '%s 1\n' "$$" >"$active/$$"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_eq "a marker under a live pid with another start time is no contention" "$err" ""
+assert_eq "the run is recorded" "$("$ORCH" suite-cost history | wc -l | tr -d ' ')" 1
+assert_eq "and that marker is gone" "$(on_disk "$active/$$")" absent
+sourced_orch liveness_record_write "$$" "$active/$$"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_contains "a marker with its true start time is contention" "$err" "orch: $overlap"
+rm -f -- "$active/$$"
+
+# Other stale markers: empty, malformed, unreadable start time, another pid's
+# record. A contended mark beside one goes with it.
+fake_proc="$(mktemp -d)"
+for kind in empty malformed unreadable otherpid; do
+  mkdir -p "$active"
+  case "$kind" in
+    empty) : >"$active/$$" ;;
+    malformed) printf 'word\n' >"$active/$$" ;;
+    unreadable) sourced_orch liveness_record_write "$$" "$active/$$" ;;
+    otherpid) printf '%s 1\n' "$dead" >"$active/$$" ;;
+  esac
+  : >"$active/$$.contended"
+  if [ "$kind" = unreadable ]; then
+    # a fake process table that knows the run (exec keeps its pid) but not
+    # the marker's pid, here the test shell's
+    err="$(ORCH_PROC_DIR="$fake_proc" bash -c 'mkdir "$ORCH_PROC_DIR/$$"; cp "/proc/$$/stat" "$ORCH_PROC_DIR/$$/stat"; exec "$0" suite-cost run -- true' "$ORCH" 2>&1)"
+  else
+    err="$("$ORCH" suite-cost run -- true 2>&1)"
+  fi
+  assert_eq "a $kind marker is stale and no contention" "$err" ""
+  assert_eq "and is removed with its contended mark" \
+    "$(on_disk "$active/$$")$(on_disk "$active/$$.contended")" absentabsent
+done
+rm -rf "$fake_proc"
+
+# A file under a marker's first name is neither removed nor counted.
+: >"$active/.$dead.new"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_eq "a file under a marker's first name is no contention" "$err" ""
+assert_eq "and is left alone" "$(on_disk "$active/.$dead.new")" present
+rm -f -- "$active/.$dead.new"
+
+# A marker in progress holds its record while two runs overlap.
+hs="$(handshake_fifos)"
+"$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>"$hs/err-first" &
+pid_a=$!
+bounded_run_replayed "$hs/err-listing" 60 "record partner ($hs/one, $hs/two)" \
+  sh -c 'read -r _ <"$0"; for m in "$2"/[0-9]*; do case "$m" in *.contended) ;; *) cat "$m" ;; esac; done >"$3"; printf "x\n" >"$1"' \
+  "$hs/one" "$hs/two" "$active" "$hs/listing"
+wait "$pid_a"
+replay_on_expiry "$?" "$hs/err-first"
+bad="$(grep -vcE '^[0-9]+ [^ ]+$' "$hs/listing")"
+assert_eq "each marker read while two runs overlap holds its record" \
+  "$bad:$(wc -l <"$hs/listing" | tr -d ' ')" "0:2"
+rm -rf "$hs"
+
+# A start time unreadable at registration: no registration, the record
+# writer's line then the could-not-register line.
+new_repo >/dev/null
+rec_path made
+fake_proc="$(mktemp -d)"
+fake_bin="$(mktemp -d)"
+printf '#!/bin/sh\nexit 1\n' >"$fake_bin/ps"
+chmod +x "$fake_bin/ps"
+errf="$(mktemp)"
+out="$(PATH="$fake_bin:$PATH" ORCH_PROC_DIR="$fake_proc" "$ORCH" suite-cost run -- sh -c 'echo ran; exit 3' 2>"$errf")"; st=$?
+assert_status "a run whose start time is unreadable passes its exit code through" "$st" 3
+assert_eq "and records nothing" "$("$ORCH" suite-cost history)" ""
+assert_contains "stderr names the orch.sh pid first" "$(sed -n 1p "$errf")" "orch: could not read the start time of pid "
+assert_contains "then the could-not-register line" "$(sed -n 2p "$errf")" \
+  "orch: this run could not register as active - its suite cost is not recorded"
+rm -rf "$fake_proc" "$fake_bin" "$errf"
 
 # A run that cannot register as active: a plain file where the active-runs
 # directory goes, the record itself still writable.
@@ -1074,7 +1153,7 @@ pre_reset() {
 # (a) no base record: a live marker beside a stale one blocks the base run.
 pre_reset
 mkdir -p "$active"
-: >"$active/$$"
+sourced_orch liveness_record_write "$$" "$active/$$"
 : >"$active/$dead"
 before="$(cat "$rec")"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
@@ -1090,7 +1169,7 @@ assert_eq "and adding no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
 # (b) a grew comparison with a live marker: no confirming run.
 confirm_reset
 mkdir -p "$active"
-: >"$active/$$"
+sourced_orch liveness_record_write "$$" "$active/$$"
 before="$(cat "$rec")"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a grew comparison beside a live run is unmeasured" "$out" "unmeasured"
@@ -1099,7 +1178,8 @@ assert_contains "warning the growth is unconfirmed, naming the pid" "$(cat "$err
 assert_eq "with no confirming run recorded" "$(cat "$rec")" "$before"
 
 # (c) a live run appearing during the head confirming run stops the base one.
-cmd=(sh -c 'if [ "$(git rev-parse HEAD)" = "$0" ]; then mkdir -p "$1" && : >"$1/$2"; fi' "$head" "$active" "$$")
+live_rec="$(sourced_orch liveness_record_write "$$" /dev/stdout)"
+cmd=(sh -c 'if [ "$(git rev-parse HEAD)" = "$0" ]; then mkdir -p "$1" && printf "%s\n" "$3" >"$1/$2"; fi' "$head" "$active" "$$" "$live_rec")
 cmd_str="${cmd[*]}"
 confirm_reset
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
@@ -1117,7 +1197,7 @@ confirm_reset
 seed_run "$base" 100.00
 seed_run "$head" 100.00
 mkdir -p "$active"
-: >"$active/$$"
+sourced_orch liveness_record_write "$$" "$active/$$"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a recorded base whose comparison is ok prints ok" "$out" "ok"
 assert_eq "without a warning" "$(cat "$errf")" ""
@@ -1146,6 +1226,18 @@ mkdir -p "$active"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a .contended file with no marker does not block the base run" "$out" "ok"
 assert_eq "and the base run is recorded" "$(grep -c "^$base" "$rec")" 2
+
+# (g) a marker with another start time and an empty marker do not block it.
+pre_reset
+mkdir -p "$active"
+printf '%s 1\n' "$$" >"$active/$$"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a marker with another start time does not block the base run" "$out" "ok"
+pre_reset
+mkdir -p "$active"
+: >"$active/$$"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "an empty marker does not block the base run" "$out" "ok"
 
 rm -rf "$errf" "$ORCH_SUITE_COST_FAKE_CPU"
 restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU

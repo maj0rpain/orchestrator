@@ -23,9 +23,13 @@
 # marker, then lists the others: it marks each other live one contended. On
 # finish it was overlapped when its .contended file exists, or when it saw
 # another live marker at start, and it removes its marker and .contended file
-# either way. A marker or .contended file whose pid names no live process is
-# stale, and so is a .contended file whose marker is
-# gone: no contention, and removed by the run that finds it. A failed .contended
+# either way. A marker holds the Liveness module's `<pid> <start-time>` record,
+# written under a first name the sweep never takes (.<pid>.new), then moved into
+# place; a run whose start time cannot be read does not register. A marker
+# whose record is empty, malformed, names a pid other than its file name, or
+# whose process is gone or has another start time is stale, and so is a
+# .contended file whose marker is gone or stale: no contention, and removed by
+# the run that finds it. A failed .contended
 # write for another run is not retried, and a failed removal is ignored. A run
 # that cannot register still runs but is not recorded. No run ever waits for
 # another. Before each of its measured runs, check looks for a live marker of
@@ -107,7 +111,11 @@ suite_cost_register() {
   dir="$(suite_cost_active 2>/dev/null)" || return 0
   me="$dir/$$"
   rm -f -- "$me.contended" 2>/dev/null || true
-  { mkdir -p -- "$dir" && : >"$me"; } 2>/dev/null || return 0
+  mkdir -p -- "$dir" 2>/dev/null || return 0
+  # written under a first name the sweep never takes for a marker, then moved
+  # into place, so a marker appears complete
+  liveness_record_write "$$" "$dir/.$$.new" || { rm -f -- "$dir/.$$.new" 2>/dev/null || true; return 0; }
+  mv -f -- "$dir/.$$.new" "$me" 2>/dev/null || { rm -f -- "$dir/.$$.new" 2>/dev/null || true; return 0; }
   SUITE_COST_MARK="$me"
   while IFS= read -r p; do
     SUITE_COST_SAW_LIVE=1
@@ -117,8 +125,9 @@ suite_cost_register() {
 
 # suite_cost_sweep <dir>: the one pass over the active-runs directory <dir>
 # that registration and check's pre-check share. Removes each stale marker or
-# .contended file - its pid names no live process, or its marker is gone,
-# whether or not its pid is live - and prints the pid of each live marker of
+# .contended file - its marker is gone, or holds no live record of its pid
+# (the Liveness module's record-alive rule), whether or not the pid is live -
+# and prints the pid of each live marker of
 # another process, one per line, in glob order. A .contended file is never
 # taken for a marker.
 suite_cost_sweep() {
@@ -127,7 +136,7 @@ suite_cost_sweep() {
     name="${f##*/}"
     p="${name%.contended}"
     [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
-    if ! kill -0 "$p" 2>/dev/null || [ ! -e "$dir/$p" ]; then
+    if [ ! -e "$dir/$p" ] || ! liveness_marker_alive "$p" "$dir/$p"; then
       rm -f -- "$f" 2>/dev/null || true
     elif [ "$f" = "$dir/$p" ]; then
       printf '%s\n' "$p"

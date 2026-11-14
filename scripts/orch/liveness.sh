@@ -6,7 +6,8 @@
 # file: the reset of a GitHub API rate limit a session hit), the
 # `<pid> <start-time>` record format, the start-time reader
 # (/proc/<pid>/stat field 22 under $ORCH_PROC_DIR, else `ps -o lstart=`), the
-# record-alive rule, the watch pidfile and the session log naming
+# record-alive rule (which also judges a suite-cost active-run marker, a
+# record too), the watch pidfile and the session log naming
 # (logs/<issue>-<phase>-<stamp>.log). Of orch.sh's files only this one touches
 # /proc and ps and names paths under run/; a session writes the hit file only
 # at the path the wrapper hands it. Its tests: scripts/test/orch/liveness.sh.
@@ -50,6 +51,15 @@ liveness_record_alive() {
   [[ "$pid" =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ -z "${extra:-}" ] || return 1
   current="$(liveness_proc_start "$pid")" || return 1
   [ "$current" = "$start" ]
+}
+
+# liveness_marker_alive <pid> <file>: whether the file holds the record of that
+# pid, alive by the record-alive rule. An empty, malformed or unreadable file,
+# or a record naming another pid, is stale.
+liveness_marker_alive() {
+  local record
+  record="$(cat "$2" 2>/dev/null)" || return 1
+  [ "${record%% *}" = "$1" ] && liveness_record_alive "$record"
 }
 
 # liveness_subdir <name>: the main checkout's autopilot subdirectory of that
