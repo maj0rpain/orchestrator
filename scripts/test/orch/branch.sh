@@ -529,9 +529,9 @@ assert_eq "and records the retirement" \
 # A failed delete whose old ref origin answers is gone (an earlier delete
 # landed) carries on and records the retirement.
 fresh_bare_origin bare9
-# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 git checkout -q -b to-gone
 git push -q -u origin to-gone
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 git -C "$bare9" update-ref -d refs/heads/to-gone
 out="$(PATH="$(git_fails_bin '*" --delete "*'):$GH_FAILING:$PATH" "$ORCH" branch retire to-gone to-gone-redo-1 2>&1)"; st=$?
 assert_status "a failed delete of an already-gone ref succeeds" "$st" 0
