@@ -1172,7 +1172,7 @@ rm -rf "$sh_all_dir" "$sh_dir"
 # that file.
 echo
 echo "the seeded start (stub cache)"
-seed_dir="$(planted_minimal_tree <<'PLANTED'
+seed_tree="$(planted_minimal_tree <<'PLANTED'
   # --- planted seeded a
   echo; echo "planted seeded a"
   if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present a"; else bad "cache missing a" "no cache in $HOME"; fi
@@ -1183,7 +1183,7 @@ seed_dir="$(planted_minimal_tree <<'PLANTED'
   if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present b"; else bad "cache missing b" "no cache in $HOME"; fi
 PLANTED
 )"
-cat >"$seed_dir/scripts/orch.sh" <<'PLANTED_ORCH'
+cat >"$seed_tree/scripts/orch.sh" <<'PLANTED_ORCH'
 #!/usr/bin/env bash
 echo "build" >>"$PLANTED_SEED_LOG"
 mkdir -p "$HOME/.cache/orchestrator" && echo stubs >"$HOME/.cache/orchestrator/planted.stubs"
@@ -1191,18 +1191,18 @@ PLANTED_ORCH
 seed_log="$(mktemp -d)/runs.log"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for seed_s in "${SUITES[@]}"; do
-  [ -e "$seed_dir/scripts/test/$seed_s" ] || echo 'echo; echo "1 passed, 0 failed"' >"$seed_dir/scripts/test/$seed_s"
+  [ -e "$seed_tree/scripts/test/$seed_s" ] || echo 'echo; echo "1 passed, 0 failed"' >"$seed_tree/scripts/test/$seed_s"
 done
 # seeded_start_run <label> <env assignment>...: the runner on the planted tree
-# with a HOME of the harness's own; sets seed_out, seed_st and seed_runs, and
-# asserts the run and its HOME.
+# (seed_tree) with a HOME of the harness's own; sets seed_out, seed_st and
+# seed_runs, and asserts the run and its HOME.
 seeded_start_run() {
   local label="$1" home
   shift
   : >"$seed_log"
   home="$(mktemp -d)"
   seed_out="$(env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD HOME="$home" PLANTED_SEED_LOG="$seed_log" ORCH_TEST_QUIET='' "$@" \
-    bash "$seed_dir/scripts/test/orch_test.sh" 2>&1)"; seed_st=$?
+    bash "$seed_tree/scripts/test/orch_test.sh" 2>&1)"; seed_st=$?
   seed_runs="$(grep -c build "$seed_log")"
   assert_status "$label: the run passes" "$seed_st" 0
   assert_eq "$label: the caller's HOME holds no stub cache afterwards" \
@@ -1225,10 +1225,10 @@ assert_eq "shard 1/2: one seed build" "$seed_runs" "1"
 seeded_start_run "shard 2/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=2/2
 assert_contains "shard 2/2: a section starts seeded" "$seed_out" "cache present"
 assert_eq "shard 2/2: one seed build" "$seed_runs" "1"
-rm -rf "$seed_dir" "$(dirname "$seed_log")"
+rm -rf "$seed_tree"
 
 # A tree whose orch.sh cannot be built: the run goes on unseeded and silent.
-seed_dir="$(planted_minimal_tree <<'PLANTED'
+seed_tree="$(planted_minimal_tree <<'PLANTED'
   # --- planted unseeded
   echo; echo "planted unseeded"
   if [ -e "$HOME/.cache" ]; then bad "cache found at start" "found one"; else ok "unseeded start"; fi
@@ -1236,11 +1236,11 @@ seed_dir="$(planted_minimal_tree <<'PLANTED'
   if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ ! -e "$HOME/.cache" ] && [ -d "$HOME" ]; then ok "unseeded start via the helper"; else bad "helper start not clean" "st $seeded_home_st out $seeded_home_out"; fi
 PLANTED
 )"
-out="$(env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD HOME="$(mktemp -d)" ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 bash "$seed_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
-assert_status "a run whose seed cannot be built passes" "$st" 0
-assert_contains "starting unseeded" "$out" "unseeded start"
-assert_eq "and prints nothing about the seed" "$(printf '%s\n' "$out" | grep -v 'planted unseeded\|unseeded start' | grep -ci 'seed')" "0"
-rm -rf "$seed_dir"
+seeded_start_run "unseeded" ORCH_TEST_JOBS=2
+assert_contains "unseeded: the section starts unseeded" "$seed_out" "unseeded start"
+assert_eq "unseeded: the output says nothing about the seed" "$(printf '%s\n' "$seed_out" | grep -v 'planted unseeded\|unseeded start' | grep -ci 'seed')" "0"
+assert_eq "unseeded: no seed build" "$seed_runs" "0"
+rm -rf "$seed_tree" "$(dirname "$seed_log")"
 
 # --- section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858) -----
 # A copy of the scripts tree cut down to planted sections and stub suites, run
