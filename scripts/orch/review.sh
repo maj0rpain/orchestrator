@@ -605,8 +605,10 @@ STANDARDS_HEADING_AWK='
 # review_standards_declaration <file>: the first `Standards:` paragraph of the
 # root file <file>, its lines joined, or nothing when it has none: the first
 # unfenced paragraph of review_standards_paragraphs that starts with Standards:.
+# It reads all of the producer's output, so the producer meets no closed pipe.
 review_standards_declaration() {
-  review_standards_paragraphs "$1" | awk '/^U\tStandards:/ { sub(/^U\t/, ""); print; exit }'
+  review_standards_paragraphs "$1" |
+    awk '!found && /^U\tStandards:/ { sub(/^U\t/, ""); print; found = 1 }'
 }
 
 # review_standards_heading_count <file> <heading>: how many ATX headings of the

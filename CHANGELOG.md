@@ -1,5 +1,17 @@
 # Changelog
 
+## 5.2.79
+
+`orch.sh review standards` now prints the declared Standards line however long the root file is; it exited 141 with no output when the declaration was followed by more than a pipe holds.
+
+## 5.2.78
+
+The autopilot started by a relative path to `orch.sh` now runs its child starts (pickup's init and redo, the session wrapper, the review-budget record) with the running `orch.sh` by an absolute path fixed at start, so a pickup no longer stops the issue or runs a side checkout's copy.
+
+## 5.2.77
+
+A tick no longer dies on one claim whose stop cannot land: stale cleanup and pickup run each stop contained, warn naming the issue, leave its claim held and go on, so one stale claim no longer blocks every pickup. The warning names the claim ref to delete by hand for an issue gone for good.
+
 ## 5.2.76
 
 Commands that reserve exit 1 for a meaningful "no" now exit 2 on a failed temp file (`glossary show`) and on a missing Repo (`issue ready`, `pr comment`, `pr comments`, `pr draft`, `pr ready`, `ticket exists`, `breakdown state`, `autopilot answer`), with the Repo remedy as the only message.
