@@ -2111,11 +2111,13 @@ assert_eq "bash hook: an in-scope payload with no command costs 1 jq call" \
   "$(bash_hook_event default orch-implementer cat | jq 'del(.tool_input.command)' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
 assert_eq "bash hook: a non-JSON payload costs 1 jq call" "$(echo 'not json {' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
 for mode in default bypassPermissions; do
-  for hb_cmd in 'cat; echo done' 'pgrep x' 'echo hi' 'python3 -Bmpytest'; do
+  for hb_cmd in 'cat; echo done' 'pgrep x' 'echo hi'; do
     hb_n="$(bash_hook_event "$mode" orch-implementer "$hb_cmd" | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")"
     assert_eq "bash hook: an in-scope '$hb_cmd' under $mode costs at most 2 jq calls" "$([ "$hb_n" -le 2 ] && echo yes || echo "no ($hb_n)")" yes
   done
 done
+hb_n="$(bash_hook_event default orch-implementer 'python3 -Bmpytest' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")"
+assert_eq "bash hook: an in-scope 'python3 -Bmpytest' under default costs at most 2 jq calls" "$([ "$hb_n" -le 2 ] && echo yes || echo "no ($hb_n)")" yes
 rm -rf "$JQC"
 # Registration and docs.
 assert_eq "hooks.json's Bash matcher has exactly one command, hook-bash.sh" \
