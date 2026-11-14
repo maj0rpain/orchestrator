@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.68
+
+`finding-triage scan` prints the same lines wherever in the checkout it is started: each git command it gives a finding's repo-root-relative file path now runs against the checkout's root, so a subdirectory no longer reads every changed or deleted finding as `unchanged`.
+
+## 5.2.67
+
+Reading an issue whose trusted comments total more than about 128 KB no longer fails: the comment array reaches jq on standard input, not as a command-line argument.
+
 ## 5.2.66
 
 `orch.sh branch retire` no longer records a retirement when origin cannot be asked whether the old remote ref is still there after a failed delete; it dies, says the new name is pushed and names the rerun.
