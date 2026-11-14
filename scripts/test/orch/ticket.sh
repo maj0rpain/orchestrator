@@ -1711,6 +1711,14 @@ for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobran
   out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
   assert_status "reclaim of a gone-directory leftover ($rc_case) succeeds" "$st" 0
   assert_contains "printing the worktree line ($rc_case)" "$out" "removed the worktree of ticket #7"
+  case "$rc_case" in
+    merged-*) assert_contains "printing the close ($rc_case)" "$out" "closed ticket #7" ;;
+    unreported-*) assert_contains "printing the discard ($rc_case)" "$out" "discarded ticket #7" ;;
+  esac
+  case "$rc_case" in
+    *-branch) assert_contains "printing the branch line ($rc_case)" "$out" "deleted the branch of ticket #7" ;;
+    *-nobranch) assert_not_contains "printing no branch line ($rc_case)" "$out" "deleted the branch of ticket #7" ;;
+  esac
   assert_eq "leaving no record ($rc_case)" "$("$ORCH" ticket-worktree list)" ""
   assert_eq "and no ticket branch ($rc_case)" "$(rc_has_branch 7)" "no"
   if [ "$rc_case" = merged-branch ]; then

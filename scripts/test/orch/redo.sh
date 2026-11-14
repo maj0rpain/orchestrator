@@ -165,7 +165,7 @@ assert_status "redo review refuses a ticket worktree whose directory is gone" "$
 assert_contains "naming its remove hint" "$out" "orch.sh ticket-worktree remove 4"
 out="$("$ORCH" doctor 2>&1)"
 assert_contains "the doctor reports the leftover" "$out" "ticket worktree $(pwd -P)/.orchestrator/worktrees/t4 is left over"
-out="$("$ORCH" ticket-worktree remove 4 --unmerged 2>&1)"; st=$?
+out="$("$ORCH" ticket-worktree remove 4 2>&1)"; st=$?
 assert_status "the remedy the refusal names succeeds" "$st" 0
 out="$("$ORCH" doctor 2>&1)"
 assert_not_contains "the doctor then reports nothing left over" "$out" "is left over"

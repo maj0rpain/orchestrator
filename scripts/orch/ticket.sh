@@ -697,7 +697,7 @@ ticket_reclaim_close() {
 # reads what exists first, so its notes follow from that; a failure dies
 # naming the ticket and the step.
 ticket_reclaim_remove() {
-  local n="$1" flow="$2" path tbranch had_wt=0 had_branch=0 state
+  local n="$1" flow="$2" path tbranch had_wt=0 had_branch=0 state left
   path="$(ticket_worktree_path "$n")"
   tbranch="$(branch_name_ticket "$flow" "$n")"
   state="$(ticket_worktree_state "$path")" || exit $?
@@ -706,8 +706,8 @@ ticket_reclaim_remove() {
   [ "$had_wt$had_branch" != 00 ] || return 0
   local teardown_failed=0
   (ticket_worktree_teardown "$n" --unmerged --discard) || teardown_failed=1
-  state="$(ticket_worktree_state "$path")" || exit $?
-  if [ "$state" != none ]; then
+  left="$(ticket_worktree_state "$path")" || exit $?
+  if [ "$left" != none ]; then
     die "ticket #$n: could not remove its worktree $path"
   fi
   [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
