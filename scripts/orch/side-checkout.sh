@@ -427,7 +427,7 @@ side_checkout_close_missed() {
   fi
   standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - the merged-PR close skips it"; return 0; }
   [ "$STANDING_STATE" = OPEN ] || return 0
-  pr_merged_closing_read default prs "no merged-PR close for issue #$issue" || return 0
+  pr_merged_closing_read default prs "no merged-PR close for issue #$issue" "$issue" || return 0
   pr_close_newest "$issue" "$default" "$(printf '%s\n' "$prs" | awk -F'\t' -v pr="$pr" -v br="$br" '(pr != "" ? $1 == pr : $2 == br)')" closed_pr || rc=$?
   if [ "$rc" -eq 3 ]; then
     warn "issue #$issue is still open: PR #$closed_pr merged less than $((PR_CLOSE_GRACE / 60)) minutes ago - GitHub may yet close it, and no later sweep will check"

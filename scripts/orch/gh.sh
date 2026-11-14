@@ -944,14 +944,22 @@ adapter_prs_merged() {
     --jq '.[] | "\(.number)\t\(.headRefOid)\t\(.isCrossRepository)"'
 }
 
-# adapter_prs_merged_closing <base>: every PR merged into the base branch,
-# newest created first, one per line as `<number>\t<head branch>\t<mergedAt>\t
+# adapter_issue_created_at <n>: issue #n's creation time, a UTC timestamp in
+# the form a PR's mergedAt has, so the two compare as strings.
+adapter_issue_created_at() {
+  gh issue view "$1" --json createdAt --jq '.createdAt'
+}
+
+# adapter_prs_merged_closing <base> <since>: every PR merged into the base
+# branch at or after the UTC timestamp <since>, newest created first (stated in
+# the search), one per line as `<number>\t<head branch>\t<mergedAt>\t
 # <closing issues>\t<isCrossRepository>` - the closing issues the numbers of its
 # closingIssuesReferences, comma-separated, empty when none - unfiltered: the
 # Trust module's trust_filter_prs drops the fork PRs. The merged-PR backstop's
-# one read per tick (issue #2478).
+# one read per tick (issue #2478), bounded since the oldest issue it may close
+# was created (issue #3061).
 adapter_prs_merged_closing() {
-  gh pr list --base "$1" --state merged --limit "$ISSUE_LIST_LIMIT" \
+  gh pr list --base "$1" --state merged --search "merged:>=$2 sort:created-desc" --limit "$ISSUE_LIST_LIMIT" \
     --json number,headRefName,mergedAt,closingIssuesReferences,isCrossRepository \
     --jq '.[] | "\(.number)\t\(.headRefName)\t\(.mergedAt)\t\([.closingIssuesReferences[].number] | map(tostring) | join(","))\t\(.isCrossRepository)"'
 }

@@ -691,6 +691,14 @@ fake_pr_head() {
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
 }
 
+# fake_issue_created <n> <age-seconds>: issue #n created <age-seconds> ago, by
+# the current time.
+fake_issue_created() {
+  local d="$ORCH_GH_FAKE_STORE/issues/$1"
+  date -u -d "@$(( $(date -u +%s) - $2 ))" +%Y-%m-%dT%H:%M:%SZ >"$d/created_at" 2>/dev/null ||
+    date -u -r "$(( $(date -u +%s) - $2 ))" +%Y-%m-%dT%H:%M:%SZ >"$d/created_at"
+}
+
 # fake_pr_merged <n> <age-seconds> [issue...]: PR #n merged <age-seconds> ago,
 # by the current time, its closingIssuesReferences the issues given.
 fake_pr_merged() {

@@ -80,7 +80,8 @@ readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # the oldest. Overridable through the environment, like review.sh's ORCH_CI_*
 # knobs, so a test can turn it down; a raised override stops counting at
 # ISSUE_SEARCH_CAP for the issue listings alone, since the PR listings run no
-# search. It stays out of the documented command surface.
+# search - bar the merged-PR close backstop's, which is search-backed, so the
+# cap applies to it as well. It stays out of the documented command surface.
 readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
 # The most rows GitHub's search returns, whatever --limit asks for.
 readonly ISSUE_SEARCH_CAP=1000
