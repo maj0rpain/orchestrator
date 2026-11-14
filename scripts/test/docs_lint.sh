@@ -91,6 +91,8 @@
 #     every build arg the former interpolates is named in the latter
 #   scan_cpu_limit  the autopilot service limits CPU from ORCH_CPUS and
 #     docker/.env.example mentions it
+#   scan_autopilot_env  docker/.env.example names the ORCH_<NAME> variable of
+#     every setting in the autopilot module's AUTOPILOT_SETTING_NAMES
 #   scan_clone_dir  the autopilot service pins ORCH_CLONE_DIR to the repo
 #     volume's mount target, the entrypoint's default and the image's directory
 #   scan_review_pass  the review pass is defined once in orch-review-pass and
@@ -2410,6 +2412,51 @@ flags "an .env.example without ORCH_CPUS is flagged" \
   "$(scan_cpu_limit "$fixture")" "does not mention ORCH_CPUS"
 check "docker/compose.yaml limits CPU from ORCH_CPUS and .env.example documents it" \
   "$(scan_cpu_limit "$PLUGIN_ROOT")"
+
+# .env.example names the variable of every autopilot setting (#3103). The names
+# come from the autopilot module's one list, sourced from the real plugin root
+# (a scanned fixture carries no module), never matched in its text.
+# scan_autopilot_env <plugin root>: one line per setting whose ORCH_<NAME>
+# variable the env example omits, or one line when the list cannot be read.
+scan_autopilot_env() {
+  local r="$1" name var
+  local -a names
+  names=()
+  # shellcheck source=/dev/null
+  if source "$PLUGIN_ROOT/scripts/orch/autopilot.sh" 2>/dev/null; then
+    names=("${AUTOPILOT_SETTING_NAMES[@]}")
+  fi
+  if [ "${#names[@]}" -eq 0 ]; then
+    echo "scripts/orch/autopilot.sh: no AUTOPILOT_SETTING_NAMES read"
+    return 0
+  fi
+  for name in "${names[@]}"; do
+    var="ORCH_$(tr 'a-z-' 'A-Z_' <<<"$name")"
+    grep -q "^#* *$var=" "$r/docker/.env.example" ||
+      echo "docker/.env.example: does not name $var"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docker"
+mapfile -t autopilot_names < <(source "$PLUGIN_ROOT/scripts/orch/autopilot.sh" && printf '%s\n' "${AUTOPILOT_SETTING_NAMES[@]}")
+: >"$fixture/docker/.env.example"
+for name in "${autopilot_names[@]}"; do
+  printf '# ORCH_%s=\n' "$(tr 'a-z-' 'A-Z_' <<<"$name")" >>"$fixture/docker/.env.example"
+done
+assert_empty "a complete env example is not flagged for a missing setting" "$(scan_autopilot_env "$fixture")"
+sed -i '/ORCH_GITHUB_RESERVE=/d' "$fixture/docker/.env.example"
+assert_eq "an env example missing one setting is flagged, naming its variable" \
+  "$(scan_autopilot_env "$fixture")" "docker/.env.example: does not name ORCH_GITHUB_RESERVE"
+flags "a plugin root with no autopilot module is flagged naming the module" \
+  "$( (PLUGIN_ROOT="$(new_fixture)"; scan_autopilot_env "$fixture") )" "scripts/orch/autopilot.sh: no AUTOPILOT_SETTING_NAMES read"
+emptylist="$(new_fixture)"
+mkdir -p "$emptylist/scripts/orch"
+printf 'AUTOPILOT_SETTING_NAMES=()\n' >"$emptylist/scripts/orch/autopilot.sh"
+flags "an autopilot module with an empty list is flagged naming the module" \
+  "$( (PLUGIN_ROOT="$emptylist"; scan_autopilot_env "$fixture") )" "scripts/orch/autopilot.sh: no AUTOPILOT_SETTING_NAMES read"
+check "docker/.env.example names the variable of every autopilot setting" \
+  "$(scan_autopilot_env "$PLUGIN_ROOT")"
 
 # The clone is always on the repo volume: the autopilot service pins
 # ORCH_CLONE_DIR in its environment to the volume's mount target, and the
