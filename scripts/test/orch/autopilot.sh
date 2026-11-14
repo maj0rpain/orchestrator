@@ -2948,19 +2948,16 @@ assert_not_contains "without the remedy (no issue)" "$out" "$repo_missing"
 state_fixture phase spec
 gh_fixture
 nr_ans="$(mktemp)"; printf 'old answer\n' >"$nr_ans"
-nr_err="$(mktemp)"
-out="$(orch_no_repo autopilot answer spec "$nr_ans" 2>"$nr_err")"; st=$?
-assert_status "no repo exits 2" "$st" 2
-assert_eq "printing nothing" "$out" ""
-assert_eq "stderr is the remedy alone" "$(cat "$nr_err")" "orch: $repo_remedy"
-assert_eq "no gh call" "$(gh_calls)" "0"
+assert_no_repo_exit2 "autopilot answer" autopilot answer spec "$nr_ans"
 assert_eq "the file is untouched" "$(cat "$nr_ans")" "old answer"
 out="$(orch_no_repo autopilot answer bogus "$nr_ans" 2>&1)"; st=$?
 assert_status "a bad phase is refused first" "$st" 2
+assert_contains "naming the bad phase" "$out" "not a flow phase: bogus"
 assert_not_contains "without the remedy" "$out" "$repo_missing"
 rm -f .orchestrator/state.json
 out="$(orch_no_repo autopilot answer spec "$nr_ans" 2>&1)"; st=$?
 assert_status "no flow state is refused first" "$st" 2
+assert_contains "naming the missing state" "$out" "no active flow (.orchestrator/state.json not found)"
 assert_not_contains "without the remedy (no state)" "$out" "$repo_missing"
-rm -f "$nr_ans" "$nr_err"
+rm -f "$nr_ans"
 restore_suite_env

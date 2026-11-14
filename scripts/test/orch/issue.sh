@@ -1286,17 +1286,11 @@ echo
 echo "issue ready: no repo"
 healthy_repo
 fake_github
-nr_err="$(mktemp)"
-out="$(orch_no_repo issue ready 70 2>"$nr_err")"; st=$?
-assert_status "no repo exits 2" "$st" 2
-assert_eq "printing nothing" "$out" ""
-assert_eq "stderr is the remedy alone" "$(cat "$nr_err")" "orch: $repo_remedy"
-assert_eq "no gh call" "$(gh_calls)" "0"
+assert_no_repo_exit2 "issue ready" issue ready 70
 out="$(orch_no_repo issue ready abc 2>&1)"; st=$?
 assert_status "a bad issue number is refused first" "$st" 2
 assert_contains "with its usage line" "$out" "issue must be a plain issue number"
 out="$(orch_no_repo issue ready 2>&1)"; st=$?
 assert_status "a usage error is refused first" "$st" 2
 assert_contains "with its usage line" "$out" "usage: orch.sh issue ready <n>"
-rm -f "$nr_err"
 restore_suite_env

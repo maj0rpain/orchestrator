@@ -1634,12 +1634,8 @@ printf 'seeded\n' >"$nr_file"
 nr_body="$(mktemp)"; printf 'a body\n' >"$nr_body"
 for nr_args in "comment $nr_body" "comments $nr_file" draft ready; do
   # shellcheck disable=SC2086
-  out="$(orch_no_repo pr $nr_args 2>"$nr_err")"; st=$?
-  assert_status "pr ${nr_args%% *} with no repo exits 2" "$st" 2
-  assert_eq "pr ${nr_args%% *} prints nothing" "$out" ""
-  assert_eq "pr ${nr_args%% *} stderr is the remedy alone" "$(cat "$nr_err")" "orch: $repo_remedy"
+  assert_no_repo_exit2 "pr ${nr_args%% *}" pr $nr_args
 done
-assert_eq "no gh call" "$(gh_calls)" "0"
 assert_eq "pr comments left its file untouched" "$(cat "$nr_file")" "seeded"
 for nr_args in "fetch $nr_file" "update $nr_body"; do
   # shellcheck disable=SC2086
@@ -1653,6 +1649,7 @@ out="$(orch_no_repo pr comment 2>&1)"; st=$?
 assert_status "pr comment usage error" "$st" 2
 assert_contains "names its usage" "$out" "usage: orch.sh pr comment <file>"
 out="$(orch_no_repo pr comments 2>&1)"; st=$?
+assert_status "pr comments usage error" "$st" 2
 assert_contains "pr comments usage error names its usage" "$out" "usage: orch.sh pr comments <file>"
 out="$(orch_no_repo pr comment /nonexistent/body 2>&1)"; st=$?
 assert_status "pr comment with a missing body file" "$st" 2
@@ -1662,6 +1659,7 @@ for nr_args in "comment $nr_body" "comments $nr_file" draft ready; do
   # shellcheck disable=SC2086
   out="$(orch_no_repo pr $nr_args 2>&1)"; st=$?
   assert_status "pr ${nr_args%% *} on a detached HEAD exits 2" "$st" 2
+  assert_contains "pr ${nr_args%% *} on a detached HEAD names it" "$out" "not on a branch (detached HEAD)"
   assert_not_contains "pr ${nr_args%% *} on a detached HEAD is not the remedy" "$out" "$repo_missing"
 done
 git checkout -q quick/12-foo

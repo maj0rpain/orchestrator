@@ -250,12 +250,7 @@ restore_suite_env
 echo
 echo "breakdown state: no repo"
 breakdown_fixture
-nr_err="$(mktemp)"
-out="$(orch_no_repo breakdown state 50 2>"$nr_err")"; st=$?
-assert_status "no draft and no repo exits 2" "$st" 2
-assert_eq "printing nothing" "$out" ""
-assert_eq "stderr is the remedy alone" "$(cat "$nr_err")" "orch: $repo_remedy"
-assert_eq "no gh call" "$(gh_calls)" "0"
+assert_no_repo_exit2 "breakdown state with no draft" breakdown state 50
 out="$(orch_no_repo breakdown state 2>&1)"; st=$?
 assert_status "a usage error is refused first" "$st" 2
 assert_contains "with its usage line" "$out" "usage: orch.sh breakdown state <parent>"
@@ -267,5 +262,4 @@ assert_eq "partial" "$out" "partial"
 out="$(orch_no_repo breakdown state 50 2>&1)"; st=$?
 assert_status "a published breakdown answers with no repo" "$st" 0
 assert_eq "complete" "$out" "complete"
-rm -f "$nr_err"
 restore_suite_env
