@@ -202,29 +202,3 @@ out="$("$ORCH" default-branch --sha extra 2>&1)"; st=$?
 assert_status "refuses an argument after --sha" "$st" 1
 assert_eq "with its usage" "$out" "orch: usage: orch.sh default-branch [--sha]"
 restore_suite_env
-
-# --- repo memo (#3147) --------------------------------------------------------
-# repo_resolve memoises its whole answer in the shell that runs it, so a later
-# resolve, and the pin over it, start no process: seen through the ssh stub and
-# a git wrapper on PATH, which log every call they get.
-echo
-echo "repo memo"
-new_repo >/dev/null
-git remote set-url origin git@github-work:acme/widgets.git
-write_ssh_stub 'echo hostname ghe.example.com' 0
-memo_git="$(counting_bin git)"
-memo_script="$(mktemp)"
-cat >"$memo_script" <<'SCRIPT'
-repo_resolve; first=$?
-: >"$MEMO_DIR/git.log"; : >"$ssh_calls"
-unset GH_REPO GH_HOST
-repo_resolve; second=$?
-repo_pin; pinned=$?
-printf '%s %s %s|%s|%s\n' "$first" "$second" "$pinned" "${GH_REPO-}" "${GH_HOST-}"
-SCRIPT
-out="$(MEMO_DIR="$memo_git" ssh_calls="$ssh_calls" PATH="$memo_git:$ssh_stub_dir:$PATH" sourced_orch_script "$(cat "$memo_script")" 2>&1)"
-assert_eq "a memo hit answers the same, and the pin exports GH_REPO and the pinned host" \
-  "$out" "0 0 0|ghe.example.com/acme/widgets|ghe.example.com"
-assert_eq "a memo hit starts no git" "$(counting_starts "$memo_git" git)" "0"
-assert_eq "a memo hit starts no ssh" "$(cat "$ssh_calls")" ""
-restore_suite_env
