@@ -466,8 +466,8 @@ open_pr_draft_flag() {
   printf '%s\n%s\n' "$pr" "$is_draft"
 }
 
-# The current branch's open PR number, for pr comment, pr comments, pr fetch
-# and pr update.
+# The current branch's open PR number, for the pr commands that act on the
+# branch's open PR, and review-pass known-items.
 # Returns 1, printing nothing, when the branch has no open PR; every other
 # failure - a detached HEAD, no repo (resolved here, after the detached-HEAD
 # check, since the gh guard's death exits 1), a GitHub that cannot be read -

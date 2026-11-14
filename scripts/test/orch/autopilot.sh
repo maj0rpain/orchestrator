@@ -2959,8 +2959,6 @@ assert_status "no recorded issue is refused first" "$st" 2
 assert_contains "naming the missing issue" "$out" "no issue recorded in state"
 assert_not_contains "without the remedy (no issue)" "$out" "$repo_missing"
 "$ORCH" state set issue 7 >/dev/null
-state_fixture phase spec
-gh_fixture
 nr_ans="$(mktemp)"; printf 'old answer\n' >"$nr_ans"
 assert_no_repo_exit2 "autopilot answer" autopilot answer spec "$nr_ans"
 assert_eq "the file is untouched" "$(cat "$nr_ans")" "old answer"
