@@ -1195,7 +1195,8 @@ adapter_job_failed_log() {
 #
 # A claim is a ref on origin, refs/orch/claims/<issue>: the one origin write
 # autopilot adds. These run git against origin, not gh, but are adapter
-# operations all the same, so the suite fakes them with the rest.
+# operations all the same, so the suite fakes them with the rest (create, delete
+# and list; adapter_claim_ref is a pure name builder the fake shares).
 
 # adapter_claim_ref <issue>: prints the claim's ref, refs/orch/claims/<issue>.
 adapter_claim_ref() { printf 'refs/orch/claims/%s\n' "$1"; }

@@ -954,7 +954,8 @@ fake_claim_seed 13 "$(hostname)" "$(dead_pid)"
 fake_fail adapter_claim_delete "HTTP 500"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "stale-claim cleanup with a failed claim delete does not fail the tick" "$st" 0
-assert_contains "the failure line names the claim ref" "$out" "delete the claim ref"
+assert_contains "the stop's own failure line names the claim ref" "$out" "could not delete the claim ref on issue #13"
+assert_contains "and the warning follows it" "${out#*could not delete the claim ref on issue #13}" "could not stop issue #13 - its claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 13)" held
 fake_unfail
 fake_claim_seed 13 otherhost
@@ -2682,7 +2683,7 @@ fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
 fake_issue 6 open ready-for-agent orch:spec orch:running
 fake_claim_seed 6 "$(hostname)" "$(dead_pid)"
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Contained pickup 7"
-rm -rf "$ORCH_GH_FAKE_STORE/issues/5"
+fake_issue_drop 5
 printf '7\n' >"$launcher_dir/release"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a stale claim whose stop cannot land does not fail the tick" "$st" 0
@@ -2701,16 +2702,19 @@ assert_contains "and warns about the same claim again" "$out" "could not stop is
 tick_fixture
 top="$(git rev-parse --show-toplevel)"
 fake_issue 10 open ready-for-agent orch:spec orch:running
-fake_claim_seed 10 "$(hostname)" "$(dead_pid)"
-mkdir -p "$top/.orchestrator/autopilot/logs"
+gone="$(dead_pid)"
+fake_claim_seed 10 "$(hostname)" "$gone"
+mkdir -p "$top/.orchestrator/autopilot/logs" "$top/.orchestrator/autopilot/run"
+printf '%s\n' "$gone" >"$top/.orchestrator/autopilot/run/10.pid"
 : >"$top/.orchestrator/autopilot/logs/10-spec-20250101T000000.log"
 fake_fail_times adapter_issue_relabel 1 "HTTP 500 relabel"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a failed stop leaves the claim held" "$(fake_claim_held 10)" held
+assert_eq "and its run record" "$(on_disk "$top/.orchestrator/autopilot/run/10.pid")" present
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "the next tick stops it" "$(fake_claim_held 10)" free
 assert_contains "its comment names the session log of the first tick" "$(fake_comments_of 10)" "logs/10-spec-20250101T000000.log"
-assert_contains "and the gone process" "$(fake_comments_of 10)" "is gone"
+assert_contains "and the gone process of the first tick's record" "$(fake_comments_of 10)" "pid $gone) is gone"
 
 # a stale claim whose stop meets a GitHub limit ends the tick with exit 0
 tick_fixture
@@ -2762,6 +2766,7 @@ printf '8\n' >"$launcher_dir/release"
 fake_fail_times adapter_issue_relabel 1 "HTTP 500 relabel"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a refusal whose stop cannot land exits 0" "$st" 0
+assert_contains "the stop's failure line precedes the warning" "${out%%could not stop issue #7*}" "orch: could not "
 assert_contains "the warning carries the kind and the reason" "$out" "could not stop issue #7 - its claim stays held; refusal: the issue is labelled orch:review"
 assert_eq "the claim stays held" "$(fake_claim_held 7)" held
 assert_contains "the next ranked issue is picked up" "$(picked)" "contained-refusal-8"
@@ -2787,7 +2792,7 @@ top="$(git rev-parse --show-toplevel)"
 git config orchestrator.autopilot.cap 1
 fake_issue 5 open orch:spec orch:running
 fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
-rm -rf "$ORCH_GH_FAKE_STORE/issues/5"
+fake_issue_drop 5
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Cap stale 7"
 "$ORCH" autopilot tick >/dev/null 2>&1
 "$ORCH" autopilot tick >/dev/null 2>&1
