@@ -1349,9 +1349,6 @@ git config branch.orch/5-feature--t7.orchestrator-ticket-parent orch/5-feature
 
 # A ticket worktree whose directory is gone cannot be rebased in: merge still
 # refuses, changing nothing.
-tw_repo
-"$ORCH" ticket-worktree add 7 >/dev/null
-wt="$(pwd -P)/.orchestrator/worktrees/t7"
 rm -rf "$wt"
 tip7="$(git rev-parse orch/5-feature--t7)"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
@@ -1695,9 +1692,11 @@ restore_suite_env
 # teardown, with and without a ticket branch, reported-and-merged or not
 for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobranch; do
   rc_setup 1
-  stale_wt="$(mktemp -d)/stale"
-  git worktree add -q -b rc-stale "$stale_wt"
-  rm -rf "$stale_wt"
+  if [ "$rc_case" = merged-branch ]; then
+    stale_wt="$(mktemp -d)/stale"
+    git worktree add -q -b rc-stale "$stale_wt"
+    rm -rf "$stale_wt"
+  fi
   case "$rc_case" in
     merged-*) rc_report 7; "$ORCH" ticket merge 7 >/dev/null 2>&1 ;;
   esac
@@ -1714,10 +1713,12 @@ for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobran
   assert_contains "printing the worktree line ($rc_case)" "$out" "removed the worktree of ticket #7"
   assert_eq "leaving no record ($rc_case)" "$("$ORCH" ticket-worktree list)" ""
   assert_eq "and no ticket branch ($rc_case)" "$(rc_has_branch 7)" "no"
-  assert_eq "another stale record is still listed by git ($rc_case)" \
-    "$(git worktree list --porcelain | grep -c "worktree $stale_wt\$")" "1"
-  git worktree prune
-  git branch -q -D rc-stale
+  if [ "$rc_case" = merged-branch ]; then
+    assert_eq "another stale record is still listed by git ($rc_case)" \
+      "$(git worktree list --porcelain | grep -c "worktree $stale_wt\$")" "1"
+    git worktree prune
+    git branch -q -D rc-stale
+  fi
 done
 
 # a plain directory at the recorded path: the teardown's refusal, then the

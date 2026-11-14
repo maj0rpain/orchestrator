@@ -76,9 +76,11 @@ ticket_worktree_state() {
 }
 
 # ticket_worktree_require <n>: dies unless <n> is a ticket number whose
-# worktree exists - the one "no ticket worktree" check. It assigns to the
-# caller's `n` (normalised) and `path`, which bash scopes dynamically, and is
-# called as a bare statement so `die` stops the caller.
+# worktree directory exists - the check for commands that need the directory
+# (merge, close, resolve); ticket_worktree_state is the definition remove, the
+# teardown and reclaim read. It assigns to the caller's `n` (normalised) and
+# `path`, which bash scopes dynamically, and is called as a bare statement so
+# `die` stops the caller.
 ticket_worktree_require() {
   n="$(ticket_worktree_number "$1")"
   path="$(ticket_worktree_path "$n")"
@@ -190,10 +192,9 @@ ticket_worktree_teardown() {
   state="$(ticket_worktree_state "$path")" || exit $?
   [ "$state" != occupied ] \
     || die "ticket worktree path $path holds something that is not a worktree, though git's record names it - delete it and run the command again"
+  [ "$state" = none ] || have_wt=1
   # A record with its directory gone has nothing to discard, abort or check.
-  [ "$state" != gone ] || have_wt=1
   if [ "$state" = worktree ]; then
-    have_wt=1
     [ "$discard" = 0 ] || discard_work_in "$path" "ticket #$n"
     if [ "$unmerged" = 1 ] && rebase_in_progress "$path"; then
       git -C "$path" rebase --abort \
