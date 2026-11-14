@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.76
+
+Commands that reserve exit 1 for a meaningful "no" now exit 2 on a failed temp file (`glossary show`) and on a missing Repo (`issue ready`, `pr comment`, `pr comments`, `pr draft`, `pr ready`, `ticket exists`, `breakdown state`, `autopilot answer`), with the Repo remedy as the only message.
+
 ## 5.2.75
 
 The Bash hook no longer denies a stdin reader that sits inside a compound command fed as a whole, such as `{ read -r a; read -r b; } < file` or a loop closed by `done < file`.
