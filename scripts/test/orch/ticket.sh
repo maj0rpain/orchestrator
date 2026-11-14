@@ -1741,3 +1741,18 @@ assert_contains "and the could-not-remove line" "$out" "ticket #7: could not rem
 assert_eq "the directory stays" "$(on_disk "$(rc_wt 7)")" "present"
 assert_eq "the record stays" "$("$ORCH" ticket-worktree list)" "7 $(rc_wt 7)"
 assert_eq "and the branch" "$(rc_has_branch 7)" "yes"
+
+# --- ticket exists: no repo (#3050) ------------------------------------------
+# Exit 1 is "no breakdown", so a repo that cannot be found exits 2 with the
+# remedy alone; a caller never publishes a second breakdown over one unseen.
+echo
+echo "ticket exists: no repo"
+ticket_fixture
+assert_no_repo_exit2 "ticket exists" ticket exists 50
+out="$(orch_no_repo ticket exists 2>&1)"; st=$?
+assert_status "a usage error is refused first" "$st" 2
+assert_contains "with its usage line" "$out" "usage: orch.sh ticket exists"
+out="$(orch_no_repo ticket exists abc 2>&1)"; st=$?
+assert_status "a parent that is no number is refused first" "$st" 2
+assert_contains "with its message" "$out" "parent must be a plain issue number, got: abc"
+restore_suite_env
