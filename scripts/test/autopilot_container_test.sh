@@ -246,7 +246,7 @@ assert_eq "ORCH_AUTO_SYNC=false reaches auto-sync" "$(cfg orchestrator.autopilot
 assert_eq "ORCH_GITHUB_RESERVE=0 reaches github-reserve" "$(cfg orchestrator.autopilot.github-reserve)" 0
 assert_contains "the names came from autopilot settings" "$(<"$orch_log")" "args=autopilot settings"
 
-# A refused autopilot settings keeps the permission mode and never starts the watcher.
+# Settings the old hand-written list lacked reach their keys, by name.
 FAKE_ORCH_FAIL="autopilot settings" run_entry ORCH_PERMISSION_MODE=plan
 assert_eq "a refused autopilot settings exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
 assert_contains "a refused autopilot settings shows its orch line" "$err" "orch: refused autopilot settings"
@@ -254,7 +254,7 @@ assert_contains "a refused autopilot settings names its step" "$err" "orch: auto
 assert_eq "a refused autopilot settings keeps the permission mode" "$(cfg orchestrator.autopilot.permission-mode)" plan
 assert_eq "a refused autopilot settings never runs the watcher" "$(grep -c 'args=autopilot watch' "$orch_log")" 0
 
-# A write failing inside the loop: global config unwritable once the mode is written.
+# A refused autopilot settings keeps the mode and never starts the watcher.
 FAKE_LOCK_GLOBAL=1 run_entry ORCH_CAP=2
 assert_eq "a failed setting write exits non-zero" "$([ "$st" -ne 0 ] && echo yes)" yes
 assert_contains "a failed setting write shows its orch line" "$err" "orch: autopilot settings: cannot write orchestrator.autopilot.cap"
