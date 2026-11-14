@@ -30,6 +30,16 @@ SUITE_CWD="$(mktemp -d)" && cd "$SUITE_CWD" || {
 SUITE_HOME="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create a temp HOME" >&2; exit 1; }
 export HOME="$SUITE_HOME"
+# The suite HOME starts with the stub cache of the tree under test: a copy of
+# the runner's seed (orch_test.sh), a file of its own, mode 600. No seed, or a
+# copy that fails, leaves HOME without it.
+# shellcheck disable=SC2154 # orch_seed_dir is set by orch_test.sh, the runner
+if [ -n "${orch_seed_dir:-}" ]; then
+  mkdir -p "$HOME/.cache/orchestrator" 2>/dev/null &&
+    cp "$orch_seed_dir"/* "$HOME/.cache/orchestrator/" 2>/dev/null &&
+    chmod 600 "$HOME/.cache/orchestrator"/* 2>/dev/null ||
+    rm -rf "$HOME/.cache"
+fi
 # GH_REPO and GH_HOST go too: they are the gh variables orch.sh reads to resolve
 # the Repo and its GitHub host, so a caller's value would change what orch.sh
 # resolves in every section.

@@ -279,6 +279,13 @@ instead - their fixtures, fakes and assertions. A
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
 section checks it against what bash itself defines.
 
+A section's `HOME` starts with the stub cache of the tree under test: the runner
+builds it once per run, the seed, and `setup.sh` copies it into each fresh
+`HOME` (mode 600, a file of its own). The cache tests and any test that runs
+`orch.sh` from a copied or planted tree still rebuild, as the file is named from
+its tree. A seed that cannot be built or copied leaves the run unseeded,
+silently.
+
 `sourced_orch` sets `ORCH_SOURCE_LAZY=1`, so it loads orch.sh's modules on
 demand, as the command does and so a test's shell starts cheaply, except in its
 `eval` form (`sourced_orch eval <code>`); `sourced_orch_script` loads every

@@ -158,6 +158,20 @@ rm -f "$trace"
 # --- stub table cache ---------------------------------------------------------
 echo
 echo "stub table cache"
+# The section's own HOME starts with the stub cache of the tree under test,
+# seeded by the runner; other trees' files under it are not counted.
+seed_dir="$(cd "$PLUGIN_ROOT/scripts/orch" && pwd -P)"
+seed_name="${seed_dir//%/%25}"
+seed_file="$HOME/.cache/orchestrator/${seed_name//\//%2F}.stubs"
+assert_eq "a section's HOME starts with the stub cache" "$([ -f "$seed_file" ] && echo yes || echo no)" "yes"
+assert_eq "which is a regular file, not a link" "$([ -L "$seed_file" ] && echo link || echo file)" "file"
+assert_eq "of mode 600" "$(stat -c %a "$seed_file" 2>/dev/null || stat -f %Lp "$seed_file")" "600"
+echo "# seeded marker" >>"$seed_file"
+touch -d '+1 minute' "$seed_file"
+"$ORCH" help >/dev/null 2>&1
+assert_contains "and a run reuses it" "$(cat "$seed_file")" "# seeded marker"
+sed -i.bak '/^# seeded marker$/d' "$seed_file"; rm -f "$seed_file.bak"
+
 new_repo >/dev/null
 cache_root="$(mktemp -d)"
 cache_scripts="$(tree_copy scripts)"
