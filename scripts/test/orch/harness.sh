@@ -18,39 +18,6 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
-# term_run <stdout file> <stderr file> <pid file>... -- <command>...: starts
-# <command> in the background, its output to the two files (one shared open
-# file, stderr merged into stdout, when both are the same path), polls (up to 20
-# seconds) until every pid file has content, sends TERM to it, and waits. The
-# command's own pid is the one TERMed, so a caller wanting a directory or an
-# unset variable passes `env -u` or `bash -c 'cd ...; exec ...'` as the
-# command. Sets term_st (its exit status) and term_secs (the seconds it took
-# to return after the TERM).
-term_run() {
-  local out="$1" err="$2" pid pid_file tries=0 t0 ready
-  local -a pid_files=()
-  shift 2
-  while [ "$1" != -- ]; do pid_files+=("$1"); shift; done
-  shift
-  if [ "$out" = "$err" ]; then
-    "$@" >"$out" 2>&1 &
-  else
-    "$@" >"$out" 2>"$err" &
-  fi
-  pid=$!
-  while [ "$tries" -le 200 ]; do
-    ready=1
-    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || ready=0; done
-    [ "$ready" = 1 ] && break
-    tries=$((tries + 1))
-    sleep 0.1
-  done
-  t0=$SECONDS
-  kill -TERM "$pid"
-  wait "$pid"; term_st=$?
-  term_secs=$((SECONDS - t0))
-}
-
 # slot_hold <pool> <slot>: creates <pool> and holds <slot>'s lock in a
 # background process, its pid in SLOT_HOLDER. The holder opens the fifo's write
 # end on fd 8, then opens and locks the slot file on fd 9, and writes the ready
@@ -1308,10 +1275,12 @@ sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/a
 dur_stub_passing stub_a.sh
 dur_stub_passing stub_b.sh
 dur_file="$dur_test/section-durations.tsv"
+dur_cmd=(env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2)
+dur_dev_script="$dur_dir/scripts/dev/section-durations.sh"
 # dur_script [<env assignment>...]: the dev script with a stub shellcheck on
 # PATH, stdout and stderr together.
 dur_script() {
-  env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" bash "$dur_dir/scripts/dev/section-durations.sh" 2>&1
+  "${dur_cmd[@]}" "$@" bash "$dur_dev_script" 2>&1
 }
 printf 'old\n' >"$dur_file"
 out="$(dur_script ORCH_TEST_ONLY='^dur a$' ORCH_TEST_SHARD=2/2)"; st=$?
@@ -1386,16 +1355,13 @@ cp "$dur_file" "$dur_dir/good.tsv"
 
 # dur_term <pid file> [<env assignment>...]: starts the script as in dur_script,
 # through term_run, which TERMs it once the pid file has content, and
-# sets dur_term_st and dur_term_secs (the seconds the script took to return).
+# sets term_st and term_secs (the seconds the script took to return).
 dur_term() {
   local pid_file="$1"
   shift
   : >"$pid_file"
   term_run "$dur_dir/term.out" "$dur_dir/term.out" "$pid_file" -- \
-    env PATH="$dur_tool:$PATH" ORCH_TEST_JOBS=2 "$@" \
-    bash "$dur_dir/scripts/dev/section-durations.sh"
-  dur_term_st=$term_st
-  dur_term_secs=$term_secs
+    "${dur_cmd[@]}" "$@" bash "$dur_dev_script"
 }
 dur_slow_pid="$dur_dir/slow.pid"
 printf '%s\n' '  # --- dur slow' \
@@ -1403,8 +1369,8 @@ printf '%s\n' '  # --- dur slow' \
   plant_file "$dur_orch" zzz-slow.sh
 dur_term "$dur_slow_pid" DUR_PID="$dur_slow_pid"
 rm -f "$dur_orch/zzz-slow.sh"
-assert_status "TERM during the orch_test.sh run makes the script exit 130" "$dur_term_st" 130
-assert_eq "within 10 seconds, though the section sleeps 30" "$((dur_term_secs < 10))" "1"
+assert_status "TERM during the orch_test.sh run makes the script exit 130" "$term_st" 130
+assert_eq "within 10 seconds, though the section sleeps 30" "$((term_secs < 10))" "1"
 assert_eq "the section's process is gone" \
   "$(kill -0 "$(cat "$dur_slow_pid")" 2>/dev/null && echo alive || echo gone)" "gone"
 assert_eq "and the durations file is unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
@@ -1417,8 +1383,8 @@ printf '%s\n' '#!/usr/bin/env bash' \
   "trap 'kill \$sp; sleep 0.3; [ -d \"\$TMPDIR\" ] && echo yes >\"$dur_stub_tmp\"; exit 0' TERM" \
   "echo \$\$ >'$dur_stub_pid'" 'sleep 30 & sp=$!; wait' >"$dur_test/stub_a.sh"
 dur_term "$dur_stub_pid"
-assert_status "TERM during a slow stub suite makes the script exit 130" "$dur_term_st" 130
-assert_eq "within 10 seconds, though the stub sleeps 30" "$((dur_term_secs < 10))" "1"
+assert_status "TERM during a slow stub suite makes the script exit 130" "$term_st" 130
+assert_eq "within 10 seconds, though the stub sleeps 30" "$((term_secs < 10))" "1"
 assert_eq "the stub is gone" \
   "$(kill -0 "$(cat "$dur_stub_pid")" 2>/dev/null && echo alive || echo gone)" "gone"
 assert_eq "the script's temp directory still existed when the stub stopped" "$(<"$dur_stub_tmp")" "yes"
