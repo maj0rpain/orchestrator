@@ -1260,11 +1260,30 @@ assert_clean_interrupt() {
   assert_eq "$1: leaves no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
 }
 
+# A shell that started with SIGINT ignored, as a parallel runner's child does,
+# hands that on to orch.sh, which then cannot trap INT. perl restores its
+# default for the INT cases; without perl they are skipped.
+int_launch=()
+int_skip=0
+if [ "$(trap -p INT)" = "trap -- '' SIGINT" ]; then
+  if command -v perl >/dev/null 2>&1; then
+    int_launch=(perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die "exec: $!"')
+  else
+    int_skip=1
+  fi
+fi
+
 for sig in INT TERM HUP; do
+  if [ "$sig" = INT ] && [ "$int_skip" -eq 1 ]; then
+    skip "a run sent INT cleans up" "this shell started with SIGINT ignored, and perl is not installed to restore it"
+    continue
+  fi
+  launch=()
+  [ "$sig" != INT ] || launch=(${int_launch[@]+"${int_launch[@]}"})
   new_repo >/dev/null
   rec_path
   tdir="$(mktemp -d)"; errf="$(mktemp)"
-  out="$(TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c "kill -$sig \$PPID" 2>"$errf")"; st=$?
+  out="$(TMPDIR="$tdir" ${launch[@]+"${launch[@]}"} "$ORCH" suite-cost run -- sh -c "kill -$sig \$PPID" 2>"$errf")"; st=$?
   assert_clean_interrupt "run $sig" "$errf" "$st" "$sig" "$tdir"
   assert_eq "run $sig: records nothing" "$(on_disk "$rec")" absent
   TMPDIR="$tdir" "$ORCH" suite-cost run -- true >/dev/null 2>"$errf"
@@ -1274,7 +1293,7 @@ for sig in INT TERM HUP; do
   check_repo
   seed_run "$head" 70.00 "sh -c kill -$sig \$PPID"
   tdir="$(mktemp -d)"; errf="$(mktemp)"
-  out="$(TMPDIR="$tdir" "$ORCH" suite-cost check -- sh -c "kill -$sig \$PPID" 2>"$errf")"; st=$?
+  out="$(TMPDIR="$tdir" ${launch[@]+"${launch[@]}"} "$ORCH" suite-cost check -- sh -c "kill -$sig \$PPID" 2>"$errf")"; st=$?
   assert_clean_interrupt "base run $sig" "$errf" "$st" "$sig" "$tdir"
   assert_eq "base run $sig: prints no verdict line" "$out" ""
   assert_eq "base run $sig: stores no verdict" "$(on_disk "$rec.verdicts")" absent
