@@ -53,8 +53,64 @@ _hook_bash_heredoc_word() {
   return 0
 }
 
-# Calls hook_bash_walk's test with the part, its unquoted text and part_head
-# (the walker's captured head when one was set, else the whole part),
+# Handles the finished word $w of _hook_bash_compound_scan (dynamic scope: w,
+# cmdpos, fn, compounds). A reserved word counts only in command position
+# (cmdpos 1), and the `{` after `function name` counts too; it opens or closes
+# a compound on `compounds`, one letter per open compound: `{`, `(`, `i` (if),
+# `l` (loop), `c` (case).
+_hook_bash_compound_word() {
+  [ -n "$w" ] || return 0
+  local pos="$cmdpos" word="$w"
+  w=""; cmdpos=0
+  if [ "$fn" = 1 ]; then fn=2; return 0; fi
+  if [ "$fn" = 2 ]; then
+    fn=0
+    if [ "$word" = '{' ]; then compounds+='{'; cmdpos=1; return 0; fi
+  fi
+  [ "$pos" = 1 ] || return 0
+  case "$word" in
+    '{') compounds+='{'; cmdpos=1 ;;
+    if) compounds+=i; cmdpos=1 ;;
+    while|until|for|select) compounds+=l; cmdpos=1 ;;
+    case) compounds+=c; cmdpos=1 ;;
+    '}') [[ "$compounds" == *'{' ]] && compounds="${compounds%?}"; cmdpos=1 ;;
+    fi) [[ "$compounds" == *i ]] && compounds="${compounds%?}"; cmdpos=1 ;;
+    done) [[ "$compounds" == *l ]] && compounds="${compounds%?}"; cmdpos=1 ;;
+    'esac') [[ "$compounds" == *c ]] && compounds="${compounds%?}"; cmdpos=1 ;;
+    do|then|elif|else|'!'|time) cmdpos=1 ;;
+    function) fn=1 ;;
+  esac
+  return 0
+}
+
+# Updates the open compounds `compounds` (dynamic scope, from hook_bash_walk)
+# with the unquoted text $1 of one part. A part starts in command position; so
+# does the word after `|`, `&`, `(`, `)` or a reserved word. An unquoted `(` or
+# `)` counts wherever it stands. No external command.
+_hook_bash_compound_scan() {
+  local t="$1" k=0 ch w="" cmdpos=1 fn=0 cs_rest
+  while [ "$k" -lt "${#t}" ]; do
+    cs_rest="${t:k}"
+    if [[ "$cs_rest" =~ ^[^\\[:space:]\;\&\|\<\>\(\)]+ ]]; then
+      w+="${BASH_REMATCH[0]}"; k=$((k + ${#BASH_REMATCH[0]})); continue
+    fi
+    ch="${cs_rest::1}"
+    case "$ch" in
+      '\') w+="${cs_rest::2}"; k=$((k + 2)); continue ;;
+      '(') _hook_bash_compound_word; compounds+='('; cmdpos=1; fn=0 ;;
+      ')') _hook_bash_compound_word; [[ "$compounds" == *'(' ]] && compounds="${compounds%?}"; cmdpos=1; fn=0 ;;
+      '&'|'|') _hook_bash_compound_word; cmdpos=1; fn=0 ;;
+      *) _hook_bash_compound_word ;;
+    esac
+    k=$((k + 1))
+  done
+  _hook_bash_compound_word
+}
+
+# Calls hook_bash_walk's test with the part, its unquoted text, part_head
+# (the walker's captured head when one was set, else the whole part) and
+# `inside` (1 when the part starts inside an open compound command, else 0),
+# the open compounds having been updated from the part just before the call;
 # then clears the part, its unquoted text and the head, and carries the part's
 # arithmetic count into the depth `arith`, stopped at 0. Reads
 # hook_bash_walk's locals (dynamic scope).
@@ -63,7 +119,10 @@ hook_bash_walk_call() {
   [ "$head_set" = 1 ] && part_head="$head"
   local rc=0
   head=""; head_set=0
-  "$test_fn" "$part" "$unq" "$part_head" || rc=$?
+  local inside=0
+  [ -z "$compounds" ] || inside=1
+  _hook_bash_compound_scan "$unq"
+  "$test_fn" "$part" "$unq" "$part_head" "$inside" || rc=$?
   arith=$(( arith + $(_hook_bash_arith_count "$unq") )); [ "$arith" -ge 0 ] || arith=0
   part=""; unq=""
   return "$rc"
@@ -76,7 +135,17 @@ hook_bash_walk_call() {
 # quoted span, quotes included, replaced by a space) and its head: the part's
 # text before its first unquoted single `|` (a `|&` counts as that `|`; the head
 # holds neither), or the whole part when it holds none, also across a
-# trailing-`|` line continuation. The first part whose test
+# trailing-`|` line continuation - and a fourth value, `inside`: 1 when the part
+# starts inside an open compound command (a group, subshell, loop, `if`, `case`
+# or function body, #3049), else 0. The walker carries the open compounds
+# across its part splits: they open at `{`, `(`, `if`, `while`, `until`, `for`,
+# `select` and `case` and close at `}`, `)`, `fi`, `done` and `esac`, each
+# closing only the innermost compound and only as its own closer; a reserved
+# word counts only in command position, an unquoted `(` or `)` anywhere. A rare
+# input it mis-reads (a `)` inside a parameter expansion) errs either way. An
+# accepted false negative: a command substitution or array literal spread over
+# several lines keeps its inner lines inside an open `(`, so a reader on them is
+# not judged (`x=$(` newline `cat` newline `)`). The first part whose test
 # succeeds ends the walk, with the test's output; the walk always succeeds. A
 # command over 8 KB is not scanned (a false negative), to stay fast. A
 # heredoc delimiter follows bash's word rule (the whole shell word after `<<`
@@ -84,7 +153,7 @@ hook_bash_walk_call() {
 # carried across parts (each one's `((` minus `))`, stopped at 0 at a split)
 # plus the current part's count is above 0 - is a shift and opens no heredoc.
 hook_bash_walk() {
-  local cmd="$1" test_fn="$2" line part="" unq="" arith=0 head="" head_set=0 quote="" heredoc_end="" in_heredoc=0 heredoc_strip_tabs=0 continued=0 i c n rest re
+  local cmd="$1" test_fn="$2" line part="" unq="" arith=0 compounds="" head="" head_set=0 quote="" heredoc_end="" in_heredoc=0 heredoc_strip_tabs=0 continued=0 i c n rest re
   [ "${#cmd}" -le 8192 ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$in_heredoc" = 1 ]; then
