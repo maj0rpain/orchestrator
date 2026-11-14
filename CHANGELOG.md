@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.60
+
+The state set and redo test sections build the stateless failed-write stub once per section instead of once per case.
+
 ## 5.2.59
 
 CONTRIBUTING.md's Resolving orch.sh section now states exactly when the docs lint requires a Claude-Code-only skill's `ORCH=` line: when it uses `orch.sh`, or the `ORCH` variable written without braces.
