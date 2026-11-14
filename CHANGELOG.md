@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.77
+
+A tick no longer dies on one claim whose stop cannot land: stale cleanup and pickup run each stop contained, warn naming the issue, leave its claim held and go on, so one stale claim no longer blocks every pickup. The warning names the claim ref to delete by hand for an issue gone for good.
+
 ## 5.2.76
 
 Commands that reserve exit 1 for a meaningful "no" now exit 2 on a failed temp file (`glossary show`) and on a missing Repo (`issue ready`, `pr comment`, `pr comments`, `pr draft`, `pr ready`, `ticket exists`, `breakdown state`, `autopilot answer`), with the Repo remedy as the only message.
