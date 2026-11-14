@@ -34,10 +34,10 @@ pr_close_missed() {
 
 # pr_merged_closing_read <default-var> <prs-var> <skip> <issue>: the backstop's
 # one read - the default branch, the creation time of <issue>, the bounding
+# it, fork PRs dropped (trust_filter_prs) - written into the two caller-named
 # issue the caller may close, then the PRs merged into the default branch since
 # variables, the PRs as adapter_prs_merged_closing's lines. Returns 1 after a
 # warning ending in <skip>, the caller's words for what it gives up, when any
-# read fails.
 # <skip>, the caller's words for what it gives up, when any read fails.
 pr_merged_closing_read() {
   local _default _raw _prs _err _since
