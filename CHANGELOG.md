@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.70
+
+`orch.sh` now stops on a bash below 4.2 with one line naming the bash it found and the remedy, `brew install bash`, instead of a raw `declare` error.
+
 ## 5.2.69
 
 `ticket-worktree remove <n>` and `ticket reclaim` now clear a ticket worktree whose directory was deleted outside git: they remove git's record of it, then delete the ticket branch under the usual merged rule. Something that is not a worktree at the recorded path is refused, naming the path.
