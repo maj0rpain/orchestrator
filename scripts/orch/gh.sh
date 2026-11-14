@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # gh.sh - the gh adapter layer (ADR-0033): gh(), the guard every GitHub call
 # goes through, the failure contract its callers die by (gh_reason, gh_die,
-# gh_or_die, verify_twice), every adapter_* operation, the out-variable
-# readers over the multi-field ones, and the JQ constants they read.
+# gh_or_die, verify_twice, gh_capture, gh_capture_err), every adapter_*
+# operation, the out-variable readers over the multi-field ones, and the JQ
+# constants they read.
 # It stays whole, whoever calls each operation, and ends with the
 # ORCH_GH_ADAPTER hook, so a test adapter overrides the real operations.
 # Its tests: scripts/test/orch/gh.sh.
@@ -10,13 +11,14 @@
 
 # The guard every GitHub call in orch.sh and its modules goes through by name
 # (#520): `gh` itself, defined ahead of the ORCH_GH_ADAPTER seam so a test
-# adapter picks it up. On use it resolves the repo (memoised in the shell that
-# resolves, which its later subshells inherit) and exports it as GH_REPO - with
-# GH_HOST beside it,
-# by repo_gh_host's one rule, whenever the repo itself decides its host - so
-# every later call - `gh api`'s
-# {owner}/{repo} placeholders and host included - is pinned to it, never to
-# gh's own default repo, which in a fork is the upstream. With no repo it dies
+# adapter picks it up. On use it resolves the repo and exports it as GH_REPO -
+# with GH_HOST beside it, by repo_gh_host's one rule, whenever the repo itself
+# decides its host - so the call - `gh api`'s {owner}/{repo} placeholders and
+# host included - is pinned to it, never to gh's own default repo, which in a
+# fork is the upstream. That export, like the memo, lives in the shell the
+# guard runs in: a process whose calls start from its main shell resolves once,
+# but a subshell that resolves first (a whole command run under a capture)
+# resolves once for itself and cannot hand the memo back. With no repo it dies
 # naming GH_REPO; that death exits 1 whatever the command reserved, so a command
 # that reserves exit 1 for a "no" resolves the repo itself first (repo_pin, then
 # die2 with REPO_REMEDY). Inside a command substitution `die` would end only

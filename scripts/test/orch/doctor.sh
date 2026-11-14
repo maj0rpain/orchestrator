@@ -2402,16 +2402,9 @@ fake_online
 git config remote.origin.url git@ghe.example.com:acme/widgets.git
 assert_not_contains "a passing probe gives no hint" "$(alias_doctor)" "$hint"
 
-# --- doctor: the repo memo (#3147) --------------------------------------------
 # The resolver's answer, a failed one too, is memoised in the shell that runs
-# it: one doctor run (the no-repo case of the doctor section reads origin twice)
-# reads origin once in check_origin and once in the resolver,
-# and calls ssh once for an SSH-alias origin.
-echo
-echo "doctor: the repo memo (#3147)"
-healthy_repo
-doctor_github
-
+# it (#3147): one doctor run reads origin once in check_origin and once in the
+# resolver, and calls ssh once for an SSH-alias origin.
 write_ssh_stub 'echo hostname ghe.example.com' 0
 git config remote.origin.url git@github-work:acme/widgets.git
 fake_noauth
