@@ -1242,6 +1242,96 @@ assert_eq "an empty marker does not block the base run" "$out" "ok"
 rm -rf "$errf" "$ORCH_SUITE_COST_FAKE_CPU"
 restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU
 
+# --- suite-cost interrupt -----------------------------------------------------
+# A measured run interrupted by INT, TERM or HUP cleans up after itself: no
+# marker, contended mark, timing file or worktree is left, nothing is recorded,
+# one warning says so, and the process exits 128 plus the signal's number.
+echo
+echo "suite-cost interrupt"
+sig_status() { case "$1" in INT) echo 130 ;; TERM) echo 143 ;; HUP) echo 129 ;; esac; }
+interrupted_msg="orch: this run was interrupted - its suite cost is not recorded"
+
+# assert_clean_interrupt <label> <errfile> <status> <signal> <tmpdir>
+assert_clean_interrupt() {
+  assert_status "$1: exits 128 plus the signal's number" "$3" "$(sig_status "$4")"
+  assert_eq "$1: warns once" "$(grep -cF -- "$interrupted_msg" "$2")" 1
+  assert_eq "$1: leaves no marker or contended mark" "$(ls -A "$rec.active" 2>/dev/null | wc -l | tr -d ' ')" 0
+  assert_eq "$1: leaves no timing file" "$(ls -A "$5" | wc -l | tr -d ' ')" 0
+  assert_eq "$1: leaves no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
+}
+
+for sig in INT TERM HUP; do
+  new_repo >/dev/null
+  rec_path
+  tdir="$(mktemp -d)"; errf="$(mktemp)"
+  out="$(TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c "kill -$sig \$PPID" 2>"$errf")"; st=$?
+  assert_clean_interrupt "run $sig" "$errf" "$st" "$sig" "$tdir"
+  assert_eq "run $sig: records nothing" "$(on_disk "$rec")" absent
+  TMPDIR="$tdir" "$ORCH" suite-cost run -- true >/dev/null 2>"$errf"
+  assert_eq "a run after an interrupted one warns nothing" "$(cat "$errf")" ""
+  assert_eq "and is recorded" "$(log_count "$rec")" 1
+
+  check_repo
+  seed_run "$head" 70.00 "sh -c kill -$sig \$PPID"
+  tdir="$(mktemp -d)"; errf="$(mktemp)"
+  out="$(TMPDIR="$tdir" "$ORCH" suite-cost check -- sh -c "kill -$sig \$PPID" 2>"$errf")"; st=$?
+  assert_clean_interrupt "base run $sig" "$errf" "$st" "$sig" "$tdir"
+  assert_eq "base run $sig: prints no verdict line" "$out" ""
+  assert_eq "base run $sig: stores no verdict" "$(on_disk "$rec.verdicts")" absent
+  assert_eq "base run $sig: records nothing new" "$(log_count "$rec")" 1
+done
+
+# A command that sends TERM and then finds its marker still on disk.
+new_repo >/dev/null
+rec_path
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c 'kill -TERM $PPID; test -e "$0/$PPID"' "$rec.active" >/dev/null 2>"$errf"; st=$?
+assert_clean_interrupt "a command finding its marker after TERM" "$errf" "$st" TERM "$tdir"
+
+# A base run's setup command that signals its parent.
+check_repo
+seed_run "$head" 70.00 "${pass[*]}"
+git config orchestrator.suiteCost.setup 'kill -TERM $PPID'
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+out="$(TMPDIR="$tdir" "$ORCH" suite-cost check -- "${pass[@]}" 2>"$errf")"; st=$?
+assert_clean_interrupt "a setup that signals" "$errf" "$st" TERM "$tdir"
+assert_eq "the command never ran" "$(on_disk "$marker")" absent
+
+# A confirming run: the base is recorded, the head grew, so the head confirming
+# run measures the command, which signals.
+check_repo
+sigcmd=(sh -c 'if [ -e "$0" ]; then kill -TERM $PPID; fi; touch "$0"' "$marker")
+seed_run "$head" 100.00 "${sigcmd[*]}"
+seed_run "$base" 70.00 "${sigcmd[*]}"
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+out="$(TMPDIR="$tdir" "$ORCH" suite-cost check -- "${sigcmd[@]}" 2>"$errf")"; st=$?
+assert_clean_interrupt "a confirming run" "$errf" "$st" TERM "$tdir"
+assert_eq "a confirming run prints no verdict line" "$out" ""
+
+# A base run whose command locks its own worktree before signalling: the
+# removal fails, naming the removing command, and the exit stays 143.
+check_repo
+seed_run "$head" 70.00 "sh -c git worktree lock . && kill -TERM \$PPID"
+errf="$(mktemp)"
+"$ORCH" suite-cost check -- sh -c 'git worktree lock . && kill -TERM $PPID' >/dev/null 2>"$errf"; st=$?
+assert_status "a locked worktree: still exits 143" "$st" 143
+assert_contains "the removal's warning names the removing command" "$(cat "$errf")" "git worktree remove --force"
+git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r w; do
+  [ "$w" = "$PWD" ] || { git worktree unlock "$w" 2>/dev/null; git worktree remove --force "$w" 2>/dev/null; }
+done
+
+# A run that could not register: a plain file where the active-runs directory
+# goes.
+new_repo >/dev/null
+rec_path made
+printf 'plain\n' >"$rec.active"
+errf="$(mktemp)"
+"$ORCH" suite-cost run -- sh -c 'kill -TERM $PPID' >/dev/null 2>"$errf"; st=$?
+assert_status "an unregistered run, interrupted, exits 143" "$st" 143
+assert_eq "warns once" "$(grep -cF -- "$interrupted_msg" "$errf")" 1
+assert_eq "records nothing" "$(on_disk "$rec")" absent
+assert_eq "and leaves the plain file as it was" "$(cat "$rec.active")" plain
+
 # --- suite-cost barrier -------------------------------------------------------
 # A FIFO handshake whose partner never arrives fails fast, naming the side and
 # its FIFO, instead of hanging the run.

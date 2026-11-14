@@ -32,6 +32,9 @@
 # the run that finds it. A failed .contended
 # write for another run is not retried, and a failed removal is ignored. A run
 # that cannot register still runs but is not recorded. No run ever waits for
+# another. A measured run interrupted by INT, TERM or HUP removes its marker,
+# first-name file, contended mark and timing file, a tree run its worktree too,
+# records nothing, warns once and exits 128 plus the signal's number.
 # another. Before each of its measured runs, check looks for a live marker of
 # another process, removing stale ones: on one it starts nothing, warns naming
 # its pid and is unmeasured.
@@ -114,8 +117,10 @@ suite_cost_register() {
   mkdir -p -- "$dir" 2>/dev/null || return 0
   # written under a first name the sweep never takes for a marker, then moved
   # into place, so a marker appears complete
-  liveness_record_write "$$" "$dir/.$$.new" || { rm -f -- "$dir/.$$.new" 2>/dev/null || true; return 0; }
-  mv -f -- "$dir/.$$.new" "$me" 2>/dev/null || { rm -f -- "$dir/.$$.new" 2>/dev/null || true; return 0; }
+  SUITE_COST_FIRST="$dir/.$$.new"
+  liveness_record_write "$$" "$dir/.$$.new" || { rm -f -- "$dir/.$$.new" 2>/dev/null || true; SUITE_COST_FIRST=""; return 0; }
+  mv -f -- "$dir/.$$.new" "$me" 2>/dev/null || { rm -f -- "$dir/.$$.new" 2>/dev/null || true; SUITE_COST_FIRST=""; return 0; }
+  SUITE_COST_FIRST=""
   SUITE_COST_MARK="$me"
   while IFS= read -r p; do
     SUITE_COST_SAW_LIVE=1
@@ -182,9 +187,11 @@ suite_cost_unregister() {
 suite_cost_run() {
   local commit_field
   commit_field="$(suite_cost_head_commit)"
+  suite_cost_interrupt_arm ""
   suite_cost_register
   suite_cost_measure "$@"
   suite_cost_unregister
+  suite_cost_interrupt_disarm
   if suite_cost_require_solo "this run" "its suite cost is not recorded" && [ "$SUITE_COST_STATUS" -eq 0 ]; then
     if [ -n "$commit_field" ]; then
       suite_cost_append "$commit_field" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
@@ -193,6 +200,51 @@ suite_cost_run() {
     fi
   fi
   exit "$SUITE_COST_STATUS"
+}
+
+# suite_cost_interrupt_arm <tmp-dir>: starts handling INT, TERM and HUP for a
+# measured run and clears the state the handler cleans up. <tmp-dir> is the
+# tree run's temporary directory, "" for suite-cost run; the tree run then sets
+# SUITE_COST_TREE_WT and SUITE_COST_TREE_HERE once its worktree is added. The
+# handler runs once the foreground command has returned (bash's own rule).
+suite_cost_interrupt_arm() {
+  SUITE_COST_MARK="" SUITE_COST_FIRST="" SUITE_COST_TIMEFILE=""
+  SUITE_COST_TREE_TMP="$1" SUITE_COST_TREE_WT="" SUITE_COST_TREE_HERE=""
+  trap 'suite_cost_interrupted 129' HUP
+  trap 'suite_cost_interrupted 130' INT
+  trap 'suite_cost_interrupted 143' TERM
+}
+
+# suite_cost_interrupt_disarm: ends the handling suite_cost_interrupt_arm began.
+suite_cost_interrupt_disarm() {
+  trap - HUP INT TERM
+  SUITE_COST_TREE_TMP="" SUITE_COST_TREE_WT="" SUITE_COST_TREE_HERE=""
+}
+
+# suite_cost_interrupted <status>: the handler. Warns once that the run was
+# interrupted - on the caller's stderr even inside the measuring step, where
+# stderr is the timing file and fd 3 is the caller's - removes the run's
+# marker, first-name file, contended mark and timing file (failures ignored),
+# for a tree run returns to its starting directory and removes its worktree
+# and temporary directory (a failed worktree removal is warned of, naming the
+# command), and exits <status>, 128 plus the signal's number.
+suite_cost_interrupted() {
+  local status="$1"
+  trap - HUP INT TERM
+  [ -z "$SUITE_COST_TIMEFILE" ] || [ ! /dev/fd/2 -ef "$SUITE_COST_TIMEFILE" ] || exec 2>&3
+  warn "this run was interrupted - its suite cost is not recorded"
+  [ -z "$SUITE_COST_MARK" ] || rm -f -- "$SUITE_COST_MARK" "$SUITE_COST_MARK.contended" 2>/dev/null || true
+  [ -z "$SUITE_COST_FIRST" ] || rm -f -- "$SUITE_COST_FIRST" 2>/dev/null || true
+  [ -z "$SUITE_COST_TIMEFILE" ] || rm -f -- "$SUITE_COST_TIMEFILE" 2>/dev/null || true
+  if [ -n "$SUITE_COST_TREE_WT" ]; then
+    cd "$SUITE_COST_TREE_HERE" 2>/dev/null || true
+    if git worktree remove --force "$SUITE_COST_TREE_WT" >/dev/null 2>&1; then
+      rmdir "$SUITE_COST_TREE_TMP" 2>/dev/null || true
+    else
+      warn "could not remove the interrupted run's worktree $SUITE_COST_TREE_WT - remove it with: git worktree remove --force $SUITE_COST_TREE_WT"
+    fi
+  fi
+  exit "$status"
 }
 
 # suite_cost_require_solo <subject> <tail>: returns 0 when the run just
@@ -233,9 +285,11 @@ suite_cost_measure() {
   local tf real user sys TIMEFORMAT='%2R %2U %2S'
   SUITE_COST_STATUS=0
   temp_file_make tf || die "could not make a temp file to time the command"
+  SUITE_COST_TIMEFILE="$tf"
   { time { command "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>"$tf"
   read -r real user sys < <(tail -n 1 "$tf") || true
   rm -f "$tf"
+  SUITE_COST_TIMEFILE=""
   # A locale may write the decimal point as a comma.
   SUITE_COST_WALL="${real/,/.}"
   SUITE_COST_CPU="$(LC_ALL=C awk -v u="${user/,/.}" -v s="${sys/,/.}" 'BEGIN { printf "%.2f", u + s }')"
@@ -512,6 +566,8 @@ suite_cost_tree_run() {
     rm -rf "$tmp"
     return 1
   fi
+  suite_cost_interrupt_arm "$tmp"
+  SUITE_COST_TREE_WT="$wt" SUITE_COST_TREE_HERE="$here"
   setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
   if cd "$wt"; then
     suite_cost_register
@@ -544,6 +600,7 @@ suite_cost_tree_run() {
     warn "could not remove $run_label's worktree $wt - remove it with: git worktree remove --force $wt"
     status=1
   fi
+  suite_cost_interrupt_disarm
   return "$status"
 }
 
