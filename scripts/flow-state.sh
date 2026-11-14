@@ -20,9 +20,10 @@
 # - flow_state_get on a file jq cannot parse: jq's own error and status pass
 #   through unchanged.
 # - flow_state_get_many: 1 for a key outside the table and 2 for a malformed
-#   <var>=<key>, both before any jq, assigning and printing nothing; an
-#   absent, unparseable or non-object file fails inside its one jq. On any
-#   failure nothing is assigned.
+#   <var>=<key>, both before any jq, assigning and printing nothing; every
+#   failed read returns 1: an absent, unparseable or non-object file inside its
+#   one jq, a failed temp file, or a short read. On any failure nothing is
+#   assigned.
 # - flow_state_resolve_many_arg: 1 for a key outside the table and 2 for a
 #   malformed <var>=<key>, which is caller input, not a programming error.
 # - flow_state_pairs_json: 2 for a dangling --string or a key with no value,
@@ -188,23 +189,23 @@ flow_state_resolve_many_arg() {
 # from one pass over the key table, not a subshell per key), and assigns the
 # values to the caller's variables <var> through printf -v. Its locals carry
 # the __fsgm_ prefix, so a caller may name an out-variable anything but one of
-# those: a <var> named like a local (__fsgm_a_var, __fsgm_rc...) assigns the
+# those: a <var> named like a local (__fsgm_a_var, __fsgm_i...) assigns the
 # local, and the value never reaches the caller. Values
 # travel NUL-separated and are read back with read -r -d '', byte for byte; a
 # NUL inside a value is dropped by the jq. A key outside the table returns 1
 # and a malformed <var>=<key> (no =, or an empty <var>) returns 2, both before
 # any jq, by flow_state_resolve_many_arg; a failed read - an absent,
-# unparseable or non-object file, null included - returns the jq's status. On
-# any failure nothing is assigned.
+# unparseable or non-object file (null included), a failed temp file, or a
+# short read - returns 1. On any failure nothing is assigned.
 #
 # jq's output goes through a temp file on purpose; do not read it directly.
 # This module is sourced by the hooks and stays bash 3.2-compatible. On bash
 # 3.2 a process substitution's exit status cannot be read (wait on one needs
 # bash 4.4) and a $(...) capture cannot hold the NUL separators, so a direct
-# read would lose the jq status this function returns on a failed read.
+# read could not tell a failed jq from a successful one.
 flow_state_get_many() {
   local __fsgm_file="$1" __fsgm_arg __fsgm_kd="" __fsgm_a_var __fsgm_a_key __fsgm_a_def \
-    __fsgm_tmp __fsgm_rc __fsgm_i __fsgm_n=0 __fsgm_rows
+    __fsgm_tmp __fsgm_i __fsgm_n=0 __fsgm_rows
   local __fsgm_vars=() __fsgm_vals=()
   shift
   __fsgm_rows="$(state_rows)" || return
@@ -215,13 +216,13 @@ flow_state_get_many() {
     __fsgm_n=$((__fsgm_n + 1))
   done
   [ "$__fsgm_n" -gt 0 ] || return 0
-  __fsgm_tmp="$(mktemp)" || return
+  __fsgm_tmp="$(mktemp)" || return 1
   jq -j --arg kd "$__fsgm_kd" '. as $o
     | if ($o | type) != "object" then error("not an object") else
       ($kd | split("\n")[] | split("|") as $p
         | ($o[$p[0]] | if . == null then $p[1] else . end | tostring
           | split("\u0000") | join("")), "\u0000") end' \
-    "$__fsgm_file" >"$__fsgm_tmp" || { __fsgm_rc=$?; rm -f "$__fsgm_tmp"; return "$__fsgm_rc"; }
+    "$__fsgm_file" >"$__fsgm_tmp" || { rm -f "$__fsgm_tmp"; return 1; }
   for ((__fsgm_i = 0; __fsgm_i < __fsgm_n; __fsgm_i++)); do
     IFS= read -r -d '' "__fsgm_vals[$__fsgm_i]" || { rm -f "$__fsgm_tmp"; return 1; }
   done <"$__fsgm_tmp"
