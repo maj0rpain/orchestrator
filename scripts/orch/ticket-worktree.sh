@@ -55,6 +55,26 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
 # would resolve a leftover t<n> directory to the enclosing checkout instead.
 is_ticket_worktree() { [ "$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" = "$1" ]; }
 
+# ticket_worktree_state <path>: prints what ticket worktree path <path> is - the
+# one definition of "has a ticket worktree", read from git's record through
+# checkout_parse: worktree (one sits at <path>), gone (git's record names
+# <path> and nothing is there), occupied (git's record names <path> and a plain
+# directory or file is there) or none. Dies when the checkouts cannot be read,
+# so callers run it as `state="$(...)" || exit $?`.
+ticket_worktree_state() {
+  local p paths=()
+  # shellcheck disable=SC2034 # checkout_parse fills it
+  local branches=()
+  if is_ticket_worktree "$1"; then echo worktree; return 0; fi
+  checkout_parse || checkouts_unreadable
+  for p in "${paths[@]}"; do
+    [ "$p" = "$1" ] || continue
+    if [ -e "$1" ] || [ -L "$1" ]; then echo occupied; else echo gone; fi
+    return 0
+  done
+  echo none
+}
+
 # ticket_worktree_require <n>: dies unless <n> is a ticket number whose
 # worktree exists - the one "no ticket worktree" check. It assigns to the
 # caller's `n` (normalised) and `path`, which bash scopes dynamically, and is
@@ -152,7 +172,7 @@ cmd_ticket_worktree_list() {
 # would judge it against this checkout's HEAD). Every refusal or failed step
 # dies naming what failed, leaving what already happened in place.
 ticket_worktree_teardown() {
-  local n="" unmerged=0 discard=0 path branch parent tbranch have_wt=0
+  local n="" unmerged=0 discard=0 path branch parent tbranch have_wt=0 state
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -167,7 +187,12 @@ ticket_worktree_teardown() {
   path="$(ticket_worktree_path "$n")"
   # Only a worktree at $path itself: a leftover t<n> directory's enclosing
   # checkout is not ours to discard, abort or remove.
-  if is_ticket_worktree "$path"; then
+  state="$(ticket_worktree_state "$path")" || exit $?
+  [ "$state" != occupied ] \
+    || die "ticket worktree path $path holds something that is not a worktree, though git's record names it - delete it and run the command again"
+  # A record with its directory gone has nothing to discard, abort or check.
+  [ "$state" != gone ] || have_wt=1
+  if [ "$state" = worktree ]; then
     have_wt=1
     [ "$discard" = 0 ] || discard_work_in "$path" "ticket #$n"
     if [ "$unmerged" = 1 ] && rebase_in_progress "$path"; then
@@ -176,7 +201,7 @@ ticket_worktree_teardown() {
     fi
     require_clean_tree "$path" \
       "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
-  else
+  elif [ "$state" = none ]; then
     git rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null \
       || die "no ticket worktree or branch for ticket $n at $path"
   fi
@@ -193,7 +218,7 @@ ticket_worktree_teardown() {
 # argument parsing over ticket_worktree_teardown, dying when there is no
 # worktree.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=() path
+  local n="" unmerged=() path state
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=(--unmerged) ;;
@@ -202,9 +227,14 @@ cmd_ticket_worktree_remove() {
     esac
     shift
   done
-  # Only that a worktree exists is read here: its branch cannot be, while a
-  # rebase leaves HEAD detached, until the teardown has aborted the rebase.
-  ticket_worktree_require "$n"
+  # Only that a worktree or git's record of one exists is read here: its
+  # branch cannot be, while a rebase leaves HEAD detached, until the teardown
+  # has aborted the rebase. A record with something else at its path is the
+  # teardown's refusal to make.
+  n="$(ticket_worktree_number "$n")"
+  path="$(ticket_worktree_path "$n")"
+  state="$(ticket_worktree_state "$path")" || exit $?
+  [ "$state" != none ] || die "no ticket worktree for ticket $n at $path"
   ticket_worktree_teardown "$n" ${unmerged[@]+"${unmerged[@]}"}
 }
 

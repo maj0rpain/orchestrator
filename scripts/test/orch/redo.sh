@@ -155,6 +155,20 @@ assert_eq "leaving the state as it was" "$(redo_state_snapshot)" "$snap_state"
 assert_eq "the handoffs" "$(ls .orchestrator/handoff)" "$snap_handoffs"
 assert_eq "and the checked-out branch" "$(git branch --show-current)" "$snap_branch"
 "$ORCH" ticket-worktree remove 4 >/dev/null 2>&1
+# The same refusal over a ticket worktree whose directory is gone: the remedy
+# it names works, the doctor reports the state before it and nothing after,
+# and the redo then proceeds.
+"$ORCH" ticket-worktree add 4 >/dev/null 2>&1
+rm -rf .orchestrator/worktrees/t4
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "redo review refuses a ticket worktree whose directory is gone" "$st" 1
+assert_contains "naming its remove hint" "$out" "orch.sh ticket-worktree remove 4"
+out="$("$ORCH" doctor 2>&1)"
+assert_contains "the doctor reports the leftover" "$out" "ticket worktree $(pwd -P)/.orchestrator/worktrees/t4 is left over"
+out="$("$ORCH" ticket-worktree remove 4 --unmerged 2>&1)"; st=$?
+assert_status "the remedy the refusal names succeeds" "$st" 0
+out="$("$ORCH" doctor 2>&1)"
+assert_not_contains "the doctor then reports nothing left over" "$out" "is left over"
 
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
