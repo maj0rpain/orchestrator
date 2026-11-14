@@ -1033,43 +1033,41 @@ sh_first_22="$sh_printed"
 assert_eq "group 2 gets the rest, the unlisted section weighing as the heaviest listed one by CPU" \
   "$sh_printed" "isolation,s1,s3,s5,"
 assert_eq "its sections start unlisted first, then by wall though the CPU order differs" "$sh_started" "s5,s3,s1,"
+# sh_case <label> <group 1> <durations line>...: the printed sections of group 1
+# of 2 under a planted durations file. The deal is a partition, which the
+# "groups run every planted section exactly once" loop proves, so group 1's
+# list alone shows the dealing.
+sh_case() {
+  sh_label="$1"; sh_g1="$2"; shift 2
+  printf '%s\n' "$@" >"$sh_t/section-durations.tsv"
+  sh_run 1/2
+  assert_eq "$sh_label" "$sh_printed" "$sh_g1"
+}
 # A file that lists no planted section: each weighs 1 second (10 tenths), so
 # the 30 CPU tenths of the shellcheck line (its 9 wall tenths are not read) put
 # s4 in group 1, the rest in 2.
 cp "$sh_t/section-durations.tsv" "$sh_dir/durations.keep"
-printf '%s\n' "9	30	shellcheck" >"$sh_t/section-durations.tsv"
-sh_run 1/2
-assert_eq "with no section listed, each weighs one second" "$sh_printed" "isolation,s4,"
+sh_case "with no section listed, each weighs one second" "isolation,s4," "9	30	shellcheck"
 printf '%s' "$(<"$sh_dir/durations.keep")" >"$sh_t/section-durations.tsv"
 sh_run 1/2
 assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s2,s4,"
 sh_run 2/2
 assert_eq "and starts its sections longest-first" "$sh_started" "s5,s3,s1,"
-# sh_case <label> <group 1> <group 2> <durations line>...: the printed sections
-# of the two groups of 2 under a planted durations file.
-sh_case() {
-  sh_label="$1"; sh_g1="$2"; sh_g2="$3"; shift 3
-  printf '%s\n' "$@" >"$sh_t/section-durations.tsv"
-  sh_run 1/2
-  assert_eq "$sh_label: group 1" "$sh_printed" "$sh_g1"
-  sh_run 2/2
-  assert_eq "$sh_label: group 2" "$sh_printed" "$sh_g2"
-}
 # Zero CPU weighs 0: s2 to s5 weigh 10, s1 0 (listed, so not the unlisted 10),
 # dealt last to group 1 on the 20-20 tie. Weighing s1 as 10 gives s1, s3, s5.
-sh_case "a section with 0 CPU weighs 0" "isolation,s1,s2,s4," "isolation,s3,s5," \
+sh_case "a section with 0 CPU weighs 0" "isolation,s1,s2,s4," \
   "99	0	shard s1" "1	10	shard s2" "1	10	shard s3" "1	10	shard s4" "1	10	shard s5"
 # Zero suite and shellcheck lines add 0, not a weight: group 1 starts at 0 and
 # takes s1 first, then s3 and s5 on ties. Weighing each line as 10 gives s1 to
 # group 2.
-sh_case "a suite and a shellcheck line with 0 CPU weigh 0" "isolation,s1,s3,s5," "isolation,s2,s4," \
+sh_case "a suite and a shellcheck line with 0 CPU weigh 0" "isolation,s1,s3,s5," \
   "9	10	shard s1" "9	10	shard s2" "9	10	shard s3" "9	10	shard s4" "9	10	shard s5" \
   "99	0	hooks_test.sh" "99	0	shellcheck"
 # Ties: s1 and s2 weigh 20, s3 and s4 10, s5 0. Of s1 and s2 the earlier is
 # dealt first, to group 1, so s3 lands there on the 20-20 tie, s4 in group 2,
 # and s5 in group 1 on the 30-30 tie. The reverse walk order flips both ties
 # and gives group 1 s2, s4 and s5.
-sh_case "ties go to the earlier section and the lowest group" "isolation,s1,s3,s5," "isolation,s2,s4," \
+sh_case "ties go to the earlier section and the lowest group" "isolation,s1,s3,s5," \
   "1	20	shard s1" "1	20	shard s2" "1	10	shard s3" "1	10	shard s4" "1	0	shard s5"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
 # Why 5 groups: the weights are s1 50, s5 (unlisted, so the heaviest listed) 50,
