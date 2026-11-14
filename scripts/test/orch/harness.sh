@@ -3527,7 +3527,7 @@ bc_helpers="$(dirname "$SUITE_SCRIPT")/test_jobs.sh"
 assert_status "test_jobs_run_child returns 0 for a succeeding command" "$bc_st" 0
 ( source "$bc_helpers"; test_jobs_run_child bash -c 'exit 7' ); bc_st=$?
 assert_status "and a failing command's status" "$bc_st" 7
-bc_out="$(source "$bc_helpers"; test_jobs_run_child sleep 0; echo "child=[$TEST_JOBS_CHILD]")"
+bc_out="$(source "$bc_helpers"; test_jobs_run_child true; echo "child=[$TEST_JOBS_CHILD]")"
 assert_eq "TEST_JOBS_CHILD is empty after it returns" "$bc_out" "child=[]"
 bc_out="$(source "$bc_helpers"; bc_fn() { echo "from a function"; }; test_jobs_run_child bc_fn)"
 assert_eq "it runs a function of the sourcing shell" "$bc_out" "from a function"
