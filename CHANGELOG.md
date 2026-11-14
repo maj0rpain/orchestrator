@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.53
+
+Test-only: the orch.sh suite harness keeps its shared sourced test helper files in one array that its planted tree, quiet-mode copy and helper index check all read.
+
 ## 5.2.52
 
 `doctor`, `status`, `autopilot tick`/`run`/`questions`/`candidates`, `side-checkout add`/`prune`/`list` and `spec-review apply` now load each module once in the main shell before the subshells that need it, instead of once per subshell, so `doctor` and `status` no longer slow down with the number of checkouts and a watcher tick no longer slows down with the queue. Nothing they print or return changes. The test runner builds the stub cache once per run and starts every section's `HOME`, and a `HOME` made by the new `seeded_home` test helper, with a copy of it, instead of rebuilding it in every section. CONTRIBUTING.md says what to do when a command's load trace shows a module twice.
