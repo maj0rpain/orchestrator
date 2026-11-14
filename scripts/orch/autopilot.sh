@@ -392,8 +392,12 @@ autopilot_epoch_iso() {
   date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
 }
 
-# autopilot_self: the absolute path of this orch.sh.
-autopilot_self() { printf '%s/orch.sh\n' "$(cd "$ORCH_SCRIPTS" && pwd)"; }
+# autopilot_self: the absolute path of this orch.sh, fixed once at load, before
+# any change of directory. It derives from the loader's module directory, which
+# the loader makes absolute at start; orch.sh sits in the directory above it.
+# It may keep a `.` or `..` part: it is only ever started as a command.
+ORCH_AUTOPILOT_SELF="${ORCH_MODULE_DIR%/*}/orch.sh"
+autopilot_self() { printf '%s\n' "$ORCH_AUTOPILOT_SELF"; }
 
 # autopilot_orch_in <dir> <orch.sh args>...: runs orch.sh itself in <dir>,
 # stdout dropped and stderr left for the caller's capture.

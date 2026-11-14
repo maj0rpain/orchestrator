@@ -576,6 +576,28 @@ assert_loads_once "autopilot candidates over three issues" "$ORCH" autopilot can
 for n in 31 32 33; do fake_issue_drop "$n"; done
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
+# --- autopilot tick: started by a relative path (#3055) -----------------------
+# Every child the tick starts runs the orch.sh that is running, however the
+# tick was started: the tick's move into the main checkout and pickup's move
+# into the side checkout both come after the start.
+echo
+echo "autopilot tick by a relative path"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 7 open ready-for-agent orch:spec
+fake_issue_title 7 "Add the widget"
+printf '7\n' >"$launcher_dir/release"
+mkdir -p "$top/sub/dir"
+rel_orch="$(realpath --relative-to="$top/sub/dir" "$ORCH")"
+out="$(cd "$top/sub/dir" && "$rel_orch" autopilot tick 2>&1)"; st=$?
+side7="$top/.orchestrator/checkouts/add-the-widget"
+assert_status "a tick started by a relative path succeeds" "$st" 0
+assert_contains "a session started in the issue's side checkout" "$(cat "$launcher_dir/calls" 2>/dev/null)" "dir:$side7"
+assert_eq "the side checkout's flow adopted the issue" "$(cd "$side7" && "$ORCH" state get issue)" "7"
+assert_not_contains "the issue is not needs-human" "$(fake_labels_of 7)" "needs-human"
+assert_not_contains "and has no failed-step comment" "$(fake_comments_of 7)" "failed"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
 # --- autopilot tick: the flow-issue read at the issue-list limit ------------
 echo
 echo "autopilot tick flow issues at the limit"
