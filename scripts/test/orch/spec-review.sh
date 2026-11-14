@@ -1306,6 +1306,12 @@ assert_status "the --tickets rerun succeeds" "$st" 0
 assert_eq "posting one changelog" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
 unset ORCH_AUTOPILOT
 
+# Each run loads a module once, however many tickets it follows.
+d="$(srt_dir)"
+assert_loads_once "spec-review apply pausing for the tickets" "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14
+srt_fetch "$d"
+assert_loads_once "spec-review apply following three tickets" "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 --tickets recommended
+
 # The pause, then the --tickets rerun.
 d="$(srt_dir)"
 sra "$d" recommended
