@@ -221,7 +221,7 @@ suite_cost_run() {
 # nothing. The handler runs once the foreground command has returned (bash's
 # own rule).
 suite_cost_interrupt_arm() {
-  SUITE_COST_MARK="" SUITE_COST_FIRST="" SUITE_COST_TIMEFILE=""
+  SUITE_COST_MARK="" SUITE_COST_FIRST="" SUITE_COST_TIMEFILE="" SUITE_COST_TIMETOKEN=""
   SUITE_COST_TREE_TMP="${1:-}" SUITE_COST_TREE_WT="${2:-}" SUITE_COST_TREE_HERE="${3:-}" SUITE_COST_TREE_LABEL="${4:-}"
   trap 'suite_cost_interrupted 129' HUP
   trap 'suite_cost_interrupted 130' INT
@@ -246,6 +246,15 @@ suite_cost_tree_remove() {
   return 1
 }
 
+# suite_cost_timefile_remove: removes SUITE_COST_TIMEFILE when its first line is
+# this run's SUITE_COST_TIMETOKEN, so only a file this run made is removed.
+suite_cost_timefile_remove() {
+  local first=""
+  [ -n "$SUITE_COST_TIMEFILE" ] || return 0
+  { read -r first <"$SUITE_COST_TIMEFILE"; } 2>/dev/null || true
+  [ "$first" != "$SUITE_COST_TIMETOKEN" ] || rm -f -- "$SUITE_COST_TIMEFILE" 2>/dev/null || true
+}
+
 # suite_cost_interrupted <status>: the handler. Warns once that the run was
 # interrupted - on the caller's stderr even inside the measuring step, where
 # stderr is the timing file and fd 3 is the caller's - removes the run's
@@ -260,7 +269,7 @@ suite_cost_interrupted() {
   warn "this run was interrupted - its suite cost is not recorded"
   [ -z "$SUITE_COST_MARK" ] || rm -f -- "$SUITE_COST_MARK" "$SUITE_COST_MARK.contended" 2>/dev/null || true
   [ -z "$SUITE_COST_FIRST" ] || rm -f -- "$SUITE_COST_FIRST" 2>/dev/null || true
-  [ -z "$SUITE_COST_TIMEFILE" ] || rm -f -- "$SUITE_COST_TIMEFILE" 2>/dev/null || true
+  suite_cost_timefile_remove
   if [ -n "$SUITE_COST_TREE_WT" ]; then
     cd "$SUITE_COST_TREE_HERE" 2>/dev/null || true
     if [ -e "$SUITE_COST_TREE_WT" ]; then
@@ -312,19 +321,22 @@ suite_cost_measure() {
   # The handler removes SUITE_COST_TIMEFILE, so it is set to the fresh name
   # before the file is made: a signal landing at any point then finds the path
   # and removes the file, or finds nothing to remove. A name at which anything
-  # exists is never set, and a failed exclusive create clears it at once, so the
-  # handler can only remove a file this step made.
-  local try=0
+  # exists is never set. The file's first line is a token only this step knows,
+  # and the handler removes the file only when it reads that token back, so a
+  # file some other process made at the name between the check and the create
+  # is never removed. After 10 names with no create, it dies as it always did.
+  local try=0 made=""
+  SUITE_COST_TIMETOKEN="$$.$RANDOM$RANDOM"
   while [ "$((try += 1))" -le 10 ]; do
     temp_file_name tf
     [[ -e $tf || -L $tf ]] && continue
     SUITE_COST_TIMEFILE="$tf"
-    (umask 077; set -o noclobber; : >"$tf") 2>/dev/null && [[ -f $tf && ! -L $tf ]] && break
+    (umask 077; set -o noclobber; printf '%s\n' "$SUITE_COST_TIMETOKEN" >"$tf") 2>/dev/null &&
+      [[ -f $tf && ! -L $tf ]] && { made=1; break; }
     SUITE_COST_TIMEFILE=""
-    tf=""
   done
-  [ -n "$tf" ] || die "could not make a temp file to time the command"
-  { time { command "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>"$tf"
+  [ -n "$made" ] || die "could not make a temp file to time the command"
+  { time { command "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>>"$tf"
   read -r real user sys < <(tail -n 1 "$tf") || true
   rm -f "$tf"
   SUITE_COST_TIMEFILE=""
