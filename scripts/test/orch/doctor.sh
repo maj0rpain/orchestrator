@@ -1378,7 +1378,7 @@ mkdir -p docs/agents
 labels_doc docs/agents/triage-labels.md
 gh_fixture
 export CLAUDE_PLUGIN_ROOT="$PWD"
-HOME="$(mktemp -d)"; export HOME
+seeded_home
 fake_offline
 dfin="$(sc_add dfin)"
 git -C "$dfin" checkout -q -b quick/20-dfin

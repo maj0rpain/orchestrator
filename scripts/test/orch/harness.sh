@@ -1150,6 +1150,8 @@ seed_dir="$(planted_minimal_tree <<'PLANTED'
   # --- planted seeded a
   echo; echo "planted seeded a"
   if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "seeded start a"; else bad "unseeded start a" "no cache in $HOME"; fi
+  seeded_home >sh.out 2>&1; seeded_home_st=$?; seeded_home_out="$(cat sh.out)"
+  if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ -f "$HOME/.cache/orchestrator/planted.stubs" ] && [ ! -L "$HOME/.cache/orchestrator/planted.stubs" ] && [ "$(stat -c %a "$HOME/.cache/orchestrator/planted.stubs")" = 600 ]; then ok "seeded_home start"; else bad "seeded_home start" "no private cache copy"; fi
   # --- planted seeded b
   echo; echo "planted seeded b"
   if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "seeded start b"; else bad "unseeded start b" "no cache in $HOME"; fi
@@ -1204,6 +1206,8 @@ seed_dir="$(planted_minimal_tree <<'PLANTED'
   # --- planted unseeded
   echo; echo "planted unseeded"
   if [ -e "$HOME/.cache" ]; then bad "an unseeded start has a cache" "found one"; else ok "unseeded start"; fi
+  seeded_home >sh.out 2>&1; seeded_home_st=$?; seeded_home_out="$(cat sh.out)"
+  if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ ! -e "$HOME/.cache" ] && [ -d "$HOME" ]; then ok "unseeded start via the helper"; else bad "unseeded start via the helper" "st $seeded_home_st out $seeded_home_out"; fi
 PLANTED
 )"
 out="$(env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD HOME="$(mktemp -d)" ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 bash "$seed_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?

@@ -608,6 +608,23 @@ labels_doc() {
           '' 'Edit the right-hand column to match whatever vocabulary you use.' >"$1"
 }
 
+# seeded_home: gives the calling shell a throwaway HOME (exported) that starts
+# with its own copy of the run's seed, the stub cache of the tree under test, so
+# isolating a test costs no cache rebuild. Prints nothing and succeeds; a run
+# with no seed, or a copy that fails, leaves the HOME without a cache file.
+seeded_home() {
+  HOME="$(mktemp -d)" || return 1
+  export HOME
+  # shellcheck disable=SC2154 # orch_seed_dir is set by orch_test.sh, the runner
+  if [ -n "${orch_seed_dir:-}" ]; then
+    mkdir -p "$HOME/.cache/orchestrator" 2>/dev/null &&
+      cp "$orch_seed_dir"/* "$HOME/.cache/orchestrator/" 2>/dev/null &&
+      chmod 600 "$HOME/.cache/orchestrator"/* 2>/dev/null ||
+      rm -rf "$HOME/.cache"
+  fi
+  return 0
+}
+
 # A repo where every --env check passes, so a test can break exactly one thing
 # and attribute the result to it.
 healthy_repo() {
@@ -619,8 +636,7 @@ healthy_repo() {
   export CLAUDE_PLUGIN_ROOT="$PWD"
   # A throwaway HOME, so no skill store on the machine running the tests
   # reaches doctor's checks.
-  HOME="$(mktemp -d)"
-  export HOME
+  seeded_home
 }
 
 

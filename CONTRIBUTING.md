@@ -291,6 +291,11 @@ builds it once per run, the seed, and `setup.sh` copies it into each fresh
 its tree. A seed that cannot be built or copied leaves the run unseeded,
 silently.
 
+A test that needs a `HOME` of its own calls `seeded_home`, which exports a
+throwaway `HOME` that starts with its own copy of the same seed, so isolating a
+test costs no rebuild; `healthy_repo` uses it. It prints nothing and
+succeeds, and in an unseeded run the `HOME` holds no cache file.
+
 `sourced_orch` sets `ORCH_SOURCE_LAZY=1`, so it loads orch.sh's modules on
 demand, as the command does and so a test's shell starts cheaply, except in its
 `eval` form (`sourced_orch eval <code>`); `sourced_orch_script` loads every

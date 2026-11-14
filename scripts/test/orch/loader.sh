@@ -172,6 +172,20 @@ touch -d '+1 minute' "$seed_file"
 assert_contains "and a run reuses it" "$(cat "$seed_file")" "# seeded marker"
 sed -i.bak '/^# seeded marker$/d' "$seed_file"; rm -f "$seed_file.bak"
 
+# A HOME the shared helper makes starts the same way, with a copy of its own.
+suite_home="$HOME"
+seeded_home
+assert_ne "a seeded_home is a HOME of its own" "$HOME" "$suite_home"
+home_file="$HOME/.cache/orchestrator/${seed_name//\//%2F}.stubs"
+assert_eq "a seeded_home starts with the stub cache" "$([ -f "$home_file" ] && echo yes || echo no)" "yes"
+assert_eq "a seeded_home cache is a regular file, not a link" "$([ -L "$home_file" ] && echo link || echo file)" "file"
+assert_eq "a seeded_home cache is of mode 600" "$(stat -c %a "$home_file" 2>/dev/null || stat -f %Lp "$home_file")" "600"
+echo "# seeded marker" >>"$home_file"
+touch -d '+1 minute' "$home_file"
+"$ORCH" help >/dev/null 2>&1
+assert_contains "and a run reuses a seeded_home cache" "$(cat "$home_file")" "# seeded marker"
+rm -rf "$HOME"; HOME="$suite_home"; export HOME
+
 new_repo >/dev/null
 cache_root="$(mktemp -d)"
 cache_scripts="$(tree_copy scripts)"
