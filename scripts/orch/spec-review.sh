@@ -1775,7 +1775,7 @@ spec_review_write() {
   if [ -f "$dir/applied.log" ] && grep -Fxq -- "$what" "$dir/applied.log"; then
     return 0
   fi
-  if ! capture_err err "$@" >/dev/null; then
+  if ! gh_capture_err err "$@" >/dev/null; then
     die "could not write $what: $(err_line "$err") - already landed: $(spec_review_landed "$dir"); $dir/changelog.md is kept, and the review stops here"
   fi
   printf '%s\n' "$what" >>"$dir/applied.log" \

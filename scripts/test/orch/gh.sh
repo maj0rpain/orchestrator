@@ -69,6 +69,11 @@ assert_eq "command gh appears in orch.sh and its modules only inside the guard" 
   "$(cat "$ORCH" "$(dirname "$ORCH")"/orch/*.sh | grep -c '\bcommand gh\b')" "1"
 assert_contains "and that one is the gh guard's own" \
   "$(sed -n '/^gh() {$/,/^}$/p' "$(dirname "$ORCH")/orch/gh.sh")" 'command gh "$@"'
+# A GitHub operation is captured through gh_capture or gh_capture_err, which
+# resolve the Repo in the caller's shell first (#3148): on no code line does bare
+# capture or capture_err run an adapter operation or gh.
+assert_eq "no bare capture or capture_err runs an adapter operation or gh" \
+  "$(grep -hEv '^[[:space:]]*#' "$(dirname "$ORCH")"/orch/*.sh | grep -cE '(^|[^_[:alnum:]])capture(_err)? .*[[:space:]](adapter_[a-z_]+|gh)([[:space:]]|$)')" "0"
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
 # in the parent shell (issue fetch) or in a command substitution (ticket
@@ -123,6 +128,19 @@ assert_contains "gh api was among the calls" "$(cat "$GH_FIXTURE/env.log")" \
   "GH_HOST=ghe.example.com api "
 assert_eq "every gh call carried the host-qualified repo and its host" \
   "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+
+# An SSH-alias origin: a command whose GitHub calls start from its main shell
+# resolves the Repo once, so ssh is called once, and every call still carries
+# the repo and its host (#3148).
+write_ssh_stub 'echo hostname ghe.example.com' 0
+git remote set-url origin git@github-work:fork/widgets.git
+: >"$GH_FIXTURE/env.log"; : >"$ssh_calls"
+out="$(PATH="$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
+assert_status "an SSH-alias origin resolves" "$st" 0
+assert_eq "and ssh is called once" "$(wc -l <"$ssh_calls" | tr -d ' ')" "1"
+assert_eq "and every gh call still carried the repo and its host" \
+  "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+write_ssh_stub 'exit 1' 1
 assert_eq "no gh call inherited a REPO_ variable: the repo memo is never exported" \
   "$(cat "$GH_FIXTURE/repo_vars.log" 2>/dev/null)" ""
 restore_suite_env GH_HOST GH_FIXTURE

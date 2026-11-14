@@ -109,7 +109,7 @@ ticket_listing_has() { [ -n "$(ticket_listing_state "$1" "$2")" ]; }
 # variable name is shadowed.
 ticket_links_verified() {
   local __tlv_out __tlv_err
-  if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
+  if ! gh_capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
     printf -v "$1" '%s' "$__tlv_err"
     return 2
   fi
@@ -398,7 +398,7 @@ cmd_ticket_retire() {
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
         temp_file_make comment_file || die "could not create a temp file for the comment on ticket #$n"
         printf '%s\n' "$msg" >"$comment_file"
-        capture_err err adapter_issue_comment "$n" "$comment_file" \
+        gh_capture_err err adapter_issue_comment "$n" "$comment_file" \
           || { rm -f "$comment_file"; gh_die "comment on ticket #$n" "$err"; }
         rm -f "$comment_file"
       fi
@@ -433,7 +433,7 @@ issue_body_rewrite() {
   local n="$1" read_what="$2" write_what="$3" body result out err
   shift 3
   temp_file_make body || die "could not create a temp file for issue #$n's body"
-  capture_err err adapter_issue_body "$n" >"$body" \
+  gh_capture_err err adapter_issue_body "$n" >"$body" \
     || { rm -f "$body"; gh_die "$read_what" "$err"; }
   temp_file_make result || { rm -f "$body"; die "could not create a temp file for issue #$n's rewritten body"; }
   "$@" <"$body" >"$result"
@@ -445,7 +445,7 @@ issue_body_rewrite() {
   fi
   if cmp -s "$body" "$result"; then rm -f "$body" "$result"; return 0; fi
   rm -f "$body"
-  capture_err err adapter_issue_body_edit "$n" "$result" \
+  gh_capture_err err adapter_issue_body_edit "$n" "$result" \
     || { rm -f "$result"; gh_die "$write_what" "$err"; }
   rm -f "$result"
 }
@@ -488,7 +488,7 @@ ticket_blockers() {
 # prefixed so no caller's variable name is shadowed.
 ticket_edges_verified() {
   local __tev_have __tev_err
-  if ! capture __tev_have __tev_err adapter_blockers "$2"; then
+  if ! gh_capture __tev_have __tev_err adapter_blockers "$2"; then
     printf -v "$1" '%s' "$__tev_err"
     return 2
   fi

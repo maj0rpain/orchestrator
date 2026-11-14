@@ -450,7 +450,7 @@ cmd_issue_triage() {
   local tmp
   temp_file_make tmp || die "could not create a temp file for the triage comment on issue #$issue"
   printf 'An orchestrator planning session triaged this issue to `%s`.\n' "$ready" >"$tmp"
-  capture_err err adapter_issue_comment "$issue" "$tmp" \
+  gh_capture_err err adapter_issue_comment "$issue" "$tmp" \
     || warn "warning: issue #$issue is labelled $ready, but gh could not post the triage comment on it: $(gh_reason "$err")"
   rm -f "$tmp"
 }

@@ -20,6 +20,12 @@ scripts/test/affected.sh                      # the suites a change maps to; run
 scripts/test/all.sh                           # every suite; run once before opening a PR
 ```
 
+A GitHub operation - an adapter_* operation or gh itself - is captured through
+the pair `gh_capture` and `gh_capture_err`, never through bare `capture` or
+`capture_err`: the pair resolves the Repo in the caller's shell first, so the
+command resolves it once. Bare `capture` and `capture_err` stay for commands
+that are not GitHub operations.
+
 While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
 `<section>` is an extended regex matched, ignoring case, against the `# ---`
@@ -412,7 +418,7 @@ scripts/orch/trust.sh         the Trust module, a concept module with no noun: w
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
-scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
+scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the ORCH_GH_ADAPTER hook
 scripts/orch/suite-cost.sh    the suite-cost noun's module, with the ORCH_SUITE_COST_TIMER hook: a test knob like ORCH_GH_ADAPTER, naming a file (the tests' scripts/test/suite_cost_timer_fake.sh) that overrides only the step timing a command
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh

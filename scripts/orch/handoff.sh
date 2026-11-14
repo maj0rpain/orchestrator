@@ -245,7 +245,7 @@ handoff_comment_post() {
   local issue="$1" name="$2" file="$3" body gh_err
   temp_file_make body || die "could not create a temp file for the handoff comment"
   { marked_comment_write handoff "$name"; cat "$file"; } >"$body"
-  if ! capture_err gh_err adapter_issue_comment "$issue" "$body"; then
+  if ! gh_capture_err gh_err adapter_issue_comment "$issue" "$body"; then
     rm -f "$body"
     warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
     return 1
@@ -498,7 +498,7 @@ handoff_comment_retire() {
     timeline_handoff "$name" || continue
     temp_file_make body || die "could not create a temp file for the retired comment"
     { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
-    capture_err gh_err adapter_issue_comment "$issue" "$body" || {
+    gh_capture_err gh_err adapter_issue_comment "$issue" "$body" || {
       rm -f "$body"
       die "could not retire the $name handoff on issue #$issue: $(gh_reason "$gh_err") - comments posted: ${posted:-none}; the recorded phase is unchanged, so a re-run retires the rest"
     }
