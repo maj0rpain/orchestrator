@@ -447,9 +447,7 @@ rm -rf "$hs"
 new_repo >/dev/null
 rec_path made
 fake_proc="$(mktemp -d)"
-fake_bin="$(mktemp -d)"
-printf '#!/bin/sh\nexit 1\n' >"$fake_bin/ps"
-chmod +x "$fake_bin/ps"
+fake_bin="$(fails_bin ps '*')"
 errf="$(mktemp)"
 out="$(PATH="$fake_bin:$PATH" ORCH_PROC_DIR="$fake_proc" "$ORCH" suite-cost run -- sh -c 'echo $PPID; exit 3' 2>"$errf")"; st=$?
 assert_status "a run whose start time is unreadable passes its exit code through" "$st" 3

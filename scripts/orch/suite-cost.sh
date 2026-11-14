@@ -309,11 +309,21 @@ suite_cost_head_commit() {
 suite_cost_measure() {
   local tf real user sys TIMEFORMAT='%2R %2U %2S'
   SUITE_COST_STATUS=0
-  # temp_file_make sets SUITE_COST_TIMEFILE itself, in its last step, so the
-  # handler never sees the file made but the variable empty for longer than one
-  # assignment.
-  temp_file_make SUITE_COST_TIMEFILE || die "could not make a temp file to time the command"
-  tf="$SUITE_COST_TIMEFILE"
+  # The handler removes SUITE_COST_TIMEFILE, so it is set to the fresh name
+  # before the file is made: a signal landing at any point then finds the path
+  # and removes the file, or finds nothing to remove. A name at which anything
+  # exists is never set, and a failed exclusive create clears it at once, so the
+  # handler can only remove a file this step made.
+  local try=0
+  while [ "$((try += 1))" -le 10 ]; do
+    temp_file_name tf
+    [[ -e $tf || -L $tf ]] && continue
+    SUITE_COST_TIMEFILE="$tf"
+    (umask 077; set -o noclobber; : >"$tf") 2>/dev/null && [[ -f $tf && ! -L $tf ]] && break
+    SUITE_COST_TIMEFILE=""
+    tf=""
+  done
+  [ -n "$tf" ] || die "could not make a temp file to time the command"
   { time { command "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>"$tf"
   read -r real user sys < <(tail -n 1 "$tf") || true
   rm -f "$tf"
