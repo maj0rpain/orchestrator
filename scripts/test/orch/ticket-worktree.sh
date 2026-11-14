@@ -333,6 +333,84 @@ out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses a ticket with no worktree" "$st" 1
 out="$("$ORCH" ticket-worktree remove 7 --bogus 2>&1)"; st=$?
 assert_status "remove refuses an unknown flag" "$st" 1
+# A ticket worktree whose directory was deleted outside git: git still records
+# it, the listing names it, and remove clears the record and the branch.
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" commit -q --allow-empty -m "ticket work"
+git merge -q --ff-only orch/5-feature--t7
+other_wt="$(mktemp -d)/other"
+git worktree add -q -b gone-other "$other_wt"
+rm -rf "$other_wt"
+rm -rf "$wt"
+assert_eq "a deleted-directory worktree is still listed" "$("$ORCH" ticket-worktree list)" "7 $wt"
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove of a merged ticket whose directory is gone succeeds with no flag" "$st" 0
+assert_eq "git no longer records it" "$(git worktree list --porcelain | grep -c "worktree $wt\$")" "0"
+assert_eq "the listing is empty" "$("$ORCH" ticket-worktree list)" ""
+assert_eq "the ticket branch is gone" "$(git branch --list 'orch/5-feature--t7')" ""
+assert_eq "another stale record is still listed by git" \
+  "$(git worktree list --porcelain | grep -c "worktree $other_wt\$")" "1"
+git worktree prune
+git branch -q -D gone-other
+
+# Unmerged: refused with the record and the branch kept; --unmerged clears both.
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" commit -q --allow-empty -m "unmerged work"
+rm -rf "$wt"
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove of an unmerged ticket whose directory is gone refuses" "$st" 1
+assert_contains "saying it is not merged" "$out" "is not merged into"
+assert_eq "keeping the listing" "$("$ORCH" ticket-worktree list)" "7 $wt"
+assert_eq "and the branch" "$(branch_presence refs/heads/orch/5-feature--t7)" "present"
+out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
+assert_status "--unmerged clears it" "$st" 0
+assert_eq "the record" "$("$ORCH" ticket-worktree list)" ""
+assert_eq "and the branch" "$(branch_presence refs/heads/orch/5-feature--t7)" "gone"
+
+# Something at the path that is not a worktree, while git's record names it:
+# refused naming the path, before the merged check, nothing removed.
+for kind in dir file; do
+  wt="$("$ORCH" ticket-worktree add 7)"
+  git -C "$wt" commit -q --allow-empty -m "unmerged work"
+  rm -rf "$wt"
+  if [ "$kind" = dir ]; then mkdir "$wt"; else echo x >"$wt"; fi
+  out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
+  assert_status "remove with a $kind at the recorded path refuses" "$st" 1
+  assert_contains "naming the path" "$out" "$wt"
+  assert_contains "saying to delete it and run the command again" "$out" "delete it and run the command again"
+  out="$("$ORCH" ticket-worktree remove 7 2>&1)"
+  assert_not_contains "before the merged check ($kind)" "$out" "not merged"
+  assert_eq "what sits there stays ($kind)" "$(on_disk "$wt")" "present"
+  assert_eq "git's record stays ($kind)" "$("$ORCH" ticket-worktree list)" "7 $wt"
+  rm -rf "$wt"
+  "$ORCH" ticket-worktree remove 7 --unmerged >/dev/null 2>&1
+done
+
+# The teardown keeps another branch the record holds, deleting only the
+# ticket's own; with the ticket branch gone it refuses, and --unmerged clears.
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" checkout -q -b keep-me
+git -C "$wt" commit -q --allow-empty -m "other branch work"
+git merge -q --ff-only keep-me
+rm -rf "$wt"
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown of a gone directory holding another branch succeeds" "$st" 0
+assert_eq "keeping the other branch" "$(branch_presence refs/heads/keep-me)" "present"
+assert_eq "deleting the ticket branch" "$(branch_presence refs/heads/orch/5-feature--t7)" "gone"
+assert_eq "clearing the record" "$("$ORCH" ticket-worktree list)" ""
+git reset -q --hard HEAD~1
+git branch -q -D keep-me
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" checkout -q --detach
+git branch -q -D orch/5-feature--t7
+rm -rf "$wt"
+out="$(sourced_orch ticket_worktree_teardown 7 2>&1)"; st=$?
+assert_status "teardown with the ticket branch gone refuses without --unmerged" "$st" 1
+assert_eq "keeping the record" "$("$ORCH" ticket-worktree list)" "7 $wt"
+out="$(sourced_orch ticket_worktree_teardown 7 --unmerged 2>&1)"; st=$?
+assert_status "and clears the record with --unmerged" "$st" 0
+assert_eq "leaving no record" "$("$ORCH" ticket-worktree list)" ""
+
 out="$("$ORCH" ticket-worktree bogus 2>&1)"; st=$?
 assert_status "ticket-worktree bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown ticket-worktree op"

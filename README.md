@@ -17,6 +17,7 @@ exchanges that `orch-to-spec` (test seams) and the spec review depend on.
 
 - Claude Code, or the Junie CLI (see [Install](#install)).
 - `gh`, `jq`, and `git`, with `gh` signed in to the repo's GitHub.
+- bash 4.2 or newer. macOS ships 3.2 as `/bin/bash`: run `brew install bash`.
 - No per-repo setup: issues are labelled with the five canonical triage label
   names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
   `wontfix`), or with the names a `docs/agents/triage-labels.md` table maps

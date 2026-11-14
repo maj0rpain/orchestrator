@@ -321,8 +321,7 @@ container is the boundary. Copy `docker/.env.example` to `docker/.env`
 - **Optional:** `ORCH_GIT_NAME` and `ORCH_GIT_EMAIL` (commits default to the
   token owner's login and GitHub noreply address); `ORCH_PERMISSION_MODE`
   (default `bypassPermissions`), `ORCH_CAP`, `ORCH_HANDLE`, `ORCH_ROUNDS` and
-  `ORCH_BUDGET`, written to the matching `orchestrator.autopilot.*` keys;
-  `ORCH_CLONE_DIR` (default `/home/orch/repo`).
+  `ORCH_BUDGET`, written to the matching `orchestrator.autopilot.*` keys.
 - **Models:** `ORCH_MODEL` and `ORCH_EFFORT` set the headless phase session's
   model and effort (`orchestrator.autopilot.model` / `.effort`).
   `ORCH_MODEL_<ROLE>` and `ORCH_EFFORT_<ROLE>`, with the role upper-case

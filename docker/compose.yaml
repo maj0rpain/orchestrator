@@ -19,6 +19,11 @@ services:
     restart: unless-stopped
     cpus: ${ORCH_CPUS:-0}
     env_file: ${ORCH_ENV_FILE:-.env}
+    # The clone always lives on the repo volume: a service's environment beats
+    # its env_file, so a stale ORCH_CLONE_DIR line cannot move the clone off it.
+    # Keep this the volume's mount target below.
+    environment:
+      ORCH_CLONE_DIR: /home/orch/repo
     volumes:
       - repo:/home/orch/repo
 

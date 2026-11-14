@@ -1347,6 +1347,18 @@ assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$f
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 git config branch.orch/5-feature--t7.orchestrator-ticket-parent orch/5-feature
 
+# A ticket worktree whose directory is gone cannot be rebased in: merge still
+# refuses, changing nothing.
+rm -rf "$wt"
+tip7="$(git rev-parse orch/5-feature--t7)"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a ticket worktree whose directory is gone" "$st" 1
+assert_contains "saying there is no ticket worktree" "$out" "no ticket worktree"
+assert_eq "git's record is unchanged" "$("$ORCH" ticket-worktree list)" "7 $wt"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$tip7"
+git worktree prune
+git branch -q -D orch/5-feature--t7
+
 out="$("$ORCH" ticket merge 9 2>&1)"; st=$?
 assert_status "merge refuses a ticket with no ticket worktree" "$st" 1
 out="$("$ORCH" ticket merge 2>&1)"; st=$?
@@ -1675,3 +1687,57 @@ out="$("$ORCH" ticket reclaim 2>&1)"; st=$?
 assert_status "reclaim refuses a missing parent" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket reclaim <parent>"
 restore_suite_env
+
+# a leftover whose directory is gone: its record is cleared through the
+# teardown, with and without a ticket branch, reported-and-merged or not
+for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobranch; do
+  rc_setup 1
+  if [ "$rc_case" = merged-branch ]; then
+    stale_wt="$(mktemp -d)/stale"
+    git worktree add -q -b rc-stale "$stale_wt"
+    rm -rf "$stale_wt"
+  fi
+  case "$rc_case" in
+    merged-*) rc_report 7; "$ORCH" ticket merge 7 >/dev/null 2>&1 ;;
+  esac
+  case "$rc_case" in
+    *-nobranch)
+      case "$rc_case" in unreported-*) commit_file . other.txt x ;; esac
+      git -C "$(rc_wt 7)" checkout -q --detach
+      git branch -q -D orch/5-feature--t7
+      ;;
+  esac
+  rm -rf "$(rc_wt 7)"
+  out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+  assert_status "reclaim of a gone-directory leftover ($rc_case) succeeds" "$st" 0
+  assert_contains "printing the worktree line ($rc_case)" "$out" "removed the worktree of ticket #7"
+  case "$rc_case" in
+    merged-*) assert_contains "printing the close ($rc_case)" "$out" "closed ticket #7" ;;
+    unreported-*) assert_contains "printing the discard ($rc_case)" "$out" "discarded ticket #7" ;;
+  esac
+  case "$rc_case" in
+    *-branch) assert_contains "printing the branch line ($rc_case)" "$out" "deleted the branch of ticket #7" ;;
+    *-nobranch) assert_not_contains "printing no branch line ($rc_case)" "$out" "deleted the branch of ticket #7" ;;
+  esac
+  assert_eq "leaving no record ($rc_case)" "$("$ORCH" ticket-worktree list)" ""
+  assert_eq "and no ticket branch ($rc_case)" "$(rc_has_branch 7)" "no"
+  if [ "$rc_case" = merged-branch ]; then
+    assert_eq "another stale record is still listed by git ($rc_case)" \
+      "$(git worktree list --porcelain | grep -c "worktree $stale_wt\$")" "1"
+    git worktree prune
+    git branch -q -D rc-stale
+  fi
+done
+
+# a plain directory at the recorded path: the teardown's refusal, then the
+# after-check; the directory, the record and the branch stay
+rc_setup 1
+rm -rf "$(rc_wt 7)"
+mkdir "$(rc_wt 7)"
+out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim with a plain directory at the recorded path dies" "$st" 1
+assert_contains "with the teardown's refusal" "$out" "delete it and run the command again"
+assert_contains "and the could-not-remove line" "$out" "ticket #7: could not remove its worktree $(rc_wt 7)"
+assert_eq "the directory stays" "$(on_disk "$(rc_wt 7)")" "present"
+assert_eq "the record stays" "$("$ORCH" ticket-worktree list)" "7 $(rc_wt 7)"
+assert_eq "and the branch" "$(rc_has_branch 7)" "yes"

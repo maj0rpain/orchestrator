@@ -10,7 +10,9 @@
 # ORCH_PERMISSION_MODE, ORCH_CAP, ORCH_HANDLE, ORCH_ROUNDS, ORCH_BUDGET,
 # ORCH_MODEL, ORCH_EFFORT, ORCH_MODEL_<ROLE>, ORCH_EFFORT_<ROLE> (roles from
 # `orch.sh agent roles`, upper-case: IMPLEMENTER, LENS, REVIEWER, FIXER, CLOSER,
-# RESOLVER, AUDITOR) and ORCH_CLONE_DIR (default /home/orch/repo) are optional;
+# RESOLVER, AUDITOR) are optional. ORCH_CLONE_DIR (default /home/orch/repo) is
+# not an env-file setting: compose sets it to the repo volume's mount target
+# and the tests use it to place the clone.
 # ORCH_SH names the installed plugin's orch.sh. A variable set to the empty
 # string counts as unset. ORCH_MODEL and ORCH_EFFORT are the phase session's
 # model and effort (orchestrator.autopilot.model/effort); a role variable is

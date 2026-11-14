@@ -371,8 +371,8 @@ array_index() {
 }
 
 # state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
-# as the lowercase word a message prints - bash 3.2 has no lowercase
-# expansion. Any other value is passed through unchanged.
+# as the lowercase word a message prints. Any other value is passed through
+# unchanged.
 state_word() {
   case "$2" in
     OPEN) printf -v "$1" '%s' open ;;
