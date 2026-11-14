@@ -497,8 +497,13 @@ FAKE_CLAUDE_HANG=2 PATH="$bench_root/bin:$PATH" HOME="$bench_root/home" BENCH_RO
   bash "$BENCH_COPY" run implementability --definition "$definition" \
   --out "$bench_root/runs-term" -n 3 >/dev/null 2>&1 &
 term_pid=$!
-claude_pid="$(fifo_read_line 20 "claude pid ($hang_fifo)" "$hang_fifo")"
-kill -TERM "$term_pid"
+claude_pid="$(fifo_read_line 20 "claude pid ($hang_fifo)" "$hang_fifo")"; pid_st=$?
+if [ "$pid_st" -ne 0 ] || [ -z "$claude_pid" ]; then
+  bad "the fake claude reports its pid before the TERM" "no pid within 20s (status $pid_st)"
+  claude_pid=""
+  kill "$term_pid" 2>/dev/null
+fi
+kill -TERM "$term_pid" 2>/dev/null
 fifo_bounded 20 "bench exit" tail --pid="$term_pid" -f /dev/null; bound_st=$?
 if [ "$bound_st" -eq 0 ]; then ok "a TERM stops it promptly"; else
   bad "a TERM stops it promptly" "still running after 20s"
@@ -506,7 +511,8 @@ if [ "$bound_st" -eq 0 ]; then ok "a TERM stops it promptly"; else
 fi
 wait "$term_pid"; term_st=$?
 assert_status "a TERM exits 130" "$term_st" 130
-if kill -0 "$claude_pid" 2>/dev/null; then bad "a TERM stops the running claude -p" "pid $claude_pid alive"; kill "$claude_pid"; else ok "a TERM stops the running claude -p"; fi
+if [ -z "$claude_pid" ]; then bad "a TERM stops the running claude -p" "no claude pid to check"
+elif kill -0 "$claude_pid" 2>/dev/null; then bad "a TERM stops the running claude -p" "pid $claude_pid alive"; kill "$claude_pid"; else ok "a TERM stops the running claude -p"; fi
 assert_eq "a TERM keeps the finished runs and removes the interrupted one" \
   "$(cd "$bench_root/runs-term" && ls -d run-*)" run-1
 assert_eq "a TERM removes the worktree" "$(worktrees)" 1

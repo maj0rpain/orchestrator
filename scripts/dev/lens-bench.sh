@@ -85,7 +85,8 @@ source "$SCRIPT_DIR/../test/test_jobs.sh"
 
 # The temporary directory `run` holds its worktree of the repo run_repo and
 # its run directories in, and the output run subdirectory `run` is writing,
-# both removed on exit.
+# both removed on exit; and the pid of the running `claude -p`, empty between
+# runs, which the INT and TERM trap stops.
 run_tmp="" run_partial="" run_repo="" run_pid=""
 run_cleanup() {
   local status=$?
