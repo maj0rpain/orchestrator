@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.66
+
+`orch.sh branch retire` no longer records a retirement when origin cannot be asked whether the old remote ref is still there after a failed delete; it dies, says the new name is pushed and names the rerun.
+
 ## 5.2.65
 
 Record the autopilot watch loop's own background-child start (its tick start and sleep start) as outside the background-child-start reuse rule, in `.out-of-scope/watch-loop-background-child-helper.md`.
