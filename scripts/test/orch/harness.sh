@@ -3531,12 +3531,14 @@ bc_out="$(source "$bc_helpers"; test_jobs_run_child true; echo "child=[$TEST_JOB
 assert_eq "TEST_JOBS_CHILD is empty after it returns" "$bc_out" "child=[]"
 bc_out="$(source "$bc_helpers"; bc_fn() { echo "from a function"; }; test_jobs_run_child bc_fn)"
 assert_eq "it runs a function of the sourcing shell" "$bc_out" "from a function"
-bc_out="$(source "$bc_helpers"; test_jobs_run_child echo hello >"${TMPDIR:-/tmp}/bc.$$"; cat "${TMPDIR:-/tmp}/bc.$$"; rm -f "${TMPDIR:-/tmp}/bc.$$")"
+bc_file="$(mktemp)"
+bc_out="$(source "$bc_helpers"; test_jobs_run_child echo hello >"$bc_file"; cat "$bc_file")"
+rm -f "$bc_file"
 assert_eq "a stdout redirect on the call reaches the child" "$bc_out" "hello"
 bc_out="$(set -e; source "$bc_helpers"; trap 'echo "child=[$TEST_JOBS_CHILD]"' EXIT; test_jobs_run_child false)"; bc_st=$?
 assert_status "a bare call under set -e exits 1" "$bc_st" 1
 assert_eq "with TEST_JOBS_CHILD already cleared" "$bc_out" "child=[]"
-unset bc_helpers bc_out bc_st
+unset bc_helpers bc_out bc_st bc_file
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
