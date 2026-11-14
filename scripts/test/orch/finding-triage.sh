@@ -349,11 +349,7 @@ fake_issue 12 closed
 # A PR head that edited the file and never reached the default branch: the
 # file differs, yet no commit since the filing touched it there, so the scan
 # names no commit older than the filing.
-git -C "$work" checkout -q -b pr11 "$head_sha"
-sed -i 's/^other line 2$/other line 2, on the PR only/' "$work/src/other.sh"
-git -C "$work" commit -qam "an unmerged PR edit"
-unmerged_sha="$(git -C "$work" rev-parse HEAD)"
-git -C "$work" push -q origin HEAD:refs/pull/11/head
+unmerged_sha="$(pr_head pr11 11 "$head_sha" other.sh 's/^other line 2$/other line 2, on the PR only/')"
 finding 11 "review:nit,needs-triage" "\`src/other.sh:2\` at $unmerged_sha" 11
 out="$(scan 11 2>&1)"; st=$?
 assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
@@ -362,6 +358,23 @@ assert_contains "saying no commit since the filing touched its lines" "$(field_o
 assert_eq "its exact line" "$(line_of 11 "$out")" "$(never_line 11 other.sh 2 "$unmerged_sha")"
 assert_eq "the never-reached scan from a subdirectory prints the root's line" "$(cd src && scan 11 2>&1)" "$out"
 fake_issue 11 closed
+
+# A PR head with no history in common with the default branch: the merge-base
+# lookup fails, which proves nothing about its deleted line, so the scan keeps
+# its stand-in, the newest commit touching the file, rather than calling the
+# line never reached.
+git -C "$work" checkout -q --orphan unrelated
+{ echo "other line 1"; echo "an unrelated line"; echo "other line 2"; } >"$work/src/other.sh"
+git -C "$work" add src/other.sh
+git -C "$work" commit -qm "an unrelated history"
+unrelated_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" push -q origin HEAD:refs/pull/31/head
+git -C "$work" checkout -q -f main
+finding 31 "review:nit,needs-triage" "\`src/other.sh:2\` at $unrelated_sha" 31
+out="$(scan 31 2>&1)"; st=$?
+assert_status "scans a finding filed on a head with no merge base" "$st" 0
+assert_eq "a failed merge-base lookup is changed, not never reached" "$(field_of 31 4 "$out")" "changed"
+fake_issue 31 closed
 
 # A finding whose lines the scan follows to the default branch, where later
 # commits touched only other lines of its file (line 3's fix, line 11's

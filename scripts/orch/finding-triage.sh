@@ -106,11 +106,15 @@ merge_base_holds() {
 # ever_held <old sha> <ref> <file> <ranges>: succeeds when some line of the
 # <ranges>, lines of <file> at <old sha>, a commit off <ref>, was held by the
 # merge base of the two or by a commit on <ref> since it - fails for lines
-# that never reached <ref>.
+# that never reached <ref>. A lookup that fails (no merge base, a log that
+# cannot run) succeeds too: it proves nothing about the lines, so the caller
+# keeps its stand-in.
 ever_held() {
-  local old="$1" ref="$2" file="$3" ranges="$4" commit
-  merge_base_holds "$old" "$ref" "$file" "$ranges" && return 0
-  for commit in $(git -C "$ROOT" log --format=%H "$ref" "^$old" -- "$file" 2>/dev/null); do
+  local old="$1" ref="$2" file="$3" ranges="$4" base commits commit
+  base="$(git -C "$ROOT" merge-base "$old" "$ref" 2>/dev/null)" || return 0
+  held_lines "$old" "$base" "$file" "$ranges" && return 0
+  commits="$(git -C "$ROOT" log --format=%H "$ref" "^$old" -- "$file" 2>/dev/null)" || return 0
+  for commit in $commits; do
     held_lines "$old" "$commit" "$file" "$ranges" && return 0
   done
   return 1
