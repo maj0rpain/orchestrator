@@ -110,8 +110,8 @@ _hook_bash_compound_scan() {
 # Calls hook_bash_walk's test with the part, its unquoted text, part_head
 # (the walker's captured head when one was set, else the whole part) and
 # `inside` (1 when the part starts inside an open compound command, else 0),
-# then updates the open compounds from the part, clears the part, its unquoted
-# text and the head, and carries the part's
+# the open compounds having been updated from the part just before the call;
+# then clears the part, its unquoted text and the head, and carries the part's
 # arithmetic count into the depth `arith`, stopped at 0. Reads
 # hook_bash_walk's locals (dynamic scope).
 hook_bash_walk_call() {
@@ -142,8 +142,10 @@ hook_bash_walk_call() {
 # `select` and `case` and close at `}`, `)`, `fi`, `done` and `esac`, each
 # closing only the innermost compound and only as its own closer; a reserved
 # word counts only in command position, an unquoted `(` or `)` anywhere. A rare
-# input it mis-reads (a `)` inside a parameter expansion) errs either way. The
-# first part whose test
+# input it mis-reads (a `)` inside a parameter expansion) errs either way. An
+# accepted false negative: a command substitution or array literal spread over
+# several lines keeps its inner lines inside an open `(`, so a reader on them is
+# not judged (`x=$(` newline `cat` newline `)`). The first part whose test
 # succeeds ends the walk, with the test's output; the walk always succeeds. A
 # command over 8 KB is not scanned (a false negative), to stay fast. A
 # heredoc delimiter follows bash's word rule (the whole shell word after `<<`

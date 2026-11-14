@@ -2018,6 +2018,7 @@ for bs_cmd in '{ read -r a; read -r b; } < file' 'time { read -r a; read -r b; }
   $'while echo a; read -r v; do :; done < file' $'if echo a; read -r v; then :; fi < file' \
   $'{\n  read -r a\n  read -r b\n} < file' $'echo x | {\n  read -r a\n  cat\n}' \
   '{ echo start; cat; }' 'echo x | ( echo a; cat )' '( read -r a; cat ) < file' \
+  'echo x | ( echo a; cat; echo b )' '( read -r a; cat; echo b ) < file' $'echo x | (\n  echo a\n  cat\n  echo b\n)' \
   'sleep 1 & { read -r a; read -r b; } < file' \
   $'if a; then echo 1; elif b; then echo 2; read -r v; else :; fi < file' \
   $'case $x in\n  a) echo 1; read -r v ;;\n  *) echo 2 ;;\nesac < file' \

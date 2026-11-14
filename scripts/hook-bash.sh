@@ -21,7 +21,9 @@
 #      loop, `if`, `case` or function body) is not judged: its stdin is
 #      whatever feeds the compound as a whole, a redirection after its closer
 #      or a pipe before its opener. Accepted false negative: an unfed reader
-#      inside a compound, `{ echo start; cat; }`, passes and would hang (#3049).
+#      inside a compound, `{ echo start; cat; }`, passes and would hang, and so
+#      does a reader on an inner line of a multi-line command substitution or
+#      array literal, which the walker keeps inside an open `(` (#3049).
 #   3. else, under bypassPermissions, allow with the command rewritten to
 #      `exec </dev/null`, a newline, then the original, so a stray read gets
 #      end-of-file at once; heredocs and here-strings inside the command still
