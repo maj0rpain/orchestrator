@@ -17,6 +17,11 @@
 #   2. else deny, when a part is a plain stdin read
 #      (hook_bash_stdin_is_reader), naming the first such part, under any mode
 #      but bypassPermissions: nothing will feed it, so it would hang.
+#      A part that starts inside an open compound command (a group, subshell,
+#      loop, `if`, `case` or function body) is not judged: its stdin is
+#      whatever feeds the compound as a whole, a redirection after its closer
+#      or a pipe before its opener. Accepted false negative: an unfed reader
+#      inside a compound, `{ echo start; cat; }`, passes and would hang (#3049).
 #   3. else, under bypassPermissions, allow with the command rewritten to
 #      `exec </dev/null`, a newline, then the original, so a stray read gets
 #      end-of-file at once; heredocs and here-strings inside the command still
@@ -134,8 +139,10 @@ hook_bash_poll_print_if_pgrep() {
 }
 
 # The hook_bash_walk callback: $1 is the part, $2 its unquoted text, $3 its
-# head. Succeeds, ending the walk, on a pgrep or pkill word (hook_bash_pgrep=1).
-# Otherwise, when hook_bash_reader_wanted is 1 and no reader is recorded yet,
+# head, $4 1 when the part starts inside an open compound command. Succeeds,
+# ending the walk, on a pgrep or pkill word (hook_bash_pgrep=1).
+# Otherwise, when hook_bash_reader_wanted is 1, the part starts outside every
+# compound and no reader is recorded yet,
 # records the part, leading whitespace trimmed, in hook_bash_reader if its head
 # is a plain stdin read; fails.
 hook_bash_scan_part() {
@@ -143,7 +150,7 @@ hook_bash_scan_part() {
     hook_bash_pgrep=1
     return 0
   fi
-  if [ "$hook_bash_reader_wanted" = 1 ] && [ -z "$hook_bash_reader" ] && hook_bash_stdin_is_reader "$3"; then
+  if [ "$hook_bash_reader_wanted" = 1 ] && [ "${4:-0}" = 0 ] && [ -z "$hook_bash_reader" ] && hook_bash_stdin_is_reader "$3"; then
     hook_bash_reader="${1#"${1%%[![:space:]]*}"}"
   fi
   return 1
