@@ -414,11 +414,16 @@ printf '{"session_id":"session-%s"}\n' "$calls"
 FAKE
 chmod +x "$bench_root/bin/claude"
 
-# fake_run <args...>: run_copy run, with the fake claude, its call count reset.
-fake_run() {
+# fake_reset: clears what the fake claude recorded, its call count included.
+fake_reset() {
   rm -rf "$bench_root"/claude.calls "$bench_root"/claude.cwd.* "$bench_root"/claude.head.* \
     "$bench_root"/claude.args.* \
     "$bench_root/home/.claude"
+}
+
+# fake_run <args...>: run_copy run, with the fake claude, its call count reset.
+fake_run() {
+  fake_reset
   PATH="$bench_root/bin:$PATH" HOME="$bench_root/home" BENCH_ROOT="$bench_root" \
     run_copy run "$@"
 }
@@ -487,18 +492,20 @@ echo
 echo "run: a TERM while a run is in progress (fake claude)"
 hang_fifo="$bench_root/claude.hang.fifo"
 mkfifo "$hang_fifo"
-rm -rf "$bench_root/claude.calls" "$bench_root/home/.claude"
+fake_reset
 FAKE_CLAUDE_HANG=2 PATH="$bench_root/bin:$PATH" HOME="$bench_root/home" BENCH_ROOT="$bench_root" \
   bash "$BENCH_COPY" run implementability --definition "$definition" \
   --out "$bench_root/runs-term" -n 3 >/dev/null 2>&1 &
 term_pid=$!
 claude_pid="$(fifo_read_line 20 "claude pid ($hang_fifo)" "$hang_fifo")"
 kill -TERM "$term_pid"
-term_start=$SECONDS
-fifo_bounded 20 "bench exit" tail --pid="$term_pid" -f /dev/null
+fifo_bounded 20 "bench exit" tail --pid="$term_pid" -f /dev/null; bound_st=$?
+if [ "$bound_st" -eq 0 ]; then ok "a TERM stops it promptly"; else
+  bad "a TERM stops it promptly" "still running after 20s"
+  kill "$claude_pid" "$term_pid" 2>/dev/null
+fi
 wait "$term_pid"; term_st=$?
 assert_status "a TERM exits 130" "$term_st" 130
-if [ $((SECONDS - term_start)) -lt 20 ]; then ok "a TERM stops it promptly"; else bad "a TERM stops it promptly" "took $((SECONDS - term_start))s"; fi
 if kill -0 "$claude_pid" 2>/dev/null; then bad "a TERM stops the running claude -p" "pid $claude_pid alive"; kill "$claude_pid"; else ok "a TERM stops the running claude -p"; fi
 assert_eq "a TERM keeps the finished runs and removes the interrupted one" \
   "$(cd "$bench_root/runs-term" && ls -d run-*)" run-1
