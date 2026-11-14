@@ -964,12 +964,15 @@ rm -rf "$ord_dir"
 # --- the shard setting (#2859) ------------------------------------------------
 # A minimal test tree - the runners, setup.sh, a harness with an isolation
 # section and five planted sections - over planted durations: CPU tenths 50,
-# 40, 30 and 20 for s1 to s4, s5 unlisted (so it weighs 50), 70 for
+# 40, 30 and 20 for s1 to s4, s5 unlisted (so it weighs the median of the listed sections, 30: the lower
+# of the middle 30 and 40), 70 for
 # hooks_test.sh and 10 for shellcheck, which group 1 starts with (80). The wall
 # tenths differ on purpose (10, 30, 20, 5, 9, 9): a dealing by wall gives other
-# groups. Two groups deal, heaviest first, s1 to group 2 (0 < 80), s5 to group
-# 2 (50 < 80), s2 to group 1 (80 < 100), s3 to group 2 (100 < 120) and s4 to
-# group 1 (120 < 130): s2 and s4 in group 1, s1, s3 and s5 in group 2. Each
+# groups. The line of 99 for a section that no longer exists is not counted in
+# the median (counting it would make it 40). Two groups deal, heaviest first (s3
+# and s5 tie at 30, s3 first in walk order): s1 to group 2 (0 < 80), s2 to group
+# 2 (50 < 80), s3 to group 1 (80 < 90), s5 to group 2 (90 < 110) and s4 to group
+# 1 (110 < 120): s3 and s4 in group 1, s1, s2 and s5 in group 2. Each
 # planted section logs its process id and name as it starts; the runner starts
 # its children one after another, so the log sorted by id is the start order.
 echo
@@ -1001,13 +1004,13 @@ sh_run() {
 }
 sh_run 1/2
 assert_status "group 1 of 2 passes" "$sh_st" 0
-assert_eq "group 1 runs isolation and the sections the dealing by CPU gives it" "$sh_printed" "isolation,s2,s4,"
-assert_eq "and starts them longest-first by wall" "$sh_started" "s2,s4,"
+assert_eq "group 1 runs isolation and the sections the dealing by CPU gives it" "$sh_printed" "isolation,s3,s4,"
+assert_eq "and starts them longest-first by wall" "$sh_started" "s3,s4,"
 sh_run 2/2
 sh_first_22="$sh_printed"
-assert_eq "group 2 gets the rest, the unlisted section weighing as the heaviest listed one by CPU" \
-  "$sh_printed" "isolation,s1,s3,s5,"
-assert_eq "its sections start unlisted first, then by wall though the CPU order differs" "$sh_started" "s5,s3,s1,"
+assert_eq "group 2 gets the rest, the unlisted section weighing the median listed one by CPU" \
+  "$sh_printed" "isolation,s1,s2,s5,"
+assert_eq "its sections start unlisted first, then by wall though the CPU order differs" "$sh_started" "s5,s2,s1,"
 # sh_case <label> <group 1> <durations line>...: the printed sections of group 1
 # of 2 under a planted durations file. The deal is a partition, which the
 # "groups run every planted section exactly once" loop proves, so group 1's
@@ -1025,9 +1028,9 @@ cp "$sh_t/section-durations.tsv" "$sh_dir/durations.keep"
 sh_case "with no section listed, each weighs one second" "isolation,s4," "9	30	shellcheck"
 printf '%s' "$(<"$sh_dir/durations.keep")" >"$sh_t/section-durations.tsv"
 sh_run 1/2
-assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s2,s4,"
+assert_eq "a durations file with no final newline deals the same" "$sh_printed" "isolation,s3,s4,"
 sh_run 2/2
-assert_eq "and its sections start unlisted first, then by wall" "$sh_started" "s5,s3,s1,"
+assert_eq "and its sections start unlisted first, then by wall" "$sh_started" "s5,s2,s1,"
 # Zero suite and shellcheck lines add 0, not a weight: group 1 starts at 0 and
 # takes s1 first, then s3 and s5 on ties. Weighing each line as 10 gives s1 to
 # group 2.
@@ -1037,20 +1040,43 @@ sh_case "a suite and a shellcheck line with 0 CPU weigh 0" "isolation,s1,s3,s5,"
 # Ties: s1 and s2 weigh 20, s3 and s4 10, s5 0. Of s1 and s2 the earlier is
 # dealt first, to group 1, so s3 lands there on the 20-20 tie, s4 in group 2,
 # and s5 in group 1 on the 30-30 tie. The reverse walk order flips both ties
-# and gives group 1 s2, s4 and s5. It also proves a listed 0-CPU section weighs
-# 0: s5 is listed at 0, and weighed as the unlisted 20 (the heaviest listed) it
-# would be dealt s1, s2, s5, s3, s4 and group 1 would get s1 and s5 only. That
-# holds because this case lists no suite or shellcheck line, so group 1 starts
-# at 0.
+# and gives group 1 s2, s4 and s5. Every section is listed here, so the unlisted
+# weight plays no part.
 sh_case "ties go to the earlier section and the lowest group" "isolation,s1,s3,s5," \
   "1	20	shard s1" "1	20	shard s2" "1	10	shard s3" "1	10	shard s4" "1	0	shard s5"
+# The unlisted weight is the median CPU of the listed sections: the middle value
+# on an odd count, the lower middle on an even one. Each case is group 1 of 2
+# over a file with no suite or shellcheck line, so both groups start at 0.
+# s1 60, s2 20 and s3 10 are listed, s4 and s5 weigh the median 20: s1 to group
+# 1, s2, s4 and s5 to group 2, s3 to group 1 on the 60-60 tie. Weighing them as
+# the heaviest (60) gives group 1 s1 and s5.
+sh_case "an odd count of listed sections: each of two unlisted weighs the middle one" "isolation,s1,s3," \
+  "1	60	shard s1" "1	20	shard s2" "1	10	shard s3"
+# s1 40, s2 30 and s3 20 listed (median 30): s1 and s5 in group 1. A line that
+# counted toward the median as a 0 would make it the lower middle of 0, 20, 30
+# and 40, 20, which gives group 1 s1 and s4.
+sh_case "a line for a section that no longer exists is not counted in the median" "isolation,s1,s5," \
+  "1	40	shard s1" "1	30	shard s2" "1	20	shard s3" "1	0	a section that no longer exists"
+sh_case "a line for another suite is not counted in the median" "isolation,s1,s5," \
+  "1	40	shard s1" "1	30	shard s2" "1	20	shard s3" "1	0	hooks_test.sh"
+sh_case "a shellcheck line is not counted in the median" "isolation,s1,s5," \
+  "1	40	shard s1" "1	30	shard s2" "1	20	shard s3" "1	0	shellcheck"
+# s5 is listed at 0 (median 30 of 50, 40, 30, 20, 0): it weighs 0, so it comes
+# last and lands in group 1 on the 70-70 tie, with s1 and s4. Weighed as the
+# unlisted 30 it would give group 1 s1 and s5.
+sh_case "a section listed at 0 weighs 0, not the unlisted weight" "isolation,s1,s4,s5," \
+  "1	50	shard s1" "1	40	shard s2" "1	30	shard s3" "1	20	shard s4" "1	0	shard s5"
+# s4 is listed at 0 and s5 is not: the 0 counts toward the median, 10 of 40, 30,
+# 10 and 0, so s5 weighs 10 and group 1 gets s1 and s5. Leaving the 0 out makes
+# the median 30 and gives group 1 s1, s3 and s4.
+sh_case "a section listed at 0 counts as 0 toward the median" "isolation,s1,s5," \
+  "1	40	shard s1" "1	30	shard s2" "1	10	shard s3" "1	0	shard s4"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-# Why 4 groups: the weights are s1 50, s5 (unlisted, so the heaviest listed) 50,
-# s2 40, s3 30 and s4 20 CPU tenths, dealt in that order; group 1 starts at 80,
-# the rest at 0. With 4 groups s1, s5 and s2 fill groups 2-4, s3 goes to group 4
-# (40, the lowest total) and s4 to group 2 (50, the lowest-numbered on the 50-50
-# tie), leaving 1/4 with isolation alone. With 3 groups s4 would land in group 1
-# on the 80-80 tie, so 4 is the smallest count that leaves it alone.
+# Why 4 groups: the weights are s1 50, s2 40, s3 30, s5 (unlisted, so the median
+# listed) 30 and s4 20 CPU tenths, dealt in that order; group 1 starts at 80, the
+# rest at 0. With 4 groups s1, s2 and s3 fill groups 2-4, s5 goes to group 4 (30,
+# the lowest total) and s4 to group 3 (40, the lowest), leaving 1/4 with
+# isolation alone.
 # The 2-group pass runs with no durations file; the others with it.
 for sh_n in 2 1 4; do
   sh_label="$sh_n groups run every planted section exactly once"
@@ -1082,7 +1108,7 @@ assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" "${sh_saved_se
 sh_run ""
 assert_eq "an empty value runs as unset" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
 sh_run 1/2 1
-assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s2,s4,"
+assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s3,s4,"
 # test_jobs_shard parses the value; one runner-level case shows the refusal
 # comes before any section starts.
 for sh_bad in x 0/2 3/2 1/ /2 1/2/3 a/b -1/2 " 1/2"; do

@@ -443,9 +443,15 @@ else
           stage == 1 { count++; pos[count] = $1; title[$1] = $2; next }
           $0 != "" && ($0 in cpu) { total[1] += cpu[$0] }
           END {
-            unlisted = 10; top = -1
-            for (k = 1; k <= count; k++) if (title[pos[k]] in cpu && cpu[title[pos[k]]] > top) top = cpu[title[pos[k]]]
-            if (top >= 0) unlisted = top
+            # An unlisted section weighs the median CPU of the listed sections of
+            # the tree (the lower middle on an even count), 10 with none listed.
+            m = 0
+            for (k = 1; k <= count; k++) if (title[pos[k]] in cpu) {
+              v = cpu[title[pos[k]]]; m++; b = m - 1
+              while (b >= 1 && vals[b] > v) { vals[b + 1] = vals[b]; b-- }
+              vals[b + 1] = v
+            }
+            unlisted = m ? vals[int((m + 1) / 2)] : 10
             for (g = 1; g <= n; g++) total[g] += 0
             for (k = 1; k <= count; k++) order[k] = pos[k]
             for (a = 2; a <= count; a++) {
