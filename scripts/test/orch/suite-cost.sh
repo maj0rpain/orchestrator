@@ -31,6 +31,22 @@ rec_path() {
   [[ "${1:-}" != made ]] || mkdir -p "${rec%/*}"
 }
 
+# sub_check: the check from pkg/ with cmd, stderr to errf.
+sub_check() { (cd pkg && "$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf"); }
+
+# no_worktree: none when the repo has only its own worktree, else left.
+no_worktree() { [ "$(git worktree list | wc -l | tr -d ' ')" -eq 1 ] && echo none || echo left; }
+
+# branch_off_base: commits what is staged or untracked as the base commit, sets
+# base to it, and starts branch feat off it recorded as its base SHA.
+branch_off_base() {
+  git add -A
+  git commit -q --allow-empty -m base
+  base="$(git rev-parse HEAD)"
+  git checkout -q -b feat
+  git config branch.feat.orchestrator-base-sha "$base"
+}
+
 # check_repo: a repo for suite-cost check, cwd inside it, its record's
 # directory made: main's first commit (root) and its child (base), then branch
 # feat off base, base recorded as its base SHA, with two commits (parent, then
@@ -792,6 +808,94 @@ assert_not_contains "never with an overlap warning" "$(cat "$errf")" "overlapped
 assert_eq "recording nothing" "$(cat "$rec")" "$before"
 rm -f "$errf"
 
+
+# Started from a subdirectory, a base run measures in the matching directory
+# of the base commit's worktree - pkg/ there, never the top.
+# sub_repo: a repo, cwd at its top, with rec and a marker path set;
+# branch_off_base commits what the case wrote as the base commit; sub_head
+# commits it as head. Scripts are written executable by put_script <path>
+# <content>.
+sub_repo() { new_repo >/dev/null; rec_path made; marker="$(mktemp -d)/ran"; }
+put_script() { mkdir -p "$(dirname "$1")"; printf '%s\n' "$2" >"$1"; chmod +x "$1"; }
+sub_head() { git add -A; git commit -q --allow-empty -m head; head="$(git rev-parse HEAD)"; }
+active_left() { [ -s "$rec.active" ] && echo left || echo none; }
+
+sub_repo
+put_script pkg/test.sh ': >"$1"'
+branch_off_base
+sub_head
+cmd=(./test.sh "$marker")
+seed_run "$head" 70.00 "${cmd[*]}"
+errf="$(mktemp)"
+out="$(sub_check)"; st=$?
+assert_status "a base run from a subdirectory exits 0" "$st" 0
+assert_eq "its command, which exists only there, ran" "$(on_disk "$marker")" present
+assert_eq "recorded at the base commit" "$(tail -n 1 "$rec" | cut -f1)" "$base"
+assert_eq "under the command string" "$(tail -n 1 "$rec" | cut -f5)" "${cmd[*]}"
+assert_eq "and the worktree is gone" "$(no_worktree)" none
+
+# A command resolving at the top and in the subdirectory runs in the latter.
+sub_repo
+put_script test.sh 'echo top >"$1"'
+put_script pkg/test.sh 'echo sub >"$1"'
+branch_off_base
+sub_head
+cmd=(./test.sh "$marker")
+seed_run "$head" 70.00 "${cmd[*]}"
+(cd pkg && "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1)
+assert_eq "a command at the top and in pkg/ leaves pkg's trace, never the top's" "$(cat "$marker")" sub
+
+# A base commit with no matching directory, or a file at that path, is
+# unmeasured: no setup, no command, no record, no worktree, no marker.
+for variant in absent file; do
+  sub_repo
+  if [ "$variant" = file ]; then echo x >pkg; fi
+  branch_off_base
+  rm -f pkg
+  put_script pkg/test.sh 'touch "$1"'
+  sub_head
+  cmd=(./test.sh "$marker")
+  seed_run "$head" 70.00 "${cmd[*]}"
+  before="$(cat "$rec")"
+  setup_mark="$(mktemp -d)/setup"
+  git config orchestrator.suiteCost.setup "touch '$setup_mark'"
+  out="$(sub_check)"; st=$?
+  assert_status "a base commit with $variant at the path exits 0" "$st" 0
+  assert_eq "and is unmeasured" "$out" "unmeasured"
+  assert_contains "warning the base-run wording" "$(cat "$errf")" \
+    "orch: commit $base has no directory pkg for the base run - the suite cost is unmeasured"
+  assert_eq "recording nothing" "$(cat "$rec")" "$before"
+  assert_eq "running no command" "$(on_disk "$marker")" absent
+  assert_eq "running no setup" "$(on_disk "$setup_mark")" absent
+  assert_eq "leaving no worktree" "$(no_worktree)" none
+  assert_eq "and no active-runs marker" "$(active_left)" none
+done
+
+# The setup runs at the worktree's top; the measured command sees it from pkg/.
+sub_repo
+put_script pkg/test.sh 'cp ../setup.out "$1"'
+branch_off_base
+sub_head
+cmd=(./test.sh "$marker")
+seed_run "$head" 70.00 "${cmd[*]}"
+git config orchestrator.suiteCost.setup 'echo at-top >setup.out'
+(cd pkg && "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1)
+assert_eq "the setup's file is at the worktree's top, seen from pkg/" "$(cat "$marker")" at-top
+
+# Exit 127 in the matching directory, with no setup, names the setup key.
+sub_repo
+mkdir pkg; : >pkg/keep
+branch_off_base
+put_script pkg/test.sh 'exit 0'
+sub_head
+cmd=(./test.sh)
+seed_run "$head" 70.00 "${cmd[*]}"
+out="$(sub_check)"; st=$?
+assert_status "a base run exiting 127 from a subdirectory exits 0" "$st" 0
+assert_contains "with the hint naming the setup key" "$(cat "$errf")" \
+  "$base exited 127 (command not found)"
+assert_contains "naming orchestrator.suiteCost.setup" "$(cat "$errf")" "orchestrator.suiteCost.setup"
+rm -f "$errf"
 # --- suite-cost check confirmation --------------------------------------------
 # A comparison past the threshold is confirmed before it is reported: check
 # measures the head once in a temporary worktree at HEAD, then the base once
@@ -1042,6 +1146,58 @@ assert_contains "the verdict still prints" "$out" "grew 80 - "
 assert_contains "after an orch: warning" "$(cat "$errf")" "orch: could not append to the suite-cost verdict record"
 rm -rf "$vf" "$cnt"
 
+
+# From a subdirectory, the confirming runs measure in the matching directory.
+# sub_confirm_repo <base has pkg> <head has pkg>: confirm_repo's shape with
+# run.sh under pkg/, cwd at the top (cd pkg for the check).
+sub_confirm_repo() {
+  new_repo >/dev/null
+  mkdir -p pkg
+  [ "$1" = yes ] && { echo ':' >pkg/run.sh; } || : >keep
+  branch_off_base
+  [ "$2" = yes ] && echo ':' >pkg/run.sh
+  git add -A; git commit -q --allow-empty -m head
+  head="$(git rev-parse HEAD)"
+  rec_path made
+  vf="$rec.verdicts"
+  cmd=(sh run.sh)
+  cmd_str="sh run.sh"
+  confirm_reset
+}
+rec_shas() { awk -F'\t' 'NR > 2 { print $1 }' "$rec" | tr '\n' ' '; }
+
+sub_confirm_repo yes yes
+out="$(sub_check)"
+assert_eq "confirming runs from a subdirectory give the timer fake's verdict" "$out" "ok"
+assert_eq "both are recorded, head then base" "$(rec_shas)" "$head $base "
+assert_eq "and their worktrees are gone" "$(no_worktree)" none
+
+confirm_reset
+: >"$rec"
+seed_run "$head" 100.00
+out="$(sub_check)"
+assert_eq "a base run then confirmation from a subdirectory gives the fake's verdict" "$out" "ok"
+assert_eq "records base, head, then base" "$(awk -F'\t' '{ print $1 }' "$rec" | tr '\n' ' ')" "$head $base $head $base "
+
+sub_confirm_repo no no
+marker="$(mktemp -d)/ran"
+printf 'touch %s\n' "$marker" >pkg/run.sh
+before="$(cat "$rec")"
+out="$(sub_check)"
+assert_eq "a head without the tracked directory is unmeasured" "$out" "unmeasured"
+assert_contains "warning the confirming-run wording naming HEAD" "$(cat "$errf")" \
+  "orch: commit $head has no directory pkg for the confirming run - the growth is unconfirmed"
+assert_eq "adding no record line" "$(cat "$rec")" "$before"
+assert_eq "running no command" "$(on_disk "$marker")" absent
+assert_eq "and leaving no worktree" "$(no_worktree)" none
+
+sub_confirm_repo no yes
+out="$(sub_check)"
+assert_eq "a base commit without the directory is unmeasured" "$out" "unmeasured"
+assert_contains "warning the confirming-run wording naming the base commit" "$(cat "$errf")" \
+  "orch: commit $base has no directory pkg for the confirming run - the growth is unconfirmed"
+assert_eq "leaving the head confirming run's line alone" "$(rec_shas)" "$head "
+assert_eq "and no worktree" "$(no_worktree)" none
 rm -rf "$hs" "$errf"
 rm -f "$ORCH_SUITE_COST_FAKE_CPU"
 restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU
