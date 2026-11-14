@@ -284,7 +284,7 @@ verify_twice() {
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
-#   adapter_issues_labelled, adapter_issues_labelled_rows,
+#   adapter_issues_labelled_rows, adapter_issues_any_labelled_rows,
 #   adapter_issues_open_oldest,
 #   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
@@ -566,15 +566,6 @@ adapter_issue_state() {
   gh issue view "$1" --json state,url --jq 'if (.url | test("/pull/")) then "PULL" else .state end'
 }
 
-# adapter_issues_labelled <label>...: the open issues carrying every label
-# named, one number per line, oldest first, so ISSUE_LIST_LIMIT cuts the
-# newest - gh filters on whole labels, not on a prefix.
-adapter_issues_labelled() {
-  local args=() l
-  for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
-}
-
 # issue_list_limit_warn <count> <what>: warns on stderr when a listing of
 # <what> (e.g. "the open issues labelled needs-human") returned <count> rows,
 # reaching its effective limit - the lesser of ISSUE_LIST_LIMIT and 1000,
@@ -596,26 +587,8 @@ issues_labelled_limit_warn() {
   issue_list_limit_warn "$__illw_n" "$__illw_what"
 }
 
-# issues_labelled_read <out_var> <err_var> <label>...: reads the open issues
-# carrying every label named once through adapter_issues_labelled, the listing
-# (one number per line, oldest first, trailing newlines gone) into the caller's
-# <out_var> and gh's stderr into <err_var>, as capture does, then warns through
-# issue_list_limit_warn when the listing reached the limit. Non-zero on a
-# failed read, warning nothing: the caller words the failure from <err_var>.
-issues_labelled_read() {
-  local __ilr_out __ilr_err __ilr_n=0
-  if ! capture __ilr_out __ilr_err adapter_issues_labelled "${@:3}"; then
-    printf -v "$2" '%s' "$__ilr_err"
-    return 1
-  fi
-  [ -z "$__ilr_out" ] || __ilr_n="$(printf '%s\n' "$__ilr_out" | grep -c .)"
-  issues_labelled_limit_warn "$__ilr_n" "${@:3}"
-  printf -v "$1" '%s' "$__ilr_out"
-  printf -v "$2" '%s' "$__ilr_err"
-}
-
 # adapter_issues_labelled_rows <label>...: the open issues carrying every label
-# named, oldest first and cut at ISSUE_LIST_LIMIT as adapter_issues_labelled is,
+# named, oldest first and cut at ISSUE_LIST_LIMIT (the newest dropped),
 # each as one count-marked record: its number, its state as GitHub answered it,
 # its label count, then one label per line. The state is never assumed from the
 # listing's own open-only filter.
@@ -624,6 +597,26 @@ adapter_issues_labelled_rows() {
   for l in "$@"; do args+=(--label "$l"); done
   gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
     --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+}
+
+# adapter_issues_any_labelled_rows <label>...: the open issues carrying any of
+# the labels named, as adapter_issues_labelled_rows prints them: oldest first,
+# cut once at ISSUE_LIST_LIMIT across all the labels. GitHub's search takes a
+# comma-joined list of quoted labels as an any-of match.
+adapter_issues_any_labelled_rows() {
+  local any="" l
+  for l in "$@"; do any="${any:+$any,}\"$l\""; done
+  gh issue list --state open --search "label:$any sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
+    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+}
+
+# issues_any_labelled_limit_warn <count> <label>...: issue_list_limit_warn for a
+# listing of the open issues carrying any of the labels named, joined by "or".
+# Always succeeds.
+issues_any_labelled_limit_warn() {
+  local __iall_n="$1" __iall_what="the open issues labelled $2" __iall_l
+  for __iall_l in "${@:3}"; do __iall_what="$__iall_what or $__iall_l"; done
+  issue_list_limit_warn "$__iall_n" "$__iall_what"
 }
 
 # issues_labelled_rows_read <nums_var> <states_array> <labels_array> <err_var>
@@ -639,13 +632,31 @@ adapter_issues_labelled_rows() {
 # by eval on a validated name, the value by reference, as
 # issues_labelled_bodies_read does.
 issues_labelled_rows_read() {
-  assoc_array_require issues_labelled_rows_read "$2" __ilrr_
-  assoc_array_require issues_labelled_rows_read "$3" __ilrr_
+  issues_rows_read_via issues_labelled_rows_read adapter_issues_labelled_rows issues_labelled_limit_warn "$@"
+}
+
+# issues_any_labelled_rows_read <nums_var> <states_array> <labels_array>
+# <err_var> <label>...: issues_labelled_rows_read for the open issues carrying
+# any of the labels, through adapter_issues_any_labelled_rows, its limit warning
+# worded by issues_any_labelled_limit_warn.
+issues_any_labelled_rows_read() {
+  issues_rows_read_via issues_any_labelled_rows_read adapter_issues_any_labelled_rows issues_any_labelled_limit_warn "$@"
+}
+
+# issues_rows_read_via <caller> <adapter> <warn> <nums_var> <states_array>
+# <labels_array> <err_var> <label>...: the reading the two readers above share,
+# through the listing <adapter> and the limit warning <warn>; <caller> names the
+# public reader in a die message.
+issues_rows_read_via() {
+  assoc_array_require "$1" "$5" __ilrr_
+  assoc_array_require "$1" "$6" __ilrr_
+  local __ilrr_adapter="$2" __ilrr_warn="$3"
+  shift 3
   local __ilrr_out __ilrr_err __ilrr_lines=() __ilrr_nums=() __ilrr_sts=() __ilrr_labs=()
   local __ilrr_i=0 __ilrr_total __ilrr_n __ilrr_state __ilrr_count __ilrr_j __ilrr_rl __ilrr_r
   local __ilrr_bad="gh answered a listing that does not parse"
   local __ilrr_whole='^[0-9]+$'
-  if ! capture __ilrr_out __ilrr_err adapter_issues_labelled_rows "${@:5}"; then
+  if ! capture __ilrr_out __ilrr_err "$__ilrr_adapter" "${@:5}"; then
     printf -v "$4" '%s' "$__ilrr_err"
     return 1
   fi
@@ -674,7 +685,7 @@ issues_labelled_rows_read() {
     eval "$3"'[${__ilrr_nums[__ilrr_r]}]=${__ilrr_labs[__ilrr_r]}'
   done
   printf -v "$1" '%s' "$(printf '%s\n' ${__ilrr_nums[@]+"${__ilrr_nums[@]}"} | grep . || true)"
-  issues_labelled_limit_warn "${#__ilrr_nums[@]}" "${@:5}"
+  "$__ilrr_warn" "${#__ilrr_nums[@]}" "${@:5}"
 }
 
 # adapter_issues_open_oldest: every open issue, one number per line, oldest
@@ -685,7 +696,7 @@ adapter_issues_open_oldest() {
 
 # adapter_issues_labelled_bodies <label>...: the open issues carrying every
 # label named, oldest first and cut at ISSUE_LIST_LIMIT as
-# adapter_issues_labelled is, each as one count-marked record: its number,
+# adapter_issues_labelled_rows is, each as one count-marked record: its number,
 # its label count, one label per line,
 # its body's line count (one more than the newlines the body holds, counted
 # with `indices`, never `split`, whose answer on an empty string differs

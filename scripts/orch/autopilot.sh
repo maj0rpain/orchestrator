@@ -915,23 +915,34 @@ autopilot_pause_extend() {
   return 0
 }
 
-# autopilot_flow_issues: the open issues carrying a phase label other than
-# orch:done, or orch:sync, deduplicated and oldest first, one number per line.
-autopilot_flow_issues() {
+# autopilot_flow_ranked <ranked-var>: the tick's one listing of its flow
+# issues. Lists the open issues carrying any live phase label (every phase
+# other than done) or orch:sync once, fills Standing from each listed row with
+# no per-issue read, drops the unpickable rows, and writes into the
+# caller-named <ranked-var> the rest, ranked: one `<rank> <issue> <phase>` line
+# each, sorted by rank, then oldest first. Dies when the listing fails.
+autopilot_flow_ranked() {
   orch_load standing
   orch_load handoff
-  local label out gh_err all="" labels=() phase
-  for phase in $PHASES; do
-    [ "$phase" != "done" ] || continue
-    labels+=("$(standing_phase_label "$phase")")
+  local _nums _err _issue _phase _ranked="" _labels_any=() _what _l
+  local -A _states=() _labels=()
+  for _phase in $PHASES; do
+    [ "$_phase" != "done" ] || continue
+    _labels_any+=("$(standing_phase_label "$_phase")")
   done
-  labels+=("$STANDING_SYNC_LABEL")
-  for label in "${labels[@]}"; do
-    issues_labelled_read out gh_err "$label" ||
-      die "could not list the issues labelled $label: $(gh_reason "$gh_err")"
-    all="$all$out"$'\n'
-  done
-  printf '%s' "$all" | grep -v '^$' | sort -nu || true
+  _labels_any+=("$STANDING_SYNC_LABEL")
+  _what="${_labels_any[0]}"
+  for _l in "${_labels_any[@]:1}"; do _what="$_what or $_l"; done
+  issues_any_labelled_rows_read _nums _states _labels _err "${_labels_any[@]}" ||
+    die "could not list the issues labelled $_what: $(gh_reason "$_err")"
+  while IFS= read -r _issue; do
+    [ -n "$_issue" ] || continue
+    standing_set "${_states[$_issue]}" "${_labels[$_issue]}"
+    standing_pickable || continue
+    _phase="$(standing_session_phase)"
+    _ranked="$_ranked$(autopilot_rank "$_phase") $_issue $_phase"$'\n'
+  done <<<"$_nums"
+  printf -v "$1" '%s' "$(printf '%s' "$_ranked" | sort -k1,1n -k2,2n)"
 }
 
 # autopilot_verdict <issue> <named> <var>: the quick autopilot's verdict on one
@@ -1141,21 +1152,23 @@ autopilot_rank() {
 # the tick ending after any pickup, and after stale cleanup, that leaves a
 # GitHub pause holding.
 # The one done read feeds both passes: sync detection gets the done table
-# minus the issues the close closed. Every candidate is read before the first
-# claim, the unpickable ones dropped, and the rest taken by rank - sync
-# requests,
-# then the phases furthest along first, oldest issue first within a rank. A
-# phase is claimed while the claim count is below the cap, a sync request
-# while it is below the cap plus the sync slots (half the cap, rounded down);
-# the first phase issue not claimed for the cap ends the tick. A claim
-# create that fails for a reason other than a lost race stops the tick, naming
-# it.
+# minus the issues the close closed. One listing of the flow issues
+# (autopilot_flow_ranked) fills Standing from its rows, drops the unpickable
+# ones and ranks the rest - sync requests, then the phases furthest along
+# first, oldest issue first within a rank. A phase is claimed while the claim
+# count is below the cap, a sync request while it is below the cap plus the
+# sync slots (half the cap, rounded down); the first phase issue not claimed
+# for the cap ends the tick. Each ranked issue the cap leaves room for is read
+# once, directly, just before its claim: one no longer pickable, or at another
+# phase than its row, is skipped silently, and the pickup acts on that read's
+# limited flag. A failed read, or a claim create that fails for a reason other
+# than a lost race, stops the tick, naming it.
 autopilot_tick() {
   orch_load standing
   orch_load gh
   orch_load handoff
-  local main_root cap count issue gh_err phase rc flow_issues limited_arg auto_sync
-  local ranked="" slots limit limited done_table reserve
+  local main_root cap count issue gh_err phase rc limited_arg auto_sync
+  local ranked="" slots limit done_table reserve
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
   autopilot_setting auto-sync; auto_sync="$AUTOPILOT_VALUE"
   main_root="$(main_checkout_or_die)" || exit $?
@@ -1178,23 +1191,20 @@ autopilot_tick() {
   standing_claims_read
   count="${#STANDING_CLAIM_ISSUES[@]}"
   slots=$((cap / 2))
-  flow_issues="$(autopilot_flow_issues)"
-  while IFS= read -r issue; do
-    [ -n "$issue" ] || continue
-    standing_read "$issue" ||
-      die "could not read issue #$issue: $STANDING_REASON"
-    standing_pickable || continue
-    phase="$(standing_session_phase)"
-    ranked="$ranked$(autopilot_rank "$phase") $issue $phase $STANDING_LIMITED"$'\n'
-  done <<<"$flow_issues"
-  ranked="$(printf '%s' "$ranked" | sort -k1,1n -k2,2n)"
-  while read -r _ issue phase limited; do
+  autopilot_flow_ranked ranked
+  while read -r _ issue phase; do
     [ -n "$issue" ] || continue
     if [ "$phase" = "$STANDING_SYNC_PHASE" ]; then limit=$((cap + slots)); else limit="$cap"; fi
     if [ "$count" -ge "$limit" ]; then
       [ "$phase" = "$STANDING_SYNC_PHASE" ] && continue
       break
     fi
+    # The listing may be served late: read the issue itself, once, before the
+    # claim. An issue no longer pickable, or at another phase, is skipped.
+    standing_read "$issue" ||
+      die "could not read issue #$issue: $STANDING_REASON"
+    standing_pickable || continue
+    [ "$(standing_session_phase)" = "$phase" ] || continue
     rc=0
     capture_err gh_err standing_claim "$issue" "$phase" "$$" || rc=$?
     case "$rc" in
@@ -1205,7 +1215,7 @@ autopilot_tick() {
     liveness_tick_begin "$issue"
     count=$((count + 1))
     limited_arg=""
-    if [ "$limited" = 1 ]; then limited_arg=limited; fi
+    if [ "$STANDING_LIMITED" = 1 ]; then limited_arg=limited; fi
     autopilot_pickup "$issue" "$phase" "$limited_arg"
     if autopilot_pause_until "$main_root" github; then return 0; fi
   done <<<"$ranked"
