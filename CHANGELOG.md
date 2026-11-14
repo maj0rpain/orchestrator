@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.61
+
+The harness tests' killed-all.sh and TERM-to-affected.sh cases read `term_run`'s result straight from `term_st`, as the other TERM cases do, instead of copying it into a second name.
+
 ## 5.2.60
 
 The state set and redo test sections build the stateless failed-write stub once per section instead of once per case.
