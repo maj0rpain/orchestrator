@@ -2417,7 +2417,9 @@ check "docker/compose.yaml limits CPU from ORCH_CPUS and .env.example documents 
 # (#3046). scan_clone_dir <plugin root>: one line per break of that rule.
 scan_clone_dir() {
   local r="$1" pin mount def img
-  pin="$(sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}' "$r/docker/compose.yaml")"
+  pin="$(awk '/^ *environment:/ { match($0, /^ */); n = RLENGTH; inenv = 1; next }
+    inenv { match($0, /^ */); if (RLENGTH <= n) inenv = 0; else print }' \
+    "$r/docker/compose.yaml" | sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}')"
   mount="$(sed -n '/^ *- *repo:/{s/^[^:]*:\([^: ]*\).*$/\1/p;q}' "$r/docker/compose.yaml")"
   def="$(sed -n '/ORCH_CLONE_DIR:-/{s/.*ORCH_CLONE_DIR:-\([^}]*\)}.*/\1/p;q}' "$r/scripts/autopilot-container.sh")"
   img="$(sed -n '/mkdir -p \/home/{s/.*mkdir -p \([^ ]*\).*/\1/p;q}' "$r/docker/Dockerfile")"
@@ -2465,6 +2467,9 @@ flags "an entrypoint default that is not the pin is flagged" \
 write_clone_dir_fixture "$pin_env" /home/r /home/r /home/other
 flags "an image directory that is not the pin is flagged" \
   "$(scan_clone_dir "$fixture")" "image creates (/home/other) is not the pinned"
+write_clone_dir_fixture $'    build:\n      args:\n        ORCH_CLONE_DIR: /home/r\n' /home/r /home/r /home/r
+flags "a pin outside the environment block is flagged" \
+  "$(scan_clone_dir "$fixture")" "does not pin ORCH_CLONE_DIR"
 check "the pinned clone directory, the volume's mount target, the entrypoint's default and the image's directory are one path" \
   "$(scan_clone_dir "$PLUGIN_ROOT")"
 
