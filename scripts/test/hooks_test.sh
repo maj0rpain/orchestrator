@@ -2019,6 +2019,37 @@ for bs_cmd in $'x=$((1<<n))\ncat' $'x=$((1 +\n1<<n))\ncat' $'cat <<\'END-NOTES\'
 done
 bs_out="$(bash_hook_scan default $'cat <<END-NOTES\ncat\nEND-NOTES')"
 assert_empty "bash hook stdin guard: default passes a hyphenated heredoc body" "$bs_out"
+# A reader inside a still-open compound command is not judged (#3049).
+bs_loop=$'while read -r k; do\n  IFS= read -r value\n  echo "$k $value"\ndone < pairs.txt'
+for bs_cmd in '{ read -r a; read -r b; } < file' 'time { read -r a; read -r b; } < file' '! { read -r a; read -r b; } < file' \
+  'echo x | { echo start; cat; }' "$bs_loop" \
+  $'until false; do echo a; read -r v; done < file' $'for x in 1 2; do echo a; read -r v; done < file' \
+  $'select x in a b; do echo a; read -r v; done < file' \
+  $'while echo a; read -r v; do :; done < file' $'if echo a; read -r v; then :; fi < file' \
+  $'{\n  read -r a\n  read -r b\n} < file' $'echo x | {\n  read -r a\n  cat\n}' \
+  '{ echo start; cat; }' 'echo x | ( echo a; cat )' '( read -r a; cat ) < file' \
+  'echo x | ( echo a; cat; echo b )' '( read -r a; cat; echo b ) < file' $'echo x | (\n  echo a\n  cat\n  echo b\n)' \
+  'sleep 1 & { read -r a; read -r b; } < file' \
+  $'if a; then echo 1; elif b; then echo 2; read -r v; else :; fi < file' \
+  $'case $x in\n  a) echo 1; read -r v ;;\n  *) echo 2 ;;\nesac < file' \
+  $'f() {\n  cat\n}\necho x | f' $'function f {\n  cat\n}\necho x | f' \
+  $'{ case $x in a) echo 1; cat ;; esac; read -r v; } < file' $'{ while a; do b; done; read -r v; } < file' \
+  $'while a; do\n  echo done\n  echo ${x}\n  echo {a,b}\n  echo $(date)\n  find . -exec echo {} \;\n  read -r v\ndone < file'; do
+  bs_out="$(bash_hook_scan default "$bs_cmd")"
+  assert_empty "bash hook stdin guard: default passes a reader inside a compound '${bs_cmd//$'\n'/\\n}'" "$bs_out"
+done
+for bs_cmd in '{ echo a; }; cat' '(cd a && ls); cat' 'while read l; do :; done; cat' \
+  $'if a; then b; elif c; then d; fi; cat' $'case $x in a) echo 1 ;; esac; cat' \
+  'echo ${x}; cat' 'echo {a,b}; cat' 'echo $(date); cat' 'arr=(a b); cat' 'find . -exec echo {} \; ; cat' \
+  'echo if; cat' 'for x in if fi; do :; done; cat' 'echo \(; cat' "echo '('; cat" $'echo a # (\ncat' \
+  $'cat <<EOF\n{\nEOF\ncat' 'cat | { read a; }' 'echo x | ( y=${z%)}; cat'; do
+  bs_out="$(bash_hook_scan default "$bs_cmd")"
+  assert_eq "bash hook stdin guard: default still denies '${bs_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bs_out")" deny
+done
+for bs_cmd in '{ read -r a; read -r b; } < file' "$bs_loop"; do
+  bs_out="$(bash_hook_event default "" "$bs_cmd" | bash_hook_run 1)"
+  assert_empty "bash hook stdin guard: autopilot passes a fed compound '${bs_cmd//$'\n'/\\n}'" "$bs_out"
+done
 bs_out="$(bash_hook_event default "" cat | bash_hook_run 1)"
 assert_eq "bash hook stdin guard: autopilot 'cat' under default is denied" \
   "$(bash_hook_decision "$bs_out")" deny
@@ -2063,6 +2094,11 @@ assert_contains "bash hook poll guard: the reason gives the foreground rerun" \
   "$(bash_hook_reason "$bp_out")" 'timeout: 600000'
 assert_contains "bash hook poll guard: the reason names the completion notice" \
   "$(jq -r '.reason' <<<"$bp_out")" 'completion notice'
+# A pgrep or pkill word inside a compound is still denied (#3049).
+for bp_cmd in $'while a; do\n  pgrep x\ndone < file' '{ echo a; pgrep x; } < file'; do
+  bp_out="$(bash_hook_scan default "$bp_cmd")"
+  assert_eq "bash hook poll guard: denies inside a compound '${bp_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bp_out")" deny
+done
 for bp_cmd in 'grep "pgrep -f" file' $'cat <<EOF\npgrep x\nEOF' 'ls -l' 'killall x' "bash -c 'pgrep x'" \
   '[ -n "$(pgrep -f x)" ]' '[ -n "`pgrep -f x`" ]' 'sleep 5 # pgrep'; do
   bp_out="$(bash_hook_scan default "$bp_cmd")"; bp_rc=$?
@@ -2111,7 +2147,7 @@ assert_eq "bash hook: an in-scope payload with no command costs 1 jq call" \
   "$(bash_hook_event default orch-implementer cat | jq 'del(.tool_input.command)' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
 assert_eq "bash hook: a non-JSON payload costs 1 jq call" "$(echo 'not json {' | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")" 1
 for mode in default bypassPermissions; do
-  for hb_cmd in 'cat; echo done' 'pgrep x' 'echo hi'; do
+  for hb_cmd in 'cat; echo done' 'pgrep x' 'echo hi' $'{\n  read -r a\n  cat\n} < f'; do
     hb_n="$(bash_hook_event "$mode" orch-implementer "$hb_cmd" | ORCH_AUTOPILOT='' jq_count "$BASH_HOOK")"
     assert_eq "bash hook: an in-scope '$hb_cmd' under $mode costs at most 2 jq calls" "$([ "$hb_n" -le 2 ] && echo yes || echo "no ($hb_n)")" yes
   done
