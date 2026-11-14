@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.67
+
+Reading an issue whose trusted comments total more than about 128 KB no longer fails: the comment array reaches jq on standard input, not as a command-line argument.
+
 ## 5.2.66
 
 `orch.sh branch retire` no longer records a retirement when origin cannot be asked whether the old remote ref is still there after a failed delete; it dies, says the new name is pushed and names the rerun.
