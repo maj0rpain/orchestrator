@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.75
+
+The Bash hook no longer denies a stdin reader that sits inside a compound command fed as a whole, such as `{ read -r a; read -r b; } < file` or a loop closed by `done < file`.
+
 ## 5.2.74
 
 The triage-label parser reads only the role table: the first table of three or more columns whose left column holds a canonical triage role. A second table elsewhere in the triage-labels doc no longer makes doctor demand its cells as labels or answer a label lookup.
