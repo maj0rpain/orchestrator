@@ -2827,6 +2827,65 @@ fake_fail adapter_issue_relabel "HTTP 500 relabel"
 fake_unfail
 assert_eq "a claim held after a failed pickup stop keeps both ticks from picking up" "$(fake_claim_held 8)" free
 
+# --- autopilot tick: one read of the claims on origin (#3062) -----------------
+echo
+echo "autopilot tick one claims read"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+tk_reads="$(mktemp)"
+tk_defs="$(counting_defs adapter_claim_list claims)"
+tk_tick() { counted_adapter_run "$tk_reads" "$tk_defs" "$ORCH" autopilot tick 2>&1; }
+fake_issue 5 open ready-for-agent orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+out="$(tk_tick)"; st=$?
+assert_status "a tick with a stale claim and nothing to pick up succeeds" "$st" 0
+assert_eq "it reads the claims once" "$(log_count "$tk_reads" claims)" "1"
+assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
+assert_eq "and releases it" "$(fake_claim_held 5)" free
+# a slot the cleanup freed is used in the same tick
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+git config orchestrator.autopilot.cap 1
+fake_issue 5 open ready-for-agent orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Freed slot 7"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "at a cap of 1 a single tick releases the stale claim" "$(fake_claim_held 5)" free
+assert_eq "and starts the waiting issue's session" "$(tick_calls)" "1"
+# a failed claims read
+tick_fixture
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Failed read 7"
+fake_fail adapter_claim_list "HTTP 502 claims"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+fake_unfail
+assert_status "a tick whose claims read fails fails" "$st" 1
+assert_contains "with today's message" "$out" "could not list the claims on origin: HTTP 502 claims"
+assert_eq "and starts no session" "$(tick_calls)" "0"
+# the GitHub-limit pause reads no claims
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$top/.orchestrator/autopilot/github-limit"
+out="$(tk_tick)"; st=$?
+assert_status "a tick held by the GitHub-limit pause succeeds" "$st" 0
+assert_eq "and makes no claim-list call" "$(log_count "$tk_reads" claims)" "0"
+# an early GitHub pause still cleans this host's stale claims, from one read
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 5 open ready-for-agent orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+quota_reset="$(( $(date +%s) + 7200 ))"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 "$((quota_reset - 100))"; fake_quota graphql 400 5000 "$quota_reset"
+out="$(tk_tick)"; st=$?
+assert_status "a tick held by an early GitHub pause succeeds" "$st" 0
+assert_contains "it is held by the early pause" "$out" "GitHub graphql pool is below the github-reserve"
+assert_eq "and records the early pause" "$(on_disk "$top/.orchestrator/autopilot/github-early-graphql")" present
+assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
+assert_eq "releases it" "$(fake_claim_held 5)" free
+assert_eq "from one claims read" "$(log_count "$tk_reads" claims)" "1"
+rm -f "$ORCH_GH_FAKE_STORE/quota" "$tk_reads"
+
 # --- autopilot run: a start-up read that meets a GitHub limit (#2577) ---------
 echo
 echo "autopilot run start-up read github limit"
