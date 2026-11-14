@@ -70,8 +70,8 @@ freshness.
 `ORCH_TEST_SHARD=<i>/<n>` makes `orch_test.sh` and `all.sh` run group `i` of `n`
 balanced groups of the sections, so CI can run a full verification as several
 jobs. The grouping depends only on the section titles, the durations file,
-`all.sh`'s suite list and `n`: sections are dealt heaviest first, by wall
-seconds, to the group with the lowest total, group 1 starting with the wall
+`all.sh`'s suite list and `n`: sections are dealt heaviest first, by CPU
+seconds, to the group with the lowest total, group 1 starting with the CPU
 seconds of the other suites and shellcheck, and a section the file does not
 list weighs as much as the heaviest listed one. The isolation section runs in
 every group. `all.sh` runs the other suites and shellcheck in group 1 only. A

@@ -145,8 +145,8 @@ trap test_jobs_stop_descendants INT TERM
 # with "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set".
 # The grouping is a pure function of the section titles in walk order,
 # section-durations.tsv, all.sh's suite list (read with suites_read) and n:
-# a section weighs its wall seconds, one the file does not list as much as the
-# heaviest that it lists (1 when none), group 1 starts with the summed wall
+# a section weighs its CPU seconds, one the file does not list as much as the
+# heaviest that it lists (1 when none), group 1 starts with the summed CPU
 # seconds of the file's other suites and shellcheck, the others at 0, and
 # sections are dealt heaviest first, ties in walk order, each to the group with
 # the lowest total, the lowest-numbered on a tie. The isolation section runs in
@@ -423,7 +423,7 @@ if [ -n "${ORCH_TEST_ONLY:-}" ]; then
 else
   orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
   if [ "$TEST_SHARD_N" -gt 1 ]; then
-    # Deal the sections but isolation by wall-second weight; keep group i's.
+    # Deal the sections but isolation by CPU-second weight; keep group i's.
     suites_read "$TEST_DIR/all.sh" "$TEST_DIR" || {
       echo "orch_test.sh: $SUITES_ERR" >&2; exit 1; }
     orch_others=""
@@ -436,15 +436,15 @@ else
         printf '\001\n%s' "$orch_others"; } |
         awk -F'\t' -v n="$TEST_SHARD_N" -v want="$TEST_SHARD_I" \
           "$DURATIONS_AWK"'
-          function weight(p) { return (title[p] in wall) ? wall[title[p]] : unlisted }
+          function weight(p) { return (title[p] in cpu) ? cpu[title[p]] : unlisted }
           BEGIN { stage = 0 }
           $0 == "\001" { stage++; next }
           stage == 0 { durations_read(); next }
           stage == 1 { count++; pos[count] = $1; title[$1] = $2; next }
-          $0 != "" && ($0 in wall) { total[1] += wall[$0] }
+          $0 != "" && ($0 in cpu) { total[1] += cpu[$0] }
           END {
             unlisted = 10; top = -1
-            for (k = 1; k <= count; k++) if (title[pos[k]] in wall && wall[title[pos[k]]] > top) top = wall[title[pos[k]]]
+            for (k = 1; k <= count; k++) if (title[pos[k]] in cpu && cpu[title[pos[k]]] > top) top = cpu[title[pos[k]]]
             if (top >= 0) unlisted = top
             for (g = 1; g <= n; g++) total[g] += 0
             for (k = 1; k <= count; k++) order[k] = pos[k]
