@@ -1244,7 +1244,7 @@ tree_copy() {
 # 'cd ...; exec ...'` as the command. Sets term_st (its exit status) and
 # term_secs (the seconds it took to return after the TERM).
 term_run() {
-  local out="$1" err="$2" pid pid_file tries=0 t0 all_written empty
+  local out="$1" err="$2" pid pid_file tries=0 t0 all_written unwritten
   local -a pid_files=()
   shift 2
   while [ "$1" != -- ]; do pid_files+=("$1"); shift; done
@@ -1257,14 +1257,14 @@ term_run() {
   pid=$!
   while [ "$tries" -le 200 ]; do
     all_written=1
-    empty=""
-    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || { all_written=0; empty+=" $pid_file"; }; done
+    unwritten=""
+    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || { all_written=0; unwritten+=" $pid_file"; }; done
     [ "$all_written" = 1 ] && break
     tries=$((tries + 1))
     sleep 0.1
   done
   if [ "$all_written" != 1 ]; then
-    bad "term_run: a pid file stayed empty for the 20-second bound" "still empty:$empty"
+    bad "term_run: a pid file stayed empty for the 20-second bound" "still empty:$unwritten"
   fi
   t0=$SECONDS
   kill -TERM "$pid"

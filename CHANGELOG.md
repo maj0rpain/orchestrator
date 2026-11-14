@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.63
+
+Rename `term_run`'s local `empty` to `unwritten` in the shared test setup, so the list of still-empty pid files reads as the list behind `all_written`.
+
 ## 5.2.62
 
 The lens-bench test suite's TERM section now polls for the bench's exit every 0.1 s instead of tail's default 1 s, so the suite no longer idles up to a second waiting.
