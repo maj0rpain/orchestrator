@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.56
+
+`flow_state_get_many` returns 1 for every failed read, so status 2 means only a malformed `<var>=<key>`. The phase writers' PHASES guard is now `require_flow_phase`.
+
 ## 5.2.55
 
 The shard setting's tests start two planted runners fewer, and their labels and comments now match what they assert.
