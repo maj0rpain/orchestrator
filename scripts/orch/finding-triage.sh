@@ -81,22 +81,18 @@ range_segments() {
   if $open; then printf '%s,%s\n' "$st" "$last"; fi
 }
 
-# range_lines <ranges>: each line number the newline-separated "<from>,<to>"
-# ranges cover, one per line.
-range_lines() {
-  local range
-  for range in $1; do seq "${range%,*}" "${range#*,}"; done
-}
-
-# held_lines <old sha> <commit> <file> <ranges>: the lines of the newline-
-# separated <ranges>, lines of <file> at <old sha>, that <commit> holds: the
-# zero-context diff from <old sha> to <commit> does not delete them outright.
+# held_lines <old sha> <commit> <file> <ranges>: succeeds when <commit> holds
+# some line of the newline-separated <ranges>, lines of <file> at <old sha>:
+# the zero-context diff from <old sha> to <commit> does not delete it outright.
 held_lines() {
-  local start end
+  local start end deleted range
   start="${4%%$'\n'*}"; start="${start%%,*}"
   end="${4##*$'\n'}"; end="${end#*,}"
-  comm -23 <(range_lines "$4" | sort) \
-    <(range_lines "$(deleted_ranges "$1" "$2" "$3" "$start" "$end")" | sort)
+  deleted="$(deleted_ranges "$1" "$2" "$3" "$start" "$end")"
+  for range in $4; do
+    [ -z "$(range_segments "${range%,*}" "${range#*,}" "$deleted")" ] || return 0
+  done
+  return 1
 }
 
 # merge_base_holds <old sha> <ref> <file> <ranges>: succeeds when the merge
@@ -104,7 +100,7 @@ held_lines() {
 # at <old sha>.
 merge_base_holds() {
   local base
-  base="$(git -C "$ROOT" merge-base "$1" "$2" 2>/dev/null)" && [ -n "$(held_lines "$1" "$base" "$3" "$4")" ]
+  base="$(git -C "$ROOT" merge-base "$1" "$2" 2>/dev/null)" && held_lines "$1" "$base" "$3" "$4"
 }
 
 # ever_held <old sha> <ref> <file> <ranges>: succeeds when some line of the
@@ -115,7 +111,7 @@ ever_held() {
   local old="$1" ref="$2" file="$3" ranges="$4" commit
   merge_base_holds "$old" "$ref" "$file" "$ranges" && return 0
   for commit in $(git -C "$ROOT" log --format=%H "$ref" "^$old" -- "$file" 2>/dev/null); do
-    [ -z "$(held_lines "$old" "$commit" "$file" "$ranges")" ] || return 0
+    held_lines "$old" "$commit" "$file" "$ranges" && return 0
   done
   return 1
 }
@@ -130,7 +126,7 @@ squash_deleting_commit() {
   local old="$1" ref="$2" file="$3" ranges="$4" commits commit after=""
   commits="$(git -C "$ROOT" log --first-parent --format=%H "$ref" "^$old" -- "$file" 2>/dev/null)" || return 0
   for commit in $commits; do
-    if [ -n "$(held_lines "$old" "$commit" "$file" "$ranges")" ]; then printf '%s\n' "$after"; return 0; fi
+    if held_lines "$old" "$commit" "$file" "$ranges"; then printf '%s\n' "$after"; return 0; fi
     after="$commit"
   done
   # No commit since the merge base holds any of them: the merge base held them

@@ -136,6 +136,11 @@ arm_per_finding_reads() {
 # line_of <n> <out>: the scan's line for issue n.
 line_of() { printf '%s\n' "$2" | awk -F'\t' -v n="$1" '$1 == n'; }
 field_of() { line_of "$1" "$3" | cut -f"$2"; }
+# never_line <n> <file> <lines> <sha>: the scan's never-reached unknown line.
+never_line() {
+  printf '%s\t%s\t%s:%s\tunknown\tno commit on the default branch since %s touched %s:%s - the difference is commits that never reached it\tneeds-triage' \
+    "$1" "$1" "src/$2" "$3" "$4" "src/$2" "$3"
+}
 
 before_refs="$(git for-each-ref refs/heads)"
 before_head="$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)"
@@ -354,8 +359,7 @@ out="$(scan 11 2>&1)"; st=$?
 assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
 assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
 assert_contains "saying no commit since the filing touched its lines" "$(field_of 11 5 "$out")" "no commit"
-assert_eq "its exact line" "$(line_of 11 "$out")" \
-  "$(printf '11\t11\tsrc/other.sh:2\tunknown\tno commit on the default branch since %s touched src/other.sh:2 - the difference is commits that never reached it\tneeds-triage' "$unmerged_sha")"
+assert_eq "its exact line" "$(line_of 11 "$out")" "$(never_line 11 other.sh 2 "$unmerged_sha")"
 assert_eq "the never-reached scan from a subdirectory prints the root's line" "$(cd src && scan 11 2>&1)" "$out"
 fake_issue 11 closed
 
@@ -518,11 +522,6 @@ git -C "$work" push -q origin main
 # src/<file>, pushed as PR <pr> and never merged; prints its SHA, leaving main
 # checked out.
 unm_pr() { pr_head "unm$1" "$1" "$unm_base" "$2" "$3"; }
-# never_line <n> <file> <lines> <sha>: the scan's never-reached unknown line.
-never_line() {
-  printf '%s\t%s\t%s:%s\tunknown\tno commit on the default branch since %s touched %s:%s - the difference is commits that never reached it\tneeds-triage' \
-    "$1" "$1" "src/$2" "$3" "$4" "src/$2" "$3"
-}
 sha51="$(unm_pr 51 um1.sh '5c\pr replaced')"
 sha52="$(unm_pr 52 um2.sh '5a pr added a\npr added b')"
 sha53="$(unm_pr 53 um3.sh '6d')"
