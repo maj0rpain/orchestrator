@@ -35,7 +35,7 @@
 # another. A measured run interrupted by INT, TERM or HUP removes its marker,
 # first-name file, contended mark and timing file, a tree run its worktree too,
 # records nothing, warns once and exits 128 plus the signal's number.
-# another. Before each of its measured runs, check looks for a live marker of
+# Before each of its measured runs, check looks for a live marker of
 # another process, removing stale ones: on one it starts nothing, warns naming
 # its pid and is unmeasured.
 #
