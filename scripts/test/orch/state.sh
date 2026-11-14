@@ -163,19 +163,20 @@ before="$(cat .orchestrator/state.json)"
 out="$(sourced_orch phase_write plan budget 1 2>&1)"; st=$?
 assert_status "phase_write refuses a phase outside the table, with pairs" "$st" 1
 assert_eq "writing neither phase nor keys" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write 'done' budget 1 2>&1)"; st=$?
+phase_write_fails_bin="$(state_write_fails_bin)"
+out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' budget 1 2>&1)"; st=$?
 assert_status "phase_write with pairs dies on a failed write" "$st" 1
 assert_contains "with its wording" "$out" "orch: could not record phase, budget in $PWD/.orchestrator/state.json - the flow is unchanged"
 assert_eq "writing neither phase nor keys on it" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write 'done' budget 1 --string branch b budget 2 2>&1)"; st=$?
+out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' budget 1 --string branch b budget 2 2>&1)"; st=$?
 assert_status "phase_write with several pairs exits 1 on a failed write" "$st" 1
 assert_contains "phase_write names each key once, in order, never --string" "$out" "orch: could not record phase, budget, branch in $PWD/.orchestrator/state.json - the flow is unchanged"
 assert_eq "a failed several-pairs write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write 'done' 2>&1)"; st=$?
+out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' 2>&1)"; st=$?
 assert_contains "phase_write with no pairs names phase alone" "$out" "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
 assert_status "phase_write with no pairs exits 1 on a failed write" "$st" 1
 assert_eq "a failed no-pairs write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$(state_write_fails_bin):$PATH" sourced_orch phase_write_try 'done' budget 1 2>&1)"; st=$?
+out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write_try 'done' budget 1 2>&1)"; st=$?
 assert_ne "phase_write_try returns non-zero on a failed write" "$st" 0
 assert_eq "without dying" "$out" ""
 out="$(sourced_orch phase_write_try plan 2>&1)"; st=$?
@@ -315,10 +316,20 @@ assert_eq "an empty variable name returns 2, assigning nothing" \
 status 0"
 printf 'null' >"$fs_dir/null.json"
 for f in absent invalid array null; do
-  assert_eq "flow_state_get_many on a $f file fails, assigning nothing" \
-    "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; [ \$? -ne 0 ] && echo \"failed \$a\"")" "failed keep
+  assert_eq "flow_state_get_many on a $f file returns 1, assigning nothing" \
+    "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; echo \"rc=\$? \$a\"")" "rc=1 keep
 status 0"
 done
+fs_jq_usage_error_bin="$(fails_bin jq '*' 2 'jq: usage error')"
+fs_tmpdir="$(mktemp -d)"
+assert_eq "flow_state_get_many returns 1 when jq exits 2, passing its text through and leaving TMPDIR empty" \
+  "$(fs_run "PATH='$fs_jq_usage_error_bin':\$PATH; a=keep; TMPDIR='$fs_tmpdir' flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"; ls -A '$fs_tmpdir'")" "jq: usage error
+rc=1 keep
+status 0"
+assert_eq "flow_state_get_many returns 1 when mktemp exits 3, assigning nothing" \
+  "$(fs_run "PATH='$(fails_bin mktemp '*' 3)':\$PATH; a=keep; flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"")" "rc=1 keep
+status 0"
+rm -rf "$fs_tmpdir"
 fs_jqbin="$(counting_bin jq)"
 fs_run "PATH=$fs_jqbin:\$PATH; flow_state_get_many many.json a=slug b=issue c=phase d=pr e=budget" >/dev/null
 assert_eq "a five-key read starts exactly one jq" "$(counting_starts "$fs_jqbin" jq)" "1"
@@ -380,7 +391,7 @@ assert_eq "flow_state_seed returns 2 for an arg row it has no value for, printin
   "$(fs_run 'STATE_KEYS="$STATE_KEYS
 bogus||arg|-"; flow_state_seed s "" main')" "status 2"
 assert_eq "flow_state_seed returns 1, printing nothing, when jq exits 2" \
-  "$(fs_run "PATH='$(fails_bin jq '*' 2 'jq: usage error')':\$PATH; flow_state_seed s 7 main 2>&1")" "status 1"
+  "$(fs_run "PATH='$fs_jq_usage_error_bin':\$PATH; flow_state_seed s 7 main 2>&1")" "status 1"
 before_ls="$(ls -A "$fs_dir")"
 assert_eq "flow_state_create creates an absent file" \
   "$(fs_run 'flow_state_create created.json "{\"slug\":\"c\"}" && jq -c . created.json')" \
