@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.62
+
+The lens-bench test suite's TERM section now polls for the bench's exit every 0.1 s instead of tail's default 1 s, so the suite no longer idles up to a second waiting.
+
 ## 5.2.61
 
 The harness tests' killed-all.sh and TERM-to-affected.sh cases read `term_run`'s result straight from `term_st`, as the other TERM cases do, instead of copying it into a second name.
