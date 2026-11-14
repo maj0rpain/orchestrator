@@ -1015,14 +1015,10 @@ sourced_orch liveness_watch_begin
 mkdir -p "$ORCH_GH_FAKE_STORE/hold"
 mkfifo "$ORCH_GH_FAKE_STORE/hold/adapter_label_upsert"
 rm -f "$ORCH_GH_FAKE_STORE/held"
-"$ORCH" autopilot watch --every 1 >/dev/null 2>&1 &
-watch_pid=$!
-for _ in $(seq 1 100); do [ -s "$ORCH_GH_FAKE_STORE/held" ] && break; sleep 0.1; done
+term_run /dev/null /dev/null "$ORCH_GH_FAKE_STORE/held" -- "$ORCH" autopilot watch --every 1
 tick_pid="$(cat "$ORCH_GH_FAKE_STORE/held" 2>/dev/null)"
 assert_eq "the held tick's pid is known" "$([[ "$tick_pid" =~ ^[0-9]+$ ]] && echo yes)" yes
-kill -TERM "$watch_pid"
-wait "$watch_pid" 2>/dev/null; st=$?
-assert_status "a watch termed mid-tick exits 0" "$st" 0
+assert_status "a watch termed mid-tick exits 0" "$term_st" 0
 assert_eq "and removes its pidfile" "$(on_disk "$pidfile")" absent
 kill -0 "${tick_pid:-none}" 2>/dev/null; st=$?
 assert_status "and the tick it was running is gone" "$st" 1

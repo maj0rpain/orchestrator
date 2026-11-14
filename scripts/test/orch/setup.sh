@@ -1234,6 +1234,44 @@ tree_copy() {
   printf '%s\n' "$dir/${1##*/}"
 }
 
+# term_run <stdout file> <stderr file> <pid file>... -- <command>...: starts
+# <command> in the background, its output to the two files (one shared open
+# file, stderr merged into stdout, when both are the same path), polls (up to 20
+# seconds) until every pid file has content, sends TERM to it, and waits. A pid
+# file still empty at the limit is reported through bad, naming it; the TERM and
+# the wait follow all the same. The command's own pid is the one TERMed, so a
+# caller wanting a directory or an unset variable passes `env -u` or `bash -c
+# 'cd ...; exec ...'` as the command. Sets term_st (its exit status) and
+# term_secs (the seconds it took to return after the TERM).
+term_run() {
+  local out="$1" err="$2" pid pid_file tries=0 t0 all_written empty
+  local -a pid_files=()
+  shift 2
+  while [ "$1" != -- ]; do pid_files+=("$1"); shift; done
+  shift
+  if [ "$out" = "$err" ]; then
+    "$@" >"$out" 2>&1 &
+  else
+    "$@" >"$out" 2>"$err" &
+  fi
+  pid=$!
+  while [ "$tries" -le 200 ]; do
+    all_written=1
+    empty=""
+    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || { all_written=0; empty+=" $pid_file"; }; done
+    [ "$all_written" = 1 ] && break
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+  if [ "$all_written" != 1 ]; then
+    bad "term_run: a pid file stayed empty for the 20-second bound" "still empty:$empty"
+  fi
+  t0=$SECONDS
+  kill -TERM "$pid"
+  wait "$pid"; term_st=$?
+  term_secs=$((SECONDS - t0))
+}
+
 # >>> summary
 # Each call the real-gh guard logged is one FAIL naming it.
 while IFS= read -r gh_guard_call; do
