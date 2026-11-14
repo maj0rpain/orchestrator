@@ -20,11 +20,15 @@ LABELS_DOC="docs/agents/triage-labels.md"
 # once split out. Emits "role<TAB>name" for every valid data row - the left
 # column (the canonical triage role name) and the right column (this repo's
 # local label for it) - so triage_labels and triage_label_for always agree on
-# what the table contains, including correctly ignoring any other table
-# elsewhere in the doc (#39).
+# what the table contains. Only the role table is read: the first table of
+# three or more columns that holds a row whose left cell is a canonical triage
+# role, and only its rows that name a role. A table of under three columns is
+# never read, a table before the role table whose left column names no role is
+# skipped, and nothing after the role table ends is read (#39, #3051).
 triage_table_rows() {
   [ -f "$ROOT/$LABELS_DOC" ] || return 0
-  awk -F'|' '
+  awk -F'|' -v roles="$TRIAGE_ROLES" '
+    BEGIN { n = split(roles, a, " "); for (i = 1; i <= n; i++) isrole[a[i]] = 1 }
     # One cleanup for any cell pulled out of a split row: restore pipes
     # masked below, strip backticks, trim the pad markdown tables pad cells
     # with - shared so l and r can never drift into cleaning a cell two
@@ -38,9 +42,14 @@ triage_table_rows() {
     }
     # A table ends where the pipes stop. Without this, cols still holds the
     # previous table width when the next table begins - a header row arrives a
-    # line before the separator that would correct it - so a narrower second
-    # table anywhere in the doc leaks its heading out as a label name.
-    !/^[[:space:]]*\|/ { cols = 0 }
+    # line before the separator that would correct it - so a narrower table
+    # holding a role row, after a wider table holding none, would be read.
+    !/^[[:space:]]*\|/ {
+      cols = 0
+      # The role table has ended: read nothing after it.
+      if (inrole) done = 1
+    }
+    done { next }
     /^[[:space:]]*\|/ {
       # `\|` is the markdown escape for a literal pipe, never a column
       # separator. Mask it before the field split and restore it after, or an
@@ -70,6 +79,8 @@ triage_table_rows() {
       # out as a label name and demanded of the repo. A diagnostic may fail to
       # parse a doc; it may not invent an answer from one.
       if (cols < 3) next
+      if (!(l in isrole)) next
+      inrole = 1
       print l "\t" r
     }' "$ROOT/$LABELS_DOC"
 }
@@ -88,8 +99,8 @@ triage_labels() {
 # vocabulary customised this, and filing under the canonical name there would
 # create a second label the repo's triage never reads. The role name itself is
 # the answer where the doc is missing or does not list it. Also a thin filter
-# over triage_table_rows, so it shares triage_labels' table-boundary and
-# column-count guard rather than risking a second table elsewhere in the doc.
+# over triage_table_rows, so it shares triage_labels' rule that only the role
+# table is read, never a second table elsewhere in the doc.
 triage_label_for() {
   local name=""
   triage_label_into name "$1"
@@ -106,7 +117,7 @@ TRIAGE_TABLE=""
 # triage_label_for prints for <role>: no subshell and, after the first lookup,
 # no external command. The role name itself is the answer where the doc is
 # missing or does not list it. Filters the kept table in bash, so it shares
-# triage_labels' table-boundary and column-count guard.
+# triage_labels' rule that only the role table is read.
 triage_label_into() {
   local __tli_role="$2" __tli_rest __tli_line __tli_name=""
   if [ "$TRIAGE_TABLE_KEY" != "$ROOT/$LABELS_DOC" ]; then
