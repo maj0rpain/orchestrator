@@ -608,8 +608,8 @@ assert_eq "does not truncate the label at the escaped pipe" \
   "$(printf '%s\n' "$out" | grep -c 'gh label create "needs"')" "0"
 
 # The ticket's own repro: the escape sits in the *other* column (the
-# mattpocock-skills name), yet it is column 3 - the label doctor actually
-# reads - that comes out corrupted, because the escaped cell shifted it.
+# mattpocock-skills name). That left cell names no role, so the row is dropped
+# whole: neither the shifted fragment nor the right cell is read as a label.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
@@ -694,10 +694,13 @@ doctor_github
 
 # Only the role table is read: the first table of three or more columns that
 # holds a row whose left cell is a canonical role, and nothing after it.
-role_rows=(
+role_head=(
   '# Triage Labels' ''
   '| Label in mattpocock/skills | Label in our tracker | Meaning     |'
   '| -------------------------- | -------------------- | ----------- |'
+)
+role_rows=(
+  "${role_head[@]}"
   '| `needs-triage`             | `needs-triage`       | Evaluate it |'
   '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |'
 )
@@ -716,8 +719,12 @@ assert_contains "a wide table after the role table: the count is the role table'
 assert_eq "and no cell of it is demanded of the repo" \
   "$(printf '%s\n' "$out" | grep -c -e 'alice' -e 'bob')" "0"
 
-# A wide table before the role table whose left column names no role.
-writeln '# Rota' '' "${rota[@]}" '' "${role_rows[@]}" >docs/agents/triage-labels.md
+# A wide table before the role table whose left column names no role. The role
+# table gives ready-for-agent a custom label, so the lookup's answer provably
+# comes from it and not from the canonical fallback.
+writeln '# Rota' '' "${rota[@]}" '' "${role_head[@]}" \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '| `ready-for-agent`          | `afk-ready`          | AFK-ready   |' >docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "a wide table before the role table: the count is the role table's" "$out" "2 triage labels"
@@ -725,14 +732,12 @@ assert_eq "and none of its cells is demanded" \
   "$(printf '%s\n' "$out" | grep -c -e 'alice' -e 'bob')" "0"
 fake_issue 7 open needs-triage
 out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
-assert_contains "the lookup resolves from the role table" "$out" "ready-for-agent"
+assert_contains "the lookup resolves from the role table" "$out" "afk-ready"
 assert_not_contains "and not from the rota" "$out" "alice"
 
 # A later wide table keyed by role never answers a lookup: the role table does
 # not list the role ...
-writeln '# Triage Labels' '' \
-        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
-        '| -------------------------- | -------------------- | ----------- |' \
+writeln "${role_head[@]}" \
         '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
         '' '## Owners' '' \
         '| Role            | Owner | Notes |' \
@@ -749,9 +754,7 @@ assert_contains "the lookup of an unlisted role answers the canonical name" "$ou
 assert_not_contains "not the later table's cell" "$out" "carol"
 
 # ... and the role table lists it with a blank label.
-writeln '# Triage Labels' '' \
-        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
-        '| -------------------------- | -------------------- | ----------- |' \
+writeln "${role_head[@]}" \
         '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
         '| `ready-for-agent`          |                      | AFK-ready   |' \
         '' '## Owners' '' \
@@ -769,9 +772,7 @@ assert_not_contains "not the later table's cell" "$out" "carol"
 
 # A row of the role table whose left cell names no canonical role, a case
 # variant included, contributes no label and never answers its lookup.
-writeln '# Triage Labels' '' \
-        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
-        '| -------------------------- | -------------------- | ----------- |' \
+writeln "${role_head[@]}" \
         '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' \
         '| `Needs-Triage`             | `variant-label`      | Evaluate it |' \
         '| `stray`                    | `stray-label`        | none        |' >docs/agents/triage-labels.md
@@ -780,14 +781,11 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "non-role rows are not counted" "$out" "1 triage labels"
 assert_eq "and their labels are not demanded" \
   "$(printf '%s\n' "$out" | grep -c -e 'variant-label' -e 'stray-label')" "0"
-writeln '# Triage Labels' '' \
-        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
-        '| -------------------------- | -------------------- | ----------- |' \
+writeln "${role_head[@]}" \
         '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' \
         '| `Needs-Triage`             | `variant-label`      | Evaluate it |' >docs/agents/triage-labels.md
-fake_issue 7 open ready-for-agent
-out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
-assert_not_contains "the needs-triage lookup is not answered from a case variant" "$out" "variant-label"
+out="$(bash -c 'ROOT="$1"; source "$2"; triage_label_for needs-triage' _ "$PWD" "$(dirname "$ORCH")/triage-labels.sh" 2>&1)"
+assert_eq "the needs-triage lookup is not answered from a case variant" "$out" "needs-triage"
 
 # A doc whose only wide table holds no role row parses to nothing.
 writeln '# Triage Labels' '' "${rota[@]}" >docs/agents/triage-labels.md

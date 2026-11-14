@@ -27,7 +27,8 @@ LABELS_DOC="docs/agents/triage-labels.md"
 # skipped, and nothing after the role table ends is read (#39, #3051).
 triage_table_rows() {
   [ -f "$ROOT/$LABELS_DOC" ] || return 0
-  awk -F'|' -v roles=" $TRIAGE_ROLES " '
+  awk -F'|' -v roles="$TRIAGE_ROLES" '
+    BEGIN { n = split(roles, a, " "); for (i = 1; i <= n; i++) isrole[a[i]] = 1 }
     # One cleanup for any cell pulled out of a split row: restore pipes
     # masked below, strip backticks, trim the pad markdown tables pad cells
     # with - shared so l and r can never drift into cleaning a cell two
@@ -41,13 +42,12 @@ triage_table_rows() {
     }
     # A table ends where the pipes stop. Without this, cols still holds the
     # previous table width when the next table begins - a header row arrives a
-    # line before the separator that would correct it - so a narrower second
-    # table anywhere in the doc leaks its heading out as a label name.
+    # line before the separator that would correct it - so a narrower table
+    # holding a role row, after a wider table holding none, would be read.
     !/^[[:space:]]*\|/ {
       cols = 0
       # The role table has ended: read nothing after it.
       if (inrole) done = 1
-      inrole = 0
     }
     done { next }
     /^[[:space:]]*\|/ {
@@ -79,7 +79,7 @@ triage_table_rows() {
       # out as a label name and demanded of the repo. A diagnostic may fail to
       # parse a doc; it may not invent an answer from one.
       if (cols < 3) next
-      if (index(roles, " " l " ") == 0 || l == "" || l ~ / /) next
+      if (!(l in isrole)) next
       inrole = 1
       print l "\t" r
     }' "$ROOT/$LABELS_DOC"
