@@ -796,8 +796,8 @@ assert_contains "with the no-labels advice" "$out" "delete it to use the canonic
 assert_eq "and reads no cell of the rota" \
   "$(printf '%s\n' "$out" | grep -c -e 'alice' -e 'bob')" "0"
 
-# Reset again: the successful adopt above just left a flow active, and the
-# sub-issues checks right after this expect the plain flow-free healthy repo.
+# Reset again: the doc was last rewritten to the rota-only table above, and
+# the sub-issues checks right after this expect the plain healthy repo.
 healthy_repo
 doctor_github
 
