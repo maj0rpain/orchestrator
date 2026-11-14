@@ -533,7 +533,7 @@ git checkout -q -b to-gone
 git push -q -u origin to-gone
 # shellcheck disable=SC2154 # assigned by fresh_bare_origin
 git -C "$bare9" update-ref -d refs/heads/to-gone
-out="$(PATH="$(git_fails_bin '*" --delete "*'):$GH_FAILING:$PATH" "$ORCH" branch retire to-gone to-gone-redo-1 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire to-gone to-gone-redo-1 2>&1)"; st=$?
 assert_status "a failed delete of an already-gone ref succeeds" "$st" 0
 assert_eq "recording the retirement on the new name" \
   "$(git config --get branch.to-gone-redo-1.orchestrator-retired || true)" "true"
