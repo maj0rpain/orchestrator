@@ -704,10 +704,24 @@ autopilot_pickup() {
         warn "could not delete the claim ref on issue #$1; it stays held for stale cleanup"
       return 0
     fi
-    standing_stop "$1" "$PICKUP_KIND" "$2" "$PICKUP_TEXT"
+    autopilot_stop_contained "$1" "$PICKUP_KIND: $PICKUP_TEXT; a later tick's stale cleanup stops it" \
+      standing_stop "$1" "$PICKUP_KIND" "$2" "$PICKUP_TEXT" || true
     return 0
   }
   autopilot_spawn_run "$1"
+}
+
+# autopilot_stop_contained <issue> <tail> <command>...: the tick's one way to
+# run a stop: a single attempt in a subshell, so a death inside it ends the
+# stop and not the tick (the next tick is the retry). The stop's own failure
+# line reaches stderr; when it fails, warns "could not stop issue #<issue> - its
+# claim stays held; <tail>" and returns 1.
+autopilot_stop_contained() {
+  local issue="$1" tail="$2"
+  shift 2
+  ( "$@" ) && return 0
+  warn "could not stop issue #$issue - its claim stays held; $tail"
+  return 1
 }
 
 # autopilot_cleanup_stale: every claim of this host whose process is gone is a
@@ -716,6 +730,7 @@ autopilot_pickup() {
 # Other hosts' claims are never touched.
 autopilot_cleanup_stale() {
   orch_load standing
+  orch_load gh
   local issue phase log detail me gone_pid backstop
   me="$(standing_host_id)"
   standing_claims_read
@@ -729,8 +744,12 @@ autopilot_cleanup_stale() {
     [ -z "$log" ] || backstop="$(P="$AUTOPILOT_BACKSTOP_PREFIX" awk 'index($0, ENVIRON["P"]) == 1' "$log" 2>/dev/null | tail -1)" || true
     if [ -n "$backstop" ]; then detail="${detail%% - no exit code is known} - the session log says: \"${backstop#autopilot run: }\""; fi
     if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
-    standing_stop "$issue" failure "$phase" "$detail"
-    liveness_issue_forget "$issue"
+    if autopilot_stop_contained "$issue" "the next tick tries again; if the issue is gone for good, delete the claim ref by hand: git push origin :$(adapter_claim_ref "$issue")" \
+      standing_stop "$issue" failure "$phase" "$detail"; then
+      liveness_issue_forget "$issue"
+    elif autopilot_github_paused; then
+      return 0
+    fi
   done
 }
 
@@ -1131,6 +1150,7 @@ autopilot_tick() {
   autopilot_github_early "$main_root" "$reserve"
   autopilot_labels_ensure
   autopilot_cleanup_stale
+  if autopilot_pause_until "$main_root" github; then return 0; fi
   autopilot_done_read done_table
   autopilot_close_missed "$done_table" done_table
   if autopilot_pause_until "$main_root"; then return 0; fi
