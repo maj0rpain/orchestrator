@@ -13,6 +13,10 @@ AUTOPILOT_ROUNDS_DEFAULT=2
 AUTOPILOT_BUDGET_DEFAULT=3
 AUTOPILOT_GITHUB_RESERVE_DEFAULT=20
 
+# The autopilot setting names, in the order show prints them; settings prints
+# the same list, so the two never disagree.
+AUTOPILOT_SETTING_NAMES=(permission-mode cap handle rounds budget model effort auto-sync github-reserve)
+
 # autopilot_lookup <name> <value-var> <source-var>: the key
 # orchestrator.autopilot.<name> - local config, then global config - into
 # <value-var>, and where it came from (local, global or unset) into
@@ -89,7 +93,7 @@ autopilot_setting() {
 # range, naming key and value.
 autopilot_show() {
   local name
-  for name in permission-mode cap handle rounds budget model effort auto-sync github-reserve; do
+  for name in "${AUTOPILOT_SETTING_NAMES[@]}"; do
     autopilot_setting "$name"
     printf 'orchestrator.autopilot.%s %s (%s)\n' "$name" "${AUTOPILOT_VALUE:-(none)}" "$AUTOPILOT_SOURCE"
   done
@@ -1443,6 +1447,10 @@ cmd_autopilot() {
   local op="${1:-}"
   shift || true
   case "$op" in
+    settings)
+      [ $# -eq 0 ] || die "usage: orch.sh autopilot settings"
+      printf '%s\n' "${AUTOPILOT_SETTING_NAMES[@]}"
+      ;;
     show)
       [ $# -eq 0 ] || die "usage: orch.sh autopilot show"
       autopilot_show
@@ -1521,6 +1529,6 @@ cmd_autopilot() {
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|settings|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail)" ;;
   esac
 }
