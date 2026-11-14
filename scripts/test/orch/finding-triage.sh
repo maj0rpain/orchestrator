@@ -175,12 +175,14 @@ assert_eq "fetches the default branch first" "$(git rev-parse origin/main)" "$or
 assert_eq "and leaves the branches as they were" "$(git for-each-ref refs/heads)" "$before_refs"
 assert_eq "HEAD too" "$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)" "$before_head"
 assert_eq "and the working tree" "$(git status --porcelain)" "$before_tree"
+assert_eq "the first scan from a subdirectory prints the root's lines" "$(cd src && scan 2>&1)" "$out"
 
 all_out="$out"
 out="$(scan --pr 8 2>&1)"; st=$?
 assert_status "narrows to one source PR" "$st" 0
 assert_eq "scanning only that PR's findings" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "7 "
 assert_eq "a kept finding's whole line is its line without --pr" "$out" "$(line_of 7 "$all_out")"
+assert_eq "the --pr scan from a subdirectory prints the root's line" "$(cd src && scan --pr 8 2>&1)" "$out"
 
 out="$(scan 2 2>&1)"; st=$?
 assert_status "scans one explicit finding" "$st" 0
@@ -221,6 +223,7 @@ assert_eq "several are comma-joined in role order, not label order" \
 assert_eq "needs-triage leads the roles" "$(field_of 23 6 "$out")" "needs-triage,ready-for-agent"
 assert_eq "an open wontfix finding is listed, its state wontfix" \
   "$(line_of 22 "$out")" "$(printf '22\t7\tsrc/gone.sh:1\tgone\t-\twontfix')"
+assert_eq "the --all scan from a subdirectory prints the root's lines" "$(cd src && scan --all 2>&1)" "$out"
 out="$(scan 2>&1)"; st=$?
 assert_status "a listed scan makes no per-finding read" "$st" 0
 assert_eq "without --all, only the findings in needs-triage" \
@@ -346,6 +349,7 @@ assert_eq "it is unknown, not changed by a commit older than the filing" "$(fiel
 assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
 assert_eq "its exact line" "$(line_of 11 "$out")" \
   "$(printf '11\t11\tsrc/other.sh:2\tunknown\tno commit on the default branch since %s touched src/other.sh - the difference is commits that never reached it\tneeds-triage' "$unmerged_sha")"
+assert_eq "the never-reached scan from a subdirectory prints the root's line" "$(cd src && scan 11 2>&1)" "$out"
 fake_issue 11 closed
 
 # A finding whose lines the scan follows to the default branch, where later
@@ -356,6 +360,7 @@ out="$(scan 14 2>&1)"; st=$?
 assert_status "scans a finding whose file changed only elsewhere" "$st" 0
 assert_eq "its followed, untouched lines are unchanged, with - for no detail" \
   "$(line_of 14 "$out")" "$(printf '14\t14\tsrc/app.sh:6\tunchanged\t-\tneeds-triage')"
+assert_eq "the followed-untouched scan from a subdirectory prints the root's line" "$(cd src && scan 14 2>&1)" "$out"
 fake_issue 14 closed
 
 # A body with its **Location:** line but no **PR:** line does not parse either.
@@ -374,6 +379,7 @@ out="$(scan 24 2>&1)"; st=$?
 assert_status "scans a suite-cost finding" "$st" 0
 assert_eq "it is unknown, its exact line saying it names the suite" "$(line_of 24 "$out")" \
   "$(printf '24\t24\tsuite\tunknown\ta suite-cost finding names the suite as a whole, no lines to follow\tneeds-triage')"
+assert_eq "the suite-cost scan from a subdirectory prints the root's line" "$(cd src && scan 24 2>&1)" "$out"
 fake_issue 24 closed
 
 # A body the Filed finding module rendered scans as one in the closer's
@@ -425,6 +431,7 @@ out="$(scan 13 2>&1)"; st=$?
 assert_status "scans a finding whose file has a large diff after its line" "$st" 0
 assert_eq "it is changed" "$(field_of 13 4 "$out")" "changed"
 assert_eq "naming the commit that touched the shifted line" "$(field_of 13 5 "$out")" "$shifted_fix_sha"
+assert_eq "the large-diff scan from a subdirectory prints the root's line" "$(cd src && scan 13 2>&1)" "$out"
 fake_issue 13 closed
 
 # Findings whose filed lines the default branch later deleted outright: never
@@ -487,6 +494,7 @@ assert_eq "a finding filed at a squash-merged PR head names the deleting commit,
   "$(line_of 37 "$out")" "$(printf '37\t37\tsrc/del_squashed.sh:11\tchanged\t%s\tneeds-triage' "$squashed_sha")"
 assert_eq "a squash-merged finding deleted in two hunks names the deleting commit" \
   "$(line_of 38 "$out")" "$(printf '38\t38\tsrc/del_split.sh:9-13\tchanged\t%s\tneeds-triage' "$split_sha")"
+assert_eq "the deleted-lines scan from a subdirectory prints the root's lines" "$(cd src && scan 2>&1)" "$out"
 for n in 30 31 32 33 34 35 36 37 38; do fake_issue "$n" closed; done
 
 # Each severity's list is cut off at the issue-list limit; a list that

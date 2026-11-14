@@ -494,6 +494,51 @@ assert_status "the rerun after the block clears succeeds" "$st" 0
 assert_eq "and the resumed retire marks the new name" \
   "$(git config --get branch.to-protect-redo-1.orchestrator-retired || true)" "true"
 
+# Origin refuses the old ref's delete and cannot be asked whether it is still
+# there (ls-remote fails with a status other than 0 and 2): the retire dies
+# without recording, says what landed and what did not, and names the rerun.
+fresh_bare_origin bare8
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
+git -C "$bare8" symbolic-ref HEAD refs/heads/to-unasked
+git -C "$bare8" config receive.denyDeleteCurrentBranch refuse
+git checkout -q -b to-unasked
+git push -q -u origin to-unasked
+out="$(PATH="$(fails_bin git '*" ls-remote "*' 128):$PATH" orch_gh_failing branch retire to-unasked to-unasked-redo-1 2>&1)"; st=$?
+assert_status "a failed delete with origin unanswered dies" "$st" 1
+assert_contains "naming the old ref" "$out" "orch: could not confirm origin/to-unasked is gone"
+assert_contains "saying origin could not be asked" "$out" "could not ask origin whether it is still there"
+assert_contains "saying the new name is pushed and the retirement is not recorded" "$out" \
+  "to-unasked-redo-1 is pushed but its retirement is not recorded"
+assert_contains "naming the rerun" "$out" "rerun orch.sh branch retire to-unasked to-unasked-redo-1"
+assert_contains "relaying git's reason" "$out" "deletion of the current branch prohibited"
+assert_not_contains "never claiming nothing changed" "$out" "nothing was changed"
+assert_eq "an unanswered probe records no retirement" \
+  "$(git config --get branch.to-unasked-redo-1.orchestrator-retired || true)" ""
+assert_eq "the new name stays local" "$(branch_presence to-unasked-redo-1)" "present"
+assert_eq "and is not renamed back" "$(branch_presence to-unasked)" "gone"
+assert_eq "origin has the new name" "$(origin_branch_state "$bare8" to-unasked-redo-1)" "pushed"
+
+# The rerun, once origin answers and no longer refuses, finishes the retire.
+git -C "$bare8" symbolic-ref HEAD refs/heads/unrelated
+out="$(orch_gh_failing branch retire to-unasked to-unasked-redo-1 2>&1)"; st=$?
+assert_status "the rerun once origin answers succeeds" "$st" 0
+assert_eq "and deletes the old remote ref" "$(origin_branch_state "$bare8" to-unasked)" "missing"
+assert_eq "and records the retirement" \
+  "$(git config --get branch.to-unasked-redo-1.orchestrator-retired || true)" "true"
+
+# A failed delete whose old ref origin answers is gone (an earlier delete
+# landed) carries on and records the retirement.
+fresh_bare_origin bare9
+git checkout -q -b to-gone
+git push -q -u origin to-gone
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
+git -C "$bare9" update-ref -d refs/heads/to-gone
+out="$(PATH="$(git_fails_bin '*" --delete "*'):$PATH" orch_gh_failing branch retire to-gone to-gone-redo-1 2>&1)"; st=$?
+assert_status "a failed delete of an already-gone ref succeeds" "$st" 0
+assert_eq "recording the retirement on the new name" \
+  "$(git config --get branch.to-gone-redo-1.orchestrator-retired || true)" "true"
+assert_eq "with the new name on origin" "$(origin_branch_state "$bare9" to-gone-redo-1)" "pushed"
+
 # A resume whose push fails is not rolled back: the rename was not this call's.
 fresh_bare_origin bare7
 git checkout -q -b rr-push
