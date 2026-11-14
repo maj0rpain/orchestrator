@@ -768,6 +768,20 @@ orch_no_repo() {
     && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" "$@")
 }
 
+# assert_no_repo_exit2 <label> <args>...: orch_no_repo <args> exits 2, prints
+# nothing, writes the repo remedy alone to stderr and calls no gh.
+assert_no_repo_exit2() {
+  local label="$1" err out st
+  shift
+  err="$(mktemp)"
+  out="$(orch_no_repo "$@" 2>"$err")"; st=$?
+  assert_status "$label with no repo exits 2" "$st" 2
+  assert_eq "$label prints nothing" "$out" ""
+  assert_eq "$label stderr is the remedy alone" "$(cat "$err")" "orch: $repo_remedy"
+  assert_eq "$label makes no gh call" "$(gh_calls)" "0"
+  rm -f "$err"
+}
+
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 

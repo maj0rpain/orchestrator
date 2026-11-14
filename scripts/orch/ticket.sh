@@ -325,6 +325,8 @@ cmd_ticket_parent() {
 cmd_ticket_exists() {
   [ $# -eq 1 ] || die2 "usage: orch.sh ticket exists <parent>"
   local parent="$1" subs body
+  case "$parent" in ''|*[!0-9]*) die2 "parent must be a plain issue number, got: $parent" ;; esac
+  repo_pin || die2 "$REPO_REMEDY"
   subs="$(ticket_sub_issues --exit 2 "$parent")" || exit "$?"
   if [ -n "$subs" ]; then
     printf 'sub-issues\n'
