@@ -373,7 +373,9 @@ git -C "$work" checkout -q -f main
 finding 31 "review:nit,needs-triage" "\`src/other.sh:2\` at $unrelated_sha" 31
 out="$(scan 31 2>&1)"; st=$?
 assert_status "scans a finding filed on a head with no merge base" "$st" 0
-assert_eq "a failed merge-base lookup is changed, not never reached" "$(field_of 31 4 "$out")" "changed"
+other_newest_sha="$(git -C "$work" log -1 --format=%H main -- src/other.sh)"
+assert_eq "a failed merge-base lookup is changed, naming the newest commit touching the file" \
+  "$(line_of 31 "$out")" "$(printf '31\t31\tsrc/other.sh:2\tchanged\t%s\tneeds-triage' "$other_newest_sha")"
 fake_issue 31 closed
 
 # A finding whose lines the scan follows to the default branch, where later
