@@ -52,7 +52,8 @@ SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
 # finding. Set per clone with git config orchestrator.suiteCost.floor and
 # orchestrator.suiteCost.growth. A third per-clone key,
 # orchestrator.suiteCost.setup, has no default: the install command (npm ci,
-# uv sync) a base run or confirming run runs first in its worktree, read by
+# uv sync) a base run or confirming run runs first at the top of its worktree
+# (the measured command then runs in the matching directory), read by
 # suite_cost_tree_run.
 SUITE_COST_FLOOR_DEFAULT=60
 SUITE_COST_GROWTH_DEFAULT=15
@@ -473,9 +474,14 @@ suite_cost_min() {
 # worktree whatever happened. <role> is base, for the base run check makes
 # when the base commit has no clean record, or confirm, for a confirming run;
 # it picks the warnings' wording, a confirming run's naming the growth as
-# unconfirmed. The worktree holds only tracked files, so git config
-# orchestrator.suiteCost.setup, when set and non-empty, runs there first with
-# bash -c, untimed and its output on stderr; a failing setup measures nothing.
+# unconfirmed. The measured command runs in the matching directory: the path
+# below the worktree's top that the caller's directory has below its
+# checkout's top (the top itself when check was started there). A commit with
+# no directory at that path starts no setup and no command, records nothing,
+# warns naming the commit and directory, and fails. The worktree holds only
+# tracked files, so git config orchestrator.suiteCost.setup, when set and
+# non-empty, runs first at the worktree's top with bash -c, untimed and its
+# output on stderr; a failing setup measures nothing.
 # The run is registered as active from its setup to its end, and a passing run
 # another suite-cost run overlapped, or that could not register, is not
 # recorded and fails, warning which. With no setup, a base run exiting 127
@@ -483,8 +489,10 @@ suite_cost_min() {
 # and the worktree is gone; a failed removal after a pass keeps the record and
 # names the left-over worktree.
 suite_cost_tree_run() {
-  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 run_label msg_tail msg_no_worktree
+  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 run_label msg_tail msg_no_worktree subdir
   shift 2
+  subdir="$(git rev-parse --show-prefix 2>/dev/null || true)"
+  subdir="${subdir%/}"
   if [ "$role" = base ]; then
     run_label="the base run" msg_tail="the suite cost is unmeasured"
     msg_no_worktree="could not add a worktree at base commit $sha - $msg_tail"
@@ -503,10 +511,16 @@ suite_cost_tree_run() {
     rm -rf "$tmp"
     return 1
   fi
+  if [ -n "$subdir" ] && [ ! -d "$wt/$subdir" ]; then
+    warn "commit $sha has no directory $subdir for $run_label - $msg_tail"
+    git worktree remove --force "$wt" >/dev/null 2>&1 && rmdir "$tmp" 2>/dev/null || true
+    return 1
+  fi
   setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
   if cd "$wt"; then
     suite_cost_register
     [ -z "$setup" ] || bash -c "$setup" >&2 || setup_status=$?
+    [ "$setup_status" -ne 0 ] || cd "$wt/$subdir" || setup_status=1
     [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
     suite_cost_unregister
     cd "$here" || die "could not return to $here"
