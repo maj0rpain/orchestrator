@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.2.71
+
+`ORCH_CLONE_DIR` is no longer read from the autopilot container's env file:
+compose pins it to the repo volume's mount target, so the clone always lives on
+the volume. A line setting it can be deleted; a project which had set it starts
+from a fresh clone on the volume at its next rebuild.
+
 ## 5.2.70
 
 `orch.sh` now stops on a bash below 4.2 with one line naming the bash it found and the remedy, `brew install bash`, instead of a raw `declare` error.
