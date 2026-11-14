@@ -114,12 +114,15 @@ gh_limit_reset() {
   printf '%s\n' "${reset:-$(($(date +%s) + 900))}"
 }
 
-# gh_limit_handle <stderr> <retried>: what a failed call's <stderr> means.
+# gh_limit_handle <stderr> <retry spent>: what a failed call's <stderr> means.
 # Status 0: no limit - the caller passes its failure through untouched.
 # Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
-# default 60) - the caller retries once and calls this again with <retried> 1.
-# Status 1: a limit to give up on - a primary one, or a secondary one met again
-# after the retry, handled as a primary one. The distinct message, naming the
+# default 60) - the caller retries once and calls this again with
+# <retry spent> 1.
+# Status 1: a limit to give up on - a primary one, a secondary one met again
+# after the retry, or a first secondary one on a compound write (never
+# retried, so called with <retry spent> 1), handled as a primary one. The
+# distinct message, naming the
 # reset, is on stderr; in an autopilot process the reset is also recorded
 # (autopilot_github_limit_record), a failed write being one more line on stderr.
 gh_limit_handle() {
@@ -786,8 +789,8 @@ adapter_issue_reopen() {
 # --draft, carrying each label named (#1299), passed to gh pr create's --label
 # in the order given - and prints its number alone. gh adds the labels in a
 # mutation after the create, so the PR can open before they land: given a
-# label it declares its gh call a compound write, as a rerun would open a
-# second PR.
+# label it declares its gh call a compound write, as a rerun after the PR has
+# opened fails with "already exists" for a PR that was in fact opened.
 # Fails, printing nothing, where gh succeeded but printed no PR URL.
 adapter_pr_create() {
   local base="$1" head="$2" title="$3" body="$4" args=() out n compound="" options="--draft --label"

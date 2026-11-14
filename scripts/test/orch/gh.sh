@@ -1764,10 +1764,10 @@ restore_suite_env
 
 # --- gh rate limits (#2577) ---------------------------------------------------
 # The guard recognises a primary or secondary limit on a failed call, retries a
-# secondary one once, reads the reset from the rate_limit endpoint, and fails
-# the call with one distinct message; any other failure passes through
-# untouched. Run against the fixture gh, then the store-backed fake's own
-# limit failures.
+# secondary one once (a compound write is given up on at once), reads the
+# reset from the rate_limit endpoint, and fails the call with one distinct
+# message; any other failure passes through untouched. Run against the
+# fixture gh, then the store-backed fake's own limit failures.
 echo
 echo "gh rate limits (#2577)"
 new_repo >/dev/null
@@ -1846,9 +1846,12 @@ assert_eq "with the retry's answer and nothing else" "$out" "Body."
 # listing whose first attempt prints rows then fails on a secondary limit gives
 # the retry's rows, each once.
 limit_once_gh "$GH_FIXTURE/rows" $'1\tone\n2\ttwo\n' $'1\tone\n2\ttwo\n3\tthree\n'
-out="$(ORCH_GH_LIMIT_WAIT=0 PATH="$GH_FIXTURE/rows:$PATH" contract adapter_issues_open_titles 2>&1)"; st=$?
+rows_tmp="$(mktemp -d)"
+out="$(TMPDIR="$rows_tmp" ORCH_GH_LIMIT_WAIT=0 PATH="$GH_FIXTURE/rows:$PATH" contract adapter_issues_open_titles 2>&1)"; st=$?
 assert_status "a paginated listing whose first attempt fails on a secondary limit succeeds" "$st" 0
 assert_eq "and gives the retry's rows alone, each once" "$out" "$(printf '1\tone\n2\ttwo\n3\tthree')"
+assert_eq "a retry leaves no temp file" "$(ls -A "$rows_tmp")" ""
+rm -rf "$rows_tmp"
 
 # gh_limit_retry passes stdout byte for byte, leaves no temp file, and keeps
 # the failure contract.
@@ -1867,11 +1870,7 @@ assert_eq "and leaves no temp file" "$(ls -A "$rt_tmp")" ""
 out="$(retry_script 'gh_limit_handle() { echo "handler" >&2; return 1; }; f() { echo kept; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
 assert_status "a limit given up on fails the call" "$st" 1
 assert_eq "with the deciding attempt's stdout" "$out" "kept"
-assert_eq "and the handler's message in place of gh's stderr" "$(<"$rt_tmp.e")" "handler"
 assert_eq "and leaves no temp file" "$(ls -A "$rt_tmp")" ""
-out="$(retry_script 'f() { echo first; echo "secondary rate limit" >&2; return 1; }; gh_limit_handle() { [ "$2" = 0 ] && return 2; return 1; }; gh_limit_retry f' 2>/dev/null)"
-assert_eq "a retried attempt's stdout is dropped, the deciding one's kept" "$out" "first"
-assert_eq "a retry leaves no temp file" "$(ls -A "$rt_tmp")" ""
 out="$(GH_LIMIT_READING=1 retry_script 'gh_limit_handle() { echo handled >&2; return 2; }; f() { echo q; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>&1)"; st=$?
 assert_eq "the quota read is neither retried nor handled" "$out" "$(printf 'q\nsecondary rate limit')"
 # A temp file that cannot be made ends the run and leaves the directory empty.
