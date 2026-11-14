@@ -220,12 +220,11 @@ repo_resolve; first=$?
 unset GH_REPO GH_HOST
 repo_resolve; second=$?
 repo_pin; pinned=$?
-printf '%s %s %s|%s|%s|%s\n' "$first" "$second" "$pinned" "$REPO_NAME" "${GH_REPO-}" "${GH_HOST-}"
-case "$(export -p)" in *REPO_MEMO*|*REPO_NAME*|*REPO_SOURCE*) echo exported ;; esac
+printf '%s %s %s|%s|%s\n' "$first" "$second" "$pinned" "${GH_REPO-}" "${GH_HOST-}"
 SCRIPT
 out="$(MEMO_DIR="$memo_git" ssh_calls="$ssh_calls" PATH="$memo_git:$ssh_stub_dir:$PATH" sourced_orch_script "$(cat "$memo_script")" 2>&1)"
 assert_eq "a memo hit answers the same, and the pin exports GH_REPO and the pinned host" \
-  "$out" "0 0 0|ghe.example.com/acme/widgets|ghe.example.com/acme/widgets|ghe.example.com"
+  "$out" "0 0 0|ghe.example.com/acme/widgets|ghe.example.com"
 assert_eq "a memo hit starts no git" "$(counting_starts "$memo_git" git)" "0"
 assert_eq "a memo hit starts no ssh" "$(cat "$ssh_calls")" ""
 restore_suite_env

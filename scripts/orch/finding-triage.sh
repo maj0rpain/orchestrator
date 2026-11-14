@@ -367,9 +367,9 @@ cmd_finding_triage_scan() {
 # the AI disclaimer every comment finding triage writes carries. Builds the
 # comment in the current shell, where errexit holds, and dies naming <file>
 # when it cannot (#1335): an unreadable file would otherwise post the
-# disclaimer alone. Only the adapter call runs through capture_err, so its
+# disclaimer alone. Only the adapter call runs through gh_capture_err, so its
 # stderr lands in <err-var> and its status is returned for the caller to word
-# its own error. Same rules as capture_err: current shell only, with
+# its own error. Same rules as gh_capture_err: current shell only, with
 # _triage_comment_post_-prefixed locals.
 triage_comment_post() {
   local _triage_comment_post_tmp _triage_comment_post_st=0

@@ -212,7 +212,8 @@ gh_die() {
 }
 
 # gh_or_die [--exit 2] [--hint <text>] [--out <var> | --file <path>] <what>
-# <op> [args...]: runs the operation through capture/capture_err - so in their
+# <op> [args...]: resolves the Repo in the caller's shell, then runs the
+# operation through gh_capture/gh_capture_err - so in their
 # subshell, and the gh guard's no-repo death still reaches the real stderr -
 # and on failure dies through gh_die with the same --exit and --hint. Those
 # are checked through die_opt_check before the operation runs, so a bad one

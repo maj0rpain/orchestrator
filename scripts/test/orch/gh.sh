@@ -166,7 +166,8 @@ assert_eq "and calls ssh not at all" "$(cat "$ssh_calls")" ""
 git branch -q quick/base; git config orchestrator.base quick/base
 # branch off captures a local git command (its checkout); its fetch of the
 # ssh origin is git's own ssh, so only the resolver's `ssh -G` is counted.
-PATH="$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" branch off quick/9-widgets >/dev/null 2>&1
+PATH="$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" branch off quick/9-widgets >/dev/null 2>&1; st=$?
+assert_status "branch off runs" "$st" 0
 assert_eq "a command that only captures a local git command runs no ssh -G" \
   "$(grep -c "^-G " "$ssh_calls")" "0"
 # On an https origin, a git wrapper logs each read of origin's URL.

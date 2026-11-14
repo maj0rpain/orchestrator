@@ -427,7 +427,7 @@ cmd_ticket_retire() {
 # `issue fetch` and `issue update` make. A body with no final newline gets
 # none back; a result byte-identical to the body is not written. A failed
 # read dies through gh_die with <read-what>, a failed write with <write-what>;
-# capture_err takes the stderr while the body still streams to
+# gh_capture_err takes the stderr while the body still streams to
 # its file, and neither death leaves a temp file.
 issue_body_rewrite() {
   local n="$1" read_what="$2" write_what="$3" body result out err
