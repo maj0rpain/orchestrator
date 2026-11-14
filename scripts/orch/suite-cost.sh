@@ -118,13 +118,17 @@ suite_cost_register() {
   # written under a first name the sweep never takes for a marker, then moved
   # into place, so a marker appears complete
   SUITE_COST_FIRST="$dir/.$$.new"
-  liveness_record_write "$$" "$SUITE_COST_FIRST" && mv -f -- "$SUITE_COST_FIRST" "$me" 2>/dev/null || {
+  # the mark is set before the move, so a signal landing as the move returns
+  # still finds the marker to remove (a missing file is ignored)
+  SUITE_COST_MARK="$me"
+  # the first name is created under a silenced redirection, so a directory that
+  # cannot be written fails quietly; the writer's own orch: line stays on stderr
+  { : >"$SUITE_COST_FIRST"; } 2>/dev/null && liveness_record_write "$$" "$SUITE_COST_FIRST" && mv -f -- "$SUITE_COST_FIRST" "$me" 2>/dev/null || {
     rm -f -- "$SUITE_COST_FIRST" 2>/dev/null || true
-    SUITE_COST_FIRST=""
+    SUITE_COST_FIRST="" SUITE_COST_MARK=""
     return 0
   }
   SUITE_COST_FIRST=""
-  SUITE_COST_MARK="$me"
   while IFS= read -r p; do
     SUITE_COST_SAW_LIVE=1
     : 2>/dev/null >"$dir/$p.contended" || true
@@ -210,11 +214,12 @@ suite_cost_run() {
 # suite_cost_interrupt_arm <tmp-dir>: starts handling INT, TERM and HUP for a
 # measured run and clears the state the handler cleans up. <tmp-dir> is the
 # tree run's temporary directory, "" for suite-cost run; the tree run then sets
-# SUITE_COST_TREE_WT and SUITE_COST_TREE_HERE once its worktree is added. The
+# SUITE_COST_TREE_WT, SUITE_COST_TREE_HERE and SUITE_COST_TREE_LABEL (the run's
+# name in the removal warning). The
 # handler runs once the foreground command has returned (bash's own rule).
 suite_cost_interrupt_arm() {
   SUITE_COST_MARK="" SUITE_COST_FIRST="" SUITE_COST_TIMEFILE=""
-  SUITE_COST_TREE_TMP="$1" SUITE_COST_TREE_WT="" SUITE_COST_TREE_HERE=""
+  SUITE_COST_TREE_TMP="$1" SUITE_COST_TREE_WT="" SUITE_COST_TREE_HERE="" SUITE_COST_TREE_LABEL=""
   trap 'suite_cost_interrupted 129' HUP
   trap 'suite_cost_interrupted 130' INT
   trap 'suite_cost_interrupted 143' TERM
@@ -223,7 +228,19 @@ suite_cost_interrupt_arm() {
 # suite_cost_interrupt_disarm: ends the handling suite_cost_interrupt_arm began.
 suite_cost_interrupt_disarm() {
   trap - HUP INT TERM
-  SUITE_COST_TREE_TMP="" SUITE_COST_TREE_WT="" SUITE_COST_TREE_HERE=""
+  SUITE_COST_TREE_TMP="" SUITE_COST_TREE_WT="" SUITE_COST_TREE_HERE="" SUITE_COST_TREE_LABEL=""
+}
+
+# suite_cost_tree_remove <label> <worktree> <tmp-dir>: removes a tree run's
+# worktree and then its temporary directory. Returns 1, after a warning that
+# names the command to remove it, when the worktree could not be removed.
+suite_cost_tree_remove() {
+  if git worktree remove --force "$2" >/dev/null 2>&1; then
+    rmdir "$3" 2>/dev/null || true
+    return 0
+  fi
+  warn "could not remove $1's worktree $2 - remove it with: git worktree remove --force $2"
+  return 1
 }
 
 # suite_cost_interrupted <status>: the handler. Warns once that the run was
@@ -243,11 +260,7 @@ suite_cost_interrupted() {
   [ -z "$SUITE_COST_TIMEFILE" ] || rm -f -- "$SUITE_COST_TIMEFILE" 2>/dev/null || true
   if [ -n "$SUITE_COST_TREE_WT" ]; then
     cd "$SUITE_COST_TREE_HERE" 2>/dev/null || true
-    if git worktree remove --force "$SUITE_COST_TREE_WT" >/dev/null 2>&1; then
-      rmdir "$SUITE_COST_TREE_TMP" 2>/dev/null || true
-    else
-      warn "could not remove $run_label's worktree $SUITE_COST_TREE_WT - remove it with: git worktree remove --force $SUITE_COST_TREE_WT"
-    fi
+    suite_cost_tree_remove "$SUITE_COST_TREE_LABEL" "$SUITE_COST_TREE_WT" "$SUITE_COST_TREE_TMP" || true
   fi
   exit "$status"
 }
@@ -551,7 +564,7 @@ suite_cost_min() {
 # and the worktree is gone; a failed removal after a pass keeps the record and
 # names the left-over worktree.
 suite_cost_tree_run() {
-  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 run_label msg_tail msg_no_worktree
+  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 ran=0 run_label msg_tail msg_no_worktree
   shift 2
   if [ "$role" = base ]; then
     run_label="the base run" msg_tail="the suite cost is unmeasured"
@@ -572,7 +585,7 @@ suite_cost_tree_run() {
     return 1
   fi
   suite_cost_interrupt_arm "$tmp"
-  SUITE_COST_TREE_WT="$wt" SUITE_COST_TREE_HERE="$here"
+  SUITE_COST_TREE_WT="$wt" SUITE_COST_TREE_HERE="$here" SUITE_COST_TREE_LABEL="$run_label"
   setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
   if cd "$wt"; then
     suite_cost_register
@@ -580,9 +593,15 @@ suite_cost_tree_run() {
     [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
     suite_cost_unregister
     cd "$here" || die "could not return to $here"
-    # the run is over: a signal now must not warn of an unrecorded run, nor
-    # remove the worktree twice
-    trap '' HUP INT TERM
+    ran=1
+  else
+    status=1
+  fi
+  # the handled window ends at the removal: the worktree goes first, then the
+  # handling, so a signal never meets a removed worktree or an appended record
+  suite_cost_tree_remove "$run_label" "$wt" "$tmp" || status=1
+  suite_cost_interrupt_disarm
+  if [ "$ran" -eq 1 ]; then
     if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
       if suite_cost_require_solo "$run_label at $sha" "$msg_tail"; then
         suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
@@ -599,16 +618,7 @@ suite_cost_tree_run() {
         warn "$run_label at $sha exited $SUITE_COST_STATUS - $msg_tail"
       fi
     fi
-  else
-    status=1
   fi
-  if git worktree remove --force "$wt" >/dev/null 2>&1; then
-    rmdir "$tmp" 2>/dev/null || true
-  else
-    warn "could not remove $run_label's worktree $wt - remove it with: git worktree remove --force $wt"
-    status=1
-  fi
-  suite_cost_interrupt_disarm
   return "$status"
 }
 
