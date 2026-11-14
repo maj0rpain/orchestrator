@@ -261,7 +261,11 @@ suite_cost_interrupted() {
   [ -z "$SUITE_COST_TIMEFILE" ] || rm -f -- "$SUITE_COST_TIMEFILE" 2>/dev/null || true
   if [ -n "$SUITE_COST_TREE_WT" ]; then
     cd "$SUITE_COST_TREE_HERE" 2>/dev/null || true
-    suite_cost_tree_remove "$SUITE_COST_TREE_LABEL" "$SUITE_COST_TREE_WT" "$SUITE_COST_TREE_TMP" || true
+    if [ -e "$SUITE_COST_TREE_WT" ]; then
+      suite_cost_tree_remove "$SUITE_COST_TREE_LABEL" "$SUITE_COST_TREE_WT" "$SUITE_COST_TREE_TMP" || true
+    else
+      rmdir "$SUITE_COST_TREE_TMP" 2>/dev/null || true
+    fi
   fi
   exit "$status"
 }
@@ -612,8 +616,9 @@ suite_cost_tree_run() {
   else
     status=1
   fi
-  # the handled window ends at the removal: the worktree goes first, then the
-  # handling, so a signal never meets a removed worktree or an appended record
+  # the handled window ends after the removal: a signal landing once the
+  # worktree is gone only removes the temporary directory (the handler checks
+  # the worktree exists), and the handling ends before the record is appended
   suite_cost_tree_remove "$run_label" "$wt" "$tmp" || status=1
   suite_cost_interrupt_disarm
   if [ "$ran" -eq 1 ]; then

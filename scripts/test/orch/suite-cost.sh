@@ -394,19 +394,28 @@ for kind in empty malformed unreadable otherpid; do
     empty) : >"$active/$$" ;;
     malformed) printf 'word\n' >"$active/$$" ;;
     unreadable) sourced_orch liveness_record_write "$$" "$active/$$" ;;
-    otherpid) printf '%s 1\n' "$dead" >"$active/$$" ;;
+    otherpid)
+      # a true record of a live pid that is not the marker's file name
+      sleep 30 &
+      other_pid=$!
+      sourced_orch liveness_record_write "$other_pid" "$active/$$"
+      ;;
   esac
   : >"$active/$$.contended"
   if [ "$kind" = unreadable ]; then
     # a fake process table that knows the run (exec keeps its pid) but not
     # the marker's pid, here the test shell's
-    err="$(ORCH_PROC_DIR="$fake_proc" bash -c 'mkdir "$ORCH_PROC_DIR/$$"; cp "/proc/$$/stat" "$ORCH_PROC_DIR/$$/stat"; exec "$0" suite-cost run -- true' "$ORCH" 2>&1)"
+    err="$(ORCH_PROC_DIR="$fake_proc" bash -c 'mkdir "$ORCH_PROC_DIR/$$"; cp "/proc/$$/stat" "$ORCH_PROC_DIR/$$/stat"; ps() { return 1; }; export -f ps; exec "$0" suite-cost run -- true' "$ORCH" 2>&1)"
   else
     err="$("$ORCH" suite-cost run -- true 2>&1)"
   fi
   assert_eq "a $kind marker is stale and no contention" "$err" ""
   assert_eq "and is removed with its contended mark" \
     "$(on_disk "$active/$$")$(on_disk "$active/$$.contended")" absentabsent
+  if [ "$kind" = otherpid ]; then
+    kill "$other_pid" 2>/dev/null || true
+    wait "$other_pid" 2>/dev/null || true
+  fi
 done
 rm -rf "$fake_proc"
 
@@ -1415,7 +1424,7 @@ assert_clean_interrupt() {
   assert_eq "$1: warns once" "$(grep -cF -- "$interrupted_msg" "$2")" 1
   assert_eq "$1: leaves no marker or contended mark" "$(ls -A "$rec.active" 2>/dev/null | wc -l | tr -d ' ')" 0
   assert_eq "$1: leaves no timing file" "$(ls -A "$5" | wc -l | tr -d ' ')" 0
-  assert_eq "$1: leaves no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
+  assert_eq "$1: leaves no worktree" "$(no_worktree)" none
 }
 
 # A shell that started with SIGINT ignored, as a parallel runner's child does,
