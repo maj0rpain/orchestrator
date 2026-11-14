@@ -285,7 +285,7 @@ verify_twice() {
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
 #   adapter_issues_labelled_rows, adapter_issues_any_labelled_rows,
-#   adapter_issues_open_oldest,
+#   adapter_issues_open_rows,
 #   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
@@ -643,6 +643,27 @@ issues_any_labelled_rows_read() {
   issues_rows_read_via issues_any_labelled_rows_read adapter_issues_any_labelled_rows issues_any_labelled_limit_warn "$@"
 }
 
+# adapter_issues_open_rows: every open issue, oldest first and cut at
+# ISSUE_LIST_LIMIT, each as the count-marked record adapter_issues_labelled_rows
+# answers: number, state as GitHub answered it, label count, one label per line.
+adapter_issues_open_rows() {
+  gh issue list --state open --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
+    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+}
+
+# issues_open_limit_warn <count>: issue_list_limit_warn for a listing of every
+# open issue. Always succeeds.
+issues_open_limit_warn() {
+  issue_list_limit_warn "$1" "the open issues"
+}
+
+# issues_open_rows_read <nums_var> <states_array> <labels_array> <err_var>:
+# issues_labelled_rows_read for every open issue, through
+# adapter_issues_open_rows, its limit warning worded by issues_open_limit_warn.
+issues_open_rows_read() {
+  issues_rows_read_via issues_open_rows_read adapter_issues_open_rows issues_open_limit_warn "$@"
+}
+
 # issues_rows_read_via <caller> <adapter> <warn> <nums_var> <states_array>
 # <labels_array> <err_var> <label>...: the reading the two readers above share,
 # through the listing <adapter> and the limit warning <warn>; <caller> names the
@@ -686,12 +707,6 @@ issues_rows_read_via() {
   done
   printf -v "$1" '%s' "$(printf '%s\n' ${__ilrr_nums[@]+"${__ilrr_nums[@]}"} | grep . || true)"
   "$__ilrr_warn" "${#__ilrr_nums[@]}" "${@:5}"
-}
-
-# adapter_issues_open_oldest: every open issue, one number per line, oldest
-# first, so ISSUE_LIST_LIMIT cuts the newest.
-adapter_issues_open_oldest() {
-  gh issue list --state open --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues carrying every

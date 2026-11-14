@@ -643,6 +643,10 @@ assert_eq "adapter_issues_labelled_rows answers number, state, label count and l
   "$(barely sortawk adapter_issues_labelled_rows alpha beta | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
 assert_eq "adapter_issues_labelled_rows cuts the list at ISSUE_LIST_LIMIT" \
   "$(ISSUE_LIST_LIMIT=1 barely sortawk adapter_issues_labelled_rows alpha | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
+assert_eq "adapter_issues_open_rows answers every open issue oldest first, as number, state, label count and labels" \
+  "$(barely sortawk adapter_issues_open_rows | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha 26 OPEN 0 30 OPEN 2 alpha beta-two "
+assert_eq "adapter_issues_open_rows cuts the list at ISSUE_LIST_LIMIT, the newest dropped" \
+  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_open_rows | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha "
 fake_lag adapter_issues_labelled_rows 1 $'22\nOPEN\n0'
 assert_eq "a lagged adapter_issues_labelled_rows serves the stale listing once, then the current one" \
   "$(barely lagcat adapter_issues_labelled_rows zzz | tr '\n' ' ')|$(barely lagcat adapter_issues_labelled_rows zzz | tr '\n' ' ')" "22 OPEN 0 |"
@@ -939,6 +943,13 @@ gh_reply 0 $'3\nOPEN\n1\nreview:nit\n9\nCLOSED\n0\n' '' \
   --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
 out="$(contract adapter_issues_labelled_rows review:nit "triage me" 2>&1)"; st=$?
 assert_status "issues labelled rows: lists the open issues carrying every label" "$st" 0
+assert_eq "one count-marked record per issue: number, state, label count, labels" "$out" "$(writeln 3 OPEN 1 review:nit 9 CLOSED 0)"
+
+gh_reply 0 $'3\nOPEN\n1\nreview:nit\n9\nCLOSED\n0\n' '' \
+  issue list --state open --search "sort:created-asc" --limit 1000 --json number,state,labels \
+  --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_open_rows 2>&1)"; st=$?
+assert_status "issues open rows: lists every open issue" "$st" 0
 assert_eq "one count-marked record per issue: number, state, label count, labels" "$out" "$(writeln 3 OPEN 1 review:nit 9 CLOSED 0)"
 
 gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \

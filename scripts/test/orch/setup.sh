@@ -146,7 +146,7 @@ counted_adapter_run() {
 counting_defs() {
   writeln \
     "eval \"fake_$1_read() \$(declare -f $1 | tail -n +2)\"" \
-    "$1() { printf '%s %s\\n' '$2' \"\$1\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
+    "$1() { printf '%s %s\\n' '$2' \"\${1-}\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
 }
 
 # log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "

@@ -945,16 +945,21 @@ autopilot_flow_ranked() {
   printf -v "$1" '%s' "$(printf '%s' "$_ranked" | sort -k1,1n -k2,2n)"
 }
 
-# autopilot_verdict <issue> <named> <var>: the quick autopilot's verdict on one
-# issue, into <var>: `eligible <none|move|override>` or `skip <reason>`, the
+# autopilot_verdict <issue> <named> <var> [<state> <labels>]: the quick
+# autopilot's verdict on one issue, into <var>: `eligible <none|move|override>`
+# or `skip <reason>`, the
 # first exclusion in the fixed order (closed, missing, untrusted, phase,
 # wontfix, needs-info, ticket, untriaged-finding). <named> is true for an issue
 # the caller named, the only kind that can be `missing`: gh's not-found reason
-# for a listed one, like any other failed read, dies. Writes nothing.
+# for a listed one, like any other failed read, dies. Given <state> and <labels>
+# (a listed row's, the labels one per line, possibly none) it reads neither.
+# Writes nothing.
 autopilot_verdict() {
   orch_load trust
   local issue="$1" named="$2" state labels err parent phase label role st=0 ready human
-  if ! issue_state_labels_read "$issue" state labels err; then
+  if [ "$#" -ge 5 ]; then
+    state="$4"; labels="$5"
+  elif ! issue_state_labels_read "$issue" state labels err; then
     if [ "$named" = true ] && gh_issue_not_found "$err"; then
       printf -v "$3" '%s' "skip missing"
       return 0
@@ -993,7 +998,8 @@ autopilot_verdict() {
 # autopilot_candidates_run <arg>...: orch.sh autopilot candidates. One line per
 # issue, `<n> eligible <none|move|override>` or `<n> skip <reason>`: the named
 # issues in the order named, or with --all / --limit <k> every open issue
-# oldest first (--limit keeping the first k eligible lines). Every read comes
+# oldest first (--limit keeping the first k eligible lines), each verdict taking
+# its state and labels from the listed row. Every read comes
 # before the first line is printed, so a failed read leaves no partial list.
 autopilot_candidates_run() {
   # autopilot_verdict runs in a command substitution: load its modules once.
@@ -1015,17 +1021,20 @@ autopilot_candidates_run() {
     esac
   done
   [ -n "$mode" ] || die "$usage"
-  local out n verdict report="" eligible=0 named=false
+  local n verdict report="" eligible=0 named=false
+  local -A listed_states=() listed_labels=()
   if [ "$mode" = named ]; then
     named=true
   else
-    gh_or_die --out out "list the open issues" adapter_issues_open_oldest
-    while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done <<<"$out"
-    issue_list_limit_warn "${#issues[@]}" "the open issues"
+    local listed list_err
+    issues_open_rows_read listed listed_states listed_labels list_err ||
+      gh_die "list the open issues" "$list_err"
+    while IFS= read -r n; do [ -z "$n" ] || issues+=("$n"); done <<<"$listed"
   fi
   for n in ${issues[@]+"${issues[@]}"}; do
     if [ "$mode" = limit ] && [ "$eligible" -ge "$limit" ]; then break; fi
-    autopilot_verdict "$n" "$named" verdict
+    if [ "$named" = true ]; then autopilot_verdict "$n" "$named" verdict
+    else autopilot_verdict "$n" "$named" verdict "${listed_states[$n]}" "${listed_labels[$n]}"; fi
     case "$verdict" in eligible*) eligible=$((eligible + 1)) ;; esac
     report="$report$n $verdict"$'\n'
   done

@@ -3121,7 +3121,7 @@ assert_eq "verdicts and the order named" "$out" "3 eligible override
 13 skip phase spec"
 
 # The fake's plain open-issue listing is newest first;
-# adapter_issues_open_oldest is the oldest-first read the verb walks, and it
+# adapter_issues_open_rows is the oldest-first read the verb walks, and it
 # must walk it in order.
 
 all="$(ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all 2>&1)"; st=$?
@@ -3145,6 +3145,21 @@ assert_contains "--all warns when the listing reaches the issue-list limit" "$(c
   "orch: the open issues reached the issue-list limit of 12 - the newest past it are missing from this list"
 rm -f "$ac_err"
 
+ac_log="$(mktemp)"
+ac_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_open_rows rows)")"
+ac_plain="$("$ORCH" autopilot candidates --all 2>&1)"
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --all >"$ac_log.out" 2>&1
+assert_eq "--all makes one listing" "$(log_count "$ac_log" rows)" "1"
+assert_eq "and no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
+assert_eq "and prints the same verdicts" "$(cat "$ac_log.out")" "$ac_plain"
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --limit 3 >"$ac_log.out" 2>&1
+assert_eq "--limit makes no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates 1 99 >"$ac_log.out" 2>&1
+assert_eq "named issues each keep one direct read" "$(log_count "$ac_log" issue)" "2"
+assert_eq "and a number naming no issue is still missing" "$(cat "$ac_log.out")" "1 eligible none
+99 skip missing"
+rm -f "$ac_log" "$ac_log.out"
+
 for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
   # shellcheck disable=SC2086 # the words are the arguments
   out="$("$ORCH" autopilot candidates $args 2>&1)"; st=$?
@@ -3163,7 +3178,7 @@ out="$("$ORCH" autopilot candidates 1 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed trust read dies" "$st" 1
 assert_contains "with the verb's own trust-check wording" "$out" "could not check the trust of issue #1"
-fake_fail adapter_issues_open_oldest "HTTP 502 list"
+fake_fail adapter_issues_open_rows "HTTP 502 list"
 out="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed listing dies" "$st" 1

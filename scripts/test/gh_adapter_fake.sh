@@ -681,17 +681,16 @@ adapter_issues_any_labelled_rows() {
   fake_labelled_rows adapter_issues_any_labelled_rows any "$@"
 }
 
+# adapter_issues_open_rows: every open issue, as adapter_issues_labelled_rows
+# lists them with no label named: oldest first, cut at the limit.
+adapter_issues_open_rows() {
+  fake_labelled_rows adapter_issues_open_rows all
+}
+
 # fake_search_cut: the first lesser of ISSUE_LIST_LIMIT and ISSUE_SEARCH_CAP
 # lines of stdin, as a search-backed real listing is cut.
 fake_search_cut() {
   awk -v n="$ISSUE_LIST_LIMIT" -v cap="$ISSUE_SEARCH_CAP" 'BEGIN{if(n>cap)n=cap} NR<=n'
-}
-
-# adapter_issues_open_oldest: the open issues in the store, oldest first and
-# cut as adapter_issues_labelled_rows is, so the newest are the ones dropped.
-adapter_issues_open_oldest() {
-  ! fake_failing adapter_issues_open_oldest || return 1
-  fake_open_issues | sort -n | fake_search_cut
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues in the store
