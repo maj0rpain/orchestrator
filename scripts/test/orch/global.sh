@@ -81,8 +81,9 @@ echo "bash version guard"
 guard_repo="$(new_repo)"
 guard_plain="$(mktemp -d)"
 guard_unfaked="$(cd "$guard_repo" && "$ORCH" help 2>&1)"
+guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
 for guard_ver in 3.2 4.1; do
-  guard_line="orch: bash $guard_ver is too old - orch.sh needs bash 4.2 or newer: brew install bash"
+  guard_line="$(guard_line_for "$guard_ver")"
   for guard_cmd in doctor help; do
     guard_out="$(cd "$guard_repo" && ORCH_BASH_VERSION=$guard_ver bash "$ORCH" "$guard_cmd" 2>"$guard_plain/err")"; st=$?
     assert_status "bash $guard_ver stops $guard_cmd with status 1" "$st" 1
@@ -92,6 +93,7 @@ for guard_ver in 3.2 4.1; do
   guard_out="$(cd "$guard_plain" && ORCH_BASH_VERSION=$guard_ver bash "$ORCH" help 2>"$guard_plain/err")"; st=$?
   assert_status "bash $guard_ver outside a repo stops with status 1" "$st" 1
   assert_eq "bash $guard_ver outside a repo wins over the repository stop" "$(cat "$guard_plain/err")" "$guard_line"
+  assert_eq "bash $guard_ver outside a repo prints nothing on stdout" "$guard_out" ""
 done
 for guard_ver in 4.2 5.0 10.0 ""; do
   guard_out="$(cd "$guard_repo" && ORCH_BASH_VERSION=$guard_ver bash "$ORCH" help 2>"$guard_plain/err")"; st=$?
@@ -106,11 +108,11 @@ guard_out="$(cd "$guard_plain" && ORCH_BASH_VERSION=3.2 bash ./orch.sh help 2>"$
 assert_status "a lone entry script stops with status 1" "$st" 1
 assert_eq "a lone entry script prints the guard's line, not a missing file" \
   "$(cat "$guard_plain/err")" \
-  "orch: bash 3.2 is too old - orch.sh needs bash 4.2 or newer: brew install bash"
+  "$(guard_line_for 3.2)"
 
 # Sourced: the child stops, so the statement after the source line never runs.
 guard_out="$(cd "$guard_repo" && ORCH_BASH_VERSION=3.2 bash -c 'source "$1"; echo after-source' _ "$ORCH" 2>"$guard_plain/err")"; st=$?
 assert_status "a sourced orch.sh stops its shell with status 1" "$st" 1
 assert_eq "a sourced orch.sh prints the guard's line" "$(cat "$guard_plain/err")" \
-  "orch: bash 3.2 is too old - orch.sh needs bash 4.2 or newer: brew install bash"
+  "$(guard_line_for 3.2)"
 assert_eq "a sourced orch.sh never reaches the next statement" "$guard_out" ""
