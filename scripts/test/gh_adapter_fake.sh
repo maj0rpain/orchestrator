@@ -502,11 +502,11 @@ adapter_issue_json() {
   d="$(fake_issue_dir "$1")"
   body="$d/body"
   [ -f "$body" ] || body=/dev/null
-  jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
-    --rawfile b "$body" \
-    --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
-    --argjson c "$(fake_comments_json "$d/comments" "$1" | jq -c 'map(del(.url))')" \
-    '{number: $n, title: $t, body: $b, labels: $l, comments: $c}'
+  fake_comments_json "$d/comments" "$1" | jq -c 'map(del(.url))' \
+    | jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
+      --rawfile b "$body" \
+      --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
+      '{number: $n, title: $t, body: $b, labels: $l, comments: input}'
 }
 
 # adapter_issue_comments_json <n>: the stored comments as one JSON array of
