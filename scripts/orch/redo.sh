@@ -93,6 +93,15 @@ redo_step_back() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
+  # Each is first reached inside a command substitution or branch of a
+  # subshell: load it here, once, in the main shell. marked-comment is needed
+  # only by an autopilot session's handoff retire.
+  orch_load review
+  orch_load handoff
+  orch_load branch
+  orch_load gh
+  orch_load autopilot
+  if autopilot_active; then orch_load marked-comment; fi
   local phase i b word detail slug issue branch pr new_n resumed
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
@@ -166,6 +175,12 @@ $detail" ;;
 # the entry guards need, and a re-run resumes.
 cmd_redo_spec() {
   orch_load spec
+  # As in cmd_redo_review: loaded once here, not once per subshell.
+  orch_load handoff
+  orch_load branch
+  orch_load gh
+  orch_load autopilot
+  if autopilot_active; then orch_load marked-comment; fi
   require_state
   local phase new_issue=0 clear_issue=()
   phase="$(state_get phase)"

@@ -170,8 +170,11 @@ assert_status "the remedy the refusal names succeeds" "$st" 0
 out="$("$ORCH" doctor 2>&1)"
 assert_not_contains "the doctor then reports nothing left over" "$out" "is left over"
 
-out="$("$ORCH" redo review 2>&1)"; st=$?
+rr_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rr_load" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
+assert_trace_loads_once "redo review with a branch, a PR and a stopped loop" "$rr_load"
+assert_trace_names_no "redo review with a branch, a PR and a stopped loop" "$rr_load" marked-comment
 assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
 assert_eq "prints the new redo count" "$out" "1"
 assert_eq "records it in state" "$("$ORCH" state get redo_count)" "1"
@@ -800,8 +803,11 @@ slug_="$("$ORCH" state get slug)"
 
 attempt_start 5
 old_pr="$(attempt_pr)"
-out="$("$ORCH" redo spec 2>&1)"; st=$?
+rs_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rs_load" "$ORCH" redo spec 2>&1)"; st=$?
 assert_status "default redo spec with a branch and PR succeeds" "$st" 0
+assert_trace_loads_once "default redo spec with a branch and PR" "$rs_load"
+assert_trace_names_no "default redo spec with a branch and PR" "$rs_load" marked-comment
 assert_eq "renames the branch aside to -redo-1" \
   "$(branch_presence "orch/5-$slug_-redo-1")" "present"
 assert_eq "closes the old PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
@@ -826,8 +832,11 @@ attempt_flow redoattempt2
 fake_issue 6 open
 slug_="$("$ORCH" state get slug)"
 attempt_start 6
-out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
+rn_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rn_load" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue with a branch and no PR succeeds" "$st" 0
+assert_trace_loads_once "redo spec --new-issue" "$rn_load"
+assert_trace_names_no "redo spec --new-issue" "$rn_load" marked-comment
 assert_eq "retires the branch under the old issue's name" \
   "$(branch_presence "orch/6-$slug_-redo-1")" "present"
 assert_eq "closing only the old issue" "$(fake_state_of 6)" "CLOSED"
@@ -973,8 +982,10 @@ redo_spec_scenario() {
   assert_status "$mode: a failure after the retire fails redo spec" "$st" 1
   assert_eq "$mode: leaving the phase at implement" "$("$ORCH" state get phase)" implement
   fake_unfail
-  out="$(handoff_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
+  rd_load="$(mktemp)"
+  out="$(ORCH_LOAD_TRACE="$rd_load" handoff_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
   assert_status "$mode: the re-run finishes" "$st" 0
+  [ "$mode" != comment ] || assert_trace_loads_once "redo spec in an autopilot session" "$rd_load"
   assert_eq "$mode: the phase is spec" "$("$ORCH" state get phase)" spec
   assert_eq "$mode: the spec handoff is retired exactly once" \
     "$(handoff_retired_count "$mode" 60 02-spec '.orchestrator/handoff/pre-redo-spec-*')" 1
@@ -1011,8 +1022,10 @@ redo_review_scenario() {
   assert_status "$mode: a failure after the retire fails redo review" "$st" 1
   assert_eq "$mode: leaving the phase at review" "$("$ORCH" state get phase)" review
   fake_unfail
-  out="$(handoff_orch "$mode" redo review 2>&1)"; st=$?
+  rd_load="$(mktemp)"
+  out="$(ORCH_LOAD_TRACE="$rd_load" handoff_orch "$mode" redo review 2>&1)"; st=$?
   assert_status "$mode: the re-run finishes" "$st" 0
+  [ "$mode" != comment ] || assert_trace_loads_once "redo review in an autopilot session" "$rd_load"
   assert_not_contains "$mode: with no taken-folder refusal" "$out" "already holds a retired handoff"
   assert_eq "$mode: stepping back to implement" "$("$ORCH" state get phase)" implement
   assert_eq "$mode: the implement handoff is retired exactly once" \

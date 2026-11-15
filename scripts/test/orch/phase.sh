@@ -5,18 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# assert_trace_names_no <label> <trace file> <module>...: asserts a load trace,
-# written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
-# modules - a module the run must not load, or not load more than it did.
-assert_trace_names_no() {
-  local label="$1" trace="$2" mod
-  shift 2
-  for mod in "$@"; do
-    assert_eq "$label: the load trace names no $mod" \
-      "$(awk -v m="$mod" '$1 == m' "$trace" | wc -l | tr -d ' ')" "0"
-  done
-}
-
 # --- phase advance / phase boundary ------------------------------------------
 # A phase is left only once the handoff it writes for the next one is valid
 # (#279): advance is the one place that rule is enforced, so a model that skips
