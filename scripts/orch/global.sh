@@ -97,7 +97,9 @@ cmd_help() {
   cat <<'USAGE'
 orch.sh - deterministic operations for the orchestrator flow
 
-  doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
+  doctor [--env|--flow]       diagnose the machine, the repo, and the active flow;
+                              also `health`; what it checks is listed in
+                              docs/repo-setup.md
   default-branch [--sha]      resolve the repo's default branch, as GitHub
                               reports it; --sha prints the default SHA instead,
                               origin/<default>'s tip as it stands, unfetched

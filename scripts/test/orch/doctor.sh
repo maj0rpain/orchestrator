@@ -162,6 +162,17 @@ out="$("$ORCH" doctor --nonsense 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--nonsense"
 
+out="$("$ORCH" health --nonsense 2>&1)"; st=$?
+assert_status "health rejects an unknown flag" "$st" 1
+assert_contains "health's rejection names doctor" "$out" "doctor"
+"$ORCH" doctor --env >/dev/null 2>&1; doc_st=$?
+out="$("$ORCH" health --env 2>&1)"; st=$?
+assert_status "health --env exits as doctor --env does" "$st" "$doc_st"
+assert_contains "health --env reports as doctor --env does" "$out" "ok    git present"
+help_out="$("$ORCH" help 2>&1)"
+assert_contains "help lists the health alias" "$help_out" "health"
+assert_contains "help's doctor line names docs/repo-setup.md" "$help_out" "docs/repo-setup.md"
+
 env_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$env_load" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes a healthy repo" "$st" 0

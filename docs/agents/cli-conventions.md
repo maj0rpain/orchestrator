@@ -44,7 +44,8 @@ behavior - run `orch.sh help` for the live list.
 
 ## Exceptions
 
-Two kinds of command don't take this shape, deliberately:
+Two kinds of command don't take this shape, deliberately (and `health` is an
+alias of `doctor`: the same command, whose messages keep saying `doctor`):
 
 - **Bare global commands** with no noun to act on: `doctor`, `init`, `slug`,
   `status`, `archive`, `help`, `default-branch`. Each is already
