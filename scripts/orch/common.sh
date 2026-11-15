@@ -393,10 +393,10 @@ newlines_strip() {
 
 # file_read_text <var> <file>: <file>'s text into <var> as $(cat <file>) gives
 # it - trailing newlines dropped - read by the shell itself. An unreadable file
-# gives empty, its diagnostic silenced.
+# gives empty, with the diagnostic $(cat) printed: file_read's.
 file_read_text() {
   printf -v "$1" '%s' ""
-  file_read "$1" "$2" 2>/dev/null || :
+  file_read "$1" "$2" || :
   newlines_strip "$1"
 }
 

@@ -1134,7 +1134,7 @@ autopilot_sync_detect() {
 # stopping the tick. Writes into the caller-named <table-var> the table minus
 # every issue it closed: the whole table when the merged-PR read fails.
 autopilot_close_missed() {
-  local prs issue running sync human default bound="" kept="" head_prefix picked
+  local prs issue running sync human default bound="" kept="" head_prefix issue_prs
   printf -v "$2" '%s' "$1"
   [ -n "$1" ] || return 0
   while read -r issue running sync human; do
@@ -1147,8 +1147,8 @@ autopilot_close_missed() {
     [ -n "$issue" ] || continue
     if [ "$running" = 0 ]; then
       branch_name_flow_into head_prefix "$issue" ""
-      pr_lines_by_prefix "$prs" "$head_prefix" picked
-      if pr_close_newest "$issue" "$default" "$picked"; then continue; fi
+      pr_lines_by_prefix "$prs" "$head_prefix" issue_prs
+      if pr_close_newest "$issue" "$default" "$issue_prs"; then continue; fi
     fi
     kept="$kept$issue $running $sync $human"$'\n'
   done <<<"$1"

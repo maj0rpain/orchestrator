@@ -333,6 +333,14 @@ assert_eq "file_read drops a NUL byte and keeps the bytes after it, as cat in a 
 assert_eq "file_read keeps trailing newlines and runs with an empty PATH" "${fr_out[7]}" "$(printf %q "[a
 
 ]")"
+printf 'a\n\n' >"$cap_tmp/frt"
+frt_out="$(sourced_orch_script '
+  PATH=
+  v=old; file_read_text v "$1"; printf "[%s]" "$v"
+  v=old; file_read_text v "$2" 2>/dev/null; printf "[%s]" "$v"' "$cap_tmp/frt" "$cap_tmp/missing")"
+assert_eq "file_read_text drops trailing newlines and gives empty for a missing file, with an empty PATH" "$frt_out" "[a][]"
+assert_eq "file_read_text prints the diagnostic of a file it cannot read" \
+  "$(sourced_orch_script 'file_read_text v "$1" 2>&1' "$cap_tmp/missing")" "cat: $cap_tmp/missing: No such file or directory"
 cap_bin="$(mktemp -d)"; ln -s "$(command -v rm)" "$cap_bin/rm"
 assert_eq "capture and capture_err run with a PATH holding only rm" \
   "$(TMPDIR="$cap_tmp" sourced_orch_script 'PATH="'"$cap_bin"'"; capture o e eval "echo out; echo err >&2"; capture_err e2 eval "echo e2 >&2"; echo "[$o] [$e] [$e2]"')" "[out] [err

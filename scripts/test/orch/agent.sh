@@ -580,13 +580,13 @@ echo "agent copy marker and Junie field"
 new_repo >/dev/null
 acm_dir="$(mktemp -d)"
 acm_marker="# written by orch.sh agent sync"
-acm_run() { sourced_orch_script 'PATH=""; "$@"' "$@" 2>&1; }
 printf -- '---\n%s\nbody\n' "$acm_marker" >"$acm_dir/marked.md"
 printf -- '---\n%s' "$acm_marker" >"$acm_dir/noeol.md"
 printf -- '---\nname: x\n%s\n' "$acm_marker" >"$acm_dir/late.md"
-acm_run agent_copy_marked "$acm_dir/marked.md"; assert_status "a marked file is marked, with an empty PATH" "$?" 0
-acm_run agent_copy_marked "$acm_dir/noeol.md"; assert_status "a second line with no trailing newline still counts" "$?" 0
-acm_run agent_copy_marked "$acm_dir/late.md"; assert_status "a marker on the third line is unmarked" "$?" 1
+assert_eq "a marked file, one with no trailing newline and one marked on the third line answer 0, 0, 1 with an empty PATH" \
+  "$(sourced_orch_script '
+    PATH=
+    for f in marked noeol late; do st=0; agent_copy_marked "$1/$f.md" || st=$?; printf "[%s]" "$st"; done' "$acm_dir" 2>&1)" "[0][0][1]"
 out="$(sourced_orch_script 'agent_copy_marked "$1"' "$acm_dir/none.md" 2>&1)"; st=$?
 assert_status "an unreadable marker file is unmarked" "$st" 1
 assert_contains "with sed's diagnostic on stderr" "$out" "sed:"
@@ -595,10 +595,9 @@ out="$(sourced_orch_script 'agent_copy_marked "$1"' "$acm_dir/dir.md" 2>&1)"; st
 assert_status "a directory in place of the marker file is unmarked" "$st" 1
 assert_contains "with sed's diagnostic on stderr too" "$out" "sed:"
 acm_line='Executing agent custom_agent_orch-x_1 with parameters (model=gpt-5, reasoningEffort=high, effort=null, xmodel=bad)'
-assert_eq "the Junie field read answers with an empty PATH" "$(acm_run agent_junie_field "$acm_line" model)" "gpt-5"
-assert_eq "a field after a letter is not matched" "$(acm_run agent_junie_field "$acm_line" odel)" ""
-assert_eq "a field up to the closing parenthesis" "$(acm_run agent_junie_field "$acm_line" xmodel)" "bad"
-assert_eq "an absent field is empty" "$(acm_run agent_junie_field "$acm_line" nothing)" ""
+assert_eq "the Junie field read answers, a field after a letter unmatched, one up to the parenthesis, an absent one empty, with an empty PATH" \
+  "$(sourced_orch_script '
+    PATH=
+    for f in model odel xmodel nothing; do printf "[%s]" "$(agent_junie_field "$1" "$f")"; done' "$acm_line" 2>&1)" "[gpt-5][][bad][]"
 rm -rf "$acm_dir"
-unset -f acm_run
 unset acm_dir acm_marker acm_line

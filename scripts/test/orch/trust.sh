@@ -70,10 +70,7 @@ for tr_a in owner ""; do
   fake_issue_authorship 8 stranger "$tr_a"
   tr_checked=no; [ -n "$({ "$ORCH" issue fetch 8 "$tr_file" >/dev/null; } 2>&1)" ] || tr_checked=yes
   assert_eq "association '$tr_label': the filter and the issue check agree" "$tr_kept" "$tr_checked"
-  case "$tr_a" in
-    OWNER|MEMBER|COLLABORATOR) assert_eq "association '$tr_label' is trusted" "$tr_kept" yes ;;
-    *) assert_eq "association '$tr_label' is not trusted" "$tr_kept" no ;;
-  esac
+  assert_eq "association '$tr_label' is not trusted" "$tr_kept" no
 done
 
 # The editor and renamer rules, with the author a stranger.
