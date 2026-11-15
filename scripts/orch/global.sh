@@ -455,9 +455,7 @@ orch.sh - deterministic operations for the orchestrator flow
   issue publish <title> <body-file>
                               create a GitHub issue under ready-for-agent
                               and verify its title and label by reading them
-                              back, then rewrite its `## Blocked by` section
-                              from those edges - recording no state; prints
-                              the number
+                              back - recording no state; prints the number
   issue fetch <n> <file> [--json]
                               write issue <n>'s body to <file>, recording no
                               state; with --json, for scripts, the issue as
