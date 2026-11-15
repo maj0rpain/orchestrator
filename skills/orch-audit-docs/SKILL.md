@@ -37,7 +37,8 @@ tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
-Steps here name capabilities (start a fresh subagent, open a report in the
+Steps here name capabilities (start a fresh subagent, run a subagent pool,
+open a report in the
 browser, invoke a skill from a step, ask a multiple-choice question).
 `docs/host-capabilities.md` under the
 plugin root maps each one to your host. Where your host's cell says
@@ -72,12 +73,15 @@ the `model` and `effort` it prints on each start, per **Agent settings** in
 `docs/host-capabilities.md`. This skill runs no `agent sync`, which would write
 `.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per area
 (see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
-fork, each an `orch-doc-auditor`, at most 4 at once; start the next as one
-finishes. Each prompt names its area (the docs to read and the code they
+fork, each an `orch-doc-auditor`, run as a subagent pool of 4 (host capability
+*Run a subagent pool*, size hint: the area's file count; see that row of
+`docs/host-capabilities.md`).
+Each prompt names its area (the docs to read and the code they
 describe), the repo root, and its own findings file in the temp directory. The
 auditor has no Edit or Bash tool; its brief holds the method (doc-claim
 driven), the finding fields and the ADR rule. A reply is the file's path and a
 finding count; read each file.
+When the pool took a fallback tier, tell the user which.
 
 A finding has its kind of text, its location (file and line), the doc passage,
 the code it disagrees with, its confidence (**certain** or **likely**) and a
