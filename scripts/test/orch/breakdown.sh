@@ -86,6 +86,7 @@ breakdown_fixture
 mkdir -p .orchestrator/breakdown/50/numbers
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "an unwritable numbers file dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the created record" "$out" "could not write ticket #100's created record"
 assert_not_contains "without the create message" "$out" "the create failed"
 assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" ""
@@ -98,6 +99,7 @@ fake_fail adapter_sub_issue_link
 "$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed link of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
 fake_unfail
 restore_suite_env
@@ -120,6 +122,7 @@ fake_unfail
 fake_fail_after adapter_sub_issues 1
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed read-back of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
 fake_unfail
 restore_suite_env
@@ -129,6 +132,7 @@ printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
 fake_fail adapter_sub_issues
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed listing read before the link dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
 fake_unfail
 assert_eq "the ticket is not linked" "$(fake_sub_issues_of 50)" ""
@@ -155,6 +159,7 @@ breakdown_fixture
 fake_fail_after adapter_blocker_add 2
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed edge add dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the draft position" "$out" "ticket 3 of the draft"
 assert_contains "naming the ticket and the link step" "$out" "ticket 3 of the draft (#102): the link failed"
 assert_eq "ticket 3 is recorded created" "$(tail -n1 .orchestrator/breakdown/50/numbers)" "3 102 created"
@@ -175,6 +180,7 @@ fake_unfail
 fake_fail adapter_blocker_add
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed edge add of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the ticket and the link step" "$out" "ticket 3 of the draft (#102): the link failed"
 fake_unfail
 restore_suite_env
@@ -197,6 +203,7 @@ breakdown_fixture
 fake_fail_after adapter_blockers 1
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed blocker read dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the draft position" "$out" "ticket 2 of the draft"
 assert_contains "naming the read" "$out" "read ticket #101's blockers"
 fake_unfail

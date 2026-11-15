@@ -133,7 +133,7 @@ breakdown_publish_in() {
     list="$(cat "$tmp/$k.blocked")"
     if [ -n "$list" ]; then
       while IFS= read -r b; do
-        want="${want:+$want,}$(breakdown_number "$numbers" "$b" | cut -d' ' -f1)"
+        want="${want:+$want$'\n'}$(breakdown_number "$numbers" "$b" | cut -d' ' -f1)"
       done <<<"$list"
     fi
     if [ -z "$rec" ]; then
@@ -146,7 +146,7 @@ breakdown_publish_in() {
     fi
     # Fresh or resumed alike: link only what is not yet linked, add only the
     # blocking edges the ticket lacks, read it all back.
-    (ticket_link "$parent" "$n" "$(tr ',' '\n' <<<"$want")") \
+    (ticket_link "$parent" "$n" "$want") \
       || die "ticket $k of the draft (#$n): the link failed"
     breakdown_record "$numbers" "$k" "$n" linked
   done <<<"$order"
