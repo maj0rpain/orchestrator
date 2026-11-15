@@ -574,7 +574,11 @@ no behaviour of its own, so invoking the skill on another host is complete.
 `docs_lint.sh` fails when a skill, or an agent that invokes a skill, never
 points at the reference, when a skill or agent offers a `/orchestrator:<cmd>`
 that has no `commands/<cmd>.md`, or when a command runs `orch.sh` or routes to a
-section that does not exist.
+section that does not exist, or when the reference lacks its **Run a subagent
+pool**
+row and fallback subsection, or a subagent pool site (`orch-quick-autopilot`'s
+step 3, an
+audit's Hunt step) does not name that capability.
 
 ## Command names
 

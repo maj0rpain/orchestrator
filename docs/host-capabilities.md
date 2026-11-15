@@ -40,6 +40,7 @@ on exactly its own cells.
 | Ask a multiple-choice question | `AskUserQuestion`. | `ask_user`, which the plan agent and the main agent both have (#202). |
 | Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`, on its role's [agent setting](#agent-settings). | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. Both hosts read its `tools:` YAML list as the agent's allowlist, so an agent left visible starts with the tools it needs. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. JetBrains tracks the filter as JUNIE-5493: appending the plugin's `docs/junie/AGENTS.md` snippet to `~/.junie/AGENTS.md` keeps the agents visible, and [docs/junie/README.md](junie/README.md) gives the command and a per-prompt fallback. The [agent setting](#agent-settings) reaches Junie in generated copies of the plugin's agents under the checkout's `.junie/agents/`, which a skill refreshes with `bash "$ORCH" agent sync` once per run before its first plugin agent; the copy carries the setting, so nothing is passed to the start. Whether a copy a skill names (rather than the user's prompt) gets past the capability filter is unverified (see **Agent settings**). |
 | Start a background subagent | The Agent tool, run in the background, so several ticket subagents build at once and each report returns as it finishes. | No documented way to start a subagent in the background and keep working while it runs. **Fallback**. |
+| Run a subagent pool | Background Agent calls: at most the pool's size in flight, the next started on each completion notice, with no sleep or poll between them. Where the session's own instructions forbid a background Agent call (seen: Claude Code through the Agent SDK in T3 Code), take the fallback under [Run a subagent pool](#run-a-subagent-pool) and say which tier. | No background subagent, per the row above, so no pool whose slot refills on each return. **Fallback**. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. `/new` fires `SessionStart` with `source: clear` per Junie CLI's bundled docs, unverified live. |
 | Start a headless session | `claude -p`, with `--permission-mode`, `--tools` (an allowlist: Agent, Skill, Bash, Read, Edit, Write, Grep, Glob, SendMessage), `--append-system-prompt` (tells the session it is headless and must not end its turn on a question), `--settings` (`disableBundledSkills`, and the built-in `plugin-authoring@builtin` plugin off), `--strict-mcp-config`, `--exclude-dynamic-system-prompt-sections`, `ORCH_AUTOPILOT=1`, `CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1` and `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=7200000` (print mode waits 10 minutes for background subagents by default, less than a ticket subagent takes; a finite 2 hours still ends a hung session) in its environment, in the issue's side checkout: what `orch.sh autopilot` starts. `/orchestrator:quick-autopilot` (`orch-quick-autopilot` and its `orch-autopilot-planner` agent) is Claude Code only too: it has no Junie path. | Unverified, and no fallback: `orch.sh autopilot` refuses ("autopilot is Claude Code only"). **Unverified**. |
@@ -151,6 +152,43 @@ the subagent run in the foreground: the sequential path of the driver
 loop in `docs/driver-loop.md`, which `orch-flow`'s implement phase and
 `orch-quick-implement`'s implement step both run. The entry check (`ticket
 reclaim`) and the combined verification still run (ADR-0036, ADR-0055).
+
+### Run a subagent pool
+
+Take the first tier that fits, in this order:
+
+1. **The session's own background task tool.** Where the session's
+   instructions name a tool for background work in place of a background Agent
+   call (seen: `delegate_task`, on Claude Code through the Agent SDK in T3
+   Code), start each subagent with it and start the next on each completion.
+   Take this tier only when the tool starts the same agent the skill names -
+   the plugin's agent itself, with the skill's prompt, the agent's tool
+   restrictions and its agent setting - and returns each report as it
+   finishes. **Unverified**: nobody has confirmed that `delegate_task` can
+   start one of the plugin's agents. If it cannot, take the next tier.
+2. **Foreground batches.** Where the host runs several foreground subagents
+   started in one response, start up to the pool's size in one response and
+   wait for all of them, then start the next batch. Order the subagents by the
+   size hint the skill names, largest first, so subagents of similar expected
+   size share a batch. A skill that names no size hint keeps its own order. On
+   Junie, whether several foreground subagents run from one response is
+   unverified: try it, and take the next tier if they do not.
+3. **One at a time.** Each subagent in the foreground, its report read before
+   the next starts. This is the rule the **Start a fresh subagent** fallback
+   already gives for several agents started at once.
+
+Whether a tier fits is judged before the pool's first start, from what the
+session's instructions and tools say. A start the host refuses is made again
+under the next tier; a subagent that did start is never started a second time.
+Subagents already started under an earlier tier keep running: the pool waits
+for each one's report and reads it like any other before the skill's next
+step. The starting skill names the tier the pool ended on: a quick autopilot in
+its closing summary, an audit to the user.
+
+A subagent started under any tier is still started as the **Start a fresh
+subagent** row and [Agent settings](#agent-settings) say. A tier never swaps
+the plugin's agent for a general-purpose one: that swap is the **Start a fresh
+subagent** fallback's own decision, taken for its own reasons.
 
 ### Start a forked subagent
 

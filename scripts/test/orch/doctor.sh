@@ -956,6 +956,7 @@ doctor_github
 out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "detects Claude Code from CLAUDECODE" "$out" "host: Claude Code"
 assert_eq "Claude Code lacks no capability" "$(printf '%s\n' "$out" | grep -c 'lacks')" "0"
+assert_eq "Claude Code names nothing unverified" "$(printf '%s\n' "$out" | grep -c 'unverified:')" "0"
 assert_contains "the plugin root check still warns when Claude Code left it unset" \
   "$out" "warn  CLAUDE_PLUGIN_ROOT"
 
@@ -983,6 +984,8 @@ assert_contains "names the forked subagent Junie cannot start" "$out" "Start a f
 # ticket at a time (ADR-0036): a gap, not Unverified.
 assert_contains "names the background subagent Junie cannot start" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Start a background subagent"
+assert_contains "names the subagent pool Junie cannot run" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Run a subagent pool"
 # Junie's grep_search has no files-only mode and no caller-set cap (#1342): a
 # known gap with a fallback, not Unverified.
 assert_contains "names the code search Junie cannot do as asked" \
