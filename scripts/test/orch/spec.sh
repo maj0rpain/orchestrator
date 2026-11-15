@@ -570,6 +570,8 @@ state_truncate
 spec_body="$(mktemp)"
 out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_state_unreadable "spec fetch" 1 "$out" "$st"
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_state_unreadable "spec round" 2 "$out" "$st"
 restore_suite_env
 
 # --- spec ops read the flow's state once (#3063) -----------------------------
@@ -597,13 +599,4 @@ for op in fetch update comment comments; do
   assert_eq "spec $op on a done flow starts jq once" "$(counting_starts "$sr_jq" jq)" "1"
 done
 rm -f "$spec_body"
-restore_suite_env
-
-# --- spec round on a truncated state.json (#3063) ----------------------------
-echo
-echo "spec round on a truncated state.json"
-fresh_flow specroundtrunc
-state_truncate
-out="$("$ORCH" spec round 2>&1)"; st=$?
-assert_state_unreadable "spec round" 2 "$out" "$st"
 restore_suite_env

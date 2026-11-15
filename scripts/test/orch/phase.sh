@@ -315,12 +315,6 @@ assert_eq "advance out of implement starts jq twice in all" "$(counting_starts "
 : >"$pr_jq/jq.log"
 PATH="$pr_jq:$PATH" "$ORCH" phase boundary >/dev/null 2>&1
 assert_eq "boundary starts jq once" "$(counting_starts "$pr_jq" jq)" "1"
-restore_suite_env
-
-# --- phase advance and boundary on a truncated state.json (#3063) ------------
-echo
-echo "phase advance and boundary on a truncated state.json"
-fresh_flow phasetrunc
 state_truncate
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_state_unreadable "phase advance" 1 "$out" "$st"

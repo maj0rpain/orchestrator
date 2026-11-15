@@ -3319,13 +3319,6 @@ fresh_flow srtrunc
 state_truncate
 out="$("$ORCH" spec-review begin 14 2>&1)"; st=$?
 assert_state_unreadable "spec-review begin" 1 "$out" "$st"
-restore_suite_env
-
-# --- spec-review apply in a flow on a truncated state.json (#3063) ------------
-echo
-echo "spec-review apply in a flow on a truncated state.json"
-fresh_flow srapplytrunc
-state_truncate
 d="$(mktemp -d)"
 out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 2>&1)"; st=$?
 assert_state_unreadable "spec-review apply" 1 "$out" "$st"

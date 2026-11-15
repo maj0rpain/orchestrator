@@ -1471,9 +1471,10 @@ assert_eq "a final reply holding the view written within the window: allowed" \
     ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
 
 # The pre-check and the size-gated re-read, counted in jq processes: a counting
-# jq, made by counting_bin, first on PATH logs each start and runs the real jq.
-# One counter dir is shared by the paste-guard counts, the one-jq-per-payload
-# checks and the Bash hook cost check. The paste-guard counts are compared
+# jq, made by counting_bin (JQC and jq_count, defined above), first on PATH
+# logs each start and runs the real jq. One counter dir is shared by the
+# grilling-hook count, the paste-guard counts, the one-jq-per-payload checks
+# and the Bash hook cost check. The paste-guard counts are compared
 # between two runs of the same hook, never against a number.
 PG_PAD="$(head -c 20000 /dev/zero | tr '\0' 'a')"
 TL="$PG/long-unarmed.jsonl"; cp "$T11" "$TL"
