@@ -233,6 +233,16 @@ fake_fail_after adapter_claim_delete 1 "HTTP 500"
 out="$(sourced_rc 'standing_pause 54 "wrote the round marker"; standing_stop 55 failure spec boom')"
 assert_contains "a stop failing in the same shell as an earlier succeeding pause names only its own writes" "$out" "writes that landed: added needs-human, removed orch:limited, posted the failure comment, removed orch:running; the claim stays held"
 fake_unfail
+tr_seed 94 orch:spec orch:running
+tr_seed 95 orch:spec orch:running
+sourced_rc 'standing_stop 95 refusal spec "no plan"; standing_pause 94 "wrote the round marker"' >/dev/null
+assert_eq "a pause run after a stop in the same shell removes its own orch:running and releases" "$(fake_labels_of 94)|$(fake_claim_held 94)" "orch:spec |free"
+out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"; printf "landed\tearlier write\n" >"$STANDING_STATE_FILE"
+standing_chain_start "the seed"; echo "landed=$STANDING_LANDED"; echo "lines=$(wc -l <"$STANDING_STATE_FILE")"; standing_landed_has "the seed" && echo skip-seed')"
+assert_contains "a seeded start puts the seed first and takes up earlier landed writes" "$out" "landed=the seed, earlier write"
+assert_contains "and writes no landed line for its seed" "$out" "lines=1"
+assert_eq "and does not skip its seed" "$(printf '%s' "$out" | grep -c skip-seed)" "0"
+fake_unfail
 
 # stop
 tr_seed 56 orch:spec orch:running orch:limited

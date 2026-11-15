@@ -241,12 +241,10 @@ standing_resume() {
 # fails partway leaves the claim held, and dies naming the writes that landed;
 # the session wrapper retries a stop chain (see the resumable chain below), and
 # a claim still held after that is cleaned up by a later tick as a failure.
-# STANDING_LANDED accumulates those writes. The transitions that start a chain
-# (start, ask, stop, reenter, sync finish, sync dropped, limit-stop and claim
-# release) reset it at their start and then, when STANDING_STATE_FILE is set
-# (only inside the session wrapper's stop attempts), take up earlier attempts'
-# landed writes from it. Finish and pause reset it by seeding it from their
-# reason and take up nothing. Begin, sync request, claim drop and resume neither
+# STANDING_LANDED accumulates those writes. Every chain transition begins
+# through standing_chain_start (start excepted: it holds no claim, and none of
+# its writes reads the list), so no chain inherits an earlier chain's writes.
+# Begin, sync request, claim drop and resume are single writes that neither
 # reset nor add to it.
 
 STANDING_LANDED=""
@@ -301,11 +299,14 @@ standing_state_get() {
   return "$rc"
 }
 
-# standing_chain_start: resets STANDING_LANDED at the start of a chain
-# transition, then takes up the writes earlier attempts landed.
+# standing_chain_start [<seed>]: begins every chain transition. It clears
+# STANDING_LANDED and the skip list (STANDING_DONE), puts a non-empty <seed>
+# first on STANDING_LANDED, then, when STANDING_STATE_FILE is set, takes up the
+# writes earlier attempts landed. The seed is a reason, not a write: it is not
+# skipped and not recorded in the state file.
 standing_chain_start() {
   local key value
-  STANDING_LANDED="" STANDING_DONE=()
+  STANDING_LANDED="${1:-}" STANDING_DONE=()
   [ -s "${STANDING_STATE_FILE:-}" ] || return 0
   while IFS=$'\t' read -r key value; do
     [ "$key" = landed ] || continue
@@ -402,7 +403,6 @@ standing_move_label() {
 standing_start() {
   orch_load handoff
   local issue="$1" file="$2" ready gh_err first
-  standing_chain_start
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   [ -f "$file" ] || die "plan file not found: $file"
   triage_label_into ready ready-for-agent
@@ -450,7 +450,7 @@ standing_begin() {
 # landed. The label moves before state.json records the phase, so a failure
 # between the two leaves the label one step ahead, never behind.
 standing_finish() {
-  STANDING_LANDED="${3:-}"
+  standing_chain_start "${3:-}"
   standing_move_label "$1" "$2"
   standing_landed_add "moved the phase label to $(standing_phase_label "$2")"
   phase_write_try "$2" ||
@@ -463,7 +463,7 @@ standing_finish() {
 # unchanged - the claim released, nothing else. <reason> seeds the writes that
 # landed.
 standing_pause() {
-  STANDING_LANDED="${2:-}"
+  standing_chain_start "${2:-}"
   standing_release "$1"
 }
 
