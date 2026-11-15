@@ -8,53 +8,64 @@
 # nothing of a noun module.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# sha> sits at <new ref>, read off the zero-context diff between them. A line
-# inside a changed hunk maps to that hunk's start. The awk exits as soon as it
-# knows the answer; under pipefail, git diff's SIGPIPE must not fail the call.
-map_line() {
-  { git -C "$ROOT" diff -U0 "$1" "$2" -- "$3" 2>/dev/null || true; } | awk -v L="$4" '
+# hunk_rows: reads a zero-context diff on stdin and prints one row per hunk
+# header, "<old start> <old count> <new start> <new count>" - the one parse of
+# the headers, shared by every reader below. It reads the diff to its end, so
+# the writer feeding it never takes a SIGPIPE.
+hunk_rows() {
+  awk '
     /^@@ / {
       split($2, o, ","); split($3, n, ",")
       a = substr(o[1], 2) + 0; b = (2 in o) ? o[2] + 0 : 1
       c = substr(n[1], 2) + 0; d = (2 in n) ? n[2] + 0 : 1
-      if (b > 0 && a <= L && L <= a + b - 1) { done = 1; print (c > 0 ? c : 1); exit }
-      if ((b > 0 && a + b - 1 < L) || (b == 0 && a < L)) off += d - b
-      else exit
+      print a, b, c, d
+    }'
+}
+
+# rows_map_line <rows> <line>: where <line> of the old side of the hunk <rows>
+# sits on the new side. A line inside a changed hunk maps to that hunk's start.
+rows_map_line() {
+  printf '%s\n' "$1" | awk -v L="$2" '
+    NF == 4 && !done && !stop {
+      a = $1; b = $2; c = $3; d = $4
+      if (b > 0 && a <= L && L <= a + b - 1) { done = 1; print (c > 0 ? c : 1) }
+      else if ((b > 0 && a + b - 1 < L) || (b == 0 && a < L)) off += d - b
+      else stop = 1
     }
     END { if (!done) print L + off }'
 }
 
-# deleted_ranges <old sha> <new ref> <file> <start> <end>: the parts of lines
-# <start>-<end> of <file> at <old sha> that the zero-context diff to <new ref>
-# deletes outright - inside a hunk whose new count is 0 - one "<from>,<to>"
-# per part, or nothing. A line a hunk replaces is not deleted by this rule.
-deleted_ranges() {
-  { git -C "$ROOT" diff -U0 "$1" "$2" -- "$3" 2>/dev/null || true; } | awk -v S="$4" -v E="$5" '
-    /^@@ / {
-      split($2, o, ","); split($3, n, ",")
-      a = substr(o[1], 2) + 0; b = (2 in o) ? o[2] + 0 : 1
-      d = (2 in n) ? n[2] + 0 : 1
-      if (a > E) exit
-      if (b > 0 && d == 0) {
-        lo = (a > S) ? a : S; hi = (a + b - 1 < E) ? a + b - 1 : E
-        if (lo <= hi) print lo "," hi
-      }
+# rows_deleted <rows> <start> <end>: the parts of lines <start>-<end> the hunk
+# <rows> delete outright - inside a hunk whose new count is 0 - one
+# "<from>,<to>" per part, or nothing. A line a hunk replaces is not deleted by
+# this rule.
+rows_deleted() {
+  printf '%s\n' "$1" | awk -v S="$2" -v E="$3" '
+    NF == 4 && $1 <= E && $2 > 0 && $4 == 0 {
+      lo = ($1 > S) ? $1 : S; hi = ($1 + $2 - 1 < E) ? $1 + $2 - 1 : E
+      if (lo <= hi) print lo "," hi
     }'
 }
 
-# range_differs <old sha> <new ref> <file> <start> <end>: prints 1 when lines
-# <start>-<end> of <file> at <old sha> differ from <new ref> - a hunk of the
-# zero-context diff removes or replaces one of them, or inserts lines between
-# two of them - and nothing otherwise. Lines inserted before the first line
-# or after the last do not make the range differ.
-range_differs() {
-  { git -C "$ROOT" diff -U0 "$1" "$2" -- "$3" 2>/dev/null || true; } | awk -v S="$4" -v E="$5" '
-    /^@@ / {
-      split($2, o, ",")
-      a = substr(o[1], 2) + 0; b = (2 in o) ? o[2] + 0 : 1
-      if (a > E) exit
-      if ((b > 0 && a + b - 1 >= S) || (b == 0 && a >= S && a < E)) { print 1; exit }
-    }'
+# rows_differ <rows> <start> <end>: prints 1 when lines <start>-<end> differ -
+# a hunk of <rows> removes or replaces one of them, or inserts lines between
+# two of them - and nothing otherwise. Lines inserted before the first line or
+# after the last do not make the range differ.
+rows_differ() {
+  printf '%s\n' "$1" | awk -v S="$2" -v E="$3" '
+    NF == 4 && !found && $1 <= E &&
+    (($2 > 0 && $1 + $2 - 1 >= S) || ($2 == 0 && $1 >= S && $1 < E)) { found = 1; print 1 }'
+}
+
+# deleted_ranges <old sha> <new ref> <file> <start> <end>: the parts of lines
+# <start>-<end> of <file> at <old sha> that the zero-context diff to <new ref>
+# deletes outright, one "<from>,<to>" per part, or nothing. The reader of the
+# diffs of other pairs - the merge base's, a walked commit's.
+deleted_ranges() {
+  local out rows
+  out="$(git -C "$ROOT" diff -U0 "$1" "$2" -- "$3" 2>/dev/null)" || true
+  rows="$(hunk_rows <<<"$out")"
+  rows_deleted "$rows" "$4" "$5"
 }
 
 # range_segments <start> <end> <ranges>: the runs of lines <start>-<end> the
@@ -184,11 +195,20 @@ deleting_commit() {
 lines_fate() {
   local __lf_old="$1" __lf_ref="$2" __lf_file="$3" __lf_start="$4" __lf_end="$5"
   local __lf_fate="" __lf_detail="" __lf_file_commit __lf_log_out __lf_deleted __lf_seg
-  local __lf_new_start __lf_new_end __lf_off_default=false
+  local __lf_new_start __lf_new_end __lf_off_default=false __lf_diff __lf_rows __lf_diff_rc=0
   local -a __lf_largs=()
   if ! git cat-file -e "$__lf_ref:$__lf_file" 2>/dev/null; then
     __lf_fate=gone
-  elif git -C "$ROOT" diff --quiet "$__lf_old" "$__lf_ref" -- "$__lf_file" 2>/dev/null; then
+  else
+    # The one diff of the filed SHA against the ref: its status is kept apart
+    # from its output, captured whole so no early exit of a reader can fail it.
+    # A diff that fails counts as differing, with no hunks: the lines are
+    # followed at their filed numbers.
+    __lf_diff="$(git -C "$ROOT" diff --exit-code -U0 "$__lf_old" "$__lf_ref" -- "$__lf_file" 2>/dev/null)" || __lf_diff_rc=$?
+    __lf_rows="$(hunk_rows <<<"$__lf_diff")"
+  fi
+  if [ "$__lf_fate" = gone ]; then :
+  elif [ "$__lf_diff_rc" -eq 0 ]; then
     __lf_fate=unchanged
   else
     # The newest commit since the filing that touched the file: the stand-in
@@ -202,13 +222,13 @@ lines_fate() {
     # by the newest commit touching the file - unless an off-ref SHA's deleted
     # lines no commit on the ref ever held: then the rest of the lines are
     # followed, and a lookup finding no commit is never-reached.
-    __lf_deleted="$(deleted_ranges "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_start" "$__lf_end")"
+    __lf_deleted="$(rows_deleted "$__lf_rows" "$__lf_start" "$__lf_end")"
     if [ -n "$__lf_deleted" ]; then
       if $__lf_off_default && ! ever_held "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_deleted"; then
         # No commit on the ref ever held the deleted lines: follow the rest.
         for __lf_seg in $(range_segments "$__lf_start" "$__lf_end" "$__lf_deleted"); do
-          __lf_new_start="$(map_line "$__lf_old" "$__lf_ref" "$__lf_file" "${__lf_seg%,*}")"
-          __lf_new_end="$(map_line "$__lf_old" "$__lf_ref" "$__lf_file" "${__lf_seg#*,}")"
+          __lf_new_start="$(rows_map_line "$__lf_rows" "${__lf_seg%,*}")"
+          __lf_new_end="$(rows_map_line "$__lf_rows" "${__lf_seg#*,}")"
           [ "$__lf_new_end" -ge "$__lf_new_start" ] || __lf_new_end="$__lf_new_start"
           __lf_largs+=(-L "$__lf_new_start,$__lf_new_end:$__lf_file")
         done
@@ -219,8 +239,8 @@ lines_fate() {
         if [ -n "$__lf_detail" ]; then __lf_fate=changed; else __lf_fate=never-reached; fi
       fi
     else
-      __lf_new_start="$(map_line "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_start")"
-      __lf_new_end="$(map_line "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_end")"
+      __lf_new_start="$(rows_map_line "$__lf_rows" "$__lf_start")"
+      __lf_new_end="$(rows_map_line "$__lf_rows" "$__lf_end")"
       [ "$__lf_new_end" -ge "$__lf_new_start" ] || __lf_new_end="$__lf_new_start"
       __lf_largs=(-L "$__lf_new_start,$__lf_new_end:$__lf_file")
     fi
@@ -233,7 +253,7 @@ lines_fate() {
         __lf_detail="$(grep -m1 -Ex '[0-9a-f]{40}' <<<"$__lf_log_out")" || true
         if [ -n "$__lf_detail" ]; then
           __lf_fate=changed
-        elif $__lf_off_default && [ -n "$(range_differs "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_start" "$__lf_end")" ]; then
+        elif $__lf_off_default && [ -n "$(rows_differ "$__lf_rows" "$__lf_start" "$__lf_end")" ]; then
           # The lines were followed and nothing since the filing touched them,
           # but the lines themselves differ, by commits that never reached the
           # ref.

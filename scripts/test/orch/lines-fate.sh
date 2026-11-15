@@ -258,3 +258,19 @@ lf_assert "$rows" mb_deleted changed "$mb_del_sha"
 lf_failing '*" cat-file "*' untouched "$head_sha" src/other.sh 2 2 >"$rows"
 lf_assert "$rows" untouched gone
 rm -f "$rows"
+
+# Cost: git's own trace counts the diffs of the filed SHA against the ref - one
+# per finding, whatever its fate. GIT_TRACE is exported only after orch.sh is
+# sourced, whose own start is not counted.
+lf_trace="$(mktemp)"
+# lf_diffs_naming <sha> <file> <start> <end>: lines_fate's count of `git diff`
+# processes naming both the filed SHA and main.
+lf_diffs_naming() {
+  : >"$lf_trace"
+  # shellcheck disable=SC2016 # expanded by the inner bash
+  sourced_orch_script 'export GIT_TRACE="$1"; lines_fate "$2" main "$3" "$4" "$5" r d' "$lf_trace" "$@" >/dev/null
+  grep 'trace: built-in: git diff ' "$lf_trace" | grep -c -- "$1.* main"
+}
+assert_eq "an off-ref never-reached finding is diffed once" "$(lf_diffs_naming "$unmerged_sha" src/other.sh 2 2)" "1"
+assert_eq "an on-ref finding whose lines were deleted is diffed once" "$(lf_diffs_naming "$filed_sha" src/del_whole.sh 10 10)" "1"
+rm -f "$lf_trace"
