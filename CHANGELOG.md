@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.3.3
+
+Every read of an issue's or a PR's comments now goes through one reader of trusted comments, which drops untrusted comments in one place and returns rather than dies on a failed or unparseable read. A structural test fails when orch.sh's own scripts read comments any other way. Nothing orch.sh prints or does changes.
+
+## 5.3.2
+
+`ticket publish` and `breakdown publish` now rewrite each published ticket's `## Blocked by` section from its verified blocking edges, one `- #<n>` line per blocker or `None (can start immediately)`, so published bodies name their blockers by number.
+
 ## 5.3.1
 
 `ticket publish` no longer takes the internal `--record` flag: `breakdown publish` owns its whole save point, and creating and linking a ticket are two steps it runs as one path for a fresh and a resumed ticket. Two failure messages change: a failed create reads `the create failed`, a failed link reads `the link failed`.

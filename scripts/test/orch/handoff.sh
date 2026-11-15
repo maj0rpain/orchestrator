@@ -529,11 +529,11 @@ fake_comment 7 someone 2030-01-02T00:00:00Z "$(marker_of handoff 01-plan retired
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "a retired newest comment is no handoff to fetch" "$st" 1
 assert_eq "saying so" "$out" "$(handoff_missing_msg comment 7 01-plan)"
-fake_lag adapter_issue_comments_json 1 'not json'
+fake_lag adapter_issue_comments 1 'not json'
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "unparseable comments make handoff fetch fail" "$st" 1
 assert_eq "with the parse-failure wording" "$out" "orch: could not read issue #7's comments"
-fake_lag adapter_issue_comments_json 1 ''
+fake_lag adapter_issue_comments 1 ''
 out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
 assert_status "an empty comments answer makes handoff fetch fail" "$st" 1
 assert_eq "with the parse-failure wording and no bash error" "$out" "orch: could not read issue #7's comments"
@@ -666,19 +666,19 @@ case "$scratch" in /*/.orchestrator/*) echo stale >"$scratch/01-plan.md" ;; esac
 out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
 assert_status "comment: a stale scratch copy is not a found handoff" "$st" 1
 assert_contains "comment: with the missing message" "$out" "$(handoff_missing_msg comment 7 01-plan)"
-fake_fail adapter_issue_comments_json "HTTP 503 read"
+fake_fail adapter_issue_comments "HTTP 503 read"
 out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
 fake_unfail
 assert_status "comment: a failed comments read dies" "$st" 1
 assert_contains "comment: showing the gh reason" "$out" "HTTP 503 read"
 assert_not_contains "comment: and not the missing line" "$out" "handoff comment"
-fake_lag adapter_issue_comments_json 1 'not json'
+fake_lag adapter_issue_comments 1 'not json'
 out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
 fake_unfail
 assert_status "comment: handoff path over unparseable comments dies" "$st" 1
 assert_eq "comment: with the parse-failure wording" "$out" "orch: could not read issue #7's comments"
 # the comments unreadable with no sibling due: gh's reason, not "missing"
-fake_fail adapter_issue_comments_json "HTTP 503 read"
+fake_fail adapter_issue_comments "HTTP 503 read"
 out="$(handoff_orch comment handoff path spec 2>&1)"; st=$?
 fake_unfail
 assert_status "comment: a failed read with no sibling due dies" "$st" 1
@@ -689,7 +689,7 @@ put_handoff comment 7 2030-01-01T00:00:00Z 01-plan "$(literal_handoff spec)"
 handoff_orch comment handoff path implement >/dev/null 2>&1
 assert_eq "comment: the sibling is fetched while readable" "$(on_disk "$scratch/01-plan.md")" present
 reads_before="$(fake_comment_reads)"
-fake_fail adapter_issue_comments_json "HTTP 503 read"
+fake_fail adapter_issue_comments "HTTP 503 read"
 out="$(handoff_orch comment handoff path implement 2>&1)"; st=$?
 fake_unfail
 assert_status "comment: an unreadable sibling fetch dies" "$st" 1
@@ -740,11 +740,11 @@ assert_eq "a retire of several handoffs makes exactly one comment read" "$(( $(f
 fake_comment 7 someone 2030-01-04T00:00:00Z "$(marker_of handoff 02-spec)
 spec third"
 before="$(fake_comments_of 7)"
-assert_gh_dies "a failed comments read dies with gh's wording" adapter_issue_comments_json "$GH_502" 1 \
+assert_gh_dies "a failed comments read dies with gh's wording" adapter_issue_comments "$GH_502" 1 \
   "orch: gh could not read the comments of issue #7: HTTP 502: Bad Gateway" \
   retire_all
 assert_eq "posting nothing" "$(fake_comments_of 7)" "$before"
-fake_lag adapter_issue_comments_json 1 'not json'
+fake_lag adapter_issue_comments 1 'not json'
 out="$(retire_all 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
 assert_eq "posting nothing either" "$(fake_comments_of 7)" "$before"

@@ -136,9 +136,12 @@ ticket_create() {
 # resume never writes a link already present. Then every link is read back
 # through verify_twice: one retry, either status gets it, and the second
 # attempt decides the death - a failed read dies with gh's reason, a mismatch
-# as unverified (ADR-0011).
+# as unverified (ADR-0011). Once the links verify, the ticket's `## Blocked by`
+# section is rewritten from <want> - sorted ascending here - as `ticket block`
+# writes it, through rewrite_blocked_by_section and issue_body_rewrite.
 ticket_link() {
   local parent="$1" n="$2" want="$3" subs b have
+  want="$(printf '%s\n' "$want" | sed '/^$/d' | sort -un)"
   subs="$(ticket_sub_issues "$parent")" || exit 1
   ticket_listing_has "$subs" "$n" || gh_or_die "link ticket #$n as a sub-issue of #$parent" \
     adapter_sub_issue_link "$parent" "$n"
@@ -155,6 +158,10 @@ ticket_link() {
   verify_twice "read ticket #$n's links" \
     "ticket #$n's sub-issue/blocked-by links did not verify - checked twice, both failed" \
     ticket_links_verified "$parent" "$n" "$want"
+
+  issue_body_rewrite "$n" "read ticket #$n's body" \
+    "rewrite ticket #$n's ## Blocked by section" \
+    rewrite_blocked_by_section "$want"
 }
 
 # Publishes a child issue - ticket_create then ticket_link: a native
@@ -397,7 +404,7 @@ cmd_ticket_retire() {
       gh_or_die "close ticket #$n" \
         adapter_issue_close "$n" --reason "not planned" --comment "$msg"
     else
-      comments_rendered adapter_issue_comments "read ticket #$n's comments" "$n" comments
+      comments_rendered issue "read ticket #$n's comments" "$n" comments
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
         temp_file_make comment_file || die "could not create a temp file for the comment on ticket #$n"
         printf '%s\n' "$msg" >"$comment_file"

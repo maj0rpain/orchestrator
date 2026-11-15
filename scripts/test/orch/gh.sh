@@ -871,35 +871,24 @@ assert_status "issue body: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" \
   "GraphQL: Could not resolve to an issue or pull request with the number of 404."
 
-comments_jq="$(sourced_orch_script 'printf "%s" "$COMMENTS_RENDER_JQ"') .comments | render_comments(.author.login)"
 gh_reply 0 $'{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}]}\n' '' \
   issue view 23 --json comments
 out="$(contract adapter_issue_comments 23 2>&1)"; st=$?
 assert_status "issue comments: reads the comments as gh's raw JSON" "$st" 0
 assert_eq "printing what gh answered, unrendered" "$out" \
   '{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}]}'
-# The renderer itself, run on gh-shaped JSON: what the fixture's canned reply
-# above stands in for.
-comments_json='{"comments":[{"author":{"login":"triage-bot"},"createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]}'
-assert_eq "COMMENTS_RENDER_JQ opens each comment with its author-and-date marker, one blank line between" \
-  "$(printf '%s' "$comments_json" | jq -r "$comments_jq")" \
-  "$(writeln '<!-- comment @triage-bot 2026-09-01T10:00:00Z -->' \
-    '## Agent brief' '' 'Do the `$HOME` thing in #6.' '' \
-    '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
-assert_eq "and prints nothing at all for no comments" \
-  "$(printf '%s' '{"comments":[]}' | jq -r "$comments_jq" | wc -c | tr -d ' ')" "0"
 
 issue_json_jq="$(sourced_orch_script 'printf "%s" "$ISSUE_JSON_JQ"')"
 : >"$GH_FIXTURE/env.log"
-gh_reply 0 $'{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}\n' '' \
-  issue view 23 --json number,title,body,labels,comments --jq "$issue_json_jq"
+gh_reply 0 $'{"body":"B.","labels":["bug"],"number":23,"title":"T"}\n' '' \
+  issue view 23 --json number,title,body,labels --jq "$issue_json_jq"
 out="$(contract adapter_issue_json 23 2>&1)"; st=$?
 assert_status "issue json: reads the issue through ISSUE_JSON_JQ" "$st" 0
-assert_eq "printing the object it formatted" "$out" '{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}'
+assert_eq "printing the object it formatted" "$out" '{"body":"B.","labels":["bug"],"number":23,"title":"T"}'
 assert_contains "pinned to the resolved repo" "$(cat "$GH_FIXTURE/env.log")" \
-  "GH_REPO=acme/widgets GH_HOST=<unset> issue view 23 --json number,title,body,labels,comments"
+  "GH_REPO=acme/widgets GH_HOST=<unset> issue view 23 --json number,title,body,labels --jq"
 gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  issue view 404 --json number,title,body,labels,comments --jq "$issue_json_jq"
+  issue view 404 --json number,title,body,labels --jq "$issue_json_jq"
 out="$(contract adapter_issue_json 404 2>&1)"; st=$?
 assert_status "issue json: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
@@ -907,23 +896,10 @@ assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 # trimmed shape - a label's id and colour, a comment author's name and more -
 # is dropped.
 issue_gh_json='{"number":23,"title":"Widgets need a handle","body":"## Problem\n\nTracked in #6.","labels":[{"id":"LA_1","name":"bug","description":"Broken","color":"d73a4a"},{"id":"LA_2","name":"ready-for-agent","description":"","color":"0e8a16"}],"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z","includesCreatedEdit":false,"isMinimized":false,"minimizedReason":"","reactionGroups":[],"url":"https://github.com/acme/widgets/issues/23#issuecomment-1","viewerDidAuthor":true}]}'
-assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body, label names and comments, each with its author association" \
+assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body and label names, with no comments" \
   "$(printf '%s' "$issue_gh_json" | jq -cS "$issue_json_jq")" \
-  '{"body":"## Problem\n\nTracked in #6.","comments":[{"author":"pat","authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}],"labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
+  '{"body":"## Problem\n\nTracked in #6.","labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
 
-: >"$GH_FIXTURE/env.log"
-comments_json_jq='[.comments[] | {author: .author.login, authorAssociation, createdAt, body, url}]'
-gh_reply 0 $'[{"author":"pat","authorAssociation":"OWNER","body":"B.","createdAt":"2026-09-02T11:30:00Z","url":"https://github.com/acme/widgets/issues/23#issuecomment-1"}]\n' '' \
-  issue view 23 --json comments --jq "$comments_json_jq"
-out="$(contract adapter_issue_comments_json 23 2>&1)"; st=$?
-assert_status "issue comments json: reads author, date, body and url" "$st" 0
-assert_contains "printing the array it formatted" "$out" '"url":"https://github.com/acme/widgets/issues/23#issuecomment-1"'
-assert_eq "the jq keeps each comment's url, which gh-shaped JSON carries" \
-  "$(printf '%s' '{"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"authorAssociation":"MEMBER","body":"A.","createdAt":"2026-09-02T11:30:00Z","url":"https://x/1","isMinimized":false}]}' | jq -c "$comments_json_jq")" \
-  '[{"author":"pat","authorAssociation":"MEMBER","createdAt":"2026-09-02T11:30:00Z","body":"A.","url":"https://x/1"}]'
-gh_reply 1 '' 'HTTP 502: Bad Gateway' issue view 404 --json comments --jq "$comments_json_jq"
-out="$(contract adapter_issue_comments_json 404 2>&1)"; st=$?
-assert_status "issue comments json: a gh failure fails it" "$st" 1
 
 bodies_jq='.[] | "\(.number)\t\(.body | @json)\t\(.isCrossRepository)"'
 bodies_line="$(printf '58\t"Closes #9\\n\\tTab \\\\ \\"q\\""\ttrue\n57\t""\tfalse')"
