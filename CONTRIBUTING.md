@@ -93,8 +93,13 @@ anything it measured fails.
 CI (`.github/workflows/test.yml`): a PR runs the whole suite once, in the
 autopilot container, as 4 jobs, each `all.sh` with its `ORCH_TEST_SHARD=<i>/4`
 (the image's `EXTRA_BUILD_COMMAND` checks in group 1 only), plus a final job
-that passes only when all four did; a push to `main` runs `all.sh` unsplit on
-the runner, and the container suite does not run there. The suite runs on a
+that passes only when all four did. Each group restores the image's base-tools
+layer (apt packages, `gh`, Claude Code) from the repo's GitHub Actions cache
+and still builds the image from the PR's commit; group 4 also writes the cache,
+and a cold or unreadable cache costs time only. A push to `main` runs `all.sh`
+unsplit on the runner (the container suite does not run there) and, in a
+separate job, builds the image from scratch with no cache read and writes the
+cache, so every PR's first run starts warm. The suite runs on a
 PR's `opened`, `synchronize` and `reopened`; a newer run for the same PR
 cancels the older one, and a push to `main` is never cancelled. The changelog
 fragment check has its own workflow (see the fragment paragraph below).
