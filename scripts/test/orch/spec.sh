@@ -647,6 +647,11 @@ assert_eq "and the copy holds the file" "$(cat "$od/d/apply-reasons.copy")" why
 out="$(sourced_orch_script 'spec_round_answer_load "$1" a; printf "[%s]" "${a[@]}"' "$od/d")"
 assert_eq "spec_round_answer_load reads the arguments back" "$out" \
   "[recommended][--reasons][$od/d/apply-reasons.copy][--round][1/2]"
+mkdir "$od/unreadable"; mkdir "$od/unreadable/apply-answer"
+out="$(sourced_orch_script 'spec_round_answer_load "$1" a; echo "survived"' "$od/unreadable" 2>&1)"; st=$?
+assert_status "spec_round_answer_load over an unreadable apply-answer dies" "$st" 1
+assert_eq "with the rerun message and no stray cat error" "$out" \
+  "orch: $od/unreadable/apply-answer is unreadable - rerun the round"
 sourced_orch spec_round_answer_clear "$od/d" nothing; st=$?
 assert_status "spec_round_answer_clear succeeds" "$st" 0
 assert_eq "it removes the answer and its copies" "$(ls -A "$od/d")" ""

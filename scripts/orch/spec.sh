@@ -180,7 +180,10 @@ spec_round_answer_save() {
 # spec_round_answer_load <dir> <array-var>: the saved answer's arguments read
 # into the array <array-var>; dies when the file is unreadable.
 spec_round_answer_load() {
-  eval "$2=($(cat "$1/$SPEC_ROUND_APPLY_ANSWER"))" 2>/dev/null \
+  local text
+  text="$(cat "$1/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null)" \
+    || die "$1/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
+  eval "$2=($text)" 2>/dev/null \
     || die "$1/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
 }
 
