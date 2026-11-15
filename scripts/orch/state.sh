@@ -1,9 +1,13 @@
 # shellcheck shell=bash
 # state.sh - orch.sh's state command (state get and state set), with the state
 # helpers every module calls (state_get, state_write, require_state,
-# require_pr, require_issue, flow_active). Two readers, each with a many-key
-# form: state_get and state_get_many, the unguarded own-checkout readers, and
-# state_get_in and state_get_many_in, the guarded shared ones.
+# require_state_read, require_value, require_field, require_pr, require_issue,
+# flow_active). Two readers, each with a many-key form: state_get and
+# state_get_many, the unguarded own-checkout readers, and state_get_in and
+# state_get_many_in, the guarded shared ones; the guarded one-key reader costs
+# one jq. A command's entry read is require_state_read: the two refusals and
+# every key it needs in one jq. require_value checks a required field on a
+# value the caller already holds; require_field reads one key and checks it.
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -39,12 +43,21 @@ state_get() {
 }
 
 # The shared reader, guarded: reads <key> from the state file <file> of any
-# checkout, not only this one's. An unreadable <file> (flow_state_readable)
-# returns status 2 and prints nothing - no jq text, so a caller scanning other
-# checkouts can skip it. On a readable one it behaves as state_get does.
+# checkout, not only this one's, in one jq (flow_state_get_many with its one
+# key). A failed read tells the causes apart, readability first: an unreadable
+# <file> returns status 2 and prints nothing - no jq text, so a caller
+# scanning other checkouts can skip it, a key outside the table included - and
+# a key outside the table beside a readable file dies "unknown state key".
 state_get_in() {
+  local __sgi_v __sgi_rc
+  if flow_state_get_many "$1" __sgi_v="$2" 2>/dev/null; then
+    printf '%s\n' "$__sgi_v"
+    return 0
+  fi
+  __sgi_rc=$?
   flow_state_readable "$1" || return 2
-  state_read "$1" "$2"
+  state_many_recheck __sgi_v="$2"
+  return "$__sgi_rc"
 }
 
 # state_read <file> <key>: the unguarded read both readers share - the Flow
@@ -169,41 +182,71 @@ require_state_readable() {
   [ ! -f "$STATE" ] || flow_state_readable "$STATE" || "${1:-die}" "$STATE_UNREADABLE_MSG"
 }
 
-# Fetches a required state field through state_get, dies with $3 if it comes
-# back empty, and otherwise writes it into the variable named by $1 - a
-# caller-named out-param via `printf -v` rather than a nameref: namerefs need
-# bash 4.3, and this file runs on 4.2 (the same idiom `d_gate` uses in
-# doctor.sh).
-#
-# Call it as a bare statement on its own line - `local pr; require_pr pr` -
-# never folded into `$(...)`. A caller-named out-param has no result to
-# capture with `pr="$(require_pr)"` in the first place, so that old shape no
-# longer compiles into anything that reads state; the only thing left to write
-# is the bare form, and `die` in that form runs directly in the caller's flow
-# rather than inside a command substitution subshell, so `set -e` actually
-# stops it instead of the caller carrying on with an empty value.
-#
-# A fourth argument, die2, dies through die2 instead, for a command that
-# reserves exit 1 for a meaningful "no".
+# require_state_read [die|die2] <var>=<key>...: a command's entry read. Dies
+# "no active flow" on a missing state file and with STATE_UNREADABLE_MSG on one
+# that is not a JSON object, through the dier given (die, or die2 for a command
+# that reserves exit 1 for a meaningful "no"); then assigns each <key>'s value,
+# with its table default, to the caller's <var>, all in one jq
+# (flow_state_get_many). Call it as a bare statement: it declares no unprefixed
+# local, so a caller may name an out-variable anything but a __rsr_ or
+# __fsgm_ name. A key outside the table dies "unknown state key", and a
+# malformed <var>=<key> "malformed state read", as state_get_many does.
+require_state_read() {
+  local __rsr_die=die
+  case "${1:-}" in die | die2) __rsr_die="$1"; shift ;; esac
+  [ -f "$STATE" ] || "$__rsr_die" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
+  flow_state_get_many "$STATE" "$@" 2>/dev/null && return
+  state_many_recheck "$@"
+  "$__rsr_die" "$STATE_UNREADABLE_MSG"
+}
+
+# The one spelling of each required field's message, by key. Prints nothing
+# and returns 1 for a key with no message.
+state_required_msg() {
+  case "$1" in
+    issue) echo "no issue recorded in state - the spec phase must publish one first" ;;
+    branch) echo "no branch recorded in state" ;;
+    pr) echo "no PR recorded in state - the implement phase opens it" ;;
+    base_sha) echo "no base SHA recorded in state - branch create records it" ;;
+    *) return 1 ;;
+  esac
+}
+
+# require_value <key> <value> [die2]: dies with <key>'s required-field message,
+# through die or die2, when <value> is empty. It reads nothing. A key with no
+# message exits 2.
+require_value() {
+  local __rv_msg
+  [ -z "$2" ] || return 0
+  __rv_msg="$(state_required_msg "$1")" || die2 "no required-field message for state key: $1"
+  "${3:-die}" "$__rv_msg"
+}
+
+# require_field <var> <key> [die2]: one guarded one-key read into the caller's
+# <var>, then require_value: one jq and no subshell, refusing in order with no
+# state file, an unreadable one, and an empty value. Call it as a bare
+# statement on its own line - `local pr; require_pr pr` - never folded into
+# `$(...)`: the out-param is assigned in the caller's own shell, and `die` runs
+# there too, so `set -e` stops it instead of the caller carrying on with an
+# empty value. A caller-named out-param is a `printf -v`, not a nameref, which
+# needs bash 4.3. The third argument, die2, dies through die2, for a command
+# that reserves exit 1 for a meaningful "no".
 require_field() {
-  local __rf_out="$1" __rf_key="$2" __rf_msg="$3" __rf_die="${4:-die}" __rf_val
-  require_state_readable "$__rf_die"
-  __rf_val="$(state_get "$__rf_key")"
-  [ -n "$__rf_val" ] || "$__rf_die" "$__rf_msg"
-  printf -v "$__rf_out" '%s' "$__rf_val"
+  require_state_read "${3:-die}" "$1=$2"
+  require_value "$2" "${!1}" "${3:-die}"
 }
 
 # Every review command that reaches GitHub needs the flow's PR number and none
 # of them can do anything useful without it.
-require_pr() { require_field "$1" pr "no PR recorded in state - the implement phase opens it"; }
+require_pr() { require_field "$1" pr; }
 
 # branch create, pr open, and every spec op need the flow's spec issue number
 # before touching GitHub. A second argument, die2, is passed on to
 # require_field.
-require_issue() { require_field "$1" issue "no issue recorded in state - the spec phase must publish one first" "${2:-die}"; }
+require_issue() { require_field "$1" issue "${2:-die}"; }
 
 # pr open and redo review both need the flow's branch before touching GitHub.
-require_branch() { require_field "$1" branch "no branch recorded in state"; }
+require_branch() { require_field "$1" branch; }
 
 # The writers of state.phase: phase_write, which dies on a failed write, and
 # phase_write_try, which returns the writer's status for a caller that words
@@ -259,12 +302,13 @@ flow_active() { flow_state_active "$STATE"; }
 # and 2 when state.json cannot be read - so the guard fails closed. A branch
 # or issue an active flow holds belongs to it (ADR-0029), so review-pass begin
 # and pr draft/ready refuse it, each with its own message, and refuse status 2
-# too. Reads state.json only when one exists. Every
+# too. Reads state.json only when one exists, in one read. Every
 # read is checked here: callers run it in `$(...) ||`, where errexit is off.
 flow_holding_phase() {
   local branch="$1" issue="${2:-}" phase held_branch held_issue
-  flow_active || return 1
+  [ -f "$STATE" ] || return 1
   state_get_many_in "$STATE" phase=phase held_branch=branch held_issue=issue || return 2
+  [ "$phase" != "done" ] || return 1
   if [ "$held_branch" != "$branch" ]; then
     [ -n "$issue" ] || return 1
     [ "$held_issue" = "$issue" ] || return 1

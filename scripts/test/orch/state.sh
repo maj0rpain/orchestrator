@@ -537,3 +537,80 @@ assert_eq "with the no-key message for it" "$out" \
   "orch: could not record the state write in $PWD/.orchestrator/state.json - the flow is unchanged"
 assert_eq "leaving state.json byte for byte for it too" "$(cat .orchestrator/state.json)" "$before"
 restore_suite_env
+
+# --- the entry read and the required-field helpers ---------------------------
+# require_state_read, require_value, require_field and the one-jq readers.
+echo
+echo "require_state_read, require_value and require_field"
+fresh_flow entry
+rs_file="$PWD/.orchestrator/state.json"
+rs_jq="$(counting_bin jq)"
+out="$(sourced_orch_script 'require_state_read key=slug file=phase rc=issue; echo "$key $file [$rc]"' 2>&1)"
+assert_eq "require_state_read assigns several keys with defaults" "$out" "entry spec []"
+PATH="$rs_jq:$PATH" sourced_orch require_state_read a=slug b=phase c=issue d=pr e=budget >/dev/null
+assert_eq "require_state_read of five keys starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
+out="$(sourced_orch require_state_read a=nonsense 2>&1)"; st=$?
+assert_status "require_state_read dies on a key outside the table" "$st" 1
+assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
+out="$(sourced_orch require_state_read nokey 2>&1)"
+assert_eq "and on a malformed argument" "$out" "orch: malformed state read: nokey"
+for rv in "issue|no issue recorded in state - the spec phase must publish one first" \
+  "branch|no branch recorded in state" \
+  "pr|no PR recorded in state - the implement phase opens it" \
+  "base_sha|no base SHA recorded in state - branch create records it"; do
+  rv_key="${rv%%|*}"; rv_msg="${rv#*|}"
+  out="$(sourced_orch require_value "$rv_key" "" 2>&1)"; st=$?
+  assert_status "require_value $rv_key empty dies" "$st" 1
+  assert_eq "with its message" "$out" "orch: $rv_msg"
+  out="$(sourced_orch require_value "$rv_key" "" die2 2>&1)"; st=$?
+  assert_status "and through die2" "$st" 2
+done
+out="$(sourced_orch require_value issue 7 2>&1)"; st=$?
+assert_status "require_value passes a non-empty value" "$st" 0
+out="$(sourced_orch require_value nonsense "" 2>&1)"; st=$?
+assert_status "require_value on a key with no message exits 2" "$st" 2
+: >"$rs_jq/jq.log"
+out="$(PATH="$rs_jq:$PATH" sourced_orch_script 'require_issue v; echo "[$v]"' 2>&1)"; st=$?
+assert_status "require_issue on a null issue dies" "$st" 1
+assert_eq "with its own message" "$out" "orch: no issue recorded in state - the spec phase must publish one first"
+assert_eq "after one jq" "$(counting_starts "$rs_jq" jq)" "1"
+out="$(sourced_orch_script 'require_issue v die2' 2>&1)"; st=$?
+assert_status "require_issue through die2 exits 2" "$st" 2
+"$ORCH" state set issue 7 >/dev/null
+out="$(sourced_orch_script 'require_issue v; echo "$v"' 2>&1)"
+assert_eq "require_issue assigns the issue" "$out" "7"
+out="$(sourced_orch state_get_in "$rs_file" issue 2>&1)"
+assert_eq "state_get_in reads a key" "$out" "7"
+: >"$rs_jq/jq.log"
+PATH="$rs_jq:$PATH" sourced_orch state_get_in "$rs_file" issue >/dev/null
+assert_eq "state_get_in starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
+out="$(sourced_orch flow_holding_phase nobranch 2>&1)"; st=$?
+assert_status "flow_holding_phase of a branch the flow does not hold returns 1" "$st" 1
+out="$(sourced_orch flow_holding_phase nobranch 7 2>&1)"; st=$?
+assert_eq "flow_holding_phase of a held issue prints the phase" "$out" "spec"
+: >"$rs_jq/jq.log"
+PATH="$rs_jq:$PATH" sourced_orch flow_holding_phase nobranch 7 >/dev/null
+assert_eq "flow_holding_phase starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
+state_fixture phase "done"
+out="$(sourced_orch flow_holding_phase nobranch 7 2>&1)"; st=$?
+assert_status "flow_holding_phase of a done flow returns 1" "$st" 1
+rm -f "$rs_file"
+out="$(sourced_orch require_state_read a=phase 2>&1)"; st=$?
+assert_status "require_state_read with no state file dies" "$st" 1
+assert_contains "saying there is no active flow" "$out" "orch: no active flow"
+out="$(sourced_orch require_state_read die2 a=phase 2>&1)"; st=$?
+assert_status "and exits 2 through die2" "$st" 2
+fresh_flow entry2
+state_truncate
+out="$(sourced_orch require_state_read a=phase 2>&1)"; st=$?
+assert_state_unreadable "require_state_read" 1 "$out" "$st"
+out="$(sourced_orch require_state_read die2 a=phase 2>&1)"; st=$?
+assert_state_unreadable "require_state_read through die2" 2 "$out" "$st"
+out="$(sourced_orch_script 'require_issue v' 2>&1)"; st=$?
+assert_state_unreadable "require_issue" 1 "$out" "$st"
+out="$(sourced_orch state_get_in "$PWD/.orchestrator/state.json" nonsense 2>&1)"; st=$?
+assert_status "state_get_in of a key outside the table on a truncated file returns 2" "$st" 2
+assert_eq "printing nothing" "$out" ""
+out="$(sourced_orch flow_holding_phase b 2>&1)"; st=$?
+assert_status "flow_holding_phase on a truncated file returns 2" "$st" 2
+restore_suite_env
