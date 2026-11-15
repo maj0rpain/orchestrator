@@ -3322,3 +3322,19 @@ assert_contains "naming the missing state" "$out" "no active flow (.orchestrator
 assert_not_contains "without the remedy (no state)" "$out" "$repo_missing"
 rm -f "$nr_ans"
 restore_suite_env
+
+# --- autopilot session ops read the issue in one jq ---------------------------
+# Each op that needs only the issue refuses a flow with none recorded before any
+# write, one jq for the whole read (#3226).
+echo
+echo "autopilot issue read"
+fresh_flow apissue
+ai_file="$(mktemp)"; printf 'text\n' >"$ai_file"
+ai_jq="$(counting_bin jq)"
+for ai_op in "autopilot_reenter review $ai_file" "autopilot_sync_finish" "autopilot_sync_dropped $ai_file" "autopilot_sync_fail why" "autopilot_answer spec $ai_file"; do
+  : >"$ai_jq/jq.log"
+  out="$(PATH="$ai_jq:$PATH" sourced_orch $ai_op 2>&1)"
+  assert_contains "${ai_op%% *} with no issue recorded refuses" "$out" "no issue recorded in state"
+  assert_eq "${ai_op%% *} with no issue recorded starts exactly one jq" "$(counting_starts "$ai_jq" jq)" "1"
+done
+restore_suite_env

@@ -823,7 +823,7 @@ check_flow_review_terminal() {
   local i b terminal word detail
   i="$D_FLOW_ITERATION"
   b="$D_FLOW_BUDGET"
-  terminal="$(review_terminal_state)" || true
+  terminal="$(review_terminal_state "$i" "$b")" || true
   lines_split "$terminal" word detail
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;

@@ -474,7 +474,6 @@ standing_pause() {
 standing_ask() {
   local phase="$1" text="$2" issue body gh_err
   standing_chain_start
-  require_state
   require_issue issue
   autopilot_setting handle
   temp_file_make body || die "could not create a temp file for the question comment"

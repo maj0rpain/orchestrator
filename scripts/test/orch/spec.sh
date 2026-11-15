@@ -570,4 +570,33 @@ state_truncate
 spec_body="$(mktemp)"
 out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_state_unreadable "spec fetch" 1 "$out" "$st"
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_state_unreadable "spec round" 2 "$out" "$st"
+restore_suite_env
+
+# --- spec ops read the flow's state once (#3063) -----------------------------
+# Each op makes one entry read of the flow's issue and phase, then refuses on
+# the values it holds: one jq on a path ending at the last guard before a write.
+echo
+echo "spec ops state reads"
+fresh_flow specreads
+fake_github
+"$ORCH" state set issue 14 >/dev/null
+fake_issue 14 open
+spec_body="$(mktemp)"
+state_fixture phase implement
+sr_jq="$(counting_bin jq)"
+for args in "pause" "pause --round 1/2" "round-dir 1/2" "round"; do
+  : >"$sr_jq/jq.log"
+  # shellcheck disable=SC2086 # the op and its arguments, split on purpose
+  PATH="$sr_jq:$PATH" "$ORCH" spec $args >/dev/null 2>&1
+  assert_eq "spec $args at a phase other than spec starts jq once" "$(counting_starts "$sr_jq" jq)" "1"
+done
+state_fixture phase "done"
+for op in fetch update comment comments; do
+  : >"$sr_jq/jq.log"
+  PATH="$sr_jq:$PATH" "$ORCH" spec "$op" "$spec_body" >/dev/null 2>&1
+  assert_eq "spec $op on a done flow starts jq once" "$(counting_starts "$sr_jq" jq)" "1"
+done
+rm -f "$spec_body"
 restore_suite_env
