@@ -673,3 +673,4 @@ assert_contains "with today's message" "$out" \
   "could not remove $od/d/fundamental.md - every GitHub write landed and settled.md is appended: landed-x"
 assert_eq "writing no round-complete" "$(on_disk "$od/d/round-complete")" absent
 rm -rf "$od"
+restore_suite_env
