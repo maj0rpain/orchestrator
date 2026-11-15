@@ -534,10 +534,10 @@ out="$("$ORCH" help 2>&1)"
 flat="$(tr -s ' \n' ' ' <<<"$out")"
 assert_contains "suite-cost run is in the usage text" "$out" "suite-cost run -- <cmd> [args...]"
 shell_line_text="A single argument is a shell line, run with bash -c and recorded as given"
-run_block="${flat#*suite-cost run -- <cmd> [args...] }"
-run_block="${run_block%%suite-cost check -- <cmd> [args...] *}"
-check_block="${flat#*suite-cost check -- <cmd> [args...] }"
-check_block="${check_block%%suite-cost history *}"
+run_block="${flat#*"suite-cost run -- <cmd> [args...] "}"
+run_block="${run_block%%"suite-cost check -- <cmd> [args...] "*}"
+check_block="${flat#*"suite-cost check -- <cmd> [args...] "}"
+check_block="${check_block%%"suite-cost history "*}"
 assert_contains "run's help text says a single argument is a shell line run with bash -c and recorded as given" \
   "$run_block" "$shell_line_text"
 assert_contains "check's help text says a single argument is a shell line run with bash -c and recorded as given" \
@@ -1042,18 +1042,14 @@ assert_eq "a one-argument chained line's base run runs its second half" "$(on_di
 assert_eq "and records the line as given on the base" \
   "$(awk -F'\t' -v b="$base" -v l="$line" '$1 == b && $5 == l' "$rec" | wc -l | tr -d ' ')" 1
 
-check_repo
-fake_cpu "$base" 5.00
-fake_cpu "$head" 5.00
+: >"$rec"
 seed_run "$base" 5.00 "true"
 seed_run "$head" 5.00 "true"
 before="$(cat "$rec")"
 "$ORCH" suite-cost check -- "true" >/dev/null 2>"$errf"
 assert_eq "a seeded one-word record serves as the base: no base run records" "$(cat "$rec")" "$before"
 
-check_repo
-fake_cpu "$base" 5.00
-fake_cpu "$head" 5.00
+: >"$rec"
 line="no-such-program-xyz --flag"
 seed_run "$head" 70.00 "$line"
 out="$("$ORCH" suite-cost check -- "$line" 2>"$errf")"
@@ -1061,9 +1057,7 @@ assert_eq "a missing program in a one-argument line is unmeasured" "$out" "unmea
 assert_contains "its base run exits 127" "$(cat "$errf")" "$base exited 127"
 assert_contains "and the warning names the setup key" "$(cat "$errf")" "orchestrator.suiteCost.setup"
 
-check_repo
-fake_cpu "$base" 5.00
-fake_cpu "$head" 5.00
+: >"$rec"
 line="true && exit 4"
 seed_run "$head" 70.00 "$line"
 before="$(cat "$rec")"
@@ -1382,7 +1376,7 @@ assert_eq "and no worktree" "$(no_worktree)" none
 # verdict record carries the line as given.
 confirm_repo ":" ":"
 cmark="$(mktemp -d)/ran"
-line="echo ran >>$cmark && :"
+line=": && echo ran >>$cmark"
 cmd=("$line")
 cmd_str="$line"
 confirm_reset
