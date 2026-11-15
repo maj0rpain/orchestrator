@@ -121,6 +121,8 @@
 #     headings stay present and in order
 #   scan_audit_tests  orch-audit-tests has its command file and its seven step
 #     headings in order
+#   scan_capability_fallback  a capability has a row in the host capabilities
+#     reference and a Fallbacks subsection naming a given phrase
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the
 #     report and a Markdown-summary fallback
 #   scan_hand_off_category  an audit skill's Hand off step passes --category for
@@ -3125,19 +3127,34 @@ scan_audit_tests() {
   scan_skill_steps "$r" audit-tests "$audit_tests_skill" "$audit_tests_steps"
   return 0
 }
+# scan_capability_fallback <plugin root> <capability> <phrase> <what the
+# fallback must name>: one line when docs/host-capabilities.md has no row for
+# the capability, one when its Fallbacks have no subsection of that name, and
+# one when that subsection lacks the phrase (case-insensitive), ending in the
+# given words.
+scan_capability_fallback() {
+  local r="$1" cap="$2" phrase="$3" what="$4" doc="docs/host-capabilities.md" fallback flat
+  grep -qF -- "| $cap |" "$r/$doc" 2>/dev/null || echo "$doc: no row for $cap"
+  if ! fallback="$(md_section "$r/$doc" "### $cap" 2>/dev/null)"; then
+    echo "$doc: no fallback for $cap"
+  elif flat="$(flat_text <<<"$fallback")"; ! grep -qiF -- "$phrase" <<<"$flat"; then
+    echo "$doc: the fallback for $cap $what"
+  fi
+  return 0
+}
+# step_names <skill file> <step name> <phrase>: status 0 when the skill's
+# numbered step of that name has a section naming the phrase.
+step_names() {
+  local file="$1" step="$2" phrase="$3" heading section
+  heading="$(numbered_heading "$file" "$step")" &&
+    section="$(md_section "$file" "$heading" 2>/dev/null)" &&
+    grep -qF -- "$phrase" <<<"$(flat_text <<<"$section")"
+}
 # scan_report_capability <plugin root>: one line when docs/host-capabilities.md
 # has no row for opening the report, and one when its Fallbacks have no
 # subsection for it naming a Markdown summary.
 scan_report_capability() {
-  local r="$1" doc="docs/host-capabilities.md" body flat
-  grep -qF -- "| $open_report_capability |" "$r/$doc" 2>/dev/null \
-    || echo "$doc: no row for $open_report_capability"
-  if ! body="$(md_section "$r/$doc" "### $open_report_capability" 2>/dev/null)"; then
-    echo "$doc: no fallback for $open_report_capability"
-  elif flat="$(flat_text <<<"$body")"; ! grep -qiF 'markdown summary' <<<"$flat"; then
-    echo "$doc: the fallback for $open_report_capability gives no Markdown summary"
-  fi
-  return 0
+  scan_capability_fallback "$1" "$open_report_capability" 'markdown summary' 'gives no Markdown summary'
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-audit-tests" "$fixture/commands" "$fixture/docs"
@@ -3258,16 +3275,14 @@ check "orch-audit-docs hands off with --category documentation" \
 # auditor, and one per skill that runs an agent sync command - a sentence saying
 # it runs none is allowed.
 scan_audit_hunt() {
-  local r="$1" name skill hunt heading
+  local r="$1" name skill
   for name in audit-docs audit-code audit-tests; do
     skill="skills/orch-$name/SKILL.md"
     if [ ! -f "$r/$skill" ]; then
       echo "$skill: missing"
       continue
     fi
-    if ! heading="$(numbered_heading "$r/$skill" "Hunt")" ||
-      ! hunt="$(md_section "$r/$skill" "$heading" 2>/dev/null)" ||
-      ! grep -qF 'agent get auditor' <<<"$(flat_text <<<"$hunt")"; then
+    if ! step_names "$r/$skill" Hunt 'agent get auditor'; then
       echo "$skill: the Hunt step does not name agent get auditor"
     fi
     if grep -qF '"$ORCH" agent sync' <<<"$(flat_text "$r/$skill")"; then
@@ -3312,20 +3327,13 @@ check "each audit skill's Hunt step reads agent get auditor and runs no agent sy
 # read as that one section) that does not name Run a subagent pool. Structure
 # only, never a site's wording (ADR-0027).
 scan_subagent_pool() {
-  local r="$1" doc="docs/host-capabilities.md" cap="Run a subagent pool" body site skill step heading
-  grep -qF -- "| $cap |" "$r/$doc" 2>/dev/null || echo "$doc: no row for $cap"
-  if ! body="$(md_section "$r/$doc" "### $cap" 2>/dev/null)"; then
-    echo "$doc: no fallback for $cap"
-  elif ! grep -qiF 'foreground batches' <<<"$(flat_text <<<"$body")"; then
-    echo "$doc: the fallback for $cap names no foreground batches"
-  fi
+  local r="$1" cap="Run a subagent pool" site skill step
+  scan_capability_fallback "$r" "$cap" 'foreground batches' 'names no foreground batches'
   for site in quick-autopilot:"Run one agent per issue" audit-code:Hunt audit-docs:Hunt audit-tests:Hunt; do
     skill="skills/orch-${site%%:*}/SKILL.md" step="${site#*:}"
     if [ ! -f "$r/$skill" ]; then
       echo "$skill: missing"
-    elif ! heading="$(numbered_heading "$r/$skill" "$step")" ||
-      ! body="$(md_section "$r/$skill" "$heading" 2>/dev/null)" ||
-      ! grep -qF "$cap" <<<"$(flat_text <<<"$body")"; then
+    elif ! step_names "$r/$skill" "$step" "$cap"; then
       echo "$skill: the $step step does not name $cap"
     fi
   done

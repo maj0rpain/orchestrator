@@ -182,8 +182,9 @@ session's instructions and tools say. A start the host refuses is made again
 under the next tier; a subagent that did start is never started a second time.
 Subagents already started under an earlier tier keep running: the pool waits
 for each one's report and reads it like any other before the skill's next
-step. The starting skill names the tier the pool ended on: a quick autopilot in
-its closing summary, an audit to the user.
+step, so the quick autopilot's summary lists that issue by the line its planner
+returned. The starting skill names the tier the pool ended on: a quick autopilot
+in its closing summary, an audit to the user.
 
 A subagent started under any tier is still started as the **Start a fresh
 subagent** row and [Agent settings](#agent-settings) say. A tier never swaps

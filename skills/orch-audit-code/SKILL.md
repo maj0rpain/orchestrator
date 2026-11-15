@@ -35,7 +35,8 @@ tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
-Steps here name capabilities (start a fresh subagent, open a report in the
+Steps here name capabilities (start a fresh subagent, run a subagent pool,
+open a report in the
 browser, invoke a skill from a step, ask a multiple-choice question).
 `docs/host-capabilities.md` under the
 plugin root maps each one to your host. Where your host's cell says
@@ -75,7 +76,8 @@ the `model` and `effort` it prints on each start, per **Agent settings** in
 `.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per area
 (see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
 fork, each an `orch-code-auditor`, run as a subagent pool of 4 (host capability
-*Run a subagent pool*, size hint: the area's file count).
+*Run a subagent pool*, size hint: the area's file count; see that row of
+`docs/host-capabilities.md`).
 Each prompt names its area (the source files), the kinds to hunt, the
 repo root, and its own findings file in the temp directory. The auditor has no
 Edit or Bash tool; its brief holds the three kinds, the evidence each needs,
