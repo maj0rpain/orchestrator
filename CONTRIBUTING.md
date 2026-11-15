@@ -145,7 +145,12 @@ module of the concept it serves, whichever modules call it.
 `scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
 note, capture and the like) and calls nothing a noun module defines; its test
 section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
-calls it. The concept modules with no noun, `checkout.sh` (the Checkout module:
+calls it. A GitHub operation is captured through the gh module's pair
+`gh_capture` and `gh_capture_err`, never through bare `capture` or
+`capture_err`: the pair resolves the Repo in the caller's shell first, so that
+shell resolves it once (a subshell that resolves first does so for itself and
+cannot hand the memo back). The concept modules with no noun, `checkout.sh`
+(the Checkout module:
 the walk over every checkout), `filed-finding.sh` (the Filed finding module:
 a filed finding's severities and labels, rendering and parsing its issue body,
 the finding categories, and the input checks `review file` and `audit file`
@@ -413,7 +418,7 @@ scripts/orch/trust.sh         the Trust module, a concept module with no noun: w
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
-scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
+scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the ORCH_GH_ADAPTER hook
 scripts/orch/suite-cost.sh    the suite-cost noun's module, with the ORCH_SUITE_COST_TIMER hook: a test knob like ORCH_GH_ADAPTER, naming a file (the tests' scripts/test/suite_cost_timer_fake.sh) that overrides only the step timing a command
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh

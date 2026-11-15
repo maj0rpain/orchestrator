@@ -63,7 +63,7 @@ timeline_read() {
   TIMELINE_STOP_INDEX="" TIMELINE_STOP_KIND="" TIMELINE_STOP_PHASE="" TIMELINE_STOP_URL=""
   TIMELINE_HANDOFF_INDEX="" TIMELINE_REPLIES=()
   TIMELINE_KIND=() TIMELINE_ARG=() TIMELINE_RETIRED=() TIMELINE_URL=()
-  if ! capture json gh_err adapter_issue_comments_json "$1"; then
+  if ! gh_capture json gh_err adapter_issue_comments_json "$1"; then
     TIMELINE_REASON="$(gh_reason "$gh_err")"
     return 1
   fi

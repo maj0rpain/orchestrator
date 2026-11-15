@@ -48,7 +48,7 @@ review_budget_fallback() {
 # mark a PR ready over checks nobody read.
 ci_probe() {
   local out err rc=0
-  capture out err adapter_pr_checks "$1" "$2" || rc=$?
+  gh_capture out err adapter_pr_checks "$1" "$2" || rc=$?
   ci_classify "$rc" "$out" "$err"
 }
 
@@ -91,10 +91,10 @@ ci_classify() {
 # before calling it. Runs in the current shell, as capture does.
 ci_counted() {
   local _cc_rc=0
-  capture "$1" "$2" adapter_pr_checks "$3" required || _cc_rc=$?
+  gh_capture "$1" "$2" adapter_pr_checks "$3" required || _cc_rc=$?
   [ "$_cc_rc" -eq 0 ] || return "$_cc_rc"
   [ -z "${!1}" ] || return 0
-  capture "$1" "$2" adapter_pr_checks "$3" all
+  gh_capture "$1" "$2" adapter_pr_checks "$3" all
 }
 
 # ci_counted_probe <pr>: ci_probe's classification of the counted checks (see
@@ -282,6 +282,7 @@ no_ci_evidence() {
   if grep -Eq '\.ya?ml$' <<<"$out"; then return 1; fi
   # 2. Required checks, from classic protection or a ruleset. A read that
   # fails is an answer nobody has.
+  repo_resolve || :
   out="$(adapter_branch_required_checks "$base" 2>/dev/null)" || return 1
   [ -z "$out" ] || return 1
   out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
@@ -382,7 +383,7 @@ review_ci_log() {
       *) note "check $name is not a GitHub Actions run - no log to read"; continue ;;
     esac
     err=""
-    if ! capture log err adapter_job_failed_log "$job"; then
+    if ! gh_capture log err adapter_job_failed_log "$job"; then
       note "check $name: the log of job $job could not be read: $(gh_reason "$err")"
       continue
     fi

@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.84
+
+`orch.sh` resolves the Repo once in the shell that resolves it, instead of before every GitHub call. That resolution covers reading `origin` and, for an SSH origin, running `ssh -G`. Every later call in that shell, and in the subshells it forks afterwards, reuses it. GitHub operations are now captured through the gh module's `gh_capture` and `gh_capture_err`, which resolve in the caller's shell before forking. Nothing a user sees changes.
+
 ## 5.2.83
 
 A watcher tick now reads the claims on origin once instead of twice.
