@@ -103,7 +103,17 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 # gets the ordinary message.
 flow_active=0
 state="$(flow_state_file "$root")"
-if flow_state_active "$state"; then flow_active=1; fi
+flow_readable=0 flow_issue="" flow_slug="" flow_phase=""
+if [ -f "$state" ]; then
+  # One read of the issue, slug and phase decides both whether the flow is
+  # active and what to name. A state file that cannot be read is a running flow.
+  if flow_state_get_many "$state" flow_issue=issue flow_slug=slug flow_phase=phase 2>/dev/null; then
+    flow_readable=1
+    [ "$flow_phase" = "done" ] || flow_active=1
+  else
+    flow_active=1
+  fi
+fi
 
 ROOT="$root"
 ready_label="$(triage_label_for ready-for-agent)"
@@ -151,13 +161,6 @@ fi
 flow_branches=""
 confirm_lead="Before you implement anything"
 if [ "$flow_active" = 1 ]; then
-  flow_readable=0 flow_issue="" flow_slug="" flow_phase=""
-  if flow_state_readable "$state"; then
-    flow_readable=1
-    flow_issue="$(flow_state_get "$state" issue)"
-    flow_slug="$(flow_state_get "$state" slug)"
-    flow_phase="$(flow_state_get "$state" phase)"
-  fi
   if [ -n "$flow_phase" ]; then flow_at="at phase $flow_phase"; else flow_at="just started"; fi
   if [ "$flow_readable" = 0 ]; then
     flow_named="a flow is active in this checkout"

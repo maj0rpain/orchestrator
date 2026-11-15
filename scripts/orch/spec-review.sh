@@ -40,11 +40,12 @@ spec_review_begin() {
   esac
   local issue="$1"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
-  if flow_active; then
-    require_state_readable
+  # One jq in all: the entry read of the flow's phase and issue, which also
+  # refuses an unreadable state.json. A done flow holds nothing.
+  if [ -f "$STATE" ]; then
     local phase held
-    state_get_many phase=phase held=issue
-    if [ "$held" = "$issue" ]; then
+    require_state_read phase=phase held=issue
+    if [ "$phase" != "done" ] && [ "$held" = "$issue" ]; then
       case "$phase" in
         spec)
           die "the active flow holds issue #$issue at phase spec - the flow's own spec phase will review it; run $(flow_cmd next)" ;;
@@ -2004,9 +2005,10 @@ spec_review_apply() {
   local flow=""
   if [ -z "$issue" ]; then
     flow=1
-    require_state
-    require_issue issue
-    flow_active \
+    local sr_phase
+    require_state_read issue=issue sr_phase=phase
+    require_value issue "$issue"
+    [ "$sr_phase" != "done" ] \
       || die "the flow on issue #$issue is done - spec-review apply acts only on an active flow's issue; for another issue use --issue <n>"
   fi
 

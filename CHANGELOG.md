@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.87
+
+A command that needs several keys of its checkout's Flow state now reads them in one `jq` at its entry, and hands the values to the helpers it calls, instead of parsing `state.json` once per key and often once more per repeated key: `phase advance` and `phase boundary`, the `spec` ops, `branch create` and `branch sync`, `ticket reclaim`, `pr open`, both redos, the `review` ops, the autopilot ops, `base set`, `init`'s busy check, `archive` and the grilling hook beside an active flow. A required-field read beside no state file now says "no active flow" instead of printing jq's raw "Could not open file" error; every other message, refusal and exit status is unchanged.
+
 ## 5.2.86
 
 The merged-PR close backstop reads only the PRs merged since the oldest issue it may close was created, instead of every merged PR.

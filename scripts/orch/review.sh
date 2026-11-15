@@ -20,15 +20,6 @@ ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 # the key existed, or a value nothing can count.
 readonly DEFAULT_BUDGET=5
 
-# review_budget: prints the flow's review budget from state, through
-# review_budget_fallback. Returns the read's status when state.json cannot be
-# read, never a default in its place.
-review_budget() {
-  local b
-  b="$(state_get budget)" || return
-  review_budget_fallback "$b"
-}
-
 # review_budget_fallback <raw>: prints the budget read from state, or
 # DEFAULT_BUDGET where <raw> is empty or not a number.
 review_budget_fallback() {
@@ -143,21 +134,44 @@ review_record_terminal() {
   [ -n "${text//[[:space:]]/}" ]
 }
 
+# review_record_path <i>: prints the path of iteration <i>'s review record, as
+# `review path` does - numeric check, base 10, the review directory made - and
+# reads no state.
+review_record_path() {
+  local n="$1"
+  case "$n" in ''|*[!0-9]*) die "not an iteration number: $n" ;; esac
+  # Base 10 explicitly: printf reads a zero-padded argument as octal, and
+  # `08` is not a number in base 8.
+  n=$((10#$n))
+  # Flat, and numbered on across every loop the flow runs: one flow, one
+  # trail, and nothing is ever moved aside for a loop that comes later.
+  mkdir -p "$REVIEW_DIR" || die "cannot create the review directory $REVIEW_DIR"
+  printf '%s/iteration-%02d.md\n' "$REVIEW_DIR" "$n"
+}
+
 # review_terminal_record <i>: prints the path of the record iteration <i>'s
 # terminal state is read from - the flat iteration-NN.md, or, when that is gone
 # while a redo review is half-finished (redo_midway), the same record under
 # review/pre-redo-<redo_count>/ if it is there. The classification and its
-# callers' malformed messages both take the path from here.
+# callers' malformed messages both take the path from here. It reads state
+# only on that fallback: issue, slug, branch and redo_count in one many-key
+# read, a failed one counting as no redo in progress.
 review_terminal_record() {
-  local flat retired n
-  flat="$(cmd_review path "$1")" || return 1
-  if [ ! -e "$flat" ] && n="$(redo_midway "$(state_get issue)" "$(state_get slug)")"; then
+  local flat retired n issue slug branch redo_count
+  flat="$(review_record_path "$1")" || return 1
+  if [ ! -e "$flat" ] \
+    && state_get_many_in "$STATE" issue=issue slug=slug branch=branch redo_count=redo_count \
+    && n="$(redo_midway "$issue" "$slug" "$branch" "$redo_count")"; then
     retired="$REVIEW_DIR/pre-redo-$n/${flat##*/}"
     if [ -e "$retired" ]; then printf '%s\n' "$retired"; return 0; fi
   fi
   printf '%s\n' "$flat"
 }
 
+# review_terminal_state <iteration> <budget>: reads neither the iteration nor
+# the budget - the caller's entry read holds both, so a state file that cannot
+# be read is its refusal. Its one read of state is review_terminal_record's
+# fallback.
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
@@ -165,10 +179,10 @@ review_terminal_record() {
 # not a second implementation of it. Prints the classification word on the
 # first line, and for `stop`, the recorded reason on the lines after it; for
 # `malformed`, the one expected-shape line callers quote rather than copy;
-# for `unreadable`, what could not be read - the iteration or the record's
-# path. Exit status is 0 for ready/stop, non-zero for none/pending/
-# interrupted/malformed/unreadable - a single boolean a caller can act on
-# without re-deriving which words count as terminal.
+# for `unreadable`, the record's path, which could not be read. Exit status is
+# 0 for ready/stop, non-zero for none/pending/interrupted/malformed/unreadable
+# - a single boolean a caller can act on without re-deriving which words count
+# as terminal.
 #
 # The section is read as markdown is written: blank lines under the heading
 # are skipped, the first line is trimmed, and `stop` may carry its reason on
@@ -180,16 +194,10 @@ review_terminal_record() {
 # pre-redo-<redo_count>/ (review_terminal_record), so the stopped loop's end
 # stays readable until the redo's closing write.
 review_terminal_state() {
-  require_state
-  local i b path err sec="" line started="" body="" first_raw first rest after s sep
-  # Its callers run it in `$(...) || true`, where errexit is off, so each read
-  # is checked here: a failure answers unreadable, never pending/interrupted.
-  i="$(state_get iteration)" \
-    || { note unreadable; note "cannot read iteration from $STATE"; return 1; }
-  b="$(review_budget)" \
-    || { note unreadable; note "cannot read budget from $STATE"; return 1; }
+  local i="$1" b="$2" path err sec="" line started="" body=""
+  local first_raw first rest after s sep
   if [ "$i" -eq 0 ]; then note none; return 1; fi
-  # The detail is cmd_review path's own last orch: line.
+  # The detail is review_record_path's own last orch: line.
   capture path err review_terminal_record "$i" \
     || { note unreadable; note "${err##*orch: }"; return 1; }
   # A loop can stop short of its budget (a failed base sync goes straight to
@@ -396,7 +404,9 @@ review_ci_log() {
   done <<<"$out"
 }
 
-# review_file <sev> <title> <flag> <value> ...: files a finding as a GitHub
+# review_file <pr> <sev> <title> <flag> <value> ...: <pr> is the flow's recorded
+# PR, from the caller's entry read, checked with require_value after the usage
+# and finding checks. Files a finding as a GitHub
 # issue, its body rendered from its parts by the Filed finding module. Every
 # check - the flags, the severity, the axis, the title, the finding file, the
 # location, the PR's head sha, and the round trip of the rendered body
@@ -404,6 +414,8 @@ review_ci_log() {
 # finding never reaches GitHub rather than surfacing weeks later as "body
 # does not parse" in triage.
 review_file() {
+  local pr_n="$1"
+  shift
   orch_load filed-finding
   local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
@@ -430,7 +442,7 @@ review_file() {
     word_listed "$seen" "$flag" || die "$usage"
   done
 
-  local colour desc category triage n file line body_file pr_n pr sha err
+  local colour desc category triage n file line body_file pr sha err
   is_filed_severity "$severity" \
     || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
   filed_severity_label "$severity" colour desc
@@ -449,7 +461,7 @@ review_file() {
   # The PR's URL and remote head come from GitHub for the flow's recorded PR,
   # before any write: the URL is right on any host, and the remote head is
   # what finding triage scan fetches.
-  require_pr pr_n
+  require_value pr "$pr_n"
   pr_url_head_read "$pr_n" pr sha err \
     || gh_die "read the URL and head of PR #$pr_n, recorded in state" "$err"
   [[ $sha =~ ^[0-9a-fA-F]+$ ]] || die "not a sha: $sha (want a hex commit SHA)"
@@ -745,18 +757,19 @@ review_standards() {
 # `budget` are never written. A failed clear dies (exit 1) naming the report.
 review_resume() {
   [ $# -eq 0 ] || die "usage: orch.sh review resume"
-  require_state
-  local state i path report b
-  state="$(review_terminal_state)" || true
+  local state i path report b budget effective recorded phase active=""
+  require_state_read i=iteration budget=budget recorded=branch phase=phase
+  effective="$(review_budget_fallback "$budget")"
+  state="$(review_terminal_state "$i" "$effective")" || true
   state="${state%%$'\n'*}"
   case "$state" in
     pending|interrupted) ;;
     *) die "nothing to resume: review terminal says ${state:-nothing}" ;;
   esac
   b="$(checkout_branch_or_rebasing "$ROOT")" || die "review resume: the current checkout is on no branch - nothing was discarded"
-  discard_own_branch_work "review resume" "$b"
-  i="$(state_get iteration)" || die "cannot read iteration from $STATE"
-  path="$(cmd_review path "$i")" || exit 1
+  [ "$phase" = "done" ] || active=1
+  discard_own_branch_work "review resume" "$b" "$recorded" "$active"
+  path="$(review_record_path "$i")" || exit 1
   if [ ! -f "$path" ]; then
     for report in "${path%.md}"-*.md; do
       [ -e "$report" ] || [ -L "$report" ] || continue
@@ -775,18 +788,17 @@ cmd_review() {
   shift || true
   case "$op" in
     begin)
-      require_state
-      local n budget prior prior_path sec
-      prior="$(state_get iteration)"
+      local n budget budget_raw prior prior_path sec
+      require_state_read prior=iteration budget_raw=budget
       n=$(( prior + 1 ))
-      budget="$(review_budget)"
+      budget="$(review_budget_fallback "$budget_raw")"
       [ "$n" -le "$budget" ] || \
         die "budget of $budget iterations spent - stop the loop and report, do not start another"
       # A loop's first iteration - iteration 0, or the one after a record with a
       # Terminal state - renews the loop's flake rerun, in the write that
       # records the iteration; resume never gets here.
       if [ "$prior" -eq 0 ] ||
-        { prior_path="$(cmd_review path "$prior")" && review_record_terminal "$prior_path" sec; }; then
+        { prior_path="$(review_record_path "$prior")" && review_record_terminal "$prior_path" sec; }; then
         state_write_many iteration "$n" flake_rerun_used false
       else
         state_write iteration "$n"
@@ -794,34 +806,32 @@ cmd_review() {
       note "$n"
       ;;
     path)
-      require_state
-      [ $# -le 1 ] || die "usage: orch.sh review path [iteration]"
       local n
-      n="${1:-$(state_get iteration)}"
-      case "$n" in ''|*[!0-9]*) die "not an iteration number: $n" ;; esac
-      # Base 10 explicitly: printf reads a zero-padded argument as octal, and
-      # `08` is not a number in base 8.
-      n=$((10#$n))
-      # Flat, and numbered on across every loop the flow runs: one flow, one
-      # trail, and nothing is ever moved aside for a loop that comes later.
-      mkdir -p "$REVIEW_DIR" || die "cannot create the review directory $REVIEW_DIR"
-      printf '%s/iteration-%02d.md\n' "$REVIEW_DIR" "$n"
+      if [ $# -eq 0 ] || { [ $# -eq 1 ] && [ -z "$1" ]; }; then
+        require_state_read n=iteration
+      else
+        require_state
+        [ $# -le 1 ] || die "usage: orch.sh review path [iteration]"
+        n="$1"
+      fi
+      review_record_path "$n"
       ;;
     file)
-      require_state
-      review_file "$@"
+      local file_pr
+      require_state_read file_pr=pr
+      review_file "$file_pr" "$@"
       ;;
     ready)
-      require_state
-      local pr
-      require_pr pr
+      local pr issue
+      require_state_read pr=pr issue=issue
+      require_value pr "$pr"
       ci_ready_gate --hint "the flow stays in review" "$pr"
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
       gh_or_die --hint "the flow stays in review" "mark PR #$pr ready" \
         adapter_pr_ready "$pr"
-      phase_finish "done" "marked PR #$pr ready"
+      phase_finish "done" "marked PR #$pr ready" "$issue"
       note "$pr"
       # stdout stays the PR number alone; the pointer goes to stderr. A side
       # checkout outlives its PR, so the human is told how to clear it once
@@ -831,13 +841,13 @@ cmd_review() {
       fi
       ;;
     ci)
-      require_state
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
       local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local commits="" no_ci=0
+      require_state_read pr=pr
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-      require_pr pr
+      require_value pr "$pr"
       started="$(date +%s)"
       # Two clocks: the timeout counts from this call, the grace from the push.
       # By the time the loop ends the fixer's last push is usually minutes old,
@@ -923,9 +933,10 @@ cmd_review() {
     rerun) review_rerun "$@" ;;
     resume) review_resume "$@" ;;
     terminal)
-      require_state
+      local ti tb
+      require_state_read ti=iteration tb=budget
       [ $# -eq 0 ] || die "usage: orch.sh review terminal"
-      review_terminal_state
+      review_terminal_state "$ti" "$(review_budget_fallback "$tb")"
       ;;
     retire)
       require_state

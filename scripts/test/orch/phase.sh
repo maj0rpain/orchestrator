@@ -293,3 +293,31 @@ assert_status "the re-run succeeds" "$st" 0
 assert_eq "recording the implement phase" "$("$ORCH" state get phase)" implement
 restore_suite_env
 
+
+# --- phase advance and boundary read the flow's state once (#3063) -----------
+# The entry read of phase, issue, branch, base_sha and pr is one jq; the handoff
+# check's own read of the state is the only other one on the path.
+echo
+echo "phase advance and boundary state reads"
+fake_flow phasereads
+export ORCHESTRATOR_HOST=claude
+"$ORCH" state set issue 7 >/dev/null
+complete_handoff "$("$ORCH" handoff path implement)"
+state_fixture phase implement
+state_fixture branch orch/7-phasereads
+state_fixture base_sha abc1234
+state_fixture pr null
+complete_handoff "$("$ORCH" handoff path review)"
+pr_jq="$(counting_bin jq)"
+out="$(PATH="$pr_jq:$PATH" "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "advance out of implement with no PR refuses" "$st" 1
+assert_eq "advance out of implement starts jq twice in all" "$(counting_starts "$pr_jq" jq)" "2"
+: >"$pr_jq/jq.log"
+PATH="$pr_jq:$PATH" "$ORCH" phase boundary >/dev/null 2>&1
+assert_eq "boundary starts jq once" "$(counting_starts "$pr_jq" jq)" "1"
+state_truncate
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_state_unreadable "phase advance" 1 "$out" "$st"
+out="$("$ORCH" phase boundary 2>&1)"; st=$?
+assert_state_unreadable "phase boundary" 1 "$out" "$st"
+restore_suite_env

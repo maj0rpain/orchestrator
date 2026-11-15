@@ -211,12 +211,11 @@ assert_eq "printing 15's directory" "$out" "$top/.orchestrator/spec-review/15/"
 assert_eq "leaving 14's directory alone" "$(cat "$sr_dir/spec.md" 2>&1)" "keep"
 assert_eq "state.json unchanged by a pass" "$(cksum <"$sr_state")" "$before"
 
-# The one-jq read of phase and issue: flow_active, require_state_readable and
-# the multi-key read each start jq once.
+# The one-jq read of phase and issue: the entry read starts jq once.
 sr_flow implement 15; sr_seed
 sr_jq="$(counting_bin jq)"
 PATH="$sr_jq:$PATH" "$ORCH" spec-review begin 14 >/dev/null 2>&1
-assert_eq "begin beside an active flow starts jq three times in all" "$(counting_starts "$sr_jq" jq)" "3"
+assert_eq "begin beside an active flow starts jq once in all" "$(counting_starts "$sr_jq" jq)" "1"
 
 sr_flow "done" 14; sr_seed
 before="$(cksum <"$sr_state")"
@@ -3320,4 +3319,21 @@ fresh_flow srtrunc
 state_truncate
 out="$("$ORCH" spec-review begin 14 2>&1)"; st=$?
 assert_state_unreadable "spec-review begin" 1 "$out" "$st"
+d="$(mktemp -d)"
+out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 2>&1)"; st=$?
+assert_state_unreadable "spec-review apply" 1 "$out" "$st"
+rm -rf "$d"
+restore_suite_env
+
+# --- spec-review apply in a flow reads the state once (#3063) -----------------
+echo
+echo "spec-review apply state reads"
+fresh_flow srapplyreads
+"$ORCH" state set issue 14 >/dev/null
+state_fixture phase "done"
+d="$(mktemp -d)"
+sr_jq="$(counting_bin jq)"
+PATH="$sr_jq:$PATH" "$ORCH" spec-review apply "$d" recommended --round 1/2 >/dev/null 2>&1
+assert_eq "apply on a done flow starts jq once" "$(counting_starts "$sr_jq" jq)" "1"
+rm -rf "$d"
 restore_suite_env
