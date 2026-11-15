@@ -119,19 +119,20 @@ spec_review_one_line() {
   printf '%s' "$out"
 }
 
-# spec_review_item_check <index>: dies, naming the item's header line, unless
-# the item carries what its recommendation needs.
+# spec_review_item_check <index>: reports, naming the item's header line, each
+# part the item lacks that its recommendation needs - a content violation (see
+# spec_review_content), so every missing part is named.
 spec_review_item_check() {
   local i="$1" line="${SR_IT_LINE[$1]}" n="${SR_IT_N[$1]}" opt fd cm opts=0 has_find="" has_comment="" unapplied_hint=""
   for opt in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
     [ "${SR_OP_ITEM[$opt]}" = "$i" ] || continue
     opts=$((opts + 1))
     [ -n "${SR_OP_SUMMARY[$opt]+x}" ] \
-      || spec_review_batch_die "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ summary"
+      || spec_review_content "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ summary"
     unapplied_hint=""
     [ "${SR_OP_LETTER[$opt]}" = "${SR_IT_ARG[$i]}" ] || unapplied_hint=" - an option not recommended still carries the edit it would make"
     [ -n "${SR_OP_REPLACE[$opt]+x}" ] \
-      || spec_review_batch_die "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ anchor/@@ replace/@@ end block$unapplied_hint"
+      || spec_review_content "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ anchor/@@ replace/@@ end block$unapplied_hint"
   done
   for fd in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
     [ "${SR_FD_ITEM[$fd]}" != "$i" ] || has_find=1
@@ -141,42 +142,75 @@ spec_review_item_check() {
   done
   case "${SR_IT_REC[$i]}" in
     apply|decline)
-      [ -n "${SR_IT_SUMMARY[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ summary"
+      [ -n "${SR_IT_SUMMARY[$i]+x}" ] || spec_review_content "$line" "item $n has no @@ summary"
       unapplied_hint=""
       [ "${SR_IT_REC[$i]}" != decline ] || unapplied_hint=" - a decline item still carries the edit it declines"
-      [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ anchor/@@ replace/@@ end block$unapplied_hint" ;;
+      [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_content "$line" "item $n has no @@ anchor/@@ replace/@@ end block$unapplied_hint" ;;
     decision)
-      [ "$opts" -ge 2 ] || spec_review_batch_die "$line" "decision item $n needs at least two @@ option blocks"
+      [ "$opts" -ge 2 ] || spec_review_content "$line" "decision item $n needs at least two @@ option blocks"
       [ -n "$(spec_review_option_index "$i" "${SR_IT_ARG[$i]}")" ] \
-        || spec_review_batch_die "$line" "decision item $n recommends option ${SR_IT_ARG[$i]}, which it does not have" ;;
+        || spec_review_content "$line" "decision item $n recommends option ${SR_IT_ARG[$i]}, which it does not have" ;;
     resolved)
-      [ -n "${SR_IT_RESOLVED[$i]+x}" ] || spec_review_batch_die "$line" "resolved item $n has no @@ resolved-by line" ;;
+      [ -n "${SR_IT_RESOLVED[$i]+x}" ] || spec_review_content "$line" "resolved item $n has no @@ resolved-by line" ;;
   esac
   if [ "${SR_IT_GROUP[$i]}" = consolidation ]; then
-    [ -n "$has_comment" ] || spec_review_batch_die "$line" "consolidation item $n cites no @@ comment"
+    [ -n "$has_comment" ] || spec_review_content "$line" "consolidation item $n cites no @@ comment"
   else
-    [ -n "$has_find" ] || spec_review_batch_die "$line" "item $n cites no @@ finding"
+    [ -n "$has_find" ] || spec_review_content "$line" "item $n cites no @@ finding"
   fi
   [ "${SR_IT_MARK[$i]}" != material ] || [ -n "${SR_IT_WHY[$i]+x}" ] \
-    || spec_review_batch_die "$line" "item $n has no @@ why"
+    || spec_review_content "$line" "item $n has no @@ why"
 }
 
 # spec_review_batch_die <line> <message>: a malformed batch file, refused
 # naming the line.
-spec_review_batch_die() { die "batch.md line $1: $2"; }
+# It is a structure violation: any content violations collected before it are
+# reported first (see spec_review_die).
+spec_review_batch_die() { spec_review_die "batch.md line $1: $2"; }
+
+# Content violations: a check run (SR_COLLECT set) records each one in
+# SR_VIOLATIONS and goes on; any other run - apply - dies on the first, as it
+# always did. A structure violation, or any later die, reports what was
+# collected first.
+SR_COLLECT=""
+SR_VIOLATIONS=()
+
+# spec_review_collect <message>: records <message> as a violation when
+# collecting, else dies with it.
+spec_review_collect() {
+  if [ -n "$SR_COLLECT" ]; then
+    SR_VIOLATIONS[${#SR_VIOLATIONS[@]}]="$1"
+  else
+    die "$1"
+  fi
+}
+
+# spec_review_content <line> <message>: a content violation of batch.md.
+spec_review_content() { spec_review_collect "batch.md line $1: $2"; }
+
+# spec_review_flush: warns each collected violation, oldest first, and clears
+# them.
+spec_review_flush() {
+  local v
+  for v in ${SR_VIOLATIONS[@]+"${SR_VIOLATIONS[@]}"}; do warn "$v"; done
+  SR_VIOLATIONS=()
+}
+
+# spec_review_die <message>: dies with <message> after the collected violations.
+spec_review_die() { spec_review_flush; die "$*"; }
 
 # The most words a batch.md @@ summary may hold (#1352), so each line of the
 # compact view stays short.
 SPEC_REVIEW_SUMMARY_WORDS=30
 
-# spec_review_summary_cap <line> <what> <summary>: dies, naming <line> and
+# spec_review_summary_cap <line> <what> <summary>: reports, naming <line> and
 # <what> - `item <n>` or `item <n> option <L>` - when <summary> holds more
 # than SPEC_REVIEW_SUMMARY_WORDS words, each a run of non-whitespace.
 spec_review_summary_cap() {
   local words
   read -r -a words <<<"$3"
   [ "${#words[@]}" -le "$SPEC_REVIEW_SUMMARY_WORDS" ] \
-    || spec_review_batch_die "$1" "$2's @@ summary has ${#words[@]} words, more than $SPEC_REVIEW_SUMMARY_WORDS"
+    || spec_review_content "$1" "$2's @@ summary has ${#words[@]} words, more than $SPEC_REVIEW_SUMMARY_WORDS"
 }
 
 # spec_review_mark_check <line> <n> <rec> <mark>: dies, naming <line>,
@@ -504,7 +538,7 @@ spec_review_batch_parse() {
   [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
   for lens in $SPEC_REVIEW_LENSES; do
     [ -n "$(array_index SR_LENS_NAME "$lens")" ] \
-      || die "batch.md: no @@ lens line for $lens - every lens in the table has one"
+      || spec_review_die "batch.md: no @@ lens line for $lens - every lens in the table has one"
   done
 }
 
@@ -513,37 +547,37 @@ spec_review_batch_parse() {
 # the single line `@@ none` - dying on a missing file or a malformed line.
 spec_review_lens_parse() {
   local f="$1/lens-$2.md" line lineno=0 k=0 cur=-1 none="" rest
-  [ -f "$f" ] || die "lens-$2.md not found in $1 - lens $2 is marked ran in batch.md"
+  [ -f "$f" ] || spec_review_die "lens-$2.md not found in $1 - lens $2 is marked ran in batch.md"
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     line="${line%$'\r'}"
     case "$line" in
       '@@ none')
         [ "$k" -eq 0 ] && [ -z "$none" ] \
-          || die "lens-$2.md line $lineno: @@ none stands alone in its file"
+          || spec_review_die "lens-$2.md line $lineno: @@ none stands alone in its file"
         none=1 ;;
       '@@ finding '*)
-        [ -z "$none" ] || die "lens-$2.md line $lineno: @@ none stands alone in its file"
+        [ -z "$none" ] || spec_review_die "lens-$2.md line $lineno: @@ none stands alone in its file"
         rest="${line#@@ finding }"
         [ "$cur" -lt 0 ] || [ -n "$(trim "${SR_LF_TEXT[$cur]}")" ] \
-          || die "lens-$2.md line $lineno: finding $k is empty"
+          || spec_review_die "lens-$2.md line $lineno: finding $k is empty"
         [ "$rest" = "$((k + 1))" ] \
-          || die "lens-$2.md line $lineno: expected @@ finding $((k + 1)), got '$line'"
+          || spec_review_die "lens-$2.md line $lineno: expected @@ finding $((k + 1)), got '$line'"
         k=$((k + 1)); cur="${#SR_LF_LENS[@]}"
         SR_LF_LENS[cur]="$2"; SR_LF_K[cur]="$k"; SR_LF_TEXT[cur]="" ;;
-      '@@ '*|'@@') die "lens-$2.md line $lineno: unknown line '$line' (want @@ finding <k> or @@ none)" ;;
+      '@@ '*|'@@') spec_review_die "lens-$2.md line $lineno: unknown line '$line' (want @@ finding <k> or @@ none)" ;;
       *)
         if [ "$cur" -ge 0 ]; then
           SR_LF_TEXT[cur]="${SR_LF_TEXT[$cur]}${SR_LF_TEXT[$cur]:+$'\n'}$line"
         elif [ -n "$(trim "$line")" ]; then
-          die "lens-$2.md line $lineno: text before the first @@ finding"
+          spec_review_die "lens-$2.md line $lineno: text before the first @@ finding"
         fi ;;
     esac
   done <"$f"
   [ "$cur" -lt 0 ] || [ -n "$(trim "${SR_LF_TEXT[$cur]}")" ] \
-    || die "lens-$2.md line $lineno: finding $k is empty"
+    || spec_review_die "lens-$2.md line $lineno: finding $k is empty"
   [ "$k" -gt 0 ] || [ -n "$none" ] \
-    || die "lens-$2.md holds no @@ finding and no @@ none"
+    || spec_review_die "lens-$2.md holds no @@ finding and no @@ none"
 }
 
 # spec_review_finding_text <lens> <k>: the k-th finding of <lens>'s file.
@@ -559,27 +593,32 @@ spec_review_finding_text() {
 # spec_review_findings_check: dies, naming the batch line, on a citation of a
 # lens that did not run or past its file's count of findings, and on an item
 # in a lens's group when that lens did not run, then on a finding of a lens that
-# ran which no item cites, naming every one at once (#1914).
+# ran which no item cites, naming every one at once (#1914). A check collects
+# each (see spec_review_collect); apply dies on the first.
 spec_review_findings_check() {
   local j l count lf it lens uncited="" cited
   for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
     l="$(array_index SR_LENS_NAME "${SR_FD_LENS[$j]}")"
-    spec_review_lens_known "${SR_FD_LENS[$j]}" \
-      || spec_review_batch_die "${SR_FD_LINE[$j]}" "unknown lens '${SR_FD_LENS[$j]}'"
-    [ "${SR_LENS_STATE[$l]}" = ran ] \
-      || spec_review_batch_die "${SR_FD_LINE[$j]}" "cites lens ${SR_FD_LENS[$j]}, which did not run"
+    if ! spec_review_lens_known "${SR_FD_LENS[$j]}"; then
+      spec_review_content "${SR_FD_LINE[$j]}" "unknown lens '${SR_FD_LENS[$j]}'"
+      continue
+    fi
+    if [ "${SR_LENS_STATE[$l]}" != ran ]; then
+      spec_review_content "${SR_FD_LINE[$j]}" "cites lens ${SR_FD_LENS[$j]}, which did not run"
+      continue
+    fi
     count=0
     for lf in ${SR_LF_LENS[@]+"${!SR_LF_LENS[@]}"}; do
       [ "${SR_LF_LENS[$lf]}" != "${SR_FD_LENS[$j]}" ] || count=$((count + 1))
     done
     [ "${SR_FD_K[$j]}" -le "$count" ] \
-      || spec_review_batch_die "${SR_FD_LINE[$j]}" "cites finding ${SR_FD_K[$j]} of lens ${SR_FD_LENS[$j]}, but lens-${SR_FD_LENS[$j]}.md holds $count"
+      || spec_review_content "${SR_FD_LINE[$j]}" "cites finding ${SR_FD_K[$j]} of lens ${SR_FD_LENS[$j]}, but lens-${SR_FD_LENS[$j]}.md holds $count"
   done
   for it in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     spec_review_lens_known "${SR_IT_GROUP[$it]}" || continue
     l="$(array_index SR_LENS_NAME "${SR_IT_GROUP[$it]}")"
     [ "${SR_LENS_STATE[$l]}" = ran ] \
-      || spec_review_batch_die "${SR_IT_LINE[$it]}" "item ${SR_IT_N[$it]} is in group ${SR_IT_GROUP[$it]}, which did not run"
+      || spec_review_content "${SR_IT_LINE[$it]}" "item ${SR_IT_N[$it]} is in group ${SR_IT_GROUP[$it]}, which did not run"
   done
   for lf in ${SR_LF_LENS[@]+"${!SR_LF_LENS[@]}"}; do
     lens="${SR_LF_LENS[$lf]}"
@@ -590,7 +629,7 @@ spec_review_findings_check() {
     [ -n "$cited" ] || uncited="${uncited:+$uncited, }$lens ${SR_LF_K[$lf]}"
   done
   [ -z "$uncited" ] \
-    || die "batch.md leaves findings uncited: $uncited - every lens finding goes in the batch, if only as a recommend-decline item"
+    || spec_review_collect "batch.md leaves findings uncited: $uncited - every lens finding goes in the batch, if only as a recommend-decline item"
 }
 
 # spec_review_answer_tokens <answer> <array-var>: an Other-list answer split
@@ -803,7 +842,8 @@ spec_review_anchor_visit() {
 # the lenses that ran, checks the citations, takes <answer> (see
 # spec_review_answer), and applies every anchor it accepts, in batch order, to
 # <body-file>'s text: SR_FETCHED holds the body as read, SR_TEXT the body
-# edited. Grammar, lens and citation errors die on the first. Every anchor is
+# edited. Apply dies on the first grammar, lens or citation error; check
+# collects them (see spec_review_collect). Every anchor is
 # visited (see spec_review_anchor_visit) and counted into SR_ANCHOR_COUNT -
 # the ones the answer declines checked on their own against SR_FETCHED - and
 # each problem, naming its `@@ anchor` line, is appended to SR_PROBLEMS, the
@@ -818,12 +858,14 @@ spec_review_validate() {
   done
   spec_review_findings_check
   spec_review_answer "$answer"
-  file_read SR_FETCHED "$body" || die "could not read $body - nothing written"
+  file_read SR_FETCHED "$body" || spec_review_die "could not read $body - nothing written"
   SR_TEXT="$SR_FETCHED"
   SR_PROBLEMS=(); SR_ANCHOR_COUNT=0
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_IT_REC[$i]}" in
       apply|decline)
+        # An item reported as having no anchor block has nothing to visit.
+        [ -n "${SR_IT_REPLACE[$i]+x}" ] || continue
         accepted=""
         [ "${SR_DISP[$i]}" != applied ] || accepted=1
         spec_review_anchor_visit "$accepted" "batch.md line ${SR_IT_ANCHOR_LINE[$i]}: item ${SR_IT_N[$i]}" \
@@ -831,6 +873,7 @@ spec_review_validate() {
       decision)
         for opt in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
           [ "${SR_OP_ITEM[$opt]}" = "$i" ] || continue
+          [ -n "${SR_OP_REPLACE[$opt]+x}" ] || continue
           accepted=""
           [ "${SR_DISP[$i]}" != taken ] || [ "${SR_TAKEN[$i]}" != "${SR_OP_LETTER[$opt]}" ] || accepted=1
           spec_review_anchor_visit "$accepted" \
@@ -946,17 +989,21 @@ spec_review_prompt() {
 # warns each, one `orch: ` line apiece, and exits 1; else returns.
 spec_review_problems_exit() {
   local p
-  [ "${#SR_PROBLEMS[@]}" -gt 0 ] || return 0
-  for p in "${SR_PROBLEMS[@]}"; do warn "$p"; done
+  [ "${#SR_PROBLEMS[@]}" -gt 0 ] || [ "${#SR_VIOLATIONS[@]}" -gt 0 ] || return 0
+  spec_review_flush
+  for p in ${SR_PROBLEMS[@]+"${SR_PROBLEMS[@]}"}; do warn "$p"; done
   exit 1
 }
 
 # spec-review check <dir>: the round's batch validated as apply would take the
 # all answer - every anchor checked, the recommended options in the dry run -
 # against <dir>/spec.fetched.md when it exists, else <dir>/spec.md. Writes
-# only <dir>/view.md, touches no GitHub, reads no flow state. Grammar, lens and
-# citation errors stop at the first; every anchor problem is reported, one
-# `orch: ` line each, then exit 1, leaving any earlier view.md as it was. A
+# only <dir>/view.md, touches no GitHub, reads no flow state. Every violation
+# it can
+# stand behind is reported in one run, one `orch: ` line each - content
+# violations, citation errors, then anchor problems; a structure violation or a
+# malformed lens file stops the run after the lines collected before it. Then
+# exit 1, leaving any earlier view.md as it was. A
 # clean batch prints its view on stdout - see spec_review_view - saves it to
 # <dir>/view.md (see spec_review_view_save), and prints a one-line summary on
 # stderr, ending in spec_review_nudge - or, with --unattended, in
@@ -991,6 +1038,7 @@ spec_review_check() {
   dir="${dir%/}"
   local body
   [ -d "$dir" ] || die "no such directory: $dir"
+  SR_COLLECT=1; SR_VIOLATIONS=()
   if [ -n "$tickets" ]; then
     orch_load ticket
     spec_review_tickets_check "$dir" "$unattended"
@@ -1330,7 +1378,11 @@ spec_review_changelog() {
 
 # spec_review_tickets_die <line> <message>: a malformed tickets.md, refused
 # naming the line.
-spec_review_tickets_die() { die "tickets.md line $1: $2"; }
+spec_review_tickets_die() { spec_review_die "tickets.md line $1: $2"; }
+
+# spec_review_tickets_content <line> <message>: a content violation of
+# tickets.md (see spec_review_collect).
+spec_review_tickets_content() { spec_review_collect "tickets.md line $1: $2"; }
 
 # spec_review_ticket_item_check <index>: dies, naming the item's header line,
 # unless a text item carries its summary and its anchor/replace block.
@@ -1338,9 +1390,9 @@ spec_review_ticket_item_check() {
   case "${ST_KIND[$1]}" in
     ticket|section)
       [ -n "${ST_SUMMARY[$1]+x}" ] \
-        || spec_review_tickets_die "${ST_LINE[$1]}" "item ${ST_N[$1]} has no @@ summary"
+        || spec_review_tickets_content "${ST_LINE[$1]}" "item ${ST_N[$1]} has no @@ summary"
       [ -n "${ST_REPLACE[$1]+x}" ] \
-        || spec_review_tickets_die "${ST_LINE[$1]}" "item ${ST_N[$1]} has no @@ anchor/@@ replace/@@ end block" ;;
+        || spec_review_tickets_content "${ST_LINE[$1]}" "item ${ST_N[$1]} has no @@ anchor/@@ replace/@@ end block" ;;
   esac
 }
 
@@ -1526,6 +1578,8 @@ SR_TICKET_ANCHOR_COUNT=0
 # caller reacts to SR_PROBLEMS itself.
 spec_review_ticket_item_offline() {
   local i="$1" body_var="$2" batch_body="$3" dir="$4" j at problem="" have="" accepted=""
+  # A text item reported as having no anchor block has nothing to check.
+  case "${ST_KIND[$i]}" in ticket|section) [ -n "${ST_REPLACE[$i]+x}" ] || return 0 ;; esac
   local what="ticket item ${ST_N[$1]}"
   at="tickets.md line ${ST_LINE[$i]}: "
   [ "${ST_DISP[$i]}" != applied ] || accepted=1
@@ -1614,8 +1668,9 @@ spec_review_tickets_follow() {
 # spec_review_tickets_check <dir> [<unattended>]: check --tickets -
 # <dir>/tickets.md validated as apply --tickets would take the all answer,
 # against the ticket copies and <dir>/spec.md, with nothing written but
-# <dir>/view.md and no GitHub read. A grammar error stops at the first; every
-# other problem is reported, one `orch: ` line each, then exit 1. A clean file
+# <dir>/view.md and no GitHub read. A structure violation stops the run after
+# the content violations before it; otherwise every problem is reported, one
+# `orch: ` line each, content violations first, then exit 1. A clean file
 # prints its view on stdout - see spec_review_tickets_view - saves it to
 # <dir>/view.md, and prints a one-line summary on stderr ending in
 # spec_review_nudge, or in spec_review_unattended_tail when <unattended> is

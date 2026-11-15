@@ -2337,6 +2337,72 @@ check_refused src "several bad anchors" "$d" \
 orch: batch.md line 18: item 2: its anchor matches more than one place in the body
 orch: batch.md line 36: item 3 option B: its anchor matches no text in the body"
 
+# One run reports every violation it can stand behind (#3456): content
+# violations item by item, then citation errors, the uncited-findings line and
+# anchor problems; a structure violation stops it after what came before.
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w31/; 35s/.*/@@ summary $src_w31/" "$d/batch.md"
+check_refused src "two over-long summaries, an item's and an option's" "$d" \
+  "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30
+orch: batch.md line 35: item 3 option B's @@ summary has 31 words, more than 30"
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w31/; 23d" "$d/batch.md"
+sed -i '16s/.*/@@ finding consistency 2/; 10s/.*/Nowhere./' "$d/batch.md"
+check_refused src "an over-long summary, an incomplete item, a bad citation and a bad anchor" "$d" \
+  "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30
+orch: batch.md line 15: item 2 has no @@ why
+orch: batch.md line 16: cites finding 2 of lens consistency, but lens-consistency.md holds 1
+orch: batch.md leaves findings uncited: consistency 1 - every lens finding goes in the batch, if only as a recommend-decline item
+orch: batch.md line 9: item 1: its anchor matches no text in the body"
+d="$(src_dir)"
+sed -i '16s/.*/@@ finding consistency 2/; 42s/.*/@@ finding testability 3/' "$d/batch.md"
+check_refused src "two bad citations and an uncited finding, then the anchors" "$d" \
+  "orch: batch.md line 16: cites finding 2 of lens consistency, but lens-consistency.md holds 1
+orch: batch.md line 42: cites finding 3 of lens testability, but lens-testability.md holds 2
+orch: batch.md leaves findings uncited: consistency 1, testability 2 - every lens finding goes in the batch, if only as a recommend-decline item"
+d="$(src_dir)"
+sed -i '8,13d' "$d/batch.md"
+sed -i '6s/.*/@@ item 1 fidelity apply minor\n@@ finding fidelity 1/' "$d/batch.md"
+check_refused src "an item with neither summary nor anchor block gives two lines" "$d" \
+  "orch: batch.md line 6: item 1 has no @@ summary
+orch: batch.md line 6: item 1 has no @@ anchor/@@ replace/@@ end block"
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w31/; 23s/.*/@@ bogus/" "$d/batch.md"
+check_refused src "a structure violation after a content violation prints both" "$d" \
+  "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30
+orch: batch.md line 23: unknown line '@@ bogus'"
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w31/; 2d" "$d/batch.md"
+check_refused src "a missing @@ lens line after a content violation prints both" "$d" \
+  "orch: batch.md line 16: item 2's @@ summary has 31 words, more than 30
+orch: batch.md: no @@ lens line for consistency - every lens in the table has one"
+d="$(src_dir)"
+sed -i '7s/.*/@@ bogus/' "$d/batch.md"
+sed -i "17s/.*/@@ summary $src_w31/" "$d/batch.md"
+check_refused src "a structure violation first prints only itself" "$d" "orch: batch.md line 7: unknown line '@@ bogus'"
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w31/" "$d/batch.md"
+printf 'preamble\n@@ finding 1\nx\n' >"$d/lens-consistency.md"
+check_refused src "a malformed lens file after a content violation prints both" "$d" \
+  "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30
+orch: lens-consistency.md line 1: text before the first @@ finding"
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w31/" "$d/batch.md"
+printf 'old view\n' >"$d/view.md"
+src "$d" --full 1 2
+assert_eq "check --full on a bad batch reports the same line" "$err" \
+  "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
+assert_eq "a failed check leaves an earlier view.md" "$(cat "$d/view.md")" "old view"
+assert_eq "and prints nothing on stdout" "$out" ""
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w31/; 23d" "$d/batch.md"
+cp "$d/spec.md" "$d/spec.before"
+sra "$d" recommended
+assert_status "apply on a content-violating batch refuses" "$st" 1
+assert_eq "with the one line it prints today" "$out" \
+  "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
+assert_eq "and writes nothing" "$(cat "$d/spec.md")" "$(cat "$d/spec.before")"
+
 # Grammar: the first error only.
 d="$(src_dir)"
 sed -i '7s/.*/@@ bogus/; 16s/.*/@@ bogus/' "$d/batch.md"
@@ -2346,7 +2412,8 @@ check_refused src "two grammar errors" "$d" "orch: batch.md line 7: unknown line
 d="$(src_dir)"
 sed -i '42s/.*/@@ finding testability 3/' "$d/batch.md"
 check_refused src "a citation past its lens file's count" "$d" \
-  "orch: batch.md line 42: cites finding 3 of lens testability, but lens-testability.md holds 2"
+  "orch: batch.md line 42: cites finding 3 of lens testability, but lens-testability.md holds 2
+orch: batch.md leaves findings uncited: testability 2 - every lens finding goes in the batch, if only as a recommend-decline item"
 d="$(src_dir)"
 printf 'preamble\n@@ finding 1\nx\n' >"$d/lens-consistency.md"
 check_refused src "a malformed lens file" "$d" \
@@ -3008,7 +3075,28 @@ check_refused srct "an unblock edge absent" "$d" \
 
 assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
 assert_contains "help names the file each check error names a line of" "$("$ORCH" help | tr -s ' \n' '  ')" \
-  "Exit 1 with one orch: line per error, each naming its batch.md or lens-<name>.md line where it has one - the first grammar error only"
+  "Exit 1 with one orch: line per error, each naming its batch.md or lens-<name>.md line where it has one - every violation it can stand behind in one run; a structure violation stops it"
+
+# check --tickets collects too (#3456): content violations first, then the
+# anchor problems; an incomplete item's anchor is not checked; a structure
+# violation stops the run after the content violations before it.
+d="$(srct_dir)"
+sed -i '14,18d; 3d' "$d/tickets.md"
+printf '@@ item 5 ticket 20 apply\n@@ summary #20 again\n@@ anchor\nNowhere.\n@@ replace\nSomewhere.\n@@ end\n' >>"$d/tickets.md"
+check_refused srct "two incomplete items and an anchor problem" "$d" \
+  "orch: tickets.md line 2: item 1 has no @@ summary
+orch: tickets.md line 11: item 4 has no @@ anchor/@@ replace/@@ end block
+orch: tickets.md line 16: ticket item 5 (#20): its anchor matches no text in the body"
+d="$(srct_dir)"
+sed -i '3d' "$d/tickets.md"
+printf '@@ bogus\n' >>"$d/tickets.md"
+check_refused srct "a structure violation after an incomplete item prints both" "$d" \
+  "orch: tickets.md line 2: item 1 has no @@ summary
+orch: tickets.md line 19: unknown line '@@ bogus'"
+d="$(srct_dir)"
+sed -i '3d' "$d/tickets.md"
+srct "$d"
+assert_eq "a failed check --tickets prints nothing on stdout" "$out" ""
 restore_suite_env
 
 # Block lines that read as grammar are escaped with a leading backslash (#1945).

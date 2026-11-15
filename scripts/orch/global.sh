@@ -835,8 +835,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               Writes only <dir>/view.md, touches no GitHub,
                               reads no flow state. Exit 1 with one orch:
                               line per error, each naming its batch.md or
-                              lens-<name>.md line where it has one - the first
-                              grammar error only, every anchor problem; exit
+                              lens-<name>.md line where it has one - every
+                              violation it can stand behind in one run; a
+                              structure violation stops it; exit
                               0 with the batch view on stdout, the same
                               bytes in <dir>/view.md (overwritten), and a
                               one-line summary on stderr naming view.md by
