@@ -1560,34 +1560,52 @@ mi_empty="$(mi_wt empty '')"
 mi_bad="$(mi_wt bad '4x\n')"
 mi_multi="$(mi_wt multi '41\n42\n')"
 mi_nul="$(mi_wt nul '41\0')"
+mi_unread="$(mi_wt unread '41\n')"
+mi_unread_marker="$(git -C "$mi_unread" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+chmod 000 "$mi_unread_marker"
+mi_perm_bites=1; if [ -r "$mi_unread_marker" ]; then mi_perm_bites=0; fi
 nogit="$(mktemp -d)"  # an empty PATH directory: no git, no cat, nothing
 mapfile -t mi < <(sourced_orch_script '
+  err="$(mktemp)"  # before PATH is emptied
   PATH="$7"
   v=untouched; side_checkout_marker_issue_into v "$1"; echo "$? $v"
-  for p in "$2" "$3" "$4" "$5" "$6"; do
-    v=untouched; st=0; out="$(side_checkout_marker_issue_into v "$p" 2>&1)" || st=$?; echo "$st $v [$out]"
-  done' "$mi_ok" "$mi_none" "$mi_empty" "$mi_bad" "$mi_multi" "$mi_nul" "$nogit")
+  for p in "$2" "$3" "$4" "$5" "$6" "$8"; do
+    v=untouched; st=0; : >"$err"
+    side_checkout_marker_issue_into v "$p" 2>"$err" || st=$?
+    echo "$st $v [$(<"$err")]"
+  done' "$mi_ok" "$mi_none" "$mi_empty" "$mi_bad" "$mi_multi" "$mi_nul" "$nogit" "$mi_unread")
+chmod 644 "$mi_unread_marker"
 assert_eq "with no git and no cat, a marker's issue is read" "${mi[0]}" "0 41"
 assert_eq "a worktree with no marker records none" "${mi[1]}" "1 untouched []"
 assert_eq "an empty marker records none" "${mi[2]}" "1 untouched []"
 assert_eq "a marker that is not a plain number records none" "${mi[3]}" "1 untouched []"
 assert_eq "a marker of more than one line records none" "${mi[4]}" "1 untouched []"
 assert_eq "a marker holding a NUL byte records none" "${mi[5]}" "1 untouched []"
+if [ "$mi_perm_bites" = 0 ]; then
+  skip "an unreadable marker records none, printing nothing" "permissions do not bite here, e.g. root"
+else
+  assert_eq "an unreadable marker records none, printing nothing" "${mi[6]}" "1 untouched []"
+fi
 
 # side_checkout_for_issue: as many git processes with five side checkouts as
 # with two, and no cat.
 mi_git="$(counting_bin git)"
 mi_cat="$(counting_bin cat)"
-mi_for_issue() { # <issue>: side_checkout_for_issue's stdout, status and the git/cat starts
+mi_for_issue() { # <issue>: empties the git/cat logs, then runs side_checkout_for_issue
   : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
   PATH="$mi_git:$mi_cat:$PATH" sourced_orch side_checkout_for_issue "$1"
 }
-mi_for_issue 9001 >/dev/null || true  # warm nothing: logs are truncated per call
-mi_wt s1 '9001\n' >/dev/null
-mi_wt s2 '9002\n' >/dev/null
+healthy_repo  # a fresh walk: only the side checkouts below are in it
+mi_dir="$(mktemp -d)"  # one parent, so the walk reaches s1..s5 in name order
+mi_wt_in() { # <name> <issue>: a side checkout under $mi_dir recording <issue>
+  git worktree add -q "$mi_dir/$1" -b "mi-in-$1"
+  printf '%s\n' "$2" >"$(git -C "$mi_dir/$1" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+}
+mi_wt_in s1 9001
+mi_wt_in s2 9002
 mi_for_issue 9002 >/dev/null
 mi_two="$(counting_starts "$mi_git" git)"
-for mi_n in 3 4 5; do mi_wt "s$mi_n" "900$mi_n\\n" >/dev/null; done
+for mi_n in 3 4 5; do mi_wt_in "s$mi_n" "900$mi_n"; done
 mi_last="$(mi_for_issue 9005)"
 mi_five="$(counting_starts "$mi_git" git)"
 assert_eq "side_checkout_for_issue starts as many git processes with five side checkouts as with two" "$mi_five" "$mi_two"

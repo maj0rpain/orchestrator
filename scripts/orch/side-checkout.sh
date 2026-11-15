@@ -285,7 +285,7 @@ side_checkout_marker_issue_into() {
   side_checkout_marked "$_sm_gd" || return 1
   # read -d '' returns 0 only when it met a NUL byte: such a marker cannot be
   # read to its end and records no issue.
-  if IFS= read -r -d '' _sm_val <"$_sm_gd/$SIDE_CHECKOUT_MARKER" 2>/dev/null; then return 1; fi
+  if IFS= read -r -d '' _sm_val 2>/dev/null <"$_sm_gd/$SIDE_CHECKOUT_MARKER"; then return 1; fi
   while [ "${_sm_val: -1}" = $'\n' ]; do _sm_val="${_sm_val%?}"; done
   case "$_sm_val" in ''|*[!0-9]*) return 1 ;; esac
   printf -v "$1" '%s' "$_sm_val"
