@@ -2362,7 +2362,7 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_not_contains "posted handoff comments are not reported missing" "$out" "is missing"
 assert_contains "the plan comment validates" "$out" "handoff 01-plan.md complete"
 assert_contains "and the spec comment" "$out" "handoff 02-spec.md complete"
-fake_fail adapter_issue_comments_json "HTTP 502 comments"
+fake_fail adapter_issue_comments "HTTP 502 comments"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 fake_unfail
 assert_status "a comments read failing past the gh gate is a failed check" "$st" 1
@@ -2372,7 +2372,7 @@ assert_eq "as a single finding" "$(grep -c "could not read issue #7's handoff co
 assert_not_contains "with no remedy" "$out" "redo"
 assert_not_contains "and no per-handoff missing line" "$out" "comment is missing"
 assert_not_contains "nor a complete line from an earlier run's copies" "$out" "complete"
-fake_lag adapter_issue_comments_json 1 'not json'
+fake_lag adapter_issue_comments 1 'not json'
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "unparseable comments fail the check" "$st" 1
 assert_contains "with the not-a-comment-list reason" "$out" "could not read issue #7's handoff comments: gh's output is not a comment list"
