@@ -2408,11 +2408,9 @@ apply_prints_one "malformed lens" "$d" "orch: batch.md line 17: item 2's @@ summ
 d="$(src_dir)"
 sed -i "17s/.*/@@ summary $src_w31/" "$d/batch.md"
 printf 'old view\n' >"$d/view.md"
-src "$d" --full 1 2
-assert_eq "check --full on a bad batch reports the same line" "$err" \
+src_full_1_2() { src "$1" --full 1 2; }
+check_refused src_full_1_2 "check --full on a bad batch" "$d" \
   "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
-assert_eq "a failed check leaves an earlier view.md" "$(cat "$d/view.md")" "old view"
-assert_eq "and prints nothing on stdout" "$out" ""
 
 # Grammar: the first error only.
 d="$(src_dir)"

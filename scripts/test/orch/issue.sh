@@ -1359,12 +1359,12 @@ for f in a.md b.md c.md sub/d.md; do echo "$f" >"$f"; done
 printf 'x\n' >'-opt.md'
 git add -A; git commit -qm files
 df_sha="$(git rev-parse HEAD)"
+printf 'A finding.\n' >"$df_dir/finding"
 # df_body <sha> <file>:<line>...: an audit body, rendered by the audit module.
 df_body() {
   local sha="$1" l ls=()
   shift
   for l in "$@"; do ls+=("$l"); done
-  printf 'A finding.\n' >"$df_dir/finding"
   sourced_orch audit_body_render "$df_dir/finding" "$sha" "${ls[@]}"
 }
 df_fetch() { "$ORCH" issue fetch 23 "$df_dir/out.md" 2>&1; }
