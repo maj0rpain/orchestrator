@@ -217,8 +217,8 @@ audit_finding_resolve() {
     audit_list_split sources "$from"
     while IFS= read -r src; do
       [ -n "$src" ] || continue
-      [[ $src =~ ^([A-Za-z0-9._-]+):([0-9]+)$ ]] \
-        || die "ranked.md line $from_ln: From: $src is not <area file>:<k>"
+      [[ $src =~ ^(area-[0-9]+):([0-9]+)$ ]] \
+        || die "ranked.md line $from_ln: From: $src is not <area file>:<k>, an area-<n> file and a block number"
       area="${BASH_REMATCH[1]}" kn="${BASH_REMATCH[2]}"
       [ -n "${AUDIT_AREA_SEEN[$area]:-}" ] || {
         AUDIT_AREA_SEEN["$area"]=1
@@ -839,6 +839,7 @@ audit_file_batch() {
     gh_or_die --out made "create the issue" \
       adapter_issue_create "${AUDIT_TITLE[n]}" "$body_file" "$triage" "$cat"
     issue[$n]="$made" state[$n]=filed
+    existing+=$'\n'"$made"$'\t'"${AUDIT_TITLE[n]}"
     printf '%s\t%s\t%s\n' "$n" "$made" filed
   done
 

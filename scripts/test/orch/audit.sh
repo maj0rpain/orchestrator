@@ -230,6 +230,30 @@ assert_status "a repo with no commit is refused" "$st" 1
 assert_eq "saying HEAD cannot be read" "$out" "orch: cannot read the HEAD commit"
 assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
 
+echo
+echo "audit report-reference check in audit file"
+audit_repo
+before="$(fake_snapshot)"
+for phrase in "finding 2" "Findings #3" "candidate #3" "candidates 1" "this report"; do
+  out="$("$ORCH" audit file "Fix it as in $phrase" "${parts[@]}" 2>&1)"; st=$?
+  assert_status "a title saying '$phrase' is refused" "$st" 1
+  assert_contains "naming the phrase" "$out" "says '$phrase'"
+  assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+done
+printf 'Line one.\nSame as Finding 4 here.\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "a finding file saying Finding 4 is refused" "$st" 1
+assert_contains "naming its line" "$out" "line 2 says 'Finding 4'"
+assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+printf 'Line one, see finding\n3 here.\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "a finding file wrapping 'finding' and its number is refused" "$st" 1
+assert_contains "naming the line it starts on" "$out" "line 1 says 'finding 3'"
+assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+printf 'The report says `finding 4`.\n```\nthis report\n```\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "the report, a span and a fence are accepted" "$st" 0
+
 # --- audit file failures ----------------------------------------------------
 
 echo
@@ -414,6 +438,7 @@ report_refuse "a ranked file with neither top nor none" "exactly one of @@ top a
 report_refuse "a finding gap" "expected @@ finding 2" 's/^@@ finding 2/@@ finding 3/'
 report_refuse "a From naming a missing area file" "area-9.md" 's/^From: area-2:1/From: area-9:1/'
 report_refuse "a From naming a missing block" "finding 7" 's/^From: area-2:1/From: area-2:7/'
+report_refuse "a From naming the ranked file itself" "From: ranked:1 is not <area file>:<k>" 's/^From: area-2:1/From: ranked:1/'
 report_refuse "a missing title" "ranked.md line 15: finding 2 has no Title" '/^Title: Deepen/d'
 report_refuse "a multi-line title" "ranked.md line 17: finding 2's Title: is not one line" 's/^Title: Deepen d.sh/Title:/'
 report_refuse "an unknown category" "ranked.md line 12: finding 1's Category: 'cheese'" 's/^Category: bug/Category: cheese/'
@@ -517,31 +542,6 @@ for args in "report" "report only-one" "report a b c"; do
    or: orch.sh audit report <dir> <out.html>
    or: orch.sh audit file"
 done
-
-
-echo
-echo "audit report-reference check in audit file"
-audit_repo
-before="$(fake_snapshot)"
-for phrase in "finding 2" "Findings #3" "candidate #3" "candidates 1" "this report"; do
-  out="$("$ORCH" audit file "Fix it as in $phrase" "${parts[@]}" 2>&1)"; st=$?
-  assert_status "a title saying '$phrase' is refused" "$st" 1
-  assert_contains "naming the phrase" "$out" "says '$phrase'"
-  assert_eq "writing nothing" "$(fake_snapshot)" "$before"
-done
-printf 'Line one.\nSame as Finding 4 here.\n' >"$finding"
-out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
-assert_status "a finding file saying Finding 4 is refused" "$st" 1
-assert_contains "naming its line" "$out" "line 2 says 'Finding 4'"
-assert_eq "writing nothing" "$(fake_snapshot)" "$before"
-printf 'Line one, see finding\n3 here.\n' >"$finding"
-out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
-assert_status "a finding file wrapping 'finding' and its number is refused" "$st" 1
-assert_contains "naming the line it starts on" "$out" "line 1 says 'finding 3'"
-assert_eq "writing nothing" "$(fake_snapshot)" "$before"
-printf 'The report says `finding 4`.\n```\nthis report\n```\n' >"$finding"
-out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
-assert_status "the report, a span and a fence are accepted" "$st" 0
 
 # --- audit file batch -------------------------------------------------------
 
@@ -691,6 +691,16 @@ out="$("$ORCH" audit file --run "$run" 2 2>&1)"; st=$?
 assert_status "an already-open title" "$st" 0
 assert_eq "files nothing and reports it open" "$out" "2${tab}50${tab}open"
 assert_eq "no new issue" "$(fake_issues)" "50 "
+
+echo
+echo "audit file batch same title twice"
+batch_reset
+sed -i 's/^Title: Whole finding with no source/Title: Latent bug in a.sh/' "$run/ranked.md"
+out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
+assert_status "two picks with one title" "$st" 0
+assert_eq "the second takes the first's new issue" "$out" "1${tab}40${tab}filed
+3${tab}40${tab}open"
+assert_eq "and only one issue is filed" "$(fake_issues)" "40 "
 
 echo
 echo "audit file batch failures"

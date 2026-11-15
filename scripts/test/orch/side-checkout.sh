@@ -1057,7 +1057,8 @@ restore_suite_env
 # --- archive keeps flow-less directories (#1247) ------------------------------
 # A standalone spec review's spec-review/<n>/, a review pass's
 # review-pass/<branch>/, the autopilot watcher's autopilot/, the breakdown save
-# points under breakdown/ and the saved reports under reports/ belong to no
+# points under breakdown/, an audit run's audit/<kind>-<stamp>/ and the saved
+# reports under reports/ belong to no
 # flow, so archiving a flow - by any command - leaves them in place; in a side
 # checkout being removed they go with the worktree (#1907). Checked through what
 # stays under .orchestrator/ and what lands in the archive. Then a scan checks
@@ -1075,7 +1076,8 @@ fake_offline
 # review record, a freely named spec-phase round directory, a flow's spec review
 # round directory under spec-rounds/ and its round marker (#1348), and puts a
 # standalone spec review's and a review pass's working directories beside it,
-# with a breakdown save point and a saved report and, unless <side> is given,
+# with a breakdown save point, an audit run's audit/<kind>-<stamp>/ and a saved
+# report and, unless <side> is given,
 # the autopilot watcher's records (#1907).
 fl_seed() {
   local o="$1/.orchestrator"
