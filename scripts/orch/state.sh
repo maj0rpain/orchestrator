@@ -201,26 +201,26 @@ require_state_read() {
   "$__rsr_die" "$STATE_UNREADABLE_MSG"
 }
 
-# The one spelling of each required field's message, by key. Prints nothing
-# and returns 1 for a key with no message.
+# The one spelling of each required field's message, by key: sets the caller's
+# __rv_msg (require_value's local), with no subshell. Returns 1 for a key with
+# no message.
 state_required_msg() {
   case "$1" in
-    issue) echo "no issue recorded in state - the spec phase must publish one first" ;;
-    branch) echo "no branch recorded in state" ;;
-    pr) echo "no PR recorded in state - the implement phase opens it" ;;
-    base_sha) echo "no base SHA recorded in state - branch create records it" ;;
+    issue) __rv_msg="no issue recorded in state - the spec phase must publish one first" ;;
+    branch) __rv_msg="no branch recorded in state" ;;
+    pr) __rv_msg="no PR recorded in state - the implement phase opens it" ;;
+    base_sha) __rv_msg="no base SHA recorded in state - branch create records it" ;;
     *) return 1 ;;
   esac
 }
 
 # require_value <key> <value> [die2]: dies with <key>'s required-field message,
 # through die or die2, when <value> is empty. It reads nothing. A key with no
-# message exits 2.
+# message exits 2, whatever the value.
 require_value() {
   local __rv_msg
-  [ -z "$2" ] || return 0
-  __rv_msg="$(state_required_msg "$1")" || die2 "no required-field message for state key: $1"
-  "${3:-die}" "$__rv_msg"
+  state_required_msg "$1" || die2 "no required-field message for state key: $1"
+  [ -n "$2" ] || "${3:-die}" "$__rv_msg"
 }
 
 # require_field <var> <key> [die2]: one guarded one-key read into the caller's

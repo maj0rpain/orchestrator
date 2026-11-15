@@ -195,6 +195,8 @@ fresh_flow reviewpath
 state_fixture iteration 5
 assert_contains "files the record flat under review/" \
   "$("$ORCH" review path)" "/review/iteration-05.md"
+assert_contains "an empty iteration falls back to the recorded one" \
+  "$("$ORCH" review path "")" "/review/iteration-05.md"
 assert_contains "zero-pads an explicit iteration" \
   "$("$ORCH" review path 2)" "/review/iteration-02.md"
 assert_eq "creates the directory it names" \

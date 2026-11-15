@@ -570,6 +570,8 @@ out="$(sourced_orch require_value issue 7 2>&1)"; st=$?
 assert_status "require_value passes a non-empty value" "$st" 0
 out="$(sourced_orch require_value nonsense "" 2>&1)"; st=$?
 assert_status "require_value on a key with no message exits 2" "$st" 2
+out="$(sourced_orch require_value nonsense 7 2>&1)"; st=$?
+assert_status "require_value on a key with no message exits 2 with a value too" "$st" 2
 : >"$rs_jq/jq.log"
 out="$(PATH="$rs_jq:$PATH" sourced_orch_script 'require_issue v; echo "[$v]"' 2>&1)"; st=$?
 assert_status "require_issue on a null issue dies" "$st" 1

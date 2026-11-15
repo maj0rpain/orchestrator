@@ -160,7 +160,7 @@ review_terminal_record() {
   local flat retired n issue slug branch redo_count
   flat="$(review_record_path "$1")" || return 1
   if [ ! -e "$flat" ] \
-    && state_get_many issue=issue slug=slug branch=branch redo_count=redo_count 2>/dev/null \
+    && state_get_many_in "$STATE" issue=issue slug=slug branch=branch redo_count=redo_count \
     && n="$(redo_midway "$issue" "$slug" "$branch" "$redo_count")"; then
     retired="$REVIEW_DIR/pre-redo-$n/${flat##*/}"
     if [ -e "$retired" ]; then printf '%s\n' "$retired"; return 0; fi
@@ -807,7 +807,7 @@ cmd_review() {
       ;;
     path)
       local n
-      if [ $# -eq 0 ]; then
+      if [ $# -eq 0 ] || { [ $# -eq 1 ] && [ -z "$1" ]; }; then
         require_state_read n=iteration
       else
         require_state
