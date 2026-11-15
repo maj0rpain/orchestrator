@@ -462,11 +462,12 @@ assert_status "an unknown category from a hunter's block is refused" "$st" 1
 assert_contains "naming the hunter's file and line" "$res" "area-2.md line 8: finding 2's Category: 'cheese'"
 sed -i '$d' "$run/area-2.md"
 report_reset
-rm "$run/record" "$report"
+rm "$run/record"
+printf 'earlier report\n' >"$report"
 res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
 assert_status "a run directory with no record is refused" "$st" 1
 assert_contains "naming the record" "$res" "no audit run record"
-assert_eq "writing nothing" "$(on_disk "$report")" absent
+assert_eq "leaving the earlier report" "$(cat "$report")" "earlier report"
 
 echo
 echo "audit report output path"
@@ -709,6 +710,15 @@ assert_contains "the third pick's issue names the shared one" "$(fake_body_of 41
 assert_contains "the shared issue names it back" "$(fake_body_of 40)" '**Related:** #41'
 assert_eq "without a warning" "$(cat "$errf")" ""
 
+batch_reset
+sed -i 's/^Title: Whole finding with no source/Title: Latent bug in a.sh/; /^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
+fake_fail adapter_issue_body_edit
+"$ORCH" audit file --run "$run" 1,2,3 >/dev/null 2>&1
+fake_unfail
+out="$("$ORCH" audit file --run "$run" 1,2,3 2>"$errf")"; st=$?
+assert_status "a same-title pair rerun after the Related write failed" "$st" 0
+assert_contains "the shared issue's Related line is written" "$(fake_body_of 40)" '**Related:** #41'
+assert_eq "without an edited-since warning" "$(cat "$errf")" ""
 echo
 echo "audit file batch failures"
 batch_reset
