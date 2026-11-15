@@ -242,10 +242,11 @@ standing_resume() {
 # the session wrapper retries a stop chain (see the resumable chain below), and
 # a claim still held after that is cleaned up by a later tick as a failure.
 # STANDING_LANDED accumulates those writes. Every chain transition begins
-# through standing_chain_start (start excepted: it holds no claim, and none of
-# its writes reads the list), so no chain inherits an earlier chain's writes.
-# Begin, sync request, claim drop and resume are single writes that neither
-# reset nor add to it.
+# through standing_chain_start, so no chain inherits an earlier chain's writes;
+# start holds no claim and does not. Every adapter write of a chain goes through
+# standing_chain_step. Outside it stay finish's write of the phase to flow
+# state, start, begin, the single writes through standing_relabel_one (sync
+# request, resume) and the claim drop.
 
 STANDING_LANDED=""
 
@@ -279,6 +280,8 @@ standing_timeline_read_or_die() {
 # successful timeline read fixed, and `stop <kind> <first line>` for the
 # wrapper's backstop line. A chain transition starts from the writes that landed
 # (STANDING_DONE) and skips them; with no state file nothing is recorded.
+# standing_chain_step is the one place a write is skipped and noted, and
+# standing_chain_comment the one place a try is recorded.
 STANDING_STATE_FILE=""
 STANDING_DONE=()
 
@@ -342,24 +345,83 @@ standing_stop_note() {
   standing_state_put stop "$1"$'\t'"$first"
 }
 
-# standing_chain_relabel <issue> <flag> <label>: one label write of a chain -
-# <flag> (--add or --remove) <label> - dying as a chain does when it fails, and
-# noting the write that landed. A write an earlier attempt landed is skipped.
-standing_chain_relabel() {
-  local gh_err verb=add past=added
-  [ "$2" != --remove ] || { verb=remove; past=removed; }
-  ! standing_landed_has "$past $3" || return 0
-  gh_capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" ||
-    standing_chain_die "$1" "$verb $3" "$gh_err"
-  standing_landed_add "$past $3"
+# standing_chain_step <landed-name> <failure-what> <issue> <adapter command...>:
+# the one holder of the chain-write rule. A write already landed is skipped and
+# its command not run; otherwise the complete command runs, its stderr captured,
+# and a failure dies as a chain does ("could not <failure-what> on issue
+# #<issue>: <reason> - writes that landed: ...; the claim stays held"); a
+# success notes <landed-name> as landed. The step adds no argument to the
+# command, so the issue appears both as <issue> and inside it.
+standing_chain_step() {
+  local landed="$1" what="$2" issue="$3" gh_err
+  shift 3
+  ! standing_landed_has "$landed" || return 0
+  gh_capture_err gh_err "$@" || standing_chain_die "$issue" "$what" "$gh_err"
+  standing_landed_add "$landed"
 }
 
-# standing_release <issue>: deletes orch:running, then the claim ref, last.
+# standing_chain_relabel <issue> (<flag> <label>)...: a label edit of a chain,
+# one edit for all its pairs, <flag> being --add or --remove. The landed name
+# ("added <label>" / "removed <label>") and the failure wording ("add <label>" /
+# "remove <label>") are derived from the pairs, in argument order, joined by
+# ", ", and the edit goes through standing_chain_step.
+standing_chain_relabel() {
+  local issue="$1" landed="" what="" past verb
+  shift
+  local args=("$@")
+  while [ "$#" -gt 0 ]; do
+    verb=add past=added
+    [ "$1" != --remove ] || { verb=remove; past=removed; }
+    landed="${landed:+$landed, }$past $2"
+    what="${what:+$what, }$verb $2"
+    shift 2
+  done
+  standing_chain_step "$landed" "$what" "$issue" adapter_issue_relabel "$issue" "${args[@]}"
+}
+
+# standing_comment_call <issue> <body-file>: posts the comment in <body-file>,
+# then removes the file, whatever the post returned. The step runs it, and dies
+# inside itself on a failed post, so the removal is done here and not after the
+# step call.
+standing_comment_call() {
+  local rc=0
+  adapter_issue_comment "$1" "$2" || rc=$?
+  rm -f "$2"
+  return "$rc"
+}
+
+# standing_chain_comment <landed-name> <failure-what> <issue> <text>: posts
+# <text> as a comment of a chain, once only. A comment already landed is
+# skipped. When the state file records that an earlier attempt tried it, the
+# issue's comments are read first: a trusted comment whose body is <text>,
+# trailing whitespace aside, counts as landed with no post, and a failed read
+# dies with no post. Otherwise the try is recorded, then the post goes through
+# standing_chain_step. The temp body file is removed on every path. This is the
+# one place a try is recorded. See the resumable chain comment.
+standing_chain_comment() {
+  local landed="$1" what="$2" issue="$3" body
+  ! standing_landed_has "$landed" || return 0
+  # An earlier attempt's call failed and may have landed: look first, and post
+  # nothing when the look fails.
+  if [ -s "${STANDING_STATE_FILE:-}" ] && grep -qxF "tried"$'\t'"$landed" "$STANDING_STATE_FILE"; then
+    standing_timeline_read_or_die "$issue" "check for this stop's comment"
+    if timeline_has_body "$4"; then
+      standing_landed_add "$landed"
+      return 0
+    fi
+  fi
+  temp_file_make body || die "could not create a temp file to $what"
+  printf '%s' "$4" >"$body"
+  standing_state_put tried "$landed"
+  standing_chain_step "$landed" "$what" "$issue" standing_comment_call "$issue" "$body"
+}
+
+# standing_release <issue>: deletes orch:running, then the claim ref, last,
+# through the step.
 standing_release() {
-  local issue="$1" gh_err
+  local issue="$1"
   standing_chain_relabel "$issue" --remove "$STANDING_RUNNING_LABEL"
-  gh_capture_err gh_err adapter_claim_delete "$issue" ||
-    standing_chain_die "$issue" "delete the claim ref" "$gh_err"
+  standing_chain_step "deleted the claim ref" "delete the claim ref" "$issue" adapter_claim_delete "$issue"
 }
 
 # standing_claim_release <issue>: a chain transition that only releases the
@@ -383,14 +445,15 @@ standing_claim_drop() {
 standing_move_label() {
   # state is the read's throwaway half.
   # shellcheck disable=SC2034
-  local issue="$1" phase="$2" state labels gh_err p args=()
+  local issue="$1" phase="$2" state labels gh_err p label args=()
   issue_state_labels_read "$issue" state labels gh_err ||
     standing_chain_die "$issue" "read the labels" "$gh_err"
   for p in $(standing_phase_labels_in "$labels"); do
     [ "$p" = "$phase" ] || args+=(--remove "$(standing_phase_label "$p")")
   done
-  gh_capture_err gh_err adapter_issue_relabel "$issue" --add "$(standing_phase_label "$phase")" ${args[@]+"${args[@]}"} ||
-    standing_chain_die "$issue" "move the phase label to $(standing_phase_label "$phase")" "$gh_err"
+  label="$(standing_phase_label "$phase")"
+  standing_chain_step "moved the phase label to $label" "move the phase label to $label" "$issue" \
+    adapter_issue_relabel "$issue" --add "$label" ${args[@]+"${args[@]}"}
 }
 
 # standing_start <issue> <plan-file>: the planning close's last step. Before
@@ -452,7 +515,6 @@ standing_begin() {
 standing_finish() {
   standing_chain_start "${3:-}"
   standing_move_label "$1" "$2"
-  standing_landed_add "moved the phase label to $(standing_phase_label "$2")"
   phase_write_try "$2" ||
     standing_landed_die "could not record phase $2 in $STATE"
   standing_landed_add "recorded phase $2"
@@ -472,61 +534,16 @@ standing_pause() {
 # @mentioned, <text>, then the reply instructions - adds needs-human, then
 # releases the claim.
 standing_ask() {
-  local phase="$1" text="$2" issue body gh_err
+  local phase="$1" text="$2" issue body
   standing_chain_start
   require_issue issue
   autopilot_setting handle
-  temp_file_make body || die "could not create a temp file for the question comment"
-  { marked_comment_write question "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; printf '%s' "$text"
-    printf '\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n'; } >"$body"
-  gh_capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
-  rm -f "$body"
-  standing_landed_add "posted the $phase question comment"
+  body="$(marked_comment_write question "$phase")"
+  printf -v body '%s\n@%s\n\n%s\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n' \
+    "$body" "$AUTOPILOT_VALUE" "$text"
+  standing_chain_comment "posted the $phase question comment" "post the $phase question comment" "$issue" "$body"
   standing_chain_relabel "$issue" --add "$STANDING_HUMAN_LABEL"
   standing_release "$issue"
-}
-
-# standing_post_release <issue> <text> <post-what> <landed-what>: the tail of a
-# write chain that ends in a comment - posts <text> as an issue comment
-# (<post-what> names it in a failure, "post the ... comment"; <landed-what>
-# once landed, "posted the ... comment"), then releases the claim, last. A
-# comment an earlier attempt landed is skipped; for one an earlier attempt only
-# tried, the issue's comments are checked first and a found comment counts as
-# landed without a post; a failed check dies with no post and no release. See
-# the resumable chain comment for the state file.
-standing_post_release() {
-  local issue="$1" text="$2" post_what="$3" landed_what="$4" present_rc
-  if ! standing_landed_has "$landed_what"; then
-    present_rc=1
-    # An earlier attempt's call failed and may have landed: look first, and post
-    # nothing when the look fails.
-    if [ -s "${STANDING_STATE_FILE:-}" ] && grep -qxF "tried"$'\t'"$landed_what" "$STANDING_STATE_FILE"; then
-      standing_timeline_read_or_die "$issue" "check for this stop's comment"
-      ! timeline_has_body "$text" || present_rc=0
-    fi
-    if [ "$present_rc" -eq 0 ]; then
-      standing_landed_add "$landed_what"
-    else
-      standing_comment_post "$issue" "$text" "$post_what" "$landed_what"
-    fi
-  fi
-  standing_release "$issue"
-}
-
-# standing_comment_post <issue> <text> <post-what> <landed-what>: posts <text>
-# as a comment and notes it landed. The try is recorded first: a failed call
-# may have landed.
-standing_comment_post() {
-  local body gh_err
-  temp_file_make body || die "could not create a temp file to $3"
-  printf '%s' "$2" >"$body"
-  standing_state_put tried "$4"
-  gh_capture_err gh_err adapter_issue_comment "$1" "$body" || {
-    rm -f "$body"
-    standing_chain_die "$1" "$3" "$gh_err"
-  }
-  rm -f "$body"
-  standing_landed_add "$4"
 }
 
 # standing_reenter <issue> <phase> <text>: the automatic re-entry transition,
@@ -546,29 +563,20 @@ standing_reenter() {
   fi
   printf -v body '%s\n\nThe watcher starts another %s loop.\n' "$text" "$phase"
   body="$(marked_comment_write reentry "$phase")"$'\n'"$body"
-  standing_post_release "$issue" "$body" \
-    "post the re-entry comment" "posted the $phase re-entry comment"
+  standing_chain_comment "posted the $phase re-entry comment" "post the re-entry comment" "$issue" "$body"
+  standing_release "$issue"
 }
 
 # standing_stop_write <issue> <kind> <text> <label> [<remove-label>]:
 # the write chain of a stop: adds <label> (removing <remove-label> when given),
 # posts <text> as the <kind> comment, then releases the claim, last. The label
-# write is worded "add <label>[, remove <remove-label>]" in a failure and
-# "added ...[, removed ...]" once landed, whenever a removal label is given.
+# edit is one call to standing_chain_relabel.
 standing_stop_write() {
-  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}" gh_err relabel=() landed
-  landed="added $label${remove:+, removed $remove}"
-  relabel=(--add "$label")
-  if [ -n "$remove" ]; then
-    relabel+=(--remove "$remove")
-  fi
+  local issue="$1" kind="$2" text="$3" label="$4" remove="${5:-}"
   standing_stop_note "$kind" "$text"
-  if ! standing_landed_has "$landed"; then
-    gh_capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
-      standing_chain_die "$issue" "add $label${remove:+, remove $remove}" "$gh_err"
-    standing_landed_add "$landed"
-  fi
-  standing_post_release "$issue" "$text" "post the $kind comment" "posted the $kind comment"
+  standing_chain_relabel "$issue" --add "$label" ${remove:+--remove "$remove"}
+  standing_chain_comment "posted the $kind comment" "post the $kind comment" "$issue" "$text"
+  standing_release "$issue"
 }
 
 # standing_stop <issue> <refusal|failure> <phase> <detail>: ends a phase that
@@ -660,7 +668,8 @@ standing_limit_stop() {
     printf -v text '%s\nThe session stopped on the GitHub API rate limit in %s, which resets %s.\n\nRetry %s of 2: the issue is picked up again by the next tick, no label is added.\n\nLog: %s\n' \
       "$marker" "$(standing_phase_text "$phase")" "${reset:-$pause}" "$((count + 1))" "$log"
     standing_stop_note "limit stop" "$text"
-    standing_post_release "$issue" "$text" "post the limit stop comment" "posted the limit stop comment"
+    standing_chain_comment "posted the limit stop comment" "post the limit stop comment" "$issue" "$text"
+    standing_release "$issue"
     return
   fi
   at="; it gave no reset time, so the watcher falls back to a one-hour limit pause, until $pause"
