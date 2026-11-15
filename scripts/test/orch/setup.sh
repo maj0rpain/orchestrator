@@ -1218,7 +1218,7 @@ assert_trace_loads_once() {
 
 # assert_trace_names_no <label> <trace file> <module>...: asserts a load trace,
 # written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
-# modules - a module the run must not load, or not load more than it did.
+# modules - a module the run must not load at all.
 assert_trace_names_no() {
   local label="$1" trace="$2" mod line n
   shift 2
