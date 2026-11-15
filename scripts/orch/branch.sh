@@ -113,6 +113,9 @@ forked_from_set() { git config "$(forked_from_key "$1")" "$2"; }
 # that and a redo count, a ticket branch from its forked-from branch and
 # ticket number, and a quick implementation's branch from issue and slug.
 branch_name_flow() { printf 'orch/%s-%s\n' "$1" "$2"; }
+# branch_name_flow_into <var> <issue> <slug>: the same name, set into the
+# caller-named <var> with no subshell.
+branch_name_flow_into() { printf -v "$1" 'orch/%s-%s' "$2" "$3"; }
 branch_name_redo() { printf '%s-redo-%s\n' "$(branch_name_flow "$1" "$2")" "$3"; }
 branch_name_ticket() { printf '%s--t%s\n' "$1" "$2"; }
 branch_name_quick() { printf 'quick/%s-%s\n' "$1" "$2"; }

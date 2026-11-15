@@ -1678,3 +1678,36 @@ done
 rm -f .orchestrator/state.json
 rm -f "$nr_err" "$nr_body"
 restore_suite_env
+
+# --- pr: PR-line pick and newest merge (#3074) ---------------------------------
+# pr_lines_by_prefix and pr_close_newest start no process: both answer with an
+# empty PATH. pr_close_missed is replaced by a function that records its
+# arguments.
+echo
+echo "pr: PR-line pick and newest merge"
+healthy_repo
+tab=$'\t'
+pl_lines="1${tab}orch/5-a${tab}2025-01-01T00:00:00Z${tab}c1"$'\n'"2${tab}orch/50-b${tab}x"$'\n'"3${tab}orch/5-c${tab}CONFLICTING"$'\n'"nohead"$'\n'
+assert_eq "pr_lines_by_prefix picks the lines whose head starts with the prefix, in order, with an empty PATH" \
+  "$(sourced_orch_script '
+    PATH=
+    pr_lines_by_prefix "$1" orch/5- picked; printf "%s" "$picked"' "$pl_lines")" \
+  "1${tab}orch/5-a${tab}2025-01-01T00:00:00Z${tab}c1"$'\n'"3${tab}orch/5-c${tab}CONFLICTING"
+assert_eq "pr_lines_by_prefix sets nothing when no line matches" \
+  "$(sourced_orch_script '
+    PATH=
+    pr_lines_by_prefix "$1" orch/9- picked; printf "[%s]" "$picked"' "$pl_lines")" "[]"
+nm_run='
+  PATH=
+  pr_close_missed() { printf "%s|" "$*"; return "${NM_ST:-3}"; }
+  prv=; st=0; pr_close_newest 7 main "$1" prv || st=$?; printf "st=%s pr=%s" "$st" "$prv"'
+assert_eq "pr_close_newest closes the newest merge, status and PR variable passed through, with an empty PATH" \
+  "$(sourced_orch_script "$nm_run" "1${tab}h${tab}2025-01-01T00:00:00Z${tab}a"$'\n'"2${tab}h${tab}2025-03-01T00:00:00Z${tab}b"$'\n'"3${tab}h${tab}2025-02-01T00:00:00Z${tab}c")" \
+  "7 2 2025-03-01T00:00:00Z b main|st=3 pr=2"
+assert_eq "pr_close_newest takes the earlier of two merges with equal timestamps" \
+  "$(sourced_orch_script "$nm_run" "4${tab}h${tab}2025-03-01T00:00:00Z${tab}a"$'\n'"2${tab}h${tab}2025-03-01T00:00:00Z${tab}b")" \
+  "7 4 2025-03-01T00:00:00Z a main|st=3 pr=4"
+assert_eq "pr_close_newest picks none from blank lines and lines with no timestamp" \
+  "$(sourced_orch_script "$nm_run" $'\n'"5${tab}h"$'\n'"6${tab}h${tab}${tab}x"$'\n')" \
+  "st=1 pr="
+restore_suite_env
