@@ -188,6 +188,9 @@ d_probe() {
     D_FLOW_PHASE=phase D_FLOW_ISSUE=issue D_FLOW_BRANCH=branch D_FLOW_PR=pr \
     D_FLOW_ITERATION=iteration budget_raw=budget 2>/dev/null; then
     D_STATE=ok
+    # The budget read, here, and the review checks run in command substitutions:
+    # load review once, in this shell.
+    orch_load review
     # shellcheck disable=SC2154 # budget_raw is set by flow_state_get_many above
     D_FLOW_BUDGET="$(review_budget_fallback "$budget_raw")"
   fi
@@ -315,6 +318,7 @@ check_gh_repo() {
 # the wrong place looks fine until review.
 check_default_branch() {
   d_gh_gate || return 0
+  orch_load base
   # Silent when the repo itself did not resolve: check_gh_repo has already said
   # so, and a second line derived from the first buries it.
   [ -n "$D_REPO_SEEN" ] || return 0
@@ -551,6 +555,7 @@ check_git_exclude() {
 # check at all.
 check_base_branch() {
   local b st=0
+  orch_load base
   b="$(base_setting)"
   if [ -z "$b" ]; then
     d_ok "base branch: ${D_REPO_BRANCH:-$(default_branch_local)} (default)"
@@ -665,6 +670,10 @@ check_autopilot_side_flows() {
     [ -f "$(flow_state_file "$path")" ] || continue
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
     d_gh_gate || return 0
+    # standing_read and the verdict's reads run in command substitutions and
+    # reach handoff: load it once, here, in this shell, only on the branch that
+    # reaches a read.
+    orch_load handoff
     standing_read "$issue" || continue
     doctor_phase_label_verdict "$issue" "$phase" "$STANDING_LABELS" "its side checkout ${path##*/}" "phase label of #$issue" || true
   done <<<"$list"
@@ -685,11 +694,14 @@ check_autopilot_claims() {
     host="${STANDING_CLAIM_HOST[$issue]}" started="${STANDING_CLAIM_STARTED[$issue]}"
     if [ "$host" = "$me" ]; then
       [ "$main_known" = 1 ] || continue
+      # First reached in this substitution: load it in this shell, once.
+      orch_load liveness
       pid="$(liveness_issue_alive "$issue" 2>/dev/null)" && continue
       d_warn "issue #$issue is claimed by this host (phase ${STANDING_CLAIM_PHASE[$issue]}), but its process is gone ($([ -n "$pid" ] && echo "pid $pid" || echo "no record"))."
       d_remedy "orch.sh autopilot tick"
       continue
     fi
+    orch_load autopilot
     started_epoch="$(autopilot_iso_epoch "$started")" || continue
     [ "$((now_epoch - started_epoch))" -gt 86400 ] || continue
     d_warn "issue #$issue has been claimed by $host (pid ${STANDING_CLAIM_PID[$issue]}, phase ${STANDING_CLAIM_PHASE[$issue]}) since $started - more than a day."
@@ -823,6 +835,10 @@ check_flow_review_terminal() {
   local i b terminal word detail
   i="$D_FLOW_ITERATION"
   b="$D_FLOW_BUDGET"
+  # redo is read only when the flat record is gone (review_terminal_record).
+  if review_flat_record_gone "$i"; then
+    orch_load redo
+  fi
   terminal="$(review_terminal_state "$i" "$b")" || true
   lines_split "$terminal" word detail
   case "$word" in

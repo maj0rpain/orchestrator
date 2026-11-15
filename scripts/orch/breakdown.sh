@@ -162,6 +162,10 @@ cmd_breakdown_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh breakdown publish <parent> <draft-file>"
   case "$1" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $1" ;; esac
   local tmp st=0
+  # The work below runs in a subshell: load what it calls once, here.
+  orch_load ticket
+  orch_load gh
+  orch_load repo
   tmp="$(mktemp -d)" || die "could not create a temp directory for the breakdown"
   (breakdown_publish_in "$1" "$2" "$tmp") || st=$?
   rm -rf "$tmp"

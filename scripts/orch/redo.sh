@@ -85,6 +85,15 @@ redo_step_back() {
   phase_write "$phase" "$@" branch null pr null base_sha null
 }
 
+# redo_load_shared: the modules, handoff aside, both redos first reach inside
+# a command substitution or subshell, loaded once here in the main shell.
+# marked-comment is needed only by an autopilot session's handoff retire.
+redo_load_shared() {
+  orch_load gh
+  orch_load autopilot
+  if autopilot_active; then orch_load marked-comment; fi
+}
+
 # The full `review -> implement` transition: retire the old branch and PR,
 # reopen the spec issue's closed tickets, move the old loop's records aside,
 # and reset the state a fresh implement attempt needs - never mid-budget, and
@@ -97,6 +106,17 @@ cmd_redo_review() {
   require_state_read phase=phase i=iteration budget_raw=budget slug=slug issue=issue \
     branch=branch pr=pr redo_count=redo_count
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
+  # review and handoff are first reached inside a command substitution (the
+  # terminal state reads handoff): load them here, once, in the main shell,
+  # past the guard that refuses a run before it. branch loads here only when
+  # the terminal-state read reaches it, through redo_midway, which
+  # review_terminal_record calls when iteration is above 0, the last flat
+  # record is gone and redo_count is above 0; the load below is then a no-op.
+  orch_load review
+  orch_load handoff
+  if review_flat_record_gone "$i" && [ "$redo_count" -gt 0 ]; then
+    orch_load branch
+  fi
   b="$(review_budget_fallback "$budget_raw")"
   local terminal; terminal="$(review_terminal_state "$i" "$b")" || true
   lines_split "$terminal" word detail
@@ -120,6 +140,10 @@ $detail" ;;
   require_value issue "$issue"
   require_value branch "$branch"
   require_value pr "$pr"
+  # Past every guard that refuses a run, none of which reaches these modules:
+  # each is first reached inside a command substitution or subshell below.
+  orch_load branch
+  redo_load_shared
   local retire
   retire="$(redo_retire_plan "$issue" "$slug" "$branch" "$redo_count")"
   lines_split "$retire" new_n resumed
@@ -184,6 +208,14 @@ cmd_redo_spec() {
   # retires a branch.
   local label retire n resumed
   require_value issue "$issue"
+  # The modules a run first reaches inside a command substitution, loaded once
+  # here in the main shell, past the guards that refuse a run before it, none
+  # of which reaches them. branch is reached only by a run with a branch
+  # recorded (the retire) or with redo_count above 0 (redo_midway's first
+  # condition).
+  orch_load handoff
+  redo_load_shared
+  if [ -n "$branch" ] || [ "${redo_count:-0}" -gt 0 ]; then orch_load branch; fi
   label="pre-redo-spec-$(dir_stamp)"
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
   handoff_retire "$label" $(handoffs_written_from spec)
