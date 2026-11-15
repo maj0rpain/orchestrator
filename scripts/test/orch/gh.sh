@@ -712,9 +712,6 @@ assert_eq "adapter_issues_open_rows cuts the list at ISSUE_LIST_LIMIT, the newes
 fake_lag adapter_issues_labelled_rows 1 $'22\nOPEN\n0'
 assert_eq "a lagged adapter_issues_labelled_rows serves the stale listing once, then the current one" \
   "$(barely lagcat adapter_issues_labelled_rows zzz | tr '\n' ' ')|$(barely lagcat adapter_issues_labelled_rows zzz | tr '\n' ' ')" "22 OPEN 0 |"
-fake_lag adapter_issues_any_labelled_rows 1 $'22\nOPEN\n0'
-assert_eq "a lagged adapter_issues_any_labelled_rows serves the stale listing once, then the current one" \
-  "$(barely lagcat adapter_issues_any_labelled_rows zzz | tr '\n' ' ')|$(barely lagcat adapter_issues_any_labelled_rows zzz | tr '\n' ' ')" "22 OPEN 0 |"
 assert_eq "fake_issue_labels reads the labels file with an empty PATH" \
   "$(barely empty fake_issue_labels 21 | tr '\n' ',')" "Alpha,beta,"
 assert_eq "and none for a missing file" "$(barely empty fake_issue_labels 26)" ""

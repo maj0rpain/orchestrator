@@ -620,7 +620,6 @@ fake_issue_drop 10
 echo
 echo "autopilot tick direct read"
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
 git config orchestrator.autopilot.cap 2
 fx_log="$(mktemp)"
 fx_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_labelled_rows rows)" "$(counting_defs adapter_issues_any_labelled_rows any)")"
