@@ -550,6 +550,19 @@ assert_contains "and that every GitHub write landed" "$out" "every GitHub write 
 assert_contains "the comment among them" "$(fake_comments_of 14)" "Round 1 of 2"
 assert_eq "and the round is not complete: no round-complete" "$(on_disk "$d/round-complete")" absent
 
+# A round-complete that cannot be written stops apply after the settled file's
+# append; the resume succeeds and settled.md holds the changelog once (#3078).
+d="$(sra_dir)"
+mkdir "$d/round-complete"
+sra "$d" recommended
+assert_status "a round-complete that cannot be written stops apply" "$st" 1
+assert_contains "naming round-complete" "$out" "$d/round-complete"
+rmdir "$d/round-complete"
+srr_resume "$d"
+assert_status "the resume succeeds" "$st" 0
+assert_eq "settled.md holds the changelog once" "$(sra_cmp "$d/settled.md" "$d/changelog.md")" same
+assert_eq "and round-complete is written" "$(on_disk "$d/round-complete")" present
+
 # apply --resume (#1614): an apply that died saved its answer in the round
 # directory; --resume reruns it, skipping the writes applied.log records.
 d="$(sra_dir)"
@@ -1024,6 +1037,14 @@ assert_contains "item 3 among them" "$(cat "$d/fundamental.md")" "@@ item 3 cons
 assert_eq "no round-complete" "$(on_disk "$d/round-complete")" absent
 assert_eq "no settled.md" "$(on_disk "$d/settled.md")" absent
 
+# A held item followed by another item keeps its trailing blank line.
+hd="$(sra_dir)"
+sed -i 's/^@@ finding testability 2$/&\n@@ why held back/' "$hd/batch.md"
+sed -i 's/^@@ item 4 testability apply minor$/@@ item 4 testability apply fundamental/' "$hd/batch.md"
+ORCH_AUTOPILOT=1 sra "$hd" recommended
+assert_status "a hold of an item followed by another item" "$st" 0
+assert_eq "fundamental.md ends with the held item's blank line" "$(tail -n 1 "$hd/fundamental.md" | wc -c | tr -d ' ')" 1
+
 ORCH_AUTOPILOT=1 sra "$d" 1C
 assert_status "the resumed apply refuses an option the item lacks" "$st" 1
 ORCH_AUTOPILOT=1 sra "$d" -4
@@ -1194,6 +1215,20 @@ sra "$d" recommended
 assert_status "flow mode applies on state's issue" "$st" 0
 assert_eq "publishing the body" "$(fake_body_of 14)" "$sra_clean"
 assert_contains "and the comment" "$(fake_comments_of 14)" "Round 1 of 1"
+
+# A round an autopilot session held, finished in an attended one: the round
+# completes, and spec round no longer reports it waiting (#3078).
+state_fixture phase spec
+"$ORCH" spec round-dir 1/1 >/dev/null 2>&1
+sra_rd="$top/.orchestrator/spec-rounds/1"
+d="$(sra_dir)"
+cp -a "$d/." "$sra_rd/"
+: >"$sra_rd/fundamental.md"
+sra "$sra_rd" recommended
+assert_status "an attended apply of a held round succeeds" "$st" 0
+assert_eq "round-complete is written" "$(on_disk "$sra_rd/round-complete")" present
+assert_eq "fundamental.md is removed" "$(on_disk "$sra_rd/fundamental.md")" absent
+assert_eq "spec round reports the round done" "$("$ORCH" spec round 2>&1)" "done 1"
 d="$(sra_dir)"
 state_fixture phase "done"
 sra "$d" recommended
@@ -1210,6 +1245,13 @@ chmod 644 "$top/.orchestrator/state.json"
 
 out="$("$ORCH" spec-review apply "$d" recommended --issue 14 2>&1)"; st=$?
 assert_status "--round is required" "$st" 1
+sra_rnd=1x/2 sra "$d" recommended
+assert_status "a malformed --round is refused" "$st" 1
+assert_contains "a malformed --round takes the shared wording" "$out" "want <k>/<n>, a round and the round count, two positive whole numbers, got: 1x/2"
+sra_rnd=3/2 sra "$d" recommended
+assert_status "a round past the count is refused" "$st" 1
+assert_contains "a round past the count takes the shared wording" "$out" "round 3 is past the round count 2"
+unset sra_rnd
 assert_contains "help documents spec-review apply" "$("$ORCH" help)" "spec-review apply <dir> <answer>"
 rm -rf "$top/.orchestrator"
 

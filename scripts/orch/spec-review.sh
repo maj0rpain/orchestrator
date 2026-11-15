@@ -60,38 +60,12 @@ spec_review_begin() {
   # spec-review/.
   local dir="$ORCH/spec-review/$issue"
   if [ "$carry" = 1 ]; then
-    spec_review_dir_reset "$dir" "${SPEC_REVIEW_CARRIED[@]}"
+    spec_round_dir_reset "$dir" --carry
   else
-    spec_review_dir_reset "$dir"
+    spec_round_dir_reset "$dir"
   fi
   printf '%s/\n' "$dir"
 }
-
-# spec_review_dir_reset <dir> [<name>...]: a round's working directory made
-# ready to run in - the one reset both a standalone review's begin and a
-# flow's spec round-dir run. With names, every entry of an existing <dir>
-# other than those is deleted in place, keeping what a round hands the next;
-# with none, <dir> is removed whole. Either way <dir> is then created when
-# missing.
-spec_review_dir_reset() {
-  local dir="$1"
-  shift
-  if [ $# -gt 0 ] && [ -d "$dir" ]; then
-    local keep=() f
-    for f in "$@"; do keep+=(! -name "$f"); done
-    find "$dir" -mindepth 1 -maxdepth 1 "${keep[@]}" -exec rm -rf {} +
-  else
-    rm -rf "$dir"
-  fi
-  mkdir -p "$dir"
-}
-
-# What a round hands the next: the Implementability lens's code map (#1141)
-# and the settled file (#1185), read by both begin's --carry and a flow's spec
-# round-dir. A flow's round-dir also carries SPEC_ROUND_LENS_SETTING, which
-# --carry leaves out: a standalone review reads the lens setting once, in one
-# session.
-readonly SPEC_REVIEW_CARRIED=(map-implementability.md settled.md)
 
 # --- spec-review apply (#1117) ------------------------------------------------
 #
@@ -672,7 +646,7 @@ spec_review_answer() {
         case "$n" in ''|*[!0-9]*) bad=1 ;; esac
         case "$sign:$letter" in :[A-Za-z]|[-+]:) ;; *) bad=1 ;; esac
         [ -z "$bad" ] || die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>"
-        letter="$(printf '%s' "$letter" | tr '[:lower:]' '[:upper:]')"
+        letter="${letter^^}"
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
         [ -z "${SR_DISP[$i]+x}" ] || die "the answer names item $n twice"
@@ -930,10 +904,9 @@ spec_review_prompt_line() {
 # directory, holding spec.md and comments.md, which the session fetched first.
 # A missing optional input prints none; the findings file and the
 # Implementability map file are write targets, always given. Fidelity runs
-# only in a flow round directory - one under SPEC_ROUNDS_DIR - and its plan
+# only in a flow round directory - one spec_round_in_flow names - and its plan
 # handoff is what `handoff path spec` prints, the op dying when it fails.
 spec_review_prompt() {
-  orch_load spec
   [ $# -eq 2 ] || die "usage: orch.sh spec-review prompt <dir> <lens>"
   local dir="${1%/}" lens="$2" plan plan_err
   spec_review_lens_known "$lens" || die "unknown lens '$lens' (want one of: $SPEC_REVIEW_LENSES)"
@@ -942,10 +915,10 @@ spec_review_prompt() {
   [ -f "$dir/spec.md" ] || die "no spec body: $dir/spec.md does not exist - fetch it first"
   [ -f "$dir/comments.md" ] || die "no comments file: $dir/comments.md does not exist - fetch it first"
   if [ "$lens" = fidelity ]; then
-    case "$dir/" in
-      "$SPEC_ROUNDS_DIR"/?*) ;;
-      *) die "the Fidelity lens runs only in a flow's spec review: $dir is not under $SPEC_ROUNDS_DIR/" ;;
-    esac
+    local rounds_dir
+    spec_rounds_dir rounds_dir
+    spec_round_in_flow "$dir" \
+      || die "the Fidelity lens runs only in a flow's spec review: $dir is not under $rounds_dir/"
     capture plan plan_err cmd_handoff path spec || {
       [ -z "$plan_err" ] || die "no plan handoff for the Fidelity prompt: $(err_line "$plan_err")"
       die "no plan handoff for the Fidelity prompt: $plan does not exist"
@@ -1517,11 +1490,11 @@ spec_review_tickets_answer() {
 
 # spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s copy into
 # TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
-# apply run has taken that copy, ticket-<t>.md. After a hold, the fetched copy
-# is the ticket as the hold run published it (see spec_review_hold, which
-# rebases the ticket copies and keeps its ticket lines). When the
-# session wrote no ticket-<t>.md, the problem, naming <what>, is appended to
-# SR_PROBLEMS and it returns 1; a copy it cannot read dies, naming <what> too.
+# apply run has taken that copy, ticket-<t>.md. A hold run leaves the ticket
+# copies untouched, so the run after the reply takes them as a first run does.
+# When the session wrote no ticket-<t>.md, the problem, naming <what>, is
+# appended to SR_PROBLEMS and it returns 1; a copy it cannot read dies, naming
+# <what> too.
 spec_review_ticket_load() {
   local j copy file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0
@@ -1791,82 +1764,6 @@ spec_review_local_write() {
     || die "could not write $1 - nothing written to GitHub"
 }
 
-# spec_review_save_answer <dir> <arg>...: the apply's answer arguments saved
-# to <dir>/apply-answer, one shell-quoted line, before the first GitHub write.
-# The file arguments (--reasons, --ticket-reasons, --host-fallbacks) are copied
-# into <dir> first and saved as the copies, so a resume never reads a file the
-# dead session left elsewhere.
-spec_review_save_answer() {
-  orch_load spec
-  local dir="$1" a file_opt="" copy saved=()
-  shift
-  for a in "$@"; do
-    if [ -n "$file_opt" ]; then
-      copy="$dir/apply-${file_opt#--}.copy"
-      cp "$a" "$copy" 2>/dev/null \
-        || die "could not copy $a to $copy - nothing written to GitHub"
-      saved+=("$copy")
-      file_opt=""
-      continue
-    fi
-    saved+=("$a")
-    case "$a" in
-      --reasons|--ticket-reasons|--host-fallbacks) file_opt="$a" ;;
-    esac
-  done
-  { printf '%q ' "${saved[@]}"; printf '\n'; } >"$dir/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
-    || die "could not write $dir/$SPEC_ROUND_APPLY_ANSWER - nothing written to GitHub"
-}
-
-# spec_review_clear_answer <dir>: the saved answer and its file copies removed,
-# at the end of the run that no resume continues.
-spec_review_clear_answer() {
-  orch_load spec
-  rm -f "$1/$SPEC_ROUND_APPLY_ANSWER" "$1"/apply-*.copy 2>/dev/null \
-    || die "could not remove $1/$SPEC_ROUND_APPLY_ANSWER - every GitHub write landed: $(spec_review_landed "$1")"
-}
-
-# spec_review_finish <dir> <log>: the local tail of a round once its changelog
-# comment landed: <log> appended to settled.md, fundamental.md removed in a
-# resumed autopilot run, round-complete written, the saved answer removed.
-spec_review_finish() {
-  orch_load spec
-  local dir="$1" log="$2"
-  # The settled file, last: a pause or a failed write before this point
-  # appends nothing, so a rerun never appends a changelog twice.
-  { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
-    || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
-  if [ "$SR_FUNDAMENTAL_RUN" = resume ]; then
-    rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
-      && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
-      || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
-  fi
-  # The round's completion, the very last step: spec round reads it to tell
-  # a resumed flow which round runs next, so it exists only once every write
-  # above has landed.
-  { : >"$dir/$SPEC_ROUND_COMPLETE"; } 2>/dev/null \
-    || die "could not write $dir/$SPEC_ROUND_COMPLETE - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
-  spec_review_clear_answer "$dir"
-}
-
-# spec_review_hold <dir>: the end of an autopilot round's first run, when the
-# batch held fundamental items back - validated, nothing applied, nothing
-# published. Writes <dir>/fundamental.md, the held-back items' blocks in the
-# batch grammar behind the batch's `@@ lens` lines: the round's save point,
-# which spec round reports as waiting and the resumed apply reads as its cue.
-spec_review_hold() {
-  orch_load spec
-  local dir="$1" held=" " i
-  for i in ${SR_IT_FUNDAMENTAL[@]+"${!SR_IT_FUNDAMENTAL[@]}"}; do held="$held${SR_IT_N[$i]} "; done
-  { {
-    grep '^@@ lens ' "$dir/batch.md" || true
-    awk -v held="$held" '
-      /^@@ item / { keep = index(held, " " $3 " ") > 0 }
-      keep { print }' "$dir/batch.md"
-  } >"$dir/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
-    || die "could not write $dir/$SPEC_ROUND_FUNDAMENTAL - nothing written to GitHub"
-}
-
 # spec_review_ticket_numbers <dir>: the numbers of <dir>'s ticket-<n>.md files,
 # one per line; the .fetched.md copies are not among them.
 spec_review_ticket_numbers() {
@@ -1893,14 +1790,13 @@ spec_review_ticket_numbers() {
 # records are skipped, and with the changelog comment landed only the local
 # tail runs.
 spec_review_apply() {
-  orch_load spec
   # Subshells below call into these: load each once here, not once per subshell.
   orch_load gh
   orch_load issue
   orch_load ticket
   local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended] [--host-fallbacks <file>] | orch.sh spec-review apply <dir> --resume --round <k>/<n>"
   local dir="" answer="" have_answer="" round="" reasons="" issue="" unattended=false hosts_file="" hosts=""
-  local ticket_answer="" ticket_reasons="" opt_like resume="" a
+  local ticket_answer="" ticket_reasons="" opt_like resume="" a r_state="" answer_file="" state=""
   local -a save_args=() saved=() given=()
   for a in "$@"; do
     if [ "$a" = --resume ]; then resume=1; else given+=("$a"); fi
@@ -1918,10 +1814,11 @@ spec_review_apply() {
     [ -n "$r_dir" ] && [ -n "$r_round" ] || die "$usage"
     [ -d "$r_dir" ] || die "no such directory: $r_dir"
     r_dir="${r_dir%/}"
-    [ -f "$r_dir/$SPEC_ROUND_APPLY_ANSWER" ] \
-      || die "--resume: $r_dir holds no $SPEC_ROUND_APPLY_ANSWER - there is no apply to resume; run apply with its answer"
-    eval "saved=($(cat "$r_dir/$SPEC_ROUND_APPLY_ANSWER"))" 2>/dev/null \
-      || die "$r_dir/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
+    spec_round_state "$r_dir" r_state
+    spec_round_answer_name answer_file
+    [ "$r_state" = applying ] \
+      || die "--resume: $r_dir holds no $answer_file - there is no apply to resume; run apply with its answer"
+    spec_round_answer_load "$r_dir" saved
     set -- "$r_dir" "${saved[@]}"
   else
     set -- ${given[@]+"${given[@]}"}
@@ -1960,12 +1857,9 @@ spec_review_apply() {
     || die "--resume --round $r_round: the saved answer in $r_dir is for round $round"
   [ -n "$dir" ] && [ -n "$have_answer" ] || die "$usage"
   [ -n "$round" ] || die "--round <k>/<n> is required ($usage)"
-  case "$round" in
-    [1-9]*/[1-9]*) ;;
-    *) die "--round must be <k>/<n>, two positive numbers, got: $round" ;;
-  esac
-  case "${round%/*}${round#*/}" in *[!0-9]*) die "--round must be <k>/<n>, two positive numbers, got: $round" ;; esac
-  [ "${round%/*}" -le "${round#*/}" ] || die "--round $round: round ${round%/*} is past the round count ${round#*/}"
+  # shellcheck disable=SC2034 # only the parse's refusals are wanted
+  local round_k round_n
+  spec_round_count_parse "$round" round_k round_n
   if [ -n "$issue" ]; then
     case "$issue" in *[!0-9]*) die "--issue must be a plain issue number, got: $issue" ;; esac
   fi
@@ -1985,16 +1879,20 @@ spec_review_apply() {
   fi
   [ -d "$dir" ] || die "no such directory: $dir"
   dir="${dir%/}"
-  [ -z "$resume" ] && [ -e "$dir/$SPEC_ROUND_APPLY_ANSWER" ] \
-    && die "$dir/$SPEC_ROUND_APPLY_ANSWER holds the answer of an apply that died - run spec-review apply $dir --resume --round $round to resume it"
+  if [ -z "$resume" ]; then
+    spec_round_state "$dir" state
+    spec_round_answer_name answer_file
+    [ "$state" != applying ] \
+      || die "$dir/$answer_file holds the answer of an apply that died - run spec-review apply $dir --resume --round $round to resume it"
+  fi
   [ -n "$resume" ] || [ ! -s "$dir/applied.log" ] \
     || die "$dir/applied.log records writes that already landed: $(spec_review_landed "$dir") - this review stopped at a failed write; apply refuses to run again"
-  # An autopilot round's two runs (see spec_review_hold): the first holds the
+  # An autopilot round's two runs (see spec_round_hold): the first holds the
   # fundamental items back and writes nothing else, the run after the reply,
   # finding fundamental.md, applies the whole batch.
   SR_FUNDAMENTAL_RUN=""
   if autopilot_active; then
-    if [ -f "$dir/$SPEC_ROUND_FUNDAMENTAL" ]; then SR_FUNDAMENTAL_RUN=resume; else SR_FUNDAMENTAL_RUN=hold; fi
+    if spec_round_held "$dir"; then SR_FUNDAMENTAL_RUN=resume; else SR_FUNDAMENTAL_RUN=hold; fi
   fi
   if [ -n "$hosts_file" ]; then
     [ -f "$hosts_file" ] || die "--host-fallbacks file not found: $hosts_file"
@@ -2018,7 +1916,7 @@ spec_review_apply() {
     [ -f "$dir/changelog.md" ] || die "changelog.md not found in $dir"
     local landed_log
     landed_log="$(cat "$dir/changelog.md")"
-    spec_review_finish "$dir" "$landed_log"
+    spec_round_complete "$dir" "$landed_log" "$(spec_review_landed "$dir")"
     return 0
   fi
   [ -f "$dir/spec.md" ] || die "spec.md not found in $dir"
@@ -2044,7 +1942,15 @@ spec_review_apply() {
   [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing applied, nothing written"
   fetched="$SR_FETCHED"; text="$SR_TEXT"
   if [ "$SR_FUNDAMENTAL_RUN" = hold ] && [ "${#SR_IT_FUNDAMENTAL[@]}" -gt 0 ]; then
-    spec_review_hold "$dir"
+    # The held-back items' blocks in the batch grammar behind the batch's
+    # `@@ lens` lines, fed by a redirect so a failed write dies in this shell.
+    local held=" "
+    for i in ${SR_IT_FUNDAMENTAL[@]+"${!SR_IT_FUNDAMENTAL[@]}"}; do held="$held${SR_IT_N[$i]} "; done
+    spec_round_hold "$dir" < <(
+      grep '^@@ lens ' "$dir/batch.md" || true
+      awk -v held="$held" '
+        /^@@ item / { keep = index(held, " " $3 " ") > 0 }
+        keep { print }' "$dir/batch.md")
     return 0
   fi
   spec_review_reasons --reasons "$reasons" SR_IT_N SR_DISP SR_REASON \
@@ -2073,7 +1979,7 @@ spec_review_apply() {
     if [ -z "$ticket_answer" ]; then
       # The pause: the session drafts the ticket items and runs apply again.
       spec_review_local_write "$dir/spec.md" "$text"
-      spec_review_clear_answer "$dir"
+      spec_round_answer_clear "$dir" "$(spec_review_landed "$dir")"
       note "$kind"
       exit 3
     fi
@@ -2093,7 +1999,7 @@ spec_review_apply() {
 
   # The answer saved before the first GitHub write, for --resume to rerun; a
   # resumed run keeps the file it was resumed from.
-  [ -n "$resume" ] || spec_review_save_answer "$dir" "${save_args[@]}"
+  [ -n "$resume" ] || spec_round_answer_save "$dir" "--reasons --ticket-reasons --host-fallbacks" "${save_args[@]}"
 
   local log
   log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
@@ -2128,5 +2034,5 @@ spec_review_apply() {
     spec_review_write "$dir" "$(spec_review_label_retire "$issue")" cmd_ticket_retire "$issue"
   fi
   spec_review_write "$dir" "$(spec_review_label_changelog "$issue")" "${comment[@]}" "$dir/changelog.md"
-  spec_review_finish "$dir" "$log"
+  spec_round_complete "$dir" "$log" "$(spec_review_landed "$dir")"
 }

@@ -540,6 +540,12 @@ and the round count, written by `orch.sh`, from which `orch.sh spec round` tells
 a fresh session the round to resume the review at. It is not a handoff, and it
 is never in `state.json`.
 
+**Round directory**:
+The directory one round of a spec review works in, holding what the round
+reads, its batch and where the round stands for a session that resumes it. A
+flow's spec review has one per round; a standalone spec review reuses one
+across its rounds.
+
 **Unattended spec review**:
 A spec review that asks the human nothing: every recommended edit
 is applied, every decision item takes its recommended option, and a ticket

@@ -301,8 +301,11 @@ printf 'model opus\neffort high\n' >"$rounds/1/agent-lens"
 : >"$rounds/1/round-complete"
 mkdir -p "$rounds/2"
 writeln stale >"$rounds/2/spec.md"
-out="$("$ORCH" spec round-dir 2/2 2>&1)"; st=$?
+rd_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rd_load" "$ORCH" spec round-dir 2/2 2>&1)"; st=$?
 assert_status "round-dir 2/2 succeeds" "$st" 0
+assert_trace_names_no "spec round-dir" "$rd_load" spec-review
+rm -f "$rd_load"
 assert_eq "printing round 2's fixed directory" "$out" "$rounds/2/"
 assert_eq "emptied, then holding only round 1's lens setting, code map and settled file" \
   "$(ls -A "$rounds/2" 2>&1)" "$(writeln agent-lens map-implementability.md settled.md)"
@@ -599,4 +602,75 @@ for op in fetch update comment comments; do
   assert_eq "spec $op on a done flow starts jq once" "$(counting_starts "$sr_jq" jq)" "1"
 done
 rm -f "$spec_body"
+restore_suite_env
+
+# --- spec round directory owner (#3078) ------------------------------------
+# The round directory's state, held, flow-membership and reset, called as the
+# spec-review module does, through sourced_orch.
+echo
+echo "spec round directory owner (#3078)"
+fresh_flow rdowner
+top="$(git rev-parse --show-toplevel)"
+od="$(mktemp -d)"
+for combo in "" a f c af ac fc afc; do
+  rm -rf "$od/d"; mkdir "$od/d"
+  case "$combo" in *a*) : >"$od/d/apply-answer" ;; esac
+  case "$combo" in *f*) : >"$od/d/fundamental.md" ;; esac
+  case "$combo" in *c*) : >"$od/d/round-complete" ;; esac
+  case "$combo" in
+    *a*) want=applying ;; *f*) want=waiting ;; *c*) want=complete ;; *) want=open ;;
+  esac
+  out="$(sourced_orch_script 'spec_round_state "$1" s; echo "$s"' "$od/d")"
+  assert_eq "spec_round_state of a directory holding '$combo' is $want" "$out" "$want"
+done
+out="$(sourced_orch_script 'spec_round_state "$1" s; echo "$s"' "$od/missing")"
+assert_eq "spec_round_state of a missing directory is open" "$out" "open"
+: >"$od/d/fundamental.md"
+sourced_orch spec_round_held "$od/d"; st=$?
+assert_status "spec_round_held succeeds beside fundamental.md" "$st" 0
+sourced_orch spec_round_held "$od/missing"; st=$?
+assert_status "spec_round_held fails without it" "$st" 1
+sourced_orch spec_round_in_flow "$top/.orchestrator/spec-rounds/2"; st=$?
+assert_status "spec_round_in_flow holds for a flow's round directory" "$st" 0
+sourced_orch spec_round_in_flow "$top/.orchestrator/spec-review/21"; st=$?
+assert_status "spec_round_in_flow fails for a standalone review's directory" "$st" 1
+sourced_orch spec_round_in_flow "$od/d"; st=$?
+assert_status "spec_round_in_flow fails for a path outside both" "$st" 1
+# The saved answer round trip: a file option's argument is saved as its copy.
+printf 'why\n' >"$od/reasons.src"
+rm -rf "$od/d"; mkdir "$od/d"
+sourced_orch spec_round_answer_save "$od/d" "--reasons --host-fallbacks" recommended --reasons "$od/reasons.src" --round "1/2"; st=$?
+assert_status "spec_round_answer_save succeeds" "$st" 0
+assert_eq "the file option's argument is saved as its copy" \
+  "$(cat "$od/d/apply-answer")" "recommended --reasons $od/d/apply-reasons.copy --round 1/2 "
+assert_eq "and the copy holds the file" "$(cat "$od/d/apply-reasons.copy")" why
+out="$(sourced_orch_script 'spec_round_answer_load "$1" a; printf "[%s]" "${a[@]}"' "$od/d")"
+assert_eq "spec_round_answer_load reads the arguments back" "$out" \
+  "[recommended][--reasons][$od/d/apply-reasons.copy][--round][1/2]"
+mkdir "$od/unreadable"; mkdir "$od/unreadable/apply-answer"
+out="$(sourced_orch_script 'spec_round_answer_load "$1" a; echo "survived"' "$od/unreadable" 2>&1)"; st=$?
+assert_status "spec_round_answer_load over an unreadable apply-answer dies" "$st" 1
+assert_eq "with the rerun message and no stray cat error" "$out" \
+  "orch: $od/unreadable/apply-answer is unreadable - rerun the round"
+sourced_orch spec_round_answer_clear "$od/d" nothing; st=$?
+assert_status "spec_round_answer_clear succeeds" "$st" 0
+assert_eq "it removes the answer and its copies" "$(ls -A "$od/d")" ""
+out="$(sourced_orch_script 'spec_round_answer_name n; echo "$n"')"
+assert_eq "spec_round_answer_name names the file" "$out" apply-answer
+# spec_round_complete twice leaves the changelog once.
+rm -rf "$od/d"; mkdir "$od/d"
+sourced_orch spec_round_complete "$od/d" "## Spec review" nothing; st=$?
+assert_status "spec_round_complete succeeds" "$st" 0
+sourced_orch spec_round_complete "$od/d" "## Spec review" nothing; st=$?
+assert_status "and runs again" "$st" 0
+assert_eq "leaving the changelog once" "$(grep -c '^## Spec review$' "$od/d/settled.md")" 1
+assert_eq "and round-complete written" "$(on_disk "$od/d/round-complete")" present
+# A fundamental.md it cannot remove: today's message, no round-complete.
+rm -rf "$od/d"; mkdir -p "$od/d/fundamental.md"; : >"$od/d/fundamental.md/x"
+out="$(sourced_orch spec_round_complete "$od/d" "## Spec review" landed-x 2>&1)"; st=$?
+assert_status "spec_round_complete over an unremovable fundamental.md dies" "$st" 1
+assert_contains "with today's message" "$out" \
+  "could not remove $od/d/fundamental.md - every GitHub write landed and settled.md is appended: landed-x"
+assert_eq "writing no round-complete" "$(on_disk "$od/d/round-complete")" absent
+rm -rf "$od"
 restore_suite_env

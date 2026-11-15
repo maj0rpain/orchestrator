@@ -354,7 +354,7 @@ cmd_finding_triage_scan() {
         || gh_die "list the review:$sev findings" "$gh_err"
     done
   fi
-  default="$(default_branch)"
+  default_branch_into default
   ref="refs/remotes/origin/$default"
   git fetch -q origin "+refs/heads/$default:$ref" >/dev/null 2>&1 \
     || die "could not fetch origin/$default"

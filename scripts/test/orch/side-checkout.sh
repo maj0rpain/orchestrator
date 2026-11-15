@@ -1538,6 +1538,125 @@ chmod 644 "$mlink/.git"
 printf '%s\n' "$mptr" >"$mlink/.git"
 restore_suite_env
 
+# --- side checkout marker issue: reading without re-classifying (#3073) -------
+# side_checkout_marker_issue_into reads the issue a marker records for a path
+# the caller holds as a side checkout, starting nothing; the loops over the walk
+# (side_checkout_for_issue, side-checkout list, doctor) cost no more per side
+# checkout than their own content needs.
+echo
+echo "side_checkout_marker_issue_into"
+healthy_repo
+mi_wt() { # <name> <marker content as printf format, or - for no marker>: a worktree; prints its path
+  local p gd
+  p="$(mktemp -d)/$1"
+  git worktree add -q "$p" -b "mi-$1"
+  gd="$(git -C "$p" rev-parse --absolute-git-dir)"
+  if [ "$2" != - ]; then printf "$2" >"$gd/orchestrator-side-checkout"; fi
+  printf '%s\n' "$p"
+}
+mi_ok="$(mi_wt ok '41\n')"
+mi_none="$(mi_wt none -)"
+mi_empty="$(mi_wt empty '')"
+mi_bad="$(mi_wt bad '4x\n')"
+mi_multi="$(mi_wt multi '41\n42\n')"
+mi_nul="$(mi_wt nul '41\0')"
+mi_unread="$(mi_wt unread '41\n')"
+mi_unread_marker="$(git -C "$mi_unread" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+chmod 000 "$mi_unread_marker"
+mi_perm_bites=1; if [ -r "$mi_unread_marker" ]; then mi_perm_bites=0; fi
+nogit="$(mktemp -d)"  # an empty PATH directory: no git, no cat, nothing
+mapfile -t mi < <(sourced_orch_script '
+  err="$(mktemp)"  # before PATH is emptied
+  PATH="$7"
+  v=untouched; side_checkout_marker_issue_into v "$1"; echo "$? $v"
+  for p in "$2" "$3" "$4" "$5" "$6" "$8"; do
+    v=untouched; st=0; : >"$err"
+    side_checkout_marker_issue_into v "$p" 2>"$err" || st=$?
+    echo "$st $v [$(<"$err")]"
+  done' "$mi_ok" "$mi_none" "$mi_empty" "$mi_bad" "$mi_multi" "$mi_nul" "$nogit" "$mi_unread")
+chmod 644 "$mi_unread_marker"
+assert_eq "with no git and no cat, a marker's issue is read" "${mi[0]}" "0 41"
+assert_eq "a worktree with no marker records none" "${mi[1]}" "1 untouched []"
+assert_eq "an empty marker records none" "${mi[2]}" "1 untouched []"
+assert_eq "a marker that is not a plain number records none" "${mi[3]}" "1 untouched []"
+assert_eq "a marker of more than one line records none" "${mi[4]}" "1 untouched []"
+assert_eq "a marker holding a NUL byte records none" "${mi[5]}" "1 untouched []"
+if [ "$mi_perm_bites" = 0 ]; then
+  skip "an unreadable marker records none, printing nothing" "permissions do not bite here, e.g. root"
+else
+  assert_eq "an unreadable marker records none, printing nothing" "${mi[6]}" "1 untouched []"
+fi
+
+# side_checkout_for_issue: as many git processes with five side checkouts as
+# with two, and no cat.
+mi_git="$(counting_bin git)"
+mi_cat="$(counting_bin cat)"
+mi_for_issue() { # <issue>: empties the git/cat logs, then runs side_checkout_for_issue
+  : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
+  PATH="$mi_git:$mi_cat:$PATH" sourced_orch side_checkout_for_issue "$1"
+}
+healthy_repo  # a fresh walk: only the side checkouts below are in it
+mi_dir="$(mktemp -d)"  # one parent, so the walk reaches s1..s5 in name order
+mi_wt_in() { # <name> <issue>: a side checkout under $mi_dir recording <issue>
+  git worktree add -q "$mi_dir/$1" -b "mi-in-$1"
+  printf '%s\n' "$2" >"$(git -C "$mi_dir/$1" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+}
+mi_wt_in s1 9001
+mi_wt_in s2 9002
+mi_for_issue 9002 >/dev/null
+mi_two="$(counting_starts "$mi_git" git)"
+for mi_n in 3 4 5; do mi_wt_in "s$mi_n" "900$mi_n"; done
+mi_last="$(mi_for_issue 9005)"
+mi_five="$(counting_starts "$mi_git" git)"
+assert_eq "side_checkout_for_issue starts as many git processes with five side checkouts as with two" "$mi_five" "$mi_two"
+assert_eq "and starts no cat" "$(counting_starts "$mi_cat" cat)" "0"
+assert_eq "it prints the path of the side checkout recording the asked issue" "${mi_last##*/}" "s5"
+mi_st=0; mi_for_issue 9999 >/dev/null || mi_st=$?
+assert_status "an issue no side checkout records is not found" "$mi_st" 1
+restore_suite_env
+
+# side-checkout list: one git process more for each added flow-less side
+# checkout (its holding line's branch read), and no more cat.
+echo
+echo "side-checkout list cost per side checkout"
+healthy_repo
+mi_git="$(counting_bin git)"
+mi_cat="$(counting_bin cat)"
+mi_list_starts() {
+  : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
+  PATH="$mi_git:$mi_cat:$PATH" "$ORCH" side-checkout list >/dev/null 2>&1
+}
+mi_wt l1 '7001\n' >/dev/null
+mi_wt l2 '7002\n' >/dev/null
+mi_list_starts
+mi_git2="$(counting_starts "$mi_git" git)"
+mi_cat2="$(counting_starts "$mi_cat" cat)"
+for mi_n in 3 4 5; do mi_wt "l$mi_n" "700$mi_n\\n" >/dev/null; done
+mi_list_starts
+assert_eq "list starts one more git process for each added side checkout" \
+  "$(counting_starts "$mi_git" git)" "$((mi_git2 + 3))"
+assert_eq "and no more cat with five than with two" "$(counting_starts "$mi_cat" cat)" "$mi_cat2"
+restore_suite_env
+
+# doctor --env: an autopilot side flow whose marker records no plain issue gets
+# no phase-label verdict.
+echo
+echo "doctor --env beside side flows with unusable markers"
+tick_fixture
+fake_issue 7 open ready-for-agent orch:implement
+mi_flow() { # <name> <marker printf format>: a side checkout with a flow and that marker
+  local p
+  p="$(mi_wt "$1" "$2")"
+  (cd "$p" && "$ORCH" init "$1" --issue 7 >/dev/null 2>&1)
+}
+mi_flow empty-marker ''
+mi_flow bad-marker '7x\n'
+out="$("$ORCH" doctor --env 2>&1)"
+assert_not_contains "an empty marker's side flow gets no phase-label verdict" "$out" "empty-marker"
+assert_not_contains "a non-numeric marker's side flow gets none either" "$out" "bad-marker"
+assert_not_contains "and no label verdict for the issue" "$out" "phase label of #7"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
 # --- archive reads the flow's slug once ---------------------------------------
 echo
 echo "archive one jq"
@@ -1551,4 +1670,58 @@ out="$(sourced_orch archive_flow "$PWD" "$PWD" 2>&1)"; st=$?
 assert_status "archive_flow beside a truncated state file succeeds" "$st" 0
 assert_contains "archiving under the unreadable stand-in slug" "$out" "-unreadable"
 assert_not_contains "and printing no could-not-read message" "$out" "could not read"
+restore_suite_env
+
+# --- side-checkout: the default branch is asked for only when needed ----------
+# Counted at the adapter's stand-in: add asks GitHub for the default branch at
+# most once, and the sweep asks only when a verdict or the merged-PR close
+# needs it.
+echo
+echo "side-checkout default-branch asks"
+sc_clone
+fake_github
+fake_default_branch main
+db_reads="$(mktemp)"
+db_defs="$(counting_defs adapter_repo_default_branch branch)"
+
+# add, no base set, nothing for the sweep to judge: one ask.
+d1="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d1 2>/dev/null)"
+assert_eq "add with no base set and an idle sweep asks exactly once" "$(log_count "$db_reads")" "1"
+
+# prune with no side checkout to walk: no ask, d1 removed first.
+git worktree remove --force "$d1"
+out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout prune 2>&1)"
+assert_eq "prune walking no side checkout asks for the default branch zero times" "$(log_count "$db_reads")" "0"
+
+# prune over a finished flow-less quick checkout whose branch records its base
+# and whose issue is closed: neither verdict nor close needs the default.
+fake_offline
+d2="$(sc_add d2)"
+sp_branch_off "$d2" quick/21-d2
+git config branch.quick/21-d2.orchestrator-base main
+fake_pr 61 merged quick/21-d2 main
+fake_pr_head 61 "$(git rev-parse quick/21-d2)"
+fake_issue 21 closed
+fake_online
+out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout prune 2>&1)"
+assert_contains "the finished quick checkout is still removed" "$out" "removed side checkout $d2"
+assert_eq "prune judging a recorded-base, closed-issue checkout asks zero times" "$(log_count "$db_reads")" "0"
+
+# add, no base set, the sweep itself needing the default: still one ask.
+fake_offline
+d3="$(sc_add d3)"
+sp_branch_off "$d3" quick/22-d3
+fake_pr 62 merged quick/22-d3 main
+fake_pr_head 62 "$(git rev-parse quick/22-d3)"
+fake_online
+out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d4 2>&1)"
+assert_contains "the sweep ran and removed the finished checkout" "$out" "removed side checkout $d3"
+assert_eq "add whose sweep needs the default asks exactly once" "$(log_count "$db_reads")" "1"
+
+# add with a base set and an idle sweep: no ask.
+git config orchestrator.base main
+out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d5 2>&1)"
+assert_eq "add with a base set and an idle sweep asks zero times" "$(log_count "$db_reads")" "0"
+git config --unset orchestrator.base
+rm -f "$db_reads"
 restore_suite_env

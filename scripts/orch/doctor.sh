@@ -200,7 +200,7 @@ d_probe() {
   # trip.
   if [ "$scope" = flow ]; then return 0; fi
   d_probe_gh
-  # The same read default_branch makes, validated the same way (#485): an
+  # The same read default_branch_into makes, validated the same way (#485): an
   # answer that is no branch name - a tool manager's banner around it, or an
   # empty one - is GitHub not having said, never a name to report.
   [ "$D_GH" = ok ] || return 0
@@ -552,8 +552,8 @@ check_git_exclude() {
 # answer that would send the next fork at nothing, so it FAILs; origin being
 # unreachable only means it could not be checked. The default case reuses the
 # default branch GitHub already answered in d_probe, else default_branch_local -
-# the answer base_branch would give, with no second ask - and needs no origin
-# check at all.
+# the answer base_branch_into would give, with no second ask - and needs no
+# origin check at all.
 check_base_branch() {
   local b st=0
   orch_load base
@@ -572,6 +572,67 @@ check_base_branch() {
   esac
 }
 
+# The first command word of a verification line's text: the backticks around
+# it and any leading VAR=value words are dropped.
+d_verification_word() {
+  local rest w n
+  trim_split "$1" rest
+  rest="${rest#\`}"
+  rest="${rest%\`}"
+  while IFS= read -r w; do
+    n="${w%%=*}"
+    if [ "$n" != "$w" ]; then
+      case "$n" in ''|[0-9]*|*[!A-Za-z0-9_]*) ;; *) continue ;; esac
+    fi
+    printf '%s' "$w"
+    return 0
+  done <<<"$(d_entries "$rest")"
+}
+
+# Whether a command word is found: an executable file for a path (relative to
+# the repo root), else a builtin, a keyword or a file on PATH.
+d_verification_found() {
+  local w="$1" p t
+  case "$w" in
+    */*)
+      case "$w" in /*) p="$w" ;; *) p="$ROOT/$w" ;; esac
+      [ -f "$p" ] && [ -x "$p" ] ;;
+    *)
+      t="$(type -t "$w" 2>/dev/null)"
+      case "$t" in builtin|keyword) return 0 ;; esac
+      [ -n "$(type -P "$w" 2>/dev/null)" ] ;;
+  esac
+}
+
+# The repo's verification commands: for each label, the first word of the
+# command on the first line, across the instruction files in order, that opens
+# with it. Found is ok; not found is a warn with no remedy, since no one
+# command installs an arbitrary tool. A label nobody names, or whose line
+# leaves no command word, says nothing. A function orch.sh defines never counts
+# as found: only a builtin, a keyword or a file does. No namerefs (bash 4.2).
+check_verification_commands() {
+  local label f line word from_file
+  for label in "Ticket verification:" "Full verification:"; do
+    from_file="" word=""
+    for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
+      [ -f "$ROOT/$f" ] || continue
+      while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+          "$label"*) from_file="$f"; word="$(d_verification_word "${line#"$label"}")"; break ;;
+        esac
+      done <"$ROOT/$f"
+      [ -z "$from_file" ] || break
+    done
+    [ -n "$from_file" ] && [ -n "$word" ] || continue
+    if d_verification_found "$word"; then
+      d_ok "${label%:} command: $word"
+    else
+      d_warn "${label%:} command $word (from $from_file) is not installed."
+    fi
+  done
+  return 0
+}
+
 # A finished side checkout left standing is a leftover the sweep has not run
 # on: warn on each, with the command that removes it, and say nothing for one
 # still in use. The finished test is the sweep's own, side_checkout_finished.
@@ -579,7 +640,7 @@ check_base_branch() {
 # skip with GitHub unreachable - only counts once one exists. The finished test
 # reads the default branch for each side checkout, so the memo is seeded before
 # the walk by default_branch_seed, from the probe's answer: doctor asks
-# GitHub for it only in its probe, never through default_branch_resolve.
+# GitHub for it only in its probe, never through a reader.
 check_side_checkouts_finished() {
   local list kind _flow _branch path found=() verdict branch rc
   if ! list="$(checkouts)"; then
@@ -600,7 +661,7 @@ check_side_checkouts_finished() {
         d_warn "side checkout ${path##*/} is finished - its PR is merged, and it is still standing at $path."
         d_remedy "orch.sh side-checkout remove ${path##*/}" ;;
       1) ;;
-      *) d_warn "side checkout $(basename "$path") could not be checked: $verdict" ;;
+      *) d_warn "side checkout ${path##*/} could not be checked: $verdict" ;;
     esac
   done
   return 0
@@ -667,7 +728,7 @@ check_autopilot_side_flows() {
   here="$(pwd -P)"
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] && [ "$path" != "$here" ] || continue
-    issue="$(side_checkout_issue "$path" 2>/dev/null)" || continue
+    side_checkout_marker_issue_into issue "$path" || continue
     [ -f "$(flow_state_file "$path")" ] || continue
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
     d_gh_gate || return 0
@@ -714,7 +775,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
+h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_verification_commands check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
 "
 # flow state -----------------------------------------------------------------
 

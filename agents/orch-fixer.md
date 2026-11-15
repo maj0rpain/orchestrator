@@ -62,7 +62,8 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    them. Done when every item is fixed or on your could-not-fix list, and
    every listed site of a pattern finding is fixed or deferred.
 2. **Verify.** Run the **ticket verification** through `bash "<orch.sh>"
-   suite-cost run -- <command>`. Find it in the repo's instructions
+   suite-cost run -- '<command>'`,
+   the whole line as one quoted argument. Find it in the repo's instructions
    (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`) yourself: a line reading
    `Ticket verification: <command>`. The prompt hands you only the full
    verification command; when the instructions name no ticket verification,

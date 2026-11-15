@@ -1013,8 +1013,12 @@ fake_fail() {
 
 # fake_comment_reads: how many comment-list reads (adapter_issue_comments_json)
 # the fake has answered or refused - 0 for none.
-fake_comment_reads() {
-  if [ -f "$ORCH_GH_FAKE_STORE/comment_reads" ]; then wc -l <"$ORCH_GH_FAKE_STORE/comment_reads" | tr -d ' '; else echo 0; fi
+fake_comment_reads() { fake_lines_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
+
+# fake_lines_count <file>: how many lines a test log file holds; 0 when the
+# file is absent.
+fake_lines_count() {
+  if [ -f "$1" ]; then wc -l <"$1" | tr -d ' '; else echo 0; fi
 }
 
 # The seeded two-line gh stderr whose first line a death must carry.
@@ -1119,7 +1123,7 @@ fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
 
 # fake_checks_reads <n>: how many times PR #n's checks were read, scripted
 # scope or not; 0 when never read.
-fake_checks_reads() { { wc -l <"$ORCH_GH_FAKE_STORE/checks/$1/reads" || echo 0; } 2>/dev/null | tr -d ' '; }
+fake_checks_reads() { fake_lines_count "$ORCH_GH_FAKE_STORE/checks/$1/reads"; }
 
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.
@@ -1185,9 +1189,7 @@ GH
 # gh_calls: how many calls the fixture gh on PATH has answered or refused - 0
 # for none. A behaviour test on the store-backed fake asserts it stays 0, so
 # no command reached a gh subprocess.
-gh_calls() {
-  if [ -f "$GH_FIXTURE/env.log" ]; then wc -l <"$GH_FIXTURE/env.log" | tr -d ' '; else echo 0; fi
-}
+gh_calls() { fake_lines_count "$GH_FIXTURE/env.log"; }
 
 # orch.sh run with a PATH gh that fails - a fixture gh given no reply - for a
 # repo whose origin GitHub cannot answer for (a local bare repo): default-branch

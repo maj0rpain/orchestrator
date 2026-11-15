@@ -275,10 +275,11 @@ require_flow_phase() {
   word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
 }
 
-# flow_base_fallback <raw>: prints the base read from state, or the default
-# branch when <raw> is empty - a flow started before base was recorded.
-flow_base_fallback() {
-  if [ -n "$1" ]; then printf '%s\n' "$1"; else default_branch; fi
+# flow_base_fallback_into <var> <raw>: sets <var> to the base read from state,
+# or the default branch when <raw> is empty - a flow started before base was
+# recorded - in the caller's shell. Never fails.
+flow_base_fallback_into() {
+  if [ -n "$2" ]; then printf -v "$1" '%s' "$2"; else default_branch_into "$1"; fi
 }
 
 # Whether a flow is active: state.json exists and its phase is not done.

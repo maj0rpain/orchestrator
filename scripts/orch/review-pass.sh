@@ -27,10 +27,11 @@ cmd_review_pass() {
 review_pass_begin() {
   orch_load state
   [ $# -eq 1 ] || die "usage: orch.sh review-pass begin <issue>"
-  local issue="$1" branch
+  local issue="$1" branch review_base
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   current_branch_or_die
-  [ "$branch" != "$(recorded_base "$branch")" ] \
+  recorded_base_into review_base "$branch"
+  [ "$branch" != "$review_base" ] \
     || die "$branch is the base branch - a review pass reviews a branch's change against it; check out the change's branch"
   local phase held rc=0
   phase="$(flow_holding_phase "$branch" "$issue")" || rc=$?

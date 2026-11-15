@@ -19,7 +19,7 @@
 suite_cost_measure() {
   local sha cpu
   SUITE_COST_STATUS=0
-  command "$@" || SUITE_COST_STATUS=$?
+  suite_cost_exec "$@" || SUITE_COST_STATUS=$?
   sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
   cpu="$(awk -v s="$sha" '$1 == s { c = $2 } END { print c }' "${ORCH_SUITE_COST_FAKE_CPU:-/dev/null}")"
   if [ -z "$cpu" ]; then

@@ -62,7 +62,7 @@ breakdown_order() {
   local dir="$1" k b list pending emitted="" rest progressed ok
   pending="$(cat "$dir/order")"
   while IFS= read -r k; do
-    list="$(cat "$dir/$k.blocked")"
+    file_read_text list "$dir/$k.blocked"
     [ -n "$list" ] || continue
     list="$(issue_number_list "ticket-$k blocked-by" "$list")" || exit 1
     while IFS= read -r b; do
@@ -90,11 +90,19 @@ breakdown_order() {
   done
 }
 
-# breakdown_number <numbers-file> <k>: the last line for <k> as number and
-# status, or nothing.
+# breakdown_number <numbers-file> <k> <number-var> <status-var>: sets the
+# variables to the number and status of the last line for <k>, both empty when
+# there is none or the file is missing. Reads the file afresh at each call, in
+# bash: a ticket's publish appends to it mid-loop.
 breakdown_number() {
-  [ -f "$1" ] || return 0
-  awk -v k="$2" '$1 == k { n = $2; s = $3 } END { if (n != "") print n, s }' "$1"
+  local _bn_k _bn_n _bn_s _bn_pn="" _bn_ps=""
+  if [ -f "$1" ]; then
+    while read -r _bn_k _bn_n _bn_s || [ -n "$_bn_k" ]; do
+      if [ "$_bn_k" = "$2" ]; then _bn_pn="$_bn_n" _bn_ps="$_bn_s"; fi
+    done <"$1"
+  fi
+  printf -v "$3" '%s' "$_bn_pn"
+  printf -v "$4" '%s' "$_bn_ps"
 }
 
 # breakdown_record <numbers-file> <k> <n> created|linked: appends one line to a
@@ -107,7 +115,7 @@ breakdown_record() {
 # breakdown_publish_in <parent> <draft> <tmp>: breakdown publish's work, run in
 # a subshell so the caller can remove <tmp> however it ends.
 breakdown_publish_in() {
-  local parent="$1" draft="$2" tmp="$3" dir saved numbers k rec n status b want list title order
+  local parent="$1" draft="$2" tmp="$3" dir saved numbers k n status b bn want list title order
   dir="$(breakdown_dir "$parent")"
   saved="$dir/draft.md"
   # A saved draft always wins over the one given.
@@ -126,18 +134,18 @@ breakdown_publish_in() {
   numbers="$dir/numbers"
   order="$(breakdown_order "$tmp")" || exit 1
   while IFS= read -r k; do
-    rec="$(breakdown_number "$numbers" "$k")"
-    n="${rec%% *}"; status="${rec#* }"
+    breakdown_number "$numbers" "$k" n status
     [ "$status" != linked ] || continue
     want=""
-    list="$(cat "$tmp/$k.blocked")"
+    file_read_text list "$tmp/$k.blocked"
     if [ -n "$list" ]; then
       while IFS= read -r b; do
-        want="${want:+$want$'\n'}$(breakdown_number "$numbers" "$b" | cut -d' ' -f1)"
+        breakdown_number "$numbers" "$b" bn status  # status is spent past the linked check
+        want="${want:+$want$'\n'}$bn"
       done <<<"$list"
     fi
-    if [ -z "$rec" ]; then
-      title="$(cat "$tmp/$k.title")"
+    if [ -z "$n" ]; then
+      file_read_text title "$tmp/$k.title"
       n="$(ticket_create "$title" "$tmp/$k.body")" \
         || die "ticket $k of the draft: the create failed"
       # Recorded before the link, so a rerun can tell "created, unlinked" from

@@ -309,6 +309,29 @@ assert_eq "both tickets linked" "$(fake_sub_issues_of 50)" "100 101"
 assert_not_contains "no CR in any title or body after the resume" "$(ticket_texts 100 101)" $'\r'
 restore_suite_env
 
+# A ticket blocked by one published earlier in the same run (#3291): the lookup
+# finds the number the publish just appended, so the edge names that issue.
+breakdown_fixture
+printf '@@ ticket 1 Early\nOne.\n@@ end\n@@ ticket 2 Late\n@@ blocked-by 1\nTwo.\n@@ end\n' >"$draft"
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a ticket blocked by one published in the same run publishes" "$st" 0
+assert_eq "the blocking edge names the earlier ticket's issue" "$(fake_blockers_of 101)" "100"
+restore_suite_env
+
+# breakdown_number answers with an empty PATH: the last line for a position
+# wins, and a missing numbers file gives nothing.
+bn_file="$(mktemp)"
+printf '1 100 created\n2 101 created\n1 100 linked\n' >"$bn_file"
+assert_eq "breakdown_number reads the last line for a position, and a missing file, with an empty PATH" \
+  "$(sourced_orch_script '
+    orch_load breakdown
+    PATH=
+    breakdown_number "$1" 1 n s; printf "[%s %s]" "$n" "$s"
+    breakdown_number "$1" 2 n s; printf "[%s %s]" "$n" "$s"
+    breakdown_number "$1" 9 n s; printf "[%s %s]" "$n" "$s"
+    breakdown_number "$1.none" 1 n s; printf "[%s %s]" "$n" "$s"' "$bn_file")" "[100 linked][101 created][ ][ ]"
+rm -f "$bn_file"
+
 # --- breakdown state ---------------------------------------------------------
 echo
 echo "breakdown state"
