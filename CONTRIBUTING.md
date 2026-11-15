@@ -46,7 +46,8 @@ a section file named as the module is, beside the per-noun files: `checkout.sh`
 for `scripts/orch/checkout.sh`,
 `filed-finding.sh` for `scripts/orch/filed-finding.sh`,
 `issue-timeline.sh` for `scripts/orch/issue-timeline.sh`, `known-items.sh` for
-`scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,
+`scripts/orch/known-items.sh`, `lines-fate.sh` for `scripts/orch/lines-fate.sh`,
+`liveness.sh` for `scripts/orch/liveness.sh`,
 `marked-comment.sh` for
 `scripts/orch/marked-comment.sh`, `session-log.sh` for
 `scripts/orch/session-log.sh`, `standing.sh` for
@@ -477,6 +478,7 @@ scripts/test/orch/checkout.sh the Checkout module's sections, named as the modul
 scripts/test/orch/filed-finding.sh the Filed finding module's sections, named as the module is
 scripts/test/orch/issue-timeline.sh the Issue timeline module's sections, named as the module is
 scripts/test/orch/known-items.sh the Known items module's sections, named as the module is
+scripts/test/orch/lines-fate.sh    the Lines fate module's sections, named as the module is
 scripts/test/orch/liveness.sh      the Liveness module's sections, named as the module is
 scripts/test/orch/marked-comment.sh the Marked comment module's sections, named as the module is
 scripts/test/orch/session-log.sh    the Session log module's sections, named as the module is

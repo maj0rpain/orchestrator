@@ -20,14 +20,6 @@ comments_answered() {
   adapter_stood_in "$(comments_answer "$json")" "$@"
 }
 
-# del_commit <file> <sed script> <message>: commits the edit to src/<file> in
-# the scan section's second clone, $work, printing its SHA.
-del_commit() {
-  sed -i "$2" "$work/src/$1"
-  git -C "$work" commit -qam "$3"
-  git -C "$work" rev-parse HEAD
-}
-
 # pr_head <branch> <pr> <base sha> <file> <sed script>: a PR head off <base sha>
 # that edits src/<file>, pushed as PR <pr> and never merged; prints its SHA,
 # leaving main checked out.
@@ -38,14 +30,6 @@ pr_head() {
   git -C "$work" rev-parse HEAD
   git -C "$work" push -q origin "HEAD:refs/pull/$2/head"
   git -C "$work" checkout -q main
-}
-
-# squash_pr_head <pr> <file> <line>: a PR head off $filed_sha, pushed as PR
-# <pr>, that inserts <line> on top of src/<file>, then the squash commit that
-# lands the same edit on main; prints the PR head's SHA, left on main.
-squash_pr_head() {
-  pr_head "pr$1" "$1" "$filed_sha" "$2" "1i $3"
-  del_commit "$2" "1i $3" "the PR, squash-merged" >/dev/null
 }
 
 # --- finding-triage scan ------------------------------------------------------
@@ -86,7 +70,6 @@ git -C "$work" commit -qam "fix line 3"
 fix_sha="$(git -C "$work" rev-parse HEAD)"
 sed -i 's/^app line 11$/app line 11, reworded/' "$work/src/app.sh"
 git -C "$work" commit -qam "reword line 11"
-reword_sha="$(git -C "$work" rev-parse HEAD)"
 git -C "$work" rm -q src/gone.sh
 git -C "$work" commit -qm "drop gone.sh"
 git -C "$work" push -q origin main
@@ -157,8 +140,6 @@ assert_eq "an unchanged file's finding: issue, PR, location, result, - for no de
 assert_eq "a finding whose lines a later commit fixed is changed" "$(field_of 2 4 "$out")" "changed"
 assert_eq "naming that commit's full SHA, not the newer one elsewhere in the file" \
   "$(field_of 2 5 "$out")" "$fix_sha"
-assert_eq "a line range the file no longer reaches is changed too" "$(field_of 3 4 "$out")" "changed"
-assert_eq "naming the newest commit touching the file" "$(field_of 3 5 "$out")" "$reword_sha"
 assert_eq "a deleted file's finding is gone" "$(field_of 4 4 "$out")" "gone"
 assert_eq "with - for no detail" "$(field_of 4 5 "$out")" "-"
 assert_eq "an unreachable head SHA is unknown" "$(field_of 5 4 "$out")" "unknown"
@@ -358,36 +339,14 @@ assert_contains "saying no commit since the filing touched its lines" "$(field_o
 assert_eq "its exact line" "$(line_of 11 "$out")" "$(never_line 11 other.sh 2 "$unmerged_sha")"
 assert_eq "the never-reached scan from a subdirectory prints the root's line" "$(cd src && scan 11 2>&1)" "$out"
 fake_issue 11 closed
-
-# A PR head with no history in common with the default branch: the merge-base
-# lookup fails, which proves nothing about its deleted line, so the scan keeps
-# its stand-in, the newest commit touching the file, rather than calling the
-# line never reached.
-git -C "$work" checkout -q --orphan unrelated
-{ echo "other line 1"; echo "an unrelated line"; echo "other line 2"; } >"$work/src/other.sh"
-git -C "$work" add src/other.sh
-git -C "$work" commit -qm "an unrelated history"
-unrelated_sha="$(git -C "$work" rev-parse HEAD)"
-git -C "$work" push -q origin HEAD:refs/pull/31/head
-git -C "$work" checkout -q -f main
-finding 31 "review:nit,needs-triage" "\`src/other.sh:2\` at $unrelated_sha" 31
-out="$(scan 31 2>&1)"; st=$?
-assert_status "scans a finding filed on a head with no merge base" "$st" 0
-other_newest_sha="$(git -C "$work" log -1 --format=%H main -- src/other.sh)"
-assert_eq "a failed merge-base lookup is changed, naming the newest commit touching the file" \
-  "$(line_of 31 "$out")" "$(printf '31\t31\tsrc/other.sh:2\tchanged\t%s\tneeds-triage' "$other_newest_sha")"
-fake_issue 31 closed
-
-# A finding whose lines the scan follows to the default branch, where later
-# commits touched only other lines of its file (line 3's fix, line 11's
-# reword): its lines are unchanged, so no commit is named.
-finding 14 "review:nit,needs-triage" "\`src/app.sh:6\` at $head_sha" 14
-out="$(scan 14 2>&1)"; st=$?
-assert_status "scans a finding whose file changed only elsewhere" "$st" 0
-assert_eq "its followed, untouched lines are unchanged, with - for no detail" \
-  "$(line_of 14 "$out")" "$(printf '14\t14\tsrc/app.sh:6\tunchanged\t-\tneeds-triage')"
-assert_eq "the followed-untouched scan from a subdirectory prints the root's line" "$(cd src && scan 14 2>&1)" "$out"
-fake_issue 14 closed
+# The sentence names the SHA as the body gives it, abbreviated, not as it
+# resolves.
+short_sha="${unmerged_sha:0:10}"
+finding 25 "review:nit,needs-triage" "\`src/other.sh:2\` at $short_sha" 25
+out="$(scan 25 2>&1)"; st=$?
+assert_status "scans a finding whose never-reached SHA is abbreviated" "$st" 0
+assert_eq "its sentence names the SHA as the body gives it" "$(line_of 25 "$out")" "$(never_line 25 other.sh 2 "$short_sha")"
+fake_issue 25 closed
 
 # A body with its **Location:** line but no **PR:** line does not parse either.
 fake_issue 16 open review:nit needs-triage
@@ -433,184 +392,6 @@ assert_status "scans a legacy body with no Axis or Why line" "$st" 0
 assert_eq "its exact line, as a full body's" "$(line_of 20 "$out")" \
   "$(printf '20\t20\tsrc/other.sh:2\tunchanged\t-\tneeds-triage')"
 fake_issue 20 closed
-
-# A finding whose file later gets hunks both before and after its line, with
-# far more diff after the matching hunk than a pipe buffer holds: the line
-# mapping stops reading the diff early, and the scan must still finish. Lines
-# inserted above the finding shift it; only the commit that touched the
-# shifted line is the answer, the bulk rewrite below it is not.
-git -C "$work" checkout -q main
-seq_lines "big file" 6000 >"$work/src/big.sh"
-git -C "$work" add src/big.sh
-git -C "$work" commit -qm "a big file"
-big_sha="$(git -C "$work" rev-parse HEAD)"
-{ seq_lines inserted 5; cat "$work/src/big.sh"; } >"$work/big.tmp" && mv "$work/big.tmp" "$work/src/big.sh"
-git -C "$work" commit -qam "insert five lines on top"
-sed -i 's/^big file line 10$/big file line 10, fixed/' "$work/src/big.sh"
-git -C "$work" commit -qam "fix the shifted line"
-shifted_fix_sha="$(git -C "$work" rev-parse HEAD)"
-sed -i '200,$ s/$/, rewritten in bulk/' "$work/src/big.sh"
-git -C "$work" commit -qam "rewrite everything below"
-git -C "$work" push -q origin main
-finding 13 "review:nit,needs-triage" "\`src/big.sh:10\` at $big_sha" 13
-out="$(scan 13 2>&1)"; st=$?
-assert_status "scans a finding whose file has a large diff after its line" "$st" 0
-assert_eq "it is changed" "$(field_of 13 4 "$out")" "changed"
-assert_eq "naming the commit that touched the shifted line" "$(field_of 13 5 "$out")" "$shifted_fix_sha"
-assert_eq "the large-diff scan from a subdirectory prints the root's line" "$(cd src && scan 13 2>&1)" "$out"
-fake_issue 13 closed
-
-# Findings whose filed lines the default branch later deleted outright: never
-# unchanged, whatever lines survive around them, and named by the commit that
-# deleted them. One file per case, all filed at one commit, each deleted by
-# its own commit after it. One unfiltered scan serves every case, each reading
-# its own line.
-git -C "$work" checkout -q main
-for f in whole end start middle later two replaced squashed split; do seq_lines "$f" 30 >"$work/src/del_$f.sh"; done
-git -C "$work" add src
-git -C "$work" commit -qm "the code the deletions are filed against"
-filed_sha="$(git -C "$work" rev-parse HEAD)"
-whole_sha="$(del_commit del_whole.sh '8,12d' "delete the whole range")"
-end_sha="$(del_commit del_end.sh '18,25d' "delete the range's end")"
-start_sha="$(del_commit del_start.sh '5,12d' "delete the range's start")"
-middle_sha="$(del_commit del_middle.sh '14,16d' "delete the range's middle")"
-later_del_sha="$(del_commit del_later.sh '8,12d' "delete before a later edit")"
-del_commit del_later.sh 's/^later line 1$/later line 1, reworded/' "a later, unrelated edit" >/dev/null
-del_commit del_two.sh '18,20d' "delete the range's end first" >/dev/null
-two_sha="$(del_commit del_two.sh '10,12d' "then delete its start")"
-replaced_sha="$(del_commit del_replaced.sh '9,11c\replaced line' "replace three lines with one")"
-# A PR head off the default branch, as a squash merge leaves it: it inserts a
-# line on top of del_squashed.sh, the squash commit lands the same edit on
-# main, a later commit deletes the filed line, and a last one edits another.
-squash_head_sha="$(squash_pr_head 37 del_squashed.sh 'squashed pr line')"
-squashed_sha="$(del_commit del_squashed.sh '9,13d' "delete the squash-merged lines")"
-del_commit del_squashed.sh 's/^squashed line 30$/squashed line 30, reworded/' "a later edit to the squashed file" >/dev/null
-# The same for del_split.sh, whose filed lines one later commit deletes in
-# two hunks with a kept line between them: their deleted ranges are two, and
-# the first is read off the first range's start (#1019).
-split_head_sha="$(squash_pr_head 38 del_split.sh 'split pr line')"
-split_sha="$(del_commit del_split.sh '9,10d;12,13d' "delete the squash-merged lines in two hunks")"
-git -C "$work" push -q origin main
-finding 30 "review:nit,needs-triage" "\`src/del_whole.sh:10\` at $filed_sha" 30
-finding 31 "review:nit,needs-triage" "\`src/del_end.sh:10-20\` at $filed_sha" 31
-finding 32 "review:nit,needs-triage" "\`src/del_start.sh:10-20\` at $filed_sha" 32
-finding 33 "review:nit,needs-triage" "\`src/del_middle.sh:10-20\` at $filed_sha" 33
-finding 34 "review:nit,needs-triage" "\`src/del_later.sh:10\` at $filed_sha" 34
-finding 35 "review:nit,needs-triage" "\`src/del_two.sh:10-20\` at $filed_sha" 35
-finding 36 "review:nit,needs-triage" "\`src/del_replaced.sh:10\` at $filed_sha" 36
-finding 37 "review:nit,needs-triage" "\`src/del_squashed.sh:11\` at $squash_head_sha" 37
-finding 38 "review:nit,needs-triage" "\`src/del_split.sh:9-13\` at $split_head_sha" 38
-out="$(scan 2>&1)"; st=$?
-assert_status "scans the findings whose lines were deleted" "$st" 0
-assert_eq "a whole deleted range is changed, naming the deleting commit" \
-  "$(line_of 30 "$out")" "$(printf '30\t30\tsrc/del_whole.sh:10\tchanged\t%s\tneeds-triage' "$whole_sha")"
-assert_eq "a range whose end was deleted is changed, naming the deleting commit" \
-  "$(line_of 31 "$out")" "$(printf '31\t31\tsrc/del_end.sh:10-20\tchanged\t%s\tneeds-triage' "$end_sha")"
-assert_eq "a range whose start was deleted is changed, naming the deleting commit" \
-  "$(line_of 32 "$out")" "$(printf '32\t32\tsrc/del_start.sh:10-20\tchanged\t%s\tneeds-triage' "$start_sha")"
-assert_eq "a range whose middle was deleted is changed, naming the deleting commit" \
-  "$(line_of 33 "$out")" "$(printf '33\t33\tsrc/del_middle.sh:10-20\tchanged\t%s\tneeds-triage' "$middle_sha")"
-assert_eq "a later, unrelated edit to the file does not displace the deleting commit" \
-  "$(line_of 34 "$out")" "$(printf '34\t34\tsrc/del_later.sh:10\tchanged\t%s\tneeds-triage' "$later_del_sha")"
-assert_eq "lines deleted across two commits name the later one" \
-  "$(line_of 35 "$out")" "$(printf '35\t35\tsrc/del_two.sh:10-20\tchanged\t%s\tneeds-triage' "$two_sha")"
-assert_eq "a line replaced, not deleted, is changed, naming the replacing commit" \
-  "$(line_of 36 "$out")" "$(printf '36\t36\tsrc/del_replaced.sh:10\tchanged\t%s\tneeds-triage' "$replaced_sha")"
-assert_eq "a finding filed at a squash-merged PR head names the deleting commit, not the squash" \
-  "$(line_of 37 "$out")" "$(printf '37\t37\tsrc/del_squashed.sh:11\tchanged\t%s\tneeds-triage' "$squashed_sha")"
-assert_eq "a squash-merged finding deleted in two hunks names the deleting commit" \
-  "$(line_of 38 "$out")" "$(printf '38\t38\tsrc/del_split.sh:9-13\tchanged\t%s\tneeds-triage' "$split_sha")"
-assert_eq "the deleted-lines scan from a subdirectory prints the root's lines" "$(cd src && scan 2>&1)" "$out"
-for n in 30 31 32 33 34 35 36 37 38; do fake_issue "$n" closed; done
-
-# Findings filed at a PR head that never merged, pushed only under its pull
-# head ref: the scan decides by the filed lines, never by the file. One file
-# per case, each a 20-line file the PR edits and the default branch then
-# edits elsewhere or alike.
-git -C "$work" checkout -q main
-for i in 1 2 3 4 5 6 7 8 9 10 11 12; do seq_lines "um$i" 20 >"$work/src/um$i.sh"; done
-git -C "$work" add src
-git -C "$work" commit -qm "the code the unmerged PRs edit"
-unm_base="$(git -C "$work" rev-parse HEAD)"
-git -C "$work" push -q origin main
-# unm_pr <pr> <file> <sed script>: a PR head off $unm_base that edits
-# src/<file>, pushed as PR <pr> and never merged; prints its SHA, leaving main
-# checked out.
-unm_pr() { pr_head "unm$1" "$1" "$unm_base" "$2" "$3"; }
-sha51="$(unm_pr 51 um1.sh '5c\pr replaced')"
-sha52="$(unm_pr 52 um2.sh '5a pr added a\npr added b')"
-sha53="$(unm_pr 53 um3.sh '6d')"
-sha54="$(unm_pr 54 um4.sh '2c\pr replaced')"
-sha55="$(unm_pr 55 um5.sh $'8i pr above\n9a pr below')"
-sha56="$(unm_pr 56 um6.sh '5c\pr replaced')"
-sha57="$(unm_pr 57 um7.sh '5c\pr replaced')"
-sha58="$(unm_pr 58 um8.sh '5a pr added a\npr added b')"
-sha59="$(unm_pr 59 um9.sh '5a pr added a\npr added b')"
-sha60="$(unm_pr 60 um10.sh '2c\pr replaced')"
-sha61="$(unm_pr 61 um11.sh '2c\pr replaced')"
-sha62="$(unm_pr 62 um12.sh '2c\pr replaced')"
-finding 51 "review:nit,needs-triage" "\`src/um1.sh:5\` at $sha51" 51
-finding 52 "review:nit,needs-triage" "\`src/um2.sh:6-7\` at $sha52" 52
-finding 53 "review:nit,needs-triage" "\`src/um3.sh:5-6\` at $sha53" 53
-finding 54 "review:nit,needs-triage" "\`src/um4.sh:8-9\` at $sha54" 54
-finding 55 "review:nit,needs-triage" "\`src/um5.sh:9-10\` at $sha55" 55
-finding 56 "review:nit,needs-triage" "\`src/um6.sh:5\` at $sha56" 56
-finding 57 "review:nit,needs-triage" "\`src/um7.sh:5-8\` at $sha57" 57
-finding 58 "review:nit,needs-triage" "\`src/um8.sh:6-8\` at $sha58" 58
-finding 59 "review:nit,needs-triage" "\`src/um9.sh:6-8\` at $sha59" 59
-finding 60 "review:nit,needs-triage" "\`src/um10.sh:8-9\` at $sha60" 60
-finding 61 "review:nit,needs-triage" "\`src/um11.sh:25\` at $sha61" 61
-finding 62 "review:nit,needs-triage" "\`src/um12.sh:25\` at $sha62" 62
-# A line only the PR's file differs on, with no default-branch commit to it.
-out="$(scan 55 2>&1)"
-assert_eq "lines the PR never touched, in a file only the PR changed, are unchanged" \
-  "$(line_of 55 "$out")" "$(printf '55\t55\tsrc/um5.sh:9-10\tunchanged\t-\tneeds-triage')"
-assert_eq "the unchanged scan from a subdirectory prints the root's line" "$(cd src && scan 55 2>&1)" "$out"
-# The default branch, after the PRs: unrelated edits and the cases' own.
-del_commit um1.sh 's/^um1 line 15$/um1 line 15, reworded/' "an unrelated edit to um1" >/dev/null
-del_commit um2.sh 's/^um2 line 15$/um2 line 15, reworded/' "an unrelated edit to um2" >/dev/null
-del_commit um3.sh 's/^um3 line 15$/um3 line 15, reworded/' "an unrelated edit to um3" >/dev/null
-um4_del_sha="$(del_commit um4.sh '8,9d' "delete um4's lines")"
-del_commit um4.sh 's/^um4 line 15$/um4 line 15, reworded/' "an unrelated edit to um4" >/dev/null
-del_commit um5.sh 's/^um5 line 15$/um5 line 15, reworded/' "an unrelated edit to um5" >/dev/null
-um6_sha="$(del_commit um6.sh 's/^um6 line 5$/um6 line 5, reworded/' "reword um6's line")"
-um7_sha="$(del_commit um7.sh 's/^um7 line 8$/um7 line 8, reworded/' "reword um7's line")"
-um8_sha="$(del_commit um8.sh 's/^um8 line 6$/um8 line 6, reworded/' "reword um8's line")"
-um9_del_sha="$(del_commit um9.sh '6d' "delete um9's line")"
-del_commit um9.sh 's/^um9 line 15$/um9 line 15, reworded/' "an unrelated edit to um9" >/dev/null
-del_commit um10.sh 's/^um10 line 15$/um10 line 15, reworded/' "an earlier edit to um10" >/dev/null
-um10_del_sha="$(del_commit um10.sh '8,9d' "delete um10's lines")"
-um12_sha="$(del_commit um12.sh 's/^um12 line 15$/um12 line 15, reworded/' "an edit to um12")"
-git -C "$work" push -q origin main
-out="$(scan --all 2>&1)"; st=$?
-assert_status "scans the findings filed at PR heads that never merged" "$st" 0
-assert_eq "a line the PR replaced, beside an unrelated commit, is unknown" \
-  "$(line_of 51 "$out")" "$(never_line 51 um1.sh 5 "$sha51")"
-assert_eq "lines the PR added, beside an unrelated commit, are unknown" \
-  "$(line_of 52 "$out")" "$(never_line 52 um2.sh 6-7 "$sha52")"
-assert_eq "a range the PR deleted a line from, beside an unrelated commit, is unknown" \
-  "$(line_of 53 "$out")" "$(never_line 53 um3.sh 5-6 "$sha53")"
-assert_eq "lines the PR never touched, deleted first, name the deleting commit" \
-  "$(line_of 54 "$out")" "$(printf '54\t54\tsrc/um4.sh:8-9\tchanged\t%s\tneeds-triage' "$um4_del_sha")"
-assert_eq "lines the PR never touched stay unchanged beside an unrelated commit" \
-  "$(line_of 55 "$out")" "$(printf '55\t55\tsrc/um5.sh:9-10\tunchanged\t-\tneeds-triage')"
-assert_eq "a line the PR replaced and the default branch changed names that commit" \
-  "$(line_of 56 "$out")" "$(printf '56\t56\tsrc/um6.sh:5\tchanged\t%s\tneeds-triage' "$um6_sha")"
-assert_eq "a range with a replaced line and a changed line names the changing commit" \
-  "$(line_of 57 "$out")" "$(printf '57\t57\tsrc/um7.sh:5-8\tchanged\t%s\tneeds-triage' "$um7_sha")"
-assert_eq "a range with added lines and a changed line names the changing commit" \
-  "$(line_of 58 "$out")" "$(printf '58\t58\tsrc/um8.sh:6-8\tchanged\t%s\tneeds-triage' "$um8_sha")"
-assert_eq "a range with added lines and a deleted base line names the deleting commit" \
-  "$(line_of 59 "$out")" "$(printf '59\t59\tsrc/um9.sh:6-8\tchanged\t%s\tneeds-triage' "$um9_del_sha")"
-assert_eq "lines deleted after an earlier unrelated commit name the deleting commit" \
-  "$(line_of 60 "$out")" "$(printf '60\t60\tsrc/um10.sh:8-9\tchanged\t%s\tneeds-triage' "$um10_del_sha")"
-assert_eq "a range past the file's end, in a file only the PR changed, is unknown" \
-  "$(line_of 61 "$out")" "$(never_line 61 um11.sh 25 "$sha61")"
-assert_eq "a range past the file's end, in a file the default branch changed, names its newest commit" \
-  "$(line_of 62 "$out")" "$(printf '62\t62\tsrc/um12.sh:25\tchanged\t%s\tneeds-triage' "$um12_sha")"
-assert_eq "the same scan from a subdirectory prints the root's lines" "$(cd src && scan --all 2>&1)" "$out"
-assert_eq "case 1 under a plain scan is the same line" "$(line_of 51 "$(scan 51 2>&1)")" "$(never_line 51 um1.sh 5 "$sha51")"
-for n in 51 52 53 54 55 56 57 58 59 60 61 62; do fake_issue "$n" closed; done
 
 # Each severity's list is cut off at the issue-list limit; a list that
 # reaches it may be missing findings past it, and the scan says so on stderr
