@@ -491,17 +491,6 @@ out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket close 22 2>&1)"; s
 assert_status "close dies when the checkouts cannot be read" "$st" 1
 assert_eq "leaving the issue open" "$(fake_state_of 22)" "OPEN"
 
-fake_issue 23 open
-wt="$("$ORCH" ticket-worktree add 23)"
-commit_file "$wt" ticket23.txt one
-echo dirt >"$wt/dirty.txt"
-flow_tip="$(git rev-parse orch/5-feature)"; t_tip="$(git rev-parse orch/5-feature--t23)"
-out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket merge 23 2>&1)"; st=$?
-assert_status "merge of a dirty worktree dies when the checkouts cannot be read" "$st" 1
-assert_contains "naming the checkouts, not the dirty tree" "$out" "could not read the checkouts"
-assert_eq "the forked-from branch is as it was" "$(git rev-parse orch/5-feature)" "$flow_tip"
-assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t23)" "$t_tip"
-
 # A ticket worktree with another branch checked out than the ticket's own.
 fake_issue 24 open
 wt="$("$ORCH" ticket-worktree add 24)"
@@ -512,10 +501,6 @@ own_tip="$(git rev-parse orch/5-feature--t24)"
 out="$("$ORCH" ticket close 24 2>&1)"; st=$?
 assert_status "close asks the merged check of the checked-out branch" "$st" 1
 assert_eq "leaving the issue open" "$(fake_state_of 24)" "OPEN"
-out="$("$ORCH" ticket merge 24 2>&1)"; st=$?
-assert_status "merge lands the checked-out branch" "$st" 0
-assert_eq "on its forked-from branch" "$(git rev-parse orch/5-feature)" "$(git rev-parse other-24)"
-assert_eq "leaving the ticket's own branch as it was" "$(git rev-parse orch/5-feature--t24)" "$own_tip"
 
 # git's record names the worktree and its directory is gone: no merged check.
 fake_issue 25 open
@@ -1505,6 +1490,28 @@ assert_eq "and leaving the main checkout's branch alone" \
   "$(git -C "$main_top" branch --show-current)" "orch/5-feature"
 cd "$main_top" || exit 1
 
+# The dirty worktree's refusal when the checkouts cannot be read.
+wt="$("$ORCH" ticket-worktree add 23)"
+commit_file "$wt" ticket23.txt one
+echo dirt >"$wt/dirty.txt"
+flow_tip="$(git rev-parse orch/5-feature)"; t_tip="$(git rev-parse orch/5-feature--t23)"
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket merge 23 2>&1)"; st=$?
+assert_status "merge of a dirty worktree dies when the checkouts cannot be read" "$st" 1
+assert_contains "naming the checkouts, not the dirty tree" "$out" "could not read the checkouts"
+assert_eq "the forked-from branch is as it was" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t23)" "$t_tip"
+
+# A ticket worktree with another branch checked out than the ticket's own.
+wt="$("$ORCH" ticket-worktree add 24)"
+git -C "$wt" checkout -q -b other-24
+git config branch.other-24.orchestrator-ticket-parent orch/5-feature
+commit_file "$wt" other24.txt one
+own_tip="$(git rev-parse orch/5-feature--t24)"
+out="$("$ORCH" ticket merge 24 2>&1)"; st=$?
+assert_status "merge lands the checked-out branch" "$st" 0
+assert_eq "on its forked-from branch" "$(git rev-parse orch/5-feature)" "$(git rev-parse other-24)"
+assert_eq "leaving the ticket's own branch as it was" "$(git rev-parse orch/5-feature--t24)" "$own_tip"
+
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket merge is in the usage text" "$out" "ticket merge <n>"
 assert_contains "the CLI conventions' noun table lists merge among ticket's verbs" \
@@ -1859,7 +1866,7 @@ for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobran
 done
 
 # a plain directory at the recorded path: the teardown's refusal, then the
-# after-check; the directory, the record and the branch stay
+# worktree line from the facts; the directory, the record and the branch stay
 rc_setup 1
 rm -rf "$(rc_wt 7)"
 mkdir "$(rc_wt 7)"

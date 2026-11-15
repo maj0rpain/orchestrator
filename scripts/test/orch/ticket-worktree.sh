@@ -163,7 +163,8 @@ assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 # ticket_worktree_teardown on them, in one sourced shell.
 teardown_of() { sourced_orch_script 'ticket_facts "$1" f; shift; ticket_worktree_teardown f "$@"' "$@"; }
 # ticket_worktree_teardown, the one site that tears a worktree down. Called
-# through sourced_orch from the flow's checkout; checked through what git shows.
+# through teardown_of (the facts read, then the teardown); checked through
+# what git shows.
 # Left mid-rebase - a ticket conflict's resolution that failed: --unmerged
 # aborts the rebase first, returning the ticket branch to its committed tip,
 # then removes the clean worktree with no force.
@@ -517,8 +518,6 @@ mkdir "$p7"
 out="$(facts_of 7)"
 assert_eq "a plain directory at a recorded path: occupied" "$(fact "$out" worktree)" "occupied"
 assert_eq "and wt_branch is empty" "$(fact "$out" wt_branch)" ""
-out="$(PATH="$(worktree_list_fails_bin):$PATH" facts_of 7)"; st=$?
-assert_status "the read dies on an unreadable record, something at the path" "$st" 1
 rmdir "$p7"
 git worktree prune
 git branch -q -D orch/5-feature--t7

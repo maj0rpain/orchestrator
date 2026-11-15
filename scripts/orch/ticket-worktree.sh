@@ -72,22 +72,23 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
 # when it cannot be read, never reading that as none. Called as a bare
 # statement, so that die stops the caller.
 ticket_facts() {
-  local _tf_n="$1" _tf_prefix="$2" _tf_path _tf_state=none _tf_wt="" _tf_parent="" _tf_own="" _tf_exists=no _tf_p
+  local _tf_n="$1" _tf_prefix="$2" _tf_path _tf_state=none _tf_wt="" _tf_parent="" _tf_own="" _tf_exists=no
   local paths=()
   # shellcheck disable=SC2034 # checkout_parse fills it
   local branches=()
   _tf_path="$(ticket_worktree_path "$_tf_n")"
   checkout_parse || checkouts_unreadable
+  local _tf_i=-1 _tf_k
+  for _tf_k in "${!paths[@]}"; do
+    [ "${paths[_tf_k]}" = "$_tf_path" ] && { _tf_i=$_tf_k; break; }
+  done
   if [ "$(git -C "$_tf_path" rev-parse --show-toplevel 2>/dev/null)" = "$_tf_path" ]; then
     _tf_state=worktree
-  else
-    for _tf_p in "${paths[@]}"; do
-      [ "$_tf_p" = "$_tf_path" ] || continue
-      if [ -e "$_tf_path" ] || [ -L "$_tf_path" ]; then _tf_state=occupied; else _tf_state=gone; fi
-      break
-    done
+    # checkout_parse stores "-" for a detached checkout; read as empty.
+    if [ "$_tf_i" -ge 0 ] && [ "${branches[_tf_i]}" != "-" ]; then _tf_wt="${branches[_tf_i]}"; fi
+  elif [ "$_tf_i" -ge 0 ]; then
+    if [ -e "$_tf_path" ] || [ -L "$_tf_path" ]; then _tf_state=occupied; else _tf_state=gone; fi
   fi
-  if [ "$_tf_state" = worktree ]; then _tf_wt="$(checkout_branch "$_tf_path")" || _tf_wt=""; fi
   _tf_parent="$(checkout_branch)" || _tf_parent=""
   if [ -n "$_tf_parent" ]; then
     _tf_own="$(branch_name_ticket "$_tf_parent" "$_tf_n")"
