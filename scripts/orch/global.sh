@@ -711,7 +711,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               then one **Location:** line per --location (each
                               <file>:<line> or <file>:<start>-<end>) and an
                               **Audited at:** line with HEAD's SHA, refused
-                              before any write unless it parses back to them.
+                              before any write unless it parses back to them,
+                              and refused when the title or the finding file
+                              refers to a report's numbering (finding 3,
+                              this report).
                               An open issue with exactly this title files
                               nothing: its number is printed, with an
                               already-open line on stderr, exiting 0

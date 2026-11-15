@@ -211,12 +211,18 @@ finding_input_check() {
   [ -n "$(tr -d '[:space:]' <"$2")" ] || die "finding file is empty: $2"
 }
 
+# finding_location_ok <location>: whether the location is <file>:<line> or
+# <file>:<start>-<end>, split at the last colon, the file part not empty.
+finding_location_ok() {
+  local file="${1%:*}" line="${1##*:}"
+  [[ $1 == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]]
+}
+
 # finding_location_check <location>: dies unless the location is
 # <file>:<line> or <file>:<start>-<end>, split at the last colon, naming both
 # shapes in the refusal.
 finding_location_check() {
-  local file="${1%:*}" line="${1##*:}"
-  [[ $1 == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
+  finding_location_ok "$1" \
     || die "not a location: $1 (want <file>:<line> or <file>:<start>-<end>)"
 }
 

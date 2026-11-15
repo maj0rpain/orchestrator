@@ -62,9 +62,8 @@ audit_usage() {
 # it is made removes it before dying. Reads and writes no flow state.
 audit_begin() {
   [ $# -eq 1 ] || die "$(audit_usage)"
-  local kind="$1" k ok="" sha dir
-  for k in $AUDIT_KINDS; do [ "$k" != "$kind" ] || ok=1; done
-  [ -n "$ok" ] || die "$(audit_usage)"
+  local kind="$1" sha dir
+  word_listed "$AUDIT_KINDS" "$kind" || die "$(audit_usage)"
   sha="$(git rev-parse --verify HEAD 2>/dev/null)" || die "cannot read the HEAD commit"
   dir="$ORCH/audit/$kind-$(dir_stamp)"
   [ ! -e "$dir" ] || die "the audit run directory already exists: $dir"
@@ -187,7 +186,8 @@ audit_ranked_sections() {
 # label the source lacks added after; the locations of every source, in From:
 # order and without repeats, unless the block restates Location:.
 audit_finding_resolve() {
-  local n="$1" i j k label value from="" from_ln src first="" locs="" restated="" sources area kn
+  local n="$1" i k label value from="" from_ln src first="" locs="" restated="" sources area kn
+  local locline loc
   local rl=() rv=()
   audit_fields_split "$2" "$3"
   for i in "${!AUDIT_FL[@]}"; do
@@ -227,25 +227,20 @@ audit_finding_resolve() {
     done <<<"$sources"
   fi
   for i in "${!rl[@]}"; do
-    label="${rl[i]}" value="${rv[i]}" k=""
-    for j in "${!bl[@]}"; do
-      if [ "${bl[j]}" = "$label" ]; then k="$j"; break; fi
-    done
+    label="${rl[i]}" value="${rv[i]}"
+    k="$(array_index bl "$label")"
     if [ -n "$k" ]; then bv[k]="$value"; else bl+=("$label") bv+=("$value"); fi
   done
   if [ -z "$restated" ] && [ -n "$locs" ]; then
     audit_list_split sl "$locs"
-    value=""
-    while IFS= read -r label; do
-      [ -n "$label" ] || continue
-      list_has "$value" "$label" || value+="${value:+$'\n'}$label"
+    locline=""
+    while IFS= read -r loc; do
+      [ -n "$loc" ] || continue
+      list_has "$locline" "$loc" || locline+="${locline:+$'\n'}$loc"
     done <<<"$sl"
-    value="${value//$'\n'/, }"
-    k=""
-    for j in "${!bl[@]}"; do
-      if [ "${bl[j]}" = Location ]; then k="$j"; break; fi
-    done
-    if [ -n "$k" ]; then bv[k]="$value"; else bl+=(Location) bv+=("$value"); fi
+    locline="${locline//$'\n'/, }"
+    k="$(array_index bl Location)"
+    if [ -n "$k" ]; then bv[k]="$locline"; else bl+=(Location) bv+=("$locline"); fi
   fi
   AUDIT_FIELDS[n]=""
   for i in "${!bl[@]}"; do AUDIT_FIELDS[n]+="${bl[i]}$AUDIT_US${bv[i]}$AUDIT_RS"; done
@@ -273,7 +268,7 @@ audit_field_get() {
 # Returns 0 with the phrase as written in <phrase_var> and its 1-based line in
 # <line_var>; returns 1 when there is none. "the report" is not one.
 audit_ref_find() {
-  local line low rest ln=0 fence="" pre bt='`'
+  local line plain low rest ln=0 fence="" pre bt='`'
   local hash="#" re
   re="(^|[^a-z0-9_])((findings?|candidates?)[[:space:]]+${hash}?[0-9]+|this[[:space:]]+report)(\$|[^a-z0-9_])"
   while IFS= read -r line || [ -n "$line" ]; do
@@ -283,17 +278,17 @@ audit_ref_find() {
       continue
     fi
     [ -z "$fence" ] || continue
-    rest="$line" low=""
+    rest="$line" plain=""
     while [[ $rest == *"$bt"*"$bt"* ]]; do
-      low+="${rest%%"$bt"*} "
+      plain+="${rest%%"$bt"*} "
       rest="${rest#*"$bt"}"
       rest="${rest#*"$bt"}"
     done
-    low+="$rest"
-    rest="${low,,}"
-    if [[ $rest =~ $re ]]; then
-      pre="${rest%%"${BASH_REMATCH[2]}"*}"
-      printf -v "$2" '%s' "${low:${#pre}:${#BASH_REMATCH[2]}}"
+    plain+="$rest"
+    low="${plain,,}"
+    if [[ $low =~ $re ]]; then
+      pre="${low%%"${BASH_REMATCH[2]}"*}"
+      printf -v "$2" '%s' "${plain:${#pre}:${#BASH_REMATCH[2]}}"
       printf -v "$3" '%s' "$ln"
       return 0
     fi
@@ -308,7 +303,7 @@ audit_ref_find() {
 # per-finding arrays above. Dies on the first thing that does not hold.
 audit_ranked_read() {
   local dir="$1" key val i j n expect=0 scopes=0 areas=0 tops=0 nones=0 ln body
-  local over cat locs loc title top_ln=0 other
+  local over overs cat locfield locs loc title top_ln=0 other sorted
   declare -gA AUDIT_AB AUDIT_AREA_SEEN
   AUDIT_AB=() AUDIT_AREA_SEEN=()
   AUDIT_DIR="$dir" AUDIT_KIND="" AUDIT_COMMIT="" AUDIT_SCOPE="" AUDIT_AREAS="" AUDIT_NONE=""
@@ -384,12 +379,12 @@ audit_ranked_read() {
     [ -n "$title" ] && [[ $title != *$'\n'* ]] || die "ranked.md line $ln: finding $n's Title: is not one line"
     audit_field_get "$n" Category cat || die "ranked.md line $ln: finding $n has no Category:"
     is_filed_category "$cat" || die "ranked.md line $ln: finding $n's Category: '$cat' is not one of $FILED_CATEGORIES"
-    audit_field_get "$n" Location locs || die "ranked.md line $ln: finding $n has no Location:"
-    audit_list_split locs "$locs"
+    audit_field_get "$n" Location locfield || die "ranked.md line $ln: finding $n has no Location:"
+    audit_list_split locs "$locfield"
     [ -n "$locs" ] || die "ranked.md line $ln: finding $n has no location"
     while IFS= read -r loc; do
       [ -n "$loc" ] || continue
-      [[ $loc == *:* && -n ${loc%:*} && ${loc##*:} =~ ^[0-9]+(-[0-9]+)?$ ]] \
+      finding_location_ok "$loc" \
         || die "ranked.md line $ln: finding $n's location '$loc' is not <file>:<line> or <file>:<start>-<end>"
     done <<<"$locs"
     local frest="${AUDIT_FIELDS[n]}" frec flabel fvalue fphrase fline
@@ -403,22 +398,22 @@ audit_ranked_read() {
     done
     AUDIT_TITLE[n]="$title" AUDIT_CATEGORY[n]="$cat" AUDIT_LOCS[n]="${locs%$'\n'}"
     if audit_field_get "$n" Overlaps over; then
-      audit_list_split over "$over"
+      audit_list_split overs "$over"
       while IFS= read -r other; do
         [ -n "$other" ] || continue
         [[ $other =~ ^[0-9]+$ ]] && [ "$other" -ge 1 ] && [ "$other" -le "$AUDIT_COUNT" ] && [ "$other" -ne "$n" ] \
           || die "ranked.md line $ln: finding $n overlaps '$other', which is not another finding of the file"
         AUDIT_LINKS[n]+=" $other"
         AUDIT_LINKS[other]+=" $n"
-      done <<<"$over"
+      done <<<"$overs"
     fi
   done
   for ((n = 1; n <= AUDIT_COUNT; n++)); do
-    over=""
+    sorted=""
     for ((j = 1; j <= AUDIT_COUNT; j++)); do
-      [[ " ${AUDIT_LINKS[n]:-} " == *" $j "* ]] && over+=" $j"
+      ! word_listed "${AUDIT_LINKS[n]:-}" "$j" || sorted+=" $j"
     done
-    AUDIT_LINKS[n]="$over "
+    AUDIT_LINKS[n]="$sorted "
   done
 }
 
@@ -554,7 +549,7 @@ audit_page_render() {
       if [ -n "${AUDIT_LINKS[n]// /}" ]; then
         printf '<h3 class="mt-3 font-semibold">Overlaps</h3>\n<ul class="list-disc ml-6">\n'
         for ((j = 1; j <= AUDIT_COUNT; j++)); do
-          [[ ${AUDIT_LINKS[n]} == *" $j "* ]] || continue
+          word_listed "${AUDIT_LINKS[n]}" "$j" || continue
           audit_esc e "${AUDIT_TITLE[j]}"
           printf '<li><a class="text-blue-700 underline" href="#finding-%s">Finding %s: %s</a></li>\n' "$j" "$j" "$e"
         done
@@ -572,7 +567,7 @@ audit_page_render() {
 # place, so a refusal or a failed write leaves an earlier report as it was.
 audit_report() {
   [ $# -eq 2 ] || die "$(audit_usage)"
-  local dir="$1" out="$2" outdir tmp
+  local dir="$1" out="$2" outdir page
   audit_ranked_read "$dir"
   case "$out" in
     */*) outdir="${out%/*}" ;;
@@ -580,13 +575,8 @@ audit_report() {
   esac
   [ -d "$outdir" ] || die "the directory for the report does not exist: $outdir"
   [ ! -d "$out" ] || die "the report path is a directory: $out"
-  tmp="$out.tmp.$$"
-  # shellcheck disable=SC2064 # the path is fixed now
-  trap "rm -f $(printf '%q' "$tmp")" EXIT
-  (set -o noclobber; : >"$tmp") 2>/dev/null || die "cannot write the report beside $out"
-  audit_page_render >"$tmp" || die "cannot write the report beside $out"
-  mv -f "$tmp" "$out" 2>/dev/null || die "cannot move the report into place at $out"
-  trap - EXIT
+  page="$(audit_page_render)" || die "cannot write the report beside $out"
+  file_write_atomic "$out" "$page"$'\n' 2>/dev/null || die "cannot write the report beside $out"
   note "$out"
 }
 
@@ -599,10 +589,41 @@ audit_file_usage() {
   printf 'usage: orch.sh audit file <title> --category <%s> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]\n' "$cats"
 }
 
+# audit_open_listing <var>: the open issues' numbers and titles, one
+# tab-separated pair per line, into <var>; dies naming the failed read.
+audit_open_listing() {
+  local err
+  gh_capture "$1" err adapter_issues_open_titles \
+    || gh_die "list the open issues" "$err"
+}
+
+# audit_open_find <listing> <title> <var>: the number of the open issue in
+# <listing> (audit_open_listing's) whose title is exactly <title>, into <var>;
+# returns 1, setting nothing, when there is none.
+audit_open_find() {
+  local num name
+  while IFS=$'\t' read -r num name; do
+    [ -n "$num" ] || continue
+    if [ "$name" = "$2" ]; then
+      printf -v "$3" '%s' "$num"
+      return 0
+    fi
+  done <<<"$1"
+  return 1
+}
+
+# audit_triage_ready <var>: the repo's needs-triage label into <var>, made if
+# it is missing.
+audit_triage_ready() {
+  triage_label_into "$1" needs-triage
+  triage_label_ensure "${!1}"
+}
+
 # audit_file <title> --category <c> --finding-file <f> --location <loc>...:
 # files one finding as a GitHub issue and prints its number. Every check - the
-# title, the finding file, the category, the locations, HEAD's SHA and the
-# round trip of the rendered body - comes before any GitHub read or write. An
+# title, the finding file, the category, the locations, a reference to a
+# report's numbering in the title or the finding, HEAD's SHA and the round
+# trip of the rendered body - comes before any GitHub read or write. An
 # open issue with exactly the title files nothing: its number is printed, with
 # the already-open line on stderr, and the exit is 0.
 audit_file() {
@@ -624,7 +645,7 @@ audit_file() {
   [ -n "$finding" ] && [ -n "$category" ] && [ "${#locations[@]}" -gt 0 ] || die "$(audit_file_usage)"
 
   is_filed_category "$category" || die "$(audit_file_usage)"
-  local loc sha body_file n err existing existing_n existing_title triage
+  local loc sha body_file n existing existing_n triage
   finding_input_check "$title" "$finding"
   local refp refl
   ! audit_ref_find "$title" refp refl \
@@ -647,19 +668,14 @@ audit_file() {
     || die "the rendered body does not parse back: audited at (given '$sha', parsed '${got_shas%$'\n'}')"
 
   # An open issue with this exact title is the finding already filed.
-  gh_capture existing err adapter_issues_open_titles \
-    || gh_die "list the open issues" "$err"
-  while IFS=$'\t' read -r existing_n existing_title; do
-    [ -n "$existing_n" ] || continue
-    if [ "$existing_title" = "$title" ]; then
-      warn "#$existing_n is already open with this title; nothing filed"
-      note "$existing_n"
-      return 0
-    fi
-  done <<<"$existing"
+  audit_open_listing existing
+  if audit_open_find "$existing" "$title" existing_n; then
+    warn "#$existing_n is already open with this title; nothing filed"
+    note "$existing_n"
+    return 0
+  fi
 
-  triage_label_into triage needs-triage
-  triage_label_ensure "$triage"
+  audit_triage_ready triage
   category_label_ensure "$category"
   gh_or_die --out n "create the issue" \
     adapter_issue_create "$title" "$body_file" "$triage" "$category"
@@ -690,8 +706,25 @@ audit_batch_body() {
 # newlines dropped, into <var>.
 audit_body_norm() {
   local s="${2//$'\r'/}"
-  while [[ $s == *$'\n' ]]; do s="${s%$'\n'}"; done
+  newlines_strip s
   printf -v "$1" '%s' "$s"
+}
+
+# audit_nums_union <var> <a> <b>: the numbers of the space-separated lists <a>
+# and <b>, each once, ascending and space-separated, into <var>.
+audit_nums_union() {
+  local out=() w i
+  for w in $2 $3; do
+    w=$((10#$w))
+    ! word_listed "${out[*]:-}" "$w" || continue
+    i="${#out[@]}"
+    while [ "$i" -gt 0 ] && [ "${out[i - 1]}" -gt "$w" ]; do
+      out[i]="${out[i - 1]}"
+      i=$((i - 1))
+    done
+    out[i]="$w"
+  done
+  printf -v "$1" '%s' "${out[*]:-}"
 }
 
 # audit_file_batch <dir> <numbers>: files the ranked findings <numbers> (comma
@@ -712,11 +745,11 @@ audit_file_batch() {
     item=$((10#$item))
     [ "$item" -ge 1 ] && [ "$item" -le "$AUDIT_COUNT" ] \
       || die "the ranked file has no finding $item"
-    [[ " $seen " != *" $item "* ]] || die "finding $item is given twice"
+    ! word_listed "$seen" "$item" || die "finding $item is given twice"
     seen+=" $item"
   done <<<"$want"
   for ((n = 1; n <= AUDIT_COUNT; n++)); do
-    [[ " $seen " != *" $n "* ]] || picked+=("$n")
+    ! word_listed "$seen" "$n" || picked+=("$n")
   done
 
   local -A base=() issue=() state=() ensured=()
@@ -731,22 +764,14 @@ audit_file_batch() {
   done
   finding_body_file_new body_file
 
-  local existing err existing_n existing_title triage="" made
-  gh_capture existing err adapter_issues_open_titles \
-    || gh_die "list the open issues" "$err"
+  local existing existing_n triage="" made
+  audit_open_listing existing
   for n in "${picked[@]}"; do
-    while IFS=$'\t' read -r existing_n existing_title; do
-      [ -n "$existing_n" ] || continue
-      if [ "$existing_title" = "${AUDIT_TITLE[n]}" ]; then
-        issue[$n]="$existing_n" state[$n]=open
-        break
-      fi
-    done <<<"$existing"
-    [ -z "${state[$n]:-}" ] || continue
-    if [ -z "$triage" ]; then
-      triage_label_into triage needs-triage
-      triage_label_ensure "$triage"
+    if audit_open_find "$existing" "${AUDIT_TITLE[n]}" existing_n; then
+      issue[$n]="$existing_n" state[$n]=open
+      continue
     fi
+    [ -n "$triage" ] || audit_triage_ready triage
     cat="${AUDIT_CATEGORY[n]}"
     if [ -z "${ensured[$cat]:-}" ]; then
       category_label_ensure "$cat"
@@ -758,12 +783,12 @@ audit_file_batch() {
     issue[$n]="$made" state[$n]=filed
   done
 
-  local links nums have cur raw tail unioned
+  local links nums have cur raw tail unioned num
   for n in "${picked[@]}"; do
     links=""
     for j in "${picked[@]}"; do
-      if [[ ${AUDIT_LINKS[n]} == *" $j "* ]] && [ "${issue[$j]}" != "${issue[$n]}" ]; then
-        links+="${issue[$j]}"$'\n'
+      if word_listed "${AUDIT_LINKS[n]}" "$j" && [ "${issue[$j]}" != "${issue[$n]}" ]; then
+        links+="${issue[$j]} "
       fi
     done
     [ -n "$links" ] || continue
@@ -775,15 +800,16 @@ audit_file_batch() {
       if [ "$cur" = "${base[$n]}" ]; then
         have=""
       elif [ "$tail" != "$cur" ] && [[ $tail =~ ^#[0-9]+(\ #[0-9]+)*$ ]]; then
-        have="$(printf '%s\n' "${tail//#/}" | tr ' ' '\n' | sort -un)"
+        audit_nums_union have "${tail//#/}" ""
       else
         warn "#${issue[$n]} was edited since it was filed; its Related line is not written"
         continue
       fi
     fi
-    unioned="$(printf '%s\n%s\n' "$have" "$links" | sed '/^$/d' | sort -un)"
+    audit_nums_union unioned "$have" "$links"
     [ "$unioned" != "$have" ] || continue
-    nums="$(printf '#%s ' $unioned)"
+    nums=""
+    for num in $unioned; do nums+="#$num "; done
     printf '%s\n\n**Related:** %s\n\n' "${base[$n]}" "${nums% }" >"$body_file"
     gh_or_die "write issue #${issue[$n]}'s Related line" \
       adapter_issue_body_edit "${issue[$n]}" "$body_file"

@@ -12,8 +12,8 @@ skill, and it invokes and depends on no upstream skill (ADR-0028).
 
 **Read-only.** This skill changes no tracked file in the repo and nothing
 `git status` shows: it edits nothing tracked, commits nothing, and opens no
-branch or PR. Its working files - each area's findings file, the report,
-and the finding file for each finding picked for filing - go in its run
+branch or PR. Its working files - each area's findings file, the ranked file
+and the report - go in its run
 directory, `.orchestrator/audit/<kind>-<stamp>/`, which `orch.sh audit
 begin` makes and git-excludes (ADR-0064). Its writes outside that directory
 are the git exclude `audit begin` ensures and `orch.sh audit file`, for

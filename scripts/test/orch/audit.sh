@@ -385,10 +385,11 @@ assert_eq "with no top recommendation" "$(grep -c 'Top recommendation' "$run/r.h
 echo
 echo "audit report refusals"
 report_run
-printf 'earlier report\n' >"$out"
-# report_refuse <what> <expected text> <sed script over ranked.md>
+cp "$run/ranked.md" "$run/ranked.orig"
+# report_refuse <what> <expected text> <sed script over ranked.md>: the one run
+# above, its ranked file restored, then edited by the sed script.
 report_refuse() {
-  report_run
+  cp "$run/ranked.orig" "$run/ranked.md"
   printf 'earlier report\n' >"$out"
   sed -i "$3" "$run/ranked.md"
   res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
@@ -454,8 +455,10 @@ done
 
 echo
 echo "audit report-reference check in audit report"
+report_run
+cp "$run/ranked.md" "$run/ranked.orig"
 for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
-  report_run
+  cp "$run/ranked.orig" "$run/ranked.md"
   printf 'earlier report\n' >"$out"
   sed -i "s/^Title: Deepen d.sh/Title: Deepen d.sh like $phrase/" "$run/ranked.md"
   res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
