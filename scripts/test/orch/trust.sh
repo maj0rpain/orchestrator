@@ -67,8 +67,7 @@ for tr_a in owner ""; do
   [ -n "$tr_a" ] || printf '\n' >"$ORCH_GH_FAKE_STORE/issues/8/comments/1/association"
   "$ORCH" issue comments 8 "$tr_file" >/dev/null 2>&1
   tr_kept=no; ! grep -q "said by $tr_label" "$tr_file" || tr_kept=yes
-  fake_issue_authorship 8 stranger "$tr_a"
-  tr_checked=no; [ -n "$({ "$ORCH" issue fetch 8 "$tr_file" >/dev/null; } 2>&1)" ] || tr_checked=yes
+  tr_checked=no; [ -n "$(tr_fetch stranger "$tr_a")" ] || tr_checked=yes
   assert_eq "association '$tr_label': the filter and the issue check agree" "$tr_kept" "$tr_checked"
   assert_eq "association '$tr_label' is not trusted" "$tr_kept" no
 done

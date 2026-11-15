@@ -601,3 +601,32 @@ assert_eq "the Junie field read answers, a field after a letter unmatched, one u
     for f in model odel xmodel nothing; do printf "[%s]" "$(agent_junie_field "$1" "$f")"; done' "$acm_line" 2>&1)" "[gpt-5][][bad][]"
 rm -rf "$acm_dir"
 unset acm_dir acm_marker acm_line
+
+# The Junie session report keeps only jq, git, and one grep, sed and awk per
+# report: PATH holds just those (grep through a counter), so a tail, or a grep
+# or sed per agent, would fail or show in the count.
+ajs_home="$(mktemp -d)"
+ajs_bin="$ajs_home/bin"
+mkdir -p "$ajs_bin" "$ajs_home/.junie/sessions" "$ajs_home/.junie/logs"
+for ajs_c in jq git sed awk; do ln -s "$(command -v "$ajs_c")" "$ajs_bin/$ajs_c"; done
+printf '#!%s\necho x >>"$AJS_COUNT"\nexec %s "$@"\n' "$BASH" "$(command -v grep)" >"$ajs_bin/grep"
+chmod +x "$ajs_bin/grep"
+ajs_root="$(git rev-parse --show-toplevel)"
+printf '{"sessionId":"s1","projectDir":"%s","updatedAt":"5"}\n' "$ajs_root" >"$ajs_home/.junie/sessions/index.jsonl"
+for ajs_n in 1 2; do
+  for ajs_a in orch-fixer orch-closer orch-reviewer-spec; do
+    printf 's1\nINFO Executing agent custom_agent_%s_%s with parameters AgentParams(model=m%s, effort=null, reasoningEffort=low)\n' \
+      "$ajs_a" "$ajs_n" "$ajs_n" >>"$ajs_home/.junie/logs/log-1.log"
+  done
+done
+ajs_run() { : >"$ajs_home/count"; HOME="$ajs_home" AJS_COUNT="$ajs_home/count" sourced_orch_script 'PATH="$HOME/bin"; agent_junie_session' 2>&1; }
+ajs_out="$(ajs_run)"
+assert_eq "the Junie session report names each agent's last run, with no tail on PATH" \
+  "$(grep -c 'ran model m2, effort low' <<<"$ajs_out")" 3
+ajs_greps="$(wc -l <"$ajs_home/count")"
+printf 's1\nINFO Executing agent custom_agent_orch-fixer_1 with parameters AgentParams(model=m1, effort=null, reasoningEffort=low)\n' >"$ajs_home/.junie/logs/log-1.log"
+ajs_run >/dev/null
+assert_eq "and starts no more greps for three agents than for one" "$ajs_greps" "$(wc -l <"$ajs_home/count")"
+rm -rf "$ajs_home"
+unset ajs_home ajs_bin ajs_c ajs_root ajs_n ajs_a ajs_out ajs_greps
+unset -f ajs_run
