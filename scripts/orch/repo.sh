@@ -3,24 +3,43 @@
 # Its tests: scripts/test/orch/repo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# REPO_ORIGIN_SSH is 1 when the Repo came from an origin in an SSH form, else
-# empty. REPO_SOURCE is read by repo show and repo_pinned_host, below, and so by
-# every gh call's pin and by doctor.sh.
+# repo_resolve: resolves the Repo once per shell and memoises the whole answer
+# in plain (never exported) shell variables, repo_resolve their one writer:
+# REPO_NAME and REPO_SOURCE (GH_REPO or origin; read by repo show
+# and doctor.sh), REPO_ORIGIN_SSH (1 when the Repo came from an
+# origin in an SSH form, else empty), REPO_MEMO_STATUS (the outcome, 0 or 1, a
+# failed resolution too; empty until the first resolve) and REPO_MEMO_HOST (the
+# host the repo pins). The memo lives in the shell that resolves: a later
+# resolve there, or in a subshell forked from it afterwards, returns the same
+# answer and status without starting a process. A subshell's own resolve dies
+# with it and never reaches its parent.
 # shellcheck disable=SC2034
 repo_resolve() {
   local url
+  if [ -n "${REPO_MEMO_STATUS:-}" ]; then return "$REPO_MEMO_STATUS"; fi
   REPO_NAME=""
   REPO_SOURCE=""
   REPO_ORIGIN_SSH=""
+  REPO_MEMO_HOST=""
   if [ -n "${GH_REPO:-}" ]; then
     REPO_NAME="$GH_REPO"
     REPO_SOURCE=GH_REPO
+    REPO_MEMO_HOST="$(repo_host "$REPO_NAME")"
+    REPO_MEMO_STATUS=0
     return 0
   fi
-  url="$(git remote get-url origin 2>/dev/null)" || return 1
-  REPO_NAME="$(repo_from_url "$url")" || { REPO_NAME=""; return 1; }
-  REPO_SOURCE=origin
-  if [ "$(repo_url_form "$url")" = ssh ]; then REPO_ORIGIN_SSH=1; fi
+  if url="$(git remote get-url origin 2>/dev/null)" \
+    && REPO_NAME="$(repo_from_url "$url")"; then
+    REPO_SOURCE=origin
+    if [ "$(repo_url_form "$url")" = ssh ]; then REPO_ORIGIN_SSH=1; fi
+    REPO_MEMO_HOST="$(repo_host "$REPO_NAME")"
+    REPO_MEMO_HOST="${REPO_MEMO_HOST:-github.com}"
+    REPO_MEMO_STATUS=0
+    return 0
+  fi
+  REPO_NAME=""
+  REPO_MEMO_STATUS=1
+  return 1
 }
 
 # The one parser of a [HOST/]OWNER/REPO repo name, as repo_resolve sets
@@ -133,8 +152,8 @@ repo_from_url() {
 }
 
 # repo_gh_host: the GitHub host gh targets for the resolved repo (not the
-# glossary's Host, the agent CLI), read from REPO_NAME and REPO_SOURCE as
-# repo_resolve sets them. The one rule, followed by the gh guard's pin, doctor's
+# glossary's Host, the agent CLI), read from the memo
+# repo_resolve memoises. The one rule, followed by the gh guard's pin, doctor's
 # GitHub probe and repo show --host: the repo's pinned host (repo_pinned_host);
 # else (a user-set OWNER/REPO GH_REPO) the user's GH_HOST, or github.com when
 # unset, as gh does.
@@ -149,22 +168,18 @@ repo_gh_host() {
 # origin; else nothing, for a user-set OWNER/REPO GH_REPO, whose host is the
 # user's own GH_HOST.
 repo_pinned_host() {
-  local host
-  host="$(repo_host "$REPO_NAME")"
-  if [ -n "$host" ]; then printf '%s\n' "$host"
-  elif [ "$REPO_SOURCE" = origin ]; then printf '%s\n' github.com
-  fi
+  repo_resolve || return 0
+  if [ -n "$REPO_MEMO_HOST" ]; then printf '%s\n' "$REPO_MEMO_HOST"; fi
 }
 
 # gh api fills {owner}/{repo} from GH_REPO but takes its host only from
 # GH_HOST, never from GH_REPO's host part (gh 2.102.0). So the pin exports the
 # repo's pinned host as GH_HOST; for a user-set OWNER/REPO GH_REPO it leaves the
-# user's GH_HOST as it is, set or unset. It reads REPO_NAME and REPO_SOURCE as
-# repo_pin's repo_resolve set them.
+# user's GH_HOST as it is, set or unset. It reads the memo
+# repo_resolve memoised.
 repo_pin_host() {
-  local host
-  host="$(repo_pinned_host)"
-  if [ -n "$host" ]; then export GH_HOST="$host"; fi
+  repo_resolve || return 0
+  if [ -n "$REPO_MEMO_HOST" ]; then export GH_HOST="$REPO_MEMO_HOST"; fi
 }
 # The USR1 trap that dies with REPO_REMEDY is set by orch.sh itself, so a module
 # loaded on demand is not what a signalled main shell waits on.

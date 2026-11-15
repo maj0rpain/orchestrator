@@ -367,9 +367,9 @@ cmd_finding_triage_scan() {
 # the AI disclaimer every comment finding triage writes carries. Builds the
 # comment in the current shell, where errexit holds, and dies naming <file>
 # when it cannot (#1335): an unreadable file would otherwise post the
-# disclaimer alone. Only the adapter call runs through capture_err, so its
+# disclaimer alone. Only the adapter call runs through gh_capture_err, so its
 # stderr lands in <err-var> and its status is returned for the caller to word
-# its own error. Same rules as capture_err: current shell only, with
+# its own error. Same rules as gh_capture_err: current shell only, with
 # _triage_comment_post_-prefixed locals.
 triage_comment_post() {
   local _triage_comment_post_tmp _triage_comment_post_st=0
@@ -379,7 +379,7 @@ triage_comment_post() {
     rm -f "$_triage_comment_post_tmp"
     die "could not write the triage comment from $3 - nothing was posted on issue #$2"
   }
-  capture_err "$1" adapter_issue_comment "$2" "$_triage_comment_post_tmp" || _triage_comment_post_st=$?
+  gh_capture_err "$1" adapter_issue_comment "$2" "$_triage_comment_post_tmp" || _triage_comment_post_st=$?
   rm -f "$_triage_comment_post_tmp"
   return "$_triage_comment_post_st"
 }
@@ -626,17 +626,17 @@ bundle_members_close() {
   for m in "${members[@]}"; do
     why=""
     held="left open"
-    if ! capture raw err adapter_issue_comments "$m"; then
+    if ! gh_capture raw err adapter_issue_comments "$m"; then
       why="gh could not read member #$m's comments: $(gh_reason "$err")"
     elif ! comments="$(comments_render_trusted "$m" <<<"$raw")"; then
       why="could not read member #$m's comments: its comments did not parse"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
       && ! triage_comment_post err "$m" "$comment_file"; then
       why="gh could not comment on member #$m: $(gh_reason "$err")"
-    elif ! capture_err err adapter_issue_close "$m" --duplicate-of "$b"; then
+    elif ! gh_capture_err err adapter_issue_close "$m" --duplicate-of "$b"; then
       why="gh could not close member #$m as a duplicate: $(gh_reason "$err") - --duplicate-of needs gh 2.102 or newer"
       held="not confirmed closed"
-    elif ! capture state err adapter_issue_state "$m"; then
+    elif ! gh_capture state err adapter_issue_state "$m"; then
       why="gh could not read member #$m's state back: $(gh_reason "$err")"
       held="not confirmed closed"
     elif [ "$state" != CLOSED ]; then

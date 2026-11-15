@@ -606,15 +606,90 @@ ORCH_ISSUE_LIST_LIMIT=3 "$ORCH" autopilot tick >/dev/null 2>"$tl_err"; st=$?
 assert_status "a tick with more flow issues than the limit succeeds" "$st" 0
 assert_eq "it picks up the oldest three" "$(picked)" "issue-7 issue-8 issue-9 "
 assert_contains "and warns at the limit, labelled" "$(cat "$tl_err")" \
-  "orch: the open issues labelled orch:spec reached the issue-list limit of 3 - the newest past it are missing from this list"
+  "orch: the open issues labelled orch:spec or orch:implement or orch:review or orch:sync reached the issue-list limit of 3 - the newest past it are missing from this list"
 rm -f "$tl_err"
-fake_fail adapter_issues_labelled "HTTP 502"
+fake_fail adapter_issues_any_labelled_rows "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick whose flow-issue listing fails exits 1" "$st" 1
-assert_contains "naming the label and the reason" "$out" "orch: could not list the issues labelled orch:"
+assert_contains "naming the labels and the reason" "$out" "orch: could not list the issues labelled orch:spec or orch:implement or orch:review or orch:sync: HTTP 502"
 assert_contains "and gh's reason" "$out" ": HTTP 502"
 fake_unfail
 fake_issue_drop 10
+
+# --- autopilot tick: the direct read before each claim ----------------------
+echo
+echo "autopilot tick direct read"
+tick_fixture
+git config orchestrator.autopilot.cap 2
+fx_log="$(mktemp)"
+fx_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_labelled_rows rows)" "$(counting_defs adapter_issues_any_labelled_rows any)")"
+fake_issue 41 open orch:spec orch:running
+fake_issue 42 open orch:implement needs-human
+fake_issue 43 open orch:done; fake_issue 44 open orch:done orch:running
+counted_adapter_run "$fx_log" "$fx_defs" "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "an idle tick over unpickable flow issues succeeds" "$st" 0
+assert_eq "it makes one done listing" "$(log_count "$fx_log" rows)" "1"
+assert_eq "and one flow listing" "$(log_count "$fx_log" any)" "1"
+assert_eq "and no per-issue read" "$(log_count "$fx_log" issue)" "0"
+fake_issue_drop 41; fake_issue_drop 42; fake_issue_drop 43; fake_issue_drop 44
+
+# a tick at its cap, no sync request ranked, reads no issue
+fake_issue 45 open ready-for-agent orch:spec; fake_issue_title 45 "Cap 45"
+fake_claim_seed 90 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fake_claim_seed 91 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+counted_adapter_run "$fx_log" "$fx_defs" "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "a tick at its cap succeeds" "$st" 0
+assert_eq "it reads no issue directly" "$(log_count "$fx_log" issue)" "0"
+# with every sync slot taken (claims held = cap + slots), a ranked sync request
+# is not read
+fake_issue 46 open orch:done orch:sync; fake_issue_title 46 "Sync 46"
+fake_claim_seed 92 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+counted_adapter_run "$fx_log" "$fx_defs" "$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick with every sync slot taken reads no issue" "$(log_count "$fx_log" issue)" "0"
+fake_claim_release 92
+# with a sync request ranked and a sync slot free, only the sync request is read
+counted_adapter_run "$fx_log" "$fx_defs" "$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the sync request in the free sync slot is read" "$([ "$(grep -c "^issue 46$" "$fx_log")" -ge 1 ] && echo read)" "read"
+assert_eq "and the phase issue past the cap is never read" "$(grep -c '^issue 45$' "$fx_log")" "0"
+fake_claim_release 90; fake_claim_release 91
+fake_issue_drop 45; fake_issue_drop 46
+
+# a listing served late: the row reads pickable, the issue is not
+for kind in closed needs-human implement; do
+  fake_issue 47 open ready-for-agent orch:spec
+  fake_lag adapter_issues_any_labelled_rows 1 $'47\nOPEN\n2\norch:spec\nready-for-agent'
+  case "$kind" in
+    closed) fake_issue 47 closed ready-for-agent orch:spec ;;
+    needs-human) fake_issue 47 open ready-for-agent orch:spec needs-human ;;
+    implement) fake_issue 47 open ready-for-agent orch:implement ;;
+  esac
+  : >"$launcher_dir/calls"
+  out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+  assert_status "a tick over a stale row ($kind) exits 0" "$st" 0
+  assert_eq "it starts no session ($kind)" "$(picked)" ""
+  assert_not_contains "and prints nothing naming the issue ($kind)" "$out" "47"
+  assert_eq "and makes no claim ($kind)" "$(fake_claim_held 47)" "free"
+  fake_issue_drop 47
+done
+
+# a row's limited flag differs from the direct read: the pickup acts on the read
+fake_issue 48 open ready-for-agent orch:spec orch:limited; fake_issue_title 48 "Limited 48"
+fake_lag adapter_issues_any_labelled_rows 1 $'48\nOPEN\n2\norch:spec\nready-for-agent'
+printf '48\n' >"$launcher_dir/release"; : >"$launcher_dir/calls"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a stale unlimited row is picked up" "$(picked)" "limited-48 "
+fake_issue_drop 48
+
+# a failed direct read stops the tick and makes no claim
+fake_issue 49 open ready-for-agent orch:spec; fake_issue_title 49 "Read 49"
+fake_fail adapter_issue_state_labels "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failed direct read stops the tick" "$st" 1
+assert_contains "with today's message" "$out" "orch: could not read issue #49: HTTP 502"
+assert_eq "making no claim" "$(fake_claim_held 49)" "free"
+fake_unfail
+rm -f "$fx_log"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: the cap, lost claims and the order ---------------------
 echo
@@ -1210,10 +1285,12 @@ rm -rf "$other_clone"
 fake_issue 30 open ready-for-agent orch:spec orch:limited
 assert_not_contains "autopilot questions lists no limited issue" "$("$ORCH" autopilot questions 2>&1)" "30"
 fake_issue 31 open needs-human orch:spec
-fake_fail adapter_issue_state_labels "HTTP 502"
-out="$("$ORCH" autopilot questions 2>&1)"; st=$?
-assert_eq "questions failing on a label read dies in one line naming gh and the reason" "$(printf "%s\n" "$out" | grep -c .)|${out#orch: gh could not read the labels of issue #*: }" "1|HTTP 502"
-fake_unfail
+qr_log="$(mktemp)"
+qr_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_labelled_rows rows)")"
+counted_adapter_run "$qr_log" "$qr_defs" "$ORCH" autopilot questions >"$qr_log.out" 2>&1
+assert_eq "questions makes one listing" "$(log_count "$qr_log" rows)" "1"
+assert_eq "and no per-issue labels read" "$(log_count "$qr_log" issue)" "0"
+rm -f "$qr_log" "$qr_log.out"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot questions, reply and resume ------------------------------------
@@ -1305,7 +1382,7 @@ fake_issue 11 open needs-human orch:spec
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #11's comments"
-fake_fail adapter_issues_labelled "HTTP 502"
+fake_fail adapter_issues_labelled_rows "HTTP 502"
 out="$("$ORCH" autopilot questions 2>&1 >/dev/null)"; st=$?
 assert_status "a failed listing dies" "$st" 1
 assert_eq "naming the needs-human listing and the reason" "$out" "orch: gh could not list the needs-human issues: HTTP 502"
@@ -2499,8 +2576,8 @@ fake_unfail
 restore_suite_env
 
 # --- autopilot tick: one read of the done issues (#2559) ----------------------
-# A tick lists the orch:done issues once and reads each once; the merged-PR
-# close and sync detection share that read.
+# A tick lists the orch:done issues once and makes no per-issue read; the
+# merged-PR close and sync detection share that listing.
 echo
 echo "autopilot tick done read"
 tick_fixture
@@ -2515,23 +2592,13 @@ fake_done_conflict() { # <issue> <pr>: an open CONFLICTING PR from orch/<issue>-
 }
 
 fake_issue 60 open orch:done; fake_done_conflict 60 160
-fake_fail_times adapter_issues_labelled 1 "HTTP 502"
+fake_fail_times adapter_issues_labelled_rows 1 "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a failed done listing does not stop the tick" "$st" 0
 assert_eq "it warns once, naming both passes" "$(printf '%s\n' "$out" | grep -c 'could not list the issues labelled orch:done: HTTP 502 - no merged-PR close or sync detection this tick')" "1"
 assert_not_contains "sync detection adds no orch:sync" "$(fake_labels_of 60)" "orch:sync"
 fake_unfail
 fake_issue_drop 60
-
-fake_done_merged 61 3600; fake_done_conflict 61 161
-fake_fail_times adapter_issue_state_labels 1 "HTTP 502"
-out="$("$ORCH" autopilot tick 2>&1)"; st=$?
-assert_status "a failed issue read does not stop the tick" "$st" 0
-assert_eq "it warns once, naming both passes" "$(printf '%s\n' "$out" | grep -c 'could not read issue #61: HTTP 502 - the merged-PR close and sync detection skip it')" "1"
-assert_eq "the issue is not closed" "$(fake_state_of 61)" "OPEN"
-assert_not_contains "and gets no orch:sync" "$(fake_labels_of 61)" "orch:sync"
-fake_unfail
-fake_issue_drop 61
 
 fake_done_merged 62 3600; fake_done_conflict 62 262
 "$ORCH" autopilot tick >/dev/null 2>&1
@@ -2884,6 +2951,65 @@ fake_fail adapter_issue_relabel "HTTP 500 relabel"
 fake_unfail
 assert_eq "a claim held after a failed pickup stop keeps both ticks from picking up" "$(fake_claim_held 8)" free
 
+# --- autopilot tick: one read of the claims on origin (#3062) -----------------
+echo
+echo "autopilot tick one claims read"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+tk_reads="$(mktemp)"
+tk_defs="$(counting_defs adapter_claim_list claims)"
+tk_tick() { counted_adapter_run "$tk_reads" "$tk_defs" "$ORCH" autopilot tick 2>&1; }
+fake_issue 5 open ready-for-agent orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+out="$(tk_tick)"; st=$?
+assert_status "a tick with a stale claim and nothing to pick up succeeds" "$st" 0
+assert_eq "it reads the claims once" "$(log_count "$tk_reads" claims)" "1"
+assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
+assert_eq "and releases it" "$(fake_claim_held 5)" free
+# a slot the cleanup freed is used in the same tick
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+git config orchestrator.autopilot.cap 1
+fake_issue 5 open ready-for-agent orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Freed slot 7"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "at a cap of 1 a single tick releases the stale claim" "$(fake_claim_held 5)" free
+assert_eq "and starts the waiting issue's session" "$(tick_calls)" "1"
+# a failed claims read
+tick_fixture
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Failed read 7"
+fake_fail adapter_claim_list "HTTP 502 claims"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+fake_unfail
+assert_status "a tick whose claims read fails fails" "$st" 1
+assert_contains "with today's message" "$out" "could not list the claims on origin: HTTP 502 claims"
+assert_eq "and starts no session" "$(tick_calls)" "0"
+# the GitHub-limit pause reads no claims
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+mkdir -p "$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$top/.orchestrator/autopilot/github-limit"
+out="$(tk_tick)"; st=$?
+assert_status "a tick held by the GitHub-limit pause succeeds" "$st" 0
+assert_eq "and makes no claim-list call" "$(log_count "$tk_reads" claims)" "0"
+# an early GitHub pause still cleans this host's stale claims, from one read
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+fake_issue 5 open ready-for-agent orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+quota_reset="$(( $(date +%s) + 7200 ))"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 "$((quota_reset - 100))"; fake_quota graphql 400 5000 "$quota_reset"
+out="$(tk_tick)"; st=$?
+assert_status "a tick held by an early GitHub pause succeeds" "$st" 0
+assert_contains "it is held by the early pause" "$out" "GitHub graphql pool is below the github-reserve"
+assert_eq "and records the early pause" "$(on_disk "$top/.orchestrator/autopilot/github-early-graphql")" present
+assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
+assert_eq "releases it" "$(fake_claim_held 5)" free
+assert_eq "from one claims read" "$(log_count "$tk_reads" claims)" "1"
+rm -f "$ORCH_GH_FAKE_STORE/quota" "$tk_reads"
+
 # --- autopilot run: a start-up read that meets a GitHub limit (#2577) ---------
 echo
 echo "autopilot run start-up read github limit"
@@ -3103,7 +3229,7 @@ assert_eq "verdicts and the order named" "$out" "3 eligible override
 13 skip phase spec"
 
 # The fake's plain open-issue listing is newest first;
-# adapter_issues_open_oldest is the oldest-first read the verb walks, and it
+# adapter_issues_open_rows is the oldest-first read the verb walks, and it
 # must walk it in order.
 
 all="$(ORCH_ISSUE_LIST_LIMIT=14 "$ORCH" autopilot candidates --all 2>&1)"; st=$?
@@ -3127,6 +3253,19 @@ assert_contains "--all warns when the listing reaches the issue-list limit" "$(c
   "orch: the open issues reached the issue-list limit of 12 - the newest past it are missing from this list"
 rm -f "$ac_err"
 
+ac_log="$(mktemp)"
+ac_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_open_rows rows)")"
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --all >"$ac_log.out" 2>&1
+assert_eq "--all makes one listing" "$(log_count "$ac_log" rows)" "1"
+assert_eq "and no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --limit 3 >"$ac_log.out" 2>&1
+assert_eq "--limit makes no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates 1 99 >"$ac_log.out" 2>&1
+assert_eq "named issues each keep one direct read" "$(log_count "$ac_log" issue)" "2"
+assert_eq "and a number naming no issue is still missing" "$(cat "$ac_log.out")" "1 eligible none
+99 skip missing"
+rm -f "$ac_log" "$ac_log.out"
+
 for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
   # shellcheck disable=SC2086 # the words are the arguments
   out="$("$ORCH" autopilot candidates $args 2>&1)"; st=$?
@@ -3145,7 +3284,7 @@ out="$("$ORCH" autopilot candidates 1 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed trust read dies" "$st" 1
 assert_contains "with the verb's own trust-check wording" "$out" "could not check the trust of issue #1"
-fake_fail adapter_issues_open_oldest "HTTP 502 list"
+fake_fail adapter_issues_open_rows "HTTP 502 list"
 out="$("$ORCH" autopilot candidates --all 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed listing dies" "$st" 1

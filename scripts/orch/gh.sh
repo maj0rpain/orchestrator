@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # gh.sh - the gh adapter layer (ADR-0033): gh(), the guard every GitHub call
 # goes through, the failure contract its callers die by (gh_reason, gh_die,
-# gh_or_die, verify_twice), every adapter_* operation, the out-variable
-# readers over the multi-field ones, and the JQ constants they read.
+# gh_or_die, verify_twice, gh_capture, gh_capture_err), every adapter_*
+# operation, the out-variable readers over the multi-field ones, and the JQ
+# constants they read.
 # It stays whole, whoever calls each operation, and ends with the
 # ORCH_GH_ADAPTER hook, so a test adapter overrides the real operations.
 # Its tests: scripts/test/orch/gh.sh.
@@ -10,12 +11,14 @@
 
 # The guard every GitHub call in orch.sh and its modules goes through by name
 # (#520): `gh` itself, defined ahead of the ORCH_GH_ADAPTER seam so a test
-# adapter picks it up. On first use it resolves the repo
-# and exports it as GH_REPO for the rest of the run - with GH_HOST beside it,
-# by repo_gh_host's one rule, whenever the repo itself decides its host - so
-# every later call - `gh api`'s
-# {owner}/{repo} placeholders and host included - is pinned to it, never to
-# gh's own default repo, which in a fork is the upstream. With no repo it dies
+# adapter picks it up. On use it resolves the repo and exports it as GH_REPO -
+# with GH_HOST beside it, by repo_gh_host's one rule, whenever the repo itself
+# decides its host - so the call - `gh api`'s {owner}/{repo} placeholders and
+# host included - is pinned to it, never to gh's own default repo, which in a
+# fork is the upstream. That export, like the memo, lives in the shell the
+# guard runs in: a process whose calls start from its main shell resolves once,
+# but a subshell that resolves first (a whole command run under a capture)
+# resolves once for itself and cannot hand the memo back. With no repo it dies
 # naming GH_REPO; that death exits 1 whatever the command reserved, so a command
 # that reserves exit 1 for a "no" resolves the repo itself first (repo_pin, then
 # die2 with REPO_REMEDY). Inside a command substitution `die` would end only
@@ -41,6 +44,24 @@ gh() {
     die "$REPO_REMEDY"
   fi
   gh_limit_retry command gh "$@"
+}
+
+# gh_capture <out-var> <err-var> <command...> and gh_capture_err <err-var>
+# <command...>: capture and capture_err for a GitHub operation - an adapter_*
+# operation or gh itself. Each runs the memoising resolver (repo_resolve) in the
+# caller's shell first, ignoring its status, so the Repo is resolved once for
+# the shell that calls it, rather than once per subshell the call runs in; a
+# failed resolution is left to the guard, which dies with the remedy as it
+# always did.
+# Defined ahead of the ORCH_GH_ADAPTER seam. A command that is not a GitHub
+# operation goes through capture or capture_err.
+gh_capture() {
+  repo_resolve || :
+  capture "$@"
+}
+gh_capture_err() {
+  repo_resolve || :
+  capture_err "$@"
 }
 
 # gh_limit_retry <command>...: runs <command>, its stdout and stderr held in
@@ -112,6 +133,7 @@ gh_limit_pools() {
 # read of the pools, 15 minutes from now.
 gh_limit_reset() {
   local pools reset
+  repo_resolve || :
   pools="$(gh_limit_pools)" || pools=""
   reset="$(awk '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
   printf '%s\n' "${reset:-$(($(date +%s) + 900))}"
@@ -192,7 +214,8 @@ gh_die() {
 }
 
 # gh_or_die [--exit 2] [--hint <text>] [--out <var> | --file <path>] <what>
-# <op> [args...]: runs the operation through capture/capture_err - so in their
+# <op> [args...]: resolves the Repo in the caller's shell, then runs the
+# operation through gh_capture/gh_capture_err - so in their
 # subshell, and the gh guard's no-repo death still reaches the real stderr -
 # and on failure dies through gh_die with the same --exit and --hint. Those
 # are checked through die_opt_check before the operation runs, so a bad one
@@ -230,19 +253,19 @@ gh_or_die() {
   fi
   [ $# -ge 2 ] || die "gh_or_die: needs <what> and an operation"
   if [ -n "$_gh_or_die_out" ]; then
-    capture _gh_or_die_text _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
+    gh_capture _gh_or_die_text _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
     [ "$_gh_or_die_st" -ne 0 ] || printf -v "$_gh_or_die_out" '%s' "$_gh_or_die_text"
   elif [ -n "$_gh_or_die_file" ]; then
     mkdir -p "$(dirname "$_gh_or_die_file")"
     _gh_or_die_tmp="$(mktemp "$_gh_or_die_file.XXXXXX")" || die "could not create a temp file beside $_gh_or_die_file"
-    if capture_err _gh_or_die_err "${@:2}" >"$_gh_or_die_tmp"; then
+    if gh_capture_err _gh_or_die_err "${@:2}" >"$_gh_or_die_tmp"; then
       mv "$_gh_or_die_tmp" "$_gh_or_die_file"
     else
       _gh_or_die_st=$?
       rm -f "$_gh_or_die_tmp"
     fi
   else
-    capture_err _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
+    gh_capture_err _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
   fi
   [ "$_gh_or_die_st" -ne 0 ] || return 0
   gh_die ${_gh_or_die_die_opts[@]+"${_gh_or_die_die_opts[@]}"} "$1" "$_gh_or_die_err"
@@ -284,7 +307,8 @@ verify_twice() {
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
-#   adapter_issues_labelled, adapter_issues_open_oldest,
+#   adapter_issues_labelled_rows, adapter_issues_any_labelled_rows,
+#   adapter_issues_open_rows,
 #   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
@@ -472,7 +496,7 @@ adapter_issue_state_labels() {
 # variable name is shadowed.
 gh_lines_read() {
   local __glr_out __glr_err
-  if ! capture __glr_out __glr_err "$1" "$2"; then
+  if ! gh_capture __glr_out __glr_err "$1" "$2"; then
     printf -v "$3" '%s' "$__glr_err"
     return 1
   fi
@@ -565,15 +589,6 @@ adapter_issue_state() {
   gh issue view "$1" --json state,url --jq 'if (.url | test("/pull/")) then "PULL" else .state end'
 }
 
-# adapter_issues_labelled <label>...: the open issues carrying every label
-# named, one number per line, oldest first, so ISSUE_LIST_LIMIT cuts the
-# newest - gh filters on whole labels, not on a prefix.
-adapter_issues_labelled() {
-  local args=() l
-  for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
-}
-
 # issue_list_limit_warn <count> <what>: warns on stderr when a listing of
 # <what> (e.g. "the open issues labelled needs-human") returned <count> rows,
 # reaching its effective limit - the lesser of ISSUE_LIST_LIMIT and 1000,
@@ -595,33 +610,140 @@ issues_labelled_limit_warn() {
   issue_list_limit_warn "$__illw_n" "$__illw_what"
 }
 
-# issues_labelled_read <out_var> <err_var> <label>...: reads the open issues
-# carrying every label named once through adapter_issues_labelled, the listing
-# (one number per line, oldest first, trailing newlines gone) into the caller's
-# <out_var> and gh's stderr into <err_var>, as capture does, then warns through
-# issue_list_limit_warn when the listing reached the limit. Non-zero on a
-# failed read, warning nothing: the caller words the failure from <err_var>.
-issues_labelled_read() {
-  local __ilr_out __ilr_err __ilr_n=0
-  if ! capture __ilr_out __ilr_err adapter_issues_labelled "${@:3}"; then
-    printf -v "$2" '%s' "$__ilr_err"
-    return 1
-  fi
-  [ -z "$__ilr_out" ] || __ilr_n="$(printf '%s\n' "$__ilr_out" | grep -c .)"
-  issues_labelled_limit_warn "$__ilr_n" "${@:3}"
-  printf -v "$1" '%s' "$__ilr_out"
-  printf -v "$2" '%s' "$__ilr_err"
+# adapter_issues_labelled_rows <label>...: the open issues carrying every label
+# named, oldest first and cut at ISSUE_LIST_LIMIT (the newest dropped),
+# each as one count-marked record: its number, its state as GitHub answered it,
+# its label count, then one label per line. The state is never assumed from the
+# listing's own open-only filter.
+adapter_issues_labelled_rows() {
+  local args=() l
+  for l in "$@"; do args+=(--label "$l"); done
+  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
+    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
 }
 
-# adapter_issues_open_oldest: every open issue, one number per line, oldest
-# first, so ISSUE_LIST_LIMIT cuts the newest.
-adapter_issues_open_oldest() {
-  gh issue list --state open --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
+# adapter_issues_any_labelled_rows <label>...: the open issues carrying any of
+# the labels named, as adapter_issues_labelled_rows prints them: oldest first,
+# cut once at ISSUE_LIST_LIMIT across all the labels. GitHub's search takes a
+# comma-joined list of quoted labels as an any-of match.
+adapter_issues_any_labelled_rows() {
+  local any="" l
+  for l in "$@"; do any="${any:+$any,}\"$l\""; done
+  gh issue list --state open --search "label:$any sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
+    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+}
+
+# issues_any_labels_phrase <var> <label>...: writes the labels named, joined by
+# " or ", into <var>, for an `orch: ` message about an any-of listing.
+issues_any_labels_phrase() {
+  local __ialp_s="$2" __ialp_l
+  for __ialp_l in "${@:3}"; do __ialp_s="$__ialp_s or $__ialp_l"; done
+  printf -v "$1" '%s' "$__ialp_s"
+}
+
+# issues_any_labelled_limit_warn <count> <label>...: issue_list_limit_warn for a
+# listing of the open issues carrying any of the labels named, joined by "or".
+# Always succeeds.
+issues_any_labelled_limit_warn() {
+  local __iall_n="$1" __iall_any
+  issues_any_labels_phrase __iall_any "${@:2}"
+  issue_list_limit_warn "$__iall_n" "the open issues labelled $__iall_any"
+}
+
+# issues_labelled_rows_read <nums_var> <states_array> <labels_array> <err_var>
+# <label>...: reads the listing once through adapter_issues_labelled_rows and
+# writes the issue numbers, oldest first one per line, into <nums_var>, and adds
+# each record's state and labels (one per line, possibly none) to two
+# caller-declared associative arrays keyed by issue number. It adds to the
+# arrays, never clearing them. Non-zero, writing nothing, on a failed read (gh's
+# stderr into <err_var>, as gh_lines_read) or an answer that does not parse
+# (<err_var> "gh answered a listing that does not parse"). Warns through
+# issues_labelled_limit_warn when the listing reaches the issue-list limit. Dies
+# when an array name is not a declared associative array. Elements are assigned
+# by eval on a validated name, the value by reference, as
+# issues_labelled_bodies_read does.
+issues_labelled_rows_read() {
+  issues_rows_read_via issues_labelled_rows_read adapter_issues_labelled_rows issues_labelled_limit_warn "$@"
+}
+
+# issues_any_labelled_rows_read <nums_var> <states_array> <labels_array>
+# <err_var> <label>...: issues_labelled_rows_read for the open issues carrying
+# any of the labels, through adapter_issues_any_labelled_rows, its limit warning
+# worded by issues_any_labelled_limit_warn.
+issues_any_labelled_rows_read() {
+  issues_rows_read_via issues_any_labelled_rows_read adapter_issues_any_labelled_rows issues_any_labelled_limit_warn "$@"
+}
+
+# adapter_issues_open_rows: every open issue, oldest first and cut at
+# ISSUE_LIST_LIMIT, each as the count-marked record adapter_issues_labelled_rows
+# answers: number, state as GitHub answered it, label count, one label per line.
+adapter_issues_open_rows() {
+  gh issue list --state open --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
+    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+}
+
+# issues_open_limit_warn <count>: issue_list_limit_warn for a listing of every
+# open issue. Always succeeds.
+issues_open_limit_warn() {
+  issue_list_limit_warn "$1" "the open issues"
+}
+
+# issues_open_rows_read <nums_var> <states_array> <labels_array> <err_var>:
+# issues_labelled_rows_read for every open issue, through
+# adapter_issues_open_rows, its limit warning worded by issues_open_limit_warn.
+issues_open_rows_read() {
+  issues_rows_read_via issues_open_rows_read adapter_issues_open_rows issues_open_limit_warn "$@"
+}
+
+# issues_rows_read_via <caller> <adapter> <warn> <nums_var> <states_array>
+# <labels_array> <err_var> [<label>...]: the reading the three readers above
+# share (the open-issue reader takes no labels), through the listing <adapter>
+# and the limit warning <warn>; <caller> names the public reader in a die
+# message.
+issues_rows_read_via() {
+  assoc_array_require "$1" "$5" __ilrr_
+  assoc_array_require "$1" "$6" __ilrr_
+  local __ilrr_adapter="$2" __ilrr_warn="$3"
+  shift 3
+  local __ilrr_out __ilrr_err __ilrr_lines=() __ilrr_nums=() __ilrr_sts=() __ilrr_labs=()
+  local __ilrr_i=0 __ilrr_total __ilrr_n __ilrr_state __ilrr_count __ilrr_j __ilrr_rl __ilrr_r
+  local __ilrr_bad="gh answered a listing that does not parse"
+  local __ilrr_whole='^[0-9]+$'
+  if ! gh_capture __ilrr_out __ilrr_err "$__ilrr_adapter" "${@:5}"; then
+    printf -v "$4" '%s' "$__ilrr_err"
+    return 1
+  fi
+  [ -z "$__ilrr_out" ] || mapfile -t __ilrr_lines <<<"$__ilrr_out"
+  __ilrr_total="${#__ilrr_lines[@]}"
+  while [ "$__ilrr_i" -lt "$__ilrr_total" ]; do
+    __ilrr_n="${__ilrr_lines[__ilrr_i]}"
+    __ilrr_state="${__ilrr_lines[__ilrr_i+1]-}"
+    __ilrr_count="${__ilrr_lines[__ilrr_i+2]-}"
+    [[ $__ilrr_n =~ $__ilrr_whole && -n $__ilrr_state && $__ilrr_count =~ $__ilrr_whole ]] \
+      || { printf -v "$4" '%s' "$__ilrr_bad"; return 1; }
+    __ilrr_i=$(( __ilrr_i + 3 ))
+    __ilrr_rl=""
+    for (( __ilrr_j = 0; __ilrr_j < 10#$__ilrr_count; __ilrr_j++ )); do
+      [ "$__ilrr_i" -lt "$__ilrr_total" ] || { printf -v "$4" '%s' "$__ilrr_bad"; return 1; }
+      [ "$__ilrr_j" -eq 0 ] || __ilrr_rl="$__ilrr_rl"$'\n'
+      __ilrr_rl="$__ilrr_rl${__ilrr_lines[__ilrr_i]}"
+      __ilrr_i=$(( __ilrr_i + 1 ))
+    done
+    __ilrr_nums+=("$(( 10#$__ilrr_n ))")
+    __ilrr_sts+=("$__ilrr_state")
+    __ilrr_labs+=("$__ilrr_rl")
+  done
+  for __ilrr_r in ${__ilrr_nums[@]+"${!__ilrr_nums[@]}"}; do
+    eval "$2"'[${__ilrr_nums[__ilrr_r]}]=${__ilrr_sts[__ilrr_r]}'
+    eval "$3"'[${__ilrr_nums[__ilrr_r]}]=${__ilrr_labs[__ilrr_r]}'
+  done
+  printf -v "$1" '%s' "$(printf '%s\n' ${__ilrr_nums[@]+"${__ilrr_nums[@]}"} | grep . || true)"
+  "$__ilrr_warn" "${#__ilrr_nums[@]}" "${@:5}"
 }
 
 # adapter_issues_labelled_bodies <label>...: the open issues carrying every
 # label named, oldest first and cut at ISSUE_LIST_LIMIT as
-# adapter_issues_labelled is, each as one count-marked record: its number,
+# adapter_issues_labelled_rows is, each as one count-marked record: its number,
 # its label count, one label per line,
 # its body's line count (one more than the newlines the body holds, counted
 # with `indices`, never `split`, whose answer on an empty string differs
@@ -646,7 +768,7 @@ adapter_issues_labelled_bodies() {
 # stderr into <err_var>, as gh_lines_read) or an answer that does not parse
 # (<err_var> "gh answered a listing that does not parse"). Warns on stderr
 # through issues_labelled_limit_warn when the listing reaches the issue-list
-# limit, as issues_labelled_read does. Dies when an array
+# limit, as issues_labelled_rows_read does. Dies when an array
 # name is not a declared associative array. Bash 4.0: elements are assigned by
 # eval on a validated name, the value by reference, as finding_body_parse does.
 issues_labelled_bodies_read() {
@@ -657,7 +779,7 @@ issues_labelled_bodies_read() {
   local __ilbr_j __ilbr_record_labels __ilbr_body __ilbr_k __ilbr_r
   local __ilbr_bad="gh answered a listing that does not parse"
   local __ilbr_whole='^[0-9]+$'
-  if ! capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
+  if ! gh_capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
     printf -v "$4" '%s' "$__ilbr_err"
     return 1
   fi
@@ -1142,7 +1264,7 @@ adapter_auth_status() {
 adapter_pr_checks() {
   local args=("$1") err out tsv st=0
   [ "$2" != required ] || args+=(--required)
-  capture out err gh pr checks "${args[@]}" --json bucket,name,link || st=$?
+  gh_capture out err gh pr checks "${args[@]}" --json bucket,name,link || st=$?
   case "$st" in
     0|8) ;;
     *)
@@ -1169,7 +1291,7 @@ adapter_pr_checks() {
 # CI-evidence operations below; not called from anywhere else.
 ci_api_read() {
   local err out res st=0
-  capture out err gh api "$2" || st=$?
+  gh_capture out err gh api "$2" || st=$?
   if [ "$st" != 0 ]; then
     if [ -n "$1" ] && grep -qF -- "$1" <<<"$out"$'\n'"$err"; then
       return 0

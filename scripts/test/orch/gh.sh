@@ -69,6 +69,11 @@ assert_eq "command gh appears in orch.sh and its modules only inside the guard" 
   "$(cat "$ORCH" "$(dirname "$ORCH")"/orch/*.sh | grep -c '\bcommand gh\b')" "1"
 assert_contains "and that one is the gh guard's own" \
   "$(sed -n '/^gh() {$/,/^}$/p' "$(dirname "$ORCH")/orch/gh.sh")" 'command gh "$@"'
+# A GitHub operation is captured through gh_capture or gh_capture_err, which
+# resolve the Repo in the caller's shell first (#3148): on no code line does
+# bare capture or capture_err run an adapter operation or gh.
+assert_eq "no bare capture or capture_err runs an adapter operation or gh" \
+  "$(grep -hEv '^[[:space:]]*#' "$(dirname "$ORCH")"/orch/*.sh | grep -cE '(^|[^_[:alnum:]])capture(_err)? .*[[:space:]](adapter_[a-z_]+|gh)([[:space:]]|$)')" "0"
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
 # in the parent shell (issue fetch) or in a command substitution (ticket
@@ -123,6 +128,65 @@ assert_contains "gh api was among the calls" "$(cat "$GH_FIXTURE/env.log")" \
   "GH_HOST=ghe.example.com api "
 assert_eq "every gh call carried the host-qualified repo and its host" \
   "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+
+# An SSH-alias origin: a command whose GitHub calls start from its main shell
+# resolves the Repo once, so ssh is called once, and every call still carries
+# the repo and its host (#3148). issue triage reads, relabels and reads back
+# from its main shell, so one ssh call for all of them is a memo, not luck.
+# triage_gh: a gh on PATH for issue 5, open and unlabelled until its first
+# edit, then ready-for-agent; it logs as the fixture gh does.
+triage_gh() {
+  triage_dir="$(mktemp -d)"
+  cat >"$triage_dir/gh" <<GH
+#!/usr/bin/env bash
+printf 'GH_REPO=%s GH_HOST=%s %s\n' "\${GH_REPO-<unset>}" "\${GH_HOST-<unset>}" "\$*" >>"$GH_FIXTURE/env.log"
+compgen -v REPO_ >>"$GH_FIXTURE/repo_vars.log"
+case "\$2" in
+  view) echo OPEN; [ ! -f "$triage_dir/edited" ] || echo ready-for-agent ;;
+  edit) : >"$triage_dir/edited" ;;
+esac
+GH
+  chmod +x "$triage_dir/gh"
+}
+write_ssh_stub 'echo hostname ghe.example.com' 0
+git remote set-url origin git@github-work:fork/widgets.git
+: >"$GH_FIXTURE/env.log"; : >"$ssh_calls"
+triage_gh
+out="$(PATH="$triage_dir:$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
+assert_status "issue triage on an SSH-alias origin runs" "$st" 0
+assert_eq "and ssh is called once for its read, relabel and read back" \
+  "$(wc -l <"$ssh_calls" | tr -d ' ')" "1"
+assert_eq "and every one of its gh calls carried the repo and its host" \
+  "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+assert_eq "and it made more than one gh call" \
+  "$([ "$(gh_calls)" -gt 1 ] && echo yes)" "yes"
+: >"$ssh_calls"
+out="$(PATH="$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" slug "Some Words" 2>&1)"; st=$?
+assert_status "a local-only command runs" "$st" 0
+assert_eq "and calls ssh not at all" "$(cat "$ssh_calls")" ""
+git branch -q quick/base; git config orchestrator.base quick/base
+# branch off captures a local git command (its checkout); its fetch of the
+# ssh origin is git's own ssh, so only the resolver's `ssh -G` is counted.
+PATH="$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" branch off quick/9-widgets >/dev/null 2>&1; st=$?
+assert_status "branch off runs" "$st" 0
+assert_eq "a command that only captures a local git command runs no ssh -G" \
+  "$(grep -c "^-G " "$ssh_calls")" "0"
+# On an https origin, a git wrapper logs each read of origin's URL.
+git remote set-url origin https://github.com/fork/widgets.git
+origin_wrap="$(mktemp -d)"
+cat >"$origin_wrap/git" <<GIT
+#!/usr/bin/env bash
+case "\$*" in "remote get-url origin") echo x >>"$origin_wrap/get-url.log" ;; esac
+exec "$(command -v git)" "\$@"
+GIT
+chmod +x "$origin_wrap/git"
+: >"$origin_wrap/get-url.log"; rm -f "$triage_dir/edited"
+out="$(PATH="$origin_wrap:$triage_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
+assert_status "issue triage on an https origin runs" "$st" 0
+assert_eq "and reads origin once" "$(wc -l <"$origin_wrap/get-url.log" | tr -d ' ')" "1"
+# The whole section's gh calls: none inherited a memo variable.
+assert_eq "no gh call inherited a REPO_ variable: the repo memo is never exported" \
+  "$(cat "$GH_FIXTURE/repo_vars.log" 2>/dev/null)" ""
 restore_suite_env GH_HOST GH_FIXTURE
 
 # --- gh_reason and capture_err (#846) -----------------------------------------
@@ -610,6 +674,7 @@ bare_dir="$(mktemp -d)"
 mkdir "$bare_dir/empty" "$bare_dir/sort" "$bare_dir/sortawk" "$bare_dir/mkcat"
 ln -s "$(command -v sort)" "$bare_dir/sort/sort"
 for c in sort awk; do ln -s "$(command -v $c)" "$bare_dir/sortawk/$c"; done
+mkdir "$bare_dir/lagcat"; for c in sort awk cat; do ln -s "$(command -v $c)" "$bare_dir/lagcat/$c"; done
 for c in mkdir cat; do ln -s "$(command -v $c)" "$bare_dir/mkcat/$c"; done
 # barely <dir> <function> [args]: the function run with PATH holding only <dir>.
 barely() { local p="$1"; shift; PATH="$bare_dir/$p" "$FB" -c 'source "$1"; shift; "$@"' _ "$GH_ADAPTER_FAKE" "$@"; }
@@ -626,14 +691,27 @@ fake_issue 26 open
 rm "$S/issues/26/labels"
 assert_eq "fake_open_issues lists open issues newest first, leaving out PRs, closed issues and a stateless one" \
   "$(barely sort fake_open_issues | tr '\n' ' ')" "30 26 22 21 "
-assert_eq "adapter_issues_labelled matches whole-line, case-insensitively" \
-  "$(barely sortawk adapter_issues_labelled ALPHA | tr '\n' ' ')" "21 22 30 "
+assert_eq "adapter_issues_labelled_rows matches whole-line, case-insensitively" \
+  "$(barely sortawk adapter_issues_labelled_rows ALPHA | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha 30 OPEN 2 alpha beta-two "
 assert_eq "several labels are all required, a substring of a label does not match" \
-  "$(barely sortawk adapter_issues_labelled alpha beta | tr '\n' ' ')" "21 "
+  "$(barely sortawk adapter_issues_labelled_rows alpha beta | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
 assert_eq "an issue with no labels file matches no label" \
-  "$(barely sortawk adapter_issues_labelled zzz | tr '\n' ' ')" ""
-assert_eq "adapter_issues_labelled cuts the list at ISSUE_LIST_LIMIT" \
-  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_labelled alpha | tr '\n' ' ')" "21 22 "
+  "$(barely sortawk adapter_issues_labelled_rows zzz | tr '\n' ' ')" ""
+assert_eq "adapter_issues_any_labelled_rows lists the issues carrying any label, oldest first" \
+  "$(barely sortawk adapter_issues_any_labelled_rows beta zzz | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
+assert_eq "any-of matches whole labels, in any case, once per issue" \
+  "$(barely sortawk adapter_issues_any_labelled_rows BETA-TWO alpha | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha 30 OPEN 2 alpha beta-two "
+assert_eq "adapter_issues_any_labelled_rows cuts once at ISSUE_LIST_LIMIT across the labels" \
+  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_any_labelled_rows beta-two beta | tr '\n' ' ')" "21 OPEN 2 Alpha beta 30 OPEN 2 alpha beta-two "
+assert_eq "adapter_issues_labelled_rows cuts the list at ISSUE_LIST_LIMIT" \
+  "$(ISSUE_LIST_LIMIT=1 barely sortawk adapter_issues_labelled_rows alpha | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
+assert_eq "adapter_issues_open_rows answers every open issue oldest first, as number, state, label count and labels" \
+  "$(barely sortawk adapter_issues_open_rows | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha 26 OPEN 0 30 OPEN 2 alpha beta-two "
+assert_eq "adapter_issues_open_rows cuts the list at ISSUE_LIST_LIMIT, the newest dropped" \
+  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_open_rows | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha "
+fake_lag adapter_issues_labelled_rows 1 $'22\nOPEN\n0'
+assert_eq "a lagged adapter_issues_labelled_rows serves the stale listing once, then the current one" \
+  "$(barely lagcat adapter_issues_labelled_rows zzz | tr '\n' ' ')|$(barely lagcat adapter_issues_labelled_rows zzz | tr '\n' ' ')" "22 OPEN 0 |"
 assert_eq "fake_issue_labels reads the labels file with an empty PATH" \
   "$(barely empty fake_issue_labels 21 | tr '\n' ',')" "Alpha,beta,"
 assert_eq "and none for a missing file" "$(barely empty fake_issue_labels 26)" ""
@@ -920,11 +998,26 @@ out="$(contract adapter_issue_state 62 2>&1)"; st=$?
 assert_status "issue state: reads the state" "$st" 0
 assert_eq "PULL for a pull request's number" "$out" "PULL"
 
-gh_reply 0 $'3\n9\n' '' \
-  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number --jq '.[].number'
-out="$(contract adapter_issues_labelled review:nit "triage me" 2>&1)"; st=$?
-assert_status "issues labelled: lists the open issues carrying every label" "$st" 0
-assert_eq "one number per line" "$out" "$(writeln 3 9)"
+gh_reply 0 $'3\nOPEN\n1\norch:spec\n9\nOPEN\n1\norch:sync\n' '' \
+  issue list --state open --search 'label:"orch:spec","orch:sync" sort:created-asc' --limit 1000 --json number,state,labels \
+  --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_any_labelled_rows orch:spec orch:sync 2>&1)"; st=$?
+assert_status "issues any labelled rows: lists the open issues carrying any label" "$st" 0
+assert_eq "one count-marked record per issue" "$out" "$(writeln 3 OPEN 1 orch:spec 9 OPEN 1 orch:sync)"
+
+gh_reply 0 $'3\nOPEN\n1\nreview:nit\n9\nCLOSED\n0\n' '' \
+  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,state,labels \
+  --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_labelled_rows review:nit "triage me" 2>&1)"; st=$?
+assert_status "issues labelled rows: lists the open issues carrying every label" "$st" 0
+assert_eq "one count-marked record per issue: number, state, label count, labels" "$out" "$(writeln 3 OPEN 1 review:nit 9 CLOSED 0)"
+
+gh_reply 0 $'3\nOPEN\n1\nreview:nit\n9\nCLOSED\n0\n' '' \
+  issue list --state open --search "sort:created-asc" --limit 1000 --json number,state,labels \
+  --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_open_rows 2>&1)"; st=$?
+assert_status "issues open rows: lists every open issue" "$st" 0
+assert_eq "one count-marked record per issue: number, state, label count, labels" "$out" "$(writeln 3 OPEN 1 review:nit 9 CLOSED 0)"
 
 gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \
   issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,labels,body \

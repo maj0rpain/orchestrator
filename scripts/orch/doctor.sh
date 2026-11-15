@@ -201,7 +201,7 @@ d_probe() {
   # answer that is no branch name - a tool manager's banner around it, or an
   # empty one - is GitHub not having said, never a name to report.
   [ "$D_GH" = ok ] || return 0
-  if capture view err adapter_repo_default_branch "$REPO_NAME"; then
+  if gh_capture view err adapter_repo_default_branch "$REPO_NAME"; then
     D_REPO_SEEN=ok
     if is_branch_name "$view"; then D_REPO_BRANCH="$view"; fi
   else
@@ -465,7 +465,7 @@ check_labels_exist() {
   # Nothing to compare against, and check_labels_doc has already said so. One
   # problem earns one FAIL, never a second derived from the first.
   [ -n "$want" ] || return 0
-  if ! capture have err adapter_labels "$LABEL_LIMIT"; then
+  if ! gh_capture have err adapter_labels "$LABEL_LIMIT"; then
     # One check, one cause, one warn: GitHub answered the auth probe and then
     # would not answer this, which is an absent answer rather than a "no".
     d_warn "the repo's labels could not be listed: $(gh_reason "$err")"
@@ -502,7 +502,7 @@ check_labels_exist() {
 check_sub_issues() {
   d_gh_gate || return 0
   local probe err
-  if ! capture probe err adapter_sub_issues_supported; then
+  if ! gh_capture probe err adapter_sub_issues_supported; then
     d_warn "sub-issues support could not be probed: $(gh_reason "$err")"
     return 0
   fi

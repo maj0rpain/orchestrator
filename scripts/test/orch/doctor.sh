@@ -58,6 +58,11 @@ doctor_github() {
   fake_issue 1 open
 }
 
+# alias_doctor: doctor --env with the ssh stub (write_ssh_stub) first on PATH.
+# hint: the line it prints for an origin host that may be an SSH Host alias.
+alias_doctor() { PATH="$ssh_stub_dir:$PATH" "$ORCH" doctor --env 2>&1; }
+hint="came from origin's SSH URL and may be an SSH Host alias"
+
 # path_without_jq() builds its restricted PATH from whatever's really on PATH,
 # not from repo state, so the one built here serves every no-jq assertion
 # (in doctor and in doctor --flow) instead of symlinking the same ~20 tools
@@ -401,7 +406,18 @@ fake_local_default ""
 # later GitHub checks counted on the skip line, no gh call made at all. The
 # real adapter runs here, over a fixture gh that logs every call it gets.
 savepath="$PATH"; gh_fixture; PATH="$savepath"
-out="$(orch_no_repo doctor --env 2>&1)"; st=$?
+# A git wrapper logs each read of origin's URL: the failed resolution is
+# memoised, so one doctor run reads origin twice (#3147).
+git_log_dir="$(mktemp -d)"
+git_real="$(command -v git)"
+cat >"$git_log_dir/git" <<GIT
+#!/usr/bin/env bash
+if [ "\$*" = "remote get-url origin" ]; then echo x >>"$git_log_dir/origin_reads"; fi
+exec "$git_real" "\$@"
+GIT
+chmod +x "$git_log_dir/git"
+: >"$git_log_dir/origin_reads"
+out="$(PATH="$git_log_dir:$PATH" orch_no_repo doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
 assert_contains "names the missing repo as a FAIL, with no remedy in it" "$out" \
   "FAIL  $repo_cause"
@@ -412,6 +428,8 @@ assert_eq "counts the later GitHub checks on the skip line, naming the bare caus
   "$(printf '%s\n' "$out" | grep -cx "warn  [0-9]* GitHub checks\\{0,1\\} skipped: $repo_missing")" "1"
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
 assert_eq "makes no gh call without a repo to pin it to" "$(gh_calls)" "0"
+assert_eq "a failed resolution is memoised: origin is read twice in a doctor run" \
+  "$(wc -l <"$git_log_dir/origin_reads" | tr -d ' ')" "2"
 unset GH_FIXTURE
 
 # The plugin depends on no other plugin (ADR-0028): doctor says nothing of
@@ -2347,8 +2365,6 @@ echo "doctor: ssh alias hint"
 healthy_repo
 doctor_github
 write_ssh_stub 'exit 1' 1
-alias_doctor() { PATH="$ssh_stub_dir:$PATH" "$ORCH" doctor --env 2>&1; }
-hint="came from origin's SSH URL and may be an SSH Host alias"
 
 fake_noauth
 git config remote.origin.url git@github-work:acme/widgets.git
@@ -2385,6 +2401,21 @@ write_ssh_stub 'exit 1' 1
 fake_online
 git config remote.origin.url git@ghe.example.com:acme/widgets.git
 assert_not_contains "a passing probe gives no hint" "$(alias_doctor)" "$hint"
+
+# The resolver's answer, a failed one too, is memoised in the shell that runs
+# it (#3147): one doctor run reads origin once in check_origin and once in the
+# resolver, and calls ssh once for an SSH-alias origin.
+write_ssh_stub 'echo hostname ghe.example.com' 0
+git config remote.origin.url git@github-work:acme/widgets.git
+fake_noauth
+: >"$ssh_calls"
+out="$(alias_doctor)"
+assert_eq "an SSH-alias origin calls ssh once in a doctor run" \
+  "$(wc -l <"$ssh_calls" | tr -d ' ')" "1"
+assert_contains "and the repo line names origin as the source" "$out" "(origin)"
+assert_contains "and the alias hint still prints for a host other than github.com" "$out" "$hint"
+write_ssh_stub 'exit 1' 1
+
 
 # --- doctor: one issue read and one PR read per run (#2554) -------------------
 # Every flow check that needs the flow issue's state or labels, or the flow PR's

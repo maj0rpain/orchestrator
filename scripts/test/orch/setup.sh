@@ -142,11 +142,12 @@ counted_adapter_run() {
 
 # counting_defs <adapter-fn> <tag>: definitions that wrap the fake's
 # <adapter-fn> so each call appends "<tag> <first-arg>" to "$COUNT_LOG" before
-# the fake answers. Join several with writeln for counted_adapter_run.
+# the fake answers (empty when it gets no argument). Join several with writeln
+# for counted_adapter_run.
 counting_defs() {
   writeln \
     "eval \"fake_$1_read() \$(declare -f $1 | tail -n +2)\"" \
-    "$1() { printf '%s %s\\n' '$2' \"\$1\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
+    "$1() { printf '%s %s\\n' '$2' \"\${1-}\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
 }
 
 # log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
@@ -1144,6 +1145,8 @@ fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 # reply fails, exit 127, naming the argv on stderr. Every
 # call appends "GH_REPO=<repo> GH_HOST=<host> <argv>" to $GH_FIXTURE/env.log
 # (<unset> for an unset one), so a test asserts which repo a call was pinned to.
+# It also appends the name of every inherited variable starting REPO_ to
+# $GH_FIXTURE/repo_vars.log: the repo memo is never exported, so it stays empty.
 # A section that calls it ends with restore_suite_env GH_FIXTURE.
 gh_fixture() {
   GH_FIXTURE="$(mktemp -d)" || return 1
@@ -1159,6 +1162,7 @@ KEY
 #!/usr/bin/env bash
 d="$(cd "$(dirname "$0")/.." && pwd)"
 printf 'GH_REPO=%s GH_HOST=%s %s\n' "${GH_REPO-<unset>}" "${GH_HOST-<unset>}" "$*" >>"$d/env.log"
+compgen -v REPO_ >>"$d/repo_vars.log"
 r="$d/replies/$("$d/key" "$@")"
 if [ -f "$r/argv" ] && printf '%s\0' "$@" | cmp -s - "$r/argv"; then
   cat "$r/stdout"
