@@ -1452,8 +1452,8 @@ for sig in INT TERM HUP; do
   assert_clean_interrupt "run $sig" "$errf" "$st" "$sig" "$tdir"
   assert_eq "run $sig: records nothing" "$(on_disk "$rec")" absent
   TMPDIR="$tdir" "$ORCH" suite-cost run -- true >/dev/null 2>"$errf"
-  assert_eq "a run after an interrupted one warns nothing" "$(cat "$errf")" ""
-  assert_eq "and is recorded" "$(log_count "$rec")" 1
+  assert_eq "run $sig: a run after an interrupted one warns nothing" "$(cat "$errf")" ""
+  assert_eq "run $sig: and is recorded" "$(log_count "$rec")" 1
 
   check_repo
   seed_run "$head" 70.00 "sh -c kill -$sig \$PPID"
