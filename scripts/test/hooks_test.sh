@@ -1554,7 +1554,7 @@ pg_b_human() { pg_check "$1" toolu_k1 batch "$PG/batch/view.md"; pg_entry "$1" u
 pg_cost_build disarmed-by-apply pg_b_apply
 pg_cost_build armed-now pg_b_armed
 pg_cost_build quotes-only pg_b_quote
-: >"$PG/cost/pad-human.jsonl"; pg_b_human "$PG/cost/pad-human.jsonl" pad
+pg_cost_build human pg_b_human
 pg_na="$PG/cost/apply-only.jsonl"; : >"$pg_na"; pg_pad "$pg_na" pad; pg_bash "$pg_na" toolu_k3 'bash "$ORCH" spec-review apply'
 for pg_fn in pg_decide sg_decide; do
   pg_cost_pair disarmed-by-apply "$pg_fn"
@@ -1567,7 +1567,11 @@ for pg_fn in pg_decide sg_decide; do
   pg_cost_pair quotes-only "$pg_fn"
   assert_eq "quotes only allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-quotes-only.jsonl")" allow
   assert_eq "disarmed by a human message alone allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-human.jsonl")" allow
-  pg_hb="$(jq_bytes "$pg_fn" "$PG/cost/pad-human.jsonl")"; pg_hn="$(jq_bytes "$pg_fn" "$PG/cost/non-nothing.jsonl")"
+  pg_hb="$(jq_bytes "$pg_fn" "$PG/cost/pad-human.jsonl")"; pg_hn="$(jq_bytes "$pg_fn" "$PG/cost/non-human.jsonl")"
+  # The bare baseline is a real transcript the scan reads: it offers jq more
+  # bytes than a missing transcript at a path of equal length.
+  assert_lt "the human case's bare baseline is read by the scan ($pg_fn)" \
+    "$(jq_bytes "$pg_fn" "$PG/cost/nox-human.jsonl")" "$pg_hn"
   assert_lt "and offers jq fewer bytes than the padding holds ($pg_fn)" "$((pg_hb - pg_hn))" "$PG_PADSIZE"
   # Apply calls but no needle: no jq beyond the payload read.
   assert_eq "apply calls but no needle start as many jq as no transcript_path ($pg_fn)" \
