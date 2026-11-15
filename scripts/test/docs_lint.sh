@@ -4489,9 +4489,9 @@ spares "with NO_VERSION_BUMP, no parent lookup runs" \
   "$(issue_parent_url() { echo "lookup ran"; return 1; }; scan_changelog_fragments "$fixture" main 1)" '.'
 eval "$real_issue_parent_url"
 check_real_changelog_fragments
-# The --fragment-only switch, run as a child of this file. Each child has
-# CHANGELOG_BASE and NO_VERSION_BUMP set or unset here, whatever this run
-# inherited, and shows its ok lines though this run may be quiet. A
+# The --fragment-only switch, run as a child of this file. Each fragment-only
+# child has CHANGELOG_BASE and NO_VERSION_BUMP set or unset here, whatever this
+# run inherited, and shows its ok lines though this run may be quiet. A
 # fragment-only child runs no self-tests, so it starts no child of its own.
 # fragment_only_child [<env words>...]: runs the
 # child under env with those words, its status, stdout and stderr landing in
@@ -4503,27 +4503,28 @@ fragment_only_child() {
   st=$?
   child_status="$st" child_out="$out" child_err="$(<"$errfile")"
 }
+# assert_child_fails <status title> <output title> <glob>: the last child
+# exited non-zero and its stdout matches <glob>.
+assert_child_fails() {
+  if [ "$child_status" -ne 0 ]; then ok "$1"; else bad "$1" "exit 0"; fi
+  # shellcheck disable=SC2053 # $3 is a glob on purpose
+  if [[ "$child_out" == $3 ]]; then ok "$2"; else bad "$2" "got: $child_out"; fi
+}
 fragment_only_child
 assert_eq "--fragment-only with CHANGELOG_BASE unset exits 0" "$child_status" 0
 assert_eq "--fragment-only with CHANGELOG_BASE unset prints the skipped line and a summary alone" \
   "$child_out" "$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n\n1 passed, 0 failed')"
 assert_empty "--fragment-only with CHANGELOG_BASE unset prints nothing on stderr" "$child_err"
 fragment_only_child CHANGELOG_BASE=no-such-ref
-[ "$child_status" -ne 0 ] && ok "--fragment-only with a base with no merge-base exits non-zero" ||
-  bad "--fragment-only with a base with no merge-base exits non-zero" "exit 0"
-case "$child_out" in
-  *"FAIL"*"CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'"*"0 passed, 1 failed") ok "--fragment-only names a base with no merge-base and counts one failed" ;;
-  *) bad "--fragment-only names a base with no merge-base and counts one failed" "got: $child_out" ;;
-esac
+assert_child_fails "--fragment-only with a base with no merge-base exits non-zero" \
+  "--fragment-only names a base with no merge-base and counts one failed" \
+  "*FAIL*CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'*0 passed, 1 failed"
 if git -C "$PLUGIN_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   child_head="$(git -C "$PLUGIN_ROOT" rev-parse HEAD)"
   fragment_only_child CHANGELOG_BASE="$child_head"
-  [ "$child_status" -ne 0 ] && ok "--fragment-only fails a PR adding no fragment" ||
-    bad "--fragment-only fails a PR adding no fragment" "exit 0"
-  case "$child_out" in
-    *"no changelog fragment added"*"0 passed, 1 failed") ok "--fragment-only says no changelog fragment added" ;;
-    *) bad "--fragment-only says no changelog fragment added" "got: $child_out" ;;
-  esac
+  assert_child_fails "--fragment-only fails a PR adding no fragment" \
+    "--fragment-only says no changelog fragment added" \
+    "*no changelog fragment added*0 passed, 1 failed"
   fragment_only_child CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
   assert_eq "--fragment-only honours NO_VERSION_BUMP" "$child_status:${child_out##*$'\n'}" "0:1 passed, 0 failed"
 else
