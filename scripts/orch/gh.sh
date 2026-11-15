@@ -610,13 +610,21 @@ adapter_issues_any_labelled_rows() {
     --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
 }
 
+# issues_any_labels_phrase <var> <label>...: writes the labels named, joined by
+# " or ", into <var>, for an `orch: ` message about an any-of listing.
+issues_any_labels_phrase() {
+  local __ialp_s="$2" __ialp_l
+  for __ialp_l in "${@:3}"; do __ialp_s="$__ialp_s or $__ialp_l"; done
+  printf -v "$1" '%s' "$__ialp_s"
+}
+
 # issues_any_labelled_limit_warn <count> <label>...: issue_list_limit_warn for a
 # listing of the open issues carrying any of the labels named, joined by "or".
 # Always succeeds.
 issues_any_labelled_limit_warn() {
-  local __iall_n="$1" __iall_what="the open issues labelled $2" __iall_l
-  for __iall_l in "${@:3}"; do __iall_what="$__iall_what or $__iall_l"; done
-  issue_list_limit_warn "$__iall_n" "$__iall_what"
+  local __iall_n="$1" __iall_any
+  issues_any_labels_phrase __iall_any "${@:2}"
+  issue_list_limit_warn "$__iall_n" "the open issues labelled $__iall_any"
 }
 
 # issues_labelled_rows_read <nums_var> <states_array> <labels_array> <err_var>
@@ -665,9 +673,10 @@ issues_open_rows_read() {
 }
 
 # issues_rows_read_via <caller> <adapter> <warn> <nums_var> <states_array>
-# <labels_array> <err_var> <label>...: the reading the two readers above share,
-# through the listing <adapter> and the limit warning <warn>; <caller> names the
-# public reader in a die message.
+# <labels_array> <err_var> [<label>...]: the reading the three readers above
+# share (the open-issue reader takes no labels), through the listing <adapter>
+# and the limit warning <warn>; <caller> names the public reader in a die
+# message.
 issues_rows_read_via() {
   assoc_array_require "$1" "$5" __ilrr_
   assoc_array_require "$1" "$6" __ilrr_
@@ -736,7 +745,7 @@ adapter_issues_labelled_bodies() {
 # stderr into <err_var>, as gh_lines_read) or an answer that does not parse
 # (<err_var> "gh answered a listing that does not parse"). Warns on stderr
 # through issues_labelled_limit_warn when the listing reaches the issue-list
-# limit, as issues_labelled_read does. Dies when an array
+# limit, as issues_labelled_rows_read does. Dies when an array
 # name is not a declared associative array. Bash 4.0: elements are assigned by
 # eval on a validated name, the value by reference, as finding_body_parse does.
 issues_labelled_bodies_read() {

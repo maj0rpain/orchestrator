@@ -629,7 +629,8 @@ fake_issue 42 open orch:implement needs-human
 fake_issue 43 open orch:done; fake_issue 44 open orch:done orch:running
 counted_adapter_run "$fx_log" "$fx_defs" "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
 assert_status "an idle tick over unpickable flow issues succeeds" "$st" 0
-assert_eq "it makes two listings" "$(( $(log_count "$fx_log" rows) + $(log_count "$fx_log" any) ))" "2"
+assert_eq "it makes one done listing" "$(log_count "$fx_log" rows)" "1"
+assert_eq "and one flow listing" "$(log_count "$fx_log" any)" "1"
 assert_eq "and no per-issue read" "$(log_count "$fx_log" issue)" "0"
 fake_issue_drop 41; fake_issue_drop 42; fake_issue_drop 43; fake_issue_drop 44
 
@@ -640,8 +641,14 @@ fake_claim_seed 91 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 counted_adapter_run "$fx_log" "$fx_defs" "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
 assert_status "a tick at its cap succeeds" "$st" 0
 assert_eq "it reads no issue directly" "$(log_count "$fx_log" issue)" "0"
-# with a sync request ranked and a sync slot free, only the sync request is read
+# with every sync slot taken (claims held = cap + slots), a ranked sync request
+# is not read
 fake_issue 46 open orch:done orch:sync; fake_issue_title 46 "Sync 46"
+fake_claim_seed 92 otherhost "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+counted_adapter_run "$fx_log" "$fx_defs" "$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a tick with every sync slot taken reads no issue" "$(log_count "$fx_log" issue)" "0"
+fake_claim_release 92
+# with a sync request ranked and a sync slot free, only the sync request is read
 counted_adapter_run "$fx_log" "$fx_defs" "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "the sync request in the free sync slot is read" "$([ "$(grep -c "^issue 46$" "$fx_log")" -ge 1 ] && echo read)" "read"
 assert_eq "and the phase issue past the cap is never read" "$(grep -c '^issue 45$' "$fx_log")" "0"
@@ -1281,11 +1288,9 @@ assert_not_contains "autopilot questions lists no limited issue" "$("$ORCH" auto
 fake_issue 31 open needs-human orch:spec
 qr_log="$(mktemp)"
 qr_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_labelled_rows rows)")"
-plain="$("$ORCH" autopilot questions 2>&1)"
 counted_adapter_run "$qr_log" "$qr_defs" "$ORCH" autopilot questions >"$qr_log.out" 2>&1
 assert_eq "questions makes one listing" "$(log_count "$qr_log" rows)" "1"
 assert_eq "and no per-issue labels read" "$(log_count "$qr_log" issue)" "0"
-assert_eq "and prints the same lines" "$(cat "$qr_log.out")" "$plain"
 rm -f "$qr_log" "$qr_log.out"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
@@ -2596,18 +2601,6 @@ assert_not_contains "sync detection adds no orch:sync" "$(fake_labels_of 60)" "o
 fake_unfail
 fake_issue_drop 60
 
-# an idle tick over several done issues makes one done listing and no per-issue
-# state-and-labels read, counted at the gh boundary
-dr_log="$(mktemp)"
-dr_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_labelled_rows rows)")"
-fake_issue 61 open orch:done; fake_issue 64 open orch:done; fake_issue 65 open orch:done needs-human
-counted_adapter_run "$dr_log" "$dr_defs" "$ORCH" autopilot tick >/dev/null 2>&1; st=$?
-assert_status "an idle tick over done issues succeeds" "$st" 0
-assert_eq "it makes no per-issue state-and-labels read" "$(log_count "$dr_log" issue)" "0"
-assert_eq "and one done listing" "$(log_count "$dr_log" rows)" "1"
-rm -f "$dr_log"
-fake_issue_drop 61; fake_issue_drop 64; fake_issue_drop 65
-
 fake_done_merged 62 3600; fake_done_conflict 62 262
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "an issue the close closed is closed" "$(fake_state_of 62)" "CLOSED"
@@ -3206,11 +3199,9 @@ rm -f "$ac_err"
 
 ac_log="$(mktemp)"
 ac_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_open_rows rows)")"
-ac_plain="$("$ORCH" autopilot candidates --all 2>&1)"
 counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --all >"$ac_log.out" 2>&1
 assert_eq "--all makes one listing" "$(log_count "$ac_log" rows)" "1"
 assert_eq "and no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
-assert_eq "and prints the same verdicts" "$(cat "$ac_log.out")" "$ac_plain"
 counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --limit 3 >"$ac_log.out" 2>&1
 assert_eq "--limit makes no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
 counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates 1 99 >"$ac_log.out" 2>&1

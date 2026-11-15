@@ -931,15 +931,14 @@ autopilot_pause_extend() {
 autopilot_flow_ranked() {
   orch_load standing
   orch_load handoff
-  local _nums _err _issue _phase _ranked="" _labels_any=() _what _l
+  local _nums _err _issue _phase _ranked="" _labels_any=() _what
   local -A _states=() _labels=()
   for _phase in $PHASES; do
     [ "$_phase" != "done" ] || continue
     _labels_any+=("$(standing_phase_label "$_phase")")
   done
   _labels_any+=("$STANDING_SYNC_LABEL")
-  _what="${_labels_any[0]}"
-  for _l in "${_labels_any[@]:1}"; do _what="$_what or $_l"; done
+  issues_any_labels_phrase _what "${_labels_any[@]}"
   issues_any_labelled_rows_read _nums _states _labels _err "${_labels_any[@]}" ||
     die "could not list the issues labelled $_what: $(gh_reason "$_err")"
   while IFS= read -r _issue; do

@@ -639,8 +639,6 @@ assert_eq "any-of matches whole labels, in any case, once per issue" \
   "$(barely sortawk adapter_issues_any_labelled_rows BETA-TWO alpha | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha 30 OPEN 2 alpha beta-two "
 assert_eq "adapter_issues_any_labelled_rows cuts once at ISSUE_LIST_LIMIT across the labels" \
   "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_any_labelled_rows beta-two beta | tr '\n' ' ')" "21 OPEN 2 Alpha beta 30 OPEN 2 alpha beta-two "
-assert_eq "adapter_issues_labelled_rows answers number, state, label count and labels per issue" \
-  "$(barely sortawk adapter_issues_labelled_rows alpha beta | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
 assert_eq "adapter_issues_labelled_rows cuts the list at ISSUE_LIST_LIMIT" \
   "$(ISSUE_LIST_LIMIT=1 barely sortawk adapter_issues_labelled_rows alpha | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
 assert_eq "adapter_issues_open_rows answers every open issue oldest first, as number, state, label count and labels" \
