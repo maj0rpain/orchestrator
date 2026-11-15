@@ -1,11 +1,14 @@
 # shellcheck shell=bash
 # base.sh - orch.sh's base command: the checkout's base branch setting and a
-# flow's own base, with the branch helpers every module calls (default_branch,
-# origin_has_branch, require_on_origin). default_branch_resolve memoises its
-# answer (DEFAULT_BRANCH, DEFAULT_BRANCH_SOURCE) in the shell that runs it, and
-# later $(default_branch) subshells of that shell inherit it;
-# default_branch_seed is the memo's one writer; default_branch_local is the
-# memo-free local fallback doctor calls.
+# flow's own base, with the branch helpers every module calls
+# (default_branch_into, origin_has_branch, require_on_origin). The readers
+# (default_branch_into, base_branch_into, recorded_base_into) set a
+# caller-named variable in the caller's own shell, so the first read memoises
+# the answer (DEFAULT_BRANCH, DEFAULT_BRANCH_SOURCE) for the rest of that
+# shell, with nothing to arrange beforehand. A reader that runs inside a $(...)
+# subshell memoises only for that subshell, which never hands its variables
+# back. default_branch_seed is the memo's one writer; default_branch_local is
+# the memo-free local fallback doctor calls.
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -45,11 +48,9 @@ default_branch_seed() {
 
 # default_branch_resolve: seeds the memo through default_branch_seed, with
 # GitHub's answer when it can get one.
-# Memoised in the shell that runs it: it returns at once, asking nothing, when
-# DEFAULT_BRANCH_SOURCE is already set in the current shell. A $(...) subshell
-# never hands its variables back, so a command that reads the default more
-# than once runs this once in its own shell before its first read; every later
-# $(default_branch) subshell inherits the memo.
+# Private to the readers. Memoised in the shell that runs it: it returns at
+# once, asking nothing, when DEFAULT_BRANCH_SOURCE is already set in the
+# current shell.
 #
 # Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen
 # at clone time - in a clone taken while a feature branch was checked out it
@@ -73,10 +74,14 @@ default_branch_resolve() {
   default_branch_seed "$b"
 }
 
-# default_branch: prints the default branch's name, one line.
-default_branch() {
+# default_branch_into <var> [<source-var>]: sets <var> to the default branch's
+# name and, with a second variable, <source-var> to the memo's source (github,
+# origin-head or fallback), in the caller's shell. Never fails.
+default_branch_into() {
   default_branch_resolve
-  printf '%s\n' "$DEFAULT_BRANCH"
+  printf -v "$1" '%s' "$DEFAULT_BRANCH"
+  if [ -n "${2:-}" ]; then printf -v "$2" '%s' "$DEFAULT_BRANCH_SOURCE"; fi
+  return 0
 }
 
 # Whether $1 is a valid branch name (git check-ref-format --branch rejects an
@@ -87,17 +92,17 @@ is_branch_name() {
 
 # The base branch in effect now: the checkout's orchestrator.base setting, else
 # the default branch. The one answer every fork, PR target and doctor check
-# asks for - default_branch keeps meaning GitHub's default branch alone.
+# asks for - default_branch_into keeps meaning GitHub's default branch alone.
 # Local git config rather than state.json or a tracked file: it outlives
 # abort and archiving, every worktree of the clone shares it, and it never
 # travels with a push.
 base_setting() { git config --get orchestrator.base 2>/dev/null || true; }
-# base_branch: prints the base branch - the configured one, else the default
-# branch.
-base_branch() {
-  local b
-  b="$(base_setting)"
-  if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
+# base_branch_into <var>: sets <var> to the base branch - the configured one,
+# else the default branch - in the caller's shell. Never fails.
+base_branch_into() {
+  local _bb_b
+  _bb_b="$(base_setting)"
+  if [ -n "$_bb_b" ]; then printf -v "$1" '%s' "$_bb_b"; else default_branch_into "$1"; fi
 }
 
 # Whether origin has branch $1: 0 yes, 2 origin answered and it does not,
@@ -113,10 +118,18 @@ origin_has_branch() {
 # for a branch made before that was recorded, the base branch in effect now.
 # The one rule pr publish targets and branch base-sha falls back to, so the PR
 # and the SHA its review diffs from never name different bases.
-recorded_base() {
-  branch_base_get "$1" || base_branch
+# recorded_base_into <var> <branch> sets <var> to it, in the caller's shell.
+recorded_base_into() {
+  local _rb_b
+  if _rb_b="$(branch_base_get "$2")"; then printf -v "$1" '%s' "$_rb_b"; else base_branch_into "$1"; fi
+  return 0
 }
 
+# Reads the current base into the named variable and notes "<base> (<source>)".
+base_note_into() {
+  base_branch_into "$1"
+  note "${!1} ($(base_source))"
+}
 # base_source: prints `set` when a base branch is configured, else `default`.
 base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; fi; }
 
@@ -185,29 +198,33 @@ cmd_base() {
       # pin today's default and outlive a rename of it - but only when GitHub
       # or origin/HEAD named that default. A name matching only the main
       # fallback is a guess, never the default's name, so it is stored.
-      default_branch_resolve
-      if [ "$b" = "$DEFAULT_BRANCH" ] && [ "$DEFAULT_BRANCH_SOURCE" != fallback ]; then
+      local dflt dsrc
+      default_branch_into dflt dsrc
+      if [ "$b" = "$dflt" ] && [ "$dsrc" != fallback ]; then
         git config --unset orchestrator.base 2>/dev/null || true
       else
         git config orchestrator.base "$b"
       fi
-      note "$(base_branch) ($(base_source))"
+      local cur
+      base_note_into cur
       # The setting only reaches flows started after it; say so rather than
       # let the active flow's PR surprise anyone by targeting its old base.
       if [ "$fphase" != "done" ]; then
-        local fb; fb="$(flow_base_fallback "$fbase")"
-        [ "$fb" = "$(base_branch)" ] ||
+        local fb; flow_base_fallback_into fb "$fbase"
+        [ "$fb" = "$cur" ] ||
           note "note: the active flow $fslug keeps its own base branch: $fb"
       fi
       ;;
     show)
       [ $# -eq 0 ] || die "usage: orch.sh base show"
-      note "$(base_branch) ($(base_source))"
+      local cur
+      base_note_into cur
       ;;
     clear)
       [ $# -eq 0 ] || die "usage: orch.sh base clear"
       git config --unset orchestrator.base 2>/dev/null || true
-      note "$(base_branch) ($(base_source))"
+      local cur
+      base_note_into cur
       ;;
     *) die "unknown base op: ${op:-<none>} (want set|show|clear)" ;;
   esac

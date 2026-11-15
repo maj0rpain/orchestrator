@@ -290,34 +290,34 @@ ci_push_time() {
 # over checks nobody verified - so anything this cannot read counts as CI.
 # Recomputed on every call: a workflow the PR itself adds is always seen.
 no_ci_evidence() {
-  local head="$1" base="$2" commits="$3" out sha
+  local head="$1" base="$2" pr="$3" tree required rules evidence line sha verdict
   [ -n "$head" ] && [ -n "$base" ] || return 1
   # 1. A head this clone has never fetched is unreadable, not empty.
   git cat-file -e "$head^{commit}" 2>/dev/null || return 1
   # --full-tree: the pathspec is otherwise read from the current directory,
   # and from a subdirectory an empty listing would read as no workflows.
-  out="$(git ls-tree --full-tree --name-only "$head" -- .github/workflows/ 2>/dev/null)" || return 1
-  if grep -Eq '\.ya?ml$' <<<"$out"; then return 1; fi
+  tree="$(git ls-tree --full-tree --name-only "$head" -- .github/workflows/ 2>/dev/null)" || return 1
+  if grep -Eq '\.ya?ml$' <<<"$tree"; then return 1; fi
   # 2. Required checks, from classic protection or a ruleset. A read that
   # fails is an answer nobody has.
   repo_resolve || :
-  out="$(adapter_branch_required_checks "$base" 2>/dev/null)" || return 1
-  [ -z "$out" ] || return 1
-  out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
-  if list_has "$out" required_status_checks; then return 1; fi
-  # 4, then 3: the base tip is one ref, the PR's earlier commits may be many.
-  ci_ref_unchecked "$base" || return 1
-  while IFS= read -r sha; do
-    [ -z "$sha" ] || [ "$sha" = "$head" ] || ci_ref_unchecked "$sha" || return 1
-  done <<<"$commits"
+  required="$(adapter_branch_required_checks "$base" 2>/dev/null)" || return 1
+  [ -z "$required" ] || return 1
+  rules="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
+  if list_has "$rules" required_status_checks; then return 1; fi
+  # 4 and 3, from one read: the base tip's answer, then a line per PR commit.
+  # The refs read's head is skipped by SHA, not by position: a push landing
+  # between the two reads leaves a newer last commit, judged as an earlier one.
+  evidence="$(adapter_pr_commits_checked "$pr" 2>/dev/null)" || return 1
+  [ "${evidence%%$'\n'*}" = no ] || return 1
+  [[ "$evidence" == *$'\n'* ]] || return 0
+  while IFS= read -r line; do
+    sha="${line%%$'\t'*}"
+    verdict="${line#*$'\t'}"
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && { [ "$verdict" = yes ] || [ "$verdict" = no ]; } || return 1
+    [ "$sha" = "$head" ] || [ "$verdict" = no ] || return 1
+  done <<<"${evidence#*$'\n'}"
   return 0
-}
-
-# Succeeds when one ref has neither a check-run nor a commit status, and the
-# two reads both answered.
-ci_ref_unchecked() {
-  [ "$(adapter_commit_has_check_runs "$1" 2>/dev/null)" = no ] || return 1
-  [ "$(adapter_commit_has_statuses "$1" 2>/dev/null)" = no ]
 }
 
 # The loop's flake rerun (issue #525): the failed jobs of every distinct
@@ -910,7 +910,7 @@ cmd_review() {
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
       local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
-      local commits="" no_ci=0
+      local no_ci=0
       require_state_read pr=pr
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
       require_value pr "$pr"
@@ -921,7 +921,7 @@ cmd_review() {
       # `push_age` is how long before this call the push landed; a PR that will
       # not say what its head is, or a head with no reflog entry, leaves it at
       # zero, and the grace counts from the call as it always did.
-      if pr_refs_read "$pr" head_oid head_ref base_ref commits refs_err; then
+      if pr_refs_read "$pr" head_oid head_ref base_ref refs_err; then
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
           ''|*[!0-9]*) ;;
@@ -930,7 +930,7 @@ cmd_review() {
         # With no evidence of CI anywhere, there is nothing for the grace to
         # wait on. It replaces only the wait: the unfiltered probe still runs,
         # so a check already reported on the head gives its verdict as before.
-        if no_ci_evidence "$head_oid" "$base_ref" "$commits"; then
+        if no_ci_evidence "$head_oid" "$base_ref" "$pr"; then
           no_ci=1
         fi
       fi

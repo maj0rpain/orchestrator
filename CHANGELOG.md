@@ -1,5 +1,49 @@
 # Changelog
 
+## 5.3.0
+
+A ticket subagent now runs the ticket verification once before its first edit, and when that run cannot start (a missing tool, or a command not found or not executable) it builds nothing and returns a stop report whose `Deviation` line opens with `verification cannot start:` and names the missing command; the driver neither saves, merges nor closes that ticket, and stops naming every missing command. `orch.sh doctor --env` warns when the first command of the repo's `Ticket verification:` or `Full verification:` line is not installed.
+
+## 5.2.100
+
+`orch.sh suite-cost run` and `suite-cost check` now take a single argument after `--` as a shell line, run with `bash -c` and recorded as given, so a repo's chained verification line passed as one quoted argument runs in full. Several arguments stay an argument list. The skills, agents and docs now say to pass the whole verification line as one quoted argument.
+
+## 5.2.99
+
+Every adapter write a Standing chain makes under a claim now goes through one step that skips a write an earlier attempt already landed, runs it, dies naming the writes that landed when it fails, and notes it as landed; every chain starts the same way, so a pause or a finish run after another chain in the same shell no longer skips its `orch:running` removal. A failed autopilot question comment post now names the writes that landed and that the claim stays held, like every other failed chain write.
+
+## 5.2.98
+
+The default branch is read through out-variable readers that memoise in the caller's own shell, so `side-checkout add` asks GitHub for it once and `side-checkout prune` asks only when a verdict or a merged-PR close needs it.
+
+## 5.2.97
+
+The spec module now owns a spec review's round directory: one set of functions reads and writes the round's state files, resets the working directory and carries what a round hands the next, and the spec-review module reaches them only through those functions. A resumed `spec-review apply` no longer appends the round's changelog to `settled.md` twice, and a round an autopilot session held and an attended session finished now reports as complete instead of `waiting`. `spec-review apply`'s `--round` refusals now use the same words as `spec pause --round` and `spec round-dir`.
+
+## 5.2.96
+
+Breakdown publish, the watcher's label check, sync detection and merged-PR close, the claim list, the issue trust check, the spec-review answer, agent sync, doctor's agent and side-checkout checks, and the archive of a done flow no longer start an external command per ticket, label, done issue, claim, agent or entry for work bash does itself: the label check compares every label with one `awk` per tick, and the claim list reads every claim with one `git for-each-ref`. Output is unchanged, except that the issue trust check no longer has a "trusted associations could not be read" failure.
+
+## 5.2.95
+
+`review ci` reads the no-CI-evidence check's signals for the base branch tip and every PR commit in one GraphQL call, instead of two GitHub calls per ref one after another, so its cost in a repo with no CI no longer grows with the PR's length. The per-ref check-run and status operations are gone, and the PR refs read no longer prints the PR's commits.
+
+## 5.2.94
+
+Reading the issue a side checkout records no longer re-classifies the checkout: the autopilot pickup lookup, `side-checkout list` and `doctor` read the marker straight from the walk's result, so their cost no longer grows quadratically with side checkouts.
+
+## 5.2.93
+
+The project's edit hook's Bash path now starts a fixed number of processes around a call whatever the number of dirty files: each listing hashes all its files in one `git hash-object` run and Post compares with one `grep`. What the hook reports is unchanged.
+
+## 5.2.92
+
+`suite-cost check` now picks its head and baseline records with a fixed number of git processes and one read of the record per side, however long the record is.
+
+## 5.2.91
+
+The line-width tool's root scan runs one awk over all covered files instead of one per file, with the same output.
+
 ## 5.2.90
 
 The paste guards no longer decode the whole transcript at every turn end and ask once a spec review has run: a fixed-string search picks out the few lines that can arm or disarm the guard, and only those and the entries after the last arming pass line are decoded.

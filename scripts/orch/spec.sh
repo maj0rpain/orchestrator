@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 # spec.sh - orch.sh's spec command: the flow's spec issue, read and written,
-# and the pause that stops the spec phase's session once it is written.
+# and the pause that stops the spec phase's session once it is written. It also
+# owns the round directory: the files saying where a spec review round stands,
+# the working-directory reset and what a round hands the next.
 # Its tests: scripts/test/orch/spec.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -96,15 +98,21 @@ spec_marker_write() {
     || die "cannot write $HANDOFF_DIR/$1"
 }
 
-# The empty file spec-review apply writes in a round's directory as its very
-# last step: a round counts as complete only when its directory holds it.
+# The round directory's three state files: this module owns them, and the
+# spec_round_* functions below read and write them. The empty file
+# spec_round_complete writes in a round's directory, as its last local step but
+# the answer's clearing: a round counts as complete only when its directory
+# holds it.
 readonly SPEC_ROUND_COMPLETE=round-complete
-# The held-back fundamental items of an autopilot round, written by spec-review
-# apply in the round's directory: while it exists the round waits for the
-# human's answer, and spec round says so.
+# The held-back fundamental items of an autopilot round, written by
+# spec_round_hold in the round's directory (spec_round_complete removes it):
+# while it exists the round waits for the human's answer, and spec round says
+# so.
 readonly SPEC_ROUND_FUNDAMENTAL=fundamental.md
 # The saved answer of a spec-review apply that is running or died in the round's
-# directory: while it exists the round is applying, and spec round says so.
+# directory, written by spec_round_answer_save and cleared by
+# spec_round_answer_clear: while it exists the round is applying, and spec round
+# says so.
 readonly SPEC_ROUND_APPLY_ANSWER=apply-answer
 # Where a flow's spec review rounds work, one directory per round number. Not
 # under spec-review/, the flow-less entry archive keeps: these belong to the
@@ -116,6 +124,150 @@ readonly SPEC_ROUNDS_DIR="$ORCH/spec-rounds"
 # starts its lenses on these values rather than reading the setting again, so
 # the whole review runs on one lens setting (#1353).
 readonly SPEC_ROUND_LENS_SETTING=agent-lens
+
+# What a round hands the next: the Implementability lens's code map (#1141)
+# and the settled file (#1185), read by both spec-review begin's --carry and a
+# flow's spec round-dir. A flow's round-dir also carries
+# SPEC_ROUND_LENS_SETTING, which --carry leaves out: a standalone review reads
+# the lens setting once, in one session.
+readonly SPEC_ROUND_CARRIED=(map-implementability.md settled.md)
+
+# spec_round_state <dir> <var>: assigns the round's state to <var>, never
+# prints it: `applying` while <dir> holds the saved apply answer, else
+# `waiting` while it holds fundamental.md, else `open` while it holds no
+# round-complete, else `complete`. A missing <dir> is open.
+spec_round_state() {
+  if [ -e "$1/$SPEC_ROUND_APPLY_ANSWER" ]; then printf -v "$2" '%s' applying
+  elif [ -e "$1/$SPEC_ROUND_FUNDAMENTAL" ]; then printf -v "$2" '%s' waiting
+  elif [ ! -e "$1/$SPEC_ROUND_COMPLETE" ]; then printf -v "$2" '%s' open
+  else printf -v "$2" '%s' complete
+  fi
+}
+
+# spec_round_held <dir>: whether <dir> holds fundamental.md, the items an
+# autopilot round held back - apart from the state, as a resumed apply of a
+# held round is `applying` and held at once.
+spec_round_held() { [ -e "$1/$SPEC_ROUND_FUNDAMENTAL" ]; }
+
+# spec_round_answer_name <var>: assigns the saved answer's file name to <var>,
+# for a caller's message that names it.
+spec_round_answer_name() { printf -v "$1" '%s' "$SPEC_ROUND_APPLY_ANSWER"; }
+
+# spec_round_answer_save <dir> <file-options> <arg>...: spec-review apply's
+# answer arguments saved to <dir>/apply-answer, one shell-quoted line, before
+# the first GitHub write. <file-options> is one word of space-separated option
+# names; the argument after each is a file, copied into <dir> first and saved
+# as the copy, so a resume never reads a file the dead session left elsewhere.
+spec_round_answer_save() {
+  local dir="$1" file_opts=" $2 " a file_opt="" copy saved=()
+  shift 2
+  for a in "$@"; do
+    if [ -n "$file_opt" ]; then
+      copy="$dir/apply-${file_opt#--}.copy"
+      cp "$a" "$copy" 2>/dev/null \
+        || die "could not copy $a to $copy - nothing written to GitHub"
+      saved+=("$copy")
+      file_opt=""
+      continue
+    fi
+    saved+=("$a")
+    case "$file_opts" in *" $a "*) file_opt="$a" ;; esac
+  done
+  { printf '%q ' "${saved[@]}"; printf '\n'; } >"$dir/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
+    || die "could not write $dir/$SPEC_ROUND_APPLY_ANSWER - nothing written to GitHub"
+}
+
+# spec_round_answer_load <dir> <array-var>: the saved answer's arguments read
+# into the array <array-var>; dies when the file is unreadable.
+spec_round_answer_load() {
+  local text
+  text="$(cat "$1/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null)" \
+    || die "$1/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
+  eval "$2=($text)" 2>/dev/null \
+    || die "$1/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
+}
+
+# spec_round_answer_clear <dir> <landed>: the saved answer and its file copies
+# removed, at the end of the run that no resume continues. <landed> names the
+# GitHub writes that landed, for the message.
+spec_round_answer_clear() {
+  rm -f "$1/$SPEC_ROUND_APPLY_ANSWER" "$1"/apply-*.copy 2>/dev/null \
+    || die "could not remove $1/$SPEC_ROUND_APPLY_ANSWER - every GitHub write landed: $2"
+}
+
+# spec_round_hold <dir>: the end of an autopilot round's first run - the
+# held-back fundamental items' blocks, read on stdin, written to
+# <dir>/fundamental.md: the round's save point, which spec round reports as
+# waiting. Feed it by a redirect, never a pipeline, so a failed write dies in
+# the caller's shell.
+spec_round_hold() {
+  { cat >"$1/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
+    || die "could not write $1/$SPEC_ROUND_FUNDAMENTAL - nothing written to GitHub"
+}
+
+# spec_round_complete <dir> <changelog> <landed>: the round's local tail once
+# its changelog comment landed, safe to run again: <changelog> appended to
+# settled.md unless it already ends with it (a settled.md that cannot be read
+# is not taken to), fundamental.md removed, round-complete written, the saved
+# answer cleared. <landed> names the GitHub writes, for the messages.
+spec_round_complete() {
+  local dir="$1" log="$2" landed="$3" n
+  n="$(printf '%s\n' "$log" | wc -c)"
+  if [ ! -f "$dir/settled.md" ] || [ "$(tail -c "$n" "$dir/settled.md" 2>/dev/null)" != "$log" ]; then
+    { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
+      || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $landed"
+  fi
+  rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
+    && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
+    || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $landed"
+  # The round's completion, the very last local step but the answer's clearing:
+  # spec round reads it to tell a resumed flow which round runs next.
+  { : >"$dir/$SPEC_ROUND_COMPLETE"; } 2>/dev/null \
+    || die "could not write $dir/$SPEC_ROUND_COMPLETE - every GitHub write landed and settled.md is appended: $landed"
+  spec_round_answer_clear "$dir" "$landed"
+}
+
+# spec_rounds_dir <var>: assigns the flow's rounds directory to <var>.
+spec_rounds_dir() { printf -v "$1" '%s' "$SPEC_ROUNDS_DIR"; }
+
+# spec_round_in_flow <dir>: whether <dir> is under a flow's rounds directory,
+# at any depth - a flow's round directory, not a standalone review's.
+spec_round_in_flow() {
+  case "${1%/}/" in "$SPEC_ROUNDS_DIR"/?*) return 0 ;; esac
+  return 1
+}
+
+# spec_round_dir_reset <dir> [--carry]: a round's working directory made ready
+# to run in - the one reset both a standalone review's spec-review begin and a
+# flow's spec round-dir run. With --carry, every entry of an existing <dir>
+# but the code map and the settled file is deleted in place, keeping what a
+# round hands the next; without it <dir> is removed whole. Either way <dir> is
+# then created when missing.
+spec_round_dir_reset() {
+  local dir="$1"
+  if [ "${2:-}" = --carry ] && [ -d "$dir" ]; then
+    local keep=() f
+    for f in "${SPEC_ROUND_CARRIED[@]}"; do keep+=(! -name "$f"); done
+    find "$dir" -mindepth 1 -maxdepth 1 "${keep[@]}" -exec rm -rf {} +
+  else
+    rm -rf "$dir"
+  fi
+  mkdir -p "$dir"
+}
+
+# spec_round_carry <k>: copies into round k's directory what round k-1 of a
+# flow's review hands it - the lens setting, the code map and the settled file,
+# each when it exists; dies when a copy fails. A copy, not a carry in place:
+# every round keeps its own directory for the final session to read its
+# changelog from.
+spec_round_carry() {
+  local k="$1" f
+  for f in "$SPEC_ROUND_LENS_SETTING" "${SPEC_ROUND_CARRIED[@]}"; do
+    [ ! -f "$SPEC_ROUNDS_DIR/$((k - 1))/$f" ] \
+      || cp "$SPEC_ROUNDS_DIR/$((k - 1))/$f" "$SPEC_ROUNDS_DIR/$k/$f" \
+      || die "cannot copy round $((k - 1))'s $f into $SPEC_ROUNDS_DIR/$k"
+  done
+}
 
 # spec_round_number <s>: whether <s> is a positive whole number with no
 # leading zero - a round or a round count.
@@ -170,22 +322,17 @@ cmd_spec_pause_round() {
 cmd_spec_round_dir() {
   local issue="$1" phase="$2"
   shift 2
-  orch_load spec-review
   local usage="usage: orch.sh spec round-dir <k>/<n>"
   [ $# -eq 1 ] || die "$usage"
   local k n
   spec_round_count_parse "$1" k n
   spec_phase_guard die round-dir issue "$issue" "$phase"
-  local dir="$SPEC_ROUNDS_DIR/$k" f
-  spec_review_dir_reset "$dir"
+  local dir="$SPEC_ROUNDS_DIR/$k"
+  spec_round_dir_reset "$dir"
   if [ "$k" -eq 1 ]; then
     find "$SPEC_ROUNDS_DIR" -mindepth 1 -maxdepth 1 ! -name 1 -exec rm -rf {} +
   else
-    for f in "$SPEC_ROUND_LENS_SETTING" "${SPEC_REVIEW_CARRIED[@]}"; do
-      [ ! -f "$SPEC_ROUNDS_DIR/$((k - 1))/$f" ] \
-        || cp "$SPEC_ROUNDS_DIR/$((k - 1))/$f" "$dir/$f" \
-        || die "cannot copy round $((k - 1))'s $f into $dir"
-    done
+    spec_round_carry "$k"
   fi
   spec_marker_write "$SPEC_ROUND_MARKER" "$issue $k $n"
   printf '%s/\n' "$dir"
@@ -215,15 +362,12 @@ cmd_spec_round() {
   spec_round_number "$k" && spec_round_number "$n" && [ -z "$extra" ] && [ "$k" -le "$n" ] \
     || die2 "$malformed"
   [ "$m_issue" = "$issue" ] || return 1
-  if [ -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_APPLY_ANSWER" ]; then
-    printf '%s %s applying\n' "$k" "$n"
-  elif [ -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_FUNDAMENTAL" ]; then
-    printf '%s %s waiting\n' "$k" "$n"
-  elif [ ! -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_COMPLETE" ]; then
-    printf '%s %s\n' "$k" "$n"
-  elif [ "$k" -lt "$n" ]; then
-    printf '%s %s\n' "$((k + 1))" "$n"
-  else
-    printf 'done %s\n' "$n"
-  fi
+  local state
+  spec_round_state "$SPEC_ROUNDS_DIR/$k" state
+  case "$state" in
+    applying|waiting) printf '%s %s %s\n' "$k" "$n" "$state" ;;
+    open) printf '%s %s\n' "$k" "$n" ;;
+    *)
+      if [ "$k" -lt "$n" ]; then printf '%s %s\n' "$((k + 1))" "$n"; else printf 'done %s\n' "$n"; fi ;;
+  esac
 }

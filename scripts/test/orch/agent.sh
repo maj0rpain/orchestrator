@@ -486,6 +486,10 @@ printf '%s\n' 'tampered' >>"$as_dir/orch-implementer.md"
 "$ORCH" agent sync >/dev/null
 assert_eq "a hand-edited marked copy is rewritten" \
   "$(grep -c tampered "$as_dir/orch-implementer.md")" "0"
+printf '\n\n' >>"$as_dir/orch-implementer.md"
+out="$(sourced_orch_script 'agent_sync_plan; printf %s "$AGENT_PLAN_WRITES"' 2>&1)"
+assert_eq "a copy with extra trailing newlines is stale" "$out" "orch-implementer|gpt-5-mini|high|stale"
+"$ORCH" agent sync >/dev/null
 
 "$ORCH" agent set implementer --host junie --model custom:my/profile.1 --effort low >/dev/null
 assert_eq "a custom: profile id is written whole, colon and all" \
@@ -569,3 +573,60 @@ cd "$as_main" || exit 1
 unset -f as_exclude as_copies
 unset as_dir as_marker as_plugin
 restore_suite_env
+
+# --- agent copy marker and Junie field: no command per call -------------------
+echo
+echo "agent copy marker and Junie field"
+new_repo >/dev/null
+acm_dir="$(mktemp -d)"
+acm_marker="# written by orch.sh agent sync"
+printf -- '---\n%s\nbody\n' "$acm_marker" >"$acm_dir/marked.md"
+printf -- '---\n%s' "$acm_marker" >"$acm_dir/noeol.md"
+printf -- '---\nname: x\n%s\n' "$acm_marker" >"$acm_dir/late.md"
+assert_eq "a marked file, one with no trailing newline and one marked on the third line answer 0, 0, 1 with an empty PATH" \
+  "$(sourced_orch_script '
+    PATH=
+    for f in marked noeol late; do st=0; agent_copy_marked "$1/$f.md" || st=$?; printf "[%s]" "$st"; done' "$acm_dir" 2>&1)" "[0][0][1]"
+out="$(sourced_orch agent_copy_marked "$acm_dir/none.md" 2>&1)"; st=$?
+assert_status "an unreadable marker file is unmarked" "$st" 1
+assert_contains "with sed's diagnostic on stderr" "$out" "sed:"
+mkdir "$acm_dir/dir.md"
+out="$(sourced_orch_script 'agent_copy_marked "$1"' "$acm_dir/dir.md" 2>&1)"; st=$?
+assert_status "a directory in place of the marker file is unmarked" "$st" 1
+assert_contains "with sed's diagnostic on stderr too" "$out" "sed:"
+acm_line='Executing agent custom_agent_orch-x_1 with parameters (model=gpt-5, reasoningEffort=high, effort=null, xmodel=bad)'
+assert_eq "the Junie field read answers, a field after a letter unmatched, one up to the parenthesis, an absent one empty, with an empty PATH" \
+  "$(sourced_orch_script '
+    PATH=
+    for f in model odel xmodel nothing; do printf "[%s]" "$(agent_junie_field "$1" "$f")"; done' "$acm_line" 2>&1)" "[gpt-5][][bad][]"
+rm -rf "$acm_dir"
+unset acm_dir acm_marker acm_line
+
+# The Junie session report keeps only jq, git, and one grep, sed and awk per
+# report: PATH holds just those (grep through a counter), so a tail, or a grep
+# or sed per agent, would fail or show in the count.
+ajs_home="$(mktemp -d)"
+ajs_bin="$ajs_home/bin"
+mkdir -p "$ajs_bin" "$ajs_home/.junie/sessions" "$ajs_home/.junie/logs"
+for ajs_c in jq git sed awk; do ln -s "$(command -v "$ajs_c")" "$ajs_bin/$ajs_c"; done
+printf '#!%s\necho x >>"$AJS_COUNT"\nexec %s "$@"\n' "$BASH" "$(command -v grep)" >"$ajs_bin/grep"
+chmod +x "$ajs_bin/grep"
+ajs_root="$(git rev-parse --show-toplevel)"
+printf '{"sessionId":"s1","projectDir":"%s","updatedAt":"5"}\n' "$ajs_root" >"$ajs_home/.junie/sessions/index.jsonl"
+for ajs_n in 1 2; do
+  for ajs_a in orch-fixer orch-closer orch-reviewer-spec; do
+    printf 's1\nINFO Executing agent custom_agent_%s_%s with parameters AgentParams(model=m%s, effort=null, reasoningEffort=low)\n' \
+      "$ajs_a" "$ajs_n" "$ajs_n" >>"$ajs_home/.junie/logs/log-1.log"
+  done
+done
+ajs_run() { : >"$ajs_home/count"; HOME="$ajs_home" AJS_COUNT="$ajs_home/count" sourced_orch_script 'PATH="$HOME/bin"; agent_junie_session' 2>&1; }
+ajs_out="$(ajs_run)"
+assert_eq "the Junie session report names each agent's last run, with no tail on PATH" \
+  "$(grep -c 'ran model m2, effort low' <<<"$ajs_out")" 3
+ajs_greps="$(wc -l <"$ajs_home/count")"
+printf 's1\nINFO Executing agent custom_agent_orch-fixer_1 with parameters AgentParams(model=m1, effort=null, reasoningEffort=low)\n' >"$ajs_home/.junie/logs/log-1.log"
+ajs_run >/dev/null
+assert_eq "and starts no more greps for three agents than for one" "$ajs_greps" "$(wc -l <"$ajs_home/count")"
+rm -rf "$ajs_home"
+unset ajs_home ajs_bin ajs_c ajs_root ajs_n ajs_a ajs_out ajs_greps
+unset -f ajs_run

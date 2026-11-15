@@ -26,7 +26,8 @@ exchanges that `orch-to-spec` (test seams) and the spec review depend on.
   lines, a `GLOSSARY.md` and a `docs/adr` directory are read when present.
   [docs/repo-setup.md](docs/repo-setup.md) lists each with its format and what
   happens when it is missing or unreadable. `/orchestrator:health` reports all
-  of this at any time.
+  of this at any time, including whether the verification commands are
+  installed.
 
 ## Install
 

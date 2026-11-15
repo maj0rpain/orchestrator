@@ -51,7 +51,7 @@ status_flow() {
   state_get_many slug=slug phase=phase issue=issue branch=branch pr=pr \
     iteration=iteration redo_count=redo_count base_raw=base budget_raw=budget ||
     die "cannot read the flow's state from $STATE"
-  base="$(flow_base_fallback "$base_raw")"
+  flow_base_fallback_into base "$base_raw"
   budget="$(review_budget_fallback "$budget_raw")"
   note "flow:      $slug"
   note "phase:     $phase"
@@ -239,6 +239,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               to match the Junie agent setting; refuses an
                               unmarked orch-*.md in the way, changing nothing
   suite-cost run -- <cmd> [args...]
+  suite-cost run -- '<shell line>'
                               run <cmd> in the current directory, its stdout,
                               stderr and exit code passed through (an
                               interrupt exits 128 plus the signal's number
@@ -258,8 +259,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               any checkout of the clone, is not recorded,
                               and warns; so is one that could not register
                               as active (orchestrator/suite-cost.active).
-                              No run waits for another
+                              No run waits for another. A single argument is
+                              a shell line, run with bash -c and recorded as
+                              given (a path with a space is quoted inside the
+                              line); two or more are an argument list
   suite-cost check -- <cmd> [args...]
+  suite-cost check -- '<shell line>'
                               print one verdict line comparing the head's
                               lowest sample of <cmd> with the baseline's
                               lowest, exiting 0 (an interrupted base or
@@ -299,7 +304,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               and growth are unchanged; a dirty tree never
                               reuses one. Dies naming the key and
                               value when an override is not a non-negative
-                              number
+                              number. A single argument is a shell line, run
+                              with bash -c and recorded as given (a path with
+                              a space is quoted inside the line); two or more
+                              are an argument list
   suite-cost history          print the record's lines, oldest first, or
                               nothing when there is no record
   repo show [--name|--host]   print the GitHub repo orch.sh works on and its

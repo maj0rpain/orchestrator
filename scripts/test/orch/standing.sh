@@ -233,6 +233,16 @@ fake_fail_after adapter_claim_delete 1 "HTTP 500"
 out="$(sourced_rc 'standing_pause 54 "wrote the round marker"; standing_stop 55 failure spec boom')"
 assert_contains "a stop failing in the same shell as an earlier succeeding pause names only its own writes" "$out" "writes that landed: added needs-human, removed orch:limited, posted the failure comment, removed orch:running; the claim stays held"
 fake_unfail
+tr_seed 94 orch:spec orch:running
+tr_seed 95 orch:spec orch:running
+sourced_rc 'standing_stop 95 refusal spec "no plan"; standing_pause 94 "wrote the round marker"' >/dev/null
+assert_eq "a pause run after a stop in the same shell removes its own orch:running and releases" "$(fake_labels_of 94)|$(fake_claim_held 94)" "orch:spec |free"
+out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"; printf "landed\tearlier write\n" >"$STANDING_STATE_FILE"
+standing_chain_start "the seed"; echo "landed=$STANDING_LANDED"; echo "lines=$(wc -l <"$STANDING_STATE_FILE")"; standing_landed_has "the seed" && echo skip-seed')"
+assert_contains "a seeded start puts the seed first and takes up earlier landed writes" "$out" "landed=the seed, earlier write"
+assert_contains "and writes no landed line for its seed" "$out" "lines=1"
+assert_eq "and does not skip its seed" "$(printf '%s' "$out" | grep -c skip-seed)" "0"
+fake_unfail
 
 # stop
 tr_seed 56 orch:spec orch:running orch:limited
@@ -368,11 +378,13 @@ resumed_stop() { # <issue> <between the attempts>
 STANDING_STATE_FILE="$(mktemp)"
 (standing_limit_stop '"$1"' spec "" 2026-01-01T01:00:00Z 1 log) || true
 '"$2"'
-standing_limit_stop '"$1"' spec "" 2026-01-01T01:00:00Z 1 log'
+standing_limit_stop '"$1"' spec "" 2026-01-01T01:00:00Z 1 log
+printf "state=%s\n" "$(tr "\t\n" " _" <"$STANDING_STATE_FILE")"'
 }
 stop_comments() { grep -c -x -F "$(marker_of limited spec)" <<<"$(fake_comments_of "$1")" || true; }
 tr_seed 71 orch:spec orch:running
-resumed_stop 71 ':' >/dev/null
+out="$(resumed_stop 71 ':')"
+assert_contains "the resumed stop's state file holds the release's claim ref delete as landed" "$out" "landed deleted the claim ref"
 assert_eq "a stop whose comment landed but whose call failed posts no second comment, and releases the claim" "$(stop_comments 71)|$(fake_claim_held 71)" "1|free"
 assert_contains "and keeps its count on the next attempt" "$(fake_comments_of 71)" "retry 1 of 2"
 tr_seed 72 orch:spec orch:running
@@ -413,6 +425,62 @@ out="$(sourced_rc 'standing_ask spec Q')"
 assert_contains "ask failing on the release names all three writes" "$out" "writes that landed: posted the spec question comment, added needs-human, removed orch:running; the claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 65)" held
 fake_unfail
+
+# ask: a temp file that cannot be made, and a failed question comment post
+ask_seed 66 orch:spec orch:running
+out="$(sourced_rc 'temp_file_name() { printf -v "$1" "%s/orch.x" /nonexistent; }; standing_ask spec Q')"
+assert_contains "ask dies when the temp body file cannot be created" "$out" "could not create a temp file to post the spec question comment"
+assert_eq "and leaves the claim held, no comment and no label added" "$(fake_claim_held 66)|$(fake_comments_of 66)|$(fake_labels_of 66)" "held||orch:running orch:spec "
+ask_seed 67 orch:spec orch:running
+TD="$(mktemp -d)"
+fake_fail adapter_issue_comment "HTTP 500"
+out="$(sourced_rc "TMPDIR='$TD' standing_ask spec Q")"
+fake_unfail
+assert_contains "a failed question comment post dies as a chain does" "$out" "could not post the spec question comment on issue #67: HTTP 500 - writes that landed: none; the claim stays held"
+assert_eq "and leaves the claim held with no label added" "$(fake_claim_held 67)|$(fake_labels_of 67)" "held|orch:running orch:spec "
+assert_eq "and no temp body file behind" "$(ls -A "$TD")" ""
+rmdir "$TD"
+
+# a posted comment leaves no body path held, so a later death removes nothing
+ask_seed 70 orch:spec orch:running
+out="$(sourced_rc 'standing_chain_start; standing_chain_comment "posted c" "post c" 70 body; echo "held=[$STANDING_BODY_FILE]"')"
+assert_contains "a posted chain comment clears the body path in the caller's shell" "$out" "held=[]"
+out="$(sourced_rc 'STANDING_BODY_FILE=/stale; standing_chain_start; echo "held=[$STANDING_BODY_FILE]"')"
+assert_contains "a chain start clears an earlier chain's body path" "$out" "held=[]"
+
+# ask: a stderr temp file that fails after the body was made leaves no body
+ask_seed 69 orch:spec orch:running
+TD="$(mktemp -d)"
+out="$(sourced_rc 'tfn=0
+temp_file_name() {
+  tfn=$((tfn + 1))
+  [ "$tfn" -gt 1 ] && set -- "$1" /nonexistent/x || set -- "$1" "'"$TD"'/orch.body"
+  printf -v "$1" "%s" "$2"
+}
+standing_ask spec Q')"
+assert_contains "a failed stderr temp file dies" "$out" "rc=1"
+assert_eq "and leaves no temp body file behind" "$(ls -A "$TD")" ""
+rmdir "$TD"
+
+# ask: a phase the marker writer refuses ends the ask before any write
+ask_seed 68 orch:spec orch:running
+out="$(sourced_rc 'standing_ask " " Q')"
+assert_contains "ask with a blank phase dies" "$out" "rc=1"
+assert_eq "and writes nothing: claim held, no comment, no label added" "$(fake_claim_held 68)|$(fake_comments_of 68)|$(fake_labels_of 68)" "held||orch:running orch:spec "
+
+# the step's contract, called directly with a state file set
+out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"; printf "landed\tearlier\n" >"$STANDING_STATE_FILE"
+standing_chain_start; rm -f "$STANDING_STATE_FILE.ran"
+step_cmd() { : >"$STANDING_STATE_FILE.ran"; }
+standing_chain_step earlier "do earlier" 1 step_cmd; echo "skip-ran=$([ -e "$STANDING_STATE_FILE.ran" ] && echo yes || echo no)"
+standing_chain_step later "do later" 1 step_cmd; echo "later-ran=$([ -e "$STANDING_STATE_FILE.ran" ] && echo yes || echo no) landed=$STANDING_LANDED"
+cat "$STANDING_STATE_FILE" | tr "\t\n" " _"; echo
+step_fail() { echo "HTTP 500" >&2; return 1; }
+(standing_chain_step third "do third" 7 step_fail)')"
+assert_contains "the step skips a landed write without running its command" "$out" "skip-ran=no"
+assert_contains "a succeeding command joins the landed list" "$out" "later-ran=yes landed=earlier, later"
+assert_contains "and writes its landed line" "$out" "landed earlier_landed later_"
+assert_contains "a failing command dies naming the writes landed before it" "$out" "could not do third on issue #7: HTTP 500 - writes that landed: earlier, later; the claim stays held"
 
 # start
 fake_issue 72 open ready-for-agent

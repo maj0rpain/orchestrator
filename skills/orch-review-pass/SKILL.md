@@ -91,7 +91,8 @@ a skipped check is reported.
    no severity, no budget, and file nothing. Commit the fixes as one commit.
    After the fixes, run the repo's ticket verification (a `Ticket verification:
    <command>` line in its instructions, else its full verification) through
-   `bash "$ORCH" suite-cost run -- <command>`.
+   `bash "$ORCH" suite-cost run -- '<command>'`,
+   the whole line as one quoted argument.
    Run it in the foreground and wait for it (host capability *Run a long
    command*); never background it and sleep, poll or kill it. A run the host
    moves to the background at its timeout is still waited for, as that row says.
@@ -123,10 +124,11 @@ a skipped check is reported.
    command:
 
    ```
-   bash "$ORCH" suite-cost check -- <verification command>
+   bash "$ORCH" suite-cost check -- '<verification command>'
    ```
 
-   Run it in the foreground and wait for it (host capability *Run a long
+   Pass the whole verification line as one quoted argument. Run it in the
+   foreground and wait for it (host capability *Run a long
    command*); never background it and sleep, poll or kill it. A `check` the host
    moves to the background at its timeout is still waited for, as that row says.
 

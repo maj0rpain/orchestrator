@@ -407,21 +407,32 @@ autopilot_orch_in() {
 }
 
 # autopilot_labels_ensure: the labels exist with their colour and
-# description. Reads the repo's labels once and upserts only those missing or
-# drifted in colour or description (names compared case-insensitively); with
-# nothing drifted it writes nothing. A failed read or upsert dies, stopping
-# the tick.
+# description. Reads the repo's labels once, compares them to the standing
+# labels in one awk, and upserts only those it prints: the missing or those
+# drifted in colour or description (names and colours compared
+# case-insensitively, descriptions exactly); with nothing drifted it writes
+# nothing. A failed read or upsert dies, stopping the tick; a failed comparison
+# upserts every standing label.
 autopilot_labels_ensure() {
-  local name colour description gh_err have _read_err
+  local name colour description gh_err have _read_err drifted
   gh_capture have _read_err adapter_labels_detail 1000 ||
     die "could not read the repo's labels: $(gh_reason "$_read_err") - the tick stops"
+  drifted="$(awk '
+    FILENAME == ARGV[1] {
+      split($0, f, "\t")
+      seen[tolower(f[1]) SUBSEP tolower(f[2]) SUBSEP f[3]] = 1
+      next
+    }
+    {
+      i = index($0, "|"); rest = substr($0, i + 1); j = index(rest, "|")
+      n = substr($0, 1, i - 1); c = substr(rest, 1, j - 1); d = substr(rest, j + 1)
+      if (!((tolower(n) SUBSEP tolower(c) SUBSEP d) in seen)) print
+    }' /dev/stdin <(standing_label_entries) <<<"$have")" || drifted="$(standing_label_entries)"
   while IFS='|' read -r name colour description; do
-    ! awk -F '\t' -v n="$name" -v c="$colour" -v d="$description" '
-      tolower($1) == tolower(n) && tolower($2) == tolower(c) && $3 == d { found = 1 }
-      END { exit !found }' <<<"$have" || continue
+    [ -n "$name" ] || continue
     gh_capture_err gh_err adapter_label_upsert "$name" "$colour" "$description" ||
       die "could not upsert the label $name: $(gh_reason "$gh_err") - the tick stops"
-  done <<<"$(standing_label_entries)"
+  done <<<"$drifted"
 }
 
 # autopilot_minimal_plan <file>: the plan a hand-labelled issue gets: the repo
@@ -1081,7 +1092,7 @@ autopilot_done_read() {
 # and skips that issue only.
 autopilot_sync_detect() {
   orch_load standing
-  local raw="" prs="" gh_err issue running sync human pr_lines head_prefix count reason=""
+  local raw="" prs="" gh_err issue running sync human pr_lines head_prefix count reason="" lines_extra mergeable
   [ -n "$1" ] || return 0
   if gh_capture raw gh_err adapter_prs_open_mergeability; then
     prs="$(printf '%s\n' "$raw" | trust_filter_prs "the open PRs")" || reason="the open PRs could not be read: a malformed line"
@@ -1095,15 +1106,17 @@ autopilot_sync_detect() {
       warn "could not read the PR of issue #$issue: $reason - sync detection skips it"
       continue
     fi
-    head_prefix="$(branch_name_flow "$issue" "")"
-    pr_lines="$(printf '%s\n' "$prs" | awk -F'\t' -v p="$head_prefix" 'index($2, p) == 1')"
-    count="$(printf '%s' "$pr_lines" | grep -c . || true)"
-    [ "$count" -ne 0 ] || continue
+    branch_name_flow_into head_prefix "$issue" ""
+    pr_lines_by_prefix "$prs" "$head_prefix" pr_lines
+    [ -n "$pr_lines" ] || continue
+    lines_extra="${pr_lines//[^$'\n']/}"
+    count=$(( ${#lines_extra} + 1 ))
     if [ "$count" -gt 1 ]; then
       warn "issue #$issue has $count open PRs from a branch starting $head_prefix - sync detection skips it"
       continue
     fi
-    [ "$(printf '%s' "$pr_lines" | cut -f3)" = CONFLICTING ] || continue
+    tsv_split "$pr_lines" _ _ mergeable
+    [ "$mergeable" = CONFLICTING ] || continue
     standing_sync_request "$issue" ||
       warn "could not add $STANDING_SYNC_LABEL to issue #$issue: $STANDING_REASON - sync detection skips it"
   done <<<"$1"
@@ -1121,7 +1134,7 @@ autopilot_sync_detect() {
 # stopping the tick. Writes into the caller-named <table-var> the table minus
 # every issue it closed: the whole table when the merged-PR read fails.
 autopilot_close_missed() {
-  local prs issue running sync human default bound="" kept=""
+  local prs issue running sync human default bound="" kept="" head_prefix issue_prs
   printf -v "$2" '%s' "$1"
   [ -n "$1" ] || return 0
   while read -r issue running sync human; do
@@ -1132,10 +1145,10 @@ autopilot_close_missed() {
   pr_merged_closing_read default prs "no merged-PR close this tick" "$bound" || return 0
   while read -r issue running sync human; do
     [ -n "$issue" ] || continue
-    if [ "$running" = 0 ] &&
-      pr_close_newest "$issue" "$default" \
-        "$(printf '%s\n' "$prs" | awk -F'\t' -v p="$(branch_name_flow "$issue" "")" 'index($2, p) == 1')"; then
-      continue
+    if [ "$running" = 0 ]; then
+      branch_name_flow_into head_prefix "$issue" ""
+      pr_lines_by_prefix "$prs" "$head_prefix" issue_prs
+      if pr_close_newest "$issue" "$default" "$issue_prs"; then continue; fi
     fi
     kept="$kept$issue $running $sync $human"$'\n'
   done <<<"$1"
