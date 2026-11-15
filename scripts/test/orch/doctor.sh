@@ -2642,11 +2642,12 @@ restore_suite_env
 # --- doctor --env: verification commands (#3346) ------------------------------
 # The first word of each `Ticket verification:` and `Full verification:` line
 # is looked up; a missing one warns, never fails. Each case asserts what doctor
-# --env prints and how it exits.
+# --env prints; the exit status is asserted once, for the missing-command case.
 echo
 echo "doctor: verification commands"
 healthy_repo
 doctor_github
+"$ORCH" init vcflow >/dev/null
 vc_bin="$(mktemp -d)"
 printf '#!/bin/sh\nexit 0\n' >"$vc_bin/vctool"
 chmod +x "$vc_bin/vctool"
@@ -2654,7 +2655,7 @@ vc_doctor() { PATH="$vc_bin:$PATH" "$ORCH" doctor --env 2>&1; }
 vc_reset() { rm -f CLAUDE.md AGENTS.md CONTRIBUTING.md; }
 vc_reset
 
-out="$(vc_doctor)"; st=$?
+out="$(vc_doctor)"
 assert_not_contains "a repo with no verification line prints nothing for the check" "$out" "verification command"
 
 printf 'Ticket verification: nosuchtool-3346 --all\nFull verification: nosuchtool-3346\n' >CLAUDE.md
@@ -2666,7 +2667,8 @@ assert_not_contains "a full verification warn gives no remedy line" "$out" "Full
       "
 assert_not_contains "a warn gives no remedy line" "$out" "nosuchtool-3346 (from CLAUDE.md) is not installed.
       "
-out="$("$ORCH" doctor --flow 2>&1)"
+out="$(PATH="$vc_bin:$PATH" "$ORCH" doctor --flow 2>&1)"
+assert_not_contains "doctor --flow runs with a flow started" "$out" "no active flow"
 assert_not_contains "doctor --flow does not run the check" "$out" "verification command"
 out="$(PATH="$vc_bin:$PATH" "$ORCH" doctor 2>&1)"
 assert_contains "bare doctor prints the check" "$out" "warn  Ticket verification command nosuchtool-3346"
