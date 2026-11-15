@@ -276,6 +276,19 @@ assert_eq "ticket 1's section is rewritten" "$(fake_body_of 100)" "$(printf 'Bod
 assert_eq "no edge added twice" "$(fake_blockers_of 102)" "100 101"
 restore_suite_env
 
+# A body write that dies on the third ticket, after its edges were written, then
+# a rerun: the resumed ticket gets no edge twice.
+breakdown_fixture
+fake_fail_after adapter_issue_body_edit 2
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a body write failing on ticket 3 dies" "$st" 1
+assert_eq "ticket 3 already holds its edges" "$(fake_blockers_of 102)" "100 101"
+fake_unfail
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "the rerun after the edges were written finishes" "$st" 0
+assert_eq "no edge added twice on the resumed ticket" "$(fake_blockers_of 102)" "100 101"
+restore_suite_env
+
 # A failed body read on the resume path, then a rerun.
 breakdown_fixture
 fake_fail adapter_sub_issue_link

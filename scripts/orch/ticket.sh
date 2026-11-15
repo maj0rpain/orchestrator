@@ -120,7 +120,8 @@ ticket_links_verified() {
 # Publishes a child issue, links it to <parent> as a native sub-issue, adds a
 # native blocking edge for every --blocked-by argument, and applies this
 # repo's ready-for-agent label - then verifies every link it just wrote by
-# reading it back. One retry on a mismatch or a failed read; a second failure
+# reading it back, then rewrites its `## Blocked by` section from the verified
+# edges. One retry on a mismatch or a failed read; a second failure
 # dies naming the ticket rather than falling back to a text-based `Blocked by:`
 # convention, since nothing downstream ever reads that fallback.
 cmd_ticket_publish() {

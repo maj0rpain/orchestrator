@@ -163,10 +163,12 @@ assert_status "a sub-issue link that only shows up on the retry still succeeds" 
 assert_eq "prints the child's number" "$out" "200"
 
 fake_lag adapter_sub_issues 2
+fake_fail adapter_issue_body   # a body read here would die with another message
 out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
 assert_status "a sub-issue link that never shows up dies rather than falling back" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #201"
-assert_contains "not a silent fallback" "$out" "did not verify"
+assert_contains "not a silent fallback, and no body read" "$out" "did not verify"
+fake_unfail
 assert_eq "the link it wrote stays, for a human to see" "$(fake_sub_issues_of 50)" "200 201"
 
 fake_next_issue 300
@@ -268,6 +270,8 @@ out="$("$ORCH" ticket publish 50 "F" "$tp_body" --blocked-by "$ta" 2>&1)"; st=$?
 tf=$((te + 1))
 assert_status "a failed body read dies" "$st" 1
 assert_contains "naming the ticket and the read" "$out" "gh could not read ticket #$tf's body"
+assert_eq "the ticket stays linked" "$(fake_sub_issues_of 50 | tr ' ' '\n' | grep -cx "$tf")" "1"
+assert_eq "with its edge" "$(fake_blockers_of "$tf")" "$ta"
 assert_eq "the draft's text stays" "$(fake_body_of "$tf")" "$(printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)')"
 fake_unfail
 
@@ -276,12 +280,6 @@ out="$("$ORCH" ticket publish 50 "G" "$tp_body" 2>&1)"; st=$?
 assert_status "no blockers on an already-matching section writes no body" "$st" 0
 fake_unfail
 
-fake_lag adapter_sub_issues 2
-fake_fail adapter_issue_body
-out="$("$ORCH" ticket publish 50 "H" "$tp_body" 2>&1)"; st=$?
-assert_status "links failing verification die" "$st" 1
-assert_contains "as unverified, with no body read" "$out" "did not verify"
-fake_unfail
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------
