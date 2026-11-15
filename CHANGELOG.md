@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.92
+
+`suite-cost check` now picks its head and baseline records with a fixed number of git processes and one read of the record per side, however long the record is.
+
 ## 5.2.91
 
 The line-width tool's root scan runs one awk over all covered files instead of one per file, with the same output.
