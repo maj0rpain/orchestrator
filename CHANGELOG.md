@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.3.1
+
+`ticket publish` no longer takes the internal `--record` flag: `breakdown publish` owns its whole save point, and creating and linking a ticket are two steps it runs as one path for a fresh and a resumed ticket. Two failure messages change: a failed create reads `the create failed`, a failed link reads `the link failed`.
+
 ## 5.3.0
 
 A ticket subagent now runs the ticket verification once before its first edit, and when that run cannot start (a missing tool, or a command not found or not executable) it builds nothing and returns a stop report whose `Deviation` line opens with `verification cannot start:` and names the missing command; the driver neither saves, merges nor closes that ticket, and stops naming every missing command. `orch.sh doctor --env` warns when the first command of the repo's `Ticket verification:` or `Full verification:` line is not installed.

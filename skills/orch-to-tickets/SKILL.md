@@ -155,10 +155,10 @@ bash "$ORCH" breakdown publish <parent> <draft-file>
 
 `breakdown publish` saves the draft as the breakdown's save point, then
 publishes every ticket in dependency order - blockers first, so each ticket's
-blocking edges name real issue numbers - through `ticket publish`, which
-creates the issue, links it as a sub-issue of the parent, records each
-blocking edge, applies the `ready-for-agent` triage role's label, reads all
-of it back, and rewrites the ticket's `## Blocked by` section from its edges,
+blocking edges name real issue numbers. Each ticket is created with the
+`ready-for-agent` triage role's label, then linked as a sub-issue of the parent
+(unless already linked) with each blocking edge it lacks, all of it is read
+back, and the ticket's `## Blocked by` section is rewritten from its edges,
 before it reports success. Blockers are declared only on the draft's
 `@@ blocked-by` line: publishing replaces whatever stands under that heading
 with one `- #<n>` line per blocking edge, or `None (can start immediately)`.

@@ -115,7 +115,7 @@ breakdown_record() {
 # breakdown_publish_in <parent> <draft> <tmp>: breakdown publish's work, run in
 # a subshell so the caller can remove <tmp> however it ends.
 breakdown_publish_in() {
-  local parent="$1" draft="$2" tmp="$3" dir saved numbers k n status b bn want list title order subs
+  local parent="$1" draft="$2" tmp="$3" dir saved numbers k n status b bn want list title order
   dir="$(breakdown_dir "$parent")"
   saved="$dir/draft.md"
   # A saved draft always wins over the one given.
@@ -129,6 +129,8 @@ breakdown_publish_in() {
     rm -rf "$tmp"; mkdir -p "$tmp"
   fi
   breakdown_parse "$saved" "$tmp"
+  # Resolve the Repo in this shell, so the $(...) calls below reuse it.
+  repo_resolve || :
   numbers="$dir/numbers"
   order="$(breakdown_order "$tmp")" || exit 1
   while IFS= read -r k; do
@@ -139,27 +141,22 @@ breakdown_publish_in() {
     if [ -n "$list" ]; then
       while IFS= read -r b; do
         breakdown_number "$numbers" "$b" bn status  # status is spent past the linked check
-        want="${want:+$want,}$bn"
+        want="${want:+$want$'\n'}$bn"
       done <<<"$list"
     fi
-    if [ -n "$n" ]; then
-      # Created but not linked: link it, never create another, adding only the
-      # blocking edges it lacks, then rewrite its `## Blocked by` section from
-      # the verified edges.
-      (
-        subs="$(ticket_sub_issues "$parent")" || exit 1
-        ticket_listing_has "$subs" "$n" || gh_or_die "link ticket #$n as a sub-issue of #$parent" \
-          adapter_sub_issue_link "$parent" "$n"
-        ticket_edges_and_verify "$parent" "$n" "${want//,/$'\n'}"
-      ) \
-        || die "ticket $k of the draft (#$n): the link or body rewrite failed"
-      breakdown_record "$numbers" "$k" "$n" linked
-    else
+    if [ -z "$n" ]; then
       file_read_text title "$tmp/$k.title"
-      (cmd_ticket_publish "$parent" "$title" "$tmp/$k.body" \
-        ${want:+--blocked-by "$want"} --record "$numbers" "$k") >/dev/null \
-        || die "ticket $k of the draft: the publish failed"
+      n="$(ticket_create "$title" "$tmp/$k.body")" \
+        || die "ticket $k of the draft: the create failed"
+      # Recorded before the link, so a rerun can tell "created, unlinked" from
+      # "not created". A failed write dies here, outside the create.
+      breakdown_record "$numbers" "$k" "$n" created
     fi
+    # Fresh or resumed alike: link only what is not yet linked, add only the
+    # blocking edges the ticket lacks, read it all back.
+    (ticket_link "$parent" "$n" "$want") \
+      || die "ticket $k of the draft (#$n): the link failed"
+    breakdown_record "$numbers" "$k" "$n" linked
   done <<<"$order"
   : >"$dir/published" || die "could not write the published marker $dir/published"
   # The numbers, in publishing order.
