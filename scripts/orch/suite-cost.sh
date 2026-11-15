@@ -262,10 +262,11 @@ suite_cost_timefile_remove() {
 # for a tree run returning to its starting directory and removing its worktree
 # and temporary directory (a failed worktree removal is warned of, naming the
 # command), and exits <status>, 128 plus the signal's number. A stderr that
-# cannot be written changes neither the cleanup nor the exit.
+# cannot be written changes neither the cleanup nor the exit. Its first act is
+# to ignore HUP, INT and TERM, so a second signal cannot cut the cleanup short.
 suite_cost_interrupted() {
   local status="$1"
-  trap - HUP INT TERM
+  trap '' HUP INT TERM
   # A dead stderr must not end the handler early: SIGPIPE from a closed pipe is
   # ignored, a failed write is ignored, and the warning follows the cleanup.
   trap '' PIPE

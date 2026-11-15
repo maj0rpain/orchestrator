@@ -1528,6 +1528,23 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r w; 
   [ "$w" = "$PWD" ] || { git worktree unlock "$w" 2>/dev/null; git worktree remove --force "$w" 2>/dev/null; }
 done
 
+# A base run interrupted once whose worktree removal sends the process a second
+# signal: the cleanup still finishes, warns once, and the exit stays 143.
+check_repo
+seed_run "$head" 70.00 "sh -c kill -TERM \$PPID"
+realgit="$(command -v git)"
+gitbin="$(mktemp -d)"
+cat >"$gitbin/git" <<EOS
+#!/bin/sh
+if [ "\$1 \$2" = "worktree remove" ]; then kill -HUP \$PPID; sleep 0.2; fi
+exec "$realgit" "\$@"
+EOS
+chmod +x "$gitbin/git"
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+out="$(PATH="$gitbin:$PATH" TMPDIR="$tdir" "$ORCH" suite-cost check -- sh -c 'kill -TERM $PPID' 2>"$errf")"; st=$?
+assert_clean_interrupt "a second signal during cleanup" "$errf" "$st" TERM "$tdir"
+rm -rf -- "$gitbin"
+
 # A run that could not register: a plain file where the active-runs directory
 # goes.
 new_repo >/dev/null
