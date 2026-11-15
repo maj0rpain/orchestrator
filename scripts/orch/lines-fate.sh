@@ -247,11 +247,9 @@ lines_fate() {
     fi
     if [ -z "$__lf_fate" ] && ! $__lf_standin; then
       # The newest commit since the filing that touched the finding's lines.
-      # The output is captured whole before filtering and given to grep -m1 as
-      # a herestring: piping it into grep -m1 or head could SIGPIPE the writer
-      # and pass for a failure under pipefail.
       if __lf_log_out="$(git -C "$ROOT" log -1 --format=%H "${__lf_largs[@]}" "$__lf_ref" "^$__lf_old" 2>/dev/null)"; then
-        __lf_detail="$(grep -m1 -Ex '[0-9a-f]{40}' <<<"$__lf_log_out")" || true
+        __lf_detail="${__lf_log_out%%$'\n'*}"
+        [[ $__lf_detail =~ ^[0-9a-f]{40}$ ]] || __lf_detail=""
         if [ -n "$__lf_detail" ]; then
           __lf_fate=changed
         elif $__lf_off_default && [ -n "$(rows_differ "$__lf_rows" "$__lf_start" "$__lf_end")" ]; then

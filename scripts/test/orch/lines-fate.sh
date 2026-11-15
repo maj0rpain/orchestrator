@@ -172,7 +172,8 @@ lf_case um61 "$sha61" src/um11.sh 25 25
 lf_case um62 "$sha62" src/um12.sh 25 25
 lf_case um63 "$sha63" src/um13.sh 9 10
 
-# lf_ask <cases file>: for each case, lines_fate asked once from the root and
+# lf_ask <cases file>: for each case (an optional sixth column names a directory
+# put first on PATH for its calls), lines_fate asked once from the root and
 # once from src/, its standard output sent to a file; one tab-separated row per
 # case: name, fate, detail, status, quiet (yes when nothing was printed from
 # either place), the subdirectory's fate, its detail and its status. Every call
@@ -181,12 +182,12 @@ lf_case um63 "$sha63" src/um13.sh 9 10
 # shellcheck disable=SC2016 # expanded by the inner bash
 LF_ASK='
   root="$PWD"; out="$(mktemp)"
-  while IFS=$'"'"'\t'"'"' read -r -u 3 name sha file start end; do
-    lines_fate "$sha" main "$file" "$start" "$end" result detail >"$out"; rc=$?
+  while IFS=$'"'"'\t'"'"' read -r -u 3 name sha file start end bin; do
+    PATH="${bin:+$bin:}$PATH" lines_fate "$sha" main "$file" "$start" "$end" result detail >"$out"; rc=$?
     quiet=yes; [ ! -s "$out" ] || quiet=no
     first_result="$result" first_detail="$detail"
     cd "$root/src" || exit 1
-    lines_fate "$sha" main "$file" "$start" "$end" result detail >"$out"; sub_rc=$?
+    PATH="${bin:+$bin:}$PATH" lines_fate "$sha" main "$file" "$start" "$end" result detail >"$out"; sub_rc=$?
     cd "$root" || exit 1
     [ ! -s "$out" ] || quiet=no
     printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$name" "$first_result" "$first_detail" "$rc" "$quiet" "$result" "$detail" "$sub_rc"
@@ -241,45 +242,42 @@ lf_assert "$rows" mb_deleted changed "$mb_del_sha"
 rm -f "$lf_cases" "$rows"
 
 # A git whose every command of one kind fails: lines_fate still returns 0, each
-# failure taking its stand-in.
-# lf_failing <pattern> <case>...: the rows for the cases, asked with every git
-# call matching <pattern> failing.
-lf_failing() {
-  local pattern="$1" cases bin
-  shift
-  cases="$(mktemp)"
-  bin="$(git_fails_bin "$pattern")"
-  lf_case_in "$cases" "$@"
-  PATH="$bin:$PATH" sourced_orch_script "$LF_ASK" "$cases"
-  rm -f "$cases"
+# failure taking its stand-in. Each case's calls run under its own stand-in git
+# (the cases file's sixth column), all four cases in one sourced shell.
+lf_failing_cases="$(mktemp)"
+# lf_failing_case <pattern> <name> <sha> <file> <start> <end>: one case row, its
+# stand-in git failing every call matching <pattern>.
+lf_failing_case() { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${@:2}" "$(git_fails_bin "$1")" >>"$lf_failing_cases"; }
+# shellcheck disable=SC2016 # globs for the stand-in git, not expansions
+{
+  lf_failing_case '*" diff "*' fixed "$head_sha" src/app.sh 3 3
+  lf_failing_case '*" blame "*' del_later "$filed_sha" src/del_later.sh 10 10
+  lf_failing_case '*" merge-base "*' mb_deleted "$mb_head_sha" src/mb.sh 10 10
+  lf_failing_case '*" cat-file "*' untouched "$head_sha" src/other.sh 2 2
 }
 rows="$(mktemp)"
-# shellcheck disable=SC2016 # a glob for the stand-in git, not an expansion
-lf_failing '*" diff "*' fixed "$head_sha" src/app.sh 3 3 >"$rows"
+sourced_orch_script "$LF_ASK" "$lf_failing_cases" >"$rows"
 lf_assert "$rows" fixed changed "$fix_sha"
-# shellcheck disable=SC2016
-lf_failing '*" blame "*' del_later "$filed_sha" src/del_later.sh 10 10 >"$rows"
 lf_assert "$rows" del_later changed "$later_edit_sha"
-# shellcheck disable=SC2016
-lf_failing '*" merge-base "*' mb_deleted "$mb_head_sha" src/mb.sh 10 10 >"$rows"
 lf_assert "$rows" mb_deleted changed "$mb_del_sha"
-# shellcheck disable=SC2016
-lf_failing '*" cat-file "*' untouched "$head_sha" src/other.sh 2 2 >"$rows"
 lf_assert "$rows" untouched gone
-rm -f "$rows"
+rm -f "$rows" "$lf_failing_cases"
 
 # Cost: git's own trace counts the diffs of the filed SHA against the ref - one
-# per finding, whatever its fate. GIT_TRACE is exported only after orch.sh is
-# sourced, whose own start is not counted.
-lf_trace="$(mktemp)"
-# lf_diffs_naming <sha> <file> <start> <end>: lines_fate's count of `git diff`
-# processes naming both the filed SHA and main.
-lf_diffs_naming() {
-  : >"$lf_trace"
-  # shellcheck disable=SC2016 # expanded by the inner bash
-  sourced_orch_script 'export GIT_TRACE="$1"; lines_fate "$2" main "$3" "$4" "$5" r d' "$lf_trace" "$@" >/dev/null
-  grep 'trace: built-in: git diff ' "$lf_trace" | grep -c -- "$1.* main"
-}
-assert_eq "an off-ref never-reached finding is diffed once" "$(lf_diffs_naming "$unmerged_sha" src/other.sh 2 2)" "1"
-assert_eq "an on-ref finding whose lines were deleted is diffed once" "$(lf_diffs_naming "$filed_sha" src/del_whole.sh 10 10)" "1"
-rm -f "$lf_trace"
+# per finding, whatever its fate. Each call writes its own trace file, and
+# GIT_TRACE is set only for the call, after orch.sh is sourced, whose own start
+# is not counted. Both counts are asked in one sourced shell.
+# shellcheck disable=SC2016 # expanded by the inner bash
+LF_COUNT='
+  count() {
+    local sha="$1" t
+    t="$(mktemp)"
+    GIT_TRACE="$t" lines_fate "$sha" main "$2" "$3" "$4" r d >/dev/null
+    grep "trace: built-in: git diff " "$t" | grep -c -- "$sha.* main"
+    rm -f "$t"
+  }
+  count "$1" src/other.sh 2 2
+  count "$2" src/del_whole.sh 10 10'
+lf_counts="$(sourced_orch_script "$LF_COUNT" "$unmerged_sha" "$filed_sha")"
+assert_eq "an off-ref never-reached finding is diffed once" "${lf_counts%%$'\n'*}" "1"
+assert_eq "an on-ref finding whose lines were deleted is diffed once" "${lf_counts#*$'\n'}" "1"
