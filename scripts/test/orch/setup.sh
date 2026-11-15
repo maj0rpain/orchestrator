@@ -637,7 +637,7 @@ healthy_repo() {
   git remote set-url origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
   # The verification lines check warns of a repo naming no full verification.
-  printf '%s\n' 'Full verification: true test' >CLAUDE.md
+  writeln 'Full verification: true test' >CLAUDE.md
   git add CLAUDE.md && git commit -qm 'instructions'
   printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
   gh_fixture

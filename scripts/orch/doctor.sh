@@ -693,12 +693,13 @@ d_verification_found() {
 }
 
 # The repo's verification commands: for each label, the first word of the
-# command on the first line, across the instruction files in order, that opens
-# with it; a label with a line of no command is verification_report's FAIL and
-# says nothing here. Found is ok; not found is a warn with no remedy, since no
-# one command installs an arbitrary tool. A label nobody names, or whose line
-# leaves no command word, says nothing. A function orch.sh defines never counts
-# as found: only a builtin, a keyword or a file does. No namerefs (bash 4.2).
+# command on the first line outside a fenced code block, across the instruction
+# files in order, that opens with it; a label with a line of no command is
+# verification_report's FAIL and says nothing here. Found is ok; not found is a
+# warn with no remedy, since no one command installs an arbitrary tool. A label
+# nobody names, or whose line leaves no command word, says nothing. A function
+# orch.sh defines never counts as found: only a builtin, a keyword or a file
+# does. No namerefs (bash 4.2).
 check_verification_commands() {
   local label word from_file bare lines l f cmd
   lines="$(verification_lines)" || lines=""
