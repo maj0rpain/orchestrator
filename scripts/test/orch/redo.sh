@@ -398,6 +398,7 @@ printf '# Review iteration 1\n' >.orchestrator/review/iteration-01.md
 rf_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$rf_load" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a refused run on a flow redone once" "$st" 1
+assert_contains "a refused run on a flow redone once says the loop was interrupted" "$out" "has no recorded terminal state"
 assert_trace_names_no "a refused run with the flat record present" "$rf_load" branch
 rm -f "$rf_load"
 restore_suite_env

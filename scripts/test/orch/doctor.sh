@@ -1979,6 +1979,15 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a default base branch passes" "$st" 0
 assert_contains "reports the default branch as the base branch" "$out" "ok    base branch: main (default)"
 assert_contains "keeps the default-branch check" "$out" "ok    default branch: main (from GitHub)"
+# GitHub not answering for the default branch loads each module once.
+fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
+db_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$db_load" "$ORCH" doctor 2>&1)"; st=$?
+assert_status "doctor with no answer for the default branch fails" "$st" 1
+assert_contains "doctor with no answer for the default branch says so" "$out" "HTTP 502"
+assert_trace_loads_once "doctor with GitHub not answering for the default branch" "$db_load"
+fake_unfail
+rm -f "$db_load"
 
 fresh_bare_origin bare
 git push -q "$bare" HEAD:refs/heads/main HEAD:refs/heads/uat
@@ -2302,15 +2311,6 @@ assert_contains "a side flow with two phase labels names both, space-separated" 
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"
-# GitHub not answering for the default branch loads each module once.
-fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
-db_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$db_load" "$ORCH" doctor 2>&1)"; st=$?
-assert_status "doctor with no answer for the default branch ends on the fixture repo's own FAILs" "$st" 1
-assert_contains "doctor with no answer for the default branch says so" "$out" "HTTP 502"
-assert_trace_loads_once "doctor with GitHub not answering for the default branch" "$db_load"
-fake_unfail
-rm -f "$db_load"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- doctor --flow: autopilot handoff comments (#1457) ------------------------

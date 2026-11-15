@@ -102,7 +102,7 @@ redo_load_shared() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word detail slug issue branch pr new_n resumed flat
+  local phase i b word detail slug issue branch pr new_n resumed
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   # review and handoff are first reached inside a command substitution (the
@@ -114,8 +114,7 @@ cmd_redo_review() {
   orch_load review
   orch_load handoff
   i="$(state_get iteration)"
-  if [ "$i" -gt 0 ] && [ "$(state_get redo_count)" -gt 0 ] \
-    && flat="$(cmd_review path "$i")" && [ ! -e "$flat" ]; then
+  if review_flat_record_gone "$i" && [ "$(state_get redo_count)" -gt 0 ]; then
     orch_load branch
   fi
   b="$(review_budget)"

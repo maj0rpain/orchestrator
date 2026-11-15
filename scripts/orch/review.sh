@@ -158,6 +158,16 @@ review_terminal_record() {
   printf '%s\n' "$flat"
 }
 
+# review_flat_record_gone <i>: succeeds, silently, when iteration <i> is an
+# integer above 0 and its flat iteration-NN.md is gone - the one state in which
+# review_terminal_record looks past it (redo_midway). Callers that load a module
+# only that look reaches test it here, rather than re-deriving the condition.
+review_flat_record_gone() {
+  local flat
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ] || return 1
+  flat="$(cmd_review path "$1" 2>/dev/null)" && [ ! -e "$flat" ]
+}
+
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with

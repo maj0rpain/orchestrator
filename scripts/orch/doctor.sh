@@ -832,11 +832,11 @@ check_flow_pr() {
 # won't run. Listed for review alone, like check_flow_upstream's phases:
 # outside review, there is no loop to classify and nothing to say about one.
 check_flow_review_terminal() {
-  local i b terminal word detail flat
+  local i b terminal word detail
   i="$D_FLOW_ITERATION"
   b="$D_FLOW_BUDGET"
   # redo is read only when the flat record is gone (review_terminal_record).
-  if [[ "$i" =~ ^[0-9]+$ ]] && [ "$i" -gt 0 ] && flat="$(cmd_review path "$i" 2>/dev/null)" && [ ! -e "$flat" ]; then
+  if review_flat_record_gone "$i"; then
     orch_load redo
   fi
   terminal="$(review_terminal_state)" || true
