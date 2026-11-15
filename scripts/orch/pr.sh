@@ -58,18 +58,42 @@ pr_merged_closing_read() {
   printf -v "$2" '%s' "$_prs"
 }
 
+# pr_lines_by_prefix <lines> <prefix> <var>: sets the caller-named <var> to the
+# lines of <lines> - pr_merged_closing_read's PRs, or the open PRs' - whose
+# head branch, the second tab-separated field, starts with <prefix>, in their
+# order and newline-joined. Matches in bash and starts no process; a line with
+# no second field never matches.
+pr_lines_by_prefix() {
+  local _line _head _picked=""
+  while IFS= read -r _line; do
+    case "$_line" in *$'\t'*) ;; *) continue ;; esac
+    tsv_split "$_line" _ _head
+    case "$_head" in
+      "$2"*) _picked="$_picked$_line"$'\n' ;;
+    esac
+  done <<<"$1"
+  printf -v "$3" '%s' "${_picked%$'\n'}"
+}
+
 # pr_close_newest <issue> <default> <lines> [<pr-var>]: runs pr_close_missed on
 # the newest merge among <lines> - the caller's pick of pr_merged_closing_read's
 # PRs, the ones that may close <issue> - and returns its status, writing the
 # PR's number into the caller-named <pr-var> when one is given. Returns 1 when
-# <lines> is empty.
+# <lines> holds no line with a merge timestamp. The newest is picked in bash by
+# comparing the timestamps (one ISO format) as strings: a blank line is
+# skipped, a line with no timestamp is never picked, and of equal timestamps
+# the earlier line wins. Starts no process of its own.
 pr_close_newest() {
-  local _line _pr _merged_at _closing
-  _line="$(printf '%s\n' "$3" | awk -F'\t' 'NF && $3 > best { best = $3; line = $0 } END { if (line != "") print line }')"
-  [ -n "$_line" ] || return 1
-  IFS=$'\t' read -r _pr _ _merged_at _closing <<<"$_line"
+  local _line _pr _merged_at _closing _best="" _best_at=""
+  while IFS= read -r _line; do
+    tsv_split "$_line" _ _ _merged_at
+    [ -n "$_merged_at" ] || continue
+    if [[ "$_merged_at" > "$_best_at" ]]; then _best="$_line"; _best_at="$_merged_at"; fi
+  done <<<"$3"
+  [ -n "$_best" ] || return 1
+  tsv_split "$_best" _pr _ _ _closing
   [ -z "${4:-}" ] || printf -v "$4" '%s' "$_pr"
-  pr_close_missed "$1" "$_pr" "$_merged_at" "$_closing" "$2"
+  pr_close_missed "$1" "$_pr" "$_best_at" "$_closing" "$2"
 }
 
 # pr_push_and_body <branch> <base> <issue> <body-file> <tmp-var> <outcome>:

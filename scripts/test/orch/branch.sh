@@ -1514,3 +1514,10 @@ assert_status "branch off succeeds with origin unreachable beside a tag of the b
 assert_eq "and forks from the local base branch, not the tag" \
   "$(git rev-parse HEAD)" "$(git rev-parse "refs/heads/$fb_base")"
 restore_suite_env
+
+# branch_name_flow_into sets the flow's branch name with an empty PATH.
+assert_eq "branch_name_flow_into sets the flow's branch name with an empty PATH" \
+  "$(sourced_orch_script '
+    orch_load branch
+    PATH=
+    branch_name_flow_into n 12 some-slug; printf "[%s]" "$n"')" "[orch/12-some-slug]"

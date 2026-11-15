@@ -599,7 +599,7 @@ check_side_checkouts_finished() {
         d_warn "side checkout ${path##*/} is finished - its PR is merged, and it is still standing at $path."
         d_remedy "orch.sh side-checkout remove ${path##*/}" ;;
       1) ;;
-      *) d_warn "side checkout $(basename "$path") could not be checked: $verdict" ;;
+      *) d_warn "side checkout ${path##*/} could not be checked: $verdict" ;;
     esac
   done
   return 0

@@ -1406,22 +1406,34 @@ adapter_claim_delete() {
 # pruning the local copies of claims since freed. Fails, git's reason on
 # stderr, where origin cannot be read.
 adapter_claim_list() {
-  local err ref issue msg host pid phase started
-  local -a refs
+  local err ref msg issue host pid phase started seen=""
+  local nl=$'\n' sentinel='orch-claim-list-end'
+  local pat_host="$nl"'host: ([^'"$nl"']*)' pat_pid="$nl"'pid: ([^'"$nl"']*)'
+  local pat_phase="$nl"'phase: ([^'"$nl"']*)' pat_started="$nl"'started: ([^'"$nl"']*)'
   capture_err err git fetch --quiet --prune origin '+refs/orch/claims/*:refs/orch/claims/*' || {
     printf '%s\n' "${err:-git gave no reason}" >&2
     return 1
   }
-  mapfile -t refs < <(git for-each-ref --format='%(refname)' refs/orch/claims/ | sort -t/ -k4,4n)
-  for ref in ${refs[@]+"${refs[@]}"}; do
+  # One for-each-ref gives every claim's ref and message, NUL-separated, in
+  # version (numeric) order; the sentinel record is printed only when it
+  # succeeds. The loop never exits early, so git is read to EOF.
+  while IFS= read -r -d '' ref && IFS= read -r -d '' msg; do
+    ref="${ref#"$nl"}"
+    if [ "$ref" = "$sentinel" ]; then
+      seen=1
+      continue
+    fi
     issue="${ref##*/}"
-    msg="$(git show -s --format=%B "$ref")" || return 1
-    host="$(sed -n 's/^host: //p' <<<"$msg")"
-    pid="$(sed -n 's/^pid: //p' <<<"$msg")"
-    phase="$(sed -n 's/^phase: //p' <<<"$msg")"
-    started="$(sed -n 's/^started: //p' <<<"$msg")"
+    host="" pid="" phase="" started=""
+    msg="$nl$msg"
+    [[ "$msg" =~ $pat_host ]] && host="${BASH_REMATCH[1]}"
+    [[ "$msg" =~ $pat_pid ]] && pid="${BASH_REMATCH[1]}"
+    [[ "$msg" =~ $pat_phase ]] && phase="${BASH_REMATCH[1]}"
+    [[ "$msg" =~ $pat_started ]] && started="${BASH_REMATCH[1]}"
     printf '%s\t%s\t%s\t%s\t%s\n' "$issue" "$host" "$pid" "$phase" "$started"
-  done
+  done < <(git for-each-ref --sort=version:refname --format='%(refname)%00%(contents)%00' refs/orch/claims/ \
+    && printf '%s\0\0' "$sentinel")
+  [ -n "$seen" ] || return 1
 }
 
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
