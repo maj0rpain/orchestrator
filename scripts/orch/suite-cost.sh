@@ -412,58 +412,56 @@ suite_cost_base_commit() {
     { warn "base commit $sha names no commit"; return 1; }
 }
 
-# suite_cost_newest <rec> <cmd-string> <pred>: prints the commit of the newest
-# record line of <cmd-string> whose commit passes <pred> (a function given the
-# commit), or fails printing nothing.
-suite_cost_newest() {
-  local rec="$1" want="$2" pred="$3" sha cmd line
-  local -a lines
+# suite_cost_pick <rec> <want> <base_commit> <head|base>: one pass over the
+# record, to its end. Prints "<commit field>TAB<lowest CPU seconds>" for the
+# newest record line of the command <want> on the side - the commit field
+# of the last such line, and the lowest sample among the lines of that command
+# whose commit field is exactly that one, so a <sha>-dirty line and a <sha>
+# one are never pooled - or fails printing nothing. The command is everything
+# after the fourth tab, compared whole.
+# The base side's lines are the clean ones whose commit field is <base_commit>
+# itself, never an ancestor of it: no git process starts. The head side's are
+# a clean line whose commit is HEAD or an ancestor of it, but not the base
+# commit nor an ancestor of it - so a run recorded just before its commit
+# still counts - or a dirty line whose commit, less -dirty, is HEAD or any
+# ancestor of it, the base commit's included, so a run made before a ticket's
+# first commit counts. Those two sets come from one history listing each,
+# whatever the record's length, read by the pass as files of their own: they
+# outgrow one environment string. A field that is not a full SHA git lists
+# is in neither set, so it belongs to neither side. A history git cannot list
+# fails the head side.
+suite_cost_pick() {
+  local rec="$1" want="$2" base_commit="$3" side="$4" clean_set="" dirty_set="" st=0
+  local -a files=()
   [ -e "$rec" ] || return 1
-  mapfile -t lines < <(awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }' "$rec")
-  for line in ${lines[@]+"${lines[@]}"}; do
-    IFS=$'\t' read -r sha _ _ _ cmd <<<"$line"
-    [ "$cmd" = "$want" ] || continue
-    if "$pred" "$sha"; then printf '%s\n' "$sha"; return 0; fi
-  done
-  return 1
-}
-
-# suite_cost_lowest <rec> <cmd-string> <commit>: prints the lowest CPU seconds
-# among the record lines of <cmd-string> whose commit field is <commit>
-# exactly, so a <sha>-dirty line and a <sha> one are never pooled, or prints
-# nothing when there is none.
-suite_cost_lowest() {
-  [ -e "$1" ] || return 0
+  if [ "$side" = head ]; then
+    temp_file_make clean_set && temp_file_make dirty_set || { rm -f "$clean_set" "$dirty_set"; return 1; }
+    git rev-list HEAD >"$dirty_set" 2>/dev/null &&
+      git rev-list HEAD "^$base_commit" >"$clean_set" 2>/dev/null || st=1
+    if [ "$st" -ne 0 ]; then rm -f "$clean_set" "$dirty_set"; return 1; fi
+    files=("$clean_set" "$dirty_set")
+  fi
   # The strings go through ENVIRON, as awk -v would expand their backslashes.
-  want="$2" sha="$3" LC_ALL=C awk -F'\t' '
-    $1 == ENVIRON["sha"] && $5 == ENVIRON["want"] && (n++ == 0 || $2 + 0 < low + 0) { low = $2 }
-    END { if (n) print low }' "$1"
-}
-
-# The head's records: a clean one whose commit is HEAD or an ancestor of it,
-# but not the base commit nor an ancestor of it - so a run recorded just before
-# its commit still counts - or a dirty one whose commit is HEAD or any ancestor
-# of it, the base commit and its ancestors included, so a run made before a
-# ticket's first commit counts. Local to suite_cost_check in effect: it reads
-# the base commit, base_commit, from that call's locals, through bash's
-# dynamic scope.
-suite_cost_is_head() {
-  case "$1" in
-    *-dirty) git merge-base --is-ancestor "${1%-dirty}" HEAD 2>/dev/null ;;
-    *)
-      git merge-base --is-ancestor "$1" HEAD 2>/dev/null &&
-        ! git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null
-      ;;
-  esac
-}
-# The baseline's records: clean ones alone, never a dirty one, whose commit is
-# the base commit itself, never an ancestor of it. Local to suite_cost_check in
-# effect, reading its base_commit as suite_cost_is_head does.
-suite_cost_is_base() {
-  case "$1" in
-    *-dirty) return 1 ;;
-    *) [ "$1" = "$base_commit" ] ;;
-  esac
+  sc_want="$want" sc_side="$side" sc_base="$base_commit" sc_clean="$clean_set" sc_dirty="$dirty_set" \
+    LC_ALL=C awk '
+    BEGIN { FS = "\t" }
+    FILENAME == ENVIRON["sc_clean"] { clean[$0] = 1; next }
+    FILENAME == ENVIRON["sc_dirty"] { dirty[$0] = 1; next }
+    {
+      if (!match($0, /^[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t/)) next
+      if (substr($0, RLENGTH + 1) != ENVIRON["sc_want"]) next
+      f = $1
+      if (ENVIRON["sc_side"] == "base") ok = (f == ENVIRON["sc_base"])
+      else if (f ~ /-dirty$/) ok = (substr(f, 1, length(f) - 6) in dirty)
+      else ok = (f in clean)
+      if (!ok) next
+      pick = f
+      if (!(f in low) || $2 + 0 < low[f] + 0) low[f] = $2
+    }
+    END { if (pick == "") exit 1; printf "%s\t%s\n", pick, low[pick] }' \
+    ${files[@]+"${files[@]}"} "$rec" || st=$?
+  [ -z "$clean_set" ] || rm -f "$clean_set" "$dirty_set"
+  return "$st"
 }
 
 # suite_cost_check <cmd> [args...]: prints one verdict line - off, ok,
@@ -478,7 +476,7 @@ suite_cost_is_base() {
 # head confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_field head_commit clean_head line IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_field head_commit clean_head line picked IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
@@ -493,11 +491,11 @@ suite_cost_check() {
     note "$verdict"
     return 0
   fi
-  head_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
+  picked="$(suite_cost_pick "$rec" "$want" "$base_commit" head)" ||
     { note unmeasured; return 0; }
-  head_cpu="$(suite_cost_lowest "$rec" "$want" "$head_sha")"
-  if base_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
-    base_cpu="$(suite_cost_lowest "$rec" "$want" "$base_sha")"
+  IFS=$'\t' read -r head_sha head_cpu <<<"$picked"
+  if picked="$(suite_cost_pick "$rec" "$want" "$base_commit" base)"; then
+    IFS=$'\t' read -r base_sha base_cpu <<<"$picked"
   else
     suite_cost_tree_run base "$base_commit" "$@" || { note unmeasured; return 0; }
     base_cpu="$SUITE_COST_CPU" base_sha="$base_commit"
