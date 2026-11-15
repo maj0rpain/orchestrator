@@ -168,6 +168,8 @@ source "$PLUGIN_ROOT/scripts/test/git_env.sh"
 test_git_env_clear || exit 1
 # shellcheck source=tally.sh
 source "$PLUGIN_ROOT/scripts/test/tally.sh"
+# shellcheck source=counting.sh
+source "$PLUGIN_ROOT/scripts/test/counting.sh"
 
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
@@ -4635,6 +4637,48 @@ assert_eq "width.sh given every fixture file prints what a root scan prints" \
   "$(printf '%s\n' "$out" | LC_ALL=C sort)"
 assert_empty "width.sh given an uncovered file prints nothing" \
   "$("$width" --root "$fixture" "$fixture/CHANGELOG.md")"
+# One awk per root scan, whatever the file count and what each file leaves open.
+src_awk="$(counting_bin awk)"
+awk_scan() { PATH="$src_awk:$PATH" "$width" --root "$1"; }
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs" "$fixture/scripts"
+{ echo '```'; echo 'code never closed'; } >"$fixture/docs/a-fence.md"
+wide_line 'Some prose ' 81 >"$fixture/docs/b-after-fence.md"
+{ echo '---'; echo 'title: never closed'; } >"$fixture/docs/c-frontmatter.md"
+{ echo '---'; echo 'title: x'; echo '---'; wide_line 'Some prose ' 81; } \
+  >"$fixture/docs/d-after-frontmatter.md"
+{ echo 'cat <<EOF'; echo 'body'; } >"$fixture/scripts/a-heredoc.sh"
+wide_line '# after a heredoc file ' 90 >"$fixture/scripts/b-after-heredoc.sh"
+{ echo 'echo "never closed'; } >"$fixture/scripts/c-quote.sh"
+wide_line '# after a quote file ' 90 >"$fixture/scripts/d-after-quote.sh"
+: >"$fixture/scripts/e-empty.sh"
+{ wide_line '# whole-line comment ' 90; wide_line 'echo code ' 90; } \
+  >"$fixture/scripts/f-after-markdown.sh"
+: >"$src_awk/awk.log"
+out="$(awk_scan "$fixture")"
+assert_eq "a root scan over several covered files starts exactly one awk" \
+  "$(counting_starts "$src_awk" awk)" "1"
+assert_eq "a root scan's unsorted output is the expected lines in scan order" \
+  "$out" "docs/b-after-fence.md:1: 81 columns, past 80
+docs/d-after-frontmatter.md:4: 81 columns, past 80
+scripts/b-after-heredoc.sh:1: 90 columns, past 80
+scripts/d-after-quote.sh:1: 90 columns, past 80
+scripts/f-after-markdown.sh:1: 90 columns, past 80"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs" "$fixture/scripts" "$fixture/skills"
+{ echo '# T'; wide_line '# a comment ' 90; wide_line 'echo code ' 90; } >"$fixture/scripts/a.sh"
+wide_line 'Some prose ' 81 >"$fixture/skills/z.md"
+wide_line 'Some prose ' 81 >"$fixture/docs/y.md"
+out="$(awk_scan "$fixture")"
+assert_eq "each file is judged by its own kind, Markdown after shell and the reverse" \
+  "$out" "docs/y.md:1: 81 columns, past 80
+scripts/a.sh:2: 90 columns, past 80
+skills/z.md:1: 81 columns, past 80"
+fixture="$(new_fixture)"
+: >"$src_awk/awk.log"
+empty_out="$(wide_line 'Some prose ' 90 | awk_scan "$fixture"; echo "rc=$?")"
+assert_eq "a root with no covered file prints nothing, exits 0, starts no awk" \
+  "$empty_out $(counting_starts "$src_awk" awk)" "rc=0 0"
 check "no covered Markdown or shell comment line is past 80 columns" \
   "$(scan_line_width "$PLUGIN_ROOT")"
 
