@@ -831,6 +831,18 @@ gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' \
 out="$(contract adapter_label_upsert review:nit c5def5 "Review finding filed at nit severity" 2>&1)"; st=$?
 assert_status "label upsert: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
+gh_reply 0 'https://github.com/acme/widgets/issues/23#issuecomment-1' '' issue comment 23 --body-file "$ibody"
+out="$(contract adapter_issue_comment_url 23 "$ibody" 2>&1)"; st=$?
+assert_status "issue comment url: posts the file as a comment" "$st" 0
+assert_eq "printing the URL gh printed" "$out" "https://github.com/acme/widgets/issues/23#issuecomment-1"
+gh_reply 0 '' '' issue comment 23 --body-file "$ibody"
+out="$(contract adapter_issue_comment_url 23 "$ibody" 2>&1)"; st=$?
+assert_status "issue comment url: a reply with no URL succeeds" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' issue comment 24 --body-file "$ibody"
+out="$(contract adapter_issue_comment_url 24 "$ibody" 2>&1)"; st=$?
+assert_status "issue comment url: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
 
 gh_reply 0 '' '' label create "triage me" --color e4e669 --description "Not yet triaged"
 out="$(contract adapter_label_create "triage me" e4e669 "Not yet triaged" 2>&1)"; st=$?

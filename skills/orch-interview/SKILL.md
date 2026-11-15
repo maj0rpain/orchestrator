@@ -347,4 +347,6 @@ the interview settled - 3 for one site and one ticket, 5 for a few files and
 state's own machinery, risk weighing above size. Last run `bash "$ORCH"
 autopilot start <issue> <plan-file>`, <issue> being the spec's issue number.
 When a step stops or fails, stop there and report why; the route ends in
-`autopilot start`. Then report that the watcher picks the issue up.
+`autopilot start`. A successful start prints two lines, the plan comment's
+(with its URL) and the phase label added: relay both, and say the watcher
+picks the issue up. Make no `gh` call to check the start.

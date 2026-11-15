@@ -267,9 +267,10 @@ start` (ADR-0061). The watcher picks either up the same way.
 
 `orch.sh autopilot start <issue> <plan-file>`, run by the planning close's
 autopilot route, refuses an issue without `ready-for-agent` or with a **phase
-label** already on it. It posts the **plan comment** and adds `orch:spec`. The
-labels then advance `orch:spec` -> `orch:implement` -> `orch:review` ->
-`orch:done`. `orch:running` is set while a session works.
+label** already on it. It posts the **plan comment** and adds `orch:spec`,
+then prints two lines: the plan comment's URL and the phase label it added; a
+failure prints nothing on stdout. The labels then advance `orch:spec` -> `orch:implement` ->
+`orch:review` -> `orch:done`. `orch:running` is set while a session works.
 
 Before starting a session, the **watcher** (`watch`, or a scheduled `tick`,
 which is the same watcher run once) takes a **claim** on the issue's next
@@ -555,7 +556,7 @@ ends the tick there with exit 0.
 | --- | --- |
 | `orch.sh autopilot show` | Print the settings, each with its source. |
 | `orch.sh autopilot settings` | Print the setting names, one per line, in the order `show` lists them; reads no config and validates nothing. |
-| `orch.sh autopilot start <issue> <plan-file>` | Post the plan comment and add `orch:spec`. |
+| `orch.sh autopilot start <issue> <plan-file>` | Post the plan comment and add `orch:spec`; prints the comment's URL and the label added on success, nothing on stdout on a failure. |
 | `orch.sh autopilot candidates [<n>... \| --all \| --limit <k>]` | List, one line per issue, whether a quick autopilot may send it (`eligible none`, `move` or `override`) or why not (`skip <reason>`); writes nothing. |
 | `orch.sh autopilot watch [--every <seconds>]` | Run the watcher, a tick every `<seconds>`. |
 | `orch.sh autopilot tick` | Run the watcher once. |

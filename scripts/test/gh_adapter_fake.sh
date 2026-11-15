@@ -119,6 +119,7 @@
 #   local_default     gh's own local default repo, as OWNER/REPO; absent,
 #                     none is set
 #   no_sub_issues     present, the sub-issues endpoint refuses every issue
+#   no_comment_url    present, adapter_issue_comment_url prints no URL
 #   offline           present, every operation fails with a connection error
 #   ratelimit         present, every operation but the rate_limit read fails
 #                     as a GitHub API rate limit, with the file's contents as
@@ -787,6 +788,21 @@ adapter_issue_comment() {
   ! fake_failing adapter_issue_comment || return 1
   fake_issue_known "$1" || return 1
   fake_comment_write "$(fake_issue_dir "$1")/comments" "$2"
+}
+
+# adapter_issue_comment_url <n> <file>: adapter_issue_comment, then the posted
+# comment's URL, as fake_comments_json stores it; nothing where no_comment_url
+# is present.
+adapter_issue_comment_url() {
+  local d k e
+  ! fake_failing adapter_issue_comment_url || return 1
+  fake_issue_known "$1" || return 1
+  d="$(fake_issue_dir "$1")/comments"
+  fake_comment_write "$d" "$2"
+  [ ! -f "$(fake_store)/no_comment_url" ] || return 0
+  k=0
+  for e in "$d"/*; do k=$((k + 1)); done
+  printf 'https://github.com/o/r/issues/%s#issuecomment-%s\n' "$1" "$k"
 }
 
 # fake_option_value <operation> <option-names> <option> [value...]: true where
