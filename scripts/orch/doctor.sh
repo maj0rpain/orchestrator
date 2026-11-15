@@ -836,7 +836,7 @@ check_flow_review_terminal() {
   i="$D_FLOW_ITERATION"
   b="$D_FLOW_BUDGET"
   # redo is read only when the flat record is gone (review_terminal_record).
-  if [ "$i" -gt 0 ] && flat="$(cmd_review path "$i" 2>/dev/null)" && [ ! -e "$flat" ]; then
+  if [[ "$i" =~ ^[0-9]+$ ]] && [ "$i" -gt 0 ] && flat="$(cmd_review path "$i" 2>/dev/null)" && [ ! -e "$flat" ]; then
     orch_load redo
   fi
   terminal="$(review_terminal_state)" || true

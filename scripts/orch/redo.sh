@@ -84,11 +84,10 @@ redo_step_back() {
   phase_write "$phase" "$@" branch null pr null base_sha null
 }
 
-# redo_load_shared: the modules both redos first reach inside a command
-# substitution or subshell, loaded once here in the main shell. marked-comment
-# is needed only by an autopilot session's handoff retire.
+# redo_load_shared: the modules, handoff aside, both redos first reach inside
+# a command substitution or subshell, loaded once here in the main shell.
+# marked-comment is needed only by an autopilot session's handoff retire.
 redo_load_shared() {
-  orch_load handoff
   orch_load gh
   orch_load autopilot
   if autopilot_active; then orch_load marked-comment; fi
@@ -106,12 +105,11 @@ cmd_redo_review() {
   local phase i b word detail slug issue branch pr new_n resumed
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
-  # Each is first reached inside a command substitution or branch of a
-  # subshell: load it here, once, in the main shell, past the guard that
-  # refuses a run before it reaches any of them.
+  # review and handoff are first reached inside a command substitution (the
+  # terminal state reads handoff): load them here,
+  # once, in the main shell, past the guard that refuses a run before it.
   orch_load review
-  orch_load branch
-  redo_load_shared
+  orch_load handoff
   i="$(state_get iteration)"
   b="$(review_budget)"
   local terminal; terminal="$(review_terminal_state)" || true
@@ -131,6 +129,10 @@ $detail" ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
+  # Past the terminal-state guards: each is first reached inside a command
+  # substitution or branch of a subshell below.
+  orch_load branch
+  redo_load_shared
   redo_refuse_ticket_worktrees
 
   slug="$(state_get slug)"
@@ -197,6 +199,7 @@ cmd_redo_spec() {
   # recorded (the retire) or one midway through a redo (redo_midway's name
   # check).
   orch_load spec
+  orch_load handoff
   redo_load_shared
   local recorded_branch recorded_count
   recorded_branch="$(state_get branch)"; recorded_count="$(state_get redo_count)"

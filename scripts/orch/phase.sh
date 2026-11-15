@@ -60,10 +60,6 @@ cmd_phase() {
     advance)
       [ $# -eq 0 ] || die "usage: orch.sh phase advance"
       require_state
-      # autopilot is first reached inside the handoff store's command
-      # substitution; gh only by an autopilot session's branch below.
-      orch_load autopilot
-      if autopilot_active; then orch_load gh; orch_load repo; fi
       local phase next file name issue _unused
       phase="$(state_get phase)"
       # The guards run in this order; past them, the next phase is the phase
@@ -72,6 +68,11 @@ cmd_phase() {
         review) die "the review phase ends through review ready, once the PR is ready - phase advance does not leave it" ;;
         done)   die "the flow is done - there is no phase to advance to" ;;
       esac
+      # Past the guards that refuse a run: autopilot is first reached inside
+      # the handoff store's command substitution; gh and repo only by an
+      # autopilot session's branch below.
+      orch_load autopilot
+      if autopilot_active; then orch_load gh; orch_load repo; fi
       next="$(phase_next "$phase")" ||
         die "not a flow phase: '$phase' - run orch.sh doctor --flow"
       # The handoff this phase writes is the one the next phase reads. It is

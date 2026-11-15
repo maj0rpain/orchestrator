@@ -2244,11 +2244,13 @@ assert_status "doctor --flow refuses an autopilot session with no phase label" "
 assert_contains "naming it" "$out" "carries no phase label"
 fake_claim_seed 7 otherhost 5 2020-01-01T00:00:00Z
 fake_claim_seed 8 otherhost 5 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fake_claim_seed 12 thirdhost 5 2020-01-01T00:00:00Z
 fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
 fake_claim_seed 11 "$(hostname)" 5 2020-01-01T00:00:00Z
 cl_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$cl_load" "$ORCH" doctor --env 2>&1)"
 assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
+assert_contains "a second other host's old claim is listed too" "$out" "issue #12 has been claimed by thirdhost"
 assert_contains "its remedy names the host to run a tick on" "$out" "if that session is gone, run orch.sh autopilot tick on otherhost"
 assert_not_contains "and no claim ref" "$out" "refs/orch/claims"
 assert_not_contains "not a fresh one" "$out" "issue #8"

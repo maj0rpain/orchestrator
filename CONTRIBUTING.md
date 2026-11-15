@@ -199,7 +199,7 @@ need, as a doctor check does, so a run that never reaches it loads nothing
 more (`phase boundary` loads no `autopilot`); and, where that branch itself
 runs inside a subshell, in the main shell behind a guard that tests the same
 condition, as `phase advance` does for `gh`:
-`if autopilot_active; then orch_load gh; fi`.
+`if autopilot_active; then orch_load gh; orch_load repo; fi`.
 The shared test assertion `assert_loads_once <label> <cmd>...` checks a
 command's trace for it, `assert_trace_loads_once` a trace an existing run
 wrote; `assert_trace_names_no <label> <trace> <module>...` asserts a trace

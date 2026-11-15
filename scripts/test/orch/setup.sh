@@ -1220,11 +1220,16 @@ assert_trace_loads_once() {
 # written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
 # modules - a module the run must not load, or not load more than it did.
 assert_trace_names_no() {
-  local label="$1" trace="$2" mod
+  local label="$1" trace="$2" mod line n
   shift 2
+  local -a lines=()
+  mapfile -t lines <"$trace"
   for mod in "$@"; do
-    assert_eq "$label: the load trace names no $mod" \
-      "$(awk -v m="$mod" '$1 == m' "$trace" | wc -l | tr -d ' ')" "0"
+    n=0
+    for line in "${lines[@]}"; do
+      [ "${line%%[[:space:]]*}" = "$mod" ] && n=$((n + 1))
+    done
+    assert_eq "$label: the load trace names no $mod" "$n" "0"
   done
 }
 
