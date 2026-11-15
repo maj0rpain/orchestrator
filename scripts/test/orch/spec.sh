@@ -633,6 +633,37 @@ sourced_orch spec_round_in_flow "$top/.orchestrator/spec-review/21"; st=$?
 assert_status "spec_round_in_flow fails for a standalone review's directory" "$st" 1
 sourced_orch spec_round_in_flow "$od/d"; st=$?
 assert_status "spec_round_in_flow fails for a path outside both" "$st" 1
+# The saved answer round trip: a file option's argument is saved as its copy.
+printf 'why\n' >"$od/reasons.src"
+rm -rf "$od/d"; mkdir "$od/d"
+sourced_orch spec_round_answer_save "$od/d" "--reasons --host-fallbacks" recommended --reasons "$od/reasons.src" --round "1/2"; st=$?
+assert_status "spec_round_answer_save succeeds" "$st" 0
+assert_eq "the file option's argument is saved as its copy" \
+  "$(cat "$od/d/apply-answer")" "recommended --reasons $od/d/apply-reasons.copy --round 1/2 "
+assert_eq "and the copy holds the file" "$(cat "$od/d/apply-reasons.copy")" why
+out="$(sourced_orch_script 'spec_round_answer_load "$1" a; printf "[%s]" "${a[@]}"' "$od/d")"
+assert_eq "spec_round_answer_load reads the arguments back" "$out" \
+  "[recommended][--reasons][$od/d/apply-reasons.copy][--round][1/2]"
+sourced_orch spec_round_answer_clear "$od/d" nothing; st=$?
+assert_status "spec_round_answer_clear succeeds" "$st" 0
+assert_eq "it removes the answer and its copies" "$(ls -A "$od/d")" ""
+out="$(sourced_orch_script 'spec_round_answer_name n; echo "$n"')"
+assert_eq "spec_round_answer_name names the file" "$out" apply-answer
+# spec_round_complete twice leaves the changelog once.
+rm -rf "$od/d"; mkdir "$od/d"
+sourced_orch spec_round_complete "$od/d" "## Spec review" nothing; st=$?
+assert_status "spec_round_complete succeeds" "$st" 0
+sourced_orch spec_round_complete "$od/d" "## Spec review" nothing; st=$?
+assert_status "and runs again" "$st" 0
+assert_eq "leaving the changelog once" "$(grep -c '^## Spec review$' "$od/d/settled.md")" 1
+assert_eq "and round-complete written" "$([ -e "$od/d/round-complete" ] && echo present)" present
+# A fundamental.md it cannot remove: today's message, no round-complete.
+rm -rf "$od/d"; mkdir -p "$od/d/fundamental.md"; : >"$od/d/fundamental.md/x"
+out="$(sourced_orch spec_round_complete "$od/d" "## Spec review" landed-x 2>&1)"; st=$?
+assert_status "spec_round_complete over an unremovable fundamental.md dies" "$st" 1
+assert_contains "with today's message" "$out" \
+  "could not remove $od/d/fundamental.md - every GitHub write landed and settled.md is appended: landed-x"
+assert_eq "writing no round-complete" "$([ -e "$od/d/round-complete" ] && echo present || echo absent)" absent
 rm -rf "$od"
 
 # --- spec round-dir loads no spec-review module (#3078) ----------------------

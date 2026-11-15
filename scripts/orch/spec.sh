@@ -145,6 +145,81 @@ spec_round_state() {
 # held round is `applying` and held at once.
 spec_round_held() { [ -e "$1/$SPEC_ROUND_FUNDAMENTAL" ]; }
 
+# spec_round_answer_name <var>: assigns the saved answer's file name to <var>,
+# for a caller's message that names it.
+spec_round_answer_name() { printf -v "$1" '%s' "$SPEC_ROUND_APPLY_ANSWER"; }
+
+# spec_round_answer_save <dir> <file-options> <arg>...: spec-review apply's
+# answer arguments saved to <dir>/apply-answer, one shell-quoted line, before
+# the first GitHub write. <file-options> is one word of space-separated option
+# names; the argument after each is a file, copied into <dir> first and saved
+# as the copy, so a resume never reads a file the dead session left elsewhere.
+spec_round_answer_save() {
+  local dir="$1" file_opts=" $2 " a file_opt="" copy saved=()
+  shift 2
+  for a in "$@"; do
+    if [ -n "$file_opt" ]; then
+      copy="$dir/apply-${file_opt#--}.copy"
+      cp "$a" "$copy" 2>/dev/null \
+        || die "could not copy $a to $copy - nothing written to GitHub"
+      saved+=("$copy")
+      file_opt=""
+      continue
+    fi
+    saved+=("$a")
+    case "$file_opts" in *" $a "*) file_opt="$a" ;; esac
+  done
+  { printf '%q ' "${saved[@]}"; printf '\n'; } >"$dir/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
+    || die "could not write $dir/$SPEC_ROUND_APPLY_ANSWER - nothing written to GitHub"
+}
+
+# spec_round_answer_load <dir> <array-var>: the saved answer's arguments read
+# into the array <array-var>; dies when the file is unreadable.
+spec_round_answer_load() {
+  eval "$2=($(cat "$1/$SPEC_ROUND_APPLY_ANSWER"))" 2>/dev/null \
+    || die "$1/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
+}
+
+# spec_round_answer_clear <dir> <landed>: the saved answer and its file copies
+# removed, at the end of the run that no resume continues. <landed> names the
+# GitHub writes that landed, for the message.
+spec_round_answer_clear() {
+  rm -f "$1/$SPEC_ROUND_APPLY_ANSWER" "$1"/apply-*.copy 2>/dev/null \
+    || die "could not remove $1/$SPEC_ROUND_APPLY_ANSWER - every GitHub write landed: $2"
+}
+
+# spec_round_hold <dir>: the end of an autopilot round's first run - the
+# held-back fundamental items' blocks, read on stdin, written to
+# <dir>/fundamental.md: the round's save point, which spec round reports as
+# waiting. Feed it by a redirect, never a pipeline, so a failed write dies in
+# the caller's shell.
+spec_round_hold() {
+  { cat >"$1/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
+    || die "could not write $1/$SPEC_ROUND_FUNDAMENTAL - nothing written to GitHub"
+}
+
+# spec_round_complete <dir> <changelog> <landed>: the round's local tail once
+# its changelog comment landed, safe to run again: <changelog> appended to
+# settled.md unless it already ends with it (a settled.md that cannot be read
+# is not taken to), fundamental.md removed, round-complete written, the saved
+# answer cleared. <landed> names the GitHub writes, for the messages.
+spec_round_complete() {
+  local dir="$1" log="$2" landed="$3" n
+  n="$(printf '%s\n' "$log" | wc -c)"
+  if [ ! -f "$dir/settled.md" ] || [ "$(tail -c "$n" "$dir/settled.md" 2>/dev/null)" != "$log" ]; then
+    { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
+      || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $landed"
+  fi
+  rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
+    && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
+    || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $landed"
+  # The round's completion, the very last local step but the answer's clearing:
+  # spec round reads it to tell a resumed flow which round runs next.
+  { : >"$dir/$SPEC_ROUND_COMPLETE"; } 2>/dev/null \
+    || die "could not write $dir/$SPEC_ROUND_COMPLETE - every GitHub write landed and settled.md is appended: $landed"
+  spec_round_answer_clear "$dir" "$landed"
+}
+
 # spec_rounds_dir <var>: assigns the flow's rounds directory to <var>.
 spec_rounds_dir() { printf -v "$1" '%s' "$SPEC_ROUNDS_DIR"; }
 
