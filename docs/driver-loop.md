@@ -116,15 +116,13 @@ caller's numbered steps.
   wrote it. When the branch already holds a release record for the spec
   issue, leave it as it is and add none. A failed commit goes in **the
   record** and **the judge** carries it, as a failed verification is. Then
-  run, on **the branch**, the repo's full verification once, through `bash
-  "$ORCH" suite-cost run -- '<command>'`,
-  the whole line as one quoted argument: the command on the `Full
-  verification: <command>` line of the repo's instructions (`CLAUDE.md`,
-  `AGENTS.md`, `CONTRIBUTING.md`). When they carry no such line, run the
-  commands the reports' `Verification` lines name, as before - joined with
-  ` && ` into one line when they name different commands,
-  and passed as one quoted argument. Its bare command
-  and `pass` or `fail` go in **the record**, and in the PR body's Evidence.
+  run, on **the branch**, the repo's full verification once: the command on
+  the `Full verification: <command>` line of the repo's instructions
+  (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`). When they carry no such
+  line, run the commands the reports' `Verification` lines name, as before -
+  joined with ` && ` into one line when they name different commands. Its
+  command and `pass` or `fail` go in **the record**, and in the PR body's
+  Evidence.
   A failure does not stop the run: **the judge** carries it.
   Run it in the foreground and wait for it (host capability *Run a long
   command*); never background it and sleep, poll or kill it. A run the host
