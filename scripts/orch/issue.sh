@@ -249,27 +249,30 @@ cmd_issue_ready() {
   label_listed "$labels" "$ready"
 }
 
-# issue next: prints the Next issue as <number><TAB><title> - the oldest open
-# issue carrying the ready-for-agent role's label and no phase label, that is
-# no sub-issue and has no open blocker - and exits 0; prints nothing and exits
-# 1 when none qualifies. A usage error or a failed gh read exits 2 (die2) with
-# nothing on stdout. Read-only. One listing carries titles and labels, so a
-# phase-labelled issue costs no read of its own; the parent and blocker reads
-# run for label-test survivors in listing order and stop at the first that
-# qualifies. A candidate is unblocked only on a positive read: with no
-# dependency summary its blocked-by listing is read, and an open blocker there
-# blocks it.
+# issue next: prints the Next issue as <number><TAB><title> - the oldest
+# issue listed open (its state as GitHub answered it, never the listing's
+# filter alone) carrying the ready-for-agent role's label and no phase label,
+# that is no sub-issue and has no open blocker - and exits 0; prints nothing
+# and exits 1 when none qualifies. A usage error or a failed gh read exits 2
+# (die2) with nothing on stdout. Read-only. One listing carries titles and
+# labels, so a phase-labelled issue costs no read of its own; the parent and
+# blocker reads run for label-test survivors in listing order and stop at the
+# first that qualifies. A candidate is unblocked only on a positive read: with
+# no dependency summary its blocked-by listing is read, and an open blocker
+# there blocks it.
 cmd_issue_next() {
   [ $# -eq 0 ] || die2 "usage: orch.sh issue next"
   orch_load standing
   orch_load handoff
-  local ready nums n err parent open_count blockers line state
+  local ready nums n err parent open_count blockers line state title
   local -A titles=() labels=()
   repo_pin || die2 "$REPO_REMEDY"
   triage_label_into ready ready-for-agent
   issues_titled_rows_read nums titles labels err "$ready" \
     || gh_die --exit 2 "list the open issues labelled $ready" "$err"
   for n in $nums; do
+    # each title is "<state><TAB><title>", the state as GitHub answered it.
+    [ "${titles[$n]%%$'\t'*}" = OPEN ] || continue
     [ -z "$(standing_phase_labels_in "${labels[$n]}")" ] || continue
     gh_or_die --exit 2 --out parent "read the parent of issue #$n" adapter_issue_parent "$n"
     [ -z "$parent" ] || continue
@@ -284,7 +287,8 @@ cmd_issue_next() {
       done <<<"$blockers"
     fi
     [ "$open_count" -eq 0 ] || continue
-    printf '%s\t%s\n' "$n" "${titles[$n]}"
+    title="${titles[$n]#*$'\t'}"
+    printf '%s\t%s\n' "$n" "$title"
     return 0
   done
   return 1

@@ -674,17 +674,18 @@ issues_open_rows_read() {
 
 # adapter_issues_titled_rows <label>: the open issues carrying the label,
 # oldest first and cut at ISSUE_LIST_LIMIT (the newest dropped), each as one
-# count-marked record: its number, its title, its label count, then one label
-# per line.
+# count-marked record: its number, its state as GitHub answered it and its
+# title joined by a tab on one line, its label count, then one label per line.
+# The state is never assumed from the listing's own open-only filter.
 adapter_issues_titled_rows() {
-  gh issue list --state open --label "$1" --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,title,labels \
-    --jq '.[] | .number, .title, (.labels | length), (.labels[].name)'
+  gh issue list --state open --label "$1" --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,title,labels \
+    --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
 }
 
 # issues_titled_rows_read <nums_var> <titles_array> <labels_array> <err_var>
 # <label>: issues_labelled_rows_read through adapter_issues_titled_rows, the
-# second field of each record a title (never empty on GitHub) in place of a
-# state, the limit warning issues_labelled_limit_warn's.
+# second field of each record the state and the title, tab-joined, in place of a
+# bare state, the limit warning issues_labelled_limit_warn's.
 issues_titled_rows_read() {
   issues_rows_read_via issues_titled_rows_read adapter_issues_titled_rows issues_labelled_limit_warn "$@"
 }

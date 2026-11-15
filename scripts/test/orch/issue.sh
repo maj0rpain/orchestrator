@@ -1327,12 +1327,6 @@ restore_suite_env
 echo
 echo "issue next"
 healthy_repo
-fake_github
-next_fixture() {
-  local n
-  for n in $(fake_issues); do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done
-  rm -rf "$ORCH_GH_FAKE_STORE/subs" "$ORCH_GH_FAKE_STORE/blocked_by" "$ORCH_GH_FAKE_STORE/no_dependency_summary"
-}
 # next_issue <n> <title> <state> [label...]: seeds issue #n with its title.
 next_issue() {
   local n="$1" title="$2"
@@ -1349,7 +1343,7 @@ next_run() {
 }
 nx_tab="$(printf '\t')"
 
-next_fixture
+fake_github
 next_issue 100 "Old phase" open ready-for-agent orch:spec
 next_issue 101 "Old done" open ready-for-agent orch:done
 next_issue 102 "Old sub" open ready-for-agent
@@ -1367,14 +1361,14 @@ assert_status "the oldest qualifying issue is printed" "$st" 0
 assert_eq "as number, tab, title - skipping phase labels, a sub-issue, an open blocker, other labels and closed issues; the parent qualifies" \
   "$nx_out" "106${nx_tab}The parent"
 
-next_fixture
+fake_github
 next_issue 110 "Closed blocker" open ready-for-agent
 next_issue 111 "Blocker" closed needs-triage
 mkdir -p "$ORCH_GH_FAKE_STORE/blocked_by"; printf '111\n' >"$ORCH_GH_FAKE_STORE/blocked_by/110"
 next_run
 assert_eq "an issue whose only blocker is closed qualifies" "$nx_out" "110${nx_tab}Closed blocker"
 
-next_fixture
+fake_github
 next_issue 120 "No summary, open blocker" open ready-for-agent
 next_issue 121 "No summary, closed blocker" open ready-for-agent
 next_issue 122 "Open blocker" open needs-triage
@@ -1397,12 +1391,12 @@ assert_eq "printing nothing on stdout" "$nx_out" ""
 assert_contains "with an orch: message" "$nx_err_text" "orch: gh could not read the blockers of issue #120: HTTP 502: Bad Gateway"
 fake_unfail
 
-next_fixture
+fake_github
 next_issue 130 "Review and human" open ready-for-agent needs-human review:high
 next_run
 assert_eq "needs-human and a review label do not stop it" "$nx_out" "130${nx_tab}Review and human"
 
-next_fixture
+fake_github
 next_issue 131 "Only triage" open needs-triage
 next_issue 132 "Only human" open ready-for-human
 next_run
@@ -1420,7 +1414,7 @@ next_run
 assert_eq "a repo's mapped ready-for-agent name is honoured" "$nx_out" "133${nx_tab}Mapped"
 labels_doc docs/agents/triage-labels.md
 
-next_fixture
+fake_github
 next_issue 140 "Only" open ready-for-agent
 fake_fail adapter_issues_titled_rows "$GH_502"
 next_run
@@ -1446,7 +1440,7 @@ assert_status "an argument is a usage error" "$st" 2
 assert_eq "with nothing on stdout" "$nx_out" ""
 assert_contains "and a usage line" "$nx_err_text" "usage: orch.sh issue next"
 
-next_fixture
+fake_github
 next_issue 150 "A" open ready-for-agent orch:plan
 next_issue 151 "B" open ready-for-agent orch:plan
 next_issue 152 "C" open ready-for-agent orch:plan
@@ -1454,6 +1448,13 @@ ORCH_ISSUE_LIST_LIMIT=3 next_run
 assert_contains "a listing reaching the limit warns" "$nx_err_text" "reached the issue-list limit of 3"
 ORCH_ISSUE_LIST_LIMIT=4 next_run
 assert_not_contains "one a single issue below it does not" "$nx_err_text" "issue-list limit"
+
+fake_github
+next_issue 160 "Closed a moment ago" closed ready-for-agent
+next_issue 161 "Still open" open ready-for-agent
+fake_lag adapter_issues_titled_rows 1 "$(printf '160\nCLOSED\tClosed a moment ago\n1\nready-for-agent\n161\nOPEN\tStill open\n1\nready-for-agent')"
+next_run
+assert_eq "a closed issue a late listing still carries is never printed; the next qualifying one is" "$nx_out" "161${nx_tab}Still open"
 
 assert_contains "help lists issue next" "$("$ORCH" help)" "issue next"
 out="$("$ORCH" issue bogus 2>&1)"

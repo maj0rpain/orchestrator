@@ -993,15 +993,15 @@ out="$(contract adapter_issues_open_rows 2>&1)"; st=$?
 assert_status "issues open rows: lists every open issue" "$st" 0
 assert_eq "one count-marked record per issue: number, state, label count, labels" "$out" "$(writeln 3 OPEN 1 review:nit 9 CLOSED 0)"
 
-gh_reply 0 $'3\nFirst title\n1\nreview:nit\n9\nSecond title\n0\n' '' \
-  issue list --state open --label review:nit --search "sort:created-asc" --limit 1000 --json number,title,labels \
-  --jq '.[] | .number, .title, (.labels | length), (.labels[].name)'
+gh_reply 0 $'3\nOPEN\tFirst title\n1\nreview:nit\n9\nOPEN\tSecond title\n0\n' '' \
+  issue list --state open --label review:nit --search "sort:created-asc" --limit 1000 --json number,state,title,labels \
+  --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
 out="$(contract adapter_issues_titled_rows review:nit 2>&1)"; st=$?
 assert_status "issues titled rows: lists the open issues carrying the label" "$st" 0
-assert_eq "one count-marked record per issue: number, title, label count, labels" "$out" "$(writeln 3 'First title' 1 review:nit 9 'Second title' 0)"
+assert_eq "one count-marked record per issue: number, state and title tab-joined, label count, labels" "$out" "$(printf '3\nOPEN\tFirst title\n1\nreview:nit\n9\nOPEN\tSecond title\n0')"
 gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  issue list --state open --label review:nit --search "sort:created-asc" --limit 1000 --json number,title,labels \
-  --jq '.[] | .number, .title, (.labels | length), (.labels[].name)'
+  issue list --state open --label review:nit --search "sort:created-asc" --limit 1000 --json number,state,title,labels \
+  --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
 out="$(contract adapter_issues_titled_rows review:nit 2>&1)"; st=$?
 assert_status "issues titled rows: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
