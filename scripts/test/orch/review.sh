@@ -329,21 +329,6 @@ assert_eq "adding the spec question line, a line range and trimmed values, the a
   "$(fake_body_of 18; printf x)" "$want"
 assert_eq "--axis SPEC files as bug" "$(fake_labels_of 18)" "bug needs-triage review:major "
 
-# The suite-cost axis and the suite location are gone: each is refused before
-# any write.
-file_github
-out="$("$ORCH" review file major "Suite cost grew 25%" --axis suite-cost --finding-file "$finding" \
-  --severity-reason "Suite cost grew past the threshold" --location scripts/a.sh:1 \
-  --why "found in the final iteration" 2>&1)"; st=$?
-assert_status "refuses the suite-cost axis" "$st" 1
-assert_eq "naming the axes it wants" "$out" "orch: not a review axis: suite-cost (want spec or standards)"
-out="$("$ORCH" review file major "Suite cost grew 25%" --axis spec --finding-file "$finding" \
-  --severity-reason "Suite cost grew past the threshold" --location suite \
-  --why "found in the final iteration" 2>&1)"; st=$?
-assert_status "refuses the location suite" "$st" 1
-assert_eq "naming the shapes it wants" "$out" \
-  "orch: not a location: suite (want <file>:<line> or <file>:<start>-<end>)"
-
 # A head sha in upper-case hex files as given.
 file_github
 fake_pr_head 7 ABC1234
@@ -449,10 +434,12 @@ out="$("$ORCH" review file major "Title" --axis spec "$finding" 2>&1)"; st=$?
 assert_status "insists on its flags rather than guessing a positional" "$st" 1
 assert_eq "with the usage line" "$out" "$usage"
 
-parts_with --axis style
-out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
-assert_status "refuses an unknown axis" "$st" 1
-assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec or standards)"
+for axis in style suite-cost; do
+  parts_with --axis "$axis"
+  out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
+  assert_status "refuses the axis '$axis'" "$st" 1
+  assert_eq "in exactly these words ($axis)" "$out" "orch: not a review axis: $axis (want spec or standards)"
+done
 for axis in $(sourced_orch_script 'printf "%s\n" "$FILED_AXES"'); do
   assert_contains "naming review axis $axis, read from FILED_AXES" "$out" "$axis"
 done
@@ -492,7 +479,7 @@ assert_status "and an empty one" "$st" 1
 assert_eq "naming it too" "$out" "orch: finding file is empty: $blank"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
-for loc in scripts/a.sh scripts/a.sh: :12 scripts/a.sh:x scripts/a.sh:12- scripts/a.sh:-3 scripts/a.sh:1-2-3; do
+for loc in suite scripts/a.sh scripts/a.sh: :12 scripts/a.sh:x scripts/a.sh:12- scripts/a.sh:-3 scripts/a.sh:1-2-3; do
   parts_with --location "$loc"
   out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
   assert_status "refuses the location '$loc'" "$st" 1

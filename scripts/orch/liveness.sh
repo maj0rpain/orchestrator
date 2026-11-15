@@ -188,6 +188,16 @@ liveness_latest_log() {
   done | sort | tail -n 1 | cut -d' ' -f2-
 }
 
+# clone_orchestrator_dir: prints the clone's orchestrator directory, under the
+# git common directory (made absolute so it holds wherever the caller runs),
+# which every worktree of the clone reaches alike.
+clone_orchestrator_dir() {
+  local d
+  d="$(git rev-parse --git-common-dir)" && d="$(cd "$d" && pwd -P)" ||
+    die "could not find the clone's git common directory"
+  printf '%s/orchestrator\n' "$d"
+}
+
 # liveness_watch_pidfile: the clone's watch pidfile, under the git common
 # directory, so every worktree of the clone reaches the same one.
 liveness_watch_pidfile() {

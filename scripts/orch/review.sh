@@ -461,7 +461,7 @@ review_file() {
     || die "not a review axis: $axis (want ${FILED_AXES// / or })"
   finding_input_check "$title" "$finding"
   # Split at the last colon: the line is the part after it, N or N-M.
-  finding_location_check "$location" "<file>:<line> or <file>:<start>-<end>"
+  finding_location_check "$location"
   file="${location%:*}" line="${location##*:}"
   # The PR's URL and remote head come from GitHub for the flow's recorded PR,
   # before any write: the URL is right on any host, and the remote head is

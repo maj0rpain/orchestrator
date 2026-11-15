@@ -211,13 +211,13 @@ finding_input_check() {
   [ -n "$(tr -d '[:space:]' <"$2")" ] || die "finding file is empty: $2"
 }
 
-# finding_location_check <location> <want>: dies unless the location is
-# <file>:<line> or <file>:<start>-<end>, split at the last colon; <want> words
-# the accepted shapes in the refusal.
+# finding_location_check <location>: dies unless the location is
+# <file>:<line> or <file>:<start>-<end>, split at the last colon, naming both
+# shapes in the refusal.
 finding_location_check() {
   local file="${1%:*}" line="${1##*:}"
   [[ $1 == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
-    || die "not a location: $1 (want $2)"
+    || die "not a location: $1 (want <file>:<line> or <file>:<start>-<end>)"
 }
 
 # finding_body_file_new <var>: creates the temp file a finding's issue body is
@@ -236,15 +236,14 @@ finding_body_file_new() {
 # finding text, its trailing newlines stripped, a blank line, then each
 # labelled line followed by a blank line, so GitHub shows each as its own
 # paragraph. The labelled lines are the closer's, byte for byte, so a body
-# filed before rendering existed parses as one rendered now does. An empty
-# <line> renders the file alone.
+# filed before rendering existed parses as one rendered now does.
 finding_body_render() {
   local axis="${2,,}"
   local display_axis="${axis^}"
   printf '%s\n\n' "$(cat "$1")" \
     "**Axis:** $display_axis" \
     "**Severity:** $3 - $4" \
-    "**Location:** \`$5${6:+:$6}\` at $7" \
+    "**Location:** \`$5:$6\` at $7" \
     "**PR:** $8" \
     "**Why not fixed in the loop:** $9"
   [ -z "${10:-}" ] || printf '%s\n\n' "**Spec question:** ${10}"

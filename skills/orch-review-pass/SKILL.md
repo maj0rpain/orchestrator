@@ -116,8 +116,8 @@ step 3's `--deviations`.
    recorded as one, never a decline, so a quick implementation's PR opens
    as a draft.
 
-   A doc-agreement finding is not a smell-baseline finding either: a
-   standalone pass keeps it. One that says
+   A doc-agreement finding is not a smell-baseline finding: a standalone
+   pass keeps it. One that says
    the change contradicts an ADR is a spec question (step 7), never fixed or
    declined, since an ADR is never edited.
 6. **Declines.** Record each finding you decline, one line each:
