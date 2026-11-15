@@ -2355,6 +2355,7 @@ sed -i "17s/.*/@@ summary $src_w31/; 35s/.*/@@ summary $src_w31/" "$d/batch.md"
 check_refused src "two over-long summaries, an item's and an option's" "$d" \
   "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30
 orch: batch.md line 35: item 3 option B's @@ summary has 31 words, more than 30"
+apply_prints_one "two over-long summaries" "$d" "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
 d="$(src_dir)"
 sed -i "17s/.*/@@ summary $src_w31/; 23d" "$d/batch.md"
 sed -i '16s/.*/@@ finding consistency 2/; 10s/.*/Nowhere./' "$d/batch.md"
@@ -2390,10 +2391,12 @@ sed -i "17s/.*/@@ summary $src_w31/; 2d" "$d/batch.md"
 check_refused src "a missing @@ lens line after a content violation prints both" "$d" \
   "orch: batch.md line 16: item 2's @@ summary has 31 words, more than 30
 orch: batch.md: no @@ lens line for consistency - every lens in the table has one"
+apply_prints_one "missing lens line after content" "$d" "orch: batch.md line 16: item 2's @@ summary has 31 words, more than 30"
 d="$(src_dir)"
 sed -i '7s/.*/@@ bogus/' "$d/batch.md"
 sed -i "17s/.*/@@ summary $src_w31/" "$d/batch.md"
 check_refused src "a structure violation first prints only itself" "$d" "orch: batch.md line 7: unknown line '@@ bogus'"
+apply_prints_one "structure first" "$d" "orch: batch.md line 7: unknown line '@@ bogus'"
 d="$(src_dir)"
 sed -i "17s/.*/@@ summary $src_w31/" "$d/batch.md"
 printf 'preamble\n@@ finding 1\nx\n' >"$d/lens-consistency.md"

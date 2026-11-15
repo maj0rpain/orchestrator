@@ -79,7 +79,7 @@ cmd_issue_fetch() {
   # An audit-filed body gets one drift line; the audit module is loaded only
   # when the body carries its marker, so any other fetch starts nothing more.
   local body
-  body="$(<"$file")"
+  file_read_text body "$file"
   if [[ $body == *'**Audited at:**'* ]]; then
     orch_load audit
     audit_drift_line "$body"

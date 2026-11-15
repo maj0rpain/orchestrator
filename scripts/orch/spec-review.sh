@@ -353,7 +353,9 @@ spec_review_at_line() {
 
 # spec_review_batch_parse <file>: reads the batch file into the SR_ arrays -
 # the `@@ lens` lines, then one entry per item, its findings, comments and
-# options - dying on the first malformed line, named by its number. The
+# options. A structure violation dies, named by its line number (under check,
+# after the collected lines are flushed); a content violation is collected and
+# the parse goes on under check, and dies only under apply. The
 # citations' ranges are checked later, against the lens files. Each
 # line goes to the shared @@ block reader first; the parser keeps its keyword
 # dispatch, the checks made as a block opens, and where a finished block, an
@@ -1402,8 +1404,10 @@ spec_review_ticket_item_check() {
 
 # spec_review_tickets_parse <file>: reads tickets.md into the ST_ arrays -
 # its `@@ recommend` line, then one entry per item and per `@@ closed` line,
-# or the lone `@@ none-affected` - dying on the first malformed line, named
-# by its number. ST_LINE holds each item's header line, ST_ANCHOR_LINE a text
+# or the lone `@@ none-affected`. A structure violation dies, named by its line
+# number (under check, after the collected lines are flushed); a content
+# violation is collected and the parse goes on under check, and dies only under
+# apply. ST_LINE holds each item's header line, ST_ANCHOR_LINE a text
 # item's `@@ anchor` line. Each line goes to the shared
 # @@ block reader first; the parser keeps its keyword dispatch, the edge-item
 # check as a block opens, and its ST_ANCHOR and ST_REPLACE storage.
