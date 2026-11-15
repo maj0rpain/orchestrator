@@ -17,20 +17,20 @@
 # comments and bodies unescaped; nothing at all for none. render_comments turns
 # an array of normalised comments (author a login string, as
 # comments_trusted_read assigns them) into the joined text.
-# shellcheck disable=SC2034 # read by comments_render and the issue module's cmd_issue_comments
 COMMENTS_RENDER_JQ='def render_comments: [.[] | "<!-- comment @\(.author) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
 
 # comments_trusted_read <issue|pr> <n> <out_var> <err_var>: issue or PR <n>'s
 # comments, read through adapter_issue_comments or adapter_pr_comments, as one
 # JSON array of the trusted authors' (Trust module) comments, each
 # {author, createdAt, body, url} with author the login as a string and no
-# authorAssociation, assigned to <out_var>. It never dies: on success it
-# returns 0 with <err_var> empty; on a gh failure it returns 1 with <out_var>
-# empty and gh's reason (gh_reason) in <err_var>; on an answer that is not a
-# comment list it returns 1 with both empty. A Repo that cannot be resolved
-# dies in gh's guard, which is not trapped here. It runs in the caller's shell,
-# so the Trust filter's stderr line, `#<n>` naming the issue or PR, reaches the
-# real stderr. Locals prefixed so no caller's variable name is shadowed.
+# authorAssociation, assigned to <out_var>. It dies only on misuse (a kind
+# other than issue or pr); otherwise on success it returns 0 with <err_var>
+# empty; on a gh failure it returns 1 with <out_var> empty and gh's reason
+# (gh_reason) in <err_var>; on an answer that is not a comment list it returns
+# 1 with both empty. A Repo that cannot be resolved dies too, in gh's guard,
+# which is not trapped here. It runs in the caller's shell, so the Trust
+# filter's stderr line, `#<n>` naming the issue or PR, reaches the real
+# stderr. Locals prefixed so no caller's variable name is shadowed.
 comments_trusted_read() {
   local __ctr_kind="$1" __ctr_n="$2" __ctr_raw __ctr_gh_err __ctr_kept
   printf -v "$3" '%s' ''

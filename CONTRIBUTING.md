@@ -43,7 +43,7 @@ own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
 check on `scripts/orch/common.sh`, `loader.sh` the loader's sections, and
 `setup.sh` the shared setup and the summary. A concept module with no noun gets
 a section file named as the module is, beside the per-noun files: `checkout.sh`
-for `scripts/orch/checkout.sh`,
+for `scripts/orch/checkout.sh`, `comments.sh` for `scripts/orch/comments.sh`,
 `filed-finding.sh` for `scripts/orch/filed-finding.sh`,
 `issue-timeline.sh` for `scripts/orch/issue-timeline.sh`, `known-items.sh` for
 `scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,

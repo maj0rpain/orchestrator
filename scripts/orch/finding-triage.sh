@@ -617,7 +617,7 @@ bundle_member_done() {
 # may have landed) - that one and every one after it - and the --into command
 # that resumes. --into skips a member already closed into B before this runs.
 bundle_members_close() {
-  local b="$1" comment_file m i=0 comments raw state why left err held
+  local b="$1" comment_file m i=0 comments kept state why left err held reason
   shift
   [ $# -gt 0 ] || return 0 # every member was already closed into B
   local members=("$@")
@@ -626,10 +626,10 @@ bundle_members_close() {
   for m in "${members[@]}"; do
     why=""
     held="left open"
-    if ! comments_trusted_read issue "$m" raw err; then
-      if [ -n "$err" ]; then why="gh could not read member #$m's comments: $err"
+    if ! comments_trusted_read issue "$m" kept reason; then
+      if [ -n "$reason" ]; then why="gh could not read member #$m's comments: $reason"
       else why="could not read member #$m's comments: its comments did not parse"; fi
-    elif ! comments="$(comments_render <<<"$raw")"; then
+    elif ! comments="$(comments_render <<<"$kept")"; then
       why="could not read member #$m's comments: its comments did not parse"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
       && ! triage_comment_post err "$m" "$comment_file"; then

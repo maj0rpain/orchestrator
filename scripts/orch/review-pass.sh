@@ -115,7 +115,7 @@ review_pass_known_items() {
   # shellcheck disable=SC2064 # expanded now: $work is local, gone by exit
   trap "rm -rf $(printf '%q' "$work")" EXIT
 
-  local k comment pr_text issue_json issue_rulings deviations="" declined="" rulings=""
+  local k comment pr_text issue_comments issue_rulings deviations="" declined="" rulings=""
   # A subshell's die has already said why; 1 alone means no open PR.
   pr="$(current_open_pr)" && st=0 || st=$?
   [ "$st" -le 1 ] || exit 1
@@ -140,8 +140,8 @@ review_pass_known_items() {
     tr -d '\r' <"$devfile" >"$work/deviations"
     text_entries_append deviations "$work/deviations"
   fi
-  comments_trusted issue "read the comments of issue #$issue" "$issue" issue_json
-  issue_rulings="$(marked_comment_texts spec-ruling <<<"$issue_json" | jq -r "$SPEC_RULING_ENTRIES_JQ")" \
+  comments_trusted issue "read the comments of issue #$issue" "$issue" issue_comments
+  issue_rulings="$(marked_comment_texts spec-ruling <<<"$issue_comments" | jq -r "$SPEC_RULING_ENTRIES_JQ")" \
     || die "could not read the comments of issue #$issue"
   printf '%s\n' "$issue_rulings" >"$work/rulings" \
     || die "could not write the rulings of issue #$issue to $work/rulings"

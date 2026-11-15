@@ -110,16 +110,16 @@ issue_json_published() {
   printf -v "$2" '%s' "$__ijp_out"
 }
 
-# The comments `issue comments` writes (#1116), rendered through
-# COMMENTS_RENDER_JQ (kept_jq, built here so this module's top level reads
-# nothing of the Comments module), as every comments read renders them.
+# The comments `issue comments` writes (#1116), rendered through the Comments
+# module's comments_render, as every comments read renders them.
 # Every comment on the issue but the untrusted authors', and by default but the
 # spec review's own changelogs, in the rendered shape - so the spec review reads
 # the comments beside the body without its earlier rounds. Filtered here rather
-# than in the adapter, from the issue's trusted structured read, never by
-# splitting the joined text. No comments is an empty file, not an error; the
-# file is written only once the read has succeeded. With --with-spec-review
-# (#1921; orch-questions passes it) the changelogs are kept, the one difference.
+# than in the adapter, from the trusted comments read (comments_trusted),
+# never by splitting the joined text. No comments is an empty file, not an
+# error; the file is written only once the read has succeeded. With
+# --with-spec-review (#1921; orch-questions passes it) the changelogs are kept,
+# the one difference.
 cmd_issue_comments() {
   local issue="$1" file="$2" keep_reviews="${3:-}" json text
   orch_load comments

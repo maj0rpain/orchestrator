@@ -263,21 +263,19 @@ name_placement() {
   return 1
 }
 
-# gh_op_placement <dir>: name_placement for the multi-field gh ops, outside
-# the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
-# module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
-gh_op_placement() {
-  local rc=0 out="" part ops owners pair
-  local pairs=(
-    "$GH_MULTI_FIELD_OPS|./orch/gh.sh"
-    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
-  )
-  for pair in "${pairs[@]}"; do
-    ops="${pair%%|*}" owners="${pair#*|}"
+# name_placement_pairs <dir> <rule> <pair>...: name_placement over each
+# "<names>|<owners>" pair (owners a space-separated path list), the parts
+# joined, sorted and unique: returns 2 when a scan fails, 1 when it printed
+# any line, else 0.
+name_placement_pairs() {
+  local dir="$1" rule="$2" rc=0 out="" part names owners pair
+  shift 2
+  for pair in "$@"; do
+    names="${pair%%|*}" owners="${pair#*|}"
     rc=0
     # owners is a space-separated path list: split it into arguments
     # shellcheck disable=SC2086
-    part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$ops" $owners)" || rc=$?
+    part="$(name_placement "$dir" "$rule" names "$names" $owners)" || rc=$?
     [ "$rc" -ne 2 ] || return 2
     [ -z "$part" ] || out="${out:+$out
 }$part"
@@ -285,6 +283,15 @@ gh_op_placement() {
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort -u
   return 1
+}
+
+# gh_op_placement <dir>: name_placement for the multi-field gh ops, outside
+# the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
+# module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
+gh_op_placement() {
+  name_placement_pairs "$1" "$GH_OP_PLACEMENT_RULE" \
+    "$GH_MULTI_FIELD_OPS|./orch/gh.sh" \
+    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
 }
 
 # The Marked comment prelude placement rule, as marked_comment_jq_placement's
@@ -309,18 +316,9 @@ COMMENT_READER_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh,
 # trust_filter_comments, outside the Trust module, orch/trust.sh, and the
 # Comments module; a line reads "<file> names <name>. <rule>".
 comment_reader_placement() {
-  local rc=0 out="" part
-  part="$(name_placement "$1" "$COMMENT_READER_PLACEMENT_RULE" names "adapter_issue_comments adapter_pr_comments" ./orch/gh.sh ./orch/comments.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  out="$part"
-  rc=0
-  part="$(name_placement "$1" "$COMMENT_READER_PLACEMENT_RULE" names trust_filter_comments ./orch/trust.sh ./orch/comments.sh)" || rc=$?
-  [ "$rc" -ne 2 ] || return 2
-  [ -z "$part" ] || out="${out:+$out
-}$part"
-  [ -z "$out" ] && return 0
-  printf '%s\n' "$out" | LC_ALL=C sort -u
-  return 1
+  name_placement_pairs "$1" "$COMMENT_READER_PLACEMENT_RULE" \
+    "adapter_issue_comments adapter_pr_comments|./orch/gh.sh ./orch/comments.sh" \
+    "trust_filter_comments|./orch/trust.sh ./orch/comments.sh"
 }
 
 # lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)

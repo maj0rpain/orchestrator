@@ -1956,8 +1956,7 @@ assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
 bud_reset() { rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log; }
 bud_reset
 comments_before="$(fake_comments_of 7)"
-fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
-fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
+fake_fail_times adapter_issue_comments 2 "API rate limit exceeded for user ID 1."
 bud_run review 0 4
 fake_unfail
 assert_eq "a budget read that meets a GitHub limit releases the claim" "$(fake_claim_held 7)" free
@@ -1967,8 +1966,7 @@ assert_eq "starts no session" "$(tick_calls)" "0"
 assert_eq "and the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
 # the same, the release failing every attempt: the claim stays, a backstop line
 bud_reset
-fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
-fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
+fake_fail_times adapter_issue_comments 2 "API rate limit exceeded for user ID 1."
 fake_fail adapter_issue_relabel "HTTP 500 relabel"
 bud_run review 0 4
 fake_unfail

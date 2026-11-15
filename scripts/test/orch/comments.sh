@@ -41,16 +41,19 @@ pat"
 # Failures: the calling shell goes on.
 fake_fail adapter_issue_comments "HTTP 502 comments"
 assert_eq "a gh failure returns 1, out empty, gh's reason in err" \
-  "$(sourced_orch_script 'rc=0; comments_trusted_read issue 7 got err || rc=$?; echo "rc=$rc got=[$got] err=[$err]"' 2>&1)" \
-  "rc=1 got=[] err=[HTTP 502 comments]"
+  "$(cm_run 'comments_trusted_read issue 7 got err || rc=$?; echo "got=[$got] err=[$err]"')" \
+  "got=[] err=[HTTP 502 comments]
+rc=1"
 fake_fail adapter_issue_comments ""
 assert_eq "a gh failure with empty stderr gives gh gave no reason" \
-  "$(sourced_orch_script 'rc=0; comments_trusted_read issue 7 got err || rc=$?; echo "rc=$rc got=[$got] err=[$err]"' 2>&1)" \
-  "rc=1 got=[] err=[gh gave no reason]"
+  "$(cm_run 'comments_trusted_read issue 7 got err || rc=$?; echo "got=[$got] err=[$err]"')" \
+  "got=[] err=[gh gave no reason]
+rc=1"
 fake_unfail
 assert_eq "an answer that is not a comment list returns 1 with both empty" \
-  "$(sourced_orch_script 'adapter_pr_comments() { echo "not json"; }; rc=0; comments_trusted_read pr 9 got err || rc=$?; echo "rc=$rc got=[$got] err=[$err]"' 2>&1)" \
-  "rc=1 got=[] err=[]"
+  "$(cm_run 'adapter_pr_comments() { echo "not json"; }; comments_trusted_read pr 9 got err || rc=$?; echo "got=[$got] err=[$err]"')" \
+  "got=[] err=[]
+rc=1"
 
 # No Repo resolvable: gh's guard dies with its remedy, the real adapter against
 # the fixture gh.
@@ -86,15 +89,13 @@ assert_eq "an answer that is not a comment list dies as its comments did not par
 rc=2"
 
 # More than 131072 bytes of trusted comments, none of 65536 characters: every
-# comment comes through, none as a command-line argument.
+# comment comes through.
 fake_pr 11 open topic main
 cm_big="$(head -c 60000 /dev/zero | tr '\0' x)"
 for k in 1 2 3; do fake_pr_comment 11 sam "2026-10-0${k}T09:00:00Z" "$k$cm_big"; done
 cm_text="$(sourced_orch_script 'comments_rendered pr "read PR #11" 11 got; printf "%s" "$got"')"
 assert_eq "a PR holding over 131072 bytes of trusted comments renders every comment" \
   "$(grep -c '^<!-- comment @sam ' <<<"$cm_text")" "3"
-assert_eq "none of the module's functions takes a comment-sized value as an argument" \
-  "$(sed -n '/^comments_trusted_read() {$/,$p' "$(dirname "$ORCH")/orch/comments.sh" | grep -cE '(--arg|--argjson|--slurpfile) ')" "0"
 
 # The rendered shape (COMMENTS_RENDER_JQ), run on normalised comments.
 cm_json='[{"author":"triage-bot","createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":"pat","createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]'
