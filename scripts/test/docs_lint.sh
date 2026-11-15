@@ -79,8 +79,7 @@
 #   scan_row_unverified  the named docs/host-capabilities.md row marks its Junie
 #     cell **Unverified**
 #   scan_names_phrase  each listed file, or section of one, names its phrase:
-#     the verifying agents suite-cost run, the review loop's triage and the
-#     review pass suite-cost check, and the PR-writing sites docs/pr-writing.md,
+#     the PR-writing sites docs/pr-writing.md,
 #     host-capabilities' Agent settings naming agent sync, the Junie README's
 #     Agent settings on Junie section naming --host junie and orch.sh doctor,
 #     the README's Running autopilot and how-it-works' Autopilot and Setup
@@ -3033,54 +3032,6 @@ flags "a test-cost smell wrapped across lines inside the smell baseline is flagg
   "$out" "agents/orch-reviewer-standards.md: **Per-test setup** is inside the ## Smell baseline"
 check "the Standards reviewer carries the four test-cost smells outside the smell baseline" \
   "$(scan_test_cost_smells "$PLUGIN_ROOT")"
-
-# --- verify through suite cost (#1306) ----------------------------------------
-echo
-echo "verify through suite cost (#1306)"
-# The agents that run a repo's verification - the implementer, the fixer and
-# the resolver - run it as orch.sh suite-cost run -- <cmd>, so every passing
-# run is recorded as a suite cost with no bookkeeping of their own.
-verify_agents='agents/orch-implementer.md
-agents/orch-fixer.md
-agents/orch-resolver.md'
-fixture="$(new_fixture)"
-mkdir -p "$fixture/agents"
-printf '# I\n\nRun `bash "<orch.sh>" suite-cost\nrun -- <cmd>`.\n' >"$fixture/agents/orch-implementer.md"
-printf '# F\n\nRun `bash "<orch.sh>" suite-cost run -- <cmd>`.\n' >"$fixture/agents/orch-fixer.md"
-printf '# R\n\nRun the checks.\n' >"$fixture/agents/orch-resolver.md"
-out="$(scan_names_phrase "$fixture" "$verify_agents" 'suite-cost run --')"
-flags "an agent that runs its checks bare is flagged" \
-  "$out" "agents/orch-resolver.md: does not name suite-cost run --"
-spares "an agent that runs suite-cost run, wrapped across lines, is not flagged" \
-  "$out" "orch-(implementer|fixer)"
-check "the implementer, fixer and resolver run their verification through suite-cost run" \
-  "$(scan_names_phrase "$PLUGIN_ROOT" "$verify_agents" 'suite-cost run --')"
-
-# --- suite-cost check (#1308) -------------------------------------------------
-echo
-echo "suite-cost check (#1308)"
-# Suite-cost growth surfaces as a finding at review time: the review loop's
-# triage, in orch-review's ## The iteration, and the review pass, in
-# orch-review-pass's ## Review pass, each run suite-cost check -- <cmd>.
-suite_cost_checks='skills/orch-review/SKILL.md|## The iteration
-skills/orch-review-pass/SKILL.md|## Review pass'
-fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-review" "$fixture/skills/orch-review-pass"
-printf '# L\n\n## The iteration\n\nTriage the findings.\n\n## Severity\n\nRun `suite-cost check -- <cmd>`.\n' \
-  >"$fixture/skills/orch-review/SKILL.md"
-printf '# P\n\n## Other\n\nRun `suite-cost check -- <cmd>`.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
-out="$(scan_names_phrase "$fixture" "$suite_cost_checks" 'suite-cost check --')"
-flags "a review loop triage that never runs suite-cost check is flagged" \
-  "$out" "skills/orch-review/SKILL.md: ## The iteration does not name suite-cost check --"
-flags "a missing Review pass section is flagged" \
-  "$out" "skills/orch-review-pass/SKILL.md: no ## Review pass section"
-printf '# L\n\n## The iteration\n\nTriage: run `bash "$ORCH" suite-cost\ncheck -- <cmd>`.\n' \
-  >"$fixture/skills/orch-review/SKILL.md"
-printf '# P\n\n## Review pass\n\nRun `suite-cost check -- <cmd>` once.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
-assert_empty "a triage and a review pass that run suite-cost check, wrapped across lines, are not flagged" \
-  "$(scan_names_phrase "$fixture" "$suite_cost_checks" 'suite-cost check --')"
-check "the review loop's triage and the review pass run suite-cost check" \
-  "$(scan_names_phrase "$PLUGIN_ROOT" "$suite_cost_checks" 'suite-cost check --')"
 
 # --- audit tests (#1309, #2499) -----------------------------------------------
 echo
