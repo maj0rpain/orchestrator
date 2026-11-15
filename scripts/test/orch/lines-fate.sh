@@ -202,7 +202,16 @@ LF_ASK='
     cd "$root" || exit 1
     [ ! -s "$out" ] || quiet=no
     printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$name" "$first_result" "$first_detail" "$rc" "$quiet" "$result" "$detail" "$sub_rc"
-  done 3<"$1"'
+  done 3<"$1"
+  count() {
+    local sha="$1" t o
+    t="$(mktemp)" o="$(mktemp)"
+    GIT_TRACE="$t" lines_fate "$sha" main "$2" "$3" "$4" result detail >"$o"
+    printf "count %s %s\n" "$(grep "trace: built-in: git diff " "$t" | grep -- "$sha" | grep -c -w main)" "$([ -s "$o" ] && echo loud || echo quiet)"
+    rm -f "$t" "$o"
+  }
+  count "$2" src/other.sh 2 2
+  count "$3" src/del_whole.sh 10 10'
 # lf_assert <rows> <case> <fate> [<commit>]: the case's answer from the root,
 # the same answer from a subdirectory, and a status of 0 with nothing printed.
 lf_assert() {
@@ -216,8 +225,8 @@ lf_assert() {
 }
 
 rows="$(mktemp)"
-sourced_orch_script "$LF_ASK" "$lf_cases" >"$rows"
-assert_eq "every case is answered" "$(wc -l <"$rows" | tr -d ' ')" "$(wc -l <"$lf_cases" | tr -d ' ')"
+sourced_orch_script "$LF_ASK" "$lf_cases" "$unmerged_sha" "$filed_sha" >"$rows"
+assert_eq "every case is answered" "$(grep -vc '^count ' "$rows")" "$(wc -l <"$lf_cases" | tr -d ' ')"
 lf_assert "$rows" fixed changed "$fix_sha"
 lf_assert "$rows" untouched unchanged
 lf_assert "$rows" reversed changed "$fix_sha"
@@ -254,23 +263,13 @@ lf_assert "$rows" fail_diff changed "$fix_sha"
 lf_assert "$rows" fail_blame changed "$later_edit_sha"
 lf_assert "$rows" fail_merge_base changed "$mb_del_sha"
 lf_assert "$rows" fail_cat_file gone
-rm -f "$lf_cases" "$rows"
+rm -f "$lf_cases"
 
 # Cost: git's own trace counts the diffs of the filed SHA against the ref - one
 # per finding, whatever its fate. Each call writes its own trace file, and
 # GIT_TRACE is set only for the call, after orch.sh is sourced, whose own start
-# is not counted. Both counts are asked in one sourced shell.
-# shellcheck disable=SC2016 # expanded by the inner bash
-LF_COUNT='
-  count() {
-    local sha="$1" t o
-    t="$(mktemp)" o="$(mktemp)"
-    GIT_TRACE="$t" lines_fate "$sha" main "$2" "$3" "$4" result detail >"$o"
-    printf "%s %s\n" "$(grep "trace: built-in: git diff " "$t" | grep -- "$sha" | grep -c -w main)" "$([ -s "$o" ] && echo loud || echo quiet)"
-    rm -f "$t" "$o"
-  }
-  count "$1" src/other.sh 2 2
-  count "$2" src/del_whole.sh 10 10'
-lf_counts="$(sourced_orch_script "$LF_COUNT" "$unmerged_sha" "$filed_sha")"
-assert_eq "an off-ref never-reached finding is diffed once, printing nothing" "${lf_counts%%$'\n'*}" "1 quiet"
-assert_eq "an on-ref finding whose lines were deleted is diffed once, printing nothing" "${lf_counts#*$'\n'}" "1 quiet"
+# is not counted. The counts are asked in the cases' shell, after its loop.
+lf_counts="$(grep '^count ' "$rows")"
+rm -f "$rows"
+assert_eq "an off-ref never-reached finding is diffed once, printing nothing" "${lf_counts%%$'\n'*}" "count 1 quiet"
+assert_eq "an on-ref finding whose lines were deleted is diffed once, printing nothing" "${lf_counts#*$'\n'}" "count 1 quiet"
