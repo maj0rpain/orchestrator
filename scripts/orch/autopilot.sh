@@ -934,7 +934,7 @@ autopilot_pause_extend() {
 autopilot_flow_ranked() {
   orch_load standing
   orch_load handoff
-  local _nums _err _issue _phase _ranked="" _labels_any=() _what
+  local _nums _err _issue _phase _session_phase _ranked="" _labels_any=() _what
   local -A _states=() _labels=()
   for _phase in $PHASES; do
     [ "$_phase" != "done" ] || continue
@@ -948,8 +948,8 @@ autopilot_flow_ranked() {
     [ -n "$_issue" ] || continue
     standing_set "${_states[$_issue]}" "${_labels[$_issue]}"
     standing_pickable || continue
-    _phase="$(standing_session_phase)"
-    _ranked="$_ranked$(autopilot_rank "$_phase") $_issue $_phase"$'\n'
+    _session_phase="$(standing_session_phase)"
+    _ranked="$_ranked$(autopilot_rank "$_session_phase") $_issue $_session_phase"$'\n'
   done <<<"$_nums"
   printf -v "$1" '%s' "$(printf '%s' "$_ranked" | sort -k1,1n -k2,2n)"
 }

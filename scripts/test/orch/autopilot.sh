@@ -2577,8 +2577,8 @@ fake_unfail
 restore_suite_env
 
 # --- autopilot tick: one read of the done issues (#2559) ----------------------
-# A tick lists the orch:done issues once and reads each once; the merged-PR
-# close and sync detection share that read.
+# A tick lists the orch:done issues once and makes no per-issue read; the
+# merged-PR close and sync detection share that listing.
 echo
 echo "autopilot tick done read"
 tick_fixture

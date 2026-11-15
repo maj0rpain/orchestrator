@@ -709,7 +709,7 @@ issues_rows_read_via() {
   local __ilrr_i=0 __ilrr_total __ilrr_n __ilrr_state __ilrr_count __ilrr_j __ilrr_rl __ilrr_r
   local __ilrr_bad="gh answered a listing that does not parse"
   local __ilrr_whole='^[0-9]+$'
-  if ! capture __ilrr_out __ilrr_err "$__ilrr_adapter" "${@:5}"; then
+  if ! gh_capture __ilrr_out __ilrr_err "$__ilrr_adapter" "${@:5}"; then
     printf -v "$4" '%s' "$__ilrr_err"
     return 1
   fi
