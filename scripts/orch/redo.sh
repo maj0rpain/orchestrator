@@ -102,20 +102,22 @@ redo_load_shared() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word detail slug issue branch pr new_n resumed
+  local phase i b word detail slug issue branch pr new_n resumed flat
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
-  # review, handoff and, on a resumed mid-redo run, branch are first reached
-  # inside a command substitution (the terminal state reads handoff, and
-  # classifies a resumed redo through redo_midway, which names the -redo-<n>
-  # branch): load them here, once, in the main shell, past the guard that
-  # refuses a run before it. branch loads only while a redo is under way
-  # (redo_count above 0, redo_midway's first condition), so a refused run with
-  # none loads no branch; the load below is then a no-op.
+  # review and handoff are first reached inside a command substitution (the
+  # terminal state reads handoff): load them here, once, in the main shell,
+  # past the guard that refuses a run before it. branch loads here only when
+  # the terminal-state read reaches it, through redo_midway, which
+  # review_terminal_record calls when iteration is above 0, the last flat
+  # record is gone and redo_count is above 0; the load below is then a no-op.
   orch_load review
   orch_load handoff
-  if [ "$(state_get redo_count)" -gt 0 ]; then orch_load branch; fi
   i="$(state_get iteration)"
+  if [ "$i" -gt 0 ] && [ "$(state_get redo_count)" -gt 0 ] \
+    && flat="$(cmd_review path "$i")" && [ ! -e "$flat" ]; then
+    orch_load branch
+  fi
   b="$(review_budget)"
   local terminal; terminal="$(review_terminal_state)" || true
   lines_split "$terminal" word detail
@@ -134,16 +136,16 @@ $detail" ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
-  # Past the terminal-state guards: each is first reached inside a command
-  # substitution or branch of a subshell below.
-  orch_load branch
-  redo_load_shared
   redo_refuse_ticket_worktrees
 
   slug="$(state_get slug)"
   require_issue issue
   require_branch branch
   require_pr pr
+  # Past every guard that refuses a run, none of which reaches these modules:
+  # each is first reached inside a command substitution or subshell below.
+  orch_load branch
+  redo_load_shared
   local retire
   retire="$(redo_retire_plan "$issue" "$slug")"
   lines_split "$retire" new_n resumed
@@ -198,17 +200,7 @@ cmd_redo_spec() {
     *) die "usage: orch.sh redo spec [--new-issue]" ;;
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
-  # The modules a run first reaches inside a command substitution, loaded once
-  # here in the main shell, past the guards that refuse a run before it
-  # reaches any of them. branch is reached only by a run with a branch
-  # recorded (the retire) or with redo_count above 0 (redo_midway's first
-  # condition).
   orch_load spec
-  orch_load handoff
-  redo_load_shared
-  local recorded_branch recorded_count
-  recorded_branch="$(state_get branch)"; recorded_count="$(state_get redo_count)"
-  if [ -n "$recorded_branch" ] || [ "${recorded_count:-0}" -gt 0 ]; then orch_load branch; fi
   redo_refuse_ticket_worktrees
   # The spec handoff - and the implement handoff built on it, if any - are
   # stale once the spec is being redone, so phase advance must not pass on
@@ -218,6 +210,16 @@ cmd_redo_spec() {
   # retires a branch.
   local issue label slug retire n resumed
   require_issue issue
+  # The modules a run first reaches inside a command substitution, loaded once
+  # here in the main shell, past the guards that refuse a run before it, none
+  # of which reaches them. branch is reached only by a run with a branch
+  # recorded (the retire) or with redo_count above 0 (redo_midway's first
+  # condition).
+  orch_load handoff
+  redo_load_shared
+  local recorded_branch recorded_count
+  recorded_branch="$(state_get branch)"; recorded_count="$(state_get redo_count)"
+  if [ -n "$recorded_branch" ] || [ "${recorded_count:-0}" -gt 0 ]; then orch_load branch; fi
   label="pre-redo-spec-$(dir_stamp)"
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
   handoff_retire "$label" $(handoffs_written_from spec)

@@ -393,6 +393,13 @@ writeln '## Terminal state' 'stop' 'old.' >.orchestrator/review/pre-redo-1/itera
 out="$("$ORCH" review terminal 2>&1)"
 assert_first_line "interrupted: the plain flow branch is not mid-redo" "$out" "interrupted"
 assert_contains "review resume reruns the iteration" "$("$ORCH" review resume 2>&1)" "rerun 1"
+# A refused run on a flow redone once reads the flat record, never redo_midway.
+printf '# Review iteration 1\n' >.orchestrator/review/iteration-01.md
+rf_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rf_load" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a refused run on a flow redone once" "$st" 1
+assert_trace_names_no "a refused run with the flat record present" "$rf_load" branch
+rm -f "$rf_load"
 restore_suite_env
 
 # --- redo review reopens tickets -------------------------------------------
