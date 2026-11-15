@@ -97,6 +97,87 @@ ticket_worktree_resolve() {
     || die "ticket worktree $path is not on a branch (detached HEAD)"
 }
 
+# ticket_facts <n> <prefix>: reads everything about ticket <n> once and only
+# reports, each fact into the caller's variable <prefix>_<name> (printf -v),
+# and writes no variable outside that prefix. <n> is already validated by the
+# caller. The facts:
+#   <prefix>_n          <n>, so the helpers handed only the prefix can name it
+#   <prefix>_path       where ticket <n>'s ticket worktree lives
+#   <prefix>_worktree   the worktree state, one word: worktree (one sits at the
+#                       path), gone (git's record names the path and nothing is
+#                       there), occupied (git's record names the path and
+#                       something that is not a worktree is there) or none (a
+#                       leftover directory with no record behind it is none)
+#   <prefix>_wt_branch  the branch checked out in the ticket worktree; empty
+#                       during a rebase and in every state but worktree
+#   <prefix>_parent     this checkout's current branch; empty on a detached HEAD
+#   <prefix>_own_branch the ticket's own branch <parent>--t<n>; ""
+#                       when parent is empty
+#   <prefix>_own_exists yes or no: whether own_branch exists
+# Reads git's record of the checkouts on every call and dies, exit 1, only
+# when it cannot be read, never reading that as none. Called as a bare
+# statement, so that die stops the caller.
+ticket_facts() {
+  local _tf_n="$1" _tf_prefix="$2" _tf_path _tf_state=none _tf_wt="" _tf_parent="" _tf_own="" _tf_exists=no _tf_p
+  local paths=()
+  # shellcheck disable=SC2034 # checkout_parse fills it
+  local branches=()
+  _tf_path="$(ticket_worktree_path "$_tf_n")"
+  checkout_parse || checkouts_unreadable
+  if is_ticket_worktree "$_tf_path"; then
+    _tf_state=worktree
+  else
+    for _tf_p in "${paths[@]}"; do
+      [ "$_tf_p" = "$_tf_path" ] || continue
+      if [ -e "$_tf_path" ] || [ -L "$_tf_path" ]; then _tf_state=occupied; else _tf_state=gone; fi
+      break
+    done
+  fi
+  if [ "$_tf_state" = worktree ]; then _tf_wt="$(checkout_branch "$_tf_path")" || _tf_wt=""; fi
+  _tf_parent="$(checkout_branch)" || _tf_parent=""
+  if [ -n "$_tf_parent" ]; then
+    _tf_own="$(branch_name_ticket "$_tf_parent" "$_tf_n")"
+    if git rev-parse --verify --quiet "refs/heads/$_tf_own" >/dev/null; then _tf_exists=yes; fi
+  fi
+  printf -v "${_tf_prefix}_n" %s "$_tf_n"
+  printf -v "${_tf_prefix}_path" %s "$_tf_path"
+  printf -v "${_tf_prefix}_worktree" %s "$_tf_state"
+  printf -v "${_tf_prefix}_wt_branch" %s "$_tf_wt"
+  printf -v "${_tf_prefix}_parent" %s "$_tf_parent"
+  printf -v "${_tf_prefix}_own_branch" %s "$_tf_own"
+  printf -v "${_tf_prefix}_own_exists" %s "$_tf_exists"
+}
+
+# ticket_facts_require_worktree <prefix> <state>...: dies, "no ticket worktree
+# for ticket <n> at <path>", unless the worktree state in <prefix>'s facts is
+# one of the <state>s its caller accepts.
+ticket_facts_require_worktree() {
+  local state_var="$1_worktree" n_var="$1_n" path_var="$1_path" s
+  shift
+  for s in "$@"; do
+    [ "${!state_var}" != "$s" ] || return 0
+  done
+  die "no ticket worktree for ticket ${!n_var} at ${!path_var}"
+}
+
+# ticket_facts_require_wt_branch <prefix>: dies unless the ticket worktree in
+# <prefix>'s facts is on a branch.
+ticket_facts_require_wt_branch() {
+  local branch_var="$1_wt_branch" path_var="$1_path"
+  [ -n "${!branch_var}" ] \
+    || die "ticket worktree ${!path_var} is not on a branch (detached HEAD)"
+}
+
+# ticket_facts_require_parent <prefix>: dies unless this checkout is on a
+# branch, through current_branch_or_die so that message keeps its one home.
+# That helper assigns the caller's `branch`, so the local `branch` below takes
+# its write and no caller's variable is touched.
+ticket_facts_require_parent() {
+  local parent_var="$1_parent" branch
+  [ -z "${!parent_var}" ] || return 0
+  current_branch_or_die
+}
+
 # ticket_branch_merged <branch>: whether ticket branch <branch> records a
 # forked-from branch and is an ancestor of it - the one merged check.
 ticket_branch_merged() {

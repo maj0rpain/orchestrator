@@ -411,6 +411,114 @@ out="$(sourced_orch ticket_worktree_teardown 7 --unmerged 2>&1)"; st=$?
 assert_status "and clears the record with --unmerged" "$st" 0
 assert_eq "leaving no record" "$("$ORCH" ticket-worktree list)" ""
 
+# ticket_facts, the one read of a ticket's facts, called through the sourced
+# orch.sh: each fact is printed and asserted.
+tw_repo
+top="$(git rev-parse --show-toplevel)"
+facts_of() {
+  sourced_orch_script 'ticket_facts "$1" f 2>&1 || exit $?
+for k in n path worktree wt_branch parent own_branch own_exists; do
+  v="f_$k"; printf "%s=%s\n" "$k" "${!v}"
+done' "$1"
+}
+fact() { sed -n "s/^$2=//p" <<<"$1"; }
+p7="$top/.orchestrator/worktrees/t7"
+
+out="$(facts_of 7)"; st=$?
+assert_status "facts of nothing succeeds" "$st" 0
+assert_eq "no worktree: the state is none" "$(fact "$out" worktree)" "none"
+assert_eq "and the ticket number is kept" "$(fact "$out" n)" "7"
+assert_eq "and the path is where it would live" "$(fact "$out" path)" "$p7"
+assert_eq "and no branch is checked out there" "$(fact "$out" wt_branch)" ""
+assert_eq "the parent is the current branch" "$(fact "$out" parent)" "orch/5-feature"
+assert_eq "the own branch is built from it" "$(fact "$out" own_branch)" "orch/5-feature--t7"
+assert_eq "and does not exist yet" "$(fact "$out" own_exists)" "no"
+
+mkdir -p "$p7"
+out="$(facts_of 7)"
+assert_eq "a leftover directory with no record is none" "$(fact "$out" worktree)" "none"
+rmdir "$p7"
+
+"$ORCH" ticket-worktree add 7 >/dev/null
+out="$(facts_of 7)"
+assert_eq "a worktree at the path: the state is worktree" "$(fact "$out" worktree)" "worktree"
+assert_eq "its branch is the ticket's own" "$(fact "$out" wt_branch)" "orch/5-feature--t7"
+assert_eq "and the own branch exists" "$(fact "$out" own_exists)" "yes"
+
+out="$(PATH="$(worktree_list_fails_bin):$PATH" facts_of 7)"; st=$?
+assert_status "the read dies when the checkouts cannot be read, a worktree present" "$st" 1
+assert_contains "naming the checkouts" "$out" "could not read the checkouts"
+assert_not_contains "never reporting none" "$out" "worktree=none"
+
+git -C "$p7" checkout -q -b other
+out="$(facts_of 7)"
+assert_eq "another branch checked out: wt_branch is that one" "$(fact "$out" wt_branch)" "other"
+assert_eq "and the own branch is still the ticket's" "$(fact "$out" own_branch)" "orch/5-feature--t7"
+git -C "$p7" checkout -q orch/5-feature--t7
+git branch -q -D other
+
+# Mid-rebase: HEAD is detached in the ticket worktree.
+echo ticket >"$p7/feature.txt" && git -C "$p7" commit -qam "ticket edit"
+echo parent >feature.txt && git commit -qam "parent edit"
+git -C "$p7" rebase -q orch/5-feature >/dev/null 2>&1
+out="$(facts_of 7)"
+assert_eq "mid-rebase: wt_branch is empty" "$(fact "$out" wt_branch)" ""
+assert_eq "and the state is still worktree" "$(fact "$out" worktree)" "worktree"
+git -C "$p7" rebase --abort
+git reset -q --hard HEAD~1
+
+git branch -q -D orch/5-feature--t7 2>/dev/null || git -C "$p7" checkout -q --detach && git branch -q -D orch/5-feature--t7
+out="$(facts_of 7)"
+assert_eq "no ticket branch of its own name: own_exists is no" "$(fact "$out" own_exists)" "no"
+assert_eq "yet the state is worktree" "$(fact "$out" worktree)" "worktree"
+git worktree remove --force "$p7"
+
+"$ORCH" ticket-worktree add 7 >/dev/null
+rm -rf "$p7"
+out="$(facts_of 7)"
+assert_eq "a record whose directory is gone: the state is gone" "$(fact "$out" worktree)" "gone"
+assert_eq "and wt_branch is empty, never the checkout's" "$(fact "$out" wt_branch)" ""
+mkdir "$p7"
+out="$(facts_of 7)"
+assert_eq "a plain directory at a recorded path: occupied" "$(fact "$out" worktree)" "occupied"
+assert_eq "and wt_branch is empty" "$(fact "$out" wt_branch)" ""
+out="$(PATH="$(worktree_list_fails_bin):$PATH" facts_of 7)"; st=$?
+assert_status "the read dies on an unreadable record, something at the path" "$st" 1
+rmdir "$p7"
+git worktree prune
+git branch -q -D orch/5-feature--t7
+out="$(PATH="$(worktree_list_fails_bin):$PATH" facts_of 7)"; st=$?
+assert_status "the read dies on an unreadable record, nothing at the path" "$st" 1
+assert_not_contains "never reporting none" "$out" "worktree=none"
+
+out="$(sourced_orch_script 'branch=b path=p n=n parent=pa tbranch=tb
+ticket_facts 7 f
+printf "%s %s %s %s %s" "$branch" "$path" "$n" "$parent" "$tbranch"' 2>&1)"
+assert_eq "a caller's branch, path, n, parent and tbranch survive the read" "$out" "b p n pa tb"
+
+git checkout -q --detach
+out="$(facts_of 7)"; st=$?
+assert_status "a detached HEAD in the checkout: the read does not die" "$st" 0
+assert_eq "parent is empty" "$(fact "$out" parent)" ""
+assert_eq "and so is own_branch" "$(fact "$out" own_branch)" ""
+out="$(sourced_orch_script 'ticket_facts 7 f; ticket_facts_require_parent f' 2>&1)"; st=$?
+assert_status "the parent helper dies there" "$st" 1
+assert_contains "with its message" "$out" "not on a branch (detached HEAD)"
+git checkout -q orch/5-feature
+
+out="$(sourced_orch_script 'ticket_facts 7 f; ticket_facts_require_worktree f worktree' 2>&1)"; st=$?
+assert_status "the worktree helper dies on a state not accepted" "$st" 1
+assert_contains "with its message" "$out" "no ticket worktree for ticket 7 at $p7"
+out="$(sourced_orch_script 'ticket_facts 7 f; ticket_facts_require_worktree f none gone' 2>&1)"; st=$?
+assert_status "and accepts a state it is given" "$st" 0
+"$ORCH" ticket-worktree add 7 >/dev/null
+git -C "$p7" checkout -q --detach
+out="$(sourced_orch_script 'ticket_facts 7 f; ticket_facts_require_wt_branch f' 2>&1)"; st=$?
+assert_status "the branch helper dies on a detached ticket worktree" "$st" 1
+assert_contains "with its message" "$out" "ticket worktree $p7 is not on a branch (detached HEAD)"
+git -C "$p7" checkout -q orch/5-feature--t7
+"$ORCH" ticket-worktree remove 7 --unmerged >/dev/null
+
 out="$("$ORCH" ticket-worktree bogus 2>&1)"; st=$?
 assert_status "ticket-worktree bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown ticket-worktree op"
