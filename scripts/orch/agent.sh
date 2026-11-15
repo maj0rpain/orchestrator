@@ -345,7 +345,15 @@ agent_role_of() {
 # agent_copy_marked <file>: whether <file> carries the marker - on the line
 # right after its opening --- and nowhere else.
 agent_copy_marked() {
-  [ "$(sed -n 1p "$1")" = "---" ] && [ "$(sed -n 2p "$1")" = "$AGENT_COPY_MARKER" ]
+  local l1="" l2="" opened=0
+  # read keeps an unterminated last line in its variable. Only an unreadable
+  # file starts a command: the one sed whose diagnostic stands for it.
+  { opened=1; IFS= read -r l1 || :; IFS= read -r l2 || :; } 2>/dev/null <"$1" || :
+  if [ "$opened" -eq 0 ]; then
+    sed -n 1p "$1" >/dev/null || :
+    return 1
+  fi
+  [ "$l1" = "---" ] && [ "$l2" = "$AGENT_COPY_MARKER" ]
 }
 
 # agent_copy_content <agent-file> <model> <effort>: what sync writes for a
@@ -372,7 +380,7 @@ agent_copy_content() {
 # missing or stale; | because a custom: model holds a colon) and
 # AGENT_PLAN_DELETES (marked copies no longer wanted, by name).
 agent_sync_plan() {
-  local file copy name role m e copy_model copy_effort content target state
+  local file copy name role m e copy_model copy_effort content target state current
   AGENT_PLAN_DIR="$ROOT/.junie/agents"
   AGENT_PLAN_WANT="" AGENT_PLAN_REFUSED="" AGENT_PLAN_WRITES="" AGENT_PLAN_DELETES=""
   for file in "$ORCH_PLUGIN"/agents/orch-*.md; do
@@ -391,7 +399,9 @@ agent_sync_plan() {
     content="$(agent_copy_content "$file" "$copy_model" "$copy_effort"; echo x)"
     if [ -e "$target" ]; then
       if ! agent_copy_marked "$target"; then AGENT_PLAN_REFUSED="$AGENT_PLAN_REFUSED$name"$'\n'; continue; fi
-      [ "$(cat "$target"; echo x)" = "$content" ] && continue
+      current=""
+      file_read current "$target" || :
+      [ "${current}x" = "$content" ] && continue
       state=stale
     fi
     AGENT_PLAN_WRITES="$AGENT_PLAN_WRITES$name|$copy_model|$copy_effort|$state"$'\n'
@@ -476,7 +486,8 @@ agent_junie_newest_log() {
 # agent_junie_field <line> <word>: the value after <word>= in a Junie log
 # line, up to a space, comma or closing parenthesis; nothing when absent.
 agent_junie_field() {
-  printf '%s' "$1" | sed -n "s/.*[^A-Za-z]$2=\\([^ ,)]*\\).*/\\1/p"
+  local re="^.*[^A-Za-z]$2=([^ ,)]*)"
+  if [[ $1 =~ $re ]]; then printf '%s' "${BASH_REMATCH[1]}"; fi
 }
 
 # agent_junie_session: doctor's best-effort report of what each orch-* agent
@@ -490,6 +501,8 @@ agent_junie_field() {
 # does not parse gives one ok line saying it cannot tell, never a FAIL.
 agent_junie_session() {
   local index="$HOME/.junie/sessions/index.jsonl" sid log lines agent line model effort set_part report="" ran_line report_line word v verdict
+  local -A last_line=()
+  local run_re="^.*custom_agent_($AGENT_JUNIE_RUN_NAME)$AGENT_JUNIE_RUN_TAIL"
   command -v jq >/dev/null 2>&1 || { agent_junie_session_cannot_tell "jq is not installed"; return 0; }
   [ -f "$index" ] || { agent_junie_session_cannot_tell "no Junie session index"; return 0; }
   sid="$(jq -rs --arg d "$ROOT" 'map(select(.projectDir == $d)) | sort_by(.updatedAt) | last | .sessionId // empty' "$index" 2>/dev/null)" ||
@@ -501,8 +514,11 @@ agent_junie_session() {
   [ -n "$lines" ] || { agent_junie_session_cannot_tell "the log holds no agent runs"; return 0; }
   local -a agents_ran
   mapfile -t agents_ran < <(printf '%s\n' "$lines" | sed -n "s/.*custom_agent_\\($AGENT_JUNIE_RUN_NAME\\)$AGENT_JUNIE_RUN_TAIL.*/\\1/p" | awk '!seen[$0]++')
+  while IFS= read -r line; do
+    if [[ $line =~ $run_re ]]; then last_line["${BASH_REMATCH[1]}"]="$line"; fi
+  done <<<"$lines"
   for agent in ${agents_ran[@]+"${agents_ran[@]}"}; do
-    line="$(printf '%s\n' "$lines" | grep -a "custom_agent_$agent$AGENT_JUNIE_RUN_TAIL" | tail -1)"
+    line="${last_line[$agent]:-}"
     model="$(agent_junie_field "$line" model)"
     [ -n "$model" ] || { agent_junie_session_cannot_tell "the log does not parse"; return 0; }
     effort=inherited
