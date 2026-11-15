@@ -453,3 +453,13 @@ assert_eq "begin failing on the running addition sets that step's wording in STA
 rc=0"
 assert_eq "and the removal had landed" "$(tr_standing 63)" "spec|0|0|0"
 restore_suite_env
+
+# --- standing_ask reads the issue in one jq -----------------------------------
+echo
+echo "standing ask issue read"
+fresh_flow standask
+sa_jq="$(counting_bin jq)"
+out="$(PATH="$sa_jq:$PATH" sourced_orch standing_ask spec Q 2>&1)"
+assert_contains "standing_ask with no issue recorded refuses" "$out" "no issue recorded in state"
+assert_eq "and starts exactly one jq" "$(counting_starts "$sa_jq" jq)" "1"
+restore_suite_env

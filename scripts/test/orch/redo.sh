@@ -170,8 +170,12 @@ assert_status "the remedy the refusal names succeeds" "$st" 0
 out="$("$ORCH" doctor 2>&1)"
 assert_not_contains "the doctor then reports nothing left over" "$out" "is left over"
 
-out="$("$ORCH" redo review 2>&1)"; st=$?
+rr_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rr_load" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
+assert_trace_loads_once "redo review with a branch, a PR and a stopped loop" "$rr_load"
+assert_trace_names_no "redo review with a branch, a PR and a stopped loop" "$rr_load" marked-comment
+rm -f "$rr_load"
 assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
 assert_eq "prints the new redo count" "$out" "1"
 assert_eq "records it in state" "$("$ORCH" state get redo_count)" "1"
@@ -354,8 +358,11 @@ assert_status "review resume refuses" "$st" 1
 assert_contains "saying there is nothing to resume" "$out" "nothing to resume"
 out="$("$ORCH" doctor --flow 2>&1)" || true
 assert_not_contains "doctor does not call the loop interrupted" "$out" "looks interrupted"
-out="$("$ORCH" redo review 2>&1)"; st=$?
+rm_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rm_load" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a clean rerun completes the redo" "$st" 0
+assert_trace_loads_once "a resumed mid-redo run" "$rm_load"
+rm -f "$rm_load"
 assert_eq "at phase implement, iteration 0, branch and PR cleared" \
   "$("$ORCH" state get phase) $("$ORCH" state get iteration) $("$ORCH" state get branch) $("$ORCH" state get pr)" \
   "implement 0  "
@@ -386,6 +393,14 @@ writeln '## Terminal state' 'stop' 'old.' >.orchestrator/review/pre-redo-1/itera
 out="$("$ORCH" review terminal 2>&1)"
 assert_first_line "interrupted: the plain flow branch is not mid-redo" "$out" "interrupted"
 assert_contains "review resume reruns the iteration" "$("$ORCH" review resume 2>&1)" "rerun 1"
+# A refused run on a flow redone once reads the flat record, never redo_midway.
+printf '# Review iteration 1\n' >.orchestrator/review/iteration-01.md
+rf_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rf_load" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a refused run on a flow redone once" "$st" 1
+assert_contains "a refused run on a flow redone once says the loop was interrupted" "$out" "has no recorded terminal state"
+assert_trace_names_no "a refused run with the flat record present" "$rf_load" branch
+rm -f "$rf_load"
 restore_suite_env
 
 # --- redo review reopens tickets -------------------------------------------
@@ -800,8 +815,12 @@ slug_="$("$ORCH" state get slug)"
 
 attempt_start 5
 old_pr="$(attempt_pr)"
-out="$("$ORCH" redo spec 2>&1)"; st=$?
+rs_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rs_load" "$ORCH" redo spec 2>&1)"; st=$?
 assert_status "default redo spec with a branch and PR succeeds" "$st" 0
+assert_trace_loads_once "default redo spec with a branch and PR" "$rs_load"
+assert_trace_names_no "default redo spec with a branch and PR" "$rs_load" marked-comment
+rm -f "$rs_load"
 assert_eq "renames the branch aside to -redo-1" \
   "$(branch_presence "orch/5-$slug_-redo-1")" "present"
 assert_eq "closes the old PR" "$(fake_pr_state_of "$old_pr")" "CLOSED"
@@ -826,8 +845,12 @@ attempt_flow redoattempt2
 fake_issue 6 open
 slug_="$("$ORCH" state get slug)"
 attempt_start 6
-out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
+rn_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rn_load" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue with a branch and no PR succeeds" "$st" 0
+assert_trace_loads_once "redo spec --new-issue" "$rn_load"
+assert_trace_names_no "redo spec --new-issue" "$rn_load" marked-comment
+rm -f "$rn_load"
 assert_eq "retires the branch under the old issue's name" \
   "$(branch_presence "orch/6-$slug_-redo-1")" "present"
 assert_eq "closing only the old issue" "$(fake_state_of 6)" "CLOSED"
@@ -973,8 +996,14 @@ redo_spec_scenario() {
   assert_status "$mode: a failure after the retire fails redo spec" "$st" 1
   assert_eq "$mode: leaving the phase at implement" "$("$ORCH" state get phase)" implement
   fake_unfail
-  out="$(handoff_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
+  rd_load=""
+  if [ "$mode" = comment ]; then rd_load="$(mktemp)"; fi
+  out="$(ORCH_LOAD_TRACE="$rd_load" handoff_orch "$mode" redo spec --new-issue 2>&1)"; st=$?
   assert_status "$mode: the re-run finishes" "$st" 0
+  if [ "$mode" = comment ]; then
+    assert_trace_loads_once "redo spec in an autopilot session" "$rd_load"
+    rm -f "$rd_load"
+  fi
   assert_eq "$mode: the phase is spec" "$("$ORCH" state get phase)" spec
   assert_eq "$mode: the spec handoff is retired exactly once" \
     "$(handoff_retired_count "$mode" 60 02-spec '.orchestrator/handoff/pre-redo-spec-*')" 1
@@ -1011,8 +1040,14 @@ redo_review_scenario() {
   assert_status "$mode: a failure after the retire fails redo review" "$st" 1
   assert_eq "$mode: leaving the phase at review" "$("$ORCH" state get phase)" review
   fake_unfail
-  out="$(handoff_orch "$mode" redo review 2>&1)"; st=$?
+  rd_load=""
+  if [ "$mode" = comment ]; then rd_load="$(mktemp)"; fi
+  out="$(ORCH_LOAD_TRACE="$rd_load" handoff_orch "$mode" redo review 2>&1)"; st=$?
   assert_status "$mode: the re-run finishes" "$st" 0
+  if [ "$mode" = comment ]; then
+    assert_trace_loads_once "redo review in an autopilot session" "$rd_load"
+    rm -f "$rd_load"
+  fi
   assert_not_contains "$mode: with no taken-folder refusal" "$out" "already holds a retired handoff"
   assert_eq "$mode: stepping back to implement" "$("$ORCH" state get phase)" implement
   assert_eq "$mode: the implement handoff is retired exactly once" \
@@ -1126,4 +1161,39 @@ new_repo >/dev/null
 for entry in "redo review" "redo spec"; do
   assert_help_names_handoffs_by_role "$entry"
 done
+restore_suite_env
+
+# --- redo reads its Flow state once, before its first write -------------------
+# Each redo makes one entry read where its require_state sat, and hands the
+# values down: exactly one jq on a path that ends at the last guard.
+echo
+echo "redo reads its Flow state once"
+fresh_flow redocount
+state_fixture phase review
+"$ORCH" state set issue 61
+git checkout -q -b orch/61-redocount
+state_fixture branch orch/61-redocount
+state_fixture iteration 1
+"$ORCH" state set budget 1
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
+rc_jq="$(counting_bin jq)"
+out="$(PATH="$rc_jq:$PATH" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "redo review on a stopped loop with no PR recorded refuses" "$st" 1
+assert_contains "naming the missing PR" "$out" "no PR recorded in state"
+assert_eq "redo review starts exactly one jq before its first write" "$(counting_starts "$rc_jq" jq)" "1"
+state_truncate
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_state_unreadable "redo review" 1 "$out" "$st"
+
+fresh_flow redocount2
+state_fixture phase implement
+: >"$rc_jq/jq.log"
+out="$(PATH="$rc_jq:$PATH" "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "redo spec with no issue recorded refuses" "$st" 1
+assert_contains "naming the missing issue" "$out" "no issue recorded in state"
+assert_eq "redo spec starts exactly one jq before its first write" "$(counting_starts "$rc_jq" jq)" "1"
+state_truncate
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_state_unreadable "redo spec" 1 "$out" "$st"
 restore_suite_env

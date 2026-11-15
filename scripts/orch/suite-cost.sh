@@ -399,10 +399,10 @@ suite_cost_knob() {
 # unreadable state.json fails with the shared warning, never the fallback.
 suite_cost_base_commit() {
   orch_load state
-  local sha=""
-  if flow_active; then
-    flow_state_readable "$STATE" || { warn "$STATE_UNREADABLE_MSG"; return 1; }
-    sha="$(state_get base_sha)"
+  local sha="" fphase fsha
+  if [ -f "$STATE" ]; then
+    state_get_many_in "$STATE" fphase=phase fsha=base_sha || { warn "$STATE_UNREADABLE_MSG"; return 1; }
+    [ "$fphase" = "done" ] || sha="$fsha"
   fi
   if [ -z "$sha" ]; then
     sha="$(cmd_branch_base_sha)" || return 1

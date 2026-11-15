@@ -791,3 +791,21 @@ printf '\n## Autopilot\n\nRounds: 2\nBudget: 3\n' >>"$f"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
 assert_status "a fenced example block ahead of the real one is not read" "$st" 0
 restore_suite_env
+
+# --- handoff post and fetch with no state file --------------------------------
+# The required-field read names the missing flow, never jq's raw error.
+echo
+echo "handoff post and fetch with no state file"
+fake_flow handoff-nostate
+rm -f .orchestrator/state.json
+nf_plan="$(mktemp -d)/01-plan.md"
+plan_file "$nf_plan" $'Rounds: 2\nBudget: 3'
+export ORCH_AUTOPILOT=1
+out="$("$ORCH" handoff post 01-plan "$nf_plan" 2>&1)"; st=$?
+assert_status "handoff post with no state file dies" "$st" 1
+assert_contains "saying there is no active flow" "$out" "orch: no active flow"
+out="$("$ORCH" handoff fetch 01-plan "$nf_plan.out" 2>&1)"; st=$?
+assert_status "handoff fetch with no state file dies" "$st" 1
+assert_contains "saying there is no active flow" "$out" "orch: no active flow"
+unset ORCH_AUTOPILOT
+restore_suite_env

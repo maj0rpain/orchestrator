@@ -162,8 +162,13 @@ out="$("$ORCH" doctor --nonsense 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--nonsense"
 
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
+env_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$env_load" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes a healthy repo" "$st" 0
+# No claim and no side checkout: the claims and side-flow checks reach none of
+# the modules their branches need.
+assert_trace_names_no "doctor --env in a repo with no claims and no side checkouts" "$env_load" autopilot handoff liveness
+rm -f "$env_load"
 assert_contains "keeps the ok-line format of the commands it replaces" "$out" "ok    git present"
 assert_contains "opens with a bare group header" "$out" "tools"
 assert_contains "summarises severities on the last line" \
@@ -279,8 +284,11 @@ fake_unfail
 # The default-branch read is the one that tells doctor GitHub can see the repo:
 # when it fails, the FAIL carries gh's own first line.
 fake_fail adapter_repo_default_branch $'HTTP 404: Not Found\nsecond line'
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
+nf_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$nf_load" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a repo GitHub will not show fails doctor" "$st" 1
+assert_trace_loads_once "doctor --env with GitHub not showing the repo" "$nf_load"
+rm -f "$nf_load"
 assert_contains "saying GitHub cannot see it, with gh's first line" "$out" \
   "FAIL  GitHub cannot see acme/widgets - origin may point somewhere you cannot see: HTTP 404: Not Found"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
@@ -1709,12 +1717,56 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "report files beside a stop record stay healthy" "$st" 0
 assert_contains "still reading the stop from the record" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
+
+# The classifier reads nothing: doctor's check hands it the iteration and
+# budget its probe already read, so the check itself starts no jq.
+dr_jq="$(counting_bin jq)"
+out="$(PATH="$dr_jq:$PATH" sourced_orch_script 'D_FLOW_ITERATION=5 D_FLOW_BUDGET=5; check_flow_review_terminal' 2>&1)"
+assert_contains "the check on a stopped loop still names it" "$out" "review loop at a terminal state: stop (CI failed twice.)"
+assert_eq "the review terminal check starts no jq" "$(counting_starts "$dr_jq" jq)" "0"
 mv .orchestrator/review/iteration-05.md .orchestrator/review/stop.saved
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "report files with no record warn rather than fail" "$st" 0
 assert_contains "and read as interrupted" "$out" "looks interrupted, not stopped"
+assert_trace_loads_once "doctor --flow with report files and the flat review record gone" "$rv_load"
+rm -f "$rv_load"
 mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
+restore_suite_env
+
+# Each module loads once: at the review phase the checks read the loop's
+# record, the PR and the redo command in subshells.
+review_flow doctorloadonce
+doctor_github
+state_fixture pr 40
+fake_pr 40 open orch/doctorloadonce main
+fake_pr_draft 40
+state_fixture iteration 5
+"$ORCH" state set budget 5
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow with a PR recorded and a stopped loop is healthy" "$st" 0
+assert_contains "and reports the stop" "$out" "review loop at a terminal state: stop (CI failed twice.)"
+assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
+assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
+rm -f "$rv_load"
+rm .orchestrator/review/iteration-05.md
+# Midway through a redo, the retired record is read in its place; a malformed
+# one has redo read for the terminal state and again for the remedy's path.
+state_fixture issue 9
+state_fixture redo_count 1
+state_fixture branch "$(sourced_orch branch_name_redo 9 "$("$ORCH" state get slug)" 1)"
+mkdir -p .orchestrator/review/pre-redo-1
+writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/pre-redo-1/iteration-05.md
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow with a malformed retired record fails" "$st" 1
+assert_contains "naming the retired record in the rewrite remedy" "$out" "rewrite the first line of $(pwd -P)/.orchestrator/review/pre-redo-1/iteration-05.md"
+assert_trace_loads_once "doctor --flow with the flat record gone mid-redo" "$rv_load"
+rm -f "$rv_load"
 restore_suite_env
 
 # --- doctor: review budget check -----------------------------------------
@@ -1934,6 +1986,15 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a default base branch passes" "$st" 0
 assert_contains "reports the default branch as the base branch" "$out" "ok    base branch: main (default)"
 assert_contains "keeps the default-branch check" "$out" "ok    default branch: main (from GitHub)"
+# GitHub not answering for the default branch loads each module once.
+fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
+db_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$db_load" "$ORCH" doctor 2>&1)"; st=$?
+assert_status "doctor with no answer for the default branch fails" "$st" 1
+assert_contains "doctor with no answer for the default branch says so" "$out" "HTTP 502"
+assert_trace_loads_once "doctor with GitHub not answering for the default branch" "$db_load"
+fake_unfail
+rm -f "$db_load"
 
 fresh_bare_origin bare
 git push -q "$bare" HEAD:refs/heads/main HEAD:refs/heads/uat
@@ -2199,14 +2260,20 @@ assert_status "doctor --flow refuses an autopilot session with no phase label" "
 assert_contains "naming it" "$out" "carries no phase label"
 fake_claim_seed 7 otherhost 5 2020-01-01T00:00:00Z
 fake_claim_seed 8 otherhost 5 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fake_claim_seed 12 thirdhost 5 2020-01-01T00:00:00Z
 fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
-out="$("$ORCH" doctor --env 2>&1)"
+fake_claim_seed 11 "$(hostname)" 5 2020-01-01T00:00:00Z
+cl_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$cl_load" "$ORCH" doctor --env 2>&1)"
 assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
+assert_contains "a second other host's old claim is listed too" "$out" "issue #12 has been claimed by thirdhost"
 assert_contains "its remedy names the host to run a tick on" "$out" "if that session is gone, run orch.sh autopilot tick on otherhost"
 assert_not_contains "and no claim ref" "$out" "refs/orch/claims"
 assert_not_contains "not a fresh one" "$out" "issue #8"
 assert_contains "this host's dead claim with no record warns, naming issue, phase and no record" "$out" "issue #9 is claimed by this host (phase spec), but its process is gone (no record)."
 assert_contains "with the tick remedy on the line after it" "$(printf "%s\n" "$out" | grep -A1 "issue #9 is claimed by this host")" "      orch.sh autopilot tick"
+assert_trace_loads_once "doctor --env with other hosts' old claims and this host's dead ones" "$cl_load"
+rm -f "$cl_load"
 live_orch liveness_run_begin 9
 out="$("$ORCH" doctor --env 2>&1)"
 assert_not_contains "a live claim adds no warning" "$out" "issue #9 is claimed"
@@ -2238,10 +2305,13 @@ fake_issue_title 7 "Side flow"
 # The side checkout is built by the commands a pickup runs: add, then init.
 side7="$("$ORCH" side-checkout add 7-side-flow --issue 7 2>/dev/null)"
 (cd "$side7" && "$ORCH" init 7-side-flow --issue 7 >/dev/null 2>&1)
+sf_load="$(mktemp)"
 fake_issue 7 open ready-for-agent orch:implement
-out="$("$ORCH" doctor --env 2>&1)"
+out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor --env 2>&1)"
 assert_contains "doctor in the main checkout flags a side flow whose label disagrees" "$out" "issue #7 is labelled orch:implement, but its side checkout"
 assert_contains "naming the recorded phase" "$out" "last moved to phase spec"
+assert_trace_loads_once "doctor --env beside a side flow whose label disagrees" "$sf_load"
+rm -f "$sf_load"
 fake_issue 7 open ready-for-agent orch:review orch:spec
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "a side flow with two phase labels names both, space-separated" "$out" "issue #7 is labelled orch:spec orch:review, but its side checkout"

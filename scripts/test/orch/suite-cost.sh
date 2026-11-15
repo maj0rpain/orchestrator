@@ -1610,3 +1610,14 @@ assert_eq "and the partner captured nothing" "$(cat "$hs/err-done")" ""
 assert_eq "and the first side wrote nothing to stderr" "$(cat "$hs/err-done-first")" ""
 assert_eq "and the replay wrote nothing to stderr" "$err" ""
 rm -rf "$hs"
+
+# --- suite-cost base commit reads the flow state once -------------------------
+echo
+echo "suite-cost base commit one jq"
+fresh_flow scjq
+state_fixture base_sha "$(git rev-parse HEAD)"
+sj_jq="$(counting_bin jq)"
+out="$(PATH="$sj_jq:$PATH" sourced_orch suite_cost_base_commit 2>&1)"
+assert_eq "inside a flow it prints state.base_sha" "$out" "$(git rev-parse HEAD)"
+assert_eq "and starts exactly one jq" "$(counting_starts "$sj_jq" jq)" "1"
+restore_suite_env

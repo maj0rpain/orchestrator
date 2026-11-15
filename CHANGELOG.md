@@ -1,5 +1,18 @@
 # Changelog
 
+## 5.2.88
+
+`phase advance`, `phase boundary`, `redo review`, `redo spec`, `breakdown
+publish`, `spec-review check --tickets` and `doctor` (bare, `--env` and
+`--flow`) now load each module once per run, in the main shell, rather than
+once per subshell that calls into it. `breakdown publish` and `doctor --env` no
+longer slow down as tickets or claims grow. Nothing these commands print or
+return changes.
+
+## 5.2.87
+
+A command that needs several keys of its checkout's Flow state now reads them in one `jq` at its entry, and hands the values to the helpers it calls, instead of parsing `state.json` once per key and often once more per repeated key: `phase advance` and `phase boundary`, the `spec` ops, `branch create` and `branch sync`, `ticket reclaim`, `pr open`, both redos, the `review` ops, the autopilot ops, `base set`, `init`'s busy check, `archive` and the grilling hook beside an active flow. A required-field read beside no state file now says "no active flow" instead of printing jq's raw "Could not open file" error; every other message, refusal and exit status is unchanged.
+
 ## 5.2.86
 
 The merged-PR close backstop reads only the PRs merged since the oldest issue it may close was created, instead of every merged PR.
