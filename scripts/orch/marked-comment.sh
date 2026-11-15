@@ -21,8 +21,8 @@
 # The readers: marked_comment_texts (the opening-stripped texts of a kind) and
 # _drop, over the prelude's marked_comment_list, _info, _entries and _of.
 #
-# Every reader takes the comments JSON on stdin: the issue object from the
-# structured issue read, or the bare comment array.
+# Every reader takes the bare comment array on stdin (the Comments module's
+# trusted read) and, on any other input, exits non-zero and prints nothing.
 
 # The legacy openings of a refusal and a failure stop comment, frozen: they
 # only recognise comments posted before those kinds had a marker.
@@ -42,8 +42,8 @@ MARKED_COMMENT_SPEC_REVIEW_OPENING='## Spec review'
 MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
 
 # marked_comment_jq: prints the jq definitions every reader shares. Expand it
-# at call time. marked_comment_list is the comment array of the input, in
-# either shape; marked_comment_info is, for a comment,
+# at call time. marked_comment_list is the comment array of the input, the
+# input itself; marked_comment_info is, for a comment,
 # {kind, arg, retired, cause} (kind and arg null for an unmarked comment,
 # retired a boolean, cause a string);
 # marked_comment_entries is, for the input, {key, c, info} of each comment: its
@@ -52,7 +52,7 @@ MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
 marked_comment_jq() {
   local kinds="${MARKED_COMMENT_KINDS// /|}" causes="${MARKED_COMMENT_CAUSES// /|}"
   cat <<EOJQ
-def marked_comment_list: if type == "object" then .comments else . end;
+def marked_comment_list: .;
 def marked_comment_info:
   ((.body // "") | split("\n")[0] // "" | rtrimstr("\r")) as \$l
   | ([\$l | capture("^<!-- orch:(?<kind>$kinds) (?<arg>[^ ]+)(?: (?<cause>$causes))?(?<retired> retired)? -->\$")?] | .[0]) as \$m
@@ -116,11 +116,12 @@ marked_comment_write() {
 # removed - the whole first line, newline included, for every kind but
 # spec-ruling, whose `Spec ruling:` prefix alone goes - and every CR removed.
 # A comment of only its opening gives "". Prints [] when none is of that kind,
-# and exits 2, printing nothing, when the comments cannot be read.
+# and exits 2, printing nothing, when the input is not a comment array.
 marked_comment_texts() {
   local out
   out="$(jq -c --arg k "$1" --arg a "${2-}" --arg ruling "$MARKED_COMMENT_SPEC_RULING_OPENING" "$(marked_comment_jq)"'
-    marked_comment_of($k; $a)
+    if type != "array" then error("not a comment array") else . end
+    | marked_comment_of($k; $a)
     | map((.c.body // "") as $b
       | (if $k == "spec-ruling" then $b | ltrimstr($ruling)
          else ($b | index("\n")) as $n | if $n == null then "" else $b[$n + 1:] end end)
@@ -128,11 +129,11 @@ marked_comment_texts() {
   printf '%s\n' "$out"
 }
 
-# marked_comment_drop <kind>: the comments on stdin, in the input's shape, with
-# every comment of <kind> dropped; each kept comment unchanged. Exits non-zero,
-# printing nothing, when the comments cannot be read.
+# marked_comment_drop <kind>: the comment array on stdin with every comment of
+# <kind> dropped; each kept comment unchanged. Exits non-zero, printing
+# nothing, when the input is not a comment array.
 marked_comment_drop() {
   jq -c --arg k "$1" "$(marked_comment_jq)"'
-    def run: map(select((marked_comment_info).kind != $k));
-    if type == "object" then .comments |= run else run end'
+    if type != "array" then error("not a comment array") else . end
+    | map(select((marked_comment_info).kind != $k))'
 }

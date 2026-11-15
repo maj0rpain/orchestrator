@@ -541,7 +541,7 @@ cmd_pr_comments() {
   local file="$1" pr
   pr="$(current_open_pr)" || return $?
   local text
-  comments_rendered --exit 2 adapter_pr_comments "read the comments of PR #$pr" "$pr" text
+  comments_rendered --exit 2 pr "read the comments of PR #$pr" "$pr" text
   file_write_atomic "$file" "${text:+$text$'\n'}" || die2 "could not write $file"
 }
 
