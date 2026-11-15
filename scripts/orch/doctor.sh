@@ -28,8 +28,10 @@
 # loads through orch_load. The helpers it calls from noun modules
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
-# require_state from state.sh), and check_agent_settings, agent.sh's check
-# its env check list names, are defined by the time cmd_doctor runs:
+# require_state from state.sh), and the checks its env check list names from
+# other modules (agent.sh's check_agent_settings, review.sh's
+# check_standards_declaration, glossary.sh's check_glossary), are defined by
+# the time cmd_doctor runs:
 # run as a command they are stubs that load their module on first call
 # (loader.sh's orch_stubs). cmd_doctor is then
 # dispatched from main() exactly like any other command.
@@ -692,21 +694,23 @@ d_verification_found() {
 
 # The repo's verification commands: for each label, the first word of the
 # command on the first line, across the instruction files in order, that opens
-# with it. Found is ok; not found is a warn with no remedy, since no one
-# command installs an arbitrary tool. A label nobody names, or whose line
+# with it; a label with a line of no command is verification_report's FAIL and
+# says nothing here. Found is ok; not found is a warn with no remedy, since no
+# one command installs an arbitrary tool. A label nobody names, or whose line
 # leaves no command word, says nothing. A function orch.sh defines never counts
 # as found: only a builtin, a keyword or a file does. No namerefs (bash 4.2).
 check_verification_commands() {
-  local label word from_file lines l f cmd
+  local label word from_file bare lines l f cmd
   lines="$(verification_lines)" || lines=""
   for label in "Ticket verification" "Full verification"; do
-    from_file="" word=""
+    from_file="" word="" bare=""
     while IFS=$'\t' read -r l f cmd; do
       [ "$l" = "$label" ] || continue
+      if [ -z "$cmd" ]; then bare=1; continue; fi
+      [ -n "$from_file" ] && continue
       from_file="$f"; word="$(d_verification_word "$cmd")"
-      break
     done <<<"$lines"
-    [ -n "$from_file" ] && [ -n "$word" ] || continue
+    [ -z "$bare" ] && [ -n "$from_file" ] && [ -n "$word" ] || continue
     if d_verification_found "$word"; then
       d_ok "$label command: $word"
     else
