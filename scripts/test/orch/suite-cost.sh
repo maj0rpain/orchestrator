@@ -1465,6 +1465,19 @@ for sig in INT TERM HUP; do
   assert_eq "base run $sig: records nothing new" "$(log_count "$rec")" 1
 done
 
+# A run interrupted while its stderr cannot be written still cleans up and exits
+# 128 plus the signal's number: no write may end the handler early.
+for sig in TERM HUP; do
+  new_repo >/dev/null
+  rec_path
+  tdir="$(mktemp -d)"
+  TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c "kill -$sig \$PPID" >/dev/null 2>/dev/full; st=$?
+  assert_status "unwritable stderr $sig: exits 128 plus the signal's number" "$st" "$(sig_status "$sig")"
+  assert_eq "unwritable stderr $sig: leaves no marker or contended mark" "$(ls -A "$rec.active" 2>/dev/null | wc -l | tr -d ' ')" 0
+  assert_eq "unwritable stderr $sig: leaves no timing file" "$(ls -A "$tdir" | wc -l | tr -d ' ')" 0
+  assert_eq "unwritable stderr $sig: records nothing" "$(on_disk "$rec")" absent
+done
+
 # A command that sends TERM and then finds its marker still on disk.
 new_repo >/dev/null
 rec_path

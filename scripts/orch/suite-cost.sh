@@ -257,16 +257,19 @@ suite_cost_timefile_remove() {
 
 # suite_cost_interrupted <status>: the handler. Warns once that the run was
 # interrupted - on the caller's stderr even inside the measuring step, where
-# stderr is the timing file and fd 3 is the caller's - removes the run's
+# stderr is the timing file and fd 3 is the caller's - after removing the run's
 # marker, first-name file, contended mark and timing file (failures ignored),
-# for a tree run returns to its starting directory and removes its worktree
+# for a tree run returning to its starting directory and removing its worktree
 # and temporary directory (a failed worktree removal is warned of, naming the
-# command), and exits <status>, 128 plus the signal's number.
+# command), and exits <status>, 128 plus the signal's number. A stderr that
+# cannot be written changes neither the cleanup nor the exit.
 suite_cost_interrupted() {
   local status="$1"
   trap - HUP INT TERM
+  # A dead stderr must not end the handler early: SIGPIPE from a closed pipe is
+  # ignored, a failed write is ignored, and the warning follows the cleanup.
+  trap '' PIPE
   [ -z "$SUITE_COST_TIMEFILE" ] || [ ! /dev/fd/2 -ef "$SUITE_COST_TIMEFILE" ] || exec 2>&3
-  warn "this run was interrupted - its suite cost is not recorded"
   [ -z "$SUITE_COST_MARK" ] || rm -f -- "$SUITE_COST_MARK" "$SUITE_COST_MARK.contended" 2>/dev/null || true
   [ -z "$SUITE_COST_FIRST" ] || rm -f -- "$SUITE_COST_FIRST" 2>/dev/null || true
   suite_cost_timefile_remove
@@ -278,6 +281,7 @@ suite_cost_interrupted() {
       rmdir "$SUITE_COST_TREE_TMP" 2>/dev/null || true
     fi
   fi
+  warn "this run was interrupted - its suite cost is not recorded" || true
   exit "$status"
 }
 
