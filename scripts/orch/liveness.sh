@@ -1,12 +1,14 @@
 # shellcheck shell=bash
 # liveness.sh - the Liveness module, a concept module with no noun: whether
-# the process behind an autopilot flow's claim on this host is still running.
+# the process behind a record - an autopilot flow's claim on this host, a
+# watch, a suite-cost active run - is still running.
 # It owns the autopilot directory's run/ layout (run/<issue>.pid, the run
 # record, run/<issue>.tick, the tick's record, and run/<issue>.hit, the hit
 # file: the reset of a GitHub API rate limit a session hit), the
 # `<pid> <start-time>` record format, the start-time reader
 # (/proc/<pid>/stat field 22 under $ORCH_PROC_DIR, else `ps -o lstart=`), the
-# record-alive rule, the watch pidfile and the session log naming
+# record-alive rule (which also judges a suite-cost active-run marker, a
+# record too), the watch pidfile and the session log naming
 # (logs/<issue>-<phase>-<stamp>.log). Of orch.sh's files only this one touches
 # /proc and ps and names paths under run/; a session writes the hit file only
 # at the path the wrapper hands it. Its tests: scripts/test/orch/liveness.sh.
@@ -18,7 +20,7 @@ liveness_proc_start() {
   local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   if [ -r "$root/$pid/stat" ]; then
-    stat="$(cat "$root/$pid/stat" 2>/dev/null)" || stat=""
+    file_read stat "$root/$pid/stat" 2>/dev/null || stat=""
     rest="${stat##*) }"
     # shellcheck disable=SC2086
     set -- $rest
@@ -50,6 +52,15 @@ liveness_record_alive() {
   [[ "$pid" =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ -z "${extra:-}" ] || return 1
   current="$(liveness_proc_start "$pid")" || return 1
   [ "$current" = "$start" ]
+}
+
+# liveness_marker_alive <pid> <file>: whether the file holds the record of that
+# pid, alive by the record-alive rule. An empty, malformed or unreadable file,
+# or a record naming another pid, is stale.
+liveness_marker_alive() {
+  local record
+  file_read record "$2" 2>/dev/null || return 1
+  [ "${record%% *}" = "$1" ] && liveness_record_alive "$record"
 }
 
 # liveness_subdir <name>: the main checkout's autopilot subdirectory of that
@@ -109,10 +120,9 @@ liveness_run_begin() {
 # names the calling process, so a later run's record survives an earlier run's
 # exit.
 liveness_run_end() {
-  local dir record
+  local dir
   dir="$(liveness_subdir run)" || return $?
-  record="$(cat "$dir/$1.pid" 2>/dev/null)" || record=""
-  [ "${record%% *}" = "$$" ] && liveness_record_alive "$record" || return 0
+  liveness_marker_alive "$$" "$dir/$1.pid" || return 0
   rm -f "$dir/$1.pid"
 }
 

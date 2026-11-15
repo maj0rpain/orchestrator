@@ -361,13 +361,101 @@ assert_eq "and that .contended file is gone" "$(on_disk "$active/$$.contended")"
 # A live run already marked contended - the test shell's own pid, its marker
 # and .contended file seeded - is contention, and only its marker is marked:
 # its .contended file is never taken for a marker of its own.
-: >"$active/$$"
+sourced_orch liveness_record_write "$$" "$active/$$"
 : >"$active/$$.contended"
 err="$("$ORCH" suite-cost run -- true 2>&1)"
 assert_contains "a live run already marked contended is contention" "$err" "orch: $overlap"
 assert_eq "and its .contended file gets no .contended file of its own" \
   "$(on_disk "$active/$$.contended.contended")" absent
 rm -f -- "$active/$$" "$active/$$.contended"
+
+# A marker is the Liveness module's record, judged by its record-alive rule: a
+# live pid with another start time is stale, its true start time is contention.
+new_repo >/dev/null
+rec_path
+active="$rec.active"
+mkdir -p "$active"
+printf '%s 1\n' "$$" >"$active/$$"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_eq "a marker under a live pid with another start time is no contention" "$err" ""
+assert_eq "the run is recorded" "$("$ORCH" suite-cost history | wc -l | tr -d ' ')" 1
+assert_eq "and that marker is gone" "$(on_disk "$active/$$")" absent
+sourced_orch liveness_record_write "$$" "$active/$$"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_contains "a marker with its true start time is contention" "$err" "orch: $overlap"
+rm -f -- "$active/$$"
+
+# Other stale markers: empty, malformed, unreadable start time, another pid's
+# record. A contended mark beside one goes with it.
+fake_proc="$(mktemp -d)"
+for kind in empty malformed unreadable otherpid; do
+  mkdir -p "$active"
+  case "$kind" in
+    empty) : >"$active/$$" ;;
+    malformed) printf 'word\n' >"$active/$$" ;;
+    unreadable) sourced_orch liveness_record_write "$$" "$active/$$" ;;
+    otherpid)
+      # a true record of a live pid that is not the marker's file name
+      sleep 30 &
+      other_pid=$!
+      sourced_orch liveness_record_write "$other_pid" "$active/$$"
+      ;;
+  esac
+  : >"$active/$$.contended"
+  if [ "$kind" = unreadable ]; then
+    # a fake process table that knows the run (exec keeps its pid) but not
+    # the marker's pid, here the test shell's
+    err="$(ORCH_PROC_DIR="$fake_proc" bash -c 'mkdir "$ORCH_PROC_DIR/$$"; cp "/proc/$$/stat" "$ORCH_PROC_DIR/$$/stat"; ps() { return 1; }; export -f ps; exec "$0" suite-cost run -- true' "$ORCH" 2>&1)"
+  else
+    err="$("$ORCH" suite-cost run -- true 2>&1)"
+  fi
+  assert_eq "a $kind marker is stale and no contention" "$err" ""
+  assert_eq "and is removed with its contended mark" \
+    "$(on_disk "$active/$$")$(on_disk "$active/$$.contended")" absentabsent
+  if [ "$kind" = otherpid ]; then
+    kill "$other_pid" 2>/dev/null || true
+    wait "$other_pid" 2>/dev/null || true
+  fi
+done
+rm -rf "$fake_proc"
+
+# A file under a marker's first name is neither removed nor counted.
+: >"$active/.$dead.new"
+before_first="$(log_count "$rec")"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_eq "a file under a marker's first name is no contention" "$err" ""
+assert_eq "and the run is recorded" "$(( $(log_count "$rec") - before_first ))" 1
+assert_eq "and is left alone" "$(on_disk "$active/.$dead.new")" present
+rm -f -- "$active/.$dead.new"
+
+# A marker in progress holds its record while two runs overlap.
+hs="$(handshake_fifos)"
+"$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>"$hs/err-first" &
+pid_a=$!
+bounded_run_replayed "$hs/err-listing" 60 "record partner ($hs/one, $hs/two)" \
+  sh -c 'read -r _ <"$0"; for m in "$2"/[0-9]*; do case "$m" in *.contended) ;; *) cat "$m" ;; esac; done >"$3"; printf "x\n" >"$1"' \
+  "$hs/one" "$hs/two" "$active" "$hs/listing"
+wait "$pid_a"
+replay_on_expiry "$?" "$hs/err-first"
+unrecorded="$(grep -vcE '^[0-9]+ [^ ]+$' "$hs/listing")"
+assert_eq "each marker read while two runs overlap holds its record" \
+  "$unrecorded:$(wc -l <"$hs/listing" | tr -d ' ')" "0:2"
+rm -rf "$hs"
+
+# A start time unreadable at registration: no registration, the record
+# writer's line then the could-not-register line.
+new_repo >/dev/null
+rec_path made
+fake_proc="$(mktemp -d)"
+fake_bin="$(fails_bin ps '*')"
+errf="$(mktemp)"
+out="$(PATH="$fake_bin:$PATH" ORCH_PROC_DIR="$fake_proc" "$ORCH" suite-cost run -- sh -c 'echo $PPID; exit 3' 2>"$errf")"; st=$?
+assert_status "a run whose start time is unreadable passes its exit code through" "$st" 3
+assert_eq "and records nothing" "$("$ORCH" suite-cost history)" ""
+assert_eq "stderr names the orch.sh pid first" "$(sed -n 1p "$errf")" "orch: could not read the start time of pid $out"
+assert_contains "then the could-not-register line" "$(sed -n 2p "$errf")" \
+  "orch: this run could not register as active - its suite cost is not recorded"
+rm -rf "$fake_proc" "$fake_bin" "$errf"
 
 # A run that cannot register as active: a plain file where the active-runs
 # directory goes, the record itself still writable.
@@ -1230,7 +1318,7 @@ pre_reset() {
 # (a) no base record: a live marker beside a stale one blocks the base run.
 pre_reset
 mkdir -p "$active"
-: >"$active/$$"
+sourced_orch liveness_record_write "$$" "$active/$$"
 : >"$active/$dead"
 before="$(cat "$rec")"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
@@ -1246,7 +1334,7 @@ assert_eq "and adding no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
 # (b) a grew comparison with a live marker: no confirming run.
 confirm_reset
 mkdir -p "$active"
-: >"$active/$$"
+sourced_orch liveness_record_write "$$" "$active/$$"
 before="$(cat "$rec")"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a grew comparison beside a live run is unmeasured" "$out" "unmeasured"
@@ -1255,7 +1343,8 @@ assert_contains "warning the growth is unconfirmed, naming the pid" "$(cat "$err
 assert_eq "with no confirming run recorded" "$(cat "$rec")" "$before"
 
 # (c) a live run appearing during the head confirming run stops the base one.
-cmd=(sh -c 'if [ "$(git rev-parse HEAD)" = "$0" ]; then mkdir -p "$1" && : >"$1/$2"; fi' "$head" "$active" "$$")
+live_rec="$(sourced_orch liveness_record_write "$$" /dev/stdout)"
+cmd=(sh -c 'if [ "$(git rev-parse HEAD)" = "$0" ]; then mkdir -p "$1" && printf "%s\n" "$3" >"$1/$2"; fi' "$head" "$active" "$$" "$live_rec")
 cmd_str="${cmd[*]}"
 confirm_reset
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
@@ -1273,7 +1362,7 @@ confirm_reset
 seed_run "$base" 100.00
 seed_run "$head" 100.00
 mkdir -p "$active"
-: >"$active/$$"
+sourced_orch liveness_record_write "$$" "$active/$$"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a recorded base whose comparison is ok prints ok" "$out" "ok"
 assert_eq "without a warning" "$(cat "$errf")" ""
@@ -1303,8 +1392,171 @@ out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a .contended file with no marker does not block the base run" "$out" "ok"
 assert_eq "and the base run is recorded" "$(grep -c "^$base" "$rec")" 2
 
+# (g) a marker with another start time and an empty marker do not block it.
+pre_reset
+mkdir -p "$active"
+printf '%s 1\n' "$$" >"$active/$$"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a marker with another start time does not block the base run" "$out" "ok"
+pre_reset
+mkdir -p "$active"
+: >"$active/$$"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "an empty marker does not block the base run" "$out" "ok"
+
 rm -rf "$errf" "$ORCH_SUITE_COST_FAKE_CPU"
 restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU
+
+# --- suite-cost interrupt -----------------------------------------------------
+# A measured run interrupted by INT, TERM or HUP cleans up after itself: no
+# marker, contended mark, timing file or worktree is left, nothing is recorded,
+# one warning says so, and the process exits 128 plus the signal's number.
+echo
+echo "suite-cost interrupt"
+sig_status() { case "$1" in INT) echo 130 ;; TERM) echo 143 ;; HUP) echo 129 ;; esac; }
+interrupted_msg="orch: this run was interrupted - its suite cost is not recorded"
+
+# assert_clean_interrupt <label> <errfile> <status> <signal> <tmpdir>
+assert_clean_interrupt() {
+  assert_status "$1: exits 128 plus the signal's number" "$3" "$(sig_status "$4")"
+  assert_eq "$1: warns once" "$(grep -cF -- "$interrupted_msg" "$2")" 1
+  assert_eq "$1: leaves no marker or contended mark" "$(ls -A "$rec.active" 2>/dev/null | wc -l | tr -d ' ')" 0
+  assert_eq "$1: leaves no timing file" "$(ls -A "$5" | wc -l | tr -d ' ')" 0
+  assert_eq "$1: leaves no worktree" "$(no_worktree)" none
+}
+
+# A shell that started with SIGINT ignored, as a parallel runner's child does,
+# hands that on to orch.sh, which then cannot trap INT. perl restores its
+# default for the INT cases; without perl they are skipped.
+int_launch=()
+int_skip=0
+if [ "$(trap -p INT)" = "trap -- '' SIGINT" ]; then
+  if command -v perl >/dev/null 2>&1; then
+    int_launch=(perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die "exec: $!"')
+  else
+    int_skip=1
+  fi
+fi
+
+for sig in INT TERM HUP; do
+  if [ "$sig" = INT ] && [ "$int_skip" -eq 1 ]; then
+    skip "a run sent INT cleans up" "this shell started with SIGINT ignored, and perl is not installed to restore it"
+    continue
+  fi
+  launch=()
+  [ "$sig" != INT ] || launch=(${int_launch[@]+"${int_launch[@]}"})
+  new_repo >/dev/null
+  rec_path
+  tdir="$(mktemp -d)"; errf="$(mktemp)"
+  out="$(TMPDIR="$tdir" ${launch[@]+"${launch[@]}"} "$ORCH" suite-cost run -- sh -c "kill -$sig \$PPID" 2>"$errf")"; st=$?
+  assert_clean_interrupt "run $sig" "$errf" "$st" "$sig" "$tdir"
+  assert_eq "run $sig: records nothing" "$(on_disk "$rec")" absent
+  TMPDIR="$tdir" "$ORCH" suite-cost run -- true >/dev/null 2>"$errf"
+  assert_eq "run $sig: a run after an interrupted one warns nothing" "$(cat "$errf")" ""
+  assert_eq "run $sig: and is recorded" "$(log_count "$rec")" 1
+
+  check_repo
+  seed_run "$head" 70.00 "sh -c kill -$sig \$PPID"
+  tdir="$(mktemp -d)"; errf="$(mktemp)"
+  out="$(TMPDIR="$tdir" ${launch[@]+"${launch[@]}"} "$ORCH" suite-cost check -- sh -c "kill -$sig \$PPID" 2>"$errf")"; st=$?
+  assert_clean_interrupt "base run $sig" "$errf" "$st" "$sig" "$tdir"
+  assert_eq "base run $sig: prints no verdict line" "$out" ""
+  assert_eq "base run $sig: stores no verdict" "$(on_disk "$rec.verdicts")" absent
+  assert_eq "base run $sig: records nothing new" "$(log_count "$rec")" 1
+done
+
+# A run interrupted while its stderr cannot be written still cleans up and exits
+# 128 plus the signal's number: no write may end the handler early.
+for sig in TERM HUP; do
+  new_repo >/dev/null
+  rec_path
+  tdir="$(mktemp -d)"
+  TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c "kill -$sig \$PPID" >/dev/null 2>/dev/full; st=$?
+  assert_status "unwritable stderr $sig: exits 128 plus the signal's number" "$st" "$(sig_status "$sig")"
+  assert_eq "unwritable stderr $sig: leaves no marker or contended mark" "$(ls -A "$rec.active" 2>/dev/null | wc -l | tr -d ' ')" 0
+  assert_eq "unwritable stderr $sig: leaves no timing file" "$(ls -A "$tdir" | wc -l | tr -d ' ')" 0
+  assert_eq "unwritable stderr $sig: records nothing" "$(on_disk "$rec")" absent
+done
+
+# A command that sends TERM and then finds its marker still on disk.
+new_repo >/dev/null
+rec_path
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+proof="$(mktemp -u)"
+TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c 'kill -TERM $PPID; test -e "$0/$PPID" && : >"$1"' "$rec.active" "$proof" >/dev/null 2>"$errf"; st=$?
+assert_clean_interrupt "a command finding its marker after TERM" "$errf" "$st" TERM "$tdir"
+assert_eq "the marker stayed until the command returned" "$(on_disk "$proof")" present
+rm -f -- "$proof"
+
+# A base run's setup command that signals its parent.
+check_repo
+seed_run "$head" 70.00 "${pass[*]}"
+git config orchestrator.suiteCost.setup 'kill -TERM $PPID'
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+out="$(TMPDIR="$tdir" "$ORCH" suite-cost check -- "${pass[@]}" 2>"$errf")"; st=$?
+assert_clean_interrupt "a setup that signals" "$errf" "$st" TERM "$tdir"
+assert_eq "the command never ran" "$(on_disk "$marker")" absent
+assert_eq "a setup that signals: prints no verdict line" "$out" ""
+assert_eq "a setup that signals: stores no verdict" "$(on_disk "$rec.verdicts")" absent
+assert_eq "a setup that signals: records nothing new" "$(log_count "$rec")" 1
+
+# A confirming run: the base is recorded, the head grew, so the base confirming
+# run (the command's second run) measures the command, which signals.
+check_repo
+sigcmd=(sh -c 'if [ -e "$0" ]; then kill -TERM $PPID; fi; touch "$0"' "$marker")
+seed_run "$head" 100.00 "${sigcmd[*]}"
+seed_run "$base" 70.00 "${sigcmd[*]}"
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+out="$(TMPDIR="$tdir" "$ORCH" suite-cost check -- "${sigcmd[@]}" 2>"$errf")"; st=$?
+assert_clean_interrupt "a confirming run" "$errf" "$st" TERM "$tdir"
+assert_eq "a confirming run prints no verdict line" "$out" ""
+assert_eq "a confirming run stores no verdict" "$(on_disk "$rec.verdicts")" absent
+# Two seeds plus the head run the check recorded before the base run signalled.
+assert_eq "a confirming run records nothing from the interrupted run" "$(log_count "$rec")" 3
+
+# A base run whose command locks its own worktree before signalling: the
+# removal fails, naming the removing command, and the exit stays 143.
+check_repo
+seed_run "$head" 70.00 "sh -c git worktree lock . && kill -TERM \$PPID"
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+TMPDIR="$tdir" "$ORCH" suite-cost check -- sh -c 'git worktree lock . && kill -TERM $PPID' >/dev/null 2>"$errf"; st=$?
+assert_status "a locked worktree: still exits 143" "$st" 143
+# the locked worktree keeps its own directory; no timing file may stay beside it
+assert_eq "a locked worktree: leaves no timing file" "$(find "$tdir" -mindepth 1 -maxdepth 1 ! -type d | wc -l | tr -d ' ')" 0
+assert_contains "the removal's warning names the removing command" "$(cat "$errf")" "git worktree remove --force"
+git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r w; do
+  [ "$w" = "$PWD" ] || { git worktree unlock "$w" 2>/dev/null; git worktree remove --force "$w" 2>/dev/null; }
+done
+
+# A base run interrupted once whose worktree removal sends the process a second
+# signal: the cleanup still finishes, warns once, and the exit stays 143.
+check_repo
+seed_run "$head" 70.00 "sh -c kill -TERM \$PPID"
+realgit="$(command -v git)"
+gitbin="$(mktemp -d)"
+cat >"$gitbin/git" <<EOS
+#!/bin/sh
+if [ "\$1 \$2" = "worktree remove" ]; then kill -HUP \$PPID; fi
+exec "$realgit" "\$@"
+EOS
+chmod +x "$gitbin/git"
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+out="$(PATH="$gitbin:$PATH" TMPDIR="$tdir" "$ORCH" suite-cost check -- sh -c 'kill -TERM $PPID' 2>"$errf")"; st=$?
+assert_clean_interrupt "a second signal during cleanup" "$errf" "$st" TERM "$tdir"
+rm -rf -- "$gitbin"
+
+# A run that could not register: a plain file where the active-runs directory
+# goes.
+new_repo >/dev/null
+rec_path made
+printf 'plain\n' >"$rec.active"
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c 'kill -TERM $PPID' >/dev/null 2>"$errf"; st=$?
+assert_status "an unregistered run, interrupted, exits 143" "$st" 143
+assert_eq "an unregistered run, interrupted: leaves no timing file" "$(ls -A "$tdir" | wc -l | tr -d ' ')" 0
+assert_eq "warns once" "$(grep -cF -- "$interrupted_msg" "$errf")" 1
+assert_eq "records nothing" "$(on_disk "$rec")" absent
+assert_eq "and leaves the plain file as it was" "$(cat "$rec.active")" plain
 
 # --- suite-cost barrier -------------------------------------------------------
 # A FIFO handshake whose partner never arrives fails fast, naming the side and
