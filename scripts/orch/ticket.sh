@@ -227,7 +227,9 @@ cmd_ticket_list() {
 # has not landed is never closed (#1146). With no ticket worktree, no check
 # runs. Every refusal comes before any gh call, leaving the issue open.
 cmd_ticket_close() {
-  local n="" unmerged=0 path branch usage="usage: orch.sh ticket close <n> [--unmerged]"
+  local n="" unmerged=0 usage="usage: orch.sh ticket close <n> [--unmerged]"
+  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
+  local cf_n cf_path cf_worktree cf_wt_branch cf_parent cf_own_branch cf_own_exists
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -239,10 +241,10 @@ cmd_ticket_close() {
   [ -n "$n" ] || die "$usage"
   case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
   if [ "$unmerged" = 0 ]; then
-    path="$(ticket_worktree_path "$n")"
-    if is_ticket_worktree "$path"; then
-      ticket_worktree_resolve "$n"
-      ticket_branch_merged_or_die "$branch" "close it anyway"
+    ticket_facts "$n" cf
+    if [ "$cf_worktree" = worktree ]; then
+      ticket_facts_require_wt_branch cf
+      ticket_branch_merged_or_die "$cf_wt_branch" "close it anyway"
     fi
   fi
   gh_or_die "close ticket #$n" adapter_issue_close "$n"
@@ -652,10 +654,17 @@ cmd_ticket() {
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
   local n path branch parent parent_checkout rebase_err unmerged said
+  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
+  local mf_n mf_path mf_worktree mf_wt_branch mf_parent mf_own_branch mf_own_exists
   # rebase_out is set by capture and only git's stderr is read.
   # shellcheck disable=SC2034
   local rebase_out
-  ticket_worktree_resolve "$1"
+  n="$(ticket_worktree_number "$1")" || exit $?
+  ticket_facts "$n" mf
+  ticket_facts_require_worktree mf worktree
+  ticket_facts_require_wt_branch mf
+  path="$mf_path"
+  branch="$mf_wt_branch"
   parent="$(forked_from_branch "$branch")" \
     || die "branch $branch records no forked-from branch"
   require_clean_tree "$path" \

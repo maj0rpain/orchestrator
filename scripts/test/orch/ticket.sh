@@ -417,6 +417,67 @@ assert_contains "the usage text lists ticket close <n> [--unmerged]" \
   "$("$ORCH" help 2>&1)" "ticket close <n> [--unmerged]"
 restore_suite_env
 
+# The facts of a ticket come from one read of git's record (#3087).
+tw_repo
+fake_github
+fake_issue 20 open
+wt="$("$ORCH" ticket-worktree add 20)"
+commit_file "$wt" ticket20.txt one
+"$ORCH" ticket merge 20 >/dev/null 2>&1
+git checkout -q --detach
+out="$("$ORCH" ticket close 20 2>&1)"; st=$?
+assert_status "close from a detached HEAD closes a merged ticket" "$st" 0
+assert_eq "closing it" "$(fake_state_of 20)" "CLOSED"
+git checkout -q orch/5-feature
+
+fake_issue 21 open
+wt="$("$ORCH" ticket-worktree add 21)"
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket close 21 --unmerged 2>&1)"; st=$?
+assert_status "close --unmerged reads no checkouts" "$st" 0
+assert_eq "closing it" "$(fake_state_of 21)" "CLOSED"
+
+fake_issue 22 open
+wt="$("$ORCH" ticket-worktree add 22)"
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket close 22 2>&1)"; st=$?
+assert_status "close dies when the checkouts cannot be read" "$st" 1
+assert_eq "leaving the issue open" "$(fake_state_of 22)" "OPEN"
+
+fake_issue 23 open
+wt="$("$ORCH" ticket-worktree add 23)"
+commit_file "$wt" ticket23.txt one
+echo dirt >"$wt/dirty.txt"
+flow_tip="$(git rev-parse orch/5-feature)"; t_tip="$(git rev-parse orch/5-feature--t23)"
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket merge 23 2>&1)"; st=$?
+assert_status "merge of a dirty worktree dies when the checkouts cannot be read" "$st" 1
+assert_contains "naming the checkouts, not the dirty tree" "$out" "could not read the checkouts"
+assert_eq "the forked-from branch is as it was" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t23)" "$t_tip"
+
+# A ticket worktree with another branch checked out than the ticket's own.
+fake_issue 24 open
+wt="$("$ORCH" ticket-worktree add 24)"
+git -C "$wt" checkout -q -b other-24
+git config branch.other-24.orchestrator-ticket-parent orch/5-feature
+commit_file "$wt" other24.txt one
+own_tip="$(git rev-parse orch/5-feature--t24)"
+out="$("$ORCH" ticket close 24 2>&1)"; st=$?
+assert_status "close asks the merged check of the checked-out branch" "$st" 1
+assert_eq "leaving the issue open" "$(fake_state_of 24)" "OPEN"
+out="$("$ORCH" ticket merge 24 2>&1)"; st=$?
+assert_status "merge lands the checked-out branch" "$st" 0
+assert_eq "on its forked-from branch" "$(git rev-parse orch/5-feature)" "$(git rev-parse other-24)"
+assert_eq "leaving the ticket's own branch as it was" "$(git rev-parse orch/5-feature--t24)" "$own_tip"
+
+# git's record names the worktree and its directory is gone: no merged check.
+fake_issue 25 open
+wt="$("$ORCH" ticket-worktree add 25)"
+commit_file "$wt" ticket25.txt one
+rm -rf "$wt"
+out="$("$ORCH" ticket close 25 2>&1)"; st=$?
+assert_status "close of a ticket whose worktree directory is gone" "$st" 0
+assert_eq "closing it" "$(fake_state_of 25)" "CLOSED"
+restore_suite_env
+
 # --- ticket reset ------------------------------------------------------------
 # Reopens every sub-issue of <parent> that is currently closed, and only
 # those - what redo review needs before handing back to a fresh implement
