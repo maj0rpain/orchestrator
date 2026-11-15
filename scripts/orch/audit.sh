@@ -42,6 +42,66 @@ audit_body_parse() {
   printf -v "$3" '%s' "$__abp_shas"
 }
 
+# audit_drift_line <body>: for an audit-filed body, prints the one line saying
+# which of the cited files changed since the audited commit: `cited files
+# changed since <sha>: none`, or the changed files joined by `, `, in body
+# order, each once. An audit-filed body has exactly one **Audited at:** line,
+# its value hexadecimal, and at least one well-formed **Location:** line; any
+# other body prints nothing. The audited commit's tree is compared with HEAD's
+# in one `git diff` for all files, so no ancestry is needed, uncommitted
+# changes are not counted, and renames are not detected (a renamed file is
+# listed as the path the body cites). Paths are literal and from the top level,
+# so the working directory changes nothing. A comparison that cannot be made
+# prints `unknown (<reason>)`, the reason one of three fixed phrases, and still
+# returns 0. The body is untrusted: only a hexadecimal value reaches git as the
+# commit, and every path is a literal pathspec after `--`.
+audit_drift_line() {
+  local locs shas loc file line sha pathspecs=() cited=() changed=() p tmp
+  local re_line='^[0-9]+(-[0-9]+)?$'
+  audit_body_parse "$1" locs shas
+  [[ $shas =~ ^[0-9a-fA-F]+$'\n'$ ]] || return 0
+  sha="${shas%$'\n'}"
+  local -A cited_set=() changed_set=()
+  while IFS= read -r loc; do
+    file="${loc%:*}" line="${loc##*:}"
+    [[ $loc == *:* && -n $file && $line =~ $re_line ]] || continue
+    [ -z "${cited_set[$file]:-}" ] || continue
+    cited_set[$file]=1
+    cited+=("$file")
+    pathspecs+=(":(top,literal)$file")
+  done <<<"$locs"
+  [ "${#cited[@]}" -gt 0 ] || return 0
+
+  local head="cited files changed since $sha:" reason=""
+  temp_file_make tmp || reason="git comparison failed"
+  if [ -z "$reason" ]; then
+    if git diff --name-only -z --no-renames --no-ext-diff "$sha" HEAD -- "${pathspecs[@]}" >"$tmp" 2>/dev/null; then
+      while IFS= read -r -d '' p; do changed_set[$p]=1; done <"$tmp"
+    elif ! git rev-parse --verify -q 'HEAD^{commit}' >/dev/null 2>&1; then
+      reason="no commit on HEAD"
+    elif ! git cat-file -e "$sha^{commit}" >/dev/null 2>&1; then
+      reason="commit not in this clone"
+    else
+      reason="git comparison failed"
+    fi
+    rm -f "$tmp"
+  fi
+  if [ -n "$reason" ]; then
+    note "$head unknown ($reason)"
+    return 0
+  fi
+  for file in "${cited[@]}"; do
+    [ -z "${changed_set[$file]:-}" ] || changed+=("$file")
+  done
+  if [ "${#changed[@]}" -eq 0 ]; then
+    note "$head none"
+  else
+    local joined
+    printf -v joined '%s, ' "${changed[@]}"
+    note "$head ${joined%, }"
+  fi
+}
+
 # audit_file_usage: the usage line, its categories read from the Filed finding
 # module's list. A function, not a variable: filed-finding.sh may not be loaded
 # when audit.sh is, so a string built at source time could not read the list.

@@ -76,6 +76,14 @@ cmd_issue_fetch() {
   fi
   gh_or_die --file "$file" "read the body of issue #$issue" \
     issue_body_lf "$issue"
+  # An audit-filed body gets one drift line; the audit module is loaded only
+  # when the body carries its marker, so any other fetch starts nothing more.
+  local body
+  body="$(<"$file")"
+  if [[ $body == *'**Audited at:**'* ]]; then
+    orch_load audit
+    audit_drift_line "$body"
+  fi
 }
 
 # issue_body_lf <n>: issue <n>'s body on stdout with every carriage return

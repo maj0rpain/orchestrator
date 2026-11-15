@@ -398,7 +398,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               back - recording no state; prints the number
   issue fetch <n> <file> [--json]
                               write issue <n>'s body to <file>, recording no
-                              state; with --json, for scripts, the issue as
+                              state; for an audit-filed body, also prints one
+                              line: cited files changed since <sha>: none, or
+                              the changed files (unknown (<reason>) when not
+                              comparable); with --json, for scripts, the issue as
                               one JSON object {number, title, body, labels:
                               [<name>], comments: [{author, createdAt, body}]}
   issue update <n> <file>     replace issue <n>'s body with <file>, recording

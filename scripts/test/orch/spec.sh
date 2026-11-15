@@ -674,3 +674,20 @@ assert_contains "with today's message" "$out" \
 assert_eq "writing no round-complete" "$(on_disk "$od/d/round-complete")" absent
 rm -rf "$od"
 restore_suite_env
+
+# --- spec fetch drift line (#3458) --------------------------------------------
+echo
+echo "spec fetch drift line"
+fresh_flow specdrift
+fake_github
+"$ORCH" state set issue 14
+fake_issue 14 open
+sd_dir="$(mktemp -d)"
+printf 'A finding.\n' >"$sd_dir/finding"
+sd_sha="$(git rev-parse HEAD)"
+fake_issue_body 14 "$(sourced_orch audit_body_render "$sd_dir/finding" "$sd_sha" README.md:1)"
+out="$("$ORCH" spec fetch "$sd_dir/spec.md" 2>&1)"; st=$?
+assert_status "spec fetch of an adopted audit-filed issue succeeds" "$st" 0
+assert_eq "printing the same drift line" "$out" "cited files changed since $sd_sha: none"
+rm -rf "$sd_dir"
+restore_suite_env

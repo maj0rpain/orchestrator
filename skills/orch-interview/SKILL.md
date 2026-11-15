@@ -124,6 +124,11 @@ with the Read tool, never `cat`, so a large issue is read once, in full; an
 empty comments file means no comments. Never read it with `gh issue view`. If
 either fetch fails, report its `orch:` message and stop before the next round.
 
+For an audit-filed issue the fetch also prints one line, `cited files changed
+since <sha>: none` or the changed files (or `unknown (<reason>)`): that is the
+drift check. Run no drift check by hand (`git log`, `git diff`), and re-read
+each listed file before trusting the finding's line numbers.
+
 When the user asks for the next issue without naming a number, run
 `bash "$ORCH" issue next` before the first round. On exit 0 it prints
 `<number><TAB><title>`; fetch the number field only. Tell the user in one

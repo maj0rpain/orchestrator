@@ -1305,6 +1305,131 @@ assert_contains "fetch --json keeps every CR" "$(jq -r .body "$lf_dir/body.json"
 rm -rf "$lf_dir"
 unset lf_dir
 
+# --- issue fetch drift line (#3458) -------------------------------------------
+# An audit-filed body gets one line saying which cited files changed since the
+# audited commit; every other body prints nothing more.
+echo
+echo "issue fetch drift line"
+healthy_repo
+fake_github
+fake_issue 23 open
+df_dir="$(mktemp -d)"
+mkdir -p sub
+for f in a.md b.md c.md sub/d.md; do echo "$f" >"$f"; done
+printf 'x\n' >'-opt.md'
+git add -A; git commit -qm files
+df_sha="$(git rev-parse HEAD)"
+# df_body <sha> <file>:<line>...: an audit body, rendered by the audit module.
+df_body() {
+  local sha="$1" l ls=()
+  shift
+  for l in "$@"; do ls+=("$l"); done
+  printf 'A finding.\n' >"$df_dir/finding"
+  sourced_orch audit_body_render "$df_dir/finding" "$sha" "${ls[@]}"
+}
+df_fetch() { "$ORCH" issue fetch 23 "$df_dir/out.md" 2>&1; }
+want_none="cited files changed since $df_sha: none"
+fake_issue_body 23 "$(df_body "$df_sha" a.md:1 b.md:2-3)"
+out="$(df_fetch)"; st=$?
+assert_status "fetch of an audit-filed body succeeds" "$st" 0
+assert_eq "no cited file changed gives none" "$out" "$want_none"
+assert_contains "and the file is written" "$(cat "$df_dir/out.md")" "**Audited at:** $df_sha"
+
+echo changed >>a.md; git commit -qam "a changes"
+out="$(df_fetch)"
+assert_eq "one of two cited files changed gives that file only" "$out" "cited files changed since $df_sha: a.md"
+fake_issue_body 23 "$(df_body "$df_sha" b.md:1 a.md:1 c.md:1)"
+echo changed >>c.md; git commit -qam "c changes"
+out="$(df_fetch)"
+assert_eq "two of three changed give both, in body order" "$out" "cited files changed since $df_sha: a.md, c.md"
+fake_issue_body 23 "$(df_body "$df_sha" c.md:1 a.md:1 c.md:5-6)"
+out="$(df_fetch)"
+assert_eq "a file cited on two Location lines is listed once" "$out" "cited files changed since $df_sha: c.md, a.md"
+
+cd sub || exit 1
+out="$(df_fetch)"
+assert_eq "run from a subdirectory the answer is the same" "$out" "cited files changed since $df_sha: c.md, a.md"
+cd ..
+
+echo uncommitted >>b.md
+fake_issue_body 23 "$(df_body "$df_sha" b.md:1)"
+out="$(df_fetch)"
+assert_eq "an uncommitted change is not counted" "$out" "$want_none"
+git checkout -q b.md
+
+git rm -q sub/d.md; git mv b.md moved.md; git commit -qm "delete and rename"
+fake_issue_body 23 "$(df_body "$df_sha" sub/d.md:1 b.md:1)"
+out="$(df_fetch)"
+assert_eq "a deleted and a renamed cited file are listed under the cited path" \
+  "$out" "cited files changed since $df_sha: sub/d.md, b.md"
+
+git checkout -q -b other "$df_sha"
+echo other >other.md; git add other.md; git commit -qm other
+df_other="$(git rev-parse HEAD)"
+git checkout -q -
+fake_issue_body 23 "$(df_body "$df_other" a.md:1)"
+out="$(df_fetch)"
+assert_eq "an audited commit on another branch still gets an answer" "$out" "cited files changed since $df_other: a.md"
+
+fake_issue_body 23 "$(df_body "$df_sha" -opt.md:1 '*.md:1' ':(glob)**:1')"
+out="$(df_fetch)"; st=$?
+assert_status "paths that look like options or patterns do not fail the fetch" "$st" 0
+assert_eq "and none is acted on" "$out" "cited files changed since $df_sha: none"
+echo changed >>-opt.md; git add -- -opt.md; git commit -qm opt
+out="$(df_fetch)"
+assert_eq "a path starting with a dash is a literal path" "$out" "cited files changed since $df_sha: -opt.md"
+
+fake_issue_body 23 "$(df_body deadbeefdeadbeefdeadbeefdeadbeefdeadbeef a.md:1)"
+rm -f "$df_dir/out.md"
+out="$(df_fetch)"; st=$?
+assert_status "a commit the clone does not hold exits 0" "$st" 0
+assert_eq "saying so" "$out" "cited files changed since deadbeefdeadbeefdeadbeefdeadbeefdeadbeef: unknown (commit not in this clone)"
+assert_contains "with the file written" "$(cat "$df_dir/out.md")" "**Audited at:**"
+
+fake_issue_body 23 "$(df_body "$df_sha" a.md:1)"
+unborn="$(mktemp -d)"; git -C "$unborn" init -q
+out="$(cd "$unborn" && "$ORCH" issue fetch 23 "$df_dir/out2.md" 2>&1)"; st=$?
+assert_status "a repo with no commit on HEAD exits 0" "$st" 0
+assert_eq "saying so" "$out" "cited files changed since $df_sha: unknown (no commit on HEAD)"
+
+for df_case in \
+  "an ordinary body|Just text." \
+  "a body quoting the marker mid-line|see the **Audited at:** $df_sha line"$'\n\n''**Location:** `a.md:1`' \
+  "two Audited at lines|**Audited at:** $df_sha"$'\n\n'"**Audited at:** $df_sha"$'\n\n''**Location:** `a.md:1`' \
+  "a non-hexadecimal value|**Audited at:** zzzz"$'\n\n''**Location:** `a.md:1`' \
+  "no well-formed Location line|**Audited at:** $df_sha"$'\n\n''**Location:** `a.md`'; do
+  fake_issue_body 23 "${df_case#*|}"
+  out="$(df_fetch)"
+  assert_eq "${df_case%%|*} prints nothing" "$out" ""
+done
+
+fake_issue_body 23 "$(df_body "$df_sha" a.md:1)"
+"$ORCH" issue fetch 23 "$df_dir/out.json" --json >"$df_dir/stdout" 2>&1
+assert_eq "--json prints nothing new" "$(cat "$df_dir/stdout")" ""
+
+# Fetching an ordinary body loads nothing and starts no git; three cited files
+# start git as many times as one.
+df_git="$(counting_bin git)"
+fake_issue_body 23 "Just text."
+: >"$df_git/git.log"
+PATH="$df_git:$PATH" ORCH_LOAD_TRACE="$df_dir/trace" "$ORCH" issue fetch 23 "$df_dir/out.md" >/dev/null 2>&1
+assert_not_contains "an ordinary fetch does not load the audit module" "$(cat "$df_dir/trace" 2>/dev/null)" "audit "
+df_ord="$(counting_starts "$df_git" git)"
+fake_issue_body 23 "$(df_body "$df_sha" a.md:1)"
+: >"$df_git/git.log"
+PATH="$df_git:$PATH" "$ORCH" issue fetch 23 "$df_dir/out.md" >/dev/null 2>&1
+df_one="$(counting_starts "$df_git" git)"
+fake_issue_body 23 "$(df_body "$df_sha" a.md:1 c.md:1 sub/x.md:1)"
+: >"$df_git/git.log"
+PATH="$df_git:$PATH" "$ORCH" issue fetch 23 "$df_dir/out.md" >/dev/null 2>&1
+assert_eq "a body citing three files starts git as many times as one citing one" \
+  "$(counting_starts "$df_git" git)" "$df_one"
+assert_eq "an ordinary fetch starts no more git than the dispatch itself (one fewer than a drift fetch)" \
+  "$((df_ord + 1))" "$df_one"
+rm -rf "$df_dir" "$unborn"
+unset df_dir unborn
+restore_suite_env
+
 # --- issue ready: no repo (#3050) ---------------------------------------------
 # Exit 1 is the "no" - the label is missing - so a repo that cannot be found
 # exits 2 with the remedy alone, never reading as "not ready".
