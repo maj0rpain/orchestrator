@@ -571,36 +571,31 @@ check_base_branch() {
   esac
 }
 
-# The repo's verification commands: for each label, the first word of the
-# command on the first line, across the instruction files in order, that opens
-# with it. Found is ok; not found is a warn with no remedy, since no one
-# command installs an arbitrary tool. A label nobody names, or whose line
-# leaves no command word, says nothing. A function orch.sh defines never counts
-# as found: only a builtin, a keyword or a file does. No namerefs (bash 4.2).
+# The first command word of a verification line's text: the backticks around
+# it and any leading VAR=value words are dropped.
 d_verification_word() {
   local rest w n
-  rest="${1#"${1%%[![:space:]]*}"}"
+  trim_split "$1" rest
   rest="${rest#\`}"
-  rest="${rest%"${rest##*[![:space:]]}"}"
   rest="${rest%\`}"
-  set -f
-  for w in $rest; do
+  while IFS= read -r w; do
     n="${w%%=*}"
     if [ "$n" != "$w" ]; then
       case "$n" in ''|[0-9]*|*[!A-Za-z0-9_]*) ;; *) continue ;; esac
     fi
     printf '%s' "$w"
-    break
-  done
-  set +f
+    return 0
+  done <<<"$(d_entries "$rest")"
 }
 
+# Whether a command word is found: an executable file for a path (relative to
+# the repo root), else a builtin, a keyword or a file on PATH.
 d_verification_found() {
-  local w="$1" t
+  local w="$1" p t
   case "$w" in
     */*)
-      case "$w" in /*) ;; *) w="$ROOT/$w" ;; esac
-      [ -f "$w" ] && [ -x "$w" ] ;;
+      case "$w" in /*) p="$w" ;; *) p="$ROOT/$w" ;; esac
+      [ -f "$p" ] && [ -x "$p" ] ;;
     *)
       t="$(type -t "$w" 2>/dev/null)"
       case "$t" in builtin|keyword) return 0 ;; esac
@@ -608,24 +603,30 @@ d_verification_found() {
   esac
 }
 
+# The repo's verification commands: for each label, the first word of the
+# command on the first line, across the instruction files in order, that opens
+# with it. Found is ok; not found is a warn with no remedy, since no one
+# command installs an arbitrary tool. A label nobody names, or whose line
+# leaves no command word, says nothing. A function orch.sh defines never counts
+# as found: only a builtin, a keyword or a file does. No namerefs (bash 4.2).
 check_verification_commands() {
-  local label f line word found
+  local label f line word from_file
   for label in "Ticket verification:" "Full verification:"; do
-    found="" word=""
+    from_file="" word=""
     for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
       [ -f "$ROOT/$f" ] || continue
       while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in
-          "$label"*) found="$f"; word="$(d_verification_word "${line#"$label"}")"; break ;;
+          "$label"*) from_file="$f"; word="$(d_verification_word "${line#"$label"}")"; break ;;
         esac
       done <"$ROOT/$f"
-      [ -z "$found" ] || break
+      [ -z "$from_file" ] || break
     done
-    [ -n "$found" ] && [ -n "$word" ] || continue
+    [ -n "$from_file" ] && [ -n "$word" ] || continue
     if d_verification_found "$word"; then
       d_ok "${label%:} command: $word"
     else
-      d_warn "${label%:} command $word (from $found) is not installed."
+      d_warn "${label%:} command $word (from $from_file) is not installed."
     fi
   done
   return 0
