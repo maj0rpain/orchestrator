@@ -431,10 +431,10 @@ BUDGET_FILE=scripts/test/suite-budget
 # section or suite with no line, per line with no section or suite, per stale
 # line (no fingerprint, or one that no longer matches the text), per title on
 # two lines, and one for a missing shellcheck line. Each names the command that
-# fixes it: scripts/dev/section-durations.sh --stale, or the full refresh for the
-# missing line of shellcheck, which only a full refresh writes. The fingerprints
-# come from test_tree.sh's ledger_fingerprints, a fixed number of processes
-# whatever the number of sections.
+# fixes it: scripts/dev/section-durations.sh --stale, or the full refresh for
+# the missing line of shellcheck, which only a full refresh writes. The
+# fingerprints come from test_tree.sh's ledger_fingerprints, a fixed number of
+# processes whatever the number of sections.
 scan_ledger_fresh() {
   local r="$1" td="$1/scripts/test" others=() suite
   if [ ! -f "$r/$LEDGER_FILE" ]; then
