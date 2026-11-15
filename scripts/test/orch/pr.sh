@@ -1679,7 +1679,7 @@ rm -f .orchestrator/state.json
 rm -f "$nr_err" "$nr_body"
 restore_suite_env
 
-# --- pr: PR-line pick and newest merge (#3074) ---------------------------------
+# --- pr: PR-line pick and newest merge (#3074)
 # pr_lines_by_prefix and pr_close_newest start no process: both answer with an
 # empty PATH. pr_close_missed is replaced by a function that records its
 # arguments.
