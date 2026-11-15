@@ -200,7 +200,7 @@ cmd_issue() {
 # Read-only: the interview's check before it proposes folding an issue in.
 cmd_issue_labels() {
   local usage="usage: orch.sh issue labels <n>..."
-  local issue state labels gh_err joined
+  local issue state shown_state labels gh_err joined
   [ $# -gt 0 ] || die "$usage"
   for issue in "$@"; do
     case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue ($usage)" ;; esac
@@ -209,8 +209,8 @@ cmd_issue_labels() {
     issue_state_labels_read "$issue" state labels gh_err \
       || gh_die "read issue #$issue" "$gh_err"
     joined="$(list_join "$labels")"
-    case "$state" in OPEN) state=open ;; *) state=closed ;; esac
-    printf '%s %s%s\n' "$issue" "$state" "${joined:+ $joined}"
+    state_word shown_state "$state"
+    printf '%s %s%s\n' "$issue" "$shown_state" "${joined:+ $joined}"
   done
 }
 

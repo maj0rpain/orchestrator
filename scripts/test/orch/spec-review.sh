@@ -2411,12 +2411,7 @@ assert_eq "a failed check leaves an earlier view.md" "$(cat "$d/view.md")" "old 
 assert_eq "and prints nothing on stdout" "$out" ""
 d="$(src_dir)"
 sed -i "17s/.*/@@ summary $src_w31/; 23d" "$d/batch.md"
-cp "$d/spec.md" "$d/spec.before"
-sra "$d" recommended
-assert_status "apply on a content-violating batch refuses" "$st" 1
-assert_eq "with the one line it prints today" "$out" \
-  "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
-assert_eq "and writes nothing" "$(cat "$d/spec.md")" "$(cat "$d/spec.before")"
+apply_prints_one "a content-violating batch" "$d" "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
 
 # Grammar: the first error only.
 d="$(src_dir)"
