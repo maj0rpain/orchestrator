@@ -22,7 +22,9 @@ exchanges that `orch-to-spec` (test seams) and the spec review depend on.
   names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
   `wontfix`), or with the names a `docs/agents/triage-labels.md` table maps
   them to, when the repo has one. `/orchestrator:health` reports all of this
-  at any time, including any of those labels the repo is missing.
+  at any time, including any of those labels the repo is missing, and whether
+  the repo's `Ticket verification:` and `Full verification:` commands are
+  installed.
 
 ## Install
 

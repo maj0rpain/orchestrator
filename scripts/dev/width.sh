@@ -43,11 +43,13 @@ covered() {
   return 1
 }
 
-# scan_file <root> <path inside the root>: the findings of one covered file.
-scan_file() {
-  F="$2" LC_ALL=C awk "$SHELL_CODE_AWK"'
+# scan_files <root> <path inside the root>...: the findings of the covered
+# files, in one awk run from inside the root: its file name is the one printed.
+scan_files() {
+  local root="$1"; shift
+  (cd "$root" && LC_ALL=C awk "$SHELL_CODE_AWK"'
     FNR == 1 {
-      is_shell = ENVIRON["F"] ~ /\.sh$/
+      is_shell = FILENAME ~ /\.sh$/
       in_frontmatter = 0; fchar = ""
     }
     { stripped = $0; sub(/^[[:space:]]+/, "", stripped) }
@@ -77,7 +79,7 @@ scan_file() {
       chars = $0
       cols = length(chars) - gsub(/[\200-\277]/, "", chars)
     }
-    cols > 80 { print ENVIRON["F"] ":" FNR ": " cols " columns, past 80" }' "$1/$2"
+    cols > 80 { print FILENAME ":" FNR ": " cols " columns, past 80" }' "$@")
 }
 
 root=""
@@ -94,8 +96,9 @@ done
 
 if [ "${#files[@]}" -eq 0 ]; then
   [ -n "$root" ] || usage
+  covered_files=()
   while IFS= read -r f; do
-    scan_file "$root" "$f"
+    covered_files+=("$f")
   done < <(cd "$root" && {
     # Candidates only: covered is the one statement of coverage.
     find skills agents commands docs scripts -type f 2>/dev/null || true
@@ -105,6 +108,8 @@ if [ "${#files[@]}" -eq 0 ]; then
   } | while IFS= read -r f; do
     if covered "$f"; then echo "$f"; fi
   done | sort)
+  # An awk with no file operand reads stdin: decide the empty list first.
+  [ "${#covered_files[@]}" -eq 0 ] || scan_files "$root" "${covered_files[@]}"
   exit 0
 fi
 
@@ -120,6 +125,6 @@ for f in "${files[@]}"; do
   case "$abs" in "$r"/*) ;; *) continue ;; esac
   rel="${abs#"$r"/}"
   covered "$rel" || continue
-  scan_file "$r" "$rel"
+  scan_files "$r" "$rel"
 done
 exit 0

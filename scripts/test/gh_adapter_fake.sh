@@ -106,7 +106,12 @@
 #   check_runs, statuses
 #                     the refs (SHAs or branch names) that have a check run,
 #                     or a commit status, one per line; absent, none do
-#   unreadable_refs   refs whose check-run and status reads both fail
+#   prs/<n>/evidence_reads
+#                     one line per adapter_pr_commits_checked read of PR #n
+#   prs/<n>/evidence_raw
+#                     present, that read's whole answer, printed as stored
+#   prs/<n>/no_base_ref
+#                     present, that read's base tip answer is empty
 #   reruns            the Actions run ids rerun, one per line, in order
 #   claims/<issue>    the issue's claim, one TSV line
 #                     "<issue><TAB><host><TAB><pid><TAB><phase><TAB><started>";
@@ -941,9 +946,7 @@ adapter_pr_comments() {
 }
 
 # adapter_pr_refs <n>: the stored head SHA (default forty zeros, a SHA no
-# reflog or object store holds), head branch and base branch, then the stored
-# commits (default the head alone, a single-commit PR, or none when the head
-# is empty).
+# reflog or object store holds), head branch and base branch.
 adapter_pr_refs() {
   local d oid
   ! fake_failing adapter_pr_refs || return 1
@@ -952,7 +955,6 @@ adapter_pr_refs() {
   oid="$(fake_pr_head_oid "$d")"
   printf '%s\n' "$oid"
   cat "$d/head" "$d/base"
-  if [ -f "$d/commits" ]; then cat "$d/commits"; elif [ -n "$oid" ]; then printf '%s\n' "$oid"; fi
 }
 
 # adapter_pr_url_head <n>: the stored PR's url (default
@@ -1358,13 +1360,6 @@ adapter_pr_checks() {
   fake_checks_answer "$answer"
 }
 
-# fake_ref_unreadable <ref>: true, with a server error on stderr, where
-# fake_unreadable_ref named the ref, so both commit reads of it fail.
-fake_ref_unreadable() {
-  grep -qxF -- "$1" "$(fake_store)/unreadable_refs" 2>/dev/null || return 1
-  echo "gh: Server Error (HTTP 502)" >&2
-}
-
 # adapter_branch_required_checks <branch>: the stored contexts the branch
 # requires; nothing for an unprotected branch.
 adapter_branch_required_checks() {
@@ -1379,20 +1374,38 @@ adapter_branch_rules() {
   cat "$(fake_store)/rules/$1" 2>/dev/null || true
 }
 
-# adapter_commit_has_check_runs <ref>: yes where the ref is listed in
-# check_runs, no otherwise.
-adapter_commit_has_check_runs() {
-  ! fake_failing adapter_commit_has_check_runs || return 1
-  ! fake_ref_unreadable "$1" || return 1
-  if grep -qxF -- "$1" "$(fake_store)/check_runs" 2>/dev/null; then echo yes; else echo no; fi
-}
-
-# adapter_commit_has_statuses <ref>: yes where the ref is listed in statuses,
-# no otherwise.
-adapter_commit_has_statuses() {
-  ! fake_failing adapter_commit_has_statuses || return 1
-  ! fake_ref_unreadable "$1" || return 1
-  if grep -qxF -- "$1" "$(fake_store)/statuses" 2>/dev/null; then echo yes; else echo no; fi
+# adapter_pr_commits_checked <n>: the base tip's answer, then a line per commit,
+# as the real operation prints them. A ref has a check run or a status where
+# check_runs or statuses lists it; the base tip is the PR's stored base branch
+# name. Each read is recorded in the PR's evidence_reads. The PR's whole answer
+# stored under evidence_raw is printed in place of the one built from the
+# store; no_base_ref makes the base tip's line empty. A commit's default list
+# is the PR's head alone.
+adapter_pr_commits_checked() {
+  local d oid ref s listed statuses base commits=""
+  ! fake_failing adapter_pr_commits_checked || return 1
+  fake_pr_known "$1" || return 1
+  d="$(fake_pr_dir "$1")"
+  echo read >>"$d/evidence_reads"
+  if [ -f "$d/evidence_raw" ]; then cat "$d/evidence_raw"; return 0; fi
+  s="$(fake_store)"
+  # Both lists are read once; each ref is then tested in bash.
+  file_read listed "$s/check_runs" || listed=""
+  file_read statuses "$s/statuses" || statuses=""
+  listed+=$'\n'"$statuses"
+  if [ -f "$d/no_base_ref" ]; then
+    echo
+  else
+    file_read base "$d/base" || base=""
+    base="${base%%$'\n'*}"
+    if list_has "$listed" "$base"; then echo yes; else echo no; fi
+  fi
+  oid="$(fake_pr_head_oid "$d")"
+  if [ -f "$d/commits" ]; then file_read commits "$d/commits" || commits=""; commits="${commits%$'\n'}"; elif [ -n "$oid" ]; then commits="$oid"; fi
+  [ -n "$commits" ] || return 0
+  while IFS= read -r ref; do
+    if list_has "$listed" "$ref"; then printf '%s\tyes\n' "$ref"; else printf '%s\tno\n' "$ref"; fi
+  done <<<"$commits"
 }
 
 # adapter_run_rerun <run>: the run appended to reruns.

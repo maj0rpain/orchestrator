@@ -3390,7 +3390,7 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
   "$(printf '# %s\n' "${index_tests[@]}")"
 
 undescribed=""
-for name in base_branch base_source section_body float_add \
+for name in base_branch_into base_source section_body float_add \
   require_state ticket_worktree_path fake_online orch_gh_failing; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"

@@ -55,7 +55,11 @@ caller's numbered steps.
   its report exactly as loop step d does - save, `ticket merge`, `ticket
   close`, `ticket-worktree remove`. Collapsed, the ticket is **the issue**
   itself, built in `t<the issue>`: its branch is merged and its worktree
-  removed, and `ticket close` is never run on it. If loop step a printed
+  removed, and `ticket close` is never run on it. A report whose `Deviation`
+  line opens with `verification cannot start:` is landed by none of those
+  (loop step d): the run stops there, **the stop** naming the missing
+  command, and the leftover worktree - `t<the issue>` when collapsed - is
+  left for the next entry check. If loop step a printed
   `ticket #<the issue> already landed` (or
   `bash "$ORCH" ticket report show <the issue>` exits 0 after it), the ticket
   is built and merged: never dispatch it again, go to loop step f. If not, it
@@ -86,7 +90,12 @@ caller's numbered steps.
   1 from `ticket merge`, `ticket close` or `ticket-worktree remove`,
   a dispatch that fails, or a report that comes back malformed stops
   refilling: the tickets still in flight report and are processed as
-  normal, then **the stop** happens, naming every failure. A leftover
+  normal, then **the stop** happens, naming every failure. A report whose
+  `Deviation` line opens with `verification cannot start:` (its subagent
+  built nothing) is not saved, not merged and not closed, and its ticket
+  worktree is left for the entry check, which discards it so the ticket is
+  rebuilt; it stops refilling as a malformed report does, and **the stop**
+  also names every missing command such reports named. A leftover
   worktree is reclaimed at the next entry check and shows in `doctor`
   (`doctor --flow` inside a flow).
 - **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
@@ -108,11 +117,13 @@ caller's numbered steps.
   issue, leave it as it is and add none. A failed commit goes in **the
   record** and **the judge** carries it, as a failed verification is. Then
   run, on **the branch**, the repo's full verification once, through `bash
-  "$ORCH" suite-cost run -- <command>`: the command on the `Full
+  "$ORCH" suite-cost run -- '<command>'`,
+  the whole line as one quoted argument: the command on the `Full
   verification: <command>` line of the repo's instructions (`CLAUDE.md`,
   `AGENTS.md`, `CONTRIBUTING.md`). When they carry no such line, run the
   commands the reports' `Verification` lines name, as before - joined with
-  ` && ` into one line when they name different commands. Its bare command
+  ` && ` into one line when they name different commands,
+  and passed as one quoted argument. Its bare command
   and `pass` or `fail` go in **the record**, and in the PR body's Evidence.
   A failure does not stop the run: **the judge** carries it.
   Run it in the foreground and wait for it (host capability *Run a long
