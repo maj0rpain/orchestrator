@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.97
+
+The spec module now owns a spec review's round directory: one set of functions reads and writes the round's state files, resets the working directory and carries what a round hands the next, and the spec-review module reaches them only through those functions. A resumed `spec-review apply` no longer appends the round's changelog to `settled.md` twice, and a round an autopilot session held and an attended session finished now reports as complete instead of `waiting`. `spec-review apply`'s `--round` refusals now use the same words as `spec pause --round` and `spec round-dir`.
+
 ## 5.2.96
 
 Breakdown publish, the watcher's label check, sync detection and merged-PR close, the claim list, the issue trust check, the spec-review answer, agent sync, doctor's agent and side-checkout checks, and the archive of a done flow no longer start an external command per ticket, label, done issue, claim, agent or entry for work bash does itself: the label check compares every label with one `awk` per tick, and the claim list reads every claim with one `git for-each-ref`. Output is unchanged, except that the issue trust check no longer has a "trusted associations could not be read" failure.
