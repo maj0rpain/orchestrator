@@ -84,7 +84,7 @@ fake_evidence_raw() {
   shift
   printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/prs/$n/evidence_raw"
 }
-fake_evidence_reads() { { cat "$ORCH_GH_FAKE_STORE/prs/$1/evidence_reads" 2>/dev/null || true; } | wc -l | tr -d " "; }
+fake_evidence_reads() { fake_lines_count "$ORCH_GH_FAKE_STORE/prs/$1/evidence_reads"; }
 
 # fake_ci_reset: no checks scripted, nothing required, no rules, and no ref
 # with a check run or status - every CI signal absent.
@@ -993,7 +993,7 @@ ci_absent; fake_evidence_raw 7 no "$head_sha"$'\tno' "$newer"$'\tyes'
 no_ci green "a check on a commit newer than the refs head keeps the grace"
 ci_absent; fake_evidence_raw 7 no "$head_sha"$'\tyes' "$newer"$'\tno'
 no_ci none "a check on the refs head alone gives none, wherever its line falls"
-fake_pr_head 7 "$head_sha" "$earlier" "$earlier" "$head_sha"
+fake_pr_head 7 "$head_sha" "$earlier" "5555555555555555555555555555555555555555" "6666666666666666666666666666666666666666" "$head_sha"
 ci_absent
 no_ci none "several earlier commits and no evidence give none"
 assert_eq "with one evidence read, however many commits" "$(fake_evidence_reads 7)" "1"
