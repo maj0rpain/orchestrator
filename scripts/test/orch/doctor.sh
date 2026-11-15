@@ -2799,7 +2799,7 @@ writeln 'Full verification: true test' >CLAUDE.md
 writeln 'Full verification: true other' >CONTRIBUTING.md
 vl_doctor --env
 assert_status "two commands is a warn, exit 0" "$st" 0
-assert_contains "it names both commands" "$out" "'true test' in CLAUDE.md and 'true other' in CONTRIBUTING.md"
+assert_contains "it names both commands" "$out" "warn  Full verification is named twice with different commands: 'true test' in CLAUDE.md and 'true other' in CONTRIBUTING.md"
 assert_contains "CLAUDE.md's is the one used" "$out" "the first, 'true test', is the one used"
 assert_contains "its remedy removes the line" "$out" "remove the line 'Full verification: true other' from CONTRIBUTING.md"
 assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
