@@ -716,6 +716,7 @@ ticket_reclaim_remove() {
   [ "${!wt_var}" = none ] || had_wt=1
   [ "${!exists_var}" != yes ] || had_branch=1
   [ "$had_wt$had_branch" != 00 ] || return 0
+  orch_load ticket-worktree
   (ticket_worktree_teardown "$1" --unmerged --discard) || st=$?
   # A failed branch step means the worktree step passed; any other failure is
   # the worktree's when the facts show any worktree state, else the branch's.
