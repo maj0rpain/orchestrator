@@ -301,8 +301,11 @@ printf 'model opus\neffort high\n' >"$rounds/1/agent-lens"
 : >"$rounds/1/round-complete"
 mkdir -p "$rounds/2"
 writeln stale >"$rounds/2/spec.md"
-out="$("$ORCH" spec round-dir 2/2 2>&1)"; st=$?
+rd_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rd_load" "$ORCH" spec round-dir 2/2 2>&1)"; st=$?
 assert_status "round-dir 2/2 succeeds" "$st" 0
+assert_trace_names_no "spec round-dir" "$rd_load" spec-review
+rm -f "$rd_load"
 assert_eq "printing round 2's fixed directory" "$out" "$rounds/2/"
 assert_eq "emptied, then holding only round 1's lens setting, code map and settled file" \
   "$(ls -A "$rounds/2" 2>&1)" "$(writeln agent-lens map-implementability.md settled.md)"
@@ -665,14 +668,3 @@ assert_contains "with today's message" "$out" \
   "could not remove $od/d/fundamental.md - every GitHub write landed and settled.md is appended: landed-x"
 assert_eq "writing no round-complete" "$(on_disk "$od/d/round-complete")" absent
 rm -rf "$od"
-
-# --- spec round-dir loads no spec-review module (#3078) ----------------------
-echo
-echo "spec round-dir load trace (#3078)"
-fresh_flow rdtrace
-state_fixture phase spec
-"$ORCH" state set issue 21
-rd_load="$(mktemp)"
-ORCH_LOAD_TRACE="$rd_load" "$ORCH" spec round-dir 2/3 >/dev/null 2>&1
-assert_trace_names_no "spec round-dir" "$rd_load" spec-review
-rm -f "$rd_load"
