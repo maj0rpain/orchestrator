@@ -701,6 +701,13 @@ assert_status "two picks with one title" "$st" 0
 assert_eq "the second takes the first's new issue" "$out" "1${tab}40${tab}filed
 3${tab}40${tab}open"
 assert_eq "and only one issue is filed" "$(fake_issues)" "40 "
+batch_reset
+sed -i 's/^Title: Whole finding with no source/Title: Latent bug in a.sh/; /^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
+out="$("$ORCH" audit file --run "$run" 1,2,3 2>"$errf")"; st=$?
+assert_status "same title twice, the second overlapping a third pick" "$st" 0
+assert_contains "the third pick's issue names the shared one" "$(fake_body_of 41)" '**Related:** #40'
+assert_contains "the shared issue names it back" "$(fake_body_of 40)" '**Related:** #41'
+assert_eq "without a warning" "$(cat "$errf")" ""
 
 echo
 echo "audit file batch failures"

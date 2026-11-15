@@ -809,7 +809,7 @@ audit_file_batch() {
     ! word_listed "$seen" "$n" || picked+=("$n")
   done
 
-  local -A base=() issue=() state=() ensured=()
+  local -A base=() issue=() state=() ensured=() filedby=() acc=()
   local body_file got_locs got_shas
   for n in "${picked[@]}"; do
     audit_body_norm "base[$n]" "$(audit_batch_body "$n")"
@@ -826,6 +826,9 @@ audit_file_batch() {
   for n in "${picked[@]}"; do
     if audit_open_find "$existing" "${AUDIT_TITLE[n]}" existing_n; then
       issue[$n]="$existing_n" state[$n]=open
+      # An issue this batch filed, reached again by a later pick's title, is
+      # written from the body it was filed with, not compared with this pick's.
+      [ -z "${filedby[$existing_n]:-}" ] || state[$n]=same
       printf '%s\t%s\t%s\n' "$n" "$existing_n" open
       continue
     fi
@@ -838,7 +841,7 @@ audit_file_batch() {
     printf '%s\n\n' "${base[$n]}" >"$body_file"
     gh_or_die --out made "create the issue" \
       adapter_issue_create "${AUDIT_TITLE[n]}" "$body_file" "$triage" "$cat"
-    issue[$n]="$made" state[$n]=filed
+    issue[$n]="$made" state[$n]=filed filedby[$made]="$n"
     existing+=$'\n'"$made"$'\t'"${AUDIT_TITLE[n]}"
     printf '%s\t%s\t%s\n' "$n" "$made" filed
   done
@@ -852,6 +855,13 @@ audit_file_batch() {
       fi
     done
     [ -n "$links" ] || continue
+    if [ "${state[$n]}" != open ]; then
+      # Filed in this batch: the picks sharing the issue pool their links, and
+      # the issue is written once, below.
+      audit_nums_union unioned "${acc[${issue[$n]}]:-}" "$links"
+      acc[${issue[$n]}]="$unioned"
+      continue
+    fi
     have=""
     if [ "${state[$n]}" = open ]; then
       gh_or_die --out raw "read issue #${issue[$n]}" adapter_issue_body "${issue[$n]}"
@@ -870,6 +880,14 @@ audit_file_batch() {
     [ "$unioned" != "$have" ] || continue
     nums=""
     for num in $unioned; do nums+="#$num "; done
+    printf '%s\n\n**Related:** %s\n\n' "${base[$n]}" "${nums% }" >"$body_file"
+    gh_or_die "write issue #${issue[$n]}'s Related line" \
+      adapter_issue_body_edit "${issue[$n]}" "$body_file"
+  done
+  for n in "${picked[@]}"; do
+    [ "${state[$n]}" = filed ] && [ -n "${acc[${issue[$n]}]:-}" ] || continue
+    nums=""
+    for num in ${acc[${issue[$n]}]}; do nums+="#$num "; done
     printf '%s\n\n**Related:** %s\n\n' "${base[$n]}" "${nums% }" >"$body_file"
     gh_or_die "write issue #${issue[$n]}'s Related line" \
       adapter_issue_body_edit "${issue[$n]}" "$body_file"
