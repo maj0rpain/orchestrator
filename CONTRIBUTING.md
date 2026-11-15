@@ -158,9 +158,9 @@ share), `issue-timeline.sh` (the Issue timeline module: one issue's
 comment history, read once and asked in domain terms), `known-items.sh` (the
 Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
-file), `liveness.sh` (the Liveness module: whether the process behind a claim
-on this host is still running - the run records and suite-cost's active-run
-markers, their format and the session log naming),
+file), `liveness.sh` (the Liveness module: whether the process behind a record
+(a claim, a watch, a suite-cost active run) is still running - the run records,
+the record suite-cost's active-run markers hold, and the session log naming),
 `marked-comment.sh` (the Marked comment module: writing and reading
 the issue comments whose first line names their kind), `session-log.sh` (the
 Session log module: what a phase session's log says about usage limits, read
@@ -410,7 +410,7 @@ scripts/orch/checkout.sh      the Checkout module, a concept module with no noun
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file` and `audit file` share
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
-scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a claim on this host is alive - the run records, the start-time reader, the record-alive rule that also judges suite-cost's active-run markers, the watch pidfile, the session log names
+scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch, a suite-cost active run) is alive - the run records, the start-time reader, the record-alive rule that also judges suite-cost's active-run markers, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
 scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims

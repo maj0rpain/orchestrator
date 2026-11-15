@@ -645,15 +645,11 @@ suite_cost_tree_run() {
   else
     status=1
   fi
-  # the handled window ends after the removal: a signal landing once the
-  # worktree is gone only removes the temporary directory (the handler checks
-  # the worktree exists), and the handling ends before the record is appended
-  suite_cost_tree_remove "$run_label" "$wt" "$tmp" || status=1
-  suite_cost_interrupt_disarm
+  local record=0
   if [ "$ran" -eq 1 ]; then
     if [ "$setup_status" -eq 0 ] && [ "$cd_failed" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
       if suite_cost_require_solo "$run_label at $sha" "$msg_tail"; then
-        suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
+        record=1
       else
         status=1
       fi
@@ -669,6 +665,14 @@ suite_cost_tree_run() {
         warn "$run_label at $sha exited $SUITE_COST_STATUS - $msg_tail"
       fi
     fi
+  fi
+  # the handled window ends after the removal: a signal landing once the
+  # worktree is gone only removes the temporary directory (the handler checks
+  # the worktree exists), and the handling ends before the record is appended
+  suite_cost_tree_remove "$run_label" "$wt" "$tmp" || status=1
+  suite_cost_interrupt_disarm
+  if [ "$record" -eq 1 ]; then
+    suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
   fi
   return "$status"
 }
