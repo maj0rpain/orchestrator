@@ -632,15 +632,15 @@ assert_eq "a long record of many unknown commits and no head record starts as ma
 seed_run "$head" 100.00
 short_starts="$(git_starts)"
 for _ in $(seq 200); do seed_run "$head" 100.00; done
-assert_eq "one head commit on many lines starts as many git processes" "$(git_starts)" "$short_starts"
+for i in $(seq 200); do seed_run "$(fake_sha "$i")" 1.00; done
+assert_eq "one head commit on many lines, newer lines of other commits after it, starts as many git processes" \
+  "$(git_starts)" "$short_starts"
 : >"$rec"
 seed_run "$base" 100.00
 seed_run "$head" 100.00
 short_starts="$(git_starts)"
-for i in $(seq 200); do seed_run "$(fake_sha "$i")" 1.00; seed_run "$parent" 100.00; done
-seed_run "$base" 100.00
-seed_run "$head" 100.00
-assert_eq "a head and a baseline record in a long record start as many git processes" \
+for i in $(seq 400); do seed_run "$(fake_sha "$i")" 1.00; done
+assert_eq "a head and a baseline record in a long record of newer lines start as many git processes" \
   "$(git_starts)" "$short_starts"
 
 # Only a full SHA git knows is matched.
@@ -658,13 +658,9 @@ done
 : >"$rec"
 seed_run "$base" 100.00
 seed_run "$head" 100.00
-gw="$(mktemp -d)"
-printf '#!/bin/sh\n[ "$1" = rev-list ] && exit 1\nexec "%s" "$@"\n' "$(command -v git)" >"$gw/git"
-chmod +x "$gw/git"
-out="$(PATH="$gw:$PATH" "$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)"; st=$?
+out="$(PATH="$(git_fails_bin '" rev-list "*'):$PATH" "$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)"; st=$?
 assert_status "a history git cannot list exits 0" "$st" 0
 assert_eq "and is unmeasured" "$out" "unmeasured"
-rm -rf "$gw"
 
 # A tab in a word of the command, or at its end: the command field is
 # everything after the fourth tab.
