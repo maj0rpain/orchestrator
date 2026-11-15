@@ -3767,6 +3767,11 @@ af_branch_titles="branch create,branch (x.y) retire"
 af_reset
 assert_eq "a change to a doc selects only the always-run checks" \
   "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
+af_put scripts/test/section-durations.tsv 'x	1.0	1.0	t	f'
+af_put scripts/test/suite-budget 100
+assert_eq "a changed durations file and a changed budget file select only the always-run checks" \
+  "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
+af_reset
 assert_eq "a module selects its section file's sections, and shellchecks itself" \
   "$(af_plan origin/main)" "$af_gate,$af_branch_titles,docs_lint.sh,scripts/orch/branch.sh"
 af_put scripts/test/orch/branch.sh 'x=2' '# --- branch create ---'
@@ -3969,6 +3974,23 @@ affected.sh: PASS (4 parts)"
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(test-helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
+
+# The base it works out is handed to docs_lint.sh in DOCS_LINT_BASE, on the
+# narrow selection and on the full-suite fallback alike. Stand-ins print what
+# they receive.
+af_reset
+af_base="$(af_git rev-parse HEAD)"
+af_put scripts/test/docs_lint.sh "echo \"lint base=\${DOCS_LINT_BASE-unset}\" >\"$af.log\"" 'echo; echo "1 passed, 0 failed"'
+: >"$af.log"
+af_out="$(cd "$af" && DOCS_LINT_BASE=stale PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"
+assert_contains "the narrow selection hands docs_lint.sh the base it works out" "$(cat "$af.log")" "lint base=$af_base"
+af_put scripts/test/all.sh 'echo "all base=${DOCS_LINT_BASE-unset}"'
+af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh HEAD 2>&1)"
+assert_eq "the full-suite fallback hands all.sh the base it works out" "$af_out" "all base=$af_base"
+af_git symbolic-ref --delete refs/remotes/origin/HEAD
+af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh 2>&1)"
+assert_eq "with no base the fallback hands on none, whatever it inherited" "$af_out" "all base=unset"
+af_reset
 
 # An invalid ORCH_TEST_POOL_PERCENT is refused before anything runs.
 : >"$af.log"
