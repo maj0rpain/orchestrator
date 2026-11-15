@@ -75,7 +75,7 @@ dirty_hashes() {
   hashes="$(printf '%s' "$quoted_paths" |
     git -C "$root" hash-object --stdin-paths 2>/dev/null)" || return 1
   while IFS= read -r hash; do
-    [ "$i" -lt "$n" ] || return 1
+    [ -n "$hash" ] && [ "$i" -lt "$n" ] || return 1
     out="$out$hash"$'\t'"${paths[i]}"$'\n'
     i=$((i + 1))
   done <<<"$hashes"

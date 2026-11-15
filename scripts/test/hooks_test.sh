@@ -2087,12 +2087,10 @@ done
 # count is compared between two runs, never against a fixed number.
 BW_GC="$(counting_bin git)"
 BW_GREPC="$(counting_bin grep)"
-# bw_dirty_repo N: a bw_repo with N untracked .md files.
-bw_dirty_repo() {
-  local d i
-  d="$(bw_repo)"
-  for ((i = 1; i <= $1; i++)); do printf '# T\n' >"$d/d$i.md"; done
-  printf '%s' "$d"
+# bw_add_dirty FROM TO: untracked .md files d<FROM>..d<TO> in the shared $BW.
+bw_add_dirty() {
+  local i
+  for ((i = $1; i <= $2; i++)); do printf '# T\n' >"$BW/d$i.md"; done
 }
 # bw_counts REPO: a Pre then a Post that change nothing; sets bw_pre_git,
 # bw_post_git, bw_post_grep (the processes each started) and bw_out.
@@ -2107,11 +2105,18 @@ bw_counts() {
   bw_post_git="$(counting_starts "$BW_GC" git)"
   bw_post_grep="$(counting_starts "$BW_GREPC" grep)"
 }
-BW_D1="$(bw_dirty_repo 1)"
-BW_D5="$(bw_dirty_repo 5)"
-bw_counts "$BW_D1"
+# $BW is made clean first (the parity case left docs/ok.md dirty), measured
+# clean, then given one and then five untracked files.
+git -C "$BW" checkout -q -- docs/ok.md
+git -C "$BW" clean -fdq
+bw_counts "$BW"
+bw_clean_pre="$bw_pre_git"; bw_clean_post="$bw_post_git"; bw_clean_grep="$bw_post_grep"
+bw_clean_out="$bw_out"
+bw_add_dirty 1 1
+bw_counts "$BW"
 bw_one_pre="$bw_pre_git"; bw_one_post="$bw_post_git"; bw_one_grep="$bw_post_grep"
-bw_counts "$BW_D5"
+bw_add_dirty 2 5
+bw_counts "$BW"
 assert_eq "bash hook cost: Pre starts as many git with 5 dirty files as with 1" \
   "$bw_pre_git" "$bw_one_pre"
 assert_eq "bash hook cost: Post starts as many git with 5 dirty files as with 1" \
@@ -2119,15 +2124,13 @@ assert_eq "bash hook cost: Post starts as many git with 5 dirty files as with 1"
 assert_eq "bash hook cost: Post starts as many grep with 5 dirty files as with 1" \
   "$bw_post_grep" "$bw_one_grep"
 assert_empty "bash hook cost: a call changing no dirty file is silent" "$bw_out"
-BW_C0="$(bw_repo)"
-bw_counts "$BW_C0"
-assert_empty "bash hook cost: a clean checkout is silent" "$bw_out"
-assert_lt "bash hook cost: a clean checkout's Pre starts fewer git" "$bw_pre_git" "$bw_one_pre"
-assert_lt "bash hook cost: a clean checkout's Post starts fewer git" "$bw_post_git" "$bw_one_post"
-assert_lt "bash hook cost: a clean checkout's Post starts fewer grep" "$bw_post_grep" "$bw_one_grep"
-rm -rf "$BW_D1" "$BW_D5" "$BW_C0"
+assert_empty "bash hook cost: a clean checkout is silent" "$bw_clean_out"
+assert_lt "bash hook cost: a clean checkout's Pre starts fewer git" "$bw_clean_pre" "$bw_one_pre"
+assert_lt "bash hook cost: a clean checkout's Post starts fewer git" "$bw_clean_post" "$bw_one_post"
+assert_lt "bash hook cost: a clean checkout's Post starts fewer grep" "$bw_clean_grep" "$bw_one_grep"
+git -C "$BW" clean -fdq
 # Odd names: left alone is silent, made wide is reported.
-BW_Q="$(bw_repo)"
+BW_Q="$BW"
 BW_NAMES=('"quote.md' 'back\slash.md' 'sp ace.md' $'ta\tb.md' 'caf'$'\xc3\xa9'.md)
 for bw_name in "${BW_NAMES[@]}"; do
   printf '# T\n\n%s\n' "$wide" >"$BW_Q/docs/$bw_name"
@@ -2201,7 +2204,26 @@ for bw_fail in "git:$BW_FAILGIT" "grep:$BW_FAILGREP"; do
     "$(ls -A "$BW_TMP3")"
   printf '# T\n' >"$BW_Q/dirty.md"
 done
-rm -rf "$BW_Q" "$BW_FAILGIT" "$BW_FAILGREP" "$BW_TMP3"
+# A hash run that exits 0 with no output returns fewer hashes than paths.
+BW_EMPTYGIT="$(mktemp -d)"
+printf '#!/bin/sh\ncase " $* " in *" hash-object "*) cat >/dev/null; exit 0 ;; esac\nexec "%s" "$@"\n' \
+  "$(command -v git)" >"$BW_EMPTYGIT/git"
+chmod +x "$BW_EMPTYGIT/git"
+git -C "$BW_Q" clean -fdq
+printf '# T\n' >"$BW_Q/dirty.md"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP3" bw_hook PreToolUse "$BW_Q" "t$BW_ID" "$BW_EMPTYGIT:$PATH"
+assert_empty "bash hook: a Pre whose hash run prints nothing leaves no snapshot" \
+  "$(ls -A "$BW_TMP3")"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP3" bw_hook PreToolUse "$BW_Q" "t$BW_ID"
+printf '# T\n\n%s\n' "$wide" >"$BW_Q/dirty.md"
+TMPDIR="$BW_TMP3" bw_hook PostToolUse "$BW_Q" "t$BW_ID" "$BW_EMPTYGIT:$PATH"
+assert_eq "bash hook: a Post whose hash run prints nothing exits 0" "$bw_rc" 0
+assert_empty "bash hook: a Post whose hash run prints nothing is silent" "$bw_out"
+assert_empty "bash hook: a Post whose hash run prints nothing leaves no snapshot" \
+  "$(ls -A "$BW_TMP3")"
+rm -rf "$BW_FAILGIT" "$BW_FAILGREP" "$BW_EMPTYGIT" "$BW_TMP3"
 rm -rf "$BW" "$BW2" "$BW_TMP" "$BW_FILE"
 
 # --- bash hook, stdin guard (scripts/hook-bash.sh, #2001)
