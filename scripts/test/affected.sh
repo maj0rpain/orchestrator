@@ -37,8 +37,8 @@
 # Always run: docs_lint.sh, orch_test.sh's placement sections (test-helper
 # placement, gh op placement, marked comment prelude placement, comment
 # reader placement), and the shellcheck run, at warning severity, on the
-# changed scripts/**/*.sh files that still exist. Sections are chosen through orch_test.sh's
-# ORCH_TEST_ONLY.
+# changed scripts/**/*.sh files that still exist. Sections are chosen through
+# orch_test.sh's ORCH_TEST_ONLY.
 #
 # Output is like all.sh's: each part's FAIL lines and one summary line, in a
 # fixed order - the suites in all.sh's list order, orch_test.sh carrying the
