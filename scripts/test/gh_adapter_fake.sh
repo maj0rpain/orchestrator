@@ -84,7 +84,7 @@
 #                     counts it down
 #   lag/<operation>.stale
 #                     the stale answer, where the operation takes one
-#   comment_reads     one line per adapter_issue_comments_json call made
+#   comment_reads     one line per adapter_issue_comments call made
 #   default_branch    the answer to the repo's default branch, byte for byte;
 #                     absent, gh cannot answer for the repo
 #   checks/<n>/<scope>
@@ -494,7 +494,12 @@ adapter_issue_body() {
 # whose comments array holds each comment's author login object,
 # authorAssociation, createdAt, body and url.
 adapter_issue_comments() {
+  echo x >>"$(fake_store)/comment_reads"
   ! fake_failing adapter_issue_comments || return 1
+  if fake_lagging adapter_issue_comments; then
+    fake_stale adapter_issue_comments
+    return 0
+  fi
   fake_issue_known "$1" || return 1
   fake_comments_raw "$(fake_issue_dir "$1")/comments" "$1"
 }
@@ -514,20 +519,6 @@ adapter_issue_json() {
       --rawfile b "$body" \
       --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
       '{number: $n, title: $t, body: $b, labels: $l, comments: input}'
-}
-
-# adapter_issue_comments_json <n>: the stored comments as one JSON array of
-# author, createdAt, body and url, the url being
-# https://github.com/o/r/issues/<n>#issuecomment-<k> for the k-th comment.
-adapter_issue_comments_json() {
-  echo x >>"$(fake_store)/comment_reads"
-  ! fake_failing adapter_issue_comments_json || return 1
-  if fake_lagging adapter_issue_comments_json; then
-    fake_stale adapter_issue_comments_json
-    return 0
-  fi
-  fake_issue_known "$1" || return 1
-  fake_comments_json "$(fake_issue_dir "$1")/comments" "$1"
 }
 
 # adapter_issue_state_labels <n>: the stored state, then its labels. Lagging

@@ -942,8 +942,9 @@ fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' 
 dir_snapshot() { (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r cksum); }
 
 # fake_snapshot: a digest of the whole store, so a test asserts a read-only
-# command left it as it was.
-fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE"; }
+# command left it as it was. The comment-read counter is a read, never a write,
+# so it is left out.
+fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE" | sed '/ \.\/comment_reads$/d'; }
 
 # fake_pr <n> <state> <head> <base>: seeds PR #n afresh, open, closed or
 # merged, from the head branch into the base - no body, comments or commits,
@@ -1011,7 +1012,7 @@ fake_fail() {
   fi
 }
 
-# fake_comment_reads: how many comment-list reads (adapter_issue_comments_json)
+# fake_comment_reads: how many comment-list reads (adapter_issue_comments)
 # the fake has answered or refused - 0 for none.
 fake_comment_reads() {
   if [ -f "$ORCH_GH_FAKE_STORE/comment_reads" ]; then wc -l <"$ORCH_GH_FAKE_STORE/comment_reads" | tr -d ' '; else echo 0; fi

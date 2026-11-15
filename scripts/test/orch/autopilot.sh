@@ -281,13 +281,13 @@ out="$("$ORCH" autopilot answer implement "$ans" 2>&1)"; st=$?
 assert_status "answer for a phase never asked exits 2, never no reply's 1" "$st" 2
 assert_contains "naming the phase" "$out" "has no implement question comment"
 assert_eq "and leaves the answer file as it was" "$(cat "$ans")" "$kept"
-fake_fail adapter_issue_comments_json "HTTP 500"
+fake_fail adapter_issue_comments "HTTP 500"
 out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "a failed comment read exits 2, never no reply's 1" "$st" 2
 assert_eq "naming the read, with gh's reason" "$out" "orch: gh could not read the comments of issue #7: HTTP 500"
 fake_unfail
 # gh succeeds but its output is no comment list
-fake_lag adapter_issue_comments_json 1 'not json'
+fake_lag adapter_issue_comments 1 'not json'
 out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
 assert_status "unparseable comments exit 2, never no reply's 1" "$st" 2
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #7's comments"
@@ -1369,13 +1369,13 @@ rm -f "$q_err"
 for n in 31 32 33; do fake_issue_drop "$n"; done
 fake_issue 11 open needs-human orch:spec
 fake_issue 12 open needs-human orch:spec
-fake_fail adapter_issue_comments_json "$GH_502"
+fake_fail adapter_issue_comments "$GH_502"
 out="$("$ORCH" autopilot questions 2>/dev/null)"; st=$?
 assert_status "an adapter read failure dies" "$st" 1
 assert_eq "listing nothing" "$out" ""
 assert_eq "naming the gh failure" "$("$ORCH" autopilot questions 2>&1 >/dev/null)" "orch: gh could not read the comments of issue #11: HTTP 502: Bad Gateway"
 fake_unfail
-fake_lag adapter_issue_comments_json 1 'not json'
+fake_lag adapter_issue_comments 1 'not json'
 fake_issue 11 open needs-human orch:spec
 out="$("$ORCH" autopilot questions 2>&1)"; st=$?
 assert_status "unparseable comments die" "$st" 1
@@ -1524,13 +1524,13 @@ assert_eq "posting nothing" "$(fake_comments_of 46 | wc -l | tr -d ' ')" "3"
 assert_eq "keeping the label" "$(fake_labels_of 46)" "needs-human orch:spec "
 fake_issue 47 open needs-human orch:spec
 fake_comment 47 o 2026-01-01T00:00:00Z "$(question_of spec)"
-fake_lag adapter_issue_comments_json 1 'not json'
+fake_lag adapter_issue_comments 1 'not json'
 out="$("$ORCH" autopilot reply 47 "$r" 2>&1)"; st=$?
 assert_status "reply over unparseable comments is refused" "$st" 1
 assert_eq "naming the issue's comments" "$out" "orch: could not read issue #47's comments"
 assert_eq "posting nothing" "$(fake_comments_of 47 | grep -c 'Yes, keep')" "0"
 fake_unfail
-fake_fail adapter_issue_comments_json "HTTP 500 comments"
+fake_fail adapter_issue_comments "HTTP 500 comments"
 out="$("$ORCH" autopilot reply 47 "$r" 2>&1)"; st=$?
 fake_unfail
 assert_status "reply over a failed comments read is refused" "$st" 1
@@ -1808,7 +1808,7 @@ fake_comment 7 o 2026-01-01T00:00:00Z "$LIM_SPEC"
 fake_comment 7 o 2026-01-01T00:00:01Z "$LIM_SPEC"
 se_end 1
 assert_eq "the third limit stop in a row still writes the limit file" "$(se_limit)" "$i2"
-se_fresh; fake_fail adapter_issue_comments_json "HTTP 500 comments"; se_end 1; fake_unfail
+se_fresh; fake_fail adapter_issue_comments "HTTP 500 comments"; se_end 1; fake_unfail
 assert_eq "unreadable comments still write the limit file" "$(se_limit)" "$i2"
 
 # claims or the checkout that cannot be read: nothing is touched
@@ -1834,7 +1834,7 @@ assert_eq "a failed comment is retried: one limit comment, the issue limited, th
 fake_unfail
 
 se_fresh
-fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded"
+fake_fail_times adapter_issue_comments 1 "API rate limit exceeded"
 se_end 1
 assert_eq "a timeline read that fails on a limit ends in a limit stop on a later attempt, not a failure stop" "$(se_kind)|$(se_marker_count limited spec)" "limited|1"
 fake_unfail
@@ -1956,7 +1956,7 @@ assert_eq "and the recorded budget untouched" "$(bud_budget)" "4"
 bud_reset() { rm -f "$top/.orchestrator/autopilot/github-limit" "$top"/.orchestrator/autopilot/logs/7-*.log; }
 bud_reset
 comments_before="$(fake_comments_of 7)"
-fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded for user ID 1."
+fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
 fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
 bud_run review 0 4
 fake_unfail
@@ -1967,7 +1967,7 @@ assert_eq "starts no session" "$(tick_calls)" "0"
 assert_eq "and the GitHub pause is held" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
 # the same, the release failing every attempt: the claim stays, a backstop line
 bud_reset
-fake_fail_times adapter_issue_comments_json 1 "API rate limit exceeded for user ID 1."
+fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
 fake_fail_times adapter_issue_comments 1 "API rate limit exceeded for user ID 1."
 fake_fail adapter_issue_relabel "HTTP 500 relabel"
 bud_run review 0 4

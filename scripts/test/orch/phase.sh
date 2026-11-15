@@ -240,7 +240,7 @@ assert_eq "and the claim held" "$(fake_claim_held 7)" held
 
 # a failed comments read is a read failure, never a missing handoff (#2538)
 ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
-fake_fail adapter_issue_comments_json "HTTP 503 read"
+fake_fail adapter_issue_comments "HTTP 503 read"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
 fake_unfail
 assert_status "phase advance with a failed comments read dies" "$st" 1

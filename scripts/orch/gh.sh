@@ -305,7 +305,6 @@ verify_twice() {
 #   adapter_labels_detail
 # - rate limit: adapter_rate_limit
 # - issue: adapter_issue_body, adapter_issue_comments,
-#   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
@@ -449,15 +448,6 @@ adapter_issue_comments() {
 # is the shape `issue fetch --json` publishes.
 adapter_issue_json() {
   gh issue view "$1" --json number,title,body,labels,comments --jq "$ISSUE_JSON_JQ"
-}
-
-# adapter_issue_comments_json <n>: the issue's comments as one JSON array, each
-# comment's author login, author association, gh's ISO-8601 timestamp, body and
-# url - the url `issue fetch --json` leaves out, so ISSUE_JSON_JQ's shape is
-# not changed.
-adapter_issue_comments_json() {
-  gh issue view "$1" --json comments \
-    --jq '[.comments[] | {author: .author.login, authorAssociation, createdAt, body, url}]'
 }
 
 # adapter_issue_state_labels <n>: OPEN or CLOSED on the first line, then one

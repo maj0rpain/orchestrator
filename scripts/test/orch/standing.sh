@@ -328,7 +328,7 @@ sourced_rc 'standing_limit_stop 69 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/nul
 assert_eq "the second limit stop in a row is still limited" "$(tr_standing 69)|$(fake_claim_held 69)" "spec|0|0|1|free"
 assert_contains "and is retry 2 of 2" "$(fake_comments_of 69)" "retry 2 of 2"
 tr_seed 70 orch:spec orch:running
-fake_fail adapter_issue_comments_json "HTTP 500 comments"
+fake_fail adapter_issue_comments "HTTP 500 comments"
 assert_contains "unreadable comments fail the attempt: it dies, naming the read" "$(sourced_rc 'standing_limit_stop 70 spec "" 2026-01-01T01:00:00Z 1 log' 2>&1)" "could not read issue #70's comments to count the stops in a row"
 fake_unfail
 assert_eq "and leave the labels, comments and claim as they were" "$(fake_comments_of 70)|$(tr_standing 70)|$(fake_claim_held 70)" "|spec|1|0|0|held"
@@ -376,7 +376,7 @@ resumed_stop 71 ':' >/dev/null
 assert_eq "a stop whose comment landed but whose call failed posts no second comment, and releases the claim" "$(stop_comments 71)|$(fake_claim_held 71)" "1|free"
 assert_contains "and keeps its count on the next attempt" "$(fake_comments_of 71)" "retry 1 of 2"
 tr_seed 72 orch:spec orch:running
-out="$(resumed_stop 72 'mkdir -p "$ORCH_GH_FAKE_STORE/fail"; printf "HTTP 500 read\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments_json"')"
+out="$(resumed_stop 72 'mkdir -p "$ORCH_GH_FAKE_STORE/fail"; printf "HTTP 500 read\n" >"$ORCH_GH_FAKE_STORE/fail/adapter_issue_comments"')"
 assert_contains "a failed duplicate-comment check fails the attempt" "$out" "could not read issue #72's comments to check for this stop's comment"
 assert_eq "and posts no second comment" "$(stop_comments 72)|$(fake_claim_held 72)" "1|held"
 fake_unfail
@@ -389,7 +389,7 @@ assert_eq "and writes no comment and changes no label" "$(fake_comments_of 68)|$
 # reenter
 # a failed re-entry comments read dies with the claim held and no write
 tr_seed 75 orch:review orch:running
-fake_fail adapter_issue_comments_json "HTTP 500"
+fake_fail adapter_issue_comments "HTTP 500"
 out="$(sourced_rc 'standing_reenter 75 review "the text"')"
 fake_unfail
 assert_contains "a failed re-entry comments read dies" "$out" "rc=1"
