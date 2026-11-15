@@ -32,12 +32,13 @@ print_boundary() {
   print_next_block "Phase $done_name complete. Handoff written to $HANDOFF_DIR/$file."
 }
 
-# phase_finish <next> <reason> <issue>: records <next> as the flow's phase. In an
-# autopilot session it also checks <issue>, the flow's issue the caller holds,
-# with require_value, moves the issue's phase label and releases the claim,
-# <reason> naming what was done. It reads no state. It reports success only, never its
-# mode - a caller asks autopilot_active for that - so it is called as a plain
-# statement, never in a condition, where set -e would be suspended.
+# phase_finish <next> <reason> <issue>: records <next> as the flow's phase.
+# In an autopilot session it also checks <issue>, the flow's issue the caller
+# holds, with require_value, moves the issue's phase label and releases the
+# claim, <reason> naming what was done. It reads no state. It reports success
+# only, never its mode - a caller asks autopilot_active for that - so it is
+# called as a plain statement, never in a condition, where set -e would be
+# suspended.
 phase_finish() {
   if autopilot_active; then
     require_value issue "$3"

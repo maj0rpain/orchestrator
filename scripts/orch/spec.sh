@@ -31,7 +31,7 @@ cmd_spec() {
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment|comments> <file>"
   local file="$1"
   require_value issue "$issue"
-  [ "$phase" != done ] \
+  [ "$phase" != "done" ] \
     || die "the flow on issue #$issue is done - spec $op acts only on an active flow's issue; for another issue use orch.sh issue $op <n> <file>"
   "cmd_issue_$op" "$issue" "$file"
 }
@@ -72,7 +72,7 @@ cmd_spec_pause() {
 spec_phase_guard() {
   local __sg_die="$1" __sg_op="$2"
   require_value issue "$4" "$__sg_die"
-  [ "$5" != done ] \
+  [ "$5" != "done" ] \
     || "$__sg_die" "the flow on issue #$4 is done - spec $__sg_op acts only on an active flow"
   [ "$5" = spec ] \
     || "$__sg_die" "spec $__sg_op runs only in the spec phase - the flow is at phase $5"

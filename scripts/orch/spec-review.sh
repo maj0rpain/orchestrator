@@ -45,7 +45,7 @@ spec_review_begin() {
   if [ -f "$STATE" ]; then
     local phase held
     require_state_read phase=phase held=issue
-    if [ "$phase" != done ] && [ "$held" = "$issue" ]; then
+    if [ "$phase" != "done" ] && [ "$held" = "$issue" ]; then
       case "$phase" in
         spec)
           die "the active flow holds issue #$issue at phase spec - the flow's own spec phase will review it; run $(flow_cmd next)" ;;
@@ -2008,7 +2008,7 @@ spec_review_apply() {
     local sr_phase
     require_state_read issue=issue sr_phase=phase
     require_value issue "$issue"
-    [ "$sr_phase" != done ] \
+    [ "$sr_phase" != "done" ] \
       || die "the flow on issue #$issue is done - spec-review apply acts only on an active flow's issue; for another issue use --issue <n>"
   fi
 
