@@ -3173,15 +3173,10 @@ numbered_heading() {
 # scan_hand_off_category <plugin root> <skill file> <category>...: one line when
 # the skill's Hand off step does not pass --category for each category named.
 scan_hand_off_category() {
-  local r="$1" skill="$2" hand c missing="" list heading
+  local r="$1" skill="$2" c missing="" list
   shift 2
-  if heading="$(numbered_heading "$r/$skill" "Hand off")"; then
-    hand="$(md_section "$r/$skill" "$heading" 2>/dev/null | flat_text)"
-  else
-    hand="" missing=1
-  fi
   for c in "$@"; do
-    grep -qF -- "--category $c" <<<"$hand" || missing=1
+    step_names "$r/$skill" "Hand off" "--category $c" || missing=1
   done
   [ -z "$missing" ] && return 0
   list="$1"
