@@ -157,7 +157,10 @@ assert_status "refuses --record" "$st" 1
 assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
 assert_not_contains "the usage line shows no --record" "$out" "--record <"
 assert_eq "writing nothing to GitHub" "$(fake_snapshot)" "$before"
-assert_not_contains "help shows no --record" "$("$ORCH" help 2>&1)" "--record"
+out="$("$ORCH" help 2>&1)"
+assert_contains "help shows the ticket publish line" "$out" \
+  "ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+assert_not_contains "help shows no --record" "$out" "--record"
 
 # A failed sub-issue listing read before the link dies, the ticket created.
 fake_fail adapter_sub_issues
