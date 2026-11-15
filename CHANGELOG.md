@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.90
+
+The paste guards no longer decode the whole transcript at every turn end and ask once a spec review has run: a fixed-string search picks out the few lines that can arm or disarm the guard, and only those and the entries after the last arming pass line are decoded.
+
 ## 5.2.89
 
 An interrupted suite-cost run no longer blocks later ones. A suite-cost marker now records the start time of the process that wrote it, so a marker left by a dead run is stale even when its pid has been reused, and the next run removes it. A measured run that INT, TERM or HUP interrupts removes its marker and, for `suite-cost check`'s base or confirming run, its temporary worktree. It records nothing, warns once and exits 128 plus the signal's number.
