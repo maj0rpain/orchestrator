@@ -40,9 +40,10 @@ lf_squash_head() {
   lf_branch_head "pr$1" "$filed_sha" "$2" "1i $3"
   lf_edit "$2" "1i $3" "the PR, squash-merged" >/dev/null
 }
-# lf_case <name> <filed sha> <file> <start> <end>: one case, asked of main.
+# lf_case <name> <filed sha> <file> <start> <end> [<bin>]: one case, asked of
+# main.
 lf_cases="$(mktemp)"
-# lf_case_in <file> <name> <sha> <file> <start> <end> [<bin>]: a case row.
+# lf_case_in <cases file> <name> <sha> <file> <start> <end> [<bin>]: a case row.
 lf_case_in() { (IFS=$'\t'; printf '%s\n' "${*:2}") >>"$1"; }
 lf_case() { lf_case_in "$lf_cases" "$@"; }
 
@@ -183,11 +184,15 @@ lf_case um63 "$sha63" src/um13.sh 9 10
   lf_case fail_cat_file "$head_sha" src/other.sh 2 2 "$(git_fails_bin '*" cat-file "*')"
 }
 
-# lf_ask <cases file>: for each case (an optional sixth column names a directory
-# put first on PATH for its calls), lines_fate asked once from the root and
-# once from src/, its standard output sent to a file; one tab-separated row per
-# case: name, fate, detail, status, quiet (yes when nothing was printed from
-# either place), the subdirectory's fate, its detail and its status. Every call
+# LF_ASK, a script run through sourced_orch_script with three arguments: $1 the
+# cases file, $2 the filed SHA of the src/other.sh count case and $3 that of the
+# src/del_whole.sh count case. For each case in $1 (an optional sixth column
+# names a directory put first on PATH for its calls), lines_fate is asked once
+# from the root and once from src/, its standard output sent to a file; one
+# tab-separated row per case: name, fate, detail, status, quiet (yes when
+# nothing was printed from either place), the subdirectory's fate, its detail
+# and its status. After the rows it prints two `count <diffs> <loud|quiet>`
+# rows, one for $2 and one for $3, which rows/lf_counts filter. Every call
 # names its out-variables result and detail and is made in the sourced shell
 # itself, never inside a command substitution.
 # shellcheck disable=SC2016 # expanded by the inner bash
