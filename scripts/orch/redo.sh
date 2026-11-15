@@ -104,8 +104,7 @@ cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
   # Each is first reached inside a command substitution or branch of a
-  # subshell: load it here, once, in the main shell. marked-comment is needed
-  # only by an autopilot session's handoff retire.
+  # subshell: load it here, once, in the main shell.
   orch_load review
   orch_load branch
   redo_load_shared

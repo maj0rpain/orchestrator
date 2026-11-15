@@ -590,7 +590,6 @@ check_side_checkouts_finished() {
   done <<<"$list"
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
-  orch_load base
   default_branch_seed "$D_REPO_BRANCH"
   for path in "${found[@]}"; do
     rc=0; verdict=""; branch=""
@@ -667,13 +666,14 @@ check_autopilot_side_flows() {
   here="$(pwd -P)"
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] && [ "$path" != "$here" ] || continue
-    # The reads below run in command substitutions and reach handoff: load it
-    # once, here, in this shell, only now that a side flow is being read.
-    orch_load handoff
     issue="$(side_checkout_issue "$path" 2>/dev/null)" || continue
     [ -f "$(flow_state_file "$path")" ] || continue
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
     d_gh_gate || return 0
+    # standing_read and the verdict's reads run in command substitutions and
+    # reach handoff: load it once, here, in this shell, only on the branch that
+    # reaches a read.
+    orch_load handoff
     standing_read "$issue" || continue
     doctor_phase_label_verdict "$issue" "$phase" "$STANDING_LABELS" "its side checkout ${path##*/}" "phase label of #$issue" || true
   done <<<"$list"

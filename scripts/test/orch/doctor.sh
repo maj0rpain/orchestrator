@@ -284,8 +284,11 @@ fake_unfail
 # The default-branch read is the one that tells doctor GitHub can see the repo:
 # when it fails, the FAIL carries gh's own first line.
 fake_fail adapter_repo_default_branch $'HTTP 404: Not Found\nsecond line'
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
+nf_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$nf_load" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a repo GitHub will not show fails doctor" "$st" 1
+assert_trace_loads_once "doctor --env with GitHub not showing the repo" "$nf_load"
+rm -f "$nf_load"
 assert_contains "saying GitHub cannot see it, with gh's first line" "$out" \
   "FAIL  GitHub cannot see acme/widgets - origin may point somewhere you cannot see: HTTP 404: Not Found"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
@@ -1727,12 +1730,8 @@ restore_suite_env
 
 # Each module loads once: at the review phase the checks read the loop's
 # record, the PR and the redo command in subshells.
-fresh_flow doctorloadonce
+review_flow doctorloadonce
 doctor_github
-complete_handoff "$("$ORCH" handoff path spec)"
-complete_handoff "$("$ORCH" handoff path implement)"
-complete_handoff "$("$ORCH" handoff path review)"
-state_fixture phase review
 state_fixture pr 40
 fake_pr 40 open orch/doctorloadonce main
 fake_pr_draft 40
@@ -2309,13 +2308,11 @@ out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"
 # GitHub not answering for the default branch loads each module once.
 fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
-for scope in --env ""; do
-  sf_load="$(mktemp)"
-  out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor $scope 2>&1)"; st=$?
-  assert_status "doctor $scope with no answer for the default branch ends on the fixture repo's own FAILs" "$st" 1
-  assert_contains "doctor $scope with no answer for the default branch says so" "$out" "HTTP 502"
-  assert_trace_loads_once "doctor $scope with GitHub not answering for the default branch" "$sf_load"
-done
+sf_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor 2>&1)"; st=$?
+assert_status "doctor with no answer for the default branch ends on the fixture repo's own FAILs" "$st" 1
+assert_contains "doctor with no answer for the default branch says so" "$out" "HTTP 502"
+assert_trace_loads_once "doctor with GitHub not answering for the default branch" "$sf_load"
 fake_unfail
 rm -f "$sf_load"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
