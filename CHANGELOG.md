@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.3.0
+
+A ticket subagent now runs the ticket verification once before its first edit, and when that run cannot start (a missing tool, or a command not found or not executable) it builds nothing and returns a stop report whose `Deviation` line opens with `verification cannot start:` and names the missing command; the driver neither saves, merges nor closes that ticket, and stops naming every missing command. `orch.sh doctor --env` warns when the first command of the repo's `Ticket verification:` or `Full verification:` line is not installed.
+
 ## 5.2.100
 
 `orch.sh suite-cost run` and `suite-cost check` now take a single argument after `--` as a shell line, run with `bash -c` and recorded as given, so a repo's chained verification line passed as one quoted argument runs in full. Several arguments stay an argument list. The skills, agents and docs now say to pass the whole verification line as one quoted argument.
