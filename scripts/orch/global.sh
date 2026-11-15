@@ -581,7 +581,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               <parent>, add a blocking edge for every
                               --blocked-by issue, apply ready-for-agent, and
                               verify the links it just wrote by reading them
-                              back - recording no state; prints the number
+                              back, then rewrite its `## Blocked by` section
+                              from those edges - recording no state; prints
+                              the number
   ticket next <parent>       print <parent>'s open sub-issues with zero open
                               blockers, in the order they were published
   ticket list <parent>       print every sub-issue of <parent>, open or
@@ -624,7 +626,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               save the approved ticket draft (the first run
                               only; a saved draft wins), then publish every
                               ticket not yet recorded, in dependency order,
-                              linking a created-but-unlinked one; the
+                              linking a created-but-unlinked one and
+                              rewriting each ticket's `## Blocked by`
+                              section from its blocking edges; the
                               published marker is written last. Prints the
                               numbers in publishing order
   breakdown state <parent>    print complete, partial or none; with no draft
