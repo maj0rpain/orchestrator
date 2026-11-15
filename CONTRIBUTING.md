@@ -421,7 +421,7 @@ skills/orch-review-pass/      the review pass, quick or standalone: one look by 
 skills/orch-sync/             a base sync on demand: branch sync, a resolver on a conflict, one PR comment, an offered review pass
 skills/orch-handoff/          handoff templates and the Rejected alternatives amendment, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue (possibly rewritten from the plan by orch-to-spec's Unattended rewrite), unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
-skills/orch-interview/        the planning interview, and its `## Closing` section: the closing rules hook-grilling.sh's message points to
+skills/orch-interview/        the planning interview, and its `## Closing` section: the closing rules hook-grilling.sh's message points to; the unattended interview sits in its `unattended.md` reference file
 skills/orch-quick-autopilot/  the quick autopilot: selects with `autopilot candidates`, one confirmation, one orch-autopilot-planner per issue, a summary - Claude Code only
 skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body - attended, or in the Unattended rewrite form a quick implementation or a quick autopilot takes
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
