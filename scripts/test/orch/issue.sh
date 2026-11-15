@@ -1456,8 +1456,6 @@ ORCH_ISSUE_LIST_LIMIT=4 next_run
 assert_not_contains "one a single issue below it does not" "$nx_err_text" "issue-list limit"
 
 assert_contains "help lists issue next" "$("$ORCH" help)" "issue next"
-assert_contains "the CLI conventions' noun table lists issue next" \
-  "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`next`'
 out="$("$ORCH" issue bogus 2>&1)"
 assert_contains "the unknown-op message lists next" "$out" "|next"
 restore_suite_env

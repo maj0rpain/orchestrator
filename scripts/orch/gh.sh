@@ -309,7 +309,7 @@ verify_twice() {
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
-#   adapter_issues_open_rows,
+#   adapter_issues_open_rows, adapter_issues_titled_rows,
 #   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
@@ -324,6 +324,7 @@ verify_twice() {
 #   adapter_pr_body_edit, adapter_pr_title_edit, adapter_pr_label_add
 # - sub-issue and dependency: adapter_sub_issues, adapter_sub_issue_link,
 #   adapter_sub_issue_unlink, adapter_issue_parent, adapter_blockers,
+#   adapter_issue_open_blockers, adapter_blockers_states,
 #   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
 # - repo: adapter_repo_default_branch, adapter_repo_local_default,
 #   adapter_auth_status <host>
@@ -681,55 +682,15 @@ adapter_issues_titled_rows() {
 }
 
 # issues_titled_rows_read <nums_var> <titles_array> <labels_array> <err_var>
-# <label>: reads the listing once through adapter_issues_titled_rows and writes
-# the issue numbers, oldest first one per line, into <nums_var>, and adds each
-# record's title and labels (one per line, possibly none) to two
-# caller-declared associative arrays keyed by issue number. Non-zero, writing
-# nothing, on a failed read (gh's stderr into <err_var>, as gh_lines_read) or an
-# answer that does not parse (<err_var> "gh answered a listing that does not
-# parse"). Warns through issues_labelled_limit_warn when the listing reaches the
-# issue-list limit. Dies when an array name is not a declared associative array.
-# Elements are assigned by eval on a validated name, the value by reference, as
-# issues_rows_read_via does.
+# <label>: issues_labelled_rows_read through adapter_issues_titled_rows, the
+# second field of each record a title (never empty on GitHub) in place of a
+# state, the limit warning issues_labelled_limit_warn's.
 issues_titled_rows_read() {
-  assoc_array_require issues_titled_rows_read "$2" __itrr_
-  assoc_array_require issues_titled_rows_read "$3" __itrr_
-  local __itrr_out __itrr_err __itrr_lines=() __itrr_nums=() __itrr_tit=() __itrr_labs=()
-  local __itrr_i=0 __itrr_total __itrr_n __itrr_count __itrr_j __itrr_rl __itrr_r
-  local __itrr_bad="gh answered a listing that does not parse" __itrr_whole='^[0-9]+$'
-  if ! gh_capture __itrr_out __itrr_err adapter_issues_titled_rows "$5"; then
-    printf -v "$4" '%s' "$__itrr_err"
-    return 1
-  fi
-  [ -z "$__itrr_out" ] || mapfile -t __itrr_lines <<<"$__itrr_out"
-  __itrr_total="${#__itrr_lines[@]}"
-  while [ "$__itrr_i" -lt "$__itrr_total" ]; do
-    __itrr_n="${__itrr_lines[__itrr_i]}"
-    __itrr_count="${__itrr_lines[__itrr_i+2]-}"
-    [[ $__itrr_n =~ $__itrr_whole && $__itrr_count =~ $__itrr_whole ]] \
-      || { printf -v "$4" '%s' "$__itrr_bad"; return 1; }
-    __itrr_tit+=("${__itrr_lines[__itrr_i+1]}")
-    __itrr_i=$(( __itrr_i + 3 ))
-    __itrr_rl=""
-    for (( __itrr_j = 0; __itrr_j < 10#$__itrr_count; __itrr_j++ )); do
-      [ "$__itrr_i" -lt "$__itrr_total" ] || { printf -v "$4" '%s' "$__itrr_bad"; return 1; }
-      [ "$__itrr_j" -eq 0 ] || __itrr_rl="$__itrr_rl"$'\n'
-      __itrr_rl="$__itrr_rl${__itrr_lines[__itrr_i]}"
-      __itrr_i=$(( __itrr_i + 1 ))
-    done
-    __itrr_nums+=("$(( 10#$__itrr_n ))")
-    __itrr_labs+=("$__itrr_rl")
-  done
-  for __itrr_r in ${__itrr_nums[@]+"${!__itrr_nums[@]}"}; do
-    eval "$2"'[${__itrr_nums[__itrr_r]}]=${__itrr_tit[__itrr_r]}'
-    eval "$3"'[${__itrr_nums[__itrr_r]}]=${__itrr_labs[__itrr_r]}'
-  done
-  printf -v "$1" '%s' "$(printf '%s\n' ${__itrr_nums[@]+"${__itrr_nums[@]}"} | grep . || true)"
-  issues_labelled_limit_warn "${#__itrr_nums[@]}" "$5"
+  issues_rows_read_via issues_titled_rows_read adapter_issues_titled_rows issues_labelled_limit_warn "$@"
 }
 
 # issues_rows_read_via <caller> <adapter> <warn> <nums_var> <states_array>
-# <labels_array> <err_var> [<label>...]: the reading the three readers above
+# <labels_array> <err_var> [<label>...]: the reading the readers above
 # share (the open-issue reader takes no labels), through the listing <adapter>
 # and the limit warning <warn>; <caller> names the public reader in a die
 # message.

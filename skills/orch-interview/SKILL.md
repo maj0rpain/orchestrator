@@ -123,8 +123,9 @@ empty comments file means no comments. Never read it with `gh issue view`. If
 either fetch fails, report its `orch:` message and stop before the next round.
 
 When the user asks for the next issue without naming a number, run
-`bash "$ORCH" issue next` before the first round. On exit 0 it prints the
-issue number: tell the user in one sentence which issue you picked and why - its
+`bash "$ORCH" issue next` before the first round. On exit 0 it prints
+`<number><TAB><title>`; fetch the number field only. Tell the user in one
+sentence which issue you picked and why - its
 number and title, as the oldest open issue carrying the `ready-for-agent`
 triage role's label, with no phase label, no parent issue and no open blocker
 (the Next issue rule) - then fetch it as any named issue. On exit 1 no issue

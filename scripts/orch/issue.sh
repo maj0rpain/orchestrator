@@ -262,6 +262,7 @@ cmd_issue_ready() {
 cmd_issue_next() {
   [ $# -eq 0 ] || die2 "usage: orch.sh issue next"
   orch_load standing
+  orch_load handoff
   local ready nums n err parent open_count blockers line state
   local -A titles=() labels=()
   repo_pin || die2 "$REPO_REMEDY"
