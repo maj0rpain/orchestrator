@@ -57,7 +57,7 @@ TIMELINE_HANDOFF_INDEX=""
 # read: TIMELINE_REASON holds gh's reason, or is empty for output that is not a
 # comment list.
 timeline_read() {
-  local json gh_err text rows line kind arg retired url
+  local json reason text rows line kind arg retired url
   TIMELINE_JSON='[]' TIMELINE_REASON=""
   TIMELINE_Q_INDEX="" TIMELINE_Q_PHASE="" TIMELINE_Q_URL=""
   TIMELINE_STOP_INDEX="" TIMELINE_STOP_KIND="" TIMELINE_STOP_PHASE="" TIMELINE_STOP_URL=""
@@ -65,8 +65,8 @@ timeline_read() {
   TIMELINE_KIND=() TIMELINE_ARG=() TIMELINE_RETIRED=() TIMELINE_URL=()
   # comments_trusted_read drops the untrusted authors' comments, once, before
   # any marker or answer is read from them.
-  comments_trusted_read issue "$1" json gh_err || {
-    TIMELINE_REASON="$gh_err"
+  comments_trusted_read issue "$1" json reason || {
+    TIMELINE_REASON="$reason"
     return 1
   }
   # One pass: the first line is the comment list, compact, then one row per

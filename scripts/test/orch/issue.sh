@@ -823,7 +823,8 @@ fake_issue_body 23 "Body of #23."
 
 # issue fetch --json (#528): the issue's title, body, labels and comments in one
 # trimmed JSON object, so a fresh agent reads an issue with one call pinned to
-# the repo. Its jq is ISSUE_JSON_JQ, pinned in "gh adapter contract".
+# the repo. ISSUE_JSON_JQ gives the issue fields; issue_json_published
+# joins in the trusted comments.
 fake_issue 27 open ready-for-agent bug
 fake_issue_title 27 "Widgets need a handle"
 fake_issue_body 27 "$(writeln '## What to build' '' 'A `$HOME` handle for #6.')"
