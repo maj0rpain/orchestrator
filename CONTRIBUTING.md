@@ -202,8 +202,8 @@ condition, as `phase advance` does for `gh`:
 `if autopilot_active; then orch_load gh; fi`.
 The shared test assertion `assert_loads_once <label> <cmd>...` checks a
 command's trace for it, `assert_trace_loads_once` a trace an existing run
-wrote; `assert_trace_names_no <label> <trace> <module>...` (in phase.sh until a
-second file uses it) asserts a trace names none of the given modules.
+wrote; `assert_trace_names_no <label> <trace> <module>...` asserts a trace
+names none of the given modules.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs

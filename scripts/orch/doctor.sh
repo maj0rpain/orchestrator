@@ -188,6 +188,9 @@ d_probe() {
     D_FLOW_PHASE=phase D_FLOW_ISSUE=issue D_FLOW_BRANCH=branch D_FLOW_PR=pr \
     D_FLOW_ITERATION=iteration budget_raw=budget 2>/dev/null; then
     D_STATE=ok
+    # The budget read, here, and the review checks run in command substitutions:
+    # load review once, in this shell.
+    orch_load review
     # shellcheck disable=SC2154 # budget_raw is set by flow_state_get_many above
     D_FLOW_BUDGET="$(review_budget_fallback "$budget_raw")"
   fi
@@ -315,6 +318,7 @@ check_gh_repo() {
 # the wrong place looks fine until review.
 check_default_branch() {
   d_gh_gate || return 0
+  orch_load base
   # Silent when the repo itself did not resolve: check_gh_repo has already said
   # so, and a second line derived from the first buries it.
   [ -n "$D_REPO_SEEN" ] || return 0
@@ -551,6 +555,7 @@ check_git_exclude() {
 # check at all.
 check_base_branch() {
   local b st=0
+  orch_load base
   b="$(base_setting)"
   if [ -z "$b" ]; then
     d_ok "base branch: ${D_REPO_BRANCH:-$(default_branch_local)} (default)"
@@ -585,6 +590,7 @@ check_side_checkouts_finished() {
   done <<<"$list"
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
+  orch_load base
   default_branch_seed "$D_REPO_BRANCH"
   for path in "${found[@]}"; do
     rc=0; verdict=""; branch=""
@@ -657,6 +663,8 @@ check_flow_autopilot_label() {
 # This checkout's own flow is check_flow_autopilot_label's.
 check_autopilot_side_flows() {
   local list kind _flow _branch path issue phase here
+  # Its helpers are read in command substitutions: load handoff once, here.
+  orch_load handoff
   list="$(checkouts)" || return 0
   here="$(pwd -P)"
   while read -r kind _flow _branch path; do
@@ -677,6 +685,10 @@ check_autopilot_side_flows() {
 # checkout cannot be resolved.
 check_autopilot_claims() {
   orch_load standing
+  # liveness and autopilot are first reached in the loop's substitutions: load
+  # each once, here.
+  orch_load liveness
+  orch_load autopilot
   local issue host started now_epoch started_epoch me main_known=0 pid
   standing_claims_read --quiet || return 0
   now_epoch="$(date -u +%s)"; me="$(standing_host_id)"
@@ -820,9 +832,13 @@ check_flow_pr() {
 # won't run. Listed for review alone, like check_flow_upstream's phases:
 # outside review, there is no loop to classify and nothing to say about one.
 check_flow_review_terminal() {
-  local i b terminal word detail
+  local i b terminal word detail flat
   i="$D_FLOW_ITERATION"
   b="$D_FLOW_BUDGET"
+  # redo is read only when the flat record is gone (review_terminal_record).
+  if [ "$i" -gt 0 ] && flat="$(cmd_review path "$i" 2>/dev/null)" && [ ! -e "$flat" ]; then
+    orch_load redo
+  fi
   terminal="$(review_terminal_state)" || true
   lines_split "$terminal" word detail
   case "$word" in

@@ -1717,6 +1717,49 @@ mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
 restore_suite_env
 
+# Each module loads once: at the review phase the checks read the loop's
+# record, the PR and the redo command in subshells.
+fresh_flow doctorloadonce
+doctor_github
+complete_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path implement)"
+complete_handoff "$("$ORCH" handoff path review)"
+state_fixture phase review
+state_fixture pr 40
+fake_pr 40 open orch/doctorloadonce main
+fake_pr_draft 40
+state_fixture iteration 5
+"$ORCH" state set budget 5
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow with a PR recorded and a stopped loop is healthy" "$st" 0
+assert_contains "and reports the stop" "$out" "review loop at a terminal state: stop (CI failed twice.)"
+assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
+assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
+rm .orchestrator/review/iteration-05.md
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow with the last flat review record gone warns, never fails" "$st" 0
+assert_contains "and reads as interrupted" "$out" "looks interrupted, not stopped"
+assert_trace_loads_once "doctor --flow at review with the flat review record gone" "$rv_load"
+rm -f "$rv_load"
+# Midway through a redo, the retired record is read in its place; a malformed
+# one has redo read for the terminal state and again for the remedy's path.
+state_fixture issue 9
+state_fixture redo_count 1
+state_fixture branch "$(sourced_orch branch_name_redo 9 "$("$ORCH" state get slug)" 1)"
+mkdir -p .orchestrator/review/pre-redo-1
+writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/pre-redo-1/iteration-05.md
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow with a malformed retired record fails" "$st" 1
+assert_contains "naming the retired record in the rewrite remedy" "$out" "rewrite the first line of $(pwd -P)/.orchestrator/review/pre-redo-1/iteration-05.md"
+assert_trace_loads_once "doctor --flow with the flat record gone mid-redo" "$rv_load"
+rm -f "$rv_load"
+restore_suite_env
+
 # --- doctor: review budget check -----------------------------------------
 # review begin's own `die` at budget is what is meant to make an iteration
 # past it unreachable - this check is for the state.json that got there some
@@ -2220,6 +2263,17 @@ fake_claim_seed 6 autopilot-abc123 5 2020-01-01T00:00:00Z
 out="$(ORCH_HOST_ID=autopilot-abc123 "$ORCH" doctor --env 2>&1)"
 assert_contains "with ORCH_HOST_ID set, a claim of that id is this host's" "$out" "issue #6 is claimed by this host"
 assert_not_contains "and the hostname's claim is another identity's, a day old or not" "$out" "issue #9 is claimed by this host"
+# Each module loads once while the claims check reads two other hosts' old
+# claims and two of this host's whose processes are gone.
+fake_claim_seed 10 otherhost 5 2020-01-01T00:00:00Z
+fake_claim_seed 11 "$(hostname)" 5 2020-01-01T00:00:00Z
+cl_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$cl_load" "$ORCH" doctor --env 2>&1)"; st=$?
+# The fixture repo is not on GitHub, so its repo checks FAIL; claims only warn.
+assert_status "doctor --env with old and dead claims ends on the fixture repo's own FAILs" "$st" 1
+assert_contains "and names this host's second dead claim" "$out" "issue #11 is claimed by this host"
+assert_trace_loads_once "doctor --env with old and dead claims" "$cl_load"
+rm -f "$cl_load"
 fake_fail adapter_claim_list "HTTP 502 claims"
 out="$("$ORCH" doctor --env 2>&1)"
 fake_unfail
@@ -2248,6 +2302,24 @@ assert_contains "a side flow with two phase labels names both, space-separated" 
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"
+# The side flow's label check and GitHub's silence each load a module once.
+sf_load="$(mktemp)"
+fake_issue 7 open ready-for-agent orch:implement
+out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "doctor --env beside a disagreeing side flow ends on the fixture repo's own FAILs" "$st" 1
+assert_contains "and names the disagreement" "$out" "issue #7 is labelled orch:implement, but its side checkout"
+assert_trace_loads_once "doctor --env beside a side flow whose label disagrees" "$sf_load"
+fake_issue 7 open ready-for-agent orch:spec
+fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
+for scope in --env ""; do
+  sf_load="$(mktemp)"
+  out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor $scope 2>&1)"; st=$?
+  assert_status "doctor $scope with no answer for the default branch ends on the fixture repo's own FAILs" "$st" 1
+  assert_contains "doctor $scope with no answer for the default branch says so" "$out" "HTTP 502"
+  assert_trace_loads_once "doctor $scope with GitHub not answering for the default branch" "$sf_load"
+done
+fake_unfail
+rm -f "$sf_load"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- doctor --flow: autopilot handoff comments (#1457) ------------------------
