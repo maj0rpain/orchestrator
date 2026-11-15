@@ -671,34 +671,32 @@ review_standards_inside() {
   esac
 }
 
-# review_standards_declared <entry>...: dies unless every entry is a
+# review_standards_declared <entry>: dies unless the entry is a
 # repo-relative path naming a regular file inside the repo, optionally with a
 # #Heading naming one section that must match exactly once.
 review_standards_declared() {
-  local e seg depth segs path n
-  for e in "$@"; do
-    case "$e" in
-      /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
+  local e="$1" seg depth segs path n
+  case "$e" in
+    /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
+  esac
+  [[ $e =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && die "Standards entry \`$e\` is a URL (want a repo-relative path)"
+  depth=0
+  path="${e%%#*}"
+  IFS=/ read -ra segs <<< "$path"
+  for seg in "${segs[@]}"; do
+    case "$seg" in
+      ''|.) ;;
+      ..) depth=$((depth - 1)); [ "$depth" -ge 0 ] || die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
+      *) depth=$((depth + 1)) ;;
     esac
-    [[ $e =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && die "Standards entry \`$e\` is a URL (want a repo-relative path)"
-    depth=0
-    path="${e%%#*}"
-    IFS=/ read -ra segs <<< "$path"
-    for seg in "${segs[@]}"; do
-      case "$seg" in
-        ''|.) ;;
-        ..) depth=$((depth - 1)); [ "$depth" -ge 0 ] || die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
-        *) depth=$((depth + 1)) ;;
-      esac
-    done
-    [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
-    [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
-    review_standards_inside "$path" || die "Standards entry \`$e\` leaves the repo (want a path inside it)"
-    [ "$path" = "$e" ] && continue
-    n="$(review_standards_heading_count "$path" "${e#*#}")"
-    [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"
-    [ "$n" -eq 1 ] || die "Standards entry \`$e\` names an ambiguous heading (matches $n times)"
   done
+  [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
+  [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
+  review_standards_inside "$path" || die "Standards entry \`$e\` leaves the repo (want a path inside it)"
+  [ "$path" = "$e" ] && return 0
+  n="$(review_standards_heading_count "$path" "${e#*#}")"
+  [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"
+  [ "$n" -eq 1 ] || die "Standards entry \`$e\` names an ambiguous heading (matches $n times)"
 }
 
 # review_standards_resolve_source: the Standards resolution, and the path it

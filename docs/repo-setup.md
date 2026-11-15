@@ -111,4 +111,4 @@ it has none.
   `docs/how-it-works.md`).
 
 Run `orch.sh doctor` to check the setup described in the sections above "What
-needs no setup"; it does not check the items listed there.
+needs no setup".
