@@ -1646,8 +1646,7 @@ tick_fixture
 fake_issue 7 open ready-for-agent orch:implement
 mi_flow() { # <name> <marker printf format>: a side checkout with a flow and that marker
   local p
-  p="$("$ORCH" side-checkout add "$1" 2>/dev/null)"
-  printf "$2" >"$(git -C "$p" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+  p="$(mi_wt "$1" "$2")"
   (cd "$p" && "$ORCH" init "$1" --issue 7 >/dev/null 2>&1)
 }
 mi_flow empty-marker ''
