@@ -8,6 +8,9 @@
 # "<file>: <problem>", and nothing when the root obeys it. Each rule runs first
 # against fixture plugin roots that break it, so a rule that stops flagging
 # anything fails here too, then once against the real plugin root.
+# Run with no argument it runs everything; --fragment-only runs the fragment
+# rule against the real plugin root and nothing else, which is all the fragment
+# workflow needs; any other argument is refused with a usage line and exit 2.
 # The linter checks structure only: it never runs orch.sh and holds no flow
 # state.
 #
@@ -15,6 +18,8 @@
 # with the rule it checks. Only rules carry the scan_ prefix, and
 # scan_rule_index fails when this index and the definitions drift apart.
 # >>> rules
+#   scan_changelog_fragments  a PR to main adds one well-formed changelog
+#     fragment, named for no sub-issue, and bumps nothing by hand
 #   scan_rule_index  this index lists every scan_* function, in file order
 #   scan_old_names  no old skill or command name outside history, and no old
 #     command file or skill directory
@@ -152,8 +157,6 @@
 #     directory
 #   scan_changelog  the CHANGELOG's top heading is the plugin version, with one
 #     non-empty section
-#   scan_changelog_fragments  a PR to main adds one well-formed changelog
-#     fragment, named for no sub-issue, and bumps nothing by hand
 #   scan_line_width  no covered Markdown or shell comment line is past 80
 #     columns, outside the exempt lines
 #   scan_interview_closing  orch-interview's SKILL.md's Closing section has
@@ -238,6 +241,18 @@ spares() {
   if [ -z "$hits" ]; then ok "$1"; else bad "$1" "expected no finding matching '$3', got: $hits"; fi
 }
 
+# The one optional argument, --fragment-only, narrows the run to the changelog
+# fragment rule. It is an argument, never an environment variable, so the
+# runners that start this file with none can never narrow a full run.
+FRAGMENT_ONLY=0
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -eq 1 ] && [ "$1" = --fragment-only ]; then
+    FRAGMENT_ONLY=1
+  else
+    echo "docs_lint.sh: usage: docs_lint.sh [--fragment-only]" >&2
+    exit 2
+  fi
+fi
 # >>> checks
 FIXTURES="$(mktemp -d)" || FIXTURES=""
 [ -n "$FIXTURES" ] || {
@@ -286,6 +301,111 @@ fixture_git() {
 SHELL_CODE_AWK="$(<"$PLUGIN_ROOT/scripts/test/shell_code.awk")"
 [ -n "$SHELL_CODE_AWK" ] || {
   echo "docs_lint.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }
+
+# The changelog fragment rule and the helpers it reaches, defined before the
+# --fragment-only run below needs them; its fixture self-tests are in the
+# version and CHANGELOG section.
+# version_field: the version field of the plugin.json on stdin, empty when
+# there is none. The linter needs no jq: plugin.json keeps it on one line.
+version_field() {
+  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | awk -v n=1 'NR<=n'
+}
+# scan_changelog_fragments <plugin root> <base commit> [<no bump>]: the
+# root's HEAD, against its merge-base with <base commit>. Unless <no bump> is
+# non-empty, it adds exactly one file under changelog.d/, named <digits>.md
+# and well-formed as scripts/version-bump.sh reads it. Always: plugin.json's
+# version is unchanged, CHANGELOG.md gains no ## heading, and no fragment the
+# merge-base holds is modified or deleted. changelog.d/.gitkeep is not a
+# fragment: adding it counts for nothing, and changing it is flagged on its
+# own. The one fragment's issue must not be a sub-issue: a fragment is named
+# for the PR's issue, never a ticket (CLAUDE.md Versioning).
+scan_changelog_fragments() {
+  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new heading frag issue parent
+  if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
+    echo "CHANGELOG_BASE: no merge-base with HEAD for '$base'"; return 0
+  fi
+  while IFS=$'\t' read -r status path; do
+    if [ "$path" = changelog.d/.gitkeep ]; then
+      case "$status" in
+        A) ;;
+        M) echo "$path: modified; version-bump.sh keeps it" ;;
+        D) echo "$path: deleted; version-bump.sh keeps it" ;;
+        *) echo "$path: changed ($status); version-bump.sh keeps it" ;;
+      esac
+      continue
+    fi
+    case "$status" in
+      A) added+=("$path") ;;
+      M) echo "$path: an existing fragment is modified" ;;
+      D) echo "$path: an existing fragment is deleted" ;;
+      *) echo "$path: an existing fragment is changed ($status)" ;;
+    esac
+  done < <(git -C "$r" diff --no-renames --name-status "$mb" HEAD -- changelog.d/)
+  if [ -z "$no_bump" ]; then
+    if [ "${#added[@]}" -eq 0 ]; then
+      echo "changelog.d/: no changelog fragment added; add one, changelog.d/<issue>.md"
+    elif [ "${#added[@]}" -gt 1 ]; then
+      echo "changelog.d/: ${#added[@]} changelog fragments added, not one: ${added[*]}"
+    elif ! [[ "${added[0]}" =~ ^changelog\.d/[0-9]+\.md$ ]]; then
+      echo "${added[0]}: not named <issue>.md, <issue> all digits"
+    else
+      # Well-formed as the version-bump script reads it: the script itself,
+      # run on a scratch checkout holding only this fragment.
+      frag="$(new_fixture)"
+      mkdir -p "$frag/.claude-plugin" "$frag/changelog.d"
+      printf '{\n  "version": "0.0.0"\n}\n' >"$frag/.claude-plugin/plugin.json"
+      printf '%s\n' '## 0.0.0' '' 'Scratch.' >"$frag/CHANGELOG.md"
+      git -C "$r" show "HEAD:${added[0]}" >"$frag/${added[0]}"
+      (cd "$frag" && bash "$PLUGIN_ROOT/scripts/version-bump.sh" 2>&1 >/dev/null) |
+        sed 's/^version-bump: //'
+      issue="$(basename "${added[0]}" .md)"
+      if ! parent="$(cd "$r" && issue_parent_url "$issue")"; then
+        echo "${added[0]}: looking up #$issue's parent issue failed (gh api), so the fragment's name is unchecked"
+      elif [ -n "$parent" ]; then
+        echo "${added[0]}: #$issue is a sub-issue of #${parent##*/}; name the fragment for the PR's issue, never a ticket"
+      fi
+    fi
+  fi
+  old="$(git -C "$r" show "$mb:.claude-plugin/plugin.json" 2>/dev/null | version_field)"
+  new="$(git -C "$r" show "HEAD:.claude-plugin/plugin.json" 2>/dev/null | version_field)"
+  [ "$old" = "$new" ] ||
+    echo ".claude-plugin/plugin.json: version changed from $old to $new; the version-bump Action bumps it on merge"
+  while IFS= read -r heading; do
+    [ -n "$heading" ] &&
+      echo "CHANGELOG.md: $heading added; the version-bump Action adds the entry on merge"
+  done < <(LC_ALL=C comm -13 \
+    <(git -C "$r" show "$mb:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort) \
+    <(git -C "$r" show "HEAD:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort))
+  return 0
+}
+# issue_parent_url <n>: issue <n>'s parent_issue_url, read from GitHub for the
+# repo of the current directory; empty when it has none. Fails when gh does.
+# The fixture self-tests replace it with a fake.
+issue_parent_url() {
+  gh api "repos/{owner}/{repo}/issues/$1" --jq '.parent_issue_url // ""'
+}
+# check_real_changelog_fragments: the changelog fragment rule against the real
+# plugin root, once: the PR against CHANGELOG_BASE, honouring NO_VERSION_BUMP,
+# or a pass naming the skip when CHANGELOG_BASE is unset. The full run and the
+# --fragment-only run both call it.
+check_real_changelog_fragments() {
+  if [ -n "${CHANGELOG_BASE+set}" ]; then
+    check "the PR adds one changelog fragment and bumps nothing by hand" \
+      "$(scan_changelog_fragments "$PLUGIN_ROOT" "$CHANGELOG_BASE" "${NO_VERSION_BUMP:-}")"
+  else
+    ok "the changelog fragment rule skipped (CHANGELOG_BASE unset)"
+  fi
+}
+
+# --fragment-only: the changelog fragment rule against the real plugin root and
+# nothing else: no section heading, no fixture self-test, no other rule. It
+# starts here, once the helpers the rule reaches are defined, and ends on the
+# same summary line as the full run.
+if [ "$FRAGMENT_ONLY" = 1 ]; then
+  check_real_changelog_fragments
+  tally_summary
+  exit $?
+fi
 
 echo "docs lint"
 
@@ -4125,18 +4245,14 @@ check "the glossary defines Turn-final reply" \
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
 # Every PR to main adds one changelog fragment, changelog.d/<issue>.md, and
 # never bumps the version by hand: the version-bump Action does, on merge. The
-# CHANGELOG rule always runs; the fragment rule runs against the real root only
-# when CHANGELOG_BASE holds main's commit, and waives its one-fragment part when
-# NO_VERSION_BUMP is set; .github/workflows/fragment.yml's "Read main's commit"
-# step sets both, and its check step carries the GH_TOKEN the fragment rule's
-# parent lookup reads issues with.
+# CHANGELOG rule runs in the full run only; the fragment rule runs against the
+# real root only when CHANGELOG_BASE holds main's commit, and waives its
+# one-fragment part when NO_VERSION_BUMP is set; the workflow's "Read main's
+# commit" step (.github/workflows/fragment.yml) sets both, and its check step
+# runs the fragment rule alone (--fragment-only) with the GH_TOKEN its parent
+# lookup reads issues with.
 echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"
-# version_field: the version field of the plugin.json on stdin, empty when
-# there is none. The linter needs no jq: plugin.json keeps it on one line.
-version_field() {
-  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | awk -v n=1 'NR<=n'
-}
 # plugin_version <plugin root>: the version field of its plugin.json.
 plugin_version() { version_field <"$1/.claude-plugin/plugin.json" 2>/dev/null; }
 # scan_changelog <plugin root>: the CHANGELOG's first ## heading is exactly
@@ -4190,80 +4306,6 @@ spares "a CHANGELOG topped by a non-empty entry for the version is not flagged" 
   "$(scan_changelog "$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' 'New.' '' '## 3.1.0' '' 'Old.')")" '.'
 check "CHANGELOG.md's top entry is the plugin.json version" "$(scan_changelog "$PLUGIN_ROOT")"
 
-# scan_changelog_fragments <plugin root> <base commit> [<no bump>]: the
-# root's HEAD, against its merge-base with <base commit>. Unless <no bump> is
-# non-empty, it adds exactly one file under changelog.d/, named <digits>.md
-# and well-formed as scripts/version-bump.sh reads it. Always: plugin.json's
-# version is unchanged, CHANGELOG.md gains no ## heading, and no fragment the
-# merge-base holds is modified or deleted. changelog.d/.gitkeep is not a
-# fragment: adding it counts for nothing, and changing it is flagged on its
-# own. The one fragment's issue must not be a sub-issue: a fragment is named
-# for the PR's issue, never a ticket (CLAUDE.md Versioning).
-scan_changelog_fragments() {
-  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new heading frag issue parent
-  if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
-    echo "CHANGELOG_BASE: no merge-base with HEAD for '$base'"; return 0
-  fi
-  while IFS=$'\t' read -r status path; do
-    if [ "$path" = changelog.d/.gitkeep ]; then
-      case "$status" in
-        A) ;;
-        M) echo "$path: modified; version-bump.sh keeps it" ;;
-        D) echo "$path: deleted; version-bump.sh keeps it" ;;
-        *) echo "$path: changed ($status); version-bump.sh keeps it" ;;
-      esac
-      continue
-    fi
-    case "$status" in
-      A) added+=("$path") ;;
-      M) echo "$path: an existing fragment is modified" ;;
-      D) echo "$path: an existing fragment is deleted" ;;
-      *) echo "$path: an existing fragment is changed ($status)" ;;
-    esac
-  done < <(git -C "$r" diff --no-renames --name-status "$mb" HEAD -- changelog.d/)
-  if [ -z "$no_bump" ]; then
-    if [ "${#added[@]}" -eq 0 ]; then
-      echo "changelog.d/: no changelog fragment added; add one, changelog.d/<issue>.md"
-    elif [ "${#added[@]}" -gt 1 ]; then
-      echo "changelog.d/: ${#added[@]} changelog fragments added, not one: ${added[*]}"
-    elif ! [[ "${added[0]}" =~ ^changelog\.d/[0-9]+\.md$ ]]; then
-      echo "${added[0]}: not named <issue>.md, <issue> all digits"
-    else
-      # Well-formed as the version-bump script reads it: the script itself,
-      # run on a scratch checkout holding only this fragment.
-      frag="$(new_fixture)"
-      mkdir -p "$frag/.claude-plugin" "$frag/changelog.d"
-      printf '{\n  "version": "0.0.0"\n}\n' >"$frag/.claude-plugin/plugin.json"
-      printf '%s\n' '## 0.0.0' '' 'Scratch.' >"$frag/CHANGELOG.md"
-      git -C "$r" show "HEAD:${added[0]}" >"$frag/${added[0]}"
-      (cd "$frag" && bash "$PLUGIN_ROOT/scripts/version-bump.sh" 2>&1 >/dev/null) |
-        sed 's/^version-bump: //'
-      issue="$(basename "${added[0]}" .md)"
-      if ! parent="$(cd "$r" && issue_parent_url "$issue")"; then
-        echo "${added[0]}: looking up #$issue's parent issue failed (gh api), so the fragment's name is unchecked"
-      elif [ -n "$parent" ]; then
-        echo "${added[0]}: #$issue is a sub-issue of #${parent##*/}; name the fragment for the PR's issue, never a ticket"
-      fi
-    fi
-  fi
-  old="$(git -C "$r" show "$mb:.claude-plugin/plugin.json" 2>/dev/null | version_field)"
-  new="$(git -C "$r" show "HEAD:.claude-plugin/plugin.json" 2>/dev/null | version_field)"
-  [ "$old" = "$new" ] ||
-    echo ".claude-plugin/plugin.json: version changed from $old to $new; the version-bump Action bumps it on merge"
-  while IFS= read -r heading; do
-    [ -n "$heading" ] &&
-      echo "CHANGELOG.md: $heading added; the version-bump Action adds the entry on merge"
-  done < <(LC_ALL=C comm -13 \
-    <(git -C "$r" show "$mb:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort) \
-    <(git -C "$r" show "HEAD:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort))
-  return 0
-}
-# issue_parent_url <n>: issue <n>'s parent_issue_url, read from GitHub for the
-# repo of the current directory; empty when it has none. Fails when gh does.
-# The fixture self-tests replace it with a fake.
-issue_parent_url() {
-  gh api "repos/{owner}/{repo}/issues/$1" --jq '.parent_issue_url // ""'
-}
 # fragment_fixture: a fixture git repo whose main branch holds plugin.json at
 # 4.5.6, a CHANGELOG topped by ## 4.5.6, and one fragment not yet bumped,
 # changelog.d/7.md; checked out on a pr branch made from main.
@@ -4446,12 +4488,54 @@ flags "a failed parent lookup is flagged" \
 spares "with NO_VERSION_BUMP, no parent lookup runs" \
   "$(issue_parent_url() { echo "lookup ran"; return 1; }; scan_changelog_fragments "$fixture" main 1)" '.'
 eval "$real_issue_parent_url"
-if [ -n "${CHANGELOG_BASE+set}" ]; then
-  check "the PR adds one changelog fragment and bumps nothing by hand" \
-    "$(scan_changelog_fragments "$PLUGIN_ROOT" "$CHANGELOG_BASE" "${NO_VERSION_BUMP:-}")"
+check_real_changelog_fragments
+# The --fragment-only switch, run as a child of this file. Each fragment-only
+# child has CHANGELOG_BASE and NO_VERSION_BUMP set or unset here, whatever this
+# run inherited, and shows its ok lines though this run may be quiet. A
+# fragment-only child runs no self-tests, so it starts no child of its own.
+# fragment_only_child [<env words>...]: runs the
+# child under env with those words, its status, stdout and stderr landing in
+# child_status, child_out and child_err.
+fragment_only_child() {
+  local errfile="$FIXTURES/child.err" out st
+  out="$(cd "$FIXTURES" && env -u CHANGELOG_BASE -u NO_VERSION_BUMP ORCH_TEST_QUIET= "$@" \
+    bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --fragment-only 2>"$errfile")"
+  st=$?
+  child_status="$st" child_out="$out" child_err="$(<"$errfile")"
+}
+# assert_child_fails <status title> <output title> <glob>: the last child
+# exited non-zero and its stdout matches <glob>.
+assert_child_fails() {
+  if [ "$child_status" -ne 0 ]; then ok "$1"; else bad "$1" "exit 0"; fi
+  # shellcheck disable=SC2053 # $3 is a glob on purpose
+  if [[ "$child_out" == $3 ]]; then ok "$2"; else bad "$2" "got: $child_out"; fi
+}
+fragment_only_child
+assert_eq "--fragment-only with CHANGELOG_BASE unset exits 0" "$child_status" 0
+assert_eq "--fragment-only with CHANGELOG_BASE unset prints the skipped line and a summary alone" \
+  "$child_out" "$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n\n1 passed, 0 failed')"
+assert_empty "--fragment-only with CHANGELOG_BASE unset prints nothing on stderr" "$child_err"
+fragment_only_child CHANGELOG_BASE=no-such-ref
+assert_child_fails "--fragment-only with a base with no merge-base exits non-zero" \
+  "--fragment-only names a base with no merge-base and counts one failed" \
+  "*FAIL*CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'*0 passed, 1 failed"
+if git -C "$PLUGIN_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  child_head="$(git -C "$PLUGIN_ROOT" rev-parse HEAD)"
+  fragment_only_child CHANGELOG_BASE="$child_head"
+  assert_child_fails "--fragment-only fails a PR adding no fragment" \
+    "--fragment-only says no changelog fragment added" \
+    "*no changelog fragment added*0 passed, 1 failed"
+  fragment_only_child CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
+  assert_eq "--fragment-only honours NO_VERSION_BUMP" "$child_status:${child_out##*$'\n'}" "0:1 passed, 0 failed"
 else
-  ok "the changelog fragment rule skipped (CHANGELOG_BASE unset)"
+  skip "--fragment-only with CHANGELOG_BASE at HEAD" "the plugin root is not a git work tree"
 fi
+child_out="$(bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --fragment-onyl 2>"$FIXTURES/child.err")"
+child_status=$?
+assert_eq "an unknown argument exits 2" "$child_status" 2
+assert_empty "an unknown argument prints nothing on stdout" "$child_out"
+assert_eq "an unknown argument prints the usage line alone on stderr" \
+  "$(<"$FIXTURES/child.err")" "docs_lint.sh: usage: docs_lint.sh [--fragment-only]"
 
 # --- line width (#1524) -------------------------------------------------------
 echo

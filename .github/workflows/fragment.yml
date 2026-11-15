@@ -1,8 +1,9 @@
 name: fragment
 
-# The changelog fragment rule (docs_lint.sh) alone, on every PR event that can
-# change its answer: a push, a reopen, and an edit to the PR's body or labels.
-# The suite workflow does not rerun for those edits.
+# The changelog fragment rule (docs_lint.sh --fragment-only) alone, on every PR
+# event that can change its answer: a push, a reopen, and an edit to the PR's
+# body or labels. The suite workflow does not rerun for those edits; it runs the
+# whole docs lint on every push.
 
 on:
   pull_request:
@@ -51,9 +52,11 @@ jobs:
           if grep -qxiF no-version-bump <<<"$labels"; then
             echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
           fi
-      # GH_TOKEN for docs_lint.sh's fragment rule, whose gh api call reads the
+      # Runs the fragment rule alone (--fragment-only), never the whole docs lint,
+      # which the suite workflow runs. GH_TOKEN is for the fragment rule, whose
+      # gh api call reads the
       # fragment's issue to check it is no sub-issue.
       - name: Check the changelog fragment
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/test/docs_lint.sh
+        run: scripts/test/docs_lint.sh --fragment-only

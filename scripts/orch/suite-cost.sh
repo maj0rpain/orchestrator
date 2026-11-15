@@ -23,12 +23,19 @@
 # marker, then lists the others: it marks each other live one contended. On
 # finish it was overlapped when its .contended file exists, or when it saw
 # another live marker at start, and it removes its marker and .contended file
-# either way. A marker or .contended file whose pid names no live process is
-# stale, and so is a .contended file whose marker is
-# gone: no contention, and removed by the run that finds it. A failed .contended
+# either way. A marker holds the Liveness module's `<pid> <start-time>` record,
+# written under a first name the sweep never takes (.<pid>.new), then moved into
+# place; a run whose start time cannot be read does not register. A marker
+# whose record is empty, malformed, names a pid other than its file name, or
+# whose process is gone or has another start time is stale, and so is a
+# .contended file whose marker is gone or stale: no contention, and removed by
+# the run that finds it. A failed .contended
 # write for another run is not retried, and a failed removal is ignored. A run
 # that cannot register still runs but is not recorded. No run ever waits for
-# another. Before each of its measured runs, check looks for a live marker of
+# another. A measured run interrupted by INT, TERM or HUP removes its marker,
+# first-name file, contended mark and timing file, a tree run its worktree too,
+# records nothing, warns once and exits 128 plus the signal's number.
+# Before each of its measured runs, check looks for a live marker of
 # another process, removing stale ones: on one it starts nothing, warns naming
 # its pid and is unmeasured.
 #
@@ -108,8 +115,21 @@ suite_cost_register() {
   dir="$(suite_cost_active 2>/dev/null)" || return 0
   me="$dir/$$"
   rm -f -- "$me.contended" 2>/dev/null || true
-  { mkdir -p -- "$dir" && : >"$me"; } 2>/dev/null || return 0
+  mkdir -p -- "$dir" 2>/dev/null || return 0
+  # written under a first name the sweep never takes for a marker, then moved
+  # into place, so a marker appears complete
+  SUITE_COST_FIRST="$dir/.$$.new"
+  # the mark is set before the move, so a signal landing as the move returns
+  # still finds the marker to remove (a missing file is ignored)
   SUITE_COST_MARK="$me"
+  # the first name is created under a silenced redirection, so a directory that
+  # cannot be written fails quietly; the writer's own orch: line stays on stderr
+  { : >"$SUITE_COST_FIRST"; } 2>/dev/null && liveness_record_write "$$" "$SUITE_COST_FIRST" && mv -f -- "$SUITE_COST_FIRST" "$me" 2>/dev/null || {
+    rm -f -- "$SUITE_COST_FIRST" 2>/dev/null || true
+    SUITE_COST_FIRST="" SUITE_COST_MARK=""
+    return 0
+  }
+  SUITE_COST_FIRST=""
   while IFS= read -r p; do
     SUITE_COST_SAW_LIVE=1
     : 2>/dev/null >"$dir/$p.contended" || true
@@ -118,8 +138,9 @@ suite_cost_register() {
 
 # suite_cost_sweep <dir>: the one pass over the active-runs directory <dir>
 # that registration and check's pre-check share. Removes each stale marker or
-# .contended file - its pid names no live process, or its marker is gone,
-# whether or not its pid is live - and prints the pid of each live marker of
+# .contended file - its marker is gone, or holds no live record of its pid
+# (the Liveness module's record-alive rule), whether or not the pid is live -
+# and prints the pid of each live marker of
 # another process, one per line, in glob order. A .contended file is never
 # taken for a marker.
 suite_cost_sweep() {
@@ -128,7 +149,7 @@ suite_cost_sweep() {
     name="${f##*/}"
     p="${name%.contended}"
     [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
-    if ! kill -0 "$p" 2>/dev/null || [ ! -e "$dir/$p" ]; then
+    if [ ! -e "$dir/$p" ] || ! liveness_marker_alive "$p" "$dir/$p"; then
       rm -f -- "$f" 2>/dev/null || true
     elif [ "$f" = "$dir/$p" ]; then
       printf '%s\n' "$p"
@@ -167,16 +188,20 @@ suite_cost_unregister() {
 }
 
 # suite_cost_run <cmd> [args...]: runs the command in the current directory,
-# its stdout, stderr and exit code passed through, and on exit 0 appends its
+# its stdout and stderr passed through, and on exit 0 appends its
 # record line, its commit <sha>-dirty when the tree had changes as it started -
 # unless another suite-cost run overlapped it, or it could not register as
-# active, either of which it warns of. Exits with the command's own status.
+# active, either of which it warns of. Exits with the command's own status,
+# except an interrupted run (INT, TERM or HUP sent to orch.sh), which exits 128
+# plus the signal's number and records nothing.
 suite_cost_run() {
   local commit_field
   commit_field="$(suite_cost_head_commit)"
+  suite_cost_interrupt_arm
   suite_cost_register
   suite_cost_measure "$@"
   suite_cost_unregister
+  suite_cost_interrupt_disarm
   if suite_cost_require_solo "this run" "its suite cost is not recorded" && [ "$SUITE_COST_STATUS" -eq 0 ]; then
     if [ -n "$commit_field" ]; then
       suite_cost_append "$commit_field" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
@@ -185,6 +210,80 @@ suite_cost_run() {
     fi
   fi
   exit "$SUITE_COST_STATUS"
+}
+
+# suite_cost_interrupt_arm [<tmp-dir> <worktree> <start-dir> <label>]: starts
+# handling INT, TERM and HUP for a measured run and clears the state the
+# handler cleans up. The tree run passes its temporary directory, the worktree
+# it is about to add, its starting directory and its name in the removal
+# warning, before the add, so a signal as the worktree appears is covered
+# (the handler skips a worktree that does not exist); suite-cost run passes
+# nothing. The handler runs once the foreground command has returned (bash's
+# own rule).
+suite_cost_interrupt_arm() {
+  SUITE_COST_MARK="" SUITE_COST_FIRST="" SUITE_COST_TIMEFILE="" SUITE_COST_TIMETOKEN=""
+  SUITE_COST_TREE_TMP="${1:-}" SUITE_COST_TREE_WT="${2:-}" SUITE_COST_TREE_HERE="${3:-}" SUITE_COST_TREE_LABEL="${4:-}"
+  trap 'suite_cost_interrupted 129' HUP
+  trap 'suite_cost_interrupted 130' INT
+  trap 'suite_cost_interrupted 143' TERM
+}
+
+# suite_cost_interrupt_disarm: ends the handling suite_cost_interrupt_arm began.
+suite_cost_interrupt_disarm() {
+  trap - HUP INT TERM
+  SUITE_COST_TREE_TMP="" SUITE_COST_TREE_WT="" SUITE_COST_TREE_HERE="" SUITE_COST_TREE_LABEL=""
+}
+
+# suite_cost_tree_remove <label> <worktree> <tmp-dir>: removes a tree run's
+# worktree and then its temporary directory. Returns 1, after a warning that
+# names the command to remove it, when the worktree could not be removed.
+suite_cost_tree_remove() {
+  if git worktree remove --force "$2" >/dev/null 2>&1; then
+    rmdir "$3" 2>/dev/null || true
+    return 0
+  fi
+  warn "could not remove $1's worktree $2 - remove it with: git worktree remove --force $2"
+  return 1
+}
+
+# suite_cost_timefile_remove: removes SUITE_COST_TIMEFILE when its first line is
+# this run's SUITE_COST_TIMETOKEN, so only a file this run made is removed.
+suite_cost_timefile_remove() {
+  local first=""
+  [ -n "$SUITE_COST_TIMEFILE" ] || return 0
+  { read -r first <"$SUITE_COST_TIMEFILE"; } 2>/dev/null || true
+  [ "$first" != "$SUITE_COST_TIMETOKEN" ] || rm -f -- "$SUITE_COST_TIMEFILE" 2>/dev/null || true
+}
+
+# suite_cost_interrupted <status>: the handler. Warns once that the run was
+# interrupted - on the caller's stderr even inside the measuring step, where
+# stderr is the timing file and fd 3 is the caller's - after removing the run's
+# marker, first-name file, contended mark and timing file (failures ignored),
+# for a tree run returning to its starting directory and removing its worktree
+# and temporary directory (a failed worktree removal is warned of, naming the
+# command), and exits <status>, 128 plus the signal's number. A stderr that
+# cannot be written changes neither the cleanup nor the exit. Its first act is
+# to ignore HUP, INT and TERM, so a second signal cannot cut the cleanup short.
+suite_cost_interrupted() {
+  local status="$1"
+  trap '' HUP INT TERM
+  # A dead stderr must not end the handler early: SIGPIPE from a closed pipe is
+  # ignored, a failed write is ignored, and the warning follows the cleanup.
+  trap '' PIPE
+  [ -z "$SUITE_COST_TIMEFILE" ] || [ ! /dev/fd/2 -ef "$SUITE_COST_TIMEFILE" ] || exec 2>&3
+  [ -z "$SUITE_COST_MARK" ] || rm -f -- "$SUITE_COST_MARK" "$SUITE_COST_MARK.contended" 2>/dev/null || true
+  [ -z "$SUITE_COST_FIRST" ] || rm -f -- "$SUITE_COST_FIRST" 2>/dev/null || true
+  suite_cost_timefile_remove
+  if [ -n "$SUITE_COST_TREE_WT" ]; then
+    cd "$SUITE_COST_TREE_HERE" 2>/dev/null || true
+    if [ -e "$SUITE_COST_TREE_WT" ]; then
+      suite_cost_tree_remove "$SUITE_COST_TREE_LABEL" "$SUITE_COST_TREE_WT" "$SUITE_COST_TREE_TMP" || true
+    else
+      rmdir "$SUITE_COST_TREE_TMP" 2>/dev/null || true
+    fi
+  fi
+  warn "this run was interrupted - its suite cost is not recorded" || true
+  exit "$status"
 }
 
 # suite_cost_require_solo <subject> <tail>: returns 0 when the run just
@@ -224,10 +323,30 @@ suite_cost_head_commit() {
 suite_cost_measure() {
   local tf real user sys TIMEFORMAT='%2R %2U %2S'
   SUITE_COST_STATUS=0
-  temp_file_make tf || die "could not make a temp file to time the command"
-  { time { command "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>"$tf"
+  # The handler removes SUITE_COST_TIMEFILE, so it is set to the fresh name
+  # before the file is made: a signal landing at any point then finds the path
+  # and removes the file, or finds nothing to remove. A name at which anything
+  # exists is never set. The file's first line is a token only this step knows,
+  # and the handler removes the file only when it reads that token back, so a
+  # file some other process made at the name between the check and the create
+  # is never removed. The creating subshell ignores HUP, INT and TERM, so the
+  # token write always follows the create and the handler never meets an empty
+  # file. After 10 names with no create, it dies as it always did.
+  local try=0 made=""
+  SUITE_COST_TIMETOKEN="$$.$RANDOM$RANDOM"
+  while [ "$((try += 1))" -le 10 ]; do
+    temp_file_name tf
+    [[ -e $tf || -L $tf ]] && continue
+    SUITE_COST_TIMEFILE="$tf"
+    (trap '' HUP INT TERM; umask 077; set -o noclobber; printf '%s\n' "$SUITE_COST_TIMETOKEN" >"$tf") 2>/dev/null &&
+      [[ -f $tf && ! -L $tf ]] && { made=1; break; }
+    SUITE_COST_TIMEFILE=""
+  done
+  [ -n "$made" ] || die "could not make a temp file to time the command"
+  { time { command "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>>"$tf"
   read -r real user sys < <(tail -n 1 "$tf") || true
   rm -f "$tf"
+  SUITE_COST_TIMEFILE=""
   # A locale may write the decimal point as a comma.
   SUITE_COST_WALL="${real/,/.}"
   SUITE_COST_CPU="$(LC_ALL=C awk -v u="${user/,/.}" -v s="${sys/,/.}" 'BEGIN { printf "%.2f", u + s }')"
@@ -489,7 +608,7 @@ suite_cost_min() {
 # and the worktree is gone; a failed removal after a pass keeps the record and
 # names the left-over worktree.
 suite_cost_tree_run() {
-  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 cd_failed=0 run_label msg_tail msg_no_worktree subdir
+  local role="$1" sha="$2" live tmp wt here="$PWD" status=0 setup setup_status=0 cd_failed=0 ran=0 run_label msg_tail msg_no_worktree subdir
   shift 2
   subdir="$(git rev-parse --show-prefix 2>/dev/null || true)"
   subdir="${subdir%/}"
@@ -506,9 +625,11 @@ suite_cost_tree_run() {
   fi
   tmp="$(mktemp -d)" || { warn "could not make a temp directory for $run_label"; return 1; }
   wt="$tmp/$role"
+  suite_cost_interrupt_arm "$tmp" "$wt" "$here" "$run_label"
   if ! git worktree add -q --detach "$wt" "$sha" >/dev/null 2>&1; then
     warn "$msg_no_worktree"
     rm -rf "$tmp"
+    suite_cost_interrupt_disarm
     return 1
   fi
   if [ -n "$subdir" ] && [ ! -d "$wt/$subdir" ]; then
@@ -525,9 +646,15 @@ suite_cost_tree_run() {
     [ "$setup_status" -ne 0 ] || [ "$cd_failed" -ne 0 ] || suite_cost_measure "$@" >&2
     suite_cost_unregister
     cd "$here" || die "could not return to $here"
+    ran=1
+  else
+    status=1
+  fi
+  local record=0
+  if [ "$ran" -eq 1 ]; then
     if [ "$setup_status" -eq 0 ] && [ "$cd_failed" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
       if suite_cost_require_solo "$run_label at $sha" "$msg_tail"; then
-        suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
+        record=1
       else
         status=1
       fi
@@ -543,14 +670,14 @@ suite_cost_tree_run() {
         warn "$run_label at $sha exited $SUITE_COST_STATUS - $msg_tail"
       fi
     fi
-  else
-    status=1
   fi
-  if git worktree remove --force "$wt" >/dev/null 2>&1; then
-    rmdir "$tmp" 2>/dev/null || true
-  else
-    warn "could not remove $run_label's worktree $wt - remove it with: git worktree remove --force $wt"
-    status=1
+  # the handled window ends after the removal: a signal landing once the
+  # worktree is gone only removes the temporary directory (the handler checks
+  # the worktree exists), and the handling ends before the record is appended
+  suite_cost_tree_remove "$run_label" "$wt" "$tmp" || status=1
+  suite_cost_interrupt_disarm
+  if [ "$record" -eq 1 ]; then
+    suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
   fi
   return "$status"
 }

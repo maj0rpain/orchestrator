@@ -67,7 +67,8 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    `Ticket verification: <command>`. The prompt hands you only the full
    verification command; when the instructions name no ticket verification,
    run that one. The run passes its output and exit code
-   through unchanged and records a passing run's suite cost.
+   through unchanged (an interrupt exits 128 plus the signal's number and
+   records nothing) and records a passing run's suite cost.
    Run it in the foreground and wait for it (host capability *Run a long
    command*); never background it and sleep, poll or kill it. A run the host
    moves to the background at its timeout is still waited for, as that row says.

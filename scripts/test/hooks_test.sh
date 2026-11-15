@@ -1470,7 +1470,7 @@ assert_eq "a final reply holding the view written within the window: allowed" \
   "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-stop.log" PG_SLEEP_PASTE="$PG/stop-paste.jsonl" PG_SLEEP_INTO="$S6" \
     ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
 
-# The pre-check and the size-gated re-read, counted in jq processes: a counting
+# The search and the size-gated re-read, counted in jq processes: a counting
 # jq, made by counting_bin (JQC and jq_count, defined above), first on PATH
 # logs each start and runs the real jq. One counter dir is shared by the
 # grilling-hook count, the paste-guard counts, the one-jq-per-payload checks
@@ -1486,10 +1486,10 @@ TQ="$PG/quoted-tail.jsonl"; cp "$T11" "$TQ"
 pg_text "$TQ" "spec_review_nudge ends a pass line with '; it is saved in <path>/view.md'"
 assert_eq "a transcript quoting the tail outside a pass line allows (ask)" "$(pg_decide "$TQ")" allow
 assert_eq "and the Stop guard too" "$(sg_decide "$TQ")" allow
-if [ "$(jq_count pg_decide "$TQ")" -gt "$(jq_count pg_decide "")" ]; then ok "the quoted tail falls back to a full scan (ask)"
-else bad "the quoted tail falls back to a full scan (ask)" "no extra jq"; fi
-if [ "$(jq_count sg_decide "$TQ")" -gt "$(jq_count sg_decide "")" ]; then ok "the quoted tail falls back to a full scan (Stop)"
-else bad "the quoted tail falls back to a full scan (Stop)" "no extra jq"; fi
+if [ "$(jq_count pg_decide "$TQ")" -gt "$(jq_count pg_decide "")" ]; then ok "the quoted tail decodes its candidate lines (ask)"
+else bad "the quoted tail decodes its candidate lines (ask)" "no extra jq"; fi
+if [ "$(jq_count sg_decide "$TQ")" -gt "$(jq_count sg_decide "")" ]; then ok "the quoted tail decodes its candidate lines (Stop)"
+else bad "the quoted tail decodes its candidate lines (Stop)" "no extra jq"; fi
 # An armed refusal over the full window on an unchanged transcript parses once.
 pg_full_window_refusal() { ORCH_PASTE_GUARD_WAIT='' PG_SLEEP_LOG="$PG/sleep-unchanged.log" PATH="$PG/stub:$PATH" "$@"; }
 for pg_fn in pg_decide sg_decide; do
@@ -1514,6 +1514,156 @@ for pg_fn in pg_decide sg_decide; do
     "$(PATH="$PG/stub-trunc:$PATH" PG_SLEEP_REPLACEMENT="$PG/trunc-new.jsonl" PG_SLEEP_INTO="$TT" \
       ORCH_PASTE_GUARD_WAIT='' "$pg_fn" "$TT")" allow
 done
+# The bounded scan (#3065), measured in the bytes each jq is offered on stdin:
+# a counting stand-in (counting_stdin_bin) first on PATH. A measure is compared
+# between two runs of the same hook, or against the padding, never against a
+# number. Padding is entries holding neither fixed string, written in one go;
+# its transcripts sit at paths of equal length, since the payload carries
+# transcript_path.
+JQB="$(counting_stdin_bin jq)"
+mkdir "$PG/cost"
+PG_PADFILE="$PG/cost/padding"
+pg_padline="$(jq -nc --arg t "$PG_PAD" '{type:"assistant", message:{role:"assistant", content:[{type:"text", text:$t}]}}')"
+for ((pg_i = 0; pg_i < 200; pg_i++)); do printf '%s\n' "$pg_padline"; done >"$PG_PADFILE"
+PG_PADSIZE="$(wc -c <"$PG_PADFILE" | tr -d ' ')"
+# jq_bytes <cmd> [args...]: the bytes all the jq processes <cmd> starts were
+# offered on stdin, in all.
+jq_bytes() {
+  : >"$JQB/jq.bytes"
+  PATH="$JQB:$PATH" "$@" >/dev/null 2>&1 </dev/null
+  counting_bytes "$JQB" jq
+}
+# pg_pad <transcript> <pad|non>: appends the padding when <pad>.
+pg_pad() { if [ "$2" = pad ]; then cat "$PG_PADFILE" >>"$1"; fi; }
+# pg_cost_build <name> <builder>: builds <name>'s transcript twice, padded and
+# bare, at paths of equal length, with <builder> <transcript> <pad|non>.
+pg_cost_build() {
+  local p="$PG/cost/pad-$1.jsonl" n="$PG/cost/non-$1.jsonl"
+  : >"$p"; : >"$n"; "$2" "$p" pad; "$2" "$n" non
+}
+# pg_cost_pair <name> <fn>: checks <fn>'s jq bytes on <name>'s two are equal.
+pg_cost_pair() {
+  assert_eq "$1: the padded transcript offers jq as many bytes as the bare one ($2)" \
+    "$(jq_bytes "$2" "$PG/cost/pad-$1.jsonl")" "$(jq_bytes "$2" "$PG/cost/non-$1.jsonl")"
+}
+pg_b_apply() { pg_pad "$1" "$2"; pg_check "$1" toolu_k1 batch "$PG/batch/view.md"; pg_bash "$1" toolu_k2 'bash "$ORCH" spec-review apply'; pg_pad "$1" "$2"; }
+pg_b_armed() { pg_pad "$1" "$2"; pg_check "$1" toolu_k1 batch "$PG/batch/view.md"; pg_text "$1" "Looking at it."; }
+pg_b_quote() { pg_pad "$1" "$2"; pg_text "$1" "the pass line ends '; it is saved in <path>/view.md'"; pg_pad "$1" "$2"; }
+pg_b_human() { pg_check "$1" toolu_k1 batch "$PG/batch/view.md"; pg_entry "$1" user '"carry on"'; pg_pad "$1" "$2"; }
+pg_cost_build disarmed-by-apply pg_b_apply
+pg_cost_build armed-now pg_b_armed
+pg_cost_build quotes-only pg_b_quote
+: >"$PG/cost/pad-human.jsonl"; pg_b_human "$PG/cost/pad-human.jsonl" pad
+pg_na="$PG/cost/apply-only.jsonl"; : >"$pg_na"; pg_pad "$pg_na" pad; pg_bash "$pg_na" toolu_k3 'bash "$ORCH" spec-review apply'
+for pg_fn in pg_decide sg_decide; do
+  pg_cost_pair disarmed-by-apply "$pg_fn"
+  assert_eq "disarmed by apply allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-disarmed-by-apply.jsonl")" allow
+  pg_cost_pair armed-now "$pg_fn"
+  assert_eq "armed now, padded before the pass line, refuses without a paste ($pg_fn)" \
+    "$("$pg_fn" "$PG/cost/pad-armed-now.jsonl")" "$([ "$pg_fn" = pg_decide ] && echo deny || echo block)"
+  cp "$PG/cost/pad-armed-now.jsonl" "$PG/cost/pad-armed-pasted.jsonl"; pg_text "$PG/cost/pad-armed-pasted.jsonl" "$(cat "$PG/batch/view.md")"
+  assert_eq "and allows with one ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-armed-pasted.jsonl")" allow
+  pg_cost_pair quotes-only "$pg_fn"
+  assert_eq "quotes only allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-quotes-only.jsonl")" allow
+  assert_eq "disarmed by a human message alone allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-human.jsonl")" allow
+  pg_hb="$(jq_bytes "$pg_fn" "$PG/cost/pad-human.jsonl")"; pg_hn="$(jq_bytes "$pg_fn" "$PG/cost/non-nothing.jsonl")"
+  if [ "$((pg_hb - pg_hn))" -lt "$PG_PADSIZE" ]; then ok "and offers jq fewer bytes than the padding holds ($pg_fn)"
+  else bad "and offers jq fewer bytes than the padding holds ($pg_fn)" "$pg_hb offered, padding $PG_PADSIZE"; fi
+  # Apply calls but no needle: no jq beyond the payload read.
+  assert_eq "apply calls but no needle start as many jq as no transcript_path ($pg_fn)" \
+    "$(jq_count "$pg_fn" "$pg_na")" "$(jq_count "$pg_fn" "")"
+done
+# Re-read: grown inside the window, as many bytes in all as the bare transcript.
+# pg_with_stub <fn> <transcript>: <fn> with the sleep stub first on PATH.
+pg_with_stub() { PATH="$PG/stub:$PATH" "$@"; }
+pg_text "$PG/cost/rr-paste.jsonl" "$(cat "$PG/batch/view.md")"
+for pg_kind in pad non; do
+  : >"$PG/cost/$pg_kind-armed.jsonl"; pg_b_armed "$PG/cost/$pg_kind-armed.jsonl" "$pg_kind"
+done
+for pg_fn in pg_decide sg_decide; do
+  for pg_kind in pad non; do
+    pg_rr="$PG/cost/$pg_kind-reread-$pg_fn.jsonl"; cp "$PG/cost/$pg_kind-armed.jsonl" "$pg_rr"
+    rm -f "$PG/cost/rr-paste.jsonl.done"
+    pg_rr_n="$(PG_SLEEP_LOG="$PG/sleep-rr.log" PG_SLEEP_PASTE="$PG/cost/rr-paste.jsonl" PG_SLEEP_INTO="$pg_rr" \
+      ORCH_PASTE_GUARD_WAIT='' jq_bytes pg_with_stub "$pg_fn" "$pg_rr")"
+    if [ "$pg_kind" = pad ]; then pg_rr_pad="$pg_rr_n"; else pg_rr_non="$pg_rr_n"; fi
+  done
+  assert_eq "a re-read of an armed padded transcript offers jq as many bytes in all as the bare one ($pg_fn)" "$pg_rr_pad" "$pg_rr_non"
+done
+# Decision cases that pin where the decode starts.
+# Fail-open stand-ins for the new failure points, built once.
+mkdir -p "$PG/cost/failgrep" "$PG/cost/failjq1" "$PG/cost/failjq2" "$PG/cost/failtail"
+printf '#!/bin/sh\nexit 1\n' >"$PG/cost/failtail/tail"
+printf '#!/bin/sh\nexit 2\n' >"$PG/cost/failgrep/grep"
+printf '#!/bin/sh\ncase " $* " in *" --arg needle "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq1/jq"
+printf '#!/bin/sh\ncase " $* " in *" --arg view "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq2/jq"
+chmod +x "$PG/cost/failtail/tail" "$PG/cost/failgrep/grep" "$PG/cost/failjq1/jq" "$PG/cost/failjq2/jq"
+pg_line="$(pg_pass_line batch "$PG/batch/view.md")"
+# The decision transcripts have the same bytes for both hooks: built once, a
+# fresh copy per hook where the case appends.
+TQL="$PG/cost/quote-live.jsonl"; pg_check "$TQL" toolu_q1 batch "$PG/batch/view.md"
+pg_text "$TQL" "As printed: $pg_line"
+TBL="$PG/cost/blob-live.jsonl"; pg_check "$TBL" toolu_q2 batch "$PG/batch/view.md"
+jq -nc --arg c "$pg_line" '{type:"api-request-blob", message:{role:"user", content:[{type:"tool_result", tool_use_id:"toolu_q2b", content:$c}]}}' >>"$TBL"
+TFE="$PG/cost/far-apply.jsonl"
+pg_bash "$TFE" toolu_q3 'bash "$ORCH" spec-review check x && bash "$ORCH" spec-review apply'
+pg_pad "$TFE" pad; pg_result "$TFE" toolu_q3 "$pg_line"
+pg_hi=0
+for pg_hm in "; it is saved in /x" "spec-review apply"; do
+  pg_hi=$((pg_hi + 1)); THM="$PG/cost/human-quote-$pg_hi.jsonl"; : >"$THM"
+  pg_check "$THM" toolu_q4 batch "$PG/batch/view.md"
+  pg_entry "$THM" user "$(jq -nc --arg t "$pg_hm" '$t')"
+done
+for pg_fn in pg_decide sg_decide; do
+  pg_want="$([ "$pg_fn" = pg_decide ] && echo deny || echo block)"
+  assert_eq "a live pass line followed by a reply quoting it refuses without a paste ($pg_fn)" "$("$pg_fn" "$TQL")" "$pg_want"
+  cp "$TQL" "$TQL.$pg_fn"; pg_text "$TQL.$pg_fn" "$(cat "$PG/batch/view.md")"
+  assert_eq "and allows once the view is pasted ($pg_fn)" "$("$pg_fn" "$TQL.$pg_fn")" allow
+  assert_eq "a live pass line followed by a request blob's copy refuses without a paste ($pg_fn)" "$("$pg_fn" "$TBL")" "$pg_want"
+  cp "$TBL" "$TBL.$pg_fn"; pg_text "$TBL.$pg_fn" "$(cat "$PG/batch/view.md")"
+  assert_eq "and allows once the view is pasted ($pg_fn)" "$("$pg_fn" "$TBL.$pg_fn")" allow
+  assert_eq "a pass-line result answering an apply call many entries earlier does not arm ($pg_fn)" "$("$pg_fn" "$TFE")" allow
+  pg_hi=0
+  for pg_hm in "; it is saved in /x" "spec-review apply"; do
+    pg_hi=$((pg_hi + 1))
+    assert_eq "a human message holding '$pg_hm' after a live pass line disarms ($pg_fn)" "$("$pg_fn" "$PG/cost/human-quote-$pg_hi.jsonl")" allow
+  done
+  # Fail open on the new failure points, on a transcript armed now.
+  for pg_f in failgrep failjq1 failjq2 failtail; do
+    assert_eq "armed now, a failing $pg_f allows ($pg_fn)" "$(PATH="$PG/cost/$pg_f:$PATH" "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
+  done
+done
+# The scan reads the apply constant and searches for both constants as JSON
+# writes them. pg_scan_with <needle> <apply> <transcript>: the view.md the scan
+# finds, with the constants set.
+pg_scan_with() {
+  local out
+  # shellcheck disable=SC2034 # read by the sourced scan
+  out="$(source "$DIR/paste-guard.sh"; PASTE_GUARD_NEEDLE="$1"; PASTE_GUARD_APPLY="$2"; paste_guard_scan "$3")"
+  printf '%s' "${out%%$'\n'*}"
+}
+pg_two() { # <file> <needle> <command> <combined|after>
+  local f="$1"; : >"$f"
+  if [ "$4" = combined ]; then pg_bash "$f" toolu_s1 "$3"; fi
+  pg_result "$f" toolu_s1 "batch.md passes: 2 items$2/tmp/x/view.md"
+  if [ "$4" = after ]; then pg_bash "$f" toolu_s2 "$3"; fi
+}
+for pg_mode in after combined; do
+  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' 'run APPLYME now' "$pg_mode"
+  assert_eq "a reassigned apply literal disarms ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'APPLYME' "$PG/cost/seam.jsonl")" ""
+  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' 'run spec-review apply now' "$pg_mode"
+  assert_eq "and the default literal no longer does ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
+  pg_two "$PG/cost/seam.jsonl" '; saved "at" ' 'run A\"P"Y\ now' "$pg_mode"
+  assert_eq "an apply literal holding a backslash and a quote disarms ($pg_mode)" \
+    "$(pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" ""
+done
+pg_two "$PG/cost/seam.jsonl" '; saved "at" ' 'noop' after
+assert_eq "a needle holding a quote arms" "$(pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" /tmp/x/view.md
+# A line holding a raw NUL byte is not JSON: skipped, and it never hides
+# the live pass line before it.
+pg_two "$PG/cost/seam.jsonl" '; it is saved in ' 'noop' after
+printf 'garbage\0line\n' >>"$PG/cost/seam.jsonl"
+assert_eq "a NUL-bearing line after a live pass line still arms" "$(pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
 # The needle and the real pass line.
 pg_needle="$( (source "$DIR/paste-guard.sh"; printf '%s' "$PASTE_GUARD_NEEDLE") )"
 assert_contains "the pass line spec_review_nudge prints holds the paste guard's needle" \
@@ -1526,8 +1676,7 @@ pg_scan_arms() {
   local f="$PG/scan-needle.jsonl"
   jq -nc --arg t "batch.md passes: 2 items$2/tmp/x/view.md" \
     '{type:"user", message:{content:[{type:"tool_result", content:$t}]}}' >"$f"
-  local out; out="$(source "$DIR/paste-guard.sh"; PASTE_GUARD_NEEDLE="$1"; paste_guard_scan "$f")"
-  printf '%s' "${out%%$'\n'*}"
+  pg_scan_with "$1" 'spec-review apply' "$f"
 }
 assert_eq "the scan arms on a pass line ending in the needle constant's reassigned tail" \
   "$(pg_scan_arms '; saved at ' '; saved at ')" /tmp/x/view.md

@@ -93,8 +93,13 @@ anything it measured fails.
 CI (`.github/workflows/test.yml`): a PR runs the whole suite once, in the
 autopilot container, as 4 jobs, each `all.sh` with its `ORCH_TEST_SHARD=<i>/4`
 (the image's `EXTRA_BUILD_COMMAND` checks in group 1 only), plus a final job
-that passes only when all four did; a push to `main` runs `all.sh` unsplit on
-the runner, and the container suite does not run there. The suite runs on a
+that passes only when all four did. Each group restores the image's base-tools
+layer (apt packages, `gh`, Claude Code) from the repo's GitHub Actions cache
+and still builds the image from the PR's commit; group 4 also writes the cache,
+and a cold or unreadable cache costs time only. A push to `main` runs `all.sh`
+unsplit on the runner (the container suite does not run there) and, in a
+separate job, builds the image from scratch with no cache read and writes the
+cache, so every PR's first run starts warm. The suite runs on a
 PR's `opened`, `synchronize` and `reopened`; a newer run for the same PR
 cancels the older one, and a push to `main` is never cancelled. The changelog
 fragment check has its own workflow (see the fragment paragraph below).
@@ -158,9 +163,10 @@ share), `issue-timeline.sh` (the Issue timeline module: one issue's
 comment history, read once and asked in domain terms), `known-items.sh` (the
 Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
-file), `liveness.sh` (the Liveness module: whether the process behind a claim
-on this host is still running - the run records, their format and the session
-log naming), `marked-comment.sh` (the Marked comment module: writing and reading
+file), `liveness.sh` (the Liveness module: whether the process behind a record
+(a claim, a watch, a suite-cost active run) is still running - the run records,
+the record suite-cost's active-run markers hold, and the session log naming),
+`marked-comment.sh` (the Marked comment module: writing and reading
 the issue comments whose first line names their kind), `session-log.sh` (the
 Session log module: what a phase session's log says about usage limits, read
 in one pass) and `standing.sh` (the
@@ -270,7 +276,8 @@ files in place and does not commit. `scripts/test/version_bump_test.sh` tests
 it.
 
 CI enforces the rule through its own workflow, `.github/workflows/fragment.yml`,
-which runs `docs_lint.sh` alone and reruns on a PR's body and label edits: a PR
+which runs the fragment rule alone (`docs_lint.sh --fragment-only`) and reruns
+on a PR's body and label edits: a PR
 to `main` adds exactly one
 well-formed fragment, and never changes `version`, adds a `## ` heading to
 `CHANGELOG.md`, or modifies or deletes an existing fragment or `.gitkeep`;
@@ -294,7 +301,9 @@ setup (`scripts/test/orch/setup.sh`), the gh adapter fake
 `( ... )` subshell, and `tally_summary`, the ending each standalone suite
 calls) and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`,
 `fifo_read_line` for a read) and the counting fixture
-(`scripts/test/counting.sh`: `counting_bin`, `counting_starts`)
+(`scripts/test/counting.sh`: `counting_bin`, `counting_starts`,
+`counting_stdin_bin`, which records the bytes offered on stdin, and
+`counting_bytes`, their sum)
 instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
@@ -418,7 +427,7 @@ scripts/orch/checkout.sh      the Checkout module, a concept module with no noun
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file` and `audit file` share
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
-scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a claim on this host is alive - the run records, the start-time reader, the watch pidfile, the session log names
+scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch, a suite-cost active run) is alive - the run records, the start-time reader, the record-alive rule that also judges suite-cost's active-run markers, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
 scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
@@ -450,7 +459,7 @@ scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per l
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
-scripts/test/counting.sh      the counting fixture the orch.sh suite's runner and hooks_test.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count
+scripts/test/counting.sh      the counting fixture the orch.sh suite's runner and hooks_test.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_stdin_bin makes the same stub also recording the bytes offered on its stdin, counting_bytes sums them
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10, and the signal-reachable child start (test_jobs_run_child, with its INT/TERM stop) that section-durations.sh and lens-bench.sh use
 scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
 scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK

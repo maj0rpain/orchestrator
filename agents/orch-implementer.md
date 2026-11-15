@@ -112,7 +112,8 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 3. **Verify as you go**: run typechecking and single test files regularly,
    and the repo's **ticket verification** once, at the end, through `bash
    "<orch.sh>" suite-cost run -- <cmd>`: it passes the command's output and
-   exit code through unchanged and records a passing run's suite cost. Find
+   exit code through unchanged (an interrupt exits 128 plus the signal's
+   number and records nothing) and records a passing run's suite cost. Find
    the ticket verification where you find the full verification, in the
    repo's instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`): a line
    reading `Ticket verification: <command>`. When they name none, `<cmd>` is
