@@ -170,32 +170,38 @@ assert_status "rounds with no plan comment dies" "$st" 1
 assert_eq "naming the missing plan" "$out" "$(handoff_missing_msg comment 7 01-plan)"
 
 fake_issue 8 open
-out="$("$ORCH" autopilot start 8 "$planf" 2>&1)"; st=$?
+start_stdout="$(mktemp)"
+out="$("$ORCH" autopilot start 8 "$planf" 2>&1 >"$start_stdout")"; st=$?
 assert_status "start refuses an issue without ready-for-agent" "$st" 1
 assert_contains "naming the label" "$out" "ready-for-agent"
 assert_eq "writing nothing" "$(fake_comments_of 8)$(fake_labels_of 8)" ""
+assert_eq "start without ready-for-agent prints nothing on stdout" "$(cat "$start_stdout")" ""
 fake_issue 9 open ready-for-agent orch:review
 fake_fail adapter_issue_state_labels "HTTP 502"
-out="$("$ORCH" autopilot start 9 "$planf" 2>&1)"; st=$?
+out="$("$ORCH" autopilot start 9 "$planf" 2>&1 >"$start_stdout")"; st=$?
+assert_eq "a failed issue read prints nothing on stdout" "$(cat "$start_stdout")" ""
 fake_unfail
 assert_status "start on a failed issue read dies" "$st" 1
 assert_eq "in one line naming gh and the reason" "$(printf '%s\n' "$out" | grep -c .)|${out#orch: gh could not read issue #9: }" "1|HTTP 502"
-out="$("$ORCH" autopilot start 9 "$planf" 2>&1)"; st=$?
+out="$("$ORCH" autopilot start 9 "$planf" 2>&1 >"$start_stdout")"; st=$?
 assert_status "start refuses an issue with a phase label" "$st" 1
 assert_contains "naming the label" "$out" "orch:review"
+assert_eq "a phase label already present prints nothing on stdout" "$(cat "$start_stdout")" ""
 assert_eq "writing nothing" "$(fake_comments_of 9)" ""
 fake_issue 9 open ready-for-agent
 bad_plan="$(mktemp -d)/01-plan.md"; complete_handoff "$bad_plan"
-out="$("$ORCH" autopilot start 9 "$bad_plan" 2>&1)"; st=$?
+out="$("$ORCH" autopilot start 9 "$bad_plan" 2>&1 >"$start_stdout")"; st=$?
 assert_status "start refuses a plan with no Autopilot block" "$st" 1
 assert_contains "naming it" "$out" "## Autopilot"
 assert_contains "and that nothing was posted" "$out" "is not valid - nothing posted"
+assert_eq "an invalid plan prints nothing on stdout" "$(cat "$start_stdout")" ""
 assert_eq "writing nothing" "$(fake_comments_of 9)$(fake_labels_of 9)" "ready-for-agent "
 
 # a failed plan post dies with the reason, adds no label and leaves no temp file
 start_tmp="$(mktemp -d)"
-fake_fail adapter_issue_comment "HTTP 502 post"
-out="$(TMPDIR="$start_tmp" "$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
+fake_fail adapter_issue_comment_url "HTTP 502 post"
+out="$(TMPDIR="$start_tmp" "$ORCH" autopilot start 7 "$planf" 2>&1 >"$start_stdout")"; st=$?
+assert_eq "a failed plan post prints nothing on stdout" "$(cat "$start_stdout")" ""
 fake_unfail
 assert_status "a failed plan post dies" "$st" 1
 assert_contains "showing the gh reason" "$out" "HTTP 502 post"
@@ -204,18 +210,20 @@ assert_eq "leaving no temp file" "$(ls -A "$start_tmp")" ""
 
 # a failure after the comment leaves the issue unlabelled and names the comment
 fake_fail adapter_issue_relabel "HTTP 502"
-out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
+out="$("$ORCH" autopilot start 7 "$planf" 2>&1 >"$start_stdout")"; st=$?
 assert_status "a failed label add dies" "$st" 1
 assert_contains "naming the comment posted" "$out" "posted the 01-plan comment on issue #7"
 assert_contains "and that the issue is unlabelled, so no watcher picks it up" "$out" "the issue is unlabelled, so no watcher picks it up"
 assert_eq "leaving the issue without a phase label" "$(fake_labels_of 7)" "ready-for-agent "
 assert_first_line "the comment is there" "$(fake_comments_of 7)" "<!-- orch:handoff 01-plan -->"
+assert_eq "a failed label add prints nothing on stdout" "$(cat "$start_stdout")" ""
 fake_unfail
 
 # a re-run on an unlabelled issue posts a newer plan comment, then labels last
 sed -i 's/^Rounds: 4/Rounds: 6/' "$planf"
-"$ORCH" autopilot start 7 "$planf" >/dev/null 2>&1; st=$?
+out="$("$ORCH" autopilot start 7 "$planf" 2>/dev/null)"; st=$?
 assert_status "a re-run on an unlabelled issue succeeds" "$st" 0
+assert_eq "printing the two lines, with the newer comment's URL" "$out" "$(printf 'posted the plan comment on issue #7: https://github.com/o/r/issues/7#issuecomment-2\nadded orch:spec to issue #7')"
 assert_eq "posting a second plan comment" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "2"
 assert_eq "and adding orch:spec" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
 out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
@@ -224,8 +232,17 @@ assert_contains "naming the label" "$out" "orch:spec"
 
 assert_eq "autopilot rounds prints the newest plan comment's Rounds" "$("$ORCH" autopilot rounds)" "6"
 assert_eq "autopilot budget prints its Budget" "$("$ORCH" autopilot budget)" "5"
-out="$("$ORCH" autopilot start 7 2>&1)"; st=$?
+out="$("$ORCH" autopilot start 7 2>&1 >"$start_stdout")"; st=$?
 assert_contains "start's usage line" "$out" "usage: orch.sh autopilot start <issue> <plan-file>"
+assert_eq "a usage error prints nothing on stdout" "$(cat "$start_stdout")" ""
+
+# with no URL from gh, a success's first line ends at the issue number
+fake_issue 13 open ready-for-agent
+: >"$ORCH_GH_FAKE_STORE/no_comment_url"
+out="$("$ORCH" autopilot start 13 "$planf" 2>/dev/null)"; st=$?
+rm -f "$ORCH_GH_FAKE_STORE/no_comment_url"
+assert_status "start succeeds when gh printed no URL" "$st" 0
+assert_eq "its first line ending at the issue number" "$out" "$(printf 'posted the plan comment on issue #13\nadded orch:spec to issue #13')"
 restore_suite_env
 
 # --- autopilot ask and answer -------------------------------------------------

@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.3.0
+
+A quick autopilot's planner reads less: the unattended interview's rules move into the interview skill's own reference file, `unattended.md`, and the planner reads that file, only the interview skill's shared interview sections and its Autopilot route, and only the handoff skill's plan template, its `## Autopilot` block and its rules for what belongs in a handoff. The Autopilot route names the plan template's file and sections instead of sending a session to find them, and both drivers name the two sections of the PR-writing doc a PR body follows. A successful `autopilot start` now prints the plan comment's URL and the phase label it added, and a failed one prints nothing on stdout.
+
 ## 6.2.0
 
 `orch.sh issue next` prints the Next issue as `<number><TAB><title>`: the oldest open issue that carries the repo's `ready-for-agent` label, carries no phase label, is no ticket of a breakdown, and is not blocked by an open issue. It prints nothing and exits 1 when no issue qualifies, and exits 2 on a usage error or a failed GitHub read. Asking `/orchestrator:interview` for the next issue now plans the issue `orch.sh issue next` picks, says which issue it picked and why, and asks what to plan when no issue qualifies. "Next issue" has a glossary entry.

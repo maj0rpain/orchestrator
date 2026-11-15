@@ -12,7 +12,9 @@ This skill is the interview's discipline and its closing. The planning
 session's state-dependent rules - what you may edit while planning, this repo's
 triage label strings, and any flow running beside this session - arrive in the
 planning hook's message when this skill starts. The rules for closing the
-interview are the **Closing** section below.
+interview are the **Closing** section below. The interview with no human in it
+is defined in `unattended.md` in this skill's directory, and is read only by a
+quick autopilot's planner.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -165,35 +167,6 @@ habits on every round:
   **surprising without context** (a future reader would ask why), and it is
   **the result of a real trade-off** (there were genuine alternatives, and one
   was picked for specific reasons). Missing any one, skip the ADR.
-
-## Unattended interview
-
-The interview with no human in it, taken only by a quick autopilot's
-planner subagent, which reads this section and **The interview** and **Domain
-language** above from this file, never loading the
-skill through the Skill tool, and never starts the **Closing**: no route
-question, no interviewed-issue question, no done-close. The attended interview
-is unchanged. Everything in **The interview** and **Domain language** holds -
-the design tree, rounds, fact-finding, the domain-language habits, the root
-cause of a bug - with these differences only:
-
-- **Every question takes its recommended answer.** Ask the human nothing and
-  wait for no answer: each round is put as written, then every question in it
-  takes its **Recommended** answer, and the next round's frontier is computed
-  from those answers.
-- **Each round is printed** as an unattended printout, with its questions and
-  the answers taken: see **Unattended printout** in `docs/turn-final-reply.md`
-  under the plugin root. It is not a turn-final reply, and the interview goes on
-  in the same turn.
-- **Each question and the answer taken is recorded**, to go under the plan's
-  `## Decisions`.
-- **An issue found already done is reported as skipped**, naming the commit, PR
-  or issue that did the work, and the interview stops there: it closes nothing,
-  moves no label and writes nothing.
-- **It never resolves "next issue".** Its planner is always given an issue
-  number, so `orch.sh issue next` is never run.
-- **There is no planning close.** The interview is done when the frontier is
-  empty; there is no confirmation of a shared understanding to wait for.
 
 ## Glossary and ADR wording goes into the plan
 
@@ -367,8 +340,13 @@ writes no flow state and makes no side checkout, so run neither `init` nor
 
 First write the spec: run the orch-to-spec skill - in
 rewrite mode, args set to the interviewed issue's number, when there is one,
-else in publish mode - with its test-seams check. Then write the plan with the
-`orch-handoff` skill's `01-plan.md` template, including its `## Autopilot`
+else in publish mode - with its test-seams check. Then write the plan from
+`skills/orch-handoff/SKILL.md` under the plugin root, reading only its `## In an
+autopilot flow`, `## What belongs in one` and `01-plan.md` template (the `###`
+heading under `## Templates`) sections, without loading the skill or listing its
+directory, each from its heading's line up to the next heading of the same or a
+higher level outside a fenced code block, found with a search, or to the file's
+end when none follows: the `01-plan.md` template, including its `## Autopilot`
 block, to a file named `01-plan.md` in a fresh `mktemp -d` directory outside
 the repo (`handoff validate` looks sections up by basename; this session runs
 without `ORCH_AUTOPILOT`, so `autopilot start` is the check that covers the
@@ -380,4 +358,6 @@ the interview settled - 3 for one site and one ticket, 5 for a few files and
 state's own machinery, risk weighing above size. Last run `bash "$ORCH"
 autopilot start <issue> <plan-file>`, <issue> being the spec's issue number.
 When a step stops or fails, stop there and report why; the route ends in
-`autopilot start`. Then report that the watcher picks the issue up.
+`autopilot start`. A successful start prints two lines, the plan comment's
+(with its URL) and the phase label added: relay both, and say the watcher
+picks the issue up. Make no `gh` call to check the start.

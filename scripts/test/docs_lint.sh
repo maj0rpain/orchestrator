@@ -1771,8 +1771,16 @@ agents/orch-fixer.md|## The record
 agents/orch-implementer.md|## Root-cause fixes
 agents/orch-reviewer-standards.md|## Root-cause check
 agents/orch-reviewer-standards.md|## Doc-agreement check
+skills/orch-handoff/SKILL.md|## In an autopilot flow
 skills/orch-handoff/SKILL.md|## Amending Rejected alternatives
+skills/orch-handoff/SKILL.md|## What belongs in one
+skills/orch-handoff/SKILL.md|### `01-plan.md` (plan -> spec)
+skills/orch-interview/SKILL.md|## The interview
+skills/orch-interview/SKILL.md|## Domain language
+skills/orch-interview/SKILL.md|## Glossary and ADR wording goes into the plan
 skills/orch-interview/SKILL.md|## Closing
+skills/orch-interview/SKILL.md|### Autopilot route
+skills/orch-interview/unattended.md|# Unattended interview
 skills/orch-quick-implement/SKILL.md|## 1. Require a linked issue
 skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
@@ -1794,6 +1802,8 @@ skills/orch-to-spec/SKILL.md|## Unattended rewrite
 skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
 skills/orch-to-tickets/SKILL.md|## Unattended breakdown
 skills/orch-to-tickets/SKILL.md|## Ticket template
+docs/pr-writing.md|## Style rules
+docs/pr-writing.md|## Body layout
 docs/turn-final-reply.md|## Turn-final reply
 docs/turn-final-reply.md|## Near-miss reply
 docs/turn-final-reply.md|## Question path
