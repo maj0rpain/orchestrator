@@ -1,5 +1,21 @@
 # Changelog
 
+## 6.0.2
+
+`finding-triage scan` now follows a finding's filed lines through one operation, `lines_fate`, in a new Lines fate module (`scripts/orch/lines-fate.sh`), which reads the diff between the filed SHA and the default branch once per finding instead of four times or more and parses hunk headers in one place. The scan prints each finding once, and nothing it prints or takes changes.
+
+## 6.0.1
+
+The ticket commands now read one ticket's facts once through `ticket_facts <n> <prefix>`, which sets the ticket worktree's path and state, its checked-out branch, the checkout's branch, and the ticket's own branch and whether it exists in variables the caller names, and writes no other variable; the refusals live in require helpers that read those facts. The teardown takes the facts its caller read and reports which removal step failed, so `ticket reclaim` words its per-ticket lines without probing again. `ticket close <n>` (without `--unmerged`) and `ticket-worktree add <n>` now die before acting where git's record of the checkouts cannot be read, and `ticket merge <n>`, which already died there, now dies earlier, before its forked-from and dirty-tree refusals; nothing else a user of `orch.sh` can observe changes.
+
+## 6.0.0
+
+Breaking: the plugin no longer measures suite cost (#3381, ADR-0063). The `orch.sh suite-cost` noun (`run`, `check` and `history`) is removed with no shim, and so are its record, verdict file and active-run markers and the `orchestrator.suiteCost.floor`, `orchestrator.suiteCost.growth` and `orchestrator.suiteCost.setup` git config keys. The review loop and the review pass run no suite-cost check, which ran the whole suite on base commits and again to confirm growth, and gave no `grew` verdict in 504. Ticket subagents, fixers, resolvers, review pass sessions and the combined-branch check run their verification command bare. `review file` takes only the `spec` and `standards` axes and a `<file>:<line>` location: `--axis suite-cost` and `--location suite` are refused. The test audit reports no recorded trend. A clone's leftover files under `.git/orchestrator/` (`suite-cost`, `suite-cost.active/`, `suite-cost.verdicts`) are no longer read and can be deleted.
+
+## 5.3.3
+
+Every read of an issue's or a PR's comments now goes through one reader of trusted comments, which drops untrusted comments in one place and returns rather than dies on a failed or unparseable read. A structural test fails when orch.sh's own scripts read comments any other way. Nothing orch.sh prints or does changes.
+
 ## 5.3.2
 
 `ticket publish` and `breakdown publish` now rewrite each published ticket's `## Blocked by` section from its verified blocking edges, one `- #<n>` line per blocker or `None (can start immediately)`, so published bodies name their blockers by number.

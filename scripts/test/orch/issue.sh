@@ -826,7 +826,8 @@ fake_issue_body 23 "Body of #23."
 
 # issue fetch --json (#528): the issue's title, body, labels and comments in one
 # trimmed JSON object, so a fresh agent reads an issue with one call pinned to
-# the repo. Its jq is ISSUE_JSON_JQ, pinned in "gh adapter contract".
+# the repo. ISSUE_JSON_JQ gives the issue fields; issue_json_published
+# joins in the trusted comments.
 fake_issue 27 open ready-for-agent bug
 fake_issue_title 27 "Widgets need a handle"
 fake_issue_body 27 "$(writeln '## What to build' '' 'A `$HOME` handle for #6.')"
@@ -896,7 +897,29 @@ fake_unfail
 
 printf 'old contents\n' >"$issue_json"
 out="$(adapter_stood_in 'adapter_issue_json() { printf "not json\n"; }' "$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
-assert_status "a comment object that does not parse fails fetch --json" "$st" 1
+assert_status "an issue answer that is not an issue object fails fetch --json" "$st" 1
+assert_eq "naming the issue and its cause, with no jq error before it" "$out" "orch: could not read issue #27: it did not parse"
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_json")" "$(printf 'old contents\n' | od -c)"
+rm -f "$issue_json"
+
+printf 'old contents\n' >"$issue_json"
+fake_fail adapter_issue_comments "$GH_502"
+out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "a failing comments read fails fetch --json" "$st" 1
+assert_eq "naming the issue's comments, with gh's first line alone" "$out" \
+  "orch: gh could not read the comments of issue #27: HTTP 502: Bad Gateway"
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_json")" "$(printf 'old contents\n' | od -c)"
+rm -f "$issue_json"
+out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "a failing comments read into no file fails too" "$st" 1
+assert_eq "and leaves no file behind" "$(on_disk "$issue_json")" "absent"
+fake_unfail
+
+printf 'old contents\n' >"$issue_json"
+out="$(adapter_stood_in 'adapter_issue_comments() { printf "not json\n"; }' "$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "a comments answer that is not a comment list fails fetch --json" "$st" 1
 assert_eq "naming the issue and its cause, with no jq error before it" "$out" "orch: could not read the comments of issue #27: its comments did not parse"
 assert_eq "and leaves the file that was already there byte-identical" \
   "$(od -c "$issue_json")" "$(printf 'old contents\n' | od -c)"
@@ -1118,7 +1141,7 @@ assert_eq "and says how many it ignored, once" "$out" \
 assert_eq "dropping the stranger's fake changelog too" "$(cat "$issue_comments")" \
   "$(writeln '<!-- comment @owner 2026-09-04T09:00:00Z -->' 'Owner note.')"
 printf 'known content\n' >"$issue_comments"
-assert_gh_dies "a gh that will not answer fails the --with-spec-review fetch" adapter_issue_json "$GH_502" 1 \
+assert_gh_dies "a gh that will not answer fails the --with-spec-review fetch" adapter_issue_comments "$GH_502" 1 \
   "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
   "$ORCH" issue comments 24 "$issue_comments" --with-spec-review
 assert_eq "and leaves the file that was already there byte-identical" \
@@ -1137,13 +1160,13 @@ assert_contains "and says it keeps the ## Spec review comments" "$("$ORCH" help 
   "with --with-spec-review, comments opening with the ## Spec review heading are kept"
 
 printf 'known content\n' >"$issue_comments"
-assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_json "$GH_502" 1 \
+assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_comments "$GH_502" 1 \
   "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
   "$ORCH" issue comments 24 "$issue_comments"
 assert_eq "and leaves the file that was already there byte-identical" \
   "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
 
-out="$(adapter_stood_in 'adapter_issue_json() { printf "not json\n"; }' "$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
+out="$(adapter_stood_in 'adapter_issue_comments() { printf "not json\n"; }' "$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
 assert_status "a comment object that does not parse fails the comments fetch" "$st" 1
 assert_eq "naming the issue and its cause" "$out" "orch: could not read the comments of issue #24: its comments did not parse"
 assert_eq "and leaves the file that was already there byte-identical" \

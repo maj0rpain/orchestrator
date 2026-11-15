@@ -3,8 +3,8 @@
 `orch.sh`'s subcommand grammar: when a command acts on a thing, the thing comes
 first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 <new>`, `orch.sh review file <major|nit> <title>
---axis <spec|standards|suite-cost> --finding-file <f> --severity-reason <r>
---location <<file>:<line>|suite> --why <reason>
+--axis <spec|standards> --finding-file <f> --severity-reason <r>
+--location <<file>:<line>> --why <reason>
 [--spec-question <q>]`.
 
 ## Current nouns
@@ -16,7 +16,6 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `audit`   | `file`                                               |
 | `autopilot` | `show`, `settings`, `active`, `rounds`, `budget`, `start`, `candidates`, `tick`, `watch`, `run`, `ask`, `answer`, `reenter`, `questions`, `reply`, `resume`, `sync`, `sync-finish`, `sync-dropped`, `sync-fail` |
 | `agent`   | `set`, `show`, `clear`, `get`, `sync`, `roles`      |
-| `suite-cost` | `run`, `check`, `history`                     |
 | `repo`    | `show`                                               |
 | `branch`  | `create`, `off`, `busy`, `base-sha`, `sync`, `retire` |
 | `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready`, `next`, `close` |
