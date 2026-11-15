@@ -84,22 +84,14 @@ pr_lines_by_prefix() {
 # skipped, a line with no timestamp is never picked, and of equal timestamps
 # the earlier line wins. Starts no process of its own.
 pr_close_newest() {
-  local _line _rest _pr _merged_at _closing _best="" _best_at="" _t=$'\t'
+  local _line _pr _merged_at _closing _best="" _best_at=""
   while IFS= read -r _line; do
-    # Split on single tabs by hand: read would collapse an empty field.
-    _rest="${_line#*"$_t"}"
-    [ "$_rest" != "$_line" ] || continue
-    [[ "$_rest" == *"$_t"* ]] || continue
-    _rest="${_rest#*"$_t"}"
-    _merged_at="${_rest%%"$_t"*}"
+    tsv_split "$_line" _ _ _merged_at
     [ -n "$_merged_at" ] || continue
     if [[ "$_merged_at" > "$_best_at" ]]; then _best="$_line"; _best_at="$_merged_at"; fi
   done <<<"$3"
   [ -n "$_best" ] || return 1
-  _pr="${_best%%"$_t"*}"
-  _rest="${_best#*"$_t"}"; _rest="${_rest#*"$_t"}"
-  _closing=""
-  [[ "$_rest" != *"$_t"* ]] || _closing="${_rest#*"$_t"}"
+  tsv_split "$_best" _pr _ _ _closing
   [ -z "${4:-}" ] || printf -v "$4" '%s' "$_pr"
   pr_close_missed "$1" "$_pr" "$_best_at" "$_closing" "$2"
 }

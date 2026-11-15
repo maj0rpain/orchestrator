@@ -177,6 +177,10 @@ for wl_item in spec implement 'done' 'spec implement' impl '' 'implement review'
 done
 assert_eq "word_listed accepts a whole word of the list, never part of one, two adjacent words or an empty word" \
   "$wl_verdicts" " y y y n n n n"
+assert_eq "word_listed answers with an empty PATH" \
+  "$(sourced_orch_script '
+    PATH=
+    word_listed "a b c" b && printf y; word_listed "a b c" "a b" || printf n')" "yn"
 
 # --- is_positive_int ----------------------------------------------------------
 # The one whole-number-of-1-or-more test.
