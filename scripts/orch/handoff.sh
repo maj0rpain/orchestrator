@@ -236,10 +236,10 @@ handoff_name_check() {
   die "unknown handoff name: $1 (want $names)"
 }
 
-# handoff_comment_post <issue> <name> <file>: posts <file>, already validated,
-# as a new comment on <issue> under <name>'s marker. The newest tagged comment
-# is the handoff, so a post never edits an earlier one. Its temp body is
-# removed on every path. A fourth argument names a variable that receives the
+# handoff_comment_post <issue> <name> <file> [<url-var>]: posts <file>, already
+# validated, as a new comment on <issue> under <name>'s marker. The newest
+# tagged comment is the handoff, so a post never edits an earlier one. Its temp
+# body is removed on every path. <url-var> names a variable that receives the
 # posted comment's URL, empty where gh printed none; without one the post is
 # silent, as every comment post but autopilot start's is. Returns non-zero,
 # with `orch: gh could not post ...: <reason>` on stderr, when the post fails;
