@@ -663,12 +663,13 @@ check_flow_autopilot_label() {
 # This checkout's own flow is check_flow_autopilot_label's.
 check_autopilot_side_flows() {
   local list kind _flow _branch path issue phase here
-  # Its helpers are read in command substitutions: load handoff once, here.
-  orch_load handoff
   list="$(checkouts)" || return 0
   here="$(pwd -P)"
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] && [ "$path" != "$here" ] || continue
+    # The reads below run in command substitutions and reach handoff: load it
+    # once, here, in this shell, only now that a side flow is being read.
+    orch_load handoff
     issue="$(side_checkout_issue "$path" 2>/dev/null)" || continue
     [ -f "$(flow_state_file "$path")" ] || continue
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
@@ -685,10 +686,6 @@ check_autopilot_side_flows() {
 # checkout cannot be resolved.
 check_autopilot_claims() {
   orch_load standing
-  # liveness and autopilot are first reached in the loop's substitutions: load
-  # each once, here.
-  orch_load liveness
-  orch_load autopilot
   local issue host started now_epoch started_epoch me main_known=0 pid
   standing_claims_read --quiet || return 0
   now_epoch="$(date -u +%s)"; me="$(standing_host_id)"
@@ -697,11 +694,14 @@ check_autopilot_claims() {
     host="${STANDING_CLAIM_HOST[$issue]}" started="${STANDING_CLAIM_STARTED[$issue]}"
     if [ "$host" = "$me" ]; then
       [ "$main_known" = 1 ] || continue
+      # First reached in this substitution: load it in this shell, once.
+      orch_load liveness
       pid="$(liveness_issue_alive "$issue" 2>/dev/null)" && continue
       d_warn "issue #$issue is claimed by this host (phase ${STANDING_CLAIM_PHASE[$issue]}), but its process is gone ($([ -n "$pid" ] && echo "pid $pid" || echo "no record"))."
       d_remedy "orch.sh autopilot tick"
       continue
     fi
+    orch_load autopilot
     started_epoch="$(autopilot_iso_epoch "$started")" || continue
     [ "$((now_epoch - started_epoch))" -gt 86400 ] || continue
     d_warn "issue #$issue has been claimed by $host (pid ${STANDING_CLAIM_PID[$issue]}, phase ${STANDING_CLAIM_PHASE[$issue]}) since $started - more than a day."

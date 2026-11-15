@@ -58,18 +58,6 @@ restore_suite_env
 
 breakdown_fixture
 fake_fail_after adapter_sub_issue_link 1
-"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
-fake_unfail
-bp_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$bp_load" "$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
-assert_status "the rerun after a failed link finishes" "$st" 0
-assert_eq "the rerun prints the numbers in publishing order" "$out" $'100\n101\n102'
-assert_trace_loads_once "breakdown publish rerun after a failed link" "$bp_load"
-rm -f "$bp_load"
-restore_suite_env
-
-breakdown_fixture
-fake_fail_after adapter_sub_issue_link 1
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed link dies" "$st" 1
 assert_contains "naming the draft position" "$out" "ticket 2 of the draft"
@@ -80,8 +68,11 @@ assert_eq "state is partial" "$("$ORCH" breakdown state 50)" "partial"
 fake_unfail
 other="$(mktemp)"
 printf '@@ ticket 1 Other\nx\n@@ end\n' >"$other"
-out="$("$ORCH" breakdown publish 50 "$other" 2>&1)"; st=$?
+bp_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$bp_load" "$ORCH" breakdown publish 50 "$other" 2>&1)"; st=$?
 assert_status "the rerun finishes" "$st" 0
+assert_trace_loads_once "breakdown publish rerun after a failed link" "$bp_load"
+rm -f "$bp_load"
 assert_eq "from the saved draft, not the file given, linking rather than creating again" "$out" $'100\n101\n102'
 assert_eq "all three linked" "$(fake_sub_issues_of 50)" "100 101 102"
 assert_eq "the unlinked ticket got its edge" "$(fake_blockers_of 101)" "100"

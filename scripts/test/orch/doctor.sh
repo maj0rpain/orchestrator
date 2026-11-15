@@ -162,8 +162,13 @@ out="$("$ORCH" doctor --nonsense 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--nonsense"
 
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
+env_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$env_load" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes a healthy repo" "$st" 0
+# No claim and no side checkout: the claims and side-flow checks reach none of
+# the modules their branches need.
+assert_trace_names_no "doctor --env in a repo with no claims and no side checkouts" "$env_load" autopilot handoff liveness
+rm -f "$env_load"
 assert_contains "keeps the ok-line format of the commands it replaces" "$out" "ok    git present"
 assert_contains "opens with a bare group header" "$out" "tools"
 assert_contains "summarises severities on the last line" \
@@ -1710,9 +1715,12 @@ assert_status "report files beside a stop record stay healthy" "$st" 0
 assert_contains "still reading the stop from the record" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
 mv .orchestrator/review/iteration-05.md .orchestrator/review/stop.saved
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "report files with no record warn rather than fail" "$st" 0
 assert_contains "and read as interrupted" "$out" "looks interrupted, not stopped"
+assert_trace_loads_once "doctor --flow with report files and the flat review record gone" "$rv_load"
+rm -f "$rv_load"
 mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
 restore_suite_env
@@ -1739,12 +1747,6 @@ assert_contains "and reports the stop" "$out" "review loop at a terminal state: 
 assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
 assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
 rm .orchestrator/review/iteration-05.md
-rv_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "doctor --flow with the last flat review record gone warns, never fails" "$st" 0
-assert_contains "and reads as interrupted" "$out" "looks interrupted, not stopped"
-assert_trace_loads_once "doctor --flow at review with the flat review record gone" "$rv_load"
-rm -f "$rv_load"
 # Midway through a redo, the retired record is read in its place; a malformed
 # one has redo read for the terminal state and again for the remedy's path.
 state_fixture issue 9
@@ -2292,24 +2294,20 @@ fake_issue_title 7 "Side flow"
 # The side checkout is built by the commands a pickup runs: add, then init.
 side7="$("$ORCH" side-checkout add 7-side-flow --issue 7 2>/dev/null)"
 (cd "$side7" && "$ORCH" init 7-side-flow --issue 7 >/dev/null 2>&1)
+sf_load="$(mktemp)"
 fake_issue 7 open ready-for-agent orch:implement
-out="$("$ORCH" doctor --env 2>&1)"
+out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor --env 2>&1)"
 assert_contains "doctor in the main checkout flags a side flow whose label disagrees" "$out" "issue #7 is labelled orch:implement, but its side checkout"
 assert_contains "naming the recorded phase" "$out" "last moved to phase spec"
+assert_trace_loads_once "doctor --env beside a side flow whose label disagrees" "$sf_load"
+rm -f "$sf_load"
 fake_issue 7 open ready-for-agent orch:review orch:spec
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "a side flow with two phase labels names both, space-separated" "$out" "issue #7 is labelled orch:spec orch:review, but its side checkout"
 fake_issue 7 open ready-for-agent orch:spec
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"
-# The side flow's label check and GitHub's silence each load a module once.
-sf_load="$(mktemp)"
-fake_issue 7 open ready-for-agent orch:implement
-out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "doctor --env beside a disagreeing side flow ends on the fixture repo's own FAILs" "$st" 1
-assert_contains "and names the disagreement" "$out" "issue #7 is labelled orch:implement, but its side checkout"
-assert_trace_loads_once "doctor --env beside a side flow whose label disagrees" "$sf_load"
-fake_issue 7 open ready-for-agent orch:spec
+# GitHub not answering for the default branch loads each module once.
 fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
 for scope in --env ""; do
   sf_load="$(mktemp)"

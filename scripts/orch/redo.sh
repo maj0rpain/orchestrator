@@ -84,6 +84,16 @@ redo_step_back() {
   phase_write "$phase" "$@" branch null pr null base_sha null
 }
 
+# redo_load_shared: the modules both redos first reach inside a command
+# substitution or subshell, loaded once here in the main shell. marked-comment
+# is needed only by an autopilot session's handoff retire.
+redo_load_shared() {
+  orch_load handoff
+  orch_load gh
+  orch_load autopilot
+  if autopilot_active; then orch_load marked-comment; fi
+}
+
 # The full `review -> implement` transition: retire the old branch and PR,
 # reopen the spec issue's closed tickets, move the old loop's records aside,
 # and reset the state a fresh implement attempt needs - never mid-budget, and
@@ -97,11 +107,8 @@ cmd_redo_review() {
   # subshell: load it here, once, in the main shell. marked-comment is needed
   # only by an autopilot session's handoff retire.
   orch_load review
-  orch_load handoff
   orch_load branch
-  orch_load gh
-  orch_load autopilot
-  if autopilot_active; then orch_load marked-comment; fi
+  redo_load_shared
   local phase i b word detail slug issue branch pr new_n resumed
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
@@ -175,13 +182,14 @@ $detail" ;;
 # the entry guards need, and a re-run resumes.
 cmd_redo_spec() {
   orch_load spec
-  # As in cmd_redo_review: loaded once here, not once per subshell.
-  orch_load handoff
-  orch_load branch
-  orch_load gh
-  orch_load autopilot
-  if autopilot_active; then orch_load marked-comment; fi
+  redo_load_shared
   require_state
+  # branch is reached only by a run with a branch recorded (the retire) or one
+  # midway through a redo (redo_midway's name check); load it in this shell,
+  # ahead of the substitutions that first call into it.
+  local recorded_branch recorded_count
+  recorded_branch="$(state_get branch)"; recorded_count="$(state_get redo_count)"
+  if [ -n "$recorded_branch" ] || [ "${recorded_count:-0}" -gt 0 ]; then orch_load branch; fi
   local phase new_issue=0 clear_issue=()
   phase="$(state_get phase)"
   [ "$phase" = implement ] || die "flow is not at the implement phase - nothing to redo back from"
