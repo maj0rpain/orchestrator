@@ -8,7 +8,8 @@
 # --- marked-comment module --------------------------------------------------
 # The Marked comment module's functions, called through a sourced orch.sh. The
 # format edge cases (CR, retired handoffs, near-misses, the legacy stop form,
-# both input shapes) are tested here and nowhere else.
+# the bare-array input and its refusal of any other) are tested here and
+# nowhere else.
 
 echo
 echo "marked-comment module"

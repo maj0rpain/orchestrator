@@ -23,10 +23,11 @@ COMMENTS_RENDER_JQ='def render_comments: [.[] | "<!-- comment @\(.author) \(.cre
 # comments, read through adapter_issue_comments or adapter_pr_comments, as one
 # JSON array of the trusted authors' (Trust module) comments, each
 # {author, createdAt, body, url} with author the login as a string and no
-# authorAssociation, assigned to <out_var>. It dies only on misuse (a kind
-# other than issue or pr); otherwise on success it returns 0 with <err_var>
-# empty; on a gh failure it returns 1 with <out_var> empty and gh's reason
-# (gh_reason) in <err_var>; on an answer that is not a comment list it returns
+# authorAssociation, assigned to <out_var>. It never dies of its own: on success
+# it returns 0 with <err_var> empty; on a kind other than issue or pr it returns
+# 1 with <out_var> empty and "unknown kind <kind>" in <err_var>; on a gh
+# failure it returns 1 with <out_var> empty and gh's reason (gh_reason) in
+# <err_var>; on an answer that is not a comment list it returns
 # 1 with both empty. A Repo that cannot be resolved dies too, in gh's guard,
 # which is not trapped here. It runs in the caller's shell, so the Trust
 # filter's stderr line, `#<n>` naming the issue or PR, reaches the real
@@ -38,7 +39,7 @@ comments_trusted_read() {
   case "$__ctr_kind" in
     issue) gh_capture __ctr_raw __ctr_gh_err adapter_issue_comments "$__ctr_n" ;;
     pr) gh_capture __ctr_raw __ctr_gh_err adapter_pr_comments "$__ctr_n" ;;
-    *) die "comments_trusted_read: unknown kind $__ctr_kind" ;;
+    *) printf -v "$4" '%s' "unknown kind $__ctr_kind"; return 1 ;;
   esac || {
     printf -v "$4" '%s' "$(gh_reason "$__ctr_gh_err")"
     return 1
