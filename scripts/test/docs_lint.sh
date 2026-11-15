@@ -3211,18 +3211,27 @@ check "orch-audit-docs has its command and its six step headings in order" \
 check "orch-audit-docs hands off through audit file --run" \
   "$(scan_hand_off_batch "$PLUGIN_ROOT" "$audit_docs_skill")"
 
+# audit_present <plugin root> <path>...: prints one `<path>: missing` line per
+# path with no file under the plugin root, and leaves the paths that exist, in
+# order, in AUDIT_PRESENT.
+audit_present() {
+  local r="$1" f
+  shift
+  AUDIT_PRESENT=()
+  for f in "$@"; do
+    if [ -f "$r/$f" ]; then AUDIT_PRESENT+=("$f"); else echo "$f: missing"; fi
+  done
+}
+AUDIT_SKILLS=(skills/orch-audit-docs/SKILL.md skills/orch-audit-code/SKILL.md skills/orch-audit-tests/SKILL.md)
+
 # scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs,
 # orch-audit-code and orch-audit-tests) whose Hunt step does not name agent get
 # auditor, and one per skill that runs an agent sync command - a sentence saying
 # it runs none is allowed.
 scan_audit_hunt() {
-  local r="$1" name skill
-  for name in audit-docs audit-code audit-tests; do
-    skill="skills/orch-$name/SKILL.md"
-    if [ ! -f "$r/$skill" ]; then
-      echo "$skill: missing"
-      continue
-    fi
+  local r="$1" skill
+  audit_present "$r" "${AUDIT_SKILLS[@]}"
+  for skill in "${AUDIT_PRESENT[@]}"; do
     if ! step_names "$r/$skill" Hunt 'agent get auditor'; then
       echo "$skill: the Hunt step does not name agent get auditor"
     fi
@@ -3266,13 +3275,9 @@ check "each audit skill's Hunt step reads agent get auditor and runs no agent sy
 # begin, and one per skill whose Hunt step does not name the area-<k>.md
 # findings file (ADR-0064).
 scan_audit_hunt_run() {
-  local r="$1" name skill
-  for name in audit-docs audit-code audit-tests; do
-    skill="skills/orch-$name/SKILL.md"
-    if [ ! -f "$r/$skill" ]; then
-      echo "$skill: missing"
-      continue
-    fi
+  local r="$1" skill
+  audit_present "$r" "${AUDIT_SKILLS[@]}"
+  for skill in "${AUDIT_PRESENT[@]}"; do
     step_names "$r/$skill" Hunt 'audit begin' || echo "$skill: the Hunt step does not name audit begin"
     step_names "$r/$skill" Hunt 'area-<k>.md' \
       || echo "$skill: the Hunt step does not name the area-<k>.md findings file"
@@ -3303,18 +3308,14 @@ check "each audit skill's Hunt step runs audit begin and names area-<k>.md" \
 # state its category in the literal form Category: <c>, for each category the
 # skill files under.
 scan_audit_rank_report() {
-  local r="$1" name skill cats cat
-  for name in audit-docs audit-code audit-tests; do
-    skill="skills/orch-$name/SKILL.md"
-    if [ ! -f "$r/$skill" ]; then
-      echo "$skill: missing"
-      continue
-    fi
+  local r="$1" skill cats cat
+  audit_present "$r" "${AUDIT_SKILLS[@]}"
+  for skill in "${AUDIT_PRESENT[@]}"; do
     step_names "$r/$skill" Report 'audit report' || echo "$skill: the Report step does not run audit report"
-    case "$name" in
-      audit-docs) cats="documentation" ;;
-      audit-code) cats="bug enhancement" ;;
-      audit-tests) cats="enhancement" ;;
+    case "$skill" in
+      */orch-audit-docs/*) cats="documentation" ;;
+      */orch-audit-code/*) cats="bug enhancement" ;;
+      */orch-audit-tests/*) cats="enhancement" ;;
     esac
     for cat in $cats; do
       step_names "$r/$skill" Rank "Category: $cat" || echo "$skill: the Rank step does not state Category: $cat"
@@ -3347,21 +3348,14 @@ check "each audit skill's Report runs audit report and its Rank states the categ
 # Reporting rules do not say a finding stands alone, and one per audit skill
 # whose Rank step does not say so of each ranked finding (ADR-0064).
 scan_audit_stands_alone() {
-  local r="$1" f text name
-  for f in agents/orch-code-auditor.md agents/orch-doc-auditor.md agents/orch-test-auditor.md; do
-    if [ ! -f "$r/$f" ]; then
-      echo "$f: missing"
-      continue
-    fi
+  local r="$1" f text
+  audit_present "$r" agents/orch-code-auditor.md agents/orch-doc-auditor.md agents/orch-test-auditor.md
+  for f in "${AUDIT_PRESENT[@]}"; do
     text="$(md_section "$r/$f" "## Reporting rules" 2>/dev/null | flat_text)"
     grep -qF 'stands alone' <<<"$text" || echo "$f: the Reporting rules do not say a finding stands alone"
   done
-  for name in audit-docs audit-code audit-tests; do
-    f="skills/orch-$name/SKILL.md"
-    if [ ! -f "$r/$f" ]; then
-      echo "$f: missing"
-      continue
-    fi
+  audit_present "$r" "${AUDIT_SKILLS[@]}"
+  for f in "${AUDIT_PRESENT[@]}"; do
     step_names "$r/$f" Rank 'stands alone' || echo "$f: the Rank step does not say a finding stands alone"
   done
   return 0

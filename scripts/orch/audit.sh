@@ -3,20 +3,30 @@
 # working directory (ADR-0064), audit report, which renders a run's ranked file
 # and area files into one HTML page, and audit file, which files one audit
 # finding as a GitHub issue, its body rendered from the finding file, its
-# locations and the HEAD it was audited at, and parsed back before any write.
+# locations and the HEAD it was audited at, and parsed back before any write;
+# and audit file --run, which files a run's picked findings from its ranked
+# file, stamped with the commit audit begin recorded.
 # Its tests: scripts/test/orch/audit.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# audit_body_render <finding-file> <sha> <location>...: prints the issue body -
-# the finding text, its trailing newlines stripped, a blank line, one
+# audit_body_tail <sha> <location>...: prints the body's tail - one
 # **Location:** line per location in the order given, then the **Audited at:**
 # line, each line followed by a blank line.
-audit_body_render() {
-  local file="$1" sha="$2" l
-  shift 2
-  printf '%s\n\n' "$(cat "$file")"
+audit_body_tail() {
+  local sha="$1" l
+  shift
   for l in "$@"; do printf '%s\n\n' "**Location:** \`$l\`"; done
   printf '%s\n\n' "**Audited at:** $sha"
+}
+
+# audit_body_render <finding-file> <sha> <location>...: prints the issue body -
+# the finding text, its trailing newlines stripped, a blank line, then
+# audit_body_tail.
+audit_body_render() {
+  local file="$1" sha="$2"
+  shift 2
+  printf '%s\n\n' "$(cat "$file")"
+  audit_body_tail "$sha" "$@"
 }
 
 # audit_body_parse <body> <locations_var> <sha_var>: reads every **Location:**
@@ -82,9 +92,9 @@ audit_begin() {
 
 # The ranked file and its reader (ADR-0064). audit_ranked_read is the one
 # reader: it checks that a run directory's ranked file holds together, and
-# leaves the run in the AUDIT_* globals for audit report to render. It dies,
-# with an orch: message naming what is wrong and its line, before anything is
-# written.
+# leaves the run in the AUDIT_* globals for its two callers: audit report, to
+# render, and audit file --run, to file from. It dies, with an orch: message
+# naming what is wrong and its line, before anything is written.
 #
 # A resolved finding i is in AUDIT_TITLE[i], AUDIT_CATEGORY[i], AUDIT_LOCS[i]
 # (newline-joined), AUDIT_LINKS[i] (the finding numbers it overlaps, on either
@@ -302,7 +312,7 @@ audit_ref_find() {
 # AUDIT_TOP_TEXT, AUDIT_NOTE_HEAD, AUDIT_NOTE_TEXT, AUDIT_COUNT and the
 # per-finding arrays above. Dies on the first thing that does not hold.
 audit_ranked_read() {
-  local dir="$1" key val i j n expect=0 scopes=0 areas=0 tops=0 nones=0 ln body
+  local dir="$1" key val arg i j n expect=0 scopes=0 areas=0 tops=0 nones=0 ln body
   local over overs cat locfield locs loc title top_ln=0 other sorted
   declare -gA AUDIT_AB AUDIT_AREA_SEEN
   AUDIT_AB=() AUDIT_AREA_SEEN=()
@@ -324,35 +334,35 @@ audit_ranked_read() {
   audit_ranked_sections "$dir/ranked.md"
   local -a bodies=() starts=()
   for i in "${!AUDIT_SK[@]}"; do
-    ln="${AUDIT_SL[i]}" val="${AUDIT_SA[i]}"
+    ln="${AUDIT_SL[i]}" arg="${AUDIT_SA[i]}"
     trim_split "${AUDIT_ST[i]}" body
     case "${AUDIT_SK[i]}" in
       scope)
         scopes=$((scopes + 1))
         [ "$scopes" -eq 1 ] || die "ranked.md line $ln: a second @@ scope"
-        [ -n "$val" ] || die "ranked.md line $ln: @@ scope names no scope"
-        AUDIT_SCOPE="$val" ;;
+        [ -n "$arg" ] || die "ranked.md line $ln: @@ scope names no scope"
+        AUDIT_SCOPE="$arg" ;;
       areas)
         areas=$((areas + 1))
         [ "$areas" -eq 1 ] || die "ranked.md line $ln: a second @@ areas"
-        [[ $val =~ ^[0-9]+$ ]] || die "ranked.md line $ln: @@ areas takes a count, not '$val'"
-        AUDIT_AREAS="$val" ;;
+        [[ $arg =~ ^[0-9]+$ ]] || die "ranked.md line $ln: @@ areas takes a count, not '$arg'"
+        AUDIT_AREAS="$arg" ;;
       note)
-        [ -n "$val" ] || die "ranked.md line $ln: @@ note names no heading"
-        AUDIT_NOTE_HEAD+=("$val") AUDIT_NOTE_TEXT+=("$body") ;;
+        [ -n "$arg" ] || die "ranked.md line $ln: @@ note names no heading"
+        AUDIT_NOTE_HEAD+=("$arg") AUDIT_NOTE_TEXT+=("$body") ;;
       top)
         tops=$((tops + 1))
         [ "$tops" -eq 1 ] || die "ranked.md line $ln: a second @@ top"
-        [[ $val =~ ^[0-9]+$ ]] || die "ranked.md line $ln: @@ top takes a finding number, not '$val'"
-        AUDIT_TOP="$val" AUDIT_TOP_TEXT="$body" top_ln="$ln" ;;
+        [[ $arg =~ ^[0-9]+$ ]] || die "ranked.md line $ln: @@ top takes a finding number, not '$arg'"
+        AUDIT_TOP="$arg" AUDIT_TOP_TEXT="$body" top_ln="$ln" ;;
       none)
         nones=$((nones + 1))
         [ "$nones" -eq 1 ] || die "ranked.md line $ln: a second @@ none"
         AUDIT_NONE=1 ;;
       finding)
         expect=$((expect + 1))
-        [[ $val =~ ^[0-9]+$ ]] && [ "$val" -eq "$expect" ] \
-          || die "ranked.md line $ln: expected @@ finding $expect, found '$val': findings are numbered from 1 in order"
+        [[ $arg =~ ^[0-9]+$ ]] && [ "$arg" -eq "$expect" ] \
+          || die "ranked.md line $ln: expected @@ finding $expect, found '$arg': findings are numbered from 1 in order"
         bodies[expect]="${AUDIT_ST[i]}" starts[expect]=$((ln + 1)) ;;
     esac
     case "${AUDIT_SK[i]}" in
@@ -688,7 +698,8 @@ audit_file() {
 # the **Audited at:** line carrying the commit audit begin recorded; each
 # paragraph followed by a blank line.
 audit_batch_body() {
-  local n="$1" rest="${AUDIT_FIELDS[$1]}" rec label loc
+  local n="$1" rest="${AUDIT_FIELDS[$1]}" rec label
+  local -a locs=()
   while [ -n "$rest" ]; do
     rec="${rest%%"$AUDIT_RS"*}"
     rest="${rest#*"$AUDIT_RS"}"
@@ -696,10 +707,8 @@ audit_batch_body() {
     case "$label" in From | Title | Category | Overlaps | Location) continue ;; esac
     printf '**%s:** %s\n\n' "$label" "${rec#*"$AUDIT_US"}"
   done
-  while IFS= read -r loc; do
-    [ -z "$loc" ] || printf '**Location:** `%s`\n\n' "$loc"
-  done <<<"${AUDIT_LOCS[n]}"
-  printf '**Audited at:** %s\n\n' "$AUDIT_COMMIT"
+  mapfile -t locs <<<"${AUDIT_LOCS[n]}"
+  audit_body_tail "$AUDIT_COMMIT" "${locs[@]}"
 }
 
 # audit_body_norm <var> <text>: <text> with its carriage returns and trailing
@@ -732,7 +741,8 @@ audit_nums_union() {
 # each linked issue's **Related:** paragraph. Every check - the ranked file's
 # reader, the numbers, the bodies' round trip - comes before any GitHub read or
 # write. Prints, per finding, its number, its issue number and filed or open,
-# tab-separated.
+# tab-separated. Each line is printed as its finding gets its issue number, so a
+# failure partway leaves the lines of the findings already filed.
 audit_file_batch() {
   [ $# -eq 2 ] || die "$(audit_usage)"
   local dir="$1" item n j picked=() want="" seen="" cat
@@ -769,6 +779,7 @@ audit_file_batch() {
   for n in "${picked[@]}"; do
     if audit_open_find "$existing" "${AUDIT_TITLE[n]}" existing_n; then
       issue[$n]="$existing_n" state[$n]=open
+      printf '%s\t%s\t%s\n' "$n" "$existing_n" open
       continue
     fi
     [ -n "$triage" ] || audit_triage_ready triage
@@ -781,6 +792,7 @@ audit_file_batch() {
     gh_or_die --out made "create the issue" \
       adapter_issue_create "${AUDIT_TITLE[n]}" "$body_file" "$triage" "$cat"
     issue[$n]="$made" state[$n]=filed
+    printf '%s\t%s\t%s\n' "$n" "$made" filed
   done
 
   local links nums have cur raw tail unioned num
@@ -813,9 +825,6 @@ audit_file_batch() {
     printf '%s\n\n**Related:** %s\n\n' "${base[$n]}" "${nums% }" >"$body_file"
     gh_or_die "write issue #${issue[$n]}'s Related line" \
       adapter_issue_body_edit "${issue[$n]}" "$body_file"
-  done
-  for n in "${picked[@]}"; do
-    printf '%s\t%s\t%s\n' "$n" "${issue[$n]}" "${state[$n]}"
   done
 }
 

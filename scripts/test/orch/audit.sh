@@ -501,7 +501,7 @@ echo
 echo "audit report-reference check in audit file"
 audit_repo
 before="$(fake_snapshot)"
-for phrase in "finding 2" "candidate #3" "this report"; do
+for phrase in "finding 2" "Findings #3" "candidate #3" "candidates 1" "this report"; do
   out="$("$ORCH" audit file "Fix it as in $phrase" "${parts[@]}" 2>&1)"; st=$?
   assert_status "a title saying '$phrase' is refused" "$st" 1
   assert_contains "naming the phrase" "$out" "says '$phrase'"
@@ -518,20 +518,24 @@ assert_status "the report, a span and a fence are accepted" "$st" 0
 
 # --- audit file batch -------------------------------------------------------
 
-# batch_run: report_run, on the store-backed fake with the repo's own
-# needs-triage label; the next issue is #40.
-batch_run() {
-  report_run
+# batch_reset: the run as report_run left it, its files restored, on a fresh
+# store-backed fake with the repo's own needs-triage label; the next issue is
+# #40.
+batch_reset() {
+  local f
+  for f in ranked.md area-1.md area-2.md record; do cp "$run/$f.saved" "$run/$f"; done
   fake_github
   fake_label needs-triage 000000 "The repo's own"
   fake_next_issue 40
-  tab="$(printf '\t')"
-  errf="$(mktemp)"
 }
+report_run
+for f in ranked.md area-1.md area-2.md record; do cp "$run/$f" "$run/$f.saved"; done
+tab="$(printf '\t')"
+errf="$(mktemp)"
 
 echo
 echo "audit file batch"
-batch_run
+batch_reset
 git commit -q --allow-empty -m "the checkout moves on"
 out="$("$ORCH" audit file --run "$run" 3,1 2>"$errf")"; st=$?
 assert_status "files a pick" "$st" 0
@@ -558,7 +562,7 @@ assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
 
 echo
 echo "audit file batch refusals"
-batch_run
+batch_reset
 before="$(fake_snapshot)"
 usage_run="orch: usage: orch.sh audit begin <code|docs|tests>
    or: orch.sh audit report <dir> <out.html>
@@ -574,12 +578,20 @@ assert_contains "with the usage naming every form" "$out" "$usage_run"
 assert_contains "the one-finding form among them" "$out" "or: orch.sh audit file <title>"
 out="$("$ORCH" audit file --run "$run" "" 2>&1)"; st=$?
 assert_status "empty numbers are refused" "$st" 1
-sed -i 's/^Evidence: a `tick`/Evidence: see finding 2 and a `tick`/' "$run/ranked.md"
-out="$("$ORCH" audit file --run "$run" 3 2>&1)"; st=$?
-assert_status "a report reference is refused through --run" "$st" 1
-assert_contains "naming the phrase" "$out" "finding 2"
-assert_eq "reaching no GitHub call" "$(gh_calls)" "0"
-assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
+for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
+  batch_reset
+  sed -i "s/^Evidence: a \`tick\`/Evidence: see $phrase and a \`tick\`/" "$run/ranked.md"
+  out="$("$ORCH" audit file --run "$run" 3 2>&1)"; st=$?
+  assert_status "a field saying '$phrase' is refused through --run" "$st" 1
+  assert_contains "naming the phrase" "$out" "says '$phrase'"
+  assert_eq "reaching no GitHub call" "$(gh_calls)" "0"
+  assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
+done
+batch_reset
+sed -i 's/^Evidence: a `tick`/Evidence: `finding 2` and "the report" read fine/' "$run/ranked.md"
+"$ORCH" audit file --run "$run" 3 >/dev/null 2>&1; st=$?
+assert_status "the report and a backticked finding 2 are accepted through --run" "$st" 0
+batch_reset
 rm -f "$run/ranked.md"
 out="$("$ORCH" audit file --run "$run" 1 2>&1)"; st=$?
 assert_status "a missing ranked file is refused" "$st" 1
@@ -587,7 +599,7 @@ assert_eq "reaching no GitHub call" "$(gh_calls)" "0"
 
 echo
 echo "audit file batch category"
-batch_run
+batch_reset
 printf 'Category: bug\n' >>"$run/area-2.md"
 sed -i '/^From: area-2:1/{n;n;d}' "$run/ranked.md"
 out="$("$ORCH" audit file --run "$run" 2 2>&1)"; st=$?
@@ -598,7 +610,7 @@ assert_eq "no Related for a finding that overlaps nothing" \
 
 echo
 echo "audit file batch related"
-batch_run
+batch_reset
 # Finding 2 overlaps 3, too: 1 and 3 are linked, 2 and 3 are, 1 and 2 are not.
 sed -i 's/^Category: enhancement$/&/; /^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
 out="$("$ORCH" audit file --run "$run" 3 2>&1)"
@@ -620,7 +632,7 @@ assert_contains "2 names only 3" "$(fake_body_of 42)" '**Related:** #40'
 
 echo
 echo "audit file batch rewritten issue"
-batch_run
+batch_reset
 "$ORCH" audit file --run "$run" 3 >/dev/null 2>&1
 fake_issue_body 40 "my own text"
 out="$("$ORCH" audit file --run "$run" 1,3 2>"$errf")"; st=$?
@@ -631,7 +643,7 @@ assert_contains "the other issue still takes its line" "$(fake_body_of 41)" '**R
 
 echo
 echo "audit file batch open title"
-batch_run
+batch_reset
 fake_issue 50 open
 fake_issue_title 50 "Deepen d.sh"
 fake_issue_body 50 "mine"
@@ -642,19 +654,20 @@ assert_eq "no new issue" "$(fake_issues)" "50 "
 
 echo
 echo "audit file batch failures"
-batch_run
+batch_reset
 fake_fail_after adapter_issue_create 1
 out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
 assert_status "a failed create stops the command" "$st" 1
 assert_contains "with its orch: message" "$out" "orch: gh could not create the issue"
 assert_eq "the issue created stays" "$(fake_issues)" "40 "
+assert_contains "the line of the finding filed stays on stdout" "$out" "1${tab}40${tab}filed"
 fake_unfail
 out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
 assert_status "the rerun finishes" "$st" 0
 assert_eq "finding it by title" "$out" "1${tab}40${tab}open
 3${tab}41${tab}filed"
 assert_contains "with its Related line written" "$(fake_body_of 40)" '**Related:** #41'
-batch_run
+batch_reset
 fake_fail adapter_issue_body_edit
 out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
 assert_status "a failed Related write stops the command" "$st" 1
