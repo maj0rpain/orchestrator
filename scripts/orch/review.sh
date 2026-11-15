@@ -746,7 +746,8 @@ review_standards() {
 review_resume() {
   [ $# -eq 0 ] || die "usage: orch.sh review resume"
   require_state
-  local state i path report b
+  # shellcheck disable=SC2034 # out-params of the entry read
+  local state i path report b recorded phase active=""
   state="$(review_terminal_state)" || true
   state="${state%%$'\n'*}"
   case "$state" in
@@ -754,7 +755,9 @@ review_resume() {
     *) die "nothing to resume: review terminal says ${state:-nothing}" ;;
   esac
   b="$(checkout_branch_or_rebasing "$ROOT")" || die "review resume: the current checkout is on no branch - nothing was discarded"
-  discard_own_branch_work "review resume" "$b"
+  state_get_many recorded=branch phase=phase
+  [ "$phase" = "done" ] || active=1
+  discard_own_branch_work "review resume" "$b" "$recorded" "$active"
   i="$(state_get iteration)" || die "cannot read iteration from $STATE"
   path="$(cmd_review path "$i")" || exit 1
   if [ ! -f "$path" ]; then

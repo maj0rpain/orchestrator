@@ -337,16 +337,16 @@ discard_work_in() {
   git -C "$path" clean -fdq >/dev/null 2>&1 || die "$who: git clean failed in $path"
 }
 
-# require_flow_branch <who> <branch>: dies (exit 1, "nothing was discarded")
-# unless <branch> is the branch the flow state records, whatever the phase -
-# the proof a discard-rule caller owes before it discards. It never asks
-# whether the flow is active: each caller first settles that a flow state
-# exists. Called as a bare statement, so the die stops the caller.
+# require_flow_branch <who> <branch> <recorded>: dies (exit 1, "nothing was
+# discarded") unless <branch> is <recorded>, the branch the flow state records,
+# whatever the phase - the proof a discard-rule caller owes before it
+# discards. It reads nothing: the caller hands over the branch from its one
+# read of flow state, and settles first that a flow state exists. Called as a
+# bare statement, so the die stops the caller.
 require_flow_branch() {
-  local who="$1" b="$2" fb
-  fb="$(state_get branch)" || die "$who: cannot read the flow's branch from $STATE"
+  local who="$1" b="$2" fb="$3"
   [ -n "$fb" ] || die "$who: on $b, the active flow records no branch yet - nothing was discarded"
-  branch_held "$b" || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
+  [ "$fb" = "$b" ] || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
 }
 
 # work_to_discard <merging-var> <rebasing-var> <dirty-var>: the one definition

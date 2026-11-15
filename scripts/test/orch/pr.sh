@@ -404,6 +404,12 @@ assert_contains "with the exact require_branch die message" "$out" \
 out="$("$ORCH" pr open "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
 assert_eq "the recorded branch is checked before the body's standard" "$out" \
   "orch: no branch recorded in state"
+pr_jq="$(counting_bin jq)"
+PATH="$pr_jq:$PATH" "$ORCH" pr open "Title" "$body" >/dev/null 2>&1
+assert_eq "pr open with no branch recorded starts exactly one jq" "$(counting_starts "$pr_jq" jq)" "1"
+state_truncate
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_state_unreadable "pr open" 1 "$out" "$st"
 
 restore_suite_env
 

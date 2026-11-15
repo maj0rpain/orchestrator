@@ -829,6 +829,9 @@ out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "refuses a branch with no recorded base" "$st" 1
 assert_eq "moving nothing (no recorded base)" "$(git rev-parse HEAD)" "$before_main"
 assert_eq "and recording no base SHA" "$(bs_sha)" ""
+bs_jq="$(counting_bin jq)"
+PATH="$bs_jq:$PATH" orch_gh_failing branch sync >/dev/null 2>&1
+assert_eq "branch sync on a branch the flow does not hold starts exactly one jq" "$(counting_starts "$bs_jq" jq)" "1"
 git config orchestrator.base main
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "even with a base branch setting to fall back to" "$st" 1
@@ -1114,6 +1117,9 @@ assert_eq "and the branch's recorded base SHA" \
 assert_eq "and its recorded base" "$(base_key orch/15-again)" "$(orch_gh_failing state get base)"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on the flow's branch while on it succeeds" "$st" 0
+bc_jq="$(counting_bin jq)"
+PATH="$bc_jq:$PATH" orch_gh_failing branch create >/dev/null 2>&1
+assert_eq "a restart with the branch made and checked out starts exactly one jq" "$(counting_starts "$bc_jq" jq)" "1"
 
 
 # A dirty tree on the flow's branch: refused in an interactive main checkout.
@@ -1182,6 +1188,8 @@ assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 echo '{ not json' >.orchestrator/state.json
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_state_unreadable "branch sync" 1 "$out" "$st"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_state_unreadable "branch create" 1 "$out" "$st"
 
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin

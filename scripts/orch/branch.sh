@@ -161,22 +161,19 @@ branch_records_base() {
   case "$(branch_kind "$1")" in flow|quick) return 0 ;; *) return 1 ;; esac
 }
 
-# branch_held <branch>: succeeds when this checkout's flow state records
-# <branch> as the flow's branch, in any phase. Reads flow state only.
-branch_held() {
-  [ -f "$STATE" ] && [ "$(state_get branch)" = "$1" ]
-}
-
-# discard_own_branch_work <who> <branch>: the Discard rule's prelude and the
-# discard in one: proves <branch> is the caller's own, then runs
-# discard_flow_branch_work. Own is the branch the flow holds, in any phase;
-# else, with an active flow, the flow-branch proof dies on it; with none, a
-# `quick` branch. Called as a bare statement, so a die stops the caller.
+# discard_own_branch_work <who> <branch> <recorded> <active>: the Discard
+# rule's prelude and the discard in one: proves <branch> is the caller's own,
+# then runs discard_flow_branch_work. <recorded> is the flow's recorded branch
+# and <active> is non-empty when a flow is active; both come from the caller's
+# one read of flow state, and this reads none. Own is the branch the flow
+# holds, in any phase; else, with an active flow, the flow-branch proof dies on
+# it; with none, a `quick` branch. Called as a bare statement, so a die stops
+# the caller.
 discard_own_branch_work() {
-  local who="$1" b="$2"
-  if ! branch_held "$b"; then
-    if flow_active; then
-      require_flow_branch "$who" "$b"
+  local who="$1" b="$2" recorded="$3" active="$4"
+  if [ "$recorded" != "$b" ]; then
+    if [ -n "$active" ]; then
+      require_flow_branch "$who" "$b" "$recorded"
     elif [ "$(branch_kind "$b")" != quick ]; then
       die "$who: no active flow, and $b is not a quick implementation's branch - nothing was discarded"
     fi
@@ -226,13 +223,13 @@ record_branch_base() {
 # config, as branch off does, so branch sync and branch base-sha still find
 # them once the flow is done or archived.
 cmd_branch_create() {
-  require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"
-  local slug issue name base sha own="" start
-  slug="$(state_get slug)"
-  require_issue issue
+  # shellcheck disable=SC2034 # out-params of the entry read
+  local slug issue name base sha own="" start recorded base_raw
+  require_state_read slug=slug issue=issue recorded=branch base_raw=base # no-state and unreadable refusals included
+  require_value issue "$issue"
   name="$(branch_name_flow "$issue" "$slug")"
-  if branch_held "$name" && git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then
+  if [ "$recorded" = "$name" ] && git rev-parse --verify --quiet "refs/heads/$name" >/dev/null; then
     own=1
   fi
   if [ -n "$own" ]; then
@@ -245,7 +242,7 @@ cmd_branch_create() {
   refuse_busy_checkout branch
   # The start point comes before the discard, so a refusal exits with
   # nothing written.
-  base="$(flow_base)"
+  base="$(flow_base_fallback "$base_raw")"
   new_branch_start start "$name" "$base" \
     "point this flow at another base: orch.sh base set <branch> --flow"
   discard_create_work "$name"
@@ -339,12 +336,14 @@ cmd_branch_sync() {
     --finish) finish=1 ;;
     *) die "usage: orch.sh branch sync [--finish]" ;;
   esac
-  local branch base held="" tip remote why mh
+  local branch base held="" tip remote why mh recorded="" base_raw=""
   current_branch_or_die ' - nothing was synced'
-  require_state_readable
-  if branch_held "$branch"; then
+  if [ -f "$STATE" ]; then
+    require_state_read recorded=branch base_raw=base
+  fi
+  if [ "$recorded" = "$branch" ]; then
     held=1
-    base="$(flow_base)"
+    base="$(flow_base_fallback "$base_raw")"
   else
     if branch_records_base "$branch"; then
       base="$(branch_base_get "$branch")"

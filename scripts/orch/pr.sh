@@ -269,10 +269,12 @@ pr_body_check() {
 }
 
 cmd_pr_open() {
-  require_state
+  # shellcheck disable=SC2034 # out-params of the entry read
+  local issue branch base_raw recorded base pr
+  require_state_read issue=issue branch=branch base_raw=base recorded=pr
   local usage="usage: orch.sh pr open <title> <body-file> [--label <name>]..." labels=()
   [ $# -ge 2 ] || die "$usage"
-  local title="$1" body_file="$2" issue branch base pr recorded
+  local title="$1" body_file="$2"
   shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -281,15 +283,14 @@ cmd_pr_open() {
     esac
   done
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  require_issue issue
-  require_branch branch
-  # Resolved here, in pr open's own shell, so the base read and the issue
+  require_value issue "$issue"
+  require_value branch "$branch"
+  # Resolved here, in pr open's own shell, so the base fallback and the issue
   # line's default-branch check ask GitHub once between them.
   default_branch_resolve
-  base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
+  base="$(flow_base_fallback "$base_raw")"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
   require_no_open_tickets "$issue" "pr open"
-  recorded="$(state_get pr)"
   if [ -n "$recorded" ]; then
     update_pr "$recorded" "$branch" "$base" "$issue" "$title" "$body_file" ${labels[@]+"${labels[@]}"}
     note "$recorded"

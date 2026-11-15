@@ -717,16 +717,17 @@ ticket_reclaim_remove() {
   [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
 
-# ticket_reclaim_guard <parent> <branch>: proves <branch> is the recovered
-# run's own branch for <parent>, or dies (exit 1, "nothing was discarded").
-# With an active flow it must be the flow's recorded branch and <parent> its
-# issue; with none, a `branch off`-made quick/<parent>-<slug> branch.
+# ticket_reclaim_guard <parent> <branch> <active> <recorded> <flow-issue>:
+# proves <branch> is the recovered run's own branch for <parent>, or dies (exit
+# 1, "nothing was discarded"). <active> is non-empty when a flow is active, and
+# <recorded> and <flow-issue> are the flow's branch and issue, all from the
+# caller's one read of flow state; it reads none. With an active flow it must
+# be the flow's recorded branch and <parent> its issue; with none, a `branch
+# off`-made quick/<parent>-<slug> branch.
 ticket_reclaim_guard() {
-  local parent="$1" b="$2" fissue
-  if flow_active; then
-    require_state_readable
-    fissue="$(state_get issue)" || die "ticket reclaim: cannot read the flow's issue from $STATE"
-    require_flow_branch "ticket reclaim" "$b"
+  local parent="$1" b="$2" active="$3" recorded="$4" fissue="$5"
+  if [ -n "$active" ]; then
+    require_flow_branch "ticket reclaim" "$b" "$recorded"
     [ -n "$fissue" ] || die "ticket reclaim: on $b, the active flow records no issue yet - nothing was discarded"
     [ "$parent" = "$fissue" ] || die "ticket reclaim: on $b, #$parent is not the flow's issue #$fissue - nothing was discarded"
     return 0
@@ -748,11 +749,16 @@ ticket_reclaim_guard() {
 # is rebuilt. One line per action; a failed write dies naming the ticket.
 cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
-  local parent="$1" flow subs line worktrees n state path st reported merged nums="" tbranch
+  # shellcheck disable=SC2034 # phase is an out-param of the entry read
+  local parent="$1" flow recorded="" fissue="" phase="" active="" subs line worktrees n state path st reported merged nums="" tbranch
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
-  ticket_reclaim_guard "$parent" "$flow"
-  discard_own_branch_work "ticket reclaim" "$flow"
+  if [ -f "$STATE" ]; then
+    require_state_read recorded=branch fissue=issue phase=phase
+    [ "$phase" = "done" ] || active=1
+  fi
+  ticket_reclaim_guard "$parent" "$flow" "$active" "$recorded" "$fissue"
+  discard_own_branch_work "ticket reclaim" "$flow" "$recorded" "$active"
   subs="$(ticket_sub_issues "$parent")" || exit 1
   while IFS= read -r line; do
     [ -n "$line" ] || continue
