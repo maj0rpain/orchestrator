@@ -317,13 +317,14 @@ restore_suite_env
 breakdown_fixture
 cat >"$draft" <<'DRAFT'
 @@ ticket 1 One
+@@ blocked-by 2
 x
 @@ end
 @@ ticket 2 Two
 x
 @@ end
 @@ ticket 3 Three
-@@ blocked-by 2,1
+@@ blocked-by 1,2
 y
 @@ end
 DRAFT
