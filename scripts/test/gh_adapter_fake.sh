@@ -118,6 +118,10 @@
 #                     absent, the issue is unclaimed
 #   local_default     gh's own local default repo, as OWNER/REPO; absent,
 #                     none is set
+#   no_dependency_summary
+#                     issue numbers, one per line, whose dependency summary
+#                     GitHub leaves off: adapter_issue_open_blockers answers
+#                     nothing for them
 #   no_sub_issues     present, the sub-issues endpoint refuses every issue
 #   offline           present, every operation fails with a connection error
 #   ratelimit         present, every operation but the rate_limit read fails
@@ -703,6 +707,22 @@ adapter_issues_open_rows() {
   fake_labelled_rows adapter_issues_open_rows all
 }
 
+# adapter_issues_titled_rows <label>: the open issues carrying the label, oldest
+# first and cut at the limit, each as the count-marked record the gh adapter
+# prints: number, stored title, label count, labels.
+adapter_issues_titled_rows() {
+  local n nums
+  ! fake_failing adapter_issues_titled_rows || return 1
+  fake_need_store || return 1
+  nums="$(fake_labelled_numbers all "$1")" || return 1
+  for n in $nums; do
+    printf '%s\n' "$n"
+    fake_slurp "$ORCH_GH_FAKE_STORE/issues/$n/title" || true
+    printf '%s\n' "$fake_slurped"
+    fake_issue_labels_counted "$n"
+  done
+}
+
 # fake_search_cut: the first lesser of ISSUE_LIST_LIMIT and ISSUE_SEARCH_CAP
 # lines of stdin, as a search-backed real listing is cut.
 fake_search_cut() {
@@ -1257,6 +1277,32 @@ adapter_blockers() {
   fi
   fake_issue_known "$1" || return 1
   cat "$(fake_store)/blocked_by/$1" 2>/dev/null || true
+}
+
+# adapter_issue_open_blockers <n>: the count of #n's stored blockers still open,
+# or nothing where no_dependency_summary lists #n.
+adapter_issue_open_blockers() {
+  ! fake_failing adapter_issue_open_blockers || return 1
+  fake_need_store || return 1
+  fake_issue_known "$1" || return 1
+  ! fake_has_line "$ORCH_GH_FAKE_STORE/no_dependency_summary" "$1" || return 0
+  fake_blockers_count "$1"
+  printf '%s\n' "$fake_open_count"
+}
+
+# adapter_blockers_states <n>: #n's stored blockers, in the order they were
+# added, each with its stored state, as the gh adapter prints them.
+adapter_blockers_states() {
+  local b
+  ! fake_failing adapter_blockers_states || return 1
+  fake_need_store || return 1
+  fake_issue_known "$1" || return 1
+  [ -r "$ORCH_GH_FAKE_STORE/blocked_by/$1" ] || return 0
+  while IFS= read -r b || [ -n "$b" ]; do
+    [ -n "$b" ] || continue
+    fake_read_state "$ORCH_GH_FAKE_STORE/issues/$b/state" || fake_state=""
+    printf '%s\t%s\n' "$b" "$fake_state"
+  done <"$ORCH_GH_FAKE_STORE/blocked_by/$1"
 }
 
 # adapter_blocker_add <n> <blocker>: the blocker appended to #n's stored

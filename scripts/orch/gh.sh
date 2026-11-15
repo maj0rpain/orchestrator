@@ -703,6 +703,63 @@ issues_open_rows_read() {
   issues_rows_read_via issues_open_rows_read adapter_issues_open_rows issues_open_limit_warn "$@"
 }
 
+# adapter_issues_titled_rows <label>: the open issues carrying the label,
+# oldest first and cut at ISSUE_LIST_LIMIT (the newest dropped), each as one
+# count-marked record: its number, its title, its label count, then one label
+# per line.
+adapter_issues_titled_rows() {
+  gh issue list --state open --label "$1" --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,title,labels \
+    --jq '.[] | .number, .title, (.labels | length), (.labels[].name)'
+}
+
+# issues_titled_rows_read <nums_var> <titles_array> <labels_array> <err_var>
+# <label>: reads the listing once through adapter_issues_titled_rows and writes
+# the issue numbers, oldest first one per line, into <nums_var>, and adds each
+# record's title and labels (one per line, possibly none) to two
+# caller-declared associative arrays keyed by issue number. Non-zero, writing
+# nothing, on a failed read (gh's stderr into <err_var>, as gh_lines_read) or an
+# answer that does not parse (<err_var> "gh answered a listing that does not
+# parse"). Warns through issues_labelled_limit_warn when the listing reaches the
+# issue-list limit. Dies when an array name is not a declared associative array.
+# Elements are assigned by eval on a validated name, the value by reference, as
+# issues_rows_read_via does.
+issues_titled_rows_read() {
+  assoc_array_require issues_titled_rows_read "$2" __itrr_
+  assoc_array_require issues_titled_rows_read "$3" __itrr_
+  local __itrr_out __itrr_err __itrr_lines=() __itrr_nums=() __itrr_tit=() __itrr_labs=()
+  local __itrr_i=0 __itrr_total __itrr_n __itrr_count __itrr_j __itrr_rl __itrr_r
+  local __itrr_bad="gh answered a listing that does not parse" __itrr_whole='^[0-9]+$'
+  if ! gh_capture __itrr_out __itrr_err adapter_issues_titled_rows "$5"; then
+    printf -v "$4" '%s' "$__itrr_err"
+    return 1
+  fi
+  [ -z "$__itrr_out" ] || mapfile -t __itrr_lines <<<"$__itrr_out"
+  __itrr_total="${#__itrr_lines[@]}"
+  while [ "$__itrr_i" -lt "$__itrr_total" ]; do
+    __itrr_n="${__itrr_lines[__itrr_i]}"
+    __itrr_count="${__itrr_lines[__itrr_i+2]-}"
+    [[ $__itrr_n =~ $__itrr_whole && $__itrr_count =~ $__itrr_whole ]] \
+      || { printf -v "$4" '%s' "$__itrr_bad"; return 1; }
+    __itrr_tit+=("${__itrr_lines[__itrr_i+1]}")
+    __itrr_i=$(( __itrr_i + 3 ))
+    __itrr_rl=""
+    for (( __itrr_j = 0; __itrr_j < 10#$__itrr_count; __itrr_j++ )); do
+      [ "$__itrr_i" -lt "$__itrr_total" ] || { printf -v "$4" '%s' "$__itrr_bad"; return 1; }
+      [ "$__itrr_j" -eq 0 ] || __itrr_rl="$__itrr_rl"$'\n'
+      __itrr_rl="$__itrr_rl${__itrr_lines[__itrr_i]}"
+      __itrr_i=$(( __itrr_i + 1 ))
+    done
+    __itrr_nums+=("$(( 10#$__itrr_n ))")
+    __itrr_labs+=("$__itrr_rl")
+  done
+  for __itrr_r in ${__itrr_nums[@]+"${!__itrr_nums[@]}"}; do
+    eval "$2"'[${__itrr_nums[__itrr_r]}]=${__itrr_tit[__itrr_r]}'
+    eval "$3"'[${__itrr_nums[__itrr_r]}]=${__itrr_labs[__itrr_r]}'
+  done
+  printf -v "$1" '%s' "$(printf '%s\n' ${__itrr_nums[@]+"${__itrr_nums[@]}"} | grep . || true)"
+  issues_labelled_limit_warn "${#__itrr_nums[@]}" "$5"
+}
+
 # issues_rows_read_via <caller> <adapter> <warn> <nums_var> <states_array>
 # <labels_array> <err_var> [<label>...]: the reading the three readers above
 # share (the open-issue reader takes no labels), through the listing <adapter>
@@ -1186,6 +1243,20 @@ adapter_issue_parent() {
 # per line, in GitHub's order. Nothing at all for none.
 adapter_blockers() {
   gh api --paginate "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by" --jq '.[].number'
+}
+
+# adapter_issue_open_blockers <n>: the count of #n's blockers still open, from
+# the dependency summary on the issue itself, or nothing at all where GitHub
+# leaves the summary off - never a stand-in zero.
+adapter_issue_open_blockers() {
+  gh api "repos/{owner}/{repo}/issues/$1" --jq '.issue_dependencies_summary.blocked_by // ""'
+}
+
+# adapter_blockers_states <n>: the issues #n is blocked by, one per line as TSV
+# "<n><TAB><OPEN|CLOSED>", in GitHub's order. Nothing at all for none.
+adapter_blockers_states() {
+  gh api --paginate "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by" \
+    --jq '.[] | "\(.number)\t\(.state | ascii_upcase)"'
 }
 
 # adapter_blocker_add <n> <blocker>: adds the edge marking #n blocked by the

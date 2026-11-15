@@ -5,6 +5,9 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_no_dependency_summary <n>: GitHub leaves #n's dependency summary off, so
+# its open-blocker count is unknown and only its blocked-by listing answers.
+fake_no_dependency_summary() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/no_dependency_summary"; }
 
 # close_refused <what> <want> <args...>: runs `issue close <args...>` and
 # asserts it exits 1 with an orch: message containing <want>, leaving the
@@ -1292,4 +1295,146 @@ assert_contains "with its usage line" "$out" "issue must be a plain issue number
 out="$(orch_no_repo issue ready 2>&1)"; st=$?
 assert_status "a usage error is refused first" "$st" 2
 assert_contains "with its usage line" "$out" "usage: orch.sh issue ready <n>"
+restore_suite_env
+
+# --- issue next ---------------------------------------------------------------
+# The Next issue (#3120): the oldest open ready-for-agent issue with no phase
+# label, no parent and no open blocker, printed as <number><TAB><title>. Exit 1
+# is the meaningful "no"; a usage error or a failed read exits 2, stdout empty.
+echo
+echo "issue next"
+healthy_repo
+fake_github
+next_fixture() {
+  local n
+  for n in $(fake_issues); do rm -rf "$ORCH_GH_FAKE_STORE/issues/$n"; done
+  rm -rf "$ORCH_GH_FAKE_STORE/subs" "$ORCH_GH_FAKE_STORE/blocked_by" "$ORCH_GH_FAKE_STORE/no_dependency_summary"
+}
+# next_issue <n> <title> <state> [label...]: seeds issue #n with its title.
+next_issue() {
+  local n="$1" title="$2"
+  shift 2
+  fake_issue "$n" "$@"
+  fake_issue_title "$n" "$title"
+}
+# next_run: runs `issue next`: stdout in nx_out, stderr in nx_err_text,
+# status in st.
+next_run() {
+  nx_err="$(mktemp)"
+  nx_out="$("$ORCH" issue next "$@" 2>"$nx_err")"; st=$?
+  nx_err_text="$(cat "$nx_err")"; rm -f "$nx_err"
+}
+nx_tab="$(printf '\t')"
+
+next_fixture
+next_issue 100 "Old phase" open ready-for-agent orch:spec
+next_issue 101 "Old done" open ready-for-agent orch:done
+next_issue 102 "Old sub" open ready-for-agent
+next_issue 103 "Old blocked" open ready-for-agent
+next_issue 104 "Old triage" open needs-triage
+next_issue 105 "Old closed" closed ready-for-agent
+next_issue 106 "The parent" open ready-for-agent
+next_issue 107 "Newer" open ready-for-agent
+next_issue 108 "Blocker" open needs-triage
+mkdir -p "$ORCH_GH_FAKE_STORE/subs" "$ORCH_GH_FAKE_STORE/blocked_by"
+printf "102\n" >"$ORCH_GH_FAKE_STORE/subs/106"
+printf "108\n" >"$ORCH_GH_FAKE_STORE/blocked_by/103"
+next_run
+assert_status "the oldest qualifying issue is printed" "$st" 0
+assert_eq "as number, tab, title - skipping phase labels, a sub-issue, an open blocker, other labels and closed issues; the parent qualifies" \
+  "$nx_out" "106${nx_tab}The parent"
+
+next_fixture
+next_issue 110 "Closed blocker" open ready-for-agent
+next_issue 111 "Blocker" closed needs-triage
+mkdir -p "$ORCH_GH_FAKE_STORE/blocked_by"; printf '111\n' >"$ORCH_GH_FAKE_STORE/blocked_by/110"
+next_run
+assert_eq "an issue whose only blocker is closed qualifies" "$nx_out" "110${nx_tab}Closed blocker"
+
+next_fixture
+next_issue 120 "No summary, open blocker" open ready-for-agent
+next_issue 121 "No summary, closed blocker" open ready-for-agent
+next_issue 122 "Open blocker" open needs-triage
+next_issue 123 "Closed blocker" closed needs-triage
+mkdir -p "$ORCH_GH_FAKE_STORE/blocked_by"
+printf '122\n' >"$ORCH_GH_FAKE_STORE/blocked_by/120"
+printf '123\n' >"$ORCH_GH_FAKE_STORE/blocked_by/121"
+fake_no_dependency_summary 120
+fake_no_dependency_summary 121
+next_run
+assert_eq "with no summary, an open listed blocker skips it and a closed one frees it" "$nx_out" "121${nx_tab}No summary, closed blocker"
+printf '' >"$ORCH_GH_FAKE_STORE/blocked_by/121"
+rm -f "$ORCH_GH_FAKE_STORE/blocked_by/120"
+next_run
+assert_eq "with no summary and no listed blocker, it is printed" "$nx_out" "120${nx_tab}No summary, open blocker"
+fake_fail adapter_blockers_states "$GH_502"
+next_run
+assert_status "a failed blocked-by listing exits 2" "$st" 2
+assert_eq "printing nothing on stdout" "$nx_out" ""
+assert_contains "with an orch: message" "$nx_err_text" "orch: gh could not read the blockers of issue #120: HTTP 502: Bad Gateway"
+fake_unfail
+
+next_fixture
+next_issue 130 "Review and human" open ready-for-agent needs-human review:high
+next_run
+assert_eq "needs-human and a review label do not stop it" "$nx_out" "130${nx_tab}Review and human"
+
+next_fixture
+next_issue 131 "Only triage" open needs-triage
+next_issue 132 "Only human" open ready-for-human
+next_run
+assert_status "nothing qualifies: exit 1" "$st" 1
+assert_eq "and nothing on stdout" "$nx_out" ""
+assert_eq "or on stderr" "$nx_err_text" ""
+
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `agent go`           | AFK-ready   |' >docs/agents/triage-labels.md
+next_issue 133 "Mapped" open "agent go"
+next_issue 134 "Default name" open ready-for-agent
+next_run
+assert_eq "a repo's mapped ready-for-agent name is honoured" "$nx_out" "133${nx_tab}Mapped"
+labels_doc docs/agents/triage-labels.md
+
+next_fixture
+next_issue 140 "Only" open ready-for-agent
+fake_fail adapter_issues_titled_rows "$GH_502"
+next_run
+assert_status "a failed listing exits 2" "$st" 2
+assert_eq "with nothing on stdout" "$nx_out" ""
+assert_contains "and an orch: message" "$nx_err_text" "orch: gh could not list the open issues labelled ready-for-agent: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_issue_parent "$GH_502"
+next_run
+assert_status "a failed parent read exits 2" "$st" 2
+assert_eq "with nothing on stdout" "$nx_out" ""
+assert_contains "and an orch: message" "$nx_err_text" "orch: gh could not read the parent of issue #140: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_issue_open_blockers "$GH_502"
+next_run
+assert_status "a failed blocker read exits 2" "$st" 2
+assert_eq "with nothing on stdout" "$nx_out" ""
+assert_contains "and an orch: message" "$nx_err_text" "orch: gh could not read the blockers of issue #140: HTTP 502: Bad Gateway"
+fake_unfail
+
+next_run extra
+assert_status "an argument is a usage error" "$st" 2
+assert_eq "with nothing on stdout" "$nx_out" ""
+assert_contains "and a usage line" "$nx_err_text" "usage: orch.sh issue next"
+
+next_fixture
+next_issue 150 "A" open ready-for-agent orch:plan
+next_issue 151 "B" open ready-for-agent orch:plan
+next_issue 152 "C" open ready-for-agent orch:plan
+ORCH_ISSUE_LIST_LIMIT=3 next_run
+assert_contains "a listing reaching the limit warns" "$nx_err_text" "reached the issue-list limit of 3"
+ORCH_ISSUE_LIST_LIMIT=4 next_run
+assert_not_contains "one a single issue below it does not" "$nx_err_text" "issue-list limit"
+
+assert_contains "help lists issue next" "$("$ORCH" help)" "issue next"
+assert_contains "the CLI conventions' noun table lists issue next" \
+  "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`next`'
+out="$("$ORCH" issue bogus 2>&1)"
+assert_contains "the unknown-op message lists next" "$out" "|next"
 restore_suite_env
