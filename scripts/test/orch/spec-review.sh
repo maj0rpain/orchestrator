@@ -1237,6 +1237,13 @@ chmod 644 "$top/.orchestrator/state.json"
 
 out="$("$ORCH" spec-review apply "$d" recommended --issue 14 2>&1)"; st=$?
 assert_status "--round is required" "$st" 1
+sra_rnd=1x/2 sra "$d" recommended
+assert_status "a malformed --round is refused" "$st" 1
+assert_contains "a malformed --round takes the shared wording" "$out" "want <k>/<n>, a round and the round count, two positive whole numbers, got: 1x/2"
+sra_rnd=3/2 sra "$d" recommended
+assert_status "a round past the count is refused" "$st" 1
+assert_contains "a round past the count takes the shared wording" "$out" "round 3 is past the round count 2"
+unset sra_rnd
 assert_contains "help documents spec-review apply" "$("$ORCH" help)" "spec-review apply <dir> <answer>"
 rm -rf "$top/.orchestrator"
 
