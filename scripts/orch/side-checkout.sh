@@ -128,7 +128,7 @@ side_checkout_finished() {
   branch="$(checkout_branch "$path")" \
     || { verdict="no branch"; return 1; }
   base="$(recorded_base "$branch")"
-  capture raw err adapter_prs_merged "$branch" "$base" \
+  gh_capture raw err adapter_prs_merged "$branch" "$base" \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   prs="$(trust_filter_prs "$branch" <<<"$raw")" \
     || { verdict="could not read GitHub: the merged PRs from $branch into $base"; return 2; }

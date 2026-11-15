@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # gh.sh - the gh adapter layer (ADR-0033): gh(), the guard every GitHub call
 # goes through, the failure contract its callers die by (gh_reason, gh_die,
-# gh_or_die, verify_twice), every adapter_* operation, the out-variable
-# readers over the multi-field ones, and the JQ constants they read.
+# gh_or_die, verify_twice, gh_capture, gh_capture_err), every adapter_*
+# operation, the out-variable readers over the multi-field ones, and the JQ
+# constants they read.
 # It stays whole, whoever calls each operation, and ends with the
 # ORCH_GH_ADAPTER hook, so a test adapter overrides the real operations.
 # Its tests: scripts/test/orch/gh.sh.
@@ -10,12 +11,14 @@
 
 # The guard every GitHub call in orch.sh and its modules goes through by name
 # (#520): `gh` itself, defined ahead of the ORCH_GH_ADAPTER seam so a test
-# adapter picks it up. On first use it resolves the repo
-# and exports it as GH_REPO for the rest of the run - with GH_HOST beside it,
-# by repo_gh_host's one rule, whenever the repo itself decides its host - so
-# every later call - `gh api`'s
-# {owner}/{repo} placeholders and host included - is pinned to it, never to
-# gh's own default repo, which in a fork is the upstream. With no repo it dies
+# adapter picks it up. On use it resolves the repo and exports it as GH_REPO -
+# with GH_HOST beside it, by repo_gh_host's one rule, whenever the repo itself
+# decides its host - so the call - `gh api`'s {owner}/{repo} placeholders and
+# host included - is pinned to it, never to gh's own default repo, which in a
+# fork is the upstream. That export, like the memo, lives in the shell the
+# guard runs in: a process whose calls start from its main shell resolves once,
+# but a subshell that resolves first (a whole command run under a capture)
+# resolves once for itself and cannot hand the memo back. With no repo it dies
 # naming GH_REPO; that death exits 1 whatever the command reserved, so a command
 # that reserves exit 1 for a "no" resolves the repo itself first (repo_pin, then
 # die2 with REPO_REMEDY). Inside a command substitution `die` would end only
@@ -41,6 +44,24 @@ gh() {
     die "$REPO_REMEDY"
   fi
   gh_limit_retry command gh "$@"
+}
+
+# gh_capture <out-var> <err-var> <command...> and gh_capture_err <err-var>
+# <command...>: capture and capture_err for a GitHub operation - an adapter_*
+# operation or gh itself. Each runs the memoising resolver (repo_resolve) in the
+# caller's shell first, ignoring its status, so the Repo is resolved once for
+# the shell that calls it, rather than once per subshell the call runs in; a
+# failed resolution is left to the guard, which dies with the remedy as it
+# always did.
+# Defined ahead of the ORCH_GH_ADAPTER seam. A command that is not a GitHub
+# operation goes through capture or capture_err.
+gh_capture() {
+  repo_resolve || :
+  capture "$@"
+}
+gh_capture_err() {
+  repo_resolve || :
+  capture_err "$@"
 }
 
 # gh_limit_retry <command>...: runs <command>, its stdout and stderr held in
@@ -112,6 +133,7 @@ gh_limit_pools() {
 # read of the pools, 15 minutes from now.
 gh_limit_reset() {
   local pools reset
+  repo_resolve || :
   pools="$(gh_limit_pools)" || pools=""
   reset="$(awk '$2 == 0 && $4 + 0 > m { m = $4 + 0 } END { if (m) print m }' <<<"$pools")"
   printf '%s\n' "${reset:-$(($(date +%s) + 900))}"
@@ -192,7 +214,8 @@ gh_die() {
 }
 
 # gh_or_die [--exit 2] [--hint <text>] [--out <var> | --file <path>] <what>
-# <op> [args...]: runs the operation through capture/capture_err - so in their
+# <op> [args...]: resolves the Repo in the caller's shell, then runs the
+# operation through gh_capture/gh_capture_err - so in their
 # subshell, and the gh guard's no-repo death still reaches the real stderr -
 # and on failure dies through gh_die with the same --exit and --hint. Those
 # are checked through die_opt_check before the operation runs, so a bad one
@@ -230,19 +253,19 @@ gh_or_die() {
   fi
   [ $# -ge 2 ] || die "gh_or_die: needs <what> and an operation"
   if [ -n "$_gh_or_die_out" ]; then
-    capture _gh_or_die_text _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
+    gh_capture _gh_or_die_text _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
     [ "$_gh_or_die_st" -ne 0 ] || printf -v "$_gh_or_die_out" '%s' "$_gh_or_die_text"
   elif [ -n "$_gh_or_die_file" ]; then
     mkdir -p "$(dirname "$_gh_or_die_file")"
     _gh_or_die_tmp="$(mktemp "$_gh_or_die_file.XXXXXX")" || die "could not create a temp file beside $_gh_or_die_file"
-    if capture_err _gh_or_die_err "${@:2}" >"$_gh_or_die_tmp"; then
+    if gh_capture_err _gh_or_die_err "${@:2}" >"$_gh_or_die_tmp"; then
       mv "$_gh_or_die_tmp" "$_gh_or_die_file"
     else
       _gh_or_die_st=$?
       rm -f "$_gh_or_die_tmp"
     fi
   else
-    capture_err _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
+    gh_capture_err _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
   fi
   [ "$_gh_or_die_st" -ne 0 ] || return 0
   gh_die ${_gh_or_die_die_opts[@]+"${_gh_or_die_die_opts[@]}"} "$1" "$_gh_or_die_err"
@@ -472,7 +495,7 @@ adapter_issue_state_labels() {
 # variable name is shadowed.
 gh_lines_read() {
   local __glr_out __glr_err
-  if ! capture __glr_out __glr_err "$1" "$2"; then
+  if ! gh_capture __glr_out __glr_err "$1" "$2"; then
     printf -v "$3" '%s' "$__glr_err"
     return 1
   fi
@@ -603,7 +626,7 @@ issues_labelled_limit_warn() {
 # failed read, warning nothing: the caller words the failure from <err_var>.
 issues_labelled_read() {
   local __ilr_out __ilr_err __ilr_n=0
-  if ! capture __ilr_out __ilr_err adapter_issues_labelled "${@:3}"; then
+  if ! gh_capture __ilr_out __ilr_err adapter_issues_labelled "${@:3}"; then
     printf -v "$2" '%s' "$__ilr_err"
     return 1
   fi
@@ -657,7 +680,7 @@ issues_labelled_bodies_read() {
   local __ilbr_j __ilbr_record_labels __ilbr_body __ilbr_k __ilbr_r
   local __ilbr_bad="gh answered a listing that does not parse"
   local __ilbr_whole='^[0-9]+$'
-  if ! capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
+  if ! gh_capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
     printf -v "$4" '%s' "$__ilbr_err"
     return 1
   fi
@@ -1134,7 +1157,7 @@ adapter_auth_status() {
 adapter_pr_checks() {
   local args=("$1") err out tsv st=0
   [ "$2" != required ] || args+=(--required)
-  capture out err gh pr checks "${args[@]}" --json bucket,name,link || st=$?
+  gh_capture out err gh pr checks "${args[@]}" --json bucket,name,link || st=$?
   case "$st" in
     0|8) ;;
     *)
@@ -1161,7 +1184,7 @@ adapter_pr_checks() {
 # CI-evidence operations below; not called from anywhere else.
 ci_api_read() {
   local err out res st=0
-  capture out err gh api "$2" || st=$?
+  gh_capture out err gh api "$2" || st=$?
   if [ "$st" != 0 ]; then
     if [ -n "$1" ] && grep -qF -- "$1" <<<"$out"$'\n'"$err"; then
       return 0
