@@ -176,6 +176,7 @@ main() {
     audit)         cmd_audit "$@" ;;
     autopilot)     cmd_autopilot "$@" ;;
     parallel)      cmd_parallel "$@" ;;
+    route)         cmd_route "$@" ;;
     repo)          cmd_repo "$@" ;;
     init)          cmd_init "$@" ;;
     slug)          cmd_slug "$@" ;;

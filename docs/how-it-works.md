@@ -657,3 +657,9 @@ changing. The guard does not arm on Junie (ADR-0025): there the planning
 message and the snippet's standing planning section steer planning away from
 source edits, and `orch.sh init`'s working-tree check catches any at flow
 start.
+
+### Default route
+
+| Command | What it does |
+| --- | --- |
+| `orch.sh route show` | Print the default route, `flow`, `quick`, `blueprint` or `autopilot`, from the git config key `orchestrator.route`, the clone's local value first, then the user's global one, or `none` when it is unset or empty; any other value is refused, naming the key, the value and the four words. Set it with `git config [--global] orchestrator.route <route>`. |

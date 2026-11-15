@@ -125,6 +125,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
+  route show                  print the default route, flow, quick, blueprint
+                              or autopilot: git config orchestrator.route,
+                              the clone's value before the user's global one,
+                              or none when unset or empty. Dies naming the key
+                              and value when it is none of the four
   autopilot settings          print the autopilot setting names, one per
                               line, in the order autopilot show lists them;
                               reads no config and validates nothing
