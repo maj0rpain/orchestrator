@@ -11,9 +11,16 @@
 # Its tests: scripts/test/orch/trust.sh.
 # Sourced by orch.sh, after common.sh.
 
-# The associations of a trusted author, as a JSON array - the one list the
-# comment filter and the issue check share.
-TRUST_ASSOCIATIONS_JSON='["OWNER", "MEMBER", "COLLABORATOR"]'
+# The associations of a trusted author, as space-separated words - the one list
+# the comment filter and the issue check share. The filter's JSON array is built
+# from it here, as the module loads, starting no process.
+TRUST_ASSOCIATIONS="OWNER MEMBER COLLABORATOR"
+_trust_items=""
+for _trust_a in $TRUST_ASSOCIATIONS; do
+  _trust_items="${_trust_items:+$_trust_items, }\"$_trust_a\""
+done
+TRUST_ASSOCIATIONS_JSON="[$_trust_items]"
+unset _trust_a _trust_items
 
 # trust_filter_comments <issue>: the comments JSON array on stdin, each comment
 # carrying its authorAssociation, on stdout without the untrusted ones. When it
@@ -82,17 +89,13 @@ TRUST_REASON=""
 # body", whichever they last wrote. Returns 2 when the read fails, setting
 # TRUST_REASON to gh's reason: a failed read is never trusted.
 trust_issue_check() {
-  local author assoc editor renamer err trusted body_ok title_ok
+  local author assoc editor renamer err body_ok title_ok
   TRUST_WRITER="" TRUST_WHAT="" TRUST_REASON=""
   trust_issue_read "$1" author assoc editor renamer err || {
     TRUST_REASON="$(gh_reason "$err")"
     return 2
   }
-  trusted="$(jq -rn --arg a "$assoc" --argjson t "$TRUST_ASSOCIATIONS_JSON" '$a | IN($t[])')" || {
-    TRUST_REASON="the trusted associations could not be read"
-    return 2
-  }
-  [ "$trusted" != true ] || return 0
+  ! word_listed "$TRUST_ASSOCIATIONS" "$assoc" || return 0
   body_ok=""
   title_ok=""
   if [ -n "$editor" ] && [ "$editor" != "$author" ]; then body_ok=1; fi

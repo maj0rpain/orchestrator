@@ -101,8 +101,9 @@ cmd_init() {
   # written, so a build that fails leaves the previous state untouched. The
   # Flow state module builds it from its key table; for base, see the header
   # of base_set_flow.
-  local seed
-  seed="$(flow_state_seed "$slug" "$issue" "$(base_branch)")" \
+  local seed seed_base
+  base_branch_into seed_base
+  seed="$(flow_state_seed "$slug" "$issue" "$seed_base")" \
     || die "could not build the state seed - nothing was written"
   # archive_flow, not cmd_archive: in a side checkout the old flow moves to the
   # main checkout's archive, but the worktree stays - the new flow lives here.

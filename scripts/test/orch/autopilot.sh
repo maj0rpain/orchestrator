@@ -2128,6 +2128,33 @@ assert_eq "a drifted description is updated" "$(fake_labels | awk -F '\t' '$1=="
 seed_autopilot_labels orch:sync
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a missing label is created" "$(fake_labels | awk -F '\t' '$1=="orch:sync"{print $2}')" "0075ca"
+
+# the label check starts one awk whatever the repo's label count
+al_wrap="$(counting_bin awk)"
+al_starts() {
+  : >"$al_wrap/awk.log"
+  PATH="$al_wrap:$PATH" sourced_orch autopilot_labels_ensure >/dev/null 2>&1
+  counting_starts "$al_wrap" awk
+}
+fake_label_names
+seed_autopilot_labels
+al_short="$(al_starts)"
+for al_n in $(seq 1 300); do fake_label "repo-label-$al_n" ededed "filler"; done
+al_long="$(al_starts)"
+assert_eq "the label check starts as many awks for 300 more repo labels as for none" "$al_long" "$al_short"
+
+# a failed comparison upserts every standing label
+fake_label_names
+al_fail="$(fails_bin awk '*FILENAME*')"
+PATH="$al_fail:$PATH" sourced_orch autopilot_labels_ensure >/dev/null 2>&1; st=$?
+assert_status "a failed comparison does not stop the check" "$st" 0
+al_missing=0
+al_have=$'\n'"$(fake_labels)"
+while IFS='|' read -r al_name _; do
+  [ -n "$al_name" ] || continue
+  [[ "$al_have" == *$'\n'"$al_name"$'\t'* ]] || al_missing=$((al_missing + 1))
+done <<<"$(sourced_orch standing_label_entries)"
+assert_eq "after a failed awk the repo holds every standing label" "$al_missing" "0"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick and run: sync requests -----------------------------------

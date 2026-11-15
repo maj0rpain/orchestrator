@@ -49,7 +49,7 @@ is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 # `merged_prs`: the merged PR's number, a tab, its head SHA - the one line
 # side_checkout_finished judges the branch tip against.
 finished_flow() {
-  local state="$1" phase slug pr base_raw base pr_state _is_draft shown_state merged_head _head_ref merged_base _commits err
+  local state="$1" phase slug pr base_raw base pr_state _is_draft shown_state merged_head _head_ref merged_base err
   state_get_many_in "$state" phase=phase slug=slug branch=branch pr=pr base_raw=base \
     || { verdict="could not read $state"; return 2; }
   if [ "$phase" != "done" ]; then
@@ -57,15 +57,14 @@ finished_flow() {
   fi
   [ -n "$branch" ] || { verdict="no branch"; return 1; }
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
-  base="$(flow_base_fallback "$base_raw")" \
-    || { verdict="could not read the base branch from $state"; return 2; }
+  flow_base_fallback_into base "$base_raw"
   pr_state_draft_read "$pr" pr_state _is_draft err \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   if [ "$pr_state" != MERGED ]; then
     state_word shown_state "$pr_state"
     verdict="PR #$pr is $shown_state"; return 1
   fi
-  pr_refs_read "$pr" merged_head _head_ref merged_base _commits err \
+  pr_refs_read "$pr" merged_head _head_ref merged_base err \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
   # shellcheck disable=SC2034 # read by side_checkout_finished
@@ -108,8 +107,8 @@ tip_covered() {
 # side_checkout_finished <path>: whether the side checkout there is finished -
 # a clean tree, and either a finished flow, or no flow and a PR merged from
 # its checked-out branch into the base branch off recorded for it (see
-# recorded_base) - and the branch's tip held by a merged PR (tip_covered), so
-# the sweep's branch -D never drops a commit. A git status that cannot run
+# recorded_base_into) - and the branch's tip held by a merged PR (tip_covered),
+# so the sweep's branch -D never drops a commit. A git status that cannot run
 # returns 2, as an unreadable GitHub does, so the sweep removes nothing on a
 # tree it could not read.
 # verdict is read by its callers, side-checkout prune, below, and
@@ -127,7 +126,7 @@ side_checkout_finished() {
   fi
   branch="$(checkout_branch "$path")" \
     || { verdict="no branch"; return 1; }
-  base="$(recorded_base "$branch")"
+  recorded_base_into base "$branch"
   gh_capture raw err adapter_prs_merged "$branch" "$base" \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   prs="$(trust_filter_prs "$branch" <<<"$raw")" \
@@ -186,7 +185,7 @@ side_checkout_refuse_ticket_worktrees() {
 # archives what is left into a fresh directory. There is no rollback.
 archive_flow() {
   local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" state slug dest entry kept i
-  local entries=() moved
+  local entries=() moved base
   state="$(flow_state_file "$root")"
   side_checkout_refuse_ticket_worktrees "$root"
   # A state.json that does not parse still archives - abort is the remedy for
@@ -196,8 +195,9 @@ archive_flow() {
   mkdir -p "$dest" 2>/dev/null || die "could not create the archive directory $dest - nothing was archived"
   for entry in "$orch"/*; do
     [ -e "$entry" ] || continue
+    path_last_into base "$entry"
     for kept in "${FLOW_LESS_ENTRIES[@]}"; do
-      [ "$(basename "$entry")" = "$kept" ] && continue 2
+      [ "$base" = "$kept" ] && continue 2
     done
     [ "$entry" = "$state" ] || entries+=("$entry")
   done
@@ -270,27 +270,48 @@ side_checkout_archive_and_remove_or_exit() {
 # checkout at <main-root> live.
 side_checkouts_dir() { printf '%s/%s/checkouts\n' "$1" "$ORCH_DIR_NAME"; }
 
+# side_checkout_marker_issue_into <var> <path>: sets <var> to the issue the
+# marker of the worktree at <path> records. It classifies nothing: it TRUSTS
+# its caller to hold <path> as a side checkout already (a walk row of kind
+# side), so a loop over the walk shares it instead of re-deriving the kind.
+# Returns 1, <var> untouched and nothing printed, when the worktree carries no
+# marker, the marker is empty, or its content - the whole file, trailing
+# newlines dropped, judged as one value - is no plain issue number (a marker of
+# more than one line or holding a NUL byte included). For a readable git
+# pointer it starts no external command and no subshell.
+side_checkout_marker_issue_into() {
+  local _sm_gd _sm_val=""
+  checkout_gitdir_into _sm_gd "$2" || return 1
+  side_checkout_marked "$_sm_gd" || return 1
+  # read -d '' returns 0 only when it met a NUL byte: such a marker cannot be
+  # read to its end and records no issue.
+  if IFS= read -r -d '' _sm_val 2>/dev/null <"$_sm_gd/$SIDE_CHECKOUT_MARKER"; then return 1; fi
+  while [ "${_sm_val: -1}" = $'\n' ]; do _sm_val="${_sm_val%?}"; done
+  case "$_sm_val" in ''|*[!0-9]*) return 1 ;; esac
+  printf -v "$1" '%s' "$_sm_val"
+}
+
 # side_checkout_issue <path>: prints the issue the side checkout at <path>
-# records in its marker; returns 1 when it is no side checkout - a ticket
-# worktree carrying a copied marker included, checked before the marker is
-# read - or its marker holds no plain issue number.
+# records in its marker. It CLASSIFIES first, for a caller whose path nothing
+# has classified: returns 1 when the checkout holding <path> is no side
+# checkout - a ticket worktree carrying a copied marker included, checked
+# before the marker is read - or its marker holds no plain issue number (the
+# read is side_checkout_marker_issue_into's).
 side_checkout_issue() {
-  local marker issue
+  local issue
   is_side_checkout "$1" || return 1
-  marker="$(side_checkout_marker "$1")" || return 1
-  issue="$(cat "$marker" 2>/dev/null)" || return 1
-  case "$issue" in ''|*[!0-9]*) return 1 ;; esac
+  side_checkout_marker_issue_into issue "$1" || return 1
   printf '%s\n' "$issue"
 }
 
 # side_checkout_for_issue <issue>: prints the path of the side checkout
 # whose marker records <issue>; returns 1 when there is none.
 side_checkout_for_issue() {
-  local list kind _flow _branch path
+  local list kind _flow _branch path recorded
   list="$(checkouts)" || return 1
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] || continue
-    if [ "$(side_checkout_issue "$path" 2>/dev/null)" = "$1" ]; then printf '%s\n' "$path"; return 0; fi
+    if side_checkout_marker_issue_into recorded "$path" && [ "$recorded" = "$1" ]; then printf '%s\n' "$path"; return 0; fi
   done <<<"$list"
   return 1
 }
@@ -324,6 +345,11 @@ cmd_side_checkout_add() {
   for mod in base branch checkout gh repo; do orch_load "$mod"; done
   slug="$(normalize_slug "$slug")"
   main_root="$(main_checkout_or_die)" || exit $?
+  # The base is read before the sweep: the sweep runs in a subshell, whose memo
+  # of the default branch dies with it, so a read below it would ask GitHub a
+  # second time when the sweep needed the default. Read here, the subshell
+  # inherits the memo.
+  base_branch_into base
   # The sweep first, its report on stderr so stdout stays the path alone. A
   # failed sweep never stops add; it may have removed the checkout this ran
   # in, so add carries on from the main checkout.
@@ -333,7 +359,6 @@ cmd_side_checkout_add() {
   path="$(side_checkouts_dir "$main_root")/$slug"
   [ ! -e "$path" ] || die "side checkout $path already exists"
   exclude_orch_dirs
-  base="$(base_branch)"
   git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch base branch $base from origin - no side checkout was made"
   git worktree add -q --detach "$path" "refs/remotes/origin/$base" \
@@ -360,7 +385,8 @@ cmd_side_checkout_list() {
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] || continue
     quick=""
-    if issue="$(side_checkout_issue "$path")"; then quick=" quick #$issue"; fi
+    issue=""
+    if side_checkout_marker_issue_into issue "$path"; then quick=" quick #$issue"; fi
     note "${path##*/} $path $(checkout_holding "$path")$quick"
   done <<<"$list"
 }
@@ -462,9 +488,6 @@ cmd_side_checkout_prune() {
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"
-  # The verdicts and the merged-PR closes each read the default branch: ask
-  # GitHub once here, in this shell, so every $(default_branch) inherits it.
-  default_branch_resolve
   for line in "${walk[@]}"; do
     read -r kind flow _branch path <<<"$line"
     rc=0; verdict=""; branch=""

@@ -354,11 +354,12 @@ plan or from what the previous loop left instead of asking.
    **Suite cost.** Once per iteration, before giving any disposition, run
 
    ```
-   bash "$ORCH" suite-cost check -- <verification command>
+   bash "$ORCH" suite-cost check -- '<verification command>'
    ```
 
    with the verification command from **Before the first iteration**, step
-   2. Run it in the foreground and wait for it (host capability *Run a long
+   2, passed as one quoted argument so a chained line runs in full. Run it in
+   the foreground and wait for it (host capability *Run a long
    command*); never background it and sleep, poll or kill it. A `check` the host
    moves to the background at its timeout is still waited for, as that row says.
    It prints one verdict line. `grew <pct> - <finding text>` is a finding
