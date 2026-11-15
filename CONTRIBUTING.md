@@ -192,9 +192,18 @@ over the real tree; its failure names the file, the function or `top level`,
 and the variable.
 When a command's load trace shows a module more than once, it was loaded in
 subshells (a command substitution, a pipeline): load it with `orch_load` in
-the main shell before the subshell that needs it, at the command's entry or
-before the shared loop, as `status` and `doctor` do. The shared test assertion
-`assert_loads_once <label> <cmd>...` checks a command's trace for it.
+the main shell before the first subshell that needs it. The load sits at the
+command's entry for a module every run reaches, or before the shared loop, as
+`status` and `doctor` do; inside the one op, branch or function that has the
+need, as a doctor check does, so a run that never reaches it loads nothing
+more (`phase boundary` loads no `autopilot`); and, where that branch itself
+runs inside a subshell, in the main shell behind a guard that tests the same
+condition, as `phase advance` does for `gh`:
+`if autopilot_active; then orch_load gh; fi`.
+The shared test assertion `assert_loads_once <label> <cmd>...` checks a
+command's trace for it, `assert_trace_loads_once` a trace an existing run
+wrote; `assert_trace_names_no <label> <trace> <module>...` (in phase.sh until a
+second file uses it) asserts a trace names none of the given modules.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs

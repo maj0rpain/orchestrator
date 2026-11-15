@@ -53,10 +53,17 @@ phase_finish() {
 cmd_phase() {
   local op="${1:-}"
   shift || true
+  # handoff is read in command substitutions by both ops: load it here, once,
+  # in the main shell, not once per subshell.
+  orch_load handoff
   case "$op" in
     advance)
       [ $# -eq 0 ] || die "usage: orch.sh phase advance"
       require_state
+      # autopilot is first reached inside the handoff store's command
+      # substitution; gh only by an autopilot session's branch below.
+      orch_load autopilot
+      if autopilot_active; then orch_load gh; orch_load repo; fi
       local phase next file name issue _unused
       phase="$(state_get phase)"
       # The guards run in this order; past them, the next phase is the phase
