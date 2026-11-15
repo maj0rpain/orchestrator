@@ -564,6 +564,7 @@ for rv in "issue|no issue recorded in state - the spec phase must publish one fi
   assert_eq "with its message" "$out" "orch: $rv_msg"
   out="$(sourced_orch require_value "$rv_key" "" die2 2>&1)"; st=$?
   assert_status "and through die2" "$st" 2
+  assert_eq "with its message through die2" "$out" "orch: $rv_msg"
 done
 out="$(sourced_orch require_value issue 7 2>&1)"; st=$?
 assert_status "require_value passes a non-empty value" "$st" 0
@@ -576,26 +577,25 @@ assert_eq "with its own message" "$out" "orch: no issue recorded in state - the 
 assert_eq "after one jq" "$(counting_starts "$rs_jq" jq)" "1"
 out="$(sourced_orch_script 'require_issue v die2' 2>&1)"; st=$?
 assert_status "require_issue through die2 exits 2" "$st" 2
+assert_eq "with its own message through die2" "$out" "orch: no issue recorded in state - the spec phase must publish one first"
 "$ORCH" state set issue 7 >/dev/null
 out="$(sourced_orch_script 'require_issue v; echo "$v"' 2>&1)"
 assert_eq "require_issue assigns the issue" "$out" "7"
-out="$(sourced_orch state_get_in "$rs_file" issue 2>&1)"
+: >"$rs_jq/jq.log"
+out="$(PATH="$rs_jq:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"
 assert_eq "state_get_in reads a key" "$out" "7"
+assert_eq "state_get_in starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
 rs_nomktemp="$(mktemp -d)"
 writeln '#!/bin/sh' 'exit 1' >"$rs_nomktemp/mktemp"
 chmod +x "$rs_nomktemp/mktemp"
 out="$(PATH="$rs_nomktemp:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"; st=$?
 assert_status "state_get_in of a failed read on a readable file returns non-zero" "$st" 1
 assert_eq "printing nothing" "$out" ""
-: >"$rs_jq/jq.log"
-PATH="$rs_jq:$PATH" sourced_orch state_get_in "$rs_file" issue >/dev/null
-assert_eq "state_get_in starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
 out="$(sourced_orch flow_holding_phase nobranch 2>&1)"; st=$?
 assert_status "flow_holding_phase of a branch the flow does not hold returns 1" "$st" 1
-out="$(sourced_orch flow_holding_phase nobranch 7 2>&1)"; st=$?
-assert_eq "flow_holding_phase of a held issue prints the phase" "$out" "spec"
 : >"$rs_jq/jq.log"
-PATH="$rs_jq:$PATH" sourced_orch flow_holding_phase nobranch 7 >/dev/null
+out="$(PATH="$rs_jq:$PATH" sourced_orch flow_holding_phase nobranch 7 2>&1)"; st=$?
+assert_eq "flow_holding_phase of a held issue prints the phase" "$out" "spec"
 assert_eq "flow_holding_phase starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
 state_fixture branch orch/held-branch
 : >"$rs_jq/jq.log"

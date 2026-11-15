@@ -833,12 +833,11 @@ assert_contains "naming it no plugin-made branch" "$out" "main"
 assert_eq "moving nothing (base branch)" "$(git rev-parse HEAD)" "$before_main"
 
 git checkout -q -b feature/hand-made
-out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+bs_jq="$(counting_bin jq)"
+out="$(PATH="$bs_jq:$PATH" orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "refuses a branch with no recorded base" "$st" 1
 assert_eq "moving nothing (no recorded base)" "$(git rev-parse HEAD)" "$before_main"
 assert_eq "and recording no base SHA" "$(bs_sha)" ""
-bs_jq="$(counting_bin jq)"
-PATH="$bs_jq:$PATH" orch_gh_failing branch sync >/dev/null 2>&1
 assert_eq "branch sync on a branch the flow does not hold starts exactly one jq" "$(counting_starts "$bs_jq" jq)" "1"
 git config orchestrator.base main
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
@@ -1123,10 +1122,9 @@ assert_eq "leaving base_sha as it was" "$(orch_gh_failing state get base_sha)" "
 assert_eq "and the branch's recorded base SHA" \
   "$(git config --get branch.orch/15-again.orchestrator-base-sha)" "moved-marker"
 assert_eq "and its recorded base" "$(base_key orch/15-again)" "$(orch_gh_failing state get base)"
-out="$(orch_gh_failing branch create 2>&1)"; st=$?
-assert_status "branch create on the flow's branch while on it succeeds" "$st" 0
 bc_jq="$(counting_bin jq)"
-PATH="$bc_jq:$PATH" orch_gh_failing branch create >/dev/null 2>&1
+out="$(PATH="$bc_jq:$PATH" orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on the flow's branch while on it succeeds" "$st" 0
 assert_eq "a restart with the branch made and checked out starts exactly one jq" "$(counting_starts "$bc_jq" jq)" "1"
 
 
