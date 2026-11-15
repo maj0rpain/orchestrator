@@ -137,12 +137,14 @@ audit_fields_split() {
 # `@@ finding <k>` block's text under the key <name>:<k>. Returns 1 when there
 # is no such file.
 audit_area_load() {
-  local file="$1/$2.md" line k=""
+  local file="$1/$2.md" line k="" ln=0
   [ -f "$file" ] || return 1
   while IFS= read -r line || [ -n "$line" ]; do
+    ln=$((ln + 1))
     if [[ $line =~ ^@@[[:space:]]+finding[[:space:]]+([0-9]+)[[:space:]]*$ ]]; then
       k="${BASH_REMATCH[1]}"
       AUDIT_AB["$2:$k"]=""
+      AUDIT_ABL["$2:$k"]=$((ln + 1))
     elif [[ $line == '@@'* ]]; then
       k=""
     elif [ -n "$k" ]; then
@@ -197,8 +199,8 @@ audit_ranked_sections() {
 # order and without repeats, unless the block restates Location:.
 audit_finding_resolve() {
   local n="$1" i k label value from="" from_ln src first="" locs="" restated="" sources area kn
-  local locline loc
-  local rl=() rv=()
+  local locline loc lw lk
+  local rl=() rv=() rw=()
   audit_fields_split "$2" "$3"
   for i in "${!AUDIT_FL[@]}"; do
     if [ "${AUDIT_FL[i]}" = From ]; then
@@ -206,11 +208,11 @@ audit_finding_resolve() {
       from="${AUDIT_FV[i]}" from_ln="${AUDIT_FN[i]}"
       [ -n "$from" ] || die "ranked.md line $from_ln: From: names no source"
     else
-      rl+=("${AUDIT_FL[i]}") rv+=("${AUDIT_FV[i]}")
+      rl+=("${AUDIT_FL[i]}") rv+=("${AUDIT_FV[i]}") rw+=("ranked.md line ${AUDIT_FN[i]}")
       [ "${AUDIT_FL[i]}" != Location ] || restated=1
     fi
   done
-  local bl=() bv=() sl
+  local bl=() bv=() bw=() sl
   if [ -n "$from" ]; then
     audit_list_split sources "$from"
     while IFS= read -r src; do
@@ -226,20 +228,32 @@ audit_finding_resolve() {
         || die "ranked.md line $from_ln: From: $src names $area.md, which is not in the run directory"
       [ "${AUDIT_AB[$src]+set}" = set ] \
         || die "ranked.md line $from_ln: From: $src names finding $kn, which $area.md lacks"
-      audit_fields_split "${AUDIT_AB[$src]}" 1
+      audit_fields_split "${AUDIT_AB[$src]}" "${AUDIT_ABL[$src]}"
       if [ -z "$first" ]; then
         first=1
         bl=("${AUDIT_FL[@]}") bv=("${AUDIT_FV[@]}")
+        for i in "${!AUDIT_FL[@]}"; do bw[i]="$area.md line ${AUDIT_FN[i]}"; done
       fi
       for i in "${!AUDIT_FL[@]}"; do
         [ "${AUDIT_FL[i]}" != Location ] || locs+="${AUDIT_FV[i]},"
+        [ "${AUDIT_FL[i]}" = Location ] && [ -z "$restated" ] || continue
+        audit_list_split lw "${AUDIT_FV[i]}"
+        while IFS= read -r loc; do
+          [ -n "$loc" ] || continue
+          lk="$n:loc:$loc"
+          [ -n "${AUDIT_FWHERE[$lk]:-}" ] || AUDIT_FWHERE["$lk"]="$area.md line ${AUDIT_FN[i]}"
+        done <<<"$lw"
       done
     done <<<"$sources"
   fi
   for i in "${!rl[@]}"; do
     label="${rl[i]}" value="${rv[i]}"
     k="$(array_index bl "$label")"
-    if [ -n "$k" ]; then bv[k]="$value"; else bl+=("$label") bv+=("$value"); fi
+    if [ -n "$k" ]; then
+      bv[k]="$value" bw[k]="${rw[i]}"
+    else
+      bl+=("$label") bv+=("$value") bw+=("${rw[i]}")
+    fi
   done
   if [ -z "$restated" ] && [ -n "$locs" ]; then
     audit_list_split sl "$locs"
@@ -250,10 +264,13 @@ audit_finding_resolve() {
     done <<<"$sl"
     locline="${locline//$'\n'/, }"
     k="$(array_index bl Location)"
-    if [ -n "$k" ]; then bv[k]="$locline"; else bl+=(Location) bv+=("$locline"); fi
+    if [ -n "$k" ]; then bv[k]="$locline"; else bl+=(Location) bv+=("$locline") bw+=("ranked.md line $from_ln"); fi
   fi
   AUDIT_FIELDS[n]=""
-  for i in "${!bl[@]}"; do AUDIT_FIELDS[n]+="${bl[i]}$AUDIT_US${bv[i]}$AUDIT_RS"; done
+  for i in "${!bl[@]}"; do
+    AUDIT_FIELDS[n]+="${bl[i]}$AUDIT_US${bv[i]}$AUDIT_RS"
+    AUDIT_FWHERE["$n:${bl[i]}"]="${bw[i]}"
+  done
 }
 
 # audit_field_get <n> <label> <var>: resolved finding <n>'s field <label> into
@@ -271,38 +288,67 @@ audit_field_get() {
   return 1
 }
 
+# audit_where <n> <label> <block line> <var>: where resolved finding <n>'s field
+# <label> was written, as `<file> line <k>`, into <var>: the ranked file or the
+# area file the value came from. Falls back to the block's own line.
+audit_where() {
+  local w="${AUDIT_FWHERE["$1:$2"]:-}"
+  [ -n "$w" ] || w="ranked.md line $3"
+  printf -v "$4" '%s' "$w"
+}
+
 # audit_ref_find <text> <phrase_var> <line_var>: looks in <text>, outside
 # inline backtick spans and fenced blocks and without regard to letter case, for
 # a reference to a report's numbering: finding, findings, candidate or
 # candidates followed by a number (an optional # before it), or "this report".
-# Returns 0 with the phrase as written in <phrase_var> and its 1-based line in
-# <line_var>; returns 1 when there is none. "the report" is not one.
+# A paragraph's lines read as one, as the report and the issue body show them,
+# so a reference split by a line wrap is found too. Returns 0 with the phrase
+# as written in <phrase_var> and the 1-based line it starts on in <line_var>;
+# returns 1 when there is none. "the report" is not one.
 audit_ref_find() {
-  local line plain low rest ln=0 fence="" pre bt='`'
+  local line low rest ln=0 fence="" pre bt='`' para="" pos i at span pad
   local hash="#" re
+  local -a starts=() lns=()
   re="(^|[^a-z0-9_])((findings?|candidates?)[[:space:]]+${hash}?[0-9]+|this[[:space:]]+report)(\$|[^a-z0-9_])"
   while IFS= read -r line || [ -n "$line" ]; do
     ln=$((ln + 1))
-    if [[ $line == "$AUDIT_FENCE"* ]]; then
-      if [ -n "$fence" ]; then fence=""; else fence=1; fi
+    if [[ $line == "$AUDIT_FENCE"* ]] || [[ -z ${line//[[:space:]]/} ]]; then
+      if [ -n "$para" ]; then
+        # an inline span, which may wrap, is blanked to as many spaces
+        rest="$para" low=""
+        while [[ $rest == *"$bt"*"$bt"* ]]; do
+          low+="${rest%%"$bt"*}"
+          rest="${rest#*"$bt"}"
+          span="${rest%%"$bt"*}"
+          printf -v pad '%*s' $((${#span} + 2)) ''
+          low+="$pad"
+          rest="${rest#*"$bt"}"
+        done
+        low="${low}${rest}"
+        low="${low,,}"
+        if [[ $low =~ $re ]]; then
+          pre="${low%%"${BASH_REMATCH[0]}"*}"
+          pos=$((${#pre} + ${#BASH_REMATCH[1]}))
+          printf -v "$2" '%s' "${para:pos:${#BASH_REMATCH[2]}}"
+          for i in "${!starts[@]}"; do
+            [ "${starts[i]}" -le "$pos" ] || break
+            at="${lns[i]}"
+          done
+          printf -v "$3" '%s' "$at"
+          return 0
+        fi
+        para="" starts=() lns=()
+      fi
+      if [[ $line == "$AUDIT_FENCE"* ]]; then
+        if [ -n "$fence" ]; then fence=""; else fence=1; fi
+      fi
       continue
     fi
     [ -z "$fence" ] || continue
-    rest="$line" plain=""
-    while [[ $rest == *"$bt"*"$bt"* ]]; do
-      plain+="${rest%%"$bt"*} "
-      rest="${rest#*"$bt"}"
-      rest="${rest#*"$bt"}"
-    done
-    plain+="$rest"
-    low="${plain,,}"
-    if [[ $low =~ $re ]]; then
-      pre="${low%%"${BASH_REMATCH[2]}"*}"
-      printf -v "$2" '%s' "${plain:${#pre}:${#BASH_REMATCH[2]}}"
-      printf -v "$3" '%s' "$ln"
-      return 0
-    fi
-  done <<<"$1"
+    if [ -n "$para" ]; then starts+=("$((${#para} + 1))"); else starts+=(0); fi
+    lns+=("$ln")
+    para+="${para:+ }$line"
+  done <<<"$1"$'\n'
   return 1
 }
 
@@ -313,9 +359,9 @@ audit_ref_find() {
 # per-finding arrays above. Dies on the first thing that does not hold.
 audit_ranked_read() {
   local dir="$1" key val arg i j n expect=0 scopes=0 areas=0 tops=0 nones=0 ln body
-  local over overs cat locfield locs loc title top_ln=0 other sorted
-  declare -gA AUDIT_AB AUDIT_AREA_SEEN
-  AUDIT_AB=() AUDIT_AREA_SEEN=()
+  local over overs cat locfield locs loc title top_ln=0 other sorted at
+  declare -gA AUDIT_AB AUDIT_ABL AUDIT_AREA_SEEN AUDIT_FWHERE
+  AUDIT_AB=() AUDIT_ABL=() AUDIT_AREA_SEEN=() AUDIT_FWHERE=()
   AUDIT_DIR="$dir" AUDIT_KIND="" AUDIT_COMMIT="" AUDIT_SCOPE="" AUDIT_AREAS="" AUDIT_NONE=""
   AUDIT_TOP="" AUDIT_TOP_TEXT="" AUDIT_NOTE_HEAD=() AUDIT_NOTE_TEXT=() AUDIT_COUNT=0
   AUDIT_TITLE=() AUDIT_CATEGORY=() AUDIT_LOCS=() AUDIT_LINKS=() AUDIT_FIELDS=()
@@ -386,16 +432,19 @@ audit_ranked_read() {
     ln=$((starts[n] - 1))
     audit_finding_resolve "$n" "${bodies[n]}" "${starts[n]}"
     audit_field_get "$n" Title title || die "ranked.md line $ln: finding $n has no Title:"
-    [ -n "$title" ] && [[ $title != *$'\n'* ]] || die "ranked.md line $ln: finding $n's Title: is not one line"
+    audit_where "$n" Title "$ln" at
+    [ -n "$title" ] && [[ $title != *$'\n'* ]] || die "$at: finding $n's Title: is not one line"
     audit_field_get "$n" Category cat || die "ranked.md line $ln: finding $n has no Category:"
-    is_filed_category "$cat" || die "ranked.md line $ln: finding $n's Category: '$cat' is not one of $FILED_CATEGORIES"
+    audit_where "$n" Category "$ln" at
+    is_filed_category "$cat" || die "$at: finding $n's Category: '$cat' is not one of $FILED_CATEGORIES"
     audit_field_get "$n" Location locfield || die "ranked.md line $ln: finding $n has no Location:"
+    audit_where "$n" Location "$ln" at
     audit_list_split locs "$locfield"
-    [ -n "$locs" ] || die "ranked.md line $ln: finding $n has no location"
+    [ -n "$locs" ] || die "$at: finding $n has no location"
     while IFS= read -r loc; do
       [ -n "$loc" ] || continue
       finding_location_ok "$loc" \
-        || die "ranked.md line $ln: finding $n's location '$loc' is not <file>:<line> or <file>:<start>-<end>"
+        || die "${AUDIT_FWHERE["$n:loc:$loc"]:-$at}: finding $n's location '$loc' is not <file>:<line> or <file>:<start>-<end>"
     done <<<"$locs"
     local frest="${AUDIT_FIELDS[n]}" frec flabel fvalue fphrase fline
     while [ -n "$frest" ]; do
@@ -408,11 +457,12 @@ audit_ranked_read() {
     done
     AUDIT_TITLE[n]="$title" AUDIT_CATEGORY[n]="$cat" AUDIT_LOCS[n]="${locs%$'\n'}"
     if audit_field_get "$n" Overlaps over; then
+      audit_where "$n" Overlaps "$ln" at
       audit_list_split overs "$over"
       while IFS= read -r other; do
         [ -n "$other" ] || continue
         [[ $other =~ ^[0-9]+$ ]] && [ "$other" -ge 1 ] && [ "$other" -le "$AUDIT_COUNT" ] && [ "$other" -ne "$n" ] \
-          || die "ranked.md line $ln: finding $n overlaps '$other', which is not another finding of the file"
+          || die "$at: finding $n overlaps '$other', which is not another finding of the file"
         AUDIT_LINKS[n]+=" $other"
         AUDIT_LINKS[other]+=" $n"
       done <<<"$overs"

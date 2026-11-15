@@ -400,16 +400,28 @@ report_refuse "a ranked file with neither top nor none" "exactly one of @@ top a
 report_refuse "a finding gap" "expected @@ finding 2" 's/^@@ finding 2/@@ finding 3/'
 report_refuse "a From naming a missing area file" "area-9.md" 's/^From: area-2:1/From: area-9:1/'
 report_refuse "a From naming a missing block" "finding 7" 's/^From: area-2:1/From: area-2:7/'
-report_refuse "a missing title" "has no Title" '/^Title: Deepen/d'
-report_refuse "a multi-line title" "not one line" 's/^Title: Deepen d.sh/Title:/'
-report_refuse "an unknown category" "'cheese'" 's/^Category: bug/Category: cheese/'
-report_refuse "a missing category" "has no Category" '/^Category: bug/d'
-report_refuse "a bad location" "not <file>:<line>" 's/^Location: z.sh:4/Location: z.sh/'
-report_refuse "a finding with no location" "has no Location" '/^Location: z.sh:4/d'
-report_refuse "an overlap outside the file" "'9'" 's/^Overlaps: 3/Overlaps: 9/'
-report_refuse "an overlap with itself" "'1'" 's/^Overlaps: 3/Overlaps: 1/'
+report_refuse "a missing title" "ranked.md line 15: finding 2 has no Title" '/^Title: Deepen/d'
+report_refuse "a multi-line title" "ranked.md line 17: finding 2's Title: is not one line" 's/^Title: Deepen d.sh/Title:/'
+report_refuse "an unknown category" "ranked.md line 12: finding 1's Category: 'cheese'" 's/^Category: bug/Category: cheese/'
+report_refuse "a missing category" "ranked.md line 9: finding 1 has no Category" '/^Category: bug/d'
+report_refuse "a bad location" "ranked.md line 22: finding 3's location 'z.sh' is not <file>:<line>" 's/^Location: z.sh:4/Location: z.sh/'
+report_refuse "a finding with no location" "ranked.md line 19: finding 3 has no Location" '/^Location: z.sh:4/d'
+report_refuse "an overlap outside the file" "ranked.md line 13: finding 1 overlaps '9'" 's/^Overlaps: 3/Overlaps: 9/'
+report_refuse "an overlap with itself" "ranked.md line 13: finding 1 overlaps '1'" 's/^Overlaps: 3/Overlaps: 1/'
 report_refuse "a top outside the file" "finding 9" 's/^@@ top 1/@@ top 9/'
 report_refuse "an unknown @@ line" "unknown line" 's/^@@ areas 2/@@ areas 2\n@@ bogus/'
+report_reset
+sed -i 's/^Location: a.sh:1, b.sh:2-3/Location: a.sh, b.sh:2-3/' "$run/area-1.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "a bad location from a hunter's block is refused" "$st" 1
+assert_contains "naming the hunter's file and line" "$res" "area-1.md line 3: finding 1's location 'a.sh'"
+report_reset
+printf 'Category: cheese\n' >>"$run/area-2.md"
+sed -i '18d' "$run/ranked.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "an unknown category from a hunter's block is refused" "$st" 1
+assert_contains "naming the hunter's file and line" "$res" "area-2.md line 8: finding 2's Category: 'cheese'"
+sed -i '$d' "$run/area-2.md"
 report_reset
 rm "$run/record" "$report"
 res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
@@ -453,6 +465,20 @@ sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in finding 2/' "$run
 res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
 assert_status "a restated field saying finding 2 is refused" "$st" 1
 assert_contains "naming the field" "$res" "Evidence: says 'finding 2'"
+report_reset
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: see\nthe finding\n3 for it/' "$run/ranked.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "a field wrapping 'finding' and its number across lines is refused" "$st" 1
+assert_contains "naming the phrase and the line it starts on" "$res" "Evidence: says 'finding 3' (line 2 of the field)"
+report_reset
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in this\nReport/' "$run/ranked.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "a field wrapping 'this report' across lines is refused" "$st" 1
+assert_contains "naming the phrase and its line" "$res" "Evidence: says 'this Report' (line 1 of the field)"
+report_reset
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: the finding\n\n3 is apart; `finding\n4`, and the\nreport reads fine/' "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null 2>&1; st=$?
+assert_status "a break between paragraphs, a span and 'the report' are accepted" "$st" 0
 report_reset
 sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: `finding 2` and "the report" read fine/' "$run/ranked.md"
 sed -i 's/^Title: Whole finding with no source/Title: See the report/' "$run/ranked.md"
@@ -511,6 +537,11 @@ printf 'Line one.\nSame as Finding 4 here.\n' >"$finding"
 out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
 assert_status "a finding file saying Finding 4 is refused" "$st" 1
 assert_contains "naming its line" "$out" "line 2 says 'Finding 4'"
+assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+printf 'Line one, see finding\n3 here.\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "a finding file wrapping 'finding' and its number is refused" "$st" 1
+assert_contains "naming the line it starts on" "$out" "line 1 says 'finding 3'"
 assert_eq "writing nothing" "$(fake_snapshot)" "$before"
 printf 'The report says `finding 4`.\n```\nthis report\n```\n' >"$finding"
 out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
@@ -581,21 +612,34 @@ assert_status "empty numbers are refused" "$st" 1
 for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
   batch_reset
   sed -i "s/^Evidence: a \`tick\`/Evidence: see $phrase and a \`tick\`/" "$run/ranked.md"
+  fake_fail adapter_issues_open_titles
   out="$("$ORCH" audit file --run "$run" 3 2>&1)"; st=$?
+  fake_unfail
   assert_status "a field saying '$phrase' is refused through --run" "$st" 1
   assert_contains "naming the phrase" "$out" "says '$phrase'"
-  assert_eq "reaching no GitHub call" "$(gh_calls)" "0"
+  assert_not_contains "reaching no GitHub call" "$out" "list the open issues"
   assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
 done
+batch_reset
+sed -i "s/^Evidence: a \`tick\`/Evidence: see finding\n3 and a \`tick\`/" "$run/ranked.md"
+fake_fail adapter_issues_open_titles
+out="$("$ORCH" audit file --run "$run" 3 2>&1)"; st=$?
+fake_unfail
+assert_status "a field wrapping 'finding' and its number is refused through --run" "$st" 1
+assert_contains "naming the phrase" "$out" "says 'finding 3'"
+assert_not_contains "reaching no GitHub call" "$out" "list the open issues"
 batch_reset
 sed -i 's/^Evidence: a `tick`/Evidence: `finding 2` and "the report" read fine/' "$run/ranked.md"
 "$ORCH" audit file --run "$run" 3 >/dev/null 2>&1; st=$?
 assert_status "the report and a backticked finding 2 are accepted through --run" "$st" 0
 batch_reset
 rm -f "$run/ranked.md"
+fake_fail adapter_issues_open_titles
 out="$("$ORCH" audit file --run "$run" 1 2>&1)"; st=$?
+fake_unfail
 assert_status "a missing ranked file is refused" "$st" 1
-assert_eq "reaching no GitHub call" "$(gh_calls)" "0"
+assert_contains "naming the ranked file" "$out" "ranked.md"
+assert_not_contains "reaching no GitHub call" "$out" "list the open issues"
 
 echo
 echo "audit file batch category"
