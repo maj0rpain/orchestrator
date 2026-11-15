@@ -190,9 +190,9 @@ repo_pin_host() {
 # so it names the remote tip the scan used.
 cmd_default_branch() {
   local usage="usage: orch.sh default-branch [--sha]" default ref sha
-  [ $# -eq 0 ] && { default_branch; return; }
+  if [ $# -eq 0 ]; then default_branch_into default; printf '%s\n' "$default"; return; fi
   [ $# -eq 1 ] && [ "$1" = --sha ] || die "$usage"
-  default="$(default_branch)"
+  default_branch_into default
   ref="refs/remotes/origin/$default"
   sha="$(git rev-parse --verify -q "$ref^{commit}")" \
     || die "no $ref - fetch the default branch first"
