@@ -1986,3 +1986,54 @@ assert_eq "recording done" "$("$ORCH" state get phase)" "done"
 assert_eq "the PR is ready" "$(fake_pr_draft_of 7)" "no"
 restore_suite_env
 
+
+# --- review reads its Flow state once -----------------------------------------
+# Each op makes one entry read where its require_state sat: exactly one jq on a
+# path that ends at its last guard, before any write.
+echo
+echo "review reads its Flow state once"
+fresh_flow reviewonce
+# rv_jq <cmd...>: runs orch.sh under a counting jq into out and st.
+rv_jq() {
+  rc_jq="$(counting_bin jq)"
+  out="$(PATH="$rc_jq:$PATH" "$ORCH" "$@" 2>&1)"; st=$?
+}
+state_fixture iteration 1
+"$ORCH" state set budget 1
+rv_jq review begin
+assert_status "review begin with the budget spent refuses" "$st" 1
+assert_contains "naming the spent budget" "$out" "budget of 1 iterations spent"
+assert_eq "review begin starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review path
+assert_eq "review path with no iteration" "$out" "$(pwd -P)/.orchestrator/review/iteration-01.md"
+assert_eq "starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review path 3
+assert_eq "review path with an iteration" "$out" "$(pwd -P)/.orchestrator/review/iteration-03.md"
+assert_eq "starts one jq too" "$(counting_starts "$rc_jq" jq)" "1"
+mkdir -p .orchestrator/review
+writeln "## Terminal state" stop "CI failed twice." >.orchestrator/review/iteration-01.md
+rv_jq review terminal
+assert_eq "review terminal starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review resume
+assert_status "review resume with nothing to resume refuses" "$st" 1
+assert_eq "review resume starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review ready
+assert_contains "review ready with no PR recorded" "$out" "no PR recorded in state"
+assert_eq "review ready starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review ci
+assert_contains "review ci with no PR recorded" "$out" "no PR recorded in state"
+assert_eq "review ci starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_finding="$(mktemp)"; echo finding >"$rv_finding"
+rv_jq review file major "A title" --axis standards --finding-file "$rv_finding" \
+  --severity-reason r --location scripts/a.sh:1 --why w
+assert_contains "review file with no PR recorded" "$out" "no PR recorded in state"
+assert_eq "review file starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review file major
+assert_contains "review file checks its usage before the PR" "$out" "usage: orch.sh review file"
+state_truncate
+for op in begin path terminal resume "path 2" "file major t"; do
+  # shellcheck disable=SC2086 # op holds words
+  out="$("$ORCH" review $op 2>&1)"; st=$?
+  assert_state_unreadable "review $op" 1 "$out" "$st"
+done
+restore_suite_env

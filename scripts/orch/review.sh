@@ -411,7 +411,9 @@ review_ci_log() {
   done <<<"$out"
 }
 
-# review_file <sev> <title> <flag> <value> ...: files a finding as a GitHub
+# review_file <pr> <sev> <title> <flag> <value> ...: <pr> is the flow's recorded
+# PR, from the caller's entry read, checked with require_value after the usage
+# and finding checks. Files a finding as a GitHub
 # issue, its body rendered from its parts by the Filed finding module. Every
 # check - the flags, the severity, the axis, the title, the finding file, the
 # location, the PR's head sha, and the round trip of the rendered body
@@ -419,6 +421,8 @@ review_ci_log() {
 # finding never reaches GitHub rather than surfacing weeks later as "body
 # does not parse" in triage.
 review_file() {
+  local pr_n="$1"
+  shift
   orch_load filed-finding
   local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
@@ -445,7 +449,7 @@ review_file() {
     word_listed "$seen" "$flag" || die "$usage"
   done
 
-  local colour desc category triage n file line body_file pr_n pr sha err
+  local colour desc category triage n file line body_file pr sha err
   is_filed_severity "$severity" \
     || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
   filed_severity_label "$severity" colour desc
@@ -464,7 +468,7 @@ review_file() {
   # The PR's URL and remote head come from GitHub for the flow's recorded PR,
   # before any write: the URL is right on any host, and the remote head is
   # what finding triage scan fetches.
-  require_pr pr_n
+  require_value pr "$pr_n"
   pr_url_head_read "$pr_n" pr sha err \
     || gh_die "read the URL and head of PR #$pr_n, recorded in state" "$err"
   [[ $sha =~ ^[0-9a-fA-F]+$ ]] || die "not a sha: $sha (want a hex commit SHA)"
@@ -791,11 +795,10 @@ cmd_review() {
   shift || true
   case "$op" in
     begin)
-      require_state
       local n budget prior prior_path sec
-      prior="$(state_get iteration)"
+      require_state_read prior=iteration budget=budget
       n=$(( prior + 1 ))
-      budget="$(review_budget)"
+      budget="$(review_budget_fallback "$budget")"
       [ "$n" -le "$budget" ] || \
         die "budget of $budget iterations spent - stop the loop and report, do not start another"
       # A loop's first iteration - iteration 0, or the one after a record with a
@@ -810,27 +813,32 @@ cmd_review() {
       note "$n"
       ;;
     path)
-      require_state
-      [ $# -le 1 ] || die "usage: orch.sh review path [iteration]"
       local n
-      n="${1:-$(state_get iteration)}"
+      if [ $# -eq 0 ]; then
+        require_state_read n=iteration
+      else
+        require_state
+        [ $# -le 1 ] || die "usage: orch.sh review path [iteration]"
+        n="$1"
+      fi
       review_record_path "$n"
       ;;
     file)
-      require_state
-      review_file "$@"
+      local file_pr
+      require_state_read file_pr=pr
+      review_file "$file_pr" "$@"
       ;;
     ready)
-      require_state
-      local pr
-      require_pr pr
+      local pr issue
+      require_state_read pr=pr issue=issue
+      require_value pr "$pr"
       ci_ready_gate --hint "the flow stays in review" "$pr"
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
       gh_or_die --hint "the flow stays in review" "mark PR #$pr ready" \
         adapter_pr_ready "$pr"
-      phase_finish "done" "marked PR #$pr ready" "$(state_get issue)"
+      phase_finish "done" "marked PR #$pr ready" "$issue"
       note "$pr"
       # stdout stays the PR number alone; the pointer goes to stderr. A side
       # checkout outlives its PR, so the human is told how to clear it once
@@ -840,13 +848,13 @@ cmd_review() {
       fi
       ;;
     ci)
-      require_state
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
       local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local commits="" no_ci=0
+      require_state_read pr=pr
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-      require_pr pr
+      require_value pr "$pr"
       started="$(date +%s)"
       # Two clocks: the timeout counts from this call, the grace from the push.
       # By the time the loop ends the fixer's last push is usually minutes old,
