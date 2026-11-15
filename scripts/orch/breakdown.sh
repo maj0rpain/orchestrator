@@ -143,7 +143,7 @@ breakdown_publish_in() {
           adapter_sub_issue_link "$parent" "$n"
         ticket_edges_and_verify "$parent" "$n" "$(tr ',' '\n' <<<"$want")"
       ) \
-        || die "ticket $k of the draft (#$n): the link failed"
+        || die "ticket $k of the draft (#$n): the link or body rewrite failed"
       breakdown_record "$numbers" "$k" "$n" linked
     else
       title="$(cat "$tmp/$k.title")"

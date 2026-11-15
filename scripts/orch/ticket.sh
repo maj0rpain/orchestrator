@@ -175,9 +175,13 @@ cmd_ticket_publish() {
 # when <want> is non-empty, so a resume never writes an edge already present -
 # and verifies every link by reading it back through verify_twice: one retry,
 # either status gets it, and the second attempt decides the death - a failed
-# read dies with gh's reason, a mismatch as unverified.
+# read dies with gh's reason, a mismatch as unverified. Once the links verify,
+# the child's `## Blocked by` section is rewritten from <want> - sorted
+# ascending here, whatever order it came in - as `ticket block` writes it,
+# through the same rewrite_blocked_by_section and issue_body_rewrite.
 ticket_edges_and_verify() {
   local parent="$1" child="$2" want="$3" b have
+  want="$(printf '%s\n' "$want" | sed '/^$/d' | sort -un)"
 
   if [ -n "$want" ]; then
     have="$(ticket_blockers "$child")" || exit 1
@@ -191,6 +195,10 @@ ticket_edges_and_verify() {
   verify_twice "read ticket #$child's links" \
     "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed" \
     ticket_links_verified "$parent" "$child" "$want"
+
+  issue_body_rewrite "$child" "read ticket #$child's body" \
+    "rewrite ticket #$child's ## Blocked by section" \
+    rewrite_blocked_by_section "$want"
 }
 
 # The parent's open sub-issues with zero open blockers, in the order GitHub

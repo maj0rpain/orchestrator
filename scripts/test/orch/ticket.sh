@@ -49,7 +49,7 @@ out="$("$ORCH" ticket publish 50 "First ticket" "$body" 2>&1)"; st=$?
 assert_status "publishes" "$st" 0
 assert_eq "printing the child's issue number and nothing else" "$out" "100"
 assert_eq "passes the title through" "$(fake_title_of 100)" "First ticket"
-assert_eq "sends the body file's contents" "$(fake_body_of 100)" "Build the thing."
+assert_eq "sends the body file's contents" "$(fake_body_of 100)" "$(printf 'Build the thing.\n\n## Blocked by\n\nNone (can start immediately)')"
 assert_eq "applies ready-for-agent" "$(fake_labels_of 100)" "ready-for-agent "
 assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "links the child as 50's sub-issue" "$(fake_sub_issues_of 50)" "100"
@@ -233,6 +233,55 @@ out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
 assert_status "a mismatch then a failed read dies" "$st" 1
 assert_contains "with the links message" "$out" "gh could not read ticket #309's links: HTTP 502: Bad Gateway"
 assert_not_contains "not the verify message" "$out" "did not verify"
+restore_suite_env
+
+# --- ticket publish rewrites ## Blocked by ------------------------------------
+# The published body's section matches the verified blocking edges (#3115).
+echo
+echo "ticket publish rewrites ## Blocked by"
+ticket_fixture
+fake_issue 50 open
+fake_next_issue 400
+tp_body="$(mktemp)"
+printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)' >"$tp_body"
+ta="$("$ORCH" ticket publish 50 "A" "$tp_body")"
+assert_eq "no blockers: the section reads None" "$(fake_body_of "$ta")" "$(printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)')"
+tb="$("$ORCH" ticket publish 50 "B" "$tp_body")"
+tc="$("$ORCH" ticket publish 50 "C" "$tp_body" --blocked-by "$tb,$ta")"
+assert_eq "blockers listed by number, ascending, the placeholder gone" "$(fake_body_of "$tc")" "$(printf 'Intro.\n\n## Blocked by\n\n- #%s\n- #%s' "$ta" "$tb")"
+printf 'Just text.\n' >"$tp_body"
+td="$("$ORCH" ticket publish 50 "D" "$tp_body" --blocked-by "$ta")"
+assert_eq "a body with no section gets one appended" "$(fake_body_of "$td")" "$(printf 'Just text.\n\n## Blocked by\n\n- #%s' "$ta")"
+
+printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)' >"$tp_body"
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket publish 50 "E" "$tp_body" --blocked-by "$ta" 2>&1)"; st=$?
+te=$((td + 1))
+assert_status "a failed body write dies" "$st" 1
+assert_contains "naming the ticket and the write" "$out" "gh could not rewrite ticket #$te's ## Blocked by section"
+assert_eq "the ticket stays linked" "$(fake_sub_issues_of 50 | tr ' ' '\n' | grep -cx "$te")" "1"
+assert_eq "with its edge" "$(fake_blockers_of "$te")" "$ta"
+assert_eq "and the draft's text" "$(fake_body_of "$te")" "$(printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)')"
+fake_unfail
+fake_fail adapter_issue_body
+out="$("$ORCH" ticket publish 50 "F" "$tp_body" --blocked-by "$ta" 2>&1)"; st=$?
+tf=$((te + 1))
+assert_status "a failed body read dies" "$st" 1
+assert_contains "naming the ticket and the read" "$out" "gh could not read ticket #$tf's body"
+assert_eq "the draft's text stays" "$(fake_body_of "$tf")" "$(printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)')"
+fake_unfail
+
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket publish 50 "G" "$tp_body" 2>&1)"; st=$?
+assert_status "no blockers on an already-matching section writes no body" "$st" 0
+fake_unfail
+
+fake_lag adapter_sub_issues 2
+fake_fail adapter_issue_body
+out="$("$ORCH" ticket publish 50 "H" "$tp_body" 2>&1)"; st=$?
+assert_status "links failing verification die" "$st" 1
+assert_contains "as unverified, with no body read" "$out" "did not verify"
+fake_unfail
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------
