@@ -13,7 +13,8 @@
 # Nothing here is called back from orch.sh or its other modules but
 # cmd_doctor and the reporters d_ok, d_warn, d_fail and d_remedy, which a
 # check living in the module of the concept it serves reports through
-# (agent.sh's check_agent_settings): init's adopted-issue check,
+# (agent.sh's check_agent_settings, review.sh's check_standards_declaration,
+# glossary.sh's check_glossary): init's adopted-issue check,
 # validate_adopted_issue, lives in init.sh, and the triage-label parser the
 # checks read lives in triage-labels.sh.
 #
@@ -459,6 +460,27 @@ check_labels_doc() {
   d_remedy "fix $LABELS_DOC's table, or delete it to use the canonical names"
 }
 
+# The ADR directory: absent is fine, no ADRs are read. A docs/adr that exists
+# and is no directory is a FAIL, since the skills and the spec review's lenses
+# read it as one. The count is the Markdown files directly in it.
+check_adr_dir() {
+  local adr="$ROOT/docs/adr" n=0 f
+  if [ ! -e "$adr" ] && [ ! -L "$adr" ]; then
+    d_ok "no docs/adr - no ADRs are read"
+    return 0
+  fi
+  if [ ! -d "$adr" ]; then
+    d_fail "docs/adr exists and is no directory - the skills and the spec review read ADRs from it."
+    d_remedy "remove docs/adr and create it as a directory of Markdown files, or delete it to have no ADRs read" \
+      "see docs/repo-setup.md under the plugin root"
+    return 0
+  fi
+  for f in "$adr"/*.md; do
+    [ -f "$f" ] && n=$((n + 1))
+  done
+  d_ok "docs/adr holds $n ADRs"
+}
+
 # The other check that justifies the feature: the spec phase applies a label at
 # `gh issue create`, so a label the repo does not have kills the phase after the
 # whole orch-to-spec exchange has already been spent.
@@ -713,7 +735,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
+h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
 "
 # flow state -----------------------------------------------------------------
 

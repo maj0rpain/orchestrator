@@ -163,3 +163,23 @@ glossary_run() {
       }
     }' "$@"
 }
+
+# check_glossary: doctor's glossary check, named in its env check list: the
+# root GLOSSARY.md read through cmd_glossary's own parse. Absent is ok; one
+# that parses is ok with its entry count; one that gives no entries is a FAIL
+# carrying the glossary command's own message. No heuristic for a near miss.
+check_glossary() {
+  local terms err n
+  if [ ! -f "$ROOT/GLOSSARY.md" ]; then
+    d_ok "no GLOSSARY.md - no glossary is read, so the Consistency lens reads none and the reviewers' glossary parse check does not run"
+    return 0
+  fi
+  if capture terms err cmd_glossary terms; then
+    n="$(grep -c . <<<"$terms")" || n=0
+    d_ok "$n glossary entries read from GLOSSARY.md"
+    return 0
+  fi
+  d_fail "${err#orch: }"
+  d_remedy 'write each entry as a **Term**: line, e.g. "**Doctor**: the diagnostic command." (optionally after a "- " bullet)' \
+    "see docs/repo-setup.md under the plugin root"
+}

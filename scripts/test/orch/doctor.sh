@@ -2638,3 +2638,88 @@ for dg_n in c d e; do git worktree add -q "$(mktemp -d)/$dg_n" -b "pw-$dg_n"; do
 dg_five="$(doctor_git_starts)"
 assert_eq "doctor starts as many git processes with five more worktrees as with two" "$dg_five" "$dg_two"
 restore_suite_env
+
+# --- doctor --env: Standards declaration check (#3358) ------------------------
+# A valid declaration is ok with its list; none is ok naming the crawl and its
+# list, or the smell baseline alone; one the resolution dies on is a FAIL
+# carrying that resolution's message and a remedy naming docs/repo-setup.md.
+echo
+echo "doctor: Standards declaration check"
+healthy_repo
+doctor_github
+rm -f CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no standards files: doctor --env passes" "$st" 0
+assert_contains "nothing to crawl names the smell baseline alone" "$out" "smell baseline alone"
+mkdir -p docs
+writeln 'rules' >docs/rules.md
+writeln 'See `docs/rules.md`.' >CLAUDE.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "no declaration is ok naming the crawl and its list" "$out" "ok    no Standards: declaration - the list is crawled: CLAUDE.md, docs/rules.md"
+writeln 'Standards: `docs/rules.md`' >CLAUDE.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a declaration: doctor --env passes" "$st" 0
+assert_contains "a declaration is ok with its file and list" "$out" "ok    Standards declared in CLAUDE.md: docs/rules.md"
+assert_not_contains "a healthy declaration has no Standards FAIL" "$out" "FAIL  "
+out="$("$ORCH" doctor 2>&1)"
+assert_contains "bare doctor runs the check" "$out" "Standards declared in CLAUDE.md"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "--flow does not run the check" "$out" "Standards"
+writeln 'Standards: `docs/missing.md`' >CLAUDE.md
+want="$("$ORCH" review standards 2>&1 >/dev/null)"; want="${want#orch: }"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a declaration naming a missing file fails doctor" "$st" 1
+assert_contains "carrying review standards' own message" "$out" "FAIL  $want"
+assert_contains "the remedy states the fix" "$out" "fix the Standards: paragraph"
+assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
+restore_suite_env
+
+# --- doctor --env: glossary check (#3358) -------------------------------------
+echo
+echo "doctor: glossary check"
+healthy_repo
+doctor_github
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no glossary: doctor --env passes" "$st" 0
+assert_contains "an absent glossary is ok" "$out" "ok    no GLOSSARY.md"
+writeln '**Alpha**: one.' '' '- **Beta**: two.' >GLOSSARY.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a parsing glossary passes" "$st" 0
+assert_contains "ok with its entry count" "$out" "ok    2 glossary entries"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "--flow does not run the check" "$out" "glossary"
+writeln '**Alpha** - one.' '' '**Beta** - two.' >GLOSSARY.md
+want="$("$ORCH" glossary terms 2>&1 >/dev/null)"; want="${want#orch: }"
+out="$("$ORCH" doctor 2>&1)"; st=$?
+assert_status "a glossary giving no entries fails bare doctor" "$st" 1
+assert_contains "carrying the glossary command's own message" "$out" "FAIL  $want"
+assert_contains "the remedy names the **Term**: line" "$out" '**Term**:'
+assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
+restore_suite_env
+
+# --- doctor --env: ADR directory check (#3358) --------------------------------
+echo
+echo "doctor: ADR directory check"
+healthy_repo
+doctor_github
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no docs/adr: doctor --env passes" "$st" 0
+assert_contains "an absent docs/adr is ok" "$out" "ok    no docs/adr"
+mkdir -p docs/adr/nested
+writeln '# one' >docs/adr/0001-a.md
+writeln '# two' >docs/adr/0002-b.md
+writeln '# nested' >docs/adr/nested/0003.md
+writeln 'x' >docs/adr/notes.txt
+out="$("$ORCH" doctor 2>&1)"; st=$?
+assert_status "a directory passes bare doctor" "$st" 0
+assert_contains "ok with the count of Markdown files directly in it" "$out" "ok    docs/adr holds 2 ADRs"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "--flow does not run the check" "$out" "docs/adr"
+rm -rf docs/adr
+writeln 'x' >docs/adr
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a file in its place fails doctor" "$st" 1
+assert_contains "naming the path" "$out" "FAIL  docs/adr exists and is no directory"
+assert_contains "the remedy states the fix" "$out" "create it as a directory"
+assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
+restore_suite_env

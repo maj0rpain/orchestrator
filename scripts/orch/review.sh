@@ -706,14 +706,15 @@ review_standards_declared() {
   done
 }
 
-# review_standards: the one Standards: line both reviewers' prompts end with -
-# a declaration in the root files when one exists, else the crawl:
+# review_standards_resolve_source: the Standards resolution, and the path it
+# took: a declaration in the root files when one exists, else the crawl:
 # root CLAUDE.md and AGENTS.md, or with neither CODING_STANDARDS.md and
 # CONTRIBUTING.md, then the .md paths they mention, then the ones those
 # mention: two hops, never a third, each path listed once at its first place
-# and only when it exists.
-review_standards() {
-  [ $# -eq 0 ] || die "usage: orch.sh review standards"
+# and only when it exists. Prints a first line, `declared <file>` or
+# `crawled`, then the list, one path per line (none when the crawl finds
+# nothing). A declaration the resolution rejects dies with its message.
+review_standards_resolve_source() {
   local listed=() hop=() next=() f p span
   for f in CLAUDE.md AGENTS.md; do
     ! review_standards_inside "$f" || listed+=("$f")
@@ -732,7 +733,8 @@ review_standards() {
     done < <(grep -oE '`[^`]+`' <<< "$decl")
     [ "${#entries[@]}" -gt 0 ] || die "$f declares Standards: with no entries (want backticked paths)"
     review_standards_declared "${entries[@]}"
-    note "Standards: $(list_join "$(printf '%s\n' "${entries[@]}")")"
+    printf 'declared %s\n' "$f"
+    printf '%s\n' "${entries[@]}"
     return 0
   done
   hop=(${listed[@]+"${listed[@]}"})
@@ -748,11 +750,47 @@ review_standards() {
     done
     hop=(${next[@]+"${next[@]}"})
   done
-  if [ "${#listed[@]}" -eq 0 ]; then
+  printf 'crawled\n'
+  [ "${#listed[@]}" -eq 0 ] || printf '%s\n' "${listed[@]}"
+}
+
+# review_standards: the one Standards: line both reviewers' prompts end with,
+# from review_standards_resolve_source's list.
+review_standards() {
+  [ $# -eq 0 ] || die "usage: orch.sh review standards"
+  local resolved list
+  resolved="$(review_standards_resolve_source)" || exit $?
+  list="${resolved#*$'\n'}"
+  [ "$list" != "$resolved" ] || list=""
+  if [ -z "$list" ]; then
     note "Standards: none"
   else
-    note "Standards: $(list_join "$(printf '%s\n' "${listed[@]}")")"
+    note "Standards: $(list_join "$list")"
   fi
+}
+
+# check_standards_declaration: doctor's Standards declaration check, named in
+# its env check list: the resolution review_standards_resolve_source makes,
+# reported - never parsed a second time. A declaration it dies on is a FAIL
+# carrying its own message.
+check_standards_declaration() {
+  local resolved err list first
+  if ! capture resolved err review_standards_resolve_source; then
+    d_fail "${err#orch: }"
+    d_remedy "fix the Standards: paragraph the message names, or delete it to have the reviewers crawl the standards documents" \
+      "see docs/repo-setup.md under the plugin root"
+    return 0
+  fi
+  first="${resolved%%$'\n'*}"
+  list="${resolved#*$'\n'}"
+  [ "$list" != "$resolved" ] || list=""
+  case "$first" in
+    declared\ *) d_ok "Standards declared in ${first#declared }: $(list_join "$list")" ;;
+    *)
+      if [ -n "$list" ]; then d_ok "no Standards: declaration - the list is crawled: $(list_join "$list")"
+      else d_ok "no Standards: declaration and nothing to crawl - the reviewers apply the smell baseline alone"; fi ;;
+  esac
+  return 0
 }
 
 # review_resume: resumes a review loop whose driving session died mid-iteration,
