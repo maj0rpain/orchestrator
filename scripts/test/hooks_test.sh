@@ -1933,6 +1933,121 @@ for ev in PreToolUse PostToolUse PostToolUseFailure; do
   assert_contains "bash hook: $ev Bash runs through CLAUDE_PROJECT_DIR" \
     "$reg" 'CLAUDE_PROJECT_DIR'
 done
+# Cost: the hook starts the same number of git and grep processes around a
+# call whatever the number of dirty files; a clean checkout starts fewer. Each
+# count is compared between two runs, never against a fixed number.
+BW_GC="$(counting_bin git)"
+BW_GREPC="$(counting_bin grep)"
+# bw_dirty_repo N: a bw_repo with N untracked .md files.
+bw_dirty_repo() {
+  local d i
+  d="$(bw_repo)"
+  for ((i = 1; i <= $1; i++)); do printf '# T\n' >"$d/d$i.md"; done
+  printf '%s' "$d"
+}
+# bw_counts REPO: a Pre then a Post that change nothing; sets bw_pre_git,
+# bw_post_git, bw_post_grep (the processes each started) and bw_out.
+bw_counts() {
+  BW_ID=$((BW_ID + 1))
+  : >"$BW_GC/git.log"
+  bw_hook PreToolUse "$1" "t$BW_ID" "$BW_GC:$BW_GREPC:$PATH"
+  bw_pre_git="$(counting_starts "$BW_GC" git)"
+  : >"$BW_GC/git.log"
+  : >"$BW_GREPC/grep.log"
+  bw_hook PostToolUse "$1" "t$BW_ID" "$BW_GC:$BW_GREPC:$PATH"
+  bw_post_git="$(counting_starts "$BW_GC" git)"
+  bw_post_grep="$(counting_starts "$BW_GREPC" grep)"
+}
+BW_D1="$(bw_dirty_repo 1)"
+BW_D5="$(bw_dirty_repo 5)"
+bw_counts "$BW_D1"
+bw_one_pre="$bw_pre_git"; bw_one_post="$bw_post_git"; bw_one_grep="$bw_post_grep"
+bw_counts "$BW_D5"
+assert_eq "bash hook cost: Pre starts as many git with 5 dirty files as with 1" \
+  "$bw_pre_git" "$bw_one_pre"
+assert_eq "bash hook cost: Post starts as many git with 5 dirty files as with 1" \
+  "$bw_post_git" "$bw_one_post"
+assert_eq "bash hook cost: Post starts as many grep with 5 dirty files as with 1" \
+  "$bw_post_grep" "$bw_one_grep"
+assert_empty "bash hook cost: a call changing no dirty file is silent" "$bw_out"
+BW_C0="$(bw_repo)"
+bw_counts "$BW_C0"
+assert_empty "bash hook cost: a clean checkout is silent" "$bw_out"
+if [ "$bw_pre_git" -lt "$bw_one_pre" ]; then ok "bash hook cost: a clean checkout's Pre starts fewer git"
+else bad "bash hook cost: a clean checkout's Pre starts fewer git" "$bw_pre_git vs $bw_one_pre"; fi
+if [ "$bw_post_git" -lt "$bw_one_post" ]; then ok "bash hook cost: a clean checkout's Post starts fewer git"
+else bad "bash hook cost: a clean checkout's Post starts fewer git" "$bw_post_git vs $bw_one_post"; fi
+if [ "$bw_post_grep" -lt "$bw_one_grep" ]; then ok "bash hook cost: a clean checkout's Post starts fewer grep"
+else bad "bash hook cost: a clean checkout's Post starts fewer grep" "$bw_post_grep vs $bw_one_grep"; fi
+rm -rf "$BW_D1" "$BW_D5" "$BW_C0"
+# Odd names: left alone is silent, made wide is reported.
+BW_Q="$(bw_repo)"
+for bw_name in '"quote.md' 'back\slash.md' 'sp ace.md' $'ta\tb.md' 'caf'$'\xc3\xa9'.md; do
+  printf '# T\n\n%s\n' "$edge" >"$BW_Q/docs/$bw_name"
+  bw_call "$BW_Q" ":"
+  assert_empty "bash hook: a dirty file named '$bw_name' left alone is silent" "$bw_out"
+  BW_ID=$((BW_ID + 1))
+  bw_hook PreToolUse "$BW_Q" "t$BW_ID"
+  printf '# T\n\n%sx\n' "$edge" >"$BW_Q/docs/$bw_name"
+  bw_hook PostToolUse "$BW_Q" "t$BW_ID"
+  assert_eq "bash hook: a file named '$bw_name' made wide exits 2" "$bw_rc" 2
+  assert_contains "bash hook: a file named '$bw_name' made wide is named" \
+    "$bw_out" "docs/$bw_name:3"
+  rm -f "$BW_Q/docs/$bw_name"
+done
+# A dirty file with a newline in its name, and one the hook cannot read, do not
+# stop another widened file from being reported.
+printf '# T\n' >"$BW_Q/$(printf 'new\nline.md')"
+BW_ID=$((BW_ID + 1))
+bw_hook PreToolUse "$BW_Q" "t$BW_ID"
+printf '# T\n\n%s\n' "$wide" >"$BW_Q/docs/after.md"
+bw_hook PostToolUse "$BW_Q" "t$BW_ID"
+assert_eq "bash hook: a newline in a dirty file's name leaves another file reported" \
+  "$bw_rc" 2
+assert_contains "bash hook: a newline in a dirty file's name leaves another file named" \
+  "$bw_out" "docs/after.md:3"
+rm -f "$BW_Q/docs/after.md" "$BW_Q/$(printf 'new\nline.md')"
+if [ "$(id -u)" -eq 0 ]; then
+  ok "bash hook: an unreadable dirty file leaves another file reported (skipped as root)"
+else
+  printf '# T\n' >"$BW_Q/docs/a-unreadable.md"
+  chmod 000 "$BW_Q/docs/a-unreadable.md"
+  BW_ID=$((BW_ID + 1))
+  bw_hook PreToolUse "$BW_Q" "t$BW_ID"
+  printf '# T\n\n%s\n' "$wide" >"$BW_Q/docs/z-after.md"
+  bw_hook PostToolUse "$BW_Q" "t$BW_ID"
+  assert_eq "bash hook: an unreadable dirty file leaves another file reported" \
+    "$bw_rc" 2
+  assert_contains "bash hook: an unreadable dirty file leaves another file named" \
+    "$bw_out" "docs/z-after.md:3"
+  chmod 644 "$BW_Q/docs/a-unreadable.md"
+  rm -f "$BW_Q/docs/a-unreadable.md" "$BW_Q/docs/z-after.md"
+fi
+# A failed listing fails whole: git or grep first on PATH failing one start.
+BW_FAILGIT="$(mktemp -d)"
+BW_FAILGREP="$(mktemp -d)"
+printf '#!/bin/sh\ncase " $* " in *" hash-object "*) exit 1 ;; esac\nexec "%s" "$@"\n' \
+  "$(command -v git)" >"$BW_FAILGIT/git"
+printf '#!/bin/sh\nexit 2\n' >"$BW_FAILGREP/grep"
+chmod +x "$BW_FAILGIT/git" "$BW_FAILGREP/grep"
+BW_TMP3="$(mktemp -d)"
+printf '# T\n' >"$BW_Q/dirty.md"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP3" bw_hook PreToolUse "$BW_Q" "t$BW_ID" "$BW_FAILGIT:$PATH"
+assert_empty "bash hook: a Pre whose hash run fails leaves no snapshot" \
+  "$(ls -A "$BW_TMP3")"
+for bw_fail in "git:$BW_FAILGIT" "grep:$BW_FAILGREP"; do
+  BW_ID=$((BW_ID + 1))
+  TMPDIR="$BW_TMP3" bw_hook PreToolUse "$BW_Q" "t$BW_ID"
+  printf '# T\n\n%s\n' "$wide" >"$BW_Q/dirty.md"
+  TMPDIR="$BW_TMP3" bw_hook PostToolUse "$BW_Q" "t$BW_ID" "${bw_fail#*:}:$PATH"
+  assert_eq "bash hook: a Post whose ${bw_fail%%:*} fails exits 0" "$bw_rc" 0
+  assert_empty "bash hook: a Post whose ${bw_fail%%:*} fails is silent" "$bw_out"
+  assert_empty "bash hook: a Post whose ${bw_fail%%:*} fails leaves no snapshot" \
+    "$(ls -A "$BW_TMP3")"
+  printf '# T\n' >"$BW_Q/dirty.md"
+done
+rm -rf "$BW_Q" "$BW_FAILGIT" "$BW_FAILGREP" "$BW_TMP3"
 rm -rf "$BW" "$BW2" "$BW_TMP" "$BW_FILE"
 
 # --- bash hook, stdin guard (scripts/hook-bash.sh, #2001)
