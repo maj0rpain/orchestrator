@@ -74,7 +74,6 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
 ticket_facts() {
   local _tf_n="$1" _tf_prefix="$2" _tf_path _tf_state=none _tf_wt="" _tf_parent="" _tf_own="" _tf_exists=no
   local paths=()
-  # shellcheck disable=SC2034 # checkout_parse fills it
   local branches=()
   _tf_path="$(ticket_worktree_path "$_tf_n")"
   checkout_parse || checkouts_unreadable
