@@ -104,6 +104,22 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    its **Implementation Decisions**, its **Testing Decisions** - the seams
    already confirmed with the human - and its **Root cause** subsection,
    if it has one: see **Root-cause fixes**.
+   Then, **before your first edit**, run the ticket verification once, found and
+   run as step 3 says, through `bash "<orch.sh>" suite-cost run -- <cmd>`.
+   This run and step 3's final one pass a `<cmd>` that opens with `VAR=value`
+   words behind `env` (`suite-cost run -- env FOO=1 make test`), so the
+   prefix sets the environment instead of being run as a missing command.
+   The run **cannot start** when it exits non-zero and either the exit is 126
+   or 127, or its output shows the shell, `make`, `npm` or another wrapper
+   reporting a command it ran as not found or not executable. The exit code
+   alone is not the test: `make` and `npm` wrap a missing tool's 127 in their
+   own exit code. A run exiting 0 has started, whatever it prints, and a
+   message a test prints about a tool it took away on purpose is that test's
+   output, not a command the run could not start. When it cannot start,
+   build, commit, install and fetch nothing, and return the stop report
+   described under **Report**. When it starts and fails another way, or
+   passes, carry on test-first and report nothing new: a red verification
+   before the first edit is not a deviation.
 2. **Build the ticket test-first**, per **Test-driven development** below,
    at those seams. A test that needs a seam the Testing Decisions do
    not name is a deviation: pick the most defensible seam, record it,
@@ -309,3 +325,11 @@ Evidence: <test name> - <one-line red failure>; ... | None
   before its code was written: the test's name, then its failure in one
   line as the run printed it, never invented. `None` when no test went red.
   The PR body's `## Evidence` draws its "before" behaviour from this line.
+
+**The stop report.** When step 1's early run cannot start, the report is
+still these six lines, with these values: `Ticket: #<ticket>`, `Commits:
+none`, `Verification: <command> - fail`, `Criteria: 0/<total> met`, a
+`Deviation` line opening with the fixed words `verification cannot start:`
+and the missing command by name (any earlier deviation, such as a failed
+`ticket parent` lookup, follows after `; `, so the fixed words always open
+the line), and `Evidence: None`.

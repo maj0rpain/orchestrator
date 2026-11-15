@@ -92,7 +92,15 @@ checks it out under `.orchestrator/worktrees/`. The agent builds that one
 ticket test-first from its own adapted copy of `tdd`'s rules, on its ticket
 branch, commits its own work, and checks its commits against the ticket's
 acceptance criteria, and that a test exercises every source file they
-changed. It cannot start sub-agents or ask the human anything: a call it
+changed. Before its first edit it runs the ticket verification once; when
+that run cannot start (a missing tool, a command not found or not
+executable) it builds, commits, installs and fetches nothing and returns its
+report with a `Deviation` line opening `verification cannot start:` and the
+missing command. The driver neither saves, merges nor closes that ticket,
+leaves its worktree for the next entry check, stops refilling, processes the
+tickets in flight as normal, and then stops, naming every missing command.
+A verification that starts and merely fails does not stop it.
+It cannot start sub-agents or ask the human anything: a call it
 cannot make alone comes back as a deviation in its report, a criterion it
 could not meet as unmet, and a source file it could not cover as untested.
 When a report is in hand, the driving session lands the ticket branch on the
