@@ -137,6 +137,14 @@ this issue as its spec issue rather than publishing a new one; a quick
 implementation started from it may rewrite it from the plan, as **Quick
 implementation** says. _Avoid_: planned issue, subject issue.
 
+**Next issue**:
+The issue a planning session takes when asked for the next issue instead of
+an issue number: the oldest open issue that carries the `ready-for-agent`
+triage label, carries no phase label, is no ticket of a breakdown, and is
+not blocked by an open issue. When no issue qualifies there is no next
+issue, and the session asks the human what to plan. _Avoid_: oldest issue,
+top issue.
+
 ### Autopilot flow
 
 **Autopilot flow**:

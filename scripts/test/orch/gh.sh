@@ -1005,6 +1005,19 @@ out="$(contract adapter_issues_open_rows 2>&1)"; st=$?
 assert_status "issues open rows: lists every open issue" "$st" 0
 assert_eq "one count-marked record per issue: number, state, label count, labels" "$out" "$(writeln 3 OPEN 1 review:nit 9 CLOSED 0)"
 
+gh_reply 0 $'3\nOPEN\tFirst title\n1\nreview:nit\n9\nOPEN\tSecond title\n0\n' '' \
+  issue list --state open --label review:nit --search "sort:created-asc" --limit 1000 --json number,state,title,labels \
+  --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_titled_rows review:nit 2>&1)"; st=$?
+assert_status "issues titled rows: lists the open issues carrying the label" "$st" 0
+assert_eq "one count-marked record per issue: number, state and title tab-joined, label count, labels" "$out" "$(printf '3\nOPEN\tFirst title\n1\nreview:nit\n9\nOPEN\tSecond title\n0')"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' \
+  issue list --state open --label review:nit --search "sort:created-asc" --limit 1000 --json number,state,title,labels \
+  --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_titled_rows review:nit 2>&1)"; st=$?
+assert_status "issues titled rows: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
 gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \
   issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,labels,body \
   --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
@@ -1600,6 +1613,28 @@ assert_eq "one blocker number per line, in GitHub's order" "$out" "$(writeln 53 
 gh_reply 1 '' 'HTTP 502: Bad Gateway' api --paginate "repos/{owner}/{repo}/issues/404/dependencies/blocked_by" --jq '.[].number'
 out="$(contract adapter_blockers 404 2>&1)"; st=$?
 assert_status "blockers: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 $'2\n' '' api "repos/{owner}/{repo}/issues/52" --jq '.issue_dependencies_summary.blocked_by // ""'
+out="$(contract adapter_issue_open_blockers 52 2>&1)"; st=$?
+assert_status "issue open blockers: reads the dependency summary" "$st" 0
+assert_eq "the count of open blockers" "$out" "2"
+gh_reply 0 '' '' api "repos/{owner}/{repo}/issues/53" --jq '.issue_dependencies_summary.blocked_by // ""'
+out="$(contract adapter_issue_open_blockers 53 2>&1)"; st=$?
+assert_status "issue open blockers: no summary is not a failure" "$st" 0
+assert_eq "an empty answer, never a zero" "$out" ""
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api "repos/{owner}/{repo}/issues/404" --jq '.issue_dependencies_summary.blocked_by // ""'
+out="$(contract adapter_issue_open_blockers 404 2>&1)"; st=$?
+assert_status "issue open blockers: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 $'53\tOPEN\n51\tCLOSED\n' '' api --paginate "$blocked" --jq '.[] | "\(.number)\t\(.state | ascii_upcase)"'
+out="$(contract adapter_blockers_states 52 2>&1)"; st=$?
+assert_status "blockers states: lists an issue's blocked-by edges with their state" "$st" 0
+assert_eq "one number and upper-case state per line, tab-separated, in GitHub's order" "$out" "$(printf '53\tOPEN\n51\tCLOSED')"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api --paginate "repos/{owner}/{repo}/issues/404/dependencies/blocked_by" --jq '.[] | "\(.number)\t\(.state | ascii_upcase)"'
+out="$(contract adapter_blockers_states 404 2>&1)"; st=$?
+assert_status "blockers states: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
 gh_reply 0 '{}' '' api --method POST "$blocked" -F issue_id=51000

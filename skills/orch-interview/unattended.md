@@ -26,5 +26,7 @@ cause of a bug - with these differences only:
 - **An issue found already done is reported as skipped**, naming the commit, PR
   or issue that did the work, and the interview stops there: it closes nothing,
   moves no label and writes nothing.
+- **It never resolves "next issue".** Its planner is always given an issue
+  number, so `orch.sh issue next` is never run.
 - **There is no planning close.** The interview is done when the frontier is
   empty; there is no confirmation of a shared understanding to wait for.

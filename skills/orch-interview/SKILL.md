@@ -124,6 +124,17 @@ with the Read tool, never `cat`, so a large issue is read once, in full; an
 empty comments file means no comments. Never read it with `gh issue view`. If
 either fetch fails, report its `orch:` message and stop before the next round.
 
+When the user asks for the next issue without naming a number, run
+`bash "$ORCH" issue next` before the first round. On exit 0 it prints
+`<number><TAB><title>`; fetch the number field only. Tell the user in one
+sentence which issue you picked and why - its
+number and title, as the oldest open issue carrying the `ready-for-agent`
+triage role's label, with no phase label, no parent issue and no open blocker
+(the Next issue rule) - then fetch it as any named issue. On exit 1 no issue
+qualifies: say so and ask which issue or change to plan, never falling back to
+another rule. On exit 2, report its `orch:` message and stop before the first
+round.
+
 Sharpen the project's domain model as you plan. Before the first round, list
 the glossary's term names with `bash "$ORCH" glossary terms`, and fetch the
 entries for the terms in play with `bash "$ORCH" glossary show <term>...` -
