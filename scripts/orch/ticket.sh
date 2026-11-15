@@ -666,6 +666,7 @@ cmd_ticket_merge() {
   # rebase_out is set by capture and only git's stderr is read.
   # shellcheck disable=SC2034
   local rebase_out
+  orch_load ticket-worktree
   n="$(ticket_worktree_number "$1")" || exit $?
   ticket_facts "$n" mf
   ticket_facts_require_worktree mf worktree

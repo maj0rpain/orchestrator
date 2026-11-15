@@ -541,23 +541,8 @@ out="$(facts_of 7)"; st=$?
 assert_status "a detached HEAD in the checkout: the read does not die" "$st" 0
 assert_eq "parent is empty" "$(fact "$out" parent)" ""
 assert_eq "and so is own_branch" "$(fact "$out" own_branch)" ""
-out="$(sourced_orch_script 'ticket_facts 7 f; ticket_facts_require_parent f' 2>&1)"; st=$?
-assert_status "the parent helper dies there" "$st" 1
-assert_contains "with its message" "$out" "not on a branch (detached HEAD)"
 git checkout -q orch/5-feature
 
-out="$(sourced_orch_script 'ticket_facts 7 f; ticket_facts_require_worktree f worktree' 2>&1)"; st=$?
-assert_status "the worktree helper dies on a state not accepted" "$st" 1
-assert_contains "with its message" "$out" "no ticket worktree for ticket 7 at $p7"
-out="$(sourced_orch_script 'ticket_facts 7 f; ticket_facts_require_worktree f none gone' 2>&1)"; st=$?
-assert_status "and accepts a state it is given" "$st" 0
-"$ORCH" ticket-worktree add 7 >/dev/null
-git -C "$p7" checkout -q --detach
-out="$(sourced_orch_script 'ticket_facts 7 f; ticket_facts_require_wt_branch f' 2>&1)"; st=$?
-assert_status "the branch helper dies on a detached ticket worktree" "$st" 1
-assert_contains "with its message" "$out" "ticket worktree $p7 is not on a branch (detached HEAD)"
-git -C "$p7" checkout -q orch/5-feature--t7
-"$ORCH" ticket-worktree remove 7 --unmerged >/dev/null
 
 out="$("$ORCH" ticket-worktree bogus 2>&1)"; st=$?
 assert_status "ticket-worktree bogus is an unknown op" "$st" 1

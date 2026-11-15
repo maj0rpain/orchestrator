@@ -88,6 +88,7 @@ ticket_facts() {
   elif [ "$_tf_i" -ge 0 ]; then
     if [ -e "$_tf_path" ] || [ -L "$_tf_path" ]; then _tf_state=occupied; else _tf_state=gone; fi
   fi
+  orch_load branch
   _tf_parent="$(checkout_branch)" || _tf_parent=""
   if [ -n "$_tf_parent" ]; then
     _tf_own="$(branch_name_ticket "$_tf_parent" "$_tf_n")"
