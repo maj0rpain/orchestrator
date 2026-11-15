@@ -407,21 +407,32 @@ autopilot_orch_in() {
 }
 
 # autopilot_labels_ensure: the labels exist with their colour and
-# description. Reads the repo's labels once and upserts only those missing or
-# drifted in colour or description (names compared case-insensitively); with
-# nothing drifted it writes nothing. A failed read or upsert dies, stopping
-# the tick.
+# description. Reads the repo's labels once, compares them to the standing
+# labels in one awk, and upserts only those it prints: the missing or those
+# drifted in colour or description (names and colours compared
+# case-insensitively, descriptions exactly); with nothing drifted it writes
+# nothing. A failed read or upsert dies, stopping the tick; a failed comparison
+# upserts every standing label.
 autopilot_labels_ensure() {
-  local name colour description gh_err have _read_err
+  local name colour description gh_err have _read_err drifted
   gh_capture have _read_err adapter_labels_detail 1000 ||
     die "could not read the repo's labels: $(gh_reason "$_read_err") - the tick stops"
+  drifted="$(awk '
+    FILENAME == ARGV[1] {
+      split($0, f, "\t")
+      seen[tolower(f[1]) SUBSEP tolower(f[2]) SUBSEP f[3]] = 1
+      next
+    }
+    {
+      i = index($0, "|"); rest = substr($0, i + 1); j = index(rest, "|")
+      n = substr($0, 1, i - 1); c = substr(rest, 1, j - 1); d = substr(rest, j + 1)
+      if (!((tolower(n) SUBSEP tolower(c) SUBSEP d) in seen)) print
+    }' /dev/stdin <(standing_label_entries) <<<"$have")" || drifted="$(standing_label_entries)"
   while IFS='|' read -r name colour description; do
-    ! awk -F '\t' -v n="$name" -v c="$colour" -v d="$description" '
-      tolower($1) == tolower(n) && tolower($2) == tolower(c) && $3 == d { found = 1 }
-      END { exit !found }' <<<"$have" || continue
+    [ -n "$name" ] || continue
     gh_capture_err gh_err adapter_label_upsert "$name" "$colour" "$description" ||
       die "could not upsert the label $name: $(gh_reason "$gh_err") - the tick stops"
-  done <<<"$(standing_label_entries)"
+  done <<<"$drifted"
 }
 
 # autopilot_minimal_plan <file>: the plan a hand-labelled issue gets: the repo
