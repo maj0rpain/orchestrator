@@ -153,9 +153,8 @@ assert_not_contains "no Spec question line when none is given" "$body" "Spec que
 assert_eq "a range without a Spec question parses back to every part" "$(parsed "$body")" \
   "$(fields spec major 'misses the spec' lib/x.sh 10-20 "$sha" "$url" 42 'found in the final iteration.')"
 
-body="$(rendered 'Grew.' spec major 'grew past the threshold' lib/x.sh 1 "$sha" "$url" 'found in the final iteration.')"
-no_line="$(printf '%s\n' "$body" | sed "s/\`lib\/x.sh:1\`/\`suite\`/")"
-assert_eq "a suite location is no location" "$(parsed "$no_line" | grep '^file=')" "file="
+assert_eq "a suite location is no location" \
+  "$(parsed "$(writeln "**Location:** \`suite\` at $sha")" | grep '^file=')" "file="
 
 body="$(rendered 'Text.' standards nit 'cheap - but noisy - fix' a.sh 1 "$sha" "$url" 'not mechanical')"
 assert_eq "a severity reason containing ' - ' splits at the first one" "$(parsed "$body")" \

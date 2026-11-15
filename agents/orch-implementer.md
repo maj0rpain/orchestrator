@@ -126,9 +126,10 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    and the repo's **ticket verification** once, at the end, bare.
    Find the ticket verification where you find the full verification, in the
    repo's instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`): a line
-   reading `Ticket verification: <command>`. When they name none, `<cmd>` is
-   the repo's full verification, its `Full verification: <command>` line or
-   the command they document. The report's `Verification` line names `<cmd>`.
+   reading `Ticket verification: <command>`. When they name none, run the
+   repo's full verification instead, its `Full verification: <command>` line or
+   the command they document. The report's `Verification` line names the
+   command you ran.
    Run it in the foreground and wait for it (host capability *Run a long
    command*); never background it and sleep, poll or kill it. A run the host
    moves to the background at its timeout is still waited for, as that row says.

@@ -220,7 +220,7 @@ finding_scan_one() {
     return
   fi
   if [ -z "$pr" ]; then
-    scan_line "$file${lines:+:$lines}" unknown 'body does not parse: no **PR:** line ending in a pull request URL'
+    scan_line "$file:$lines" unknown 'body does not parse: no **PR:** line ending in a pull request URL'
     return
   fi
   # A squash merge leaves the PR's head commit off every branch: the PR's own

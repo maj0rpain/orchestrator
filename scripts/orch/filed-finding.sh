@@ -299,11 +299,8 @@ finding_body_parse() {
       '**Location:**'*)
         [ -z "$__fbp_seen_loc" ] || continue
         __fbp_seen_loc=1
-        if [[ $__fbp_line =~ $__fbp_loc_re ]]; then
-          __fbp_loc_file="${BASH_REMATCH[1]}"; __fbp_loc_line="${BASH_REMATCH[2]}"
-        else
-          continue
-        fi
+        [[ $__fbp_line =~ $__fbp_loc_re ]] || continue
+        __fbp_loc_file="${BASH_REMATCH[1]}"; __fbp_loc_line="${BASH_REMATCH[2]}"
         __fbp_rest="$__fbp_line" __fbp_sha=""
         while [[ $__fbp_rest =~ $__fbp_at_re ]]; do
           __fbp_sha="${BASH_REMATCH[1]}"

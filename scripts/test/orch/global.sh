@@ -80,7 +80,7 @@ out="$("$ORCH" suite-cost run -- true 2>&1)"; st=$?
 assert_status "suite-cost is an unknown command" "$st" 1
 assert_contains "and says so" "$out" "unknown command: suite-cost"
 out="$("$ORCH" help 2>&1)"
-assert_eq "help names no suite-cost" "$(grep -c 'suite-cost' <<<"$out")" "0"
+assert_not_contains "help names no suite-cost" "$out" "suite-cost"
 
 # --- bash version guard -----------------------------------------------------
 # orch.sh checks the running bash before it sources anything. The version is
