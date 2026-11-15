@@ -1,6 +1,6 @@
 ---
 name: orch-to-spec
-description: Turn the current conversation into a spec - no interview, just synthesis of what has already been discussed, after one check of the test seams with the user - and either publish it as a new GitHub issue labelled for an agent, or, given a leading issue number (rewrite mode), rewrite that issue's body as the spec. A quick implementation or a quick autopilot reaches rewrite mode in its Unattended rewrite form, which asks nothing. Use from orch-flow's spec phase, from a planning session's Blueprint route, from quick implementation's step 1, or standalone when a user asks to write up or publish a spec, or runs /orchestrator:to-spec or /orchestrator:to-spec <n>.
+description: Turn the current conversation into a spec - no interview, just synthesis of what has already been discussed, after one check of the test seams with the user, asked only when no seams were agreed - and either publish it as a new GitHub issue labelled for an agent, or, given a leading issue number (rewrite mode), rewrite that issue's body as the spec. A quick implementation or a quick autopilot reaches rewrite mode in its Unattended rewrite form, which asks nothing. Use from orch-flow's spec phase, from a planning session's Blueprint route, from quick implementation's step 1, or standalone when a user asks to write up or publish a spec, or runs /orchestrator:to-spec or /orchestrator:to-spec <n>.
 ---
 
 # Orchestrator to-spec
@@ -10,9 +10,10 @@ Adapted from the `to-spec` skill in `mattpocock-skills` 1.2.3.
 Take the current conversation and what you know of the codebase, and turn it
 into a spec: published as one new GitHub issue, or, in rewrite mode, written
 over an existing issue's body. Do not interview the user: synthesize
-what is already known. The one exchange is the test-seams check in step 2, and
-in rewrite mode the retire-or-keep question when the issue already has a ticket
-breakdown. **Unattended rewrite** has neither.
+what is already known. The test-seams check in step 2 is asked only when no
+seams were agreed, and in rewrite mode the retire-or-keep question is asked
+when the issue already has a ticket breakdown. **Unattended rewrite** asks
+neither.
 
 This skill reads and writes no flow state. Inside a flow, the caller
 (`orch-flow`'s spec phase) records the published issue; standalone, nothing is
@@ -71,8 +72,19 @@ turns out missing, take the fallback it documents and tell your caller which.
    Where a new seam is needed, propose it at the highest point you can. The
    fewer seams across the codebase the better; the ideal number is one.
 
-   Check with the user that these seams match their expectations. That
-   exchange is the point of this step: do not skip it.
+   Then take one of two paths.
+
+   - **Seams already agreed.** When the conversation holds seams a human
+     agreed on a planning close's route question, or the plan handoff the spec
+     is written from records them under Decisions, take those seams and ask
+     nothing.
+   - **No seams agreed.** Ask one blocking question with the ask-the-user
+     capability. The question holds the seams in one line. Its first option is
+     "Accept (Recommended)" and its second is "Change the seams". Seams the
+     user types as the question's free-text answer are taken as given.
+     Picking "Change the seams" with no seams named asks for them in plain
+     text, and the user's next message is taken as the seams. Either way they
+     are not confirmed again: go on to step 3.
 
 3. **Write the spec** from the template below into a body file outside the
    repo's tracked tree (`.scratch/` serves). A glossary or ADR change

@@ -11,7 +11,8 @@ phase's context into the next. The reviewer already believes the
 implementer's reasoning. Splitting the phases and passing only a written
 handoff between them means each phase judges the work, not the story behind
 it. Fresh context per phase also leaves room for the human-in-the-loop
-exchanges that `orch-to-spec` (test seams) and the spec review depend on.
+exchanges that the spec review depends on, and that `orch-to-spec` depends on
+when no planning close agreed the test seams.
 
 ## Requirements
 

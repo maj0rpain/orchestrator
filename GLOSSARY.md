@@ -621,13 +621,18 @@ records it as not run.
 
 **Seam**:
 The public boundary a test observes behaviour at. Seams are agreed with a human
-in the spec phase, recorded in the spec, and that agreement is
-the only one: the implement phase tests at the seams the spec gives and does not
+once, before the spec is written: at a planning close they are named
+in one line on the route question, and picking a route accepts them; where
+no planning close agreed them, `orch-to-spec` asks them as one line when it
+writes the spec. They are recorded in the spec, and that agreement is the
+only one: the implement phase tests at the seams the spec gives and does not
 re-ask. A seam the code turns out not to allow is a deviation, recorded like
-any other. In an autopilot flow they are agreed in the planning session, which
-writes the spec; a hand-labelled issue's are the ones its body states, accepted
-by the human who labelled it. A quick autopilot's are the ones its unattended
-rewrite sketches, accepted by the human who ran it.
+any other. In an autopilot flow they are agreed in the planning session,
+which writes the spec; a hand-labelled issue's are the ones its body states,
+accepted by the human who labelled it. A quick autopilot's are the ones its
+unattended rewrite sketches, accepted by the human who ran it. A quick
+implementation that reviews its issue as it stands takes the seams its body
+states.
 
 ### Review loop
 

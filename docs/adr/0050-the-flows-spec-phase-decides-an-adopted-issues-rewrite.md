@@ -3,6 +3,9 @@
 Amended by ADR-0052: an autopilot flow's spec phase skips the rewrite decision,
 and its batch is unattended.
 
+Amended by ADR-0064: the rewrite's test-seams check is asked only when the
+plan handoff records no agreed seams.
+
 Supersedes in part ADR-0034: the flow's spec phase no longer asks whether to
 rewrite an adopted issue from the plan. It decides by the rule that used to pick
 the recommended answer - rewrite when the plan changed the issue's scope or
