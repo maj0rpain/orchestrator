@@ -372,8 +372,8 @@ assert_contains "warns the default branch was not resolved from GitHub" \
 assert_eq "an empty answer is read exactly once" "$(doc_read_count)" "1"
 assert_contains "and the warning names origin/HEAD's branch" "$out" "falling back to develop."
 assert_contains "and the base branch line names it too" "$out" "base branch: develop (default)"
-# GitHub's answer is validated as default_branch validates it (#485): a tool
-# manager's banner around the name is no branch name, so doctor falls back.
+# GitHub's answer is validated as default_branch_into validates it (#485): a
+# tool manager's banner around the name is no branch name, so doctor falls back.
 fake_default_branch "$(printf 'mise ~/.config/mise/config.toml tools: gh@2.102.0\nmain\n')"
 out="$(doc_counted)"; st=$?
 assert_status "a polluted default branch does not block the flow" "$st" 0

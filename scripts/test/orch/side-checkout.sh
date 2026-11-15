@@ -1562,7 +1562,6 @@ echo "side-checkout default-branch asks"
 sc_clone
 fake_github
 fake_default_branch main
-top="$(git rev-parse --show-toplevel)"
 db_reads="$(mktemp)"
 db_defs="$(counting_defs adapter_repo_default_branch branch)"
 
