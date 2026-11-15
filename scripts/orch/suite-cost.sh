@@ -324,14 +324,16 @@ suite_cost_measure() {
   # exists is never set. The file's first line is a token only this step knows,
   # and the handler removes the file only when it reads that token back, so a
   # file some other process made at the name between the check and the create
-  # is never removed. After 10 names with no create, it dies as it always did.
+  # is never removed. The creating subshell ignores HUP, INT and TERM, so the
+  # token write always follows the create and the handler never meets an empty
+  # file. After 10 names with no create, it dies as it always did.
   local try=0 made=""
   SUITE_COST_TIMETOKEN="$$.$RANDOM$RANDOM"
   while [ "$((try += 1))" -le 10 ]; do
     temp_file_name tf
     [[ -e $tf || -L $tf ]] && continue
     SUITE_COST_TIMEFILE="$tf"
-    (umask 077; set -o noclobber; printf '%s\n' "$SUITE_COST_TIMETOKEN" >"$tf") 2>/dev/null &&
+    (trap '' HUP INT TERM; umask 077; set -o noclobber; printf '%s\n' "$SUITE_COST_TIMETOKEN" >"$tf") 2>/dev/null &&
       [[ -f $tf && ! -L $tf ]] && { made=1; break; }
     SUITE_COST_TIMEFILE=""
   done
