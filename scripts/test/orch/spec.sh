@@ -600,3 +600,48 @@ for op in fetch update comment comments; do
 done
 rm -f "$spec_body"
 restore_suite_env
+
+# --- spec round directory owner (#3078) ------------------------------------
+# The round directory's state, held, flow-membership and reset, called as the
+# spec-review module does, through sourced_orch.
+echo
+echo "spec round directory owner (#3078)"
+fresh_flow rdowner
+top="$(git rev-parse --show-toplevel)"
+od="$(mktemp -d)"
+for combo in "" a f c af ac fc afc; do
+  rm -rf "$od/d"; mkdir "$od/d"
+  case "$combo" in *a*) : >"$od/d/apply-answer" ;; esac
+  case "$combo" in *f*) : >"$od/d/fundamental.md" ;; esac
+  case "$combo" in *c*) : >"$od/d/round-complete" ;; esac
+  case "$combo" in
+    *a*) want=applying ;; *f*) want=waiting ;; *c*) want=complete ;; *) want=open ;;
+  esac
+  out="$(sourced_orch_script 'spec_round_state "$1" s; echo "$s"' "$od/d")"
+  assert_eq "spec_round_state of a directory holding '$combo' is $want" "$out" "$want"
+done
+out="$(sourced_orch_script 'spec_round_state "$1" s; echo "$s"' "$od/missing")"
+assert_eq "spec_round_state of a missing directory is open" "$out" "open"
+: >"$od/d/fundamental.md"
+sourced_orch spec_round_held "$od/d"; st=$?
+assert_status "spec_round_held succeeds beside fundamental.md" "$st" 0
+sourced_orch spec_round_held "$od/missing"; st=$?
+assert_status "spec_round_held fails without it" "$st" 1
+sourced_orch spec_round_in_flow "$top/.orchestrator/spec-rounds/2"; st=$?
+assert_status "spec_round_in_flow holds for a flow's round directory" "$st" 0
+sourced_orch spec_round_in_flow "$top/.orchestrator/spec-review/21"; st=$?
+assert_status "spec_round_in_flow fails for a standalone review's directory" "$st" 1
+sourced_orch spec_round_in_flow "$od/d"; st=$?
+assert_status "spec_round_in_flow fails for a path outside both" "$st" 1
+rm -rf "$od"
+
+# --- spec round-dir loads no spec-review module (#3078) ----------------------
+echo
+echo "spec round-dir load trace (#3078)"
+fresh_flow rdtrace
+state_fixture phase spec
+"$ORCH" state set issue 21
+rd_load="$(mktemp)"
+ORCH_LOAD_TRACE="$rd_load" "$ORCH" spec round-dir 2/3 >/dev/null 2>&1
+assert_trace_names_no "spec round-dir" "$rd_load" spec-review
+rm -f "$rd_load"

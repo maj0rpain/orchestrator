@@ -60,38 +60,12 @@ spec_review_begin() {
   # spec-review/.
   local dir="$ORCH/spec-review/$issue"
   if [ "$carry" = 1 ]; then
-    spec_review_dir_reset "$dir" "${SPEC_REVIEW_CARRIED[@]}"
+    spec_round_dir_reset "$dir" --carry
   else
-    spec_review_dir_reset "$dir"
+    spec_round_dir_reset "$dir"
   fi
   printf '%s/\n' "$dir"
 }
-
-# spec_review_dir_reset <dir> [<name>...]: a round's working directory made
-# ready to run in - the one reset both a standalone review's begin and a
-# flow's spec round-dir run. With names, every entry of an existing <dir>
-# other than those is deleted in place, keeping what a round hands the next;
-# with none, <dir> is removed whole. Either way <dir> is then created when
-# missing.
-spec_review_dir_reset() {
-  local dir="$1"
-  shift
-  if [ $# -gt 0 ] && [ -d "$dir" ]; then
-    local keep=() f
-    for f in "$@"; do keep+=(! -name "$f"); done
-    find "$dir" -mindepth 1 -maxdepth 1 "${keep[@]}" -exec rm -rf {} +
-  else
-    rm -rf "$dir"
-  fi
-  mkdir -p "$dir"
-}
-
-# What a round hands the next: the Implementability lens's code map (#1141)
-# and the settled file (#1185), read by both begin's --carry and a flow's spec
-# round-dir. A flow's round-dir also carries SPEC_ROUND_LENS_SETTING, which
-# --carry leaves out: a standalone review reads the lens setting once, in one
-# session.
-readonly SPEC_REVIEW_CARRIED=(map-implementability.md settled.md)
 
 # --- spec-review apply (#1117) ------------------------------------------------
 #
@@ -930,10 +904,9 @@ spec_review_prompt_line() {
 # directory, holding spec.md and comments.md, which the session fetched first.
 # A missing optional input prints none; the findings file and the
 # Implementability map file are write targets, always given. Fidelity runs
-# only in a flow round directory - one under SPEC_ROUNDS_DIR - and its plan
+# only in a flow round directory - one spec_round_in_flow names - and its plan
 # handoff is what `handoff path spec` prints, the op dying when it fails.
 spec_review_prompt() {
-  orch_load spec
   [ $# -eq 2 ] || die "usage: orch.sh spec-review prompt <dir> <lens>"
   local dir="${1%/}" lens="$2" plan plan_err
   spec_review_lens_known "$lens" || die "unknown lens '$lens' (want one of: $SPEC_REVIEW_LENSES)"
@@ -942,10 +915,10 @@ spec_review_prompt() {
   [ -f "$dir/spec.md" ] || die "no spec body: $dir/spec.md does not exist - fetch it first"
   [ -f "$dir/comments.md" ] || die "no comments file: $dir/comments.md does not exist - fetch it first"
   if [ "$lens" = fidelity ]; then
-    case "$dir/" in
-      "$SPEC_ROUNDS_DIR"/?*) ;;
-      *) die "the Fidelity lens runs only in a flow's spec review: $dir is not under $SPEC_ROUNDS_DIR/" ;;
-    esac
+    local rounds_dir
+    spec_rounds_dir rounds_dir
+    spec_round_in_flow "$dir" \
+      || die "the Fidelity lens runs only in a flow's spec review: $dir is not under $rounds_dir/"
     capture plan plan_err cmd_handoff path spec || {
       [ -z "$plan_err" ] || die "no plan handoff for the Fidelity prompt: $(err_line "$plan_err")"
       die "no plan handoff for the Fidelity prompt: $plan does not exist"

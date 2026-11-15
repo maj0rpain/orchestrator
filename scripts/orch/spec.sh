@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 # spec.sh - orch.sh's spec command: the flow's spec issue, read and written,
-# and the pause that stops the spec phase's session once it is written.
+# and the pause that stops the spec phase's session once it is written. It also
+# owns the round directory: the files saying where a spec review round stands,
+# the working-directory reset and what a round hands the next.
 # Its tests: scripts/test/orch/spec.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -96,8 +98,10 @@ spec_marker_write() {
     || die "cannot write $HANDOFF_DIR/$1"
 }
 
-# The empty file spec-review apply writes in a round's directory as its very
-# last step: a round counts as complete only when its directory holds it.
+# The round directory's three state files, names only (the spec_round_*
+# functions below read them). The empty file spec-review apply writes in a
+# round's directory as its very last step: a round counts as complete only
+# when its directory holds it.
 readonly SPEC_ROUND_COMPLETE=round-complete
 # The held-back fundamental items of an autopilot round, written by spec-review
 # apply in the round's directory: while it exists the round waits for the
@@ -116,6 +120,72 @@ readonly SPEC_ROUNDS_DIR="$ORCH/spec-rounds"
 # starts its lenses on these values rather than reading the setting again, so
 # the whole review runs on one lens setting (#1353).
 readonly SPEC_ROUND_LENS_SETTING=agent-lens
+
+# What a round hands the next: the Implementability lens's code map (#1141)
+# and the settled file (#1185), read by both spec-review begin's --carry and a
+# flow's spec round-dir. A flow's round-dir also carries
+# SPEC_ROUND_LENS_SETTING, which --carry leaves out: a standalone review reads
+# the lens setting once, in one session.
+readonly SPEC_ROUND_CARRIED=(map-implementability.md settled.md)
+
+# spec_round_state <dir> <var>: assigns the round's state to <var>, never
+# prints it: `applying` while <dir> holds the saved apply answer, else
+# `waiting` while it holds fundamental.md, else `open` while it holds no
+# round-complete, else `complete`. A missing <dir> is open.
+spec_round_state() {
+  if [ -e "$1/$SPEC_ROUND_APPLY_ANSWER" ]; then printf -v "$2" '%s' applying
+  elif [ -e "$1/$SPEC_ROUND_FUNDAMENTAL" ]; then printf -v "$2" '%s' waiting
+  elif [ ! -e "$1/$SPEC_ROUND_COMPLETE" ]; then printf -v "$2" '%s' open
+  else printf -v "$2" '%s' complete
+  fi
+}
+
+# spec_round_held <dir>: whether <dir> holds fundamental.md, the items an
+# autopilot round held back - apart from the state, as a resumed apply of a
+# held round is `applying` and held at once.
+spec_round_held() { [ -e "$1/$SPEC_ROUND_FUNDAMENTAL" ]; }
+
+# spec_rounds_dir <var>: assigns the flow's rounds directory to <var>.
+spec_rounds_dir() { printf -v "$1" '%s' "$SPEC_ROUNDS_DIR"; }
+
+# spec_round_in_flow <dir>: whether <dir> is under a flow's rounds directory,
+# at any depth - a flow's round directory, not a standalone review's.
+spec_round_in_flow() {
+  case "${1%/}/" in "$SPEC_ROUNDS_DIR"/?*) return 0 ;; esac
+  return 1
+}
+
+# spec_round_dir_reset <dir> [--carry]: a round's working directory made ready
+# to run in - the one reset both a standalone review's spec-review begin and a
+# flow's spec round-dir run. With --carry, every entry of an existing <dir>
+# but the code map and the settled file is deleted in place, keeping what a
+# round hands the next; without it <dir> is removed whole. Either way <dir> is
+# then created when missing.
+spec_round_dir_reset() {
+  local dir="$1"
+  if [ "${2:-}" = --carry ] && [ -d "$dir" ]; then
+    local keep=() f
+    for f in "${SPEC_ROUND_CARRIED[@]}"; do keep+=(! -name "$f"); done
+    find "$dir" -mindepth 1 -maxdepth 1 "${keep[@]}" -exec rm -rf {} +
+  else
+    rm -rf "$dir"
+  fi
+  mkdir -p "$dir"
+}
+
+# spec_round_carry <k>: copies into round k's directory what round k-1 of a
+# flow's review hands it - the lens setting, the code map and the settled file,
+# each when it exists; dies when a copy fails. A copy, not a carry in place:
+# every round keeps its own directory for the final session to read its
+# changelog from.
+spec_round_carry() {
+  local k="$1" f
+  for f in "$SPEC_ROUND_LENS_SETTING" "${SPEC_ROUND_CARRIED[@]}"; do
+    [ ! -f "$SPEC_ROUNDS_DIR/$((k - 1))/$f" ] \
+      || cp "$SPEC_ROUNDS_DIR/$((k - 1))/$f" "$SPEC_ROUNDS_DIR/$k/$f" \
+      || die "cannot copy round $((k - 1))'s $f into $SPEC_ROUNDS_DIR/$k"
+  done
+}
 
 # spec_round_number <s>: whether <s> is a positive whole number with no
 # leading zero - a round or a round count.
@@ -170,22 +240,17 @@ cmd_spec_pause_round() {
 cmd_spec_round_dir() {
   local issue="$1" phase="$2"
   shift 2
-  orch_load spec-review
   local usage="usage: orch.sh spec round-dir <k>/<n>"
   [ $# -eq 1 ] || die "$usage"
   local k n
   spec_round_count_parse "$1" k n
   spec_phase_guard die round-dir issue "$issue" "$phase"
-  local dir="$SPEC_ROUNDS_DIR/$k" f
-  spec_review_dir_reset "$dir"
+  local dir="$SPEC_ROUNDS_DIR/$k"
+  spec_round_dir_reset "$dir"
   if [ "$k" -eq 1 ]; then
     find "$SPEC_ROUNDS_DIR" -mindepth 1 -maxdepth 1 ! -name 1 -exec rm -rf {} +
   else
-    for f in "$SPEC_ROUND_LENS_SETTING" "${SPEC_REVIEW_CARRIED[@]}"; do
-      [ ! -f "$SPEC_ROUNDS_DIR/$((k - 1))/$f" ] \
-        || cp "$SPEC_ROUNDS_DIR/$((k - 1))/$f" "$dir/$f" \
-        || die "cannot copy round $((k - 1))'s $f into $dir"
-    done
+    spec_round_carry "$k"
   fi
   spec_marker_write "$SPEC_ROUND_MARKER" "$issue $k $n"
   printf '%s/\n' "$dir"
@@ -215,15 +280,12 @@ cmd_spec_round() {
   spec_round_number "$k" && spec_round_number "$n" && [ -z "$extra" ] && [ "$k" -le "$n" ] \
     || die2 "$malformed"
   [ "$m_issue" = "$issue" ] || return 1
-  if [ -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_APPLY_ANSWER" ]; then
-    printf '%s %s applying\n' "$k" "$n"
-  elif [ -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_FUNDAMENTAL" ]; then
-    printf '%s %s waiting\n' "$k" "$n"
-  elif [ ! -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_COMPLETE" ]; then
-    printf '%s %s\n' "$k" "$n"
-  elif [ "$k" -lt "$n" ]; then
-    printf '%s %s\n' "$((k + 1))" "$n"
-  else
-    printf 'done %s\n' "$n"
-  fi
+  local state
+  spec_round_state "$SPEC_ROUNDS_DIR/$k" state
+  case "$state" in
+    applying|waiting) printf '%s %s %s\n' "$k" "$n" "$state" ;;
+    open) printf '%s %s\n' "$k" "$n" ;;
+    *)
+      if [ "$k" -lt "$n" ]; then printf '%s %s\n' "$((k + 1))" "$n"; else printf 'done %s\n' "$n"; fi ;;
+  esac
 }
