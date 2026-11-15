@@ -339,7 +339,7 @@ suite_cost_head_commit() {
 # included) and SUITE_COST_WALL to its wall seconds, both to two places.
 # Measured by bash's own time keyword and TIMEFORMAT, so no GNU-only time is
 # needed: the report goes to a temp file while the command's stderr goes
-# through fd 3 to the caller's. `command` keeps it off orch.sh's own functions.
+# through fd 3 to the caller's. Starts the command through suite_cost_exec.
 # The one step ORCH_SUITE_COST_TIMER's file overrides (see the module's end).
 suite_cost_measure() {
   local tf real user sys TIMEFORMAT='%2R %2U %2S'

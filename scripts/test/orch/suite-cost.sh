@@ -258,8 +258,10 @@ assert_eq "its command field is the argument as given" "$(tail -n 1 "$rec" | cut
 out="$("$ORCH" suite-cost run -- 'true && exit 3' 2>&1)"; st=$?
 assert_status "a failing second half passes its exit code through" "$st" 3
 assert_eq "and records nothing" "$(log_count "$rec")" 1
+n_two="$(log_count "$rec")"
 "$ORCH" suite-cost run -- 'echo a b' >/dev/null 2>&1
 "$ORCH" suite-cost run -- echo a b >/dev/null 2>&1
+assert_eq "both runs append a record line" "$(log_count "$rec")" "$((n_two + 2))"
 assert_eq "one quoted argument records what the same words as several do" \
   "$(tail -n 2 "$rec" | cut -f5 | sort -u | wc -l | tr -d ' ')" 1
 out="$("$ORCH" suite-cost run -- printf '%s\n' '&&' 2>&1)"
@@ -270,6 +272,7 @@ for blank in "" " " $'\t '; do
     out="$("$ORCH" suite-cost "$op" -- "$blank" 2>&1)"; st=$?
     assert_status "$op with a blank single argument is a usage error" "$st" 1
     assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost $op -- <cmd> [args...]"
+    assert_contains "and its usage line names the one-argument form" "$out" "suite-cost $op -- '<shell line>'"
   done
 done
 assert_eq "and records nothing" "$(log_count "$rec")" "$n_before"
@@ -530,10 +533,15 @@ assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost history"
 out="$("$ORCH" help 2>&1)"
 flat="$(tr -s ' \n' ' ' <<<"$out")"
 assert_contains "suite-cost run is in the usage text" "$out" "suite-cost run -- <cmd> [args...]"
-assert_contains "run's usage line names the one-argument form" "$("$ORCH" suite-cost run 2>&1)" "suite-cost run -- '<shell line>'"
-assert_contains "check's usage line names the one-argument form" "$("$ORCH" suite-cost check 2>&1)" "suite-cost check -- '<shell line>'"
-assert_contains "the help text says a single argument is a shell line run with bash -c and recorded as given" \
-  "$flat" "A single argument is a shell line, run with bash -c and recorded as given"
+shell_line_text="A single argument is a shell line, run with bash -c and recorded as given"
+run_block="${flat#*suite-cost run -- <cmd> [args...] }"
+run_block="${run_block%%suite-cost check -- <cmd> [args...] *}"
+check_block="${flat#*suite-cost check -- <cmd> [args...] }"
+check_block="${check_block%%suite-cost history *}"
+assert_contains "run's help text says a single argument is a shell line run with bash -c and recorded as given" \
+  "$run_block" "$shell_line_text"
+assert_contains "check's help text says a single argument is a shell line run with bash -c and recorded as given" \
+  "$check_block" "$shell_line_text"
 assert_contains "suite-cost history is in the usage text" "$out" "suite-cost history"
 assert_contains "the usage text says an overlapped run is not recorded" \
   "$flat" "A run another suite-cost run overlapped, in any checkout of the clone, is not recorded"
@@ -1031,7 +1039,8 @@ fake_cpu "$head" 5.00
 seed_run "$head" 70.00 "$line"
 out="$("$ORCH" suite-cost check -- "$line" 2>"$errf")"
 assert_eq "a one-argument chained line's base run runs its second half" "$(on_disk "$mk2")" present
-assert_eq "and records the line as given" "$(tail -n 1 "$rec" | cut -f5)" "$line"
+assert_eq "and records the line as given on the base" \
+  "$(awk -F'\t' -v b="$base" -v l="$line" '$1 == b && $5 == l' "$rec" | wc -l | tr -d ' ')" 1
 
 check_repo
 fake_cpu "$base" 5.00
