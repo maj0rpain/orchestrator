@@ -2238,7 +2238,7 @@ assert_eq "bash hook: a Post whose hash run prints nothing exits 0" "$bw_rc" 0
 assert_empty "bash hook: a Post whose hash run prints nothing is silent" "$bw_out"
 assert_empty "bash hook: a Post whose hash run prints nothing leaves no snapshot" \
   "$(ls -A "$BW_TMP3")"
-rm -rf "$BW_FAILGIT" "$BW_FAILGREP" "$BW_EMPTYGIT" "$BW_TMP3"
+rm -rf "$BW_FAILGIT" "$BW_FAILGREP" "$BW_EMPTYGIT" "$BW_STATGIT" "$BW_TMP3"
 rm -rf "$BW" "$BW2" "$BW_TMP" "$BW_FILE"
 
 # --- bash hook, stdin guard (scripts/hook-bash.sh, #2001)

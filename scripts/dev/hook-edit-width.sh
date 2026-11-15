@@ -43,8 +43,9 @@ check_file() {
 # is listed. A path that is not a regular readable file, or holds a newline
 # (the one-line-per-file format cannot carry it), is left out. Returns 1,
 # printing nothing, when the status listing or the hash run fails, or the hash
-# run returns a different number of hashes than paths. The listing ends with an
-# "rc=<status>" record, never a path (a status entry has a space third).
+# run returns a different number of hashes than paths. The status stream read
+# below ends with an "rc=<status>" record, never read as a path (a status entry
+# has a space third).
 dirty_hashes() {
   local root="$1" entry path quoted rest skip=0 n=0 i=0 hash hashes out="" status_rc=""
   local -a paths=()
