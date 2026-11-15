@@ -26,7 +26,7 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 ## Never load the skills
 
 Read the files below as files, under the plugin root (two directories above
-`ORCH`). Never load either skill through the Skill tool: loading
+`ORCH`). Never load any of these skills through the Skill tool: loading
 `orch-interview` fires the grilling hook, which arms the planning guard and
 pushes the planning close. Never start the planning close: no route question,
 no interviewed-issue question, no done-close.
@@ -65,11 +65,12 @@ nothing back, and its line says the label was moved.
    of the mode; restate none of it.
 5. **Plan** (`plan`). Write the plan, its file, Rounds and Budget as the
    `### Autopilot route` section of `skills/orch-interview/SKILL.md` alone
-   sets them, from `skills/orch-handoff/SKILL.md`'s `## In an autopilot flow`,
+   sets them, taking nothing else from that route (not its orch-to-spec run,
+   its `autopilot start` or the relay of that command's lines), from
+   `skills/orch-handoff/SKILL.md`'s `## In an autopilot flow`,
    `## What belongs in one` and the `01-plan.md` template's `###` section under
-   `## Templates`, with every
-   interview question and the answer taken under `## Decisions`. Validate it
-   with `bash "$ORCH" handoff validate <file>`.
+   `## Templates`, with every interview question and the answer taken under
+   `## Decisions`. Validate it with `bash "$ORCH" handoff validate <file>`.
 6. **Start** (`start`). `bash "$ORCH" autopilot start <n> <plan-file>`.
 
 ## Report
