@@ -497,7 +497,6 @@ wt="$("$ORCH" ticket-worktree add 24)"
 git -C "$wt" checkout -q -b other-24
 git config branch.other-24.orchestrator-ticket-parent orch/5-feature
 commit_file "$wt" other24.txt one
-own_tip="$(git rev-parse orch/5-feature--t24)"
 out="$("$ORCH" ticket close 24 2>&1)"; st=$?
 assert_status "close asks the merged check of the checked-out branch" "$st" 1
 assert_eq "leaving the issue open" "$(fake_state_of 24)" "OPEN"

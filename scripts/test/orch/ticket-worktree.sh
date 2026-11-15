@@ -457,7 +457,12 @@ for k in n path worktree wt_branch parent own_branch own_exists; do
   v="f_$k"; printf "%s=%s\n" "$k" "${!v}"
 done' "$1"
 }
-fact() { sed -n "s/^$2=//p" <<<"$1"; }
+fact() {
+	local k v
+	while IFS='=' read -r k v; do
+		[ "$k" != "$2" ] || printf '%s\n' "$v"
+	done <<<"$1"
+}
 p7="$top/.orchestrator/worktrees/t7"
 
 out="$(facts_of 7)"; st=$?
@@ -503,7 +508,8 @@ assert_eq "and the state is still worktree" "$(fact "$out" worktree)" "worktree"
 git -C "$p7" rebase --abort
 git reset -q --hard HEAD~1
 
-git branch -q -D orch/5-feature--t7 2>/dev/null || git -C "$p7" checkout -q --detach && git branch -q -D orch/5-feature--t7
+git -C "$p7" checkout -q --detach
+git branch -q -D orch/5-feature--t7
 out="$(facts_of 7)"
 assert_eq "no ticket branch of its own name: own_exists is no" "$(fact "$out" own_exists)" "no"
 assert_eq "yet the state is worktree" "$(fact "$out" worktree)" "worktree"
