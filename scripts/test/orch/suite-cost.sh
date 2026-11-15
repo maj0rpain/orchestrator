@@ -1536,7 +1536,7 @@ realgit="$(command -v git)"
 gitbin="$(mktemp -d)"
 cat >"$gitbin/git" <<EOS
 #!/bin/sh
-if [ "\$1 \$2" = "worktree remove" ]; then kill -HUP \$PPID; sleep 0.2; fi
+if [ "\$1 \$2" = "worktree remove" ]; then kill -HUP \$PPID; fi
 exec "$realgit" "\$@"
 EOS
 chmod +x "$gitbin/git"
