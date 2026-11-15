@@ -236,7 +236,7 @@ out="$("$ORCH" autopilot start 7 2>&1)"; st=$?
 assert_contains "start's usage line" "$out" "usage: orch.sh autopilot start <issue> <plan-file>"
 assert_eq "a usage error prints nothing on stdout" "$("$ORCH" autopilot start 7 2>/dev/null)" ""
 
-# a success prints the two lines; with no URL from gh the first ends at the number
+# a success prints the two lines; with no URL from gh the first ends at #n
 fake_issue 12 open ready-for-agent
 assert_eq "start prints the two lines with the comment's URL and the first phase label" "$("$ORCH" autopilot start 12 "$planf" 2>/dev/null)" "$(printf 'posted the plan comment on issue #12: https://github.com/o/r/issues/12#issuecomment-1\nadded orch:spec to issue #12')"
 fake_issue 13 open ready-for-agent

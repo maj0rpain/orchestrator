@@ -269,8 +269,9 @@ start` (ADR-0061). The watcher picks either up the same way.
 autopilot route, refuses an issue without `ready-for-agent` or with a **phase
 label** already on it. It posts the **plan comment** and adds `orch:spec`,
 then prints two lines: the plan comment's URL and the phase label it added; a
-failure prints nothing on stdout. The labels then advance `orch:spec` -> `orch:implement` ->
-`orch:review` -> `orch:done`. `orch:running` is set while a session works.
+failure prints nothing on stdout. The labels then advance `orch:spec` ->
+`orch:implement` -> `orch:review` -> `orch:done`. `orch:running` is set while a
+session works.
 
 Before starting a session, the **watcher** (`watch`, or a scheduled `tick`,
 which is the same watcher run once) takes a **claim** on the issue's next
