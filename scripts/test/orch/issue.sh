@@ -680,6 +680,50 @@ assert_contains "the CLI conventions' noun table lists issue ready" \
   "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`ready`'
 restore_suite_env
 
+# --- issue labels -------------------------------------------------------------
+# The interview's pre-fold-in check (#3459): one line per issue, in the order
+# named - number, open|closed, then its labels joined by ", ".
+echo
+echo "issue labels"
+healthy_repo
+fake_github
+labels_of() { "$ORCH" issue labels "$@"; }
+
+fake_issue 90 open bug orch:running
+out="$(labels_of 90 2>&1)"; st=$?
+assert_status "one issue exits 0" "$st" 0
+assert_eq "and prints its number, state and labels" "$out" "90 open bug, orch:running"
+
+fake_issue 91 closed ready-for-agent
+fake_issue 92 open
+out="$(labels_of 92 90 91 2>&1)"
+assert_eq "several issues print in the order named, closed and unlabelled as such" \
+  "$out" $'92 open\n90 open bug, orch:running\n91 closed ready-for-agent'
+
+snap="$(fake_snapshot)"
+out="$(labels_of 2>&1)"; st=$?
+assert_status "no number is a usage error" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh issue labels <n>..."
+out="$(labels_of 90 abc 2>&1)"; st=$?
+assert_status "a number that is not plain is a usage error" "$st" 1
+assert_not_contains "raised before any read, so nothing printed" "$out" "90 open"
+assert_eq "and the store is untouched" "$(fake_snapshot)" "$snap"
+
+fake_fail_after adapter_issue_state_labels 1 "$GH_502"
+out="$(labels_of 90 91 92 2>&1)"; st=$?
+assert_status "a failed read partway exits 1" "$st" 1
+assert_eq "earlier line printed, then the error naming the issue, no later issue" \
+  "$out" $'90 open bug, orch:running\norch: gh could not read issue #91: HTTP 502: Bad Gateway'
+fake_unfail
+
+assert_contains "the unknown-op message lists labels" "$("$ORCH" issue bogus 2>&1)" "|labels"
+assert_contains "help documents issue labels" "$("$ORCH" help)" "issue labels <n>..."
+assert_contains "the CLI conventions' noun table lists issue labels" \
+  "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`labels`'
+assert_contains "the issue tracker doc's conventions list reading labels" \
+  "$(cat "$PLUGIN_ROOT/docs/agents/issue-tracker.md")" 'issue labels'
+restore_suite_env
+
 # --- issue close --------------------------------------------------------------
 # The planning close's done-close (#985): one gh call closes an issue as
 # completed or as a duplicate, the file's contents as its closing comment -

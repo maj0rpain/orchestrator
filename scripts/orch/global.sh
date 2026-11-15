@@ -434,6 +434,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               label (wontfix ahead of ready-for-human), or
                               movable, exit 0; exit 1 where the write would
                               die. Not with --override
+  issue labels <n>...         print one line per issue, in the order named: its
+                              number, open or closed, then its labels joined
+                              by ", " (none when it has none); a failed read
+                              dies naming the issue after the lines already
+                              printed; 1 on a usage error - recording no state
   issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
                               close issue <n> as completed, or as a duplicate
                               of <m> (gh 2.102 or newer), with <file> as its

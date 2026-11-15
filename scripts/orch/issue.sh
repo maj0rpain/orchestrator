@@ -185,9 +185,33 @@ cmd_issue() {
     triage) cmd_issue_triage "$@" ;;
     ready) cmd_issue_ready "$@" ;;
     next) cmd_issue_next "$@" ;;
+    labels) cmd_issue_labels "$@" ;;
     close) cmd_issue_close "$@" ;;
-    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage|ready|next|close)" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage|ready|next|labels|close)" ;;
   esac
+}
+
+# issue labels <n>...: prints one line per issue, in the order named - its
+# number, open or closed, then its labels joined by ", " (only the number and
+# state when it has none) - through the existing state-and-labels read. Each
+# line is printed as its read succeeds; a failed read dies naming the issue,
+# after the lines already printed, and no later issue is read. No number, or a
+# number that is not plain, is a usage error (exit 1) before any read.
+# Read-only: the interview's check before it proposes folding an issue in.
+cmd_issue_labels() {
+  local usage="usage: orch.sh issue labels <n>..."
+  local issue state labels gh_err joined
+  [ $# -gt 0 ] || die "$usage"
+  for issue in "$@"; do
+    case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue ($usage)" ;; esac
+  done
+  for issue in "$@"; do
+    issue_state_labels_read "$issue" state labels gh_err \
+      || gh_die "read issue #$issue" "$gh_err"
+    joined="$(printf '%s\n' "$labels" | awk 'NF { printf "%s%s", sep, $0; sep = ", " }')"
+    case "$state" in OPEN) state=open ;; *) state=closed ;; esac
+    printf '%s %s%s\n' "$issue" "$state" "${joined:+ $joined}"
+  done
 }
 
 # issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>:

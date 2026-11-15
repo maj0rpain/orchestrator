@@ -163,6 +163,11 @@ habits on every round:
   check whether the code agrees, and surface a contradiction: "The code
   cancels whole Orders, but you just said partial cancellation is possible.
   Which is right?"
+- **Check an issue before folding it in.** Before proposing to fold another
+  issue into the plan, or to order the plan against one, run
+  `bash "$ORCH" issue labels <n>` on it. The question then states the issue's
+  state, its phase label and whether it carries `orch:running`. An issue with
+  a phase label is never recommended for folding in.
 - **Name the docs the plan will make stale.** When the plan changes or
   removes something a doc describes, name each such doc by document and
   section (the README's Install section), so the spec lists it under

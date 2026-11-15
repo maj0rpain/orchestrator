@@ -26,6 +26,9 @@ file assumes `$repo` is set this way.
   the file: `cited files changed since <sha>: none`, or the changed cited
   files joined by `, `, or `unknown (<reason>)` when the comparison cannot
   be made. `--json` prints no such line.
+- **Read an issue's labels**: `bash "<orch.sh>" issue labels <number>...`
+  prints one line per issue, in the order named: its number, `open` or
+  `closed`, then its labels joined by `, `.
 - **List issues**: `gh issue list -R "$repo" --state open --json
   number,title,body,labels,comments --jq '[.[] | {number, title, body, labels:
   [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label`
