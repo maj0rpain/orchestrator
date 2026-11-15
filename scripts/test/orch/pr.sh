@@ -1685,7 +1685,7 @@ restore_suite_env
 # arguments.
 echo
 echo "pr: PR-line pick and newest merge"
-healthy_repo
+new_repo >/dev/null
 tab=$'\t'
 pl_lines="1${tab}orch/5-a${tab}2025-01-01T00:00:00Z${tab}c1"$'\n'"2${tab}orch/50-b${tab}x"$'\n'"3${tab}orch/5-c${tab}CONFLICTING"$'\n'"nohead"$'\n'
 nm_run='

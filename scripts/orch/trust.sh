@@ -15,12 +15,12 @@
 # the comment filter and the issue check share. The filter's JSON array is built
 # from it here, as the module loads, starting no process.
 TRUST_ASSOCIATIONS="OWNER MEMBER COLLABORATOR"
-TRUST_ASSOCIATIONS_JSON=""
+_trust_items=""
 for _trust_a in $TRUST_ASSOCIATIONS; do
-  TRUST_ASSOCIATIONS_JSON="${TRUST_ASSOCIATIONS_JSON:+$TRUST_ASSOCIATIONS_JSON, }\"$_trust_a\""
+  _trust_items="${_trust_items:+$_trust_items, }\"$_trust_a\""
 done
-TRUST_ASSOCIATIONS_JSON="[$TRUST_ASSOCIATIONS_JSON]"
-unset _trust_a
+TRUST_ASSOCIATIONS_JSON="[$_trust_items]"
+unset _trust_a _trust_items
 
 # trust_filter_comments <issue>: the comments JSON array on stdin, each comment
 # carrying its authorAssociation, on stdout without the untrusted ones. When it

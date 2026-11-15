@@ -59,7 +59,8 @@ A helper called once per item (per file, per label, per issue, per worktree)
 starts no external command for work bash can do itself, such as reading a small
 file, taking a path's last component or testing membership in a list. Reach for
 the primitives: `temp_file_make` for a private temp file, `file_read` to read a
-file back, `path_last_into` for a path's last component, `list_has` and
+file back exactly, `file_read_text` to read it as `$(cat)` gives it,
+`path_last_into` for a path's last component, `list_has` and
 `word_listed` for membership in a newline or space-separated list, `tsv_split`
 and `lines_split` to split a line or a text into fields, and `newlines_strip` to
 drop trailing newlines.
