@@ -94,10 +94,10 @@ paste_guard_scan() {
   needle="${PASTE_GUARD_NEEDLE//\\/\\\\}"; needle="${needle//\"/\\\"}"
   apply="${PASTE_GUARD_APPLY//\\/\\\\}"; apply="${apply//\"/\\\"}"
   # No needle, no arming: nothing is decoded.
-  grep -qF -e "$needle" "$1" 2>/dev/null; st=$?
+  grep -qaF -e "$needle" "$1" 2>/dev/null; st=$?
   [ "$st" -le 1 ] || return 1
   [ "$st" -eq 0 ] || return 0
-  cands="$(grep -nF -e "$needle" -e "$apply" "$1" 2>/dev/null)"; st=$?
+  cands="$(grep -naF -e "$needle" -e "$apply" "$1" 2>/dev/null)"; st=$?
   [ "$st" -le 1 ] || return 1
   nums="$(printf '%s\n' "$cands" | cut -d: -f1)" || return 1
   s1="$(set -o pipefail; printf '%s\n' "$cands" | cut -d: -f2- | jq -nrR \
