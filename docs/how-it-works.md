@@ -106,7 +106,8 @@ could not meet as unmet, and a source file it could not cover as untested.
 When a report other than a stop report is in hand, the driving session lands
 the ticket branch on the flow's branch with `orch.sh ticket merge` (a rebase
 and a fast-forward), closes the ticket, removes its worktree, and refills the
-free slots from the re-queried frontier. A ticket whose merge conflicts is resolved, not rebuilt:
+free slots from the re-queried frontier. A ticket whose merge conflicts is
+resolved, not rebuilt:
 the driver resumes the ticket's own implementer to rebase and resolve it in
 its worktree (or starts a fresh `orch-resolver` there), and only if that
 resolution fails is the ticket redone alone once nothing else is in flight.
