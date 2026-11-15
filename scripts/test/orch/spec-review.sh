@@ -2756,7 +2756,8 @@ TICKETS
 srct() { src "$1" --tickets; }
 
 d="$(srct_dir)"
-check_passes srct "a ticket batch" "$d" '## The ticket items
+srct_load="$(mktemp)"
+ORCH_LOAD_TRACE="$srct_load" check_passes srct "a ticket batch" "$d" '## The ticket items
 
 ### Item 1 - #20
 
@@ -2804,6 +2805,8 @@ Build gamma twice.
 
 **Recommended answer:** apply' \
   "tickets.md passes: 4 items, 2 anchors, each matching once, and the all answer applies cleanly$(src_nudge "$d")"
+assert_trace_loads_once "spec-review check --tickets with two edge items" "$srct_load"
+rm -f "$srct_load"
 assert_eq "no fetched copy taken" "$(on_disk "$d/ticket-20.fetched.md")" absent
 
 # A collapsed breakdown's ## Ticket item, anchored on spec.md.

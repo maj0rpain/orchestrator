@@ -51,6 +51,9 @@ phase_finish() {
 cmd_phase() {
   local op="${1:-}"
   shift || true
+  # handoff is read in command substitutions by both ops: load it here, once,
+  # in the main shell, not once per subshell.
+  orch_load handoff
   case "$op" in
     advance)
       [ $# -eq 0 ] || die "usage: orch.sh phase advance"
@@ -64,6 +67,11 @@ cmd_phase() {
       esac
       next="$(phase_next "$phase")" ||
         die "not a flow phase: '$phase' - run orch.sh doctor --flow"
+      # Past the guards that refuse a run: autopilot is first reached inside
+      # the handoff store's command substitution; gh and repo only by an
+      # autopilot session's branch below.
+      orch_load autopilot
+      if autopilot_active; then orch_load gh; orch_load repo; fi
       # The handoff this phase writes is the one the next phase reads. It is
       # checked before the state fields so a missing handoff - the likelier
       # gap - is the one reported.

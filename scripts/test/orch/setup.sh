@@ -1216,6 +1216,23 @@ assert_trace_loads_once() {
     "$(awk '{print $1}' "$2" | sort | uniq -d | tr '\n' ' ')" ""
 }
 
+# assert_trace_names_no <label> <trace file> <module>...: asserts a load trace,
+# written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
+# modules - a module the run must not load at all.
+assert_trace_names_no() {
+  local label="$1" trace="$2" mod line n
+  shift 2
+  local -a lines=()
+  mapfile -t lines <"$trace"
+  for mod in "$@"; do
+    n=0
+    for line in "${lines[@]}"; do
+      [ "${line%%[[:space:]]*}" = "$mod" ] && n=$((n + 1))
+    done
+    assert_eq "$label: the load trace names no $mod" "$n" "0"
+  done
+}
+
 # sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
 # finished sweep first and reports it on stderr, so that stderr is held back:
 # discarded when add succeeds, printed when it fails. The new path passes

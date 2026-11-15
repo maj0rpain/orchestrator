@@ -54,8 +54,7 @@ trace="$(mktemp)"
 run_traced() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash "$ORCH" "$@" >/dev/null 2>&1 || true; }
 
 run_traced state get phase
-assert_eq "state get loads the state module and never the autopilot's" \
-  "$(awk '$1 == "autopilot"' "$trace" | wc -l | tr -d ' ')" "0"
+assert_trace_names_no "state get loads the state module and never the autopilot's" "$trace" autopilot
 assert_contains "state get loads the state module" "$(cat "$trace")" "state 0"
 assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
@@ -134,7 +133,7 @@ out="$(src_run 'source "$1"; cmd_state() { echo replaced; }; cmd_state')"
 assert_eq "a function replaced after source stays replaced" "$out" "replaced"
 
 src_run 'ORCH_SOURCE_LAZY=1; source "$1"' >/dev/null
-assert_eq "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$(awk '$1 == "autopilot"' "$trace" | wc -l | tr -d ' ')" "0"
+assert_trace_names_no "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$trace" autopilot
 out="$(src_run 'ORCH_SOURCE_LAZY=1; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
 assert_eq "and is unset after the source" "$out" "unset"
 out="$(src_run 'export ORCH_SOURCE_LAZY=1; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
@@ -146,7 +145,7 @@ assert_eq "and loads every module" "$(awk '{print $1}' "$trace")" "$(orch_module
 
 : >"$trace"
 ORCH_LOAD_TRACE="$trace" sourced_orch branch_records_base orch/40-flowing || true
-assert_eq "sourced_orch loads on demand" "$(awk '$1 == "autopilot"' "$trace" | wc -l | tr -d ' ')" "0"
+assert_trace_names_no "sourced_orch loads on demand" "$trace" autopilot
 : >"$trace"
 ORCH_LOAD_TRACE="$trace" sourced_orch eval 'true'
 assert_eq "sourced_orch eval loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
