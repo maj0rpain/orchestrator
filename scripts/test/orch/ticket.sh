@@ -466,6 +466,51 @@ assert_contains "the usage text lists ticket close <n> [--unmerged]" \
   "$("$ORCH" help 2>&1)" "ticket close <n> [--unmerged]"
 restore_suite_env
 
+# The facts of a ticket come from one read of git's record (#3087).
+tw_repo
+fake_github
+fake_issue 20 open
+wt="$("$ORCH" ticket-worktree add 20)"
+commit_file "$wt" ticket20.txt one
+"$ORCH" ticket merge 20 >/dev/null 2>&1
+git checkout -q --detach
+out="$("$ORCH" ticket close 20 2>&1)"; st=$?
+assert_status "close from a detached HEAD closes a merged ticket" "$st" 0
+assert_eq "closing it" "$(fake_state_of 20)" "CLOSED"
+git checkout -q orch/5-feature
+
+fake_issue 21 open
+wt="$("$ORCH" ticket-worktree add 21)"
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket close 21 --unmerged 2>&1)"; st=$?
+assert_status "close --unmerged reads no checkouts" "$st" 0
+assert_eq "closing it" "$(fake_state_of 21)" "CLOSED"
+
+fake_issue 22 open
+wt="$("$ORCH" ticket-worktree add 22)"
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket close 22 2>&1)"; st=$?
+assert_status "close dies when the checkouts cannot be read" "$st" 1
+assert_eq "leaving the issue open" "$(fake_state_of 22)" "OPEN"
+
+# A ticket worktree with another branch checked out than the ticket's own.
+fake_issue 24 open
+wt="$("$ORCH" ticket-worktree add 24)"
+git -C "$wt" checkout -q -b other-24
+git config branch.other-24.orchestrator-ticket-parent orch/5-feature
+commit_file "$wt" other24.txt one
+out="$("$ORCH" ticket close 24 2>&1)"; st=$?
+assert_status "close asks the merged check of the checked-out branch" "$st" 1
+assert_eq "leaving the issue open" "$(fake_state_of 24)" "OPEN"
+
+# git's record names the worktree and its directory is gone: no merged check.
+fake_issue 25 open
+wt="$("$ORCH" ticket-worktree add 25)"
+commit_file "$wt" ticket25.txt one
+rm -rf "$wt"
+out="$("$ORCH" ticket close 25 2>&1)"; st=$?
+assert_status "close of a ticket whose worktree directory is gone" "$st" 0
+assert_eq "closing it" "$(fake_state_of 25)" "CLOSED"
+restore_suite_env
+
 # --- ticket reset ------------------------------------------------------------
 # Reopens every sub-issue of <parent> that is currently closed, and only
 # those - what redo review needs before handing back to a fresh implement
@@ -1444,6 +1489,28 @@ assert_eq "and leaving the main checkout's branch alone" \
   "$(git -C "$main_top" branch --show-current)" "orch/5-feature"
 cd "$main_top" || exit 1
 
+# The dirty worktree's refusal when the checkouts cannot be read.
+wt="$("$ORCH" ticket-worktree add 23)"
+commit_file "$wt" ticket23.txt one
+echo dirt >"$wt/dirty.txt"
+flow_tip="$(git rev-parse orch/5-feature)"; t_tip="$(git rev-parse orch/5-feature--t23)"
+out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" ticket merge 23 2>&1)"; st=$?
+assert_status "merge of a dirty worktree dies when the checkouts cannot be read" "$st" 1
+assert_contains "naming the checkouts, not the dirty tree" "$out" "could not read the checkouts"
+assert_eq "the forked-from branch is as it was" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t23)" "$t_tip"
+
+# A ticket worktree with another branch checked out than the ticket's own.
+wt="$("$ORCH" ticket-worktree add 24)"
+git -C "$wt" checkout -q -b other-24
+git config branch.other-24.orchestrator-ticket-parent orch/5-feature
+commit_file "$wt" other24.txt one
+own_tip="$(git rev-parse orch/5-feature--t24)"
+out="$("$ORCH" ticket merge 24 2>&1)"; st=$?
+assert_status "merge lands the checked-out branch" "$st" 0
+assert_eq "on its forked-from branch" "$(git rev-parse orch/5-feature)" "$(git rev-parse other-24)"
+assert_eq "leaving the ticket's own branch as it was" "$(git rev-parse orch/5-feature--t24)" "$own_tip"
+
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket merge is in the usage text" "$out" "ticket merge <n>"
 assert_contains "the CLI conventions' noun table lists merge among ticket's verbs" \
@@ -1798,7 +1865,7 @@ for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobran
 done
 
 # a plain directory at the recorded path: the teardown's refusal, then the
-# after-check; the directory, the record and the branch stay
+# worktree line from the facts; the directory, the record and the branch stay
 rc_setup 1
 rm -rf "$(rc_wt 7)"
 mkdir "$(rc_wt 7)"
@@ -1809,6 +1876,34 @@ assert_contains "and the could-not-remove line" "$out" "ticket #7: could not rem
 assert_eq "the directory stays" "$(on_disk "$(rc_wt 7)")" "present"
 assert_eq "the record stays" "$("$ORCH" ticket-worktree list)" "7 $(rc_wt 7)"
 assert_eq "and the branch" "$(rc_has_branch 7)" "yes"
+
+# a step that fails before anything is removed (the discard in the ticket
+# worktree) still gets the worktree line, and leaves the worktree
+rc_setup 1
+out="$(PATH="$(git_fails_bin '*" reset "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a discard that fails before any removal dies" "$st" 1
+assert_contains "with the worktree line" "$out" "ticket #7: could not remove its worktree $(rc_wt 7)"
+assert_not_contains "and no branch line" "$out" "could not delete branch"
+assert_eq "leaving the worktree and the branch" "$(rc_has_worktree 7)$(rc_has_branch 7)" "yesyes"
+restore_suite_env
+
+# a branch with no worktree whose delete fails: the branch line, no note
+rc_setup 1
+rc_report 7
+git worktree remove --force "$(rc_wt 7)"
+out="$(PATH="$(git_fails_bin '*" branch "*" -D "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a branch delete that fails with no worktree dies" "$st" 1
+assert_contains "naming the ticket and its branch" "$out" "ticket #7: could not delete branch orch/5-feature--t7"
+assert_not_contains "with no note that a worktree went" "$out" "removed the worktree"
+restore_suite_env
+
+# a gone-directory leftover whose worktree removal fails: the worktree line
+rc_setup 1
+rm -rf "$(rc_wt 7)"
+out="$(PATH="$(git_fails_bin '*" worktree remove "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a gone-directory record that cannot be removed dies" "$st" 1
+assert_contains "with the worktree line" "$out" "ticket #7: could not remove its worktree $(rc_wt 7)"
+restore_suite_env
 
 # --- ticket exists: no repo (#3050) ------------------------------------------
 # Exit 1 is "no breakdown", so a repo that cannot be found exits 2 with the

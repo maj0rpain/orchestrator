@@ -99,9 +99,8 @@ No field is ever empty: an empty `<pr>` or `<detail>` prints `-`.
   filing: `<detail>` is then the commit that deleted them.
 - `gone` - the file no longer exists on the default branch.
 - `unknown` - `<detail>` says why: an unreachable SHA, a body that does not
-  parse, filed lines that differ only by commits that never reached the
-  default branch, or a suite-cost finding, whose location `suite` names the
-  suite as a whole and no lines.
+  parse, or filed lines that differ only by commits that never reached the
+  default branch.
 
 `<state>` is the finding's current triage state: every triage-role label the
 issue carries - `needs-triage`, `needs-info`, `ready-for-agent`,

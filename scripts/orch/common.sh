@@ -116,16 +116,6 @@ float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 # zeros allowed ("08" is 8). Each caller keeps its own reaction to a no.
 is_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$((10#$1))" -gt 0 ]; }
 
-# clone_orchestrator_dir: prints the clone's orchestrator directory, under the
-# git common directory (made absolute so it holds wherever the caller runs),
-# which every worktree of the clone reaches alike.
-clone_orchestrator_dir() {
-  local d
-  d="$(git rev-parse --git-common-dir)" && d="$(cd "$d" && pwd -P)" ||
-    die "could not find the clone's git common directory"
-  printf '%s/orchestrator\n' "$d"
-}
-
 # require_poll_knobs <var>... <interval-var>: dies unless every named variable
 # holds a number and the last, the poll interval, is greater than zero.
 # awk compares a number against a non-numeric string as strings, which makes

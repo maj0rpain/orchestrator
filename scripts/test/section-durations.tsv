@@ -286,13 +286,6 @@
 3	4	commands on a truncated state.json (#1929)
 6	7	the shared and own-checkout readers on a truncated state.json
 7	8	state set with a failed write (#1931)
-8	10	suite-cost run
-1	1	suite-cost history
-21	23	suite-cost check
-16	18	suite-cost check base run
-31	34	suite-cost check confirmation
-7	8	suite-cost check pre-check
-61	2	suite-cost barrier
 21	23	ticket-worktree (#619)
 1	1	a ticket branch has no upstream (#1152)
 2	3	the merged check beside a same-named tag (#2337)

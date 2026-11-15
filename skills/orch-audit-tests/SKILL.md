@@ -1,13 +1,13 @@
 ---
 name: orch-audit-tests
-description: Audit a repo's test suite for quality-preserving refactors ranked by the cost they save - scope git hot spots or a named direction, measure each test section (or file, on a large scope) sequentially, partition into areas, hunt each area in a fresh read-only orch-test-auditor subagent (at most 4 at once), rank the candidates, show an HTML report, and hand picked candidates to orch-interview, to orch.sh audit file, or both. Read-only. Use when the user asks to shrink, speed up or audit a test suite, or runs /orchestrator:audit-tests.
+description: Audit a repo's test suite for quality-preserving refactors ranked by the CPU cost they save - scope git hot spots or a named direction, measure each test section (or file, on a large scope) sequentially, partition into areas, hunt each area in a fresh read-only orch-test-auditor subagent (at most 4 at once), rank the candidates, show an HTML report, and hand picked candidates to orch-interview, to orch.sh audit file, or both. Read-only. Use when the user asks to shrink, speed up or audit a test suite, or runs /orchestrator:audit-tests.
 ---
 
 # Orchestrator audit tests
 
 Reads the repo's test suite and proposes refactors that make it cheaper to run
-without making it test less, ranked by the **suite cost** (see `GLOSSARY.md`:
-**Test audit**) each one saves. It ships for any repo. The idea comes from
+without making it test less, ranked by the CPU cost each one saves (see
+`GLOSSARY.md`: **Test audit**). It ships for any repo. The idea comes from
 mattpocock's `improve-codebase-architecture`, as inspiration only: the seven
 steps below define this skill, and it invokes and depends on no upstream skill
 (ADR-0028).
@@ -93,10 +93,6 @@ Run it in the foreground and wait for it (host capability *Run a long
 command*); never background it and sleep, poll or kill it. A run the host
 moves to the background at its timeout is still waited for, as that row says.
 
-Then run `bash "$ORCH" suite-cost history` and read the recorded runs of the
-full verification command for the trend: whether the suite cost is growing,
-and since which commit. No record means no trend; say so.
-
 ## 3. Partition
 
 Split the scope into **areas**: each is a set of test files given to one
@@ -120,7 +116,7 @@ fork, each an `orch-test-auditor`, run as a subagent pool of 4 (host capability
 *Run a subagent pool*, size hint: the area's file count; see that row of
 `docs/host-capabilities.md`).
 Each prompt names its area (the test files), the repo root, the
-measured cost of each part in the area, the trend, and its own findings file in
+measured cost of each part in the area, and its own findings file in
 the temp directory. The hunter has no Edit or Bash tool, so it times nothing;
 its brief holds the quality rule, the six kinds, the fields each
 candidate states (among them the replacement, why it tests as well, and the
@@ -156,8 +152,7 @@ Write a self-contained HTML report to the temp directory (for instance
 everything else inline. It carries:
 
 - the scope, the area count, whether parts were timed per section, per file,
-  or only as one whole run, the measured cost of each part, and the trend from
-  `suite-cost history`;
+  or only as one whole run, the measured cost of each part;
 - the top recommendation, first;
 - each candidate in rank order, with its kind, location, strength, cost saved
   (marked estimated where it is), and a **before/after**: the test as it is
@@ -166,7 +161,7 @@ everything else inline. It carries:
 Open it in the browser - `xdg-open <file>` on Linux, `open <file>` on macOS -
 and tell the user its path. On a host that cannot open it, write a Markdown
 summary in chat instead: the scope, the area count, whether parts were timed
-per section, per file, or only as one whole run, the trend, the top
+per section, per file, or only as one whole run, the top
 recommendation, and one line per candidate with its rank, kind, location,
 strength, cost saved (marked estimated where it is, as for a saving inside a
 file timed as a whole), and replacement.
