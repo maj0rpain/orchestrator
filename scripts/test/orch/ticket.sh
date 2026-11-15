@@ -164,11 +164,13 @@ assert_eq "prints the child's number" "$out" "200"
 
 fake_lag adapter_sub_issues 2
 fake_fail adapter_issue_body   # a body read here would die with another message
+fake_fail adapter_issue_body_edit   # a body write here would die with another message
 out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
 assert_status "a sub-issue link that never shows up dies rather than falling back" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #201"
-assert_contains "not a silent fallback, and no body read" "$out" "did not verify"
+assert_contains "not a silent fallback, and no body read or write" "$out" "did not verify"
 fake_unfail
+assert_eq "no body write: the stored body is the draft's text" "$(fake_body_of 201)" "$(cat "$body")"
 assert_eq "the link it wrote stays, for a human to see" "$(fake_sub_issues_of 50)" "200 201"
 
 fake_next_issue 300
