@@ -981,6 +981,16 @@ assert_eq "starts the sections a filter kept longest-first" "$ord_started" "ord 
 assert_eq "and prints them in walk order" "$ord_printed" "ord a,ord b,"
 ord_run 1 '^ord '
 assert_eq "ORCH_TEST_JOBS=1 starts in walk order" "$ord_started" "ord a,ord b,ord c,ord d,ord unlisted,"
+# The same file with a fingerprint column on every line orders the same.
+printf '%s\n' \
+  "10	11	ord a	fp1" "30	31	ord b	fp2" "20	21	ord c	fp3" "20	22	ord d	fp4" \
+  "99	99	a section that no longer exists	fp5" \
+  >"$ord_file"
+ord_run 2 '^ord '
+assert_eq "a four-column file starts the sections in the three-column order" \
+  "$ord_started" "ord unlisted,ord b,ord c,ord d,ord a,"
+assert_eq "and prints them in walk order" \
+  "$ord_printed" "ord a,ord b,ord c,ord d,ord unlisted,"
 rm -f "$ord_file"
 ord_run 2 '^ord '
 assert_status "a run with no durations file passes" "$ord_st" 0
@@ -1038,6 +1048,17 @@ sh_first_22="$sh_printed"
 assert_eq "group 2 gets the rest, the unlisted section weighing the median listed one by CPU" \
   "$sh_printed" "isolation,s1,s2,s5,"
 assert_eq "its sections start unlisted first, then by wall though the CPU order differs" "$sh_started" "s5,s2,s1,"
+# The same planted durations with a fingerprint column on every line but the
+# one for the lint step deal and start the same.
+printf '%s\n' "10	50	shard s1	fp" "30	40	shard s2	fp" "20	30	shard s3	fp" "5	20	shard s4	fp" \
+  "9	70	hooks_test.sh	fp" "9	10	shellcheck" "1	99	a section that no longer exists	fp" \
+  >"$sh_t/section-durations.tsv"
+sh_run 1/2
+assert_eq "a four-column file gives group 1 the same sections" "$sh_printed" "isolation,s3,s4,"
+assert_eq "and starts them the same" "$sh_started" "s3,s4,"
+sh_run 2/2
+assert_eq "and group 2 the same sections" "$sh_printed" "isolation,s1,s2,s5,"
+assert_eq "starting them the same" "$sh_started" "s5,s2,s1,"
 # sh_case <label> <group 1> <durations line>...: the printed sections of group 1
 # of 2 under a planted durations file. The deal is a partition, which the
 # "groups run every planted section exactly once" loop proves, so group 1's
@@ -1408,6 +1429,43 @@ assert_eq "the busy-loop stub's line shows at least 4 tenths of CPU" \
   "$(awk -F'\t' '$3 == "stub_cpu.sh" { print ($2 >= 4 ? "yes" : "no " $2) }' "$dur_file")" "yes"
 rm -f "$dur_test/stub_cpu.sh" "$dur_test/stub_cpu.sh.times"
 sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
+
+# The fingerprint column (#3467), observed through the script's output: a
+# planted file with a preamble and two sections, recorded, edited and recorded
+# again. fp_of <title>: that line's fourth column.
+fp_of() { awk -F'\t' -v t="$1" '$3 == t { print $4 }' "$dur_file"; }
+fp_plant() {
+  printf '%s\n' "  $1" '  # --- fp x' "  echo; echo 'fp x'; $2; ok 'x ran'" \
+    '  # --- fp y' "  echo; echo 'fp y'; ok 'y ran'" | plant_file "$dur_orch" zzz-fp.sh
+}
+fp_plant 'FP_PRE=1' ':'
+out="$(dur_script)"; st=$?
+assert_status "the script passes with a fingerprint-test file planted" "$st" 0
+assert_eq "every line but shellcheck's has four columns" \
+  "$(awk -F'\t' '$3 != "shellcheck" && NF != 4 { n++ } END { print n + 0 }' "$dur_file")" "0"
+assert_eq "and shellcheck's keeps three" \
+  "$(awk -F'\t' '$3 == "shellcheck" { print NF }' "$dur_file")" "3"
+fp_x="$(fp_of 'fp x')"; fp_y="$(fp_of 'fp y')"; fp_a="$(fp_of 'dur a')"; fp_s="$(fp_of stub_a.sh)"
+assert_eq "a fingerprint is not empty" "$([ -n "$fp_x" ] && echo yes)" "yes"
+assert_eq "two sections' fingerprints differ" "$([ "$fp_x" != "$fp_y" ] && echo yes)" "yes"
+fp_plant 'FP_PRE=1' 'true'
+dur_stub_passing stub_a.sh
+echo '# edited' >>"$dur_test/stub_a.sh"
+out="$(dur_script)"; st=$?
+assert_eq "an edit to a section's own lines changes its fingerprint" \
+  "$([ "$(fp_of 'fp x')" != "$fp_x" ] && echo yes)" "yes"
+assert_eq "and not its neighbour's" "$(fp_of 'fp y')" "$fp_y"
+assert_eq "an edit to a suite's file changes its fingerprint" \
+  "$([ "$(fp_of stub_a.sh)" != "$fp_s" ] && echo yes)" "yes"
+assert_eq "and not another file's section" "$(fp_of 'dur a')" "$fp_a"
+fp_x="$(fp_of 'fp x')"
+fp_plant 'FP_PRE=2' 'true'
+out="$(dur_script)"; st=$?
+assert_eq "an edit to a file's preamble changes each of its sections" \
+  "$([ "$(fp_of 'fp x')" != "$fp_x" ] && [ "$(fp_of 'fp y')" != "$fp_y" ] && echo yes)" "yes"
+assert_eq "and no other file's" "$(fp_of 'dur a')" "$fp_a"
+rm -f "$dur_orch/zzz-fp.sh"
+dur_stub_passing stub_a.sh
 cp "$dur_file" "$dur_dir/good.tsv"
 
 # TERM to the dev script (#2957), last in the section: a slow child records its

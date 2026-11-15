@@ -85,6 +85,48 @@ shellcheck_files() {
   [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
 }
 
+# The function ledger_fingerprints <test dir> <suite>... prints one line,
+# "<title><TAB><fingerprint>", for each test section in walk order
+# (orch_test.sh's walk: harness.sh, then the other <test dir>/orch/*.sh but
+# setup.sh, in LC_ALL=C order), then for each named suite file of <test dir>,
+# and returns 0. A
+# section's fingerprint covers its own lines (its `# --- ` line to the line
+# before the next) and its file's preamble (the text before the file's first
+# `# --- ` line); a suite's covers the file's whole text. It starts a fixed
+# number of processes whatever the number of sections (two awk, one sort, one
+# grep, one git hash-object, one mktemp), so the full refresh, the later
+# --stale mode and the docs lint can all call it. It returns 1 when a step
+# fails.
+ledger_fingerprints() {
+  local test_dir="$1" tmp files f
+  shift
+  tmp="$(mktemp -d)" || return 1
+  mapfile -t files < <(printf '%s\n' "$test_dir"/orch/*.sh | LC_ALL=C sort |
+    grep -vxF -e "$test_dir/orch/setup.sh" -e "$test_dir/orch/harness.sh")
+  files=("$test_dir/orch/harness.sh" "${files[@]}")
+  : >"$tmp/titles"
+  : >"$tmp/paths"
+  awk -v dir="$tmp" "$SECTION_TITLE_AWK"'
+    FNR == 1 { pre = ""; open = 0; if (cur != "") close(cur); cur = "" }
+    /^# --- / {
+      if (cur != "") close(cur)
+      n++; cur = dir "/t." n; open = 1
+      printf "%s", pre > cur
+      print cur >> (dir "/paths")
+      print title($0) >> (dir "/titles")
+    }
+    open { print > cur; next }
+    { pre = pre $0 "\n" }
+  ' "${files[@]}" || { rm -rf "$tmp"; return 1; }
+  for f in "$@"; do
+    printf '%s\n' "$test_dir/$f" >>"$tmp/paths"
+    printf '%s\n' "$f" >>"$tmp/titles"
+  done
+  git hash-object --stdin-paths <"$tmp/paths" >"$tmp/hashes" || { rm -rf "$tmp"; return 1; }
+  awk 'NR == FNR { t[NR] = $0; next } { print t[FNR] "\t" $0 }' "$tmp/titles" "$tmp/hashes"
+  rm -rf "$tmp"
+}
+
 # TENTHS_AWK: the awk function tenths(s) as text, for a program to start with.
 # It reads seconds with one decimal place, as bash's `time` prints them under
 # LC_NUMERIC=C, and returns tenths of a second; a caller sets LC_NUMERIC=C
@@ -94,7 +136,9 @@ shellcheck_files() {
 # durations_read(), which reads the current record of section-durations.tsv
 # into the arrays wall and cpu, in tenths of a second, keyed by name. A line
 # is "<wall>", "<cpu>" and a non-empty name, tab-separated, the two numbers
-# digits; any other line is ignored, and the first line per name wins. The
+# digits, with an optional fourth column after the name, the ledger's
+# fingerprint, which it does not read: a three- and a four-column line read
+# alike. Any other line is ignored, and the first line per name wins. The
 # shard dealing and the start order both start with it, so they read the file
 # one way.
 #
@@ -110,7 +154,7 @@ shellcheck_files() {
 TENTHS_AWK='function tenths(s) { sub(/\./, "", s); return s + 0 }'
 # shellcheck disable=SC2034 # read by the sourcing runners
 DURATIONS_AWK='function durations_read() {
-  if (NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in wall)) {
+  if ((NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in wall)) {
     wall[$3] = $1 + 0; cpu[$3] = $2 + 0
   }
 }'

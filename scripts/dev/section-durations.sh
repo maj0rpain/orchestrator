@@ -8,9 +8,13 @@
 # temporary file, so every section is measured (several at a time, from the job
 # pool); then times each other suite of all.sh's suites list and the shellcheck
 # step, one after another, with bash's `time` keyword. Each line of the file is
-# "<wall tenths><TAB><CPU tenths><TAB><name>" - tenths of a second, CPU the
-# user plus system time of the process tree: the sections in walk order, then
-# the other suites in suite-list order, then `shellcheck`.
+# "<wall tenths><TAB><CPU tenths><TAB><name><TAB><fingerprint>" - tenths of a
+# second, CPU the user plus system time of the process tree: the sections in
+# walk order, then the other suites in suite-list order, then `shellcheck`,
+# whose line has three columns, no fingerprint. The fingerprint is the hash of
+# the test text the line was measured from (test_tree.sh's ledger_fingerprints):
+# a section's own lines plus its file's preamble, a suite's whole file; it is
+# taken before anything is measured.
 #
 # ORCH_TEST_ONLY and ORCH_TEST_SHARD are unset, so the whole suite is always
 # measured. With a job count of 1 (ORCH_TEST_JOBS=1) it prints a message naming
@@ -46,6 +50,8 @@ suites_read "$dir/all.sh" "$dir" || {
   echo "section-durations.sh: $SUITES_ERR" >&2; exit 1; }
 
 tmp="$(mktemp -d)" || exit 1
+ledger_fingerprints "$dir" "${SUITES[@]}" >"$tmp/fingerprints" || {
+  echo "section-durations.sh: could not fingerprint the test text" >&2; rm -rf "$tmp"; exit 1; }
 SHELLCHECK_PIDS=()
 trap 'rm -rf "$tmp"' EXIT
 trap 'test_jobs_stop_children ${TEST_JOBS_CHILD:+"$TEST_JOBS_CHILD"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
@@ -104,5 +110,7 @@ if [ ! -s "$tmp/sections" ]; then
   echo "section-durations.sh: orch_test.sh recorded no sections, durations file left unchanged" >&2
   exit 1
 fi
-cat "$tmp/sections" "$tmp/rest" >"$tmp/new" || exit 1
+cat "$tmp/sections" "$tmp/rest" |
+  awk -F'\t' -v OFS='\t' 'NR == FNR { if (!($1 in fp)) fp[$1] = $2; next }
+    $3 in fp { print $0, fp[$3]; next } { print }' "$tmp/fingerprints" - >"$tmp/new" || exit 1
 cp "$tmp/new" "$target"

@@ -129,7 +129,10 @@ trap test_jobs_stop_descendants INT TERM
 # The parallel run starts its kept sections longest-first, read from the
 # committed tab-separated file section-durations.tsv beside this runner: one
 # line per section, "<wall tenths>", "<cpu tenths>" and the section's title,
-# tab-separated. Sections the file does not list start first, in walk order;
+# tab-separated, and a fourth column, the fingerprint of the text the line was
+# measured from, on every line but shellcheck's; this runner reads three- and
+# four-column lines alike and ignores the fingerprint (test_tree.sh's reader).
+# Sections the file does not list start first, in walk order;
 # the rest follow by wall seconds, longest first, ties in walk order. Output
 # stays in walk order. A line that does not parse and a name matching no
 # section are ignored, and a missing file gives walk order, so the file costs
