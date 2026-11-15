@@ -749,7 +749,6 @@ ticket_reclaim_guard() {
 # is rebuilt. One line per action; a failed write dies naming the ticket.
 cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
-  # shellcheck disable=SC2034 # phase is an out-param of the entry read
   local parent="$1" flow recorded="" fissue="" phase="" active="" subs line worktrees n state path st reported merged nums="" tbranch
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"

@@ -1153,7 +1153,7 @@ assert_state_unreadable "redo review" 1 "$out" "$st"
 
 fresh_flow redocount2
 state_fixture phase implement
-rc_jq="$(counting_bin jq)"
+: >"$rc_jq/jq.log"
 out="$(PATH="$rc_jq:$PATH" "$ORCH" redo spec 2>&1)"; st=$?
 assert_status "redo spec with no issue recorded refuses" "$st" 1
 assert_contains "naming the missing issue" "$out" "no issue recorded in state"

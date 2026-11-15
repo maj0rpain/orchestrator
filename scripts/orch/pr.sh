@@ -269,7 +269,6 @@ pr_body_check() {
 }
 
 cmd_pr_open() {
-  # shellcheck disable=SC2034 # out-params of the entry read
   local issue branch base_raw recorded base pr
   require_state_read issue=issue branch=branch base_raw=base recorded=pr
   local usage="usage: orch.sh pr open <title> <body-file> [--label <name>]..." labels=()

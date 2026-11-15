@@ -93,11 +93,11 @@ redo_step_back() {
 # resets it when the next loop starts.
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
-  local phase i b word detail slug issue branch pr redo_count new_n resumed
-  require_state_read phase=phase i=iteration b=budget slug=slug issue=issue \
+  local phase i b budget_raw word detail slug issue branch pr redo_count new_n resumed
+  require_state_read phase=phase i=iteration budget_raw=budget slug=slug issue=issue \
     branch=branch pr=pr redo_count=redo_count
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
-  b="$(review_budget_fallback "$b")"
+  b="$(review_budget_fallback "$budget_raw")"
   local terminal; terminal="$(review_terminal_state "$i" "$b")" || true
   lines_split "$terminal" word detail
   case "$word" in

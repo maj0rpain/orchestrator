@@ -312,7 +312,7 @@ pr_jq="$(counting_bin jq)"
 out="$(PATH="$pr_jq:$PATH" "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advance out of implement with no PR refuses" "$st" 1
 assert_eq "advance out of implement starts jq twice in all" "$(counting_starts "$pr_jq" jq)" "2"
-pr_jq="$(counting_bin jq)"
+: >"$pr_jq/jq.log"
 PATH="$pr_jq:$PATH" "$ORCH" phase boundary >/dev/null 2>&1
 assert_eq "boundary starts jq once" "$(counting_starts "$pr_jq" jq)" "1"
 restore_suite_env

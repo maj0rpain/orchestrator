@@ -583,15 +583,16 @@ fake_github
 fake_issue 14 open
 spec_body="$(mktemp)"
 state_fixture phase implement
+sr_jq="$(counting_bin jq)"
 for args in "pause" "pause --round 1/2" "round-dir 1/2" "round"; do
-  sr_jq="$(counting_bin jq)"
+  : >"$sr_jq/jq.log"
   # shellcheck disable=SC2086 # the op and its arguments, split on purpose
   PATH="$sr_jq:$PATH" "$ORCH" spec $args >/dev/null 2>&1
   assert_eq "spec $args at a phase other than spec starts jq once" "$(counting_starts "$sr_jq" jq)" "1"
 done
 state_fixture phase "done"
 for op in fetch update comment comments; do
-  sr_jq="$(counting_bin jq)"
+  : >"$sr_jq/jq.log"
   PATH="$sr_jq:$PATH" "$ORCH" spec "$op" "$spec_body" >/dev/null 2>&1
   assert_eq "spec $op on a done flow starts jq once" "$(counting_starts "$sr_jq" jq)" "1"
 done

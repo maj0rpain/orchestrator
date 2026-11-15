@@ -788,10 +788,10 @@ cmd_review() {
   shift || true
   case "$op" in
     begin)
-      local n budget prior prior_path sec
-      require_state_read prior=iteration budget=budget
+      local n budget budget_raw prior prior_path sec
+      require_state_read prior=iteration budget_raw=budget
       n=$(( prior + 1 ))
-      budget="$(review_budget_fallback "$budget")"
+      budget="$(review_budget_fallback "$budget_raw")"
       [ "$n" -le "$budget" ] || \
         die "budget of $budget iterations spent - stop the loop and report, do not start another"
       # A loop's first iteration - iteration 0, or the one after a record with a

@@ -223,7 +223,6 @@ record_branch_base() {
 # config, as branch off does, so branch sync and branch base-sha still find
 # them once the flow is done or archived.
 cmd_branch_create() {
-  # shellcheck disable=SC2034 # out-params of the entry read
   local slug issue name base sha own="" start recorded base_raw
   require_state_read slug=slug issue=issue recorded=branch base_raw=base # no-state and unreadable refusals included
   [ $# -eq 0 ] || die "usage: orch.sh branch create"

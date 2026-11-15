@@ -1994,8 +1994,9 @@ echo
 echo "review reads its Flow state once"
 fresh_flow reviewonce
 # rv_jq <cmd...>: runs orch.sh under a counting jq into out and st.
+rc_jq="$(counting_bin jq)"
 rv_jq() {
-  rc_jq="$(counting_bin jq)"
+  : >"$rc_jq/jq.log"
   out="$(PATH="$rc_jq:$PATH" "$ORCH" "$@" 2>&1)"; st=$?
 }
 state_fixture iteration 1
