@@ -2757,6 +2757,12 @@ TICKETS
 srct() { src "$1" --tickets; }
 
 d="$(srct_dir)"
+srct_load="$(mktemp)"
+ORCH_LOAD_TRACE="$srct_load" srct "$d"
+assert_status "check --tickets on two edge items passes" "$st" 0
+assert_contains "check --tickets prints its edge item" "$out" "### Item 2 - unblock #21 by #20"
+assert_trace_loads_once "spec-review check --tickets with two edge items" "$srct_load"
+rm -f "$srct_load"
 check_passes srct "a ticket batch" "$d" '## The ticket items
 
 ### Item 1 - #20

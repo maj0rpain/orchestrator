@@ -1018,6 +1018,7 @@ spec_review_check() {
   local body
   [ -d "$dir" ] || die "no such directory: $dir"
   if [ -n "$tickets" ]; then
+    orch_load ticket
     spec_review_tickets_check "$dir" "$unattended"
     return 0
   fi

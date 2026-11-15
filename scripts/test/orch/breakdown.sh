@@ -41,7 +41,10 @@ ticket_texts() {
 echo
 echo "breakdown publish"
 breakdown_fixture
-out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+bp_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$bp_load" "$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_trace_loads_once "breakdown publish of three tickets, two with blockers" "$bp_load"
+rm -f "$bp_load"
 assert_status "publishes a first run" "$st" 0
 assert_eq "printing the numbers in publishing order" "$out" $'100\n101\n102'
 assert_eq "saves the draft" "$(cat .orchestrator/breakdown/50/draft.md)" "$(cat "$draft")"
@@ -51,6 +54,18 @@ assert_eq "the marker is written" "$(on_disk .orchestrator/breakdown/50/publishe
 assert_eq "state is complete" "$("$ORCH" breakdown state 50)" "complete"
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_eq "a rerun creates nothing more" "$(fake_sub_issues_of 50)" "100 101 102"
+restore_suite_env
+
+breakdown_fixture
+fake_fail_after adapter_sub_issue_link 1
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+fake_unfail
+bp_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$bp_load" "$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "the rerun after a failed link finishes" "$st" 0
+assert_eq "the rerun prints the numbers in publishing order" "$out" $'100\n101\n102'
+assert_trace_loads_once "breakdown publish rerun after a failed link" "$bp_load"
+rm -f "$bp_load"
 restore_suite_env
 
 breakdown_fixture
