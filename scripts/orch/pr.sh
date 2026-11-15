@@ -141,15 +141,15 @@ open_pr() {
 # push dies before any PR write; a failed write dies naming it and each write
 # already landed. A rerun repeats every write.
 update_pr() {
-  # shellcheck disable=SC2034 # pr_refs_read fills all four; the head SHA and commits go unread
-  local pr="$1" branch="$2" base="$3" issue="$4" title="$5" body_file="$6" st draft err refs_oid head pr_base commits line_base
+  # shellcheck disable=SC2034 # pr_refs_read fills all three; the head SHA goes unread
+  local pr="$1" branch="$2" base="$3" issue="$4" title="$5" body_file="$6" st draft err refs_oid head pr_base line_base
   shift 6
   # shellcheck disable=SC2034 # ignored takes the writes' output, read by no one
   local tmp have ignored label landed=""
   pr_state_draft_read "$pr" st draft err \
     || gh_die "read the state of PR #$pr, recorded in state" "$err"
   [ "$st" = OPEN ] || die "PR #$pr, recorded in state, is $st, not open - no PR was opened or updated"
-  pr_refs_read "$pr" refs_oid head pr_base commits err \
+  pr_refs_read "$pr" refs_oid head pr_base err \
     || gh_die "read the branch of PR #$pr, recorded in state" "$err"
   [ "$head" = "$branch" ] \
     || die "PR #$pr, recorded in state, is on branch $head, not the flow's branch $branch - no PR was opened or updated"

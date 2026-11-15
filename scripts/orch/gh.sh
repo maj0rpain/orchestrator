@@ -328,8 +328,8 @@ verify_twice() {
 # - repo: adapter_repo_default_branch, adapter_repo_local_default,
 #   adapter_auth_status <host>
 # - ci: adapter_pr_checks, adapter_branch_required_checks,
-#   adapter_branch_rules, adapter_commit_has_check_runs,
-#   adapter_commit_has_statuses, adapter_run_rerun, adapter_job_failed_log
+#   adapter_branch_rules, adapter_pr_commits_checked,
+#   adapter_run_rerun, adapter_job_failed_log
 #
 # ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review.sh's
 # ORCH_CI_* ones, but read differently: not a value substituted at load time,
@@ -960,24 +960,22 @@ adapter_pr_comments() {
   gh pr view "$1" --json comments
 }
 
-# adapter_pr_refs <n>: review ci's read of the PR's own head, base and commits
-# (issues #475, #476) - the SHA and branch its grace is anchored to, and the
-# commits its CI-evidence pre-check reads, come from the PR, not from local
-# HEAD, which can be anywhere by the time the loop ends. Prints the head SHA,
-# the head branch and the base branch on the first three lines, an empty line
-# for one GitHub leaves unset, then one commit SHA per line, oldest first.
+# adapter_pr_refs <n>: review ci's read of the PR's own head and base (issues
+# #475, #476) - the SHA and branch its grace is anchored to come from the PR,
+# not from local HEAD, which can be anywhere by the time the loop ends. Prints
+# the head SHA, the head branch and the base branch, an empty line for one
+# GitHub leaves unset.
 adapter_pr_refs() {
-  gh pr view "$1" --json headRefOid,headRefName,baseRefName,commits \
-    --jq '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // ""), ((.commits // [])[].oid)'
+  gh pr view "$1" --json headRefOid,headRefName,baseRefName \
+    --jq '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")'
 }
 
-# pr_refs_read <n> <head_oid_var> <head_ref_var> <base_var> <commits_var>
-# <err_var>: reads PR <n> once through adapter_pr_refs and writes its head SHA,
-# head branch, base branch (each empty where GitHub leaves it unset) and its
-# commits (one SHA per line, oldest first) into the first four caller-named
-# variables, on gh_lines_read's contract.
+# pr_refs_read <n> <head_oid_var> <head_ref_var> <base_var> <err_var>: reads
+# PR <n> once through adapter_pr_refs and writes its head SHA, head branch and
+# base branch (each empty where GitHub leaves it unset) into the three
+# caller-named variables, on gh_lines_read's contract.
 pr_refs_read() {
-  gh_lines_read adapter_pr_refs "$1" "$6" "$2" "$3" "$4" "$5"
+  gh_lines_read adapter_pr_refs "$1" "$5" "$2" "$3" "$4"
 }
 
 # adapter_pr_url_head <n>: review file's read of the PR's canonical URL and
@@ -1286,14 +1284,15 @@ adapter_pr_checks() {
   printf '%s\n' "$tsv"
 }
 
-# ci_api_read <what> <path> <jq>: one gh api read, its JSON answer run through
+# ci_api_read <what> <path> <jq> [gh api args...]: one gh api read (the args,
+# a GraphQL query's fields, follow the path), its JSON answer run through
 # the jq expression. On a gh failure, gh's stderr passes through - except
 # where <what> is given and gh's answer names it: GitHub's message for an
 # absence it reports as an error, which succeeds printing nothing. Shared by the
 # CI-evidence operations below; not called from anywhere else.
 ci_api_read() {
   local err out res st=0
-  gh_capture out err gh api "$2" || st=$?
+  gh_capture out err gh api "$2" "${@:4}" || st=$?
   if [ "$st" != 0 ]; then
     if [ -n "$1" ] && grep -qF -- "$1" <<<"$out"$'\n'"$err"; then
       return 0
@@ -1327,18 +1326,20 @@ adapter_branch_rules() {
   ci_api_read '' "repos/{owner}/{repo}/rules/branches/$1" '.[].type'
 }
 
-# adapter_commit_has_check_runs <ref>: "yes" where the commit (a SHA, or a
-# branch name for its tip) has any check run, "no" where it has none.
-adapter_commit_has_check_runs() {
-  ci_api_read '' "repos/{owner}/{repo}/commits/$1/check-runs?per_page=1" \
-    'if .total_count == 0 then "no" else "yes" end'
-}
+# The GraphQL query and jq behind adapter_pr_commits_checked. One line, so a
+# logged argv (the gh fixture's) stays one line. A rollup's contexts are the
+# commit's check runs and commit statuses together; null where it has none.
+PR_COMMITS_CHECKED_QUERY='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { baseRef { target { ... on Commit { statusCheckRollup { contexts { totalCount } } } } } commits(first: 100) { nodes { commit { oid statusCheckRollup { contexts { totalCount } } } } } } } }'
+PR_COMMITS_CHECKED_JQ='def checked: if (.statusCheckRollup.contexts.totalCount // 0) > 0 then "yes" else "no" end; .data.repository.pullRequest | (if .baseRef == null then "" else .baseRef.target | checked end), (.commits.nodes[] | "\(.commit.oid)\t\(.commit | checked)")'
 
-# adapter_commit_has_statuses <ref>: "yes" where the commit has any commit
-# status, "no" where it has none.
-adapter_commit_has_statuses() {
-  ci_api_read '' "repos/{owner}/{repo}/commits/$1/status" \
-    'if .total_count == 0 then "no" else "yes" end'
+# adapter_pr_commits_checked <n>: whether the base branch tip, then each of PR
+# #n's first 100 commits, has any check run or commit status. The first line is
+# the base tip's "yes" or "no" - empty where GitHub holds no base ref - then one
+# "<sha><TAB>yes|no" line per commit, oldest first. One GraphQL read; it decides
+# nothing, no_ci_evidence judges what it prints.
+adapter_pr_commits_checked() {
+  ci_api_read '' graphql "$PR_COMMITS_CHECKED_JQ" \
+    -F owner='{owner}' -F name='{repo}' -F number="$1" -f query="$PR_COMMITS_CHECKED_QUERY"
 }
 
 # adapter_run_rerun <run>: reruns the failed jobs of GitHub Actions run <run>

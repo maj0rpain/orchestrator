@@ -363,16 +363,14 @@ assert_eq "a failed read writes neither and fills the error variable" "$out" \
 assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 
 printf 'abc123\n' >"$ORCH_GH_FAKE_STORE/prs/8/head_oid"
-printf 'c1\nc2\n' >"$ORCH_GH_FAKE_STORE/prs/8/commits"
-out="$(sourced_orch_script 'pr_refs_read 8 oid ref base commits err; printf "%s|%s|%s|%s" "$oid" "$ref" "$base" "$commits"')"
-assert_eq "pr_refs_read writes the head SHA, head branch, base and commits" "$out" \
-  "abc123|topic|main|c1
-c2"
+out="$(sourced_orch_script 'pr_refs_read 8 oid ref base err; printf "%s|%s|%s" "$oid" "$ref" "$base"')"
+assert_eq "pr_refs_read writes the head SHA, head branch and base" "$out" \
+  "abc123|topic|main"
 fake_fail adapter_pr_refs "$GH_502"
-out="$(sourced_orch_script 'oid=x ref=x base=x commits=x; st=0; pr_refs_read 8 oid ref base commits err || st=$?
-  printf "%s|%s|%s|%s|%s|%s" "$st" "$oid" "$ref" "$base" "$commits" "$err"' 2>"$rerr")"
+out="$(sourced_orch_script 'oid=x ref=x base=x; st=0; pr_refs_read 8 oid ref base err || st=$?
+  printf "%s|%s|%s|%s|%s" "$st" "$oid" "$ref" "$base" "$err"' 2>"$rerr")"
 assert_eq "a failed refs read writes none and fills the error variable" "$out" \
-  "1|x|x|x|x|$GH_502"
+  "1|x|x|x|$GH_502"
 assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 
 fake_issue 9 open bug enhancement
@@ -648,7 +646,7 @@ zeros=0000000000000000000000000000000000000000
 fake_pr 80 merged topic main
 fake_pr_head 80 ""
 out="$(faked adapter_pr_refs 80; echo x)"
-assert_eq "gh fake: pr refs of an empty head prints an empty line, the branches and no commit" \
+assert_eq "gh fake: pr refs of an empty head prints an empty line and the branches" \
   "$out" "$(writeln '' topic main x)"
 assert_eq "its merged-PRs read prints the empty head in its slot" \
   "$(faked adapter_prs_merged topic main)" "$(printf '80\t\tfalse')"
@@ -656,16 +654,16 @@ out="$(faked adapter_pr_url_head 80; echo x)"
 assert_eq "its URL-and-head read prints the URL, then an empty line" \
   "$out" "$(writeln https://github.com/o/r/pull/80 '' x)"
 fake_pr 81 merged topic2 main
-assert_eq "an absent head reads as forty zeros from the refs read, as head and commit" \
-  "$(faked adapter_pr_refs 81)" "$(writeln "$zeros" topic2 main "$zeros")"
+assert_eq "an absent head reads as forty zeros from the refs read" \
+  "$(faked adapter_pr_refs 81)" "$(writeln "$zeros" topic2 main)"
 assert_eq "from the merged-PRs read" \
   "$(faked adapter_prs_merged topic2 main)" "$(printf '81\t%s\tfalse' "$zeros")"
 assert_eq "and from the URL-and-head read" \
   "$(faked adapter_pr_url_head 81)" "$(writeln https://github.com/o/r/pull/81 "$zeros")"
 fake_pr 82 open topic3 main
 fake_pr_head 82 abc123
-assert_eq "a non-empty head with no seeded commits is its own single commit" \
-  "$(faked adapter_pr_refs 82)" "$(writeln abc123 topic3 main abc123)"
+assert_eq "a non-empty head prints three lines and no commits" \
+  "$(faked adapter_pr_refs 82)" "$(writeln abc123 topic3 main)"
 # The fake's busiest functions answer from the store in bash (#2861): a bare
 # PATH holds only the commands each may keep.
 fake_github
@@ -1256,18 +1254,18 @@ assert_status "pr comments: reads the comments as gh's raw JSON" "$st" 0
 assert_eq "printing what gh answered, unrendered" "$out" \
   '{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"LGTM","createdAt":"2026-10-01T09:00:00Z"}]}'
 
-refs_jq='(.headRefOid // ""), (.headRefName // ""), (.baseRefName // ""), ((.commits // [])[].oid)'
-gh_reply 0 $'bbbb\ntopic\nmain\naaaa\nbbbb\n' '' \
-  pr view 57 --json headRefOid,headRefName,baseRefName,commits --jq "$refs_jq"
+refs_jq='(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")'
+gh_reply 0 $'bbbb\ntopic\nmain\n' '' \
+  pr view 57 --json headRefOid,headRefName,baseRefName --jq "$refs_jq"
 out="$(contract adapter_pr_refs 57 2>&1)"; st=$?
-assert_status "pr refs: reads the PR's head, base and commits" "$st" 0
-assert_eq "head SHA, head branch, base branch, then one commit per line, oldest first" \
-  "$out" "$(writeln bbbb topic main aaaa bbbb)"
+assert_status "pr refs: reads the PR's head and base" "$st" 0
+assert_eq "head SHA, head branch, base branch and no commits" \
+  "$out" "$(writeln bbbb topic main)"
 assert_eq "its --jq prints an empty line for a field GitHub leaves null" \
-  "$(printf '%s' '{"headRefOid":null,"headRefName":"topic","baseRefName":"main","commits":null}' | jq -r "$refs_jq")" \
+  "$(printf '%s' '{"headRefOid":null,"headRefName":"topic","baseRefName":"main"}' | jq -r "$refs_jq")" \
   "$(writeln '' topic main)"
 gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  pr view 58 --json headRefOid,headRefName,baseRefName,commits --jq "$refs_jq"
+  pr view 58 --json headRefOid,headRefName,baseRefName --jq "$refs_jq"
 out="$(contract adapter_pr_refs 58 2>&1)"; st=$?
 assert_status "pr refs: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
@@ -1497,32 +1495,26 @@ out="$(contract adapter_branch_rules down 2>&1)"; st=$?
 assert_status "branch rules: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
-gh_reply 0 '{"total_count":3,"check_runs":[{"name":"build"}]}' '' \
-  api 'repos/{owner}/{repo}/commits/aaaa/check-runs?per_page=1'
-out="$(contract adapter_commit_has_check_runs aaaa 2>&1)"; st=$?
-assert_status "commit has check runs: reads a commit's check runs" "$st" 0
-assert_eq "yes where it has any" "$out" "yes"
-gh_reply 0 '{"total_count":0,"check_runs":[]}' '' api 'repos/{owner}/{repo}/commits/bbbb/check-runs?per_page=1'
-assert_eq "commit has check runs: no where it has none" "$(contract adapter_commit_has_check_runs bbbb 2>&1)" "no"
-gh_reply 1 '' 'gh: Server Error (HTTP 502)' api 'repos/{owner}/{repo}/commits/cccc/check-runs?per_page=1'
-out="$(contract adapter_commit_has_check_runs cccc 2>&1)"; st=$?
-assert_status "commit has check runs: a gh failure fails it" "$st" 1
+pcc_argv=(api graphql -F owner='{owner}' -F name='{repo}' -F number=31
+  -f query="$(sourced_orch_script 'printf %s "$PR_COMMITS_CHECKED_QUERY"')")
+gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":{"target":{"statusCheckRollup":null}},"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":null}},{"commit":{"oid":"bbbb","statusCheckRollup":{"contexts":{"totalCount":0}}}},{"commit":{"oid":"cccc","statusCheckRollup":{"contexts":{"totalCount":4}}}}]}}}}}' '' "${pcc_argv[@]}"
+out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
+assert_status "PR commits checked: reads the base tip and the commits in one GraphQL call" "$st" 0
+assert_eq "the base answer, then a line per commit: null and zero are no, a count is yes" "$out" \
+  "$(writeln no "$(printf 'aaaa\tno')" "$(printf 'bbbb\tno')" "$(printf 'cccc\tyes')")"
+gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":{"target":{"statusCheckRollup":{"contexts":{"totalCount":2}}}},"commits":{"nodes":[]}}}}}' '' "${pcc_argv[@]}"
+assert_eq "PR commits checked: a base tip with a check is yes" "$(contract adapter_pr_commits_checked 31 2>&1)" "yes"
+gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":null,"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":null}}]}}}}}' '' "${pcc_argv[@]}"
+out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
+assert_status "PR commits checked: a null base ref succeeds" "$st" 0
+assert_eq "printing an empty first line" "$out" "$(printf '\naaaa\tno')"
+gh_reply 1 '' 'gh: Server Error (HTTP 502)' "${pcc_argv[@]}"
+out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
+assert_status "PR commits checked: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "gh: Server Error (HTTP 502)"
-gh_reply 0 'not json' '' api 'repos/{owner}/{repo}/commits/dddd/check-runs?per_page=1'
-out="$(contract adapter_commit_has_check_runs dddd 2>&1)"; st=$?
-assert_status "commit has check runs: an answer jq cannot read fails it" "$st" 1
-
-gh_reply 0 '{"state":"success","total_count":1,"statuses":[{"context":"ci/legacy"}]}' '' \
-  api "repos/{owner}/{repo}/commits/aaaa/status"
-out="$(contract adapter_commit_has_statuses aaaa 2>&1)"; st=$?
-assert_status "commit has statuses: reads a commit's combined status" "$st" 0
-assert_eq "yes where it has any" "$out" "yes"
-gh_reply 0 '{"state":"pending","total_count":0,"statuses":[]}' '' api "repos/{owner}/{repo}/commits/main/status"
-assert_eq "commit has statuses: no where it has none" "$(contract adapter_commit_has_statuses main 2>&1)" "no"
-gh_reply 1 '' 'gh: Server Error (HTTP 502)' api "repos/{owner}/{repo}/commits/cccc/status"
-out="$(contract adapter_commit_has_statuses cccc 2>&1)"; st=$?
-assert_status "commit has statuses: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "gh: Server Error (HTTP 502)"
+gh_reply 0 'not json' '' "${pcc_argv[@]}"
+out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
+assert_status "PR commits checked: an answer jq cannot read fails it" "$st" 1
 
 gh_reply 0 '✓ Requested rerun of failed jobs' '' run rerun 4242 --failed
 out="$(contract adapter_run_rerun 4242 2>&1)"; st=$?
