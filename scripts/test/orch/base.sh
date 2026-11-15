@@ -166,7 +166,9 @@ assert_eq "init records the base branch setting" "$(orch_gh_failing state get ba
 out="$(orch_gh_failing base set uat 2>&1)"
 assert_not_contains "set says nothing more when the active flow already has that base" \
   "$out" "keeps its own base branch"
-out="$(orch_gh_failing base set main 2>&1)"; st=$?
+bj_jq="$(counting_bin jq)"
+out="$(PATH="$bj_jq:$PATH" orch_gh_failing base set main 2>&1)"; st=$?
+assert_eq "base set beside an active flow reads its state in one jq" "$(counting_starts "$bj_jq" jq)" "1"
 assert_status "set still succeeds while a flow with another base is active" "$st" 0
 assert_contains "and notes that the active flow keeps its own base branch" \
   "$out" "flowbase keeps its own base branch: uat"
@@ -210,8 +212,10 @@ out="$(orch_gh_failing base clear --flow 2>&1)"; st=$?
 assert_status "base clear refuses --flow" "$st" 1
 assert_contains "with its usage error" "$out" "usage: orch.sh base clear"
 
-out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"; st=$?
+: >"$bj_jq/jq.log"
+out="$(PATH="$bj_jq:$PATH" orch_gh_failing base set 'bad..name' --flow 2>&1)"; st=$?
 assert_status "base set --flow refuses an invalid branch name" "$st" 1
+assert_eq "and reads the flow state in one jq before refusing" "$(counting_starts "$bj_jq" jq)" "1"
 assert_contains "saying nothing was set" "$out" "bad..name is not a valid branch name - nothing was set"
 assert_eq "leaving the flow's base unchanged" "$(orch_gh_failing state get base)" "uat"
 out="$(orch_gh_failing base set nosuch --flow 2>&1)"; st=$?

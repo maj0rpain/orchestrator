@@ -386,10 +386,10 @@ assert_contains "help documents --label" "$("$ORCH" help)" \
   "pr open <title> <body-file> [--label <name>]..."
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
-# require_branch's die message is the other half of require_field's coverage
-# (#79) alongside "refuses when state has no issue" above - a fresh flow with
-# an issue recorded but no branch yet is exactly the gap between init and
-# branch create.
+# The branch message require_value gives is the other half of
+# require_field's coverage (#79) alongside "refuses when state has no
+# issue" above - a fresh flow with an issue recorded but no branch yet is
+# exactly the gap between init and branch create.
 echo
 echo "pr open (missing branch)"
 new_repo >/dev/null
@@ -399,11 +399,17 @@ body="$(mktemp)"
 pr_body_complete "$body"
 out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses when state has no branch" "$st" 1
-assert_contains "with the exact require_branch die message" "$out" \
+assert_contains "with the exact require_value branch message" "$out" \
   "no branch recorded in state"
 out="$("$ORCH" pr open "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
 assert_eq "the recorded branch is checked before the body's standard" "$out" \
   "orch: no branch recorded in state"
+pr_jq="$(counting_bin jq)"
+PATH="$pr_jq:$PATH" "$ORCH" pr open "Title" "$body" >/dev/null 2>&1
+assert_eq "pr open with no branch recorded starts exactly one jq" "$(counting_starts "$pr_jq" jq)" "1"
+state_truncate
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_state_unreadable "pr open" 1 "$out" "$st"
 
 restore_suite_env
 

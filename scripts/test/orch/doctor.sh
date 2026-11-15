@@ -1717,6 +1717,13 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "report files beside a stop record stay healthy" "$st" 0
 assert_contains "still reading the stop from the record" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
+
+# The classifier reads nothing: doctor's check hands it the iteration and
+# budget its probe already read, so the check itself starts no jq.
+dr_jq="$(counting_bin jq)"
+out="$(PATH="$dr_jq:$PATH" sourced_orch_script 'D_FLOW_ITERATION=5 D_FLOW_BUDGET=5; check_flow_review_terminal' 2>&1)"
+assert_contains "the check on a stopped loop still names it" "$out" "review loop at a terminal state: stop (CI failed twice.)"
+assert_eq "the review terminal check starts no jq" "$(counting_starts "$dr_jq" jq)" "0"
 mv .orchestrator/review/iteration-05.md .orchestrator/review/stop.saved
 rv_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?

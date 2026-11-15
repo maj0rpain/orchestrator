@@ -839,7 +839,7 @@ check_flow_review_terminal() {
   if review_flat_record_gone "$i"; then
     orch_load redo
   fi
-  terminal="$(review_terminal_state)" || true
+  terminal="$(review_terminal_state "$i" "$b")" || true
   lines_split "$terminal" word detail
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;

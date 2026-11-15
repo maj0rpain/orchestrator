@@ -209,9 +209,18 @@ current_branch_or_die() {
 # read exits 1, never read as free or busy. Called as a bare statement, so
 # that exit stops the caller.
 checkout_busy() {
-  local line_var="$1" remedy_var="$2" signals="${*:3}" fslug fphase b dirty busy_line="" busy_remedy=""
-  if word_listed "$signals" flow && flow_active; then
+  local line_var="$1" remedy_var="$2" signals="${*:3}" fslug fphase fread=none b dirty busy_line="" busy_remedy=""
+  # The flow signal: one read of the slug and phase. A state file that cannot
+  # be read counts as a running flow; a done phase is no flow.
+  if word_listed "$signals" flow && [ -f "$STATE" ]; then
     if state_get_many_in "$STATE" fslug=slug fphase=phase; then
+      [ "$fphase" = "done" ] || fread=ok
+    else
+      fread=unreadable
+    fi
+  fi
+  if [ "$fread" != none ]; then
+    if [ "$fread" = ok ]; then
       busy_line="busy: a flow is mid-pipeline (slug: $fslug, phase: $fphase)"
       busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
     else
@@ -337,16 +346,16 @@ discard_work_in() {
   git -C "$path" clean -fdq >/dev/null 2>&1 || die "$who: git clean failed in $path"
 }
 
-# require_flow_branch <who> <branch>: dies (exit 1, "nothing was discarded")
-# unless <branch> is the branch the flow state records, whatever the phase -
-# the proof a discard-rule caller owes before it discards. It never asks
-# whether the flow is active: each caller first settles that a flow state
-# exists. Called as a bare statement, so the die stops the caller.
+# require_flow_branch <who> <branch> <recorded>: dies (exit 1, "nothing was
+# discarded") unless <branch> is <recorded>, the branch the flow state records,
+# whatever the phase - the proof a discard-rule caller owes before it
+# discards. It reads nothing: the caller hands over the branch from its one
+# read of flow state, and settles first that a flow state exists. Called as a
+# bare statement, so the die stops the caller.
 require_flow_branch() {
-  local who="$1" b="$2" fb
-  fb="$(state_get branch)" || die "$who: cannot read the flow's branch from $STATE"
+  local who="$1" b="$2" fb="$3"
   [ -n "$fb" ] || die "$who: on $b, the active flow records no branch yet - nothing was discarded"
-  branch_held "$b" || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
+  [ "$fb" = "$b" ] || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
 }
 
 # work_to_discard <merging-var> <rebasing-var> <dirty-var>: the one definition

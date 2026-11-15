@@ -195,6 +195,8 @@ fresh_flow reviewpath
 state_fixture iteration 5
 assert_contains "files the record flat under review/" \
   "$("$ORCH" review path)" "/review/iteration-05.md"
+assert_contains "an empty iteration falls back to the recorded one" \
+  "$("$ORCH" review path "")" "/review/iteration-05.md"
 assert_contains "zero-pads an explicit iteration" \
   "$("$ORCH" review path 2)" "/review/iteration-02.md"
 assert_eq "creates the directory it names" \
@@ -525,7 +527,7 @@ file_github
 before_bad="$(fake_snapshot)"
 out="$("$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
 assert_status "dies with no PR in state" "$st" 1
-assert_eq "in require_pr's words" "$out" \
+assert_eq "in require_value's pr words" "$out" \
   "orch: no PR recorded in state - the implement phase opens it"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before_bad"
 state_fixture pr 7
@@ -977,7 +979,7 @@ fake_unfail
 state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
-# require_pr dies inside a command substitution, so what stops the command is
+# require_value dies inside a command substitution, so what stops the command is
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
@@ -1986,3 +1988,55 @@ assert_eq "recording done" "$("$ORCH" state get phase)" "done"
 assert_eq "the PR is ready" "$(fake_pr_draft_of 7)" "no"
 restore_suite_env
 
+
+# --- review reads its Flow state once -----------------------------------------
+# Each op makes one entry read where its require_state sat: exactly one jq on a
+# path that ends at its last guard, before any write.
+echo
+echo "review reads its Flow state once"
+fresh_flow reviewonce
+# rv_jq <cmd...>: runs orch.sh under a counting jq into out and st.
+rc_jq="$(counting_bin jq)"
+rv_jq() {
+  : >"$rc_jq/jq.log"
+  out="$(PATH="$rc_jq:$PATH" "$ORCH" "$@" 2>&1)"; st=$?
+}
+state_fixture iteration 1
+"$ORCH" state set budget 1
+rv_jq review begin
+assert_status "review begin with the budget spent refuses" "$st" 1
+assert_contains "naming the spent budget" "$out" "budget of 1 iterations spent"
+assert_eq "review begin starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review path
+assert_eq "review path with no iteration" "$out" "$(pwd -P)/.orchestrator/review/iteration-01.md"
+assert_eq "starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review path 3
+assert_eq "review path with an iteration" "$out" "$(pwd -P)/.orchestrator/review/iteration-03.md"
+assert_eq "starts one jq too" "$(counting_starts "$rc_jq" jq)" "1"
+mkdir -p .orchestrator/review
+writeln "## Terminal state" stop "CI failed twice." >.orchestrator/review/iteration-01.md
+rv_jq review terminal
+assert_eq "review terminal starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review resume
+assert_status "review resume with nothing to resume refuses" "$st" 1
+assert_eq "review resume starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review ready
+assert_contains "review ready with no PR recorded" "$out" "no PR recorded in state"
+assert_eq "review ready starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review ci
+assert_contains "review ci with no PR recorded" "$out" "no PR recorded in state"
+assert_eq "review ci starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_finding="$(mktemp)"; echo finding >"$rv_finding"
+rv_jq review file major "A title" --axis standards --finding-file "$rv_finding" \
+  --severity-reason r --location scripts/a.sh:1 --why w
+assert_contains "review file with no PR recorded" "$out" "no PR recorded in state"
+assert_eq "review file starts one jq" "$(counting_starts "$rc_jq" jq)" "1"
+rv_jq review file major
+assert_contains "review file checks its usage before the PR" "$out" "usage: orch.sh review file"
+state_truncate
+for op in begin path terminal resume "path 2" "file major t"; do
+  # shellcheck disable=SC2086 # op holds words
+  out="$("$ORCH" review $op 2>&1)"; st=$?
+  assert_state_unreadable "review $op" 1 "$out" "$st"
+done
+restore_suite_env

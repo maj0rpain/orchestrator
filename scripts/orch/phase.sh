@@ -19,9 +19,6 @@ next_phase_cmd() {
 # indented Next line naming the fresh session to start, through next_phase_cmd.
 print_next_block() { printf '%s\n\n  Next: %s\n' "$1" "$(next_phase_cmd)"; }
 
-# advance needs the base SHA the review diffs against before leaving implement.
-require_base_sha() { require_field "$1" base_sha "no base SHA recorded in state - branch create records it"; }
-
 # The block that ends every phase, for the handoff the phase now recorded
 # reads: the next phase needs a fresh session this one cannot start, so the
 # block names it in the host's own words, through next_phase_cmd. The finished
@@ -35,16 +32,17 @@ print_boundary() {
   print_next_block "Phase $done_name complete. Handoff written to $HANDOFF_DIR/$file."
 }
 
-# phase_finish <next> <reason>: records <next> as the flow's phase. In an
-# autopilot session it also moves the issue's phase label and releases the
-# claim, <reason> naming what was done. It reports success only, never its
-# mode - a caller asks autopilot_active for that - so it is called as a plain
-# statement, never in a condition, where set -e would be suspended.
+# phase_finish <next> <reason> <issue>: records <next> as the flow's phase.
+# In an autopilot session it also checks <issue>, the flow's issue the caller
+# holds, with require_value, moves the issue's phase label and releases the
+# claim, <reason> naming what was done. It reads no state. It reports success
+# only, never its mode - a caller asks autopilot_active for that - so it is
+# called as a plain statement, never in a condition, where set -e would be
+# suspended.
 phase_finish() {
-  local issue
   if autopilot_active; then
-    require_issue issue
-    standing_finish "$issue" "$1" "$2"
+    require_value issue "$3"
+    standing_finish "$3" "$1" "$2"
   else
     phase_write "$1"
   fi
@@ -59,9 +57,8 @@ cmd_phase() {
   case "$op" in
     advance)
       [ $# -eq 0 ] || die "usage: orch.sh phase advance"
-      require_state
-      local phase next file name issue _unused
-      phase="$(state_get phase)"
+      local phase next file name issue branch base_sha pr
+      require_state_read phase=phase issue=issue branch=branch base_sha=base_sha pr=pr
       # The guards run in this order; past them, the next phase is the phase
       # table's, and phase_next fails only on a phase outside the table.
       case "$phase" in
@@ -82,17 +79,16 @@ cmd_phase() {
       file="$(handoff_read "$name" "before leaving the $phase phase")"
       handoff_check "$file" "" "$name" ||
         handoff_invalid "$name" "then run phase advance again; the flow stays at $phase"
-      # Deliberately a per-phase switch, not a phase table column: each
-      # requirement carries its own remedy message, which a column of field
-      # names could only reach through a naming convention.
+      # Deliberately a per-phase switch, not a phase table column: it keeps
+      # each check's place in the refusal order beside the phase that needs it.
       case "$next" in
-        implement) require_issue _unused ;;
-        review)    require_branch _unused; require_base_sha _unused; require_pr _unused
-               require_issue issue; require_no_open_tickets "$issue" "phase advance" ;;
+        implement) require_value issue "$issue" ;;
+        review)    require_value branch "$branch"; require_value base_sha "$base_sha"
+               require_value pr "$pr"; require_value issue "$issue"
+               require_no_open_tickets "$issue" "phase advance" ;;
       esac
-      phase_finish "$next" ""
+      phase_finish "$next" "" "$issue"
       if autopilot_active; then
-        issue="$(state_get issue)"
         note "Phase $(phase_cell writer "$next") complete. Handoff posted on issue #$issue; the watcher starts the $next phase."
       else
         print_boundary "$next"
@@ -100,8 +96,9 @@ cmd_phase() {
       ;;
     boundary)
       [ $# -eq 0 ] || die "usage: orch.sh phase boundary"
-      require_state
-      print_boundary "$(state_get phase)"
+      local phase
+      require_state_read phase=phase
+      print_boundary "$phase"
       ;;
     *) die "unknown phase op: ${op:-<none>} (want advance|boundary)" ;;
   esac
