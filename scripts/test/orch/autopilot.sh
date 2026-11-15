@@ -170,37 +170,38 @@ assert_status "rounds with no plan comment dies" "$st" 1
 assert_eq "naming the missing plan" "$out" "$(handoff_missing_msg comment 7 01-plan)"
 
 fake_issue 8 open
-out="$("$ORCH" autopilot start 8 "$planf" 2>&1)"; st=$?
+start_stdout="$(mktemp)"
+out="$("$ORCH" autopilot start 8 "$planf" 2>&1 >"$start_stdout")"; st=$?
 assert_status "start refuses an issue without ready-for-agent" "$st" 1
 assert_contains "naming the label" "$out" "ready-for-agent"
 assert_eq "writing nothing" "$(fake_comments_of 8)$(fake_labels_of 8)" ""
-assert_eq "start without ready-for-agent prints nothing on stdout" "$("$ORCH" autopilot start 8 "$planf" 2>/dev/null)" ""
+assert_eq "start without ready-for-agent prints nothing on stdout" "$(cat "$start_stdout")" ""
 fake_issue 9 open ready-for-agent orch:review
 fake_fail adapter_issue_state_labels "HTTP 502"
-out="$("$ORCH" autopilot start 9 "$planf" 2>&1)"; st=$?
-assert_eq "a failed issue read prints nothing on stdout" "$("$ORCH" autopilot start 9 "$planf" 2>/dev/null)" ""
+out="$("$ORCH" autopilot start 9 "$planf" 2>&1 >"$start_stdout")"; st=$?
+assert_eq "a failed issue read prints nothing on stdout" "$(cat "$start_stdout")" ""
 fake_unfail
 assert_status "start on a failed issue read dies" "$st" 1
 assert_eq "in one line naming gh and the reason" "$(printf '%s\n' "$out" | grep -c .)|${out#orch: gh could not read issue #9: }" "1|HTTP 502"
-out="$("$ORCH" autopilot start 9 "$planf" 2>&1)"; st=$?
+out="$("$ORCH" autopilot start 9 "$planf" 2>&1 >"$start_stdout")"; st=$?
 assert_status "start refuses an issue with a phase label" "$st" 1
 assert_contains "naming the label" "$out" "orch:review"
-assert_eq "a phase label already present prints nothing on stdout" "$("$ORCH" autopilot start 9 "$planf" 2>/dev/null)" ""
+assert_eq "a phase label already present prints nothing on stdout" "$(cat "$start_stdout")" ""
 assert_eq "writing nothing" "$(fake_comments_of 9)" ""
 fake_issue 9 open ready-for-agent
 bad_plan="$(mktemp -d)/01-plan.md"; complete_handoff "$bad_plan"
-out="$("$ORCH" autopilot start 9 "$bad_plan" 2>&1)"; st=$?
+out="$("$ORCH" autopilot start 9 "$bad_plan" 2>&1 >"$start_stdout")"; st=$?
 assert_status "start refuses a plan with no Autopilot block" "$st" 1
 assert_contains "naming it" "$out" "## Autopilot"
 assert_contains "and that nothing was posted" "$out" "is not valid - nothing posted"
-assert_eq "an invalid plan prints nothing on stdout" "$("$ORCH" autopilot start 9 "$bad_plan" 2>/dev/null)" ""
+assert_eq "an invalid plan prints nothing on stdout" "$(cat "$start_stdout")" ""
 assert_eq "writing nothing" "$(fake_comments_of 9)$(fake_labels_of 9)" "ready-for-agent "
 
 # a failed plan post dies with the reason, adds no label and leaves no temp file
 start_tmp="$(mktemp -d)"
 fake_fail adapter_issue_comment_url "HTTP 502 post"
-out="$(TMPDIR="$start_tmp" "$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
-assert_eq "a failed plan post prints nothing on stdout" "$("$ORCH" autopilot start 7 "$planf" 2>/dev/null)" ""
+out="$(TMPDIR="$start_tmp" "$ORCH" autopilot start 7 "$planf" 2>&1 >"$start_stdout")"; st=$?
+assert_eq "a failed plan post prints nothing on stdout" "$(cat "$start_stdout")" ""
 fake_unfail
 assert_status "a failed plan post dies" "$st" 1
 assert_contains "showing the gh reason" "$out" "HTTP 502 post"
@@ -209,7 +210,6 @@ assert_eq "leaving no temp file" "$(ls -A "$start_tmp")" ""
 
 # a failure after the comment leaves the issue unlabelled and names the comment
 fake_fail adapter_issue_relabel "HTTP 502"
-start_stdout="$(mktemp)"
 out="$("$ORCH" autopilot start 7 "$planf" 2>&1 >"$start_stdout")"; st=$?
 assert_status "a failed label add dies" "$st" 1
 assert_contains "naming the comment posted" "$out" "posted the 01-plan comment on issue #7"
@@ -232,9 +232,9 @@ assert_contains "naming the label" "$out" "orch:spec"
 
 assert_eq "autopilot rounds prints the newest plan comment's Rounds" "$("$ORCH" autopilot rounds)" "6"
 assert_eq "autopilot budget prints its Budget" "$("$ORCH" autopilot budget)" "5"
-out="$("$ORCH" autopilot start 7 2>&1)"; st=$?
+out="$("$ORCH" autopilot start 7 2>&1 >"$start_stdout")"; st=$?
 assert_contains "start's usage line" "$out" "usage: orch.sh autopilot start <issue> <plan-file>"
-assert_eq "a usage error prints nothing on stdout" "$("$ORCH" autopilot start 7 2>/dev/null)" ""
+assert_eq "a usage error prints nothing on stdout" "$(cat "$start_stdout")" ""
 
 # a success prints the two lines; with no URL from gh the first ends at #n
 fake_issue 12 open ready-for-agent

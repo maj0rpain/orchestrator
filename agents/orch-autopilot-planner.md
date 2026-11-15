@@ -58,11 +58,11 @@ nothing back, and its line says the label was moved.
    it>`. No close, no label change, no write.
 3. **Label move** (`label`). For `move`, `bash "$ORCH" issue triage <n>`; for
    `override`, `bash "$ORCH" issue triage <n> --override`; for `none`, nothing.
-4. **Unattended rewrite** (`rewrite`). Follow the **Unattended rewrite**
-   section of `skills/orch-to-spec/SKILL.md`, read whole, on the issue, in
-   rewrite mode, through to its end, with glossary and ADR wording the interview
-   decided    carried into the body verbatim (ADR-0022). That section is the one
-   definition of the mode; restate none of it.
+4. **Unattended rewrite** (`rewrite`). Read `skills/orch-to-spec/SKILL.md`
+   whole, and follow its **Unattended rewrite** section on the issue, in rewrite
+   mode, through to its end, with glossary and ADR wording the interview decided
+   carried into the body verbatim (ADR-0022). That section is the one definition
+   of the mode; restate none of it.
 5. **Plan** (`plan`). Write the plan, its file, Rounds and Budget as the
    `### Autopilot route` section of `skills/orch-interview/SKILL.md` alone
    sets them, from `skills/orch-handoff/SKILL.md`'s `## In an autopilot flow`,

@@ -429,11 +429,13 @@ fake_issue_labels_counted() {
 
 # fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
 # one comment appended to an issue's or PR's comments directory, numbered in
-# order, its authorAssociation OWNER unless given. The existing comments are
-# counted with a glob, and the comment's directory made in one mkdir.
+# order, its authorAssociation OWNER unless given, its number left in
+# fake_comment_number. The existing comments are counted with a glob, and the
+# comment's directory made in one mkdir.
 fake_comment_append() {
   local d="$1" k=1 e
   for e in "$d"/*; do [ -e "$e" ] && k=$((k + 1)); done
+  fake_comment_number="$k"
   mkdir -p "$d/$k"
   printf '%s\n' "$2" >"$d/$k/author"
   printf '%s\n' "$3" >"$d/$k/created"
@@ -459,6 +461,9 @@ fake_close_comment() {
   rm -f "$c"
 }
 
+# fake_comment_url <n> <k>: the URL of the k-th comment on issue <n>.
+fake_comment_url() { printf 'https://github.com/o/r/issues/%s#issuecomment-%s\n' "$1" "$2"; }
+
 # fake_comments_json <comments-dir> <n>: the directory's comments, numerically
 # ordered, as one compact JSON array of author, authorAssociation (OWNER for a
 # comment stored without one), createdAt, body and url, the url
@@ -476,7 +481,7 @@ fake_comments_json() {
       comments="$(jq -c --arg a "$au" \
         --arg s "$as" \
         --arg c "$cr" --rawfile b "$d/$k/body" \
-        --arg u "https://github.com/o/r/issues/$2#issuecomment-$k" \
+        --arg u "$(fake_comment_url "$2" "$k")" \
         '. + [{author: $a, authorAssociation: $s, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
     done
   fi
@@ -818,15 +823,13 @@ adapter_issue_comment() {
 # comment's URL, as fake_comments_json stores it; nothing where no_comment_url
 # is present.
 adapter_issue_comment_url() {
-  local d k e
+  local d
   ! fake_failing adapter_issue_comment_url || return 1
   fake_issue_known "$1" || return 1
   d="$(fake_issue_dir "$1")/comments"
   fake_comment_write "$d" "$2"
   [ ! -f "$(fake_store)/no_comment_url" ] || return 0
-  k=0
-  for e in "$d"/*; do k=$((k + 1)); done
-  printf 'https://github.com/o/r/issues/%s#issuecomment-%s\n' "$1" "$k"
+  fake_comment_url "$1" "$fake_comment_number"
 }
 
 # fake_option_value <operation> <option-names> <option> [value...]: true where
