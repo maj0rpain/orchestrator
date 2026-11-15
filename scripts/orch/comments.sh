@@ -32,7 +32,7 @@ COMMENTS_RENDER_JQ='def render_comments: [.[] | "<!-- comment @\(.author) \(.cre
 # filter's stderr line, `#<n>` naming the issue or PR, reaches the real
 # stderr. Locals prefixed so no caller's variable name is shadowed.
 comments_trusted_read() {
-  local __ctr_kind="$1" __ctr_n="$2" __ctr_raw __ctr_gh_err __ctr_kept
+  local __ctr_kind="$1" __ctr_n="$2" __ctr_raw __ctr_gh_err __ctr_filtered __ctr_kept
   printf -v "$3" '%s' ''
   printf -v "$4" '%s' ''
   case "$__ctr_kind" in
@@ -43,10 +43,10 @@ comments_trusted_read() {
     printf -v "$4" '%s' "$(gh_reason "$__ctr_gh_err")"
     return 1
   }
-  __ctr_kept="$(jq -c '.comments | map({author: .author.login, authorAssociation, createdAt, body, url})' \
+  __ctr_filtered="$(jq -c '.comments | map({author: .author.login, authorAssociation, createdAt, body, url})' \
     2>/dev/null <<<"$__ctr_raw" | trust_filter_comments "$__ctr_n")" || return 1
-  [ -n "$__ctr_kept" ] || return 1
-  __ctr_kept="$(jq -c 'map(del(.authorAssociation))' <<<"$__ctr_kept")" || return 1
+  [ -n "$__ctr_filtered" ] || return 1
+  __ctr_kept="$(jq -c 'map(del(.authorAssociation))' <<<"$__ctr_filtered")" || return 1
   printf -v "$3" '%s' "$__ctr_kept"
 }
 
