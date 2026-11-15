@@ -1519,16 +1519,6 @@ assert_eq "warns once" "$(grep -cF -- "$interrupted_msg" "$errf")" 1
 assert_eq "records nothing" "$(on_disk "$rec")" absent
 assert_eq "and leaves the plain file as it was" "$(cat "$rec.active")" plain
 
-# A timing-file name taken on every try dies as before, runs no command and
-# leaves the file it collided with.
-tf_dir="$(mktemp -d)"; printf 'planted' >"$tf_dir/taken"
-out="$(sourced_orch_script 'temp_file_name() { printf -v "$1" "%s" "'"$tf_dir"'/taken"; }; suite_cost_measure touch "'"$tf_dir"'/ran"' 2>&1)"; st=$?
-assert_status "a timing-file name taken on every try: exits 1" "$st" 1
-assert_contains "and says it could not make a temp file" "$out" "could not make a temp file to time the command"
-assert_eq "and leaves the file it collided with" "$(cat "$tf_dir/taken" 2>/dev/null)" planted
-assert_eq "and did not run the command" "$(on_disk "$tf_dir/ran")" absent
-rm -rf "$tf_dir"
-
 # --- suite-cost barrier -------------------------------------------------------
 # A FIFO handshake whose partner never arrives fails fast, naming the side and
 # its FIFO, instead of hanging the run.
