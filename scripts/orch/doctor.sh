@@ -666,7 +666,7 @@ check_autopilot_side_flows() {
   here="$(pwd -P)"
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] && [ "$path" != "$here" ] || continue
-    issue="$(side_checkout_issue "$path" 2>/dev/null)" || continue
+    side_checkout_marker_issue_into issue "$path" || continue
     [ -f "$(flow_state_file "$path")" ] || continue
     phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
     d_gh_gate || return 0

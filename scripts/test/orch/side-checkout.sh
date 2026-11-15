@@ -1538,6 +1538,108 @@ chmod 644 "$mlink/.git"
 printf '%s\n' "$mptr" >"$mlink/.git"
 restore_suite_env
 
+# --- side checkout marker issue: reading without re-classifying (#3073) -------
+# side_checkout_marker_issue_into reads the issue a marker records for a path
+# the caller holds as a side checkout, starting nothing; the loops over the walk
+# (side_checkout_for_issue, side-checkout list, doctor) cost no more per side
+# checkout than their own content needs.
+echo
+echo "side_checkout_marker_issue_into"
+healthy_repo
+mi_wt() { # <name> <marker content as printf format, or - for no marker>: a worktree; prints its path
+  local p gd
+  p="$(mktemp -d)/$1"
+  git worktree add -q "$p" -b "mi-$1"
+  gd="$(git -C "$p" rev-parse --absolute-git-dir)"
+  if [ "$2" != - ]; then printf "$2" >"$gd/orchestrator-side-checkout"; fi
+  printf '%s\n' "$p"
+}
+mi_ok="$(mi_wt ok '41\n')"
+mi_none="$(mi_wt none -)"
+mi_empty="$(mi_wt empty '')"
+mi_bad="$(mi_wt bad '4x\n')"
+mi_multi="$(mi_wt multi '41\n42\n')"
+mi_nul="$(mi_wt nul '41\0')"
+nogit="$(mktemp -d)"  # an empty PATH directory: no git, no cat, nothing
+mapfile -t mi < <(sourced_orch_script '
+  PATH="$7"
+  v=untouched; side_checkout_marker_issue_into v "$1"; echo "$? $v"
+  for p in "$2" "$3" "$4" "$5" "$6"; do
+    v=untouched; st=0; out="$(side_checkout_marker_issue_into v "$p" 2>&1)" || st=$?; echo "$st $v [$out]"
+  done' "$mi_ok" "$mi_none" "$mi_empty" "$mi_bad" "$mi_multi" "$mi_nul" "$nogit")
+assert_eq "with no git and no cat, a marker's issue is read" "${mi[0]}" "0 41"
+assert_eq "a worktree with no marker records none" "${mi[1]}" "1 untouched []"
+assert_eq "an empty marker records none" "${mi[2]}" "1 untouched []"
+assert_eq "a marker that is not a plain number records none" "${mi[3]}" "1 untouched []"
+assert_eq "a marker of more than one line records none" "${mi[4]}" "1 untouched []"
+assert_eq "a marker holding a NUL byte records none" "${mi[5]}" "1 untouched []"
+
+# side_checkout_for_issue: as many git processes with five side checkouts as
+# with two, and no cat.
+mi_git="$(counting_bin git)"
+mi_cat="$(counting_bin cat)"
+mi_for_issue() { # <issue>: side_checkout_for_issue's stdout, status and the git/cat starts
+  : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
+  PATH="$mi_git:$mi_cat:$PATH" sourced_orch side_checkout_for_issue "$1"
+}
+mi_for_issue 9001 >/dev/null || true  # warm nothing: logs are truncated per call
+mi_wt s1 '9001\n' >/dev/null
+mi_wt s2 '9002\n' >/dev/null
+mi_for_issue 9002 >/dev/null
+mi_two="$(counting_starts "$mi_git" git)"
+for mi_n in 3 4 5; do mi_wt "s$mi_n" "900$mi_n\\n" >/dev/null; done
+mi_last="$(mi_for_issue 9005)"
+mi_five="$(counting_starts "$mi_git" git)"
+assert_eq "side_checkout_for_issue starts as many git processes with five side checkouts as with two" "$mi_five" "$mi_two"
+assert_eq "and starts no cat" "$(counting_starts "$mi_cat" cat)" "0"
+assert_eq "it prints the path of the side checkout recording the asked issue" "${mi_last##*/}" "s5"
+mi_st=0; mi_for_issue 9999 >/dev/null || mi_st=$?
+assert_status "an issue no side checkout records is not found" "$mi_st" 1
+restore_suite_env
+
+# side-checkout list: one git process more for each added flow-less side
+# checkout (its holding line's branch read), and no more cat.
+echo
+echo "side-checkout list cost per side checkout"
+healthy_repo
+mi_git="$(counting_bin git)"
+mi_cat="$(counting_bin cat)"
+mi_list_starts() {
+  : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
+  PATH="$mi_git:$mi_cat:$PATH" "$ORCH" side-checkout list >/dev/null 2>&1
+}
+mi_wt l1 '7001\n' >/dev/null
+mi_wt l2 '7002\n' >/dev/null
+mi_list_starts
+mi_git2="$(counting_starts "$mi_git" git)"
+mi_cat2="$(counting_starts "$mi_cat" cat)"
+for mi_n in 3 4 5; do mi_wt "l$mi_n" "700$mi_n\\n" >/dev/null; done
+mi_list_starts
+assert_eq "list starts one more git process for each added side checkout" \
+  "$(counting_starts "$mi_git" git)" "$((mi_git2 + 3))"
+assert_eq "and no more cat with five than with two" "$(counting_starts "$mi_cat" cat)" "$mi_cat2"
+restore_suite_env
+
+# doctor --env: an autopilot side flow whose marker records no plain issue gets
+# no phase-label verdict.
+echo
+echo "doctor --env beside side flows with unusable markers"
+tick_fixture
+fake_issue 7 open ready-for-agent orch:implement
+mi_flow() { # <name> <marker printf format>: a side checkout with a flow and that marker
+  local p
+  p="$("$ORCH" side-checkout add "$1" 2>/dev/null)"
+  printf "$2" >"$(git -C "$p" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+  (cd "$p" && "$ORCH" init "$1" --issue 7 >/dev/null 2>&1)
+}
+mi_flow empty-marker ''
+mi_flow bad-marker '7x\n'
+out="$("$ORCH" doctor --env 2>&1)"
+assert_not_contains "an empty marker's side flow gets no phase-label verdict" "$out" "empty-marker"
+assert_not_contains "a non-numeric marker's side flow gets none either" "$out" "bad-marker"
+assert_not_contains "and no label verdict for the issue" "$out" "phase label of #7"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
 # --- archive reads the flow's slug once ---------------------------------------
 echo
 echo "archive one jq"
