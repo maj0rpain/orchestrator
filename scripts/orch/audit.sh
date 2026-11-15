@@ -266,6 +266,41 @@ audit_field_get() {
   return 1
 }
 
+# audit_ref_find <text> <phrase_var> <line_var>: looks in <text>, outside
+# inline backtick spans and fenced blocks and without regard to letter case, for
+# a reference to a report's numbering: finding, findings, candidate or
+# candidates followed by a number (an optional # before it), or "this report".
+# Returns 0 with the phrase as written in <phrase_var> and its 1-based line in
+# <line_var>; returns 1 when there is none. "the report" is not one.
+audit_ref_find() {
+  local line low rest ln=0 fence="" pre bt='`'
+  local hash="#" re
+  re="(^|[^a-z0-9_])((findings?|candidates?)[[:space:]]+${hash}?[0-9]+|this[[:space:]]+report)(\$|[^a-z0-9_])"
+  while IFS= read -r line || [ -n "$line" ]; do
+    ln=$((ln + 1))
+    if [[ $line == "$AUDIT_FENCE"* ]]; then
+      if [ -n "$fence" ]; then fence=""; else fence=1; fi
+      continue
+    fi
+    [ -z "$fence" ] || continue
+    rest="$line" low=""
+    while [[ $rest == *"$bt"*"$bt"* ]]; do
+      low+="${rest%%"$bt"*} "
+      rest="${rest#*"$bt"}"
+      rest="${rest#*"$bt"}"
+    done
+    low+="$rest"
+    rest="${low,,}"
+    if [[ $rest =~ $re ]]; then
+      pre="${rest%%"${BASH_REMATCH[2]}"*}"
+      printf -v "$2" '%s' "${low:${#pre}:${#BASH_REMATCH[2]}}"
+      printf -v "$3" '%s' "$ln"
+      return 0
+    fi
+  done <<<"$1"
+  return 1
+}
+
 # audit_ranked_read <dir>: reads and checks the run directory <dir>: its
 # record, its ranked file, and every area file a From: names. Sets AUDIT_DIR,
 # AUDIT_KIND, AUDIT_COMMIT, AUDIT_SCOPE, AUDIT_AREAS, AUDIT_NONE, AUDIT_TOP,
@@ -357,6 +392,15 @@ audit_ranked_read() {
       [[ $loc == *:* && -n ${loc%:*} && ${loc##*:} =~ ^[0-9]+(-[0-9]+)?$ ]] \
         || die "ranked.md line $ln: finding $n's location '$loc' is not <file>:<line> or <file>:<start>-<end>"
     done <<<"$locs"
+    local frest="${AUDIT_FIELDS[n]}" frec flabel fvalue fphrase fline
+    while [ -n "$frest" ]; do
+      frec="${frest%%"$AUDIT_RS"*}"
+      frest="${frest#*"$AUDIT_RS"}"
+      flabel="${frec%%"$AUDIT_US"*}" fvalue="${frec#*"$AUDIT_US"}"
+      [ "$flabel" != From ] && [ "$flabel" != Overlaps ] || continue
+      ! audit_ref_find "$fvalue" fphrase fline \
+        || die "ranked.md line $ln: finding $n's $flabel: says '$fphrase' (line $fline of the field): a finding must read alone, so name no other finding by number and never this report; restate the field in the ranked block"
+    done
     AUDIT_TITLE[n]="$title" AUDIT_CATEGORY[n]="$cat" AUDIT_LOCS[n]="${locs%$'\n'}"
     if audit_field_get "$n" Overlaps over; then
       audit_list_split over "$over"
@@ -582,6 +626,11 @@ audit_file() {
   is_filed_category "$category" || die "$(audit_file_usage)"
   local loc sha body_file n err existing existing_n existing_title triage
   finding_input_check "$title" "$finding"
+  local refp refl
+  ! audit_ref_find "$title" refp refl \
+    || die "the title says '$refp': a finding must read alone, so name no other finding by number and never this report"
+  ! audit_ref_find "$(cat "$finding")" refp refl \
+    || die "$finding line $refl says '$refp': a finding must read alone, so name no other finding by number and never this report"
   for loc in "${locations[@]}"; do
     finding_location_check "$loc" "<file>:<line> or <file>:<start>-<end>"
   done

@@ -131,6 +131,8 @@
 #     the area-<k>.md findings file
 #   scan_audit_rank_report  each audit skill's Report step runs audit report and
 #     its Rank step states its category as Category: <c>
+#   scan_audit_stands_alone  each auditor brief's Reporting rules and each audit
+#     skill's Rank step say a finding stands alone
 #   scan_quality_rule_home  orch-audit-tests' opening names the test auditor's
 #     brief and that brief's Brief section holds the quality rule
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
@@ -3397,6 +3399,52 @@ flags "and audit report outside the Report step" \
   "$out" "skills/orch-audit-tests/SKILL.md: the Report step does not run audit report"
 check "each audit skill's Report runs audit report and its Rank states the category" \
   "$(scan_audit_rank_report "$PLUGIN_ROOT")"
+
+# scan_audit_stands_alone <plugin root>: one line per auditor brief whose
+# Reporting rules do not say a finding stands alone, and one per audit skill
+# whose Rank step does not say so of each ranked finding (ADR-0063).
+scan_audit_stands_alone() {
+  local r="$1" f heading text name
+  for f in agents/orch-code-auditor.md agents/orch-doc-auditor.md agents/orch-test-auditor.md; do
+    if [ ! -f "$r/$f" ]; then
+      echo "$f: missing"
+      continue
+    fi
+    text="$(md_section "$r/$f" "## Reporting rules" 2>/dev/null | flat_text)"
+    grep -qF 'stands alone' <<<"$text" || echo "$f: the Reporting rules do not say a finding stands alone"
+  done
+  for name in audit-docs audit-code audit-tests; do
+    f="skills/orch-$name/SKILL.md"
+    if [ ! -f "$r/$f" ]; then
+      echo "$f: missing"
+      continue
+    fi
+    text=""
+    if heading="$(numbered_heading "$r/$f" "Rank")"; then
+      text="$(md_section "$r/$f" "$heading" 2>/dev/null | flat_text)"
+    fi
+    grep -qF 'stands alone' <<<"$text" || echo "$f: the Rank step does not say a finding stands alone"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents" "$fixture/skills/orch-audit-docs" "$fixture/skills/orch-audit-code" "$fixture/skills/orch-audit-tests"
+printf '# A\n\n## Reporting rules\n\n- A finding stands alone.\n\n## Next\n' >"$fixture/agents/orch-code-auditor.md"
+printf '# A\n\n## Reporting rules\n\n- Report findings.\n\n## Next\n\nA finding stands alone.\n' >"$fixture/agents/orch-doc-auditor.md"
+printf '# A\n\n## Reporting rules\n\n- Each finding stands\n  alone.\n' >"$fixture/agents/orch-test-auditor.md"
+printf '# A\n\n## 4. Rank\n\nEach finding stands alone.\n\n## 5. Report\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
+printf '# A\n\n## 4. Rank\n\nRank.\n\n## 5. Report\n\nIt stands alone.\n' >"$fixture/skills/orch-audit-code/SKILL.md"
+out="$(scan_audit_stands_alone "$fixture")"
+spares "a brief whose Reporting rules say it is accepted" "$out" 'orch-code-auditor.md'
+flags "a brief saying it outside its Reporting rules is flagged" \
+  "$out" "agents/orch-doc-auditor.md: the Reporting rules do not say a finding stands alone"
+spares "a rule wrapped over two lines is accepted" "$out" 'orch-test-auditor.md'
+spares "a Rank step saying it is accepted" "$out" 'audit-docs/SKILL.md'
+flags "a Rank step saying it outside Rank is flagged" \
+  "$out" "skills/orch-audit-code/SKILL.md: the Rank step does not say a finding stands alone"
+flags "a missing skill is flagged" "$out" "skills/orch-audit-tests/SKILL.md: missing"
+check "each auditor brief and audit Rank step says a finding stands alone" \
+  "$(scan_audit_stands_alone "$PLUGIN_ROOT")"
 
 # scan_quality_rule_home <plugin root>: one line when orch-audit-tests' opening
 # (its text before the first numbered step heading) does not name

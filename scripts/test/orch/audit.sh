@@ -450,3 +450,59 @@ for args in "report" "report only-one" "report a b c"; do
    or: orch.sh audit report <dir> <out.html>
    or: orch.sh audit file"
 done
+
+echo
+echo "audit report-reference check in audit report"
+for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
+  report_run
+  printf 'earlier report\n' >"$out"
+  sed -i "s/^Title: Deepen d.sh/Title: Deepen d.sh like $phrase/" "$run/ranked.md"
+  res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
+  assert_status "a title saying '$phrase' is refused" "$st" 1
+  assert_contains "naming the phrase" "$res" "says '$phrase'"
+  assert_eq "writing nothing" "$(cat "$out")" "earlier report"
+done
+report_run
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in finding 2/' "$run/ranked.md"
+res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
+assert_status "a restated field saying finding 2 is refused" "$st" 1
+assert_contains "naming the field" "$res" "Evidence: says 'finding 2'"
+report_run
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: `finding 2` and "the report" read fine/' "$run/ranked.md"
+sed -i 's/^Title: Whole finding with no source/Title: See the report/' "$run/ranked.md"
+"$ORCH" audit report "$run" "$out" >/dev/null; st=$?
+assert_status "the report and a backticked finding 2 are accepted" "$st" 0
+report_run
+sed -i "s/^Confidence: certain/Confidence: as in finding 3/" "$run/area-1.md"
+res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
+assert_status "a hunter's block saying finding 3 is refused" "$st" 1
+sed -i "s/^Evidence: restated <b>evidence<\/b>/Confidence: sure/" "$run/ranked.md"
+"$ORCH" audit report "$run" "$out" >/dev/null; st=$?
+assert_status "until the ranked block restates the field" "$st" 0
+report_run
+sed -i "s/^Evidence: not a field/finding 9 and this report/" "$run/ranked.md"
+"$ORCH" audit report "$run" "$out" >/dev/null; st=$?
+assert_status "a fenced block is not checked" "$st" 0
+report_run
+printf '@@ finding 4\nFrom: area-2:1\nTitle: T4\nCategory: bug\nOverlaps: 1\n' >>"$run/ranked.md"
+"$ORCH" audit report "$run" "$out" >/dev/null; st=$?
+assert_status "From: and Overlaps: values are not checked" "$st" 0
+
+echo
+echo "audit report-reference check in audit file"
+audit_repo
+before="$(fake_snapshot)"
+for phrase in "finding 2" "candidate #3" "this report"; do
+  out="$("$ORCH" audit file "Fix it as in $phrase" "${parts[@]}" 2>&1)"; st=$?
+  assert_status "a title saying '$phrase' is refused" "$st" 1
+  assert_contains "naming the phrase" "$out" "says '$phrase'"
+  assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+done
+printf 'Line one.\nSame as Finding 4 here.\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "a finding file saying Finding 4 is refused" "$st" 1
+assert_contains "naming its line" "$out" "line 2 says 'Finding 4'"
+assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+printf 'The report says `finding 4`.\n```\nthis report\n```\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "the report, a span and a fence are accepted" "$st" 0
