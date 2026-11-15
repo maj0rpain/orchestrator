@@ -51,7 +51,7 @@ status_flow() {
   state_get_many slug=slug phase=phase issue=issue branch=branch pr=pr \
     iteration=iteration redo_count=redo_count base_raw=base budget_raw=budget ||
     die "cannot read the flow's state from $STATE"
-  base="$(flow_base_fallback "$base_raw")"
+  flow_base_fallback_into base "$base_raw"
   budget="$(review_budget_fallback "$budget_raw")"
   note "flow:      $slug"
   note "phase:     $phase"

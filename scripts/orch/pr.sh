@@ -41,7 +41,7 @@ pr_close_missed() {
 # read fails.
 pr_merged_closing_read() {
   local _default _raw _prs _err _since
-  _default="$(default_branch)" || { warn "could not find the default branch - $3"; return 1; }
+  default_branch_into _default
   gh_capture _since _err adapter_issue_created_at "$4" || {
     warn "could not read the creation time of issue #$4: $(gh_reason "$_err") - $3"
     return 1
@@ -105,7 +105,7 @@ pr_close_newest() {
 # opened", "PR #7 was not updated"). Current shell only: it sets <tmp-var>
 # with printf -v, and its locals carry a _pr_pb_ prefix.
 pr_push_and_body() {
-  local _pr_pb_why _pr_pb_tmp _pr_pb_keyword=Closes
+  local _pr_pb_why _pr_pb_tmp _pr_pb_keyword=Closes _pr_pb_default
   # A bare push would rely on set -e, which bash turns off inside the $(...)
   # open_pr's callers run it in (#1300), so the status is checked here.
   # Full refs: a tag named like the branch outranks a bare source (#2337).
@@ -114,7 +114,8 @@ pr_push_and_body() {
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of
   # claiming to close it - the release PR is what closes it.
-  [ "$2" = "$(default_branch)" ] || _pr_pb_keyword=Refs
+  default_branch_into _pr_pb_default
+  [ "$2" = "$_pr_pb_default" ] || _pr_pb_keyword=Refs
   # Errexit is off in that $(...) too (#1327), so the temp body's creation and
   # write are checked here: a failed write would otherwise open the PR with a
   # truncated body.
@@ -308,10 +309,7 @@ cmd_pr_open() {
   [ -f "$body_file" ] || die "body file not found: $body_file"
   require_value issue "$issue"
   require_value branch "$branch"
-  # Resolved here, in pr open's own shell, so the base fallback and the issue
-  # line's default-branch check ask GitHub once between them.
-  default_branch_resolve
-  base="$(flow_base_fallback "$base_raw")"
+  flow_base_fallback_into base "$base_raw"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
   require_no_open_tickets "$issue" "pr open"
   if [ -n "$recorded" ]; then
@@ -350,10 +348,7 @@ cmd_pr_publish() {
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   current_branch_or_die
-  # Resolved here, in pr publish's own shell, so the base read and the issue
-  # line's default-branch check ask GitHub once between them.
-  default_branch_resolve
-  base="$(recorded_base "$branch")"
+  recorded_base_into base "$branch"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
   require_no_open_tickets "$issue" "pr publish"
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft" ${labels[@]+"${labels[@]}"})"
@@ -371,11 +366,8 @@ cmd_pr_release() {
   local title="$1" body_file="$2" base default
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  # Resolved here, in pr release's own shell, so the base and default reads
-  # ask GitHub once between them.
-  default_branch_resolve
-  base="$(base_branch)"
-  default="$(default_branch)"
+  base_branch_into base
+  default_branch_into default
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
   local raw open

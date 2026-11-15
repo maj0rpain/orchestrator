@@ -244,7 +244,7 @@ cmd_branch_create() {
   refuse_busy_checkout branch
   # The start point comes before the discard, so a refusal exits with
   # nothing written.
-  base="$(flow_base_fallback "$base_raw")"
+  flow_base_fallback_into base "$base_raw"
   new_branch_start start "$name" "$base" \
     "point this flow at another base: orch.sh base set <branch> --flow"
   discard_create_work "$name"
@@ -267,7 +267,7 @@ cmd_branch_off() {
   [ $# -eq 1 ] || die "usage: orch.sh branch off <name>"
   refuse_busy_checkout flow branch tree
   local base
-  base="$(base_branch)"
+  base_branch_into base
   checkout_new_branch "$1" "$base"
   record_branch_base "$1" "$base" "$(git rev-parse HEAD)"
   note "$1"
@@ -286,7 +286,7 @@ cmd_branch_busy() {
 
 # The current branch's base SHA, as branch off, branch create or branch sync
 # recorded it. A branch made
-# before that was recorded falls back to the merge-base with its recorded_base,
+# before that was recorded falls back to the merge-base with its recorded base,
 # preferring origin's copy of it. Only a fallback: a base merged in mid-branch
 # moves the merge-base and silently shrinks the diff it bounds.
 cmd_branch_base_sha() {
@@ -295,7 +295,7 @@ cmd_branch_base_sha() {
   current_branch_or_die
   sha="$(branch_base_sha_get "$branch")" || sha=""
   if [ -n "$sha" ]; then note "$sha"; return; fi
-  base="$(recorded_base "$branch")"
+  recorded_base_into base "$branch"
   if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null; then
     ref="refs/remotes/origin/$base"
   elif git rev-parse --verify --quiet "refs/heads/$base" >/dev/null; then
@@ -318,8 +318,8 @@ on_origin_base() {
 # moves its base SHA to that tip, and pushes when it has an upstream. A
 # plugin-made branch is the one this checkout's flow holds, whose base is the
 # flow's, or one whose git config records a base (branch off, branch create);
-# never the base branch in effect, which recorded_base falls back to. Exit 3 is
-# a conflict, the merge left in progress for a resolver, with nothing else
+# never the base branch in effect, which recorded_base_into falls back to. Exit
+# 3 is a conflict, the merge left in progress for a resolver, with nothing else
 # moved; every refusal is exit 1 with nothing moved. A failed push is the one
 # exit 1 after something moved: the merge and base SHA stand, and a rerun -
 # nothing left to merge - retries the push.
@@ -345,7 +345,7 @@ cmd_branch_sync() {
   fi
   if [ "$recorded" = "$branch" ]; then
     held=1
-    base="$(flow_base_fallback "$base_raw")"
+    flow_base_fallback_into base "$base_raw"
   else
     if branch_records_base "$branch"; then
       base="$(branch_base_get "$branch")"

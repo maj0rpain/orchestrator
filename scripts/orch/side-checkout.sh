@@ -57,8 +57,7 @@ finished_flow() {
   fi
   [ -n "$branch" ] || { verdict="no branch"; return 1; }
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
-  base="$(flow_base_fallback "$base_raw")" \
-    || { verdict="could not read the base branch from $state"; return 2; }
+  flow_base_fallback_into base "$base_raw"
   pr_state_draft_read "$pr" pr_state _is_draft err \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   if [ "$pr_state" != MERGED ]; then
@@ -108,8 +107,8 @@ tip_covered() {
 # side_checkout_finished <path>: whether the side checkout there is finished -
 # a clean tree, and either a finished flow, or no flow and a PR merged from
 # its checked-out branch into the base branch off recorded for it (see
-# recorded_base) - and the branch's tip held by a merged PR (tip_covered), so
-# the sweep's branch -D never drops a commit. A git status that cannot run
+# recorded_base_into) - and the branch's tip held by a merged PR (tip_covered),
+# so the sweep's branch -D never drops a commit. A git status that cannot run
 # returns 2, as an unreadable GitHub does, so the sweep removes nothing on a
 # tree it could not read.
 # verdict is read by its callers, side-checkout prune, below, and
@@ -127,7 +126,7 @@ side_checkout_finished() {
   fi
   branch="$(checkout_branch "$path")" \
     || { verdict="no branch"; return 1; }
-  base="$(recorded_base "$branch")"
+  recorded_base_into base "$branch"
   gh_capture raw err adapter_prs_merged "$branch" "$base" \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   prs="$(trust_filter_prs "$branch" <<<"$raw")" \
@@ -346,6 +345,11 @@ cmd_side_checkout_add() {
   for mod in base branch checkout gh repo; do orch_load "$mod"; done
   slug="$(normalize_slug "$slug")"
   main_root="$(main_checkout_or_die)" || exit $?
+  # The base is read before the sweep: the sweep runs in a subshell, whose memo
+  # of the default branch dies with it, so a read below it would ask GitHub a
+  # second time when the sweep needed the default. Read here, the subshell
+  # inherits the memo.
+  base_branch_into base
   # The sweep first, its report on stderr so stdout stays the path alone. A
   # failed sweep never stops add; it may have removed the checkout this ran
   # in, so add carries on from the main checkout.
@@ -355,7 +359,6 @@ cmd_side_checkout_add() {
   path="$(side_checkouts_dir "$main_root")/$slug"
   [ ! -e "$path" ] || die "side checkout $path already exists"
   exclude_orch_dirs
-  base="$(base_branch)"
   git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch base branch $base from origin - no side checkout was made"
   git worktree add -q --detach "$path" "refs/remotes/origin/$base" \
@@ -485,9 +488,6 @@ cmd_side_checkout_prune() {
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"
-  # The verdicts and the merged-PR closes each read the default branch: ask
-  # GitHub once here, in this shell, so every $(default_branch) inherits it.
-  default_branch_resolve
   for line in "${walk[@]}"; do
     read -r kind flow _branch path <<<"$line"
     rc=0; verdict=""; branch=""

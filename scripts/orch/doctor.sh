@@ -200,7 +200,7 @@ d_probe() {
   # trip.
   if [ "$scope" = flow ]; then return 0; fi
   d_probe_gh
-  # The same read default_branch makes, validated the same way (#485): an
+  # The same read default_branch_into makes, validated the same way (#485): an
   # answer that is no branch name - a tool manager's banner around it, or an
   # empty one - is GitHub not having said, never a name to report.
   [ "$D_GH" = ok ] || return 0
@@ -551,8 +551,8 @@ check_git_exclude() {
 # answer that would send the next fork at nothing, so it FAILs; origin being
 # unreachable only means it could not be checked. The default case reuses the
 # default branch GitHub already answered in d_probe, else default_branch_local -
-# the answer base_branch would give, with no second ask - and needs no origin
-# check at all.
+# the answer base_branch_into would give, with no second ask - and needs no
+# origin check at all.
 check_base_branch() {
   local b st=0
   orch_load base
@@ -578,7 +578,7 @@ check_base_branch() {
 # skip with GitHub unreachable - only counts once one exists. The finished test
 # reads the default branch for each side checkout, so the memo is seeded before
 # the walk by default_branch_seed, from the probe's answer: doctor asks
-# GitHub for it only in its probe, never through default_branch_resolve.
+# GitHub for it only in its probe, never through a reader.
 check_side_checkouts_finished() {
   local list kind _flow _branch path found=() verdict branch rc
   if ! list="$(checkouts)"; then

@@ -1671,3 +1671,57 @@ assert_status "archive_flow beside a truncated state file succeeds" "$st" 0
 assert_contains "archiving under the unreadable stand-in slug" "$out" "-unreadable"
 assert_not_contains "and printing no could-not-read message" "$out" "could not read"
 restore_suite_env
+
+# --- side-checkout: the default branch is asked for only when needed ----------
+# Counted at the adapter's stand-in: add asks GitHub for the default branch at
+# most once, and the sweep asks only when a verdict or the merged-PR close
+# needs it.
+echo
+echo "side-checkout default-branch asks"
+sc_clone
+fake_github
+fake_default_branch main
+db_reads="$(mktemp)"
+db_defs="$(counting_defs adapter_repo_default_branch branch)"
+
+# add, no base set, nothing for the sweep to judge: one ask.
+d1="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d1 2>/dev/null)"
+assert_eq "add with no base set and an idle sweep asks exactly once" "$(log_count "$db_reads")" "1"
+
+# prune with no side checkout to walk: no ask, d1 removed first.
+git worktree remove --force "$d1"
+out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout prune 2>&1)"
+assert_eq "prune walking no side checkout asks for the default branch zero times" "$(log_count "$db_reads")" "0"
+
+# prune over a finished flow-less quick checkout whose branch records its base
+# and whose issue is closed: neither verdict nor close needs the default.
+fake_offline
+d2="$(sc_add d2)"
+sp_branch_off "$d2" quick/21-d2
+git config branch.quick/21-d2.orchestrator-base main
+fake_pr 61 merged quick/21-d2 main
+fake_pr_head 61 "$(git rev-parse quick/21-d2)"
+fake_issue 21 closed
+fake_online
+out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout prune 2>&1)"
+assert_contains "the finished quick checkout is still removed" "$out" "removed side checkout $d2"
+assert_eq "prune judging a recorded-base, closed-issue checkout asks zero times" "$(log_count "$db_reads")" "0"
+
+# add, no base set, the sweep itself needing the default: still one ask.
+fake_offline
+d3="$(sc_add d3)"
+sp_branch_off "$d3" quick/22-d3
+fake_pr 62 merged quick/22-d3 main
+fake_pr_head 62 "$(git rev-parse quick/22-d3)"
+fake_online
+out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d4 2>&1)"
+assert_contains "the sweep ran and removed the finished checkout" "$out" "removed side checkout $d3"
+assert_eq "add whose sweep needs the default asks exactly once" "$(log_count "$db_reads")" "1"
+
+# add with a base set and an idle sweep: no ask.
+git config orchestrator.base main
+out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d5 2>&1)"
+assert_eq "add with a base set and an idle sweep asks zero times" "$(log_count "$db_reads")" "0"
+git config --unset orchestrator.base
+rm -f "$db_reads"
+restore_suite_env
