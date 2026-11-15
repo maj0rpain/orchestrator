@@ -328,6 +328,15 @@ assert_contains "the same-flow branch names the flow's issue" "$ctx" "about this
 check_flow_variant "on Claude Code" "$ctx" "$cc_next_redo"
 check_pointer "beside an active flow" "$ctx"
 assert_marker_present "writes the grilling marker beside an active flow" grilling s6
+# The flow read costs one jq: a planning prompt beside an active flow starts
+# exactly one more jq than the same prompt with no state file (#3226).
+GJ="$(counting_bin jq)"
+grill_jq() { : >"$GJ/jq.log"; skill_event "grilling" "$1" | PATH="$GJ:$PATH" "$GRILL" >/dev/null 2>&1; counting_starts "$GJ" jq; }
+gj_with="$(grill_jq s6j1)"
+mv "$REPO/.orchestrator/state.json" "$REPO/.orchestrator/state.json.kept"
+gj_without="$(grill_jq s6j2)"
+mv "$REPO/.orchestrator/state.json.kept" "$REPO/.orchestrator/state.json"
+assert_eq "a planning prompt beside an active flow starts exactly one more jq than with no state file" "$gj_with" "$((gj_without + 1))"
 assert_empty "stays silent on a second planning call beside an active flow" \
   "$(skill_event "grilling" s6 | "$GRILL")"
 write_flow_state slug my-change phase implement issue null

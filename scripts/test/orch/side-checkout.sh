@@ -1537,3 +1537,18 @@ fi
 chmod 644 "$mlink/.git"
 printf '%s\n' "$mptr" >"$mlink/.git"
 restore_suite_env
+
+# --- archive reads the flow's slug once ---------------------------------------
+echo
+echo "archive one jq"
+fresh_flow arcjq
+aj_jq="$(counting_bin jq)"
+out="$(PATH="$aj_jq:$PATH" sourced_orch archive_flow "$PWD" "$PWD" 2>&1)"
+assert_eq "archive of an active flow starts exactly one jq" "$(counting_starts "$aj_jq" jq)" "1"
+fresh_flow arctrunc
+state_truncate
+out="$(sourced_orch archive_flow "$PWD" "$PWD" 2>&1)"; st=$?
+assert_status "archive_flow beside a truncated state file succeeds" "$st" 0
+assert_contains "archiving under the unreadable stand-in slug" "$out" "-unreadable"
+assert_not_contains "and printing no could-not-read message" "$out" "could not read"
+restore_suite_env

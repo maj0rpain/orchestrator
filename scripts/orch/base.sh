@@ -143,8 +143,9 @@ require_on_origin() {
 base_set_flow() {
   orch_load state
   local b="$1" branch slug phase
-  flow_active || die "no active flow - nothing was set"
+  [ -f "$STATE" ] || die "no active flow - nothing was set"
   state_get_many_in "$STATE" branch=branch slug=slug phase=phase || die "$STATE_UNREADABLE_MSG"
+  [ "$phase" != "done" ] || die "no active flow - nothing was set"
   if [ -n "$branch" ]; then
     if [ "$phase" = review ]; then
       die "flow $slug already has branch $branch - its base can change again once $(flow_cmd redo) retires it"
@@ -172,7 +173,12 @@ cmd_base() {
       done
       [ -n "$b" ] || die "usage: orch.sh base set <branch> [--flow]"
       if [ "$flow" -eq 1 ]; then base_set_flow "$b"; return; fi
-      require_state_readable
+      # One read of the active flow's phase, base and slug, only when a state
+      # file exists, doubles as the readability check.
+      local fphase="done" fbase fslug
+      if [ -f "$STATE" ]; then
+        state_get_many_in "$STATE" fphase=phase fbase=base fslug=slug || die "$STATE_UNREADABLE_MSG"
+      fi
       require_on_origin "$b"
       # The default branch's own name is no setting at all - storing it would
       # pin today's default and outlive a rename of it - but only when GitHub
@@ -187,10 +193,10 @@ cmd_base() {
       note "$(base_branch) ($(base_source))"
       # The setting only reaches flows started after it; say so rather than
       # let the active flow's PR surprise anyone by targeting its old base.
-      if flow_active; then
-        local fb; fb="$(flow_base)"
+      if [ "$fphase" != "done" ]; then
+        local fb; fb="$(flow_base_fallback "$fbase")"
         [ "$fb" = "$(base_branch)" ] ||
-          note "note: the active flow $(state_get slug) keeps its own base branch: $fb"
+          note "note: the active flow $fslug keeps its own base branch: $fb"
       fi
       ;;
     show)

@@ -318,3 +318,26 @@ out="$(orch_gh_failing base set uat 2>&1)"; st=$?
 assert_state_unreadable "plain base set" 1 "$out" "$st"
 assert_eq "and leaves orchestrator.base unchanged" "$(git config --get orchestrator.base)" "keep"
 restore_suite_env
+
+# --- base set reads the flow state in one jq ----------------------------------
+echo
+echo "base set one jq"
+new_repo >/dev/null
+fresh_bare_origin bare
+git push -q origin HEAD:refs/heads/main
+git push -q origin HEAD:refs/heads/other
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+orch_gh_failing init onejq >/dev/null
+bj_jq="$(counting_bin jq)"
+PATH="$bj_jq:$PATH" orch_gh_failing base set uat --flow >/dev/null 2>&1
+assert_eq "base set --flow starts exactly one jq before any write" "$(counting_starts "$bj_jq" jq)" "1"
+: >"$bj_jq/jq.log"
+out="$(PATH="$bj_jq:$PATH" sourced_orch cmd_base set nosuch 2>&1)"
+assert_eq "base set beside an active flow reads its state once, up to the origin check" "$(counting_starts "$bj_jq" jq)" "1"
+: >"$bj_jq/jq.log"
+out="$(PATH="$bj_jq:$PATH" orch_gh_failing base set other 2>&1)"
+assert_contains "base set beside an active flow on another base prints the note" "$out" "note: the active flow onejq keeps its own base branch: main"
+assert_eq "using one jq for the readability check and the note" "$(counting_starts "$bj_jq" jq)" "1"
+rm -rf "$(dirname "$bare")"
+restore_suite_env

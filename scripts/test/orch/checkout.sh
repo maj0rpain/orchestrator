@@ -297,3 +297,14 @@ out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on it exits 3" "$st" 3
 assert_contains "with the busy line (branch create)" "$out" "$busy_line"
 assert_contains "and the remedy (branch create)" "$out" "$busy_remedy"
+
+# --- the busy-checkout flow signal reads once ---------------------------------
+echo
+echo "checkout busy one jq"
+new_repo_with_origin
+orch_gh_failing init busyjq >/dev/null
+cb_jq="$(counting_bin jq)"
+out="$(PATH="$cb_jq:$PATH" orch_gh_failing init other 2>&1)"; st=$?
+assert_status "init in a busy checkout is refused" "$st" 3
+assert_eq "its flow signal starts exactly one jq" "$(counting_starts "$cb_jq" jq)" "1"
+restore_suite_env

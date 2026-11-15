@@ -209,9 +209,18 @@ current_branch_or_die() {
 # read exits 1, never read as free or busy. Called as a bare statement, so
 # that exit stops the caller.
 checkout_busy() {
-  local line_var="$1" remedy_var="$2" signals="${*:3}" fslug fphase b dirty busy_line="" busy_remedy=""
-  if word_listed "$signals" flow && flow_active; then
+  local line_var="$1" remedy_var="$2" signals="${*:3}" fslug fphase fread=none b dirty busy_line="" busy_remedy=""
+  # The flow signal: one read of the slug and phase. A state file that cannot
+  # be read counts as a running flow; a done phase is no flow.
+  if word_listed "$signals" flow && [ -f "$STATE" ]; then
     if state_get_many_in "$STATE" fslug=slug fphase=phase; then
+      [ "$fphase" = "done" ] || fread=ok
+    else
+      fread=unreadable
+    fi
+  fi
+  if [ "$fread" != none ]; then
+    if [ "$fread" = ok ]; then
       busy_line="busy: a flow is mid-pipeline (slug: $fslug, phase: $fphase)"
       busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
     else
