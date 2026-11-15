@@ -269,8 +269,10 @@ assert_contains "naming the draft position" "$out" "ticket 1 of the draft"
 assert_contains "naming the failed write" "$out" "gh could not rewrite ticket #100's ## Blocked by section"
 assert_eq "ticket 1 is not recorded linked" "$(paste -sd ';' .orchestrator/breakdown/50/numbers)" "1 100 created"
 fake_unfail
+fake_fail_after adapter_blocker_add 3
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
-assert_status "the rerun finishes" "$st" 0
+fake_unfail
+assert_status "the rerun finishes, adding only the three edges of the new tickets" "$st" 0
 assert_eq "no second ticket" "$(fake_sub_issues_of 50)" "100 101 102"
 assert_eq "ticket 1's section is rewritten" "$(fake_body_of 100)" "$(printf 'Body one.\n\n## Blocked by\n\nNone (can start immediately)')"
 assert_eq "no edge added twice" "$(fake_blockers_of 102)" "100 101"
@@ -284,8 +286,10 @@ out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a body write failing on ticket 3 dies" "$st" 1
 assert_eq "ticket 3 already holds its edges" "$(fake_blockers_of 102)" "100 101"
 fake_unfail
+fake_fail adapter_blocker_add
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
-assert_status "the rerun after the edges were written finishes" "$st" 0
+fake_unfail
+assert_status "the rerun after the edges were written finishes without adding an edge" "$st" 0
 assert_eq "no edge added twice on the resumed ticket" "$(fake_blockers_of 102)" "100 101"
 restore_suite_env
 
