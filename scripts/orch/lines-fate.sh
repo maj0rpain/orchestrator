@@ -211,12 +211,12 @@ lines_fate() {
     # A diff that fails counts as differing, with no hunks: the lines are
     # followed at their filed numbers.
     __lf_diff="$(git -C "$ROOT" diff --exit-code -U0 "$__lf_old" "$__lf_ref" -- "$__lf_file" 2>/dev/null)" || __lf_diff_rc=$?
-    __lf_rows="$(hunk_rows <<<"$__lf_diff")"
   fi
   if [ "$__lf_fate" = gone ]; then :
   elif [ "$__lf_diff_rc" -eq 0 ]; then
     __lf_fate=unchanged
   else
+    __lf_rows="$(hunk_rows <<<"$__lf_diff")"
     # The newest commit since the filing that touched the file: the stand-in
     # when the exact lookup fails.
     __lf_file_commit="$(git -C "$ROOT" log -1 --format=%H "$__lf_ref" "^$__lf_old" -- "$__lf_file" 2>/dev/null)" || true
