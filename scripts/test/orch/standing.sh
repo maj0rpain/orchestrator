@@ -441,6 +441,13 @@ assert_eq "and leaves the claim held with no label added" "$(fake_claim_held 67)
 assert_eq "and no temp body file behind" "$(ls -A "$TD")" ""
 rmdir "$TD"
 
+# a posted comment leaves no body path held, so a later death removes nothing
+ask_seed 70 orch:spec orch:running
+out="$(sourced_rc 'standing_chain_start; standing_chain_comment "posted c" "post c" 70 body; echo "held=[$STANDING_BODY_FILE]"')"
+assert_contains "a posted chain comment clears the body path in the caller's shell" "$out" "held=[]"
+out="$(sourced_rc 'STANDING_BODY_FILE=/stale; standing_chain_start; echo "held=[$STANDING_BODY_FILE]"')"
+assert_contains "a chain start clears an earlier chain's body path" "$out" "held=[]"
+
 # ask: a stderr temp file that fails after the body was made leaves no body
 ask_seed 69 orch:spec orch:running
 TD="$(mktemp -d)"

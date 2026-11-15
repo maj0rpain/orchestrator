@@ -249,7 +249,8 @@ standing_resume() {
 # request, resume) and the claim drop.
 
 STANDING_LANDED=""
-# The temp body file of a comment in flight, so a death removes it too.
+# The temp body file of a comment in flight, so a death removes it too; cleared
+# once the post's step returns and by standing_chain_start.
 STANDING_BODY_FILE=""
 
 # standing_landed_die <what failed>: removes the comment body file in flight, if
@@ -309,13 +310,13 @@ standing_state_get() {
 }
 
 # standing_chain_start [<seed>]: begins every chain transition. It clears
-# STANDING_LANDED and the skip list (STANDING_DONE), puts a non-empty <seed>
-# first on STANDING_LANDED, then, when STANDING_STATE_FILE is set, takes up the
-# writes earlier attempts landed. The seed is a reason, not a write: it is not
-# skipped and not recorded in the state file.
+# STANDING_LANDED, the skip list (STANDING_DONE) and STANDING_BODY_FILE, puts a
+# non-empty <seed> first on STANDING_LANDED, then, when STANDING_STATE_FILE is
+# set, takes up the writes earlier attempts landed. The seed is a reason, not a
+# write: it is not skipped and not recorded in the state file.
 standing_chain_start() {
   local key value
-  STANDING_LANDED="${1:-}" STANDING_DONE=()
+  STANDING_LANDED="${1:-}" STANDING_DONE=() STANDING_BODY_FILE=""
   [ -s "${STANDING_STATE_FILE:-}" ] || return 0
   while IFS=$'\t' read -r key value; do
     [ "$key" = landed ] || continue
@@ -390,12 +391,12 @@ standing_chain_relabel() {
 # standing_comment_call <issue> <body-file>: posts the comment in <body-file>,
 # then removes the file, whatever the post returned. The step runs it, and dies
 # inside itself on a failed post, so the removal is done here and not after the
-# step call.
+# step call. It runs in a subshell, so standing_chain_comment, not this, clears
+# STANDING_BODY_FILE.
 standing_comment_call() {
   local rc=0
   adapter_issue_comment "$1" "$2" || rc=$?
   rm -f "$2"
-  STANDING_BODY_FILE=""
   return "$rc"
 }
 
@@ -424,6 +425,7 @@ standing_chain_comment() {
   printf '%s' "$4" >"$body"
   standing_state_put tried "$landed"
   standing_chain_step "$landed" "$what" "$issue" standing_comment_call "$issue" "$body"
+  STANDING_BODY_FILE=""
 }
 
 # standing_release <issue>: deletes orch:running, then the claim ref, last,
