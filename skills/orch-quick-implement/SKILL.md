@@ -267,8 +267,8 @@ PR body's **Host fallbacks**.
 Commit, and draft the body file described below, by the `## Style rules` and
 `## Body layout` sections of `docs/pr-writing.md` (under the plugin root), which
 own the **Summary**, **Evidence** and **Merge Danger** headings, their order
-before the headings below, and the style of all of them. **Evidence** draws on the
-reports' `Evidence` lines kept in step 5, and its last line is step 5's
+before the headings below, and the style of all of them. **Evidence** draws
+on the reports' `Evidence` lines kept in step 5, and its last line is step 5's
 combined verification: the command loop step f ran, then `pass` or
 `fail`. The headings below are this site's own, its audit layer. Then,
 before `pr publish`,
