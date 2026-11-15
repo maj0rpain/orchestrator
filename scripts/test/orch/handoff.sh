@@ -481,8 +481,9 @@ out="$("$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
 assert_status "handoff post refuses outside autopilot" "$st" 1
 assert_contains "saying it is for an autopilot flow" "$out" "autopilot"
 export ORCH_AUTOPILOT=1
-out="$("$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
+out="$("$ORCH" handoff post 01-plan "$planf" 2>/dev/null)"; st=$?
 assert_status "handoff post posts a valid plan" "$st" 0
+assert_eq "printing nothing on stdout" "$out" ""
 assert_eq "as one comment" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "1"
 assert_first_line "tagged with the handoff's name" "$(fake_comments_of 7)" "<!-- orch:handoff 01-plan -->"
 

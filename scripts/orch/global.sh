@@ -146,7 +146,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               without ready-for-agent or with a phase label,
                               validate the plan (## Autopilot block included),
                               post it as the plan handoff comment, then add
-                              orch:spec
+                              orch:spec. On success prints two lines: the
+                              posted comment's URL line and the label
+                              added; a failure prints nothing on stdout
   autopilot candidates [<n>... | --all | --limit <k>]
                               one line per issue, `<n> eligible none|move|
                               override` or `<n> skip <reason>`: whether a

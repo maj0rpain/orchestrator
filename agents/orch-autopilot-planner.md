@@ -25,12 +25,18 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 
 ## Never load the skills
 
-Read `skills/orch-interview/SKILL.md` and `skills/orch-to-spec/SKILL.md` as
-files, under the plugin root (two directories above `ORCH`). Never load either
-through the Skill tool: loading `orch-interview` fires the grilling hook, which
-arms the planning guard and pushes the planning close. Never start the
-planning close: no route question, no interviewed-issue question, no
-done-close.
+Read the files below as files, under the plugin root (two directories above
+`ORCH`). Never load any of these skills through the Skill tool: loading
+`orch-interview` fires the grilling hook, which arms the planning guard and
+pushes the planning close. Never start the planning close: no route question,
+no interviewed-issue question, no done-close.
+
+**Reading one section of a file.** Find the line of the section's heading and
+the line of the next heading of the same or a higher level with a search,
+skipping any heading-like line inside a fenced code block, and read only that
+range, up to the file's end when no such heading follows. A range named from
+one heading up to a later one runs from the first heading's line up to, not
+including, the later one's. A file named with sections is never read whole.
 
 ## Steps
 
@@ -40,9 +46,10 @@ nothing back, and its line says the label was moved.
 
 1. **Unattended interview** (`interview`). Fetch the issue
    (`bash "$ORCH" issue fetch <n> <file>`, and `issue comments`, into
-   `mktemp` files outside the repo, opened with Read). Follow the **Unattended
-   interview** section of `skills/orch-interview/SKILL.md`, with **The
-   interview** and **Domain language** it points at, on the issue: every
+   `mktemp` files outside the repo, opened with Read). Follow
+   `skills/orch-interview/unattended.md`, read whole, with the range of
+   `skills/orch-interview/SKILL.md` from `## The interview` up to `## Closing`,
+   on the issue: every
    question takes its recommended answer, each round is printed as
    `docs/turn-final-reply.md`'s **Unattended printout** says, and every
    question with the answer taken is kept for step 5's Decisions.
@@ -51,17 +58,19 @@ nothing back, and its line says the label was moved.
    it>`. No close, no label change, no write.
 3. **Label move** (`label`). For `move`, `bash "$ORCH" issue triage <n>`; for
    `override`, `bash "$ORCH" issue triage <n> --override`; for `none`, nothing.
-4. **Unattended rewrite** (`rewrite`). Follow the **Unattended rewrite**
-   section of `skills/orch-to-spec/SKILL.md` on the issue, in rewrite mode,
-   through to its end, with glossary and ADR wording the interview decided
-   carried into the body verbatim (ADR-0022). That section is the one
-   definition of the mode; restate none of it.
+4. **Unattended rewrite** (`rewrite`). Read `skills/orch-to-spec/SKILL.md`
+   whole, and follow its **Unattended rewrite** section on the issue, in rewrite
+   mode, through to its end, with glossary and ADR wording the interview decided
+   carried into the body verbatim (ADR-0022). That section is the one definition
+   of the mode; restate none of it.
 5. **Plan** (`plan`). Write the plan, its file, Rounds and Budget as the
-   Autopilot route of `skills/orch-interview/SKILL.md` sets them, from the
-   `01-plan.md` template in `skills/orch-handoff/SKILL.md` (read that file; you
-   have no Skill tool), with every
-   interview question and the answer taken under `## Decisions`. Validate it
-   with `bash "$ORCH" handoff validate <file>`.
+   `### Autopilot route` section of `skills/orch-interview/SKILL.md` alone
+   sets them, taking nothing else from that route (not its orch-to-spec run,
+   its `autopilot start` or the relay of that command's lines), from
+   `skills/orch-handoff/SKILL.md`'s `## In an autopilot flow`,
+   `## What belongs in one` and the `01-plan.md` template's `###` section under
+   `## Templates`, with every interview question and the answer taken under
+   `## Decisions`. Validate it with `bash "$ORCH" handoff validate <file>`.
 6. **Start** (`start`). `bash "$ORCH" autopilot start <n> <plan-file>`.
 
 ## Report

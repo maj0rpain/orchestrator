@@ -475,11 +475,13 @@ standing_move_label() {
 # issue ready checks it) and one that already carries a phase label, then
 # validates the plan, ## Autopilot block included. Then it posts the plan
 # comment and, last, adds the first phase's label - so a failure after the
-# comment leaves the issue unlabelled, never picked up. A re-run on an
-# unlabelled issue posts a newer plan comment, which supersedes the earlier.
+# comment leaves the issue unlabelled, never picked up. Only a success prints:
+# the plan comment's line (with its URL, where gh printed one), then the
+# label's. A re-run on an unlabelled issue posts a newer plan comment, which
+# supersedes the earlier.
 standing_start() {
   orch_load handoff
-  local issue="$1" file="$2" ready gh_err first
+  local issue="$1" file="$2" ready gh_err first url
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   [ -f "$file" ] || die "plan file not found: $file"
   triage_label_into ready ready-for-agent
@@ -488,11 +490,13 @@ standing_start() {
     die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"
   [ -z "$STANDING_PHASE_LABELS" ] ||
     die "issue #$issue already carries the phase label ${STANDING_PHASE_LABELS%% *} - it is already an autopilot flow"
-  handoff_check "$file" "" 01-plan.md autopilot || die "plan $file is not valid - nothing posted"
-  handoff_comment_post "$issue" 01-plan "$file" || exit 1
+  handoff_check "$file" "" 01-plan.md autopilot >&2 || die "plan $file is not valid - nothing posted"
+  handoff_comment_post "$issue" 01-plan "$file" url || exit 1
   first="$(standing_phase_label "${PHASES%% *}")"
   gh_capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
+  printf 'posted the plan comment on issue #%s%s\n' "$issue" "${url:+: $url}"
+  printf 'added %s to issue #%s\n' "$first" "$issue"
 }
 
 # standing_sync_request <issue>: the sync request transition - adds orch:sync,

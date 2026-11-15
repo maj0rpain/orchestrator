@@ -403,9 +403,10 @@ says.
    own. On a restart that updates the PR the flow already records, the line
    follows the base that PR actually targets, and `pr open` warns when that
    differs from the flow's base.
-   Write the body file, a temporary file outside the repo, by the body
-   layout in `docs/pr-writing.md` (under the plugin root), which owns its
-   headings and style. Its **Summary**, **Evidence** and **Merge Danger**
+   Write the body file, a temporary file outside the repo, by the
+   `## Style rules` and `## Body layout` sections of `docs/pr-writing.md`
+   (under the plugin root), which own its headings and style. Its
+   **Summary**, **Evidence** and **Merge Danger**
    are judged against `git diff <base SHA>..HEAD`, with the base SHA from
    `bash "$ORCH" branch base-sha`; **Evidence** draws on
    the `Evidence` lines (each saved report's sixth), and its last line is step
