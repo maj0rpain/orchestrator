@@ -51,52 +51,6 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
 
-# is_ticket_worktree <path>: whether a worktree sits at <path> itself - git
-# would resolve a leftover t<n> directory to the enclosing checkout instead.
-is_ticket_worktree() { [ "$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" = "$1" ]; }
-
-# ticket_worktree_state <path>: prints what ticket worktree path <path> is - the
-# one definition of "has a ticket worktree", read from git's record through
-# checkout_parse: worktree (one sits at <path>), gone (git's record names
-# <path> and nothing is there), occupied (git's record names <path> and a plain
-# directory or file is there) or none. Dies when the checkouts cannot be read,
-# so callers run it as `state="$(...)" || exit $?`.
-ticket_worktree_state() {
-  local p paths=()
-  # shellcheck disable=SC2034 # checkout_parse fills it
-  local branches=()
-  if is_ticket_worktree "$1"; then echo worktree; return 0; fi
-  checkout_parse || checkouts_unreadable
-  for p in "${paths[@]}"; do
-    [ "$p" = "$1" ] || continue
-    if [ -e "$1" ] || [ -L "$1" ]; then echo occupied; else echo gone; fi
-    return 0
-  done
-  echo none
-}
-
-# ticket_worktree_require <n>: dies unless <n> is a ticket number whose
-# worktree directory exists - the check for commands that need the directory
-# (merge, close, resolve); ticket_worktree_state is the definition remove, the
-# teardown and reclaim read. It assigns to the caller's `n` (normalised) and
-# `path`, which bash scopes dynamically, and is called as a bare statement so
-# `die` stops the caller.
-ticket_worktree_require() {
-  n="$(ticket_worktree_number "$1")"
-  path="$(ticket_worktree_path "$n")"
-  is_ticket_worktree "$path" \
-    || die "no ticket worktree for ticket $n at $path"
-}
-
-# Resolves ticket <n>'s worktree for a command that acts on an existing one:
-# ticket_worktree_require, then dies unless the worktree is on a branch. It
-# also assigns the caller's `branch`.
-ticket_worktree_resolve() {
-  ticket_worktree_require "$1"
-  branch="$(checkout_branch "$path")" \
-    || die "ticket worktree $path is not on a branch (detached HEAD)"
-}
-
 # ticket_facts <n> <prefix>: reads everything about ticket <n> once and only
 # reports, each fact into the caller's variable <prefix>_<name> (printf -v),
 # and writes no variable outside that prefix. <n> is already validated by the
@@ -124,7 +78,7 @@ ticket_facts() {
   local branches=()
   _tf_path="$(ticket_worktree_path "$_tf_n")"
   checkout_parse || checkouts_unreadable
-  if is_ticket_worktree "$_tf_path"; then
+  if [ "$(git -C "$_tf_path" rev-parse --show-toplevel 2>/dev/null)" = "$_tf_path" ]; then
     _tf_state=worktree
   else
     for _tf_p in "${paths[@]}"; do

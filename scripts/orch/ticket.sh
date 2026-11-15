@@ -704,26 +704,26 @@ ticket_reclaim_close() {
   note "closed ticket #$n"
 }
 
-# ticket_reclaim_remove <n> <flow>: tears down ticket <n>'s worktree and
-# branch, discarding the work in the worktree first, when either exists. It
-# reads what exists first, so its notes follow from that; a failure dies
-# naming the ticket and the step.
+# ticket_reclaim_remove <prefix>: tears down the ticket worktree and branch in
+# <prefix>'s facts, discarding the work in the worktree first, when either
+# exists. The facts are the caller's one read, so its notes follow from them and
+# nothing is probed afterwards. The teardown runs in a subshell, so a die in it
+# cannot end this command before the line below is printed; its status says
+# which step failed. A failure dies naming the ticket and the step.
 ticket_reclaim_remove() {
-  local n="$1" flow="$2" path tbranch had_wt=0 had_branch=0 state left
-  path="$(ticket_worktree_path "$n")"
-  tbranch="$(branch_name_ticket "$flow" "$n")"
-  state="$(ticket_worktree_state "$path")" || exit $?
-  [ "$state" = none ] || had_wt=1
-  ! git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null || had_branch=1
+  local n_var="$1_n" path_var="$1_path" wt_var="$1_worktree" own_var="$1_own_branch" exists_var="$1_own_exists"
+  local n="${!n_var}" path="${!path_var}" had_wt=0 had_branch=0 st=0
+  [ "${!wt_var}" = none ] || had_wt=1
+  [ "${!exists_var}" != yes ] || had_branch=1
   [ "$had_wt$had_branch" != 00 ] || return 0
-  local teardown_failed=0
-  (ticket_facts "$n" f; ticket_worktree_teardown f --unmerged --discard) || teardown_failed=1
-  left="$(ticket_worktree_state "$path")" || exit $?
-  if [ "$left" != none ]; then
+  (ticket_worktree_teardown "$1" --unmerged --discard) || st=$?
+  # A failed branch step means the worktree step passed; any other failure is
+  # the worktree's when the facts show any worktree state, else the branch's.
+  if [ "$st" != 0 ] && [ "$st" != "$TICKET_TEARDOWN_BRANCH_FAILED" ] && [ "$had_wt" = 1 ]; then
     die "ticket #$n: could not remove its worktree $path"
   fi
   [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
-  [ "$teardown_failed" = 0 ] || die "ticket #$n: could not delete branch $tbranch"
+  [ "$st" = 0 ] || die "ticket #$n: could not delete branch ${!own_var}"
   [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
 
@@ -759,7 +759,9 @@ ticket_reclaim_guard() {
 # is rebuilt. One line per action; a failed write dies naming the ticket.
 cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
-  local parent="$1" flow recorded="" fissue="" phase="" active="" subs line worktrees n state path st reported merged nums="" tbranch
+  local parent="$1" flow recorded="" fissue="" phase="" active="" subs line worktrees n state path st reported merged nums=""
+  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
+  local rf_n rf_path rf_worktree rf_wt_branch rf_parent rf_own_branch rf_own_exists
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
   if [ -f "$STATE" ]; then
@@ -784,21 +786,21 @@ cmd_ticket_reclaim() {
   nums="$(printf '%s' "$nums" | sort -un)"
   while read -r n; do
     [ -n "$n" ] || continue
-    path="$(ticket_worktree_path "$n")"
+    ticket_facts "$n" rf
+    path="$rf_path"
     reported=""
     [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
     merged=""
-    tbranch="$(branch_name_ticket "$flow" "$n")"
-    if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
-      ! ticket_branch_merged "$tbranch" || merged=1
+    if [ "$rf_own_exists" = yes ]; then
+      ! ticket_branch_merged "$rf_own_branch" || merged=1
     elif [ -n "$reported" ]; then
       merged=1
     fi
     if [ -n "$reported" ] && [ -n "$merged" ]; then
       [ "$n" != "$parent" ] || note "ticket #$n already landed"
       ticket_reclaim_close "$n" "$parent"
-      ticket_reclaim_remove "$n" "$flow"
-    elif [ -n "$reported" ] && is_ticket_worktree "$path"; then
+      ticket_reclaim_remove rf
+    elif [ -n "$reported" ] && [ "$rf_worktree" = worktree ]; then
       discard_work_in "$path" "ticket #$n"
       st=0
       (cmd_ticket_merge "$n") || st=$?
@@ -806,9 +808,9 @@ cmd_ticket_reclaim() {
       [ "$st" -eq 0 ] || die "ticket #$n: could not merge its branch"
       note "merged ticket #$n"
       ticket_reclaim_close "$n" "$parent"
-      ticket_reclaim_remove "$n" "$flow"
+      ticket_reclaim_remove rf
     else
-      ticket_reclaim_remove "$n" "$flow"
+      ticket_reclaim_remove rf
       ticket_report_remove "$n"
       note "discarded ticket #$n"
     fi

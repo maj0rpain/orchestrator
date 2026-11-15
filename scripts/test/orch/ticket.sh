@@ -1822,6 +1822,34 @@ assert_eq "the directory stays" "$(on_disk "$(rc_wt 7)")" "present"
 assert_eq "the record stays" "$("$ORCH" ticket-worktree list)" "7 $(rc_wt 7)"
 assert_eq "and the branch" "$(rc_has_branch 7)" "yes"
 
+# a step that fails before anything is removed (the discard in the ticket
+# worktree) still gets the worktree line, and leaves the worktree
+rc_setup 1
+out="$(PATH="$(git_fails_bin '*" reset "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a discard that fails before any removal dies" "$st" 1
+assert_contains "with the worktree line" "$out" "ticket #7: could not remove its worktree $(rc_wt 7)"
+assert_not_contains "and no branch line" "$out" "could not delete branch"
+assert_eq "leaving the worktree and the branch" "$(rc_has_worktree 7)$(rc_has_branch 7)" "yesyes"
+restore_suite_env
+
+# a branch with no worktree whose delete fails: the branch line, no worktree note
+rc_setup 1
+rc_report 7
+git worktree remove --force "$(rc_wt 7)"
+out="$(PATH="$(git_fails_bin '*" branch "*" -D "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a branch delete that fails with no worktree dies" "$st" 1
+assert_contains "naming the ticket and its branch" "$out" "ticket #7: could not delete branch orch/5-feature--t7"
+assert_not_contains "with no note that a worktree went" "$out" "removed the worktree"
+restore_suite_env
+
+# a gone-directory leftover whose worktree removal fails: the worktree line
+rc_setup 1
+rm -rf "$(rc_wt 7)"
+out="$(PATH="$(git_fails_bin '*" worktree remove "*')":$PATH "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "a gone-directory record that cannot be removed dies" "$st" 1
+assert_contains "with the worktree line" "$out" "ticket #7: could not remove its worktree $(rc_wt 7)"
+restore_suite_env
+
 # --- ticket exists: no repo (#3050) ------------------------------------------
 # Exit 1 is "no breakdown", so a repo that cannot be found exits 2 with the
 # remedy alone; a caller never publishes a second breakdown over one unseen.
