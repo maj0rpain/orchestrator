@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.93
+
+The project's edit hook's Bash path now starts a fixed number of processes around a call whatever the number of dirty files: each listing hashes all its files in one `git hash-object` run and Post compares with one `grep`. What the hook reports is unchanged.
+
 ## 5.2.92
 
 `suite-cost check` now picks its head and baseline records with a fixed number of git processes and one read of the record per side, however long the record is.
