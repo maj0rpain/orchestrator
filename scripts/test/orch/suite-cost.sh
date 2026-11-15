@@ -1049,12 +1049,19 @@ assert_eq "a one-argument chained line's base run runs its second half" "$(on_di
 assert_eq "and records the line as given on the base" \
   "$(awk -F'\t' -v b="$base" -v l="$line" '$1 == b && $5 == l' "$rec" | wc -l | tr -d ' ')" 1
 
+seed_bin="$(mktemp -d)"
+seed_mark="$(mktemp -d)/ran"
+printf '#!/bin/sh\ntouch "%s"\n' "$seed_mark" >"$seed_bin/oneword"
+chmod +x "$seed_bin/oneword"
 : >"$rec"
-seed_run "$base" 5.00 "true"
-seed_run "$head" 5.00 "true"
+seed_run "$base" 5.00 "oneword"
+seed_run "$head" 5.00 "oneword"
 before="$(cat "$rec")"
-"$ORCH" suite-cost check -- "true" >/dev/null 2>"$errf"
-assert_eq "a seeded one-word record serves as the base: no base run records" "$(cat "$rec")" "$before"
+out="$(PATH="$seed_bin:$PATH" "$ORCH" suite-cost check -- "oneword" 2>"$errf")"
+assert_eq "a seeded one-word record serves as the base: its verdict is off" "$out" "off"
+assert_eq "and no base run leaves its marker" "$(on_disk "$seed_mark")" absent
+assert_eq "and records nothing" "$(cat "$rec")" "$before"
+rm -rf "$seed_bin"
 
 : >"$rec"
 line="no-such-program-xyz --flag"
