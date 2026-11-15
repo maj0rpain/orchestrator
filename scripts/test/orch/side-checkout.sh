@@ -1079,7 +1079,7 @@ fake_offline
 # the autopilot watcher's records (#1907).
 fl_seed() {
   local o="$1/.orchestrator"
-  mkdir -p "$o/handoff" "$o/review" "$o/round-2" "$o/spec-rounds/1" "$o/spec-review/1244" "$o/review-pass/quick-9-x"
+  mkdir -p "$o/handoff" "$o/review" "$o/round-2" "$o/spec-rounds/1" "$o/spec-review/1244" "$o/review-pass/quick-9-x" "$o/audit/docs-20300101-000000"
   echo plan >"$o/handoff/01-plan.md"
   echo '40 1 2' >"$o/handoff/spec-round"
   echo changes >"$o/spec-rounds/1/changelog.md"
@@ -1087,6 +1087,7 @@ fl_seed() {
   echo round >"$o/round-2/notes.md"
   echo body >"$o/spec-review/1244/body.md"
   echo report >"$o/review-pass/quick-9-x/pass-1.md"
+  echo area >"$o/audit/docs-20300101-000000/area-1.md"
   mkdir -p "$o/breakdown/1244" "$o/reports"
   echo draft >"$o/breakdown/1244/draft.md"
   echo report >"$o/reports/1244.md"
@@ -1104,7 +1105,7 @@ fl_kept() {
   assert_eq "$1: review-pass/<branch>/ stays in place with its files" \
     "$(on_disk "$2/.orchestrator/review-pass/quick-9-x/pass-1.md")" "present"
   local f
-  for f in autopilot/run/12.pid autopilot/limit autopilot/logs/12.log breakdown/1244/draft.md reports/1244.md; do
+  for f in audit/docs-20300101-000000/area-1.md autopilot/run/12.pid autopilot/limit autopilot/logs/12.log breakdown/1244/draft.md reports/1244.md; do
     assert_eq "$1: $f stays in place" "$(on_disk "$2/.orchestrator/$f")" "present"
   done
 }
@@ -1117,7 +1118,7 @@ fl_archived() {
   done
   assert_eq "$1: no spec-review/ in the archive" "$(on_disk "$2/spec-review")" "absent"
   assert_eq "$1: no review-pass/ in the archive" "$(on_disk "$2/review-pass")" "absent"
-  for e in autopilot breakdown reports; do
+  for e in audit autopilot breakdown reports; do
     assert_eq "$1: no $e/ in the archive" "$(on_disk "$2/$e")" "absent"
   done
 }
@@ -1130,7 +1131,7 @@ orch_gh_failing archive >/dev/null; st=$?
 assert_status "archive in the main checkout succeeds" "$st" 0
 fl_kept "archive" "$top"
 fl_archived "archive" "$(fl_dest arc-flow)"
-rm -rf "$top/.orchestrator/spec-review" "$top/.orchestrator/review-pass"
+rm -rf "$top/.orchestrator/spec-review" "$top/.orchestrator/review-pass" "$top/.orchestrator/audit"
 
 # init over a done flow.
 orch_gh_failing init old-flow >/dev/null
@@ -1141,7 +1142,7 @@ assert_status "init over a done flow succeeds" "$st" 0
 fl_kept "init" "$top"
 fl_archived "init" "$(fl_dest old-flow)"
 orch_gh_failing archive >/dev/null
-rm -rf "$top/.orchestrator/spec-review" "$top/.orchestrator/review-pass"
+rm -rf "$top/.orchestrator/spec-review" "$top/.orchestrator/review-pass" "$top/.orchestrator/audit"
 
 # side-checkout remove of a side checkout holding a done flow.
 rmv="$(sc_add rmv)"

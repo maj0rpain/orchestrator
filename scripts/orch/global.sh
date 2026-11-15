@@ -737,6 +737,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               as left alone. Removes nothing, exiting 1, when
                               GitHub cannot be read; exits 1 after a failed
                               step, which leaves that checkout as it stands
+  audit begin <code|docs|tests>
+                              make an audit run's working directory,
+                              .orchestrator/audit/<kind>-<UTC timestamp>/,
+                              git-excluded, recording the kind and the HEAD
+                              commit in it; prints its absolute path and
+                              nothing else. Never reuses a directory, removes
+                              the one it made when a later write fails, and
+                              reads and writes no flow state
   audit file <title> --category <c> --finding-file <f> --location <<file>:<line>>...
                               file one audit finding as a GitHub issue
                               labelled the repo's needs-triage and the
@@ -1087,7 +1095,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               a flow and every side checkout
   archive                     move the live flow into .orchestrator/archive/,
                               leaving the entries that belong to no flow in
-                              place: archive/, checkouts/, spec-review/,
+                              place: archive/, checkouts/, spec-review/, audit/,
                               review-pass/, autopilot/, breakdown/ and
                               reports/
                               (refuses, naming each, while a ticket worktree

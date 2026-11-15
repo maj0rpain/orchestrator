@@ -127,6 +127,8 @@
 #     each named category
 #   scan_audit_hunt  each audit skill's Hunt step names agent get auditor and it
 #     runs no agent sync
+#   scan_audit_hunt_run  each audit skill's Hunt step runs audit begin and names
+#     the area-<k>.md findings file
 #   scan_quality_rule_home  orch-audit-tests' opening names the test auditor's
 #     brief and that brief's Brief section holds the quality rule
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
@@ -3300,6 +3302,47 @@ flags "an audit-tests Hunt step at step 4 that runs agent sync is flagged" \
   "$(scan_audit_hunt "$fixture")" "$audit_tests_skill: runs an agent sync command"
 check "each audit skill's Hunt step reads agent get auditor and runs no agent sync" \
   "$(scan_audit_hunt "$PLUGIN_ROOT")"
+
+# scan_audit_hunt_run <plugin root>: one line per audit skill (orch-audit-docs,
+# orch-audit-code and orch-audit-tests) whose Hunt step does not name audit
+# begin, and one per skill whose Hunt step does not name the area-<k>.md
+# findings file (ADR-0063).
+scan_audit_hunt_run() {
+  local r="$1" name skill hunt heading text
+  for name in audit-docs audit-code audit-tests; do
+    skill="skills/orch-$name/SKILL.md"
+    if [ ! -f "$r/$skill" ]; then
+      echo "$skill: missing"
+      continue
+    fi
+    text=""
+    if heading="$(numbered_heading "$r/$skill" "Hunt")" &&
+      hunt="$(md_section "$r/$skill" "$heading" 2>/dev/null)"; then
+      text="$(flat_text <<<"$hunt")"
+    fi
+    grep -qF 'audit begin' <<<"$text" || echo "$skill: the Hunt step does not name audit begin"
+    grep -qF 'area-<k>.md' <<<"$text" || echo "$skill: the Hunt step does not name the area-<k>.md findings file"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-audit-docs" "$fixture/skills/orch-audit-code" "$fixture/skills/orch-audit-tests"
+printf '# A\n\n## 3. Hunt\n\nRun `audit begin docs`; each hunter writes `area-<k>.md`.\n\n## 4. Rank\n' \
+  >"$fixture/skills/orch-audit-docs/SKILL.md"
+printf '# A\n\n## 3. Hunt\n\nEach hunter writes `area-<k>.md`.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-code/SKILL.md"
+printf '# A\n\nRun `audit begin tests`; write `area-<k>.md`.\n\n## 4. Hunt\n\nStart the hunters.\n\n## 5. Rank\n' \
+  >"$fixture/skills/orch-audit-tests/SKILL.md"
+out="$(scan_audit_hunt_run "$fixture")"
+spares "a Hunt step naming audit begin and area-<k>.md is accepted" "$out" 'audit-docs/SKILL.md'
+flags "a Hunt step that never runs audit begin is flagged" \
+  "$out" "skills/orch-audit-code/SKILL.md: the Hunt step does not name audit begin"
+spares "a Hunt step naming area-<k>.md is not flagged for it" "$out" 'audit-code/SKILL.md: the Hunt step does not name the area'
+flags "a Hunt step with neither, the names standing outside it, is flagged for the begin" \
+  "$out" "skills/orch-audit-tests/SKILL.md: the Hunt step does not name audit begin"
+flags "and for the findings file name" \
+  "$out" "skills/orch-audit-tests/SKILL.md: the Hunt step does not name the area-<k>.md findings file"
+check "each audit skill's Hunt step runs audit begin and names area-<k>.md" \
+  "$(scan_audit_hunt_run "$PLUGIN_ROOT")"
 
 # scan_quality_rule_home <plugin root>: one line when orch-audit-tests' opening
 # (its text before the first numbered step heading) does not name

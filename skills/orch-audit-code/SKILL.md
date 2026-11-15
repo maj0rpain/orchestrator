@@ -10,14 +10,16 @@ worth deepening (see `GLOSSARY.md`: **Code audit**), which the review sees only
 where a change touches. It ships for any repo. The six steps below define this
 skill, and it invokes and depends on no upstream skill (ADR-0028).
 
-**Read-only.** This skill changes no file in the repo: it edits nothing,
-commits nothing, and opens no branch or PR. Every file it writes - the
-subagents' findings files, the report, and the finding file for each finding
-picked for filing - goes in one temp directory outside the repo (make it with
-`mktemp -d`). Its one write outside that directory is `orch.sh audit file`,
-for findings the user picks for filing. The promise covers the audit itself:
-once it hands picked findings to `orch-interview`, what that interview and the
-flow, quick implementation or blueprint it closes on write is theirs.
+**Read-only.** This skill changes no tracked file in the repo and nothing
+`git status` shows: it edits nothing tracked, commits nothing, and opens no
+branch or PR. Its working files - each area's findings file, the report,
+and the finding file for each finding picked for filing - go in its run
+directory, `.orchestrator/audit/<kind>-<stamp>/`, which `orch.sh audit
+begin` makes and git-excludes (ADR-0063). Its writes outside that directory
+are the git exclude `audit begin` ensures and `orch.sh audit file`, for
+findings the user picks for filing. The promise covers the audit itself:
+once it hands picked findings to `orch-interview`, what that interview and
+the flow, quick implementation or blueprint it closes on write is theirs.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -70,16 +72,20 @@ start nothing until they answer. A narrowed scope returns to this step.
 ## 3. Hunt
 
 Read `bash "$ORCH" agent get auditor` once, before the first hunter, and pass
-the `model` and `effort` it prints on each start, per **Agent settings** in
-`docs/host-capabilities.md`. This skill runs no `agent sync`, which would write
-`.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per area
-(see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
-fork, each an `orch-code-auditor`, at most 4 at once; start the next as one
-finishes. Each prompt names its area (the source files), the kinds to hunt, the
-repo root, and its own findings file in the temp directory. The auditor has no
-Edit or Bash tool; its brief holds the three kinds, the evidence each needs,
-the ADR rule and the findings-file format (`@@ finding <k>` blocks, `@@ none`
-when empty). A reply is the file's path and a finding count; read each file.
+the `model` and `effort` it prints on each start, per **Agent settings**
+in `docs/host-capabilities.md`. Then run `bash "$ORCH" audit begin code`
+once, before the first hunter starts; it prints the run directory,
+git-excluded, where every working file goes. This skill runs no `agent
+sync`, which would write `.junie/agents/` in the checkout (ADR-0060). Start
+one fresh subagent per area (see the *Start a fresh subagent* row of
+`docs/host-capabilities.md`), never a fork, each an `orch-code-auditor`,
+at most 4 at once; start the next as one finishes. Each prompt names its
+area (the source files), the kinds to hunt, the repo root, and its own
+findings file, `area-<k>.md` in the run directory (<k> the area's number
+from 1). The auditor has no Edit or Bash tool; its brief holds the three
+kinds, the evidence each needs, the ADR rule and the findings-file format
+(`@@ finding <k>` blocks, `@@ none` when empty). A reply is the file's path
+and a finding count; read each file.
 
 A candidate has its kind, its location(s), its evidence, its confidence
 (**certain** or **likely**), a before/after and a proposed fix. A pattern
@@ -110,11 +116,12 @@ recommendation**: the candidate to start with, and why.
 
 ## 5. Report
 
-Write a self-contained HTML report to the temp directory (for instance
-`"$TMP/audit-code.html"`). It loads Tailwind and Mermaid from a CDN and holds
-everything else inline. It carries the scope, the area count, the top
-recommendation first, and every candidate numbered in rank order, each with its
-kind, location, evidence, confidence, strength, before/after and proposed fix.
+Write a self-contained HTML report to the run directory (for instance
+`"<run directory>/audit-code.html"`). It loads Tailwind and Mermaid from a
+CDN and holds everything else inline. It carries the scope, the area count,
+the top recommendation first, and every candidate numbered in rank order,
+each with its kind, location, evidence, confidence, strength, before/after
+and proposed fix.
 
 Open it in the browser - `xdg-open <file>` on Linux, `open <file>` on macOS -
 and tell the user its path. On a host that cannot open it, write a Markdown
@@ -144,7 +151,7 @@ With both lists, filing runs first, then the interview.
 
 - **File.** For each finding picked for `file`, one at a time in number
   order, write its text (kind, evidence, confidence, strength, before/after,
-  proposed fix) to a finding file in the temp directory and run
+  proposed fix) to a finding file in the run directory and run
   `bash "$ORCH" audit file "<title>" --category <bug|enhancement>
   --finding-file <file> --location
   <location>...`, one `--location` per site: `--category bug` for a latent

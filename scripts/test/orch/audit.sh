@@ -185,3 +185,85 @@ assert_gh_dies "a failed issue create dies naming the step" adapter_issue_create
   "orch: gh could not create the issue: HTTP 502: Bad Gateway" \
   "$ORCH" audit file "Title" "${parts[@]}"
 assert_eq "filing no issue" "$(fake_issues)" ""
+
+# --- audit begin ------------------------------------------------------------
+
+echo
+echo "audit begin"
+new_repo >/dev/null
+top="$(git rev-parse --show-toplevel)"
+head_sha="$(git rev-parse HEAD)"
+errf="$(mktemp)"
+out="$("$ORCH" audit begin docs 2>"$errf")"; st=$?
+assert_status "begins a docs audit" "$st" 0
+case "$out" in
+  "$top"/.orchestrator/audit/docs-[0-9]*-[0-9]*) found=absolute ;;
+  *) found="$out" ;;
+esac
+assert_eq "printing the run directory's absolute path and nothing else" "$found" absolute
+assert_eq "and nothing on stderr" "$(cat "$errf")" ""
+assert_eq "the directory exists" "$(on_disk "$out")" present
+assert_eq "recording the kind and the HEAD commit" "$(cat "$out/record")" "$(printf 'kind docs\ncommit %s' "$head_sha")"
+assert_eq "git excludes the directory, so status shows nothing" "$(git status --porcelain)" ""
+assert_eq "and the exclude names .orchestrator/ once" "$(grep -cxF .orchestrator/ "$(git rev-parse --git-common-dir)/info/exclude")" 1
+for kind in code tests; do
+  out="$("$ORCH" audit begin "$kind" 2>&1)"; st=$?
+  assert_status "begins a $kind audit" "$st" 0
+  assert_contains "its directory named for the kind" "$out" ".orchestrator/audit/$kind-"
+done
+
+# Refusals make nothing.
+usage_all="orch: usage: orch.sh audit begin <code|docs|tests>
+   or: orch.sh audit file <title> --category <bug|enhancement|documentation> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
+new_repo >/dev/null
+for args in "begin" "begin bogus" "begin code extra" "bogus" ""; do
+  # shellcheck disable=SC2086 # the words are the point
+  out="$("$ORCH" audit $args 2>&1)"; st=$?
+  assert_status "audit '$args' is refused" "$st" 1
+  assert_eq "with the usage naming every form" "$out" "$usage_all"
+  assert_eq "making no audit directory" "$(on_disk .orchestrator/audit)" absent
+done
+
+nohead="$(mktemp -d)"
+git -C "$nohead" init -q
+cd "$nohead" || exit 1
+out="$("$ORCH" audit begin code 2>&1)"; st=$?
+assert_status "a repo with no commit is refused" "$st" 1
+assert_eq "saying HEAD cannot be read" "$out" "orch: cannot read the HEAD commit"
+assert_eq "making nothing" "$(on_disk .orchestrator)" absent
+
+# An existing directory is never reused: the date stub pins the stamp.
+new_repo >/dev/null
+shim="$(mktemp -d)"
+printf '%s\n' '#!/bin/sh' 'case "$*" in "-u +%Y%m%d-%H%M%S") echo 20300101-000000 ;; *) exec /usr/bin/env date "$@" ;; esac' >"$shim/date"
+chmod +x "$shim/date"
+out="$(PATH="$shim:$PATH" "$ORCH" audit begin code 2>&1)"; st=$?
+assert_status "the first run at a pinned stamp succeeds" "$st" 0
+echo kept >"$out/area-1.md"
+out2="$(PATH="$shim:$PATH" "$ORCH" audit begin code 2>&1)"; st=$?
+assert_status "a second run at the same stamp is refused" "$st" 1
+assert_contains "saying the directory exists" "$out2" "already exists"
+assert_eq "leaving the first run as it was" "$(cat "$out/area-1.md")" kept
+
+# A write failing after the directory is made removes it.
+new_repo >/dev/null
+exclude="$(git rev-parse --git-common-dir)/info/exclude"
+rm -f "$exclude"
+mkdir -p "$exclude"
+out="$("$ORCH" audit begin tests 2>&1)"; st=$?
+assert_status "an unwritable git exclude file fails the run" "$st" 1
+assert_contains "dying with its orch line" "$out" "orch: cannot add"
+assert_eq "leaving no run directory" "$(find .orchestrator/audit -mindepth 1 2>/dev/null | wc -l | tr -d ' ')" 0
+
+# With and without an active flow, state.json is untouched.
+new_repo >/dev/null
+out="$("$ORCH" audit begin code 2>&1)"; st=$?
+assert_status "runs with no flow" "$st" 0
+assert_eq "and writes no state.json" "$(on_disk .orchestrator/state.json)" absent
+fake_github
+"$ORCH" init audit-flow >/dev/null 2>&1
+state_fixture phase implement
+before="$(cksum <.orchestrator/state.json)"
+out="$("$ORCH" audit begin docs 2>&1)"; st=$?
+assert_status "runs with an active flow" "$st" 0
+assert_eq "leaving state.json unchanged" "$(cksum <.orchestrator/state.json)" "$before"

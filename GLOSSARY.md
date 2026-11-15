@@ -816,7 +816,7 @@ documentation that says something the code does not do - the repo-wide
 counterpart of the **doc-agreement check**, which sees only what one change
 touches. It covers the same texts and follows the same ADR rule. Each finding
 the human picks from it goes to a planning interview or is filed as an issue; it
-edits nothing in the repo. _Avoid_: docs drift scan.
+changes no tracked file in the repo. _Avoid_: docs drift scan.
 
 **Code audit**:
 An on-demand, read-only read of a repo's source code - its git hot spots, or a
@@ -824,7 +824,8 @@ named area - for latent bugs, inefficiencies and architecture worth deepening,
 which the review sees only where a change touches. Test files are read only as
 evidence. A latent bug reaches the report only with a failure scenario
 confirmed against the code. Each finding the human picks from it goes to a
-planning interview or is filed as an issue; it edits nothing in the repo.
+planning interview or is filed as an issue; it changes no tracked file in
+the repo.
 _Avoid_: code scan, codebase review.
 
 **Test audit**:
@@ -833,7 +834,16 @@ named area - for refactors that cut its **suite cost** without testing less.
 Every candidate names the replacement that takes its place and why it tests
 the behaviour as well; one that cannot is dropped, and cost only ranks the
 rest. Each candidate the human picks goes to a planning interview or is filed
-as an issue; it edits nothing in the repo. _Avoid_: test scan, suite review.
+as an issue; it changes no tracked file in the repo. _Avoid_: test scan,
+suite review.
+
+**Audit run**:
+One run of a **docs audit**, a **code audit** or a **test audit**, from its
+scope to its hand-off. It keeps its working files together in one run
+directory, apart from any flow: each area's findings file, the ranked
+findings and the report. Two findings of one run **overlap** when their fixes
+would change the same function or the same lines; filed together, each one's
+issue names the other. _Avoid_: audit session, audit pass.
 
 **Pattern finding**:
 A finding whose claim holds at more than one place - one cause or one breached

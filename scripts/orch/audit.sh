@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# audit.sh - orch.sh's audit command: audit file, which files one audit
+# audit.sh - orch.sh's audit command: audit begin, which makes an audit run's
+# working directory (ADR-0063), and audit file, which files one audit
 # finding as a GitHub issue, its body rendered from the finding file, its
 # locations and the HEAD it was audited at, and parsed back before any write.
 # Its tests: scripts/test/orch/audit.sh.
@@ -40,6 +41,42 @@ audit_body_parse() {
   done <<<"$1"
   printf -v "$2" '%s' "$__abp_locs"
   printf -v "$3" '%s' "$__abp_shas"
+}
+
+# AUDIT_KINDS: the kinds of audit `audit begin` takes, one per audit skill.
+AUDIT_KINDS="code docs tests"
+
+# audit_usage: the usage text naming every form of the audit command, one per
+# line. The one-finding form's own refusals print audit_file_usage alone.
+audit_usage() {
+  local kinds="${AUDIT_KINDS// /|}"
+  printf 'usage: orch.sh audit begin <%s>\n   or: %s' "$kinds" "$(audit_file_usage | sed 's/^usage: //')"
+}
+
+# audit_begin <kind>: makes .orchestrator/audit/<kind>-<stamp>/ in the current
+# checkout, git-excluded, records the kind and the HEAD commit in its `record`
+# file, and prints its absolute path and nothing else. Every check comes before
+# the directory is made; the directory is never reused; a write failing after
+# it is made removes it before dying. Reads and writes no flow state.
+audit_begin() {
+  [ $# -eq 1 ] || die "$(audit_usage)"
+  local kind="$1" k ok="" sha dir
+  for k in $AUDIT_KINDS; do [ "$k" != "$kind" ] || ok=1; done
+  [ -n "$ok" ] || die "$(audit_usage)"
+  sha="$(git rev-parse --verify HEAD 2>/dev/null)" || die "cannot read the HEAD commit"
+  dir="$ORCH/audit/$kind-$(dir_stamp)"
+  [ ! -e "$dir" ] || die "the audit run directory already exists: $dir"
+  mkdir -p "$ORCH/audit" 2>/dev/null && mkdir "$dir" 2>/dev/null \
+    || die "cannot make the audit run directory $dir"
+  # A failed write below dies inside exclude_line or here; the trap removes
+  # the half-made directory either way.
+  # shellcheck disable=SC2064 # the directory is fixed now
+  trap "rm -rf $(printf '%q' "$dir")" EXIT
+  exclude_orch_dirs
+  printf 'kind %s\ncommit %s\n' "$kind" "$sha" >"$dir/record" 2>/dev/null \
+    || die "cannot write the audit run record in $dir"
+  trap - EXIT
+  note "$dir"
 }
 
 # audit_file_usage: the usage line, its categories read from the Filed finding
@@ -117,7 +154,8 @@ cmd_audit() {
   local op="${1:-}"
   shift || true
   case "$op" in
+    begin) audit_begin "$@" ;;
     file) audit_file "$@" ;;
-    *) die "$(audit_file_usage)" ;;
+    *) die "$(audit_usage)" ;;
   esac
 }

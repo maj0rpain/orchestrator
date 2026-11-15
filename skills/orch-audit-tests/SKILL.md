@@ -12,15 +12,17 @@ mattpocock's `improve-codebase-architecture`, as inspiration only: the seven
 steps below define this skill, and it invokes and depends on no upstream skill
 (ADR-0028).
 
-**Read-only.** This skill changes no file in the repo: it edits nothing,
-commits nothing, and opens no branch or PR. It only reads and runs the test
-commands the repo's agent files document. Every file it writes - the
-subagents' findings files, the report, and the finding file for each candidate
-picked for filing - goes in one temp directory outside the repo (make it with
-`mktemp -d`). Its one write outside that directory is `orch.sh audit file`, for
-candidates the user picks for filing. The promise covers the audit itself: once
-it hands picked candidates to `orch-interview`, what that interview and the
-flow, quick implementation or blueprint it closes on write is theirs.
+**Read-only.** This skill changes no tracked file in the repo and nothing
+`git status` shows: it edits nothing tracked, commits nothing, and opens no
+branch or PR. It only reads and runs the test commands the repo's agent files
+document. Its working files - each area's findings file, the report, and the
+finding file for each candidate picked for filing - go in its run directory,
+`.orchestrator/audit/<kind>-<stamp>/`, which `orch.sh audit begin` makes
+and git-excludes (ADR-0063). Its writes outside that directory are the git
+exclude `audit begin` ensures and `orch.sh audit file`, for candidates the
+user picks for filing. The promise covers the audit itself: once it hands
+picked candidates to `orch-interview`, what that interview and the flow,
+quick implementation or blueprint it closes on write is theirs.
 
 Every candidate must pass **the quality rule** in the Brief of
 `agents/orch-test-auditor.md` (under the plugin root). Cost only ranks the
@@ -110,20 +112,23 @@ start nothing until they answer. A narrowed scope returns to step 1.
 
 ## 4. Hunt
 
-Read `bash "$ORCH" agent get auditor` once, before the first hunter, and pass
-the `model` and `effort` it prints on each start, per **Agent settings** in
-`docs/host-capabilities.md`. This skill runs no `agent sync`, which would write
-`.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per area
-(see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
-fork, each an `orch-test-auditor`, at most 4 at once; start the next as one
-finishes. Each prompt names its area (the test files), the repo root, the
-measured cost of each part in the area, the trend, and its own findings file in
-the temp directory. The hunter has no Edit or Bash tool, so it times nothing;
-its brief holds the quality rule, the six kinds, the fields each
-candidate states (among them the replacement, why it tests as well, and the
-expected saving, measured or estimated) and the findings-file format (`@@
-finding <k>` blocks, `@@ none` when empty). A reply is the file's path and a
-candidate count; read each file.
+Read `bash "$ORCH" agent get auditor` once, before the first hunter,
+and pass the `model` and `effort` it prints on each start, per **Agent
+settings** in `docs/host-capabilities.md`. Then run `bash "$ORCH" audit begin
+tests` once, before the first hunter starts; it prints the run directory,
+git-excluded, where every working file goes. This skill runs no `agent
+sync`, which would write `.junie/agents/` in the checkout (ADR-0060). Start
+one fresh subagent per area (see the *Start a fresh subagent* row of
+`docs/host-capabilities.md`), never a fork, each an `orch-test-auditor`, at
+most 4 at once; start the next as one finishes. Each prompt names its area
+(the test files), the repo root, the measured cost of each part in the area,
+the trend, and its own findings file, `area-<k>.md` in the run directory
+(<k> the area's number from 1). The hunter has no Edit or Bash tool, so it
+times nothing; its brief holds the quality rule, the six kinds, the fields
+each candidate states (among them the replacement, why it tests as well,
+and the expected saving, measured or estimated) and the findings-file format
+(`@@ finding <k>` blocks, `@@ none` when empty). A reply is the file's path
+and a candidate count; read each file.
 
 Check every candidate again against the quality rule, per **The quality rule**
 in `agents/orch-test-auditor.md` (under the plugin root), and drop each one
@@ -147,9 +152,9 @@ change. Name one **top recommendation**: the candidate to start with, and why.
 
 ## 6. Report
 
-Write a self-contained HTML report to the temp directory (for instance
-`"$TMP/audit-tests.html"`). It loads Tailwind and Mermaid from a CDN and holds
-everything else inline. It carries:
+Write a self-contained HTML report to the run directory (for instance
+`"<run directory>/audit-tests.html"`). It loads Tailwind and Mermaid from
+a CDN and holds everything else inline. It carries:
 
 - the scope, the area count, whether parts were timed per section, per file,
   or only as one whole run, the measured cost of each part, and the trend from
@@ -191,7 +196,7 @@ With both lists, filing runs first, then the interview.
 - **File.** For each candidate picked for `file`, one at a time in number
   order, write its text (kind, location, measured cost, replacement, why it
   tests as well, expected saving and whether it is measured or estimated,
-  strength) to a finding file in the temp directory and run
+  strength) to a finding file in the run directory and run
   `bash "$ORCH" audit file "<title>" --category enhancement --finding-file
   <file> --location <location>...`, one `--location` per site, each the
   `<file>:<start>-<end>` the hunter reported. The title is one line naming the
