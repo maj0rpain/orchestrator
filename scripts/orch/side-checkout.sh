@@ -270,27 +270,48 @@ side_checkout_archive_and_remove_or_exit() {
 # checkout at <main-root> live.
 side_checkouts_dir() { printf '%s/%s/checkouts\n' "$1" "$ORCH_DIR_NAME"; }
 
+# side_checkout_marker_issue_into <var> <path>: sets <var> to the issue the
+# marker of the worktree at <path> records. It classifies nothing: it TRUSTS
+# its caller to hold <path> as a side checkout already (a walk row of kind
+# side), so a loop over the walk shares it instead of re-deriving the kind.
+# Returns 1, <var> untouched and nothing printed, when the worktree carries no
+# marker, the marker is empty, or its content - the whole file, trailing
+# newlines dropped, judged as one value - is no plain issue number (a marker of
+# more than one line or holding a NUL byte included). For a readable git
+# pointer it starts no external command and no subshell.
+side_checkout_marker_issue_into() {
+  local _sm_gd _sm_val=""
+  checkout_gitdir_into _sm_gd "$2" || return 1
+  side_checkout_marked "$_sm_gd" || return 1
+  # read -d '' returns 0 only when it met a NUL byte: such a marker cannot be
+  # read to its end and records no issue.
+  if IFS= read -r -d '' _sm_val 2>/dev/null <"$_sm_gd/$SIDE_CHECKOUT_MARKER"; then return 1; fi
+  while [ "${_sm_val: -1}" = $'\n' ]; do _sm_val="${_sm_val%?}"; done
+  case "$_sm_val" in ''|*[!0-9]*) return 1 ;; esac
+  printf -v "$1" '%s' "$_sm_val"
+}
+
 # side_checkout_issue <path>: prints the issue the side checkout at <path>
-# records in its marker; returns 1 when it is no side checkout - a ticket
-# worktree carrying a copied marker included, checked before the marker is
-# read - or its marker holds no plain issue number.
+# records in its marker. It CLASSIFIES first, for a caller whose path nothing
+# has classified: returns 1 when the checkout holding <path> is no side
+# checkout - a ticket worktree carrying a copied marker included, checked
+# before the marker is read - or its marker holds no plain issue number (the
+# read is side_checkout_marker_issue_into's).
 side_checkout_issue() {
-  local marker issue
+  local issue
   is_side_checkout "$1" || return 1
-  marker="$(side_checkout_marker "$1")" || return 1
-  issue="$(cat "$marker" 2>/dev/null)" || return 1
-  case "$issue" in ''|*[!0-9]*) return 1 ;; esac
+  side_checkout_marker_issue_into issue "$1" || return 1
   printf '%s\n' "$issue"
 }
 
 # side_checkout_for_issue <issue>: prints the path of the side checkout
 # whose marker records <issue>; returns 1 when there is none.
 side_checkout_for_issue() {
-  local list kind _flow _branch path
+  local list kind _flow _branch path recorded
   list="$(checkouts)" || return 1
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] || continue
-    if [ "$(side_checkout_issue "$path" 2>/dev/null)" = "$1" ]; then printf '%s\n' "$path"; return 0; fi
+    if side_checkout_marker_issue_into recorded "$path" && [ "$recorded" = "$1" ]; then printf '%s\n' "$path"; return 0; fi
   done <<<"$list"
   return 1
 }
@@ -360,7 +381,8 @@ cmd_side_checkout_list() {
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] || continue
     quick=""
-    if issue="$(side_checkout_issue "$path")"; then quick=" quick #$issue"; fi
+    issue=""
+    if side_checkout_marker_issue_into issue "$path"; then quick=" quick #$issue"; fi
     note "${path##*/} $path $(checkout_holding "$path")$quick"
   done <<<"$list"
 }
