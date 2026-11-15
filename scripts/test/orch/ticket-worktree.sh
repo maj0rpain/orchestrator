@@ -258,13 +258,13 @@ assert_status "teardown with neither worktree nor branch dies" "$st" 1
 assert_contains "naming the ticket" "$out" "no ticket worktree or branch for ticket 7"
 
 # Strict arguments.
-out="$(sourced_orch_script 'ticket_worktree_teardown' 2>&1)"; st=$?
+out="$(sourced_orch ticket_worktree_teardown 2>&1)"; st=$?
 assert_status "teardown without a prefix dies" "$st" 1
 assert_contains "with its usage" "$out" "usage: ticket_worktree_teardown <prefix> [--unmerged] [--discard]"
-out="$(sourced_orch_script 'ticket_facts 7 f; ticket_worktree_teardown f --bogus' 2>&1)"; st=$?
+out="$(sourced_orch ticket_worktree_teardown f --bogus 2>&1)"; st=$?
 assert_status "teardown dies on an unknown flag" "$st" 1
 assert_contains "naming it" "$out" "--bogus"
-out="$(sourced_orch_script 'ticket_facts 7 f; ticket_worktree_teardown f g' 2>&1)"; st=$?
+out="$(sourced_orch ticket_worktree_teardown f g 2>&1)"; st=$?
 assert_status "teardown dies on a second positional argument" "$st" 1
 assert_contains "naming it" "$out" "unexpected argument: g"
 
