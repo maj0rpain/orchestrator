@@ -1483,6 +1483,14 @@ out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
 assert_status "a rerun with nothing left succeeds" "$st" 0
 assert_eq "printing nothing" "$out" ""
 
+# a branch that is not the flow's: refused after one read of flow state
+rc_setup 1
+git checkout -q -b not-the-flows-branch
+rc_jq="$(counting_bin jq)"
+out="$(PATH="$rc_jq:$PATH" "$ORCH" ticket reclaim 90 2>&1)"; st=$?
+assert_status "reclaim on a branch that is not the flow's is refused" "$st" 1
+assert_eq "reclaim on a branch that is not the flow's starts exactly one jq" "$(counting_starts "$rc_jq" jq)" "1"
+
 # a state.json that does not parse: the shared refusal, nothing discarded
 rc_setup 1
 state_truncate

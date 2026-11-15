@@ -31,7 +31,8 @@ merge_state() {
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
-# `base_sha` for pr open and redo review to read back later via require_branch.
+# `base_sha` for pr open and redo review to read back later, their branch check
+# being require_value's.
 # Like branch off, it also records the base and base SHA in the branch's git
 # config, so branch sync and branch base-sha find them once the flow is gone.
 echo
@@ -60,6 +61,13 @@ PATH="$(state_write_fails_after_first_bin):$PATH" "$ORCH" branch create >/dev/nu
 assert_eq "a death after the first state write leaves branch recorded" \
   "$("$ORCH" state get branch)" "orch/12-bcreate1w"
 assert_eq "and base_sha recorded with it" "$("$ORCH" state get base_sha)" "$before_sha"
+
+# The state refusals come before the usage check: with no flow, extra arguments
+# earn "no active flow", as they did when require_state ran first.
+new_repo >/dev/null
+out="$("$ORCH" branch create extra 2>&1)"; st=$?
+assert_status "branch create with an argument and no flow exits 1" "$st" 1
+assert_contains "refusing for the missing flow before its usage" "$out" "no active flow"
 
 # A stray local branch named origin/main must not stand in for origin's tip.
 sc_clone
@@ -825,10 +833,12 @@ assert_contains "naming it no plugin-made branch" "$out" "main"
 assert_eq "moving nothing (base branch)" "$(git rev-parse HEAD)" "$before_main"
 
 git checkout -q -b feature/hand-made
-out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+bs_jq="$(counting_bin jq)"
+out="$(PATH="$bs_jq:$PATH" orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "refuses a branch with no recorded base" "$st" 1
 assert_eq "moving nothing (no recorded base)" "$(git rev-parse HEAD)" "$before_main"
 assert_eq "and recording no base SHA" "$(bs_sha)" ""
+assert_eq "branch sync on a branch the flow does not hold starts exactly one jq" "$(counting_starts "$bs_jq" jq)" "1"
 git config orchestrator.base main
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "even with a base branch setting to fall back to" "$st" 1
@@ -1112,8 +1122,10 @@ assert_eq "leaving base_sha as it was" "$(orch_gh_failing state get base_sha)" "
 assert_eq "and the branch's recorded base SHA" \
   "$(git config --get branch.orch/15-again.orchestrator-base-sha)" "moved-marker"
 assert_eq "and its recorded base" "$(base_key orch/15-again)" "$(orch_gh_failing state get base)"
-out="$(orch_gh_failing branch create 2>&1)"; st=$?
+bc_jq="$(counting_bin jq)"
+out="$(PATH="$bc_jq:$PATH" orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on the flow's branch while on it succeeds" "$st" 0
+assert_eq "a restart with the branch made and checked out starts exactly one jq" "$(counting_starts "$bc_jq" jq)" "1"
 
 
 # A dirty tree on the flow's branch: refused in an interactive main checkout.
@@ -1182,6 +1194,8 @@ assert_eq "discarding the dirty tree" "$(git status --porcelain)" ""
 echo '{ not json' >.orchestrator/state.json
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_state_unreadable "branch sync" 1 "$out" "$st"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_state_unreadable "branch create" 1 "$out" "$st"
 
 # A different existing branch - one the flow never recorded - is still refused.
 new_repo_with_origin

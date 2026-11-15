@@ -328,6 +328,21 @@ assert_contains "the same-flow branch names the flow's issue" "$ctx" "about this
 check_flow_variant "on Claude Code" "$ctx" "$cc_next_redo"
 check_pointer "beside an active flow" "$ctx"
 assert_marker_present "writes the grilling marker beside an active flow" grilling s6
+# The flow read costs one jq: a planning prompt beside an active flow starts
+# exactly one more jq than the same prompt with no state file (#3226).
+JQC="$(counting_bin jq)"
+# jq_count <cmd> [args...]: how many jq processes <cmd> starts, run with JQC
+# first on PATH (on the payload on stdin, if any) and its output dropped.
+jq_count() {
+  : >"$JQC/jq.log"
+  PATH="$JQC:$PATH" "$@" >/dev/null 2>&1
+  counting_starts "$JQC" jq
+}
+gj_with="$(skill_event grilling s6j1 | jq_count "$GRILL")"
+mv "$REPO/.orchestrator/state.json" "$REPO/.orchestrator/state.json.kept"
+gj_without="$(skill_event grilling s6j2 | jq_count "$GRILL")"
+mv "$REPO/.orchestrator/state.json.kept" "$REPO/.orchestrator/state.json"
+assert_eq "a planning prompt beside an active flow starts exactly one more jq than with no state file" "$gj_with" "$((gj_without + 1))"
 assert_empty "stays silent on a second planning call beside an active flow" \
   "$(skill_event "grilling" s6 | "$GRILL")"
 write_flow_state slug my-change phase implement issue null
@@ -1456,18 +1471,11 @@ assert_eq "a final reply holding the view written within the window: allowed" \
     ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
 
 # The pre-check and the size-gated re-read, counted in jq processes: a counting
-# jq, made by counting_bin, first on PATH logs each start and runs the real jq.
-# One counter dir is shared by the paste-guard counts, the one-jq-per-payload
-# checks and the Bash hook cost check. The paste-guard counts are compared
+# jq, made by counting_bin (JQC and jq_count, defined above), first on PATH
+# logs each start and runs the real jq. One counter dir is shared by the
+# grilling-hook count, the paste-guard counts, the one-jq-per-payload checks
+# and the Bash hook cost check. The paste-guard counts are compared
 # between two runs of the same hook, never against a number.
-JQC="$(counting_bin jq)"
-# jq_count <cmd> [args...]: how many jq processes <cmd> starts, run with JQC
-# first on PATH (on the payload on stdin, if any) and its output dropped.
-jq_count() {
-  : >"$JQC/jq.log"
-  PATH="$JQC:$PATH" "$@" >/dev/null 2>&1
-  counting_starts "$JQC" jq
-}
 PG_PAD="$(head -c 20000 /dev/zero | tr '\0' 'a')"
 TL="$PG/long-unarmed.jsonl"; cp "$T11" "$TL"
 pg_text "$TL" "$PG_PAD"; pg_text "$TL" "$PG_PAD"

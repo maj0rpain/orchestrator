@@ -213,7 +213,6 @@ autopilot_reenter() {
   local phase="$1" file="$2" text issue
   [ "$phase" = review ] || die "only the review phase re-enters automatically, got: $phase"
   autopilot_file_text text re-entry "$file"
-  require_state
   require_issue issue
   standing_reenter "$issue" "$phase" "$text"
 }
@@ -224,7 +223,6 @@ autopilot_reenter() {
 # autopilot_sync_finish: orch:sync removed, the claim released.
 autopilot_sync_finish() {
   local issue
-  require_state
   require_issue issue
   standing_sync_finish "$issue"
 }
@@ -235,7 +233,6 @@ autopilot_sync_finish() {
 autopilot_sync_dropped() {
   local file="$1" issue text auto_sync
   autopilot_file_text text dropped-intents "$file"
-  require_state
   require_issue issue
   # The merge is pushed, so a bad auto-sync value must not kill the stop: the
   # read runs in a subshell, its die line on stderr serves as the warning, and
@@ -249,7 +246,6 @@ autopilot_sync_fail() {
   orch_load standing
   local issue
   [ -n "$1" ] || die "a sync failure needs a reason"
-  require_state
   require_issue issue
   standing_stop "$issue" failure "$STANDING_SYNC_PHASE" "$1"
 }
@@ -264,7 +260,6 @@ autopilot_answer() {
   orch_load issue-timeline
   local phase="$1" file="$2" issue out first rest
   autopilot_phase_arg "$phase" die2
-  require_state die2
   require_issue issue die2
   repo_pin || die2 "$REPO_REMEDY"
   if ! timeline_read "$issue"; then

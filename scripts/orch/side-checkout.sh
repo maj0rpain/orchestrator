@@ -179,7 +179,7 @@ side_checkout_refuse_ticket_worktrees() {
 # archives in place (see archive_root).
 #
 # Every step checks its own status, since its callers run it where errexit is
-# off: a failed slug read, archive-directory creation or move dies naming the
+# off: a failed archive-directory creation or move dies naming the
 # path. state.json moves last, so a move failing partway leaves the flow
 # recognisable where it stands - the entries already moved stay in the new
 # archive directory, the rest in place, the message naming both - and a rerun
@@ -191,11 +191,7 @@ archive_flow() {
   side_checkout_refuse_ticket_worktrees "$root"
   # A state.json that does not parse still archives - abort is the remedy for
   # it - under a slug standing in for the one it cannot give.
-  if flow_state_readable "$state"; then
-    slug="$(state_get_in "$state" slug)" || die "could not read the flow's slug from $state - nothing was archived"
-  else
-    slug=unreadable
-  fi
+  slug="$(state_get_in "$state" slug)" || slug=unreadable
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest" 2>/dev/null || die "could not create the archive directory $dest - nothing was archived"
   for entry in "$orch"/*; do

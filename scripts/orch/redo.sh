@@ -3,22 +3,23 @@
 # Its tests: scripts/test/orch/redo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# redo_midway <issue> <slug>: succeeds while a redo (review or spec) is
-# half-finished, printing its redo_count. True between a redo's branch retire
-# and its closing write, which clears state.branch: redo_count is above 0 and
-# state.branch is exactly the -redo-<redo_count> name of the issue and slug (the
-# exact name, so a slug that merely ends that way does not match: #2550). The
-# one test both the retire plan below and the review loop's terminal-state
-# classification make, so they never disagree on whether a redo is resuming.
+# redo_midway <issue> <slug> <branch> <redo_count>: reads nothing - the caller
+# holds the Flow state's branch and redo_count. Succeeds while a redo (review
+# or spec) is half-finished, printing its redo_count. True between a redo's
+# branch retire and its closing write, which clears state.branch: redo_count is
+# above 0 and state.branch is exactly the -redo-<redo_count> name of the issue
+# and slug (the exact name, so a slug that merely ends that way does not match:
+# #2550). The one test both the retire plan below and the review loop's
+# terminal-state classification make, so they never disagree on whether a redo
+# is resuming.
 redo_midway() {
-  local branch redo_count
-  branch="$(state_get branch)"
-  redo_count="$(state_get redo_count)"
+  local branch="$3" redo_count="$4"
   [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$1" "$2" "$redo_count")" ] || return 1
   printf '%s\n' "$redo_count"
 }
 
-# The first retire step, shared by both redos: prints the pair the retire
+# redo_retire_plan <issue> <slug> <branch> <redo_count>: reads nothing. The
+# first retire step, shared by both redos: prints the pair the retire
 # plans, two lines, "<n>" then "<resumed>": the number the attempt's retire
 # carries and whether its rename is already done.
 # A previous call at this same redo can have already retired the branch and
@@ -30,11 +31,11 @@ redo_midway() {
 # close outright rather than retiring an already-retired branch a second time
 # (issue #63).
 redo_retire_plan() {
-  local issue="$1" slug="$2" redo_count
-  if redo_count="$(redo_midway "$issue" "$slug")"; then
-    printf '%s\n1\n' "$redo_count"
+  local issue="$1" slug="$2" branch="$3" redo_count="$4" midway
+  if midway="$(redo_midway "$issue" "$slug" "$branch" "$redo_count")"; then
+    printf '%s\n1\n' "$midway"
   else
-    printf '%s\n0\n' $(( $(state_get redo_count) + 1 ))
+    printf '%s\n0\n' $(( redo_count + 1 ))
   fi
 }
 
@@ -44,7 +45,9 @@ redo_refuse_ticket_worktrees() {
   refuse_ticket_worktrees "$ROOT" "a redo would strand their unmerged ticket work"
 }
 
-# The second retire step, shared by both redos: close state.pr with the redo
+# redo_retire_attempt <issue> <slug> <n> <resumed> <branch> <pr>: reads
+# nothing - the caller holds the recorded branch and PR. The second retire
+# step, shared by both redos: close state.pr with the redo
 # comment, then rename state.branch to its -redo-<n> name and record it at
 # once - unless <resumed> says the rename is done, which also means the close
 # came before it, so a resumed rerun does neither. The close comes first
@@ -57,12 +60,10 @@ redo_refuse_ticket_worktrees() {
 # rerun never retires the branch a second time. The caller clears branch, pr
 # and base_sha in its closing write (redo_step_back).
 redo_retire_attempt() {
-  local issue="$1" slug="$2" n="$3" resumed="$4" branch pr new_branch msg
-  branch="$(state_get branch)"
+  local issue="$1" slug="$2" n="$3" resumed="$4" branch="$5" pr="$6" new_branch msg
   [ -n "$branch" ] || return 0
   [ "$resumed" -eq 0 ] || return 0
   new_branch="$(branch_name_redo "$issue" "$slug" "$n")"
-  pr="$(state_get pr)"
   if [ -n "$pr" ]; then
     msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
     gh_or_die "close PR #$pr" adapter_pr_close "$pr" "$msg"
@@ -92,13 +93,12 @@ redo_step_back() {
 # resets it when the next loop starts.
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
-  require_state
-  local phase i b word detail slug issue branch pr new_n resumed
-  phase="$(state_get phase)"
+  local phase i b budget_raw word detail slug issue branch pr redo_count new_n resumed
+  require_state_read phase=phase i=iteration budget_raw=budget slug=slug issue=issue \
+    branch=branch pr=pr redo_count=redo_count
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
-  i="$(state_get iteration)"
-  b="$(review_budget)"
-  local terminal; terminal="$(review_terminal_state)" || true
+  b="$(review_budget_fallback "$budget_raw")"
+  local terminal; terminal="$(review_terminal_state "$i" "$b")" || true
   lines_split "$terminal" word detail
   case "$word" in
     none)
@@ -117,12 +117,11 @@ $detail" ;;
   esac
   redo_refuse_ticket_worktrees
 
-  slug="$(state_get slug)"
-  require_issue issue
-  require_branch branch
-  require_pr pr
+  require_value issue "$issue"
+  require_value branch "$branch"
+  require_value pr "$pr"
   local retire
-  retire="$(redo_retire_plan "$issue" "$slug")"
+  retire="$(redo_retire_plan "$issue" "$slug" "$branch" "$redo_count")"
   lines_split "$retire" new_n resumed
 
   # The implement handoff described the attempt being retired; left in place,
@@ -133,7 +132,7 @@ $detail" ;;
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
   handoff_retire "pre-redo-$new_n" $(handoffs_written_from implement)
 
-  redo_retire_attempt "$issue" "$slug" "$new_n" "$resumed"
+  redo_retire_attempt "$issue" "$slug" "$new_n" "$resumed" "$branch" "$pr"
 
   # The prior implement phase closed every ticket it finished, so the redone
   # implement phase's frontier query (ticket next) would otherwise find
@@ -166,9 +165,9 @@ $detail" ;;
 # the entry guards need, and a re-run resumes.
 cmd_redo_spec() {
   orch_load spec
-  require_state
-  local phase new_issue=0 clear_issue=()
-  phase="$(state_get phase)"
+  local phase issue slug branch pr redo_count new_issue=0 clear_issue=()
+  require_state_read phase=phase issue=issue slug=slug branch=branch pr=pr \
+    redo_count=redo_count
   [ "$phase" = implement ] || die "flow is not at the implement phase - nothing to redo back from"
   case "${1:-}" in
     "") ;;
@@ -183,15 +182,14 @@ cmd_redo_spec() {
   # review. The folder is told apart by a UTC timestamp. The implement attempt
   # retires next, under the old issue number, bumping redo_count when it
   # retires a branch.
-  local issue label slug retire n resumed
-  require_issue issue
+  local label retire n resumed
+  require_value issue "$issue"
   label="pre-redo-spec-$(dir_stamp)"
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
   handoff_retire "$label" $(handoffs_written_from spec)
-  slug="$(state_get slug)"
-  retire="$(redo_retire_plan "$issue" "$slug")"
+  retire="$(redo_retire_plan "$issue" "$slug" "$branch" "$redo_count")"
   lines_split "$retire" n resumed
-  redo_retire_attempt "$issue" "$slug" "$n" "$resumed"
+  redo_retire_attempt "$issue" "$slug" "$n" "$resumed" "$branch" "$pr"
   if [ "$new_issue" -eq 1 ]; then
     clear_issue=(issue null)
     local msg

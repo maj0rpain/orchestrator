@@ -3323,12 +3323,12 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
   "$(printf '# %s\n' "${index_tests[@]}")"
 
 undescribed=""
-for name in base_branch base_source section_body review_budget float_add \
+for name in base_branch base_source section_body float_add \
   require_state ticket_worktree_path fake_online orch_gh_failing; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"
 done
-assert_eq "each of the nine newly commented helpers prints a description" "$undescribed" ""
+assert_eq "each of the eight newly commented helpers prints a description" "$undescribed" ""
 
 index_dir="$(tree_copy scripts)"
 plant_file "$index_dir/orch" zz-planted.sh <<'PLANTED'
