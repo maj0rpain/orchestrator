@@ -692,12 +692,17 @@ fake_pr_head() {
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
 }
 
+# iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
+iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+# iso_ago <age-seconds>: the UTC timestamp <age-seconds> before the current
+# time.
+iso_ago() { iso_of "$(( $(date -u +%s) - $1 ))"; }
+
 # fake_issue_created <n> <age-seconds>: issue #n created <age-seconds> ago, by
 # the current time.
 fake_issue_created() {
-  local d="$ORCH_GH_FAKE_STORE/issues/$1"
-  date -u -d "@$(( $(date -u +%s) - $2 ))" +%Y-%m-%dT%H:%M:%SZ >"$d/created_at" 2>/dev/null ||
-    date -u -r "$(( $(date -u +%s) - $2 ))" +%Y-%m-%dT%H:%M:%SZ >"$d/created_at"
+  iso_ago "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/created_at"
 }
 
 # fake_pr_merged <n> <age-seconds> [issue...]: PR #n merged <age-seconds> ago,
@@ -706,8 +711,7 @@ fake_pr_merged() {
   local n="$1" age="$2" d
   shift 2
   d="$ORCH_GH_FAKE_STORE/prs/$n"
-  date -u -d "@$(( $(date -u +%s) - age ))" +%Y-%m-%dT%H:%M:%SZ >"$d/merged_at" 2>/dev/null ||
-    date -u -r "$(( $(date -u +%s) - age ))" +%Y-%m-%dT%H:%M:%SZ >"$d/merged_at"
+  iso_ago "$age" >"$d/merged_at"
   : >"$d/closing"
   for i in "$@"; do printf '%s\n' "$i" >>"$d/closing"; done
 }

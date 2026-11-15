@@ -5,8 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
-iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
 # picked: the side checkouts the launcher started sessions in, in order, one
@@ -2569,9 +2567,10 @@ rm -f "$limit"
 
 # no open orch:done issue: no merged PRs are read
 fake_issue_drop 50 51 52 53 54 55 56 57 58 59
-fake_fail adapter_prs_merged_closing "HTTP 502"
+fake_fail adapter_prs_merged_closing "HTTP 502"; fake_fail adapter_issue_created_at "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"
 assert_not_contains "with no done issue the merged PRs are not read" "$out" "could not read the merged PRs"
+assert_not_contains "nor is the creation time" "$out" "could not read the creation time"
 fake_unfail
 restore_suite_env
 
@@ -2668,10 +2667,6 @@ assert_not_contains "with every done issue running neither read happens (listing
 assert_not_contains "nor the creation time" "$out" "could not read the creation time"
 fake_unfail
 fake_issue_drop 88
-fake_fail adapter_issue_created_at "HTTP 502"
-out="$("$ORCH" autopilot tick 2>&1)"
-assert_not_contains "with no done issue the creation time is not read" "$out" "could not read the creation time"
-fake_unfail
 
 fake_done_merged 89 3600; fake_done_conflict 89 189
 fake_fail adapter_issue_created_at "HTTP 502"

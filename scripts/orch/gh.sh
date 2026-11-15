@@ -307,7 +307,8 @@ verify_twice() {
 #   adapter_issue_comments_json,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
-#   adapter_issues_labelled_rows, adapter_issues_any_labelled_rows,
+#   adapter_issue_created_at, adapter_issues_labelled_rows,
+#   adapter_issues_any_labelled_rows,
 #   adapter_issues_open_rows,
 #   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
@@ -318,7 +319,8 @@ verify_twice() {
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_bodies,
 #   adapter_prs_open_mergeability,
 #   adapter_pr_diff, adapter_prs_merged,
-#   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
+#   adapter_prs_merged_closing, adapter_prs_merged_bodies, adapter_pr_close,
+#   adapter_pr_comment,
 #   adapter_pr_body_edit, adapter_pr_title_edit, adapter_pr_label_add
 # - sub-issue and dependency: adapter_sub_issues, adapter_sub_issue_link,
 #   adapter_sub_issue_unlink, adapter_issue_parent, adapter_blockers,
@@ -589,7 +591,13 @@ adapter_issue_state() {
   gh issue view "$1" --json state,url --jq 'if (.url | test("/pull/")) then "PULL" else .state end'
 }
 
-# issue_list_limit_warn <count> <what>: warns on stderr when a listing of
+# adapter_issue_created_at <n>: issue #n's creation time, a UTC timestamp in
+# the form a PR's mergedAt has, so the two compare as strings.
+adapter_issue_created_at() {
+  gh issue view "$1" --json createdAt --jq '.createdAt'
+}
+
+# issue_list_limit_warn<count> <what>: warns on stderr when a listing of
 # <what> (e.g. "the open issues labelled needs-human") returned <count> rows,
 # reaching its effective limit - the lesser of ISSUE_LIST_LIMIT and 1000,
 # GitHub's search cap - and names that limit. Always succeeds.
@@ -1064,12 +1072,6 @@ adapter_pr_diff() {
 adapter_prs_merged() {
   gh pr list --head "$1" --base "$2" --state merged --json number,headRefOid,isCrossRepository \
     --jq '.[] | "\(.number)\t\(.headRefOid)\t\(.isCrossRepository)"'
-}
-
-# adapter_issue_created_at <n>: issue #n's creation time, a UTC timestamp in
-# the form a PR's mergedAt has, so the two compare as strings.
-adapter_issue_created_at() {
-  gh issue view "$1" --json createdAt --jq '.createdAt'
 }
 
 # adapter_prs_merged_closing <base> <since>: every PR merged into the base

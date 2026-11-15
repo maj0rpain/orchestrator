@@ -606,6 +606,14 @@ adapter_issue_state() {
   cat "$(fake_issue_dir "$1")/state"
 }
 
+# adapter_issue_created_at <n>: the stored created_at of issue #n, the epoch
+# where unset.
+adapter_issue_created_at() {
+  ! fake_failing adapter_issue_created_at || return 1
+  fake_issue_known "$1" || return 1
+  cat "$(fake_issue_dir "$1")/created_at" 2>/dev/null || echo 1970-01-01T00:00:00Z
+}
+
 # fake_open_issues: the numbers of the open issues in the store, newest first,
 # as real gh lists them. Each state is read, and each number taken from its
 # directory's path, in bash; only sort runs.
@@ -1066,14 +1074,6 @@ adapter_prs_merged() {
     printf '%s\t%s\t%s\n' "$(basename "$d")" "$(fake_pr_head_oid "$d")" \
       "$(fake_pr_cross_of "$d")"
   done | sort -rn
-}
-
-# adapter_issue_created_at <n>: the stored created_at of issue #n, the epoch
-# where unset.
-adapter_issue_created_at() {
-  ! fake_failing adapter_issue_created_at || return 1
-  fake_issue_known "$1" || return 1
-  cat "$(fake_issue_dir "$1")/created_at" 2>/dev/null || echo 1970-01-01T00:00:00Z
 }
 
 # adapter_prs_merged_closing <base> <since>: the merged PRs in the store into
