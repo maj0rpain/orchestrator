@@ -412,58 +412,81 @@ suite_cost_base_commit() {
     { warn "base commit $sha names no commit"; return 1; }
 }
 
-# suite_cost_newest <rec> <cmd-string> <pred>: prints the commit of the newest
-# record line of <cmd-string> whose commit passes <pred> (a function given the
-# commit), or fails printing nothing.
-suite_cost_newest() {
-  local rec="$1" want="$2" pred="$3" sha cmd line
-  local -a lines
-  [ -e "$rec" ] || return 1
-  mapfile -t lines < <(awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }' "$rec")
-  for line in ${lines[@]+"${lines[@]}"}; do
-    IFS=$'\t' read -r sha _ _ _ cmd <<<"$line"
-    [ "$cmd" = "$want" ] || continue
-    if "$pred" "$sha"; then printf '%s\n' "$sha"; return 0; fi
-  done
-  return 1
+# suite_cost_head_sets <head_commit> <base_commit> <clean-file> <dirty-file>:
+# writes the head side's two commit sets, one full SHA per line, to the two
+# empty files, from one history listing, `git rev-list --topo-order --parents`
+# of HEAD and the base commit, read to its end with its exit status checked.
+# One awk pass over it, children before parents, closes both over the parent
+# edges: <dirty-file> gets every commit reachable from HEAD, <clean-file> those
+# less the ones reachable from the base commit. A history git cannot list
+# fails.
+suite_cost_head_sets() {
+  local list="" st=0
+  [ -n "$1" ] || return 1
+  temp_file_make list || return 1
+  if git rev-list --topo-order --parents HEAD "$2" >"$list" 2>/dev/null; then
+    sc_head="$1" sc_base="$2" sc_clean="$3" sc_dirty="$4" LC_ALL=C awk '
+      BEGIN { H[ENVIRON["sc_head"]] = 1; B[ENVIRON["sc_base"]] = 1 }
+      {
+        order[++n] = $1
+        for (i = 2; i <= NF; i++) {
+          if ($1 in H) H[$i] = 1
+          if ($1 in B) B[$i] = 1
+        }
+      }
+      END {
+        for (i = 1; i <= n; i++) {
+          c = order[i]
+          if (!(c in H)) continue
+          print c >>ENVIRON["sc_dirty"]
+          if (!(c in B)) print c >>ENVIRON["sc_clean"]
+        }
+      }' "$list" || st=$?
+  else
+    st=1
+  fi
+  rm -f "$list"
+  return "$st"
 }
 
-# suite_cost_lowest <rec> <cmd-string> <commit>: prints the lowest CPU seconds
-# among the record lines of <cmd-string> whose commit field is <commit>
-# exactly, so a <sha>-dirty line and a <sha> one are never pooled, or prints
-# nothing when there is none.
-suite_cost_lowest() {
-  [ -e "$1" ] || return 0
-  # The strings go through ENVIRON, as awk -v would expand their backslashes.
-  want="$2" sha="$3" LC_ALL=C awk -F'\t' '
-    $1 == ENVIRON["sha"] && $5 == ENVIRON["want"] && (n++ == 0 || $2 + 0 < low + 0) { low = $2 }
-    END { if (n) print low }' "$1"
-}
-
-# The head's records: a clean one whose commit is HEAD or an ancestor of it,
+# suite_cost_pick <rec> <want> <clean-set file> <dirty-set file>: one pass over
+# the record, to its end. Prints "<commit field>TAB<lowest CPU seconds>" for the
+# newest record line of the command <want> on the side the sets give - the
+# commit field of the last such line, and the lowest sample among the lines of
+# that command whose commit field is exactly that one, so a <sha>-dirty line
+# and a <sha> one are never pooled - or fails printing nothing. The command is
+# everything after the fourth tab, compared whole. A side's lines are a clean
+# one whose commit field is in the clean set, or a dirty one whose commit, less
+# -dirty, is in the dirty set; a field in neither belongs to no side, a field
+# that is not a full SHA git lists included. The sets are read by the pass as
+# files of their own: a long history outgrows one environment string.
+# The base side's sets are the base commit alone and an empty dirty set: its
+# lines are the clean ones whose commit field is the base commit itself, never
+# an ancestor of it, and no git process starts. The head side's sets come from
+# suite_cost_head_sets: a clean line whose commit is HEAD or an ancestor of it
 # but not the base commit nor an ancestor of it - so a run recorded just before
-# its commit still counts - or a dirty one whose commit is HEAD or any ancestor
-# of it, the base commit and its ancestors included, so a run made before a
-# ticket's first commit counts. Local to suite_cost_check in effect: it reads
-# the base commit, base_commit, from that call's locals, through bash's
-# dynamic scope.
-suite_cost_is_head() {
-  case "$1" in
-    *-dirty) git merge-base --is-ancestor "${1%-dirty}" HEAD 2>/dev/null ;;
-    *)
-      git merge-base --is-ancestor "$1" HEAD 2>/dev/null &&
-        ! git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null
-      ;;
-  esac
-}
-# The baseline's records: clean ones alone, never a dirty one, whose commit is
-# the base commit itself, never an ancestor of it. Local to suite_cost_check in
-# effect, reading its base_commit as suite_cost_is_head does.
-suite_cost_is_base() {
-  case "$1" in
-    *-dirty) return 1 ;;
-    *) [ "$1" = "$base_commit" ] ;;
-  esac
+# its commit still counts - or a dirty line whose commit, less -dirty, is HEAD
+# or any ancestor of it, the base commit's included, so a run made before a
+# ticket's first commit counts.
+suite_cost_pick() {
+  [ -e "$1" ] || return 1
+  # The strings go through ENVIRON, as awk -v would expand their backslashes.
+  sc_want="$2" sc_clean="$3" sc_dirty="$4" LC_ALL=C awk '
+    BEGIN { FS = "\t" }
+    FILENAME == ENVIRON["sc_clean"] { clean[$0] = 1; next }
+    FILENAME == ENVIRON["sc_dirty"] { dirty[$0] = 1; next }
+    {
+      if (!match($0, /^[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t/)) next
+      if (substr($0, RLENGTH + 1) != ENVIRON["sc_want"]) next
+      f = $1
+      if (f ~ /-dirty$/) ok = (substr(f, 1, length(f) - 6) in dirty)
+      else ok = (f in clean)
+      if (!ok) next
+      pick = f
+      if (!(f in low) || $2 + 0 < low[f] + 0) low[f] = $2
+    }
+    END { if (pick == "") exit 1; printf "%s\t%s\n", pick, low[pick] }' \
+    "$3" "$4" "$1"
 }
 
 # suite_cost_check <cmd> [args...]: prints one verdict line - off, ok,
@@ -478,7 +501,7 @@ suite_cost_is_base() {
 # head confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_field head_commit clean_head line IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_field head_commit clean_head line head_pick base_pick have_base clean_set dirty_set IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
@@ -493,11 +516,17 @@ suite_cost_check() {
     note "$verdict"
     return 0
   fi
-  head_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
-    { note unmeasured; return 0; }
-  head_cpu="$(suite_cost_lowest "$rec" "$want" "$head_sha")"
-  if base_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
-    base_cpu="$(suite_cost_lowest "$rec" "$want" "$base_sha")"
+  temp_file_make clean_set && temp_file_make dirty_set || { rm -f "$clean_set"; note unmeasured; return 0; }
+  head_pick="$(suite_cost_head_sets "$head_commit" "$base_commit" "$clean_set" "$dirty_set" &&
+    suite_cost_pick "$rec" "$want" "$clean_set" "$dirty_set")" ||
+    { rm -f "$clean_set" "$dirty_set"; note unmeasured; return 0; }
+  IFS=$'\t' read -r head_sha head_cpu <<<"$head_pick"
+  printf '%s\n' "$base_commit" >"$clean_set"
+  : >"$dirty_set"
+  base_pick="$(suite_cost_pick "$rec" "$want" "$clean_set" "$dirty_set")" && have_base=1 || have_base=""
+  rm -f "$clean_set" "$dirty_set"
+  if [ -n "$have_base" ]; then
+    IFS=$'\t' read -r base_sha base_cpu <<<"$base_pick"
   else
     suite_cost_tree_run base "$base_commit" "$@" || { note unmeasured; return 0; }
     base_cpu="$SUITE_COST_CPU" base_sha="$base_commit"

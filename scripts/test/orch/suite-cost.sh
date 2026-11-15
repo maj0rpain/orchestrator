@@ -612,6 +612,83 @@ assert_eq "a large record file gives the same verdict with SIGPIPE ignored" "$ou
 assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
 rm -f "$errf" "$marker"
 
+# A fixed number of git processes, however long the record: a record of many
+# distinct commits and no head record of the command, then one head commit on
+# many lines, then a head and a baseline record, each long against short.
+git_starts() {
+  local gdir
+  gdir="$(counting_bin git)"
+  PATH="$gdir:$PATH" "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+  counting_starts "$gdir" git
+}
+fake_sha() { printf '%040x' "$1"; }
+: >"$rec"
+seed_run "$head" 70.00 "scripts/test/orch_test.sh"
+short_starts="$(git_starts)"
+for i in $(seq 200); do seed_run "$(fake_sha "$i")" 1.00; done
+assert_eq "a long record of many unknown commits and no head record starts as many git processes" \
+  "$(git_starts)" "$short_starts"
+: >"$rec"
+seed_run "$head" 100.00
+short_starts="$(git_starts)"
+for _ in $(seq 200); do seed_run "$head" 100.00; done
+for i in $(seq 200); do seed_run "$(fake_sha "$i")" 1.00; done
+assert_eq "one head commit on many lines, newer lines of other commits after it, starts as many git processes" \
+  "$(git_starts)" "$short_starts"
+: >"$rec"
+seed_run "$base" 100.00
+seed_run "$head" 100.00
+short_starts="$(git_starts)"
+for i in $(seq 400); do seed_run "$(fake_sha "$i")" 1.00; done
+assert_eq "a head and a baseline record in a long record of newer lines start as many git processes" \
+  "$(git_starts)" "$short_starts"
+
+# Only a full SHA git knows is matched.
+for field in HEAD feat "${head:0:12}" "$(fake_sha 7)"; do
+  : >"$rec"
+  seed_run "$field" 70.00
+  errf="$(mktemp)"
+  out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+  assert_eq "a commit field '${field:0:12}' counts for neither side" "$out" "unmeasured"
+  assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
+  rm -f "$errf"
+done
+
+# A history git cannot list is no head record.
+: >"$rec"
+seed_run "$base" 100.00
+seed_run "$head" 100.00
+out="$(PATH="$(git_fails_bin '" rev-list "*'):$PATH" "$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)"; st=$?
+assert_status "a history git cannot list exits 0" "$st" 0
+assert_eq "and is unmeasured" "$out" "unmeasured"
+
+# A tab in a word of the command, or at its end: the command field is
+# everything after the fourth tab.
+tabcmd=(sh -c 'touch "$0"; exit 9' "$marker" "$(printf 'a\tb')")
+tab_str="${tabcmd[*]}"
+: >"$rec"
+rm -f "$marker"
+seed_run "$base" 100.00 "$tab_str"
+seed_run "$head" 200.00 "$tab_str"
+errf="$(mktemp)"
+out="$("$ORCH" suite-cost check -- "${tabcmd[@]}" 2>"$errf")"
+assert_eq "a tabbed command past the threshold reaches confirmation" "$out" "unmeasured"
+assert_contains "where the failing head run warns" "$(cat "$errf")" "the growth is unconfirmed"
+: >"$rec"
+seed_run "$base" 100.00 "$tab_str"
+seed_run "$head" 105.00 "$tab_str"
+assert_eq "a tabbed command within the threshold is ok" \
+  "$("$ORCH" suite-cost check -- "${tabcmd[@]}" 2>/dev/null)" "ok"
+endcmd=(sh -c 'touch "$0"; exit 9' "$marker" "$(printf 'z\t')")
+end_str="${endcmd[*]}"
+: >"$rec"
+seed_run "$base" 100.00 "$end_str"
+seed_run "$head" 105.00 "$end_str"
+assert_eq "a command ending in a tab has its records picked" \
+  "$("$ORCH" suite-cost check -- "${endcmd[@]}" 2>/dev/null)" "ok"
+rm -f "$errf" "$marker"
+
+
 # Lowest samples: of several records on the newest head record's commit, or
 # on the newest baseline record's, the lowest decides, not the newest.
 : >"$rec"
