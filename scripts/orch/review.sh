@@ -290,7 +290,7 @@ ci_push_time() {
 # over checks nobody verified - so anything this cannot read counts as CI.
 # Recomputed on every call: a workflow the PR itself adds is always seen.
 no_ci_evidence() {
-  local head="$1" base="$2" commits="$3" out sha
+  local head="$1" base="$2" pr="$3" out line sha verdict
   [ -n "$head" ] && [ -n "$base" ] || return 1
   # 1. A head this clone has never fetched is unreadable, not empty.
   git cat-file -e "$head^{commit}" 2>/dev/null || return 1
@@ -305,19 +305,19 @@ no_ci_evidence() {
   [ -z "$out" ] || return 1
   out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
   if list_has "$out" required_status_checks; then return 1; fi
-  # 4, then 3: the base tip is one ref, the PR's earlier commits may be many.
-  ci_ref_unchecked "$base" || return 1
-  while IFS= read -r sha; do
-    [ -z "$sha" ] || [ "$sha" = "$head" ] || ci_ref_unchecked "$sha" || return 1
-  done <<<"$commits"
+  # 4 and 3, from one read: the base tip's answer, then a line per PR commit.
+  # The refs read's head is skipped by SHA, not by position: a push landing
+  # between the two reads leaves a newer last commit, judged as an earlier one.
+  out="$(adapter_pr_commits_checked "$pr" 2>/dev/null)" || return 1
+  [ "${out%%$'\n'*}" = no ] || return 1
+  [[ "$out" == *$'\n'* ]] || return 0
+  while IFS= read -r line; do
+    sha="${line%%$'\t'*}"
+    verdict="${line#*$'\t'}"
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && { [ "$verdict" = yes ] || [ "$verdict" = no ]; } || return 1
+    [ "$sha" = "$head" ] || [ "$verdict" = no ] || return 1
+  done <<<"${out#*$'\n'}"
   return 0
-}
-
-# Succeeds when one ref has neither a check-run nor a commit status, and the
-# two reads both answered.
-ci_ref_unchecked() {
-  [ "$(adapter_commit_has_check_runs "$1" 2>/dev/null)" = no ] || return 1
-  [ "$(adapter_commit_has_statuses "$1" 2>/dev/null)" = no ]
 }
 
 # The loop's flake rerun (issue #525): the failed jobs of every distinct
@@ -854,6 +854,7 @@ cmd_review() {
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
       local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
+      # shellcheck disable=SC2034
       local commits="" no_ci=0
       require_state_read pr=pr
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
@@ -874,7 +875,7 @@ cmd_review() {
         # With no evidence of CI anywhere, there is nothing for the grace to
         # wait on. It replaces only the wait: the unfiltered probe still runs,
         # so a check already reported on the head gives its verdict as before.
-        if no_ci_evidence "$head_oid" "$base_ref" "$commits"; then
+        if no_ci_evidence "$head_oid" "$base_ref" "$pr"; then
           no_ci=1
         fi
       fi

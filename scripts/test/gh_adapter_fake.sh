@@ -106,7 +106,12 @@
 #   check_runs, statuses
 #                     the refs (SHAs or branch names) that have a check run,
 #                     or a commit status, one per line; absent, none do
-#   unreadable_refs   refs whose check-run and status reads both fail
+#   prs/<n>/evidence_reads
+#                     one line per adapter_pr_commits_checked read of PR #n
+#   prs/<n>/evidence_raw
+#                     present, that read's whole answer, printed as stored
+#   prs/<n>/no_base_ref
+#                     present, that read's base tip answer is empty
 #   reruns            the Actions run ids rerun, one per line, in order
 #   claims/<issue>    the issue's claim, one TSV line
 #                     "<issue><TAB><host><TAB><pid><TAB><phase><TAB><started>";
@@ -1369,13 +1374,6 @@ adapter_pr_checks() {
   fake_checks_answer "$answer"
 }
 
-# fake_ref_unreadable <ref>: true, with a server error on stderr, where
-# fake_unreadable_ref named the ref, so both commit reads of it fail.
-fake_ref_unreadable() {
-  grep -qxF -- "$1" "$(fake_store)/unreadable_refs" 2>/dev/null || return 1
-  echo "gh: Server Error (HTTP 502)" >&2
-}
-
 # adapter_branch_required_checks <branch>: the stored contexts the branch
 # requires; nothing for an unprotected branch.
 adapter_branch_required_checks() {
@@ -1390,20 +1388,34 @@ adapter_branch_rules() {
   cat "$(fake_store)/rules/$1" 2>/dev/null || true
 }
 
-# adapter_commit_has_check_runs <ref>: yes where the ref is listed in
-# check_runs, no otherwise.
-adapter_commit_has_check_runs() {
-  ! fake_failing adapter_commit_has_check_runs || return 1
-  ! fake_ref_unreadable "$1" || return 1
-  if grep -qxF -- "$1" "$(fake_store)/check_runs" 2>/dev/null; then echo yes; else echo no; fi
+# adapter_pr_commits_checked <n>: the base tip's answer, then a line per commit,
+# as the real operation prints them. A ref has a check run or a status where
+# check_runs or statuses lists it; the base tip is the PR's stored base branch
+# name. Each read is recorded in the PR's evidence_reads. The PR's whole answer
+# stored under evidence_raw is printed in place of the one built from the
+# store; no_base_ref makes the base tip's line empty. A commit's default list
+# is the PR's head alone.
+adapter_pr_commits_checked() {
+  local d oid ref
+  ! fake_failing adapter_pr_commits_checked || return 1
+  fake_pr_known "$1" || return 1
+  d="$(fake_pr_dir "$1")"
+  echo read >>"$d/evidence_reads"
+  if [ -f "$d/evidence_raw" ]; then cat "$d/evidence_raw"; return 0; fi
+  if [ -f "$d/no_base_ref" ]; then echo; else fake_ref_checked "$(cat "$d/base" 2>/dev/null)"; fi
+  oid="$(fake_pr_head_oid "$d")"
+  { if [ -f "$d/commits" ]; then cat "$d/commits"; elif [ -n "$oid" ]; then printf '%s\n' "$oid"; fi; } \
+    | while IFS= read -r ref; do
+      printf '%s\t%s\n' "$ref" "$(fake_ref_checked "$ref")"
+    done
 }
 
-# adapter_commit_has_statuses <ref>: yes where the ref is listed in statuses,
-# no otherwise.
-adapter_commit_has_statuses() {
-  ! fake_failing adapter_commit_has_statuses || return 1
-  ! fake_ref_unreadable "$1" || return 1
-  if grep -qxF -- "$1" "$(fake_store)/statuses" 2>/dev/null; then echo yes; else echo no; fi
+# fake_ref_checked <ref>: yes where the ref is listed in check_runs or
+# statuses, no otherwise.
+fake_ref_checked() {
+  local s
+  s="$(fake_store)"
+  if grep -qxF -- "$1" "$s/check_runs" "$s/statuses" 2>/dev/null; then echo yes; else echo no; fi
 }
 
 # adapter_run_rerun <run>: the run appended to reruns.

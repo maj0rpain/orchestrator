@@ -70,18 +70,30 @@ fake_rules() {
 }
 
 # fake_check_run <ref> / fake_status <ref>: the ref - a SHA, or a branch name
-# for its tip - has a check run, or a commit status. fake_unreadable_ref <ref>:
-# both reads of the ref fail.
+# for its tip - has a check run, or a commit status.
 fake_check_run() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/check_runs"; }
 fake_status() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/statuses"; }
-fake_unreadable_ref() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/unreadable_refs"; }
+
+# fake_no_base_ref <n>: PR #n's evidence read has no answer for the base tip.
+# fake_evidence_raw <n> <line>...: the whole answer of that read, one argument
+# a line, printed in place of the one the store would build.
+# fake_evidence_reads <n>: how many times that read was made.
+fake_no_base_ref() { : >"$ORCH_GH_FAKE_STORE/prs/$1/no_base_ref"; }
+fake_evidence_raw() {
+  local n="$1"
+  shift
+  printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/prs/$n/evidence_raw"
+}
+fake_evidence_reads() { { cat "$ORCH_GH_FAKE_STORE/prs/$1/evidence_reads" 2>/dev/null || true; } | wc -l | tr -d " "; }
 
 # fake_ci_reset: no checks scripted, nothing required, no rules, and no ref
 # with a check run or status - every CI signal absent.
 fake_ci_reset() {
   fake_checks_clear
   rm -rf "$ORCH_GH_FAKE_STORE/protection" "$ORCH_GH_FAKE_STORE/rules" \
-    "$ORCH_GH_FAKE_STORE/check_runs" "$ORCH_GH_FAKE_STORE/statuses" "$ORCH_GH_FAKE_STORE/unreadable_refs"
+    "$ORCH_GH_FAKE_STORE/check_runs" "$ORCH_GH_FAKE_STORE/statuses"
+  rm -f "$ORCH_GH_FAKE_STORE"/prs/*/evidence_raw "$ORCH_GH_FAKE_STORE"/prs/*/no_base_ref \
+    "$ORCH_GH_FAKE_STORE"/prs/*/evidence_reads
 }
 
 # fake_reruns: the Actions run ids rerun, read back, space-separated, in order.
@@ -963,11 +975,28 @@ fake_unfail
 ci_absent; fake_fail adapter_branch_rules
 no_ci green "a ruleset read that fails keeps the grace"
 fake_unfail
-ci_absent; fake_unreadable_ref main
-no_ci green "a base-tip read that fails keeps the grace"
+ci_absent; fake_fail adapter_pr_commits_checked "gh: Server Error (HTTP 502)"
+no_ci green "a failed evidence read keeps the grace"
+fake_unfail
+ci_absent; fake_no_base_ref 7
+no_ci green "a base tip with no answer keeps the grace"
 fake_pr_head 7 "$head_sha" "$earlier" "$head_sha"
-ci_absent; fake_unreadable_ref "$earlier"
-no_ci green "an earlier commit's read that fails keeps the grace"
+ci_absent; fake_evidence_raw 7 no "$earlier"$'\tmaybe'
+no_ci green "a commit line that is not yes or no keeps the grace"
+ci_absent; fake_evidence_raw 7 no "not-a-sha"$'\tno'
+no_ci green "a commit line that is not a SHA keeps the grace"
+# A push landed between the refs read and the evidence read: the newest line is
+# a commit the refs read did not give, so it is judged as an earlier commit.
+newer=4444444444444444444444444444444444444444
+fake_pr_head 7 "$head_sha"
+ci_absent; fake_evidence_raw 7 no "$head_sha"$'\tno' "$newer"$'\tyes'
+no_ci green "a check on a commit newer than the refs head keeps the grace"
+ci_absent; fake_evidence_raw 7 no "$head_sha"$'\tyes' "$newer"$'\tno'
+no_ci none "a check on the refs head alone gives none, wherever its line falls"
+fake_pr_head 7 "$head_sha" "$earlier" "$earlier" "$head_sha"
+ci_absent
+no_ci none "several earlier commits and no evidence give none"
+assert_eq "with one evidence read, however many commits" "$(fake_evidence_reads 7)" "1"
 fake_pr_head 7 3333333333333333333333333333333333333333
 ci_absent
 no_ci green "a head this clone does not hold keeps the grace"

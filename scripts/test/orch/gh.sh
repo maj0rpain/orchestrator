@@ -1497,32 +1497,26 @@ out="$(contract adapter_branch_rules down 2>&1)"; st=$?
 assert_status "branch rules: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
-gh_reply 0 '{"total_count":3,"check_runs":[{"name":"build"}]}' '' \
-  api 'repos/{owner}/{repo}/commits/aaaa/check-runs?per_page=1'
-out="$(contract adapter_commit_has_check_runs aaaa 2>&1)"; st=$?
-assert_status "commit has check runs: reads a commit's check runs" "$st" 0
-assert_eq "yes where it has any" "$out" "yes"
-gh_reply 0 '{"total_count":0,"check_runs":[]}' '' api 'repos/{owner}/{repo}/commits/bbbb/check-runs?per_page=1'
-assert_eq "commit has check runs: no where it has none" "$(contract adapter_commit_has_check_runs bbbb 2>&1)" "no"
-gh_reply 1 '' 'gh: Server Error (HTTP 502)' api 'repos/{owner}/{repo}/commits/cccc/check-runs?per_page=1'
-out="$(contract adapter_commit_has_check_runs cccc 2>&1)"; st=$?
-assert_status "commit has check runs: a gh failure fails it" "$st" 1
+pcc_argv=(api graphql -F owner='{owner}' -F name='{repo}' -F number=31
+  -f query="$(sourced_orch_script 'printf %s "$PR_COMMITS_CHECKED_QUERY"')")
+gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":{"target":{"statusCheckRollup":null}},"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":null}},{"commit":{"oid":"bbbb","statusCheckRollup":{"contexts":{"totalCount":0}}}},{"commit":{"oid":"cccc","statusCheckRollup":{"contexts":{"totalCount":4}}}}]}}}}}' '' "${pcc_argv[@]}"
+out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
+assert_status "PR commits checked: reads the base tip and the commits in one GraphQL call" "$st" 0
+assert_eq "the base answer, then a line per commit: null and zero are no, a count is yes" "$out" \
+  "$(writeln no "$(printf 'aaaa\tno')" "$(printf 'bbbb\tno')" "$(printf 'cccc\tyes')")"
+gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":{"target":{"statusCheckRollup":{"contexts":{"totalCount":2}}}},"commits":{"nodes":[]}}}}}' '' "${pcc_argv[@]}"
+assert_eq "PR commits checked: a base tip with a check is yes" "$(contract adapter_pr_commits_checked 31 2>&1)" "yes"
+gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":null,"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":null}}]}}}}}' '' "${pcc_argv[@]}"
+out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
+assert_status "PR commits checked: a null base ref succeeds" "$st" 0
+assert_eq "printing an empty first line" "$out" "$(printf '\naaaa\tno')"
+gh_reply 1 '' 'gh: Server Error (HTTP 502)' "${pcc_argv[@]}"
+out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
+assert_status "PR commits checked: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "gh: Server Error (HTTP 502)"
-gh_reply 0 'not json' '' api 'repos/{owner}/{repo}/commits/dddd/check-runs?per_page=1'
-out="$(contract adapter_commit_has_check_runs dddd 2>&1)"; st=$?
-assert_status "commit has check runs: an answer jq cannot read fails it" "$st" 1
-
-gh_reply 0 '{"state":"success","total_count":1,"statuses":[{"context":"ci/legacy"}]}' '' \
-  api "repos/{owner}/{repo}/commits/aaaa/status"
-out="$(contract adapter_commit_has_statuses aaaa 2>&1)"; st=$?
-assert_status "commit has statuses: reads a commit's combined status" "$st" 0
-assert_eq "yes where it has any" "$out" "yes"
-gh_reply 0 '{"state":"pending","total_count":0,"statuses":[]}' '' api "repos/{owner}/{repo}/commits/main/status"
-assert_eq "commit has statuses: no where it has none" "$(contract adapter_commit_has_statuses main 2>&1)" "no"
-gh_reply 1 '' 'gh: Server Error (HTTP 502)' api "repos/{owner}/{repo}/commits/cccc/status"
-out="$(contract adapter_commit_has_statuses cccc 2>&1)"; st=$?
-assert_status "commit has statuses: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "gh: Server Error (HTTP 502)"
+gh_reply 0 'not json' '' "${pcc_argv[@]}"
+out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
+assert_status "PR commits checked: an answer jq cannot read fails it" "$st" 1
 
 gh_reply 0 '✓ Requested rerun of failed jobs' '' run rerun 4242 --failed
 out="$(contract adapter_run_rerun 4242 2>&1)"; st=$?
