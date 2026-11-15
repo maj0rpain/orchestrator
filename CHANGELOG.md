@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.2.86
+
+The merged-PR close backstop reads only the PRs merged since the oldest issue it may close was created, instead of every merged PR.
+
+## 5.2.85
+
+A watcher's tick no longer views every issue it lists: the issue listings now answer each issue's state and labels with its number, so an idle tick makes two listings - one of the open issues labelled `orch:spec`, `orch:implement`, `orch:review` or `orch:sync`, one of `orch:done` - and no per-issue view, however many issues are open, and a tick reads an issue directly only once, just before it claims it, skipping it for that tick when the read finds it no longer pickable or at another phase than its listed row. `orch.sh autopilot questions` and `orch.sh autopilot candidates --all` or `--limit` likewise take each issue's labels from the listing instead of viewing it. The flow-label listing is now cut once across its four labels at the issue-list limit, and its limit warning and failure message name the labels joined by "or".
+
 ## 5.2.84
 
 `orch.sh` resolves the Repo once in the shell that resolves it, instead of before every GitHub call. That resolution covers reading `origin` and, for an SSH origin, running `ssh -G`. Every later call in that shell, and in the subshells it forks afterwards, reuses it. GitHub operations are now captured through the gh module's `gh_capture` and `gh_capture_err`, which resolve in the caller's shell before forking. Nothing a user sees changes.

@@ -32,15 +32,21 @@ pr_close_missed() {
   }
 }
 
-# pr_merged_closing_read <default-var> <prs-var> <skip>: the backstop's one read
-# - the default branch, then the PRs merged into it, fork PRs dropped
-# (trust_filter_prs) - written into the two caller-named variables, the PRs as
-# adapter_prs_merged_closing's lines. Returns 1 after a warning ending in
-# <skip>, the caller's words for what it gives up, when any read fails.
+# pr_merged_closing_read <default-var> <prs-var> <skip> <issue>: the backstop's
+# one read - the default branch, the creation time of <issue>, the bounding
+# issue the caller may close, then the PRs merged into the default branch since
+# it, fork PRs dropped (trust_filter_prs) - written into the two caller-named
+# variables, the PRs as adapter_prs_merged_closing's lines. Returns 1 after a
+# warning ending in <skip>, the caller's words for what it gives up, when any
+# read fails.
 pr_merged_closing_read() {
-  local _default _raw _prs _err
+  local _default _raw _prs _err _since
   _default="$(default_branch)" || { warn "could not find the default branch - $3"; return 1; }
-  gh_capture _raw _err adapter_prs_merged_closing "$_default" || {
+  gh_capture _since _err adapter_issue_created_at "$4" || {
+    warn "could not read the creation time of issue #$4: $(gh_reason "$_err") - $3"
+    return 1
+  }
+  gh_capture _raw _err adapter_prs_merged_closing "$_default" "$_since" || {
     warn "could not read the merged PRs: $(gh_reason "$_err") - $3"
     return 1
   }

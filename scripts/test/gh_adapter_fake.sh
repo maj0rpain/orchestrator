@@ -36,6 +36,9 @@
 #                     the issue's k-th comment
 #   next_issue        the number the next created issue takes; absent, one
 #                     past the highest the store holds
+#   issues/<n>/created_at
+#                     the UTC timestamp the issue was created at; absent, the
+#                     epoch
 #   prs/<n>/state     OPEN, CLOSED or MERGED
 #   prs/<n>/head, prs/<n>/base
 #                     the head and base branch names
@@ -406,10 +409,12 @@ fake_issue_labels() {
 # fake_issue_labels_counted <n>: issue #n's label count on one line, then its
 # labels one per line when there are any.
 fake_issue_labels_counted() {
-  local labels
-  labels="$(fake_issue_labels "$1")"
-  printf '%s\n' "$(printf '%s' "$labels" | grep -c .)"
-  [ -z "$labels" ] || printf '%s\n' "$labels"
+  local l n=0
+  fake_need_store || return 1
+  fake_read_lines "$ORCH_GH_FAKE_STORE/issues/$1/labels" || true
+  for l in ${fake_lines[@]+"${fake_lines[@]}"}; do [ -z "$l" ] || n=$((n + 1)); done
+  printf '%s\n' "$n"
+  for l in ${fake_lines[@]+"${fake_lines[@]}"}; do [ -z "$l" ] || printf '%s\n' "$l"; done
 }
 
 # fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
@@ -601,6 +606,14 @@ adapter_issue_state() {
   cat "$(fake_issue_dir "$1")/state"
 }
 
+# adapter_issue_created_at <n>: the stored created_at of issue #n, the epoch
+# where unset.
+adapter_issue_created_at() {
+  ! fake_failing adapter_issue_created_at || return 1
+  fake_issue_known "$1" || return 1
+  cat "$(fake_issue_dir "$1")/created_at" 2>/dev/null || echo 1970-01-01T00:00:00Z
+}
+
 # fake_open_issues: the numbers of the open issues in the store, newest first,
 # as real gh lists them. Each state is read, and each number taken from its
 # directory's path, in bash; only sort runs.
@@ -617,30 +630,72 @@ fake_open_issues() {
   done | sort -nr
 }
 
-# adapter_issues_labelled <label>...: the open issues in the store carrying
-# every label named, oldest first - the first lesser of ISSUE_LIST_LIMIT and
-# 1000 of them, as the search-backed real listing is cut, with awk, which reads
-# all of the while loop's output, so the loop never takes SIGPIPE under
-# pipefail as it would from head (#1019). Each issue's labels file is read once
-# in bash, and a label matches a whole line, literally and in any case.
-adapter_issues_labelled() {
-  local n l keep line h found
+# fake_labelled_numbers <all|any> <label>...: the open issues in the store
+# carrying every label named (all) or any of them (any), oldest first - the
+# first lesser of ISSUE_LIST_LIMIT and 1000 of them, as the search-backed real
+# listing is cut, with awk, which reads all of the while loop's output, so the
+# loop never takes SIGPIPE under pipefail as it would from head (#1019). Each
+# issue's labels file is read once in bash, and a label matches a whole line,
+# literally and in any case. The part the labelled listings share; it checks no
+# seeded failure.
+fake_labelled_numbers() {
+  local mode="$1" n l keep line h found
   local -a have
-  ! fake_failing adapter_issues_labelled || return 1
+  shift
   fake_need_store || return 1
   fake_open_issues | while read -r n; do
     have=()
     fake_read_lines "$ORCH_GH_FAKE_STORE/issues/$n/labels" || true
     for line in ${fake_lines[@]+"${fake_lines[@]}"}; do have+=("${line,,}"); done
     keep=1
+    [ "$mode" = all ] || keep=0
     for l in "$@"; do
       found=0
       for h in ${have[@]+"${have[@]}"}; do [ "$h" = "${l,,}" ] && found=1 && break; done
-      [ "$found" = 1 ] || keep=0
+      if [ "$mode" = all ]; then [ "$found" = 1 ] || keep=0; else [ "$found" = 0 ] || keep=1; fi
     done
     [ "$keep" = 1 ] || continue
     printf "%s\n" "$n"
   done | sort -n | fake_search_cut
+}
+
+# fake_labelled_rows <op> <all|any> <label>...: the issues fake_labelled_numbers
+# lists, each as the count-marked record the gh adapter prints: number, stored
+# state, label count, labels. Lagging (fake_lag) for <op>, it answers the stale
+# answer fake_lag was given, or nothing - a listing served late.
+fake_labelled_rows() {
+  local op="$1" mode="$2" n nums
+  shift 2
+  ! fake_failing "$op" || return 1
+  fake_need_store || return 1
+  if fake_lagging "$op"; then
+    fake_stale "$op"
+    return 0
+  fi
+  nums="$(fake_labelled_numbers "$mode" "$@")" || return 1
+  for n in $nums; do
+    printf '%s\n' "$n"
+    fake_read_state "$ORCH_GH_FAKE_STORE/issues/$n/state" || true
+    printf '%s\n' "$fake_state"
+    fake_issue_labels_counted "$n"
+  done
+}
+
+# adapter_issues_labelled_rows <label>...: the open issues carrying every label.
+adapter_issues_labelled_rows() {
+  fake_labelled_rows adapter_issues_labelled_rows all "$@"
+}
+
+# adapter_issues_any_labelled_rows <label>...: the open issues carrying any of
+# the labels, as adapter_issues_labelled_rows lists them, one cut across all.
+adapter_issues_any_labelled_rows() {
+  fake_labelled_rows adapter_issues_any_labelled_rows any "$@"
+}
+
+# adapter_issues_open_rows: every open issue, as adapter_issues_labelled_rows
+# lists them with no label named: oldest first, cut at the limit.
+adapter_issues_open_rows() {
+  fake_labelled_rows adapter_issues_open_rows all
 }
 
 # fake_search_cut: the first lesser of ISSUE_LIST_LIMIT and ISSUE_SEARCH_CAP
@@ -649,16 +704,9 @@ fake_search_cut() {
   awk -v n="$ISSUE_LIST_LIMIT" -v cap="$ISSUE_SEARCH_CAP" 'BEGIN{if(n>cap)n=cap} NR<=n'
 }
 
-# adapter_issues_open_oldest: the open issues in the store, oldest first and
-# cut as adapter_issues_labelled is, so the newest are the ones dropped.
-adapter_issues_open_oldest() {
-  ! fake_failing adapter_issues_open_oldest || return 1
-  fake_open_issues | sort -n | fake_search_cut
-}
-
 # adapter_issues_labelled_bodies <label>...: the open issues in the store
 # carrying every label named, oldest first and cut as
-# adapter_issues_labelled is, each as the count-marked
+# adapter_issues_labelled_rows is, each as the count-marked
 # record the gh adapter prints: number, label count, labels, the body's line
 # count (its newlines plus one), then the body byte for byte and a newline. The
 # body is read once in bash from the store's path, its newlines counted there.
@@ -666,7 +714,7 @@ adapter_issues_labelled_bodies() {
   local n nums body nl
   ! fake_failing adapter_issues_labelled_bodies || return 1
   fake_need_store || return 1
-  nums="$(adapter_issues_labelled "$@")" || return 1
+  nums="$(fake_labelled_numbers all "$@")" || return 1
   for n in $nums; do
     body=""
     if [ -r "$ORCH_GH_FAKE_STORE/issues/$n/body" ]; then
@@ -1028,18 +1076,21 @@ adapter_prs_merged() {
   done | sort -rn
 }
 
-# adapter_prs_merged_closing <base>: the merged PRs in the store into the base,
-# newest first, each as `<number>\t<head>\t<mergedAt>\t<closing>\t<flag>` -
+# adapter_prs_merged_closing <base> <since>: the merged PRs in the store into
+# the base merged at or after <since>, newest first, each as
+# `<number>\t<head>\t<mergedAt>\t<closing>\t<flag>` -
 # the stored merged_at (the epoch where unset), the stored closing numbers
 # comma-joined, the flag as adapter_prs_open prints it.
 adapter_prs_merged_closing() {
-  local d
+  local d merged_at
   ! fake_failing adapter_prs_merged_closing || return 1
   for d in "$(fake_store)"/prs/*/; do
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = MERGED ] && [ "$(cat "$d/base")" = "$1" ] || continue
+    merged_at="$(cat "$d/merged_at" 2>/dev/null || echo 1970-01-01T00:00:00Z)"
+    [[ "$merged_at" < "$2" ]] && continue
     printf '%s\t%s\t%s\t%s\t%s\n' "$(basename "$d")" "$(cat "$d/head")" \
-      "$(cat "$d/merged_at" 2>/dev/null || echo 1970-01-01T00:00:00Z)" \
+      "$merged_at" \
       "$(paste -sd, "$d/closing" 2>/dev/null)" "$(fake_pr_cross_of "$d")"
   done | sort -rn
 }
