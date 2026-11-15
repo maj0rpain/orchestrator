@@ -94,12 +94,13 @@ issue_body_lf() (
 # trusted comments (Comments module) through comments_trusted, and the two are
 # joined on jq's standard input. A gh failure dies as "gh could not read issue
 # #<n>" or "gh could not read the comments of issue #<n>"; an issue answer that
-# is not an issue object dies as "could not read issue #<n>: it did not parse".
+# is not an issue object dies as "could not read issue #<n>: it did not parse";
+# a comments answer that is not a comment list dies as "could not read the
+# comments of issue #<n>: its comments did not parse".
 # Run in the caller's shell, never under capture, so the trust filter's stderr
 # line reaches the real stderr.
 issue_json_published() {
   local __ijp_issue __ijp_comments __ijp_out
-  orch_load comments
   gh_or_die --out __ijp_issue "read issue #$1" adapter_issue_json "$1"
   jq -e 'type == "object"' >/dev/null 2>&1 <<<"$__ijp_issue" \
     || die "could not read issue #$1: it did not parse"
@@ -122,7 +123,6 @@ issue_json_published() {
 # the one difference.
 cmd_issue_comments() {
   local issue="$1" file="$2" keep_reviews="${3:-}" json text
-  orch_load comments
   comments_trusted issue "read the comments of issue #$issue" "$issue" json
   if [ -n "$keep_reviews" ]; then
     text="$(comments_render <<<"$json")"
