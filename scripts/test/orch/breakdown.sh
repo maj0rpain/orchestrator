@@ -62,6 +62,8 @@ out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed link dies" "$st" 1
 assert_contains "naming the draft position" "$out" "ticket 2 of the draft"
 assert_contains "naming the write" "$out" "gh could not link ticket #101"
+assert_contains "naming the ticket and the link step" "$out" "ticket 2 of the draft (#101): the link failed"
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_eq "no marker" "$(on_disk .orchestrator/breakdown/50/published)" "absent"
 assert_eq "the recorded numbers are kept" "$(paste -sd ';' .orchestrator/breakdown/50/numbers)" "1 100 created;1 100 linked;2 101 created"
 assert_eq "state is partial" "$("$ORCH" breakdown state 50)" "partial"
@@ -77,6 +79,48 @@ assert_eq "from the saved draft, not the file given, linking rather than creatin
 assert_eq "all three linked" "$(fake_sub_issues_of 50)" "100 101 102"
 assert_eq "the unlinked ticket got its edge" "$(fake_blockers_of 101)" "100"
 assert_eq "marker written" "$(on_disk .orchestrator/breakdown/50/published)" "present"
+restore_suite_env
+
+# An unwritable numbers file dies at the created record, before any link.
+breakdown_fixture
+mkdir -p .orchestrator/breakdown/50/numbers
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "an unwritable numbers file dies" "$st" 1
+assert_contains "naming the created record" "$out" "could not write ticket #100's created record"
+assert_not_contains "without the create message" "$out" "the create failed"
+assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" ""
+restore_suite_env
+
+# A failed link read-back or listing read names the ticket, fresh or resumed.
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail_after adapter_sub_issues 1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed read-back of a fresh ticket dies" "$st" 1
+assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
+assert_not_contains "never the old message" "$out" "the publish failed"
+fake_unfail
+restore_suite_env
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail adapter_sub_issue_link
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+fake_unfail
+fake_fail_after adapter_sub_issues 1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed read-back of a resumed ticket dies" "$st" 1
+assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
+fake_unfail
+restore_suite_env
+
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail adapter_sub_issues
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed listing read before the link dies" "$st" 1
+assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
+fake_unfail
+assert_eq "the ticket is not linked" "$(fake_sub_issues_of 50)" ""
 restore_suite_env
 
 # A ticket created whose link already landed: the resume finds it listed and
@@ -101,6 +145,7 @@ fake_fail_after adapter_blocker_add 2
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed edge add dies" "$st" 1
 assert_contains "naming the draft position" "$out" "ticket 3 of the draft"
+assert_contains "naming the ticket and the link step" "$out" "ticket 3 of the draft (#102): the link failed"
 assert_eq "ticket 3 is recorded created" "$(tail -n1 .orchestrator/breakdown/50/numbers)" "3 102 created"
 fake_unfail
 fake_fail_after adapter_blocker_add 1
@@ -140,7 +185,8 @@ breakdown_fixture
 fake_fail adapter_issue_create
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed create dies" "$st" 1
-assert_contains "naming the draft position" "$out" "ticket 1 of the draft"
+assert_contains "naming the draft position and the create" "$out" "ticket 1 of the draft: the create failed"
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_eq "no marker" "$(on_disk .orchestrator/breakdown/50/published)" "absent"
 fake_unfail
 restore_suite_env

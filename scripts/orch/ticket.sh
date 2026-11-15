@@ -117,17 +117,53 @@ ticket_links_verified() {
   ticket_edges_verified "$1" "$3" "$4"
 }
 
-# Publishes a child issue, links it to <parent> as a native sub-issue, adds a
-# native blocking edge for every --blocked-by argument, and applies this
-# repo's ready-for-agent label - then verifies every link it just wrote by
-# reading it back. One retry on a mismatch or a failed read; a second failure
-# dies naming the ticket rather than falling back to a text-based `Blocked by:`
-# convention, since nothing downstream ever reads that fallback.
+# ticket_create <title> <body-file>: creates the ticket's issue under this
+# repo's ready-for-agent label and prints its number. Dies when the create
+# fails; inside $(...) the caller must pass that status on.
+ticket_create() {
+  local ready child
+  triage_label_into ready ready-for-agent
+  gh_or_die --out child "create the ticket" \
+    adapter_issue_create "$1" "$2" "$ready"
+  note "$child"
+}
+
+# ticket_link <parent> <n> <want>: puts ticket <n> in place under <parent> with
+# the blockers <want> names (newline-separated numbers, possibly empty),
+# whatever already landed. The parent's sub-issue listing is read and the
+# ticket linked only when it is not listed; its blockers are read once, and
+# only when <want> is non-empty, and only the edges it lacks are added, so a
+# resume never writes a link already present. Then every link is read back
+# through verify_twice: one retry, either status gets it, and the second
+# attempt decides the death - a failed read dies with gh's reason, a mismatch
+# as unverified (ADR-0011).
+ticket_link() {
+  local parent="$1" n="$2" want="$3" subs b have
+  subs="$(ticket_sub_issues "$parent")" || exit 1
+  ticket_listing_has "$subs" "$n" || gh_or_die "link ticket #$n as a sub-issue of #$parent" \
+    adapter_sub_issue_link "$parent" "$n"
+
+  if [ -n "$want" ]; then
+    have="$(ticket_blockers "$n")" || exit 1
+    while IFS= read -r b; do
+      ! list_has "$have" "$b" || continue
+      gh_or_die "add a blocking edge from ticket #$n on #$b" \
+        adapter_blocker_add "$n" "$b"
+    done <<<"$want"
+  fi
+
+  verify_twice "read ticket #$n's links" \
+    "ticket #$n's sub-issue/blocked-by links did not verify - checked twice, both failed" \
+    ticket_links_verified "$parent" "$n" "$want"
+}
+
+# Publishes a child issue - ticket_create then ticket_link: a native
+# sub-issue of <parent>, a native blocking edge for every --blocked-by
+# argument, this repo's ready-for-agent label, every link read back.
 cmd_ticket_publish() {
-  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...] [--record <numbers-file> <k>]"
+  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
   [ $# -ge 3 ] || die "$usage"
-  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want=""
-  local record_file="" record_k="" ready child
+  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" child
   shift 3
   # Every argument check runs here, before the first GitHub write. A second
   # --blocked-by is refused, never allowed to replace the first.
@@ -136,10 +172,6 @@ cmd_ticket_publish() {
       --blocked-by)
         flag_value_once "$usage" "$have_blocked_by" "$#"
         blocked_by="$2"; have_blocked_by=1; shift 2 ;;
-      --record)
-        [ $# -ge 3 ] && [ -z "$record_file" ] || die "$usage"
-        record_file="$2"; record_k="$3"; shift 3
-        case "$record_k" in ''|*[!0-9]*) die "--record's position must be a plain number, got: $record_k" ;; esac ;;
       *) die "$usage" ;;
     esac
   done
@@ -154,43 +186,10 @@ cmd_ticket_publish() {
     want="$(issue_number_list --blocked-by "$blocked_by")" || exit 1
   fi
 
-  triage_label_into ready ready-for-agent
-  gh_or_die --out child "create the ticket" \
-    adapter_issue_create "$title" "$body_file" "$ready"
-
-  # The created number is recorded before the link, so a rerun can tell
-  # "created, unlinked" from "not created". A failed write dies here.
-  if [ -n "$record_file" ]; then breakdown_record "$record_file" "$record_k" "$child" created; fi
-
-  gh_or_die "link ticket #$child as a sub-issue of #$parent" \
-    adapter_sub_issue_link "$parent" "$child"
-  ticket_edges_and_verify "$parent" "$child" "$want"
-  if [ -n "$record_file" ]; then breakdown_record "$record_file" "$record_k" "$child" linked; fi
+  child="$(ticket_create "$title" "$body_file")" || exit 1
+  ticket_link "$parent" "$child" "$want"
 
   note "$child"
-}
-
-# ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
-# every number in <want> the child lacks - its blockers are read once, and only
-# when <want> is non-empty, so a resume never writes an edge already present -
-# and verifies every link by reading it back through verify_twice: one retry,
-# either status gets it, and the second attempt decides the death - a failed
-# read dies with gh's reason, a mismatch as unverified.
-ticket_edges_and_verify() {
-  local parent="$1" child="$2" want="$3" b have
-
-  if [ -n "$want" ]; then
-    have="$(ticket_blockers "$child")" || exit 1
-    while IFS= read -r b; do
-      ! list_has "$have" "$b" || continue
-      gh_or_die "add a blocking edge from ticket #$child on #$b" \
-        adapter_blocker_add "$child" "$b"
-    done <<<"$want"
-  fi
-
-  verify_twice "read ticket #$child's links" \
-    "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed" \
-    ticket_links_verified "$parent" "$child" "$want"
 }
 
 # The parent's open sub-issues with zero open blockers, in the order GitHub
