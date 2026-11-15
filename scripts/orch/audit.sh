@@ -504,6 +504,18 @@ audit_inline() {
   printf '%s' "$out$e"
 }
 
+# audit_para_print <para>: prints <para> as one HTML paragraph.
+audit_para_print() {
+  printf '<p class="my-2">%s</p>\n' "$(audit_inline "$1")"
+}
+
+# audit_code_print <code>: prints <code> as one escaped plain-code block.
+audit_code_print() {
+  local e
+  audit_esc e "$1"
+  printf '<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>%s</code></pre>\n' "$e"
+}
+
 # audit_md_render <text>: prints <text> as HTML, in the one small markup set:
 # every character escaped; a blank line ends a paragraph; a fenced block is
 # preformatted code, a fenced block tagged mermaid a Mermaid diagram; an inline
@@ -513,11 +525,11 @@ audit_md_render() {
   while IFS= read -r line || [ -n "$line" ]; do
     if [ -n "$fence" ]; then
       if [[ $line == "$AUDIT_FENCE"* ]]; then
-        audit_esc e "$code"
         if [ "$tag" = mermaid ]; then
+          audit_esc e "$code"
           printf '<pre class="mermaid">%s</pre>\n' "$e"
         else
-          printf '<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>%s</code></pre>\n' "$e"
+          audit_code_print "$code"
         fi
         fence="" code="" code_n=0
       else
@@ -526,21 +538,18 @@ audit_md_render() {
         code_n=$((code_n + 1))
       fi
     elif [[ $line == "$AUDIT_FENCE"* ]]; then
-      [ -z "$para" ] || { printf '<p class="my-2">%s</p>\n' "$(audit_inline "$para")"; para=""; }
+      [ -z "$para" ] || { audit_para_print "$para"; para=""; }
       trim_split "${line#"$AUDIT_FENCE"}" tag
       fence=1
     elif [[ -z ${line//[[:space:]]/} ]]; then
-      [ -z "$para" ] || { printf '<p class="my-2">%s</p>\n' "$(audit_inline "$para")"; para=""; }
+      [ -z "$para" ] || { audit_para_print "$para"; para=""; }
     else
       if [ -n "$para" ]; then para+=$'\n'; fi
       para+="$line"
     fi
   done <<<"$1"
-  [ -z "$para" ] || printf '<p class="my-2">%s</p>\n' "$(audit_inline "$para")"
-  if [ -n "$fence" ]; then
-    audit_esc e "$code"
-    printf '<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>%s</code></pre>\n' "$e"
-  fi
+  [ -z "$para" ] || audit_para_print "$para"
+  if [ -n "$fence" ]; then audit_code_print "$code"; fi
 }
 
 # audit_page_render: prints the report page for the run audit_ranked_read left

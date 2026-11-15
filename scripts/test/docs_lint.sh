@@ -132,8 +132,8 @@
 #     the area-<k>.md findings file
 #   scan_audit_rank_report  each audit skill's Report step runs audit report and
 #     its Rank step states its category as Category: <c>
-#   scan_audit_stands_alone  each auditor brief's Reporting rules and each audit
-#     skill's Rank step say a finding stands alone
+#   scan_audit_stands_alone  each auditor brief's Reporting rules say a
+#     finding stands alone
 #   scan_subagent_pool  docs/host-capabilities.md has a Run a subagent pool row
 #     and a Fallbacks subsection naming foreground batches, and each pool site
 #     (orch-quick-autopilot's step 3, each audit's Hunt step) names the
