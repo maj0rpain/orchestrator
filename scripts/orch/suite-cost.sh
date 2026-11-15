@@ -12,7 +12,8 @@
 # printed anything then, untracked files counting and ignored paths not, the CPU
 # seconds (user plus system, children included), the wall seconds, both to two
 # places, the UTC time in ISO 8601, and the command, its words joined by single
-# spaces. history prints it as written, and the tests seed it.
+# spaces (one argument is a shell line run with bash -c, recorded as given).
+# history prints it as written, and the tests seed it.
 #
 # Only a run no other suite-cost run overlapped is recorded. Beside the record,
 # the active-runs directory suite-cost.active holds one marker per measured run
@@ -51,8 +52,8 @@
 # command wins; later runs on HEAD or the base do not invalidate it. A dirty
 # tree never reads the file. history does not print it.
 
-SUITE_COST_RUN_USAGE="usage: orch.sh suite-cost run -- <cmd> [args...]"
-SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
+SUITE_COST_RUN_USAGE="usage: orch.sh suite-cost run -- <cmd> [args...] | orch.sh suite-cost run -- '<shell line>'"
+SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...] | orch.sh suite-cost check -- '<shell line>'"
 
 # check's defaults, read here alone: below the floor (CPU seconds) a baseline
 # is compared with nothing, and growth past the threshold (percent) is a
@@ -72,11 +73,13 @@ cmd_suite_cost() {
     run)
       [ "${1:-}" = "--" ] && [ $# -ge 2 ] || die "$SUITE_COST_RUN_USAGE"
       shift
+      suite_cost_args_ok "$@" || die "$SUITE_COST_RUN_USAGE"
       suite_cost_run "$@"
       ;;
     check)
       [ "${1:-}" = "--" ] && [ $# -ge 2 ] || die "$SUITE_COST_CHECK_USAGE"
       shift
+      suite_cost_args_ok "$@" || die "$SUITE_COST_CHECK_USAGE"
       suite_cost_check "$@"
       ;;
     history)
@@ -185,6 +188,24 @@ suite_cost_unregister() {
   fi
   rm -f -- "$SUITE_COST_MARK" "$SUITE_COST_MARK.contended" 2>/dev/null || true
   SUITE_COST_MARK=""
+}
+
+# suite_cost_args_ok <arg>...: succeeds unless the command is one argument
+# that is empty or only spaces and tabs, which would run nothing.
+suite_cost_args_ok() {
+  [ $# -ne 1 ] || [[ "$1" == *[!$' \t']* ]]
+}
+
+# suite_cost_exec <cmd> [args...]: starts the command, the one place the rule
+# lives: exactly one argument is a shell line, run with plain bash -c; two or
+# more are an argument list, run as given. Called by suite_cost_measure and by
+# the tests' timer fake. `command` keeps the list off orch.sh's own functions.
+suite_cost_exec() {
+  if [ $# -eq 1 ]; then
+    command bash -c "$1"
+  else
+    command "$@"
+  fi
 }
 
 # suite_cost_run <cmd> [args...]: runs the command in the current directory,
@@ -343,7 +364,7 @@ suite_cost_measure() {
     SUITE_COST_TIMEFILE=""
   done
   [ -n "$made" ] || die "could not make a temp file to time the command"
-  { time { command "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>>"$tf"
+  { time { suite_cost_exec "$@" 2>&3 3>&- || SUITE_COST_STATUS=$?; }; } 3>&2 2>>"$tf"
   read -r real user sys < <(tail -n 1 "$tf") || true
   rm -f "$tf"
   SUITE_COST_TIMEFILE=""

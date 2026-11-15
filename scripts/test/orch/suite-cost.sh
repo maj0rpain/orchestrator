@@ -244,6 +244,36 @@ for args in "" "true" "-- " "true --"; do
 done
 assert_eq "a usage error records nothing" "$(log_count "$rec")" 2
 
+# One argument is a shell line, run with bash -c and recorded as given.
+new_repo >/dev/null
+rec_path
+rm -f "$rec"
+sm="$(mktemp -d)/second"
+line="true && touch $sm"
+"$ORCH" suite-cost run -- "$line" >/dev/null 2>&1; st=$?
+assert_status "a one-argument chained line exits 0" "$st" 0
+assert_eq "its second half ran" "$(on_disk "$sm")" present
+assert_eq "one record line is appended" "$(log_count "$rec")" 1
+assert_eq "its command field is the argument as given" "$(tail -n 1 "$rec" | cut -f5)" "$line"
+out="$("$ORCH" suite-cost run -- 'true && exit 3' 2>&1)"; st=$?
+assert_status "a failing second half passes its exit code through" "$st" 3
+assert_eq "and records nothing" "$(log_count "$rec")" 1
+"$ORCH" suite-cost run -- 'echo a b' >/dev/null 2>&1
+"$ORCH" suite-cost run -- echo a b >/dev/null 2>&1
+assert_eq "one quoted argument records what the same words as several do" \
+  "$(tail -n 2 "$rec" | cut -f5 | sort -u | wc -l | tr -d ' ')" 1
+out="$("$ORCH" suite-cost run -- printf '%s\n' '&&' 2>&1)"
+assert_eq "a several-argument run passes a literal && word to the program" "$out" "&&"
+n_before="$(log_count "$rec")"
+for blank in "" " " $'\t '; do
+  for op in run check; do
+    out="$("$ORCH" suite-cost "$op" -- "$blank" 2>&1)"; st=$?
+    assert_status "$op with a blank single argument is a usage error" "$st" 1
+    assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost $op -- <cmd> [args...]"
+  done
+done
+assert_eq "and records nothing" "$(log_count "$rec")" "$n_before"
+
 # An append that fails: the record's path is a directory, so no user, root
 # included, can write it.
 new_repo >/dev/null
@@ -500,6 +530,10 @@ assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost history"
 out="$("$ORCH" help 2>&1)"
 flat="$(tr -s ' \n' ' ' <<<"$out")"
 assert_contains "suite-cost run is in the usage text" "$out" "suite-cost run -- <cmd> [args...]"
+assert_contains "run's usage line names the one-argument form" "$("$ORCH" suite-cost run 2>&1)" "suite-cost run -- '<shell line>'"
+assert_contains "check's usage line names the one-argument form" "$("$ORCH" suite-cost check 2>&1)" "suite-cost check -- '<shell line>'"
+assert_contains "the help text says a single argument is a shell line run with bash -c and recorded as given" \
+  "$flat" "A single argument is a shell line, run with bash -c and recorded as given"
 assert_contains "suite-cost history is in the usage text" "$out" "suite-cost history"
 assert_contains "the usage text says an overlapped run is not recorded" \
   "$flat" "A run another suite-cost run overlapped, in any checkout of the clone, is not recorded"
@@ -983,6 +1017,54 @@ assert_status "a base run exiting 127 from a subdirectory exits 0" "$st" 0
 assert_contains "with the hint naming the setup key" "$(cat "$errf")" \
   "$base exited 127 (command not found)"
 assert_contains "naming orchestrator.suiteCost.setup" "$(cat "$errf")" "orchestrator.suiteCost.setup"
+
+# A one-argument line is a shell line: the base run runs it whole, through the
+# timer fake, and records it as given.
+ORCH_SUITE_COST_FAKE_CPU="$(mktemp)"
+export ORCH_SUITE_COST_TIMER="$TEST_DIR/suite_cost_timer_fake.sh" ORCH_SUITE_COST_FAKE_CPU
+errf="$(mktemp)"
+check_repo
+mk2="$(mktemp -d)/second"
+line="true && touch $mk2"
+fake_cpu "$base" 5.00
+fake_cpu "$head" 5.00
+seed_run "$head" 70.00 "$line"
+out="$("$ORCH" suite-cost check -- "$line" 2>"$errf")"
+assert_eq "a one-argument chained line's base run runs its second half" "$(on_disk "$mk2")" present
+assert_eq "and records the line as given" "$(tail -n 1 "$rec" | cut -f5)" "$line"
+
+check_repo
+fake_cpu "$base" 5.00
+fake_cpu "$head" 5.00
+seed_run "$base" 5.00 "true"
+seed_run "$head" 5.00 "true"
+before="$(cat "$rec")"
+"$ORCH" suite-cost check -- "true" >/dev/null 2>"$errf"
+assert_eq "a seeded one-word record serves as the base: no base run records" "$(cat "$rec")" "$before"
+
+check_repo
+fake_cpu "$base" 5.00
+fake_cpu "$head" 5.00
+line="no-such-program-xyz --flag"
+seed_run "$head" 70.00 "$line"
+out="$("$ORCH" suite-cost check -- "$line" 2>"$errf")"
+assert_eq "a missing program in a one-argument line is unmeasured" "$out" "unmeasured"
+assert_contains "its base run exits 127" "$(cat "$errf")" "$base exited 127"
+assert_contains "and the warning names the setup key" "$(cat "$errf")" "orchestrator.suiteCost.setup"
+
+check_repo
+fake_cpu "$base" 5.00
+fake_cpu "$head" 5.00
+line="true && exit 4"
+seed_run "$head" 70.00 "$line"
+before="$(cat "$rec")"
+out="$("$ORCH" suite-cost check -- "$line" 2>"$errf")"
+assert_eq "a failing second half is unmeasured" "$out" "unmeasured"
+assert_contains "warning with the base run's exit code" "$(cat "$errf")" "the base run at $base exited 4"
+assert_eq "no base record is written" "$(cat "$rec")" "$before"
+assert_eq "and no verdict" "$(on_disk "$rec.verdicts")" absent
+rm -rf "$errf" "$ORCH_SUITE_COST_FAKE_CPU"
+restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU
 rm -f "$errf"
 # --- suite-cost check confirmation --------------------------------------------
 # A comparison past the threshold is confirmed before it is reported: check
@@ -1286,6 +1368,21 @@ assert_contains "warning the confirming-run wording naming the base commit" "$(c
   "orch: commit $base has no directory pkg for the confirming run - the growth is unconfirmed"
 assert_eq "leaving the head confirming run's line alone" "$(rec_shas)" "$head "
 assert_eq "and no worktree" "$(no_worktree)" none
+
+# A one-argument chained line: each confirming run runs the whole line, and the
+# verdict record carries the line as given.
+confirm_repo ":" ":"
+cmark="$(mktemp -d)/ran"
+line="echo ran >>$cmark && :"
+cmd=("$line")
+cmd_str="$line"
+confirm_reset
+fake_cpu "$head" 90.00
+fake_cpu "$base" 60.00
+out="$("$ORCH" suite-cost check -- "$line" 2>"$errf")"
+assert_contains "a one-argument chained line's growth is confirmed" "$out" "grew "
+assert_eq "each confirming run ran the whole line: head's and base's" "$(wc -l <"$cmark" | tr -d ' ')" 2
+assert_eq "the verdict record carries the line as given" "$(cut -f6 "$vf")" "$line"
 rm -rf "$hs" "$errf"
 rm -f "$ORCH_SUITE_COST_FAKE_CPU"
 restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU

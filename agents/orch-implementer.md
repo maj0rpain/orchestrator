@@ -111,7 +111,8 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    helper index the repo's agent files (`CLAUDE.md`, `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
    and the repo's **ticket verification** once, at the end, through `bash
-   "<orch.sh>" suite-cost run -- <cmd>`: it passes the command's output and
+   "<orch.sh>" suite-cost run -- '<cmd>'`,
+   the whole line as one quoted argument: it passes the command's output and
    exit code through unchanged (an interrupt exits 128 plus the signal's
    number and records nothing) and records a passing run's suite cost. Find
    the ticket verification where you find the full verification, in the
