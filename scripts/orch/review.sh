@@ -758,10 +758,9 @@ review_standards_resolve_source() {
 # from review_standards_resolve_source's list.
 review_standards() {
   [ $# -eq 0 ] || die "usage: orch.sh review standards"
-  local resolved list
+  local resolved first list
   resolved="$(review_standards_resolve_source)" || exit $?
-  list="${resolved#*$'\n'}"
-  [ "$list" != "$resolved" ] || list=""
+  lines_split "$resolved" first list
   if [ -z "$list" ]; then
     note "Standards: none"
   else
@@ -774,16 +773,35 @@ review_standards() {
 # reported - never parsed a second time. A declaration it dies on is a FAIL
 # carrying its own message.
 check_standards_declaration() {
-  local resolved err list first
+  local resolved err list first f where="" entry=""
   if ! capture resolved err review_standards_resolve_source; then
     d_fail "${err#orch: }"
-    d_remedy "fix the Standards: paragraph the message names, or delete it to have the reviewers crawl the standards documents" \
-      "see docs/repo-setup.md under the plugin root"
+    # The file holding the paragraph, by the order the resolution reads them.
+    for f in CLAUDE.md AGENTS.md; do
+      ! review_standards_inside "$f" || where="$where $f"
+    done
+    if [ -z "$where" ]; then
+      for f in CODING_STANDARDS.md CONTRIBUTING.md; do
+        ! review_standards_inside "$f" || where="$where $f"
+      done
+    fi
+    for f in $where; do
+      if [ -n "$(review_standards_declaration "$f")" ]; then where="$f"; break; fi
+    done
+    where="${where# }"
+    case "$err" in
+      *'`'*) entry="${err#*\`}"; entry="${entry%%\`*}" ;;
+    esac
+    if [ -n "$entry" ]; then
+      d_remedy "change the entry \`$entry\` in the Standards: paragraph of $where to a repo-relative path of a file in the repo, with at most one #Heading that matches once - or delete the paragraph to have the reviewers crawl the standards documents" \
+        "see docs/repo-setup.md under the plugin root"
+    else
+      d_remedy "list backticked repo-relative paths in the Standards: paragraph of $where - or delete the paragraph to have the reviewers crawl the standards documents" \
+        "see docs/repo-setup.md under the plugin root"
+    fi
     return 0
   fi
-  first="${resolved%%$'\n'*}"
-  list="${resolved#*$'\n'}"
-  [ "$list" != "$resolved" ] || list=""
+  lines_split "$resolved" first list
   case "$first" in
     declared\ *) d_ok "Standards declared in ${first#declared }: $(list_join "$list")" ;;
     *)

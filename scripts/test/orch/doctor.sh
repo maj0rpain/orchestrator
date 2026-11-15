@@ -165,10 +165,14 @@ assert_contains "names the flag it rejected" "$out" "--nonsense"
 out="$("$ORCH" health --nonsense 2>&1)"; st=$?
 assert_status "health rejects an unknown flag" "$st" 1
 assert_contains "health's rejection names doctor" "$out" "doctor"
-"$ORCH" doctor --env >/dev/null 2>&1; doc_st=$?
+doc_out="$("$ORCH" doctor --env 2>&1)"; doc_st=$?
 out="$("$ORCH" health --env 2>&1)"; st=$?
 assert_status "health --env exits as doctor --env does" "$st" "$doc_st"
-assert_contains "health --env reports as doctor --env does" "$out" "ok    git present"
+assert_eq "health --env reports as doctor --env does" "$out" "$doc_out"
+doc_out="$("$ORCH" doctor 2>&1)"; doc_st=$?
+out="$("$ORCH" health 2>&1)"; st=$?
+assert_status "bare health exits as bare doctor does" "$st" "$doc_st"
+assert_eq "bare health reports as bare doctor does" "$out" "$doc_out"
 help_out="$("$ORCH" help 2>&1)"
 assert_contains "help lists the health alias" "$help_out" "health"
 assert_contains "help's doctor line names docs/repo-setup.md" "$help_out" "docs/repo-setup.md"
@@ -2681,7 +2685,7 @@ want="$("$ORCH" review standards 2>&1 >/dev/null)"; want="${want#orch: }"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a declaration naming a missing file fails doctor" "$st" 1
 assert_contains "carrying review standards' own message" "$out" "FAIL  $want"
-assert_contains "the remedy states the fix" "$out" "fix the Standards: paragraph"
+assert_contains "the remedy names the entry and the file holding it" "$out" "change the entry \`docs/missing.md\` in the Standards: paragraph of CLAUDE.md"
 assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
 restore_suite_env
 
@@ -2776,12 +2780,16 @@ printf '%s\n' 'Full verification:' >CLAUDE.md
 printf '%s\n' 'Full verification: make test' >CONTRIBUTING.md
 vl_doctor --env
 assert_contains "a bare full verification fails beside a command elsewhere" "$out" "FAIL  CLAUDE.md has a 'Full verification:' line with no command."
+assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Full verification:' in CLAUDE.md, or remove the line"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
 assert_not_contains "and no ok line is reported for that label" "$out" "ok    Full verification"
 
 printf '%s\n' 'Full verification: make test' >CLAUDE.md
 printf '%s\n' 'Full verification:' >CONTRIBUTING.md
 vl_doctor --env
 assert_contains "the reverse fails too, naming CONTRIBUTING.md" "$out" "FAIL  CONTRIBUTING.md has a 'Full verification:' line with no command."
+assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Full verification:' in CONTRIBUTING.md, or remove the line"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
 assert_not_contains "and no ok line is reported for it" "$out" "ok    Full verification"
 
 printf '%s\n' 'Full verification: make test' >CLAUDE.md
@@ -2797,15 +2805,29 @@ printf '%s\n' 'Ticket verification: a' 'Ticket verification: b' 'Full verificati
 rm -f CONTRIBUTING.md
 vl_doctor --env
 assert_contains "two commands in one file warn as well" "$out" "warn  Ticket verification is named twice with different commands: 'a' in CLAUDE.md and 'b' in CLAUDE.md"
+assert_contains "its remedy removes the second line" "$out" "remove the line 'Ticket verification: b' from CLAUDE.md"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
 
 printf '%s\n' '```' 'Full verification: make fenced' 'Ticket verification:' '```' 'Full verification: make test' >CLAUDE.md
 vl_doctor --env
 assert_contains "a line in a fenced block is not read" "$out" "ok    Full verification: make test (CLAUDE.md)"
 assert_contains "a fenced bare label is not a FAIL" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
 
+printf '%s\n' '~~~' '```' 'Full verification: make fenced' '```' 'Ticket verification:' '~~~' 'Full verification: make test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a backtick line inside a tilde fence does not close it" "$out" "ok    Full verification: make test (CLAUDE.md)"
+assert_contains "and the fenced bare label is no FAIL" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
+
+printf '%s\n' '````' '```' 'Full verification: make fenced' '```' '````' '   ~~~' 'Ticket verification:' '   ~~~' 'Full verification: make test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a short fence inside a longer one and a three-space indented fence hold their lines" "$out" "ok    Full verification: make test (CLAUDE.md)"
+assert_contains "and no FAIL comes from them" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
+
 printf '%s\n' 'Ticket verification:' >CLAUDE.md
 vl_doctor
 assert_contains "bare doctor runs the check" "$out" "FAIL  CLAUDE.md has a 'Ticket verification:' line with no command."
+assert_contains "bare doctor's remedy says what to write or remove" "$out" "write the command after 'Ticket verification:' in CLAUDE.md, or remove the line"
+assert_contains "bare doctor's remedy names the setup doc" "$out" "$vl_setup"
 vl_doctor --flow
 assert_not_contains "--flow does not run the check" "$out" "verification"
 restore_suite_env

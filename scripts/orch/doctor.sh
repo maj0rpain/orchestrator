@@ -550,24 +550,18 @@ check_sub_issues() {
 # "<label> <file> <command>" line per verification line, files in the order
 # the agents read them, a label with no command printing an empty command.
 verification_lines() {
-  local f line fence cmd label
+  local f line cmd label
   for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
     [ -f "$ROOT/$f" ] || continue
-    fence=0
-    while IFS= read -r line || [ -n "$line" ]; do
-      case "$line" in
-        '```'*|'~~~'*|[[:space:]]'```'*|[[:space:]]'~~~'*) fence=$((1 - fence)); continue ;;
-      esac
-      [ "$fence" -eq 0 ] || continue
+    while IFS= read -r line; do
       case "$line" in
         'Ticket verification:'*) label="Ticket verification"; cmd="${line#Ticket verification:}" ;;
         'Full verification:'*)   label="Full verification";   cmd="${line#Full verification:}" ;;
         *) continue ;;
       esac
-      cmd="${cmd#"${cmd%%[![:space:]]*}"}"
-      cmd="${cmd%"${cmd##*[![:space:]]}"}"
+      trim_split "$cmd" cmd
       printf '%s\t%s\t%s\n' "$label" "$f" "$cmd"
-    done <"$ROOT/$f"
+    done < <(awk "$FENCE_AWK"'fenced($0) == 0' "$ROOT/$f")
   done
 }
 

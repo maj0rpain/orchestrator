@@ -27,7 +27,9 @@ it has none.
   file, a `#Heading` that matches no heading or several, or a path that leaves
   the repo stops the review with a message naming the cause.
 - **Doctor line**: "Standards declared in ...", or "no Standards: declaration
-  - the list is crawled ...", or a `FAIL` carrying the resolution's message.
+  - the list is crawled ...", or "no Standards: declaration and nothing to
+  crawl - the reviewers apply the smell baseline alone", or a `FAIL` carrying
+  the resolution's message.
 
 ## Verification lines
 
@@ -43,10 +45,12 @@ it has none.
 - **Unreadable**: a label with no command after it leaves the agents no command
   to run. Two lines naming different commands for one label leave agents to
   pick; the first one found is the one doctor reports.
-- **Doctor line**: "full verification" and "ticket verification" lines: `ok`
-  with the command and file; `warn` for no full verification or for two
-  commands for one label; `FAIL` for a label with no command. Doctor never
-  runs the command.
+- **Doctor line**: one line per label. `ok` reads `Full verification: <command>
+  (<file>)` or `Ticket verification: <command> (<file>)`; with no ticket
+  verification it is also `ok`, reading "no 'Ticket verification:' line -
+  tickets run the full verification (ADR-0058)". `warn` for no full
+  verification or for two commands for one label; `FAIL` for a label with no
+  command. Doctor never runs the command.
 
 ## Glossary
 
