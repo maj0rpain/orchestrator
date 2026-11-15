@@ -1127,3 +1127,38 @@ for entry in "redo review" "redo spec"; do
   assert_help_names_handoffs_by_role "$entry"
 done
 restore_suite_env
+
+# --- redo reads its Flow state once, before its first write -------------------
+# Each redo makes one entry read where its require_state sat, and hands the
+# values down: exactly one jq on a path that ends at the last guard.
+echo
+echo "redo reads its Flow state once"
+fresh_flow redocount
+state_fixture phase review
+"$ORCH" state set issue 61
+git checkout -q -b orch/61-redocount
+state_fixture branch orch/61-redocount
+state_fixture iteration 1
+"$ORCH" state set budget 1
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
+rc_jq="$(counting_bin jq)"
+out="$(PATH="$rc_jq:$PATH" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "redo review on a stopped loop with no PR recorded refuses" "$st" 1
+assert_contains "naming the missing PR" "$out" "no PR recorded in state"
+assert_eq "redo review starts exactly one jq before its first write" "$(counting_starts "$rc_jq" jq)" "1"
+state_truncate
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_state_unreadable "redo review" 1 "$out" "$st"
+
+fresh_flow redocount2
+state_fixture phase implement
+rc_jq="$(counting_bin jq)"
+out="$(PATH="$rc_jq:$PATH" "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "redo spec with no issue recorded refuses" "$st" 1
+assert_contains "naming the missing issue" "$out" "no issue recorded in state"
+assert_eq "redo spec starts exactly one jq before its first write" "$(counting_starts "$rc_jq" jq)" "1"
+state_truncate
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_state_unreadable "redo spec" 1 "$out" "$st"
+restore_suite_env

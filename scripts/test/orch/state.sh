@@ -614,3 +614,24 @@ assert_eq "printing nothing" "$out" ""
 out="$(sourced_orch flow_holding_phase b 2>&1)"; st=$?
 assert_status "flow_holding_phase on a truncated file returns 2" "$st" 2
 restore_suite_env
+
+# --- review_terminal_record fallback reads once -------------------------------
+# A half-finished redo review whose flat record has moved is found under
+# pre-redo-<redo_count>/ with one many-key read; a state file that cannot be
+# read counts as no redo in progress.
+echo
+echo "review_terminal_record fallback"
+fresh_flow rtrec
+"$ORCH" state set issue 9
+state_fixture branch orch/9-rtrec-redo-1
+state_fixture redo_count 1
+mkdir -p .orchestrator/review/pre-redo-1
+writeln '## Terminal state' 'stop' >.orchestrator/review/pre-redo-1/iteration-02.md
+rt_jq="$(counting_bin jq)"
+out="$(PATH="$rt_jq:$PATH" sourced_orch review_terminal_record 2 2>&1)"
+assert_eq "finds the stopped record under pre-redo-1" "$out" "$(pwd -P)/.orchestrator/review/pre-redo-1/iteration-02.md"
+assert_eq "with one jq" "$(counting_starts "$rt_jq" jq)" "1"
+state_truncate
+out="$(sourced_orch review_terminal_record 2 2>&1)"
+assert_eq "beside a truncated state file it answers as with no redo" "$out" "$(pwd -P)/.orchestrator/review/iteration-02.md"
+restore_suite_env
