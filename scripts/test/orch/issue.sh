@@ -1432,9 +1432,11 @@ assert_contains "with the file written" "$(cat "$df_dir/out.md")" "**Audited at:
 
 fake_issue_body 23 "$(df_body "$df_sha" a.md:1)"
 unborn="$(mktemp -d)"; git -C "$unborn" init -q
+rm -f "$df_dir/out2.md"
 out="$(cd "$unborn" && "$ORCH" issue fetch 23 "$df_dir/out2.md" 2>&1)"; st=$?
 assert_status "a repo with no commit on HEAD exits 0" "$st" 0
 assert_eq "saying so" "$out" "cited files changed since $df_sha: unknown (no commit on HEAD)"
+assert_contains "with the file written" "$(cat "$df_dir/out2.md")" "**Audited at:**"
 
 for df_case in \
   "an ordinary body|Just text." \
