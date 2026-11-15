@@ -143,9 +143,10 @@ fi
 new="$(dirty_hashes "$root")" || { rm -f "$snap" 2>/dev/null; exit 0; }
 findings=""
 if [ -n "$new" ]; then
-  # One grep: the listed lines absent from the snapshot. Status 1 selects no
+  # One grep (-a: a name invalid in the locale is still a line): the listed
+  # lines absent from the snapshot. Status 1 selects no
   # line, the normal case of a call that changed no listed file.
-  changed="$(printf '%s\n' "$new" | grep -vxFf "$snap" 2>/dev/null)"
+  changed="$(printf '%s\n' "$new" | grep -a -vxFf "$snap" 2>/dev/null)"
   if [ "$?" -gt 1 ]; then
     rm -f "$snap" 2>/dev/null
     exit 0

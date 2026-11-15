@@ -2152,6 +2152,17 @@ for bw_name in "${BW_NAMES[@]}"; do
     "$bw_out" "docs/$bw_name:3"
   rm -f "$BW_Q/docs/$bw_name"
 done
+# A name that is not valid UTF-8 is still reported under a UTF-8 locale.
+BW_BAD=$'bad\xe9.md'
+printf '# T\n\n%s\n' "$edge" >"$BW_Q/docs/$BW_BAD"
+BW_ID=$((BW_ID + 1))
+LC_ALL=C.UTF-8 bw_hook PreToolUse "$BW_Q" "t$BW_ID"
+printf '# T\n\n%sx\n' "$edge" >"$BW_Q/docs/$BW_BAD"
+LC_ALL=C.UTF-8 bw_hook PostToolUse "$BW_Q" "t$BW_ID"
+assert_eq "bash hook: a name invalid in UTF-8 made wide exits 2" "$bw_rc" 2
+assert_contains "bash hook: a name invalid in UTF-8 made wide is named" \
+  "$bw_out" "docs/$BW_BAD:3"
+rm -f "$BW_Q/docs/$BW_BAD"
 # A dirty file with a newline in its name, and one the hook cannot read, do not
 # stop another widened file from being reported.
 printf '# T\n' >"$BW_Q/$(printf 'new\nline.md')"
@@ -2185,7 +2196,8 @@ BW_FAILGIT="$(mktemp -d)"
 BW_FAILGREP="$(mktemp -d)"
 printf '#!/bin/sh\ncase " $* " in *" hash-object "*) exit 1 ;; esac\nexec "%s" "$@"\n' \
   "$(command -v git)" >"$BW_FAILGIT/git"
-printf '#!/bin/sh\nexit 2\n' >"$BW_FAILGREP/grep"
+printf '#!/bin/sh\ncase " $* " in *" -vxFf "*) exit 2 ;; esac\nexec "%s" "$@"\n' \
+  "$(command -v grep)" >"$BW_FAILGREP/grep"
 chmod +x "$BW_FAILGIT/git" "$BW_FAILGREP/grep"
 BW_TMP3="$(mktemp -d)"
 printf '# T\n' >"$BW_Q/dirty.md"
