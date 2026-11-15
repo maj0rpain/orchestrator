@@ -697,23 +697,20 @@ d_verification_found() {
 # leaves no command word, says nothing. A function orch.sh defines never counts
 # as found: only a builtin, a keyword or a file does. No namerefs (bash 4.2).
 check_verification_commands() {
-  local label f line word from_file
-  for label in "Ticket verification:" "Full verification:"; do
+  local label word from_file lines l f cmd
+  lines="$(verification_lines)" || lines=""
+  for label in "Ticket verification" "Full verification"; do
     from_file="" word=""
-    for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
-      [ -f "$ROOT/$f" ] || continue
-      while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-          "$label"*) from_file="$f"; word="$(d_verification_word "${line#"$label"}")"; break ;;
-        esac
-      done <"$ROOT/$f"
-      [ -z "$from_file" ] || break
-    done
+    while IFS=$'\t' read -r l f cmd; do
+      [ "$l" = "$label" ] || continue
+      from_file="$f"; word="$(d_verification_word "$cmd")"
+      break
+    done <<<"$lines"
     [ -n "$from_file" ] && [ -n "$word" ] || continue
     if d_verification_found "$word"; then
-      d_ok "${label%:} command: $word"
+      d_ok "$label command: $word"
     else
-      d_warn "${label%:} command $word (from $from_file) is not installed."
+      d_warn "$label command $word (from $from_file) is not installed."
     fi
   done
   return 0
@@ -861,7 +858,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_verification_lines check_verification_commands check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
+h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_base_branch check_verification_lines check_verification_commands check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
 "
 # flow state -----------------------------------------------------------------
 

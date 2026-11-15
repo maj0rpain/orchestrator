@@ -2919,6 +2919,11 @@ printf -- '- Ticket verification: nosuchtool-3346\n' >CLAUDE.md
 out="$(vc_doctor)"
 assert_not_contains "a line the label does not open is not read" "$out" "Ticket verification command"
 
+printf '```\nFull verification: nosuchtool-3346\n```\nFull verification: vctool\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a fenced line of the label is not read" "$out" "ok    Full verification command: vctool"
+assert_not_contains "a fenced line of the label is not checked" "$out" "command nosuchtool-3346"
+
 printf 'Ticket verification: vctool\n' >CLAUDE.md
 printf 'Ticket verification: nosuchtool-3346\n' >AGENTS.md
 out="$(vc_doctor)"

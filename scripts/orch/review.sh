@@ -713,7 +713,8 @@ review_standards_declared() {
 # mention: two hops, never a third, each path listed once at its first place
 # and only when it exists. Prints a first line, `declared <file>` or
 # `crawled`, then the list, one path per line (none when the crawl finds
-# nothing). A declaration the resolution rejects dies with its message.
+# nothing). A declaration the resolution rejects dies with its message, after
+# printing the first line and the entries up to the rejected one, last.
 review_standards_resolve_source() {
   local listed=() hop=() next=() f p span
   for f in CLAUDE.md AGENTS.md; do
@@ -731,10 +732,15 @@ review_standards_resolve_source() {
     while IFS= read -r span; do
       entries+=("${span:1:${#span}-2}")
     done < <(grep -oE '`[^`]+`' <<< "$decl")
-    [ "${#entries[@]}" -gt 0 ] || die "$f declares Standards: with no entries (want backticked paths)"
-    review_standards_declared "${entries[@]}"
+    # The declaring file leads and each entry is printed before it is checked,
+    # so a die leaves the file and, last, the rejected entry on stdout for
+    # doctor to read as data.
     printf 'declared %s\n' "$f"
-    printf '%s\n' "${entries[@]}"
+    [ "${#entries[@]}" -gt 0 ] || die "$f declares Standards: with no entries (want backticked paths)"
+    for span in "${entries[@]}"; do
+      printf '%s\n' "$span"
+      review_standards_declared "$span"
+    done
     return 0
   done
   hop=(${listed[@]+"${listed[@]}"})
@@ -773,30 +779,19 @@ review_standards() {
 # reported - never parsed a second time. A declaration it dies on is a FAIL
 # carrying its own message.
 check_standards_declaration() {
-  local resolved err list first f where="" entry=""
+  local resolved err list first entry=""
   if ! capture resolved err review_standards_resolve_source; then
     d_fail "${err#orch: }"
-    # The file holding the paragraph, by the order the resolution reads them.
-    for f in CLAUDE.md AGENTS.md; do
-      ! review_standards_inside "$f" || where="$where $f"
-    done
-    if [ -z "$where" ]; then
-      for f in CODING_STANDARDS.md CONTRIBUTING.md; do
-        ! review_standards_inside "$f" || where="$where $f"
-      done
-    fi
-    for f in $where; do
-      if [ -n "$(review_standards_declaration "$f")" ]; then where="$f"; break; fi
-    done
-    where="${where# }"
-    case "$err" in
-      *'`'*) entry="${err#*\`}"; entry="${entry%%\`*}" ;;
-    esac
+    # The died resolution left its stdout: the declaring file, then the entries
+    # up to the rejected one (none when the paragraph had no entries).
+    lines_split "$resolved" first list
+    first="${first#declared }"
+    entry="${list##*$'\n'}"
     if [ -n "$entry" ]; then
-      d_remedy "change the entry \`$entry\` in the Standards: paragraph of $where to a repo-relative path of a file in the repo, with at most one #Heading that matches once - or delete the paragraph to have the reviewers crawl the standards documents" \
+      d_remedy "change the entry \`$entry\` in the Standards: paragraph of $first to a repo-relative path of a file in the repo, with at most one #Heading that matches once - or delete the paragraph to have the reviewers crawl the standards documents" \
         "see docs/repo-setup.md under the plugin root"
     else
-      d_remedy "list backticked repo-relative paths in the Standards: paragraph of $where - or delete the paragraph to have the reviewers crawl the standards documents" \
+      d_remedy "list backticked repo-relative paths in the Standards: paragraph of $first - or delete the paragraph to have the reviewers crawl the standards documents" \
         "see docs/repo-setup.md under the plugin root"
     fi
     return 0
