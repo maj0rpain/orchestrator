@@ -2657,20 +2657,20 @@ vc_reset
 out="$(vc_doctor)"; st=$?
 assert_not_contains "a repo with no verification line prints nothing for the check" "$out" "verification command"
 
-printf 'Ticket verification: nosuchtool-3346 --all\n' >CLAUDE.md
+printf 'Ticket verification: nosuchtool-3346 --all\nFull verification: nosuchtool-3346\n' >CLAUDE.md
 out="$(vc_doctor)"; st=$?
 assert_status "a missing ticket verification command leaves the exit status 0" "$st" 0
 assert_contains "warns, naming label, command and file" "$out" "warn  Ticket verification command nosuchtool-3346 (from CLAUDE.md)"
+assert_contains "a missing full verification command warns" "$out" "warn  Full verification command nosuchtool-3346 (from CLAUDE.md)"
+assert_not_contains "a full verification warn gives no remedy line" "$out" "Full verification command nosuchtool-3346 (from CLAUDE.md) is not installed.
+      "
 assert_not_contains "a warn gives no remedy line" "$out" "nosuchtool-3346 (from CLAUDE.md) is not installed.
       "
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_not_contains "doctor --flow does not run the check" "$out" "verification command"
 out="$(PATH="$vc_bin:$PATH" "$ORCH" doctor 2>&1)"
 assert_contains "bare doctor prints the check" "$out" "warn  Ticket verification command nosuchtool-3346"
-
-printf 'Full verification: nosuchtool-3346\n' >CLAUDE.md
-out="$(vc_doctor)"
-assert_contains "a missing full verification command warns" "$out" "warn  Full verification command nosuchtool-3346 (from CLAUDE.md)"
+assert_contains "bare doctor prints the full verification check" "$out" "warn  Full verification command nosuchtool-3346"
 
 printf 'Ticket verification: vctool test\nFull verification: vctool all\n' >CLAUDE.md
 out="$(vc_doctor)"
@@ -2680,9 +2680,6 @@ assert_contains "a found full command prints its ok line" "$out" "ok    Full ver
 printf 'Ticket verification: FOO=1 BAR=2 vctool test\n' >CLAUDE.md
 out="$(vc_doctor)"
 assert_contains "leading VAR=value words are skipped" "$out" "ok    Ticket verification command: vctool"
-printf 'Ticket verification: FOO=1 nosuchtool-3346\n' >CLAUDE.md
-out="$(vc_doctor)"
-assert_contains "the word after the prefix is the one checked" "$out" "warn  Ticket verification command nosuchtool-3346"
 
 printf 'Ticket verification: `vctool test`\n' >CLAUDE.md
 out="$(vc_doctor)"
