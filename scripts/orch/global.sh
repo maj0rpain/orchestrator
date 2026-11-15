@@ -745,6 +745,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               nothing else. Never reuses a directory, removes
                               the one it made when a later write fails, and
                               reads and writes no flow state
+  audit report <dir> <out.html>
+                              render the audit run <dir>'s HTML report from
+                              its ranked.md and area files into <out.html>,
+                              printing its path. Refused, writing nothing and
+                              leaving an earlier report as it was, when the
+                              ranked file does not hold together; the page
+                              goes through a temporary file beside <out.html>
   audit file <title> --category <c> --finding-file <f> --location <<file>:<line>>...
                               file one audit finding as a GitHub issue
                               labelled the repo's needs-triage and the

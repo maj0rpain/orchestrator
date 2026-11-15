@@ -129,6 +129,8 @@
 #     runs no agent sync
 #   scan_audit_hunt_run  each audit skill's Hunt step runs audit begin and names
 #     the area-<k>.md findings file
+#   scan_audit_rank_report  each audit skill's Report step runs audit report and
+#     its Rank step states its category as Category: <c>
 #   scan_quality_rule_home  orch-audit-tests' opening names the test auditor's
 #     brief and that brief's Brief section holds the quality rule
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
@@ -3343,6 +3345,58 @@ flags "and for the findings file name" \
   "$out" "skills/orch-audit-tests/SKILL.md: the Hunt step does not name the area-<k>.md findings file"
 check "each audit skill's Hunt step runs audit begin and names area-<k>.md" \
   "$(scan_audit_hunt_run "$PLUGIN_ROOT")"
+
+# scan_audit_rank_report <plugin root>: one line per audit skill whose Report
+# step does not run audit report, and one per skill whose Rank step does not
+# state its category in the literal form Category: <c>, for each category the
+# skill files under.
+scan_audit_rank_report() {
+  local r="$1" name skill heading report rank cat
+  for name in audit-docs audit-code audit-tests; do
+    skill="skills/orch-$name/SKILL.md"
+    if [ ! -f "$r/$skill" ]; then
+      echo "$skill: missing"
+      continue
+    fi
+    report="" rank=""
+    if heading="$(numbered_heading "$r/$skill" "Report")"; then
+      report="$(md_section "$r/$skill" "$heading" 2>/dev/null | flat_text)"
+    fi
+    if heading="$(numbered_heading "$r/$skill" "Rank")"; then
+      rank="$(md_section "$r/$skill" "$heading" 2>/dev/null | flat_text)"
+    fi
+    grep -qF 'audit report' <<<"$report" || echo "$skill: the Report step does not run audit report"
+    case "$name" in
+      audit-docs) cat="documentation" ;;
+      audit-code) cat="bug enhancement" ;;
+      audit-tests) cat="enhancement" ;;
+    esac
+    for cat in $cat; do
+      grep -qF "Category: $cat" <<<"$rank" || echo "$skill: the Rank step does not state Category: $cat"
+    done
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-audit-docs" "$fixture/skills/orch-audit-code" "$fixture/skills/orch-audit-tests"
+printf '# A\n\n## 4. Rank\n\nWrite `Category: documentation`.\n\n## 5. Report\n\nRun `audit report`.\n\n## 6. Hand off\n' \
+  >"$fixture/skills/orch-audit-docs/SKILL.md"
+printf '# A\n\n## 4. Rank\n\nWrite `Category: bug`.\n\n## 5. Report\n\nWrite the HTML.\n\n## 6. Hand off\n' \
+  >"$fixture/skills/orch-audit-code/SKILL.md"
+printf '# A\n\nRun `audit report`; `Category: enhancement`.\n\n## 5. Rank\n\nRank.\n\n## 6. Report\n\nOpen it.\n\n## 7. Hand off\n' \
+  >"$fixture/skills/orch-audit-tests/SKILL.md"
+out="$(scan_audit_rank_report "$fixture")"
+spares "a Report naming audit report and a Rank stating its category is accepted" "$out" 'audit-docs/SKILL.md'
+flags "a Report step that never runs audit report is flagged" \
+  "$out" "skills/orch-audit-code/SKILL.md: the Report step does not run audit report"
+flags "a Rank step missing one of two categories is flagged" \
+  "$out" "skills/orch-audit-code/SKILL.md: the Rank step does not state Category: enhancement"
+flags "a category stated outside the Rank step is flagged" \
+  "$out" "skills/orch-audit-tests/SKILL.md: the Rank step does not state Category: enhancement"
+flags "and audit report outside the Report step" \
+  "$out" "skills/orch-audit-tests/SKILL.md: the Report step does not run audit report"
+check "each audit skill's Report runs audit report and its Rank states the category" \
+  "$(scan_audit_rank_report "$PLUGIN_ROOT")"
 
 # scan_quality_rule_home <plugin root>: one line when orch-audit-tests' opening
 # (its text before the first numbered step heading) does not name

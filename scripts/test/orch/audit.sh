@@ -214,6 +214,7 @@ done
 
 # Refusals make nothing.
 usage_all="orch: usage: orch.sh audit begin <code|docs|tests>
+   or: orch.sh audit report <dir> <out.html>
    or: orch.sh audit file <title> --category <bug|enhancement|documentation> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
 new_repo >/dev/null
 for args in "begin" "begin bogus" "begin code extra" "bogus" ""; do
@@ -267,3 +268,185 @@ before="$(cksum <.orchestrator/state.json)"
 out="$("$ORCH" audit begin docs 2>&1)"; st=$?
 assert_status "runs with an active flow" "$st" 0
 assert_eq "leaving state.json unchanged" "$(cksum <.orchestrator/state.json)" "$before"
+
+# --- audit report -----------------------------------------------------------
+
+# report_run: a fresh repo and an audit run holding two area files and a
+# ranked file; the run directory is in $run, the commit in $head_sha.
+report_run() {
+  new_repo >/dev/null
+  head_sha="$(git rev-parse HEAD)"
+  run="$("$ORCH" audit begin code)"
+  cat >"$run/area-1.md" <<'AREA'
+@@ finding 1
+Kind: latent bug
+Location: a.sh:1, b.sh:2-3
+Evidence: it <breaks> when `x & y` runs
+```mermaid
+graph TD; A-->B
+```
+Confidence: certain
+@@ finding 2
+Kind: inefficiency
+Location: b.sh:2-3, c.sh:9
+Evidence: slow
+AREA
+  cat >"$run/area-2.md" <<'AREA'
+@@ finding 1
+Kind: architecture deepening
+Location: d.sh:5
+Evidence: friction
+```
+Note: kept in a fence
+```
+AREA
+  cat >"$run/ranked.md" <<'RANKED'
+@@ scope the audit's scope
+@@ areas 2
+@@ note Timing mode
+Mode: fast.
+
+Trend: flat.
+@@ top 1
+Start here, because `a.sh` is hot.
+@@ finding 1
+From: area-1:1, area-1:2
+Title: Latent bug in a.sh
+Category: bug
+Overlaps: 3
+Evidence: restated <b>evidence</b>
+@@ finding 2
+From: area-2:1
+Title: Deepen d.sh
+Category: enhancement
+@@ finding 3
+Title: Whole finding with no source
+Category: enhancement
+Location: z.sh:4
+Kind: inefficiency
+Evidence: a `tick` and a fence:
+```
+Evidence: not a field
+```
+RANKED
+  out="$run/report.html"
+}
+
+echo
+echo "audit report"
+report_run
+res="$("$ORCH" audit report "$run" "$out")"; st=$?
+assert_status "renders a report" "$st" 0
+assert_eq "printing the report's path" "$res" "$out"
+page="$(cat "$out")"
+assert_contains "the head names the kind" "$page" "Audit report: code"
+assert_contains "and the scope" "$page" "the audit&#39;s scope"
+assert_contains "and the area count" "$page" '<dt class="font-semibold">Areas</dt><dd class="col-span-3">2</dd>'
+assert_contains "and the recorded commit" "$page" "<code>$head_sha</code>"
+assert_contains "and each note under its heading" "$page" '<h2 class="text-lg font-semibold">Timing mode</h2>'
+assert_contains "the note's paragraphs break at a blank line" "$page" '<p class="my-2">Trend: flat.</p>'
+assert_contains "the top recommendation links its finding" "$page" 'href="#finding-1">Finding 1: Latent bug in a.sh</a>'
+assert_contains "with its reason, a span as code" "$page" '<code>a.sh</code> is hot.'
+assert_contains "a From: reference carries the source's fields" "$page" '<p class="my-2">latent bug</p>'
+assert_contains "a restated field replaces the source's, escaped" "$page" 'restated &lt;b&gt;evidence&lt;/b&gt;'
+assert_contains "a merge lists every source's locations" "$page" "<li><code>a.sh:1</code></li>
+<li><code>b.sh:2-3</code></li>
+<li><code>c.sh:9</code></li>"
+assert_contains "a finding with no source carries its own" "$page" '<h2 class="text-xl font-semibold">3. Whole finding with no source</h2>'
+assert_contains "its inline span is code" "$page" '<code>tick</code>'
+assert_contains "a fence is preformatted code, its field-looking line kept" "$page" '<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>Evidence: not a field</code></pre>'
+assert_contains "an overlap stated on one finding links the other" "$page" 'href="#finding-3">Finding 3: Whole finding with no source</a>'
+assert_contains "and shows on the other" "$(grep -A25 'id="finding-3"' "$out")" 'href="#finding-1">Finding 1: Latent bug in a.sh</a>'
+assert_eq "no src or href but the two CDNs and the page's own findings" \
+  "$(grep -o '\(src\|href\)="[^"]*"' "$out" | grep -v '="#finding-[0-9]*"$' | sort | tr '\n' ' ')" \
+  'src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" src="https://cdn.tailwindcss.com" '
+"$ORCH" audit report "$run" "$run/again.html" >/dev/null
+assert_eq "the same run renders the same bytes" "$(cksum <"$run/again.html")" "$(cksum <"$out")"
+
+echo
+echo "audit report mermaid from a hunter's block"
+report_run
+sed -i '/^Evidence: restated/d' "$run/ranked.md"
+"$ORCH" audit report "$run" "$out" >/dev/null
+assert_contains "an unrestated field keeps the hunter's fenced diagram" "$(cat "$out")" '<pre class="mermaid">graph TD; A--&gt;B</pre>'
+
+echo
+echo "audit report nothing found"
+new_repo >/dev/null
+run="$("$ORCH" audit begin tests)"
+printf '@@ scope s\n@@ areas 1\n@@ none\n' >"$run/ranked.md"
+"$ORCH" audit report "$run" "$run/r.html" >/dev/null; st=$?
+assert_status "renders a nothing-found report" "$st" 0
+assert_contains "saying nothing was found" "$(cat "$run/r.html")" "found nothing"
+assert_contains "naming its kind" "$(cat "$run/r.html")" "Audit report: tests"
+assert_eq "with no top recommendation" "$(grep -c 'Top recommendation' "$run/r.html")" 0
+
+echo
+echo "audit report refusals"
+report_run
+printf 'earlier report\n' >"$out"
+# report_refuse <what> <expected text> <sed script over ranked.md>
+report_refuse() {
+  report_run
+  printf 'earlier report\n' >"$out"
+  sed -i "$3" "$run/ranked.md"
+  res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
+  assert_status "$1 is refused" "$st" 1
+  assert_contains "saying so" "$res" "orch: "
+  assert_contains "naming the problem" "$res" "$2"
+  assert_eq "leaving the earlier report" "$(cat "$out")" "earlier report"
+  assert_eq "and no temporary file" "$(find "$run" -name "*.tmp.*" | wc -l | tr -d " ")" 0
+}
+report_refuse "a ranked file with no scope" "no @@ scope" '/^@@ scope/d'
+report_refuse "a second scope" "a second @@ scope" '/^@@ areas/a @@ scope again'
+report_refuse "a ranked file with no areas" "no @@ areas" '/^@@ areas/d'
+report_refuse "a ranked file with neither top nor none" "exactly one of @@ top and @@ none" '/^@@ top/,/^Start here/d'
+report_refuse "a finding gap" "expected @@ finding 2" 's/^@@ finding 2/@@ finding 3/'
+report_refuse "a From naming a missing area file" "area-9.md" 's/^From: area-2:1/From: area-9:1/'
+report_refuse "a From naming a missing block" "finding 7" 's/^From: area-2:1/From: area-2:7/'
+report_refuse "a missing title" "has no Title" '/^Title: Deepen/d'
+report_refuse "a multi-line title" "not one line" 's/^Title: Deepen d.sh/Title:/'
+report_refuse "an unknown category" "'cheese'" 's/^Category: bug/Category: cheese/'
+report_refuse "a missing category" "has no Category" '/^Category: bug/d'
+report_refuse "a bad location" "not <file>:<line>" 's/^Location: z.sh:4/Location: z.sh/'
+report_refuse "a finding with no location" "has no Location" '/^Location: z.sh:4/d'
+report_refuse "an overlap outside the file" "'9'" 's/^Overlaps: 3/Overlaps: 9/'
+report_refuse "an overlap with itself" "'1'" 's/^Overlaps: 3/Overlaps: 1/'
+report_refuse "a top outside the file" "finding 9" 's/^@@ top 1/@@ top 9/'
+report_refuse "an unknown @@ line" "unknown line" 's/^@@ areas 2/@@ areas 2\n@@ bogus/'
+report_run
+rm "$run/record"
+res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
+assert_status "a run directory with no record is refused" "$st" 1
+assert_contains "naming the record" "$res" "no audit run record"
+assert_eq "writing nothing" "$(on_disk "$out")" absent
+
+echo
+echo "audit report output path"
+report_run
+res="$("$ORCH" audit report "$run" "$run/nodir/r.html" 2>&1)"; st=$?
+assert_status "an out.html whose directory is missing is refused" "$st" 1
+assert_contains "with an orch line" "$res" "orch: the directory for the report does not exist"
+assert_eq "writing nothing" "$(on_disk "$run/nodir")" absent
+if [ "$(id -u)" -ne 0 ]; then
+  mkdir "$run/ro"
+  printf 'earlier\n' >"$run/ro/r.html"
+  chmod a-w "$run/ro"
+  res="$("$ORCH" audit report "$run" "$run/ro/r.html" 2>&1)"; st=$?
+  chmod u+w "$run/ro"
+  assert_status "an out.html in a read-only directory is refused" "$st" 1
+  assert_contains "with an orch line" "$res" "orch: cannot write the report"
+  assert_eq "leaving the earlier report byte for byte" "$(cat "$run/ro/r.html")" earlier
+fi
+
+echo
+echo "audit report usage"
+new_repo >/dev/null
+for args in "report" "report only-one" "report a b c"; do
+  # shellcheck disable=SC2086 # the words are the point
+  res="$("$ORCH" audit $args 2>&1)"; st=$?
+  assert_status "audit '$args' is refused" "$st" 1
+  assert_contains "with the usage naming report" "$res" "orch: usage: orch.sh audit begin <code|docs|tests>
+   or: orch.sh audit report <dir> <out.html>
+   or: orch.sh audit file"
+done

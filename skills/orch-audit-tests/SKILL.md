@@ -150,19 +150,35 @@ Give each candidate a recommendation strength - **strong**, **worth it** or
 **marginal** - weighing the cost saved against the size and risk of the
 change. Name one **top recommendation**: the candidate to start with, and why.
 
+Then write the ranked file, `ranked.md` in the run directory. Its lines are
+`@@ scope <text>` (the scope in one line), `@@ areas <count>`, any number
+of `@@ note <heading>` blocks (text shown in the report's head under that
+heading), which carry the timing mode (per section, per file or only as one
+whole run), the measured cost of each part and the trend from `suite-cost
+history`, `@@ top <n>` followed by why that finding comes first, and one
+`@@ finding <n>` block per kept finding, numbered from 1 in order with no
+gap; `@@ none` takes the place of `@@ top` and every finding when ranking
+kept nothing. No line of text starts with `@@`. A finding block is a list
+of fields, each opening a line with its label and a colon. Point at each
+kept finding with `From: <area file>:<k>` (e.g. `area-2:3`, finding 3 of
+`area-2.md`; several sources comma-separated, merged in `From:` order),
+restate only the fields ranking changed, and give each a `Title:` - one
+line naming the finding's kind and location, the issue's title if it is
+filed - and a `Category: <c>`: `Category: enhancement`. The strength, cost
+saved (marked estimated where it is) and before/after are fields like any
+other. List under `Overlaps:` the numbers of each finding whose fix would
+change the same function or the same lines. A finding written whole needs
+no `From:`. Each finding stands alone: it names no other finding and never
+the report.
+
 ## 6. Report
 
-Write a self-contained HTML report to the run directory (for instance
-`"<run directory>/audit-tests.html"`). It loads Tailwind and Mermaid from
-a CDN and holds everything else inline. It carries:
-
-- the scope, the area count, whether parts were timed per section, per file,
-  or only as one whole run, the measured cost of each part, and the trend from
-  `suite-cost history`;
-- the top recommendation, first;
-- each candidate in rank order, with its kind, location, strength, cost saved
-  (marked estimated where it is), and a **before/after**: the test as it is
-  beside the test as proposed, with why the after tests as well.
+Run `bash "$ORCH" audit report "<run>" "<run>/report.html"`,
+<run> being the run directory. It renders the self-contained HTML report from
+`ranked.md` and the area files: the scope, area count, notes and recorded
+commit in its head, the top recommendation first, then every finding in
+rank order. A refusal names the line that is wrong: fix it in the ranked
+file and run the command again. Never write HTML or a script that writes it.
 
 Open it in the browser - `xdg-open <file>` on Linux, `open <file>` on macOS -
 and tell the user its path. On a host that cannot open it, write a Markdown
@@ -199,8 +215,8 @@ With both lists, filing runs first, then the interview.
   strength) to a finding file in the run directory and run
   `bash "$ORCH" audit file "<title>" --category enhancement --finding-file
   <file> --location <location>...`, one `--location` per site, each the
-  `<file>:<start>-<end>` the hunter reported. The title is one line naming the
-  candidate's kind and location. It prints the issue number; when an open issue
+  `<file>:<start>-<end>` the hunter reported. The title is the finding's
+  `Title:` from the ranked file. It prints the issue number; when an open issue
   already has that title it files nothing and says so on stderr. Report the
   issue numbers, naming any that was already open rather than newly filed. A
   filing that fails stops the step: report the numbers already filed (they stay
