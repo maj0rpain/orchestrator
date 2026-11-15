@@ -53,6 +53,29 @@ for assoc in $tr_assocs_untrusted; do
     "$(tr_fetch stranger "$assoc")" "was last written by stranger"
 done
 
+# The JSON array the filter hands jq is built as the module loads, on an empty
+# PATH, so it starts no process.
+tr_json="$(PATH='' "$BASH" -c 'source "$1/scripts/orch/trust.sh"; printf "%s" "$TRUST_ASSOCIATIONS_JSON"' _ "$PLUGIN_ROOT")"
+assert_eq "the array is built at load, with no process on PATH" "$tr_json" '["OWNER", "MEMBER", "COLLABORATOR"]'
+
+# The comment filter and the issue check agree on each trusted association, one
+# outside them, a lower-case one and an empty one.
+for tr_a in OWNER MEMBER COLLABORATOR NONE owner ""; do
+  tr_label="${tr_a:-empty}"
+  fake_issue 8 open ready-for-agent orch:spec
+  fake_comment 8 someone "2026-09-01T10:00:00Z" "said by $tr_label" "$tr_a"
+  [ -n "$tr_a" ] || printf '\n' >"$ORCH_GH_FAKE_STORE/issues/8/comments/1/association"
+  "$ORCH" issue comments 8 "$tr_file" >/dev/null 2>&1
+  tr_kept=no; ! grep -q "said by $tr_label" "$tr_file" || tr_kept=yes
+  fake_issue_authorship 8 stranger "$tr_a"
+  tr_checked=no; [ -n "$({ "$ORCH" issue fetch 8 "$tr_file" >/dev/null; } 2>&1)" ] || tr_checked=yes
+  assert_eq "association '$tr_label': the filter and the issue check agree" "$tr_kept" "$tr_checked"
+  case "$tr_a" in
+    OWNER|MEMBER|COLLABORATOR) assert_eq "association '$tr_label' is trusted" "$tr_kept" yes ;;
+    *) assert_eq "association '$tr_label' is not trusted" "$tr_kept" no ;;
+  esac
+done
+
 # The editor and renamer rules, with the author a stranger.
 tr_wrote="was last written by"
 assert_eq "a maintainer editor trusts a title never renamed" "$(tr_fetch stranger NONE maintainer "")" ""

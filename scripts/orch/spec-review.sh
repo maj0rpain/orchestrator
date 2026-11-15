@@ -672,7 +672,7 @@ spec_review_answer() {
         case "$n" in ''|*[!0-9]*) bad=1 ;; esac
         case "$sign:$letter" in :[A-Za-z]|[-+]:) ;; *) bad=1 ;; esac
         [ -z "$bad" ] || die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>"
-        letter="$(printf '%s' "$letter" | tr '[:lower:]' '[:upper:]')"
+        letter="${letter^^}"
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
         [ -z "${SR_DISP[$i]+x}" ] || die "the answer names item $n twice"

@@ -186,7 +186,7 @@ side_checkout_refuse_ticket_worktrees() {
 # archives what is left into a fresh directory. There is no rollback.
 archive_flow() {
   local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" state slug dest entry kept i
-  local entries=() moved
+  local entries=() moved base
   state="$(flow_state_file "$root")"
   side_checkout_refuse_ticket_worktrees "$root"
   # A state.json that does not parse still archives - abort is the remedy for
@@ -196,8 +196,9 @@ archive_flow() {
   mkdir -p "$dest" 2>/dev/null || die "could not create the archive directory $dest - nothing was archived"
   for entry in "$orch"/*; do
     [ -e "$entry" ] || continue
+    path_last_into base "$entry"
     for kept in "${FLOW_LESS_ENTRIES[@]}"; do
-      [ "$(basename "$entry")" = "$kept" ] && continue 2
+      [ "$base" = "$kept" ] && continue 2
     done
     [ "$entry" = "$state" ] || entries+=("$entry")
   done
