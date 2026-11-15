@@ -173,7 +173,7 @@ stale_run() {
   # The calibration sections: recorded CPU nearest 5.0 seconds, ties in walk
   # order; "<distance> <index> <cpu> <title>".
   awk -F'\t' '{ d = $2 - 50; if (d < 0) d = -d; printf "%d\t%d\t%d\t%s\n", d, $1, $2, $3 }' "$tmp/fresh" |
-    sort -t "$TAB" -k1,1n -k2,2n | head -n 5 >"$tmp/calib" || return 1
+    sort -t "$TAB" -k1,1n -k2,2n | awk "NR <= 5" >"$tmp/calib" || return 1
   { awk -F'\t' '$3 == "section" { print $2 }' "$tmp/todo"; cut -f4 "$tmp/calib"; } >"$tmp/needed"
   # One filtered parallel run measures the stale and missing sections and the
   # calibration ones; the pattern holds each title whole.
