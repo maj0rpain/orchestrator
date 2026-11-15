@@ -1518,9 +1518,11 @@ assert_eq "a confirming run records nothing from the interrupted run" "$(log_cou
 # removal fails, naming the removing command, and the exit stays 143.
 check_repo
 seed_run "$head" 70.00 "sh -c git worktree lock . && kill -TERM \$PPID"
-errf="$(mktemp)"
-"$ORCH" suite-cost check -- sh -c 'git worktree lock . && kill -TERM $PPID' >/dev/null 2>"$errf"; st=$?
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+TMPDIR="$tdir" "$ORCH" suite-cost check -- sh -c 'git worktree lock . && kill -TERM $PPID' >/dev/null 2>"$errf"; st=$?
 assert_status "a locked worktree: still exits 143" "$st" 143
+# the locked worktree keeps its own directory; no timing file may stay beside it
+assert_eq "a locked worktree: leaves no timing file" "$(find "$tdir" -mindepth 1 -maxdepth 1 ! -type d | wc -l | tr -d ' ')" 0
 assert_contains "the removal's warning names the removing command" "$(cat "$errf")" "git worktree remove --force"
 git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r w; do
   [ "$w" = "$PWD" ] || { git worktree unlock "$w" 2>/dev/null; git worktree remove --force "$w" 2>/dev/null; }
@@ -1531,9 +1533,10 @@ done
 new_repo >/dev/null
 rec_path made
 printf 'plain\n' >"$rec.active"
-errf="$(mktemp)"
-"$ORCH" suite-cost run -- sh -c 'kill -TERM $PPID' >/dev/null 2>"$errf"; st=$?
+tdir="$(mktemp -d)"; errf="$(mktemp)"
+TMPDIR="$tdir" "$ORCH" suite-cost run -- sh -c 'kill -TERM $PPID' >/dev/null 2>"$errf"; st=$?
 assert_status "an unregistered run, interrupted, exits 143" "$st" 143
+assert_eq "an unregistered run, interrupted: leaves no timing file" "$(ls -A "$tdir" | wc -l | tr -d ' ')" 0
 assert_eq "warns once" "$(grep -cF -- "$interrupted_msg" "$errf")" 1
 assert_eq "records nothing" "$(on_disk "$rec")" absent
 assert_eq "and leaves the plain file as it was" "$(cat "$rec.active")" plain
