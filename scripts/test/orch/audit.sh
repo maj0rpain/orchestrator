@@ -79,7 +79,6 @@ Evidence: a `tick` and a fence:
 Evidence: not a field
 ```
 RANKED
-  out="$run/report.html"
 }
 
 # --- audit file -------------------------------------------------------------
@@ -336,10 +335,16 @@ assert_eq "leaving state.json unchanged" "$(cksum <.orchestrator/state.json)" "$
 echo
 echo "audit report"
 report_run
-res="$("$ORCH" audit report "$run" "$out")"; st=$?
+report="$run/report.html"
+cp "$run/ranked.md" "$run/ranked.saved"; cp "$run/area-1.md" "$run/area-1.saved"; cp "$run/record" "$run/record.saved"
+# report_reset: the run as report_run left it, for the next case.
+report_reset() {
+  cp "$run/ranked.saved" "$run/ranked.md"; cp "$run/area-1.saved" "$run/area-1.md"; cp "$run/record.saved" "$run/record"
+}
+res="$("$ORCH" audit report "$run" "$report")"; st=$?
 assert_status "renders a report" "$st" 0
-assert_eq "printing the report's path" "$res" "$out"
-page="$(cat "$out")"
+assert_eq "printing the report's path" "$res" "$report"
+page="$(cat "$report")"
 assert_contains "the head names the kind" "$page" "Audit report: code"
 assert_contains "and the scope" "$page" "the audit&#39;s scope"
 assert_contains "and the area count" "$page" '<dt class="font-semibold">Areas</dt><dd class="col-span-3">2</dd>'
@@ -357,46 +362,35 @@ assert_contains "a finding with no source carries its own" "$page" '<h2 class="t
 assert_contains "its inline span is code" "$page" '<code>tick</code>'
 assert_contains "a fence is preformatted code, its field-looking line kept" "$page" '<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>Evidence: not a field</code></pre>'
 assert_contains "an overlap stated on one finding links the other" "$page" 'href="#finding-3">Finding 3: Whole finding with no source</a>'
-assert_contains "and shows on the other" "$(grep -A25 'id="finding-3"' "$out")" 'href="#finding-1">Finding 1: Latent bug in a.sh</a>'
+assert_contains "and shows on the other" "$(grep -A25 'id="finding-3"' "$report")" 'href="#finding-1">Finding 1: Latent bug in a.sh</a>'
 assert_eq "no src or href but the two CDNs and the page's own findings" \
-  "$(grep -o '\(src\|href\)="[^"]*"' "$out" | grep -v '="#finding-[0-9]*"$' | sort | tr '\n' ' ')" \
+  "$(grep -o '\(src\|href\)="[^"]*"' "$report" | grep -v '="#finding-[0-9]*"$' | sort | tr '\n' ' ')" \
   'src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" src="https://cdn.tailwindcss.com" '
 "$ORCH" audit report "$run" "$run/again.html" >/dev/null
-assert_eq "the same run renders the same bytes" "$(cksum <"$run/again.html")" "$(cksum <"$out")"
+assert_eq "the same run renders the same bytes" "$(cksum <"$run/again.html")" "$(cksum <"$report")"
 
 echo
 echo "audit report mermaid from a hunter's block"
-report_run
+report_reset
 sed -i '/^Evidence: restated/d' "$run/ranked.md"
-"$ORCH" audit report "$run" "$out" >/dev/null
-assert_contains "an unrestated field keeps the hunter's fenced diagram" "$(cat "$out")" '<pre class="mermaid">graph TD; A--&gt;B</pre>'
-
-echo
-echo "audit report nothing found"
-new_repo >/dev/null
-run="$("$ORCH" audit begin tests)"
-printf '@@ scope s\n@@ areas 1\n@@ none\n' >"$run/ranked.md"
-"$ORCH" audit report "$run" "$run/r.html" >/dev/null; st=$?
-assert_status "renders a nothing-found report" "$st" 0
-assert_contains "saying nothing was found" "$(cat "$run/r.html")" "found nothing"
-assert_contains "naming its kind" "$(cat "$run/r.html")" "Audit report: tests"
-assert_eq "with no top recommendation" "$(grep -c 'Top recommendation' "$run/r.html")" 0
+"$ORCH" audit report "$run" "$report" >/dev/null
+assert_contains "an unrestated field keeps the hunter's fenced diagram" "$(cat "$report")" '<pre class="mermaid">graph TD; A--&gt;B</pre>'
 
 echo
 echo "audit report refusals"
-report_run
+report_reset
 cp "$run/ranked.md" "$run/ranked.orig"
 # report_refuse <what> <expected text> <sed script over ranked.md>: the one run
 # above, its ranked file restored, then edited by the sed script.
 report_refuse() {
   cp "$run/ranked.orig" "$run/ranked.md"
-  printf 'earlier report\n' >"$out"
+  printf 'earlier report\n' >"$report"
   sed -i "$3" "$run/ranked.md"
-  res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
+  res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
   assert_status "$1 is refused" "$st" 1
   assert_contains "saying so" "$res" "orch: "
   assert_contains "naming the problem" "$res" "$2"
-  assert_eq "leaving the earlier report" "$(cat "$out")" "earlier report"
+  assert_eq "leaving the earlier report" "$(cat "$report")" "earlier report"
   assert_eq "and no temporary file" "$(find "$run" -name "*.tmp.*" | wc -l | tr -d " ")" 0
 }
 report_refuse "a ranked file with no scope" "no @@ scope" '/^@@ scope/d'
@@ -416,16 +410,16 @@ report_refuse "an overlap outside the file" "'9'" 's/^Overlaps: 3/Overlaps: 9/'
 report_refuse "an overlap with itself" "'1'" 's/^Overlaps: 3/Overlaps: 1/'
 report_refuse "a top outside the file" "finding 9" 's/^@@ top 1/@@ top 9/'
 report_refuse "an unknown @@ line" "unknown line" 's/^@@ areas 2/@@ areas 2\n@@ bogus/'
-report_run
-rm "$run/record"
-res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
+report_reset
+rm "$run/record" "$report"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
 assert_status "a run directory with no record is refused" "$st" 1
 assert_contains "naming the record" "$res" "no audit run record"
-assert_eq "writing nothing" "$(on_disk "$out")" absent
+assert_eq "writing nothing" "$(on_disk "$report")" absent
 
 echo
 echo "audit report output path"
-report_run
+report_reset
 res="$("$ORCH" audit report "$run" "$run/nodir/r.html" 2>&1)"; st=$?
 assert_status "an out.html whose directory is missing is refused" "$st" 1
 assert_contains "with an orch line" "$res" "orch: the directory for the report does not exist"
@@ -442,6 +436,55 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo
+echo "audit report-reference check in audit report"
+report_reset
+cp "$run/ranked.md" "$run/ranked.orig"
+for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
+  cp "$run/ranked.orig" "$run/ranked.md"
+  printf 'earlier report\n' >"$report"
+  sed -i "s/^Title: Deepen d.sh/Title: Deepen d.sh like $phrase/" "$run/ranked.md"
+  res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+  assert_status "a title saying '$phrase' is refused" "$st" 1
+  assert_contains "naming the phrase" "$res" "says '$phrase'"
+  assert_eq "writing nothing" "$(cat "$report")" "earlier report"
+done
+report_reset
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in finding 2/' "$run/ranked.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "a restated field saying finding 2 is refused" "$st" 1
+assert_contains "naming the field" "$res" "Evidence: says 'finding 2'"
+report_reset
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: `finding 2` and "the report" read fine/' "$run/ranked.md"
+sed -i 's/^Title: Whole finding with no source/Title: See the report/' "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null; st=$?
+assert_status "the report and a backticked finding 2 are accepted" "$st" 0
+report_reset
+sed -i "s/^Confidence: certain/Confidence: as in finding 3/" "$run/area-1.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "a hunter's block saying finding 3 is refused" "$st" 1
+sed -i "s/^Evidence: restated <b>evidence<\/b>/Confidence: sure/" "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null; st=$?
+assert_status "until the ranked block restates the field" "$st" 0
+report_reset
+sed -i "s/^Evidence: not a field/finding 9 and this report/" "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null; st=$?
+assert_status "a fenced block is not checked" "$st" 0
+report_reset
+printf '@@ finding 4\nFrom: area-2:1\nTitle: T4\nCategory: bug\nOverlaps: 1\n' >>"$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null; st=$?
+assert_status "From: and Overlaps: values are not checked" "$st" 0
+echo
+echo "audit report nothing found"
+new_repo >/dev/null
+run="$("$ORCH" audit begin tests)"
+printf '@@ scope s\n@@ areas 1\n@@ none\n' >"$run/ranked.md"
+"$ORCH" audit report "$run" "$run/r.html" >/dev/null; st=$?
+assert_status "renders a nothing-found report" "$st" 0
+assert_contains "saying nothing was found" "$(cat "$run/r.html")" "found nothing"
+assert_contains "naming its kind" "$(cat "$run/r.html")" "Audit report: tests"
+assert_eq "with no top recommendation" "$(grep -c 'Top recommendation' "$run/r.html")" 0
+
+echo
 echo "audit report usage"
 new_repo >/dev/null
 for args in "report" "report only-one" "report a b c"; do
@@ -453,44 +496,6 @@ for args in "report" "report only-one" "report a b c"; do
    or: orch.sh audit file"
 done
 
-echo
-echo "audit report-reference check in audit report"
-report_run
-cp "$run/ranked.md" "$run/ranked.orig"
-for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
-  cp "$run/ranked.orig" "$run/ranked.md"
-  printf 'earlier report\n' >"$out"
-  sed -i "s/^Title: Deepen d.sh/Title: Deepen d.sh like $phrase/" "$run/ranked.md"
-  res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
-  assert_status "a title saying '$phrase' is refused" "$st" 1
-  assert_contains "naming the phrase" "$res" "says '$phrase'"
-  assert_eq "writing nothing" "$(cat "$out")" "earlier report"
-done
-report_run
-sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in finding 2/' "$run/ranked.md"
-res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
-assert_status "a restated field saying finding 2 is refused" "$st" 1
-assert_contains "naming the field" "$res" "Evidence: says 'finding 2'"
-report_run
-sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: `finding 2` and "the report" read fine/' "$run/ranked.md"
-sed -i 's/^Title: Whole finding with no source/Title: See the report/' "$run/ranked.md"
-"$ORCH" audit report "$run" "$out" >/dev/null; st=$?
-assert_status "the report and a backticked finding 2 are accepted" "$st" 0
-report_run
-sed -i "s/^Confidence: certain/Confidence: as in finding 3/" "$run/area-1.md"
-res="$("$ORCH" audit report "$run" "$out" 2>&1)"; st=$?
-assert_status "a hunter's block saying finding 3 is refused" "$st" 1
-sed -i "s/^Evidence: restated <b>evidence<\/b>/Confidence: sure/" "$run/ranked.md"
-"$ORCH" audit report "$run" "$out" >/dev/null; st=$?
-assert_status "until the ranked block restates the field" "$st" 0
-report_run
-sed -i "s/^Evidence: not a field/finding 9 and this report/" "$run/ranked.md"
-"$ORCH" audit report "$run" "$out" >/dev/null; st=$?
-assert_status "a fenced block is not checked" "$st" 0
-report_run
-printf '@@ finding 4\nFrom: area-2:1\nTitle: T4\nCategory: bug\nOverlaps: 1\n' >>"$run/ranked.md"
-"$ORCH" audit report "$run" "$out" >/dev/null; st=$?
-assert_status "From: and Overlaps: values are not checked" "$st" 0
 
 echo
 echo "audit report-reference check in audit file"
