@@ -2166,10 +2166,7 @@ rm -f "$BW_Q/docs/$BW_BAD"
 # A dirty file with a newline in its name, and one the hook cannot read, do not
 # stop another widened file from being reported.
 printf '# T\n' >"$BW_Q/$(printf 'new\nline.md')"
-BW_ID=$((BW_ID + 1))
-bw_hook PreToolUse "$BW_Q" "t$BW_ID"
-printf '# T\n\n%s\n' "$wide" >"$BW_Q/docs/after.md"
-bw_hook PostToolUse "$BW_Q" "t$BW_ID"
+bw_call "$BW_Q" "printf '# T\n\n%s\n' '$wide' > docs/after.md"
 assert_eq "bash hook: a newline in a dirty file's name leaves another file reported" \
   "$bw_rc" 2
 assert_contains "bash hook: a newline in a dirty file's name leaves another file named" \
@@ -2180,10 +2177,7 @@ if [ "$(id -u)" -eq 0 ]; then
 else
   printf '# T\n' >"$BW_Q/docs/a-unreadable.md"
   chmod 000 "$BW_Q/docs/a-unreadable.md"
-  BW_ID=$((BW_ID + 1))
-  bw_hook PreToolUse "$BW_Q" "t$BW_ID"
-  printf '# T\n\n%s\n' "$wide" >"$BW_Q/docs/z-after.md"
-  bw_hook PostToolUse "$BW_Q" "t$BW_ID"
+  bw_call "$BW_Q" "printf '# T\n\n%s\n' '$wide' > docs/z-after.md"
   assert_eq "bash hook: an unreadable dirty file leaves another file reported" \
     "$bw_rc" 2
   assert_contains "bash hook: an unreadable dirty file leaves another file named" \
@@ -2216,6 +2210,15 @@ for bw_fail in "git:$BW_FAILGIT" "grep:$BW_FAILGREP"; do
     "$(ls -A "$BW_TMP3")"
   printf '# T\n' >"$BW_Q/dirty.md"
 done
+# A status listing that fails leaves no snapshot.
+BW_STATGIT="$(mktemp -d)"
+printf '#!/bin/sh\ncase " $* " in *" status "*) exit 1 ;; esac\nexec "%s" "$@"\n' \
+  "$(command -v git)" >"$BW_STATGIT/git"
+chmod +x "$BW_STATGIT/git"
+BW_ID=$((BW_ID + 1))
+TMPDIR="$BW_TMP3" bw_hook PreToolUse "$BW_Q" "t$BW_ID" "$BW_STATGIT:$PATH"
+assert_empty "bash hook: a Pre whose status listing fails leaves no snapshot" \
+  "$(ls -A "$BW_TMP3")"
 # A hash run that exits 0 with no output returns fewer hashes than paths.
 BW_EMPTYGIT="$(mktemp -d)"
 printf '#!/bin/sh\ncase " $* " in *" hash-object "*) cat >/dev/null; exit 0 ;; esac\nexec "%s" "$@"\n' \

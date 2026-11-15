@@ -42,14 +42,16 @@ check_file() {
 # hashed in one `git hash-object --stdin-paths` run, started only when a file
 # is listed. A path that is not a regular readable file, or holds a newline
 # (the one-line-per-file format cannot carry it), is left out. Returns 1,
-# printing nothing, when the hash run fails or returns a different number of
-# hashes than paths.
+# printing nothing, when the status listing or the hash run fails, or the hash
+# run returns a different number of hashes than paths. The listing ends with an
+# "rc=<status>" record, never a path (a status entry has a space third).
 dirty_hashes() {
-  local root="$1" entry path quoted rest skip=0 n=0 i=0 hash hashes out=""
+  local root="$1" entry path quoted rest skip=0 n=0 i=0 hash hashes out="" status_rc=""
   local -a paths=()
   local quoted_paths=""
   while IFS= read -r -d '' entry; do
     if [ "$skip" -eq 1 ]; then skip=0; continue; fi
+    case "$entry" in rc=[0-9]*) status_rc="${entry#rc=}"; continue ;; esac
     case "${entry:0:1}${entry:1:1}" in R* | C* | ?R | ?C) skip=1 ;; esac
     path="${entry:3}"
     [ -f "$root/$path" ] && [ -r "$root/$path" ] || continue
@@ -70,7 +72,9 @@ dirty_hashes() {
     quoted_paths="$quoted_paths\"$quoted\""$'\n'
     paths[n]="$path"
     n=$((n + 1))
-  done < <(git -C "$root" status --porcelain -uall -z 2>/dev/null)
+  done < <(git -C "$root" status --porcelain -uall -z 2>/dev/null
+    printf 'rc=%s\0' "$?")
+  [ "$status_rc" = 0 ] || return 1
   [ "$n" -gt 0 ] || return 0
   hashes="$(printf '%s' "$quoted_paths" |
     git -C "$root" hash-object --stdin-paths 2>/dev/null)" || return 1
