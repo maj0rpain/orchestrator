@@ -5,8 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
-iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
 # picked: the side checkouts the launcher started sessions in, in order, one
@@ -2569,9 +2567,10 @@ rm -f "$limit"
 
 # no open orch:done issue: no merged PRs are read
 fake_issue_drop 50 51 52 53 54 55 56 57 58 59
-fake_fail adapter_prs_merged_closing "HTTP 502"
+fake_fail adapter_prs_merged_closing "HTTP 502"; fake_fail adapter_issue_created_at "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"
 assert_not_contains "with no done issue the merged PRs are not read" "$out" "could not read the merged PRs"
+assert_not_contains "nor is the creation time" "$out" "could not read the creation time"
 fake_unfail
 restore_suite_env
 
@@ -2625,6 +2624,59 @@ assert_eq "it closes the oldest" "$(fake_state_of 70)" "CLOSED"
 assert_eq "and leaves the newest past the limit" "$(fake_state_of 72)" "OPEN"
 fake_issue_drop 70; fake_issue_drop 71; fake_issue_drop 72
 rm -f "$dl_err"
+
+# the merged-PR read is bounded by the creation of the oldest issue it may close
+bd_day=86400
+fake_done_merged 80 3600; fake_issue_created 80 7200
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an issue whose PR merged after its creation is closed" "$(fake_state_of 80)" "CLOSED"
+fake_issue_drop 80
+
+fake_done_merged 81 7200; fake_issue_created 81 3600
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a PR merged before its issue was created is not acted on" "$(fake_state_of 81)" "OPEN"
+fake_issue_drop 81
+
+fake_done_merged 82 $((3 * bd_day)); fake_issue_created 82 $((10 * bd_day))
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an issue created 10 days ago whose PR merged 3 days ago is closed" "$(fake_state_of 82)" "CLOSED"
+fake_issue_drop 82
+
+fake_done_merged 83 $((4 * bd_day)); fake_issue_created 83 $((5 * bd_day))
+fake_done_merged 84 3600; fake_issue_created 84 $((1 * bd_day))
+bd_reads="$(mktemp)"
+bd_defs="$(writeln "$(counting_defs adapter_prs_merged_closing prs)" "$(counting_defs adapter_issue_created_at created)")"
+counted_adapter_run "$bd_reads" "$bd_defs" "$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "two done issues of different ages are both closed in one tick (older)" "$(fake_state_of 83)" "CLOSED"
+assert_eq "and the newer" "$(fake_state_of 84)" "CLOSED"
+assert_eq "the tick makes one merged-PR listing" "$(log_count "$bd_reads" prs)" "1"
+assert_eq "and one creation-time read" "$(log_count "$bd_reads" created)" "1"
+fake_issue_drop 83 84
+
+fake_done_merged 85 3600; fake_issue_relabel 85 orch:done orch:running; fake_issue_created 85 $((3 * bd_day))
+fake_done_merged 86 3600; fake_issue_created 86 $((2 * bd_day))
+fake_done_merged 87 3600; fake_issue_created 87 $((1 * bd_day))
+counted_adapter_run "$bd_reads" "$bd_defs" "$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the creation-time read names the oldest issue not carrying orch:running" "$(grep '^created ' "$bd_reads")" "created 86"
+fake_issue_drop 85 86 87
+
+fake_done_merged 88 3600; fake_issue_relabel 88 orch:done orch:running
+fake_fail adapter_prs_merged_closing "HTTP 502"; fake_fail adapter_issue_created_at "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"
+assert_not_contains "with every done issue running neither read happens (listing)" "$out" "could not read the merged PRs"
+assert_not_contains "nor the creation time" "$out" "could not read the creation time"
+fake_unfail
+fake_issue_drop 88
+
+fake_done_merged 89 3600; fake_done_conflict 89 189
+fake_fail adapter_issue_created_at "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing creation-time read does not stop the tick" "$st" 0
+assert_contains "it warns with gh's reason" "$out" "could not read the creation time of issue #89: HTTP 502 - no merged-PR close this tick"
+assert_eq "closes nothing" "$(fake_state_of 89)" "OPEN"
+assert_contains "and sync detection still sees the issue" "$(fake_labels_of 89)" "orch:sync"
+fake_unfail
+fake_issue_drop 89
 
 fake_fail_times adapter_prs_merged_closing 1 "HTTP 502"
 fake_fail_times adapter_prs_open_mergeability 1 "HTTP 502"

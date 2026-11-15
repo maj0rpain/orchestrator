@@ -1117,17 +1117,24 @@ autopilot_sync_detect() {
 # autopilot_close_missed <table> <table-var>: the merged-PR backstop (#2478),
 # run every tick whatever the auto-sync setting, from the done table
 # autopilot_done_read took (it reads no issue itself). When the table is not
-# empty, reads the PRs merged into the default branch once, and closes - through
+# empty, reads the PRs merged into the default branch since the oldest issue in
+# it not carrying orch:running was created - once, and not at all when every
+# issue carries it - and closes, through
 # pr_close_missed - each issue in it not carrying orch:running whose newest
 # merged PR from `orch/<issue>-` should have closed it. orch:sync and
 # needs-human do not stop it. A failed read or close warns and skips, never
 # stopping the tick. Writes into the caller-named <table-var> the table minus
 # every issue it closed: the whole table when the merged-PR read fails.
 autopilot_close_missed() {
-  local prs issue running sync human default kept=""
+  local prs issue running sync human default bound="" kept=""
   printf -v "$2" '%s' "$1"
   [ -n "$1" ] || return 0
-  pr_merged_closing_read default prs "no merged-PR close this tick" || return 0
+  while read -r issue running sync human; do
+    [ -n "$issue" ] && [ "$running" = 0 ] || continue
+    bound="$issue"; break
+  done <<<"$1"
+  [ -n "$bound" ] || return 0
+  pr_merged_closing_read default prs "no merged-PR close this tick" "$bound" || return 0
   while read -r issue running sync human; do
     [ -n "$issue" ] || continue
     if [ "$running" = 0 ] &&

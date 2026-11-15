@@ -1436,6 +1436,28 @@ assert_eq "the issue stays open" "$(fake_state_of 608)" "OPEN"
 assert_eq "the checkout is still removed" "$(sp_branch quick/608-fr)" "gone"
 fake_unfail
 
+# A PR that merged before its issue was created is not acted on, and the
+# checkout is still removed.
+fake_offline
+bf_quick bd 611 711; fake_pr_merged 711 7200 611; fake_issue_created 611 3600
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "a merge before the issue's creation does not fail prune" "$st" 0
+assert_eq "the issue stays open" "$(fake_state_of 611)" "OPEN"
+assert_eq "the checkout is still removed" "$(sp_branch quick/611-bd)" "gone"
+
+# A failed read of the issue's creation time warns and never blocks the removal.
+fake_offline
+bf_quick fk 612 712; fake_pr_merged 712 3600 612
+fake_online
+fake_fail adapter_issue_created_at "HTTP 502"
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "a failed creation-time read does not fail prune" "$st" 0
+assert_contains "it warns with gh's reason" "$out" "could not read the creation time of issue #612: HTTP 502 - no merged-PR close for issue #612"
+assert_eq "the issue stays open" "$(fake_state_of 612)" "OPEN"
+assert_eq "the checkout is still removed" "$(sp_branch quick/612-fk)" "gone"
+fake_unfail
+
 # A side checkout whose state.json is truncated is skipped: the backstop
 # returns 0, prints nothing and reads nothing from GitHub.
 fake_offline

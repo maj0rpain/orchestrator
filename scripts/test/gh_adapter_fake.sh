@@ -36,6 +36,9 @@
 #                     the issue's k-th comment
 #   next_issue        the number the next created issue takes; absent, one
 #                     past the highest the store holds
+#   issues/<n>/created_at
+#                     the UTC timestamp the issue was created at; absent, the
+#                     epoch
 #   prs/<n>/state     OPEN, CLOSED or MERGED
 #   prs/<n>/head, prs/<n>/base
 #                     the head and base branch names
@@ -603,6 +606,14 @@ adapter_issue_state() {
   cat "$(fake_issue_dir "$1")/state"
 }
 
+# adapter_issue_created_at <n>: the stored created_at of issue #n, the epoch
+# where unset.
+adapter_issue_created_at() {
+  ! fake_failing adapter_issue_created_at || return 1
+  fake_issue_known "$1" || return 1
+  cat "$(fake_issue_dir "$1")/created_at" 2>/dev/null || echo 1970-01-01T00:00:00Z
+}
+
 # fake_open_issues: the numbers of the open issues in the store, newest first,
 # as real gh lists them. Each state is read, and each number taken from its
 # directory's path, in bash; only sort runs.
@@ -1065,18 +1076,21 @@ adapter_prs_merged() {
   done | sort -rn
 }
 
-# adapter_prs_merged_closing <base>: the merged PRs in the store into the base,
-# newest first, each as `<number>\t<head>\t<mergedAt>\t<closing>\t<flag>` -
+# adapter_prs_merged_closing <base> <since>: the merged PRs in the store into
+# the base merged at or after <since>, newest first, each as
+# `<number>\t<head>\t<mergedAt>\t<closing>\t<flag>` -
 # the stored merged_at (the epoch where unset), the stored closing numbers
 # comma-joined, the flag as adapter_prs_open prints it.
 adapter_prs_merged_closing() {
-  local d
+  local d merged_at
   ! fake_failing adapter_prs_merged_closing || return 1
   for d in "$(fake_store)"/prs/*/; do
     [ -d "$d" ] || continue
     [ "$(cat "$d/state")" = MERGED ] && [ "$(cat "$d/base")" = "$1" ] || continue
+    merged_at="$(cat "$d/merged_at" 2>/dev/null || echo 1970-01-01T00:00:00Z)"
+    [[ "$merged_at" < "$2" ]] && continue
     printf '%s\t%s\t%s\t%s\t%s\n' "$(basename "$d")" "$(cat "$d/head")" \
-      "$(cat "$d/merged_at" 2>/dev/null || echo 1970-01-01T00:00:00Z)" \
+      "$merged_at" \
       "$(paste -sd, "$d/closing" 2>/dev/null)" "$(fake_pr_cross_of "$d")"
   done | sort -rn
 }
