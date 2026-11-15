@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.96
+
+Breakdown publish, the watcher's label check, sync detection and merged-PR close, the claim list, the issue trust check, the spec-review answer, agent sync, doctor's agent and side-checkout checks, and the archive of a done flow no longer start an external command per ticket, label, done issue, claim, agent or entry for work bash does itself: the label check compares every label with one `awk` per tick, and the claim list reads every claim with one `git for-each-ref`. Output is unchanged, except that the issue trust check no longer has a "trusted associations could not be read" failure.
+
 ## 5.2.95
 
 `review ci` reads the no-CI-evidence check's signals for the base branch tip and every PR commit in one GraphQL call, instead of two GitHub calls per ref one after another, so its cost in a repo with no CI no longer grows with the PR's length. The per-ref check-run and status operations are gone, and the PR refs read no longer prints the PR's commits.
