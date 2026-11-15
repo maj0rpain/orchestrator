@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.94
+
+Reading the issue a side checkout records no longer re-classifies the checkout: the autopilot pickup lookup, `side-checkout list` and `doctor` read the marker straight from the walk's result, so their cost no longer grows quadratically with side checkouts.
+
 ## 5.2.93
 
 The project's edit hook's Bash path now starts a fixed number of processes around a call whatever the number of dirty files: each listing hashes all its files in one `git hash-object` run and Post compares with one `grep`. What the hook reports is unchanged.
