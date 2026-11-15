@@ -58,15 +58,23 @@ only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
 A parallel `orch_test.sh` run starts its kept sections longest-first, read from
-`scripts/test/section-durations.tsv`: one line per section, tab-separated, of
-wall seconds, CPU seconds (both in tenths of a second) and the section's title.
+`scripts/test/section-durations.tsv`, the durations file: one line per section,
+other suite and the shellcheck run, tab-separated, of wall seconds, CPU seconds
+(both in tenths of a second), the title and, on every line but shellcheck's, the
+fingerprint of the test text the line was measured from: a section's own lines
+and its file's preamble, or an other suite's whole file. A line whose
+fingerprint no longer matches, or that has none, is stale. The file is a ledger:
+`docs_lint.sh` fails on a section or suite with no line, a line with no section
+or suite, a stale line, a title on two lines and a missing shellcheck line. The
+runners read a three-column line and a four-column one alike.
 Sections the file does not list start first, in walk order; the rest follow by
 wall seconds, longest first, ties in walk order, so a run ends when its work
 does. Output stays in walk order, and a filtered run orders the sections it kept
 the same way; `ORCH_TEST_JOBS=1` runs in walk order in one shell. A line that
 does not parse and a title that matches no section are ignored, and a missing
-file gives walk order: the file costs speed only, and nothing checks it for
-freshness.
+file gives walk order: for the runners the file costs speed only. The shared
+test setup, the fakes and the code under test are in no fingerprint, so a change
+there that makes every section dearer is seen only by a full refresh.
 
 `ORCH_TEST_SHARD=<i>/<n>` makes `orch_test.sh` and `all.sh` run group `i` of `n`
 balanced groups of the sections, so CI can run a full verification as several
@@ -82,14 +90,68 @@ malformed value, or any value with `ORCH_TEST_ONLY`, is refused; an empty value
 counts as unset; `affected.sh` unsets it, and no runner a section starts
 inherits it.
 
-`scripts/dev/section-durations.sh` rewrites that file: it runs `orch_test.sh`
+`scripts/dev/section-durations.sh` with no argument makes a full refresh of that
+file: it runs `orch_test.sh`
 once, unfiltered, with `ORCH_TEST_DURATIONS=<temporary file>`, which makes a
 parallel run write one line per section it ran, then times each other suite of
-all.sh's list and the shellcheck step. Run it, on a tree whose suite passes,
-when sections are added or removed or change much in cost, and commit the
-result. It unsets `ORCH_TEST_ONLY` and `ORCH_TEST_SHARD`, refuses
+all.sh's list and the shellcheck step, and writes a fingerprint on every line
+but shellcheck's. A full refresh is unscaled: it sets the scale every later
+recording is held to, so it is the human's call, made on a tree whose suite
+passes, in the autopilot container, and its change restates the suite budget.
+It unsets `ORCH_TEST_ONLY` and `ORCH_TEST_SHARD`, refuses
 `ORCH_TEST_JOBS=1`, and leaves the file unchanged, naming what failed, when
 anything it measured fails.
+
+`section-durations.sh --stale` records only what is out of date: a section or
+suite with no line, a stale line, a line whose section or suite is gone, and a
+title on two lines (every line of a section or suite title is removed and
+measured afresh; of two shellcheck lines the first is kept, shellcheck never
+measured). It measures those sections in one parallel `orch_test.sh` run, and
+each such other suite as the full refresh does, together with five calibration
+sections: the fresh sections whose recorded CPU is nearest 5.0 seconds, never
+the isolation section (all of them when fewer than five are fresh). Each new
+line is what was measured times the ratio of the calibration sections' recorded
+CPU to their measured CPU, so a line is scaled to the full refresh's machine
+and corrected for load. Every other line stays byte for byte. It prints the new
+total and the suite budget on its last line. With nothing out of date it
+changes nothing and exits 0; with only orphaned lines it removes them and
+measures nothing; with something to measure and no fresh section it refuses,
+naming the full refresh, and exits 1; anything it measures failing leaves the
+file unchanged and exits 1; it refuses `ORCH_TEST_JOBS=1`.
+
+**The suite budget** is `scripts/test/suite-budget`: one positive whole number
+of CPU seconds, which the total (the sum of the durations file's CPU column,
+the first line per title) may not pass. `docs_lint.sh` fails a change whose
+total is over the budget and above its base's total (the same sum at the
+merge-base), so a change that adds nothing or cuts cost always passes. It also
+fails a change that edits the budget file beside any file but the durations
+file, the change that introduces the budget file excepted. What a session does:
+
+- **Record before verifying.** A session that adds or edits tests runs
+  `section-durations.sh --stale` before its ticket verification and commits the
+  durations file with its change. After a forgotten recording, only
+  `docs_lint.sh` needs running again.
+- **Over the budget**, it makes cheaper only the tests its change added or
+  edited, which the ledger charges by section: in a section the change edited,
+  the tests it did not touch are not its to cut. Cost is never a reason to test
+  less. It then records again.
+- **Still over**, it stops for the human. A session that cannot ask (a ticket
+  subagent, a fixer, a resolver) reports it and changes nothing more; a resolver
+  still commits its merge resolution and reports the stop beside it, and the
+  same holds when its `--stale` refuses for want of a fresh section. The session
+  that started it asks: an autopilot session with `orch.sh autopilot ask`, an
+  attended session with a blocking question giving the total and the budget and
+  offering two answers, raise the budget on `main` or name what to cut. A
+  fixer's stop reaches the human only when the review loop stops.
+- **Nobody raises the number in a feature change.** After the human raises it on
+  `main`, a base sync brings it in.
+- **Changing the number** is a human's say, in a change that touches the budget
+  file alone, or the budget file and the durations file at a full refresh. Such
+  a change is repo hygiene and carries the `no-version-bump` label.
+- **A conflict in the durations file**: keep both sides' lines, then run
+  `section-durations.sh --stale`.
+- **A full refresh** is the human's call. A session whose `--stale` refuses for
+  want of a fresh section stops for the human, as when still over.
 
 CI (`.github/workflows/test.yml`): a PR runs the whole suite once, in the
 autopilot container, as 4 jobs, each `all.sh` with its `ORCH_TEST_SHARD=<i>/4`
@@ -286,8 +348,11 @@ files in place and does not commit. `scripts/test/version_bump_test.sh` tests
 it.
 
 CI enforces the rule through its own workflow, `.github/workflows/fragment.yml`,
-which runs the fragment rule alone (`docs_lint.sh --fragment-only`) and reruns
-on a PR's body and label edits: a PR
+which runs the fragment rule and the suite budget's two rules with a base (the
+total within the budget, the budget file changing alone) through
+`docs_lint.sh --fragment-only`, and reruns on a PR's body and label edits; the
+ledger's freshness rule runs in the suite's whole lint, on a push to `main`
+too, where the budget comparison is skipped: a PR
 to `main` adds exactly one
 well-formed fragment, and never changes `version`, adds a `## ` heading to
 `CHANGELOG.md`, or modifies or deletes an existing fragment or `.gitkeep`;
@@ -463,7 +528,8 @@ docker/                       the autopilot container: `Dockerfile`, `compose.ya
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
-scripts/dev/section-durations.sh rewrites scripts/test/section-durations.tsv: measures every orch_test.sh section, the other suites and shellcheck (Develop)
+scripts/dev/section-durations.sh rewrites scripts/test/section-durations.tsv: a full refresh measures every orch_test.sh section, the other suites and shellcheck; `--stale` records only the lines out of date (Develop)
+scripts/test/suite-budget     the suite budget: one positive whole number of CPU seconds, which the durations file's CPU column may not sum past (Develop)
 scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
 scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
