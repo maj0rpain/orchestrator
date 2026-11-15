@@ -8,7 +8,8 @@
 # --- marked-comment module --------------------------------------------------
 # The Marked comment module's functions, called through a sourced orch.sh. The
 # format edge cases (CR, retired handoffs, near-misses, the legacy stop form,
-# both input shapes) are tested here and nowhere else.
+# the bare-array input and its refusal of any other) are tested here and
+# nowhere else.
 
 echo
 echo "marked-comment module"
@@ -57,8 +58,6 @@ for entry in $(printf '%s:plan ' $hidden_kinds) "spec-review" "spec-ruling"; do
   mc texts "$arr" "$kind" $arg
   assert_eq "$kind: the opening-stripped text is the text, trailing newline kept" "$mc_out" \
     "$([ "$kind" = spec-ruling ] && echo '["\nthe text\n"]' || echo '["the text\n"]')"
-  mc_newest "$(mc_object "$line"$'\n')" "$kind" $arg
-  assert_eq "$kind: the issue object is read as the bare array is" "$mc_out/$mc_rc" "0/0"
 done
 assert_eq "the writer prints the question marker" "$(marker_of question plan)" "<!-- orch:question plan -->"
 assert_eq "the writer prints the retired handoff marker" "$(marker_of handoff 01-plan retired)" "<!-- orch:handoff 01-plan retired -->"
@@ -111,8 +110,6 @@ mc_newest "$(mc_array "$q" "$(marker_of question implement)")" question plan
 assert_eq "with an argument the newest question of that phase is found" "$mc_rc:$mc_out" "0:0"
 mc_newest '[]' question
 assert_eq "an empty array has no question comment" "$mc_rc:$mc_out" "1:"
-mc_newest '{"comments": []}' question
-assert_eq "an issue object with no comments has no question comment" "$mc_rc:$mc_out" "1:"
 
 # The legacy stop forms.
 mc_newest "$(mc_array "Autopilot refused to run the review phase: no pr")" refusal review
@@ -133,13 +130,15 @@ assert_eq "drop leaves the other comments unchanged, in the array shape" "$mc_ou
 mc texts "$arr" spec-review
 assert_eq "texts drops the spec-review heading line" "$mc_out" '["Round 1 of 2"]'
 mc drop "$(mc_object "keep" $'## Spec review\nx')" spec-review
-assert_eq "drop on the issue object keeps its shape" "$mc_out" '{"number":1,"comments":[{"body":"keep"}]}'
+assert_eq "drop handed the issue object exits non-zero and prints nothing" "$([ "$mc_rc" != 0 ] && echo nonzero):$mc_out" "nonzero:"
+mc texts "$(mc_object "keep" $'## Spec review\nx')" spec-review
+assert_eq "texts handed the issue object exits non-zero and prints nothing" "$([ "$mc_rc" != 0 ] && echo nonzero):$mc_out" "nonzero:"
 
 # Spec ruling.
 mc texts "$(mc_array $'Spec ruling: a\r\n- b\r\n' "x")" spec-ruling
 assert_eq "a spec ruling with CR line endings loses its prefix and its CRs" "$mc_out" '[" a\n- b\n"]'
-mc texts "$(mc_object $'Spec ruling: q - a' $'Spec ruling:\nlater' "x")" spec-ruling
-assert_eq "texts keeps a same-line ruling and a ruling on following lines, on the object shape" "$mc_out" '[" q - a","\nlater"]'
+mc texts "$(mc_array $'Spec ruling: q - a' $'Spec ruling:\nlater' "x")" spec-ruling
+assert_eq "texts keeps a same-line ruling and a ruling on following lines" "$mc_out" '[" q - a","\nlater"]'
 mc texts "$(mc_array "$q"$'\r\nbody\r\n' "$q" "$(marker_of question build)"$'\nother')" question plan
 assert_eq "texts drops the marker line, strips CRs, and honours the argument" "$mc_out" '["body\n",""]'
 mc texts "$(mc_array "x" "$q")" spec-review
@@ -185,5 +184,3 @@ assert_eq "the prelude reads a limit stop with and without its cause, and refuse
   '[{"kind":"limited","arg":"build","retired":false,"cause":"github"},{"kind":"limited","arg":"build","retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""},{"kind":null,"arg":null,"retired":false,"cause":""}]'
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"[]")"
 assert_eq "the prelude reads an empty array as no comments" "$got" "[]"
-got="$(mc_jq 'marked_comment_list | length' <<<"$(mc_object a b)")"
-assert_eq "the prelude reads the issue object's comments" "$got" "2"

@@ -263,21 +263,19 @@ name_placement() {
   return 1
 }
 
-# gh_op_placement <dir>: name_placement for the multi-field gh ops, outside
-# the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
-# module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
-gh_op_placement() {
-  local rc=0 out="" part ops owners pair
-  local pairs=(
-    "$GH_MULTI_FIELD_OPS|./orch/gh.sh"
-    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
-  )
-  for pair in "${pairs[@]}"; do
-    ops="${pair%%|*}" owners="${pair#*|}"
+# name_placement_pairs <dir> <rule> <pair>...: name_placement over each
+# "<names>|<owners>" pair (owners a space-separated path list), the parts
+# joined, sorted and unique: returns 2 when a scan fails, 1 when it printed
+# any line, else 0.
+name_placement_pairs() {
+  local dir="$1" rule="$2" rc=0 out="" part names owners pair
+  shift 2
+  for pair in "$@"; do
+    names="${pair%%|*}" owners="${pair#*|}"
     rc=0
     # owners is a space-separated path list: split it into arguments
     # shellcheck disable=SC2086
-    part="$(name_placement "$1" "$GH_OP_PLACEMENT_RULE" names "$ops" $owners)" || rc=$?
+    part="$(name_placement "$dir" "$rule" names "$names" $owners)" || rc=$?
     [ "$rc" -ne 2 ] || return 2
     [ -z "$part" ] || out="${out:+$out
 }$part"
@@ -285,6 +283,15 @@ gh_op_placement() {
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort -u
   return 1
+}
+
+# gh_op_placement <dir>: name_placement for the multi-field gh ops, outside
+# the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
+# module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
+gh_op_placement() {
+  name_placement_pairs "$1" "$GH_OP_PLACEMENT_RULE" \
+    "$GH_MULTI_FIELD_OPS|./orch/gh.sh" \
+    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
 }
 
 # The Marked comment prelude placement rule, as marked_comment_jq_placement's
@@ -297,6 +304,21 @@ MARKED_COMMENT_JQ_PLACEMENT_RULE="The rule: only the Marked comment module, scri
 # marked_comment_jq. <rule>".
 marked_comment_jq_placement() {
   name_placement "$1" "$MARKED_COMMENT_JQ_PLACEMENT_RULE" calls marked_comment_jq ./orch/marked-comment.sh ./orch/issue-timeline.sh
+}
+
+# The comment reader placement rule, as comment_reader_placement's message
+# states it.
+COMMENT_READER_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, and the Comments module, scripts/orch/comments.sh, name adapter_issue_comments or adapter_pr_comments, and only the Trust module, scripts/orch/trust.sh, and the Comments module name trust_filter_comments; every other script reads comments through the Comments module's reader, comments_trusted_read, which applies the trust filter."
+
+# comment_reader_placement <dir>: name_placement for the issue-comments and
+# PR-comments adapters, outside the gh module, orch/gh.sh, and the Comments
+# module, orch/comments.sh, and for the trust filter's comment step,
+# trust_filter_comments, outside the Trust module, orch/trust.sh, and the
+# Comments module; a line reads "<file> names <name>. <rule>".
+comment_reader_placement() {
+  name_placement_pairs "$1" "$COMMENT_READER_PLACEMENT_RULE" \
+    "adapter_issue_comments adapter_pr_comments|./orch/gh.sh ./orch/comments.sh" \
+    "trust_filter_comments|./orch/trust.sh ./orch/comments.sh"
 }
 
 # lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)
@@ -3099,6 +3121,49 @@ assert_status "a call in another module fails, while comments, longer names and 
 assert_eq "naming only the calling file and the rule" "$out" \
   "scripts/orch/zz-prelude.sh calls marked_comment_jq. $MARKED_COMMENT_JQ_PLACEMENT_RULE"
 rm -rf "${mcjq_dir%/scripts}"
+
+# --- comment reader placement (#3085) ----------------------------------------
+# comment_reader_placement over the real scripts/, then over copies of it, each
+# with planted files: three that break the rule, and four that keep it.
+echo
+echo "comment reader placement (#3085)"
+out="$(comment_reader_placement "$PLUGIN_ROOT/scripts")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "no script of the real tree reads comments around the Comments module's reader"
+else
+  bad "no script of the real tree reads comments around the Comments module's reader" "$out"
+fi
+
+crp_dir="$(tree_copy scripts)"
+plant_file "$crp_dir/orch" zz-command.sh <<'PLANTED'
+  planted_read() { adapter_issue_comments "$1"; }
+PLANTED
+plant_file "$crp_dir/orch" zz-capture.sh <<'PLANTED'
+  if ! gh_capture out err adapter_pr_comments "$n"; then :; fi
+PLANTED
+plant_file "$crp_dir/orch" zz-filter.sh <<'PLANTED'
+  planted_trust() { trust_filter_comments "$1" <<<"$2"; }
+PLANTED
+out="$(comment_reader_placement "$crp_dir")"; st=$?
+assert_status "an adapter as a command word, one handed to a capture and the trust filter's comment step outside its modules fail" "$st" 1
+assert_eq "naming each file and name" "$out" \
+  "scripts/orch/zz-capture.sh names adapter_pr_comments. $COMMENT_READER_PLACEMENT_RULE
+scripts/orch/zz-command.sh names adapter_issue_comments. $COMMENT_READER_PLACEMENT_RULE
+scripts/orch/zz-filter.sh names trust_filter_comments. $COMMENT_READER_PLACEMENT_RULE"
+rm -rf "${crp_dir%/scripts}"
+
+crp_dir="$(tree_copy scripts)"
+printf '%s\n' 'planted_adapter() { adapter_issue_comments "$1"; }' \
+  'planted_filter() { trust_filter_comments "$1"; }' >>"$crp_dir/orch/comments.sh"
+plant_file "$crp_dir/orch" zz-keep.sh <<'PLANTED'
+  # adapter_pr_comments in a comment, as comments_trusted_read reads it
+  x=1  # and trust_filter_comments after code
+  my_adapter_issue_comments_x() { :; }
+PLANTED
+out="$(comment_reader_placement "$crp_dir")"; st=$?
+assert_status "calls in the Comments module, names in a comment and longer names pass" "$st" 0
+assert_eq "and print nothing" "$out" ""
+rm -rf "${crp_dir%/scripts}"
 
 # --- orch_load before cross-module reads (#2868) ---------------------
 # orch_load_reads over the real scripts/, then over one copy of it, planted

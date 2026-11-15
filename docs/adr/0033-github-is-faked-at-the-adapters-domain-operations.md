@@ -7,6 +7,13 @@ Amended by ADR-0057: `adapter_issue_comments` and `adapter_pr_comments` also
 return raw JSON, which the Trust module filters, so the plain-text rule has
 those exceptions too.
 
+Amended by #3075: `adapter_issue_json` answers the issue without its
+comments, still as one JSON object, because `issue fetch --json` joins
+that object with the comments; #663's reason, that its object is the
+published shape, no longer holds. The object `issue fetch --json`
+publishes is assembled above it, its comments coming from the one reader
+of trusted comments; `adapter_issue_comments_json` is gone.
+
 orch.sh and doctor.sh reach GitHub only through adapter operations named for
 what their callers need; each owns gh's flags, `--jq` expressions, URL parsing
 and exit-code quirks, and prints plain text. Behaviour tests replace those
