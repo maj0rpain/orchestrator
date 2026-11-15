@@ -186,6 +186,8 @@ cmd_ticket_publish() {
     want="$(issue_number_list --blocked-by "$blocked_by")" || exit 1
   fi
 
+  # Resolve the Repo in this shell, so the $(...) calls below reuse it.
+  repo_resolve || :
   child="$(ticket_create "$title" "$body_file")" || exit 1
   ticket_link "$parent" "$child" "$want"
 

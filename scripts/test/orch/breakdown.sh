@@ -91,6 +91,17 @@ assert_not_contains "without the create message" "$out" "the create failed"
 assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" ""
 restore_suite_env
 
+# A failed link of a resumed ticket (recorded created) names it too.
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail adapter_sub_issue_link
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed link of a resumed ticket dies" "$st" 1
+assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
+fake_unfail
+restore_suite_env
+
 # A failed link read-back or listing read names the ticket, fresh or resumed.
 breakdown_fixture
 printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
@@ -154,6 +165,18 @@ assert_status "a resume with part of the edges present adds only the missing one
 fake_unfail
 assert_eq "ticket 3 ends with its full blocker set" "$(fake_blockers_of 102)" "100 101"
 assert_eq "marker written" "$(on_disk .orchestrator/breakdown/50/published)" "present"
+restore_suite_env
+
+# A failed edge add of a resumed ticket (recorded created) names it too.
+breakdown_fixture
+fake_fail_after adapter_blocker_add 2
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+fake_unfail
+fake_fail adapter_blocker_add
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed edge add of a resumed ticket dies" "$st" 1
+assert_contains "naming the ticket and the link step" "$out" "ticket 3 of the draft (#102): the link failed"
+fake_unfail
 restore_suite_env
 
 # A ticket whose link and every edge landed but whose linked record did not:

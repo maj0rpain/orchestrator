@@ -121,6 +121,8 @@ breakdown_publish_in() {
     rm -rf "$tmp"; mkdir -p "$tmp"
   fi
   breakdown_parse "$saved" "$tmp"
+  # Resolve the Repo in this shell, so the $(...) calls below reuse it.
+  repo_resolve || :
   numbers="$dir/numbers"
   order="$(breakdown_order "$tmp")" || exit 1
   while IFS= read -r k; do

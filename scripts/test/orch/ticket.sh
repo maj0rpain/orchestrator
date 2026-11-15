@@ -36,9 +36,10 @@ fake_fail_times_after() {
 
 
 # --- ticket publish -----------------------------------------------------
-# The one place the ticket-breakdown feature files a ticket and writes its
-# sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`
-# on these endpoints directly. Stateless like issue publish/pr publish: the
+# The standalone command that files one ticket and writes its sub-issue link
+# and blocked-by edges (ticket_create then ticket_link, which breakdown publish
+# also calls), so no skill prose ever calls `gh api` on these endpoints
+# directly. Stateless like issue publish/pr publish: the
 # store-backed fake is the GitHub it writes to, not orch.sh state.
 echo
 echo "ticket publish"
@@ -146,8 +147,29 @@ assert_gh_dies "a failed blocking-edge write still exits 1" adapter_blocker_add 
   "$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100
 restore_suite_env
 
+# --record is gone: refused with the usage line, nothing written to GitHub.
+ticket_fixture
+fake_issue 50 open
+fake_next_issue 102
+before="$(fake_snapshot)"
+out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$(mktemp -d)" 3 2>&1)"; st=$?
+assert_status "refuses --record" "$st" 1
+assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
+assert_not_contains "the usage line shows no --record" "$out" "--record <"
+assert_eq "writing nothing to GitHub" "$(fake_snapshot)" "$before"
+assert_not_contains "help shows no --record" "$("$ORCH" help 2>&1)" "--record"
+
+# A failed sub-issue listing read before the link dies, the ticket created.
+fake_fail adapter_sub_issues
+out="$("$ORCH" ticket publish 50 "Third" "$body" 2>&1)"; st=$?
+assert_status "a failed pre-link listing read dies" "$st" 1
+assert_contains "with the listing line" "$out" "gh could not list sub-issues of #50"
+fake_unfail
+assert_eq "the ticket is created and not linked" "$(fake_sub_issues_of 50)" ""
+restore_suite_env
+
 # --- ticket publish verify-then-die ---------------------------------------
-# Immediately after publishing, ticket_publish reads the links back (ADR-0011).
+# Immediately after publishing, ticket_link reads the links back (ADR-0011).
 # One retry on a mismatch; a second failure dies naming the ticket, rather
 # than falling back to a text-based `Blocked by:` convention nothing
 # downstream ever reads. fake_lag makes a readback answer stale (empty) for N
@@ -1140,27 +1162,6 @@ assert_eq "and bringing the body in line" \
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket unblock is in the usage text" "$out" "ticket unblock <n> --by N,N,..."
 
-restore_suite_env
-
-# --record is gone: refused with the usage line, nothing written to GitHub.
-ticket_fixture
-fake_issue 50 open
-fake_next_issue 102
-before="$(fake_snapshot)"
-out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$(mktemp -d)" 3 2>&1)"; st=$?
-assert_status "refuses --record" "$st" 1
-assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
-assert_not_contains "the usage line shows no --record" "$out" "--record <"
-assert_eq "writing nothing to GitHub" "$(fake_snapshot)" "$before"
-assert_not_contains "help shows no --record" "$("$ORCH" help 2>&1)" "--record"
-
-# A failed sub-issue listing read before the link dies, the ticket created.
-fake_fail adapter_sub_issues
-out="$("$ORCH" ticket publish 50 "Third" "$body" 2>&1)"; st=$?
-assert_status "a failed pre-link listing read dies" "$st" 1
-assert_contains "with the listing line" "$out" "gh could not list sub-issues of #50"
-fake_unfail
-assert_eq "the ticket is created and not linked" "$(fake_sub_issues_of 50)" ""
 restore_suite_env
 
 # --- ticket retire: breakdown save point ------------------------------------
