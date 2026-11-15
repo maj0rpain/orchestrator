@@ -205,9 +205,7 @@ Build the linked issue's ticket frontier with the driver loop in
 
 The split is the flow's: each ticket subagent runs the repo's ticket
 verification (`Ticket verification:` in its instructions), and loop step f
-runs the full verification once (`Full verification:`), through
-`bash "$ORCH" suite-cost run -- '<Full verification>'`,
-the whole line as one quoted argument.
+runs the full verification once (`Full verification:`), bare.
 
 As each implementer's report is recorded, its `Deviation` line goes under
 **Deviations** when it is not `None`: one bullet per such ticket, naming the
@@ -253,11 +251,6 @@ repo, and name that file to the pass as its deviations file, for its step 3's
 `--deviations`. If the file cannot be made or written, stop before the
 review, as a stopped pass does, naming the failure. Once the pass returns or
 stops, however it ends, remove the file.
-
-Name step 5's combined verification command - the one loop step f ran,
-whose result is the last line of the PR body's **Evidence** - to the pass as its
-verification command, for its suite-cost check. A `grew` the pass declines
-goes under **Review** with the other declines.
 
 If the pass stops, stop before opening the PR. This skill promises a review
 before the PR, so it never opens one with an axis unreviewed.

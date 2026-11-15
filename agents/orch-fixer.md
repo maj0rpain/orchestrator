@@ -61,15 +61,11 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    record of what it wrote, and the driver blames later findings against
    them. Done when every item is fixed or on your could-not-fix list, and
    every listed site of a pattern finding is fixed or deferred.
-2. **Verify.** Run the **ticket verification** through `bash "<orch.sh>"
-   suite-cost run -- '<command>'`,
-   the whole line as one quoted argument. Find it in the repo's instructions
-   (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`) yourself: a line reading
-   `Ticket verification: <command>`. The prompt hands you only the full
+2. **Verify.** Run the **ticket verification** bare. Find it in the repo's
+   instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`) yourself: a line
+   reading `Ticket verification: <command>`. The prompt hands you only the full
    verification command; when the instructions name no ticket verification,
-   run that one. The run passes its output and exit code
-   through unchanged (an interrupt exits 128 plus the signal's number and
-   records nothing) and records a passing run's suite cost.
+   run that one.
    Run it in the foreground and wait for it (host capability *Run a long
    command*); never background it and sleep, poll or kill it. A run the host
    moves to the background at its timeout is still waited for, as that row says.
@@ -397,8 +393,7 @@ listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
 
 **Verification** names the bare command step 2 ran (the ticket
-verification, or the handed full command when the repo names none), never the
-`suite-cost run` wrapper step 2 ran it through.
+verification, or the handed full command when the repo names none).
 
 Each **Waiting to be filed** bullet carries the finding's location, as the
 template shows, with `-` in its place when the finding gave `-`: later
