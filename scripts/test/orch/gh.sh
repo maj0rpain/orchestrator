@@ -674,6 +674,7 @@ bare_dir="$(mktemp -d)"
 mkdir "$bare_dir/empty" "$bare_dir/sort" "$bare_dir/sortawk" "$bare_dir/mkcat"
 ln -s "$(command -v sort)" "$bare_dir/sort/sort"
 for c in sort awk; do ln -s "$(command -v $c)" "$bare_dir/sortawk/$c"; done
+mkdir "$bare_dir/lagcat"; for c in sort awk cat; do ln -s "$(command -v $c)" "$bare_dir/lagcat/$c"; done
 for c in mkdir cat; do ln -s "$(command -v $c)" "$bare_dir/mkcat/$c"; done
 # barely <dir> <function> [args]: the function run with PATH holding only <dir>.
 barely() { local p="$1"; shift; PATH="$bare_dir/$p" "$FB" -c 'source "$1"; shift; "$@"' _ "$GH_ADAPTER_FAKE" "$@"; }
@@ -690,14 +691,27 @@ fake_issue 26 open
 rm "$S/issues/26/labels"
 assert_eq "fake_open_issues lists open issues newest first, leaving out PRs, closed issues and a stateless one" \
   "$(barely sort fake_open_issues | tr '\n' ' ')" "30 26 22 21 "
-assert_eq "adapter_issues_labelled matches whole-line, case-insensitively" \
-  "$(barely sortawk adapter_issues_labelled ALPHA | tr '\n' ' ')" "21 22 30 "
+assert_eq "adapter_issues_labelled_rows matches whole-line, case-insensitively" \
+  "$(barely sortawk adapter_issues_labelled_rows ALPHA | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha 30 OPEN 2 alpha beta-two "
 assert_eq "several labels are all required, a substring of a label does not match" \
-  "$(barely sortawk adapter_issues_labelled alpha beta | tr '\n' ' ')" "21 "
+  "$(barely sortawk adapter_issues_labelled_rows alpha beta | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
 assert_eq "an issue with no labels file matches no label" \
-  "$(barely sortawk adapter_issues_labelled zzz | tr '\n' ' ')" ""
-assert_eq "adapter_issues_labelled cuts the list at ISSUE_LIST_LIMIT" \
-  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_labelled alpha | tr '\n' ' ')" "21 22 "
+  "$(barely sortawk adapter_issues_labelled_rows zzz | tr '\n' ' ')" ""
+assert_eq "adapter_issues_any_labelled_rows lists the issues carrying any label, oldest first" \
+  "$(barely sortawk adapter_issues_any_labelled_rows beta zzz | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
+assert_eq "any-of matches whole labels, in any case, once per issue" \
+  "$(barely sortawk adapter_issues_any_labelled_rows BETA-TWO alpha | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha 30 OPEN 2 alpha beta-two "
+assert_eq "adapter_issues_any_labelled_rows cuts once at ISSUE_LIST_LIMIT across the labels" \
+  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_any_labelled_rows beta-two beta | tr '\n' ' ')" "21 OPEN 2 Alpha beta 30 OPEN 2 alpha beta-two "
+assert_eq "adapter_issues_labelled_rows cuts the list at ISSUE_LIST_LIMIT" \
+  "$(ISSUE_LIST_LIMIT=1 barely sortawk adapter_issues_labelled_rows alpha | tr '\n' ' ')" "21 OPEN 2 Alpha beta "
+assert_eq "adapter_issues_open_rows answers every open issue oldest first, as number, state, label count and labels" \
+  "$(barely sortawk adapter_issues_open_rows | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha 26 OPEN 0 30 OPEN 2 alpha beta-two "
+assert_eq "adapter_issues_open_rows cuts the list at ISSUE_LIST_LIMIT, the newest dropped" \
+  "$(ISSUE_LIST_LIMIT=2 barely sortawk adapter_issues_open_rows | tr '\n' ' ')" "21 OPEN 2 Alpha beta 22 OPEN 1 alpha "
+fake_lag adapter_issues_labelled_rows 1 $'22\nOPEN\n0'
+assert_eq "a lagged adapter_issues_labelled_rows serves the stale listing once, then the current one" \
+  "$(barely lagcat adapter_issues_labelled_rows zzz | tr '\n' ' ')|$(barely lagcat adapter_issues_labelled_rows zzz | tr '\n' ' ')" "22 OPEN 0 |"
 assert_eq "fake_issue_labels reads the labels file with an empty PATH" \
   "$(barely empty fake_issue_labels 21 | tr '\n' ',')" "Alpha,beta,"
 assert_eq "and none for a missing file" "$(barely empty fake_issue_labels 26)" ""
@@ -976,11 +990,26 @@ out="$(contract adapter_issue_state 62 2>&1)"; st=$?
 assert_status "issue state: reads the state" "$st" 0
 assert_eq "PULL for a pull request's number" "$out" "PULL"
 
-gh_reply 0 $'3\n9\n' '' \
-  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number --jq '.[].number'
-out="$(contract adapter_issues_labelled review:nit "triage me" 2>&1)"; st=$?
-assert_status "issues labelled: lists the open issues carrying every label" "$st" 0
-assert_eq "one number per line" "$out" "$(writeln 3 9)"
+gh_reply 0 $'3\nOPEN\n1\norch:spec\n9\nOPEN\n1\norch:sync\n' '' \
+  issue list --state open --search 'label:"orch:spec","orch:sync" sort:created-asc' --limit 1000 --json number,state,labels \
+  --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_any_labelled_rows orch:spec orch:sync 2>&1)"; st=$?
+assert_status "issues any labelled rows: lists the open issues carrying any label" "$st" 0
+assert_eq "one count-marked record per issue" "$out" "$(writeln 3 OPEN 1 orch:spec 9 OPEN 1 orch:sync)"
+
+gh_reply 0 $'3\nOPEN\n1\nreview:nit\n9\nCLOSED\n0\n' '' \
+  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,state,labels \
+  --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_labelled_rows review:nit "triage me" 2>&1)"; st=$?
+assert_status "issues labelled rows: lists the open issues carrying every label" "$st" 0
+assert_eq "one count-marked record per issue: number, state, label count, labels" "$out" "$(writeln 3 OPEN 1 review:nit 9 CLOSED 0)"
+
+gh_reply 0 $'3\nOPEN\n1\nreview:nit\n9\nCLOSED\n0\n' '' \
+  issue list --state open --search "sort:created-asc" --limit 1000 --json number,state,labels \
+  --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+out="$(contract adapter_issues_open_rows 2>&1)"; st=$?
+assert_status "issues open rows: lists every open issue" "$st" 0
+assert_eq "one count-marked record per issue: number, state, label count, labels" "$out" "$(writeln 3 OPEN 1 review:nit 9 CLOSED 0)"
 
 gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \
   issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,labels,body \
