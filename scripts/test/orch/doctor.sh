@@ -2734,7 +2734,7 @@ assert_contains "naming the path" "$out" "FAIL  docs/adr exists and is no direct
 assert_contains "the remedy states the fix" "$out" "create it as a directory"
 assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
 
-# --- doctor --env: verification lines ------------------------------------------
+# --- doctor --env: verification lines -----------------------------------------
 # The Ticket verification: and Full verification: lines the agents read from
 # the repo's instructions: each label is reported on its own.
 echo
