@@ -2304,13 +2304,13 @@ out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"
 # GitHub not answering for the default branch loads each module once.
 fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
-sf_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor 2>&1)"; st=$?
+db_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$db_load" "$ORCH" doctor 2>&1)"; st=$?
 assert_status "doctor with no answer for the default branch ends on the fixture repo's own FAILs" "$st" 1
 assert_contains "doctor with no answer for the default branch says so" "$out" "HTTP 502"
-assert_trace_loads_once "doctor with GitHub not answering for the default branch" "$sf_load"
+assert_trace_loads_once "doctor with GitHub not answering for the default branch" "$db_load"
 fake_unfail
-rm -f "$sf_load"
+rm -f "$db_load"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- doctor --flow: autopilot handoff comments (#1457) ------------------------

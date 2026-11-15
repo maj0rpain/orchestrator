@@ -201,8 +201,8 @@ cmd_redo_spec() {
   # The modules a run first reaches inside a command substitution, loaded once
   # here in the main shell, past the guards that refuse a run before it
   # reaches any of them. branch is reached only by a run with a branch
-  # recorded (the retire) or one midway through a redo (redo_midway's name
-  # check).
+  # recorded (the retire) or with redo_count above 0 (redo_midway's first
+  # condition).
   orch_load spec
   orch_load handoff
   redo_load_shared
