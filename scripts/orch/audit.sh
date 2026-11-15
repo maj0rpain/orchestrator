@@ -72,7 +72,7 @@ audit_drift_line() {
   done <<<"$locs"
   [ "${#cited[@]}" -gt 0 ] || return 0
 
-  local head="cited files changed since $sha:" reason=""
+  local prefix="cited files changed since $sha:" reason=""
   temp_file_make tmp || reason="git comparison failed"
   if [ -z "$reason" ]; then
     if git diff --name-only -z --no-renames --no-ext-diff --no-relative "$sha" HEAD -- "${pathspecs[@]}" >"$tmp" 2>/dev/null; then
@@ -87,18 +87,18 @@ audit_drift_line() {
     rm -f "$tmp"
   fi
   if [ -n "$reason" ]; then
-    note "$head unknown ($reason)"
+    note "$prefix unknown ($reason)"
     return 0
   fi
   for file in "${cited[@]}"; do
     [ -z "${changed_set[$file]:-}" ] || changed+=("$file")
   done
   if [ "${#changed[@]}" -eq 0 ]; then
-    note "$head none"
+    note "$prefix none"
   else
     local joined
     printf -v joined '%s, ' "${changed[@]}"
-    note "$head ${joined%, }"
+    note "$prefix ${joined%, }"
   fi
 }
 

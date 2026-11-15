@@ -2365,6 +2365,7 @@ orch: batch.md line 15: item 2 has no @@ why
 orch: batch.md line 16: cites finding 2 of lens consistency, but lens-consistency.md holds 1
 orch: batch.md leaves findings uncited: consistency 1 - every lens finding goes in the batch, if only as a recommend-decline item
 orch: batch.md line 9: item 1: its anchor matches no text in the body"
+apply_prints_one "an over-long summary and an incomplete item" "$d" "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
 d="$(src_dir)"
 sed -i '16s/.*/@@ finding consistency 2/; 42s/.*/@@ finding testability 3/; 10s/.*/Nowhere./' "$d/batch.md"
 check_refused src "two bad citations and an uncited finding, then the anchors" "$d" \
@@ -2412,9 +2413,6 @@ assert_eq "check --full on a bad batch reports the same line" "$err" \
   "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
 assert_eq "a failed check leaves an earlier view.md" "$(cat "$d/view.md")" "old view"
 assert_eq "and prints nothing on stdout" "$out" ""
-d="$(src_dir)"
-sed -i "17s/.*/@@ summary $src_w31/; 23d" "$d/batch.md"
-apply_prints_one "a content-violating batch" "$d" "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
 
 # Grammar: the first error only.
 d="$(src_dir)"
