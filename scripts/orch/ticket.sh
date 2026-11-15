@@ -787,6 +787,7 @@ cmd_ticket_reclaim() {
   # A collapsed breakdown has no sub-issues; its one ticket is the parent, whose
   # saved report is the record that it landed even once its worktree is gone.
   if [ -z "$subs" ] && [ -f "$(ticket_reports_dir)/$parent.md" ]; then nums="$nums$parent"$'\n'; fi
+  orch_load ticket-worktree
   worktrees="$(ticket_worktrees_under "$ROOT")" || exit 1
   while read -r n path; do
     [ -z "$n" ] || nums="$nums$n"$'\n'
