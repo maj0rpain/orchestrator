@@ -1832,7 +1832,7 @@ assert_not_contains "and no branch line" "$out" "could not delete branch"
 assert_eq "leaving the worktree and the branch" "$(rc_has_worktree 7)$(rc_has_branch 7)" "yesyes"
 restore_suite_env
 
-# a branch with no worktree whose delete fails: the branch line, no worktree note
+# a branch with no worktree whose delete fails: the branch line, no note
 rc_setup 1
 rc_report 7
 git worktree remove --force "$(rc_wt 7)"
