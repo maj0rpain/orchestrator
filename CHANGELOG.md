@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.91
+
+The line-width tool's root scan runs one awk over all covered files instead of one per file, with the same output.
+
 ## 5.2.90
 
 The paste guards no longer decode the whole transcript at every turn end and ask once a spec review has run: a fixed-string search picks out the few lines that can arm or disarm the guard, and only those and the entries after the last arming pass line are decoded.
