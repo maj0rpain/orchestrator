@@ -136,7 +136,9 @@ paste_guard_scan() {
   ' 2>/dev/null
   st_pipe=("${PIPESTATUS[@]}")
   # jq stops reading at the first human message or apply, so a tail that dies
-  # of SIGPIPE (141) is not a failure.
+  # of SIGPIPE (141) is not a failure. Where SIGPIPE is ignored, tail exits 1 on
+  # its write error instead, and the scan then fails open: the same allow the
+  # early stop gives.
   [ "${st_pipe[0]}" -eq 0 ] || [ "${st_pipe[0]}" -eq 141 ] || return 1
   return "${st_pipe[1]}"
 }

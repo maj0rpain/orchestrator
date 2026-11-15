@@ -28,14 +28,23 @@ counting_starts() { wc -l <"$1/$2.log" | tr -d ' '; }
 # early shows the read-ahead it was offered, not the whole input. The caller
 # gives the wrapped command a stdin that ends (a pipe or </dev/null). Prints
 # the dir.
+# The count relies on SIGPIPE killing tee when the command stops reading. A
+# tee that inherited SIGPIPE ignored gets EPIPE instead and copies the rest of
+# its input into the file, so the count becomes the whole input. When
+# `env --default-signal=PIPE` is supported (GNU coreutils 8.31+, uutils), the
+# wrapper starts tee under it and the count is exact whatever disposition the
+# wrapper inherited; this is checked once, when the wrapper is built. Where it
+# is not (macOS's BSD env, older coreutils), the wrapper uses plain tee and the
+# count is exact only where SIGPIPE is at its default.
 counting_stdin_bin() {
-  local dir
+  local dir tee_cmd=tee
   dir="$(counting_bin "$1")"
+  if env --default-signal=PIPE true 2>/dev/null; then tee_cmd="env --default-signal=PIPE tee"; fi
   cat >"$dir/$1" <<STUB
 #!/usr/bin/env bash
 echo x >>"$dir/$1.log"
 f="\$(mktemp)"
-tee "\$f" | "$(command -v "$1")" "\$@"
+$tee_cmd "\$f" | "$(command -v "$1")" "\$@"
 st=\${PIPESTATUS[1]}
 wc -c <"\$f" | tr -d ' ' >>"$dir/$1.bytes"
 rm -f "\$f"

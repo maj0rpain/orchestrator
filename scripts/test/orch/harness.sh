@@ -27,6 +27,11 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
+# assert_lt <name> <a> <b>: passes when the integer <a> is below <b>.
+assert_lt() {
+  if [ "$2" -lt "$3" ]; then ok "$1"; else bad "$1" "$2 is not below $3"; fi
+}
+
 # slot_hold <pool> <slot>: creates <pool> and holds <slot>'s lock in a
 # background process, its pid in SLOT_HOLDER. The holder opens the fifo's write
 # end on fd 8, then opens and locks the slot file on fd 9, and writes the ready
@@ -3630,6 +3635,53 @@ bc_out="$(set -e; source "$bc_helpers"; trap 'echo "child=[$TEST_JOBS_CHILD]"' E
 assert_status "a bare call under set -e exits 1" "$bc_st" 1
 assert_eq "with TEST_JOBS_CHILD already cleared" "$bc_out" "child=[]"
 unset bc_helpers bc_out bc_st bc_file
+
+# --- the counting fixture's stdin counter (#3434) ----------------------------
+# counting_stdin_bin jq, fed an input far larger than any pipe buffer or tee
+# read-ahead that a jq program stops reading after its first line: the count
+# is the bytes jq was offered, so it stays below a quarter of the input
+# whichever SIGPIPE disposition the suite inherited.
+csb_in="$(mktemp)"
+head -c 9000000 /dev/zero | tr '\0' 'x' | fold -w 99 >"$csb_in"
+csb_size="$(wc -c <"$csb_in" | tr -d ' ')"
+csb_dir="$(counting_stdin_bin jq)"
+csb_prog='input'
+if env --default-signal=PIPE true 2>/dev/null; then
+  : >"$csb_dir/jq.bytes"
+  (trap '' PIPE; PATH="$csb_dir:$PATH" jq -nR "$csb_prog" <"$csb_in" >/dev/null)
+  assert_lt "the stdin counter counts only what jq was offered with SIGPIPE ignored" \
+    "$(counting_bytes "$csb_dir" jq)" "$((csb_size / 4))"
+  : >"$csb_dir/jq.bytes"
+  PATH="$csb_dir:$PATH" env --default-signal=PIPE jq -nR "$csb_prog" <"$csb_in" >/dev/null
+  assert_lt "the stdin counter counts only what jq was offered with SIGPIPE default" \
+    "$(counting_bytes "$csb_dir" jq)" "$((csb_size / 4))"
+else
+  skip "the stdin counter with SIGPIPE ignored" "env has no --default-signal"
+  skip "the stdin counter with SIGPIPE default" "env has no --default-signal"
+fi
+# Without --default-signal the wrapper falls back to plain tee.
+csb_stub="$(mktemp -d)"
+printf '#!/bin/sh\nfor a in "$@"; do case "$a" in --default-signal*) exit 125;; esac; done\nexec "%s" "$@"\n' \
+  "$(command -v env)" >"$csb_stub/env"
+chmod +x "$csb_stub/env"
+csb_fb="$(PATH="$csb_stub:$PATH" counting_stdin_bin jq)"
+csb_out="$(printf '{"a":1}\n' | PATH="$csb_fb:$PATH" jq -e .a 2>/dev/null)"; csb_st=$?
+assert_eq "the fallback counter passes the command's stdout through" "$csb_out" "1"
+assert_status "and its exit status" "$csb_st" 0
+printf '{"a":false}\n' | PATH="$csb_fb:$PATH" jq -e .a >/dev/null 2>&1; csb_st=$?
+assert_status "and a failing command's exit status" "$csb_st" 1
+assert_eq "and records one count per start" "$(wc -l <"$csb_fb/jq.bytes" | tr -d ' ')" "2"
+: >"$csb_fb/jq.bytes"
+PATH="$csb_fb:$PATH" jq -nR "$csb_prog" <"$csb_in" >/dev/null
+assert_eq "and records one count for one start" "$(wc -l <"$csb_fb/jq.bytes" | tr -d ' ')" "1"
+if env --default-signal=PIPE true 2>/dev/null; then
+  : >"$csb_fb/jq.bytes"
+  PATH="$csb_fb:$PATH" env --default-signal=PIPE jq -nR "$csb_prog" <"$csb_in" >/dev/null
+  assert_lt "and with SIGPIPE default the count is still below a quarter of the input" \
+    "$(counting_bytes "$csb_fb" jq)" "$((csb_size / 4))"
+fi
+rm -rf "$csb_in" "$csb_stub" "$csb_dir" "$csb_fb"
+unset csb_in csb_size csb_dir csb_prog csb_stub csb_fb csb_out csb_st
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo that carries the test
