@@ -985,8 +985,9 @@ spec_review_prompt() {
   printf 'Findings file: %s\n' "$dir/lens-$lens.md"
 }
 
-# spec_review_problems_exit: when a check collected problems in SR_PROBLEMS,
-# warns each, one `orch: ` line apiece, and exits 1; else returns.
+# spec_review_problems_exit: when a check collected problems in SR_PROBLEMS or
+# violations in SR_VIOLATIONS, flushes the violations, warns each problem, one
+# `orch: ` line apiece, and exits 1; else returns.
 spec_review_problems_exit() {
   local p
   [ "${#SR_PROBLEMS[@]}" -gt 0 ] || [ "${#SR_VIOLATIONS[@]}" -gt 0 ] || return 0
@@ -1384,8 +1385,9 @@ spec_review_tickets_die() { spec_review_die "tickets.md line $1: $2"; }
 # tickets.md (see spec_review_collect).
 spec_review_tickets_content() { spec_review_collect "tickets.md line $1: $2"; }
 
-# spec_review_ticket_item_check <index>: dies, naming the item's header line,
-# unless a text item carries its summary and its anchor/replace block.
+# spec_review_ticket_item_check <index>: reports, naming the item's header line
+# (a content violation: collected under check, a die under apply), unless a
+# text item carries its summary and its anchor/replace block.
 spec_review_ticket_item_check() {
   case "${ST_KIND[$1]}" in
     ticket|section)
@@ -1555,7 +1557,7 @@ spec_review_ticket_load() {
     return 1
   fi
   [ -e "$file" ] || file="$1/ticket-$2.md"
-  file_read copy "$file" || die "$3: could not read $file - nothing written"
+  file_read copy "$file" || spec_review_die "$3: could not read $file - nothing written"
   j="${#TK_T[@]}"
   TK_T[j]="$2"; TK_FETCHED[j]="$copy"; TK_TEXT[j]="$copy"
 }
@@ -1682,7 +1684,7 @@ spec_review_tickets_check() {
   [ -f "$dir/spec.md" ] || die "spec.md not found in $dir"
   spec_review_tickets_parse "$dir/tickets.md"
   spec_review_tickets_answer all
-  file_read __srtc_body "$dir/spec.md" || die "could not read $dir/spec.md"
+  file_read __srtc_body "$dir/spec.md" || spec_review_die "could not read $dir/spec.md"
   local batch_body="$__srtc_body"
   SR_PROBLEMS=(); SR_TICKET_ANCHOR_COUNT=0; TK_T=(); TK_FETCHED=(); TK_TEXT=()
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do

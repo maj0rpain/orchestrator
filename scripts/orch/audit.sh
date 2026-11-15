@@ -75,7 +75,7 @@ audit_drift_line() {
   local head="cited files changed since $sha:" reason=""
   temp_file_make tmp || reason="git comparison failed"
   if [ -z "$reason" ]; then
-    if git diff --name-only -z --no-renames --no-ext-diff "$sha" HEAD -- "${pathspecs[@]}" >"$tmp" 2>/dev/null; then
+    if git diff --name-only -z --no-renames --no-ext-diff --no-relative "$sha" HEAD -- "${pathspecs[@]}" >"$tmp" 2>/dev/null; then
       while IFS= read -r -d '' p; do changed_set[$p]=1; done <"$tmp"
     elif ! git rev-parse --verify -q 'HEAD^{commit}' >/dev/null 2>&1; then
       reason="no commit on HEAD"

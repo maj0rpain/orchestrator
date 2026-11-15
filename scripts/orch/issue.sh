@@ -208,7 +208,7 @@ cmd_issue_labels() {
   for issue in "$@"; do
     issue_state_labels_read "$issue" state labels gh_err \
       || gh_die "read issue #$issue" "$gh_err"
-    joined="$(printf '%s\n' "$labels" | awk 'NF { printf "%s%s", sep, $0; sep = ", " }')"
+    joined="$(list_join "$labels")"
     case "$state" in OPEN) state=open ;; *) state=closed ;; esac
     printf '%s %s%s\n' "$issue" "$state" "${joined:+ $joined}"
   done

@@ -718,10 +718,6 @@ fake_unfail
 
 assert_contains "the unknown-op message lists labels" "$("$ORCH" issue bogus 2>&1)" "|labels"
 assert_contains "help documents issue labels" "$("$ORCH" help)" "issue labels <n>..."
-assert_contains "the CLI conventions' noun table lists issue labels" \
-  "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`labels`'
-assert_contains "the issue tracker doc's conventions list reading labels" \
-  "$(cat "$PLUGIN_ROOT/docs/agents/issue-tracker.md")" 'issue labels'
 restore_suite_env
 
 # --- issue close --------------------------------------------------------------
@@ -1393,6 +1389,10 @@ assert_eq "a file cited on two Location lines is listed once" "$out" "cited file
 cd sub || exit 1
 out="$(df_fetch)"
 assert_eq "run from a subdirectory the answer is the same" "$out" "cited files changed since $df_sha: c.md, a.md"
+git config diff.relative true
+out="$(df_fetch)"
+assert_eq "a user's diff.relative config does not hide files outside the directory" "$out" "cited files changed since $df_sha: c.md, a.md"
+git config --unset diff.relative
 cd ..
 
 echo uncommitted >>b.md

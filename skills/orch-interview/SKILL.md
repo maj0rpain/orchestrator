@@ -167,7 +167,9 @@ habits on every round:
   issue into the plan, or to order the plan against one, run
   `bash "$ORCH" issue labels <n>` on it. The question then states the issue's
   state, its phase label and whether it carries `orch:running`. An issue with
-  a phase label is never recommended for folding in.
+  a phase label is never recommended for folding in: an autopilot flow
+  already holds its work. The session may still recommend ordering the plan
+  against it.
 - **Name the docs the plan will make stale.** When the plan changes or
   removes something a doc describes, name each such doc by document and
   section (the README's Install section), so the spec lists it under

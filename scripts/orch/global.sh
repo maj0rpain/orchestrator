@@ -436,8 +436,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               die. Not with --override
   issue labels <n>...         print one line per issue, in the order named: its
                               number, open or closed, then its labels joined
-                              by ", " (none when it has none); a failed read
-                              dies naming the issue after the lines already
+                              by ", " (no labels: only number and state); a
+                              failed read dies naming the issue after the lines already
                               printed; 1 on a usage error - recording no state
   issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
                               close issue <n> as completed, or as a duplicate
