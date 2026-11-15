@@ -199,7 +199,7 @@ audit_ranked_sections() {
 # order and without repeats, unless the block restates Location:.
 audit_finding_resolve() {
   local n="$1" i k label value from="" from_ln src first="" locs="" restated="" sources area kn
-  local locline loc lw lk
+  local loclist locfield loc lw lk
   local rl=() rv=() rw=()
   audit_fields_split "$2" "$3"
   for i in "${!AUDIT_FL[@]}"; do
@@ -257,14 +257,14 @@ audit_finding_resolve() {
   done
   if [ -z "$restated" ] && [ -n "$locs" ]; then
     audit_list_split sl "$locs"
-    locline=""
+    loclist=""
     while IFS= read -r loc; do
       [ -n "$loc" ] || continue
-      list_has "$locline" "$loc" || locline+="${locline:+$'\n'}$loc"
+      list_has "$loclist" "$loc" || loclist+="${loclist:+$'\n'}$loc"
     done <<<"$sl"
-    locline="${locline//$'\n'/, }"
+    locfield="${loclist//$'\n'/, }"
     k="$(array_index bl Location)"
-    if [ -n "$k" ]; then bv[k]="$locline"; else bl+=(Location) bv+=("$locline") bw+=("ranked.md line $from_ln"); fi
+    if [ -n "$k" ]; then bv[k]="$locfield"; else bl+=(Location) bv+=("$locfield") bw+=("ranked.md line $from_ln"); fi
   fi
   AUDIT_FIELDS[n]=""
   for i in "${!bl[@]}"; do
@@ -843,7 +843,7 @@ audit_file_batch() {
     printf '%s\t%s\t%s\n' "$n" "$made" filed
   done
 
-  local links have cur raw tail unioned
+  local links have use cur raw tail unioned
   local -A first=()
   for n in "${picked[@]}"; do
     [ -n "${first[${issue[$n]}]:-}" ] || first[${issue[$n]}]="$n"
@@ -855,29 +855,37 @@ audit_file_batch() {
     done
     [ -n "$links" ] || continue
     # The picks sharing an issue pool their links; the issue is written once,
-    # from the body of the pick that first reached it.
+    # from the rendering of the pick the issue still matches.
     audit_nums_union unioned "${acc[${issue[$n]}]:-}" "$links"
     acc[${issue[$n]}]="$unioned"
   done
   for n in "${picked[@]}"; do
     [ "${first[${issue[$n]}]}" = "$n" ] && [ -n "${acc[${issue[$n]}]:-}" ] || continue
-    have=""
+    have="" use="$n"
     if [ "${state[$n]}" = open ]; then
       gh_or_die --out raw "read issue #${issue[$n]}" adapter_issue_body "${issue[$n]}"
       audit_body_norm cur "$raw"
-      tail="${cur#"${base[$n]}"$'\n\n**Related:** '}"
-      if [ "$cur" != "${base[$n]}" ]; then
-        if [ "$tail" != "$cur" ] && [[ $tail =~ ^#[0-9]+(\ #[0-9]+)*$ ]]; then
+      use=""
+      for j in "${picked[@]}"; do
+        [ "${issue[$j]}" = "${issue[$n]}" ] || continue
+        tail="${cur#"${base[$j]}"$'\n\n**Related:** '}"
+        if [ "$cur" = "${base[$j]}" ]; then
+          use="$j"
+          break
+        elif [ "$tail" != "$cur" ] && [[ $tail =~ ^#[0-9]+(\ #[0-9]+)*$ ]]; then
           audit_nums_union have "${tail//#/}" ""
-        else
-          warn "#${issue[$n]} was edited since it was filed; its Related line is not written"
-          continue
+          use="$j"
+          break
         fi
+      done
+      if [ -z "$use" ]; then
+        warn "#${issue[$n]} was edited since it was filed; its Related line is not written"
+        continue
       fi
     fi
     audit_nums_union unioned "$have" "${acc[${issue[$n]}]}"
     [ "$unioned" != "$have" ] || continue
-    audit_related_write "${base[$n]}" "${issue[$n]}" "$unioned" "$body_file"
+    audit_related_write "${base[$use]}" "${issue[$n]}" "$unioned" "$body_file"
   done
 }
 

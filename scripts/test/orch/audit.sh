@@ -653,7 +653,7 @@ echo
 echo "audit file batch related"
 batch_reset
 # Finding 2 overlaps 3, too: 1 and 3 are linked, 2 and 3 are, 1 and 2 are not.
-sed -i 's/^Category: enhancement$/&/; /^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
+sed -i '/^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
 out="$("$ORCH" audit file --run "$run" 3 2>&1)"
 assert_eq "an overlap outside the batch writes nothing" "$(fake_body_of 40 | grep -c Related || true)" "0"
 # The open issue's body takes CRLF line ends and trailing newlines.
@@ -718,6 +718,14 @@ fake_unfail
 out="$("$ORCH" audit file --run "$run" 1,2,3 2>"$errf")"; st=$?
 assert_status "a same-title pair rerun after the Related write failed" "$st" 0
 assert_contains "the shared issue's Related line is written" "$(fake_body_of 40)" '**Related:** #41'
+
+batch_reset
+sed -i 's/^Title: Whole finding with no source/Title: Latent bug in a.sh/; /^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
+"$ORCH" audit file --run "$run" 3 >/dev/null 2>&1
+out="$("$ORCH" audit file --run "$run" 1,2,3 2>"$errf")"; st=$?
+assert_status "same title twice, the issue filed earlier from the later pick" "$st" 0
+assert_contains "the shared issue still takes its Related line" "$(fake_body_of 40)" '**Related:** #41'
+assert_eq "without an edited warning" "$(cat "$errf")" ""
 assert_eq "without an edited-since warning" "$(cat "$errf")" ""
 echo
 echo "audit file batch failures"
