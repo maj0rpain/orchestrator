@@ -45,8 +45,9 @@ with nothing written.
 ## 3. Run one agent per issue
 
 Run the eligible issues as a subagent pool of 4 (host capability
-*Run a subagent pool*,
-in the issue order `autopilot candidates` printed, no size hint), each a fresh
+*Run a subagent pool*, no size hint; see that row of
+`docs/host-capabilities.md`), in the issue order `autopilot candidates`
+printed, each a fresh
 `orch-autopilot-planner` subagent.
 Its prompt is exactly these three lines, and nothing else:
 
