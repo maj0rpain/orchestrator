@@ -587,7 +587,7 @@ assert_eq "a marked file, one with no trailing newline and one marked on the thi
   "$(sourced_orch_script '
     PATH=
     for f in marked noeol late; do st=0; agent_copy_marked "$1/$f.md" || st=$?; printf "[%s]" "$st"; done' "$acm_dir" 2>&1)" "[0][0][1]"
-out="$(sourced_orch_script 'agent_copy_marked "$1"' "$acm_dir/none.md" 2>&1)"; st=$?
+out="$(sourced_orch agent_copy_marked "$acm_dir/none.md" 2>&1)"; st=$?
 assert_status "an unreadable marker file is unmarked" "$st" 1
 assert_contains "with sed's diagnostic on stderr" "$out" "sed:"
 mkdir "$acm_dir/dir.md"
