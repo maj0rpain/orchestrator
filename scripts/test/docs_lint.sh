@@ -4638,7 +4638,7 @@ assert_eq "width.sh given every fixture file prints what a root scan prints" \
 assert_empty "width.sh given an uncovered file prints nothing" \
   "$("$width" --root "$fixture" "$fixture/CHANGELOG.md")"
 # One awk per root scan, whatever the file count and what each file leaves open.
-src_awk="$(counting_bin awk)"
+src_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
 awk_scan() { PATH="$src_awk:$PATH" "$width" --root "$1"; }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/docs" "$fixture/scripts"
