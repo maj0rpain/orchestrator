@@ -123,8 +123,8 @@
 #     headings in order
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the
 #     report and a Markdown-summary fallback
-#   scan_hand_off_category  an audit skill's Hand off step passes --category for
-#     each named category
+#   scan_hand_off_batch  an audit skill's Hand off step files through audit
+#     file --run, passing no per-finding --category, --finding-file, --location
 #   scan_audit_hunt  each audit skill's Hunt step names agent get auditor and it
 #     runs no agent sync
 #   scan_audit_hunt_run  each audit skill's Hunt step runs audit begin and names
@@ -3204,56 +3204,41 @@ numbered_heading() {
   [ -n "$h" ] || return 1
   printf '%s\n' "$h"
 }
-# scan_hand_off_category <plugin root> <skill file> <category>...: one line when
-# the skill's Hand off step does not pass --category for each category named.
-scan_hand_off_category() {
-  local r="$1" skill="$2" hand c missing="" list heading
-  shift 2
+# scan_hand_off_batch <plugin root> <skill file>: one line when the skill's Hand
+# off step does not file its picks through the batch form (audit file --run), or
+# still passes a per-finding --category, --finding-file or --location.
+scan_hand_off_batch() {
+  local r="$1" skill="$2" hand="" heading flag
   if heading="$(numbered_heading "$r/$skill" "Hand off")"; then
     hand="$(md_section "$r/$skill" "$heading" 2>/dev/null | flat_text)"
-  else
-    hand="" missing=1
   fi
-  for c in "$@"; do
-    grep -qF -- "--category $c" <<<"$hand" || missing=1
+  grep -qF -- 'audit file --run' <<<"$hand" \
+    || echo "$skill: the Hand off step does not file through audit file --run"
+  for flag in --category --finding-file --location; do
+    ! grep -qF -- "$flag" <<<"$hand" \
+      || echo "$skill: the Hand off step passes $flag, which the batch form takes from the run"
   done
-  [ -z "$missing" ] && return 0
-  list="$1"
-  shift
-  for c in "$@"; do list="$list and $c"; done
-  echo "$skill: the Hand off step does not pass --category $list"
   return 0
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-audit-docs"
-printf '# A\n\n## 6. Hand off\n\nRun `--category bug`.\n' >"$fixture/$audit_docs_skill"
-flags "a hand off missing one of two categories is flagged" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug enhancement)" \
-  "$audit_docs_skill: the Hand off step does not pass --category bug and enhancement"
-printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --finding-file f`.\n' >"$fixture/$audit_docs_skill"
-flags "a hand off without --category is flagged" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug enhancement)" \
-  "$audit_docs_skill: the Hand off step does not pass --category bug and enhancement"
-flags "a hand off missing its one category is flagged" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" documentation)" \
-  "$audit_docs_skill: the Hand off step does not pass --category documentation"
-printf '# A\n\n## 6. Hand off\n\nRun `--category bug` or `--category enhancement`.\n' >"$fixture/$audit_docs_skill"
-assert_empty "a hand off with every category is accepted" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug enhancement)"
-printf '# A\n\n## 6. Hand off\n\nPass --category documentation.\n' >"$fixture/$audit_docs_skill"
-assert_empty "a category with no audit file text around it is accepted" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" documentation)"
-printf '# A\n\n## 7. Hand off\n\nRun `--category bug`.\n' >"$fixture/$audit_docs_skill"
-assert_empty "a hand off at step 7 passing its category is accepted" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug)"
-printf '# A\n\nRun `--category bug`.\n\n## 7. Handoff\n\nNothing.\n' >"$fixture/$audit_docs_skill"
-flags "a missing Hand off heading is flagged even when the phrase appears elsewhere" \
-  "$(scan_hand_off_category "$fixture" "$audit_docs_skill" bug)" \
-  "$audit_docs_skill: the Hand off step does not pass --category bug"
-check "orch-audit-docs has its command and its six step headings in order" \
-  "$(scan_skill_steps "$PLUGIN_ROOT" audit-docs "$audit_docs_skill" "$audit_steps")"
-check "orch-audit-docs hands off with --category documentation" \
-  "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_docs_skill" documentation)"
+printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --category bug --finding-file f`.\n' >"$fixture/$audit_docs_skill"
+out="$(scan_hand_off_batch "$fixture" "$audit_docs_skill")"
+flags "a hand off that files one finding at a time is flagged" \
+  "$out" "$audit_docs_skill: the Hand off step does not file through audit file --run"
+flags "a hand off passing --category is flagged" \
+  "$out" "$audit_docs_skill: the Hand off step passes --category, which the batch form takes from the run"
+flags "a hand off passing --finding-file is flagged" \
+  "$out" "$audit_docs_skill: the Hand off step passes --finding-file, which the batch form takes from the run"
+printf '# A\n\n## 6. Hand off\n\nRun `audit file --run <run> 3,7`.\n' >"$fixture/$audit_docs_skill"
+assert_empty "a hand off through the batch form is accepted" \
+  "$(scan_hand_off_batch "$fixture" "$audit_docs_skill")"
+printf '# A\n\nRun `audit file --run <run> 3`.\n\n## 7. Handoff\n\nNothing.\n' >"$fixture/$audit_docs_skill"
+flags "a batch call outside the Hand off step is flagged" \
+  "$(scan_hand_off_batch "$fixture" "$audit_docs_skill")" \
+  "$audit_docs_skill: the Hand off step does not file through audit file --run"
+check "orch-audit-docs hands off through audit file --run" \
+  "$(scan_hand_off_batch "$PLUGIN_ROOT" "$audit_docs_skill")"
 
 # scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs,
 # orch-audit-code and orch-audit-tests) whose Hunt step does not name agent get
@@ -3498,10 +3483,10 @@ check "orch-audit-tests names the brief that holds the quality rule" \
 audit_code_skill='skills/orch-audit-code/SKILL.md'
 check "orch-audit-code has its command and its six step headings in order" \
   "$(scan_skill_steps "$PLUGIN_ROOT" audit-code "$audit_code_skill" "$audit_steps")"
-check "orch-audit-code hands off with --category bug and enhancement" \
-  "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_code_skill" bug enhancement)"
-check "orch-audit-tests hands off with --category enhancement" \
-  "$(scan_hand_off_category "$PLUGIN_ROOT" "$audit_tests_skill" enhancement)"
+check "orch-audit-code hands off through audit file --run" \
+  "$(scan_hand_off_batch "$PLUGIN_ROOT" "$audit_code_skill")"
+check "orch-audit-tests hands off through audit file --run" \
+  "$(scan_hand_off_batch "$PLUGIN_ROOT" "$audit_tests_skill")"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo

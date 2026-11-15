@@ -51,7 +51,7 @@ AUDIT_KINDS="code docs tests"
 # line. The one-finding form's own refusals print audit_file_usage alone.
 audit_usage() {
   local kinds="${AUDIT_KINDS// /|}"
-  printf 'usage: orch.sh audit begin <%s>\n   or: orch.sh audit report <dir> <out.html>\n   or: %s' \
+  printf 'usage: orch.sh audit begin <%s>\n   or: orch.sh audit report <dir> <out.html>\n   or: orch.sh audit file --run <dir> <numbers>\n   or: %s' \
     "$kinds" "$(audit_file_usage | sed 's/^usage: //')"
 }
 
@@ -666,13 +666,141 @@ audit_file() {
   note "$n"
 }
 
+# audit_batch_body <n>: prints the issue body of ranked finding <n>, from the
+# AUDIT_* globals: each field other than the steering four and Location as a
+# paragraph with its label in bold, one **Location:** line per location, then
+# the **Audited at:** line carrying the commit audit begin recorded; each
+# paragraph followed by a blank line.
+audit_batch_body() {
+  local n="$1" rest="${AUDIT_FIELDS[$1]}" rec label loc
+  while [ -n "$rest" ]; do
+    rec="${rest%%"$AUDIT_RS"*}"
+    rest="${rest#*"$AUDIT_RS"}"
+    label="${rec%%"$AUDIT_US"*}"
+    case "$label" in From | Title | Category | Overlaps | Location) continue ;; esac
+    printf '**%s:** %s\n\n' "$label" "${rec#*"$AUDIT_US"}"
+  done
+  while IFS= read -r loc; do
+    [ -z "$loc" ] || printf '**Location:** `%s`\n\n' "$loc"
+  done <<<"${AUDIT_LOCS[n]}"
+  printf '**Audited at:** %s\n\n' "$AUDIT_COMMIT"
+}
+
+# audit_body_norm <var> <text>: <text> with its carriage returns and trailing
+# newlines dropped, into <var>.
+audit_body_norm() {
+  local s="${2//$'\r'/}"
+  while [[ $s == *$'\n' ]]; do s="${s%$'\n'}"; done
+  printf -v "$1" '%s' "$s"
+}
+
+# audit_file_batch <dir> <numbers>: files the ranked findings <numbers> (comma
+# separated) of the audit run <dir> as issues, in number order, then writes
+# each linked issue's **Related:** paragraph. Every check - the ranked file's
+# reader, the numbers, the bodies' round trip - comes before any GitHub read or
+# write. Prints, per finding, its number, its issue number and filed or open,
+# tab-separated.
+audit_file_batch() {
+  [ $# -eq 2 ] || die "$(audit_usage)"
+  local dir="$1" item n j picked=() want="" seen="" cat
+  audit_ranked_read "$dir"
+  audit_list_split want "$2"
+  [ -n "$want" ] || die "$(audit_usage)"
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    [[ $item =~ ^[0-9]+$ ]] || die "'$item' is not a finding number"
+    item=$((10#$item))
+    [ "$item" -ge 1 ] && [ "$item" -le "$AUDIT_COUNT" ] \
+      || die "the ranked file has no finding $item"
+    [[ " $seen " != *" $item "* ]] || die "finding $item is given twice"
+    seen+=" $item"
+  done <<<"$want"
+  for ((n = 1; n <= AUDIT_COUNT; n++)); do
+    [[ " $seen " != *" $n "* ]] || picked+=("$n")
+  done
+
+  local -A base=() issue=() state=() ensured=()
+  local body_file got_locs got_shas
+  for n in "${picked[@]}"; do
+    audit_body_norm "base[$n]" "$(audit_batch_body "$n")"
+    audit_body_parse "${base[$n]}" got_locs got_shas
+    [ "$got_locs" = "${AUDIT_LOCS[n]}"$'\n' ] \
+      || die "the rendered body does not parse back: locations of finding $n"
+    [ "$got_shas" = "$AUDIT_COMMIT"$'\n' ] \
+      || die "the rendered body does not parse back: audited at of finding $n"
+  done
+  finding_body_file_new body_file
+
+  local existing err existing_n existing_title triage="" made
+  gh_capture existing err adapter_issues_open_titles \
+    || gh_die "list the open issues" "$err"
+  for n in "${picked[@]}"; do
+    while IFS=$'\t' read -r existing_n existing_title; do
+      [ -n "$existing_n" ] || continue
+      if [ "$existing_title" = "${AUDIT_TITLE[n]}" ]; then
+        issue[$n]="$existing_n" state[$n]=open
+        break
+      fi
+    done <<<"$existing"
+    [ -z "${state[$n]:-}" ] || continue
+    if [ -z "$triage" ]; then
+      triage_label_into triage needs-triage
+      triage_label_ensure "$triage"
+    fi
+    cat="${AUDIT_CATEGORY[n]}"
+    if [ -z "${ensured[$cat]:-}" ]; then
+      category_label_ensure "$cat"
+      ensured[$cat]=1
+    fi
+    printf '%s\n\n' "${base[$n]}" >"$body_file"
+    gh_or_die --out made "create the issue" \
+      adapter_issue_create "${AUDIT_TITLE[n]}" "$body_file" "$triage" "$cat"
+    issue[$n]="$made" state[$n]=filed
+  done
+
+  local links nums have cur raw tail unioned
+  for n in "${picked[@]}"; do
+    links=""
+    for j in "${picked[@]}"; do
+      if [[ ${AUDIT_LINKS[n]} == *" $j "* ]] && [ "${issue[$j]}" != "${issue[$n]}" ]; then
+        links+="${issue[$j]}"$'\n'
+      fi
+    done
+    [ -n "$links" ] || continue
+    have=""
+    if [ "${state[$n]}" = open ]; then
+      gh_or_die --out raw "read issue #${issue[$n]}" adapter_issue_body "${issue[$n]}"
+      audit_body_norm cur "$raw"
+      tail="${cur#"${base[$n]}"$'\n\n**Related:** '}"
+      if [ "$cur" = "${base[$n]}" ]; then
+        have=""
+      elif [ "$tail" != "$cur" ] && [[ $tail =~ ^#[0-9]+(\ #[0-9]+)*$ ]]; then
+        have="$(printf '%s\n' "${tail//#/}" | tr ' ' '\n' | sort -un)"
+      else
+        warn "#${issue[$n]} was edited since it was filed; its Related line is not written"
+        continue
+      fi
+    fi
+    unioned="$(printf '%s\n%s\n' "$have" "$links" | sed '/^$/d' | sort -un)"
+    [ "$unioned" != "$have" ] || continue
+    nums="$(printf '#%s ' $unioned)"
+    printf '%s\n\n**Related:** %s\n\n' "${base[$n]}" "${nums% }" >"$body_file"
+    gh_or_die "write issue #${issue[$n]}'s Related line" \
+      adapter_issue_body_edit "${issue[$n]}" "$body_file"
+  done
+  for n in "${picked[@]}"; do
+    printf '%s\t%s\t%s\n' "$n" "${issue[$n]}" "${state[$n]}"
+  done
+}
+
 cmd_audit() {
   local op="${1:-}"
   shift || true
   case "$op" in
     begin) audit_begin "$@" ;;
     report) audit_report "$@" ;;
-    file) audit_file "$@" ;;
+    file)
+      if [ "${1:-}" = --run ]; then audit_file_batch "${@:2}"; else audit_file "$@"; fi ;;
     *) die "$(audit_usage)" ;;
   esac
 }

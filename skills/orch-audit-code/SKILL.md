@@ -169,19 +169,16 @@ or the report's path, and the pick question.
 
 With both lists, filing runs first, then the interview.
 
-- **File.** For each finding picked for `file`, one at a time in number
-  order, write its text (kind, evidence, confidence, strength, before/after,
-  proposed fix) to a finding file in the run directory and run
-  `bash "$ORCH" audit file "<title>" --category <bug|enhancement>
-  --finding-file <file> --location
-  <location>...`, one `--location` per site: `--category bug` for a latent
-  bug, `--category enhancement` for an inefficiency or an architecture
-  deepening (an ADR decision item is an architecture deepening). It prints the
-  issue number; when an open issue already has that title it files nothing and
-  says so on stderr. Report the issue numbers, naming any that was already open
-  rather than newly filed. A filing that fails stops the step: report the
-  numbers already filed (they stay filed), the failure, and the findings not
-  filed, and do not start the interview.
+- **File.** Run `bash "$ORCH" audit file --run "<run>" <numbers>` once, with
+  the numbers picked for `file`, comma-separated. It files the findings in
+  number order from the ranked file, with the title, category, locations and
+  text each already holds, and writes each issue's `**Related:** #a #b` line
+  for the picked findings that overlap. Write no per-finding file and pass no
+  title, category or location. It prints one line per finding: its number, its
+  issue number and `filed` or `open`. Report the issue numbers from those
+  lines, naming any that was already open rather than newly filed. A failure
+  stops the step: report what was filed (it stays filed), the failure, and what
+  was not filed, and do not start the interview; the same command is the retry.
 - **Interview.** Invoke `orch-interview` with the findings picked for
   `interview` together, as one change to plan, each with its location,
   evidence, before/after, and proposed fix. The interview ends in a flow, a

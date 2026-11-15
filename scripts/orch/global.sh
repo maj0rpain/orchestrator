@@ -752,6 +752,23 @@ orch.sh - deterministic operations for the orchestrator flow
                               leaving an earlier report as it was, when the
                               ranked file does not hold together; the page
                               goes through a temporary file beside <out.html>
+  audit file --run <dir> <numbers>
+                              file the audit run <dir>'s ranked findings
+                              <numbers> (comma-separated) as issues, in number
+                              order, each checked through the ranked file's
+                              reader before any GitHub call. The body is the
+                              finding's resolved fields as bold-labelled
+                              paragraphs, a **Location:** line per location
+                              and an **Audited at:** line with the commit
+                              audit begin recorded; labelled needs-triage and
+                              the category. An open issue with the title
+                              files nothing. Then a **Related:** #a #b
+                              paragraph is written into each issue whose
+                              finding overlaps another picked one (an
+                              already-open issue only while its body is still
+                              the rendering, else a warning). Prints one line
+                              per finding: number, issue, filed|open,
+                              tab-separated; a rerun finishes a failed batch
   audit file <title> --category <c> --finding-file <f> --location <<file>:<line>>...
                               file one audit finding as a GitHub issue
                               labelled the repo's needs-triage and the
