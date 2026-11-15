@@ -241,8 +241,8 @@ question. Otherwise, before asking anything, run `bash "$ORCH" issue triage <n>
 ### Done-close
 
 If the planning settles that the interviewed issue's work is already done - a
-commit, PR or issue already did it - skip the interviewed-issue step's move to
-`ready-for-agent` and the route question. Instead ask one blocking question that
+commit, PR or issue already did it - skip the label move and the route
+question. Instead ask one blocking question that
 names the commit, PR or issue that did the work, with two options: "Close #<n>
 as done (duplicate of #<m>)" when another issue, #<m>, did the work, else "Close
 #<n> as done (completed)"; and "Leave #<n> open". On the close, write the
@@ -333,14 +333,13 @@ checkout, so run their skills only on that route (on Claude Code, with args
 
 ### Blueprint route
 
-When the interviewed-issue step settled an interviewed issue - the one this
-planning was about, or the one the user named under "It's a different issue" -
-whatever happened to its label - moved, already ready, left alone, or the
-check failed - write the spec in rewrite mode on that issue, replacing
-#<n>'s body instead of publishing a new issue (orch-to-spec, handed #<n>).
-Only with no interviewed issue, publish the spec as a new issue
-(orch-to-spec). Either way, write any glossary or ADR wording the planning
-decided into the issue body verbatim.
+When the planning has an interviewed issue - the one this planning was about,
+or the one the user named in its place - whatever happened to its label -
+moved, already ready, left alone, or the check failed - write the spec in
+rewrite mode on that issue, replacing #<n>'s body instead of publishing a new
+issue (orch-to-spec, handed #<n>). Only with no interviewed issue, publish the
+spec as a new issue (orch-to-spec). Either way, write any glossary or ADR
+wording the planning decided into the issue body verbatim.
 
 
 The route's steps run in this order, and one rule covers every step: when a
