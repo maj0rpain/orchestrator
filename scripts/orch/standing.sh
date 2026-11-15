@@ -219,7 +219,7 @@ standing_human_guard() {
 # alone.
 standing_relabel_one() {
   local gh_err
-  capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" && return 0
+  gh_capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" && return 0
   STANDING_REASON="$(gh_reason "$gh_err")"
   return 1
 }
@@ -348,7 +348,7 @@ standing_chain_relabel() {
   local gh_err verb=add past=added
   [ "$2" != --remove ] || { verb=remove; past=removed; }
   ! standing_landed_has "$past $3" || return 0
-  capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" ||
+  gh_capture_err gh_err adapter_issue_relabel "$1" "$2" "$3" ||
     standing_chain_die "$1" "$verb $3" "$gh_err"
   standing_landed_add "$past $3"
 }
@@ -357,7 +357,7 @@ standing_chain_relabel() {
 standing_release() {
   local issue="$1" gh_err
   standing_chain_relabel "$issue" --remove "$STANDING_RUNNING_LABEL"
-  capture_err gh_err adapter_claim_delete "$issue" ||
+  gh_capture_err gh_err adapter_claim_delete "$issue" ||
     standing_chain_die "$issue" "delete the claim ref" "$gh_err"
 }
 
@@ -388,7 +388,7 @@ standing_move_label() {
   for p in $(standing_phase_labels_in "$labels"); do
     [ "$p" = "$phase" ] || args+=(--remove "$(standing_phase_label "$p")")
   done
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$(standing_phase_label "$phase")" ${args[@]+"${args[@]}"} ||
+  gh_capture_err gh_err adapter_issue_relabel "$issue" --add "$(standing_phase_label "$phase")" ${args[@]+"${args[@]}"} ||
     standing_chain_die "$issue" "move the phase label to $(standing_phase_label "$phase")" "$gh_err"
 }
 
@@ -414,7 +414,7 @@ standing_start() {
   handoff_check "$file" "" 01-plan.md autopilot || die "plan $file is not valid - nothing posted"
   handoff_comment_post "$issue" 01-plan "$file" || exit 1
   first="$(standing_phase_label "${PHASES%% *}")"
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
+  gh_capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
 }
 
@@ -433,12 +433,12 @@ standing_sync_request() {
 standing_begin() {
   local issue="$1" gh_err
   if [ -n "${2:-}" ]; then
-    capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_LIMITED_LABEL" || {
+    gh_capture_err gh_err adapter_issue_relabel "$issue" --remove "$STANDING_LIMITED_LABEL" || {
       STANDING_REASON="step removing $STANDING_LIMITED_LABEL failed: $(gh_reason "$gh_err")"
       return 1
     }
   fi
-  capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_RUNNING_LABEL" || {
+  gh_capture_err gh_err adapter_issue_relabel "$issue" --add "$STANDING_RUNNING_LABEL" || {
     STANDING_REASON="step adding $STANDING_RUNNING_LABEL failed: $(gh_reason "$gh_err")"
     return 1
   }
@@ -480,7 +480,7 @@ standing_ask() {
   temp_file_make body || die "could not create a temp file for the question comment"
   { marked_comment_write question "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; printf '%s' "$text"
     printf '\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n'; } >"$body"
-  capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
+  gh_capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
   rm -f "$body"
   standing_landed_add "posted the $phase question comment"
   standing_chain_relabel "$issue" --add "$STANDING_HUMAN_LABEL"
@@ -522,7 +522,7 @@ standing_comment_post() {
   temp_file_make body || die "could not create a temp file to $3"
   printf '%s' "$2" >"$body"
   standing_state_put tried "$4"
-  capture_err gh_err adapter_issue_comment "$1" "$body" || {
+  gh_capture_err gh_err adapter_issue_comment "$1" "$body" || {
     rm -f "$body"
     standing_chain_die "$1" "$3" "$gh_err"
   }
@@ -565,7 +565,7 @@ standing_stop_write() {
   fi
   standing_stop_note "$kind" "$text"
   if ! standing_landed_has "$landed"; then
-    capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
+    gh_capture_err gh_err adapter_issue_relabel "$issue" "${relabel[@]}" ||
       standing_chain_die "$issue" "add $label${remove:+, remove $remove}" "$gh_err"
     standing_landed_add "$landed"
   fi
@@ -685,7 +685,7 @@ standing_claims_read() {
   local gh_err text issue host pid phase started
   STANDING_CLAIM_ISSUES=()
   STANDING_CLAIM_HOST=() STANDING_CLAIM_PID=() STANDING_CLAIM_PHASE=() STANDING_CLAIM_STARTED=()
-  if ! capture text gh_err adapter_claim_list; then
+  if ! gh_capture text gh_err adapter_claim_list; then
     [ "${1:-}" != --quiet ] || return 1
     die "could not list the claims on origin: $(gh_reason "$gh_err")"
   fi

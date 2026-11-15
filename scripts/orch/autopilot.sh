@@ -347,6 +347,7 @@ autopilot_questions() {
   orch_load trust
   local list n phase row kind lines="" q_phase stop_phase list_err
   local -A listed_states=() listed_labels=()
+  repo_resolve || :
   issues_labelled_rows_read list listed_states listed_labels list_err "$STANDING_HUMAN_LABEL" ||
     gh_die "list the $STANDING_HUMAN_LABEL issues" "$list_err"
   for n in $(printf '%s\n' "$list" | sort -n); do
@@ -417,13 +418,13 @@ autopilot_orch_in() {
 # the tick.
 autopilot_labels_ensure() {
   local name colour description gh_err have _read_err
-  capture have _read_err adapter_labels_detail 1000 ||
+  gh_capture have _read_err adapter_labels_detail 1000 ||
     die "could not read the repo's labels: $(gh_reason "$_read_err") - the tick stops"
   while IFS='|' read -r name colour description; do
     ! awk -F '\t' -v n="$name" -v c="$colour" -v d="$description" '
       tolower($1) == tolower(n) && tolower($2) == tolower(c) && $3 == d { found = 1 }
       END { exit !found }' <<<"$have" || continue
-    capture_err gh_err adapter_label_upsert "$name" "$colour" "$description" ||
+    gh_capture_err gh_err adapter_label_upsert "$name" "$colour" "$description" ||
       die "could not upsert the label $name: $(gh_reason "$gh_err") - the tick stops"
   done <<<"$(standing_label_entries)"
 }
@@ -835,6 +836,7 @@ autopilot_github_early_file() { printf '%s/github-early-%s\n' "$(autopilot_dir "
 autopilot_github_early() {
   local quota pool remaining limit reset
   [ "$2" -gt 0 ] || return 0
+  repo_resolve || :
   quota="$(gh_limit_pools)" || return 0
   while read -r pool remaining limit reset; do
     case "$pool" in core|graphql) ;; *) continue ;; esac
@@ -853,6 +855,7 @@ autopilot_github_early() {
 autopilot_github_usage() {
   local after pool n line="" b_used a_used
   [ -n "$1" ] || return 1
+  repo_resolve || :
   after="$(gh_limit_pools)" || return 1
   for pool in core graphql; do
     b_used="$(awk -v p="$pool" '$1 == p { print $3 - $2 }' <<<"$1")"
@@ -1085,7 +1088,7 @@ autopilot_sync_detect() {
   orch_load standing
   local raw="" prs="" gh_err issue running sync human pr_lines head_prefix count reason=""
   [ -n "$1" ] || return 0
-  if capture raw gh_err adapter_prs_open_mergeability; then
+  if gh_capture raw gh_err adapter_prs_open_mergeability; then
     prs="$(printf '%s\n' "$raw" | trust_filter_prs "the open PRs")" || reason="the open PRs could not be read: a malformed line"
   else
     reason="$(gh_reason "$gh_err")"
@@ -1224,7 +1227,7 @@ autopilot_tick() {
     standing_pickable || continue
     [ "$(standing_session_phase)" = "$phase" ] || continue
     rc=0
-    capture_err gh_err standing_claim "$issue" "$phase" "$$" || rc=$?
+    gh_capture_err gh_err standing_claim "$issue" "$phase" "$$" || rc=$?
     case "$rc" in
       0) ;;
       2) continue ;;
@@ -1453,6 +1456,7 @@ autopilot_run() {
     autopilot_setting "$name"
     if [ "$AUTOPILOT_SOURCE" != unset ] && [ "$AUTOPILOT_VALUE" != inherit ]; then flags+=("--$name" "$AUTOPILOT_VALUE"); fi
   done
+  repo_resolve || :
   usage_before="$(gh_limit_pools)" || usage_before=""
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   ( cd "$side" && ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit" CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="$AUTOPILOT_BG_WAIT_MS" "$launcher" -p "$prompt" --permission-mode "$mode" ${flags[@]+"${flags[@]}"} \

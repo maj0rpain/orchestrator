@@ -25,7 +25,7 @@ pr_close_missed() {
   case ",$closing," in *",$issue,"*) ;; *) return 1 ;; esac
   merged_epoch="$(autopilot_iso_epoch "$merged_at")" || return 1
   [ $(( $(date -u +%s) - merged_epoch )) -ge "$PR_CLOSE_GRACE" ] || return 3
-  capture_err gh_err adapter_issue_close "$issue" --reason completed \
+  gh_capture_err gh_err adapter_issue_close "$issue" --reason completed \
     --comment "Closed by the orchestrator: PR #$pr merged into \`$default\` with \`Closes #$issue\`, but GitHub did not close this issue." || {
     warn "could not close issue #$issue after PR #$pr merged: $(gh_reason "$gh_err")"
     return 2
@@ -40,7 +40,7 @@ pr_close_missed() {
 pr_merged_closing_read() {
   local _default _raw _prs _err
   _default="$(default_branch)" || { warn "could not find the default branch - $3"; return 1; }
-  capture _raw _err adapter_prs_merged_closing "$_default" || {
+  gh_capture _raw _err adapter_prs_merged_closing "$_default" || {
     warn "could not read the merged PRs: $(gh_reason "$_err") - $3"
     return 1
   }
@@ -116,7 +116,7 @@ open_pr() {
   [ "$draft" != true ] || create_opts=(--draft)
   for label; do create_opts+=(--label "$label"); done
   pr_push_and_body "$branch" "$base" "$issue" "$body_file" tmp "no PR was opened"
-  if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${create_opts[@]+"${create_opts[@]}"}; then
+  if ! gh_capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${create_opts[@]+"${create_opts[@]}"}; then
     rm -f "$tmp"
     gh_die "open the PR for branch $branch (issue #$issue)" "$err"
   fi
@@ -151,23 +151,23 @@ update_pr() {
   [ "$line_base" = "$base" ] \
     || warn "PR #$pr targets $line_base, not the flow's base $base - its issue line follows the PR's base"
   pr_push_and_body "$branch" "$line_base" "$issue" "$body_file" tmp "PR #$pr was not updated"
-  if ! capture ignored err adapter_pr_title_edit "$pr" "$title"; then
+  if ! gh_capture ignored err adapter_pr_title_edit "$pr" "$title"; then
     rm -f "$tmp"
     gh_die "write the title of PR #$pr" "$err"
   fi
   landed="the title"
-  if ! capture ignored err adapter_pr_body_edit "$pr" "$tmp"; then
+  if ! gh_capture ignored err adapter_pr_body_edit "$pr" "$tmp"; then
     rm -f "$tmp"
     gh_die --hint "already written: $landed" "write the body of PR #$pr" "$err"
   fi
   rm -f "$tmp"
   landed="$landed, the body"
   [ $# -gt 0 ] || return 0
-  capture have err adapter_pr_labels "$pr" \
+  gh_capture have err adapter_pr_labels "$pr" \
     || gh_die --hint "already written: $landed" "read the labels of PR #$pr" "$err"
   for label; do
     label_listed "$have" "$label" && continue
-    capture ignored err adapter_pr_label_add "$pr" "$label" \
+    gh_capture ignored err adapter_pr_label_add "$pr" "$label" \
       || gh_die --hint "already written: $landed" "add the label '$label' to PR #$pr" "$err"
     landed="$landed, the label '$label'"
   done
@@ -194,7 +194,7 @@ pr_labels_check() {
   local pr="$1" have err label missing="" count=0
   shift
   [ $# -gt 0 ] || return 0
-  capture have err adapter_pr_labels "$pr" \
+  gh_capture have err adapter_pr_labels "$pr" \
     || gh_die "read the labels of PR #$pr, open and recorded on its branch" "$err"
   for label; do
     label_listed "$have" "$label" && continue
@@ -386,7 +386,7 @@ cmd_pr_release() {
     cat "$body_file"
   } >"$tmp"
   # Not a draft: nothing after this would ever mark it ready.
-  if ! capture pr err adapter_pr_create "$default" "$base" "$title" "$tmp"; then
+  if ! gh_capture pr err adapter_pr_create "$default" "$base" "$title" "$tmp"; then
     rm -f "$tmp"
     gh_die "open the release PR from $base into $default" "$err"
   fi

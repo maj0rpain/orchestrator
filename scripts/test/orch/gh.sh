@@ -69,6 +69,11 @@ assert_eq "command gh appears in orch.sh and its modules only inside the guard" 
   "$(cat "$ORCH" "$(dirname "$ORCH")"/orch/*.sh | grep -c '\bcommand gh\b')" "1"
 assert_contains "and that one is the gh guard's own" \
   "$(sed -n '/^gh() {$/,/^}$/p' "$(dirname "$ORCH")/orch/gh.sh")" 'command gh "$@"'
+# A GitHub operation is captured through gh_capture or gh_capture_err, which
+# resolve the Repo in the caller's shell first (#3148): on no code line does
+# bare capture or capture_err run an adapter operation or gh.
+assert_eq "no bare capture or capture_err runs an adapter operation or gh" \
+  "$(grep -hEv '^[[:space:]]*#' "$(dirname "$ORCH")"/orch/*.sh | grep -cE '(^|[^_[:alnum:]])capture(_err)? .*[[:space:]](adapter_[a-z_]+|gh)([[:space:]]|$)')" "0"
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
 # in the parent shell (issue fetch) or in a command substitution (ticket
@@ -123,6 +128,65 @@ assert_contains "gh api was among the calls" "$(cat "$GH_FIXTURE/env.log")" \
   "GH_HOST=ghe.example.com api "
 assert_eq "every gh call carried the host-qualified repo and its host" \
   "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+
+# An SSH-alias origin: a command whose GitHub calls start from its main shell
+# resolves the Repo once, so ssh is called once, and every call still carries
+# the repo and its host (#3148). issue triage reads, relabels and reads back
+# from its main shell, so one ssh call for all of them is a memo, not luck.
+# triage_gh: a gh on PATH for issue 5, open and unlabelled until its first
+# edit, then ready-for-agent; it logs as the fixture gh does.
+triage_gh() {
+  triage_dir="$(mktemp -d)"
+  cat >"$triage_dir/gh" <<GH
+#!/usr/bin/env bash
+printf 'GH_REPO=%s GH_HOST=%s %s\n' "\${GH_REPO-<unset>}" "\${GH_HOST-<unset>}" "\$*" >>"$GH_FIXTURE/env.log"
+compgen -v REPO_ >>"$GH_FIXTURE/repo_vars.log"
+case "\$2" in
+  view) echo OPEN; [ ! -f "$triage_dir/edited" ] || echo ready-for-agent ;;
+  edit) : >"$triage_dir/edited" ;;
+esac
+GH
+  chmod +x "$triage_dir/gh"
+}
+write_ssh_stub 'echo hostname ghe.example.com' 0
+git remote set-url origin git@github-work:fork/widgets.git
+: >"$GH_FIXTURE/env.log"; : >"$ssh_calls"
+triage_gh
+out="$(PATH="$triage_dir:$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
+assert_status "issue triage on an SSH-alias origin runs" "$st" 0
+assert_eq "and ssh is called once for its read, relabel and read back" \
+  "$(wc -l <"$ssh_calls" | tr -d ' ')" "1"
+assert_eq "and every one of its gh calls carried the repo and its host" \
+  "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+assert_eq "and it made more than one gh call" \
+  "$([ "$(gh_calls)" -gt 1 ] && echo yes)" "yes"
+: >"$ssh_calls"
+out="$(PATH="$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" slug "Some Words" 2>&1)"; st=$?
+assert_status "a local-only command runs" "$st" 0
+assert_eq "and calls ssh not at all" "$(cat "$ssh_calls")" ""
+git branch -q quick/base; git config orchestrator.base quick/base
+# branch off captures a local git command (its checkout); its fetch of the
+# ssh origin is git's own ssh, so only the resolver's `ssh -G` is counted.
+PATH="$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" branch off quick/9-widgets >/dev/null 2>&1; st=$?
+assert_status "branch off runs" "$st" 0
+assert_eq "a command that only captures a local git command runs no ssh -G" \
+  "$(grep -c "^-G " "$ssh_calls")" "0"
+# On an https origin, a git wrapper logs each read of origin's URL.
+git remote set-url origin https://github.com/fork/widgets.git
+origin_wrap="$(mktemp -d)"
+cat >"$origin_wrap/git" <<GIT
+#!/usr/bin/env bash
+case "\$*" in "remote get-url origin") echo x >>"$origin_wrap/get-url.log" ;; esac
+exec "$(command -v git)" "\$@"
+GIT
+chmod +x "$origin_wrap/git"
+: >"$origin_wrap/get-url.log"; rm -f "$triage_dir/edited"
+out="$(PATH="$origin_wrap:$triage_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
+assert_status "issue triage on an https origin runs" "$st" 0
+assert_eq "and reads origin once" "$(wc -l <"$origin_wrap/get-url.log" | tr -d ' ')" "1"
+# The whole section's gh calls: none inherited a memo variable.
+assert_eq "no gh call inherited a REPO_ variable: the repo memo is never exported" \
+  "$(cat "$GH_FIXTURE/repo_vars.log" 2>/dev/null)" ""
 restore_suite_env GH_HOST GH_FIXTURE
 
 # --- gh_reason and capture_err (#846) -----------------------------------------
