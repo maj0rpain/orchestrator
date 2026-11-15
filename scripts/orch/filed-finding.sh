@@ -31,9 +31,8 @@ readonly FILED_SEVERITIES
 # The axis table: each review axis a finding is filed on, paired with the
 # category a finding filed on it starts in, as <axis>:<category>, in order. A
 # Spec finding misses what was asked for, so it is a bug; a Standards finding
-# improves how it was built, and so does a suite-cost one. Adding an axis is one
-# entry here.
-readonly FILED_AXIS_TABLE="spec:bug standards:enhancement suite-cost:enhancement"
+# improves how it was built. Adding an axis is one entry here.
+readonly FILED_AXIS_TABLE="spec:bug standards:enhancement"
 
 # The review axes alone, in the table's order, for usage lines, messages and
 # loops over them.
@@ -158,9 +157,6 @@ category_for_axis() {
   return 1
 }
 
-# The location a suite-cost finding names: the suite as a whole, with no line.
-readonly SUITE_LOCATION=suite
-
 # category_other <category>: the opposite category - the one a finding loses
 # when triage settles on <category>. Prints nothing and fails for anything but
 # bug or enhancement.
@@ -215,13 +211,13 @@ finding_input_check() {
   [ -n "$(tr -d '[:space:]' <"$2")" ] || die "finding file is empty: $2"
 }
 
-# finding_location_check <location> <want>: dies unless the location is
-# <file>:<line> or <file>:<start>-<end>, split at the last colon; <want> words
-# the accepted shapes in the refusal.
+# finding_location_check <location>: dies unless the location is
+# <file>:<line> or <file>:<start>-<end>, split at the last colon, naming both
+# shapes in the refusal.
 finding_location_check() {
   local file="${1%:*}" line="${1##*:}"
   [[ $1 == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
-    || die "not a location: $1 (want $2)"
+    || die "not a location: $1 (want <file>:<line> or <file>:<start>-<end>)"
 }
 
 # finding_body_file_new <var>: creates the temp file a finding's issue body is
@@ -240,15 +236,14 @@ finding_body_file_new() {
 # finding text, its trailing newlines stripped, a blank line, then each
 # labelled line followed by a blank line, so GitHub shows each as its own
 # paragraph. The labelled lines are the closer's, byte for byte, so a body
-# filed before rendering existed parses as one rendered now does. An empty
-# <line> renders the file alone, as a suite-cost finding's `suite` is.
+# filed before rendering existed parses as one rendered now does.
 finding_body_render() {
   local axis="${2,,}"
   local display_axis="${axis^}"
   printf '%s\n\n' "$(cat "$1")" \
     "**Axis:** $display_axis" \
     "**Severity:** $3 - $4" \
-    "**Location:** \`$5${6:+:$6}\` at $7" \
+    "**Location:** \`$5:$6\` at $7" \
     "**PR:** $8" \
     "**Why not fixed in the loop:** $9"
   [ -z "${10:-}" ] || printf '%s\n\n' "**Spec question:** ${10}"
@@ -262,8 +257,7 @@ finding_body_render() {
 # comes from the first line that carries it, as finding triage always read
 # them: Location from the first line starting with its label, with no
 # fallback when that one does not parse - the first backticked <file>:<line>,
-# the file free of backticks and colons, or else a backticked `suite`, a
-# suite-cost finding's location, with an empty line, and the hex run of the
+# the file free of backticks and colons, and the hex run of the
 # line's last " at <hex>"; PR from the first line ending in a URL whose last
 # segment after /pull/ is a number; the rest from the first line starting with
 # their label, as the rest of it, trimmed. Severity splits at the first " - ". A
@@ -305,13 +299,8 @@ finding_body_parse() {
       '**Location:**'*)
         [ -z "$__fbp_seen_loc" ] || continue
         __fbp_seen_loc=1
-        if [[ $__fbp_line =~ $__fbp_loc_re ]]; then
-          __fbp_loc_file="${BASH_REMATCH[1]}"; __fbp_loc_line="${BASH_REMATCH[2]}"
-        elif [[ $__fbp_line == *"\`$SUITE_LOCATION\`"* ]]; then
-          __fbp_loc_file="$SUITE_LOCATION"; __fbp_loc_line=""
-        else
-          continue
-        fi
+        [[ $__fbp_line =~ $__fbp_loc_re ]] || continue
+        __fbp_loc_file="${BASH_REMATCH[1]}"; __fbp_loc_line="${BASH_REMATCH[2]}"
         __fbp_rest="$__fbp_line" __fbp_sha=""
         while [[ $__fbp_rest =~ $__fbp_at_re ]]; do
           __fbp_sha="${BASH_REMATCH[1]}"

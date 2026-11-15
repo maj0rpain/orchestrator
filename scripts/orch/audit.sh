@@ -79,7 +79,7 @@ audit_file() {
   local loc sha body_file n err existing existing_n existing_title triage
   finding_input_check "$title" "$finding"
   for loc in "${locations[@]}"; do
-    finding_location_check "$loc" "<file>:<line> or <file>:<start>-<end>"
+    finding_location_check "$loc"
   done
   sha="$(git rev-parse --verify HEAD 2>/dev/null)" || die "cannot read the HEAD commit"
 
