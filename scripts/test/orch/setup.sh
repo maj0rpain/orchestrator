@@ -142,7 +142,8 @@ counted_adapter_run() {
 
 # counting_defs <adapter-fn> <tag>: definitions that wrap the fake's
 # <adapter-fn> so each call appends "<tag> <first-arg>" to "$COUNT_LOG" before
-# the fake answers. Join several with writeln for counted_adapter_run.
+# the fake answers (empty when it gets no argument). Join several with writeln
+# for counted_adapter_run.
 counting_defs() {
   writeln \
     "eval \"fake_$1_read() \$(declare -f $1 | tail -n +2)\"" \

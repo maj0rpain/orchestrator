@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.83
+
+A watcher tick now reads the claims on origin once instead of twice.
+
 ## 5.2.82
 
 `suite-cost check` started from a subdirectory now measures its base run and confirming runs in the matching directory of their temporary worktree, and reports a commit with no such directory as unmeasured.
