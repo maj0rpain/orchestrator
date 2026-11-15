@@ -34,8 +34,14 @@
 #   seen on the first read. An unchanged transcript - the same size as at the
 #   last read - is not parsed again: the wait only sleeps through its window.
 #   ORCH_PASTE_GUARD_WAIT may shorten the window, for the tests.
+# - Bounded scan: a fixed-string search finds the candidate lines (those
+#   holding the needle or the apply literal), step 1 decodes only those to find
+#   the last arming pass line and any later disarm, and step 2 decodes the
+#   entries after that line, stopping at the first human message or apply call;
+#   the transcript is never parsed whole.
 # - Fails open: a missing or unreadable transcript, a view.md deleted, empty
-#   or unreadable, or a transcript with no arming pass line all allow. So does
+#   or unreadable, a transcript with no arming pass line, or a failed search or
+#   decode all allow. So does
 #   a human message queued mid-turn - typed while the `check` turn is still
 #   running, if the host writes it to the transcript before that turn ends: it
 #   disarms the guard early, and that turn's Stop allows without a paste.
@@ -75,19 +81,25 @@ PASTE_GUARD_JQ_DEFS='
 # line, then one JSON array of the assistant text blocks written after its pass
 # line - or nothing when the guard is not armed: no arming pass line, or an
 # apply or human message after it. Returns non-zero when a search or decode
-# fails. Bounded: a fixed-string search finds the candidate lines, those
-# holding the needle or the apply literal as JSON writes them; step 1 decodes
-# only those to find the last arming pass line and whether a later candidate
-# disarms it; step 2 decodes the entries after that line and stops at the
-# first human message. No state is kept between calls.
+# fails (a grep exit above 1, a failed cut, tail or jq; grep exit 1, no match,
+# is no candidate). Bounded: a fixed-string search finds the candidate lines,
+# those holding the needle or the apply literal as JSON writes them; step 1
+# decodes only those to find the last arming pass line and whether a later
+# candidate disarms it; step 2 decodes the entries after that line and stops
+# at the first human message or apply call. No state is kept between calls.
 paste_guard_scan() {
-  local needle apply nums s1 k line view
+  local needle apply cands nums s1 k line view st
+  local -a st_pipe
   needle="${PASTE_GUARD_NEEDLE//\\/\\\\}"; needle="${needle//\"/\\\"}"
   apply="${PASTE_GUARD_APPLY//\\/\\\\}"; apply="${apply//\"/\\\"}"
   # No needle, no arming: nothing is decoded.
-  grep -qF -e "$needle" "$1" 2>/dev/null || return 0
-  nums="$(grep -nF -e "$needle" -e "$apply" "$1" 2>/dev/null | cut -d: -f1)" || return 1
-  s1="$(grep -F -e "$needle" -e "$apply" "$1" 2>/dev/null | jq -nrR \
+  grep -qF -e "$needle" "$1" 2>/dev/null; st=$?
+  [ "$st" -le 1 ] || return 1
+  [ "$st" -eq 0 ] || return 0
+  cands="$(grep -nF -e "$needle" -e "$apply" "$1" 2>/dev/null)"; st=$?
+  [ "$st" -le 1 ] || return 1
+  nums="$(printf '%s\n' "$cands" | cut -d: -f1)" || return 1
+  s1="$(set -o pipefail; printf '%s\n' "$cands" | cut -d: -f2- | jq -nrR \
     --arg needle "$PASTE_GUARD_NEEDLE" --arg apply "$PASTE_GUARD_APPLY" "$PASTE_GUARD_JQ_DEFS"'
     def rx_escape: gsub("(?<c>[\\\\.^$|?*+()\\[\\]{}])"; "\\\(.c)");
     reduce inputs as $raw ({i: 0, applied: [], k: null, view: null, dis: false};
@@ -121,6 +133,11 @@ paste_guard_scan() {
         else empty end]
     | if any(.[]; type == "object") then empty else $view, tojson end
   ' 2>/dev/null
+  st_pipe=("${PIPESTATUS[@]}")
+  # jq stops reading at the first human message or apply, so a tail that dies
+  # of SIGPIPE (141) is not a failure.
+  [ "${st_pipe[0]}" -eq 0 ] || [ "${st_pipe[0]}" -eq 141 ] || return 1
+  return "${st_pipe[1]}"
 }
 
 # paste_guard_pasted <blocks> <view.md>: succeeds when one of the text blocks

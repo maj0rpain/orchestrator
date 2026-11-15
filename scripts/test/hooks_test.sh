@@ -1561,14 +1561,13 @@ for pg_fn in pg_decide sg_decide; do
     "$(jq_count "$pg_fn" "$pg_na")" "$(jq_count "$pg_fn" "")"
 done
 # Re-read: grown inside the window, as many bytes in all as the bare transcript.
-pg_b_reread() { pg_b_armed "$1" "$2"; }
 # pg_with_stub <fn> <transcript>: <fn> with the sleep stub first on PATH.
 pg_with_stub() { PATH="$PG/stub:$PATH" "$@"; }
+pg_text "$PG/cost/rr-paste.jsonl" "$(cat "$PG/batch/view.md")"
 for pg_fn in pg_decide sg_decide; do
-  pg_text "$PG/cost/rr-paste.jsonl" "$(cat "$PG/batch/view.md")"
   pg_rr_bytes=""
   for pg_kind in pad non; do
-    pg_rr="$PG/cost/$pg_kind-reread.jsonl"; : >"$pg_rr"; pg_b_reread "$pg_rr" "$pg_kind"
+    pg_rr="$PG/cost/$pg_kind-reread.jsonl"; : >"$pg_rr"; pg_b_armed "$pg_rr" "$pg_kind"
     rm -f "$PG/cost/rr-paste.jsonl.done"
     pg_rr_bytes="$pg_rr_bytes $(PG_SLEEP_LOG="$PG/sleep-rr.log" PG_SLEEP_PASTE="$PG/cost/rr-paste.jsonl" PG_SLEEP_INTO="$pg_rr" \
       ORCH_PASTE_GUARD_WAIT='' jq_bytes pg_with_stub "$pg_fn" "$pg_rr")"
@@ -1577,6 +1576,13 @@ for pg_fn in pg_decide sg_decide; do
   assert_eq "a re-read of an armed padded transcript offers jq as many bytes in all as the bare one ($pg_fn)" "$1" "$2"
 done
 # Decision cases that pin where the decode starts.
+# Fail-open stand-ins for the new failure points, built once.
+mkdir -p "$PG/cost/failgrep" "$PG/cost/failjq1" "$PG/cost/failjq2" "$PG/cost/failtail"
+printf '#!/bin/sh\nexit 1\n' >"$PG/cost/failtail/tail"
+printf '#!/bin/sh\nexit 2\n' >"$PG/cost/failgrep/grep"
+printf '#!/bin/sh\ncase " $* " in *" --arg needle "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq1/jq"
+printf '#!/bin/sh\ncase " $* " in *" --arg view "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq2/jq"
+chmod +x "$PG/cost/failtail/tail" "$PG/cost/failgrep/grep" "$PG/cost/failjq1/jq" "$PG/cost/failjq2/jq"
 pg_line="$(pg_pass_line batch "$PG/batch/view.md")"
 for pg_fn in pg_decide sg_decide; do
   pg_want="$([ "$pg_fn" = pg_decide ] && echo deny || echo block)"
@@ -1600,12 +1606,7 @@ for pg_fn in pg_decide sg_decide; do
     assert_eq "a human message holding '$pg_hm' after a live pass line disarms ($pg_fn)" "$("$pg_fn" "$THM")" allow
   done
   # Fail open on the new failure points, on a transcript armed now.
-  mkdir -p "$PG/cost/failgrep" "$PG/cost/failjq1" "$PG/cost/failjq2"
-  printf '#!/bin/sh\nexit 2\n' >"$PG/cost/failgrep/grep"
-  printf '#!/bin/sh\ncase " $* " in *" --arg needle "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq1/jq"
-  printf '#!/bin/sh\ncase " $* " in *" --arg view "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq2/jq"
-  chmod +x "$PG/cost/failgrep/grep" "$PG/cost/failjq1/jq" "$PG/cost/failjq2/jq"
-  for pg_f in failgrep failjq1 failjq2; do
+  for pg_f in failgrep failjq1 failjq2 failtail; do
     assert_eq "armed now, a failing $pg_f allows ($pg_fn)" "$(PATH="$PG/cost/$pg_f:$PATH" "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
   done
 done
@@ -1627,6 +1628,7 @@ pg_two() { # <file> <needle> <apply> <command> <combined|after>
 for pg_mode in after combined; do
   pg_two "$PG/cost/seam.jsonl" '; it is saved in ' x 'run APPLYME now' "$pg_mode"
   assert_eq "a reassigned apply literal disarms ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'APPLYME' "$PG/cost/seam.jsonl")" ""
+  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' x 'run spec-review apply now' "$pg_mode"
   assert_eq "and the default literal no longer does ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
   pg_two "$PG/cost/seam.jsonl" '; saved "at" ' x 'run A\"P"Y\ now' "$pg_mode"
   assert_eq "an apply literal holding a backslash and a quote disarms ($pg_mode)" \
