@@ -488,6 +488,7 @@ report_reset
 sed -i "s/^Confidence: certain/Confidence: as in finding 3/" "$run/area-1.md"
 res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
 assert_status "a hunter's block saying finding 3 is refused" "$st" 1
+assert_contains "naming the hunter's file, not the ranked block" "$res" "area-1.md line"
 sed -i "s/^Evidence: restated <b>evidence<\/b>/Confidence: sure/" "$run/ranked.md"
 "$ORCH" audit report "$run" "$report" >/dev/null; st=$?
 assert_status "until the ranked block restates the field" "$st" 0

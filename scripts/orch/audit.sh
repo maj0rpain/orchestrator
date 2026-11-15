@@ -358,8 +358,8 @@ audit_ref_find() {
 # AUDIT_TOP_TEXT, AUDIT_NOTE_HEAD, AUDIT_NOTE_TEXT, AUDIT_COUNT and the
 # per-finding arrays above. Dies on the first thing that does not hold.
 audit_ranked_read() {
-  local dir="$1" key val arg i j n expect=0 scopes=0 areas=0 tops=0 nones=0 ln body
-  local over overs cat locfield locs loc title top_ln=0 other sorted at
+  local dir="$1" key val arg i n expect=0 scopes=0 areas=0 tops=0 nones=0 ln body
+  local over overs cat locfield locs loc title top_ln=0 other at
   declare -gA AUDIT_AB AUDIT_ABL AUDIT_AREA_SEEN AUDIT_FWHERE
   AUDIT_AB=() AUDIT_ABL=() AUDIT_AREA_SEEN=() AUDIT_FWHERE=()
   AUDIT_DIR="$dir" AUDIT_KIND="" AUDIT_COMMIT="" AUDIT_SCOPE="" AUDIT_AREAS="" AUDIT_NONE=""
@@ -452,8 +452,9 @@ audit_ranked_read() {
       frest="${frest#*"$AUDIT_RS"}"
       flabel="${frec%%"$AUDIT_US"*}" fvalue="${frec#*"$AUDIT_US"}"
       [ "$flabel" != From ] && [ "$flabel" != Overlaps ] || continue
+      audit_where "$n" "$flabel" "$ln" at
       ! audit_ref_find "$fvalue" fphrase fline \
-        || die "ranked.md line $ln: finding $n's $flabel: says '$fphrase' (line $fline of the field): a finding must read alone, so name no other finding by number and never this report; restate the field in the ranked block"
+        || die "$at: finding $n's $flabel: says '$fphrase' (line $fline of the field): a finding must read alone, so name no other finding by number and never this report; restate the field in the ranked block"
     done
     AUDIT_TITLE[n]="$title" AUDIT_CATEGORY[n]="$cat" AUDIT_LOCS[n]="${locs%$'\n'}"
     if audit_field_get "$n" Overlaps over; then
@@ -469,11 +470,7 @@ audit_ranked_read() {
     fi
   done
   for ((n = 1; n <= AUDIT_COUNT; n++)); do
-    sorted=""
-    for ((j = 1; j <= AUDIT_COUNT; j++)); do
-      ! word_listed "${AUDIT_LINKS[n]:-}" "$j" || sorted+=" $j"
-    done
-    AUDIT_LINKS[n]="$sorted "
+    audit_nums_union "AUDIT_LINKS[$n]" "${AUDIT_LINKS[n]:-}" ""
   done
 }
 
