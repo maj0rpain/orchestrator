@@ -70,7 +70,8 @@
 #
 # CHANGELOG_BASE and NO_VERSION_BUMP pass through untouched - set, empty or
 # unset - for docs_lint.sh's changelog fragment rule (CI's fragment.yml runs
-# docs_lint.sh --fragment-only, the fragment rule alone, and feeds them
+# docs_lint.sh --fragment-only, the fragment rule and the suite budget rules
+# that judge a change against a base, and feeds them
 # itself). DOCS_LINT_BASE passes through the same way: the base affected.sh
 # hands docs_lint.sh on its full-suite fallback, for its suite budget rules.
 # ORCH_TEST_JOBS

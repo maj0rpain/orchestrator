@@ -1,9 +1,10 @@
 name: fragment
 
-# The changelog fragment rule (docs_lint.sh --fragment-only) alone, on every PR
-# event that can change its answer: a push, a reopen, and an edit to the PR's
-# body or labels. The suite workflow does not rerun for those edits; it runs the
-# whole docs lint on every push.
+# The changelog fragment rule and the suite budget rules that judge a change
+# against its base (docs_lint.sh --fragment-only), on every PR event that can
+# change their answer: a push, a reopen, and an edit to the PR's body or labels.
+# The suite workflow does not rerun for those edits; it runs the whole docs lint
+# on every push, which adds the ledger's freshness rule.
 
 on:
   pull_request:
@@ -31,7 +32,8 @@ jobs:
           # with main.
           fetch-depth: 0
       # Sets CHANGELOG_BASE, main's commit, for docs_lint.sh's changelog
-      # fragment rule on every PR to main, and NO_VERSION_BUMP=1 when the PR
+      # fragment rule and, as DOCS_LINT_BASE is unset here, its suite budget
+      # rules, on every PR to main, and NO_VERSION_BUMP=1 when the PR
       # carries the no-version-bump label, which waives only its one-fragment
       # part. The labels are the PR's as they stand now, read with gh, not the
       # event payload's snapshot: gh pr create --label adds them in a mutation

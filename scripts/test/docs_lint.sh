@@ -9,8 +9,15 @@
 # against fixture plugin roots that break it, so a rule that stops flagging
 # anything fails here too, then once against the real plugin root.
 # Run with no argument it runs everything; --fragment-only runs the fragment
-# rule against the real plugin root and nothing else, which is all the fragment
-# workflow needs; any other argument is refused with a usage line and exit 2.
+# rule and the two suite budget rules that judge a change against a base
+# (scan_suite_budget and scan_suite_budget_alone) against the real plugin root
+# and nothing else, which is all the fragment workflow needs; any other
+# argument is refused with a usage line and exit 2. The suite budget rules
+# judge the working tree against the merge-base of a base and HEAD: the base is
+# DOCS_LINT_BASE (affected.sh sets it), else CHANGELOG_BASE, else none, and
+# with none the comparison with the base and scan_suite_budget_alone are
+# skipped and say so. scan_ledger_fresh needs no base and runs in the full run
+# alone, a push to main included.
 # The linter checks structure only: it never runs orch.sh and holds no flow
 # state.
 #
@@ -20,6 +27,14 @@
 # >>> rules
 #   scan_changelog_fragments  a PR to main adds one well-formed changelog
 #     fragment, named for no sub-issue, and bumps nothing by hand
+#   scan_ledger_fresh  the durations file has one fresh line per section, per
+#     other suite and for shellcheck, and none for anything else; the message
+#     names section-durations.sh --stale, or the full refresh for shellcheck
+#   scan_suite_budget  the suite-budget file is one positive whole number, and
+#     with a base known the durations file's total is not over it and above the
+#     base's total
+#   scan_suite_budget_alone  with a base known, a change to the suite-budget
+#     file touches no file but the durations file, unless the budget file is new
 #   scan_rule_index  this index lists every scan_* function, in file order
 #   scan_old_names  no old skill or command name outside history, and no old
 #     command file or skill directory
@@ -178,6 +193,8 @@ test_git_env_clear || exit 1
 source "$PLUGIN_ROOT/scripts/test/tally.sh"
 # shellcheck source=counting.sh
 source "$PLUGIN_ROOT/scripts/test/counting.sh"
+# shellcheck source=test_tree.sh
+source "$PLUGIN_ROOT/scripts/test/test_tree.sh"
 
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
@@ -249,8 +266,9 @@ spares() {
 }
 
 # The one optional argument, --fragment-only, narrows the run to the changelog
-# fragment rule. It is an argument, never an environment variable, so the
-# runners that start this file with none can never narrow a full run.
+# fragment rule and the suite budget rules 2 and 3. It is an argument, never an
+# environment variable, so the runners that start this file with none can never
+# narrow a full run.
 FRAGMENT_ONLY=0
 if [ "$#" -gt 0 ]; then
   if [ "$#" -eq 1 ] && [ "$1" = --fragment-only ]; then
@@ -404,12 +422,133 @@ check_real_changelog_fragments() {
   fi
 }
 
-# --fragment-only: the changelog fragment rule against the real plugin root and
-# nothing else: no section heading, no fixture self-test, no other rule. It
-# starts here, once the helpers the rule reaches are defined, and ends on the
-# same summary line as the full run.
+# The three suite budget rules (#3180) and the helpers they reach. They read
+# the durations file, scripts/test/section-durations.tsv, and the budget file
+# beside it, scripts/test/suite-budget, under a plugin root.
+LEDGER_FILE=scripts/test/section-durations.tsv
+BUDGET_FILE=scripts/test/suite-budget
+# scan_ledger_fresh <plugin root>: rule 1, the ledger is fresh. One line per
+# section or suite with no line, per line with no section or suite, per stale
+# line (no fingerprint, or one that no longer matches the text), per title on
+# two lines, and one for a missing shellcheck line. Each names the command that
+# fixes it: scripts/dev/section-durations.sh --stale, or the full refresh for the
+# missing line of shellcheck, which only a full refresh writes. The fingerprints
+# come from test_tree.sh's ledger_fingerprints, a fixed number of processes
+# whatever the number of sections.
+scan_ledger_fresh() {
+  local r="$1" td="$1/scripts/test" others=() suite
+  if [ ! -f "$r/$LEDGER_FILE" ]; then
+    echo "$LEDGER_FILE: missing; run the full refresh (scripts/dev/section-durations.sh with no argument)"
+    return 0
+  fi
+  suites_read "$td/all.sh" "$td" || { echo "scripts/test/all.sh: $SUITES_ERR"; return 0; }
+  for suite in "${SUITES[@]}"; do
+    [ "$suite" = orch_test.sh ] || others+=("$suite")
+  done
+  ledger_fingerprints "$td" ${others[@]+"${others[@]}"} | awk -F'\t' -v file="$LEDGER_FILE" '
+    FILENAME == "-" { if (!($1 in fp)) { fp[$1] = $2; ord[++n] = $1 } next }
+    (NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" {
+      if (!($3 in cnt)) { nf[$3] = NF; f4[$3] = $4; lines[++m] = $3 }
+      cnt[$3]++
+    }
+    END {
+      fix = "run scripts/dev/section-durations.sh --stale"
+      for (i = 1; i <= n; i++) {
+        t = ord[i]
+        if (!(t in cnt)) print file ": section or suite \"" t "\" has no line; " fix
+        else if (cnt[t] > 1) print file ": title \"" t "\" is on " cnt[t] " lines; " fix
+        else if (nf[t] != 4 || f4[t] != fp[t]) print file ": the line of \"" t "\" is stale; " fix
+      }
+      for (i = 1; i <= m; i++) {
+        t = lines[i]
+        if (t == "shellcheck") { if (cnt[t] > 1) print file ": title \"shellcheck\" is on " cnt[t] " lines; " fix; continue }
+        if (!(t in fp)) print file ": the line of \"" t "\" has no section or suite; " fix
+      }
+      if (!("shellcheck" in cnt)) print file ": no shellcheck line; run the full refresh (scripts/dev/section-durations.sh with no argument)"
+    }' - "$r/$LEDGER_FILE"
+}
+# ledger_total <durations text on stdin>: the total in tenths of a second, the
+# CPU column summed over the first line per title.
+ledger_total() {
+  awk -F'\t' '(NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in s) { s[$3] = 1; t += $2 }
+    END { print t + 0 }'
+}
+# tenths_text <tenths>: seconds with one decimal place.
+tenths_text() { printf '%d.%d' "$(($1 / 10))" "$(($1 % 10))"; }
+# scan_suite_budget <plugin root> [<base>]: rule 2, the total is within the
+# suite budget. It reports a budget file that is missing or is not one positive
+# whole number. With a <base>, it reports a total over the budget and above the
+# base's total, the same sum over the durations file at the merge-base of <base>
+# and HEAD, and a <base> with no merge-base; the durations file is the working
+# tree's. Without one, it checks the budget file's format alone.
+scan_suite_budget() {
+  local r="$1" base="${2:-}" lines=() budget total base_total mb
+  if [ -f "$r/$BUDGET_FILE" ]; then mapfile -t lines <"$r/$BUDGET_FILE"; fi
+  if [ ! -f "$r/$BUDGET_FILE" ]; then
+    echo "$BUDGET_FILE: missing; it holds the suite budget, one positive whole number of CPU seconds"
+    return 0
+  elif [ "${#lines[@]}" -ne 1 ] || ! [[ "${lines[0]}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "$BUDGET_FILE: not one positive whole number of CPU seconds"
+    return 0
+  fi
+  [ -n "$base" ] || return 0
+  budget="${lines[0]}"
+  if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
+    echo "$LEDGER_FILE: no merge-base with HEAD for '$base', so the suite budget is not compared with the base"
+    return 0
+  fi
+  total="$(ledger_total <"$r/$LEDGER_FILE" 2>/dev/null)"
+  base_total="$(git -C "$r" show "$mb:$LEDGER_FILE" 2>/dev/null | ledger_total)"
+  if [ "$total" -gt "$((budget * 10))" ] && [ "$total" -gt "$base_total" ]; then
+    echo "$LEDGER_FILE: the total is $(tenths_text "$total") CPU seconds, over the suite budget of $budget and above the base's total of $(tenths_text "$base_total"). Make cheaper the tests this change added or edited and run scripts/dev/section-durations.sh --stale again; never cut other tests and never edit $BUDGET_FILE; if still over, stop for the human"
+  fi
+  return 0
+}
+# scan_suite_budget_alone <plugin root> [<base>]: rule 3, the budget file
+# changes alone. With a <base>, when the working tree's budget file differs
+# from the merge-base's, it reports every other file changed since the
+# merge-base, committed or not, untracked files included, the durations file
+# excepted. A budget file the merge-base lacks is exempt: that change
+# introduces it. A <base> with no merge-base is reported. Without a <base> it
+# prints nothing.
+scan_suite_budget_alone() {
+  local r="$1" base="${2:-}" mb changed path
+  [ -n "$base" ] || return 0
+  if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
+    echo "$BUDGET_FILE: no merge-base with HEAD for '$base', so the budget file is not judged"
+    return 0
+  fi
+  git -C "$r" cat-file -e "$mb:$BUDGET_FILE" 2>/dev/null || return 0
+  changed="$({ git -C "$r" diff --no-renames --name-only "$mb"
+    git -C "$r" ls-files --others --exclude-standard; } | LC_ALL=C sort -u)"
+  grep -qxF -- "$BUDGET_FILE" <<<"$changed" || return 0
+  while IFS= read -r path; do
+    [ "$path" = "$BUDGET_FILE" ] || [ "$path" = "$LEDGER_FILE" ] || [ -z "$path" ] ||
+      echo "$path: changed beside $BUDGET_FILE; the suite budget changes in a change of its own, with at most the durations file"
+  done <<<"$changed"
+  return 0
+}
+# check_real_suite_budget: rules 2 and 3 against the real plugin root, once,
+# judged against DOCS_LINT_BASE, else CHANGELOG_BASE, else neither: the
+# comparison with the base and rule 3 are then skipped, and say so. The full
+# run and the --fragment-only run both call it.
+check_real_suite_budget() {
+  local base="${DOCS_LINT_BASE:-${CHANGELOG_BASE:-}}"
+  check "the recorded total is within the suite budget" "$(scan_suite_budget "$PLUGIN_ROOT" "$base")"
+  if [ -n "$base" ]; then
+    check "the suite budget file changes alone" "$(scan_suite_budget_alone "$PLUGIN_ROOT" "$base")"
+  else
+    ok "the suite budget comparison with the base and the budget-alone rule skipped (DOCS_LINT_BASE and CHANGELOG_BASE unset)"
+  fi
+}
+
+# --fragment-only: the changelog fragment rule and the suite budget rules 2 and
+# 3 against the real plugin root and nothing else: no section heading, no
+# fixture self-test, no other rule. It starts here, once the helpers the rules
+# reach are defined, and ends on the same summary line as the full run.
 if [ "$FRAGMENT_ONLY" = 1 ]; then
   check_real_changelog_fragments
+  check_real_suite_budget
   tally_summary
   exit $?
 fi
@@ -4536,15 +4675,16 @@ spares "with NO_VERSION_BUMP, no parent lookup runs" \
 eval "$real_issue_parent_url"
 check_real_changelog_fragments
 # The --fragment-only switch, run as a child of this file. Each fragment-only
-# child has CHANGELOG_BASE and NO_VERSION_BUMP set or unset here, whatever this
-# run inherited, and shows its ok lines though this run may be quiet. A
-# fragment-only child runs no self-tests, so it starts no child of its own.
+# child has CHANGELOG_BASE, DOCS_LINT_BASE and NO_VERSION_BUMP set or unset
+# here, whatever this run inherited, and shows its ok lines though this run may
+# be quiet. A fragment-only child runs no self-tests, so it starts no child of
+# its own.
 # fragment_only_child [<env words>...]: runs the
 # child under env with those words, its status, stdout and stderr landing in
 # child_status, child_out and child_err.
 fragment_only_child() {
   local errfile="$FIXTURES/child.err" out st
-  out="$(cd "$FIXTURES" && env -u CHANGELOG_BASE -u NO_VERSION_BUMP ORCH_TEST_QUIET= "$@" \
+  out="$(cd "$FIXTURES" && env -u CHANGELOG_BASE -u NO_VERSION_BUMP -u DOCS_LINT_BASE ORCH_TEST_QUIET= "$@" \
     bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --fragment-only 2>"$errfile")"
   st=$?
   child_status="$st" child_out="$out" child_err="$(<"$errfile")"
@@ -4557,22 +4697,33 @@ assert_child_fails() {
   if [[ "$child_out" == $3 ]]; then ok "$2"; else bad "$2" "got: $child_out"; fi
 }
 fragment_only_child
-assert_eq "--fragment-only with CHANGELOG_BASE unset exits 0" "$child_status" 0
-assert_eq "--fragment-only with CHANGELOG_BASE unset prints the skipped line and a summary alone" \
-  "$child_out" "$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n\n1 passed, 0 failed')"
-assert_empty "--fragment-only with CHANGELOG_BASE unset prints nothing on stderr" "$child_err"
+assert_eq "--fragment-only with no base set exits 0" "$child_status" 0
+assert_eq "--fragment-only with no base set prints the three skipped or passing lines and a summary alone" \
+  "$child_out" "$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n  ok   the recorded total is within the suite budget\n  ok   the suite budget comparison with the base and the budget-alone rule skipped (DOCS_LINT_BASE and CHANGELOG_BASE unset)\n\n3 passed, 0 failed')"
+assert_empty "--fragment-only with no base set prints nothing on stderr" "$child_err"
 fragment_only_child CHANGELOG_BASE=no-such-ref
 assert_child_fails "--fragment-only with a base with no merge-base exits non-zero" \
-  "--fragment-only names a base with no merge-base and counts one failed" \
-  "*FAIL*CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'*0 passed, 1 failed"
+  "--fragment-only names a base with no merge-base in all three rules and counts three failed" \
+  "*FAIL*CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'*section-durations.tsv: no merge-base with HEAD for 'no-such-ref'*suite-budget: no merge-base with HEAD for 'no-such-ref'*0 passed, 3 failed"
 if git -C "$PLUGIN_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   child_head="$(git -C "$PLUGIN_ROOT" rev-parse HEAD)"
   fragment_only_child CHANGELOG_BASE="$child_head"
   assert_child_fails "--fragment-only fails a PR adding no fragment" \
     "--fragment-only says no changelog fragment added" \
-    "*no changelog fragment added*0 passed, 1 failed"
+    "*no changelog fragment added*, 1 failed"
   fragment_only_child CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
-  assert_eq "--fragment-only honours NO_VERSION_BUMP" "$child_status:${child_out##*$'\n'}" "0:1 passed, 0 failed"
+  assert_eq "--fragment-only honours NO_VERSION_BUMP" "$child_status:${child_out##*$'\n'}" "0:3 passed, 0 failed"
+  fragment_only_child DOCS_LINT_BASE="$child_head"
+  assert_eq "--fragment-only with only the budget base set skips the changelog rule and judges the budget rules" \
+    "$child_status:$child_out" "0:$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n  ok   the recorded total is within the suite budget\n  ok   the suite budget file changes alone\n\n3 passed, 0 failed')"
+  fragment_only_child DOCS_LINT_BASE=no-such-ref CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
+  assert_child_fails "--fragment-only judges the budget rules against their own base before the changelog's" \
+    "--fragment-only names the budget base, not the changelog's, in both budget rules" \
+    "*section-durations.tsv: no merge-base with HEAD for 'no-such-ref'*suite-budget: no merge-base with HEAD for 'no-such-ref'*1 passed, 2 failed"
+  fragment_only_child DOCS_LINT_BASE="$child_head" CHANGELOG_BASE=no-such-ref NO_VERSION_BUMP=1
+  assert_child_fails "--fragment-only with the budget base set and a changelog base with no merge-base exits non-zero" \
+    "--fragment-only fails the changelog rule alone, the budget rules judged against the budget base" \
+    "*CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'*ok   the recorded total is within the suite budget*ok   the suite budget file changes alone*2 passed, 1 failed"
 else
   skip "--fragment-only with CHANGELOG_BASE at HEAD" "the plugin root is not a git work tree"
 fi
@@ -4582,6 +4733,202 @@ assert_eq "an unknown argument exits 2" "$child_status" 2
 assert_empty "an unknown argument prints nothing on stdout" "$child_out"
 assert_eq "an unknown argument prints the usage line alone on stderr" \
   "$(<"$FIXTURES/child.err")" "docs_lint.sh: usage: docs_lint.sh [--fragment-only]"
+
+# --- suite budget rules (#3180) -----------------------------------------------
+# The three rules over fixture roots holding a scripts/test tree:
+# scan_ledger_fresh (rule 1), scan_suite_budget (rule 2) and
+# scan_suite_budget_alone (rule 3). The real root's checks are the full run's
+# ledger line below, and the real-root runs of check_real_suite_budget in the
+# --fragment-only child tests above.
+echo
+echo "suite budget rules (#3180)"
+# ledger_record <root>: writes the root's durations file fresh: every section
+# and the one other suite at 1.0 s wall and 2.0 s CPU, shellcheck at 5.0 and
+# 5.0, so the fixture's total is 13.0 CPU seconds.
+ledger_record() {
+  local td="$1/scripts/test"
+  { ledger_fingerprints "$td" other_test.sh | awk -F'\t' -v OFS='\t' '{ print 10, 20, $1, $2 }'
+    printf '50\t50\tshellcheck\n'; } >"$td/section-durations.tsv"
+}
+# ledger_fixture: a fixture plugin root with a test tree of three sections in
+# two files and one other suite, a fresh durations file and a suite budget of
+# 20 CPU seconds, above the total of 13.0.
+ledger_fixture() {
+  local f td
+  f="$(new_fixture)"
+  td="$f/scripts/test"
+  mkdir -p "$td/orch"
+  printf '%s\n' 'suites=(orch_test.sh other_test.sh)' >"$td/all.sh"
+  : >"$td/orch_test.sh"
+  printf '%s\n' '# other suite' 'echo other' >"$td/other_test.sh"
+  printf '%s\n' '# harness preamble' '# --- h one ---' 'echo 1' '# --- h two ---' 'echo 2' >"$td/orch/harness.sh"
+  printf '%s\n' '# a preamble' '# --- a one ---' 'echo 3' >"$td/orch/a.sh"
+  ledger_record "$f"
+  echo 20 >"$td/suite-budget"
+  echo "$f"
+}
+ledger_fix='run scripts/dev/section-durations.sh --stale'
+fixture="$(ledger_fixture)"
+assert_empty "a fresh ledger is not flagged" "$(scan_ledger_fresh "$fixture")"
+printf '%s\n' '# --- a two ---' 'echo 4' >>"$fixture/scripts/test/orch/a.sh"
+out="$(scan_ledger_fresh "$fixture")"
+flags "a section with no line is flagged, naming --stale" \
+  "$out" "section or suite \"a two\" has no line; $ledger_fix"
+spares "a section with a line is not flagged as missing" "$out" '"a one"'
+fixture="$(ledger_fixture)"
+printf '10\t20\tgone\tabc\n' >>"$fixture/scripts/test/section-durations.tsv"
+flags "a line with no section or suite is flagged, naming --stale" \
+  "$(scan_ledger_fresh "$fixture")" "the line of \"gone\" has no section or suite; $ledger_fix"
+fixture="$(ledger_fixture)"
+fixture_sed "$fixture/scripts/test/orch/harness.sh" 's/^echo 1$/echo changed/'
+out="$(scan_ledger_fresh "$fixture")"
+flags "a stale line is flagged, naming --stale" "$out" "the line of \"h one\" is stale; $ledger_fix"
+spares "a fresh line beside a stale one is not flagged" "$out" '"h two"|"a one"'
+fixture="$(ledger_fixture)"
+fixture_sed "$fixture/scripts/test/orch/harness.sh" 's/^# harness preamble$/# harness preamble, edited/'
+out="$(scan_ledger_fresh "$fixture")"
+flags "an edit to a file's preamble flags its first section" "$out" "the line of \"h one\" is stale"
+flags "an edit to a file's preamble flags its second section" "$out" "the line of \"h two\" is stale"
+spares "an edit to a file's preamble leaves another file's sections alone" "$out" '"a one"'
+fixture="$(ledger_fixture)"
+fixture_sed "$fixture/scripts/test/other_test.sh" 's/other$/changed/'
+flags "an edited other suite is flagged as stale" \
+  "$(scan_ledger_fresh "$fixture")" "the line of \"other_test.sh\" is stale; $ledger_fix"
+fixture="$(ledger_fixture)"
+fixture_sed "$fixture/scripts/test/section-durations.tsv" 's/^\(10\t20\ta one\)\t.*$/\1/'
+flags "a three-column section line is flagged as stale" \
+  "$(scan_ledger_fresh "$fixture")" "the line of \"a one\" is stale; $ledger_fix"
+fixture="$(ledger_fixture)"
+dup_line="$(grep -F "a one" "$fixture/scripts/test/section-durations.tsv")"
+printf "%s\n" "$dup_line" >>"$fixture/scripts/test/section-durations.tsv"
+flags "a title on two lines is flagged, naming --stale" \
+  "$(scan_ledger_fresh "$fixture")" "title \"a one\" is on 2 lines; $ledger_fix"
+fixture="$(ledger_fixture)"
+fixture_sed "$fixture/scripts/test/section-durations.tsv" '/shellcheck/d'
+out="$(scan_ledger_fresh "$fixture")"
+flags "a missing shellcheck line is flagged, naming the full refresh" \
+  "$out" "no shellcheck line; run the full refresh (scripts/dev/section-durations.sh with no argument)"
+spares "a missing shellcheck line does not name --stale" "$out" 'shellcheck.*--stale'
+# A ledger of many sections costs no more processes than one of three: the
+# counted commands are the ones the scan runs, at the docs lint seam.
+count_cmds=(awk git grep sort)
+count_dirs=()
+for count_cmd in "${count_cmds[@]}"; do
+  count_dirs+=("$(TMPDIR="$FIXTURES" counting_bin "$count_cmd")")
+done
+# ledger_starts <root>: the starts of awk, git, grep and sort by one scan of
+# the root, in that order on one line; findings of the scan are shown instead.
+ledger_starts() {
+  local i counts="" found
+  for i in "${!count_cmds[@]}"; do : >"${count_dirs[i]}/${count_cmds[i]}.log"; done
+  found="$(PATH="$(IFS=:; echo "${count_dirs[*]}"):$PATH" scan_ledger_fresh "$1")"
+  [ -z "$found" ] || { echo "unexpected findings: $found"; return 0; }
+  for i in "${!count_cmds[@]}"; do
+    counts+="${counts:+ }$(counting_starts "${count_dirs[i]}" "${count_cmds[i]}")"
+  done
+  echo "$counts"
+}
+fixture="$(ledger_fixture)"
+few_starts="$(ledger_starts "$fixture")"
+for n in $(seq 1 40); do
+  printf '# --- many %s ---\necho %s\n' "$n" "$n" >>"$fixture/scripts/test/orch/a.sh"
+done
+ledger_record "$fixture"
+assert_eq "a ledger of 43 sections starts as many processes as one of three" \
+  "$(ledger_starts "$fixture")" "$few_starts"
+[ "${few_starts%% *}" -gt 0 ] && ok "the process count sees the scan's awk" ||
+  bad "the process count sees the scan's awk" "counts: $few_starts"
+
+# budget_fixture [<budget>]: ledger_fixture as a git repo, main holding it with
+# a suite budget of <budget> (20 when none; none at all when it is "none"),
+# checked out on a pr branch made from main.
+budget_fixture() {
+  local f
+  f="$(ledger_fixture)"
+  if [ "${1:-20}" = none ]; then rm "$f/scripts/test/suite-budget"; else echo "${1:-20}" >"$f/scripts/test/suite-budget"; fi
+  fixture_git "$f" init -q -b main
+  fragment_commit "$f"
+  fixture_git "$f" checkout -q -b pr
+  echo "$f"
+}
+# ledger_extra <root> <cpu tenths>: adds a line of that CPU to the durations
+# file.
+ledger_extra() { printf '10\t%s\textra\tabc\n' "$2" >>"$1/scripts/test/section-durations.tsv"; }
+fixture="$(budget_fixture 14)"
+ledger_extra "$fixture" 40
+fragment_commit "$fixture"
+out="$(scan_suite_budget "$fixture" main)"
+flags "a total over the budget and above the base's total is flagged, giving the total" \
+  "$out" "the total is 17.0 CPU seconds"
+flags "the over-budget message gives the budget and the base's total" \
+  "$out" "over the suite budget of 14 and above the base's total of 13.0"
+flags "the over-budget message states the rule for the session" \
+  "$out" "Make cheaper the tests this change added or edited and run scripts/dev/section-durations.sh --stale again; never cut other tests and never edit scripts/test/suite-budget; if still over, stop for the human"
+fixture="$(budget_fixture 14)"
+ledger_extra "$fixture" 40
+flags "the working tree, not HEAD, is judged: an uncommitted durations file over the budget is flagged" \
+  "$(scan_suite_budget "$fixture" main)" "the total is 17.0 CPU seconds"
+fixture="$(budget_fixture 8)"
+assert_empty "a total over the budget that is not above the base's total is not flagged" \
+  "$(scan_suite_budget "$fixture" main)"
+fixture_sed "$fixture/scripts/test/section-durations.tsv" '/a one/d'
+assert_empty "a change that cuts the total while over the budget is not flagged" \
+  "$(scan_suite_budget "$fixture" main)"
+fixture="$(budget_fixture 14)"
+ledger_extra "$fixture" 5
+assert_empty "a total under the budget is not flagged, whatever it adds" \
+  "$(scan_suite_budget "$fixture" main)"
+fixture="$(budget_fixture 14)"
+ledger_extra "$fixture" 40
+assert_empty "with no base, the comparison is skipped and an over-budget total is not flagged" \
+  "$(scan_suite_budget "$fixture")"
+for budget_text in '' 'x' '0' '-5' '12.5' '1 2'; do
+  printf '%s\n' "$budget_text" >"$fixture/scripts/test/suite-budget"
+  flags "with no base, a budget file holding '$budget_text' is still flagged" \
+    "$(scan_suite_budget "$fixture")" "scripts/test/suite-budget: not one positive whole number"
+done
+: >"$fixture/scripts/test/suite-budget"
+flags "an empty budget file is flagged" \
+  "$(scan_suite_budget "$fixture" main)" "scripts/test/suite-budget: not one positive whole number"
+printf '12\n13\n' >"$fixture/scripts/test/suite-budget"
+flags "a two-line budget file is flagged" \
+  "$(scan_suite_budget "$fixture" main)" "scripts/test/suite-budget: not one positive whole number"
+rm "$fixture/scripts/test/suite-budget"
+flags "a missing budget file is flagged" \
+  "$(scan_suite_budget "$fixture" main)" "scripts/test/suite-budget: missing"
+fixture="$(budget_fixture 14)"
+flags "a base with no merge-base is flagged by the total rule" \
+  "$(scan_suite_budget "$fixture" no-such-ref)" "no merge-base with HEAD for 'no-such-ref'"
+flags "a base with no merge-base is flagged by the budget-alone rule" \
+  "$(scan_suite_budget_alone "$fixture" no-such-ref)" "no merge-base with HEAD for 'no-such-ref'"
+# Rule 3.
+fixture="$(budget_fixture 14)"
+echo 30 >"$fixture/scripts/test/suite-budget"
+mkdir -p "$fixture/scripts"
+echo '# new' >"$fixture/scripts/new.sh"
+flags "an untracked file beside an uncommitted budget edit is flagged" \
+  "$(scan_suite_budget_alone "$fixture" main)" "scripts/new.sh: changed beside scripts/test/suite-budget"
+fragment_commit "$fixture"
+flags "a committed file beside a committed budget edit is flagged" \
+  "$(scan_suite_budget_alone "$fixture" main)" "scripts/new.sh: changed beside scripts/test/suite-budget"
+fixture="$(budget_fixture 14)"
+echo 30 >"$fixture/scripts/test/suite-budget"
+assert_empty "a budget file changed alone is not flagged" "$(scan_suite_budget_alone "$fixture" main)"
+ledger_extra "$fixture" 40
+assert_empty "a budget file changed beside only the durations file is not flagged" \
+  "$(scan_suite_budget_alone "$fixture" main)"
+fixture="$(budget_fixture 14)"
+echo '# new' >"$fixture/scripts/new.sh"
+assert_empty "another file changed with the budget file untouched is not flagged" \
+  "$(scan_suite_budget_alone "$fixture" main)"
+fixture="$(budget_fixture none)"
+echo 30 >"$fixture/scripts/test/suite-budget"
+echo '# new' >"$fixture/scripts/new.sh"
+assert_empty "a budget file new in the change is exempt, beside other files" \
+  "$(scan_suite_budget_alone "$fixture" main)"
+assert_empty "with no base, the budget-alone rule is skipped" "$(scan_suite_budget_alone "$fixture")"
+check "the durations file has one fresh line for every section, other suite and shellcheck" \
+  "$(scan_ledger_fresh "$PLUGIN_ROOT")"
 
 # --- line width (#1524) -------------------------------------------------------
 echo
