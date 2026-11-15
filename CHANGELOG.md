@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.95
+
+`review ci` reads the no-CI-evidence check's signals for the base branch tip and every PR commit in one GraphQL call, instead of two GitHub calls per ref one after another, so its cost in a repo with no CI no longer grows with the PR's length. The per-ref check-run and status operations are gone, and the PR refs read no longer prints the PR's commits.
+
 ## 5.2.94
 
 Reading the issue a side checkout records no longer re-classifies the checkout: the autopilot pickup lookup, `side-checkout list` and `doctor` read the marker straight from the walk's result, so their cost no longer grows quadratically with side checkouts.
