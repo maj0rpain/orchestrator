@@ -116,7 +116,7 @@ lf_case del_split "$split_head_sha" src/del_split.sh 9 13
 
 # A deletion main made of lines held by a head off its history, for the case
 # whose merge-base lookup fails: the head edits another line, main deletes.
-for i in 1 2 3 4 5 6 7 8 9 10 11 12; do lf_seq "um$i" 20 >"src/um$i.sh"; done
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13; do lf_seq "um$i" 20 >"src/um$i.sh"; done
 lf_seq mb 30 >src/mb.sh
 git add src
 git commit -qm "the code the unmerged PRs edit"
@@ -141,6 +141,9 @@ sha59="$(lf_unm 59 um9.sh '5a pr added a\npr added b')"
 sha60="$(lf_unm 60 um10.sh '2c\pr replaced')"
 sha61="$(lf_unm 61 um11.sh '2c\pr replaced')"
 sha62="$(lf_unm 62 um12.sh '2c\pr replaced')"
+# um13 is um5's twin that main never edits: no commit on the ref touched the
+# file since the filed SHA, so the differs-at-all test alone decides.
+sha63="$(lf_unm 63 um13.sh $'8i pr above\n9a pr below')"
 lf_edit um1.sh 's/^um1 line 15$/um1 line 15, reworded/' "an unrelated edit to um1" >/dev/null
 lf_edit um2.sh 's/^um2 line 15$/um2 line 15, reworded/' "an unrelated edit to um2" >/dev/null
 lf_edit um3.sh 's/^um3 line 15$/um3 line 15, reworded/' "an unrelated edit to um3" >/dev/null
@@ -167,6 +170,7 @@ lf_case um59 "$sha59" src/um9.sh 6 8
 lf_case um60 "$sha60" src/um10.sh 8 9
 lf_case um61 "$sha61" src/um11.sh 25 25
 lf_case um62 "$sha62" src/um12.sh 25 25
+lf_case um63 "$sha63" src/um13.sh 9 10
 
 # lf_ask <cases file>: for each case, lines_fate asked once from the root and
 # once from src/, its standard output sent to a file; one tab-separated row per
@@ -232,6 +236,7 @@ lf_assert "$rows" um60 changed "$um10_del_sha"
 # file, where no commit on main touched it: the stand-in's never-reached arm.
 lf_assert "$rows" um61 never-reached
 lf_assert "$rows" um62 changed "$um12_sha"
+lf_assert "$rows" um63 unchanged
 lf_assert "$rows" mb_deleted changed "$mb_del_sha"
 rm -f "$lf_cases" "$rows"
 
