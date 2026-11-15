@@ -96,6 +96,10 @@ session in the issue's side checkout. The flow's phase lives in an `orch:`
 comment that @mentions them and the `needs-human` label. It is Claude Code
 only.
 
+The closing question recommends your default route when you have set one, for
+a repo or for yourself (`git config [--global] orchestrator.route <route>`;
+see [How it works](docs/how-it-works.md#default-route)); you still pick.
+
 **Blueprint.** The closing question's "Blueprint only" option: the spec issue
 and its ticket breakdown are published, the spec review offered, and then it
 stops. A flow or a quick implementation can pick it up later.

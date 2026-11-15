@@ -128,14 +128,17 @@ _Avoid_: existing issue, pre-existing issue, given issue.
 
 **Interviewed issue**:
 An open issue a planning session was run about, or the open issue the human
-names in its place when the session closes. When the human confirms the plan,
-the session offers to move it to the `ready-for-agent` triage label, since the
-interview settled what triage would have, and asks nothing when it already
-carries it - unless the plan finds its work already done, when the session
-offers to close it as done instead. A blueprint drawn from that session rewrites
-this issue as its spec issue rather than publishing a new one; a quick
-implementation started from it may rewrite it from the plan, as **Quick
-implementation** says. _Avoid_: planned issue, subject issue.
+names in its place when the session closes. When the human picks a route at
+the close, the session moves it to the `ready-for-agent` triage label, since
+the interview settled what triage would have: the route question says so,
+and no separate question is asked. It moves nothing when the issue already
+carries that label or the human's answer declines the move, and it overrides
+a held label only on the human's answer to a question naming that label.
+When the plan finds its work already done, the session offers to close it as
+done instead. A blueprint drawn from that session rewrites this issue as its
+spec issue rather than publishing a new one; a quick implementation started
+from it may rewrite it from the plan, as **Quick implementation** says.
+_Avoid_: planned issue, subject issue.
 
 **Next issue**:
 The issue a planning session takes when asked for the next issue instead of
@@ -423,6 +426,14 @@ flow's spec phase, finding the plan changed it, rewrites it from the plan and
 the human has that rewrite retire that breakdown, or a quick implementation's
 rewrite from the plan retires it. _Avoid_: planning-only, parked spec, banked
 spec.
+
+**Default route**:
+The route a planning session's route question recommends when the user has
+set one, for a repo or for themselves: a flow, a quick implementation, a
+blueprint or an autopilot flow. It sets the recommendation only: the human
+still picks the route at every close. With none set, or on a host that does
+not offer the one set, the question recommends from the scope of the work.
+_Avoid_: preferred route, automatic route.
 
 **Unattended rewrite**:
 `orch-to-spec`'s rewrite mode asking the human nothing, taken only by a quick
