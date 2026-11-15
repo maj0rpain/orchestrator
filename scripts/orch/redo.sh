@@ -103,14 +103,15 @@ redo_load_shared() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  # Each is first reached inside a command substitution or branch of a
-  # subshell: load it here, once, in the main shell.
-  orch_load review
-  orch_load branch
-  redo_load_shared
   local phase i b word detail slug issue branch pr new_n resumed
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
+  # Each is first reached inside a command substitution or branch of a
+  # subshell: load it here, once, in the main shell, past the guard that
+  # refuses a run before it reaches any of them.
+  orch_load review
+  orch_load branch
+  redo_load_shared
   i="$(state_get iteration)"
   b="$(review_budget)"
   local terminal; terminal="$(review_terminal_state)" || true
@@ -180,15 +181,7 @@ $detail" ;;
 # so a death anywhere earlier leaves phase implement with the issue and the keys
 # the entry guards need, and a re-run resumes.
 cmd_redo_spec() {
-  orch_load spec
-  redo_load_shared
   require_state
-  # branch is reached only by a run with a branch recorded (the retire) or one
-  # midway through a redo (redo_midway's name check); load it in this shell,
-  # ahead of the substitutions that first call into it.
-  local recorded_branch recorded_count
-  recorded_branch="$(state_get branch)"; recorded_count="$(state_get redo_count)"
-  if [ -n "$recorded_branch" ] || [ "${recorded_count:-0}" -gt 0 ]; then orch_load branch; fi
   local phase new_issue=0 clear_issue=()
   phase="$(state_get phase)"
   [ "$phase" = implement ] || die "flow is not at the implement phase - nothing to redo back from"
@@ -198,6 +191,16 @@ cmd_redo_spec() {
     *) die "usage: orch.sh redo spec [--new-issue]" ;;
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
+  # The modules a run first reaches inside a command substitution, loaded once
+  # here in the main shell, past the guards that refuse a run before it
+  # reaches any of them. branch is reached only by a run with a branch
+  # recorded (the retire) or one midway through a redo (redo_midway's name
+  # check).
+  orch_load spec
+  redo_load_shared
+  local recorded_branch recorded_count
+  recorded_branch="$(state_get branch)"; recorded_count="$(state_get redo_count)"
+  if [ -n "$recorded_branch" ] || [ "${recorded_count:-0}" -gt 0 ]; then orch_load branch; fi
   redo_refuse_ticket_worktrees
   # The spec handoff - and the implement handoff built on it, if any - are
   # stale once the spec is being redone, so phase advance must not pass on

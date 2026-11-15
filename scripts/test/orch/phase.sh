@@ -66,7 +66,8 @@ adv_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$adv_load" "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advances spec to implement with a valid handoff and an issue" "$st" 0
 assert_trace_loads_once "phase advance leaving spec" "$adv_load"
-assert_trace_names_no "phase advance leaving spec" "$adv_load" gh
+assert_trace_names_no "phase advance leaving spec" "$adv_load" gh repo
+rm -f "$adv_load"
 assert_eq "records the implement phase" "$("$ORCH" state get phase)" "implement"
 assert_contains "prints the boundary naming the spec handoff" "$out" \
   "Phase spec complete. Handoff written to $hs2."
@@ -138,6 +139,7 @@ adv_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$adv_load" "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advances implement to review with a valid handoff and the fields" "$st" 0
 assert_trace_loads_once "phase advance leaving implement" "$adv_load"
+rm -f "$adv_load"
 assert_eq "records the review phase" "$("$ORCH" state get phase)" "review"
 assert_contains "prints the boundary naming the implement handoff" "$out" \
   "Phase implement complete. Handoff written to $hi2."
@@ -174,6 +176,7 @@ out="$(ORCH_LOAD_TRACE="$bnd_load" "$ORCH" phase boundary 2>&1)"; st=$?
 assert_status "prints at flow start" "$st" 0
 assert_trace_loads_once "phase boundary" "$bnd_load"
 assert_trace_names_no "phase boundary" "$bnd_load" autopilot
+rm -f "$bnd_load"
 assert_eq "names the plan handoff and the Claude Code Next line" "$out" \
   "$(printf 'Phase plan complete. Handoff written to %s.\n\n  Next: /clear, then /orchestrator:next' "$("$ORCH" handoff path spec)")"
 state_fixture phase review
@@ -259,6 +262,7 @@ ap_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$ap_load" ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance in autopilot succeeds on the posted handoff" "$st" 0
 assert_trace_loads_once "phase advance in an autopilot session" "$ap_load"
+rm -f "$ap_load"
 assert_eq "moving the phase label" "$(fake_labels_of 7)" "orch:implement ready-for-agent "
 assert_eq "releasing the claim" "$(fake_claim_held 7)" free
 assert_eq "recording the phase" "$("$ORCH" state get phase)" "implement"

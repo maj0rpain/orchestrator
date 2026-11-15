@@ -1745,6 +1745,7 @@ assert_status "doctor --flow with a PR recorded and a stopped loop is healthy" "
 assert_contains "and reports the stop" "$out" "review loop at a terminal state: stop (CI failed twice.)"
 assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
 assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
+rm -f "$rv_load"
 rm .orchestrator/review/iteration-05.md
 # Midway through a redo, the retired record is read in its place; a malformed
 # one has redo read for the terminal state and again for the remedy's path.
@@ -2244,13 +2245,17 @@ assert_contains "naming it" "$out" "carries no phase label"
 fake_claim_seed 7 otherhost 5 2020-01-01T00:00:00Z
 fake_claim_seed 8 otherhost 5 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
-out="$("$ORCH" doctor --env 2>&1)"
+fake_claim_seed 11 "$(hostname)" 5 2020-01-01T00:00:00Z
+cl_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$cl_load" "$ORCH" doctor --env 2>&1)"
 assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
 assert_contains "its remedy names the host to run a tick on" "$out" "if that session is gone, run orch.sh autopilot tick on otherhost"
 assert_not_contains "and no claim ref" "$out" "refs/orch/claims"
 assert_not_contains "not a fresh one" "$out" "issue #8"
 assert_contains "this host's dead claim with no record warns, naming issue, phase and no record" "$out" "issue #9 is claimed by this host (phase spec), but its process is gone (no record)."
 assert_contains "with the tick remedy on the line after it" "$(printf "%s\n" "$out" | grep -A1 "issue #9 is claimed by this host")" "      orch.sh autopilot tick"
+assert_trace_loads_once "doctor --env with other hosts' old claims and this host's dead ones" "$cl_load"
+rm -f "$cl_load"
 live_orch liveness_run_begin 9
 out="$("$ORCH" doctor --env 2>&1)"
 assert_not_contains "a live claim adds no warning" "$out" "issue #9 is claimed"
@@ -2264,17 +2269,6 @@ fake_claim_seed 6 autopilot-abc123 5 2020-01-01T00:00:00Z
 out="$(ORCH_HOST_ID=autopilot-abc123 "$ORCH" doctor --env 2>&1)"
 assert_contains "with ORCH_HOST_ID set, a claim of that id is this host's" "$out" "issue #6 is claimed by this host"
 assert_not_contains "and the hostname's claim is another identity's, a day old or not" "$out" "issue #9 is claimed by this host"
-# Each module loads once while the claims check reads two other hosts' old
-# claims and two of this host's whose processes are gone.
-fake_claim_seed 10 otherhost 5 2020-01-01T00:00:00Z
-fake_claim_seed 11 "$(hostname)" 5 2020-01-01T00:00:00Z
-cl_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$cl_load" "$ORCH" doctor --env 2>&1)"; st=$?
-# The fixture repo is not on GitHub, so its repo checks FAIL; claims only warn.
-assert_status "doctor --env with old and dead claims ends on the fixture repo's own FAILs" "$st" 1
-assert_contains "and names this host's second dead claim" "$out" "issue #11 is claimed by this host"
-assert_trace_loads_once "doctor --env with old and dead claims" "$cl_load"
-rm -f "$cl_load"
 fake_fail adapter_claim_list "HTTP 502 claims"
 out="$("$ORCH" doctor --env 2>&1)"
 fake_unfail
