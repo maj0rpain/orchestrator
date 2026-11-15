@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.2.0
+
+`orch.sh issue next` prints the Next issue as `<number><TAB><title>`: the oldest open issue that carries the repo's `ready-for-agent` label, carries no phase label, is no ticket of a breakdown, and is not blocked by an open issue. It prints nothing and exits 1 when no issue qualifies, and exits 2 on a usage error or a failed GitHub read. Asking `/orchestrator:interview` for the next issue now plans the issue `orch.sh issue next` picks, says which issue it picked and why, and asks what to plan when no issue qualifies. "Next issue" has a glossary entry.
+
 ## 6.1.1
 
 Skills that run a subagent pool (the quick autopilot and the code, docs and tests audits) now take the mechanism from the host capabilities reference, which gives a fallback for sessions that forbid a background Agent call: the session's own background task tool, foreground batches ordered by size, or one at a time. The run names the tier it took.

@@ -439,6 +439,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               ready-for-agent label, 1 when it does not, 2 on
                               a usage error or a gh failure - recording no
                               state
+  issue next                  print the Next issue as <number><TAB><title>
+                              and exit 0: the oldest open issue carrying the
+                              repo's ready-for-agent label and no phase
+                              label, that is no sub-issue and has no open
+                              blocker; exit 1, printing nothing, when none
+                              qualifies; 2 on a usage error or a gh failure
+                              - recording no state
   pr open <title> <body-file> [--label <name>]...
                               push and open a draft PR against the flow's base
                               branch, or, when a PR is already recorded,

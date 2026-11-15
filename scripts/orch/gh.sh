@@ -309,7 +309,7 @@ verify_twice() {
 #   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
-#   adapter_issues_open_rows,
+#   adapter_issues_open_rows, adapter_issues_titled_rows,
 #   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
@@ -324,6 +324,7 @@ verify_twice() {
 #   adapter_pr_body_edit, adapter_pr_title_edit, adapter_pr_label_add
 # - sub-issue and dependency: adapter_sub_issues, adapter_sub_issue_link,
 #   adapter_sub_issue_unlink, adapter_issue_parent, adapter_blockers,
+#   adapter_issue_open_blockers, adapter_blockers_states,
 #   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
 # - repo: adapter_repo_default_branch, adapter_repo_local_default,
 #   adapter_auth_status <host>
@@ -671,8 +672,26 @@ issues_open_rows_read() {
   issues_rows_read_via issues_open_rows_read adapter_issues_open_rows issues_open_limit_warn "$@"
 }
 
+# adapter_issues_titled_rows <label>: the open issues carrying the label,
+# oldest first and cut at ISSUE_LIST_LIMIT (the newest dropped), each as one
+# count-marked record: its number, its state as GitHub answered it and its
+# title joined by a tab on one line, its label count, then one label per line.
+# The state is never assumed from the listing's own open-only filter.
+adapter_issues_titled_rows() {
+  gh issue list --state open --label "$1" --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,title,labels \
+    --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
+}
+
+# issues_titled_rows_read <nums_var> <titles_array> <labels_array> <err_var>
+# <label>: issues_labelled_rows_read through adapter_issues_titled_rows, the
+# second field of each record the state and the title, tab-joined, in place of a
+# bare state, the limit warning issues_labelled_limit_warn's.
+issues_titled_rows_read() {
+  issues_rows_read_via issues_titled_rows_read adapter_issues_titled_rows issues_labelled_limit_warn "$@"
+}
+
 # issues_rows_read_via <caller> <adapter> <warn> <nums_var> <states_array>
-# <labels_array> <err_var> [<label>...]: the reading the three readers above
+# <labels_array> <err_var> [<label>...]: the reading the readers above
 # share (the open-issue reader takes no labels), through the listing <adapter>
 # and the limit warning <warn>; <caller> names the public reader in a die
 # message.
@@ -1154,6 +1173,20 @@ adapter_issue_parent() {
 # per line, in GitHub's order. Nothing at all for none.
 adapter_blockers() {
   gh api --paginate "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by" --jq '.[].number'
+}
+
+# adapter_issue_open_blockers <n>: the count of #n's blockers still open, from
+# the dependency summary on the issue itself, or nothing at all where GitHub
+# leaves the summary off - never a stand-in zero.
+adapter_issue_open_blockers() {
+  gh api "repos/{owner}/{repo}/issues/$1" --jq '.issue_dependencies_summary.blocked_by // ""'
+}
+
+# adapter_blockers_states <n>: the issues #n is blocked by, one per line as TSV
+# "<n><TAB><OPEN|CLOSED>", in GitHub's order. Nothing at all for none.
+adapter_blockers_states() {
+  gh api --paginate "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by" \
+    --jq '.[] | "\(.number)\t\(.state | ascii_upcase)"'
 }
 
 # adapter_blocker_add <n> <blocker>: adds the edge marking #n blocked by the
