@@ -62,6 +62,8 @@ out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed link dies" "$st" 1
 assert_contains "naming the draft position" "$out" "ticket 2 of the draft"
 assert_contains "naming the write" "$out" "gh could not link ticket #101"
+assert_contains "naming the ticket and the link step" "$out" "ticket 2 of the draft (#101): the link failed"
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_eq "no marker" "$(on_disk .orchestrator/breakdown/50/published)" "absent"
 assert_eq "the recorded numbers are kept" "$(paste -sd ';' .orchestrator/breakdown/50/numbers)" "1 100 created;1 100 linked;2 101 created"
 assert_eq "state is partial" "$("$ORCH" breakdown state 50)" "partial"
@@ -77,6 +79,63 @@ assert_eq "from the saved draft, not the file given, linking rather than creatin
 assert_eq "all three linked" "$(fake_sub_issues_of 50)" "100 101 102"
 assert_eq "the unlinked ticket got its edge" "$(fake_blockers_of 101)" "100"
 assert_eq "marker written" "$(on_disk .orchestrator/breakdown/50/published)" "present"
+restore_suite_env
+
+# An unwritable numbers file dies at the created record, before any link.
+breakdown_fixture
+mkdir -p .orchestrator/breakdown/50/numbers
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "an unwritable numbers file dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
+assert_contains "naming the created record" "$out" "could not write ticket #100's created record"
+assert_not_contains "without the create message" "$out" "the create failed"
+assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" ""
+restore_suite_env
+
+# A failed link of a resumed ticket (recorded created) names it too.
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail adapter_sub_issue_link
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed link of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
+assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
+fake_unfail
+restore_suite_env
+
+# A failed link read-back or listing read names the ticket, fresh or resumed.
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail_after adapter_sub_issues 1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed read-back of a fresh ticket dies" "$st" 1
+assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
+assert_not_contains "never the old message" "$out" "the publish failed"
+fake_unfail
+restore_suite_env
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail adapter_sub_issue_link
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+fake_unfail
+fake_fail_after adapter_sub_issues 1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed read-back of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
+assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
+fake_unfail
+restore_suite_env
+
+breakdown_fixture
+printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
+fake_fail adapter_sub_issues
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed listing read before the link dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
+assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
+fake_unfail
+assert_eq "the ticket is not linked" "$(fake_sub_issues_of 50)" ""
 restore_suite_env
 
 # A ticket created whose link already landed: the resume finds it listed and
@@ -100,7 +159,9 @@ breakdown_fixture
 fake_fail_after adapter_blocker_add 2
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed edge add dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the draft position" "$out" "ticket 3 of the draft"
+assert_contains "naming the ticket and the link step" "$out" "ticket 3 of the draft (#102): the link failed"
 assert_eq "ticket 3 is recorded created" "$(tail -n1 .orchestrator/breakdown/50/numbers)" "3 102 created"
 fake_unfail
 fake_fail_after adapter_blocker_add 1
@@ -109,6 +170,19 @@ assert_status "a resume with part of the edges present adds only the missing one
 fake_unfail
 assert_eq "ticket 3 ends with its full blocker set" "$(fake_blockers_of 102)" "100 101"
 assert_eq "marker written" "$(on_disk .orchestrator/breakdown/50/published)" "present"
+restore_suite_env
+
+# A failed edge add of a resumed ticket (recorded created) names it too.
+breakdown_fixture
+fake_fail_after adapter_blocker_add 2
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+fake_unfail
+fake_fail adapter_blocker_add
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed edge add of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
+assert_contains "naming the ticket and the link step" "$out" "ticket 3 of the draft (#102): the link failed"
+fake_unfail
 restore_suite_env
 
 # A ticket whose link and every edge landed but whose linked record did not:
@@ -129,6 +203,7 @@ breakdown_fixture
 fake_fail_after adapter_blockers 1
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed blocker read dies" "$st" 1
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_contains "naming the draft position" "$out" "ticket 2 of the draft"
 assert_contains "naming the read" "$out" "read ticket #101's blockers"
 fake_unfail
@@ -140,7 +215,8 @@ breakdown_fixture
 fake_fail adapter_issue_create
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a failed create dies" "$st" 1
-assert_contains "naming the draft position" "$out" "ticket 1 of the draft"
+assert_contains "naming the draft position and the create" "$out" "ticket 1 of the draft: the create failed"
+assert_not_contains "never the old message" "$out" "the publish failed"
 assert_eq "no marker" "$(on_disk .orchestrator/breakdown/50/published)" "absent"
 fake_unfail
 restore_suite_env
@@ -231,6 +307,110 @@ out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "the rerun on the saved CRLF draft finishes" "$st" 0
 assert_eq "both tickets linked" "$(fake_sub_issues_of 50)" "100 101"
 assert_not_contains "no CR in any title or body after the resume" "$(ticket_texts 100 101)" $'\r'
+restore_suite_env
+
+# --- breakdown publish rewrites ## Blocked by --------------------------------
+echo
+echo "breakdown publish rewrites ## Blocked by"
+breakdown_fixture
+cat >"$draft" <<'DRAFT'
+@@ ticket 1 First
+Body one.
+
+## Blocked by
+
+Nothing, it is the root.
+@@ end
+@@ ticket 2 Second
+@@ blocked-by 1
+Body two.
+
+## Blocked by
+
+- The ticket "First" of this breakdown.
+@@ end
+DRAFT
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "publishes" "$st" 0
+assert_eq "the first ticket's prose is replaced by None" "$(fake_body_of 100)" "$(printf 'Body one.\n\n## Blocked by\n\nNone (can start immediately)')"
+assert_eq "the second names the first by number" "$(fake_body_of 101)" "$(printf 'Body two.\n\n## Blocked by\n\n- #100')"
+restore_suite_env
+
+# A failed body write on a fresh publish, then a rerun.
+breakdown_fixture
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed body write dies" "$st" 1
+assert_contains "naming the draft position" "$out" "ticket 1 of the draft"
+assert_contains "naming the failed write" "$out" "gh could not rewrite ticket #100's ## Blocked by section"
+assert_eq "ticket 1 is not recorded linked" "$(paste -sd ';' .orchestrator/breakdown/50/numbers)" "1 100 created"
+fake_unfail
+fake_fail_after adapter_blocker_add 3
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+fake_unfail
+assert_status "the rerun finishes, adding only the three edges of the new tickets" "$st" 0
+assert_eq "no second ticket" "$(fake_sub_issues_of 50)" "100 101 102"
+assert_eq "ticket 1's section is rewritten" "$(fake_body_of 100)" "$(printf 'Body one.\n\n## Blocked by\n\nNone (can start immediately)')"
+assert_eq "no edge added twice" "$(fake_blockers_of 102)" "100 101"
+restore_suite_env
+
+# A body write that dies on the third ticket, after its edges were written, then
+# a rerun: the resumed ticket gets no edge twice.
+breakdown_fixture
+fake_fail_after adapter_issue_body_edit 2
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a body write failing on ticket 3 dies" "$st" 1
+assert_eq "ticket 3 already holds its edges" "$(fake_blockers_of 102)" "100 101"
+fake_unfail
+fake_fail adapter_blocker_add
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+fake_unfail
+assert_status "the rerun after the edges were written finishes without adding an edge" "$st" 0
+assert_eq "no edge added twice on the resumed ticket" "$(fake_blockers_of 102)" "100 101"
+restore_suite_env
+
+# A failed body read on the resume path, then a rerun.
+breakdown_fixture
+fake_fail adapter_sub_issue_link
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+fake_unfail
+fake_fail adapter_issue_body
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed body read on resume dies" "$st" 1
+assert_contains "naming the draft position" "$out" "ticket 1 of the draft (#100)"
+assert_contains "naming the link step" "$out" "the link failed"
+assert_contains "naming the failed read" "$out" "gh could not read ticket #100's body"
+assert_eq "not recorded linked" "$(paste -sd ';' .orchestrator/breakdown/50/numbers)" "1 100 created"
+fake_unfail
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "the rerun finishes" "$st" 0
+assert_eq "no second ticket" "$(fake_sub_issues_of 50)" "100 101 102"
+assert_eq "the section is rewritten" "$(fake_body_of 100)" "$(printf 'Body one.\n\n## Blocked by\n\nNone (can start immediately)')"
+restore_suite_env
+
+# A resumed ticket blocked by two tickets whose numbers run opposite to the
+# draft order lists them ascending.
+breakdown_fixture
+cat >"$draft" <<'DRAFT'
+@@ ticket 1 One
+@@ blocked-by 2
+x
+@@ end
+@@ ticket 2 Two
+x
+@@ end
+@@ ticket 3 Three
+@@ blocked-by 1,2
+y
+@@ end
+DRAFT
+"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
+sed -i '$d' .orchestrator/breakdown/50/numbers
+rm -f .orchestrator/breakdown/50/published
+fake_body_read 102 'y\n'
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "the resume finishes" "$st" 0
+assert_eq "the section lists the blockers ascending" "$(fake_body_of 102)" "$(printf 'y\n\n## Blocked by\n\n- #100\n- #101')"
 restore_suite_env
 
 # A ticket blocked by one published earlier in the same run (#3291): the lookup

@@ -43,10 +43,11 @@ own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
 check on `scripts/orch/common.sh`, `loader.sh` the loader's sections, and
 `setup.sh` the shared setup and the summary. A concept module with no noun gets
 a section file named as the module is, beside the per-noun files: `checkout.sh`
-for `scripts/orch/checkout.sh`,
+for `scripts/orch/checkout.sh`, `comments.sh` for `scripts/orch/comments.sh`,
 `filed-finding.sh` for `scripts/orch/filed-finding.sh`,
 `issue-timeline.sh` for `scripts/orch/issue-timeline.sh`, `known-items.sh` for
-`scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,
+`scripts/orch/known-items.sh`, `lines-fate.sh` for `scripts/orch/lines-fate.sh`,
+`liveness.sh` for `scripts/orch/liveness.sh`,
 `marked-comment.sh` for
 `scripts/orch/marked-comment.sh`, `session-log.sh` for
 `scripts/orch/session-log.sh`, `standing.sh` for
@@ -156,16 +157,25 @@ calls it. A GitHub operation is captured through the gh module's pair
 shell resolves it once (a subshell that resolves first does so for itself and
 cannot hand the memo back). The concept modules with no noun, `checkout.sh`
 (the Checkout module:
-the walk over every checkout), `filed-finding.sh` (the Filed finding module:
+the walk over every checkout), `comments.sh` (the Comments module: reading an
+issue's or a PR's trusted comments once, the wrappers that die on a failed read,
+the rendered shape, the render step and the split into one file per comment),
+`filed-finding.sh` (the Filed finding module:
 a filed finding's severities and labels, rendering and parsing its issue body,
 the finding categories, and the input checks `review file` and `audit file`
 share), `issue-timeline.sh` (the Issue timeline module: one issue's
 comment history, read once and asked in domain terms), `known-items.sh` (the
 Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
-file), `liveness.sh` (the Liveness module: whether the process behind a record
-(a claim, a watch, a suite-cost active run) is still running - the run records,
-the record suite-cost's active-run markers hold, and the session log naming),
+file), `lines-fate.sh` (the Lines fate module: what became of a range of a
+file's lines at a ref since a commit filed them: the existence check, the test
+that the file differs at all, the line mapping, the deleted ranges, the
+deleting-commit lookup and its squash walk, the range expander and the
+never-reached rule, behind `lines_fate`),
+`liveness.sh` (the Liveness module: whether the process behind a record
+(a claim, a watch) is still running - the run records,
+the start-time reader, the record-alive rule, the watch pidfile and the
+session log naming),
 `marked-comment.sh` (the Marked comment module: writing and reading
 the issue comments whose first line names their kind), `session-log.sh` (the
 Session log module: what a phase session's log says about usage limits, read
@@ -424,10 +434,12 @@ skills/orch-audit-code/      audits a repo's source code for latent bugs, ineffi
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main
 scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
+scripts/orch/comments.sh      the Comments module, a concept module with no noun: reading an issue's or a PR's trusted comments once, the dying wrappers over that read, the rendered shape, the render step and the split into one file per comment
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file` and `audit file` share
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
-scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch, a suite-cost active run) is alive - the run records, the start-time reader, the record-alive rule that also judges suite-cost's active-run markers, the watch pidfile, the session log names
+scripts/orch/lines-fate.sh      the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them - the existence check, the test that the file differs at all, the line mapping, deleted ranges, deleting-commit lookup and the never-reached rule, behind `lines_fate`
+scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch) is alive - the run records, the start-time reader, the record-alive rule, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
 scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
@@ -436,7 +448,6 @@ scripts/orch/global.sh        the bare global commands with no module of their o
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the ORCH_GH_ADAPTER hook
-scripts/orch/suite-cost.sh    the suite-cost noun's module, with the ORCH_SUITE_COST_TIMER hook: a test knob like ORCH_GH_ADAPTER, naming a file (the tests' scripts/test/suite_cost_timer_fake.sh) that overrides only the step timing a command
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
 scripts/host.sh               the one host detector: host_detect (environment) and host_from_project_path (hook payload), sourced by orch.sh and hook-common.sh
@@ -471,9 +482,11 @@ scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
 scripts/test/orch/loader.sh   the loader's sections: orch_load, on-demand loading, the stub table cache
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 scripts/test/orch/checkout.sh the Checkout module's sections, named as the module is
+scripts/test/orch/comments.sh      the Comments module's sections, named as the module is
 scripts/test/orch/filed-finding.sh the Filed finding module's sections, named as the module is
 scripts/test/orch/issue-timeline.sh the Issue timeline module's sections, named as the module is
 scripts/test/orch/known-items.sh the Known items module's sections, named as the module is
+scripts/test/orch/lines-fate.sh    the Lines fate module's sections, named as the module is
 scripts/test/orch/liveness.sh      the Liveness module's sections, named as the module is
 scripts/test/orch/marked-comment.sh the Marked comment module's sections, named as the module is
 scripts/test/orch/session-log.sh    the Session log module's sections, named as the module is
@@ -482,6 +495,7 @@ scripts/test/orch/trust.sh          the Trust module's sections, named as the mo
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run
+docs/repo-setup.md            everything orch.sh reads from a repo: Standards declaration, verification lines, glossary, ADR directory, triage labels
 docs/pr-writing.md            the PR-writing standard: style rules, body and release layouts, and the comment shape every PR body and comment follows
 docs/turn-final-reply.md      the turn-final reply procedure and the unattended-printout rule, written once
 docs/adr/                     the architecture decision records
@@ -574,7 +588,11 @@ no behaviour of its own, so invoking the skill on another host is complete.
 `docs_lint.sh` fails when a skill, or an agent that invokes a skill, never
 points at the reference, when a skill or agent offers a `/orchestrator:<cmd>`
 that has no `commands/<cmd>.md`, or when a command runs `orch.sh` or routes to a
-section that does not exist.
+section that does not exist, or when the reference lacks its **Run a subagent
+pool**
+row and fallback subsection, or a subagent pool site (`orch-quick-autopilot`'s
+step 3, an
+audit's Hunt step) does not name that capability.
 
 ## Command names
 

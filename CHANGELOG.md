@@ -1,5 +1,37 @@
 # Changelog
 
+## 6.1.1
+
+Skills that run a subagent pool (the quick autopilot and the code, docs and tests audits) now take the mechanism from the host capabilities reference, which gives a fallback for sessions that forbid a background Agent call: the session's own background task tool, foreground batches ordered by size, or one at a time. The run names the tier it took.
+
+## 6.1.0
+
+A new doc, `docs/repo-setup.md`, lists everything orch.sh reads from a repo: the `Standards:` declaration, the `Ticket verification:` and `Full verification:` lines, the root `GLOSSARY.md`, `docs/adr` and the triage labels. For each it gives the exact format, what happens when the item is missing or unreadable, and which doctor line reports it. It also lists what needs no setup. `orch.sh doctor` (bare and `--env`) now checks the first four. It reports the declared or crawled standards list, the full and ticket verification commands, the glossary's entry count and the ADR count. It fails on a declaration the reviewers' resolution rejects, a verification label with no command, a glossary that gives no entries (naming the `**Term**:` line an entry starts at) and a `docs/adr` that is no directory. It warns when no full verification is named, or when two lines name different commands for one label. Every new warn and FAIL names its fix and the new doc. The Standards reviewer runs `orch.sh glossary terms` whenever a change edits `GLOSSARY.md`, and reports a failed parse or an added entry the parse misses as a blocking finding. The interview skill says what a glossary entry must look like. `orch.sh health` is an alias of `orch.sh doctor`.
+
+## 6.0.2
+
+`finding-triage scan` now follows a finding's filed lines through one operation, `lines_fate`, in a new Lines fate module (`scripts/orch/lines-fate.sh`), which reads the diff between the filed SHA and the default branch once per finding instead of four times or more and parses hunk headers in one place. The scan prints each finding once, and nothing it prints or takes changes.
+
+## 6.0.1
+
+The ticket commands now read one ticket's facts once through `ticket_facts <n> <prefix>`, which sets the ticket worktree's path and state, its checked-out branch, the checkout's branch, and the ticket's own branch and whether it exists in variables the caller names, and writes no other variable; the refusals live in require helpers that read those facts. The teardown takes the facts its caller read and reports which removal step failed, so `ticket reclaim` words its per-ticket lines without probing again. `ticket close <n>` (without `--unmerged`) and `ticket-worktree add <n>` now die before acting where git's record of the checkouts cannot be read, and `ticket merge <n>`, which already died there, now dies earlier, before its forked-from and dirty-tree refusals; nothing else a user of `orch.sh` can observe changes.
+
+## 6.0.0
+
+Breaking: the plugin no longer measures suite cost (#3381, ADR-0063). The `orch.sh suite-cost` noun (`run`, `check` and `history`) is removed with no shim, and so are its record, verdict file and active-run markers and the `orchestrator.suiteCost.floor`, `orchestrator.suiteCost.growth` and `orchestrator.suiteCost.setup` git config keys. The review loop and the review pass run no suite-cost check, which ran the whole suite on base commits and again to confirm growth, and gave no `grew` verdict in 504. Ticket subagents, fixers, resolvers, review pass sessions and the combined-branch check run their verification command bare. `review file` takes only the `spec` and `standards` axes and a `<file>:<line>` location: `--axis suite-cost` and `--location suite` are refused. The test audit reports no recorded trend. A clone's leftover files under `.git/orchestrator/` (`suite-cost`, `suite-cost.active/`, `suite-cost.verdicts`) are no longer read and can be deleted.
+
+## 5.3.3
+
+Every read of an issue's or a PR's comments now goes through one reader of trusted comments, which drops untrusted comments in one place and returns rather than dies on a failed or unparseable read. A structural test fails when orch.sh's own scripts read comments any other way. Nothing orch.sh prints or does changes.
+
+## 5.3.2
+
+`ticket publish` and `breakdown publish` now rewrite each published ticket's `## Blocked by` section from its verified blocking edges, one `- #<n>` line per blocker or `None (can start immediately)`, so published bodies name their blockers by number.
+
+## 5.3.1
+
+`ticket publish` no longer takes the internal `--record` flag: `breakdown publish` owns its whole save point, and creating and linking a ticket are two steps it runs as one path for a fresh and a resumed ticket. Two failure messages change: a failed create reads `the create failed`, a failed link reads `the link failed`.
+
 ## 5.3.0
 
 A ticket subagent now runs the ticket verification once before its first edit, and when that run cannot start (a missing tool, or a command not found or not executable) it builds nothing and returns a stop report whose `Deviation` line opens with `verification cannot start:` and names the missing command; the driver neither saves, merges nor closes that ticket, and stops naming every missing command. `orch.sh doctor --env` warns when the first command of the repo's `Ticket verification:` or `Full verification:` line is not installed.

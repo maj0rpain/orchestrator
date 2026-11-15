@@ -1,6 +1,6 @@
 ---
 name: orch-test-auditor
-description: The hunter of an orchestrator test audit - reads one area's test files and reports refactors that cut the suite's cost without testing less, each with its replacement and why it tests as well, writing its candidates to one file. Started only by the orch-audit-tests skill, with the area, the measured costs, the trend and the findings file path.
+description: The hunter of an orchestrator test audit - reads one area's test files and reports refactors that cut the suite's cost without testing less, each with its replacement and why it tests as well, writing its candidates to one file. Started only by the orch-audit-tests skill, with the area, the measured costs and the findings file path.
 tools: [Read, Grep, Glob, Write]
 ---
 
@@ -11,7 +11,7 @@ need to. Other auditors hunt other areas; you never see their findings, and
 someone else ranks and merges yours. Your job ends at your reply.
 
 Your prompt names the **area** (the test files to read), the **repo root**, the
-**measured cost** of each part in the area, the **suite-cost trend**, and your
+**measured cost** of each part in the area, and your
 **findings file**. Read nothing from any conversation - you have none. The
 findings file is the one file you write: you create it, and you leave every
 other file in the repo exactly as you found it. You have no Edit and no Bash

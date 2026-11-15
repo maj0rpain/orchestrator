@@ -427,7 +427,7 @@ review_file() {
   local pr_n="$1"
   shift
   orch_load filed-finding
-  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --why <reason> [--spec-question <q>]"
+  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
   local severity="$1" title="$2" flag value
   local axis="" finding="" reason="" location="" why="" question=""
@@ -460,14 +460,9 @@ review_file() {
   category="$(category_for_axis "$axis")" \
     || die "not a review axis: $axis (want ${FILED_AXES// / or })"
   finding_input_check "$title" "$finding"
-  # Split at the last colon: the line is the part after it, N or N-M. The
-  # literal suite - a suite-cost finding's - names the suite, with no line.
-  if [ "$location" = "$SUITE_LOCATION" ]; then
-    file="$SUITE_LOCATION" line=""
-  else
-    finding_location_check "$location" "<file>:<line>, <file>:<start>-<end> or suite"
-    file="${location%:*}" line="${location##*:}"
-  fi
+  # Split at the last colon: the line is the part after it, N or N-M.
+  finding_location_check "$location"
+  file="${location%:*}" line="${location##*:}"
   # The PR's URL and remote head come from GitHub for the flow's recorded PR,
   # before any write: the URL is right on any host, and the remote head is
   # what finding triage scan fetches.
@@ -676,44 +671,44 @@ review_standards_inside() {
   esac
 }
 
-# review_standards_declared <entry>...: dies unless every entry is a
+# review_standards_declared <entry>: dies unless the entry is a
 # repo-relative path naming a regular file inside the repo, optionally with a
 # #Heading naming one section that must match exactly once.
 review_standards_declared() {
-  local e seg depth segs path n
-  for e in "$@"; do
-    case "$e" in
-      /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
+  local e="$1" seg depth segs path n
+  case "$e" in
+    /*) die "Standards entry \`$e\` is an absolute path (want a repo-relative path)" ;;
+  esac
+  [[ $e =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && die "Standards entry \`$e\` is a URL (want a repo-relative path)"
+  depth=0
+  path="${e%%#*}"
+  IFS=/ read -ra segs <<< "$path"
+  for seg in "${segs[@]}"; do
+    case "$seg" in
+      ''|.) ;;
+      ..) depth=$((depth - 1)); [ "$depth" -ge 0 ] || die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
+      *) depth=$((depth + 1)) ;;
     esac
-    [[ $e =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && die "Standards entry \`$e\` is a URL (want a repo-relative path)"
-    depth=0
-    path="${e%%#*}"
-    IFS=/ read -ra segs <<< "$path"
-    for seg in "${segs[@]}"; do
-      case "$seg" in
-        ''|.) ;;
-        ..) depth=$((depth - 1)); [ "$depth" -ge 0 ] || die "Standards entry \`$e\` leaves the repo (want a path inside it)" ;;
-        *) depth=$((depth + 1)) ;;
-      esac
-    done
-    [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
-    [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
-    review_standards_inside "$path" || die "Standards entry \`$e\` leaves the repo (want a path inside it)"
-    [ "$path" = "$e" ] && continue
-    n="$(review_standards_heading_count "$path" "${e#*#}")"
-    [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"
-    [ "$n" -eq 1 ] || die "Standards entry \`$e\` names an ambiguous heading (matches $n times)"
   done
+  [ -e "$ROOT/$path" ] || die "Standards entry \`$e\` names a missing file"
+  [ -f "$ROOT/$path" ] || die "Standards entry \`$e\` is not a regular file"
+  review_standards_inside "$path" || die "Standards entry \`$e\` leaves the repo (want a path inside it)"
+  [ "$path" = "$e" ] && return 0
+  n="$(review_standards_heading_count "$path" "${e#*#}")"
+  [ "$n" -ge 1 ] || die "Standards entry \`$e\` names a missing heading"
+  [ "$n" -eq 1 ] || die "Standards entry \`$e\` names an ambiguous heading (matches $n times)"
 }
 
-# review_standards: the one Standards: line both reviewers' prompts end with -
-# a declaration in the root files when one exists, else the crawl:
+# review_standards_resolve_source: the Standards resolution, and the path it
+# took: a declaration in the root files when one exists, else the crawl:
 # root CLAUDE.md and AGENTS.md, or with neither CODING_STANDARDS.md and
 # CONTRIBUTING.md, then the .md paths they mention, then the ones those
 # mention: two hops, never a third, each path listed once at its first place
-# and only when it exists.
-review_standards() {
-  [ $# -eq 0 ] || die "usage: orch.sh review standards"
+# and only when it exists. Prints a first line, `declared <file>` or
+# `crawled`, then the list, one path per line (none when the crawl finds
+# nothing). A declaration the resolution rejects dies with its message, after
+# printing the first line and the entries up to the rejected one, last.
+review_standards_resolve_source() {
   local listed=() hop=() next=() f p span
   for f in CLAUDE.md AGENTS.md; do
     ! review_standards_inside "$f" || listed+=("$f")
@@ -730,9 +725,15 @@ review_standards() {
     while IFS= read -r span; do
       entries+=("${span:1:${#span}-2}")
     done < <(grep -oE '`[^`]+`' <<< "$decl")
+    # The declaring file leads and each entry is printed before it is checked,
+    # so a die leaves the file and, last, the rejected entry on stdout for
+    # doctor to read as data.
+    printf 'declared %s\n' "$f"
     [ "${#entries[@]}" -gt 0 ] || die "$f declares Standards: with no entries (want backticked paths)"
-    review_standards_declared "${entries[@]}"
-    note "Standards: $(list_join "$(printf '%s\n' "${entries[@]}")")"
+    for span in "${entries[@]}"; do
+      printf '%s\n' "$span"
+      review_standards_declared "$span"
+    done
     return 0
   done
   hop=(${listed[@]+"${listed[@]}"})
@@ -748,11 +749,54 @@ review_standards() {
     done
     hop=(${next[@]+"${next[@]}"})
   done
-  if [ "${#listed[@]}" -eq 0 ]; then
+  printf 'crawled\n'
+  [ "${#listed[@]}" -eq 0 ] || printf '%s\n' "${listed[@]}"
+}
+
+# review_standards: the one Standards: line both reviewers' prompts end with,
+# from review_standards_resolve_source's list.
+review_standards() {
+  [ $# -eq 0 ] || die "usage: orch.sh review standards"
+  local resolved first list
+  resolved="$(review_standards_resolve_source)" || exit $?
+  lines_split "$resolved" first list
+  if [ -z "$list" ]; then
     note "Standards: none"
   else
-    note "Standards: $(list_join "$(printf '%s\n' "${listed[@]}")")"
+    note "Standards: $(list_join "$list")"
   fi
+}
+
+# check_standards_declaration: doctor's Standards declaration check, named in
+# its env check list: the resolution review_standards_resolve_source makes,
+# reported - never parsed a second time. A declaration it dies on is a FAIL
+# carrying its own message.
+check_standards_declaration() {
+  local resolved err list first entry=""
+  if ! capture resolved err review_standards_resolve_source; then
+    d_fail "${err#orch: }"
+    # The died resolution left its stdout: the declaring file, then the entries
+    # up to the rejected one (none when the paragraph had no entries).
+    lines_split "$resolved" first list
+    first="${first#declared }"
+    entry="${list##*$'\n'}"
+    if [ -n "$entry" ]; then
+      d_remedy "change the entry \`$entry\` in the Standards: paragraph of $first to a repo-relative path of a file in the repo, with at most one #Heading that matches once - or delete the paragraph to have the reviewers crawl the standards documents" \
+        "see docs/repo-setup.md under the plugin root"
+    else
+      d_remedy "list backticked repo-relative paths in the Standards: paragraph of $first - or delete the paragraph to have the reviewers crawl the standards documents" \
+        "see docs/repo-setup.md under the plugin root"
+    fi
+    return 0
+  fi
+  lines_split "$resolved" first list
+  case "$first" in
+    declared\ *) d_ok "Standards declared in ${first#declared }: $(list_join "$list")" ;;
+    *)
+      if [ -n "$list" ]; then d_ok "no Standards: declaration - the list is crawled: $(list_join "$list")"
+      else d_ok "no Standards: declaration and nothing to crawl - the reviewers apply the smell baseline alone"; fi ;;
+  esac
+  return 0
 }
 
 # review_resume: resumes a review loop whose driving session died mid-iteration,

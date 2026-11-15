@@ -636,6 +636,9 @@ healthy_repo() {
   new_repo >/dev/null
   git remote set-url origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
+  # The verification lines check warns of a repo naming no full verification.
+  writeln 'Full verification: true test' >CLAUDE.md
+  git add CLAUDE.md && git commit -qm 'instructions'
   printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
   gh_fixture
   export CLAUDE_PLUGIN_ROOT="$PWD"
@@ -942,8 +945,9 @@ fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' 
 dir_snapshot() { (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r cksum); }
 
 # fake_snapshot: a digest of the whole store, so a test asserts a read-only
-# command left it as it was.
-fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE"; }
+# command left it as it was. The read counters (comment_reads and each PR's
+# evidence_reads) are reads, never writes, so they are left out.
+fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE" | sed -E '/ \.\/(comment_reads|prs\/[^\/]+\/evidence_reads)$/d'; }
 
 # fake_pr <n> <state> <head> <base>: seeds PR #n afresh, open, closed or
 # merged, from the head branch into the base - no body, comments or commits,
@@ -1011,7 +1015,7 @@ fake_fail() {
   fi
 }
 
-# fake_comment_reads: how many comment-list reads (adapter_issue_comments_json)
+# fake_comment_reads: how many comment-list reads (adapter_issue_comments)
 # the fake has answered or refused - 0 for none.
 fake_comment_reads() { fake_lines_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
 

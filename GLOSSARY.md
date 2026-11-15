@@ -830,7 +830,7 @@ _Avoid_: code scan, codebase review.
 
 **Test audit**:
 An on-demand, read-only read of a repo's test suite - its git hot spots, or a
-named area - for refactors that cut its **suite cost** without testing less.
+named area - for refactors that cut its CPU cost without testing less.
 Every candidate names the replacement that takes its place and why it tests
 the behaviour as well; one that cannot is dropped, and cost only ranks the
 rest. Each candidate the human picks goes to a planning interview or is filed
@@ -963,8 +963,8 @@ A filed finding's or a bundle's `bug` or `enhancement` label. An audit finding
 filed with `orch.sh audit file` carries one too, set by its audit: `bug` or
 `enhancement` for a code audit, `enhancement` for a test audit, `documentation`
 for a docs audit. The closer
-sets it from the finding's axis - `bug` for Spec, `enhancement` for Standards
-and Suite-cost - and finding triage keeps or flips it: a Standards finding that
+sets it from the finding's axis - `bug` for Spec, `enhancement` for Standards -
+and finding triage keeps or flips it: a Standards finding that
 is a real defect becomes `bug`, a Spec finding that is a nice-to-have becomes
 `enhancement`. A bundle's is `bug` whenever any member's is.
 
@@ -973,24 +973,6 @@ A fix that removes a defect's cause everywhere that cause acts - every copy of
 the logic, every call site, every input it mishandles - rather than only the
 reported instance. Its opposite, a **symptom fix**, makes the reported case pass
 while the cause stays live elsewhere. _Avoid_: foundational fix, proper fix
-
-**Suite cost**:
-The CPU time, user plus system, that one passing run of a verification command
-takes, as `orch.sh suite-cost run` records it with that command on the machine
-that ran it, or `suite-cost check` records it for a base it had to measure or a
-head and base it measured to confirm a growth. The baseline is the base commit's
-own runs, never an earlier commit's, so a base with none is measured first. A
-verdict `check` confirmed is stored and reused while the head, base commit,
-command and threshold are unchanged, so an unchanged tree is not measured again.
-A run made with uncommitted changes is recorded as dirty: it can measure the
-head, never the base. Recorded only for a run no other suite-cost run
-overlapped. `check` starts no run while another suite-cost run is in
-progress, and is unmeasured instead. Compared, lowest sample against lowest
-sample, only between runs of the same command on the same machine, and a
-growth is confirmed by measuring head and base once more before it counts; below
-the floor nothing compares it. Growth past the threshold is a finding with no
-reviewer behind it: in a review loop a major the driver raises from `check`'s
-verdict, and in a review pass a finding the session handles like any other.
 
 **Ticket verification**:
 The verification command a ticket subagent, fixer, resolver or review pass
@@ -1028,6 +1010,12 @@ fallbacks, including any taken during its spec review, under its PR body's
 **Host fallbacks**; and a standalone review pass records them in its PR
 comment, or reports them in the session when the branch has no PR - so a
 reduced run is never mistaken for a full one.
+
+**Subagent pool**:
+A list of subagents a skill runs with at most a fixed number in flight, the
+next started as each one returns, so a slow subagent holds back only its own
+slot. `docs/host-capabilities.md` says how each host runs one.
+_Avoid_: rolling pool, worker pool.
 
 **Turn-final reply**:
 One plain-text reply that ends a session's turn with no tool call in it,

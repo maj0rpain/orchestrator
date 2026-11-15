@@ -1,13 +1,13 @@
 ---
 name: orch-audit-tests
-description: Audit a repo's test suite for quality-preserving refactors ranked by the cost they save - scope git hot spots or a named direction, measure each test section (or file, on a large scope) sequentially, partition into areas, hunt each area in a fresh read-only orch-test-auditor subagent (at most 4 at once), rank the candidates, show an HTML report, and hand picked candidates to orch-interview, to orch.sh audit file, or both. Read-only. Use when the user asks to shrink, speed up or audit a test suite, or runs /orchestrator:audit-tests.
+description: Audit a repo's test suite for quality-preserving refactors ranked by the CPU cost they save - scope git hot spots or a named direction, measure each test section (or file, on a large scope) sequentially, partition into areas, hunt each area in a fresh read-only orch-test-auditor subagent (at most 4 at once), rank the candidates, show an HTML report, and hand picked candidates to orch-interview, to orch.sh audit file, or both. Read-only. Use when the user asks to shrink, speed up or audit a test suite, or runs /orchestrator:audit-tests.
 ---
 
 # Orchestrator audit tests
 
 Reads the repo's test suite and proposes refactors that make it cheaper to run
-without making it test less, ranked by the **suite cost** (see `GLOSSARY.md`:
-**Test audit**) each one saves. It ships for any repo. The idea comes from
+without making it test less, ranked by the CPU cost each one saves (see
+`GLOSSARY.md`: **Test audit**). It ships for any repo. The idea comes from
 mattpocock's `improve-codebase-architecture`, as inspiration only: the seven
 steps below define this skill, and it invokes and depends on no upstream skill
 (ADR-0028).
@@ -44,7 +44,8 @@ tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
-Steps here name capabilities (start a fresh subagent, open a report in the
+Steps here name capabilities (start a fresh subagent, run a subagent pool,
+open a report in the
 browser, invoke a skill from a step, ask a multiple-choice question).
 `docs/host-capabilities.md` under the
 plugin root maps each one to your host. Where your host's cell says
@@ -94,10 +95,6 @@ Run it in the foreground and wait for it (host capability *Run a long
 command*); never background it and sleep, poll or kill it. A run the host
 moves to the background at its timeout is still waited for, as that row says.
 
-Then run `bash "$ORCH" suite-cost history` and read the recorded runs of the
-full verification command for the trend: whether the suite cost is growing,
-and since which commit. No record means no trend; say so.
-
 ## 3. Partition
 
 Split the scope into **areas**: each is a set of test files given to one
@@ -112,23 +109,25 @@ start nothing until they answer. A narrowed scope returns to step 1.
 
 ## 4. Hunt
 
-Read `bash "$ORCH" agent get auditor` once, before the first hunter,
-and pass the `model` and `effort` it prints on each start, per **Agent
-settings** in `docs/host-capabilities.md`. Then run `bash "$ORCH" audit begin
-tests` once, before the first hunter starts; it prints the run directory,
-git-excluded, where every working file goes. This skill runs no `agent
-sync`, which would write `.junie/agents/` in the checkout (ADR-0060). Start
-one fresh subagent per area (see the *Start a fresh subagent* row of
-`docs/host-capabilities.md`), never a fork, each an `orch-test-auditor`, at
-most 4 at once; start the next as one finishes. Each prompt names its area
-(the test files), the repo root, the measured cost of each part in the area,
-the trend, and its own findings file, `area-<k>.md` in the run directory
-(<k> the area's number from 1). The hunter has no Edit or Bash tool, so it
-times nothing; its brief holds the quality rule, the six kinds, the fields
-each candidate states (among them the replacement, why it tests as well,
+Read `bash "$ORCH" agent get auditor` once, before the first hunter, and pass
+the `model` and `effort` it prints on each start, per **Agent settings** in
+`docs/host-capabilities.md`. Then run `bash "$ORCH" audit begin tests` once,
+before the first hunter starts; it prints the run directory, git-excluded,
+where every working file goes. This skill runs no `agent sync`, which would
+write `.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per
+area (see the *Start a fresh subagent* row of `docs/host-capabilities.md`),
+never a fork, each an `orch-test-auditor`, run as a subagent pool of 4 (host
+capability *Run a subagent pool*, size hint: the area's file count; see that row
+of `docs/host-capabilities.md`).
+Each prompt names its area (the test files), the repo root, the measured cost of
+each part in the area, the trend, and its own findings file, `area-<k>.md` in
+the run directory (<k> the area's number from 1). The hunter has no Edit or Bash
+tool, so it times nothing; its brief holds the quality rule, the six kinds, the
+fields each candidate states (among them the replacement, why it tests as well,
 and the expected saving, measured or estimated) and the findings-file format
-(`@@ finding <k>` blocks, `@@ none` when empty). A reply is the file's path
-and a candidate count; read each file.
+(`@@ finding <k>` blocks, `@@ none` when empty). A reply is the file's path and
+a candidate count; read each file.
+When the pool took a fallback tier, tell the user which.
 
 Check every candidate again against the quality rule, per **The quality rule**
 in `agents/orch-test-auditor.md` (under the plugin root), and drop each one
@@ -183,7 +182,7 @@ file and run the command again. Never write HTML or a script that writes it.
 Open it in the browser - `xdg-open <file>` on Linux, `open <file>` on macOS -
 and tell the user its path. On a host that cannot open it, write a Markdown
 summary in chat instead: the scope, the area count, whether parts were timed
-per section, per file, or only as one whole run, the trend, the top
+per section, per file, or only as one whole run, the top
 recommendation, and one line per candidate with its rank, kind, location,
 strength, cost saved (marked estimated where it is, as for a saving inside a
 file timed as a whole), and replacement.

@@ -170,7 +170,10 @@ including the review loop's iteration count against its budget, the PR's CI
 status, and its draft state against the flow's phase. It also FAILs on
 changes in the working tree outside the planning allowlist: every phase
 commits its own work before it ends, so such changes are a bug in the phase
-that left them.
+that left them. Its repo config checks cover what orch.sh reads from the repo:
+the triage labels, the `Standards:` declaration, the verification lines, the
+root `GLOSSARY.md` and `docs/adr`, each listed in
+[docs/repo-setup.md](repo-setup.md).
 
 ## Commands in detail
 

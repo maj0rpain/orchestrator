@@ -632,7 +632,7 @@ audit_file() {
   ! audit_ref_find "$(cat "$finding")" refp refl \
     || die "$finding line $refl says '$refp': a finding must read alone, so name no other finding by number and never this report"
   for loc in "${locations[@]}"; do
-    finding_location_check "$loc" "<file>:<line> or <file>:<start>-<end>"
+    finding_location_check "$loc"
   done
   sha="$(git rev-parse --verify HEAD 2>/dev/null)" || die "cannot read the HEAD commit"
 

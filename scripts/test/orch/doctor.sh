@@ -162,6 +162,21 @@ out="$("$ORCH" doctor --nonsense 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--nonsense"
 
+out="$("$ORCH" health --nonsense 2>&1)"; st=$?
+assert_status "health rejects an unknown flag" "$st" 1
+assert_contains "health's rejection names doctor" "$out" "doctor"
+doc_out="$("$ORCH" doctor --env 2>&1)"; doc_st=$?
+out="$("$ORCH" health --env 2>&1)"; st=$?
+assert_status "health --env exits as doctor --env does" "$st" "$doc_st"
+assert_eq "health --env reports as doctor --env does" "$out" "$doc_out"
+doc_out="$("$ORCH" doctor 2>&1)"; doc_st=$?
+out="$("$ORCH" health 2>&1)"; st=$?
+assert_status "bare health exits as bare doctor does" "$st" "$doc_st"
+assert_eq "bare health reports as bare doctor does" "$out" "$doc_out"
+help_out="$("$ORCH" help 2>&1)"
+assert_contains "help lists the health alias" "$help_out" "health"
+assert_contains "help's doctor line names docs/repo-setup.md" "$help_out" "docs/repo-setup.md"
+
 env_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$env_load" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes a healthy repo" "$st" 0
@@ -837,15 +852,15 @@ assert_status "sub-issues supported: still a healthy pass" "$st" 0
 assert_contains "reports sub-issues as supported" "$out" "ok    sub-issues supported"
 
 # The endpoint 404ing (or otherwise refusing) reads as "not supported" -
-# advisory, so a warn, never a FAIL: the real gate is ticket_publish's own
-# verify-then-die, not this probe.
+# advisory, so a warn, never a FAIL: the real gate is breakdown publish's own
+# link read-back (ticket_link), not this probe.
 fake_no_sub_issues
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "unsupported sub-issues does not block the flow" "$st" 0
 assert_contains "warns rather than fails when sub-issues are unsupported" \
   "$out" "warn  sub-issues do not appear to be supported"
 assert_contains "explains the consequence rather than leaving it silent" \
-  "$out" "ticket publish will fail"
+  "$out" "breakdown publish will fail"
 
 # A repo with no issues at all has nothing to probe against - still a warn,
 # not a FAIL, and a distinct message from the unsupported case above.
@@ -956,6 +971,7 @@ doctor_github
 out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "detects Claude Code from CLAUDECODE" "$out" "host: Claude Code"
 assert_eq "Claude Code lacks no capability" "$(printf '%s\n' "$out" | grep -c 'lacks')" "0"
+assert_eq "Claude Code names nothing unverified" "$(printf '%s\n' "$out" | grep -c 'unverified:')" "0"
 assert_contains "the plugin root check still warns when Claude Code left it unset" \
   "$out" "warn  CLAUDE_PLUGIN_ROOT"
 
@@ -983,6 +999,8 @@ assert_contains "names the forked subagent Junie cannot start" "$out" "Start a f
 # ticket at a time (ADR-0036): a gap, not Unverified.
 assert_contains "names the background subagent Junie cannot start" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Start a background subagent"
+assert_contains "names the subagent pool Junie cannot run" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Run a subagent pool"
 # Junie's grep_search has no files-only mode and no caller-set cap (#1342): a
 # known gap with a fallback, not Unverified.
 assert_contains "names the code search Junie cannot do as asked" \
@@ -2347,7 +2365,7 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_not_contains "posted handoff comments are not reported missing" "$out" "is missing"
 assert_contains "the plan comment validates" "$out" "handoff 01-plan.md complete"
 assert_contains "and the spec comment" "$out" "handoff 02-spec.md complete"
-fake_fail adapter_issue_comments_json "HTTP 502 comments"
+fake_fail adapter_issue_comments "HTTP 502 comments"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 fake_unfail
 assert_status "a comments read failing past the gh gate is a failed check" "$st" 1
@@ -2357,7 +2375,7 @@ assert_eq "as a single finding" "$(grep -c "could not read issue #7's handoff co
 assert_not_contains "with no remedy" "$out" "redo"
 assert_not_contains "and no per-handoff missing line" "$out" "comment is missing"
 assert_not_contains "nor a complete line from an earlier run's copies" "$out" "complete"
-fake_lag adapter_issue_comments_json 1 'not json'
+fake_lag adapter_issue_comments 1 'not json'
 out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "unparseable comments fail the check" "$st" 1
 assert_contains "with the not-a-comment-list reason" "$out" "could not read issue #7's handoff comments: gh's output is not a comment list"
@@ -2639,6 +2657,187 @@ dg_five="$(doctor_git_starts)"
 assert_eq "doctor starts as many git processes with five more worktrees as with two" "$dg_five" "$dg_two"
 restore_suite_env
 
+# --- doctor --env: Standards declaration check (#3358) ------------------------
+# A valid declaration is ok with its list; none is ok naming the crawl and its
+# list, or the smell baseline alone; one the resolution dies on is a FAIL
+# carrying that resolution's message and a remedy naming docs/repo-setup.md.
+echo
+echo "doctor: Standards declaration check"
+healthy_repo
+doctor_github
+rm -f CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no standards files: doctor --env passes" "$st" 0
+assert_contains "nothing to crawl is ok, naming the smell baseline alone" "$out" "ok    no Standards: declaration and nothing to crawl - the reviewers apply the smell baseline alone"
+mkdir -p docs
+writeln 'rules' >docs/rules.md
+writeln 'See `docs/rules.md`.' >CLAUDE.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "no declaration is ok naming the crawl and its list" "$out" "ok    no Standards: declaration - the list is crawled: CLAUDE.md, docs/rules.md"
+writeln 'Standards: `docs/rules.md`' >CLAUDE.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a declaration: doctor --env passes" "$st" 0
+assert_contains "a declaration is ok with its file and list" "$out" "ok    Standards declared in CLAUDE.md: docs/rules.md"
+assert_not_contains "a healthy declaration has no Standards FAIL" "$out" "FAIL  "
+out="$("$ORCH" doctor 2>&1)"
+assert_contains "bare doctor runs the check" "$out" "Standards declared in CLAUDE.md"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "--flow does not run the check" "$out" "Standards"
+writeln 'Standards: `docs/missing.md`' >CLAUDE.md
+want="$("$ORCH" review standards 2>&1 >/dev/null)"; want="${want#orch: }"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a declaration naming a missing file fails doctor" "$st" 1
+assert_contains "carrying review standards' own message" "$out" "FAIL  $want"
+assert_contains "the remedy names the entry and the file holding it" "$out" "change the entry \`docs/missing.md\` in the Standards: paragraph of CLAUDE.md"
+assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
+restore_suite_env
+
+# --- doctor --env: glossary check (#3358) -------------------------------------
+echo
+echo "doctor: glossary check"
+healthy_repo
+doctor_github
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no glossary: doctor --env passes" "$st" 0
+assert_contains "an absent glossary is ok" "$out" "ok    no GLOSSARY.md"
+writeln '**Alpha**: one.' '' '- **Beta**: two.' >GLOSSARY.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a parsing glossary passes" "$st" 0
+assert_contains "ok with its entry count" "$out" "ok    2 glossary entries"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "--flow does not run the check" "$out" "glossary"
+writeln '**Alpha** - one.' '' '**Beta** - two.' >GLOSSARY.md
+want="$("$ORCH" glossary terms 2>&1 >/dev/null)"; want="${want#orch: }"
+out="$("$ORCH" doctor 2>&1)"; st=$?
+assert_status "a glossary giving no entries fails bare doctor" "$st" 1
+assert_contains "carrying the glossary command's own message" "$out" "FAIL  $want"
+assert_contains "the remedy gives the example entry line" "$out" '"**Doctor**: the diagnostic command."'
+assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
+restore_suite_env
+
+# --- doctor --env: ADR directory check (#3358) --------------------------------
+echo
+echo "doctor: ADR directory check"
+healthy_repo
+doctor_github
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no docs/adr: doctor --env passes" "$st" 0
+assert_contains "an absent docs/adr is ok" "$out" "ok    no docs/adr"
+mkdir -p docs/adr/nested
+writeln '# one' >docs/adr/0001-a.md
+writeln '# two' >docs/adr/0002-b.md
+writeln '# nested' >docs/adr/nested/0003.md
+writeln 'x' >docs/adr/notes.txt
+out="$("$ORCH" doctor 2>&1)"; st=$?
+assert_status "a directory passes bare doctor" "$st" 0
+assert_contains "ok with the count of Markdown files directly in it" "$out" "ok    docs/adr holds 2 ADRs"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "--flow does not run the check" "$out" "docs/adr"
+rm -rf docs/adr
+writeln 'x' >docs/adr
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a file in its place fails doctor" "$st" 1
+assert_contains "naming the path" "$out" "FAIL  docs/adr exists and is no directory"
+assert_contains "the remedy states the fix" "$out" "create it as a directory"
+assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
+restore_suite_env
+
+# --- doctor --env: verification lines -----------------------------------------
+# The Ticket verification: and Full verification: lines the agents read from
+# the repo's instructions: each label is reported on its own.
+echo
+echo "doctor --env: verification lines"
+healthy_repo
+doctor_github
+vl_setup="docs/repo-setup.md"
+vl_doctor() { out="$("$ORCH" doctor "$@" 2>&1)"; st=$?; }
+
+vl_doctor --env
+assert_status "a full verification alone passes" "$st" 0
+assert_contains "no ticket verification is ok naming the fallback" "$out" \
+  "ok    no 'Ticket verification:' line - tickets run the full verification (ADR-0058)"
+assert_contains "the full verification is ok with its command and file" "$out" \
+  "ok    Full verification: true test (CLAUDE.md)"
+assert_contains "a healthy repo reports no warn and no FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+
+writeln 'Ticket verification: true quick' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a ticket verification is ok with its command and file" "$out" "ok    Ticket verification: true quick (CLAUDE.md)"
+assert_contains "and the full one still is" "$out" "ok    Full verification: true test (CLAUDE.md)"
+
+writeln 'Ticket verification: true quick' >CLAUDE.md
+vl_doctor --env
+assert_status "no full verification still exits 0" "$st" 0
+assert_contains "no full verification warns" "$out" "warn  no 'Full verification:' line"
+assert_contains "its remedy writes the line" "$out" "add the line 'Full verification: <command>' to CLAUDE.md"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+
+writeln 'Ticket verification:' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_status "a bare ticket verification fails" "$st" 1
+assert_contains "it names the file" "$out" "FAIL  CLAUDE.md has a 'Ticket verification:' line with no command."
+assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Ticket verification:' in CLAUDE.md, or remove the line"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+assert_not_contains "no ok line names the fallback" "$out" "tickets run the full verification"
+
+writeln 'Full verification:' >CLAUDE.md
+writeln 'Full verification: true test' >CONTRIBUTING.md
+vl_doctor --env
+assert_contains "a bare full verification fails beside a command elsewhere" "$out" "FAIL  CLAUDE.md has a 'Full verification:' line with no command."
+assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Full verification:' in CLAUDE.md, or remove the line"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+assert_not_contains "and no ok line is reported for that label" "$out" "ok    Full verification:"
+assert_not_contains "and no command line is reported for that label" "$out" "Full verification command"
+
+writeln 'Full verification: true test' >CLAUDE.md
+writeln 'Full verification:' >CONTRIBUTING.md
+vl_doctor --env
+assert_contains "the reverse fails too, naming CONTRIBUTING.md" "$out" "FAIL  CONTRIBUTING.md has a 'Full verification:' line with no command."
+assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Full verification:' in CONTRIBUTING.md, or remove the line"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+assert_not_contains "and no ok line is reported for it" "$out" "ok    Full verification:"
+assert_not_contains "and no command line is reported for it" "$out" "Full verification command"
+
+writeln 'Full verification: true test' >CLAUDE.md
+writeln 'Full verification: true other' >CONTRIBUTING.md
+vl_doctor --env
+assert_status "two commands is a warn, exit 0" "$st" 0
+assert_contains "it names both commands" "$out" "warn  Full verification is named twice with different commands: 'true test' in CLAUDE.md and 'true other' in CONTRIBUTING.md"
+assert_contains "CLAUDE.md's is the one used" "$out" "the first, 'true test', is the one used"
+assert_contains "its remedy removes the line" "$out" "remove the line 'Full verification: true other' from CONTRIBUTING.md"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+
+writeln 'Ticket verification: a' 'Ticket verification: b' 'Full verification: true test' >CLAUDE.md
+rm -f CONTRIBUTING.md
+vl_doctor --env
+assert_contains "two commands in one file warn as well" "$out" "warn  Ticket verification is named twice with different commands: 'a' in CLAUDE.md and 'b' in CLAUDE.md"
+assert_contains "its remedy removes the second line" "$out" "remove the line 'Ticket verification: b' from CLAUDE.md"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+
+writeln '```' 'Full verification: make fenced' 'Ticket verification:' '```' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a line in a fenced block is not read" "$out" "ok    Full verification: true test (CLAUDE.md)"
+assert_contains "a fenced bare label is not a FAIL" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
+
+writeln '~~~' '```' 'Full verification: make fenced' '```' 'Ticket verification:' '~~~' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a backtick line inside a tilde fence does not close it" "$out" "ok    Full verification: true test (CLAUDE.md)"
+assert_contains "and the fenced bare label is no FAIL" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
+
+writeln '````' '```' 'Full verification: make fenced' '```' '````' '   ~~~' 'Ticket verification:' '   ~~~' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a short fence inside a longer one and a three-space indented fence hold their lines" "$out" "ok    Full verification: true test (CLAUDE.md)"
+assert_contains "and no FAIL comes from them" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
+
+writeln 'Ticket verification:' >CLAUDE.md
+vl_doctor
+assert_contains "bare doctor runs the check" "$out" "FAIL  CLAUDE.md has a 'Ticket verification:' line with no command."
+assert_contains "bare doctor's remedy says what to write or remove" "$out" "write the command after 'Ticket verification:' in CLAUDE.md, or remove the line"
+assert_contains "bare doctor's remedy names the setup doc" "$out" "$vl_setup"
+vl_doctor --flow
+assert_not_contains "--flow does not run the check" "$out" "verification"
+restore_suite_env
+
 # --- doctor --env: verification commands (#3346) ------------------------------
 # The first word of each `Ticket verification:` and `Full verification:` line
 # is looked up; a missing one warns, never fails. Each case asserts what doctor
@@ -2720,17 +2919,22 @@ done
 printf 'Ticket verification: vctool first\nTicket verification: nosuchtool-3346\n' >CLAUDE.md
 out="$(vc_doctor)"
 assert_contains "the first line of a label is the one checked" "$out" "ok    Ticket verification command: vctool"
-assert_not_contains "a later line of the label is not checked" "$out" "nosuchtool-3346"
+assert_not_contains "a later line of the label is not checked" "$out" "command nosuchtool-3346"
 
 printf -- '- Ticket verification: nosuchtool-3346\n' >CLAUDE.md
 out="$(vc_doctor)"
 assert_not_contains "a line the label does not open is not read" "$out" "Ticket verification command"
 
+printf '```\nFull verification: nosuchtool-3346\n```\nFull verification: vctool\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a fenced line of the label is not read" "$out" "ok    Full verification command: vctool"
+assert_not_contains "a fenced line of the label is not checked" "$out" "command nosuchtool-3346"
+
 printf 'Ticket verification: vctool\n' >CLAUDE.md
 printf 'Ticket verification: nosuchtool-3346\n' >AGENTS.md
 out="$(vc_doctor)"
 assert_contains "the first file in the order wins" "$out" "ok    Ticket verification command: vctool"
-assert_not_contains "a later file's line is not checked" "$out" "nosuchtool-3346"
+assert_not_contains "a later file's line is not checked" "$out" "command nosuchtool-3346"
 rm -f CLAUDE.md
 out="$(vc_doctor)"
 assert_contains "with the first file gone the next one is read" "$out" "warn  Ticket verification command nosuchtool-3346 (from AGENTS.md)"

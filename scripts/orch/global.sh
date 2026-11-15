@@ -97,7 +97,9 @@ cmd_help() {
   cat <<'USAGE'
 orch.sh - deterministic operations for the orchestrator flow
 
-  doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
+  doctor [--env|--flow]       diagnose the machine, the repo, and the active flow;
+                              also `health`; what it reads from the repo is
+                              listed in docs/repo-setup.md
   default-branch [--sha]      resolve the repo's default branch, as GitHub
                               reports it; --sha prints the default SHA instead,
                               origin/<default>'s tip as it stands, unfetched
@@ -236,78 +238,6 @@ orch.sh - deterministic operations for the orchestrator flow
                               .junie/agents/ copies of the plugin's agents
                               to match the Junie agent setting; refuses an
                               unmarked orch-*.md in the way, changing nothing
-  suite-cost run -- <cmd> [args...]
-  suite-cost run -- '<shell line>'
-                              run <cmd> in the current directory, its stdout,
-                              stderr and exit code passed through (an
-                              interrupt exits 128 plus the signal's number
-                              and records nothing) and nothing added on
-                              stdout; on exit 0 alone, append its
-                              suite cost to the clone-wide record under the
-                              git common directory (orchestrator/suite-cost),
-                              one line of five tab-separated fields: HEAD's
-                              full SHA at the start, suffixed -dirty when
-                              git status --porcelain printed anything then
-                              (untracked files count, ignored paths do
-                              not), CPU seconds (user plus
-                              system, children included), wall seconds, the
-                              UTC time in ISO 8601, and the command. An
-                              append that fails warns and records nothing.
-                              A run another suite-cost run overlapped, in
-                              any checkout of the clone, is not recorded,
-                              and warns; so is one that could not register
-                              as active (orchestrator/suite-cost.active).
-                              No run waits for another. A single argument is
-                              a shell line, run with bash -c and recorded as
-                              given (a path with a space is quoted inside the
-                              line); two or more are an argument list
-  suite-cost check -- <cmd> [args...]
-  suite-cost check -- '<shell line>'
-                              print one verdict line comparing the head's
-                              lowest sample of <cmd> with the baseline's
-                              lowest, exiting 0 (an interrupted base or
-                              confirming run prints none and exits 128 plus
-                              the signal's number). The head sample is the
-                              lowest CPU seconds among the recorded runs on
-                              the commit of the newest head record (on HEAD
-                              or an ancestor not on the base, or a dirty one
-                              on HEAD or any ancestor; <sha>-dirty and <sha>
-                              are different commits); the baseline sample
-                              the lowest on the commit of the newest
-                              baseline record (a clean one, never a dirty
-                              one, on the base commit itself:
-                              state.base_sha in a flow, else branch base-sha).
-                              Verdicts: off (baseline below git config
-                              orchestrator.suiteCost.floor, else 60 CPU
-                              seconds), ok, grew <pct> - <finding text> (past
-                              orchestrator.suiteCost.growth, else 15 percent),
-                              or unmeasured. A growth is confirmed by
-                              measuring head and base once more, in
-                              temporary worktrees at HEAD and the baseline
-                              sample's commit, and comparing again; the
-                              head is run only to confirm a growth. A base
-                              commit with no clean record of its own is
-                              measured once, never an ancestor's record
-                              reused, in a temporary
-                              worktree. Each such run first runs
-                              git config orchestrator.suiteCost.setup there,
-                              untimed, when it is set. Such a base or
-                              confirming run is not recorded when another
-                              suite-cost run overlaps it, or when it could
-                              not register as active, and the verdict is
-                              then unmeasured. A verdict confirmed this way
-                              is stored (orchestrator/suite-cost.verdicts)
-                              and reused, printed with nothing run, while
-                              the clean HEAD, base commit, command, floor
-                              and growth are unchanged; a dirty tree never
-                              reuses one. Dies naming the key and
-                              value when an override is not a non-negative
-                              number. A single argument is a shell line, run
-                              with bash -c and recorded as given (a path with
-                              a space is quoted inside the line); two or more
-                              are an argument list
-  suite-cost history          print the record's lines, oldest first, or
-                              nothing when there is no record
   repo show [--name|--host]   print the GitHub repo orch.sh works on and its
                               source: GH_REPO when set, else the checkout's
                               origin - never gh's default repo. --name prints
@@ -574,12 +504,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               <file>, recording no state. Refuses, leaving
                               the body unchanged, unless <file> opens with
                               the PR's existing Closes/Refs #<issue> line
-  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...] [--record <numbers-file> <k>]
+  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
                               create a ticket, link it as a sub-issue of
                               <parent>, add a blocking edge for every
                               --blocked-by issue, apply ready-for-agent, and
                               verify the links it just wrote by reading them
-                              back - recording no state; prints the number
+                              back, then rewrite its `## Blocked by` section
+                              from those edges - recording no state; prints
+                              the number
   ticket next <parent>       print <parent>'s open sub-issues with zero open
                               blockers, in the order they were published
   ticket list <parent>       print every sub-issue of <parent>, open or
@@ -622,7 +554,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               save the approved ticket draft (the first run
                               only; a saved draft wins), then publish every
                               ticket not yet recorded, in dependency order,
-                              linking a created-but-unlinked one; the
+                              linking a created-but-unlinked one and
+                              rewriting each ticket's `## Blocked by`
+                              section from its blocking edges; the
                               published marker is written last. Prints the
                               numbers in publishing order
   breakdown state <parent>    print complete, partial or none; with no draft
@@ -785,14 +719,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
                               creating the directory if it is not there yet
-  review file <major|nit> <title> --axis <spec|standards|suite-cost>
+  review file <major|nit> <title> --axis <spec|standards>
               --finding-file <f> --severity-reason <r>
-              --location <<file>:<line>|suite> --why <reason>
+              --location <<file>:<line>> --why <reason>
               [--spec-question <q>]
                               file a finding as a GitHub issue labelled
                               review:<severity>, the repo's needs-triage, and
-                              bug (spec axis) or enhancement (standards or
-                              suite-cost axis),
+                              bug (spec axis) or enhancement (standards
+                              axis),
                               creating the labels if missing; prints the number.
                               The body is rendered from the parts - the finding
                               file, then one labelled line per flag - and

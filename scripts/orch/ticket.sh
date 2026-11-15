@@ -117,17 +117,60 @@ ticket_links_verified() {
   ticket_edges_verified "$1" "$3" "$4"
 }
 
-# Publishes a child issue, links it to <parent> as a native sub-issue, adds a
-# native blocking edge for every --blocked-by argument, and applies this
-# repo's ready-for-agent label - then verifies every link it just wrote by
-# reading it back. One retry on a mismatch or a failed read; a second failure
-# dies naming the ticket rather than falling back to a text-based `Blocked by:`
-# convention, since nothing downstream ever reads that fallback.
+# ticket_create <title> <body-file>: creates the ticket's issue under this
+# repo's ready-for-agent label and prints its number. Dies when the create
+# fails; inside $(...) the caller must pass that status on.
+ticket_create() {
+  local ready child
+  triage_label_into ready ready-for-agent
+  gh_or_die --out child "create the ticket" \
+    adapter_issue_create "$1" "$2" "$ready"
+  note "$child"
+}
+
+# ticket_link <parent> <n> <want>: puts ticket <n> in place under <parent> with
+# the blockers <want> names (newline-separated numbers, possibly empty),
+# whatever already landed. The parent's sub-issue listing is read and the
+# ticket linked only when it is not listed; its blockers are read once, and
+# only when <want> is non-empty, and only the edges it lacks are added, so a
+# resume never writes a link already present. Then every link is read back
+# through verify_twice: one retry, either status gets it, and the second
+# attempt decides the death - a failed read dies with gh's reason, a mismatch
+# as unverified (ADR-0011). Once the links verify, the ticket's `## Blocked by`
+# section is rewritten from <want> - sorted ascending here - as `ticket block`
+# writes it, through rewrite_blocked_by_section and issue_body_rewrite.
+ticket_link() {
+  local parent="$1" n="$2" want="$3" subs b have
+  want="$(printf '%s\n' "$want" | sed '/^$/d' | sort -un)"
+  subs="$(ticket_sub_issues "$parent")" || exit 1
+  ticket_listing_has "$subs" "$n" || gh_or_die "link ticket #$n as a sub-issue of #$parent" \
+    adapter_sub_issue_link "$parent" "$n"
+
+  if [ -n "$want" ]; then
+    have="$(ticket_blockers "$n")" || exit 1
+    while IFS= read -r b; do
+      ! list_has "$have" "$b" || continue
+      gh_or_die "add a blocking edge from ticket #$n on #$b" \
+        adapter_blocker_add "$n" "$b"
+    done <<<"$want"
+  fi
+
+  verify_twice "read ticket #$n's links" \
+    "ticket #$n's sub-issue/blocked-by links did not verify - checked twice, both failed" \
+    ticket_links_verified "$parent" "$n" "$want"
+
+  issue_body_rewrite "$n" "read ticket #$n's body" \
+    "rewrite ticket #$n's ## Blocked by section" \
+    rewrite_blocked_by_section "$want"
+}
+
+# Publishes a child issue - ticket_create then ticket_link: a native
+# sub-issue of <parent>, a native blocking edge for every --blocked-by
+# argument, this repo's ready-for-agent label, every link read back.
 cmd_ticket_publish() {
-  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...] [--record <numbers-file> <k>]"
+  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
   [ $# -ge 3 ] || die "$usage"
-  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want=""
-  local record_file="" record_k="" ready child
+  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" child
   shift 3
   # Every argument check runs here, before the first GitHub write. A second
   # --blocked-by is refused, never allowed to replace the first.
@@ -136,10 +179,6 @@ cmd_ticket_publish() {
       --blocked-by)
         flag_value_once "$usage" "$have_blocked_by" "$#"
         blocked_by="$2"; have_blocked_by=1; shift 2 ;;
-      --record)
-        [ $# -ge 3 ] && [ -z "$record_file" ] || die "$usage"
-        record_file="$2"; record_k="$3"; shift 3
-        case "$record_k" in ''|*[!0-9]*) die "--record's position must be a plain number, got: $record_k" ;; esac ;;
       *) die "$usage" ;;
     esac
   done
@@ -154,43 +193,12 @@ cmd_ticket_publish() {
     want="$(issue_number_list --blocked-by "$blocked_by")" || exit 1
   fi
 
-  triage_label_into ready ready-for-agent
-  gh_or_die --out child "create the ticket" \
-    adapter_issue_create "$title" "$body_file" "$ready"
-
-  # The created number is recorded before the link, so a rerun can tell
-  # "created, unlinked" from "not created". A failed write dies here.
-  if [ -n "$record_file" ]; then breakdown_record "$record_file" "$record_k" "$child" created; fi
-
-  gh_or_die "link ticket #$child as a sub-issue of #$parent" \
-    adapter_sub_issue_link "$parent" "$child"
-  ticket_edges_and_verify "$parent" "$child" "$want"
-  if [ -n "$record_file" ]; then breakdown_record "$record_file" "$record_k" "$child" linked; fi
+  # Resolve the Repo in this shell, so the $(...) calls below reuse it.
+  repo_resolve || :
+  child="$(ticket_create "$title" "$body_file")" || exit 1
+  ticket_link "$parent" "$child" "$want"
 
   note "$child"
-}
-
-# ticket_edges_and_verify <parent> <child> <want>: adds a blocking edge for
-# every number in <want> the child lacks - its blockers are read once, and only
-# when <want> is non-empty, so a resume never writes an edge already present -
-# and verifies every link by reading it back through verify_twice: one retry,
-# either status gets it, and the second attempt decides the death - a failed
-# read dies with gh's reason, a mismatch as unverified.
-ticket_edges_and_verify() {
-  local parent="$1" child="$2" want="$3" b have
-
-  if [ -n "$want" ]; then
-    have="$(ticket_blockers "$child")" || exit 1
-    while IFS= read -r b; do
-      ! list_has "$have" "$b" || continue
-      gh_or_die "add a blocking edge from ticket #$child on #$b" \
-        adapter_blocker_add "$child" "$b"
-    done <<<"$want"
-  fi
-
-  verify_twice "read ticket #$child's links" \
-    "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed" \
-    ticket_links_verified "$parent" "$child" "$want"
 }
 
 # The parent's open sub-issues with zero open blockers, in the order GitHub
@@ -226,7 +234,9 @@ cmd_ticket_list() {
 # has not landed is never closed (#1146). With no ticket worktree, no check
 # runs. Every refusal comes before any gh call, leaving the issue open.
 cmd_ticket_close() {
-  local n="" unmerged=0 path branch usage="usage: orch.sh ticket close <n> [--unmerged]"
+  local n="" unmerged=0 usage="usage: orch.sh ticket close <n> [--unmerged]"
+  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
+  local cf_n cf_path cf_worktree cf_wt_branch cf_parent cf_own_branch cf_own_exists
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -238,10 +248,10 @@ cmd_ticket_close() {
   [ -n "$n" ] || die "$usage"
   case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
   if [ "$unmerged" = 0 ]; then
-    path="$(ticket_worktree_path "$n")"
-    if is_ticket_worktree "$path"; then
-      ticket_worktree_resolve "$n"
-      ticket_branch_merged_or_die "$branch" "close it anyway"
+    ticket_facts "$n" cf
+    if [ "$cf_worktree" = worktree ]; then
+      ticket_facts_require_wt_branch cf
+      ticket_branch_merged_or_die "$cf_wt_branch" "close it anyway"
     fi
   fi
   gh_or_die "close ticket #$n" adapter_issue_close "$n"
@@ -394,7 +404,7 @@ cmd_ticket_retire() {
       gh_or_die "close ticket #$n" \
         adapter_issue_close "$n" --reason "not planned" --comment "$msg"
     else
-      comments_rendered adapter_issue_comments "read ticket #$n's comments" "$n" comments
+      comments_rendered issue "read ticket #$n's comments" "$n" comments
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
         temp_file_make comment_file || die "could not create a temp file for the comment on ticket #$n"
         printf '%s\n' "$msg" >"$comment_file"
@@ -651,10 +661,18 @@ cmd_ticket() {
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
   local n path branch parent parent_checkout rebase_err unmerged said
+  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
+  local mf_n mf_path mf_worktree mf_wt_branch mf_parent mf_own_branch mf_own_exists
   # rebase_out is set by capture and only git's stderr is read.
   # shellcheck disable=SC2034
   local rebase_out
-  ticket_worktree_resolve "$1"
+  orch_load ticket-worktree
+  n="$(ticket_worktree_number "$1")" || exit $?
+  ticket_facts "$n" mf
+  ticket_facts_require_worktree mf worktree
+  ticket_facts_require_wt_branch mf
+  path="$mf_path"
+  branch="$mf_wt_branch"
   parent="$(forked_from_branch "$branch")" \
     || die "branch $branch records no forked-from branch"
   require_clean_tree "$path" \
@@ -694,26 +712,27 @@ ticket_reclaim_close() {
   note "closed ticket #$n"
 }
 
-# ticket_reclaim_remove <n> <flow>: tears down ticket <n>'s worktree and
-# branch, discarding the work in the worktree first, when either exists. It
-# reads what exists first, so its notes follow from that; a failure dies
-# naming the ticket and the step.
+# ticket_reclaim_remove <prefix>: tears down the ticket worktree and branch in
+# <prefix>'s facts, discarding the work in the worktree first, when either
+# exists. The facts are the caller's one read, so its notes follow from them and
+# nothing is probed afterwards. The teardown runs in a subshell, so a die in it
+# cannot end this command before the line below is printed; its status says
+# which step failed. A failure dies naming the ticket and the step.
 ticket_reclaim_remove() {
-  local n="$1" flow="$2" path tbranch had_wt=0 had_branch=0 state left
-  path="$(ticket_worktree_path "$n")"
-  tbranch="$(branch_name_ticket "$flow" "$n")"
-  state="$(ticket_worktree_state "$path")" || exit $?
-  [ "$state" = none ] || had_wt=1
-  ! git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null || had_branch=1
+  local n_var="$1_n" path_var="$1_path" wt_var="$1_worktree" own_var="$1_own_branch" exists_var="$1_own_exists"
+  local n="${!n_var}" path="${!path_var}" had_wt=0 had_branch=0 st=0
+  [ "${!wt_var}" = none ] || had_wt=1
+  [ "${!exists_var}" != yes ] || had_branch=1
   [ "$had_wt$had_branch" != 00 ] || return 0
-  local teardown_failed=0
-  (ticket_worktree_teardown "$n" --unmerged --discard) || teardown_failed=1
-  left="$(ticket_worktree_state "$path")" || exit $?
-  if [ "$left" != none ]; then
+  orch_load ticket-worktree
+  (ticket_worktree_teardown "$1" --unmerged --discard) || st=$?
+  # A failed branch step means the worktree step passed; any other failure is
+  # the worktree's when the facts show any worktree state, else the branch's.
+  if [ "$st" != 0 ] && [ "$st" != "$TICKET_TEARDOWN_BRANCH_FAILED" ] && [ "$had_wt" = 1 ]; then
     die "ticket #$n: could not remove its worktree $path"
   fi
   [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
-  [ "$teardown_failed" = 0 ] || die "ticket #$n: could not delete branch $tbranch"
+  [ "$st" = 0 ] || die "ticket #$n: could not delete branch ${!own_var}"
   [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
 
@@ -749,7 +768,9 @@ ticket_reclaim_guard() {
 # is rebuilt. One line per action; a failed write dies naming the ticket.
 cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
-  local parent="$1" flow recorded="" fissue="" phase="" active="" subs line worktrees n state path st reported merged nums="" tbranch
+  local parent="$1" flow recorded="" fissue="" phase="" active="" subs line worktrees n state path st reported merged nums=""
+  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
+  local rf_n rf_path rf_worktree rf_wt_branch rf_parent rf_own_branch rf_own_exists
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
   if [ -f "$STATE" ]; then
@@ -767,6 +788,7 @@ cmd_ticket_reclaim() {
   # A collapsed breakdown has no sub-issues; its one ticket is the parent, whose
   # saved report is the record that it landed even once its worktree is gone.
   if [ -z "$subs" ] && [ -f "$(ticket_reports_dir)/$parent.md" ]; then nums="$nums$parent"$'\n'; fi
+  orch_load ticket-worktree
   worktrees="$(ticket_worktrees_under "$ROOT")" || exit 1
   while read -r n path; do
     [ -z "$n" ] || nums="$nums$n"$'\n'
@@ -774,21 +796,21 @@ cmd_ticket_reclaim() {
   nums="$(printf '%s' "$nums" | sort -un)"
   while read -r n; do
     [ -n "$n" ] || continue
-    path="$(ticket_worktree_path "$n")"
+    ticket_facts "$n" rf
+    path="$rf_path"
     reported=""
     [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
     merged=""
-    tbranch="$(branch_name_ticket "$flow" "$n")"
-    if git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null; then
-      ! ticket_branch_merged "$tbranch" || merged=1
+    if [ "$rf_own_exists" = yes ]; then
+      ! ticket_branch_merged "$rf_own_branch" || merged=1
     elif [ -n "$reported" ]; then
       merged=1
     fi
     if [ -n "$reported" ] && [ -n "$merged" ]; then
       [ "$n" != "$parent" ] || note "ticket #$n already landed"
       ticket_reclaim_close "$n" "$parent"
-      ticket_reclaim_remove "$n" "$flow"
-    elif [ -n "$reported" ] && is_ticket_worktree "$path"; then
+      ticket_reclaim_remove rf
+    elif [ -n "$reported" ] && [ "$rf_worktree" = worktree ]; then
       discard_work_in "$path" "ticket #$n"
       st=0
       (cmd_ticket_merge "$n") || st=$?
@@ -796,9 +818,9 @@ cmd_ticket_reclaim() {
       [ "$st" -eq 0 ] || die "ticket #$n: could not merge its branch"
       note "merged ticket #$n"
       ticket_reclaim_close "$n" "$parent"
-      ticket_reclaim_remove "$n" "$flow"
+      ticket_reclaim_remove rf
     else
-      ticket_reclaim_remove "$n" "$flow"
+      ticket_reclaim_remove rf
       ticket_report_remove "$n"
       note "discarded ticket #$n"
     fi

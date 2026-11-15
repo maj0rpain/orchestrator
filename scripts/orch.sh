@@ -169,14 +169,13 @@ main() {
   local cmd="${1:-help}"
   shift || true
   case "$cmd" in
-    doctor)        cmd_doctor "$@" ;;
+    doctor|health) cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     agent)         cmd_agent "$@" ;;
     audit)         cmd_audit "$@" ;;
     autopilot)     cmd_autopilot "$@" ;;
     parallel)      cmd_parallel "$@" ;;
-    suite-cost)    cmd_suite_cost "$@" ;;
     repo)          cmd_repo "$@" ;;
     init)          cmd_init "$@" ;;
     slug)          cmd_slug "$@" ;;

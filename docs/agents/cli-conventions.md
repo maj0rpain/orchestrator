@@ -3,8 +3,8 @@
 `orch.sh`'s subcommand grammar: when a command acts on a thing, the thing comes
 first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 <new>`, `orch.sh review file <major|nit> <title>
---axis <spec|standards|suite-cost> --finding-file <f> --severity-reason <r>
---location <<file>:<line>|suite> --why <reason>
+--axis <spec|standards> --finding-file <f> --severity-reason <r>
+--location <<file>:<line>> --why <reason>
 [--spec-question <q>]`.
 
 ## Current nouns
@@ -16,7 +16,6 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `audit`   | `begin` (takes code, docs or tests), `report`, `file` (a title and flags for one finding, or --run with a run directory and numbers for a run's picks) |
 | `autopilot` | `show`, `settings`, `active`, `rounds`, `budget`, `start`, `candidates`, `tick`, `watch`, `run`, `ask`, `answer`, `reenter`, `questions`, `reply`, `resume`, `sync`, `sync-finish`, `sync-dropped`, `sync-fail` |
 | `agent`   | `set`, `show`, `clear`, `get`, `sync`, `roles`      |
-| `suite-cost` | `run`, `check`, `history`                     |
 | `repo`    | `show`                                               |
 | `branch`  | `create`, `off`, `busy`, `base-sha`, `sync`, `retire` |
 | `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready`, `close` |
@@ -44,7 +43,8 @@ behavior - run `orch.sh help` for the live list.
 
 ## Exceptions
 
-Two kinds of command don't take this shape, deliberately:
+Two kinds of command don't take this shape, deliberately (and `health` is an
+alias of `doctor`: the same command, whose messages keep saying `doctor`):
 
 - **Bare global commands** with no noun to act on: `doctor`, `init`, `slug`,
   `status`, `archive`, `help`, `default-branch`. Each is already

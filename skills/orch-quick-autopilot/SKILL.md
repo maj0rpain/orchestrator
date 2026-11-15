@@ -19,8 +19,8 @@ If `orch.sh` is not at that path, stop and tell the human the quick autopilot is
 Claude Code only and needs the full orchestrator plugin
 (`/plugin install orchestrator@orchestrator`).
 
-Steps here name capabilities (start a fresh subagent, start a background
-subagent, ask the user a question). `docs/host-capabilities.md` under the plugin
+Steps here name capabilities (start a fresh subagent, run a subagent pool,
+ask the user a question). `docs/host-capabilities.md` under the plugin
 root (two directories above `ORCH`) maps each one to your host.
 
 ## 1. Select
@@ -44,8 +44,11 @@ with nothing written.
 
 ## 3. Run one agent per issue
 
-For each eligible issue, start a fresh `orch-autopilot-planner`
-subagent, in the background, at most 4 at once: start the next as one returns.
+Run the eligible issues as a subagent pool of 4 (host capability
+*Run a subagent pool*, no size hint; see that row of
+`docs/host-capabilities.md`), in the issue order `autopilot candidates`
+printed, each a fresh
+`orch-autopilot-planner` subagent.
 Its prompt is exactly these three lines, and nothing else:
 
 ```
@@ -66,4 +69,5 @@ issue found already done names what did the work, and is not closed), and the
 failed with their `orch:` messages. A `failed` line after the label move says
 the label was moved: a later `/orchestrator:quick-autopilot <n>` plans that
 issue again from its interview. Say that the watcher picks the started issues
-up; this skill starts no watcher.
+up; this skill starts no watcher. When the pool took a fallback tier, add one
+line naming the tier it ended on.

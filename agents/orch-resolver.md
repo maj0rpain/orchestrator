@@ -243,12 +243,7 @@ implementer follows it from here.
    `CLAUDE.md`, `AGENTS.md`, README, CI workflows, or test runner - and run
    them on the resolved tree - the repo's **ticket verification**, a line
    reading `Ticket verification: <command>` in those instructions, is the
-   checks command when it names one - through
-   `bash "<orch.sh>" suite-cost run -- '<command>'`,
-   the whole line as one quoted argument, which passes their
-   output and exit code through unchanged (an interrupt exits 128 plus the
-   signal's number and records nothing) and records a passing run's suite
-   cost.
+   checks command when it names one - bare.
    Run it in the foreground and wait for it (host capability *Run a long
    command*); never background it and sleep, poll or kill it. A run the host
    moves to the background at its timeout is still waited for, as that row says.
@@ -282,7 +277,7 @@ Verification: <command> pass|fail
 - `Dropped`: each intent dropped, with the side that meant it and why,
   separated by "; ", or `None`.
 - `Verification`: the checks command you ran and its result after your
-  fixes: the bare command, never the `suite-cost run` wrapper.
+  fixes.
 
 The driver judges a resolution - the resolver's, or a resumed
 implementer's - by this report and the checkout or ticket worktree it
