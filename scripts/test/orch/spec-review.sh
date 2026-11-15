@@ -33,6 +33,16 @@ sra_refused() {
     "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)" "$before"
   assert_eq "$label: no GitHub write" "$(fake_snapshot)" "$snap"
 }
+# apply_prints_one <label> <dir> <stderr>: plain apply on <dir> refuses with
+# exactly the one line <stderr> and writes nothing.
+apply_prints_one() {
+  local before
+  before="$(cat "$2/spec.md")"
+  sra "$2" recommended
+  assert_status "$1: apply refuses" "$st" 1
+  assert_eq "$1: apply prints the single line it prints today" "$out" "$3"
+  assert_eq "$1: apply writes nothing" "$(cat "$2/spec.md")" "$before"
+}
 # check_refused <runner> <label> <dir> <stderr>: <runner> <dir> - a check
 # run that sets out, err and st - exits 1 with exactly <stderr>, nothing on
 # stdout, and <dir> unchanged.
@@ -2355,22 +2365,26 @@ orch: batch.md line 16: cites finding 2 of lens consistency, but lens-consistenc
 orch: batch.md leaves findings uncited: consistency 1 - every lens finding goes in the batch, if only as a recommend-decline item
 orch: batch.md line 9: item 1: its anchor matches no text in the body"
 d="$(src_dir)"
-sed -i '16s/.*/@@ finding consistency 2/; 42s/.*/@@ finding testability 3/' "$d/batch.md"
+sed -i '16s/.*/@@ finding consistency 2/; 42s/.*/@@ finding testability 3/; 10s/.*/Nowhere./' "$d/batch.md"
 check_refused src "two bad citations and an uncited finding, then the anchors" "$d" \
   "orch: batch.md line 16: cites finding 2 of lens consistency, but lens-consistency.md holds 1
 orch: batch.md line 42: cites finding 3 of lens testability, but lens-testability.md holds 2
-orch: batch.md leaves findings uncited: consistency 1, testability 2 - every lens finding goes in the batch, if only as a recommend-decline item"
+orch: batch.md leaves findings uncited: consistency 1, testability 2 - every lens finding goes in the batch, if only as a recommend-decline item
+orch: batch.md line 9: item 1: its anchor matches no text in the body"
+apply_prints_one "two bad citations" "$d" "orch: batch.md line 16: cites finding 2 of lens consistency, but lens-consistency.md holds 1"
 d="$(src_dir)"
 sed -i '8,13d' "$d/batch.md"
 sed -i '6s/.*/@@ item 1 fidelity apply minor\n@@ finding fidelity 1/' "$d/batch.md"
 check_refused src "an item with neither summary nor anchor block gives two lines" "$d" \
   "orch: batch.md line 6: item 1 has no @@ summary
 orch: batch.md line 6: item 1 has no @@ anchor/@@ replace/@@ end block"
+apply_prints_one "no summary and no anchor block" "$d" "orch: batch.md line 6: item 1 has no @@ summary"
 d="$(src_dir)"
 sed -i "17s/.*/@@ summary $src_w31/; 23s/.*/@@ bogus/" "$d/batch.md"
 check_refused src "a structure violation after a content violation prints both" "$d" \
   "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30
 orch: batch.md line 23: unknown line '@@ bogus'"
+apply_prints_one "structure after content" "$d" "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
 d="$(src_dir)"
 sed -i "17s/.*/@@ summary $src_w31/; 2d" "$d/batch.md"
 check_refused src "a missing @@ lens line after a content violation prints both" "$d" \
@@ -2386,6 +2400,7 @@ printf 'preamble\n@@ finding 1\nx\n' >"$d/lens-consistency.md"
 check_refused src "a malformed lens file after a content violation prints both" "$d" \
   "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30
 orch: lens-consistency.md line 1: text before the first @@ finding"
+apply_prints_one "malformed lens" "$d" "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
 d="$(src_dir)"
 sed -i "17s/.*/@@ summary $src_w31/" "$d/batch.md"
 printf 'old view\n' >"$d/view.md"
@@ -3093,10 +3108,6 @@ printf '@@ bogus\n' >>"$d/tickets.md"
 check_refused srct "a structure violation after an incomplete item prints both" "$d" \
   "orch: tickets.md line 2: item 1 has no @@ summary
 orch: tickets.md line 19: unknown line '@@ bogus'"
-d="$(srct_dir)"
-sed -i '3d' "$d/tickets.md"
-srct "$d"
-assert_eq "a failed check --tickets prints nothing on stdout" "$out" ""
 restore_suite_env
 
 # Block lines that read as grammar are escaped with a leading backslash (#1945).

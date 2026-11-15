@@ -166,7 +166,6 @@
 #     columns, outside the exempt lines
 #   scan_interview_closing  orch-interview's SKILL.md's Closing section has
 #     four numbered route options
-#   scan_interview_labels  orch-interview's SKILL.md names issue labels
 #   scan_repo_verification  this repo's CLAUDE.md Testing section names a
 #     Ticket verification: and a Full verification: command
 # <<< rules
@@ -4840,23 +4839,8 @@ assert_empty "four numbered route options in the Closing section are not flagged
 check "orch-interview's Closing section has four numbered route options" \
   "$(scan_interview_closing "$PLUGIN_ROOT")"
 
-# scan_interview_labels <plugin root>: one line when orch-interview's SKILL.md
-# does not name `issue labels`. Structure only, never wording (ADR-0027).
-scan_interview_labels() {
-  local r="$1" skill="skills/orch-interview/SKILL.md"
-  grep -qF 'issue labels' "$r/$skill" 2>/dev/null \
-    || echo "$skill: does not name issue labels"
-  return 0
-}
-fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-interview"
-printf '# I\n\n## Domain language\n\nRun issue fetch.\n' >"$fixture/skills/orch-interview/SKILL.md"
-flags "an interview skill that does not name issue labels is flagged" \
-  "$(scan_interview_labels "$fixture")" "does not name issue labels"
-printf '# I\n\nRun `issue labels <n>`.\n' >"$fixture/skills/orch-interview/SKILL.md"
-assert_empty "an interview skill naming issue labels is not flagged" \
-  "$(scan_interview_labels "$fixture")"
-check "orch-interview names issue labels" "$(scan_interview_labels "$PLUGIN_ROOT")"
+check "orch-interview names issue labels" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'skills/orch-interview/SKILL.md' 'issue labels')"
 
 # This repo's CLAUDE.md Testing section names its two verification commands
 # (ADR-0058), so the ticket/full split cannot rot.

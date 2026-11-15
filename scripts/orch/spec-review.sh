@@ -170,8 +170,8 @@ spec_review_batch_die() { spec_review_die "batch.md line $1: $2"; }
 
 # Content violations: a check run (SR_COLLECT set) records each one in
 # SR_VIOLATIONS and goes on; any other run - apply - dies on the first, as it
-# always did. A structure violation, or any later die, reports what was
-# collected first.
+# always did. A structure violation, or any `spec_review_die`, reports
+# what was collected first.
 SR_COLLECT=""
 SR_VIOLATIONS=()
 
@@ -842,8 +842,10 @@ spec_review_anchor_visit() {
 # the lenses that ran, checks the citations, takes <answer> (see
 # spec_review_answer), and applies every anchor it accepts, in batch order, to
 # <body-file>'s text: SR_FETCHED holds the body as read, SR_TEXT the body
-# edited. Apply dies on the first grammar, lens or citation error; check
-# collects them (see spec_review_collect). Every anchor is
+# edited. Apply dies on the first grammar, lens, content or citation error;
+# check collects content violations and citation errors (see
+# spec_review_collect), and a structure violation or a malformed lens file still
+# stops it. Every anchor is
 # visited (see spec_review_anchor_visit) and counted into SR_ANCHOR_COUNT -
 # the ones the answer declines checked on their own against SR_FETCHED - and
 # each problem, naming its `@@ anchor` line, is appended to SR_PROBLEMS, the
