@@ -250,6 +250,7 @@ the only Standards look the change gets before its PR (ADR-0021).
    the twelve in `agents/orch-reviewer-standards.md`'s **Smell baseline**.
    A Source beginning `root-cause check` or `test-cost check`, or naming no
    baseline smell, is never one; nor is any Spec-report finding. A Source
+   beginning `glossary parse check` is never one either. A Source
    beginning `doc-agreement check` is never one either. A smell that
    matched an earlier decline is already under **Previously declined** and is
    not counted. A `grew` verdict from **Review pass** step 5's suite-cost check
