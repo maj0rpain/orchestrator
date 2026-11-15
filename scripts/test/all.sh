@@ -70,7 +70,8 @@
 #
 # CHANGELOG_BASE and NO_VERSION_BUMP pass through untouched - set, empty or
 # unset - for docs_lint.sh's changelog fragment rule (CI's fragment.yml runs
-# docs_lint.sh alone and feeds them itself). ORCH_TEST_JOBS
+# docs_lint.sh --fragment-only, the fragment rule alone, and feeds them
+# itself). ORCH_TEST_JOBS
 # passes through too: orch_test.sh runs that many sections at once, by default
 # 75% of the usable CPUs (ORCH_TEST_POOL_PERCENT sets another share; the full
 # count under CI), and ORCH_TEST_JOBS=1 runs them

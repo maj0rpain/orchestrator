@@ -271,7 +271,8 @@ files in place and does not commit. `scripts/test/version_bump_test.sh` tests
 it.
 
 CI enforces the rule through its own workflow, `.github/workflows/fragment.yml`,
-which runs `docs_lint.sh` alone and reruns on a PR's body and label edits: a PR
+which runs the fragment rule alone (`docs_lint.sh --fragment-only`) and reruns
+on a PR's body and label edits: a PR
 to `main` adds exactly one
 well-formed fragment, and never changes `version`, adds a `## ` heading to
 `CHANGELOG.md`, or modifies or deletes an existing fragment or `.gitkeep`;
