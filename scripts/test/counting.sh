@@ -29,7 +29,7 @@ counting_starts() { wc -l <"$1/$2.log" | tr -d ' '; }
 # the dir.
 counting_stdin_bin() {
   local dir
-  dir="$(mktemp -d)"
+  dir="$(counting_bin "$1")"
   cat >"$dir/$1" <<STUB
 #!/usr/bin/env bash
 echo x >>"$dir/$1.log"
@@ -40,8 +40,7 @@ wc -c <"\$f" | tr -d ' ' >>"$dir/$1.bytes"
 rm -f "\$f"
 exit "\$st"
 STUB
-  chmod +x "$dir/$1"
-  : >"$dir/$1.log"; : >"$dir/$1.bytes"
+  : >"$dir/$1.bytes"
   printf '%s\n' "$dir"
 }
 

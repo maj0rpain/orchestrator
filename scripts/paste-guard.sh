@@ -61,8 +61,9 @@ PASTE_GUARD_NEEDLE='; it is saved in '
 # it. paste_guard_scan's search and its decode both read it.
 PASTE_GUARD_APPLY='spec-review apply'
 
-# The jq definitions both decode steps share: the text of a content value, a
-# human message, and an assistant entry holding an apply call.
+# The jq definitions the decode steps draw on: the text of a content value
+# (step 1's tool_result read only), a human message, and an assistant entry
+# holding an apply call (both steps).
 PASTE_GUARD_JQ_DEFS='
   def text: if type == "string" then . elif type == "array"
     then map(select(type == "object" and .type == "text") | .text // "") | join("\n")

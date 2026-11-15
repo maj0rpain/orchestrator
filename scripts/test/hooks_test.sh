@@ -1532,7 +1532,7 @@ pg_pad() { if [ "$2" = pad ]; then cat "$PG_PADFILE" >>"$1"; fi; }
 # then checks <fn>'s jq bytes are equal.
 pg_cost_pair() {
   local p="$PG/cost/pad-$1.jsonl" n="$PG/cost/non-$1.jsonl"
-  "$2" "$p" pad; "$2" "$n" non
+  : >"$p"; : >"$n"; "$2" "$p" pad; "$2" "$n" non
   assert_eq "$1: the padded transcript offers jq as many bytes as the bare one ($3)" \
     "$(jq_bytes "$3" "$p")" "$(jq_bytes "$3" "$n")"
 }
@@ -1550,13 +1550,13 @@ for pg_fn in pg_decide sg_decide; do
   assert_eq "and allows with one ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-armed-pasted.jsonl")" allow
   pg_cost_pair quotes-only pg_b_quote "$pg_fn"
   assert_eq "quotes only allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-quotes-only.jsonl")" allow
-  pg_b_human "$PG/cost/pad-human.jsonl" pad
+  : >"$PG/cost/pad-human.jsonl"; pg_b_human "$PG/cost/pad-human.jsonl" pad
   assert_eq "disarmed by a human message alone allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-human.jsonl")" allow
   pg_hb="$(jq_bytes "$pg_fn" "$PG/cost/pad-human.jsonl")"; pg_hn="$(jq_bytes "$pg_fn" "$PG/cost/non-nothing.jsonl")"
   if [ "$((pg_hb - pg_hn))" -lt "$PG_PADSIZE" ]; then ok "and offers jq fewer bytes than the padding holds ($pg_fn)"
   else bad "and offers jq fewer bytes than the padding holds ($pg_fn)" "$pg_hb offered, padding $PG_PADSIZE"; fi
   # Apply calls but no needle: no jq beyond the payload read.
-  pg_na="$PG/cost/apply-only.jsonl"; pg_pad "$pg_na" pad; pg_bash "$pg_na" toolu_k3 'bash "$ORCH" spec-review apply'
+  pg_na="$PG/cost/apply-only.jsonl"; : >"$pg_na"; pg_pad "$pg_na" pad; pg_bash "$pg_na" toolu_k3 'bash "$ORCH" spec-review apply'
   assert_eq "apply calls but no needle start as many jq as no transcript_path ($pg_fn)" \
     "$(jq_count "$pg_fn" "$pg_na")" "$(jq_count "$pg_fn" "")"
 done
@@ -1592,7 +1592,7 @@ for pg_fn in pg_decide sg_decide; do
   pg_text "$TQL" "$(cat "$PG/batch/view.md")"
   assert_eq "and allows once the view is pasted ($pg_fn)" "$("$pg_fn" "$TQL")" allow
   TBL="$PG/cost/blob-live-$pg_fn.jsonl"; pg_check "$TBL" toolu_q2 batch "$PG/batch/view.md"
-  jq -nc --arg c "$pg_line" '{type:"system", content:$c}' >>"$TBL"
+  jq -nc --arg c "$pg_line" '{type:"api-request-blob", message:{role:"user", content:[{type:"tool_result", tool_use_id:"toolu_q2b", content:$c}]}}' >>"$TBL"
   assert_eq "a live pass line followed by a request blob's copy refuses without a paste ($pg_fn)" "$("$pg_fn" "$TBL")" "$pg_want"
   pg_text "$TBL" "$(cat "$PG/batch/view.md")"
   assert_eq "and allows once the view is pasted ($pg_fn)" "$("$pg_fn" "$TBL")" allow
@@ -1601,7 +1601,7 @@ for pg_fn in pg_decide sg_decide; do
   pg_pad "$TFE" pad; pg_result "$TFE" toolu_q3 "$pg_line"
   assert_eq "a pass-line result answering an apply call many entries earlier does not arm ($pg_fn)" "$("$pg_fn" "$TFE")" allow
   for pg_hm in "; it is saved in /x" "spec-review apply"; do
-    THM="$PG/cost/human-quote-$pg_fn.jsonl"; pg_check "$THM" toolu_q4 batch "$PG/batch/view.md"
+    THM="$PG/cost/human-quote-$pg_fn.jsonl"; : >"$THM"; pg_check "$THM" toolu_q4 batch "$PG/batch/view.md"
     pg_entry "$THM" user "$(jq -nc --arg t "$pg_hm" '$t')"
     assert_eq "a human message holding '$pg_hm' after a live pass line disarms ($pg_fn)" "$("$pg_fn" "$THM")" allow
   done
@@ -1619,22 +1619,22 @@ pg_scan_with() {
   out="$(source "$DIR/paste-guard.sh"; PASTE_GUARD_NEEDLE="$1"; PASTE_GUARD_APPLY="$2"; paste_guard_scan "$3")"
   printf '%s' "${out%%$'\n'*}"
 }
-pg_two() { # <file> <needle> <apply> <command> <combined|after>
+pg_two() { # <file> <needle> <command> <combined|after>
   local f="$1"; : >"$f"
-  if [ "$5" = combined ]; then pg_bash "$f" toolu_s1 "$4"; fi
+  if [ "$4" = combined ]; then pg_bash "$f" toolu_s1 "$3"; fi
   pg_result "$f" toolu_s1 "batch.md passes: 2 items$2/tmp/x/view.md"
-  if [ "$5" = after ]; then pg_bash "$f" toolu_s2 "$4"; fi
+  if [ "$4" = after ]; then pg_bash "$f" toolu_s2 "$3"; fi
 }
 for pg_mode in after combined; do
-  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' x 'run APPLYME now' "$pg_mode"
+  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' 'run APPLYME now' "$pg_mode"
   assert_eq "a reassigned apply literal disarms ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'APPLYME' "$PG/cost/seam.jsonl")" ""
-  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' x 'run spec-review apply now' "$pg_mode"
+  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' 'run spec-review apply now' "$pg_mode"
   assert_eq "and the default literal no longer does ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
-  pg_two "$PG/cost/seam.jsonl" '; saved "at" ' x 'run A\"P"Y\ now' "$pg_mode"
+  pg_two "$PG/cost/seam.jsonl" '; saved "at" ' 'run A\"P"Y\ now' "$pg_mode"
   assert_eq "an apply literal holding a backslash and a quote disarms ($pg_mode)" \
     "$(pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" ""
 done
-pg_two "$PG/cost/seam.jsonl" '; saved "at" ' x 'noop' after
+pg_two "$PG/cost/seam.jsonl" '; saved "at" ' 'noop' after
 assert_eq "a needle holding a quote arms" "$(pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" /tmp/x/view.md
 # The needle and the real pass line.
 pg_needle="$( (source "$DIR/paste-guard.sh"; printf '%s' "$PASTE_GUARD_NEEDLE") )"
@@ -1648,8 +1648,7 @@ pg_scan_arms() {
   local f="$PG/scan-needle.jsonl"
   jq -nc --arg t "batch.md passes: 2 items$2/tmp/x/view.md" \
     '{type:"user", message:{content:[{type:"tool_result", content:$t}]}}' >"$f"
-  local out; out="$(source "$DIR/paste-guard.sh"; PASTE_GUARD_NEEDLE="$1"; paste_guard_scan "$f")"
-  printf '%s' "${out%%$'\n'*}"
+  pg_scan_with "$1" 'spec-review apply' "$f"
 }
 assert_eq "the scan arms on a pass line ending in the needle constant's reassigned tail" \
   "$(pg_scan_arms '; saved at ' '; saved at ')" /tmp/x/view.md
