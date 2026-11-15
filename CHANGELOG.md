@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.3.1
+
+The test suite's stdin byte counter now measures the bytes a command was offered whether SIGPIPE is ignored or default, so the push-to-main run agrees with the PR run. The paste guard's human-message cost case compares against a real bare transcript.
+
 ## 6.3.0
 
 A quick autopilot's planner reads less: the unattended interview's rules move into the interview skill's own reference file, `unattended.md`, and the planner reads that file, only the interview skill's shared interview sections and its Autopilot route, and only the handoff skill's plan template, its `## Autopilot` block and its rules for what belongs in a handoff. The Autopilot route names the plan template's file and sections instead of sending a session to find them, and both drivers name the two sections of the PR-writing doc a PR body follows. A successful `autopilot start` now prints the plan comment's URL and the phase label it added, and a failed one prints nothing on stdout.
