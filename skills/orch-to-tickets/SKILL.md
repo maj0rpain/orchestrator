@@ -157,8 +157,12 @@ bash "$ORCH" breakdown publish <parent> <draft-file>
 publishes every ticket in dependency order - blockers first, so each ticket's
 blocking edges name real issue numbers. Each ticket is created with the
 `ready-for-agent` triage role's label, then linked as a sub-issue of the parent
-(unless already linked) with each blocking edge it lacks, and all of it is read
-back before it reports success. It prints the published numbers in
+(unless already linked) with each blocking edge it lacks, all of it is read
+back, and the ticket's `## Blocked by` section is rewritten from its edges,
+before it reports success. Blockers are declared only on the draft's
+`@@ blocked-by` line: publishing replaces whatever stands under that heading
+with one `- #<n>` line per blocking edge, or `None (can start immediately)`.
+It prints the published numbers in
 publishing order. If it fails it names the ticket's draft position and the
 failed write, and a rerun on the same parent finishes from the saved draft,
 linking a ticket created but never linked rather than creating another,
@@ -248,7 +252,7 @@ not a layer-by-layer implementation list.
 
 ## Blocked by
 
-- #<blocking ticket>, one per line, or "None (can start immediately)".
+None (can start immediately)
 ```
 
 Avoid specific file paths or code snippets: they go stale fast. The exception
