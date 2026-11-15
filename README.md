@@ -18,12 +18,15 @@ exchanges that `orch-to-spec` (test seams) and the spec review depend on.
 - Claude Code, or the Junie CLI (see [Install](#install)).
 - `gh`, `jq`, and `git`, with `gh` signed in to the repo's GitHub.
 - bash 4.2 or newer. macOS ships 3.2 as `/bin/bash`: run `brew install bash`.
-- No per-repo setup: issues are labelled with the five canonical triage label
-  names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
-  `wontfix`), or with the names a `docs/agents/triage-labels.md` table maps
-  them to, when the repo has one. `/orchestrator:health` reports all of this
-  at any time, including any of those labels the repo is missing, and whether
-  the repo's `Ticket verification:` and `Full verification:` commands are
+- Little per-repo setup, all optional but the triage labels: the five
+  canonical triage label names (`needs-triage`, `needs-info`,
+  `ready-for-agent`, `ready-for-human`, `wontfix`), or the names a
+  `docs/agents/triage-labels.md` table maps them to, must exist on the repo.
+  A `Standards:` declaration, `Ticket verification:` and `Full verification:`
+  lines, a `GLOSSARY.md` and a `docs/adr` directory are read when present.
+  [docs/repo-setup.md](docs/repo-setup.md) lists each with its format and what
+  happens when it is missing or unreadable. `/orchestrator:health` reports all
+  of this at any time, including whether the verification commands are
   installed.
 
 ## Install
@@ -149,6 +152,8 @@ Every command in full:
   full, the base branch, hosts, and the hooks.
 - [GLOSSARY.md](GLOSSARY.md) and [docs/adr/](docs/adr/) - the domain language
   and the decisions behind it.
+- [docs/repo-setup.md](docs/repo-setup.md) - everything orch.sh reads from a
+  repo, with each item's format.
 - [docs/host-capabilities.md](docs/host-capabilities.md) - how each host
   provides each capability, and the fallbacks.
 - [docs/junie/README.md](docs/junie/README.md) - running on the Junie CLI.

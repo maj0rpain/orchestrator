@@ -495,6 +495,7 @@ scripts/test/orch/trust.sh          the Trust module's sections, named as the mo
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run
+docs/repo-setup.md            everything orch.sh reads from a repo: Standards declaration, verification lines, glossary, ADR directory, triage labels
 docs/pr-writing.md            the PR-writing standard: style rules, body and release layouts, and the comment shape every PR body and comment follows
 docs/turn-final-reply.md      the turn-final reply procedure and the unattended-printout rule, written once
 docs/adr/                     the architecture decision records

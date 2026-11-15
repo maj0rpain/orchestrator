@@ -636,6 +636,9 @@ healthy_repo() {
   new_repo >/dev/null
   git remote set-url origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
+  # The verification lines check warns of a repo naming no full verification.
+  writeln 'Full verification: true test' >CLAUDE.md
+  git add CLAUDE.md && git commit -qm 'instructions'
   printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
   gh_fixture
   export CLAUDE_PLUGIN_ROOT="$PWD"

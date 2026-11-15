@@ -33,9 +33,10 @@ Your one write is the report, written through Bash to the report path. Every
 other command you run reads: `git diff`, `git log`, `git show`, `git blame`,
 `bash "<orch.sh>" issue fetch <n> <file>` and `bash "<orch.sh>" issue
 comments <n> <file>` (their files under `mktemp`, outside the working tree),
-`cat`, `grep`. You leave the working tree, the
-index, the branch, the PR, and the issues exactly as you found them, even
-when a fix is one character away - describe it in the finding instead.
+`bash "<orch.sh>" glossary terms`, `cat`, `grep`. You leave the working
+tree, the index, the branch, the PR, and the issues exactly as you found
+them, even when a fix is one character away - describe it in the finding
+instead.
 
 ## Known items
 
@@ -95,7 +96,8 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    **smell baseline** below, against the **test-cost smells** for every test
    hunk, and, for a hunk that fixes a defect, with the **root-cause check**
    after it. Then run the **doc-agreement check** once over the whole diff,
-   not per hunk. Read the surrounding file wherever a hunk alone cannot tell you
+   not per hunk, and the **glossary parse check** once over the whole diff.
+   Read the surrounding file wherever a hunk alone cannot tell you
    whether a rule is met. When a finding names a pattern, grep for every site
    of it - see **Pattern findings**. Done when every hunk has been checked
    against every rule, and every name the diff alters or removes has been
@@ -183,6 +185,24 @@ longer does. It is a judgement call, never a lint (ADR-0027).
   amending ADR's wording (ADR-0022): the Spec reviewer checks that wording
   landed.
 
+## Glossary parse check
+
+Kept apart from the smell baseline, which is a pinned upstream copy
+(ADR-0018), and run once over the whole diff. When `git diff <base SHA>...HEAD`
+touches the root `GLOSSARY.md` and the file exists at HEAD, run `bash
+"<orch.sh>" glossary terms`.
+
+- A non-zero exit is a finding at `GLOSSARY.md:1`, carrying the command's
+  message.
+- A term the diff adds as an entry that the output does not list is a finding
+  at that line, saying an entry starts at a `**Term**:` line.
+
+Both are hard findings, never judgement calls: the source is `glossary parse
+check`, with no `(judgement call)` suffix. They are not smell-baseline
+findings, so a standalone review pass never leaves them out, and a review
+loop's driver ranks them blocking: orch.sh reads the glossary through this
+parser, so the change leaves it broken.
+
 ## Test-cost smells
 
 Kept apart from the smell baseline, which is a pinned upstream copy
@@ -238,9 +258,10 @@ file and line are at HEAD; the claim says what is
 wrong in one or two sentences and, where the remedy is not obvious, what the
 fix would be. The source is the documented rule it breaches, quoted briefly,
 the baseline smell it resembles, or the root-cause check's, the test-cost
-check's or the doc-agreement check's own source - a documented-standard breach
-can be hard, a smell, a test-cost smell, a possible symptom fix or a possible
-stale doc is always a judgement call. A
+check's, the doc-agreement check's or the glossary parse check's own source - a
+documented-standard breach and a glossary parse check finding can be hard;
+a smell, a test-cost smell, a possible symptom fix or a possible stale doc is
+always a judgement call. A
 re-raised known item ends with its marker (see **Known items**). `Known items
 held back` counts the findings held back, `0` when none were.
 

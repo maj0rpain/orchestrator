@@ -417,8 +417,9 @@ rule, and you record it as a host fallback.
 Two plugin agents under the plugin root's `agents/`, one per axis:
 
 - **`orch-reviewer-standards`** - the Standards axis: the repo's documented
-  coding standards, the plugin's own smell baseline, and a doc-agreement check
-  that no doc is left disagreeing with the code.
+  coding standards, the plugin's own smell baseline, a doc-agreement check
+  that no doc is left disagreeing with the code, and a glossary parse check
+  when the change edits `GLOSSARY.md`, whose findings you rank blocking.
 - **`orch-reviewer-spec`** - the Spec axis: whether the change implements what
   the spec issue asked for.
 
