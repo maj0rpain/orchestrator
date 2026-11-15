@@ -3265,7 +3265,7 @@ check "each audit skill's Hunt step reads agent get auditor and runs no agent sy
 # scan_audit_hunt_run <plugin root>: one line per audit skill (orch-audit-docs,
 # orch-audit-code and orch-audit-tests) whose Hunt step does not name audit
 # begin, and one per skill whose Hunt step does not name the area-<k>.md
-# findings file (ADR-0063).
+# findings file (ADR-0064).
 scan_audit_hunt_run() {
   local r="$1" name skill hunt heading text
   for name in audit-docs audit-code audit-tests; do
@@ -3357,7 +3357,7 @@ check "each audit skill's Report runs audit report and its Rank states the categ
 
 # scan_audit_stands_alone <plugin root>: one line per auditor brief whose
 # Reporting rules do not say a finding stands alone, and one per audit skill
-# whose Rank step does not say so of each ranked finding (ADR-0063).
+# whose Rank step does not say so of each ranked finding (ADR-0064).
 scan_audit_stands_alone() {
   local r="$1" f heading text name
   for f in agents/orch-code-auditor.md agents/orch-doc-auditor.md agents/orch-test-auditor.md; do

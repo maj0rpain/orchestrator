@@ -17,7 +17,7 @@ skill (ADR-0028).
 branch or PR. Its working files - each area's findings file, the report,
 and the finding file for each finding picked for filing - go in its run
 directory, `.orchestrator/audit/<kind>-<stamp>/`, which `orch.sh audit
-begin` makes and git-excludes (ADR-0063). Its writes outside that directory
+begin` makes and git-excludes (ADR-0064). Its writes outside that directory
 are the git exclude `audit begin` ensures and `orch.sh audit file`, for
 findings the user picks for filing. The promise covers the audit itself:
 once it hands picked findings to `orch-interview`, what that interview and

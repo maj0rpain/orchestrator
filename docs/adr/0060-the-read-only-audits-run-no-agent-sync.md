@@ -1,6 +1,6 @@
 # The read-only audits run no agent sync
 
-Amended by ADR-0063: the audits write their working files in the checkout's
+Amended by ADR-0064: the audits write their working files in the checkout's
 git-excluded run directory; they still run no agent sync.
 
 ADR-0052 (on Junie the agent setting travels in generated agent copies) has

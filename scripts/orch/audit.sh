@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # audit.sh - orch.sh's audit command: audit begin, which makes an audit run's
-# working directory (ADR-0063), audit report, which renders a run's ranked file
+# working directory (ADR-0064), audit report, which renders a run's ranked file
 # and area files into one HTML page, and audit file, which files one audit
 # finding as a GitHub issue, its body rendered from the finding file, its
 # locations and the HEAD it was audited at, and parsed back before any write.
@@ -81,7 +81,7 @@ audit_begin() {
   note "$dir"
 }
 
-# The ranked file and its reader (ADR-0063). audit_ranked_read is the one
+# The ranked file and its reader (ADR-0064). audit_ranked_read is the one
 # reader: it checks that a run directory's ranked file holds together, and
 # leaves the run in the AUDIT_* globals for audit report to render. It dies,
 # with an orch: message naming what is wrong and its line, before anything is

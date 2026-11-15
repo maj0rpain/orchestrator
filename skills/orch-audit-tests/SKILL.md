@@ -18,7 +18,7 @@ branch or PR. It only reads and runs the test commands the repo's agent files
 document. Its working files - each area's findings file, the report, and the
 finding file for each candidate picked for filing - go in its run directory,
 `.orchestrator/audit/<kind>-<stamp>/`, which `orch.sh audit begin` makes
-and git-excludes (ADR-0063). Its writes outside that directory are the git
+and git-excludes (ADR-0064). Its writes outside that directory are the git
 exclude `audit begin` ensures and `orch.sh audit file`, for candidates the
 user picks for filing. The promise covers the audit itself: once it hands
 picked candidates to `orch-interview`, what that interview and the flow,
