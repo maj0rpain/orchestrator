@@ -3,7 +3,8 @@
 # goes through, the failure contract its callers die by (gh_reason, gh_die,
 # gh_or_die, verify_twice, gh_capture, gh_capture_err), every adapter_*
 # operation, the out-variable readers over the multi-field ones, and the JQ
-# constants they read.
+# constants they read. It does not render: rendering happens in the Comments
+# module, after the Trust filter.
 # It stays whole, whoever calls each operation, and ends with the
 # ORCH_GH_ADAPTER hook, so a test adapter overrides the real operations.
 # Its tests: scripts/test/orch/gh.sh.
@@ -422,28 +423,6 @@ adapter_rate_limit() {
 
 # --- issue operations ---
 
-# The shape every comment read renders in: each comment opened by a marker line
-# naming its author and gh's ISO-8601 timestamp, one blank line between
-# comments and bodies unescaped; nothing at all for none. No adapter renders:
-# the adapters answer raw JSON, and the issue module renders the trusted
-# comments after the Trust filter (comments_rendered, for issue and PR comments
-# alike). COMMENTS_RENDER_JQ is that shape, defined once: render_comments(login)
-# turns an array of comments into the joined text, login reading each comment's
-# author, so every comments read - issue comments' filtered one among them
-# (#1116) - renders through the same definition.
-# shellcheck disable=SC2034 # read by the issue module's comments_render_trusted and cmd_issue_comments
-COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
-
-# comments_split <file> <dir>: splits <file>, comments in its rendered shape,
-# into one file per comment under <dir>, numbered from 1 in order, each holding
-# the comment's body alone. A comment opens at its marker line, the one
-# COMMENTS_RENDER_JQ renders.
-comments_split() {
-  awk -v d="$2" '
-    /^<!-- comment @[^ ]* [^ ]* -->$/ { if (out != "") close(out); out = d "/" (++k); printf "" >out; next }
-    out != "" { print >out }' "$1"
-}
-
 # The trimmed object `issue fetch --json` publishes (#528): the issue's number,
 # title and body, its label names, and each comment's author login, gh's
 # ISO-8601 timestamp and body - every other field gh answers with is dropped,
@@ -459,8 +438,8 @@ adapter_issue_body() {
 
 # adapter_issue_comments <n>: the issue's comments as gh answers them, raw JSON
 # - an object whose comments array holds each comment's author login object,
-# authorAssociation, createdAt and body, among gh's other fields. Rendering
-# happens above the adapter, after the trust filter (comments_rendered).
+# authorAssociation, createdAt, body and url, among gh's other fields.
+# Rendering happens above the adapter, in the Comments module.
 adapter_issue_comments() {
   gh issue view "$1" --json comments
 }
@@ -955,7 +934,7 @@ adapter_pr_body() {
 
 # adapter_pr_comments <n>: the PR's comments as gh answers them, raw JSON, as
 # adapter_issue_comments prints an issue's (issue #418). Rendering happens above
-# the adapter, after the trust filter (comments_rendered).
+# the adapter, in the Comments module.
 adapter_pr_comments() {
   gh pr view "$1" --json comments
 }

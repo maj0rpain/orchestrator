@@ -475,10 +475,10 @@ fake_comments_json() {
 
 # fake_comments_raw <comments-dir> <n>: the stored comments as gh's raw JSON -
 # an object whose comments array holds each comment's author login object,
-# authorAssociation, createdAt and body.
+# authorAssociation, createdAt, body and url.
 fake_comments_raw() {
   fake_comments_json "$1" "$2" \
-    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body})}'
+    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body, url})}'
 }
 
 # adapter_issue_body <n>: the stored body, then a newline, as gh's --jq .body
@@ -492,7 +492,7 @@ adapter_issue_body() {
 
 # adapter_issue_comments <n>: the stored comments as gh's raw JSON - an object
 # whose comments array holds each comment's author login object,
-# authorAssociation, createdAt and body.
+# authorAssociation, createdAt, body and url.
 adapter_issue_comments() {
   ! fake_failing adapter_issue_comments || return 1
   fake_issue_known "$1" || return 1

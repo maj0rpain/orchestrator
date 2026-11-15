@@ -873,23 +873,12 @@ assert_status "issue body: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" \
   "GraphQL: Could not resolve to an issue or pull request with the number of 404."
 
-comments_jq="$(sourced_orch_script 'printf "%s" "$COMMENTS_RENDER_JQ"') .comments | render_comments(.author.login)"
 gh_reply 0 $'{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}]}\n' '' \
   issue view 23 --json comments
 out="$(contract adapter_issue_comments 23 2>&1)"; st=$?
 assert_status "issue comments: reads the comments as gh's raw JSON" "$st" 0
 assert_eq "printing what gh answered, unrendered" "$out" \
   '{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}]}'
-# The renderer itself, run on gh-shaped JSON: what the fixture's canned reply
-# above stands in for.
-comments_json='{"comments":[{"author":{"login":"triage-bot"},"createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]}'
-assert_eq "COMMENTS_RENDER_JQ opens each comment with its author-and-date marker, one blank line between" \
-  "$(printf '%s' "$comments_json" | jq -r "$comments_jq")" \
-  "$(writeln '<!-- comment @triage-bot 2026-09-01T10:00:00Z -->' \
-    '## Agent brief' '' 'Do the `$HOME` thing in #6.' '' \
-    '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
-assert_eq "and prints nothing at all for no comments" \
-  "$(printf '%s' '{"comments":[]}' | jq -r "$comments_jq" | wc -c | tr -d ' ')" "0"
 
 issue_json_jq="$(sourced_orch_script 'printf "%s" "$ISSUE_JSON_JQ"')"
 : >"$GH_FIXTURE/env.log"

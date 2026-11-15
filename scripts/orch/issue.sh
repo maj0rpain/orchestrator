@@ -112,72 +112,9 @@ comments_trust_filter() {
   jq -c .comments 2>/dev/null | trust_filter_comments "$1"
 }
 
-# comments_render: a JSON array of comments on stdin, on stdout rendered through
-# COMMENTS_RENDER_JQ with each author's login - nothing for none, no
-# placeholder for a dropped comment.
-comments_render() {
-  orch_load gh
-  jq -r "$COMMENTS_RENDER_JQ"' render_comments(.author.login)'
-}
-
-# comments_render_trusted <n>: adapter_issue_comments' raw JSON on stdin, on
-# stdout the comments of trusted authors rendered through COMMENTS_RENDER_JQ as
-# it renders them - nothing for none, no placeholder for a dropped
-# comment. Non-zero when stdin is not a comment object. <n> is the issue or PR
-# number; the trust filter's stderr line names `#<n>`.
-comments_render_trusted() {
-  comments_trust_filter "$1" | comments_render
-}
-
-# comments_trusted [--exit 2] [--hint <h>] <adapter> <what> <n> <var>: issue or
-# PR <n>'s comments, read by <adapter> (adapter_issue_comments or
-# adapter_pr_comments), kept to the trusted authors' (Trust module) as a JSON
-# array, assigned to <var>; the Trust filter's stderr line names <n>. A gh
-# failure dies as "gh could not <what>" (--hint passed on to gh_or_die, never
-# added to the parse failure); a comment object that does not parse dies as
-# "could not <what>: its comments did not parse", both with status 1, or status
-# 2 under --exit 2 (a caller that reserves exit 1, like pr comments; also passed
-# on to gh_or_die). The options are die_opt_check's and may come in either
-# order. Out-params through `printf -v`, its locals prefixed so no caller's
-# variable name is shadowed.
-comments_trusted() {
-  comments_read keep "$@"
-}
-
-# comments_rendered [--exit 2] [--hint <h>] <adapter> <what> <n> <var>:
-# comments_trusted's comments rendered through COMMENTS_RENDER_JQ as
-# comments_render_trusted renders them, assigned to <var>; no placeholder for a
-# dropped comment. Its failures, --exit and --hint are comments_trusted's.
-comments_rendered() {
-  comments_read render "$@"
-}
-
-# comments_read <keep|render> [--exit 2] [--hint <h>] <adapter> <what> <n>
-# <var>: comments_trusted (keep) and comments_rendered (render), with their one
-# option parser.
-comments_read() {
-  local __cr_mode="$1" __cr_opts=() __cr_exit=() __cr_raw __cr_kept __cr_out
-  shift
-  while [ "${1-}" = --hint ] || [ "${1-}" = --exit ]; do
-    die_opt_check comments_trusted $# "$@"
-    [ "$1" != --exit ] || __cr_exit=(--exit 2)
-    __cr_opts+=("$1" "$2"); shift 2
-  done
-  gh_or_die ${__cr_opts[@]+"${__cr_opts[@]}"} --out __cr_raw "$2" "$1" "$3"
-  __cr_kept="$(comments_trust_filter "$3" <<<"$__cr_raw")" \
-    || die_hinted ${__cr_exit[@]+"${__cr_exit[@]}"} "could not $2: its comments did not parse"
-  if [ "$__cr_mode" = render ]; then
-    __cr_out="$(comments_render <<<"$__cr_kept")" \
-      || die_hinted ${__cr_exit[@]+"${__cr_exit[@]}"} "could not $2: its comments did not parse"
-  else
-    __cr_out="$__cr_kept"
-  fi
-  printf -v "$4" '%s' "$__cr_out"
-}
-
 # The comments `issue comments` writes (#1116), rendered through
 # COMMENTS_RENDER_JQ (kept_jq, built here so this module's top level reads
-# nothing of gh), as every comments read renders them.
+# nothing of the Comments module), as every comments read renders them.
 # Every comment on the issue but the untrusted authors', and by default but the
 # spec review's own changelogs, in the rendered shape - so the spec review reads
 # the comments beside the body without its earlier rounds. Filtered here rather
@@ -187,8 +124,8 @@ comments_read() {
 # (#1921; orch-questions passes it) the changelogs are kept, the one difference.
 cmd_issue_comments() {
   local issue="$1" file="$2" keep_reviews="${3:-}" json text kept_jq
-  orch_load gh
-  kept_jq="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author)'
+  orch_load comments
+  kept_jq="$COMMENTS_RENDER_JQ"' .comments | render_comments'
   issue_json_trusted "read the comments of issue #$issue" "$issue" json
   if [ -n "$keep_reviews" ]; then
     text="$(jq -r "$kept_jq" <<<"$json")"

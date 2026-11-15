@@ -395,7 +395,7 @@ triage_comment_post() {
 # be read (triage_comment_post then dies naming it).
 triage_comment_posted() {
   local kept want
-  comments_trusted adapter_issue_comments "read issue #$1's comments" "$1" kept
+  comments_trusted issue "read issue #$1's comments" "$1" kept
   want="$(printf '%s\n\n' "$TRIAGE_COMMENT_DISCLAIMER" && cat "$2")" \
     || return 1  # triage_comment_post dies naming the unreadable file
   jq -e --arg want "$want" 'any(.[]; (.body | sub("\n+$"; "")) == $want)' <<<"$kept" >/dev/null
@@ -604,7 +604,7 @@ cmd_finding_triage_bundle() {
 # or unparseable comments read dies naming the member, before any write.
 bundle_member_done() {
   local comments
-  comments_rendered --hint "no member was touched" adapter_issue_comments \
+  comments_rendered --hint "no member was touched" issue \
     "read issue #$2's comments" "$2" comments
   grep -qE "Bundled into #$1([^0-9]|\$)" <<<"$comments"
 }
@@ -626,9 +626,10 @@ bundle_members_close() {
   for m in "${members[@]}"; do
     why=""
     held="left open"
-    if ! gh_capture raw err adapter_issue_comments "$m"; then
-      why="gh could not read member #$m's comments: $(gh_reason "$err")"
-    elif ! comments="$(comments_render_trusted "$m" <<<"$raw")"; then
+    if ! comments_trusted_read issue "$m" raw err; then
+      if [ -n "$err" ]; then why="gh could not read member #$m's comments: $err"
+      else why="could not read member #$m's comments: its comments did not parse"; fi
+    elif ! comments="$(comments_render <<<"$raw")"; then
       why="could not read member #$m's comments: its comments did not parse"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
       && ! triage_comment_post err "$m" "$comment_file"; then
