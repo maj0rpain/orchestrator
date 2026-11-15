@@ -4,6 +4,15 @@ name: test
 # ORCH_TEST_SHARD groups plus one gate job; a push to main runs it unsplit on
 # the runner. The changelog fragment rule lives in fragment.yml. The grouping
 # and the suite list live in the scripts: this file is wiring only.
+#
+# The autopilot image's base-tools layer (apt packages, gh, Claude Code) is
+# kept in the repo's GitHub Actions cache. Each of a PR's four groups restores
+# it, then still builds the image from the PR's own commit, so only the layer
+# the PR did not change is restored. Two jobs write the cache: the push job on
+# a push to main, which builds from scratch, and group 4 of a PR run. The cache
+# is a speed-up only: a cold, missing or unreadable cache makes a build do the
+# layer itself, and a failed write is a warning. The cache address and token
+# reach only the builds that read or write it, never the suite step.
 
 on:
   pull_request:
@@ -16,6 +25,11 @@ on:
 concurrency:
   group: test-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Every autopilot image build reads this one value, so every build makes the
+# same base-tools layer.
+env:
+  APT_PACKAGES: shellcheck
 
 jobs:
   # A push to main: the whole suite on the runner's own tools, unsplit, so
@@ -33,6 +47,38 @@ jobs:
       - name: Verify
         run: scripts/test/all.sh
 
+  # A push to main: builds the autopilot image from scratch, with no cache
+  # read, and writes the base-tools layer to the cache, so every PR's first run
+  # starts warm and every merge proves the image builds from nothing. It runs
+  # no suite and no hook check, and the suite gate does not need it.
+  image:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read the cache address and token
+        id: cache
+        uses: actions/github-script@v8
+        with:
+          script: |
+            for (const k of ["ACTIONS_CACHE_URL", "ACTIONS_RESULTS_URL", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_CACHE_SERVICE_V2"]) {
+              if (k === "ACTIONS_RUNTIME_TOKEN" && process.env[k]) core.setSecret(process.env[k]);
+              core.setOutput(k, process.env[k] || "");
+            }
+      - name: Build the autopilot image and write the cache
+        env:
+          ACTIONS_CACHE_URL: ${{ steps.cache.outputs.ACTIONS_CACHE_URL }}
+          ACTIONS_RESULTS_URL: ${{ steps.cache.outputs.ACTIONS_RESULTS_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ steps.cache.outputs.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ steps.cache.outputs.ACTIONS_CACHE_SERVICE_V2 }}
+        run: >-
+          docker build -f docker/Dockerfile
+          --build-arg "EXTRA_APT_PACKAGES=$APT_PACKAGES"
+          --cache-to type=gha,scope=autopilot,ignore-error=true
+          -t orchestrator-autopilot .
+
   # A PR: the whole suite on the autopilot image's own tools (jq 1.6,
   # bookworm's mawk, git 2.39, its shellcheck), so tool-version drift and
   # environment leaks are caught on the PR rather than in an autopilot run, as
@@ -47,23 +93,53 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
-    # Every build below reads this one value, so the extra builds reuse the
-    # first build's cached apt layer.
-    env:
-      APT_PACKAGES: shellcheck
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Read the cache address and token
+        id: cache
+        uses: actions/github-script@v8
+        with:
+          script: |
+            for (const k of ["ACTIONS_CACHE_URL", "ACTIONS_RESULTS_URL", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_CACHE_SERVICE_V2"]) {
+              if (k === "ACTIONS_RUNTIME_TOKEN" && process.env[k]) core.setSecret(process.env[k]);
+              core.setOutput(k, process.env[k] || "");
+            }
+      # Every group restores the base-tools layer from the cache; the build
+      # itself still runs from this commit. Groups 1 to 3 only read.
       - name: Build the autopilot image
+        if: matrix.shard != 4
+        env:
+          ACTIONS_CACHE_URL: ${{ steps.cache.outputs.ACTIONS_CACHE_URL }}
+          ACTIONS_RESULTS_URL: ${{ steps.cache.outputs.ACTIONS_RESULTS_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ steps.cache.outputs.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ steps.cache.outputs.ACTIONS_CACHE_SERVICE_V2 }}
         run: >-
           docker build -f docker/Dockerfile
           --build-arg "EXTRA_APT_PACKAGES=$APT_PACKAGES"
+          --cache-from type=gha,scope=autopilot
+          -t orchestrator-autopilot .
+      # Group 4 reads and writes; with the layer already cached its write
+      # uploads next to nothing. A failed write is a warning.
+      - name: Build the autopilot image and write the cache
+        if: matrix.shard == 4
+        env:
+          ACTIONS_CACHE_URL: ${{ steps.cache.outputs.ACTIONS_CACHE_URL }}
+          ACTIONS_RESULTS_URL: ${{ steps.cache.outputs.ACTIONS_RESULTS_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ steps.cache.outputs.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ steps.cache.outputs.ACTIONS_CACHE_SERVICE_V2 }}
+        run: >-
+          docker build -f docker/Dockerfile
+          --build-arg "EXTRA_APT_PACKAGES=$APT_PACKAGES"
+          --cache-from type=gha,scope=autopilot
+          --cache-to type=gha,scope=autopilot,ignore-error=true
           -t orchestrator-autopilot .
       # The EXTRA_BUILD_COMMAND hook checks run in group 1 only: a root-installed
       # artifact in a system path is usable by orch, and a failure anywhere in
-      # the command fails the build on the step's own failure line. The apt
-      # layer is cached from above.
+      # the command fails the build on the step's own failure line. These
+      # builds hold no cache address or token and read no cache: they reuse the
+      # base-tools layer the main build left on group 1's own runner.
       - name: Build with EXTRA_BUILD_COMMAND
         if: matrix.shard == 1
         run: >-
