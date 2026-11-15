@@ -622,9 +622,9 @@ suite_cost_tree_run() {
   wt="$tmp/$role"
   suite_cost_interrupt_arm "$tmp" "$wt" "$here" "$run_label"
   if ! git worktree add -q --detach "$wt" "$sha" >/dev/null 2>&1; then
-    suite_cost_interrupt_disarm
     warn "$msg_no_worktree"
     rm -rf "$tmp"
+    suite_cost_interrupt_disarm
     return 1
   fi
   if [ -n "$subdir" ] && [ ! -d "$wt/$subdir" ]; then

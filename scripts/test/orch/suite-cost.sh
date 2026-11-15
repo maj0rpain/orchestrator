@@ -1483,9 +1483,12 @@ tdir="$(mktemp -d)"; errf="$(mktemp)"
 out="$(TMPDIR="$tdir" "$ORCH" suite-cost check -- "${pass[@]}" 2>"$errf")"; st=$?
 assert_clean_interrupt "a setup that signals" "$errf" "$st" TERM "$tdir"
 assert_eq "the command never ran" "$(on_disk "$marker")" absent
+assert_eq "a setup that signals: prints no verdict line" "$out" ""
+assert_eq "a setup that signals: stores no verdict" "$(on_disk "$rec.verdicts")" absent
+assert_eq "a setup that signals: records nothing new" "$(log_count "$rec")" 1
 
-# A confirming run: the base is recorded, the head grew, so the head confirming
-# run measures the command, which signals.
+# A confirming run: the base is recorded, the head grew, so the base confirming
+# run (the command's second run) measures the command, which signals.
 check_repo
 sigcmd=(sh -c 'if [ -e "$0" ]; then kill -TERM $PPID; fi; touch "$0"' "$marker")
 seed_run "$head" 100.00 "${sigcmd[*]}"
@@ -1494,6 +1497,9 @@ tdir="$(mktemp -d)"; errf="$(mktemp)"
 out="$(TMPDIR="$tdir" "$ORCH" suite-cost check -- "${sigcmd[@]}" 2>"$errf")"; st=$?
 assert_clean_interrupt "a confirming run" "$errf" "$st" TERM "$tdir"
 assert_eq "a confirming run prints no verdict line" "$out" ""
+assert_eq "a confirming run stores no verdict" "$(on_disk "$rec.verdicts")" absent
+# Two seeds plus the head run the check recorded before the base run signalled.
+assert_eq "a confirming run records nothing from the interrupted run" "$(log_count "$rec")" 3
 
 # A base run whose command locks its own worktree before signalling: the
 # removal fails, naming the removing command, and the exit stays 143.
