@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.1
+
+Skills that run a subagent pool (the quick autopilot and the code, docs and tests audits) now take the mechanism from the host capabilities reference, which gives a fallback for sessions that forbid a background Agent call: the session's own background task tool, foreground batches ordered by size, or one at a time. The run names the tier it took.
+
 ## 6.1.0
 
 A new doc, `docs/repo-setup.md`, lists everything orch.sh reads from a repo: the `Standards:` declaration, the `Ticket verification:` and `Full verification:` lines, the root `GLOSSARY.md`, `docs/adr` and the triage labels. For each it gives the exact format, what happens when the item is missing or unreadable, and which doctor line reports it. It also lists what needs no setup. `orch.sh doctor` (bare and `--env`) now checks the first four. It reports the declared or crawled standards list, the full and ticket verification commands, the glossary's entry count and the ADR count. It fails on a declaration the reviewers' resolution rejects, a verification label with no command, a glossary that gives no entries (naming the `**Term**:` line an entry starts at) and a `docs/adr` that is no directory. It warns when no full verification is named, or when two lines name different commands for one label. Every new warn and FAIL names its fix and the new doc. The Standards reviewer runs `orch.sh glossary terms` whenever a change edits `GLOSSARY.md`, and reports a failed parse or an added entry the parse misses as a blocking finding. The interview skill says what a glossary entry must look like. `orch.sh health` is an alias of `orch.sh doctor`.
