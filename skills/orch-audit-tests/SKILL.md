@@ -120,7 +120,7 @@ never a fork, each an `orch-test-auditor`, run as a subagent pool of 4 (host
 capability *Run a subagent pool*, size hint: the area's file count; see that row
 of `docs/host-capabilities.md`).
 Each prompt names its area (the test files), the repo root, the measured cost of
-each part in the area, the trend, and its own findings file, `area-<k>.md` in
+each part in the area, and its own findings file, `area-<k>.md` in
 the run directory (<k> the area's number from 1). The hunter has no Edit or Bash
 tool, so it times nothing; its brief holds the quality rule, the six kinds, the
 fields each candidate states (among them the replacement, why it tests as well,
@@ -153,22 +153,21 @@ Then write the ranked file, `ranked.md` in the run directory. Its lines are
 `@@ scope <text>` (the scope in one line), `@@ areas <count>`, any number
 of `@@ note <heading>` blocks (text shown in the report's head under that
 heading), which carry the timing mode (per section, per file or only as one
-whole run), the measured cost of each part and the trend from `suite-cost
-history`, `@@ top <n>` followed by why that finding comes first, and one
-`@@ finding <n>` block per kept finding, numbered from 1 in order with no
-gap; `@@ none` takes the place of `@@ top` and every finding when ranking
-kept nothing. No line of text starts with `@@`. A finding block is a list
-of fields, each opening a line with its label and a colon. Point at each
-kept finding with `From: <area file>:<k>` (e.g. `area-2:3`, finding 3 of
-`area-2.md`; several sources comma-separated, merged in `From:` order),
-restate only the fields ranking changed, and give each a `Title:` - one
-line naming the finding's kind and location, the issue's title if it is
-filed - and a `Category: <c>`: `Category: enhancement`. The strength, cost
-saved (marked estimated where it is) and before/after are fields like any
-other. List under `Overlaps:` the numbers of each finding whose fix would
-change the same function or the same lines. A finding written whole needs
-no `From:`. Each finding stands alone: it names no other finding and never
-the report.
+whole run) and the measured cost of each part, `@@ top <n>` followed by
+why that finding comes first, and one `@@ finding <n>` block per kept
+finding, numbered from 1 in order with no gap; `@@ none` takes the place
+of `@@ top` and every finding when ranking kept nothing. No line of text
+starts with `@@`. A finding block is a list of fields, each opening a line
+with its label and a colon. Point at each kept finding with
+`From: <area file>:<k>` (e.g. `area-2:3`, finding 3 of `area-2.md`;
+several sources comma-separated, merged in `From:` order), restate only
+the fields ranking changed, and give each a `Title:` - one line naming the
+finding's kind and location, the issue's title if it is filed - and a
+`Category: <c>`: `Category: enhancement`. The strength, cost saved (marked
+estimated where it is) and before/after are fields like any other. List
+under `Overlaps:` the numbers of each finding whose fix would change the
+same function or the same lines. A finding written whole needs no `From:`.
+Each finding stands alone: it names no other finding and never the report.
 
 ## 6. Report
 
