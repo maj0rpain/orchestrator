@@ -875,7 +875,7 @@ out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=3 ORCH_TEST_SECTION_TIMEOUT=2 \
   ORCH_TEST_ONLY='^planted (hang|fine)$' bash "$dl_suite" 2>&1)"; st=$?
 dl_took=$((SECONDS - dl_start))
 assert_status "a parallel run with a hanging section exits non-zero" "$st" 1
-assert_eq "and finishes well within the hang" "$([ "$dl_took" -lt 60 ] && echo fast)" "fast"
+assert_lt "and finishes well within the hang" "$dl_took" 60
 assert_contains "prints the hanging section's output, then its timeout FAIL" "$out" \
   "$(printf 'output before the hang\n  FAIL section '"'"'planted hang'"'"' timed out\n     after 2s; its process tree was stopped')"
 assert_contains "still passes the section planted beside it" "$out" "  ok   fine ran"
