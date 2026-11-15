@@ -249,10 +249,14 @@ standing_resume() {
 # request, resume) and the claim drop.
 
 STANDING_LANDED=""
+# The temp body file of a comment in flight, so a death removes it too.
+STANDING_BODY_FILE=""
 
-# standing_landed_die <what failed>: dies with the clause, then the writes that
-# landed and that the claim stays held.
+# standing_landed_die <what failed>: removes the comment body file in flight, if
+# any, then dies with the clause, the writes that landed and that the claim
+# stays held.
 standing_landed_die() {
+  [ -z "$STANDING_BODY_FILE" ] || rm -f "$STANDING_BODY_FILE"
   die "$1 - writes that landed: ${STANDING_LANDED:-none}; the claim stays held"
 }
 
@@ -391,6 +395,7 @@ standing_comment_call() {
   local rc=0
   adapter_issue_comment "$1" "$2" || rc=$?
   rm -f "$2"
+  STANDING_BODY_FILE=""
   return "$rc"
 }
 
@@ -415,6 +420,7 @@ standing_chain_comment() {
     fi
   fi
   temp_file_make body || die "could not create a temp file to $what"
+  STANDING_BODY_FILE="$body"
   printf '%s' "$4" >"$body"
   standing_state_put tried "$landed"
   standing_chain_step "$landed" "$what" "$issue" standing_comment_call "$issue" "$body"
@@ -445,7 +451,9 @@ standing_claim_drop() {
 }
 
 # standing_move_label <issue> <phase>: <issue>'s phase label made the one for
-# <phase> - the other phase labels removed - in one edit.
+# <phase> - the other phase labels removed - in one edit, through the step: an
+# edit an earlier attempt landed is skipped, and a landed one is noted as
+# "moved the phase label to <label>".
 standing_move_label() {
   # state is the read's throwaway half.
   # shellcheck disable=SC2034

@@ -441,6 +441,20 @@ assert_eq "and leaves the claim held with no label added" "$(fake_claim_held 67)
 assert_eq "and no temp body file behind" "$(ls -A "$TD")" ""
 rmdir "$TD"
 
+# ask: a stderr temp file that fails after the body was made leaves no body
+ask_seed 69 orch:spec orch:running
+TD="$(mktemp -d)"
+out="$(sourced_rc 'tfn=0
+temp_file_name() {
+  tfn=$((tfn + 1))
+  [ "$tfn" -gt 1 ] && set -- "$1" /nonexistent/x || set -- "$1" "'"$TD"'/orch.body"
+  printf -v "$1" "%s" "$2"
+}
+standing_ask spec Q')"
+assert_contains "a failed stderr temp file dies" "$out" "rc=1"
+assert_eq "and leaves no temp body file behind" "$(ls -A "$TD")" ""
+rmdir "$TD"
+
 # ask: a phase the marker writer refuses ends the ask before any write
 ask_seed 68 orch:spec orch:running
 out="$(sourced_rc 'standing_ask " " Q')"
