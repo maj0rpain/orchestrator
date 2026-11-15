@@ -25,14 +25,18 @@ hunk_rows() {
 # rows_map_line <rows> <line>: where <line> of the old side of the hunk <rows>
 # sits on the new side. A line inside a changed hunk maps to that hunk's start.
 rows_map_line() {
-  printf '%s\n' "$1" | awk -v L="$2" '
-    NF == 4 && !done && !stop {
-      a = $1; b = $2; c = $3; d = $4
-      if (b > 0 && a <= L && L <= a + b - 1) { done = 1; print (c > 0 ? c : 1) }
-      else if ((b > 0 && a + b - 1 < L) || (b == 0 && a < L)) off += d - b
-      else stop = 1
-    }
-    END { if (!done) print L + off }'
+  local a b c d off=0
+  while read -r a b c d; do
+    [ -n "$d" ] || continue
+    if ((b > 0 && a <= $2 && $2 <= a + b - 1)); then
+      echo $((c > 0 ? c : 1)); return 0
+    elif ((b > 0 && a + b - 1 < $2 || b == 0 && a < $2)); then
+      off=$((off + d - b))
+    else
+      break
+    fi
+  done <<<"$1"
+  echo $(($2 + off))
 }
 
 # rows_deleted <rows> <start> <end>: the parts of lines <start>-<end> the hunk
@@ -40,11 +44,14 @@ rows_map_line() {
 # "<from>,<to>" per part, or nothing. A line a hunk replaces is not deleted by
 # this rule.
 rows_deleted() {
-  printf '%s\n' "$1" | awk -v S="$2" -v E="$3" '
-    NF == 4 && $1 <= E && $2 > 0 && $4 == 0 {
-      lo = ($1 > S) ? $1 : S; hi = ($1 + $2 - 1 < E) ? $1 + $2 - 1 : E
-      if (lo <= hi) print lo "," hi
-    }'
+  local a b c d lo hi
+  while read -r a b c d; do
+    [ -n "$d" ] || continue
+    if ((a <= $3 && b > 0 && d == 0)); then
+      lo=$(($2 > a ? $2 : a)); hi=$((a + b - 1 < $3 ? a + b - 1 : $3))
+      if ((lo <= hi)); then printf '%s,%s\n' "$lo" "$hi"; fi
+    fi
+  done <<<"$1"
 }
 
 # rows_differ <rows> <start> <end>: prints 1 when lines <start>-<end> differ -
@@ -52,9 +59,13 @@ rows_deleted() {
 # two of them - and nothing otherwise. Lines inserted before the first line or
 # after the last do not make the range differ.
 rows_differ() {
-  printf '%s\n' "$1" | awk -v S="$2" -v E="$3" '
-    NF == 4 && !found && $1 <= E &&
-    (($2 > 0 && $1 + $2 - 1 >= S) || ($2 == 0 && $1 >= S && $1 < E)) { found = 1; print 1 }'
+  local a b c d
+  while read -r a b c d; do
+    [ -n "$d" ] || continue
+    if ((a <= $3 && (b > 0 && a + b - 1 >= $2 || b == 0 && a >= $2 && a < $3))); then
+      echo 1; return 0
+    fi
+  done <<<"$1"
 }
 
 # deleted_ranges <old sha> <new ref> <file> <start> <end>: the parts of lines
@@ -177,11 +188,6 @@ deleting_commit() {
   done
 }
 
-# scan_line <file:lines> <result> <detail>: the scan's one line, in the
-# columns `finding-triage scan` prints. Local to finding_scan_one in effect: it
-# reads the issue and PR number and the triage state, n, pr and roles, from
-# that call's locals, through bash's dynamic scope, and prints - for an empty
-
 # lines_fate <filed sha> <ref> <file> <start> <end> <result-var> <detail-var>:
 # what became of lines <start>-<end> of <file> (repo-root-relative) at <filed
 # sha>, a commit already in the clone, at <ref>. Prints nothing; sets the two
@@ -195,7 +201,7 @@ deleting_commit() {
 lines_fate() {
   local __lf_old="$1" __lf_ref="$2" __lf_file="$3" __lf_start="$4" __lf_end="$5"
   local __lf_fate="" __lf_detail="" __lf_file_commit __lf_log_out __lf_deleted __lf_seg
-  local __lf_new_start __lf_new_end __lf_off_default=false __lf_diff __lf_rows __lf_diff_rc=0
+  local __lf_new_start __lf_new_end __lf_off_default=false __lf_standin=false __lf_diff __lf_rows __lf_diff_rc=0
   local -a __lf_largs=()
   if ! git cat-file -e "$__lf_ref:$__lf_file" 2>/dev/null; then
     __lf_fate=gone
@@ -223,28 +229,22 @@ lines_fate() {
     # lines no commit on the ref ever held: then the rest of the lines are
     # followed, and a lookup finding no commit is never-reached.
     __lf_deleted="$(rows_deleted "$__lf_rows" "$__lf_start" "$__lf_end")"
-    if [ -n "$__lf_deleted" ]; then
-      if $__lf_off_default && ! ever_held "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_deleted"; then
-        # No commit on the ref ever held the deleted lines: follow the rest.
-        for __lf_seg in $(range_segments "$__lf_start" "$__lf_end" "$__lf_deleted"); do
-          __lf_new_start="$(rows_map_line "$__lf_rows" "${__lf_seg%,*}")"
-          __lf_new_end="$(rows_map_line "$__lf_rows" "${__lf_seg#*,}")"
-          [ "$__lf_new_end" -ge "$__lf_new_start" ] || __lf_new_end="$__lf_new_start"
-          __lf_largs+=(-L "$__lf_new_start,$__lf_new_end:$__lf_file")
-        done
-        [ "${#__lf_largs[@]}" -ne 0 ] || __lf_fate=never-reached
-      else
-        __lf_detail="$(deleting_commit "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_deleted")"
-        __lf_detail="${__lf_detail:-$__lf_file_commit}"
-        if [ -n "$__lf_detail" ]; then __lf_fate=changed; else __lf_fate=never-reached; fi
-      fi
+    if [ -n "$__lf_deleted" ] && { ! $__lf_off_default || ever_held "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_deleted"; }; then
+      __lf_detail="$(deleting_commit "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_deleted")"
+      __lf_detail="${__lf_detail:-$__lf_file_commit}"
+      __lf_standin=true
     else
-      __lf_new_start="$(rows_map_line "$__lf_rows" "$__lf_start")"
-      __lf_new_end="$(rows_map_line "$__lf_rows" "$__lf_end")"
-      [ "$__lf_new_end" -ge "$__lf_new_start" ] || __lf_new_end="$__lf_new_start"
-      __lf_largs=(-L "$__lf_new_start,$__lf_new_end:$__lf_file")
+      # The runs of lines no deletion took (no deletion: the whole range) are
+      # followed, a deleted part no commit on the ref ever held left out.
+      for __lf_seg in $(range_segments "$__lf_start" "$__lf_end" "$__lf_deleted"); do
+        __lf_new_start="$(rows_map_line "$__lf_rows" "${__lf_seg%,*}")"
+        __lf_new_end="$(rows_map_line "$__lf_rows" "${__lf_seg#*,}")"
+        [ "$__lf_new_end" -ge "$__lf_new_start" ] || __lf_new_end="$__lf_new_start"
+        __lf_largs+=(-L "$__lf_new_start,$__lf_new_end:$__lf_file")
+      done
+      if [ -n "$__lf_deleted" ] && [ "${#__lf_largs[@]}" -eq 0 ]; then __lf_fate=never-reached; fi
     fi
-    if [ -z "$__lf_fate" ]; then
+    if [ -z "$__lf_fate" ] && ! $__lf_standin; then
       # The newest commit since the filing that touched the finding's lines.
       # The output is captured whole before filtering and given to grep -m1 as
       # a herestring: piping it into grep -m1 or head could SIGPIPE the writer
@@ -266,8 +266,12 @@ lines_fate() {
         # A range starting past the file's end can't be followed: the newest
         # commit touching the file stands in.
         __lf_detail="$__lf_file_commit"
-        if [ -n "$__lf_detail" ]; then __lf_fate=changed; else __lf_fate=never-reached; fi
+        __lf_standin=true
       fi
+    fi
+    # A stand-in is changed when a commit stands in, else never-reached.
+    if $__lf_standin; then
+      if [ -n "$__lf_detail" ]; then __lf_fate=changed; else __lf_fate=never-reached; fi
     fi
   fi
   [ "$__lf_fate" = changed ] || __lf_detail=""

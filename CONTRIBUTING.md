@@ -168,7 +168,9 @@ comment history, read once and asked in domain terms), `known-items.sh` (the
 Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
 file), `lines-fate.sh` (the Lines fate module: what became of a range of a
-file's lines at a ref since a commit filed them, behind `lines_fate`),
+file's lines at a ref since a commit filed them: the existence check, the line
+mapping, the deleted ranges, the deleting-commit lookup and its squash walk, the
+range expander and the never-reached rule, behind `lines_fate`),
 `liveness.sh` (the Liveness module: whether the process behind a record
 (a claim, a watch) is still running - the run records,
 the start-time reader, the record-alive rule, the watch pidfile and the

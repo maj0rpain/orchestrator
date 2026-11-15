@@ -42,7 +42,9 @@ lf_squash_head() {
 }
 # lf_case <name> <filed sha> <file> <start> <end>: one case, asked of main.
 lf_cases="$(mktemp)"
-lf_case() { printf '%s\t%s\t%s\t%s\t%s\n' "$@" >>"$lf_cases"; }
+# lf_case_in <file> <name> <sha> <file> <start> <end>: one case row, in <file>.
+lf_case_in() { printf '%s\t%s\t%s\t%s\t%s\n' "${@:2}" >>"$1"; }
+lf_case() { lf_case_in "$lf_cases" "$@"; }
 
 mkdir -p src
 lf_seq app 12 >src/app.sh
@@ -187,11 +189,13 @@ LF_ASK='
 # lf_assert <rows> <case> <fate> [<commit>]: the case's answer from the root,
 # the same answer from a subdirectory, and a status of 0 with nothing printed.
 lf_assert() {
-  local row
+  local row n f2 f3 f4 f5 f6 f7 f8
   row="$(awk -F'\t' -v n="$2" '$1 == n' "$1")"
-  assert_eq "$2: its fate and commit" "$(cut -f2,3 <<<"$row")" "$(printf '%s\t%s' "$3" "${4:-}")"
-  assert_eq "$2: the same from a subdirectory" "$(cut -f6,7 <<<"$row")" "$(cut -f2,3 <<<"$row")"
-  assert_eq "$2: returns 0 from both places and prints nothing" "$(cut -f4,5,8 <<<"$row")" "$(printf '0\tyes\t0')"
+  row="${row//$'\t'/|}" # a tab would fold empty fields away
+  IFS='|' read -r n f2 f3 f4 f5 f6 f7 f8 <<<"$row"
+  assert_eq "$2: its fate and commit" "$f2	$f3" "$(printf '%s\t%s' "$3" "${4:-}")"
+  assert_eq "$2: the same from a subdirectory" "$f6	$f7" "$f2	$f3"
+  assert_eq "$2: returns 0 from both places and prints nothing" "$f4	$f5	$f8" "$(printf '0\tyes\t0')"
 }
 
 rows="$(mktemp)"
@@ -242,8 +246,6 @@ lf_failing() {
   PATH="$bin:$PATH" sourced_orch_script "$LF_ASK" "$cases"
   rm -f "$cases"
 }
-# lf_case_in <file> <name> <sha> <file> <start> <end>: one case row, in <file>.
-lf_case_in() { printf '%s\t%s\t%s\t%s\t%s\n' "${@:2}" >>"$1"; }
 rows="$(mktemp)"
 # shellcheck disable=SC2016 # a glob for the stand-in git, not an expansion
 lf_failing '*" diff "*' fixed "$head_sha" src/app.sh 3 3 >"$rows"
