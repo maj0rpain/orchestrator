@@ -2638,3 +2638,102 @@ for dg_n in c d e; do git worktree add -q "$(mktemp -d)/$dg_n" -b "pw-$dg_n"; do
 dg_five="$(doctor_git_starts)"
 assert_eq "doctor starts as many git processes with five more worktrees as with two" "$dg_five" "$dg_two"
 restore_suite_env
+
+# --- doctor --env: verification commands (#3346) ------------------------------
+# The first word of each `Ticket verification:` and `Full verification:` line
+# is looked up; a missing one warns, never fails. Each case asserts what doctor
+# --env prints; the exit status is asserted once, for the missing-command case.
+echo
+echo "doctor: verification commands"
+healthy_repo
+doctor_github
+"$ORCH" init vcflow >/dev/null
+vc_bin="$(mktemp -d)"
+printf '#!/bin/sh\nexit 0\n' >"$vc_bin/vctool"
+chmod +x "$vc_bin/vctool"
+vc_doctor() { PATH="$vc_bin:$PATH" "$ORCH" doctor --env 2>&1; }
+vc_reset() { rm -f CLAUDE.md AGENTS.md CONTRIBUTING.md; }
+vc_reset
+
+out="$(vc_doctor)"
+assert_not_contains "a repo with no verification line prints nothing for the check" "$out" "verification command"
+
+printf 'Ticket verification: nosuchtool-3346 --all\nFull verification: nosuchtool-3346\n' >CLAUDE.md
+out="$(vc_doctor)"; st=$?
+assert_status "a missing ticket verification command leaves the exit status 0" "$st" 0
+assert_contains "warns, naming label, command and file" "$out" "warn  Ticket verification command nosuchtool-3346 (from CLAUDE.md)"
+assert_contains "a missing full verification command warns" "$out" "warn  Full verification command nosuchtool-3346 (from CLAUDE.md)"
+assert_not_contains "a full verification warn gives no remedy line" "$out" "Full verification command nosuchtool-3346 (from CLAUDE.md) is not installed.
+      "
+assert_not_contains "a warn gives no remedy line" "$out" "nosuchtool-3346 (from CLAUDE.md) is not installed.
+      "
+out="$(PATH="$vc_bin:$PATH" "$ORCH" doctor --flow 2>&1)"
+assert_not_contains "doctor --flow runs with a flow started" "$out" "no active flow"
+assert_not_contains "doctor --flow does not run the check" "$out" "verification command"
+out="$(PATH="$vc_bin:$PATH" "$ORCH" doctor 2>&1)"
+assert_contains "bare doctor prints the check" "$out" "warn  Ticket verification command nosuchtool-3346"
+assert_contains "bare doctor prints the full verification check" "$out" "warn  Full verification command nosuchtool-3346"
+
+printf 'Ticket verification: vctool test\nFull verification: vctool all\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a found ticket command prints its ok line" "$out" "ok    Ticket verification command: vctool"
+assert_contains "a found full command prints its ok line" "$out" "ok    Full verification command: vctool"
+
+printf 'Ticket verification: FOO=1 BAR=2 vctool test\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "leading VAR=value words are skipped" "$out" "ok    Ticket verification command: vctool"
+
+printf 'Ticket verification: `vctool test`\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a command wrapped in backticks is read without them" "$out" "ok    Ticket verification command: vctool"
+
+mkdir -p scripts
+printf '#!/bin/sh\nexit 0\n' >scripts/vc-run.sh
+chmod +x scripts/vc-run.sh
+printf 'Ticket verification: scripts/vc-run.sh\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a relative path to an executable file is found" "$out" "ok    Ticket verification command: scripts/vc-run.sh"
+printf 'Ticket verification: scripts/vc-missing.sh\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a relative path to a missing file warns" "$out" "warn  Ticket verification command scripts/vc-missing.sh"
+printf '#!/bin/sh\nexit 0\n' >scripts/vc-plain.sh
+chmod -x scripts/vc-plain.sh
+printf 'Ticket verification: scripts/vc-plain.sh\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a relative path to a non-executable file warns" "$out" "warn  Ticket verification command scripts/vc-plain.sh"
+
+printf 'Ticket verification: if true; then true; fi\nFull verification: cd /tmp\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a shell keyword is found" "$out" "ok    Ticket verification command: if"
+assert_contains "a shell builtin is found" "$out" "ok    Full verification command: cd"
+
+printf 'Ticket verification: die\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a function orch.sh defines does not count as found" "$out" "warn  Ticket verification command die"
+
+for vc_text in 'Ticket verification:' 'Ticket verification: ``' 'Ticket verification: FOO=1 BAR=2'; do
+  printf '%s\n' "$vc_text" >CLAUDE.md
+  out="$(vc_doctor)"
+  assert_not_contains "a line leaving no command word prints nothing ($vc_text)" "$out" "Ticket verification command"
+done
+
+printf 'Ticket verification: vctool first\nTicket verification: nosuchtool-3346\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "the first line of a label is the one checked" "$out" "ok    Ticket verification command: vctool"
+assert_not_contains "a later line of the label is not checked" "$out" "nosuchtool-3346"
+
+printf -- '- Ticket verification: nosuchtool-3346\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_not_contains "a line the label does not open is not read" "$out" "Ticket verification command"
+
+printf 'Ticket verification: vctool\n' >CLAUDE.md
+printf 'Ticket verification: nosuchtool-3346\n' >AGENTS.md
+out="$(vc_doctor)"
+assert_contains "the first file in the order wins" "$out" "ok    Ticket verification command: vctool"
+assert_not_contains "a later file's line is not checked" "$out" "nosuchtool-3346"
+rm -f CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "with the first file gone the next one is read" "$out" "warn  Ticket verification command nosuchtool-3346 (from AGENTS.md)"
+vc_reset
+rm -rf "$vc_bin" scripts/vc-run.sh scripts/vc-plain.sh
+restore_suite_env
