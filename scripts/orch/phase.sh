@@ -71,9 +71,8 @@ cmd_phase() {
       file="$(handoff_read "$name" "before leaving the $phase phase")"
       handoff_check "$file" "" "$name" ||
         handoff_invalid "$name" "then run phase advance again; the flow stays at $phase"
-      # Deliberately a per-phase switch, not a phase table column: each
-      # requirement carries its own remedy message, which a column of field
-      # names could only reach through a naming convention.
+      # Deliberately a per-phase switch, not a phase table column: it keeps
+      # each check's place in the refusal order beside the phase that needs it.
       case "$next" in
         implement) require_value issue "$issue" ;;
         review)    require_value branch "$branch"; require_value base_sha "$base_sha"

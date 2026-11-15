@@ -50,10 +50,10 @@ state_get() {
 # a key outside the table beside a readable file dies "unknown state key".
 state_get_in() {
   local __sgi_v __sgi_rc
-  if flow_state_get_many "$1" __sgi_v="$2" 2>/dev/null; then
+  flow_state_get_many "$1" __sgi_v="$2" 2>/dev/null && {
     printf '%s\n' "$__sgi_v"
     return 0
-  fi
+  }
   __sgi_rc=$?
   flow_state_readable "$1" || return 2
   state_many_recheck __sgi_v="$2"
@@ -159,7 +159,7 @@ state_write_many() {
 # require_state [die2]: dies unless an active flow's state file exists and
 # parses (require_state_exists, then require_state_readable) - with die2 for a
 # command that reserves exit 1 for a meaningful "no".
-# shellcheck disable=SC2120 # die2 is passed by spec_phase_guard, in spec.sh
+# shellcheck disable=SC2120 # no caller passes a dier any more; die2 stays for one that needs it
 require_state() {
   require_state_exists "$@"
   require_state_readable "$@"
@@ -194,7 +194,7 @@ require_state_readable() {
 require_state_read() {
   local __rsr_die=die
   case "${1:-}" in die | die2) __rsr_die="$1"; shift ;; esac
-  [ -f "$STATE" ] || "$__rsr_die" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
+  require_state_exists "$__rsr_die"
   flow_state_get_many "$STATE" "$@" 2>/dev/null && return
   state_many_recheck "$@"
   "$__rsr_die" "$STATE_UNREADABLE_MSG"
@@ -236,16 +236,16 @@ require_field() {
   require_value "$2" "${!1}" "${3:-die}"
 }
 
-# Every review command that reaches GitHub needs the flow's PR number and none
-# of them can do anything useful without it.
+# require_pr and require_branch are require_field on the one key. Commands
+# that need the PR or the branch read it with their entry read and refuse an
+# empty one with require_value, which gives the same message.
 require_pr() { require_field "$1" pr; }
 
-# branch create, pr open, and every spec op need the flow's spec issue number
-# before touching GitHub. A second argument, die2, is passed on to
+# The spec issue number, for the handoff, autopilot and standing ops that need
+# it before touching GitHub. A second argument, die2, is passed on to
 # require_field.
 require_issue() { require_field "$1" issue "${2:-die}"; }
 
-# pr open and redo review both need the flow's branch before touching GitHub.
 require_branch() { require_field "$1" branch; }
 
 # The writers of state.phase: phase_write, which dies on a failed write, and
@@ -272,19 +272,6 @@ phase_write_try() {
 require_flow_phase() {
   orch_load handoff
   word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
-}
-
-# The active flow's own base branch, recorded by init. A flow started before
-# base was recorded has none, and always forked from the default branch.
-flow_base() { flow_base_in "$STATE"; }
-
-# flow_base against another checkout's state file <file>. A state file that
-# cannot be read returns the read's failure: the default branch stands in
-# only for a readable state that records no base (flow_base_fallback).
-flow_base_in() {
-  local b
-  b="$(state_get_in "$1" base)" || return
-  flow_base_fallback "$b"
 }
 
 # flow_base_fallback <raw>: prints the base read from state, or the default

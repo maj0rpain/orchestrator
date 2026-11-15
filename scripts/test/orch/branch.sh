@@ -31,7 +31,8 @@ merge_state() {
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
-# `base_sha` for pr open and redo review to read back later via require_branch.
+# `base_sha` for pr open and redo review to read back later, their branch check
+# being require_value's.
 # Like branch off, it also records the base and base SHA in the branch's git
 # config, so branch sync and branch base-sha find them once the flow is gone.
 echo
@@ -60,6 +61,13 @@ PATH="$(state_write_fails_after_first_bin):$PATH" "$ORCH" branch create >/dev/nu
 assert_eq "a death after the first state write leaves branch recorded" \
   "$("$ORCH" state get branch)" "orch/12-bcreate1w"
 assert_eq "and base_sha recorded with it" "$("$ORCH" state get base_sha)" "$before_sha"
+
+# The state refusals come before the usage check: with no flow, extra arguments
+# earn "no active flow", as they did when require_state ran first.
+new_repo >/dev/null
+out="$("$ORCH" branch create extra 2>&1)"; st=$?
+assert_status "branch create with an argument and no flow exits 1" "$st" 1
+assert_contains "refusing for the missing flow before its usage" "$out" "no active flow"
 
 # A stray local branch named origin/main must not stand in for origin's tip.
 sc_clone

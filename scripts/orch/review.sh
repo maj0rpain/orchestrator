@@ -20,15 +20,6 @@ ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 # the key existed, or a value nothing can count.
 readonly DEFAULT_BUDGET=5
 
-# review_budget: prints the flow's review budget from state, through
-# review_budget_fallback. Returns the read's status when state.json cannot be
-# read, never a default in its place.
-review_budget() {
-  local b
-  b="$(state_get budget)" || return
-  review_budget_fallback "$b"
-}
-
 # review_budget_fallback <raw>: prints the budget read from state, or
 # DEFAULT_BUDGET where <raw> is empty or not a number.
 review_budget_fallback() {
@@ -177,8 +168,10 @@ review_terminal_record() {
   printf '%s\n' "$flat"
 }
 
-# review_terminal_state <iteration> <budget>: reads nothing - the caller's
-# entry read holds both, so a state file that cannot be read is its refusal.
+# review_terminal_state <iteration> <budget>: reads neither the iteration nor
+# the budget - the caller's entry read holds both, so a state file that cannot
+# be read is its refusal. Its one read of state is review_terminal_record's
+# fallback.
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
@@ -186,10 +179,10 @@ review_terminal_record() {
 # not a second implementation of it. Prints the classification word on the
 # first line, and for `stop`, the recorded reason on the lines after it; for
 # `malformed`, the one expected-shape line callers quote rather than copy;
-# for `unreadable`, what could not be read - the iteration or the record's
-# path. Exit status is 0 for ready/stop, non-zero for none/pending/
-# interrupted/malformed/unreadable - a single boolean a caller can act on
-# without re-deriving which words count as terminal.
+# for `unreadable`, the record's path, which could not be read. Exit status is
+# 0 for ready/stop, non-zero for none/pending/interrupted/malformed/unreadable
+# - a single boolean a caller can act on without re-deriving which words count
+# as terminal.
 #
 # The section is read as markdown is written: blank lines under the heading
 # are skipped, the first line is trimmed, and `stop` may carry its reason on
@@ -764,10 +757,10 @@ review_standards() {
 # `budget` are never written. A failed clear dies (exit 1) naming the report.
 review_resume() {
   [ $# -eq 0 ] || die "usage: orch.sh review resume"
-  local state i path report b budget recorded phase active=""
+  local state i path report b budget effective recorded phase active=""
   require_state_read i=iteration budget=budget recorded=branch phase=phase
-  b="$(review_budget_fallback "$budget")"
-  state="$(review_terminal_state "$i" "$b")" || true
+  effective="$(review_budget_fallback "$budget")"
+  state="$(review_terminal_state "$i" "$effective")" || true
   state="${state%%$'\n'*}"
   case "$state" in
     pending|interrupted) ;;

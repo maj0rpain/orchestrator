@@ -525,7 +525,7 @@ file_github
 before_bad="$(fake_snapshot)"
 out="$("$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
 assert_status "dies with no PR in state" "$st" 1
-assert_eq "in require_pr's words" "$out" \
+assert_eq "in require_value's pr words" "$out" \
   "orch: no PR recorded in state - the implement phase opens it"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before_bad"
 state_fixture pr 7
@@ -977,7 +977,7 @@ fake_unfail
 state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
-# require_pr dies inside a command substitution, so what stops the command is
+# require_value dies inside a command substitution, so what stops the command is
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"

@@ -177,6 +177,7 @@ cmd_base() {
       # file exists, doubles as the readability check.
       local fphase="done" fbase fslug
       if [ -f "$STATE" ]; then
+        orch_load state
         state_get_many_in "$STATE" fphase=phase fbase=base fslug=slug || die "$STATE_UNREADABLE_MSG"
       fi
       require_on_origin "$b"
