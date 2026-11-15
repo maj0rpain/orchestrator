@@ -1943,16 +1943,14 @@ spec_review_apply() {
   fetched="$SR_FETCHED"; text="$SR_TEXT"
   if [ "$SR_FUNDAMENTAL_RUN" = hold ] && [ "${#SR_IT_FUNDAMENTAL[@]}" -gt 0 ]; then
     # The held-back items' blocks in the batch grammar behind the batch's
-    # `@@ lens` lines, built and checked here, then fed by a redirect so a
-    # failed write dies in this shell.
-    local held=" " blocks
+    # `@@ lens` lines, fed by a redirect so a failed write dies in this shell.
+    local held=" "
     for i in ${SR_IT_FUNDAMENTAL[@]+"${!SR_IT_FUNDAMENTAL[@]}"}; do held="$held${SR_IT_N[$i]} "; done
-    blocks="$( { grep '^@@ lens ' "$dir/batch.md" || true
+    spec_round_hold "$dir" < <(
+      grep '^@@ lens ' "$dir/batch.md" || true
       awk -v held="$held" '
         /^@@ item / { keep = index(held, " " $3 " ") > 0 }
-        keep { print }' "$dir/batch.md"; } 2>/dev/null )" \
-      || die "could not read $dir/batch.md - nothing written to GitHub"
-    spec_round_hold "$dir" <<<"$blocks"
+        keep { print }' "$dir/batch.md")
     return 0
   fi
   spec_review_reasons --reasons "$reasons" SR_IT_N SR_DISP SR_REASON \

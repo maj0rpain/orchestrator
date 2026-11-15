@@ -1037,6 +1037,14 @@ assert_contains "item 3 among them" "$(cat "$d/fundamental.md")" "@@ item 3 cons
 assert_eq "no round-complete" "$(on_disk "$d/round-complete")" absent
 assert_eq "no settled.md" "$(on_disk "$d/settled.md")" absent
 
+# A held item followed by another item keeps its trailing blank line.
+hd="$(sra_dir)"
+sed -i 's/^@@ finding testability 2$/&\n@@ why held back/' "$hd/batch.md"
+sed -i 's/^@@ item 4 testability apply minor$/@@ item 4 testability apply fundamental/' "$hd/batch.md"
+ORCH_AUTOPILOT=1 sra "$hd" recommended
+assert_status "a hold of an item followed by another item" "$st" 0
+assert_eq "fundamental.md ends with the held item's blank line" "$(tail -n 1 "$hd/fundamental.md" | wc -c | tr -d ' ')" 1
+
 ORCH_AUTOPILOT=1 sra "$d" 1C
 assert_status "the resumed apply refuses an option the item lacks" "$st" 1
 ORCH_AUTOPILOT=1 sra "$d" -4
