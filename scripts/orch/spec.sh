@@ -17,18 +17,21 @@ cmd_spec() {
   shift || true
   # spec round reserves exit 1 for "no round marker", so even its missing
   # flow is exit 2: it checks for the flow itself, through die2.
-  [ "$op" = round ] || require_state
+  # Every other op makes the entry read of the flow's issue and phase here
+  # and hands both on.
+  local issue="" phase=""
+  [ "$op" = round ] || require_state_read issue=issue phase=phase
   case "$op" in
     fetch|update|comment|comments) ;;
-    pause) cmd_spec_pause "$@"; return ;;
+    pause) cmd_spec_pause "$issue" "$phase" "$@"; return ;;
     round) cmd_spec_round "$@"; return ;;
-    round-dir) cmd_spec_round_dir "$@"; return ;;
+    round-dir) cmd_spec_round_dir "$issue" "$phase" "$@"; return ;;
     *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment|comments|pause|round|round-dir)" ;;
   esac
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment|comments> <file>"
-  local file="$1" issue
-  require_issue issue
-  flow_active \
+  local file="$1"
+  require_value issue "$issue"
+  [ "$phase" != done ] \
     || die "the flow on issue #$issue is done - spec $op acts only on an active flow's issue; for another issue use orch.sh issue $op <n> <file>"
   "cmd_issue_$op" "$issue" "$file"
 }
@@ -47,32 +50,33 @@ readonly SPEC_PAUSED_MARKER=spec-paused
 # With --round <k>/<n>, the stop after round k of n of a flow's spec review
 # instead: see cmd_spec_pause_round.
 cmd_spec_pause() {
+  local issue="$1" phase="$2"
+  shift 2
   if [ "${1:-}" = --round ]; then
     shift
-    cmd_spec_pause_round "$@"
+    cmd_spec_pause_round "$issue" "$phase" "$@"
     return
   fi
   [ $# -eq 0 ] || die "usage: orch.sh spec pause [--round <k>/<n>]"
-  local issue
-  spec_phase_guard die pause issue
+  spec_phase_guard die pause issue "$issue" "$phase"
   spec_marker_write "$SPEC_PAUSED_MARKER" "$issue"
   print_next_block "Spec #$issue written. The spec review runs in a fresh session."
 }
 
-# spec_phase_guard <die|die2> <op> <var>: the refusals every op that acts
-# inside the spec phase shares - no flow, no recorded issue, a done flow, a
-# phase other than spec - each through <die|die2>; assigns the flow's issue
-# to the variable named <var>. Call it as a bare statement, as require_field.
+# spec_phase_guard <die|die2> <op> <var> <issue> <phase>: the refusals every op
+# that acts inside the spec phase shares once the caller holds the flow's
+# <issue> and <phase> from its entry read - no recorded issue, a done flow, a
+# phase other than spec - each through <die|die2>; it reads nothing, and assigns
+# <issue> to the variable named <var>. Call it as a bare statement, as
+# require_field.
 spec_phase_guard() {
-  local __sg_die="$1" __sg_op="$2" __sg_issue __sg_phase
-  require_state "$__sg_die"
-  require_issue __sg_issue "$__sg_die"
-  flow_active \
-    || "$__sg_die" "the flow on issue #$__sg_issue is done - spec $__sg_op acts only on an active flow"
-  __sg_phase="$(state_get phase)"
-  [ "$__sg_phase" = spec ] \
-    || "$__sg_die" "spec $__sg_op runs only in the spec phase - the flow is at phase $__sg_phase"
-  printf -v "$3" '%s' "$__sg_issue"
+  local __sg_die="$1" __sg_op="$2"
+  require_value issue "$4" "$__sg_die"
+  [ "$5" != done ] \
+    || "$__sg_die" "the flow on issue #$4 is done - spec $__sg_op acts only on an active flow"
+  [ "$5" = spec ] \
+    || "$__sg_die" "spec $__sg_op runs only in the spec phase - the flow is at phase $5"
+  printf -v "$3" '%s' "$4"
 }
 
 # The round marker (#1346): the file a flow's spec review leaves in the
@@ -140,12 +144,14 @@ spec_round_count_parse() {
 # write prints no block. The last round never pauses: the ticket breakdown and
 # the handoff follow it in the same session.
 cmd_spec_pause_round() {
+  local issue="$1" phase="$2"
+  shift 2
   [ $# -eq 1 ] || die "usage: orch.sh spec pause [--round <k>/<n>]"
-  local k n issue
+  local k n
   spec_round_count_parse "$1" k n
   [ "$k" -lt "$n" ] \
     || die "round $k is the last of $n - the last round never pauses; go on to the ticket breakdown"
-  spec_phase_guard die pause issue
+  spec_phase_guard die pause issue "$issue" "$phase"
   spec_marker_write "$SPEC_ROUND_MARKER" "$issue $((k + 1)) $n"
   # In autopilot the round's session ends here: the claim is released, and the
   # next tick starts the next round.
@@ -162,12 +168,14 @@ cmd_spec_pause_round() {
 # exists - a copy, not a carry in place, since every round keeps its own
 # directory for the final session to read its changelog from. Idempotent.
 cmd_spec_round_dir() {
+  local issue="$1" phase="$2"
+  shift 2
   orch_load spec-review
   local usage="usage: orch.sh spec round-dir <k>/<n>"
   [ $# -eq 1 ] || die "$usage"
-  local k n issue
+  local k n
   spec_round_count_parse "$1" k n
-  spec_phase_guard die round-dir issue
+  spec_phase_guard die round-dir issue "$issue" "$phase"
   local dir="$SPEC_ROUNDS_DIR/$k" f
   spec_review_dir_reset "$dir"
   if [ "$k" -eq 1 ]; then
@@ -194,8 +202,9 @@ cmd_spec_round_dir() {
 # "no marker".
 cmd_spec_round() {
   [ $# -eq 0 ] || die2 "usage: orch.sh spec round"
-  local issue marker="$HANDOFF_DIR/$SPEC_ROUND_MARKER" line m_issue k n extra
-  spec_phase_guard die2 round issue
+  local issue phase marker="$HANDOFF_DIR/$SPEC_ROUND_MARKER" line m_issue k n extra
+  require_state_read die2 issue=issue phase=phase
+  spec_phase_guard die2 round issue "$issue" "$phase"
   [ -f "$marker" ] || return 1
   line=""
   IFS= read -r line <"$marker" || [ -n "$line" ] \
