@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.100
+
+`orch.sh suite-cost run` and `suite-cost check` now take a single argument after `--` as a shell line, run with `bash -c` and recorded as given, so a repo's chained verification line passed as one quoted argument runs in full. Several arguments stay an argument list. The skills, agents and docs now say to pass the whole verification line as one quoted argument.
+
 ## 5.2.99
 
 Every adapter write a Standing chain makes under a claim now goes through one step that skips a write an earlier attempt already landed, runs it, dies naming the writes that landed when it fails, and notes it as landed; every chain starts the same way, so a pause or a finish run after another chain in the same shell no longer skips its `orch:running` removal. A failed autopilot question comment post now names the writes that landed and that the claim stays held, like every other failed chain write.
