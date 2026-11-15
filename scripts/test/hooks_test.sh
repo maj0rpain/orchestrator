@@ -41,6 +41,7 @@ count_of() {
   done
   printf '%s' "$n"
 }
+assert_lt()       { if [ "$2" -lt "$3" ]; then ok "$1"; else bad "$1" "$2 vs $3"; fi; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
 # <kind> is grilling or planning: the marker $TMPDIR/orchestrator-<kind>-<id>.
 assert_marker_present() { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then ok "$1"; else bad "$1" "no orchestrator-$2-$3"; fi; }
@@ -1567,8 +1568,7 @@ for pg_fn in pg_decide sg_decide; do
   assert_eq "quotes only allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-quotes-only.jsonl")" allow
   assert_eq "disarmed by a human message alone allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-human.jsonl")" allow
   pg_hb="$(jq_bytes "$pg_fn" "$PG/cost/pad-human.jsonl")"; pg_hn="$(jq_bytes "$pg_fn" "$PG/cost/non-nothing.jsonl")"
-  if [ "$((pg_hb - pg_hn))" -lt "$PG_PADSIZE" ]; then ok "and offers jq fewer bytes than the padding holds ($pg_fn)"
-  else bad "and offers jq fewer bytes than the padding holds ($pg_fn)" "$pg_hb offered, padding $PG_PADSIZE"; fi
+  assert_lt "and offers jq fewer bytes than the padding holds ($pg_fn)" "$((pg_hb - pg_hn))" "$PG_PADSIZE"
   # Apply calls but no needle: no jq beyond the payload read.
   assert_eq "apply calls but no needle start as many jq as no transcript_path ($pg_fn)" \
     "$(jq_count "$pg_fn" "$pg_na")" "$(jq_count "$pg_fn" "")"
@@ -2122,24 +2122,29 @@ assert_empty "bash hook cost: a call changing no dirty file is silent" "$bw_out"
 BW_C0="$(bw_repo)"
 bw_counts "$BW_C0"
 assert_empty "bash hook cost: a clean checkout is silent" "$bw_out"
-if [ "$bw_pre_git" -lt "$bw_one_pre" ]; then ok "bash hook cost: a clean checkout's Pre starts fewer git"
-else bad "bash hook cost: a clean checkout's Pre starts fewer git" "$bw_pre_git vs $bw_one_pre"; fi
-if [ "$bw_post_git" -lt "$bw_one_post" ]; then ok "bash hook cost: a clean checkout's Post starts fewer git"
-else bad "bash hook cost: a clean checkout's Post starts fewer git" "$bw_post_git vs $bw_one_post"; fi
-if [ "$bw_post_grep" -lt "$bw_one_grep" ]; then ok "bash hook cost: a clean checkout's Post starts fewer grep"
-else bad "bash hook cost: a clean checkout's Post starts fewer grep" "$bw_post_grep vs $bw_one_grep"; fi
+assert_lt "bash hook cost: a clean checkout's Pre starts fewer git" "$bw_pre_git" "$bw_one_pre"
+assert_lt "bash hook cost: a clean checkout's Post starts fewer git" "$bw_post_git" "$bw_one_post"
+assert_lt "bash hook cost: a clean checkout's Post starts fewer grep" "$bw_post_grep" "$bw_one_grep"
 rm -rf "$BW_D1" "$BW_D5" "$BW_C0"
 # Odd names: left alone is silent, made wide is reported.
 BW_Q="$(bw_repo)"
-for bw_name in '"quote.md' 'back\slash.md' 'sp ace.md' $'ta\tb.md' 'caf'$'\xc3\xa9'.md; do
+BW_NAMES=('"quote.md' 'back\slash.md' 'sp ace.md' $'ta\tb.md' 'caf'$'\xc3\xa9'.md)
+for bw_name in "${BW_NAMES[@]}"; do
+  printf '# T\n\n%s\n' "$wide" >"$BW_Q/docs/$bw_name"
+done
+bw_call "$BW_Q" ":"
+assert_empty "bash hook: dirty wide files with odd names left alone are silent" "$bw_out"
+for bw_name in "${BW_NAMES[@]}"; do
   printf '# T\n\n%s\n' "$edge" >"$BW_Q/docs/$bw_name"
-  bw_call "$BW_Q" ":"
-  assert_empty "bash hook: a dirty file named '$bw_name' left alone is silent" "$bw_out"
-  BW_ID=$((BW_ID + 1))
-  bw_hook PreToolUse "$BW_Q" "t$BW_ID"
+done
+BW_ID=$((BW_ID + 1))
+bw_hook PreToolUse "$BW_Q" "t$BW_ID"
+for bw_name in "${BW_NAMES[@]}"; do
   printf '# T\n\n%sx\n' "$edge" >"$BW_Q/docs/$bw_name"
-  bw_hook PostToolUse "$BW_Q" "t$BW_ID"
-  assert_eq "bash hook: a file named '$bw_name' made wide exits 2" "$bw_rc" 2
+done
+bw_hook PostToolUse "$BW_Q" "t$BW_ID"
+assert_eq "bash hook: files with odd names made wide exit 2" "$bw_rc" 2
+for bw_name in "${BW_NAMES[@]}"; do
   assert_contains "bash hook: a file named '$bw_name' made wide is named" \
     "$bw_out" "docs/$bw_name:3"
   rm -f "$BW_Q/docs/$bw_name"

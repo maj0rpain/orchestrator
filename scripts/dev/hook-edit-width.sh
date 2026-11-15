@@ -42,9 +42,10 @@ check_file() {
 # hashed in one `git hash-object --stdin-paths` run, started only when a file
 # is listed. A path that is not a regular readable file, or holds a newline
 # (the one-line-per-file format cannot carry it), is left out. Returns 1,
-# printing nothing, when the hash run fails or returns fewer hashes than paths.
+# printing nothing, when the hash run fails or returns a different number of
+# hashes than paths.
 dirty_hashes() {
-  local root="$1" entry path quoted skip=0 n=0 i=0 hash hashes out=""
+  local root="$1" entry path quoted rest skip=0 n=0 i=0 hash hashes out=""
   local -a paths=()
   local quoted_paths=""
   while IFS= read -r -d '' entry; do
@@ -54,8 +55,18 @@ dirty_hashes() {
     [ -f "$root/$path" ] && [ -r "$root/$path" ] || continue
     case "$path" in *$'\n'*) continue ;; esac
     # --stdin-paths reads a line starting with a double quote as C-quoted.
-    quoted="${path//\\/\\\\}"
-    quoted="${quoted//\"/\\\"}"
+    # Built character by character: a pattern substitution's replacement
+    # quoting differs between bash 3.2 and 5.2.
+    quoted=""
+    rest="$path"
+    while [ -n "$rest" ]; do
+      case "${rest:0:1}" in
+        "\\") quoted="$quoted\\\\" ;;
+        '"') quoted="$quoted\\\"" ;;
+        *) quoted="$quoted${rest:0:1}" ;;
+      esac
+      rest="${rest:1}"
+    done
     quoted_paths="$quoted_paths\"$quoted\""$'\n'
     paths[n]="$path"
     n=$((n + 1))
