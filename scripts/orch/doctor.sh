@@ -543,6 +543,76 @@ check_sub_issues() {
   d_warn "sub-issues do not appear to be supported on this GitHub instance - ticket publish will fail its own verify-then-die check at spec time."
 }
 
+# The verification lines the agents read from the repo's instructions: a line
+# outside a fenced code block starting with `Ticket verification:` or `Full
+# verification:` (ADR-0058). Doctor never judges whether a command runs, only
+# that each label is named once, with a command. Prints one tab-separated
+# "<label> <file> <command>" line per verification line, files in the order
+# the agents read them, a label with no command printing an empty command.
+verification_lines() {
+  local f line fence cmd label
+  for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
+    [ -f "$ROOT/$f" ] || continue
+    fence=0
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        '```'*|'~~~'*|[[:space:]]'```'*|[[:space:]]'~~~'*) fence=$((1 - fence)); continue ;;
+      esac
+      [ "$fence" -eq 0 ] || continue
+      case "$line" in
+        'Ticket verification:'*) label="Ticket verification"; cmd="${line#Ticket verification:}" ;;
+        'Full verification:'*)   label="Full verification";   cmd="${line#Full verification:}" ;;
+        *) continue ;;
+      esac
+      cmd="${cmd#"${cmd%%[![:space:]]*}"}"
+      cmd="${cmd%"${cmd##*[![:space:]]}"}"
+      printf '%s\t%s\t%s\n' "$label" "$f" "$cmd"
+    done <"$ROOT/$f"
+  done
+}
+
+# Reports one label by the first rule that holds: a label with no command is a
+# FAIL and the only line for it; two different commands warn; else the label is
+# found (ok) or not (warn for Full, ok naming the fallback for Ticket).
+# $1 is the label, $2 the scan's output.
+verification_report() {
+  local label="$1" lines="$2" l f cmd first_f="" first_c="" have=0 bare="" other_f="" other_c=""
+  local setup="$ORCH_PLUGIN/docs/repo-setup.md"
+  while IFS=$'\t' read -r l f cmd; do
+    [ "$l" = "$label" ] || continue
+    if [ -z "$cmd" ]; then [ -n "$bare" ] || bare="$f"; continue; fi
+    if [ "$have" -eq 0 ]; then
+      have=1; first_f="$f"; first_c="$cmd"
+    elif [ -z "$other_f" ] && [ "$cmd" != "$first_c" ]; then
+      other_f="$f"; other_c="$cmd"
+    fi
+  done <<<"$lines"
+  if [ -n "$bare" ]; then
+    d_fail "$bare has a '$label:' line with no command."
+    d_remedy "write the command after '$label:' in $bare, or remove the line - see $setup"
+    return 0
+  fi
+  if [ -n "$other_f" ]; then
+    d_warn "$label is named twice with different commands: '$first_c' in $first_f and '$other_c' in $other_f - the first, '$first_c', is the one used."
+    d_remedy "remove the line '$label: $other_c' from $other_f, or make it match - see $setup"
+    return 0
+  fi
+  if [ "$have" -eq 1 ]; then d_ok "$label: $first_c ($first_f)"; return 0; fi
+  if [ "$label" = "Full verification" ]; then
+    d_warn "no 'Full verification:' line in CLAUDE.md, AGENTS.md or CONTRIBUTING.md - the agents' fallback is not defined by the code."
+    d_remedy "add the line 'Full verification: <command>' to CLAUDE.md - see $setup"
+    return 0
+  fi
+  d_ok "no 'Ticket verification:' line - tickets run the full verification (ADR-0058)"
+}
+
+check_verification_lines() {
+  local lines
+  lines="$(verification_lines)" || lines=""
+  verification_report "Ticket verification" "$lines"
+  verification_report "Full verification" "$lines"
+}
+
 check_git_exclude() {
   local missing=() d
   # orch_dirs_unexcluded's git rev-parse is unguarded, and unreachable: the
@@ -735,7 +805,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
+h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_verification_lines check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
 "
 # flow state -----------------------------------------------------------------
 

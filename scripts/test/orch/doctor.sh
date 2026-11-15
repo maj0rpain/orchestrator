@@ -2733,4 +2733,79 @@ assert_status "a file in its place fails doctor" "$st" 1
 assert_contains "naming the path" "$out" "FAIL  docs/adr exists and is no directory"
 assert_contains "the remedy states the fix" "$out" "create it as a directory"
 assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
+
+# --- doctor --env: verification lines ------------------------------------------
+# The Ticket verification: and Full verification: lines the agents read from
+# the repo's instructions: each label is reported on its own.
+echo
+echo "doctor --env: verification lines"
+healthy_repo
+doctor_github
+vl_setup="docs/repo-setup.md"
+vl_doctor() { out="$("$ORCH" doctor "$@" 2>&1)"; st=$?; }
+
+vl_doctor --env
+assert_status "a full verification alone passes" "$st" 0
+assert_contains "no ticket verification is ok naming the fallback" "$out" \
+  "ok    no 'Ticket verification:' line - tickets run the full verification (ADR-0058)"
+assert_contains "the full verification is ok with its command and file" "$out" \
+  "ok    Full verification: make test (CLAUDE.md)"
+assert_contains "a healthy repo reports no warn and no FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+
+printf '%s\n' 'Ticket verification: make quick' 'Full verification: make test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a ticket verification is ok with its command and file" "$out" "ok    Ticket verification: make quick (CLAUDE.md)"
+assert_contains "and the full one still is" "$out" "ok    Full verification: make test (CLAUDE.md)"
+
+printf '%s\n' 'Ticket verification: make quick' >CLAUDE.md
+vl_doctor --env
+assert_status "no full verification still exits 0" "$st" 0
+assert_contains "no full verification warns" "$out" "warn  no 'Full verification:' line"
+assert_contains "its remedy writes the line" "$out" "add the line 'Full verification: <command>' to CLAUDE.md"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+
+printf '%s\n' 'Ticket verification:' 'Full verification: make test' >CLAUDE.md
+vl_doctor --env
+assert_status "a bare ticket verification fails" "$st" 1
+assert_contains "it names the file" "$out" "FAIL  CLAUDE.md has a 'Ticket verification:' line with no command."
+assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Ticket verification:' in CLAUDE.md, or remove the line"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+assert_not_contains "no ok line names the fallback" "$out" "tickets run the full verification"
+
+printf '%s\n' 'Full verification:' >CLAUDE.md
+printf '%s\n' 'Full verification: make test' >CONTRIBUTING.md
+vl_doctor --env
+assert_contains "a bare full verification fails beside a command elsewhere" "$out" "FAIL  CLAUDE.md has a 'Full verification:' line with no command."
+assert_not_contains "and no ok line is reported for that label" "$out" "ok    Full verification"
+
+printf '%s\n' 'Full verification: make test' >CLAUDE.md
+printf '%s\n' 'Full verification:' >CONTRIBUTING.md
+vl_doctor --env
+assert_contains "the reverse fails too, naming CONTRIBUTING.md" "$out" "FAIL  CONTRIBUTING.md has a 'Full verification:' line with no command."
+assert_not_contains "and no ok line is reported for it" "$out" "ok    Full verification"
+
+printf '%s\n' 'Full verification: make test' >CLAUDE.md
+printf '%s\n' 'Full verification: make other' >CONTRIBUTING.md
+vl_doctor --env
+assert_status "two commands is a warn, exit 0" "$st" 0
+assert_contains "it names both commands" "$out" "'make test' in CLAUDE.md and 'make other' in CONTRIBUTING.md"
+assert_contains "CLAUDE.md's is the one used" "$out" "the first, 'make test', is the one used"
+assert_contains "its remedy removes the line" "$out" "remove the line 'Full verification: make other' from CONTRIBUTING.md"
+assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+
+printf '%s\n' 'Ticket verification: a' 'Ticket verification: b' 'Full verification: make test' >CLAUDE.md
+rm -f CONTRIBUTING.md
+vl_doctor --env
+assert_contains "two commands in one file warn as well" "$out" "warn  Ticket verification is named twice with different commands: 'a' in CLAUDE.md and 'b' in CLAUDE.md"
+
+printf '%s\n' '```' 'Full verification: make fenced' 'Ticket verification:' '```' 'Full verification: make test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a line in a fenced block is not read" "$out" "ok    Full verification: make test (CLAUDE.md)"
+assert_contains "a fenced bare label is not a FAIL" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
+
+printf '%s\n' 'Ticket verification:' >CLAUDE.md
+vl_doctor
+assert_contains "bare doctor runs the check" "$out" "FAIL  CLAUDE.md has a 'Ticket verification:' line with no command."
+vl_doctor --flow
+assert_not_contains "--flow does not run the check" "$out" "verification"
 restore_suite_env
