@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.98
+
+The default branch is read through out-variable readers that memoise in the caller's own shell, so `side-checkout add` asks GitHub for it once and `side-checkout prune` asks only when a verdict or a merged-PR close needs it.
+
 ## 5.2.97
 
 The spec module now owns a spec review's round directory: one set of functions reads and writes the round's state files, resets the working directory and carries what a round hands the next, and the spec-review module reaches them only through those functions. A resumed `spec-review apply` no longer appends the round's changelog to `settled.md` twice, and a round an autopilot session held and an attended session finished now reports as complete instead of `waiting`. `spec-review apply`'s `--round` refusals now use the same words as `spec pause --round` and `spec round-dir`.
