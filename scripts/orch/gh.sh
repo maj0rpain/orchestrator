@@ -1330,7 +1330,7 @@ adapter_branch_rules() {
 # logged argv (the gh fixture's) stays one line. A rollup's contexts are the
 # commit's check runs and commit statuses together; null where it has none.
 PR_COMMITS_CHECKED_QUERY='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { baseRef { target { ... on Commit { statusCheckRollup { contexts { totalCount } } } } } commits(first: 100) { nodes { commit { oid statusCheckRollup { contexts { totalCount } } } } } } } }'
-PR_COMMITS_CHECKED_JQ='.data.repository.pullRequest | (if .baseRef == null then "" elif (.baseRef.target.statusCheckRollup.contexts.totalCount // 0) > 0 then "yes" else "no" end), (.commits.nodes[] | "\(.commit.oid)\t\(if (.commit.statusCheckRollup.contexts.totalCount // 0) > 0 then "yes" else "no" end)")'
+PR_COMMITS_CHECKED_JQ='def checked: if (.statusCheckRollup.contexts.totalCount // 0) > 0 then "yes" else "no" end; .data.repository.pullRequest | (if .baseRef == null then "" else .baseRef.target | checked end), (.commits.nodes[] | "\(.commit.oid)\t\(.commit | checked)")'
 
 # adapter_pr_commits_checked <n>: whether the base branch tip, then each of PR
 # #n's first 100 commits, has any check run or commit status. The first line is

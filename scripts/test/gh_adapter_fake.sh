@@ -1393,26 +1393,30 @@ adapter_branch_rules() {
 # store; no_base_ref makes the base tip's line empty. A commit's default list
 # is the PR's head alone.
 adapter_pr_commits_checked() {
-  local d oid ref
+  local d oid ref s listed statuses base commits=""
   ! fake_failing adapter_pr_commits_checked || return 1
   fake_pr_known "$1" || return 1
   d="$(fake_pr_dir "$1")"
   echo read >>"$d/evidence_reads"
   if [ -f "$d/evidence_raw" ]; then cat "$d/evidence_raw"; return 0; fi
-  if [ -f "$d/no_base_ref" ]; then echo; else fake_ref_checked "$(cat "$d/base" 2>/dev/null)"; fi
-  oid="$(fake_pr_head_oid "$d")"
-  { if [ -f "$d/commits" ]; then cat "$d/commits"; elif [ -n "$oid" ]; then printf '%s\n' "$oid"; fi; } \
-    | while IFS= read -r ref; do
-      printf '%s\t%s\n' "$ref" "$(fake_ref_checked "$ref")"
-    done
-}
-
-# fake_ref_checked <ref>: yes where the ref is listed in check_runs or
-# statuses, no otherwise.
-fake_ref_checked() {
-  local s
   s="$(fake_store)"
-  if grep -qxF -- "$1" "$s/check_runs" "$s/statuses" 2>/dev/null; then echo yes; else echo no; fi
+  # Both lists are read once; each ref is then tested in bash.
+  file_read listed "$s/check_runs" || listed=""
+  file_read statuses "$s/statuses" || statuses=""
+  listed+=$'\n'"$statuses"
+  if [ -f "$d/no_base_ref" ]; then
+    echo
+  else
+    file_read base "$d/base" || base=""
+    base="${base%%$'\n'*}"
+    if list_has "$listed" "$base"; then echo yes; else echo no; fi
+  fi
+  oid="$(fake_pr_head_oid "$d")"
+  if [ -f "$d/commits" ]; then file_read commits "$d/commits" || commits=""; commits="${commits%$'\n'}"; elif [ -n "$oid" ]; then commits="$oid"; fi
+  [ -n "$commits" ] || return 0
+  while IFS= read -r ref; do
+    if list_has "$listed" "$ref"; then printf '%s\tyes\n' "$ref"; else printf '%s\tno\n' "$ref"; fi
+  done <<<"$commits"
 }
 
 # adapter_run_rerun <run>: the run appended to reruns.
