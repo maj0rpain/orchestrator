@@ -576,7 +576,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               <file>, recording no state. Refuses, leaving
                               the body unchanged, unless <file> opens with
                               the PR's existing Closes/Refs #<issue> line
-  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...] [--record <numbers-file> <k>]
+  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
                               create a ticket, link it as a sub-issue of
                               <parent>, add a blocking edge for every
                               --blocked-by issue, apply ready-for-agent, and

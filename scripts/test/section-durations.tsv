@@ -307,7 +307,6 @@
 9	11	ticket exists
 42	48	ticket block
 30	33	ticket unblock
-0	1	ticket publish --record
 1	2	ticket retire: breakdown save point
 5	7	ticket retire: untrusted comments
 0	1	ticket: unknown op

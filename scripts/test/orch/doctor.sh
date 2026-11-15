@@ -852,15 +852,15 @@ assert_status "sub-issues supported: still a healthy pass" "$st" 0
 assert_contains "reports sub-issues as supported" "$out" "ok    sub-issues supported"
 
 # The endpoint 404ing (or otherwise refusing) reads as "not supported" -
-# advisory, so a warn, never a FAIL: the real gate is ticket_publish's own
-# verify-then-die, not this probe.
+# advisory, so a warn, never a FAIL: the real gate is breakdown publish's own
+# link read-back (ticket_link), not this probe.
 fake_no_sub_issues
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "unsupported sub-issues does not block the flow" "$st" 0
 assert_contains "warns rather than fails when sub-issues are unsupported" \
   "$out" "warn  sub-issues do not appear to be supported"
 assert_contains "explains the consequence rather than leaving it silent" \
-  "$out" "ticket publish will fail"
+  "$out" "breakdown publish will fail"
 
 # A repo with no issues at all has nothing to probe against - still a warn,
 # not a FAIL, and a distinct message from the unsupported case above.

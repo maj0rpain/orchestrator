@@ -521,8 +521,9 @@ check_labels_exist() {
 # GA part of Issues on github.com - so the only reliable way to know whether
 # this GitHub instance supports them is to ask the endpoint against an issue
 # that exists and read whether it answers or 404s. warn, never FAIL: the
-# real gate is ticket_publish's own verify-then-die, not this advisory probe
-# - a repo that fails it should be told at setup, not discover it mid-flow.
+# real gate is breakdown publish's link read-back (ticket_link), not this
+# advisory probe - a repo that fails it should be told at setup, not discover
+# it mid-flow.
 # A probe that fails outright (a 5xx, a 403, no connection) is neither answer,
 # and says so in gh's own first line (#554).
 check_sub_issues() {
@@ -540,7 +541,7 @@ check_sub_issues() {
     d_ok "sub-issues supported"
     return 0
   fi
-  d_warn "sub-issues do not appear to be supported on this GitHub instance - ticket publish will fail its own verify-then-die check at spec time."
+  d_warn "sub-issues do not appear to be supported on this GitHub instance - breakdown publish will fail its own link read-back check at spec time."
 }
 
 # The verification lines the agents read from the repo's instructions: a line
