@@ -25,13 +25,13 @@ COMMENTS_RENDER_JQ='def render_comments: [.[] | "<!-- comment @\(.author) \(.cre
 # {author, createdAt, body, url} with author the login as a string and no
 # authorAssociation, assigned to <out_var>. It never dies of its own: on success
 # it returns 0 with <err_var> empty; on a kind other than issue or pr it returns
-# 1 with <out_var> empty and "unknown kind <kind>" in <err_var>; on a gh
-# failure it returns 1 with <out_var> empty and gh's reason (gh_reason) in
-# <err_var>; on an answer that is not a comment list it returns
-# 1 with both empty. A Repo that cannot be resolved dies too, in gh's guard,
-# which is not trapped here. It runs in the caller's shell, so the Trust
-# filter's stderr line, `#<n>` naming the issue or PR, reaches the real
-# stderr. Locals prefixed so no caller's variable name is shadowed.
+# 1 with both <out_var> and <err_var> empty (no gh call was made, so no gh
+# reason exists); on a gh failure it returns 1 with <out_var> empty and gh's
+# reason (gh_reason) in <err_var>; on an answer that is not a comment list it
+# returns 1 with both empty. A Repo that cannot be resolved dies too, in gh's
+# guard, which is not trapped here. It runs in the caller's shell, so the Trust
+# filter's stderr line, `#<n>` naming the issue or PR, reaches the real stderr.
+# Locals prefixed so no caller's variable name is shadowed.
 comments_trusted_read() {
   local __ctr_kind="$1" __ctr_n="$2" __ctr_raw __ctr_gh_err __ctr_filtered __ctr_kept
   printf -v "$3" '%s' ''
@@ -39,7 +39,7 @@ comments_trusted_read() {
   case "$__ctr_kind" in
     issue) gh_capture __ctr_raw __ctr_gh_err adapter_issue_comments "$__ctr_n" ;;
     pr) gh_capture __ctr_raw __ctr_gh_err adapter_pr_comments "$__ctr_n" ;;
-    *) printf -v "$4" '%s' "unknown kind $__ctr_kind"; return 1 ;;
+    *) return 1 ;;
   esac || {
     printf -v "$4" '%s' "$(gh_reason "$__ctr_gh_err")"
     return 1

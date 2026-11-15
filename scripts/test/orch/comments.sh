@@ -55,9 +55,9 @@ assert_eq "an answer that is not a comment list returns 1 with both empty" \
   "got=[] err=[]
 rc=1"
 
-assert_eq "an unknown kind returns 1, out empty, the reason in err, and never dies" \
+assert_eq "an unknown kind returns 1 with both empty, and never dies" \
   "$(cm_run 'comments_trusted_read repo 7 got err || rc=$?; echo "got=[$got] err=[$err]"')" \
-  "got=[] err=[unknown kind repo]
+  "got=[] err=[]
 rc=1"
 
 # No Repo resolvable: gh's guard dies with its remedy, the real adapter against
