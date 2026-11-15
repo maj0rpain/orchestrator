@@ -960,24 +960,22 @@ adapter_pr_comments() {
   gh pr view "$1" --json comments
 }
 
-# adapter_pr_refs <n>: review ci's read of the PR's own head, base and commits
-# (issues #475, #476) - the SHA and branch its grace is anchored to, and the
-# commits its CI-evidence pre-check reads, come from the PR, not from local
-# HEAD, which can be anywhere by the time the loop ends. Prints the head SHA,
-# the head branch and the base branch on the first three lines, an empty line
-# for one GitHub leaves unset, then one commit SHA per line, oldest first.
+# adapter_pr_refs <n>: review ci's read of the PR's own head and base (issues
+# #475, #476) - the SHA and branch its grace is anchored to come from the PR,
+# not from local HEAD, which can be anywhere by the time the loop ends. Prints
+# the head SHA, the head branch and the base branch, an empty line for one
+# GitHub leaves unset.
 adapter_pr_refs() {
-  gh pr view "$1" --json headRefOid,headRefName,baseRefName,commits \
-    --jq '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // ""), ((.commits // [])[].oid)'
+  gh pr view "$1" --json headRefOid,headRefName,baseRefName \
+    --jq '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")'
 }
 
-# pr_refs_read <n> <head_oid_var> <head_ref_var> <base_var> <commits_var>
-# <err_var>: reads PR <n> once through adapter_pr_refs and writes its head SHA,
-# head branch, base branch (each empty where GitHub leaves it unset) and its
-# commits (one SHA per line, oldest first) into the first four caller-named
-# variables, on gh_lines_read's contract.
+# pr_refs_read <n> <head_oid_var> <head_ref_var> <base_var> <err_var>: reads
+# PR <n> once through adapter_pr_refs and writes its head SHA, head branch and
+# base branch (each empty where GitHub leaves it unset) into the three
+# caller-named variables, on gh_lines_read's contract.
 pr_refs_read() {
-  gh_lines_read adapter_pr_refs "$1" "$6" "$2" "$3" "$4" "$5"
+  gh_lines_read adapter_pr_refs "$1" "$5" "$2" "$3" "$4"
 }
 
 # adapter_pr_url_head <n>: review file's read of the PR's canonical URL and

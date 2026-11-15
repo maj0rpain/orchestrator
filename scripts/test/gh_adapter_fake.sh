@@ -957,9 +957,7 @@ adapter_pr_comments() {
 }
 
 # adapter_pr_refs <n>: the stored head SHA (default forty zeros, a SHA no
-# reflog or object store holds), head branch and base branch, then the stored
-# commits (default the head alone, a single-commit PR, or none when the head
-# is empty).
+# reflog or object store holds), head branch and base branch.
 adapter_pr_refs() {
   local d oid
   ! fake_failing adapter_pr_refs || return 1
@@ -968,7 +966,6 @@ adapter_pr_refs() {
   oid="$(fake_pr_head_oid "$d")"
   printf '%s\n' "$oid"
   cat "$d/head" "$d/base"
-  if [ -f "$d/commits" ]; then cat "$d/commits"; elif [ -n "$oid" ]; then printf '%s\n' "$oid"; fi
 }
 
 # adapter_pr_url_head <n>: the stored PR's url (default

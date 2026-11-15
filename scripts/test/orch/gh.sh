@@ -363,16 +363,14 @@ assert_eq "a failed read writes neither and fills the error variable" "$out" \
 assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 
 printf 'abc123\n' >"$ORCH_GH_FAKE_STORE/prs/8/head_oid"
-printf 'c1\nc2\n' >"$ORCH_GH_FAKE_STORE/prs/8/commits"
-out="$(sourced_orch_script 'pr_refs_read 8 oid ref base commits err; printf "%s|%s|%s|%s" "$oid" "$ref" "$base" "$commits"')"
-assert_eq "pr_refs_read writes the head SHA, head branch, base and commits" "$out" \
-  "abc123|topic|main|c1
-c2"
+out="$(sourced_orch_script 'pr_refs_read 8 oid ref base err; printf "%s|%s|%s" "$oid" "$ref" "$base"')"
+assert_eq "pr_refs_read writes the head SHA, head branch and base" "$out" \
+  "abc123|topic|main"
 fake_fail adapter_pr_refs "$GH_502"
-out="$(sourced_orch_script 'oid=x ref=x base=x commits=x; st=0; pr_refs_read 8 oid ref base commits err || st=$?
-  printf "%s|%s|%s|%s|%s|%s" "$st" "$oid" "$ref" "$base" "$commits" "$err"' 2>"$rerr")"
+out="$(sourced_orch_script 'oid=x ref=x base=x; st=0; pr_refs_read 8 oid ref base err || st=$?
+  printf "%s|%s|%s|%s|%s" "$st" "$oid" "$ref" "$base" "$err"' 2>"$rerr")"
 assert_eq "a failed refs read writes none and fills the error variable" "$out" \
-  "1|x|x|x|x|$GH_502"
+  "1|x|x|x|$GH_502"
 assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 
 fake_issue 9 open bug enhancement
@@ -648,7 +646,7 @@ zeros=0000000000000000000000000000000000000000
 fake_pr 80 merged topic main
 fake_pr_head 80 ""
 out="$(faked adapter_pr_refs 80; echo x)"
-assert_eq "gh fake: pr refs of an empty head prints an empty line, the branches and no commit" \
+assert_eq "gh fake: pr refs of an empty head prints an empty line and the branches" \
   "$out" "$(writeln '' topic main x)"
 assert_eq "its merged-PRs read prints the empty head in its slot" \
   "$(faked adapter_prs_merged topic main)" "$(printf '80\t\tfalse')"
@@ -656,16 +654,16 @@ out="$(faked adapter_pr_url_head 80; echo x)"
 assert_eq "its URL-and-head read prints the URL, then an empty line" \
   "$out" "$(writeln https://github.com/o/r/pull/80 '' x)"
 fake_pr 81 merged topic2 main
-assert_eq "an absent head reads as forty zeros from the refs read, as head and commit" \
-  "$(faked adapter_pr_refs 81)" "$(writeln "$zeros" topic2 main "$zeros")"
+assert_eq "an absent head reads as forty zeros from the refs read" \
+  "$(faked adapter_pr_refs 81)" "$(writeln "$zeros" topic2 main)"
 assert_eq "from the merged-PRs read" \
   "$(faked adapter_prs_merged topic2 main)" "$(printf '81\t%s\tfalse' "$zeros")"
 assert_eq "and from the URL-and-head read" \
   "$(faked adapter_pr_url_head 81)" "$(writeln https://github.com/o/r/pull/81 "$zeros")"
 fake_pr 82 open topic3 main
 fake_pr_head 82 abc123
-assert_eq "a non-empty head with no seeded commits is its own single commit" \
-  "$(faked adapter_pr_refs 82)" "$(writeln abc123 topic3 main abc123)"
+assert_eq "a non-empty head prints three lines and no commits" \
+  "$(faked adapter_pr_refs 82)" "$(writeln abc123 topic3 main)"
 # The fake's busiest functions answer from the store in bash (#2861): a bare
 # PATH holds only the commands each may keep.
 fake_github
@@ -1256,18 +1254,18 @@ assert_status "pr comments: reads the comments as gh's raw JSON" "$st" 0
 assert_eq "printing what gh answered, unrendered" "$out" \
   '{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"LGTM","createdAt":"2026-10-01T09:00:00Z"}]}'
 
-refs_jq='(.headRefOid // ""), (.headRefName // ""), (.baseRefName // ""), ((.commits // [])[].oid)'
-gh_reply 0 $'bbbb\ntopic\nmain\naaaa\nbbbb\n' '' \
-  pr view 57 --json headRefOid,headRefName,baseRefName,commits --jq "$refs_jq"
+refs_jq='(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")'
+gh_reply 0 $'bbbb\ntopic\nmain\n' '' \
+  pr view 57 --json headRefOid,headRefName,baseRefName --jq "$refs_jq"
 out="$(contract adapter_pr_refs 57 2>&1)"; st=$?
-assert_status "pr refs: reads the PR's head, base and commits" "$st" 0
-assert_eq "head SHA, head branch, base branch, then one commit per line, oldest first" \
-  "$out" "$(writeln bbbb topic main aaaa bbbb)"
+assert_status "pr refs: reads the PR's head and base" "$st" 0
+assert_eq "head SHA, head branch, base branch and no commits" \
+  "$out" "$(writeln bbbb topic main)"
 assert_eq "its --jq prints an empty line for a field GitHub leaves null" \
-  "$(printf '%s' '{"headRefOid":null,"headRefName":"topic","baseRefName":"main","commits":null}' | jq -r "$refs_jq")" \
+  "$(printf '%s' '{"headRefOid":null,"headRefName":"topic","baseRefName":"main"}' | jq -r "$refs_jq")" \
   "$(writeln '' topic main)"
 gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  pr view 58 --json headRefOid,headRefName,baseRefName,commits --jq "$refs_jq"
+  pr view 58 --json headRefOid,headRefName,baseRefName --jq "$refs_jq"
 out="$(contract adapter_pr_refs 58 2>&1)"; st=$?
 assert_status "pr refs: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
