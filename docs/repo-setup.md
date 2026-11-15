@@ -98,6 +98,8 @@ it has none.
   docs/agents/triage-labels.md" (`ok`), and "every triage label exists on the
   repo" or a `FAIL` naming the missing ones.
 
+Run `orch.sh doctor` to check every item above.
+
 ## What needs no setup
 
 - The git-exclude lines: `orch.sh init` writes them (see
@@ -109,5 +111,3 @@ it has none.
   `docs/how-it-works.md`).
 - Autopilot settings: `orch.sh autopilot` reads them (see
   `docs/how-it-works.md`).
-
-Run `orch.sh doctor` to check every item above.

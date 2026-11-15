@@ -98,8 +98,8 @@ cmd_help() {
 orch.sh - deterministic operations for the orchestrator flow
 
   doctor [--env|--flow]       diagnose the machine, the repo, and the active flow;
-                              also `health`; what it checks is listed in
-                              docs/repo-setup.md
+                              also `health`; what it reads from the repo is
+                              listed in docs/repo-setup.md
   default-branch [--sha]      resolve the repo's default branch, as GitHub
                               reports it; --sha prints the default SHA instead,
                               origin/<default>'s tip as it stands, unfetched

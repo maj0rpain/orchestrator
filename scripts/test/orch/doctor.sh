@@ -2665,7 +2665,7 @@ doctor_github
 rm -f CLAUDE.md AGENTS.md CONTRIBUTING.md CODING_STANDARDS.md
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no standards files: doctor --env passes" "$st" 0
-assert_contains "nothing to crawl names the smell baseline alone" "$out" "smell baseline alone"
+assert_contains "nothing to crawl is ok, naming the smell baseline alone" "$out" "ok    no Standards: declaration and nothing to crawl - the reviewers apply the smell baseline alone"
 mkdir -p docs
 writeln 'rules' >docs/rules.md
 writeln 'See `docs/rules.md`.' >CLAUDE.md
@@ -2708,7 +2708,7 @@ want="$("$ORCH" glossary terms 2>&1 >/dev/null)"; want="${want#orch: }"
 out="$("$ORCH" doctor 2>&1)"; st=$?
 assert_status "a glossary giving no entries fails bare doctor" "$st" 1
 assert_contains "carrying the glossary command's own message" "$out" "FAIL  $want"
-assert_contains "the remedy names the **Term**: line" "$out" '**Term**:'
+assert_contains "the remedy gives the example entry line" "$out" '"**Doctor**: the diagnostic command."'
 assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
 restore_suite_env
 
