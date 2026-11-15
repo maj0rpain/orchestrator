@@ -31,9 +31,8 @@ readonly FILED_SEVERITIES
 # The axis table: each review axis a finding is filed on, paired with the
 # category a finding filed on it starts in, as <axis>:<category>, in order. A
 # Spec finding misses what was asked for, so it is a bug; a Standards finding
-# improves how it was built, and so does a suite-cost one. Adding an axis is one
-# entry here.
-readonly FILED_AXIS_TABLE="spec:bug standards:enhancement suite-cost:enhancement"
+# improves how it was built. Adding an axis is one entry here.
+readonly FILED_AXIS_TABLE="spec:bug standards:enhancement"
 
 # The review axes alone, in the table's order, for usage lines, messages and
 # loops over them.
@@ -158,9 +157,6 @@ category_for_axis() {
   return 1
 }
 
-# The location a suite-cost finding names: the suite as a whole, with no line.
-readonly SUITE_LOCATION=suite
-
 # category_other <category>: the opposite category - the one a finding loses
 # when triage settles on <category>. Prints nothing and fails for anything but
 # bug or enhancement.
@@ -241,7 +237,7 @@ finding_body_file_new() {
 # labelled line followed by a blank line, so GitHub shows each as its own
 # paragraph. The labelled lines are the closer's, byte for byte, so a body
 # filed before rendering existed parses as one rendered now does. An empty
-# <line> renders the file alone, as a suite-cost finding's `suite` is.
+# <line> renders the file alone.
 finding_body_render() {
   local axis="${2,,}"
   local display_axis="${axis^}"
@@ -262,8 +258,7 @@ finding_body_render() {
 # comes from the first line that carries it, as finding triage always read
 # them: Location from the first line starting with its label, with no
 # fallback when that one does not parse - the first backticked <file>:<line>,
-# the file free of backticks and colons, or else a backticked `suite`, a
-# suite-cost finding's location, with an empty line, and the hex run of the
+# the file free of backticks and colons, and the hex run of the
 # line's last " at <hex>"; PR from the first line ending in a URL whose last
 # segment after /pull/ is a number; the rest from the first line starting with
 # their label, as the rest of it, trimmed. Severity splits at the first " - ". A
@@ -307,8 +302,6 @@ finding_body_parse() {
         __fbp_seen_loc=1
         if [[ $__fbp_line =~ $__fbp_loc_re ]]; then
           __fbp_loc_file="${BASH_REMATCH[1]}"; __fbp_loc_line="${BASH_REMATCH[2]}"
-        elif [[ $__fbp_line == *"\`$SUITE_LOCATION\`"* ]]; then
-          __fbp_loc_file="$SUITE_LOCATION"; __fbp_loc_line=""
         else
           continue
         fi

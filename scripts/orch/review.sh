@@ -427,7 +427,7 @@ review_file() {
   local pr_n="$1"
   shift
   orch_load filed-finding
-  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>|suite> --why <reason> [--spec-question <q>]"
+  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <${FILED_AXES// /|}> --finding-file <f> --severity-reason <r> --location <<file>:<line>> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
   local severity="$1" title="$2" flag value
   local axis="" finding="" reason="" location="" why="" question=""
@@ -460,14 +460,9 @@ review_file() {
   category="$(category_for_axis "$axis")" \
     || die "not a review axis: $axis (want ${FILED_AXES// / or })"
   finding_input_check "$title" "$finding"
-  # Split at the last colon: the line is the part after it, N or N-M. The
-  # literal suite - a suite-cost finding's - names the suite, with no line.
-  if [ "$location" = "$SUITE_LOCATION" ]; then
-    file="$SUITE_LOCATION" line=""
-  else
-    finding_location_check "$location" "<file>:<line>, <file>:<start>-<end> or suite"
-    file="${location%:*}" line="${location##*:}"
-  fi
+  # Split at the last colon: the line is the part after it, N or N-M.
+  finding_location_check "$location" "<file>:<line> or <file>:<start>-<end>"
+  file="${location%:*}" line="${location##*:}"
   # The PR's URL and remote head come from GitHub for the flow's recorded PR,
   # before any write: the URL is right on any host, and the remote head is
   # what finding triage scan fetches.
