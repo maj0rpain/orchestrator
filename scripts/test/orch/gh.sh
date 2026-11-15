@@ -1816,6 +1816,35 @@ assert_eq "and writes nothing to stderr" "$(cat "$errf")" ""
 # shellcheck disable=SC2218 # claim_op is the redefinition above
 claim_op adapter_claim_delete 123 >/dev/null 2>&1
 rm -f "$errf"
+# Listing starts a fixed number of git processes, whatever the claim count, and
+# a claim whose message lacks a field prints that field empty.
+claim_git="$(counting_bin git)"
+: >"$claim_git/git.log"
+# shellcheck disable=SC2218 # claim_op is the redefinition above
+PATH="$claim_git:$PATH" claim_op adapter_claim_list >/dev/null 2>&1
+claim_starts_few="$(counting_starts "$claim_git" git)"
+for claim_n in 201 202 203 204 205; do
+  claim_op adapter_claim_create "$claim_n" spec 1 "$(hostname)" >/dev/null 2>&1
+done
+claim_partial="$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "orch claim 300" -m "host: h300")"
+git push -q origin "$claim_partial:refs/orch/claims/300"
+: >"$claim_git/git.log"
+claim_lines="$(PATH="$claim_git:$PATH" claim_op adapter_claim_list 2>&1)"
+assert_eq "listing several claims starts as many git processes as listing fewer" \
+  "$(counting_starts "$claim_git" git)" "$claim_starts_few"
+assert_eq "a claim whose message lacks fields prints them empty" \
+  "$(printf '%s\n' "$claim_lines" | awk -F'\t' '$1 == 300 { print NF ":" $2 ":" $3 ":" $4 ":" $5 }')" "5:h300:::"
+assert_eq "and claims stay in numeric order" \
+  "$(printf '%s\n' "$claim_lines" | cut -f1 | tr '\n' ' ')" "7 41 60 201 202 203 204 205 300 "
+claim_stub="$(mktemp -d)"
+printf '#!/bin/sh\nif [ "$1" = for-each-ref ]; then echo "fatal: ref read broke" >&2; exit 1; fi\nexec "%s" "$@"\n' "$(command -v git)" >"$claim_stub/git"
+chmod +x "$claim_stub/git"
+out="$(PATH="$claim_stub:$PATH" claim_op adapter_claim_list 2>&1 >/dev/null)"; st=$?
+assert_status "a ref read that fails fails the list with status 1" "$st" 1
+assert_eq "with git's reason on stderr" "$out" "fatal: ref read broke"
+rm -rf "$claim_git" "$claim_stub"
+git push -q origin ":refs/orch/claims/300" ":refs/orch/claims/201" ":refs/orch/claims/202" ":refs/orch/claims/203" ":refs/orch/claims/204" ":refs/orch/claims/205"
+
 git remote set-url origin "$claim_origin/nowhere"
 out="$(claim_op adapter_claim_create 50 spec 1 "$(hostname)" 2>&1)"; st=$?
 assert_status "a push that fails for another reason fails with status 1, not 2" "$st" 1
