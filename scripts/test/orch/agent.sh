@@ -486,6 +486,10 @@ printf '%s\n' 'tampered' >>"$as_dir/orch-implementer.md"
 "$ORCH" agent sync >/dev/null
 assert_eq "a hand-edited marked copy is rewritten" \
   "$(grep -c tampered "$as_dir/orch-implementer.md")" "0"
+printf '\n\n' >>"$as_dir/orch-implementer.md"
+out="$(sourced_orch_script 'agent_sync_plan; printf %s "$AGENT_PLAN_WRITES"' 2>&1)"
+assert_eq "a copy with extra trailing newlines is stale" "$out" "orch-implementer|gpt-5-mini|high|stale"
+"$ORCH" agent sync >/dev/null
 
 "$ORCH" agent set implementer --host junie --model custom:my/profile.1 --effort low >/dev/null
 assert_eq "a custom: profile id is written whole, colon and all" \
@@ -586,6 +590,10 @@ acm_run agent_copy_marked "$acm_dir/late.md"; assert_status "a marker on the thi
 out="$(sourced_orch_script 'agent_copy_marked "$1"' "$acm_dir/none.md" 2>&1)"; st=$?
 assert_status "an unreadable marker file is unmarked" "$st" 1
 assert_contains "with sed's diagnostic on stderr" "$out" "sed:"
+mkdir "$acm_dir/dir.md"
+out="$(sourced_orch_script 'agent_copy_marked "$1"' "$acm_dir/dir.md" 2>&1)"; st=$?
+assert_status "a directory in place of the marker file is unmarked" "$st" 1
+assert_contains "with sed's diagnostic on stderr too" "$out" "sed:"
 acm_line='Executing agent custom_agent_orch-x_1 with parameters (model=gpt-5, reasoningEffort=high, effort=null, xmodel=bad)'
 assert_eq "the Junie field read answers with an empty PATH" "$(acm_run agent_junie_field "$acm_line" model)" "gpt-5"
 assert_eq "a field after a letter is not matched" "$(acm_run agent_junie_field "$acm_line" odel)" ""
@@ -594,17 +602,3 @@ assert_eq "an absent field is empty" "$(acm_run agent_junie_field "$acm_line" no
 rm -rf "$acm_dir"
 unset -f acm_run
 unset acm_dir acm_marker acm_line
-
-# --- agent sync: a copy differing only in trailing newlines is stale ----------
-echo
-echo "agent sync trailing newlines"
-new_repo >/dev/null
-seeded_home
-git config --local orchestrator.junie.model.closer gpt-5
-"$ORCH" agent sync >/dev/null 2>&1
-printf '\n\n' >>.junie/agents/orch-closer.md
-out="$(sourced_orch_script 'agent_sync_plan; printf %s "$AGENT_PLAN_WRITES"' 2>&1)"
-assert_eq "a copy with extra trailing newlines is stale" "$out" "orch-closer|gpt-5|inherit|stale"
-"$ORCH" agent sync >/dev/null 2>&1
-assert_eq "and sync rewrites it exactly" "$(tail -c 3 .junie/agents/orch-closer.md | od -An -c | tr -d ' ')" "$(tail -c 3 "$PLUGIN_ROOT/agents/orch-closer.md" | od -An -c | tr -d ' ')"
-restore_suite_env

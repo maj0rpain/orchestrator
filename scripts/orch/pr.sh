@@ -64,11 +64,10 @@ pr_merged_closing_read() {
 # order and newline-joined. Matches in bash and starts no process; a line with
 # no second field never matches.
 pr_lines_by_prefix() {
-  local _line _rest _head _picked=""
+  local _line _head _picked=""
   while IFS= read -r _line; do
-    _rest="${_line#*$'\t'}"
-    [ "$_rest" != "$_line" ] || continue
-    _head="${_rest%%$'\t'*}"
+    case "$_line" in *$'\t'*) ;; *) continue ;; esac
+    tsv_split "$_line" _ _head
     case "$_head" in
       "$2"*) _picked="$_picked$_line"$'\n' ;;
     esac

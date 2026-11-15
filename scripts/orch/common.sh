@@ -391,6 +391,15 @@ newlines_strip() {
   printf -v "$1" '%s' "$_ns_v"
 }
 
+# file_read_text <var> <file>: <file>'s text into <var> as $(cat <file>) gives
+# it - trailing newlines dropped - read by the shell itself. An unreadable file
+# gives empty, its diagnostic silenced.
+file_read_text() {
+  printf -v "$1" '%s' ""
+  file_read "$1" "$2" 2>/dev/null || :
+  newlines_strip "$1"
+}
+
 # The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
 # to a single hyphen, trimmed, dying if nothing survives. `init` and `cmd_slug`
 # both call this rather than each carrying their own copy of the sed expression

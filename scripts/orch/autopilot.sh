@@ -1115,7 +1115,7 @@ autopilot_sync_detect() {
       warn "issue #$issue has $count open PRs from a branch starting $head_prefix - sync detection skips it"
       continue
     fi
-    IFS=$'\t' read -r _ _ mergeable _ <<<"$pr_lines"
+    tsv_split "$pr_lines" _ _ mergeable
     [ "$mergeable" = CONFLICTING ] || continue
     standing_sync_request "$issue" ||
       warn "could not add $STANDING_SYNC_LABEL to issue #$issue: $STANDING_REASON - sync detection skips it"

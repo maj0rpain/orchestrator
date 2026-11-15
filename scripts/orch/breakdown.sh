@@ -62,8 +62,7 @@ breakdown_order() {
   local dir="$1" k b list pending emitted="" rest progressed ok
   pending="$(cat "$dir/order")"
   while IFS= read -r k; do
-    list=""; file_read list "$dir/$k.blocked" 2>/dev/null || :
-    newlines_strip list
+    file_read_text list "$dir/$k.blocked"
     [ -n "$list" ] || continue
     list="$(issue_number_list "ticket-$k blocked-by" "$list")" || exit 1
     while IFS= read -r b; do
@@ -136,8 +135,7 @@ breakdown_publish_in() {
     breakdown_number "$numbers" "$k" n status
     [ "$status" != linked ] || continue
     want=""
-    list=""; file_read list "$tmp/$k.blocked" 2>/dev/null || :
-    newlines_strip list
+    file_read_text list "$tmp/$k.blocked"
     if [ -n "$list" ]; then
       while IFS= read -r b; do
         breakdown_number "$numbers" "$b" bn status  # status is spent past the linked check
@@ -156,8 +154,7 @@ breakdown_publish_in() {
         || die "ticket $k of the draft (#$n): the link failed"
       breakdown_record "$numbers" "$k" "$n" linked
     else
-      title=""; file_read title "$tmp/$k.title" 2>/dev/null || :
-      newlines_strip title
+      file_read_text title "$tmp/$k.title"
       (cmd_ticket_publish "$parent" "$title" "$tmp/$k.body" \
         ${want:+--blocked-by "$want"} --record "$numbers" "$k") >/dev/null \
         || die "ticket $k of the draft: the publish failed"

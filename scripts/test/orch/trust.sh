@@ -58,9 +58,9 @@ done
 tr_json="$(PATH='' "$BASH" -c 'source "$1/scripts/orch/trust.sh"; printf "%s" "$TRUST_ASSOCIATIONS_JSON"' _ "$PLUGIN_ROOT")"
 assert_eq "the array is built at load, with no process on PATH" "$tr_json" '["OWNER", "MEMBER", "COLLABORATOR"]'
 
-# The comment filter and the issue check agree on each trusted association, one
-# outside them, a lower-case one and an empty one.
-for tr_a in OWNER MEMBER COLLABORATOR NONE owner ""; do
+# The comment filter and the issue check agree on a lower-case association and
+# an empty one (the trusted ones and NONE are asserted above).
+for tr_a in owner ""; do
   tr_label="${tr_a:-empty}"
   fake_issue 8 open ready-for-agent orch:spec
   fake_comment 8 someone "2026-09-01T10:00:00Z" "said by $tr_label" "$tr_a"
