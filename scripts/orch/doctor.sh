@@ -13,7 +13,8 @@
 # Nothing here is called back from orch.sh or its other modules but
 # cmd_doctor and the reporters d_ok, d_warn, d_fail and d_remedy, which a
 # check living in the module of the concept it serves reports through
-# (agent.sh's check_agent_settings): init's adopted-issue check,
+# (agent.sh's check_agent_settings, review.sh's check_standards_declaration,
+# glossary.sh's check_glossary): init's adopted-issue check,
 # validate_adopted_issue, lives in init.sh, and the triage-label parser the
 # checks read lives in triage-labels.sh.
 #
@@ -27,8 +28,10 @@
 # loads through orch_load. The helpers it calls from noun modules
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
-# require_state from state.sh), and check_agent_settings, agent.sh's check
-# its env check list names, are defined by the time cmd_doctor runs:
+# require_state from state.sh), and the checks its env check list names from
+# other modules (agent.sh's check_agent_settings, review.sh's
+# check_standards_declaration, glossary.sh's check_glossary), are defined by
+# the time cmd_doctor runs:
 # run as a command they are stubs that load their module on first call
 # (loader.sh's orch_stubs). cmd_doctor is then
 # dispatched from main() exactly like any other command.
@@ -459,6 +462,27 @@ check_labels_doc() {
   d_remedy "fix $LABELS_DOC's table, or delete it to use the canonical names"
 }
 
+# The ADR directory: absent is fine, no ADRs are read. A docs/adr that exists
+# and is no directory is a FAIL, since the skills and the spec review's lenses
+# read it as one. The count is the Markdown files directly in it.
+check_adr_dir() {
+  local adr="$ROOT/docs/adr" n=0 f
+  if [ ! -e "$adr" ] && [ ! -L "$adr" ]; then
+    d_ok "no docs/adr - no ADRs are read"
+    return 0
+  fi
+  if [ ! -d "$adr" ]; then
+    d_fail "docs/adr exists and is no directory - the skills and the spec review read ADRs from it."
+    d_remedy "remove docs/adr and create it as a directory of Markdown files, or delete it to have no ADRs read" \
+      "see docs/repo-setup.md under the plugin root"
+    return 0
+  fi
+  for f in "$adr"/*.md; do
+    [ -f "$f" ] && n=$((n + 1))
+  done
+  d_ok "docs/adr holds $n ADRs"
+}
+
 # The other check that justifies the feature: the spec phase applies a label at
 # `gh issue create`, so a label the repo does not have kills the phase after the
 # whole orch-to-spec exchange has already been spent.
@@ -520,6 +544,70 @@ check_sub_issues() {
     return 0
   fi
   d_warn "sub-issues do not appear to be supported on this GitHub instance - breakdown publish will fail its own link read-back check at spec time."
+}
+
+# The verification lines the agents read from the repo's instructions: a line
+# outside a fenced code block starting with `Ticket verification:` or `Full
+# verification:` (ADR-0058). Doctor never judges whether a command runs, only
+# that each label is named once, with a command. Prints one tab-separated
+# "<label> <file> <command>" line per verification line, files in the order
+# the agents read them, a label with no command printing an empty command.
+verification_lines() {
+  local f line cmd label
+  for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
+    [ -f "$ROOT/$f" ] || continue
+    while IFS= read -r line; do
+      case "$line" in
+        'Ticket verification:'*) label="Ticket verification"; cmd="${line#Ticket verification:}" ;;
+        'Full verification:'*)   label="Full verification";   cmd="${line#Full verification:}" ;;
+        *) continue ;;
+      esac
+      trim_split "$cmd" cmd
+      printf '%s\t%s\t%s\n' "$label" "$f" "$cmd"
+    done < <(awk "$FENCE_AWK"'fenced($0) == 0' "$ROOT/$f")
+  done
+}
+
+# Reports one label by the first rule that holds: a label with no command is a
+# FAIL and the only line for it; two different commands warn; else the label is
+# found (ok) or not (warn for Full, ok naming the fallback for Ticket).
+# $1 is the label, $2 the scan's output.
+verification_report() {
+  local label="$1" lines="$2" l f cmd first_f="" first_c="" have=0 bare="" other_f="" other_c=""
+  local setup="$ORCH_PLUGIN/docs/repo-setup.md"
+  while IFS=$'\t' read -r l f cmd; do
+    [ "$l" = "$label" ] || continue
+    if [ -z "$cmd" ]; then [ -n "$bare" ] || bare="$f"; continue; fi
+    if [ "$have" -eq 0 ]; then
+      have=1; first_f="$f"; first_c="$cmd"
+    elif [ -z "$other_f" ] && [ "$cmd" != "$first_c" ]; then
+      other_f="$f"; other_c="$cmd"
+    fi
+  done <<<"$lines"
+  if [ -n "$bare" ]; then
+    d_fail "$bare has a '$label:' line with no command."
+    d_remedy "write the command after '$label:' in $bare, or remove the line - see $setup"
+    return 0
+  fi
+  if [ -n "$other_f" ]; then
+    d_warn "$label is named twice with different commands: '$first_c' in $first_f and '$other_c' in $other_f - the first, '$first_c', is the one used."
+    d_remedy "remove the line '$label: $other_c' from $other_f, or make it match - see $setup"
+    return 0
+  fi
+  if [ "$have" -eq 1 ]; then d_ok "$label: $first_c ($first_f)"; return 0; fi
+  if [ "$label" = "Full verification" ]; then
+    d_warn "no 'Full verification:' line in CLAUDE.md, AGENTS.md or CONTRIBUTING.md - the agents' fallback is not defined by the code."
+    d_remedy "add the line 'Full verification: <command>' to CLAUDE.md - see $setup"
+    return 0
+  fi
+  d_ok "no 'Ticket verification:' line - tickets run the full verification (ADR-0058)"
+}
+
+check_verification_lines() {
+  local lines
+  lines="$(verification_lines)" || lines=""
+  verification_report "Ticket verification" "$lines"
+  verification_report "Full verification" "$lines"
 }
 
 check_git_exclude() {
@@ -605,29 +693,29 @@ d_verification_found() {
 }
 
 # The repo's verification commands: for each label, the first word of the
-# command on the first line, across the instruction files in order, that opens
-# with it. Found is ok; not found is a warn with no remedy, since no one
-# command installs an arbitrary tool. A label nobody names, or whose line
-# leaves no command word, says nothing. A function orch.sh defines never counts
-# as found: only a builtin, a keyword or a file does. No namerefs (bash 4.2).
+# command on the first line outside a fenced code block, across the instruction
+# files in order, that opens with it; a label with a line of no command is
+# verification_report's FAIL and says nothing here. Found is ok; not found is a
+# warn with no remedy, since no one command installs an arbitrary tool. A label
+# nobody names, or whose line leaves no command word, says nothing. A function
+# orch.sh defines never counts as found: only a builtin, a keyword or a file
+# does. No namerefs (bash 4.2).
 check_verification_commands() {
-  local label f line word from_file
-  for label in "Ticket verification:" "Full verification:"; do
-    from_file="" word=""
-    for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
-      [ -f "$ROOT/$f" ] || continue
-      while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-          "$label"*) from_file="$f"; word="$(d_verification_word "${line#"$label"}")"; break ;;
-        esac
-      done <"$ROOT/$f"
-      [ -z "$from_file" ] || break
-    done
-    [ -n "$from_file" ] && [ -n "$word" ] || continue
+  local label word from_file bare lines l f cmd
+  lines="$(verification_lines)" || lines=""
+  for label in "Ticket verification" "Full verification"; do
+    from_file="" word="" bare=""
+    while IFS=$'\t' read -r l f cmd; do
+      [ "$l" = "$label" ] || continue
+      if [ -z "$cmd" ]; then bare=1; continue; fi
+      [ -n "$from_file" ] && continue
+      from_file="$f"; word="$(d_verification_word "$cmd")"
+    done <<<"$lines"
+    [ -z "$bare" ] && [ -n "$from_file" ] && [ -n "$word" ] || continue
     if d_verification_found "$word"; then
-      d_ok "${label%:} command: $word"
+      d_ok "$label command: $word"
     else
-      d_warn "${label%:} command $word (from $from_file) is not installed."
+      d_warn "$label command $word (from $from_file) is not installed."
     fi
   done
   return 0
@@ -775,7 +863,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_verification_commands check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
+h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_base_branch check_verification_lines check_verification_commands check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
 "
 # flow state -----------------------------------------------------------------
 

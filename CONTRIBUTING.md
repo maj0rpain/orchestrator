@@ -495,6 +495,7 @@ scripts/test/orch/trust.sh          the Trust module's sections, named as the mo
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run
+docs/repo-setup.md            everything orch.sh reads from a repo: Standards declaration, verification lines, glossary, ADR directory, triage labels
 docs/pr-writing.md            the PR-writing standard: style rules, body and release layouts, and the comment shape every PR body and comment follows
 docs/turn-final-reply.md      the turn-final reply procedure and the unattended-printout rule, written once
 docs/adr/                     the architecture decision records
@@ -587,7 +588,11 @@ no behaviour of its own, so invoking the skill on another host is complete.
 `docs_lint.sh` fails when a skill, or an agent that invokes a skill, never
 points at the reference, when a skill or agent offers a `/orchestrator:<cmd>`
 that has no `commands/<cmd>.md`, or when a command runs `orch.sh` or routes to a
-section that does not exist.
+section that does not exist, or when the reference lacks its **Run a subagent
+pool**
+row and fallback subsection, or a subagent pool site (`orch-quick-autopilot`'s
+step 3, an
+audit's Hunt step) does not name that capability.
 
 ## Command names
 

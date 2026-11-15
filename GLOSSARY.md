@@ -1009,6 +1009,12 @@ fallbacks, including any taken during its spec review, under its PR body's
 comment, or reports them in the session when the branch has no PR - so a
 reduced run is never mistaken for a full one.
 
+**Subagent pool**:
+A list of subagents a skill runs with at most a fixed number in flight, the
+next started as each one returns, so a slow subagent holds back only its own
+slot. `docs/host-capabilities.md` says how each host runs one.
+_Avoid_: rolling pool, worker pool.
+
 **Turn-final reply**:
 One plain-text reply that ends a session's turn with no tool call in it,
 holding a long block and then the question about it, its answer words spelled

@@ -202,7 +202,9 @@ the plan, never into `GLOSSARY.md`, `GLOSSARY-MAP.md`, or `docs/adr/` now. Those
 files are records, and a record changes only with the change it describes
 (ADR-0022). Write the exact wording - the new or replaced text, and which file
 and entry it goes in - into the plan, so the spec or the linked issue carries
-it verbatim and it lands with the implementation.
+it verbatim and it lands with the implementation. Glossary wording is written
+as entries orch.sh can parse, each starting at a `**Term**:` line;
+`docs/repo-setup.md` under the plugin root gives the full grammar.
 
 The glossary stays a glossary: an entry defines a term, free of
 implementation detail. Implementation decisions belong in the plan, not in a

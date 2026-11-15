@@ -42,7 +42,8 @@ tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
-Steps here name capabilities (start a fresh subagent, open a report in the
+Steps here name capabilities (start a fresh subagent, run a subagent pool,
+open a report in the
 browser, invoke a skill from a step, ask a multiple-choice question).
 `docs/host-capabilities.md` under the
 plugin root maps each one to your host. Where your host's cell says
@@ -111,8 +112,10 @@ the `model` and `effort` it prints on each start, per **Agent settings** in
 `docs/host-capabilities.md`. This skill runs no `agent sync`, which would write
 `.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per area
 (see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
-fork, each an `orch-test-auditor`, at most 4 at once; start the next as one
-finishes. Each prompt names its area (the test files), the repo root, the
+fork, each an `orch-test-auditor`, run as a subagent pool of 4 (host capability
+*Run a subagent pool*, size hint: the area's file count; see that row of
+`docs/host-capabilities.md`).
+Each prompt names its area (the test files), the repo root, the
 measured cost of each part in the area, and its own findings file in
 the temp directory. The hunter has no Edit or Bash tool, so it times nothing;
 its brief holds the quality rule, the six kinds, the fields each
@@ -120,6 +123,7 @@ candidate states (among them the replacement, why it tests as well, and the
 expected saving, measured or estimated) and the findings-file format (`@@
 finding <k>` blocks, `@@ none` when empty). A reply is the file's path and a
 candidate count; read each file.
+When the pool took a fallback tier, tell the user which.
 
 Check every candidate again against the quality rule, per **The quality rule**
 in `agents/orch-test-auditor.md` (under the plugin root), and drop each one
