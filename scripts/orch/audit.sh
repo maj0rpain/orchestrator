@@ -98,7 +98,7 @@ audit_begin() {
 #
 # A resolved finding i is in AUDIT_TITLE[i], AUDIT_CATEGORY[i], AUDIT_LOCS[i]
 # (newline-joined), AUDIT_LINKS[i] (the finding numbers it overlaps, on either
-# side, space-padded and ascending) and AUDIT_FIELDS[i]: its fields in
+# side, space-separated and ascending) and AUDIT_FIELDS[i]: its fields in
 # resolved order, each a label, AUDIT_US and its value, ended by AUDIT_RS.
 AUDIT_US=$'\x1f'
 AUDIT_RS=$'\x1e'
@@ -556,13 +556,13 @@ audit_page_render() {
   printf '<script>mermaid.initialize({ startOnLoad: true });</script>\n'
   printf '</head>\n<body class="bg-white text-gray-900 max-w-4xl mx-auto p-6">\n'
   printf '<header class="mb-6">\n<h1 class="text-2xl font-bold">Audit report: %s</h1>\n' "$e"
-  audit_esc e "$AUDIT_SCOPE"
+  e="$(audit_inline "$AUDIT_SCOPE")"
   printf '<dl class="mt-3 grid grid-cols-4 gap-2">\n<dt class="font-semibold">Scope</dt><dd class="col-span-3">%s</dd>\n' "$e"
   printf '<dt class="font-semibold">Areas</dt><dd class="col-span-3">%s</dd>\n' "$AUDIT_AREAS"
   audit_esc e "$AUDIT_COMMIT"
   printf '<dt class="font-semibold">Commit</dt><dd class="col-span-3"><code>%s</code></dd>\n</dl>\n' "$e"
   for i in "${!AUDIT_NOTE_HEAD[@]}"; do
-    audit_esc e "${AUDIT_NOTE_HEAD[i]}"
+    e="$(audit_inline "${AUDIT_NOTE_HEAD[i]}")"
     printf '<section class="mt-4">\n<h2 class="text-lg font-semibold">%s</h2>\n' "$e"
     audit_md_render "${AUDIT_NOTE_TEXT[i]}"
     printf '</section>\n'
@@ -571,7 +571,7 @@ audit_page_render() {
   if [ -n "$AUDIT_NONE" ]; then
     printf '<p class="text-lg">The audit found nothing: no findings were kept.</p>\n'
   else
-    audit_esc e "${AUDIT_TITLE[AUDIT_TOP]}"
+    e="$(audit_inline "${AUDIT_TITLE[AUDIT_TOP]}")"
     printf '<section id="top" class="mb-8 p-4 border-l-4 border-blue-500 bg-blue-50">\n'
     printf '<h2 class="text-lg font-semibold">Top recommendation</h2>\n'
     printf '<p class="my-2"><a class="text-blue-700 underline" href="#finding-%s">Finding %s: %s</a></p>\n' \
@@ -579,7 +579,7 @@ audit_page_render() {
     audit_md_render "$AUDIT_TOP_TEXT"
     printf '</section>\n'
     for ((n = 1; n <= AUDIT_COUNT; n++)); do
-      audit_esc e "${AUDIT_TITLE[n]}"
+      e="$(audit_inline "${AUDIT_TITLE[n]}")"
       printf '<article id="finding-%s" class="mb-8">\n' "$n"
       printf '<h2 class="text-xl font-semibold">%s. %s</h2>\n' "$n" "$e"
       audit_esc e "${AUDIT_CATEGORY[n]}"
@@ -607,7 +607,7 @@ audit_page_render() {
         printf '<h3 class="mt-3 font-semibold">Overlaps</h3>\n<ul class="list-disc ml-6">\n'
         for ((j = 1; j <= AUDIT_COUNT; j++)); do
           word_listed "${AUDIT_LINKS[n]}" "$j" || continue
-          audit_esc e "${AUDIT_TITLE[j]}"
+          e="$(audit_inline "${AUDIT_TITLE[j]}")"
           printf '<li><a class="text-blue-700 underline" href="#finding-%s">Finding %s: %s</a></li>\n' "$j" "$j" "$e"
         done
         printf '</ul>\n'

@@ -377,6 +377,19 @@ sed -i '/^Evidence: restated/d' "$run/ranked.md"
 assert_contains "an unrestated field keeps the hunter's fenced diagram" "$(cat "$report")" '<pre class="mermaid">graph TD; A--&gt;B</pre>'
 
 echo
+echo "audit report inline code in headings"
+report_reset
+sed -i -e 's/^@@ scope .*/@@ scope the `s.sh` scope/' -e 's/^@@ note Timing mode/@@ note Timing `mode`/' \
+  -e 's/^Title: Latent bug in a.sh/Title: Latent bug in `a.sh`/' "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null
+page="$(cat "$report")"
+assert_contains "a scope span is code" "$page" 'the <code>s.sh</code> scope'
+assert_contains "a note heading span is code" "$page" '>Timing <code>mode</code></h2>'
+assert_contains "a finding heading span is code" "$page" '1. Latent bug in <code>a.sh</code></h2>'
+assert_contains "the top recommendation link's span is code" "$page" 'href="#finding-1">Finding 1: Latent bug in <code>a.sh</code></a></p>'
+assert_contains "an overlap link's span is code" "$page" 'href="#finding-1">Finding 1: Latent bug in <code>a.sh</code></a></li>'
+
+echo
 echo "audit report refusals"
 report_reset
 cp "$run/ranked.md" "$run/ranked.orig"
@@ -386,12 +399,13 @@ report_refuse() {
   cp "$run/ranked.orig" "$run/ranked.md"
   printf 'earlier report\n' >"$report"
   sed -i "$3" "$run/ranked.md"
+  before="$(ls -A "$run")"
   res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
   assert_status "$1 is refused" "$st" 1
   assert_contains "saying so" "$res" "orch: "
   assert_contains "naming the problem" "$res" "$2"
   assert_eq "leaving the earlier report" "$(cat "$report")" "earlier report"
-  assert_eq "and no temporary file" "$(find "$run" -name "*.tmp.*" | wc -l | tr -d " ")" 0
+  assert_eq "and no temporary file beside it" "$(ls -A "$run")" "$before"
 }
 report_refuse "a ranked file with no scope" "no @@ scope" '/^@@ scope/d'
 report_refuse "a second scope" "a second @@ scope" '/^@@ areas/a @@ scope again'
@@ -450,31 +464,12 @@ fi
 echo
 echo "audit report-reference check in audit report"
 report_reset
-cp "$run/ranked.md" "$run/ranked.orig"
 for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
-  cp "$run/ranked.orig" "$run/ranked.md"
-  printf 'earlier report\n' >"$report"
-  sed -i "s/^Title: Deepen d.sh/Title: Deepen d.sh like $phrase/" "$run/ranked.md"
-  res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
-  assert_status "a title saying '$phrase' is refused" "$st" 1
-  assert_contains "naming the phrase" "$res" "says '$phrase'"
-  assert_eq "writing nothing" "$(cat "$report")" "earlier report"
+  report_refuse "a title saying '$phrase'" "says '$phrase'" "s/^Title: Deepen d.sh/Title: Deepen d.sh like $phrase/"
 done
-report_reset
-sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in finding 2/' "$run/ranked.md"
-res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
-assert_status "a restated field saying finding 2 is refused" "$st" 1
-assert_contains "naming the field" "$res" "Evidence: says 'finding 2'"
-report_reset
-sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: see\nthe finding\n3 for it/' "$run/ranked.md"
-res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
-assert_status "a field wrapping 'finding' and its number across lines is refused" "$st" 1
-assert_contains "naming the phrase and the line it starts on" "$res" "Evidence: says 'finding 3' (line 2 of the field)"
-report_reset
-sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in this\nReport/' "$run/ranked.md"
-res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
-assert_status "a field wrapping 'this report' across lines is refused" "$st" 1
-assert_contains "naming the phrase and its line" "$res" "Evidence: says 'this Report' (line 1 of the field)"
+report_refuse "a restated field saying finding 2" "Evidence: says 'finding 2'" 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in finding 2/'
+report_refuse "a field wrapping 'finding' and its number across lines" "Evidence: says 'finding 3' (line 2 of the field)" 's/^Evidence: restated <b>evidence<\/b>/Evidence: see\nthe finding\n3 for it/'
+report_refuse "a field wrapping 'this report' across lines" "Evidence: says 'this Report' (line 1 of the field)" 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in this\nReport/'
 report_reset
 sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: the finding\n\n3 is apart; `finding\n4`, and the\nreport reads fine/' "$run/ranked.md"
 "$ORCH" audit report "$run" "$report" >/dev/null 2>&1; st=$?
