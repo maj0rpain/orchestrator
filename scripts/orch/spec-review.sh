@@ -1490,11 +1490,11 @@ spec_review_tickets_answer() {
 
 # spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s copy into
 # TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
-# apply run has taken that copy, ticket-<t>.md. After a hold, the fetched copy
-# is the ticket as the hold run published it (see the hold run, which
-# rebases the ticket copies and keeps its ticket lines). When the
-# session wrote no ticket-<t>.md, the problem, naming <what>, is appended to
-# SR_PROBLEMS and it returns 1; a copy it cannot read dies, naming <what> too.
+# apply run has taken that copy, ticket-<t>.md. A hold run leaves the ticket
+# copies untouched, so the run after the reply takes them as a first run does.
+# When the session wrote no ticket-<t>.md, the problem, naming <what>, is
+# appended to SR_PROBLEMS and it returns 1; a copy it cannot read dies, naming
+# <what> too.
 spec_review_ticket_load() {
   local j copy file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0

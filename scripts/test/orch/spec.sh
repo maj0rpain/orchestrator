@@ -656,14 +656,14 @@ assert_status "spec_round_complete succeeds" "$st" 0
 sourced_orch spec_round_complete "$od/d" "## Spec review" nothing; st=$?
 assert_status "and runs again" "$st" 0
 assert_eq "leaving the changelog once" "$(grep -c '^## Spec review$' "$od/d/settled.md")" 1
-assert_eq "and round-complete written" "$([ -e "$od/d/round-complete" ] && echo present)" present
+assert_eq "and round-complete written" "$(on_disk "$od/d/round-complete")" present
 # A fundamental.md it cannot remove: today's message, no round-complete.
 rm -rf "$od/d"; mkdir -p "$od/d/fundamental.md"; : >"$od/d/fundamental.md/x"
 out="$(sourced_orch spec_round_complete "$od/d" "## Spec review" landed-x 2>&1)"; st=$?
 assert_status "spec_round_complete over an unremovable fundamental.md dies" "$st" 1
 assert_contains "with today's message" "$out" \
   "could not remove $od/d/fundamental.md - every GitHub write landed and settled.md is appended: landed-x"
-assert_eq "writing no round-complete" "$([ -e "$od/d/round-complete" ] && echo present || echo absent)" absent
+assert_eq "writing no round-complete" "$(on_disk "$od/d/round-complete")" absent
 rm -rf "$od"
 
 # --- spec round-dir loads no spec-review module (#3078) ----------------------

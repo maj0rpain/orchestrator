@@ -98,17 +98,21 @@ spec_marker_write() {
     || die "cannot write $HANDOFF_DIR/$1"
 }
 
-# The round directory's three state files, names only (the spec_round_*
-# functions below read them). The empty file spec-review apply writes in a
-# round's directory as its very last step: a round counts as complete only
-# when its directory holds it.
+# The round directory's three state files: this module owns them, and the
+# spec_round_* functions below read and write them. The empty file
+# spec_round_complete writes in a round's directory, as its last local step but
+# the answer's clearing: a round counts as complete only when its directory
+# holds it.
 readonly SPEC_ROUND_COMPLETE=round-complete
-# The held-back fundamental items of an autopilot round, written by spec-review
-# apply in the round's directory: while it exists the round waits for the
-# human's answer, and spec round says so.
+# The held-back fundamental items of an autopilot round, written by
+# spec_round_hold in the round's directory (spec_round_complete removes it):
+# while it exists the round waits for the human's answer, and spec round says
+# so.
 readonly SPEC_ROUND_FUNDAMENTAL=fundamental.md
 # The saved answer of a spec-review apply that is running or died in the round's
-# directory: while it exists the round is applying, and spec round says so.
+# directory, written by spec_round_answer_save and cleared by
+# spec_round_answer_clear: while it exists the round is applying, and spec round
+# says so.
 readonly SPEC_ROUND_APPLY_ANSWER=apply-answer
 # Where a flow's spec review rounds work, one directory per round number. Not
 # under spec-review/, the flow-less entry archive keeps: these belong to the
