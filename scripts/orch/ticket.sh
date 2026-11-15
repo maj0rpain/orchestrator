@@ -717,7 +717,7 @@ ticket_reclaim_remove() {
   ! git -C "$ROOT" rev-parse --verify --quiet "refs/heads/$tbranch" >/dev/null || had_branch=1
   [ "$had_wt$had_branch" != 00 ] || return 0
   local teardown_failed=0
-  (ticket_worktree_teardown "$n" --unmerged --discard) || teardown_failed=1
+  (ticket_facts "$n" f; ticket_worktree_teardown f --unmerged --discard) || teardown_failed=1
   left="$(ticket_worktree_state "$path")" || exit $?
   if [ "$left" != none ]; then
     die "ticket #$n: could not remove its worktree $path"
