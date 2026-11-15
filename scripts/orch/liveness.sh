@@ -1,14 +1,13 @@
 # shellcheck shell=bash
 # liveness.sh - the Liveness module, a concept module with no noun: whether
 # the process behind a record - an autopilot flow's claim on this host, a
-# watch, a suite-cost active run - is still running.
+# watch - is still running.
 # It owns the autopilot directory's run/ layout (run/<issue>.pid, the run
 # record, run/<issue>.tick, the tick's record, and run/<issue>.hit, the hit
 # file: the reset of a GitHub API rate limit a session hit), the
 # `<pid> <start-time>` record format, the start-time reader
 # (/proc/<pid>/stat field 22 under $ORCH_PROC_DIR, else `ps -o lstart=`), the
-# record-alive rule (which also judges a suite-cost active-run marker, a
-# record too), the watch pidfile and the session log naming
+# record-alive rule, the watch pidfile and the session log naming
 # (logs/<issue>-<phase>-<stamp>.log). Of orch.sh's files only this one touches
 # /proc and ps and names paths under run/; a session writes the hit file only
 # at the path the wrapper hands it. Its tests: scripts/test/orch/liveness.sh.
@@ -190,8 +189,7 @@ liveness_latest_log() {
 }
 
 # liveness_watch_pidfile: the clone's watch pidfile, under the git common
-# directory beside the suite-cost record, so every worktree of the clone
-# reaches the same one.
+# directory, so every worktree of the clone reaches the same one.
 liveness_watch_pidfile() {
   local d
   d="$(clone_orchestrator_dir)" || return 1

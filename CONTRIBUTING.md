@@ -164,8 +164,9 @@ comment history, read once and asked in domain terms), `known-items.sh` (the
 Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
 file), `liveness.sh` (the Liveness module: whether the process behind a record
-(a claim, a watch, a suite-cost active run) is still running - the run records,
-the record suite-cost's active-run markers hold, and the session log naming),
+(a claim, a watch) is still running - the run records,
+the start-time reader, the record-alive rule, the watch pidfile and the
+session log naming),
 `marked-comment.sh` (the Marked comment module: writing and reading
 the issue comments whose first line names their kind), `session-log.sh` (the
 Session log module: what a phase session's log says about usage limits, read
@@ -427,7 +428,7 @@ scripts/orch/checkout.sh      the Checkout module, a concept module with no noun
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file` and `audit file` share
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
-scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch, a suite-cost active run) is alive - the run records, the start-time reader, the record-alive rule that also judges suite-cost's active-run markers, the watch pidfile, the session log names
+scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch) is alive - the run records, the start-time reader, the record-alive rule, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
 scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
@@ -436,7 +437,6 @@ scripts/orch/global.sh        the bare global commands with no module of their o
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the ORCH_GH_ADAPTER hook
-scripts/orch/suite-cost.sh    the suite-cost noun's module, with the ORCH_SUITE_COST_TIMER hook: a test knob like ORCH_GH_ADAPTER, naming a file (the tests' scripts/test/suite_cost_timer_fake.sh) that overrides only the step timing a command
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
 scripts/host.sh               the one host detector: host_detect (environment) and host_from_project_path (hook payload), sourced by orch.sh and hook-common.sh

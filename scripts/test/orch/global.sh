@@ -73,6 +73,15 @@ out="$("$ORCH" mp-skill to-spec 2>&1)"; st=$?
 assert_status "mp-skill is an unknown command" "$st" 1
 assert_contains "and says so" "$out" "unknown command: mp-skill"
 
+# The plugin measures no suite cost (ADR-0063): the noun is gone.
+echo
+echo "suite-cost is gone"
+out="$("$ORCH" suite-cost run -- true 2>&1)"; st=$?
+assert_status "suite-cost is an unknown command" "$st" 1
+assert_contains "and says so" "$out" "unknown command: suite-cost"
+out="$("$ORCH" help 2>&1)"
+assert_eq "help names no suite-cost" "$(grep -c 'suite-cost' <<<"$out")" "0"
+
 # --- bash version guard -----------------------------------------------------
 # orch.sh checks the running bash before it sources anything. The version is
 # faked through ORCH_BASH_VERSION, so no bash 3.2 is needed on the machine.
