@@ -105,10 +105,7 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    already confirmed with the human - and its **Root cause** subsection,
    if it has one: see **Root-cause fixes**.
    Then, **before your first edit**, run the ticket verification once, found and
-   run as step 3 says, through `bash "<orch.sh>" suite-cost run -- <cmd>`.
-   This run and step 3's final one pass a `<cmd>` that opens with `VAR=value`
-   words behind `env` (`suite-cost run -- env FOO=1 make test`), so the
-   prefix sets the environment instead of being run as a missing command.
+   run as step 3 says.
    The run **cannot start** when it exits non-zero and either the exit is 126
    or 127, or its output shows the shell, `make`, `npm` or another wrapper
    reporting a command it ran as not found or not executable. The exit code
@@ -126,17 +123,13 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    and carry on. Before writing tests, read any test-helpers reference or
    helper index the repo's agent files (`CLAUDE.md`, `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
-   and the repo's **ticket verification** once, at the end, through `bash
-   "<orch.sh>" suite-cost run -- '<cmd>'`,
-   the whole line as one quoted argument: it passes the command's output and
-   exit code through unchanged (an interrupt exits 128 plus the signal's
-   number and records nothing) and records a passing run's suite cost. Find
-   the ticket verification where you find the full verification, in the
+   and the repo's **ticket verification** once, at the end, bare.
+   Find the ticket verification where you find the full verification, in the
    repo's instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`): a line
-   reading `Ticket verification: <command>`. When they name none, `<cmd>` is
-   the repo's full verification, its `Full verification: <command>` line or
-   the command they document. The report's `Verification` line names `<cmd>`
-   itself, without the wrapper.
+   reading `Ticket verification: <command>`. When they name none, run the
+   repo's full verification instead, its `Full verification: <command>` line or
+   the command they document. The report's `Verification` line names the
+   command you ran.
    Run it in the foreground and wait for it (host capability *Run a long
    command*); never background it and sleep, poll or kill it. A run the host
    moves to the background at its timeout is still waited for, as that row says.
@@ -316,8 +309,7 @@ Evidence: <test name> - <one-line red failure>; ... | None
 
 - `Commits`: your commits' short SHAs, oldest first, space-separated.
 - `Verification`: the bare ticket-verification command (the full
-  verification when the repo names no ticket verification), never the
-  `suite-cost run` wrapper you ran it through.
+  verification when the repo names no ticket verification).
 - `Criteria`: each unmet criterion in its ticket wording, shortened to fit
   the line, after `unmet:`; then each changed source file no test exercises,
   by its repo path, after `untested:`. Either part is left out when empty.

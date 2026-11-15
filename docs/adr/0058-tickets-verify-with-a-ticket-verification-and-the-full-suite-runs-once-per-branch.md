@@ -1,5 +1,8 @@
 # Tickets verify with a ticket verification; the full suite runs once per branch
 
+Superseded in part by ADR-0063: step f runs the full verification bare, not
+through `suite-cost run`, which is removed.
+
 A full run of this repo's suite costs about 22 CPU-minutes, and a flow ran it
 about 9-12 times: once per ticket subagent, once at the combined-branch check,
 once per review-loop fixer, and again for each suite-cost confirmation.

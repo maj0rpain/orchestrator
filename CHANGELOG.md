@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.0.0
+
+Breaking: the plugin no longer measures suite cost (#3381, ADR-0063). The `orch.sh suite-cost` noun (`run`, `check` and `history`) is removed with no shim, and so are its record, verdict file and active-run markers and the `orchestrator.suiteCost.floor`, `orchestrator.suiteCost.growth` and `orchestrator.suiteCost.setup` git config keys. The review loop and the review pass run no suite-cost check, which ran the whole suite on base commits and again to confirm growth, and gave no `grew` verdict in 504. Ticket subagents, fixers, resolvers, review pass sessions and the combined-branch check run their verification command bare. `review file` takes only the `spec` and `standards` axes and a `<file>:<line>` location: `--axis suite-cost` and `--location suite` are refused. The test audit reports no recorded trend. A clone's leftover files under `.git/orchestrator/` (`suite-cost`, `suite-cost.active/`, `suite-cost.verdicts`) are no longer read and can be deleted.
+
+## 5.3.3
+
+Every read of an issue's or a PR's comments now goes through one reader of trusted comments, which drops untrusted comments in one place and returns rather than dies on a failed or unparseable read. A structural test fails when orch.sh's own scripts read comments any other way. Nothing orch.sh prints or does changes.
+
 ## 5.3.2
 
 `ticket publish` and `breakdown publish` now rewrite each published ticket's `## Blocked by` section from its verified blocking edges, one `- #<n>` line per blocker or `None (can start immediately)`, so published bodies name their blockers by number.

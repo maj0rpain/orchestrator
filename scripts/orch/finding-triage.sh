@@ -39,9 +39,7 @@ finding_scan_one() {
   if [ -z "$file" ]; then
     loc=- result=unknown detail='body does not parse: no **Location:** line naming `<file>:<line>` at <SHA>'
   elif [ -z "$pr" ]; then
-    loc="$file${lines:+:$lines}" result=unknown detail='body does not parse: no **PR:** line ending in a pull request URL'
-  elif [ "$file" = "$SUITE_LOCATION" ] && [ -z "$lines" ]; then
-    loc="$file" result=unknown detail="a suite-cost finding names the suite as a whole, no lines to follow"
+    loc="$file:$lines" result=unknown detail='body does not parse: no **PR:** line ending in a pull request URL'
   elif ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")" &&
     { git fetch -q origin "refs/pull/$pr/head" >/dev/null 2>&1 || true
       ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")"; }; then
@@ -148,7 +146,7 @@ triage_comment_post() {
 # be read (triage_comment_post then dies naming it).
 triage_comment_posted() {
   local kept want
-  comments_trusted adapter_issue_comments "read issue #$1's comments" "$1" kept
+  comments_trusted issue "read issue #$1's comments" "$1" kept
   want="$(printf '%s\n\n' "$TRIAGE_COMMENT_DISCLAIMER" && cat "$2")" \
     || return 1  # triage_comment_post dies naming the unreadable file
   jq -e --arg want "$want" 'any(.[]; (.body | sub("\n+$"; "")) == $want)' <<<"$kept" >/dev/null
@@ -357,7 +355,7 @@ cmd_finding_triage_bundle() {
 # or unparseable comments read dies naming the member, before any write.
 bundle_member_done() {
   local comments
-  comments_rendered --hint "no member was touched" adapter_issue_comments \
+  comments_rendered --hint "no member was touched" issue \
     "read issue #$2's comments" "$2" comments
   grep -qE "Bundled into #$1([^0-9]|\$)" <<<"$comments"
 }
@@ -370,7 +368,7 @@ bundle_member_done() {
 # may have landed) - that one and every one after it - and the --into command
 # that resumes. --into skips a member already closed into B before this runs.
 bundle_members_close() {
-  local b="$1" comment_file m i=0 comments raw state why left err held
+  local b="$1" comment_file m i=0 comments kept state why left err held reason
   shift
   [ $# -gt 0 ] || return 0 # every member was already closed into B
   local members=("$@")
@@ -379,9 +377,10 @@ bundle_members_close() {
   for m in "${members[@]}"; do
     why=""
     held="left open"
-    if ! gh_capture raw err adapter_issue_comments "$m"; then
-      why="gh could not read member #$m's comments: $(gh_reason "$err")"
-    elif ! comments="$(comments_render_trusted "$m" <<<"$raw")"; then
+    if ! comments_trusted_read issue "$m" kept reason; then
+      if [ -n "$reason" ]; then why="gh could not read member #$m's comments: $reason"
+      else why="could not read member #$m's comments: its comments did not parse"; fi
+    elif ! comments="$(comments_render <<<"$kept")"; then
       why="could not read member #$m's comments: its comments did not parse"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
       && ! triage_comment_post err "$m" "$comment_file"; then

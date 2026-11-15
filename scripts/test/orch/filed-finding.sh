@@ -79,7 +79,7 @@ echo "axis table"
 new_repo >/dev/null
 # shellcheck disable=SC2016 # expanded by the inner bash
 assert_eq "FILED_AXES lists the table's axes in its order" \
-  "$(sourced_orch_script 'printf "%s" "$FILED_AXES"')" "spec standards suite-cost"
+  "$(sourced_orch_script 'printf "%s" "$FILED_AXES"')" "spec standards"
 # shellcheck disable=SC2016 # expanded by the inner bash
 missing="$(sourced_orch_script '
   for axis in $FILED_AXES; do
@@ -89,8 +89,7 @@ assert_eq "every member of FILED_AXES has a category_for_axis result" "$missing"
 axis_category() { sourced_orch category_for_axis "$1"; }
 assert_eq "spec starts as a bug" "$(axis_category spec)" "bug"
 assert_eq "standards starts as an enhancement" "$(axis_category standards)" "enhancement"
-assert_eq "suite-cost starts as an enhancement" "$(axis_category suite-cost)" "enhancement"
-assert_eq "the axis is case-insensitive" "$(axis_category Suite-Cost)" "enhancement"
+assert_eq "the axis is case-insensitive" "$(axis_category Standards)" "enhancement"
 out="$(axis_category style)"; st=$?
 assert_status "an unknown axis fails" "$st" 1
 assert_eq "printing nothing" "$out" ""
@@ -154,12 +153,8 @@ assert_not_contains "no Spec question line when none is given" "$body" "Spec que
 assert_eq "a range without a Spec question parses back to every part" "$(parsed "$body")" \
   "$(fields spec major 'misses the spec' lib/x.sh 10-20 "$sha" "$url" 42 'found in the final iteration.')"
 
-body="$(rendered 'Grew.' suite-cost major 'grew past the threshold' suite '' "$sha" "$url" 'found in the final iteration.')"
-assert_contains "a suite-cost finding names the suite, with no line" "$body" "**Location:** \`suite\` at $sha"
-assert_eq "and parses back to every part, its line empty" "$(parsed "$body")" \
-  "$(fields suite-cost major 'grew past the threshold' suite '' "$sha" "$url" 42 'found in the final iteration.')"
-no_line="$(printf '%s\n' "$body" | sed "s/\`suite\`/\`src\/app.sh\`/")"
-assert_eq "while any other file with no line is no location" "$(parsed "$no_line" | grep '^file=')" "file="
+assert_eq "a suite location is no location" \
+  "$(parsed "$(writeln "**Location:** \`suite\` at $sha")" | grep '^file=')" "file="
 
 body="$(rendered 'Text.' standards nit 'cheap - but noisy - fix' a.sh 1 "$sha" "$url" 'not mechanical')"
 assert_eq "a severity reason containing ' - ' splits at the first one" "$(parsed "$body")" \
