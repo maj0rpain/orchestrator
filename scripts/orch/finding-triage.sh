@@ -39,7 +39,7 @@ finding_scan_one() {
   if [ -z "$file" ]; then
     loc=- result=unknown detail='body does not parse: no **Location:** line naming `<file>:<line>` at <SHA>'
   elif [ -z "$pr" ]; then
-    loc="$file:$lines" result=unknown detail='body does not parse: no **PR:** line ending in a pull request URL'
+    result=unknown detail='body does not parse: no **PR:** line ending in a pull request URL'
   elif ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")" &&
     { git fetch -q origin "refs/pull/$pr/head" >/dev/null 2>&1 || true
       ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")"; }; then

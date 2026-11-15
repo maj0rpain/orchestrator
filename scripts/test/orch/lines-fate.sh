@@ -55,6 +55,7 @@ fix_sha="$(lf_edit app.sh 's/^app line 3$/app line 3, fixed/' "fix line 3")"
 reword_sha="$(lf_edit app.sh 's/^app line 11$/app line 11, reworded/' "reword line 11")"
 lf_case fixed "$head_sha" src/app.sh 3 3
 lf_case untouched "$head_sha" src/app.sh 6 6
+lf_case reversed "$head_sha" src/app.sh 3 1
 lf_case pastend "$head_sha" src/app.sh 40 41
 
 # A PR head that edited the file and never reached the default branch.
@@ -203,6 +204,7 @@ sourced_orch_script "$LF_ASK" "$lf_cases" >"$rows"
 assert_eq "every case is answered" "$(wc -l <"$rows" | tr -d ' ')" "$(wc -l <"$lf_cases" | tr -d ' ')"
 lf_assert "$rows" fixed changed "$fix_sha"
 lf_assert "$rows" untouched unchanged
+lf_assert "$rows" reversed changed "$fix_sha"
 lf_assert "$rows" pastend changed "$reword_sha"
 lf_assert "$rows" unmerged never-reached
 lf_assert "$rows" nomergebase changed "$head_sha"

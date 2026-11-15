@@ -236,7 +236,8 @@ lines_fate() {
     else
       # The runs of lines no deletion took (no deletion: the whole range) are
       # followed, a deleted part no commit on the ref ever held left out.
-      for __lf_seg in $(range_segments "$__lf_start" "$__lf_end" "$__lf_deleted"); do
+      # A reversed range (start past end) follows its start line alone.
+      for __lf_seg in $(range_segments "$__lf_start" "$(( __lf_end < __lf_start ? __lf_start : __lf_end ))" "$__lf_deleted"); do
         __lf_new_start="$(rows_map_line "$__lf_rows" "${__lf_seg%,*}")"
         __lf_new_end="$(rows_map_line "$__lf_rows" "${__lf_seg#*,}")"
         [ "$__lf_new_end" -ge "$__lf_new_start" ] || __lf_new_end="$__lf_new_start"
