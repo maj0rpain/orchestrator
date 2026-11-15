@@ -105,11 +105,16 @@ cmd_redo_review() {
   local phase i b word detail slug issue branch pr new_n resumed
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
-  # review and handoff are first reached inside a command substitution (the
-  # terminal state reads handoff): load them here,
-  # once, in the main shell, past the guard that refuses a run before it.
+  # review, handoff and, on a resumed mid-redo run, branch are first reached
+  # inside a command substitution (the terminal state reads handoff, and
+  # classifies a resumed redo through redo_midway, which names the -redo-<n>
+  # branch): load them here, once, in the main shell, past the guard that
+  # refuses a run before it. branch loads only while a redo is under way
+  # (redo_count above 0, redo_midway's first condition), so a refused run with
+  # none loads no branch; the load below is then a no-op.
   orch_load review
   orch_load handoff
+  if [ "$(state_get redo_count)" -gt 0 ]; then orch_load branch; fi
   i="$(state_get iteration)"
   b="$(review_budget)"
   local terminal; terminal="$(review_terminal_state)" || true

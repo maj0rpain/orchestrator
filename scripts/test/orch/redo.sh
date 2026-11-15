@@ -358,8 +358,11 @@ assert_status "review resume refuses" "$st" 1
 assert_contains "saying there is nothing to resume" "$out" "nothing to resume"
 out="$("$ORCH" doctor --flow 2>&1)" || true
 assert_not_contains "doctor does not call the loop interrupted" "$out" "looks interrupted"
-out="$("$ORCH" redo review 2>&1)"; st=$?
+rm_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rm_load" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a clean rerun completes the redo" "$st" 0
+assert_trace_loads_once "a resumed mid-redo run" "$rm_load"
+rm -f "$rm_load"
 assert_eq "at phase implement, iteration 0, branch and PR cleared" \
   "$("$ORCH" state get phase) $("$ORCH" state get iteration) $("$ORCH" state get branch) $("$ORCH" state get pr)" \
   "implement 0  "
