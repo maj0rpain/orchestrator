@@ -20,3 +20,30 @@ counting_bin() {
 
 # counting_starts <dir> <cmd>: how many times the <cmd> in <dir> has started.
 counting_starts() { wc -l <"$1/$2.log" | tr -d ' '; }
+
+# counting_stdin_bin <cmd>: like counting_bin, and each start also appends one
+# line to <dir>/<cmd>.bytes: the bytes the <cmd> was offered on standard input.
+# Its stdin passes through tee into a file, so a command that stops reading
+# early shows the read-ahead it was offered, not the whole input. The caller
+# gives the wrapped command a stdin that ends (a pipe or </dev/null). Prints
+# the dir.
+counting_stdin_bin() {
+  local dir
+  dir="$(counting_bin "$1")"
+  cat >"$dir/$1" <<STUB
+#!/usr/bin/env bash
+echo x >>"$dir/$1.log"
+f="\$(mktemp)"
+tee "\$f" | "$(command -v "$1")" "\$@"
+st=\${PIPESTATUS[1]}
+wc -c <"\$f" | tr -d ' ' >>"$dir/$1.bytes"
+rm -f "\$f"
+exit "\$st"
+STUB
+  : >"$dir/$1.bytes"
+  printf '%s\n' "$dir"
+}
+
+# counting_bytes <dir> <cmd>: the bytes all starts of the <cmd> in <dir> were
+# offered on standard input, in all.
+counting_bytes() { awk '{ s += $1 } END { print s + 0 }' "$1/$2.bytes"; }
