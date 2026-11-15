@@ -62,14 +62,15 @@ open_issue_read() {
 
 # The issue's body as plain multi-line text: what agents read, with the Read
 # tool, beside `issue comments` (#1143). With --json, the issue's title, body,
-# labels and comments as ISSUE_JSON_JQ's object - the machine form, for
-# scripts: compact JSON puts the whole issue on one line, which Read cuts off.
+# labels and comments as the object issue_json_published builds - the machine
+# form, for scripts: compact JSON puts the whole issue on one line, which Read
+# cuts off.
 cmd_issue_fetch() {
   local issue="$1" file="$2" as_json="${3:-}"
   trust_warn_issue "$issue"
   if [ -n "$as_json" ]; then
     local json
-    issue_json_trusted "read issue #$issue" "$issue" json
+    issue_json_published "$issue" json
     file_write_atomic "$file" "$json"$'\n' || die "could not write $file"
     return
   fi
@@ -87,29 +88,26 @@ issue_body_lf() (
   adapter_issue_body "$1" | tr -d '\r'
 )
 
-# issue_json_trusted <what> <n> <var>: issue <n> as ISSUE_JSON_JQ's object minus
-# the comments of untrusted authors (Trust module), authorAssociation deleted
-# from the rest, so the published shape is unchanged; assigned to <var>. A gh
-# failure dies as "gh could not <what>". Run in the caller's shell, never under
-# capture, so the trust filter's stderr line reaches the real stderr.
-issue_json_trusted() {
-  local __ijt_raw __ijt_kept __ijt_out
-  gh_or_die --out __ijt_raw "$1" adapter_issue_json "$2"
-  __ijt_kept="$(comments_trust_filter "$2" <<<"$__ijt_raw")" \
-    || die "could not read the comments of issue #$2: its comments did not parse"
-  __ijt_out="$(printf '%s\n%s\n' "$__ijt_raw" "$__ijt_kept" \
-    | jq -cs '. as [$o, $c] | $o | .comments = ($c | map(del(.authorAssociation)))')" \
-    || die "could not read the comments of issue #$2"
-  printf -v "$3" '%s' "$__ijt_out"
-}
-
-# comments_trust_filter <n>: a raw comment object (adapter_issue_comments' or an
-# issue's) on stdin, on stdout its comments kept to the trusted authors' (Trust
-# module) as a compact JSON array; the Trust filter's stderr line names `#<n>`,
-# the issue or PR number. Non-zero when stdin does not parse, its jq error
-# silenced.
-comments_trust_filter() {
-  jq -c .comments 2>/dev/null | trust_filter_comments "$1"
+# issue_json_published <n> <var>: issue <n> as the object `issue fetch --json`
+# publishes, {number, title, body, labels, comments}, each comment {author,
+# createdAt, body}; assigned to <var>. The issue is read first, then its
+# trusted comments (Comments module) through comments_trusted, and the two are
+# joined on jq's standard input. A gh failure dies as "gh could not read issue
+# #<n>" or "gh could not read the comments of issue #<n>"; an issue answer that
+# is not an issue object dies as "could not read issue #<n>: it did not parse".
+# Run in the caller's shell, never under capture, so the trust filter's stderr
+# line reaches the real stderr.
+issue_json_published() {
+  local __ijp_issue __ijp_comments __ijp_out
+  orch_load comments
+  gh_or_die --out __ijp_issue "read issue #$1" adapter_issue_json "$1"
+  jq -e 'type == "object"' >/dev/null 2>&1 <<<"$__ijp_issue" \
+    || die "could not read issue #$1: it did not parse"
+  comments_trusted issue "read the comments of issue #$1" "$1" __ijp_comments
+  __ijp_out="$(printf '%s\n%s\n' "$__ijp_issue" "$__ijp_comments" \
+    | jq -cs '. as [$o, $c] | $o | .comments = ($c | map({author, createdAt, body}))')" \
+    || die "could not read issue #$1: it did not parse"
+  printf -v "$2" '%s' "$__ijp_out"
 }
 
 # The comments `issue comments` writes (#1116), rendered through
@@ -123,14 +121,13 @@ comments_trust_filter() {
 # file is written only once the read has succeeded. With --with-spec-review
 # (#1921; orch-questions passes it) the changelogs are kept, the one difference.
 cmd_issue_comments() {
-  local issue="$1" file="$2" keep_reviews="${3:-}" json text kept_jq
+  local issue="$1" file="$2" keep_reviews="${3:-}" json text
   orch_load comments
-  kept_jq="$COMMENTS_RENDER_JQ"' .comments | render_comments'
-  issue_json_trusted "read the comments of issue #$issue" "$issue" json
+  comments_trusted issue "read the comments of issue #$issue" "$issue" json
   if [ -n "$keep_reviews" ]; then
-    text="$(jq -r "$kept_jq" <<<"$json")"
+    text="$(comments_render <<<"$json")"
   else
-    text="$(marked_comment_drop spec-review <<<"$json" | jq -r "$kept_jq")"
+    text="$(marked_comment_drop spec-review <<<"$json" | comments_render)"
   fi \
     || die "could not read the comments of issue #$issue"
   # $(...) drops the trailing newline jq -r printed; put it back unless empty.

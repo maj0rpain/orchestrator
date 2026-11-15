@@ -262,7 +262,7 @@ out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" --deviations "$kp/missi
 assert_eq "and writing no file" "$(on_disk "$kp/fresh.md")" "absent"
 
 fake_pr 57 open quick/21-foo main
-for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_json; do
+for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_comments; do
   fake_fail "$op"
   out="$("$ORCH" review-pass known-items 21 "$kp/known.md" 2>&1)"; st=$?
   assert_status "refuses when $op cannot be read" "$st" 1
@@ -272,6 +272,19 @@ for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_jso
   assert_eq "and writing no file for $op" "$(on_disk "$kp/fresh.md")" "absent"
   fake_unfail
 done
+
+fake_fail adapter_issue_comments "$GH_502"
+out="$("$ORCH" review-pass known-items 21 "$kp/known.md" 2>&1)"; st=$?
+assert_status "a failing issue-comments read exits 1" "$st" 1
+assert_eq "naming the issue's comments and gh's reason" "$out" \
+  "orch: gh could not read the comments of issue #21: HTTP 502: Bad Gateway"
+assert_eq "leaving the known-items file as it was" "$(cat "$kp/known.md")" "kept"
+fake_unfail
+out="$(adapter_stood_in 'adapter_issue_comments() { printf "not json\n"; }' "$ORCH" review-pass known-items 21 "$kp/known.md" 2>&1)"; st=$?
+assert_status "an issue-comments answer that is not a comment list exits 1" "$st" 1
+assert_eq "naming the issue and its cause" "$out" \
+  "orch: could not read the comments of issue #21: its comments did not parse"
+assert_eq "leaving the known-items file as it was" "$(cat "$kp/known.md")" "kept"
 
 for args in "" "21" "abc $kp/fresh.md" "21 $kp/fresh.md --deviations" \
   "21 $kp/fresh.md --bogus x" "21 $kp/fresh.md extra"; do

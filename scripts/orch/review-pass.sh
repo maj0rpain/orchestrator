@@ -139,7 +139,7 @@ review_pass_known_items() {
     tr -d '\r' <"$devfile" >"$work/deviations"
     text_entries_append deviations "$work/deviations"
   fi
-  issue_json_trusted "read the comments of issue #$issue" "$issue" issue_json
+  comments_trusted issue "read the comments of issue #$issue" "$issue" issue_json
   issue_rulings="$(marked_comment_texts spec-ruling <<<"$issue_json" | jq -r "$SPEC_RULING_ENTRIES_JQ")" \
     || die "could not read the comments of issue #$issue"
   printf '%s\n' "$issue_rulings" >"$work/rulings" \

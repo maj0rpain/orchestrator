@@ -505,8 +505,7 @@ adapter_issue_comments() {
 }
 
 # adapter_issue_json <n>: the stored issue as ISSUE_JSON_JQ's trimmed object -
-# its number, title, body byte for byte, label names, and each comment's
-# author, association, date and body.
+# its number, title, body byte for byte and label names; no comments.
 adapter_issue_json() {
   ! fake_failing adapter_issue_json || return 1
   fake_issue_known "$1" || return 1
@@ -514,11 +513,10 @@ adapter_issue_json() {
   d="$(fake_issue_dir "$1")"
   body="$d/body"
   [ -f "$body" ] || body=/dev/null
-  fake_comments_json "$d/comments" "$1" | jq -c 'map(del(.url))' \
-    | jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
-      --rawfile b "$body" \
-      --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
-      '{number: $n, title: $t, body: $b, labels: $l, comments: input}'
+  jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
+    --rawfile b "$body" \
+    --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
+    '{number: $n, title: $t, body: $b, labels: $l}'
 }
 
 # adapter_issue_state_labels <n>: the stored state, then its labels. Lagging

@@ -882,15 +882,15 @@ assert_eq "printing what gh answered, unrendered" "$out" \
 
 issue_json_jq="$(sourced_orch_script 'printf "%s" "$ISSUE_JSON_JQ"')"
 : >"$GH_FIXTURE/env.log"
-gh_reply 0 $'{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}\n' '' \
-  issue view 23 --json number,title,body,labels,comments --jq "$issue_json_jq"
+gh_reply 0 $'{"body":"B.","labels":["bug"],"number":23,"title":"T"}\n' '' \
+  issue view 23 --json number,title,body,labels --jq "$issue_json_jq"
 out="$(contract adapter_issue_json 23 2>&1)"; st=$?
 assert_status "issue json: reads the issue through ISSUE_JSON_JQ" "$st" 0
-assert_eq "printing the object it formatted" "$out" '{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}'
+assert_eq "printing the object it formatted" "$out" '{"body":"B.","labels":["bug"],"number":23,"title":"T"}'
 assert_contains "pinned to the resolved repo" "$(cat "$GH_FIXTURE/env.log")" \
-  "GH_REPO=acme/widgets GH_HOST=<unset> issue view 23 --json number,title,body,labels,comments"
+  "GH_REPO=acme/widgets GH_HOST=<unset> issue view 23 --json number,title,body,labels --jq"
 gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  issue view 404 --json number,title,body,labels,comments --jq "$issue_json_jq"
+  issue view 404 --json number,title,body,labels --jq "$issue_json_jq"
 out="$(contract adapter_issue_json 404 2>&1)"; st=$?
 assert_status "issue json: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
@@ -898,9 +898,9 @@ assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 # trimmed shape - a label's id and colour, a comment author's name and more -
 # is dropped.
 issue_gh_json='{"number":23,"title":"Widgets need a handle","body":"## Problem\n\nTracked in #6.","labels":[{"id":"LA_1","name":"bug","description":"Broken","color":"d73a4a"},{"id":"LA_2","name":"ready-for-agent","description":"","color":"0e8a16"}],"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z","includesCreatedEdit":false,"isMinimized":false,"minimizedReason":"","reactionGroups":[],"url":"https://github.com/acme/widgets/issues/23#issuecomment-1","viewerDidAuthor":true}]}'
-assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body, label names and comments, each with its author association" \
+assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body and label names, with no comments" \
   "$(printf '%s' "$issue_gh_json" | jq -cS "$issue_json_jq")" \
-  '{"body":"## Problem\n\nTracked in #6.","comments":[{"author":"pat","authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}],"labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
+  '{"body":"## Problem\n\nTracked in #6.","labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
 
 
 bodies_jq='.[] | "\(.number)\t\(.body | @json)\t\(.isCrossRepository)"'
