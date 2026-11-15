@@ -441,6 +441,12 @@ assert_eq "and leaves the claim held with no label added" "$(fake_claim_held 67)
 assert_eq "and no temp body file behind" "$(ls -A "$TD")" ""
 rmdir "$TD"
 
+# ask: a phase the marker writer refuses ends the ask before any write
+ask_seed 68 orch:spec orch:running
+out="$(sourced_rc 'standing_ask " " Q')"
+assert_contains "ask with a blank phase dies" "$out" "rc=1"
+assert_eq "and writes nothing: claim held, no comment, no label added" "$(fake_claim_held 68)|$(fake_comments_of 68)|$(fake_labels_of 68)" "held||orch:running orch:spec "
+
 # the step's contract, called directly with a state file set
 out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"; printf "landed\tearlier\n" >"$STANDING_STATE_FILE"
 standing_chain_start; rm -f "$STANDING_STATE_FILE.ran"

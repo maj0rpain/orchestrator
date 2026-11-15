@@ -280,7 +280,9 @@ standing_timeline_read_or_die() {
 # successful timeline read fixed, and `stop <kind> <first line>` for the
 # wrapper's backstop line. A chain transition starts from the writes that landed
 # (STANDING_DONE) and skips them; with no state file nothing is recorded.
-# standing_chain_step is the one place a write is skipped and noted, and
+# standing_chain_step is the one place an adapter write is run, skipped and
+# noted, apart from a comment standing_chain_comment's look finds already
+# landed (and finish's own phase record, which is no adapter write), and
 # standing_chain_comment the one place a try is recorded.
 STANDING_STATE_FILE=""
 STANDING_DONE=()
@@ -346,12 +348,14 @@ standing_stop_note() {
 }
 
 # standing_chain_step <landed-name> <failure-what> <issue> <adapter command...>:
-# the one holder of the chain-write rule. A write already landed is skipped and
-# its command not run; otherwise the complete command runs, its stderr captured,
-# and a failure dies as a chain does ("could not <failure-what> on issue
-# #<issue>: <reason> - writes that landed: ...; the claim stays held"); a
-# success notes <landed-name> as landed. The step adds no argument to the
-# command, so the issue appears both as <issue> and inside it.
+# the one holder of the chain-write rule for adapter writes (a comment
+# standing_chain_comment's look finds landed is skipped and noted there). A
+# write already landed is skipped and its command not run; otherwise the
+# complete command runs, its stderr captured, and a failure dies as a chain
+# does ("could not <failure-what> on issue #<issue>: <reason> - writes that
+# landed: ...; the claim stays held"); a success notes <landed-name> as
+# landed. The step adds no argument to the command, so the issue appears both
+# as <issue> and inside it.
 standing_chain_step() {
   local landed="$1" what="$2" issue="$3" gh_err
   shift 3
@@ -534,13 +538,13 @@ standing_pause() {
 # @mentioned, <text>, then the reply instructions - adds needs-human, then
 # releases the claim.
 standing_ask() {
-  local phase="$1" text="$2" issue body
+  local phase="$1" text="$2" issue marker body
   standing_chain_start
   require_issue issue
   autopilot_setting handle
-  body="$(marked_comment_write question "$phase")"
+  marker="$(marked_comment_write question "$phase")" || exit 1
   printf -v body '%s\n@%s\n\n%s\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n' \
-    "$body" "$AUTOPILOT_VALUE" "$text"
+    "$marker" "$AUTOPILOT_VALUE" "$text"
   standing_chain_comment "posted the $phase question comment" "post the $phase question comment" "$issue" "$body"
   standing_chain_relabel "$issue" --add "$STANDING_HUMAN_LABEL"
   standing_release "$issue"
