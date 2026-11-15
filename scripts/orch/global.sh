@@ -656,8 +656,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout of the clone - marked worktrees only -
                               followed by quick #<N> when it records an issue
   side-checkout issue         print the issue this side checkout records
-                              (side-checkout add --issue); exits 1 in a
-                              checkout that is no side checkout, or records
+                              (side-checkout add --issue); exits 1,
+                              printing nothing, in a checkout that is no
+                              side checkout, or records
                               no plain issue number, and 2 on a usage error
   side-checkout remove <slug> remove side checkout <slug>, never with --force.
                               Refuses an unknown slug, a worktree without the

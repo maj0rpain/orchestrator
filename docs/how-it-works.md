@@ -619,7 +619,8 @@ to honour a human's request for a side checkout.
 `orch.sh side-checkout add <slug> --issue N` makes a side checkout for a
 quick implementation and records `N`, its issue, in the side checkout's
 ownership marker; without `--issue` the marker records nothing. Run inside a
-checkout, `orch.sh side-checkout issue` prints the recorded issue, and exits 1
+checkout, `orch.sh side-checkout issue` prints the recorded issue, and exits 1,
+printing nothing,
 in a checkout that is not a side checkout or records none, so a session
 opened there picks the issue up without being told. `side-checkout list`
 appends `quick #N` to each side checkout that records one.
