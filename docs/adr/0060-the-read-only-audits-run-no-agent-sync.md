@@ -1,5 +1,8 @@
 # The read-only audits run no agent sync
 
+Amended by ADR-0064: the audits write their working files in the checkout's
+git-excluded run directory; they still run no agent sync.
+
 ADR-0052 (on Junie the agent setting travels in generated agent copies) has
 every skill run `agent sync` on Junie once per run, before its first plugin
 agent. The audit skills, `orch-audit-docs`, `orch-audit-code` and
