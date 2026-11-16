@@ -1369,6 +1369,7 @@ df_body() {
 }
 df_fetch() { "$ORCH" issue fetch 23 "$df_dir/out.md" 2>&1; }
 want_none="cited files changed since $df_sha: none"
+df_one_body="$(df_body "$df_sha" a.md:1)"
 fake_issue_body 23 "$(df_body "$df_sha" a.md:1 b.md:2-3)"
 out="$(df_fetch)"; st=$?
 assert_status "fetch of an audit-filed body succeeds" "$st" 0
@@ -1430,7 +1431,7 @@ assert_status "a commit the clone does not hold exits 0" "$st" 0
 assert_eq "saying so" "$out" "cited files changed since deadbeefdeadbeefdeadbeefdeadbeefdeadbeef: unknown (commit not in this clone)"
 assert_contains "with the file written" "$(cat "$df_dir/out.md")" "**Audited at:**"
 
-fake_issue_body 23 "$(df_body "$df_sha" a.md:1)"
+fake_issue_body 23 "$df_one_body"
 unborn="$(mktemp -d)"; git -C "$unborn" init -q
 rm -f "$df_dir/out2.md"
 out="$(cd "$unborn" && "$ORCH" issue fetch 23 "$df_dir/out2.md" 2>&1)"; st=$?
@@ -1449,7 +1450,7 @@ for df_case in \
   assert_eq "${df_case%%|*} prints nothing" "$out" ""
 done
 
-fake_issue_body 23 "$(df_body "$df_sha" a.md:1)"
+fake_issue_body 23 "$df_one_body"
 "$ORCH" issue fetch 23 "$df_dir/out.json" --json >"$df_dir/stdout" 2>&1
 assert_eq "--json prints nothing new" "$(cat "$df_dir/stdout")" ""
 
@@ -1459,9 +1460,9 @@ df_git="$(counting_bin git)"
 fake_issue_body 23 "Just text."
 : >"$df_git/git.log"
 PATH="$df_git:$PATH" ORCH_LOAD_TRACE="$df_dir/trace" "$ORCH" issue fetch 23 "$df_dir/out.md" >/dev/null 2>&1
-assert_not_contains "an ordinary fetch does not load the audit module" "$(cat "$df_dir/trace" 2>/dev/null)" "audit "
+assert_trace_names_no "an ordinary fetch" "$df_dir/trace" audit
 df_ord="$(counting_starts "$df_git" git)"
-fake_issue_body 23 "$(df_body "$df_sha" a.md:1)"
+fake_issue_body 23 "$df_one_body"
 : >"$df_git/git.log"
 PATH="$df_git:$PATH" "$ORCH" issue fetch 23 "$df_dir/out.md" >/dev/null 2>&1
 df_one="$(counting_starts "$df_git" git)"
