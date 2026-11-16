@@ -54,9 +54,9 @@ jobs:
           if grep -qxiF no-version-bump <<<"$labels"; then
             echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
           fi
-      # Runs the fragment rule alone (--fragment-only), never the whole docs lint,
-      # which the suite workflow runs. GH_TOKEN is for the fragment rule, whose
-      # gh api call reads the
+      # Runs the fragment rule and the suite budget rules 2 and 3
+      # (--fragment-only), never the whole docs lint, which the suite workflow
+      # runs. GH_TOKEN is for the fragment rule, whose gh api call reads the
       # fragment's issue to check it is no sub-issue.
       - name: Check the changelog fragment
         env:

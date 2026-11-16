@@ -436,18 +436,21 @@ BUDGET_FILE=scripts/test/suite-budget
 # fingerprints come from test_tree.sh's ledger_fingerprints, a fixed number of
 # processes whatever the number of sections.
 scan_ledger_fresh() {
-  local r="$1" td="$1/scripts/test" others=() suite
+  local r="$1" td="$1/scripts/test" fps st=0
   if [ ! -f "$r/$LEDGER_FILE" ]; then
     echo "$LEDGER_FILE: missing; run the full refresh (scripts/dev/section-durations.sh with no argument)"
     return 0
   fi
-  suites_read "$td/all.sh" "$td" || { echo "scripts/test/all.sh: $SUITES_ERR"; return 0; }
-  for suite in "${SUITES[@]}"; do
-    [ "$suite" = orch_test.sh ] || others+=("$suite")
-  done
-  ledger_fingerprints "$td" ${others[@]+"${others[@]}"} | awk -F'\t' -v file="$LEDGER_FILE" '
-    FILENAME == "-" { if (!($1 in fp)) { fp[$1] = $2; ord[++n] = $1 } next }
-    (NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" {
+  fps="$(mktemp)" || return 0
+  ledger_fingerprints_all "$td" >"$fps" || st=$?
+  if [ "$st" -eq 1 ]; then
+    echo "scripts/test/all.sh: $SUITES_ERR"
+    rm -f "$fps"
+    return 0
+  fi
+  awk -F'\t' -v file="$LEDGER_FILE" "$DURATIONS_AWK"'
+    FILENAME == ARGV[1] { if (!($1 in fp)) { fp[$1] = $2; ord[++n] = $1 } next }
+    durations_line() {
       if (!($3 in cnt)) { nf[$3] = NF; f4[$3] = $4; lines[++m] = $3 }
       cnt[$3]++
     }
@@ -465,13 +468,8 @@ scan_ledger_fresh() {
         if (!(t in fp)) print file ": the line of \"" t "\" has no section or suite; " fix
       }
       if (!("shellcheck" in cnt)) print file ": no shellcheck line; run the full refresh (scripts/dev/section-durations.sh with no argument)"
-    }' - "$r/$LEDGER_FILE"
-}
-# ledger_total <durations text on stdin>: the total in tenths of a second, the
-# CPU column summed over the first line per title.
-ledger_total() {
-  awk -F'\t' '(NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in s) { s[$3] = 1; t += $2 }
-    END { print t + 0 }'
+    }' "$fps" "$r/$LEDGER_FILE"
+  rm -f "$fps"
 }
 # tenths_text <tenths>: seconds with one decimal place.
 tenths_text() { printf '%d.%d' "$(($1 / 10))" "$(($1 % 10))"; }
@@ -482,23 +480,23 @@ tenths_text() { printf '%d.%d' "$(($1 / 10))" "$(($1 % 10))"; }
 # and HEAD, and a <base> with no merge-base; the durations file is the working
 # tree's. Without one, it checks the budget file's format alone.
 scan_suite_budget() {
-  local r="$1" base="${2:-}" lines=() budget total base_total mb
-  if [ -f "$r/$BUDGET_FILE" ]; then mapfile -t lines <"$r/$BUDGET_FILE"; fi
-  if [ ! -f "$r/$BUDGET_FILE" ]; then
+  local r="$1" base="${2:-}" budget total base_total mb st=0
+  suite_budget_read "$r/$BUDGET_FILE" || st=$?
+  if [ "$st" -eq 1 ]; then
     echo "$BUDGET_FILE: missing; it holds the suite budget, one positive whole number of CPU seconds"
     return 0
-  elif [ "${#lines[@]}" -ne 1 ] || ! [[ "${lines[0]}" =~ ^[1-9][0-9]*$ ]]; then
+  elif [ "$st" -ne 0 ]; then
     echo "$BUDGET_FILE: not one positive whole number of CPU seconds"
     return 0
   fi
   [ -n "$base" ] || return 0
-  budget="${lines[0]}"
+  budget="$SUITE_BUDGET"
   if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
     echo "$LEDGER_FILE: no merge-base with HEAD for '$base', so the suite budget is not compared with the base"
     return 0
   fi
-  total="$(ledger_total <"$r/$LEDGER_FILE" 2>/dev/null)"
-  base_total="$(git -C "$r" show "$mb:$LEDGER_FILE" 2>/dev/null | ledger_total)"
+  total="$(durations_total <"$r/$LEDGER_FILE" 2>/dev/null)"
+  base_total="$(git -C "$r" show "$mb:$LEDGER_FILE" 2>/dev/null | durations_total)"
   if [ "$total" -gt "$((budget * 10))" ] && [ "$total" -gt "$base_total" ]; then
     echo "$LEDGER_FILE: the total is $(tenths_text "$total") CPU seconds, over the suite budget of $budget and above the base's total of $(tenths_text "$base_total"). Make cheaper the tests this change added or edited and run scripts/dev/section-durations.sh --stale again; never cut other tests and never edit $BUDGET_FILE; if still over, stop for the human"
   fi
@@ -531,7 +529,7 @@ scan_suite_budget_alone() {
 # check_real_suite_budget: rules 2 and 3 against the real plugin root, once,
 # judged against DOCS_LINT_BASE, else CHANGELOG_BASE, else neither: the
 # comparison with the base and rule 3 are then skipped, and say so. The full
-# run and the --fragment-only run both call it.
+# run (after the ledger check) and the --fragment-only run both call it.
 check_real_suite_budget() {
   local base="${DOCS_LINT_BASE:-${CHANGELOG_BASE:-}}"
   check "the recorded total is within the suite budget" "$(scan_suite_budget "$PLUGIN_ROOT" "$base")"
@@ -4434,8 +4432,8 @@ check "the glossary defines Turn-final reply" \
 # real root only when CHANGELOG_BASE holds main's commit, and waives its
 # one-fragment part when NO_VERSION_BUMP is set; the workflow's "Read main's
 # commit" step (.github/workflows/fragment.yml) sets both, and its check step
-# runs the fragment rule alone (--fragment-only) with the GH_TOKEN its parent
-# lookup reads issues with.
+# runs the fragment rule and the suite budget rules 2 and 3 (--fragment-only)
+# with the GH_TOKEN its parent lookup reads issues with.
 echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"
 # plugin_version <plugin root>: the version field of its plugin.json.
@@ -4929,6 +4927,12 @@ assert_empty "a budget file new in the change is exempt, beside other files" \
 assert_empty "with no base, the budget-alone rule is skipped" "$(scan_suite_budget_alone "$fixture")"
 check "the durations file has one fresh line for every section, other suite and shellcheck" \
   "$(scan_ledger_fresh "$PLUGIN_ROOT")"
+# The full run judges the suite budget rules 2 and 3 as well, so a ticket
+# verification enforces them before a push. The call stands at column 0 here
+# and nowhere else; the --fragment-only call is indented.
+assert_eq "the full run calls check_real_suite_budget" \
+  "$(grep -c '^check_real_suite_budget$' "$PLUGIN_ROOT/scripts/test/docs_lint.sh")" 1
+check_real_suite_budget
 
 # --- line width (#1524) -------------------------------------------------------
 echo

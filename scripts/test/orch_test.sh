@@ -190,15 +190,6 @@ trap test_jobs_stop_descendants INT TERM
 # so the processes it starts inherit it; a niceness of 10 or more is left
 # alone, so nested runs never stack, and a failing renice is ignored.
 
-# section_files: the noun files the walk reads, one per line - harness.sh,
-# then every other scripts/test/orch/*.sh but setup.sh, in LC_ALL=C order
-# whatever the caller's locale. There is no list of files: a new one is read.
-section_files() {
-  printf '%s\n' "$SECTION_DIR/harness.sh"
-  printf '%s\n' "$SECTION_DIR"/*.sh | LC_ALL=C sort |
-    grep -vxF -e "$SETUP_FILE" -e "$SECTION_DIR/harness.sh"
-}
-
 # The walk section_titles and section_text share, over setup.sh, the noun
 # files, then setup.sh again. Each line is in one phase. "setup" is setup.sh's
 # shared setup (from its `# >>> shared setup` line to its `# >>> summary` line),
@@ -221,7 +212,7 @@ section_walk_awk="$SECTION_TITLE_AWK"'
 section_walk() {
   local program="$1" files
   shift
-  mapfile -t files < <(section_files)
+  mapfile -t files < <(section_files "$SECTION_DIR")
   ORCH_SETUP_FILE="$SETUP_FILE" awk "$@" "$section_walk_awk$program" \
     "$SETUP_FILE" "${files[@]}" "$SETUP_FILE"
 }

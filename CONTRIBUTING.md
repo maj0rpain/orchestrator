@@ -140,9 +140,9 @@ file, the change that introduces the budget file excepted. What a session does:
   still commits its merge resolution and reports the stop beside it, and the
   same holds when its `--stale` refuses for want of a fresh section. The session
   that started it asks: an autopilot session with `orch.sh autopilot ask`, an
-  attended session with a blocking question giving the total and the budget and
-  offering two answers, raise the budget on `main` or name what to cut. A
-  fixer's stop reaches the human only when the review loop stops.
+  attended session with a blocking question. Either question gives the total
+  and the budget and offers two answers, raise the budget on `main` or name
+  what to cut. A fixer's stop reaches the human only when the review loop stops.
 - **Nobody raises the number in a feature change.** After the human raises it on
   `main`, a base sync brings it in.
 - **Changing the number** is a human's say, in a change that touches the budget
@@ -539,7 +539,7 @@ scripts/test/tally.sh         the assertion tally every suite sources: ok, bad a
 scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_stdin_bin makes the same stub also recording the bytes offered on its stdin, counting_bytes sums them
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10, and the signal-reachable child start (test_jobs_run_child, with its INT/TERM stop) that section-durations.sh and lens-bench.sh use
 scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
-scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK
+scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh, docs_lint.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, section_files, the noun files of the walk, ledger_fingerprints and ledger_fingerprints_all, the ledger's fingerprints, suite_budget_read, the reader of the suite budget, durations_total, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

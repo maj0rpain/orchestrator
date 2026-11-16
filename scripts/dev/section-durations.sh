@@ -82,13 +82,9 @@ test_jobs_pool_init section-durations.sh || exit 1
 suites_read "$dir/all.sh" "$dir" || {
   echo "section-durations.sh: $SUITES_ERR" >&2; exit 1; }
 
-others=()
-for suite in "${SUITES[@]}"; do
-  [ "$suite" = orch_test.sh ] || others+=("$suite")
-done
 TAB=$(printf "\t")
 tmp="$(mktemp -d)" || exit 1
-ledger_fingerprints "$dir" ${others[@]+"${others[@]}"} >"$tmp/fingerprints" || {
+ledger_fingerprints_all "$dir" >"$tmp/fingerprints" || {
   echo "section-durations.sh: could not fingerprint the test text" >&2; rm -rf "$tmp"; exit 1; }
 SHELLCHECK_PIDS=()
 trap 'rm -rf "$tmp"' EXIT
@@ -115,14 +111,25 @@ measure() {
 # line; the budget is named as missing when suite-budget is missing or is not
 # one positive whole number.
 stale_report() {
-  local total budget_lines=()
-  total="$(awk -F'\t' '(NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in s) { s[$3] = 1; t += $2 }
-    END { printf "%d.%d", int(t / 10), t % 10 }' "$target")" || return 1
-  [ -f "$dir/suite-budget" ] && mapfile -t budget_lines <"$dir/suite-budget"
-  if [ "${#budget_lines[@]}" -eq 1 ] && [[ "${budget_lines[0]}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "section-durations.sh: total $total CPU seconds, budget ${budget_lines[0]} CPU seconds"
+  local total budget
+  total="$(durations_total <"$target")" || return 1
+  total="$((total / 10)).$((total % 10))"
+  if suite_budget_read "$dir/suite-budget"; then
+    budget="$SUITE_BUDGET CPU seconds"
   else
-    echo "section-durations.sh: total $total CPU seconds, budget missing"
+    budget=missing
+  fi
+  echo "section-durations.sh: total $total CPU seconds, budget $budget"
+}
+
+# measure_suite <name>: times the other suite <name> as the full refresh does,
+# and on a failure adds it to failed, with its report and output on stderr.
+measure_suite() {
+  local suite_st
+  TMPDIR="$tmp" measure "$1" test_jobs_run_child bash "$dir/$1"; suite_st=$?
+  if ! report_suite "$1" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
+    failed+=("$1")
+    cat "$tmp/report" "$tmp/out" >&2
   fi
 }
 
@@ -130,15 +137,15 @@ stale_report() {
 stale_run() {
   local regex
   # The ledger's walk: "<title> <fingerprint> <kind> <walk index>".
-  awk -F'\t' -v OFS='\t' -v ns="${#others[@]}" 'NR == FNR { n = NR; next }
+  awk -F'\t' -v OFS='\t' -v ns="${#LEDGER_OTHERS[@]}" 'NR == FNR { n = NR; next }
     { print $0, (FNR > n - ns ? "suite" : "section"), FNR }' "$tmp/fingerprints" "$tmp/fingerprints" >"$tmp/walk" || return 1
   [ -f "$target" ] || : >"$target"
   # Pass 1: the lines kept byte for byte (kept), what to measure (todo: index,
   # title, kind, fingerprint) and the fresh sections but isolation (fresh).
-  awk -F'\t' -v kept="$tmp/kept" -v todo="$tmp/todo" -v fresh="$tmp/fresh" '
+  awk -F'\t' -v kept="$tmp/kept" -v todo="$tmp/todo" -v fresh="$tmp/fresh" "$DURATIONS_AWK"'
     NR == FNR { if (!($1 in fp)) { fp[$1] = $2; kind[$1] = $3; ttl[$4] = $1; top = $4 + 0 } next }
     { line[++n] = $0
-      ok[n] = ((NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "")
+      ok[n] = durations_line()
       if (ok[n]) { t[n] = $3; cnt[$3]++; nf[n] = NF; f4[n] = (NF == 4 ? $4 : ""); cpuv[n] = $2 + 0 } }
     END {
       printf "" > kept; printf "" > todo; printf "" > fresh
@@ -153,7 +160,7 @@ stale_run() {
         name = ttl[k]
         if (name == "") continue
         if (!(name in isfresh)) printf "%d\t%s\t%s\t%s\n", k, name, kind[name], fp[name] > todo
-        else if (kind[name] == "section" && name != "isolation") printf "%d\t%d\t%s\n", k, fcpu[name], name > fresh
+        else if (kind[name] == "section" && k != 1) printf "%d\t%d\t%s\n", k, fcpu[name], name > fresh
       }
     }' "$tmp/walk" "$target" || return 1
   if [ ! -s "$tmp/todo" ]; then
@@ -191,11 +198,7 @@ stale_run() {
   done
   while IFS=$'\t' read -r _ title kind _; do
     [ "$kind" = suite ] || continue
-    TMPDIR="$tmp" measure "$title" test_jobs_run_child bash "$dir/$title"; suite_st=$?
-    if ! report_suite "$title" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
-      failed+=("$title")
-      cat "$tmp/report" "$tmp/out" >&2
-    fi
+    measure_suite "$title"
   done <"$tmp/todo"
   if [ "${#failed[@]}" -gt 0 ]; then
     echo "section-durations.sh: failed, durations file left unchanged: ${failed[*]}" >&2
@@ -215,12 +218,12 @@ stale_run() {
       for (name in idx) print idx[name], int(wall[name] * r / m + 0.5), int(cpu[name] * r / m + 0.5), name, fp[name]
     }' "$tmp/calib" "$tmp/todo" "$tmp/measured" | sort -t "$TAB" -k1,1n >"$tmp/new" || return 1
   # Merge: a new line goes before the first kept line that is later in the walk.
-  awk -F'\t' -v OFS='\t' '
+  awk -F'\t' -v OFS='\t' "$DURATIONS_AWK"'
     FILENAME == ARGV[1] { widx[$1] = $4; next }
     FILENAME == ARGV[2] { nn++; nidx[nn] = $1; $1 = ""; nline[nn] = substr($0, 2); next }
     {
       k = last
-      if ((NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "")
+      if (durations_line())
         k = ($3 == "shellcheck" ? 1000000000 : ($3 in widx ? widx[$3] : last))
       while (p < nn && nidx[p + 1] < k) print nline[++p]
       last = k
@@ -241,11 +244,7 @@ ORCH_TEST_DURATIONS="$tmp/sections" test_jobs_run_child bash "$dir/orch_test.sh"
 
 for suite in "${SUITES[@]}"; do
   [ "$suite" = orch_test.sh ] && continue
-  TMPDIR="$tmp" measure "$suite" test_jobs_run_child bash "$dir/$suite"; suite_st=$?
-  if ! report_suite "$suite" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
-    failed+=("$suite")
-    cat "$tmp/report" "$tmp/out" >&2
-  fi
+  measure_suite "$suite"
 done
 
 if ! command -v shellcheck >/dev/null 2>&1; then

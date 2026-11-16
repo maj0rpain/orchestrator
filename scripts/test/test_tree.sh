@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
-# Sourced by orch_test.sh, all.sh, affected.sh and
+# Sourced by orch_test.sh, all.sh, affected.sh, docs_lint.sh and
 # scripts/dev/section-durations.sh, and by harness.sh through orch_test.sh, so
 # the runners read the test tree one way: all.sh's suite list, a section
-# file's titles, the files shellcheck checks, the shellcheck command, the
-# pooled shellcheck step (`shellcheck_start` / `shellcheck_join`), the tenths
-# conversion and the durations-file grammar. A runner that calls the step first
-# sources test_jobs.sh and inits the job pool. Runs nothing.
+# file's titles, the section files, the files shellcheck checks, the shellcheck
+# command, the pooled shellcheck step (`shellcheck_start` / `shellcheck_join`),
+# the tenths conversion, the durations-file grammar, the suite budget and the
+# ledger's fingerprints (`ledger_fingerprints`). A runner that calls the step
+# first sources test_jobs.sh and inits the job pool. Runs nothing.
 #
 # SECTION_TITLE_AWK: the awk function title(s) as text, for a program to start
 # with. It drops a header's leading `# --- `, then its trailing spaces and
@@ -85,11 +86,21 @@ shellcheck_files() {
   [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
 }
 
+# The function section_files <section dir> prints the noun files the walk
+# reads, one per line: <section dir>/harness.sh, then every other
+# <section dir>/*.sh but setup.sh, in LC_ALL=C order whatever the caller's
+# locale. There is no list of files: a new one is read. orch_test.sh and
+# ledger_fingerprints both call it, so the two walk the same files.
+section_files() {
+  printf '%s\n' "$1/harness.sh"
+  printf '%s\n' "$1"/*.sh | LC_ALL=C sort |
+    grep -vxF -e "$1/setup.sh" -e "$1/harness.sh"
+}
+
 # The function ledger_fingerprints <test dir> <suite>... prints one line,
 # "<title><TAB><fingerprint>", for each test section in walk order
-# (orch_test.sh's walk: harness.sh, then the other <test dir>/orch/*.sh but
-# setup.sh, in LC_ALL=C order), then for each named suite file of <test dir>,
-# and returns 0. A
+# (orch_test.sh's walk: section_files of <test dir>/orch), then for each named
+# suite file of <test dir>, and returns 0. A
 # section's fingerprint covers its own lines (its `# --- ` line to the line
 # before the next) and its file's preamble (the text before the file's first
 # `# --- ` line); a suite's covers the file's whole text. It starts a fixed
@@ -101,9 +112,7 @@ ledger_fingerprints() {
   local test_dir="$1" tmp files f
   shift
   tmp="$(mktemp -d)" || return 1
-  mapfile -t files < <(printf '%s\n' "$test_dir"/orch/*.sh | LC_ALL=C sort |
-    grep -vxF -e "$test_dir/orch/setup.sh" -e "$test_dir/orch/harness.sh")
-  files=("$test_dir/orch/harness.sh" "${files[@]}")
+  mapfile -t files < <(section_files "$test_dir/orch")
   : >"$tmp/titles"
   : >"$tmp/paths"
   awk -v dir="$tmp" "$SECTION_TITLE_AWK"'
@@ -127,6 +136,37 @@ ledger_fingerprints() {
   rm -rf "$tmp"
 }
 
+# The function ledger_fingerprints_all <test dir> reads <test dir>/all.sh's
+# suites list with suites_read, fills the array LEDGER_OTHERS with every suite
+# of it but orch_test.sh, and prints ledger_fingerprints of <test dir> and
+# those suites. A caller that wants LEDGER_OTHERS calls it with no pipe or
+# command substitution. It returns 1 when suites_read fails, SUITES_ERR then
+# holding its message, else ledger_fingerprints's status.
+ledger_fingerprints_all() {
+  local suite
+  suites_read "$1/all.sh" "$1" || return 1
+  LEDGER_OTHERS=()
+  for suite in "${SUITES[@]}"; do
+    [ "$suite" = orch_test.sh ] || LEDGER_OTHERS+=("$suite")
+  done
+  ledger_fingerprints "$1" ${LEDGER_OTHERS[@]+"${LEDGER_OTHERS[@]}"}
+}
+
+# The function suite_budget_read <budget file> reads the suite budget into
+# SUITE_BUDGET: the file must hold exactly one line, a positive whole number.
+# It returns 0, 1 when the file is missing, 2 when it is not one positive whole
+# number; each caller words its own message.
+suite_budget_read() {
+  local lines=()
+  SUITE_BUDGET=""
+  [ -f "$1" ] || return 1
+  mapfile -t lines <"$1"
+  if [ "${#lines[@]}" -ne 1 ] || ! [[ "${lines[0]}" =~ ^[1-9][0-9]*$ ]]; then
+    return 2
+  fi
+  SUITE_BUDGET="${lines[0]}"
+}
+
 # TENTHS_AWK: the awk function tenths(s) as text, for a program to start with.
 # It reads seconds with one decimal place, as bash's `time` prints them under
 # LC_NUMERIC=C, and returns tenths of a second; a caller sets LC_NUMERIC=C
@@ -140,7 +180,10 @@ ledger_fingerprints() {
 # fingerprint, which it does not read: a three- and a four-column line read
 # alike. Any other line is ignored, and the first line per name wins. The
 # shard dealing and the start order both start with it, so they read the file
-# one way.
+# one way. It also defines durations_line(), true when the current record is
+# such a line, for a program that reads every line itself. The function
+# durations_total prints, from the durations text on stdin, the CPU column
+# summed over the first line per name, in tenths of a second.
 #
 # SHELLCHECK_CMD: the array holding the one shellcheck invocation, run from the
 # repo root with the files to check appended. all.sh, affected.sh and
@@ -153,11 +196,18 @@ ledger_fingerprints() {
 # shellcheck disable=SC2034 # read by the sourcing runners
 TENTHS_AWK='function tenths(s) { sub(/\./, "", s); return s + 0 }'
 # shellcheck disable=SC2034 # read by the sourcing runners
-DURATIONS_AWK='function durations_read() {
-  if ((NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "" && !($3 in wall)) {
+DURATIONS_AWK='function durations_line() {
+  return ((NF == 3 || NF == 4) && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 != "")
+}
+function durations_read() {
+  if (durations_line() && !($3 in wall)) {
     wall[$3] = $1 + 0; cpu[$3] = $2 + 0
   }
 }'
+durations_total() {
+  awk -F'\t' "$DURATIONS_AWK"'{ durations_read() }
+    END { for (name in cpu) t += cpu[name]; print t + 0 }'
+}
 # shellcheck disable=SC2034 # read by the sourcing runners
 SHELLCHECK_CMD=(shellcheck -S warning -f gcc)
 

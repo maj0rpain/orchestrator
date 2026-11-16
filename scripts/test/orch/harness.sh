@@ -1431,8 +1431,8 @@ rm -f "$dur_test/stub_cpu.sh" "$dur_test/stub_cpu.sh.times"
 sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
 
 # The fingerprint column (#3467), observed through the script's output: a
-# planted file with a preamble and two sections, recorded, edited and recorded
-# again. fp_of <title>: that line's fourth column.
+# planted file with a preamble and two sections, recorded once; the edit cases
+# live in docs_lint.sh's suite budget section. fp_of <title>: the fourth column.
 fp_of() { awk -F'\t' -v t="$1" '$3 == t { print $4 }' "$dur_file"; }
 fp_plant() {
   printf '%s\n' "  $1" '  # --- fp x' "  echo; echo 'fp x'; $2; ok 'x ran'" \
@@ -1445,25 +1445,9 @@ assert_eq "every line but shellcheck's has four columns" \
   "$(awk -F'\t' '$3 != "shellcheck" && NF != 4 { n++ } END { print n + 0 }' "$dur_file")" "0"
 assert_eq "and shellcheck's keeps three" \
   "$(awk -F'\t' '$3 == "shellcheck" { print NF }' "$dur_file")" "3"
-fp_x="$(fp_of 'fp x')"; fp_y="$(fp_of 'fp y')"; fp_a="$(fp_of 'dur a')"; fp_s="$(fp_of stub_a.sh)"
+fp_x="$(fp_of 'fp x')"; fp_y="$(fp_of 'fp y')"
 assert_eq "a fingerprint is not empty" "$([ -n "$fp_x" ] && echo yes)" "yes"
 assert_eq "two sections' fingerprints differ" "$([ "$fp_x" != "$fp_y" ] && echo yes)" "yes"
-fp_plant 'FP_PRE=1' 'true'
-dur_stub_passing stub_a.sh
-echo '# edited' >>"$dur_test/stub_a.sh"
-out="$(dur_script)"; st=$?
-assert_eq "an edit to a section's own lines changes its fingerprint" \
-  "$([ "$(fp_of 'fp x')" != "$fp_x" ] && echo yes)" "yes"
-assert_eq "and not its neighbour's" "$(fp_of 'fp y')" "$fp_y"
-assert_eq "an edit to a suite's file changes its fingerprint" \
-  "$([ "$(fp_of stub_a.sh)" != "$fp_s" ] && echo yes)" "yes"
-assert_eq "and not another file's section" "$(fp_of 'dur a')" "$fp_a"
-fp_x="$(fp_of 'fp x')"
-fp_plant 'FP_PRE=2' 'true'
-out="$(dur_script)"; st=$?
-assert_eq "an edit to a file's preamble changes each of its sections" \
-  "$([ "$(fp_of 'fp x')" != "$fp_x" ] && [ "$(fp_of 'fp y')" != "$fp_y" ] && echo yes)" "yes"
-assert_eq "and no other file's" "$(fp_of 'dur a')" "$fp_a"
 rm -f "$dur_orch/zzz-fp.sh"
 dur_stub_passing stub_a.sh
 cp "$dur_file" "$dur_dir/good.tsv"
@@ -1658,8 +1642,7 @@ out="$(dur_stale)"; st=$?
 assert_status "--stale with two fresh sections passes" "$st" 0
 assert_eq "its new lines are far above their own measurement too" "$([ "$(st_cpu 'cal m1')" -ge 500 ] && echo yes)" "yes"
 st_reset
-out="$(dur_script)"
-cp "$dur_file" "$dur_dir/good.tsv"
+cp "$dur_dir/base.tsv" "$dur_dir/good.tsv"
 
 # TERM to the dev script (#2957), last in the section: a slow child records its
 # pid and sleeps 30 s. After TERM the script must return at once with 130, the
