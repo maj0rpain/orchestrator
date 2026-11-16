@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.4.0
+
+The audits now build their report, filing and cross-links through `orch.sh` instead of by hand. `orch.sh audit begin` opens a run's folder before the Hunt; `orch.sh audit report` reads the ranked file and renders the HTML report from it; and `orch.sh audit file --run <dir> <numbers>` (a comma-separated list) files a run's picked findings in one batch, each issue's body and labels taken from the ranked file, and writes a `Related:` line on each filed issue whose finding overlaps another picked one, naming those issues. A finding that refers to the report's own numbering is refused before anything reaches GitHub, and a rerun after a failed create or Related write finishes the batch without filing twice. The audits' read-only promise now covers the repo's files only, not the run folder under `.orchestrator/`.
+
 ## 6.3.1
 
 The test suite's stdin byte counter now measures the bytes a command was offered whether SIGPIPE is ignored or default, so the push-to-main run agrees with the PR run. The paste guard's human-message cost case compares against a real bare transcript.
