@@ -283,7 +283,7 @@ for suite_n in "${start_order[@]}"; do
     ORCH_TEST_ONLY="^($only)\$" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   else
     unset ORCH_TEST_ONLY
-    [ "$suite" = orch_test.sh ] || test_jobs_suite_take
+    [ "$suite" = orch_test.sh ] || test_jobs_slot_wait
     test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   fi
   pids[suite_n]="$TEST_JOBS_SUITE_PID"

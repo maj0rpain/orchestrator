@@ -137,7 +137,7 @@ for suite_n in "${start_order[@]}"; do
   if [ "$suite" = orch_test.sh ]; then
     TMPDIR="$suites_tmp" ORCH_TEST_SHARD="$all_shard" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   else
-    test_jobs_suite_take
+    test_jobs_slot_wait
     TMPDIR="$suites_tmp" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   fi
   pids[suite_n]="$TEST_JOBS_SUITE_PID"

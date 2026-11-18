@@ -104,12 +104,13 @@
 # coordinator mostly sleeps while its section children hold their own slots,
 # holds a slot while it runs. It has two steps a caller can run apart:
 #
-# test_jobs_suite_take: the take step, test_jobs_slot_wait under another name:
-# waits for a slot (with the waiting notice) and keeps it on the runner's fd.
+# test_jobs_slot_wait: the take step: waits for a slot (with the waiting notice)
+# and keeps it on the runner's fd.
 #
 # test_jobs_suite_start <outfile> <cmd>...: the start step. Starts <cmd> (an
 # external command; assignments before the call pass through) in the background
-# with its stdout on <outfile>, through test_jobs_job, its children marked
+# with its stdout on <outfile> (`-` keeps the caller's stdout), through
+# test_jobs_job, its children marked
 # ORCH_TEST_POOL_HELD with the pool directory when a slot was taken (an
 # inherited marker passes on when the run is unpooled), and hands the slot to a
 # holder that keeps it until the suite exits. Records the suite's pid in
@@ -390,16 +391,16 @@ test_jobs_job() {
   exec "$@"
 }
 
-test_jobs_suite_take() {
-  test_jobs_slot_wait
-}
-
 # shellcheck disable=SC2034 # read by the sourcing runners
 test_jobs_suite_start() {
   local out="$1" held="${ORCH_TEST_POOL_HELD:-}"
   shift
   [ -z "$TEST_JOBS_SLOT_FD" ] || held="$TEST_JOBS_POOL"
-  ORCH_TEST_POOL_HELD="$held" test_jobs_job "$@" >"$out" &
+  if [ "$out" = - ]; then
+    ORCH_TEST_POOL_HELD="$held" test_jobs_job "$@" &
+  else
+    ORCH_TEST_POOL_HELD="$held" test_jobs_job "$@" >"$out" &
+  fi
   TEST_JOBS_SUITE_PID=$!
   test_jobs_slot_release "$TEST_JOBS_SUITE_PID"
 }

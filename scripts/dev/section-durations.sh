@@ -70,27 +70,17 @@ measure() {
   return "$st"
 }
 
-# measure_suite <name>: like measure, for a suite under a slot. The slot is
-# taken before the timed region; inside it the suite starts, then its pid and
-# the slot's holder (`$!` after the start step) are waited on, so the
-# holder's CPU is charged to this suite's line, not the next one's.
-measure_suite() {
-  local name="$1" st holder LC_NUMERIC=C
-  # shellcheck disable=SC2034 # read by the time keyword
-  TIMEFORMAT='%1R %1U %1S'
-  test_jobs_suite_take
-  {
-    time {
-      TMPDIR="$tmp" test_jobs_suite_start "$tmp/out" bash "$dir/$name"
-      holder=$!
-      wait "$TEST_JOBS_SUITE_PID"; st=$?
-      wait "$holder" 2>/dev/null
-    }
-  } 2>"$tmp/time"
+# suite_run <name>: the start step and both waits of a suite under a slot the
+# caller took. The suite starts, then its pid and the slot's holder (`$!` after
+# the start step) are waited on, so the holder's CPU is charged to this suite's
+# line, not the next one's. The status is the suite's.
+suite_run() {
+  local holder st
+  TMPDIR="$tmp" test_jobs_suite_start - bash "$dir/$1"
+  holder=$!
+  wait "$TEST_JOBS_SUITE_PID"; st=$?
+  wait "$holder" 2>/dev/null
   TEST_JOBS_SUITE_PID=""
-  awk -v name="$name" "$TENTHS_AWK"'
-    { printf "%d\t%d\t%s\n", tenths($1), tenths($2) + tenths($3), name }
-  ' "$tmp/time" >>"$tmp/rest"
   return "$st"
 }
 
@@ -100,7 +90,8 @@ ORCH_TEST_DURATIONS="$tmp/sections" test_jobs_run_child bash "$dir/orch_test.sh"
 
 for suite in "${SUITES[@]}"; do
   [ "$suite" = orch_test.sh ] && continue
-  measure_suite "$suite"; suite_st=$?
+  test_jobs_slot_wait
+  measure "$suite" suite_run "$suite"; suite_st=$?
   if ! report_suite "$suite" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
     failed+=("$suite")
     cat "$tmp/report" "$tmp/out" >&2

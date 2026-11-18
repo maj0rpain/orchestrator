@@ -1385,11 +1385,12 @@ assert_status "a failing section fails the script" "$st" 1
 assert_contains "naming what failed" "$out" "orch_test.sh"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
 rm -f "$dur_orch/zzz-failing.sh"
-printf '#!/usr/bin/env bash\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
+printf '#!/usr/bin/env bash\necho "stderr-marker" >&2\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
 out="$(dur_script)"; st=$?
 assert_status "a failing other suite fails the script" "$st" 1
 assert_contains "naming it" "$out" "stub_b.sh"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
+assert_contains "a failing suite's stderr is in the failure dump" "$out" "stderr-marker"
 dur_stub_passing stub_b.sh
 printf '#!/usr/bin/env bash\necho "a.sh:1:1: warning: planted"; exit 1\n' >"$dur_tool/shellcheck"
 out="$(dur_script)"; st=$?
@@ -2516,7 +2517,8 @@ assert_eq "its report keeps the selection order" \
 assert_contains "the verdict names the failing suite" "$(tail -n 1 "$jp_dir/afout")" "affected.sh: FAIL (docs_lint.sh"
 # ORCH_TEST_JOBS narrows a pooled run's slot range to min(N, the pool's size),
 # nested runners included, so the whole all.sh run fits within N jobs.
-for jp_case in "1 cpu2 1" "2 cpu4 2" "8 cpu2 2"; do
+# The above-the-pool half is the ORCH_TEST_JOBS=4 case on the cpu2 pool above.
+for jp_case in "1 cpu2 1" "2 cpu4 2"; do
   read -r jp_jobs jp_cpu jp_want <<<"$jp_case"
   : >"$jp_log"
   env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/$jp_cpu" ORCH_TEST_POOL_DIR="$jp_dir/pool22$jp_jobs" \
