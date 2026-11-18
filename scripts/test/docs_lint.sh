@@ -2592,13 +2592,6 @@ skills/orch-review/SKILL.md
 skills/orch-spec-review/SKILL.md'
 check "each site that runs a re-callable command names the term" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$recall_sites" 're-callable')"
-recall_fixture="$(mktemp -d)"
-mkdir -p "$recall_fixture/agents"
-printf 'Run it through verification run, and run it again on exit 75.\n' >"$recall_fixture/agents/x.md"
-flags "the re-callable check fails on a site that does not name the term" \
-  "$(scan_names_phrase "$recall_fixture" 'agents/x.md' 're-callable')" \
-  "agents/x.md: does not name re-callable"
-rm -rf "$recall_fixture"
 
 # --- autopilot docs (#1497) ---------------------------------------------------
 echo

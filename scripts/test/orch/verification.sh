@@ -140,16 +140,18 @@ echo noise >ig.log
 mkdir -p .orchestrator/x && echo noise >.orchestrator/x/y
 vr_run "$cmd" >/dev/null; st=$?
 assert_eq "an ignored file written while a run is live leaves it attached" "$(counting_starts "$vr_count" date)" "1"
+# Each call below replaces a stale run, so its block is two seconds: a 0.2 s
+# block can end the call mid-stop when the whole-second clock rolls over.
 echo one >>README.md
-vr_run "$cmd" >/dev/null
+vr_block=2 vr_run "$cmd" >/dev/null
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 assert_eq "an edit to a tracked file makes the run stale: a fresh one starts" "$(counting_starts "$vr_count" date)" "2"
 echo two >>README.md
-vr_run "$cmd" >/dev/null
+vr_block=2 vr_run "$cmd" >/dev/null
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 assert_eq "a second edit to the already-modified file makes it stale again" "$(counting_starts "$vr_count" date)" "3"
 echo new >untracked.txt
-vr_run "$cmd" >/dev/null
+vr_block=2 vr_run "$cmd" >/dev/null
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 assert_eq "a new untracked file makes it stale" "$(counting_starts "$vr_count" date)" "4"
 
@@ -168,7 +170,7 @@ cmd="trap 'echo TERM >>\"$vr_dir/log\"; exit 0' TERM; date >/dev/null; echo up >
 vr_run "$cmd" >/dev/null
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 echo four >>README.md
-vr_run "$cmd" >/dev/null
+vr_block=2 vr_run "$cmd" >/dev/null
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 assert_eq "a changed tree stops the live run with TERM" "$(<"$vr_dir/log")" "TERM"
 
@@ -179,7 +181,7 @@ vr_run "$cmd" >/dev/null
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 echo five >>README.md
 base="$(counting_starts "$vr_count" date)"
-vr_run "$cmd" >/dev/null
+vr_block=2 vr_run "$cmd" >/dev/null
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 assert_eq "the fresh run starts after the stale one is stopped" "$(counting_starts "$vr_count" date)" "$((base + 1))"
 kill -0 "$(head -n 1 "$vr_dir/pids")" 2>/dev/null; st=$?

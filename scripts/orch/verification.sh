@@ -239,6 +239,12 @@ verification_deliver() {
   exit "$st"
 }
 
+# verification_died <dir>: whether the run in <dir> died without leaving a
+# status: it has a process record that is no longer alive, and no status.
+verification_died() {
+  [ ! -f "$1/status" ] && [ -f "$1/pid" ] && ! liveness_record_alive "$(<"$1/pid")"
+}
+
 # verification_run <command>: the verb's work.
 verification_run() {
   orch_load wait
@@ -266,7 +272,7 @@ verification_run() {
     if [ ! -f "$d/state" ]; then
       verification_wait_state "$d" && continue
     elif [ "$(<"$d/state")" = "$state" ]; then
-      if [ -f "$d/status" ] || [ ! -f "$d/pid" ] || liveness_record_alive "$(<"$d/pid")"; then
+      if ! verification_died "$d"; then
         attached=1; break
       fi
       stop=""
@@ -285,7 +291,7 @@ verification_run() {
     mv "$d/state.tmp" "$d/state"
   fi
   while [ ! -f "$d/status" ]; do
-    if [ -f "$d/pid" ] && ! liveness_record_alive "$(<"$d/pid")" && [ ! -f "$d/status" ]; then
+    if verification_died "$d"; then
       rm -rf "$d"
       die "the run ended without a status - run the same command again"
     fi

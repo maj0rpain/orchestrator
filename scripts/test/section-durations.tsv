@@ -168,7 +168,7 @@
 115	123	gh adapter contract (#280)	48e991187b762b12a4f0e536c19ac683adfe246f
 18	19	claim adapter operations (#1454)	789d0acedda7f5894bb4754db20a69aed25c5e36
 2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
-34	26	gh rate limits (#2577)	ff20ae4f882c576c0912e4e1f019f5884c460b3c
+46	29	gh rate limits (#2577)	58728f2779c2686a9f036652430ea54ecd2d31a7
 4	6	gh rate limits: the GitHub pause and the hit file (#2577)	0e88478b202415efeddd56917630a4c349f9c021
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
@@ -262,7 +262,7 @@
 5	6	the multi-loop machinery is gone	8cbc8c9ee1a33748c9ad58440f05830134c73795
 45	49	review file	cb1f1cabf91630416daf9b520f1c1176bfa7a862
 14	15	review ready	3de42f3d7ace4ec6ce6ffa7c0883b3806733eed4
-40	22	review ci	f473402812378f7d7ab99e26196821bb0987209c
+128	75	review ci	f5fe396e014ddcb8606e7cb91bd63c581a66715c
 13	12	the grace counts from the push (issue #475)	eb2a643a788b9b82800270785192827a831aab40
 51	42	the grace is skipped on no evidence of CI (issue #476)	47adf5995cd35a720b31a17a50f1a4366fc237c7
 9	10	review rerun	39699a125cfcb488efe0e549d5a7f71549d25bc2
@@ -283,7 +283,7 @@
 62	66	side-checkout archive and remove (#724)	1fb2f3f39b0980a84392830dc2587afb5d19aa14
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
 69	73	side-checkout prune: edge cases (#726)	362681b13f704c2999a7f32e8b1370b18d3d834c
-18	19	archive keeps flow-less directories (#1247)	e9c16b4e7c5a62601ddecc03ca5a3cd253230c44
+18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
 21	23	side-checkout prune: a covered branch tip (#1906)	b13be4c577395b49197e461cad6954d626b4081f
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
 49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
@@ -298,7 +298,7 @@
 62	69	spec-review check (#1137)	f1f762bffccdd6172b075a3b7ffa216acb03bd91
 1	2	spec-review check literal item numbers (#1339)	f6bfd387c1a4973b7ac5420ac8ec62f9e4184fd7
 16	19	spec-review check --tickets (#1226)	d8614203d8b91ab4a785e6dde9a6778876bf5110
-25	5	spec-review wait (#1183)	3f4674c62c6295e6e732bac5aaa5da5a5777b3b7
+72	21	spec-review wait (#1183)	e8a2ff8f1872dc8be81922979410be14e5531d54
 4	5	spec-review prompt (#1521)	3c8a54e487f3050ae74e54efcd6dff6eaf9cd6a5
 0	1	spec_review_lens_known matches one whole lens (#1546)	ac06eecad2f306d0ff2e53fd6720ba837a5cbdaa
 1	2	spec-review check requires every finding cited (#1914)	6ec68a18cc75972b5e64a50ea94ae6514dee3f6e
@@ -353,8 +353,12 @@
 141	147	ticket reclaim (ADR-0054)	17ed22348527c35ead699f866b4bb1141afeec43
 1	2	ticket exists: no repo (#3050)	291d750cc4efbe9e118a0494a09f83666294d0d8
 17	20	trust module	8907f14dbb6515e13cfad144156774f74dc17a98
-686	806	hooks_test.sh	6625869d545a29266bdef9aa7a67cb0a5abc74db
-159	167	docs_lint.sh	39f9eb1ede7538899520aba6ff3684afe74d9f1b
+48	7	verification run	47b3faa12874515582dcc444b9ef94f7c0e68c16
+180	19	verification run: the run key, stale runs, the ceiling	2fa1096a19147e62b37f102277291e3d050a5e19
+0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
+58	3	wait: a call's block is wall time	efdd947d3b4366fe7c9b9f1339c3369847a43565
+686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
+134	159	docs_lint.sh	d985f88abc6de09e499877c7f24ef07b6c97f5ec
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8

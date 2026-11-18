@@ -143,7 +143,8 @@ gh_limit_reset() {
 # gh_limit_handle <stderr> <retry spent>: what a failed call's <stderr> means.
 # Status 0: no limit - the caller passes its failure through untouched.
 # Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
-# default 60) - the caller retries once and calls this again with
+# default 60, cut to what is left of ORCH_WAIT_BLOCK while wait.sh is loaded) -
+# the caller retries once and calls this again with
 # <retry spent> 1.
 # Status 1: a limit to give up on - a primary one, a secondary one met again
 # after the retry, or a first secondary one on a compound write (never
@@ -152,11 +153,17 @@ gh_limit_reset() {
 # reset, is on stderr; in an autopilot process the reset is also recorded
 # (autopilot_github_limit_record), a failed write being one more line on stderr.
 gh_limit_handle() {
-  local kind reset
+  local kind reset nap
   kind="$(gh_limit_kind "$1")"
   [ -n "$kind" ] || return 0
   if [ "$kind" = secondary ] && [ "$2" = 0 ]; then
-    sleep "${ORCH_GH_LIMIT_WAIT:-60}"
+    nap="${ORCH_GH_LIMIT_WAIT:-60}"
+    # A re-callable wait (wait.sh) is open: the sleep never passes its block.
+    if declare -F wait_nap >/dev/null; then
+      nap="$(wait_nap "$nap" "$(wait_block_spent 0)")"
+      float_lt 0 "$nap" || nap=0
+    fi
+    sleep "$nap"
     return 2
   fi
   reset="$(gh_limit_reset)"
