@@ -153,7 +153,8 @@ archive_root() {
 # to no flow, which archive_flow leaves in place: the archive itself, the side
 # checkouts, the working directories of a standalone spec review
 # (spec-review/<n>/, an unattended one included) and of a review pass
-# (review-pass/<branch>/), the autopilot watcher's records (autopilot/, kept
+# (review-pass/<branch>/), of an audit run (audit/<kind>-<stamp>/), the
+# autopilot watcher's records (autopilot/, kept
 # under the main checkout for the watcher), and the breakdown save points
 # (breakdown/<parent>/) and saved ticket reports (reports/<n>.md), which are
 # keyed by issue number and shared between a flow and flow-less work in the
@@ -162,7 +163,7 @@ archive_root() {
 # freely named round directories and a flow's spec review round directories
 # (spec-rounds/<k>/) included. The round marker lives in the handoff folder, so
 # it goes with it.
-FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass autopilot breakdown reports)
+FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass audit autopilot breakdown reports)
 
 # side_checkout_refuse_ticket_worktrees <root>: refuses while ticket worktrees
 # are left under the checkout at <root>, the one reason this module gives.
