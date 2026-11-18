@@ -754,16 +754,20 @@ assert_contains "and it says the wait ran out" "$out" "still pending"
 # review ci is re-callable (#3498): each call blocks at most ORCH_WAIT_BLOCK
 # seconds and, while the wait is not over, exits 75 with nothing on stdout and
 # the still-running line, against a total counted from the first call and
-# stored. rc_calls runs it until it delivers, counting the calls.
-rc_calls() {
-  rc_n=0 rc_out="" rc_st=75
-  while [ "$rc_st" = 75 ] && [ "$rc_n" -lt 30 ]; do
-    rc_out="$(rc_ci 2>"$rc_err")"; rc_st=$?
-    rc_n=$((rc_n + 1))
-  done
-}
+# kept between calls.
 rc_err="$(mktemp)"
 rc_ci() { ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=2 ORCH_WAIT_BLOCK=0.2 "$ORCH" review ci; }
+# rc_spend: three calls of 0.4 s each, 1.2 s of one wait's total, against a
+# timeout nothing reaches. rc_probe: one call of the same wait against a 1.5 s
+# timeout - the wait with 1.2 s behind it is over within the call (exit 1);
+# a wait starting its own total is still going at the end of it (exit 75).
+rc_spend() {
+  local _
+  for _ in 1 2 3; do
+    ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.4 "$ORCH" review ci >/dev/null 2>&1
+  done
+}
+rc_probe() { ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=1.5 ORCH_WAIT_BLOCK=0.4 "$ORCH" review ci >/dev/null 2>&1; }
 fake_checks_clear; fake_checks 7 all pending
 fake_pr_head 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 out="$(rc_ci 2>"$rc_err")"; st=$?
@@ -771,42 +775,56 @@ assert_status "a wait not over within ORCH_WAIT_BLOCK exits 75" "$st" 75
 assert_eq "with nothing on stdout" "$out" ""
 assert_eq "and the still-running line on stderr" "$(cat "$rc_err")" \
   "orch: still running after 0.2s - run the same command again"
-rc_calls
-assert_status "the calls go on to the total's timeout outcome" "$rc_st" 1
-assert_first_line "delivered as before" "$rc_out" "unreachable"
-assert_contains "naming the total" "$rc_out" "still pending after 2s"
-[ "$rc_n" -ge 2 ] && [ "$rc_n" -le 12 ] && rc_ok=yes || rc_ok="no ($rc_n calls)"
+calls_until_delivered 30 "$rc_err" rc_ci
+assert_status "the calls go on to the total's timeout outcome" "$calls_st" 1
+assert_first_line "delivered as before" "$calls_out" "unreachable"
+assert_contains "naming the total" "$calls_out" "still pending after 2s"
+[ "$calls_n" -ge 2 ] && [ "$calls_n" -le 12 ] && rc_ok=yes || rc_ok="no ($calls_n calls)"
 assert_eq "the total of 2s spans several calls and ends them: it is inherited, not restarted" "$rc_ok" "yes"
 
 out="$(rc_ci 2>/dev/null)"; st=$?
 assert_status "a review ci asked again after the outcome starts a new total" "$st" 75
-rc_calls
-assert_eq "which spans the whole total again" "$([ "$rc_n" -ge 2 ] && echo yes || echo "no ($rc_n)")" "yes"
 
-fake_pr_head 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+fake_pr_head 7 cccccccccccccccccccccccccccccccccccccccc
 rc_ci >/dev/null 2>&1
 fake_checks_clear; fake_checks 7 all green
 out="$(rc_ci 2>&1)"; st=$?
 assert_status "a pending wait finishing delivers today's output" "$st" 0
 assert_first_line "green" "$out" "green"
-assert_eq "and nothing is stored for the delivered wait" "$(ls "$ORCH_DIR_NAME/wait" 2>/dev/null | wc -l | tr -d ' ')" "0"
-
 fake_checks_clear; fake_checks 7 all pending
+rc_spend
+fake_checks_clear; fake_checks 7 all green
 rc_ci >/dev/null 2>&1
-fake_pr_head 7 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-rc_ci >/dev/null 2>&1
-assert_eq "a new head commit starts its own total, the old one still pending" \
-  "$(ls "$ORCH_DIR_NAME/wait" | wc -l | tr -d ' ')" "2"
-rm -rf "${ORCH_DIR_NAME:?}/wait"
+fake_checks_clear; fake_checks 7 all pending
+rc_probe; st=$?
+assert_status "a delivered wait is forgotten: the next one starts its own total" "$st" 75
+
+fake_pr_head 7 dddddddddddddddddddddddddddddddddddddddd
+rc_spend
+fake_pr_head 7 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+rc_probe; st=$?
+assert_status "a new head commit starts its own total and inherits none still pending" "$st" 75
+fake_pr_head 7 dddddddddddddddddddddddddddddddddddddddd
+rc_probe; st=$?
+assert_status "and the old head's total is still there for its own calls" "$st" 1
+
+fake_pr 8 open topic main
+fake_pr_head 8 dddddddddddddddddddddddddddddddddddddddd
+fake_checks 8 all pending
+state_fixture pr 8
+rc_probe; st=$?
+assert_status "a review ci for another PR starts its own total and inherits none still pending" "$st" 75
+state_fixture pr 7
+
 rm -f "$ORCH_GH_FAKE_STORE/prs/7/head"
-rc_ci >/dev/null 2>&1
-rc_ci >/dev/null 2>&1
-assert_eq "a head that cannot be read keys the total by the PR alone" \
-  "$(ls "$ORCH_DIR_NAME/wait" | wc -l | tr -d ' ')" "1"
+rc_spend
+rc_probe; st=$?
+assert_status "a head that cannot be read keys the total by the PR alone: its calls share one" "$st" 1
+fake_pr 7 open topic main
 rm -rf "${ORCH_DIR_NAME:?}/wait"
-for bad in soon 0 0.0; do
-  out="$(ORCH_WAIT_BLOCK=$bad timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-  assert_status "an ORCH_WAIT_BLOCK of $bad is refused" "$st" 1
+for bad_block in soon 0 0.0; do
+  out="$(ORCH_WAIT_BLOCK=$bad_block timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+  assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 1
 done
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
 assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$("$ORCH" help)" "75 - run it again; the 900 s total"

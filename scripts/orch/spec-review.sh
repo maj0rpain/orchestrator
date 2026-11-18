@@ -860,6 +860,8 @@ ORCH_SPEC_REVIEW_WAIT_INTERVAL="${ORCH_SPEC_REVIEW_WAIT_INTERVAL:-5}"
 spec_review_wait() {
   local usage="usage: orch.sh spec-review wait <dir> <lens>..."
   [ $# -ge 2 ] || die "$usage"
+  # blocked and slept are read and advanced by wait_tick.
+  # shellcheck disable=SC2034
   local dir="${1%/}" lens missing summary slept=0 blocked=0 started elapsed=0 n key
   shift
   [ -d "$dir" ] || die "no such directory: $dir"
@@ -867,7 +869,8 @@ spec_review_wait() {
     spec_review_lens_known "$lens" || die "unknown lens '$lens' (want one of: $SPEC_REVIEW_LENSES)"
   done
   require_poll_knobs ORCH_SPEC_REVIEW_WAIT_TIMEOUT ORCH_SPEC_REVIEW_WAIT_INTERVAL
-  wait_block_check
+  orch_load wait
+  require_poll_knobs ORCH_WAIT_BLOCK
   # The total is stored from the first call and belongs to this directory and
   # these lenses (wait.sh); it is forgotten once a call delivers an outcome.
   key="spec-review wait $(cd "$dir" && pwd -P) $*"
@@ -878,14 +881,10 @@ spec_review_wait() {
       [ -e "$dir/lens-$lens.md" ] || missing+=" $lens"
     done
     [ -n "$missing" ] || break
-    elapsed="$(ci_elapsed "$started" "$slept")"
+    elapsed="$(wait_elapsed "$started" "$slept")"
     float_lt "$elapsed" "$ORCH_SPEC_REVIEW_WAIT_TIMEOUT" \
       || { wait_forget; die "lenses not back after ${ORCH_SPEC_REVIEW_WAIT_TIMEOUT}s:$missing"; }
-    orch_load wait
-    float_lt "$blocked" "$ORCH_WAIT_BLOCK" || wait_still_running "$slept"
-    sleep "$ORCH_SPEC_REVIEW_WAIT_INTERVAL"
-    slept="$(float_add "$slept" "$ORCH_SPEC_REVIEW_WAIT_INTERVAL")"
-    blocked="$(float_add "$blocked" "$ORCH_SPEC_REVIEW_WAIT_INTERVAL")"
+    wait_tick "$ORCH_SPEC_REVIEW_WAIT_INTERVAL"
   done
   wait_forget
   summary=""

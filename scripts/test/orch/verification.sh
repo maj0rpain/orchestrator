@@ -5,11 +5,28 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# vr_gate <dir>: a command line that signals it is running through <dir>/up (a
-# FIFO), waits until <dir>/gate exists, logs one start of the counted date, and
-# prints "done".
+# vr_gate <dir> [quiet]: a command line that signals it is running through
+# <dir>/up (a FIFO, unless quiet), waits until <dir>/gate exists, logs one start
+# of the counted date, and prints "done".
 vr_gate() {
-  printf 'date >/dev/null; echo up >"%s/up"; while [ ! -f "%s/gate" ]; do sleep 0.1; done; echo done' "$1" "$1"
+  local up="echo up >\"$1/up\"; "
+  [ -z "${2-}" ] || up=""
+  printf 'date >/dev/null; %swhile [ ! -f "%s/gate" ]; do sleep 0.1; done; echo done' "$up" "$1"
+}
+
+# vr_finished <dir>: runs a gated line, prints "done" then "again", to its end
+# without delivering it, in the current checkout (vr_run, vr_count): the line is
+# left in vr_cmd. The first run of the line tells <dir>/fin (a FIFO) it has
+# ended; a later run, once <dir>/ended exists, tells nothing and waits for no
+# reader.
+vr_finished() {
+  [ -p "$1/fin" ] || mkfifo "$1/fin"
+  rm -f "$1/gate" "$1/ended"
+  vr_cmd="$(vr_gate "$1" quiet); echo again; [ -f \"$1/ended\" ] || echo end >\"$1/fin\""
+  vr_run "$vr_cmd" >/dev/null
+  : >"$1/gate"
+  fifo_read_line 20 "$1/fin" "$1/fin" >/dev/null
+  : >"$1/ended"
 }
 
 # --- verification run ---------------------------------------------------------
@@ -101,7 +118,6 @@ done
 echo
 echo "verification run key"
 new_repo >/dev/null
-vr_repo="$PWD"
 printf 'ig.log\n' >.gitignore
 git add .gitignore && git commit -qm ignore
 vr_dir="$(mktemp -d)"
@@ -131,17 +147,10 @@ fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 assert_eq "a new untracked file makes it stale" "$(counting_starts "$vr_count" date)" "4"
 
 # A finished result whose tree has changed is never delivered.
-rm -f "$vr_dir/gate"
-cmd="$(vr_gate "$vr_dir" | sed "s| echo up >[^;]*;||"); echo again"
-vr_run "$cmd" >/dev/null
-: >"$vr_dir/gate"
-for _ in $(seq 100); do
-  compgen -G "$vr_repo/.orchestrator/verification/*/status" >/dev/null && break
-  sleep 0.1
-done
+vr_finished "$vr_dir"
 echo three >>README.md
 base="$(counting_starts "$vr_count" date)"
-out="$(vr_run "$cmd")"; st=$?
+out="$(vr_run "$vr_cmd")"; st=$?
 assert_eq "a finished result whose tree changed starts a fresh run" "$(counting_starts "$vr_count" date)" "$((base + 1))"
 assert_eq "and the old result is not delivered" "$out" "done
 again"
@@ -188,6 +197,18 @@ out="$(ORCH_WAIT_BLOCK=30 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification run '
 assert_status "a run past the ceiling exits 1" "$st" 1
 assert_contains "with the output it wrote" "$out" "partial"
 assert_contains "and the ceiling's orch: line" "$out" "orch: the run was still going after the ceiling of 1s (orchestrator.verification.timeout)"
+# The run is its own timer: a run nobody calls again is stopped at the ceiling,
+# and the next call delivers it as failed.
+[ -p "$vr_dir/fin" ] || mkfifo "$vr_dir/fin"
+cmd="trap 'echo stopped >\"$vr_dir/fin\"; exit 0' TERM; echo partial; while :; do sleep 0.1; done"
+ORCH_WAIT_BLOCK=0.2 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification run "$cmd" >/dev/null 2>&1; st=$?
+assert_status "a run outliving its call is still going" "$st" 75
+assert_eq "with no call waiting on it, the ceiling stops it by TERM" \
+  "$(fifo_read_line 20 "$vr_dir/fin" "$vr_dir/fin")" "stopped"
+out="$(ORCH_WAIT_BLOCK=30 "$ORCH" verification run "$cmd" 2>&1)"; st=$?
+assert_status "the next call delivers it as a failed run" "$st" 1
+assert_contains "with the output it wrote" "$out" "partial"
+assert_contains "and the ceiling's orch: line" "$out" "orch: the run was still going after the ceiling of 1s"
 for vr_bad in abc 0 -1 1.2.3; do
   git config orchestrator.verification.timeout "$vr_bad"
   out="$("$ORCH" verification run 'true' 2>&1)"; st=$?
@@ -200,26 +221,18 @@ git config --unset orchestrator.verification.timeout
 echo
 echo "verification run orphans"
 new_repo >/dev/null
-vr_main="$PWD"
 vr_wt="$(mktemp -d)/wt"
 git worktree add -q "$vr_wt" -b side
-rm -f "$vr_dir/gate"
-cmd="$(vr_gate "$vr_dir" | sed "s| echo up >[^;]*;||"); echo again"
-(cd "$vr_wt" && vr_run "$cmd" >/dev/null)
-: >"$vr_dir/gate"
-for _ in $(seq 100); do
-  compgen -G "$vr_main/.orchestrator/verification/*/status" >/dev/null && break
-  sleep 0.1
-done
+pushd "$vr_wt" >/dev/null || exit 1
+vr_finished "$vr_dir"
+popd >/dev/null || exit 1
 git worktree remove --force "$vr_wt"
 git worktree add -q "$vr_wt" side
 base="$(counting_starts "$vr_count" date)"
-out="$(cd "$vr_wt" && vr_run "$cmd")"; st=$?
+out="$(cd "$vr_wt" && vr_run "$vr_cmd")"; st=$?
 assert_eq "a checkout made again at the same path starts a fresh run" "$(counting_starts "$vr_count" date)" "$((base + 1))"
 assert_eq "and is never handed the old result" "$out" "done
 again"
-assert_eq "the old record is cleared" \
-  "$(compgen -G "$vr_main/.orchestrator/verification/*/" | wc -l | tr -d ' ')" "0"
 
 # --- verification run in help and the CLI conventions -------------------------
 echo

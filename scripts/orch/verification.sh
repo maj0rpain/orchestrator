@@ -13,13 +13,15 @@
 # .orchestrator/verification/<hash of checkout, identity, command>/: command,
 # root and id (the checkout and its identity token), state (HEAD and the
 # working-tree state: tracked changes, staged or not, and unignored untracked
-# files, by content), started, pid (a liveness record), out, err and status
-# (written once the run ends). A finished result or a live run whose state no
+# files, by content), started, pid (a liveness record), out, err, status
+# (written once the run ends) and overrun (a run stopped at the ceiling). A
+# finished result or a live run whose state no
 # longer matches is stale: the result is discarded undelivered, the live run
 # stopped by its process group (TERM, then KILL after
 # ORCH_VERIFICATION_GRACE) and a fresh run started. A run of another command
 # is left alone. A run still going at orchestrator.verification.timeout (git
-# config, default 3600 s) is stopped and delivered as failed. Records of
+# config, default 3600 s) is stopped by its own runner, with no call needed,
+# and delivered as failed by the next one. Records of
 # checkouts that no longer exist are cleared by the next call. A finished
 # result is forgotten only once a call has printed it whole. Nothing about a
 # delivered run is measured or kept (ADR-0063).
@@ -78,26 +80,26 @@ verification_timeout() {
   v="$(git -C "$ROOT" config --get orchestrator.verification.timeout 2>/dev/null || true)"
   [ -n "$v" ] || v=3600
   case "$v" in
-    *[!0-9.]*|*.*.*|.) v="$v|" ;;
+    *[!0-9.]*|*.*.*|.) ;;
+    *) [ -z "${v//[0.]/}" ] || { printf '%s\n' "$v"; return 0; } ;;
   esac
-  case "$v" in
-    *'|') ;;
-    *) [ -n "${v//[0.]/}" ] && { printf '%s\n' "$v"; return 0; } ;;
-  esac
-  die "orchestrator.verification.timeout is ${v%|} - it must be a positive number of seconds (git config orchestrator.verification.timeout <seconds>)"
+  die "orchestrator.verification.timeout is $v - it must be a positive number of seconds (git config orchestrator.verification.timeout <seconds>)"
 }
 
 # verification_clear_orphans <store>: removes the records of checkouts that no
 # longer exist, or were made again at their path. A live run there runs to its
 # end, undelivered.
 verification_clear_orphans() {
-  local r root id
+  local r root id current idf
   for r in "$1"/*/; do
     r="${r%/}"
     [ -f "$r/root" ] && [ -f "$r/id" ] || continue
     root="$(<"$r/root")"
     id="$(<"$r/id")"
-    [ "$(cat "$root/$ORCH_DIR_NAME/verification/id" 2>/dev/null)" = "$id" ] || rm -rf "$r"
+    current=""
+    idf="$root/$ORCH_DIR_NAME/verification/id"
+    [ ! -f "$idf" ] || current="$(<"$idf")"
+    [ "$current" = "$id" ] || rm -rf "$r"
   done
 }
 
@@ -118,22 +120,47 @@ verification_stop() {
   return 1
 }
 
-# verification_start <dir> <command>: starts the run detached, in a process
-# group of its own, and records it in <dir>. The command's output goes to
-# <dir>/out and <dir>/err, its status to <dir>/status once it ends.
+# verification_start <dir> <command> <ceiling>: starts the run detached, in a
+# process group of its own, and records it in <dir>. The command's output goes
+# to <dir>/out and <dir>/err, its status to <dir>/status once it ends. The
+# runner is the run's own timer: a command still going at <ceiling> seconds
+# (whole seconds, rounded up) is stopped by the process group, TERM then KILL
+# after ORCH_VERIFICATION_GRACE, and its status recorded as 1 beside an
+# <dir>/overrun file, so a run nobody calls again cannot outlive its ceiling.
 verification_start() {
-  local d="$1" pid
+  local d="$1" ceiling="$3" limit steps pid
+  limit="$(awk -v c="$ceiling" 'BEGIN { printf "%d", (c == int(c)) ? c : int(c) + 1 }')"
+  steps="$(awk -v g="$ORCH_VERIFICATION_GRACE" 'BEGIN { printf "%d", g * 10 + 0.5 }')"
   printf '%s\n' "$2" >"$d/command"
   printf '%(%s)T\n' -1 >"$d/started"
   (
     set -m
     cd "$ROOT" || exit 1
     nohup bash -c '
-      d="$1"; cmd="$2"
-      bash -c "$cmd" >"$d/out" 2>"$d/err" </dev/null
-      echo "$?" >"$d/status.tmp"
-      mv "$d/status.tmp" "$d/status"
-    ' _ "$d" "$2" >/dev/null 2>&1 </dev/null &
+      d="$1"; cmd="$2"; ceiling="$3"; limit="$4"; steps="$5"
+      start="$(printf "%(%s)T" -1)"
+      (
+        bash -c "$cmd" >"$d/out" 2>"$d/err" </dev/null
+        echo "$?" >"$d/status.tmp"
+        mv "$d/status.tmp" "$d/status"
+      ) &
+      until [ -f "$d/status" ]; do
+        if [ "$(( $(printf "%(%s)T" -1) - start ))" -ge "$limit" ]; then
+          trap "" TERM
+          printf "%s\n" "$ceiling" >"$d/overrun"
+          kill -TERM 0
+          n=0
+          while [ "$n" -lt "$steps" ] && [ -n "$(jobs -r)" ]; do
+            sleep 0.1
+            n=$((n + 1))
+          done
+          echo 1 >"$d/status.tmp"
+          mv "$d/status.tmp" "$d/status"
+          kill -KILL 0
+        fi
+        sleep 0.2
+      done
+    ' _ "$d" "$2" "$ceiling" "$limit" "$steps" >/dev/null 2>&1 </dev/null &
     echo "$!" >"$d/pid.raw"
   ) >/dev/null 2>&1 </dev/null
   pid="$(<"$d/pid.raw")"
@@ -143,13 +170,18 @@ verification_start() {
 
 # verification_deliver <dir>: prints the finished run's stdout and stderr whole
 # and exits with its status - 1 and an orch: line naming it, for a command that
-# itself exited 75 - then forgets the run, only once everything was printed.
+# itself exited 75, and 1 for a run stopped at the ceiling, with an orch: line
+# saying so - then forgets the run, only once everything was printed.
 verification_deliver() {
-  local d="$1" st
+  local d="$1" st ceiling
   st="$(<"$d/status")"
   cat "$d/out" || exit 1
   cat "$d/err" >&2 || exit 1
-  if [ "$st" = 75 ]; then
+  if [ -f "$d/overrun" ]; then
+    ceiling="$(<"$d/overrun")"
+    warn "the run was still going after the ceiling of ${ceiling}s (orchestrator.verification.timeout) and was stopped"
+    st=1
+  elif [ "$st" = 75 ]; then
     warn "the command exited 75 - delivered as exit 1, its real status"
     st=1
   fi
@@ -157,29 +189,17 @@ verification_deliver() {
   exit "$st"
 }
 
-# verification_overrun <dir> <pid> <ceiling>: stops the run that outlived its
-# ceiling and delivers what it wrote, as failed.
-verification_overrun() {
-  local d="$1" pid="$2" ceiling="$3" what="and was stopped"
-  verification_stop "$pid" || what="and its process group $pid could not be stopped"
-  cat "$d/out" 2>/dev/null || true
-  cat "$d/err" >&2 2>/dev/null || true
-  warn "the run was still going after the ceiling of ${ceiling}s (orchestrator.verification.timeout) $what"
-  rm -rf "$d"
-  exit 1
-}
-
 # verification_run <command>: the verb's work.
 verification_run() {
   orch_load wait
-  wait_block_check
+  require_poll_knobs ORCH_WAIT_BLOCK
   require_poll_knobs ORCH_VERIFICATION_GRACE ORCH_VERIFICATION_INTERVAL
-  local command="$1" state store d slept=0 attached="" ceiling id main rec
+  local command="$1" state store d slept=0 attached="" ceiling id main_root rec
   ceiling="$(verification_timeout)" || exit $?
   id="$(verification_identity)" || die "could not record this checkout's identity in $ORCH"
   state="$(verification_state)" || die "could not read the working tree state"
-  main="$(main_checkout_or_die)" || exit $?
-  store="$main/$ORCH_DIR_NAME/verification"
+  main_root="$(main_checkout_or_die)" || exit $?
+  store="$main_root/$ORCH_DIR_NAME/verification"
   mkdir -p "$store" || die "could not create $store"
   verification_clear_orphans "$store"
   d="$store/$(printf 'root %s\nid %s\ncommand %s\n' "$ROOT" "$id" "$command" | git hash-object --stdin)"
@@ -206,7 +226,7 @@ verification_run() {
     printf '%s\n' "$ROOT" >"$d/root"
     printf '%s\n' "$id" >"$d/id"
     printf '%s\n' "$state" >"$d/state.tmp"
-    verification_start "$d" "$command"
+    verification_start "$d" "$command" "$ceiling"
     mv "$d/state.tmp" "$d/state"
   fi
   while [ ! -f "$d/status" ]; do
@@ -214,15 +234,7 @@ verification_run() {
       rm -rf "$d"
       die "the run ended without a status - run the same command again"
     fi
-    if [ -f "$d/pid" ] && [ -f "$d/started" ] &&
-       ! float_lt "$(( $(printf "%(%s)T" -1) - $(<"$d/started") ))" "$ceiling"; then
-      rec="$(<"$d/pid")"
-      verification_overrun "$d" "${rec%% *}" "$ceiling"
-    fi
-    if ! float_lt "$slept" "$ORCH_WAIT_BLOCK"; then
-      printf 'orch: still running after %ss - run the same command again\n' "$ORCH_WAIT_BLOCK" >&2
-      exit 75
-    fi
+    float_lt "$slept" "$ORCH_WAIT_BLOCK" || wait_exit_running
     sleep "$ORCH_VERIFICATION_INTERVAL"
     slept="$(float_add "$slept" "$ORCH_VERIFICATION_INTERVAL")"
   done

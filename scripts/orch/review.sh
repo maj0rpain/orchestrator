@@ -251,30 +251,18 @@ review_terminal_state() {
   return 1
 }
 
-# The larger of the wall clock and the time this loop has spent asleep. The wall
-# clock alone is whole seconds, which a sub-second override never reaches; the
-# sleep total alone ignores however long each `gh` call took, which would
-# stretch a 15-minute cap well past 15 minutes on a slow connection.
-ci_elapsed() { awk -v w="$(( $(date +%s) - $1 ))" -v s="$2" 'BEGIN { print (w > s) ? w : s }'; }
-
-# One turn of the poll loop: wait, then advance both clocks. It assigns to the
-# caller's `slept` and `elapsed`, which bash scopes dynamically - threading two
-# counters back out through a subshell's stdout would cost more than it
-# explains. A call that has slept ORCH_WAIT_BLOCK seconds stores the total and
-# exits 75 instead of sleeping on (wait.sh).
+# One turn of the poll loop: wait (wait_tick), then advance `elapsed`. It
+# assigns to the caller's `slept`, `blocked` and `elapsed`, which bash scopes
+# dynamically.
 ci_tick() {
-  orch_load wait
-  float_lt "$blocked" "$ORCH_WAIT_BLOCK" || wait_still_running "$slept"
-  sleep "$ORCH_CI_INTERVAL"
-  slept="$(float_add "$slept" "$ORCH_CI_INTERVAL")"
-  blocked="$(float_add "$blocked" "$ORCH_CI_INTERVAL")"
-  elapsed="$(ci_elapsed "$started" "$slept")"
+  wait_tick "$ORCH_CI_INTERVAL"
+  elapsed="$(wait_elapsed "$started" "$slept")"
 }
 
 # When the PR's head was pushed, in epoch seconds: the newest reflog entry of
 # the head branch's remote-tracking ref whose new value is the head SHA. Prints
 # nothing when there is no such entry - pushed from another machine, or a
-# reflog that is not kept - and the grace then counts from the call instead.
+# reflog that is not kept - and the grace then counts from the first call.
 ci_push_time() {
   local oid="$1" branch="$2"
   [ -n "$oid" ] && [ -n "$branch" ] || return 0
@@ -904,21 +892,23 @@ cmd_review() {
       local pr started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local no_ci=0
       require_state_read pr=pr
+      orch_load wait
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-      wait_block_check
+      require_poll_knobs ORCH_WAIT_BLOCK
       require_value pr "$pr"
-      # Two clocks: the timeout counts from this call, the grace from the push.
+      # Two clocks: the timeout counts from the wait's first call (the stored
+      # total), the grace from the push.
       # By the time the loop ends the fixer's last push is usually minutes old,
       # and a CI that has not registered a check in that time is not about to.
-      # `push_age` is how long before this call the push landed; a PR that will
-      # not say what its head is, or a head with no reflog entry, leaves it at
-      # zero, and the grace counts from the call as it always did.
+      # `push_age` is how long before the wait's first call the push landed; a
+      # PR that will not say what its head is, or a head with no reflog entry,
+      # leaves it at zero, and the grace counts from the first call.
       # The total is stored from the first call: a wait belongs to this PR and
       # head commit, or to the PR alone when the head cannot be read, and is
       # forgotten once a call delivers an outcome (wait.sh).
       pr_refs_read "$pr" head_oid head_ref base_ref refs_err || head_oid=""
       wait_open "review ci $pr $head_oid" started slept
-      elapsed="$(ci_elapsed "$started" "$slept")"
+      elapsed="$(wait_elapsed "$started" "$slept")"
       if [ -n "$head_oid" ]; then
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in

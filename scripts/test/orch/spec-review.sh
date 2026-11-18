@@ -3125,37 +3125,51 @@ assert_eq "naming the variable" "$out" "orch: ORCH_SPEC_REVIEW_WAIT_INTERVAL mus
 
 # spec-review wait is re-callable (#3498): a call blocks at most ORCH_WAIT_BLOCK
 # seconds and, while a lens is missing, exits 75 with nothing on stdout and the
-# still-running line; the 1s total counts from the first call and is stored.
-sw_calls() {
-  sw_n=0 sw_st=75
-  while [ "$sw_st" = 75 ] && [ "$sw_n" -lt 30 ]; do
-    ORCH_SPEC_REVIEW_WAIT_TIMEOUT=2 ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$@" >/dev/null 2>"$wait_err"; sw_st=$?
-    sw_n=$((sw_n + 1))
+# still-running line; the total counts from the first call and is kept between
+# calls.
+sw_wait() { ORCH_SPEC_REVIEW_WAIT_TIMEOUT=2 ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$@"; }
+# sw_spend <lens>: three calls of 0.4 s each, 1.2 s of that wait's total,
+# against a timeout nothing reaches. sw_probe <lens>: one call of the same wait
+# against a 1.5 s timeout - the wait with 1.2 s behind it is over within the
+# call (exit 1); a wait starting its own total is still going at the end of it
+# (exit 75).
+sw_spend() {
+  local _
+  for _ in 1 2 3; do
+    ORCH_SPEC_REVIEW_WAIT_TIMEOUT=100 ORCH_WAIT_BLOCK=0.4 "$ORCH" spec-review wait "$sw_dir" "$@" >/dev/null 2>&1
   done
 }
+sw_probe() { ORCH_SPEC_REVIEW_WAIT_TIMEOUT=1.5 ORCH_WAIT_BLOCK=0.4 "$ORCH" spec-review wait "$sw_dir" "$@" >/dev/null 2>&1; }
 sw_dir="$(mktemp -d)"
-out="$(ORCH_SPEC_REVIEW_WAIT_TIMEOUT=2 ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$sw_dir" fidelity 2>"$wait_err")"; st=$?
+out="$(sw_wait "$sw_dir" fidelity 2>"$wait_err")"; st=$?
 assert_status "a wait not over within ORCH_WAIT_BLOCK exits 75" "$st" 75
 assert_eq "with nothing on stdout" "$out" ""
 assert_eq "and the still-running line on stderr" "$(cat "$wait_err")" \
   "orch: still running after 0.2s - run the same command again"
-sw_calls "$sw_dir" fidelity
-assert_status "the calls go on to the total's failure" "$sw_st" 1
+calls_until_delivered 30 "$wait_err" sw_wait "$sw_dir" fidelity
+assert_status "the calls go on to the total's failure" "$calls_st" 1
 assert_eq "naming the missing lens" "$(cat "$wait_err")" "orch: lenses not back after 2s: fidelity"
-assert_eq "after several calls, the total inherited" "$([ "$sw_n" -ge 2 ] && [ "$sw_n" -le 12 ] && echo yes || echo "no ($sw_n)")" "yes"
-out="$(ORCH_SPEC_REVIEW_WAIT_TIMEOUT=2 ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$sw_dir" fidelity 2>/dev/null)"; st=$?
+assert_eq "after several calls, the total inherited" "$([ "$calls_n" -ge 2 ] && [ "$calls_n" -le 12 ] && echo yes || echo "no ($calls_n)")" "yes"
+out="$(sw_wait "$sw_dir" fidelity 2>/dev/null)"; st=$?
 assert_status "asked again after the failure, a new total starts" "$st" 75
-ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$sw_dir" consistency >/dev/null 2>&1
-assert_eq "other lenses start their own total, the first still pending" \
-  "$(ls "$ORCH_DIR_NAME/wait" | wc -l | tr -d ' ')" "2"
+sw_spend fidelity testability
+sw_probe consistency; st=$?
+assert_status "other lenses start their own total and inherit none still pending" "$st" 75
+sw_probe fidelity testability; st=$?
+assert_status "and the first wait's total is still there for its own calls" "$st" 1
 printf '@@ none\n' >"$sw_dir/lens-fidelity.md"
 out="$(ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$sw_dir" fidelity 2>&1)"; st=$?
 assert_status "a lens arriving ends the wait with today's output" "$st" 0
 assert_eq "the summary line" "$out" "lenses back: fidelity 0"
-assert_eq "and its total is forgotten" "$(ls "$ORCH_DIR_NAME/wait" | wc -l | tr -d ' ')" "1"
-for bad in soon 0 0.0; do
-  out="$(ORCH_WAIT_BLOCK=$bad timeout 5 "$ORCH" spec-review wait "$sw_dir" fidelity 2>&1)"; st=$?
-  assert_status "an ORCH_WAIT_BLOCK of $bad is refused" "$st" 1
+sw_spend fidelity testability
+printf '@@ none\n' >"$sw_dir/lens-testability.md"
+ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$sw_dir" fidelity testability >/dev/null 2>&1
+rm -f "$sw_dir/lens-testability.md"
+sw_probe fidelity testability; st=$?
+assert_status "a delivered wait is forgotten: the next one starts its own total" "$st" 75
+for bad_block in soon 0 0.0; do
+  out="$(ORCH_WAIT_BLOCK=$bad_block timeout 5 "$ORCH" spec-review wait "$sw_dir" fidelity 2>&1)"; st=$?
+  assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 1
 done
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
 assert_contains "help names exit 75" "$("$ORCH" help)" "exit 75 - run"
