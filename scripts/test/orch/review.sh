@@ -818,6 +818,7 @@ state_fixture pr 7
 
 rm -f "$ORCH_GH_FAKE_STORE/prs/7/head"
 rc_spend
+rc_probe  # a call whose sleep spends its block exits 75 at once: this one tops the total up past the cap
 rc_probe; st=$?
 assert_status "a head that cannot be read keys the total by the PR alone: its calls share one" "$st" 1
 fake_pr 7 open topic main

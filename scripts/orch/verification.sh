@@ -81,10 +81,10 @@ verification_timeout() {
   local v
   v="$(git -C "$ROOT" config --get orchestrator.verification.timeout 2>/dev/null || true)"
   [ -n "$v" ] || v=3600
-  case "$v" in
-    *[!0-9.]*|*.*.*|.) ;;
-    *) [ -z "${v//[0.]/}" ] || { printf '%s\n' "$v"; return 0; } ;;
-  esac
+  if is_positive_number "$v"; then
+    printf '%s\n' "$v"
+    return 0
+  fi
   die "orchestrator.verification.timeout is $v - it must be a positive number of seconds (git config orchestrator.verification.timeout <seconds>)"
 }
 
@@ -227,7 +227,7 @@ verification_run() {
   orch_load wait
   require_poll_knobs ORCH_WAIT_BLOCK
   require_poll_knobs ORCH_VERIFICATION_GRACE ORCH_VERIFICATION_INTERVAL
-  local command="$1" state store d slept=0 attached="" ceiling id main_root rec stop
+  local command="$1" state store d slept=0 attached="" ceiling id main_root rec stop spent nap
   ceiling="$(verification_timeout)" || exit $?
   id="$(verification_identity)" || die "could not record this checkout's identity in $ORCH"
   state="$(verification_state)" || die "could not read the working tree state"
@@ -254,7 +254,7 @@ verification_run() {
       fi
       stop=""
     fi
-    if [ -n "$stop" ] && [ ! -f "$d/status" ] && [ -f "$d/pid" ]; then
+    if [ -n "$stop" ] && [ ! -f "$d/status" ] && [ -f "$d/pid" ] && liveness_record_alive "$(<"$d/pid")"; then
       rec="$(<"$d/pid")"
       verification_stop "${rec%% *}" || die "the stale run of this command (process group ${rec%% *}) could not be stopped - stop it by hand"
     fi
@@ -272,9 +272,11 @@ verification_run() {
       rm -rf "$d"
       die "the run ended without a status - run the same command again"
     fi
-    float_lt "$(wait_block_spent "$slept")" "$ORCH_WAIT_BLOCK" || wait_exit_running
-    sleep "$ORCH_VERIFICATION_INTERVAL"
-    slept="$(float_add "$slept" "$ORCH_VERIFICATION_INTERVAL")"
+    spent="$(wait_block_spent "$slept")"
+    float_lt "$spent" "$ORCH_WAIT_BLOCK" || wait_exit_running
+    nap="$(awk -v i="$ORCH_VERIFICATION_INTERVAL" -v b="$ORCH_WAIT_BLOCK" -v s="$spent" 'BEGIN { r = b - s; print (r < i) ? r : i }')"
+    sleep "$nap"
+    slept="$(float_add "$slept" "$nap")"
   done
   verification_deliver "$d"
 }

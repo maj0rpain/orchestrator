@@ -185,6 +185,36 @@ assert_eq "the fresh run starts after the stale one is stopped" "$(counting_star
 kill -0 "$(head -n 1 "$vr_dir/pids")" 2>/dev/null; st=$?
 assert_status "and the stale run that ignored TERM is gone" "$st" 1
 
+# A stale record whose process is gone is cleared without a signal: its pid may
+# be another process's now, so the group it names is never signalled.
+rm -f "$vr_dir/gate"
+cmd="$(vr_gate "$vr_dir")"
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+vr_rec=""; for vr_d in .orchestrator/verification/*/; do [ "$vr_d" -nt "${vr_rec:-/nonexistent}" ] && vr_rec="$vr_d"; done
+vr_rec="${vr_rec%/}"
+vr_old="$(<"$vr_rec/pid")"
+kill -TERM -- "-${vr_old%% *}" 2>/dev/null
+setsid sleep 60 >/dev/null 2>&1 </dev/null & vr_other=$!
+printf '%s 1\n' "$vr_other" >"$vr_rec/pid"
+rm -f "$vr_rec/status"
+printf 'stale\n' >"$vr_rec/state"
+: >"$vr_dir/gate"
+vr_block=5 vr_run "$cmd" >/dev/null
+kill -0 "$vr_other" 2>/dev/null; st=$?
+assert_status "a stale record of a dead run never signals its recorded group" "$st" 0
+kill "$vr_other" 2>/dev/null
+
+# A call never sleeps past ORCH_WAIT_BLOCK, whatever the poll interval.
+rm -f "$vr_dir/gate"
+cmd="$(vr_gate "$vr_dir" quiet)"
+vr_t0=$SECONDS
+ORCH_VERIFICATION_INTERVAL=8 ORCH_WAIT_BLOCK=1 ORCH_VERIFICATION_GRACE=0.3 \
+  "$ORCH" verification run "$cmd" >/dev/null 2>&1; st=$?
+assert_status "a call with a long interval still ends in exit 75" "$st" 75
+assert_eq "within the block, not a whole interval past it" "$(( SECONDS - vr_t0 < 4 ))" "1"
+: >"$vr_dir/gate"
+
 # A different command is left alone, and starts beside the live one.
 rm -f "$vr_dir/gate"
 cmd="$(vr_gate "$vr_dir")"

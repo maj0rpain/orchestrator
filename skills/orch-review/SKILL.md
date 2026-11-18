@@ -633,8 +633,9 @@ exiting non-zero on the last two:
   second failure is a **bounded stop**. That second ask
   restarts the fifteen-minute wait rather than inheriting what is left of the
   first, because a rerun restarts the checks - so this one path, once per loop,
-  can wait longer than the cap. A second ask that times out or is killed is
-  **unreachable** like the first.
+  can wait longer than the cap. A second ask that times out is **unreachable**
+  like the first, and so is one the host kills when it cannot run it again (see
+  the end of this section).
 - **failing**, at **Termination** in an autopilot flow: judge it before it
   is called a reason. Read `bash "$ORCH" review ci-log <pr>`. The failure needs
   a decision, a human reason, when any of these holds: it would fail on the

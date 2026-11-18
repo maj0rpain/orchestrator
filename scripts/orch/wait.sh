@@ -44,12 +44,12 @@ wait_open() {
     { IFS= read -r start; IFS= read -r slept; } <"$WAIT_FILE" || true
   fi
   case "$start" in ''|*[!0-9]*) start="" ;; esac
-  case "$slept" in ''|*[!0-9.]*|*.*.*|.) slept="" ;; esac
+  is_number "$slept" || slept=""
   if [ -z "$start" ] || [ -z "$slept" ]; then
     epoch="$(date +%s)"
     start="$epoch"
     slept=0
-    printf '%s\n%s\n' "$start" "$slept" >"$WAIT_FILE" || die "could not store the wait"
+    file_write_atomic "$WAIT_FILE" "$start"$'\n'"$slept"$'\n' || die "could not store the wait"
   fi
   WAIT_START="$start"
   printf -v "$2" '%s' "$start"
