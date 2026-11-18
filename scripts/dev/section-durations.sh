@@ -122,11 +122,13 @@ stale_report() {
   echo "section-durations.sh: total $total CPU seconds, budget $budget"
 }
 
+# DOCS_LINT_RECORDING=1 tells docs_lint.sh the ledger is being recorded, so it
+# does not fail on the very lines this run replaces.
 # measure_suite <name>: times the other suite <name> as the full refresh does,
 # and on a failure adds it to failed, with its report and output on stderr.
 measure_suite() {
   local suite_st
-  TMPDIR="$tmp" measure "$1" test_jobs_run_child bash "$dir/$1"; suite_st=$?
+  DOCS_LINT_RECORDING=1 TMPDIR="$tmp" measure "$1" test_jobs_run_child bash "$dir/$1"; suite_st=$?
   if ! report_suite "$1" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
     failed+=("$1")
     cat "$tmp/report" "$tmp/out" >&2

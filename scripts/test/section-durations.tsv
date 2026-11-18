@@ -6,7 +6,7 @@
 13	12	the parallel runner's start order (#2857)	fc6bd901e809c854c4f24de349833375b37da878
 106	52	the shard setting (#2859)	e458e8b2e5e96585f1fa1c17550dcaf16af69a8d
 9	9	the seeded start (stub cache)	4d395568422b51808c584e5f2eeb5e45e4fd9245
-263	209	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	ab52c84f1b669539897188cc3d0872f3db6fd41d
+263	231	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	15f22785a116fdd60f6afe1409339cd195c95f39
 2	2	assertions in a subshell (#1904)	0452522e28fb1c4c3c38be4bdc01164d38083a6d
 0	1	the standalone suites' tally (#1904)	3ef63a2498ce5575744c59c536feb59e722c4808
 9	9	the section files (#932)	ae9bc054f49c95a75fd421f36ed5090445872826
@@ -35,10 +35,13 @@
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60
-5	6	audit file	f49e1df3fb17df1bda77cc777ca703f93fdbd869
-2	3	audit file duplicates	f1a18f7a654adf47915c20a9aa17accaecb265c4
-4	5	audit file refusals	722b789719d688d6ea16d4ec0118aea878444ddf
-1	2	audit file failures	489890f052ac57f15d84d1a88bbd941bca44a32a
+5	7	audit file	e97f4bcf770e6f84652afee83c052a5ae0585f1a
+2	3	audit file duplicates	73913f6f2897becbffd2e3a03b14f265e780bba0
+8	9	audit file refusals	e065509389876d325ba7a19b4233858047b6779d
+1	2	audit file failures	36da66fe7e1963a63d248c9eefd0530932ced2f6
+7	8	audit begin	9277e95ea24eb4fc6e267ab64ed38ff470cc2550
+18	20	audit report	4a48bf1e65833c424d6e185968d4ca2cb6099862
+29	32	audit file batch	b8cec2882b163e468be28a8f291c8d1d68829f5b
 9	10	autopilot	0de8834cdf8bd2ccc871a51e5abda748144d0337
 19	22	autopilot rounds, budget and start	41829146970a3ee47b79d27ccf9e27f2ba60d4f1
 40	46	autopilot ask and answer	646445929ad04febc7c3cdb6d5d7cdfc421084b0
@@ -277,7 +280,7 @@
 62	66	side-checkout archive and remove (#724)	1fb2f3f39b0980a84392830dc2587afb5d19aa14
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
 69	73	side-checkout prune: edge cases (#726)	362681b13f704c2999a7f32e8b1370b18d3d834c
-17	19	archive keeps flow-less directories (#1247)	a630a887a3b55154b49703be44e3a73898d8c728
+18	19	archive keeps flow-less directories (#1247)	e9c16b4e7c5a62601ddecc03ca5a3cd253230c44
 21	23	side-checkout prune: a covered branch tip (#1906)	b13be4c577395b49197e461cad6954d626b4081f
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
 49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
@@ -347,7 +350,7 @@
 1	2	ticket exists: no repo (#3050)	291d750cc4efbe9e118a0494a09f83666294d0d8
 17	20	trust module	8907f14dbb6515e13cfad144156774f74dc17a98
 686	806	hooks_test.sh	6625869d545a29266bdef9aa7a67cb0a5abc74db
-126	150	docs_lint.sh	3cd6ab96d7f2efd727ee73af6817509fffc60caf
+150	167	docs_lint.sh	1465eec1b05a462437a8d6e726e3281f5b9719f6
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8

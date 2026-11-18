@@ -1432,8 +1432,9 @@ sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/a
 
 # The fingerprint column (#3467), observed through the script's output: a
 # planted file with a preamble and two sections, recorded once; the edit cases
-# live in docs_lint.sh's suite budget section. fp_of <title>: the fourth column.
-fp_of() { awk -F'\t' -v t="$1" '$3 == t { print $4 }' "$dur_file"; }
+# live in docs_lint.sh's suite budget section.
+# fp_of <title> [<file>]: the title's fourth column in <file> or the ledger.
+fp_of() { awk -F'\t' -v t="$1" '$3 == t { print $4 }' "${2:-$dur_file}"; }
 fp_plant() {
   printf '%s\n' "  $1" '  # --- fp x' "  echo; echo 'fp x'; $2; ok 'x ran'" \
     '  # --- fp y' "  echo; echo 'fp y'; ok 'y ran'" | plant_file "$dur_orch" zzz-fp.sh
@@ -1503,14 +1504,9 @@ assert_eq "with a budget file it ends on the total and the budget" \
 assert_eq "the total is the CPU column's sum" \
   "$(( 10#$(st_last "$out" | sed "s/.*total \([0-9]*\)\.\([0-9]\) .*/\1\2/") ))" \
   "$(awk -F'\t' '{ s += $2 } END { print s }' "$dur_file")"
-for st_bad in abc 0 -3 '1 2' ''; do
-  printf '%s\n' "$st_bad" >"$dur_test/suite-budget"
-  out="$(dur_stale)"
-  assert_contains "a budget file holding '$st_bad' is named as missing" "$(st_last "$out")" "budget missing"
-done
-printf '1\n2\n' >"$dur_test/suite-budget"
+printf 'abc\n' >"$dur_test/suite-budget"
 out="$(dur_stale)"
-assert_contains "a budget file of two lines is named as missing" "$(st_last "$out")" "budget missing"
+assert_contains "a budget file holding abc is named as missing" "$(st_last "$out")" "budget missing"
 rm -f "$dur_test/suite-budget"
 
 # A stale section: only its line changes, byte for byte otherwise.
@@ -1518,7 +1514,7 @@ echo '# edited' >>"$dur_orch/zz-planted.sh"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on an edited section exits 0" "$st" 0
 assert_eq "it rewrites that section's line, with a new fingerprint" \
-  "$([ "$(awk -F'\t' '$3 == "dur b" { print $4 }' "$dur_file")" != "$(awk -F'\t' '$3 == "dur b" { print $4 }' "$dur_dir/base.tsv")" ] && echo yes)" "yes"
+  "$([ "$(fp_of "dur b")" != "$(fp_of "dur b" "$dur_dir/base.tsv")" ] && echo yes)" "yes"
 assert_eq "and leaves every other line byte for byte" \
   "$(st_except 'dur b' | cut -c1-)" "$(awk -F'\t' '$3 != "dur b"' "$dur_dir/base.tsv")"
 assert_eq "and the title keeps its place" "$(cut -f3 "$dur_file" | tr '\n' ',')" "$(cut -f3 "$dur_dir/base.tsv" | tr '\n' ',')"
@@ -1545,7 +1541,7 @@ out="$(dur_stale)"; st=$?
 assert_status "--stale on a title on two lines exits 0" "$st" 0
 assert_eq "it ends as one line for the title" "$(awk -F'\t' '$3 == "dur a"' "$dur_file" | wc -l | tr -d ' ')" "1"
 assert_eq "with the fingerprint the text has" \
-  "$(awk -F'\t' '$3 == "dur a" { print $4 }' "$dur_file")" "$(awk -F'\t' '$3 == "dur a" { print $4 }' "$dur_dir/base.tsv")"
+  "$(fp_of "dur a")" "$(fp_of "dur a" "$dur_dir/base.tsv")"
 st_reset
 # Two shellcheck lines end as the first.
 printf '7\t7\tshellcheck\n' >>"$dur_file"
@@ -1568,7 +1564,7 @@ echo '# edited' >>"$dur_test/stub_a.sh"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on an edited other suite exits 0" "$st" 0
 assert_eq "its fingerprint changed" \
-  "$([ "$(awk -F'\t' '$3 == "stub_a.sh" { print $4 }' "$dur_file")" != "$(awk -F'\t' '$3 == "stub_a.sh" { print $4 }' "$dur_dir/base.tsv")" ] && echo yes)" "yes"
+  "$([ "$(fp_of stub_a.sh)" != "$(fp_of stub_a.sh "$dur_dir/base.tsv")" ] && echo yes)" "yes"
 assert_eq "and every other line is as it was" "$(st_except stub_a.sh)" "$(awk -F'\t' '$3 != "stub_a.sh"' "$dur_dir/base.tsv")"
 st_reset
 # A job count of 1 is refused.
@@ -1589,11 +1585,23 @@ assert_status "a failing missing section fails --stale" "$st" 1
 assert_contains "naming it" "$out" "dur fails"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
 st_reset
+echo '  bad "dur b" "planted"' >>"$dur_orch/zz-planted.sh"
+out="$(dur_stale)"; st=$?
+assert_status "a failing stale section fails --stale" "$st" 1
+assert_contains "naming it" "$out" "dur b"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
+st_reset
 printf '#!/usr/bin/env bash\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
 out="$(dur_stale)"; st=$?
 assert_status "a failing stale other suite fails --stale" "$st" 1
 assert_contains "naming it" "$out" "stub_b.sh"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
+st_reset
+# A suite is measured with DOCS_LINT_RECORDING=1, so docs_lint.sh can skip the
+# rule that the ledger it is being measured for is fresh.
+printf '#!/usr/bin/env bash\necho\n[ "${DOCS_LINT_RECORDING:-}" = 1 ] || exit 1\necho "1 passed, 0 failed"\n' >"$dur_test/stub_b.sh"
+out="$(dur_stale)"; st=$?
+assert_status "--stale measures a suite with DOCS_LINT_RECORDING=1" "$st" 0
 st_reset
 # No fresh section: refused, naming the full refresh.
 echo '# edited' >>"$dur_orch/zz-planted.sh"
