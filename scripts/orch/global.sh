@@ -1060,14 +1060,32 @@ orch.sh - deterministic operations for the orchestrator flow
                               the attempt's branch and PR are retired too
                               (branch to -redo-<n>, PR closed, redo_count
                               bumped when a branch is retired)
+  verification run <command>  run <command>, one shell command line, with
+                              bash -c detached from this call, in a process
+                              group of its own, so stopping the call stops
+                              nothing. Blocks ORCH_WAIT_BLOCK seconds
+                              (default 570; a value that is not a positive
+                              number is refused). Finished in time: prints
+                              the command's stdout and stderr whole and exits
+                              with its status; a command that itself exits 75
+                              is delivered as exit 1 with an orch: line
+                              naming its real status. Still going: stdout
+                              empty, stderr "orch: still running after <n>s -
+                              run the same command again", exit 75. The same
+                              line run again on the same checkout, HEAD and
+                              working tree attaches to the live run, never
+                              starting a second; a finished result nobody
+                              collected is delivered once, forgotten only once
+                              printed whole, and the next call starts a fresh
+                              run. Nothing about a delivered run is kept
   status                      human-readable summary of this checkout's flow,
                               then one line for every other checkout holding
                               a flow and every side checkout
   archive                     move the live flow into .orchestrator/archive/,
                               leaving the entries that belong to no flow in
                               place: archive/, checkouts/, spec-review/, audit/,
-                              review-pass/, autopilot/, breakdown/ and
-                              reports/
+                              review-pass/, autopilot/, breakdown/,
+                              reports/ and verification/
                               (refuses, naming each, while a ticket worktree
                               is left under this checkout). In a side
                               checkout, the flow moves to the main checkout's
