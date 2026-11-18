@@ -96,6 +96,131 @@ $vr_case"
   assert_eq "with no second copy started ($vr_case)" "$(counting_starts "$vr_count" date)" "$before"
 done
 
+# --- verification run: the run key, stale runs, the ceiling -------------------
+# One run per command in a checkout; a changed HEAD or tree makes it stale.
+echo
+echo "verification run key"
+new_repo >/dev/null
+vr_repo="$PWD"
+printf 'ig.log\n' >.gitignore
+git add .gitignore && git commit -qm ignore
+vr_dir="$(mktemp -d)"
+vr_count="$(counting_bin date)"
+mkfifo "$vr_dir/up"
+# vr_run <command>: one call of the line, the counted date on the path.
+vr_run() { PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=1 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification run "$1" 2>&1; }
+
+cmd="$(vr_gate "$vr_dir")"
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+echo noise >ig.log
+mkdir -p .orchestrator/x && echo noise >.orchestrator/x/y
+vr_run "$cmd" >/dev/null; st=$?
+assert_eq "an ignored file written while a run is live leaves it attached" "$(counting_starts "$vr_count" date)" "1"
+echo one >>README.md
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+assert_eq "an edit to a tracked file makes the run stale: a fresh one starts" "$(counting_starts "$vr_count" date)" "2"
+echo two >>README.md
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+assert_eq "a second edit to the already-modified file makes it stale again" "$(counting_starts "$vr_count" date)" "3"
+echo new >untracked.txt
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+assert_eq "a new untracked file makes it stale" "$(counting_starts "$vr_count" date)" "4"
+
+# A finished result whose tree has changed is never delivered.
+rm -f "$vr_dir/gate"
+cmd="$(vr_gate "$vr_dir" | sed "s| echo up >[^;]*;||"); echo again"
+vr_run "$cmd" >/dev/null
+: >"$vr_dir/gate"
+for _ in $(seq 100); do
+  compgen -G "$vr_repo/.orchestrator/verification/*/status" >/dev/null && break
+  sleep 0.1
+done
+echo three >>README.md
+base="$(counting_starts "$vr_count" date)"
+out="$(vr_run "$cmd")"; st=$?
+assert_eq "a finished result whose tree changed starts a fresh run" "$(counting_starts "$vr_count" date)" "$((base + 1))"
+assert_eq "and the old result is not delivered" "$out" "done
+again"
+
+# A stale live run is stopped by its process group: TERM first.
+rm -f "$vr_dir/gate" "$vr_dir/log"
+cmd="trap 'echo TERM >>\"$vr_dir/log\"; exit 0' TERM; date >/dev/null; echo up >\"$vr_dir/up\"; while :; do sleep 0.1; done"
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+echo four >>README.md
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+assert_eq "a changed tree stops the live run with TERM" "$(<"$vr_dir/log")" "TERM"
+
+# A stale run that ignores TERM is stopped by KILL after the grace.
+rm -f "$vr_dir/pids"
+cmd="trap '' TERM; echo \$\$ >>\"$vr_dir/pids\"; date >/dev/null; echo up >\"$vr_dir/up\"; while :; do sleep 0.1; done"
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+echo five >>README.md
+base="$(counting_starts "$vr_count" date)"
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+assert_eq "the fresh run starts after the stale one is stopped" "$(counting_starts "$vr_count" date)" "$((base + 1))"
+kill -0 "$(head -n 1 "$vr_dir/pids")" 2>/dev/null; st=$?
+assert_status "and the stale run that ignored TERM is gone" "$st" 1
+
+# A different command is left alone, and starts beside the live one.
+rm -f "$vr_dir/gate"
+cmd="$(vr_gate "$vr_dir")"
+vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+base="$(counting_starts "$vr_count" date)"
+out="$(vr_run 'echo other')"; st=$?
+assert_eq "a different command starts its own run" "$out" "other"
+vr_run "$cmd" >/dev/null; st=$?
+assert_status "the first command's run is still live" "$st" 75
+assert_eq "and was never restarted" "$(counting_starts "$vr_count" date)" "$base"
+: >"$vr_dir/gate"
+
+# The ceiling.
+git config orchestrator.verification.timeout 1
+out="$(ORCH_WAIT_BLOCK=30 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification run 'echo partial; sleep 60' 2>&1)"; st=$?
+assert_status "a run past the ceiling exits 1" "$st" 1
+assert_contains "with the output it wrote" "$out" "partial"
+assert_contains "and the ceiling's orch: line" "$out" "orch: the run was still going after the ceiling of 1s (orchestrator.verification.timeout)"
+for vr_bad in abc 0 -1 1.2.3; do
+  git config orchestrator.verification.timeout "$vr_bad"
+  out="$("$ORCH" verification run 'true' 2>&1)"; st=$?
+  assert_ne "a timeout of $vr_bad is refused" "$st" 0
+  assert_contains "naming the key ($vr_bad)" "$out" "orchestrator.verification.timeout"
+done
+git config --unset orchestrator.verification.timeout
+
+# A record of a checkout that no longer exists is cleared by the next call.
+echo
+echo "verification run orphans"
+new_repo >/dev/null
+vr_main="$PWD"
+vr_wt="$(mktemp -d)/wt"
+git worktree add -q "$vr_wt" -b side
+rm -f "$vr_dir/gate"
+cmd="$(vr_gate "$vr_dir" | sed "s| echo up >[^;]*;||"); echo again"
+(cd "$vr_wt" && vr_run "$cmd" >/dev/null)
+: >"$vr_dir/gate"
+for _ in $(seq 100); do
+  compgen -G "$vr_main/.orchestrator/verification/*/status" >/dev/null && break
+  sleep 0.1
+done
+git worktree remove --force "$vr_wt"
+git worktree add -q "$vr_wt" side
+base="$(counting_starts "$vr_count" date)"
+out="$(cd "$vr_wt" && vr_run "$cmd")"; st=$?
+assert_eq "a checkout made again at the same path starts a fresh run" "$(counting_starts "$vr_count" date)" "$((base + 1))"
+assert_eq "and is never handed the old result" "$out" "done
+again"
+assert_eq "the old record is cleared" \
+  "$(compgen -G "$vr_main/.orchestrator/verification/*/" | wc -l | tr -d ' ')" "0"
+
 # --- verification run in help and the CLI conventions -------------------------
 echo
 echo "verification run docs"

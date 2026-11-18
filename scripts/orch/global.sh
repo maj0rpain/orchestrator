@@ -1090,7 +1090,20 @@ orch.sh - deterministic operations for the orchestrator flow
                               starting a second; a finished result nobody
                               collected is delivered once, forgotten only once
                               printed whole, and the next call starts a fresh
-                              run. Nothing about a delivered run is kept
+                              run. Nothing about a delivered run is kept.
+                              Working tree = tracked changes and unignored
+                              untracked files, by content; ignored files never
+                              count. A result or live run whose HEAD or tree
+                              changed is stale: the result is dropped, the live
+                              run stopped by its process group (TERM, then KILL
+                              after ORCH_VERIFICATION_GRACE, default 5 s), and a
+                              fresh run starts; another command's run is left
+                              alone. orchestrator.verification.timeout (git
+                              config, default 3600 s, fractions allowed) is the
+                              ceiling: a run past it is stopped and delivered as
+                              failed with an orch: line, exit 1. Records of
+                              checkouts that no longer exist are cleared by the
+                              next call
   status                      human-readable summary of this checkout's flow,
                               then one line for every other checkout holding
                               a flow and every side checkout
