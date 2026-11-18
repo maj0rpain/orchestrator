@@ -280,8 +280,8 @@ Verification: <command> pass|fail
   every rebase commit; `None` when a rebase applied cleanly.
 - `Dropped`: each intent dropped, with the side that meant it and why,
   separated by "; ", or `None`.
-- `Verification`: the checks command you ran and its result after your
-  fixes.
+- `Verification`: the inner checks command, not the
+  `verification run` call, and its result after your fixes.
 
 The driver judges a resolution - the resolver's, or a resumed
 implementer's - by this report and the checkout or ticket worktree it

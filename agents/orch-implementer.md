@@ -130,7 +130,7 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    reading `Ticket verification: <command>`. When they name none, run the
    repo's full verification instead, its `Full verification: <command>` line or
    the command they document. The report's `Verification` line names the
-   command you ran.
+   inner command, not the `verification run` call.
    Run it in the foreground and wait for it (host capability *Run a long
    command*), through `verification run`, a **re-callable command**:
    `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and

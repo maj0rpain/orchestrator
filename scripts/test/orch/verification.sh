@@ -185,25 +185,28 @@ assert_eq "the fresh run starts after the stale one is stopped" "$(counting_star
 kill -0 "$(head -n 1 "$vr_dir/pids")" 2>/dev/null; st=$?
 assert_status "and the stale run that ignored TERM is gone" "$st" 1
 
-# A stale record whose process is gone is cleared without a signal: its pid may
-# be another process's now, so the group it names is never signalled.
+# A run whose process group was killed, leaving no status, is cleared and
+# started fresh by the next call of the line: the command ends its own group
+# the first time it starts.
+rm -f "$vr_dir/gate" "$vr_dir/killed"
+cmd="date >/dev/null; [ -f \"$vr_dir/killed\" ] || { : >\"$vr_dir/killed\"; kill -KILL 0; }; echo done"
+base="$(counting_starts "$vr_count" date)"
+vr_block=2 vr_run "$cmd" >/dev/null
+out="$(vr_block=5 vr_run "$cmd")"; st=$?
+assert_eq "a run whose group was killed is replaced by a fresh one" "$(counting_starts "$vr_count" date)" "$((base + 2))"
+assert_eq "which is delivered whole" "$out" "done"
+
+# A stale run that ignores TERM never holds a call past ORCH_WAIT_BLOCK: the
+# grace wait of its stop is bounded by the block, and the next call goes on.
 rm -f "$vr_dir/gate"
-cmd="$(vr_gate "$vr_dir")"
+cmd="trap '' TERM; $(vr_gate "$vr_dir" quiet)"
 vr_run "$cmd" >/dev/null
-fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
-vr_rec=""; for vr_d in .orchestrator/verification/*/; do [ "$vr_d" -nt "${vr_rec:-/nonexistent}" ] && vr_rec="$vr_d"; done
-vr_rec="${vr_rec%/}"
-vr_old="$(<"$vr_rec/pid")"
-kill -TERM -- "-${vr_old%% *}" 2>/dev/null
-setsid sleep 60 >/dev/null 2>&1 </dev/null & vr_other=$!
-printf '%s 1\n' "$vr_other" >"$vr_rec/pid"
-rm -f "$vr_rec/status"
-printf 'stale\n' >"$vr_rec/state"
+echo six >>README.md
+vr_t0=$SECONDS
+ORCH_WAIT_BLOCK=0.5 ORCH_VERIFICATION_GRACE=30 "$ORCH" verification run "$cmd" >/dev/null 2>&1; st=$?
+assert_status "a stop whose grace outlasts the block ends in exit 75" "$st" 75
+assert_eq "within the block, not the grace" "$(( SECONDS - vr_t0 < 4 ))" "1"
 : >"$vr_dir/gate"
-vr_block=5 vr_run "$cmd" >/dev/null
-kill -0 "$vr_other" 2>/dev/null; st=$?
-assert_status "a stale record of a dead run never signals its recorded group" "$st" 0
-kill "$vr_other" 2>/dev/null
 
 # A call never sleeps past ORCH_WAIT_BLOCK, whatever the poll interval.
 rm -f "$vr_dir/gate"
@@ -249,7 +252,9 @@ assert_contains "and the ceiling's orch: line" "$out" "orch: the run was still g
 # A run finishing inside its ceiling is never stopped early, wherever the
 # whole-second clock falls: begun just before a second turns, 0.7 s of work
 # under a 1 s ceiling is delivered done.
-vr_ms=$(( 10#$(date +%N) / 1000000 )); sleep "0.$(printf %03d $(( (1900 - vr_ms) % 1000 )))"
+vr_sec="$(printf '%(%s)T' -1)"
+while [ "$(printf '%(%s)T' -1)" = "$vr_sec" ]; do sleep 0.05; done
+sleep 0.85
 out="$(ORCH_WAIT_BLOCK=30 "$ORCH" verification run 'sleep 0.7; echo inside' 2>&1)"; st=$?
 assert_status "a run finishing inside its ceiling is delivered as done" "$st" 0
 assert_eq "with its output" "$out" "inside"

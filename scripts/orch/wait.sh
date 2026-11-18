@@ -74,6 +74,12 @@ wait_exit_running() {
 # the time each poll itself took counts against ORCH_WAIT_BLOCK too.
 wait_block_spent() { wait_elapsed "$WAIT_CALL_START" "$1"; }
 
+# wait_nap <interval> <spent>: prints <interval>, or what is left of
+# ORCH_WAIT_BLOCK after <spent> seconds when that is less.
+wait_nap() {
+  awk -v i="$1" -v b="$ORCH_WAIT_BLOCK" -v s="$2" 'BEGIN { r = b - s; print (r < i) ? r : i }'
+}
+
 # wait_still_running <slept>: stores the seconds slept so far, says the wait is
 # not over, and exits 75.
 wait_still_running() {
@@ -93,7 +99,7 @@ wait_tick() {
   local spent nap
   spent="$(wait_block_spent "$blocked")"
   float_lt "$spent" "$ORCH_WAIT_BLOCK" || wait_still_running "$slept"
-  nap="$(awk -v i="$1" -v b="$ORCH_WAIT_BLOCK" -v s="$spent" 'BEGIN { r = b - s; print (r < i) ? r : i }')"
+  nap="$(wait_nap "$1" "$spent")"
   sleep "$nap"
   slept="$(float_add "$slept" "$nap")"
   blocked="$(float_add "$blocked" "$nap")"

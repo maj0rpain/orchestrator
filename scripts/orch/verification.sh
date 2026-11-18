@@ -111,13 +111,25 @@ verification_clear_orphans() {
   done
 }
 
-# verification_wait_gone <pid>: waits up to ORCH_VERIFICATION_GRACE seconds for
-# the process group <pid> to be gone. Returns 1 when it is still there.
+# verification_grace_nap: one 0.1 s turn of a grace wait, clamped to what is
+# left of ORCH_WAIT_BLOCK; a call whose block is spent exits 75 instead, so no
+# grace wait runs a call past the block.
+verification_grace_nap() {
+  local spent
+  orch_load wait
+  spent="$(wait_block_spent 0)"
+  float_lt "$spent" "$ORCH_WAIT_BLOCK" || wait_exit_running
+  sleep "$(wait_nap 0.1 "$spent")"
+}
+
+# verification_wait_gone <pid>: waits up to ORCH_VERIFICATION_GRACE seconds (and
+# ORCH_WAIT_BLOCK) for the process group <pid> to be gone. Returns 1 when it is
+# still there.
 verification_wait_gone() {
   local pid="$1" slept=0
   while kill -0 -- "-$pid" 2>/dev/null; do
     float_lt "$slept" "$ORCH_VERIFICATION_GRACE" || return 1
-    sleep 0.1
+    verification_grace_nap
     slept="$(float_add "$slept" 0.1)"
   done
 }
@@ -139,7 +151,7 @@ verification_wait_state() {
   local slept=0
   until [ -f "$1/state" ]; do
     float_lt "$slept" "$ORCH_VERIFICATION_GRACE" || return 1
-    sleep 0.1
+    verification_grace_nap
     slept="$(float_add "$slept" 0.1)"
   done
 }
@@ -198,17 +210,22 @@ verification_start() {
 # saying so (naming the process group when it is still there) - then forgets
 # the run, only once everything was printed.
 verification_deliver() {
-  local d="$1" st ceiling rec group
+  local d="$1" st ceiling rec group gone=1
   st="$(<"$d/status")"
-  cat "$d/out" || exit 1
-  cat "$d/err" >&2 || exit 1
   if [ -f "$d/overrun" ]; then
     ceiling="$(<"$d/overrun")"
     # The runner's KILL ends the group an instant after it wrote the status.
+    # Waited for before anything is printed: a call whose block is spent exits
+    # 75 here, and the next one delivers.
     rec=""
     [ ! -f "$d/pid" ] || rec="$(<"$d/pid")"
     group="${rec%% *}"
-    if [ -n "$group" ] && ! verification_wait_gone "$group"; then
+    if [ -n "$group" ] && ! verification_wait_gone "$group"; then gone=""; fi
+  fi
+  cat "$d/out" || exit 1
+  cat "$d/err" >&2 || exit 1
+  if [ -f "$d/overrun" ]; then
+    if [ -z "$gone" ]; then
       warn "the run was still going after the ceiling of ${ceiling}s (orchestrator.verification.timeout) and its process group $group is left running - stop it by hand"
     else
       warn "the run was still going after the ceiling of ${ceiling}s (orchestrator.verification.timeout) and was stopped"
@@ -274,7 +291,7 @@ verification_run() {
     fi
     spent="$(wait_block_spent "$slept")"
     float_lt "$spent" "$ORCH_WAIT_BLOCK" || wait_exit_running
-    nap="$(awk -v i="$ORCH_VERIFICATION_INTERVAL" -v b="$ORCH_WAIT_BLOCK" -v s="$spent" 'BEGIN { r = b - s; print (r < i) ? r : i }')"
+    nap="$(wait_nap "$ORCH_VERIFICATION_INTERVAL" "$spent")"
     sleep "$nap"
     slept="$(float_add "$slept" "$nap")"
   done
