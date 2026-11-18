@@ -6,7 +6,7 @@
 13	12	the parallel runner's start order (#2857)	fc6bd901e809c854c4f24de349833375b37da878
 106	52	the shard setting (#2859)	e458e8b2e5e96585f1fa1c17550dcaf16af69a8d
 9	9	the seeded start (stub cache)	4d395568422b51808c584e5f2eeb5e45e4fd9245
-234	190	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	b1e9588d54e2e25999584477da63baecd48b0564
+284	195	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	5f7e4c9af82c2844256af4d7ec8dc3cae0c5dc4e
 2	2	assertions in a subshell (#1904)	0452522e28fb1c4c3c38be4bdc01164d38083a6d
 0	1	the standalone suites' tally (#1904)	3ef63a2498ce5575744c59c536feb59e722c4808
 9	9	the section files (#932)	ae9bc054f49c95a75fd421f36ed5090445872826
@@ -14,7 +14,7 @@
 0	1	the real-gh guard (#779)	cb366aae66d730bb97a674ba01e295c93f12d26a
 34	18	all.sh, the single entry point (#615)	cbe1d524a6b0c5e8446ad5d14a4283396dd83df6
 0	1	all.sh's suite list holds every runner (#1941)	72f68870b0dcef725db33ae64cd3f6b7c9c780ae
-187	32	the job pool (#2022)	067e5d2fe4f441909710730759fda2f51142c5f1
+464	66	the job pool (#2022)	2da4b824fbaa748fa0275be5930002bb2a80349b
 0	1	the slot fd contract (#2300)	170fbdd751e6da0f3ffd08890c7437d351f296c3
 57	13	the test runners' CPU load (#1586)	e9b695c7a03e0905f9e1cd1400539a487043a2e1
 0	1	shell code (#1411)	72a46bd82b6cf7860201472d6413e791e2a36552
@@ -31,7 +31,7 @@
 2	3	runner git isolation (#1905)	71ce11eb3b493cb1b633d406d98c545e982c78ee
 0	1	the background child start (#3025)	cd1314d985f5640647f7e529b8de66a56c83b085
 2	3	the counting fixture's stdin counter (#3434)	ff596769dbc0e83db12708e2a0ed7e4e348bd7fc
-26	29	affected.sh, the ticket verification (#2023)	647edbfe4e6e1a10ae80a87599ddde3664e164a8
+36	32	affected.sh, the ticket verification (#2023)	fa90f1d104cb9a278d7c450d3bdd5504608822ea
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60
@@ -206,11 +206,13 @@
 24	28	issue triage	35104602a6dc67c6a5b055ec9fbef989793ffefc
 15	18	issue triage --check	564f12ed763e0da2d5050a9f33e1d37403c81e97
 3	4	issue ready	fb83751d2b18b2562947725eb2ec3faeb24a3a24
+2	3	issue labels	2660a93084add5e8c79be829041de52212aedfaf
 4	5	issue close	31642c9eef64b5d17aea977702d7884852078fee
 89	102	issue fetch/update	757d89d57752cf31da76d1a7277bd0ea0a65a9c7
 0	1	outside a checkout (#931)	062b9b295a023794605c84086a2187d40ba593df
 6	7	issue fetch trust warning	3bfa7f95a6e73bcaa9c194dc1197ddbe0030538b
 4	5	issue fetch writes LF lines (#1916)	33c6a8168242000311c27c47957c82c5cb0a1df5
+16	18	issue fetch drift line (#3458)	ed2b3c91f9fe31b2d39ee7dbff2c91f10cbde9be
 1	1	issue ready: no repo (#3050)	3f95bd4e8885c84b685c31aee7e81d0018a438ca
 10	12	issue next	5197d781f049be338dec1b6be44187961f50c651
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
@@ -274,8 +276,9 @@
 13	15	review standards (#1532)	51b9dc72c38a1bbf1bf3a35d98be00be13132d18
 9	10	review ready with a failed phase write (#1931)	66843fb4a3f090b55ec0719f4827cb02043c8277
 10	11	review reads its Flow state once	200dd493efe90a87e9c9dcb2c1dcc0b586e93393
+2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
-40	42	side-checkout (#722)	09bbcdb3442eb29829e2f58176d59fa88b495b6c
+40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4
 20	21	status lists every checkout (#725)	0e2829f44c533a36ede63218f75dc3b6b9f517bf
 62	66	side-checkout archive and remove (#724)	1fb2f3f39b0980a84392830dc2587afb5d19aa14
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
@@ -288,20 +291,20 @@
 12	13	side checkout marker issue: reading without re-classifying (#3073)	38fb5dbe3d46481d12994865f0baff152661f1c4
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
 5	7	side-checkout: the default branch is asked for only when needed	03ca2477dac861e7e263fc55a80eb119924bf047
-5	6	spec-review begin (#224)	d78d89a4b963ae39f4955964d68a6665d83ec4a4
-5	6	spec-review begin --carry (#1141, #1185)	61edcef3baea335c688ae5396fca24727570dc5e
-0	1	quick implementation runs an unattended spec review (#237)	8e26fd4329a875a196a44037fe2c041af7a247c3
-346	375	spec-review apply (#1117)	2fb18e4dda90fe28bef8a2bcad223f8ab62f685b
-52	58	spec-review check (#1137)	6c875284602a91d0bc6103bf5fa09221deaeb022
-1	2	spec-review check literal item numbers (#1339)	71574e84f1e54a3439c21f752b6166815915d1ce
-15	17	spec-review check --tickets (#1226)	f6b6ea6658394ec244fb858b3e4434d716e0b956
-27	4	spec-review wait (#1183)	27d9c7d4c8536df976d9b89204bcc0987f410f1c
-4	5	spec-review prompt (#1521)	c8cf6056ef17ad56e2043d0eabc05527a8d06aa0
-0	1	spec_review_lens_known matches one whole lens (#1546)	ab873a44f3f8c0f31762c44d44381ff63d5d0206
-1	2	spec-review check requires every finding cited (#1914)	5847f0ccda34dc680b79d726e1a54044cac99606
-2	3	spec-review check on a CRLF body (#1916)	7a2d09b6a41d515a26c5a1eba6bb0e2fb9c3df3b
-3	4	spec-review begin on a truncated state.json (#1929)	abd347fe6eea18f61d1c911d4fba8d94f2e2a20f
-4	5	spec-review apply in a flow reads the state once (#3063)	0e5d47cee497402e9be9241004d3f8b82334da24
+6	7	spec-review begin (#224)	94bb432792131696ac40f28aa83506faaca0b2a7
+5	7	spec-review begin --carry (#1141, #1185)	3c4ecf7256076ba81a70a615f6bd2f3d72443614
+0	1	quick implementation runs an unattended spec review (#237)	6b4e233546f10516272fc682b9f7b6edd022a545
+350	377	spec-review apply (#1117)	45610b03df281ca2e2b1a2f164dcb0ff1bccc233
+62	69	spec-review check (#1137)	f1f762bffccdd6172b075a3b7ffa216acb03bd91
+1	2	spec-review check literal item numbers (#1339)	f6bfd387c1a4973b7ac5420ac8ec62f9e4184fd7
+16	19	spec-review check --tickets (#1226)	d8614203d8b91ab4a785e6dde9a6778876bf5110
+25	5	spec-review wait (#1183)	3f4674c62c6295e6e732bac5aaa5da5a5777b3b7
+4	5	spec-review prompt (#1521)	3c8a54e487f3050ae74e54efcd6dff6eaf9cd6a5
+0	1	spec_review_lens_known matches one whole lens (#1546)	ac06eecad2f306d0ff2e53fd6720ba837a5cbdaa
+1	2	spec-review check requires every finding cited (#1914)	6ec68a18cc75972b5e64a50ea94ae6514dee3f6e
+2	3	spec-review check on a CRLF body (#1916)	95ab92394fb94d6aebcbd619b03b76affa2694a9
+3	4	spec-review begin on a truncated state.json (#1929)	9a7303842c417025b3bd1debb99257ca9237b700
+4	5	spec-review apply in a flow reads the state once (#3063)	facd39de0844d90c5768ef64dbf9525553ff051a
 26	30	spec	a66453ea4b1d08fd96f23b38d6d509eaabeae8fd
 10	11	spec pause	1d162ea996a9c817686e6922bbd3c075fe2e33b7
 15	16	spec round-dir	37ce1d585142e7aff29c2cfc8a4a2fe864c50bc5
@@ -310,7 +313,8 @@
 5	6	spec pause --round in an autopilot flow (#1457)	538a0f0c05ff3eae5986077aea943807f8278613
 3	3	spec fetch on a truncated state.json (#1929)	60f3d67efe5d3d495d1adc47c8b0aea7008f5965
 7	8	spec ops read the flow's state once (#3063)	1ac4cb1881c14fda5d71d28175a34c212f051d4d
-8	9	spec round directory owner (#3078)	3c5854dc6086218c5cc8c4f264dbe3c5e74f105a
+9	10	spec round directory owner (#3078)	15bcf060fe1245d496d4e31d5a67a77363b5cdb9
+4	5	spec fetch drift line (#3458)	c71d2f327c2168a6b7f8593078ff7fe1849a0a52
 24	26	Standing module	6cfa7b28a3900d83ffd05487fe520a6d51e80892
 93	101	Standing transitions	d90a1bfe25d89f9d27d09abf02d484ea994b9710
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
@@ -350,7 +354,7 @@
 1	2	ticket exists: no repo (#3050)	291d750cc4efbe9e118a0494a09f83666294d0d8
 17	20	trust module	8907f14dbb6515e13cfad144156774f74dc17a98
 686	806	hooks_test.sh	6625869d545a29266bdef9aa7a67cb0a5abc74db
-132	158	docs_lint.sh	e0a62de0a351709f62f083b9d9829e54b1760e35
+132	157	docs_lint.sh	20ffee96c5af70baeceeafa1863bc4948067a4f1
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8

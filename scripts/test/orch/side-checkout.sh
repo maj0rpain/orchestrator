@@ -190,13 +190,16 @@ assert_contains "and after a branch is checked out" \
   "$(orch_gh_failing side-checkout list)" "quick-one $qi branch quick/123-quick-one quick #123"
 out="$(cd "$top/.orchestrator/checkouts/alpha" && orch_gh_failing side-checkout issue 2>&1)"; st=$?
 assert_status "side-checkout issue exits 1 in a side checkout made without --issue" "$st" 1
+assert_eq "and prints nothing on stdout or stderr (no --issue)" "$out" ""
 assert_not_contains "and list appends nothing for it" \
   "$(orch_gh_failing side-checkout list | grep '^alpha ')" "quick #"
 out="$(orch_gh_failing side-checkout issue 2>&1)"; st=$?
 assert_status "side-checkout issue exits 1 in the main checkout" "$st" 1
+assert_eq "and prints nothing on stdout or stderr (main checkout)" "$out" ""
 printf 'abc\n' >"$(git -C "$qi" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
 out="$(cd "$qi" && orch_gh_failing side-checkout issue 2>&1)"; st=$?
 assert_status "side-checkout issue exits 1 when the marker is not a plain number" "$st" 1
+assert_eq "and prints nothing on stdout or stderr (damaged marker)" "$out" ""
 assert_not_contains "and list appends nothing for it" \
   "$(orch_gh_failing side-checkout list | grep '^quick-one ')" "quick #"
 out="$(cd "$qi" && orch_gh_failing side-checkout issue extra 2>&1)"; st=$?
@@ -208,6 +211,7 @@ git branch -q -D quick/123-quick-one
 marked="$(marked_ticket_worktree 41)"
 out="$(cd "$marked" && orch_gh_failing side-checkout issue 2>&1)"; st=$?
 assert_status "side-checkout issue exits 1 in a ticket worktree carrying a copied marker" "$st" 1
+assert_eq "and prints nothing on stdout or stderr (copied marker)" "$out" ""
 git worktree remove "$marked"
 git branch -q -D main--t41
 

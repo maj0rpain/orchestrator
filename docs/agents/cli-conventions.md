@@ -13,12 +13,13 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | --------- | --------------------------------------------------- |
 | `base`    | `set`, `show`, `clear`                               |
 | `parallel` | `show`                                             |
+| `route`   | `show`                                               |
 | `audit`   | `begin` (takes code, docs or tests), `report`, `file` (a title and flags for one finding, or --run with a run directory and numbers for a run's picks) |
 | `autopilot` | `show`, `settings`, `active`, `rounds`, `budget`, `start`, `candidates`, `tick`, `watch`, `run`, `ask`, `answer`, `reenter`, `questions`, `reply`, `resume`, `sync`, `sync-finish`, `sync-dropped`, `sync-fail` |
 | `agent`   | `set`, `show`, `clear`, `get`, `sync`, `roles`      |
 | `repo`    | `show`                                               |
 | `branch`  | `create`, `off`, `busy`, `base-sha`, `sync`, `retire` |
-| `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready`, `next`, `close` |
+| `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready`, `next`, `labels`, `close` |
 | `pr`      | `open`, `publish`, `release`, `comment`, `comments`, `fetch`, `read`, `update`, `draft`, `ready` |
 | `review`  | `begin`, `path`, `file`, `known-items`, `standards`, `ready`, `ci`, `ci-log`, `rerun`, `terminal`, `resume`, `retire` |
 | `review-pass` | `begin`, `known-items`                           |

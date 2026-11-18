@@ -11,7 +11,8 @@ phase's context into the next. The reviewer already believes the
 implementer's reasoning. Splitting the phases and passing only a written
 handoff between them means each phase judges the work, not the story behind
 it. Fresh context per phase also leaves room for the human-in-the-loop
-exchanges that `orch-to-spec` (test seams) and the spec review depend on.
+exchanges that the spec review depends on, and that `orch-to-spec` depends on
+when no planning close agreed the test seams.
 
 ## Requirements
 
@@ -95,6 +96,10 @@ session in the issue's side checkout. The flow's phase lives in an `orch:`
 **phase label** on its issue, and the human is reached only through an issue
 comment that @mentions them and the `needs-human` label. It is Claude Code
 only.
+
+The closing question recommends your default route when you have set one, for
+a repo or for yourself (`git config [--global] orchestrator.route <route>`;
+see [How it works](docs/how-it-works.md#default-route)); you still pick.
 
 **Blueprint.** The closing question's "Blueprint only" option: the spec issue
 and its ticket breakdown are published, the spec review offered, and then it

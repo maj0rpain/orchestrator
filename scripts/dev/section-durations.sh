@@ -18,6 +18,9 @@
 # is the hash of the test text the line was measured from (test_tree.sh's
 # ledger_fingerprints): a section's own lines plus its file's preamble, a
 # suite's whole file; it is taken before anything is measured.
+# Each of those other suites is timed under a slot of the job pool
+# (test_jobs.sh's suite start): the wait for the slot is not timed, and the
+# timed region ends once the suite and the slot's holder have both exited.
 #
 # ORCH_TEST_ONLY and ORCH_TEST_SHARD are unset, so the whole suite is always
 # measured. With a job count of 1 (ORCH_TEST_JOBS=1) it prints a message naming
@@ -89,7 +92,7 @@ ledger_fingerprints_all "$dir" >"$tmp/fingerprints" || {
   echo "section-durations.sh: ${SUITES_ERR:-could not fingerprint the test text}" >&2; rm -rf "$tmp"; exit 1; }
 SHELLCHECK_PIDS=()
 trap 'rm -rf "$tmp"' EXIT
-trap 'test_jobs_stop_children ${TEST_JOBS_CHILD:+"$TEST_JOBS_CHILD"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
+trap 'test_jobs_stop_children ${TEST_JOBS_SUITE_PID:+"$TEST_JOBS_SUITE_PID"} ${TEST_JOBS_CHILD:+"$TEST_JOBS_CHILD"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
 export ORCH_TEST_QUIET=1
 failed=()
 
@@ -105,6 +108,21 @@ measure() {
   awk -v name="$name" "$TENTHS_AWK"'
     { printf "%d\t%d\t%s\n", tenths($1), tenths($2) + tenths($3), name }
   ' "$tmp/time" >>"$tmp/rest"
+  return "$st"
+}
+
+# suite_run <name>: the start step and both waits of a suite under a slot the
+# caller took. The suite starts, then its pid and the slot's holder (`$!` after
+# the start step; with the slot taken it is the holder, as the take step always
+# precedes this call) are waited on, so the holder's CPU is charged to this
+# suite's line, not the next one's. The status is the suite's.
+suite_run() {
+  local holder st
+  TMPDIR="$tmp" test_jobs_suite_start - bash "$dir/$1"
+  holder=$!
+  wait "$TEST_JOBS_SUITE_PID"; st=$?
+  wait "$holder" 2>/dev/null
+  TEST_JOBS_SUITE_PID=""
   return "$st"
 }
 
@@ -129,7 +147,8 @@ stale_report() {
 # and on a failure adds it to failed, with its report and output on stderr.
 measure_suite() {
   local suite_st
-  DOCS_LINT_RECORDING=1 TMPDIR="$tmp" measure "$1" test_jobs_run_child bash "$dir/$1"; suite_st=$?
+  test_jobs_slot_wait
+  DOCS_LINT_RECORDING=1 measure "$1" suite_run "$1"; suite_st=$?
   if ! report_suite "$1" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
     failed+=("$1")
     cat "$tmp/report" "$tmp/out" >&2
