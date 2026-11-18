@@ -387,8 +387,9 @@ issue_triage_verified() {
 # read back through verify_twice (the one-retry policy ADR-0011 records for
 # ticket publish), and one comment names the label it now carries.
 # With --check it writes nothing: the same read and role walk, then one line
-# on stdout - ready, the held label, or movable - for the planning hook's
-# interviewed-issue step to ask its question from (#989).
+# on stdout - ready, the held label, or movable - for the planning close to
+# read: a held label's override question, or the route question's move
+# sentence (#989).
 cmd_issue_triage() {
   local usage="usage: orch.sh issue triage <n> [--override | --check]"
   local issue="" override=false check=false ready labels role label removed=() remove_opts=()
