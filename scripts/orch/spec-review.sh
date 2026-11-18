@@ -899,11 +899,14 @@ spec_review_validate() {
 ORCH_SPEC_REVIEW_WAIT_TIMEOUT="${ORCH_SPEC_REVIEW_WAIT_TIMEOUT:-900}"
 ORCH_SPEC_REVIEW_WAIT_INTERVAL="${ORCH_SPEC_REVIEW_WAIT_INTERVAL:-5}"
 
-# spec-review wait <dir> <lens>...: blocks until <dir>/lens-<lens>.md exists
-# for every named lens, then prints `lenses back: <lens> <count>, ...` in the
+# spec-review wait <dir> <lens>...: a call blocks at most ORCH_WAIT_BLOCK
+# seconds and exits 75 with nothing on stdout while a lens is missing; the same
+# line run again goes on, the total stored across calls. Once
+# <dir>/lens-<lens>.md exists for every named lens it prints
+# `lenses back: <lens> <count>, ...` in the
 # order named, <count> its `@@ finding ` lines - the file is not validated
-# here; check and the session's own read meet a malformed one. On timeout,
-# nothing on stdout, and exit 1 naming the lenses still missing.
+# here; check and the session's own read meet a malformed one. On the total
+# timeout, nothing on stdout, and exit 1 naming the lenses still missing.
 spec_review_wait() {
   local usage="usage: orch.sh spec-review wait <dir> <lens>..."
   [ $# -ge 2 ] || die "$usage"

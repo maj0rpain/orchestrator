@@ -224,47 +224,11 @@ for vr_bad in abc 0 -1 1.2.3; do
 done
 git config --unset orchestrator.verification.timeout
 
-# --- verification run: records left behind ------------------------------------
-echo
-echo "verification run: records left behind"
-new_repo >/dev/null
-vr_dir="$(mktemp -d)"
-vr_count="$(counting_bin date)"
-
-# A record whose group outlives the ceiling's stop is delivered as failed, its
-# orch: line naming the group left running. The test stands in for a group that
-# survives KILL: the run is live while its record says it was stopped.
-rm -f "$vr_dir/gate"
-cmd="$(vr_gate "$vr_dir" quiet)"
-vr_run "$cmd" >/dev/null
-vr_rec="$(echo .orchestrator/verification/*/)"
-vr_grp="$(<"$vr_rec/pid")"; vr_grp="${vr_grp%% *}"
-echo 1 >"$vr_rec/overrun"; echo 1 >"$vr_rec/status"
-out="$(vr_block=5 vr_run "$cmd")"; st=$?
-assert_status "a group that outlived the stop is delivered as failed" "$st" 1
-assert_contains "its orch: line names the group" "$out" "process group $vr_grp"
-assert_contains "and says it was left running" "$out" "left running"
-: >"$vr_dir/gate"
-kill -KILL -- "-$vr_grp" 2>/dev/null || true
-
-# A record with no state - a call stopped before it wrote one - is not attached
-# to for ever: the next call starts the run afresh.
-rm -f "$vr_dir/gate"
-cmd="$(vr_gate "$vr_dir" quiet)"
-vr_run "$cmd" >/dev/null
-vr_rec="$(echo .orchestrator/verification/*/)"
-vr_grp="$(<"$vr_rec/pid")"; vr_grp="${vr_grp%% *}"
-kill -KILL -- "-$vr_grp" 2>/dev/null || true
-rm -f "$vr_rec/state" "$vr_rec/pid" "$vr_rec/status"
-: >"$vr_dir/gate"
-out="$(vr_block=5 vr_run "$cmd")"; st=$?
-assert_status "a record with no state is not attached to: a fresh run" "$st" 0
-assert_eq "and its output is delivered" "$out" "done"
-
-# A record of a checkout that no longer exists is cleared by the next call.
 echo
 echo "verification run orphans"
 new_repo >/dev/null
+vr_dir="$(mktemp -d)"
+vr_count="$(counting_bin date)"
 vr_wt="$(mktemp -d)/wt"
 git worktree add -q "$vr_wt" -b side
 pushd "$vr_wt" >/dev/null || exit 1

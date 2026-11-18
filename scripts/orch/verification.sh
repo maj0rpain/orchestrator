@@ -10,10 +10,10 @@
 # going leaves stdout empty, says so on stderr and exits 75, and the same line
 # run again attaches to it.
 # A run is one command in one checkout, kept in the main checkout's
-# .orchestrator/verification/<hash of checkout, identity, command>/: command,
-# root and id (the checkout and its identity token), state (HEAD and the
+# .orchestrator/verification/<hash of checkout, identity, command>/: root and
+# id (the checkout and its identity token), state (HEAD and the
 # working-tree state: tracked changes, staged or not, and unignored untracked
-# files, by content), started, pid (a liveness record), out, err, status
+# files, by content), pid (a liveness record), out, err, status
 # (written once the run ends) and overrun (a run stopped at the ceiling). A
 # finished result or a live run whose state no
 # longer matches is stale: the result is discarded undelivered, the live run
@@ -89,13 +89,19 @@ verification_timeout() {
 }
 
 # verification_clear_orphans <store>: removes the records of checkouts that no
-# longer exist, or were made again at their path. A live run there runs to its
+# longer exist, or were made again at their path, and those a call stopped
+# before it wrote their root and id left behind. A live run there runs to its
 # end, undelivered.
 verification_clear_orphans() {
   local r root id current idf
   for r in "$1"/*/; do
     r="${r%/}"
-    [ -f "$r/root" ] && [ -f "$r/id" ] || continue
+    if [ ! -f "$r/root" ] || [ ! -f "$r/id" ]; then
+      # A call stopped before it wrote them: no call will, so the record is
+      # stale once no starting call can still be at it.
+      [ -z "$(find "$r" -maxdepth 0 -mmin +1 2>/dev/null)" ] || rm -rf "$r"
+      continue
+    fi
     root="$(<"$r/root")"
     id="$(<"$r/id")"
     current=""
@@ -149,8 +155,6 @@ verification_start() {
   local d="$1" ceiling="$3" limit steps pid
   limit="$(awk -v c="$ceiling" 'BEGIN { printf "%d", (c == int(c)) ? c : int(c) + 1 }')"
   steps="$(awk -v g="$ORCH_VERIFICATION_GRACE" 'BEGIN { printf "%d", g * 10 + 0.5 }')"
-  printf '%s\n' "$2" >"$d/command"
-  printf '%(%s)T\n' -1 >"$d/started"
   (
     set -m
     cd "$ROOT" || exit 1
