@@ -160,7 +160,9 @@ verification_start() {
     cd "$ROOT" || exit 1
     nohup bash -c '
       d="$1"; cmd="$2"; ceiling="$3"; limit="$4"; steps="$5"
-      start="$(printf "%(%s)T" -1)"
+      # One second past the whole second the run began in, so the whole-second
+      # test below never fires before the ceiling, only up to a second after.
+      start="$(( $(printf "%(%s)T" -1) + 1 ))"
       (
         bash -c "$cmd" >"$d/out" 2>"$d/err" </dev/null
         echo "$?" >"$d/status.tmp"

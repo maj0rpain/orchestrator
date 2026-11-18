@@ -83,14 +83,19 @@ wait_still_running() {
 
 # wait_tick <interval>: one turn of a poll loop's wait. A call that has blocked
 # ORCH_WAIT_BLOCK seconds (wait_block_spent) stores the total and exits 75
-# instead of sleeping on;
-# otherwise it sleeps <interval> and adds it to the caller's `slept` (across
-# every call) and `blocked` (this call), which bash scopes dynamically -
-# threading two counters back out through a subshell's stdout would cost more
-# than it explains.
+# instead of sleeping on; otherwise it sleeps <interval>, or what is left of the
+# block when that is less, and adds it to the caller's `slept` (across every
+# call) and `blocked` (this call), which bash scopes dynamically - threading
+# two counters back out through a subshell's stdout would cost more than it
+# explains. A call whose sleep spent the block exits 75 at once, so the caller
+# runs no further probe past ORCH_WAIT_BLOCK.
 wait_tick() {
+  local spent nap
+  spent="$(wait_block_spent "$blocked")"
+  float_lt "$spent" "$ORCH_WAIT_BLOCK" || wait_still_running "$slept"
+  nap="$(awk -v i="$1" -v b="$ORCH_WAIT_BLOCK" -v s="$spent" 'BEGIN { r = b - s; print (r < i) ? r : i }')"
+  sleep "$nap"
+  slept="$(float_add "$slept" "$nap")"
+  blocked="$(float_add "$blocked" "$nap")"
   float_lt "$(wait_block_spent "$blocked")" "$ORCH_WAIT_BLOCK" || wait_still_running "$slept"
-  sleep "$1"
-  slept="$(float_add "$slept" "$1")"
-  blocked="$(float_add "$blocked" "$1")"
 }

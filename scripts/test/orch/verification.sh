@@ -216,6 +216,13 @@ out="$(ORCH_WAIT_BLOCK=30 "$ORCH" verification run "$cmd" 2>&1)"; st=$?
 assert_status "the next call delivers it as a failed run" "$st" 1
 assert_contains "with the output it wrote" "$out" "partial"
 assert_contains "and the ceiling's orch: line" "$out" "orch: the run was still going after the ceiling of 1s"
+# A run finishing inside its ceiling is never stopped early, wherever the
+# whole-second clock falls: begun just before a second turns, 0.7 s of work
+# under a 1 s ceiling is delivered done.
+vr_ms=$(( 10#$(date +%N) / 1000000 )); sleep "0.$(printf %03d $(( (1900 - vr_ms) % 1000 )))"
+out="$(ORCH_WAIT_BLOCK=30 "$ORCH" verification run 'sleep 0.7; echo inside' 2>&1)"; st=$?
+assert_status "a run finishing inside its ceiling is delivered as done" "$st" 0
+assert_eq "with its output" "$out" "inside"
 for vr_bad in abc 0 -1 1.2.3; do
   git config orchestrator.verification.timeout "$vr_bad"
   out="$("$ORCH" verification run 'true' 2>&1)"; st=$?

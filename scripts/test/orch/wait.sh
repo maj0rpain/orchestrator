@@ -47,3 +47,14 @@ wt_took=$(( $(wt_seconds) - wt_start ))
 assert_status "spec-review wait with slow polls still exits 75" "$st" 75
 assert_eq "and ends within the wall-clock block too" \
   "$([ "$wt_took" -le 4 ] && echo yes || echo "no (${wt_took}s)")" "yes"
+
+# A call never sleeps past its block: the sleep is clamped to what is left, and
+# a call whose sleep spent the block exits 75 without another turn.
+wt_lens="$(mktemp -d)"
+wt_start="$(wt_seconds)"
+ORCH_SPEC_REVIEW_WAIT_TIMEOUT=100 ORCH_SPEC_REVIEW_WAIT_INTERVAL=6 \
+  ORCH_WAIT_BLOCK=0.5 "$ORCH" spec-review wait "$wt_lens" fidelity >/dev/null 2>&1; st=$?
+wt_took=$(( $(wt_seconds) - wt_start ))
+assert_status "spec-review wait with an interval past the block exits 75" "$st" 75
+assert_eq "and ends within the block, not a whole interval after it" \
+  "$([ "$wt_took" -le 3 ] && echo yes || echo "no (${wt_took}s)")" "yes"
