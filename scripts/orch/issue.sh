@@ -76,6 +76,14 @@ cmd_issue_fetch() {
   fi
   gh_or_die --file "$file" "read the body of issue #$issue" \
     issue_body_lf "$issue"
+  # An audit-filed body gets one drift line; the audit module is loaded only
+  # when the body carries its marker, so any other fetch starts nothing more.
+  local body
+  file_read_text body "$file"
+  if [[ $body == *'**Audited at:**'* ]]; then
+    orch_load audit
+    audit_drift_line "$body"
+  fi
 }
 
 # issue_body_lf <n>: issue <n>'s body on stdout with every carriage return
@@ -177,9 +185,33 @@ cmd_issue() {
     triage) cmd_issue_triage "$@" ;;
     ready) cmd_issue_ready "$@" ;;
     next) cmd_issue_next "$@" ;;
+    labels) cmd_issue_labels "$@" ;;
     close) cmd_issue_close "$@" ;;
-    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage|ready|next|close)" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage|ready|next|labels|close)" ;;
   esac
+}
+
+# issue labels <n>...: prints one line per issue, in the order named - its
+# number, open or closed, then its labels joined by ", " (only the number and
+# state when it has none) - through the existing state-and-labels read. Each
+# line is printed as its read succeeds; a failed read dies naming the issue,
+# after the lines already printed, and no later issue is read. No number, or a
+# number that is not plain, is a usage error (exit 1) before any read.
+# Read-only: the interview's check before it proposes folding an issue in.
+cmd_issue_labels() {
+  local usage="usage: orch.sh issue labels <n>..."
+  local issue state shown_state labels gh_err joined
+  [ $# -gt 0 ] || die "$usage"
+  for issue in "$@"; do
+    case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue ($usage)" ;; esac
+  done
+  for issue in "$@"; do
+    issue_state_labels_read "$issue" state labels gh_err \
+      || gh_die "read issue #$issue" "$gh_err"
+    joined="$(list_join "$labels")"
+    state_word shown_state "$state"
+    printf '%s %s%s\n' "$issue" "$shown_state" "${joined:+ $joined}"
+  done
 }
 
 # issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>:

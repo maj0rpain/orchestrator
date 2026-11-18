@@ -398,7 +398,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               back - recording no state; prints the number
   issue fetch <n> <file> [--json]
                               write issue <n>'s body to <file>, recording no
-                              state; with --json, for scripts, the issue as
+                              state; for an audit-filed body, also prints one
+                              line: cited files changed since <sha>: none, or
+                              the changed files (unknown (<reason>) when not
+                              comparable); with --json, for scripts, the issue as
                               one JSON object {number, title, body, labels:
                               [<name>], comments: [{author, createdAt, body}]}
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
@@ -431,6 +434,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               label (wontfix ahead of ready-for-human), or
                               movable, exit 0; exit 1 where the write would
                               die. Not with --override
+  issue labels <n>...         print one line per issue, in the order named: its
+                              number, open or closed, then its labels joined
+                              by ", " (no labels: only number and state); a
+                              failed read dies naming the issue after the lines already
+                              printed; 1 on a usage error - recording no state
   issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
                               close issue <n> as completed, or as a duplicate
                               of <m> (gh 2.102 or newer), with <file> as its
@@ -656,8 +664,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout of the clone - marked worktrees only -
                               followed by quick #<N> when it records an issue
   side-checkout issue         print the issue this side checkout records
-                              (side-checkout add --issue); exits 1 in a
-                              checkout that is no side checkout, or records
+                              (side-checkout add --issue); exits 1,
+                              printing nothing, in a checkout that is no
+                              side checkout, or records
                               no plain issue number, and 2 on a usage error
   side-checkout remove <slug> remove side checkout <slug>, never with --force.
                               Refuses an unknown slug, a worktree without the
@@ -861,8 +870,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               Writes only <dir>/view.md, touches no GitHub,
                               reads no flow state. Exit 1 with one orch:
                               line per error, each naming its batch.md or
-                              lens-<name>.md line where it has one - the first
-                              grammar error only, every anchor problem; exit
+                              lens-<name>.md line where it has one - every
+                              violation it can stand behind in one run; a
+                              structure violation stops it; exit
                               0 with the batch view on stdout, the same
                               bytes in <dir>/view.md (overwritten), and a
                               one-line summary on stderr naming view.md by

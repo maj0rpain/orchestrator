@@ -124,6 +124,11 @@ with the Read tool, never `cat`, so a large issue is read once, in full; an
 empty comments file means no comments. Never read it with `gh issue view`. If
 either fetch fails, report its `orch:` message and stop before the next round.
 
+For an audit-filed issue the fetch also prints one line, `cited files changed
+since <sha>: none` or the changed files (or `unknown (<reason>)`): that is the
+drift check. Run no drift check by hand (`git log`, `git diff`), and re-read
+each listed file before trusting the finding's line numbers.
+
 When the user asks for the next issue without naming a number, run
 `bash "$ORCH" issue next` before the first round. On exit 0 it prints
 `<number><TAB><title>`; fetch the number field only. Tell the user in one
@@ -158,6 +163,13 @@ habits on every round:
   check whether the code agrees, and surface a contradiction: "The code
   cancels whole Orders, but you just said partial cancellation is possible.
   Which is right?"
+- **Check an issue before folding it in.** Before proposing to fold another
+  issue into the plan, or to order the plan against one, run
+  `bash "$ORCH" issue labels <n>` on it. The question then states the issue's
+  state, its phase label and whether it carries `orch:running`. An issue with
+  a phase label is never recommended for folding in: an autopilot flow
+  already holds its work. The session may still recommend ordering the plan
+  against it.
 - **Name the docs the plan will make stale.** When the plan changes or
   removes something a doc describes, name each such doc by document and
   section (the README's Install section), so the spec lists it under
