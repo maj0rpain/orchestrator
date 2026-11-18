@@ -105,7 +105,7 @@ section_files() {
 # before the next) and its file's preamble (the text before the file's first
 # `# --- ` line); a suite's covers the file's whole text. It starts a fixed
 # number of processes whatever the number of sections (two awk, one sort, one
-# grep, one git hash-object, one mktemp), so the full refresh, the later
+# grep, one git hash-object, one mktemp, one rm -rf), so the full refresh, the
 # --stale mode and the docs lint can all call it. It returns 1 when a step
 # fails.
 ledger_fingerprints() {

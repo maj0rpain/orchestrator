@@ -138,11 +138,12 @@ measure_suite() {
 
 # stale_run: the --stale mode (see the header); returns the script's status.
 stale_run() {
-  local regex
+  local regex src="$target"
   # The ledger's walk: "<title> <fingerprint> <kind> <walk index>".
   awk -F'\t' -v OFS='\t' -v ns="${#LEDGER_OTHERS[@]}" 'NR == FNR { n = NR; next }
     { print $0, (FNR > n - ns ? "suite" : "section"), FNR }' "$tmp/fingerprints" "$tmp/fingerprints" >"$tmp/walk" || return 1
-  [ -f "$target" ] || : >"$target"
+  # A missing file reads as an empty one; only a recording creates it.
+  [ -f "$target" ] || src=/dev/null
   # Pass 1: the lines kept byte for byte (kept), what to measure (todo: index,
   # title, kind, fingerprint) and the fresh sections but isolation (fresh).
   awk -F'\t' -v kept="$tmp/kept" -v todo="$tmp/todo" -v fresh="$tmp/fresh" "$DURATIONS_AWK"'
@@ -165,9 +166,9 @@ stale_run() {
         if (!(name in isfresh)) printf "%d\t%s\t%s\t%s\n", k, name, kind[name], fp[name] > todo
         else if (kind[name] == "section" && k != 1) printf "%d\t%d\t%s\n", k, fcpu[name], name > fresh
       }
-    }' "$tmp/walk" "$target" || return 1
+    }' "$tmp/walk" "$src" || return 1
   if [ ! -s "$tmp/todo" ]; then
-    if cmp -s "$tmp/kept" "$target"; then
+    if cmp -s "$tmp/kept" "$src"; then
       echo "section-durations.sh: nothing out of date, durations file unchanged"
     else
       cp "$tmp/kept" "$target" || return 1

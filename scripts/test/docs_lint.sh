@@ -4855,10 +4855,10 @@ ledger_record() {
   { ledger_fingerprints "$td" other_test.sh | awk -F'\t' -v OFS='\t' '{ print 10, 20, $1, $2 }'
     printf '50\t50\tshellcheck\n'; } >"$td/section-durations.tsv"
 }
-# ledger_fixture: a fixture plugin root with a test tree of three sections in
-# two files and one other suite, a fresh durations file and a suite budget of
-# 20 CPU seconds, above the total of 13.0.
-ledger_fixture() {
+# ledger_template: builds, once, a fixture plugin root with a test tree of three
+# sections in two files and one other suite, a fresh durations file and a suite
+# budget of 20 CPU seconds, above the total of 13.0; prints its path.
+ledger_template() {
   local f td
   f="$(new_fixture)"
   td="$f/scripts/test"
@@ -4871,6 +4871,12 @@ ledger_fixture() {
   ledger_record "$f"
   echo 20 >"$td/suite-budget"
   echo "$f"
+}
+ledger_template_dir="$(ledger_template)"
+# ledger_fixture: a new fixture root, a copy of the template.
+ledger_fixture() {
+  local f
+  f="$(new_fixture)" && cp -r "$ledger_template_dir/." "$f" && echo "$f"
 }
 ledger_fix='run scripts/dev/section-durations.sh --stale'
 fixture="$(ledger_fixture)"
