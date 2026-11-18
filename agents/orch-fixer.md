@@ -397,7 +397,7 @@ A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
 
-**Verification** names the bare command step 2 ran (the ticket
+**Verification** names the inner command step 2 ran (the ticket
 verification, or the handed full command when the repo names none).
 
 Each **Waiting to be filed** bullet carries the finding's location, as the

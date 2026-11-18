@@ -14,6 +14,15 @@ vr_gate() {
   printf 'date >/dev/null; %swhile [ ! -f "%s/gate" ]; do sleep 0.1; done; echo done' "$up" "$1"
 }
 
+# vr_run <command>: one call of the line, the counted date on the path. A call
+# that must end in exit 75 blocks the sub-second $vr_block (default 0.2), so a
+# call that must deliver sets a longer one: `vr_block=5 vr_run <command>`.
+vr_run() {
+  PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK="${vr_block:-0.2}" \
+    ORCH_VERIFICATION_GRACE=0.3 \
+    "$ORCH" verification run "$1" 2>&1
+}
+
 # vr_finished <dir>: runs a gated line, prints "done" then "again", to its end
 # without delivering it, in the current checkout (vr_run, vr_count): the line is
 # left in vr_cmd. The first run of the line tells <dir>/fin (a FIFO) it has
@@ -57,13 +66,13 @@ assert_ne "a zero wait block is refused" "$st" 0
 
 # Outliving one call, then attaching, then delivery.
 cmd="$(vr_gate "$vr_dir")"
-out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=1 "$ORCH" verification run "$cmd" 2>"$vr_dir/err")"; st=$?
+out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$cmd" 2>"$vr_dir/err")"; st=$?
 assert_status "work outliving one call exits 75" "$st" 75
 assert_eq "with empty stdout" "$out" ""
 assert_eq "and the still-running line on stderr" "$(<"$vr_dir/err")" \
-  "orch: still running after 1s - run the same command again"
+  "orch: still running after 0.2s - run the same command again"
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
-out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=1 "$ORCH" verification run "$cmd" 2>&1)"; st=$?
+out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$cmd" 2>&1)"; st=$?
 assert_status "the same line run again attaches, still running" "$st" 75
 assert_eq "and started no second copy" "$(counting_starts "$vr_count" date)" "1"
 : >"$vr_dir/gate"
@@ -71,7 +80,7 @@ out="$(PATH="$vr_count:$PATH" "$ORCH" verification run "$cmd" 2>&1)"; st=$?
 assert_status "the finished run is delivered with its status" "$st" 0
 assert_eq "and its output" "$out" "done"
 assert_eq "still one start" "$(counting_starts "$vr_count" date)" "1"
-out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=1 "$ORCH" verification run "$cmd" 2>&1)"; st=$?
+out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$cmd" 2>&1)"; st=$?
 assert_status "the call after delivery starts a fresh run, still going" "$st" 75
 assert_eq "two starts in all" "$(counting_starts "$vr_count" date)" "2"
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
@@ -123,8 +132,6 @@ git add .gitignore && git commit -qm ignore
 vr_dir="$(mktemp -d)"
 vr_count="$(counting_bin date)"
 mkfifo "$vr_dir/up"
-# vr_run <command>: one call of the line, the counted date on the path.
-vr_run() { PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=1 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification run "$1" 2>&1; }
 
 cmd="$(vr_gate "$vr_dir")"
 vr_run "$cmd" >/dev/null
@@ -150,7 +157,7 @@ assert_eq "a new untracked file makes it stale" "$(counting_starts "$vr_count" d
 vr_finished "$vr_dir"
 echo three >>README.md
 base="$(counting_starts "$vr_count" date)"
-out="$(vr_run "$vr_cmd")"; st=$?
+out="$(vr_block=5 vr_run "$vr_cmd")"; st=$?
 assert_eq "a finished result whose tree changed starts a fresh run" "$(counting_starts "$vr_count" date)" "$((base + 1))"
 assert_eq "and the old result is not delivered" "$out" "done
 again"
@@ -184,7 +191,7 @@ cmd="$(vr_gate "$vr_dir")"
 vr_run "$cmd" >/dev/null
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 base="$(counting_starts "$vr_count" date)"
-out="$(vr_run 'echo other')"; st=$?
+out="$(vr_block=5 vr_run 'echo other')"; st=$?
 assert_eq "a different command starts its own run" "$out" "other"
 vr_run "$cmd" >/dev/null; st=$?
 assert_status "the first command's run is still live" "$st" 75
@@ -217,6 +224,43 @@ for vr_bad in abc 0 -1 1.2.3; do
 done
 git config --unset orchestrator.verification.timeout
 
+# --- verification run: records left behind ------------------------------------
+echo
+echo "verification run: records left behind"
+new_repo >/dev/null
+vr_dir="$(mktemp -d)"
+vr_count="$(counting_bin date)"
+
+# A record whose group outlives the ceiling's stop is delivered as failed, its
+# orch: line naming the group left running. The test stands in for a group that
+# survives KILL: the run is live while its record says it was stopped.
+rm -f "$vr_dir/gate"
+cmd="$(vr_gate "$vr_dir" quiet)"
+vr_run "$cmd" >/dev/null
+vr_rec="$(echo .orchestrator/verification/*/)"
+vr_grp="$(<"$vr_rec/pid")"; vr_grp="${vr_grp%% *}"
+echo 1 >"$vr_rec/overrun"; echo 1 >"$vr_rec/status"
+out="$(vr_block=5 vr_run "$cmd")"; st=$?
+assert_status "a group that outlived the stop is delivered as failed" "$st" 1
+assert_contains "its orch: line names the group" "$out" "process group $vr_grp"
+assert_contains "and says it was left running" "$out" "left running"
+: >"$vr_dir/gate"
+kill -KILL -- "-$vr_grp" 2>/dev/null || true
+
+# A record with no state - a call stopped before it wrote one - is not attached
+# to for ever: the next call starts the run afresh.
+rm -f "$vr_dir/gate"
+cmd="$(vr_gate "$vr_dir" quiet)"
+vr_run "$cmd" >/dev/null
+vr_rec="$(echo .orchestrator/verification/*/)"
+vr_grp="$(<"$vr_rec/pid")"; vr_grp="${vr_grp%% *}"
+kill -KILL -- "-$vr_grp" 2>/dev/null || true
+rm -f "$vr_rec/state" "$vr_rec/pid" "$vr_rec/status"
+: >"$vr_dir/gate"
+out="$(vr_block=5 vr_run "$cmd")"; st=$?
+assert_status "a record with no state is not attached to: a fresh run" "$st" 0
+assert_eq "and its output is delivered" "$out" "done"
+
 # A record of a checkout that no longer exists is cleared by the next call.
 echo
 echo "verification run orphans"
@@ -229,7 +273,7 @@ popd >/dev/null || exit 1
 git worktree remove --force "$vr_wt"
 git worktree add -q "$vr_wt" side
 base="$(counting_starts "$vr_count" date)"
-out="$(cd "$vr_wt" && vr_run "$vr_cmd")"; st=$?
+out="$(cd "$vr_wt" && vr_block=5 vr_run "$vr_cmd")"; st=$?
 assert_eq "a checkout made again at the same path starts a fresh run" "$(counting_starts "$vr_count" date)" "$((base + 1))"
 assert_eq "and is never handed the old result" "$out" "done
 again"

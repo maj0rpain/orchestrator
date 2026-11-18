@@ -2430,7 +2430,8 @@ check "the Run a long command row marks Junie Unverified" \
   "$(scan_row_unverified "$PLUGIN_ROOT" 'Run a long command')"
 # Each site that runs a re-callable command names the term (ADR-0065), by
 # structure only: the Run a long command sites minus the audit's timing run,
-# which is not re-callable.
+# which is not re-callable, plus the quick implementation's line, which is not
+# one of the Run a long command sites.
 recall_sites='agents/orch-implementer.md
 agents/orch-fixer.md
 agents/orch-resolver.md

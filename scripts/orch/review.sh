@@ -890,7 +890,7 @@ cmd_review() {
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
       local pr started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
-      local no_ci=0
+      local no_ci=0 ci_status
       require_state_read pr=pr
       orch_load wait
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
@@ -942,11 +942,11 @@ cmd_review() {
         fi
         verdict="${res%%$'\n'*}"
         case "$verdict" in
-          green)       printf '%s\n' "$res"; wait_forget; return 0 ;;
+          green)       printf '%s\n' "$res"; ci_status=0; break ;;
           # Reported, not fixed: which failure is worth a flake rerun is a
           # judgement, and the budget for it belongs to the flow.
-          failing)     printf '%s\n' "$res"; wait_forget; return 1 ;;
-          unreachable) printf '%s\n' "$res"; wait_forget; return 1 ;;
+          failing)     printf '%s\n' "$res"; ci_status=1; break ;;
+          unreachable) printf '%s\n' "$res"; ci_status=1; break ;;
           # Only reachable with the grace spent or skipped: nothing required
           # reported, and then nothing at all reported either. The detail line
           # says which, here rather than in ci_probe, so doctor's lines are
@@ -958,8 +958,7 @@ cmd_review() {
             else
               note "      nothing reported before the ${ORCH_CI_GRACE}s grace ran out"
             fi
-            wait_forget
-            return 0 ;;
+            ci_status=0; break ;;
           pending)
             if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
             # Still pending at the cap is an answer we do not have, not a green
@@ -967,8 +966,7 @@ cmd_review() {
             # nothing ever verified.
             note unreachable
             note "      checks were still pending after ${ORCH_CI_TIMEOUT}s"
-            wait_forget
-            return 1 ;;
+            ci_status=1; break ;;
           # Unreachable while ci_probe prints one of the five words above, and
           # the arm that keeps it that way: an unrecognised answer with no arm
           # would fall through to the next pass with nothing to wait on, and
@@ -976,10 +974,13 @@ cmd_review() {
           *)
             note unreachable
             note "      unrecognised answer from gh pr checks: $verdict"
-            wait_forget
-            return 1 ;;
+            ci_status=1; break ;;
         esac
       done
+      # Every terminal arm leaves the loop with its status and only pending
+      # continues, so the stored total is forgotten in this one place.
+      wait_forget
+      return "$ci_status"
       ;;
     known-items)
       require_state

@@ -21,7 +21,9 @@
 # ORCH_VERIFICATION_GRACE) and a fresh run started. A run of another command
 # is left alone. A run still going at orchestrator.verification.timeout (git
 # config, default 3600 s) is stopped by its own runner, with no call needed,
-# and delivered as failed by the next one. Records of
+# and delivered as failed by the next one, its orch: message naming the process
+# group when that could not be stopped. A record with no state is waited on for
+# ORCH_VERIFICATION_GRACE, then cleared as stale. Records of
 # checkouts that no longer exist are cleared by the next call. A finished
 # result is forgotten only once a call has printed it whole. Nothing about a
 # delivered run is measured or kept (ADR-0063).
@@ -67,7 +69,7 @@ verification_identity() {
   if [ ! -s "$f" ]; then
     mkdir -p "$ORCH/verification" || return 1
     t="$(printf '%s %s %s %s\n' "$$" "$RANDOM$RANDOM" "$(printf "%(%s)T" -1)" "$ROOT" | git hash-object --stdin)" || return 1
-    printf '%s\n' "$t" >"$f.$$" && mv "$f.$$" "$f" || return 1
+    file_write_atomic "$f" "$t"$'\n' || return 1
   fi
   cat "$f"
 }
@@ -103,21 +105,37 @@ verification_clear_orphans() {
   done
 }
 
+# verification_wait_gone <pid>: waits up to ORCH_VERIFICATION_GRACE seconds for
+# the process group <pid> to be gone. Returns 1 when it is still there.
+verification_wait_gone() {
+  local pid="$1" slept=0
+  while kill -0 -- "-$pid" 2>/dev/null; do
+    float_lt "$slept" "$ORCH_VERIFICATION_GRACE" || return 1
+    sleep 0.1
+    slept="$(float_add "$slept" 0.1)"
+  done
+}
+
 # verification_stop <pid>: stops the run's process group: TERM, then KILL after
 # ORCH_VERIFICATION_GRACE seconds. Returns 1 when the group is still there.
 verification_stop() {
-  local pid="$1" slept sig
+  local pid="$1" sig
   for sig in TERM KILL; do
     kill "-$sig" -- "-$pid" 2>/dev/null || true
-    slept=0
-    while kill -0 -- "-$pid" 2>/dev/null; do
-      float_lt "$slept" "$ORCH_VERIFICATION_GRACE" || break
-      sleep 0.1
-      slept="$(float_add "$slept" 0.1)"
-    done
-    kill -0 -- "-$pid" 2>/dev/null || return 0
+    verification_wait_gone "$pid" && return 0
   done
   return 1
+}
+
+# verification_wait_state <dir>: waits up to ORCH_VERIFICATION_GRACE seconds for
+# the record <dir> to have its state file. Returns 1 when it still has none.
+verification_wait_state() {
+  local slept=0
+  until [ -f "$1/state" ]; do
+    float_lt "$slept" "$ORCH_VERIFICATION_GRACE" || return 1
+    sleep 0.1
+    slept="$(float_add "$slept" 0.1)"
+  done
 }
 
 # verification_start <dir> <command> <ceiling>: starts the run detached, in a
@@ -171,15 +189,24 @@ verification_start() {
 # verification_deliver <dir>: prints the finished run's stdout and stderr whole
 # and exits with its status - 1 and an orch: line naming it, for a command that
 # itself exited 75, and 1 for a run stopped at the ceiling, with an orch: line
-# saying so - then forgets the run, only once everything was printed.
+# saying so (naming the process group when it is still there) - then forgets
+# the run, only once everything was printed.
 verification_deliver() {
-  local d="$1" st ceiling
+  local d="$1" st ceiling rec group
   st="$(<"$d/status")"
   cat "$d/out" || exit 1
   cat "$d/err" >&2 || exit 1
   if [ -f "$d/overrun" ]; then
     ceiling="$(<"$d/overrun")"
-    warn "the run was still going after the ceiling of ${ceiling}s (orchestrator.verification.timeout) and was stopped"
+    # The runner's KILL ends the group an instant after it wrote the status.
+    rec=""
+    [ ! -f "$d/pid" ] || rec="$(<"$d/pid")"
+    group="${rec%% *}"
+    if [ -n "$group" ] && ! verification_wait_gone "$group"; then
+      warn "the run was still going after the ceiling of ${ceiling}s (orchestrator.verification.timeout) and its process group $group is left running - stop it by hand"
+    else
+      warn "the run was still going after the ceiling of ${ceiling}s (orchestrator.verification.timeout) and was stopped"
+    fi
     st=1
   elif [ "$st" = 75 ]; then
     warn "the command exited 75 - delivered as exit 1, its real status"
@@ -194,7 +221,7 @@ verification_run() {
   orch_load wait
   require_poll_knobs ORCH_WAIT_BLOCK
   require_poll_knobs ORCH_VERIFICATION_GRACE ORCH_VERIFICATION_INTERVAL
-  local command="$1" state store d slept=0 attached="" ceiling id main_root rec
+  local command="$1" state store d slept=0 attached="" ceiling id main_root rec stop
   ceiling="$(verification_timeout)" || exit $?
   id="$(verification_identity)" || die "could not record this checkout's identity in $ORCH"
   state="$(verification_state)" || die "could not read the working tree state"
@@ -208,15 +235,20 @@ verification_run() {
   # stale: the result is dropped, the live run stopped by its process group,
   # and a fresh
   # run started. A run that died leaving no status is cleared the same way.
+  # A record with no state is another call still starting the run, for as long
+  # as ORCH_VERIFICATION_GRACE: a call stopped before it wrote the state never
+  # will, and its record is stale like any other.
   until mkdir "$d" 2>/dev/null; do
+    stop=1
     if [ ! -f "$d/state" ]; then
-      attached=1; break   # another call is still starting it
-    fi
-    if [ "$(<"$d/state")" = "$state" ]; then
+      verification_wait_state "$d" && continue
+    elif [ "$(<"$d/state")" = "$state" ]; then
       if [ -f "$d/status" ] || [ ! -f "$d/pid" ] || liveness_record_alive "$(<"$d/pid")"; then
         attached=1; break
       fi
-    elif [ ! -f "$d/status" ] && [ -f "$d/pid" ]; then
+      stop=""
+    fi
+    if [ -n "$stop" ] && [ ! -f "$d/status" ] && [ -f "$d/pid" ]; then
       rec="$(<"$d/pid")"
       verification_stop "${rec%% *}" || die "the stale run of this command (process group ${rec%% *}) could not be stopped - stop it by hand"
     fi
@@ -234,7 +266,7 @@ verification_run() {
       rm -rf "$d"
       die "the run ended without a status - run the same command again"
     fi
-    float_lt "$slept" "$ORCH_WAIT_BLOCK" || wait_exit_running
+    float_lt "$(wait_block_spent "$slept")" "$ORCH_WAIT_BLOCK" || wait_exit_running
     sleep "$ORCH_VERIFICATION_INTERVAL"
     slept="$(float_add "$slept" "$ORCH_VERIFICATION_INTERVAL")"
   done
