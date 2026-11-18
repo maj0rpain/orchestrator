@@ -2534,12 +2534,15 @@ for jp_case in "1 cpu2 1" "2 cpu4 2"; do
 done
 # affected.sh does not check ORCH_TEST_JOBS: an invalid value leaves its slot
 # range at the pool size, its other suites still start, and orch_test.sh fails.
+# The docs_lint.sh stub passes here, so orch_test.sh is the one failure.
+printf '#!/usr/bin/env bash\necho "+ docs_lint.sh" >>%q\nsleep 0.3\necho - >>%q\necho; echo "1 passed, 0 failed"\nexit 0\n' \
+  "$jp_log" "$jp_log" >"$jp_tree/scripts/test/docs_lint.sh"
 : >"$jp_log"
 jp_runner "$jp_dir/cpu2" "$jp_dir/pool23" abc affected.sh HEAD
 assert_eq "affected.sh with ORCH_TEST_JOBS=abc still starts its other suites" "$(grep -c '^+ ' "$jp_log")" "3"
 assert_eq "affected.sh with ORCH_TEST_JOBS=abc runs at most 2 jobs at once" "$(log_peak "$jp_log")" "2"
-assert_contains "affected.sh with ORCH_TEST_JOBS=abc ends on the orch_test.sh failure" \
-  "$(tail -n 1 "$jp_dir/out")" "affected.sh: FAIL (orch_test.sh"
+assert_eq "affected.sh with ORCH_TEST_JOBS=abc ends on the orch_test.sh failure alone" \
+  "$(tail -n 1 "$jp_dir/out")" "affected.sh: FAIL (orch_test.sh)"
 fi
 rm -rf "$jp_tree"
 
