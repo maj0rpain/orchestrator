@@ -22,6 +22,13 @@
 # (test_jobs.sh's suite start): the wait for the slot is not timed, and the
 # timed region ends once the suite and the slot's holder have both exited.
 #
+# Both modes time each other suite with DOCS_LINT_RECORDING=1, which only this
+# script sets (all.sh and affected.sh unset it, CI never sets it, and
+# docs_lint.sh --fragment-only ignores it). docs_lint.sh's full run, with it
+# set, skips the ledger freshness rule and the budget total rule (rules 1 and
+# 2) and says so, so it does not fail on the lines being replaced; rule 3 still
+# runs. With it unset it judges them all.
+#
 # ORCH_TEST_ONLY and ORCH_TEST_SHARD are unset, so the whole suite is always
 # measured. With a job count of 1 (ORCH_TEST_JOBS=1) it prints a message naming
 # the setting and exits 1 before measuring: a sequential run records nothing.
@@ -163,29 +170,31 @@ stale_run() {
     { print $0, (FNR > n - ns ? "suite" : "section"), FNR }' "$tmp/fingerprints" "$tmp/fingerprints" >"$tmp/walk" || return 1
   # A missing file reads as an empty one; only a recording creates it.
   [ -f "$target" ] || src=/dev/null
-  # Pass 1: the lines kept byte for byte (kept), what to measure (todo: index,
-  # title, kind, fingerprint) and the fresh sections but isolation (fresh).
+  # The states of the walk's titles and the file's (ledger_states), then pass 1:
+  # the lines kept byte for byte (kept), what to measure (todo: index, title,
+  # kind, fingerprint) and the fresh sections but isolation (fresh).
+  ledger_states "$tmp/walk" "$src" >"$tmp/states" || return 1
   awk -F'\t' -v kept="$tmp/kept" -v todo="$tmp/todo" -v fresh="$tmp/fresh" "$DURATIONS_AWK"'
-    NR == FNR { if (!($1 in fp)) { fp[$1] = $2; kind[$1] = $3; ttl[$4] = $1; top = $4 + 0 } next }
+    FILENAME == ARGV[1] { if (!($1 in fp)) { fp[$1] = $2; kind[$1] = $3; ttl[$4] = $1; top = $4 + 0 } next }
+    FILENAME == ARGV[2] { state[$1] = $2; next }
     { line[++n] = $0
       ok[n] = durations_line()
-      if (ok[n]) { t[n] = $3; cnt[$3]++; nf[n] = NF; f4[n] = (NF == 4 ? $4 : ""); cpuv[n] = $2 + 0 } }
+      if (ok[n]) { t[n] = $3; cpuv[n] = $2 + 0 } }
     END {
       printf "" > kept; printf "" > todo; printf "" > fresh
       for (i = 1; i <= n; i++) {
         if (!ok[i]) { print line[i] > kept; continue }
         name = t[i]
         if (name == "shellcheck") { if (!seen) { seen = 1; print line[i] > kept } continue }
-        if (!(name in fp) || cnt[name] > 1) continue
-        if (nf[i] == 4 && f4[i] == fp[name]) { print line[i] > kept; isfresh[name] = 1; fcpu[name] = cpuv[i] }
+        if (state[name] == "fresh") { print line[i] > kept; fcpu[name] = cpuv[i] }
       }
       for (k = 1; k <= top; k++) {
         name = ttl[k]
         if (name == "") continue
-        if (!(name in isfresh)) printf "%d\t%s\t%s\t%s\n", k, name, kind[name], fp[name] > todo
+        if (state[name] != "fresh") printf "%d\t%s\t%s\t%s\n", k, name, kind[name], fp[name] > todo
         else if (kind[name] == "section" && k != 1) printf "%d\t%d\t%s\n", k, fcpu[name], name > fresh
       }
-    }' "$tmp/walk" "$src" || return 1
+    }' "$tmp/walk" "$tmp/states" "$src" || return 1
   if [ ! -s "$tmp/todo" ]; then
     if cmp -s "$tmp/kept" "$src"; then
       echo "section-durations.sh: nothing out of date, durations file unchanged"

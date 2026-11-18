@@ -1447,12 +1447,16 @@ dur_stale() {
   "${dur_cmd[@]}" "$@" bash "$dur_dev_script" --stale 2>&1
 }
 # st_last <output>: the output's last line. st_cpu <title>: that line's CPU
-# tenths. st_set <title> <cpu>: plants that CPU on the title's line.
+# tenths. st_set <cpu> <title>...: plants that CPU on each title's line.
 st_last() { printf '%s\n' "$1" | tail -n 1; }
 st_cpu() { awk -F'\t' -v t="$1" '$3 == t { print $2 }' "$dur_file"; }
 st_set() {
-  awk -F'\t' -v OFS='\t' -v t="$1" -v c="$2" '$3 == t { $2 = c } 1' "$dur_file" >"$dur_dir/st.tmp" &&
-    cp "$dur_dir/st.tmp" "$dur_file"
+  local c="$1" titles
+  shift
+  titles="$(printf '%s\n' "$@")"
+  awk -F'\t' -v OFS='\t' -v c="$c" -v ts="$titles" \
+    'BEGIN { n = split(ts, a, "\n"); for (i = 1; i <= n; i++) want[a[i]] = 1 } $3 in want { $2 = c } 1' \
+    "$dur_file" >"$dur_dir/st.tmp" && cp "$dur_dir/st.tmp" "$dur_file"
 }
 # st_except <title> [<file>]: <file> or the durations file, less the title.
 st_except() {
@@ -1612,14 +1616,14 @@ st_reset
 # Scaling, by direction and a wide bound: a missing section's line against
 # fresh lines planted far above, then far below, what they measure.
 dur_plant_new
-for st_t in 'dur a' 'dur b' 'dur cal'; do st_set "$st_t" 9000; done
+st_set 9000 'dur a' 'dur b' 'dur cal'
 cp "$dur_file" "$dur_dir/high.tsv"
 out="$(dur_stale)"; st=$?
 assert_status "--stale beside fresh lines planted far above passes" "$st" 0
 assert_eq "the new line is far above its own measurement" "$([ "$(st_cpu 'dur new')" -ge 500 ] && echo yes)" "yes"
 assert_eq "and the fresh lines are as planted" "$(st_except 'dur new')" "$(<"$dur_dir/high.tsv")"
 cp "$dur_dir/base.tsv" "$dur_file"
-for st_t in "dur a" "dur b" "dur cal"; do st_set "$st_t" 0; done
+st_set 0 'dur a' 'dur b' 'dur cal'
 out="$(dur_stale)"
 assert_eq "beside fresh lines planted far below, the new line is far below" \
   "$([ "$(st_cpu 'dur new')" -le 20 ] && echo yes)" "yes"
@@ -1635,8 +1639,8 @@ printf '%s\n' '  # --- cal m1' '  echo; for ((i = 0; i < 200000; i++)); do :; do
     awk -F'\t' -v OFS='\t' '$1 ~ /^cal m/ { print 10, 10, $1, $2 }'
   grep $'\tshellcheck$' "$dur_dir/base.tsv"; } >"$dur_file"
 cp "$dur_file" "$dur_dir/many.tsv"
-for st_t in isolation 'dur a' 'dur b' 'dur cal' 'cal m6'; do st_set "$st_t" 0; done
-for st_t in 'cal m1' 'cal m2' 'cal m3' 'cal m4' 'cal m5'; do st_set "$st_t" 50; done
+st_set 0 isolation 'dur a' 'dur b' 'dur cal' 'cal m6'
+st_set 50 'cal m1' 'cal m2' 'cal m3' 'cal m4' 'cal m5'
 dur_plant_new
 out="$(dur_stale)"; st=$?
 assert_status "--stale with a planted calibration choice passes" "$st" 0

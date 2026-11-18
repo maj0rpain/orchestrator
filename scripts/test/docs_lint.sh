@@ -444,7 +444,7 @@ BUDGET_FILE=scripts/test/suite-budget
 # fingerprints come from test_tree.sh's ledger_fingerprints, a fixed number of
 # processes whatever the number of sections.
 scan_ledger_fresh() {
-  local r="$1" td="$1/scripts/test" fps st=0
+  local r="$1" td="$1/scripts/test" fps st=0 fix="run scripts/dev/section-durations.sh --stale"
   if [ ! -f "$r/$LEDGER_FILE" ]; then
     echo "$LEDGER_FILE: missing; run the full refresh (scripts/dev/section-durations.sh with no argument)"
     return 0
@@ -456,27 +456,19 @@ scan_ledger_fresh() {
     rm -f "$fps"
     return 0
   fi
-  awk -F'\t' -v file="$LEDGER_FILE" "$DURATIONS_AWK"'
-    FILENAME == ARGV[1] { if (!($1 in fp)) { fp[$1] = $2; ord[++n] = $1 } next }
-    durations_line() {
-      if (!($3 in cnt)) { nf[$3] = NF; f4[$3] = $4; lines[++m] = $3 }
-      cnt[$3]++
-    }
-    END {
-      fix = "run scripts/dev/section-durations.sh --stale"
-      for (i = 1; i <= n; i++) {
-        t = ord[i]
-        if (!(t in cnt)) print file ": section or suite \"" t "\" has no line; " fix
-        else if (cnt[t] > 1) print file ": title \"" t "\" is on " cnt[t] " lines; " fix
-        else if (nf[t] != 4 || f4[t] != fp[t]) print file ": the line of \"" t "\" is stale; " fix
-      }
-      for (i = 1; i <= m; i++) {
-        t = lines[i]
-        if (t == "shellcheck") { if (cnt[t] > 1) print file ": title \"shellcheck\" is on " cnt[t] " lines; " fix; continue }
-        if (!(t in fp)) print file ": the line of \"" t "\" has no section or suite; " fix
-      }
-      if (!("shellcheck" in cnt)) print file ": no shellcheck line; run the full refresh (scripts/dev/section-durations.sh with no argument)"
-    }' "$fps" "$r/$LEDGER_FILE"
+  ledger_states "$fps" "$r/$LEDGER_FILE" | while IFS=$'\t' read -r t state n; do
+    case "$state" in
+      missing)
+        if [ "$t" = shellcheck ]; then
+          echo "$LEDGER_FILE: no shellcheck line; run the full refresh (scripts/dev/section-durations.sh with no argument)"
+        else
+          echo "$LEDGER_FILE: section or suite \"$t\" has no line; $fix"
+        fi ;;
+      duplicated) echo "$LEDGER_FILE: title \"$t\" is on $n lines; $fix" ;;
+      stale) echo "$LEDGER_FILE: the line of \"$t\" is stale; $fix" ;;
+      orphaned) echo "$LEDGER_FILE: the line of \"$t\" has no section or suite; $fix" ;;
+    esac
+  done
   rm -f "$fps"
 }
 # tenths_text <tenths>: seconds with one decimal place.
@@ -555,6 +547,18 @@ check_real_suite_budget() {
   fi
 }
 
+# check_real_ledger_fresh: rule 1 against the real plugin root, once. While
+# section-durations.sh records the ledger (DOCS_LINT_RECORDING=1) the freshness
+# rule is not judged, and the pass says so: it would fail on the very lines
+# being replaced. Only the full run calls it, never --fragment-only.
+check_real_ledger_fresh() {
+  if [ -n "${DOCS_LINT_RECORDING:-}" ]; then
+    ok "the durations file's freshness is not judged while it is being recorded"
+  else
+    check "the durations file has one fresh line for every section, other suite and shellcheck" \
+      "$(scan_ledger_fresh "$PLUGIN_ROOT")"
+  fi
+}
 # --fragment-only: the changelog fragment rule and the suite budget rules 2 and
 # 3 against the real plugin root and nothing else: no section heading, no
 # fixture self-test, no other rule. It starts here, once the helpers the rules
@@ -4842,9 +4846,10 @@ assert_eq "an unknown argument prints the usage line alone on stderr" \
 # --- suite budget rules (#3180) -----------------------------------------------
 # The three rules over fixture roots holding a scripts/test tree:
 # scan_ledger_fresh (rule 1), scan_suite_budget (rule 2) and
-# scan_suite_budget_alone (rule 3). The real root's checks are the full run's
-# ledger line below, and the real-root runs of check_real_suite_budget in the
-# --fragment-only child tests above.
+# scan_suite_budget_alone (rule 3). The real root is checked by the full run's
+# own calls of check_real_ledger_fresh and check_real_suite_budget, below, and
+# by the real-root runs of check_real_suite_budget in the --fragment-only child
+# tests above.
 echo
 echo "suite budget rules (#3180)"
 # ledger_record <root>: writes the root's durations file fresh: every section
@@ -4950,17 +4955,26 @@ assert_eq "a ledger of 43 sections starts as many processes as one of three" \
 [ "${few_starts%% *}" -gt 0 ] && ok "the process count sees the scan's awk" ||
   bad "the process count sees the scan's awk" "counts: $few_starts"
 
-# budget_fixture [<budget>]: ledger_fixture as a git repo, main holding it with
-# a suite budget of <budget> (20 when none; none at all when it is "none"),
-# checked out on a pr branch made from main.
-budget_fixture() {
+# budget_template <budget>: ledger_fixture as a git repo, main holding it with
+# a suite budget of <budget> (none at all when it is "none"), checked out on a
+# pr branch made from main; prints its path. Built once per budget below.
+budget_template() {
   local f
   f="$(ledger_fixture)"
-  if [ "${1:-20}" = none ]; then rm "$f/scripts/test/suite-budget"; else echo "${1:-20}" >"$f/scripts/test/suite-budget"; fi
+  if [ "$1" = none ]; then rm "$f/scripts/test/suite-budget"; else echo "$1" >"$f/scripts/test/suite-budget"; fi
   fixture_git "$f" init -q -b main
   fragment_commit "$f"
   fixture_git "$f" checkout -q -b pr
   echo "$f"
+}
+budget_template_14="$(budget_template 14)"
+budget_template_8="$(budget_template 8)"
+budget_template_none="$(budget_template none)"
+# budget_fixture <14|8|none>: a new fixture root, a copy of that template.
+budget_fixture() {
+  local f src="$budget_template_14"
+  case "$1" in 8) src="$budget_template_8" ;; none) src="$budget_template_none" ;; esac
+  f="$(new_fixture)" && cp -r "$src/." "$f" && echo "$f"
 }
 # ledger_extra <root> <cpu tenths>: adds a line of that CPU to the durations
 # file.
@@ -5047,13 +5061,22 @@ assert_eq "and is judged when the ledger is not being recorded" \
   "$([[ "$out" == *"FAIL the recorded total is within the suite budget"* ]] && echo yes)" yes
 # section-durations.sh measures this file with DOCS_LINT_RECORDING=1 while it
 # replaces the ledger's lines, so the freshness rule would fail on the very
-# lines being recorded; only that script sets it, and rule 2 reads it too.
-if [ -n "${DOCS_LINT_RECORDING:-}" ]; then
-  ok "the durations file's freshness is not judged while it is being recorded"
-else
-  check "the durations file has one fresh line for every section, other suite and shellcheck" \
-    "$(scan_ledger_fresh "$PLUGIN_ROOT")"
-fi
+# lines being recorded; only that script sets it, and rule 2 reads it too. The
+# full run's own call stands at column 0 here and nowhere else, as below, so the
+# two cases that follow, the function with it set and unset, are the full run's.
+fixture="$(ledger_fixture)"
+printf '%s\n' '# --- a two ---' 'echo 4' >>"$fixture/scripts/test/orch/a.sh"
+out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
+  DOCS_LINT_RECORDING=1 check_real_ledger_fresh)"
+assert_eq "a stale ledger's freshness is not judged while the ledger is recorded, and says so" \
+  "$([[ "$out" == *"ok   the durations file's freshness is not judged while it is being recorded"* ]] && echo yes)" yes
+out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
+  DOCS_LINT_RECORDING='' check_real_ledger_fresh)"
+assert_eq "and is judged when the ledger is not being recorded" \
+  "$([[ "$out" == *"FAIL the durations file has one fresh line"* ]] && echo yes)" yes
+assert_eq "the full run calls check_real_ledger_fresh" \
+  "$(grep -c '^check_real_ledger_fresh$' "$PLUGIN_ROOT/scripts/test/docs_lint.sh")" 1
+check_real_ledger_fresh
 # The full run judges the suite budget rules 2 and 3 as well, so a ticket
 # verification enforces them before a push. The call stands at column 0 here
 # and nowhere else; the --fragment-only call is indented.

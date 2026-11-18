@@ -216,6 +216,44 @@ durations_total() {
   awk -F'\t' "$DURATIONS_AWK"'{ durations_read() }
     END { for (name in cpu) t += cpu[name]; print t + 0 }'
 }
+# The function ledger_states <fingerprints> <durations file> is the one place
+# the ledger's freshness rule is written. <fingerprints> holds the walk, one
+# "<title><TAB><fingerprint>..." line per section or suite (the output of
+# ledger_fingerprints, or lines that start with it). It prints one line,
+# "<title><TAB><state><TAB><lines>", per title: first each walked title, as
+# `missing` (no line), `duplicated` (more than one), `stale` (a line that is
+# not four columns or whose fingerprint differs) or `fresh`; then each title of
+# the durations file that the walk lacks, in line order, as `orphaned`, or
+# `shellcheck` as `fresh` or `duplicated`; last `shellcheck` as `missing` when
+# the file has no line for it. <lines> is how many lines the title has. A
+# caller reacts to the states in its own way: it runs one awk, so the number of
+# processes does not grow with the number of sections.
+ledger_states() {
+  awk -F'\t' "$DURATIONS_AWK"'
+    FILENAME == ARGV[1] { if (!($1 in fp)) { fp[$1] = $2; ord[++n] = $1 } next }
+    durations_line() {
+      if (!($3 in cnt)) { nf[$3] = NF; f4[$3] = $4; lines[++m] = $3 }
+      cnt[$3]++
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        t = ord[i]
+        if (!(t in cnt)) { print t "\tmissing\t0"; continue }
+        if (cnt[t] > 1) s = "duplicated"
+        else if (nf[t] != 4 || f4[t] != fp[t]) s = "stale"
+        else s = "fresh"
+        print t "\t" s "\t" cnt[t]
+      }
+      for (i = 1; i <= m; i++) {
+        t = lines[i]
+        if (t in fp) continue
+        if (t != "shellcheck") s = "orphaned"
+        else s = (cnt[t] > 1 ? "duplicated" : "fresh")
+        print t "\t" s "\t" cnt[t]
+      }
+      if (!("shellcheck" in cnt)) print "shellcheck\tmissing\t0"
+    }' "$1" "$2"
+}
 # shellcheck disable=SC2034 # read by the sourcing runners
 SHELLCHECK_CMD=(shellcheck -S warning -f gcc)
 
