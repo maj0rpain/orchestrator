@@ -24,12 +24,18 @@
 #   version-bump.sh, autopilot-container.sh, autopilot-up.sh, and the suites
 #   themselves, scripts/dev/lens-bench.sh and lens_bench_test.sh included
 #                                     their own test file
-#   skills, agents, docs, markdown, changelog fragments
+#   skills, agents, docs, markdown, changelog fragments, the durations file
+#   (section-durations.tsv) and the budget file (suite-budget, beside it)
 #                                     nothing beyond the always-run checks
 #   anything else, orch.sh, orch/common.sh, orch/loader.sh, the shared test
 #   setup, the runners, the gh fake, test_jobs.sh, report.sh, test_tree.sh
 #                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
+#
+# The base worked out above is handed to docs_lint.sh in DOCS_LINT_BASE, the
+# docs lint's own base setting for its suite budget rules, on the narrow
+# selection and on the full-suite fallback alike (all.sh passes it through to
+# its docs_lint.sh). With no base the setting is unset, never inherited.
 #
 # ORCH_TEST_SHARD is unset at start: a ticket verification is never split, its
 # fallback to the full verification (all.sh) included.
@@ -96,6 +102,7 @@ full_suite() {
     echo "all.sh"
     exit 0
   fi
+  if [ -n "${merge_base:-}" ]; then export DOCS_LINT_BASE="$merge_base"; else unset DOCS_LINT_BASE; fi
   exec bash "$dir/all.sh"
 }
 
@@ -165,6 +172,7 @@ classify() {
     scripts/autopilot-up.sh | scripts/test/autopilot_up_test.sh) want+=(autopilot_up_test.sh) ;;
     scripts/dev/lens-bench.sh | scripts/test/lens_bench_test.sh) want+=(lens_bench_test.sh) ;;
     scripts/test/docs_lint.sh) ;;
+    scripts/test/section-durations.tsv | scripts/test/suite-budget) return 0 ;;
     skills/* | agents/* | docs/* | changelog.d/* | *.md) return 0 ;;
     *) full_suite ;;
   esac
@@ -250,10 +258,9 @@ fi
 
 # ORCH_TEST_ONLY for orch_test.sh: an anchored alternation of the titles.
 only=""
-for t in "${titles[@]}"; do
-  esc="$(printf '%s' "$t" | sed 's/[].\\[*^$+?(){}|]/\\&/g')"
-  only+="${only:+|}$esc"
-done
+if [ "${#titles[@]}" -gt 0 ]; then
+  only="$(printf '%s\n' "${titles[@]}" | titles_regex)"
+fi
 
 # shellcheck source=test_jobs.sh
 source "$dir/test_jobs.sh"
@@ -262,6 +269,7 @@ source "$dir/report.sh"
 test_jobs_lower_priority
 test_jobs_pool_init affected.sh || exit 1
 export ORCH_TEST_QUIET=1
+unset DOCS_LINT_RECORDING
 tmp="$(mktemp -d)" || exit 1
 pids=()
 trap 'test_jobs_stop_children "${pids[@]}"' INT TERM
@@ -280,7 +288,11 @@ done
 for suite_n in "${start_order[@]}"; do
   suite="${selected[$suite_n]}"
   if [ "$suite" = orch_test.sh ] && [ -n "$only" ]; then
-    ORCH_TEST_ONLY="^($only)\$" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
+    ORCH_TEST_ONLY="$only" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
+  elif [ "$suite" = docs_lint.sh ]; then
+    unset ORCH_TEST_ONLY
+    test_jobs_slot_wait
+    DOCS_LINT_BASE="$merge_base" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   else
     unset ORCH_TEST_ONLY
     [ "$suite" = orch_test.sh ] || test_jobs_slot_wait

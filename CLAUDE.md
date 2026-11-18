@@ -49,6 +49,12 @@ See `docs/agents/coding-standards.md`.
 While iterating, run only the section you are working on:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`,
 e.g. `ORCH_TEST_ONLY='^branch create$'`.
+A session that adds or edits tests runs `scripts/dev/section-durations.sh
+--stale` before verifying and commits the durations file with its change. Over
+the suite budget (`scripts/test/suite-budget`), make cheaper only the tests the
+change added or edited, then record again; still over, stop for the human (a
+session that cannot ask reports it and changes nothing more; the session that
+started it asks). Never raise the budget in a feature change.
 Run `scripts/test/affected.sh` before each commit, and `scripts/test/all.sh`
 once before opening a PR.
 Ticket verification: scripts/test/affected.sh
