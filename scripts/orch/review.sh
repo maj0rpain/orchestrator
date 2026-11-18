@@ -936,9 +936,11 @@ cmd_review() {
         # ci_counted, which widens to every check.
         if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
           res="$(ci_probe "$pr" required)"
+          wait_limited_check "$slept"
           if [ "${res%%$'\n'*}" = none ]; then ci_tick; continue; fi
         else
           res="$(ci_counted_probe "$pr")"
+          wait_limited_check "$slept"
         fi
         verdict="${res%%$'\n'*}"
         case "$verdict" in

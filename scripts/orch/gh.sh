@@ -143,9 +143,12 @@ gh_limit_reset() {
 # gh_limit_handle <stderr> <retry spent>: what a failed call's <stderr> means.
 # Status 0: no limit - the caller passes its failure through untouched.
 # Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
-# default 60, cut to what is left of ORCH_WAIT_BLOCK while wait.sh is loaded) -
-# the caller retries once and calls this again with
-# <retry spent> 1.
+# default 60) - the caller retries once and calls this again with
+# <retry spent> 1. While a re-callable wait is open (wait_open set WAIT_FILE)
+# and what is left of ORCH_WAIT_BLOCK cannot hold that wait, the rest of the
+# block is slept, the mark "$WAIT_FILE.limited" is written and the status is 1
+# with no message, nothing recorded: the wait is not over, and its poll loop
+# (wait_limited_check) ends the call as still running (exit 75, total kept).
 # Status 1: a limit to give up on - a primary one, a secondary one met again
 # after the retry, or a first secondary one on a compound write (never
 # retried, so called with <retry spent> 1), handled as a primary one. The
@@ -153,15 +156,23 @@ gh_limit_reset() {
 # reset, is on stderr; in an autopilot process the reset is also recorded
 # (autopilot_github_limit_record), a failed write being one more line on stderr.
 gh_limit_handle() {
-  local kind reset nap
+  local kind reset nap left
   kind="$(gh_limit_kind "$1")"
   [ -n "$kind" ] || return 0
   if [ "$kind" = secondary ] && [ "$2" = 0 ]; then
     nap="${ORCH_GH_LIMIT_WAIT:-60}"
-    # A re-callable wait (wait.sh) is open: the sleep never passes its block.
-    if declare -F wait_nap >/dev/null; then
-      nap="$(wait_nap "$nap" "$(wait_block_spent 0)")"
-      float_lt 0 "$nap" || nap=0
+    # A re-callable wait is open (wait_open ran): its call never blocks past
+    # ORCH_WAIT_BLOCK, so a limit wait the block cannot hold ends the call as
+    # still running, not as a retry that meets the limit again. The wait is
+    # open only where wait_open set WAIT_FILE: the stubbed wait_nap of every
+    # other command is never reached.
+    if [ -n "${WAIT_FILE:-}" ]; then
+      left="$(wait_nap "$nap" "$(wait_block_spent 0)")"
+      if float_lt "$left" "$nap"; then
+        float_lt 0 "$left" && sleep "$left"
+        : >"$WAIT_FILE.limited"
+        return 1
+      fi
     fi
     sleep "$nap"
     return 2

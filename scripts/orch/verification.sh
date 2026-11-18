@@ -156,7 +156,8 @@ verification_wait_gone() {
 # verification_stop <pid> <dir>: stops the run's process group: TERM, then KILL
 # once ORCH_VERIFICATION_GRACE seconds have passed since the TERM, which
 # <dir>/termed keeps, so a call whose block ends inside the grace is followed
-# by one that goes on to KILL. Returns 1 when the group is still there.
+# by one that goes on to KILL; the grace after the KILL counts the same way,
+# from <dir>/killed. Returns 1 when the group is still there.
 verification_stop() {
   local pid="$1" d="$2"
   if [ ! -f "$d/termed" ]; then
@@ -165,7 +166,8 @@ verification_stop() {
   fi
   verification_wait_gone "$pid" "$(verification_epoch_in "$d/termed")" && return 0
   kill -KILL -- "-$pid" 2>/dev/null || true
-  verification_wait_gone "$pid"
+  verification_mark "$d/killed"
+  verification_wait_gone "$pid" "$(verification_epoch_in "$d/killed")"
 }
 
 # verification_wait_state <dir>: waits until ORCH_VERIFICATION_GRACE seconds
@@ -217,6 +219,7 @@ verification_start() {
             sleep 0.1
             n=$((n + 1))
           done
+          printf "%(%s)T\n" -1 >"$d/killed"
           echo 1 >"$d/status.tmp"
           mv "$d/status.tmp" "$d/status"
           kill -KILL 0
@@ -247,7 +250,11 @@ verification_deliver() {
     rec=""
     [ ! -f "$d/pid" ] || rec="$(<"$d/pid")"
     group="${rec%% *}"
-    if [ -n "$group" ] && ! verification_wait_gone "$group"; then gone=""; fi
+    if [ -n "$group" ]; then
+      # The grace counts from the runner's KILL (its mark), across calls.
+      verification_mark "$d/killed"
+      verification_wait_gone "$group" "$(verification_epoch_in "$d/killed")" || gone=""
+    fi
   fi
   cat "$d/out" || exit 1
   cat "$d/err" >&2 || exit 1

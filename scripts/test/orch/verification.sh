@@ -220,8 +220,19 @@ fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 assert_status "and the stale run that ignored TERM is gone" "$st" 1
 : >"$vr_dir/gate"
 
-# A call never sleeps past ORCH_WAIT_BLOCK, whatever the poll interval.
-rm -f "$vr_dir/gate"
+# The grace after a KILL is counted across calls too: a group still there when
+# the KILL was sent longer ago than the grace is given up on at once, not met
+# with a fresh grace that a short block never outlasts. kill is faked as a group
+# that never goes.
+vr_kd="$(mktemp -d)"
+printf '%s\n' "$(( $(printf '%(%s)T' -1) - 10 ))" >"$vr_kd/termed"
+cp "$vr_kd/termed" "$vr_kd/killed"
+ORCH_WAIT_BLOCK=0.3 ORCH_VERIFICATION_GRACE=2 sourced_orch_script \
+  "orch_load verification; orch_load wait; kill() { return 0; }; verification_stop 4242 '$vr_kd' || exit 3" >/dev/null 2>&1; st=$?
+assert_status "a group still there past the grace since its KILL is given up on, not exit 75" "$st" 3
+rm -rf "$vr_kd"
+
+$1rm -f "$vr_dir/gate"
 cmd="$(vr_gate "$vr_dir" quiet)"
 vr_t0=$SECONDS
 ORCH_VERIFICATION_INTERVAL=8 ORCH_WAIT_BLOCK=1 ORCH_VERIFICATION_GRACE=0.3 \

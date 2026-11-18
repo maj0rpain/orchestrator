@@ -58,3 +58,16 @@ wt_took=$(( $(wt_seconds) - wt_start ))
 assert_status "spec-review wait with an interval past the block exits 75" "$st" 75
 assert_eq "and ends within the block, not a whole interval after it" \
   "$([ "$wt_took" -le 3 ] && echo yes || echo "no (${wt_took}s)")" "yes"
+
+# A rate limit the block could not hold (gh_limit_handle's mark) ends the poll
+# loop's call as still running, total kept; with no mark, the loop goes on.
+wt_wf="$(mktemp)"
+printf '1\n0\n' >"$wt_wf"
+sourced_orch_script 'WAIT_FILE=$1; WAIT_START=1; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
+assert_status "with no mark, wait_limited_check goes on" "$st" 0
+: >"$wt_wf.limited"
+sourced_orch_script 'WAIT_FILE=$1; WAIT_START=1; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
+assert_status "with the mark, it ends the call as still running" "$st" 75
+assert_eq "keeps the stored total" "$(sed -n 1p "$wt_wf")" "1"
+assert_status "and consumes the mark" "$([ -e "$wt_wf.limited" ]; echo $?)" 1
+rm -f "$wt_wf"

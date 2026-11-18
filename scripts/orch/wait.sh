@@ -58,7 +58,17 @@ wait_open() {
 
 # wait_forget: forgets the stored total, once a call delivers an outcome.
 wait_forget() {
-  rm -f "$WAIT_FILE"
+  rm -f "$WAIT_FILE" "$WAIT_FILE.limited"
+}
+
+# wait_limited_check <slept>: ends the call as still running (stores <slept>,
+# exit 75) when a gh call met a rate limit the block could not hold - the mark
+# gh_limit_handle left, which a subshell's exit could not. Call it after each
+# probe of a poll loop.
+wait_limited_check() {
+  [ -e "$WAIT_FILE.limited" ] || return 0
+  rm -f "$WAIT_FILE.limited"
+  wait_still_running "$1"
 }
 
 # wait_exit_running: says on stderr that the call's wait is not over and exits

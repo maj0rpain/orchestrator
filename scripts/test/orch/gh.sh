@@ -2137,14 +2137,19 @@ assert_contains "with the handler's message" "$out" "orch: GitHub API rate limit
 assert_eq "the secondary wording is not passed through" \
   "$(grep -c 'secondary rate limit' <<<"$out")" "0"
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
-# With a re-callable wait's module loaded, that wait never passes the call's
-# block (ORCH_WAIT_BLOCK): the first-limit wait is cut to what is left of it.
+# While a re-callable wait is open (WAIT_FILE set), a first limit wait the
+# call's block cannot hold is not retried early: the rest of the block is slept,
+# the call's mark is left and the guard gives up quietly, so the poll loop ends
+# the call as still running (exit 75, total kept).
 fake_ratelimit 'You have exceeded a secondary rate limit.'
+gl_wf="$(mktemp)"
 SECONDS=0
-out="$(ORCH_WAIT_BLOCK=1 ORCH_GH_LIMIT_WAIT=30 sourced_orch_script 'orch_load wait; adapter_issue_body 5' 2>&1)"; st=$?
-assert_status "a secondary limit under a wait's block still fails the call" "$st" 1
-assert_status "and its wait is cut to the block, not ORCH_GH_LIMIT_WAIT" "$((SECONDS < 20 ? 0 : 1))" 0
-rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
+out="$(ORCH_WAIT_BLOCK=1 ORCH_GH_LIMIT_WAIT=30 sourced_orch_script 'WAIT_FILE=$1; adapter_issue_body 5' "$gl_wf" 2>&1)"; st=$?
+assert_status "a secondary limit a wait's block cannot hold fails the guarded call" "$st" 1
+assert_status "its mark for the poll loop is left" "$([ -e "$gl_wf.limited" ]; echo $?)" 0
+assert_eq "with no limit message, nothing being given up" "$(grep -c 'rate limit reached' <<<"$out")" "0"
+assert_status "and it waits the block, not ORCH_GH_LIMIT_WAIT" "$((SECONDS < 20 ? 0 : 1))" 0
+rm -f "$gl_wf" "$gl_wf.limited" "$ORCH_GH_FAKE_STORE/ratelimit"
 # A quota read that itself meets rate-limit wording is made once: never retried,
 # no limit message, no wait. The second call would succeed, so a retry shows.
 fake_online; fake_unfail
