@@ -114,9 +114,10 @@
 # ORCH_TEST_POOL_HELD with the pool directory when a slot was taken (an
 # inherited marker passes on when the run is unpooled), and hands the slot to a
 # holder that keeps it until the suite exits. Records the suite's pid in
-# TEST_JOBS_SUITE_PID, which the caller reads, never `$!`: after this step `$!`
-# names the slot's holder. An unpooled run, or a start with no take step first,
-# starts the suite with no slot.
+# TEST_JOBS_SUITE_PID, which the caller reads, never `$!`: after this step with
+# a slot taken `$!` names the slot's holder; with no slot (an unpooled run, or
+# a start with no take step first) there is no holder, `$!` is the suite's own
+# pid, and the suite starts with no slot.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap

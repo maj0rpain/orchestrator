@@ -2468,8 +2468,23 @@ if command -v flock >/dev/null 2>&1; then
 suites_read "$jp_tests/all.sh" "$jp_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 jp_stubs="$jp_dir/stubs"
 mkdir -p "$jp_stubs"
-printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' "$jp_log" "$jp_log" >"$jp_stubs/shellcheck"
+printf '#!/usr/bin/env bash\necho +sc >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' "$jp_log" "$jp_log" >"$jp_stubs/shellcheck"
 chmod +x "$jp_stubs/shellcheck"
+# jp_runner <cpu file> <pool dir> <jobs> <script> [args...]: a runner of the
+# planted tree (all.sh or affected.sh, under scripts/test) on the pool, from
+# the tree's root, with the stub shellcheck first on PATH; its stdout is
+# $jp_dir/out, its stderr $jp_dir/errout, and a sleeper a stub left behind is
+# killed. Returns the runner's status.
+jp_runner() {
+  local cpu="$1" pool="$2" jobs="$3" script="$4" st
+  shift 4
+  (cd "$jp_tree" && env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$cpu" ORCH_TEST_POOL_DIR="$pool" \
+    JP_LOG="$jp_log" JP_POOL="$pool" JP_SUITE="$jp_suite" ORCH_TEST_JOBS="$jobs" PATH="$jp_stubs:$PATH" \
+    bash "scripts/test/$script" "$@" >"$jp_dir/out" 2>"$jp_dir/errout")
+  st=$?
+  [ ! -r "$jp_log.sleep" ] || kill "$(<"$jp_log.sleep")" 2>/dev/null
+  return "$st"
+}
 for jp_stub in "${SUITES[@]}"; do
   [ "$jp_stub" != orch_test.sh ] || continue
   jp_code=0
@@ -2478,20 +2493,16 @@ for jp_stub in "${SUITES[@]}"; do
     "$jp_stub" "$jp_log" "$jp_log" "$((1 - jp_code))" "$jp_code" "$jp_code" >"$jp_tree/scripts/test/$jp_stub"
 done
 : >"$jp_log"
-env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" ORCH_TEST_POOL_DIR="$jp_dir/pool20" \
-  JP_LOG="$jp_log" JP_POOL="$jp_dir/pool20" JP_SUITE="$jp_suite" ORCH_TEST_JOBS=4 PATH="$jp_stubs:$PATH" \
-  bash "$jp_tree/scripts/test/all.sh" >"$jp_dir/allout" 2>"$jp_dir/allerr"
-jp_s1=$?
-[ ! -r "$jp_log.sleep" ] || kill "$(<"$jp_log.sleep")" 2>/dev/null
+jp_runner "$jp_dir/cpu2" "$jp_dir/pool20" 4 all.sh; jp_s1=$?
 assert_status "all.sh over a failing stub suite exits 1" "$jp_s1" 1
 assert_eq "all.sh on a 2-slot pool runs at most 2 jobs at once" "$(log_peak "$jp_log")" "2"
 assert_eq "every stub suite ran" "$(grep -c '^+ ' "$jp_log")" "$((${#SUITES[@]} - 1))"
-assert_eq "the stub shellcheck ran for the planted tree" "$(grep -c '^+$' "$jp_log" | awk '{ print ($1 > 4) }')" "1"
-assert_contains "the failing suite's report line reads FAIL" "$(grep '^docs_lint.sh:' "$jp_dir/allout")" "0 passed, 1 failed"
-assert_contains "the verdict names it" "$(tail -n 1 "$jp_dir/allout")" "all.sh: FAIL (docs_lint.sh"
+assert_eq "the stub shellcheck ran for the planted tree" "$(grep -c '^+sc$' "$jp_log" | awk '{ print ($1 > 0) }')" "1"
+assert_contains "the failing suite's report line reads FAIL" "$(grep '^docs_lint.sh:' "$jp_dir/out")" "0 passed, 1 failed"
+assert_contains "the verdict names it" "$(tail -n 1 "$jp_dir/out")" "all.sh: FAIL (docs_lint.sh"
 assert_eq "the report lines follow the suite list" \
-  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/allout" | cut -d: -f1 | tr '\n' ' ')" "${SUITES[*]} "
-assert_eq "the waiting notice appears once" "$(grep -c 'all.sh: waiting for a job slot (' "$jp_dir/allerr")" "1"
+  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/out" | cut -d: -f1 | tr '\n' ' ')" "${SUITES[*]} "
+assert_eq "the waiting notice appears once" "$(grep -c 'all.sh: waiting for a job slot (' "$jp_dir/errout")" "1"
 assert_eq "the other suites start before any orch_test.sh section" \
   "$(awk '/^\+ / { n++ } /^\+$/ { print n + 0; exit }' "$jp_log")" "$((${#SUITES[@]} - 1))"
 # affected.sh holds a slot for each suite it starts besides orch_test.sh: in a
@@ -2504,40 +2515,31 @@ git -C "$jp_tree" -c user.name=t -c user.email=t@example.com commit -qm init
 echo '# changed' >>"$jp_tree/scripts/test/hooks_test.sh"
 echo '# changed' >>"$jp_tree/scripts/test/version_bump_test.sh"
 : >"$jp_log"
-(cd "$jp_tree" && env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" ORCH_TEST_POOL_DIR="$jp_dir/pool21" \
-  JP_LOG="$jp_log" JP_POOL="$jp_dir/pool21" JP_SUITE="$jp_suite" ORCH_TEST_JOBS=4 PATH="$jp_stubs:$PATH" \
-  bash scripts/test/affected.sh HEAD >"$jp_dir/afout" 2>"$jp_dir/aferr")
-jp_s1=$?
-[ ! -r "$jp_log.sleep" ] || kill "$(<"$jp_log.sleep")" 2>/dev/null
+jp_runner "$jp_dir/cpu2" "$jp_dir/pool21" 4 affected.sh HEAD; jp_s1=$?
 assert_status "affected.sh over a failing stub suite exits 1" "$jp_s1" 1
 assert_eq "affected.sh on a 2-slot pool runs at most 2 jobs at once" "$(log_peak "$jp_log")" "2"
 assert_eq "its selected stub suites all ran" "$(grep -c '^+ ' "$jp_log")" "3"
 assert_eq "its report keeps the selection order" \
-  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/afout" | cut -d: -f1 | tr '\n' ' ')" "orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh "
-assert_contains "the verdict names the failing suite" "$(tail -n 1 "$jp_dir/afout")" "affected.sh: FAIL (docs_lint.sh"
+  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/out" | cut -d: -f1 | tr '\n' ' ')" "orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh "
+assert_contains "the verdict names the failing suite" "$(tail -n 1 "$jp_dir/out")" "affected.sh: FAIL (docs_lint.sh"
 # ORCH_TEST_JOBS narrows a pooled run's slot range to min(N, the pool's size),
 # nested runners included, so the whole all.sh run fits within N jobs.
 # The above-the-pool half is the ORCH_TEST_JOBS=4 case on the cpu2 pool above.
 for jp_case in "1 cpu2 1" "2 cpu4 2"; do
   read -r jp_jobs jp_cpu jp_want <<<"$jp_case"
   : >"$jp_log"
-  env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/$jp_cpu" ORCH_TEST_POOL_DIR="$jp_dir/pool22$jp_jobs" \
-    JP_LOG="$jp_log" JP_POOL="$jp_dir/pool22$jp_jobs" JP_SUITE="$jp_suite" ORCH_TEST_JOBS="$jp_jobs" PATH="$jp_stubs:$PATH" \
-    bash "$jp_tree/scripts/test/all.sh" >"$jp_dir/allout" 2>"$jp_dir/allerr"
-  [ ! -r "$jp_log.sleep" ] || kill "$(<"$jp_log.sleep")" 2>/dev/null
+  jp_runner "$jp_dir/$jp_cpu" "$jp_dir/pool22$jp_jobs" "$jp_jobs" all.sh
   assert_eq "all.sh with ORCH_TEST_JOBS=$jp_jobs on the $jp_cpu pool runs at most $jp_want jobs at once" \
     "$(log_peak "$jp_log")" "$jp_want"
 done
 # affected.sh does not check ORCH_TEST_JOBS: an invalid value leaves its slot
 # range at the pool size, its other suites still start, and orch_test.sh fails.
 : >"$jp_log"
-(cd "$jp_tree" && env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" ORCH_TEST_POOL_DIR="$jp_dir/pool23" \
-  JP_LOG="$jp_log" JP_POOL="$jp_dir/pool23" JP_SUITE="$jp_suite" ORCH_TEST_JOBS=abc PATH="$jp_stubs:$PATH" \
-  bash scripts/test/affected.sh HEAD >"$jp_dir/afout" 2>"$jp_dir/aferr")
+jp_runner "$jp_dir/cpu2" "$jp_dir/pool23" abc affected.sh HEAD
 assert_eq "affected.sh with ORCH_TEST_JOBS=abc still starts its other suites" "$(grep -c '^+ ' "$jp_log")" "3"
 assert_eq "affected.sh with ORCH_TEST_JOBS=abc runs at most 2 jobs at once" "$(log_peak "$jp_log")" "2"
 assert_contains "affected.sh with ORCH_TEST_JOBS=abc ends on the orch_test.sh failure" \
-  "$(tail -n 1 "$jp_dir/afout")" "affected.sh: FAIL (orch_test.sh"
+  "$(tail -n 1 "$jp_dir/out")" "affected.sh: FAIL (orch_test.sh"
 fi
 rm -rf "$jp_tree"
 
