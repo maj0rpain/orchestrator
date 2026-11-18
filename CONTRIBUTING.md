@@ -135,7 +135,8 @@ every suite included, and no more test jobs run at once than the pool holds; two
 or three sessions verifying at once queue for slots (`orch_test.sh: waiting for
 a job slot (N in use)` on stderr, once) and a killed holder's slot is freed by
 the kernel. `ORCH_TEST_JOBS=N` caps how many slots a run asks for and never
-bypasses the pool, so a run asking for more jobs than the pool holds queues;
+bypasses the pool, bounding the whole run at min(N, the pool's size) slots,
+nested runners included; a run asking for more jobs than the pool holds queues;
 `ORCH_TEST_JOBS=1` holds one slot for its whole one-shell run. `CI` bypasses the
 pool, as does a runner started inside a slot of the same pool (the runner marks
 its children with `ORCH_TEST_POOL_HELD`); a pool that cannot be created, opened

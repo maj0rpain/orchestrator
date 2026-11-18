@@ -55,8 +55,11 @@
 # from one pool of slot lock files, so concurrent runs queue for slots instead
 # of oversubscribing the machine. The pool holds test_jobs_default slots (the
 # job-count logic is untouched); a slot is held by an flock on its file, which
-# the kernel releases when the last process holding the open file dies. The pool
-# lives in $HOME/.cache/orchestrator/test-job-pool unless the test-only
+# the kernel releases when the last process holding the open file dies.
+# ORCH_TEST_JOBS, when a positive integer, narrows the slot range a run tries to
+# 1..min(ORCH_TEST_JOBS, the pool size), so it bounds the whole run, nested
+# runners (which inherit it) included; an invalid value narrows nothing.
+# The pool lives in $HOME/.cache/orchestrator/test-job-pool unless the test-only
 # ORCH_TEST_POOL_DIR names another directory.
 #
 # test_jobs_pool_init <runner>: decides whether this run is pooled, setting
@@ -331,6 +334,10 @@ test_jobs_pool_init() {
   [ "${ORCH_TEST_POOL_HELD:-}" = "$dir" ] && return 0
   command -v flock >/dev/null 2>&1 || return 0
   mkdir -p "$dir" 2>/dev/null || return 0
+  if is_positive_integer "${ORCH_TEST_JOBS:-}" &&
+    [ "$((10#$ORCH_TEST_JOBS))" -lt "$slots" ]; then
+    slots=$((10#$ORCH_TEST_JOBS))
+  fi
   TEST_JOBS_SLOTS="$slots"
   TEST_JOBS_POOL="$dir"
 }

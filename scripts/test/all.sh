@@ -89,6 +89,9 @@
 # the job pool (test_jobs.sh) while it
 # runs, waiting for one when none is free, and printing "all.sh: waiting for a
 # job slot (N in use)" on stderr the first time; CI bypasses the pool.
+# ORCH_TEST_JOBS narrows the pool's slot range to min(ORCH_TEST_JOBS, the
+# pool size) and bounds the whole run: every suite, section child and shellcheck
+# process fits within that many slots, so ORCH_TEST_JOBS=1 runs one at a time.
 #
 # Outside CI all.sh lowers its own niceness to 10 at start (test_jobs.sh), so
 # every process it starts inherits it; a niceness of 10 or more is left alone,

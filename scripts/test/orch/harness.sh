@@ -2514,6 +2514,28 @@ assert_eq "its selected stub suites all ran" "$(grep -c '^+ ' "$jp_log")" "3"
 assert_eq "its report keeps the selection order" \
   "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/afout" | cut -d: -f1 | tr '\n' ' ')" "orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh "
 assert_contains "the verdict names the failing suite" "$(tail -n 1 "$jp_dir/afout")" "affected.sh: FAIL (docs_lint.sh"
+# ORCH_TEST_JOBS narrows a pooled run's slot range to min(N, the pool's size),
+# nested runners included, so the whole all.sh run fits within N jobs.
+for jp_case in "1 cpu2 1" "2 cpu4 2" "8 cpu2 2"; do
+  read -r jp_jobs jp_cpu jp_want <<<"$jp_case"
+  : >"$jp_log"
+  env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/$jp_cpu" ORCH_TEST_POOL_DIR="$jp_dir/pool22$jp_jobs" \
+    JP_LOG="$jp_log" JP_POOL="$jp_dir/pool22$jp_jobs" JP_SUITE="$jp_suite" ORCH_TEST_JOBS="$jp_jobs" PATH="$jp_stubs:$PATH" \
+    bash "$jp_tree/scripts/test/all.sh" >"$jp_dir/allout" 2>"$jp_dir/allerr"
+  [ ! -r "$jp_log.sleep" ] || kill "$(<"$jp_log.sleep")" 2>/dev/null
+  assert_eq "all.sh with ORCH_TEST_JOBS=$jp_jobs on the $jp_cpu pool runs at most $jp_want jobs at once" \
+    "$(log_peak "$jp_log")" "$jp_want"
+done
+# affected.sh does not check ORCH_TEST_JOBS: an invalid value leaves its slot
+# range at the pool size, its other suites still start, and orch_test.sh fails.
+: >"$jp_log"
+(cd "$jp_tree" && env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" ORCH_TEST_POOL_DIR="$jp_dir/pool23" \
+  JP_LOG="$jp_log" JP_POOL="$jp_dir/pool23" JP_SUITE="$jp_suite" ORCH_TEST_JOBS=abc PATH="$jp_stubs:$PATH" \
+  bash scripts/test/affected.sh HEAD >"$jp_dir/afout" 2>"$jp_dir/aferr")
+assert_eq "affected.sh with ORCH_TEST_JOBS=abc still starts its other suites" "$(grep -c '^+ ' "$jp_log")" "3"
+assert_eq "affected.sh with ORCH_TEST_JOBS=abc runs at most 2 jobs at once" "$(log_peak "$jp_log")" "2"
+assert_contains "affected.sh with ORCH_TEST_JOBS=abc ends on the orch_test.sh failure" \
+  "$(tail -n 1 "$jp_dir/afout")" "affected.sh: FAIL (orch_test.sh"
 fi
 rm -rf "$jp_tree"
 
@@ -4014,7 +4036,7 @@ done
 exit "$found"
 STUB
 chmod +x "$af_sc/shellcheck"
-af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a passing run exits 0" "$st" 0
 assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
   "orch_test.sh: 7 passed, 0 failed
@@ -4056,7 +4078,7 @@ fi
 printf '%s\n' '#!/usr/bin/env bash' 'printf "  FAIL a thing\n     its detail\n"' \
   'echo; echo "1 passed, 1 failed"; exit 1' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'for f in $(ls); do echo "$f"; done'
-af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a failing part makes the run exit 1" "$st" 1
 assert_contains "printing its FAIL lines and its summary" "$af_out" \
   "  FAIL a thing
@@ -4069,7 +4091,7 @@ assert_eq "ending on a FAIL verdict naming the failing parts" "$(printf '%s\n' "
 # A suite that exits 0 on a header, with no summary line, died before it.
 printf '%s\n' '#!/usr/bin/env bash' 'echo "a section header"' >"$af/scripts/test/hooks_test.sh"
 af_put scripts/hook-guard.sh 'echo ok'
-af_out="$(cd "$af" && PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a suite that exited 0 without its summary makes the run exit 1" "$st" 1
 assert_contains "and is reported as died before its summary" "$af_out" \
   "hooks_test.sh: died before its summary (exit 0)"
