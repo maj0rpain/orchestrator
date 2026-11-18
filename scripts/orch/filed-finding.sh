@@ -3,9 +3,9 @@
 # noun of its own, holding what a filed finding is - its severities, each
 # severity's label colour and description, its label rules, and its issue
 # body, rendered from its parts and parsed back - with the finding categories
-# and the input checks review file and audit file share. Review file, audit
-# file, finding triage and issue triage read it. Its tests:
-# scripts/test/orch/filed-finding.sh.
+# and the input checks review file, audit file and audit report share. Review
+# file, audit file, audit report, finding triage and issue triage read it. Its
+# tests: scripts/test/orch/filed-finding.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # filed_table_keys <table>: the keys of a space-separated table of
@@ -211,12 +211,18 @@ finding_input_check() {
   [ -n "$(tr -d '[:space:]' <"$2")" ] || die "finding file is empty: $2"
 }
 
+# finding_location_ok <location>: whether the location is <file>:<line> or
+# <file>:<start>-<end>, split at the last colon, the file part not empty.
+finding_location_ok() {
+  local file="${1%:*}" line="${1##*:}"
+  [[ $1 == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]]
+}
+
 # finding_location_check <location>: dies unless the location is
 # <file>:<line> or <file>:<start>-<end>, split at the last colon, naming both
 # shapes in the refusal.
 finding_location_check() {
-  local file="${1%:*}" line="${1##*:}"
-  [[ $1 == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
+  finding_location_ok "$1" \
     || die "not a location: $1 (want <file>:<line> or <file>:<start>-<end>)"
 }
 

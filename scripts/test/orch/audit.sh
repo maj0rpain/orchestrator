@@ -21,6 +21,66 @@ audit_repo() {
   errf="$(mktemp)"
 }
 
+# report_run: a fresh repo and an audit run holding two area files and a
+# ranked file; the run directory is in $run, the commit in $head_sha.
+report_run() {
+  new_repo >/dev/null
+  head_sha="$(git rev-parse HEAD)"
+  run="$("$ORCH" audit begin code)"
+  cat >"$run/area-1.md" <<'AREA'
+@@ finding 1
+Kind: latent bug
+Location: a.sh:1, b.sh:2-3
+Evidence: it <breaks> when `x & y` runs
+```mermaid
+graph TD; A-->B
+```
+Confidence: certain
+@@ finding 2
+Kind: inefficiency
+Location: b.sh:2-3, c.sh:9
+Evidence: slow
+AREA
+  cat >"$run/area-2.md" <<'AREA'
+@@ finding 1
+Kind: architecture deepening
+Location: d.sh:5
+Evidence: friction
+```
+Note: kept in a fence
+```
+AREA
+  cat >"$run/ranked.md" <<'RANKED'
+@@ scope the audit's scope
+@@ areas 2
+@@ note Timing mode
+Mode: fast.
+
+Trend: flat.
+@@ top 1
+Start here, because `a.sh` is hot.
+@@ finding 1
+From: area-1:1, area-1:2
+Title: Latent bug in a.sh
+Category: bug
+Overlaps: 3
+Evidence: restated <b>evidence</b>
+@@ finding 2
+From: area-2:1
+Title: Deepen d.sh
+Category: enhancement
+@@ finding 3
+Title: Whole finding with no source
+Category: enhancement
+Location: z.sh:4
+Kind: inefficiency
+Evidence: a `tick` and a fence:
+```
+Evidence: not a field
+```
+RANKED
+}
+
 # --- audit file -------------------------------------------------------------
 
 echo
@@ -170,6 +230,30 @@ assert_status "a repo with no commit is refused" "$st" 1
 assert_eq "saying HEAD cannot be read" "$out" "orch: cannot read the HEAD commit"
 assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
 
+echo
+echo "audit report-reference check in audit file"
+audit_repo
+before="$(fake_snapshot)"
+for phrase in "finding 2" "Findings #3" "candidate #3" "candidates 1" "this report"; do
+  out="$("$ORCH" audit file "Fix it as in $phrase" "${parts[@]}" 2>&1)"; st=$?
+  assert_status "a title saying '$phrase' is refused" "$st" 1
+  assert_contains "naming the phrase" "$out" "says '$phrase'"
+  assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+done
+printf 'Line one.\nSame as Finding 4 here.\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "a finding file saying Finding 4 is refused" "$st" 1
+assert_contains "naming its line" "$out" "line 2 says 'Finding 4'"
+assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+printf 'Line one, see finding\n3 here.\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "a finding file wrapping 'finding' and its number is refused" "$st" 1
+assert_contains "naming the line it starts on" "$out" "line 1 says 'finding 3'"
+assert_eq "writing nothing" "$(fake_snapshot)" "$before"
+printf 'The report says `finding 4`.\n```\nthis report\n```\n' >"$finding"
+out="$("$ORCH" audit file "Title" "${parts[@]}" 2>&1)"; st=$?
+assert_status "the report, a span and a fence are accepted" "$st" 0
+
 # --- audit file failures ----------------------------------------------------
 
 echo
@@ -185,3 +269,489 @@ assert_gh_dies "a failed issue create dies naming the step" adapter_issue_create
   "orch: gh could not create the issue: HTTP 502: Bad Gateway" \
   "$ORCH" audit file "Title" "${parts[@]}"
 assert_eq "filing no issue" "$(fake_issues)" ""
+
+# --- audit begin ------------------------------------------------------------
+
+echo
+echo "audit begin"
+new_repo >/dev/null
+top="$(git rev-parse --show-toplevel)"
+head_sha="$(git rev-parse HEAD)"
+errf="$(mktemp)"
+out="$("$ORCH" audit begin docs 2>"$errf")"; st=$?
+assert_status "begins a docs audit" "$st" 0
+case "$out" in
+  "$top"/.orchestrator/audit/docs-[0-9]*-[0-9]*) found=absolute ;;
+  *) found="$out" ;;
+esac
+assert_eq "printing the run directory's absolute path and nothing else" "$found" absolute
+assert_eq "and nothing on stderr" "$(cat "$errf")" ""
+assert_eq "the directory exists" "$(on_disk "$out")" present
+assert_eq "recording the kind and the HEAD commit" "$(cat "$out/record")" "$(printf 'kind docs\ncommit %s' "$head_sha")"
+assert_eq "git excludes the directory, so status shows nothing" "$(git status --porcelain)" ""
+assert_eq "and the exclude names .orchestrator/ once" "$(grep -cxF .orchestrator/ "$(git rev-parse --git-common-dir)/info/exclude")" 1
+for kind in code tests; do
+  out="$("$ORCH" audit begin "$kind" 2>&1)"; st=$?
+  assert_status "begins a $kind audit" "$st" 0
+  assert_contains "its directory named for the kind" "$out" ".orchestrator/audit/$kind-"
+done
+
+# Refusals make nothing.
+usage_all="orch: usage: orch.sh audit begin <code|docs|tests>
+   or: orch.sh audit report <dir> <out.html>
+   or: orch.sh audit file --run <dir> <numbers>
+   or: orch.sh audit file <title> --category <bug|enhancement|documentation> --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
+new_repo >/dev/null
+for args in "begin" "begin bogus" "begin code extra" "bogus" ""; do
+  # shellcheck disable=SC2086 # the words are the point
+  out="$("$ORCH" audit $args 2>&1)"; st=$?
+  assert_status "audit '$args' is refused" "$st" 1
+  assert_eq "with the usage naming every form" "$out" "$usage_all"
+  assert_eq "making no audit directory" "$(on_disk .orchestrator/audit)" absent
+done
+
+nohead="$(mktemp -d)"
+git -C "$nohead" init -q
+cd "$nohead" || exit 1
+out="$("$ORCH" audit begin code 2>&1)"; st=$?
+assert_status "a repo with no commit is refused" "$st" 1
+assert_eq "saying HEAD cannot be read" "$out" "orch: cannot read the HEAD commit"
+assert_eq "making nothing" "$(on_disk .orchestrator)" absent
+
+# An existing directory is never reused: the date stub pins the stamp.
+new_repo >/dev/null
+shim="$(mktemp -d)"
+printf '%s\n' '#!/bin/sh' 'case "$*" in "-u +%Y%m%d-%H%M%S") echo 20300101-000000 ;; *) exec /usr/bin/env date "$@" ;; esac' >"$shim/date"
+chmod +x "$shim/date"
+out="$(PATH="$shim:$PATH" "$ORCH" audit begin code 2>&1)"; st=$?
+assert_status "the first run at a pinned stamp succeeds" "$st" 0
+echo kept >"$out/area-1.md"
+out2="$(PATH="$shim:$PATH" "$ORCH" audit begin code 2>&1)"; st=$?
+assert_status "a second run at the same stamp is refused" "$st" 1
+assert_contains "saying the directory exists" "$out2" "already exists"
+assert_eq "leaving the first run as it was" "$(cat "$out/area-1.md")" kept
+
+# A write failing after the directory is made removes it.
+new_repo >/dev/null
+exclude="$(git rev-parse --git-common-dir)/info/exclude"
+rm -f "$exclude"
+mkdir -p "$exclude"
+out="$("$ORCH" audit begin tests 2>&1)"; st=$?
+assert_status "an unwritable git exclude file fails the run" "$st" 1
+assert_contains "dying with its orch line" "$out" "orch: cannot add"
+assert_eq "leaving no run directory" "$(find .orchestrator/audit -mindepth 1 2>/dev/null | wc -l | tr -d ' ')" 0
+
+# With and without an active flow, state.json is untouched.
+new_repo >/dev/null
+out="$("$ORCH" audit begin code 2>&1)"; st=$?
+assert_status "runs with no flow" "$st" 0
+assert_eq "and writes no state.json" "$(on_disk .orchestrator/state.json)" absent
+fake_github
+"$ORCH" init audit-flow >/dev/null 2>&1
+state_fixture phase implement
+before="$(cksum <.orchestrator/state.json)"
+out="$("$ORCH" audit begin docs 2>&1)"; st=$?
+assert_status "runs with an active flow" "$st" 0
+assert_eq "leaving state.json unchanged" "$(cksum <.orchestrator/state.json)" "$before"
+
+# --- audit report -----------------------------------------------------------
+
+echo
+echo "audit report"
+report_run
+report="$run/report.html"
+cp "$run/ranked.md" "$run/ranked.saved"; cp "$run/area-1.md" "$run/area-1.saved"; cp "$run/record" "$run/record.saved"
+# report_reset: the run as report_run left it, for the next case.
+report_reset() {
+  cp "$run/ranked.saved" "$run/ranked.md"; cp "$run/area-1.saved" "$run/area-1.md"; cp "$run/record.saved" "$run/record"
+}
+res="$("$ORCH" audit report "$run" "$report")"; st=$?
+assert_status "renders a report" "$st" 0
+assert_eq "printing the report's path" "$res" "$report"
+page="$(cat "$report")"
+assert_contains "the head names the kind" "$page" "Audit report: code"
+assert_contains "and the scope" "$page" "the audit&#39;s scope"
+assert_contains "and the area count" "$page" '<dt class="font-semibold">Areas</dt><dd class="col-span-3">2</dd>'
+assert_contains "and the recorded commit" "$page" "<code>$head_sha</code>"
+assert_contains "and each note under its heading" "$page" '<h2 class="text-lg font-semibold">Timing mode</h2>'
+assert_contains "the note's paragraphs break at a blank line" "$page" '<p class="my-2">Trend: flat.</p>'
+assert_contains "the top recommendation links its finding" "$page" 'href="#finding-1">Finding 1: Latent bug in a.sh</a>'
+assert_contains "with its reason, a span as code" "$page" '<code>a.sh</code> is hot.'
+assert_contains "a From: reference carries the source's fields" "$page" '<p class="my-2">latent bug</p>'
+assert_contains "a restated field replaces the source's, escaped" "$page" 'restated &lt;b&gt;evidence&lt;/b&gt;'
+assert_contains "a merge lists every source's locations" "$page" "<li><code>a.sh:1</code></li>
+<li><code>b.sh:2-3</code></li>
+<li><code>c.sh:9</code></li>"
+assert_contains "a finding with no source carries its own" "$page" '<h2 class="text-xl font-semibold">3. Whole finding with no source</h2>'
+assert_contains "its inline span is code" "$page" '<code>tick</code>'
+assert_contains "a fence is preformatted code, its field-looking line kept" "$page" '<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>Evidence: not a field</code></pre>'
+assert_contains "an overlap stated on one finding links the other" "$page" 'href="#finding-3">Finding 3: Whole finding with no source</a>'
+assert_contains "and shows on the other" "$(grep -A25 'id="finding-3"' "$report")" 'href="#finding-1">Finding 1: Latent bug in a.sh</a>'
+assert_eq "no src or href but the two CDNs and the page's own findings" \
+  "$(grep -o '\(src\|href\)="[^"]*"' "$report" | grep -v '="#finding-[0-9]*"$' | sort | tr '\n' ' ')" \
+  'src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" src="https://cdn.tailwindcss.com" '
+"$ORCH" audit report "$run" "$run/again.html" >/dev/null
+assert_eq "the same run renders the same bytes" "$(cksum <"$run/again.html")" "$(cksum <"$report")"
+
+echo
+echo "audit report mermaid from a hunter's block"
+report_reset
+sed -i '/^Evidence: restated/d' "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null
+assert_contains "an unrestated field keeps the hunter's fenced diagram" "$(cat "$report")" '<pre class="mermaid">graph TD; A--&gt;B</pre>'
+
+echo
+echo "audit report inline code in headings"
+report_reset
+sed -i -e 's/^@@ scope .*/@@ scope the `s.sh` scope/' -e 's/^@@ note Timing mode/@@ note Timing `mode`/' \
+  -e 's/^Title: Latent bug in a.sh/Title: Latent bug in `a.sh`/' "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null
+page="$(cat "$report")"
+assert_contains "a scope span is code" "$page" 'the <code>s.sh</code> scope'
+assert_contains "a note heading span is code" "$page" '>Timing <code>mode</code></h2>'
+assert_contains "a finding heading span is code" "$page" '1. Latent bug in <code>a.sh</code></h2>'
+assert_contains "the top recommendation link's span is code" "$page" 'href="#finding-1">Finding 1: Latent bug in <code>a.sh</code></a></p>'
+assert_contains "an overlap link's span is code" "$page" 'href="#finding-1">Finding 1: Latent bug in <code>a.sh</code></a></li>'
+
+echo
+echo "audit report refusals"
+report_reset
+cp "$run/ranked.md" "$run/ranked.orig"
+# report_refuse <what> <expected text> <sed script over ranked.md>: the one run
+# above, its ranked file restored, then edited by the sed script.
+report_refuse() {
+  cp "$run/ranked.orig" "$run/ranked.md"
+  printf 'earlier report\n' >"$report"
+  sed -i "$3" "$run/ranked.md"
+  before="$(ls -A "$run")"
+  res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+  assert_status "$1 is refused" "$st" 1
+  assert_contains "saying so" "$res" "orch: "
+  assert_contains "naming the problem" "$res" "$2"
+  assert_eq "leaving the earlier report" "$(cat "$report")" "earlier report"
+  assert_eq "and no temporary file beside it" "$(ls -A "$run")" "$before"
+}
+report_refuse "a ranked file with no scope" "no @@ scope" '/^@@ scope/d'
+report_refuse "a second scope" "a second @@ scope" '/^@@ areas/a @@ scope again'
+report_refuse "a ranked file with no areas" "no @@ areas" '/^@@ areas/d'
+report_refuse "a ranked file with neither top nor none" "exactly one of @@ top and @@ none" '/^@@ top/,/^Start here/d'
+report_refuse "a finding gap" "expected @@ finding 2" 's/^@@ finding 2/@@ finding 3/'
+report_refuse "a From naming a missing area file" "area-9.md" 's/^From: area-2:1/From: area-9:1/'
+report_refuse "a From naming a missing block" "finding 7" 's/^From: area-2:1/From: area-2:7/'
+report_refuse "a From naming the ranked file itself" "From: ranked:1 is not <area file>:<k>" 's/^From: area-2:1/From: ranked:1/'
+report_refuse "a missing title" "ranked.md line 15: finding 2 has no Title" '/^Title: Deepen/d'
+report_refuse "a multi-line title" "ranked.md line 17: finding 2's Title: is not one line" 's/^Title: Deepen d.sh/Title:/'
+report_refuse "an unknown category" "ranked.md line 12: finding 1's Category: 'cheese'" 's/^Category: bug/Category: cheese/'
+report_refuse "a missing category" "ranked.md line 9: finding 1 has no Category" '/^Category: bug/d'
+report_refuse "a bad location" "ranked.md line 22: finding 3's location 'z.sh' is not <file>:<line>" 's/^Location: z.sh:4/Location: z.sh/'
+report_refuse "a finding with no location" "ranked.md line 19: finding 3 has no Location" '/^Location: z.sh:4/d'
+report_refuse "an overlap outside the file" "ranked.md line 13: finding 1 overlaps '9'" 's/^Overlaps: 3/Overlaps: 9/'
+report_refuse "an overlap with itself" "ranked.md line 13: finding 1 overlaps '1'" 's/^Overlaps: 3/Overlaps: 1/'
+report_refuse "a top outside the file" "finding 9" 's/^@@ top 1/@@ top 9/'
+report_refuse "an unknown @@ line" "unknown line" 's/^@@ areas 2/@@ areas 2\n@@ bogus/'
+report_reset
+sed -i 's/^Location: a.sh:1, b.sh:2-3/Location: a.sh, b.sh:2-3/' "$run/area-1.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "a bad location from a hunter's block is refused" "$st" 1
+assert_contains "naming the hunter's file and line" "$res" "area-1.md line 3: finding 1's location 'a.sh'"
+report_reset
+printf 'Category: cheese\n' >>"$run/area-2.md"
+sed -i '18d' "$run/ranked.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "an unknown category from a hunter's block is refused" "$st" 1
+assert_contains "naming the hunter's file and line" "$res" "area-2.md line 8: finding 2's Category: 'cheese'"
+sed -i '$d' "$run/area-2.md"
+report_reset
+rm "$run/record"
+printf 'earlier report\n' >"$report"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "a run directory with no record is refused" "$st" 1
+assert_contains "naming the record" "$res" "no audit run record"
+assert_eq "leaving the earlier report" "$(cat "$report")" "earlier report"
+
+echo
+echo "audit report output path"
+report_reset
+res="$("$ORCH" audit report "$run" "$run/nodir/r.html" 2>&1)"; st=$?
+assert_status "an out.html whose directory is missing is refused" "$st" 1
+assert_contains "with an orch line" "$res" "orch: the directory for the report does not exist"
+assert_eq "writing nothing" "$(on_disk "$run/nodir")" absent
+if [ "$(id -u)" -ne 0 ]; then
+  mkdir "$run/ro"
+  printf 'earlier\n' >"$run/ro/r.html"
+  chmod a-w "$run/ro"
+  res="$("$ORCH" audit report "$run" "$run/ro/r.html" 2>&1)"; st=$?
+  chmod u+w "$run/ro"
+  assert_status "an out.html in a read-only directory is refused" "$st" 1
+  assert_contains "with an orch line" "$res" "orch: cannot write the report"
+  assert_eq "leaving the earlier report byte for byte" "$(cat "$run/ro/r.html")" earlier
+fi
+
+echo
+echo "audit report-reference check in audit report"
+report_reset
+for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
+  report_refuse "a title saying '$phrase'" "says '$phrase'" "s/^Title: Deepen d.sh/Title: Deepen d.sh like $phrase/"
+done
+report_refuse "a restated field saying finding 2" "Evidence: says 'finding 2'" 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in finding 2/'
+report_refuse "a field wrapping 'finding' and its number across lines" "Evidence: says 'finding 3' (line 2 of the field)" 's/^Evidence: restated <b>evidence<\/b>/Evidence: see\nthe finding\n3 for it/'
+report_refuse "a field wrapping 'this report' across lines" "Evidence: says 'this Report' (line 1 of the field)" 's/^Evidence: restated <b>evidence<\/b>/Evidence: as in this\nReport/'
+report_reset
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: the finding\n\n3 is apart; `finding\n4`, and the\nreport reads fine/' "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null 2>&1; st=$?
+assert_status "a break between paragraphs, a span and 'the report' are accepted" "$st" 0
+report_reset
+sed -i 's/^Evidence: restated <b>evidence<\/b>/Evidence: `finding 2` and "the report" read fine/' "$run/ranked.md"
+sed -i 's/^Title: Whole finding with no source/Title: See the report/' "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null; st=$?
+assert_status "the report and a backticked finding 2 are accepted" "$st" 0
+report_reset
+sed -i "s/^Confidence: certain/Confidence: as in finding 3/" "$run/area-1.md"
+res="$("$ORCH" audit report "$run" "$report" 2>&1)"; st=$?
+assert_status "a hunter's block saying finding 3 is refused" "$st" 1
+assert_contains "naming the hunter's file, not the ranked block" "$res" "area-1.md line"
+sed -i "s/^Evidence: restated <b>evidence<\/b>/Confidence: sure/" "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null; st=$?
+assert_status "until the ranked block restates the field" "$st" 0
+report_reset
+sed -i "s/^Evidence: not a field/finding 9 and this report/" "$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null; st=$?
+assert_status "a fenced block is not checked" "$st" 0
+report_reset
+printf '@@ finding 4\nFrom: area-2:1\nTitle: T4\nCategory: bug\nOverlaps: 1\n' >>"$run/ranked.md"
+"$ORCH" audit report "$run" "$report" >/dev/null; st=$?
+assert_status "From: and Overlaps: values are not checked" "$st" 0
+echo
+echo "audit report nothing found"
+new_repo >/dev/null
+run="$("$ORCH" audit begin tests)"
+printf '@@ scope s\n@@ areas 1\n@@ none\n' >"$run/ranked.md"
+"$ORCH" audit report "$run" "$run/r.html" >/dev/null; st=$?
+assert_status "renders a nothing-found report" "$st" 0
+assert_contains "saying nothing was found" "$(cat "$run/r.html")" "found nothing"
+assert_contains "naming its kind" "$(cat "$run/r.html")" "Audit report: tests"
+assert_eq "with no top recommendation" "$(grep -c 'Top recommendation' "$run/r.html")" 0
+
+echo
+echo "audit report usage"
+new_repo >/dev/null
+for args in "report" "report only-one" "report a b c"; do
+  # shellcheck disable=SC2086 # the words are the point
+  res="$("$ORCH" audit $args 2>&1)"; st=$?
+  assert_status "audit '$args' is refused" "$st" 1
+  assert_contains "with the usage naming report" "$res" "orch: usage: orch.sh audit begin <code|docs|tests>
+   or: orch.sh audit report <dir> <out.html>
+   or: orch.sh audit file"
+done
+
+# --- audit file batch -------------------------------------------------------
+
+# batch_reset: the run as report_run left it, its files restored, on a fresh
+# store-backed fake with the repo's own needs-triage label; the next issue is
+# #40.
+batch_reset() {
+  local f
+  for f in ranked.md area-1.md area-2.md record; do cp "$run/$f.saved" "$run/$f"; done
+  fake_github
+  fake_label needs-triage 000000 "The repo's own"
+  fake_next_issue 40
+}
+report_run
+for f in ranked.md area-1.md area-2.md record; do cp "$run/$f" "$run/$f.saved"; done
+tab="$(printf '\t')"
+errf="$(mktemp)"
+
+echo
+echo "audit file batch"
+batch_reset
+git commit -q --allow-empty -m "the checkout moves on"
+out="$("$ORCH" audit file --run "$run" 3,1 2>"$errf")"; st=$?
+assert_status "files a pick" "$st" 0
+assert_eq "printing one line per finding, in number order, whatever order was given" "$out" \
+  "1${tab}40${tab}filed
+3${tab}41${tab}filed"
+assert_eq "and nothing on stderr" "$(cat "$errf")" ""
+want="$(printf '%s\n' '**Kind:** latent bug' '' '**Evidence:** restated <b>evidence</b>' '' \
+  '**Confidence:** certain' '' '**Location:** `a.sh:1`' '' '**Location:** `b.sh:2-3`' '' \
+  '**Location:** `c.sh:9`' '' "**Audited at:** $head_sha" '' '**Related:** #41' ''; printf x)"
+assert_eq "the body is the resolved fields, a Location line each, the recorded commit and Related, byte for byte" \
+  "$(fake_body_of 40; printf x)" "$want"
+assert_ne "the recorded commit is not the moved HEAD" "$head_sha" "$(git rev-parse HEAD)"
+assert_contains "the other side of the overlap, stated on one side only, takes the line too" \
+  "$(fake_body_of 41)" '**Related:** #40'
+assert_eq "labels: needs-triage and the category" "$(fake_labels_of 40)" "bug needs-triage "
+assert_eq "title passed through" "$(fake_title_of 40)" "Latent bug in a.sh"
+before="$(fake_snapshot)"
+out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
+assert_status "a second run succeeds" "$st" 0
+assert_eq "reporting both open" "$out" "1${tab}40${tab}open
+3${tab}41${tab}open"
+assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
+
+echo
+echo "audit file batch refusals"
+batch_reset
+before="$(fake_snapshot)"
+usage_run="orch: usage: orch.sh audit begin <code|docs|tests>
+   or: orch.sh audit report <dir> <out.html>
+   or: orch.sh audit file --run <dir> <numbers>"
+for args in "1,1" "9" "0" "x" "1,,x"; do
+  out="$("$ORCH" audit file --run "$run" "$args" 2>&1)"; st=$?
+  assert_status "numbers '$args' are refused" "$st" 1
+  assert_contains "with an orch: line" "$out" "orch: "
+done
+out="$("$ORCH" audit file --run "$run" 2>&1)"; st=$?
+assert_status "no numbers is refused" "$st" 1
+assert_contains "with the usage naming every form" "$out" "$usage_run"
+assert_contains "the one-finding form among them" "$out" "or: orch.sh audit file <title>"
+out="$("$ORCH" audit file --run "$run" "" 2>&1)"; st=$?
+assert_status "empty numbers are refused" "$st" 1
+for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
+  batch_reset
+  sed -i "s/^Evidence: a \`tick\`/Evidence: see $phrase and a \`tick\`/" "$run/ranked.md"
+  fake_fail adapter_issues_open_titles
+  out="$("$ORCH" audit file --run "$run" 3 2>&1)"; st=$?
+  fake_unfail
+  assert_status "a field saying '$phrase' is refused through --run" "$st" 1
+  assert_contains "naming the phrase" "$out" "says '$phrase'"
+  assert_not_contains "reaching no GitHub call" "$out" "list the open issues"
+  assert_eq "and writing nothing" "$(fake_snapshot)" "$before"
+done
+batch_reset
+sed -i "s/^Evidence: a \`tick\`/Evidence: see finding\n3 and a \`tick\`/" "$run/ranked.md"
+fake_fail adapter_issues_open_titles
+out="$("$ORCH" audit file --run "$run" 3 2>&1)"; st=$?
+fake_unfail
+assert_status "a field wrapping 'finding' and its number is refused through --run" "$st" 1
+assert_contains "naming the phrase" "$out" "says 'finding 3'"
+assert_not_contains "reaching no GitHub call" "$out" "list the open issues"
+batch_reset
+sed -i 's/^Evidence: a `tick`/Evidence: `finding 2` and "the report" read fine/' "$run/ranked.md"
+"$ORCH" audit file --run "$run" 3 >/dev/null 2>&1; st=$?
+assert_status "the report and a backticked finding 2 are accepted through --run" "$st" 0
+batch_reset
+rm -f "$run/ranked.md"
+fake_fail adapter_issues_open_titles
+out="$("$ORCH" audit file --run "$run" 1 2>&1)"; st=$?
+fake_unfail
+assert_status "a missing ranked file is refused" "$st" 1
+assert_contains "naming the ranked file" "$out" "ranked.md"
+assert_not_contains "reaching no GitHub call" "$out" "list the open issues"
+
+echo
+echo "audit file batch category"
+batch_reset
+printf 'Category: bug\n' >>"$run/area-2.md"
+sed -i '/^From: area-2:1/{n;n;d}' "$run/ranked.md"
+out="$("$ORCH" audit file --run "$run" 2 2>&1)"; st=$?
+assert_status "files a finding whose category is in the hunter's block" "$st" 0
+assert_eq "labelled with it" "$(fake_labels_of 40)" "bug needs-triage "
+assert_eq "no Related for a finding that overlaps nothing" \
+  "$(fake_body_of 40 | grep -c Related || true)" "0"
+
+echo
+echo "audit file batch related"
+batch_reset
+# Finding 2 overlaps 3, too: 1 and 3 are linked, 2 and 3 are, 1 and 2 are not.
+sed -i '/^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
+out="$("$ORCH" audit file --run "$run" 3 2>&1)"
+assert_eq "an overlap outside the batch writes nothing" "$(fake_body_of 40 | grep -c Related || true)" "0"
+# The open issue's body takes CRLF line ends and trailing newlines.
+fake_issue_body 40 "$(fake_body_of 40 | sed 's/$/\r/')"$'\r\n\r\n\n'
+out="$("$ORCH" audit file --run "$run" 1,3 2>"$errf")"; st=$?
+assert_status "a batch over an open issue" "$st" 0
+assert_eq "the open one is reported" "$out" "1${tab}41${tab}filed
+3${tab}40${tab}open"
+assert_contains "CRLF and trailing newlines differences still take the Related line" "$(fake_body_of 40)" '**Related:** #41'
+assert_eq "without a warning" "$(cat "$errf")" ""
+out="$("$ORCH" audit file --run "$run" 2,3 2>&1)"; st=$?
+assert_status "a second batch" "$st" 0
+assert_contains "keeps the first batch's number and adds its own" "$(fake_body_of 40)" '**Related:** #41 #42'
+assert_contains "no chaining: 1 and 2 are not linked" "$(fake_body_of 41)" '**Related:** #40'
+assert_not_contains "and 1 does not name 2" "$(fake_body_of 41)" '#42'
+assert_contains "2 names only 3" "$(fake_body_of 42)" '**Related:** #40'
+
+echo
+echo "audit file batch rewritten issue"
+batch_reset
+"$ORCH" audit file --run "$run" 3 >/dev/null 2>&1
+fake_issue_body 40 "my own text"
+out="$("$ORCH" audit file --run "$run" 1,3 2>"$errf")"; st=$?
+assert_status "a rewritten open issue does not fail the batch" "$st" 0
+assert_eq "left alone" "$(fake_body_of 40)" "my own text"
+assert_contains "with a warning naming it" "$(cat "$errf")" "#40"
+assert_contains "the other issue still takes its line" "$(fake_body_of 41)" '**Related:** #40'
+
+echo
+echo "audit file batch open title"
+batch_reset
+fake_issue 50 open
+fake_issue_title 50 "Deepen d.sh"
+fake_issue_body 50 "mine"
+out="$("$ORCH" audit file --run "$run" 2 2>&1)"; st=$?
+assert_status "an already-open title" "$st" 0
+assert_eq "files nothing and reports it open" "$out" "2${tab}50${tab}open"
+assert_eq "no new issue" "$(fake_issues)" "50 "
+
+echo
+echo "audit file batch same title twice"
+batch_reset
+sed -i 's/^Title: Whole finding with no source/Title: Latent bug in a.sh/' "$run/ranked.md"
+out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
+assert_status "two picks with one title" "$st" 0
+assert_eq "the second takes the first's new issue" "$out" "1${tab}40${tab}filed
+3${tab}40${tab}open"
+assert_eq "and only one issue is filed" "$(fake_issues)" "40 "
+batch_reset
+sed -i 's/^Title: Whole finding with no source/Title: Latent bug in a.sh/; /^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
+out="$("$ORCH" audit file --run "$run" 1,2,3 2>"$errf")"; st=$?
+assert_status "same title twice, the second overlapping a third pick" "$st" 0
+assert_contains "the third pick's issue names the shared one" "$(fake_body_of 41)" '**Related:** #40'
+assert_contains "the shared issue names it back" "$(fake_body_of 40)" '**Related:** #41'
+assert_eq "without a warning" "$(cat "$errf")" ""
+
+batch_reset
+sed -i 's/^Title: Whole finding with no source/Title: Latent bug in a.sh/; /^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
+fake_fail adapter_issue_body_edit
+"$ORCH" audit file --run "$run" 1,2,3 >/dev/null 2>&1
+fake_unfail
+out="$("$ORCH" audit file --run "$run" 1,2,3 2>"$errf")"; st=$?
+assert_status "a same-title pair rerun after the Related write failed" "$st" 0
+assert_contains "the shared issue's Related line is written" "$(fake_body_of 40)" '**Related:** #41'
+
+batch_reset
+sed -i 's/^Title: Whole finding with no source/Title: Latent bug in a.sh/; /^From: area-2:1/a Overlaps: 3' "$run/ranked.md"
+"$ORCH" audit file --run "$run" 3 >/dev/null 2>&1
+out="$("$ORCH" audit file --run "$run" 1,2,3 2>"$errf")"; st=$?
+assert_status "same title twice, the issue filed earlier from the later pick" "$st" 0
+assert_contains "the shared issue still takes its Related line" "$(fake_body_of 40)" '**Related:** #41'
+assert_eq "without an edited warning" "$(cat "$errf")" ""
+assert_eq "without an edited-since warning" "$(cat "$errf")" ""
+echo
+echo "audit file batch failures"
+batch_reset
+fake_fail_after adapter_issue_create 1
+out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
+assert_status "a failed create stops the command" "$st" 1
+assert_contains "with its orch: message" "$out" "orch: gh could not create the issue"
+assert_eq "the issue created stays" "$(fake_issues)" "40 "
+assert_contains "the line of the finding filed stays on stdout" "$out" "1${tab}40${tab}filed"
+fake_unfail
+out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
+assert_status "the rerun finishes" "$st" 0
+assert_eq "finding it by title" "$out" "1${tab}40${tab}open
+3${tab}41${tab}filed"
+assert_contains "with its Related line written" "$(fake_body_of 40)" '**Related:** #41'
+batch_reset
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
+assert_status "a failed Related write stops the command" "$st" 1
+assert_contains "with its orch: message" "$out" "orch: gh could not write issue #40"
+assert_eq "both issues exist" "$(fake_issues)" "40 41 "
+fake_unfail
+out="$("$ORCH" audit file --run "$run" 1,3 2>&1)"; st=$?
+assert_status "the rerun finishes" "$st" 0
+assert_contains "writing the line" "$(fake_body_of 41)" '**Related:** #40'
+before="$(fake_snapshot)"
+"$ORCH" audit file --run "$run" 1,3 >/dev/null 2>&1
+assert_eq "and a second run writes nothing" "$(fake_snapshot)" "$before"

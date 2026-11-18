@@ -65,6 +65,8 @@ for each one).
 - Report candidates only, never draft edits to any file other than your
   findings file.
 - Report no style, naming or taste point.
+- A finding stands alone: it names no other finding by number or by nickname,
+  and never the report.
 - With no candidates, write the single line `@@ none`.
 
 ## Reading the code

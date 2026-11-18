@@ -167,10 +167,10 @@ issue's or a PR's trusted comments once, the wrappers that die on a failed read,
 the rendered shape, the render step and the split into one file per comment),
 `filed-finding.sh` (the Filed finding module:
 a filed finding's severities and labels, rendering and parsing its issue body,
-the finding categories, and the input checks `review file` and `audit file`
-share), `issue-timeline.sh` (the Issue timeline module: one issue's
-comment history, read once and asked in domain terms), `known-items.sh` (the
-Known items module: splitting a record's text
+the finding categories, and the input checks `review file`, `audit file` and
+`audit report` share), `issue-timeline.sh` (the Issue timeline module: one
+issue's comment history, read once and asked in domain terms),
+`known-items.sh` (the Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
 file), `lines-fate.sh` (the Lines fate module: what became of a range of a
 file's lines at a ref since a commit filed them: the existence check, the test
@@ -440,7 +440,7 @@ scripts/orch.sh               the entry point for every deterministic operation 
 scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
 scripts/orch/comments.sh      the Comments module, a concept module with no noun: reading an issue's or a PR's trusted comments once, the dying wrappers over that read, the rendered shape, the render step and the split into one file per comment
-scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file` and `audit file` share
+scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file`, `audit file` and `audit report` share
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/lines-fate.sh      the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them - the existence check, the test that the file differs at all, the line mapping, deleted ranges, deleting-commit lookup and the never-reached rule, behind `lines_fate`
