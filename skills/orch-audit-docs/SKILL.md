@@ -12,14 +12,16 @@ audit**), which sees only what one change touches. It ships for any repo. The
 six steps below define this skill, and it invokes and depends on no upstream
 skill (ADR-0028).
 
-**Read-only.** This skill changes no file in the repo: it edits nothing,
-commits nothing, and opens no branch or PR. Every file it writes - the
-subagents' findings files, the report, and the finding file for each finding
-picked for filing - goes in one temp directory outside the repo (make it with
-`mktemp -d`). Its one write outside that directory is `orch.sh audit file`,
-for findings the user picks for filing. The promise covers the audit itself:
-once it hands picked findings to `orch-interview`, what that interview and the
-flow, quick implementation or blueprint it closes on write is theirs.
+**Read-only.** This skill changes no tracked file in the repo and nothing
+`git status` shows: it edits nothing tracked, commits nothing, and opens no
+branch or PR. Its working files - each area's findings file, the ranked file
+and the report - go in its run
+directory, `.orchestrator/audit/<kind>-<stamp>/`, which `orch.sh audit
+begin` makes and git-excludes (ADR-0064). Its writes outside that directory
+are the git exclude `audit begin` ensures and `orch.sh audit file`, for
+findings the user picks for filing. The promise covers the audit itself:
+once it hands picked findings to `orch-interview`, what that interview and
+the flow, quick implementation or blueprint it closes on write is theirs.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -70,17 +72,20 @@ start nothing until they answer. A narrowed scope returns to this step.
 
 Read `bash "$ORCH" agent get auditor` once, before the first hunter, and pass
 the `model` and `effort` it prints on each start, per **Agent settings** in
-`docs/host-capabilities.md`. This skill runs no `agent sync`, which would write
-`.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per area
-(see the *Start a fresh subagent* row of `docs/host-capabilities.md`), never a
-fork, each an `orch-doc-auditor`, run as a subagent pool of 4 (host capability
-*Run a subagent pool*, size hint: the area's file count; see that row of
-`docs/host-capabilities.md`).
-Each prompt names its area (the docs to read and the code they
-describe), the repo root, and its own findings file in the temp directory. The
-auditor has no Edit or Bash tool; its brief holds the method (doc-claim
-driven), the finding fields and the ADR rule. A reply is the file's path and a
-finding count; read each file.
+`docs/host-capabilities.md`. Then run `bash "$ORCH" audit begin docs` once,
+before the first hunter starts; it prints the run directory, git-excluded,
+where every working file goes. This skill runs no `agent sync`, which would
+write `.junie/agents/` in the checkout (ADR-0060). Start one fresh subagent per
+area (see the *Start a fresh subagent* row of `docs/host-capabilities.md`),
+never a fork, each an `orch-doc-auditor`, run as a subagent pool of 4 (host
+capability *Run a subagent pool*, size hint: the area's file count; see that row
+of `docs/host-capabilities.md`).
+Each prompt names its area (the docs to read and the code they describe), the
+repo root, and its own findings file, `area-<k>.md` in the run directory
+(<k> the
+area's number from 1). The auditor has no Edit or Bash tool; its brief holds the
+method (doc-claim driven), the finding fields and the ADR rule. A reply is the
+file's path and a finding count; read each file.
 When the pool took a fallback tier, tell the user which.
 
 A finding has its kind of text, its location (file and line), the doc passage,
@@ -102,14 +107,32 @@ options and recommends neither. Within a group, **certain** ranks above
 **likely**. Number every finding in rank order, and name one **top
 recommendation**: the finding to start with, and why.
 
+Then write the ranked file, `ranked.md` in the run directory. Its lines are
+`@@ scope <text>` (the scope in one line), `@@ areas <count>`, any number
+of `@@ note <heading>` blocks (text shown in the report's head under that
+heading), `@@ top <n>` followed by why that finding comes first, and one
+`@@ finding <n>` block per kept finding, numbered from 1 in order with no
+gap; `@@ none` takes the place of `@@ top` and every finding when ranking
+kept nothing. No line of text starts with `@@`. A finding block is a list
+of fields, each opening a line with its label and a colon. Point at each
+kept finding with `From: <area file>:<k>` (e.g. `area-2:3`, finding 3 of
+`area-2.md`; several sources comma-separated, merged in `From:` order),
+restate only the fields ranking changed, and give each a `Title:` - one line
+naming the finding's kind and location, the issue's title if it is filed
+- and a `Category: <c>`: `Category: documentation`. The confidence is a
+`Confidence:` field like any other. List under `Overlaps:` the numbers of
+each finding whose fix would change the same function or the same lines. A
+finding written whole needs no `From:`. Each finding stands alone: it names
+no other finding and never the report.
+
 ## 5. Report
 
-Write a self-contained HTML report to the temp directory (for instance
-`"$TMP/audit-docs.html"`). It loads Tailwind and Mermaid from a CDN and holds
-everything else inline. It carries the scope, the area count, the top
-recommendation first, and every finding numbered in rank order, each with its
-kind of text, location, passage, the code it disagrees with, confidence and
-proposed fix.
+Run `bash "$ORCH" audit report "<run>" "<run>/report.html"`,
+<run> being the run directory. It renders the self-contained HTML report from
+`ranked.md` and the area files: the scope, area count, notes and recorded
+commit in its head, the top recommendation first, then every finding in
+rank order. A refusal names the line that is wrong: fix it in the ranked
+file and run the command again. Never write HTML or a script that writes it.
 
 Open it in the browser - `xdg-open <file>` on Linux, `open <file>` on macOS -
 and tell the user its path. On a host that cannot open it, write a Markdown
@@ -137,17 +160,16 @@ or the report's path, and the pick question.
 
 With both lists, filing runs first, then the interview.
 
-- **File.** For each finding picked for `file`, one at a time in number
-  order, write its text (kind of text, passage, the code it disagrees with,
-  confidence, proposed fix) to a finding file in the temp directory and run
-  `bash "$ORCH" audit file "<title>" --category documentation
-  --finding-file <file> --location
-  <location>...`, one `--location` per site. It prints the issue number; when
-  an open issue already has that title it files nothing and says so on
-  stderr. Report the issue numbers, naming any that was already open rather
-  than newly filed. A filing that fails stops the step: report the numbers
-  already filed (they stay filed), the failure, and the findings not filed,
-  and do not start the interview.
+- **File.** Run `bash "$ORCH" audit file --run "<run>" <numbers>` once, with
+  the numbers picked for `file`, comma-separated. It files the findings in
+  number order from the ranked file, with the title, category, locations and
+  text each already holds, and writes each issue's `**Related:** #a #b` line
+  for the picked findings that overlap. Write no per-finding file and pass no
+  title, category or location. It prints one line per finding: its number, its
+  issue number and `filed` or `open`. Report the issue numbers from those
+  lines, naming any that was already open rather than newly filed. A failure
+  stops the step: report what was filed (it stays filed), the failure, and what
+  was not filed, and do not start the interview; the same command is the retry.
 - **Interview.** Invoke `orch-interview` with the findings picked for
   `interview` together, as one change to plan, each with its location,
   passage, the code it disagrees with, and proposed fix. The interview ends

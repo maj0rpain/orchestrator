@@ -68,6 +68,8 @@ code - and recommends neither.
   findings file.
 - Quote the code for every finding.
 - Report no style, naming or taste point.
+- A finding stands alone: it names no other finding by number or by nickname,
+  and never the report.
 - With no findings, write the single line `@@ none`.
 
 ## Reading the code

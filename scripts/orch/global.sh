@@ -680,6 +680,38 @@ orch.sh - deterministic operations for the orchestrator flow
                               as left alone. Removes nothing, exiting 1, when
                               GitHub cannot be read; exits 1 after a failed
                               step, which leaves that checkout as it stands
+  audit begin <code|docs|tests>
+                              make an audit run's working directory,
+                              .orchestrator/audit/<kind>-<UTC timestamp>/,
+                              git-excluded, recording the kind and the HEAD
+                              commit in it; prints its absolute path and
+                              nothing else. Never reuses a directory, removes
+                              the one it made when a later write fails, and
+                              reads and writes no flow state
+  audit report <dir> <out.html>
+                              render the audit run <dir>'s HTML report from
+                              its ranked.md and area files into <out.html>,
+                              printing its path. Refused, writing nothing and
+                              leaving an earlier report as it was, when the
+                              ranked file does not hold together; the page
+                              goes through a temporary file beside <out.html>
+  audit file --run <dir> <numbers>
+                              file the audit run <dir>'s ranked findings
+                              <numbers> (comma-separated) as issues, in number
+                              order, each checked through the ranked file's
+                              reader before any GitHub call. The body is the
+                              finding's resolved fields as bold-labelled
+                              paragraphs, a **Location:** line per location
+                              and an **Audited at:** line with the commit
+                              audit begin recorded; labelled needs-triage and
+                              the category. An open issue with the title
+                              files nothing. Then a **Related:** #a #b
+                              paragraph is written into each issue whose
+                              finding overlaps another picked one (an
+                              already-open issue only while its body is still
+                              the rendering, else a warning). Prints one line
+                              per finding: number, issue, filed|open,
+                              tab-separated; a rerun finishes a failed batch
   audit file <title> --category <c> --finding-file <f> --location <<file>:<line>>...
                               file one audit finding as a GitHub issue
                               labelled the repo's needs-triage and the
@@ -688,7 +720,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               then one **Location:** line per --location (each
                               <file>:<line> or <file>:<start>-<end>) and an
                               **Audited at:** line with HEAD's SHA, refused
-                              before any write unless it parses back to them.
+                              before any write unless it parses back to them,
+                              and refused when the title or the finding file
+                              refers to a report's numbering (finding 3,
+                              this report).
                               An open issue with exactly this title files
                               nothing: its number is printed, with an
                               already-open line on stderr, exiting 0
@@ -1030,7 +1065,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               a flow and every side checkout
   archive                     move the live flow into .orchestrator/archive/,
                               leaving the entries that belong to no flow in
-                              place: archive/, checkouts/, spec-review/,
+                              place: archive/, checkouts/, spec-review/, audit/,
                               review-pass/, autopilot/, breakdown/ and
                               reports/
                               (refuses, naming each, while a ticket worktree
