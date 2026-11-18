@@ -232,7 +232,7 @@ ORCH_WAIT_BLOCK=0.3 ORCH_VERIFICATION_GRACE=2 sourced_orch_script \
 assert_status "a group still there past the grace since its KILL is given up on, not exit 75" "$st" 3
 rm -rf "$vr_kd"
 
-$1rm -f "$vr_dir/gate"
+rm -f "$vr_dir/gate"
 cmd="$(vr_gate "$vr_dir" quiet)"
 vr_t0=$SECONDS
 ORCH_VERIFICATION_INTERVAL=8 ORCH_WAIT_BLOCK=1 ORCH_VERIFICATION_GRACE=0.3 \

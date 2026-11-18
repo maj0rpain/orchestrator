@@ -354,7 +354,7 @@
 1	2	ticket exists: no repo (#3050)	291d750cc4efbe9e118a0494a09f83666294d0d8
 17	20	trust module	8907f14dbb6515e13cfad144156774f74dc17a98
 48	7	verification run	60a21967681dc4d52f5e7454aaa13fb421327ec2
-211	20	verification run: the run key, stale runs, the ceiling	6522af7af3151c6d9a2f624f484b900c67975a49
+216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
 58	4	wait: a call's block is wall time	685e7591341f125a56a0600e3192feafb61282bf
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8

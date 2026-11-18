@@ -93,8 +93,8 @@ step 3's `--deviations`.
    command*), through `verification run`, a **re-callable command**:
    `bash "$ORCH" verification run '<command>'` at the longest timeout, and run
    the same line again while it exits 75, which means still running. Never
-   background it and sleep, poll or kill it. A run the host stops is a failed
-   run.
+   background it and sleep, poll or kill it. A call the host stops is run again,
+   as one that exited 75 is.
    The Spec report's `## Set aside` lines are not findings: each is a
    requirement a known deviation set aside on purpose - one the caller
    handed in with `--deviations`, or, in a standalone pass, one the PR

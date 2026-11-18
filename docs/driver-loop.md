@@ -129,8 +129,8 @@ caller's numbered steps.
   `bash "$ORCH" verification run '<command>'` at the longest timeout, run again
   while it exits 75, which means still running. The command joined above is the
   one argument, and the record and the Evidence name it, never the wrapper.
-  Never background it and sleep, poll or kill it. A run the host stops is a
-  failed run.
+  Never background it and sleep, poll or kill it. A call the host stops is run
+  again, as one that exited 75 is.
 
 Once loop step f has run, go **after loop step f**.
 

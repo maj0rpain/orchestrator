@@ -248,9 +248,10 @@ implementer follows it from here.
    command*), through `verification run`, a **re-callable command**:
    `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and
    run the same line again while it exits 75, which means still running, never
-   a result. Never background it and sleep, poll or kill it. A run the host
-   stops is a failed run. The `Verification` line of your report names the inner
-   command, never the `verification run` call around it.
+   a result. Never background it and sleep, poll or kill it. A call the host
+   stops is run again, as one that exited 75 is. The `Verification` line of
+   your report names the inner command, never the `verification run` call
+   around it.
    A local test failure is reported as flaky only after its section was
    rerun alone at least 3 times and passed every time; otherwise it is a
    failure. This is not the CI **Flake rerun**, which stays one per loop.
