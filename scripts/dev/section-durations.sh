@@ -11,6 +11,9 @@
 # "<wall tenths><TAB><CPU tenths><TAB><name>" - tenths of a second, CPU the
 # user plus system time of the process tree: the sections in walk order, then
 # the other suites in suite-list order, then `shellcheck`.
+# Each of those other suites is timed under a slot of the job pool
+# (test_jobs.sh's suite start): the wait for the slot is not timed, and the
+# timed region ends once the suite and the slot's holder have both exited.
 #
 # ORCH_TEST_ONLY and ORCH_TEST_SHARD are unset, so the whole suite is always
 # measured. With a job count of 1 (ORCH_TEST_JOBS=1) it prints a message naming
@@ -48,7 +51,7 @@ suites_read "$dir/all.sh" "$dir" || {
 tmp="$(mktemp -d)" || exit 1
 SHELLCHECK_PIDS=()
 trap 'rm -rf "$tmp"' EXIT
-trap 'test_jobs_stop_children ${TEST_JOBS_CHILD:+"$TEST_JOBS_CHILD"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
+trap 'test_jobs_stop_children ${TEST_JOBS_SUITE_PID:+"$TEST_JOBS_SUITE_PID"} ${TEST_JOBS_CHILD:+"$TEST_JOBS_CHILD"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
 export ORCH_TEST_QUIET=1
 failed=()
 
@@ -67,13 +70,29 @@ measure() {
   return "$st"
 }
 
+# suite_run <name>: the start step and both waits of a suite under a slot the
+# caller took. The suite starts, then its pid and the slot's holder (`$!` after
+# the start step; with the slot taken it is the holder, as the take step always
+# precedes this call) are waited on, so the holder's CPU is charged to this
+# suite's line, not the next one's. The status is the suite's.
+suite_run() {
+  local holder st
+  TMPDIR="$tmp" test_jobs_suite_start - bash "$dir/$1"
+  holder=$!
+  wait "$TEST_JOBS_SUITE_PID"; st=$?
+  wait "$holder" 2>/dev/null
+  TEST_JOBS_SUITE_PID=""
+  return "$st"
+}
+
 : >"$tmp/sections"
 : >"$tmp/rest"
 ORCH_TEST_DURATIONS="$tmp/sections" test_jobs_run_child bash "$dir/orch_test.sh" || failed+=("orch_test.sh")
 
 for suite in "${SUITES[@]}"; do
   [ "$suite" = orch_test.sh ] && continue
-  TMPDIR="$tmp" measure "$suite" test_jobs_run_child bash "$dir/$suite"; suite_st=$?
+  test_jobs_slot_wait
+  measure "$suite" suite_run "$suite"; suite_st=$?
   if ! report_suite "$suite" "$suite_st" "$(<"$tmp/out")" >"$tmp/report"; then
     failed+=("$suite")
     cat "$tmp/report" "$tmp/out" >&2
