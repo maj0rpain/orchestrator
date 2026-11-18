@@ -1,5 +1,8 @@
 # The plugin measures no suite cost
 
+Superseded in part by ADR-0065: sessions run their verification through
+`verification run`, not bare; the rest of this ADR stands.
+
 `orch.sh suite-cost` recorded the CPU time of each passing verification run, and
 `suite-cost check` compared a change's head with its base commit once per
 review-loop iteration and once per review pass, raising a major past 15% growth.

@@ -258,8 +258,9 @@ during it are now visible, and each lens it names as missing has failed. A
 failed lens's findings file, if it left an unreadable one, is removed; then
 the lens is spawned once more with the same prompt, and in the same response a
 second
-`spec-review wait` names only the respawned lenses, run the same way (host
-capability *Run a long command*). A second failure makes it
+`spec-review wait` names only the respawned lenses, run the same way: a
+**re-callable command**, run again while it exits 75 (host capability *Run a
+long command*). A second failure makes it
 **not run - <reason>**: it appears that way in the batch and in the
 changelog, and the review continues on the lenses that answered. Three
 lenses and a recorded gap is a spec review; a silent gap is not.

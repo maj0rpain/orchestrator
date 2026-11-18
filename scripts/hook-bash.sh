@@ -215,7 +215,7 @@ hook_bash_reader_wanted=1
 hook_bash_walk "$cmd" hook_bash_scan_part
 
 if [ "$hook_bash_pgrep" = 1 ]; then
-  hook_emit_deny "This Bash call holds an unquoted pgrep or pkill word. pgrep and pkill match this shell's own command line, so a poll never ends and a kill kills this shell. To wait for a long command, rerun it in the foreground with timeout: 600000; if the host moves it to the background, wait for its completion notice and use its exit code (host capability *Run a long command*). If the word is only an argument, such as a grep pattern, quote it."
+  hook_emit_deny "This Bash call holds an unquoted pgrep or pkill word. pgrep and pkill match this shell's own command line, so a poll never ends and a kill kills this shell. To wait for a re-callable command (verification run, review ci, spec-review wait), run the same command again: it goes on waiting for the same work, and exits 75 while it is still running. To wait for any other long command, rerun it in the foreground with timeout: 600000; if the host moves it to the background, wait for its completion notice and use its exit code, never starting a second copy (host capability *Run a long command*). If the word is only an argument, such as a grep pattern, quote it."
 elif [ -n "$hook_bash_reader" ]; then
   hook_emit_deny "This Bash call reads stdin, which nothing will feed, so it would hang: '$hook_bash_reader'. Supply input with a heredoc, <<<, a pipe or </dev/null."
 elif [ "$mode" = bypassPermissions ]; then

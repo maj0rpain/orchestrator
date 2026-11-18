@@ -88,10 +88,14 @@ step 3's `--deviations`.
    with that is not a spec question (step 7). Use no fixer agent, no closer,
    no severity, no budget, and file nothing. Commit the fixes as one commit.
    After the fixes, run the repo's ticket verification (a `Ticket verification:
-   <command>` line in its instructions, else its full verification) bare.
+   <command>` line in its instructions, else its full verification) through
+   `verification run`.
    Run it in the foreground and wait for it (host capability *Run a long
-   command*); never background it and sleep, poll or kill it. A run the host
-   moves to the background at its timeout is still waited for, as that row says.
+   command*), through `verification run`, a **re-callable command**:
+   `bash "$ORCH" verification run '<command>'` at the longest timeout, and run
+   the same line again while it exits 75, which means still running. Never
+   background it and sleep, poll or kill it. A run the host stops is a failed
+   run.
    The Spec report's `## Set aside` lines are not findings: each is a
    requirement a known deviation set aside on purpose - one the caller
    handed in with `--deviations`, or, in a standalone pass, one the PR

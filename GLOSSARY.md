@@ -994,6 +994,13 @@ The verification command a repo's instructions name as its full verification:
 the whole suite, run once per branch at the combined-branch check, and in CI.
 A repo that names no ticket verification runs it for every ticket too.
 
+**Re-callable command**:
+An `orch.sh` command whose work can outlive one call. A call waits a bounded
+time; when the work is still going it says so and exits, and running the same
+command again on unchanged code goes on waiting for the same work while it is
+still going, never starting a second copy beside it. `verification run`, `review
+ci` and `spec-review wait` are re-callable.
+
 ### Hosts
 
 **Host**:

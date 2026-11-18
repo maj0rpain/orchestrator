@@ -597,8 +597,11 @@ Waited on **once per loop**, at **Termination**, and never inside an
 iteration: that would block a single session for most of an hour, and the fix
 commits are pushed as they land anyway.
 
-Run `bash "$ORCH" review ci` in the foreground and wait for it (host capability
-*Run a long command*); never background it and sleep, poll or kill it.
+`review ci` is a **re-callable command**. Run `bash "$ORCH" review ci` in the
+foreground and wait for it (host capability *Run a long command*), and run the
+same command again each time it exits 75, which means still running, never a
+word below; the fifteen-minute total is kept across calls. Never background it
+and sleep, poll or kill it.
 
 `bash "$ORCH" review ci` polls the PR's checks and prints one of four words,
 exiting non-zero on the last two:
@@ -625,7 +628,8 @@ exiting non-zero on the last two:
     **bounded stop**.
 
   On exit 0, record `bash "$ORCH" state set flake_rerun_used true` and ask
-  `review ci` again, run the same way (host capability *Run a long command*). A
+  `review ci` again, run the same way: re-called while it exits 75 (host
+  capability *Run a long command*). A
   second failure is a **bounded stop**. That second ask
   restarts the fifteen-minute wait rather than inheriting what is left of the
   first, because a rerun restarts the checks - so this one path, once per loop,

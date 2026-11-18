@@ -243,10 +243,14 @@ implementer follows it from here.
    `CLAUDE.md`, `AGENTS.md`, README, CI workflows, or test runner - and run
    them on the resolved tree - the repo's **ticket verification**, a line
    reading `Ticket verification: <command>` in those instructions, is the
-   checks command when it names one - bare.
+   checks command when it names one - through `verification run`.
    Run it in the foreground and wait for it (host capability *Run a long
-   command*); never background it and sleep, poll or kill it. A run the host
-   moves to the background at its timeout is still waited for, as that row says.
+   command*), through `verification run`, a **re-callable command**:
+   `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and
+   run the same line again while it exits 75, which means still running, never
+   a result. Never background it and sleep, poll or kill it. A run the host
+   stops is a failed run. The `Verification` line of your report names the inner
+   command, never the `verification run` call around it.
    A local test failure is reported as flaky only after its section was
    rerun alone at least 3 times and passed every time; otherwise it is a
    failure. This is not the CI **Flake rerun**, which stays one per loop.

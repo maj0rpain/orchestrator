@@ -61,14 +61,19 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    record of what it wrote, and the driver blames later findings against
    them. Done when every item is fixed or on your could-not-fix list, and
    every listed site of a pattern finding is fixed or deferred.
-2. **Verify.** Run the **ticket verification** bare. Find it in the repo's
-   instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`) yourself: a line
+2. **Verify.** Run the **ticket verification** through `verification run`. Find
+   it in the repo's instructions (`CLAUDE.md`, `AGENTS.md`,
+   `CONTRIBUTING.md`) yourself: a line
    reading `Ticket verification: <command>`. The prompt hands you only the full
    verification command; when the instructions name no ticket verification,
    run that one.
    Run it in the foreground and wait for it (host capability *Run a long
-   command*); never background it and sleep, poll or kill it. A run the host
-   moves to the background at its timeout is still waited for, as that row says.
+   command*), through `verification run`, a **re-callable command**:
+   `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and
+   run the same line again while it exits 75, which means still running, never
+   a result. Never background it and sleep, poll or kill it. A run the host
+   stops is a failed run. The `Verification` line of your report names the inner
+   command, never the `verification run` call around it.
    A local test failure is reported as flaky only after its section was
    rerun alone at least 3 times and passed every time; otherwise it is a
    failure. This is not the CI **Flake rerun**, which stays one per loop.

@@ -2408,6 +2408,8 @@ for bp_cmd in 'pkill -f y' 'echo $(pgrep x)' 'echo `pgrep x`' 'ls | xargs pkill'
   assert_eq "bash hook poll guard: denies '${bp_cmd//$'\n'/\\n}'" "$(bash_hook_decision "$bp_out")" deny
 done
 bp_out="$(bash_hook_scan default 'pgrep x')"
+assert_contains "bash hook poll guard: the reason tells a re-callable command to be run again" \
+  "$(bash_hook_reason "$bp_out")" 'run the same command again'
 assert_contains "bash hook poll guard: the reason gives the foreground rerun" \
   "$(bash_hook_reason "$bp_out")" 'timeout: 600000'
 assert_contains "bash hook poll guard: the reason names the completion notice" \
