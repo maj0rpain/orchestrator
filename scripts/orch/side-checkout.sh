@@ -163,7 +163,7 @@ archive_root() {
 # freely named round directories and a flow's spec review round directories
 # (spec-rounds/<k>/) included. The round marker lives in the handoff folder, so
 # it goes with it.
-FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass audit autopilot breakdown reports verification)
+FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass audit autopilot breakdown reports verification wait)
 
 # side_checkout_refuse_ticket_worktrees <root>: refuses while ticket worktrees
 # are left under the checkout at <root>, the one reason this module gives.

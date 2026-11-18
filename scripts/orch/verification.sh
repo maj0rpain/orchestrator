@@ -17,7 +17,6 @@
 # Its tests: scripts/test/orch/verification.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-ORCH_WAIT_BLOCK="${ORCH_WAIT_BLOCK:-570}"
 # How often a waiting call looks at the run, in seconds.
 ORCH_VERIFICATION_INTERVAL="${ORCH_VERIFICATION_INTERVAL:-0.2}"
 
@@ -87,7 +86,8 @@ verification_deliver() {
 
 # verification_run <command>: the verb's work.
 verification_run() {
-  require_poll_knobs ORCH_WAIT_BLOCK
+  orch_load wait
+  wait_block_check
   require_poll_knobs ORCH_VERIFICATION_INTERVAL
   local command="$1" key store d slept=0 attached=""
   key="$(verification_key "$command")" || die "could not read the working tree state"

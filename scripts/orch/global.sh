@@ -767,6 +767,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               with no entries, fails with an orch: message
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
+                              Blocks at most ORCH_WAIT_BLOCK seconds (default
+                              570; a value that is not a positive number is
+                              refused): still waiting, it prints nothing,
+                              says "orch: still running" on stderr and exits
+                              75 - run it again; the 900 s total counts from
+                              the first call, per PR and head commit, and is
+                              forgotten once an outcome is delivered
   review rerun <pr>           rerun the failed jobs of every Actions run
                               behind the failing checks review ci counts;
                               prints each run id. Exits 1 when a failing check
@@ -903,6 +910,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               missing after ORCH_SPEC_REVIEW_WAIT_TIMEOUT
                               seconds (default 900), polling every
                               ORCH_SPEC_REVIEW_WAIT_INTERVAL (default 5)
+                              Blocks at most ORCH_WAIT_BLOCK seconds per call
+                              (default 570): still waiting, nothing on stdout,
+                              "orch: still running" on stderr, exit 75 - run
+                              it again; the total counts from the first call,
+                              per directory and lenses, forgotten once an
+                              outcome is delivered
   spec-review prompt <dir> <lens>
                               print <lens>'s whole prompt, for the session
                               to pass unchanged: one "<label>: <path>" line
@@ -1085,7 +1098,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               leaving the entries that belong to no flow in
                               place: archive/, checkouts/, spec-review/, audit/,
                               review-pass/, autopilot/, breakdown/,
-                              reports/ and verification/
+                              reports/, verification/ and wait/
                               (refuses, naming each, while a ticket worktree
                               is left under this checkout). In a side
                               checkout, the flow moves to the main checkout's

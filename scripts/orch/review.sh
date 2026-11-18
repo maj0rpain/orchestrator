@@ -260,10 +260,14 @@ ci_elapsed() { awk -v w="$(( $(date +%s) - $1 ))" -v s="$2" 'BEGIN { print (w > 
 # One turn of the poll loop: wait, then advance both clocks. It assigns to the
 # caller's `slept` and `elapsed`, which bash scopes dynamically - threading two
 # counters back out through a subshell's stdout would cost more than it
-# explains.
+# explains. A call that has slept ORCH_WAIT_BLOCK seconds stores the total and
+# exits 75 instead of sleeping on (wait.sh).
 ci_tick() {
+  orch_load wait
+  float_lt "$blocked" "$ORCH_WAIT_BLOCK" || wait_still_running "$slept"
   sleep "$ORCH_CI_INTERVAL"
   slept="$(float_add "$slept" "$ORCH_CI_INTERVAL")"
+  blocked="$(float_add "$blocked" "$ORCH_CI_INTERVAL")"
   elapsed="$(ci_elapsed "$started" "$slept")"
 }
 
@@ -897,19 +901,25 @@ cmd_review() {
     ci)
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
-      local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
+      local pr started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local no_ci=0
       require_state_read pr=pr
       require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+      wait_block_check
       require_value pr "$pr"
-      started="$(date +%s)"
       # Two clocks: the timeout counts from this call, the grace from the push.
       # By the time the loop ends the fixer's last push is usually minutes old,
       # and a CI that has not registered a check in that time is not about to.
       # `push_age` is how long before this call the push landed; a PR that will
       # not say what its head is, or a head with no reflog entry, leaves it at
       # zero, and the grace counts from the call as it always did.
-      if pr_refs_read "$pr" head_oid head_ref base_ref refs_err; then
+      # The total is stored from the first call: a wait belongs to this PR and
+      # head commit, or to the PR alone when the head cannot be read, and is
+      # forgotten once a call delivers an outcome (wait.sh).
+      pr_refs_read "$pr" head_oid head_ref base_ref refs_err || head_oid=""
+      wait_open "review ci $pr $head_oid" started slept
+      elapsed="$(ci_elapsed "$started" "$slept")"
+      if [ -n "$head_oid" ]; then
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
           ''|*[!0-9]*) ;;
@@ -942,11 +952,11 @@ cmd_review() {
         fi
         verdict="${res%%$'\n'*}"
         case "$verdict" in
-          green)       printf '%s\n' "$res"; return 0 ;;
+          green)       printf '%s\n' "$res"; wait_forget; return 0 ;;
           # Reported, not fixed: which failure is worth a flake rerun is a
           # judgement, and the budget for it belongs to the flow.
-          failing)     printf '%s\n' "$res"; return 1 ;;
-          unreachable) printf '%s\n' "$res"; return 1 ;;
+          failing)     printf '%s\n' "$res"; wait_forget; return 1 ;;
+          unreachable) printf '%s\n' "$res"; wait_forget; return 1 ;;
           # Only reachable with the grace spent or skipped: nothing required
           # reported, and then nothing at all reported either. The detail line
           # says which, here rather than in ci_probe, so doctor's lines are
@@ -958,6 +968,7 @@ cmd_review() {
             else
               note "      nothing reported before the ${ORCH_CI_GRACE}s grace ran out"
             fi
+            wait_forget
             return 0 ;;
           pending)
             if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
@@ -966,6 +977,7 @@ cmd_review() {
             # nothing ever verified.
             note unreachable
             note "      checks were still pending after ${ORCH_CI_TIMEOUT}s"
+            wait_forget
             return 1 ;;
           # Unreachable while ci_probe prints one of the five words above, and
           # the arm that keeps it that way: an unrecognised answer with no arm
@@ -974,6 +986,7 @@ cmd_review() {
           *)
             note unreachable
             note "      unrecognised answer from gh pr checks: $verdict"
+            wait_forget
             return 1 ;;
         esac
       done
