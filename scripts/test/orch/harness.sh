@@ -2493,6 +2493,27 @@ assert_eq "the report lines follow the suite list" \
 assert_eq "the waiting notice appears once" "$(grep -c 'all.sh: waiting for a job slot (' "$jp_dir/allerr")" "1"
 assert_eq "the other suites start before any orch_test.sh section" \
   "$(awk '/^\+ / { n++ } /^\+$/ { print n + 0; exit }' "$jp_log")" "$((${#SUITES[@]} - 1))"
+# affected.sh holds a slot for each suite it starts besides orch_test.sh: in a
+# git copy of the planted tree, with docs_lint.sh and two changed suites
+# selected, the same 2-slot pool is never exceeded.
+cp "$jp_tests/affected.sh" "$jp_tree/scripts/test/"
+git -C "$jp_tree" init -q -b main
+git -C "$jp_tree" add -A
+git -C "$jp_tree" -c user.name=t -c user.email=t@example.com commit -qm init
+echo '# changed' >>"$jp_tree/scripts/test/hooks_test.sh"
+echo '# changed' >>"$jp_tree/scripts/test/version_bump_test.sh"
+: >"$jp_log"
+(cd "$jp_tree" && env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" ORCH_TEST_POOL_DIR="$jp_dir/pool21" \
+  JP_LOG="$jp_log" JP_POOL="$jp_dir/pool21" JP_SUITE="$jp_suite" ORCH_TEST_JOBS=4 PATH="$jp_stubs:$PATH" \
+  bash scripts/test/affected.sh HEAD >"$jp_dir/afout" 2>"$jp_dir/aferr")
+jp_s1=$?
+[ ! -r "$jp_log.sleep" ] || kill "$(<"$jp_log.sleep")" 2>/dev/null
+assert_status "affected.sh over a failing stub suite exits 1" "$jp_s1" 1
+assert_eq "affected.sh on a 2-slot pool runs at most 2 jobs at once" "$(log_peak "$jp_log")" "2"
+assert_eq "its selected stub suites all ran" "$(grep -c '^+ ' "$jp_log")" "3"
+assert_eq "its report keeps the selection order" \
+  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/afout" | cut -d: -f1 | tr '\n' ' ')" "orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh "
+assert_contains "the verdict names the failing suite" "$(tail -n 1 "$jp_dir/afout")" "affected.sh: FAIL (docs_lint.sh"
 fi
 rm -rf "$jp_tree"
 

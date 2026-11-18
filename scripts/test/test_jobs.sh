@@ -95,8 +95,8 @@
 # writes the number. <cmd>
 # is an external command.
 #
-# The suite start, which all.sh calls (affected.sh and section-durations.sh are
-# to follow) so no runner starts a whole suite its own way. A suite is one
+# The suite start, which all.sh, affected.sh and section-durations.sh call
+# so no runner starts a whole suite its own way. A suite is one
 # script of a runner's suites list; each one other than orch_test.sh, whose
 # coordinator mostly sleeps while its section children hold their own slots,
 # holds a slot while it runs. It has two steps a caller can run apart:
