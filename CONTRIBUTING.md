@@ -129,7 +129,9 @@ under `~/.cache/orchestrator/test-job-pool`, as many as that default (so
 `ORCH_TEST_POOL_PERCENT`, read from each run's own environment, sizes the pool;
 an invalid value fails every runner with
 `<runner>: ORCH_TEST_POOL_PERCENT='<value>' is not a positive integer`), each
-held with `flock` while one section child or one shellcheck process runs, so two
+held with `flock` while one section child, one shellcheck process or one whole
+suite other than `orch_test.sh` runs, so the pool share bounds the whole run,
+every suite included, and no more test jobs run at once than the pool holds; two
 or three sessions verifying at once queue for slots (`orch_test.sh: waiting for
 a job slot (N in use)` on stderr, once) and a killed holder's slot is freed by
 the kernel. `ORCH_TEST_JOBS=N` caps how many slots a run asks for and never
@@ -142,6 +144,8 @@ directory. Runs that disagree on the size share the directory unchanged: each
 tries slots 1 to its own size, so a larger run also uses the higher slots while
 all contend for the low ones, and concurrency is bounded by the largest size
 among the active runs; no size is recorded there.
+A slot bounds jobs, not cores: to cap cores outright use CPU affinity, for
+example `taskset -c 0-7 <command>`.
 Test-helper placement is checked by harness.sh's test-helper placement
 section; its failure message states the rule.
 

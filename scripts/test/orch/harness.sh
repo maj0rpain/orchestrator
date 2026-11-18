@@ -2459,6 +2459,41 @@ assert_eq "without a waiting notice" "$(grep -c "$jp_notice" "$jp_dir/err")" "0"
 else
   skip "the job pool cases on a shared pool" "flock is not installed"
 fi
+# all.sh's whole run stays within the pool: on a 2-slot pool, over the planted
+# tree with logging stub suites (named as all.sh's suites list names them) and a
+# logging stub shellcheck, sections, suites and shellcheck together never run
+# more than 2 at once; every suite still runs and reports, in suite-list order.
+if command -v flock >/dev/null 2>&1; then
+suites_read "$jp_tests/all.sh" "$jp_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
+jp_stubs="$jp_dir/stubs"
+mkdir -p "$jp_stubs"
+printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' "$jp_log" "$jp_log" >"$jp_stubs/shellcheck"
+chmod +x "$jp_stubs/shellcheck"
+for jp_stub in "${SUITES[@]}"; do
+  [ "$jp_stub" != orch_test.sh ] || continue
+  jp_code=0
+  [ "$jp_stub" != docs_lint.sh ] || jp_code=1
+  printf '#!/usr/bin/env bash\necho "+ %s" >>%q\nsleep 0.3\necho - >>%q\necho; echo "%s passed, %s failed"\nexit %s\n' \
+    "$jp_stub" "$jp_log" "$jp_log" "$((1 - jp_code))" "$jp_code" "$jp_code" >"$jp_tree/scripts/test/$jp_stub"
+done
+: >"$jp_log"
+env -u CI ORCH_TEST_POOL_PERCENT=50 ORCH_TEST_CPU_MAX_FILE="$jp_dir/cpu2" ORCH_TEST_POOL_DIR="$jp_dir/pool20" \
+  JP_LOG="$jp_log" JP_POOL="$jp_dir/pool20" JP_SUITE="$jp_suite" ORCH_TEST_JOBS=4 PATH="$jp_stubs:$PATH" \
+  bash "$jp_tree/scripts/test/all.sh" >"$jp_dir/allout" 2>"$jp_dir/allerr"
+jp_s1=$?
+[ ! -r "$jp_log.sleep" ] || kill "$(<"$jp_log.sleep")" 2>/dev/null
+assert_status "all.sh over a failing stub suite exits 1" "$jp_s1" 1
+assert_eq "all.sh on a 2-slot pool runs at most 2 jobs at once" "$(log_peak "$jp_log")" "2"
+assert_eq "every stub suite ran" "$(grep -c '^+ ' "$jp_log")" "$((${#SUITES[@]} - 1))"
+assert_eq "the stub shellcheck ran for the planted tree" "$(grep -c '^+$' "$jp_log" | awk '{ print ($1 > 4) }')" "1"
+assert_contains "the failing suite's report line reads FAIL" "$(grep '^docs_lint.sh:' "$jp_dir/allout")" "0 passed, 1 failed"
+assert_contains "the verdict names it" "$(tail -n 1 "$jp_dir/allout")" "all.sh: FAIL (docs_lint.sh"
+assert_eq "the report lines follow the suite list" \
+  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/allout" | cut -d: -f1 | tr '\n' ' ')" "${SUITES[*]} "
+assert_eq "the waiting notice appears once" "$(grep -c 'all.sh: waiting for a job slot (' "$jp_dir/allerr")" "1"
+assert_eq "the other suites start before any orch_test.sh section" \
+  "$(awk '/^\+ / { n++ } /^\+$/ { print n + 0; exit }' "$jp_log")" "$((${#SUITES[@]} - 1))"
+fi
 rm -rf "$jp_tree"
 
 # all.sh's shellcheck processes take slots: two concurrent all.sh runs on a

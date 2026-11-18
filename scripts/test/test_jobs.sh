@@ -95,6 +95,25 @@
 # writes the number. <cmd>
 # is an external command.
 #
+# The suite start, which all.sh calls (affected.sh and section-durations.sh are
+# to follow) so no runner starts a whole suite its own way. A suite is one
+# script of a runner's suites list; each one other than orch_test.sh, whose
+# coordinator mostly sleeps while its section children hold their own slots,
+# holds a slot while it runs. It has two steps a caller can run apart:
+#
+# test_jobs_suite_take: the take step, test_jobs_slot_wait under another name:
+# waits for a slot (with the waiting notice) and keeps it on the runner's fd.
+#
+# test_jobs_suite_start <outfile> <cmd>...: the start step. Starts <cmd> (an
+# external command; assignments before the call pass through) in the background
+# with its stdout on <outfile>, through test_jobs_job, its children marked
+# ORCH_TEST_POOL_HELD with the pool directory when a slot was taken (an
+# inherited marker passes on when the run is unpooled), and hands the slot to a
+# holder that keeps it until the suite exits. Records the suite's pid in
+# TEST_JOBS_SUITE_PID, which the caller reads, never `$!`: after this step `$!`
+# names the slot's holder. An unpooled run, or a start with no take step first,
+# starts the suite with no slot.
+#
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
 # removes its temp directory only once no child can still write into it. A
@@ -297,6 +316,7 @@ TEST_JOBS_IN_USE=0
 TEST_JOBS_NOTED=0
 TEST_JOBS_RUNNER=""
 TEST_JOBS_CHILD=""
+TEST_JOBS_SUITE_PID=""
 
 test_jobs_pool_init() {
   local dir slots
@@ -361,4 +381,18 @@ test_jobs_slot_release() {
 test_jobs_job() {
   eval "exec $TEST_JOBS_FD>&-"
   exec "$@"
+}
+
+test_jobs_suite_take() {
+  test_jobs_slot_wait
+}
+
+# shellcheck disable=SC2034 # read by the sourcing runners
+test_jobs_suite_start() {
+  local out="$1" held="${ORCH_TEST_POOL_HELD:-}"
+  shift
+  [ -z "$TEST_JOBS_SLOT_FD" ] || held="$TEST_JOBS_POOL"
+  ORCH_TEST_POOL_HELD="$held" test_jobs_job "$@" >"$out" &
+  TEST_JOBS_SUITE_PID=$!
+  test_jobs_slot_release "$TEST_JOBS_SUITE_PID"
 }
