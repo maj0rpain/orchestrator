@@ -1430,28 +1430,10 @@ assert_eq "the busy-loop stub's line shows at least 4 tenths of CPU" \
 rm -f "$dur_test/stub_cpu.sh" "$dur_test/stub_cpu.sh.times"
 sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
 
-# The fingerprint column (#3467), observed through the script's output: a
-# planted file with a preamble and two sections, recorded once; the edit cases
-# live in docs_lint.sh's suite budget section.
+# The fingerprint column (#3467), read from the full refresh below; the edit
+# cases live in docs_lint.sh's suite budget section.
 # fp_of <title> [<file>]: the title's fourth column in <file> or the ledger.
 fp_of() { awk -F'\t' -v t="$1" '$3 == t { print $4 }' "${2:-$dur_file}"; }
-fp_plant() {
-  printf '%s\n' "  $1" '  # --- fp x' "  echo; echo 'fp x'; $2; ok 'x ran'" \
-    '  # --- fp y' "  echo; echo 'fp y'; ok 'y ran'" | plant_file "$dur_orch" zzz-fp.sh
-}
-fp_plant 'FP_PRE=1' ':'
-out="$(dur_script)"; st=$?
-assert_status "the script passes with a fingerprint-test file planted" "$st" 0
-assert_eq "every line but shellcheck's has four columns" \
-  "$(awk -F'\t' '$3 != "shellcheck" && NF != 4 { n++ } END { print n + 0 }' "$dur_file")" "0"
-assert_eq "and shellcheck's keeps three" \
-  "$(awk -F'\t' '$3 == "shellcheck" { print NF }' "$dur_file")" "3"
-fp_x="$(fp_of 'fp x')"; fp_y="$(fp_of 'fp y')"
-assert_eq "a fingerprint is not empty" "$([ -n "$fp_x" ] && echo yes)" "yes"
-assert_eq "two sections' fingerprints differ" "$([ "$fp_x" != "$fp_y" ] && echo yes)" "yes"
-rm -f "$dur_orch/zzz-fp.sh"
-dur_stub_passing stub_a.sh
-cp "$dur_file" "$dur_dir/good.tsv"
 # The --stale mode (#3468): the same planted tree, a recorded base file, and a
 # change to one thing at a time. dur_stale [<env assignment>...]: the dev script
 # with --stale, stdout and stderr together.
@@ -1480,6 +1462,12 @@ cp "$dur_test/stub_b.sh" "$dur_dir/stub_b.keep"
 out="$(dur_script)"; st=$?
 assert_status "a full refresh on the tree for the --stale cases passes" "$st" 0
 cp "$dur_file" "$dur_dir/base.tsv"
+assert_eq "every line but shellcheck's has four columns" \
+  "$(awk -F'\t' '$3 != "shellcheck" && NF != 4 { n++ } END { print n + 0 }' "$dur_file")" "0"
+assert_eq "and shellcheck's keeps three" \
+  "$(awk -F'\t' '$3 == "shellcheck" { print NF }' "$dur_file")" "3"
+assert_eq "a fingerprint is not empty" "$([ -n "$(fp_of 'dur a')" ] && echo yes)" "yes"
+assert_eq "two sections' fingerprints differ" "$([ "$(fp_of 'dur a')" != "$(fp_of 'dur b')" ] && echo yes)" "yes"
 # st_reset: the tree and the file as the base recorded them.
 st_reset() {
   cp "$dur_dir/planted.keep" "$dur_orch/zz-planted.sh"
@@ -1561,8 +1549,10 @@ assert_contains "the budget file missing still records, and the last line says s
 st_reset
 # A stale other suite is measured and its line rewritten.
 echo '# edited' >>"$dur_test/stub_a.sh"
+printf 'abc\n' >"$dur_test/suite-budget"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on an edited other suite exits 0" "$st" 0
+assert_contains "a malformed budget file still records, and the last line names it as missing" "$(st_last "$out")" "budget missing"
 assert_eq "its fingerprint changed" \
   "$([ "$(fp_of stub_a.sh)" != "$(fp_of stub_a.sh "$dur_dir/base.tsv")" ] && echo yes)" "yes"
 assert_eq "and every other line is as it was" "$(st_except stub_a.sh)" "$(awk -F'\t' '$3 != "stub_a.sh"' "$dur_dir/base.tsv")"

@@ -253,10 +253,9 @@ fi
 
 # ORCH_TEST_ONLY for orch_test.sh: an anchored alternation of the titles.
 only=""
-for t in "${titles[@]}"; do
-  esc="$(printf '%s' "$t" | sed 's/[].\\[*^$+?(){}|]/\\&/g')"
-  only+="${only:+|}$esc"
-done
+if [ "${#titles[@]}" -gt 0 ]; then
+  only="$(printf '%s\n' "${titles[@]}" | titles_regex)"
+fi
 
 # shellcheck source=test_jobs.sh
 source "$dir/test_jobs.sh"
@@ -265,6 +264,7 @@ source "$dir/report.sh"
 test_jobs_lower_priority
 test_jobs_pool_init affected.sh || exit 1
 export ORCH_TEST_QUIET=1
+unset DOCS_LINT_RECORDING
 tmp="$(mktemp -d)" || exit 1
 pids=()
 trap 'test_jobs_stop_children "${pids[@]}"' INT TERM
@@ -272,7 +272,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 for suite in "${selected[@]}"; do
   if [ "$suite" = orch_test.sh ] && [ -n "$only" ]; then
-    ORCH_TEST_ONLY="^($only)\$" bash "$dir/$suite" >"$tmp/$suite" &
+    ORCH_TEST_ONLY="$only" bash "$dir/$suite" >"$tmp/$suite" &
   elif [ "$suite" = docs_lint.sh ]; then
     unset ORCH_TEST_ONLY
     DOCS_LINT_BASE="$merge_base" bash "$dir/$suite" >"$tmp/$suite" &

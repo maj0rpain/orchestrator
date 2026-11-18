@@ -152,6 +152,14 @@ ledger_fingerprints_all() {
   ledger_fingerprints "$1" ${LEDGER_OTHERS[@]+"${LEDGER_OTHERS[@]}"}
 }
 
+# The function titles_regex prints, from section titles on stdin, one per line,
+# the ERE ORCH_TEST_ONLY takes to select exactly those sections: the titles
+# escaped, joined with `|`, in one anchored group. affected.sh and
+# section-durations.sh both call it, so the two cannot drift.
+titles_regex() {
+  printf '^(%s)$\n' "$(sed 's/[].\\[*^$+?(){}|]/\\&/g' | paste -sd'|' -)"
+}
+
 # The function suite_budget_read <budget file> reads the suite budget into
 # SUITE_BUDGET: the file must hold exactly one line, a positive whole number.
 # It returns 0, 1 when the file is missing, 2 when it is not one positive whole

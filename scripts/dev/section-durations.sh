@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # section-durations.sh: rewrites scripts/test/section-durations.tsv, the file
-# orch_test.sh reads to start its sections longest-first. Run it when the
-# suite's shape changes (sections added, removed or made much slower or faster),
-# on a tree whose suite passes.
+# orch_test.sh reads to start its sections longest-first. It has two modes. With
+# no argument it is the full refresh, which resets the scale of every line: the
+# human's call, made when the suite's shape changes (sections added, removed or
+# made much slower or faster), on a tree whose suite passes. With --stale,
+# below, a session that adds or edits tests records just what its change made
+# out of date.
 #
-# It runs orch_test.sh once, unfiltered, with ORCH_TEST_DURATIONS pointing at a
-# temporary file, so every section is measured (several at a time, from the job
-# pool); then times each other suite of all.sh's suites list and the shellcheck
-# step, one after another, with bash's `time` keyword. Each line of the file is
-# "<wall tenths><TAB><CPU tenths><TAB><name><TAB><fingerprint>" - tenths of a
-# second, CPU the user plus system time of the process tree: the sections in
-# walk order, then the other suites in suite-list order, then `shellcheck`,
-# whose line has three columns, no fingerprint. The fingerprint is the hash of
-# the test text the line was measured from (test_tree.sh's ledger_fingerprints):
-# a section's own lines plus its file's preamble, a suite's whole file; it is
-# taken before anything is measured.
+# The full refresh runs orch_test.sh once, unfiltered, with ORCH_TEST_DURATIONS
+# pointing at a temporary file, so every section is measured (several at a time,
+# from the job pool); then times each other suite of all.sh's suites list and
+# the shellcheck step, one after another, with bash's `time` keyword. Each line
+# of the file is "<wall tenths><TAB><CPU tenths><TAB><name><TAB><fingerprint>"
+# - tenths of a second, CPU the user plus system time of the process tree: the
+# sections in walk order, then the other suites in suite-list order, then
+# `shellcheck`, whose line has three columns, no fingerprint. The fingerprint
+# is the hash of the test text the line was measured from (test_tree.sh's
+# ledger_fingerprints): a section's own lines plus its file's preamble, a
+# suite's whole file; it is taken before anything is measured.
 #
 # ORCH_TEST_ONLY and ORCH_TEST_SHARD are unset, so the whole suite is always
 # measured. With a job count of 1 (ORCH_TEST_JOBS=1) it prints a message naming
@@ -79,13 +82,11 @@ if [ "$jobs" -eq 1 ]; then
   exit 1
 fi
 test_jobs_pool_init section-durations.sh || exit 1
-suites_read "$dir/all.sh" "$dir" || {
-  echo "section-durations.sh: $SUITES_ERR" >&2; exit 1; }
 
 TAB=$(printf "\t")
 tmp="$(mktemp -d)" || exit 1
 ledger_fingerprints_all "$dir" >"$tmp/fingerprints" || {
-  echo "section-durations.sh: could not fingerprint the test text" >&2; rm -rf "$tmp"; exit 1; }
+  echo "section-durations.sh: ${SUITES_ERR:-could not fingerprint the test text}" >&2; rm -rf "$tmp"; exit 1; }
 SHELLCHECK_PIDS=()
 trap 'rm -rf "$tmp"' EXIT
 trap 'test_jobs_stop_children ${TEST_JOBS_CHILD:+"$TEST_JOBS_CHILD"} ${SHELLCHECK_PIDS[@]+"${SHELLCHECK_PIDS[@]}"}' INT TERM
@@ -186,10 +187,10 @@ stale_run() {
   { awk -F'\t' '$3 == "section" { print $2 }' "$tmp/todo"; cut -f4 "$tmp/calib"; } >"$tmp/needed"
   # One filtered parallel run measures the stale and missing sections and the
   # calibration ones; the pattern holds each title whole.
-  regex="$(sed -e 's/[][\\.(){*+?|^$]/\\&/g' -e 's/^/^/' -e 's/$/$/' "$tmp/needed" | paste -sd'|' -)"
+  regex="$(titles_regex <"$tmp/needed")"
   : >"$tmp/sections"
   : >"$tmp/rest"
-  ORCH_TEST_ONLY="($regex)" ORCH_TEST_DURATIONS="$tmp/sections" \
+  ORCH_TEST_ONLY="$regex" ORCH_TEST_DURATIONS="$tmp/sections" \
     test_jobs_run_child bash "$dir/orch_test.sh" >"$tmp/orch.out" 2>&1 || {
     failed+=("orch_test.sh")
     cat "$tmp/orch.out" >&2
@@ -244,8 +245,7 @@ fi
 : >"$tmp/rest"
 ORCH_TEST_DURATIONS="$tmp/sections" test_jobs_run_child bash "$dir/orch_test.sh" || failed+=("orch_test.sh")
 
-for suite in "${SUITES[@]}"; do
-  [ "$suite" = orch_test.sh ] && continue
+for suite in ${LEDGER_OTHERS[@]+"${LEDGER_OTHERS[@]}"}; do
   measure_suite "$suite"
 done
 

@@ -6,7 +6,7 @@
 13	12	the parallel runner's start order (#2857)	fc6bd901e809c854c4f24de349833375b37da878
 106	52	the shard setting (#2859)	e458e8b2e5e96585f1fa1c17550dcaf16af69a8d
 9	9	the seeded start (stub cache)	4d395568422b51808c584e5f2eeb5e45e4fd9245
-263	231	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	15f22785a116fdd60f6afe1409339cd195c95f39
+257	227	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	c67561c1f25d7dd7b4f95fe99258f08d9fe26da3
 2	2	assertions in a subshell (#1904)	0452522e28fb1c4c3c38be4bdc01164d38083a6d
 0	1	the standalone suites' tally (#1904)	3ef63a2498ce5575744c59c536feb59e722c4808
 9	9	the section files (#932)	ae9bc054f49c95a75fd421f36ed5090445872826
@@ -350,7 +350,7 @@
 1	2	ticket exists: no repo (#3050)	291d750cc4efbe9e118a0494a09f83666294d0d8
 17	20	trust module	8907f14dbb6515e13cfad144156774f74dc17a98
 686	806	hooks_test.sh	6625869d545a29266bdef9aa7a67cb0a5abc74db
-150	167	docs_lint.sh	1465eec1b05a462437a8d6e726e3281f5b9719f6
+150	167	docs_lint.sh	31af1301497259f2373fbf497a00dba67ea3a1b6
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8

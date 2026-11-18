@@ -274,7 +274,9 @@ spares() {
 # The one optional argument, --fragment-only, narrows the run to the changelog
 # fragment rule and the suite budget rules 2 and 3. It is an argument, never an
 # environment variable, so the runners that start this file with none can never
-# narrow a full run.
+# narrow a full run. The one variable the full run reads is DOCS_LINT_RECORDING,
+# which only section-durations.sh sets: it skips the ledger freshness rule and
+# rule 2 while the ledger is recorded, and all.sh and affected.sh unset it.
 FRAGMENT_ONLY=0
 if [ "$#" -gt 0 ]; then
   if [ "$#" -eq 1 ] && [ "$1" = --fragment-only ]; then
@@ -538,7 +540,14 @@ scan_suite_budget_alone() {
 # run (after the ledger check) and the --fragment-only run both call it.
 check_real_suite_budget() {
   local base="${DOCS_LINT_BASE:-${CHANGELOG_BASE:-}}"
-  check "the recorded total is within the suite budget" "$(scan_suite_budget "$PLUGIN_ROOT" "$base")"
+  # While section-durations.sh records the ledger (DOCS_LINT_RECORDING), the
+  # budget file may be missing or malformed and the recording still goes on, so
+  # rule 2 is not judged in the full run; the budget-alone rule still is.
+  if [ "$FRAGMENT_ONLY" = 0 ] && [ -n "${DOCS_LINT_RECORDING:-}" ]; then
+    ok "the recorded total is not judged against the suite budget while the durations file is being recorded"
+  else
+    check "the recorded total is within the suite budget" "$(scan_suite_budget "$PLUGIN_ROOT" "$base")"
+  fi
   if [ -n "$base" ]; then
     check "the suite budget file changes alone" "$(scan_suite_budget_alone "$PLUGIN_ROOT" "$base")"
   else
@@ -5020,9 +5029,19 @@ echo '# new' >"$fixture/scripts/new.sh"
 assert_empty "a budget file new in the change is exempt, beside other files" \
   "$(scan_suite_budget_alone "$fixture" main)"
 assert_empty "with no base, the budget-alone rule is skipped" "$(scan_suite_budget_alone "$fixture")"
+# While the ledger is recorded, a missing budget file is not judged by rule 2.
+fixture="$(budget_fixture none)"
+out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" DOCS_LINT_BASE='' CHANGELOG_BASE='' \
+  DOCS_LINT_RECORDING=1 check_real_suite_budget)"
+assert_eq "a missing budget file is not judged while the ledger is recorded" \
+  "$([[ "$out" == *"ok   the recorded total is not judged against the suite budget"* ]] && echo yes)" yes
+out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" DOCS_LINT_BASE='' CHANGELOG_BASE='' \
+  DOCS_LINT_RECORDING='' check_real_suite_budget)"
+assert_eq "and is judged when the ledger is not being recorded" \
+  "$([[ "$out" == *"FAIL the recorded total is within the suite budget"* ]] && echo yes)" yes
 # section-durations.sh measures this file with DOCS_LINT_RECORDING=1 while it
 # replaces the ledger's lines, so the freshness rule would fail on the very
-# lines being recorded; only that script sets it, and only for this rule.
+# lines being recorded; only that script sets it, and rule 2 reads it too.
 if [ -n "${DOCS_LINT_RECORDING:-}" ]; then
   ok "the durations file's freshness is not judged while it is being recorded"
 else

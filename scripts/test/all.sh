@@ -59,7 +59,9 @@
 # Exits 1 when any suite failed or printed a FAIL line, a suite left temp files
 # behind, or shellcheck did not pass.
 #
-# ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs.
+# ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs. So is
+# DOCS_LINT_RECORDING, which only section-durations.sh sets, so an inherited
+# value cannot switch off docs_lint.sh's ledger and budget rules here.
 #
 # ORCH_TEST_SHARD=<i>/<n> passes to orch_test.sh alone (never to the other
 # suites), which runs group i of n of its sections; all.sh runs the other suites
@@ -104,7 +106,7 @@ source "$dir/test_tree.sh"
 sc_jobs="$(test_jobs_count all.sh)" || exit 1
 test_jobs_lower_priority
 test_jobs_pool_init all.sh || exit 1
-unset ORCH_TEST_ONLY
+unset ORCH_TEST_ONLY DOCS_LINT_RECORDING
 all_shard="${ORCH_TEST_SHARD:-}"
 unset ORCH_TEST_SHARD
 test_jobs_shard all.sh "$all_shard" || exit 1
