@@ -60,6 +60,8 @@ change to the code - and recommends neither.
 - Quote the doc passage and the code for every finding.
 - Report no style, wording or taste point: only a disagreement between a text
   and the code.
+- A finding stands alone: it names no other finding by number or by nickname,
+  and never the report.
 - With no findings, write the single line `@@ none`.
 
 ## Reading the code

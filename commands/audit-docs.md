@@ -1,5 +1,5 @@
 ---
-description: Audit the repo's documentation (prose docs, comments and docstrings, agent and skill instruction files) against the code, rank the disagreements in an HTML report; picked findings go to the planning interview, are filed as issues, or both. Changes no file.
+description: Audit the repo's documentation (prose docs, comments and docstrings, agent and skill instruction files) against the code, rank the disagreements in an HTML report; picked findings go to the planning interview, are filed as issues, or both. Changes no tracked file.
 argument-hint: "[<direction>]"
 ---
 
